@@ -21,6 +21,6 @@ public static class PageSize
     public static readonly PdfRectangle A6 = Mm(105, 148);
 
     public static readonly PdfRectangle Letter = new(0, 0, 612, 792);
-    public static readonly PdfRectangle Legal  = new(0, 0, 612, 1008);
+    public static readonly PdfRectangle Legal = new(0, 0, 612, 1008);
     public static readonly PdfRectangle Ledger = new(0, 0, 1224, 792);
 }

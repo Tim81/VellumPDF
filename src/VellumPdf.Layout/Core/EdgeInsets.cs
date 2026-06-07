@@ -12,5 +12,5 @@ public readonly record struct EdgeInsets(double Top, double Right, double Bottom
     public static readonly EdgeInsets Zero = new(0);
 
     public double Horizontal => Left + Right;
-    public double Vertical   => Top + Bottom;
+    public double Vertical => Top + Bottom;
 }

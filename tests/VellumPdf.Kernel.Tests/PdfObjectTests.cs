@@ -15,28 +15,28 @@ public sealed class PdfObjectTests
         return System.Text.Encoding.ASCII.GetString(ms.ToArray());
     }
 
-    [Fact] public void Null_serializes()    => Assert.Equal("null",  Serialize(PdfNull.Instance));
-    [Fact] public void True_serializes()    => Assert.Equal("true",  Serialize(PdfBoolean.True));
-    [Fact] public void False_serializes()   => Assert.Equal("false", Serialize(PdfBoolean.False));
+    [Fact] public void Null_serializes() => Assert.Equal("null", Serialize(PdfNull.Instance));
+    [Fact] public void True_serializes() => Assert.Equal("true", Serialize(PdfBoolean.True));
+    [Fact] public void False_serializes() => Assert.Equal("false", Serialize(PdfBoolean.False));
 
     [Theory]
-    [InlineData(0,     "0")]
-    [InlineData(42,    "42")]
-    [InlineData(-7,    "-7")]
-    [InlineData(1000,  "1000")]
+    [InlineData(0, "0")]
+    [InlineData(42, "42")]
+    [InlineData(-7, "-7")]
+    [InlineData(1000, "1000")]
     public void Integer_serializes(long value, string expected) =>
         Assert.Equal(expected, Serialize(new PdfInteger(value)));
 
     [Theory]
-    [InlineData(0.0,   "0")]
-    [InlineData(1.5,   "1.5")]
+    [InlineData(0.0, "0")]
+    [InlineData(1.5, "1.5")]
     [InlineData(-3.14, "-3.14")]
-    [InlineData(595.28,"595.28")]
+    [InlineData(595.28, "595.28")]
     public void Real_serializes(double value, string expected) =>
         Assert.Equal(expected, Serialize(new PdfReal(value)));
 
     [Theory]
-    [InlineData("Page",    "/Page")]
+    [InlineData("Page", "/Page")]
     [InlineData("FlateDecode", "/FlateDecode")]
     public void Name_serializes(string value, string expected) =>
         Assert.Equal(expected, Serialize(new PdfName(value)));

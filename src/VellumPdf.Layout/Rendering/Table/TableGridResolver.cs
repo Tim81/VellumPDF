@@ -19,8 +19,8 @@ namespace VellumPdf.Layout.Rendering.Table;
 /// </summary>
 internal sealed class TableGridResolver
 {
-    public double[] ColWidths    { get; private set; } = [];
-    public int      ColCount     { get; private set; }
+    public double[] ColWidths { get; private set; } = [];
+    public int ColCount { get; private set; }
 
     public void Resolve(TableElement table, double availableWidth)
     {
@@ -55,7 +55,7 @@ internal sealed class TableGridResolver
                 var cellStyle = cell.Style ?? style;
                 var words = cell.Content.Split(' ');
                 var longest = words.Max(w => Standard14Metrics.MeasureString(cellStyle.Font, w, cellStyle.FontSize));
-                var full    = Standard14Metrics.MeasureString(cellStyle.Font, cell.Content, cellStyle.FontSize)
+                var full = Standard14Metrics.MeasureString(cellStyle.Font, cell.Content, cellStyle.FontSize)
                               + cell.Padding.Horizontal;
 
                 var share = cell.ColSpan;
@@ -70,7 +70,7 @@ internal sealed class TableGridResolver
 
         // Distribute available width proportionally to max-content widths
         var totalMax = maxW.Sum();
-        var result   = new double[cols];
+        var result = new double[cols];
         for (var i = 0; i < cols; i++)
         {
             result[i] = totalMax > 0

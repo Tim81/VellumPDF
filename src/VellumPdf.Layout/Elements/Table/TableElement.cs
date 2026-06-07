@@ -14,15 +14,15 @@ namespace VellumPdf.Layout.Elements.Table;
 /// </summary>
 public sealed class TableElement
 {
-    private readonly List<Row>    _rows    = [];
+    private readonly List<Row> _rows = [];
     private readonly List<double> _colWidths = [];   // 0 = auto
 
-    public TextStyle?  DefaultCellStyle { get; init; }
-    public double      BorderWidth      { get; init; } = 0.5;
-    public ColorRgb    BorderColor      { get; init; } = ColorRgb.Black;
-    public EdgeInsets  Margins          { get; init; } = EdgeInsets.Zero;
+    public TextStyle? DefaultCellStyle { get; init; }
+    public double BorderWidth { get; init; } = 0.5;
+    public ColorRgb BorderColor { get; init; } = ColorRgb.Black;
+    public EdgeInsets Margins { get; init; } = EdgeInsets.Zero;
 
-    public IReadOnlyList<Row> Rows      => _rows;
+    public IReadOnlyList<Row> Rows => _rows;
     public IReadOnlyList<double> ColWidths => _colWidths;
 
     public TableElement SetColumnWidths(params double[] widths)

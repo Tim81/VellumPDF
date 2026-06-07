@@ -157,7 +157,7 @@ public sealed class FontAndIoTests
         uint expected = 0;
         var i = 0;
         for (; i + 3 < data.Length; i += 4)
-            expected += ((uint)data[i] << 24) | ((uint)data[i+1] << 16) | ((uint)data[i+2] << 8) | data[i+3];
+            expected += ((uint)data[i] << 24) | ((uint)data[i + 1] << 16) | ((uint)data[i + 2] << 8) | data[i + 3];
         var rem = data.Length - i;
         if (rem > 0)
         {
@@ -185,7 +185,7 @@ public sealed class FontAndIoTests
     {
         // Times-Roman 'W' = 944, Times-Bold 'W' = 1000 per AFM
         var wRoman = Standard14Metrics.GetWidth(Standard14.TimesRoman, 'W');
-        var wBold  = Standard14Metrics.GetWidth(Standard14.TimesBold, 'W');
+        var wBold = Standard14Metrics.GetWidth(Standard14.TimesBold, 'W');
         Assert.NotEqual(wRoman, wBold);
         Assert.Equal(1000, wBold);
     }
@@ -195,7 +195,7 @@ public sealed class FontAndIoTests
     {
         // Times-Italic 'W' = 833, Times-Roman 'W' = 944
         var wItalic = Standard14Metrics.GetWidth(Standard14.TimesItalic, 'W');
-        var wRoman  = Standard14Metrics.GetWidth(Standard14.TimesRoman, 'W');
+        var wRoman = Standard14Metrics.GetWidth(Standard14.TimesRoman, 'W');
         Assert.NotEqual(wRoman, wItalic);
         Assert.Equal(833, wItalic);
     }
@@ -204,7 +204,7 @@ public sealed class FontAndIoTests
     public void TimesBoldItalic_W_differsFromTimesRoman()
     {
         var wBoldItalic = Standard14Metrics.GetWidth(Standard14.TimesBoldItalic, 'W');
-        var wRoman      = Standard14Metrics.GetWidth(Standard14.TimesRoman, 'W');
+        var wRoman = Standard14Metrics.GetWidth(Standard14.TimesRoman, 'W');
         Assert.NotEqual(wRoman, wBoldItalic);
     }
 
@@ -214,7 +214,7 @@ public sealed class FontAndIoTests
     public void PdfName_escapesParenthesesAndSlash()
     {
         var ms = new MemoryStream();
-        var w  = new PdfWriter(ms);
+        var w = new PdfWriter(ms);
         new PdfName("A(B/C").WriteTo(w);
         var result = Encoding.ASCII.GetString(ms.ToArray());
         Assert.Equal("/A#28B#2FC", result);
@@ -224,7 +224,7 @@ public sealed class FontAndIoTests
     public void PdfName_escapesPercent()
     {
         var ms = new MemoryStream();
-        var w  = new PdfWriter(ms);
+        var w = new PdfWriter(ms);
         new PdfName("A%B").WriteTo(w);
         var result = Encoding.ASCII.GetString(ms.ToArray());
         Assert.Equal("/A#25B", result);
@@ -234,7 +234,7 @@ public sealed class FontAndIoTests
     public void PdfName_escapesAngleBrackets()
     {
         var ms = new MemoryStream();
-        var w  = new PdfWriter(ms);
+        var w = new PdfWriter(ms);
         new PdfName("A<B>C").WriteTo(w);
         var result = Encoding.ASCII.GetString(ms.ToArray());
         Assert.Equal("/A#3CB#3EC", result);
@@ -286,7 +286,7 @@ public sealed class FontAndIoTests
         var fontFileStream = embedder.BuildFontFileStream();
         Assert.NotNull(fontFileStream);
 
-        var descRef    = new PdfIndirectReference(99);
+        var descRef = new PdfIndirectReference(99);
         var descriptor = embedder.BuildFontDescriptor(descRef);
         Assert.NotNull(descriptor);
 
@@ -298,22 +298,22 @@ public sealed class FontAndIoTests
 
     private sealed class NonSeekableStreamWrapper(Stream inner) : Stream
     {
-        public override bool CanRead  => false;
-        public override bool CanSeek  => false;
+        public override bool CanRead => false;
+        public override bool CanSeek => false;
         public override bool CanWrite => true;
-        public override long Length   => throw new NotSupportedException();
+        public override long Length => throw new NotSupportedException();
         public override long Position
         {
             get => throw new NotSupportedException();
             set => throw new NotSupportedException();
         }
-        public override void Flush()                              => inner.Flush();
-        public override int  Read(byte[] b, int o, int c)        => throw new NotSupportedException();
+        public override void Flush() => inner.Flush();
+        public override int Read(byte[] b, int o, int c) => throw new NotSupportedException();
         public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
-        public override void SetLength(long value)                => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
         public override void Write(byte[] buffer, int offset, int count) => inner.Write(buffer, offset, count);
-        public override void Write(ReadOnlySpan<byte> buffer)            => inner.Write(buffer);
-        public override void WriteByte(byte value)                       => inner.WriteByte(value);
+        public override void Write(ReadOnlySpan<byte> buffer) => inner.Write(buffer);
+        public override void WriteByte(byte value) => inner.WriteByte(value);
     }
 
     // ── PNG builders ─────────────────────────────────────────────────────────
@@ -341,9 +341,9 @@ public sealed class FontAndIoTests
     private static byte[] CreateIhdr(int w, int h, byte bitDepth, byte colorType)
     {
         var buf = new byte[13];
-        buf[0]  = (byte)(w >> 24); buf[1] = (byte)(w >> 16); buf[2] = (byte)(w >> 8); buf[3] = (byte)w;
-        buf[4]  = (byte)(h >> 24); buf[5] = (byte)(h >> 16); buf[6] = (byte)(h >> 8); buf[7] = (byte)h;
-        buf[8]  = bitDepth; buf[9] = colorType;
+        buf[0] = (byte)(w >> 24); buf[1] = (byte)(w >> 16); buf[2] = (byte)(w >> 8); buf[3] = (byte)w;
+        buf[4] = (byte)(h >> 24); buf[5] = (byte)(h >> 16); buf[6] = (byte)(h >> 8); buf[7] = (byte)h;
+        buf[8] = bitDepth; buf[9] = colorType;
         return buf;
     }
 
@@ -358,7 +358,7 @@ public sealed class FontAndIoTests
     private static byte[] ZlibCompress(byte[] data)
     {
         using var ms = new MemoryStream();
-        using var z  = new System.IO.Compression.ZLibStream(ms,
+        using var z = new System.IO.Compression.ZLibStream(ms,
             System.IO.Compression.CompressionLevel.Fastest, leaveOpen: true);
         z.Write(data);
         z.Flush();
@@ -368,7 +368,7 @@ public sealed class FontAndIoTests
     private static void WriteChunk(Stream s, string type, byte[] data)
     {
         s.WriteByte((byte)(data.Length >> 24)); s.WriteByte((byte)(data.Length >> 16));
-        s.WriteByte((byte)(data.Length >> 8));  s.WriteByte((byte)data.Length);
+        s.WriteByte((byte)(data.Length >> 8)); s.WriteByte((byte)data.Length);
         foreach (var c in type) s.WriteByte((byte)c);
         s.Write(data);
         var crcData = new byte[4 + data.Length];
@@ -376,7 +376,7 @@ public sealed class FontAndIoTests
         data.CopyTo(crcData, 4);
         var crc = Crc32(crcData);
         s.WriteByte((byte)(crc >> 24)); s.WriteByte((byte)(crc >> 16));
-        s.WriteByte((byte)(crc >> 8));  s.WriteByte((byte)crc);
+        s.WriteByte((byte)(crc >> 8)); s.WriteByte((byte)crc);
     }
 
     private static uint Crc32(byte[] data)
@@ -404,7 +404,7 @@ public sealed class FontAndIoTests
         ms.WriteByte((byte)(sofLen >> 8)); ms.WriteByte((byte)sofLen);
         ms.WriteByte(8); // precision
         ms.WriteByte((byte)(height >> 8)); ms.WriteByte((byte)height);
-        ms.WriteByte((byte)(width  >> 8)); ms.WriteByte((byte)width);
+        ms.WriteByte((byte)(width >> 8)); ms.WriteByte((byte)width);
         ms.WriteByte((byte)components);
         for (var i = 0; i < components; i++) { ms.WriteByte((byte)(i + 1)); ms.WriteByte(0x11); ms.WriteByte(0); }
         ms.Write([0xFF, 0xD9]); // EOI
@@ -423,7 +423,7 @@ internal static class ChecksumHelper
         uint sum = 0;
         var i = 0;
         for (; i + 3 < data.Length; i += 4)
-            sum += ((uint)data[i] << 24) | ((uint)data[i+1] << 16) | ((uint)data[i+2] << 8) | data[i+3];
+            sum += ((uint)data[i] << 24) | ((uint)data[i + 1] << 16) | ((uint)data[i + 2] << 8) | data[i + 3];
         var rem = data.Length - i;
         if (rem > 0)
         {

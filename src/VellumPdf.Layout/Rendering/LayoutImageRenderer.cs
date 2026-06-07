@@ -10,7 +10,7 @@ public sealed class LayoutImageRenderer : IRenderer
 {
     private readonly LayoutImage _img;
 
-    private double    _w, _h;
+    private double _w, _h;
     private LayoutBox _occupied;
 
     public LayoutImageRenderer(LayoutImage img)
@@ -39,7 +39,7 @@ public sealed class LayoutImageRenderer : IRenderer
         var xOff = _img.Alignment switch
         {
             HorizontalAlignment.Center => (area.Width - _w) / 2,
-            HorizontalAlignment.Right  => area.Width - _w,
+            HorizontalAlignment.Right => area.Width - _w,
             _ => 0
         };
 

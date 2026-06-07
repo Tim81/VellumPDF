@@ -11,9 +11,9 @@ namespace VellumPdf.Document;
 /// </summary>
 public sealed class PdfPage
 {
-    private readonly PdfDictionary _fontResources    = new();
+    private readonly PdfDictionary _fontResources = new();
     private readonly PdfDictionary _xObjectResources = new();
-    private readonly PdfArray      _annots           = new();
+    private readonly PdfArray _annots = new();
     private bool _hasAnnots;
 
     public PdfRectangle MediaBox { get; }

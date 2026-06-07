@@ -5,12 +5,12 @@ namespace VellumPdf.Fonts.Sfnt;
 
 internal sealed class HeadTable
 {
-    public int   UnitsPerEm      { get; }
+    public int UnitsPerEm { get; }
     public short IndexToLocFormat { get; } // 0 = short offsets, 1 = long offsets
 
     private HeadTable(int unitsPerEm, short indexToLocFormat)
     {
-        UnitsPerEm       = unitsPerEm;
+        UnitsPerEm = unitsPerEm;
         IndexToLocFormat = indexToLocFormat;
     }
 

@@ -18,17 +18,17 @@ namespace VellumPdf.Layout.Core;
 /// </summary>
 public sealed class DrawContext
 {
-    public PdfCanvas       Canvas          { get; }
-    public LayoutBox       PageBounds      { get; }   // full page in layout space
-    public RendererContext RendererContext  { get; }   // per-page resource registration
+    public PdfCanvas Canvas { get; }
+    public LayoutBox PageBounds { get; }   // full page in layout space
+    public RendererContext RendererContext { get; }   // per-page resource registration
     private readonly PdfDocument _document;
 
     public DrawContext(PdfCanvas canvas, LayoutBox pageBounds, RendererContext rendererContext, PdfDocument document)
     {
-        Canvas          = canvas;
-        PageBounds      = pageBounds;
+        Canvas = canvas;
+        PageBounds = pageBounds;
         RendererContext = rendererContext;
-        _document       = document;
+        _document = document;
     }
 
     /// <summary>Returns (or creates) a font resource on the current document.</summary>

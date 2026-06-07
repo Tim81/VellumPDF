@@ -12,8 +12,8 @@ namespace VellumPdf.Fonts.Sfnt;
 internal sealed class NameTable
 {
     public string? PostScriptName { get; }
-    public string? FullName       { get; }
-    public string? FamilyName     { get; }
+    public string? FullName { get; }
+    public string? FamilyName { get; }
 
     private NameTable(string? psName, string? fullName, string? familyName)
     {
@@ -22,8 +22,8 @@ internal sealed class NameTable
 
     public static NameTable Parse(SfntFont font)
     {
-        var r      = font.GetTableReader(new Tag("name"));
-        var count  = r.ReadU16(2);
+        var r = font.GetTableReader(new Tag("name"));
+        var count = r.ReadU16(2);
         var strOff = r.ReadU16(4);
 
         string? psName = null, fullName = null, familyName = null;
@@ -32,9 +32,9 @@ internal sealed class NameTable
             var platform = r.ReadU16(6 + i * 12);
             var encoding = r.ReadU16(6 + i * 12 + 2);
             var language = r.ReadU16(6 + i * 12 + 4);
-            var nameId   = r.ReadU16(6 + i * 12 + 6);
-            var length   = r.ReadU16(6 + i * 12 + 8);
-            var offset   = r.ReadU16(6 + i * 12 + 10);
+            var nameId = r.ReadU16(6 + i * 12 + 6);
+            var length = r.ReadU16(6 + i * 12 + 8);
+            var offset = r.ReadU16(6 + i * 12 + 10);
 
             // Prefer platform 3 (Windows), encoding 1, US English
             if (platform != 3 || encoding != 1 || language != 0x0409) continue;
@@ -43,8 +43,8 @@ internal sealed class NameTable
             switch (nameId)
             {
                 case 1: familyName = s; break;
-                case 4: fullName   = s; break;
-                case 6: psName     = s; break;
+                case 4: fullName = s; break;
+                case 6: psName = s; break;
             }
         }
         return new NameTable(psName, fullName, familyName);

@@ -7,12 +7,12 @@ namespace VellumPdf.Fonts.Sfnt;
 internal sealed class HmtxTable
 {
     private readonly ushort[] _advanceWidths;
-    private readonly int      _numGlyphs;
+    private readonly int _numGlyphs;
 
     private HmtxTable(ushort[] advances, int numGlyphs)
     {
         _advanceWidths = advances;
-        _numGlyphs     = numGlyphs;
+        _numGlyphs = numGlyphs;
     }
 
     /// <summary>Returns the advance width in design units for glyph <paramref name="gid"/>.</summary>
@@ -26,9 +26,9 @@ internal sealed class HmtxTable
 
     public static HmtxTable Parse(SfntFont font, HheaTable hhea, int numGlyphs)
     {
-        var r         = font.GetTableReader(new Tag("hmtx"));
-        var n         = hhea.NumHMetrics;
-        var advances  = new ushort[n];
+        var r = font.GetTableReader(new Tag("hmtx"));
+        var n = hhea.NumHMetrics;
+        var advances = new ushort[n];
         for (var i = 0; i < n; i++)
             advances[i] = r.ReadU16(i * 4);
         return new HmtxTable(advances, numGlyphs);

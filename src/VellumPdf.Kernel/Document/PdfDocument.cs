@@ -75,8 +75,8 @@ public sealed class PdfDocument : IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(destination);
 
-        var writer   = new PdfWriter(destination);
-        var xref     = new CrossReferenceBuilder();
+        var writer = new PdfWriter(destination);
+        var xref = new CrossReferenceBuilder();
         var registry = new PdfObjectRegistry();
 
         // PDF header — "%PDF-2.0\n" + binary comment with raw bytes E2 E3 CF D3.
@@ -129,19 +129,19 @@ public sealed class PdfDocument : IDisposable
                     var sMaskStream = img.SMask;
                     // Set SMask image dict fields
                     sMaskStream.Dictionary
-                        .Set(PdfName.Type,    new PdfName("XObject"))
+                        .Set(PdfName.Type, new PdfName("XObject"))
                         .Set(PdfName.Subtype, new PdfName("Image"))
-                        .Set(new PdfName("Width"),            new PdfInteger(img.Width))
-                        .Set(new PdfName("Height"),           new PdfInteger(img.Height))
-                        .Set(new PdfName("ColorSpace"),       new PdfName("DeviceGray"))
+                        .Set(new PdfName("Width"), new PdfInteger(img.Width))
+                        .Set(new PdfName("Height"), new PdfInteger(img.Height))
+                        .Set(new PdfName("ColorSpace"), new PdfName("DeviceGray"))
                         .Set(new PdfName("BitsPerComponent"), new PdfInteger(8));
                     registry.SetValue(sMaskObjRef, sMaskStream);
                     sMaskRef = sMaskObjRef;
                 }
 
                 // Allocate and set image stream
-                var imgObjRef  = registry.Reserve();
-                var imgStream  = img.BuildStreamWithSMask(sMaskRef);
+                var imgObjRef = registry.Reserve();
+                var imgStream = img.BuildStreamWithSMask(sMaskRef);
                 registry.SetValue(imgObjRef, imgStream);
                 page.RegisterXObject(name, imgObjRef);
             }

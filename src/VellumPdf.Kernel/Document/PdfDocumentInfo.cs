@@ -8,21 +8,21 @@ namespace VellumPdf.Document;
 /// <summary>Document information dictionary (ISO 32000-2 §14.3.3).</summary>
 public sealed class PdfDocumentInfo
 {
-    public string? Title    { get; set; }
-    public string? Author   { get; set; }
-    public string? Subject  { get; set; }
+    public string? Title { get; set; }
+    public string? Author { get; set; }
+    public string? Subject { get; set; }
     public string? Keywords { get; set; }
-    public string? Creator  { get; set; }
+    public string? Creator { get; set; }
     public string? Producer { get; set; }
 
     internal PdfDictionary BuildDictionary()
     {
         var d = new PdfDictionary();
-        SetIfPresent(d, "Title",    Title);
-        SetIfPresent(d, "Author",   Author);
-        SetIfPresent(d, "Subject",  Subject);
+        SetIfPresent(d, "Title", Title);
+        SetIfPresent(d, "Author", Author);
+        SetIfPresent(d, "Subject", Subject);
         SetIfPresent(d, "Keywords", Keywords);
-        SetIfPresent(d, "Creator",  Creator);
+        SetIfPresent(d, "Creator", Creator);
         SetIfPresent(d, "Producer", Producer);
         return d;
     }

@@ -13,21 +13,21 @@ internal sealed class SfntFont
     private readonly Dictionary<Tag, SfntTableRecord> _tables;
 
     public uint SfVersion { get; }
-    public bool IsCff     { get; } // 'OTTO' → CFF outlines; else TrueType glyf
+    public bool IsCff { get; } // 'OTTO' → CFF outlines; else TrueType glyf
 
     private SfntFont(SfntReader reader, uint sfVersion, Dictionary<Tag, SfntTableRecord> tables)
     {
-        _reader    = reader;
-        SfVersion  = sfVersion;
-        _tables    = tables;
-        IsCff      = sfVersion == 0x4F54544F; // 'OTTO'
+        _reader = reader;
+        SfVersion = sfVersion;
+        _tables = tables;
+        IsCff = sfVersion == 0x4F54544F; // 'OTTO'
     }
 
     public static SfntFont Parse(ReadOnlyMemory<byte> fontData)
     {
         var r = new SfntReader(fontData);
-        var sfVersion  = r.ReadU32(0);
-        var numTables  = r.ReadU16(4);
+        var sfVersion = r.ReadU32(0);
+        var numTables = r.ReadU16(4);
 
         var tables = new Dictionary<Tag, SfntTableRecord>(numTables);
         for (var i = 0; i < numTables; i++)

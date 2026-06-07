@@ -32,17 +32,17 @@ public static class PngImageLoader
         while (pos < pngBytes.Length - 8)
         {
             var length = ReadU32Be(pngBytes, pos);
-            var type   = ReadTag(pngBytes, pos + 4);
-            var data   = pngBytes.AsSpan(pos + 8, (int)length);
+            var type = ReadTag(pngBytes, pos + 4);
+            var data = pngBytes.AsSpan(pos + 8, (int)length);
 
             switch (type)
             {
                 case "IHDR":
-                    width            = (int)ReadU32Be(pngBytes, pos + 8);
-                    height           = (int)ReadU32Be(pngBytes, pos + 12);
-                    bitDepth         = data[8];
-                    colorType        = data[9];
-                    interlaceMethod  = data[12];
+                    width = (int)ReadU32Be(pngBytes, pos + 8);
+                    height = (int)ReadU32Be(pngBytes, pos + 12);
+                    bitDepth = data[8];
+                    colorType = data[9];
+                    interlaceMethod = data[12];
                     break;
 
                 case "PLTE":
@@ -62,18 +62,18 @@ public static class PngImageLoader
             }
             pos += 12 + (int)length;
         }
-        done:
+    done:
 
         if (interlaceMethod != 0)
             throw new NotSupportedException("Interlaced PNG not supported.");
 
         // ── Decompress IDAT ──
         var compressed = Combine(idatData);
-        var raw        = Inflate(compressed);
+        var raw = Inflate(compressed);
 
         // ── Unfilter scanlines ──
-        var bpp       = BytesPerPixel(colorType, bitDepth);
-        var rowBytes  = (int)Math.Ceiling(width * bpp);
+        var bpp = BytesPerPixel(colorType, bitDepth);
+        var rowBytes = (int)Math.Ceiling(width * bpp);
         var unfiltered = Unfilter(raw, width, height, colorType, bitDepth, rowBytes);
 
         // ── Extract colour and alpha planes ──
@@ -85,8 +85,8 @@ public static class PngImageLoader
         byte colorType, byte bitDepth, byte[]? palette)
     {
         bool hasAlpha = colorType == 4 || colorType == 6;
-        int  channels = colorType switch { 0 or 3 => 1, 2 => 3, 4 => 2, 6 => 4, _ => 3 };
-        var  colorChannels = channels - (hasAlpha ? 1 : 0);
+        int channels = colorType switch { 0 or 3 => 1, 2 => 3, 4 => 2, 6 => 4, _ => 3 };
+        var colorChannels = channels - (hasAlpha ? 1 : 0);
 
         byte[]? alphaBytes = null;
         byte[] colorBytes;
@@ -134,16 +134,16 @@ public static class PngImageLoader
         byte[] raw, int width, int height,
         byte colorType, byte bitDepth, int rowBytes)
     {
-        var bpp    = Math.Max(1, (int)Math.Ceiling(BytesPerPixel(colorType, bitDepth)));
+        var bpp = Math.Max(1, (int)Math.Ceiling(BytesPerPixel(colorType, bitDepth)));
         var stride = rowBytes;
         var result = new byte[height * stride];
-        var prev   = new byte[stride];
+        var prev = new byte[stride];
 
         for (var y = 0; y < height; y++)
         {
             var filterType = raw[y * (stride + 1)];
-            var src        = raw.AsSpan(y * (stride + 1) + 1, stride);
-            var dst        = result.AsSpan(y * stride, stride);
+            var src = raw.AsSpan(y * (stride + 1) + 1, stride);
+            var dst = result.AsSpan(y * stride, stride);
             src.CopyTo(dst);
 
             switch (filterType)
@@ -181,7 +181,7 @@ public static class PngImageLoader
 
     private static int PaethPredictor(int a, int b, int c)
     {
-        var p  = a + b - c;
+        var p = a + b - c;
         var pa = Math.Abs(p - a);
         var pb = Math.Abs(p - b);
         var pc = Math.Abs(p - c);
@@ -194,7 +194,7 @@ public static class PngImageLoader
         for (var i = 0; i < w * h; i++)
         {
             var idx = pixels[i] * 3;
-            result[i * 3]     = palette[idx];
+            result[i * 3] = palette[idx];
             result[i * 3 + 1] = palette[idx + 1];
             result[i * 3 + 2] = palette[idx + 2];
         }
@@ -226,15 +226,15 @@ public static class PngImageLoader
     private static byte[] Combine(List<byte[]> chunks)
     {
         var total = chunks.Sum(c => c.Length);
-        var buf   = new byte[total];
-        var pos   = 0;
+        var buf = new byte[total];
+        var pos = 0;
         foreach (var c in chunks) { c.CopyTo(buf, pos); pos += c.Length; }
         return buf;
     }
 
     private static uint ReadU32Be(byte[] data, int offset) =>
-        ((uint)data[offset] << 24) | ((uint)data[offset+1] << 16) |
-        ((uint)data[offset+2] <<  8) |  data[offset+3];
+        ((uint)data[offset] << 24) | ((uint)data[offset + 1] << 16) |
+        ((uint)data[offset + 2] << 8) | data[offset + 3];
 
     private static string ReadTag(byte[] data, int offset) =>
         new string([(char)data[offset], (char)data[offset+1],
@@ -245,7 +245,7 @@ public static class PngImageLoader
         if (data.Length < 8) throw new InvalidDataException("Not a PNG file.");
         ulong sig = ((ulong)data[0] << 56) | ((ulong)data[1] << 48) | ((ulong)data[2] << 40) |
                     ((ulong)data[3] << 32) | ((ulong)data[4] << 24) | ((ulong)data[5] << 16) |
-                    ((ulong)data[6] <<  8) |  data[7];
+                    ((ulong)data[6] << 8) | data[7];
         if (sig != PngSignature) throw new InvalidDataException("Not a PNG file.");
     }
 }

@@ -16,13 +16,13 @@ internal sealed class SfntReader
     public int Length => _data.Length;
     public ReadOnlySpan<byte> Span => _data.Span;
 
-    public byte   ReadU8(int offset)  => _data.Span[offset];
+    public byte ReadU8(int offset) => _data.Span[offset];
     public ushort ReadU16(int offset) => (ushort)((_data.Span[offset] << 8) | _data.Span[offset + 1]);
-    public short  ReadI16(int offset) => (short)ReadU16(offset);
-    public uint   ReadU32(int offset) =>
-        ((uint)_data.Span[offset]     << 24) |
+    public short ReadI16(int offset) => (short)ReadU16(offset);
+    public uint ReadU32(int offset) =>
+        ((uint)_data.Span[offset] << 24) |
         ((uint)_data.Span[offset + 1] << 16) |
-        ((uint)_data.Span[offset + 2] <<  8) |
+        ((uint)_data.Span[offset + 2] << 8) |
          (uint)_data.Span[offset + 3];
 
     public int ReadI32(int offset) => (int)ReadU32(offset);

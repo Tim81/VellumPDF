@@ -17,16 +17,16 @@ public sealed class ParagraphRenderer : IRenderer
 
     // Computed during Layout:
     private List<string>? _lines;
-    private double        _lineHeight;
-    private LayoutBox     _occupied;
+    private double _lineHeight;
+    private LayoutBox _occupied;
 
     // Split point: if Partial, only lines[0.._splitAt] are in this renderer.
     private readonly int _startLine;
-    private          int _endLine;  // exclusive
+    private int _endLine;  // exclusive
 
     public ParagraphRenderer(Paragraph para, int startLine = 0)
     {
-        _para      = para;
+        _para = para;
         _startLine = startLine;
     }
 
@@ -37,7 +37,7 @@ public sealed class ParagraphRenderer : IRenderer
             return LayoutResult.Nothing();
 
         _lineHeight = _para.Style.EffectiveLeading;
-        _lines    ??= WordWrap(_para.Text, _para.Style, area.Width);
+        _lines ??= WordWrap(_para.Text, _para.Style, area.Width);
 
         var maxLines = (int)Math.Floor(area.Height / _lineHeight);
         if (maxLines <= 0)
@@ -49,16 +49,16 @@ public sealed class ParagraphRenderer : IRenderer
 
         if (remaining <= maxLines)
         {
-            _endLine  = _lines.Count;
+            _endLine = _lines.Count;
             _occupied = area.WithHeight(remaining * _lineHeight);
             return LayoutResult.Full(_occupied);
         }
 
         // Partial: first maxLines lines fit
-        _endLine  = _startLine + maxLines;
+        _endLine = _startLine + maxLines;
         _occupied = area.WithHeight(maxLines * _lineHeight);
         var overflow = new ParagraphRenderer(_para, _endLine) { _lines = _lines };
-        var split    = new ParagraphRenderer(_para) { _lines = _lines, _endLine = _endLine, _lineHeight = _lineHeight, _occupied = _occupied };
+        var split = new ParagraphRenderer(_para) { _lines = _lines, _endLine = _endLine, _lineHeight = _lineHeight, _occupied = _occupied };
         return LayoutResult.Partial(_occupied, split, overflow);
     }
 
@@ -67,19 +67,19 @@ public sealed class ParagraphRenderer : IRenderer
         if (_lines is null) return;
 
         var fontResource = ctx.GetFont(_para.Style.Font);
-        var area         = _occupied;
-        var canvas       = ctx.Canvas;
+        var area = _occupied;
+        var canvas = ctx.Canvas;
 
         canvas.BeginText();
         canvas.SetFont(fontResource, _para.Style.FontSize);
         canvas.SetFillColorRgb(_para.Style.Color.R, _para.Style.Color.G, _para.Style.Color.B);
 
-        var leading   = _lineHeight;
+        var leading = _lineHeight;
         var startPdfY = ctx.ToPdfY(area.Y) - _para.Style.FontSize;
 
         for (var i = _startLine; i < _endLine; i++)
         {
-            var line      = _lines![i];
+            var line = _lines![i];
             var lineWidth = Standard14Metrics.MeasureString(_para.Style.Font, line, _para.Style.FontSize);
 
             // Use SetTextMatrix for every line to avoid horizontal drift when
@@ -88,7 +88,7 @@ public sealed class ParagraphRenderer : IRenderer
             double xOffset = _para.Alignment switch
             {
                 HorizontalAlignment.Center => (area.Width - lineWidth) / 2,
-                HorizontalAlignment.Right  => area.Width - lineWidth,
+                HorizontalAlignment.Right => area.Width - lineWidth,
                 _ => 0
             };
 
@@ -103,14 +103,14 @@ public sealed class ParagraphRenderer : IRenderer
 
     private static List<string> WordWrap(string text, TextStyle style, double maxWidth)
     {
-        var lines   = new List<string>();
-        var words   = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var lines = new List<string>();
+        var words = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         var current = new System.Text.StringBuilder();
         var currentW = 0.0;
 
         foreach (var word in words)
         {
-            var wordW  = Standard14Metrics.MeasureString(style.Font, word, style.FontSize);
+            var wordW = Standard14Metrics.MeasureString(style.Font, word, style.FontSize);
             var spaceW = Standard14Metrics.MeasureString(style.Font, " ", style.FontSize);
 
             if (current.Length == 0)

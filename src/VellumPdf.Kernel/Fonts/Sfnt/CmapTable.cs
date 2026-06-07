@@ -22,7 +22,7 @@ internal sealed class CmapTable
 
     public static CmapTable Parse(SfntFont font)
     {
-        var r       = font.GetTableReader(new Tag("cmap"));
+        var r = font.GetTableReader(new Tag("cmap"));
         var version = r.ReadU16(0);
         var numTabs = r.ReadU16(2);
 
@@ -33,12 +33,12 @@ internal sealed class CmapTable
         {
             var platform = r.ReadU16(4 + i * 8);
             var encoding = r.ReadU16(4 + i * 8 + 2);
-            var offset   = (int)r.ReadU32(4 + i * 8 + 4);
-            var fmt      = r.ReadU16(offset);
+            var offset = (int)r.ReadU32(4 + i * 8 + 4);
+            var fmt = r.ReadU16(offset);
             if (fmt != 4) continue;
 
             int priority = platform == 3 && encoding == 1 ? 2 :
-                           platform == 0                   ? 1 : 0;
+                           platform == 0 ? 1 : 0;
             if (priority > bestPriority) { bestPriority = priority; best = offset; }
         }
 
@@ -55,17 +55,17 @@ internal sealed class CmapTable
     {
         // Format 4: segmented mapping (ISO 32000-2 is not relevant here; see OpenType spec).
         var segCount = r.ReadU16(offset + 6) / 2;
-        var endCodes   = new int[segCount];
+        var endCodes = new int[segCount];
         var startCodes = new int[segCount];
-        var idDeltas   = new short[segCount];
+        var idDeltas = new short[segCount];
         var idRangeOffsets = new ushort[segCount];
         var idRangeOffsetsPos = offset + 14 + segCount * 6 + 2; // +2 for the reservedPad field
 
         for (var i = 0; i < segCount; i++)
         {
-            endCodes[i]   = r.ReadU16(offset + 14 + i * 2);
+            endCodes[i] = r.ReadU16(offset + 14 + i * 2);
             startCodes[i] = r.ReadU16(offset + 14 + segCount * 2 + 2 + i * 2);
-            idDeltas[i]   = r.ReadI16(offset + 14 + segCount * 4 + 2 + i * 2);
+            idDeltas[i] = r.ReadI16(offset + 14 + segCount * 4 + 2 + i * 2);
             idRangeOffsets[i] = r.ReadU16(idRangeOffsetsPos + i * 2);
         }
 
@@ -73,7 +73,7 @@ internal sealed class CmapTable
         for (var i = 0; i < segCount; i++)
         {
             var start = startCodes[i];
-            var end   = endCodes[i];
+            var end = endCodes[i];
             if (start == 0xFFFF && end == 0xFFFF) break;
 
             for (var cp = start; cp <= end; cp++)

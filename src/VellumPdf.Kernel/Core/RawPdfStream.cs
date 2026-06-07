@@ -15,7 +15,7 @@ internal sealed class RawPdfStream : PdfStream
     public RawPdfStream(byte[] rawData, PdfName filter) : base()
     {
         _rawData = rawData;
-        _filter  = filter;
+        _filter = filter;
     }
 
     public override void WriteTo(PdfWriter writer)

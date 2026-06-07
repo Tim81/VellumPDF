@@ -13,7 +13,7 @@ public sealed class PdfRectangle
     public double UrX { get; }
     public double UrY { get; }
 
-    public double Width  => UrX - LlX;
+    public double Width => UrX - LlX;
     public double Height => UrY - LlY;
 
     public PdfRectangle(double llx, double lly, double urx, double ury)

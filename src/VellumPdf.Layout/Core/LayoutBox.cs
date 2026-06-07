@@ -10,11 +10,11 @@ namespace VellumPdf.Layout.Core;
 /// </summary>
 public readonly record struct LayoutBox(double X, double Y, double Width, double Height)
 {
-    public double Right  => X + Width;
+    public double Right => X + Width;
     public double Bottom => Y + Height;
 
     public LayoutBox WithHeight(double height) => new(X, Y, Width, height);
-    public LayoutBox WithY(double y)            => new(X, y, Width, Height);
+    public LayoutBox WithY(double y) => new(X, y, Width, Height);
 
     /// <summary>Returns this box shrunk by the given insets.</summary>
     public LayoutBox Deflate(double left, double top, double right, double bottom) =>

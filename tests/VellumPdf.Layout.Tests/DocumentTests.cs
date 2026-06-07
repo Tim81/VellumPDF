@@ -27,7 +27,7 @@ public sealed class DocumentTests
     public void Save_withMetadata_includesInfoDict()
     {
         using var doc = new Document();
-        doc.Info.Title  = "Layout Test";
+        doc.Info.Title = "Layout Test";
         doc.Info.Author = "Test";
         doc.Add("Some content");
 

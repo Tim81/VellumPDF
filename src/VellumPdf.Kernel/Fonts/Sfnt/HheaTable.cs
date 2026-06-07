@@ -5,15 +5,15 @@ namespace VellumPdf.Fonts.Sfnt;
 
 internal sealed class HheaTable
 {
-    public int Ascender  { get; }
+    public int Ascender { get; }
     public int Descender { get; }
-    public int LineGap   { get; }
+    public int LineGap { get; }
     public int NumHMetrics { get; }
 
     private HheaTable(int ascender, int descender, int lineGap, int numHMetrics)
     {
         Ascender = ascender; Descender = descender;
-        LineGap = lineGap;  NumHMetrics = numHMetrics;
+        LineGap = lineGap; NumHMetrics = numHMetrics;
     }
 
     public static HheaTable Parse(SfntFont font)

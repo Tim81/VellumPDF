@@ -11,6 +11,6 @@ public readonly record struct ColorRgb(double R, double G, double B)
 
     public static ColorRgb FromHex(uint rgb) => new(
         ((rgb >> 16) & 0xFF) / 255.0,
-        ((rgb >>  8) & 0xFF) / 255.0,
-         (rgb        & 0xFF) / 255.0);
+        ((rgb >> 8) & 0xFF) / 255.0,
+         (rgb & 0xFF) / 255.0);
 }

@@ -24,15 +24,15 @@ namespace VellumPdf.Layout.Rendering.Table;
 public sealed class TableRenderer : IRenderer
 {
     private readonly TableElement _table;
-    private readonly int          _startRow;  // first data row index (0-based)
+    private readonly int _startRow;  // first data row index (0-based)
 
-    private double[] _colWidths  = [];
+    private double[] _colWidths = [];
     private double[] _rowHeights = [];
     private LayoutBox _occupied;
 
     public TableRenderer(TableElement table, int startRow = 0)
     {
-        _table    = table;
+        _table = table;
         _startRow = startRow;
     }
 
@@ -54,17 +54,17 @@ public sealed class TableRenderer : IRenderer
 
         for (var r = 0; r < rows.Count; r++)
         {
-            var row  = rows[r];
+            var row = rows[r];
             var maxH = 0.0;
-            var col  = 0;
+            var col = 0;
             foreach (var cell in row.Cells)
             {
                 if (col >= _colWidths.Length) break;
-                var cs      = cell.Style ?? style;
-                var colW    = ColSpanWidth(col, cell.ColSpan);
-                var innerW  = colW - cell.Padding.Horizontal;
-                var lines   = WordWrapCount(cell.Content, cs, Math.Max(1, innerW));
-                var cellH   = lines * cs.EffectiveLeading + cell.Padding.Vertical;
+                var cs = cell.Style ?? style;
+                var colW = ColSpanWidth(col, cell.ColSpan);
+                var innerW = colW - cell.Padding.Horizontal;
+                var lines = WordWrapCount(cell.Content, cs, Math.Max(1, innerW));
+                var cellH = lines * cs.EffectiveLeading + cell.Padding.Vertical;
                 maxH = Math.Max(maxH, cellH);
                 col += cell.ColSpan;
             }
@@ -73,13 +73,13 @@ public sealed class TableRenderer : IRenderer
 
         // Find header row indices (may not be contiguous at top; use actual IsHeader rows)
         var headerRowIndices = FindHeaderRowIndices(rows);
-        var headerHeight     = headerRowIndices.Sum(i => _rowHeights[i]);
-        var lastHeaderRow    = headerRowIndices.Count > 0 ? headerRowIndices[^1] + 1 : 0;
-        var dataStartRow     = Math.Max(_startRow, lastHeaderRow);
+        var headerHeight = headerRowIndices.Sum(i => _rowHeights[i]);
+        var lastHeaderRow = headerRowIndices.Count > 0 ? headerRowIndices[^1] + 1 : 0;
+        var dataStartRow = Math.Max(_startRow, lastHeaderRow);
 
         // Fit as many data rows as possible
-        var y         = area.Y;
-        var lastFit   = dataStartRow - 1;
+        var y = area.Y;
+        var lastFit = dataStartRow - 1;
         var runHeight = headerHeight;
 
         for (var r = dataStartRow; r < rows.Count; r++)
@@ -87,7 +87,7 @@ public sealed class TableRenderer : IRenderer
             if (y + runHeight + _rowHeights[r] > area.Bottom + 0.001)
                 break;
             runHeight += _rowHeights[r];
-            lastFit    = r;
+            lastFit = r;
         }
 
         if (lastFit < dataStartRow)
@@ -103,21 +103,21 @@ public sealed class TableRenderer : IRenderer
             return LayoutResult.Full(_occupied);
 
         // Partial
-        var split    = new TableRenderer(_table, _startRow)   { _colWidths = _colWidths, _rowHeights = _rowHeights, _occupied = _occupied };
+        var split = new TableRenderer(_table, _startRow) { _colWidths = _colWidths, _rowHeights = _rowHeights, _occupied = _occupied };
         var overflow = new TableRenderer(_table, lastFit + 1) { _colWidths = _colWidths, _rowHeights = _rowHeights };
         return LayoutResult.Partial(_occupied, split, overflow);
     }
 
     public void Draw(DrawContext ctx)
     {
-        var area  = _occupied.Deflate(_table.Margins.Left, _table.Margins.Top, _table.Margins.Right, 0);
+        var area = _occupied.Deflate(_table.Margins.Left, _table.Margins.Top, _table.Margins.Right, 0);
         var style = _table.DefaultCellStyle ?? TextStyle.Default;
-        var font  = ctx.GetFont(style.Font);
-        var rows  = _table.Rows;
+        var font = ctx.GetFont(style.Font);
+        var rows = _table.Rows;
 
         // Determine which rows to draw (headers + data rows starting at _startRow)
         var headerRowIndices = FindHeaderRowIndices(rows);
-        var dataStartRow     = Math.Max(_startRow, headerRowIndices.Count > 0 ? headerRowIndices[^1] + 1 : 0);
+        var dataStartRow = Math.Max(_startRow, headerRowIndices.Count > 0 ? headerRowIndices[^1] + 1 : 0);
 
         // RowSpan occupancy: tracks which (row, col) slots are covered by a span from a prior row.
         // Key: (rowIndex, colIndex), Value: the cell + the Y position where the span started.
@@ -145,13 +145,13 @@ public sealed class TableRenderer : IRenderer
         TextStyle style, VellumPdf.Fonts.PdfFontResource font,
         Dictionary<(int row, int col), (Cell cell, Row originRow, double startY, int remainingRows)> spanMap)
     {
-        var x   = startX;
+        var x = startX;
         var col = 0;
 
         // Advance x past any columns that are occupied by row-spanning cells from prior rows.
         // We iterate columns the same way as the source row's cells, but skip occupied slots.
         var cellIdx = 0;
-        var cells   = row.Cells;
+        var cells = row.Cells;
 
         // Build a column-x map for this row to resolve span-origin x positions.
         var colXPositions = new double[_colWidths.Length + 1];
@@ -167,9 +167,9 @@ public sealed class TableRenderer : IRenderer
                 // It's the last row of a multi-row span — draw the cell spanning full combined height
                 if (span.remainingRows == 1)
                 {
-                    var spanCell      = span.cell;
-                    var spanColW      = ColSpanWidth(col, spanCell.ColSpan);
-                    var spanTotalH    = rowY + _rowHeights[rowIdx] - span.startY;
+                    var spanCell = span.cell;
+                    var spanColW = ColSpanWidth(col, spanCell.ColSpan);
+                    var spanTotalH = rowY + _rowHeights[rowIdx] - span.startY;
                     DrawCell(ctx, spanCell, span.originRow, col, colXPositions[col], span.startY,
                              spanColW, spanTotalH, style, font);
                     // Remove all slots this cell occupied in this row
@@ -195,7 +195,7 @@ public sealed class TableRenderer : IRenderer
             if (col >= _colWidths.Length) break;
 
             var colW = ColSpanWidth(col, cell.ColSpan);
-            var h    = _rowHeights[rowIdx];
+            var h = _rowHeights[rowIdx];
 
             if (cell.RowSpan <= 1)
             {
@@ -258,7 +258,7 @@ public sealed class TableRenderer : IRenderer
         double txOffset = cell.Alignment switch
         {
             HorizontalAlignment.Center => (innerBox.Width - textW) / 2,
-            HorizontalAlignment.Right  => innerBox.Width - textW,
+            HorizontalAlignment.Right => innerBox.Width - textW,
             _ => 0
         };
 
@@ -292,10 +292,10 @@ public sealed class TableRenderer : IRenderer
     private static int WordWrapCount(string text, TextStyle style, double maxWidth)
     {
         if (string.IsNullOrEmpty(text)) return 1;
-        var words    = text.Split(' ');
-        var lines    = 1;
-        var lineW    = 0.0;
-        var spaceW   = Standard14Metrics.MeasureString(style.Font, " ", style.FontSize);
+        var words = text.Split(' ');
+        var lines = 1;
+        var lineW = 0.0;
+        var spaceW = Standard14Metrics.MeasureString(style.Font, " ", style.FontSize);
 
         foreach (var word in words)
         {

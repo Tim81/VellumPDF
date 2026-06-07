@@ -25,9 +25,9 @@ public sealed class LayoutResult
 
     private LayoutResult(Outcome status, LayoutBox? area, IRenderer? split, IRenderer? overflow)
     {
-        Status           = status;
-        OccupiedArea     = area;
-        SplitRenderer    = split;
+        Status = status;
+        OccupiedArea = area;
+        SplitRenderer = split;
         OverflowRenderer = overflow;
     }
 

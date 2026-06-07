@@ -9,7 +9,7 @@ public sealed class PdfArray : PdfObject
     private readonly List<PdfObject> _items;
 
     public PdfArray() => _items = [];
-    public PdfArray(IEnumerable<PdfObject> items) => _items = [..items];
+    public PdfArray(IEnumerable<PdfObject> items) => _items = [.. items];
 
     public int Count => _items.Count;
     public PdfObject this[int i] => _items[i];

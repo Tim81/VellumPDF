@@ -131,18 +131,18 @@ public static class Standard14Metrics
 
     private static readonly Dictionary<Standard14, ushort[]> _tables = new()
     {
-        [Standard14.Helvetica]           = Helvetica,
-        [Standard14.HelveticaBold]       = HelveticaBold,
-        [Standard14.HelveticaOblique]    = Helvetica,        // same widths as regular
-        [Standard14.HelveticaBoldOblique]= HelveticaBold,    // same widths as bold
-        [Standard14.TimesRoman]          = TimesRoman,
-        [Standard14.TimesBold]           = TimesBold,
-        [Standard14.TimesItalic]         = TimesItalic,
-        [Standard14.TimesBoldItalic]     = TimesBoldItalic,
-        [Standard14.Courier]             = Courier,
-        [Standard14.CourierBold]         = Courier,
-        [Standard14.CourierOblique]      = Courier,
-        [Standard14.CourierBoldOblique]  = Courier,
+        [Standard14.Helvetica] = Helvetica,
+        [Standard14.HelveticaBold] = HelveticaBold,
+        [Standard14.HelveticaOblique] = Helvetica,        // same widths as regular
+        [Standard14.HelveticaBoldOblique] = HelveticaBold,    // same widths as bold
+        [Standard14.TimesRoman] = TimesRoman,
+        [Standard14.TimesBold] = TimesBold,
+        [Standard14.TimesItalic] = TimesItalic,
+        [Standard14.TimesBoldItalic] = TimesBoldItalic,
+        [Standard14.Courier] = Courier,
+        [Standard14.CourierBold] = Courier,
+        [Standard14.CourierOblique] = Courier,
+        [Standard14.CourierBoldOblique] = Courier,
     };
 
     /// <summary>

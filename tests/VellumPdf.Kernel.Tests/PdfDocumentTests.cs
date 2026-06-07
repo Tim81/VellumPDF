@@ -32,8 +32,8 @@ public sealed class PdfDocumentTests
     public void Save_singlePageWithText_containsFontResource()
     {
         using var doc = new PdfDocument();
-        var page   = doc.AddPage();
-        var font   = doc.UseFont(Standard14.Helvetica);
+        var page = doc.AddPage();
+        var font = doc.UseFont(Standard14.Helvetica);
         var canvas = new PdfCanvas(page);
 
         canvas
@@ -77,8 +77,8 @@ public sealed class PdfDocumentTests
     public void Save_withInfo_writesMetadata()
     {
         using var doc = new PdfDocument();
-        doc.Info.Title    = "Test Document";
-        doc.Info.Author   = "Timothy van der Ham";
+        doc.Info.Title = "Test Document";
+        doc.Info.Author = "Timothy van der Ham";
         doc.Info.Producer = "VellumPdf";
         doc.AddPage();
 
@@ -96,7 +96,7 @@ public sealed class PdfDocumentTests
     public void DefaultPageSize_isA4()
     {
         using var doc = new PdfDocument();
-        Assert.Equal(PageSize.A4.Width,  doc.DefaultPageSize.Width,  precision: 2);
+        Assert.Equal(PageSize.A4.Width, doc.DefaultPageSize.Width, precision: 2);
         Assert.Equal(PageSize.A4.Height, doc.DefaultPageSize.Height, precision: 2);
     }
 
@@ -113,7 +113,7 @@ public sealed class PdfDocumentTests
     public void UseFont_differentFonts_differentResourceNames()
     {
         using var doc = new PdfDocument();
-        var hv  = doc.UseFont(Standard14.Helvetica);
+        var hv = doc.UseFont(Standard14.Helvetica);
         var cou = doc.UseFont(Standard14.Courier);
         Assert.NotEqual(hv.ResourceName, cou.ResourceName);
     }

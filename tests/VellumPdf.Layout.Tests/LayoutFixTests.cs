@@ -26,7 +26,7 @@ public sealed class LayoutFixTests
 
         // Force narrow width so "Hello World" wraps: "Hello" on line 1, "World" on line 2
         doc.PageSize = new PdfRectangle(0, 0, 120, 500); // 120pt wide
-        doc.Margins  = new EdgeInsets(10); // 10pt margins → 100pt content
+        doc.Margins = new EdgeInsets(10); // 10pt margins → 100pt content
 
         var style = new TextStyle { FontSize = 10 };
         // Two words that each measure > 50pt at size 10 so they force two lines at 100pt content width
@@ -51,7 +51,7 @@ public sealed class LayoutFixTests
     {
         using var doc = new Document();
         doc.PageSize = new PdfRectangle(0, 0, 120, 500);
-        doc.Margins  = new EdgeInsets(10);
+        doc.Margins = new EdgeInsets(10);
 
         var style = new TextStyle { FontSize = 10 };
         doc.Add(new Paragraph("Hello World", style) { Alignment = HorizontalAlignment.Right });
@@ -82,12 +82,12 @@ public sealed class LayoutFixTests
     {
         using var doc = new Document();
         doc.PageSize = new PdfRectangle(0, 0, 200, 100); // Very short page
-        doc.Margins  = new EdgeInsets(5);
+        doc.Margins = new EdgeInsets(5);
 
         // Add 20 lines of text — each line is ~12pt, so 20*12=240pt > 90pt content height
         // This creates a paragraph that is taller than a single page
         var style = new TextStyle { FontSize = 12 };
-        var text  = string.Join(" ", Enumerable.Repeat("Word", 150)); // very long paragraph
+        var text = string.Join(" ", Enumerable.Repeat("Word", 150)); // very long paragraph
         doc.Add(new Paragraph(text, style));
 
         var ms = new MemoryStream();
@@ -204,8 +204,8 @@ public sealed class LayoutFixTests
     public void Document_addLayoutImage_producesXObjectInPdf()
     {
         var pngBytes = CreateMinimalRgbPng(8, 8);
-        var image    = VellumPdf.Images.PngImageLoader.Load(pngBytes);
-        var li       = new LayoutImage(image);
+        var image = VellumPdf.Images.PngImageLoader.Load(pngBytes);
+        var li = new LayoutImage(image);
 
         using var doc = new Document();
         doc.Add(li);
@@ -228,9 +228,9 @@ public sealed class LayoutFixTests
     /// </summary>
     private static string DecompressAllFlatStreams(byte[] pdfBytes)
     {
-        var sb      = new StringBuilder();
+        var sb = new StringBuilder();
         var pdfText = Encoding.Latin1.GetString(pdfBytes);
-        var pos     = 0;
+        var pos = 0;
 
         while (pos < pdfBytes.Length)
         {
@@ -241,7 +241,7 @@ public sealed class LayoutFixTests
             var dataStart = streamKeyword + "\nstream\n".Length;
 
             // Find /Length in the preceding dict (scan backwards from streamKeyword)
-            var dictEnd  = streamKeyword;
+            var dictEnd = streamKeyword;
             var dictStart = pdfText.LastIndexOf("obj\n", dictEnd, StringComparison.Ordinal);
             if (dictStart < 0) { pos = dataStart; continue; }
 
@@ -250,7 +250,7 @@ public sealed class LayoutFixTests
             if (lenIdx < 0) { pos = dataStart; continue; }
 
             var lenValStart = lenIdx + "/Length ".Length;
-            var lenValEnd   = lenValStart;
+            var lenValEnd = lenValStart;
             while (lenValEnd < pdfText.Length && char.IsDigit(pdfText[lenValEnd])) lenValEnd++;
             if (!int.TryParse(pdfText[lenValStart..lenValEnd], out var streamLength))
             { pos = dataStart; continue; }
@@ -262,9 +262,9 @@ public sealed class LayoutFixTests
             // Try to decompress as zlib
             try
             {
-                using var input  = new MemoryStream(rawBytes);
+                using var input = new MemoryStream(rawBytes);
                 using var output = new MemoryStream();
-                using var z      = new System.IO.Compression.ZLibStream(input,
+                using var z = new System.IO.Compression.ZLibStream(input,
                     System.IO.Compression.CompressionMode.Decompress);
                 z.CopyTo(output);
                 sb.Append(Encoding.Latin1.GetString(output.ToArray()));
@@ -283,7 +283,7 @@ public sealed class LayoutFixTests
     private static int CountOccurrences(string text, string pattern)
     {
         var count = 0;
-        var idx   = 0;
+        var idx = 0;
         while ((idx = text.IndexOf(pattern, idx, StringComparison.Ordinal)) >= 0)
         {
             count++;
@@ -322,7 +322,7 @@ public sealed class LayoutFixTests
     private static byte[] ZlibCompress(byte[] data)
     {
         using var ms = new MemoryStream();
-        using var z  = new System.IO.Compression.ZLibStream(ms,
+        using var z = new System.IO.Compression.ZLibStream(ms,
             System.IO.Compression.CompressionLevel.Fastest, leaveOpen: true);
         z.Write(data); z.Flush();
         return ms.ToArray();
@@ -331,7 +331,7 @@ public sealed class LayoutFixTests
     private static void WriteChunk(Stream s, string type, byte[] data)
     {
         s.WriteByte((byte)(data.Length >> 24)); s.WriteByte((byte)(data.Length >> 16));
-        s.WriteByte((byte)(data.Length >> 8));  s.WriteByte((byte)data.Length);
+        s.WriteByte((byte)(data.Length >> 8)); s.WriteByte((byte)data.Length);
         foreach (var c in type) s.WriteByte((byte)c);
         s.Write(data);
         var crcData = new byte[4 + data.Length];
@@ -339,7 +339,7 @@ public sealed class LayoutFixTests
         data.CopyTo(crcData, 4);
         var crc = Crc32(crcData);
         s.WriteByte((byte)(crc >> 24)); s.WriteByte((byte)(crc >> 16));
-        s.WriteByte((byte)(crc >> 8));  s.WriteByte((byte)crc);
+        s.WriteByte((byte)(crc >> 8)); s.WriteByte((byte)crc);
     }
 
     private static uint Crc32(byte[] data)

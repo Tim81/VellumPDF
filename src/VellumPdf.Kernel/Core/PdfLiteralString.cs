@@ -22,7 +22,7 @@ public sealed class PdfLiteralString : PdfObject
         for (var i = 0; i < value.Length; i++)
         {
             var c = (ushort)value[i];
-            bytes[2 + i * 2]     = (byte)(c >> 8);
+            bytes[2 + i * 2] = (byte)(c >> 8);
             bytes[2 + i * 2 + 1] = (byte)(c & 0xFF);
         }
         return new PdfLiteralString(bytes);
@@ -35,12 +35,12 @@ public sealed class PdfLiteralString : PdfObject
         {
             switch (b)
             {
-                case (byte)'(':  writer.WriteByte((byte)'\\'); writer.WriteByte((byte)'('); break;
-                case (byte)')':  writer.WriteByte((byte)'\\'); writer.WriteByte((byte)')'); break;
+                case (byte)'(': writer.WriteByte((byte)'\\'); writer.WriteByte((byte)'('); break;
+                case (byte)')': writer.WriteByte((byte)'\\'); writer.WriteByte((byte)')'); break;
                 case (byte)'\\': writer.WriteByte((byte)'\\'); writer.WriteByte((byte)'\\'); break;
-                case 0x0A:       writer.WriteByte((byte)'\\'); writer.WriteByte((byte)'n'); break;
-                case 0x0D:       writer.WriteByte((byte)'\\'); writer.WriteByte((byte)'r'); break;
-                default:         writer.WriteByte(b); break;
+                case 0x0A: writer.WriteByte((byte)'\\'); writer.WriteByte((byte)'n'); break;
+                case 0x0D: writer.WriteByte((byte)'\\'); writer.WriteByte((byte)'r'); break;
+                default: writer.WriteByte(b); break;
             }
         }
         writer.WriteByte((byte)')');

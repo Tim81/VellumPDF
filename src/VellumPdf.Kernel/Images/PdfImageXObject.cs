@@ -11,26 +11,26 @@ namespace VellumPdf.Images;
 /// </summary>
 public sealed class PdfImageXObject
 {
-    public int Width    { get; }
-    public int Height   { get; }
+    public int Width { get; }
+    public int Height { get; }
 
-    private readonly byte[]           _streamData;
-    private readonly PdfName          _filter;
-    private readonly ImageColorSpace  _colorSpace;
-    private readonly int              _bitsPerComponent;
-    private readonly PdfStream?       _sMask; // alpha channel for PNG with transparency
+    private readonly byte[] _streamData;
+    private readonly PdfName _filter;
+    private readonly ImageColorSpace _colorSpace;
+    private readonly int _bitsPerComponent;
+    private readonly PdfStream? _sMask; // alpha channel for PNG with transparency
 
     internal PdfImageXObject(
         int width, int height, byte[] streamData, PdfName filter,
         ImageColorSpace colorSpace, int bitsPerComponent, PdfStream? sMask = null)
     {
-        Width             = width;
-        Height            = height;
-        _streamData       = streamData;
-        _filter           = filter;
-        _colorSpace       = colorSpace;
+        Width = width;
+        Height = height;
+        _streamData = streamData;
+        _filter = filter;
+        _colorSpace = colorSpace;
         _bitsPerComponent = bitsPerComponent;
-        _sMask            = sMask;
+        _sMask = sMask;
     }
 
     public PdfStream? SMask => _sMask;
@@ -74,11 +74,11 @@ public sealed class PdfImageXObject
 
     private void SetImageDict(PdfDictionary d, PdfIndirectReference? sMaskRef)
     {
-        d.Set(PdfName.Type,    new PdfName("XObject"))
+        d.Set(PdfName.Type, new PdfName("XObject"))
          .Set(PdfName.Subtype, new PdfName("Image"))
-         .Set(new PdfName("Width"),           new PdfInteger(Width))
-         .Set(new PdfName("Height"),          new PdfInteger(Height))
-         .Set(new PdfName("ColorSpace"),      ColorSpaceName())
+         .Set(new PdfName("Width"), new PdfInteger(Width))
+         .Set(new PdfName("Height"), new PdfInteger(Height))
+         .Set(new PdfName("ColorSpace"), ColorSpaceName())
          .Set(new PdfName("BitsPerComponent"), new PdfInteger(_bitsPerComponent));
 
         if (sMaskRef is not null)
@@ -88,7 +88,7 @@ public sealed class PdfImageXObject
     private PdfObject ColorSpaceName() => _colorSpace switch
     {
         ImageColorSpace.DeviceGray => new PdfName("DeviceGray"),
-        ImageColorSpace.DeviceRgb  => new PdfName("DeviceRGB"),
+        ImageColorSpace.DeviceRgb => new PdfName("DeviceRGB"),
         ImageColorSpace.DeviceCmyk => new PdfName("DeviceCMYK"),
         _ => new PdfName("DeviceRGB")
     };

@@ -27,16 +27,16 @@ public sealed class PdfCanvas
 
     // ── Graphics state ──────────────────────────────────────────────────────
 
-    public PdfCanvas SaveState()    { WriteOp("q"u8);  return this; }
-    public PdfCanvas RestoreState() { WriteOp("Q"u8);  return this; }
+    public PdfCanvas SaveState() { WriteOp("q"u8); return this; }
+    public PdfCanvas RestoreState() { WriteOp("Q"u8); return this; }
 
     public PdfCanvas Concat(double a, double b, double c, double d, double e, double f)
     { WriteOpAscii($"{N(a)} {N(b)} {N(c)} {N(d)} {N(e)} {N(f)} cm"); return this; }
 
-    public PdfCanvas SetLineWidth(double w)   { WriteOpAscii($"{N(w)} w"); return this; }
-    public PdfCanvas SetLineCap(int cap)      { WriteOpAscii($"{cap} J"); return this; }
-    public PdfCanvas SetLineJoin(int join)    { WriteOpAscii($"{join} j"); return this; }
-    public PdfCanvas SetMiterLimit(double m)  { WriteOpAscii($"{N(m)} M"); return this; }
+    public PdfCanvas SetLineWidth(double w) { WriteOpAscii($"{N(w)} w"); return this; }
+    public PdfCanvas SetLineCap(int cap) { WriteOpAscii($"{cap} J"); return this; }
+    public PdfCanvas SetLineJoin(int join) { WriteOpAscii($"{join} j"); return this; }
+    public PdfCanvas SetMiterLimit(double m) { WriteOpAscii($"{N(m)} M"); return this; }
 
     public PdfCanvas SetStrokeColorRgb(double r, double g, double b)
     { WriteOpAscii($"{N(r)} {N(g)} {N(b)} RG"); return this; }
@@ -45,12 +45,12 @@ public sealed class PdfCanvas
     { WriteOpAscii($"{N(r)} {N(g)} {N(b)} rg"); return this; }
 
     public PdfCanvas SetStrokeColorGray(double g) { WriteOpAscii($"{N(g)} G"); return this; }
-    public PdfCanvas SetFillColorGray(double g)   { WriteOpAscii($"{N(g)} g"); return this; }
+    public PdfCanvas SetFillColorGray(double g) { WriteOpAscii($"{N(g)} g"); return this; }
 
     // ── Path construction ───────────────────────────────────────────────────
 
-    public PdfCanvas MoveTo(double x, double y)  { WriteOpAscii($"{N(x)} {N(y)} m"); return this; }
-    public PdfCanvas LineTo(double x, double y)  { WriteOpAscii($"{N(x)} {N(y)} l"); return this; }
+    public PdfCanvas MoveTo(double x, double y) { WriteOpAscii($"{N(x)} {N(y)} m"); return this; }
+    public PdfCanvas LineTo(double x, double y) { WriteOpAscii($"{N(x)} {N(y)} l"); return this; }
 
     public PdfCanvas CurveTo(double x1, double y1, double x2, double y2, double x3, double y3)
     { WriteOpAscii($"{N(x1)} {N(y1)} {N(x2)} {N(y2)} {N(x3)} {N(y3)} c"); return this; }
@@ -58,18 +58,18 @@ public sealed class PdfCanvas
     public PdfCanvas Rectangle(double x, double y, double w, double h)
     { WriteOpAscii($"{N(x)} {N(y)} {N(w)} {N(h)} re"); return this; }
 
-    public PdfCanvas ClosePath()       { WriteOp("h"u8);  return this; }
-    public PdfCanvas Stroke()          { WriteOp("S"u8);  return this; }
-    public PdfCanvas Fill()            { WriteOp("f"u8);  return this; }
-    public PdfCanvas FillEvenOdd()     { WriteOp("f*"u8); return this; }
-    public PdfCanvas FillAndStroke()   { WriteOp("B"u8);  return this; }
-    public PdfCanvas CloseAndStroke()  { WriteOp("s"u8);  return this; }
-    public PdfCanvas EndPath()         { WriteOp("n"u8);  return this; }
+    public PdfCanvas ClosePath() { WriteOp("h"u8); return this; }
+    public PdfCanvas Stroke() { WriteOp("S"u8); return this; }
+    public PdfCanvas Fill() { WriteOp("f"u8); return this; }
+    public PdfCanvas FillEvenOdd() { WriteOp("f*"u8); return this; }
+    public PdfCanvas FillAndStroke() { WriteOp("B"u8); return this; }
+    public PdfCanvas CloseAndStroke() { WriteOp("s"u8); return this; }
+    public PdfCanvas EndPath() { WriteOp("n"u8); return this; }
 
     // ── Text operators ──────────────────────────────────────────────────────
 
     public PdfCanvas BeginText() { WriteOp("BT"u8); return this; }
-    public PdfCanvas EndText()   { WriteOp("ET"u8); return this; }
+    public PdfCanvas EndText() { WriteOp("ET"u8); return this; }
 
     public PdfCanvas SetFont(PdfFontResource font, double size)
     {
@@ -86,10 +86,10 @@ public sealed class PdfCanvas
 
     public PdfCanvas SetCharSpacing(double cs) { WriteOpAscii($"{N(cs)} Tc"); return this; }
     public PdfCanvas SetWordSpacing(double ws) { WriteOpAscii($"{N(ws)} Tw"); return this; }
-    public PdfCanvas SetTextRise(double tr)    { WriteOpAscii($"{N(tr)} Ts"); return this; }
+    public PdfCanvas SetTextRise(double tr) { WriteOpAscii($"{N(tr)} Ts"); return this; }
     public PdfCanvas SetHorizScaling(double s) { WriteOpAscii($"{N(s)} Tz"); return this; }
     public PdfCanvas SetTextLeading(double tl) { WriteOpAscii($"{N(tl)} TL"); return this; }
-    public PdfCanvas NextLine()                { WriteOp("T*"u8); return this; }
+    public PdfCanvas NextLine() { WriteOp("T*"u8); return this; }
 
     /// <summary>Renders a Latin-1 string using the standard PDF string operator (Tj).</summary>
     public PdfCanvas ShowText(string text)
@@ -158,12 +158,12 @@ public sealed class PdfCanvas
         {
             switch (b)
             {
-                case (byte)'(':  _ops.WriteByte((byte)'\\'); _ops.WriteByte((byte)'('); break;
-                case (byte)')':  _ops.WriteByte((byte)'\\'); _ops.WriteByte((byte)')'); break;
+                case (byte)'(': _ops.WriteByte((byte)'\\'); _ops.WriteByte((byte)'('); break;
+                case (byte)')': _ops.WriteByte((byte)'\\'); _ops.WriteByte((byte)')'); break;
                 case (byte)'\\': _ops.WriteByte((byte)'\\'); _ops.WriteByte((byte)'\\'); break;
-                case 0x0A:       _ops.WriteByte((byte)'\\'); _ops.WriteByte((byte)'n'); break;
-                case 0x0D:       _ops.WriteByte((byte)'\\'); _ops.WriteByte((byte)'r'); break;
-                default:         _ops.WriteByte(b); break;
+                case 0x0A: _ops.WriteByte((byte)'\\'); _ops.WriteByte((byte)'n'); break;
+                case 0x0D: _ops.WriteByte((byte)'\\'); _ops.WriteByte((byte)'r'); break;
+                default: _ops.WriteByte(b); break;
             }
         }
         _ops.WriteByte((byte)')');

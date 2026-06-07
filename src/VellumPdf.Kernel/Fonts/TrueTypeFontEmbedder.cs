@@ -16,37 +16,37 @@ namespace VellumPdf.Fonts;
 /// </summary>
 public sealed class TrueTypeFontEmbedder
 {
-    private readonly SfntFont    _sfnt;
-    private readonly CmapTable   _cmap;
-    private readonly HeadTable   _head;
-    private readonly HheaTable   _hhea;
-    private readonly HmtxTable   _hmtx;
-    private readonly MaxpTable   _maxp;
-    private readonly NameTable   _name;
-    private readonly Os2Table    _os2;
-    private readonly PostTable   _post;
+    private readonly SfntFont _sfnt;
+    private readonly CmapTable _cmap;
+    private readonly HeadTable _head;
+    private readonly HheaTable _hhea;
+    private readonly HmtxTable _hmtx;
+    private readonly MaxpTable _maxp;
+    private readonly NameTable _name;
+    private readonly Os2Table _os2;
+    private readonly PostTable _post;
 
-    private readonly HashSet<int>  _usedGids = new() { 0 }; // always keep .notdef
+    private readonly HashSet<int> _usedGids = new() { 0 }; // always keep .notdef
     private readonly Dictionary<int, ushort> _unicodeToGid = new();
 
     public string ResourceName { get; }
 
     public TrueTypeFontEmbedder(ReadOnlyMemory<byte> fontData, string resourceName)
     {
-        _sfnt  = SfntFont.Parse(fontData);
+        _sfnt = SfntFont.Parse(fontData);
 
         if (_sfnt.IsCff)
             throw new NotSupportedException(
                 "OpenType/CFF (OTTO) fonts are not yet supported; only TrueType (glyf) outlines can be embedded.");
 
-        _cmap  = CmapTable.Parse(_sfnt);
-        _head  = HeadTable.Parse(_sfnt);
-        _hhea  = HheaTable.Parse(_sfnt);
-        _maxp  = MaxpTable.Parse(_sfnt);
-        _name  = NameTable.Parse(_sfnt);
-        _os2   = Os2Table.Parse(_sfnt);
-        _post  = PostTable.Parse(_sfnt);
-        _hmtx  = HmtxTable.Parse(_sfnt, _hhea, _maxp.NumGlyphs);
+        _cmap = CmapTable.Parse(_sfnt);
+        _head = HeadTable.Parse(_sfnt);
+        _hhea = HheaTable.Parse(_sfnt);
+        _maxp = MaxpTable.Parse(_sfnt);
+        _name = NameTable.Parse(_sfnt);
+        _os2 = Os2Table.Parse(_sfnt);
+        _post = PostTable.Parse(_sfnt);
+        _hmtx = HmtxTable.Parse(_sfnt, _hhea, _maxp.NumGlyphs);
         ResourceName = resourceName;
     }
 
@@ -127,12 +127,12 @@ public sealed class TrueTypeFontEmbedder
             .Set(new Core.PdfName("FontName"), new Core.PdfName(PostScriptName))
             .Set(new Core.PdfName("Flags"), (long)flags)
             .Set(new Core.PdfName("ItalicAngle"), new Core.PdfReal(_post.ItalicAngle))
-            .Set(new Core.PdfName("Ascent"),      new Core.PdfReal(Scale(_os2.TypoAscender)))
-            .Set(new Core.PdfName("Descent"),     new Core.PdfReal(Scale(_os2.TypoDescender)))
-            .Set(new Core.PdfName("CapHeight"),   new Core.PdfReal(Scale(_os2.CapHeight != 0 ? _os2.CapHeight : _os2.TypoAscender)))
-            .Set(new Core.PdfName("StemV"),       new Core.PdfInteger(80)) // heuristic
-            .Set(new Core.PdfName("FontBBox"),    BuildFontBBox())
-            .Set(new Core.PdfName("FontFile2"),   fontFileRef);
+            .Set(new Core.PdfName("Ascent"), new Core.PdfReal(Scale(_os2.TypoAscender)))
+            .Set(new Core.PdfName("Descent"), new Core.PdfReal(Scale(_os2.TypoDescender)))
+            .Set(new Core.PdfName("CapHeight"), new Core.PdfReal(Scale(_os2.CapHeight != 0 ? _os2.CapHeight : _os2.TypoAscender)))
+            .Set(new Core.PdfName("StemV"), new Core.PdfInteger(80)) // heuristic
+            .Set(new Core.PdfName("FontBBox"), BuildFontBBox())
+            .Set(new Core.PdfName("FontFile2"), fontFileRef);
     }
 
     public Core.PdfStream BuildFontFileStream()
@@ -150,8 +150,8 @@ public sealed class TrueTypeFontEmbedder
     // ── Private helpers ─────────────────────────────────────────────────────
 
     private Core.PdfDictionary BuildCidSystemInfo() => new Core.PdfDictionary()
-        .Set(new Core.PdfName("Registry"),   new Core.PdfLiteralString(Encoding.ASCII.GetBytes("Adobe")))
-        .Set(new Core.PdfName("Ordering"),   new Core.PdfLiteralString(Encoding.ASCII.GetBytes("Identity")))
+        .Set(new Core.PdfName("Registry"), new Core.PdfLiteralString(Encoding.ASCII.GetBytes("Adobe")))
+        .Set(new Core.PdfName("Ordering"), new Core.PdfLiteralString(Encoding.ASCII.GetBytes("Identity")))
         .Set(new Core.PdfName("Supplement"), new Core.PdfInteger(0));
 
     private Core.PdfArray BuildFontBBox()
@@ -170,7 +170,7 @@ public sealed class TrueTypeFontEmbedder
     {
         // PDF CIDFont W array: [first [w1 w2 …]] or [first last w] (§9.7.4.3)
         // Use individual-glyph form for the used GIDs.
-        var arr  = new Core.PdfArray();
+        var arr = new Core.PdfArray();
         var gids = _usedGids.Order().ToArray();
         if (gids.Length == 0) return arr;
 
@@ -199,7 +199,7 @@ public sealed class TrueTypeFontEmbedder
     {
         // Expand composites, then build subset glyf+loca
         var subsetter = new GlyfSubsetter(_sfnt);
-        var keepSet   = new HashSet<int>(_usedGids);
+        var keepSet = new HashSet<int>(_usedGids);
         subsetter.ExpandComposites(keepSet);
         var (glyfBytes, locaBytes) = subsetter.BuildSubset(keepSet);
 
@@ -242,7 +242,7 @@ public sealed class TrueTypeFontEmbedder
         layout.Add((loca, newLoca));
         layout.Sort((a, b) => string.Compare(a.tag.ToString(), b.tag.ToString(), StringComparison.Ordinal));
 
-        var ms     = new MemoryStream();
+        var ms = new MemoryStream();
         var offset = headerSize;
 
         // Compute offsets
@@ -297,8 +297,8 @@ public sealed class TrueTypeFontEmbedder
             {
                 // offsets[i] is the offset of the head table data within fontBytes
                 var headOffset = offsets[i];
-                fontBytes[headOffset + 8]  = (byte)(adjustment >> 24);
-                fontBytes[headOffset + 9]  = (byte)(adjustment >> 16);
+                fontBytes[headOffset + 8] = (byte)(adjustment >> 24);
+                fontBytes[headOffset + 9] = (byte)(adjustment >> 16);
                 fontBytes[headOffset + 10] = (byte)(adjustment >> 8);
                 fontBytes[headOffset + 11] = (byte)adjustment;
                 break;
@@ -365,7 +365,7 @@ public sealed class TrueTypeFontEmbedder
         uint sum = 0;
         var i = 0;
         for (; i + 3 < data.Length; i += 4)
-            sum += ((uint)data[i] << 24) | ((uint)data[i+1] << 16) | ((uint)data[i+2] << 8) | data[i+3];
+            sum += ((uint)data[i] << 24) | ((uint)data[i + 1] << 16) | ((uint)data[i + 2] << 8) | data[i + 3];
         // Partial last word: left-justify (zero-pad on the right).
         // e.g. [b0,b1,b2] → b0<<24 | b1<<16 | b2<<8  (not right-justified).
         var rem = data.Length - i;
@@ -379,13 +379,13 @@ public sealed class TrueTypeFontEmbedder
     }
 
     private static int FloorPow2(int n) { var r = 1; while (r * 2 <= n) r *= 2; return r; }
-    private static int Log2(int n)      { var r = 0; while (n > 1) { n /= 2; r++; } return r; }
+    private static int Log2(int n) { var r = 0; while (n > 1) { n /= 2; r++; } return r; }
 
     private static void WriteU16(Stream s, ushort v) { s.WriteByte((byte)(v >> 8)); s.WriteByte((byte)v); }
     private static void WriteU32(Stream s, uint v)
     {
         s.WriteByte((byte)(v >> 24)); s.WriteByte((byte)(v >> 16));
-        s.WriteByte((byte)(v >>  8)); s.WriteByte((byte)v);
+        s.WriteByte((byte)(v >> 8)); s.WriteByte((byte)v);
     }
     private static void WriteTag(Stream s, Tag t)
     {
@@ -395,7 +395,7 @@ public sealed class TrueTypeFontEmbedder
 
     private static IEnumerable<int> EnumerateCodePoints(string text)
     {
-        for (var i = 0; i < text.Length; )
+        for (var i = 0; i < text.Length;)
         {
             var cp = char.ConvertToUtf32(text, i);
             yield return cp;

@@ -10,14 +10,14 @@ namespace VellumPdf.Layout.Elements;
 /// </summary>
 public sealed class Paragraph
 {
-    public string             Text      { get; }
-    public TextStyle          Style     { get; }
-    public EdgeInsets         Margins   { get; init; } = EdgeInsets.Zero;
+    public string Text { get; }
+    public TextStyle Style { get; }
+    public EdgeInsets Margins { get; init; } = EdgeInsets.Zero;
     public HorizontalAlignment Alignment { get; init; } = HorizontalAlignment.Left;
 
     public Paragraph(string text, TextStyle? style = null)
     {
-        Text  = text;
+        Text = text;
         Style = style ?? TextStyle.Default;
     }
 }

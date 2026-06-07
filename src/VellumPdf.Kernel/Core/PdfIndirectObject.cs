@@ -12,7 +12,7 @@ namespace VellumPdf.Core;
 public sealed class PdfIndirectObject : PdfObject
 {
     public int ObjectNumber { get; }
-    public PdfObject Value  { get; }
+    public PdfObject Value { get; }
 
     public PdfIndirectObject(int objectNumber, PdfObject value)
     {

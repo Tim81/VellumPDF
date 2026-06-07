@@ -15,14 +15,14 @@ namespace VellumPdf.Layout.Rendering;
 /// </summary>
 public sealed class RendererContext
 {
-    private readonly PdfPage     _page;
+    private readonly PdfPage _page;
     private readonly PdfDocument _document;
     private readonly Dictionary<PdfImageXObject, string> _imageNames = new();
     private int _imageCounter;
 
     public RendererContext(PdfPage page, PdfDocument document)
     {
-        _page     = page;
+        _page = page;
         _document = document;
     }
 

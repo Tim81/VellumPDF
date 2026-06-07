@@ -20,7 +20,7 @@ public sealed class LayoutContext
 
     public LayoutContext(LayoutBox area, double contentTop = 0)
     {
-        Area       = area;
+        Area = area;
         ContentTop = contentTop;
     }
 

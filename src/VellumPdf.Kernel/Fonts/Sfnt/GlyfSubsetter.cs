@@ -17,22 +17,22 @@ internal sealed class GlyfSubsetter
     private readonly HeadTable _head;
     private readonly MaxpTable _maxp;
 
-    private readonly int[]  _locaOffsets;  // long-format loca (absolute file offsets)
+    private readonly int[] _locaOffsets;  // long-format loca (absolute file offsets)
     private readonly byte[] _glyfData;
 
     public GlyfSubsetter(SfntFont font)
     {
-        _font  = font;
-        _head  = HeadTable.Parse(font);
-        _maxp  = MaxpTable.Parse(font);
+        _font = font;
+        _head = HeadTable.Parse(font);
+        _maxp = MaxpTable.Parse(font);
         _locaOffsets = ReadLoca();
-        _glyfData    = font.GetTableBytes(new Tag("glyf")).ToArray();
+        _glyfData = font.GetTableBytes(new Tag("glyf")).ToArray();
     }
 
     private int[] ReadLoca()
     {
-        var n   = _maxp.NumGlyphs + 1;
-        var r   = _font.GetTableReader(new Tag("loca"));
+        var n = _maxp.NumGlyphs + 1;
+        var r = _font.GetTableReader(new Tag("loca"));
         var arr = new int[n];
         if (_head.IndexToLocFormat == 0)
             for (var i = 0; i < n; i++) arr[i] = r.ReadU16(i * 2) * 2;
@@ -49,7 +49,7 @@ internal sealed class GlyfSubsetter
     {
         if (gid < 0 || gid >= _maxp.NumGlyphs) return default;
         var start = _locaOffsets[gid];
-        var end   = _locaOffsets[gid + 1];
+        var end = _locaOffsets[gid + 1];
         return start == end ? default : _glyfData.AsSpan(start, end - start);
     }
 
@@ -124,9 +124,9 @@ internal sealed class GlyfSubsetter
         for (var i = 0; i <= _maxp.NumGlyphs; i++)
         {
             var v = locaEntries[i];
-            locaBytes[i * 4]     = (byte)(v >> 24);
+            locaBytes[i * 4] = (byte)(v >> 24);
             locaBytes[i * 4 + 1] = (byte)(v >> 16);
-            locaBytes[i * 4 + 2] = (byte)(v >>  8);
+            locaBytes[i * 4 + 2] = (byte)(v >> 8);
             locaBytes[i * 4 + 3] = (byte)(v);
         }
 
