@@ -3,7 +3,9 @@
 
 using VellumPdf.Layout.Core;
 using VellumPdf.Layout.Elements;
+using VellumPdf.Layout.Elements.Table;
 using VellumPdf.Layout.Rendering;
+using VellumPdf.Layout.Rendering.Table;
 
 namespace VellumPdf.Layout;
 
@@ -46,6 +48,12 @@ public sealed class Document : IDisposable
     public Document Add(LineSeparator separator)
     {
         _content.Add(new LineSeparatorRenderer(separator));
+        return this;
+    }
+
+    public Document Add(TableElement table)
+    {
+        _content.Add(new TableRenderer(table));
         return this;
     }
 
