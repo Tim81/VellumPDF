@@ -360,7 +360,7 @@ public sealed class TrueTypeFontEmbedder
         return sb.ToString();
     }
 
-    private static uint Checksum(byte[] data)
+    internal static uint Checksum(byte[] data)
     {
         uint sum = 0;
         var i = 0;

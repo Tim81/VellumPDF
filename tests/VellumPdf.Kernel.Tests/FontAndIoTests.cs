@@ -143,31 +143,28 @@ public sealed class FontAndIoTests
         // Loading succeeds (color space detection is internal; we just verify no throw)
     }
 
-    // ── Group C: Checksum left-justify ────────────────────────────────────────
-    // Tested via a pure test helper that replicates the algorithm
+    // ── Group C: TrueType subset table checksum (left-justified partial word) ──
+    // Validates the production TrueTypeFontEmbedder.Checksum against the canonical
+    // sfnt definition (zero-pad to a 4-byte multiple, then sum big-endian uint32
+    // words). The expected value is derived independently of the production code.
 
     [Theory]
     [InlineData(new byte[] { 0x01, 0x02, 0x03, 0x04 })]        // exact 4 bytes
     [InlineData(new byte[] { 0x01, 0x02, 0x03, 0x04, 0xAB })]  // +1 byte
     [InlineData(new byte[] { 0x01, 0x02, 0x03, 0x04, 0xAB, 0xCD })] // +2 bytes
     [InlineData(new byte[] { 0x01, 0x02, 0x03, 0x04, 0xAB, 0xCD, 0xEF })] // +3 bytes
-    public void Checksum_leftJustified_matchesExpected(byte[] data)
+    public void Checksum_matchesCanonicalZeroPaddedDefinition(byte[] data)
     {
-        // Compute the expected checksum using the left-justify algorithm
+        // Canonical sfnt checksum: pad with zero bytes to a 4-byte multiple,
+        // then sum the big-endian 32-bit words.
+        var padded = new byte[(data.Length + 3) / 4 * 4];
+        data.CopyTo(padded, 0);
         uint expected = 0;
-        var i = 0;
-        for (; i + 3 < data.Length; i += 4)
-            expected += ((uint)data[i] << 24) | ((uint)data[i + 1] << 16) | ((uint)data[i + 2] << 8) | data[i + 3];
-        var rem = data.Length - i;
-        if (rem > 0)
-        {
-            uint last = 0;
-            for (var j = 0; j < rem; j++) last |= (uint)data[i + j] << ((3 - j) * 8);
-            expected += last;
-        }
+        for (var i = 0; i < padded.Length; i += 4)
+            expected += (uint)((padded[i] << 24) | (padded[i + 1] << 16) | (padded[i + 2] << 8) | padded[i + 3]);
 
-        // Now compute via the actual TrueTypeFontEmbedder.Checksum (exposed via the test helper)
-        var actual = ChecksumHelper.Compute(data);
+        // Call the real production method (internal, visible via InternalsVisibleTo).
+        var actual = TrueTypeFontEmbedder.Checksum(data);
         Assert.Equal(expected, actual);
     }
 
@@ -409,28 +406,5 @@ public sealed class FontAndIoTests
         for (var i = 0; i < components; i++) { ms.WriteByte((byte)(i + 1)); ms.WriteByte(0x11); ms.WriteByte(0); }
         ms.Write([0xFF, 0xD9]); // EOI
         return ms.ToArray();
-    }
-}
-
-/// <summary>
-/// Exposes the checksum algorithm in a test-accessible way by reimplementing it
-/// identically to what is used in TrueTypeFontEmbedder (left-justify).
-/// </summary>
-internal static class ChecksumHelper
-{
-    public static uint Compute(byte[] data)
-    {
-        uint sum = 0;
-        var i = 0;
-        for (; i + 3 < data.Length; i += 4)
-            sum += ((uint)data[i] << 24) | ((uint)data[i + 1] << 16) | ((uint)data[i + 2] << 8) | data[i + 3];
-        var rem = data.Length - i;
-        if (rem > 0)
-        {
-            uint last = 0;
-            for (var j = 0; j < rem; j++) last |= (uint)data[i + j] << ((3 - j) * 8);
-            sum += last;
-        }
-        return sum;
     }
 }
