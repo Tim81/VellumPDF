@@ -10,13 +10,15 @@ namespace VellumPdf.Core;
 /// Data is stored uncompressed; WriteTo applies FlateDecode compression via
 /// ZLibStream (RFC 1950 — includes the zlib wrapper PDF requires).
 /// </summary>
-public sealed class PdfStream : PdfObject
+public class PdfStream : PdfObject
 {
     public PdfDictionary Dictionary { get; } = new();
 
     private readonly byte[] _data;
 
     public PdfStream(byte[] data) => _data = data;
+
+    protected PdfStream() => _data = [];
 
     public override void WriteTo(PdfWriter writer)
     {
