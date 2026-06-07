@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\VellumPdf.Layout\VellumPdf.Layout.csproj" />
+  </ItemGroup>
+
+</Project>

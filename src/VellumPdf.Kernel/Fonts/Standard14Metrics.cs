@@ -9,7 +9,7 @@ namespace VellumPdf.Fonts;
 /// (ISO 32000-2 Annex D).  Values are in 1/1000 of a point per unit size.
 /// Only Latin-1 / WinAnsi range (32–255) is covered; unmapped glyphs → 0.
 /// </summary>
-internal static class Standard14Metrics
+public static class Standard14Metrics
 {
     // Helvetica — same widths as Arial (proportional sans-serif).
     private static readonly ushort[] Helvetica =
