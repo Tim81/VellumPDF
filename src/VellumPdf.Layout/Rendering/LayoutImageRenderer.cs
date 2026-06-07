@@ -8,16 +8,14 @@ namespace VellumPdf.Layout.Rendering;
 
 public sealed class LayoutImageRenderer : IRenderer
 {
-    private readonly LayoutImage  _img;
-    private readonly RendererContext _rendererCtx;
+    private readonly LayoutImage _img;
 
     private double    _w, _h;
     private LayoutBox _occupied;
 
-    public LayoutImageRenderer(LayoutImage img, RendererContext ctx)
+    public LayoutImageRenderer(LayoutImage img)
     {
-        _img         = img;
-        _rendererCtx = ctx;
+        _img = img;
     }
 
     public LayoutResult Layout(LayoutContext ctx)
@@ -45,7 +43,8 @@ public sealed class LayoutImageRenderer : IRenderer
             _ => 0
         };
 
-        var resName  = _rendererCtx.RegisterImageXObject(_img.Image);
+        // Register the XObject via the per-page RendererContext carried on DrawContext.
+        var resName = ctx.RendererContext.RegisterImageXObject(_img.Image);
         var (x, y, _, _) = ctx.ToPdfRect(area);
 
         ctx.Canvas

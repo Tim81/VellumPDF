@@ -2,12 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 using VellumPdf.Canvas;
+using VellumPdf.Fonts;
+using VellumPdf.Layout.Rendering;
 
 namespace VellumPdf.Layout.Core;
 
 /// <summary>
 /// Passed to <see cref="IRenderer.Draw"/>. Provides access to the current page's
-/// canvas and performs the Y-down→Y-up coordinate flip at this single boundary.
+/// canvas, a per-page resource context, and the document font/resource provider.
 ///
 /// Layout space: origin top-left, Y increases down, units = points.
 /// PDF space:    origin bottom-left, Y increases up, units = points.
@@ -16,14 +18,21 @@ namespace VellumPdf.Layout.Core;
 /// </summary>
 public sealed class DrawContext
 {
-    public PdfCanvas Canvas     { get; }
-    public LayoutBox PageBounds { get; }   // full page in layout space
+    public PdfCanvas       Canvas          { get; }
+    public LayoutBox       PageBounds      { get; }   // full page in layout space
+    public RendererContext RendererContext  { get; }   // per-page resource registration
+    private readonly PdfDocument _document;
 
-    public DrawContext(PdfCanvas canvas, LayoutBox pageBounds)
+    public DrawContext(PdfCanvas canvas, LayoutBox pageBounds, RendererContext rendererContext, PdfDocument document)
     {
-        Canvas     = canvas;
-        PageBounds = pageBounds;
+        Canvas          = canvas;
+        PageBounds      = pageBounds;
+        RendererContext = rendererContext;
+        _document       = document;
     }
+
+    /// <summary>Returns (or creates) a font resource on the current document.</summary>
+    public PdfFontResource GetFont(Standard14 font) => _document.UseFont(font);
 
     /// <summary>Converts a layout-space Y coordinate to PDF user-space Y.</summary>
     public double ToPdfY(double layoutY) => PageBounds.Height - layoutY;

@@ -21,8 +21,8 @@ public sealed class PdfRectangle
         LlX = llx; LlY = lly; UrX = urx; UrY = ury;
     }
 
-    /// <summary>A4 portrait: 210 × 297 mm at 72 pt/in (595.28 × 841.89 pt).</summary>
-    public static readonly PdfRectangle A4 = new(0, 0, 595.28, 841.89);
+    /// <summary>A4 portrait. Delegates to <see cref="PageSize.A4"/> to keep a single canonical value.</summary>
+    public static PdfRectangle A4 => PageSize.A4;
 
     public PdfArray ToArray() => new([
         new PdfReal(LlX), new PdfReal(LlY), new PdfReal(UrX), new PdfReal(UrY)

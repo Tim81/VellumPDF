@@ -8,7 +8,14 @@ namespace VellumPdf.Core;
 public sealed class PdfReal : PdfObject
 {
     public double Value { get; }
-    public PdfReal(double value) => Value = value;
+
+    public PdfReal(double value)
+    {
+        if (double.IsNaN(value) || double.IsInfinity(value))
+            throw new ArgumentException(
+                $"PDF does not support NaN or Infinity as a real number value. Got: {value}", nameof(value));
+        Value = value;
+    }
 
     public override void WriteTo(PdfWriter writer)
     {

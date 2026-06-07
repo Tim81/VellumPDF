@@ -90,7 +90,8 @@ internal sealed class GlyfSubsetter
 
     /// <summary>
     /// Builds the subset glyf and loca table bytes for embedding.
-    /// Unused GIDs get a 4-byte padding glyph (null outline, required alignment).
+    /// Unused GIDs are zero-length (loca[gid] == loca[gid+1], nothing written).
+    /// Kept glyphs with actual outlines are padded to 4-byte alignment.
     /// </summary>
     public (byte[] GlyfBytes, byte[] LocaBytes) BuildSubset(IReadOnlySet<int> keepGids)
     {
@@ -102,22 +103,20 @@ internal sealed class GlyfSubsetter
             locaEntries[gid] = (int)newGlyf.Position;
             if (!keepGids.Contains(gid))
             {
-                // null glyph: 4 bytes of zeros (keeps 4-byte alignment)
-                newGlyf.Write([0, 0, 0, 0]);
+                // Unused glyph: zero-length entry (loca[gid] == loca[gid+1]).
+                // Nothing is written; the next GID picks up at the same offset.
                 continue;
             }
             var data = GetGlyphData(gid);
             if (data.IsEmpty)
             {
-                newGlyf.Write([0, 0, 0, 0]);
+                // Zero-length kept glyph (e.g. space) — still write nothing.
+                continue;
             }
-            else
-            {
-                newGlyf.Write(data);
-                // Pad to 4-byte boundary
-                var rem = (int)(newGlyf.Position % 4);
-                if (rem != 0) for (var i = 0; i < 4 - rem; i++) newGlyf.WriteByte(0);
-            }
+            newGlyf.Write(data);
+            // Pad to 4-byte boundary for kept glyphs with outline data
+            var rem = (int)(newGlyf.Position % 4);
+            if (rem != 0) for (var i = 0; i < 4 - rem; i++) newGlyf.WriteByte(0);
         }
         locaEntries[_maxp.NumGlyphs] = (int)newGlyf.Position;
 

@@ -66,42 +66,34 @@ public sealed class ParagraphRenderer : IRenderer
     {
         if (_lines is null) return;
 
-        var fontResource = DocumentFontRegistry.GetOrCreate(_para.Style.Font);
+        var fontResource = ctx.GetFont(_para.Style.Font);
         var area         = _occupied;
         var canvas       = ctx.Canvas;
-
-        var (_, pdfY, _, _) = ctx.ToPdfRect(area);
 
         canvas.BeginText();
         canvas.SetFont(fontResource, _para.Style.FontSize);
         canvas.SetFillColorRgb(_para.Style.Color.R, _para.Style.Color.G, _para.Style.Color.B);
 
-        var leading = _lineHeight;
-        // Start at top-left of the area: PDF Y = area top → pdfY + height
-        var startPdfY = ctx.ToPdfY(area.Y);
-        canvas.SetTextMatrix(1, 0, 0, 1, area.X, startPdfY - _para.Style.FontSize);
+        var leading   = _lineHeight;
+        var startPdfY = ctx.ToPdfY(area.Y) - _para.Style.FontSize;
 
         for (var i = _startLine; i < _endLine; i++)
         {
-            var line    = _lines![i];
+            var line      = _lines![i];
             var lineWidth = Standard14Metrics.MeasureString(_para.Style.Font, line, _para.Style.FontSize);
 
+            // Use SetTextMatrix for every line to avoid horizontal drift when
+            // Center/Right alignment produces non-zero xOffset that accumulates
+            // via successive Td (relative) calls.
             double xOffset = _para.Alignment switch
             {
-                HorizontalAlignment.Center  => (area.Width - lineWidth) / 2,
-                HorizontalAlignment.Right   => area.Width - lineWidth,
+                HorizontalAlignment.Center => (area.Width - lineWidth) / 2,
+                HorizontalAlignment.Right  => area.Width - lineWidth,
                 _ => 0
             };
 
-            if (i == _startLine)
-            {
-                if (xOffset != 0)
-                    canvas.MoveTextPosition(xOffset, 0);
-            }
-            else
-            {
-                canvas.MoveTextPosition(xOffset, -leading);
-            }
+            var linePdfY = startPdfY - (i - _startLine) * leading;
+            canvas.SetTextMatrix(1, 0, 0, 1, area.X + xOffset, linePdfY);
 
             canvas.ShowText(line);
         }
@@ -111,18 +103,25 @@ public sealed class ParagraphRenderer : IRenderer
 
     private static List<string> WordWrap(string text, TextStyle style, double maxWidth)
     {
-        var lines  = new List<string>();
-        var words  = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var lines   = new List<string>();
+        var words   = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         var current = new System.Text.StringBuilder();
         var currentW = 0.0;
 
         foreach (var word in words)
         {
-            var wordW = Standard14Metrics.MeasureString(style.Font, word, style.FontSize);
+            var wordW  = Standard14Metrics.MeasureString(style.Font, word, style.FontSize);
             var spaceW = Standard14Metrics.MeasureString(style.Font, " ", style.FontSize);
 
             if (current.Length == 0)
             {
+                // If the word alone is wider than the line, hard-break it at char granularity.
+                if (wordW > maxWidth)
+                {
+                    HardBreak(word, style, maxWidth, lines);
+                    // currentW stays 0; current stays empty (HardBreak always ends with a full flush)
+                    continue;
+                }
                 current.Append(word);
                 currentW = wordW;
             }
@@ -136,11 +135,43 @@ public sealed class ParagraphRenderer : IRenderer
             {
                 lines.Add(current.ToString());
                 current.Clear();
-                current.Append(word);
-                currentW = wordW;
+                if (wordW > maxWidth)
+                {
+                    HardBreak(word, style, maxWidth, lines);
+                    currentW = 0.0;
+                }
+                else
+                {
+                    current.Append(word);
+                    currentW = wordW;
+                }
             }
         }
         if (current.Length > 0) lines.Add(current.ToString());
         return lines;
+    }
+
+    /// <summary>
+    /// Splits a single word that is wider than the available line width at character
+    /// granularity and appends each fragment to <paramref name="lines"/>.
+    /// </summary>
+    private static void HardBreak(string word, TextStyle style, double maxWidth, List<string> lines)
+    {
+        var fragment = new System.Text.StringBuilder();
+        var fragmentW = 0.0;
+
+        foreach (var ch in word)
+        {
+            var charW = Standard14Metrics.MeasureString(style.Font, ch.ToString(), style.FontSize);
+            if (fragment.Length > 0 && fragmentW + charW > maxWidth)
+            {
+                lines.Add(fragment.ToString());
+                fragment.Clear();
+                fragmentW = 0.0;
+            }
+            fragment.Append(ch);
+            fragmentW += charW;
+        }
+        if (fragment.Length > 0) lines.Add(fragment.ToString());
     }
 }

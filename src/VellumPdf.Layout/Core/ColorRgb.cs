@@ -4,14 +4,8 @@
 namespace VellumPdf.Layout.Core;
 
 /// <summary>Normalised RGB colour (0.0–1.0 per channel).</summary>
-public readonly struct ColorRgb
+public readonly record struct ColorRgb(double R, double G, double B)
 {
-    public double R { get; }
-    public double G { get; }
-    public double B { get; }
-
-    public ColorRgb(double r, double g, double b) { R = r; G = g; B = b; }
-
     public static readonly ColorRgb Black = new(0, 0, 0);
     public static readonly ColorRgb White = new(1, 1, 1);
 

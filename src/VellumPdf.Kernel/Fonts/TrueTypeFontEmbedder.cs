@@ -1,7 +1,6 @@
 // Copyright 2026 Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
-using System.IO.Compression;
 using System.Text;
 using VellumPdf.Fonts.Sfnt;
 
@@ -35,6 +34,11 @@ public sealed class TrueTypeFontEmbedder
     public TrueTypeFontEmbedder(ReadOnlyMemory<byte> fontData, string resourceName)
     {
         _sfnt  = SfntFont.Parse(fontData);
+
+        if (_sfnt.IsCff)
+            throw new NotSupportedException(
+                "OpenType/CFF (OTTO) fonts are not yet supported; only TrueType (glyf) outlines can be embedded.");
+
         _cmap  = CmapTable.Parse(_sfnt);
         _head  = HeadTable.Parse(_sfnt);
         _hhea  = HheaTable.Parse(_sfnt);
@@ -278,7 +282,30 @@ public sealed class TrueTypeFontEmbedder
             if (rem != 0) for (var j = 0; j < 4 - rem; j++) ms.WriteByte(0);
         }
 
-        return ms.ToArray();
+        var fontBytes = ms.ToArray();
+
+        // Compute and patch checkSumAdjustment in the head table.
+        // The head table checkSumAdjustment (offset 8, uint32 big-endian) must be
+        // 0xB1B0AFBA - checksum(entire font).
+        var wholeFileChecksum = Checksum(fontBytes);
+        var adjustment = unchecked(0xB1B0AFBAu - wholeFileChecksum);
+
+        // Find the head table entry in the directory to get its file offset
+        for (var i = 0; i < layout.Count; i++)
+        {
+            if (layout[i].tag == head)
+            {
+                // offsets[i] is the offset of the head table data within fontBytes
+                var headOffset = offsets[i];
+                fontBytes[headOffset + 8]  = (byte)(adjustment >> 24);
+                fontBytes[headOffset + 9]  = (byte)(adjustment >> 16);
+                fontBytes[headOffset + 10] = (byte)(adjustment >> 8);
+                fontBytes[headOffset + 11] = (byte)adjustment;
+                break;
+            }
+        }
+
+        return fontBytes;
     }
 
     private string BuildToUnicodeCMapContent()
@@ -307,7 +334,22 @@ public sealed class TrueTypeFontEmbedder
             sb.AppendLine($"{end - start} beginbfchar");
             for (var i = start; i < end; i++)
             {
-                sb.AppendLine($"<{pairs[i].gid:X4}> <{pairs[i].cp:X4}>");
+                var cp = pairs[i].cp;
+                string cpHex;
+                if (cp <= 0xFFFF)
+                {
+                    // BMP: 4 hex digits
+                    cpHex = $"{cp:X4}";
+                }
+                else
+                {
+                    // Supplementary: encode as UTF-16BE surrogate pair (8 hex digits)
+                    cp -= 0x10000;
+                    var hi = 0xD800 + (cp >> 10);
+                    var lo = 0xDC00 + (cp & 0x3FF);
+                    cpHex = $"{hi:X4}{lo:X4}";
+                }
+                sb.AppendLine($"<{pairs[i].gid:X4}> <{cpHex}>");
             }
             sb.AppendLine("endbfchar");
         }
@@ -324,10 +366,15 @@ public sealed class TrueTypeFontEmbedder
         var i = 0;
         for (; i + 3 < data.Length; i += 4)
             sum += ((uint)data[i] << 24) | ((uint)data[i+1] << 16) | ((uint)data[i+2] << 8) | data[i+3];
-        // Partial last word
-        uint last = 0;
-        for (var j = i; j < data.Length; j++) last = (last << 8) | data[j];
-        sum += last;
+        // Partial last word: left-justify (zero-pad on the right).
+        // e.g. [b0,b1,b2] → b0<<24 | b1<<16 | b2<<8  (not right-justified).
+        var rem = data.Length - i;
+        if (rem > 0)
+        {
+            uint last = 0;
+            for (var j = 0; j < rem; j++) last |= (uint)data[i + j] << ((3 - j) * 8);
+            sum += last;
+        }
         return sum;
     }
 

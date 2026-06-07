@@ -3,6 +3,7 @@
 
 using VellumPdf.Core;
 using VellumPdf.Fonts;
+using VellumPdf.Images;
 using VellumPdf.IO;
 
 namespace VellumPdf.Document;
@@ -15,6 +16,10 @@ public sealed class PdfDocument : IDisposable
 {
     private readonly List<PdfPage> _pages = [];
     private readonly Dictionary<Standard14, Fonts.PdfFontResource> _fontCache = new();
+
+    // Per-page image registrations: page → list of (image, resourceName)
+    private readonly Dictionary<PdfPage, List<(PdfImageXObject Image, string Name)>> _pageImages = new();
+
     private int _fontCounter;
     private bool _disposed;
 
@@ -48,77 +53,126 @@ public sealed class PdfDocument : IDisposable
         return res;
     }
 
+    /// <summary>
+    /// Registers an image XObject on the given page, returning the resource name.
+    /// The image stream (and its SMask if present) are allocated in the object
+    /// registry and written during <see cref="Save"/>.
+    /// </summary>
+    public string RegisterImageXObject(PdfPage page, PdfImageXObject image, string resourceName)
+    {
+        if (!_pageImages.TryGetValue(page, out var list))
+        {
+            list = [];
+            _pageImages[page] = list;
+        }
+        list.Add((image, resourceName));
+        return resourceName;
+    }
+
     /// <summary>Writes a complete PDF file to <paramref name="destination"/>.</summary>
     public void Save(Stream destination)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(destination);
 
-        var writer = new PdfWriter(destination);
-        var xref   = new CrossReferenceBuilder();
+        var writer   = new PdfWriter(destination);
+        var xref     = new CrossReferenceBuilder();
+        var registry = new PdfObjectRegistry();
 
-        // PDF header with binary comment (hints readers to treat as binary)
-        writer.WriteAscii("%PDF-2.0\n%\xE2\xE3\xCF\xD3\n"u8);
+        // PDF header — "%PDF-2.0\n" + binary comment with raw bytes E2 E3 CF D3.
+        writer.WriteAscii("%PDF-2.0\n%"u8);
+        writer.WriteRaw([0xE2, 0xE3, 0xCF, 0xD3]);
+        writer.WriteAscii("\n"u8);
 
-        // ── Page content streams ───────────────────────────────────────────
+        // ── Pre-allocate references for page-tree and catalog (forward refs) ──
+
+        // Reserves object numbers in a single pass so each page dict can reference
+        // the page-tree before it is written.
+
+        // Content streams: one per page
         var pageContentRefs = new PdfIndirectReference[_pages.Count];
+        for (var i = 0; i < _pages.Count; i++)
+            pageContentRefs[i] = registry.Reserve();
+
+        // Page dict refs
+        var pageDictRefs = new PdfIndirectReference[_pages.Count];
+        for (var i = 0; i < _pages.Count; i++)
+            pageDictRefs[i] = registry.Reserve();
+
+        // Page tree ref (reserved now so page dicts can reference it)
+        var pageTreeRef = registry.Reserve();
+
+        // Info dict ref
+        var infoRef = registry.Reserve();
+
+        // Catalog ref
+        var catalogRef = registry.Reserve();
+
+        // ── Fill content stream values ─────────────────────────────────────
         for (var i = 0; i < _pages.Count; i++)
         {
             var content = _pages[i].ContentBytes ?? [];
-            var stream  = new PdfStream(content);
-            var objNum  = xref.ReserveObjectNumber(writer.Position);
-            new PdfIndirectObject(objNum, stream).WriteTo(writer);
-            writer.WriteByte((byte)'\n');
-            pageContentRefs[i] = new PdfIndirectReference(objNum);
+            registry.SetValue(pageContentRefs[i], new PdfStream(content));
         }
 
-        // ── Page tree node  ────────────────────────────────────────────────
-        // We need the page-tree object number before writing page dicts
-        // (each page dict's /Parent must reference it).
-        // Allocate page-dict object numbers first, then the tree node.
-        var pageDictObjNums = new int[_pages.Count];
-        for (var i = 0; i < _pages.Count; i++)
-            pageDictObjNums[i] = xref.NextObjectNumber + i;
+        // ── Register image XObjects for each page ──────────────────────────
+        foreach (var page in _pages)
+        {
+            if (!_pageImages.TryGetValue(page, out var images)) continue;
+            foreach (var (img, name) in images)
+            {
+                // Allocate SMask first (if any) so its ref is known when building image stream
+                PdfIndirectReference? sMaskRef = null;
+                if (img.SMask is not null)
+                {
+                    var sMaskObjRef = registry.Reserve();
+                    var sMaskStream = img.SMask;
+                    // Set SMask image dict fields
+                    sMaskStream.Dictionary
+                        .Set(PdfName.Type,    new PdfName("XObject"))
+                        .Set(PdfName.Subtype, new PdfName("Image"))
+                        .Set(new PdfName("Width"),            new PdfInteger(img.Width))
+                        .Set(new PdfName("Height"),           new PdfInteger(img.Height))
+                        .Set(new PdfName("ColorSpace"),       new PdfName("DeviceGray"))
+                        .Set(new PdfName("BitsPerComponent"), new PdfInteger(8));
+                    registry.SetValue(sMaskObjRef, sMaskStream);
+                    sMaskRef = sMaskObjRef;
+                }
 
-        var pageTreeObjNum = xref.NextObjectNumber + _pages.Count;
-        var pageTreeRef    = new PdfIndirectReference(pageTreeObjNum);
+                // Allocate and set image stream
+                var imgObjRef  = registry.Reserve();
+                var imgStream  = img.BuildStreamWithSMask(sMaskRef);
+                registry.SetValue(imgObjRef, imgStream);
+                page.RegisterXObject(name, imgObjRef);
+            }
+        }
 
-        // Write page dicts
-        var pageDictRefs = new PdfIndirectReference[_pages.Count];
+        // ── Fill page dict values ──────────────────────────────────────────
         for (var i = 0; i < _pages.Count; i++)
         {
-            var dict   = _pages[i].BuildDictionary(pageTreeRef, pageContentRefs[i]);
-            var objNum = xref.ReserveObjectNumber(writer.Position);
-            new PdfIndirectObject(objNum, dict).WriteTo(writer);
-            writer.WriteByte((byte)'\n');
-            pageDictRefs[i] = new PdfIndirectReference(objNum);
+            var dict = _pages[i].BuildDictionary(pageTreeRef, pageContentRefs[i]);
+            registry.SetValue(pageDictRefs[i], dict);
         }
 
-        // Write page tree node
+        // ── Fill page tree value ───────────────────────────────────────────
         var kids = new PdfArray(pageDictRefs.Cast<PdfObject>());
         var pageTree = new PdfDictionary()
             .Set(PdfName.Type, PdfName.Pages)
             .Set(PdfName.Kids, kids)
             .Set(PdfName.Count, _pages.Count);
-        var actualPageTreeObjNum = xref.ReserveObjectNumber(writer.Position);
-        new PdfIndirectObject(actualPageTreeObjNum, pageTree).WriteTo(writer);
-        writer.WriteByte((byte)'\n');
+        registry.SetValue(pageTreeRef, pageTree);
 
-        // ── Info dictionary ────────────────────────────────────────────────
-        var infoObjNum = xref.ReserveObjectNumber(writer.Position);
-        new PdfIndirectObject(infoObjNum, Info.BuildDictionary()).WriteTo(writer);
-        writer.WriteByte((byte)'\n');
-        var infoRef = new PdfIndirectReference(infoObjNum);
+        // ── Fill info dict value ───────────────────────────────────────────
+        registry.SetValue(infoRef, Info.BuildDictionary());
 
-        // ── Catalog ────────────────────────────────────────────────────────
+        // ── Fill catalog value ─────────────────────────────────────────────
         var catalog = new PdfDictionary()
             .Set(PdfName.Type, PdfName.Catalog)
             .Set(PdfName.Pages, pageTreeRef);
+        registry.SetValue(catalogRef, catalog);
 
-        var catalogObjNum = xref.ReserveObjectNumber(writer.Position);
-        new PdfIndirectObject(catalogObjNum, catalog).WriteTo(writer);
-        writer.WriteByte((byte)'\n');
-        var catalogRef = new PdfIndirectReference(catalogObjNum);
+        // ── Write all objects in object-number order ───────────────────────
+        registry.WriteAll(writer, xref);
 
         // ── Cross-reference table + trailer ───────────────────────────────
         xref.WriteXrefAndTrailer(writer, catalogRef, infoRef);

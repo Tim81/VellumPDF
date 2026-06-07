@@ -8,14 +8,23 @@ namespace VellumPdf.Layout.Rendering;
 /// <summary>
 /// Per-page rendering context that manages resource registration
 /// (XObjects, embedded fonts) on the current page.
+///
+/// Images are registered on both the <see cref="PdfDocument"/> (so the kernel
+/// allocates indirect objects for them during <c>Save</c>) and on the page's
+/// resource dictionary so content streams can reference them by name.
 /// </summary>
 public sealed class RendererContext
 {
-    private readonly PdfPage _page;
+    private readonly PdfPage     _page;
+    private readonly PdfDocument _document;
     private readonly Dictionary<PdfImageXObject, string> _imageNames = new();
     private int _imageCounter;
 
-    public RendererContext(PdfPage page) => _page = page;
+    public RendererContext(PdfPage page, PdfDocument document)
+    {
+        _page     = page;
+        _document = document;
+    }
 
     /// <summary>
     /// Registers an Image XObject on the current page and returns its resource name.
@@ -26,10 +35,9 @@ public sealed class RendererContext
         if (_imageNames.TryGetValue(image, out var name)) return name;
         name = $"Im{++_imageCounter}";
         _imageNames[image] = name;
-        // Image XObjects need indirect references from the document writer;
-        // for Phase 3, we embed the stream inline (Phase 4 will add deduplication).
-        // The page resource registration happens via PdfPage.RegisterXObject,
-        // but we need to write the stream and get a ref first — deferred to DocumentRenderer.
+        // Register with the document so the Save path writes the indirect object
+        // and registers the resource on the page.
+        _document.RegisterImageXObject(_page, image, name);
         return name;
     }
 }

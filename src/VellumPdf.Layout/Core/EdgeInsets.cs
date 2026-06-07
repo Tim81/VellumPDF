@@ -4,19 +4,10 @@
 namespace VellumPdf.Layout.Core;
 
 /// <summary>CSS-style four-sided inset (top, right, bottom, left) in points.</summary>
-public readonly struct EdgeInsets
+public readonly record struct EdgeInsets(double Top, double Right, double Bottom, double Left)
 {
-    public double Top    { get; }
-    public double Right  { get; }
-    public double Bottom { get; }
-    public double Left   { get; }
-
     public EdgeInsets(double all) : this(all, all, all, all) { }
     public EdgeInsets(double topBottom, double leftRight) : this(topBottom, leftRight, topBottom, leftRight) { }
-    public EdgeInsets(double top, double right, double bottom, double left)
-    {
-        Top = top; Right = right; Bottom = bottom; Left = left;
-    }
 
     public static readonly EdgeInsets Zero = new(0);
 

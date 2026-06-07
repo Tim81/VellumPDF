@@ -43,7 +43,10 @@ internal sealed class CmapTable
         }
 
         if (best < 0)
-            return new CmapTable(new Dictionary<int, ushort>());
+            // Only format-4 Unicode cmap parsing is implemented. Format 12 (full Unicode)
+            // and format 6/0 (older/symbol) are not yet supported.
+            throw new NotSupportedException(
+                "font has no supported (format 4) Unicode cmap subtable");
 
         return new CmapTable(ParseFormat4(r, best));
     }
@@ -56,7 +59,7 @@ internal sealed class CmapTable
         var startCodes = new int[segCount];
         var idDeltas   = new short[segCount];
         var idRangeOffsets = new ushort[segCount];
-        var idRangeOffsetsPos = offset + 14 + segCount * 6; // byte position of idRangeOffset array
+        var idRangeOffsetsPos = offset + 14 + segCount * 6 + 2; // +2 for the reservedPad field
 
         for (var i = 0; i < segCount; i++)
         {

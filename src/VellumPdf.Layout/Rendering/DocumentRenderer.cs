@@ -18,9 +18,10 @@ public sealed class DocumentRenderer
 
     private readonly List<IRenderer> _renderers = [];
 
-    private PdfPage?   _currentPage;
-    private PdfCanvas? _currentCanvas;
-    private double     _currentY;  // layout-space Y cursor (Y-down)
+    private PdfPage?         _currentPage;
+    private PdfCanvas?       _currentCanvas;
+    private RendererContext? _currentRendererCtx;
+    private double           _currentY;  // layout-space Y cursor (Y-down)
 
     public DocumentRenderer(PdfDocument pdf, PdfRectangle? pageSize = null, EdgeInsets? margins = null)
     {
@@ -34,8 +35,6 @@ public sealed class DocumentRenderer
     /// <summary>Lays out all added renderers and saves the resulting PDF to <paramref name="destination"/>.</summary>
     public void Render(Stream destination)
     {
-        DocumentFontRegistry.SetDocument(_pdf);
-
         foreach (var renderer in _renderers)
             PlaceRenderer(renderer);
 
@@ -55,9 +54,10 @@ public sealed class DocumentRenderer
     {
         if (_currentPage is null)
         {
-            _currentPage   = _pdf.AddPage(_pageSize);
-            _currentCanvas = new PdfCanvas(_currentPage);
-            _currentY      = _margins.Top;
+            _currentPage        = _pdf.AddPage(_pageSize);
+            _currentCanvas      = new PdfCanvas(_currentPage);
+            _currentRendererCtx = new RendererContext(_currentPage, _pdf);
+            _currentY           = _margins.Top;
         }
     }
 
@@ -66,8 +66,9 @@ public sealed class DocumentRenderer
         if (_currentCanvas is not null)
         {
             _currentCanvas.Finish();
-            _currentPage   = null;
-            _currentCanvas = null;
+            _currentPage        = null;
+            _currentCanvas      = null;
+            _currentRendererCtx = null;
         }
     }
 
@@ -84,34 +85,40 @@ public sealed class DocumentRenderer
         switch (result.Status)
         {
             case LayoutResult.Outcome.Full:
-                DrawRenderer(renderer, result.OccupiedArea!.Value);
+                DrawRenderer(renderer);
                 _currentY = result.OccupiedArea!.Value.Bottom;
                 break;
 
             case LayoutResult.Outcome.Partial:
-                DrawRenderer(result.SplitRenderer!, result.OccupiedArea!.Value);
+                DrawRenderer(result.SplitRenderer!);
                 FinishCurrentPage();
                 // Overflow continues on next page
                 PlaceRenderer(result.OverflowRenderer!);
                 break;
 
             case LayoutResult.Outcome.Nothing:
-                // Nothing fit — advance to fresh page and retry
+                // Nothing fit — advance to fresh page and retry.
                 FinishCurrentPage();
                 EnsurePage();
-                availableArea = ContentArea;
-                var retry = renderer.Layout(new LayoutContext(availableArea));
-                if (retry.Status != LayoutResult.Outcome.Nothing)
-                    PlaceRenderer(renderer);
-                // else content is too tall for a single page — skip it (degenerate)
+                var retry = renderer.Layout(new LayoutContext(ContentArea));
+                if (retry.Status == LayoutResult.Outcome.Nothing)
+                {
+                    // Element is taller than a full page — cannot render it.
+                    // Finish the (empty) page we just opened to avoid a stray blank page.
+                    FinishCurrentPage();
+                    throw new InvalidOperationException(
+                        "An element is too tall to fit on a single page and cannot be rendered. " +
+                        "Reduce the element's content or increase the page size.");
+                }
+                PlaceRenderer(renderer);
                 break;
         }
     }
 
-    private void DrawRenderer(IRenderer renderer, LayoutBox occupied)
+    private void DrawRenderer(IRenderer renderer)
     {
         var pageBounds = new LayoutBox(0, 0, _pageSize.Width, _pageSize.Height);
-        var ctx = new DrawContext(_currentCanvas!, pageBounds);
+        var ctx = new DrawContext(_currentCanvas!, pageBounds, _currentRendererCtx!, _pdf);
         renderer.Draw(ctx);
     }
 }

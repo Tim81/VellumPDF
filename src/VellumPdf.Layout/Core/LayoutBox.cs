@@ -8,20 +8,10 @@ namespace VellumPdf.Layout.Core;
 /// X increases right, Y increases downward (opposite of PDF's Y-up convention).
 /// The Y-flip to PDF coordinates happens in <see cref="DrawContext"/>.
 /// </summary>
-public readonly struct LayoutBox
+public readonly record struct LayoutBox(double X, double Y, double Width, double Height)
 {
-    public double X      { get; }
-    public double Y      { get; }
-    public double Width  { get; }
-    public double Height { get; }
-
     public double Right  => X + Width;
     public double Bottom => Y + Height;
-
-    public LayoutBox(double x, double y, double width, double height)
-    {
-        X = x; Y = y; Width = width; Height = height;
-    }
 
     public LayoutBox WithHeight(double height) => new(X, Y, Width, height);
     public LayoutBox WithY(double y)            => new(X, y, Width, Height);

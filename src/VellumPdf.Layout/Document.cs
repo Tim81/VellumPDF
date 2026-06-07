@@ -57,6 +57,12 @@ public sealed class Document : IDisposable
         return this;
     }
 
+    public Document Add(LayoutImage image)
+    {
+        _content.Add(new LayoutImageRenderer(image));
+        return this;
+    }
+
     public Document Add(string text, TextStyle? style = null)
         => Add(new Paragraph(text, style ?? _defaultStyle));
 

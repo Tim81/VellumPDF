@@ -1,8 +1,6 @@
 // Copyright 2026 Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
-using System.Text;
-
 namespace VellumPdf.Core;
 
 /// <summary>
@@ -55,12 +53,19 @@ public sealed class PdfName : PdfObject, IEquatable<PdfName>
         Value = value;
     }
 
+    // PDF delimiters that must be escaped in name objects (ISO 32000-2 §7.3.5).
+    private static readonly System.Collections.Generic.HashSet<byte> _delimiters = new()
+    {
+        (byte)'(', (byte)')', (byte)'<', (byte)'>', (byte)'[', (byte)']',
+        (byte)'{', (byte)'}', (byte)'/', (byte)'%'
+    };
+
     public override void WriteTo(PdfWriter writer)
     {
         writer.WriteByte((byte)'/');
         foreach (var ch in System.Text.Encoding.Latin1.GetBytes(Value))
         {
-            if (ch == '#' || ch < 0x21 || ch > 0x7E)
+            if (ch == '#' || ch < 0x21 || ch > 0x7E || _delimiters.Contains(ch))
             {
                 writer.WriteByte((byte)'#');
                 writer.WriteByte(ToHexNibble(ch >> 4));
