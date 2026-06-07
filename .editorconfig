@@ -1,0 +1,60 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+[*.{json,yml,yaml,csproj,props,targets,slnx,xml}]
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false
+
+[*.cs]
+# Modern C# style preferences (kept at suggestion so they never break the build;
+# enforced in CI via `dotnet format --verify-no-changes`).
+csharp_style_namespace_declarations = file_scoped:suggestion
+csharp_using_directive_placement = outside_namespace:suggestion
+dotnet_sort_system_directives_first = true
+csharp_prefer_braces = true:suggestion
+csharp_style_var_when_type_is_apparent = true:suggestion
+csharp_style_expression_bodied_members = true:suggestion
+csharp_style_prefer_primary_constructors = true:suggestion
+csharp_style_prefer_collection_expression = true:suggestion
+csharp_prefer_simple_using_statement = true:suggestion
+dotnet_style_readonly_field = true:suggestion
+dotnet_style_require_accessibility_modifiers = always:suggestion
+dotnet_style_namespace_match_folder = true:suggestion
+
+# Required file header (copyright + license). Enforced via `dotnet format` / CI.
+file_header_template = Copyright 2026 Timothy van der Ham (@Tim81)\nSPDX-License-Identifier: Apache-2.0
+dotnet_diagnostic.IDE0073.severity = warning
+
+# Naming conventions
+dotnet_naming_rule.interfaces_prefixed_with_i.severity = warning
+dotnet_naming_rule.interfaces_prefixed_with_i.symbols = interface_symbols
+dotnet_naming_rule.interfaces_prefixed_with_i.style = i_prefix
+dotnet_naming_symbols.interface_symbols.applicable_kinds = interface
+dotnet_naming_style.i_prefix.required_prefix = I
+dotnet_naming_style.i_prefix.capitalization = pascal_case
+
+dotnet_naming_rule.types_are_pascal.severity = warning
+dotnet_naming_rule.types_are_pascal.symbols = type_symbols
+dotnet_naming_rule.types_are_pascal.style = pascal
+dotnet_naming_symbols.type_symbols.applicable_kinds = class,struct,enum,delegate
+dotnet_naming_style.pascal.capitalization = pascal_case
+
+dotnet_naming_rule.private_fields_camel_underscore.severity = suggestion
+dotnet_naming_rule.private_fields_camel_underscore.symbols = private_fields
+dotnet_naming_rule.private_fields_camel_underscore.style = underscore_camel
+dotnet_naming_symbols.private_fields.applicable_kinds = field
+dotnet_naming_symbols.private_fields.applicable_accessibilities = private
+dotnet_naming_style.underscore_camel.required_prefix = _
+dotnet_naming_style.underscore_camel.capitalization = camel_case
+
+# Nullable reference types make most public-arg null-checks redundant.
+dotnet_diagnostic.CA1062.severity = none

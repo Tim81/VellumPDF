@@ -1,0 +1,20 @@
+VellumPdf
+Copyright 2026 Timothy van der Ham (@Tim81)
+
+This product is an original, independent, clean-room implementation of the
+Portable Document Format (PDF). It is based solely on publicly available open
+specifications — principally the ISO 32000 family of standards — together with
+other open specifications it interoperates with (for example the OpenType and
+TrueType font specifications). It is not derived from, and contains no source
+code copied from, any third-party PDF library.
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not use
+the files in this repository except in compliance with the License. A copy of
+the License is provided in the LICENSE file at the root of this repository, and
+may also be obtained at:
+
+    https://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software distributed
+under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+CONDITIONS OF ANY KIND, either express or implied.

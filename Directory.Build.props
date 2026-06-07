@@ -1,0 +1,19 @@
+<Project>
+
+  <!-- Shared settings for every project in the repository. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <AnalysisLevel>latest</AnalysisLevel>
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
+    <Authors>Timothy van der Ham</Authors>
+    <Company>Timothy van der Ham</Company>
+    <Product>VellumPdf</Product>
+    <Copyright>Copyright 2026 Timothy van der Ham (@Tim81)</Copyright>
+  </PropertyGroup>
+
+</Project>

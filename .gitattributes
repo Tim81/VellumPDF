@@ -1,0 +1,16 @@
+# Normalise line endings: LF in the repository, auto on checkout.
+* text=auto eol=lf
+
+# Treat binary assets as binary (no EOL/whitespace munging).
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.pdf binary
+*.ttf binary
+*.otf binary
+*.woff binary
+*.woff2 binary
+*.icc binary
+*.snk binary
+*.pfx binary

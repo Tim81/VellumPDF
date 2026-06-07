@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\VellumPdf.Kernel\VellumPdf.Kernel.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <RootNamespace>VellumPdf.Layout</RootNamespace>
+    <AssemblyName>VellumPdf.Layout</AssemblyName>
+    <PackageId>VellumPdf.Layout</PackageId>
+    <Description>High-level document and layout engine for VellumPdf: paragraphs, lists, tables, images, automatic pagination, and tagged-content support. Implemented solely from the ISO 32000 standard.</Description>
+    <PackageTags>pdf;layout;document;tables;pagination;aot</PackageTags>
+  </PropertyGroup>
+
+</Project>

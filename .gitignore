@@ -1,0 +1,33 @@
+# Build output
+[Bb]in/
+[Oo]bj/
+artifacts/
+[Dd]ebug/
+[Rr]elease/
+*.binlog
+
+# Test output
+[Tt]est[Rr]esults/
+*.trx
+*.coverage
+*.received.*
+
+# NuGet
+*.nupkg
+*.snupkg
+
+# IDE
+.vs/
+.idea/
+*.user
+*.suo
+*.DotSettings.user
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets / signing keys (never commit)
+*.snk
+*.pfx
+*.lic

@@ -1,0 +1,37 @@
+<Project>
+
+  <!-- Inherit the repository-wide settings (MSBuild only auto-imports the nearest file). -->
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
+
+  <!-- Settings specific to shippable library projects. -->
+  <PropertyGroup>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- TODO: drop this suppression and require XML docs on the public surface once the API stabilises. -->
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+
+    <!-- A genuine selling point: no native binaries, AOT- and trim-ready, single managed DLL. -->
+    <IsAotCompatible>true</IsAotCompatible>
+    <IsTrimmable>true</IsTrimmable>
+
+    <!-- Packaging -->
+    <IsPackable>true</IsPackable>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageProjectUrl>https://github.com/Tim81/VellumPDF</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/Tim81/VellumPDF</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+
+    <!-- TODO: enable strong naming before the first public release (provide eng/VellumPdf.snk). -->
+    <!-- <SignAssembly>true</SignAssembly> -->
+    <!-- <AssemblyOriginatorKeyFile>$(MSBuildThisFileDirectory)../eng/VellumPdf.snk</AssemblyOriginatorKeyFile> -->
+  </PropertyGroup>
+
+  <ItemGroup Condition="Exists('$(MSBuildThisFileDirectory)../README.md')">
+    <None Include="$(MSBuildThisFileDirectory)../README.md" Pack="true" PackagePath="\" Visible="false" />
+  </ItemGroup>
+
+</Project>

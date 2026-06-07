@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>VellumPdf</RootNamespace>
+    <AssemblyName>VellumPdf.Kernel</AssemblyName>
+    <PackageId>VellumPdf.Kernel</PackageId>
+    <Description>Clean-room .NET PDF generation kernel: low-level object model, document structure, content streams, fonts, and images. Implemented solely from the ISO 32000 standard. Zero runtime dependencies.</Description>
+    <PackageTags>pdf;generation;iso-32000;document;fonts;aot</PackageTags>
+  </PropertyGroup>
+
+</Project>
