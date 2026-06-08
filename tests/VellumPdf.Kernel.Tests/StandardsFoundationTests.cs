@@ -279,6 +279,33 @@ public sealed class StandardsFoundationTests
         Assert.Contains("/ID [<", content);
     }
 
+    [Fact]
+    public void Conformance_PdfA2b_headerDeclaresPdf17()
+    {
+        // PDF/A-2 is defined against PDF 1.7, so the header must be %PDF-1.7 (veraPDF 6.1.2).
+        using var doc = new PdfDocument();
+        doc.Conformance = PdfConformance.PdfA2b;
+        doc.AddPage();
+
+        var ms = new MemoryStream();
+        doc.Save(ms);
+
+        Assert.Equal("%PDF-1.7"u8.ToArray(), ms.ToArray()[..8]);
+    }
+
+    [Fact]
+    public void Conformance_None_headerDeclaresPdf20()
+    {
+        // Non-conformance documents keep the PDF 2.0 baseline header.
+        using var doc = new PdfDocument();
+        doc.AddPage();
+
+        var ms = new MemoryStream();
+        doc.Save(ms);
+
+        Assert.Equal("%PDF-2.0"u8.ToArray(), ms.ToArray()[..8]);
+    }
+
     // ── 4. Tagged PDF structure tree ──────────────────────────────────────────
 
     [Fact]

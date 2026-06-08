@@ -81,6 +81,30 @@ public sealed class TrueTypeFontEmbedder
     private string PostScriptName =>
         _name.PostScriptName ?? _name.FamilyName ?? "Unknown";
 
+    // A subsetted font's name must carry a six-uppercase-letter tag + '+' prefix
+    // (ISO 32000-1 §9.6.4 / §9.7.4.2). CFF/OTTO fonts are whole-font embedded
+    // (not subsetted), so they keep the bare PostScript name.
+    private string SubsetPostScriptName =>
+        _sfnt.IsCff ? PostScriptName : $"{SubsetTag()}+{PostScriptName}";
+
+    // Six uppercase letters derived deterministically from the embedded glyph set,
+    // so the same subset always gets the same tag and output stays reproducible.
+    private string SubsetTag()
+    {
+        var gids = _usedGids.Order().ToArray();
+        var input = new byte[gids.Length * 2];
+        for (var i = 0; i < gids.Length; i++)
+        {
+            input[i * 2] = (byte)(gids[i] >> 8);
+            input[i * 2 + 1] = (byte)gids[i];
+        }
+        var hash = System.Security.Cryptography.SHA256.HashData(input);
+        var tag = new char[6];
+        for (var i = 0; i < 6; i++)
+            tag[i] = (char)('A' + hash[i] % 26);
+        return new string(tag);
+    }
+
     // ── Build all required PDF objects ──────────────────────────────────────
 
     public Core.PdfDictionary BuildFontDictionary(
@@ -92,7 +116,7 @@ public sealed class TrueTypeFontEmbedder
         var d = new Core.PdfDictionary()
             .Set(Core.PdfName.Type, Core.PdfName.Font)
             .Set(Core.PdfName.Subtype, new Core.PdfName("Type0"))
-            .Set(Core.PdfName.BaseFont, new Core.PdfName(PostScriptName))
+            .Set(Core.PdfName.BaseFont, new Core.PdfName(SubsetPostScriptName))
             .Set(new Core.PdfName("Encoding"), new Core.PdfName("Identity-H"))
             .Set(new Core.PdfName("DescendantFonts"), descendantFonts)
             .Set(new Core.PdfName("ToUnicode"), toUnicodeRef);
@@ -119,7 +143,7 @@ public sealed class TrueTypeFontEmbedder
         return new Core.PdfDictionary()
             .Set(Core.PdfName.Type, Core.PdfName.Font)
             .Set(Core.PdfName.Subtype, new Core.PdfName("CIDFontType2"))
-            .Set(Core.PdfName.BaseFont, new Core.PdfName(PostScriptName))
+            .Set(Core.PdfName.BaseFont, new Core.PdfName(SubsetPostScriptName))
             .Set(new Core.PdfName("CIDSystemInfo"), BuildCidSystemInfo())
             .Set(new Core.PdfName("FontDescriptor"), descriptorRef)
             .Set(new Core.PdfName("DW"), new Core.PdfInteger(1000))
@@ -138,7 +162,7 @@ public sealed class TrueTypeFontEmbedder
 
         var descriptor = new Core.PdfDictionary()
             .Set(Core.PdfName.Type, new Core.PdfName("FontDescriptor"))
-            .Set(new Core.PdfName("FontName"), new Core.PdfName(PostScriptName))
+            .Set(new Core.PdfName("FontName"), new Core.PdfName(SubsetPostScriptName))
             .Set(new Core.PdfName("Flags"), (long)flags)
             .Set(new Core.PdfName("ItalicAngle"), new Core.PdfReal(_post.ItalicAngle))
             .Set(new Core.PdfName("Ascent"), new Core.PdfReal(Scale(_os2.TypoAscender)))

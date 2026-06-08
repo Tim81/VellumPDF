@@ -327,12 +327,26 @@ public sealed class PdfDocument : IDisposable
                 "UseObjectStreams cannot be combined with Encrypt(). " +
                 "Object-stream encryption is not supported. Remove one of these options.");
 
+        // PDF/A prohibits encryption (ISO 19005-2 §6.3.1). Fail fast rather than emit
+        // a document that claims conformance but can never validate.
+        if (Conformance != PdfConformance.None && _encryptionSettings is not null)
+            throw new InvalidOperationException(
+                "PDF/A prohibits encryption (ISO 19005-2 §6.3.1). " +
+                "Remove Encrypt() or clear Conformance before calling Save().");
+
         var writer = new PdfWriter(destination);
         var xref = new CrossReferenceBuilder();
         var registry = new PdfObjectRegistry();
 
-        // PDF header — "%PDF-2.0\n" + binary comment with raw bytes E2 E3 CF D3.
-        writer.WriteAscii("%PDF-2.0\n%"u8);
+        // PDF header + binary comment (raw bytes >= 128, ISO 32000 7.5.2). PDF/A-2 is
+        // defined against PDF 1.7, so conformance documents declare %PDF-1.7 (veraPDF
+        // rule 6.1.2); other documents use the 2.0 baseline.
+        writer.WriteAscii("%PDF-"u8);
+        if (Conformance == PdfConformance.None)
+            writer.WriteAscii("2.0"u8);
+        else
+            writer.WriteAscii("1.7"u8);
+        writer.WriteAscii("\n%"u8);
         writer.WriteRaw([0xE2, 0xE3, 0xCF, 0xD3]);
         writer.WriteAscii("\n"u8);
 
@@ -640,8 +654,13 @@ public sealed class PdfDocument : IDisposable
         var xref = new CrossReferenceBuilder();
         var registry = new PdfObjectRegistry();
 
-        // PDF header
-        writer.WriteAscii("%PDF-2.0\n%"u8);
+        // PDF header — conformance documents declare %PDF-1.7 (veraPDF rule 6.1.2).
+        writer.WriteAscii("%PDF-"u8);
+        if (Conformance == PdfConformance.None)
+            writer.WriteAscii("2.0"u8);
+        else
+            writer.WriteAscii("1.7"u8);
+        writer.WriteAscii("\n%"u8);
         writer.WriteRaw([0xE2, 0xE3, 0xCF, 0xD3]);
         writer.WriteAscii("\n"u8);
 
@@ -868,6 +887,11 @@ public sealed class PdfDocument : IDisposable
 
         if (structTreeRootRef is not null)
             catalog.Set(new PdfName("StructTreeRoot"), structTreeRootRef);
+
+        // PDF/A output intent (sRGB ICC, §6.2.2) — required when signing a conformance
+        // document, just as on the regular Save path.
+        if (Conformance != PdfConformance.None)
+            catalog.Set(new PdfName("OutputIntents"), new PdfArray([BuildOutputIntents(registry)]));
 
         registry.SetValue(catalogRef, catalog);
 

@@ -667,89 +667,199 @@ public sealed class PdfValidatorOracleTests : IDisposable
         doc.Save(path);
     }
 
-    // ── veraPDF PDF/A-2b oracle ───────────────────────────────────────────────
+    // ── veraPDF PDF/A conformance oracle ──────────────────────────────────────
 
-    /// <summary>
-    /// Generates a PDF/A-2b document with an embedded TrueType font and validates it
-    /// with veraPDF (flavour 2b).
-    ///
-    /// <para>
-    /// Tool gating:
-    /// <list type="bullet">
-    ///   <item>If no platform font is found: skip (embedded fonts are required for PDF/A).</item>
-    ///   <item>If veraPDF is absent and we are on CI (CI=true): fail with a clear message.</item>
-    ///   <item>If veraPDF is absent locally: skip silently.</item>
-    /// </list>
-    /// </para>
-    ///
-    /// <para>
-    /// The assertion checks the veraPDF XML report for <c>isCompliant="true"</c>.
-    /// If veraPDF reports non-compliance the full report is included in the failure
-    /// message so failing rules are visible — the assertion is NOT weakened to hide
-    /// any non-compliance.
-    /// </para>
-    /// </summary>
+    // The veraPDF CLI is provided on PATH in CI via a Docker shim (see
+    // .github/workflows/ci.yml "Install veraPDF shim"). These tests therefore gate
+    // on CI through GateOnCi("verapdf"): if veraPDF is missing on CI the build fails,
+    // while a local machine without veraPDF simply skips. The compliance assertion is
+    // strict — a non-compliant report fails the test and the full report is surfaced;
+    // it is never weakened to hide a failing rule.
+    //
+    // Each gated document embeds a TrueType font for ALL of its text (PDF/A forbids
+    // unembedded fonts) — the layout default style is Standard-14 Helvetica, so the
+    // embedded style is set explicitly on every element (default cell style, list
+    // default style, heading/paragraph styles).
+
     [Fact]
     public void PdfA2b_veraPdf_reportsCompliant()
     {
         var fontPath = FindPlatformFont();
-        if (fontPath is null)
-        {
-            // No embedded font available — PDF/A validation requires embedded fonts.
-            // On CI we expect DejaVu to be installed (fonts-dejavu-core).
-            GateOnCi("platform font for PDF/A-2b oracle");
-            return;
-        }
+        if (fontPath is null) { GateOnCi("platform font for PDF/A oracle"); return; }
 
         var pdfPath = Path.Combine(_tempDir, "pdfa2b_verapdf.pdf");
-        GeneratePdfA2bDoc(pdfPath, fontPath);
+        GeneratePdfATextDoc(pdfPath, fontPath, PdfConformance.PdfA2b);
+        AssertVeraPdfCompliant(pdfPath, "2b");
+    }
 
-        // Run veraPDF with --flavour 2b, XML output format
-        // veraPDF returns exit code 0 when validation completes (regardless of compliance).
-        // We parse the XML output to check isCompliant="true".
-        if (!TryRunTool("verapdf", $"--flavour 2b \"{pdfPath}\"",
+    [Fact]
+    public void PdfA2u_veraPdf_reportsCompliant()
+    {
+        var fontPath = FindPlatformFont();
+        if (fontPath is null) { GateOnCi("platform font for PDF/A oracle"); return; }
+
+        var pdfPath = Path.Combine(_tempDir, "pdfa2u_verapdf.pdf");
+        GeneratePdfATextDoc(pdfPath, fontPath, PdfConformance.PdfA2u);
+        AssertVeraPdfCompliant(pdfPath, "2u");
+    }
+
+    [Fact]
+    public void PdfA2b_Table_veraPdf_reportsCompliant()
+    {
+        var fontPath = FindPlatformFont();
+        if (fontPath is null) { GateOnCi("platform font for PDF/A oracle"); return; }
+
+        var pdfPath = Path.Combine(_tempDir, "pdfa2b_table_verapdf.pdf");
+        GeneratePdfATableDoc(pdfPath, fontPath);
+        AssertVeraPdfCompliant(pdfPath, "2b");
+    }
+
+    [Fact]
+    public void PdfA2b_Image_veraPdf_reportsCompliant()
+    {
+        var fontPath = FindPlatformFont();
+        if (fontPath is null) { GateOnCi("platform font for PDF/A oracle"); return; }
+
+        var pdfPath = Path.Combine(_tempDir, "pdfa2b_image_verapdf.pdf");
+        GeneratePdfAImageDoc(pdfPath, fontPath);
+        AssertVeraPdfCompliant(pdfPath, "2b");
+    }
+
+    [Fact]
+    public void PdfA2b_Tagged_veraPdf_reportsCompliant()
+    {
+        var fontPath = FindPlatformFont();
+        if (fontPath is null) { GateOnCi("platform font for PDF/A oracle"); return; }
+
+        var pdfPath = Path.Combine(_tempDir, "pdfa2b_tagged_verapdf.pdf");
+        GeneratePdfATaggedDoc(pdfPath, fontPath);
+        AssertVeraPdfCompliant(pdfPath, "2b");
+    }
+
+    // PDF/A-2a (conformance level A) requires full accessible tagging — catalog /Lang,
+    // a role map, and validated marked-content↔structure linkage — which is a roadmap
+    // item (see README "Not yet / roadmap"). The metadata path is covered by the
+    // StandardsFoundation tests; the strict veraPDF 2a gate is enabled once that lands.
+    [Fact(Skip = "PDF/A-2a (level A) accessible-tagging conformance is a roadmap item; gate enabled once /Lang + role map land.")]
+    public void PdfA2a_veraPdf_reportsCompliant()
+    {
+        var fontPath = FindPlatformFont();
+        if (fontPath is null) { GateOnCi("platform font for PDF/A oracle"); return; }
+
+        var pdfPath = Path.Combine(_tempDir, "pdfa2a_verapdf.pdf");
+        GeneratePdfATaggedDoc(pdfPath, fontPath, PdfConformance.PdfA2a);
+        AssertVeraPdfCompliant(pdfPath, "2a");
+    }
+
+    /// <summary>
+    /// Runs veraPDF against <paramref name="pdfPath"/> at the given flavour and asserts
+    /// the report says the file is compliant. Gates on CI when veraPDF is unavailable
+    /// (fail), skips locally. The assertion is strict and surfaces the full report.
+    /// </summary>
+    private static void AssertVeraPdfCompliant(string pdfPath, string flavour)
+    {
+        if (!TryRunTool("verapdf", $"--flavour {flavour} \"{pdfPath}\"",
             out var exit, out var reportXml, out var stderr))
         {
-            // veraPDF is not yet wired into CI (its IzPack installer is fragile to set up
-            // reliably). This conformance gate therefore runs only where `verapdf` is on
-            // PATH and skips otherwise — including on CI — rather than failing the build.
-            // The strict compliance assertion below is unchanged for when it does run.
+            GateOnCi("verapdf");
             return;
         }
 
-        // veraPDF XML output contains: isCompliant="true" or isCompliant="false"
-        // We assert the compliant attribute is true.
-        // Do NOT weaken this assertion: if veraPDF reports false, the full report is shown.
         var isCompliant = reportXml.Contains("isCompliant=\"true\"", StringComparison.Ordinal) ||
                           reportXml.Contains("compliant=\"true\"", StringComparison.Ordinal);
 
         Assert.True(
             isCompliant,
-            $"veraPDF PDF/A-2b validation failed (exit {exit}).\n" +
+            $"veraPDF PDF/A-{flavour} validation failed (exit {exit}).\n" +
             $"veraPDF report:\n{reportXml}\n" +
             $"stderr:\n{stderr}\n" +
-            "Note: veraPDF rules that fail are listed in the report above. " +
-            "Common causes: unembedded fonts (use LoadTrueTypeFont), missing OutputIntent, " +
-            "incorrect XMP pdfaid schema.");
+            "Failing rules are listed in the report above. Common causes: unembedded fonts " +
+            "(use LoadTrueTypeFont), missing OutputIntent, incorrect XMP pdfaid schema, " +
+            "missing /CIDSet, or a missing font subset tag.");
     }
 
-    /// <summary>
-    /// Generates a PDF/A-2b document with an embedded TrueType font and some text content.
-    /// </summary>
-    private static void GeneratePdfA2bDoc(string path, string fontPath)
+    private static TextStyle EmbeddedStyle(Document doc, string fontPath, double size = 12)
+    {
+        var handle = doc.LoadTrueTypeFont(fontPath);
+        return new TextStyle { FontRef = handle, FontSize = size };
+    }
+
+    private static void GeneratePdfATextDoc(string path, string fontPath, PdfConformance conformance)
     {
         using var doc = new Document();
-        doc.Conformance = PdfConformance.PdfA2b;
-        doc.Info.Title = "veraPDF Oracle PDF/A-2b";
+        doc.Conformance = conformance;
+        doc.Info.Title = "VellumPdf veraPDF Oracle";
         doc.Info.Author = "VellumPdf Oracle";
         doc.Info.Producer = "VellumPdf";
 
-        // PDF/A requires embedded fonts — load an embedded TrueType font.
-        var handle = doc.LoadTrueTypeFont(fontPath);
-        var style = new TextStyle { FontRef = handle, FontSize = 12 };
-
-        doc.Add(new Paragraph("VellumPdf PDF/A-2b oracle test document.", style));
+        var style = EmbeddedStyle(doc, fontPath);
+        doc.Add(new Paragraph("VellumPdf PDF/A oracle test document.", style));
         doc.Add(new Paragraph("This document uses an embedded TrueType font.", style));
+
+        doc.Save(path);
+    }
+
+    private static void GeneratePdfATableDoc(string path, string fontPath)
+    {
+        using var doc = new Document();
+        doc.Conformance = PdfConformance.PdfA2b;
+        doc.Info.Title = "VellumPdf veraPDF Oracle — Table";
+        doc.Info.Producer = "VellumPdf";
+
+        var style = EmbeddedStyle(doc, fontPath);
+        doc.Add(new Paragraph("PDF/A-2b table document.", style));
+
+        var table = new TableElement { DefaultCellStyle = style };
+        table.SetColumnWidths(200, 200);
+        table.AddHeaderRow().AddCell("Column One").AddCell("Column Two");
+        table.AddRow().AddCell("Cell A").AddCell("Cell B");
+        doc.Add(table);
+
+        doc.Save(path);
+    }
+
+    private static void GeneratePdfAImageDoc(string path, string fontPath)
+    {
+        using var doc = new Document();
+        doc.Conformance = PdfConformance.PdfA2b;
+        doc.Info.Title = "VellumPdf veraPDF Oracle — Image";
+        doc.Info.Producer = "VellumPdf";
+
+        var style = EmbeddedStyle(doc, fontPath);
+        doc.Add(new Paragraph("PDF/A-2b image document.", style));
+
+        var imgXObj = VellumPdf.Images.PngImageLoader.Load(PdfTestUtil.CreateMinimalRgbPng());
+        doc.Add(new LayoutImage(imgXObj) { Width = 48, AltText = "White test square" });
+
+        doc.Save(path);
+    }
+
+    private static void GeneratePdfATaggedDoc(
+        string path, string fontPath, PdfConformance conformance = PdfConformance.PdfA2b)
+    {
+        using var doc = new Document();
+        doc.Conformance = conformance;
+        doc.Tagged = true;
+        doc.Info.Title = "VellumPdf veraPDF Oracle — Tagged";
+        doc.Info.Producer = "VellumPdf";
+
+        var style = EmbeddedStyle(doc, fontPath);
+        doc.Add(new Heading("Tagged Heading", new TextStyle { FontRef = style.FontRef, FontSize = 18 }));
+        doc.Add(new Paragraph("A tagged paragraph with an embedded font.", style));
+
+        var table = new TableElement { DefaultCellStyle = style };
+        table.SetColumnWidths(200, 200);
+        table.AddHeaderRow().AddCell("H1").AddCell("H2");
+        table.AddRow().AddCell("A").AddCell("B");
+        doc.Add(table);
+
+        var list = new ListElement(ListStyle.OrderedDecimal) { DefaultStyle = style };
+        list.Add("First item");
+        list.Add("Second item");
+        doc.Add(list);
+
+        var imgXObj = VellumPdf.Images.PngImageLoader.Load(PdfTestUtil.CreateMinimalRgbPng());
+        doc.Add(new LayoutImage(imgXObj) { Width = 48, AltText = "White test square" });
 
         doc.Save(path);
     }
