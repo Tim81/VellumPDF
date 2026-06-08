@@ -11,7 +11,8 @@ namespace VellumPdf.Images;
 /// Alpha channel (RGBA or greyscale+alpha) is separated into an /SMask Image XObject.
 ///
 /// Supports colour types: 0 (Greyscale), 2 (RGB), 3 (Indexed→RGB), 4 (Greyscale+Alpha),
-/// 6 (RGB+Alpha). Bit depths: 8 and 16 (16-bit is downsampled to 8).
+/// 6 (RGB+Alpha). Bit depths: 1, 2, 4 (greyscale and indexed; unpacked to 8-bit),
+/// 8, and 16 (16-bit is downsampled to 8).
 /// </summary>
 public static class PngImageLoader
 {
@@ -72,8 +73,9 @@ public static class PngImageLoader
         var raw = Inflate(compressed);
 
         // ── Unfilter scanlines ──
-        var bpp = BytesPerPixel(colorType, bitDepth);
-        var rowBytes = (int)Math.Ceiling(width * bpp);
+        // Row stride is ceil(width * bitsPerSample / 8) bytes — handles sub-byte packing.
+        var bitsPerRow = (long)width * SamplesPerPixel(colorType) * bitDepth;
+        var rowBytes = (int)((bitsPerRow + 7) / 8);
         var unfiltered = Unfilter(raw, width, height, colorType, bitDepth, rowBytes);
 
         // ── Extract colour and alpha planes ──
@@ -84,6 +86,15 @@ public static class PngImageLoader
         byte[] pixels, int w, int h,
         byte colorType, byte bitDepth, byte[]? palette)
     {
+        // ── Sub-byte unpacking (bit depths 1, 2, 4) ──────────────────────────
+        // PNG packs multiple samples per byte for bit depths < 8.
+        // Unpack them to one byte per sample before further processing.
+        if (bitDepth < 8)
+        {
+            pixels = UnpackSubByte(pixels, w, h, colorType, bitDepth);
+            // After unpacking, treat as 8-bit for all downstream logic.
+        }
+
         bool hasAlpha = colorType == 4 || colorType == 6;
         int channels = colorType switch { 0 or 3 => 1, 2 => 3, 4 => 2, 6 => 4, _ => 3 };
         var colorChannels = channels - (hasAlpha ? 1 : 0);
@@ -93,7 +104,7 @@ public static class PngImageLoader
 
         if (colorType == 3)
         {
-            // Indexed: expand palette
+            // Indexed: expand palette (indices are now 1 byte each after unpack)
             colorBytes = ExpandPalette(pixels, w, h, palette!);
             return new PdfImageXObject(w, h, colorBytes, PdfName.FlateDecode, ImageColorSpace.DeviceRgb, 8);
         }
@@ -128,6 +139,46 @@ public static class PngImageLoader
             sMask = new PdfStream(alphaBytes); // grayscale SMask; will compress via FlateDecode
 
         return new PdfImageXObject(w, h, colorBytes, PdfName.FlateDecode, cs, 8, sMask);
+    }
+
+    /// <summary>
+    /// Unpacks sub-byte PNG samples (bit depths 1, 2, 4) into one byte per sample.
+    /// Greyscale samples are linearly scaled to the 0-255 range.
+    /// Indexed samples are returned as raw palette indices (0-based, 1 byte each).
+    /// </summary>
+    private static byte[] UnpackSubByte(byte[] packed, int w, int h, byte colorType, byte bitDepth)
+    {
+        // Only greyscale (0) and indexed (3) support sub-8 bit depths per the PNG spec.
+        int samplesPerPixel = SamplesPerPixel(colorType);
+        int totalSamples = w * h * samplesPerPixel;
+        var result = new byte[totalSamples];
+
+        int maxVal = (1 << bitDepth) - 1;
+        // Scale factor from sub-byte to 8-bit (only meaningful for greyscale).
+        // e.g. 1-bit: 0→0, 1→255.  4-bit: 15→255.
+        int scale = colorType == 0 ? (255 / maxVal) : 1;
+
+        int bitMask = maxVal;
+        int outIdx = 0;
+
+        for (var row = 0; row < h; row++)
+        {
+            // Each packed row is ceil(w * bitDepth / 8) bytes.
+            var bitsInRow = w * bitDepth;
+            var packedRowStart = row * ((bitsInRow + 7) / 8);
+            int bitPos = 0; // current bit position within the row (0 = MSB of first byte)
+
+            for (var col = 0; col < w; col++)
+            {
+                // Extract one sample of `bitDepth` bits from the MSB-first packed stream.
+                var byteIdx = packedRowStart + bitPos / 8;
+                var bitOffset = 8 - bitDepth - (bitPos % 8); // shift within byte
+                var sample = (packed[byteIdx] >> bitOffset) & bitMask;
+                result[outIdx++] = (byte)(sample * scale);
+                bitPos += bitDepth;
+            }
+        }
+        return result;
     }
 
     private static byte[] Unfilter(
@@ -209,11 +260,11 @@ public static class PngImageLoader
         return result;
     }
 
-    private static double BytesPerPixel(byte colorType, byte bitDepth)
-    {
-        var channels = colorType switch { 0 => 1, 2 => 3, 3 => 1, 4 => 2, 6 => 4, _ => 3 };
-        return channels * bitDepth / 8.0;
-    }
+    private static int SamplesPerPixel(byte colorType) =>
+        colorType switch { 0 => 1, 2 => 3, 3 => 1, 4 => 2, 6 => 4, _ => 3 };
+
+    private static double BytesPerPixel(byte colorType, byte bitDepth) =>
+        SamplesPerPixel(colorType) * bitDepth / 8.0;
 
     private static byte[] Inflate(byte[] compressed)
     {
