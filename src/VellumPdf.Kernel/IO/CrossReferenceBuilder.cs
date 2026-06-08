@@ -31,10 +31,19 @@ public sealed class CrossReferenceBuilder
     /// Writes the xref section + trailer and returns the offset of the xref keyword
     /// (needed for %%EOF startxref).
     /// </summary>
+    /// <param name="writer">The PDF writer to output to.</param>
+    /// <param name="catalogRef">The /Root (catalog) indirect reference.</param>
+    /// <param name="infoRef">The /Info indirect reference, or null.</param>
+    /// <param name="documentId">
+    /// Optional 16-byte document ID. When provided, written as /ID [&lt;hex&gt; &lt;hex&gt;]
+    /// in the trailer (both array elements are the same value at creation time per ISO 32000-2 §14.4).
+    /// </param>
+    /// <param name="prevXrefOffset">Non-zero for incremental updates (§7.5.6).</param>
     public long WriteXrefAndTrailer(
         PdfWriter writer,
         PdfIndirectReference catalogRef,
         PdfIndirectReference? infoRef,
+        ReadOnlySpan<byte> documentId = default,
         long prevXrefOffset = 0)
     {
         var xrefOffset = writer.Position;
@@ -64,6 +73,14 @@ public sealed class CrossReferenceBuilder
 
         if (infoRef is not null)
             trailer.Set(PdfName.Info, infoRef);
+
+        if (!documentId.IsEmpty && documentId.Length == 16)
+        {
+            // /ID [<firstId> <updateId>] — at creation both values are the same (§14.4).
+            var hexId = new PdfHexString(documentId.ToArray());
+            var hexId2 = new PdfHexString(documentId.ToArray());
+            trailer.Set(PdfName.ID, new PdfArray([hexId, hexId2]));
+        }
 
         if (prevXrefOffset > 0)
             trailer.Set(PdfName.Prev, prevXrefOffset);

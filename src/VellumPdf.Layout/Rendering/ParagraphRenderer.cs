@@ -71,18 +71,25 @@ public sealed class ParagraphRenderer : IRenderer
         _endLine = _startLine + maxLines;
         _occupied = area.WithHeight(maxLines * _lineHeight);
 
-        var overflow = new ParagraphRenderer(_para, _endLine) { _lines = _lines };
+        var overflow = new ParagraphRenderer(_para, _endLine) { _lines = _lines, StructType = StructType };
         var split = new ParagraphRenderer(_para)
         {
             _lines = _lines,
             _endLine = _endLine,
             _lineHeight = _lineHeight,
             _occupied = _occupied,
+            StructType = StructType,
         };
         return LayoutResult.Partial(_occupied, split, overflow);
     }
 
     // ── Phase 2: Draw ─────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Structure type used when tagging is enabled. "P" for normal paragraphs.
+    /// Set to "H1"…"H6" by <see cref="HeadingRenderer"/> before calling Draw.
+    /// </summary>
+    internal string StructType { get; set; } = "P";
 
     public void Draw(DrawContext ctx)
     {
@@ -92,6 +99,15 @@ public sealed class ParagraphRenderer : IRenderer
         var canvas = ctx.Canvas;
         var leading = _lineHeight;
         var isLastLine = false;
+
+        // Tagged PDF: wrap content in BDC/EMC and register a /StructElem.
+        if (ctx.Tagged)
+        {
+            var mcid = canvas.BeginMarkedContent(StructType);
+            canvas.EndMarkedContent();
+            var elem = new PdfStructElem(StructType) { Mcid = mcid };
+            ctx.RegisterStructElem(elem);
+        }
 
         canvas.BeginText();
 

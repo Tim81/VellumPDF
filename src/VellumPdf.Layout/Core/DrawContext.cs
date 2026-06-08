@@ -25,6 +25,13 @@ public sealed class DrawContext
     private readonly PdfDocument _document;
     private readonly PdfPage _page;
 
+    /// <summary>
+    /// Whether tagged PDF output is enabled. When true, Draw implementations should
+    /// wrap their content in <see cref="PdfCanvas.BeginMarkedContent"/> /
+    /// <see cref="PdfCanvas.EndMarkedContent"/> and call <see cref="RegisterStructElem"/>.
+    /// </summary>
+    public bool Tagged => _document.Tagged;
+
     public DrawContext(PdfCanvas canvas, LayoutBox pageBounds, RendererContext rendererContext, PdfDocument document, PdfPage page)
     {
         Canvas = canvas;
@@ -90,5 +97,16 @@ public sealed class DrawContext
             DestTop = pdfY,
             Level = level,
         });
+    }
+
+    /// <summary>
+    /// Registers a structure element with the document's structure tree.
+    /// Only has an effect when <see cref="Tagged"/> is true.
+    /// The element's <see cref="PdfStructElem.Page"/> is automatically set to the current page.
+    /// </summary>
+    public void RegisterStructElem(PdfStructElem elem)
+    {
+        elem.Page = _page;
+        _document.RegisterStructElem(elem);
     }
 }

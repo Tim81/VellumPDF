@@ -20,6 +20,12 @@ public sealed class PdfPage
     private bool _hasExtGState;
     private bool _hasShading;
 
+    /// <summary>
+    /// /StructParents integer key for the ParentTree. Set by <see cref="PdfDocument.Save"/>
+    /// when tagged content is present on this page. -1 means "not set".
+    /// </summary>
+    internal int StructParentsKey { get; set; } = -1;
+
     public PdfRectangle MediaBox { get; }
     public int Rotate { get; set; } = 0;
 
@@ -94,6 +100,9 @@ public sealed class PdfPage
 
         if (_hasAnnots)
             pageDict.Set(PdfName.Annots, _annots);
+
+        if (StructParentsKey >= 0)
+            pageDict.Set(new PdfName("StructParents"), new PdfInteger(StructParentsKey));
 
         return pageDict;
     }

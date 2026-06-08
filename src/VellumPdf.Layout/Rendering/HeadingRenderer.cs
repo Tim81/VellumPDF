@@ -25,10 +25,24 @@ internal sealed class HeadingRenderer : IRenderer
             Margins = heading.Margins,
             Alignment = heading.Alignment,
         };
-        _inner = new ParagraphRenderer(para);
+        _inner = new ParagraphRenderer(para)
+        {
+            StructType = HeadingStructType(heading.Level),
+        };
     }
 
-    // Private constructor used by Split/Overflow path.
+    /// <summary>Maps a heading level (0-based) to a PDF structure type.</summary>
+    private static string HeadingStructType(int level) => level switch
+    {
+        0 => "H1",
+        1 => "H2",
+        2 => "H3",
+        3 => "H4",
+        4 => "H5",
+        _ => "H6",
+    };
+
+    // Private constructor used by Split/Overflow path (inner already has StructType set).
     private HeadingRenderer(Heading heading, ParagraphRenderer inner)
     {
         _heading = heading;

@@ -1,6 +1,8 @@
 // Copyright 2026 Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
+using System.Security.Cryptography;
+using System.Text;
 using VellumPdf.Annotations;
 using VellumPdf.Core;
 using VellumPdf.Fonts;
@@ -33,6 +35,10 @@ public sealed class PdfDocument : IDisposable
     // Document outline (bookmark) entries, in insertion order
     private readonly List<PdfOutlineEntry> _outlineEntries = [];
 
+    // Structure tree — populated by RegisterStructElem during layout/draw
+    private readonly PdfStructureTree _structureTree = new();
+    private bool _tagged;
+
     private int _fontCounter;
     private int _ttFontCounter;
     private bool _disposed;
@@ -41,6 +47,32 @@ public sealed class PdfDocument : IDisposable
 
     /// <summary>Default page size for new pages. Defaults to A4.</summary>
     public PdfRectangle DefaultPageSize { get; set; } = PageSize.A4;
+
+    /// <summary>
+    /// Optional fixed timestamp used for XMP CreateDate/ModifyDate and document ID computation.
+    /// When null, <see cref="DateTimeOffset.UtcNow"/> at the time of the first <see cref="Save"/>
+    /// call is used. Set to a fixed value for deterministic output.
+    /// </summary>
+    public DateTimeOffset? Timestamp { get; set; }
+
+    /// <summary>
+    /// Requested PDF/A conformance level.
+    /// When non-<see cref="PdfConformance.None"/>:
+    /// XMP pdfaid schema is included, /ID is written, and /MarkInfo /Marked true is set.
+    /// PDF/A-2a additionally implies <see cref="Tagged"/> = true.
+    /// </summary>
+    public PdfConformance Conformance { get; set; } = PdfConformance.None;
+
+    /// <summary>
+    /// When true, a /StructTreeRoot is written and marked-content sequences
+    /// around paragraphs and headings are registered as /StructElem objects.
+    /// Default is false; set to true explicitly or implied by <see cref="PdfConformance.PdfA2a"/>.
+    /// </summary>
+    public bool Tagged
+    {
+        get => _tagged || Conformance == PdfConformance.PdfA2a;
+        set => _tagged = value;
+    }
 
     public PdfPage AddPage() => AddPage(DefaultPageSize);
 
@@ -132,6 +164,16 @@ public sealed class PdfDocument : IDisposable
     /// Entries are rendered in the order they are added.
     /// </summary>
     public void AddOutlineEntry(PdfOutlineEntry entry) => _outlineEntries.Add(entry);
+
+    /// <summary>
+    /// Registers a structure element for the structure tree (PDF §14.7).
+    /// Only has an effect when <see cref="Tagged"/> is true; ignored otherwise.
+    /// </summary>
+    public void RegisterStructElem(PdfStructElem elem)
+    {
+        if (Tagged)
+            _structureTree.AddStructElem(elem);
+    }
 
     /// <summary>Writes a complete PDF file to <paramref name="destination"/>.</summary>
     public void Save(Stream destination)
@@ -291,29 +333,87 @@ public sealed class PdfDocument : IDisposable
         // ── Fill info dict value ───────────────────────────────────────────
         registry.SetValue(infoRef, Info.BuildDictionary());
 
+        // ── Build XMP metadata stream ──────────────────────────────────────
+        var ts = Timestamp ?? DateTimeOffset.UtcNow;
+        var xmpBytes = XmpMetadataWriter.BuildPacket(Info, Conformance, ts);
+        var metadataStream = new UncompressedPdfStream(xmpBytes);
+        metadataStream.Dictionary
+            .Set(PdfName.Type, new PdfName("Metadata"))
+            .Set(PdfName.Subtype, new PdfName("XML"));
+        var metadataRef = registry.Reserve();
+        registry.SetValue(metadataRef, metadataStream);
+
+        // ── Build document /ID (MD5 over title + producer + page count + timestamp) ─
+        var documentId = ComputeDocumentId(ts);
+
         // ── Build outline tree (bookmarks) ────────────────────────────────
         PdfIndirectReference? outlinesRef = null;
         if (_outlineEntries.Count > 0)
             outlinesRef = BuildOutlineTree(registry, pageRefMap);
 
+        // ── Build structure tree (tagged PDF) ─────────────────────────────
+        PdfIndirectReference? structTreeRootRef = null;
+        if (Tagged && !_structureTree.IsEmpty)
+        {
+            structTreeRootRef = _structureTree.Build(registry, pageRefMap, out var pageStructParents);
+            // Stamp /StructParents on each page that has tagged content.
+            foreach (var (page, key) in pageStructParents)
+                page.StructParentsKey = key;
+        }
+
         // ── Fill catalog value ─────────────────────────────────────────────
         var catalog = new PdfDictionary()
             .Set(PdfName.Type, PdfName.Catalog)
-            .Set(PdfName.Pages, pageTreeRef);
+            .Set(PdfName.Pages, pageTreeRef)
+            .Set(new PdfName("Metadata"), metadataRef);
+
         if (outlinesRef is not null)
         {
             catalog
                 .Set(new PdfName("Outlines"), outlinesRef)
                 .Set(new PdfName("PageMode"), new PdfName("UseOutlines"));
         }
+
+        // /MarkInfo — required when Tagged or PDF/A conformance is requested
+        var needsMarkInfo = Tagged || Conformance != PdfConformance.None;
+        if (needsMarkInfo)
+        {
+            var markInfo = new PdfDictionary()
+                .Set(new PdfName("Marked"), PdfBoolean.True);
+            catalog.Set(new PdfName("MarkInfo"), markInfo);
+        }
+
+        if (structTreeRootRef is not null)
+            catalog.Set(new PdfName("StructTreeRoot"), structTreeRootRef);
+
         registry.SetValue(catalogRef, catalog);
 
         // ── Write all objects in object-number order ───────────────────────
         registry.WriteAll(writer, xref);
 
         // ── Cross-reference table + trailer ───────────────────────────────
-        xref.WriteXrefAndTrailer(writer, catalogRef, infoRef);
+        xref.WriteXrefAndTrailer(writer, catalogRef, infoRef, documentId: documentId);
         writer.Flush();
+    }
+
+    /// <summary>
+    /// Computes a 16-byte document identifier via MD5 over the document's
+    /// identifying attributes (title, producer, page count, timestamp).
+    /// Using MD5 for fingerprinting is explicitly recommended by ISO 32000-2 §14.4;
+    /// this is NOT a security hash.
+    /// </summary>
+    private byte[] ComputeDocumentId(DateTimeOffset ts)
+    {
+        var sb = new StringBuilder();
+        sb.Append(Info.Title ?? string.Empty);
+        sb.Append('|');
+        sb.Append(Info.Producer ?? "VellumPdf");
+        sb.Append('|');
+        sb.Append(_pages.Count);
+        sb.Append('|');
+        sb.Append(ts.ToUnixTimeMilliseconds());
+        var input = Encoding.UTF8.GetBytes(sb.ToString());
+        return MD5.HashData(input);
     }
 
     /// <summary>

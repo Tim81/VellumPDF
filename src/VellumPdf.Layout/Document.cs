@@ -34,6 +34,27 @@ public sealed class Document : IDisposable
         set => _pdf.DefaultPageSize = value;
     }
 
+    /// <summary>
+    /// Requested PDF/A conformance level. Forwarded to the underlying <see cref="PdfDocument"/>.
+    /// PDF/A-2a implies <see cref="Tagged"/> = true.
+    /// </summary>
+    public PdfConformance Conformance
+    {
+        get => _pdf.Conformance;
+        set => _pdf.Conformance = value;
+    }
+
+    /// <summary>
+    /// When true, paragraphs and headings are wrapped in marked-content sequences
+    /// and a /StructTreeRoot is written. Default is false.
+    /// Forwarded to the underlying <see cref="PdfDocument"/>.
+    /// </summary>
+    public bool Tagged
+    {
+        get => _pdf.Tagged;
+        set => _pdf.Tagged = value;
+    }
+
     public EdgeInsets Margins { get; set; } = new EdgeInsets(72); // 1 inch
 
     /// <summary>
