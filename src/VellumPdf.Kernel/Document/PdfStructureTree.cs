@@ -11,7 +11,7 @@ namespace VellumPdf.Document;
 /// </summary>
 public sealed class PdfStructElem
 {
-    /// <summary>Structure type, e.g. "P", "H1", "H2", "Document".</summary>
+    /// <summary>Structure type, e.g. "P", "H1", "H2", "Table", "TR", "TD", "L", "Figure".</summary>
     public string StructType { get; }
 
     /// <summary>The page that owns this element's marked content.</summary>
@@ -19,14 +19,27 @@ public sealed class PdfStructElem
 
     /// <summary>
     /// Marked-content identifier (MCID) on the page.
-    /// -1 means this is a grouping element (e.g. the Document root) with no direct MCID.
+    /// -1 means this is a grouping element (e.g. Table, TR) with no direct MCID.
     /// </summary>
     public int Mcid { get; set; } = -1;
 
-    /// <summary>Child structure elements (for grouping elements).</summary>
-    internal List<PdfStructElem> Children { get; } = [];
+    /// <summary>
+    /// Optional alternate text. Written as the <c>/Alt</c> entry on the struct elem dict
+    /// when non-null. Used primarily for <c>Figure</c> elements (PDF/UA and PDF/A-2a).
+    /// </summary>
+    public string? AltText { get; set; }
+
+    /// <summary>Child structure elements (for grouping elements such as Table, TR, L, LI).</summary>
+    public List<PdfStructElem> Children { get; } = [];
 
     public PdfStructElem(string structType) => StructType = structType;
+
+    /// <summary>Adds a child struct element and returns it (fluent helper).</summary>
+    public PdfStructElem AddChild(PdfStructElem child)
+    {
+        Children.Add(child);
+        return child;
+    }
 }
 
 /// <summary>
@@ -136,13 +149,32 @@ internal sealed class PdfStructureTree
                 .Set(new PdfName("S"), new PdfName(elem.StructType))
                 .Set(new PdfName("P"), parentRef);
 
-            // /Pg — the page this element's content is on
-            if (elem.Page is not null && pageRefMap.TryGetValue(elem.Page, out var pgRef))
+            // /Pg — the page this element's content is on.
+            // For grouping elements (Mcid == -1) without an explicit Page, derive it from
+            // the first leaf descendant so the /Pg is still present.
+            var pg = elem.Page ?? FindFirstLeafPage(elem);
+            if (pg is not null && pageRefMap.TryGetValue(pg, out var pgRef))
                 d.Set(new PdfName("Pg"), pgRef);
 
-            // /K — the MCID integer
+            // /K — either the MCID integer (leaf) or an array of child refs (grouping element).
             if (elem.Mcid >= 0)
+            {
                 d.Set(new PdfName("K"), new PdfInteger(elem.Mcid));
+            }
+            else if (elem.Children.Count > 0)
+            {
+                var childRefs = elem.Children
+                    .Where(c => elemRefs.ContainsKey(c))
+                    .Select(c => (PdfObject)elemRefs[c])
+                    .ToList();
+                if (childRefs.Count > 0)
+                    d.Set(new PdfName("K"), new PdfArray(childRefs));
+            }
+
+            // /Alt — alternate text for Figure (and other elements that carry it).
+            // Written as a UTF-16BE string with BOM per PDF §7.9.2.
+            if (elem.AltText is not null)
+                d.Set(new PdfName("Alt"), PdfLiteralString.FromUnicode(elem.AltText));
 
             // /StructParents is NOT set on individual struct elems; it belongs on the page.
             registry.SetValue(ref_, d);
@@ -221,5 +253,21 @@ internal sealed class PdfStructureTree
             map[child] = parent;
             BuildParentMap(child, map);
         }
+    }
+
+    /// <summary>
+    /// Returns the <see cref="PdfPage"/> of the first leaf descendant (Mcid &gt;= 0) of
+    /// <paramref name="elem"/>, or null if none exists. Used to supply a /Pg entry for
+    /// grouping elements that have no direct page assignment.
+    /// </summary>
+    private static PdfPage? FindFirstLeafPage(PdfStructElem elem)
+    {
+        foreach (var child in elem.Children)
+        {
+            if (child.Page is not null && child.Mcid >= 0) return child.Page;
+            var found = FindFirstLeafPage(child);
+            if (found is not null) return found;
+        }
+        return null;
     }
 }

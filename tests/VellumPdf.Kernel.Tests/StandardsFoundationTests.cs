@@ -435,4 +435,96 @@ public sealed class StandardsFoundationTests
         // If it were an indirect reference, we'd see "/DescendantFonts N 0 R" (no brackets).
         Assert.Contains("/DescendantFonts [", content);
     }
+
+    // ── PDF/A OutputIntents (sRGB ICC) ────────────────────────────────────────
+
+    [Fact]
+    public void Conformance_PdfA2b_emitsOutputIntents()
+    {
+        using var doc = new PdfDocument();
+        doc.Conformance = PdfConformance.PdfA2b;
+        doc.AddPage();
+
+        var content = SaveToString(doc);
+
+        Assert.Contains("/OutputIntents", content);
+    }
+
+    [Fact]
+    public void Conformance_PdfA2b_emitsGtsPdfa1()
+    {
+        using var doc = new PdfDocument();
+        doc.Conformance = PdfConformance.PdfA2b;
+        doc.AddPage();
+
+        var content = SaveToString(doc);
+
+        Assert.Contains("/GTS_PDFA1", content);
+    }
+
+    [Fact]
+    public void Conformance_PdfA2b_emitsDestOutputProfile()
+    {
+        using var doc = new PdfDocument();
+        doc.Conformance = PdfConformance.PdfA2b;
+        doc.AddPage();
+
+        var content = SaveToString(doc);
+
+        Assert.Contains("/DestOutputProfile", content);
+    }
+
+    [Fact]
+    public void Conformance_PdfA2b_iccStreamHasN3()
+    {
+        // The ICC stream must carry /N 3 (3-component RGB).
+        using var doc = new PdfDocument();
+        doc.Conformance = PdfConformance.PdfA2b;
+        doc.AddPage();
+
+        var ms = new MemoryStream();
+        doc.Save(ms);
+        var bytes = ms.ToArray();
+        var content = System.Text.Encoding.Latin1.GetString(bytes);
+
+        Assert.Contains("/N 3", content);
+    }
+
+    [Fact]
+    public void Conformance_PdfA2b_xmpContainsPdfaidPart()
+    {
+        // Regression: pdfaid:part must appear with value 2.
+        using var doc = new PdfDocument();
+        doc.Conformance = PdfConformance.PdfA2b;
+        doc.AddPage();
+
+        var content = SaveToString(doc);
+
+        Assert.Contains("pdfaid:part", content);
+        Assert.Contains(">2<", content);
+    }
+
+    [Fact]
+    public void Conformance_None_doesNotEmitOutputIntents()
+    {
+        // /OutputIntents must NOT be written when Conformance is None.
+        using var doc = new PdfDocument();
+        doc.AddPage();
+
+        var content = SaveToString(doc);
+
+        Assert.DoesNotContain("/OutputIntents", content);
+    }
+
+    [Fact]
+    public void Conformance_PdfA2u_emitsOutputIntents()
+    {
+        using var doc = new PdfDocument();
+        doc.Conformance = PdfConformance.PdfA2u;
+        doc.AddPage();
+
+        var content = SaveToString(doc);
+
+        Assert.Contains("/OutputIntents", content);
+    }
 }

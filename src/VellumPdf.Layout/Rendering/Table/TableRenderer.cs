@@ -123,12 +123,19 @@ public sealed class TableRenderer : IRenderer
         // Key: (rowIndex, colIndex), Value: the cell + the Y position where the span started.
         var spanMap = new Dictionary<(int row, int col), (Cell cell, Row originRow, double startY, int remainingRows)>();
 
+        // Tagged PDF: build the Table → TR → TH/TD → P hierarchy.
+        PdfStructElem? tableElem = null;
+        if (ctx.Tagged)
+            tableElem = new PdfStructElem("Table");
+
         var rowY = area.Y;
 
         // Draw actual header rows (wherever they appear)
         foreach (var hi in headerRowIndices)
         {
-            DrawRow(ctx, rows[hi], hi, rowY, area.X, style, spanMap);
+            var trElem = tableElem is not null ? new PdfStructElem("TR") : null;
+            if (trElem is not null) tableElem!.Children.Add(trElem);
+            DrawRow(ctx, rows[hi], hi, rowY, area.X, style, spanMap, trElem);
             rowY += _rowHeights[hi];
         }
 
@@ -136,14 +143,21 @@ public sealed class TableRenderer : IRenderer
         for (var r = dataStartRow; r < rows.Count; r++)
         {
             if (rowY >= _occupied.Bottom - 0.001) break;
-            DrawRow(ctx, rows[r], r, rowY, area.X, style, spanMap);
+            var trElem = tableElem is not null ? new PdfStructElem("TR") : null;
+            if (trElem is not null) tableElem!.Children.Add(trElem);
+            DrawRow(ctx, rows[r], r, rowY, area.X, style, spanMap, trElem);
             rowY += _rowHeights[r];
         }
+
+        // Register the complete Table struct elem tree with the document.
+        if (tableElem is not null)
+            ctx.RegisterStructElemTree(tableElem);
     }
 
     private void DrawRow(DrawContext ctx, Row row, int rowIdx, double rowY, double startX,
         TextStyle style,
-        Dictionary<(int row, int col), (Cell cell, Row originRow, double startY, int remainingRows)> spanMap)
+        Dictionary<(int row, int col), (Cell cell, Row originRow, double startY, int remainingRows)> spanMap,
+        PdfStructElem? trElem)
     {
         var x = startX;
         var col = 0;
@@ -171,7 +185,7 @@ public sealed class TableRenderer : IRenderer
                     var spanColW = ColSpanWidth(col, spanCell.ColSpan);
                     var spanTotalH = rowY + _rowHeights[rowIdx] - span.startY;
                     DrawCell(ctx, spanCell, span.originRow, col, colXPositions[col], span.startY,
-                             spanColW, spanTotalH, style);
+                             spanColW, spanTotalH, style, trElem);
                     // Remove all slots this cell occupied in this row
                     for (var sc = col; sc < col + spanCell.ColSpan; sc++)
                         spanMap.Remove((rowIdx, sc));
@@ -200,7 +214,7 @@ public sealed class TableRenderer : IRenderer
             if (cell.RowSpan <= 1)
             {
                 // Normal single-row cell — draw immediately
-                DrawCell(ctx, cell, row, col, colXPositions[col], rowY, colW, h, style);
+                DrawCell(ctx, cell, row, col, colXPositions[col], rowY, colW, h, style, trElem);
             }
             else
             {
@@ -211,7 +225,7 @@ public sealed class TableRenderer : IRenderer
                 for (var sr = rowIdx; sr < rowIdx + cell.RowSpan && sr < _rowHeights.Length; sr++)
                     totalSpanH += _rowHeights[sr];
 
-                DrawCell(ctx, cell, row, col, colXPositions[col], rowY, colW, totalSpanH, style);
+                DrawCell(ctx, cell, row, col, colXPositions[col], rowY, colW, totalSpanH, style, trElem);
 
                 // Mark subsequent rows as occupied so they skip this column range
                 for (var sr = rowIdx + 1; sr < rowIdx + cell.RowSpan && sr < _rowHeights.Length; sr++)
@@ -225,7 +239,7 @@ public sealed class TableRenderer : IRenderer
 
     private void DrawCell(DrawContext ctx, Cell cell, Row row, int colIdx,
         double cellX, double cellY, double colW, double h,
-        TextStyle style)
+        TextStyle style, PdfStructElem? trElem)
     {
         var cs = cell.Style ?? style;
 
@@ -262,6 +276,13 @@ public sealed class TableRenderer : IRenderer
         };
 
         var pdfTextY = ctx.ToPdfY(innerBox.Y + cs.FontSize);
+
+        // Tagged PDF: TH (header) or TD (data), containing a P with the MCID.
+        // Structure: TR → TH/TD → P
+        int mcid = -1;
+        if (ctx.Tagged)
+            mcid = ctx.Canvas.BeginMarkedContent("P");
+
         var canvas = ctx.Canvas.BeginText();
 
         if (cs.FontRef.IsEmbedded)
@@ -286,6 +307,19 @@ public sealed class TableRenderer : IRenderer
             canvas.ShowText(cell.Content);
 
         canvas.EndText();
+
+        if (ctx.Tagged && mcid >= 0)
+        {
+            ctx.Canvas.EndMarkedContent();
+
+            // Build: TR → TH/TD → P
+            var cellType = row.IsHeader ? "TH" : "TD";
+            var cellElem = new PdfStructElem(cellType);
+            var pElem = new PdfStructElem("P") { Mcid = mcid };
+            ctx.StampStructElemPage(pElem);
+            cellElem.Children.Add(pElem);
+            trElem?.Children.Add(cellElem);
+        }
     }
 
     /// <summary>Maps every code point to a glyph id and emits a single hex glyph run.</summary>

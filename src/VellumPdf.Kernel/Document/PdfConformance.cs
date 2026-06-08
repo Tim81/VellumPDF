@@ -16,10 +16,16 @@ namespace VellumPdf.Document;
 /// </para>
 ///
 /// <para>
-/// <strong>This is a structural scaffold only.</strong> A conforming PDF/A file also
-/// requires embedded fonts (no font substitution), an ICC output intent, and passes
-/// a PDF/A validator. Those requirements are out of scope here and must be satisfied
-/// by the caller.
+/// A fully conforming PDF/A file also requires:
+/// <list type="bullet">
+///   <item>Embedded fonts — use <c>Document.LoadTrueTypeFont</c> / <c>PdfDocument.UseTrueTypeFont</c>;
+///         Standard-14 unembedded fonts are <strong>not</strong> valid in PDF/A
+///         (ISO 19005-2 §6.3.3).</item>
+///   <item>No encryption — PDF/A prohibits the <c>/Encrypt</c> dictionary
+///         (ISO 19005-2 §6.3.1).</item>
+///   <item>An sRGB ICC OutputIntent — emitted automatically by <c>PdfDocument.Save</c>
+///         when <c>Conformance != None</c> (ISO 19005-2 §6.2.2).</item>
+/// </list>
 /// </para>
 /// </summary>
 public enum PdfConformance

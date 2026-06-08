@@ -71,7 +71,7 @@ public sealed class ParagraphRenderer : IRenderer
         _endLine = _startLine + maxLines;
         _occupied = area.WithHeight(maxLines * _lineHeight);
 
-        var overflow = new ParagraphRenderer(_para, _endLine) { _lines = _lines, StructType = StructType };
+        var overflow = new ParagraphRenderer(_para, _endLine) { _lines = _lines, StructType = StructType, ParentStructElem = ParentStructElem };
         var split = new ParagraphRenderer(_para, _startLine)
         {
             _lines = _lines,
@@ -79,6 +79,7 @@ public sealed class ParagraphRenderer : IRenderer
             _lineHeight = _lineHeight,
             _occupied = _occupied,
             StructType = StructType,
+            ParentStructElem = ParentStructElem,
         };
         return LayoutResult.Partial(_occupied, split, overflow);
     }
@@ -90,6 +91,13 @@ public sealed class ParagraphRenderer : IRenderer
     /// Set to "H1"…"H6" by <see cref="HeadingRenderer"/> before calling Draw.
     /// </summary>
     internal string StructType { get; set; } = "P";
+
+    /// <summary>
+    /// When non-null, the struct elem produced by this renderer is added as a child
+    /// of <see cref="ParentStructElem"/> instead of being registered at the document
+    /// structure tree root. Used by table/list renderers to build nested hierarchies.
+    /// </summary>
+    internal PdfStructElem? ParentStructElem { get; set; }
 
     public void Draw(DrawContext ctx)
     {
@@ -193,7 +201,17 @@ public sealed class ParagraphRenderer : IRenderer
         {
             canvas.EndMarkedContent();
             var elem = new PdfStructElem(StructType) { Mcid = mcid };
-            ctx.RegisterStructElem(elem);
+            if (ParentStructElem is not null)
+            {
+                // Nested mode: add as child of the provided parent (table/list use case).
+                ctx.StampStructElemPage(elem);
+                ParentStructElem.Children.Add(elem);
+            }
+            else
+            {
+                // Top-level mode: register at the document structure tree root.
+                ctx.RegisterStructElem(elem);
+            }
         }
     }
 

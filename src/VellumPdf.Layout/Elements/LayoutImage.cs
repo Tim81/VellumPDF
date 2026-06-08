@@ -15,5 +15,12 @@ public sealed class LayoutImage
     public HorizontalAlignment Alignment { get; init; } = HorizontalAlignment.Left;
     public EdgeInsets Margins { get; init; } = EdgeInsets.Zero;
 
+    /// <summary>
+    /// Optional alternate text for the PDF /Figure structure element (tagged PDF).
+    /// Used as the <c>/Alt</c> entry on the Figure struct elem when tagging is enabled.
+    /// If null, a generic fallback "Figure" is used.
+    /// </summary>
+    public string? AltText { get; init; }
+
     public LayoutImage(PdfImageXObject image) => Image = image;
 }

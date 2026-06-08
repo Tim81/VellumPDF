@@ -109,4 +109,28 @@ public sealed class DrawContext
         elem.Page = _page;
         _document.RegisterStructElem(elem);
     }
+
+    /// <summary>
+    /// Registers a top-level structure element (e.g. Table, L) that contains nested
+    /// child struct elems. The leaf descendants already have their Page set by
+    /// <see cref="StampStructElemPage"/> calls; this method only adds the root to the tree.
+    /// Only has an effect when <see cref="Tagged"/> is true.
+    /// </summary>
+    public void RegisterStructElemTree(PdfStructElem root)
+    {
+        if (Tagged)
+            _document.RegisterStructElem(root);
+    }
+
+    /// <summary>
+    /// Stamps <see cref="PdfStructElem.Page"/> on a leaf struct element (Mcid &gt;= 0)
+    /// to the current page, without registering it as a top-level element.
+    /// Used by table/list renderers to fill in page references on child elems.
+    /// Only has an effect when <see cref="Tagged"/> is true.
+    /// </summary>
+    public void StampStructElemPage(PdfStructElem elem)
+    {
+        if (Tagged)
+            elem.Page = _page;
+    }
 }

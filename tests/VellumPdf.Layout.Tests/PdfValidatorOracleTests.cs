@@ -528,4 +528,88 @@ public sealed class PdfValidatorOracleTests : IDisposable
 
         // Local dev: tool not installed — silently skip.
     }
+
+    // ── veraPDF PDF/A-2b oracle ───────────────────────────────────────────────
+
+    /// <summary>
+    /// Generates a PDF/A-2b document with an embedded TrueType font and validates it
+    /// with veraPDF (flavour 2b).
+    ///
+    /// <para>
+    /// Tool gating:
+    /// <list type="bullet">
+    ///   <item>If no platform font is found: skip (embedded fonts are required for PDF/A).</item>
+    ///   <item>If veraPDF is absent and we are on CI (CI=true): fail with a clear message.</item>
+    ///   <item>If veraPDF is absent locally: skip silently.</item>
+    /// </list>
+    /// </para>
+    ///
+    /// <para>
+    /// The assertion checks the veraPDF XML report for <c>isCompliant="true"</c>.
+    /// If veraPDF reports non-compliance the full report is included in the failure
+    /// message so failing rules are visible — the assertion is NOT weakened to hide
+    /// any non-compliance.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void PdfA2b_veraPdf_reportsCompliant()
+    {
+        var fontPath = FindPlatformFont();
+        if (fontPath is null)
+        {
+            // No embedded font available — PDF/A validation requires embedded fonts.
+            // On CI we expect DejaVu to be installed (fonts-dejavu-core).
+            GateOnCi("platform font for PDF/A-2b oracle");
+            return;
+        }
+
+        var pdfPath = Path.Combine(_tempDir, "pdfa2b_verapdf.pdf");
+        GeneratePdfA2bDoc(pdfPath, fontPath);
+
+        // Run veraPDF with --flavour 2b, XML output format
+        // veraPDF returns exit code 0 when validation completes (regardless of compliance).
+        // We parse the XML output to check isCompliant="true".
+        if (!TryRunTool("verapdf", $"--flavour 2b \"{pdfPath}\"",
+            out var exit, out var reportXml, out var stderr))
+        {
+            GateOnCi("verapdf");
+            return;
+        }
+
+        // veraPDF XML output contains: isCompliant="true" or isCompliant="false"
+        // We assert the compliant attribute is true.
+        // Do NOT weaken this assertion: if veraPDF reports false, the full report is shown.
+        var isCompliant = reportXml.Contains("isCompliant=\"true\"", StringComparison.Ordinal) ||
+                          reportXml.Contains("compliant=\"true\"", StringComparison.Ordinal);
+
+        Assert.True(
+            isCompliant,
+            $"veraPDF PDF/A-2b validation failed (exit {exit}).\n" +
+            $"veraPDF report:\n{reportXml}\n" +
+            $"stderr:\n{stderr}\n" +
+            "Note: veraPDF rules that fail are listed in the report above. " +
+            "Common causes: unembedded fonts (use LoadTrueTypeFont), missing OutputIntent, " +
+            "incorrect XMP pdfaid schema.");
+    }
+
+    /// <summary>
+    /// Generates a PDF/A-2b document with an embedded TrueType font and some text content.
+    /// </summary>
+    private static void GeneratePdfA2bDoc(string path, string fontPath)
+    {
+        using var doc = new Document();
+        doc.Conformance = PdfConformance.PdfA2b;
+        doc.Info.Title = "veraPDF Oracle PDF/A-2b";
+        doc.Info.Author = "VellumPdf Oracle";
+        doc.Info.Producer = "VellumPdf";
+
+        // PDF/A requires embedded fonts — load an embedded TrueType font.
+        var handle = doc.LoadTrueTypeFont(fontPath);
+        var style = new TextStyle { FontRef = handle, FontSize = 12 };
+
+        doc.Add(new Paragraph("VellumPdf PDF/A-2b oracle test document.", style));
+        doc.Add(new Paragraph("This document uses an embedded TrueType font.", style));
+
+        doc.Save(path);
+    }
 }

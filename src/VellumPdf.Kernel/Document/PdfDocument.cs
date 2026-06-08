@@ -446,6 +446,13 @@ public sealed class PdfDocument : IDisposable
         var metadataRef = registry.Reserve();
         registry.SetValue(metadataRef, metadataStream);
 
+        // ── Build sRGB ICC OutputIntent (PDF/A-2 §6.2.2) ─────────────────
+        // An /OutputIntents array with a GTS_PDFA1 entry referencing an sRGB ICC
+        // stream is required for all PDF/A-2 conformance levels.
+        PdfIndirectReference? outputIntentsRef = null;
+        if (Conformance != PdfConformance.None)
+            outputIntentsRef = BuildOutputIntents(registry);
+
         // ── Build document /ID (MD5 over title + producer + page count + timestamp) ─
         var documentId = ComputeDocumentId(ts);
 
@@ -496,6 +503,9 @@ public sealed class PdfDocument : IDisposable
 
         if (acroFormDict is not null)
             catalog.Set(new PdfName("AcroForm"), acroFormDict);
+
+        if (outputIntentsRef is not null)
+            catalog.Set(new PdfName("OutputIntents"), new PdfArray([outputIntentsRef]));
 
         registry.SetValue(catalogRef, catalog);
 
@@ -791,6 +801,50 @@ public sealed class PdfDocument : IDisposable
         // ── Cross-reference table + trailer ───────────────────────────────────
         xref.WriteXrefAndTrailer(writer, catalogRef, infoRef, documentId: documentId);
         writer.Flush();
+    }
+
+    /// <summary>
+    /// Builds and registers the /OutputIntents array entry referencing an sRGB ICC profile stream.
+    /// Required by PDF/A-2 (ISO 19005-2 §6.2.2) for all conformance levels.
+    ///
+    /// <para>
+    /// The ICC stream uses FlateDecode compression and carries <c>/N 3</c> (3 colour components,
+    /// RGB). The OutputIntent dictionary uses <c>/S /GTS_PDFA1</c> and identifies the profile
+    /// as "sRGB IEC61966-2.1".
+    /// </para>
+    /// </summary>
+    /// <remarks>
+    /// <strong>PDF/A output requirements (all must be satisfied by the caller):</strong>
+    /// <list type="bullet">
+    ///   <item>Use <see cref="UseTrueTypeFont"/> for all fonts — Standard-14 unembedded fonts fail
+    ///         the PDF/A font-embedding rule (ISO 19005-2 §6.3.3).</item>
+    ///   <item>Do not use <see cref="Encrypt"/> — PDF/A prohibits encryption (ISO 19005-2 §6.3.1).</item>
+    ///   <item>Set <see cref="Tagged"/> = true (or use <see cref="PdfConformance.PdfA2a"/>) for
+    ///         conformance level A.</item>
+    /// </list>
+    /// </remarks>
+    private static PdfIndirectReference BuildOutputIntents(PdfObjectRegistry registry)
+    {
+        var iccBytes = SrgbIccProfile.Bytes;
+        var iccStream = new PdfStream(iccBytes);
+        iccStream.Dictionary
+            .Set(new PdfName("N"), new PdfInteger(3));
+
+        var iccRef = registry.Reserve();
+        registry.SetValue(iccRef, iccStream);
+
+        var intentDict = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("OutputIntent"))
+            .Set(new PdfName("S"), new PdfName("GTS_PDFA1"))
+            .Set(new PdfName("OutputConditionIdentifier"), new PdfLiteralString(
+                System.Text.Encoding.Latin1.GetBytes("sRGB IEC61966-2.1")))
+            .Set(new PdfName("Info"), new PdfLiteralString(
+                System.Text.Encoding.Latin1.GetBytes("sRGB IEC61966-2.1")))
+            .Set(new PdfName("DestOutputProfile"), iccRef);
+
+        var intentRef = registry.Reserve();
+        registry.SetValue(intentRef, intentDict);
+        return intentRef;
     }
 
     /// <summary>

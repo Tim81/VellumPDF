@@ -123,6 +123,13 @@ public sealed class ListRenderer : IRenderer
         var area = _occupied;
         var y = area.Y;
 
+        // Tagged PDF: build L → LI → (Lbl + LBody → P) hierarchy.
+        // Each ParagraphRenderer draws tagged content using ParentStructElem so the
+        // struct elems nest correctly instead of registering at the document root.
+        PdfStructElem? listElem = null;
+        if (ctx.Tagged)
+            listElem = new PdfStructElem("L");
+
         for (var i = _startItem; i < _endItem; i++)
         {
             var (marker, content) = _items[i];
@@ -138,11 +145,46 @@ public sealed class ListRenderer : IRenderer
                 markerResult.OccupiedArea?.Height ?? 0,
                 contentResult.OccupiedArea?.Height ?? 0);
 
-            marker.Draw(ctx);
-            content.Draw(ctx);
+            if (ctx.Tagged && listElem is not null)
+            {
+                // LI groups the label and body for one list item.
+                var liElem = new PdfStructElem("LI");
+                listElem.Children.Add(liElem);
+
+                // Lbl: the marker (bullet or number)
+                var lblElem = new PdfStructElem("Lbl");
+                liElem.Children.Add(lblElem);
+
+                // LBody: the item content paragraph
+                var lbodyElem = new PdfStructElem("LBody");
+                liElem.Children.Add(lbodyElem);
+
+                // Wire the paragraph renderers to nest their P elems under Lbl/LBody.
+                marker.StructType = "P";
+                marker.ParentStructElem = lblElem;
+                content.StructType = "P";
+                content.ParentStructElem = lbodyElem;
+
+                marker.Draw(ctx);
+                content.Draw(ctx);
+
+                // Reset for safety (layout/draw may be called multiple times in pagination)
+                marker.StructType = "P";
+                marker.ParentStructElem = null;
+                content.StructType = "P";
+                content.ParentStructElem = null;
+            }
+            else
+            {
+                marker.Draw(ctx);
+                content.Draw(ctx);
+            }
 
             y += itemH;
         }
+
+        if (listElem is not null)
+            ctx.RegisterStructElemTree(listElem);
     }
 
     // ── Item building ─────────────────────────────────────────────────────────

@@ -47,10 +47,26 @@ public sealed class LayoutImageRenderer : IRenderer
         var resName = ctx.RendererContext.RegisterImageXObject(_img.Image);
         var (x, y, _, _) = ctx.ToPdfRect(area);
 
+        // Tagged PDF: Figure struct elem with an /Alt entry for accessibility.
+        int mcid = -1;
+        if (ctx.Tagged)
+            mcid = ctx.Canvas.BeginMarkedContent("Figure");
+
         ctx.Canvas
             .SaveState()
             .Concat(_w, 0, 0, _h, x + xOff, y)
             .DoXObject(resName)
             .RestoreState();
+
+        if (ctx.Tagged && mcid >= 0)
+        {
+            ctx.Canvas.EndMarkedContent();
+            var elem = new PdfStructElem("Figure")
+            {
+                Mcid = mcid,
+                AltText = _img.AltText ?? "Figure",
+            };
+            ctx.RegisterStructElem(elem);
+        }
     }
 }
