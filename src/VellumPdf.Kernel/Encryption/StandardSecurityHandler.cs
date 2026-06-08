@@ -21,13 +21,16 @@ public sealed class StandardSecurityHandler : IPdfEncryptor
     private readonly byte[] _fileKey; // 32-byte AES-256 file encryption key
     private readonly PdfEncryptionSettings _settings;
 
-    // The computed /U, /O, /UE, /OE, /Perms values, available after construction.
-    public byte[] U { get; }
-    public byte[] O { get; }
-    public byte[] UE { get; }
-    public byte[] OE { get; }
-    public byte[] Perms { get; }
-    public int PValue { get; }
+    // Computed /U, /O, /UE, /OE, /Perms and /P values used to build the document's
+    // /Encrypt dictionary. Internal, not public: /UE and /OE wrap the file encryption
+    // key, so these are secret-bearing implementation detail — never an API surface.
+    // The Kernel writer and the white-box encryption tests read them via InternalsVisibleTo.
+    internal byte[] U { get; }
+    internal byte[] O { get; }
+    internal byte[] UE { get; }
+    internal byte[] OE { get; }
+    internal byte[] Perms { get; }
+    internal int PValue { get; }
 
     public StandardSecurityHandler(PdfEncryptionSettings settings)
     {
