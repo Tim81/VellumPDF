@@ -93,9 +93,8 @@ public sealed class TrueTypeEmbedEndToEndTests
         Assert.Contains("/FontFile2", content);
         Assert.Contains("/ToUnicode", content);
 
-        // A subsetted TrueType font must carry a /CIDSet and a six-uppercase-letter '+'
-        // subset tag on /BaseFont (ISO 32000-1 §9.6.4 / §9.7.4.2; PDF/A §6.3.5).
-        Assert.Contains("/CIDSet", content);
+        // A subsetted TrueType font must carry a six-uppercase-letter '+' subset tag
+        // on /BaseFont (ISO 32000-1 §9.6.4 / §9.7.4.2).
         Assert.Matches(@"/BaseFont\s*/[A-Z]{6}\+", content);
     }
 

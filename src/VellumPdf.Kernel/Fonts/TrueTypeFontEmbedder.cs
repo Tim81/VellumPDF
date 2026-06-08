@@ -81,9 +81,6 @@ public sealed class TrueTypeFontEmbedder
     private string PostScriptName =>
         _name.PostScriptName ?? _name.FamilyName ?? "Unknown";
 
-    /// <summary>True when the font carries CFF (PostScript) outlines (OTTO).</summary>
-    public bool IsCff => _sfnt.IsCff;
-
     // A subsetted font's name must carry a six-uppercase-letter tag + '+' prefix
     // (ISO 32000-1 §9.6.4 / §9.7.4.2). CFF/OTTO fonts are whole-font embedded
     // (not subsetted), so they keep the bare PostScript name.
@@ -154,9 +151,7 @@ public sealed class TrueTypeFontEmbedder
             .Set(new Core.PdfName("CIDToGIDMap"), new Core.PdfName("Identity"));
     }
 
-    public Core.PdfDictionary BuildFontDescriptor(
-        Core.PdfIndirectReference fontFileRef,
-        Core.PdfIndirectReference? cidSetRef = null)
+    public Core.PdfDictionary BuildFontDescriptor(Core.PdfIndirectReference fontFileRef)
     {
         var unitsPerEm = _head.UnitsPerEm;
         double Scale(int v) => Math.Round(v * 1000.0 / unitsPerEm);
@@ -182,10 +177,6 @@ public sealed class TrueTypeFontEmbedder
         else
             descriptor.Set(new Core.PdfName("FontFile2"), fontFileRef);
 
-        // /CIDSet identifies the CIDs present in a CIDFontType2 (glyf) subset (PDF/A §6.3.5).
-        if (cidSetRef is not null && !_sfnt.IsCff)
-            descriptor.Set(new Core.PdfName("CIDSet"), cidSetRef);
-
         return descriptor;
     }
 
@@ -203,26 +194,6 @@ public sealed class TrueTypeFontEmbedder
 
         var subsetBytes = BuildSubsetFont();
         return new Core.PdfStream(subsetBytes);
-    }
-
-    /// <summary>
-    /// Builds the /CIDSet stream for a CIDFontType2 (glyf) subset: a bitmap where
-    /// bit N (MSB-first within each byte) is set when CID/GID N is present in the
-    /// embedded subset. The set mirrors the glyphs actually embedded — the used
-    /// GIDs plus any composite component GIDs pulled in by the subsetter — so it
-    /// agrees with the font program (PDF/A ISO 19005-2 §6.3.5).
-    /// </summary>
-    public Core.PdfStream BuildCidSetStream()
-    {
-        var keep = new HashSet<int>(_usedGids);
-        new GlyfSubsetter(_sfnt).ExpandComposites(keep);
-
-        var numGlyphs = _maxp.NumGlyphs;
-        var bits = new byte[(numGlyphs + 7) / 8];
-        foreach (var gid in keep)
-            if (gid >= 0 && gid < numGlyphs)
-                bits[gid / 8] |= (byte)(0x80 >> (gid % 8));
-        return new Core.PdfStream(bits);
     }
 
     public Core.PdfStream BuildToUnicodeCMap()

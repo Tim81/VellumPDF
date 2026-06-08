@@ -338,8 +338,15 @@ public sealed class PdfDocument : IDisposable
         var xref = new CrossReferenceBuilder();
         var registry = new PdfObjectRegistry();
 
-        // PDF header — "%PDF-2.0\n" + binary comment with raw bytes E2 E3 CF D3.
-        writer.WriteAscii("%PDF-2.0\n%"u8);
+        // PDF header + binary comment (raw bytes >= 128, ISO 32000 7.5.2). PDF/A-2 is
+        // defined against PDF 1.7, so conformance documents declare %PDF-1.7 (veraPDF
+        // rule 6.1.2); other documents use the 2.0 baseline.
+        writer.WriteAscii("%PDF-"u8);
+        if (Conformance == PdfConformance.None)
+            writer.WriteAscii("2.0"u8);
+        else
+            writer.WriteAscii("1.7"u8);
+        writer.WriteAscii("\n%"u8);
         writer.WriteRaw([0xE2, 0xE3, 0xCF, 0xD3]);
         writer.WriteAscii("\n"u8);
 
@@ -427,17 +434,9 @@ public sealed class PdfDocument : IDisposable
             var toUnicodeRef = registry.Reserve();  // ToUnicode CMap stream
             var type0Ref = registry.Reserve();      // Type0 font dict
 
-            // /CIDSet is required for CIDFontType2 (glyf) subsets under PDF/A (§6.3.5).
-            PdfIndirectReference? cidSetRef = null;
-            if (!emb.IsCff)
-            {
-                cidSetRef = registry.Reserve();
-                registry.SetValue(cidSetRef, emb.BuildCidSetStream());
-            }
-
             // Set values (subset is built here — all glyphs have been registered by Draw)
             registry.SetValue(fontFileRef, emb.BuildFontFileStream());
-            registry.SetValue(descriptorRef, emb.BuildFontDescriptor(fontFileRef, cidSetRef));
+            registry.SetValue(descriptorRef, emb.BuildFontDescriptor(fontFileRef));
             registry.SetValue(cidFontRef, emb.BuildCidFontDictionary(descriptorRef));
 
             // /DescendantFonts is written as an inline array inside the Type0 dict (PDF/A-compliant).
@@ -655,8 +654,13 @@ public sealed class PdfDocument : IDisposable
         var xref = new CrossReferenceBuilder();
         var registry = new PdfObjectRegistry();
 
-        // PDF header
-        writer.WriteAscii("%PDF-2.0\n%"u8);
+        // PDF header — conformance documents declare %PDF-1.7 (veraPDF rule 6.1.2).
+        writer.WriteAscii("%PDF-"u8);
+        if (Conformance == PdfConformance.None)
+            writer.WriteAscii("2.0"u8);
+        else
+            writer.WriteAscii("1.7"u8);
+        writer.WriteAscii("\n%"u8);
         writer.WriteRaw([0xE2, 0xE3, 0xCF, 0xD3]);
         writer.WriteAscii("\n"u8);
 
@@ -727,14 +731,8 @@ public sealed class PdfDocument : IDisposable
             var cidFontRef = registry.Reserve();
             var toUnicodeRef = registry.Reserve();
             var type0Ref = registry.Reserve();
-            PdfIndirectReference? cidSetRef = null;
-            if (!emb.IsCff)
-            {
-                cidSetRef = registry.Reserve();
-                registry.SetValue(cidSetRef, emb.BuildCidSetStream());
-            }
             registry.SetValue(fontFileRef, emb.BuildFontFileStream());
-            registry.SetValue(descriptorRef, emb.BuildFontDescriptor(fontFileRef, cidSetRef));
+            registry.SetValue(descriptorRef, emb.BuildFontDescriptor(fontFileRef));
             registry.SetValue(cidFontRef, emb.BuildCidFontDictionary(descriptorRef));
             registry.SetValue(toUnicodeRef, emb.BuildToUnicodeCMap());
             registry.SetValue(type0Ref, emb.BuildFontDictionary(cidFontRef, toUnicodeRef));
