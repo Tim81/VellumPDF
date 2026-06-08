@@ -170,7 +170,7 @@ public sealed class ListRenderer : IRenderer
             // Content paragraph: indented by _list.Indent from the left edge.
             var contentPara = new Paragraph(item.Text, itemStyle)
             {
-                Margins = new EdgeInsets(indent, 0, 0, 0),
+                Margins = new EdgeInsets(0, 0, 0, indent),
                 Alignment = HorizontalAlignment.Left,
             };
             var contentRenderer = new ParagraphRenderer(contentPara);
@@ -191,11 +191,11 @@ public sealed class ListRenderer : IRenderer
 
                     var childMarkerPara = new Paragraph(childMarker, childStyle)
                     {
-                        Margins = new EdgeInsets(indent, 0, 0, 0),
+                        Margins = new EdgeInsets(0, 0, 0, indent),
                     };
                     var childContentPara = new Paragraph(child.Text, childStyle)
                     {
-                        Margins = new EdgeInsets(indent * 2, 0, 0, 0),
+                        Margins = new EdgeInsets(0, 0, 0, indent * 2),
                     };
 
                     result.Add((new ParagraphRenderer(childMarkerPara), new ParagraphRenderer(childContentPara)));
