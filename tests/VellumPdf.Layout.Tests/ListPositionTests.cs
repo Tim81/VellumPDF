@@ -1,8 +1,6 @@
 // Copyright 2026 Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
-using System.IO.Compression;
-using System.Text;
 using System.Text.RegularExpressions;
 using VellumPdf.Layout;
 using VellumPdf.Layout.Elements;
@@ -28,7 +26,7 @@ public sealed partial class ListPositionTests
 
         var ms = new MemoryStream();
         doc.Save(ms);
-        var content = DecompressContentStreams(ms.ToArray());
+        var content = PdfTestUtil.DecompressAllFlatStreams(ms.ToArray());
 
         var positions = ExtractTextPositions(content);
 
@@ -60,38 +58,4 @@ public sealed partial class ListPositionTests
     // Matches:  1 0 0 1 <x> <y> Tm (text) Tj
     [GeneratedRegex(@"1 0 0 1 (-?\d+(?:\.\d+)?) (-?\d+(?:\.\d+)?) Tm\s*\(([^)]*)\) Tj")]
     private static partial Regex TextMatrixShow();
-
-    private static string DecompressContentStreams(byte[] pdf)
-    {
-        var sb = new StringBuilder();
-        var text = Encoding.Latin1.GetString(pdf);
-        var pos = 0;
-        while (true)
-        {
-            var s = text.IndexOf("\nstream\n", pos, StringComparison.Ordinal);
-            if (s < 0) break;
-            var dataStart = s + "\nstream\n".Length;
-            var objStart = text.LastIndexOf("obj\n", s, StringComparison.Ordinal);
-            var lenIdx = objStart >= 0 ? text.IndexOf("/Length ", objStart, s - objStart, StringComparison.Ordinal) : -1;
-            if (lenIdx < 0) { pos = dataStart; continue; }
-            var v = lenIdx + "/Length ".Length;
-            var e = v;
-            while (e < text.Length && char.IsDigit(text[e])) e++;
-            if (!int.TryParse(text[v..e], out var len) || dataStart + len > pdf.Length) { pos = dataStart; continue; }
-            try
-            {
-                using var input = new MemoryStream(pdf[dataStart..(dataStart + len)]);
-                using var z = new ZLibStream(input, CompressionMode.Decompress);
-                using var outp = new MemoryStream();
-                z.CopyTo(outp);
-                sb.Append(Encoding.Latin1.GetString(outp.ToArray()));
-            }
-            catch (InvalidDataException)
-            {
-                // Not a zlib stream (e.g. an uncompressed XMP /Metadata stream) — skip it.
-            }
-            pos = dataStart + len;
-        }
-        return sb.ToString();
-    }
 }

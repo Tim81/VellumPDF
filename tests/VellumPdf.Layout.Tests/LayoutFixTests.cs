@@ -37,10 +37,10 @@ public sealed class LayoutFixTests
 
         // Decompress the content streams embedded in the PDF
         var pdfBytes = ms.ToArray();
-        var decompressed = DecompressAllFlatStreams(pdfBytes);
+        var decompressed = PdfTestUtil.DecompressAllFlatStreams(pdfBytes);
 
         // Both lines must use Tm (SetTextMatrix) — one per line for absolute positioning.
-        var tmCount = CountOccurrences(decompressed, " Tm\n");
+        var tmCount = PdfTestUtil.CountOccurrences(decompressed, " Tm\n");
         Assert.True(tmCount >= 2,
             $"Expected at least 2 Tm operators for 2 centered lines, found {tmCount}. " +
             "This indicates ParagraphRenderer is using relative Td instead of absolute Tm per line.");
@@ -122,7 +122,7 @@ public sealed class LayoutFixTests
         Assert.True(ms.Length > 100);
 
         // Content streams are FlateDecode-compressed; decompress to find cell text
-        var decompressed = DecompressAllFlatStreams(ms.ToArray());
+        var decompressed = PdfTestUtil.DecompressAllFlatStreams(ms.ToArray());
         Assert.Contains("Span2", decompressed);
     }
 
@@ -161,10 +161,10 @@ public sealed class LayoutFixTests
         Assert.Contains("/Count ", allText);
 
         // Decompress all FlateDecode content streams and count header occurrences
-        var decompressed = DecompressAllFlatStreams(pdfBytes);
+        var decompressed = PdfTestUtil.DecompressAllFlatStreams(pdfBytes);
 
         // Assertion: header text must appear at least twice
-        var countHdr = CountOccurrences(decompressed, "HdrXYZ");
+        var countHdr = PdfTestUtil.CountOccurrences(decompressed, "HdrXYZ");
         Assert.True(countHdr >= 2,
             $"Header 'HdrXYZ' should appear on each page (found {countHdr}). " +
             $"Decompressed content length: {decompressed.Length}. " +
@@ -219,78 +219,6 @@ public sealed class LayoutFixTests
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
-
-    /// <summary>
-    /// Scans the PDF bytes for FlateDecode stream data, decompresses each, and
-    /// concatenates the results as ASCII/Latin-1 text for inspection.
-    /// Uses the <c>/Length N</c> field to extract exact stream bytes so compressed
-    /// content bytes that happen to contain the "endstream" pattern don't confuse the parser.
-    /// </summary>
-    private static string DecompressAllFlatStreams(byte[] pdfBytes)
-    {
-        var sb = new StringBuilder();
-        var pdfText = Encoding.Latin1.GetString(pdfBytes);
-        var pos = 0;
-
-        while (pos < pdfBytes.Length)
-        {
-            // Find next FlateDecode stream: look for /Length N then stream\n
-            var streamKeyword = pdfText.IndexOf("\nstream\n", pos, StringComparison.Ordinal);
-            if (streamKeyword < 0) break;
-
-            var dataStart = streamKeyword + "\nstream\n".Length;
-
-            // Find /Length in the preceding dict (scan backwards from streamKeyword)
-            var dictEnd = streamKeyword;
-            var dictStart = pdfText.LastIndexOf("obj\n", dictEnd, StringComparison.Ordinal);
-            if (dictStart < 0) { pos = dataStart; continue; }
-
-            // Extract length value: /Length NNN
-            var lenIdx = pdfText.IndexOf("/Length ", dictStart, dictEnd - dictStart, StringComparison.Ordinal);
-            if (lenIdx < 0) { pos = dataStart; continue; }
-
-            var lenValStart = lenIdx + "/Length ".Length;
-            var lenValEnd = lenValStart;
-            while (lenValEnd < pdfText.Length && char.IsDigit(pdfText[lenValEnd])) lenValEnd++;
-            if (!int.TryParse(pdfText[lenValStart..lenValEnd], out var streamLength))
-            { pos = dataStart; continue; }
-
-            if (dataStart + streamLength > pdfBytes.Length) { pos = dataStart; continue; }
-
-            var rawBytes = pdfBytes[dataStart..(dataStart + streamLength)];
-
-            // Try to decompress as zlib
-            try
-            {
-                using var input = new MemoryStream(rawBytes);
-                using var output = new MemoryStream();
-                using var z = new System.IO.Compression.ZLibStream(input,
-                    System.IO.Compression.CompressionMode.Decompress);
-                z.CopyTo(output);
-                sb.Append(Encoding.Latin1.GetString(output.ToArray()));
-            }
-            catch
-            {
-                // Not a valid zlib stream (e.g. DCTDecode JPEG) — skip
-            }
-
-            pos = dataStart + streamLength;
-        }
-
-        return sb.ToString();
-    }
-
-    private static int CountOccurrences(string text, string pattern)
-    {
-        var count = 0;
-        var idx = 0;
-        while ((idx = text.IndexOf(pattern, idx, StringComparison.Ordinal)) >= 0)
-        {
-            count++;
-            idx += pattern.Length;
-        }
-        return count;
-    }
 
     private static byte[] CreateMinimalRgbPng(int w, int h)
     {
@@ -370,7 +298,7 @@ public sealed class LayoutFixTests
         var ms = new MemoryStream();
         doc.Save(ms);
 
-        var decompressed = DecompressAllFlatStreams(ms.ToArray());
+        var decompressed = PdfTestUtil.DecompressAllFlatStreams(ms.ToArray());
 
         var bdcIdx = decompressed.IndexOf("BDC", StringComparison.Ordinal);
         var btIdx = decompressed.IndexOf("BT", StringComparison.Ordinal);
@@ -412,15 +340,15 @@ public sealed class LayoutFixTests
         Assert.Contains("/Count ", allText);
 
         // Decompress all content streams.
-        var decompressed = DecompressAllFlatStreams(ms.ToArray());
+        var decompressed = PdfTestUtil.DecompressAllFlatStreams(ms.ToArray());
 
         // The decompressed stream contains text from all pages concatenated.
         // Crucially, no individual word token should appear more times than the
         // number of pages it genuinely belongs to (at most 1 for per-line words).
         // We can't easily split per-page, so instead verify the total word count
         // is not inflated (each line word appears at most once across all streams).
-        var lineACount = CountOccurrences(decompressed, "LineA");
-        var lineBCount = CountOccurrences(decompressed, "LineB");
+        var lineACount = PdfTestUtil.CountOccurrences(decompressed, "LineA");
+        var lineBCount = PdfTestUtil.CountOccurrences(decompressed, "LineB");
         // Each word should appear exactly once in the output
         Assert.True(lineACount <= 1, $"'LineA' appears {lineACount} times — expected at most 1 (no duplication)");
         Assert.True(lineBCount <= 1, $"'LineB' appears {lineBCount} times — expected at most 1 (no duplication)");

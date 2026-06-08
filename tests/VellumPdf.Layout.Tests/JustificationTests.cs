@@ -1,7 +1,6 @@
 // Copyright 2026 Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
-using System.Text;
 using VellumPdf.Document;
 using VellumPdf.Fonts;
 using VellumPdf.Layout;
@@ -13,60 +12,6 @@ namespace VellumPdf.Layout.Tests;
 /// <summary>Tests for justified text alignment.</summary>
 public sealed class JustificationTests
 {
-    private static string DecompressAllFlatStreams(byte[] pdfBytes)
-    {
-        var sb = new StringBuilder();
-        var pdfText = Encoding.Latin1.GetString(pdfBytes);
-        var pos = 0;
-
-        while (pos < pdfBytes.Length)
-        {
-            var streamKeyword = pdfText.IndexOf("\nstream\n", pos, StringComparison.Ordinal);
-            if (streamKeyword < 0) break;
-            var dataStart = streamKeyword + "\nstream\n".Length;
-
-            var dictEnd = streamKeyword;
-            var dictStart = pdfText.LastIndexOf("obj\n", dictEnd, StringComparison.Ordinal);
-            if (dictStart < 0) { pos = dataStart; continue; }
-
-            var lenIdx = pdfText.IndexOf("/Length ", dictStart, dictEnd - dictStart, StringComparison.Ordinal);
-            if (lenIdx < 0) { pos = dataStart; continue; }
-
-            var lenValStart = lenIdx + "/Length ".Length;
-            var lenValEnd = lenValStart;
-            while (lenValEnd < pdfText.Length && char.IsDigit(pdfText[lenValEnd])) lenValEnd++;
-            if (!int.TryParse(pdfText[lenValStart..lenValEnd], out var streamLength))
-            { pos = dataStart; continue; }
-
-            if (dataStart + streamLength > pdfBytes.Length) { pos = dataStart; continue; }
-
-            var rawBytes = pdfBytes[dataStart..(dataStart + streamLength)];
-            try
-            {
-                using var input = new MemoryStream(rawBytes);
-                using var output = new MemoryStream();
-                using var z = new System.IO.Compression.ZLibStream(input, System.IO.Compression.CompressionMode.Decompress);
-                z.CopyTo(output);
-                sb.Append(Encoding.Latin1.GetString(output.ToArray()));
-            }
-            catch
-            {
-                // Not a valid zlib stream (e.g. DCTDecode JPEG or XMP metadata) — skip
-            }
-            pos = dataStart + streamLength;
-        }
-        return sb.ToString();
-    }
-
-    private static int CountOccurrences(string text, string pattern)
-    {
-        var count = 0;
-        var idx = 0;
-        while ((idx = text.IndexOf(pattern, idx, StringComparison.Ordinal)) >= 0)
-        { count++; idx += pattern.Length; }
-        return count;
-    }
-
     // ── Tests ────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -84,10 +29,10 @@ public sealed class JustificationTests
 
         var ms = new MemoryStream();
         doc.Save(ms);
-        var decompressed = DecompressAllFlatStreams(ms.ToArray());
+        var decompressed = PdfTestUtil.DecompressAllFlatStreams(ms.ToArray());
 
         // At least one Tw operator should appear (for non-last justified lines)
-        var twCount = CountOccurrences(decompressed, " Tw\n");
+        var twCount = PdfTestUtil.CountOccurrences(decompressed, " Tw\n");
         Assert.True(twCount >= 1,
             $"Expected at least 1 Tw operator for justified multi-line paragraph, found {twCount}.\n" +
             $"Decompressed (first 500 chars): {decompressed[..Math.Min(500, decompressed.Length)]}");
@@ -106,7 +51,7 @@ public sealed class JustificationTests
 
         var ms = new MemoryStream();
         doc.Save(ms);
-        var decompressed = DecompressAllFlatStreams(ms.ToArray());
+        var decompressed = PdfTestUtil.DecompressAllFlatStreams(ms.ToArray());
 
         // There should be at least one "0 Tw" reset (word-spacing reset to 0 after justified lines)
         Assert.Contains("0 Tw", decompressed);
@@ -126,10 +71,10 @@ public sealed class JustificationTests
 
         var ms = new MemoryStream();
         doc.Save(ms);
-        var decompressed = DecompressAllFlatStreams(ms.ToArray());
+        var decompressed = PdfTestUtil.DecompressAllFlatStreams(ms.ToArray());
 
         // No positive Tw should appear (single line = last line = left-aligned)
-        var twCount = CountOccurrences(decompressed, " Tw\n");
+        var twCount = PdfTestUtil.CountOccurrences(decompressed, " Tw\n");
         // The only Tw allowed is "0 Tw" (reset) — check there's no non-zero positive Tw
         // by verifying any Tw present is the reset.
         // Simplest: since it's one line there should be no Tw at all, or only "0 Tw".
@@ -149,7 +94,7 @@ public sealed class JustificationTests
 
         var ms = new MemoryStream();
         doc.Save(ms);
-        var decompressed = DecompressAllFlatStreams(ms.ToArray());
+        var decompressed = PdfTestUtil.DecompressAllFlatStreams(ms.ToArray());
 
         // Left-aligned paragraphs must not use Tw
         Assert.DoesNotContain("Tw", decompressed);

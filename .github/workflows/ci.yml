@@ -26,6 +26,9 @@ jobs:
       - name: Build
         run: dotnet build VellumPdf.slnx -c Release --no-restore
 
+      - name: Install PDF validators
+        run: sudo apt-get update && sudo apt-get install -y qpdf poppler-utils fonts-dejavu-core
+
       - name: Test
         run: dotnet test VellumPdf.slnx -c Release --no-build
 
