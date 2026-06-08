@@ -1,0 +1,452 @@
+#nullable enable
+abstract VellumPdf.Core.PdfObject.WriteTo(VellumPdf.IO.PdfWriter! writer) -> void
+override VellumPdf.Core.PdfArray.WriteTo(VellumPdf.IO.PdfWriter! writer) -> void
+override VellumPdf.Core.PdfBoolean.WriteTo(VellumPdf.IO.PdfWriter! writer) -> void
+override VellumPdf.Core.PdfDictionary.WriteTo(VellumPdf.IO.PdfWriter! writer) -> void
+override VellumPdf.Core.PdfHexString.WriteTo(VellumPdf.IO.PdfWriter! writer) -> void
+override VellumPdf.Core.PdfIndirectObject.WriteTo(VellumPdf.IO.PdfWriter! writer) -> void
+override VellumPdf.Core.PdfIndirectReference.Equals(object? obj) -> bool
+override VellumPdf.Core.PdfIndirectReference.GetHashCode() -> int
+override VellumPdf.Core.PdfIndirectReference.WriteTo(VellumPdf.IO.PdfWriter! writer) -> void
+override VellumPdf.Core.PdfInteger.WriteTo(VellumPdf.IO.PdfWriter! writer) -> void
+override VellumPdf.Core.PdfLiteralString.WriteTo(VellumPdf.IO.PdfWriter! writer) -> void
+override VellumPdf.Core.PdfName.Equals(object? obj) -> bool
+override VellumPdf.Core.PdfName.GetHashCode() -> int
+override VellumPdf.Core.PdfName.ToString() -> string!
+override VellumPdf.Core.PdfName.WriteTo(VellumPdf.IO.PdfWriter! writer) -> void
+override VellumPdf.Core.PdfNull.WriteTo(VellumPdf.IO.PdfWriter! writer) -> void
+override VellumPdf.Core.PdfReal.WriteTo(VellumPdf.IO.PdfWriter! writer) -> void
+override VellumPdf.Core.PdfStream.WriteTo(VellumPdf.IO.PdfWriter! writer) -> void
+override VellumPdf.Forms.RadioOption.GetHashCode() -> int
+static readonly VellumPdf.Core.PdfBoolean.False -> VellumPdf.Core.PdfBoolean!
+static readonly VellumPdf.Core.PdfBoolean.True -> VellumPdf.Core.PdfBoolean!
+static readonly VellumPdf.Core.PdfName.Annots -> VellumPdf.Core.PdfName!
+static readonly VellumPdf.Core.PdfName.BaseFont -> VellumPdf.Core.PdfName!
+static readonly VellumPdf.Core.PdfName.C0 -> VellumPdf.Core.PdfName!
+static readonly VellumPdf.Core.PdfName.C1 -> VellumPdf.Core.PdfName!
+static readonly VellumPdf.Core.PdfName.Catalog -> VellumPdf.Core.PdfName!
+static readonly VellumPdf.Core.PdfName.ColorSpace -> VellumPdf.Core.PdfName!
+static readonly VellumPdf.Core.PdfName.Contents -> VellumPdf.Core.PdfName!
+static readonly VellumPdf.Core.PdfName.Coords -> VellumPdf.Core.PdfName!
+static readonly VellumPdf.Core.PdfName.Count -> VellumPdf.Core.PdfName!
+static readonly VellumPdf.Core.PdfName.DCTDecode -> VellumPdf.Core.PdfName!
+static readonly VellumPdf.Core.PdfName.DeviceRGB -> VellumPdf.Core.PdfName!
+static readonly VellumPdf.Core.PdfName.Domain -> VellumPdf.Core.PdfName!
+static readonly VellumPdf.Core.PdfName.Encoding -> VellumPdf.Core.PdfName!
+static readonly VellumPdf.Core.PdfName.Extend -> VellumPdf.Core.PdfName!
+static readonly VellumPdf.Core.PdfName.ExtGState -> VellumPdf.Core.PdfName!
+static readonly VellumPdf.Core.PdfName.Filter -> VellumPdf.Core.PdfName!
+static readonly VellumPdf.Core.PdfName.FlateDecode -> VellumPdf.Core.PdfName!
+static readonly VellumPdf.Core.PdfName.Font -> VellumPdf.Core.PdfName!
+static readonly VellumPdf.Core.PdfName.Function -> VellumPdf.Core.PdfName!
+static readonly VellumPdf.Core.PdfName.FunctionType -> VellumPdf.Core.PdfName!
+static readonly VellumPdf.Core.PdfName.ID -> VellumPdf.Core.PdfName!
+static readonly VellumPdf.Core.PdfName.ImageB -> VellumPdf.Core.PdfName!
+static readonly VellumPdf.Core.PdfName.ImageC -> VellumPdf.Core.PdfName!
+static readonly VellumPdf.Core.PdfName.ImageI -> VellumPdf.Core.PdfName!
+static readonly VellumPdf.Core.PdfName.Info -> VellumPdf.Core.PdfName!
+static readonly VellumPdf.Core.PdfName.Kids -> VellumPdf.Core.PdfName!
+static readonly VellumPdf.Core.PdfName.Length -> VellumPdf.Core.PdfName!
+static readonly VellumPdf.Core.PdfName.MediaBox -> VellumPdf.Core.PdfName!
+static readonly VellumPdf.Core.PdfName.N -> VellumPdf.Core.PdfName!
+static readonly VellumPdf.Core.PdfName.Name -> VellumPdf.Core.PdfName!
+static readonly VellumPdf.Core.PdfName.Page -> VellumPdf.Core.PdfName!
+static readonly VellumPdf.Core.PdfName.Pages -> VellumPdf.Core.PdfName!
+static readonly VellumPdf.Core.PdfName.Parent -> VellumPdf.Core.PdfName!
+static readonly VellumPdf.Core.PdfName.PDF -> VellumPdf.Core.PdfName!
+static readonly VellumPdf.Core.PdfName.Prev -> VellumPdf.Core.PdfName!
+static readonly VellumPdf.Core.PdfName.ProcSet -> VellumPdf.Core.PdfName!
+static readonly VellumPdf.Core.PdfName.Resources -> VellumPdf.Core.PdfName!
+static readonly VellumPdf.Core.PdfName.Root -> VellumPdf.Core.PdfName!
+static readonly VellumPdf.Core.PdfName.Rotate -> VellumPdf.Core.PdfName!
+static readonly VellumPdf.Core.PdfName.Shading -> VellumPdf.Core.PdfName!
+static readonly VellumPdf.Core.PdfName.ShadingType -> VellumPdf.Core.PdfName!
+static readonly VellumPdf.Core.PdfName.Size -> VellumPdf.Core.PdfName!
+static readonly VellumPdf.Core.PdfName.Subtype -> VellumPdf.Core.PdfName!
+static readonly VellumPdf.Core.PdfName.Text -> VellumPdf.Core.PdfName!
+static readonly VellumPdf.Core.PdfName.Type -> VellumPdf.Core.PdfName!
+static readonly VellumPdf.Core.PdfName.XObject -> VellumPdf.Core.PdfName!
+static readonly VellumPdf.Core.PdfNull.Instance -> VellumPdf.Core.PdfNull!
+static readonly VellumPdf.Document.PageSize.A0 -> VellumPdf.Document.PdfRectangle!
+static readonly VellumPdf.Document.PageSize.A1 -> VellumPdf.Document.PdfRectangle!
+static readonly VellumPdf.Document.PageSize.A2 -> VellumPdf.Document.PdfRectangle!
+static readonly VellumPdf.Document.PageSize.A3 -> VellumPdf.Document.PdfRectangle!
+static readonly VellumPdf.Document.PageSize.A4 -> VellumPdf.Document.PdfRectangle!
+static readonly VellumPdf.Document.PageSize.A5 -> VellumPdf.Document.PdfRectangle!
+static readonly VellumPdf.Document.PageSize.A6 -> VellumPdf.Document.PdfRectangle!
+static readonly VellumPdf.Document.PageSize.Ledger -> VellumPdf.Document.PdfRectangle!
+static readonly VellumPdf.Document.PageSize.Legal -> VellumPdf.Document.PdfRectangle!
+static readonly VellumPdf.Document.PageSize.Letter -> VellumPdf.Document.PdfRectangle!
+static VellumPdf.Core.PdfBoolean.Of(bool value) -> VellumPdf.Core.PdfBoolean!
+static VellumPdf.Core.PdfLiteralString.FromUnicode(string! value) -> VellumPdf.Core.PdfLiteralString!
+static VellumPdf.Document.PdfRectangle.A4.get -> VellumPdf.Document.PdfRectangle!
+static VellumPdf.Fonts.Standard14Metrics.GetWidth(VellumPdf.Fonts.Standard14 font, char c) -> int
+static VellumPdf.Fonts.Standard14Metrics.MeasureString(VellumPdf.Fonts.Standard14 font, string! text, double pointSize) -> double
+static VellumPdf.Forms.RadioOption.operator !=(VellumPdf.Forms.RadioOption left, VellumPdf.Forms.RadioOption right) -> bool
+static VellumPdf.Forms.RadioOption.operator ==(VellumPdf.Forms.RadioOption left, VellumPdf.Forms.RadioOption right) -> bool
+static VellumPdf.Graphics.KernelColor.Black.get -> VellumPdf.Graphics.KernelColor
+static VellumPdf.Graphics.KernelColor.White.get -> VellumPdf.Graphics.KernelColor
+static VellumPdf.Images.BmpImageLoader.Load(byte[]! bmpBytes) -> VellumPdf.Images.PdfImageXObject!
+static VellumPdf.Images.GifImageLoader.Load(byte[]! gifBytes) -> VellumPdf.Images.PdfImageXObject!
+static VellumPdf.Images.JpegImageLoader.Load(byte[]! jpegBytes) -> VellumPdf.Images.PdfImageXObject!
+static VellumPdf.Images.PngImageLoader.Load(byte[]! pngBytes) -> VellumPdf.Images.PdfImageXObject!
+static VellumPdf.Images.TiffImageLoader.Load(byte[]! tiff) -> VellumPdf.Images.PdfImageXObject!
+VellumPdf.Annotations.PdfLinkAnnotation
+VellumPdf.Annotations.PdfLinkAnnotation.DestLeft.get -> double
+VellumPdf.Annotations.PdfLinkAnnotation.DestLeft.init -> void
+VellumPdf.Annotations.PdfLinkAnnotation.DestPage.get -> VellumPdf.Document.PdfPage?
+VellumPdf.Annotations.PdfLinkAnnotation.DestPage.init -> void
+VellumPdf.Annotations.PdfLinkAnnotation.DestTop.get -> double
+VellumPdf.Annotations.PdfLinkAnnotation.DestTop.init -> void
+VellumPdf.Annotations.PdfLinkAnnotation.Llx.get -> double
+VellumPdf.Annotations.PdfLinkAnnotation.Llx.init -> void
+VellumPdf.Annotations.PdfLinkAnnotation.Lly.get -> double
+VellumPdf.Annotations.PdfLinkAnnotation.Lly.init -> void
+VellumPdf.Annotations.PdfLinkAnnotation.PdfLinkAnnotation() -> void
+VellumPdf.Annotations.PdfLinkAnnotation.Uri.get -> string?
+VellumPdf.Annotations.PdfLinkAnnotation.Uri.init -> void
+VellumPdf.Annotations.PdfLinkAnnotation.Urx.get -> double
+VellumPdf.Annotations.PdfLinkAnnotation.Urx.init -> void
+VellumPdf.Annotations.PdfLinkAnnotation.Ury.get -> double
+VellumPdf.Annotations.PdfLinkAnnotation.Ury.init -> void
+VellumPdf.Annotations.PdfOutlineEntry
+VellumPdf.Annotations.PdfOutlineEntry.DestLeft.get -> double
+VellumPdf.Annotations.PdfOutlineEntry.DestLeft.init -> void
+VellumPdf.Annotations.PdfOutlineEntry.DestPage.get -> VellumPdf.Document.PdfPage!
+VellumPdf.Annotations.PdfOutlineEntry.DestPage.init -> void
+VellumPdf.Annotations.PdfOutlineEntry.DestTop.get -> double
+VellumPdf.Annotations.PdfOutlineEntry.DestTop.init -> void
+VellumPdf.Annotations.PdfOutlineEntry.Level.get -> int
+VellumPdf.Annotations.PdfOutlineEntry.Level.init -> void
+VellumPdf.Annotations.PdfOutlineEntry.PdfOutlineEntry() -> void
+VellumPdf.Annotations.PdfOutlineEntry.Title.get -> string!
+VellumPdf.Annotations.PdfOutlineEntry.Title.init -> void
+VellumPdf.Canvas.PdfCanvas
+VellumPdf.Canvas.PdfCanvas.BeginMarkedContent(string! tag) -> int
+VellumPdf.Canvas.PdfCanvas.BeginText() -> VellumPdf.Canvas.PdfCanvas!
+VellumPdf.Canvas.PdfCanvas.Clip() -> VellumPdf.Canvas.PdfCanvas!
+VellumPdf.Canvas.PdfCanvas.ClipEvenOdd() -> VellumPdf.Canvas.PdfCanvas!
+VellumPdf.Canvas.PdfCanvas.CloseAndStroke() -> VellumPdf.Canvas.PdfCanvas!
+VellumPdf.Canvas.PdfCanvas.ClosePath() -> VellumPdf.Canvas.PdfCanvas!
+VellumPdf.Canvas.PdfCanvas.Concat(double a, double b, double c, double d, double e, double f) -> VellumPdf.Canvas.PdfCanvas!
+VellumPdf.Canvas.PdfCanvas.CurveTo(double x1, double y1, double x2, double y2, double x3, double y3) -> VellumPdf.Canvas.PdfCanvas!
+VellumPdf.Canvas.PdfCanvas.DoXObject(string! resourceName) -> VellumPdf.Canvas.PdfCanvas!
+VellumPdf.Canvas.PdfCanvas.EndMarkedContent() -> VellumPdf.Canvas.PdfCanvas!
+VellumPdf.Canvas.PdfCanvas.EndPath() -> VellumPdf.Canvas.PdfCanvas!
+VellumPdf.Canvas.PdfCanvas.EndText() -> VellumPdf.Canvas.PdfCanvas!
+VellumPdf.Canvas.PdfCanvas.Fill() -> VellumPdf.Canvas.PdfCanvas!
+VellumPdf.Canvas.PdfCanvas.FillAndStroke() -> VellumPdf.Canvas.PdfCanvas!
+VellumPdf.Canvas.PdfCanvas.FillEvenOdd() -> VellumPdf.Canvas.PdfCanvas!
+VellumPdf.Canvas.PdfCanvas.Finish() -> void
+VellumPdf.Canvas.PdfCanvas.LineTo(double x, double y) -> VellumPdf.Canvas.PdfCanvas!
+VellumPdf.Canvas.PdfCanvas.MoveTextPosition(double tx, double ty) -> VellumPdf.Canvas.PdfCanvas!
+VellumPdf.Canvas.PdfCanvas.MoveTo(double x, double y) -> VellumPdf.Canvas.PdfCanvas!
+VellumPdf.Canvas.PdfCanvas.NextLine() -> VellumPdf.Canvas.PdfCanvas!
+VellumPdf.Canvas.PdfCanvas.PaintAxialGradient(double x0, double y0, double x1, double y1, VellumPdf.Graphics.KernelColor c0, VellumPdf.Graphics.KernelColor c1) -> VellumPdf.Canvas.PdfCanvas!
+VellumPdf.Canvas.PdfCanvas.PaintRadialGradient(double x0, double y0, double r0, double x1, double y1, double r1, VellumPdf.Graphics.KernelColor c0, VellumPdf.Graphics.KernelColor c1) -> VellumPdf.Canvas.PdfCanvas!
+VellumPdf.Canvas.PdfCanvas.PdfCanvas(VellumPdf.Document.PdfPage! page) -> void
+VellumPdf.Canvas.PdfCanvas.Rectangle(double x, double y, double w, double h) -> VellumPdf.Canvas.PdfCanvas!
+VellumPdf.Canvas.PdfCanvas.RestoreState() -> VellumPdf.Canvas.PdfCanvas!
+VellumPdf.Canvas.PdfCanvas.SaveState() -> VellumPdf.Canvas.PdfCanvas!
+VellumPdf.Canvas.PdfCanvas.SetCharSpacing(double cs) -> VellumPdf.Canvas.PdfCanvas!
+VellumPdf.Canvas.PdfCanvas.SetFillAlpha(double alpha) -> VellumPdf.Canvas.PdfCanvas!
+VellumPdf.Canvas.PdfCanvas.SetFillColorCmyk(double c, double m, double y, double k) -> VellumPdf.Canvas.PdfCanvas!
+VellumPdf.Canvas.PdfCanvas.SetFillColorGray(double g) -> VellumPdf.Canvas.PdfCanvas!
+VellumPdf.Canvas.PdfCanvas.SetFillColorRgb(double r, double g, double b) -> VellumPdf.Canvas.PdfCanvas!
+VellumPdf.Canvas.PdfCanvas.SetFont(VellumPdf.Fonts.PdfFontResource! font, double size) -> VellumPdf.Canvas.PdfCanvas!
+VellumPdf.Canvas.PdfCanvas.SetFontByName(string! resourceName, double size) -> VellumPdf.Canvas.PdfCanvas!
+VellumPdf.Canvas.PdfCanvas.SetHorizScaling(double s) -> VellumPdf.Canvas.PdfCanvas!
+VellumPdf.Canvas.PdfCanvas.SetLineCap(int cap) -> VellumPdf.Canvas.PdfCanvas!
+VellumPdf.Canvas.PdfCanvas.SetLineDash(System.ReadOnlySpan<double> pattern, double phase) -> VellumPdf.Canvas.PdfCanvas!
+VellumPdf.Canvas.PdfCanvas.SetLineJoin(int join) -> VellumPdf.Canvas.PdfCanvas!
+VellumPdf.Canvas.PdfCanvas.SetLineWidth(double w) -> VellumPdf.Canvas.PdfCanvas!
+VellumPdf.Canvas.PdfCanvas.SetMiterLimit(double m) -> VellumPdf.Canvas.PdfCanvas!
+VellumPdf.Canvas.PdfCanvas.SetSolidLine() -> VellumPdf.Canvas.PdfCanvas!
+VellumPdf.Canvas.PdfCanvas.SetStrokeAlpha(double alpha) -> VellumPdf.Canvas.PdfCanvas!
+VellumPdf.Canvas.PdfCanvas.SetStrokeColorCmyk(double c, double m, double y, double k) -> VellumPdf.Canvas.PdfCanvas!
+VellumPdf.Canvas.PdfCanvas.SetStrokeColorGray(double g) -> VellumPdf.Canvas.PdfCanvas!
+VellumPdf.Canvas.PdfCanvas.SetStrokeColorRgb(double r, double g, double b) -> VellumPdf.Canvas.PdfCanvas!
+VellumPdf.Canvas.PdfCanvas.SetTextLeading(double tl) -> VellumPdf.Canvas.PdfCanvas!
+VellumPdf.Canvas.PdfCanvas.SetTextMatrix(double a, double b, double c, double d, double e, double f) -> VellumPdf.Canvas.PdfCanvas!
+VellumPdf.Canvas.PdfCanvas.SetTextRise(double tr) -> VellumPdf.Canvas.PdfCanvas!
+VellumPdf.Canvas.PdfCanvas.SetWordSpacing(double ws) -> VellumPdf.Canvas.PdfCanvas!
+VellumPdf.Canvas.PdfCanvas.ShowGlyphs(System.ReadOnlySpan<ushort> glyphIds) -> VellumPdf.Canvas.PdfCanvas!
+VellumPdf.Canvas.PdfCanvas.ShowText(string! text) -> VellumPdf.Canvas.PdfCanvas!
+VellumPdf.Canvas.PdfCanvas.Stroke() -> VellumPdf.Canvas.PdfCanvas!
+VellumPdf.Core.PdfArray
+VellumPdf.Core.PdfArray.Add(VellumPdf.Core.PdfObject! obj) -> VellumPdf.Core.PdfArray!
+VellumPdf.Core.PdfArray.Count.get -> int
+VellumPdf.Core.PdfArray.PdfArray() -> void
+VellumPdf.Core.PdfArray.PdfArray(System.Collections.Generic.IEnumerable<VellumPdf.Core.PdfObject!>! items) -> void
+VellumPdf.Core.PdfArray.this[int i].get -> VellumPdf.Core.PdfObject!
+VellumPdf.Core.PdfBoolean
+VellumPdf.Core.PdfBoolean.Value.get -> bool
+VellumPdf.Core.PdfDictionary
+VellumPdf.Core.PdfDictionary.Get(VellumPdf.Core.PdfName! key) -> VellumPdf.Core.PdfObject?
+VellumPdf.Core.PdfDictionary.PdfDictionary() -> void
+VellumPdf.Core.PdfDictionary.Set(VellumPdf.Core.PdfName! key, long value) -> VellumPdf.Core.PdfDictionary!
+VellumPdf.Core.PdfDictionary.Set(VellumPdf.Core.PdfName! key, string! nameValue) -> VellumPdf.Core.PdfDictionary!
+VellumPdf.Core.PdfDictionary.Set(VellumPdf.Core.PdfName! key, VellumPdf.Core.PdfObject! value) -> VellumPdf.Core.PdfDictionary!
+VellumPdf.Core.PdfDictionary.TryGet(VellumPdf.Core.PdfName! key, out VellumPdf.Core.PdfObject? value) -> bool
+VellumPdf.Core.PdfHexString
+VellumPdf.Core.PdfHexString.Bytes.get -> System.ReadOnlyMemory<byte>
+VellumPdf.Core.PdfHexString.PdfHexString(System.ReadOnlyMemory<byte> bytes) -> void
+VellumPdf.Core.PdfIndirectObject
+VellumPdf.Core.PdfIndirectObject.ObjectNumber.get -> int
+VellumPdf.Core.PdfIndirectObject.PdfIndirectObject(int objectNumber, VellumPdf.Core.PdfObject! value) -> void
+VellumPdf.Core.PdfIndirectObject.Reference.get -> VellumPdf.Core.PdfIndirectReference!
+VellumPdf.Core.PdfIndirectObject.Value.get -> VellumPdf.Core.PdfObject!
+VellumPdf.Core.PdfIndirectReference
+VellumPdf.Core.PdfIndirectReference.Equals(VellumPdf.Core.PdfIndirectReference? other) -> bool
+VellumPdf.Core.PdfIndirectReference.ObjectNumber.get -> int
+VellumPdf.Core.PdfIndirectReference.PdfIndirectReference(int objectNumber) -> void
+VellumPdf.Core.PdfInteger
+VellumPdf.Core.PdfInteger.PdfInteger(long value) -> void
+VellumPdf.Core.PdfInteger.Value.get -> long
+VellumPdf.Core.PdfLiteralString
+VellumPdf.Core.PdfLiteralString.Bytes.get -> System.ReadOnlyMemory<byte>
+VellumPdf.Core.PdfLiteralString.PdfLiteralString(System.ReadOnlyMemory<byte> bytes) -> void
+VellumPdf.Core.PdfName
+VellumPdf.Core.PdfName.Equals(VellumPdf.Core.PdfName? other) -> bool
+VellumPdf.Core.PdfName.PdfName(string! value) -> void
+VellumPdf.Core.PdfName.Value.get -> string!
+VellumPdf.Core.PdfNull
+VellumPdf.Core.PdfObject
+VellumPdf.Core.PdfObject.PdfObject() -> void
+VellumPdf.Core.PdfReal
+VellumPdf.Core.PdfReal.PdfReal(double value) -> void
+VellumPdf.Core.PdfReal.Value.get -> double
+VellumPdf.Core.PdfStream
+VellumPdf.Core.PdfStream.Dictionary.get -> VellumPdf.Core.PdfDictionary!
+VellumPdf.Core.PdfStream.PdfStream() -> void
+VellumPdf.Core.PdfStream.PdfStream(byte[]! data) -> void
+VellumPdf.Document.PageSize
+VellumPdf.Document.PdfConformance
+VellumPdf.Document.PdfConformance.None = 0 -> VellumPdf.Document.PdfConformance
+VellumPdf.Document.PdfConformance.PdfA2a = 3 -> VellumPdf.Document.PdfConformance
+VellumPdf.Document.PdfConformance.PdfA2b = 1 -> VellumPdf.Document.PdfConformance
+VellumPdf.Document.PdfConformance.PdfA2u = 2 -> VellumPdf.Document.PdfConformance
+VellumPdf.Document.PdfDocument
+VellumPdf.Document.PdfDocument.AddCheckBox(VellumPdf.Document.PdfPage! page, string! name, VellumPdf.Document.PdfRectangle! rect, bool checkedState = false, VellumPdf.Forms.FormFieldOptions? options = null) -> void
+VellumPdf.Document.PdfDocument.AddChoiceField(VellumPdf.Document.PdfPage! page, string! name, VellumPdf.Document.PdfRectangle! rect, System.Collections.Generic.IReadOnlyList<string!>! options, string? selected = null, bool combo = true, VellumPdf.Forms.FormFieldOptions? fieldOptions = null) -> void
+VellumPdf.Document.PdfDocument.AddOutlineEntry(VellumPdf.Annotations.PdfOutlineEntry! entry) -> void
+VellumPdf.Document.PdfDocument.AddPage() -> VellumPdf.Document.PdfPage!
+VellumPdf.Document.PdfDocument.AddPage(VellumPdf.Document.PdfRectangle! size) -> VellumPdf.Document.PdfPage!
+VellumPdf.Document.PdfDocument.AddPushButton(VellumPdf.Document.PdfPage! page, string! name, VellumPdf.Document.PdfRectangle! rect, string! caption, VellumPdf.Forms.FormFieldOptions? options = null) -> void
+VellumPdf.Document.PdfDocument.AddRadioButtonGroup(string! name, System.Collections.Generic.IReadOnlyList<VellumPdf.Forms.RadioOption>! options, string? selectedExportValue = null, VellumPdf.Forms.FormFieldOptions? fieldOptions = null) -> void
+VellumPdf.Document.PdfDocument.AddTextField(VellumPdf.Document.PdfPage! page, string! name, VellumPdf.Document.PdfRectangle! rect, string! value = "", VellumPdf.Forms.FormFieldOptions? options = null) -> void
+VellumPdf.Document.PdfDocument.Conformance.get -> VellumPdf.Document.PdfConformance
+VellumPdf.Document.PdfDocument.Conformance.set -> void
+VellumPdf.Document.PdfDocument.DefaultPageSize.get -> VellumPdf.Document.PdfRectangle!
+VellumPdf.Document.PdfDocument.DefaultPageSize.set -> void
+VellumPdf.Document.PdfDocument.Dispose() -> void
+VellumPdf.Document.PdfDocument.Encrypt(VellumPdf.Encryption.PdfEncryptionSettings! settings) -> void
+VellumPdf.Document.PdfDocument.Info.get -> VellumPdf.Document.PdfDocumentInfo!
+VellumPdf.Document.PdfDocument.Pages.get -> System.Collections.Generic.IReadOnlyList<VellumPdf.Document.PdfPage!>!
+VellumPdf.Document.PdfDocument.PdfDocument() -> void
+VellumPdf.Document.PdfDocument.PrepareForSigning(VellumPdf.Document.SignaturePlaceholderOptions! options) -> byte[]!
+VellumPdf.Document.PdfDocument.RegisterEmbeddedFontUsage(VellumPdf.Document.PdfPage! page, VellumPdf.Fonts.EmbeddedFontHandle! handle) -> void
+VellumPdf.Document.PdfDocument.RegisterImageXObject(VellumPdf.Document.PdfPage! page, VellumPdf.Images.PdfImageXObject! image, string! resourceName) -> string!
+VellumPdf.Document.PdfDocument.RegisterLinkAnnotation(VellumPdf.Document.PdfPage! page, VellumPdf.Annotations.PdfLinkAnnotation! annotation) -> void
+VellumPdf.Document.PdfDocument.RegisterStructElem(VellumPdf.Document.PdfStructElem! elem) -> void
+VellumPdf.Document.PdfDocument.Save(System.IO.Stream! destination) -> void
+VellumPdf.Document.PdfDocument.Tagged.get -> bool
+VellumPdf.Document.PdfDocument.Tagged.set -> void
+VellumPdf.Document.PdfDocument.Timestamp.get -> System.DateTimeOffset?
+VellumPdf.Document.PdfDocument.Timestamp.set -> void
+VellumPdf.Document.PdfDocument.UseFont(VellumPdf.Fonts.Standard14 font) -> VellumPdf.Fonts.PdfFontResource!
+VellumPdf.Document.PdfDocument.UseObjectStreams.get -> bool
+VellumPdf.Document.PdfDocument.UseObjectStreams.set -> void
+VellumPdf.Document.PdfDocument.UseTrueTypeFont(byte[]! fontData) -> VellumPdf.Fonts.EmbeddedFontHandle!
+VellumPdf.Document.PdfDocumentInfo
+VellumPdf.Document.PdfDocumentInfo.Author.get -> string?
+VellumPdf.Document.PdfDocumentInfo.Author.set -> void
+VellumPdf.Document.PdfDocumentInfo.Creator.get -> string?
+VellumPdf.Document.PdfDocumentInfo.Creator.set -> void
+VellumPdf.Document.PdfDocumentInfo.Keywords.get -> string?
+VellumPdf.Document.PdfDocumentInfo.Keywords.set -> void
+VellumPdf.Document.PdfDocumentInfo.PdfDocumentInfo() -> void
+VellumPdf.Document.PdfDocumentInfo.Producer.get -> string?
+VellumPdf.Document.PdfDocumentInfo.Producer.set -> void
+VellumPdf.Document.PdfDocumentInfo.Subject.get -> string?
+VellumPdf.Document.PdfDocumentInfo.Subject.set -> void
+VellumPdf.Document.PdfDocumentInfo.Title.get -> string?
+VellumPdf.Document.PdfDocumentInfo.Title.set -> void
+VellumPdf.Document.PdfPage
+VellumPdf.Document.PdfPage.AddAnnotation(VellumPdf.Core.PdfIndirectReference! annotRef) -> void
+VellumPdf.Document.PdfPage.ContentBytes.get -> byte[]?
+VellumPdf.Document.PdfPage.ContentBytes.set -> void
+VellumPdf.Document.PdfPage.MediaBox.get -> VellumPdf.Document.PdfRectangle!
+VellumPdf.Document.PdfPage.PdfPage(VellumPdf.Document.PdfRectangle! mediaBox) -> void
+VellumPdf.Document.PdfPage.Rotate.get -> int
+VellumPdf.Document.PdfPage.Rotate.set -> void
+VellumPdf.Document.PdfRectangle
+VellumPdf.Document.PdfRectangle.Height.get -> double
+VellumPdf.Document.PdfRectangle.LlX.get -> double
+VellumPdf.Document.PdfRectangle.LlY.get -> double
+VellumPdf.Document.PdfRectangle.PdfRectangle(double llx, double lly, double urx, double ury) -> void
+VellumPdf.Document.PdfRectangle.ToArray() -> VellumPdf.Core.PdfArray!
+VellumPdf.Document.PdfRectangle.UrX.get -> double
+VellumPdf.Document.PdfRectangle.UrY.get -> double
+VellumPdf.Document.PdfRectangle.Width.get -> double
+VellumPdf.Document.PdfStructElem
+VellumPdf.Document.PdfStructElem.AddChild(VellumPdf.Document.PdfStructElem! child) -> VellumPdf.Document.PdfStructElem!
+VellumPdf.Document.PdfStructElem.AltText.get -> string?
+VellumPdf.Document.PdfStructElem.AltText.set -> void
+VellumPdf.Document.PdfStructElem.Children.get -> System.Collections.Generic.List<VellumPdf.Document.PdfStructElem!>!
+VellumPdf.Document.PdfStructElem.Mcid.get -> int
+VellumPdf.Document.PdfStructElem.Mcid.set -> void
+VellumPdf.Document.PdfStructElem.Page.get -> VellumPdf.Document.PdfPage?
+VellumPdf.Document.PdfStructElem.Page.set -> void
+VellumPdf.Document.PdfStructElem.PdfStructElem(string! structType) -> void
+VellumPdf.Document.PdfStructElem.StructType.get -> string!
+VellumPdf.Document.SignaturePlaceholderOptions
+VellumPdf.Document.SignaturePlaceholderOptions.ContactInfo.get -> string?
+VellumPdf.Document.SignaturePlaceholderOptions.ContactInfo.init -> void
+VellumPdf.Document.SignaturePlaceholderOptions.EstimatedSignatureSizeBytes.get -> int
+VellumPdf.Document.SignaturePlaceholderOptions.EstimatedSignatureSizeBytes.init -> void
+VellumPdf.Document.SignaturePlaceholderOptions.Location.get -> string?
+VellumPdf.Document.SignaturePlaceholderOptions.Location.init -> void
+VellumPdf.Document.SignaturePlaceholderOptions.Reason.get -> string?
+VellumPdf.Document.SignaturePlaceholderOptions.Reason.init -> void
+VellumPdf.Document.SignaturePlaceholderOptions.SignaturePlaceholderOptions() -> void
+VellumPdf.Document.SignaturePlaceholderOptions.SignerName.get -> string?
+VellumPdf.Document.SignaturePlaceholderOptions.SignerName.init -> void
+VellumPdf.Document.SignaturePlaceholderOptions.SigningTime.get -> System.DateTimeOffset?
+VellumPdf.Document.SignaturePlaceholderOptions.SigningTime.init -> void
+VellumPdf.Document.SignaturePlaceholderOptions.SubFilter.get -> string!
+VellumPdf.Document.SignaturePlaceholderOptions.SubFilter.init -> void
+VellumPdf.Encryption.IPdfEncryptor
+VellumPdf.Encryption.IPdfEncryptor.Encrypt(System.ReadOnlySpan<byte> data) -> byte[]!
+VellumPdf.Encryption.PdfEncryptionSettings
+VellumPdf.Encryption.PdfEncryptionSettings.EncryptMetadata.get -> bool
+VellumPdf.Encryption.PdfEncryptionSettings.EncryptMetadata.set -> void
+VellumPdf.Encryption.PdfEncryptionSettings.OwnerPassword.get -> string?
+VellumPdf.Encryption.PdfEncryptionSettings.OwnerPassword.set -> void
+VellumPdf.Encryption.PdfEncryptionSettings.PdfEncryptionSettings() -> void
+VellumPdf.Encryption.PdfEncryptionSettings.Permissions.get -> VellumPdf.Encryption.PdfPermissions
+VellumPdf.Encryption.PdfEncryptionSettings.Permissions.set -> void
+VellumPdf.Encryption.PdfEncryptionSettings.UserPassword.get -> string?
+VellumPdf.Encryption.PdfEncryptionSettings.UserPassword.set -> void
+VellumPdf.Encryption.PdfPermissions
+VellumPdf.Encryption.PdfPermissions.All = VellumPdf.Encryption.PdfPermissions.Print | VellumPdf.Encryption.PdfPermissions.Modify | VellumPdf.Encryption.PdfPermissions.Copy | VellumPdf.Encryption.PdfPermissions.Annotate | VellumPdf.Encryption.PdfPermissions.FillForms | VellumPdf.Encryption.PdfPermissions.Extract | VellumPdf.Encryption.PdfPermissions.Assemble | VellumPdf.Encryption.PdfPermissions.PrintHighRes -> VellumPdf.Encryption.PdfPermissions
+VellumPdf.Encryption.PdfPermissions.Annotate = 32 -> VellumPdf.Encryption.PdfPermissions
+VellumPdf.Encryption.PdfPermissions.Assemble = 1024 -> VellumPdf.Encryption.PdfPermissions
+VellumPdf.Encryption.PdfPermissions.Copy = 16 -> VellumPdf.Encryption.PdfPermissions
+VellumPdf.Encryption.PdfPermissions.Extract = 512 -> VellumPdf.Encryption.PdfPermissions
+VellumPdf.Encryption.PdfPermissions.FillForms = 256 -> VellumPdf.Encryption.PdfPermissions
+VellumPdf.Encryption.PdfPermissions.Modify = 8 -> VellumPdf.Encryption.PdfPermissions
+VellumPdf.Encryption.PdfPermissions.None = 0 -> VellumPdf.Encryption.PdfPermissions
+VellumPdf.Encryption.PdfPermissions.Print = 4 -> VellumPdf.Encryption.PdfPermissions
+VellumPdf.Encryption.PdfPermissions.PrintHighRes = 2048 -> VellumPdf.Encryption.PdfPermissions
+VellumPdf.Encryption.StandardSecurityHandler
+VellumPdf.Encryption.StandardSecurityHandler.Encrypt(System.ReadOnlySpan<byte> data) -> byte[]!
+VellumPdf.Encryption.StandardSecurityHandler.O.get -> byte[]!
+VellumPdf.Encryption.StandardSecurityHandler.OE.get -> byte[]!
+VellumPdf.Encryption.StandardSecurityHandler.Perms.get -> byte[]!
+VellumPdf.Encryption.StandardSecurityHandler.PValue.get -> int
+VellumPdf.Encryption.StandardSecurityHandler.StandardSecurityHandler(VellumPdf.Encryption.PdfEncryptionSettings! settings) -> void
+VellumPdf.Encryption.StandardSecurityHandler.U.get -> byte[]!
+VellumPdf.Encryption.StandardSecurityHandler.UE.get -> byte[]!
+VellumPdf.Fonts.EmbeddedFontHandle
+VellumPdf.Fonts.EmbeddedFontHandle.GetGlyphId(int codePoint) -> ushort
+VellumPdf.Fonts.EmbeddedFontHandle.GetGlyphIds(string! text, System.Span<ushort> buffer) -> int
+VellumPdf.Fonts.EmbeddedFontHandle.MeasureString(string! text, double pointSize) -> double
+VellumPdf.Fonts.EmbeddedFontHandle.ResourceName.get -> string!
+VellumPdf.Fonts.PdfFontResource
+VellumPdf.Fonts.PdfFontResource.BaseFontName.get -> string!
+VellumPdf.Fonts.PdfFontResource.BuildDictionary() -> VellumPdf.Core.PdfDictionary!
+VellumPdf.Fonts.PdfFontResource.Font.get -> VellumPdf.Fonts.Standard14
+VellumPdf.Fonts.PdfFontResource.MeasureString(string! text, double pointSize) -> double
+VellumPdf.Fonts.PdfFontResource.PdfFontResource(VellumPdf.Fonts.Standard14 font, string! resourceName) -> void
+VellumPdf.Fonts.PdfFontResource.ResourceName.get -> string!
+VellumPdf.Fonts.Standard14
+VellumPdf.Fonts.Standard14.Courier = 8 -> VellumPdf.Fonts.Standard14
+VellumPdf.Fonts.Standard14.CourierBold = 9 -> VellumPdf.Fonts.Standard14
+VellumPdf.Fonts.Standard14.CourierBoldOblique = 11 -> VellumPdf.Fonts.Standard14
+VellumPdf.Fonts.Standard14.CourierOblique = 10 -> VellumPdf.Fonts.Standard14
+VellumPdf.Fonts.Standard14.Helvetica = 0 -> VellumPdf.Fonts.Standard14
+VellumPdf.Fonts.Standard14.HelveticaBold = 1 -> VellumPdf.Fonts.Standard14
+VellumPdf.Fonts.Standard14.HelveticaBoldOblique = 3 -> VellumPdf.Fonts.Standard14
+VellumPdf.Fonts.Standard14.HelveticaOblique = 2 -> VellumPdf.Fonts.Standard14
+VellumPdf.Fonts.Standard14.Symbol = 12 -> VellumPdf.Fonts.Standard14
+VellumPdf.Fonts.Standard14.TimesBold = 5 -> VellumPdf.Fonts.Standard14
+VellumPdf.Fonts.Standard14.TimesBoldItalic = 7 -> VellumPdf.Fonts.Standard14
+VellumPdf.Fonts.Standard14.TimesItalic = 6 -> VellumPdf.Fonts.Standard14
+VellumPdf.Fonts.Standard14.TimesRoman = 4 -> VellumPdf.Fonts.Standard14
+VellumPdf.Fonts.Standard14.ZapfDingbats = 13 -> VellumPdf.Fonts.Standard14
+VellumPdf.Fonts.Standard14Metrics
+VellumPdf.Fonts.TrueTypeFontEmbedder
+VellumPdf.Fonts.TrueTypeFontEmbedder.BuildCidFontDictionary(VellumPdf.Core.PdfIndirectReference! descriptorRef) -> VellumPdf.Core.PdfDictionary!
+VellumPdf.Fonts.TrueTypeFontEmbedder.BuildFontDescriptor(VellumPdf.Core.PdfIndirectReference! fontFileRef) -> VellumPdf.Core.PdfDictionary!
+VellumPdf.Fonts.TrueTypeFontEmbedder.BuildFontDictionary(VellumPdf.Core.PdfIndirectReference! cidFontRef, VellumPdf.Core.PdfIndirectReference! toUnicodeRef) -> VellumPdf.Core.PdfDictionary!
+VellumPdf.Fonts.TrueTypeFontEmbedder.BuildFontFileStream() -> VellumPdf.Core.PdfStream!
+VellumPdf.Fonts.TrueTypeFontEmbedder.BuildToUnicodeCMap() -> VellumPdf.Core.PdfStream!
+VellumPdf.Fonts.TrueTypeFontEmbedder.GetAdvanceWidth(ushort gid) -> int
+VellumPdf.Fonts.TrueTypeFontEmbedder.GetGlyphId(int codePoint) -> ushort
+VellumPdf.Fonts.TrueTypeFontEmbedder.MeasureString(string! text, double pointSize) -> double
+VellumPdf.Fonts.TrueTypeFontEmbedder.ResourceName.get -> string!
+VellumPdf.Fonts.TrueTypeFontEmbedder.TrueTypeFontEmbedder(System.ReadOnlyMemory<byte> fontData, string! resourceName) -> void
+VellumPdf.Forms.FormFieldOptions
+VellumPdf.Forms.FormFieldOptions.FontSize.get -> double
+VellumPdf.Forms.FormFieldOptions.FontSize.init -> void
+VellumPdf.Forms.FormFieldOptions.FormFieldOptions() -> void
+VellumPdf.Forms.FormFieldOptions.Multiline.get -> bool
+VellumPdf.Forms.FormFieldOptions.Multiline.init -> void
+VellumPdf.Forms.FormFieldOptions.ReadOnly.get -> bool
+VellumPdf.Forms.FormFieldOptions.ReadOnly.init -> void
+VellumPdf.Forms.FormFieldOptions.Required.get -> bool
+VellumPdf.Forms.FormFieldOptions.Required.init -> void
+VellumPdf.Forms.RadioOption
+VellumPdf.Forms.RadioOption.Deconstruct(out VellumPdf.Document.PdfPage! Page, out VellumPdf.Document.PdfRectangle! Rect, out string! ExportValue) -> void
+VellumPdf.Forms.RadioOption.Equals(VellumPdf.Forms.RadioOption other) -> bool
+VellumPdf.Forms.RadioOption.ExportValue.get -> string!
+VellumPdf.Forms.RadioOption.ExportValue.init -> void
+VellumPdf.Forms.RadioOption.Page.get -> VellumPdf.Document.PdfPage!
+VellumPdf.Forms.RadioOption.Page.init -> void
+VellumPdf.Forms.RadioOption.RadioOption() -> void
+VellumPdf.Forms.RadioOption.RadioOption(VellumPdf.Document.PdfPage! Page, VellumPdf.Document.PdfRectangle! Rect, string! ExportValue) -> void
+VellumPdf.Forms.RadioOption.Rect.get -> VellumPdf.Document.PdfRectangle!
+VellumPdf.Forms.RadioOption.Rect.init -> void
+VellumPdf.Graphics.KernelColor
+VellumPdf.Graphics.KernelColor.B.get -> double
+VellumPdf.Graphics.KernelColor.G.get -> double
+VellumPdf.Graphics.KernelColor.KernelColor() -> void
+VellumPdf.Graphics.KernelColor.KernelColor(double r, double g, double b) -> void
+VellumPdf.Graphics.KernelColor.R.get -> double
+VellumPdf.Images.BmpImageLoader
+VellumPdf.Images.GifImageLoader
+VellumPdf.Images.JpegImageLoader
+VellumPdf.Images.PdfImageXObject
+VellumPdf.Images.PdfImageXObject.BuildStream() -> VellumPdf.Core.PdfStream!
+VellumPdf.Images.PdfImageXObject.BuildStreamWithSMask(VellumPdf.Core.PdfIndirectReference? sMaskRef) -> VellumPdf.Core.PdfStream!
+VellumPdf.Images.PdfImageXObject.Height.get -> int
+VellumPdf.Images.PdfImageXObject.SMask.get -> VellumPdf.Core.PdfStream?
+VellumPdf.Images.PdfImageXObject.Width.get -> int
+VellumPdf.Images.PngImageLoader
+VellumPdf.Images.TiffImageLoader
+VellumPdf.IO.CrossReferenceBuilder
+VellumPdf.IO.CrossReferenceBuilder.CrossReferenceBuilder() -> void
+VellumPdf.IO.CrossReferenceBuilder.NextObjectNumber.get -> int
+VellumPdf.IO.CrossReferenceBuilder.ReserveObjectNumber(long byteOffset) -> int
+VellumPdf.IO.CrossReferenceBuilder.WriteXrefAndTrailer(VellumPdf.IO.PdfWriter! writer, VellumPdf.Core.PdfIndirectReference! catalogRef, VellumPdf.Core.PdfIndirectReference? infoRef, System.ReadOnlySpan<byte> documentId = default(System.ReadOnlySpan<byte>), VellumPdf.Core.PdfIndirectReference? encryptRef = null, long prevXrefOffset = 0) -> long
+VellumPdf.IO.PdfObjectRegistry
+VellumPdf.IO.PdfObjectRegistry.Add(VellumPdf.Core.PdfObject! value) -> VellumPdf.Core.PdfIndirectReference!
+VellumPdf.IO.PdfObjectRegistry.ObjectCount.get -> int
+VellumPdf.IO.PdfObjectRegistry.PdfObjectRegistry() -> void
+VellumPdf.IO.PdfObjectRegistry.Reserve() -> VellumPdf.Core.PdfIndirectReference!
+VellumPdf.IO.PdfObjectRegistry.SetValue(VellumPdf.Core.PdfIndirectReference! reference, VellumPdf.Core.PdfObject! value) -> void
+VellumPdf.IO.PdfObjectRegistry.WriteAll(VellumPdf.IO.PdfWriter! writer, VellumPdf.IO.CrossReferenceBuilder! xref) -> void
+VellumPdf.IO.PdfObjectRegistry.WriteAll(VellumPdf.IO.PdfWriter! writer, VellumPdf.IO.CrossReferenceBuilder! xref, System.Func<int, System.Action?>? preWrite) -> void
+VellumPdf.IO.PdfWriter
+VellumPdf.IO.PdfWriter.Encryptor.get -> VellumPdf.Encryption.IPdfEncryptor?
+VellumPdf.IO.PdfWriter.Encryptor.set -> void
+VellumPdf.IO.PdfWriter.Flush() -> void
+VellumPdf.IO.PdfWriter.PdfWriter(System.IO.Stream! stream) -> void
+VellumPdf.IO.PdfWriter.Position.get -> long
+VellumPdf.IO.PdfWriter.WriteAscii(System.ReadOnlySpan<byte> bytes) -> void
+VellumPdf.IO.PdfWriter.WriteAsciiString(string! s) -> void
+VellumPdf.IO.PdfWriter.WriteByte(byte b) -> void
+VellumPdf.IO.PdfWriter.WriteRaw(System.ReadOnlySpan<byte> bytes) -> void
+~override VellumPdf.Forms.RadioOption.Equals(object obj) -> bool
+~override VellumPdf.Forms.RadioOption.ToString() -> string

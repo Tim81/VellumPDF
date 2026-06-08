@@ -1,0 +1,22 @@
+#nullable enable
+static VellumPdf.Signing.SigningExtensions.Sign(this VellumPdf.Document.PdfDocument! doc, System.IO.Stream! output, VellumPdf.Signing.PdfSignatureSettings! settings) -> void
+static VellumPdf.Signing.SigningExtensions.Sign(this VellumPdf.Layout.Document! doc, System.IO.Stream! output, VellumPdf.Signing.PdfSignatureSettings! settings) -> void
+VellumPdf.Signing.PdfSignatureSettings
+VellumPdf.Signing.PdfSignatureSettings.Certificate.get -> System.Security.Cryptography.X509Certificates.X509Certificate2!
+VellumPdf.Signing.PdfSignatureSettings.Certificate.init -> void
+VellumPdf.Signing.PdfSignatureSettings.ContactInfo.get -> string?
+VellumPdf.Signing.PdfSignatureSettings.ContactInfo.init -> void
+VellumPdf.Signing.PdfSignatureSettings.EstimatedSignatureSizeBytes.get -> int
+VellumPdf.Signing.PdfSignatureSettings.EstimatedSignatureSizeBytes.init -> void
+VellumPdf.Signing.PdfSignatureSettings.Location.get -> string?
+VellumPdf.Signing.PdfSignatureSettings.Location.init -> void
+VellumPdf.Signing.PdfSignatureSettings.PdfSignatureSettings() -> void
+VellumPdf.Signing.PdfSignatureSettings.Reason.get -> string?
+VellumPdf.Signing.PdfSignatureSettings.Reason.init -> void
+VellumPdf.Signing.PdfSignatureSettings.SignerName.get -> string?
+VellumPdf.Signing.PdfSignatureSettings.SignerName.init -> void
+VellumPdf.Signing.PdfSignatureSettings.SigningTime.get -> System.DateTimeOffset?
+VellumPdf.Signing.PdfSignatureSettings.SigningTime.init -> void
+VellumPdf.Signing.PdfSignatureSettings.SubFilter.get -> string!
+VellumPdf.Signing.PdfSignatureSettings.SubFilter.init -> void
+VellumPdf.Signing.SigningExtensions
