@@ -11,8 +11,13 @@ public sealed class PdfHexString : PdfObject
 
     public override void WriteTo(PdfWriter writer)
     {
+        // When an encryptor is active, encrypt the raw bytes first.
+        var payload = writer.Encryptor is { } enc
+            ? enc.Encrypt(Bytes.Span)
+            : Bytes.Span.ToArray();
+
         writer.WriteByte((byte)'<');
-        foreach (var b in Bytes.Span)
+        foreach (var b in payload.AsSpan())
         {
             writer.WriteByte(Nibble(b >> 4));
             writer.WriteByte(Nibble(b & 0xF));

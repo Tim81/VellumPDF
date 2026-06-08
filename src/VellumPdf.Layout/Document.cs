@@ -1,6 +1,7 @@
 // Copyright 2026 Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
+using VellumPdf.Encryption;
 using VellumPdf.Fonts;
 using VellumPdf.Layout.Core;
 using VellumPdf.Layout.Elements;
@@ -142,6 +143,19 @@ public sealed class Document : IDisposable
 
     public Document Add(string text, TextStyle? style = null)
         => Add(new Paragraph(text, style ?? _defaultStyle));
+
+    // ── Encryption ──────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Configures AES-256 encryption for this document.
+    /// Delegates to <see cref="PdfDocument.Encrypt"/>.
+    /// Must be called before <see cref="Save(Stream)"/>.
+    /// </summary>
+    public Document Encrypt(PdfEncryptionSettings settings)
+    {
+        _pdf.Encrypt(settings);
+        return this;
+    }
 
     // ── Output ───────────────────────────────────────────────────────────────
 

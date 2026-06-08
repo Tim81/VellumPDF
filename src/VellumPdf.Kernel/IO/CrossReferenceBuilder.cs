@@ -38,12 +38,14 @@ public sealed class CrossReferenceBuilder
     /// Optional 16-byte document ID. When provided, written as /ID [&lt;hex&gt; &lt;hex&gt;]
     /// in the trailer (both array elements are the same value at creation time per ISO 32000-2 §14.4).
     /// </param>
+    /// <param name="encryptRef">Optional reference to the /Encrypt dictionary indirect object.</param>
     /// <param name="prevXrefOffset">Non-zero for incremental updates (§7.5.6).</param>
     public long WriteXrefAndTrailer(
         PdfWriter writer,
         PdfIndirectReference catalogRef,
         PdfIndirectReference? infoRef,
         ReadOnlySpan<byte> documentId = default,
+        PdfIndirectReference? encryptRef = null,
         long prevXrefOffset = 0)
     {
         var xrefOffset = writer.Position;
@@ -77,10 +79,15 @@ public sealed class CrossReferenceBuilder
         if (!documentId.IsEmpty && documentId.Length == 16)
         {
             // /ID [<firstId> <updateId>] — at creation both values are the same (§14.4).
+            // NOTE: /ID strings in the trailer are NEVER encrypted (§7.6.5 note).
+            // The writer's encryptor is always null at this point (disabled during trailer write).
             var hexId = new PdfHexString(documentId.ToArray());
             var hexId2 = new PdfHexString(documentId.ToArray());
             trailer.Set(PdfName.ID, new PdfArray([hexId, hexId2]));
         }
+
+        if (encryptRef is not null)
+            trailer.Set(new PdfName("Encrypt"), encryptRef);
 
         if (prevXrefOffset > 0)
             trailer.Set(PdfName.Prev, prevXrefOffset);

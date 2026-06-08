@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 using System.Text;
+using VellumPdf.Encryption;
 
 namespace VellumPdf.IO;
 
@@ -16,6 +17,13 @@ public sealed class PdfWriter
 {
     private readonly Stream _stream;
     private long _position;
+
+    /// <summary>
+    /// When non-null, string and stream content is encrypted via this encryptor
+    /// before being written. Set to null while writing the /Encrypt dictionary
+    /// itself and for trailer /ID (which must not be encrypted).
+    /// </summary>
+    public IPdfEncryptor? Encryptor { get; set; }
 
     /// <summary>
     /// Number of bytes written so far. This is always authoritative, even for

@@ -5,6 +5,7 @@ using System.Security.Cryptography;
 using System.Text;
 using VellumPdf.Annotations;
 using VellumPdf.Core;
+using VellumPdf.Encryption;
 using VellumPdf.Fonts;
 using VellumPdf.Images;
 using VellumPdf.IO;
@@ -45,6 +46,9 @@ public sealed class PdfDocument : IDisposable
     private int _fontCounter;
     private int _ttFontCounter;
     private bool _disposed;
+
+    // Encryption settings supplied via Encrypt(). Null = no encryption.
+    private PdfEncryptionSettings? _encryptionSettings;
 
     public PdfDocumentInfo Info { get; } = new();
 
@@ -182,6 +186,22 @@ public sealed class PdfDocument : IDisposable
     {
         if (Tagged)
             _structureTree.AddStructElem(elem);
+    }
+
+    /// <summary>
+    /// Configures AES-256 encryption (Standard security handler V=5, R=6) for this document.
+    /// Must be called before <see cref="Save"/>. When called, <see cref="Save"/> will:
+    /// <list type="bullet">
+    ///   <item>Generate the /Encrypt dictionary and write it as an unencrypted indirect object.</item>
+    ///   <item>Encrypt all string and stream content in the document body.</item>
+    ///   <item>Add /Encrypt to the trailer (unencrypted).</item>
+    /// </list>
+    /// </summary>
+    public void Encrypt(PdfEncryptionSettings settings)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(settings);
+        _encryptionSettings = settings;
     }
 
     /// <summary>Writes a complete PDF file to <paramref name="destination"/>.</summary>
@@ -367,6 +387,21 @@ public sealed class PdfDocument : IDisposable
         // ── Build document /ID (MD5 over title + producer + page count + timestamp) ─
         var documentId = ComputeDocumentId(ts);
 
+        // ── Build /Encrypt dictionary (AES-256, V5/R6) and arm the encryptor ──
+        // The /Encrypt object itself MUST be written BEFORE calling WriteAll,
+        // and MUST be written with writer.Encryptor == null (not encrypted).
+        // All other objects (written by WriteAll below) will be encrypted.
+        PdfIndirectReference? encryptRef = null;
+        if (_encryptionSettings is { } encSettings)
+        {
+            var handler = new StandardSecurityHandler(encSettings);
+            encryptRef = registry.Reserve();
+            var encDict = BuildEncryptDictionary(handler, encSettings);
+            registry.SetValue(encryptRef, encDict);
+            // Arm the writer — all strings/streams from WriteAll onward are encrypted.
+            writer.Encryptor = handler;
+        }
+
         // ── Build outline tree (bookmarks) ────────────────────────────────
         PdfIndirectReference? outlinesRef = null;
         if (_outlineEntries.Count > 0)
@@ -400,11 +435,92 @@ public sealed class PdfDocument : IDisposable
         registry.SetValue(catalogRef, catalog);
 
         // ── Write all objects in object-number order ───────────────────────
-        registry.WriteAll(writer, xref);
+        // The /Encrypt object is written here too; because it is a plain PdfDictionary
+        // (no strings/streams), and strings inside it are PdfHexString values that were
+        // created without going through the encryptor path (they are raw bytes), this is
+        // safe. However, to be absolutely correct we momentarily disable the encryptor
+        // when WriteAll processes the /Encrypt object's slot.
+        // Implementation note: WriteAll writes objects in slot order. The /Encrypt ref
+        // was reserved LAST (after the catalog), so its slot is at the end. We use a
+        // per-object encryptor-disable approach: the /Encrypt dict's WriteTo is a
+        // PdfDictionary, which never calls the encryptor directly — its children
+        // (PdfHexString values) do. We disable the encryptor for those writes by
+        // temporarily patching writer.Encryptor inside WriteAllWithEncryptExempt.
+        WriteAllWithEncryptExempt(writer, xref, registry, encryptRef);
 
         // ── Cross-reference table + trailer ───────────────────────────────
-        xref.WriteXrefAndTrailer(writer, catalogRef, infoRef, documentId: documentId);
+        // Trailer /ID must NOT be encrypted. Ensure encryptor is null during trailer write.
+        writer.Encryptor = null;
+        xref.WriteXrefAndTrailer(writer, catalogRef, infoRef, documentId: documentId, encryptRef: encryptRef);
         writer.Flush();
+    }
+
+    /// <summary>
+    /// Builds the /Encrypt dictionary for a V5/R6 AES-256 Standard security handler.
+    /// The string values (/O, /U, /OE, /UE, /Perms) are written as hex strings
+    /// (PdfHexString). They are raw computed bytes — NOT encrypted themselves.
+    /// </summary>
+    private static PdfDictionary BuildEncryptDictionary(
+        Encryption.StandardSecurityHandler handler,
+        PdfEncryptionSettings settings)
+    {
+        // /CF sub-dictionary: one crypt filter "StdCF" using AESv3 (256-bit AES).
+        var stdCfDict = new PdfDictionary()
+            .Set(new PdfName("CFM"), new PdfName("AESV3"))
+            .Set(new PdfName("AuthEvent"), new PdfName("DocOpen"));
+
+        var cfDict = new PdfDictionary()
+            .Set(new PdfName("StdCF"), stdCfDict);
+
+        return new PdfDictionary()
+            .Set(new PdfName("Filter"), new PdfName("Standard"))
+            .Set(new PdfName("V"), new PdfInteger(5))
+            .Set(new PdfName("R"), new PdfInteger(6))
+            .Set(new PdfName("Length"), new PdfInteger(256))
+            .Set(new PdfName("CF"), cfDict)
+            .Set(new PdfName("StmF"), new PdfName("StdCF"))
+            .Set(new PdfName("StrF"), new PdfName("StdCF"))
+            .Set(new PdfName("O"), new PdfHexString(handler.O))
+            .Set(new PdfName("U"), new PdfHexString(handler.U))
+            .Set(new PdfName("OE"), new PdfHexString(handler.OE))
+            .Set(new PdfName("UE"), new PdfHexString(handler.UE))
+            .Set(new PdfName("P"), new PdfInteger(handler.PValue))
+            .Set(new PdfName("Perms"), new PdfHexString(handler.Perms))
+            .Set(new PdfName("EncryptMetadata"), settings.EncryptMetadata ? PdfBoolean.True : PdfBoolean.False);
+    }
+
+    /// <summary>
+    /// Writes all registered indirect objects, temporarily disabling the encryptor
+    /// for the /Encrypt object's slot (its data is already computed encrypted values —
+    /// they must NOT be double-encrypted).
+    ///
+    /// The /Encrypt dict contains PdfHexString values that would normally go through
+    /// the encryptor if it is active. We disable the encryptor just for that one object.
+    /// </summary>
+    private static void WriteAllWithEncryptExempt(
+        PdfWriter writer,
+        CrossReferenceBuilder xref,
+        PdfObjectRegistry registry,
+        PdfIndirectReference? encryptRef)
+    {
+        if (encryptRef is null)
+        {
+            // No encryption — delegate to the normal path.
+            registry.WriteAll(writer, xref);
+            return;
+        }
+
+        registry.WriteAll(writer, xref, objectNumber =>
+        {
+            // Disable the encryptor while writing the /Encrypt dict itself.
+            if (objectNumber == encryptRef.ObjectNumber)
+            {
+                var saved = writer.Encryptor;
+                writer.Encryptor = null;
+                return () => writer.Encryptor = saved;
+            }
+            return null;
+        });
     }
 
     /// <summary>

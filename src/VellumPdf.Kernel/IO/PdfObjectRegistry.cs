@@ -7,12 +7,11 @@ namespace VellumPdf.IO;
 /// General-purpose indirect-object allocator for a single PDF revision.
 ///
 /// Usage:
-///   1. Call <see cref="Reserve"/> to obtain a <see cref="PdfIndirectReference"/>
-///      with an assigned object number before the value is known (forward-reference).
-///   2. Call <see cref="SetValue"/> to attach the <see cref="PdfObject"/> payload.
-///   3. At serialisation time call <see cref="WriteAll"/> which walks entries in
-///      object-number order, records each byte offset into the supplied
-///      <see cref="CrossReferenceBuilder"/>, and writes the indirect-object wrappers.
+///   1. Call Reserve to obtain a PdfIndirectReference with an assigned object number.
+///   2. Call SetValue to attach the PdfObject payload.
+///   3. At serialisation time call WriteAll which walks entries in object-number order,
+///      records each byte offset into the supplied CrossReferenceBuilder, and writes
+///      the indirect-object wrappers.
 /// </summary>
 public sealed class PdfObjectRegistry
 {
@@ -20,7 +19,7 @@ public sealed class PdfObjectRegistry
 
     /// <summary>
     /// Reserves the next object number and returns its reference.
-    /// The payload must be set via <see cref="SetValue"/> before <see cref="WriteAll"/> is called.
+    /// The payload must be set via SetValue before WriteAll is called.
     /// </summary>
     public PdfIndirectReference Reserve()
     {
@@ -50,10 +49,17 @@ public sealed class PdfObjectRegistry
     /// <summary>
     /// Writes all registered indirect objects to <paramref name="writer"/> in object-number order,
     /// recording each byte offset into <paramref name="xref"/>.
-    /// Entries whose value is still <c>null</c> are skipped (they will be absent from xref
-    /// and treated as free by readers — this should not happen in well-formed documents).
     /// </summary>
     public void WriteAll(PdfWriter writer, CrossReferenceBuilder xref)
+        => WriteAll(writer, xref, preWrite: null);
+
+    /// <summary>
+    /// Writes all registered indirect objects with an optional per-object pre-write hook.
+    /// <paramref name="preWrite"/> receives the object number and may return a cleanup action
+    /// invoked after the object is written (e.g. to restore writer state).
+    /// Returning null from the delegate means no cleanup is needed.
+    /// </summary>
+    public void WriteAll(PdfWriter writer, CrossReferenceBuilder xref, Func<int, Action?>? preWrite)
     {
         for (var i = 0; i < _values.Count; i++)
         {
@@ -62,9 +68,11 @@ public sealed class PdfObjectRegistry
                 throw new InvalidOperationException($"Object {i + 1} was reserved but never assigned a value.");
 
             var objNum = i + 1;
+            var cleanup = preWrite?.Invoke(objNum);
             xref.ReserveObjectNumber(writer.Position);
             new PdfIndirectObject(objNum, value).WriteTo(writer);
             writer.WriteByte((byte)'\n');
+            cleanup?.Invoke();
         }
     }
 }

@@ -24,13 +24,29 @@ public class PdfStream : PdfObject
     {
         byte[] compressed = Compress(_data);
 
-        Dictionary
-            .Set(PdfName.Filter, PdfName.FlateDecode)
-            .Set(PdfName.Length, compressed.Length);
+        // When an encryptor is active the stream body is wrapped:
+        // body = AES-IV(16) || AES-CBC-PKCS7(compressed). The /Length reflects
+        // the encrypted length. The /Filter chain stays as FlateDecode because
+        // PDF readers decrypt first, then decompress.
+        byte[] body;
+        if (writer.Encryptor is { } enc)
+        {
+            body = enc.Encrypt(compressed);
+            Dictionary
+                .Set(PdfName.Filter, PdfName.FlateDecode)
+                .Set(PdfName.Length, body.Length);
+        }
+        else
+        {
+            body = compressed;
+            Dictionary
+                .Set(PdfName.Filter, PdfName.FlateDecode)
+                .Set(PdfName.Length, compressed.Length);
+        }
 
         Dictionary.WriteTo(writer);
         writer.WriteAscii("\nstream\n"u8);
-        writer.WriteRaw(compressed);
+        writer.WriteRaw(body);
         writer.WriteAscii("\nendstream"u8);
     }
 

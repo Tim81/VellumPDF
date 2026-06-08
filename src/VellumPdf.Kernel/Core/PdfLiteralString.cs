@@ -30,8 +30,14 @@ public sealed class PdfLiteralString : PdfObject
 
     public override void WriteTo(PdfWriter writer)
     {
+        // When an encryptor is active, encrypt the raw bytes first and then
+        // write the escaped result. The (…) delimiters wrap the encrypted payload.
+        var payload = writer.Encryptor is { } enc
+            ? enc.Encrypt(Bytes.Span)
+            : Bytes.Span.ToArray();
+
         writer.WriteByte((byte)'(');
-        foreach (var b in Bytes.Span)
+        foreach (var b in payload.AsSpan())
         {
             switch (b)
             {

@@ -19,12 +19,22 @@ internal sealed class UncompressedPdfStream : PdfStream
 
     public override void WriteTo(PdfWriter writer)
     {
-        // No /Filter — plain uncompressed bytes.
-        Dictionary.Set(PdfName.Length, _data.Length);
+        // No /Filter — plain uncompressed bytes (or encrypted body when active).
+        byte[] body;
+        if (writer.Encryptor is { } enc)
+        {
+            body = enc.Encrypt(_data);
+            Dictionary.Set(PdfName.Length, body.Length);
+        }
+        else
+        {
+            body = _data;
+            Dictionary.Set(PdfName.Length, _data.Length);
+        }
 
         Dictionary.WriteTo(writer);
         writer.WriteAscii("\nstream\n"u8);
-        writer.WriteRaw(_data);
+        writer.WriteRaw(body);
         writer.WriteAscii("\nendstream"u8);
     }
 }

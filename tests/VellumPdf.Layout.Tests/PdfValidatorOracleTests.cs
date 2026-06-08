@@ -3,6 +3,7 @@
 
 using System.ComponentModel;
 using System.Diagnostics;
+using VellumPdf.Encryption;
 using VellumPdf.Fonts;
 using VellumPdf.Layout;
 using VellumPdf.Layout.Core;
@@ -158,6 +159,73 @@ public sealed class PdfValidatorOracleTests : IDisposable
             $"Embedded-font marker 'EMBEDORACLE456' not found in pdftotext output.\nstderr: {stderr}");
     }
 
+    // ── AES-256 encryption oracle tests ─────────────────────────────────────
+
+    private const string EncryptionUserPassword = "openme";
+    private const string EncryptionMarker = "VELLUMORACLE_ENCRYPTTEST_7F3A";
+
+    [Fact]
+    public void AesEncrypted_QpdfCheck_Passes()
+    {
+        var pdfPath = Path.Combine(_tempDir, "encrypted_aes256.pdf");
+        GenerateEncryptedDoc(pdfPath);
+
+        if (!TryRunTool("qpdf", $"--password={EncryptionUserPassword} --check \"{pdfPath}\"",
+            out var exit, out var stdout, out var stderr))
+        {
+            GateOnCi("qpdf");
+            return;
+        }
+
+        Assert.True(
+            exit == 0,
+            $"qpdf --check failed (exit {exit}) on AES-256 encrypted doc.\n" +
+            $"stdout: {stdout}\nstderr: {stderr}");
+    }
+
+    [Fact]
+    public void AesEncrypted_QpdfShowEncryption_ReportsAESV3()
+    {
+        var pdfPath = Path.Combine(_tempDir, "encrypted_showenc.pdf");
+        GenerateEncryptedDoc(pdfPath);
+
+        if (!TryRunTool("qpdf", $"--password={EncryptionUserPassword} --show-encryption \"{pdfPath}\"",
+            out var exit, out var stdout, out var stderr))
+        {
+            GateOnCi("qpdf");
+            return;
+        }
+
+        // qpdf reports the key length and algorithm in --show-encryption output.
+        Assert.True(
+            stdout.Contains("256", StringComparison.OrdinalIgnoreCase) ||
+            stderr.Contains("256", StringComparison.OrdinalIgnoreCase),
+            $"Expected '256' in qpdf --show-encryption output.\nstdout: {stdout}\nstderr: {stderr}");
+
+        Assert.True(
+            stdout.Contains("AES", StringComparison.OrdinalIgnoreCase) ||
+            stderr.Contains("AES", StringComparison.OrdinalIgnoreCase),
+            $"Expected 'AES' in qpdf --show-encryption output.\nstdout: {stdout}\nstderr: {stderr}");
+    }
+
+    [Fact]
+    public void AesEncrypted_PdftotextWithPassword_FindsMarker()
+    {
+        var pdfPath = Path.Combine(_tempDir, "encrypted_pdftotext.pdf");
+        GenerateEncryptedDoc(pdfPath);
+
+        if (!TryRunTool("pdftotext", $"-upw {EncryptionUserPassword} \"{pdfPath}\" -",
+            out _, out var text, out var stderr))
+        {
+            GateOnCi("pdftotext");
+            return;
+        }
+
+        Assert.True(
+            text.Contains(EncryptionMarker, StringComparison.Ordinal),
+            $"Encryption marker '{EncryptionMarker}' not found in pdftotext output.\nstderr: {stderr}");
+    }
+
     // ── Document generators ──────────────────────────────────────────────────
 
     private static void GenerateMultiPageDoc(string path)
@@ -194,6 +262,21 @@ public sealed class PdfValidatorOracleTests : IDisposable
         list.Add("ListMarkerTwo");
         doc.Add(list);
 
+        doc.Save(path);
+    }
+
+    private static void GenerateEncryptedDoc(string path)
+    {
+        using var doc = new Document();
+        var style = new TextStyle { Font = Standard14.Helvetica, FontSize = 12 };
+        doc.Add(new Paragraph(EncryptionMarker, style));
+        doc.Add(new Paragraph("This document is AES-256 encrypted.", style));
+        doc.Encrypt(new PdfEncryptionSettings
+        {
+            UserPassword = EncryptionUserPassword,
+            OwnerPassword = "ownerpassword",
+            Permissions = PdfPermissions.All,
+        });
         doc.Save(path);
     }
 

@@ -20,13 +20,25 @@ internal sealed class RawPdfStream : PdfStream
 
     public override void WriteTo(PdfWriter writer)
     {
-        Dictionary
-            .Set(PdfName.Filter, _filter)
-            .Set(PdfName.Length, _rawData.Length);
+        byte[] body;
+        if (writer.Encryptor is { } enc)
+        {
+            body = enc.Encrypt(_rawData);
+            Dictionary
+                .Set(PdfName.Filter, _filter)
+                .Set(PdfName.Length, body.Length);
+        }
+        else
+        {
+            body = _rawData;
+            Dictionary
+                .Set(PdfName.Filter, _filter)
+                .Set(PdfName.Length, _rawData.Length);
+        }
 
         Dictionary.WriteTo(writer);
         writer.WriteAscii("\nstream\n"u8);
-        writer.WriteRaw(_rawData);
+        writer.WriteRaw(body);
         writer.WriteAscii("\nendstream"u8);
     }
 }
