@@ -29,6 +29,21 @@ jobs:
       - name: Install PDF validators
         run: sudo apt-get update && sudo apt-get install -y qpdf poppler-utils fonts-dejavu-core fonts-texgyre
 
+      - name: Pull veraPDF Docker image
+        run: docker pull verapdf/cli:v1.30.2
+
+      - name: Install veraPDF shim
+        run: |
+          # The oracle tests shell out to `verapdf`; back it with the official Docker
+          # image. The image ENTRYPOINT is /opt/verapdf/verapdf, so arguments pass
+          # straight through — the shim must NOT prepend the word "verapdf". Mounting
+          # /tmp lets the tests' temp-dir PDF paths resolve identically in-container.
+          sudo tee /usr/local/bin/verapdf > /dev/null << 'SHIM'
+          #!/bin/sh
+          exec docker run --rm -v /tmp:/tmp -w /tmp verapdf/cli:v1.30.2 "$@"
+          SHIM
+          sudo chmod +x /usr/local/bin/verapdf
+
       - name: Test
         run: dotnet test VellumPdf.slnx -c Release --no-build
 
