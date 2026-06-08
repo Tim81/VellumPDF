@@ -38,8 +38,11 @@ public static class GifImageLoader
 
         if (globalColorTableFlag)
         {
-            globalPalette = gifBytes[pos..(pos + globalColorTableSize * 3)];
-            pos += globalColorTableSize * 3;
+            var tableBytes = globalColorTableSize * 3;
+            if (pos + tableBytes > gifBytes.Length)
+                throw new InvalidDataException("GIF global colour table extends beyond end of file.");
+            globalPalette = gifBytes[pos..(pos + tableBytes)];
+            pos += tableBytes;
         }
 
         // Walk the block stream until the first image descriptor
@@ -103,8 +106,11 @@ public static class GifImageLoader
         byte[] palette;
         if (hasLocalColorTable)
         {
-            palette = data[pos..(pos + localColorTableSize * 3)];
-            pos += localColorTableSize * 3;
+            var localTableBytes = localColorTableSize * 3;
+            if (pos + localTableBytes > data.Length)
+                throw new InvalidDataException("GIF local colour table extends beyond end of file.");
+            palette = data[pos..(pos + localTableBytes)];
+            pos += localTableBytes;
         }
         else
         {
@@ -238,28 +244,37 @@ public static class GifImageLoader
                 throw new InvalidDataException("Invalid GIF LZW code.");
             }
 
-            // Walk the chain and push to stack (entries are stored tail-first)
+            // Walk the chain and push to stack (entries are stored tail-first).
+            // Cap the walk to maxTableSize iterations to prevent OOB on a malformed/cyclic chain.
             stackTop = 0;
             var cur = resolvedCode;
             while (cur >= 0)
             {
+                if (stackTop >= maxTableSize)
+                    throw new InvalidDataException("GIF LZW chain exceeds maximum table size; data may be corrupt.");
                 stack[stackTop++] = tableSuffix[cur];
                 cur = tablePrefix[cur];
             }
 
-            // If code == nextCode, append the first byte of prevCode's chain (already on stack top)
+            // If code == nextCode (KwKwK case), the new entry's first byte equals
+            // the first byte of prevCode's sequence, which is already at the bottom of the stack.
             if (code == nextCode)
-                stack[stackTop++] = stack[stackTop - 1];
+            {
+                var firstByte = stack[stackTop - 1];
+                stack[stackTop++] = firstByte;
+            }
 
             // Pop stack into output
             for (var i = stackTop - 1; i >= 0 && outIdx < pixelCount; i--)
                 output[outIdx++] = stack[i];
 
-            // Add new table entry: prevCode's sequence + first byte of current code
+            // Add new table entry: prevCode's sequence + first byte of current code.
+            // The chain walk pushes suffix bytes root-to-leaf reversed, so stack[stackTop-1]
+            // is the first byte of the decoded string (emitted first in the pop loop).
             if (prevCode >= 0 && nextCode < maxTableSize)
             {
-                // First byte of current code = bottom of the chain we just walked
-                var firstByte = code < nextCode ? stack[stackTop - 1] : stack[stackTop - 1];
+                // stack[stackTop-1] is the first byte of the resolved code's string.
+                var firstByte = stack[stackTop - 1];
                 tablePrefix[nextCode] = prevCode;
                 tableSuffix[nextCode] = firstByte;
                 nextCode++;
@@ -291,6 +306,8 @@ public static class GifImageLoader
         {
             var blockLen = data[pos++];
             if (blockLen == 0) break;
+            if (pos + blockLen > data.Length)
+                throw new InvalidDataException("GIF sub-block extends beyond end of file.");
             ms.Write(data, pos, blockLen);
             pos += blockLen;
         }

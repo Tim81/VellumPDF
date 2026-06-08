@@ -77,6 +77,10 @@ internal sealed class PdfStructureTree
         foreach (var e in allElems)
             elemRefs[e] = registry.Reserve();
 
+        // Build a parent map so each elem's true immediate parent is known at any depth.
+        var parentMap = new Dictionary<PdfStructElem, PdfStructElem>(allElems.Count);
+        BuildParentMap(_documentRoot, parentMap);
+
         // Reserve StructTreeRoot ref
         var structTreeRootRef = registry.Reserve();
 
@@ -120,8 +124,12 @@ internal sealed class PdfStructureTree
         {
             var ref_ = elemRefs[elem];
 
-            // Find parent ref
-            PdfObject parentRef = FindParentRef(elem, _documentRoot, elemRefs, docRootRef, structTreeRootRef);
+            // Resolve the immediate parent using the parent map built above.
+            PdfObject parentRef;
+            if (parentMap.TryGetValue(elem, out var immediateParent) && elemRefs.TryGetValue(immediateParent, out var parentElemRef))
+                parentRef = parentElemRef;
+            else
+                parentRef = structTreeRootRef;
 
             var d = new PdfDictionary()
                 .Set(PdfName.Type, new PdfName("StructElem"))
@@ -202,38 +210,16 @@ internal sealed class PdfStructureTree
         }
     }
 
-    private static PdfObject FindParentRef(
-        PdfStructElem target,
-        PdfStructElem documentRoot,
-        Dictionary<PdfStructElem, PdfIndirectReference> elemRefs,
-        PdfIndirectReference docRootRef,
-        PdfIndirectReference structTreeRootRef)
-    {
-        // Direct children of documentRoot have documentRoot as parent.
-        if (documentRoot.Children.Contains(target))
-            return docRootRef;
-
-        // Deeper children — find which child of documentRoot contains target.
-        foreach (var topChild in documentRoot.Children)
-        {
-            if (ContainsElem(topChild, target))
-            {
-                return elemRefs.TryGetValue(topChild, out var parentRef)
-                    ? (PdfObject)parentRef
-                    : structTreeRootRef;
-            }
-        }
-
-        return structTreeRootRef;
-    }
-
-    private static bool ContainsElem(PdfStructElem parent, PdfStructElem target)
+    /// <summary>
+    /// Recursively populates <paramref name="map"/> so that each child element maps to its
+    /// immediate parent. The document root itself is the parent of its direct children.
+    /// </summary>
+    private static void BuildParentMap(PdfStructElem parent, Dictionary<PdfStructElem, PdfStructElem> map)
     {
         foreach (var child in parent.Children)
         {
-            if (child == target) return true;
-            if (ContainsElem(child, target)) return true;
+            map[child] = parent;
+            BuildParentMap(child, map);
         }
-        return false;
     }
 }

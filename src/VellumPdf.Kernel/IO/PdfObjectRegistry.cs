@@ -58,7 +58,8 @@ public sealed class PdfObjectRegistry
         for (var i = 0; i < _values.Count; i++)
         {
             var value = _values[i];
-            if (value is null) continue;
+            if (value is null)
+                throw new InvalidOperationException($"Object {i + 1} was reserved but never assigned a value.");
 
             var objNum = i + 1;
             xref.ReserveObjectNumber(writer.Position);

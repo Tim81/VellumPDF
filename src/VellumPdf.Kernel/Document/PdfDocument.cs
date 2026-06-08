@@ -265,23 +265,20 @@ public sealed class PdfDocument : IDisposable
             var emb = handle.Embedder;
 
             // Reserve all indirect references first (forward-reference pattern)
-            var fontFileRef = registry.Reserve();       // FontFile2 stream
-            var descriptorRef = registry.Reserve();      // FontDescriptor dict
-            var cidFontRef = registry.Reserve();         // CIDFontType2 dict
-            var descendantArrayRef = registry.Reserve(); // one-element PdfArray [cidFontRef]
-            var toUnicodeRef = registry.Reserve();       // ToUnicode CMap stream
-            var type0Ref = registry.Reserve();           // Type0 font dict
+            var fontFileRef = registry.Reserve();   // FontFile2 stream
+            var descriptorRef = registry.Reserve(); // FontDescriptor dict
+            var cidFontRef = registry.Reserve();    // CIDFontType2 dict
+            var toUnicodeRef = registry.Reserve();  // ToUnicode CMap stream
+            var type0Ref = registry.Reserve();      // Type0 font dict
 
             // Set values (subset is built here — all glyphs have been registered by Draw)
             registry.SetValue(fontFileRef, emb.BuildFontFileStream());
             registry.SetValue(descriptorRef, emb.BuildFontDescriptor(fontFileRef));
             registry.SetValue(cidFontRef, emb.BuildCidFontDictionary(descriptorRef));
 
-            // DescendantFonts is an array containing the CIDFont ref
-            registry.SetValue(descendantArrayRef, new PdfArray([cidFontRef]));
-
+            // /DescendantFonts is written as an inline array inside the Type0 dict (PDF/A-compliant).
             registry.SetValue(toUnicodeRef, emb.BuildToUnicodeCMap());
-            registry.SetValue(type0Ref, emb.BuildFontDictionary(descendantArrayRef, toUnicodeRef));
+            registry.SetValue(type0Ref, emb.BuildFontDictionary(cidFontRef, toUnicodeRef));
 
             // Register on each page that used this font
             foreach (var page in _pages)
@@ -313,6 +310,18 @@ public sealed class PdfDocument : IDisposable
                 registry.SetValue(annotRef, annotDict);
                 page.AddAnnotation(annotRef);
             }
+        }
+
+        // ── Build structure tree (tagged PDF) ─────────────────────────────
+        // MUST happen before the page-dict build so that page.StructParentsKey is set
+        // before BuildDictionary is called (otherwise /StructParents is never written).
+        PdfIndirectReference? structTreeRootRef = null;
+        if (Tagged && !_structureTree.IsEmpty)
+        {
+            structTreeRootRef = _structureTree.Build(registry, pageRefMap, out var pageStructParents);
+            // Stamp /StructParents on each page that has tagged content.
+            foreach (var (page, key) in pageStructParents)
+                page.StructParentsKey = key;
         }
 
         // ── Fill page dict values ──────────────────────────────────────────
@@ -350,16 +359,6 @@ public sealed class PdfDocument : IDisposable
         PdfIndirectReference? outlinesRef = null;
         if (_outlineEntries.Count > 0)
             outlinesRef = BuildOutlineTree(registry, pageRefMap);
-
-        // ── Build structure tree (tagged PDF) ─────────────────────────────
-        PdfIndirectReference? structTreeRootRef = null;
-        if (Tagged && !_structureTree.IsEmpty)
-        {
-            structTreeRootRef = _structureTree.Build(registry, pageRefMap, out var pageStructParents);
-            // Stamp /StructParents on each page that has tagged content.
-            foreach (var (page, key) in pageStructParents)
-                page.StructParentsKey = key;
-        }
 
         // ── Fill catalog value ─────────────────────────────────────────────
         var catalog = new PdfDictionary()
@@ -524,13 +523,14 @@ public sealed class PdfDocument : IDisposable
             if (sibIdx < siblings.Count - 1)
                 itemDict.Set(new PdfName("Next"), itemRefs[siblings[sibIdx + 1]]);
 
-            // /First, /Last, /Count for items that have children
+            // /First, /Last, /Count for items that have children.
+            // /Count is the total number of ALL open descendants (recursive), per ISO 32000-2 §12.3.3.
             if (childrenOf.TryGetValue(i, out var myChildren) && myChildren.Count > 0)
             {
                 itemDict
                     .Set(new PdfName("First"), itemRefs[myChildren[0]])
                     .Set(new PdfName("Last"), itemRefs[myChildren[^1]])
-                    .Set(new PdfName("Count"), new PdfInteger(myChildren.Count));
+                    .Set(new PdfName("Count"), new PdfInteger(CountAllDescendants(i, childrenOf)));
             }
 
             registry.SetValue(itemRefs[i], itemDict);
@@ -538,7 +538,8 @@ public sealed class PdfDocument : IDisposable
 
         // Build the /Outlines root dict.
         var rootChildren = siblingsByParent.TryGetValue(-1, out var rootSiblings) ? rootSiblings : [];
-        var rootCountAll = _outlineEntries.Count; // total number of items (open count)
+        // Root /Count = total open (visible) items = number of direct top-level children.
+        var rootCountAll = rootChildren.Count;
 
         var outlinesDict = new PdfDictionary()
             .Set(PdfName.Type, new PdfName("Outlines"));
@@ -553,6 +554,20 @@ public sealed class PdfDocument : IDisposable
 
         registry.SetValue(outlinesRef, outlinesDict);
         return outlinesRef;
+    }
+
+    /// <summary>
+    /// Recursively counts all descendants of outline item <paramref name="itemIndex"/>
+    /// (i.e. children + their children + …) to produce the correct ISO 32000-2 §12.3.3 /Count.
+    /// </summary>
+    private static int CountAllDescendants(int itemIndex, Dictionary<int, List<int>> childrenOf)
+    {
+        if (!childrenOf.TryGetValue(itemIndex, out var children) || children.Count == 0)
+            return 0;
+        var total = children.Count;
+        foreach (var child in children)
+            total += CountAllDescendants(child, childrenOf);
+        return total;
     }
 
     public void Dispose() => _disposed = true;

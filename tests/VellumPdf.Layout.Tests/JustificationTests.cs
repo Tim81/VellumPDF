@@ -49,7 +49,10 @@ public sealed class JustificationTests
                 z.CopyTo(output);
                 sb.Append(Encoding.Latin1.GetString(output.ToArray()));
             }
-            catch { }
+            catch
+            {
+                // Not a valid zlib stream (e.g. DCTDecode JPEG or XMP metadata) — skip
+            }
             pos = dataStart + streamLength;
         }
         return sb.ToString();

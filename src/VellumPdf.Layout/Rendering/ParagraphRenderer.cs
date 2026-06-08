@@ -72,7 +72,7 @@ public sealed class ParagraphRenderer : IRenderer
         _occupied = area.WithHeight(maxLines * _lineHeight);
 
         var overflow = new ParagraphRenderer(_para, _endLine) { _lines = _lines, StructType = StructType };
-        var split = new ParagraphRenderer(_para)
+        var split = new ParagraphRenderer(_para, _startLine)
         {
             _lines = _lines,
             _endLine = _endLine,
@@ -100,14 +100,10 @@ public sealed class ParagraphRenderer : IRenderer
         var leading = _lineHeight;
         var isLastLine = false;
 
-        // Tagged PDF: wrap content in BDC/EMC and register a /StructElem.
+        // Tagged PDF: BDC must open BEFORE BeginText so the BDC…EMC actually encloses BT…ET.
+        int mcid = -1;
         if (ctx.Tagged)
-        {
-            var mcid = canvas.BeginMarkedContent(StructType);
-            canvas.EndMarkedContent();
-            var elem = new PdfStructElem(StructType) { Mcid = mcid };
-            ctx.RegisterStructElem(elem);
-        }
+            mcid = canvas.BeginMarkedContent(StructType);
 
         canvas.BeginText();
 
@@ -191,6 +187,14 @@ public sealed class ParagraphRenderer : IRenderer
         }
 
         canvas.EndText();
+
+        // Tagged PDF: close the BDC sequence after ET and register the /StructElem.
+        if (ctx.Tagged && mcid >= 0)
+        {
+            canvas.EndMarkedContent();
+            var elem = new PdfStructElem(StructType) { Mcid = mcid };
+            ctx.RegisterStructElem(elem);
+        }
     }
 
     // ── Link annotation registration ──────────────────────────────────────────

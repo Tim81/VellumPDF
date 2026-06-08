@@ -85,15 +85,17 @@ public sealed class TrueTypeFontEmbedder
     // ── Build all required PDF objects ──────────────────────────────────────
 
     public Core.PdfDictionary BuildFontDictionary(
-        Core.PdfIndirectReference descendantArrayRef,
+        Core.PdfIndirectReference cidFontRef,
         Core.PdfIndirectReference toUnicodeRef)
     {
+        // /DescendantFonts must be an inline array per PDF/A validators — not an indirect ref.
+        var descendantFonts = new Core.PdfArray([cidFontRef]);
         var d = new Core.PdfDictionary()
             .Set(Core.PdfName.Type, Core.PdfName.Font)
             .Set(Core.PdfName.Subtype, new Core.PdfName("Type0"))
             .Set(Core.PdfName.BaseFont, new Core.PdfName(PostScriptName))
             .Set(new Core.PdfName("Encoding"), new Core.PdfName("Identity-H"))
-            .Set(new Core.PdfName("DescendantFonts"), descendantArrayRef)
+            .Set(new Core.PdfName("DescendantFonts"), descendantFonts)
             .Set(new Core.PdfName("ToUnicode"), toUnicodeRef);
         return d;
     }

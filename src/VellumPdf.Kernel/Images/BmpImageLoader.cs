@@ -52,9 +52,31 @@ public static class BmpImageLoader
             throw new NotSupportedException(
                 $"Only 8-, 24-, and 32-bit BMP are supported; found {bitCount}-bit.");
 
+        // Reject int.MinValue height (Math.Abs would overflow) and absurd dimensions.
+        if (rawHeight == int.MinValue)
+            throw new InvalidDataException("BMP height value is invalid (int.MinValue).");
+
         var width = Math.Abs(rawWidth);
         var height = Math.Abs(rawHeight);
         var bottomUp = rawHeight > 0; // positive height = bottom-up storage
+
+        // Reject absurd dimensions before allocating (> 100M pixels).
+        var pixelCount = (long)width * height;
+        if (pixelCount > 100_000_000L)
+            throw new InvalidDataException($"BMP dimensions {width}×{height} exceed the 100M pixel safety limit.");
+
+        // Validate pixelOffset is within the file.
+        if (pixelOffset >= (uint)bmpBytes.Length)
+            throw new InvalidDataException($"BMP pixel data offset {pixelOffset} is beyond the end of the file.");
+
+        // Validate the palette region (for 8-bit images) is within the file.
+        if (bitCount == 8)
+        {
+            const int paletteOffset = 54;
+            const int paletteSize = 256 * 4;
+            if (paletteOffset + paletteSize > bmpBytes.Length)
+                throw new InvalidDataException("BMP file is truncated: palette extends beyond end of file.");
+        }
 
         return bitCount switch
         {

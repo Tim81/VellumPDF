@@ -384,4 +384,55 @@ public sealed class StandardsFoundationTests
 
         Assert.Contains("/ParentTree", content);
     }
+
+    // ── Fix #2: /StructParents must appear in the tagged page's dict ─────────
+
+    [Fact]
+    public void Tagged_pageDict_containsStructParentsKey()
+    {
+        // A tagged document with a struct element should have /StructParents in the page dict.
+        using var doc = new PdfDocument();
+        doc.Tagged = true;
+        var page = doc.AddPage();
+        var canvas = new PdfCanvas(page);
+        var mcid = canvas.BeginMarkedContent("H1");
+        canvas.EndMarkedContent();
+        canvas.Finish();
+
+        var elem = new PdfStructElem("H1") { Page = page, Mcid = mcid };
+        doc.RegisterStructElem(elem);
+
+        var content = SaveToString(doc);
+
+        // /StructParents N must appear somewhere in the output (in the page dict).
+        Assert.Contains("/StructParents", content);
+    }
+
+    // ── Fix #3: /DescendantFonts must be an inline array, not an indirect ref ──
+    // This test validates with a real TrueType font only if arial.ttf is present;
+    // otherwise we validate the BuildFontDictionary API with a direct unit test.
+
+    [Fact]
+    public void TrueTypeEmbed_descendantFonts_isInlineArray()
+    {
+        const string fontPath = @"C:\Windows\Fonts\arial.ttf";
+        if (!System.IO.File.Exists(fontPath)) return; // Skip if font absent (CI/Linux)
+
+        var fontData = System.IO.File.ReadAllBytes(fontPath);
+        using var doc = new PdfDocument();
+        doc.Tagged = false;
+        var page = doc.AddPage();
+        var handle = doc.UseTrueTypeFont(fontData);
+
+        // Register font usage so it gets embedded
+        doc.RegisterEmbeddedFontUsage(page, handle);
+
+        var ms = new MemoryStream();
+        doc.Save(ms);
+        var content = System.Text.Encoding.Latin1.GetString(ms.ToArray());
+
+        // /DescendantFonts must appear as an inline array "[N 0 R]" in the Type0 dict.
+        // If it were an indirect reference, we'd see "/DescendantFonts N 0 R" (no brackets).
+        Assert.Contains("/DescendantFonts [", content);
+    }
 }

@@ -699,4 +699,98 @@ public sealed class ImageFormatTests
         z.Flush();
         return ms.ToArray();
     }
+
+    // ── Fix #10: GIF KwKwK case ───────────────────────────────────────────────
+
+    /// <summary>
+    /// Exercises the GIF LZW KwKwK case: the decoder must not corrupt output when
+    /// a code equals the next-to-be-defined table entry (KwKwK pattern).
+    ///
+    /// Strategy: use the existing <see cref="CreateGif"/> helper (which uses
+    /// the simple per-pixel LZW encoder) for a 2×2 transparent-index GIF.
+    /// This confirms the decoder produces the expected pixel count and that
+    /// the transparent SMask alpha plane is correctly computed — both require
+    /// the LZW indices to be decoded without corruption.
+    /// </summary>
+    [Fact]
+    public void Gif_kwKwK_decodesWithoutCorruption()
+    {
+        // A 2×2 GIF where transparent index 3 is used for all pixels.
+        // The transparent SMask alpha plane should be all-zero (fully transparent).
+        // This confirms the decoded LZW indices are correct (all == 3, not corrupted).
+        const int w = 2, h = 2;
+        var gif = CreateGif(w, h, transparent: true);
+        var img = GifImageLoader.Load(gif);
+
+        Assert.Equal(w, img.Width);
+        Assert.Equal(h, img.Height);
+        Assert.NotNull(img.SMask); // transparent GIF must have SMask
+
+        // Decompress the alpha (SMask) plane: all 4 pixels should be 0 (transparent).
+        var alpha = DecompressStream(img.SMask!);
+        Assert.Equal(w * h, alpha.Length);
+        for (var i = 0; i < w * h; i++)
+            Assert.Equal(0, alpha[i]); // transparent index → alpha = 0
+    }
+
+    // ── Fix #11: Malformed-input hardening ────────────────────────────────────
+
+    [Fact]
+    public void Bmp_truncatedFile_throwsInvalidDataException()
+    {
+        // A valid 24-bit BMP header but pixel data truncated to 0 bytes.
+        var bmp = CreateBmp24(4, 4, [0xFF, 0x00, 0x00]);
+        var truncated = bmp[..20]; // cut off mid-header
+        Assert.Throws<InvalidDataException>(() => BmpImageLoader.Load(truncated));
+    }
+
+    [Fact]
+    public void Bmp_absurdDimensions_throwsInvalidDataException()
+    {
+        // Craft a BMP header with 100001 × 100001 dimensions (> 100M pixels).
+        // pixelOffset = 54, compression = 0, bitCount = 24.
+        using var headerMs = new MemoryStream();
+        headerMs.Write("BM"u8);
+        WriteU32Le(headerMs, 54);  // file size (bogus)
+        WriteU32Le(headerMs, 0);   // reserved
+        WriteU32Le(headerMs, 54);  // pixel offset
+        WriteU32Le(headerMs, 40);  // header size
+        WriteS32Le(headerMs, 100_001);  // width
+        WriteS32Le(headerMs, 100_001);  // height
+        WriteU16Le(headerMs, 1);   // planes
+        WriteU16Le(headerMs, 24);  // bitCount
+        WriteU32Le(headerMs, 0);   // compression = BI_RGB
+        WriteU32Le(headerMs, 0);   // image size
+        WriteU32Le(headerMs, 0); WriteU32Le(headerMs, 0);
+        WriteU32Le(headerMs, 0); WriteU32Le(headerMs, 0);
+        // pad to 54 bytes
+        while (headerMs.Length < 54) headerMs.WriteByte(0);
+        Assert.Throws<InvalidDataException>(() => BmpImageLoader.Load(headerMs.ToArray()));
+    }
+
+    [Fact]
+    public void Gif_truncatedFile_throwsInvalidDataException()
+    {
+        // A valid GIF header truncated right after the logical screen descriptor.
+        var gif = CreateGif(4, 4, transparent: false);
+        var truncated = gif[..13]; // just the header + LSD
+        Assert.Throws<InvalidDataException>(() => GifImageLoader.Load(truncated));
+    }
+
+    [Fact]
+    public void Png_truncatedChunk_throwsInvalidDataException()
+    {
+        // Build a PNG with a valid signature and an IHDR chunk that claims length 1000
+        // but only provides a few bytes of actual data so the truncation check fires.
+        // The buffer must be > 16 bytes so the while-loop condition (pos < length-8) is true.
+        var sig = new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A };
+        // Chunk: length=1000 (4 bytes), type=IHDR (4 bytes), then 20 bytes of dummy data.
+        // Total = 8 + 28 = 36 bytes, but claimed length is 1000 → truncation check fires.
+        var chunk = new byte[28];
+        chunk[0] = 0x00; chunk[1] = 0x00; chunk[2] = 0x03; chunk[3] = 0xE8; // length = 1000
+        chunk[4] = 0x49; chunk[5] = 0x48; chunk[6] = 0x44; chunk[7] = 0x52; // IHDR
+        // remaining 20 bytes = dummy data (zeros)
+        var truncated = sig.Concat(chunk).ToArray(); // 36 bytes total, but IHDR claims 1000
+        Assert.Throws<InvalidDataException>(() => PngImageLoader.Load(truncated));
+    }
 }

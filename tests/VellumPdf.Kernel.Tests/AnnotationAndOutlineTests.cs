@@ -329,4 +329,41 @@ public sealed class AnnotationAndOutlineTests
         // /Dest should appear and include /XYZ
         Assert.Contains("/XYZ", content);
     }
+
+    // ── Fix #4: Outline /Count must be the total descendant count ────────────
+
+    [Fact]
+    public void OutlineTree_nestedEntry_parentCountIsDescendantTotal()
+    {
+        // 2-level outline: one root item ("Chapter") with two direct children ("Sec 1", "Sec 2").
+        // The parent item's /Count must be 2 (its two descendants), NOT 1 (just children).
+        using var doc = new PdfDocument();
+        var page = doc.AddPage();
+
+        doc.AddOutlineEntry(new PdfOutlineEntry { Title = "Chapter", DestPage = page, Level = 0 });
+        doc.AddOutlineEntry(new PdfOutlineEntry { Title = "Sec 1", DestPage = page, Level = 1 });
+        doc.AddOutlineEntry(new PdfOutlineEntry { Title = "Sec 2", DestPage = page, Level = 1 });
+
+        var content = SaveToString(doc);
+
+        // The /Count 2 must appear somewhere (parent item's count = 2 descendants).
+        Assert.Contains("/Count 2", content);
+        // Root /Outlines /Count = number of visible top-level items = 1 (only "Chapter" at level 0).
+        Assert.Contains("/Count 1", content);
+    }
+
+    [Fact]
+    public void OutlineTree_noNesting_rootCountEqualsTopLevelItemCount()
+    {
+        using var doc = new PdfDocument();
+        var page = doc.AddPage();
+
+        doc.AddOutlineEntry(new PdfOutlineEntry { Title = "Item A", DestPage = page, Level = 0 });
+        doc.AddOutlineEntry(new PdfOutlineEntry { Title = "Item B", DestPage = page, Level = 0 });
+
+        var content = SaveToString(doc);
+
+        // Root /Outlines /Count = 2 top-level items.
+        Assert.Contains("/Count 2", content);
+    }
 }

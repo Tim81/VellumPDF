@@ -1,6 +1,7 @@
 // Copyright 2026 Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
+using System.Globalization;
 using System.Text;
 
 namespace VellumPdf.Document;
@@ -83,7 +84,7 @@ internal static class XmpMetadataWriter
         }
 
         // xmp:CreateDate and xmp:ModifyDate
-        var dateStr = timestamp.ToString(XmpDateFormat);
+        var dateStr = timestamp.ToString(XmpDateFormat, CultureInfo.InvariantCulture);
         sb.Append("    <xmp:CreateDate>");
         sb.Append(dateStr);
         sb.Append("</xmp:CreateDate>\n");

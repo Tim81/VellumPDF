@@ -33,6 +33,13 @@ public static class PngImageLoader
         while (pos < pngBytes.Length - 8)
         {
             var length = ReadU32Be(pngBytes, pos);
+
+            // Validate chunk length before slicing to prevent IndexOutOfRangeException on truncated files.
+            if (length > int.MaxValue)
+                throw new InvalidDataException($"PNG chunk length {length} exceeds int.MaxValue.");
+            if ((long)pos + 12 + (long)length > pngBytes.Length)
+                throw new InvalidDataException("PNG file is truncated: chunk extends beyond end of file.");
+
             var type = ReadTag(pngBytes, pos + 4);
             var data = pngBytes.AsSpan(pos + 8, (int)length);
 

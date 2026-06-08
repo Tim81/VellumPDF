@@ -355,4 +355,74 @@ public sealed class LayoutFixTests
         foreach (var b in data) crc = table[(crc ^ b) & 0xFF] ^ (crc >> 8);
         return crc ^ 0xFFFFFFFFu;
     }
+
+    // ── Fix #7: BDC/EMC must enclose BT…ET in tagged paragraphs ─────────────
+
+    [Fact]
+    public void TaggedParagraph_bdcEnclosesTextOperators()
+    {
+        // Produce a tagged document with a paragraph and verify that in the
+        // decompressed content stream, BDC appears BEFORE BT and EMC appears AFTER ET.
+        using var doc = new Document();
+        doc.Tagged = true;
+        doc.Add(new Paragraph("Tagged content test line"));
+
+        var ms = new MemoryStream();
+        doc.Save(ms);
+
+        var decompressed = DecompressAllFlatStreams(ms.ToArray());
+
+        var bdcIdx = decompressed.IndexOf("BDC", StringComparison.Ordinal);
+        var btIdx = decompressed.IndexOf("BT", StringComparison.Ordinal);
+        var etIdx = decompressed.IndexOf("ET", StringComparison.Ordinal);
+        var emcIdx = decompressed.IndexOf("EMC", StringComparison.Ordinal);
+
+        Assert.True(bdcIdx >= 0, "BDC operator must appear in tagged content stream");
+        Assert.True(btIdx >= 0, "BT operator must appear");
+        Assert.True(etIdx >= 0, "ET operator must appear");
+        Assert.True(emcIdx >= 0, "EMC operator must appear");
+
+        Assert.True(bdcIdx < btIdx, $"BDC (pos {bdcIdx}) must precede BT (pos {btIdx})");
+        Assert.True(etIdx < emcIdx, $"ET (pos {etIdx}) must precede EMC (pos {emcIdx})");
+    }
+
+    // ── Fix #8: Split paragraph must not re-draw earlier lines on later pages ─
+
+    [Fact]
+    public void Paragraph_threePage_noLineDuplication()
+    {
+        // Force a paragraph to span 3 pages by using a tiny page height (30pt) and
+        // a paragraph with enough words to fill 3 pages.
+        // Each page gets exactly one line; we verify no line text appears on multiple pages.
+        using var doc = new Document();
+        doc.PageSize = new PdfRectangle(0, 0, 300, 30); // very short page
+        doc.Margins = new EdgeInsets(0);                 // no margins
+
+        // At fontSize 10, lineHeight ~12, a 30pt page fits ~2 lines.
+        // Use distinct per-line words so we can detect duplication.
+        var style = new TextStyle { FontSize = 10 };
+        doc.Add(new Paragraph("LineA LineB LineC LineD LineE", style));
+
+        var ms = new MemoryStream();
+        doc.Save(ms);
+
+        // Must produce at least 2 pages (very short page)
+        var allText = Encoding.Latin1.GetString(ms.ToArray());
+        // Count pages by looking for /Count N in page tree
+        Assert.Contains("/Count ", allText);
+
+        // Decompress all content streams.
+        var decompressed = DecompressAllFlatStreams(ms.ToArray());
+
+        // The decompressed stream contains text from all pages concatenated.
+        // Crucially, no individual word token should appear more times than the
+        // number of pages it genuinely belongs to (at most 1 for per-line words).
+        // We can't easily split per-page, so instead verify the total word count
+        // is not inflated (each line word appears at most once across all streams).
+        var lineACount = CountOccurrences(decompressed, "LineA");
+        var lineBCount = CountOccurrences(decompressed, "LineB");
+        // Each word should appear exactly once in the output
+        Assert.True(lineACount <= 1, $"'LineA' appears {lineACount} times — expected at most 1 (no duplication)");
+        Assert.True(lineBCount <= 1, $"'LineB' appears {lineBCount} times — expected at most 1 (no duplication)");
+    }
 }

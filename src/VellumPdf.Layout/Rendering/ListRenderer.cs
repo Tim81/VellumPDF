@@ -119,7 +119,8 @@ public sealed class ListRenderer : IRenderer
     {
         if (_items is null) return;
 
-        var area = _occupied.Deflate(_list.Margins);
+        // _occupied is already the margin-deflated area from Layout; do not deflate again.
+        var area = _occupied;
         var y = area.Y;
 
         for (var i = _startItem; i < _endItem; i++)
