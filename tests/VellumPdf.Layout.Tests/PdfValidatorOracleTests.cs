@@ -529,6 +529,61 @@ public sealed class PdfValidatorOracleTests : IDisposable
         // Local dev: tool not installed — silently skip.
     }
 
+    // ── Object-stream / XRef-stream oracle tests ─────────────────────────────
+
+    private const string ObjStmOracleMarker = "VELLUMORACLE_OBJSTM_4D9B";
+
+    [Fact]
+    public void ObjectStream_MultiPage_QpdfCheck_Passes()
+    {
+        var pdfPath = Path.Combine(_tempDir, "objstm_multipage.pdf");
+        GenerateObjStmMultiPageDoc(pdfPath);
+
+        if (!TryRunTool("qpdf", $"--check \"{pdfPath}\"", out var exit, out var stdout, out var stderr))
+        {
+            GateOnCi("qpdf");
+            return;
+        }
+
+        Assert.True(
+            exit == 0,
+            $"qpdf --check failed (exit {exit}) on object-stream doc.\nstdout: {stdout}\nstderr: {stderr}");
+    }
+
+    [Fact]
+    public void ObjectStream_MultiPage_PdftotextFindsMarker()
+    {
+        var pdfPath = Path.Combine(_tempDir, "objstm_multipage_text.pdf");
+        GenerateObjStmMultiPageDoc(pdfPath);
+
+        if (!TryRunTool("pdftotext", $"\"{pdfPath}\" -", out _, out var text, out var stderr))
+        {
+            GateOnCi("pdftotext");
+            return;
+        }
+
+        Assert.True(
+            text.Contains(ObjStmOracleMarker, StringComparison.Ordinal),
+            $"Marker '{ObjStmOracleMarker}' not found in pdftotext output.\nstderr: {stderr}");
+    }
+
+    private static void GenerateObjStmMultiPageDoc(string path)
+    {
+        using var doc = new Document();
+        doc.UseObjectStreams = true;
+
+        var style = new TextStyle { Font = Standard14.Helvetica, FontSize = 12 };
+
+        doc.Add(new Paragraph($"{ObjStmOracleMarker} — object-stream test doc.", style));
+
+        // Multi-page content to produce several indirect objects
+        for (var i = 0; i < 30; i++)
+            doc.Add(new Paragraph($"Body paragraph {i + 1}: The quick brown fox jumps over the lazy dog.", style));
+
+        doc.Add(new Paragraph("Last line of object-stream test.", style));
+        doc.Save(path);
+    }
+
     // ── veraPDF PDF/A-2b oracle ───────────────────────────────────────────────
 
     /// <summary>

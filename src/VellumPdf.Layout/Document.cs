@@ -57,6 +57,17 @@ public sealed class Document : IDisposable
         set => _pdf.Tagged = value;
     }
 
+    /// <summary>
+    /// When true, <see cref="Save(Stream)"/> uses PDF 1.5+ object streams and a
+    /// cross-reference stream for smaller output. Forwarded to the underlying
+    /// <see cref="PdfDocument"/>. Cannot be combined with <see cref="Encrypt"/>.
+    /// </summary>
+    public bool UseObjectStreams
+    {
+        get => _pdf.UseObjectStreams;
+        set => _pdf.UseObjectStreams = value;
+    }
+
     public EdgeInsets Margins { get; set; } = new EdgeInsets(72); // 1 inch
 
     /// <summary>

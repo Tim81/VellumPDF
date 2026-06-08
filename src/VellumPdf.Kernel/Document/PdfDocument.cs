@@ -75,6 +75,25 @@ public sealed class PdfDocument : IDisposable
     public PdfConformance Conformance { get; set; } = PdfConformance.None;
 
     /// <summary>
+    /// When true, <see cref="Save"/> uses PDF 1.5+ object streams (§7.5.7) and a
+    /// cross-reference stream (§7.5.8) instead of the classic xref table.
+    /// This produces smaller output by compressing non-stream indirect objects.
+    ///
+    /// Default is false; the default (classic xref) path is byte-for-byte unchanged.
+    ///
+    /// <para>
+    /// Restrictions:
+    /// <list type="bullet">
+    ///   <item>Cannot be combined with <see cref="Encrypt"/> — throws
+    ///         <see cref="NotSupportedException"/>.</item>
+    ///   <item>Cannot be combined with <see cref="PrepareForSigning"/> — the signing path
+    ///         always uses the classic xref for byte-range compatibility.</item>
+    /// </list>
+    /// </para>
+    /// </summary>
+    public bool UseObjectStreams { get; set; } = false;
+
+    /// <summary>
     /// When true, a /StructTreeRoot is written and marked-content sequences
     /// around paragraphs and headings are registered as /StructElem objects.
     /// Default is false; set to true explicitly or implied by <see cref="PdfConformance.PdfA2a"/>.
@@ -265,6 +284,11 @@ public sealed class PdfDocument : IDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(destination);
+
+        if (UseObjectStreams && _encryptionSettings is not null)
+            throw new NotSupportedException(
+                "UseObjectStreams cannot be combined with Encrypt(). " +
+                "Object-stream encryption is not supported. Remove one of these options.");
 
         var writer = new PdfWriter(destination);
         var xref = new CrossReferenceBuilder();
@@ -509,25 +533,40 @@ public sealed class PdfDocument : IDisposable
 
         registry.SetValue(catalogRef, catalog);
 
-        // ── Write all objects in object-number order ───────────────────────
-        // The /Encrypt object is written here too; because it is a plain PdfDictionary
-        // (no strings/streams), and strings inside it are PdfHexString values that were
-        // created without going through the encryptor path (they are raw bytes), this is
-        // safe. However, to be absolutely correct we momentarily disable the encryptor
-        // when WriteAll processes the /Encrypt object's slot.
-        // Implementation note: WriteAll writes objects in slot order. The /Encrypt ref
-        // was reserved LAST (after the catalog), so its slot is at the end. We use a
-        // per-object encryptor-disable approach: the /Encrypt dict's WriteTo is a
-        // PdfDictionary, which never calls the encryptor directly — its children
-        // (PdfHexString values) do. We disable the encryptor for those writes by
-        // temporarily patching writer.Encryptor inside WriteAllWithEncryptExempt.
-        WriteAllWithEncryptExempt(writer, xref, registry, encryptRef);
+        if (UseObjectStreams)
+        {
+            // ── Compressed path: ObjStm + XRef stream ─────────────────────────
+            // The registry holds objects 1..ObjectCount. We allocate two extra numbers
+            // (not in the registry) for the ObjStm and the XRef stream object.
+            var objStmObjNum = registry.ObjectCount + 1;
+            var xrefObjNum = registry.ObjectCount + 2;
 
-        // ── Cross-reference table + trailer ───────────────────────────────
-        // Trailer /ID must NOT be encrypted. Ensure encryptor is null during trailer write.
-        writer.Encryptor = null;
-        xref.WriteXrefAndTrailer(writer, catalogRef, infoRef, documentId: documentId, encryptRef: encryptRef);
-        writer.Flush();
+            var xrefStream = registry.WriteAllCompressed(writer, objStmObjNum, xrefObjNum);
+            xrefStream.WriteXRefStream(writer, xrefObjNum, catalogRef, infoRef, documentId: documentId);
+            writer.Flush();
+        }
+        else
+        {
+            // ── Classic path (unchanged) ───────────────────────────────────────
+            // The /Encrypt object is written here too; because it is a plain PdfDictionary
+            // (no strings/streams), and strings inside it are PdfHexString values that were
+            // created without going through the encryptor path (they are raw bytes), this is
+            // safe. However, to be absolutely correct we momentarily disable the encryptor
+            // when WriteAll processes the /Encrypt object's slot.
+            // Implementation note: WriteAll writes objects in slot order. The /Encrypt ref
+            // was reserved LAST (after the catalog), so its slot is at the end. We use a
+            // per-object encryptor-disable approach: the /Encrypt dict's WriteTo is a
+            // PdfDictionary, which never calls the encryptor directly — its children
+            // (PdfHexString values) do. We disable the encryptor for those writes by
+            // temporarily patching writer.Encryptor inside WriteAllWithEncryptExempt.
+            WriteAllWithEncryptExempt(writer, xref, registry, encryptRef);
+
+            // ── Cross-reference table + trailer ───────────────────────────────
+            // Trailer /ID must NOT be encrypted. Ensure encryptor is null during trailer write.
+            writer.Encryptor = null;
+            xref.WriteXrefAndTrailer(writer, catalogRef, infoRef, documentId: documentId, encryptRef: encryptRef);
+            writer.Flush();
+        }
     }
 
     /// <summary>
