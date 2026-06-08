@@ -140,13 +140,16 @@ public sealed class TrueTypeEmbedEndToEndTests
     [Fact]
     public void Save_twoEmbeddedFonts_bothPresentInPdf()
     {
-        if (!File.Exists(FontPath)) return;
+        const string secondFontPath = @"C:\Windows\Fonts\times.ttf";
+        if (!File.Exists(FontPath) || !File.Exists(secondFontPath)) return;
 
         using var doc = new PdfDocument();
         var page = doc.AddPage();
 
+        // Two genuinely different fonts → two distinct embedded subsets
+        // (loading the same font twice now de-duplicates to a single subset).
         var h1 = doc.UseTrueTypeFont(File.ReadAllBytes(FontPath));
-        var h2 = doc.UseTrueTypeFont(File.ReadAllBytes(FontPath));
+        var h2 = doc.UseTrueTypeFont(File.ReadAllBytes(secondFontPath));
         doc.RegisterEmbeddedFontUsage(page, h1);
         doc.RegisterEmbeddedFontUsage(page, h2);
 

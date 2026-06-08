@@ -26,6 +26,9 @@ public sealed class PdfDocument : IDisposable
     // Embedded TrueType fonts: ordered list of known handles
     private readonly List<EmbeddedFontHandle> _embeddedFonts = [];
 
+    // Dedup cache: font content hash → handle, so loading the same font twice shares one subset.
+    private readonly Dictionary<string, EmbeddedFontHandle> _embeddedFontByHash = new();
+
     // Per-page embedded font usage: page → set of handle resource names
     private readonly Dictionary<PdfPage, HashSet<string>> _pageEmbeddedFonts = new();
 
@@ -107,10 +110,16 @@ public sealed class PdfDocument : IDisposable
     /// </summary>
     public EmbeddedFontHandle UseTrueTypeFont(byte[] fontData)
     {
+        // Dedup by content so loading the same font twice shares one embedded subset.
+        var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(fontData));
+        if (_embeddedFontByHash.TryGetValue(hash, out var existing))
+            return existing;
+
         var resourceName = $"TT{++_ttFontCounter}";
         var embedder = new TrueTypeFontEmbedder(fontData, resourceName);
         var handle = new EmbeddedFontHandle(embedder);
         _embeddedFonts.Add(handle);
+        _embeddedFontByHash[hash] = handle;
         return handle;
     }
 
@@ -221,34 +230,37 @@ public sealed class PdfDocument : IDisposable
             registry.SetValue(pageContentRefs[i], new PdfStream(content));
         }
 
-        // ── Register image XObjects for each page ──────────────────────────
+        // ── Register image XObjects (deduplicated by image identity) ───────
+        // The same image instance used on multiple pages is written once and shared.
+        var imageRefs = new Dictionary<PdfImageXObject, PdfIndirectReference>(ReferenceEqualityComparer.Instance);
         foreach (var page in _pages)
         {
             if (!_pageImages.TryGetValue(page, out var images)) continue;
             foreach (var (img, name) in images)
             {
-                // Allocate SMask first (if any) so its ref is known when building image stream
-                PdfIndirectReference? sMaskRef = null;
-                if (img.SMask is not null)
+                if (!imageRefs.TryGetValue(img, out var imgObjRef))
                 {
-                    var sMaskObjRef = registry.Reserve();
-                    var sMaskStream = img.SMask;
-                    // Set SMask image dict fields
-                    sMaskStream.Dictionary
-                        .Set(PdfName.Type, new PdfName("XObject"))
-                        .Set(PdfName.Subtype, new PdfName("Image"))
-                        .Set(new PdfName("Width"), new PdfInteger(img.Width))
-                        .Set(new PdfName("Height"), new PdfInteger(img.Height))
-                        .Set(new PdfName("ColorSpace"), new PdfName("DeviceGray"))
-                        .Set(new PdfName("BitsPerComponent"), new PdfInteger(8));
-                    registry.SetValue(sMaskObjRef, sMaskStream);
-                    sMaskRef = sMaskObjRef;
-                }
+                    // Allocate SMask first (if any) so its ref is known when building the image stream.
+                    PdfIndirectReference? sMaskRef = null;
+                    if (img.SMask is not null)
+                    {
+                        var sMaskObjRef = registry.Reserve();
+                        var sMaskStream = img.SMask;
+                        sMaskStream.Dictionary
+                            .Set(PdfName.Type, new PdfName("XObject"))
+                            .Set(PdfName.Subtype, new PdfName("Image"))
+                            .Set(new PdfName("Width"), new PdfInteger(img.Width))
+                            .Set(new PdfName("Height"), new PdfInteger(img.Height))
+                            .Set(new PdfName("ColorSpace"), new PdfName("DeviceGray"))
+                            .Set(new PdfName("BitsPerComponent"), new PdfInteger(8));
+                        registry.SetValue(sMaskObjRef, sMaskStream);
+                        sMaskRef = sMaskObjRef;
+                    }
 
-                // Allocate and set image stream
-                var imgObjRef = registry.Reserve();
-                var imgStream = img.BuildStreamWithSMask(sMaskRef);
-                registry.SetValue(imgObjRef, imgStream);
+                    imgObjRef = registry.Reserve();
+                    registry.SetValue(imgObjRef, img.BuildStreamWithSMask(sMaskRef));
+                    imageRefs[img] = imgObjRef;
+                }
                 page.RegisterXObject(name, imgObjRef);
             }
         }
