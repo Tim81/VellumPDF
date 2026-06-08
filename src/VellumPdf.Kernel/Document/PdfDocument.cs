@@ -7,6 +7,7 @@ using VellumPdf.Annotations;
 using VellumPdf.Core;
 using VellumPdf.Encryption;
 using VellumPdf.Fonts;
+using VellumPdf.Forms;
 using VellumPdf.Images;
 using VellumPdf.IO;
 
@@ -35,6 +36,9 @@ public sealed class PdfDocument : IDisposable
 
     // Per-page link annotations
     private readonly Dictionary<PdfPage, List<PdfLinkAnnotation>> _pageAnnotations = new();
+
+    // AcroForm fields registered via AddTextField / AddCheckBox / AddChoiceField
+    private readonly List<PdfFormField> _formFields = [];
 
     // Document outline (bookmark) entries, in insertion order
     private readonly List<PdfOutlineEntry> _outlineEntries = [];
@@ -186,6 +190,58 @@ public sealed class PdfDocument : IDisposable
     {
         if (Tagged)
             _structureTree.AddStructElem(elem);
+    }
+
+    /// <summary>
+    /// Adds an absolute-positioned text-input AcroForm field to <paramref name="page"/>.
+    /// The field is serialised during <see cref="Save"/>.
+    /// </summary>
+    public void AddTextField(
+        PdfPage page,
+        string name,
+        PdfRectangle rect,
+        string value = "",
+        FormFieldOptions? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(page);
+        ArgumentException.ThrowIfNullOrEmpty(name);
+        ArgumentNullException.ThrowIfNull(rect);
+        _formFields.Add(new PdfFormField.TextField(page, name, rect, value, options ?? new()));
+    }
+
+    /// <summary>
+    /// Adds an absolute-positioned checkbox AcroForm field to <paramref name="page"/>.
+    /// </summary>
+    public void AddCheckBox(
+        PdfPage page,
+        string name,
+        PdfRectangle rect,
+        bool checkedState = false,
+        FormFieldOptions? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(page);
+        ArgumentException.ThrowIfNullOrEmpty(name);
+        ArgumentNullException.ThrowIfNull(rect);
+        _formFields.Add(new PdfFormField.CheckBoxField(page, name, rect, checkedState, options ?? new()));
+    }
+
+    /// <summary>
+    /// Adds an absolute-positioned dropdown or listbox AcroForm field to <paramref name="page"/>.
+    /// </summary>
+    public void AddChoiceField(
+        PdfPage page,
+        string name,
+        PdfRectangle rect,
+        IReadOnlyList<string> options,
+        string? selected = null,
+        bool combo = true,
+        FormFieldOptions? fieldOptions = null)
+    {
+        ArgumentNullException.ThrowIfNull(page);
+        ArgumentException.ThrowIfNullOrEmpty(name);
+        ArgumentNullException.ThrowIfNull(rect);
+        ArgumentNullException.ThrowIfNull(options);
+        _formFields.Add(new PdfFormField.ChoiceField(page, name, rect, options, selected, combo, fieldOptions ?? new()));
     }
 
     /// <summary>
@@ -356,6 +412,12 @@ public sealed class PdfDocument : IDisposable
                 page.StructParentsKey = key;
         }
 
+        // ── Build AcroForm (interactive form fields) ──────────────────────
+        // MUST happen before page dicts are built so that page.AddAnnotation()
+        // calls populate _annots before BuildDictionary consumes them.
+        var helveticaForForms = UseFont(Standard14.Helvetica);
+        var acroFormDict = AcroFormBuilder.Build(_formFields, registry, pageRefMap, helveticaForForms);
+
         // ── Fill page dict values ──────────────────────────────────────────
         for (var i = 0; i < _pages.Count; i++)
         {
@@ -431,6 +493,9 @@ public sealed class PdfDocument : IDisposable
 
         if (structTreeRootRef is not null)
             catalog.Set(new PdfName("StructTreeRoot"), structTreeRootRef);
+
+        if (acroFormDict is not null)
+            catalog.Set(new PdfName("AcroForm"), acroFormDict);
 
         registry.SetValue(catalogRef, catalog);
 
