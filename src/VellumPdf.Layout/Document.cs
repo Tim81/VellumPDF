@@ -79,6 +79,12 @@ public sealed class Document : IDisposable
         return this;
     }
 
+    public Document Add(ListElement list)
+    {
+        _content.Add(new ListRenderer(list));
+        return this;
+    }
+
     public Document Add(string text, TextStyle? style = null)
         => Add(new Paragraph(text, style ?? _defaultStyle));
 
