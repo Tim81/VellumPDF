@@ -33,6 +33,12 @@ public sealed class TextStyle
 
     public double EffectiveLeading => Leading > 0 ? Leading : FontSize * 1.2;
 
+    /// <summary>
+    /// When non-null, text rendered with this style will be wrapped in a /Link
+    /// annotation pointing to this URI. Use a full URI string (e.g. "https://example.com").
+    /// </summary>
+    public string? LinkUri { get; init; }
+
     /// <summary>Measures a string using whichever font this style references.</summary>
     public double MeasureString(string text) => FontRef.MeasureString(text, FontSize);
 }

@@ -36,7 +36,35 @@ public sealed class Document : IDisposable
 
     public EdgeInsets Margins { get; set; } = new EdgeInsets(72); // 1 inch
 
+    /// <summary>
+    /// Optional header band drawn at the top of every page.
+    /// Set via <see cref="SetHeader"/> for a fluent API.
+    /// Supports {page} and {pages} tokens.
+    /// </summary>
+    public RunningBand? Header { get; set; }
+
+    /// <summary>
+    /// Optional footer band drawn at the bottom of every page.
+    /// Set via <see cref="SetFooter"/> for a fluent API.
+    /// Supports {page} and {pages} tokens.
+    /// </summary>
+    public RunningBand? Footer { get; set; }
+
     public Document SetDefaultFont(TextStyle style) { _defaultStyle = style; return this; }
+
+    /// <summary>Sets a header band with optional style and alignment. Returns this document for chaining.</summary>
+    public Document SetHeader(string template, TextStyle? style = null, HorizontalAlignment alignment = HorizontalAlignment.Center)
+    {
+        Header = new RunningBand(template, style, alignment);
+        return this;
+    }
+
+    /// <summary>Sets a footer band with optional style and alignment. Returns this document for chaining.</summary>
+    public Document SetFooter(string template, TextStyle? style = null, HorizontalAlignment alignment = HorizontalAlignment.Center)
+    {
+        Footer = new RunningBand(template, style, alignment);
+        return this;
+    }
 
     // ── Embedded font registration ───────────────────────────────────────────
 
@@ -85,6 +113,12 @@ public sealed class Document : IDisposable
         return this;
     }
 
+    public Document Add(Heading heading)
+    {
+        _content.Add(new HeadingRenderer(heading));
+        return this;
+    }
+
     public Document Add(string text, TextStyle? style = null)
         => Add(new Paragraph(text, style ?? _defaultStyle));
 
@@ -92,7 +126,11 @@ public sealed class Document : IDisposable
 
     public void Save(Stream destination)
     {
-        var renderer = new DocumentRenderer(_pdf, _pdf.DefaultPageSize, Margins);
+        var renderer = new DocumentRenderer(_pdf, _pdf.DefaultPageSize, Margins)
+        {
+            Header = Header,
+            Footer = Footer,
+        };
         foreach (var r in _content) renderer.Add(r);
         renderer.Render(destination);
     }

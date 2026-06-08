@@ -130,6 +130,9 @@ public sealed class ParagraphRenderer : IRenderer
             var linePdfY = ctx.ToPdfY(area.Y) - maxFontSize - (lineIdx - _startLine) * leading;
             var curX = area.X + xOffset;
 
+            // Layout-space top of this text line for link annotation rects.
+            var lineLayoutTop = area.Y + (lineIdx - _startLine) * leading;
+
             // Check if ANY fragment on this line uses an embedded font.
             var hasEmbedded = fragments.Any(f => f.Style.FontRef.IsEmbedded);
 
@@ -138,6 +141,7 @@ public sealed class ParagraphRenderer : IRenderer
                 // Embedded fonts: Tw does not work with 2-byte CID encoding.
                 // Position each word-token explicitly with Tm.
                 DrawJustifiedEmbeddedLine(canvas, ctx, fragments, curX, linePdfY, area.Width, slack, wordGapCount, ref currentFont, ref currentColor);
+                RegisterLineLinks(ctx, fragments, curX, lineLayoutTop, leading);
             }
             else
             {
@@ -145,6 +149,7 @@ public sealed class ParagraphRenderer : IRenderer
                 if (isJustified && wordGapCount > 0)
                     canvas.SetWordSpacing(wordSpacing);
 
+                var linkStartX = curX;
                 foreach (var frag in fragments)
                 {
                     SwitchFont(canvas, ctx, frag.Style, ref currentFont);
@@ -152,6 +157,14 @@ public sealed class ParagraphRenderer : IRenderer
 
                     canvas.SetTextMatrix(1, 0, 0, 1, curX, linePdfY);
                     ShowText(canvas, frag.Style, frag.Text);
+
+                    // Register link annotation for this fragment if it has a URI.
+                    if (frag.Style.LinkUri is not null)
+                    {
+                        var fragBox = new LayoutBox(curX, lineLayoutTop, frag.Width, leading);
+                        ctx.AddUriLinkAnnotation(fragBox, frag.Style.LinkUri);
+                    }
+
                     curX += frag.Width;
                     // Word spacing is handled by Tw operator, so advance by frag.Width only.
                 }
@@ -162,6 +175,29 @@ public sealed class ParagraphRenderer : IRenderer
         }
 
         canvas.EndText();
+    }
+
+    // ── Link annotation registration ──────────────────────────────────────────
+
+    /// <summary>
+    /// For each fragment in an embedded-font justified line that carries a
+    /// <see cref="TextStyle.LinkUri"/>, registers a link annotation at its
+    /// approximate position. Because exact token positions are computed inside
+    /// <see cref="DrawJustifiedEmbeddedLine"/>, we use the fragment's full width
+    /// as a reasonable approximation.
+    /// </summary>
+    private static void RegisterLineLinks(DrawContext ctx, LineFragment[] fragments, double startX, double lineTop, double lineHeight)
+    {
+        var curX = startX;
+        foreach (var frag in fragments)
+        {
+            if (frag.Style.LinkUri is not null)
+            {
+                var box = new LayoutBox(curX, lineTop, frag.Width, lineHeight);
+                ctx.AddUriLinkAnnotation(box, frag.Style.LinkUri);
+            }
+            curX += frag.Width;
+        }
     }
 
     // ── Justified embedded draw ───────────────────────────────────────────────

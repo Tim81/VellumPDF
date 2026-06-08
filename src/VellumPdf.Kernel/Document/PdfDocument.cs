@@ -1,6 +1,7 @@
 // Copyright 2026 Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
+using VellumPdf.Annotations;
 using VellumPdf.Core;
 using VellumPdf.Fonts;
 using VellumPdf.Images;
@@ -25,6 +26,12 @@ public sealed class PdfDocument : IDisposable
 
     // Per-page embedded font usage: page → set of handle resource names
     private readonly Dictionary<PdfPage, HashSet<string>> _pageEmbeddedFonts = new();
+
+    // Per-page link annotations
+    private readonly Dictionary<PdfPage, List<PdfLinkAnnotation>> _pageAnnotations = new();
+
+    // Document outline (bookmark) entries, in insertion order
+    private readonly List<PdfOutlineEntry> _outlineEntries = [];
 
     private int _fontCounter;
     private int _ttFontCounter;
@@ -105,6 +112,26 @@ public sealed class PdfDocument : IDisposable
         list.Add((image, resourceName));
         return resourceName;
     }
+
+    /// <summary>
+    /// Registers a /Link annotation on the given page.
+    /// The annotation is written as an indirect object during <see cref="Save"/>.
+    /// </summary>
+    public void RegisterLinkAnnotation(PdfPage page, PdfLinkAnnotation annotation)
+    {
+        if (!_pageAnnotations.TryGetValue(page, out var list))
+        {
+            list = [];
+            _pageAnnotations[page] = list;
+        }
+        list.Add(annotation);
+    }
+
+    /// <summary>
+    /// Adds a bookmark entry that will be written into the document outline tree.
+    /// Entries are rendered in the order they are added.
+    /// </summary>
+    public void AddOutlineEntry(PdfOutlineEntry entry) => _outlineEntries.Add(entry);
 
     /// <summary>Writes a complete PDF file to <paramref name="destination"/>.</summary>
     public void Save(Stream destination)
@@ -223,6 +250,29 @@ public sealed class PdfDocument : IDisposable
             }
         }
 
+        // ── Build page→ref lookup (used by annotations and outlines) ─────
+        var pageRefMap = new Dictionary<PdfPage, PdfIndirectReference>(_pages.Count);
+        for (var i = 0; i < _pages.Count; i++)
+            pageRefMap[_pages[i]] = pageDictRefs[i];
+
+        // ── Write link annotations as indirect objects ─────────────────────
+        // For each page that has annotations, build each annotation dict as an
+        // indirect object and call AddAnnotation so the page dict gets /Annots.
+        foreach (var page in _pages)
+        {
+            if (!_pageAnnotations.TryGetValue(page, out var annots)) continue;
+            foreach (var annot in annots)
+            {
+                PdfIndirectReference? destRef = annot.DestPage is not null
+                    ? pageRefMap.GetValueOrDefault(annot.DestPage)
+                    : null;
+                var annotDict = annot.BuildDictionary(destRef);
+                var annotRef = registry.Reserve();
+                registry.SetValue(annotRef, annotDict);
+                page.AddAnnotation(annotRef);
+            }
+        }
+
         // ── Fill page dict values ──────────────────────────────────────────
         for (var i = 0; i < _pages.Count; i++)
         {
@@ -241,10 +291,21 @@ public sealed class PdfDocument : IDisposable
         // ── Fill info dict value ───────────────────────────────────────────
         registry.SetValue(infoRef, Info.BuildDictionary());
 
+        // ── Build outline tree (bookmarks) ────────────────────────────────
+        PdfIndirectReference? outlinesRef = null;
+        if (_outlineEntries.Count > 0)
+            outlinesRef = BuildOutlineTree(registry, pageRefMap);
+
         // ── Fill catalog value ─────────────────────────────────────────────
         var catalog = new PdfDictionary()
             .Set(PdfName.Type, PdfName.Catalog)
             .Set(PdfName.Pages, pageTreeRef);
+        if (outlinesRef is not null)
+        {
+            catalog
+                .Set(new PdfName("Outlines"), outlinesRef)
+                .Set(new PdfName("PageMode"), new PdfName("UseOutlines"));
+        }
         registry.SetValue(catalogRef, catalog);
 
         // ── Write all objects in object-number order ───────────────────────
@@ -253,6 +314,145 @@ public sealed class PdfDocument : IDisposable
         // ── Cross-reference table + trailer ───────────────────────────────
         xref.WriteXrefAndTrailer(writer, catalogRef, infoRef);
         writer.Flush();
+    }
+
+    /// <summary>
+    /// Builds the full /Outlines indirect object tree from the flat list of
+    /// <see cref="_outlineEntries"/>, allocating all refs in <paramref name="registry"/>.
+    /// Returns the /Outlines root ref.
+    /// </summary>
+    private PdfIndirectReference BuildOutlineTree(
+        PdfObjectRegistry registry,
+        Dictionary<PdfPage, PdfIndirectReference> pageRefMap)
+    {
+        // We model outline items at each level as a doubly-linked list.
+        // Algorithm: walk entries in order; maintain a stack of the last open item
+        // at each level so /Parent, /Prev, /Next can be wired.
+
+        // Reserve refs for every item up front so we can set back-links.
+        var itemRefs = new PdfIndirectReference[_outlineEntries.Count];
+        for (var i = 0; i < _outlineEntries.Count; i++)
+            itemRefs[i] = registry.Reserve();
+
+        var outlinesRef = registry.Reserve();
+
+        // We'll track, for each level, the ref of the last item at that level so
+        // /Prev / /Next links work correctly without a second pass.
+        // Stack: index = level, value = index into _outlineEntries of the last open entry at that level.
+        var lastAtLevel = new Dictionary<int, int>(); // level → entry index of last item at that level
+        var firstAtLevel = new Dictionary<int, int>(); // level → entry index of first item at that level
+
+        // Children: each item that has children gets /First, /Last, /Count set.
+        // We accumulate a list of direct children refs per parent entry index.
+        var childrenOf = new Dictionary<int, List<int>>(); // parent entry index → list of child entry indices
+
+        // Assign parents: each entry's parent is the last entry at (level-1),
+        // or the root outlines dict if level == 0.
+        var parentItemIndex = new int[_outlineEntries.Count]; // -1 means root
+        for (var i = 0; i < _outlineEntries.Count; i++)
+        {
+            var level = _outlineEntries[i].Level;
+            if (level == 0)
+            {
+                parentItemIndex[i] = -1; // root
+            }
+            else
+            {
+                // Find last entry at level-1
+                var parentLevel = level - 1;
+                parentItemIndex[i] = lastAtLevel.TryGetValue(parentLevel, out var pi) ? pi : -1;
+            }
+
+            // Register as child of parent
+            var pid = parentItemIndex[i];
+            if (!childrenOf.TryGetValue(pid, out var list))
+            {
+                list = [];
+                childrenOf[pid] = list;
+            }
+            list.Add(i);
+
+            lastAtLevel[level] = i;
+            if (!firstAtLevel.ContainsKey(level))
+                firstAtLevel[level] = i;
+        }
+
+        // Wire /Prev and /Next among siblings (entries that share the same parent).
+        // Group siblings by parentItemIndex.
+        var siblingsByParent = new Dictionary<int, List<int>>(); // parent → ordered sibling list
+        for (var i = 0; i < _outlineEntries.Count; i++)
+        {
+            var pid = parentItemIndex[i];
+            if (!siblingsByParent.TryGetValue(pid, out var siblings))
+            {
+                siblings = [];
+                siblingsByParent[pid] = siblings;
+            }
+            siblings.Add(i);
+        }
+
+        // Now build each item dict.
+        for (var i = 0; i < _outlineEntries.Count; i++)
+        {
+            var entry = _outlineEntries[i];
+            var title = PdfLiteralString.FromUnicode(entry.Title);
+
+            // /Dest [pageRef /XYZ left top null]
+            pageRefMap.TryGetValue(entry.DestPage, out var destPageRef);
+            var dest = new PdfArray([
+                destPageRef ?? (PdfObject)PdfNull.Instance,
+                new PdfName("XYZ"),
+                new PdfReal(entry.DestLeft),
+                new PdfReal(entry.DestTop),
+                PdfNull.Instance,
+            ]);
+
+            // /Parent ref — either the outlines root or a parent item
+            var pid = parentItemIndex[i];
+            PdfObject parentRef = pid == -1 ? (PdfObject)outlinesRef : itemRefs[pid];
+
+            var itemDict = new PdfDictionary()
+                .Set(new PdfName("Title"), title)
+                .Set(new PdfName("Parent"), parentRef)
+                .Set(new PdfName("Dest"), dest);
+
+            // /Prev and /Next from sibling list
+            var siblings = siblingsByParent[pid];
+            var sibIdx = siblings.IndexOf(i);
+            if (sibIdx > 0)
+                itemDict.Set(new PdfName("Prev"), itemRefs[siblings[sibIdx - 1]]);
+            if (sibIdx < siblings.Count - 1)
+                itemDict.Set(new PdfName("Next"), itemRefs[siblings[sibIdx + 1]]);
+
+            // /First, /Last, /Count for items that have children
+            if (childrenOf.TryGetValue(i, out var myChildren) && myChildren.Count > 0)
+            {
+                itemDict
+                    .Set(new PdfName("First"), itemRefs[myChildren[0]])
+                    .Set(new PdfName("Last"), itemRefs[myChildren[^1]])
+                    .Set(new PdfName("Count"), new PdfInteger(myChildren.Count));
+            }
+
+            registry.SetValue(itemRefs[i], itemDict);
+        }
+
+        // Build the /Outlines root dict.
+        var rootChildren = siblingsByParent.TryGetValue(-1, out var rootSiblings) ? rootSiblings : [];
+        var rootCountAll = _outlineEntries.Count; // total number of items (open count)
+
+        var outlinesDict = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("Outlines"));
+
+        if (rootChildren.Count > 0)
+        {
+            outlinesDict
+                .Set(new PdfName("First"), itemRefs[rootChildren[0]])
+                .Set(new PdfName("Last"), itemRefs[rootChildren[^1]])
+                .Set(new PdfName("Count"), new PdfInteger(rootCountAll));
+        }
+
+        registry.SetValue(outlinesRef, outlinesDict);
+        return outlinesRef;
     }
 
     public void Dispose() => _disposed = true;
