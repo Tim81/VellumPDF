@@ -3,12 +3,15 @@
 
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using VellumPdf.Encryption;
 using VellumPdf.Fonts;
 using VellumPdf.Layout;
 using VellumPdf.Layout.Core;
 using VellumPdf.Layout.Elements;
 using VellumPdf.Layout.Elements.Table;
+using VellumPdf.Signing;
 
 namespace VellumPdf.Layout.Tests;
 
@@ -222,7 +225,57 @@ public sealed class PdfValidatorOracleTests : IDisposable
             $"Encryption marker '{EncryptionMarker}' not found in pdftotext output.\nstderr: {stderr}");
     }
 
+    // ── PAdES signature oracle test ─────────────────────────────────────────
+
+    [Fact]
+    public void Signed_doc_pdfsig_reports_valid_signature()
+    {
+        var pdfPath = Path.Combine(_tempDir, "signed.pdf");
+        GenerateSignedDoc(pdfPath);
+
+        if (!TryRunTool("pdfsig", $"\"{pdfPath}\"", out _, out var stdout, out var stderr))
+        {
+            GateOnCi("pdfsig");
+            return;
+        }
+
+        // pdfsig (poppler-utils) outputs "Signature is Valid" for a valid digest.
+        // An untrusted self-signed certificate still produces a valid digest, so
+        // "Signature is Valid" confirms the /ByteRange and /Contents are correct.
+        Assert.True(
+            stdout.Contains("Signature is Valid", StringComparison.OrdinalIgnoreCase) ||
+            stderr.Contains("Signature is Valid", StringComparison.OrdinalIgnoreCase),
+            $"pdfsig did not report 'Signature is Valid'.\nstdout: {stdout}\nstderr: {stderr}");
+    }
+
     // ── Document generators ──────────────────────────────────────────────────
+
+    private static void GenerateSignedDoc(string path)
+    {
+        using var rsa = RSA.Create(2048);
+        var req = new CertificateRequest(
+            "CN=VellumPdf Oracle Test",
+            rsa,
+            HashAlgorithmName.SHA256,
+            RSASignaturePadding.Pkcs1);
+        using var cert = req.CreateSelfSigned(
+            DateTimeOffset.UtcNow.AddDays(-1),
+            DateTimeOffset.UtcNow.AddYears(1));
+
+        using var doc = new Document();
+        var style = new TextStyle { Font = Standard14.Helvetica, FontSize = 12 };
+        doc.Add(new Paragraph("VELLUM_PDFSIG_ORACLE_TEST", style));
+
+        var settings = new PdfSignatureSettings
+        {
+            Certificate = cert,
+            SignerName = "VellumPdf Oracle",
+            Reason = "Oracle test",
+        };
+
+        using var fs = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None);
+        doc.Sign(fs, settings);
+    }
 
     private static void GenerateMultiPageDoc(string path)
     {

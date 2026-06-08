@@ -1,6 +1,7 @@
 // Copyright 2026 Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
+using VellumPdf.Document;
 using VellumPdf.Encryption;
 using VellumPdf.Fonts;
 using VellumPdf.Layout.Core;
@@ -174,6 +175,27 @@ public sealed class Document : IDisposable
     {
         using var fs = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None);
         Save(fs);
+    }
+
+    // ── Signing seam (VellumPdf.Signing only) ────────────────────────────────
+
+    /// <summary>
+    /// Runs the layout pass and delegates to
+    /// <see cref="PdfDocument.PrepareForSigning"/> to produce the unsigned placeholder bytes.
+    /// Called exclusively by <c>VellumPdf.Signing.SigningExtensions</c>.
+    /// </summary>
+    internal byte[] PrepareForSigning(SignaturePlaceholderOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+
+        var renderer = new DocumentRenderer(_pdf, _pdf.DefaultPageSize, Margins)
+        {
+            Header = Header,
+            Footer = Footer,
+        };
+        foreach (var r in _content) renderer.Add(r);
+        renderer.RunLayout();
+        return _pdf.PrepareForSigning(options);
     }
 
     public void Dispose() => _pdf.Dispose();

@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <PackageReference Include="System.Security.Cryptography.Pkcs" />
+    <ProjectReference Include="..\VellumPdf.Kernel\VellumPdf.Kernel.csproj" />
+    <ProjectReference Include="..\VellumPdf.Layout\VellumPdf.Layout.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <RootNamespace>VellumPdf.Signing</RootNamespace>
+    <AssemblyName>VellumPdf.Signing</AssemblyName>
+    <PackageId>VellumPdf.Signing</PackageId>
+    <Description>Optional digital-signature add-on for VellumPdf: PAdES/PKCS#7 detached CMS signatures over VellumPdf.Kernel.PdfDocument and VellumPdf.Layout.Document. References System.Security.Cryptography.Pkcs; keeps the core zero-dependency.</Description>
+    <PackageTags>pdf;signing;digital-signature;pades;pkcs7;cms;aot</PackageTags>
+  </PropertyGroup>
+
+</Project>

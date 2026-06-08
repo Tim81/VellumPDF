@@ -49,6 +49,17 @@ public sealed class DocumentRenderer
     /// <summary>Lays out all added renderers and saves the resulting PDF to <paramref name="destination"/>.</summary>
     public void Render(Stream destination)
     {
+        RunLayout();
+        _pdf.Save(destination);
+    }
+
+    /// <summary>
+    /// Runs the layout pass (page count + full render) without writing to any stream.
+    /// After this call, callers may invoke <see cref="PdfDocument.Save"/> or
+    /// <see cref="PdfDocument.PrepareForSigning"/> on the underlying document.
+    /// </summary>
+    internal void RunLayout()
+    {
         int totalPages;
         if (Header is not null || Footer is not null)
         {
@@ -65,7 +76,6 @@ public sealed class DocumentRenderer
             PlaceRenderer(renderer, totalPages);
 
         FinishCurrentPage(totalPages);
-        _pdf.Save(destination);
     }
 
     // ── Private ──────────────────────────────────────────────────────────────

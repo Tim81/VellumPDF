@@ -456,6 +456,279 @@ public sealed class PdfDocument : IDisposable
     }
 
     /// <summary>
+    /// Writes this document to an in-memory buffer with AcroForm signature-field placeholders
+    /// and returns the raw bytes. The returned array contains a structurally valid PDF whose
+    /// <c>/ByteRange</c> and <c>/Contents</c> values are fixed-width placeholders ready for
+    /// in-place patching by <c>VellumPdf.Signing</c>.
+    ///
+    /// <para>Encryption and signing are mutually exclusive; throws
+    /// <see cref="NotSupportedException"/> when <see cref="Encrypt"/> has been called.</para>
+    /// </summary>
+    public byte[] PrepareForSigning(SignaturePlaceholderOptions options)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(options);
+
+        if (_encryptionSettings is not null)
+            throw new NotSupportedException(
+                "PDF encryption and digital signatures cannot be combined. " +
+                "Remove the Encrypt() call or use Sign() without Encrypt().");
+
+        var ms = new MemoryStream();
+        WriteWithSignaturePlaceholders(ms, options);
+        return ms.ToArray();
+    }
+
+    /// <summary>
+    /// Writes the PDF with signature field placeholders to <paramref name="destination"/>.
+    /// The output contains valid PDF structure but with placeholder /ByteRange and /Contents.
+    /// </summary>
+    private void WriteWithSignaturePlaceholders(Stream destination, SignaturePlaceholderOptions options)
+    {
+        var writer = new PdfWriter(destination);
+        var xref = new CrossReferenceBuilder();
+        var registry = new PdfObjectRegistry();
+
+        // PDF header
+        writer.WriteAscii("%PDF-2.0\n%"u8);
+        writer.WriteRaw([0xE2, 0xE3, 0xCF, 0xD3]);
+        writer.WriteAscii("\n"u8);
+
+        // ── Pre-allocate references ────────────────────────────────────────────
+        var pageContentRefs = new PdfIndirectReference[_pages.Count];
+        for (var i = 0; i < _pages.Count; i++)
+            pageContentRefs[i] = registry.Reserve();
+
+        var pageDictRefs = new PdfIndirectReference[_pages.Count];
+        for (var i = 0; i < _pages.Count; i++)
+            pageDictRefs[i] = registry.Reserve();
+
+        var pageTreeRef = registry.Reserve();
+        var infoRef = registry.Reserve();
+        var catalogRef = registry.Reserve();
+
+        // ── Signature-specific refs ────────────────────────────────────────────
+        // sigDictRef = the /Sig value object (contains /ByteRange, /Contents)
+        // sigFieldRef = the widget annotation / signature field
+        var sigDictRef = registry.Reserve();
+        var sigFieldRef = registry.Reserve();
+
+        // ── Content streams ────────────────────────────────────────────────────
+        for (var i = 0; i < _pages.Count; i++)
+        {
+            var content = _pages[i].ContentBytes ?? [];
+            registry.SetValue(pageContentRefs[i], new PdfStream(content));
+        }
+
+        // ── Image XObjects ─────────────────────────────────────────────────────
+        var imageRefs = new Dictionary<PdfImageXObject, PdfIndirectReference>(ReferenceEqualityComparer.Instance);
+        foreach (var page in _pages)
+        {
+            if (!_pageImages.TryGetValue(page, out var images)) continue;
+            foreach (var (img, name) in images)
+            {
+                if (!imageRefs.TryGetValue(img, out var imgObjRef))
+                {
+                    PdfIndirectReference? sMaskRef = null;
+                    if (img.SMask is not null)
+                    {
+                        var sMaskObjRef = registry.Reserve();
+                        var sMaskStream = img.SMask;
+                        sMaskStream.Dictionary
+                            .Set(PdfName.Type, new PdfName("XObject"))
+                            .Set(PdfName.Subtype, new PdfName("Image"))
+                            .Set(new PdfName("Width"), new PdfInteger(img.Width))
+                            .Set(new PdfName("Height"), new PdfInteger(img.Height))
+                            .Set(new PdfName("ColorSpace"), new PdfName("DeviceGray"))
+                            .Set(new PdfName("BitsPerComponent"), new PdfInteger(8));
+                        registry.SetValue(sMaskObjRef, sMaskStream);
+                        sMaskRef = sMaskObjRef;
+                    }
+                    imgObjRef = registry.Reserve();
+                    registry.SetValue(imgObjRef, img.BuildStreamWithSMask(sMaskRef));
+                    imageRefs[img] = imgObjRef;
+                }
+                page.RegisterXObject(name, imgObjRef);
+            }
+        }
+
+        // ── Embedded TrueType fonts ────────────────────────────────────────────
+        foreach (var handle in _embeddedFonts)
+        {
+            var emb = handle.Embedder;
+            var fontFileRef = registry.Reserve();
+            var descriptorRef = registry.Reserve();
+            var cidFontRef = registry.Reserve();
+            var toUnicodeRef = registry.Reserve();
+            var type0Ref = registry.Reserve();
+            registry.SetValue(fontFileRef, emb.BuildFontFileStream());
+            registry.SetValue(descriptorRef, emb.BuildFontDescriptor(fontFileRef));
+            registry.SetValue(cidFontRef, emb.BuildCidFontDictionary(descriptorRef));
+            registry.SetValue(toUnicodeRef, emb.BuildToUnicodeCMap());
+            registry.SetValue(type0Ref, emb.BuildFontDictionary(cidFontRef, toUnicodeRef));
+            foreach (var page in _pages)
+            {
+                if (!_pageEmbeddedFonts.TryGetValue(page, out var usedNames)) continue;
+                if (!usedNames.Contains(handle.ResourceName)) continue;
+                page.RegisterFontRef(handle.ResourceName, type0Ref);
+            }
+        }
+
+        // ── Page→ref lookup ────────────────────────────────────────────────────
+        var pageRefMap = new Dictionary<PdfPage, PdfIndirectReference>(_pages.Count);
+        for (var i = 0; i < _pages.Count; i++)
+            pageRefMap[_pages[i]] = pageDictRefs[i];
+
+        // ── Link annotations ───────────────────────────────────────────────────
+        foreach (var page in _pages)
+        {
+            if (!_pageAnnotations.TryGetValue(page, out var annots)) continue;
+            foreach (var annot in annots)
+            {
+                PdfIndirectReference? destRef = annot.DestPage is not null
+                    ? pageRefMap.GetValueOrDefault(annot.DestPage)
+                    : null;
+                var annotDict = annot.BuildDictionary(destRef);
+                var annotRef = registry.Reserve();
+                registry.SetValue(annotRef, annotDict);
+                page.AddAnnotation(annotRef);
+            }
+        }
+
+        // ── Structure tree ─────────────────────────────────────────────────────
+        PdfIndirectReference? structTreeRootRef = null;
+        if (Tagged && !_structureTree.IsEmpty)
+        {
+            structTreeRootRef = _structureTree.Build(registry, pageRefMap, out var pageStructParents);
+            foreach (var (page, key) in pageStructParents)
+                page.StructParentsKey = key;
+        }
+
+        // ── Add signature widget annotation to page 1 ──────────────────────────
+        // The invisible widget is added to the first page's /Annots.
+        if (_pages.Count > 0)
+            _pages[0].AddAnnotation(sigFieldRef);
+
+        // ── Page dicts ────────────────────────────────────────────────────────
+        for (var i = 0; i < _pages.Count; i++)
+        {
+            var dict = _pages[i].BuildDictionary(pageTreeRef, pageContentRefs[i]);
+            registry.SetValue(pageDictRefs[i], dict);
+        }
+
+        // ── Page tree ─────────────────────────────────────────────────────────
+        var kids = new PdfArray(pageDictRefs.Cast<PdfObject>());
+        var pageTree = new PdfDictionary()
+            .Set(PdfName.Type, PdfName.Pages)
+            .Set(PdfName.Kids, kids)
+            .Set(PdfName.Count, _pages.Count);
+        registry.SetValue(pageTreeRef, pageTree);
+
+        // ── Info dict ─────────────────────────────────────────────────────────
+        registry.SetValue(infoRef, Info.BuildDictionary());
+
+        // ── XMP metadata ──────────────────────────────────────────────────────
+        var ts = Timestamp ?? DateTimeOffset.UtcNow;
+        var xmpBytes = XmpMetadataWriter.BuildPacket(Info, Conformance, ts);
+        var metadataStream = new UncompressedPdfStream(xmpBytes);
+        metadataStream.Dictionary
+            .Set(PdfName.Type, new PdfName("Metadata"))
+            .Set(PdfName.Subtype, new PdfName("XML"));
+        var metadataRef = registry.Reserve();
+        registry.SetValue(metadataRef, metadataStream);
+
+        // ── Document ID ───────────────────────────────────────────────────────
+        var documentId = ComputeDocumentId(ts);
+
+        // ── Outline tree ──────────────────────────────────────────────────────
+        PdfIndirectReference? outlinesRef = null;
+        if (_outlineEntries.Count > 0)
+            outlinesRef = BuildOutlineTree(registry, pageRefMap);
+
+        // ── Signature dictionary (/V) ──────────────────────────────────────────
+        // /ByteRange and /Contents must be placeholders with fixed byte width so
+        // they can be patched in-place without shifting any offsets.
+        var signingTime = options.SigningTime ?? DateTimeOffset.UtcNow;
+        var pdfDate = PdfSignatureHelper.FormatPdfDate(signingTime);
+
+        var sigDict = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("Sig"))
+            .Set(PdfName.Filter, new PdfName("Adobe.PPKLite"))
+            .Set(new PdfName("SubFilter"), new PdfName(options.SubFilter))
+            .Set(new PdfName("M"), new PdfLiteralString(System.Text.Encoding.Latin1.GetBytes(pdfDate)))
+            .Set(new PdfName("ByteRange"), new PdfRawBytesObject(PdfSignatureHelper.GetByteRangePlaceholderString()))
+            .Set(PdfName.Contents, new PdfRawBytesObject(PdfSignatureHelper.GetContentsPlaceholder(options.EstimatedSignatureSizeBytes)));
+
+        // Optional fields — only include if non-null/non-empty
+        if (!string.IsNullOrEmpty(options.SignerName))
+            sigDict.Set(new PdfName("Name"), new PdfLiteralString(System.Text.Encoding.Latin1.GetBytes(options.SignerName)));
+        if (!string.IsNullOrEmpty(options.Reason))
+            sigDict.Set(new PdfName("Reason"), new PdfLiteralString(System.Text.Encoding.Latin1.GetBytes(options.Reason)));
+        if (!string.IsNullOrEmpty(options.Location))
+            sigDict.Set(new PdfName("Location"), new PdfLiteralString(System.Text.Encoding.Latin1.GetBytes(options.Location)));
+        if (!string.IsNullOrEmpty(options.ContactInfo))
+            sigDict.Set(new PdfName("ContactInfo"), new PdfLiteralString(System.Text.Encoding.Latin1.GetBytes(options.ContactInfo)));
+
+        registry.SetValue(sigDictRef, sigDict);
+
+        // ── Signature field / widget annotation ────────────────────────────────
+        // This is both the AcroForm field (/FT /Sig) and the invisible widget annotation
+        // (/Subtype /Widget /Rect [0 0 0 0]). Per ISO 32000-2, a signature field may
+        // merge the field and its widget annotation into one dictionary.
+        var page1Ref = _pages.Count > 0 ? pageDictRefs[0] : (PdfObject)PdfNull.Instance;
+
+        var sigFieldDict = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("Annot"))
+            .Set(PdfName.Subtype, new PdfName("Widget"))
+            .Set(new PdfName("FT"), new PdfName("Sig"))
+            .Set(new PdfName("T"), new PdfLiteralString(System.Text.Encoding.Latin1.GetBytes("Signature1")))
+            .Set(new PdfName("Rect"), new PdfArray([new PdfInteger(0), new PdfInteger(0), new PdfInteger(0), new PdfInteger(0)]))
+            .Set(new PdfName("F"), new PdfInteger(132))
+            .Set(new PdfName("P"), page1Ref)
+            .Set(new PdfName("V"), sigDictRef);
+
+        registry.SetValue(sigFieldRef, sigFieldDict);
+
+        // ── Catalog ────────────────────────────────────────────────────────────
+        var acroFormDict = new PdfDictionary()
+            .Set(new PdfName("Fields"), new PdfArray([sigFieldRef]))
+            .Set(new PdfName("SigFlags"), new PdfInteger(3));
+
+        var catalog = new PdfDictionary()
+            .Set(PdfName.Type, PdfName.Catalog)
+            .Set(PdfName.Pages, pageTreeRef)
+            .Set(new PdfName("Metadata"), metadataRef)
+            .Set(new PdfName("AcroForm"), acroFormDict);
+
+        if (outlinesRef is not null)
+        {
+            catalog
+                .Set(new PdfName("Outlines"), outlinesRef)
+                .Set(new PdfName("PageMode"), new PdfName("UseOutlines"));
+        }
+
+        var needsMarkInfo = Tagged || Conformance != PdfConformance.None;
+        if (needsMarkInfo)
+        {
+            var markInfo = new PdfDictionary()
+                .Set(new PdfName("Marked"), PdfBoolean.True);
+            catalog.Set(new PdfName("MarkInfo"), markInfo);
+        }
+
+        if (structTreeRootRef is not null)
+            catalog.Set(new PdfName("StructTreeRoot"), structTreeRootRef);
+
+        registry.SetValue(catalogRef, catalog);
+
+        // ── Write all objects ──────────────────────────────────────────────────
+        registry.WriteAll(writer, xref);
+
+        // ── Cross-reference table + trailer ───────────────────────────────────
+        xref.WriteXrefAndTrailer(writer, catalogRef, infoRef, documentId: documentId);
+        writer.Flush();
+    }
+
+    /// <summary>
     /// Builds the /Encrypt dictionary for a V5/R6 AES-256 Standard security handler.
     /// The string values (/O, /U, /OE, /UE, /Perms) are written as hex strings
     /// (PdfHexString). They are raw computed bytes — NOT encrypted themselves.
