@@ -445,6 +445,40 @@ public sealed class PdfValidatorOracleTests : IDisposable
     }
 
     /// <summary>
+    /// Returns the first OpenType-CFF (.otf) font path found on the current platform,
+    /// or null if none is available. On CI, fonts-texgyre provides OTF files.
+    /// </summary>
+    private static string? FindOtfFont()
+    {
+        string[] candidates =
+        [
+            // Linux CI — TeX Gyre (fonts-texgyre apt package)
+            "/usr/share/fonts/opentype/texgyre/texgyreadventor-regular.otf",
+            "/usr/share/fonts/opentype/texgyre/texgyreheros-regular.otf",
+            "/usr/share/fonts/opentype/texgyre/texgyrecursor-regular.otf",
+            "/usr/share/fonts/opentype/texgyre/texgyrebonum-regular.otf",
+            "/usr/share/fonts/opentype/texgyre/texgyrechorus-regular.otf",
+            "/usr/share/fonts/opentype/texgyre/texgyrepagella-regular.otf",
+            "/usr/share/fonts/opentype/texgyre/texgyreschola-regular.otf",
+            "/usr/share/fonts/opentype/texgyre/texgyretermes-regular.otf",
+            // Generic Linux fallbacks
+            "/usr/share/fonts/opentype/noto/NotoSans-Regular.otf",
+            "/usr/share/fonts/opentype/freefont/FreeSans.otf",
+        ];
+        foreach (var c in candidates)
+            if (File.Exists(c)) return c;
+
+        // Broader Linux search under /usr/share/fonts for any .otf
+        if (Directory.Exists("/usr/share/fonts"))
+        {
+            foreach (var f in Directory.EnumerateFiles("/usr/share/fonts", "*.otf", SearchOption.AllDirectories))
+                return f;
+        }
+
+        return null;
+    }
+
+    /// <summary>
     /// Attempts to run an external CLI tool and captures its output.
     /// Returns false if the process cannot be started (tool not installed).
     /// Gives the process a 30-second timeout and disposes properly.
@@ -717,6 +751,62 @@ public sealed class PdfValidatorOracleTests : IDisposable
         doc.Add(new Paragraph("VellumPdf PDF/A-2b oracle test document.", style));
         doc.Add(new Paragraph("This document uses an embedded TrueType font.", style));
 
+        doc.Save(path);
+    }
+
+    // ── OpenType-CFF (OTTO) oracle tests ────────────────────────────────────
+
+    private const string OtfOracleMarker = "VELLUMORACLE_OTF_CFF_8E2C";
+
+    [Fact]
+    public void OtfCff_QpdfCheck_Passes()
+    {
+        var otfPath = FindOtfFont();
+        if (otfPath is null) return; // skip if no OTF font available on this platform
+
+        var pdfPath = Path.Combine(_tempDir, "otf_cff.pdf");
+        GenerateOtfCffDoc(pdfPath, otfPath);
+
+        if (!TryRunTool("qpdf", $"--check \"{pdfPath}\"", out var exit, out var stdout, out var stderr))
+        {
+            GateOnCi("qpdf");
+            return;
+        }
+
+        Assert.True(
+            exit == 0,
+            $"qpdf --check failed (exit {exit}) on OTF/CFF embedded font doc.\nstdout: {stdout}\nstderr: {stderr}");
+    }
+
+    [Fact]
+    public void OtfCff_PdftotextFindsMarker()
+    {
+        var otfPath = FindOtfFont();
+        if (otfPath is null) return; // skip if no OTF font available on this platform
+
+        var pdfPath = Path.Combine(_tempDir, "otf_cff_text.pdf");
+        GenerateOtfCffDoc(pdfPath, otfPath);
+
+        if (!TryRunTool("pdftotext", $"\"{pdfPath}\" -", out _, out var text, out var stderr))
+        {
+            GateOnCi("pdftotext");
+            return;
+        }
+
+        Assert.True(
+            text.Contains(OtfOracleMarker, StringComparison.Ordinal),
+            $"OTF/CFF marker '{OtfOracleMarker}' not found in pdftotext output.\nstderr: {stderr}");
+    }
+
+    /// <summary>
+    /// Generates a PDF with an OTF/CFF embedded font and a marker string.
+    /// </summary>
+    private static void GenerateOtfCffDoc(string path, string otfPath)
+    {
+        using var doc = new Document();
+        var handle = doc.LoadTrueTypeFont(otfPath);
+        var style = new TextStyle { FontRef = handle, FontSize = 12 };
+        doc.Add(new Paragraph($"{OtfOracleMarker} — OTF/CFF embedded font marker.", style));
         doc.Save(path);
     }
 }

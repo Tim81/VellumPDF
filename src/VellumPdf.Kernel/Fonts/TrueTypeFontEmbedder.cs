@@ -7,8 +7,9 @@ using VellumPdf.Fonts.Sfnt;
 namespace VellumPdf.Fonts;
 
 /// <summary>
-/// Builds the PDF objects required to embed a TrueType/OpenType (glyf) font
-/// as Type0 / CIDFontType2 with Identity-H encoding (ISO 32000-2 §9.7).
+/// Builds the PDF objects required to embed a TrueType/OpenType font as Type0 /
+/// CIDFontType2 (glyf outlines) or CIDFontType0 (CFF/OTTO outlines) with
+/// Identity-H encoding (ISO 32000-2 §9.7 / §9.9).
 ///
 /// This is the primary embedding path: it supports the full Unicode range,
 /// avoids the 256-glyph limit of Type1/WinAnsi, and produces compliant
@@ -17,6 +18,7 @@ namespace VellumPdf.Fonts;
 public sealed class TrueTypeFontEmbedder
 {
     private readonly SfntFont _sfnt;
+    private readonly ReadOnlyMemory<byte> _fontData; // retained for whole-font CFF embedding
     private readonly CmapTable _cmap;
     private readonly HeadTable _head;
     private readonly HheaTable _hhea;
@@ -34,10 +36,7 @@ public sealed class TrueTypeFontEmbedder
     public TrueTypeFontEmbedder(ReadOnlyMemory<byte> fontData, string resourceName)
     {
         _sfnt = SfntFont.Parse(fontData);
-
-        if (_sfnt.IsCff)
-            throw new NotSupportedException(
-                "OpenType/CFF (OTTO) fonts are not yet supported; only TrueType (glyf) outlines can be embedded.");
+        _fontData = fontData;
 
         _cmap = CmapTable.Parse(_sfnt);
         _head = HeadTable.Parse(_sfnt);
@@ -103,7 +102,21 @@ public sealed class TrueTypeFontEmbedder
     public Core.PdfDictionary BuildCidFontDictionary(Core.PdfIndirectReference descriptorRef)
     {
         var widths = BuildWidthsArray();
-        var d = new Core.PdfDictionary()
+        if (_sfnt.IsCff)
+        {
+            // CFF path: CIDFontType0, no /CIDToGIDMap (CIDFontType2-only key)
+            return new Core.PdfDictionary()
+                .Set(Core.PdfName.Type, Core.PdfName.Font)
+                .Set(Core.PdfName.Subtype, new Core.PdfName("CIDFontType0"))
+                .Set(Core.PdfName.BaseFont, new Core.PdfName(PostScriptName))
+                .Set(new Core.PdfName("CIDSystemInfo"), BuildCidSystemInfo())
+                .Set(new Core.PdfName("FontDescriptor"), descriptorRef)
+                .Set(new Core.PdfName("DW"), new Core.PdfInteger(1000))
+                .Set(new Core.PdfName("W"), widths);
+        }
+
+        // TrueType (glyf) path: CIDFontType2 with Identity CIDToGIDMap
+        return new Core.PdfDictionary()
             .Set(Core.PdfName.Type, Core.PdfName.Font)
             .Set(Core.PdfName.Subtype, new Core.PdfName("CIDFontType2"))
             .Set(Core.PdfName.BaseFont, new Core.PdfName(PostScriptName))
@@ -112,7 +125,6 @@ public sealed class TrueTypeFontEmbedder
             .Set(new Core.PdfName("DW"), new Core.PdfInteger(1000))
             .Set(new Core.PdfName("W"), widths)
             .Set(new Core.PdfName("CIDToGIDMap"), new Core.PdfName("Identity"));
-        return d;
     }
 
     public Core.PdfDictionary BuildFontDescriptor(Core.PdfIndirectReference fontFileRef)
@@ -124,7 +136,7 @@ public sealed class TrueTypeFontEmbedder
         if (_post.IsFixedPitch) flags |= 1;
         if (_post.ItalicAngle != 0) flags |= 64; // Italic (bit 7)
 
-        return new Core.PdfDictionary()
+        var descriptor = new Core.PdfDictionary()
             .Set(Core.PdfName.Type, new Core.PdfName("FontDescriptor"))
             .Set(new Core.PdfName("FontName"), new Core.PdfName(PostScriptName))
             .Set(new Core.PdfName("Flags"), (long)flags)
@@ -133,12 +145,29 @@ public sealed class TrueTypeFontEmbedder
             .Set(new Core.PdfName("Descent"), new Core.PdfReal(Scale(_os2.TypoDescender)))
             .Set(new Core.PdfName("CapHeight"), new Core.PdfReal(Scale(_os2.CapHeight != 0 ? _os2.CapHeight : _os2.TypoAscender)))
             .Set(new Core.PdfName("StemV"), new Core.PdfInteger(80)) // heuristic
-            .Set(new Core.PdfName("FontBBox"), BuildFontBBox())
-            .Set(new Core.PdfName("FontFile2"), fontFileRef);
+            .Set(new Core.PdfName("FontBBox"), BuildFontBBox());
+
+        // CFF fonts use /FontFile3 (with /Subtype /OpenType); TrueType fonts use /FontFile2.
+        if (_sfnt.IsCff)
+            descriptor.Set(new Core.PdfName("FontFile3"), fontFileRef);
+        else
+            descriptor.Set(new Core.PdfName("FontFile2"), fontFileRef);
+
+        return descriptor;
     }
 
     public Core.PdfStream BuildFontFileStream()
     {
+        if (_sfnt.IsCff)
+        {
+            // Whole-font embedding for CFF/OTTO: embed the entire original font bytes.
+            // ISO 32000-2 §9.9 allows the complete OpenType program in a FontFile3
+            // stream with /Subtype /OpenType. No subsetting — CFF subsetting is out of scope.
+            var stream = new Core.PdfStream(_fontData.ToArray());
+            stream.Dictionary.Set(new Core.PdfName("Subtype"), new Core.PdfName("OpenType"));
+            return stream;
+        }
+
         var subsetBytes = BuildSubsetFont();
         return new Core.PdfStream(subsetBytes);
     }
