@@ -20,7 +20,14 @@ public sealed class PdfDocument : IDisposable
     // Per-page image registrations: page → list of (image, resourceName)
     private readonly Dictionary<PdfPage, List<(PdfImageXObject Image, string Name)>> _pageImages = new();
 
+    // Embedded TrueType fonts: ordered list of known handles
+    private readonly List<EmbeddedFontHandle> _embeddedFonts = [];
+
+    // Per-page embedded font usage: page → set of handle resource names
+    private readonly Dictionary<PdfPage, HashSet<string>> _pageEmbeddedFonts = new();
+
     private int _fontCounter;
+    private int _ttFontCounter;
     private bool _disposed;
 
     public PdfDocumentInfo Info { get; } = new();
@@ -51,6 +58,36 @@ public sealed class PdfDocument : IDisposable
             _fontCache[font] = res;
         }
         return res;
+    }
+
+    /// <summary>
+    /// Registers a TrueType font for embedding and returns a handle.
+    /// The handle's <see cref="EmbeddedFontHandle.ResourceName"/> is the PDF resource name
+    /// (e.g. "TT1"). Call <see cref="RegisterEmbeddedFontUsage"/> during drawing to record
+    /// per-page usage so <see cref="Save"/> wires each page's resource dictionary.
+    /// </summary>
+    public EmbeddedFontHandle UseTrueTypeFont(byte[] fontData)
+    {
+        var resourceName = $"TT{++_ttFontCounter}";
+        var embedder = new TrueTypeFontEmbedder(fontData, resourceName);
+        var handle = new EmbeddedFontHandle(embedder);
+        _embeddedFonts.Add(handle);
+        return handle;
+    }
+
+    /// <summary>
+    /// Records that <paramref name="page"/> uses the embedded font identified by
+    /// <paramref name="handle"/>. Called by the layout engine during the draw phase
+    /// so that <see cref="Save"/> can register the font reference on the correct pages.
+    /// </summary>
+    public void RegisterEmbeddedFontUsage(PdfPage page, EmbeddedFontHandle handle)
+    {
+        if (!_pageEmbeddedFonts.TryGetValue(page, out var set))
+        {
+            set = [];
+            _pageEmbeddedFonts[page] = set;
+        }
+        set.Add(handle.ResourceName);
     }
 
     /// <summary>
@@ -144,6 +181,45 @@ public sealed class PdfDocument : IDisposable
                 var imgStream = img.BuildStreamWithSMask(sMaskRef);
                 registry.SetValue(imgObjRef, imgStream);
                 page.RegisterXObject(name, imgObjRef);
+            }
+        }
+
+        // ── Embed TrueType fonts (Type0/CIDFontType2) ─────────────────────
+        // Build the full font object graph for each embedded font, then register
+        // the Type0 reference on every page that used the font.
+        //
+        // Object graph per font (ref chain):
+        //   Type0 dict → DescendantFonts array → CIDFontType2 dict → FontDescriptor → FontFile2
+        //   Type0 dict → ToUnicode stream
+        foreach (var handle in _embeddedFonts)
+        {
+            var emb = handle.Embedder;
+
+            // Reserve all indirect references first (forward-reference pattern)
+            var fontFileRef = registry.Reserve();       // FontFile2 stream
+            var descriptorRef = registry.Reserve();      // FontDescriptor dict
+            var cidFontRef = registry.Reserve();         // CIDFontType2 dict
+            var descendantArrayRef = registry.Reserve(); // one-element PdfArray [cidFontRef]
+            var toUnicodeRef = registry.Reserve();       // ToUnicode CMap stream
+            var type0Ref = registry.Reserve();           // Type0 font dict
+
+            // Set values (subset is built here — all glyphs have been registered by Draw)
+            registry.SetValue(fontFileRef, emb.BuildFontFileStream());
+            registry.SetValue(descriptorRef, emb.BuildFontDescriptor(fontFileRef));
+            registry.SetValue(cidFontRef, emb.BuildCidFontDictionary(descriptorRef));
+
+            // DescendantFonts is an array containing the CIDFont ref
+            registry.SetValue(descendantArrayRef, new PdfArray([cidFontRef]));
+
+            registry.SetValue(toUnicodeRef, emb.BuildToUnicodeCMap());
+            registry.SetValue(type0Ref, emb.BuildFontDictionary(descendantArrayRef, toUnicodeRef));
+
+            // Register on each page that used this font
+            foreach (var page in _pages)
+            {
+                if (!_pageEmbeddedFonts.TryGetValue(page, out var usedNames)) continue;
+                if (!usedNames.Contains(handle.ResourceName)) continue;
+                page.RegisterFontRef(handle.ResourceName, type0Ref);
             }
         }
 

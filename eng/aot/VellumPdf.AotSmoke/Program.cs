@@ -3,6 +3,7 @@
 
 using System.Text;
 using VellumPdf.Layout;
+using VellumPdf.Layout.Core;
 using VellumPdf.Layout.Elements;
 
 // Exercises the public generation path under Native AOT: layout engine,
@@ -32,4 +33,29 @@ if (header != "%PDF-2.0")
 }
 
 Console.WriteLine($"OK: Native AOT generated a {bytes.Length}-byte PDF.");
+
+// Exercise the embedded-font path so AOT compiles/validates the sfnt parser,
+// glyf subsetter, and Type0/Identity-H writer. Reachable at compile time (so it
+// is AOT-analysed) but guarded at runtime so it is a no-op without a system font.
+const string fontPath = @"C:\Windows\Fonts\arial.ttf";
+if (File.Exists(fontPath))
+{
+    using var fdoc = new Document();
+    var font = fdoc.LoadTrueTypeFont(fontPath);
+    fdoc.Add(new Paragraph("Embedded TrueType under AOT — cafe resume.",
+        new TextStyle { FontRef = font, FontSize = 12 }));
+    using var fms = new MemoryStream();
+    fdoc.Save(fms);
+    if (fms.Length < 100)
+    {
+        Console.Error.WriteLine("FAIL: embedded-font PDF too small");
+        return 1;
+    }
+    Console.WriteLine($"OK: embedded-font Native AOT PDF = {fms.Length} bytes.");
+}
+else
+{
+    Console.WriteLine("(embedded-font path AOT-compiled; runtime-skipped — no system font present)");
+}
+
 return 0;

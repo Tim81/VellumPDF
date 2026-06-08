@@ -1,6 +1,7 @@
 // Copyright 2026 Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
+using VellumPdf.Fonts;
 using VellumPdf.Images;
 
 namespace VellumPdf.Layout.Rendering;
@@ -40,4 +41,11 @@ public sealed class RendererContext
         _document.RegisterImageXObject(_page, image, name);
         return name;
     }
+
+    /// <summary>
+    /// Records that the current page uses the given embedded TrueType font.
+    /// Idempotent — safe to call on every draw call for the same font.
+    /// </summary>
+    public void RegisterEmbeddedFontUsage(EmbeddedFontHandle handle) =>
+        _document.RegisterEmbeddedFontUsage(_page, handle);
 }

@@ -78,6 +78,37 @@ public sealed class PdfCanvas
         return this;
     }
 
+    /// <summary>
+    /// Selects an embedded TrueType font by resource name and size.
+    /// The resource must already be registered on the page (via <c>RegisterFontRef</c>)
+    /// before the content stream is consumed.
+    /// </summary>
+    public PdfCanvas SetFontByName(string resourceName, double size)
+    {
+        WriteOpAscii($"/{resourceName} {N(size)} Tf");
+        return this;
+    }
+
+    /// <summary>
+    /// Emits a hex-encoded glyph-id run using the PDF <c>Tj</c> operator.
+    /// Each glyph id is encoded as 2 bytes big-endian (Identity-H CIDFont encoding).
+    /// </summary>
+    public PdfCanvas ShowGlyphs(ReadOnlySpan<ushort> glyphIds)
+    {
+        _ops.WriteByte((byte)'<');
+        foreach (var gid in glyphIds)
+        {
+            _ops.WriteByte(HexNibble(gid >> 12));
+            _ops.WriteByte(HexNibble((gid >> 8) & 0xF));
+            _ops.WriteByte(HexNibble((gid >> 4) & 0xF));
+            _ops.WriteByte(HexNibble(gid & 0xF));
+        }
+        _ops.Write("> Tj\n"u8);
+        return this;
+    }
+
+    private static byte HexNibble(int v) => (byte)(v < 10 ? '0' + v : 'A' + v - 10);
+
     public PdfCanvas SetTextMatrix(double a, double b, double c, double d, double e, double f)
     { WriteOpAscii($"{N(a)} {N(b)} {N(c)} {N(d)} {N(e)} {N(f)} Tm"); return this; }
 

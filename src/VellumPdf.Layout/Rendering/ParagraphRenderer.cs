@@ -10,6 +10,7 @@ namespace VellumPdf.Layout.Rendering;
 /// <summary>
 /// Two-phase renderer for <see cref="Paragraph"/>.
 /// Performs greedy word-wrap in Layout; emits Td/Tj PDF operators in Draw.
+/// Supports both Standard-14 (Latin-1 string) and embedded TrueType (glyph-run hex) fonts.
 /// </summary>
 public sealed class ParagraphRenderer : IRenderer
 {
@@ -66,21 +67,32 @@ public sealed class ParagraphRenderer : IRenderer
     {
         if (_lines is null) return;
 
-        var fontResource = ctx.GetFont(_para.Style.Font);
+        var style = _para.Style;
         var area = _occupied;
         var canvas = ctx.Canvas;
+        var leading = _lineHeight;
+        var startPdfY = ctx.ToPdfY(area.Y) - style.FontSize;
 
         canvas.BeginText();
-        canvas.SetFont(fontResource, _para.Style.FontSize);
-        canvas.SetFillColorRgb(_para.Style.Color.R, _para.Style.Color.G, _para.Style.Color.B);
 
-        var leading = _lineHeight;
-        var startPdfY = ctx.ToPdfY(area.Y) - _para.Style.FontSize;
+        if (style.FontRef.IsEmbedded)
+        {
+            var handle = style.FontRef.Embedded;
+            var resourceName = ctx.UseEmbeddedFont(handle);
+            canvas.SetFontByName(resourceName, style.FontSize);
+        }
+        else
+        {
+            var fontResource = ctx.GetFont(style.Font);
+            canvas.SetFont(fontResource, style.FontSize);
+        }
+
+        canvas.SetFillColorRgb(style.Color.R, style.Color.G, style.Color.B);
 
         for (var i = _startLine; i < _endLine; i++)
         {
             var line = _lines![i];
-            var lineWidth = Standard14Metrics.MeasureString(_para.Style.Font, line, _para.Style.FontSize);
+            var lineWidth = style.FontRef.MeasureString(line, style.FontSize);
 
             // Use SetTextMatrix for every line to avoid horizontal drift when
             // Center/Right alignment produces non-zero xOffset that accumulates
@@ -95,10 +107,22 @@ public sealed class ParagraphRenderer : IRenderer
             var linePdfY = startPdfY - (i - _startLine) * leading;
             canvas.SetTextMatrix(1, 0, 0, 1, area.X + xOffset, linePdfY);
 
-            canvas.ShowText(line);
+            if (style.FontRef.IsEmbedded)
+                ShowEmbeddedText(canvas, style.FontRef.Embedded, line);
+            else
+                canvas.ShowText(line);
         }
 
         canvas.EndText();
+    }
+
+    /// <summary>Maps every code point to a glyph id and emits a single hex glyph run.</summary>
+    private static void ShowEmbeddedText(VellumPdf.Canvas.PdfCanvas canvas, EmbeddedFontHandle handle, string text)
+    {
+        // Allocate conservatively: one glyph per char (surrogate pairs → 1 glyph each).
+        var gids = new ushort[text.Length];
+        var count = handle.GetGlyphIds(text, gids);
+        canvas.ShowGlyphs(gids.AsSpan(0, count));
     }
 
     private static List<string> WordWrap(string text, TextStyle style, double maxWidth)
@@ -110,8 +134,8 @@ public sealed class ParagraphRenderer : IRenderer
 
         foreach (var word in words)
         {
-            var wordW = Standard14Metrics.MeasureString(style.Font, word, style.FontSize);
-            var spaceW = Standard14Metrics.MeasureString(style.Font, " ", style.FontSize);
+            var wordW = style.FontRef.MeasureString(word, style.FontSize);
+            var spaceW = style.FontRef.MeasureString(" ", style.FontSize);
 
             if (current.Length == 0)
             {
@@ -160,9 +184,10 @@ public sealed class ParagraphRenderer : IRenderer
         var fragment = new System.Text.StringBuilder();
         var fragmentW = 0.0;
 
-        foreach (var ch in word)
+        foreach (var rune in word.EnumerateRunes())
         {
-            var charW = Standard14Metrics.MeasureString(style.Font, ch.ToString(), style.FontSize);
+            var ch = rune.ToString();
+            var charW = style.FontRef.MeasureString(ch, style.FontSize);
             if (fragment.Length > 0 && fragmentW + charW > maxWidth)
             {
                 lines.Add(fragment.ToString());

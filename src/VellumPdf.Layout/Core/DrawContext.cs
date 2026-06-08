@@ -34,6 +34,16 @@ public sealed class DrawContext
     /// <summary>Returns (or creates) a font resource on the current document.</summary>
     public PdfFontResource GetFont(Standard14 font) => _document.UseFont(font);
 
+    /// <summary>
+    /// Records that the current page uses the given embedded TrueType font handle
+    /// and returns its PDF resource name so the canvas can select it.
+    /// </summary>
+    public string UseEmbeddedFont(EmbeddedFontHandle handle)
+    {
+        RendererContext.RegisterEmbeddedFontUsage(handle);
+        return handle.ResourceName;
+    }
+
     /// <summary>Converts a layout-space Y coordinate to PDF user-space Y.</summary>
     public double ToPdfY(double layoutY) => PageBounds.Height - layoutY;
 

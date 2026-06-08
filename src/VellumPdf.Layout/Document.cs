@@ -1,6 +1,7 @@
 // Copyright 2026 Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
+using VellumPdf.Fonts;
 using VellumPdf.Layout.Core;
 using VellumPdf.Layout.Elements;
 using VellumPdf.Layout.Elements.Table;
@@ -36,6 +37,21 @@ public sealed class Document : IDisposable
     public EdgeInsets Margins { get; set; } = new EdgeInsets(72); // 1 inch
 
     public Document SetDefaultFont(TextStyle style) { _defaultStyle = style; return this; }
+
+    // ── Embedded font registration ───────────────────────────────────────────
+
+    /// <summary>
+    /// Registers a TrueType font for embedding and returns a handle that can be
+    /// used in <see cref="TextStyle.FontRef"/>.
+    /// </summary>
+    public EmbeddedFontHandle UseTrueTypeFont(byte[] fontData) =>
+        _pdf.UseTrueTypeFont(fontData);
+
+    /// <summary>
+    /// Loads a TrueType font file from disk, registers it for embedding, and returns a handle.
+    /// </summary>
+    public EmbeddedFontHandle LoadTrueTypeFont(string path) =>
+        UseTrueTypeFont(File.ReadAllBytes(path));
 
     // ── Content methods ──────────────────────────────────────────────────────
 

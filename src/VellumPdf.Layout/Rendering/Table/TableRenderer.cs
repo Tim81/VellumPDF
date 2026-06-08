@@ -1,6 +1,7 @@
 // Copyright 2026 Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
+using VellumPdf.Canvas;
 using VellumPdf.Fonts;
 using VellumPdf.Layout.Core;
 using VellumPdf.Layout.Elements.Table;
@@ -112,7 +113,6 @@ public sealed class TableRenderer : IRenderer
     {
         var area = _occupied.Deflate(_table.Margins.Left, _table.Margins.Top, _table.Margins.Right, 0);
         var style = _table.DefaultCellStyle ?? TextStyle.Default;
-        var font = ctx.GetFont(style.Font);
         var rows = _table.Rows;
 
         // Determine which rows to draw (headers + data rows starting at _startRow)
@@ -128,7 +128,7 @@ public sealed class TableRenderer : IRenderer
         // Draw actual header rows (wherever they appear)
         foreach (var hi in headerRowIndices)
         {
-            DrawRow(ctx, rows[hi], hi, rowY, area.X, style, font, spanMap);
+            DrawRow(ctx, rows[hi], hi, rowY, area.X, style, spanMap);
             rowY += _rowHeights[hi];
         }
 
@@ -136,13 +136,13 @@ public sealed class TableRenderer : IRenderer
         for (var r = dataStartRow; r < rows.Count; r++)
         {
             if (rowY >= _occupied.Bottom - 0.001) break;
-            DrawRow(ctx, rows[r], r, rowY, area.X, style, font, spanMap);
+            DrawRow(ctx, rows[r], r, rowY, area.X, style, spanMap);
             rowY += _rowHeights[r];
         }
     }
 
     private void DrawRow(DrawContext ctx, Row row, int rowIdx, double rowY, double startX,
-        TextStyle style, VellumPdf.Fonts.PdfFontResource font,
+        TextStyle style,
         Dictionary<(int row, int col), (Cell cell, Row originRow, double startY, int remainingRows)> spanMap)
     {
         var x = startX;
@@ -171,7 +171,7 @@ public sealed class TableRenderer : IRenderer
                     var spanColW = ColSpanWidth(col, spanCell.ColSpan);
                     var spanTotalH = rowY + _rowHeights[rowIdx] - span.startY;
                     DrawCell(ctx, spanCell, span.originRow, col, colXPositions[col], span.startY,
-                             spanColW, spanTotalH, style, font);
+                             spanColW, spanTotalH, style);
                     // Remove all slots this cell occupied in this row
                     for (var sc = col; sc < col + spanCell.ColSpan; sc++)
                         spanMap.Remove((rowIdx, sc));
@@ -200,7 +200,7 @@ public sealed class TableRenderer : IRenderer
             if (cell.RowSpan <= 1)
             {
                 // Normal single-row cell — draw immediately
-                DrawCell(ctx, cell, row, col, colXPositions[col], rowY, colW, h, style, font);
+                DrawCell(ctx, cell, row, col, colXPositions[col], rowY, colW, h, style);
             }
             else
             {
@@ -211,7 +211,7 @@ public sealed class TableRenderer : IRenderer
                 for (var sr = rowIdx; sr < rowIdx + cell.RowSpan && sr < _rowHeights.Length; sr++)
                     totalSpanH += _rowHeights[sr];
 
-                DrawCell(ctx, cell, row, col, colXPositions[col], rowY, colW, totalSpanH, style, font);
+                DrawCell(ctx, cell, row, col, colXPositions[col], rowY, colW, totalSpanH, style);
 
                 // Mark subsequent rows as occupied so they skip this column range
                 for (var sr = rowIdx + 1; sr < rowIdx + cell.RowSpan && sr < _rowHeights.Length; sr++)
@@ -225,10 +225,9 @@ public sealed class TableRenderer : IRenderer
 
     private void DrawCell(DrawContext ctx, Cell cell, Row row, int colIdx,
         double cellX, double cellY, double colW, double h,
-        TextStyle style, VellumPdf.Fonts.PdfFontResource font)
+        TextStyle style)
     {
         var cs = cell.Style ?? style;
-        var cf = ctx.GetFont(cs.Font);
 
         // Background fill
         var bg = cell.Background ?? row.Background;
@@ -254,7 +253,7 @@ public sealed class TableRenderer : IRenderer
             cellX + cell.Padding.Left, cellY + cell.Padding.Top,
             colW - cell.Padding.Horizontal, h - cell.Padding.Vertical);
 
-        var textW = Standard14Metrics.MeasureString(cs.Font, cell.Content, cs.FontSize);
+        var textW = cs.FontRef.MeasureString(cell.Content, cs.FontSize);
         double txOffset = cell.Alignment switch
         {
             HorizontalAlignment.Center => (innerBox.Width - textW) / 2,
@@ -263,13 +262,39 @@ public sealed class TableRenderer : IRenderer
         };
 
         var pdfTextY = ctx.ToPdfY(innerBox.Y + cs.FontSize);
-        ctx.Canvas
-            .BeginText()
-            .SetFont(cf, cs.FontSize)
+        var canvas = ctx.Canvas.BeginText();
+
+        if (cs.FontRef.IsEmbedded)
+        {
+            var handle = cs.FontRef.Embedded;
+            var resourceName = ctx.UseEmbeddedFont(handle);
+            canvas.SetFontByName(resourceName, cs.FontSize);
+        }
+        else
+        {
+            var cf = ctx.GetFont(cs.Font);
+            canvas.SetFont(cf, cs.FontSize);
+        }
+
+        canvas
             .SetFillColorRgb(cs.Color.R, cs.Color.G, cs.Color.B)
-            .SetTextMatrix(1, 0, 0, 1, innerBox.X + txOffset, pdfTextY)
-            .ShowText(cell.Content)
-            .EndText();
+            .SetTextMatrix(1, 0, 0, 1, innerBox.X + txOffset, pdfTextY);
+
+        if (cs.FontRef.IsEmbedded)
+            ShowEmbeddedText(canvas, cs.FontRef.Embedded, cell.Content);
+        else
+            canvas.ShowText(cell.Content);
+
+        canvas.EndText();
+    }
+
+    /// <summary>Maps every code point to a glyph id and emits a single hex glyph run.</summary>
+    private static void ShowEmbeddedText(PdfCanvas canvas, EmbeddedFontHandle handle, string text)
+    {
+        // Allocate conservatively: one glyph per char (surrogate pairs → 1 glyph each).
+        var gids = new ushort[text.Length];
+        var count = handle.GetGlyphIds(text, gids);
+        canvas.ShowGlyphs(gids.AsSpan(0, count));
     }
 
     /// <summary>Returns the indices of all header rows in the table, in order.</summary>
@@ -295,11 +320,11 @@ public sealed class TableRenderer : IRenderer
         var words = text.Split(' ');
         var lines = 1;
         var lineW = 0.0;
-        var spaceW = Standard14Metrics.MeasureString(style.Font, " ", style.FontSize);
+        var spaceW = style.FontRef.MeasureString(" ", style.FontSize);
 
         foreach (var word in words)
         {
-            var ww = Standard14Metrics.MeasureString(style.Font, word, style.FontSize);
+            var ww = style.FontRef.MeasureString(word, style.FontSize);
             if (lineW == 0) { lineW = ww; }
             else if (lineW + spaceW + ww <= maxWidth) { lineW += spaceW + ww; }
             else { lines++; lineW = ww; }
