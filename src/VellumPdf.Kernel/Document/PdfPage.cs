@@ -13,8 +13,12 @@ public sealed class PdfPage
 {
     private readonly PdfDictionary _fontResources = new();
     private readonly PdfDictionary _xObjectResources = new();
+    private readonly PdfDictionary _extGStateResources = new();
+    private readonly PdfDictionary _shadingResources = new();
     private readonly PdfArray _annots = new();
     private bool _hasAnnots;
+    private bool _hasExtGState;
+    private bool _hasShading;
 
     public PdfRectangle MediaBox { get; }
     public int Rotate { get; set; } = 0;
@@ -35,6 +39,26 @@ public sealed class PdfPage
     internal void RegisterXObject(string resourceName, PdfIndirectReference xObjRef) =>
         _xObjectResources.Set(new PdfName(resourceName), xObjRef);
 
+    /// <summary>
+    /// Registers an inline /ExtGState entry (e.g. <c>&lt;&lt; /ca 0.5 &gt;&gt;</c>).
+    /// Called by <see cref="Canvas.PdfCanvas"/> when setting alpha.
+    /// </summary>
+    internal void RegisterExtGState(string resourceName, PdfDictionary stateDict)
+    {
+        _extGStateResources.Set(new PdfName(resourceName), stateDict);
+        _hasExtGState = true;
+    }
+
+    /// <summary>
+    /// Registers an inline /Shading entry for a gradient shading dictionary.
+    /// Called by <see cref="Canvas.PdfCanvas"/> when painting a gradient.
+    /// </summary>
+    internal void RegisterShading(string resourceName, PdfDictionary shadingDict)
+    {
+        _shadingResources.Set(new PdfName(resourceName), shadingDict);
+        _hasShading = true;
+    }
+
     /// <summary>Adds an annotation reference (annotation/AcroForm seam).</summary>
     public void AddAnnotation(PdfIndirectReference annotRef)
     {
@@ -51,6 +75,12 @@ public sealed class PdfPage
             .Set(PdfName.ProcSet, procSet)
             .Set(PdfName.Font, _fontResources)
             .Set(PdfName.XObject, _xObjectResources);
+
+        if (_hasExtGState)
+            resources.Set(PdfName.ExtGState, _extGStateResources);
+
+        if (_hasShading)
+            resources.Set(PdfName.Shading, _shadingResources);
 
         var pageDict = new PdfDictionary()
             .Set(PdfName.Type, PdfName.Page)

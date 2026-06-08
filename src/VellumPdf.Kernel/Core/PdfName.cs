@@ -44,6 +44,19 @@ public sealed class PdfName : PdfObject, IEquatable<PdfName>
     public static readonly PdfName Encoding = new("Encoding");
     public static readonly PdfName BaseFont = new("BaseFont");
     public static readonly PdfName Name = new("Name");
+    public static readonly PdfName ExtGState = new("ExtGState");
+    public static readonly PdfName Shading = new("Shading");
+    public static readonly PdfName ShadingType = new("ShadingType");
+    public static readonly PdfName ColorSpace = new("ColorSpace");
+    public static readonly PdfName Coords = new("Coords");
+    public static readonly PdfName Domain = new("Domain");
+    public static readonly PdfName Function = new("Function");
+    public static readonly PdfName Extend = new("Extend");
+    public static readonly PdfName FunctionType = new("FunctionType");
+    public static readonly PdfName C0 = new("C0");
+    public static readonly PdfName C1 = new("C1");
+    public static readonly PdfName N = new("N");
+    public static readonly PdfName DeviceRGB = new("DeviceRGB");
 
     public string Value { get; }
 

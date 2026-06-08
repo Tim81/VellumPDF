@@ -6,6 +6,7 @@ using System.Text;
 using VellumPdf.Core;
 using VellumPdf.Document;
 using VellumPdf.Fonts;
+using VellumPdf.Graphics;
 
 namespace VellumPdf.Canvas;
 
@@ -22,6 +23,15 @@ public sealed class PdfCanvas
     private readonly PdfPage _page;
     private readonly Dictionary<string, PdfFontResource> _usedFonts = new();
     private int _mcidCounter;
+
+    // ExtGState dedup: key encodes the parameters, value is the resource name.
+    // Keys use format "ca:0.5" or "CA:0.5" or "ca:0.5;CA:0.75".
+    private readonly Dictionary<string, string> _extGStateIndex = new(StringComparer.Ordinal);
+    private int _extGStateCounter;
+
+    // Shading dedup: key is the canonical descriptor string, value is resource name.
+    private readonly Dictionary<string, string> _shadingIndex = new(StringComparer.Ordinal);
+    private int _shadingCounter;
 
     public PdfCanvas(PdfPage page) => _page = page;
 
@@ -47,6 +57,122 @@ public sealed class PdfCanvas
     public PdfCanvas SetStrokeColorGray(double g) { WriteOpAscii($"{N(g)} G"); return this; }
     public PdfCanvas SetFillColorGray(double g) { WriteOpAscii($"{N(g)} g"); return this; }
 
+    // ── Feature 4: CMYK colour ──────────────────────────────────────────────
+
+    /// <summary>
+    /// Sets the fill colour to the given CMYK values (each in [0, 1]).
+    /// Emits the <c>k</c> operator.
+    /// </summary>
+    public PdfCanvas SetFillColorCmyk(double c, double m, double y, double k)
+    { WriteOpAscii($"{N(c)} {N(m)} {N(y)} {N(k)} k"); return this; }
+
+    /// <summary>
+    /// Sets the stroke colour to the given CMYK values (each in [0, 1]).
+    /// Emits the <c>K</c> operator.
+    /// </summary>
+    public PdfCanvas SetStrokeColorCmyk(double c, double m, double y, double k)
+    { WriteOpAscii($"{N(c)} {N(m)} {N(y)} {N(k)} K"); return this; }
+
+    // ── Feature 3: Dash patterns ────────────────────────────────────────────
+
+    /// <summary>
+    /// Sets the line dash pattern.
+    /// Emits <c>[a b …] phase d</c>.
+    /// Pass an empty span to set a solid line.
+    /// </summary>
+    public PdfCanvas SetLineDash(ReadOnlySpan<double> pattern, double phase)
+    {
+        var sb = new StringBuilder("[");
+        for (var i = 0; i < pattern.Length; i++)
+        {
+            if (i > 0) sb.Append(' ');
+            sb.Append(N(pattern[i]));
+        }
+        sb.Append("] ");
+        sb.Append(N(phase));
+        sb.Append(" d");
+        WriteOpAscii(sb.ToString());
+        return this;
+    }
+
+    /// <summary>
+    /// Resets the line to solid (no dash).
+    /// Emits <c>[] 0 d</c>.
+    /// </summary>
+    public PdfCanvas SetSolidLine() { WriteOp("[] 0 d"u8); return this; }
+
+    // ── Feature 1: Transparency / ExtGState ────────────────────────────────
+
+    /// <summary>
+    /// Sets the fill (non-stroking) opacity.
+    /// Registers an inline <c>/ExtGState</c> resource entry
+    /// <c>&lt;&lt; /ca <paramref name="alpha"/> &gt;&gt;</c> and emits
+    /// <c>/GSn gs</c>. Values are deduplicated by alpha value so repeated
+    /// calls with the same alpha reuse a single resource entry.
+    /// </summary>
+    public PdfCanvas SetFillAlpha(double alpha)
+    {
+        var gsName = GetOrRegisterExtGState($"ca:{N(alpha)}", fillAlpha: alpha, strokeAlpha: null);
+        WriteOpAscii($"/{gsName} gs");
+        return this;
+    }
+
+    /// <summary>
+    /// Sets the stroke opacity.
+    /// Registers an inline <c>/ExtGState</c> resource entry
+    /// <c>&lt;&lt; /CA <paramref name="alpha"/> &gt;&gt;</c> and emits
+    /// <c>/GSn gs</c>.
+    /// </summary>
+    public PdfCanvas SetStrokeAlpha(double alpha)
+    {
+        var gsName = GetOrRegisterExtGState($"CA:{N(alpha)}", fillAlpha: null, strokeAlpha: alpha);
+        WriteOpAscii($"/{gsName} gs");
+        return this;
+    }
+
+    private string GetOrRegisterExtGState(string key, double? fillAlpha, double? strokeAlpha)
+    {
+        if (_extGStateIndex.TryGetValue(key, out var existing))
+            return existing;
+
+        var name = $"GS{++_extGStateCounter}";
+        _extGStateIndex[key] = name;
+
+        var dict = new PdfDictionary();
+        if (fillAlpha.HasValue)
+            dict.Set(new PdfName("ca"), new PdfReal(fillAlpha.Value));
+        if (strokeAlpha.HasValue)
+            dict.Set(new PdfName("CA"), new PdfReal(strokeAlpha.Value));
+
+        _page.RegisterExtGState(name, dict);
+        return name;
+    }
+
+    // ── Feature 2: Clipping ─────────────────────────────────────────────────
+
+    /// <summary>
+    /// Intersects the current path with the clipping path using the non-zero
+    /// winding rule. Emits the <c>W</c> operator.
+    ///
+    /// <para>
+    /// Per PDF spec (ISO 32000-2 §8.5.4), <c>W</c> must be paired with a path-painting
+    /// or <c>n</c> operator on the same path. Typical usage:
+    /// <code>
+    /// canvas.Rectangle(...).Clip().EndPath(); // establish clip, discard path
+    /// canvas.PaintAxialGradient(...);          // paint within clip
+    /// </code>
+    /// </para>
+    /// </summary>
+    public PdfCanvas Clip() { WriteOp("W"u8); return this; }
+
+    /// <summary>
+    /// Intersects the current path with the clipping path using the even-odd rule.
+    /// Emits the <c>W*</c> operator.
+    ///
+    /// <para>See <see cref="Clip"/> for usage notes.</para>
+    /// </summary>
+    public PdfCanvas ClipEvenOdd() { WriteOp("W*"u8); return this; }
+
     // ── Path construction ───────────────────────────────────────────────────
 
     public PdfCanvas MoveTo(double x, double y) { WriteOpAscii($"{N(x)} {N(y)} m"); return this; }
@@ -65,6 +191,121 @@ public sealed class PdfCanvas
     public PdfCanvas FillAndStroke() { WriteOp("B"u8); return this; }
     public PdfCanvas CloseAndStroke() { WriteOp("s"u8); return this; }
     public PdfCanvas EndPath() { WriteOp("n"u8); return this; }
+
+    // ── Feature 5: Axial and radial shadings ────────────────────────────────
+
+    /// <summary>
+    /// Paints an axial (linear) gradient from point (<paramref name="x0"/>, <paramref name="y0"/>)
+    /// to (<paramref name="x1"/>, <paramref name="y1"/>), blending from colour <paramref name="c0"/>
+    /// to <paramref name="c1"/>. Registers an inline <c>/Shading</c> resource and emits <c>sh</c>.
+    ///
+    /// <para>
+    /// Typical usage to paint within a clipped region:
+    /// <code>
+    /// canvas.SaveState();
+    /// canvas.Rectangle(x, y, w, h).Clip().EndPath();
+    /// canvas.PaintAxialGradient(x, y, x + w, y, c0, c1);
+    /// canvas.RestoreState();
+    /// </code>
+    /// </para>
+    /// </summary>
+    public PdfCanvas PaintAxialGradient(
+        double x0, double y0, double x1, double y1,
+        KernelColor c0, KernelColor c1)
+    {
+        var key = $"axial:{N(x0)},{N(y0)},{N(x1)},{N(y1)};c0:{N(c0.R)},{N(c0.G)},{N(c0.B)};c1:{N(c1.R)},{N(c1.G)},{N(c1.B)}";
+        var shName = GetOrRegisterAxialShading(key, x0, y0, x1, y1, c0, c1);
+        WriteOpAscii($"/{shName} sh");
+        return this;
+    }
+
+    /// <summary>
+    /// Paints a radial (circular) gradient between two circles.
+    /// Circle 0: centre (<paramref name="x0"/>, <paramref name="y0"/>), radius <paramref name="r0"/>.
+    /// Circle 1: centre (<paramref name="x1"/>, <paramref name="y1"/>), radius <paramref name="r1"/>.
+    /// Colour blends from <paramref name="c0"/> to <paramref name="c1"/>.
+    /// Registers an inline <c>/Shading</c> resource and emits <c>sh</c>.
+    /// </summary>
+    public PdfCanvas PaintRadialGradient(
+        double x0, double y0, double r0,
+        double x1, double y1, double r1,
+        KernelColor c0, KernelColor c1)
+    {
+        var key = $"radial:{N(x0)},{N(y0)},{N(r0)},{N(x1)},{N(y1)},{N(r1)};c0:{N(c0.R)},{N(c0.G)},{N(c0.B)};c1:{N(c1.R)},{N(c1.G)},{N(c1.B)}";
+        var shName = GetOrRegisterRadialShading(key, x0, y0, r0, x1, y1, r1, c0, c1);
+        WriteOpAscii($"/{shName} sh");
+        return this;
+    }
+
+    private string GetOrRegisterAxialShading(
+        string key, double x0, double y0, double x1, double y1,
+        KernelColor c0, KernelColor c1)
+    {
+        if (_shadingIndex.TryGetValue(key, out var existing))
+            return existing;
+
+        var name = $"Sh{++_shadingCounter}";
+        _shadingIndex[key] = name;
+
+        var fn = BuildType2Function(c0, c1);
+        var coords = new PdfArray([
+            new PdfReal(x0), new PdfReal(y0),
+            new PdfReal(x1), new PdfReal(y1),
+        ]);
+        var shading = new PdfDictionary()
+            .Set(PdfName.ShadingType, new PdfInteger(2))
+            .Set(PdfName.ColorSpace, PdfName.DeviceRGB)
+            .Set(PdfName.Coords, coords)
+            .Set(PdfName.Function, fn)
+            .Set(PdfName.Extend, new PdfArray([PdfBoolean.True, PdfBoolean.True]));
+
+        _page.RegisterShading(name, shading);
+        return name;
+    }
+
+    private string GetOrRegisterRadialShading(
+        string key, double x0, double y0, double r0,
+        double x1, double y1, double r1,
+        KernelColor c0, KernelColor c1)
+    {
+        if (_shadingIndex.TryGetValue(key, out var existing))
+            return existing;
+
+        var name = $"Sh{++_shadingCounter}";
+        _shadingIndex[key] = name;
+
+        var fn = BuildType2Function(c0, c1);
+        var coords = new PdfArray([
+            new PdfReal(x0), new PdfReal(y0), new PdfReal(r0),
+            new PdfReal(x1), new PdfReal(y1), new PdfReal(r1),
+        ]);
+        var shading = new PdfDictionary()
+            .Set(PdfName.ShadingType, new PdfInteger(3))
+            .Set(PdfName.ColorSpace, PdfName.DeviceRGB)
+            .Set(PdfName.Coords, coords)
+            .Set(PdfName.Function, fn)
+            .Set(PdfName.Extend, new PdfArray([PdfBoolean.True, PdfBoolean.True]));
+
+        _page.RegisterShading(name, shading);
+        return name;
+    }
+
+    /// <summary>
+    /// Builds a Type 2 (exponential interpolation) function with
+    /// /Domain [0 1], /N 1, /C0 and /C1 from the two colours.
+    /// </summary>
+    private static PdfDictionary BuildType2Function(KernelColor c0, KernelColor c1)
+    {
+        var domain = new PdfArray([new PdfReal(0), new PdfReal(1)]);
+        var c0Array = new PdfArray([new PdfReal(c0.R), new PdfReal(c0.G), new PdfReal(c0.B)]);
+        var c1Array = new PdfArray([new PdfReal(c1.R), new PdfReal(c1.G), new PdfReal(c1.B)]);
+        return new PdfDictionary()
+            .Set(PdfName.FunctionType, new PdfInteger(2))
+            .Set(PdfName.Domain, domain)
+            .Set(PdfName.C0, c0Array)
+            .Set(PdfName.C1, c1Array)
+            .Set(PdfName.N, new PdfInteger(1));
+    }
 
     // ── Text operators ──────────────────────────────────────────────────────
 
