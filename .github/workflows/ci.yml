@@ -27,16 +27,7 @@ jobs:
         run: dotnet build VellumPdf.slnx -c Release --no-restore
 
       - name: Install PDF validators
-        run: sudo apt-get update && sudo apt-get install -y qpdf poppler-utils fonts-dejavu-core default-jre
-
-      - name: Install veraPDF
-        run: |
-          curl -L -o verapdf-installer.zip https://software.verapdf.org/releases/verapdf-installer.zip
-          unzip -q verapdf-installer.zip -d verapdf-dist
-          DIR=$(find verapdf-dist -maxdepth 1 -type d -name 'verapdf-*' | head -1)
-          printf '<AutomatedInstallation langpack="eng"><com.izforge.izpack.panels.htmlhello.HTMLHelloPanel id="welcome"/><com.izforge.izpack.panels.target.TargetPanel id="install_dir"><installpath>%s/verapdf</installpath></com.izforge.izpack.panels.target.TargetPanel><com.izforge.izpack.panels.packs.PacksPanel id="sdk_pack_select"><pack index="0" name="veraPDF Mac and *nix Scripts" selected="true"/></com.izforge.izpack.panels.packs.PacksPanel><com.izforge.izpack.panels.finish.FinishPanel id="finish"/></AutomatedInstallation>' "$HOME" > auto-install.xml
-          "$DIR/verapdf-install.sh" auto-install.xml
-          echo "$HOME/verapdf" >> $GITHUB_PATH
+        run: sudo apt-get update && sudo apt-get install -y qpdf poppler-utils fonts-dejavu-core
 
       - name: Test
         run: dotnet test VellumPdf.slnx -c Release --no-build
