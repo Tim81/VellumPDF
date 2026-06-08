@@ -153,8 +153,10 @@ public sealed class StandardSecurityHandler : IPdfEncryptor
                 _ => SHA512.HashData(e),
             };
 
-            // Termination: round >= 63 AND last byte of E <= (round - 32)
-            if (round >= 63 && e[^1] <= round - 32)
+            // Termination (ISO 32000-2 §7.6.4.3.4): with the 1-indexed round number
+            // r = round + 1, stop when r >= 64 AND last byte of E <= r - 32.
+            // In this 0-indexed loop that is: round >= 63 AND e[last] <= round - 31.
+            if (round >= 63 && e[^1] <= round - 31)
                 break;
         }
 
