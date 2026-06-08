@@ -327,6 +327,13 @@ public sealed class PdfDocument : IDisposable
                 "UseObjectStreams cannot be combined with Encrypt(). " +
                 "Object-stream encryption is not supported. Remove one of these options.");
 
+        // PDF/A prohibits encryption (ISO 19005-2 §6.3.1). Fail fast rather than emit
+        // a document that claims conformance but can never validate.
+        if (Conformance != PdfConformance.None && _encryptionSettings is not null)
+            throw new InvalidOperationException(
+                "PDF/A prohibits encryption (ISO 19005-2 §6.3.1). " +
+                "Remove Encrypt() or clear Conformance before calling Save().");
+
         var writer = new PdfWriter(destination);
         var xref = new CrossReferenceBuilder();
         var registry = new PdfObjectRegistry();
@@ -420,9 +427,17 @@ public sealed class PdfDocument : IDisposable
             var toUnicodeRef = registry.Reserve();  // ToUnicode CMap stream
             var type0Ref = registry.Reserve();      // Type0 font dict
 
+            // /CIDSet is required for CIDFontType2 (glyf) subsets under PDF/A (§6.3.5).
+            PdfIndirectReference? cidSetRef = null;
+            if (!emb.IsCff)
+            {
+                cidSetRef = registry.Reserve();
+                registry.SetValue(cidSetRef, emb.BuildCidSetStream());
+            }
+
             // Set values (subset is built here — all glyphs have been registered by Draw)
             registry.SetValue(fontFileRef, emb.BuildFontFileStream());
-            registry.SetValue(descriptorRef, emb.BuildFontDescriptor(fontFileRef));
+            registry.SetValue(descriptorRef, emb.BuildFontDescriptor(fontFileRef, cidSetRef));
             registry.SetValue(cidFontRef, emb.BuildCidFontDictionary(descriptorRef));
 
             // /DescendantFonts is written as an inline array inside the Type0 dict (PDF/A-compliant).
@@ -712,8 +727,14 @@ public sealed class PdfDocument : IDisposable
             var cidFontRef = registry.Reserve();
             var toUnicodeRef = registry.Reserve();
             var type0Ref = registry.Reserve();
+            PdfIndirectReference? cidSetRef = null;
+            if (!emb.IsCff)
+            {
+                cidSetRef = registry.Reserve();
+                registry.SetValue(cidSetRef, emb.BuildCidSetStream());
+            }
             registry.SetValue(fontFileRef, emb.BuildFontFileStream());
-            registry.SetValue(descriptorRef, emb.BuildFontDescriptor(fontFileRef));
+            registry.SetValue(descriptorRef, emb.BuildFontDescriptor(fontFileRef, cidSetRef));
             registry.SetValue(cidFontRef, emb.BuildCidFontDictionary(descriptorRef));
             registry.SetValue(toUnicodeRef, emb.BuildToUnicodeCMap());
             registry.SetValue(type0Ref, emb.BuildFontDictionary(cidFontRef, toUnicodeRef));
@@ -868,6 +889,11 @@ public sealed class PdfDocument : IDisposable
 
         if (structTreeRootRef is not null)
             catalog.Set(new PdfName("StructTreeRoot"), structTreeRootRef);
+
+        // PDF/A output intent (sRGB ICC, §6.2.2) — required when signing a conformance
+        // document, just as on the regular Save path.
+        if (Conformance != PdfConformance.None)
+            catalog.Set(new PdfName("OutputIntents"), new PdfArray([BuildOutputIntents(registry)]));
 
         registry.SetValue(catalogRef, catalog);
 
