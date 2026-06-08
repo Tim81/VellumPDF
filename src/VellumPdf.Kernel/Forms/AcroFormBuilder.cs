@@ -14,10 +14,13 @@ namespace VellumPdf.Forms;
 internal static class AcroFormBuilder
 {
     // ── Ff flag bit positions (ISO 32000-2 §12.7.4.2) ──────────────────────
-    private const int FfReadOnly = 1;        // bit 1
-    private const int FfRequired = 2;        // bit 2
-    private const int FfMultiline = 1 << 12; // bit 13
-    private const int FfCombo = 1 << 17;     // bit 18 (choice field combo)
+    private const int FfReadOnly = 1;           // bit 1
+    private const int FfRequired = 2;           // bit 2
+    private const int FfMultiline = 1 << 12;    // bit 13
+    private const int FfNoToggleToOff = 1 << 14; // bit 15 (radio: must always have a selection)
+    private const int FfRadio = 1 << 15;         // bit 16 (Btn: radio buttons)
+    private const int FfPushButton = 1 << 16;    // bit 17 (Btn: push button)
+    private const int FfCombo = 1 << 17;         // bit 18 (choice field combo)
 
     // /F 4 = Print flag — widget is printable
     private const int AnnotFlagPrint = 4;
@@ -51,18 +54,36 @@ internal static class AcroFormBuilder
 
         foreach (var field in fields)
         {
-            pageRefMap.TryGetValue(field.Page, out var pageRef);
-
-            PdfIndirectReference widgetRef = field switch
+            switch (field)
             {
-                PdfFormField.TextField tf => BuildTextField(tf, registry, helvFontRef, pageRef),
-                PdfFormField.CheckBoxField cb => BuildCheckBoxField(cb, registry, helvFontRef, zadbFontRef, pageRef),
-                PdfFormField.ChoiceField ch => BuildChoiceField(ch, registry, helvFontRef, pageRef),
-                _ => throw new InvalidOperationException("Unknown field type"),
-            };
+                case PdfFormField.RadioGroupField rg:
+                    {
+                        // Radio group: one field ref (no widget annotation on its own page),
+                        // kid widget refs go onto their respective pages.
+                        var fieldRef = BuildRadioGroupField(rg, registry, zadbFontRef, pageRefMap);
+                        fieldRefs.Add(fieldRef);
+                        // Note: kid widgets are added to their pages inside BuildRadioGroupField.
+                        break;
+                    }
 
-            fieldRefs.Add(widgetRef);
-            field.Page.AddAnnotation(widgetRef);
+                default:
+                    {
+                        pageRefMap.TryGetValue(field.Page, out var pageRef);
+
+                        PdfIndirectReference widgetRef = field switch
+                        {
+                            PdfFormField.TextField tf => BuildTextField(tf, registry, helvFontRef, pageRef),
+                            PdfFormField.CheckBoxField cb => BuildCheckBoxField(cb, registry, helvFontRef, zadbFontRef, pageRef),
+                            PdfFormField.ChoiceField ch => BuildChoiceField(ch, registry, helvFontRef, pageRef),
+                            PdfFormField.PushButtonField pb => BuildPushButtonField(pb, registry, helvFontRef, pageRef),
+                            _ => throw new InvalidOperationException("Unknown field type"),
+                        };
+
+                        fieldRefs.Add(widgetRef);
+                        field.Page.AddAnnotation(widgetRef);
+                        break;
+                    }
+            }
         }
 
         // Build /AcroForm /DR /Font dict
@@ -251,7 +272,201 @@ internal static class AcroFormBuilder
         return widgetRef;
     }
 
+    // ── Radio button group field ────────────────────────────────────────────
+
+    private static PdfIndirectReference BuildRadioGroupField(
+        PdfFormField.RadioGroupField field,
+        PdfObjectRegistry registry,
+        PdfIndirectReference zadbFontRef,
+        Dictionary<PdfPage, PdfIndirectReference> pageRefMap)
+    {
+        var opts = field.Options;
+
+        // Reserve the parent field ref so kids can reference it via /Parent.
+        var fieldRef = registry.Reserve();
+
+        var ff = FfRadio | FfNoToggleToOff;
+        if (opts.ReadOnly) ff |= FfReadOnly;
+        if (opts.Required) ff |= FfRequired;
+
+        var valueName = field.SelectedExportValue ?? "Off";
+
+        // Build each kid widget annotation.
+        var kidRefs = new List<PdfIndirectReference>(field.RadioOptions.Count);
+        foreach (var option in field.RadioOptions)
+        {
+            var rect = option.Rect;
+            double w = rect.Width;
+            double h = rect.Height;
+
+            // On-state appearance: filled radio dot using ZapfDingbats 'l' (lowercase L = bullet).
+            var onContent = BuildRadioOnAppearanceContent(opts.FontSize, w, h);
+            var onStream = BuildFormXObjectStreamWithZaDb(onContent, w, h, zadbFontRef);
+            var onApRef = registry.Reserve();
+            registry.SetValue(onApRef, onStream);
+
+            // Off-state appearance: empty stream.
+            var offStream = BuildFormXObjectStreamNoFont([], w, h);
+            var offApRef = registry.Reserve();
+            registry.SetValue(offApRef, offStream);
+
+            // /AP /N dict keyed by export value and /Off.
+            var apNDict = new PdfDictionary()
+                .Set(new PdfName(option.ExportValue), onApRef)
+                .Set(new PdfName("Off"), offApRef);
+
+            var ap = new PdfDictionary()
+                .Set(PdfName.N, apNDict);
+
+            // /AS is the export value if this kid is selected, otherwise /Off.
+            var asName = string.Equals(option.ExportValue, field.SelectedExportValue, StringComparison.Ordinal)
+                ? option.ExportValue
+                : "Off";
+
+            var mk = new PdfDictionary()
+                .Set(new PdfName("CA"), LiteralFromLatin1("l"));
+
+            pageRefMap.TryGetValue(option.Page, out var kidPageRef);
+
+            var kidDict = new PdfDictionary()
+                .Set(PdfName.Type, new PdfName("Annot"))
+                .Set(PdfName.Subtype, new PdfName("Widget"))
+                .Set(new PdfName("Parent"), fieldRef)
+                .Set(new PdfName("Rect"), rect.ToArray())
+                .Set(new PdfName("F"), new PdfInteger(AnnotFlagPrint))
+                .Set(new PdfName("AP"), ap)
+                .Set(new PdfName("AS"), new PdfName(asName))
+                .Set(new PdfName("MK"), mk);
+
+            if (kidPageRef is not null)
+                kidDict.Set(new PdfName("P"), kidPageRef);
+
+            var kidRef = registry.Reserve();
+            registry.SetValue(kidRef, kidDict);
+            kidRefs.Add(kidRef);
+
+            // Each kid widget annotation goes into its own page's /Annots.
+            option.Page.AddAnnotation(kidRef);
+        }
+
+        var kidsArray = new PdfArray(kidRefs.Cast<PdfObject>());
+
+        // The parent field dict has no /Rect (it is a non-terminal field node).
+        var fieldDict = new PdfDictionary()
+            .Set(new PdfName("FT"), new PdfName("Btn"))
+            .Set(new PdfName("T"), LiteralFromLatin1(field.Name))
+            .Set(new PdfName("Ff"), new PdfInteger(ff))
+            .Set(new PdfName("V"), new PdfName(valueName))
+            .Set(new PdfName("DA"), new PdfLiteralString("/ZaDb 0 Tf 0 g"u8.ToArray()))
+            .Set(new PdfName("Kids"), kidsArray);
+
+        registry.SetValue(fieldRef, fieldDict);
+        return fieldRef;
+    }
+
+    // ── Push button field ────────────────────────────────────────────────────
+
+    private static PdfIndirectReference BuildPushButtonField(
+        PdfFormField.PushButtonField field,
+        PdfObjectRegistry registry,
+        PdfIndirectReference helvFontRef,
+        PdfIndirectReference? pageRef)
+    {
+        var opts = field.Options;
+        var rect = field.Rect;
+        double w = rect.Width;
+        double h = rect.Height;
+        double sz = opts.FontSize;
+
+        // Appearance: grey background + border + centred caption text.
+        var apContent = BuildPushButtonAppearanceContent(field.Caption, sz, w, h);
+        var apStream = BuildFormXObjectStream(apContent, w, h, helvFontRef);
+        var apRef = registry.Reserve();
+        registry.SetValue(apRef, apStream);
+
+        var ff = FfPushButton;
+        if (opts.ReadOnly) ff |= FfReadOnly;
+
+        var mk = new PdfDictionary()
+            .Set(new PdfName("CA"), LiteralFromLatin1(field.Caption))
+            .Set(new PdfName("BG"), new PdfArray([new PdfReal(0.8), new PdfReal(0.8), new PdfReal(0.8)]))
+            .Set(new PdfName("BC"), new PdfArray([new PdfReal(0), new PdfReal(0), new PdfReal(0)]));
+
+        var dict = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("Annot"))
+            .Set(PdfName.Subtype, new PdfName("Widget"))
+            .Set(new PdfName("FT"), new PdfName("Btn"))
+            .Set(new PdfName("Ff"), new PdfInteger(ff))
+            .Set(new PdfName("T"), LiteralFromLatin1(field.Name))
+            .Set(new PdfName("Rect"), rect.ToArray())
+            .Set(new PdfName("F"), new PdfInteger(AnnotFlagPrint))
+            .Set(new PdfName("MK"), mk)
+            .Set(new PdfName("AP"), BuildApN(apRef));
+
+        if (pageRef is not null)
+            dict.Set(new PdfName("P"), pageRef);
+
+        var widgetRef = registry.Reserve();
+        registry.SetValue(widgetRef, dict);
+        return widgetRef;
+    }
+
     // ── Appearance-stream helpers ────────────────────────────────────────────
+
+    /// <summary>
+    /// Builds the on-state appearance content for a radio button kid widget.
+    /// Uses ZapfDingbats 'l' (lowercase L = bullet/filled circle symbol).
+    /// </summary>
+    private static byte[] BuildRadioOnAppearanceContent(double fontSize, double w, double h)
+    {
+        var sz = fontSize > 0 ? fontSize : Math.Min(w, h) * 0.8;
+        var baselineY = (h - sz) / 2.0;
+        if (baselineY < 1.0) baselineY = 1.0;
+        var x = (w - sz * 0.6) / 2.0;
+        if (x < 1.0) x = 1.0;
+
+        var sb = new StringBuilder();
+        sb.Append("q\n");
+        sb.Append("BT\n");
+        sb.AppendFormat("/ZaDb {0:0.###} Tf\n", sz);
+        sb.Append("0 g\n");
+        sb.AppendFormat("{0:0.###} {1:0.###} Td\n", x, baselineY);
+        sb.Append("(l) Tj\n");
+        sb.Append("ET\n");
+        sb.Append("Q\n");
+        return Encoding.Latin1.GetBytes(sb.ToString());
+    }
+
+    /// <summary>
+    /// Builds the normal-state appearance content for a push button widget.
+    /// Draws a grey background, a black border, and the caption centred using Helvetica.
+    /// </summary>
+    private static byte[] BuildPushButtonAppearanceContent(string caption, double fontSize, double w, double h)
+    {
+        var baselineY = (h - fontSize) / 2.0;
+        if (baselineY < 1.0) baselineY = 1.0;
+
+        var sb = new StringBuilder();
+        // Grey background
+        sb.Append("q\n");
+        sb.Append("0.8 0.8 0.8 rg\n");
+        sb.AppendFormat("{0:0.###} {1:0.###} {2:0.###} {3:0.###} re f\n", 0, 0, w, h);
+        // Black border
+        sb.Append("0 0 0 RG\n");
+        sb.Append("1 w\n");
+        sb.AppendFormat("{0:0.###} {1:0.###} {2:0.###} {3:0.###} re S\n", 0.5, 0.5, w - 1, h - 1);
+        // Caption text
+        sb.Append("BT\n");
+        sb.AppendFormat("/Helv {0:0.###} Tf\n", fontSize);
+        sb.Append("0 g\n");
+        sb.AppendFormat("{0:0.###} {1:0.###} Td\n", 4.0, baselineY);
+        sb.Append('(');
+        sb.Append(EscapePdfString(caption));
+        sb.Append(") Tj\n");
+        sb.Append("ET\n");
+        sb.Append("Q\n");
+        return Encoding.Latin1.GetBytes(sb.ToString());
+    }
 
     /// <summary>
     /// Builds the content-stream bytes for a text or choice field appearance.

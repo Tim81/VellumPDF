@@ -529,6 +529,55 @@ public sealed class PdfValidatorOracleTests : IDisposable
         // Local dev: tool not installed — silently skip.
     }
 
+    // ── Radio button group + push button oracle tests ────────────────────────
+
+    [Fact]
+    public void RadioGroupAndPushButton_QpdfCheck_Passes()
+    {
+        var pdfPath = Path.Combine(_tempDir, "radio_pushbutton.pdf");
+        GenerateRadioAndPushButtonDoc(pdfPath);
+
+        if (!TryRunTool("qpdf", $"--check \"{pdfPath}\"", out var exit, out var stdout, out var stderr))
+        {
+            GateOnCi("qpdf");
+            return;
+        }
+
+        Assert.True(
+            exit == 0,
+            $"qpdf --check failed (exit {exit}) on radio+push-button doc.\nstdout: {stdout}\nstderr: {stderr}");
+    }
+
+    /// <summary>
+    /// Generates a PDF with a radio button group (3 options, one selected) and a push button.
+    /// Uses PdfDocument directly (kernel layer only).
+    /// </summary>
+    private static void GenerateRadioAndPushButtonDoc(string path)
+    {
+        using var doc = new PdfDocument();
+        var page = doc.AddPage(PageSize.A4);
+
+        var radioOptions = new[]
+        {
+            new RadioOption(page, new PdfRectangle(72, 720, 90, 738), "OptionA"),
+            new RadioOption(page, new PdfRectangle(72, 700, 90, 718), "OptionB"),
+            new RadioOption(page, new PdfRectangle(72, 680, 90, 698), "OptionC"),
+        };
+        doc.AddRadioButtonGroup(
+            name: "RadioGroup1",
+            options: radioOptions,
+            selectedExportValue: "OptionB");
+
+        doc.AddPushButton(
+            page: page,
+            name: "Submit",
+            rect: new PdfRectangle(72, 640, 200, 660),
+            caption: "Submit Form");
+
+        using var fs = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None);
+        doc.Save(fs);
+    }
+
     // ── Object-stream / XRef-stream oracle tests ─────────────────────────────
 
     private const string ObjStmOracleMarker = "VELLUMORACLE_OBJSTM_4D9B";

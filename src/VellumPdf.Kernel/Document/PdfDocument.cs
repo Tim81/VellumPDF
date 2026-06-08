@@ -264,6 +264,43 @@ public sealed class PdfDocument : IDisposable
     }
 
     /// <summary>
+    /// Adds a radio button group AcroForm field. Each element of <paramref name="options"/>
+    /// specifies the page, rectangle, and export value for one radio button widget.
+    /// The optional <paramref name="selectedExportValue"/> sets the initially selected button;
+    /// pass <see langword="null"/> to leave all buttons unselected (/V /Off).
+    /// </summary>
+    public void AddRadioButtonGroup(
+        string name,
+        IReadOnlyList<RadioOption> options,
+        string? selectedExportValue = null,
+        FormFieldOptions? fieldOptions = null)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(name);
+        ArgumentNullException.ThrowIfNull(options);
+        if (options.Count == 0)
+            throw new ArgumentException("A radio button group must have at least one option.", nameof(options));
+        _formFields.Add(new PdfFormField.RadioGroupField(name, options, selectedExportValue, fieldOptions ?? new()));
+    }
+
+    /// <summary>
+    /// Adds a push button AcroForm field to <paramref name="page"/>.
+    /// The button displays <paramref name="caption"/> centred in the widget rectangle.
+    /// </summary>
+    public void AddPushButton(
+        PdfPage page,
+        string name,
+        PdfRectangle rect,
+        string caption,
+        FormFieldOptions? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(page);
+        ArgumentException.ThrowIfNullOrEmpty(name);
+        ArgumentNullException.ThrowIfNull(rect);
+        ArgumentNullException.ThrowIfNull(caption);
+        _formFields.Add(new PdfFormField.PushButtonField(page, name, rect, caption, options ?? new()));
+    }
+
+    /// <summary>
     /// Configures AES-256 encryption (Standard security handler V=5, R=6) for this document.
     /// Must be called before <see cref="Save"/>. When called, <see cref="Save"/> will:
     /// <list type="bullet">
