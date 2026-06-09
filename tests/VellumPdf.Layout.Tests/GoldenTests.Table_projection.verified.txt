@@ -1,0 +1,9 @@
+﻿PageCount: 1
+IndirectObjectCount: 6
+HasHelvetica: True
+HasType1: True
+HasBT: True
+HasET: True
+HasNameCell: True
+HasAliceCell: True
+HasBobCell: True
