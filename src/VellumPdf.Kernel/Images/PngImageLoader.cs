@@ -75,14 +75,24 @@ public static class PngImageLoader
         if (interlaceMethod != 0)
             throw new NotSupportedException("Interlaced PNG not supported.");
 
-        // ── Decompress IDAT ──
-        var compressed = Combine(idatData);
-        var raw = Inflate(compressed);
+        // Reject hostile dimensions and out-of-range IHDR fields before allocating buffers.
+        ImageLimits.ValidateDimensions("PNG", width, height);
+        if (bitDepth is not (1 or 2 or 4 or 8 or 16))
+            throw new InvalidDataException($"PNG has invalid bit depth {bitDepth}.");
+        if (colorType is not (0 or 2 or 3 or 4 or 6))
+            throw new InvalidDataException($"PNG has invalid colour type {colorType}.");
 
-        // ── Unfilter scanlines ──
+        // ── Decompress IDAT ──
         // Row stride is ceil(width * bitsPerSample / 8) bytes — handles sub-byte packing.
         var bitsPerRow = (long)width * SamplesPerPixel(colorType) * bitDepth;
         var rowBytes = (int)((bitsPerRow + 7) / 8);
+        // For non-interlaced PNG the decompressed size is exactly height*(rowBytes+1) — each
+        // scanline carries a 1-byte filter tag. Cap inflation to that to defuse zlib bombs.
+        var expectedRaw = (long)height * (rowBytes + 1);
+        var compressed = Combine(idatData);
+        var raw = Inflate(compressed, expectedRaw);
+
+        // ── Unfilter scanlines ──
         var unfiltered = Unfilter(raw, width, height, colorType, bitDepth, rowBytes);
 
         // ── Extract colour and alpha planes ──
@@ -273,11 +283,24 @@ public static class PngImageLoader
     private static double BytesPerPixel(byte colorType, byte bitDepth) =>
         SamplesPerPixel(colorType) * bitDepth / 8.0;
 
-    private static byte[] Inflate(byte[] compressed)
+    private static byte[] Inflate(byte[] compressed, long maxOutput)
     {
+        // Cap decompression to the size the IHDR dimensions imply (plus slack) so a crafted
+        // zlib "bomb" — a few KB inflating to gigabytes — fails cleanly instead of exhausting memory.
+        var cap = maxOutput + 16;
         var ms = new MemoryStream();
         using var z = new ZLibStream(new MemoryStream(compressed), CompressionMode.Decompress);
-        z.CopyTo(ms);
+        var buffer = new byte[81920];
+        long total = 0;
+        int read;
+        while ((read = z.Read(buffer, 0, buffer.Length)) > 0)
+        {
+            total += read;
+            if (total > cap)
+                throw new InvalidDataException(
+                    "PNG image data decompresses to more bytes than its declared dimensions allow.");
+            ms.Write(buffer, 0, read);
+        }
         return ms.ToArray();
     }
 

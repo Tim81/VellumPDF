@@ -100,6 +100,10 @@ public static class GifImageLoader
         var packed = data[pos + 8];
         pos += 9;
 
+        // Reject hostile dimensions before allocating pixel buffers. width*height overflows
+        // Int32 for a 65535×65535 descriptor; ValidateDimensions computes it as Int64.
+        ImageLimits.ValidateDimensions("GIF", width, height);
+
         var hasLocalColorTable = (packed & 0x80) != 0;
         var localColorTableSize = 2 << (packed & 0x07);
 
