@@ -69,7 +69,12 @@ internal sealed class CmapTable
             idRangeOffsets[i] = r.ReadU16(idRangeOffsetsPos + i * 2);
         }
 
-        var map = new Dictionary<int, ushort>(segCount * 16);
+        // Format-4 covers the Basic Multilingual Plane (code points 0x0000-0xFFFF), so the total
+        // number of mapped code points is bounded by 0x10000. A hostile font can declare many
+        // wide, overlapping segments whose combined ranges span billions of iterations; budget
+        // the total work to that bound (with slack) and fail cleanly instead of hanging.
+        var map = new Dictionary<int, ushort>();
+        var budget = 0x20000;
         for (var i = 0; i < segCount; i++)
         {
             var start = startCodes[i];
@@ -78,6 +83,10 @@ internal sealed class CmapTable
 
             for (var cp = start; cp <= end; cp++)
             {
+                if (--budget < 0)
+                    throw new InvalidDataException(
+                        "Malformed font: cmap format-4 subtable describes more code points than the BMP allows.");
+
                 ushort gid;
                 if (idRangeOffsets[i] == 0)
                 {

@@ -16,18 +16,49 @@ internal sealed class SfntReader
     public int Length => _data.Length;
     public ReadOnlySpan<byte> Span => _data.Span;
 
-    public byte ReadU8(int offset) => _data.Span[offset];
-    public ushort ReadU16(int offset) => (ushort)((_data.Span[offset] << 8) | _data.Span[offset + 1]);
+    public byte ReadU8(int offset)
+    {
+        Require(offset, 1);
+        return _data.Span[offset];
+    }
+
+    public ushort ReadU16(int offset)
+    {
+        Require(offset, 2);
+        var s = _data.Span;
+        return (ushort)((s[offset] << 8) | s[offset + 1]);
+    }
+
     public short ReadI16(int offset) => (short)ReadU16(offset);
-    public uint ReadU32(int offset) =>
-        ((uint)_data.Span[offset] << 24) |
-        ((uint)_data.Span[offset + 1] << 16) |
-        ((uint)_data.Span[offset + 2] << 8) |
-         (uint)_data.Span[offset + 3];
+
+    public uint ReadU32(int offset)
+    {
+        Require(offset, 4);
+        var s = _data.Span;
+        return ((uint)s[offset] << 24) | ((uint)s[offset + 1] << 16) | ((uint)s[offset + 2] << 8) | s[offset + 3];
+    }
 
     public int ReadI32(int offset) => (int)ReadU32(offset);
 
-    public Tag ReadTag(int offset) => new(_data.Span[offset..]);
+    public Tag ReadTag(int offset)
+    {
+        Require(offset, 4);
+        return new(_data.Span[offset..]);
+    }
 
-    public ReadOnlyMemory<byte> Slice(int offset, int length) => _data.Slice(offset, length);
+    public ReadOnlyMemory<byte> Slice(int offset, int length)
+    {
+        Require(offset, length);
+        return _data.Slice(offset, length);
+    }
+
+    // Validates that `size` bytes are readable at `offset`, converting truncated/malformed
+    // font input into a clean InvalidDataException instead of IndexOutOfRangeException.
+    // The long cast prevents offset + size overflowing Int32 on hostile input.
+    private void Require(int offset, int size)
+    {
+        if (offset < 0 || size < 0 || (long)offset + size > _data.Length)
+            throw new InvalidDataException(
+                $"Malformed font: cannot read {size} byte(s) at offset {offset}; buffer length is {_data.Length}.");
+    }
 }

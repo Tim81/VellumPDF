@@ -335,13 +335,7 @@ VellumPdf.Encryption.PdfPermissions.Print = 4 -> VellumPdf.Encryption.PdfPermiss
 VellumPdf.Encryption.PdfPermissions.PrintHighRes = 2048 -> VellumPdf.Encryption.PdfPermissions
 VellumPdf.Encryption.StandardSecurityHandler
 VellumPdf.Encryption.StandardSecurityHandler.Encrypt(System.ReadOnlySpan<byte> data) -> byte[]!
-VellumPdf.Encryption.StandardSecurityHandler.O.get -> byte[]!
-VellumPdf.Encryption.StandardSecurityHandler.OE.get -> byte[]!
-VellumPdf.Encryption.StandardSecurityHandler.Perms.get -> byte[]!
-VellumPdf.Encryption.StandardSecurityHandler.PValue.get -> int
 VellumPdf.Encryption.StandardSecurityHandler.StandardSecurityHandler(VellumPdf.Encryption.PdfEncryptionSettings! settings) -> void
-VellumPdf.Encryption.StandardSecurityHandler.U.get -> byte[]!
-VellumPdf.Encryption.StandardSecurityHandler.UE.get -> byte[]!
 VellumPdf.Fonts.EmbeddedFontHandle
 VellumPdf.Fonts.EmbeddedFontHandle.GetGlyphId(int codePoint) -> ushort
 VellumPdf.Fonts.EmbeddedFontHandle.GetGlyphIds(string! text, System.Span<ushort> buffer) -> int

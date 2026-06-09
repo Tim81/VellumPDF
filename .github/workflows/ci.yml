@@ -23,6 +23,14 @@ jobs:
       - name: Restore
         run: dotnet restore VellumPdf.slnx
 
+      - name: Check for vulnerable packages
+        run: |
+          dotnet list package --vulnerable --include-transitive 2>&1 | tee vuln-report.txt
+          if grep -q "has the following vulnerable packages" vuln-report.txt; then
+            echo "::error::Vulnerable NuGet packages detected — see the report above."
+            exit 1
+          fi
+
       - name: Build
         run: dotnet build VellumPdf.slnx -c Release --no-restore
 

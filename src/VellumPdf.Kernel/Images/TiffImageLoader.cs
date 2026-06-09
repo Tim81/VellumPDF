@@ -149,11 +149,7 @@ public static class TiffImageLoader
         if (photometric < 0)
             throw new InvalidDataException("TIFF PhotometricInterpretation tag is missing.");
 
-        // Overflow guard: > 100M pixels
-        var pixelCount = (long)width * height;
-        if (pixelCount > 100_000_000L)
-            throw new InvalidDataException(
-                $"TIFF dimensions {width}×{height} exceed the 100M pixel safety limit.");
+        ImageLimits.ValidateDimensions("TIFF", width, height);
 
         if (bitsPerSample != 8)
             throw new NotSupportedException(

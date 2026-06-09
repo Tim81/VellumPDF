@@ -50,6 +50,9 @@ internal sealed class GlyfSubsetter
         if (gid < 0 || gid >= _maxp.NumGlyphs) return default;
         var start = _locaOffsets[gid];
         var end = _locaOffsets[gid + 1];
+        if (start < 0 || end < start || end > _glyfData.Length)
+            throw new InvalidDataException(
+                $"Malformed font: glyph {gid} loca range [{start}, {end}) is outside the {_glyfData.Length}-byte glyf table.");
         return start == end ? default : _glyfData.AsSpan(start, end - start);
     }
 
