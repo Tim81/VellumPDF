@@ -1,0 +1,66 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Derive version from tag
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          if [[ -z "$version" ]]; then
+            echo "::error::Tag '${GITHUB_REF_NAME}' yields an empty version; expected a 'vX.Y.Z' tag."
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Restore
+        run: dotnet restore VellumPdf.slnx
+
+      - name: Build
+        run: dotnet build VellumPdf.slnx -c Release --no-restore -p:Version="${{ steps.version.outputs.version }}"
+
+      - name: Pack
+        run: dotnet pack VellumPdf.slnx -c Release --no-build -o ${{ runner.temp }}/packages -p:Version="${{ steps.version.outputs.version }}"
+
+      - name: Push to NuGet.org
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: >
+          dotnet nuget push "${{ runner.temp }}/packages/*.nupkg"
+          --api-key "$NUGET_API_KEY"
+          --source https://api.nuget.org/v3/index.json
+          --skip-duplicate
+
+      - name: Create GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          shopt -s failglob
+          version="${{ steps.version.outputs.version }}"
+          prerelease_flag=""
+          if [[ "$version" == *-* ]]; then
+            prerelease_flag="--prerelease"
+          fi
+          gh release create "$GITHUB_REF_NAME" \
+            "${{ runner.temp }}"/packages/*.nupkg \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes \
+            $prerelease_flag
