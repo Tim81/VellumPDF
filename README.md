@@ -1,13 +1,14 @@
 # VellumPdf
 
 [![CI](https://github.com/Tim81/VellumPDF/actions/workflows/ci.yml/badge.svg)](https://github.com/Tim81/VellumPDF/actions/workflows/ci.yml)
+[![NuGet](https://img.shields.io/nuget/v/VellumPdf.Kernel.svg?label=VellumPdf.Kernel)](https://www.nuget.org/packages/VellumPdf.Kernel)
 
 A modern, **dependency-free PDF generation library for .NET 10**, implemented
 clean-room from the open **ISO 32000** standard.
 
-> **Status: beta.** Core features are implemented and CI-validated — including
-> PDF/A-2b/2u conformance proven on every push with veraPDF. The public API may
-> still change before 1.0.
+> **Status: 1.0 — stable.** The public API is locked (analyzer-enforced) and
+> the library targets .NET 10. Core features are CI-validated — including
+> PDF/A-2b/2u conformance proven on every push with veraPDF.
 
 ## Why VellumPdf
 
@@ -33,11 +34,15 @@ clean-room from the open **ISO 32000** standard.
 | --- | --- | --- |
 | `VellumPdf.Kernel` | Stable | Object model, canvas, Standard-14 fonts, TrueType/OpenType embedding + subsetting, images (JPEG/PNG/BMP/GIF/TIFF), AES-256 encryption, object/cross-reference streams, AcroForm fields, tagged-PDF structure tree, and the PDF/A-2 metadata + sRGB output-intent scaffold. |
 | `VellumPdf.Layout` | Stable | High-level document builder: paragraphs, headings, lists, tables, images, header/footer bands, bookmarks, and automatic pagination. |
-| `VellumPdf.Signing` | Beta | PAdES / PKCS#7 detached digital signatures over an incremental-update revision. |
+| `VellumPdf.Signing` | Stable | PAdES / PKCS#7 detached digital signatures over an incremental-update revision. |
 | _(roadmap)_ `VellumPdf.Conformance` | Planned | In-process PDF/A and PDF/UA preflight validator. |
 | _(roadmap)_ `VellumPdf.Barcodes` | Planned | QR, PDF417, Code128, EAN. |
 
 ## Quick start
+
+```shell
+dotnet add package VellumPdf.Layout
+```
 
 ```csharp
 using VellumPdf.Document;          // PdfConformance
