@@ -18,7 +18,9 @@ public class PdfStream : PdfObject
 
     public PdfStream(byte[] data) => _data = data;
 
-    protected PdfStream() => _data = [];
+    // private protected: blocks external subclassing while allowing the internal
+    // RawPdfStream / UncompressedPdfStream subclasses in this assembly.
+    private protected PdfStream() => _data = [];
 
     public override void WriteTo(PdfWriter writer)
     {

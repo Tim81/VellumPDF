@@ -98,17 +98,11 @@ VellumPdf.Annotations.PdfLinkAnnotation.DestPage.get -> VellumPdf.Document.PdfPa
 VellumPdf.Annotations.PdfLinkAnnotation.DestPage.init -> void
 VellumPdf.Annotations.PdfLinkAnnotation.DestTop.get -> double
 VellumPdf.Annotations.PdfLinkAnnotation.DestTop.init -> void
-VellumPdf.Annotations.PdfLinkAnnotation.Llx.get -> double
-VellumPdf.Annotations.PdfLinkAnnotation.Llx.init -> void
-VellumPdf.Annotations.PdfLinkAnnotation.Lly.get -> double
-VellumPdf.Annotations.PdfLinkAnnotation.Lly.init -> void
 VellumPdf.Annotations.PdfLinkAnnotation.PdfLinkAnnotation() -> void
+VellumPdf.Annotations.PdfLinkAnnotation.Rect.get -> VellumPdf.Document.PdfRectangle!
+VellumPdf.Annotations.PdfLinkAnnotation.Rect.init -> void
 VellumPdf.Annotations.PdfLinkAnnotation.Uri.get -> string?
 VellumPdf.Annotations.PdfLinkAnnotation.Uri.init -> void
-VellumPdf.Annotations.PdfLinkAnnotation.Urx.get -> double
-VellumPdf.Annotations.PdfLinkAnnotation.Urx.init -> void
-VellumPdf.Annotations.PdfLinkAnnotation.Ury.get -> double
-VellumPdf.Annotations.PdfLinkAnnotation.Ury.init -> void
 VellumPdf.Annotations.PdfOutlineEntry
 VellumPdf.Annotations.PdfOutlineEntry.DestLeft.get -> double
 VellumPdf.Annotations.PdfOutlineEntry.DestLeft.init -> void
@@ -218,7 +212,6 @@ VellumPdf.Core.PdfReal.PdfReal(double value) -> void
 VellumPdf.Core.PdfReal.Value.get -> double
 VellumPdf.Core.PdfStream
 VellumPdf.Core.PdfStream.Dictionary.get -> VellumPdf.Core.PdfDictionary!
-VellumPdf.Core.PdfStream.PdfStream() -> void
 VellumPdf.Core.PdfStream.PdfStream(byte[]! data) -> void
 VellumPdf.Document.PageSize
 VellumPdf.Document.PdfConformance
@@ -293,7 +286,7 @@ VellumPdf.Document.PdfStructElem
 VellumPdf.Document.PdfStructElem.AddChild(VellumPdf.Document.PdfStructElem! child) -> VellumPdf.Document.PdfStructElem!
 VellumPdf.Document.PdfStructElem.AltText.get -> string?
 VellumPdf.Document.PdfStructElem.AltText.set -> void
-VellumPdf.Document.PdfStructElem.Children.get -> System.Collections.Generic.List<VellumPdf.Document.PdfStructElem!>!
+VellumPdf.Document.PdfStructElem.Children.get -> System.Collections.Generic.IReadOnlyList<VellumPdf.Document.PdfStructElem!>!
 VellumPdf.Document.PdfStructElem.Mcid.get -> int
 VellumPdf.Document.PdfStructElem.Mcid.set -> void
 VellumPdf.Document.PdfStructElem.Page.get -> VellumPdf.Document.PdfPage?
@@ -320,14 +313,14 @@ VellumPdf.Encryption.IPdfEncryptor
 VellumPdf.Encryption.IPdfEncryptor.Encrypt(System.ReadOnlySpan<byte> data) -> byte[]!
 VellumPdf.Encryption.PdfEncryptionSettings
 VellumPdf.Encryption.PdfEncryptionSettings.EncryptMetadata.get -> bool
-VellumPdf.Encryption.PdfEncryptionSettings.EncryptMetadata.set -> void
+VellumPdf.Encryption.PdfEncryptionSettings.EncryptMetadata.init -> void
 VellumPdf.Encryption.PdfEncryptionSettings.OwnerPassword.get -> string?
-VellumPdf.Encryption.PdfEncryptionSettings.OwnerPassword.set -> void
+VellumPdf.Encryption.PdfEncryptionSettings.OwnerPassword.init -> void
 VellumPdf.Encryption.PdfEncryptionSettings.PdfEncryptionSettings() -> void
 VellumPdf.Encryption.PdfEncryptionSettings.Permissions.get -> VellumPdf.Encryption.PdfPermissions
-VellumPdf.Encryption.PdfEncryptionSettings.Permissions.set -> void
+VellumPdf.Encryption.PdfEncryptionSettings.Permissions.init -> void
 VellumPdf.Encryption.PdfEncryptionSettings.UserPassword.get -> string?
-VellumPdf.Encryption.PdfEncryptionSettings.UserPassword.set -> void
+VellumPdf.Encryption.PdfEncryptionSettings.UserPassword.init -> void
 VellumPdf.Encryption.PdfPermissions
 VellumPdf.Encryption.PdfPermissions.All = VellumPdf.Encryption.PdfPermissions.Print | VellumPdf.Encryption.PdfPermissions.Modify | VellumPdf.Encryption.PdfPermissions.Copy | VellumPdf.Encryption.PdfPermissions.Annotate | VellumPdf.Encryption.PdfPermissions.FillForms | VellumPdf.Encryption.PdfPermissions.Extract | VellumPdf.Encryption.PdfPermissions.Assemble | VellumPdf.Encryption.PdfPermissions.PrintHighRes -> VellumPdf.Encryption.PdfPermissions
 VellumPdf.Encryption.PdfPermissions.Annotate = 32 -> VellumPdf.Encryption.PdfPermissions

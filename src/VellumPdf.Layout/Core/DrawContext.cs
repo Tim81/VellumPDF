@@ -73,10 +73,7 @@ public sealed class DrawContext
         var (x, y, w, h) = ToPdfRect(box);
         var annot = new PdfLinkAnnotation
         {
-            Llx = x,
-            Lly = y,
-            Urx = x + w,
-            Ury = y + h,
+            Rect = new VellumPdf.Document.PdfRectangle(x, y, x + w, y + h),
             Uri = uri,
         };
         _document.RegisterLinkAnnotation(_page, annot);

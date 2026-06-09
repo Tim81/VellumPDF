@@ -205,7 +205,7 @@ public sealed class ParagraphRenderer : IRenderer
             {
                 // Nested mode: add as child of the provided parent (table/list use case).
                 ctx.StampStructElemPage(elem);
-                ParentStructElem.Children.Add(elem);
+                ParentStructElem.AddChild(elem);
             }
             else
             {

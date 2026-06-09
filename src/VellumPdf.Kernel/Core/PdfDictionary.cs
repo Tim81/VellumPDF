@@ -4,7 +4,7 @@
 namespace VellumPdf.Core;
 
 /// <summary>PDF dictionary object (ISO 32000-2 §7.3.7).</summary>
-public class PdfDictionary : PdfObject
+public sealed class PdfDictionary : PdfObject
 {
     private readonly List<KeyValuePair<PdfName, PdfObject>> _entries = [];
 

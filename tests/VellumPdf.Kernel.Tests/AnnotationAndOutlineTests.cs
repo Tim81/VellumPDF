@@ -29,10 +29,7 @@ public sealed class AnnotationAndOutlineTests
 
         doc.RegisterLinkAnnotation(page, new PdfLinkAnnotation
         {
-            Llx = 72,
-            Lly = 700,
-            Urx = 200,
-            Ury = 714,
+            Rect = new PdfRectangle(72, 700, 200, 714),
             Uri = "https://example.com",
         });
 
@@ -48,10 +45,7 @@ public sealed class AnnotationAndOutlineTests
 
         doc.RegisterLinkAnnotation(page, new PdfLinkAnnotation
         {
-            Llx = 72,
-            Lly = 700,
-            Urx = 200,
-            Ury = 714,
+            Rect = new PdfRectangle(72, 700, 200, 714),
             Uri = "https://example.com",
         });
 
@@ -68,10 +62,7 @@ public sealed class AnnotationAndOutlineTests
 
         doc.RegisterLinkAnnotation(page, new PdfLinkAnnotation
         {
-            Llx = 72,
-            Lly = 700,
-            Urx = 200,
-            Ury = 714,
+            Rect = new PdfRectangle(72, 700, 200, 714),
             Uri = url,
         });
 
@@ -88,10 +79,7 @@ public sealed class AnnotationAndOutlineTests
 
         doc.RegisterLinkAnnotation(page, new PdfLinkAnnotation
         {
-            Llx = 10,
-            Lly = 20,
-            Urx = 110,
-            Ury = 40,
+            Rect = new PdfRectangle(10, 20, 110, 40),
             Uri = "https://x.com",
         });
 
@@ -108,10 +96,7 @@ public sealed class AnnotationAndOutlineTests
 
         doc.RegisterLinkAnnotation(page1, new PdfLinkAnnotation
         {
-            Llx = 72,
-            Lly = 700,
-            Urx = 200,
-            Ury = 714,
+            Rect = new PdfRectangle(72, 700, 200, 714),
             DestPage = page2,
             DestLeft = 0,
             DestTop = 841,
@@ -140,18 +125,12 @@ public sealed class AnnotationAndOutlineTests
 
         doc.RegisterLinkAnnotation(page, new PdfLinkAnnotation
         {
-            Llx = 72,
-            Lly = 700,
-            Urx = 200,
-            Ury = 714,
+            Rect = new PdfRectangle(72, 700, 200, 714),
             Uri = "https://a.com",
         });
         doc.RegisterLinkAnnotation(page, new PdfLinkAnnotation
         {
-            Llx = 72,
-            Lly = 650,
-            Urx = 200,
-            Ury = 664,
+            Rect = new PdfRectangle(72, 650, 200, 664),
             Uri = "https://b.com",
         });
 

@@ -149,15 +149,15 @@ public sealed class ListRenderer : IRenderer
             {
                 // LI groups the label and body for one list item.
                 var liElem = new PdfStructElem("LI");
-                listElem.Children.Add(liElem);
+                listElem.AddChild(liElem);
 
                 // Lbl: the marker (bullet or number)
                 var lblElem = new PdfStructElem("Lbl");
-                liElem.Children.Add(lblElem);
+                liElem.AddChild(lblElem);
 
                 // LBody: the item content paragraph
                 var lbodyElem = new PdfStructElem("LBody");
-                liElem.Children.Add(lbodyElem);
+                liElem.AddChild(lbodyElem);
 
                 // Wire the paragraph renderers to nest their P elems under Lbl/LBody.
                 marker.StructType = "P";
