@@ -52,7 +52,7 @@ public sealed class MalformedInputTests
 
     // ── Fonts: cmap format-4 denial-of-service ───────────────────────────────
 
-    [Fact]
+    [Fact(Timeout = 10_000)]
     public void CmapFormat4_overlappingWideSegments_throwsAndDoesNotHang()
     {
         // Three segments each covering the whole BMP (0x0000-0xFFFE) sum to ~196k iterations,
@@ -116,12 +116,21 @@ public sealed class MalformedInputTests
         Assert.Throws<InvalidDataException>(() => PngImageLoader.Load(png));
     }
 
-    [Fact]
+    [Fact(Timeout = 10_000)]
     public void Png_zlibBomb_throwsAndDoesNotExhaustMemory()
     {
         // A 1×1 image whose IDAT decompresses to ~4 MB — far beyond the dimensions' expected size.
         var bomb = ZlibCompress(new byte[4_000_000]);
         var png = BuildPng(1, 1, bitDepth: 8, colorType: 2, idat: bomb);
+        Assert.Throws<InvalidDataException>(() => PngImageLoader.Load(png));
+    }
+
+    [Fact]
+    public void Png_truncatedImageData_throwsInvalidDataException()
+    {
+        // Valid 8×8 RGB IHDR, but the IDAT decompresses to far fewer bytes than the
+        // height×(rowBytes+1) the scanline unfilter requires.
+        var png = BuildPng(8, 8, bitDepth: 8, colorType: 2, idat: ZlibCompress(new byte[10]));
         Assert.Throws<InvalidDataException>(() => PngImageLoader.Load(png));
     }
 

@@ -93,6 +93,12 @@ public static class PngImageLoader
         var compressed = Combine(idatData);
         var raw = Inflate(compressed, expectedRaw);
 
+        // Reject a stream that decompressed to fewer bytes than the dimensions require, so the
+        // scanline unfilter below fails cleanly instead of indexing past the buffer.
+        if (raw.Length < expectedRaw)
+            throw new InvalidDataException(
+                "PNG image data is truncated: fewer bytes than the declared dimensions require.");
+
         // ── Unfilter scanlines ──
         var unfiltered = Unfilter(raw, width, height, colorType, bitDepth, rowBytes);
 

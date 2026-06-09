@@ -24,9 +24,14 @@ jobs:
         run: dotnet restore VellumPdf.slnx
 
       - name: Check for vulnerable packages
+        shell: bash
         run: |
-          dotnet list package --vulnerable --include-transitive 2>&1 | tee vuln-report.txt
-          if grep -q "has the following vulnerable packages" vuln-report.txt; then
+          set -euo pipefail
+          # Capture output; `set -e` fails the step if `dotnet list` itself errors, so a
+          # silent restore failure cannot let a vulnerable package slip through the gate.
+          report=$(dotnet list package --vulnerable --include-transitive 2>&1)
+          echo "$report"
+          if echo "$report" | grep -q "has the following vulnerable packages"; then
             echo "::error::Vulnerable NuGet packages detected — see the report above."
             exit 1
           fi
