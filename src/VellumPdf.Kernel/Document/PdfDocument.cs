@@ -54,6 +54,7 @@ public sealed class PdfDocument : IDisposable
     // Encryption settings supplied via Encrypt(). Null = no encryption.
     private PdfEncryptionSettings? _encryptionSettings;
 
+    /// <summary>Document metadata (title, author, producer, …) written to the /Info dictionary.</summary>
     public PdfDocumentInfo Info { get; } = new();
 
     /// <summary>Default page size for new pages. Defaults to A4.</summary>
@@ -104,8 +105,10 @@ public sealed class PdfDocument : IDisposable
         set => _tagged = value;
     }
 
+    /// <summary>Adds a new page using <see cref="DefaultPageSize"/> and returns it.</summary>
     public PdfPage AddPage() => AddPage(DefaultPageSize);
 
+    /// <summary>Adds a new page of the given <paramref name="size"/> and returns it.</summary>
     public PdfPage AddPage(PdfRectangle size)
     {
         var page = new PdfPage(size);
@@ -113,6 +116,7 @@ public sealed class PdfDocument : IDisposable
         return page;
     }
 
+    /// <summary>The pages in this document, in order.</summary>
     public IReadOnlyList<PdfPage> Pages => _pages;
 
     /// <summary>
@@ -1199,5 +1203,6 @@ public sealed class PdfDocument : IDisposable
         return total;
     }
 
+    /// <summary>Releases the document; subsequent <see cref="Save"/> or <see cref="Encrypt"/> calls throw.</summary>
     public void Dispose() => _disposed = true;
 }

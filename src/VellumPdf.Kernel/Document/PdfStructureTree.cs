@@ -34,6 +34,7 @@ public sealed class PdfStructElem
     /// <summary>Child structure elements (for grouping elements such as Table, TR, L, LI).</summary>
     public IReadOnlyList<PdfStructElem> Children => _children;
 
+    /// <summary>Creates a structure element of the given structure type.</summary>
     public PdfStructElem(string structType) => StructType = structType;
 
     /// <summary>Adds a child struct element and returns it (fluent helper).</summary>

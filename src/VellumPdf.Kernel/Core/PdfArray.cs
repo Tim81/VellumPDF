@@ -8,14 +8,20 @@ public sealed class PdfArray : PdfObject
 {
     private readonly List<PdfObject> _items;
 
+    /// <summary>Creates an empty array.</summary>
     public PdfArray() => _items = [];
+    /// <summary>Creates an array populated with <paramref name="items"/>.</summary>
     public PdfArray(IEnumerable<PdfObject> items) => _items = [.. items];
 
+    /// <summary>The number of items in the array.</summary>
     public int Count => _items.Count;
+    /// <summary>Gets the item at index <paramref name="i"/>.</summary>
     public PdfObject this[int i] => _items[i];
 
+    /// <summary>Appends <paramref name="obj"/> to the array and returns this array.</summary>
     public PdfArray Add(PdfObject obj) { _items.Add(obj); return this; }
 
+    /// <summary>Writes the serialised PDF representation to <paramref name="writer"/>.</summary>
     public override void WriteTo(PdfWriter writer)
     {
         writer.WriteAscii("["u8);

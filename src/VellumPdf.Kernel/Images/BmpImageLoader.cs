@@ -23,6 +23,7 @@ public static class BmpImageLoader
     // BMP compression constants
     private const uint BiRgb = 0;
 
+    /// <summary>Decodes BMP file bytes into a FlateDecode Image XObject.</summary>
     public static PdfImageXObject Load(byte[] bmpBytes)
     {
         if (bmpBytes.Length < 54)

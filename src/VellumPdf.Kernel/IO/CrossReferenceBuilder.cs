@@ -17,6 +17,7 @@ public sealed class CrossReferenceBuilder
 {
     private readonly List<long> _offsets = []; // index = objectNumber - 1
 
+    /// <summary>The object number that will be assigned to the next reserved object.</summary>
     public int NextObjectNumber => _offsets.Count + 1;
 
     /// <summary>Records the byte offset of the next indirect object before it is written.</summary>

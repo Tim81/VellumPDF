@@ -28,6 +28,7 @@ public sealed class ParagraphRenderer : IRenderer
     private readonly int _startLine;
     private int _endLine;  // exclusive
 
+    /// <summary>Creates a renderer for the paragraph, optionally starting at <paramref name="startLine"/> for pagination.</summary>
     public ParagraphRenderer(Paragraph para, int startLine = 0)
     {
         _para = para;
@@ -36,6 +37,7 @@ public sealed class ParagraphRenderer : IRenderer
 
     // ── Phase 1: Layout ───────────────────────────────────────────────────────
 
+    /// <summary>Word-wraps the paragraph and fits as many lines as the area allows, splitting at line boundaries on overflow.</summary>
     public LayoutResult Layout(LayoutContext context)
     {
         var area = context.Area.Deflate(_para.Margins);
@@ -99,6 +101,7 @@ public sealed class ParagraphRenderer : IRenderer
     /// </summary>
     internal PdfStructElem? ParentStructElem { get; set; }
 
+    /// <summary>Emits the wrapped lines as PDF text operators, applying alignment, justification, links and tagging.</summary>
     public void Draw(DrawContext ctx)
     {
         if (_lines is null) return;

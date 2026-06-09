@@ -26,9 +26,13 @@ public sealed class PdfPage
     /// </summary>
     internal int StructParentsKey { get; set; } = -1;
 
+    /// <summary>The page's media box (its physical dimensions in PDF user space).</summary>
     public PdfRectangle MediaBox { get; }
+
+    /// <summary>Page rotation in degrees clockwise (must be a multiple of 90). Default 0.</summary>
     public int Rotate { get; set; } = 0;
 
+    /// <summary>Creates a page with the given media box.</summary>
     public PdfPage(PdfRectangle mediaBox) => MediaBox = mediaBox;
 
     /// <summary>Raw PDF content stream bytes. Set by <see cref="Canvas.PdfCanvas.Finish"/>.</summary>

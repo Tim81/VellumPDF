@@ -24,7 +24,10 @@ public sealed class Paragraph
     /// <summary>All inline text runs in this paragraph (always at least one entry).</summary>
     public IReadOnlyList<TextRun> Runs => _runs;
 
+    /// <summary>Margins around the paragraph.</summary>
     public EdgeInsets Margins { get; init; } = EdgeInsets.Zero;
+
+    /// <summary>Horizontal alignment of the paragraph text.</summary>
     public HorizontalAlignment Alignment { get; init; } = HorizontalAlignment.Left;
 
     // ── Constructors ─────────────────────────────────────────────────────────

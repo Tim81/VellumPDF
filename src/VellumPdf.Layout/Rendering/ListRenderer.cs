@@ -25,6 +25,7 @@ public sealed class ListRenderer : IRenderer
 
     private LayoutBox _occupied;
 
+    /// <summary>Creates a renderer for the list, optionally starting at <paramref name="startItem"/> for pagination.</summary>
     public ListRenderer(ListElement list, int startItem = 0)
     {
         _list = list;
@@ -33,6 +34,7 @@ public sealed class ListRenderer : IRenderer
 
     // ── Phase 1: Layout ───────────────────────────────────────────────────────
 
+    /// <summary>Paginates the list item-by-item, splitting at item boundaries when it overflows the area.</summary>
     public LayoutResult Layout(LayoutContext context)
     {
         var area = context.Area.Deflate(_list.Margins);
@@ -115,6 +117,7 @@ public sealed class ListRenderer : IRenderer
 
     // ── Phase 2: Draw ─────────────────────────────────────────────────────────
 
+    /// <summary>Draws each item's marker and content, building the tagged L → LI → Lbl/LBody hierarchy when tagging is enabled.</summary>
     public void Draw(DrawContext ctx)
     {
         if (_items is null) return;

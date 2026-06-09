@@ -46,6 +46,7 @@ public static class TiffImageLoader
     private const int CompressionPackBits = 32773;
     private const int CompressionLzw = 5;
 
+    /// <summary>Decodes baseline TIFF file bytes into a FlateDecode Image XObject.</summary>
     public static PdfImageXObject Load(byte[] tiff)
     {
         if (tiff.Length < 8)

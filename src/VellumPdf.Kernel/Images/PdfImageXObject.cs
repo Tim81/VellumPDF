@@ -11,7 +11,9 @@ namespace VellumPdf.Images;
 /// </summary>
 public sealed class PdfImageXObject
 {
+    /// <summary>The image width in pixels.</summary>
     public int Width { get; }
+    /// <summary>The image height in pixels.</summary>
     public int Height { get; }
 
     private readonly byte[] _streamData;
@@ -33,6 +35,7 @@ public sealed class PdfImageXObject
         _sMask = sMask;
     }
 
+    /// <summary>The soft-mask (alpha channel) stream, or <see langword="null"/> when the image is opaque.</summary>
     public PdfStream? SMask => _sMask;
 
     /// <summary>Builds the Image XObject as a PDF stream with inline data.</summary>
@@ -50,6 +53,7 @@ public sealed class PdfImageXObject
         return stream;
     }
 
+    /// <summary>Builds the Image XObject stream, wiring <paramref name="sMaskRef"/> as the /SMask reference when supplied.</summary>
     public PdfStream BuildStreamWithSMask(PdfIndirectReference? sMaskRef)
     {
         if (_filter == PdfName.DCTDecode)

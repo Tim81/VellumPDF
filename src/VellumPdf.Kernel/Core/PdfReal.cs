@@ -5,10 +5,13 @@ using System.Globalization;
 
 namespace VellumPdf.Core;
 
+/// <summary>PDF real (floating-point) numeric object (ISO 32000-2 §7.3.3).</summary>
 public sealed class PdfReal : PdfObject
 {
+    /// <summary>The real value. Never NaN or Infinity.</summary>
     public double Value { get; }
 
+    /// <summary>Creates a real object, rejecting NaN and Infinity which PDF cannot represent.</summary>
     public PdfReal(double value)
     {
         if (double.IsNaN(value) || double.IsInfinity(value))
@@ -17,6 +20,7 @@ public sealed class PdfReal : PdfObject
         Value = value;
     }
 
+    /// <inheritdoc />
     public override void WriteTo(PdfWriter writer)
     {
         // PDF requires a decimal point; use up to 5 decimal places (sufficient for coordinates).

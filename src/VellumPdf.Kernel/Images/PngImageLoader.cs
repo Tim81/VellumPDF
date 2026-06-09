@@ -18,6 +18,7 @@ public static class PngImageLoader
 {
     private const ulong PngSignature = 0x89504E470D0A1A0A;
 
+    /// <summary>Decodes PNG file bytes into a FlateDecode Image XObject (alpha becomes an /SMask).</summary>
     public static PdfImageXObject Load(byte[] pngBytes)
     {
         ValidateSignature(pngBytes);

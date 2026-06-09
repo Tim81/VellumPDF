@@ -37,6 +37,7 @@ public sealed class DocumentRenderer
     // Pending bookmarks: queued by Document.AddBookmark, drained on next Draw.
     internal readonly List<BookmarkEntry> PendingBookmarks = [];
 
+    /// <summary>Creates a renderer that paginates content onto <paramref name="pdf"/> using the given page size and margins.</summary>
     public DocumentRenderer(PdfDocument pdf, PdfRectangle? pageSize = null, EdgeInsets? margins = null)
     {
         _pdf = pdf;
@@ -44,6 +45,7 @@ public sealed class DocumentRenderer
         _margins = margins ?? new EdgeInsets(72); // 1-inch default margins (72pt)
     }
 
+    /// <summary>Appends a renderer to the document flow and returns this instance for chaining.</summary>
     public DocumentRenderer Add(IRenderer renderer) { _renderers.Add(renderer); return this; }
 
     /// <summary>Lays out all added renderers and saves the resulting PDF to <paramref name="destination"/>.</summary>

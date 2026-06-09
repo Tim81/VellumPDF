@@ -12,16 +12,23 @@ public sealed class ListItem
 {
     private List<ListItem>? _children;
 
+    /// <summary>The item's text.</summary>
     public string Text { get; }
+
+    /// <summary>Optional text style; when null the list's default style is used.</summary>
     public TextStyle? Style { get; init; }
+
+    /// <summary>The nested child items, or null if this item has no children.</summary>
     public IReadOnlyList<ListItem>? Children => _children;
 
+    /// <summary>Creates a list item with the given text and optional style.</summary>
     public ListItem(string text, TextStyle? style = null)
     {
         Text = text;
         Style = style;
     }
 
+    /// <summary>Adds a nested child item. Returns this item.</summary>
     public ListItem AddChild(ListItem child)
     {
         _children ??= [];
@@ -29,6 +36,7 @@ public sealed class ListItem
         return this;
     }
 
+    /// <summary>Adds a nested child item with the given text and optional style. Returns this item.</summary>
     public ListItem AddChild(string text, TextStyle? style = null)
         => AddChild(new ListItem(text, style));
 }

@@ -31,6 +31,7 @@ public sealed class PdfWriter
     /// </summary>
     public long Position => _position;
 
+    /// <summary>Creates a writer over the given writable <paramref name="stream"/>.</summary>
     public PdfWriter(Stream stream)
     {
         ArgumentNullException.ThrowIfNull(stream);
@@ -38,24 +39,28 @@ public sealed class PdfWriter
         _stream = stream;
     }
 
+    /// <summary>Writes a single byte and advances the tracked position.</summary>
     public void WriteByte(byte b)
     {
         _stream.WriteByte(b);
         _position++;
     }
 
+    /// <summary>Writes a span of pre-encoded ASCII bytes and advances the tracked position.</summary>
     public void WriteAscii(ReadOnlySpan<byte> bytes)
     {
         _stream.Write(bytes);
         _position += bytes.Length;
     }
 
+    /// <summary>Writes raw bytes verbatim (e.g. stream content) and advances the tracked position.</summary>
     public void WriteRaw(ReadOnlySpan<byte> bytes)
     {
         _stream.Write(bytes);
         _position += bytes.Length;
     }
 
+    /// <summary>Encodes an ASCII-safe string and writes it, advancing the tracked position.</summary>
     public void WriteAsciiString(string s)
     {
         // Caller guarantees ASCII-safe content (numbers, names, operators).
@@ -64,5 +69,6 @@ public sealed class PdfWriter
         _position += bytes.Length;
     }
 
+    /// <summary>Flushes any buffered bytes to the underlying stream.</summary>
     public void Flush() => _stream.Flush();
 }

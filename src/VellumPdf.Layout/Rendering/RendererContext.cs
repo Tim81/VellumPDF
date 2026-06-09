@@ -21,6 +21,7 @@ public sealed class RendererContext
     private readonly Dictionary<PdfImageXObject, string> _imageNames = new();
     private int _imageCounter;
 
+    /// <summary>Creates a rendering context bound to the given page and its owning document.</summary>
     public RendererContext(PdfPage page, PdfDocument document)
     {
         _page = page;

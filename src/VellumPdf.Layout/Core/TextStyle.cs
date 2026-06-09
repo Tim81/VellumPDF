@@ -8,6 +8,7 @@ namespace VellumPdf.Layout.Core;
 /// <summary>Typography properties applied to a run of text.</summary>
 public sealed class TextStyle
 {
+    /// <summary>A style with default values (Helvetica, 12 pt, auto leading, black).</summary>
     public static readonly TextStyle Default = new();
 
     /// <summary>
@@ -27,10 +28,16 @@ public sealed class TextStyle
         init => FontRef = value;
     }
 
+    /// <summary>The font size in points. Defaults to 12.</summary>
     public double FontSize { get; init; } = 12;
+
+    /// <summary>The line leading in points; 0 (the default) means auto (font size × 1.2).</summary>
     public double Leading { get; init; } = 0;  // 0 = auto (font-size * 1.2)
+
+    /// <summary>The text colour. Defaults to <see cref="ColorRgb.Black"/>.</summary>
     public ColorRgb Color { get; init; } = ColorRgb.Black;
 
+    /// <summary>The resolved leading: <see cref="Leading"/> when positive, otherwise font size × 1.2.</summary>
     public double EffectiveLeading => Leading > 0 ? Leading : FontSize * 1.2;
 
     /// <summary>

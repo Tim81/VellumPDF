@@ -6,8 +6,6 @@
   <!-- Settings specific to shippable library projects. -->
   <PropertyGroup>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
-    <!-- TODO: drop this suppression and require XML docs on the public surface once the API stabilises. -->
-    <NoWarn>$(NoWarn);CS1591</NoWarn>
 
     <!-- A genuine selling point: no native binaries, AOT- and trim-ready, single managed DLL. -->
     <IsAotCompatible>true</IsAotCompatible>

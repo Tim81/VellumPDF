@@ -18,6 +18,7 @@ namespace VellumPdf.Images;
 /// </summary>
 public static class GifImageLoader
 {
+    /// <summary>Decodes the first frame of a GIF into a FlateDecode Image XObject.</summary>
     public static PdfImageXObject Load(byte[] gifBytes)
     {
         if (gifBytes.Length < 13)
