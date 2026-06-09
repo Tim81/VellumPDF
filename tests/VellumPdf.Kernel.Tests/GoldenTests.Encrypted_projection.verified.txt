@@ -1,0 +1,9 @@
+﻿HasEncrypt: True
+FilterStandard: True
+V5: True
+R6: True
+HasAESV3: True
+HasStmF: True
+HasStrF: True
+Permissions: /P -196
+IndirectObjectCount: 7

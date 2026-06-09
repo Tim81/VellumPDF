@@ -1,0 +1,6 @@
+﻿HasType0: True
+HasCIDFontType2: True
+HasIdentityH: True
+HasFontFile2: True
+HasToUnicode: True
+HasSubsetTag: True
