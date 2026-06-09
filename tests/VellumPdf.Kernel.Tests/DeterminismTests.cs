@@ -83,4 +83,20 @@ public sealed class DeterminismTests
 
         Assert.Equal(Build(), Build());
     }
+
+    [Fact]
+    public void PrepareForSigning_withPins_isByteIdentical()
+    {
+        // The signing-placeholder document (before the signature is patched in) must be
+        // reproducible with pins — this covers the DocumentId wiring on the signing path.
+        static byte[] Build()
+        {
+            using var doc = new PdfDocument { Timestamp = PinnedTime, DocumentId = PinnedId };
+            doc.Info.Title = "Signable";
+            doc.AddPage(PageSize.A4);
+            return doc.PrepareForSigning(new SignaturePlaceholderOptions());
+        }
+
+        Assert.Equal(Build(), Build());
+    }
 }
