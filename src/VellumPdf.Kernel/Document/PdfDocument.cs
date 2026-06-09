@@ -68,6 +68,13 @@ public sealed class PdfDocument : IDisposable
     public DateTimeOffset? Timestamp { get; set; }
 
     /// <summary>
+    /// Optional fixed document <c>/ID</c> (the permanent element of the PDF <c>/ID</c> array).
+    /// When null, the ID is derived from the document content and <see cref="Timestamp"/>.
+    /// Pin this together with <see cref="Timestamp"/> for byte-reproducible output.
+    /// </summary>
+    public byte[]? DocumentId { get; set; }
+
+    /// <summary>
     /// Requested PDF/A conformance level.
     /// When non-<see cref="PdfConformance.None"/>:
     /// XMP pdfaid schema is included, /ID is written, and /MarkInfo /Marked true is set.
@@ -539,7 +546,7 @@ public sealed class PdfDocument : IDisposable
             outputIntentsRef = BuildOutputIntents(registry);
 
         // ── Build document /ID (MD5 over title + producer + page count + timestamp) ─
-        var documentId = ComputeDocumentId(ts);
+        var documentId = DocumentId ?? ComputeDocumentId(ts);
 
         // ── Build /Encrypt dictionary (AES-256, V5/R6) and arm the encryptor ──
         // The /Encrypt object itself MUST be written BEFORE calling WriteAll,
@@ -821,7 +828,7 @@ public sealed class PdfDocument : IDisposable
         registry.SetValue(metadataRef, metadataStream);
 
         // ── Document ID ───────────────────────────────────────────────────────
-        var documentId = ComputeDocumentId(ts);
+        var documentId = DocumentId ?? ComputeDocumentId(ts);
 
         // ── Outline tree ──────────────────────────────────────────────────────
         PdfIndirectReference? outlinesRef = null;

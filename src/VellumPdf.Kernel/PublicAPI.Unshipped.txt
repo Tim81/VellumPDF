@@ -233,6 +233,8 @@ VellumPdf.Document.PdfDocument.Conformance.get -> VellumPdf.Document.PdfConforma
 VellumPdf.Document.PdfDocument.Conformance.set -> void
 VellumPdf.Document.PdfDocument.DefaultPageSize.get -> VellumPdf.Document.PdfRectangle!
 VellumPdf.Document.PdfDocument.DefaultPageSize.set -> void
+VellumPdf.Document.PdfDocument.DocumentId.get -> byte[]?
+VellumPdf.Document.PdfDocument.DocumentId.set -> void
 VellumPdf.Document.PdfDocument.Dispose() -> void
 VellumPdf.Document.PdfDocument.Encrypt(VellumPdf.Encryption.PdfEncryptionSettings! settings) -> void
 VellumPdf.Document.PdfDocument.Info.get -> VellumPdf.Document.PdfDocumentInfo!
