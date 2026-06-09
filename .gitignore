@@ -31,3 +31,8 @@ Thumbs.db
 *.snk
 *.pfx
 *.lic
+
+# DocFX outputs (generated — do not commit)
+_site/
+api/*.yml
+api/.manifest

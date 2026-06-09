@@ -1,0 +1,44 @@
+{
+  "metadata": [
+    {
+      "src": [
+        {
+          "files": [
+            "src/VellumPdf.Kernel/VellumPdf.Kernel.csproj",
+            "src/VellumPdf.Layout/VellumPdf.Layout.csproj",
+            "src/VellumPdf.Signing/VellumPdf.Signing.csproj"
+          ]
+        }
+      ],
+      "dest": "api",
+      "properties": {
+        "TargetFramework": "net10.0"
+      },
+      "disableDefaultFilter": false
+    }
+  ],
+  "build": {
+    "content": [
+      {
+        "files": ["api/**.yml", "api/index.md"]
+      },
+      {
+        "files": ["docs/**.md", "toc.yml", "index.md"]
+      }
+    ],
+    "resource": [],
+    "dest": "_site",
+    "template": ["default", "modern"],
+    "globalMetadata": {
+      "_appName": "VellumPdf",
+      "_appTitle": "VellumPdf API Reference",
+      "_appFooter": "VellumPdf — Apache 2.0 — <a href='https://github.com/Tim81/VellumPDF'>GitHub</a>",
+      "_enableSearch": true
+    },
+    "postProcessors": [],
+    "noLangKeyword": false,
+    "keepFileLink": false,
+    "cleanupCacheHistory": false,
+    "disableGitFeatures": false
+  }
+}

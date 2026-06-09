@@ -1,0 +1,65 @@
+name: Docs
+
+# Publishes the DocFX API-reference site to GitHub Pages.
+#
+# Prerequisites: in the repository Settings → Pages, set Source to
+# "GitHub Actions". The workflow will fail the deploy step until that
+# setting is enabled, but it will NOT block CI (this is a separate,
+# non-gating workflow).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'docs/**'
+      - 'docfx.json'
+      - 'toc.yml'
+      - 'index.md'
+      - '.github/workflows/docs.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Only one concurrent deployment; cancel in-progress runs for the same branch.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build-docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Install DocFX
+        run: dotnet tool update -g docfx
+
+      - name: Generate API metadata
+        run: docfx metadata docfx.json
+
+      - name: Build site
+        run: docfx build docfx.json
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy-docs:
+    needs: build-docs
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deploy
+        uses: actions/deploy-pages@v4

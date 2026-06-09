@@ -1,0 +1,4 @@
+- name: Architecture
+  href: architecture.md
+- name: Kernel Guide
+  href: kernel-guide.md
