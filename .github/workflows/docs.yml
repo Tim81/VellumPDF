@@ -2,10 +2,11 @@ name: Docs
 
 # Publishes the DocFX API-reference site to GitHub Pages.
 #
-# Prerequisites: in the repository Settings → Pages, set Source to
-# "GitHub Actions". The workflow will fail the deploy step until that
-# setting is enabled, but it will NOT block CI (this is a separate,
-# non-gating workflow).
+# To publish: in the repository Settings → Pages, set Source to
+# "GitHub Actions". The deploy job is best-effort (continue-on-error), so
+# this workflow stays green before Pages is enabled; once it is enabled,
+# pushes to main publish the site automatically. Separate, non-gating
+# workflow — independent of CI.
 
 on:
   push:
@@ -56,6 +57,10 @@ jobs:
   deploy-docs:
     needs: build-docs
     runs-on: ubuntu-latest
+    # Best-effort: until Pages is enabled the deploy API returns 404. This
+    # keeps the Docs run green; once Pages is enabled (Settings → Pages →
+    # Source: GitHub Actions) the site publishes automatically.
+    continue-on-error: true
     environment:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
