@@ -58,7 +58,42 @@ jobs:
           sudo chmod +x /usr/local/bin/verapdf
 
       - name: Test
-        run: dotnet test VellumPdf.slnx -c Release --no-build
+        run: dotnet test VellumPdf.slnx -c Release --no-build --collect:"XPlat Code Coverage" --results-directory ${{ runner.temp }}/coverage
+
+      - name: Enforce coverage threshold
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'EOF'
+          import xml.etree.ElementTree as ET, glob, os, sys
+
+          cov_dir = os.path.join(os.environ["RUNNER_TEMP"], "coverage")
+          files = glob.glob(os.path.join(cov_dir, "**", "coverage.cobertura.xml"), recursive=True)
+          if not files:
+              print("::error::No coverage.cobertura.xml files found under", cov_dir)
+              sys.exit(1)
+
+          THRESHOLD = 68
+
+          total_covered = 0
+          total_valid = 0
+          for f in sorted(files):
+              tree = ET.parse(f)
+              root = tree.getroot()
+              lc = int(root.get("lines-covered", 0))
+              lv = int(root.get("lines-valid", 0))
+              print(f"  {os.path.relpath(f, cov_dir)}: covered={lc}, valid={lv}, line-rate={lc/lv if lv else 0:.4f}")
+              total_covered += lc
+              total_valid += lv
+
+          combined = total_covered / total_valid if total_valid else 0
+          pct = combined * 100
+          print(f"Combined line coverage: {pct:.1f}% (threshold: {THRESHOLD}%)")
+          if pct < THRESHOLD:
+              print(f"::error::Line coverage {pct:.1f}% is below the required threshold of {THRESHOLD}%.")
+              sys.exit(1)
+          print("Coverage gate passed.")
+          EOF
 
       - name: Format check
         run: dotnet format VellumPdf.slnx --verify-no-changes
