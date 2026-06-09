@@ -12,21 +12,21 @@ namespace VellumPdf.Layout.Tests;
 /// <summary>
 /// End-to-end tests for embedded TrueType fonts through the layout API.
 /// All tests are guarded by a font-presence check and skip silently on systems
-/// where the font is absent (CI / Linux).
+/// where no supported font is found (dev boxes with neither Arial nor DejaVuSans).
+/// On Linux CI (fonts-dejavu-core installed) DejaVuSans is used automatically.
 /// </summary>
 public sealed class EmbeddedFontTests
 {
-    private const string FontPath = @"C:\Windows\Fonts\arial.ttf";
-
     // ── Test 1: Document.UseTrueTypeFont + Paragraph → /Type0 in PDF ──────────
 
     [Fact]
     public void Document_useTrueTypeFont_paragraphRendersType0()
     {
-        if (!File.Exists(FontPath)) return;
+        var fontPath = PdfTestUtil.FindPlatformFont();
+        if (fontPath is null) return;
 
         using var doc = new Document();
-        var handle = doc.UseTrueTypeFont(File.ReadAllBytes(FontPath));
+        var handle = doc.UseTrueTypeFont(File.ReadAllBytes(fontPath));
 
         var style = new TextStyle { FontRef = handle, FontSize = 12 };
         doc.Add(new Paragraph("Hello, embedded world!", style));
@@ -47,10 +47,11 @@ public sealed class EmbeddedFontTests
     [Fact]
     public void Document_loadTrueTypeFont_pathOverload_works()
     {
-        if (!File.Exists(FontPath)) return;
+        var fontPath = PdfTestUtil.FindPlatformFont();
+        if (fontPath is null) return;
 
         using var doc = new Document();
-        var handle = doc.LoadTrueTypeFont(FontPath);
+        var handle = doc.LoadTrueTypeFont(fontPath);
 
         Assert.NotNull(handle);
         Assert.NotEmpty(handle.ResourceName);
@@ -70,10 +71,11 @@ public sealed class EmbeddedFontTests
     [Fact]
     public void Document_embeddedFont_contentStreamHasHexGlyphRun()
     {
-        if (!File.Exists(FontPath)) return;
+        var fontPath = PdfTestUtil.FindPlatformFont();
+        if (fontPath is null) return;
 
         using var doc = new Document();
-        var handle = doc.UseTrueTypeFont(File.ReadAllBytes(FontPath));
+        var handle = doc.UseTrueTypeFont(File.ReadAllBytes(fontPath));
         var style = new TextStyle { FontRef = handle, FontSize = 12 };
         doc.Add(new Paragraph("Hello", style));
 
@@ -96,10 +98,11 @@ public sealed class EmbeddedFontTests
     [Fact]
     public void Document_mixedFonts_bothWorkTogether()
     {
-        if (!File.Exists(FontPath)) return;
+        var fontPath = PdfTestUtil.FindPlatformFont();
+        if (fontPath is null) return;
 
         using var doc = new Document();
-        var handle = doc.UseTrueTypeFont(File.ReadAllBytes(FontPath));
+        var handle = doc.UseTrueTypeFont(File.ReadAllBytes(fontPath));
 
         doc.Add(new Paragraph("Standard-14 paragraph"));
         doc.Add(new Paragraph("Embedded font paragraph",
@@ -139,10 +142,11 @@ public sealed class EmbeddedFontTests
     [Fact]
     public void Document_embeddedFont_multiPage_fontsWiredOnAllPages()
     {
-        if (!File.Exists(FontPath)) return;
+        var fontPath = PdfTestUtil.FindPlatformFont();
+        if (fontPath is null) return;
 
         using var doc = new Document();
-        var handle = doc.UseTrueTypeFont(File.ReadAllBytes(FontPath));
+        var handle = doc.UseTrueTypeFont(File.ReadAllBytes(fontPath));
         var style = new TextStyle { FontRef = handle, FontSize = 12 };
 
         // Generate enough paragraphs to force pagination
