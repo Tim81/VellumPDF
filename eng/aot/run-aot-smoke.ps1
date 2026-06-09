@@ -14,7 +14,7 @@ $ErrorActionPreference = 'Stop'
 $installer = "C:\Program Files (x86)\Microsoft Visual Studio\Installer"
 if (Test-Path $installer) { $env:PATH = "$installer;$env:PATH" }
 
-$rid  = if ($IsWindows -or $null -eq $IsWindows) { 'win-x64' } elseif ($IsMacOS) { 'osx-x64' } else { 'linux-x64' }
+$rid  = if ($IsWindows -or $null -eq $IsWindows) { 'win-x64' } elseif ($IsMacOS) { if ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture -eq [System.Runtime.InteropServices.Architecture]::Arm64) { 'osx-arm64' } else { 'osx-x64' } } else { 'linux-x64' }
 $proj = Join-Path $PSScriptRoot 'VellumPdf.AotSmoke\VellumPdf.AotSmoke.csproj'
 
 Write-Host "Publishing Native AOT ($rid)..." -ForegroundColor Cyan
