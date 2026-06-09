@@ -6,6 +6,9 @@ artifacts/
 [Rr]elease/
 *.binlog
 
+# BenchmarkDotNet output
+BenchmarkDotNet.Artifacts/
+
 # Test output
 [Tt]est[Rr]esults/
 *.trx
