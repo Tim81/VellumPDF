@@ -12,6 +12,11 @@ internal sealed class CmapTable
 {
     private readonly Dictionary<int, ushort> _map;
 
+    // Format-4 covers the Basic Multilingual Plane (0x0000-0xFFFF), so a well-formed subtable
+    // maps at most 0x10000 code points. Budget 2x that and reject hostile subtables whose
+    // overlapping segments would otherwise span billions of iterations.
+    private const int Format4CodePointBudget = 0x20000;
+
     private CmapTable(Dictionary<int, ushort> map) => _map = map;
 
     public bool TryGetGlyphId(int codePoint, out ushort glyphId) =>
@@ -69,12 +74,10 @@ internal sealed class CmapTable
             idRangeOffsets[i] = r.ReadU16(idRangeOffsetsPos + i * 2);
         }
 
-        // Format-4 covers the Basic Multilingual Plane (code points 0x0000-0xFFFF), so the total
-        // number of mapped code points is bounded by 0x10000. A hostile font can declare many
-        // wide, overlapping segments whose combined ranges span billions of iterations; budget
-        // the total work to that bound (with slack) and fail cleanly instead of hanging.
+        // Budget the total code-point iterations (see Format4CodePointBudget) so hostile
+        // overlapping segments fail cleanly instead of hanging.
         var map = new Dictionary<int, ushort>();
-        var budget = 0x20000;
+        var budget = Format4CodePointBudget;
         for (var i = 0; i < segCount; i++)
         {
             var start = startCodes[i];
