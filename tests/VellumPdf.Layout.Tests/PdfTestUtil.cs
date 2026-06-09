@@ -11,6 +11,56 @@ namespace VellumPdf.Layout.Tests;
 internal static class PdfTestUtil
 {
     /// <summary>
+    /// Returns the first platform font path that exists, or null if neither is present.
+    /// Tries Windows Arial then Linux DejaVuSans (installed by fonts-dejavu-core on CI).
+    /// </summary>
+    internal static string? FindPlatformFont()
+    {
+        string[] candidates =
+        [
+            @"C:\Windows\Fonts\arial.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        ];
+        foreach (var c in candidates)
+            if (File.Exists(c)) return c;
+        return null;
+    }
+
+    /// <summary>
+    /// Returns the first OpenType-CFF (.otf) font path found on the current platform,
+    /// or null if none is available. On CI, fonts-texgyre provides OTF files.
+    /// </summary>
+    internal static string? FindOtfFont()
+    {
+        string[] candidates =
+        [
+            // Linux CI — TeX Gyre (fonts-texgyre apt package)
+            "/usr/share/fonts/opentype/texgyre/texgyreadventor-regular.otf",
+            "/usr/share/fonts/opentype/texgyre/texgyreheros-regular.otf",
+            "/usr/share/fonts/opentype/texgyre/texgyrecursor-regular.otf",
+            "/usr/share/fonts/opentype/texgyre/texgyrebonum-regular.otf",
+            "/usr/share/fonts/opentype/texgyre/texgyrechorus-regular.otf",
+            "/usr/share/fonts/opentype/texgyre/texgyrepagella-regular.otf",
+            "/usr/share/fonts/opentype/texgyre/texgyreschola-regular.otf",
+            "/usr/share/fonts/opentype/texgyre/texgyretermes-regular.otf",
+            // Generic Linux fallbacks
+            "/usr/share/fonts/opentype/noto/NotoSans-Regular.otf",
+            "/usr/share/fonts/opentype/freefont/FreeSans.otf",
+        ];
+        foreach (var c in candidates)
+            if (File.Exists(c)) return c;
+
+        // Broader Linux search under /usr/share/fonts for any .otf
+        if (Directory.Exists("/usr/share/fonts"))
+        {
+            foreach (var f in Directory.EnumerateFiles("/usr/share/fonts", "*.otf", SearchOption.AllDirectories))
+                return f;
+        }
+
+        return null;
+    }
+
+    /// <summary>
     /// Scans <paramref name="pdf"/> for FlateDecode stream data, decompresses each stream, and
     /// concatenates the results as Latin-1 text for assertion.
     /// Uses the <c>/Length N</c> field from each stream dict to slice exact bytes so compressed

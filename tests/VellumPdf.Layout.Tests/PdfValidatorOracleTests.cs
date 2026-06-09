@@ -431,52 +431,15 @@ public sealed class PdfValidatorOracleTests : IDisposable
 
     /// <summary>
     /// Returns the first platform font path that exists, or null if neither is present.
+    /// Delegates to the shared cross-platform finder in PdfTestUtil.
     /// </summary>
-    private static string? FindPlatformFont()
-    {
-        string[] candidates =
-        [
-            @"C:\Windows\Fonts\arial.ttf",
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        ];
-        foreach (var c in candidates)
-            if (File.Exists(c)) return c;
-        return null;
-    }
+    private static string? FindPlatformFont() => PdfTestUtil.FindPlatformFont();
 
     /// <summary>
     /// Returns the first OpenType-CFF (.otf) font path found on the current platform,
-    /// or null if none is available. On CI, fonts-texgyre provides OTF files.
+    /// or null if none is available. Delegates to the shared finder in PdfTestUtil.
     /// </summary>
-    private static string? FindOtfFont()
-    {
-        string[] candidates =
-        [
-            // Linux CI — TeX Gyre (fonts-texgyre apt package)
-            "/usr/share/fonts/opentype/texgyre/texgyreadventor-regular.otf",
-            "/usr/share/fonts/opentype/texgyre/texgyreheros-regular.otf",
-            "/usr/share/fonts/opentype/texgyre/texgyrecursor-regular.otf",
-            "/usr/share/fonts/opentype/texgyre/texgyrebonum-regular.otf",
-            "/usr/share/fonts/opentype/texgyre/texgyrechorus-regular.otf",
-            "/usr/share/fonts/opentype/texgyre/texgyrepagella-regular.otf",
-            "/usr/share/fonts/opentype/texgyre/texgyreschola-regular.otf",
-            "/usr/share/fonts/opentype/texgyre/texgyretermes-regular.otf",
-            // Generic Linux fallbacks
-            "/usr/share/fonts/opentype/noto/NotoSans-Regular.otf",
-            "/usr/share/fonts/opentype/freefont/FreeSans.otf",
-        ];
-        foreach (var c in candidates)
-            if (File.Exists(c)) return c;
-
-        // Broader Linux search under /usr/share/fonts for any .otf
-        if (Directory.Exists("/usr/share/fonts"))
-        {
-            foreach (var f in Directory.EnumerateFiles("/usr/share/fonts", "*.otf", SearchOption.AllDirectories))
-                return f;
-        }
-
-        return null;
-    }
+    private static string? FindOtfFont() => PdfTestUtil.FindOtfFont();
 
     /// <summary>
     /// Attempts to run an external CLI tool and captures its output.
