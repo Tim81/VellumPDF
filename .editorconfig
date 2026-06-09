@@ -31,7 +31,7 @@ dotnet_style_require_accessibility_modifiers = always:suggestion
 dotnet_style_namespace_match_folder = true:suggestion
 
 # Required file header (copyright + license). Enforced via `dotnet format` / CI.
-file_header_template = Copyright 2026 Timothy van der Ham (@Tim81)\nSPDX-License-Identifier: Apache-2.0
+file_header_template = Copyright © Timothy van der Ham (@Tim81)\nSPDX-License-Identifier: Apache-2.0
 dotnet_diagnostic.IDE0073.severity = warning
 
 # Naming conventions

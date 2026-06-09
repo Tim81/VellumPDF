@@ -1,5 +1,5 @@
 #!/usr/bin/env pwsh
-# Copyright 2026 Timothy van der Ham (@Tim81)
+# Copyright © Timothy van der Ham (@Tim81)
 # SPDX-License-Identifier: Apache-2.0
 #
 # Builds the VellumPdf.AotSmoke harness with Native AOT and runs it, proving the
