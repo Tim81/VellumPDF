@@ -1,6 +1,7 @@
 // Copyright 2026 Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
-// VellumPdf.Layout's global-using propagates the VellumPdf.Document namespace,
-// which would shadow VellumPdf.Layout.Document. Pin the type explicitly.
+// Ergonomic alias for the high-level VellumPdf.Layout.Document type, used across
+// the benchmark files (avoids a broad `using VellumPdf.Layout;` alongside the
+// more specific VellumPdf.Layout.* usings).
 global using LayoutDocument = VellumPdf.Layout.Document;
