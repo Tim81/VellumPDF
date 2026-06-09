@@ -5,4 +5,8 @@
     <ProjectReference Include="..\..\src\VellumPdf.Signing\VellumPdf.Signing.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="CsCheck" />
+  </ItemGroup>
+
 </Project>
