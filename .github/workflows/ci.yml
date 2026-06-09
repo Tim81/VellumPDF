@@ -63,6 +63,9 @@ jobs:
       - name: Format check
         run: dotnet format VellumPdf.slnx --verify-no-changes
 
+      - name: Pack
+        run: dotnet pack VellumPdf.slnx -c Release --no-build -o ${{ runner.temp }}/packages
+
   aot-smoke:
     strategy:
       fail-fast: false
