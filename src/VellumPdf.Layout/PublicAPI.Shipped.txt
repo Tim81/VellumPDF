@@ -1,0 +1,324 @@
+#nullable enable
+override VellumPdf.Layout.Core.ColorRgb.GetHashCode() -> int
+override VellumPdf.Layout.Core.EdgeInsets.GetHashCode() -> int
+override VellumPdf.Layout.Core.LayoutBox.GetHashCode() -> int
+override VellumPdf.Layout.Core.LayoutBox.ToString() -> string!
+static readonly VellumPdf.Layout.Core.ColorRgb.Black -> VellumPdf.Layout.Core.ColorRgb
+static readonly VellumPdf.Layout.Core.ColorRgb.White -> VellumPdf.Layout.Core.ColorRgb
+static readonly VellumPdf.Layout.Core.EdgeInsets.Zero -> VellumPdf.Layout.Core.EdgeInsets
+static readonly VellumPdf.Layout.Core.TextStyle.Default -> VellumPdf.Layout.Core.TextStyle!
+static VellumPdf.Layout.Core.ColorRgb.FromHex(uint rgb) -> VellumPdf.Layout.Core.ColorRgb
+static VellumPdf.Layout.Core.ColorRgb.implicit operator VellumPdf.Graphics.KernelColor(VellumPdf.Layout.Core.ColorRgb c) -> VellumPdf.Graphics.KernelColor
+static VellumPdf.Layout.Core.ColorRgb.implicit operator VellumPdf.Layout.Core.ColorRgb(VellumPdf.Graphics.KernelColor c) -> VellumPdf.Layout.Core.ColorRgb
+static VellumPdf.Layout.Core.ColorRgb.operator !=(VellumPdf.Layout.Core.ColorRgb left, VellumPdf.Layout.Core.ColorRgb right) -> bool
+static VellumPdf.Layout.Core.ColorRgb.operator ==(VellumPdf.Layout.Core.ColorRgb left, VellumPdf.Layout.Core.ColorRgb right) -> bool
+static VellumPdf.Layout.Core.EdgeInsets.operator !=(VellumPdf.Layout.Core.EdgeInsets left, VellumPdf.Layout.Core.EdgeInsets right) -> bool
+static VellumPdf.Layout.Core.EdgeInsets.operator ==(VellumPdf.Layout.Core.EdgeInsets left, VellumPdf.Layout.Core.EdgeInsets right) -> bool
+static VellumPdf.Layout.Core.FontReference.implicit operator VellumPdf.Layout.Core.FontReference(VellumPdf.Fonts.EmbeddedFontHandle! handle) -> VellumPdf.Layout.Core.FontReference
+static VellumPdf.Layout.Core.FontReference.implicit operator VellumPdf.Layout.Core.FontReference(VellumPdf.Fonts.Standard14 font) -> VellumPdf.Layout.Core.FontReference
+static VellumPdf.Layout.Core.LayoutBox.operator !=(VellumPdf.Layout.Core.LayoutBox left, VellumPdf.Layout.Core.LayoutBox right) -> bool
+static VellumPdf.Layout.Core.LayoutBox.operator ==(VellumPdf.Layout.Core.LayoutBox left, VellumPdf.Layout.Core.LayoutBox right) -> bool
+static VellumPdf.Layout.Core.LayoutResult.Full(VellumPdf.Layout.Core.LayoutBox occupied) -> VellumPdf.Layout.Core.LayoutResult!
+static VellumPdf.Layout.Core.LayoutResult.Nothing() -> VellumPdf.Layout.Core.LayoutResult!
+static VellumPdf.Layout.Core.LayoutResult.Partial(VellumPdf.Layout.Core.LayoutBox occupied, VellumPdf.Layout.Core.IRenderer! split, VellumPdf.Layout.Core.IRenderer! overflow) -> VellumPdf.Layout.Core.LayoutResult!
+VellumPdf.Layout.Core.ColorRgb
+VellumPdf.Layout.Core.ColorRgb.B.get -> double
+VellumPdf.Layout.Core.ColorRgb.B.init -> void
+VellumPdf.Layout.Core.ColorRgb.ColorRgb() -> void
+VellumPdf.Layout.Core.ColorRgb.ColorRgb(double R, double G, double B) -> void
+VellumPdf.Layout.Core.ColorRgb.Deconstruct(out double R, out double G, out double B) -> void
+VellumPdf.Layout.Core.ColorRgb.Equals(VellumPdf.Layout.Core.ColorRgb other) -> bool
+VellumPdf.Layout.Core.ColorRgb.G.get -> double
+VellumPdf.Layout.Core.ColorRgb.G.init -> void
+VellumPdf.Layout.Core.ColorRgb.R.get -> double
+VellumPdf.Layout.Core.ColorRgb.R.init -> void
+VellumPdf.Layout.Core.DrawContext
+VellumPdf.Layout.Core.DrawContext.AddOutlineEntry(string! title, int level, double layoutY) -> void
+VellumPdf.Layout.Core.DrawContext.AddUriLinkAnnotation(VellumPdf.Layout.Core.LayoutBox box, string! uri) -> void
+VellumPdf.Layout.Core.DrawContext.Canvas.get -> VellumPdf.Canvas.PdfCanvas!
+VellumPdf.Layout.Core.DrawContext.DrawContext(VellumPdf.Canvas.PdfCanvas! canvas, VellumPdf.Layout.Core.LayoutBox pageBounds, VellumPdf.Layout.Rendering.RendererContext! rendererContext, VellumPdf.Document.PdfDocument! document, VellumPdf.Document.PdfPage! page) -> void
+VellumPdf.Layout.Core.DrawContext.GetFont(VellumPdf.Fonts.Standard14 font) -> VellumPdf.Fonts.PdfFontResource!
+VellumPdf.Layout.Core.DrawContext.PageBounds.get -> VellumPdf.Layout.Core.LayoutBox
+VellumPdf.Layout.Core.DrawContext.RegisterStructElem(VellumPdf.Document.PdfStructElem! elem) -> void
+VellumPdf.Layout.Core.DrawContext.RegisterStructElemTree(VellumPdf.Document.PdfStructElem! root) -> void
+VellumPdf.Layout.Core.DrawContext.RendererContext.get -> VellumPdf.Layout.Rendering.RendererContext!
+VellumPdf.Layout.Core.DrawContext.StampStructElemPage(VellumPdf.Document.PdfStructElem! elem) -> void
+VellumPdf.Layout.Core.DrawContext.Tagged.get -> bool
+VellumPdf.Layout.Core.DrawContext.ToPdfRect(VellumPdf.Layout.Core.LayoutBox box) -> (double x, double y, double w, double h)
+VellumPdf.Layout.Core.DrawContext.ToPdfY(double layoutY) -> double
+VellumPdf.Layout.Core.DrawContext.UseEmbeddedFont(VellumPdf.Fonts.EmbeddedFontHandle! handle) -> string!
+VellumPdf.Layout.Core.EdgeInsets
+VellumPdf.Layout.Core.EdgeInsets.Bottom.get -> double
+VellumPdf.Layout.Core.EdgeInsets.Bottom.init -> void
+VellumPdf.Layout.Core.EdgeInsets.Deconstruct(out double Top, out double Right, out double Bottom, out double Left) -> void
+VellumPdf.Layout.Core.EdgeInsets.EdgeInsets() -> void
+VellumPdf.Layout.Core.EdgeInsets.EdgeInsets(double all) -> void
+VellumPdf.Layout.Core.EdgeInsets.EdgeInsets(double Top, double Right, double Bottom, double Left) -> void
+VellumPdf.Layout.Core.EdgeInsets.EdgeInsets(double topBottom, double leftRight) -> void
+VellumPdf.Layout.Core.EdgeInsets.Equals(VellumPdf.Layout.Core.EdgeInsets other) -> bool
+VellumPdf.Layout.Core.EdgeInsets.Horizontal.get -> double
+VellumPdf.Layout.Core.EdgeInsets.Left.get -> double
+VellumPdf.Layout.Core.EdgeInsets.Left.init -> void
+VellumPdf.Layout.Core.EdgeInsets.Right.get -> double
+VellumPdf.Layout.Core.EdgeInsets.Right.init -> void
+VellumPdf.Layout.Core.EdgeInsets.Top.get -> double
+VellumPdf.Layout.Core.EdgeInsets.Top.init -> void
+VellumPdf.Layout.Core.EdgeInsets.Vertical.get -> double
+VellumPdf.Layout.Core.FontReference
+VellumPdf.Layout.Core.FontReference.Embedded.get -> VellumPdf.Fonts.EmbeddedFontHandle!
+VellumPdf.Layout.Core.FontReference.FontReference() -> void
+VellumPdf.Layout.Core.FontReference.FontReference(VellumPdf.Fonts.EmbeddedFontHandle! handle) -> void
+VellumPdf.Layout.Core.FontReference.FontReference(VellumPdf.Fonts.Standard14 font) -> void
+VellumPdf.Layout.Core.FontReference.IsEmbedded.get -> bool
+VellumPdf.Layout.Core.FontReference.MeasureString(string! text, double pointSize) -> double
+VellumPdf.Layout.Core.FontReference.Standard14.get -> VellumPdf.Fonts.Standard14
+VellumPdf.Layout.Core.HorizontalAlignment
+VellumPdf.Layout.Core.HorizontalAlignment.Center = 1 -> VellumPdf.Layout.Core.HorizontalAlignment
+VellumPdf.Layout.Core.HorizontalAlignment.Justify = 3 -> VellumPdf.Layout.Core.HorizontalAlignment
+VellumPdf.Layout.Core.HorizontalAlignment.Left = 0 -> VellumPdf.Layout.Core.HorizontalAlignment
+VellumPdf.Layout.Core.HorizontalAlignment.Right = 2 -> VellumPdf.Layout.Core.HorizontalAlignment
+VellumPdf.Layout.Core.IRenderer
+VellumPdf.Layout.Core.IRenderer.Draw(VellumPdf.Layout.Core.DrawContext! context) -> void
+VellumPdf.Layout.Core.IRenderer.Layout(VellumPdf.Layout.Core.LayoutContext! context) -> VellumPdf.Layout.Core.LayoutResult!
+VellumPdf.Layout.Core.LayoutBox
+VellumPdf.Layout.Core.LayoutBox.Bottom.get -> double
+VellumPdf.Layout.Core.LayoutBox.Deconstruct(out double X, out double Y, out double Width, out double Height) -> void
+VellumPdf.Layout.Core.LayoutBox.Deflate(double left, double top, double right, double bottom) -> VellumPdf.Layout.Core.LayoutBox
+VellumPdf.Layout.Core.LayoutBox.Deflate(VellumPdf.Layout.Core.EdgeInsets insets) -> VellumPdf.Layout.Core.LayoutBox
+VellumPdf.Layout.Core.LayoutBox.Equals(VellumPdf.Layout.Core.LayoutBox other) -> bool
+VellumPdf.Layout.Core.LayoutBox.Height.get -> double
+VellumPdf.Layout.Core.LayoutBox.Height.init -> void
+VellumPdf.Layout.Core.LayoutBox.IsEmpty.get -> bool
+VellumPdf.Layout.Core.LayoutBox.LayoutBox() -> void
+VellumPdf.Layout.Core.LayoutBox.LayoutBox(double X, double Y, double Width, double Height) -> void
+VellumPdf.Layout.Core.LayoutBox.Right.get -> double
+VellumPdf.Layout.Core.LayoutBox.Width.get -> double
+VellumPdf.Layout.Core.LayoutBox.Width.init -> void
+VellumPdf.Layout.Core.LayoutBox.WithHeight(double height) -> VellumPdf.Layout.Core.LayoutBox
+VellumPdf.Layout.Core.LayoutBox.WithY(double y) -> VellumPdf.Layout.Core.LayoutBox
+VellumPdf.Layout.Core.LayoutBox.X.get -> double
+VellumPdf.Layout.Core.LayoutBox.X.init -> void
+VellumPdf.Layout.Core.LayoutBox.Y.get -> double
+VellumPdf.Layout.Core.LayoutBox.Y.init -> void
+VellumPdf.Layout.Core.LayoutContext
+VellumPdf.Layout.Core.LayoutContext.Area.get -> VellumPdf.Layout.Core.LayoutBox
+VellumPdf.Layout.Core.LayoutContext.ContentTop.get -> double
+VellumPdf.Layout.Core.LayoutContext.LayoutContext(VellumPdf.Layout.Core.LayoutBox area, double contentTop = 0) -> void
+VellumPdf.Layout.Core.LayoutContext.WithArea(VellumPdf.Layout.Core.LayoutBox area) -> VellumPdf.Layout.Core.LayoutContext!
+VellumPdf.Layout.Core.LayoutResult
+VellumPdf.Layout.Core.LayoutResult.OccupiedArea.get -> VellumPdf.Layout.Core.LayoutBox?
+VellumPdf.Layout.Core.LayoutResult.Outcome
+VellumPdf.Layout.Core.LayoutResult.Outcome.Full = 0 -> VellumPdf.Layout.Core.LayoutResult.Outcome
+VellumPdf.Layout.Core.LayoutResult.Outcome.Nothing = 2 -> VellumPdf.Layout.Core.LayoutResult.Outcome
+VellumPdf.Layout.Core.LayoutResult.Outcome.Partial = 1 -> VellumPdf.Layout.Core.LayoutResult.Outcome
+VellumPdf.Layout.Core.LayoutResult.OverflowRenderer.get -> VellumPdf.Layout.Core.IRenderer?
+VellumPdf.Layout.Core.LayoutResult.SplitRenderer.get -> VellumPdf.Layout.Core.IRenderer?
+VellumPdf.Layout.Core.LayoutResult.Status.get -> VellumPdf.Layout.Core.LayoutResult.Outcome
+VellumPdf.Layout.Core.TextStyle
+VellumPdf.Layout.Core.TextStyle.Color.get -> VellumPdf.Layout.Core.ColorRgb
+VellumPdf.Layout.Core.TextStyle.Color.init -> void
+VellumPdf.Layout.Core.TextStyle.EffectiveLeading.get -> double
+VellumPdf.Layout.Core.TextStyle.Font.get -> VellumPdf.Fonts.Standard14
+VellumPdf.Layout.Core.TextStyle.Font.init -> void
+VellumPdf.Layout.Core.TextStyle.FontRef.get -> VellumPdf.Layout.Core.FontReference
+VellumPdf.Layout.Core.TextStyle.FontRef.init -> void
+VellumPdf.Layout.Core.TextStyle.FontSize.get -> double
+VellumPdf.Layout.Core.TextStyle.FontSize.init -> void
+VellumPdf.Layout.Core.TextStyle.Leading.get -> double
+VellumPdf.Layout.Core.TextStyle.Leading.init -> void
+VellumPdf.Layout.Core.TextStyle.LinkUri.get -> string?
+VellumPdf.Layout.Core.TextStyle.LinkUri.init -> void
+VellumPdf.Layout.Core.TextStyle.MeasureString(string! text) -> double
+VellumPdf.Layout.Core.TextStyle.TextStyle() -> void
+VellumPdf.Layout.Document
+VellumPdf.Layout.Document.Add(string! text, VellumPdf.Layout.Core.TextStyle? style = null) -> VellumPdf.Layout.Document!
+VellumPdf.Layout.Document.Add(VellumPdf.Layout.Elements.Heading! heading) -> VellumPdf.Layout.Document!
+VellumPdf.Layout.Document.Add(VellumPdf.Layout.Elements.LayoutImage! image) -> VellumPdf.Layout.Document!
+VellumPdf.Layout.Document.Add(VellumPdf.Layout.Elements.LineSeparator! separator) -> VellumPdf.Layout.Document!
+VellumPdf.Layout.Document.Add(VellumPdf.Layout.Elements.ListElement! list) -> VellumPdf.Layout.Document!
+VellumPdf.Layout.Document.Add(VellumPdf.Layout.Elements.Paragraph! paragraph) -> VellumPdf.Layout.Document!
+VellumPdf.Layout.Document.Add(VellumPdf.Layout.Elements.Table.TableElement! table) -> VellumPdf.Layout.Document!
+VellumPdf.Layout.Document.Conformance.get -> VellumPdf.Document.PdfConformance
+VellumPdf.Layout.Document.Conformance.set -> void
+VellumPdf.Layout.Document.Dispose() -> void
+VellumPdf.Layout.Document.Document() -> void
+VellumPdf.Layout.Document.Encrypt(VellumPdf.Encryption.PdfEncryptionSettings! settings) -> VellumPdf.Layout.Document!
+VellumPdf.Layout.Document.Footer.get -> VellumPdf.Layout.Elements.RunningBand?
+VellumPdf.Layout.Document.Footer.set -> void
+VellumPdf.Layout.Document.Header.get -> VellumPdf.Layout.Elements.RunningBand?
+VellumPdf.Layout.Document.Header.set -> void
+VellumPdf.Layout.Document.Info.get -> VellumPdf.Document.PdfDocumentInfo!
+VellumPdf.Layout.Document.LoadTrueTypeFont(string! path) -> VellumPdf.Fonts.EmbeddedFontHandle!
+VellumPdf.Layout.Document.Margins.get -> VellumPdf.Layout.Core.EdgeInsets
+VellumPdf.Layout.Document.Margins.set -> void
+VellumPdf.Layout.Document.PageSize.get -> VellumPdf.Document.PdfRectangle!
+VellumPdf.Layout.Document.PageSize.set -> void
+VellumPdf.Layout.Document.Save(string! path) -> void
+VellumPdf.Layout.Document.Save(System.IO.Stream! destination) -> void
+VellumPdf.Layout.Document.SetDefaultFont(VellumPdf.Layout.Core.TextStyle! style) -> VellumPdf.Layout.Document!
+VellumPdf.Layout.Document.SetFooter(string! template, VellumPdf.Layout.Core.TextStyle? style = null, VellumPdf.Layout.Core.HorizontalAlignment alignment = VellumPdf.Layout.Core.HorizontalAlignment.Center) -> VellumPdf.Layout.Document!
+VellumPdf.Layout.Document.SetHeader(string! template, VellumPdf.Layout.Core.TextStyle? style = null, VellumPdf.Layout.Core.HorizontalAlignment alignment = VellumPdf.Layout.Core.HorizontalAlignment.Center) -> VellumPdf.Layout.Document!
+VellumPdf.Layout.Document.Tagged.get -> bool
+VellumPdf.Layout.Document.Tagged.set -> void
+VellumPdf.Layout.Document.UseObjectStreams.get -> bool
+VellumPdf.Layout.Document.UseObjectStreams.set -> void
+VellumPdf.Layout.Document.UseTrueTypeFont(byte[]! fontData) -> VellumPdf.Fonts.EmbeddedFontHandle!
+VellumPdf.Layout.Elements.Heading
+VellumPdf.Layout.Elements.Heading.Alignment.get -> VellumPdf.Layout.Core.HorizontalAlignment
+VellumPdf.Layout.Elements.Heading.Alignment.init -> void
+VellumPdf.Layout.Elements.Heading.BookmarkTitle.get -> string?
+VellumPdf.Layout.Elements.Heading.BookmarkTitle.init -> void
+VellumPdf.Layout.Elements.Heading.Heading(string! text, VellumPdf.Layout.Core.TextStyle? style = null) -> void
+VellumPdf.Layout.Elements.Heading.Level.get -> int
+VellumPdf.Layout.Elements.Heading.Level.init -> void
+VellumPdf.Layout.Elements.Heading.Margins.get -> VellumPdf.Layout.Core.EdgeInsets
+VellumPdf.Layout.Elements.Heading.Margins.init -> void
+VellumPdf.Layout.Elements.Heading.Style.get -> VellumPdf.Layout.Core.TextStyle!
+VellumPdf.Layout.Elements.Heading.Text.get -> string!
+VellumPdf.Layout.Elements.LayoutImage
+VellumPdf.Layout.Elements.LayoutImage.Alignment.get -> VellumPdf.Layout.Core.HorizontalAlignment
+VellumPdf.Layout.Elements.LayoutImage.Alignment.init -> void
+VellumPdf.Layout.Elements.LayoutImage.AltText.get -> string?
+VellumPdf.Layout.Elements.LayoutImage.AltText.init -> void
+VellumPdf.Layout.Elements.LayoutImage.Height.get -> double?
+VellumPdf.Layout.Elements.LayoutImage.Height.init -> void
+VellumPdf.Layout.Elements.LayoutImage.Image.get -> VellumPdf.Images.PdfImageXObject!
+VellumPdf.Layout.Elements.LayoutImage.LayoutImage(VellumPdf.Images.PdfImageXObject! image) -> void
+VellumPdf.Layout.Elements.LayoutImage.Margins.get -> VellumPdf.Layout.Core.EdgeInsets
+VellumPdf.Layout.Elements.LayoutImage.Margins.init -> void
+VellumPdf.Layout.Elements.LayoutImage.Width.get -> double?
+VellumPdf.Layout.Elements.LayoutImage.Width.init -> void
+VellumPdf.Layout.Elements.LineSeparator
+VellumPdf.Layout.Elements.LineSeparator.Color.get -> VellumPdf.Layout.Core.ColorRgb
+VellumPdf.Layout.Elements.LineSeparator.Color.init -> void
+VellumPdf.Layout.Elements.LineSeparator.LineSeparator() -> void
+VellumPdf.Layout.Elements.LineSeparator.LineWidth.get -> double
+VellumPdf.Layout.Elements.LineSeparator.LineWidth.init -> void
+VellumPdf.Layout.Elements.LineSeparator.Margins.get -> VellumPdf.Layout.Core.EdgeInsets
+VellumPdf.Layout.Elements.LineSeparator.Margins.init -> void
+VellumPdf.Layout.Elements.ListElement
+VellumPdf.Layout.Elements.ListElement.Add(string! text, VellumPdf.Layout.Core.TextStyle? style = null) -> VellumPdf.Layout.Elements.ListElement!
+VellumPdf.Layout.Elements.ListElement.Add(VellumPdf.Layout.Elements.ListItem! item) -> VellumPdf.Layout.Elements.ListElement!
+VellumPdf.Layout.Elements.ListElement.DefaultStyle.get -> VellumPdf.Layout.Core.TextStyle?
+VellumPdf.Layout.Elements.ListElement.DefaultStyle.init -> void
+VellumPdf.Layout.Elements.ListElement.FormatMarker(int index) -> string!
+VellumPdf.Layout.Elements.ListElement.Indent.get -> double
+VellumPdf.Layout.Elements.ListElement.Indent.init -> void
+VellumPdf.Layout.Elements.ListElement.Items.get -> System.Collections.Generic.IReadOnlyList<VellumPdf.Layout.Elements.ListItem!>!
+VellumPdf.Layout.Elements.ListElement.ListElement(VellumPdf.Layout.Elements.ListStyle style = VellumPdf.Layout.Elements.ListStyle.Unordered, System.Collections.Generic.IEnumerable<VellumPdf.Layout.Elements.ListItem!>? items = null) -> void
+VellumPdf.Layout.Elements.ListElement.Margins.get -> VellumPdf.Layout.Core.EdgeInsets
+VellumPdf.Layout.Elements.ListElement.Margins.init -> void
+VellumPdf.Layout.Elements.ListElement.Style.get -> VellumPdf.Layout.Elements.ListStyle
+VellumPdf.Layout.Elements.ListItem
+VellumPdf.Layout.Elements.ListItem.AddChild(string! text, VellumPdf.Layout.Core.TextStyle? style = null) -> VellumPdf.Layout.Elements.ListItem!
+VellumPdf.Layout.Elements.ListItem.AddChild(VellumPdf.Layout.Elements.ListItem! child) -> VellumPdf.Layout.Elements.ListItem!
+VellumPdf.Layout.Elements.ListItem.Children.get -> System.Collections.Generic.IReadOnlyList<VellumPdf.Layout.Elements.ListItem!>?
+VellumPdf.Layout.Elements.ListItem.ListItem(string! text, VellumPdf.Layout.Core.TextStyle? style = null) -> void
+VellumPdf.Layout.Elements.ListItem.Style.get -> VellumPdf.Layout.Core.TextStyle?
+VellumPdf.Layout.Elements.ListItem.Style.init -> void
+VellumPdf.Layout.Elements.ListItem.Text.get -> string!
+VellumPdf.Layout.Elements.ListStyle
+VellumPdf.Layout.Elements.ListStyle.OrderedAlpha = 2 -> VellumPdf.Layout.Elements.ListStyle
+VellumPdf.Layout.Elements.ListStyle.OrderedDecimal = 1 -> VellumPdf.Layout.Elements.ListStyle
+VellumPdf.Layout.Elements.ListStyle.OrderedRoman = 3 -> VellumPdf.Layout.Elements.ListStyle
+VellumPdf.Layout.Elements.ListStyle.Unordered = 0 -> VellumPdf.Layout.Elements.ListStyle
+VellumPdf.Layout.Elements.Paragraph
+VellumPdf.Layout.Elements.Paragraph.Add(string! text, VellumPdf.Layout.Core.TextStyle? style = null) -> VellumPdf.Layout.Elements.Paragraph!
+VellumPdf.Layout.Elements.Paragraph.Alignment.get -> VellumPdf.Layout.Core.HorizontalAlignment
+VellumPdf.Layout.Elements.Paragraph.Alignment.init -> void
+VellumPdf.Layout.Elements.Paragraph.Margins.get -> VellumPdf.Layout.Core.EdgeInsets
+VellumPdf.Layout.Elements.Paragraph.Margins.init -> void
+VellumPdf.Layout.Elements.Paragraph.Paragraph(string! text, VellumPdf.Layout.Core.TextStyle? style = null) -> void
+VellumPdf.Layout.Elements.Paragraph.Paragraph(System.Collections.Generic.IEnumerable<VellumPdf.Layout.Elements.TextRun!>! runs) -> void
+VellumPdf.Layout.Elements.Paragraph.Runs.get -> System.Collections.Generic.IReadOnlyList<VellumPdf.Layout.Elements.TextRun!>!
+VellumPdf.Layout.Elements.Paragraph.Style.get -> VellumPdf.Layout.Core.TextStyle!
+VellumPdf.Layout.Elements.Paragraph.Text.get -> string!
+VellumPdf.Layout.Elements.RunningBand
+VellumPdf.Layout.Elements.RunningBand.Alignment.get -> VellumPdf.Layout.Core.HorizontalAlignment
+VellumPdf.Layout.Elements.RunningBand.EffectiveHeight.get -> double
+VellumPdf.Layout.Elements.RunningBand.Height.get -> double?
+VellumPdf.Layout.Elements.RunningBand.Height.init -> void
+VellumPdf.Layout.Elements.RunningBand.Resolve(int pageNumber, int totalPages) -> string!
+VellumPdf.Layout.Elements.RunningBand.RunningBand(string! template, VellumPdf.Layout.Core.TextStyle? style = null, VellumPdf.Layout.Core.HorizontalAlignment alignment = VellumPdf.Layout.Core.HorizontalAlignment.Center) -> void
+VellumPdf.Layout.Elements.RunningBand.Style.get -> VellumPdf.Layout.Core.TextStyle!
+VellumPdf.Layout.Elements.RunningBand.Template.get -> string!
+VellumPdf.Layout.Elements.Table.Cell
+VellumPdf.Layout.Elements.Table.Cell.Alignment.get -> VellumPdf.Layout.Core.HorizontalAlignment
+VellumPdf.Layout.Elements.Table.Cell.Alignment.init -> void
+VellumPdf.Layout.Elements.Table.Cell.Background.get -> VellumPdf.Layout.Core.ColorRgb?
+VellumPdf.Layout.Elements.Table.Cell.Background.init -> void
+VellumPdf.Layout.Elements.Table.Cell.Cell(string! content) -> void
+VellumPdf.Layout.Elements.Table.Cell.ColSpan.get -> int
+VellumPdf.Layout.Elements.Table.Cell.ColSpan.init -> void
+VellumPdf.Layout.Elements.Table.Cell.Content.get -> string!
+VellumPdf.Layout.Elements.Table.Cell.Padding.get -> VellumPdf.Layout.Core.EdgeInsets
+VellumPdf.Layout.Elements.Table.Cell.Padding.init -> void
+VellumPdf.Layout.Elements.Table.Cell.RowSpan.get -> int
+VellumPdf.Layout.Elements.Table.Cell.RowSpan.init -> void
+VellumPdf.Layout.Elements.Table.Cell.Style.get -> VellumPdf.Layout.Core.TextStyle?
+VellumPdf.Layout.Elements.Table.Cell.Style.init -> void
+VellumPdf.Layout.Elements.Table.Row
+VellumPdf.Layout.Elements.Table.Row.AddCell(string! text) -> VellumPdf.Layout.Elements.Table.Row!
+VellumPdf.Layout.Elements.Table.Row.AddCell(VellumPdf.Layout.Elements.Table.Cell! cell) -> VellumPdf.Layout.Elements.Table.Row!
+VellumPdf.Layout.Elements.Table.Row.Background.get -> VellumPdf.Layout.Core.ColorRgb?
+VellumPdf.Layout.Elements.Table.Row.Background.init -> void
+VellumPdf.Layout.Elements.Table.Row.Cells.get -> System.Collections.Generic.IReadOnlyList<VellumPdf.Layout.Elements.Table.Cell!>!
+VellumPdf.Layout.Elements.Table.Row.IsHeader.get -> bool
+VellumPdf.Layout.Elements.Table.Row.IsHeader.init -> void
+VellumPdf.Layout.Elements.Table.Row.Row() -> void
+VellumPdf.Layout.Elements.Table.TableElement
+VellumPdf.Layout.Elements.Table.TableElement.AddHeaderRow() -> VellumPdf.Layout.Elements.Table.Row!
+VellumPdf.Layout.Elements.Table.TableElement.AddRow(bool isHeader = false) -> VellumPdf.Layout.Elements.Table.Row!
+VellumPdf.Layout.Elements.Table.TableElement.BorderColor.get -> VellumPdf.Layout.Core.ColorRgb
+VellumPdf.Layout.Elements.Table.TableElement.BorderColor.init -> void
+VellumPdf.Layout.Elements.Table.TableElement.BorderWidth.get -> double
+VellumPdf.Layout.Elements.Table.TableElement.BorderWidth.init -> void
+VellumPdf.Layout.Elements.Table.TableElement.ColWidths.get -> System.Collections.Generic.IReadOnlyList<double>!
+VellumPdf.Layout.Elements.Table.TableElement.DefaultCellStyle.get -> VellumPdf.Layout.Core.TextStyle?
+VellumPdf.Layout.Elements.Table.TableElement.DefaultCellStyle.init -> void
+VellumPdf.Layout.Elements.Table.TableElement.Margins.get -> VellumPdf.Layout.Core.EdgeInsets
+VellumPdf.Layout.Elements.Table.TableElement.Margins.init -> void
+VellumPdf.Layout.Elements.Table.TableElement.Rows.get -> System.Collections.Generic.IReadOnlyList<VellumPdf.Layout.Elements.Table.Row!>!
+VellumPdf.Layout.Elements.Table.TableElement.SetColumnWidths(params double[]! widths) -> VellumPdf.Layout.Elements.Table.TableElement!
+VellumPdf.Layout.Elements.Table.TableElement.TableElement() -> void
+VellumPdf.Layout.Elements.TextRun
+VellumPdf.Layout.Elements.TextRun.Style.get -> VellumPdf.Layout.Core.TextStyle!
+VellumPdf.Layout.Elements.TextRun.Text.get -> string!
+VellumPdf.Layout.Elements.TextRun.TextRun(string! Text, VellumPdf.Layout.Core.TextStyle! Style) -> void
+VellumPdf.Layout.Rendering.DocumentRenderer
+VellumPdf.Layout.Rendering.DocumentRenderer.Add(VellumPdf.Layout.Core.IRenderer! renderer) -> VellumPdf.Layout.Rendering.DocumentRenderer!
+VellumPdf.Layout.Rendering.DocumentRenderer.DocumentRenderer(VellumPdf.Document.PdfDocument! pdf, VellumPdf.Document.PdfRectangle? pageSize = null, VellumPdf.Layout.Core.EdgeInsets? margins = null) -> void
+VellumPdf.Layout.Rendering.DocumentRenderer.Footer.get -> VellumPdf.Layout.Elements.RunningBand?
+VellumPdf.Layout.Rendering.DocumentRenderer.Footer.set -> void
+VellumPdf.Layout.Rendering.DocumentRenderer.Header.get -> VellumPdf.Layout.Elements.RunningBand?
+VellumPdf.Layout.Rendering.DocumentRenderer.Header.set -> void
+VellumPdf.Layout.Rendering.DocumentRenderer.Render(System.IO.Stream! destination) -> void
+VellumPdf.Layout.Rendering.LayoutImageRenderer
+VellumPdf.Layout.Rendering.LayoutImageRenderer.Draw(VellumPdf.Layout.Core.DrawContext! ctx) -> void
+VellumPdf.Layout.Rendering.LayoutImageRenderer.Layout(VellumPdf.Layout.Core.LayoutContext! ctx) -> VellumPdf.Layout.Core.LayoutResult!
+VellumPdf.Layout.Rendering.LayoutImageRenderer.LayoutImageRenderer(VellumPdf.Layout.Elements.LayoutImage! img) -> void
+VellumPdf.Layout.Rendering.LineSeparatorRenderer
+VellumPdf.Layout.Rendering.LineSeparatorRenderer.Draw(VellumPdf.Layout.Core.DrawContext! ctx) -> void
+VellumPdf.Layout.Rendering.LineSeparatorRenderer.Layout(VellumPdf.Layout.Core.LayoutContext! ctx) -> VellumPdf.Layout.Core.LayoutResult!
+VellumPdf.Layout.Rendering.LineSeparatorRenderer.LineSeparatorRenderer(VellumPdf.Layout.Elements.LineSeparator! sep) -> void
+VellumPdf.Layout.Rendering.ListRenderer
+VellumPdf.Layout.Rendering.ListRenderer.Draw(VellumPdf.Layout.Core.DrawContext! ctx) -> void
+VellumPdf.Layout.Rendering.ListRenderer.Layout(VellumPdf.Layout.Core.LayoutContext! context) -> VellumPdf.Layout.Core.LayoutResult!
+VellumPdf.Layout.Rendering.ListRenderer.ListRenderer(VellumPdf.Layout.Elements.ListElement! list, int startItem = 0) -> void
+VellumPdf.Layout.Rendering.ParagraphRenderer
+VellumPdf.Layout.Rendering.ParagraphRenderer.Draw(VellumPdf.Layout.Core.DrawContext! ctx) -> void
+VellumPdf.Layout.Rendering.ParagraphRenderer.Layout(VellumPdf.Layout.Core.LayoutContext! context) -> VellumPdf.Layout.Core.LayoutResult!
+VellumPdf.Layout.Rendering.ParagraphRenderer.ParagraphRenderer(VellumPdf.Layout.Elements.Paragraph! para, int startLine = 0) -> void
+VellumPdf.Layout.Rendering.RendererContext
+VellumPdf.Layout.Rendering.RendererContext.RegisterEmbeddedFontUsage(VellumPdf.Fonts.EmbeddedFontHandle! handle) -> void
+VellumPdf.Layout.Rendering.RendererContext.RegisterImageXObject(VellumPdf.Images.PdfImageXObject! image) -> string!
+VellumPdf.Layout.Rendering.RendererContext.RendererContext(VellumPdf.Document.PdfPage! page, VellumPdf.Document.PdfDocument! document) -> void
+VellumPdf.Layout.Rendering.Table.TableRenderer
+VellumPdf.Layout.Rendering.Table.TableRenderer.Draw(VellumPdf.Layout.Core.DrawContext! ctx) -> void
+VellumPdf.Layout.Rendering.Table.TableRenderer.Layout(VellumPdf.Layout.Core.LayoutContext! context) -> VellumPdf.Layout.Core.LayoutResult!
+VellumPdf.Layout.Rendering.Table.TableRenderer.TableRenderer(VellumPdf.Layout.Elements.Table.TableElement! table, int startRow = 0) -> void
+~override VellumPdf.Layout.Core.ColorRgb.Equals(object obj) -> bool
+~override VellumPdf.Layout.Core.ColorRgb.ToString() -> string
+~override VellumPdf.Layout.Core.EdgeInsets.Equals(object obj) -> bool
+~override VellumPdf.Layout.Core.EdgeInsets.ToString() -> string
+~override VellumPdf.Layout.Core.LayoutBox.Equals(object obj) -> bool
