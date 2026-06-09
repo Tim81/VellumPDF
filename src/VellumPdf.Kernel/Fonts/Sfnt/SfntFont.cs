@@ -29,10 +29,25 @@ internal sealed class SfntFont
         var sfVersion = r.ReadU32(0);
         var numTables = r.ReadU16(4);
 
+        // The table directory (12-byte header + 16 bytes per record) must fit within the
+        // font. This bounds numTables by the actual data length, so a truncated/hostile file
+        // cannot drive a huge allocation or read past the buffer.
+        if (12 + numTables * 16 > r.Length)
+            throw new InvalidDataException(
+                $"Malformed font: table directory of {numTables} record(s) exceeds the {r.Length}-byte font.");
+
         var tables = new Dictionary<Tag, SfntTableRecord>(numTables);
         for (var i = 0; i < numTables; i++)
         {
             var rec = ParseRecord(r, 12 + i * 16);
+
+            // Reject records whose data range falls outside the font (negative values arise
+            // when a UInt32 offset/length exceeds Int32.MaxValue and wraps).
+            if (rec.Offset < 0 || rec.Length < 0 || (long)rec.Offset + rec.Length > r.Length)
+                throw new InvalidDataException(
+                    $"Malformed font: table '{rec.TagValue}' range [{rec.Offset}, {(long)rec.Offset + rec.Length}) " +
+                    $"is outside the {r.Length}-byte font.");
+
             tables[rec.TagValue] = rec;
         }
 

@@ -52,18 +52,16 @@ public static class BmpImageLoader
             throw new NotSupportedException(
                 $"Only 8-, 24-, and 32-bit BMP are supported; found {bitCount}-bit.");
 
-        // Reject int.MinValue height (Math.Abs would overflow) and absurd dimensions.
-        if (rawHeight == int.MinValue)
-            throw new InvalidDataException("BMP height value is invalid (int.MinValue).");
+        // Reject int.MinValue dimensions (Math.Abs would overflow) before normalising.
+        if (rawWidth == int.MinValue || rawHeight == int.MinValue)
+            throw new InvalidDataException("BMP dimension value is invalid (int.MinValue).");
 
         var width = Math.Abs(rawWidth);
         var height = Math.Abs(rawHeight);
         var bottomUp = rawHeight > 0; // positive height = bottom-up storage
 
-        // Reject absurd dimensions before allocating (> 100M pixels).
-        var pixelCount = (long)width * height;
-        if (pixelCount > 100_000_000L)
-            throw new InvalidDataException($"BMP dimensions {width}×{height} exceed the 100M pixel safety limit.");
+        // Reject non-positive and absurd dimensions before allocating.
+        ImageLimits.ValidateDimensions("BMP", width, height);
 
         // Validate pixelOffset is within the file.
         if (pixelOffset >= (uint)bmpBytes.Length)
@@ -96,6 +94,7 @@ public static class BmpImageLoader
         var colorTableOffset = 54;
         var rgb = new byte[width * height * 3];
         var rowStride = (width + 3) & ~3; // DWORD-aligned
+        RequirePixelData(data, pixelOffset, height, rowStride);
 
         for (var y = 0; y < height; y++)
         {
@@ -122,6 +121,7 @@ public static class BmpImageLoader
         // Each row is padded to a DWORD boundary.
         var rowStride = (width * 3 + 3) & ~3;
         var rgb = new byte[width * height * 3];
+        RequirePixelData(data, pixelOffset, height, rowStride);
 
         for (var y = 0; y < height; y++)
         {
@@ -147,6 +147,7 @@ public static class BmpImageLoader
     {
         // 32-bit rows are inherently DWORD-aligned; no padding needed.
         var rowStride = width * 4;
+        RequirePixelData(data, pixelOffset, height, rowStride);
         var rgb = new byte[width * height * 3];
         var alpha = new byte[width * height];
         var hasNonOpaqueAlpha = false;
@@ -185,4 +186,12 @@ public static class BmpImageLoader
 
     private static ushort ReadU16Le(byte[] data, int offset) =>
         (ushort)(data[offset] | (data[offset + 1] << 8));
+
+    // Ensures the declared pixel region [pixelOffset, pixelOffset + height*rowStride) lies within
+    // the file, so a truncated BMP fails cleanly instead of throwing IndexOutOfRangeException.
+    private static void RequirePixelData(byte[] data, uint pixelOffset, int height, int rowStride)
+    {
+        if ((long)pixelOffset + (long)height * rowStride > data.Length)
+            throw new InvalidDataException("BMP file is truncated: pixel data extends beyond end of file.");
+    }
 }
