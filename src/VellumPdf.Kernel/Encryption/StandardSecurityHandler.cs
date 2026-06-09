@@ -32,6 +32,10 @@ public sealed class StandardSecurityHandler : IPdfEncryptor
     internal byte[] Perms { get; }
     internal int PValue { get; }
 
+    /// <summary>
+    /// Generates a random file key and derives the /U, /O, /UE, /OE, /Perms and /P
+    /// values for the given encryption settings.
+    /// </summary>
     public StandardSecurityHandler(PdfEncryptionSettings settings)
     {
         _settings = settings;

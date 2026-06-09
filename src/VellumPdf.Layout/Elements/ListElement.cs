@@ -8,9 +8,16 @@ namespace VellumPdf.Layout.Elements;
 /// <summary>Ordered or unordered list with optional nesting (one level deep).</summary>
 public enum ListStyle
 {
+    /// <summary>Unordered list rendered with a bullet marker.</summary>
     Unordered,
+
+    /// <summary>Ordered list numbered with decimal digits (1., 2., 3.).</summary>
     OrderedDecimal,
+
+    /// <summary>Ordered list numbered with lowercase letters (a., b., c.).</summary>
     OrderedAlpha,
+
+    /// <summary>Ordered list numbered with lowercase Roman numerals (i., ii., iii.).</summary>
     OrderedRoman,
 }
 
@@ -22,17 +29,22 @@ public sealed class ListElement
 {
     private readonly List<ListItem> _items = [];
 
+    /// <summary>Marker style used for the list (bullet or numbering scheme).</summary>
     public ListStyle Style { get; }
+
+    /// <summary>The items contained in this list, in render order.</summary>
     public IReadOnlyList<ListItem> Items => _items;
 
     /// <summary>Points of indent for each list level.</summary>
     public double Indent { get; init; } = 20;
 
+    /// <summary>Outer margins applied around the whole list block.</summary>
     public EdgeInsets Margins { get; init; } = EdgeInsets.Zero;
 
     /// <summary>Text style applied to items that have no explicit style.</summary>
     public TextStyle? DefaultStyle { get; init; }
 
+    /// <summary>Creates a list with the given marker style and optional initial items.</summary>
     public ListElement(ListStyle style = ListStyle.Unordered, IEnumerable<ListItem>? items = null)
     {
         Style = style;
@@ -40,8 +52,10 @@ public sealed class ListElement
             _items.AddRange(items);
     }
 
+    /// <summary>Appends an item to the list and returns this instance for chaining.</summary>
     public ListElement Add(ListItem item) { _items.Add(item); return this; }
 
+    /// <summary>Appends a text item with an optional text style and returns this instance for chaining.</summary>
     public ListElement Add(string text, TextStyle? style = null)
         => Add(new ListItem(text, style));
 

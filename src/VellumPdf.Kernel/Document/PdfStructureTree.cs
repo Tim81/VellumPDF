@@ -29,15 +29,18 @@ public sealed class PdfStructElem
     /// </summary>
     public string? AltText { get; set; }
 
-    /// <summary>Child structure elements (for grouping elements such as Table, TR, L, LI).</summary>
-    public List<PdfStructElem> Children { get; } = [];
+    private readonly List<PdfStructElem> _children = [];
 
+    /// <summary>Child structure elements (for grouping elements such as Table, TR, L, LI).</summary>
+    public IReadOnlyList<PdfStructElem> Children => _children;
+
+    /// <summary>Creates a structure element of the given structure type.</summary>
     public PdfStructElem(string structType) => StructType = structType;
 
     /// <summary>Adds a child struct element and returns it (fluent helper).</summary>
     public PdfStructElem AddChild(PdfStructElem child)
     {
-        Children.Add(child);
+        _children.Add(child);
         return child;
     }
 }
@@ -58,7 +61,7 @@ internal sealed class PdfStructureTree
     // The top-level /Document struct elem that holds all other elems as children.
     private readonly PdfStructElem _documentRoot = new("Document");
 
-    public void AddStructElem(PdfStructElem elem) => _documentRoot.Children.Add(elem);
+    public void AddStructElem(PdfStructElem elem) => _documentRoot.AddChild(elem);
 
     public bool IsEmpty => _documentRoot.Children.Count == 0;
 

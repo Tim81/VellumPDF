@@ -12,14 +12,19 @@ namespace VellumPdf.Core;
 /// </summary>
 public class PdfStream : PdfObject
 {
+    /// <summary>The stream's dictionary, holding entries such as /Filter and /Length.</summary>
     public PdfDictionary Dictionary { get; } = new();
 
     private readonly byte[] _data;
 
+    /// <summary>Creates a stream wrapping the given uncompressed data.</summary>
     public PdfStream(byte[] data) => _data = data;
 
-    protected PdfStream() => _data = [];
+    // private protected: blocks external subclassing while allowing the internal
+    // RawPdfStream / UncompressedPdfStream subclasses in this assembly.
+    private protected PdfStream() => _data = [];
 
+    /// <inheritdoc />
     public override void WriteTo(PdfWriter writer)
     {
         byte[] compressed = Compress(_data);

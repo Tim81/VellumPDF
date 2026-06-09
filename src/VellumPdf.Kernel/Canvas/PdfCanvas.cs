@@ -33,28 +33,40 @@ public sealed class PdfCanvas
     private readonly Dictionary<string, string> _shadingIndex = new(StringComparer.Ordinal);
     private int _shadingCounter;
 
+    /// <summary>Creates a content stream builder targeting the given page.</summary>
     public PdfCanvas(PdfPage page) => _page = page;
 
     // ── Graphics state ──────────────────────────────────────────────────────
 
+    /// <summary>Pushes the current graphics state onto the stack. Emits <c>q</c>.</summary>
     public PdfCanvas SaveState() { WriteOp("q"u8); return this; }
+    /// <summary>Pops the graphics state off the stack, restoring the previous state. Emits <c>Q</c>.</summary>
     public PdfCanvas RestoreState() { WriteOp("Q"u8); return this; }
 
+    /// <summary>Concatenates the matrix [a b c d e f] onto the current transformation matrix. Emits <c>cm</c>.</summary>
     public PdfCanvas Concat(double a, double b, double c, double d, double e, double f)
     { WriteOpAscii($"{N(a)} {N(b)} {N(c)} {N(d)} {N(e)} {N(f)} cm"); return this; }
 
+    /// <summary>Sets the line width for stroking. Emits <c>w</c>.</summary>
     public PdfCanvas SetLineWidth(double w) { WriteOpAscii($"{N(w)} w"); return this; }
+    /// <summary>Sets the line cap style (0 butt, 1 round, 2 square). Emits <c>J</c>.</summary>
     public PdfCanvas SetLineCap(int cap) { WriteOpAscii($"{cap} J"); return this; }
+    /// <summary>Sets the line join style (0 miter, 1 round, 2 bevel). Emits <c>j</c>.</summary>
     public PdfCanvas SetLineJoin(int join) { WriteOpAscii($"{join} j"); return this; }
+    /// <summary>Sets the miter limit for mitered line joins. Emits <c>M</c>.</summary>
     public PdfCanvas SetMiterLimit(double m) { WriteOpAscii($"{N(m)} M"); return this; }
 
+    /// <summary>Sets the stroke colour in DeviceRGB (each component in [0, 1]). Emits <c>RG</c>.</summary>
     public PdfCanvas SetStrokeColorRgb(double r, double g, double b)
     { WriteOpAscii($"{N(r)} {N(g)} {N(b)} RG"); return this; }
 
+    /// <summary>Sets the fill colour in DeviceRGB (each component in [0, 1]). Emits <c>rg</c>.</summary>
     public PdfCanvas SetFillColorRgb(double r, double g, double b)
     { WriteOpAscii($"{N(r)} {N(g)} {N(b)} rg"); return this; }
 
+    /// <summary>Sets the stroke colour in DeviceGray (in [0, 1]). Emits <c>G</c>.</summary>
     public PdfCanvas SetStrokeColorGray(double g) { WriteOpAscii($"{N(g)} G"); return this; }
+    /// <summary>Sets the fill colour in DeviceGray (in [0, 1]). Emits <c>g</c>.</summary>
     public PdfCanvas SetFillColorGray(double g) { WriteOpAscii($"{N(g)} g"); return this; }
 
     // ── Feature 4: CMYK colour ──────────────────────────────────────────────
@@ -175,21 +187,32 @@ public sealed class PdfCanvas
 
     // ── Path construction ───────────────────────────────────────────────────
 
+    /// <summary>Begins a new subpath at (<paramref name="x"/>, <paramref name="y"/>). Emits <c>m</c>.</summary>
     public PdfCanvas MoveTo(double x, double y) { WriteOpAscii($"{N(x)} {N(y)} m"); return this; }
+    /// <summary>Appends a straight line segment to (<paramref name="x"/>, <paramref name="y"/>). Emits <c>l</c>.</summary>
     public PdfCanvas LineTo(double x, double y) { WriteOpAscii($"{N(x)} {N(y)} l"); return this; }
 
+    /// <summary>Appends a cubic Bézier curve with control points (x1,y1) and (x2,y2) ending at (x3,y3). Emits <c>c</c>.</summary>
     public PdfCanvas CurveTo(double x1, double y1, double x2, double y2, double x3, double y3)
     { WriteOpAscii($"{N(x1)} {N(y1)} {N(x2)} {N(y2)} {N(x3)} {N(y3)} c"); return this; }
 
+    /// <summary>Appends a rectangle with lower-left corner (<paramref name="x"/>, <paramref name="y"/>), width <paramref name="w"/> and height <paramref name="h"/> as a complete subpath. Emits <c>re</c>.</summary>
     public PdfCanvas Rectangle(double x, double y, double w, double h)
     { WriteOpAscii($"{N(x)} {N(y)} {N(w)} {N(h)} re"); return this; }
 
+    /// <summary>Closes the current subpath with a line back to its start point. Emits <c>h</c>.</summary>
     public PdfCanvas ClosePath() { WriteOp("h"u8); return this; }
+    /// <summary>Strokes the current path. Emits <c>S</c>.</summary>
     public PdfCanvas Stroke() { WriteOp("S"u8); return this; }
+    /// <summary>Fills the current path using the non-zero winding rule. Emits <c>f</c>.</summary>
     public PdfCanvas Fill() { WriteOp("f"u8); return this; }
+    /// <summary>Fills the current path using the even-odd rule. Emits <c>f*</c>.</summary>
     public PdfCanvas FillEvenOdd() { WriteOp("f*"u8); return this; }
+    /// <summary>Fills (non-zero winding) then strokes the current path. Emits <c>B</c>.</summary>
     public PdfCanvas FillAndStroke() { WriteOp("B"u8); return this; }
+    /// <summary>Closes then strokes the current subpath. Emits <c>s</c>.</summary>
     public PdfCanvas CloseAndStroke() { WriteOp("s"u8); return this; }
+    /// <summary>Ends the current path without filling or stroking (no-op painting). Emits <c>n</c>.</summary>
     public PdfCanvas EndPath() { WriteOp("n"u8); return this; }
 
     // ── Feature 5: Axial and radial shadings ────────────────────────────────
@@ -309,9 +332,12 @@ public sealed class PdfCanvas
 
     // ── Text operators ──────────────────────────────────────────────────────
 
+    /// <summary>Begins a text object. Emits <c>BT</c>.</summary>
     public PdfCanvas BeginText() { WriteOp("BT"u8); return this; }
+    /// <summary>Ends the current text object. Emits <c>ET</c>.</summary>
     public PdfCanvas EndText() { WriteOp("ET"u8); return this; }
 
+    /// <summary>Selects the given font resource at the specified size, registering it for inclusion in the page resources. Emits <c>Tf</c>.</summary>
     public PdfCanvas SetFont(PdfFontResource font, double size)
     {
         _usedFonts[font.ResourceName] = font;
@@ -350,17 +376,25 @@ public sealed class PdfCanvas
 
     private static byte HexNibble(int v) => (byte)(v < 10 ? '0' + v : 'A' + v - 10);
 
+    /// <summary>Sets the text matrix and text line matrix to [a b c d e f]. Emits <c>Tm</c>.</summary>
     public PdfCanvas SetTextMatrix(double a, double b, double c, double d, double e, double f)
     { WriteOpAscii($"{N(a)} {N(b)} {N(c)} {N(d)} {N(e)} {N(f)} Tm"); return this; }
 
+    /// <summary>Moves to the start of the next line, offset by (<paramref name="tx"/>, <paramref name="ty"/>) from the current line start. Emits <c>Td</c>.</summary>
     public PdfCanvas MoveTextPosition(double tx, double ty)
     { WriteOpAscii($"{N(tx)} {N(ty)} Td"); return this; }
 
+    /// <summary>Sets the character spacing. Emits <c>Tc</c>.</summary>
     public PdfCanvas SetCharSpacing(double cs) { WriteOpAscii($"{N(cs)} Tc"); return this; }
+    /// <summary>Sets the word spacing. Emits <c>Tw</c>.</summary>
     public PdfCanvas SetWordSpacing(double ws) { WriteOpAscii($"{N(ws)} Tw"); return this; }
+    /// <summary>Sets the text rise (vertical baseline shift). Emits <c>Ts</c>.</summary>
     public PdfCanvas SetTextRise(double tr) { WriteOpAscii($"{N(tr)} Ts"); return this; }
+    /// <summary>Sets the horizontal text scaling as a percentage. Emits <c>Tz</c>.</summary>
     public PdfCanvas SetHorizScaling(double s) { WriteOpAscii($"{N(s)} Tz"); return this; }
+    /// <summary>Sets the text leading (line spacing) used by <see cref="NextLine"/>. Emits <c>TL</c>.</summary>
     public PdfCanvas SetTextLeading(double tl) { WriteOpAscii($"{N(tl)} TL"); return this; }
+    /// <summary>Moves to the start of the next text line using the current leading. Emits <c>T*</c>.</summary>
     public PdfCanvas NextLine() { WriteOp("T*"u8); return this; }
 
     /// <summary>Renders a Latin-1 string using the standard PDF string operator (Tj).</summary>
@@ -386,10 +420,12 @@ public sealed class PdfCanvas
         return mcid;
     }
 
+    /// <summary>Closes the current marked-content sequence. Emits <c>EMC</c>.</summary>
     public PdfCanvas EndMarkedContent() { WriteOp("EMC"u8); return this; }
 
     // ── XObject ─────────────────────────────────────────────────────────────
 
+    /// <summary>Paints the named XObject (image or form) from the page resources. Emits <c>Do</c>.</summary>
     public PdfCanvas DoXObject(string resourceName)
     { WriteOpAscii($"/{resourceName} Do"); return this; }
 

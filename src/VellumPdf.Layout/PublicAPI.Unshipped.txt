@@ -8,6 +8,8 @@ static readonly VellumPdf.Layout.Core.ColorRgb.White -> VellumPdf.Layout.Core.Co
 static readonly VellumPdf.Layout.Core.EdgeInsets.Zero -> VellumPdf.Layout.Core.EdgeInsets
 static readonly VellumPdf.Layout.Core.TextStyle.Default -> VellumPdf.Layout.Core.TextStyle!
 static VellumPdf.Layout.Core.ColorRgb.FromHex(uint rgb) -> VellumPdf.Layout.Core.ColorRgb
+static VellumPdf.Layout.Core.ColorRgb.implicit operator VellumPdf.Graphics.KernelColor(VellumPdf.Layout.Core.ColorRgb c) -> VellumPdf.Graphics.KernelColor
+static VellumPdf.Layout.Core.ColorRgb.implicit operator VellumPdf.Layout.Core.ColorRgb(VellumPdf.Graphics.KernelColor c) -> VellumPdf.Layout.Core.ColorRgb
 static VellumPdf.Layout.Core.ColorRgb.operator !=(VellumPdf.Layout.Core.ColorRgb left, VellumPdf.Layout.Core.ColorRgb right) -> bool
 static VellumPdf.Layout.Core.ColorRgb.operator ==(VellumPdf.Layout.Core.ColorRgb left, VellumPdf.Layout.Core.ColorRgb right) -> bool
 static VellumPdf.Layout.Core.EdgeInsets.operator !=(VellumPdf.Layout.Core.EdgeInsets left, VellumPdf.Layout.Core.EdgeInsets right) -> bool

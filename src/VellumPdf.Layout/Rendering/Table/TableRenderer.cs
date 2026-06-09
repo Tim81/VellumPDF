@@ -31,12 +31,14 @@ public sealed class TableRenderer : IRenderer
     private double[] _rowHeights = [];
     private LayoutBox _occupied;
 
+    /// <summary>Creates a renderer for the table, optionally starting at data row <paramref name="startRow"/> for pagination.</summary>
     public TableRenderer(TableElement table, int startRow = 0)
     {
         _table = table;
         _startRow = startRow;
     }
 
+    /// <summary>Resolves column widths and row heights, fitting as many rows as possible and splitting at row boundaries on overflow.</summary>
     public LayoutResult Layout(LayoutContext context)
     {
         var area = context.Area.Deflate(_table.Margins);
@@ -109,6 +111,7 @@ public sealed class TableRenderer : IRenderer
         return LayoutResult.Partial(_occupied, split, overflow);
     }
 
+    /// <summary>Draws cell backgrounds, borders and text (repeating header rows) and builds the tagged Table struct tree when tagging is enabled.</summary>
     public void Draw(DrawContext ctx)
     {
         var area = _occupied.Deflate(_table.Margins.Left, _table.Margins.Top, _table.Margins.Right, 0);
@@ -134,7 +137,7 @@ public sealed class TableRenderer : IRenderer
         foreach (var hi in headerRowIndices)
         {
             var trElem = tableElem is not null ? new PdfStructElem("TR") : null;
-            if (trElem is not null) tableElem!.Children.Add(trElem);
+            if (trElem is not null) tableElem!.AddChild(trElem);
             DrawRow(ctx, rows[hi], hi, rowY, area.X, style, spanMap, trElem);
             rowY += _rowHeights[hi];
         }
@@ -144,7 +147,7 @@ public sealed class TableRenderer : IRenderer
         {
             if (rowY >= _occupied.Bottom - 0.001) break;
             var trElem = tableElem is not null ? new PdfStructElem("TR") : null;
-            if (trElem is not null) tableElem!.Children.Add(trElem);
+            if (trElem is not null) tableElem!.AddChild(trElem);
             DrawRow(ctx, rows[r], r, rowY, area.X, style, spanMap, trElem);
             rowY += _rowHeights[r];
         }
@@ -317,8 +320,8 @@ public sealed class TableRenderer : IRenderer
             var cellElem = new PdfStructElem(cellType);
             var pElem = new PdfStructElem("P") { Mcid = mcid };
             ctx.StampStructElemPage(pElem);
-            cellElem.Children.Add(pElem);
-            trElem?.Children.Add(cellElem);
+            cellElem.AddChild(pElem);
+            trElem?.AddChild(cellElem);
         }
     }
 

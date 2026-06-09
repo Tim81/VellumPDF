@@ -11,17 +11,22 @@ namespace VellumPdf.Core;
 /// </summary>
 public sealed class PdfIndirectObject : PdfObject
 {
+    /// <summary>The object number assigned to this indirect object.</summary>
     public int ObjectNumber { get; }
+    /// <summary>The wrapped object value.</summary>
     public PdfObject Value { get; }
 
+    /// <summary>Creates an indirect object with the given <paramref name="objectNumber"/> wrapping <paramref name="value"/>.</summary>
     public PdfIndirectObject(int objectNumber, PdfObject value)
     {
         ObjectNumber = objectNumber;
         Value = value;
     }
 
+    /// <summary>An indirect reference (N 0 R) pointing at this object.</summary>
     public PdfIndirectReference Reference => new(ObjectNumber);
 
+    /// <summary>Writes the serialised PDF representation to <paramref name="writer"/>.</summary>
     public override void WriteTo(PdfWriter writer)
     {
         WriteInt(writer, ObjectNumber);

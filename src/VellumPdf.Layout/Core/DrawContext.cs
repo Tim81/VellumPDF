@@ -19,8 +19,13 @@ namespace VellumPdf.Layout.Core;
 /// </summary>
 public sealed class DrawContext
 {
+    /// <summary>The content-stream canvas for the current page.</summary>
     public PdfCanvas Canvas { get; }
+
+    /// <summary>The full page bounds in layout space (Y-down).</summary>
     public LayoutBox PageBounds { get; }   // full page in layout space
+
+    /// <summary>The per-page resource registration context.</summary>
     public RendererContext RendererContext { get; }   // per-page resource registration
     private readonly PdfDocument _document;
     private readonly PdfPage _page;
@@ -32,6 +37,7 @@ public sealed class DrawContext
     /// </summary>
     public bool Tagged => _document.Tagged;
 
+    /// <summary>Creates a draw context bound to the current page, its canvas, and the owning document.</summary>
     public DrawContext(PdfCanvas canvas, LayoutBox pageBounds, RendererContext rendererContext, PdfDocument document, PdfPage page)
     {
         Canvas = canvas;
@@ -73,10 +79,7 @@ public sealed class DrawContext
         var (x, y, w, h) = ToPdfRect(box);
         var annot = new PdfLinkAnnotation
         {
-            Llx = x,
-            Lly = y,
-            Urx = x + w,
-            Ury = y + h,
+            Rect = new VellumPdf.Document.PdfRectangle(x, y, x + w, y + h),
             Uri = uri,
         };
         _document.RegisterLinkAnnotation(_page, annot);

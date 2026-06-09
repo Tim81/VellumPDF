@@ -18,11 +18,13 @@ public sealed class LayoutContext
     /// </summary>
     public double ContentTop { get; }
 
+    /// <summary>Creates a context for the given available area and optional content top.</summary>
     public LayoutContext(LayoutBox area, double contentTop = 0)
     {
         Area = area;
         ContentTop = contentTop;
     }
 
+    /// <summary>Returns a copy of this context with the available area replaced.</summary>
     public LayoutContext WithArea(LayoutBox area) => new(area, ContentTop);
 }

@@ -15,8 +15,10 @@ public sealed class RunningBand
     /// <summary>Text template — may contain {page} and/or {pages}.</summary>
     public string Template { get; }
 
+    /// <summary>The text style of the band.</summary>
     public TextStyle Style { get; }
 
+    /// <summary>Horizontal alignment of the band text.</summary>
     public HorizontalAlignment Alignment { get; }
 
     /// <summary>
@@ -25,6 +27,7 @@ public sealed class RunningBand
     /// </summary>
     public double? Height { get; init; }
 
+    /// <summary>Creates a running band from a text template, with optional style and alignment (defaults to centered).</summary>
     public RunningBand(string template, TextStyle? style = null, HorizontalAlignment alignment = HorizontalAlignment.Center)
     {
         Template = template;

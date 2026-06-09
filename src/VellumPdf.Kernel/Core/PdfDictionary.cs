@@ -4,10 +4,11 @@
 namespace VellumPdf.Core;
 
 /// <summary>PDF dictionary object (ISO 32000-2 §7.3.7).</summary>
-public class PdfDictionary : PdfObject
+public sealed class PdfDictionary : PdfObject
 {
     private readonly List<KeyValuePair<PdfName, PdfObject>> _entries = [];
 
+    /// <summary>Sets <paramref name="key"/> to <paramref name="value"/>, replacing any existing entry, and returns this dictionary.</summary>
     public PdfDictionary Set(PdfName key, PdfObject value)
     {
         for (var i = 0; i < _entries.Count; i++)
@@ -22,9 +23,12 @@ public class PdfDictionary : PdfObject
         return this;
     }
 
+    /// <summary>Sets <paramref name="key"/> to an integer <paramref name="value"/> and returns this dictionary.</summary>
     public PdfDictionary Set(PdfName key, long value) => Set(key, new PdfInteger(value));
+    /// <summary>Sets <paramref name="key"/> to a name built from <paramref name="nameValue"/> and returns this dictionary.</summary>
     public PdfDictionary Set(PdfName key, string nameValue) => Set(key, new PdfName(nameValue));
 
+    /// <summary>Gets the value for <paramref name="key"/>; returns <see langword="true"/> when present.</summary>
     public bool TryGet(PdfName key, out PdfObject? value)
     {
         foreach (var kv in _entries)
@@ -35,8 +39,10 @@ public class PdfDictionary : PdfObject
         return false;
     }
 
+    /// <summary>Returns the value for <paramref name="key"/>, or <see langword="null"/> when absent.</summary>
     public PdfObject? Get(PdfName key) => TryGet(key, out var v) ? v : null;
 
+    /// <summary>Writes the serialised PDF representation to <paramref name="writer"/>.</summary>
     public override void WriteTo(PdfWriter writer)
     {
         writer.WriteAscii("<<"u8);

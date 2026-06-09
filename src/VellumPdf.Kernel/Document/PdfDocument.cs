@@ -54,6 +54,7 @@ public sealed class PdfDocument : IDisposable
     // Encryption settings supplied via Encrypt(). Null = no encryption.
     private PdfEncryptionSettings? _encryptionSettings;
 
+    /// <summary>Document metadata (title, author, producer, …) written to the /Info dictionary.</summary>
     public PdfDocumentInfo Info { get; } = new();
 
     /// <summary>Default page size for new pages. Defaults to A4.</summary>
@@ -104,8 +105,10 @@ public sealed class PdfDocument : IDisposable
         set => _tagged = value;
     }
 
+    /// <summary>Adds a new page using <see cref="DefaultPageSize"/> and returns it.</summary>
     public PdfPage AddPage() => AddPage(DefaultPageSize);
 
+    /// <summary>Adds a new page of the given <paramref name="size"/> and returns it.</summary>
     public PdfPage AddPage(PdfRectangle size)
     {
         var page = new PdfPage(size);
@@ -113,6 +116,7 @@ public sealed class PdfDocument : IDisposable
         return page;
     }
 
+    /// <summary>The pages in this document, in order.</summary>
     public IReadOnlyList<PdfPage> Pages => _pages;
 
     /// <summary>
@@ -309,6 +313,8 @@ public sealed class PdfDocument : IDisposable
     ///   <item>Add /Encrypt to the trailer (unencrypted).</item>
     /// </list>
     /// </summary>
+    /// <exception cref="ObjectDisposedException">The document has been disposed.</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="settings"/> is <see langword="null"/>.</exception>
     public void Encrypt(PdfEncryptionSettings settings)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -317,6 +323,10 @@ public sealed class PdfDocument : IDisposable
     }
 
     /// <summary>Writes a complete PDF file to <paramref name="destination"/>.</summary>
+    /// <exception cref="ObjectDisposedException">The document has been disposed.</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="destination"/> is <see langword="null"/>.</exception>
+    /// <exception cref="NotSupportedException"><see cref="UseObjectStreams"/> is combined with <see cref="Encrypt"/>.</exception>
+    /// <exception cref="InvalidOperationException">A PDF/A <see cref="Conformance"/> is set together with <see cref="Encrypt"/>.</exception>
     public void Save(Stream destination)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -629,6 +639,9 @@ public sealed class PdfDocument : IDisposable
     /// <para>Encryption and signing are mutually exclusive; throws
     /// <see cref="NotSupportedException"/> when <see cref="Encrypt"/> has been called.</para>
     /// </summary>
+    /// <exception cref="ObjectDisposedException">The document has been disposed.</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="options"/> is <see langword="null"/>.</exception>
+    /// <exception cref="NotSupportedException"><see cref="Encrypt"/> has been called; encryption and signing cannot be combined.</exception>
     public byte[] PrepareForSigning(SignaturePlaceholderOptions options)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -1190,5 +1203,6 @@ public sealed class PdfDocument : IDisposable
         return total;
     }
 
+    /// <summary>Releases the document; subsequent <see cref="Save"/> or <see cref="Encrypt"/> calls throw.</summary>
     public void Dispose() => _disposed = true;
 }

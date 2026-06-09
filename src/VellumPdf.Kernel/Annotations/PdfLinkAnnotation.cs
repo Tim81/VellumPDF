@@ -13,10 +13,7 @@ namespace VellumPdf.Annotations;
 public sealed class PdfLinkAnnotation
 {
     /// <summary>Annotation bounding rectangle in PDF user-space (points, Y-up).</summary>
-    public required double Llx { get; init; }
-    public required double Lly { get; init; }
-    public required double Urx { get; init; }
-    public required double Ury { get; init; }
+    public required PdfRectangle Rect { get; init; }
 
     /// <summary>External URI action target (mutually exclusive with <see cref="DestPage"/>).</summary>
     public string? Uri { get; init; }
@@ -36,15 +33,12 @@ public sealed class PdfLinkAnnotation
     /// <summary>Builds the annotation dictionary given the resolved destination page reference.</summary>
     internal PdfDictionary BuildDictionary(PdfIndirectReference? destPageRef)
     {
-        var rect = new PdfArray([
-            new PdfReal(Llx), new PdfReal(Lly), new PdfReal(Urx), new PdfReal(Ury)
-        ]);
         var border = new PdfArray([new PdfInteger(0), new PdfInteger(0), new PdfInteger(0)]);
 
         var dict = new PdfDictionary()
             .Set(PdfName.Type, new PdfName("Annot"))
             .Set(PdfName.Subtype, new PdfName("Link"))
-            .Set(new PdfName("Rect"), rect)
+            .Set(new PdfName("Rect"), Rect.ToArray())
             .Set(new PdfName("Border"), border);
 
         if (Uri is not null)

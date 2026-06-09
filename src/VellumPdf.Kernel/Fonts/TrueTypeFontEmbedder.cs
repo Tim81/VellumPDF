@@ -31,8 +31,10 @@ public sealed class TrueTypeFontEmbedder
     private readonly HashSet<int> _usedGids = new() { 0 }; // always keep .notdef
     private readonly Dictionary<int, ushort> _unicodeToGid = new();
 
+    /// <summary>The resource name used to reference this font from a page's resource dictionary.</summary>
     public string ResourceName { get; }
 
+    /// <summary>Parses the SFNT font program and prepares it for embedding under the given resource name.</summary>
     public TrueTypeFontEmbedder(ReadOnlyMemory<byte> fontData, string resourceName)
     {
         _sfnt = SfntFont.Parse(fontData);
@@ -107,6 +109,7 @@ public sealed class TrueTypeFontEmbedder
 
     // ── Build all required PDF objects ──────────────────────────────────────
 
+    /// <summary>Builds the top-level Type0 composite font dictionary referencing the descendant CIDFont and ToUnicode CMap.</summary>
     public Core.PdfDictionary BuildFontDictionary(
         Core.PdfIndirectReference cidFontRef,
         Core.PdfIndirectReference toUnicodeRef)
@@ -123,6 +126,7 @@ public sealed class TrueTypeFontEmbedder
         return d;
     }
 
+    /// <summary>Builds the descendant CIDFont dictionary (CIDFontType0 for CFF, CIDFontType2 for glyf) with its width array.</summary>
     public Core.PdfDictionary BuildCidFontDictionary(Core.PdfIndirectReference descriptorRef)
     {
         var widths = BuildWidthsArray();
@@ -151,6 +155,7 @@ public sealed class TrueTypeFontEmbedder
             .Set(new Core.PdfName("CIDToGIDMap"), new Core.PdfName("Identity"));
     }
 
+    /// <summary>Builds the /FontDescriptor dictionary (flags, metrics, bounding box) pointing at the embedded font file.</summary>
     public Core.PdfDictionary BuildFontDescriptor(Core.PdfIndirectReference fontFileRef)
     {
         var unitsPerEm = _head.UnitsPerEm;
@@ -180,6 +185,7 @@ public sealed class TrueTypeFontEmbedder
         return descriptor;
     }
 
+    /// <summary>Builds the embedded font program stream: a subsetted glyf font, or the whole CFF/OTTO program as /FontFile3.</summary>
     public Core.PdfStream BuildFontFileStream()
     {
         if (_sfnt.IsCff)
@@ -196,6 +202,7 @@ public sealed class TrueTypeFontEmbedder
         return new Core.PdfStream(subsetBytes);
     }
 
+    /// <summary>Builds the /ToUnicode CMap stream mapping glyph IDs back to Unicode so text stays searchable and copyable.</summary>
     public Core.PdfStream BuildToUnicodeCMap()
     {
         var cmap = BuildToUnicodeCMapContent();

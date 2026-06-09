@@ -10,6 +10,9 @@ namespace VellumPdf.Layout.Elements;
 /// </summary>
 public sealed class TextRun(string Text, TextStyle Style)
 {
+    /// <summary>The run's text.</summary>
     public string Text { get; } = Text;
+
+    /// <summary>The run's text style.</summary>
     public TextStyle Style { get; } = Style;
 }

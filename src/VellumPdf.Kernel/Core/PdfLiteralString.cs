@@ -9,8 +9,10 @@ namespace VellumPdf.Core;
 /// </summary>
 public sealed class PdfLiteralString : PdfObject
 {
+    /// <summary>The raw (unescaped) string bytes.</summary>
     public ReadOnlyMemory<byte> Bytes { get; }
 
+    /// <summary>Creates a literal string from the given raw bytes.</summary>
     public PdfLiteralString(ReadOnlyMemory<byte> bytes) => Bytes = bytes;
 
     /// <summary>Encodes a UTF-16BE string with BOM (used for metadata fields).</summary>
@@ -28,6 +30,7 @@ public sealed class PdfLiteralString : PdfObject
         return new PdfLiteralString(bytes);
     }
 
+    /// <inheritdoc />
     public override void WriteTo(PdfWriter writer)
     {
         // When an encryptor is active, encrypt the raw bytes first and then

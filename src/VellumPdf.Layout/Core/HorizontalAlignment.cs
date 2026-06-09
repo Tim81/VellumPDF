@@ -3,4 +3,18 @@
 
 namespace VellumPdf.Layout.Core;
 
-public enum HorizontalAlignment { Left, Center, Right, Justify }
+/// <summary>Horizontal alignment of text or content within its available width.</summary>
+public enum HorizontalAlignment
+{
+    /// <summary>Align content to the left edge.</summary>
+    Left,
+
+    /// <summary>Centre content horizontally.</summary>
+    Center,
+
+    /// <summary>Align content to the right edge.</summary>
+    Right,
+
+    /// <summary>Stretch content to fill the width, flush with both the left and right edges.</summary>
+    Justify,
+}

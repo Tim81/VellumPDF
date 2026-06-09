@@ -71,6 +71,14 @@ archive.Add(table);
 archive.Save("archive.pdf");
 ```
 
+## Conventions
+
+- **Units.** All coordinates and sizes are in PDF user-space **points** (1 pt = 1/72 inch).
+  `PageSize` provides the common ISO-A sizes plus a `PageSize.Mm(width, height)` helper for
+  custom millimetre dimensions.
+- **Synchronous I/O.** Saving, signing, and the font/image loaders are synchronous by design
+  for 1.0 — there is no `async` surface. Offload to `Task.Run` if you need to keep a thread free.
+
 ## Validation & CI
 
 Correctness is enforced on every push by running real external validators as CI

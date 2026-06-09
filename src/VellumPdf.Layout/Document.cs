@@ -28,8 +28,10 @@ public sealed class Document : IDisposable
     private readonly List<IRenderer> _content = [];
     private TextStyle _defaultStyle = TextStyle.Default;
 
+    /// <summary>Document metadata (title, author, subject, keywords, etc.).</summary>
     public PdfDocumentInfo Info => _pdf.Info;
 
+    /// <summary>The default page size used for newly created pages.</summary>
     public PdfRectangle PageSize
     {
         get => _pdf.DefaultPageSize;
@@ -68,6 +70,7 @@ public sealed class Document : IDisposable
         set => _pdf.UseObjectStreams = value;
     }
 
+    /// <summary>Page margins applied to the content area. Defaults to 72 points (1 inch) on all sides.</summary>
     public EdgeInsets Margins { get; set; } = new EdgeInsets(72); // 1 inch
 
     /// <summary>
@@ -84,6 +87,7 @@ public sealed class Document : IDisposable
     /// </summary>
     public RunningBand? Footer { get; set; }
 
+    /// <summary>Sets the default text style applied to content added without an explicit style. Returns this document for chaining.</summary>
     public Document SetDefaultFont(TextStyle style) { _defaultStyle = style; return this; }
 
     /// <summary>Sets a header band with optional style and alignment. Returns this document for chaining.</summary>
@@ -117,42 +121,49 @@ public sealed class Document : IDisposable
 
     // ── Content methods ──────────────────────────────────────────────────────
 
+    /// <summary>Adds a paragraph to the document content. Returns this document for chaining.</summary>
     public Document Add(Paragraph paragraph)
     {
         _content.Add(new ParagraphRenderer(paragraph));
         return this;
     }
 
+    /// <summary>Adds a horizontal line separator to the document content. Returns this document for chaining.</summary>
     public Document Add(LineSeparator separator)
     {
         _content.Add(new LineSeparatorRenderer(separator));
         return this;
     }
 
+    /// <summary>Adds a table to the document content. Returns this document for chaining.</summary>
     public Document Add(TableElement table)
     {
         _content.Add(new TableRenderer(table));
         return this;
     }
 
+    /// <summary>Adds an image to the document content. Returns this document for chaining.</summary>
     public Document Add(LayoutImage image)
     {
         _content.Add(new LayoutImageRenderer(image));
         return this;
     }
 
+    /// <summary>Adds a bulleted or numbered list to the document content. Returns this document for chaining.</summary>
     public Document Add(ListElement list)
     {
         _content.Add(new ListRenderer(list));
         return this;
     }
 
+    /// <summary>Adds a heading to the document content. Returns this document for chaining.</summary>
     public Document Add(Heading heading)
     {
         _content.Add(new HeadingRenderer(heading));
         return this;
     }
 
+    /// <summary>Adds a paragraph built from the given text, using the supplied style or the default style. Returns this document for chaining.</summary>
     public Document Add(string text, TextStyle? style = null)
         => Add(new Paragraph(text, style ?? _defaultStyle));
 
@@ -171,6 +182,7 @@ public sealed class Document : IDisposable
 
     // ── Output ───────────────────────────────────────────────────────────────
 
+    /// <summary>Runs the layout pass and writes the resulting PDF to the given stream.</summary>
     public void Save(Stream destination)
     {
         var renderer = new DocumentRenderer(_pdf, _pdf.DefaultPageSize, Margins)
@@ -182,6 +194,7 @@ public sealed class Document : IDisposable
         renderer.Render(destination);
     }
 
+    /// <summary>Runs the layout pass and writes the resulting PDF to a file at the given path.</summary>
     public void Save(string path)
     {
         using var fs = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None);
@@ -209,5 +222,6 @@ public sealed class Document : IDisposable
         return _pdf.PrepareForSigning(options);
     }
 
+    /// <summary>Releases the underlying <see cref="PdfDocument"/> and its resources.</summary>
     public void Dispose() => _pdf.Dispose();
 }

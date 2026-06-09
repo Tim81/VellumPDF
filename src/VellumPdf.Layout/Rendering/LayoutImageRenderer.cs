@@ -6,6 +6,7 @@ using VellumPdf.Layout.Elements;
 
 namespace VellumPdf.Layout.Rendering;
 
+/// <summary>Renders a <see cref="LayoutImage"/> as a placed XObject, honouring sizing, margins and alignment.</summary>
 public sealed class LayoutImageRenderer : IRenderer
 {
     private readonly LayoutImage _img;
@@ -13,11 +14,13 @@ public sealed class LayoutImageRenderer : IRenderer
     private double _w, _h;
     private LayoutBox _occupied;
 
+    /// <summary>Creates a renderer for the given layout image.</summary>
     public LayoutImageRenderer(LayoutImage img)
     {
         _img = img;
     }
 
+    /// <summary>Resolves the image size within the available area and reports the occupied region.</summary>
     public LayoutResult Layout(LayoutContext ctx)
     {
         var area = ctx.Area.Deflate(_img.Margins);
@@ -33,6 +36,7 @@ public sealed class LayoutImageRenderer : IRenderer
         return LayoutResult.Full(_occupied);
     }
 
+    /// <summary>Draws the image XObject, emitting a tagged Figure struct element when tagging is enabled.</summary>
     public void Draw(DrawContext ctx)
     {
         var area = _occupied.Deflate(_img.Margins);
