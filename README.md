@@ -1,5 +1,7 @@
 # VellumPdf
 
+[![CI](https://github.com/Tim81/VellumPDF/actions/workflows/ci.yml/badge.svg)](https://github.com/Tim81/VellumPDF/actions/workflows/ci.yml)
+
 A modern, **dependency-free PDF generation library for .NET 10**, implemented
 clean-room from the open **ISO 32000** standard.
 
@@ -70,6 +72,37 @@ archive.Add(table);
 
 archive.Save("archive.pdf");
 ```
+
+### Low-level Kernel API
+
+For precise canvas control, bypass the Layout engine and write directly to the
+PDF content stream:
+
+```csharp
+using VellumPdf.Canvas;    // PdfCanvas
+using VellumPdf.Document;  // PdfDocument, PageSize
+using VellumPdf.Fonts;     // Standard14
+
+using var doc = new PdfDocument();
+var page = doc.AddPage(PageSize.A4);
+var font = doc.UseFont(Standard14.Helvetica);
+var canvas = new PdfCanvas(page);
+
+canvas
+    .BeginText()
+    .SetFont(font, 12)
+    .SetTextMatrix(1, 0, 0, 1, 72, 720)
+    .ShowText("Hello from the Kernel API!")
+    .EndText();
+
+canvas.Finish();
+
+using var stream = File.OpenWrite("kernel-hello.pdf");
+doc.Save(stream);
+```
+
+For a full walkthrough of the canvas, graphics primitives, and font handling,
+see [docs/kernel-guide.md](docs/kernel-guide.md).
 
 ## Conventions
 
