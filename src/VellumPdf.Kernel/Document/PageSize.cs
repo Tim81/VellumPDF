@@ -9,8 +9,13 @@ public static class PageSize
     // 1 mm = 72/25.4 pt ≈ 2.8346 pt
     private const double MmToPt = 72.0 / 25.4;
 
-    private static PdfRectangle Mm(double w, double h) =>
-        new(0, 0, Math.Round(w * MmToPt, 2), Math.Round(h * MmToPt, 2));
+    /// <summary>
+    /// Builds a portrait <see cref="PdfRectangle"/> of <paramref name="widthMm"/> ×
+    /// <paramref name="heightMm"/> millimetres, converted to PDF user-space points
+    /// (the unit used throughout the API).
+    /// </summary>
+    public static PdfRectangle Mm(double widthMm, double heightMm) =>
+        new(0, 0, Math.Round(widthMm * MmToPt, 2), Math.Round(heightMm * MmToPt, 2));
 
     public static readonly PdfRectangle A0 = Mm(841, 1189);
     public static readonly PdfRectangle A1 = Mm(594, 841);

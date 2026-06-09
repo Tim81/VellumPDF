@@ -77,6 +77,7 @@ static readonly VellumPdf.Document.PageSize.A6 -> VellumPdf.Document.PdfRectangl
 static readonly VellumPdf.Document.PageSize.Ledger -> VellumPdf.Document.PdfRectangle!
 static readonly VellumPdf.Document.PageSize.Legal -> VellumPdf.Document.PdfRectangle!
 static readonly VellumPdf.Document.PageSize.Letter -> VellumPdf.Document.PdfRectangle!
+static VellumPdf.Document.PageSize.Mm(double widthMm, double heightMm) -> VellumPdf.Document.PdfRectangle!
 static VellumPdf.Core.PdfBoolean.Of(bool value) -> VellumPdf.Core.PdfBoolean!
 static VellumPdf.Core.PdfLiteralString.FromUnicode(string! value) -> VellumPdf.Core.PdfLiteralString!
 static VellumPdf.Document.PdfRectangle.A4.get -> VellumPdf.Document.PdfRectangle!
