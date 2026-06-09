@@ -83,4 +83,43 @@ public sealed class DeterminismTests
 
         Assert.Equal(Build(), Build());
     }
+
+    [Fact]
+    public void PrepareForSigning_withPins_isByteIdentical()
+    {
+        // The signing-placeholder document (before the signature is patched in) must be
+        // reproducible with pins — this covers the DocumentId wiring on the signing path.
+        static byte[] Build()
+        {
+            using var doc = new PdfDocument { Timestamp = PinnedTime, DocumentId = PinnedId };
+            doc.Info.Title = "Signable";
+            doc.AddPage(PageSize.A4);
+            return doc.PrepareForSigning(new SignaturePlaceholderOptions());
+        }
+
+        Assert.Equal(Build(), Build());
+    }
+
+    [Fact]
+    public void DocumentId_isDefensivelyCopied_onGetAndSet()
+    {
+        var id = Convert.FromHexString("000102030405060708090A0B0C0D0E0F");
+
+        // SET copies: mutating the caller's array after assignment must not change the output.
+        static byte[] SaveWith(byte[] idArray, bool mutateAfterSet)
+        {
+            using var doc = new PdfDocument { Timestamp = PinnedTime };
+            doc.DocumentId = idArray;
+            if (mutateAfterSet) idArray[0] ^= 0xFF;
+            var ms = new MemoryStream();
+            doc.Save(ms);
+            return ms.ToArray();
+        }
+        Assert.Equal(SaveWith((byte[])id.Clone(), false), SaveWith((byte[])id.Clone(), true));
+
+        // GET copies: mutating the returned array must not change the stored value.
+        using var doc = new PdfDocument { DocumentId = id };
+        doc.DocumentId![0] ^= 0xFF;
+        Assert.Equal(id, doc.DocumentId);
+    }
 }

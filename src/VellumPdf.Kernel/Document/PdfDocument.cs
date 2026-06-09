@@ -67,12 +67,25 @@ public sealed class PdfDocument : IDisposable
     /// </summary>
     public DateTimeOffset? Timestamp { get; set; }
 
+    private byte[]? _documentId;
+
     /// <summary>
-    /// Optional fixed document <c>/ID</c> (the permanent element of the PDF <c>/ID</c> array).
-    /// When null, the ID is derived from the document content and <see cref="Timestamp"/>.
-    /// Pin this together with <see cref="Timestamp"/> for byte-reproducible output.
+    /// Optional fixed document <c>/ID</c> (the permanent element of the PDF <c>/ID</c> array;
+    /// 16 bytes is conventional). When null, the ID is derived from the document content and
+    /// <see cref="Timestamp"/>. Pin this together with <see cref="Timestamp"/> for byte-reproducible
+    /// output.
+    ///
+    /// <para>Encrypted and signed documents stay non-deterministic regardless of these pins:
+    /// each save draws fresh random salts/IVs for encryption, and a signature is time- and
+    /// key-dependent.</para>
     /// </summary>
-    public byte[]? DocumentId { get; set; }
+    /// <remarks>The array is defensively copied on get and set, so mutating it afterwards has
+    /// no effect on the output.</remarks>
+    public byte[]? DocumentId
+    {
+        get => _documentId is null ? null : (byte[])_documentId.Clone();
+        set => _documentId = value is null ? null : (byte[])value.Clone();
+    }
 
     /// <summary>
     /// Requested PDF/A conformance level.
@@ -546,7 +559,7 @@ public sealed class PdfDocument : IDisposable
             outputIntentsRef = BuildOutputIntents(registry);
 
         // ── Build document /ID (MD5 over title + producer + page count + timestamp) ─
-        var documentId = DocumentId ?? ComputeDocumentId(ts);
+        var documentId = _documentId ?? ComputeDocumentId(ts);
 
         // ── Build /Encrypt dictionary (AES-256, V5/R6) and arm the encryptor ──
         // The /Encrypt object itself MUST be written BEFORE calling WriteAll,
@@ -828,7 +841,7 @@ public sealed class PdfDocument : IDisposable
         registry.SetValue(metadataRef, metadataStream);
 
         // ── Document ID ───────────────────────────────────────────────────────
-        var documentId = DocumentId ?? ComputeDocumentId(ts);
+        var documentId = _documentId ?? ComputeDocumentId(ts);
 
         // ── Outline tree ──────────────────────────────────────────────────────
         PdfIndirectReference? outlinesRef = null;
