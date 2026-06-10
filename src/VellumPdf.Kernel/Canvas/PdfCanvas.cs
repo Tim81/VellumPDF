@@ -427,10 +427,7 @@ public sealed class PdfCanvas
     /// logical structure). Close it with <see cref="EndMarkedContent"/>. Use for purely
     /// decorative content (rules, table borders/fills) so tagged/PDF-UA output has no
     /// untagged "real" content.</summary>
-    public void BeginArtifactMarkedContent()
-    {
-        WriteOp("/Artifact BMC"u8);
-    }
+    public PdfCanvas BeginArtifactMarkedContent() { WriteOp("/Artifact BMC"u8); return this; }
 
     // ── XObject ─────────────────────────────────────────────────────────────
 
