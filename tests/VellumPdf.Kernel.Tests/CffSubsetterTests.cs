@@ -169,7 +169,7 @@ public sealed partial class CffSubsetterTests(ITestOutputHelper output)
             var originalSize = cffData.Length;
             var subsetSize = subsetBytes.Length;
 
-            Console.WriteLine(
+            _output.WriteLine(
                 $"[CffSubsetterTests] {Path.GetFileName(path)}: " +
                 $"original CFF={originalSize:N0} bytes, subset CFF={subsetSize:N0} bytes, " +
                 $"reduction={100.0 * (originalSize - subsetSize) / originalSize:F1}%");
@@ -428,22 +428,22 @@ public sealed partial class CffSubsetterTests(ITestOutputHelper output)
             // our new output correctly includes it. So compare total savings vs cs-only savings.
             var subrSavingsApprox = tinyTotalSavings - csOnlySavingsBytes;
 
-            Console.WriteLine(
+            _output.WriteLine(
                 $"[CffSubsetterTests subrSubsetting] {Path.GetFileName(path)}:");
-            Console.WriteLine(
+            _output.WriteLine(
                 $"  original CFF={originalSize:N0} B, NumGlyphs={font.NumGlyphs}");
-            Console.WriteLine(
+            _output.WriteLine(
                 $"  GlobalSubrINDEX={font.GlobalSubrIndexLength:N0} B ({font.GlobalSubrCount} subrs), " +
                 $"LocalSubrINDEX={font.LocalSubrIndexLength:N0} B ({font.LocalSubrCount} subrs)");
-            Console.WriteLine(
+            _output.WriteLine(
                 $"  CharStringsINDEX={font.CharStringsIndexLength:N0} B");
-            Console.WriteLine(
+            _output.WriteLine(
                 $"  tiny subset (GID 0 only): {tinySubsetBytes.Length:N0} B = {tinyRatio:F1}% (saved {tinyTotalSavings:N0} B)");
-            Console.WriteLine(
+            _output.WriteLine(
                 $"    charstrings-only savings: {csOnlySavingsBytes:N0} B");
-            Console.WriteLine(
+            _output.WriteLine(
                 $"    subr closure extra savings: {subrSavingsApprox:N0} B");
-            Console.WriteLine(
+            _output.WriteLine(
                 $"  small subset (GIDs 3-12): {smallSubsetBytes.Length:N0} B = {smallRatio:F1}% (reduction {100.0 - smallRatio:F1}%)");
 
             // Both subsets must be smaller than original
@@ -461,11 +461,11 @@ public sealed partial class CffSubsetterTests(ITestOutputHelper output)
             var origSubrBytes = font.GlobalSubrIndexLength + font.LocalSubrIndexLength;
             var subsetSubrBytes = tinySubset.GlobalSubrIndexLength + tinySubset.LocalSubrIndexLength;
 
-            Console.WriteLine(
+            _output.WriteLine(
                 $"  original subr INDEXes total: {origSubrBytes:N0} B");
-            Console.WriteLine(
+            _output.WriteLine(
                 $"  subset subr INDEXes total:   {subsetSubrBytes:N0} B");
-            Console.WriteLine(
+            _output.WriteLine(
                 $"  subr INDEX reduction: {origSubrBytes - subsetSubrBytes:N0} B " +
                 $"({100.0 * (origSubrBytes - subsetSubrBytes) / Math.Max(1, origSubrBytes):F1}%)");
 
