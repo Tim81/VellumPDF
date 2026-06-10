@@ -554,4 +554,124 @@ public sealed class StandardsFoundationTests
 
         Assert.Contains("/OutputIntents", content);
     }
+
+    // ── 5. Document /Lang ─────────────────────────────────────────────────────
+
+    [Fact]
+    public void Language_set_emitsCatalogLang()
+    {
+        using var doc = new PdfDocument();
+        doc.Language = "en-US";
+        doc.AddPage();
+
+        var content = SaveToString(doc);
+
+        Assert.Contains("/Lang", content);
+        Assert.Contains("en-US", content);
+    }
+
+    [Fact]
+    public void Language_null_doesNotEmitCatalogLang()
+    {
+        using var doc = new PdfDocument();
+        doc.Language = null;
+        doc.AddPage();
+
+        var content = SaveToString(doc);
+
+        Assert.DoesNotContain("/Lang", content);
+    }
+
+    [Fact]
+    public void Language_whitespaceOnly_doesNotEmitCatalogLang()
+    {
+        using var doc = new PdfDocument();
+        doc.Language = "   ";
+        doc.AddPage();
+
+        var content = SaveToString(doc);
+
+        Assert.DoesNotContain("/Lang", content);
+    }
+
+    [Fact]
+    public void Language_set_emitsDcLanguageInXmp()
+    {
+        using var doc = new PdfDocument();
+        doc.Language = "fr-FR";
+        doc.AddPage();
+
+        var content = SaveToString(doc);
+
+        Assert.Contains("dc:language", content);
+        Assert.Contains("fr-FR", content);
+    }
+
+    [Fact]
+    public void Language_null_doesNotEmitDcLanguageInXmp()
+    {
+        using var doc = new PdfDocument();
+        doc.Language = null;
+        doc.AddPage();
+
+        var content = SaveToString(doc);
+
+        Assert.DoesNotContain("dc:language", content);
+    }
+
+    [Fact]
+    public void Language_worksWithConformanceNone()
+    {
+        // /Lang is valid in any PDF, not just PDF/A.
+        using var doc = new PdfDocument();
+        doc.Language = "de";
+        doc.AddPage();
+
+        var content = SaveToString(doc);
+
+        Assert.Contains("/Lang", content);
+        Assert.DoesNotContain("pdfaid", content);
+    }
+
+    // ── 6. Per-element /Lang on PdfStructElem ────────────────────────────────
+
+    [Fact]
+    public void StructElem_Language_set_emitsLangOnElem()
+    {
+        using var doc = new PdfDocument();
+        doc.Tagged = true;
+        var page = doc.AddPage();
+        var canvas = new PdfCanvas(page);
+        var mcid = canvas.BeginMarkedContent("P");
+        canvas.EndMarkedContent();
+        canvas.Finish();
+
+        var elem = new PdfStructElem("P") { Page = page, Mcid = mcid, Language = "es-ES" };
+        doc.RegisterStructElem(elem);
+
+        var content = SaveToString(doc);
+
+        Assert.Contains("/Lang", content);
+        Assert.Contains("es-ES", content);
+    }
+
+    [Fact]
+    public void StructElem_Language_null_doesNotEmitLangOnElem()
+    {
+        using var doc = new PdfDocument();
+        doc.Tagged = true;
+        var page = doc.AddPage();
+        var canvas = new PdfCanvas(page);
+        var mcid = canvas.BeginMarkedContent("P");
+        canvas.EndMarkedContent();
+        canvas.Finish();
+
+        var elem = new PdfStructElem("P") { Page = page, Mcid = mcid, Language = null };
+        doc.RegisterStructElem(elem);
+
+        var content = SaveToString(doc);
+
+        // Only /StructTreeRoot etc. should appear; no /Lang unless doc.Language is also set
+        Assert.DoesNotContain("/Lang", content);
+    }
 }

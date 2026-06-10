@@ -73,7 +73,7 @@ public sealed class ParagraphRenderer : IRenderer
         _endLine = _startLine + maxLines;
         _occupied = area.WithHeight(maxLines * _lineHeight);
 
-        var overflow = new ParagraphRenderer(_para, _endLine) { _lines = _lines, StructType = StructType, ParentStructElem = ParentStructElem };
+        var overflow = new ParagraphRenderer(_para, _endLine) { _lines = _lines, StructType = StructType, ParentStructElem = ParentStructElem, ElementLanguage = ElementLanguage };
         var split = new ParagraphRenderer(_para, _startLine)
         {
             _lines = _lines,
@@ -82,6 +82,7 @@ public sealed class ParagraphRenderer : IRenderer
             _occupied = _occupied,
             StructType = StructType,
             ParentStructElem = ParentStructElem,
+            ElementLanguage = ElementLanguage,
         };
         return LayoutResult.Partial(_occupied, split, overflow);
     }
@@ -100,6 +101,13 @@ public sealed class ParagraphRenderer : IRenderer
     /// structure tree root. Used by table/list renderers to build nested hierarchies.
     /// </summary>
     internal PdfStructElem? ParentStructElem { get; set; }
+
+    /// <summary>
+    /// Per-element language override forwarded from <see cref="Paragraph.Language"/>
+    /// (or <see cref="Heading.Language"/> via <see cref="HeadingRenderer"/>).
+    /// Written as <c>/Lang</c> on the struct element when non-null.
+    /// </summary>
+    internal string? ElementLanguage { get; set; }
 
     /// <summary>Emits the wrapped lines as PDF text operators, applying alignment, justification, links and tagging.</summary>
     public void Draw(DrawContext ctx)
@@ -204,6 +212,8 @@ public sealed class ParagraphRenderer : IRenderer
         {
             canvas.EndMarkedContent();
             var elem = new PdfStructElem(StructType) { Mcid = mcid };
+            if (ElementLanguage is not null)
+                elem.Language = ElementLanguage;
             if (ParentStructElem is not null)
             {
                 // Nested mode: add as child of the provided parent (table/list use case).

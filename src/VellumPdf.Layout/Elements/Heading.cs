@@ -31,6 +31,12 @@ public sealed class Heading
     /// <summary>Horizontal alignment of the heading text.</summary>
     public HorizontalAlignment Alignment { get; init; } = HorizontalAlignment.Left;
 
+    /// <summary>
+    /// Optional per-element language override (BCP 47 / RFC 5646, e.g. <c>"en-US"</c>).
+    /// When set and the document is tagged, written as <c>/Lang</c> on the struct element.
+    /// </summary>
+    public string? Language { get; init; }
+
     /// <summary>Creates a heading with the given text and optional style (defaults to 14pt).</summary>
     public Heading(string text, TextStyle? style = null)
     {

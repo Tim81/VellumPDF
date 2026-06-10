@@ -60,6 +60,18 @@ public sealed class Document : IDisposable
     }
 
     /// <summary>
+    /// Optional document language tag (BCP 47 / RFC 5646, e.g. <c>"en-US"</c>, <c>"fr"</c>).
+    /// Forwarded to the underlying <see cref="PdfDocument"/>.
+    /// When set, writes <c>/Lang</c> in the catalog and <c>dc:language</c> in XMP.
+    /// Required by PDF/A-2a and PDF/UA-1 (set it explicitly — no default is applied).
+    /// </summary>
+    public string? Language
+    {
+        get => _pdf.Language;
+        set => _pdf.Language = value;
+    }
+
+    /// <summary>
     /// When true, <see cref="Save(Stream)"/> uses PDF 1.5+ object streams and a
     /// cross-reference stream for smaller output. Forwarded to the underlying
     /// <see cref="PdfDocument"/>. Cannot be combined with <see cref="Encrypt"/>.
@@ -124,7 +136,7 @@ public sealed class Document : IDisposable
     /// <summary>Adds a paragraph to the document content. Returns this document for chaining.</summary>
     public Document Add(Paragraph paragraph)
     {
-        _content.Add(new ParagraphRenderer(paragraph));
+        _content.Add(new ParagraphRenderer(paragraph) { ElementLanguage = paragraph.Language });
         return this;
     }
 

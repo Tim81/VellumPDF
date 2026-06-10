@@ -125,6 +125,15 @@ public sealed class PdfDocument : IDisposable
         set => _tagged = value;
     }
 
+    /// <summary>
+    /// Optional document language tag (BCP 47 / RFC 5646, e.g. <c>"en-US"</c>, <c>"fr"</c>).
+    /// When non-null and non-whitespace, written as <c>/Lang</c> in the catalog and
+    /// <c>dc:language</c> in the XMP metadata stream.
+    /// Valid in any PDF; required by PDF/A-2a and PDF/UA-1 (set it explicitly —
+    /// no value is auto-defaulted for any conformance level).
+    /// </summary>
+    public string? Language { get; set; }
+
     /// <summary>Adds a new page using <see cref="DefaultPageSize"/> and returns it.</summary>
     public PdfPage AddPage() => AddPage(DefaultPageSize);
 
@@ -543,7 +552,7 @@ public sealed class PdfDocument : IDisposable
 
         // ── Build XMP metadata stream ──────────────────────────────────────
         var ts = Timestamp ?? DateTimeOffset.UtcNow;
-        var xmpBytes = XmpMetadataWriter.BuildPacket(Info, Conformance, ts);
+        var xmpBytes = XmpMetadataWriter.BuildPacket(Info, Conformance, ts, Language);
         var metadataStream = new UncompressedPdfStream(xmpBytes);
         metadataStream.Dictionary
             .Set(PdfName.Type, new PdfName("Metadata"))
@@ -611,6 +620,8 @@ public sealed class PdfDocument : IDisposable
 
         if (outputIntentsRef is not null)
             catalog.Set(new PdfName("OutputIntents"), new PdfArray([outputIntentsRef]));
+
+        ApplyLanguage(catalog, Language);
 
         registry.SetValue(catalogRef, catalog);
 
@@ -832,7 +843,7 @@ public sealed class PdfDocument : IDisposable
 
         // ── XMP metadata ──────────────────────────────────────────────────────
         var ts = Timestamp ?? DateTimeOffset.UtcNow;
-        var xmpBytes = XmpMetadataWriter.BuildPacket(Info, Conformance, ts);
+        var xmpBytes = XmpMetadataWriter.BuildPacket(Info, Conformance, ts, Language);
         var metadataStream = new UncompressedPdfStream(xmpBytes);
         metadataStream.Dictionary
             .Set(PdfName.Type, new PdfName("Metadata"))
@@ -925,6 +936,8 @@ public sealed class PdfDocument : IDisposable
         // document, just as on the regular Save path.
         if (Conformance != PdfConformance.None)
             catalog.Set(new PdfName("OutputIntents"), new PdfArray([BuildOutputIntents(registry)]));
+
+        ApplyLanguage(catalog, Language);
 
         registry.SetValue(catalogRef, catalog);
 
@@ -1066,6 +1079,20 @@ public sealed class PdfDocument : IDisposable
         sb.Append(ts.ToUnixTimeMilliseconds());
         var input = Encoding.UTF8.GetBytes(sb.ToString());
         return MD5.HashData(input);
+    }
+
+    /// <summary>
+    /// Writes <c>/Lang</c> into <paramref name="catalog"/> when <paramref name="language"/>
+    /// is non-null and non-whitespace. Called from both the regular Save path and the
+    /// signing placeholder path so neither drifts out of sync.
+    /// Uses the same PDF string type (<see cref="PdfLiteralString.FromUnicode"/>) as the
+    /// document-info metadata strings.
+    /// </summary>
+    private static void ApplyLanguage(PdfDictionary catalog, string? language)
+    {
+        var trimmed = language?.Trim();
+        if (string.IsNullOrEmpty(trimmed)) return;
+        catalog.Set(new PdfName("Lang"), PdfLiteralString.FromUnicode(trimmed));
     }
 
     /// <summary>

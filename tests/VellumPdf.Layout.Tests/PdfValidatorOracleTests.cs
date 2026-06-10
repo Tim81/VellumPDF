@@ -703,7 +703,7 @@ public sealed class PdfValidatorOracleTests : IDisposable
     // a role map, and validated marked-content↔structure linkage — which is a roadmap
     // item (see README "Not yet / roadmap"). The metadata path is covered by the
     // StandardsFoundation tests; the strict veraPDF 2a gate is enabled once that lands.
-    [Fact(Skip = "PDF/A-2a (level A) accessible-tagging conformance is a roadmap item; gate enabled once /Lang + role map land.")]
+    [Fact(Skip = "PDF/A-2a (level A): /Lang is now emitted; remaining blockers are the role map + marked-content linkage (#38).")]
     public void PdfA2a_veraPdf_reportsCompliant()
     {
         var fontPath = FindPlatformFont();

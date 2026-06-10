@@ -29,6 +29,13 @@ public sealed class PdfStructElem
     /// </summary>
     public string? AltText { get; set; }
 
+    /// <summary>
+    /// Optional per-element language override (BCP 47 / RFC 5646, e.g. <c>"en-US"</c>).
+    /// Written as the <c>/Lang</c> entry on this struct element dict when non-null.
+    /// Overrides the document-level <c>/Lang</c> for this element and its children.
+    /// </summary>
+    public string? Language { get; set; }
+
     private readonly List<PdfStructElem> _children = [];
 
     /// <summary>Child structure elements (for grouping elements such as Table, TR, L, LI).</summary>
@@ -178,6 +185,11 @@ internal sealed class PdfStructureTree
             // Written as a UTF-16BE string with BOM per PDF §7.9.2.
             if (elem.AltText is not null)
                 d.Set(new PdfName("Alt"), PdfLiteralString.FromUnicode(elem.AltText));
+
+            // /Lang — per-element language override (BCP 47).
+            var elemLang = elem.Language?.Trim();
+            if (!string.IsNullOrEmpty(elemLang))
+                d.Set(new PdfName("Lang"), PdfLiteralString.FromUnicode(elemLang));
 
             // /StructParents is NOT set on individual struct elems; it belongs on the page.
             registry.SetValue(ref_, d);
