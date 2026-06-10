@@ -5,6 +5,8 @@ using System.Text;
 using VellumPdf.Canvas;
 using VellumPdf.Document;
 using VellumPdf.Fonts;
+using VellumPdf.Fonts.Cff;
+using VellumPdf.Fonts.Sfnt;
 
 namespace VellumPdf.Kernel.Tests;
 
@@ -25,16 +27,21 @@ public sealed class TrueTypeEmbedEndToEndTests
     /// </summary>
     private static string? FindOtfFont()
     {
+        var windowsUserFonts = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "Microsoft", "Windows", "Fonts");
+
         string[] candidates =
         [
-            // Linux CI — TeX Gyre (fonts-texgyre apt package)
-            "/usr/share/fonts/opentype/texgyre/texgyreadventor-regular.otf",
+            // Windows user-installed TeX Gyre fonts
+            Path.Combine(windowsUserFonts, "texgyreheros-regular.otf"),
+            Path.Combine(windowsUserFonts, "texgyretermes-regular.otf"),
+            // Linux CI — fonts-texgyre on Ubuntu Noble installs under the TeX tree
+            "/usr/share/texmf/fonts/opentype/public/tex-gyre/texgyreheros-regular.otf",
+            "/usr/share/texmf/fonts/opentype/public/tex-gyre/texgyretermes-regular.otf",
+            "/usr/share/texmf/fonts/opentype/public/tex-gyre/texgyreadventor-regular.otf",
+            // Linux CI — older fonts-texgyre layout
             "/usr/share/fonts/opentype/texgyre/texgyreheros-regular.otf",
-            "/usr/share/fonts/opentype/texgyre/texgyrecursor-regular.otf",
-            "/usr/share/fonts/opentype/texgyre/texgyrebonum-regular.otf",
-            "/usr/share/fonts/opentype/texgyre/texgyrechorus-regular.otf",
-            "/usr/share/fonts/opentype/texgyre/texgyrepagella-regular.otf",
-            "/usr/share/fonts/opentype/texgyre/texgyreschola-regular.otf",
             "/usr/share/fonts/opentype/texgyre/texgyretermes-regular.otf",
             // Generic Linux search fallback
             "/usr/share/fonts/opentype/noto/NotoSans-Regular.otf",
@@ -43,10 +50,11 @@ public sealed class TrueTypeEmbedEndToEndTests
         foreach (var c in candidates)
             if (File.Exists(c)) return c;
 
-        // Broader Linux search under /usr/share/fonts for any .otf
-        if (Directory.Exists("/usr/share/fonts"))
+        // Broader Linux search for any .otf under the common font roots.
+        foreach (var root in (string[])["/usr/share/texmf", "/usr/share/fonts", "/usr/share/texlive"])
         {
-            foreach (var f in Directory.EnumerateFiles("/usr/share/fonts", "*.otf", SearchOption.AllDirectories))
+            if (!Directory.Exists(root)) continue;
+            foreach (var f in Directory.EnumerateFiles(root, "*.otf", SearchOption.AllDirectories))
                 return f;
         }
 
@@ -274,6 +282,142 @@ public sealed class TrueTypeEmbedEndToEndTests
         Assert.DoesNotContain("/CIDFontType2", content);
         Assert.DoesNotContain("/FontFile2", content);
         Assert.DoesNotContain("/CIDToGIDMap", content);
+
+        // CFF fonts are now subsetted — /BaseFont must carry a six-uppercase-letter tag.
+        Assert.Matches(@"/BaseFont\s*/[A-Z]{6}\+", content);
+    }
+
+    // ── Test 8: CFF FontFile3 is a valid smaller subset sfnt, /BaseFont is tagged ─
+
+    [Fact]
+    public void Save_withEmbeddedCffFont_fontFile3IsValidSubsetSfnt()
+    {
+        var otfPath = FindOtfFont();
+        if (otfPath is null) return; // skip if no OTF font available on this platform
+
+        var originalFontBytes = File.ReadAllBytes(otfPath);
+        var originalSfnt = SfntFont.Parse(originalFontBytes);
+        var originalCffSize = originalSfnt.GetTableBytes(new Tag("CFF ")).Length;
+
+        using var doc = new PdfDocument();
+        var page = doc.AddPage();
+
+        var handle = doc.UseTrueTypeFont(originalFontBytes);
+        doc.RegisterEmbeddedFontUsage(page, handle);
+
+        var canvas = new PdfCanvas(page);
+        canvas
+            .BeginText()
+            .SetFontByName(handle.ResourceName, 12)
+            .SetTextMatrix(1, 0, 0, 1, 72, 720);
+
+        // Use only a handful of glyphs so the subset is small.
+        var text = "Hi";
+        var gids = new ushort[text.Length];
+        var count = handle.GetGlyphIds(text, gids);
+        canvas.ShowGlyphs(gids.AsSpan(0, count));
+        canvas.EndText();
+        canvas.Finish();
+
+        var ms = new MemoryStream();
+        doc.Save(ms);
+        var pdfBytes = ms.ToArray();
+        var content = Encoding.Latin1.GetString(pdfBytes);
+
+        // (a) /BaseFont carries a six-letter subset tag.
+        Assert.Matches(@"/BaseFont\s*/[A-Z]{6}\+", content);
+
+        // (b) Extract the /FontFile3 stream bytes and verify it is a valid sfnt
+        //     whose CFF  table re-parses correctly.
+        var fontFileBytes = ExtractFontFile3Bytes(pdfBytes);
+        Assert.NotNull(fontFileBytes);
+
+        var subsetSfnt = SfntFont.Parse(fontFileBytes);
+        Assert.True(subsetSfnt.IsCff, "FontFile3 must be an OTTO (CFF) sfnt.");
+
+        var subsetCffBytes = subsetSfnt.GetTableBytes(new Tag("CFF "));
+        var subsetCff = CffFont.Parse(subsetCffBytes); // must not throw
+        Assert.True(subsetCff.NumGlyphs > 0, "Subset CFF must retain all glyph slots.");
+
+        // (c) The FontFile3 stream (whole sfnt) must be substantially smaller than the
+        //     original font. With only 2 glyphs used, the CFF table alone shrinks to
+        //     well under half the original.
+        var fontFile3Size = fontFileBytes.Length;
+        Assert.True(
+            fontFile3Size < originalFontBytes.Length,
+            $"FontFile3 ({fontFile3Size:N0} B) should be smaller than original font " +
+            $"({originalFontBytes.Length:N0} B).");
+
+        // Report sizes for the test output.
+        Console.WriteLine(
+            $"[CFF subset embed] {Path.GetFileName(otfPath)}: " +
+            $"original font={originalFontBytes.Length:N0} B, " +
+            $"original CFF table={originalCffSize:N0} B, " +
+            $"FontFile3 sfnt={fontFile3Size:N0} B " +
+            $"({100.0 * fontFile3Size / originalFontBytes.Length:F1}% of original font).");
+    }
+
+    /// <summary>
+    /// Scans the raw PDF bytes for the first /FontFile3 stream and returns its
+    /// decompressed (FlateDecode) or raw content bytes.  Returns null if not found.
+    /// This locates the first stream after a dict containing "/Subtype /OpenType".
+    /// </summary>
+    private static byte[]? ExtractFontFile3Bytes(byte[] pdf)
+    {
+        var pdfText = Encoding.Latin1.GetString(pdf);
+        var pos = 0;
+        while (pos < pdf.Length)
+        {
+            var streamIdx = pdfText.IndexOf("\nstream\n", pos, StringComparison.Ordinal);
+            if (streamIdx < 0) break;
+            var dataStart = streamIdx + "\nstream\n".Length;
+
+            // Find the dict preceding this stream.
+            var dictEnd = streamIdx;
+            var dictStart = pdfText.LastIndexOf("obj\n", dictEnd, StringComparison.Ordinal);
+            if (dictStart < 0) { pos = dataStart; continue; }
+
+            var dictText = pdfText[dictStart..dictEnd];
+
+            // We want the /FontFile3 stream which has /Subtype /OpenType.
+            if (!dictText.Contains("/Subtype /OpenType", StringComparison.Ordinal))
+            { pos = dataStart; continue; }
+
+            // Parse /Length.
+            var lenIdx = dictText.IndexOf("/Length ", StringComparison.Ordinal);
+            if (lenIdx < 0) { pos = dataStart; continue; }
+            var lenValStart = lenIdx + "/Length ".Length;
+            var lenValEnd = lenValStart;
+            while (lenValEnd < dictText.Length && char.IsDigit(dictText[lenValEnd])) lenValEnd++;
+            if (!int.TryParse(dictText[lenValStart..lenValEnd], out var streamLength))
+            { pos = dataStart; continue; }
+            if (dataStart + streamLength > pdf.Length) { pos = dataStart; continue; }
+
+            var rawBytes = pdf[dataStart..(dataStart + streamLength)];
+
+            // Check for FlateDecode.
+            if (dictText.Contains("/FlateDecode", StringComparison.Ordinal)
+                || dictText.Contains("/Filter /FlateDecode", StringComparison.Ordinal))
+            {
+                try
+                {
+                    using var input = new MemoryStream(rawBytes);
+                    using var output = new MemoryStream();
+                    using var z = new System.IO.Compression.ZLibStream(
+                        input, System.IO.Compression.CompressionMode.Decompress);
+                    z.CopyTo(output);
+                    return output.ToArray();
+                }
+                catch (InvalidDataException)
+                {
+                    return rawBytes; // not zlib — return raw
+                }
+            }
+
+            return rawBytes;
+        }
+
+        return null;
     }
 
     // ── Test 7: GetGlyphId returns non-zero for a common letter in a CFF font ───

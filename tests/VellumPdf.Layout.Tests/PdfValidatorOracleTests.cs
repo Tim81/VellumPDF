@@ -750,6 +750,40 @@ public sealed class PdfValidatorOracleTests : IDisposable
     }
 
     /// <summary>
+    /// PDF/A-2b compliance with a subsetted OTF/CFF embedded font.
+    /// Verifies that the subsetted CFF sfnt meets all PDF/A-2b requirements.
+    /// Skips locally when no OTF font or veraPDF is available; fails on CI
+    /// when either is missing.
+    /// </summary>
+    [Fact]
+    public void PdfA2b_OtfCff_veraPdf_reportsCompliant()
+    {
+        var otfPath = FindOtfFont();
+        if (otfPath is null) { GateOnCi("OTF font for PDF/A OTF/CFF oracle"); return; }
+
+        var pdfPath = Path.Combine(_tempDir, "pdfa2b_otf_cff_verapdf.pdf");
+        GeneratePdfA2bOtfCffDoc(pdfPath, otfPath);
+        AssertVeraPdfCompliant(pdfPath, "2b");
+    }
+
+    /// <summary>
+    /// Generates a PDF/A-2b document using an embedded OTF/CFF font (subsetted).
+    /// </summary>
+    private static void GeneratePdfA2bOtfCffDoc(string path, string otfPath)
+    {
+        using var doc = new Document();
+        doc.Conformance = PdfConformance.PdfA2b;
+        doc.Info.Title = "VellumPdf veraPDF OTF/CFF Oracle";
+        doc.Info.Producer = "VellumPdf";
+
+        var handle = doc.LoadTrueTypeFont(otfPath);
+        var style = new TextStyle { FontRef = handle, FontSize = 12 };
+        doc.Add(new Paragraph("VellumPdf PDF/A-2b subsetted OTF/CFF oracle document.", style));
+        doc.Add(new Paragraph("This document uses a subsetted CFF (OpenType) embedded font.", style));
+        doc.Save(path);
+    }
+
+    /// <summary>
     /// Runs veraPDF against <paramref name="pdfPath"/> at the given flavour and asserts
     /// the report says the file is compliant. Gates on CI when veraPDF is unavailable
     /// (fail), skips locally. The assertion is strict and surfaces the full report.
@@ -887,7 +921,7 @@ public sealed class PdfValidatorOracleTests : IDisposable
     public void OtfCff_QpdfCheck_Passes()
     {
         var otfPath = FindOtfFont();
-        if (otfPath is null) return; // skip if no OTF font available on this platform
+        if (otfPath is null) { GateOnCi("OTF/CFF font for oracle"); return; }
 
         var pdfPath = Path.Combine(_tempDir, "otf_cff.pdf");
         GenerateOtfCffDoc(pdfPath, otfPath);
@@ -907,7 +941,7 @@ public sealed class PdfValidatorOracleTests : IDisposable
     public void OtfCff_PdftotextFindsMarker()
     {
         var otfPath = FindOtfFont();
-        if (otfPath is null) return; // skip if no OTF font available on this platform
+        if (otfPath is null) { GateOnCi("OTF/CFF font for oracle"); return; }
 
         var pdfPath = Path.Combine(_tempDir, "otf_cff_text.pdf");
         GenerateOtfCffDoc(pdfPath, otfPath);
