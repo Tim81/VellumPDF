@@ -255,16 +255,15 @@ internal sealed class PdfStructureTree
                     $"Structure type '{type}' is not a standard type and has no role mapping.");
             roleMapDict.Set(new PdfName(type), new PdfName(type));
         }
-        var roleMapRef = registry.Reserve();
-        registry.SetValue(roleMapRef, roleMapDict);
 
-        // Write /StructTreeRoot
+        // Write /StructTreeRoot. /RoleMap is a direct nested dict (like the catalog's
+        // /MarkInfo) — it is small and unshared, so no separate indirect object is needed.
         var structTreeRoot = new PdfDictionary()
             .Set(PdfName.Type, new PdfName("StructTreeRoot"))
             .Set(new PdfName("K"), docRootRef)
             .Set(new PdfName("ParentTree"), parentTreeRef)
             .Set(new PdfName("ParentTreeNextKey"), new PdfInteger(pageOrder.Count))
-            .Set(new PdfName("RoleMap"), roleMapRef);
+            .Set(new PdfName("RoleMap"), roleMapDict);
         registry.SetValue(structTreeRootRef, structTreeRoot);
 
         return structTreeRootRef;
