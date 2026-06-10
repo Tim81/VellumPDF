@@ -921,7 +921,7 @@ public sealed class PdfValidatorOracleTests : IDisposable
     public void OtfCff_QpdfCheck_Passes()
     {
         var otfPath = FindOtfFont();
-        if (otfPath is null) return; // skip if no OTF font available on this platform
+        if (otfPath is null) { GateOnCi("OTF/CFF font for oracle"); return; }
 
         var pdfPath = Path.Combine(_tempDir, "otf_cff.pdf");
         GenerateOtfCffDoc(pdfPath, otfPath);
@@ -941,7 +941,7 @@ public sealed class PdfValidatorOracleTests : IDisposable
     public void OtfCff_PdftotextFindsMarker()
     {
         var otfPath = FindOtfFont();
-        if (otfPath is null) return; // skip if no OTF font available on this platform
+        if (otfPath is null) { GateOnCi("OTF/CFF font for oracle"); return; }
 
         var pdfPath = Path.Combine(_tempDir, "otf_cff_text.pdf");
         GenerateOtfCffDoc(pdfPath, otfPath);

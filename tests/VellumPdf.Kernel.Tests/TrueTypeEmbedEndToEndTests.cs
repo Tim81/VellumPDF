@@ -36,14 +36,12 @@ public sealed class TrueTypeEmbedEndToEndTests
             // Windows user-installed TeX Gyre fonts
             Path.Combine(windowsUserFonts, "texgyreheros-regular.otf"),
             Path.Combine(windowsUserFonts, "texgyretermes-regular.otf"),
-            // Linux CI — TeX Gyre (fonts-texgyre apt package)
-            "/usr/share/fonts/opentype/texgyre/texgyreadventor-regular.otf",
+            // Linux CI — fonts-texgyre on Ubuntu Noble installs under the TeX tree
+            "/usr/share/texmf/fonts/opentype/public/tex-gyre/texgyreheros-regular.otf",
+            "/usr/share/texmf/fonts/opentype/public/tex-gyre/texgyretermes-regular.otf",
+            "/usr/share/texmf/fonts/opentype/public/tex-gyre/texgyreadventor-regular.otf",
+            // Linux CI — older fonts-texgyre layout
             "/usr/share/fonts/opentype/texgyre/texgyreheros-regular.otf",
-            "/usr/share/fonts/opentype/texgyre/texgyrecursor-regular.otf",
-            "/usr/share/fonts/opentype/texgyre/texgyrebonum-regular.otf",
-            "/usr/share/fonts/opentype/texgyre/texgyrechorus-regular.otf",
-            "/usr/share/fonts/opentype/texgyre/texgyrepagella-regular.otf",
-            "/usr/share/fonts/opentype/texgyre/texgyreschola-regular.otf",
             "/usr/share/fonts/opentype/texgyre/texgyretermes-regular.otf",
             // Generic Linux search fallback
             "/usr/share/fonts/opentype/noto/NotoSans-Regular.otf",
@@ -52,10 +50,11 @@ public sealed class TrueTypeEmbedEndToEndTests
         foreach (var c in candidates)
             if (File.Exists(c)) return c;
 
-        // Broader Linux search under /usr/share/fonts for any .otf
-        if (Directory.Exists("/usr/share/fonts"))
+        // Broader Linux search for any .otf under the common font roots.
+        foreach (var root in (string[])["/usr/share/texmf", "/usr/share/fonts", "/usr/share/texlive"])
         {
-            foreach (var f in Directory.EnumerateFiles("/usr/share/fonts", "*.otf", SearchOption.AllDirectories))
+            if (!Directory.Exists(root)) continue;
+            foreach (var f in Directory.EnumerateFiles(root, "*.otf", SearchOption.AllDirectories))
                 return f;
         }
 
