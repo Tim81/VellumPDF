@@ -727,6 +727,28 @@ public sealed class PdfValidatorOracleTests : IDisposable
         AssertVeraPdfCompliant(pdfPath, "2a");
     }
 
+    [Fact]
+    public void PdfUA1_veraPdf_reportsCompliant()
+    {
+        var fontPath = FindPlatformFont();
+        if (fontPath is null) { GateOnCi("platform font for PDF/UA oracle"); return; }
+
+        var pdfPath = Path.Combine(_tempDir, "pdfua1_verapdf.pdf");
+        GeneratePdfATaggedDoc(pdfPath, fontPath, PdfConformance.PdfUA1);
+        AssertVeraPdfCompliant(pdfPath, "ua1");
+    }
+
+    [Fact]
+    public void PdfUA1_Text_veraPdf_reportsCompliant()
+    {
+        var fontPath = FindPlatformFont();
+        if (fontPath is null) { GateOnCi("platform font for PDF/UA oracle"); return; }
+
+        var pdfPath = Path.Combine(_tempDir, "pdfua1_text_verapdf.pdf");
+        GeneratePdfATaggedTextDoc(pdfPath, fontPath, PdfConformance.PdfUA1);
+        AssertVeraPdfCompliant(pdfPath, "ua1");
+    }
+
     /// <summary>
     /// Runs veraPDF against <paramref name="pdfPath"/> at the given flavour and asserts
     /// the report says the file is compliant. Gates on CI when veraPDF is unavailable
@@ -841,10 +863,10 @@ public sealed class PdfValidatorOracleTests : IDisposable
         doc.Save(path);
     }
 
-    private static void GeneratePdfATaggedTextDoc(string path, string fontPath)
+    private static void GeneratePdfATaggedTextDoc(string path, string fontPath, PdfConformance conformance = PdfConformance.PdfA2a)
     {
         using var doc = new Document();
-        doc.Conformance = PdfConformance.PdfA2a;
+        doc.Conformance = conformance;
         doc.Tagged = true;
         doc.Language = "en-US";
         doc.Info.Title = "VellumPdf veraPDF Oracle — Tagged Text";

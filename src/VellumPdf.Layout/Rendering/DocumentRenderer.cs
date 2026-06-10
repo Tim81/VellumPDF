@@ -218,6 +218,10 @@ public sealed class DocumentRenderer
         // PDF Y: baseline of text within the band (centred vertically in the band)
         var pdfY = ctx.ToPdfY(bandY + bandHeight - (bandHeight - style.FontSize) / 2);
 
+        // Running-band text is pagination decoration, not part of the logical structure.
+        // Wrap as /Artifact when the document is tagged so PDF/UA validators find no
+        // untagged real content.
+        if (ctx.Tagged) canvas.BeginArtifactMarkedContent();
         canvas.BeginText();
         if (style.FontRef.IsEmbedded)
         {
@@ -237,6 +241,7 @@ public sealed class DocumentRenderer
             canvas.ShowText(text);
         }
         canvas.EndText();
+        if (ctx.Tagged) canvas.EndMarkedContent();
     }
 
     // ── Pass 1: page counting ─────────────────────────────────────────────────

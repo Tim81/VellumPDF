@@ -25,6 +25,50 @@ public sealed class StandardsFoundationTests
         return System.Text.Encoding.Latin1.GetString(ms.ToArray());
     }
 
+    /// <summary>
+    /// Saves and returns the raw PDF text concatenated with all decompressed
+    /// FlateDecode stream data, so tests can assert on content-stream operators
+    /// that are compressed in the output.
+    /// </summary>
+    private static string SaveToStringWithDecompressed(PdfDocument doc)
+    {
+        var ms = new MemoryStream();
+        doc.Save(ms);
+        var bytes = ms.ToArray();
+        var raw = System.Text.Encoding.Latin1.GetString(bytes);
+        var sb = new System.Text.StringBuilder(raw);
+        // Decompress each FlateDecode stream and append.
+        var pos = 0;
+        while (pos < bytes.Length)
+        {
+            var streamKeyword = raw.IndexOf("\nstream\n", pos, StringComparison.Ordinal);
+            if (streamKeyword < 0) break;
+            var dataStart = streamKeyword + "\nstream\n".Length;
+            var dictEnd = streamKeyword;
+            var dictStart = raw.LastIndexOf("obj\n", dictEnd, StringComparison.Ordinal);
+            if (dictStart < 0) { pos = dataStart; continue; }
+            var lenIdx = raw.IndexOf("/Length ", dictStart, dictEnd - dictStart, StringComparison.Ordinal);
+            if (lenIdx < 0) { pos = dataStart; continue; }
+            var lenValStart = lenIdx + "/Length ".Length;
+            var lenValEnd = lenValStart;
+            while (lenValEnd < raw.Length && char.IsDigit(raw[lenValEnd])) lenValEnd++;
+            if (!int.TryParse(raw[lenValStart..lenValEnd], out var streamLength)) { pos = dataStart; continue; }
+            if (dataStart + streamLength > bytes.Length) { pos = dataStart; continue; }
+            var rawBytes = bytes[dataStart..(dataStart + streamLength)];
+            try
+            {
+                using var input = new MemoryStream(rawBytes);
+                using var output = new MemoryStream();
+                using var z = new System.IO.Compression.ZLibStream(input, System.IO.Compression.CompressionMode.Decompress);
+                z.CopyTo(output);
+                sb.Append(System.Text.Encoding.Latin1.GetString(output.ToArray()));
+            }
+            catch (InvalidDataException) { /* not a zlib stream — skip */ }
+            pos = dataStart + streamLength;
+        }
+        return sb.ToString();
+    }
+
     // ── 1. XMP metadata ──────────────────────────────────────────────────────
 
     [Fact]
@@ -692,13 +736,14 @@ public sealed class StandardsFoundationTests
         Assert.Contains("en-US", content);
     }
 
-    // ── 8. /RoleMap and MCID-ordered /ParentTree (issue #38) ─────────────────
+    // ── 8. No /RoleMap for standard types + MCID-ordered /ParentTree (issue #38) ─
 
     [Fact]
-    public void Tagged_structTree_emitsRoleMapWithIdentityEntries()
+    public void Tagged_structTree_standardTypes_omitsRoleMap()
     {
-        // A tagged doc with P, H1, and Figure elems → /RoleMap must contain identity
-        // entries for Document, P, H1, and Figure.
+        // A tagged doc using only standard structure types (P, H1, Figure) must NOT
+        // emit /RoleMap. Mapping a standard type to itself is a circular mapping that
+        // violates ISO 14289-1 (PDF/UA-1) clause 7.1. Standard types need no role mapping.
         using var doc = new PdfDocument();
         doc.Tagged = true;
         var page = doc.AddPage();
@@ -718,11 +763,31 @@ public sealed class StandardsFoundationTests
 
         var content = SaveToString(doc);
 
-        Assert.Contains("/RoleMap", content);
-        Assert.Contains("/P /P", content);
-        Assert.Contains("/H1 /H1", content);
-        Assert.Contains("/Figure /Figure", content);
-        Assert.Contains("/Document /Document", content);
+        Assert.DoesNotContain("/RoleMap", content);
+    }
+
+    [Fact]
+    public void Tagged_thStructElem_emitsTableScope()
+    {
+        // A TH struct elem with TableHeaderScope = "Column" must emit
+        // /A << /O /Table /Scope /Column >> (ISO 14289-1 clause 7.5).
+        using var doc = new PdfDocument();
+        doc.Tagged = true;
+        var page = doc.AddPage();
+        var canvas = new PdfCanvas(page);
+        var mcid = canvas.BeginMarkedContent("P");
+        canvas.EndMarkedContent();
+        canvas.Finish();
+
+        var pElem = new PdfStructElem("P") { Page = page, Mcid = mcid };
+        var thElem = new PdfStructElem("TH") { Page = page, TableHeaderScope = "Column" };
+        thElem.AddChild(pElem);
+        doc.RegisterStructElem(thElem);
+
+        var content = SaveToString(doc);
+
+        Assert.Contains("/O /Table", content);
+        Assert.Contains("/Scope /Column", content);
     }
 
     [Fact]
@@ -793,5 +858,68 @@ public sealed class StandardsFoundationTests
 
         var ms = new MemoryStream();
         Assert.Throws<InvalidOperationException>(() => { doc.Save(ms); });
+    }
+
+    // ── 9. PDF/UA-1 conformance ───────────────────────────────────────────────
+
+    [Fact]
+    public void Conformance_PdfUA1_emitsViewerPreferencesDisplayDocTitle()
+    {
+        using var doc = new PdfDocument();
+        doc.Conformance = PdfConformance.PdfUA1;
+        doc.Info.Title = "UA-1 Test";
+        doc.Language = "en-US";
+        doc.AddPage();
+
+        var content = SaveToString(doc);
+
+        Assert.Contains("/ViewerPreferences", content);
+        Assert.Contains("/DisplayDocTitle true", content);
+    }
+
+    [Fact]
+    public void Conformance_PdfUA1_emitsPdfUaIdPart_notPdfaId()
+    {
+        using var doc = new PdfDocument();
+        doc.Conformance = PdfConformance.PdfUA1;
+        doc.Info.Title = "UA-1 XMP Test";
+        doc.AddPage();
+
+        var content = SaveToString(doc);
+
+        Assert.Contains("pdfuaid", content);
+        Assert.Contains("<pdfuaid:part>1", content);
+        Assert.DoesNotContain("pdfaid:", content);
+    }
+
+    [Fact]
+    public void Conformance_PdfUA1_impliesTagged()
+    {
+        using var doc = new PdfDocument();
+        doc.Conformance = PdfConformance.PdfUA1;
+
+        Assert.True(doc.Tagged);
+    }
+
+    [Fact]
+    public void Canvas_BeginArtifactMarkedContent_emitsArtifactBmc()
+    {
+        using var doc = new PdfDocument();
+        var page = doc.AddPage();
+        var canvas = new PdfCanvas(page);
+        canvas.BeginArtifactMarkedContent();
+        canvas
+            .SetStrokeColorRgb(0, 0, 0)
+            .MoveTo(10, 10)
+            .LineTo(100, 10)
+            .Stroke();
+        canvas.EndMarkedContent();
+        canvas.Finish();
+
+        // Content stream is FlateDecode-compressed; use the decompressed helper.
+        var content = SaveToStringWithDecompressed(doc);
+
+        Assert.Contains("/Artifact BMC", content);
+        Assert.Contains("EMC", content);
     }
 }

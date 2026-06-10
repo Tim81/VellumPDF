@@ -36,6 +36,13 @@ public sealed class PdfStructElem
     /// </summary>
     public string? Language { get; set; }
 
+    /// <summary>
+    /// For table header (<c>TH</c>) elements — the <c>/Scope</c> value (<c>"Column"</c> or
+    /// <c>"Row"</c>). Emitted as <c>/A &lt;&lt; /O /Table /Scope /&lt;value&gt; &gt;&gt;</c>;
+    /// required by PDF/UA-1 (ISO 14289-1 clause 7.5) so data cells can resolve their headers.
+    /// </summary>
+    public string? TableHeaderScope { get; set; }
+
     private readonly List<PdfStructElem> _children = [];
 
     /// <summary>Child structure elements (for grouping elements such as Table, TR, L, LI).</summary>
@@ -224,6 +231,14 @@ internal sealed class PdfStructureTree
             if (!string.IsNullOrEmpty(elemLang))
                 d.Set(new PdfName("Lang"), PdfLiteralString.FromUnicode(elemLang));
 
+            // /A — attribute dictionary for TH elements (PDF/UA-1 clause 7.5).
+            // Scope identifies whether this header applies to a Column or Row.
+            var scope = elem.TableHeaderScope?.Trim();
+            if (!string.IsNullOrEmpty(scope))
+                d.Set(new PdfName("A"), new PdfDictionary()
+                    .Set(new PdfName("O"), new PdfName("Table"))
+                    .Set(new PdfName("Scope"), new PdfName(scope)));
+
             // /StructParents is NOT set on individual struct elems; it belongs on the page.
             registry.SetValue(ref_, d);
         }
@@ -241,29 +256,28 @@ internal sealed class PdfStructureTree
         var parentTreeRef = registry.Reserve();
         registry.SetValue(parentTreeRef, parentTreeDict);
 
-        // Build /RoleMap: collect distinct structure types actually used in the tree
-        // (including the top-level /Document root), map each to itself (identity mapping
-        // for standard types). Non-standard types are rejected with an exception.
+        // Validate that all used structure types are standard ISO 32000-1 types.
+        // Standard types must NOT appear in /RoleMap — mapping a standard type to itself
+        // is a circular mapping and fails ISO 14289-1 (PDF/UA-1) clause 7.1.
+        // VellumPdf emits only standard types, so no /RoleMap is written at all.
         var usedTypes = new HashSet<string>();
         CollectStructTypes(_documentRoot, usedTypes);
 
-        var roleMapDict = new PdfDictionary();
-        foreach (var type in usedTypes.OrderBy(t => t, StringComparer.Ordinal))
+        foreach (var type in usedTypes)
         {
             if (!StandardStructureTypes.Contains(type))
                 throw new InvalidOperationException(
                     $"Structure type '{type}' is not a standard type and has no role mapping.");
-            roleMapDict.Set(new PdfName(type), new PdfName(type));
         }
 
-        // Write /StructTreeRoot. /RoleMap is a direct nested dict (like the catalog's
-        // /MarkInfo) — it is small and unshared, so no separate indirect object is needed.
+        // Write /StructTreeRoot. /RoleMap is intentionally omitted: all used types are
+        // standard PDF structure types, and a standard type mapped to itself constitutes
+        // a circular mapping that violates ISO 14289-1 clause 7.1.
         var structTreeRoot = new PdfDictionary()
             .Set(PdfName.Type, new PdfName("StructTreeRoot"))
             .Set(new PdfName("K"), docRootRef)
             .Set(new PdfName("ParentTree"), parentTreeRef)
-            .Set(new PdfName("ParentTreeNextKey"), new PdfInteger(pageOrder.Count))
-            .Set(new PdfName("RoleMap"), roleMapDict);
+            .Set(new PdfName("ParentTreeNextKey"), new PdfInteger(pageOrder.Count));
         registry.SetValue(structTreeRootRef, structTreeRoot);
 
         return structTreeRootRef;

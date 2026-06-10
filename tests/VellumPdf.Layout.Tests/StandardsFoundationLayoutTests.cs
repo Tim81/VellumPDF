@@ -420,6 +420,47 @@ public sealed class StandardsFoundationLayoutTests
         Assert.Contains("/N 3", content);
     }
 
+    // ── PDF/UA-1 artifact wrapping ────────────────────────────────────────────
+
+    [Fact]
+    public void Document_tagged_table_bordersAreArtifacts()
+    {
+        // Content streams are FlateDecode-compressed; search the decompressed data.
+        using var doc = new Document();
+        doc.Tagged = true;
+
+        var table = new TableElement();
+        table.SetColumnWidths(200, 200);
+        var row = table.AddRow();
+        row.AddCell("Alpha").AddCell("Beta");
+        doc.Add(table);
+
+        var ms = new MemoryStream();
+        doc.Save(ms);
+        var decompressed = PdfTestUtil.DecompressAllFlatStreams(ms.ToArray());
+
+        Assert.Contains("/Artifact", decompressed);
+    }
+
+    [Fact]
+    public void Document_untagged_table_doesNotContainArtifact()
+    {
+        // Untagged doc: decorative draws must NOT be artifact-wrapped (byte-stable).
+        using var doc = new Document();
+
+        var table = new TableElement();
+        table.SetColumnWidths(200, 200);
+        var row = table.AddRow();
+        row.AddCell("Alpha").AddCell("Beta");
+        doc.Add(table);
+
+        var ms = new MemoryStream();
+        doc.Save(ms);
+        var decompressed = PdfTestUtil.DecompressAllFlatStreams(ms.ToArray());
+
+        Assert.DoesNotContain("/Artifact", decompressed);
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     /// <summary>Creates a minimal valid 2×2 white RGB PNG for image tagging tests.</summary>

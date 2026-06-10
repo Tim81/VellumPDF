@@ -1,5 +1,9 @@
 #nullable enable
+VellumPdf.Canvas.PdfCanvas.BeginArtifactMarkedContent() -> VellumPdf.Canvas.PdfCanvas!
+VellumPdf.Document.PdfConformance.PdfUA1 = 4 -> VellumPdf.Document.PdfConformance
 VellumPdf.Document.PdfDocument.Language.get -> string?
 VellumPdf.Document.PdfDocument.Language.set -> void
 VellumPdf.Document.PdfStructElem.Language.get -> string?
 VellumPdf.Document.PdfStructElem.Language.set -> void
+VellumPdf.Document.PdfStructElem.TableHeaderScope.get -> string?
+VellumPdf.Document.PdfStructElem.TableHeaderScope.set -> void

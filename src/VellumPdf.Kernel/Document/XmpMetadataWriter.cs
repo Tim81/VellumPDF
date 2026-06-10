@@ -47,7 +47,9 @@ internal static class XmpMetadataWriter
         sb.Append("    xmlns:xmp=\"http://ns.adobe.com/xap/1.0/\"\n");
         sb.Append("    xmlns:pdf=\"http://ns.adobe.com/pdf/1.3/\"");
 
-        if (conformance != PdfConformance.None)
+        if (conformance == PdfConformance.PdfUA1)
+            sb.Append("\n    xmlns:pdfuaid=\"http://www.aiim.org/pdfua/ns/id/\"");
+        else if (conformance != PdfConformance.None)
             sb.Append("\n    xmlns:pdfaid=\"http://www.aiim.org/pdfa/ns/id/\"");
 
         sb.Append(">\n");
@@ -108,8 +110,12 @@ internal static class XmpMetadataWriter
         sb.Append(XmlEscape(producer));
         sb.Append("</pdf:Producer>\n");
 
-        // pdfaid schema — only when conformance is requested
-        if (conformance != PdfConformance.None)
+        // Conformance identification schema — pdfuaid for PDF/UA-1, pdfaid for PDF/A levels.
+        if (conformance == PdfConformance.PdfUA1)
+        {
+            sb.Append("    <pdfuaid:part>1</pdfuaid:part>\n");
+        }
+        else if (conformance != PdfConformance.None)
         {
             var (part, conf) = conformance switch
             {

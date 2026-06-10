@@ -121,7 +121,7 @@ public sealed class PdfDocument : IDisposable
     /// </summary>
     public bool Tagged
     {
-        get => _tagged || Conformance == PdfConformance.PdfA2a;
+        get => _tagged || Conformance == PdfConformance.PdfA2a || Conformance == PdfConformance.PdfUA1;
         set => _tagged = value;
     }
 
@@ -624,6 +624,13 @@ public sealed class PdfDocument : IDisposable
 
         ApplyLanguage(catalog, Language);
 
+        if (Conformance == PdfConformance.PdfUA1)
+        {
+            var viewerPrefs = new PdfDictionary()
+                .Set(new PdfName("DisplayDocTitle"), PdfBoolean.True);
+            catalog.Set(new PdfName("ViewerPreferences"), viewerPrefs);
+        }
+
         registry.SetValue(catalogRef, catalog);
 
         if (UseObjectStreams)
@@ -939,6 +946,13 @@ public sealed class PdfDocument : IDisposable
             catalog.Set(new PdfName("OutputIntents"), new PdfArray([BuildOutputIntents(registry)]));
 
         ApplyLanguage(catalog, Language);
+
+        if (Conformance == PdfConformance.PdfUA1)
+        {
+            var viewerPrefs = new PdfDictionary()
+                .Set(new PdfName("DisplayDocTitle"), PdfBoolean.True);
+            catalog.Set(new PdfName("ViewerPreferences"), viewerPrefs);
+        }
 
         registry.SetValue(catalogRef, catalog);
 
