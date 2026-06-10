@@ -85,6 +85,60 @@ public sealed class PdfCanvas
     public PdfCanvas SetStrokeColorCmyk(double c, double m, double y, double k)
     { WriteOpAscii($"{N(c)} {N(m)} {N(y)} {N(k)} K"); return this; }
 
+    // ── ICCBased / general N-component colour spaces ────────────────────────
+
+    /// <summary>
+    /// Selects the named colour space as the current non-stroking (fill) colour space.
+    /// Emits <c>/resourceName cs</c>.
+    /// Use after registering an ICCBased space via
+    /// <see cref="Document.PdfDocument.RegisterIccBasedColorSpace"/>.
+    /// </summary>
+    public PdfCanvas SetFillColorSpace(string resourceName)
+    { WriteOpAscii($"/{resourceName} cs"); return this; }
+
+    /// <summary>
+    /// Selects the named colour space as the current stroking colour space.
+    /// Emits <c>/resourceName CS</c>.
+    /// </summary>
+    public PdfCanvas SetStrokeColorSpace(string resourceName)
+    { WriteOpAscii($"/{resourceName} CS"); return this; }
+
+    /// <summary>
+    /// Sets the fill (non-stroking) colour components for the current colour space.
+    /// Emits <c>c1 c2 … scn</c>. Use with ICCBased or Separation colour spaces
+    /// after calling <see cref="SetFillColorSpace"/>.
+    /// </summary>
+    public PdfCanvas SetFillColor(params ReadOnlySpan<double> components)
+    {
+        var sb = new StringBuilder();
+        for (var i = 0; i < components.Length; i++)
+        {
+            if (i > 0) sb.Append(' ');
+            sb.Append(N(components[i]));
+        }
+        sb.Append(" scn");
+        WriteOpAscii(sb.ToString());
+        return this;
+    }
+
+    /// <summary>
+    /// Sets the stroking colour components for the current colour space.
+    /// Emits <c>c1 c2 … SCN</c>. Use with ICCBased or Separation colour spaces
+    /// after calling <see cref="SetStrokeColorSpace"/>.
+    /// </summary>
+    public PdfCanvas SetStrokeColor(params ReadOnlySpan<double> components)
+    {
+        var sb = new StringBuilder();
+        for (var i = 0; i < components.Length; i++)
+        {
+            if (i > 0) sb.Append(' ');
+            sb.Append(N(components[i]));
+        }
+        sb.Append(" SCN");
+        WriteOpAscii(sb.ToString());
+        return this;
+    }
+
     // ── Feature 3: Dash patterns ────────────────────────────────────────────
 
     /// <summary>

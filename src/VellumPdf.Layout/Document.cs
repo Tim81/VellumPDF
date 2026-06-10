@@ -180,6 +180,40 @@ public sealed class Document : IDisposable
     public Document Add(string text, TextStyle? style = null)
         => Add(new Paragraph(text, style ?? _defaultStyle));
 
+    // ── OutputIntent configuration ───────────────────────────────────────────
+
+    /// <summary>
+    /// Configures a custom ICC profile as the PDF/A OutputIntent for this document.
+    /// Forwarded to the underlying <see cref="PdfDocument.SetPdfAOutputIntent"/>.
+    ///
+    /// <para>
+    /// Note: the layout engine uses DeviceRGB for text and table fills. A CMYK
+    /// output intent is appropriate when the document contains custom CMYK or ICCBased
+    /// content (e.g. via kernel-level drawing). Mixing DeviceRGB layout content with a
+    /// pure CMYK output intent may be flagged by strict PDF/A validators.
+    /// </para>
+    /// </summary>
+    /// <param name="iccProfile">The raw ICC profile bytes.</param>
+    /// <param name="componentCount">Number of colour components: 1 (Gray), 3 (RGB), or 4 (CMYK).</param>
+    /// <param name="outputConditionIdentifier">The OutputConditionIdentifier string.</param>
+    /// <param name="info">Optional /Info string. Defaults to <paramref name="outputConditionIdentifier"/> when null.</param>
+    public void SetPdfAOutputIntent(byte[] iccProfile, int componentCount, string outputConditionIdentifier, string? info = null) =>
+        _pdf.SetPdfAOutputIntent(iccProfile, componentCount, outputConditionIdentifier, info);
+
+    /// <summary>
+    /// Convenience method: sets the PDF/A OutputIntent to the built-in generic CMYK
+    /// ICC profile (4 components). Forwarded to the underlying
+    /// <see cref="PdfDocument.UseCmykOutputIntent"/>.
+    ///
+    /// <para>
+    /// Note: the layout engine uses DeviceRGB for text and table fills. This method is
+    /// intended for documents that combine layout content with custom CMYK kernel drawing.
+    /// </para>
+    /// </summary>
+    /// <param name="outputConditionIdentifier">The OutputConditionIdentifier string written to the OutputIntent dictionary.</param>
+    public void UseCmykOutputIntent(string outputConditionIdentifier = "Generic CMYK") =>
+        _pdf.UseCmykOutputIntent(outputConditionIdentifier);
+
     // ── Encryption ──────────────────────────────────────────────────────────
 
     /// <summary>
