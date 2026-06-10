@@ -85,6 +85,35 @@ internal sealed class CffFont
     /// <summary>Raw bytes of the Top DICT data (inside the Top DICT INDEX entry).</summary>
     public ReadOnlyMemory<byte> TopDictBytes { get; }
 
+    // ── Subroutine INDEX positions ────────────────────────────────────────────
+
+    /// <summary>Number of entries in the Global Subr INDEX (0 if INDEX is empty).</summary>
+    public int GlobalSubrCount { get; }
+
+    /// <summary>
+    /// Type2 bias for the Global Subr INDEX.
+    /// 107 if count &lt; 1240, 1131 if count &lt; 33900, 32768 otherwise.
+    /// </summary>
+    public int GlobalSubrBias { get; }
+
+    /// <summary>
+    /// Byte offset within CFF data where the Local Subr INDEX begins.
+    /// 0 if the Private DICT does not contain a Subrs operator (op 19).
+    /// </summary>
+    public int LocalSubrIndexOffset { get; }
+
+    /// <summary>Byte length of the Local Subr INDEX. 0 when not present.</summary>
+    public int LocalSubrIndexLength { get; }
+
+    /// <summary>Number of entries in the Local Subr INDEX. 0 when not present.</summary>
+    public int LocalSubrCount { get; }
+
+    /// <summary>
+    /// Type2 bias for the Local Subr INDEX.
+    /// 107 if count &lt; 1240, 1131 if count &lt; 33900, 32768 otherwise.
+    /// </summary>
+    public int LocalSubrBias { get; }
+
     private CffFont(
         ReadOnlyMemory<byte> data,
         int numGlyphs,
@@ -105,9 +134,13 @@ internal sealed class CffFont
         int stringIndexLength,
         int globalSubrIndexOffset,
         int globalSubrIndexLength,
+        int globalSubrCount,
         int charStringsIndexOffset,
         int charStringsIndexLength,
-        ReadOnlyMemory<byte> topDictBytes)
+        ReadOnlyMemory<byte> topDictBytes,
+        int localSubrIndexOffset,
+        int localSubrIndexLength,
+        int localSubrCount)
     {
         Data = data;
         NumGlyphs = numGlyphs;
@@ -128,9 +161,15 @@ internal sealed class CffFont
         StringIndexLength = stringIndexLength;
         GlobalSubrIndexOffset = globalSubrIndexOffset;
         GlobalSubrIndexLength = globalSubrIndexLength;
+        GlobalSubrCount = globalSubrCount;
+        GlobalSubrBias = ComputeBias(globalSubrCount);
         CharStringsIndexOffset = charStringsIndexOffset;
         CharStringsIndexLength = charStringsIndexLength;
         TopDictBytes = topDictBytes;
+        LocalSubrIndexOffset = localSubrIndexOffset;
+        LocalSubrIndexLength = localSubrIndexLength;
+        LocalSubrCount = localSubrCount;
+        LocalSubrBias = ComputeBias(localSubrCount);
     }
 
     /// <summary>
@@ -217,6 +256,10 @@ internal sealed class CffFont
         // ── Global Subr INDEX (§16) ───────────────────────────────────────────
         var globalSubrIndexOffset = pos;
         int globalSubrIndexLength = IndexTotalLength(s, pos, len);
+        // Read count for bias computation
+        var globalSubrCount = 0;
+        if (pos + 2 <= len)
+            globalSubrCount = (s[pos] << 8) | s[pos + 1];
         pos += globalSubrIndexLength;
 
         // ── Parse Top DICT for key offsets ────────────────────────────────────
@@ -233,6 +276,31 @@ internal sealed class CffFont
         var charStringsIndexOffset = charStringsOffset;
         var (csCount, _, _) = ReadIndexOffsets(s, charStringsOffset, len);
         var charStringsIndexLength = IndexTotalLength(s, charStringsOffset, len);
+
+        // ── Local Subr INDEX (from Private DICT, op 19) ───────────────────────
+        // The Private DICT Subrs operator (op 19) holds a byte offset relative
+        // to the start of the Private DICT. The Local Subr INDEX is at:
+        //   privateDictOffset + subrRelativeOffset
+        var localSubrIndexOffset = 0;
+        var localSubrIndexLength = 0;
+        var localSubrCount = 0;
+
+        if (privateDictSize > 0 && privateDictOffset > 0
+            && privateDictOffset + privateDictSize <= len)
+        {
+            var privSpan = s.Slice(privateDictOffset, privateDictSize);
+            var subrRelOffset = ParsePrivateDictSubrsOffset(privSpan);
+            if (subrRelOffset > 0)
+            {
+                var absLocalSubrOffset = privateDictOffset + subrRelOffset;
+                if (absLocalSubrOffset + 2 <= len)
+                {
+                    localSubrIndexOffset = absLocalSubrOffset;
+                    localSubrIndexLength = IndexTotalLength(s, absLocalSubrOffset, len);
+                    localSubrCount = (s[absLocalSubrOffset] << 8) | s[absLocalSubrOffset + 1];
+                }
+            }
+        }
 
         return new CffFont(
             cffData,
@@ -254,9 +322,13 @@ internal sealed class CffFont
             stringIndexLength: stringIndexLength,
             globalSubrIndexOffset: globalSubrIndexOffset,
             globalSubrIndexLength: globalSubrIndexLength,
+            globalSubrCount: globalSubrCount,
             charStringsIndexOffset: charStringsIndexOffset,
             charStringsIndexLength: charStringsIndexLength,
-            topDictBytes: topDictBytes);
+            topDictBytes: topDictBytes,
+            localSubrIndexOffset: localSubrIndexOffset,
+            localSubrIndexLength: localSubrIndexLength,
+            localSubrCount: localSubrCount);
     }
 
     /// <summary>Returns the raw charstring bytes for <paramref name="gid"/>.</summary>
@@ -275,14 +347,45 @@ internal sealed class CffFont
         return Data.Slice(absStart, csLen);
     }
 
+    /// <summary>Returns the raw bytes for Global Subr entry <paramref name="index"/>.</summary>
+    public ReadOnlyMemory<byte> GetGlobalSubr(int index)
+    {
+        if (GlobalSubrCount == 0)
+            throw new InvalidOperationException("Font has no Global Subr INDEX.");
+        return GetSubrEntry(Data.Span, GlobalSubrIndexOffset, Data.Length, index);
+    }
+
+    /// <summary>Returns the raw bytes for Local Subr entry <paramref name="index"/>.</summary>
+    public ReadOnlyMemory<byte> GetLocalSubr(int index)
+    {
+        if (LocalSubrCount == 0)
+            throw new InvalidOperationException("Font has no Local Subr INDEX.");
+        return GetSubrEntry(Data.Span, LocalSubrIndexOffset, Data.Length, index);
+    }
+
     // ── INDEX helpers ─────────────────────────────────────────────────────────
+
+    private ReadOnlyMemory<byte> GetSubrEntry(ReadOnlySpan<byte> s, int indexOffset, int totalLen, int entryIndex)
+    {
+        var (count, offsets, dataBase) = ReadIndexOffsets(s, indexOffset, totalLen);
+        if (entryIndex < 0 || entryIndex >= count)
+            throw new ArgumentOutOfRangeException(nameof(entryIndex),
+                $"Subr index {entryIndex} out of range [0, {count}).");
+        var start = (int)offsets[entryIndex];
+        var end = (int)offsets[entryIndex + 1];
+        var absStart = dataBase + start - 1;
+        var entryLen = end - start;
+        if (entryLen < 0 || absStart < 0 || absStart + entryLen > totalLen)
+            throw new InvalidDataException($"Subr INDEX entry {entryIndex} data out of range.");
+        return Data.Slice(absStart, entryLen);
+    }
 
     /// <summary>
     /// Reads the count + offsets array from an INDEX at <paramref name="pos"/>.
     /// Returns (count, offsets[0..count], absoluteDataBase).
     /// Offsets are 1-based per CFF spec; dataBase is the abs offset of offset[0]==1.
     /// </summary>
-    private static (int count, uint[] offsets, int dataBase) ReadIndexOffsets(
+    internal static (int count, uint[] offsets, int dataBase) ReadIndexOffsets(
         ReadOnlySpan<byte> s, int pos, int totalLen)
     {
         if (pos + 2 > totalLen)
@@ -321,7 +424,7 @@ internal sealed class CffFont
     /// <summary>
     /// Returns the total byte length of the INDEX at <paramref name="pos"/> (including the header).
     /// </summary>
-    private static int IndexTotalLength(ReadOnlySpan<byte> s, int pos, int totalLen)
+    internal static int IndexTotalLength(ReadOnlySpan<byte> s, int pos, int totalLen)
     {
         if (pos + 2 > totalLen)
             throw new InvalidDataException($"CFF INDEX at offset {pos}: insufficient data for count.");
@@ -349,6 +452,91 @@ internal sealed class CffFont
         // Data section size = lastOffset - 1 (offsets are 1-based)
         var dataSize = (int)lastOffset - 1;
         return 3 + offsetsArrayLen + dataSize;
+    }
+
+    // ── Private DICT decoder ──────────────────────────────────────────────────
+
+    /// <summary>
+    /// Scans the Private DICT body for op 19 (Subrs) and returns the relative byte
+    /// offset of the Local Subr INDEX (relative to the start of the Private DICT).
+    /// Returns 0 if the operator is absent.
+    /// </summary>
+    internal static int ParsePrivateDictSubrsOffset(ReadOnlySpan<byte> dict)
+    {
+        var operands = new List<double>(4);
+        var i = 0;
+
+        while (i < dict.Length)
+        {
+            var b0 = dict[i];
+
+            // Operators: 0-21 (excluding 28)
+            if (b0 <= 21)
+            {
+                if (b0 == 12)
+                {
+                    // Two-byte operator — skip
+                    i += 2;
+                }
+                else
+                {
+                    if (b0 == 19 && operands.Count > 0) // Subrs
+                        return (int)operands[0];
+                    i++;
+                }
+                operands.Clear();
+                continue;
+            }
+
+            // Operand encodings (same as Top DICT)
+            if (b0 == 28)
+            {
+                if (i + 2 >= dict.Length) break;
+                operands.Add((short)((dict[i + 1] << 8) | dict[i + 2]));
+                i += 3;
+            }
+            else if (b0 == 29)
+            {
+                if (i + 4 >= dict.Length) break;
+                var val = (dict[i + 1] << 24) | (dict[i + 2] << 16) | (dict[i + 3] << 8) | dict[i + 4];
+                operands.Add(val);
+                i += 5;
+            }
+            else if (b0 == 30)
+            {
+                // Real — skip nibble-pairs until end nibble 0xF
+                i++;
+                while (i < dict.Length)
+                {
+                    var nb = dict[i++];
+                    if ((nb & 0x0F) == 0x0F || (nb >> 4) == 0x0F) break;
+                }
+                operands.Add(0);
+            }
+            else if (b0 is >= 32 and <= 246)
+            {
+                operands.Add(b0 - 139);
+                i++;
+            }
+            else if (b0 is >= 247 and <= 250)
+            {
+                if (i + 1 >= dict.Length) break;
+                operands.Add((b0 - 247) * 256 + dict[i + 1] + 108);
+                i += 2;
+            }
+            else if (b0 is >= 251 and <= 254)
+            {
+                if (i + 1 >= dict.Length) break;
+                operands.Add(-(b0 - 251) * 256 - dict[i + 1] - 108);
+                i += 2;
+            }
+            else
+            {
+                i++;
+            }
+        }
+
+        return 0; // no Subrs operator found
     }
 
     // ── Top DICT decoder ──────────────────────────────────────────────────────
@@ -493,5 +681,18 @@ internal sealed class CffFont
         return (charStringsOffset, charsetOffset, encodingOffset,
                 privateDictSize, privateDictOffset,
                 fdArrayOffset, fdSelectOffset, isCidKeyed);
+    }
+
+    // ── Bias helper ───────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Computes the Type2 subr number bias from an INDEX count.
+    /// Per Adobe Technical Note 5177 §4.7.
+    /// </summary>
+    internal static int ComputeBias(int count)
+    {
+        if (count < 1240) return 107;
+        if (count < 33900) return 1131;
+        return 32768;
     }
 }

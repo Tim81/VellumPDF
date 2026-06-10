@@ -8,26 +8,37 @@ namespace VellumPdf.Fonts.Cff;
 /// <summary>
 /// Produces a subset of a CFF font table using the "blank-unused" strategy:
 /// every unused glyph's CharString is replaced with a single <c>endchar</c> (0x0E) byte,
-/// while the GID space and all other CFF structures are preserved intact.
+/// unreached global and local subroutines are replaced with a single <c>return</c> (0x0B) byte,
+/// while the GID/subr-number space is preserved intact.
 /// This preserves CID==GID identity required by Type0/CIDFontType0 with Identity-H.
 /// </summary>
 internal static class CffSubsetter
 {
     private static readonly byte[] EndcharByte = [0x0E];
+    private static readonly byte[] ReturnByte = [0x0B];
 
     /// <summary>
     /// Subsets <paramref name="font"/>, replacing unused glyph CharStrings with a single
-    /// <c>endchar</c> byte. GID 0 (.notdef) is always included.
+    /// <c>endchar</c> byte, and unreached subroutines with a single <c>return</c> byte.
+    /// GID 0 (.notdef) is always included.
     /// </summary>
     /// <param name="font">Parsed CFF font.</param>
     /// <param name="usedGids">Set of GIDs to keep verbatim; GID 0 is always added.</param>
     /// <returns>A new CFF table byte array with the subset applied.</returns>
+    /// <exception cref="NotSupportedException">Thrown when <paramref name="font"/> is CID-keyed.</exception>
     public static byte[] Subset(CffFont font, IReadOnlySet<int> usedGids)
     {
+        if (font.IsCidKeyed)
+            throw new NotSupportedException(
+                "CFF subroutine-closure subsetting is not supported for CID-keyed fonts.");
+
         // Ensure .notdef and sort for determinism
         var effectiveGids = new HashSet<int>(usedGids) { 0 };
 
-        // ── 1. Build the new CharStrings INDEX ───────────────────────────────
+        // ── 1. Compute subroutine closure ────────────────────────────────────
+        var (usedLocalSubrs, usedGlobalSubrs) = ComputeSubrClosure(font, effectiveGids);
+
+        // ── 2. Build the new CharStrings INDEX ───────────────────────────────
         var charstrings = new byte[font.NumGlyphs][];
         for (var gid = 0; gid < font.NumGlyphs; gid++)
         {
@@ -38,42 +49,75 @@ internal static class CffSubsetter
 
         var (newCsIndexBytes, csIndexSize) = BuildIndex(charstrings);
 
-        // ── 2. Build the new Name INDEX with subset tag ───────────────────────
+        // ── 3. Build the new Global Subr INDEX ───────────────────────────────
+        var newGlobalSubrs = BuildSubrEntries(font, isLocal: false, usedGlobalSubrs);
+        var (newGlobalSubrBytes, _) = BuildIndex(newGlobalSubrs);
+
+        // ── 4. Build the new Local Subr INDEX (and patched Private DICT) ─────
+        // The Private DICT's Subrs operand (op 19) is a byte offset relative to
+        // the start of the Private DICT. We rebuild the Private DICT, stripping
+        // the old Subrs operator and re-emitting it pointing to the local subr
+        // INDEX that sits immediately after the Private DICT. This keeps the
+        // Subrs offset = privateDictSize (the rebuilt Private DICT byte length).
+        byte[] newLocalSubrBytes;
+        byte[] newPrivateDictBytes;
+
+        if (font.LocalSubrCount > 0)
+        {
+            var newLocalSubrs = BuildSubrEntries(font, isLocal: true, usedLocalSubrs);
+            (newLocalSubrBytes, _) = BuildIndex(newLocalSubrs);
+
+            // Rebuild Private DICT: strip op 19, append op 19 pointing immediately after
+            var privSrc = font.Data.Span.Slice(font.PrivateDictOffset, font.PrivateDictSize);
+            var strippedPriv = StripPrivateDictSubrs(privSrc);
+
+            // The local subr INDEX will be placed immediately after the Private DICT,
+            // so the relative offset = strippedPriv.Length + appendedSubrsOp bytes.
+            // We need to know the encoded size first. We compute iteratively with a
+            // placeholder to stabilise the Private DICT size.
+            newPrivateDictBytes = BuildPrivateDictWithSubrs(strippedPriv, newLocalSubrBytes.Length);
+        }
+        else
+        {
+            // No local subrs in source — emit empty local subr INDEX and verbatim Private DICT
+            newLocalSubrBytes = [0x00, 0x00]; // empty INDEX (count=0)
+            newPrivateDictBytes = font.PrivateDictSize > 0 && font.PrivateDictOffset > 0
+                && font.PrivateDictOffset + font.PrivateDictSize <= font.Data.Length
+                ? font.Data.Span.Slice(font.PrivateDictOffset, font.PrivateDictSize).ToArray()
+                : [];
+        }
+
+        // ── 5. Build the new Name INDEX with subset tag ───────────────────────
         var tag = ComputeSubsetTag(effectiveGids);
         var newFontName = $"{tag}+{font.FontName}";
         var nameBytes = Encoding.Latin1.GetBytes(newFontName);
         var (newNameIndexBytes, _) = BuildIndex([nameBytes]);
 
-        // ── 3. Lay out the canonical CFF structure ───────────────────────────
+        // ── 6. Lay out the canonical CFF structure ───────────────────────────
         //
         //  [Header]
         //  [Name INDEX]            ← patched FontName
         //  [Top DICT INDEX]        ← rebuilt with corrected offsets
         //  [String INDEX]          ← verbatim copy
-        //  [Global Subr INDEX]     ← verbatim copy
+        //  [Global Subr INDEX]     ← rebuilt (blank-unreached)
         //  [CharStrings INDEX]     ← rebuilt (blank-unused)
-        //  [charset]               ← verbatim copy (if offset-based, > 2)
-        //  [Encoding]              ← verbatim copy (if offset-based, > 2)
-        //  [FDArray]               ← verbatim copy (if CID-keyed)
-        //  [FDSelect]              ← verbatim copy (if CID-keyed)
-        //  [Private DICT]          ← verbatim copy
+        //  [charset]               ← verbatim copy (if offset-based)
+        //  [Encoding]              ← verbatim copy (if offset-based)
+        //  [Private DICT]          ← rebuilt (Subrs op updated)
+        //  [Local Subr INDEX]      ← rebuilt (blank-unreached), immediately after Private DICT
         //
         // We place each section sequentially, then rebuild the Top DICT.
 
         var src = font.Data.Span;
 
-        // Verbatim slices
-        var headerBytes = src[..font.NameIndexOffset].ToArray(); // CFF header (hdrSize bytes)
+        var headerBytes = src[..font.NameIndexOffset].ToArray();
         var stringIndexBytes = src.Slice(font.StringIndexOffset, font.StringIndexLength).ToArray();
-        var globalSubrBytes = src.Slice(font.GlobalSubrIndexOffset, font.GlobalSubrIndexLength).ToArray();
 
-        // charset — only copy if it is an offset (> 2); predefined enumerations need no data
+        // charset — only copy if it is an offset (> 2)
         byte[] charsetBytes = [];
         var charsetIsOffset = font.CharsetOffset > 2;
         if (charsetIsOffset && font.CharsetOffset + 1 <= src.Length)
         {
-            // Length is not stored explicitly — copy everything up to the next known section.
-            // We derive length by comparing positions of adjacent sections.
             var charsetLen = NextSectionOffset(font) - font.CharsetOffset;
             if (charsetLen > 0 && font.CharsetOffset + charsetLen <= src.Length)
                 charsetBytes = src.Slice(font.CharsetOffset, charsetLen).ToArray();
@@ -89,71 +133,19 @@ internal static class CffSubsetter
                 encodingBytes = src.Slice(font.EncodingOffset, encLen).ToArray();
         }
 
-        // FDArray (CID-keyed)
-        byte[] fdArrayBytes = [];
-        if (font.IsCidKeyed && font.FdArrayOffset > 0)
-        {
-            var fdArrayLen = FdArrayLength(font, src);
-            if (fdArrayLen > 0)
-                fdArrayBytes = src.Slice(font.FdArrayOffset, fdArrayLen).ToArray();
-        }
+        // Combined Private DICT + Local Subr INDEX size
+        var combinedPrivateSize = newPrivateDictBytes.Length + newLocalSubrBytes.Length;
 
-        // FDSelect (CID-keyed)
-        byte[] fdSelectBytes = [];
-        if (font.IsCidKeyed && font.FdSelectOffset > 0)
-        {
-            var fdSelectLen = FdSelectLength(font, src);
-            if (fdSelectLen > 0)
-                fdSelectBytes = src.Slice(font.FdSelectOffset, fdSelectLen).ToArray();
-        }
+        // ── 7. Compute layout offsets ────────────────────────────────────────
 
-        // Private DICT
-        byte[] privateDictBytes = [];
-        if (font.PrivateDictSize > 0 && font.PrivateDictOffset > 0
-            && font.PrivateDictOffset + font.PrivateDictSize <= src.Length)
-        {
-            privateDictBytes = src.Slice(font.PrivateDictOffset, font.PrivateDictSize).ToArray();
-        }
-
-        // ── 4. Compute layout offsets ────────────────────────────────────────
-        var cursor = headerBytes.Length;
-
-        var nameIndexStart = cursor;
-        cursor += newNameIndexBytes.Length;
-
-        var topDictIndexStart = cursor;
-        // Top DICT INDEX is rebuilt; we need a placeholder size first.
-        // We'll compute the Top DICT size iteratively (two-pass).
-        cursor += 0; // will be filled in after computing top dict
-
-        var stringIndexStart = cursor + 0; // will shift after top dict size is known
-        // We do a two-pass: first compute all section sizes, then build.
-
-        // -- Section positions (relative to start of CFF output) --
-        // We know the fixed-size sections, just need to know the TopDICT INDEX size.
-        // The top dict INDEX size depends on the offsets we put in it,
-        // which depend on the top dict INDEX size. We break this with a fixed-size
-        // encoding strategy: always use 4-byte (b0=29) integers for offsets (5 bytes each).
-
-        // Count how many offset operands need patching and their encoded size:
-        // CharStrings: 1 operand, op=17         → 5+1 = 6 bytes
-        // charset (if offset): 1 operand, op=15 → 5+1 = 6 bytes
-        // Encoding (if offset): 1 operand, op=16 → 5+1 = 6 bytes
-        // Private (always): 2 operands + op=18  → 5+5+1 = 11 bytes
-        // FDArray (if present): 1 operand + op 12 36 → 5+2 = 7 bytes
-        // FDSelect (if present): 1 operand + op 12 37 → 5+2 = 7 bytes
-        //
-        // We rebuild the Top DICT by stripping those operators from the original
-        // and appending the rebuilt ones at the end.
-
+        // Two-pass to resolve Top DICT INDEX size (contains the new offsets)
         var rebuildResult = RebuildTopDictBytes(
             font,
-            charStringsNewOffset: 0, // placeholder
+            charStringsNewOffset: 0,
             charsetNewOffset: 0,
             encodingNewOffset: 0,
             privateDictNewOffset: 0,
-            fdArrayNewOffset: 0,
-            fdSelectNewOffset: 0,
+            privateDictNewSize: newPrivateDictBytes.Length,
             charsetIsOffset: charsetIsOffset,
             encodingIsOffset: encodingIsOffset);
 
@@ -161,8 +153,8 @@ internal static class CffSubsetter
         var (topDictIndexBytes, _) = BuildIndex([topDictData]);
         var topDictIndexSize = topDictIndexBytes.Length;
 
-        // Now lay out everything
-        cursor = headerBytes.Length + newNameIndexBytes.Length;
+        // First-pass layout
+        var cursor = headerBytes.Length + newNameIndexBytes.Length;
         var topDictStart = cursor;
         cursor += topDictIndexSize;
 
@@ -170,7 +162,7 @@ internal static class CffSubsetter
         cursor += stringIndexBytes.Length;
 
         var gsubrStart = cursor;
-        cursor += globalSubrBytes.Length;
+        cursor += newGlobalSubrBytes.Length;
 
         var csStart = cursor;
         cursor += newCsIndexBytes.Length;
@@ -181,43 +173,25 @@ internal static class CffSubsetter
         var encodingStart = encodingIsOffset ? cursor : font.EncodingOffset;
         if (encodingIsOffset) cursor += encodingBytes.Length;
 
-        int fdArrayStart = 0, fdSelectStart = 0;
-        if (font.IsCidKeyed)
-        {
-            if (font.FdArrayOffset > 0)
-            {
-                fdArrayStart = cursor;
-                cursor += fdArrayBytes.Length;
-            }
-            if (font.FdSelectOffset > 0)
-            {
-                fdSelectStart = cursor;
-                cursor += fdSelectBytes.Length;
-            }
-        }
-
         var privateDictStart = cursor;
-        cursor += privateDictBytes.Length;
+        cursor += combinedPrivateSize;
 
-        // ── 5. Rebuild Top DICT with real offsets ────────────────────────────
+        // ── 8. Rebuild Top DICT with real offsets ────────────────────────────
         topDictData = RebuildTopDictBytes(
             font,
             charStringsNewOffset: csStart,
             charsetNewOffset: charsetIsOffset ? charsetStart : font.CharsetOffset,
             encodingNewOffset: encodingIsOffset ? encodingStart : font.EncodingOffset,
-            privateDictNewOffset: privateDictBytes.Length > 0 ? privateDictStart : 0,
-            fdArrayNewOffset: fdArrayBytes.Length > 0 ? fdArrayStart : 0,
-            fdSelectNewOffset: fdSelectBytes.Length > 0 ? fdSelectStart : 0,
+            privateDictNewOffset: newPrivateDictBytes.Length > 0 ? privateDictStart : 0,
+            privateDictNewSize: newPrivateDictBytes.Length,
             charsetIsOffset: charsetIsOffset,
             encodingIsOffset: encodingIsOffset);
 
         (topDictIndexBytes, _) = BuildIndex([topDictData]);
 
-        // Sanity: top dict index size should match what we computed earlier
         if (topDictIndexBytes.Length != topDictIndexSize)
         {
-            // This can happen if the rebuilt top dict size differs from placeholder.
-            // Re-lay out everything with the actual size.
+            // Re-layout with actual Top DICT INDEX size
             topDictIndexSize = topDictIndexBytes.Length;
 
             cursor = headerBytes.Length + newNameIndexBytes.Length;
@@ -228,7 +202,7 @@ internal static class CffSubsetter
             cursor += stringIndexBytes.Length;
 
             gsubrStart = cursor;
-            cursor += globalSubrBytes.Length;
+            cursor += newGlobalSubrBytes.Length;
 
             csStart = cursor;
             cursor += newCsIndexBytes.Length;
@@ -239,59 +213,405 @@ internal static class CffSubsetter
             encodingStart = encodingIsOffset ? cursor : font.EncodingOffset;
             if (encodingIsOffset) cursor += encodingBytes.Length;
 
-            fdArrayStart = 0;
-            fdSelectStart = 0;
-            if (font.IsCidKeyed)
-            {
-                if (font.FdArrayOffset > 0)
-                {
-                    fdArrayStart = cursor;
-                    cursor += fdArrayBytes.Length;
-                }
-                if (font.FdSelectOffset > 0)
-                {
-                    fdSelectStart = cursor;
-                    cursor += fdSelectBytes.Length;
-                }
-            }
-
             privateDictStart = cursor;
-            cursor += privateDictBytes.Length;
+            cursor += combinedPrivateSize;
 
             topDictData = RebuildTopDictBytes(
                 font,
                 charStringsNewOffset: csStart,
                 charsetNewOffset: charsetIsOffset ? charsetStart : font.CharsetOffset,
                 encodingNewOffset: encodingIsOffset ? encodingStart : font.EncodingOffset,
-                privateDictNewOffset: privateDictBytes.Length > 0 ? privateDictStart : 0,
-                fdArrayNewOffset: fdArrayBytes.Length > 0 ? fdArrayStart : 0,
-                fdSelectNewOffset: fdSelectBytes.Length > 0 ? fdSelectStart : 0,
+                privateDictNewOffset: newPrivateDictBytes.Length > 0 ? privateDictStart : 0,
+                privateDictNewSize: newPrivateDictBytes.Length,
                 charsetIsOffset: charsetIsOffset,
                 encodingIsOffset: encodingIsOffset);
 
             (topDictIndexBytes, _) = BuildIndex([topDictData]);
         }
 
-        _ = gsubrStart; // consumed in array assembly
+        _ = topDictStart;
+        _ = strStart;
+        _ = gsubrStart;
 
-        // ── 6. Assemble output ───────────────────────────────────────────────
+        // ── 9. Assemble output ───────────────────────────────────────────────
         var output = new MemoryStream(cursor + 64);
         output.Write(headerBytes);
         output.Write(newNameIndexBytes);
         output.Write(topDictIndexBytes);
         output.Write(stringIndexBytes);
-        output.Write(globalSubrBytes);
+        output.Write(newGlobalSubrBytes);
         output.Write(newCsIndexBytes);
         if (charsetIsOffset && charsetBytes.Length > 0) output.Write(charsetBytes);
         if (encodingIsOffset && encodingBytes.Length > 0) output.Write(encodingBytes);
-        if (font.IsCidKeyed)
+        if (newPrivateDictBytes.Length > 0)
         {
-            if (fdArrayBytes.Length > 0) output.Write(fdArrayBytes);
-            if (fdSelectBytes.Length > 0) output.Write(fdSelectBytes);
+            output.Write(newPrivateDictBytes);
+            output.Write(newLocalSubrBytes);
         }
-        if (privateDictBytes.Length > 0) output.Write(privateDictBytes);
 
         return output.ToArray();
+    }
+
+    // ── Subroutine closure ────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Computes the transitive closure of all subroutines reachable from the kept
+    /// glyph charstrings (including GID 0). Returns sets of used local and global subr
+    /// indices (before bias adjustment — raw zero-based indices into the INDEX).
+    /// </summary>
+    private static (HashSet<int> usedLocalSubrs, HashSet<int> usedGlobalSubrs)
+        ComputeSubrClosure(CffFont font, HashSet<int> effectiveGids)
+    {
+        var usedLocalSubrs = new HashSet<int>();
+        var usedGlobalSubrs = new HashSet<int>();
+        var visitedLocalSubrs = new HashSet<int>();
+        var visitedGlobalSubrs = new HashSet<int>();
+
+        // Walk each kept glyph charstring
+        foreach (var gid in effectiveGids)
+        {
+            var cs = font.GetCharstring(gid);
+            var numHints = 0;
+            WalkCharstring(font, cs.Span, usedLocalSubrs, usedGlobalSubrs,
+                visitedLocalSubrs, visitedGlobalSubrs, ref numHints);
+        }
+
+        return (usedLocalSubrs, usedGlobalSubrs);
+    }
+
+    /// <summary>
+    /// Type2 charstring mini-interpreter. Walks the charstring bytes, tracking the
+    /// operand stack and hint count so that <c>hintmask</c>/<c>cntrmask</c> mask bytes
+    /// are consumed correctly. Records all <c>callsubr</c> (op 10) and
+    /// <c>callgsubr</c> (op 29) targets and recurses into them.
+    /// </summary>
+    /// <param name="font">The CFF font providing subr INDEX access.</param>
+    /// <param name="cs">Charstring bytes to walk (top-level or subroutine body).</param>
+    /// <param name="usedLocalSubrs">Accumulates zero-based indices of all reachable local subrs.</param>
+    /// <param name="usedGlobalSubrs">Accumulates zero-based indices of all reachable global subrs.</param>
+    /// <param name="visitedLocalSubrs">Guards against re-entering the same local subr (cycle prevention).</param>
+    /// <param name="visitedGlobalSubrs">Guards against re-entering the same global subr (cycle prevention).</param>
+    /// <param name="numHints">
+    /// Running total of hint pairs declared so far. Passed by <c>ref</c> so that hints
+    /// declared inside a subroutine are visible to the caller — this is required because
+    /// a <c>hintmask</c> or <c>cntrmask</c> operator inside a subroutine must consume
+    /// <c>ceil(totalHints/8)</c> mask bytes, where <c>totalHints</c> includes hints from
+    /// the calling charstring. Passing 0 on first entry is correct; callers must not
+    /// reset this value between nested calls.
+    /// </param>
+    private static void WalkCharstring(
+        CffFont font,
+        ReadOnlySpan<byte> cs,
+        HashSet<int> usedLocalSubrs,
+        HashSet<int> usedGlobalSubrs,
+        HashSet<int> visitedLocalSubrs,
+        HashSet<int> visitedGlobalSubrs,
+        ref int numHints)
+    {
+        // Operand stack (we only track depth + the top value for subr calls)
+        Span<double> stack = stackalloc double[64];
+        var stackDepth = 0;
+
+        var i = 0;
+        while (i < cs.Length)
+        {
+            var b0 = cs[i];
+
+            // ── Operand encodings ─────────────────────────────────────────────
+            if (b0 is >= 32 and <= 246)
+            {
+                // 1-byte integer: value = b0 - 139
+                Push(stack, ref stackDepth, b0 - 139);
+                i++;
+                continue;
+            }
+
+            if (b0 is >= 247 and <= 250)
+            {
+                // 2-byte positive: value = (b0-247)*256 + b1 + 108
+                if (i + 1 >= cs.Length) return;
+                Push(stack, ref stackDepth, (b0 - 247) * 256 + cs[i + 1] + 108);
+                i += 2;
+                continue;
+            }
+
+            if (b0 is >= 251 and <= 254)
+            {
+                // 2-byte negative: value = -(b0-251)*256 - b1 - 108
+                if (i + 1 >= cs.Length) return;
+                Push(stack, ref stackDepth, -(b0 - 251) * 256 - cs[i + 1] - 108);
+                i += 2;
+                continue;
+            }
+
+            if (b0 == 28)
+            {
+                // 3-byte short int (signed 16-bit)
+                if (i + 2 >= cs.Length) return;
+                var val = (short)((cs[i + 1] << 8) | cs[i + 2]);
+                Push(stack, ref stackDepth, val);
+                i += 3;
+                continue;
+            }
+
+            if (b0 == 255)
+            {
+                // 5-byte fixed 16.16 — push as double, skip 4 payload bytes
+                if (i + 4 >= cs.Length) return;
+                var intPart = (cs[i + 1] << 8) | cs[i + 2];
+                var fracPart = (cs[i + 3] << 8) | cs[i + 4];
+                Push(stack, ref stackDepth, intPart + fracPart / 65536.0);
+                i += 5;
+                continue;
+            }
+
+            // ── Operators (0-31, except 28) ───────────────────────────────────
+            if (b0 == 12)
+            {
+                // Two-byte operator — we don't need to act on any two-byte op
+                // for subroutine tracking; just clear stack and advance.
+                if (i + 1 >= cs.Length) return;
+                i += 2;
+                stackDepth = 0;
+                continue;
+            }
+
+            i++; // consume operator byte
+
+            switch (b0)
+            {
+                case 1:  // hstem
+                case 3:  // vstem
+                case 18: // hstemhm
+                case 23: // vstemhm
+                    // Each pair of operands declares one stem hint.
+                    // stackDepth may be odd if there is a width first (only for first stem group);
+                    // integer division rounds down which naturally absorbs the width arg.
+                    numHints += stackDepth / 2;
+                    stackDepth = 0;
+                    break;
+
+                case 19: // hintmask
+                case 20: // cntrmask
+                    // Any remaining stack args are implicit vstem hints promoted at the first mask op.
+                    // numHints is threaded via ref so it includes hints from the calling charstring
+                    // context — critical for subroutines that issue hintmask without declaring hints
+                    // themselves.
+                    numHints += stackDepth / 2;
+                    stackDepth = 0;
+                    // Consume ceil(numHints/8) mask bytes. numHints must be > 0 for any valid
+                    // charstring; if it is 0 here the font is malformed but we skip 0 bytes safely.
+                    i += (numHints + 7) / 8;
+                    break;
+
+                case 10: // callsubr (local)
+                    if (stackDepth > 0 && font.LocalSubrCount > 0)
+                    {
+                        var subrNum = (int)stack[stackDepth - 1] + font.LocalSubrBias;
+                        stackDepth--; // pop the subr number
+                        if (subrNum >= 0 && subrNum < font.LocalSubrCount)
+                        {
+                            usedLocalSubrs.Add(subrNum);
+                            if (visitedLocalSubrs.Add(subrNum))
+                            {
+                                var subrCs = font.GetLocalSubr(subrNum);
+                                // Thread numHints by ref so hint declarations and mask operations
+                                // inside the subroutine see the cumulative count from the caller.
+                                WalkCharstring(font, subrCs.Span,
+                                    usedLocalSubrs, usedGlobalSubrs,
+                                    visitedLocalSubrs, visitedGlobalSubrs,
+                                    ref numHints);
+                            }
+                        }
+                    }
+                    break;
+
+                case 29: // callgsubr (global)
+                    if (stackDepth > 0 && font.GlobalSubrCount > 0)
+                    {
+                        var subrNum = (int)stack[stackDepth - 1] + font.GlobalSubrBias;
+                        stackDepth--;
+                        if (subrNum >= 0 && subrNum < font.GlobalSubrCount)
+                        {
+                            usedGlobalSubrs.Add(subrNum);
+                            if (visitedGlobalSubrs.Add(subrNum))
+                            {
+                                var subrCs = font.GetGlobalSubr(subrNum);
+                                // Thread numHints by ref — same reason as callsubr above.
+                                WalkCharstring(font, subrCs.Span,
+                                    usedLocalSubrs, usedGlobalSubrs,
+                                    visitedLocalSubrs, visitedGlobalSubrs,
+                                    ref numHints);
+                            }
+                        }
+                    }
+                    break;
+
+                case 11: // return — end of subr
+                case 14: // endchar — end of charstring
+                    return;
+
+                case 21: // rmoveto
+                case 22: // hmoveto
+                case 4:  // vmoveto
+                    stackDepth = 0;
+                    break;
+
+                default:
+                    // All other operators clear the stack
+                    stackDepth = 0;
+                    break;
+            }
+        }
+    }
+
+    private static void Push(Span<double> stack, ref int depth, double value)
+    {
+        if (depth < stack.Length)
+            stack[depth] = value;
+        depth++;
+    }
+
+    // ── Subroutine INDEX entry builder ────────────────────────────────────────
+
+    /// <summary>
+    /// Returns an array of subr entry byte arrays. Entries in <paramref name="usedSubrs"/>
+    /// are copied verbatim; all others are replaced with a single <c>return</c> (0x0B) byte.
+    /// </summary>
+    private static byte[][] BuildSubrEntries(CffFont font, bool isLocal, HashSet<int> usedSubrs)
+    {
+        var count = isLocal ? font.LocalSubrCount : font.GlobalSubrCount;
+        if (count == 0) return [];
+
+        var entries = new byte[count][];
+        for (var i = 0; i < count; i++)
+        {
+            entries[i] = usedSubrs.Contains(i)
+                ? (isLocal ? font.GetLocalSubr(i) : font.GetGlobalSubr(i)).ToArray()
+                : ReturnByte;
+        }
+        return entries;
+    }
+
+    // ── Private DICT rebuilder ────────────────────────────────────────────────
+
+    /// <summary>
+    /// Strips the Subrs operator (op 19) and its operand from the Private DICT bytes.
+    /// </summary>
+    private static byte[] StripPrivateDictSubrs(ReadOnlySpan<byte> dict)
+    {
+        var output = new MemoryStream(dict.Length);
+        var operandStart = 0;
+        var i = 0;
+
+        while (i < dict.Length)
+        {
+            var b0 = dict[i];
+
+            if (b0 <= 21)
+            {
+                if (b0 == 12)
+                {
+                    // Two-byte operator — preserve verbatim
+                    output.Write(dict.Slice(operandStart, i - operandStart));
+                    var opLen = i + 1 < dict.Length ? 2 : 1;
+                    output.Write(dict.Slice(i, opLen));
+                    i += opLen;
+                    operandStart = i;
+                }
+                else if (b0 == 19)
+                {
+                    // Subrs (op 19) — skip operands + operator
+                    i++;
+                    operandStart = i;
+                }
+                else
+                {
+                    // Other single-byte operator — flush operands + operator
+                    output.Write(dict.Slice(operandStart, i - operandStart));
+                    output.WriteByte(b0);
+                    i++;
+                    operandStart = i;
+                }
+                continue;
+            }
+
+            // Advance through operand bytes
+            if (b0 == 28) { i += 3; }
+            else if (b0 == 29) { i += 5; }
+            else if (b0 == 30)
+            {
+                i++;
+                while (i < dict.Length)
+                {
+                    var nb = dict[i++];
+                    if ((nb & 0x0F) == 0x0F || (nb >> 4) == 0x0F) break;
+                }
+            }
+            else if (b0 is >= 32 and <= 246) { i++; }
+            else if (b0 is >= 247 and <= 250) { i += 2; }
+            else if (b0 is >= 251 and <= 254) { i += 2; }
+            else { i++; }
+        }
+
+        // Flush any trailing bytes
+        if (operandStart < dict.Length)
+            output.Write(dict.Slice(operandStart));
+
+        return output.ToArray();
+    }
+
+    /// <summary>
+    /// Builds the Private DICT bytes from <paramref name="stripped"/> (sans Subrs op)
+    /// and appends a new Subrs op 19 pointing to the local subr INDEX that will
+    /// immediately follow this Private DICT in the output stream.
+    /// The relative offset = (stripped.Length + encoded operand size + 1 byte for op 19).
+    /// We iterate once to stabilise the encoded size.
+    /// </summary>
+    private static byte[] BuildPrivateDictWithSubrs(byte[] stripped, int localSubrIndexLength)
+    {
+        // The Subrs relative offset = privateDictNewSize (the local subr INDEX starts
+        // immediately after the Private DICT). privateDictNewSize = stripped.Length
+        // + operandBytes + 1 (op byte). We need to find the fixed point.
+
+        // Try with a compact encoding first and verify size stability.
+        // Use 5-byte form (b0=29) to guarantee one pass.
+        const int opSize = 5 + 1; // 5-byte int + 1-byte op
+        var privateDictSize = stripped.Length + opSize;
+
+        var ms = new MemoryStream(privateDictSize);
+        ms.Write(stripped);
+        EncodeInt(ms, privateDictSize); // Subrs offset = immediately after this dict
+        ms.WriteByte(19); // op Subrs
+
+        // Verify encoded size matches
+        var result = ms.ToArray();
+
+        // If EncodeInt chose a shorter form and the size changed, redo with actual size
+        var actualPrivateDictSize = result.Length;
+        if (actualPrivateDictSize != privateDictSize)
+        {
+            // Re-encode with the actual size (compact form may be shorter)
+            privateDictSize = actualPrivateDictSize;
+            var ms2 = new MemoryStream(privateDictSize);
+            ms2.Write(stripped);
+            EncodeInt(ms2, privateDictSize);
+            ms2.WriteByte(19);
+            result = ms2.ToArray();
+
+            // One more pass if it still shifted (highly unlikely but safe)
+            if (result.Length != privateDictSize)
+            {
+                privateDictSize = result.Length;
+                var ms3 = new MemoryStream(privateDictSize);
+                ms3.Write(stripped);
+                EncodeInt(ms3, privateDictSize);
+                ms3.WriteByte(19);
+                result = ms3.ToArray();
+            }
+        }
+
+        return result;
     }
 
     // ── Top DICT rebuilder ────────────────────────────────────────────────────
@@ -306,8 +626,7 @@ internal static class CffSubsetter
         int charsetNewOffset,
         int encodingNewOffset,
         int privateDictNewOffset,
-        int fdArrayNewOffset,
-        int fdSelectNewOffset,
+        int privateDictNewSize,
         bool charsetIsOffset,
         bool encodingIsOffset)
     {
@@ -339,28 +658,12 @@ internal static class CffSubsetter
             ms.WriteByte(16);
         }
 
-        // Private (op 18) — size + offset
-        if (privateDictNewOffset > 0 && font.PrivateDictSize > 0)
+        // Private (op 18) — size + offset (size = rebuilt Private DICT size only, not incl. local subrs)
+        if (privateDictNewOffset > 0 && privateDictNewSize > 0)
         {
-            EncodeInt(ms, font.PrivateDictSize);
+            EncodeInt(ms, privateDictNewSize);
             EncodeInt(ms, privateDictNewOffset);
             ms.WriteByte(18);
-        }
-
-        // FDArray (op 12 36)
-        if (fdArrayNewOffset > 0)
-        {
-            EncodeInt(ms, fdArrayNewOffset);
-            ms.WriteByte(12);
-            ms.WriteByte(36);
-        }
-
-        // FDSelect (op 12 37)
-        if (fdSelectNewOffset > 0)
-        {
-            EncodeInt(ms, fdSelectNewOffset);
-            ms.WriteByte(12);
-            ms.WriteByte(37);
         }
 
         return ms.ToArray();
@@ -378,10 +681,6 @@ internal static class CffSubsetter
         bool hasFdSelect,
         bool hasPrivate)
     {
-        // We scan the dict, collecting operands as byte ranges.
-        // When we hit a target operator, we skip all pending operand bytes and the operator.
-        // Otherwise we flush the operands and the operator byte(s).
-
         var opsToStrip = new HashSet<int>
         {
             17, // CharStrings
@@ -402,7 +701,6 @@ internal static class CffSubsetter
 
             if (b0 <= 21)
             {
-                // Operator
                 int opKey;
                 int opLen;
                 if (b0 == 12)
@@ -423,13 +721,11 @@ internal static class CffSubsetter
 
                 if (opsToStrip.Contains(opKey))
                 {
-                    // Skip: don't flush operands, don't emit operator
                     i += opLen;
-                    operandStart = i; // reset operand accumulation
+                    operandStart = i;
                 }
                 else
                 {
-                    // Flush operands + operator verbatim
                     output.Write(dict.Slice(operandStart, i - operandStart));
                     output.Write(dict.Slice(i, opLen));
                     i += opLen;
@@ -438,12 +734,10 @@ internal static class CffSubsetter
                 continue;
             }
 
-            // Operand bytes — advance i without flushing yet
             if (b0 == 28) { i += 3; }
             else if (b0 == 29) { i += 5; }
             else if (b0 == 30)
             {
-                // Real: skip nibble-pairs until end nibble 0xF
                 i++;
                 while (i < dict.Length)
                 {
@@ -455,7 +749,7 @@ internal static class CffSubsetter
             else if (b0 is >= 32 and <= 246) { i++; }
             else if (b0 is >= 247 and <= 250) { i += 2; }
             else if (b0 is >= 251 and <= 254) { i += 2; }
-            else { i++; } // unknown: skip
+            else { i++; }
         }
 
         return output.ToArray();
@@ -472,28 +766,22 @@ internal static class CffSubsetter
     {
         if (entries.Length == 0)
         {
-            // count=0 INDEX: just 2 bytes
             return ([0x00, 0x00], 2);
         }
 
-        // Compute total data size
         var dataSize = entries.Sum(e => e.Length);
-        var offSize = ComputeOffSize(dataSize + 1); // +1 because offsets are 1-based
+        var offSize = ComputeOffSize(dataSize + 1);
 
-        var headerSize = 2 + 1 + (entries.Length + 1) * offSize; // count(2) + offSize(1) + offsets
+        var headerSize = 2 + 1 + (entries.Length + 1) * offSize;
         var totalSize = headerSize + dataSize;
 
         var buf = new byte[totalSize];
         var pos = 0;
 
-        // count
         buf[pos++] = (byte)(entries.Length >> 8);
         buf[pos++] = (byte)entries.Length;
-
-        // offSize
         buf[pos++] = (byte)offSize;
 
-        // offsets (1-based)
         var currentOffset = 1;
         WriteOffset(buf, ref pos, offSize, currentOffset);
         for (var i = 0; i < entries.Length; i++)
@@ -502,7 +790,6 @@ internal static class CffSubsetter
             WriteOffset(buf, ref pos, offSize, currentOffset);
         }
 
-        // data
         for (var i = 0; i < entries.Length; i++)
         {
             entries[i].CopyTo(buf, pos);
@@ -555,7 +842,6 @@ internal static class CffSubsetter
         }
         else
         {
-            // 4-byte form (b0=29)
             s.WriteByte(29);
             s.WriteByte((byte)(value >> 24));
             s.WriteByte((byte)(value >> 16));
@@ -568,7 +854,6 @@ internal static class CffSubsetter
 
     /// <summary>
     /// Computes a deterministic 6-uppercase-letter subset tag from the sorted GID set.
-    /// Mirrors the TrueType SubsetTag() in TrueTypeFontEmbedder.cs.
     /// </summary>
     private static string ComputeSubsetTag(IEnumerable<int> gids)
     {
@@ -588,56 +873,30 @@ internal static class CffSubsetter
 
     // ── Section length helpers ────────────────────────────────────────────────
 
-    /// <summary>
-    /// Heuristic: find the offset of the first "other" section that comes after CharStrings.
-    /// Used to determine the byte range of sections that lack an explicit length.
-    /// </summary>
     private static int NextSectionOffset(CffFont font)
     {
-        // The sections after CharStrings in canonical layout are:
-        // charset, Encoding, FDArray, FDSelect, Private.
-        // We just need the one immediately after charset.
         var offsets = new List<int>();
         if (font.EncodingOffset > 2) offsets.Add(font.EncodingOffset);
+        if (font.CharStringsOffset > 0) offsets.Add(font.CharStringsOffset);
         if (font.FdArrayOffset > 0) offsets.Add(font.FdArrayOffset);
         if (font.FdSelectOffset > 0) offsets.Add(font.FdSelectOffset);
         if (font.PrivateDictOffset > 0) offsets.Add(font.PrivateDictOffset);
+        if (font.LocalSubrIndexOffset > 0) offsets.Add(font.LocalSubrIndexOffset);
         offsets.Add(font.Data.Length);
 
-        var after = offsets.Where(o => o > font.CharsetOffset).DefaultIfEmpty(font.Data.Length).Min();
-        return after;
+        return offsets.Where(o => o > font.CharsetOffset).DefaultIfEmpty(font.Data.Length).Min();
     }
 
     private static int NextSectionOffsetAfterEncoding(CffFont font)
     {
         var offsets = new List<int>();
+        if (font.CharStringsOffset > 0) offsets.Add(font.CharStringsOffset);
         if (font.FdArrayOffset > 0) offsets.Add(font.FdArrayOffset);
         if (font.FdSelectOffset > 0) offsets.Add(font.FdSelectOffset);
         if (font.PrivateDictOffset > 0) offsets.Add(font.PrivateDictOffset);
+        if (font.LocalSubrIndexOffset > 0) offsets.Add(font.LocalSubrIndexOffset);
         offsets.Add(font.Data.Length);
 
-        var after = offsets.Where(o => o > font.EncodingOffset).DefaultIfEmpty(font.Data.Length).Min();
-        return after;
-    }
-
-    private static int FdArrayLength(CffFont font, ReadOnlySpan<byte> src)
-    {
-        if (font.FdArrayOffset <= 0 || font.FdArrayOffset >= src.Length) return 0;
-        var offsets = new List<int>();
-        if (font.FdSelectOffset > 0) offsets.Add(font.FdSelectOffset);
-        if (font.PrivateDictOffset > 0) offsets.Add(font.PrivateDictOffset);
-        offsets.Add(src.Length);
-        var next = offsets.Where(o => o > font.FdArrayOffset).DefaultIfEmpty(src.Length).Min();
-        return next - font.FdArrayOffset;
-    }
-
-    private static int FdSelectLength(CffFont font, ReadOnlySpan<byte> src)
-    {
-        if (font.FdSelectOffset <= 0 || font.FdSelectOffset >= src.Length) return 0;
-        var offsets = new List<int>();
-        if (font.PrivateDictOffset > 0) offsets.Add(font.PrivateDictOffset);
-        offsets.Add(src.Length);
-        var next = offsets.Where(o => o > font.FdSelectOffset).DefaultIfEmpty(src.Length).Min();
-        return next - font.FdSelectOffset;
+        return offsets.Where(o => o > font.EncodingOffset).DefaultIfEmpty(font.Data.Length).Min();
     }
 }
