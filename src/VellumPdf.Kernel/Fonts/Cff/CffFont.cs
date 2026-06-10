@@ -205,6 +205,11 @@ internal sealed class CffFont
         {
             var lastNameEnd = (int)nameOffsets[nameCount];
             nameIndexLength = nameDataBase + lastNameEnd - 1 - pos;
+            // B2: a malformed last offset can make the length negative, causing pos to move
+            // backward and misparse subsequent sections as garbage, eventually throwing an
+            // uncaught exception outside Parse's InvalidDataException catch.
+            if (nameIndexLength < 0)
+                throw new InvalidDataException("CFF Name INDEX: negative length.");
         }
         pos += nameIndexLength;
 
@@ -231,6 +236,9 @@ internal sealed class CffFont
         {
             var lastEnd = (int)topDictOffsets[topDictCount];
             topDictIndexLength = topDictDataBase + lastEnd - 1 - pos;
+            // B2: same as Name INDEX — negative length means malformed last offset.
+            if (topDictIndexLength < 0)
+                throw new InvalidDataException("CFF Top DICT INDEX: negative length.");
         }
         pos += topDictIndexLength;
 
@@ -285,15 +293,20 @@ internal sealed class CffFont
         var localSubrIndexLength = 0;
         var localSubrCount = 0;
 
+        // B1: use long arithmetic for the bounds check so a Top DICT with
+        // privateDictSize == int.MaxValue cannot overflow the int addition to a negative
+        // value, pass the guard, and cause s.Slice to throw ArgumentOutOfRangeException
+        // (which escapes the caller's catch(InvalidDataException)).
         if (privateDictSize > 0 && privateDictOffset > 0
-            && privateDictOffset + privateDictSize <= len)
+            && (long)privateDictOffset + privateDictSize <= len)
         {
             var privSpan = s.Slice(privateDictOffset, privateDictSize);
             var subrRelOffset = ParsePrivateDictSubrsOffset(privSpan);
             if (subrRelOffset > 0)
             {
                 var absLocalSubrOffset = privateDictOffset + subrRelOffset;
-                if (absLocalSubrOffset + 2 <= len)
+                // B1: same overflow protection for the local-subr-offset bounds check.
+                if ((long)absLocalSubrOffset + 2 <= len)
                 {
                     localSubrIndexOffset = absLocalSubrOffset;
                     localSubrIndexLength = IndexTotalLength(s, absLocalSubrOffset, len);
@@ -449,6 +462,12 @@ internal sealed class CffFont
         for (var b = 0; b < offSize; b++)
             lastOffset = (lastOffset << 8) | s[lastOffsetPos + b];
 
+        // B3: a valid CFF INDEX has offset[0] == 1 (the first entry starts at byte 1),
+        // so the final entry's end offset is always >= 1. A zero last offset means the
+        // data is malformed; dataSize = lastOffset - 1 would be -1 and the returned
+        // length would be wrong, potentially allowing out-of-bounds reads later.
+        if (lastOffset == 0)
+            throw new InvalidDataException($"CFF INDEX at offset {pos}: invalid zero last offset.");
         // Data section size = lastOffset - 1 (offsets are 1-based)
         var dataSize = (int)lastOffset - 1;
         return 3 + offsetsArrayLen + dataSize;

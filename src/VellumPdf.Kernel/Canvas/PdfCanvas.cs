@@ -110,6 +110,8 @@ public sealed class PdfCanvas
     /// </summary>
     public PdfCanvas SetFillColor(params ReadOnlySpan<double> components)
     {
+        if (components.IsEmpty)
+            throw new ArgumentException("At least one colour component is required.", nameof(components));
         var sb = new StringBuilder();
         for (var i = 0; i < components.Length; i++)
         {
@@ -128,6 +130,8 @@ public sealed class PdfCanvas
     /// </summary>
     public PdfCanvas SetStrokeColor(params ReadOnlySpan<double> components)
     {
+        if (components.IsEmpty)
+            throw new ArgumentException("At least one colour component is required.", nameof(components));
         var sb = new StringBuilder();
         for (var i = 0; i < components.Length; i++)
         {

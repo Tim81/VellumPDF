@@ -42,6 +42,12 @@ internal sealed class CmapTable
         //   1 — format 0 or 6 + platform 3 / encoding 0 (Windows Symbol) OR platform 0
         //   0 — format 0 or 6 + anything else
         //  skip — any other format
+        // C3: a crafted font could claim tens of thousands of subtable records, blowing
+        // through the loop and reading past the cmap header before reaching any subtable.
+        // 0x4000 (16384) is far above any real font's count.
+        if (numTabs > 0x4000)
+            throw new InvalidDataException("cmap: implausible subtable count.");
+
         int best = -1; int bestPriority = -1; int bestFormat = -1;
         for (var i = 0; i < numTabs; i++)
         {
@@ -124,10 +130,20 @@ internal sealed class CmapTable
                 }
                 else
                 {
-                    var glyphIndexArrayPos =
-                        idRangeOffsetsPos + i * 2 + idRangeOffsets[i] + (cp - start) * 2;
-                    gid = r.ReadU16(glyphIndexArrayPos);
-                    if (gid != 0) gid = (ushort)((gid + idDeltas[i]) & 0xFFFF);
+                    // C1: compute in long to prevent int overflow on hostile idRangeOffsets values.
+                    // If the position falls outside the table SfntReader.Require will throw
+                    // InvalidDataException; if it overflows int we treat the entry as missing (gid 0).
+                    var glyphIndexArrayPosLong =
+                        (long)idRangeOffsetsPos + i * 2 + idRangeOffsets[i] + (cp - start) * 2;
+                    if (glyphIndexArrayPosLong < 0 || glyphIndexArrayPosLong + 2 > r.Length)
+                    {
+                        gid = 0;
+                    }
+                    else
+                    {
+                        gid = r.ReadU16((int)glyphIndexArrayPosLong);
+                        if (gid != 0) gid = (ushort)((gid + idDeltas[i]) & 0xFFFF);
+                    }
                 }
                 if (gid != 0) map[cp] = gid;
             }
@@ -154,6 +170,9 @@ internal sealed class CmapTable
         // Header: format(2) length(2) language(2) firstCode(2) entryCount(2) then glyphIdArray[entryCount].
         var firstCode = r.ReadU16(offset + 6);
         var entryCount = r.ReadU16(offset + 8);
+        // C2: firstCode + entryCount must not exceed the BMP (0x10000 code points).
+        if (firstCode + entryCount > 0x10000)
+            throw new InvalidDataException("cmap format 6: range exceeds BMP.");
         var map = new Dictionary<int, ushort>(entryCount);
         for (var i = 0; i < entryCount; i++)
         {
