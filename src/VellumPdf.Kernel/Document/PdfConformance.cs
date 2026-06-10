@@ -41,4 +41,11 @@ public enum PdfConformance
 
     /// <summary>PDF/A-2a — accessible conformance (structural tagging required).</summary>
     PdfA2a,
+
+    /// <summary>
+    /// PDF/UA-1 (ISO 14289-1) — universal accessibility. Requires tagging, catalog /Lang,
+    /// a document title with /ViewerPreferences /DisplayDocTitle true, and decorative content
+    /// marked as /Artifact. Distinct from PDF/A (uses the pdfuaid XMP schema, not pdfaid).
+    /// </summary>
+    PdfUA1,
 }

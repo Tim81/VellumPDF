@@ -423,6 +423,15 @@ public sealed class PdfCanvas
     /// <summary>Closes the current marked-content sequence. Emits <c>EMC</c>.</summary>
     public PdfCanvas EndMarkedContent() { WriteOp("EMC"u8); return this; }
 
+    /// <summary>Opens an /Artifact marked-content sequence (no MCID; not part of the
+    /// logical structure). Close it with <see cref="EndMarkedContent"/>. Use for purely
+    /// decorative content (rules, table borders/fills) so tagged/PDF-UA output has no
+    /// untagged "real" content.</summary>
+    public void BeginArtifactMarkedContent()
+    {
+        WriteOp("/Artifact BMC"u8);
+    }
+
     // ── XObject ─────────────────────────────────────────────────────────────
 
     /// <summary>Paints the named XObject (image or form) from the page resources. Emits <c>Do</c>.</summary>

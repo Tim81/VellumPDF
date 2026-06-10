@@ -25,6 +25,50 @@ public sealed class StandardsFoundationTests
         return System.Text.Encoding.Latin1.GetString(ms.ToArray());
     }
 
+    /// <summary>
+    /// Saves and returns the raw PDF text concatenated with all decompressed
+    /// FlateDecode stream data, so tests can assert on content-stream operators
+    /// that are compressed in the output.
+    /// </summary>
+    private static string SaveToStringWithDecompressed(PdfDocument doc)
+    {
+        var ms = new MemoryStream();
+        doc.Save(ms);
+        var bytes = ms.ToArray();
+        var raw = System.Text.Encoding.Latin1.GetString(bytes);
+        var sb = new System.Text.StringBuilder(raw);
+        // Decompress each FlateDecode stream and append.
+        var pos = 0;
+        while (pos < bytes.Length)
+        {
+            var streamKeyword = raw.IndexOf("\nstream\n", pos, StringComparison.Ordinal);
+            if (streamKeyword < 0) break;
+            var dataStart = streamKeyword + "\nstream\n".Length;
+            var dictEnd = streamKeyword;
+            var dictStart = raw.LastIndexOf("obj\n", dictEnd, StringComparison.Ordinal);
+            if (dictStart < 0) { pos = dataStart; continue; }
+            var lenIdx = raw.IndexOf("/Length ", dictStart, dictEnd - dictStart, StringComparison.Ordinal);
+            if (lenIdx < 0) { pos = dataStart; continue; }
+            var lenValStart = lenIdx + "/Length ".Length;
+            var lenValEnd = lenValStart;
+            while (lenValEnd < raw.Length && char.IsDigit(raw[lenValEnd])) lenValEnd++;
+            if (!int.TryParse(raw[lenValStart..lenValEnd], out var streamLength)) { pos = dataStart; continue; }
+            if (dataStart + streamLength > bytes.Length) { pos = dataStart; continue; }
+            var rawBytes = bytes[dataStart..(dataStart + streamLength)];
+            try
+            {
+                using var input = new MemoryStream(rawBytes);
+                using var output = new MemoryStream();
+                using var z = new System.IO.Compression.ZLibStream(input, System.IO.Compression.CompressionMode.Decompress);
+                z.CopyTo(output);
+                sb.Append(System.Text.Encoding.Latin1.GetString(output.ToArray()));
+            }
+            catch (InvalidDataException) { /* not a zlib stream — skip */ }
+            pos = dataStart + streamLength;
+        }
+        return sb.ToString();
+    }
+
     // ── 1. XMP metadata ──────────────────────────────────────────────────────
 
     [Fact]
@@ -793,5 +837,68 @@ public sealed class StandardsFoundationTests
 
         var ms = new MemoryStream();
         Assert.Throws<InvalidOperationException>(() => { doc.Save(ms); });
+    }
+
+    // ── 9. PDF/UA-1 conformance ───────────────────────────────────────────────
+
+    [Fact]
+    public void Conformance_PdfUA1_emitsViewerPreferencesDisplayDocTitle()
+    {
+        using var doc = new PdfDocument();
+        doc.Conformance = PdfConformance.PdfUA1;
+        doc.Info.Title = "UA-1 Test";
+        doc.Language = "en-US";
+        doc.AddPage();
+
+        var content = SaveToString(doc);
+
+        Assert.Contains("/ViewerPreferences", content);
+        Assert.Contains("/DisplayDocTitle true", content);
+    }
+
+    [Fact]
+    public void Conformance_PdfUA1_emitsPdfUaIdPart_notPdfaId()
+    {
+        using var doc = new PdfDocument();
+        doc.Conformance = PdfConformance.PdfUA1;
+        doc.Info.Title = "UA-1 XMP Test";
+        doc.AddPage();
+
+        var content = SaveToString(doc);
+
+        Assert.Contains("pdfuaid", content);
+        Assert.Contains("<pdfuaid:part>1", content);
+        Assert.DoesNotContain("pdfaid:", content);
+    }
+
+    [Fact]
+    public void Conformance_PdfUA1_impliesTagged()
+    {
+        using var doc = new PdfDocument();
+        doc.Conformance = PdfConformance.PdfUA1;
+
+        Assert.True(doc.Tagged);
+    }
+
+    [Fact]
+    public void Canvas_BeginArtifactMarkedContent_emitsArtifactBmc()
+    {
+        using var doc = new PdfDocument();
+        var page = doc.AddPage();
+        var canvas = new PdfCanvas(page);
+        canvas.BeginArtifactMarkedContent();
+        canvas
+            .SetStrokeColorRgb(0, 0, 0)
+            .MoveTo(10, 10)
+            .LineTo(100, 10)
+            .Stroke();
+        canvas.EndMarkedContent();
+        canvas.Finish();
+
+        // Content stream is FlateDecode-compressed; use the decompressed helper.
+        var content = SaveToStringWithDecompressed(doc);
+
+        Assert.Contains("/Artifact BMC", content);
+        Assert.Contains("EMC", content);
     }
 }

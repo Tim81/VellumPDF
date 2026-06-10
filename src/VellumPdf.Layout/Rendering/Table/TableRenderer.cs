@@ -246,24 +246,28 @@ public sealed class TableRenderer : IRenderer
     {
         var cs = cell.Style ?? style;
 
-        // Background fill
+        // Background fill (decorative — wrapped as /Artifact when tagged)
         var bg = cell.Background ?? row.Background;
         if (bg.HasValue)
         {
             var (bx, by, bw, bh) = ctx.ToPdfRect(new LayoutBox(cellX, cellY, colW, h));
+            if (ctx.Tagged) ctx.Canvas.BeginArtifactMarkedContent();
             ctx.Canvas
                 .SetFillColorRgb(bg.Value.R, bg.Value.G, bg.Value.B)
                 .Rectangle(bx, by, bw, bh)
                 .Fill();
+            if (ctx.Tagged) ctx.Canvas.EndMarkedContent();
         }
 
-        // Cell border
+        // Cell border (decorative — wrapped as /Artifact when tagged)
         var (rx, ry, rw, rh) = ctx.ToPdfRect(new LayoutBox(cellX, cellY, colW, h));
+        if (ctx.Tagged) ctx.Canvas.BeginArtifactMarkedContent();
         ctx.Canvas
             .SetStrokeColorRgb(_table.BorderColor.R, _table.BorderColor.G, _table.BorderColor.B)
             .SetLineWidth(_table.BorderWidth)
             .Rectangle(rx, ry, rw, rh)
             .Stroke();
+        if (ctx.Tagged) ctx.Canvas.EndMarkedContent();
 
         // Cell text
         var innerBox = new LayoutBox(

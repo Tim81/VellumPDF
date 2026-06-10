@@ -29,11 +29,13 @@ public sealed class LineSeparatorRenderer : IRenderer
     {
         var (x, y, w, h) = ctx.ToPdfRect(_occupied);
         var lineY = y + _sep.Margins.Bottom + _sep.LineWidth / 2;
+        if (ctx.Tagged) ctx.Canvas.BeginArtifactMarkedContent();
         ctx.Canvas
             .SetStrokeColorRgb(_sep.Color.R, _sep.Color.G, _sep.Color.B)
             .SetLineWidth(_sep.LineWidth)
             .MoveTo(x, lineY)
             .LineTo(x + w, lineY)
             .Stroke();
+        if (ctx.Tagged) ctx.Canvas.EndMarkedContent();
     }
 }
