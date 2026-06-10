@@ -700,10 +700,10 @@ public sealed class PdfValidatorOracleTests : IDisposable
     }
 
     // PDF/A-2a (conformance level A) requires full accessible tagging — catalog /Lang,
-    // a role map, and validated marked-content↔structure linkage — which is a roadmap
-    // item (see README "Not yet / roadmap"). The metadata path is covered by the
-    // StandardsFoundation tests; the strict veraPDF 2a gate is enabled once that lands.
-    [Fact(Skip = "PDF/A-2a (level A): /Lang is now emitted; remaining blockers are the role map + marked-content linkage (#38).")]
+    // a role map, and validated marked-content↔structure linkage — all now implemented
+    // (#37, #38). This strict veraPDF 2a gate validates a fully-tagged document (heading,
+    // paragraph, table, ordered list, figure-with-/Alt, embedded font, catalog /Lang).
+    [Fact]
     public void PdfA2a_veraPdf_reportsCompliant()
     {
         var fontPath = FindPlatformFont();
@@ -803,6 +803,7 @@ public sealed class PdfValidatorOracleTests : IDisposable
         using var doc = new Document();
         doc.Conformance = conformance;
         doc.Tagged = true;
+        doc.Language = "en-US";
         doc.Info.Title = "VellumPdf veraPDF Oracle — Tagged";
         doc.Info.Producer = "VellumPdf";
 
