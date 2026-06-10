@@ -32,8 +32,15 @@ internal static class PdfTestUtil
     /// </summary>
     internal static string? FindOtfFont()
     {
+        var windowsUserFonts = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "Microsoft", "Windows", "Fonts");
+
         string[] candidates =
         [
+            // Windows user-installed TeX Gyre fonts
+            Path.Combine(windowsUserFonts, "texgyreheros-regular.otf"),
+            Path.Combine(windowsUserFonts, "texgyretermes-regular.otf"),
             // Linux CI — TeX Gyre (fonts-texgyre apt package)
             "/usr/share/fonts/opentype/texgyre/texgyreadventor-regular.otf",
             "/usr/share/fonts/opentype/texgyre/texgyreheros-regular.otf",
