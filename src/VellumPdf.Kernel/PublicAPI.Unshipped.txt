@@ -1,1 +1,11 @@
 #nullable enable
+VellumPdf.Canvas.PdfCanvas.SetFillColor(params System.ReadOnlySpan<double> components) -> VellumPdf.Canvas.PdfCanvas!
+VellumPdf.Canvas.PdfCanvas.SetFillColorSpace(string! resourceName) -> VellumPdf.Canvas.PdfCanvas!
+VellumPdf.Canvas.PdfCanvas.SetStrokeColor(params System.ReadOnlySpan<double> components) -> VellumPdf.Canvas.PdfCanvas!
+VellumPdf.Canvas.PdfCanvas.SetStrokeColorSpace(string! resourceName) -> VellumPdf.Canvas.PdfCanvas!
+VellumPdf.Document.IccProfiles
+VellumPdf.Document.PdfDocument.RegisterIccBasedColorSpace(VellumPdf.Document.PdfPage! page, byte[]! iccProfile, int componentCount, string! resourceName) -> string!
+VellumPdf.Document.PdfDocument.SetPdfAOutputIntent(byte[]! iccProfile, int componentCount, string! outputConditionIdentifier, string? info = null) -> void
+VellumPdf.Document.PdfDocument.UseCmykOutputIntent(string! outputConditionIdentifier = "Generic CMYK") -> void
+static VellumPdf.Document.IccProfiles.GenericCmyk.get -> byte[]!
+static VellumPdf.Document.IccProfiles.Srgb.get -> byte[]!

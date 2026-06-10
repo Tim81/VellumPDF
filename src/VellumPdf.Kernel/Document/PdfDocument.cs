@@ -54,6 +54,15 @@ public sealed class PdfDocument : IDisposable
     // Encryption settings supplied via Encrypt(). Null = no encryption.
     private PdfEncryptionSettings? _encryptionSettings;
 
+    // OutputIntent configuration. Defaults to sRGB when Conformance != None.
+    private byte[]? _outputIntentProfile;
+    private int _outputIntentComponents = 3;
+    private string _outputIntentIdentifier = "sRGB IEC61966-2.1";
+    private string? _outputIntentInfo;
+
+    // Per-page ICC colour space registrations: page → list of (icc, components, name)
+    private readonly Dictionary<PdfPage, List<(byte[] Icc, int Components, string Name)>> _pageColorSpaces = new();
+
     /// <summary>Document metadata (title, author, producer, …) written to the /Info dictionary.</summary>
     public PdfDocumentInfo Info { get; } = new();
 
@@ -243,6 +252,81 @@ public sealed class PdfDocument : IDisposable
     {
         if (Tagged)
             _structureTree.AddStructElem(elem);
+    }
+
+    /// <summary>
+    /// Configures a custom ICC profile as the PDF/A OutputIntent for this document.
+    /// The OutputIntent is only emitted when <see cref="Conformance"/> is not
+    /// <see cref="PdfConformance.None"/>.
+    ///
+    /// <para>
+    /// Using <c>k</c>/<c>K</c> (DeviceCMYK) operators in a PDF/A document requires a
+    /// CMYK output intent (<paramref name="componentCount"/> = 4). Using DeviceRGB
+    /// operators requires an RGB output intent (<paramref name="componentCount"/> = 3).
+    /// </para>
+    /// </summary>
+    /// <param name="iccProfile">The raw ICC profile bytes. Must be non-null and non-empty.</param>
+    /// <param name="componentCount">Number of colour components: 1 (Gray), 3 (RGB), or 4 (CMYK).</param>
+    /// <param name="outputConditionIdentifier">The OutputConditionIdentifier string (e.g. "sRGB IEC61966-2.1"). Must be non-null.</param>
+    /// <param name="info">Optional /Info string. Defaults to <paramref name="outputConditionIdentifier"/> when null.</param>
+    /// <exception cref="ArgumentException"><paramref name="iccProfile"/> is null or empty, or <paramref name="outputConditionIdentifier"/> is null.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="componentCount"/> is not 1, 3, or 4.</exception>
+    public void SetPdfAOutputIntent(byte[] iccProfile, int componentCount, string outputConditionIdentifier, string? info = null)
+    {
+        if (iccProfile is null || iccProfile.Length == 0)
+            throw new ArgumentException("iccProfile must be non-null and non-empty.", nameof(iccProfile));
+        if (componentCount != 1 && componentCount != 3 && componentCount != 4)
+            throw new ArgumentOutOfRangeException(nameof(componentCount), "componentCount must be 1, 3, or 4.");
+        ArgumentNullException.ThrowIfNull(outputConditionIdentifier);
+        _outputIntentProfile = (byte[])iccProfile.Clone();
+        _outputIntentComponents = componentCount;
+        _outputIntentIdentifier = outputConditionIdentifier;
+        _outputIntentInfo = info;
+    }
+
+    /// <summary>
+    /// Convenience method: sets the PDF/A OutputIntent to the built-in generic CMYK
+    /// ICC profile (4 components). Use this when the document uses DeviceCMYK
+    /// (<c>k</c>/<c>K</c>) operators under a PDF/A conformance level.
+    /// </summary>
+    /// <param name="outputConditionIdentifier">The OutputConditionIdentifier string written to the OutputIntent dictionary.</param>
+    public void UseCmykOutputIntent(string outputConditionIdentifier = "Generic CMYK") =>
+        SetPdfAOutputIntent(CmykIccProfile.Bytes, 4, outputConditionIdentifier);
+
+    /// <summary>
+    /// Registers an ICCBased colour space on <paramref name="page"/> for deferred
+    /// materialisation during <see cref="Save"/>. The colour space will be written as
+    /// an indirect ICC stream object and registered in the page's /ColorSpace resource
+    /// dictionary under <paramref name="resourceName"/>.
+    ///
+    /// <para>
+    /// After registering, use <see cref="Canvas.PdfCanvas.SetFillColorSpace"/> /
+    /// <see cref="Canvas.PdfCanvas.SetStrokeColorSpace"/> with <paramref name="resourceName"/>
+    /// to select it, then <see cref="Canvas.PdfCanvas.SetFillColor"/> /
+    /// <see cref="Canvas.PdfCanvas.SetStrokeColor"/> to paint.
+    /// </para>
+    /// </summary>
+    /// <param name="page">The page on which the colour space will be used.</param>
+    /// <param name="iccProfile">The raw ICC profile bytes.</param>
+    /// <param name="componentCount">Number of colour components: 1 (Gray), 3 (RGB), or 4 (CMYK).</param>
+    /// <param name="resourceName">The resource name used in content stream operators (e.g. "CS0").</param>
+    /// <returns><paramref name="resourceName"/> for convenience in fluent call chains.</returns>
+    /// <exception cref="ArgumentException"><paramref name="iccProfile"/> is null or empty, or <paramref name="resourceName"/> is null.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="componentCount"/> is not 1, 3, or 4.</exception>
+    public string RegisterIccBasedColorSpace(PdfPage page, byte[] iccProfile, int componentCount, string resourceName)
+    {
+        if (iccProfile is null || iccProfile.Length == 0)
+            throw new ArgumentException("iccProfile must be non-null and non-empty.", nameof(iccProfile));
+        if (componentCount != 1 && componentCount != 3 && componentCount != 4)
+            throw new ArgumentOutOfRangeException(nameof(componentCount), "componentCount must be 1, 3, or 4.");
+        ArgumentNullException.ThrowIfNull(resourceName);
+        if (!_pageColorSpaces.TryGetValue(page, out var list))
+        {
+            list = [];
+            _pageColorSpaces[page] = list;
+        }
+        list.Add((iccProfile, componentCount, resourceName));
+        return resourceName;
     }
 
     /// <summary>
@@ -455,6 +539,9 @@ public sealed class PdfDocument : IDisposable
                 page.RegisterXObject(name, imgObjRef);
             }
         }
+
+        // ── Materialise ICC colour spaces ──────────────────────────────────
+        MaterializeIccColorSpaces(registry);
 
         // ── Embed TrueType fonts (Type0/CIDFontType2) ─────────────────────
         // Build the full font object graph for each embedded font, then register
@@ -774,6 +861,9 @@ public sealed class PdfDocument : IDisposable
             }
         }
 
+        // ── Materialise ICC colour spaces ──────────────────────────────────────
+        MaterializeIccColorSpaces(registry);
+
         // ── Embedded TrueType fonts ────────────────────────────────────────────
         foreach (var handle in _embeddedFonts)
         {
@@ -965,13 +1055,13 @@ public sealed class PdfDocument : IDisposable
     }
 
     /// <summary>
-    /// Builds and registers the /OutputIntents array entry referencing an sRGB ICC profile stream.
+    /// Builds and registers the /OutputIntents array entry referencing an ICC profile stream.
     /// Required by PDF/A-2 (ISO 19005-2 §6.2.2) for all conformance levels.
     ///
     /// <para>
-    /// The ICC stream uses FlateDecode compression and carries <c>/N 3</c> (3 colour components,
-    /// RGB). The OutputIntent dictionary uses <c>/S /GTS_PDFA1</c> and identifies the profile
-    /// as "sRGB IEC61966-2.1".
+    /// Uses the profile configured via <see cref="SetPdfAOutputIntent"/> or
+    /// <see cref="UseCmykOutputIntent"/>. Defaults to the built-in sRGB profile when
+    /// no custom profile has been configured.
     /// </para>
     /// </summary>
     /// <remarks>
@@ -984,12 +1074,16 @@ public sealed class PdfDocument : IDisposable
     ///         conformance level A.</item>
     /// </list>
     /// </remarks>
-    private static PdfIndirectReference BuildOutputIntents(PdfObjectRegistry registry)
+    private PdfIndirectReference BuildOutputIntents(PdfObjectRegistry registry)
     {
-        var iccBytes = SrgbIccProfile.Bytes;
+        var iccBytes = _outputIntentProfile ?? SrgbIccProfile.Bytes;
+        var nValue = _outputIntentProfile is null ? 3 : _outputIntentComponents;
+        var identifier = _outputIntentIdentifier;
+        var infoText = _outputIntentInfo ?? identifier;
+
         var iccStream = new PdfStream(iccBytes);
         iccStream.Dictionary
-            .Set(new PdfName("N"), new PdfInteger(3));
+            .Set(new PdfName("N"), new PdfInteger(nValue));
 
         var iccRef = registry.Reserve();
         registry.SetValue(iccRef, iccStream);
@@ -998,14 +1092,44 @@ public sealed class PdfDocument : IDisposable
             .Set(PdfName.Type, new PdfName("OutputIntent"))
             .Set(new PdfName("S"), new PdfName("GTS_PDFA1"))
             .Set(new PdfName("OutputConditionIdentifier"), new PdfLiteralString(
-                System.Text.Encoding.Latin1.GetBytes("sRGB IEC61966-2.1")))
+                System.Text.Encoding.Latin1.GetBytes(identifier)))
             .Set(new PdfName("Info"), new PdfLiteralString(
-                System.Text.Encoding.Latin1.GetBytes("sRGB IEC61966-2.1")))
+                System.Text.Encoding.Latin1.GetBytes(infoText)))
             .Set(new PdfName("DestOutputProfile"), iccRef);
 
         var intentRef = registry.Reserve();
         registry.SetValue(intentRef, intentDict);
         return intentRef;
+    }
+
+    /// <summary>
+    /// Materialises per-page ICC colour spaces into the object registry and registers
+    /// them in the page's /ColorSpace resource dictionary. Deduplicated by array identity
+    /// so the same profile bytes object is written only once.
+    /// Call immediately after the image-XObject foreach loop in both Save paths.
+    /// </summary>
+    private void MaterializeIccColorSpaces(PdfObjectRegistry registry)
+    {
+        var csRefs = new Dictionary<byte[], PdfIndirectReference>(ReferenceEqualityComparer.Instance);
+        foreach (var page in _pages)
+        {
+            if (!_pageColorSpaces.TryGetValue(page, out var spaces)) continue;
+            foreach (var (icc, components, name) in spaces)
+            {
+                if (!csRefs.TryGetValue(icc, out var iccRef))
+                {
+                    var stream = new PdfStream(icc);
+                    stream.Dictionary
+                        .Set(PdfName.N, new PdfInteger(components))
+                        .Set(new PdfName("Alternate"), new PdfName(
+                            components == 1 ? "DeviceGray" : components == 4 ? "DeviceCMYK" : "DeviceRGB"));
+                    iccRef = registry.Reserve();
+                    registry.SetValue(iccRef, stream);
+                    csRefs[icc] = iccRef;
+                }
+                page.RegisterColorSpace(name, new PdfArray([new PdfName("ICCBased"), iccRef]));
+            }
+        }
     }
 
     /// <summary>

@@ -5,6 +5,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
+using VellumPdf.Canvas;
 using VellumPdf.Document;
 using VellumPdf.Encryption;
 using VellumPdf.Fonts;
@@ -911,6 +912,78 @@ public sealed class PdfValidatorOracleTests : IDisposable
         doc.Add(new Paragraph("A minimal tagged PDF/A-2a text document.", style));
 
         doc.Save(path);
+    }
+
+    // ── CMYK + ICCBased veraPDF oracle tests ─────────────────────────────────
+
+    /// <summary>
+    /// PDF/A-2b document using DeviceCMYK operators under a CMYK output intent.
+    /// No fonts are embedded (no text), so only DeviceCMYK and DeviceGray default
+    /// colour spaces appear — valid under the CMYK output intent.
+    /// </summary>
+    [Fact]
+    public void PdfA2b_Cmyk_veraPdf_reportsCompliant()
+    {
+        var pdfPath = Path.Combine(_tempDir, "pdfa2b_cmyk_verapdf.pdf");
+
+        using (var doc = new PdfDocument())
+        {
+            doc.Conformance = PdfConformance.PdfA2b;
+            doc.Info.Title = "VellumPdf CMYK Oracle";
+            doc.Info.Producer = "VellumPdf";
+            doc.UseCmykOutputIntent("VellumPdf CMYK Oracle");
+
+            var page = doc.AddPage(PageSize.A4);
+            var canvas = new PdfCanvas(page);
+            canvas
+                .SetFillColorCmyk(0, 0.5, 1, 0)
+                .Rectangle(72, 72, 200, 200)
+                .Fill()
+                .SetStrokeColorCmyk(0, 0, 0, 1)
+                .SetLineWidth(2)
+                .Rectangle(300, 300, 150, 100)
+                .Stroke();
+            canvas.Finish();
+
+            using var fs = new FileStream(pdfPath, FileMode.Create, FileAccess.Write, FileShare.None);
+            doc.Save(fs);
+        }
+
+        AssertVeraPdfCompliant(pdfPath, "2b");
+    }
+
+    /// <summary>
+    /// PDF/A-2b document using an ICCBased sRGB colour space under the default sRGB
+    /// output intent. ICCBased is device-independent and valid under the sRGB intent.
+    /// </summary>
+    [Fact]
+    public void PdfA2b_IccBased_veraPdf_reportsCompliant()
+    {
+        var pdfPath = Path.Combine(_tempDir, "pdfa2b_iccbased_verapdf.pdf");
+
+        using (var doc = new PdfDocument())
+        {
+            doc.Conformance = PdfConformance.PdfA2b;
+            doc.Info.Title = "VellumPdf ICCBased Oracle";
+            doc.Info.Producer = "VellumPdf";
+            // Default sRGB output intent — do NOT call UseCmykOutputIntent.
+
+            var page = doc.AddPage(PageSize.A4);
+            doc.RegisterIccBasedColorSpace(page, IccProfiles.Srgb, 3, "CS0");
+
+            var canvas = new PdfCanvas(page);
+            canvas
+                .SetFillColorSpace("CS0")
+                .SetFillColor(0.2, 0.4, 0.6)
+                .Rectangle(72, 72, 200, 200)
+                .Fill();
+            canvas.Finish();
+
+            using var fs = new FileStream(pdfPath, FileMode.Create, FileAccess.Write, FileShare.None);
+            doc.Save(fs);
+        }
+
+        AssertVeraPdfCompliant(pdfPath, "2b");
     }
 
     // ── OpenType-CFF (OTTO) oracle tests ────────────────────────────────────

@@ -15,10 +15,12 @@ public sealed class PdfPage
     private readonly PdfDictionary _xObjectResources = new();
     private readonly PdfDictionary _extGStateResources = new();
     private readonly PdfDictionary _shadingResources = new();
+    private readonly PdfDictionary _colorSpaceResources = new();
     private readonly PdfArray _annots = new();
     private bool _hasAnnots;
     private bool _hasExtGState;
     private bool _hasShading;
+    private bool _hasColorSpace;
 
     /// <summary>
     /// /StructParents integer key for the ParentTree. Set by <see cref="PdfDocument.Save"/>
@@ -69,6 +71,16 @@ public sealed class PdfPage
         _hasShading = true;
     }
 
+    /// <summary>
+    /// Registers a /ColorSpace resource entry for an ICCBased or other colour space.
+    /// Called by <see cref="PdfDocument"/> during materialisation.
+    /// </summary>
+    internal void RegisterColorSpace(string resourceName, PdfObject colorSpace)
+    {
+        _colorSpaceResources.Set(new PdfName(resourceName), colorSpace);
+        _hasColorSpace = true;
+    }
+
     /// <summary>Adds an annotation reference (annotation/AcroForm seam).</summary>
     public void AddAnnotation(PdfIndirectReference annotRef)
     {
@@ -91,6 +103,9 @@ public sealed class PdfPage
 
         if (_hasShading)
             resources.Set(PdfName.Shading, _shadingResources);
+
+        if (_hasColorSpace)
+            resources.Set(PdfName.ColorSpace, _colorSpaceResources);
 
         var pageDict = new PdfDictionary()
             .Set(PdfName.Type, PdfName.Page)
