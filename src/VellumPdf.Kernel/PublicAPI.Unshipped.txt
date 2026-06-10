@@ -5,3 +5,5 @@ VellumPdf.Document.PdfDocument.Language.get -> string?
 VellumPdf.Document.PdfDocument.Language.set -> void
 VellumPdf.Document.PdfStructElem.Language.get -> string?
 VellumPdf.Document.PdfStructElem.Language.set -> void
+VellumPdf.Document.PdfStructElem.TableHeaderScope.get -> string?
+VellumPdf.Document.PdfStructElem.TableHeaderScope.set -> void

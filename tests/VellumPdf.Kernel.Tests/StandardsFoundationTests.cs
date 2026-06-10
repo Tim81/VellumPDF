@@ -736,13 +736,14 @@ public sealed class StandardsFoundationTests
         Assert.Contains("en-US", content);
     }
 
-    // ── 8. /RoleMap and MCID-ordered /ParentTree (issue #38) ─────────────────
+    // ── 8. No /RoleMap for standard types + MCID-ordered /ParentTree (issue #38) ─
 
     [Fact]
-    public void Tagged_structTree_emitsRoleMapWithIdentityEntries()
+    public void Tagged_structTree_standardTypes_omitsRoleMap()
     {
-        // A tagged doc with P, H1, and Figure elems → /RoleMap must contain identity
-        // entries for Document, P, H1, and Figure.
+        // A tagged doc using only standard structure types (P, H1, Figure) must NOT
+        // emit /RoleMap. Mapping a standard type to itself is a circular mapping that
+        // violates ISO 14289-1 (PDF/UA-1) clause 7.1. Standard types need no role mapping.
         using var doc = new PdfDocument();
         doc.Tagged = true;
         var page = doc.AddPage();
@@ -762,11 +763,31 @@ public sealed class StandardsFoundationTests
 
         var content = SaveToString(doc);
 
-        Assert.Contains("/RoleMap", content);
-        Assert.Contains("/P /P", content);
-        Assert.Contains("/H1 /H1", content);
-        Assert.Contains("/Figure /Figure", content);
-        Assert.Contains("/Document /Document", content);
+        Assert.DoesNotContain("/RoleMap", content);
+    }
+
+    [Fact]
+    public void Tagged_thStructElem_emitsTableScope()
+    {
+        // A TH struct elem with TableHeaderScope = "Column" must emit
+        // /A << /O /Table /Scope /Column >> (ISO 14289-1 clause 7.5).
+        using var doc = new PdfDocument();
+        doc.Tagged = true;
+        var page = doc.AddPage();
+        var canvas = new PdfCanvas(page);
+        var mcid = canvas.BeginMarkedContent("P");
+        canvas.EndMarkedContent();
+        canvas.Finish();
+
+        var pElem = new PdfStructElem("P") { Page = page, Mcid = mcid };
+        var thElem = new PdfStructElem("TH") { Page = page, TableHeaderScope = "Column" };
+        thElem.AddChild(pElem);
+        doc.RegisterStructElem(thElem);
+
+        var content = SaveToString(doc);
+
+        Assert.Contains("/O /Table", content);
+        Assert.Contains("/Scope /Column", content);
     }
 
     [Fact]

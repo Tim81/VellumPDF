@@ -324,6 +324,8 @@ public sealed class TableRenderer : IRenderer
             var cellElem = new PdfStructElem(cellType);
             if (cell.Language is not null)
                 cellElem.Language = cell.Language;
+            if (row.IsHeader)
+                cellElem.TableHeaderScope = "Column";
             var pElem = new PdfStructElem("P") { Mcid = mcid };
             ctx.StampStructElemPage(pElem);
             cellElem.AddChild(pElem);
