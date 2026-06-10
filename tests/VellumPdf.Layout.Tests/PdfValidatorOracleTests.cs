@@ -700,10 +700,10 @@ public sealed class PdfValidatorOracleTests : IDisposable
     }
 
     // PDF/A-2a (conformance level A) requires full accessible tagging — catalog /Lang,
-    // a role map, and validated marked-content↔structure linkage — which is a roadmap
-    // item (see README "Not yet / roadmap"). The metadata path is covered by the
-    // StandardsFoundation tests; the strict veraPDF 2a gate is enabled once that lands.
-    [Fact(Skip = "PDF/A-2a (level A): /Lang is now emitted; remaining blockers are the role map + marked-content linkage (#38).")]
+    // a role map, and validated marked-content↔structure linkage — all now implemented
+    // (#37, #38). This strict veraPDF 2a gate validates a fully-tagged document (heading,
+    // paragraph, table, ordered list, figure-with-/Alt, embedded font, catalog /Lang).
+    [Fact]
     public void PdfA2a_veraPdf_reportsCompliant()
     {
         var fontPath = FindPlatformFont();
@@ -711,6 +711,19 @@ public sealed class PdfValidatorOracleTests : IDisposable
 
         var pdfPath = Path.Combine(_tempDir, "pdfa2a_verapdf.pdf");
         GeneratePdfATaggedDoc(pdfPath, fontPath, PdfConformance.PdfA2a);
+        AssertVeraPdfCompliant(pdfPath, "2a");
+    }
+
+    [Fact]
+    public void PdfA2a_Text_veraPdf_reportsCompliant()
+    {
+        // Minimal tagged text (heading + paragraph) isolates basic level-A tagging
+        // from the table/list/figure content of the comprehensive 2a document above.
+        var fontPath = FindPlatformFont();
+        if (fontPath is null) { GateOnCi("platform font for PDF/A oracle"); return; }
+
+        var pdfPath = Path.Combine(_tempDir, "pdfa2a_text_verapdf.pdf");
+        GeneratePdfATaggedTextDoc(pdfPath, fontPath);
         AssertVeraPdfCompliant(pdfPath, "2a");
     }
 
@@ -803,6 +816,7 @@ public sealed class PdfValidatorOracleTests : IDisposable
         using var doc = new Document();
         doc.Conformance = conformance;
         doc.Tagged = true;
+        doc.Language = "en-US";
         doc.Info.Title = "VellumPdf veraPDF Oracle — Tagged";
         doc.Info.Producer = "VellumPdf";
 
@@ -823,6 +837,22 @@ public sealed class PdfValidatorOracleTests : IDisposable
 
         var imgXObj = VellumPdf.Images.PngImageLoader.Load(PdfTestUtil.CreateMinimalRgbPng());
         doc.Add(new LayoutImage(imgXObj) { Width = 48, AltText = "White test square" });
+
+        doc.Save(path);
+    }
+
+    private static void GeneratePdfATaggedTextDoc(string path, string fontPath)
+    {
+        using var doc = new Document();
+        doc.Conformance = PdfConformance.PdfA2a;
+        doc.Tagged = true;
+        doc.Language = "en-US";
+        doc.Info.Title = "VellumPdf veraPDF Oracle — Tagged Text";
+        doc.Info.Producer = "VellumPdf";
+
+        var style = EmbeddedStyle(doc, fontPath);
+        doc.Add(new Heading("Tagged Heading", new TextStyle { FontRef = style.FontRef, FontSize = 16 }));
+        doc.Add(new Paragraph("A minimal tagged PDF/A-2a text document.", style));
 
         doc.Save(path);
     }
