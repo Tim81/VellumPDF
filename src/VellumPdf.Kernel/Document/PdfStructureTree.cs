@@ -68,6 +68,19 @@ internal sealed class PdfStructureTree
     // The top-level /Document struct elem that holds all other elems as children.
     private readonly PdfStructElem _documentRoot = new("Document");
 
+    // ISO 32000-1 Table 333 standard structure types.
+    private static readonly HashSet<string> StandardStructureTypes =
+    [
+        "Document", "Part", "Art", "Sect", "Div", "BlockQuote", "Caption",
+        "TOC", "TOCI", "Index", "NonStruct", "Private",
+        "P", "H", "H1", "H2", "H3", "H4", "H5", "H6",
+        "L", "LI", "Lbl", "LBody",
+        "Table", "TR", "TH", "TD", "THead", "TBody", "TFoot",
+        "Span", "Quote", "Note", "Reference", "BibEntry", "Code",
+        "Link", "Annot", "Ruby", "RB", "RT", "RP", "Warichu", "WT", "WP",
+        "Figure", "Formula", "Form",
+    ];
+
     public void AddStructElem(PdfStructElem elem) => _documentRoot.AddChild(elem);
 
     public bool IsEmpty => _documentRoot.Children.Count == 0;
@@ -107,20 +120,40 @@ internal sealed class PdfStructureTree
         // Reserve StructTreeRoot ref
         var structTreeRootRef = registry.Reserve();
 
-        // Build ParentTree: structParentsKey → array of struct elem refs on that page.
-        // For each page, gather all struct elems (leaf nodes) belonging to it.
+        // Build ParentTree: structParentsKey → array of struct elem refs indexed by MCID.
+        // For each page, gather leaf struct elems (Mcid >= 0) and place each at index == MCID.
+        // This validates the marked-content ↔ structure bijection:
+        //   • no two elems may share an MCID on the same page (duplicate),
+        //   • no MCID may be out of range [0, n) (dangling),
+        //   • after placement all n slots are filled ⇒ MCIDs are exactly 0..n-1.
         var parentTreeArrayRefs = new PdfIndirectReference[pageOrder.Count];
         for (var pi = 0; pi < pageOrder.Count; pi++)
         {
             var page = pageOrder[pi];
-            // Collect leaf elems on this page (those with Mcid >= 0)
             var elemsOnPage = new List<PdfStructElem>();
             CollectElemsOnPage(_documentRoot, page, elemsOnPage);
 
-            var refList = elemsOnPage
-                .Where(e => elemRefs.ContainsKey(e))
-                .Select(e => (PdfObject)elemRefs[e])
-                .ToList();
+            var n = elemsOnPage.Count;
+            var indexed = new PdfObject?[n];
+
+            foreach (var elem in elemsOnPage)
+            {
+                if (elem.Mcid < 0 || elem.Mcid >= n)
+                    throw new InvalidOperationException(
+                        $"Structure element on page {pi} has MCID {elem.Mcid} which is out of range [0, {n}). " +
+                        $"The page has {n} leaf structure element(s).");
+
+                if (indexed[elem.Mcid] is not null)
+                    throw new InvalidOperationException(
+                        $"Structure element on page {pi} has duplicate MCID {elem.Mcid}. " +
+                        $"Two structure elements claim the same MCID on the same page.");
+
+                indexed[elem.Mcid] = elemRefs[elem];
+            }
+
+            var refList = new List<PdfObject>(n);
+            for (var i = 0; i < n; i++)
+                refList.Add(indexed[i]!);
 
             var arr = new PdfArray(refList);
             parentTreeArrayRefs[pi] = registry.Reserve();
@@ -208,12 +241,29 @@ internal sealed class PdfStructureTree
         var parentTreeRef = registry.Reserve();
         registry.SetValue(parentTreeRef, parentTreeDict);
 
-        // Write /StructTreeRoot
+        // Build /RoleMap: collect distinct structure types actually used in the tree
+        // (including the top-level /Document root), map each to itself (identity mapping
+        // for standard types). Non-standard types are rejected with an exception.
+        var usedTypes = new HashSet<string>();
+        CollectStructTypes(_documentRoot, usedTypes);
+
+        var roleMapDict = new PdfDictionary();
+        foreach (var type in usedTypes.OrderBy(t => t, StringComparer.Ordinal))
+        {
+            if (!StandardStructureTypes.Contains(type))
+                throw new InvalidOperationException(
+                    $"Structure type '{type}' is not a standard type and has no role mapping.");
+            roleMapDict.Set(new PdfName(type), new PdfName(type));
+        }
+
+        // Write /StructTreeRoot. /RoleMap is a direct nested dict (like the catalog's
+        // /MarkInfo) — it is small and unshared, so no separate indirect object is needed.
         var structTreeRoot = new PdfDictionary()
             .Set(PdfName.Type, new PdfName("StructTreeRoot"))
             .Set(new PdfName("K"), docRootRef)
             .Set(new PdfName("ParentTree"), parentTreeRef)
-            .Set(new PdfName("ParentTreeNextKey"), new PdfInteger(pageOrder.Count));
+            .Set(new PdfName("ParentTreeNextKey"), new PdfInteger(pageOrder.Count))
+            .Set(new PdfName("RoleMap"), roleMapDict);
         registry.SetValue(structTreeRootRef, structTreeRoot);
 
         return structTreeRootRef;
@@ -284,5 +334,17 @@ internal sealed class PdfStructureTree
             if (found is not null) return found;
         }
         return null;
+    }
+
+    /// <summary>
+    /// Recursively collects distinct structure-type strings from <paramref name="elem"/>
+    /// and all its descendants (inclusive). The caller is responsible for seeding the
+    /// set with the document root's type before the first call if needed.
+    /// </summary>
+    private static void CollectStructTypes(PdfStructElem elem, HashSet<string> types)
+    {
+        types.Add(elem.StructType);
+        foreach (var child in elem.Children)
+            CollectStructTypes(child, types);
     }
 }
