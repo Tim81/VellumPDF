@@ -33,7 +33,8 @@ internal static class XmpMetadataWriter
     internal static byte[] BuildPacket(
         PdfDocumentInfo info,
         PdfConformance conformance,
-        DateTimeOffset timestamp)
+        DateTimeOffset timestamp,
+        string? language = null)
     {
         var sb = new StringBuilder(1024);
 
@@ -73,6 +74,15 @@ internal static class XmpMetadataWriter
             sb.Append("    <dc:description><rdf:Alt><rdf:li xml:lang=\"x-default\">");
             sb.Append(XmlEscape(info.Subject));
             sb.Append("</rdf:li></rdf:Alt></dc:description>\n");
+        }
+
+        // dc:language
+        var trimmedLanguage = language?.Trim();
+        if (!string.IsNullOrEmpty(trimmedLanguage))
+        {
+            sb.Append("    <dc:language><rdf:Bag><rdf:li>");
+            sb.Append(XmlEscape(trimmedLanguage));
+            sb.Append("</rdf:li></rdf:Bag></dc:language>\n");
         }
 
         // xmp:CreatorTool

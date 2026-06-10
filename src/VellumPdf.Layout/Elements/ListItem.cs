@@ -18,6 +18,12 @@ public sealed class ListItem
     /// <summary>Optional text style; when null the list's default style is used.</summary>
     public TextStyle? Style { get; init; }
 
+    /// <summary>
+    /// Optional per-element language override (BCP 47 / RFC 5646, e.g. <c>"en-US"</c>).
+    /// When set and the document is tagged, written as <c>/Lang</c> on the struct element.
+    /// </summary>
+    public string? Language { get; init; }
+
     /// <summary>The nested child items, or null if this item has no children.</summary>
     public IReadOnlyList<ListItem>? Children => _children;
 

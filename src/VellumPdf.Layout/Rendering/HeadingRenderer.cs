@@ -28,6 +28,7 @@ internal sealed class HeadingRenderer : IRenderer
         _inner = new ParagraphRenderer(para)
         {
             StructType = HeadingStructType(heading.Level),
+            ElementLanguage = heading.Language,
         };
     }
 

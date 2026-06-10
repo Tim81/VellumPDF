@@ -496,3 +496,179 @@ public sealed class StandardsFoundationLayoutTests
         return crc ^ 0xFFFFFFFFu;
     }
 }
+
+/// <summary>
+/// Layout-layer tests for the document language channel (#37):
+/// document /Lang in catalog, dc:language in XMP, and per-element /Lang on struct elements.
+/// </summary>
+public sealed class LanguageChannelTests
+{
+    private static string SaveToString(Document doc)
+    {
+        var ms = new MemoryStream();
+        doc.Save(ms);
+        return System.Text.Encoding.Latin1.GetString(ms.ToArray());
+    }
+
+    // ── Document.Language → catalog /Lang ────────────────────────────────────
+
+    [Fact]
+    public void Document_Language_set_emitsCatalogLang()
+    {
+        using var doc = new Document();
+        doc.Language = "en-US";
+        doc.Add(new Paragraph("Hello"));
+
+        var content = SaveToString(doc);
+
+        Assert.Contains("/Lang", content);
+        Assert.Contains("en-US", content);
+    }
+
+    [Fact]
+    public void Document_Language_null_doesNotEmitCatalogLang()
+    {
+        using var doc = new Document();
+        doc.Language = null;
+        doc.Add(new Paragraph("Hello"));
+
+        var content = SaveToString(doc);
+
+        Assert.DoesNotContain("/Lang", content);
+    }
+
+    // ── Document.Language → XMP dc:language ──────────────────────────────────
+
+    [Fact]
+    public void Document_Language_set_emitsDcLanguageInXmp()
+    {
+        using var doc = new Document();
+        doc.Language = "en-GB";
+        doc.Add(new Paragraph("Hello"));
+
+        var content = SaveToString(doc);
+
+        Assert.Contains("dc:language", content);
+        Assert.Contains("en-GB", content);
+    }
+
+    [Fact]
+    public void Document_Language_null_doesNotEmitDcLanguageInXmp()
+    {
+        using var doc = new Document();
+        doc.Add(new Paragraph("Hello"));
+
+        var content = SaveToString(doc);
+
+        Assert.DoesNotContain("dc:language", content);
+    }
+
+    // ── Paragraph.Language → per-element struct elem /Lang ───────────────────
+
+    [Fact]
+    public void Paragraph_Language_set_emitsStructElemLang()
+    {
+        using var doc = new Document();
+        doc.Tagged = true;
+        doc.Add(new Paragraph("Bonjour") { Language = "fr-CA" });
+
+        var content = SaveToString(doc);
+
+        Assert.Contains("/Lang", content);
+        Assert.Contains("fr-CA", content);
+    }
+
+    [Fact]
+    public void Paragraph_Language_null_doesNotEmitStructElemLang()
+    {
+        using var doc = new Document();
+        doc.Tagged = true;
+        doc.Add(new Paragraph("Hello") { Language = null });
+
+        var content = SaveToString(doc);
+
+        // No document or element language set — /Lang should be absent
+        Assert.DoesNotContain("/Lang", content);
+    }
+
+    // ── Heading.Language → per-element struct elem /Lang ─────────────────────
+
+    [Fact]
+    public void Heading_Language_set_emitsStructElemLang()
+    {
+        using var doc = new Document();
+        doc.Tagged = true;
+        doc.Add(new Heading("Hola") { Level = 0, Language = "es-MX" });
+
+        var content = SaveToString(doc);
+
+        Assert.Contains("/Lang", content);
+        Assert.Contains("es-MX", content);
+    }
+
+    // ── Language roundtrip on Document ───────────────────────────────────────
+
+    [Fact]
+    public void Document_Language_property_roundtrips()
+    {
+        using var doc = new Document();
+        doc.Language = "zh-CN";
+        Assert.Equal("zh-CN", doc.Language);
+    }
+
+    // ── Dual-level precedence: document /Lang + element /Lang ────────────────
+
+    [Fact]
+    public void DualLevel_DocumentLanguage_and_ParagraphLanguage_bothPresent()
+    {
+        // Document-level default and per-element override must both be written.
+        using var doc = new Document();
+        doc.Tagged = true;
+        doc.Language = "en-US";
+        doc.Add(new Paragraph("Bonjour") { Language = "fr-CA" });
+
+        var content = SaveToString(doc);
+
+        Assert.Contains("en-US", content);
+        Assert.Contains("fr-CA", content);
+    }
+
+    // ── ListItem.Language → per-element struct elem /Lang ────────────────────
+
+    [Fact]
+    public void ListItem_Language_set_emitsStructElemLang()
+    {
+        using var doc = new Document();
+        doc.Tagged = true;
+
+        var list = new ListElement(ListStyle.Unordered);
+        list.Add(new ListItem("Hallo") { Language = "de-DE" });
+        doc.Add(list);
+
+        var content = SaveToString(doc);
+
+        Assert.Contains("/Lang", content);
+        Assert.Contains("de-DE", content);
+    }
+
+    // ── TableCell.Language → per-element struct elem /Lang ───────────────────
+
+    [Fact]
+    public void TableCell_Language_set_emitsStructElemLang()
+    {
+        using var doc = new Document();
+        doc.Tagged = true;
+
+        var table = new TableElement();
+        table.SetColumnWidths(200, 200);
+        var row = table.AddRow();
+        row.AddCell(new Cell("") { Language = "ja-JP" });
+        row.AddCell("Other");
+        doc.Add(table);
+
+        var content = SaveToString(doc);
+
+        Assert.Contains("/Lang", content);
+        Assert.Contains("ja-JP", content);
+    }
+}

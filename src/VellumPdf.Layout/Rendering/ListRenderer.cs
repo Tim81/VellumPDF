@@ -218,7 +218,7 @@ public sealed class ListRenderer : IRenderer
                 Margins = new EdgeInsets(0, 0, 0, indent),
                 Alignment = HorizontalAlignment.Left,
             };
-            var contentRenderer = new ParagraphRenderer(contentPara);
+            var contentRenderer = new ParagraphRenderer(contentPara) { ElementLanguage = item.Language };
 
             result.Add((markerRenderer, contentRenderer));
 
@@ -243,7 +243,7 @@ public sealed class ListRenderer : IRenderer
                         Margins = new EdgeInsets(0, 0, 0, indent * 2),
                     };
 
-                    result.Add((new ParagraphRenderer(childMarkerPara), new ParagraphRenderer(childContentPara)));
+                    result.Add((new ParagraphRenderer(childMarkerPara), new ParagraphRenderer(childContentPara) { ElementLanguage = child.Language }));
                 }
             }
         }

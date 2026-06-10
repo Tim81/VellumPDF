@@ -30,6 +30,12 @@ public sealed class Paragraph
     /// <summary>Horizontal alignment of the paragraph text.</summary>
     public HorizontalAlignment Alignment { get; init; } = HorizontalAlignment.Left;
 
+    /// <summary>
+    /// Optional per-element language override (BCP 47 / RFC 5646, e.g. <c>"en-US"</c>).
+    /// When set and the document is tagged, written as <c>/Lang</c> on the struct element.
+    /// </summary>
+    public string? Language { get; init; }
+
     // ── Constructors ─────────────────────────────────────────────────────────
 
     /// <summary>Creates a single-run paragraph with uniform style.</summary>
