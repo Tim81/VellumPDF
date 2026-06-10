@@ -1,11 +1,1 @@
 #nullable enable
-VellumPdf.Layout.Document.Language.get -> string?
-VellumPdf.Layout.Document.Language.set -> void
-VellumPdf.Layout.Elements.Heading.Language.get -> string?
-VellumPdf.Layout.Elements.Heading.Language.init -> void
-VellumPdf.Layout.Elements.ListItem.Language.get -> string?
-VellumPdf.Layout.Elements.ListItem.Language.init -> void
-VellumPdf.Layout.Elements.Paragraph.Language.get -> string?
-VellumPdf.Layout.Elements.Paragraph.Language.init -> void
-VellumPdf.Layout.Elements.Table.Cell.Language.get -> string?
-VellumPdf.Layout.Elements.Table.Cell.Language.init -> void
