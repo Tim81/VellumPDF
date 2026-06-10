@@ -691,4 +691,107 @@ public sealed class StandardsFoundationTests
         Assert.Contains("/Lang", content);
         Assert.Contains("en-US", content);
     }
+
+    // ── 8. /RoleMap and MCID-ordered /ParentTree (issue #38) ─────────────────
+
+    [Fact]
+    public void Tagged_structTree_emitsRoleMapWithIdentityEntries()
+    {
+        // A tagged doc with P, H1, and Figure elems → /RoleMap must contain identity
+        // entries for Document, P, H1, and Figure.
+        using var doc = new PdfDocument();
+        doc.Tagged = true;
+        var page = doc.AddPage();
+        var canvas = new PdfCanvas(page);
+
+        var mcid0 = canvas.BeginMarkedContent("P");
+        canvas.EndMarkedContent();
+        var mcid1 = canvas.BeginMarkedContent("H1");
+        canvas.EndMarkedContent();
+        var mcid2 = canvas.BeginMarkedContent("Figure");
+        canvas.EndMarkedContent();
+        canvas.Finish();
+
+        doc.RegisterStructElem(new PdfStructElem("P") { Page = page, Mcid = mcid0 });
+        doc.RegisterStructElem(new PdfStructElem("H1") { Page = page, Mcid = mcid1 });
+        doc.RegisterStructElem(new PdfStructElem("Figure") { Page = page, Mcid = mcid2 });
+
+        var content = SaveToString(doc);
+
+        Assert.Contains("/RoleMap", content);
+        Assert.Contains("/P /P", content);
+        Assert.Contains("/H1 /H1", content);
+        Assert.Contains("/Figure /Figure", content);
+        Assert.Contains("/Document /Document", content);
+    }
+
+    [Fact]
+    public void Tagged_structTree_parentTreePresentWithMultipleElems()
+    {
+        // A tagged doc with 3 leaf elems on a page → /ParentTree and /Nums are present.
+        using var doc = new PdfDocument();
+        doc.Tagged = true;
+        var page = doc.AddPage();
+        var canvas = new PdfCanvas(page);
+
+        var mcid0 = canvas.BeginMarkedContent("P");
+        canvas.EndMarkedContent();
+        var mcid1 = canvas.BeginMarkedContent("P");
+        canvas.EndMarkedContent();
+        var mcid2 = canvas.BeginMarkedContent("H1");
+        canvas.EndMarkedContent();
+        canvas.Finish();
+
+        doc.RegisterStructElem(new PdfStructElem("P") { Page = page, Mcid = mcid0 });
+        doc.RegisterStructElem(new PdfStructElem("P") { Page = page, Mcid = mcid1 });
+        doc.RegisterStructElem(new PdfStructElem("H1") { Page = page, Mcid = mcid2 });
+
+        var content = SaveToString(doc);
+
+        Assert.Contains("/ParentTree", content);
+        Assert.Contains("/Nums", content);
+    }
+
+    [Fact]
+    public void Tagged_duplicateMcidOnPage_throwsInvalidOperationException()
+    {
+        // Two struct elems on the same page both claiming MCID 0 → Save must throw.
+        using var doc = new PdfDocument();
+        doc.Tagged = true;
+        var page = doc.AddPage();
+        var canvas = new PdfCanvas(page);
+
+        // Emit two BDC/EMC sequences; we'll lie and assign both struct elems MCID 0.
+        var mcid0 = canvas.BeginMarkedContent("P");
+        canvas.EndMarkedContent();
+        canvas.BeginMarkedContent("P"); // returns mcid 1, but we override below
+        canvas.EndMarkedContent();
+        canvas.Finish();
+
+        // Register both with Mcid = 0 to trigger the duplicate guard.
+        doc.RegisterStructElem(new PdfStructElem("P") { Page = page, Mcid = 0 });
+        doc.RegisterStructElem(new PdfStructElem("P") { Page = page, Mcid = 0 });
+
+        var ms = new MemoryStream();
+        Assert.Throws<InvalidOperationException>(() => { doc.Save(ms); });
+    }
+
+    [Fact]
+    public void Tagged_outOfRangeMcidOnPage_throwsInvalidOperationException()
+    {
+        // One leaf elem on a page (n=1) but Mcid = 5 → out-of-range, Save must throw.
+        using var doc = new PdfDocument();
+        doc.Tagged = true;
+        var page = doc.AddPage();
+        var canvas = new PdfCanvas(page);
+        canvas.BeginMarkedContent("P");
+        canvas.EndMarkedContent();
+        canvas.Finish();
+
+        // Manually assign an out-of-range MCID (only 1 leaf elem exists, so valid range is [0,1)).
+        doc.RegisterStructElem(new PdfStructElem("P") { Page = page, Mcid = 5 });
+
+        var ms = new MemoryStream();
+        Assert.Throws<InvalidOperationException>(() => { doc.Save(ms); });
+    }
 }
