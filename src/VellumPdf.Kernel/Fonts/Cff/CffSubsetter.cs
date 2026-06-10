@@ -299,6 +299,7 @@ internal static class CffSubsetter
     /// the calling charstring. Passing 0 on first entry is correct; callers must not
     /// reset this value between nested calls.
     /// </param>
+    /// <param name="depth">Current subroutine nesting depth; 0 for top-level charstrings.</param>
     private static void WalkCharstring(
         CffFont font,
         ReadOnlySpan<byte> cs,
@@ -306,8 +307,14 @@ internal static class CffSubsetter
         HashSet<int> usedGlobalSubrs,
         HashSet<int> visitedLocalSubrs,
         HashSet<int> visitedGlobalSubrs,
-        ref int numHints)
+        ref int numHints,
+        int depth = 0)
     {
+        // A2: guard against linear subroutine chains exhausting the thread stack.
+        // The Type2 spec limits nesting to 10; we allow 60 to tolerate any minor
+        // real-world variation while still catching hostile deep chains.
+        if (depth > 60)
+            throw new NotSupportedException("Charstring subroutine nesting too deep; embedding whole font.");
         // Operand stack (we only track depth + the top value for subr calls)
         Span<double> stack = stackalloc double[64];
         var stackDepth = 0;
@@ -420,7 +427,7 @@ internal static class CffSubsetter
                                 WalkCharstring(font, subrCs.Span,
                                     usedLocalSubrs, usedGlobalSubrs,
                                     visitedLocalSubrs, visitedGlobalSubrs,
-                                    ref numHints);
+                                    ref numHints, depth + 1);
                             }
                         }
                     }
@@ -441,7 +448,7 @@ internal static class CffSubsetter
                                 WalkCharstring(font, subrCs.Span,
                                     usedLocalSubrs, usedGlobalSubrs,
                                     visitedLocalSubrs, visitedGlobalSubrs,
-                                    ref numHints);
+                                    ref numHints, depth + 1);
                             }
                         }
                     }
@@ -467,8 +474,14 @@ internal static class CffSubsetter
 
     private static void Push(Span<double> stack, ref int depth, double value)
     {
-        if (depth < stack.Length)
-            stack[depth] = value;
+        // A1: the Type2 spec operand limit is 48, well under our 64-entry buffer.
+        // A crafted charstring with 65+ operands before a callsubr would let depth
+        // reach 64, making the stack[stackDepth - 1] read in case 10/29 throw an
+        // uncaught IndexOutOfRangeException. Throw NotSupportedException instead so
+        // TrueTypeFontEmbedder's existing catch converts it to whole-font embedding.
+        if (depth >= stack.Length)
+            throw new NotSupportedException("Type2 charstring operand stack overflow; embedding whole font.");
+        stack[depth] = value;
         depth++;
     }
 
