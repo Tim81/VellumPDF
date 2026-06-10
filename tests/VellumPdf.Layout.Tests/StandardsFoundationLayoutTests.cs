@@ -615,4 +615,60 @@ public sealed class LanguageChannelTests
         doc.Language = "zh-CN";
         Assert.Equal("zh-CN", doc.Language);
     }
+
+    // ── Dual-level precedence: document /Lang + element /Lang ────────────────
+
+    [Fact]
+    public void DualLevel_DocumentLanguage_and_ParagraphLanguage_bothPresent()
+    {
+        // Document-level default and per-element override must both be written.
+        using var doc = new Document();
+        doc.Tagged = true;
+        doc.Language = "en-US";
+        doc.Add(new Paragraph("Bonjour") { Language = "fr-CA" });
+
+        var content = SaveToString(doc);
+
+        Assert.Contains("en-US", content);
+        Assert.Contains("fr-CA", content);
+    }
+
+    // ── ListItem.Language → per-element struct elem /Lang ────────────────────
+
+    [Fact]
+    public void ListItem_Language_set_emitsStructElemLang()
+    {
+        using var doc = new Document();
+        doc.Tagged = true;
+
+        var list = new ListElement(ListStyle.Unordered);
+        list.Add(new ListItem("Hallo") { Language = "de-DE" });
+        doc.Add(list);
+
+        var content = SaveToString(doc);
+
+        Assert.Contains("/Lang", content);
+        Assert.Contains("de-DE", content);
+    }
+
+    // ── TableCell.Language → per-element struct elem /Lang ───────────────────
+
+    [Fact]
+    public void TableCell_Language_set_emitsStructElemLang()
+    {
+        using var doc = new Document();
+        doc.Tagged = true;
+
+        var table = new TableElement();
+        table.SetColumnWidths(200, 200);
+        var row = table.AddRow();
+        row.AddCell(new Cell("") { Language = "ja-JP" });
+        row.AddCell("Other");
+        doc.Add(table);
+
+        var content = SaveToString(doc);
+
+        Assert.Contains("/Lang", content);
+        Assert.Contains("ja-JP", content);
+    }
 }

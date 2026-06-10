@@ -318,6 +318,8 @@ public sealed class TableRenderer : IRenderer
             // Build: TR → TH/TD → P
             var cellType = row.IsHeader ? "TH" : "TD";
             var cellElem = new PdfStructElem(cellType);
+            if (cell.Language is not null)
+                cellElem.Language = cell.Language;
             var pElem = new PdfStructElem("P") { Mcid = mcid };
             ctx.StampStructElemPage(pElem);
             cellElem.AddChild(pElem);

@@ -29,6 +29,12 @@ public sealed class Cell
     /// <summary>Horizontal alignment of the cell content.</summary>
     public HorizontalAlignment Alignment { get; init; } = HorizontalAlignment.Left;
 
+    /// <summary>
+    /// Optional per-element language override (BCP 47 / RFC 5646, e.g. <c>"en-US"</c>).
+    /// When set and the document is tagged, written as <c>/Lang</c> on the struct element.
+    /// </summary>
+    public string? Language { get; init; }
+
     /// <summary>Creates a cell with the given text content.</summary>
     public Cell(string content) => Content = content;
 }

@@ -131,6 +131,7 @@ public sealed class PdfDocument : IDisposable
     /// <c>dc:language</c> in the XMP metadata stream.
     /// Valid in any PDF; required by PDF/A-2a and PDF/UA-1 (set it explicitly —
     /// no value is auto-defaulted for any conformance level).
+    /// Leading and trailing whitespace is trimmed when the value is written.
     /// </summary>
     public string? Language { get; set; }
 

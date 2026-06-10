@@ -64,6 +64,7 @@ public sealed class Document : IDisposable
     /// Forwarded to the underlying <see cref="PdfDocument"/>.
     /// When set, writes <c>/Lang</c> in the catalog and <c>dc:language</c> in XMP.
     /// Required by PDF/A-2a and PDF/UA-1 (set it explicitly — no default is applied).
+    /// Leading and trailing whitespace is trimmed when the value is written.
     /// </summary>
     public string? Language
     {

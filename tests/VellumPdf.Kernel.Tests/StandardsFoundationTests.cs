@@ -674,4 +674,21 @@ public sealed class StandardsFoundationTests
         // Only /StructTreeRoot etc. should appear; no /Lang unless doc.Language is also set
         Assert.DoesNotContain("/Lang", content);
     }
+
+    // ── 7. PDF/A-2b + Language regression ────────────────────────────────────
+
+    [Fact]
+    public void Conformance_PdfA2b_withLanguage_emitsCatalogLang()
+    {
+        // Regression: catalog /Lang must be written together with PDF/A-2b conformance.
+        using var doc = new PdfDocument();
+        doc.Conformance = PdfConformance.PdfA2b;
+        doc.Language = "en-US";
+        doc.AddPage();
+
+        var content = SaveToString(doc);
+
+        Assert.Contains("/Lang", content);
+        Assert.Contains("en-US", content);
+    }
 }
