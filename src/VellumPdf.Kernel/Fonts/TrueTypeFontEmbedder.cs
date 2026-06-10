@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 using System.Text;
+using VellumPdf.Fonts.Cff;
 using VellumPdf.Fonts.Sfnt;
 
 namespace VellumPdf.Fonts;
@@ -30,6 +31,7 @@ public sealed class TrueTypeFontEmbedder
 
     private readonly HashSet<int> _usedGids = new() { 0 }; // always keep .notdef
     private readonly Dictionary<int, ushort> _unicodeToGid = new();
+    private readonly Tag _cffTag = new("CFF ");
 
     /// <summary>The resource name used to reference this font from a page's resource dictionary.</summary>
     public string ResourceName { get; }
@@ -84,10 +86,9 @@ public sealed class TrueTypeFontEmbedder
         _name.PostScriptName ?? _name.FamilyName ?? "Unknown";
 
     // A subsetted font's name must carry a six-uppercase-letter tag + '+' prefix
-    // (ISO 32000-1 §9.6.4 / §9.7.4.2). CFF/OTTO fonts are whole-font embedded
-    // (not subsetted), so they keep the bare PostScript name.
-    private string SubsetPostScriptName =>
-        _sfnt.IsCff ? PostScriptName : $"{SubsetTag()}+{PostScriptName}";
+    // (ISO 32000-1 §9.6.4 / §9.7.4.2). Both CFF/OTTO and glyf-outline fonts are
+    // now subsetted, so both carry the tag.
+    private string SubsetPostScriptName => $"{SubsetTag()}+{PostScriptName}";
 
     // Six uppercase letters derived deterministically from the embedded glyph set,
     // so the same subset always gets the same tag and output stays reproducible.
@@ -132,11 +133,12 @@ public sealed class TrueTypeFontEmbedder
         var widths = BuildWidthsArray();
         if (_sfnt.IsCff)
         {
-            // CFF path: CIDFontType0, no /CIDToGIDMap (CIDFontType2-only key)
+            // CFF path: CIDFontType0, no /CIDToGIDMap (CIDFontType2-only key).
+            // /BaseFont must carry the subset tag to match the descriptor and Type0 dict.
             return new Core.PdfDictionary()
                 .Set(Core.PdfName.Type, Core.PdfName.Font)
                 .Set(Core.PdfName.Subtype, new Core.PdfName("CIDFontType0"))
-                .Set(Core.PdfName.BaseFont, new Core.PdfName(PostScriptName))
+                .Set(Core.PdfName.BaseFont, new Core.PdfName(SubsetPostScriptName))
                 .Set(new Core.PdfName("CIDSystemInfo"), BuildCidSystemInfo())
                 .Set(new Core.PdfName("FontDescriptor"), descriptorRef)
                 .Set(new Core.PdfName("DW"), new Core.PdfInteger(1000))
@@ -185,21 +187,22 @@ public sealed class TrueTypeFontEmbedder
         return descriptor;
     }
 
-    /// <summary>Builds the embedded font program stream: a subsetted glyf font, or the whole CFF/OTTO program as /FontFile3.</summary>
+    /// <summary>Builds the embedded font program stream: a subsetted glyf font, or a subsetted CFF/OTTO program as /FontFile3.</summary>
     public Core.PdfStream BuildFontFileStream()
     {
         if (_sfnt.IsCff)
         {
-            // Whole-font embedding for CFF/OTTO: embed the entire original font bytes.
-            // ISO 32000-2 §9.9 allows the complete OpenType program in a FontFile3
-            // stream with /Subtype /OpenType. No subsetting — CFF subsetting is out of scope.
-            var stream = new Core.PdfStream(_fontData.ToArray());
+            // CFF/OTTO: subset the CFF table and reassemble the sfnt shell.
+            // If the font is CID-keyed (NotSupportedException from CffSubsetter), fall back
+            // to whole-font embedding so those fonts still work.
+            var subsetBytes = BuildSubsetCffFont();
+            var stream = new Core.PdfStream(subsetBytes);
             stream.Dictionary.Set(new Core.PdfName("Subtype"), new Core.PdfName("OpenType"));
             return stream;
         }
 
-        var subsetBytes = BuildSubsetFont();
-        return new Core.PdfStream(subsetBytes);
+        var glyf = BuildSubsetFont();
+        return new Core.PdfStream(glyf);
     }
 
     /// <summary>Builds the /ToUnicode CMap stream mapping glyph IDs back to Unicode so text stays searchable and copyable.</summary>
@@ -268,6 +271,129 @@ public sealed class TrueTypeFontEmbedder
         // Reassemble the font: copy all original tables except glyf, loca, head;
         // replace those with subset versions. head.indexToLocFormat forced to 1 (long).
         return AssembleFont(glyfBytes, locaBytes);
+    }
+
+    /// <summary>
+    /// Subsets the CFF table and reassembles the full sfnt (OTTO) shell around it.
+    /// Falls back to whole-font embedding when the font is CID-keyed (NotSupportedException).
+    /// </summary>
+    private byte[] BuildSubsetCffFont()
+    {
+        var cffTableBytes = _sfnt.GetTableBytes(_cffTag);
+        CffFont cff;
+        try
+        {
+            cff = CffFont.Parse(cffTableBytes);
+        }
+        catch (InvalidDataException)
+        {
+            // Malformed CFF — fall back to whole-font embedding.
+            return _fontData.ToArray();
+        }
+
+        byte[] newCff;
+        try
+        {
+            newCff = CffSubsetter.Subset(cff, _usedGids);
+        }
+        catch (NotSupportedException)
+        {
+            // CID-keyed font — fall back to whole-font embedding.
+            return _fontData.ToArray();
+        }
+
+        return AssembleCffFont(newCff);
+    }
+
+    /// <summary>
+    /// Reassembles the OTTO sfnt with the <c>CFF </c> table replaced by
+    /// <paramref name="newCffBytes"/>.  All other tables are copied verbatim.
+    /// Per-table checksums, the sfnt table directory, and the <c>head</c>
+    /// <c>checkSumAdjustment</c> are all recomputed.
+    /// </summary>
+    private byte[] AssembleCffFont(byte[] newCffBytes)
+    {
+        var head = new Tag("head");
+
+        // Tables to keep verbatim (every table except CFF )
+        var tablesToKeep = _sfnt.Tables.Keys
+            .Where(t => t != _cffTag)
+            .OrderBy(t => t.ToString())
+            .ToList();
+
+        var tableCount = tablesToKeep.Count + 1; // +1 for CFF
+        var headerSize = 12 + tableCount * 16;
+
+        var layout = new List<(Tag tag, byte[] data)>();
+        foreach (var tag in tablesToKeep)
+        {
+            var bytes = _sfnt.GetTableBytes(tag).ToArray();
+            if (tag == head)
+                // Zero checkSumAdjustment — will be recomputed below.
+                bytes[8] = bytes[9] = bytes[10] = bytes[11] = 0;
+            layout.Add((tag, bytes));
+        }
+        layout.Add((_cffTag, newCffBytes));
+        layout.Sort((a, b) => string.Compare(a.tag.ToString(), b.tag.ToString(), StringComparison.Ordinal));
+
+        // Compute per-table file offsets (4-byte aligned).
+        var offset = headerSize;
+        var offsets = new int[layout.Count];
+        for (var i = 0; i < layout.Count; i++)
+        {
+            offsets[i] = offset;
+            offset += layout[i].data.Length;
+            var rem = offset % 4;
+            if (rem != 0) offset += 4 - rem;
+        }
+
+        var ms = new MemoryStream(offset + 16);
+
+        // Write sfnt offset table with 'OTTO' (0x4F54544F) signature.
+        WriteU32(ms, 0x4F54544Fu);
+        WriteU16(ms, (ushort)tableCount);
+        var sr = (ushort)(FloorPow2(tableCount) * 16);
+        WriteU16(ms, sr);
+        WriteU16(ms, (ushort)Log2(FloorPow2(tableCount)));
+        WriteU16(ms, (ushort)(tableCount * 16 - sr));
+
+        // Write table directory.
+        for (var i = 0; i < layout.Count; i++)
+        {
+            var (tag, data) = layout[i];
+            WriteTag(ms, tag);
+            WriteU32(ms, Checksum(data));
+            WriteU32(ms, (uint)offsets[i]);
+            WriteU32(ms, (uint)data.Length);
+        }
+
+        // Write padded table data.
+        for (var i = 0; i < layout.Count; i++)
+        {
+            ms.Write(layout[i].data);
+            var rem = (int)(ms.Position % 4);
+            if (rem != 0) for (var j = 0; j < 4 - rem; j++) ms.WriteByte(0);
+        }
+
+        var fontBytes = ms.ToArray();
+
+        // Patch head.checkSumAdjustment = 0xB1B0AFBA - checksum(entire font).
+        var wholeChecksum = Checksum(fontBytes);
+        var adjustment = unchecked(0xB1B0AFBAu - wholeChecksum);
+        for (var i = 0; i < layout.Count; i++)
+        {
+            if (layout[i].tag == head)
+            {
+                var ho = offsets[i];
+                fontBytes[ho + 8] = (byte)(adjustment >> 24);
+                fontBytes[ho + 9] = (byte)(adjustment >> 16);
+                fontBytes[ho + 10] = (byte)(adjustment >> 8);
+                fontBytes[ho + 11] = (byte)adjustment;
+                break;
+            }
+        }
+
+        return fontBytes;
     }
 
     private byte[] AssembleFont(byte[] newGlyf, byte[] newLoca)
