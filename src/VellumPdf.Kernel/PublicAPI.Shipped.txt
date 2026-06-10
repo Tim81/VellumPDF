@@ -117,6 +117,7 @@ VellumPdf.Annotations.PdfOutlineEntry.PdfOutlineEntry() -> void
 VellumPdf.Annotations.PdfOutlineEntry.Title.get -> string!
 VellumPdf.Annotations.PdfOutlineEntry.Title.init -> void
 VellumPdf.Canvas.PdfCanvas
+VellumPdf.Canvas.PdfCanvas.BeginArtifactMarkedContent() -> VellumPdf.Canvas.PdfCanvas!
 VellumPdf.Canvas.PdfCanvas.BeginMarkedContent(string! tag) -> int
 VellumPdf.Canvas.PdfCanvas.BeginText() -> VellumPdf.Canvas.PdfCanvas!
 VellumPdf.Canvas.PdfCanvas.Clip() -> VellumPdf.Canvas.PdfCanvas!
@@ -220,6 +221,7 @@ VellumPdf.Document.PdfConformance.None = 0 -> VellumPdf.Document.PdfConformance
 VellumPdf.Document.PdfConformance.PdfA2a = 3 -> VellumPdf.Document.PdfConformance
 VellumPdf.Document.PdfConformance.PdfA2b = 1 -> VellumPdf.Document.PdfConformance
 VellumPdf.Document.PdfConformance.PdfA2u = 2 -> VellumPdf.Document.PdfConformance
+VellumPdf.Document.PdfConformance.PdfUA1 = 4 -> VellumPdf.Document.PdfConformance
 VellumPdf.Document.PdfDocument
 VellumPdf.Document.PdfDocument.AddCheckBox(VellumPdf.Document.PdfPage! page, string! name, VellumPdf.Document.PdfRectangle! rect, bool checkedState = false, VellumPdf.Forms.FormFieldOptions? options = null) -> void
 VellumPdf.Document.PdfDocument.AddChoiceField(VellumPdf.Document.PdfPage! page, string! name, VellumPdf.Document.PdfRectangle! rect, System.Collections.Generic.IReadOnlyList<string!>! options, string? selected = null, bool combo = true, VellumPdf.Forms.FormFieldOptions? fieldOptions = null) -> void
@@ -238,6 +240,8 @@ VellumPdf.Document.PdfDocument.DocumentId.set -> void
 VellumPdf.Document.PdfDocument.Dispose() -> void
 VellumPdf.Document.PdfDocument.Encrypt(VellumPdf.Encryption.PdfEncryptionSettings! settings) -> void
 VellumPdf.Document.PdfDocument.Info.get -> VellumPdf.Document.PdfDocumentInfo!
+VellumPdf.Document.PdfDocument.Language.get -> string?
+VellumPdf.Document.PdfDocument.Language.set -> void
 VellumPdf.Document.PdfDocument.Pages.get -> System.Collections.Generic.IReadOnlyList<VellumPdf.Document.PdfPage!>!
 VellumPdf.Document.PdfDocument.PdfDocument() -> void
 VellumPdf.Document.PdfDocument.PrepareForSigning(VellumPdf.Document.SignaturePlaceholderOptions! options) -> byte[]!
@@ -290,12 +294,16 @@ VellumPdf.Document.PdfStructElem.AddChild(VellumPdf.Document.PdfStructElem! chil
 VellumPdf.Document.PdfStructElem.AltText.get -> string?
 VellumPdf.Document.PdfStructElem.AltText.set -> void
 VellumPdf.Document.PdfStructElem.Children.get -> System.Collections.Generic.IReadOnlyList<VellumPdf.Document.PdfStructElem!>!
+VellumPdf.Document.PdfStructElem.Language.get -> string?
+VellumPdf.Document.PdfStructElem.Language.set -> void
 VellumPdf.Document.PdfStructElem.Mcid.get -> int
 VellumPdf.Document.PdfStructElem.Mcid.set -> void
 VellumPdf.Document.PdfStructElem.Page.get -> VellumPdf.Document.PdfPage?
 VellumPdf.Document.PdfStructElem.Page.set -> void
 VellumPdf.Document.PdfStructElem.PdfStructElem(string! structType) -> void
 VellumPdf.Document.PdfStructElem.StructType.get -> string!
+VellumPdf.Document.PdfStructElem.TableHeaderScope.get -> string?
+VellumPdf.Document.PdfStructElem.TableHeaderScope.set -> void
 VellumPdf.Document.SignaturePlaceholderOptions
 VellumPdf.Document.SignaturePlaceholderOptions.ContactInfo.get -> string?
 VellumPdf.Document.SignaturePlaceholderOptions.ContactInfo.init -> void

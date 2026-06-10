@@ -6,9 +6,9 @@
 A modern, **dependency-free PDF generation library for .NET 10**, implemented
 clean-room from the open **ISO 32000** standard.
 
-> **Status: 1.0 — stable.** The public API is locked (analyzer-enforced) and
+> **Status: 1.1 — stable.** The public API is locked (analyzer-enforced) and
 > the library targets .NET 10. Core features are CI-validated — including
-> PDF/A-2b/2u conformance proven on every push with veraPDF.
+> PDF/A-2a/2b/2u and PDF/UA-1 conformance proven on every push with veraPDF.
 
 ## Why VellumPdf
 
@@ -23,9 +23,9 @@ clean-room from the open **ISO 32000** standard.
 - **Two API tiers.** A low-level canvas for precise drawing, and a high-level
   document/layout engine with paragraphs, headings, lists, tables, images, and
   automatic pagination.
-- **Built for the hard standards.** PDF/A (archival) metadata, output intents,
-  and font embedding; a tagged-PDF structure-tree channel; PAdES digital
-  signatures; and interactive AcroForms are all implemented.
+- **Built for the hard standards.** PDF/A-2a (accessible archival) and PDF/UA-1
+  (universal accessibility) are implemented and CI-validated with veraPDF, alongside
+  PDF/A-2b/2u, PAdES digital signatures, and interactive AcroForms.
 - **Permissive license.** Apache-2.0 — free to use in proprietary products.
 
 ## Packages
@@ -125,7 +125,7 @@ oracles — a missing tool fails the build, so the gates can never silently skip
 - **`qpdf --check`** — structural integrity of every generated document type.
 - **`pdftotext`** (poppler) — text-extraction round-trip proving `ToUnicode` maps.
 - **`pdfsig`** (poppler) — signature validity for PAdES documents.
-- **veraPDF** (official `verapdf/cli` Docker image) — strict PDF/A-2b/2u
+- **veraPDF** (official `verapdf/cli` Docker image) — strict **PDF/A-2a/2b/2u and PDF/UA-1**
   conformance over embedded-font, table, image, and tagged documents. A
   non-compliant report fails CI with the full rule list attached.
 
@@ -133,8 +133,6 @@ oracles — a missing tool fails the build, so the gates can never silently skip
 
 | Area | Notes |
 | --- | --- |
-| PDF/A-2a (level A) | Metadata is emitted; full accessible-tagging conformance (catalog `/Lang`, role map, validated marked-content↔structure linkage) is in progress. |
-| PDF/UA-1 | Structure tree exists; the accessibility validation gate is not yet wired. |
 | In-process preflight | `VellumPdf.Conformance` PDF/A and PDF/UA validator package. |
 | CFF subsetting | OpenType-CFF fonts are currently embedded whole (not subsetted). |
 | Image codecs | JBIG2, JPEG 2000, and CCITT Group 3/4 decoders. |

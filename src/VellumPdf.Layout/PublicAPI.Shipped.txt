@@ -148,6 +148,8 @@ VellumPdf.Layout.Document.Footer.set -> void
 VellumPdf.Layout.Document.Header.get -> VellumPdf.Layout.Elements.RunningBand?
 VellumPdf.Layout.Document.Header.set -> void
 VellumPdf.Layout.Document.Info.get -> VellumPdf.Document.PdfDocumentInfo!
+VellumPdf.Layout.Document.Language.get -> string?
+VellumPdf.Layout.Document.Language.set -> void
 VellumPdf.Layout.Document.LoadTrueTypeFont(string! path) -> VellumPdf.Fonts.EmbeddedFontHandle!
 VellumPdf.Layout.Document.Margins.get -> VellumPdf.Layout.Core.EdgeInsets
 VellumPdf.Layout.Document.Margins.set -> void
@@ -169,6 +171,8 @@ VellumPdf.Layout.Elements.Heading.Alignment.init -> void
 VellumPdf.Layout.Elements.Heading.BookmarkTitle.get -> string?
 VellumPdf.Layout.Elements.Heading.BookmarkTitle.init -> void
 VellumPdf.Layout.Elements.Heading.Heading(string! text, VellumPdf.Layout.Core.TextStyle? style = null) -> void
+VellumPdf.Layout.Elements.Heading.Language.get -> string?
+VellumPdf.Layout.Elements.Heading.Language.init -> void
 VellumPdf.Layout.Elements.Heading.Level.get -> int
 VellumPdf.Layout.Elements.Heading.Level.init -> void
 VellumPdf.Layout.Elements.Heading.Margins.get -> VellumPdf.Layout.Core.EdgeInsets
@@ -213,6 +217,8 @@ VellumPdf.Layout.Elements.ListItem
 VellumPdf.Layout.Elements.ListItem.AddChild(string! text, VellumPdf.Layout.Core.TextStyle? style = null) -> VellumPdf.Layout.Elements.ListItem!
 VellumPdf.Layout.Elements.ListItem.AddChild(VellumPdf.Layout.Elements.ListItem! child) -> VellumPdf.Layout.Elements.ListItem!
 VellumPdf.Layout.Elements.ListItem.Children.get -> System.Collections.Generic.IReadOnlyList<VellumPdf.Layout.Elements.ListItem!>?
+VellumPdf.Layout.Elements.ListItem.Language.get -> string?
+VellumPdf.Layout.Elements.ListItem.Language.init -> void
 VellumPdf.Layout.Elements.ListItem.ListItem(string! text, VellumPdf.Layout.Core.TextStyle? style = null) -> void
 VellumPdf.Layout.Elements.ListItem.Style.get -> VellumPdf.Layout.Core.TextStyle?
 VellumPdf.Layout.Elements.ListItem.Style.init -> void
@@ -226,6 +232,8 @@ VellumPdf.Layout.Elements.Paragraph
 VellumPdf.Layout.Elements.Paragraph.Add(string! text, VellumPdf.Layout.Core.TextStyle? style = null) -> VellumPdf.Layout.Elements.Paragraph!
 VellumPdf.Layout.Elements.Paragraph.Alignment.get -> VellumPdf.Layout.Core.HorizontalAlignment
 VellumPdf.Layout.Elements.Paragraph.Alignment.init -> void
+VellumPdf.Layout.Elements.Paragraph.Language.get -> string?
+VellumPdf.Layout.Elements.Paragraph.Language.init -> void
 VellumPdf.Layout.Elements.Paragraph.Margins.get -> VellumPdf.Layout.Core.EdgeInsets
 VellumPdf.Layout.Elements.Paragraph.Margins.init -> void
 VellumPdf.Layout.Elements.Paragraph.Paragraph(string! text, VellumPdf.Layout.Core.TextStyle? style = null) -> void
@@ -251,6 +259,8 @@ VellumPdf.Layout.Elements.Table.Cell.Cell(string! content) -> void
 VellumPdf.Layout.Elements.Table.Cell.ColSpan.get -> int
 VellumPdf.Layout.Elements.Table.Cell.ColSpan.init -> void
 VellumPdf.Layout.Elements.Table.Cell.Content.get -> string!
+VellumPdf.Layout.Elements.Table.Cell.Language.get -> string?
+VellumPdf.Layout.Elements.Table.Cell.Language.init -> void
 VellumPdf.Layout.Elements.Table.Cell.Padding.get -> VellumPdf.Layout.Core.EdgeInsets
 VellumPdf.Layout.Elements.Table.Cell.Padding.init -> void
 VellumPdf.Layout.Elements.Table.Cell.RowSpan.get -> int

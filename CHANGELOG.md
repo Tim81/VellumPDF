@@ -3,10 +3,22 @@
 All notable changes to VellumPdf will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
-VellumPdf is currently **pre-1.0 beta** — the public API may still change before
-the first stable release.
 
-## [Unreleased]
+## [1.1.0] - 2026-06-10
+
+### Added
+
+- **PDF/A-2a (level A) conformance**, validated on every CI run with strict veraPDF.
+- **PDF/UA-1 (ISO 14289-1) conformance** via `PdfConformance.PdfUA1`, validated on CI with strict veraPDF — emits the `pdfuaid` XMP schema, `/ViewerPreferences << /DisplayDocTitle true >>`, and marks decorative content (table borders/fills, separators, running header/footer bands) as `/Artifact`.
+- **Document and per-element language.** A `Language` property on the layout `Document`, `Paragraph`, `Heading`, `ListItem`, and table `Cell` (and on kernel `PdfDocument` / `PdfStructElem`) emits catalog `/Lang` and XMP `dc:language`.
+- **`PdfCanvas.BeginArtifactMarkedContent`** — marks decorative content as a PDF `/Artifact` (no MCID).
+- **Accessible tables.** `PdfStructElem.TableHeaderScope` emits `/A << /O /Table /Scope … >>` on header cells so assistive tech can resolve column headers.
+
+### Changed
+
+- The tagged-PDF structure tree now writes an MCID-validated `/ParentTree` and no longer emits a self-referential `/RoleMap` (a circular role mapping, which PDF/UA-1 forbids).
+
+## [1.0.0] - 2026-06-09
 
 ### Added
 
@@ -39,4 +51,5 @@ the first stable release.
   headers, and no unbounded allocations driven by attacker-controlled length
   fields.
 
-[Unreleased]: https://github.com/Tim81/VellumPDF/commits/main
+[1.1.0]: https://github.com/Tim81/VellumPDF/releases/tag/v1.1.0
+[1.0.0]: https://github.com/Tim81/VellumPDF/releases/tag/v1.0.0
