@@ -12,11 +12,16 @@ namespace VellumPdf.Images;
 ///   • Byte order: II (little-endian) and MM (big-endian).
 ///   • Compression: 1 (None/Uncompressed), 4 (CCITT Group 4 / T.6 — single strip,
 ///     CCITTFaxDecode passthrough), 5 (LZW), 7 (new-style JPEG — single strip,
-///     DCTDecode passthrough), and 32773 (PackBits RLE).
+///     DCTDecode passthrough for any photometric including YCbCr (6)), and 32773 (PackBits RLE).
 ///   • Photometric: 0 (WhiteIsZero greyscale — inverted), 1 (BlackIsZero greyscale),
 ///     2 (RGB), 3 (Palette/Indexed — ColorMap expanded to DeviceRGB).
+///     Compression=7 (new-style JPEG) additionally accepts photometric 6 (YCbCr) and
+///     any other value — the TIFF photometric is not consulted for that path because the
+///     JPEG datastream is embedded verbatim as DCTDecode and the PDF viewer handles
+///     colour-space interpretation via the JPEG SOF component count.
 ///   • BitsPerSample: 8 (all photometrics) and 16 (greyscale and RGB only).
 ///     CCITT Group 4 uses BitsPerSample=1 (bilevel), handled before the 8/16 gate.
+///     Compression=7 (new-style JPEG) is also dispatched before the 8/16 gate.
 ///   • SamplesPerPixel: 1 (grey/palette), 3 (RGB), 4 (RGB+alpha → /SMask).
 ///   • PlanarConfiguration: 1 (chunky) and 2 (planar — reassembled to chunky).
 ///   • Multiple strips (StripOffsets / StripByteCounts / RowsPerStrip).
@@ -29,10 +34,10 @@ namespace VellumPdf.Images;
 ///   • Compression 2 and 3 (CCITT Group 3 variants) — T4Options mapping required, out of scope for v1.3.
 ///   • Compression 6 (old-style JPEG) — not implemented.
 ///   • Compression 4 (CCITT Group 4) with more than one strip.
-///   • BitsPerSample other than 8 or 16 (for non-CCITT images); BitsPerSample=16 with palette photometric.
+///   • BitsPerSample other than 8 or 16 (for non-CCITT, non-JPEG images); BitsPerSample=16 with palette photometric.
 ///   • Compression 7 (new-style JPEG) with more than one strip.
 ///   • Predictor=2 + BitsPerSample=16 is supported; other Predictor values are rejected.
-///   • Unsupported photometric values.
+///   • Unsupported photometric values (for raw-pixel decode paths: None, PackBits, LZW).
 ///
 /// Throws InvalidDataException on truncated or structurally invalid data.
 /// </summary>
@@ -247,6 +252,33 @@ public static class TiffImageLoader
                 encodedByteAlign: false);
         }
 
+        // ── New-style JPEG (Compression=7): single-strip DCTDecode passthrough ──
+        // Dispatched early, before the bitsPerSample/photometric/samplesPerPixel gates,
+        // because the TIFF strip is a self-contained JPEG datastream. The TIFF tags for
+        // photometric, bitsPerSample, samplesPerPixel, and planarConfiguration are
+        // irrelevant — JpegImageLoader.Load infers colour space from the JPEG SOF
+        // component count. This path therefore accepts any photometric, including
+        // YCbCr (6), which is common for colour JPEG-in-TIFF.
+        if (compression == CompressionJpegNewStyle)
+        {
+            if (stripOffsets is null || stripOffsets.Length == 0)
+                throw new InvalidDataException("TIFF is missing StripOffsets.");
+            if (stripByteCounts is null || stripByteCounts.Length == 0)
+                throw new InvalidDataException("TIFF is missing StripByteCounts.");
+
+            if (stripOffsets.Length != 1)
+                throw new NotSupportedException(
+                    "TIFF Compression=7 (new-style JPEG) is only supported for single-strip images.");
+
+            var jpegOffset = ValidateTiffLong(stripOffsets[0], "JPEG strip offset");
+            var jpegLength = ValidateTiffLong(stripByteCounts[0], "JPEG strip byte count");
+            if (jpegOffset < 0 || (long)jpegOffset + jpegLength > tiff.Length)
+                throw new InvalidDataException(
+                    $"TIFF JPEG strip (offset={jpegOffset}, length={jpegLength}) extends beyond end of file.");
+            var jpegBytes = tiff[jpegOffset..(jpegOffset + jpegLength)];
+            return JpegImageLoader.Load(jpegBytes);
+        }
+
         if (bitsPerSample != 8 && bitsPerSample != 16)
             throw new NotSupportedException(
                 $"Only 8-bit and 16-bit TIFF are supported; found BitsPerSample={bitsPerSample}.");
@@ -278,7 +310,7 @@ public static class TiffImageLoader
                 "TIFF Compression=6 (old-style JPEG) is not supported.");
 
         if (compression != CompressionNone && compression != CompressionPackBits &&
-            compression != CompressionLzw && compression != CompressionJpegNewStyle)
+            compression != CompressionLzw)
             throw new NotSupportedException(
                 $"TIFF Compression={compression} is not supported. " +
                 $"Supported: 1 (None), 4 (CCITT Group 4), 5 (LZW), 7 (new-style JPEG), 32773 (PackBits).");
@@ -305,22 +337,7 @@ public static class TiffImageLoader
         if (rowsPerStrip > height)
             rowsPerStrip = height;
 
-        // ── New-style JPEG (Compression=7): single-strip passthrough ─────────
-        if (compression == CompressionJpegNewStyle)
-        {
-            if (stripOffsets.Length != 1)
-                throw new NotSupportedException(
-                    "TIFF Compression=7 (new-style JPEG) is only supported for single-strip images.");
-            var jpegOffset = ValidateTiffLong(stripOffsets[0], "JPEG strip offset");
-            var jpegLength = ValidateTiffLong(stripByteCounts[0], "JPEG strip byte count");
-            if (jpegOffset < 0 || (long)jpegOffset + jpegLength > tiff.Length)
-                throw new InvalidDataException(
-                    $"TIFF JPEG strip (offset={jpegOffset}, length={jpegLength}) extends beyond end of file.");
-            var jpegBytes = tiff[jpegOffset..(jpegOffset + jpegLength)];
-            return JpegImageLoader.Load(jpegBytes);
-        }
-
-        // After JPEG dispatch, validate strip count consistency.
+        // Validate strip count consistency.
         if (stripOffsets.Length != stripByteCounts.Length)
             throw new InvalidDataException(
                 $"TIFF StripOffsets count ({stripOffsets.Length}) != StripByteCounts count ({stripByteCounts.Length}).");

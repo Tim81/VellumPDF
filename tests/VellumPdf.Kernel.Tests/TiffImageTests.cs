@@ -639,6 +639,60 @@ public sealed class TiffImageTests
         Assert.Throws<NotSupportedException>(() => TiffImageLoader.Load(tiff));
     }
 
+    [Fact]
+    public void Tiff_Jpeg7_YCbCr_Photometric6_LoadsAsDctDecode()
+    {
+        // A single-strip TIFF with Compression=7 and PhotometricInterpretation=6 (YCbCr)
+        // embedding a 3-component JPEG must load successfully as a DCTDecode passthrough.
+        // The photometric=6 guard must NOT fire — JPEG-7 is dispatched early before it.
+        var jpeg = BuildMinimalJpeg3Component(2, 1);
+        var tiff = BuildTiffWithJpeg7Photometric(jpeg, photometric: 6);
+        var img = TiffImageLoader.Load(tiff);
+
+        var dictText = StreamDictText(img);
+        Assert.Contains("DCTDecode", dictText);
+        Assert.DoesNotContain("FlateDecode", dictText);
+
+        // JPEG bytes must appear verbatim.
+        using var ms = new MemoryStream();
+        var writer = new VellumPdf.IO.PdfWriter(ms);
+        img.BuildStream().WriteTo(writer);
+        var raw = ms.ToArray();
+        var soiPos = -1;
+        for (var i = 0; i < raw.Length - 1; i++)
+        {
+            if (raw[i] == 0xFF && raw[i + 1] == 0xD8) { soiPos = i; break; }
+        }
+        Assert.True(soiPos >= 0, "JPEG SOI marker FF D8 not found in TIFF stream output.");
+        for (var i = 0; i < jpeg.Length; i++)
+            Assert.Equal(jpeg[i], raw[soiPos + i]);
+    }
+
+    [Fact]
+    public void Tiff_Jpeg7_Rgb_Photometric2_LoadsAsDctDecode()
+    {
+        // Sanity: Compression=7 with photometric=2 (RGB) and a 3-component JPEG loads correctly.
+        var jpeg = BuildMinimalJpeg3Component(2, 1);
+        var tiff = BuildTiffWithJpeg7Photometric(jpeg, photometric: 2);
+        var img = TiffImageLoader.Load(tiff);
+
+        var dictText = StreamDictText(img);
+        Assert.Contains("DCTDecode", dictText);
+        Assert.DoesNotContain("FlateDecode", dictText);
+    }
+
+    [Fact]
+    public void Tiff_Lzw_YCbCr_Photometric6_ThrowsNotSupportedException()
+    {
+        // PhotometricInterpretation=6 (YCbCr) with a non-JPEG compression (LZW) must
+        // still be rejected — the YCbCr allowance is scoped to the JPEG-7 early dispatch only.
+        var rawPixels = new byte[] { 0x80, 0x80, 0x80 };
+        var lzwData = TiffLzwEncode(rawPixels);
+        var tiff = BuildTiff(1, 1, 8, 5, photometric: 6, samplesPerPixel: 3,
+            lzwData, littleEndian: true, colorMap: null, alphaIncluded: false);
+        Assert.Throws<NotSupportedException>(() => TiffImageLoader.Load(tiff));
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private static string StreamDictText(VellumPdf.Images.PdfImageXObject img)
@@ -1443,6 +1497,94 @@ public sealed class TiffImageTests
         // EOI — terminate immediately (not a valid scan, but JpegImageLoader only reads SOF)
         ms.WriteByte(0xFF); ms.WriteByte(0xD9);
 
+        return ms.ToArray();
+    }
+
+    /// <summary>
+    /// Builds a minimal valid baseline JPEG with 3 components (e.g. YCbCr or RGB).
+    /// Contains SOI, APP0, SOF0 with 3 components, and EOI.
+    /// JpegImageLoader.ReadSof returns components=3 → DeviceRGB colour space.
+    /// </summary>
+    private static byte[] BuildMinimalJpeg3Component(int w, int h)
+    {
+        using var ms = new MemoryStream();
+
+        // SOI
+        ms.WriteByte(0xFF); ms.WriteByte(0xD8);
+
+        // APP0 (JFIF marker) — 16 bytes
+        ms.WriteByte(0xFF); ms.WriteByte(0xE0);
+        WriteJpegU16(ms, 16);
+        ms.Write("JFIF\0"u8);
+        ms.WriteByte(1); ms.WriteByte(1); // version 1.1
+        ms.WriteByte(0);                  // aspect ratio units
+        WriteJpegU16(ms, 1);              // X density
+        WriteJpegU16(ms, 1);              // Y density
+        ms.WriteByte(0); ms.WriteByte(0); // thumbnail size
+
+        // SOF0 — 3 components: length = 8 + 3*3 = 17
+        ms.WriteByte(0xFF); ms.WriteByte(0xC0);
+        WriteJpegU16(ms, 17);
+        ms.WriteByte(8);      // precision
+        WriteJpegU16(ms, (ushort)h);
+        WriteJpegU16(ms, (ushort)w);
+        ms.WriteByte(3);      // 3 components
+        // Component 1
+        ms.WriteByte(1); ms.WriteByte(0x11); ms.WriteByte(0);
+        // Component 2
+        ms.WriteByte(2); ms.WriteByte(0x11); ms.WriteByte(1);
+        // Component 3
+        ms.WriteByte(3); ms.WriteByte(0x11); ms.WriteByte(1);
+
+        // EOI
+        ms.WriteByte(0xFF); ms.WriteByte(0xD9);
+
+        return ms.ToArray();
+    }
+
+    /// <summary>
+    /// Builds a single-strip TIFF with Compression=7 (new-style JPEG) and the specified photometric.
+    /// </summary>
+    private static byte[] BuildTiffWithJpeg7Photometric(byte[] jpegBytes, int photometric)
+    {
+        using var ms = new MemoryStream();
+        ms.WriteByte(0x49); ms.WriteByte(0x49);
+        ms.WriteByte(0x2A); ms.WriteByte(0x00);
+
+        var jpegOffset = 8u;
+        var ifdOffset = jpegOffset + (uint)jpegBytes.Length;
+        WriteU32(ms, ifdOffset, true);
+        ms.Write(jpegBytes);
+
+        var entries = new List<(ushort tag, ushort type, uint count, uint value)>
+        {
+            (256, 4, 1, 2),
+            (257, 4, 1, 1),
+            (258, 3, 1, 8),
+            (259, 3, 1, 7),                              // Compression=7
+            (262, 3, 1, (uint)photometric),              // PhotometricInterpretation (caller-supplied)
+            (273, 4, 1, jpegOffset),
+            (277, 3, 1, 3),
+            (278, 4, 1, 1),
+            (279, 4, 1, (uint)jpegBytes.Length),
+            (284, 3, 1, 1),
+        };
+        entries.Sort((a, b) => a.tag.CompareTo(b.tag));
+
+        WriteU16(ms, (ushort)entries.Count, true);
+        foreach (var (tag, type, count, value) in entries)
+        {
+            WriteU16(ms, tag, true);
+            WriteU16(ms, type, true);
+            WriteU32(ms, count, true);
+            if (type == 3)
+            {
+                ms.WriteByte((byte)value); ms.WriteByte((byte)(value >> 8));
+                ms.WriteByte(0); ms.WriteByte(0);
+            }
+            else WriteU32(ms, value, true);
+        }
+        WriteU32(ms, 0, true);
         return ms.ToArray();
     }
 
