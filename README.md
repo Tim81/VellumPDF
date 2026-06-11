@@ -17,7 +17,7 @@ clean-room from the open **ISO 32000** standard.
   signing package is the sole exception: it uses `System.Security.Cryptography.Pkcs`.)
 - **AOT- and trim-ready.** Ships as managed DLLs; ideal for Native AOT,
   trimming, containers, and serverless. A Native-AOT smoke test guards this.
-- **Unicode-first text.** Embeds and subsets TrueType fonts, embeds OpenType-CFF,
+- **Unicode-first text.** Embeds and subsets TrueType and OpenType-CFF fonts,
   emits composite (CID) fonts with subset tags, and writes `ToUnicode` maps so
   output stays searchable and copy-paste-able.
 - **Two API tiers.** A low-level canvas for precise drawing, and a high-level
@@ -32,7 +32,7 @@ clean-room from the open **ISO 32000** standard.
 
 | Package | Status | Description |
 | --- | --- | --- |
-| `VellumPdf.Kernel` | Stable | Object model, canvas, Standard-14 fonts, TrueType/OpenType embedding + subsetting, images (JPEG/PNG/BMP/GIF/TIFF), AES-256 encryption, object/cross-reference streams, AcroForm fields, tagged-PDF structure tree, and the PDF/A-2 metadata + sRGB output-intent scaffold. |
+| `VellumPdf.Kernel` | Stable | Object model, canvas, Standard-14 fonts, TrueType/OpenType embedding + subsetting, images (JPEG/PNG/BMP/GIF/TIFF), AES-256 encryption, object/cross-reference streams, AcroForm fields, tagged-PDF structure tree, PDF/A-2 metadata, and DeviceCMYK and ICC-based colour with configurable output intents. |
 | `VellumPdf.Layout` | Stable | High-level document builder: paragraphs, headings, lists, tables, images, header/footer bands, bookmarks, and automatic pagination. |
 | `VellumPdf.Signing` | Stable | PAdES / PKCS#7 detached digital signatures over an incremental-update revision. |
 | _(roadmap)_ `VellumPdf.Conformance` | Planned | In-process PDF/A and PDF/UA preflight validator. |
@@ -134,9 +134,7 @@ oracles — a missing tool fails the build, so the gates can never silently skip
 | Area | Notes |
 | --- | --- |
 | In-process preflight | `VellumPdf.Conformance` PDF/A and PDF/UA validator package. |
-| CFF subsetting | OpenType-CFF fonts are currently embedded whole (not subsetted). |
 | Image codecs | JBIG2, JPEG 2000, and CCITT Group 3/4 decoders. |
-| Colour management | DeviceRGB and DeviceGray today; CMYK and ICC-based colour. |
 | Linearization | "Fast web view" object ordering. |
 | Signature LTV | Long-term validation data (OCSP/CRL) for archival PAdES. |
 | Barcodes | The `VellumPdf.Barcodes` package. |

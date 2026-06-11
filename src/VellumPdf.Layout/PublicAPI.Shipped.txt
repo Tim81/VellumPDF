@@ -332,3 +332,27 @@ VellumPdf.Layout.Rendering.Table.TableRenderer.TableRenderer(VellumPdf.Layout.El
 ~override VellumPdf.Layout.Core.EdgeInsets.Equals(object obj) -> bool
 ~override VellumPdf.Layout.Core.EdgeInsets.ToString() -> string
 ~override VellumPdf.Layout.Core.LayoutBox.Equals(object obj) -> bool
+VellumPdf.Layout.Core.ColorCmyk
+VellumPdf.Layout.Core.ColorCmyk.C.get -> double
+VellumPdf.Layout.Core.ColorCmyk.C.init -> void
+VellumPdf.Layout.Core.ColorCmyk.ColorCmyk() -> void
+VellumPdf.Layout.Core.ColorCmyk.ColorCmyk(double C, double M, double Y, double K) -> void
+VellumPdf.Layout.Core.ColorCmyk.Deconstruct(out double C, out double M, out double Y, out double K) -> void
+VellumPdf.Layout.Core.ColorCmyk.Equals(VellumPdf.Layout.Core.ColorCmyk other) -> bool
+VellumPdf.Layout.Core.ColorCmyk.K.get -> double
+VellumPdf.Layout.Core.ColorCmyk.K.init -> void
+VellumPdf.Layout.Core.ColorCmyk.M.get -> double
+VellumPdf.Layout.Core.ColorCmyk.M.init -> void
+VellumPdf.Layout.Core.ColorCmyk.ToRgbApproximate() -> VellumPdf.Layout.Core.ColorRgb
+VellumPdf.Layout.Core.ColorCmyk.Y.get -> double
+VellumPdf.Layout.Core.ColorCmyk.Y.init -> void
+VellumPdf.Layout.Document.SetPdfAOutputIntent(byte[]! iccProfile, int componentCount, string! outputConditionIdentifier, string? info = null) -> void
+VellumPdf.Layout.Document.UseCmykOutputIntent(string! outputConditionIdentifier = "Generic CMYK") -> void
+override VellumPdf.Layout.Core.ColorCmyk.GetHashCode() -> int
+static VellumPdf.Layout.Core.ColorCmyk.FromRgb(VellumPdf.Layout.Core.ColorRgb rgb) -> VellumPdf.Layout.Core.ColorCmyk
+static VellumPdf.Layout.Core.ColorCmyk.operator !=(VellumPdf.Layout.Core.ColorCmyk left, VellumPdf.Layout.Core.ColorCmyk right) -> bool
+static VellumPdf.Layout.Core.ColorCmyk.operator ==(VellumPdf.Layout.Core.ColorCmyk left, VellumPdf.Layout.Core.ColorCmyk right) -> bool
+static readonly VellumPdf.Layout.Core.ColorCmyk.Black -> VellumPdf.Layout.Core.ColorCmyk
+static readonly VellumPdf.Layout.Core.ColorCmyk.White -> VellumPdf.Layout.Core.ColorCmyk
+~override VellumPdf.Layout.Core.ColorCmyk.Equals(object obj) -> bool
+~override VellumPdf.Layout.Core.ColorCmyk.ToString() -> string
