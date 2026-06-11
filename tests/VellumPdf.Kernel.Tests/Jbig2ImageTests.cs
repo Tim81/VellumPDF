@@ -636,6 +636,20 @@ public sealed class Jbig2ImageTests
         Assert.Throws<InvalidDataException>(() => Jbig2ImageLoader.Load(jbig2, opts));
     }
 
+    [Fact]
+    public void Load_DecodeToRaster_ExtremeAspectRatioMmrRegion_ThrowsInvalidData()
+    {
+        // 100,000,000 × 1 passes the width×height pixel-count limit, but the MMR decoder's
+        // per-row changing-element scratch is sized to the width (~800 MB for this region)
+        // — a decompression-bomb amplification from a few bytes. The per-dimension raster
+        // limit must reject it with InvalidDataException before allocating.
+        var mmr = new byte[] { 0x00, 0x00 };
+        var jbig2 = BuildJbig2WithMmrRegion(width: 100_000_000, height: 1, mmr);
+
+        var opts = new ImageLoadOptions { DecodeMode = ImageDecodeMode.DecodeToRaster };
+        Assert.Throws<InvalidDataException>(() => Jbig2ImageLoader.Load(jbig2, opts));
+    }
+
     // ── Helper to build a JBIG2 buffer with an extra segment of a given type ──
 
     private static byte[] BuildJbig2WithSegmentType(

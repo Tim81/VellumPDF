@@ -26,6 +26,15 @@ internal static class MmrDecoder
     /// <returns>A byte array of length rowBytes * height, MSB-first packed pixels.</returns>
     public static byte[] Decode(ReadOnlySpan<byte> data, int width, int height, int rowBytes)
     {
+        // The changing-element scratch below is sized to the row width (8 bytes per pixel of
+        // width). A width within MaxPixels but with an extreme aspect ratio (e.g. 100M×1)
+        // could otherwise drive a ~800 MB scratch allocation from a few bytes of compressed
+        // input, so bound each dimension before allocating.
+        if (width > ImageLimits.MaxRasterDecodeDimension || height > ImageLimits.MaxRasterDecodeDimension)
+            throw new InvalidDataException(
+                $"JBIG2 MMR: dimension {width}×{height} exceeds the raster-decode safety limit " +
+                $"of {ImageLimits.MaxRasterDecodeDimension} per side.");
+
         var output = new byte[rowBytes * height];
         var reader = new BitReader(data);
 
