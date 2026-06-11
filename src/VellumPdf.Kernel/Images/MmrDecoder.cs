@@ -81,18 +81,27 @@ internal static class MmrDecoder
                 case Mode.Horizontal:
                     {
                         // Two consecutive run lengths follow, alternating color from a0Col.
-                        var run1 = DecodeRun(ref reader, a0Col);
-                        var run2 = DecodeRun(ref reader, 1 - a0Col);
+                        // Runs are capped at the image width: a single run cannot exceed the
+                        // line, and the cap also prevents integer overflow of the accumulated
+                        // make-up total on malformed input.
+                        var run1 = DecodeRun(ref reader, a0Col, width);
+                        var run2 = DecodeRun(ref reader, 1 - a0Col, width);
                         var a1 = Math.Min(a0 + run1, width);
                         var a2 = Math.Min(a1 + run2, width);
                         FillRun(output, rowOffset, a0, a1, a0Col);
-                        curCE[ceIdx++] = a1;
+                        AppendCe(curCE, ref ceIdx, a1);
                         FillRun(output, rowOffset, a1, a2, 1 - a0Col);
-                        curCE[ceIdx++] = a2;
+                        AppendCe(curCE, ref ceIdx, a2);
                         a0 = a2;
                         // a0Col returns to original (two color transitions = net zero).
                         break;
                     }
+
+                case Mode.Eofb:
+                    // End-of-facsimile-block before all rows were decoded — the stream is
+                    // truncated relative to the declared region height.
+                    throw new InvalidDataException(
+                        "JBIG2 MMR: unexpected EOFB before all rows were decoded.");
 
                 default:
                     {
@@ -102,7 +111,7 @@ internal static class MmrDecoder
                         var a1 = Math.Clamp(b1 + delta, a0, width);
                         FillRun(output, rowOffset, a0, a1, a0Col);
                         if (a1 != a0)
-                            curCE[ceIdx++] = a1;
+                            AppendCe(curCE, ref ceIdx, a1);
                         a0 = a1;
                         a0Col ^= 1; // color flips at a1
                         break;
@@ -200,14 +209,20 @@ internal static class MmrDecoder
     /// <summary>
     /// Decodes one T.4 run length for the given <paramref name="color"/> (0=white, 1=black).
     /// A run may be made up of one or more makeup codes followed by a terminating code.
+    /// The accumulated run is bounded by <paramref name="maxRun"/> (the image width); a run
+    /// that exceeds it is rejected, which also guards against integer overflow of the
+    /// accumulator on a malformed stream of makeup codes.
     /// </summary>
-    private static int DecodeRun(ref BitReader r, int color)
+    private static int DecodeRun(ref BitReader r, int color, int maxRun)
     {
         var total = 0;
         while (true)
         {
             var (value, isMakeup) = color == 0 ? ReadWhite(ref r) : ReadBlack(ref r);
             total += value;
+            if (total > maxRun)
+                throw new InvalidDataException(
+                    "JBIG2 MMR: decoded run length exceeds the image width.");
             if (!isMakeup) return total;
         }
     }
@@ -550,6 +565,21 @@ internal static class MmrDecoder
         }
 
         throw new InvalidDataException("JBIG2 MMR: unrecognised black run-length code.");
+    }
+
+    /// <summary>
+    /// Appends a changing-element x-coordinate to <paramref name="ce"/>, rejecting overflow.
+    /// A valid row has at most <c>width</c> transitions, so the array (sized <c>width + 2</c>)
+    /// cannot legitimately overflow; a malformed 2D stream (e.g. repeated zero-length
+    /// horizontal runs) can drive the index past the end, which this guard converts into an
+    /// <see cref="InvalidDataException"/> rather than an <see cref="IndexOutOfRangeException"/>.
+    /// </summary>
+    private static void AppendCe(int[] ce, ref int idx, int value)
+    {
+        if (idx >= ce.Length)
+            throw new InvalidDataException(
+                "JBIG2 MMR: too many changing elements in a row (malformed 2D data).");
+        ce[idx++] = value;
     }
 
     // ── Changing-element helpers ──────────────────────────────────────────────

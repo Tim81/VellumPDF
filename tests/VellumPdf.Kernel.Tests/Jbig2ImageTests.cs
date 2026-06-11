@@ -158,6 +158,47 @@ public sealed class Jbig2ImageTests
         buf[offset + 3] = (byte)value;
     }
 
+    /// <summary>Packs a sequence of (value, bit-length) codes MSB-first into a byte array.</summary>
+    private static byte[] PackMsbFirst(params (int value, int bits)[] codes)
+    {
+        var bitCount = 0;
+        foreach (var (_, bits) in codes) bitCount += bits;
+        var bytes = new byte[(bitCount + 7) / 8];
+        var bitIndex = 0;
+        foreach (var (value, bits) in codes)
+        {
+            for (var i = bits - 1; i >= 0; i--)
+            {
+                if (((value >> i) & 1) != 0)
+                    bytes[bitIndex / 8] |= (byte)(0x80 >> (bitIndex % 8));
+                bitIndex++;
+            }
+        }
+        return bytes;
+    }
+
+    /// <summary>
+    /// Builds a JBIG2 file with a single MMR-coded immediate generic region (type 38) carrying
+    /// <paramref name="mmr"/> as its compressed data, plus the page-info and EOF segments.
+    /// </summary>
+    private static byte[] BuildJbig2WithMmrRegion(int width, int height, byte[] mmr)
+    {
+        var regionData = new byte[18 + mmr.Length];
+        WriteInt32(regionData, 0, width);   // regionWidth
+        WriteInt32(regionData, 4, height);  // regionHeight
+        WriteInt32(regionData, 8, 0);       // x
+        WriteInt32(regionData, 12, 0);      // y
+        regionData[16] = 0;                 // region combination flags
+        regionData[17] = 0x01;              // grFlags: MMR = 1
+        Array.Copy(mmr, 0, regionData, 18, mmr.Length);
+
+        byte[] header = [0x97, 0x4A, 0x42, 0x32, 0x0D, 0x0A, 0x1A, 0x0A];
+        var pageInfoSeg = BuildSegment(0, 48, 1, BuildPageInfoSegmentData(width, height));
+        var regionSeg = BuildSegment(1, 38, 1, regionData);
+        var eofSeg = BuildSegment(2, 51, 0, []);
+        return [.. header, .. pageInfoSeg, .. regionSeg, .. eofSeg];
+    }
+
     // ── Filter / dict structure tests ─────────────────────────────────────────
 
     [Fact]
@@ -554,6 +595,42 @@ public sealed class Jbig2ImageTests
         Array.Copy(pageInfoSeg, 0, jbig2, pos, pageInfoSeg.Length); pos += pageInfoSeg.Length;
         Array.Copy(regionSeg, 0, jbig2, pos, regionSeg.Length); pos += regionSeg.Length;
         Array.Copy(eofSeg, 0, jbig2, pos, eofSeg.Length);
+
+        var opts = new ImageLoadOptions { DecodeMode = ImageDecodeMode.DecodeToRaster };
+        Assert.Throws<InvalidDataException>(() => Jbig2ImageLoader.Load(jbig2, opts));
+    }
+
+    // ── MmrDecoder: malformed-input hardening ─────────────────────────────────
+
+    [Fact]
+    public void Load_DecodeToRaster_MmrRunExceedsWidth_ThrowsInvalidData()
+    {
+        // Horizontal mode (011) followed by a white make-up code for a 64-pixel run, far
+        // larger than the 2-pixel width. The run-length cap must reject this with
+        // InvalidDataException rather than accumulating without bound — a long make-up run
+        // would otherwise overflow the run accumulator and yield a negative fill range.
+        var mmr = PackMsbFirst((0b011, 3), (0b11011, 5)); // H, white make-up 64
+        var jbig2 = BuildJbig2WithMmrRegion(width: 2, height: 1, mmr);
+
+        var opts = new ImageLoadOptions { DecodeMode = ImageDecodeMode.DecodeToRaster };
+        Assert.Throws<InvalidDataException>(() => Jbig2ImageLoader.Load(jbig2, opts));
+    }
+
+    [Fact]
+    public void Load_DecodeToRaster_MmrZeroRunHorizontalFlood_ThrowsInvalidData()
+    {
+        // Repeated zero-run Horizontal modes never advance the coding position but push two
+        // changing elements each iteration. The bounds-checked changing-element append must
+        // reject this with InvalidDataException rather than overrunning the CE array
+        // (which previously surfaced as IndexOutOfRangeException).
+        (int, int)[] zeroRunHorizontal =
+        [
+            (0b011, 3),         // Horizontal mode
+            (0b00110101, 8),    // white run length 0 (terminating)
+            (0b0001111, 7),     // black run length 0 (terminating)
+        ];
+        var mmr = PackMsbFirst([.. zeroRunHorizontal, .. zeroRunHorizontal, .. zeroRunHorizontal]);
+        var jbig2 = BuildJbig2WithMmrRegion(width: 2, height: 1, mmr);
 
         var opts = new ImageLoadOptions { DecodeMode = ImageDecodeMode.DecodeToRaster };
         Assert.Throws<InvalidDataException>(() => Jbig2ImageLoader.Load(jbig2, opts));
