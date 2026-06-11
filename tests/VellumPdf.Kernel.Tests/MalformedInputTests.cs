@@ -828,4 +828,240 @@ public sealed class MalformedInputTests
         s.WriteByte((byte)value);
         s.WriteByte((byte)(value >> 8));
     }
+
+    // ── Hardening tests: PNG ─────────────────────────────────────────────────
+
+    /// <summary>
+    /// Fix #1: Indexed PNG whose PLTE is shorter than required by the pixel index.
+    /// An in-range-looking pixel index (e.g. 2) referencing a 3-entry palette is fine,
+    /// but index 3 when the PLTE only has 3 entries (9 bytes) must throw.
+    /// </summary>
+    [Fact]
+    public void Png_shortPlte_outOfRangeIndex_throwsInvalidDataException()
+    {
+        // 1×1 indexed PNG: PLTE has 3 entries (indices 0-2), pixel index = 3.
+        // palette[3*3] would be out of bounds.
+        var plteData = new byte[9]; // 3 entries × 3 bytes each
+        plteData[0] = 255; // entry 0 R
+        plteData[3] = 0;   // entry 1 R
+        plteData[6] = 128; // entry 2 R
+        // pixel value = 3 (index into 3-entry palette — out of range)
+        var rawRow = new byte[] { 0, 3 }; // filter=None, pixel index=3
+        var idat = ZlibCompress(rawRow);
+        var png = BuildPngWithPlte(1, 1, bitDepth: 8, plteData: plteData, idat: idat);
+        Assert.Throws<InvalidDataException>(() => PngImageLoader.Load(png));
+    }
+
+    /// <summary>
+    /// Fix #2: Indexed PNG (colour type 3) with no PLTE chunk.
+    /// Must throw InvalidDataException before the null-dereference occurs.
+    /// </summary>
+    [Fact]
+    public void Png_indexedNoPalette_throwsInvalidDataException()
+    {
+        // Valid 1×1 RGB IDAT but with colorType=3 and no PLTE chunk.
+        var rawRow = new byte[] { 0, 0 }; // filter=None, pixel=0
+        var idat = ZlibCompress(rawRow);
+        var png = BuildPng(1, 1, bitDepth: 8, colorType: 3, idat: idat);
+        Assert.Throws<InvalidDataException>(() => PngImageLoader.Load(png));
+    }
+
+    /// <summary>
+    /// Fix #3: IHDR chunk with length != 13 must throw InvalidDataException.
+    /// </summary>
+    [Fact]
+    public void Png_ihdrWrongLength_throwsInvalidDataException()
+    {
+        // Build a PNG whose IHDR chunk declares length=12 (one byte short of 13).
+        var png = BuildPngWithIhdrLength(width: 1, height: 1, ihdrLength: 12);
+        Assert.Throws<InvalidDataException>(() => PngImageLoader.Load(png));
+    }
+
+    /// <summary>
+    /// Fix #4: A row with filter byte 5 (undefined by PNG spec) must throw InvalidDataException.
+    /// </summary>
+    [Fact]
+    public void Png_unknownFilterByte_throwsInvalidDataException()
+    {
+        // 1×1 RGB PNG; raw row has filter byte = 5 (unsupported).
+        var rawRow = new byte[] { 5, 100, 100, 100 }; // filter=5, RGB pixel
+        var idat = ZlibCompress(rawRow);
+        var png = BuildPng(1, 1, bitDepth: 8, colorType: 2, idat: idat);
+        Assert.Throws<InvalidDataException>(() => PngImageLoader.Load(png));
+    }
+
+    /// <summary>
+    /// Fix #5: colorType 2 (RGB) with bitDepth 4 is a PNG-spec-invalid combination.
+    /// Must throw InvalidDataException.
+    /// </summary>
+    [Fact]
+    public void Png_invalidColorTypeBitDepthCombo_throwsInvalidDataException()
+    {
+        // colorType 2 requires bitDepth 8 or 16; bitDepth 4 is invalid.
+        var png = BuildPng(4, 4, bitDepth: 4, colorType: 2, idat: ZlibCompress(new byte[64]));
+        Assert.Throws<InvalidDataException>(() => PngImageLoader.Load(png));
+    }
+
+    // ── Hardening tests: TIFF ────────────────────────────────────────────────
+
+    /// <summary>
+    /// Fix #6: SamplesPerPixel=2 is not in {1,3,4} — must throw NotSupportedException.
+    /// </summary>
+    [Fact]
+    public void Tiff_samplesPerPixel2_throwsNotSupportedException()
+    {
+        var pixelData = new byte[4]; // 1×1 with spp=2 → 2 bytes, but irrelevant
+        var tiff = BuildTiffLzw(1, 1, 8, 1, samplesPerPixel: 2, stripData: ZeroLzw(2));
+        Assert.Throws<NotSupportedException>(() => TiffImageLoader.Load(tiff));
+    }
+
+    /// <summary>
+    /// Fix #6: SamplesPerPixel=99 is not in {1,3,4} — must throw NotSupportedException.
+    /// (This is the hostile case that would previously overflow rawRowBytes.)
+    /// </summary>
+    [Fact]
+    public void Tiff_samplesPerPixel99_throwsNotSupportedException()
+    {
+        var tiff = BuildTiffLzw(1000, 1000, 8, 1, samplesPerPixel: 99, stripData: ZeroLzw(1));
+        Assert.Throws<NotSupportedException>(() => TiffImageLoader.Load(tiff));
+    }
+
+    /// <summary>
+    /// Fix #8: StripOffsets with a huge count field in the IFD entry causes ReadTagArray
+    /// to be called with count > data.Length. Must throw InvalidDataException with no OOM.
+    /// </summary>
+    [Fact(Timeout = 10_000)]
+    public void Tiff_hugeStripOffsetsCount_throwsInvalidDataException()
+    {
+        // Build a minimal valid grey TIFF, then corrupt the StripOffsets count field
+        // to be 0x7FFFFFFF (2 billion), which is far larger than the file.
+        var rawPixels = new byte[] { 128 };
+        var stripData = TiffLzwEncode(rawPixels);
+        var tiff = BuildTiffLzw(1, 1, 8, 1, 1, stripData);
+        // Patch the StripOffsets IFD entry count (tag 273).
+        // IFD starts at byte 4 (LE). Read ifdOffset.
+        var ifdOffset = (int)(tiff[4] | (tiff[5] << 8) | (tiff[6] << 16) | (tiff[7] << 24));
+        var entryCount = tiff[ifdOffset] | (tiff[ifdOffset + 1] << 8);
+        for (var i = 0; i < entryCount; i++)
+        {
+            var entryBase = ifdOffset + 2 + i * 12;
+            var tag = tiff[entryBase] | (tiff[entryBase + 1] << 8);
+            if (tag == 273) // StripOffsets
+            {
+                // Patch count field (bytes entryBase+4 through entryBase+7) to 0x7FFFFFFF.
+                tiff[entryBase + 4] = 0xFF;
+                tiff[entryBase + 5] = 0xFF;
+                tiff[entryBase + 6] = 0xFF;
+                tiff[entryBase + 7] = 0x7F;
+                break;
+            }
+        }
+        Assert.Throws<InvalidDataException>(() => TiffImageLoader.Load(tiff));
+    }
+
+    /// <summary>
+    /// Fix #9: A single-strip CCITT G4 TIFF whose StripByteCounts entry exceeds int.MaxValue
+    /// must throw InvalidDataException from the ValidateTiffLong guard, not truncate silently.
+    /// We use an LZW TIFF here (single strip, value > int.MaxValue in the byte count field).
+    /// </summary>
+    [Fact]
+    public void Tiff_stripByteCountExceedsIntMax_throwsInvalidDataException()
+    {
+        // Build a minimal LZW TIFF, then corrupt the StripByteCounts value to 0x80000000
+        // (> int.MaxValue), which ValidateTiffLong must reject.
+        var rawPixels = new byte[] { 128 };
+        var stripData = TiffLzwEncode(rawPixels);
+        var tiff = BuildTiffLzw(1, 1, 8, 1, 1, stripData);
+        // Patch the StripByteCounts IFD entry value (tag 279).
+        var ifdOffset = (int)(tiff[4] | (tiff[5] << 8) | (tiff[6] << 16) | (tiff[7] << 24));
+        var entryCount = tiff[ifdOffset] | (tiff[ifdOffset + 1] << 8);
+        for (var i = 0; i < entryCount; i++)
+        {
+            var entryBase = ifdOffset + 2 + i * 12;
+            var tag = tiff[entryBase] | (tiff[entryBase + 1] << 8);
+            if (tag == 279) // StripByteCounts
+            {
+                // The value field is at entryBase+8. For a LONG inline value, patch to 0x80000000.
+                tiff[entryBase + 8] = 0x00;
+                tiff[entryBase + 9] = 0x00;
+                tiff[entryBase + 10] = 0x00;
+                tiff[entryBase + 11] = 0x80;
+                break;
+            }
+        }
+        Assert.Throws<InvalidDataException>(() => TiffImageLoader.Load(tiff));
+    }
+
+    // ── PNG builder helpers for hardening tests ──────────────────────────────
+
+    /// <summary>
+    /// Builds an indexed (colorType=3) PNG with an explicit PLTE chunk.
+    /// </summary>
+    private static byte[] BuildPngWithPlte(int width, int height, byte bitDepth, byte[] plteData, byte[] idat)
+    {
+        var ihdr = new byte[13];
+        WriteU32Be(ihdr, 0, (uint)width);
+        WriteU32Be(ihdr, 4, (uint)height);
+        ihdr[8] = bitDepth;
+        ihdr[9] = 3; // colorType = 3 (indexed)
+        // compression(10), filter(11), interlace(12) = 0
+
+        using var ms = new MemoryStream();
+        ms.Write([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
+        ms.Write(PngChunk("IHDR", ihdr));
+        ms.Write(PngChunk("PLTE", plteData));
+        ms.Write(PngChunk("IDAT", idat));
+        ms.Write(PngChunk("IEND", []));
+        return ms.ToArray();
+    }
+
+    /// <summary>
+    /// Builds a PNG whose IHDR chunk has the given declared length (may be != 13).
+    /// The IHDR data bytes are always 13 bytes in the actual content; only the
+    /// length field in the chunk header is forged.
+    /// </summary>
+    private static byte[] BuildPngWithIhdrLength(int width, int height, uint ihdrLength)
+    {
+        // Standard 13-byte IHDR content.
+        var ihdrContent = new byte[13];
+        WriteU32Be(ihdrContent, 0, (uint)width);
+        WriteU32Be(ihdrContent, 4, (uint)height);
+        ihdrContent[8] = 8;  // bitDepth
+        ihdrContent[9] = 2;  // colorType (RGB)
+
+        using var ms = new MemoryStream();
+        ms.Write([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
+
+        // Write IHDR chunk manually with the forged length field.
+        // Chunk structure: 4-byte length | 4-byte type | data | 4-byte CRC (left 0).
+        var chunk = new byte[12 + ihdrContent.Length];
+        // Write forged length (big-endian).
+        chunk[0] = (byte)(ihdrLength >> 24);
+        chunk[1] = (byte)(ihdrLength >> 16);
+        chunk[2] = (byte)(ihdrLength >> 8);
+        chunk[3] = (byte)ihdrLength;
+        // Type "IHDR"
+        chunk[4] = (byte)'I'; chunk[5] = (byte)'H'; chunk[6] = (byte)'D'; chunk[7] = (byte)'R';
+        ihdrContent.CopyTo(chunk, 8);
+        // CRC at chunk[8+13..] left as zero.
+        ms.Write(chunk);
+
+        // Append minimal IDAT and IEND so we get past chunk parsing if IHDR check fires.
+        ms.Write(PngChunk("IDAT", ZlibCompress(new byte[4])));
+        ms.Write(PngChunk("IEND", []));
+        return ms.ToArray();
+    }
+
+    // ── Helper: encode minimal LZW data for a zero-valued strip ─────────────
+
+    /// <summary>
+    /// Returns a minimal TIFF-variant LZW stream that encodes <paramref name="byteCount"/>
+    /// zero bytes. Used as placeholder strip data when we want to trigger a validation
+    /// error before the strip is decoded.
+    /// </summary>
+    private static byte[] ZeroLzw(int byteCount)
+    {
+        var data = new byte[byteCount];
+        return TiffLzwEncode(data);
+    }
 }

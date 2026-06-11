@@ -34,6 +34,8 @@ internal static class TiffLzwDecoder
     /// <exception cref="InvalidDataException">Thrown on overflow, invalid codes, or output length mismatch.</exception>
     public static byte[] Decode(byte[] src, int srcOffset, int srcLength, int expectedOutput)
     {
+        if (expectedOutput < 0)
+            throw new InvalidDataException("TIFF LZW expected output length is negative.");
         var output = new byte[expectedOutput];
         var outIdx = 0;
 

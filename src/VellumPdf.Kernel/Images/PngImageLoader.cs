@@ -57,6 +57,8 @@ public static class PngImageLoader
             switch (type)
             {
                 case "IHDR":
+                    if (length != 13)
+                        throw new InvalidDataException($"PNG IHDR chunk length must be 13; found {length}.");
                     width = (int)ReadU32Be(pngBytes, pos + 8);
                     height = (int)ReadU32Be(pngBytes, pos + 12);
                     bitDepth = data[8];
@@ -91,6 +93,17 @@ public static class PngImageLoader
             throw new InvalidDataException($"PNG has invalid colour type {colorType}.");
         if (interlaceMethod is not (0 or 1))
             throw new InvalidDataException($"PNG has invalid interlace method {interlaceMethod}.");
+
+        // Validate PNG-spec bit depth / colour type combinations.
+        // colorType 2 (RGB), 4 (Grey+Alpha), 6 (RGBA) require bitDepth 8 or 16.
+        // colorType 3 (Indexed) requires bitDepth 1, 2, 4, or 8 (not 16).
+        // colorType 0 (Greyscale) allows 1, 2, 4, 8, or 16.
+        if (colorType is 2 or 4 or 6 && bitDepth is not (8 or 16))
+            throw new InvalidDataException(
+                $"PNG colour type {colorType} requires bit depth 8 or 16; found {bitDepth}.");
+        if (colorType == 3 && bitDepth == 16)
+            throw new InvalidDataException(
+                "PNG colour type 3 (Indexed) does not support bit depth 16.");
 
         // ── Decompress IDAT ──
         var samplesPerPixel = SamplesPerPixel(colorType);
@@ -291,7 +304,9 @@ public static class PngImageLoader
         if (colorType == 3)
         {
             // Indexed: expand palette (indices are now 1 byte each after unpack)
-            colorBytes = ExpandPalette(pixels, w, h, palette!);
+            if (palette is null)
+                throw new InvalidDataException("PNG indexed image (colour type 3) has no PLTE chunk.");
+            colorBytes = ExpandPalette(pixels, w, h, palette);
             return new PdfImageXObject(w, h, colorBytes, PdfName.FlateDecode, ImageColorSpace.DeviceRgb, 8);
         }
 
@@ -457,6 +472,8 @@ public static class PngImageLoader
                         dst[x] = (byte)(dst[x] + PaethPredictor(a, b, c));
                     }
                     break;
+                default:
+                    throw new InvalidDataException($"PNG row {y}: unsupported filter type {filterType}.");
             }
             dst.CopyTo(prev.AsSpan());
         }
@@ -474,10 +491,16 @@ public static class PngImageLoader
 
     private static byte[] ExpandPalette(byte[] pixels, int w, int h, byte[] palette)
     {
+        if (palette.Length % 3 != 0 || palette.Length < 3)
+            throw new InvalidDataException(
+                $"PNG PLTE chunk length {palette.Length} is not a multiple of 3 or is empty.");
         var result = new byte[w * h * 3];
         for (var i = 0; i < w * h; i++)
         {
             var idx = pixels[i] * 3;
+            if (idx + 2 >= palette.Length)
+                throw new InvalidDataException(
+                    $"PNG palette index {pixels[i]} out of range for {palette.Length / 3}-entry PLTE.");
             result[i * 3] = palette[idx];
             result[i * 3 + 1] = palette[idx + 1];
             result[i * 3 + 2] = palette[idx + 2];

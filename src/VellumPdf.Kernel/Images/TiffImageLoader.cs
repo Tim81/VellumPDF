@@ -215,8 +215,8 @@ public static class TiffImageLoader
                 throw new NotSupportedException(
                     "Multi-strip CCITT Group 4 TIFF is not supported.");
 
-            var g4Offset = (int)stripOffsets[0];
-            var g4Length = (int)stripByteCounts[0];
+            var g4Offset = ValidateTiffLong(stripOffsets[0], "CCITT G4 strip offset");
+            var g4Length = ValidateTiffLong(stripByteCounts[0], "CCITT G4 strip byte count");
             if (g4Offset < 0 || (long)g4Offset + g4Length > tiff.Length)
                 throw new InvalidDataException(
                     $"TIFF CCITT G4 strip (offset={g4Offset}, length={g4Length}) extends beyond end of file.");
@@ -254,6 +254,19 @@ public static class TiffImageLoader
         if (planarConfiguration != 1 && planarConfiguration != 2)
             throw new NotSupportedException(
                 $"Only PlanarConfiguration 1 (chunky) or 2 (planar) TIFF is supported; found {planarConfiguration}.");
+
+        // Validate SamplesPerPixel: only 1, 3, 4 are supported.
+        if (samplesPerPixel is not (1 or 3 or 4))
+            throw new NotSupportedException(
+                $"TIFF SamplesPerPixel={samplesPerPixel} is not supported.");
+
+        // Validate SamplesPerPixel consistency with photometric.
+        if (photometric == 2 && samplesPerPixel is not (3 or 4))
+            throw new NotSupportedException(
+                $"TIFF PhotometricInterpretation=2 (RGB) requires SamplesPerPixel 3 or 4; found {samplesPerPixel}.");
+        if (photometric is 0 or 1 or 3 && samplesPerPixel != 1)
+            throw new NotSupportedException(
+                $"TIFF PhotometricInterpretation={photometric} requires SamplesPerPixel=1; found {samplesPerPixel}.");
 
         if (compression == CompressionCcittG3Variants1D || compression == CompressionCcittG3Mixed)
             throw new NotSupportedException(
@@ -298,8 +311,8 @@ public static class TiffImageLoader
             if (stripOffsets.Length != 1)
                 throw new NotSupportedException(
                     "TIFF Compression=7 (new-style JPEG) is only supported for single-strip images.");
-            var jpegOffset = (int)stripOffsets[0];
-            var jpegLength = (int)stripByteCounts[0];
+            var jpegOffset = ValidateTiffLong(stripOffsets[0], "JPEG strip offset");
+            var jpegLength = ValidateTiffLong(stripByteCounts[0], "JPEG strip byte count");
             if (jpegOffset < 0 || (long)jpegOffset + jpegLength > tiff.Length)
                 throw new InvalidDataException(
                     $"TIFF JPEG strip (offset={jpegOffset}, length={jpegLength}) extends beyond end of file.");
@@ -330,7 +343,12 @@ public static class TiffImageLoader
         // containing all rows for one sample channel.
         //
         // rawRowBytes: bytes per row in the final chunky buffer.
-        var rawRowBytes = width * samplesPerPixel * bytesPerSample;
+        // Compute in long to detect overflow before casting to int.
+        var rawRowBytesLong = (long)width * samplesPerPixel * bytesPerSample;
+        if (rawRowBytesLong > int.MaxValue)
+            throw new InvalidDataException(
+                $"TIFF row byte count {rawRowBytesLong} exceeds int.MaxValue.");
+        var rawRowBytes = (int)rawRowBytesLong;
         var rawBuffer = new byte[(long)height * rawRowBytes];
 
         if (planarConfiguration == 1)
@@ -383,10 +401,16 @@ public static class TiffImageLoader
         var rowsDone = 0;
         while (rowsDone < height && stripIndex < stripOffsets.Length)
         {
-            var stripOffset = (int)stripOffsets[stripIndex];
-            var stripByteCount = (int)stripByteCounts[stripIndex];
+            var stripOffset = ValidateTiffLong(stripOffsets[stripIndex],
+                $"TIFF strip {stripIndex} offset");
+            var stripByteCount = ValidateTiffLong(stripByteCounts[stripIndex],
+                $"TIFF strip {stripIndex} byte count");
             var stripRowCount = Math.Min(rowsPerStrip, height - rowsDone);
-            var expectedStripBytes = stripRowCount * rawRowBytes;
+            var expectedStripBytesLong = (long)stripRowCount * rawRowBytes;
+            if (expectedStripBytesLong > int.MaxValue)
+                throw new InvalidDataException(
+                    $"TIFF strip {stripIndex} expected byte count {expectedStripBytesLong} exceeds int.MaxValue.");
+            var expectedStripBytes = (int)expectedStripBytesLong;
 
             if (stripOffset < 0 || (long)stripOffset + stripByteCount > tiff.Length)
                 throw new InvalidDataException(
@@ -427,7 +451,11 @@ public static class TiffImageLoader
                 $"but StripOffsets has {stripOffsets.Length} entries.");
 
         // Row bytes for a single sample plane.
-        var planeRowBytes = width * bytesPerSample;
+        var planeRowBytesLong = (long)width * bytesPerSample;
+        if (planeRowBytesLong > int.MaxValue)
+            throw new InvalidDataException(
+                $"TIFF planar row byte count {planeRowBytesLong} exceeds int.MaxValue.");
+        var planeRowBytes = (int)planeRowBytesLong;
 
         // Plane buffer: decoded rows for a single sample across all height rows.
         var planeBuffer = new byte[(long)height * planeRowBytes];
@@ -438,10 +466,16 @@ public static class TiffImageLoader
             for (var s = 0; s < stripsPerImage; s++)
             {
                 var stripIndex = plane * stripsPerImage + s;
-                var stripOffset = (int)stripOffsets[stripIndex];
-                var stripByteCount = (int)stripByteCounts[stripIndex];
+                var stripOffset = ValidateTiffLong(stripOffsets[stripIndex],
+                    $"TIFF planar strip {stripIndex} offset");
+                var stripByteCount = ValidateTiffLong(stripByteCounts[stripIndex],
+                    $"TIFF planar strip {stripIndex} byte count");
                 var stripRowCount = Math.Min(rowsPerStrip, height - rowsDone);
-                var expectedStripBytes = stripRowCount * planeRowBytes;
+                var expectedStripBytesLong = (long)stripRowCount * planeRowBytes;
+                if (expectedStripBytesLong > int.MaxValue)
+                    throw new InvalidDataException(
+                        $"TIFF planar strip {stripIndex} expected byte count {expectedStripBytesLong} exceeds int.MaxValue.");
+                var expectedStripBytes = (int)expectedStripBytesLong;
 
                 if (stripOffset < 0 || (long)stripOffset + stripByteCount > tiff.Length)
                     throw new InvalidDataException(
@@ -787,6 +821,12 @@ public static class TiffImageLoader
     /// </summary>
     private static long[] ReadTagArray(byte[] data, int entryBase, ushort type, long count, bool le)
     {
+        // Reject implausibly large counts before allocating — an array cannot have more
+        // elements than the source file has bytes.
+        if (count < 0 || count > data.Length)
+            throw new InvalidDataException(
+                $"TIFF tag array element count {count} is implausible.");
+
         var typeSize = type < TypeSizes.Length ? TypeSizes[type] : 1;
         var totalBytes = typeSize * count;
         var result = new long[count];
@@ -837,6 +877,20 @@ public static class TiffImageLoader
         for (var i = 0; i < count; i++)
             result[i] = ReadU16(data, offset + i * 2, le);
         return result;
+    }
+
+    // ── Strip-value cast helper ───────────────────────────────────────────────
+
+    /// <summary>
+    /// Validates that a long value from a StripOffsets or StripByteCounts array can safely
+    /// be cast to int (i.e. it is in [0, int.MaxValue]). Throws InvalidDataException otherwise.
+    /// </summary>
+    private static int ValidateTiffLong(long value, string label)
+    {
+        if (value < 0 || value > int.MaxValue)
+            throw new InvalidDataException(
+                $"TIFF {label} value {value} is out of range [0, {int.MaxValue}].");
+        return (int)value;
     }
 
     // ── Endian-aware primitive readers ───────────────────────────────────────
