@@ -23,6 +23,8 @@ public sealed class PdfName : PdfObject, IEquatable<PdfName>
     public static readonly PdfName FlateDecode = new("FlateDecode");
     /// <summary>The <c>/DCTDecode</c> name.</summary>
     public static readonly PdfName DCTDecode = new("DCTDecode");
+    /// <summary>The <c>/CCITTFaxDecode</c> name.</summary>
+    public static readonly PdfName CCITTFaxDecode = new("CCITTFaxDecode");
     /// <summary>The <c>/Page</c> name.</summary>
     public static readonly PdfName Page = new("Page");
     /// <summary>The <c>/Pages</c> name.</summary>

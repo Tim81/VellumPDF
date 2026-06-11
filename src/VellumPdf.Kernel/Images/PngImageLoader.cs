@@ -12,14 +12,24 @@ namespace VellumPdf.Images;
 ///
 /// Supports colour types: 0 (Greyscale), 2 (RGB), 3 (Indexed→RGB), 4 (Greyscale+Alpha),
 /// 6 (RGB+Alpha). Bit depths: 1, 2, 4 (greyscale and indexed; unpacked to 8-bit),
-/// 8, and 16 (16-bit is downsampled to 8).
+/// 8, and 16 (preserved at 16-bit or downsampled to 8 per ImageLoadOptions).
+/// Interlace methods: 0 (None) and 1 (Adam7).
 /// </summary>
 public static class PngImageLoader
 {
     private const ulong PngSignature = 0x89504E470D0A1A0A;
 
+    // Adam7 pass parameters: xStart, yStart, xStep, yStep for passes 0..6
+    private static readonly int[] Adam7XStart = [0, 4, 0, 2, 0, 1, 0];
+    private static readonly int[] Adam7YStart = [0, 0, 4, 0, 2, 0, 1];
+    private static readonly int[] Adam7XStep = [8, 8, 4, 4, 2, 2, 1];
+    private static readonly int[] Adam7YStep = [8, 8, 8, 4, 4, 2, 2];
+
     /// <summary>Decodes PNG file bytes into a FlateDecode Image XObject (alpha becomes an /SMask).</summary>
-    public static PdfImageXObject Load(byte[] pngBytes)
+    public static PdfImageXObject Load(byte[] pngBytes) => Load(pngBytes, ImageLoadOptions.Default);
+
+    /// <summary>Decodes PNG file bytes into a FlateDecode Image XObject with the specified load options.</summary>
+    public static PdfImageXObject Load(byte[] pngBytes, ImageLoadOptions options)
     {
         ValidateSignature(pngBytes);
 
@@ -47,6 +57,8 @@ public static class PngImageLoader
             switch (type)
             {
                 case "IHDR":
+                    if (length != 13)
+                        throw new InvalidDataException($"PNG IHDR chunk length must be 13; found {length}.");
                     width = (int)ReadU32Be(pngBytes, pos + 8);
                     height = (int)ReadU32Be(pngBytes, pos + 12);
                     bitDepth = data[8];
@@ -73,42 +85,205 @@ public static class PngImageLoader
         }
     done:
 
-        if (interlaceMethod != 0)
-            throw new NotSupportedException("Interlaced PNG not supported.");
-
         // Reject hostile dimensions and out-of-range IHDR fields before allocating buffers.
         ImageLimits.ValidateDimensions("PNG", width, height);
         if (bitDepth is not (1 or 2 or 4 or 8 or 16))
             throw new InvalidDataException($"PNG has invalid bit depth {bitDepth}.");
         if (colorType is not (0 or 2 or 3 or 4 or 6))
             throw new InvalidDataException($"PNG has invalid colour type {colorType}.");
+        if (interlaceMethod is not (0 or 1))
+            throw new InvalidDataException($"PNG has invalid interlace method {interlaceMethod}.");
+
+        // Validate PNG-spec bit depth / colour type combinations.
+        // colorType 2 (RGB), 4 (Grey+Alpha), 6 (RGBA) require bitDepth 8 or 16.
+        // colorType 3 (Indexed) requires bitDepth 1, 2, 4, or 8 (not 16).
+        // colorType 0 (Greyscale) allows 1, 2, 4, 8, or 16.
+        if (colorType is 2 or 4 or 6 && bitDepth is not (8 or 16))
+            throw new InvalidDataException(
+                $"PNG colour type {colorType} requires bit depth 8 or 16; found {bitDepth}.");
+        if (colorType == 3 && bitDepth == 16)
+            throw new InvalidDataException(
+                "PNG colour type 3 (Indexed) does not support bit depth 16.");
 
         // ── Decompress IDAT ──
+        var samplesPerPixel = SamplesPerPixel(colorType);
         // Row stride is ceil(width * bitsPerSample / 8) bytes — handles sub-byte packing.
-        var bitsPerRow = (long)width * SamplesPerPixel(colorType) * bitDepth;
+        var bitsPerRow = (long)width * samplesPerPixel * bitDepth;
         var rowBytes = (int)((bitsPerRow + 7) / 8);
-        // For non-interlaced PNG the decompressed size is exactly height*(rowBytes+1) — each
-        // scanline carries a 1-byte filter tag. Cap inflation to that to defuse zlib bombs.
-        var expectedRaw = (long)height * (rowBytes + 1);
+
+        long expectedRaw;
+        if (interlaceMethod == 0)
+        {
+            // For non-interlaced PNG the decompressed size is exactly height*(rowBytes+1) — each
+            // scanline carries a 1-byte filter tag. Cap inflation to that to defuse zlib bombs.
+            expectedRaw = (long)height * (rowBytes + 1);
+        }
+        else
+        {
+            // For Adam7: sum over all 7 passes of (reducedRowBytes+1)*reducedHeight,
+            // counting only passes with at least 1 pixel.
+            expectedRaw = ComputeAdam7ExpectedRaw(width, height, colorType, bitDepth, samplesPerPixel);
+        }
+
         var compressed = Combine(idatData);
         var raw = Inflate(compressed, expectedRaw);
 
-        // Reject a stream that decompressed to fewer bytes than the dimensions require, so the
-        // scanline unfilter below fails cleanly instead of indexing past the buffer.
+        // Reject a stream that decompressed to fewer bytes than the dimensions require.
         if (raw.Length < expectedRaw)
             throw new InvalidDataException(
                 "PNG image data is truncated: fewer bytes than the declared dimensions require.");
 
         // ── Unfilter scanlines ──
-        var unfiltered = Unfilter(raw, width, height, colorType, bitDepth, rowBytes);
+        byte[] unfiltered;
+        if (interlaceMethod == 0)
+        {
+            unfiltered = Unfilter(raw, rowBytes, width, height, colorType, bitDepth);
+        }
+        else
+        {
+            unfiltered = DeinterlaceAdam7(raw, width, height, colorType, bitDepth, samplesPerPixel);
+        }
 
         // ── Extract colour and alpha planes ──
-        return BuildXObject(unfiltered, width, height, colorType, bitDepth, palette);
+        return BuildXObject(unfiltered, width, height, colorType, bitDepth, palette, options);
+    }
+
+    /// <summary>
+    /// Computes the expected total decompressed bytes for an Adam7-interlaced PNG.
+    /// This is the sum over all 7 passes of (reducedRowBytes + 1) * reducedHeight,
+    /// counting only passes that contain at least one pixel.
+    /// </summary>
+    private static long ComputeAdam7ExpectedRaw(
+        int width, int height, byte colorType, byte bitDepth, int samplesPerPixel)
+    {
+        long total = 0;
+        for (var pass = 0; pass < 7; pass++)
+        {
+            var rw = ReducedDimension(width, Adam7XStart[pass], Adam7XStep[pass]);
+            var rh = ReducedDimension(height, Adam7YStart[pass], Adam7YStep[pass]);
+            if (rw == 0 || rh == 0) continue;
+            var passRowBits = (long)rw * samplesPerPixel * bitDepth;
+            var passRowBytes = (int)((passRowBits + 7) / 8);
+            total += (long)(passRowBytes + 1) * rh;
+        }
+        return total;
+    }
+
+    /// <summary>
+    /// Computes the reduced dimension for one Adam7 pass axis.
+    /// reducedDim = ceil((fullDim - start) / step), or 0 if start >= fullDim.
+    /// </summary>
+    private static int ReducedDimension(int fullDim, int start, int step)
+    {
+        if (start >= fullDim) return 0;
+        return (fullDim - start + step - 1) / step;
+    }
+
+    /// <summary>
+    /// De-interlaces an Adam7-compressed stream into a full-raster byte array in the same
+    /// layout as non-interlaced output: packed rows of (width * samplesPerPixel * bitDepth)
+    /// bits each, stored in full-width rows without filter bytes.
+    ///
+    /// Strategy: build a full-raster byte array large enough for packed output, then for each
+    /// of the 7 passes, unfilter that pass's sub-image and scatter each sample bit-group into
+    /// the correct raster position. For sub-byte bit depths, we work at the sample level by
+    /// reading individual samples from the pass buffer and writing them into the full raster
+    /// using the same MSB-first bit packing as the non-interlaced path feeds to UnpackSubByte.
+    /// </summary>
+    private static byte[] DeinterlaceAdam7(
+        byte[] raw, int width, int height,
+        byte colorType, byte bitDepth, int samplesPerPixel)
+    {
+        // Full-raster row stride (packed, no filter bytes).
+        var bitsPerFullRow = (long)width * samplesPerPixel * bitDepth;
+        var fullRowBytes = (int)((bitsPerFullRow + 7) / 8);
+        var raster = new byte[height * fullRowBytes];
+
+        var rawOffset = 0;
+
+        for (var pass = 0; pass < 7; pass++)
+        {
+            var xStart = Adam7XStart[pass];
+            var yStart = Adam7YStart[pass];
+            var xStep = Adam7XStep[pass];
+            var yStep = Adam7YStep[pass];
+
+            var rw = ReducedDimension(width, xStart, xStep);
+            var rh = ReducedDimension(height, yStart, yStep);
+            if (rw == 0 || rh == 0) continue;
+
+            var passRowBits = (long)rw * samplesPerPixel * bitDepth;
+            var passRowBytes = (int)((passRowBits + 7) / 8);
+
+            // Slice the raw bytes for this pass and unfilter it.
+            var passRawLen = rh * (passRowBytes + 1);
+            var passRaw = raw.AsSpan(rawOffset, passRawLen).ToArray();
+            rawOffset += passRawLen;
+
+            var passPixels = Unfilter(passRaw, passRowBytes, rw, rh, colorType, bitDepth);
+
+            // Scatter pass pixels into the full raster.
+            if (bitDepth >= 8)
+            {
+                // Each sample is bytesPerSample bytes. Scatter sample groups (pixels) directly.
+                var bytesPerSample = bitDepth / 8;
+                var passBytesPerPixel = samplesPerPixel * bytesPerSample;
+                for (var row = 0; row < rh; row++)
+                {
+                    var fullRow = yStart + row * yStep;
+                    var passRowStart = row * rw * passBytesPerPixel;
+                    for (var col = 0; col < rw; col++)
+                    {
+                        var fullCol = xStart + col * xStep;
+                        var srcBase = passRowStart + col * passBytesPerPixel;
+                        var dstBase = fullRow * fullRowBytes + fullCol * passBytesPerPixel;
+                        for (var b = 0; b < passBytesPerPixel; b++)
+                            raster[dstBase + b] = passPixels[srcBase + b];
+                    }
+                }
+            }
+            else
+            {
+                // Sub-byte bit depths: read individual samples from pass and write into raster
+                // at the bit position corresponding to the scattered pixel column.
+                var bitMask = (1 << bitDepth) - 1;
+                for (var row = 0; row < rh; row++)
+                {
+                    var fullRow = yStart + row * yStep;
+                    var passRowStart = row * passRowBytes;
+                    var rasterRowStart = fullRow * fullRowBytes;
+
+                    for (var col = 0; col < rw; col++)
+                    {
+                        var fullCol = xStart + col * xStep;
+                        // Read each sample for this pixel from the pass buffer.
+                        for (var s = 0; s < samplesPerPixel; s++)
+                        {
+                            // Source bit position in the pass row.
+                            var srcBitPos = (col * samplesPerPixel + s) * bitDepth;
+                            var srcByteIdx = passRowStart + srcBitPos / 8;
+                            var srcBitOffset = 8 - bitDepth - (srcBitPos % 8);
+                            var sample = (passPixels[srcByteIdx] >> srcBitOffset) & bitMask;
+
+                            // Destination bit position in the full raster row.
+                            var dstBitPos = (fullCol * samplesPerPixel + s) * bitDepth;
+                            var dstByteIdx = rasterRowStart + dstBitPos / 8;
+                            var dstBitOffset = 8 - bitDepth - (dstBitPos % 8);
+                            // Clear the target bits, then OR in the sample.
+                            raster[dstByteIdx] &= (byte)~(bitMask << dstBitOffset);
+                            raster[dstByteIdx] |= (byte)(sample << dstBitOffset);
+                        }
+                    }
+                }
+            }
+        }
+
+        return raster;
     }
 
     private static PdfImageXObject BuildXObject(
         byte[] pixels, int w, int h,
-        byte colorType, byte bitDepth, byte[]? palette)
+        byte colorType, byte bitDepth, byte[]? palette, ImageLoadOptions options)
     {
         // ── Sub-byte unpacking (bit depths 1, 2, 4) ──────────────────────────
         // PNG packs multiple samples per byte for bit depths < 8.
@@ -129,19 +304,44 @@ public static class PngImageLoader
         if (colorType == 3)
         {
             // Indexed: expand palette (indices are now 1 byte each after unpack)
-            colorBytes = ExpandPalette(pixels, w, h, palette!);
+            if (palette is null)
+                throw new InvalidDataException("PNG indexed image (colour type 3) has no PLTE chunk.");
+            colorBytes = ExpandPalette(pixels, w, h, palette);
             return new PdfImageXObject(w, h, colorBytes, PdfName.FlateDecode, ImageColorSpace.DeviceRgb, 8);
         }
 
         if (hasAlpha)
         {
-            colorBytes = new byte[w * h * colorChannels];
-            alphaBytes = new byte[w * h];
-            for (int i = 0, src = 0; i < w * h; i++, src += channels)
+            if (bitDepth == 16)
             {
-                for (var c = 0; c < colorChannels; c++)
-                    colorBytes[i * colorChannels + c] = pixels[src + c];
-                alphaBytes[i] = pixels[src + colorChannels];
+                // 16-bit: each sample is 2 bytes. Split on 2-byte boundaries.
+                var colorSampleBytes = colorChannels * 2;
+                var alphaSampleBytes = 2;
+                var totalSampleBytes = channels * 2;
+                colorBytes = new byte[w * h * colorSampleBytes];
+                alphaBytes = new byte[w * h * alphaSampleBytes];
+                for (int i = 0, src = 0; i < w * h; i++, src += totalSampleBytes)
+                {
+                    for (var c = 0; c < colorChannels; c++)
+                    {
+                        colorBytes[i * colorSampleBytes + c * 2] = pixels[src + c * 2];
+                        colorBytes[i * colorSampleBytes + c * 2 + 1] = pixels[src + c * 2 + 1];
+                    }
+                    alphaBytes[i * 2] = pixels[src + colorChannels * 2];
+                    alphaBytes[i * 2 + 1] = pixels[src + colorChannels * 2 + 1];
+                }
+            }
+            else
+            {
+                // 8-bit (or sub-byte unpacked to 8): each sample is 1 byte.
+                colorBytes = new byte[w * h * colorChannels];
+                alphaBytes = new byte[w * h];
+                for (int i = 0, src = 0; i < w * h; i++, src += channels)
+                {
+                    for (var c = 0; c < colorChannels; c++)
+                        colorBytes[i * colorChannels + c] = pixels[src + c];
+                    alphaBytes[i] = pixels[src + colorChannels];
+                }
             }
         }
         else
@@ -149,11 +349,30 @@ public static class PngImageLoader
             colorBytes = pixels;
         }
 
-        // Downsample 16-bit to 8-bit
+        // Downsample 16-bit to 8-bit only when ReduceToEight is requested.
+        int bitsPerComponent;
+        int sMaskBitsPerComponent;
         if (bitDepth == 16)
         {
-            colorBytes = Downsample16(colorBytes);
-            if (alphaBytes is not null) alphaBytes = Downsample16(alphaBytes);
+            if (options.BitDepth == ImageBitDepth.ReduceToEight)
+            {
+                colorBytes = Downsample16(colorBytes);
+                if (alphaBytes is not null) alphaBytes = Downsample16(alphaBytes);
+                bitsPerComponent = 8;
+                sMaskBitsPerComponent = 8;
+            }
+            else
+            {
+                // Preserve: keep 16-bit bytes as-is. PNG stores samples big-endian,
+                // which matches PDF's expected byte order — no swap needed.
+                bitsPerComponent = 16;
+                sMaskBitsPerComponent = 16;
+            }
+        }
+        else
+        {
+            bitsPerComponent = 8;
+            sMaskBitsPerComponent = 8;
         }
 
         var cs = colorChannels == 1 ? ImageColorSpace.DeviceGray : ImageColorSpace.DeviceRgb;
@@ -162,7 +381,7 @@ public static class PngImageLoader
         if (alphaBytes is not null)
             sMask = new PdfStream(alphaBytes); // grayscale SMask; will compress via FlateDecode
 
-        return new PdfImageXObject(w, h, colorBytes, PdfName.FlateDecode, cs, 8, sMask);
+        return new PdfImageXObject(w, h, colorBytes, PdfName.FlateDecode, cs, bitsPerComponent, sMask, sMaskBitsPerComponent);
     }
 
     /// <summary>
@@ -205,9 +424,14 @@ public static class PngImageLoader
         return result;
     }
 
+    /// <summary>
+    /// Applies PNG filter reconstruction to a raw filtered byte stream.
+    /// <paramref name="raw"/> contains rows of (1 filter byte + rowBytes data bytes).
+    /// Returns a flat array of height * rowBytes unfiltered bytes.
+    /// </summary>
     private static byte[] Unfilter(
-        byte[] raw, int width, int height,
-        byte colorType, byte bitDepth, int rowBytes)
+        byte[] raw, int rowBytes, int width, int height,
+        byte colorType, byte bitDepth)
     {
         var bpp = Math.Max(1, (int)Math.Ceiling(BytesPerPixel(colorType, bitDepth)));
         var stride = rowBytes;
@@ -248,6 +472,8 @@ public static class PngImageLoader
                         dst[x] = (byte)(dst[x] + PaethPredictor(a, b, c));
                     }
                     break;
+                default:
+                    throw new InvalidDataException($"PNG row {y}: unsupported filter type {filterType}.");
             }
             dst.CopyTo(prev.AsSpan());
         }
@@ -265,10 +491,16 @@ public static class PngImageLoader
 
     private static byte[] ExpandPalette(byte[] pixels, int w, int h, byte[] palette)
     {
+        if (palette.Length % 3 != 0 || palette.Length < 3)
+            throw new InvalidDataException(
+                $"PNG PLTE chunk length {palette.Length} is not a multiple of 3 or is empty.");
         var result = new byte[w * h * 3];
         for (var i = 0; i < w * h; i++)
         {
             var idx = pixels[i] * 3;
+            if (idx + 2 >= palette.Length)
+                throw new InvalidDataException(
+                    $"PNG palette index {pixels[i]} out of range for {palette.Length / 3}-entry PLTE.");
             result[i * 3] = palette[idx];
             result[i * 3 + 1] = palette[idx + 1];
             result[i * 3 + 2] = palette[idx + 2];
@@ -325,8 +557,8 @@ public static class PngImageLoader
         ((uint)data[offset + 2] << 8) | data[offset + 3];
 
     private static string ReadTag(byte[] data, int offset) =>
-        new string([(char)data[offset], (char)data[offset+1],
-                    (char)data[offset+2], (char)data[offset+3]]);
+        new string([(char)data[offset], (char)data[offset + 1],
+                    (char)data[offset + 2], (char)data[offset + 3]]);
 
     private static void ValidateSignature(byte[] data)
     {

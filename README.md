@@ -134,7 +134,7 @@ oracles — a missing tool fails the build, so the gates can never silently skip
 | Area | Notes |
 | --- | --- |
 | In-process preflight | `VellumPdf.Conformance` PDF/A and PDF/UA validator package. |
-| Image codecs | JBIG2, JPEG 2000, and CCITT Group 3/4 decoders. |
+| Image codecs | JBIG2 and JPEG 2000 decoders, and CCITT Group 3 (Group 4 is supported). |
 | Linearization | "Fast web view" object ordering. |
 | Signature LTV | Long-term validation data (OCSP/CRL) for archival PAdES. |
 | Barcodes | The `VellumPdf.Barcodes` package. |

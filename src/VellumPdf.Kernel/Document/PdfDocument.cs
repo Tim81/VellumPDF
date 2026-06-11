@@ -527,7 +527,7 @@ public sealed class PdfDocument : IDisposable
                             .Set(new PdfName("Width"), new PdfInteger(img.Width))
                             .Set(new PdfName("Height"), new PdfInteger(img.Height))
                             .Set(new PdfName("ColorSpace"), new PdfName("DeviceGray"))
-                            .Set(new PdfName("BitsPerComponent"), new PdfInteger(8));
+                            .Set(new PdfName("BitsPerComponent"), new PdfInteger(img.SMaskBitsPerComponent));
                         registry.SetValue(sMaskObjRef, sMaskStream);
                         sMaskRef = sMaskObjRef;
                     }
@@ -849,7 +849,7 @@ public sealed class PdfDocument : IDisposable
                             .Set(new PdfName("Width"), new PdfInteger(img.Width))
                             .Set(new PdfName("Height"), new PdfInteger(img.Height))
                             .Set(new PdfName("ColorSpace"), new PdfName("DeviceGray"))
-                            .Set(new PdfName("BitsPerComponent"), new PdfInteger(8));
+                            .Set(new PdfName("BitsPerComponent"), new PdfInteger(img.SMaskBitsPerComponent));
                         registry.SetValue(sMaskObjRef, sMaskStream);
                         sMaskRef = sMaskObjRef;
                     }
