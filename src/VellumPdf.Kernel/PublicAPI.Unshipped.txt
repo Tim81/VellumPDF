@@ -2,9 +2,14 @@
 VellumPdf.Images.ImageBitDepth
 VellumPdf.Images.ImageBitDepth.Preserve = 0 -> VellumPdf.Images.ImageBitDepth
 VellumPdf.Images.ImageBitDepth.ReduceToEight = 1 -> VellumPdf.Images.ImageBitDepth
+VellumPdf.Images.ImageDecodeMode
+VellumPdf.Images.ImageDecodeMode.Passthrough = 0 -> VellumPdf.Images.ImageDecodeMode
+VellumPdf.Images.ImageDecodeMode.DecodeToRaster = 1 -> VellumPdf.Images.ImageDecodeMode
 VellumPdf.Images.ImageLoadOptions
 VellumPdf.Images.ImageLoadOptions.BitDepth.get -> VellumPdf.Images.ImageBitDepth
 VellumPdf.Images.ImageLoadOptions.BitDepth.init -> void
+VellumPdf.Images.ImageLoadOptions.DecodeMode.get -> VellumPdf.Images.ImageDecodeMode
+VellumPdf.Images.ImageLoadOptions.DecodeMode.init -> void
 VellumPdf.Images.ImageLoadOptions.ImageLoadOptions() -> void
 VellumPdf.Images.ImageLoadOptions.Equals(VellumPdf.Images.ImageLoadOptions? other) -> bool
 override VellumPdf.Images.ImageLoadOptions.Equals(object? obj) -> bool
@@ -15,7 +20,16 @@ static VellumPdf.Images.ImageLoadOptions.operator ==(VellumPdf.Images.ImageLoadO
 static VellumPdf.Images.ImageLoadOptions.operator !=(VellumPdf.Images.ImageLoadOptions? left, VellumPdf.Images.ImageLoadOptions? right) -> bool
 static VellumPdf.Images.ImageLoadOptions.Default.get -> VellumPdf.Images.ImageLoadOptions!
 static readonly VellumPdf.Core.PdfName.CCITTFaxDecode -> VellumPdf.Core.PdfName!
+static readonly VellumPdf.Core.PdfName.JBIG2Decode -> VellumPdf.Core.PdfName!
+static readonly VellumPdf.Core.PdfName.JPXDecode -> VellumPdf.Core.PdfName!
 static VellumPdf.Images.PngImageLoader.Load(byte[]! pngBytes, VellumPdf.Images.ImageLoadOptions! options) -> VellumPdf.Images.PdfImageXObject!
 static VellumPdf.Images.TiffImageLoader.Load(byte[]! tiff, VellumPdf.Images.ImageLoadOptions! options) -> VellumPdf.Images.PdfImageXObject!
 VellumPdf.Images.CcittImageLoader
-static VellumPdf.Images.CcittImageLoader.Load(byte[]! ccittData, int columns, int rows, int k = -1, bool blackIs1 = false, bool encodedByteAlign = false) -> VellumPdf.Images.PdfImageXObject!
+static VellumPdf.Images.CcittImageLoader.Load(byte[]! ccittData, int columns, int rows, int k = -1, bool blackIs1 = false, bool encodedByteAlign = false, bool endOfLine = false) -> VellumPdf.Images.PdfImageXObject!
+static VellumPdf.Images.CcittImageLoader.Load(byte[]! ccittData, int columns, int rows, VellumPdf.Images.ImageLoadOptions! options) -> VellumPdf.Images.PdfImageXObject!
+VellumPdf.Images.Jbig2ImageLoader
+static VellumPdf.Images.Jbig2ImageLoader.Load(byte[]! jbig2) -> VellumPdf.Images.PdfImageXObject!
+static VellumPdf.Images.Jbig2ImageLoader.Load(byte[]! jbig2, VellumPdf.Images.ImageLoadOptions! options) -> VellumPdf.Images.PdfImageXObject!
+VellumPdf.Images.JpxImageLoader
+static VellumPdf.Images.JpxImageLoader.Load(byte[]! jpx) -> VellumPdf.Images.PdfImageXObject!
+static VellumPdf.Images.JpxImageLoader.Load(byte[]! jpx, VellumPdf.Images.ImageLoadOptions! options) -> VellumPdf.Images.PdfImageXObject!

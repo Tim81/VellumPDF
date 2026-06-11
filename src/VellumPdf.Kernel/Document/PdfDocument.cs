@@ -532,8 +532,17 @@ public sealed class PdfDocument : IDisposable
                         sMaskRef = sMaskObjRef;
                     }
 
+                    // Allocate JBIG2Globals side-stream (if any) so its ref is known.
+                    PdfIndirectReference? jbig2GlobalsRef = null;
+                    if (img.Jbig2Globals is not null)
+                    {
+                        var globalsObjRef = registry.Reserve();
+                        registry.SetValue(globalsObjRef, new PdfStream(img.Jbig2Globals));
+                        jbig2GlobalsRef = globalsObjRef;
+                    }
+
                     imgObjRef = registry.Reserve();
-                    registry.SetValue(imgObjRef, img.BuildStreamWithSMask(sMaskRef));
+                    registry.SetValue(imgObjRef, img.BuildStreamWithSMaskAndJbig2Globals(sMaskRef, jbig2GlobalsRef));
                     imageRefs[img] = imgObjRef;
                 }
                 page.RegisterXObject(name, imgObjRef);
@@ -853,8 +862,18 @@ public sealed class PdfDocument : IDisposable
                         registry.SetValue(sMaskObjRef, sMaskStream);
                         sMaskRef = sMaskObjRef;
                     }
+
+                    // Allocate JBIG2Globals side-stream (if any) so its ref is known.
+                    PdfIndirectReference? jbig2GlobalsRef = null;
+                    if (img.Jbig2Globals is not null)
+                    {
+                        var globalsObjRef = registry.Reserve();
+                        registry.SetValue(globalsObjRef, new PdfStream(img.Jbig2Globals));
+                        jbig2GlobalsRef = globalsObjRef;
+                    }
+
                     imgObjRef = registry.Reserve();
-                    registry.SetValue(imgObjRef, img.BuildStreamWithSMask(sMaskRef));
+                    registry.SetValue(imgObjRef, img.BuildStreamWithSMaskAndJbig2Globals(sMaskRef, jbig2GlobalsRef));
                     imageRefs[img] = imgObjRef;
                 }
                 page.RegisterXObject(name, imgObjRef);

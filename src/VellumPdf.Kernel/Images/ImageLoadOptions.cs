@@ -23,6 +23,29 @@ public enum ImageBitDepth
 }
 
 /// <summary>
+/// Controls how a compressed source codestream (CCITT, JBIG2, JPEG 2000) is mapped
+/// into a PDF image XObject.
+/// </summary>
+public enum ImageDecodeMode
+{
+    /// <summary>
+    /// Embed the source codestream verbatim using the matching PDF-native filter
+    /// (<c>/CCITTFaxDecode</c>, <c>/JBIG2Decode</c>, <c>/JPXDecode</c>); the PDF viewer
+    /// decodes it at render time. This is the default — it is lossless and preserves the
+    /// original compression. Quality is preferred over in-process decoding.
+    /// </summary>
+    Passthrough,
+
+    /// <summary>
+    /// Decode the source codestream to raster pixels in-process and re-encode with
+    /// <c>/FlateDecode</c>. Useful when the consumer needs a self-contained pixel image
+    /// rather than relying on the viewer's codec support. May not be supported for every
+    /// codec variant; unsupported variants throw <see cref="System.NotSupportedException"/>.
+    /// </summary>
+    DecodeToRaster,
+}
+
+/// <summary>
 /// Options passed to image loader methods to control how the source image
 /// is mapped into a PDF image XObject.
 /// </summary>
@@ -35,6 +58,14 @@ public sealed record ImageLoadOptions
     /// </summary>
     public ImageBitDepth BitDepth { get; init; } = ImageBitDepth.Preserve;
 
-    /// <summary>The default options instance (bit depth = Preserve).</summary>
+    /// <summary>
+    /// Controls whether a compressed source codestream is passed through verbatim or
+    /// decoded to raster. Defaults to <see cref="ImageDecodeMode.Passthrough"/> (lossless,
+    /// viewer-decoded). Set to <see cref="ImageDecodeMode.DecodeToRaster"/> to decode
+    /// in-process and re-encode as <c>/FlateDecode</c>.
+    /// </summary>
+    public ImageDecodeMode DecodeMode { get; init; } = ImageDecodeMode.Passthrough;
+
+    /// <summary>The default options instance (bit depth = Preserve, decode mode = Passthrough).</summary>
     public static ImageLoadOptions Default { get; } = new();
 }
