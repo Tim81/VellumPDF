@@ -7,7 +7,8 @@ namespace VellumPdf.Images;
 
 /// <summary>
 /// Builds a PDF Image XObject dictionary + stream.
-/// Supports JPEG (DCTDecode passthrough) and PNG (FlateDecode decode).
+/// Supports JPEG (DCTDecode passthrough), CCITTFaxDecode (passthrough),
+/// and raw pixel data (FlateDecode).
 /// </summary>
 public sealed class PdfImageXObject
 {
@@ -20,11 +21,18 @@ public sealed class PdfImageXObject
     private readonly PdfName _filter;
     private readonly ImageColorSpace _colorSpace;
     private readonly int _bitsPerComponent;
-    private readonly PdfStream? _sMask; // alpha channel for PNG with transparency
+    private readonly PdfStream? _sMask;
+    private readonly int _sMaskBitsPerComponent;
+    private readonly PdfDictionary? _decodeParms;
+
+    // When true, the stream bytes are passed verbatim (pre-compressed by the
+    // encoder named in _filter). When false, PdfStream applies FlateDecode.
+    private readonly bool _passthrough;
 
     internal PdfImageXObject(
         int width, int height, byte[] streamData, PdfName filter,
-        ImageColorSpace colorSpace, int bitsPerComponent, PdfStream? sMask = null)
+        ImageColorSpace colorSpace, int bitsPerComponent, PdfStream? sMask = null,
+        int sMaskBitsPerComponent = 8, PdfDictionary? decodeParms = null)
     {
         Width = width;
         Height = height;
@@ -33,21 +41,32 @@ public sealed class PdfImageXObject
         _colorSpace = colorSpace;
         _bitsPerComponent = bitsPerComponent;
         _sMask = sMask;
+        _sMaskBitsPerComponent = sMaskBitsPerComponent;
+        _decodeParms = decodeParms;
+
+        // Passthrough: any filter that is not the implicit-FlateDecode sentinel.
+        // Loaders pass PdfName.FlateDecode when the bytes are raw pixels that
+        // PdfStream should compress. All other named filters mean the bytes are
+        // already encoded and must be written verbatim.
+        _passthrough = !filter.Equals(PdfName.FlateDecode);
     }
 
     /// <summary>The soft-mask (alpha channel) stream, or <see langword="null"/> when the image is opaque.</summary>
     public PdfStream? SMask => _sMask;
 
+    /// <summary>
+    /// The bit depth that the SMask stream was built with. Used by <see cref="Document.PdfDocument"/>
+    /// when wiring the SMask image dictionary so that high-bit-depth alpha channels are
+    /// emitted at the correct <c>BitsPerComponent</c> rather than silently downsampled to 8.
+    /// </summary>
+    internal int SMaskBitsPerComponent => _sMaskBitsPerComponent;
+
     /// <summary>Builds the Image XObject as a PDF stream with inline data.</summary>
     public PdfStream BuildStream()
     {
-        // For DCTDecode (JPEG), we pass raw bytes directly — no re-compression.
-        // For other filters, PdfStream re-compresses with FlateDecode.
-        // We bypass PdfStream's compression for JPEG by using a raw-write path.
-        if (_filter == PdfName.DCTDecode)
-            return BuildJpegStream();
+        if (_passthrough)
+            return BuildPassthroughStream(sMaskRef: null);
 
-        // PNG data is already in BGR channel bytes; PdfStream compresses it.
         var stream = new PdfStream(_streamData);
         SetImageDict(stream.Dictionary, sMaskRef: null);
         return stream;
@@ -56,23 +75,19 @@ public sealed class PdfImageXObject
     /// <summary>Builds the Image XObject stream, wiring <paramref name="sMaskRef"/> as the /SMask reference when supplied.</summary>
     public PdfStream BuildStreamWithSMask(PdfIndirectReference? sMaskRef)
     {
-        if (_filter == PdfName.DCTDecode)
-        {
-            var s = BuildJpegStream();
-            if (sMaskRef is not null) s.Dictionary.Set(new PdfName("SMask"), sMaskRef);
-            return s;
-        }
-        var stream2 = new PdfStream(_streamData);
-        SetImageDict(stream2.Dictionary, sMaskRef);
-        return stream2;
+        if (_passthrough)
+            return BuildPassthroughStream(sMaskRef);
+
+        var stream = new PdfStream(_streamData);
+        SetImageDict(stream.Dictionary, sMaskRef);
+        return stream;
     }
 
-    private PdfStream BuildJpegStream()
+    private PdfStream BuildPassthroughStream(PdfIndirectReference? sMaskRef)
     {
-        // Wrap raw JPEG bytes in a stream that skips FlateDecode re-compression.
-        // We use a helper that writes the stream with the DCTDecode filter directly.
+        // Write raw bytes verbatim with the named filter (DCTDecode, CCITTFaxDecode, …).
         var stream = new RawPdfStream(_streamData, _filter);
-        SetImageDict(stream.Dictionary, sMaskRef: null);
+        SetImageDict(stream.Dictionary, sMaskRef);
         return stream;
     }
 
@@ -84,6 +99,9 @@ public sealed class PdfImageXObject
          .Set(new PdfName("Height"), new PdfInteger(Height))
          .Set(new PdfName("ColorSpace"), ColorSpaceName())
          .Set(new PdfName("BitsPerComponent"), new PdfInteger(_bitsPerComponent));
+
+        if (_decodeParms is not null)
+            d.Set(new PdfName("DecodeParms"), _decodeParms);
 
         if (sMaskRef is not null)
             d.Set(new PdfName("SMask"), sMaskRef);
