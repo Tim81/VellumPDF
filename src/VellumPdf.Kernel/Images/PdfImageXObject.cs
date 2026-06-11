@@ -136,9 +136,9 @@ public sealed class PdfImageXObject
 
         if (_decodeParms is not null || jbig2GlobalsRef is not null)
         {
-            // When /JBIG2Globals is needed we always have a _decodeParms dict from the loader.
-            // Clone it (or create a new one) to add the indirect reference without mutating
-            // the original so the XObject remains reusable if registered more than once.
+            // Loaders hand us a fresh per-image /DecodeParms dictionary and PdfDocument builds
+            // each image exactly once, so adding the /JBIG2Globals indirect reference in place is
+            // safe. (For a JBIG2 image with globals, _decodeParms is always non-null.)
             var dp = _decodeParms ?? new PdfDictionary();
             if (jbig2GlobalsRef is not null)
                 dp.Set(new PdfName("JBIG2Globals"), jbig2GlobalsRef);

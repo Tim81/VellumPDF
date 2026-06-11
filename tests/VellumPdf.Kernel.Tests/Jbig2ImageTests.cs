@@ -125,6 +125,31 @@ public sealed class Jbig2ImageTests
         return seg;
     }
 
+    /// <summary>
+    /// Builds one JBIG2 segment that refers to a single other segment. The referred-to
+    /// count is encoded in the TOP 3 bits of the count byte (T.88 §7.2.4); a segment number
+    /// ≤ 256 uses 1-byte referred-to entries (§7.2.5).
+    /// </summary>
+    private static byte[] BuildSegmentWithRef(
+        int segNumber, int type, int pageAssociation, int referredSegNumber, byte[] data)
+    {
+        var seg = new byte[4 + 1 + 1 + 1 + 1 + 1 + 4 + data.Length];
+        var pos = 0;
+        WriteInt32(seg, pos, segNumber); pos += 4;
+        // flags: type in bits 0-5, pageAssocSize=0 (1-byte page assoc).
+        seg[pos++] = (byte)(type & 0x3F);
+        // refCountByte: count = 1 in the top 3 bits (0x20); retention flags in low 5 bits = 0.
+        seg[pos++] = 0x20;
+        // One 1-byte referred-to segment number.
+        seg[pos++] = (byte)referredSegNumber;
+        // pageAssociation: 1 byte.
+        seg[pos++] = (byte)pageAssociation;
+        // dataLen: 4 bytes.
+        WriteInt32(seg, pos, data.Length); pos += 4;
+        Array.Copy(data, 0, seg, pos, data.Length);
+        return seg;
+    }
+
     private static void WriteInt32(byte[] buf, int offset, int value)
     {
         buf[offset] = (byte)(value >> 24);
@@ -223,6 +248,32 @@ public sealed class Jbig2ImageTests
         // The stub symDict has 8 bytes of data; the total segment size is header (10) + 8 = 18 bytes.
         Assert.NotNull(img.Jbig2Globals);
         Assert.True(img.Jbig2Globals!.Length >= 8, "Globals should contain the symbol-dictionary segment.");
+    }
+
+    [Fact]
+    public void Load_SegmentWithReferredToSegments_ParsesHeaderAndPartitionsCorrectly()
+    {
+        // Regression for the referred-to-count encoding (T.88 §7.2.4): the count lives in
+        // the TOP 3 bits of the count byte. A text region (type 6) on page 1 refers to the
+        // global symbol dictionary (segment 0). If the count byte (0x20) is misread, the
+        // 1-byte referred-to segment number is not skipped and the rest of the header — and
+        // every following segment — is misparsed, so the global partition is wrong.
+        byte[] header = [0x97, 0x4A, 0x42, 0x32, 0x0D, 0x0A, 0x1A, 0x0A];
+        var symDictSeg = BuildSegment(segNumber: 0, type: 0, pageAssociation: 0, new byte[8]);
+        var pageInfoSeg = BuildSegment(segNumber: 1, type: 48, pageAssociation: 1, BuildPageInfoSegmentData(100, 80));
+        var textRegionSeg = BuildSegmentWithRef(
+            segNumber: 2, type: 6, pageAssociation: 1, referredSegNumber: 0, new byte[20]);
+        var eofSeg = BuildSegment(segNumber: 3, type: 51, pageAssociation: 0, []);
+        byte[] jbig2 = [.. header, .. symDictSeg, .. pageInfoSeg, .. textRegionSeg, .. eofSeg];
+
+        var img = Jbig2ImageLoader.Load(jbig2);
+
+        Assert.Equal(100, img.Width);
+        Assert.Equal(80, img.Height);
+        // Globals must be exactly the symbol-dictionary segment: header (11) + 8 data = 19 bytes.
+        // The page-1 text region must stay on the page stream, not leak into globals.
+        Assert.NotNull(img.Jbig2Globals);
+        Assert.Equal(19, img.Jbig2Globals!.Length);
     }
 
     [Fact]

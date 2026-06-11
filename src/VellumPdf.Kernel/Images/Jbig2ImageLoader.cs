@@ -178,23 +178,24 @@ public static class Jbig2ImageLoader
             var pageAssocSizeFlag = (flags >> 6) & 1; // 0 = 1-byte, 1 = 4-byte page assoc
             pos++;
 
-            // §7.2.3 Referred-to segment count and retention flags.
+            // §7.2.4 Referred-to segment count and retention flags.
+            // The count is held in the TOP 3 bits of the first byte (the low 5 bits are
+            // retention flags). When those top bits are all 1 (value 7) the field is the
+            // long form: a 4-byte big-endian value whose low 29 bits hold the count,
+            // followed by ceil((count + 1) / 8) retention-flag bytes.
             if (pos >= data.Length)
                 throw new InvalidDataException("JBIG2: truncated referred-to segment count.");
-            var refCountByte = data[pos];
-            pos++;
+            var refFlagByte = data[pos];
+            int refCount = (refFlagByte >> 5) & 0x7;
 
-            int refCount;
-            if ((refCountByte & 0x1F) == 0x1F)
+            if (refCount == 7)
             {
-                // Extended form: next 4 bytes hold the actual count.
+                // Long form: the count byte is the first of a 4-byte field.
                 if (pos + 4 > data.Length)
-                    throw new InvalidDataException("JBIG2: truncated referred-to segment count (extended).");
-                refCount = ReadInt32(data, pos);
-                if (refCount < 0)
-                    throw new InvalidDataException("JBIG2: negative referred-to segment count.");
+                    throw new InvalidDataException("JBIG2: truncated referred-to segment count (long form).");
+                refCount = (int)(ReadUInt32(data, pos) & 0x1FFF_FFFF);
                 pos += 4;
-                // Skip retention flags: ceil((refCount + 1) / 8) bytes.
+                // Retention flags: ceil((refCount + 1) / 8) bytes.
                 var retentionBytes = (refCount + 8) / 8;
                 if (pos + retentionBytes > data.Length)
                     throw new InvalidDataException("JBIG2: truncated referred-to retention flags.");
@@ -202,18 +203,17 @@ public static class Jbig2ImageLoader
             }
             else
             {
-                refCount = refCountByte & 0x1F;
-                // The single count byte already contains the retention flags for ≤ 4 referred-to
-                // segments — no additional bytes needed.
+                // Short form: single byte (count in top 3 bits, retention flags in low 5 bits).
+                pos++;
             }
 
-            // §7.2.4 Referred-to segment numbers.
+            // §7.2.5 Referred-to segment numbers.
             // Each entry is 1, 2, or 4 bytes depending on the current segment number.
             int refEntryBytes = segNumber <= 256 ? 1 : segNumber <= 65536 ? 2 : 4;
-            var refSectionBytes = refCount * refEntryBytes;
-            if (refSectionBytes < 0 || pos + refSectionBytes > data.Length)
+            var refSectionBytes = (long)refCount * refEntryBytes;
+            if (pos + refSectionBytes > data.Length)
                 throw new InvalidDataException("JBIG2: truncated referred-to segment numbers.");
-            pos += refSectionBytes;
+            pos += (int)refSectionBytes;
 
             // §7.2.6 Segment page association.
             int pageAssociation;
