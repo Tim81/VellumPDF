@@ -10,15 +10,24 @@ namespace VellumPdf.Images;
 ///
 /// Supported:
 ///   • Byte order: II (little-endian) and MM (big-endian).
-///   • Compression: 1 (None/Uncompressed) and 32773 (PackBits RLE).
+///   • Compression: 1 (None/Uncompressed), 5 (LZW), 7 (new-style JPEG — single strip,
+///     DCTDecode passthrough), and 32773 (PackBits RLE).
 ///   • Photometric: 0 (WhiteIsZero greyscale — inverted), 1 (BlackIsZero greyscale),
 ///     2 (RGB), 3 (Palette/Indexed — ColorMap expanded to DeviceRGB).
-///   • BitsPerSample: 8. SamplesPerPixel: 1 (grey/palette), 3 (RGB), 4 (RGB+alpha → /SMask).
-///   • PlanarConfiguration: 1 (chunky) only.
+///   • BitsPerSample: 8 (all photometrics) and 16 (greyscale and RGB only).
+///   • SamplesPerPixel: 1 (grey/palette), 3 (RGB), 4 (RGB+alpha → /SMask).
+///   • PlanarConfiguration: 1 (chunky) and 2 (planar — reassembled to chunky).
 ///   • Multiple strips (StripOffsets / StripByteCounts / RowsPerStrip).
+///   • Horizontal differencing predictor (Predictor=2) for 8-bit and 16-bit samples.
+///   • 16-bit bit-depth: honour ImageLoadOptions.BitDepth (Preserve=16bpc; ReduceToEight=8bpc).
 ///
-/// Rejected (throws NotSupportedException): LZW (5), JPEG (6), and all other compression values;
-/// PlanarConfiguration 2 (planar); BitsPerSample other than 8; unsupported photometric values.
+/// Rejected (throws NotSupportedException):
+///   • Compression 4 (CCITT Group 4) and 6 (old-style JPEG) — pending/not implemented.
+///   • BitsPerSample other than 8 or 16; BitsPerSample=16 with palette photometric.
+///   • Compression 7 (new-style JPEG) with more than one strip.
+///   • Predictor=2 + BitsPerSample=16 is supported; other Predictor values are rejected.
+///   • Unsupported photometric values.
+///
 /// Throws InvalidDataException on truncated or structurally invalid data.
 /// </summary>
 public static class TiffImageLoader
@@ -43,11 +52,15 @@ public static class TiffImageLoader
 
     // Compression constants
     private const int CompressionNone = 1;
-    private const int CompressionPackBits = 32773;
     private const int CompressionLzw = 5;
+    private const int CompressionJpegNewStyle = 7;
+    private const int CompressionPackBits = 32773;
 
     /// <summary>Decodes baseline TIFF file bytes into a FlateDecode Image XObject.</summary>
-    public static PdfImageXObject Load(byte[] tiff)
+    public static PdfImageXObject Load(byte[] tiff) => Load(tiff, ImageLoadOptions.Default);
+
+    /// <summary>Decodes baseline TIFF file bytes into a FlateDecode Image XObject with the specified load options.</summary>
+    public static PdfImageXObject Load(byte[] tiff, ImageLoadOptions options)
     {
         if (tiff.Length < 8)
             throw new InvalidDataException("TIFF file too small to contain a valid header.");
@@ -152,20 +165,24 @@ public static class TiffImageLoader
 
         ImageLimits.ValidateDimensions("TIFF", width, height);
 
-        if (bitsPerSample != 8)
+        if (bitsPerSample != 8 && bitsPerSample != 16)
             throw new NotSupportedException(
-                $"Only 8-bit-per-sample TIFF is supported; found BitsPerSample={bitsPerSample}.");
+                $"Only 8-bit and 16-bit TIFF are supported; found BitsPerSample={bitsPerSample}.");
 
-        if (planarConfiguration != 1)
+        if (planarConfiguration != 1 && planarConfiguration != 2)
             throw new NotSupportedException(
-                $"Only chunky (PlanarConfiguration=1) TIFF is supported; found {planarConfiguration}.");
+                $"Only PlanarConfiguration 1 (chunky) or 2 (planar) TIFF is supported; found {planarConfiguration}.");
 
-        if (compression == CompressionLzw)
-            throw new NotSupportedException("LZW (Compression=5) TIFF is not supported.");
-
-        if (compression != CompressionNone && compression != CompressionPackBits)
+        if (compression == 4 || compression == 6)
             throw new NotSupportedException(
-                $"TIFF Compression={compression} is not supported. Supported: 1 (None), 32773 (PackBits).");
+                $"TIFF Compression={compression} is not supported " +
+                $"(4=CCITT Group 4 pending; 6=old-style JPEG not implemented).");
+
+        if (compression != CompressionNone && compression != CompressionPackBits &&
+            compression != CompressionLzw && compression != CompressionJpegNewStyle)
+            throw new NotSupportedException(
+                $"TIFF Compression={compression} is not supported. " +
+                $"Supported: 1 (None), 5 (LZW), 7 (new-style JPEG), 32773 (PackBits).");
 
         if (photometric is not (0 or 1 or 2 or 3))
             throw new NotSupportedException(
@@ -174,13 +191,14 @@ public static class TiffImageLoader
         if (photometric == 3 && colorMap is null)
             throw new InvalidDataException("TIFF Palette photometric requires a ColorMap tag.");
 
+        if (bitsPerSample == 16 && photometric == 3)
+            throw new NotSupportedException(
+                "TIFF palette (photometric=3) with BitsPerSample=16 is not supported.");
+
         if (stripOffsets is null || stripOffsets.Length == 0)
             throw new InvalidDataException("TIFF is missing StripOffsets.");
         if (stripByteCounts is null || stripByteCounts.Length == 0)
             throw new InvalidDataException("TIFF is missing StripByteCounts.");
-        if (stripOffsets.Length != stripByteCounts.Length)
-            throw new InvalidDataException(
-                $"TIFF StripOffsets count ({stripOffsets.Length}) != StripByteCounts count ({stripByteCounts.Length}).");
 
         // Clamp rowsPerStrip to avoid very large allocation
         if (rowsPerStrip <= 0)
@@ -188,51 +206,113 @@ public static class TiffImageLoader
         if (rowsPerStrip > height)
             rowsPerStrip = height;
 
+        // ── New-style JPEG (Compression=7): single-strip passthrough ─────────
+        if (compression == CompressionJpegNewStyle)
+        {
+            if (stripOffsets.Length != 1)
+                throw new NotSupportedException(
+                    "TIFF Compression=7 (new-style JPEG) is only supported for single-strip images.");
+            var jpegOffset = (int)stripOffsets[0];
+            var jpegLength = (int)stripByteCounts[0];
+            if (jpegOffset < 0 || (long)jpegOffset + jpegLength > tiff.Length)
+                throw new InvalidDataException(
+                    $"TIFF JPEG strip (offset={jpegOffset}, length={jpegLength}) extends beyond end of file.");
+            var jpegBytes = tiff[jpegOffset..(jpegOffset + jpegLength)];
+            return JpegImageLoader.Load(jpegBytes);
+        }
+
+        // After JPEG dispatch, validate strip count consistency.
+        if (stripOffsets.Length != stripByteCounts.Length)
+            throw new InvalidDataException(
+                $"TIFF StripOffsets count ({stripOffsets.Length}) != StripByteCounts count ({stripByteCounts.Length}).");
+
         // Determine colour samples per pixel (excluding extra alpha sample)
         int colorSamples = samplesPerPixel;
         bool hasAlpha = false;
-        if (samplesPerPixel == 4 && (photometric == 2))
+        if (samplesPerPixel == 4 && photometric == 2)
         {
             hasAlpha = true;
             colorSamples = 3;
         }
 
+        // Bytes per sample (1 for 8-bit, 2 for 16-bit)
+        int bytesPerSample = bitsPerSample == 16 ? 2 : 1;
+
         // ── Decode strips into a top-to-bottom pixel buffer ───────────────────
-        // bytesPerRow: for palette, 1 index per pixel; for grey, 1 sample; for RGB, 3; for RGBA, 4.
-        var bytesPerPixelRaw = samplesPerPixel; // raw bytes including extra samples
-        var rawRowBytes = width * bytesPerPixelRaw;
+        // For chunky (planar=1): strips contain all samples interleaved.
+        // For planar (planar=2): strips are organized as N planes, each plane
+        // containing all rows for one sample channel.
+        //
+        // rawRowBytes: bytes per row in the final chunky buffer.
+        var rawRowBytes = width * samplesPerPixel * bytesPerSample;
         var rawBuffer = new byte[(long)height * rawRowBytes];
 
+        if (planarConfiguration == 1)
+        {
+            // Chunky: standard strip-by-strip decode.
+            DecodeChunkyStrips(tiff, stripOffsets, stripByteCounts, compression, predictor,
+                width, height, samplesPerPixel, bytesPerSample, rawRowBytes,
+                (int)rowsPerStrip, rawBuffer);
+        }
+        else
+        {
+            // Planar (PlanarConfiguration=2): strips are arranged as N blocks of
+            // (stripsPerImage) strips, one block per sample plane.
+            // StripOffsets has (stripsPerImage * samplesPerPixel) entries:
+            //   plane 0 strips: indices 0..stripsPerImage-1
+            //   plane 1 strips: indices stripsPerImage..2*stripsPerImage-1
+            //   etc.
+            DecodePlanarStrips(tiff, stripOffsets, stripByteCounts, compression, predictor,
+                width, height, samplesPerPixel, bytesPerSample, rawRowBytes,
+                (int)rowsPerStrip, rawBuffer);
+        }
+
+        // ── Endian-normalize 16-bit samples ───────────────────────────────────
+        // PDF expects 16-bit samples big-endian. TIFF II stores them little-endian.
+        // When little-endian, byte-swap each 16-bit sample in rawBuffer.
+        if (bitsPerSample == 16 && littleEndian)
+            ByteSwap16Samples(rawBuffer);
+
+        // ── Build colour (and optional alpha) output ──────────────────────────
+        return photometric switch
+        {
+            0 or 1 => BuildGreyscale(rawBuffer, width, height, photometric == 0, bitsPerSample, options),
+            2 => BuildRgb(rawBuffer, width, height, hasAlpha, bitsPerSample, options),
+            3 => BuildPalette(rawBuffer, width, height, colorMap!),
+            _ => throw new NotSupportedException(
+                $"TIFF PhotometricInterpretation={photometric} is not supported.")
+        };
+    }
+
+    // ── Strip decode helpers ──────────────────────────────────────────────────
+
+    private static void DecodeChunkyStrips(
+        byte[] tiff,
+        long[] stripOffsets, long[] stripByteCounts,
+        int compression, int predictor,
+        int width, int height, int samplesPerPixel, int bytesPerSample, int rawRowBytes,
+        int rowsPerStrip, byte[] rawBuffer)
+    {
         var stripIndex = 0;
         var rowsDone = 0;
         while (rowsDone < height && stripIndex < stripOffsets.Length)
         {
             var stripOffset = (int)stripOffsets[stripIndex];
             var stripByteCount = (int)stripByteCounts[stripIndex];
+            var stripRowCount = Math.Min(rowsPerStrip, height - rowsDone);
+            var expectedStripBytes = stripRowCount * rawRowBytes;
 
             if (stripOffset < 0 || (long)stripOffset + stripByteCount > tiff.Length)
                 throw new InvalidDataException(
                     $"TIFF strip {stripIndex} data (offset={stripOffset}, length={stripByteCount}) extends beyond end of file.");
 
-            var stripRowCount = (int)Math.Min(rowsPerStrip, height - rowsDone);
-            var expectedStripBytes = stripRowCount * rawRowBytes;
+            var stripData = DecodeStrip(tiff, stripOffset, stripByteCount, compression, expectedStripBytes);
 
-            byte[] stripData;
-            if (compression == CompressionNone)
-            {
-                if (stripByteCount < expectedStripBytes)
-                    throw new InvalidDataException(
-                        $"TIFF strip {stripIndex} is too small ({stripByteCount} bytes; expected {expectedStripBytes}).");
-                stripData = tiff[stripOffset..(stripOffset + expectedStripBytes)];
-            }
-            else // PackBits
-            {
-                stripData = DecodePackBits(tiff, stripOffset, stripByteCount, expectedStripBytes);
-            }
-
-            // Apply horizontal predictor if set (rare but valid for uncompressed)
             if (predictor == 2)
-                ApplyHorizontalPredictor(stripData, stripRowCount, width, bytesPerPixelRaw);
+                ApplyHorizontalPredictor(stripData, stripRowCount, width, samplesPerPixel, bytesPerSample);
+            else if (predictor != 1)
+                throw new NotSupportedException(
+                    $"TIFF Predictor={predictor} is not supported. Supported: 1 (None), 2 (Horizontal Differencing).");
 
             Buffer.BlockCopy(stripData, 0, rawBuffer, rowsDone * rawRowBytes, expectedStripBytes);
             rowsDone += stripRowCount;
@@ -242,23 +322,144 @@ public static class TiffImageLoader
         if (rowsDone < height)
             throw new InvalidDataException(
                 $"TIFF has only {rowsDone} decoded rows but ImageLength={height}.");
+    }
 
-        // ── Build colour (and optional alpha) output ──────────────────────────
-        return photometric switch
+    private static void DecodePlanarStrips(
+        byte[] tiff,
+        long[] stripOffsets, long[] stripByteCounts,
+        int compression, int predictor,
+        int width, int height, int samplesPerPixel, int bytesPerSample, int rawRowBytes,
+        int rowsPerStrip, byte[] rawBuffer)
+    {
+        // Number of strips per plane.
+        var stripsPerImage = (height + rowsPerStrip - 1) / rowsPerStrip;
+
+        if (stripOffsets.Length != stripsPerImage * samplesPerPixel)
+            throw new InvalidDataException(
+                $"TIFF PlanarConfiguration=2: expected {stripsPerImage * samplesPerPixel} strips " +
+                $"({stripsPerImage} per plane × {samplesPerPixel} planes), " +
+                $"but StripOffsets has {stripOffsets.Length} entries.");
+
+        // Row bytes for a single sample plane.
+        var planeRowBytes = width * bytesPerSample;
+
+        // Plane buffer: decoded rows for a single sample across all height rows.
+        var planeBuffer = new byte[(long)height * planeRowBytes];
+
+        for (var plane = 0; plane < samplesPerPixel; plane++)
         {
-            0 or 1 => BuildGreyscale(rawBuffer, width, height, photometric == 0),
-            2 => BuildRgb(rawBuffer, width, height, hasAlpha),
-            3 => BuildPalette(rawBuffer, width, height, colorMap!),
-            _ => throw new NotSupportedException(
-                $"TIFF PhotometricInterpretation={photometric} is not supported.")
+            var rowsDone = 0;
+            for (var s = 0; s < stripsPerImage; s++)
+            {
+                var stripIndex = plane * stripsPerImage + s;
+                var stripOffset = (int)stripOffsets[stripIndex];
+                var stripByteCount = (int)stripByteCounts[stripIndex];
+                var stripRowCount = Math.Min(rowsPerStrip, height - rowsDone);
+                var expectedStripBytes = stripRowCount * planeRowBytes;
+
+                if (stripOffset < 0 || (long)stripOffset + stripByteCount > tiff.Length)
+                    throw new InvalidDataException(
+                        $"TIFF planar strip {stripIndex} data (offset={stripOffset}, length={stripByteCount}) extends beyond end of file.");
+
+                var stripData = DecodeStrip(tiff, stripOffset, stripByteCount, compression, expectedStripBytes);
+
+                if (predictor == 2)
+                    ApplyHorizontalPredictor(stripData, stripRowCount, width, 1, bytesPerSample);
+                else if (predictor != 1)
+                    throw new NotSupportedException(
+                        $"TIFF Predictor={predictor} is not supported. Supported: 1 (None), 2 (Horizontal Differencing).");
+
+                Buffer.BlockCopy(stripData, 0, planeBuffer, rowsDone * planeRowBytes, expectedStripBytes);
+                rowsDone += stripRowCount;
+            }
+
+            if (rowsDone < height)
+                throw new InvalidDataException(
+                    $"TIFF plane {plane} has only {rowsDone} decoded rows but ImageLength={height}.");
+
+            // Interleave plane bytes into rawBuffer (chunky layout).
+            // For each pixel, the plane byte(s) sit at position: pixelIndex * samplesPerPixel * bytesPerSample + plane * bytesPerSample
+            for (var row = 0; row < height; row++)
+            {
+                for (var col = 0; col < width; col++)
+                {
+                    var srcBase = row * planeRowBytes + col * bytesPerSample;
+                    var dstBase = row * rawRowBytes + (col * samplesPerPixel + plane) * bytesPerSample;
+                    for (var b = 0; b < bytesPerSample; b++)
+                        rawBuffer[dstBase + b] = planeBuffer[srcBase + b];
+                }
+            }
+        }
+    }
+
+    private static byte[] DecodeStrip(byte[] tiff, int stripOffset, int stripByteCount, int compression, int expectedBytes)
+    {
+        return compression switch
+        {
+            CompressionNone => DecodeStripNone(tiff, stripOffset, stripByteCount, expectedBytes),
+            CompressionPackBits => DecodePackBits(tiff, stripOffset, stripByteCount, expectedBytes),
+            CompressionLzw => TiffLzwDecoder.Decode(tiff, stripOffset, stripByteCount, expectedBytes),
+            _ => throw new NotSupportedException($"TIFF Compression={compression} is not supported.")
         };
+    }
+
+    private static byte[] DecodeStripNone(byte[] tiff, int stripOffset, int stripByteCount, int expectedBytes)
+    {
+        if (stripByteCount < expectedBytes)
+            throw new InvalidDataException(
+                $"TIFF uncompressed strip is too small ({stripByteCount} bytes; expected {expectedBytes}).");
+        return tiff[stripOffset..(stripOffset + expectedBytes)];
+    }
+
+    // ── Endian swap for 16-bit little-endian samples ─────────────────────────
+
+    private static void ByteSwap16Samples(byte[] data)
+    {
+        for (var i = 0; i < data.Length - 1; i += 2)
+        {
+            var tmp = data[i];
+            data[i] = data[i + 1];
+            data[i + 1] = tmp;
+        }
     }
 
     // ── Photometric output builders ───────────────────────────────────────────
 
     private static PdfImageXObject BuildGreyscale(
-        byte[] raw, int width, int height, bool invertWhiteIsZero)
+        byte[] raw, int width, int height, bool invertWhiteIsZero,
+        int bitsPerSample, ImageLoadOptions options)
     {
+        if (bitsPerSample == 16)
+        {
+            // 16-bit greyscale.
+            byte[] grey16;
+            if (invertWhiteIsZero)
+            {
+                grey16 = new byte[raw.Length];
+                // Each sample is 2 bytes big-endian (after endian normalization).
+                // Inversion: 0xFFFF - sample.
+                for (var i = 0; i < raw.Length; i += 2)
+                {
+                    int sample = (raw[i] << 8) | raw[i + 1];
+                    int inverted = 0xFFFF - sample;
+                    grey16[i] = (byte)(inverted >> 8);
+                    grey16[i + 1] = (byte)inverted;
+                }
+            }
+            else
+            {
+                grey16 = raw;
+            }
+
+            if (options.BitDepth == ImageBitDepth.ReduceToEight)
+            {
+                var grey8 = Downsample16(grey16);
+                return new PdfImageXObject(width, height, grey8, PdfName.FlateDecode, ImageColorSpace.DeviceGray, 8);
+            }
+            return new PdfImageXObject(width, height, grey16, PdfName.FlateDecode, ImageColorSpace.DeviceGray, 16);
+        }
+
+        // 8-bit greyscale (original path — unchanged).
         var grey = invertWhiteIsZero ? new byte[raw.Length] : raw;
         if (invertWhiteIsZero)
             for (var i = 0; i < raw.Length; i++)
@@ -266,26 +467,85 @@ public static class TiffImageLoader
         return new PdfImageXObject(width, height, grey, PdfName.FlateDecode, ImageColorSpace.DeviceGray, 8);
     }
 
-    private static PdfImageXObject BuildRgb(byte[] raw, int width, int height, bool hasAlpha)
+    private static PdfImageXObject BuildRgb(
+        byte[] raw, int width, int height, bool hasAlpha,
+        int bitsPerSample, ImageLoadOptions options)
     {
         var pixelCount = width * height;
+
+        if (bitsPerSample == 16)
+        {
+            // 16-bit RGB or RGBA.
+            int colorSampleBytes = 3 * 2; // 3 channels × 2 bytes
+            int alphaSampleBytes = 2;
+            int totalSampleBytes = (hasAlpha ? 4 : 3) * 2;
+
+            byte[] rgb16;
+            byte[]? alpha16 = null;
+            bool hasNonOpaqueAlpha = false;
+
+            if (hasAlpha)
+            {
+                rgb16 = new byte[pixelCount * colorSampleBytes];
+                alpha16 = new byte[pixelCount * alphaSampleBytes];
+                for (var i = 0; i < pixelCount; i++)
+                {
+                    // Copy RGB (3 channels × 2 bytes each)
+                    for (var c = 0; c < 3; c++)
+                    {
+                        rgb16[i * colorSampleBytes + c * 2] = raw[i * totalSampleBytes + c * 2];
+                        rgb16[i * colorSampleBytes + c * 2 + 1] = raw[i * totalSampleBytes + c * 2 + 1];
+                    }
+                    // Copy alpha (2 bytes)
+                    alpha16[i * 2] = raw[i * totalSampleBytes + 6];
+                    alpha16[i * 2 + 1] = raw[i * totalSampleBytes + 7];
+                    // "Fully opaque" check: big-endian 0xFFFF = bytes FF FF
+                    if (alpha16[i * 2] != 0xFF || alpha16[i * 2 + 1] != 0xFF)
+                        hasNonOpaqueAlpha = true;
+                }
+            }
+            else
+            {
+                rgb16 = raw;
+            }
+
+            if (options.BitDepth == ImageBitDepth.ReduceToEight)
+            {
+                var rgb8 = Downsample16(rgb16);
+                PdfStream? sMask8 = null;
+                if (hasAlpha && hasNonOpaqueAlpha)
+                    sMask8 = new PdfStream(Downsample16(alpha16!));
+                else if (hasAlpha && !hasNonOpaqueAlpha)
+                    sMask8 = null;
+                return new PdfImageXObject(width, height, rgb8, PdfName.FlateDecode, ImageColorSpace.DeviceRgb, 8, sMask8, 8);
+            }
+            else
+            {
+                PdfStream? sMask16 = null;
+                if (hasAlpha && hasNonOpaqueAlpha)
+                    sMask16 = new PdfStream(alpha16!);
+                return new PdfImageXObject(width, height, rgb16, PdfName.FlateDecode, ImageColorSpace.DeviceRgb, 16, sMask16, 16);
+            }
+        }
+
+        // 8-bit RGB (original path — unchanged).
         if (!hasAlpha)
             return new PdfImageXObject(width, height, raw, PdfName.FlateDecode, ImageColorSpace.DeviceRgb, 8);
 
-        var rgb = new byte[pixelCount * 3];
-        var alpha = new byte[pixelCount];
-        var hasNonOpaqueAlpha = false;
+        var rgbOut = new byte[pixelCount * 3];
+        var alphaOut = new byte[pixelCount];
+        var hasNonOpaque = false;
         for (var i = 0; i < pixelCount; i++)
         {
-            rgb[i * 3] = raw[i * 4];
-            rgb[i * 3 + 1] = raw[i * 4 + 1];
-            rgb[i * 3 + 2] = raw[i * 4 + 2];
+            rgbOut[i * 3] = raw[i * 4];
+            rgbOut[i * 3 + 1] = raw[i * 4 + 1];
+            rgbOut[i * 3 + 2] = raw[i * 4 + 2];
             var a = raw[i * 4 + 3];
-            alpha[i] = a;
-            if (a != 255) hasNonOpaqueAlpha = true;
+            alphaOut[i] = a;
+            if (a != 255) hasNonOpaque = true;
         }
-        PdfStream? sMask = hasNonOpaqueAlpha ? new PdfStream(alpha) : null;
-        return new PdfImageXObject(width, height, rgb, PdfName.FlateDecode, ImageColorSpace.DeviceRgb, 8, sMask);
+        PdfStream? sMask = hasNonOpaque ? new PdfStream(alphaOut) : null;
+        return new PdfImageXObject(width, height, rgbOut, PdfName.FlateDecode, ImageColorSpace.DeviceRgb, 8, sMask);
     }
 
     private static PdfImageXObject BuildPalette(
@@ -300,23 +560,47 @@ public static class TiffImageLoader
         {
             var idx = raw[i];
             if (idx >= paletteSize) idx = 0; // out-of-range index — map to first entry
-            rgb[i * 3] = (byte)(colorMap[idx] >> 8);                      // R
-            rgb[i * 3 + 1] = (byte)(colorMap[idx + paletteSize] >> 8);    // G
-            rgb[i * 3 + 2] = (byte)(colorMap[idx + 2 * paletteSize] >> 8); // B
+            rgb[i * 3] = (byte)(colorMap[idx] >> 8);                        // R
+            rgb[i * 3 + 1] = (byte)(colorMap[idx + paletteSize] >> 8);      // G
+            rgb[i * 3 + 2] = (byte)(colorMap[idx + 2 * paletteSize] >> 8);  // B
         }
         return new PdfImageXObject(width, height, rgb, PdfName.FlateDecode, ImageColorSpace.DeviceRgb, 8);
     }
 
     // ── Horizontal differencing predictor (TIFF Predictor=2) ─────────────────
 
-    private static void ApplyHorizontalPredictor(byte[] data, int rows, int width, int samplesPerPixel)
+    /// <summary>
+    /// Applies the TIFF horizontal differencing predictor to decode a strip.
+    /// Works for both 8-bit (bytesPerSample=1) and 16-bit (bytesPerSample=2) samples.
+    /// Differencing is applied per sample (not per byte) for 16-bit.
+    /// </summary>
+    private static void ApplyHorizontalPredictor(
+        byte[] data, int rows, int width, int samplesPerPixel, int bytesPerSample)
     {
-        var rowBytes = width * samplesPerPixel;
+        var sampleStride = samplesPerPixel * bytesPerSample;
+        var rowBytes = width * sampleStride;
+
         for (var row = 0; row < rows; row++)
         {
             var rowBase = row * rowBytes;
-            for (var x = samplesPerPixel; x < rowBytes; x++)
-                data[rowBase + x] = (byte)(data[rowBase + x] + data[rowBase + x - samplesPerPixel]);
+            // Start from the second pixel (skip the first pixel which is stored as-is).
+            for (var x = sampleStride; x < rowBytes; x += bytesPerSample)
+            {
+                if (bytesPerSample == 1)
+                {
+                    data[rowBase + x] = (byte)(data[rowBase + x] + data[rowBase + x - sampleStride]);
+                }
+                else
+                {
+                    // 16-bit: samples are big-endian after normalization.
+                    // Reconstruct as unsigned, add, store back big-endian.
+                    int cur = (data[rowBase + x] << 8) | data[rowBase + x + 1];
+                    int prev = (data[rowBase + x - sampleStride] << 8) | data[rowBase + x - sampleStride + 1];
+                    int sum = (cur + prev) & 0xFFFF;
+                    data[rowBase + x] = (byte)(sum >> 8);
+                    data[rowBase + x + 1] = (byte)sum;
+                }
+            }
         }
     }
 
@@ -358,6 +642,18 @@ public static class TiffImageLoader
         return result;
     }
 
+    // ── 16-bit → 8-bit downsampling ───────────────────────────────────────────
+
+    private static byte[] Downsample16(byte[] data)
+    {
+        // After big-endian normalization: high byte is data[i*2], low byte is data[i*2+1].
+        // ReduceToEight takes the high byte (MSB).
+        var result = new byte[data.Length / 2];
+        for (var i = 0; i < result.Length; i++)
+            result[i] = data[i * 2];
+        return result;
+    }
+
     // ── IFD value readers ─────────────────────────────────────────────────────
 
     /// <summary>
@@ -377,7 +673,7 @@ public static class TiffImageLoader
             var valueField = entryBase + 8;
             return type switch
             {
-                1 => data[valueField],          // BYTE
+                1 => data[valueField],           // BYTE
                 3 => ReadU16(data, valueField, le), // SHORT
                 4 => ReadU32(data, valueField, le), // LONG
                 _ => data[valueField]

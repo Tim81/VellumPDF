@@ -11,9 +11,14 @@ namespace VellumPdf.Kernel.Tests;
 ///
 /// Covers:
 ///   • Little-endian (II) and big-endian (MM) byte orders.
-///   • Compression: 1 (None) and 32773 (PackBits).
+///   • Compression: 1 (None), 5 (LZW), 7 (new-style JPEG), and 32773 (PackBits).
 ///   • Photometric: 0 (WhiteIsZero), 1 (BlackIsZero), 2 (RGB), 3 (Palette).
 ///   • SamplesPerPixel: 1 (grey), 3 (RGB), 4 (RGBA → /SMask).
+///   • PlanarConfiguration: 1 (chunky) and 2 (planar).
+///   • BitsPerSample: 8 and 16.
+///   • 16-bit: Preserve (BitsPerComponent=16) and ReduceToEight (BitsPerComponent=8),
+///     both II and MM byte orders; 16-bit RGBA → 16-bit SMask.
+///   • LZW + Predictor=2 round-trip.
 ///   • Round-trip pixel verification.
 ///   • Error cases: truncated data → InvalidDataException;
 ///     unsupported compression → NotSupportedException.
@@ -206,6 +211,370 @@ public sealed class TiffImageTests
         Assert.Null(img.SMask);
     }
 
+    // ── PlanarConfiguration 2 ────────────────────────────────────────────────
+
+    [Fact]
+    public void Tiff_Planar2_Rgb_MatchesChunky()
+    {
+        // Build a 2×2 RGB image as both chunky (PlanarConfig=1) and planar (PlanarConfig=2).
+        // The decoded pixel bytes must be identical.
+        var pixels = new byte[]
+        {
+            0x10, 0x20, 0x30, // pixel (0,0): R,G,B
+            0x40, 0x50, 0x60, // pixel (0,1)
+            0x70, 0x80, 0x90, // pixel (1,0)
+            0xA0, 0xB0, 0xC0, // pixel (1,1)
+        };
+        var chunky = BuildTiff(2, 2, 8, 1, photometric: 2, samplesPerPixel: 3,
+            pixels, littleEndian: true, colorMap: null, alphaIncluded: false);
+        var planar = BuildPlanarTiff(2, 2, 8, 1, pixels);
+
+        var chunkyPixels = DecompressStream(TiffImageLoader.Load(chunky).BuildStream());
+        var planarPixels = DecompressStream(TiffImageLoader.Load(planar).BuildStream());
+
+        Assert.Equal(chunkyPixels, planarPixels);
+    }
+
+    [Fact]
+    public void Tiff_Planar2_Grey_PixelRoundTrip()
+    {
+        // 1-sample (grey) image: PlanarConfig=2 is trivially the same as chunky.
+        // Verify it decodes without error.
+        var pixels = new byte[] { 0x10, 0x20, 0x30, 0x40 }; // 2×2 grey
+        var planar = BuildPlanarTiff(2, 2, 8, 1, pixels, samplesPerPixel: 1, photometric: 1);
+        var img = TiffImageLoader.Load(planar);
+        var decoded = DecompressStream(img.BuildStream());
+        Assert.Equal(new byte[] { 0x10, 0x20, 0x30, 0x40 }, decoded);
+    }
+
+    // ── 16-bit samples ───────────────────────────────────────────────────────
+
+    [Fact]
+    public void Tiff_16Bit_Greyscale_LittleEndian_Preserve()
+    {
+        // 2×1 grey 16-bit LE: sample values 0x1234 and 0xABCD stored LE.
+        // LE on disk: [0x34,0x12, 0xCD,0xAB]. After endian swap → BE: [0x12,0x34, 0xAB,0xCD].
+        var pixelData = new byte[] { 0x34, 0x12, 0xCD, 0xAB }; // LE: 0x1234, 0xABCD
+        var tiff = BuildTiff(2, 1, 16, 1, photometric: 1, samplesPerPixel: 1,
+            pixelData, littleEndian: true, colorMap: null, alphaIncluded: false);
+        var img = TiffImageLoader.Load(tiff, ImageLoadOptions.Default);
+
+        Assert.Equal(16, ReadBitsPerComponent(img.BuildStream()));
+        var decoded = DecompressStream(img.BuildStream());
+        Assert.Equal(4, decoded.Length); // 2 pixels × 2 bytes
+        Assert.Equal(0x12, decoded[0]); // high byte after swap
+        Assert.Equal(0x34, decoded[1]); // low byte after swap
+        Assert.Equal(0xAB, decoded[2]);
+        Assert.Equal(0xCD, decoded[3]);
+    }
+
+    [Fact]
+    public void Tiff_16Bit_Greyscale_BigEndian_Preserve()
+    {
+        // 2×1 grey 16-bit BE: samples stored as 0x1234 and 0xABCD big-endian (no swap needed).
+        var pixelData = new byte[] { 0x12, 0x34, 0xAB, 0xCD }; // BE: 0x1234, 0xABCD
+        var tiff = BuildTiff(2, 1, 16, 1, photometric: 1, samplesPerPixel: 1,
+            pixelData, littleEndian: false, colorMap: null, alphaIncluded: false);
+        var img = TiffImageLoader.Load(tiff, ImageLoadOptions.Default);
+
+        Assert.Equal(16, ReadBitsPerComponent(img.BuildStream()));
+        var decoded = DecompressStream(img.BuildStream());
+        Assert.Equal(4, decoded.Length);
+        Assert.Equal(0x12, decoded[0]);
+        Assert.Equal(0x34, decoded[1]);
+        Assert.Equal(0xAB, decoded[2]);
+        Assert.Equal(0xCD, decoded[3]);
+    }
+
+    [Fact]
+    public void Tiff_16Bit_Greyscale_ReduceToEight()
+    {
+        // 2×1 grey 16-bit LE (0x1234, 0xABCD). ReduceToEight → high bytes only: [0x12, 0xAB].
+        var pixelData = new byte[] { 0x34, 0x12, 0xCD, 0xAB }; // LE
+        var tiff = BuildTiff(2, 1, 16, 1, photometric: 1, samplesPerPixel: 1,
+            pixelData, littleEndian: true, colorMap: null, alphaIncluded: false);
+        var img = TiffImageLoader.Load(tiff, new ImageLoadOptions { BitDepth = ImageBitDepth.ReduceToEight });
+
+        Assert.Equal(8, ReadBitsPerComponent(img.BuildStream()));
+        var decoded = DecompressStream(img.BuildStream());
+        Assert.Equal(2, decoded.Length); // 2 pixels × 1 byte
+        Assert.Equal(0x12, decoded[0]);
+        Assert.Equal(0xAB, decoded[1]);
+    }
+
+    [Fact]
+    public void Tiff_16Bit_Rgb_LittleEndian_Preserve()
+    {
+        // 1×1 RGB 16-bit LE: R=0x1122, G=0x3344, B=0x5566.
+        // Stored LE: [0x22,0x11, 0x44,0x33, 0x66,0x55]. After swap → BE: [0x11,0x22, 0x33,0x44, 0x55,0x66].
+        var pixelData = new byte[] { 0x22, 0x11, 0x44, 0x33, 0x66, 0x55 };
+        var tiff = BuildTiff(1, 1, 16, 1, photometric: 2, samplesPerPixel: 3,
+            pixelData, littleEndian: true, colorMap: null, alphaIncluded: false);
+        var img = TiffImageLoader.Load(tiff, ImageLoadOptions.Default);
+
+        Assert.Equal(16, ReadBitsPerComponent(img.BuildStream()));
+        var decoded = DecompressStream(img.BuildStream());
+        Assert.Equal(6, decoded.Length); // 1 pixel × 3 channels × 2 bytes
+        Assert.Equal(0x11, decoded[0]); Assert.Equal(0x22, decoded[1]); // R
+        Assert.Equal(0x33, decoded[2]); Assert.Equal(0x44, decoded[3]); // G
+        Assert.Equal(0x55, decoded[4]); Assert.Equal(0x66, decoded[5]); // B
+    }
+
+    [Fact]
+    public void Tiff_16Bit_Rgba_Preserve_HasSmask()
+    {
+        // 1×1 RGBA 16-bit LE: R=0x1122, G=0x3344, B=0x5566, A=0x7788 (non-opaque).
+        // Stored LE: [0x22,0x11, 0x44,0x33, 0x66,0x55, 0x88,0x77].
+        var pixelData = new byte[] { 0x22, 0x11, 0x44, 0x33, 0x66, 0x55, 0x88, 0x77 };
+        var tiff = BuildTiff(1, 1, 16, 1, photometric: 2, samplesPerPixel: 4,
+            pixelData, littleEndian: true, colorMap: null, alphaIncluded: true);
+        var img = TiffImageLoader.Load(tiff, ImageLoadOptions.Default);
+
+        Assert.NotNull(img.SMask);
+        Assert.Equal(16, img.SMaskBitsPerComponent);
+
+        var colorBytes = DecompressStream(img.BuildStream());
+        Assert.Equal(6, colorBytes.Length);
+        Assert.Equal(0x11, colorBytes[0]); Assert.Equal(0x22, colorBytes[1]); // R
+        Assert.Equal(0x33, colorBytes[2]); Assert.Equal(0x44, colorBytes[3]); // G
+        Assert.Equal(0x55, colorBytes[4]); Assert.Equal(0x66, colorBytes[5]); // B
+
+        var alphaBytes = DecompressStream(img.SMask!);
+        Assert.Equal(2, alphaBytes.Length);
+        Assert.Equal(0x77, alphaBytes[0]); // A high byte
+        Assert.Equal(0x88, alphaBytes[1]); // A low byte
+    }
+
+    [Fact]
+    public void Tiff_16Bit_WhiteIsZero_Inversion()
+    {
+        // 1×1 16-bit WhiteIsZero LE: sample=0x0000. Inverted: 0xFFFF-0x0000 = 0xFFFF.
+        var pixelData = new byte[] { 0x00, 0x00 };
+        var tiff = BuildTiff(1, 1, 16, 1, photometric: 0, samplesPerPixel: 1,
+            pixelData, littleEndian: true, colorMap: null, alphaIncluded: false);
+        var img = TiffImageLoader.Load(tiff, ImageLoadOptions.Default);
+
+        var decoded = DecompressStream(img.BuildStream());
+        Assert.Equal(2, decoded.Length);
+        Assert.Equal(0xFF, decoded[0]);
+        Assert.Equal(0xFF, decoded[1]);
+    }
+
+    // ── LZW compression (Compression=5) ──────────────────────────────────────
+
+    [Fact]
+    public void Tiff_Lzw_Greyscale_RoundTrip()
+    {
+        // 4×1 greyscale image, LZW compressed.
+        var rawPixels = new byte[] { 0x10, 0x20, 0x30, 0x40 };
+        var lzwData = TiffLzwEncode(rawPixels);
+        var tiff = BuildTiff(4, 1, 8, 5, photometric: 1, samplesPerPixel: 1,
+            lzwData, littleEndian: true, colorMap: null, alphaIncluded: false);
+        var img = TiffImageLoader.Load(tiff);
+        var decoded = DecompressStream(img.BuildStream());
+        Assert.Equal(rawPixels, decoded);
+    }
+
+    [Fact]
+    public void Tiff_Lzw_Rgb_RoundTrip()
+    {
+        // 2×1 RGB image, LZW compressed.
+        var rawPixels = new byte[] { 0xDE, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE };
+        var lzwData = TiffLzwEncode(rawPixels);
+        var tiff = BuildTiff(2, 1, 8, 5, photometric: 2, samplesPerPixel: 3,
+            lzwData, littleEndian: true, colorMap: null, alphaIncluded: false);
+        var img = TiffImageLoader.Load(tiff);
+        var decoded = DecompressStream(img.BuildStream());
+        Assert.Equal(rawPixels, decoded);
+    }
+
+    [Fact]
+    public void Tiff_Lzw_Predictor2_RoundTrip()
+    {
+        // 3×1 RGB image with LZW + horizontal differencing (Predictor=2).
+        // Raw pixels: (10,20,30), (15,25,35), (20,30,40).
+        // After predictor encoding (delta from left):
+        //   pixel 0: (10,20,30) as-is; pixel 1: (5,5,5); pixel 2: (5,5,5).
+        var rawPixels = new byte[] { 10, 20, 30, 15, 25, 35, 20, 30, 40 };
+        // Predictor-encode: subtract left sample
+        var predictorEncoded = new byte[rawPixels.Length];
+        predictorEncoded[0] = rawPixels[0];
+        predictorEncoded[1] = rawPixels[1];
+        predictorEncoded[2] = rawPixels[2];
+        for (var i = 3; i < rawPixels.Length; i++)
+            predictorEncoded[i] = (byte)(rawPixels[i] - rawPixels[i - 3]);
+
+        var lzwData = TiffLzwEncode(predictorEncoded);
+        var tiff = BuildTiffWithPredictor(3, 1, 8, 5, photometric: 2, samplesPerPixel: 3,
+            lzwData, littleEndian: true, predictor: 2);
+        var img = TiffImageLoader.Load(tiff);
+        var decoded = DecompressStream(img.BuildStream());
+        Assert.Equal(rawPixels, decoded);
+    }
+
+    [Fact]
+    public void Tiff_Lzw_LargerImage_RoundTrip()
+    {
+        // 8×8 greyscale, LZW: exercises multi-entry table growth.
+        var rawPixels = new byte[64];
+        for (var i = 0; i < rawPixels.Length; i++)
+            rawPixels[i] = (byte)(i * 3 % 256);
+        var lzwData = TiffLzwEncode(rawPixels);
+        var tiff = BuildTiff(8, 8, 8, 5, photometric: 1, samplesPerPixel: 1,
+            lzwData, littleEndian: true, colorMap: null, alphaIncluded: false);
+        var img = TiffImageLoader.Load(tiff);
+        var decoded = DecompressStream(img.BuildStream());
+        Assert.Equal(rawPixels, decoded);
+    }
+
+    [Fact]
+    public void Tiff_Lzw_RepeatedByte_KwKwK_RoundTrip()
+    {
+        // 512 copies of a single byte: the most canonical KwKwK trigger.
+        // After ClearCode the encoder emits 0x42, then sees 0x42+0x42 → adds entry 258=0x42+0x42
+        // and so on.  The decoder will encounter code == nextCode (KwKwK) once the
+        // repeated-string code is reused before its table entry is fully registered.
+        var rawPixels = new byte[512];
+        Array.Fill(rawPixels, (byte)0x42);
+        var lzwData = TiffLzwEncode(rawPixels);
+        var tiff = BuildTiff(512, 1, 8, 5, photometric: 1, samplesPerPixel: 1,
+            lzwData, littleEndian: true, colorMap: null, alphaIncluded: false);
+        var img = TiffImageLoader.Load(tiff);
+        var decoded = DecompressStream(img.BuildStream());
+        Assert.Equal(rawPixels, decoded);
+    }
+
+    [Fact]
+    public void Tiff_Lzw_RepeatingPattern_KwKwK_RoundTrip()
+    {
+        // {1,2,3} repeated 128 times (= 384 bytes): forces multi-byte table entries
+        // and the back-reference / KwKwK code path.
+        var pattern = new byte[] { 1, 2, 3 };
+        var rawPixels = new byte[384];
+        for (var i = 0; i < rawPixels.Length; i++)
+            rawPixels[i] = pattern[i % pattern.Length];
+        var lzwData = TiffLzwEncode(rawPixels);
+        var tiff = BuildTiff(384, 1, 8, 5, photometric: 1, samplesPerPixel: 1,
+            lzwData, littleEndian: true, colorMap: null, alphaIncluded: false);
+        var img = TiffImageLoader.Load(tiff);
+        var decoded = DecompressStream(img.BuildStream());
+        Assert.Equal(rawPixels, decoded);
+    }
+
+    [Fact]
+    public void Tiff_Lzw_CodeWidth9To10_RoundTrip()
+    {
+        // 16×16 = 256 bytes of varied grey values; the LZW table will accumulate enough
+        // novel sequences to push nextCode past 511, crossing the 9→10 bit boundary.
+        var rawPixels = new byte[256];
+        for (var i = 0; i < rawPixels.Length; i++)
+            rawPixels[i] = (byte)(i & 0xFF);
+        var lzwData = TiffLzwEncode(rawPixels);
+        var tiff = BuildTiff(16, 16, 8, 5, photometric: 1, samplesPerPixel: 1,
+            lzwData, littleEndian: true, colorMap: null, alphaIncluded: false);
+        var img = TiffImageLoader.Load(tiff);
+        var decoded = DecompressStream(img.BuildStream());
+        Assert.Equal(rawPixels, decoded);
+    }
+
+    [Fact]
+    public void Tiff_Lzw_CodeWidth10To11_TableFull_RoundTrip()
+    {
+        // 64×64 = 4096 bytes of varied data, driving nextCode well past 1023 (10→11 boundary)
+        // and pushing the table to its 4096-entry limit, which forces a mid-stream ClearCode reset.
+        // The image uses an 8×8 tile pattern to mix repetition with novelty.
+        var rawPixels = new byte[4096];
+        for (var i = 0; i < rawPixels.Length; i++)
+            rawPixels[i] = (byte)((i * 7 + (i / 64) * 13) & 0xFF);
+        var lzwData = TiffLzwEncode(rawPixels);
+        var tiff = BuildTiff(64, 64, 8, 5, photometric: 1, samplesPerPixel: 1,
+            lzwData, littleEndian: true, colorMap: null, alphaIncluded: false);
+        var img = TiffImageLoader.Load(tiff);
+        var decoded = DecompressStream(img.BuildStream());
+        Assert.Equal(rawPixels, decoded);
+    }
+
+    [Fact]
+    public void Tiff_Lzw_Predictor2_LargerImage_RoundTrip()
+    {
+        // 8×8 RGB image with LZW + Predictor=2; multiple rows exercise the per-row
+        // horizontal differencing combined with real LZW back-references.
+        const int w = 8;
+        const int h = 8;
+        const int spp = 3;
+        var rawPixels = new byte[w * h * spp];
+        for (var i = 0; i < rawPixels.Length; i++)
+            rawPixels[i] = (byte)((i * 5 + (i / (w * spp)) * 17) & 0xFF);
+
+        // Apply horizontal predictor per row (delta per channel from left pixel)
+        var predicted = new byte[rawPixels.Length];
+        for (var row = 0; row < h; row++)
+        {
+            var rowStart = row * w * spp;
+            for (var c = 0; c < spp; c++)
+                predicted[rowStart + c] = rawPixels[rowStart + c];
+            for (var col = 1; col < w; col++)
+            {
+                for (var c = 0; c < spp; c++)
+                {
+                    var idx = rowStart + col * spp + c;
+                    predicted[idx] = (byte)(rawPixels[idx] - rawPixels[idx - spp]);
+                }
+            }
+        }
+
+        var lzwData = TiffLzwEncode(predicted);
+        var tiff = BuildTiffWithPredictor(w, h, 8, 5, photometric: 2, samplesPerPixel: spp,
+            lzwData, littleEndian: true, predictor: 2);
+        var img = TiffImageLoader.Load(tiff);
+        var decoded = DecompressStream(img.BuildStream());
+        Assert.Equal(rawPixels, decoded);
+    }
+
+    // ── New-style JPEG (Compression=7) ───────────────────────────────────────
+
+    [Fact]
+    public void Tiff_Jpeg7_SingleStrip_DctDecodePassthrough()
+    {
+        // Embed a minimal baseline JPEG as a single TIFF strip.
+        // The result must be a DCTDecode passthrough with the JPEG bytes verbatim.
+        var jpeg = BuildMinimalJpeg(2, 1);
+        var tiff = BuildTiffWithJpeg7(jpeg);
+        var img = TiffImageLoader.Load(tiff);
+
+        // Must be DCTDecode (passthrough), not FlateDecode.
+        var dictText = StreamDictText(img);
+        Assert.Contains("DCTDecode", dictText);
+        Assert.DoesNotContain("FlateDecode", dictText);
+    }
+
+    [Fact]
+    public void Tiff_Jpeg7_SingleStrip_BytesVerbatim()
+    {
+        // The JPEG bytes in the TIFF stream must be written verbatim (passthrough).
+        var jpeg = BuildMinimalJpeg(2, 1);
+        var tiff = BuildTiffWithJpeg7(jpeg);
+        var img = TiffImageLoader.Load(tiff);
+
+        // Read stream bytes and locate the embedded JPEG (SOI = FF D8).
+        using var ms = new MemoryStream();
+        var writer = new VellumPdf.IO.PdfWriter(ms);
+        img.BuildStream().WriteTo(writer);
+        var raw = ms.ToArray();
+
+        // Find FF D8 (JPEG SOI) in the output
+        var soiPos = -1;
+        for (var i = 0; i < raw.Length - 1; i++)
+        {
+            if (raw[i] == 0xFF && raw[i + 1] == 0xD8) { soiPos = i; break; }
+        }
+        Assert.True(soiPos >= 0, "JPEG SOI marker FF D8 not found in TIFF stream output.");
+
+        // Verify the JPEG bytes match verbatim from the SOI position.
+        for (var i = 0; i < jpeg.Length; i++)
+            Assert.Equal(jpeg[i], raw[soiPos + i]);
+    }
+
     // ── Error cases ───────────────────────────────────────────────────────────
 
     [Fact]
@@ -232,15 +601,9 @@ public sealed class TiffImageTests
     }
 
     [Fact]
-    public void Tiff_UnsupportedCompression_LZW_ThrowsNotSupportedException()
+    public void Tiff_UnsupportedCompression_OldJpeg_ThrowsNotSupportedException()
     {
-        var tiff = CreateRgbTiffWithCompression(2, 2, compressionValue: 5);
-        Assert.Throws<NotSupportedException>(() => TiffImageLoader.Load(tiff));
-    }
-
-    [Fact]
-    public void Tiff_UnsupportedCompression_Jpeg_ThrowsNotSupportedException()
-    {
+        // Compression=6 (old-style JPEG) must still throw.
         var tiff = CreateRgbTiffWithCompression(2, 2, compressionValue: 6);
         Assert.Throws<NotSupportedException>(() => TiffImageLoader.Load(tiff));
     }
@@ -262,7 +625,17 @@ public sealed class TiffImageTests
     [Fact]
     public void Tiff_UnsupportedBitsPerSample_ThrowsNotSupportedException()
     {
+        // BitsPerSample=4 is not supported.
         var tiff = CreateRgbTiffWithBitsPerSample(2, 2, bps: 4);
+        Assert.Throws<NotSupportedException>(() => TiffImageLoader.Load(tiff));
+    }
+
+    [Fact]
+    public void Tiff_Jpeg7_MultiStrip_ThrowsNotSupportedException()
+    {
+        // Compression=7 with more than one strip must throw.
+        var jpeg = BuildMinimalJpeg(2, 2);
+        var tiff = BuildTiffWithJpeg7MultiStrip(jpeg);
         Assert.Throws<NotSupportedException>(() => TiffImageLoader.Load(tiff));
     }
 
@@ -303,6 +676,22 @@ public sealed class TiffImageTests
                 return i;
         }
         return -1;
+    }
+
+    private static int ReadBitsPerComponent(VellumPdf.Core.PdfStream stream)
+    {
+        using var ms = new MemoryStream();
+        var writer = new VellumPdf.IO.PdfWriter(ms);
+        stream.WriteTo(writer);
+        var text = System.Text.Encoding.Latin1.GetString(ms.ToArray());
+        const string key = "/BitsPerComponent ";
+        var idx = text.IndexOf(key, StringComparison.Ordinal);
+        if (idx < 0) throw new InvalidOperationException("BitsPerComponent not found in stream dict.");
+        var rest = text[(idx + key.Length)..];
+        var end = rest.IndexOf('\n');
+        if (end < 0) end = rest.IndexOf(' ');
+        if (end < 0) end = rest.Length;
+        return int.Parse(rest[..end].Trim());
     }
 
     // ── TIFF builder helpers ──────────────────────────────────────────────────
@@ -404,6 +793,147 @@ public sealed class TiffImageTests
         var pixelData = new byte[w * h * 3];
         return BuildTiff(w, h, bps, compression: 1, photometric: 2, samplesPerPixel: 3,
             pixelData, littleEndian: true, colorMap: null, alphaIncluded: false);
+    }
+
+    /// <summary>
+    /// Builds a minimal TIFF with PlanarConfiguration=2.
+    /// pixels must be in chunky (interleaved) format — this builder separates them into planes.
+    /// Strategy: write plane data first, then write strip offset/bytecount arrays immediately
+    /// before the IFD (so they have known offsets), then write the IFD pointing to them.
+    /// This avoids the TIFF value-inline-vs-offset complexity for multi-entry arrays.
+    /// For count=1 (single-sample images), the TIFF spec stores the 4-byte value inline —
+    /// we handle that by embedding the plane offset directly.
+    /// </summary>
+    private static byte[] BuildPlanarTiff(
+        int w, int h, int bitsPerSample, int compression,
+        byte[] chunkyPixels, int samplesPerPixel = 3, int photometric = 2)
+    {
+        int bytesPerSample = bitsPerSample == 16 ? 2 : 1;
+        int planeRowBytes = w * bytesPerSample;
+        int pixelStride = samplesPerPixel * bytesPerSample;
+
+        // Split chunky pixels into separate plane buffers.
+        var planes = new byte[samplesPerPixel][];
+        for (var p = 0; p < samplesPerPixel; p++)
+        {
+            planes[p] = new byte[h * planeRowBytes];
+            for (var row = 0; row < h; row++)
+            {
+                for (var col = 0; col < w; col++)
+                {
+                    var srcBase = row * w * pixelStride + col * pixelStride + p * bytesPerSample;
+                    var dstBase = row * planeRowBytes + col * bytesPerSample;
+                    for (var b = 0; b < bytesPerSample; b++)
+                        planes[p][dstBase + b] = chunkyPixels[srcBase + b];
+                }
+            }
+        }
+
+        // Layout:
+        //   offset 0-3: byte order + magic
+        //   offset 4-7: IFD offset (placeholder filled in later)
+        //   offset 8..: plane data (all planes concatenated)
+        //   then: strip-offsets array (samplesPerPixel × 4 bytes) — only if spp > 1
+        //   then: strip-bytecounts array (samplesPerPixel × 4 bytes) — only if spp > 1
+        //   then: IFD
+        using var ms = new MemoryStream();
+
+        // Byte order: II little-endian
+        ms.WriteByte(0x49); ms.WriteByte(0x49);
+        ms.WriteByte(0x2A); ms.WriteByte(0x00);
+
+        // IFD offset placeholder at bytes 4-7
+        var ifdOffsetPos = (int)ms.Position;
+        WriteU32(ms, 0, true); // placeholder
+
+        // Write plane data, record offsets
+        var planeOffsets = new uint[samplesPerPixel];
+        var planeByteCount = (uint)(h * planeRowBytes);
+        for (var p = 0; p < samplesPerPixel; p++)
+        {
+            planeOffsets[p] = (uint)ms.Position;
+            ms.Write(planes[p]);
+        }
+
+        // For multi-sample images: write strip offset/bytecount arrays here (known position before IFD).
+        // For single-sample: inline, no array needed.
+        uint stripOffsetsTagValue;
+        uint stripByteCountsTagValue;
+        uint stripTagCount = (uint)samplesPerPixel;
+
+        if (samplesPerPixel > 1)
+        {
+            // Arrays stored at this position, before the IFD.
+            stripOffsetsTagValue = (uint)ms.Position;
+            for (var p = 0; p < samplesPerPixel; p++)
+                WriteU32(ms, planeOffsets[p], true);
+
+            stripByteCountsTagValue = (uint)ms.Position;
+            for (var p = 0; p < samplesPerPixel; p++)
+                WriteU32(ms, planeByteCount, true);
+        }
+        else
+        {
+            // count=1, 4 bytes fits inline: store actual plane offset + byte count directly.
+            stripOffsetsTagValue = planeOffsets[0];
+            stripByteCountsTagValue = planeByteCount;
+        }
+
+        // IFD starts here
+        var ifdStart = (uint)ms.Position;
+        ms.Seek(ifdOffsetPos, SeekOrigin.Begin);
+        WriteU32(ms, ifdStart, true);
+        ms.Seek(0, SeekOrigin.End);
+
+        // IFD entries (sorted by tag)
+        var entries = new List<(ushort tag, ushort type, uint count, uint value)>
+        {
+            (256, 4, 1, (uint)w),
+            (257, 4, 1, (uint)h),
+            (258, 3, 1, (uint)bitsPerSample),
+            (259, 3, 1, (uint)compression),
+            (262, 3, 1, (uint)photometric),
+            (273, 4, stripTagCount, stripOffsetsTagValue),
+            (277, 3, 1, (uint)samplesPerPixel),
+            (278, 4, 1, (uint)h),   // RowsPerStrip = full image (1 strip per plane)
+            (279, 4, stripTagCount, stripByteCountsTagValue),
+            (284, 3, 1, 2u),         // PlanarConfiguration = 2
+        };
+        entries.Sort((a, b) => a.tag.CompareTo(b.tag));
+
+        WriteU16(ms, (ushort)entries.Count, true);
+
+        foreach (var (tag, type, cnt, value) in entries)
+        {
+            var typeSize = GetTypeSize(type);
+            var totalBytes = typeSize * cnt;
+
+            WriteU16(ms, tag, true);
+            WriteU16(ms, type, true);
+            WriteU32(ms, cnt, true);
+
+            if (totalBytes <= 4)
+            {
+                // Inline value
+                if (type == 3)
+                {
+                    ms.WriteByte((byte)value); ms.WriteByte((byte)(value >> 8));
+                    ms.WriteByte(0); ms.WriteByte(0);
+                }
+                else
+                {
+                    WriteU32(ms, value, true);
+                }
+            }
+            else
+            {
+                // Offset to external array
+                WriteU32(ms, value, true);
+            }
+        }
+        WriteU32(ms, 0, true); // next IFD = 0
+
+        return ms.ToArray();
     }
 
     /// <summary>
@@ -545,6 +1075,197 @@ public sealed class TiffImageTests
         return ms.ToArray();
     }
 
+    /// <summary>
+    /// Builds a TIFF with a Predictor=2 tag added to the IFD.
+    /// </summary>
+    private static byte[] BuildTiffWithPredictor(
+        int w, int h, int bitsPerSample, int compression,
+        int photometric, int samplesPerPixel,
+        byte[] pixelData, bool littleEndian, int predictor)
+    {
+        using var ms = new MemoryStream();
+
+        if (littleEndian)
+        {
+            ms.WriteByte(0x49); ms.WriteByte(0x49);
+            ms.WriteByte(0x2A); ms.WriteByte(0x00);
+        }
+        else
+        {
+            ms.WriteByte(0x4D); ms.WriteByte(0x4D);
+            ms.WriteByte(0x00); ms.WriteByte(0x2A);
+        }
+
+        var pixelOffset = 8u;
+        var ifdOffset = pixelOffset + (uint)pixelData.Length;
+        WriteU32(ms, ifdOffset, littleEndian);
+        ms.Write(pixelData);
+
+        var entries = new List<(ushort tag, ushort type, uint count, uint value)>
+        {
+            (256, 4, 1, (uint)w),
+            (257, 4, 1, (uint)h),
+            (258, 3, 1, (uint)bitsPerSample),
+            (259, 3, 1, (uint)compression),
+            (262, 3, 1, (uint)photometric),
+            (273, 4, 1, pixelOffset),
+            (277, 3, 1, (uint)samplesPerPixel),
+            (278, 4, 1, (uint)h),
+            (279, 4, 1, (uint)pixelData.Length),
+            (284, 3, 1, 1),
+            (317, 3, 1, (uint)predictor), // Predictor
+        };
+        entries.Sort((a, b) => a.tag.CompareTo(b.tag));
+
+        WriteU16(ms, (ushort)entries.Count, littleEndian);
+        foreach (var (tag, type, count, value) in entries)
+        {
+            var typeSize = GetTypeSize(type);
+            var totalBytes = typeSize * count;
+            WriteU16(ms, tag, littleEndian);
+            WriteU16(ms, type, littleEndian);
+            WriteU32(ms, count, littleEndian);
+
+            if (totalBytes <= 4)
+            {
+                if (littleEndian)
+                {
+                    if (type == 3)
+                    {
+                        ms.WriteByte((byte)value); ms.WriteByte((byte)(value >> 8));
+                        ms.WriteByte(0); ms.WriteByte(0);
+                    }
+                    else WriteU32(ms, value, littleEndian);
+                }
+                else
+                {
+                    if (type == 3)
+                    {
+                        ms.WriteByte((byte)(value >> 8)); ms.WriteByte((byte)value);
+                        ms.WriteByte(0); ms.WriteByte(0);
+                    }
+                    else WriteU32(ms, value, littleEndian);
+                }
+            }
+            else
+            {
+                WriteU32(ms, value, littleEndian);
+            }
+        }
+        WriteU32(ms, 0, littleEndian);
+        return ms.ToArray();
+    }
+
+    /// <summary>
+    /// Builds a TIFF with Compression=7 (new-style JPEG) wrapping the given JPEG bytes as a single strip.
+    /// </summary>
+    private static byte[] BuildTiffWithJpeg7(byte[] jpegBytes)
+    {
+        using var ms = new MemoryStream();
+        ms.WriteByte(0x49); ms.WriteByte(0x49);
+        ms.WriteByte(0x2A); ms.WriteByte(0x00);
+
+        var jpegOffset = 8u;
+        var ifdOffset = jpegOffset + (uint)jpegBytes.Length;
+        WriteU32(ms, ifdOffset, true);
+        ms.Write(jpegBytes);
+
+        var entries = new List<(ushort tag, ushort type, uint count, uint value)>
+        {
+            (256, 4, 1, 2),          // ImageWidth
+            (257, 4, 1, 1),          // ImageLength
+            (258, 3, 1, 8),          // BitsPerSample
+            (259, 3, 1, 7),          // Compression=7 new-style JPEG
+            (262, 3, 1, 2),          // PhotometricInterpretation=2 (RGB)
+            (273, 4, 1, jpegOffset), // StripOffsets
+            (277, 3, 1, 3),          // SamplesPerPixel
+            (278, 4, 1, 1),          // RowsPerStrip
+            (279, 4, 1, (uint)jpegBytes.Length), // StripByteCounts
+            (284, 3, 1, 1),          // PlanarConfiguration
+        };
+        entries.Sort((a, b) => a.tag.CompareTo(b.tag));
+
+        WriteU16(ms, (ushort)entries.Count, true);
+        foreach (var (tag, type, count, value) in entries)
+        {
+            WriteU16(ms, tag, true);
+            WriteU16(ms, type, true);
+            WriteU32(ms, count, true);
+            if (type == 3)
+            {
+                ms.WriteByte((byte)value); ms.WriteByte((byte)(value >> 8));
+                ms.WriteByte(0); ms.WriteByte(0);
+            }
+            else WriteU32(ms, value, true);
+        }
+        WriteU32(ms, 0, true);
+        return ms.ToArray();
+    }
+
+    /// <summary>
+    /// Builds a multi-strip TIFF with Compression=7 (to test the rejection of multi-strip JPEG).
+    /// </summary>
+    private static byte[] BuildTiffWithJpeg7MultiStrip(byte[] jpegBytes)
+    {
+        // Two fake strips — both pointing to the same JPEG data (values don't matter, just the count).
+        using var ms = new MemoryStream();
+        ms.WriteByte(0x49); ms.WriteByte(0x49);
+        ms.WriteByte(0x2A); ms.WriteByte(0x00);
+
+        var jpegOffset = 8u;
+        // IFD: after JPEG bytes + two arrays of 2 longs each for StripOffsets + StripByteCounts
+        var ifdOffset = jpegOffset + (uint)jpegBytes.Length;
+
+        // We'll put strip arrays after IFD. IFD = 2 + 10*12 + 4 = 126 bytes.
+        // Strip arrays follow IFD.
+        var stripOffsetsOff = ifdOffset + 126u;
+        var stripByteCountsOff = stripOffsetsOff + 8u; // 2 × 4 bytes
+
+        WriteU32(ms, ifdOffset, true);
+        ms.Write(jpegBytes);
+
+        // IFD entries
+        var entries = new List<(ushort tag, ushort type, uint count, uint value)>
+        {
+            (256, 4, 1, 2),
+            (257, 4, 1, 2),  // height=2 so multi-strip
+            (258, 3, 1, 8),
+            (259, 3, 1, 7),  // Compression=7
+            (262, 3, 1, 2),
+            (273, 4, 2, stripOffsetsOff),     // 2 strips
+            (277, 3, 1, 3),
+            (278, 4, 1, 1),  // RowsPerStrip=1 → 2 rows = 2 strips
+            (279, 4, 2, stripByteCountsOff),  // 2 strip byte counts
+            (284, 3, 1, 1),
+        };
+        entries.Sort((a, b) => a.tag.CompareTo(b.tag));
+
+        WriteU16(ms, (ushort)entries.Count, true);
+        foreach (var (tag, type, count, value) in entries)
+        {
+            WriteU16(ms, tag, true);
+            WriteU16(ms, type, true);
+            WriteU32(ms, count, true);
+            if (count * GetTypeSize(type) <= 4 && type == 3)
+            {
+                ms.WriteByte((byte)value); ms.WriteByte((byte)(value >> 8));
+                ms.WriteByte(0); ms.WriteByte(0);
+            }
+            else WriteU32(ms, value, true);
+        }
+        WriteU32(ms, 0, true); // next IFD
+
+        // Strip offsets array: both strips point to same jpeg data
+        WriteU32(ms, jpegOffset, true);
+        WriteU32(ms, jpegOffset, true);
+
+        // Strip byte counts array
+        WriteU32(ms, (uint)jpegBytes.Length, true);
+        WriteU32(ms, (uint)jpegBytes.Length, true);
+
+        return ms.ToArray();
+    }
+
     private static int GetTypeSize(ushort type) => type switch
     {
         1 => 1, // BYTE
@@ -571,6 +1292,164 @@ public sealed class TiffImageTests
             pos += count;
         }
         return ms.ToArray();
+    }
+
+    // ── TIFF LZW encoder (MSB-first, early-change, full LZW) ────────────────
+
+    /// <summary>
+    /// Full TIFF-variant LZW encoder for test fixtures.
+    /// MSB-first bit packing; early change (grow code width when nextCode == (1 &lt;&lt; codeWidth) - 1).
+    /// Implements the standard LZW string-table algorithm; emits back-references and
+    /// triggers the KwKwK decoder path on highly repetitive input.
+    /// Resets the table (emits ClearCode) when the table fills to 4096 entries.
+    /// </summary>
+    private static byte[] TiffLzwEncode(byte[] input)
+    {
+        const int clearCode = 256;
+        const int eoiCode = 257;
+        const int firstFreeCode = 258;
+        const int maxTableSize = 4096;
+
+        using var ms = new MemoryStream();
+        int codeWidth = 9;
+        int nextCode = firstFreeCode;
+
+        // LZW string table: key = (prefixCode << 8) | suffixByte → assigned code
+        var table = new Dictionary<long, int>();
+
+        // MSB-first bit buffer
+        int bitBuf = 0;
+        int bitsInBuf = 0;
+
+        void EmitCode(int code)
+        {
+            bitBuf = (bitBuf << codeWidth) | (code & ((1 << codeWidth) - 1));
+            bitsInBuf += codeWidth;
+            while (bitsInBuf >= 8)
+            {
+                bitsInBuf -= 8;
+                ms.WriteByte((byte)(bitBuf >> bitsInBuf));
+                bitBuf &= (1 << bitsInBuf) - 1;
+            }
+        }
+
+        void ResetTable()
+        {
+            table.Clear();
+            codeWidth = 9;
+            nextCode = firstFreeCode;
+        }
+
+        EmitCode(clearCode);
+
+        if (input.Length == 0)
+        {
+            EmitCode(eoiCode);
+            if (bitsInBuf > 0)
+                ms.WriteByte((byte)(bitBuf << (8 - bitsInBuf)));
+            return ms.ToArray();
+        }
+
+        int w = input[0]; // current prefix code (starts as first byte's literal)
+
+        for (var i = 1; i < input.Length; i++)
+        {
+            int k = input[i];
+            long key = ((long)w << 8) | (byte)k;
+
+            if (table.TryGetValue(key, out int existing))
+            {
+                // W+K is in the table; extend the current string
+                w = existing;
+            }
+            else
+            {
+                // W+K not in table: output code(W), add W+K to table, W=K
+                EmitCode(w);
+
+                if (nextCode < maxTableSize)
+                {
+                    table[key] = nextCode;
+                    nextCode++;
+                    // TIFF early-change: the decoder grows its read width when its nextCode
+                    // reaches (1<<width)-1, which happens one entry after the encoder adds the
+                    // same entry (because the first code after a ClearCode is decoded without
+                    // adding an entry, keeping the decoder one entry behind).  To stay in sync,
+                    // the encoder must grow its write width one entry later — i.e. when nextCode
+                    // reaches exactly (1<<codeWidth), not (1<<codeWidth)-1.
+                    if (nextCode == (1 << codeWidth) && codeWidth < 12)
+                        codeWidth++;
+                }
+                else
+                {
+                    // Table full: emit ClearCode and reset
+                    EmitCode(clearCode);
+                    ResetTable();
+                }
+
+                w = k;
+            }
+        }
+
+        // Emit the final pending code
+        EmitCode(w);
+        EmitCode(eoiCode);
+
+        // Flush remaining bits (pad to byte boundary)
+        if (bitsInBuf > 0)
+            ms.WriteByte((byte)(bitBuf << (8 - bitsInBuf)));
+
+        return ms.ToArray();
+    }
+
+    // ── Minimal baseline JPEG builder ────────────────────────────────────────
+
+    /// <summary>
+    /// Builds a minimal valid baseline JPEG (grayscale, 1×1 or 2×1).
+    /// Contains proper SOI, APP0, SOF0, DHT, SOS, and EOI markers.
+    /// This is the smallest possible valid JPEG that JpegImageLoader.Load can parse.
+    /// </summary>
+    private static byte[] BuildMinimalJpeg(int w, int h)
+    {
+        // We build a minimal greyscale 1-component JPEG.
+        // Use a hardcoded minimal JPEG structure. The actual image data is
+        // a solid grey value — we just need a structurally valid JPEG.
+        using var ms = new MemoryStream();
+
+        // SOI
+        ms.WriteByte(0xFF); ms.WriteByte(0xD8);
+
+        // APP0 (JFIF marker) — 16 bytes
+        ms.WriteByte(0xFF); ms.WriteByte(0xE0);
+        WriteJpegU16(ms, 16); // length including length field
+        ms.Write("JFIF\0"u8);
+        ms.WriteByte(1); ms.WriteByte(1); // version 1.1
+        ms.WriteByte(0);                  // aspect ratio units
+        WriteJpegU16(ms, 1);              // X density
+        WriteJpegU16(ms, 1);              // Y density
+        ms.WriteByte(0); ms.WriteByte(0); // thumbnail size
+
+        // SOF0 (Start Of Frame, baseline DCT) — minimal for w×h, 1 component
+        ms.WriteByte(0xFF); ms.WriteByte(0xC0);
+        WriteJpegU16(ms, 11); // length: 8 + 3 per component = 11 for 1 component
+        ms.WriteByte(8);      // precision
+        WriteJpegU16(ms, (ushort)h);
+        WriteJpegU16(ms, (ushort)w);
+        ms.WriteByte(1);      // 1 component
+        ms.WriteByte(1);      // component id
+        ms.WriteByte(0x11);   // sampling factors 1×1
+        ms.WriteByte(0);      // quantization table id
+
+        // EOI — terminate immediately (not a valid scan, but JpegImageLoader only reads SOF)
+        ms.WriteByte(0xFF); ms.WriteByte(0xD9);
+
+        return ms.ToArray();
+    }
+
+    private static void WriteJpegU16(Stream s, ushort v)
+    {
+        s.WriteByte((byte)(v >> 8));
+        s.WriteByte((byte)v);
     }
 
     // ── Endian write helpers ──────────────────────────────────────────────────
