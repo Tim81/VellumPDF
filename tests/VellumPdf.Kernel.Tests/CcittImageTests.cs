@@ -260,7 +260,118 @@ public sealed class CcittImageTests
         return buf;
     }
 
+    // ── EndOfLine parameter ───────────────────────────────────────────────────
+
+    [Fact]
+    public void CcittLoad_Default_EndOfLine_Absent()
+    {
+        // EndOfLine=false (the PDF default for G4) must not be emitted.
+        var img = CcittImageLoader.Load([0x01], columns: 8, rows: 1);
+        Assert.DoesNotContain("/EndOfLine", StreamDictText(img));
+    }
+
+    [Fact]
+    public void CcittLoad_EndOfLine_True_Present()
+    {
+        var img = CcittImageLoader.Load([0x01], columns: 8, rows: 1, endOfLine: true);
+        Assert.Contains("/EndOfLine true", StreamDictText(img));
+    }
+
+    [Fact]
+    public void CcittLoad_EndOfLine_False_Absent()
+    {
+        var img = CcittImageLoader.Load([0x01], columns: 8, rows: 1, endOfLine: false);
+        Assert.DoesNotContain("/EndOfLine", StreamDictText(img));
+    }
+
+    [Fact]
+    public void CcittLoad_G3_K0_EndOfLine_AllParams_Present()
+    {
+        // Group 3 1D: K=0, EndOfLine=true, EncodedByteAlign=true, BlackIs1=true
+        var img = CcittImageLoader.Load([0x01], columns: 8, rows: 1,
+            k: 0, blackIs1: true, encodedByteAlign: true, endOfLine: true);
+        var dict = StreamDictText(img);
+        Assert.Contains("/K 0", dict);
+        Assert.Contains("/EndOfLine true", dict);
+        Assert.Contains("/EncodedByteAlign true", dict);
+        Assert.Contains("/BlackIs1 true", dict);
+        Assert.Contains("/CCITTFaxDecode", dict);
+    }
+
+    // ── DecodeToRaster option ─────────────────────────────────────────────────
+
+    [Fact]
+    public void CcittLoad_DecodeMode_Passthrough_ReturnsCcittFilter()
+    {
+        var opts = new ImageLoadOptions { DecodeMode = ImageDecodeMode.Passthrough };
+        var img = CcittImageLoader.Load([0x01, 0x02], columns: 8, rows: 1, opts);
+        Assert.Contains("/CCITTFaxDecode", StreamDictText(img));
+        Assert.DoesNotContain("/FlateDecode", StreamDictText(img));
+    }
+
+    [Fact]
+    public void CcittLoad_DecodeMode_Passthrough_IsDefault_WithOptions()
+    {
+        // Load(byte[], int, int, ImageLoadOptions) with default options → passthrough (K=-1, CCITTFaxDecode).
+        var opts = ImageLoadOptions.Default;
+        var img = CcittImageLoader.Load([0x01, 0x02], columns: 8, rows: 1, opts);
+        Assert.Contains("/CCITTFaxDecode", StreamDictText(img));
+        Assert.DoesNotContain("/FlateDecode", StreamDictText(img));
+    }
+
+    [Fact]
+    public void CcittLoad_DecodeMode_DecodeToRaster_G4_ThrowsNotSupportedException()
+    {
+        // Load(byte[], int, int, ImageLoadOptions) always uses K=-1 (G4).
+        // G4 (K<0) decode-to-raster is not supported.
+        var opts = new ImageLoadOptions { DecodeMode = ImageDecodeMode.DecodeToRaster };
+        Assert.Throws<NotSupportedException>(() =>
+            CcittImageLoader.Load([0x01], columns: 8, rows: 1, opts));
+    }
+
+    [Fact]
+    public void CcittLoad_DecodeToRaster_NullOptions_ThrowsArgumentNullException()
+    {
+        Assert.Throws<ArgumentNullException>(() =>
+            CcittImageLoader.Load([0x01], columns: 8, rows: 1, null!));
+    }
+
+    // ── All-white 1D MH stream builder ────────────────────────────────────────
+
+    /// <summary>
+    /// Builds a minimal 1D Modified Huffman stream for an 8×2 all-white image.
+    /// No EOL codes, byte-aligned rows (Compression=2 / Modified Huffman style).
+    /// White run of 8: ITU-T T.4 terminating code = <c>10011</c> (5 bits), padded to byte.
+    /// </summary>
+    public static byte[] BuildAllWhite1D_8wide_2rows()
+    {
+        // Each row: white run of 8 pixels.
+        // T.4 white terminating code for run=8 is: 10011 (5 bits).
+        // Pad to byte: 10011 + 000 = 0b10011000 = 0x98.
+        // Two rows: [0x98, 0x98].
+        return [0x98, 0x98];
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private static byte[] DecompressFlateStream(VellumPdf.Core.PdfStream pdfStream)
+    {
+        using var pdfMs = new MemoryStream();
+        var writer = new VellumPdf.IO.PdfWriter(pdfMs);
+        pdfStream.WriteTo(writer);
+        var raw = pdfMs.ToArray();
+
+        var markerStart = FindSequence(raw, "\nstream\n"u8);
+        var start = markerStart + 8;
+        var end = FindSequence(raw, "\nendstream"u8);
+        var compressed = raw[start..end];
+
+        using var zms = new MemoryStream(compressed);
+        using var z = new System.IO.Compression.ZLibStream(zms, System.IO.Compression.CompressionMode.Decompress);
+        using var result = new MemoryStream();
+        z.CopyTo(result);
+        return result.ToArray();
+    }
 
     private static string StreamDictText(VellumPdf.Images.PdfImageXObject img)
     {

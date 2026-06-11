@@ -10,7 +10,9 @@ namespace VellumPdf.Images;
 ///
 /// Supported:
 ///   • Byte order: II (little-endian) and MM (big-endian).
-///   • Compression: 1 (None/Uncompressed), 4 (CCITT Group 4 / T.6 — single strip,
+///   • Compression: 1 (None/Uncompressed), 2 (CCITT Modified Huffman 1D — single strip,
+///     CCITTFaxDecode passthrough or raster decode), 3 (CCITT Group 3 T.4 — single strip,
+///     CCITTFaxDecode passthrough or raster decode), 4 (CCITT Group 4 / T.6 — single strip,
 ///     CCITTFaxDecode passthrough), 5 (LZW), 7 (new-style JPEG — single strip,
 ///     DCTDecode passthrough for any photometric including YCbCr (6)), and 32773 (PackBits RLE).
 ///   • Photometric: 0 (WhiteIsZero greyscale — inverted), 1 (BlackIsZero greyscale),
@@ -21,6 +23,7 @@ namespace VellumPdf.Images;
 ///     colour-space interpretation via the JPEG SOF component count.
 ///   • BitsPerSample: 8 (all photometrics) and 16 (greyscale and RGB only).
 ///     CCITT Group 4 uses BitsPerSample=1 (bilevel), handled before the 8/16 gate.
+///     CCITT Group 3 (Compression 2 and 3) also uses BitsPerSample=1, handled before the gate.
 ///     Compression=7 (new-style JPEG) is also dispatched before the 8/16 gate.
 ///   • SamplesPerPixel: 1 (grey/palette), 3 (RGB), 4 (RGB+alpha → /SMask).
 ///   • PlanarConfiguration: 1 (chunky) and 2 (planar — reassembled to chunky).
@@ -31,7 +34,7 @@ namespace VellumPdf.Images;
 ///     before passthrough so the CCITTFaxDecode filter receives standard bit order.
 ///
 /// Rejected (throws NotSupportedException):
-///   • Compression 2 and 3 (CCITT Group 3 variants) — T4Options mapping required, out of scope for v1.3.
+///   • Compression 2 and 3 (CCITT Group 3) with more than one strip.
 ///   • Compression 6 (old-style JPEG) — not implemented.
 ///   • Compression 4 (CCITT Group 4) with more than one strip.
 ///   • BitsPerSample other than 8 or 16 (for non-CCITT, non-JPEG images); BitsPerSample=16 with palette photometric.
@@ -60,6 +63,7 @@ public static class TiffImageLoader
     private const ushort TagPredictor = 317;
     private const ushort TagColorMap = 320;
     private const ushort TagFillOrder = 266;
+    private const ushort TagT4Options = 292;
     private const ushort TagExtraSamples = 338;
 
     // Compression constants
@@ -136,6 +140,7 @@ public static class TiffImageLoader
         int planarConfiguration = 1;
         int predictor = 1;
         int fillOrder = 1; // 1=MSB-first (default), 2=LSB-first
+        long t4Options = 0; // Tag 292: T4Options (LONG, default 0)
         ushort[]? colorMap = null;
         int extraSamples = 0; // 0=unspecified, 1=pre-multiplied alpha, 2=unassociated alpha
 
@@ -174,6 +179,9 @@ public static class TiffImageLoader
                     break;
                 case TagFillOrder:
                     fillOrder = (int)ReadTagValue(tiff, entryBase, type, count, littleEndian);
+                    break;
+                case TagT4Options:
+                    t4Options = (long)ReadTagValue(tiff, entryBase, type, count, littleEndian);
                     break;
                 case TagPredictor:
                     predictor = (int)ReadTagValue(tiff, entryBase, type, count, littleEndian);
@@ -252,6 +260,87 @@ public static class TiffImageLoader
                 encodedByteAlign: false);
         }
 
+        // ── CCITT Group 3 (Compression=2 Modified Huffman, Compression=3 T.4/G3):
+        //    dispatch early before the 8/16-bit gate, like Group 4.
+        if (compression == CompressionCcittG3Variants1D || compression == CompressionCcittG3Mixed)
+        {
+            if (samplesPerPixel != 1)
+                throw new NotSupportedException(
+                    $"TIFF CCITT Group 3 requires SamplesPerPixel=1; found {samplesPerPixel}.");
+
+            if (stripOffsets is null || stripOffsets.Length == 0)
+                throw new InvalidDataException("TIFF is missing StripOffsets.");
+            if (stripByteCounts is null || stripByteCounts.Length == 0)
+                throw new InvalidDataException("TIFF is missing StripByteCounts.");
+
+            if (stripOffsets.Length != 1)
+                throw new NotSupportedException(
+                    "Multi-strip CCITT Group 3 TIFF is not supported.");
+
+            var g3Offset = ValidateTiffLong(stripOffsets[0], "CCITT G3 strip offset");
+            var g3Length = ValidateTiffLong(stripByteCounts[0], "CCITT G3 strip byte count");
+            if (g3Offset < 0 || (long)g3Offset + g3Length > tiff.Length)
+                throw new InvalidDataException(
+                    $"TIFF CCITT G3 strip (offset={g3Offset}, length={g3Length}) extends beyond end of file.");
+
+            var g3Bytes = tiff[g3Offset..(g3Offset + g3Length)];
+
+            // FillOrder 2 (LSB-first) requires bit-reversal to MSB-first.
+            if (fillOrder == 2)
+            {
+                var reversed = new byte[g3Bytes.Length];
+                for (var bi = 0; bi < g3Bytes.Length; bi++)
+                    reversed[bi] = BitReverse[g3Bytes[bi]];
+                g3Bytes = reversed;
+            }
+
+            // Polarity: photometric 1 (BlackIsZero) → bit 0 = black → blackIs1 = true.
+            bool g3BlackIs1 = photometric == 1;
+
+            // Map TIFF compression/T4Options to CCITTFaxDecode DecodeParms.
+            // Compression 2: Modified Huffman, 1D, byte-aligned rows.
+            //   K=0, EncodedByteAlign=true, EndOfLine=false.
+            // Compression 3, T4Options bit0=0: T.4 1D.
+            //   K=0, EncodedByteAlign=(T4Options & 0x4)!=0, EndOfLine=true.
+            // Compression 3, T4Options bit0=1: T.4 mixed 1D/2D.
+            //   K=height (positive), EncodedByteAlign=(T4Options & 0x4)!=0, EndOfLine=true.
+            int g3K;
+            bool g3EncodedByteAlign;
+            bool g3EndOfLine;
+
+            if (compression == CompressionCcittG3Variants1D)
+            {
+                g3K = 0;
+                g3EncodedByteAlign = true;
+                g3EndOfLine = false;
+            }
+            else
+            {
+                // Compression 3 (T.4 / G3)
+                bool is2D = (t4Options & 0x1) != 0;
+                g3K = is2D ? height : 0;
+                g3EncodedByteAlign = (t4Options & 0x4) != 0;
+                g3EndOfLine = true;
+            }
+
+            if (options.DecodeMode == ImageDecodeMode.DecodeToRaster)
+            {
+                var raster = CcittImageLoader.DecodeCcittToRaster(
+                    g3Bytes, width, height, g3K, g3BlackIs1, g3EncodedByteAlign);
+                return new PdfImageXObject(width, height, raster, PdfName.FlateDecode,
+                    ImageColorSpace.DeviceGray, bitsPerComponent: 1);
+            }
+
+            return CcittImageLoader.Build(
+                g3Bytes,
+                columns: width,
+                rows: height,
+                k: g3K,
+                blackIs1: g3BlackIs1,
+                encodedByteAlign: g3EncodedByteAlign,
+                endOfLine: g3EndOfLine);
+        }
+
         // ── New-style JPEG (Compression=7): single-strip DCTDecode passthrough ──
         // Dispatched early, before the bitsPerSample/photometric/samplesPerPixel gates,
         // because the TIFF strip is a self-contained JPEG datastream. The TIFF tags for
@@ -299,11 +388,6 @@ public static class TiffImageLoader
         if (photometric is 0 or 1 or 3 && samplesPerPixel != 1)
             throw new NotSupportedException(
                 $"TIFF PhotometricInterpretation={photometric} requires SamplesPerPixel=1; found {samplesPerPixel}.");
-
-        if (compression == CompressionCcittG3Variants1D || compression == CompressionCcittG3Mixed)
-            throw new NotSupportedException(
-                $"TIFF Compression={compression} (CCITT Group 3) is not supported in v1.3. " +
-                $"T4Options mapping is required and is out of scope.");
 
         if (compression == CompressionJpegOldStyle)
             throw new NotSupportedException(

@@ -1716,17 +1716,191 @@ public sealed class TiffImageTests
     }
 
     [Fact]
-    public void Tiff_CcittG3_Compression2_ThrowsNotSupportedException()
+    public void Tiff_CcittG3_Compression2_MultiSample_ThrowsNotSupportedException()
     {
+        // Compression=2 with SamplesPerPixel=3 (RGB) must still be rejected —
+        // G3 only supports bilevel (SamplesPerPixel=1).
         var tiff = CreateRgbTiffWithCompression(2, 2, compressionValue: 2);
         Assert.Throws<NotSupportedException>(() => TiffImageLoader.Load(tiff));
     }
 
     [Fact]
-    public void Tiff_CcittG3_Compression3_ThrowsNotSupportedException()
+    public void Tiff_CcittG3_Compression3_MultiSample_ThrowsNotSupportedException()
     {
+        // Compression=3 with SamplesPerPixel=3 (RGB) must still be rejected.
         var tiff = CreateRgbTiffWithCompression(2, 2, compressionValue: 3);
         Assert.Throws<NotSupportedException>(() => TiffImageLoader.Load(tiff));
+    }
+
+    // ── CCITT Group 3 (Compression=2 and 3) ─────────────────────────────────
+
+    [Fact]
+    public void Tiff_G3_Compression2_Filter_IsCcittFaxDecode()
+    {
+        // Compression=2: K=0, EncodedByteAlign=true, EndOfLine=false (PDF default = absent).
+        var mhData = CcittImageTests.BuildAllWhite1D_8wide_2rows();
+        var tiff = BuildTiffG3(8, 2, photometric: 0, compression: 2, t4Options: 0, mhData);
+        var img = TiffImageLoader.Load(tiff);
+
+        var dict = StreamDictText(img);
+        Assert.Contains("/CCITTFaxDecode", dict);
+        Assert.DoesNotContain("/FlateDecode", dict);
+        Assert.Contains("/K 0", dict);
+        Assert.Contains("/EncodedByteAlign true", dict);
+        Assert.DoesNotContain("/EndOfLine", dict);
+        Assert.Contains("/Columns 8", dict);
+        Assert.Contains("/Rows 2", dict);
+    }
+
+    [Fact]
+    public void Tiff_G3_Compression2_Photometric0_NoBlackIs1()
+    {
+        var mhData = CcittImageTests.BuildAllWhite1D_8wide_2rows();
+        var tiff = BuildTiffG3(8, 2, photometric: 0, compression: 2, t4Options: 0, mhData);
+        var img = TiffImageLoader.Load(tiff);
+        Assert.DoesNotContain("/BlackIs1", StreamDictText(img));
+    }
+
+    [Fact]
+    public void Tiff_G3_Compression2_Photometric1_BlackIs1_True()
+    {
+        var mhData = CcittImageTests.BuildAllWhite1D_8wide_2rows();
+        var tiff = BuildTiffG3(8, 2, photometric: 1, compression: 2, t4Options: 0, mhData);
+        var img = TiffImageLoader.Load(tiff);
+        Assert.Contains("/BlackIs1 true", StreamDictText(img));
+    }
+
+    [Fact]
+    public void Tiff_G3_Compression2_BytesVerbatim()
+    {
+        var mhData = CcittImageTests.BuildAllWhite1D_8wide_2rows();
+        var tiff = BuildTiffG3(8, 2, photometric: 0, compression: 2, t4Options: 0, mhData);
+        var img = TiffImageLoader.Load(tiff);
+
+        var raw = WriteStreamRaw(img);
+        var markerStart = FindSequence(raw, "\nstream\n"u8);
+        Assert.True(markerStart >= 0, "stream marker not found");
+        var bodyStart = markerStart + 8;
+        var endStream = FindSequence(raw, "\nendstream"u8);
+        var body = raw[bodyStart..endStream];
+        Assert.Equal(mhData, body);
+    }
+
+    [Fact]
+    public void Tiff_G3_Compression3_1D_T4Options0_DecodeParms_Correct()
+    {
+        // Compression=3, T4Options=0 (bit0=0 → 1D), bit2=0 → EncodedByteAlign=false, EndOfLine=true.
+        var mhData = CcittImageTests.BuildAllWhite1D_8wide_2rows();
+        var tiff = BuildTiffG3(8, 2, photometric: 0, compression: 3, t4Options: 0, mhData);
+        var img = TiffImageLoader.Load(tiff);
+
+        var dict = StreamDictText(img);
+        Assert.Contains("/CCITTFaxDecode", dict);
+        Assert.Contains("/K 0", dict);
+        Assert.DoesNotContain("/EncodedByteAlign", dict);
+        Assert.Contains("/EndOfLine true", dict);
+    }
+
+    [Fact]
+    public void Tiff_G3_Compression3_1D_T4Options4_EncodedByteAlign_True()
+    {
+        // T4Options bit2=1 → EncodedByteAlign=true.
+        var mhData = CcittImageTests.BuildAllWhite1D_8wide_2rows();
+        var tiff = BuildTiffG3(8, 2, photometric: 0, compression: 3, t4Options: 4, mhData);
+        var img = TiffImageLoader.Load(tiff);
+
+        var dict = StreamDictText(img);
+        Assert.Contains("/EncodedByteAlign true", dict);
+        Assert.Contains("/EndOfLine true", dict);
+        Assert.Contains("/K 0", dict);
+    }
+
+    [Fact]
+    public void Tiff_G3_Compression3_2D_T4Options1_K_IsPositive()
+    {
+        // T4Options bit0=1 → mixed 1D/2D → K = height (positive), EndOfLine=true.
+        var mhData = CcittImageTests.BuildAllWhite1D_8wide_2rows();
+        var tiff = BuildTiffG3(8, 2, photometric: 0, compression: 3, t4Options: 1, mhData);
+        var img = TiffImageLoader.Load(tiff);
+
+        var dict = StreamDictText(img);
+        Assert.Contains("/EndOfLine true", dict);
+        // K must be positive (equal to height = 2 for this fixture).
+        Assert.Contains("/K 2", dict);
+    }
+
+    [Fact]
+    public void Tiff_G3_Dimensions_Correct()
+    {
+        var mhData = CcittImageTests.BuildAllWhite1D_8wide_2rows();
+        var tiff = BuildTiffG3(8, 2, photometric: 0, compression: 2, t4Options: 0, mhData);
+        var img = TiffImageLoader.Load(tiff);
+        Assert.Equal(8, img.Width);
+        Assert.Equal(2, img.Height);
+    }
+
+    [Fact]
+    public void Tiff_G3_MultiStrip_ThrowsNotSupportedException()
+    {
+        var mhData = CcittImageTests.BuildAllWhite1D_8wide_2rows();
+        var tiff = BuildTiffG3MultiStrip(8, 2, photometric: 0, mhData);
+        Assert.Throws<NotSupportedException>(() => TiffImageLoader.Load(tiff));
+    }
+
+    [Fact]
+    public void Tiff_G3_FillOrder2_BytesAreReversed()
+    {
+        // FillOrder=2 TIFF: bytes must be bit-reversed before passthrough.
+        var original = new byte[] { 0xAB, 0xCD };
+        var tiff = BuildTiffG3WithFillOrder(4, 2, photometric: 0, compression: 2, t4Options: 0,
+            original, fillOrder: 2);
+        var img = TiffImageLoader.Load(tiff);
+
+        var raw = WriteStreamRaw(img);
+        var markerStart = FindSequence(raw, "\nstream\n"u8);
+        var bodyStart = markerStart + 8;
+        var endStream = FindSequence(raw, "\nendstream"u8);
+        var body = raw[bodyStart..endStream];
+
+        // 0xAB reversed = 0xD5; 0xCD reversed = 0xB3
+        Assert.Equal(new byte[] { 0xD5, 0xB3 }, body);
+    }
+
+    [Fact]
+    public void Tiff_G3_DecodeToRaster_AllWhite_ReturnsFlate()
+    {
+        // DecodeToRaster via TiffImageLoader for Compression=2 (Modified Huffman 1D).
+        var mhData = CcittImageTests.BuildAllWhite1D_8wide_2rows();
+        var tiff = BuildTiffG3(8, 2, photometric: 0, compression: 2, t4Options: 0, mhData);
+        var opts = new ImageLoadOptions { DecodeMode = ImageDecodeMode.DecodeToRaster };
+        var img = TiffImageLoader.Load(tiff, opts);
+
+        var dict = StreamDictText(img);
+        Assert.Contains("/FlateDecode", dict);
+        Assert.DoesNotContain("/CCITTFaxDecode", dict);
+        Assert.Equal(8, img.Width);
+        Assert.Equal(2, img.Height);
+    }
+
+    [Fact]
+    public void Tiff_G3_DecodeToRaster_2D_ThrowsNotSupportedException()
+    {
+        // Compression=3 with T4Options bit0=1 (2D rows) → DecodeToRaster must throw.
+        // Build a stream that contains an EOL (000000000001 = 12 bits) followed by a
+        // 2D-row tag bit (0), so the decoder detects a 2D row immediately.
+        // [0x00, 0x10]: bits 0-11 = "000000000001" (EOL), bit 12 = 0 (2D row indicator).
+        var stream2D = new byte[] { 0x00, 0x10 };
+        var tiff = BuildTiffG3(8, 2, photometric: 0, compression: 3, t4Options: 1, stream2D);
+        var opts = new ImageLoadOptions { DecodeMode = ImageDecodeMode.DecodeToRaster };
+        Assert.Throws<NotSupportedException>(() => TiffImageLoader.Load(tiff, opts));
+    }
+
+    [Fact]
+    public void Tiff_G3_TruncatedStrip_ThrowsInvalidDataException()
+    {
+        // Strip claims 8 bytes but TIFF file is truncated to half that.
+        var tiff = BuildTiffG3WithTruncatedStrip(8, 2);
+        Assert.Throws<InvalidDataException>(() => TiffImageLoader.Load(tiff));
     }
 
     // ── G4 TIFF builder helpers ───────────────────────────────────────────────
@@ -1856,6 +2030,185 @@ public sealed class TiffImageTests
         WriteU32(ms, (uint)strip1.Length, true);
         WriteU32(ms, (uint)strip2.Length, true);
 
+        return ms.ToArray();
+    }
+
+    // ── G3 TIFF builder helpers ───────────────────────────────────────────────
+
+    /// <summary>
+    /// Builds a minimal single-strip TIFF with Compression=2 or 3 (CCITT Group 3).
+    /// BitsPerSample=1, SamplesPerPixel=1.
+    /// </summary>
+    private static byte[] BuildTiffG3(
+        int w, int h, int photometric, int compression, int t4Options, byte[] stripData)
+        => BuildTiffG3WithFillOrder(w, h, photometric, compression, t4Options, stripData, fillOrder: 1);
+
+    private static byte[] BuildTiffG3WithFillOrder(
+        int w, int h, int photometric, int compression, int t4Options,
+        byte[] stripData, int fillOrder)
+    {
+        using var ms = new MemoryStream();
+        ms.WriteByte(0x49); ms.WriteByte(0x49); // II little-endian
+        ms.WriteByte(0x2A); ms.WriteByte(0x00);
+
+        var stripOffset = 8u;
+        var ifdOffset = stripOffset + (uint)stripData.Length;
+        WriteU32(ms, ifdOffset, true);
+        ms.Write(stripData);
+
+        var entries = new List<(ushort tag, ushort type, uint count, uint value)>
+        {
+            (256, 4, 1, (uint)w),
+            (257, 4, 1, (uint)h),
+            (258, 3, 1, 1),                       // BitsPerSample=1
+            (259, 3, 1, (uint)compression),       // Compression (2 or 3)
+            (262, 3, 1, (uint)photometric),
+            (266, 3, 1, (uint)fillOrder),         // FillOrder
+            (273, 4, 1, stripOffset),
+            (277, 3, 1, 1),                       // SamplesPerPixel=1
+            (278, 4, 1, (uint)h),                 // RowsPerStrip=h
+            (279, 4, 1, (uint)stripData.Length),
+            (284, 3, 1, 1),                       // PlanarConfiguration=chunky
+            (292, 4, 1, (uint)t4Options),         // T4Options (LONG)
+        };
+        entries.Sort((a, b) => a.tag.CompareTo(b.tag));
+
+        WriteU16(ms, (ushort)entries.Count, true);
+        foreach (var (tag, type, count, value) in entries)
+        {
+            WriteU16(ms, tag, true);
+            WriteU16(ms, type, true);
+            WriteU32(ms, count, true);
+            if (type == 3)
+            {
+                ms.WriteByte((byte)value); ms.WriteByte((byte)(value >> 8));
+                ms.WriteByte(0); ms.WriteByte(0);
+            }
+            else
+            {
+                WriteU32(ms, value, true);
+            }
+        }
+        WriteU32(ms, 0, true);
+        return ms.ToArray();
+    }
+
+    /// <summary>
+    /// Builds a multi-strip G3 TIFF (two strips) to test the rejection path.
+    /// </summary>
+    private static byte[] BuildTiffG3MultiStrip(int w, int h, int photometric, byte[] stripData)
+    {
+        using var ms = new MemoryStream();
+        ms.WriteByte(0x49); ms.WriteByte(0x49);
+        ms.WriteByte(0x2A); ms.WriteByte(0x00);
+
+        var half = (stripData.Length + 1) / 2;
+        var strip1 = stripData[..half];
+        var strip2 = half < stripData.Length ? stripData[half..] : new byte[] { 0x00 };
+
+        var strip1Offset = 8u;
+        var strip2Offset = strip1Offset + (uint)strip1.Length;
+
+        // IFD size: 2 + 11*12 + 4 = 138 bytes. Strip arrays follow.
+        var ifdOffset = strip2Offset + (uint)strip2.Length;
+        var stripOffsetsArrayOff = ifdOffset + 138u;
+        var stripByteCountsArrayOff = stripOffsetsArrayOff + 8u;
+
+        WriteU32(ms, ifdOffset, true);
+        ms.Write(strip1);
+        ms.Write(strip2);
+
+        var entries = new List<(ushort tag, ushort type, uint count, uint value)>
+        {
+            (256, 4, 1, (uint)w),
+            (257, 4, 1, (uint)h),
+            (258, 3, 1, 1),
+            (259, 3, 1, 2),                                 // Compression=2
+            (262, 3, 1, (uint)photometric),
+            (266, 3, 1, 1),                                 // FillOrder=1
+            (273, 4, 2, stripOffsetsArrayOff),
+            (277, 3, 1, 1),
+            (278, 4, 1, (uint)(h / 2)),
+            (279, 4, 2, stripByteCountsArrayOff),
+            (284, 3, 1, 1),
+        };
+        entries.Sort((a, b) => a.tag.CompareTo(b.tag));
+
+        WriteU16(ms, (ushort)entries.Count, true);
+        foreach (var (tag, type, count, value) in entries)
+        {
+            WriteU16(ms, tag, true);
+            WriteU16(ms, type, true);
+            WriteU32(ms, count, true);
+            if (count * GetTypeSize(type) <= 4 && type == 3)
+            {
+                ms.WriteByte((byte)value); ms.WriteByte((byte)(value >> 8));
+                ms.WriteByte(0); ms.WriteByte(0);
+            }
+            else WriteU32(ms, value, true);
+        }
+        WriteU32(ms, 0, true);
+
+        WriteU32(ms, strip1Offset, true);
+        WriteU32(ms, strip2Offset, true);
+        WriteU32(ms, (uint)strip1.Length, true);
+        WriteU32(ms, (uint)strip2.Length, true);
+
+        return ms.ToArray();
+    }
+
+    /// <summary>
+    /// Builds a G3 TIFF where StripByteCounts claims a byte count large enough to extend
+    /// well beyond the end of the file, triggering the bounds check in the G3 dispatch path.
+    /// </summary>
+    private static byte[] BuildTiffG3WithTruncatedStrip(int w, int h)
+    {
+        // Use a claimed byte count larger than any reasonable file: int.MaxValue.
+        // ValidateTiffLong accepts values up to int.MaxValue; the subsequent
+        // bounds check (g3Offset + g3Length > tiff.Length) will always fire.
+        const uint claimedByteCount = 0x7FFFFFFF; // int.MaxValue
+
+        var realData = new byte[] { 0x98, 0x98 }; // 2 bytes of real strip data (irrelevant)
+
+        using var ms = new MemoryStream();
+        ms.WriteByte(0x49); ms.WriteByte(0x49);
+        ms.WriteByte(0x2A); ms.WriteByte(0x00);
+
+        var stripOffset = 8u;
+        var ifdOffset = stripOffset + (uint)realData.Length;
+        WriteU32(ms, ifdOffset, true);
+        ms.Write(realData);
+
+        var entries = new List<(ushort tag, ushort type, uint count, uint value)>
+        {
+            (256, 4, 1, (uint)w),
+            (257, 4, 1, (uint)h),
+            (258, 3, 1, 1),
+            (259, 3, 1, 2),                    // Compression=2
+            (262, 3, 1, 0),
+            (266, 3, 1, 1),
+            (273, 4, 1, stripOffset),
+            (277, 3, 1, 1),
+            (278, 4, 1, (uint)h),
+            (279, 4, 1, claimedByteCount),     // int.MaxValue > any file length
+            (284, 3, 1, 1),
+        };
+        entries.Sort((a, b) => a.tag.CompareTo(b.tag));
+
+        WriteU16(ms, (ushort)entries.Count, true);
+        foreach (var (tag, type, count, value) in entries)
+        {
+            WriteU16(ms, tag, true);
+            WriteU16(ms, type, true);
+            WriteU32(ms, count, true);
+            if (type == 3)
+            {
+                ms.WriteByte((byte)value); ms.WriteByte((byte)(value >> 8));
+                ms.WriteByte(0); ms.WriteByte(0);
+            }
+            else WriteU32(ms, value, true);
+        }
+        WriteU32(ms, 0, true);
         return ms.ToArray();
     }
 
