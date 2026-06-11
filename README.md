@@ -32,7 +32,7 @@ clean-room from the open **ISO 32000** standard.
 
 | Package | Status | Description |
 | --- | --- | --- |
-| `VellumPdf.Kernel` | Stable | Object model, canvas, Standard-14 fonts, TrueType/OpenType embedding + subsetting, images (JPEG/PNG/BMP/GIF/TIFF), AES-256 encryption, object/cross-reference streams, AcroForm fields, tagged-PDF structure tree, PDF/A-2 metadata, and DeviceCMYK and ICC-based colour with configurable output intents. |
+| `VellumPdf.Kernel` | Stable | Object model, canvas, Standard-14 fonts, TrueType/OpenType embedding + subsetting, images (JPEG/PNG/BMP/GIF/TIFF/JBIG2/JPEG 2000), AES-256 encryption, object/cross-reference streams, AcroForm fields, tagged-PDF structure tree, PDF/A-2 metadata, and DeviceCMYK and ICC-based colour with configurable output intents. |
 | `VellumPdf.Layout` | Stable | High-level document builder: paragraphs, headings, lists, tables, images, header/footer bands, bookmarks, and automatic pagination. |
 | `VellumPdf.Signing` | Stable | PAdES / PKCS#7 detached digital signatures over an incremental-update revision. |
 | _(roadmap)_ `VellumPdf.Conformance` | Planned | In-process PDF/A and PDF/UA preflight validator. |
@@ -134,7 +134,6 @@ oracles — a missing tool fails the build, so the gates can never silently skip
 | Area | Notes |
 | --- | --- |
 | In-process preflight | `VellumPdf.Conformance` PDF/A and PDF/UA validator package. |
-| Image codecs | JBIG2 and JPEG 2000 decoders, and CCITT Group 3 (Group 4 is supported). |
 | Linearization | "Fast web view" object ordering. |
 | Signature LTV | Long-term validation data (OCSP/CRL) for archival PAdES. |
 | Barcodes | The `VellumPdf.Barcodes` package. |
