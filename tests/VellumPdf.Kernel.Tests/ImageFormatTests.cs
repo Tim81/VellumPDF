@@ -793,4 +793,399 @@ public sealed class ImageFormatTests
         var truncated = sig.Concat(chunk).ToArray(); // 36 bytes total, but IHDR claims 1000
         Assert.Throws<InvalidDataException>(() => PngImageLoader.Load(truncated));
     }
+
+    // ── PNG: Adam7 interlaced ─────────────────────────────────────────────────
+
+    /// <summary>
+    /// Builds an interlaced (Adam7) PNG for a given image by producing the 7 Adam7 passes
+    /// each as its own sub-image filtered stream, then concatenating. Each pass scanline
+    /// uses filter type 0 (None).
+    /// </summary>
+    private static byte[] CreateInterlacedPng(int w, int h, byte colorType, byte bitDepth, byte[] pixels)
+    {
+        // Adam7 pass parameters
+        int[] xStart = [0, 4, 0, 2, 0, 1, 0];
+        int[] yStart = [0, 0, 4, 0, 2, 0, 1];
+        int[] xStep = [8, 8, 4, 4, 2, 2, 1];
+        int[] yStep = [8, 8, 8, 4, 4, 2, 2];
+
+        int samplesPerPixel = colorType switch { 0 => 1, 2 => 3, 3 => 1, 4 => 2, 6 => 4, _ => 3 };
+        int bytesPerSample = bitDepth >= 8 ? bitDepth / 8 : 1; // for sub-byte we work at byte level below
+        int fullRowBytes = (w * samplesPerPixel * bitDepth + 7) / 8;
+
+        using var idatMs = new MemoryStream();
+
+        for (var pass = 0; pass < 7; pass++)
+        {
+            int rw = xStart[pass] >= w ? 0 : (w - xStart[pass] + xStep[pass] - 1) / xStep[pass];
+            int rh = yStart[pass] >= h ? 0 : (h - yStart[pass] + yStep[pass] - 1) / yStep[pass];
+            if (rw == 0 || rh == 0) continue;
+
+            int passRowBytes = (rw * samplesPerPixel * bitDepth + 7) / 8;
+            var passRaw = new byte[rh * (1 + passRowBytes)];
+
+            for (var row = 0; row < rh; row++)
+            {
+                var fullRow = yStart[pass] + row * yStep[pass];
+                passRaw[row * (1 + passRowBytes)] = 0; // filter None
+
+                if (bitDepth >= 8)
+                {
+                    int passBytesPerPixel = samplesPerPixel * bytesPerSample;
+                    for (var col = 0; col < rw; col++)
+                    {
+                        var fullCol = xStart[pass] + col * xStep[pass];
+                        var srcBase = fullRow * fullRowBytes + fullCol * passBytesPerPixel;
+                        var dstBase = row * (1 + passRowBytes) + 1 + col * passBytesPerPixel;
+                        for (var b = 0; b < passBytesPerPixel; b++)
+                            passRaw[dstBase + b] = pixels[srcBase + b];
+                    }
+                }
+                else
+                {
+                    // Sub-byte: copy bits from full raster to pass row
+                    int bitMask = (1 << bitDepth) - 1;
+                    for (var col = 0; col < rw; col++)
+                    {
+                        var fullCol = xStart[pass] + col * xStep[pass];
+                        for (var s = 0; s < samplesPerPixel; s++)
+                        {
+                            // Read from full raster
+                            int srcBitPos = (fullRow * fullRowBytes * 8) + (fullCol * samplesPerPixel + s) * bitDepth;
+                            int srcByteIdx = srcBitPos / 8;
+                            int srcBitOffset = 8 - bitDepth - (srcBitPos % 8);
+                            var sample = (pixels[srcByteIdx] >> srcBitOffset) & bitMask;
+
+                            // Write to pass row
+                            int dstBitPos = (col * samplesPerPixel + s) * bitDepth;
+                            int dstByteIdx = row * (1 + passRowBytes) + 1 + dstBitPos / 8;
+                            int dstBitOffset = 8 - bitDepth - (dstBitPos % 8);
+                            passRaw[dstByteIdx] &= (byte)~(bitMask << dstBitOffset);
+                            passRaw[dstByteIdx] |= (byte)(sample << dstBitOffset);
+                        }
+                    }
+                }
+            }
+
+            idatMs.Write(passRaw);
+        }
+
+        // Build PNG
+        using var ms = new MemoryStream();
+        ms.Write([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
+
+        // IHDR with interlace=1
+        var ihdr = new byte[13];
+        ihdr[0] = (byte)(w >> 24); ihdr[1] = (byte)(w >> 16); ihdr[2] = (byte)(w >> 8); ihdr[3] = (byte)w;
+        ihdr[4] = (byte)(h >> 24); ihdr[5] = (byte)(h >> 16); ihdr[6] = (byte)(h >> 8); ihdr[7] = (byte)h;
+        ihdr[8] = bitDepth; ihdr[9] = colorType;
+        // compression=0, filter=0, interlace=1
+        ihdr[10] = 0; ihdr[11] = 0; ihdr[12] = 1;
+        WritePngChunk(ms, "IHDR", ihdr);
+
+        WritePngChunk(ms, "IDAT", ZlibCompress(idatMs.ToArray()));
+        WritePngChunk(ms, "IEND", []);
+        return ms.ToArray();
+    }
+
+    /// <summary>
+    /// Builds the equivalent non-interlaced PNG for the same pixel data, for round-trip comparison.
+    /// </summary>
+    private static byte[] CreateNonInterlacedPng(int w, int h, byte colorType, byte bitDepth, byte[] pixels)
+    {
+        int samplesPerPixel = colorType switch { 0 => 1, 2 => 3, 3 => 1, 4 => 2, 6 => 4, _ => 3 };
+        int rowBytes = (w * samplesPerPixel * bitDepth + 7) / 8;
+
+        // Build filtered raw: each row prefixed by filter byte 0
+        var raw = new byte[h * (1 + rowBytes)];
+        for (var y = 0; y < h; y++)
+        {
+            raw[y * (1 + rowBytes)] = 0; // filter None
+            Array.Copy(pixels, y * rowBytes, raw, y * (1 + rowBytes) + 1, rowBytes);
+        }
+
+        using var ms = new MemoryStream();
+        ms.Write([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
+        WritePngChunk(ms, "IHDR", CreatePngIhdr(w, h, bitDepth, colorType));
+        WritePngChunk(ms, "IDAT", ZlibCompress(raw));
+        WritePngChunk(ms, "IEND", []);
+        return ms.ToArray();
+    }
+
+    [Fact]
+    public void Png_interlaced_8x8_rgb_roundtrip()
+    {
+        // 8×8 RGB image: each pixel is (row*16, col*16, 128).
+        const int w = 8, h = 8;
+        var pixels = new byte[w * h * 3];
+        for (var row = 0; row < h; row++)
+            for (var col = 0; col < w; col++)
+            {
+                pixels[(row * w + col) * 3] = (byte)(row * 16);
+                pixels[(row * w + col) * 3 + 1] = (byte)(col * 16);
+                pixels[(row * w + col) * 3 + 2] = 128;
+            }
+
+        var interlacedPng = CreateInterlacedPng(w, h, 2, 8, pixels);
+        var nonInterlacedPng = CreateNonInterlacedPng(w, h, 2, 8, pixels);
+
+        var imgInterlaced = PngImageLoader.Load(interlacedPng);
+        var imgNonInterlaced = PngImageLoader.Load(nonInterlacedPng);
+
+        var deinterlaced = DecompressStream(imgInterlaced.BuildStream());
+        var nonInterlacedPixels = DecompressStream(imgNonInterlaced.BuildStream());
+
+        Assert.Equal(w, imgInterlaced.Width);
+        Assert.Equal(h, imgInterlaced.Height);
+        Assert.Equal(nonInterlacedPixels, deinterlaced);
+    }
+
+    [Fact]
+    public void Png_interlaced_5x3_rgb_roundtrip()
+    {
+        // Non-square: 5×3 RGB — exercises pass-dimension ceil math.
+        const int w = 5, h = 3;
+        var pixels = new byte[w * h * 3];
+        for (var i = 0; i < w * h; i++)
+        {
+            pixels[i * 3] = (byte)(i * 7 % 256);
+            pixels[i * 3 + 1] = (byte)(i * 13 % 256);
+            pixels[i * 3 + 2] = (byte)(i * 31 % 256);
+        }
+
+        var interlacedPng = CreateInterlacedPng(w, h, 2, 8, pixels);
+        var nonInterlacedPng = CreateNonInterlacedPng(w, h, 2, 8, pixels);
+
+        var imgInterlaced = PngImageLoader.Load(interlacedPng);
+        var imgNonInterlaced = PngImageLoader.Load(nonInterlacedPng);
+
+        var deinterlaced = DecompressStream(imgInterlaced.BuildStream());
+        var nonInterlacedPixels = DecompressStream(imgNonInterlaced.BuildStream());
+
+        Assert.Equal(nonInterlacedPixels, deinterlaced);
+    }
+
+    [Fact]
+    public void Png_interlaced_8x8_gray8_roundtrip()
+    {
+        // 8×8 grayscale 8-bit interlaced.
+        const int w = 8, h = 8;
+        var pixels = new byte[w * h];
+        for (var i = 0; i < w * h; i++)
+            pixels[i] = (byte)(i * 4 % 256);
+
+        var interlacedPng = CreateInterlacedPng(w, h, 0, 8, pixels);
+        var nonInterlacedPng = CreateNonInterlacedPng(w, h, 0, 8, pixels);
+
+        var imgInterlaced = PngImageLoader.Load(interlacedPng);
+        var imgNonInterlaced = PngImageLoader.Load(nonInterlacedPng);
+
+        var deinterlaced = DecompressStream(imgInterlaced.BuildStream());
+        var nonInterlacedPixels = DecompressStream(imgNonInterlaced.BuildStream());
+
+        Assert.Equal(w, imgInterlaced.Width);
+        Assert.Equal(h, imgInterlaced.Height);
+        Assert.Equal(nonInterlacedPixels, deinterlaced);
+    }
+
+    [Fact]
+    public void Png_interlaced_8x8_gray1bit_roundtrip()
+    {
+        // 8×8 1-bit grayscale interlaced. Row stride = 1 byte per row.
+        // Pixels packed: each row is 8 bits, one per column.
+        const int w = 8, h = 8;
+        // 1 byte per row, alternating 0xAA (10101010) and 0x55 (01010101)
+        var pixels = new byte[h]; // 1 byte per row for w=8, bitDepth=1
+        for (var row = 0; row < h; row++)
+            pixels[row] = (byte)(row % 2 == 0 ? 0xAA : 0x55);
+
+        var interlacedPng = CreateInterlacedPng(w, h, 0, 1, pixels);
+        var nonInterlacedPng = CreateNonInterlacedPng(w, h, 0, 1, pixels);
+
+        var imgInterlaced = PngImageLoader.Load(interlacedPng);
+        var imgNonInterlaced = PngImageLoader.Load(nonInterlacedPng);
+
+        // Both should produce the same unpacked 8-bit grayscale output.
+        var deinterlaced = DecompressStream(imgInterlaced.BuildStream());
+        var nonInterlacedOut = DecompressStream(imgNonInterlaced.BuildStream());
+
+        Assert.Equal(w, imgInterlaced.Width);
+        Assert.Equal(h, imgInterlaced.Height);
+        Assert.Equal(nonInterlacedOut, deinterlaced);
+    }
+
+    // ── PNG: 16-bit preserve / reduce ────────────────────────────────────────
+
+    /// <summary>Reads the BitsPerComponent value from a stream's dict text.</summary>
+    private static int ReadBitsPerComponent(VellumPdf.Core.PdfStream stream)
+    {
+        var text = PdfStreamText(stream);
+        const string key = "/BitsPerComponent ";
+        var idx = text.IndexOf(key, StringComparison.Ordinal);
+        if (idx < 0) throw new InvalidOperationException("BitsPerComponent not found in stream dict.");
+        var rest = text[(idx + key.Length)..];
+        var end = rest.IndexOf('\n');
+        if (end < 0) end = rest.IndexOf(' ');
+        if (end < 0) end = rest.Length;
+        return int.Parse(rest[..end].Trim());
+    }
+
+    /// <summary>
+    /// Creates a 16-bit grayscale PNG where each pixel has a known high and low byte.
+    /// The pixels array must contain w * h * 2 bytes (big-endian 16-bit samples).
+    /// </summary>
+    private static byte[] Create16BitGrayPng(int w, int h, byte[] pixels16)
+    {
+        // rowBytes = w * 2 for 16-bit gray
+        int rowBytes = w * 2;
+        var raw = new byte[h * (1 + rowBytes)];
+        for (var y = 0; y < h; y++)
+        {
+            raw[y * (1 + rowBytes)] = 0; // filter None
+            Array.Copy(pixels16, y * rowBytes, raw, y * (1 + rowBytes) + 1, rowBytes);
+        }
+        using var ms = new MemoryStream();
+        ms.Write([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
+        WritePngChunk(ms, "IHDR", CreatePngIhdr(w, h, 16, 0)); // colorType 0 = gray
+        WritePngChunk(ms, "IDAT", ZlibCompress(raw));
+        WritePngChunk(ms, "IEND", []);
+        return ms.ToArray();
+    }
+
+    /// <summary>
+    /// Creates a 16-bit RGBA PNG where each pixel has known samples.
+    /// pixels16 must contain w * h * 4 * 2 bytes (RRGGBBAA, 2 bytes each, big-endian).
+    /// </summary>
+    private static byte[] Create16BitRgbaPng(int w, int h, byte[] pixels16)
+    {
+        // colorType 6 = RGBA, 4 samples × 2 bytes = 8 bytes per pixel
+        int rowBytes = w * 4 * 2;
+        var raw = new byte[h * (1 + rowBytes)];
+        for (var y = 0; y < h; y++)
+        {
+            raw[y * (1 + rowBytes)] = 0;
+            Array.Copy(pixels16, y * rowBytes, raw, y * (1 + rowBytes) + 1, rowBytes);
+        }
+        using var ms = new MemoryStream();
+        ms.Write([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]);
+        WritePngChunk(ms, "IHDR", CreatePngIhdr(w, h, 16, 6)); // colorType 6 = RGBA
+        WritePngChunk(ms, "IDAT", ZlibCompress(raw));
+        WritePngChunk(ms, "IEND", []);
+        return ms.ToArray();
+    }
+
+    [Fact]
+    public void Png16Bit_preserve_bitsPerComponent_is16()
+    {
+        // 2×1 16-bit gray with pixel 0 = 0x1234 and pixel 1 = 0xABCD.
+        // Each pixel: high byte first, then low byte (big-endian).
+        var pixels16 = new byte[] { 0x12, 0x34, 0xAB, 0xCD };
+        var png = Create16BitGrayPng(2, 1, pixels16);
+
+        var img = PngImageLoader.Load(png, ImageLoadOptions.Default); // Default = Preserve
+        var stream = img.BuildStream();
+        var bpc = ReadBitsPerComponent(stream);
+
+        Assert.Equal(16, bpc);
+        Assert.Equal(2, img.Width);
+        Assert.Equal(1, img.Height);
+    }
+
+    [Fact]
+    public void Png16Bit_preserve_both_bytes_retained()
+    {
+        // Verify both high and low bytes are present in the decompressed stream.
+        // Pixel 0 = 0x1234, pixel 1 = 0xABCD.
+        var pixels16 = new byte[] { 0x12, 0x34, 0xAB, 0xCD };
+        var png = Create16BitGrayPng(2, 1, pixels16);
+
+        var img = PngImageLoader.Load(png, ImageLoadOptions.Default);
+        var decompressed = DecompressStream(img.BuildStream());
+
+        Assert.Equal(4, decompressed.Length); // 2 pixels × 2 bytes each
+        Assert.Equal(0x12, decompressed[0]);  // high byte of pixel 0
+        Assert.Equal(0x34, decompressed[1]);  // low byte of pixel 0
+        Assert.Equal(0xAB, decompressed[2]);  // high byte of pixel 1
+        Assert.Equal(0xCD, decompressed[3]);  // low byte of pixel 1
+    }
+
+    [Fact]
+    public void Png16Bit_reduce_bitsPerComponent_is8()
+    {
+        // Same PNG but loaded with ReduceToEight: only high bytes should appear.
+        var pixels16 = new byte[] { 0x12, 0x34, 0xAB, 0xCD };
+        var png = Create16BitGrayPng(2, 1, pixels16);
+
+        var img = PngImageLoader.Load(png, new ImageLoadOptions { BitDepth = ImageBitDepth.ReduceToEight });
+        var stream = img.BuildStream();
+        var bpc = ReadBitsPerComponent(stream);
+
+        Assert.Equal(8, bpc);
+
+        var decompressed = DecompressStream(stream);
+        Assert.Equal(2, decompressed.Length); // 2 pixels × 1 byte each
+        Assert.Equal(0x12, decompressed[0]);  // high byte of pixel 0
+        Assert.Equal(0xAB, decompressed[1]);  // high byte of pixel 1
+    }
+
+    [Fact]
+    public void Png16Bit_preserve_alpha_smask_is16bit()
+    {
+        // 1×1 16-bit RGBA: pixel = R=0x1122, G=0x3344, B=0x5566, A=0x7788
+        var pixels16 = new byte[]
+        {
+            0x11, 0x22, // R
+            0x33, 0x44, // G
+            0x55, 0x66, // B
+            0x77, 0x88  // A
+        };
+        var png = Create16BitRgbaPng(1, 1, pixels16);
+
+        var img = PngImageLoader.Load(png, ImageLoadOptions.Default);
+
+        // SMask should exist and be 16-bit.
+        Assert.NotNull(img.SMask);
+        Assert.Equal(16, img.SMaskBitsPerComponent);
+
+        // Color stream: R G B at 16-bit each (3 channels × 2 bytes = 6 bytes)
+        var colorBytes = DecompressStream(img.BuildStream());
+        Assert.Equal(6, colorBytes.Length);
+        Assert.Equal(0x11, colorBytes[0]); Assert.Equal(0x22, colorBytes[1]); // R
+        Assert.Equal(0x33, colorBytes[2]); Assert.Equal(0x44, colorBytes[3]); // G
+        Assert.Equal(0x55, colorBytes[4]); Assert.Equal(0x66, colorBytes[5]); // B
+
+        // Alpha stream: A at 16-bit (2 bytes)
+        var alphaBytes = DecompressStream(img.SMask!);
+        Assert.Equal(2, alphaBytes.Length);
+        Assert.Equal(0x77, alphaBytes[0]); // A high
+        Assert.Equal(0x88, alphaBytes[1]); // A low
+    }
+
+    [Fact]
+    public void Png16Bit_reduce_alpha_smask_is8bit()
+    {
+        // Same RGBA PNG with ReduceToEight: SMask must be 8-bit.
+        var pixels16 = new byte[]
+        {
+            0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88
+        };
+        var png = Create16BitRgbaPng(1, 1, pixels16);
+
+        var img = PngImageLoader.Load(png, new ImageLoadOptions { BitDepth = ImageBitDepth.ReduceToEight });
+
+        Assert.NotNull(img.SMask);
+        Assert.Equal(8, img.SMaskBitsPerComponent);
+
+        // Color stream: high bytes only (3 bytes)
+        var colorBytes = DecompressStream(img.BuildStream());
+        Assert.Equal(3, colorBytes.Length);
+        Assert.Equal(0x11, colorBytes[0]); // R high
+        Assert.Equal(0x33, colorBytes[1]); // G high
+        Assert.Equal(0x55, colorBytes[2]); // B high
+
+        // Alpha stream: A high byte only (1 byte)
+        var alphaBytes = DecompressStream(img.SMask!);
+        Assert.Single(alphaBytes);
+        Assert.Equal(0x77, alphaBytes[0]);
+    }
 }
