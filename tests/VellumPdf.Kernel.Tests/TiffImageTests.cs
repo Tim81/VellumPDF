@@ -1485,4 +1485,243 @@ public sealed class TiffImageTests
             s.WriteByte((byte)v);
         }
     }
+
+    // ── CCITT Group 4 (Compression=4) tests ─────────────────────────────────
+
+    [Fact]
+    public void Tiff_G4_SingleStrip_Photometric0_CcittFaxDecode()
+    {
+        // Photometric=0 (WhiteIsZero) with G4 → /Filter CCITTFaxDecode, no /BlackIs1.
+        var g4Data = CcittImageTests.BuildAllWhiteG4(8, 4);
+        var tiff = BuildTiffG4(8, 4, photometric: 0, g4Data);
+        var img = TiffImageLoader.Load(tiff);
+
+        var dict = StreamDictText(img);
+        Assert.Contains("/CCITTFaxDecode", dict);
+        Assert.DoesNotContain("/FlateDecode", dict);
+        Assert.Contains("/K -1", dict);
+        Assert.Contains("/Columns 8", dict);
+        Assert.Contains("/Rows 4", dict);
+        Assert.DoesNotContain("/BlackIs1", dict);
+    }
+
+    [Fact]
+    public void Tiff_G4_SingleStrip_Photometric1_BlackIs1_True()
+    {
+        // Photometric=1 (BlackIsZero) → /BlackIs1 true must be present.
+        var g4Data = CcittImageTests.BuildAllWhiteG4(8, 4);
+        var tiff = BuildTiffG4(8, 4, photometric: 1, g4Data);
+        var img = TiffImageLoader.Load(tiff);
+
+        Assert.Contains("/BlackIs1 true", StreamDictText(img));
+    }
+
+    [Fact]
+    public void Tiff_G4_Dimensions_Correct()
+    {
+        var g4Data = CcittImageTests.BuildAllWhiteG4(16, 12);
+        var tiff = BuildTiffG4(16, 12, photometric: 0, g4Data);
+        var img = TiffImageLoader.Load(tiff);
+
+        Assert.Equal(16, img.Width);
+        Assert.Equal(12, img.Height);
+    }
+
+    [Fact]
+    public void Tiff_G4_SingleStrip_BytesVerbatim()
+    {
+        // The strip bytes must appear verbatim in the output stream.
+        var g4Data = CcittImageTests.BuildAllWhiteG4(8, 4);
+        var tiff = BuildTiffG4(8, 4, photometric: 0, g4Data);
+        var img = TiffImageLoader.Load(tiff);
+
+        var raw = WriteStreamRaw(img);
+        var markerStart = FindSequence(raw, "\nstream\n"u8);
+        Assert.True(markerStart >= 0, "stream marker not found");
+        var bodyStart = markerStart + 8;
+        var endStream = FindSequence(raw, "\nendstream"u8);
+        Assert.True(endStream >= 0, "endstream not found");
+        var body = raw[bodyStart..endStream];
+        Assert.Equal(g4Data, body);
+    }
+
+    [Fact]
+    public void Tiff_G4_MultiStrip_ThrowsNotSupportedException()
+    {
+        var g4Data = CcittImageTests.BuildAllWhiteG4(8, 4);
+        var tiff = BuildTiffG4MultiStrip(8, 4, g4Data);
+        Assert.Throws<NotSupportedException>(() => TiffImageLoader.Load(tiff));
+    }
+
+    [Fact]
+    public void Tiff_G4_FillOrder2_BytesAreReversed()
+    {
+        // FillOrder=2 (LSB-first) TIFF: the TiffImageLoader must bit-reverse every byte
+        // before passthrough so the CCITTFaxDecode filter receives MSB-first data.
+        var original = new byte[] { 0xAB, 0xCD };
+        var tiff = BuildTiffG4WithFillOrder(4, 2, photometric: 0, stripData: original, fillOrder: 2);
+        var img = TiffImageLoader.Load(tiff);
+
+        var raw = WriteStreamRaw(img);
+        var markerStart = FindSequence(raw, "\nstream\n"u8);
+        var bodyStart = markerStart + 8;
+        var endStream = FindSequence(raw, "\nendstream"u8);
+        var body = raw[bodyStart..endStream];
+
+        // 0xAB = 1010_1011 reversed = 1101_0101 = 0xD5
+        // 0xCD = 1100_1101 reversed = 1011_0011 = 0xB3
+        Assert.Equal(new byte[] { 0xD5, 0xB3 }, body);
+    }
+
+    [Fact]
+    public void Tiff_CcittG3_Compression2_ThrowsNotSupportedException()
+    {
+        var tiff = CreateRgbTiffWithCompression(2, 2, compressionValue: 2);
+        Assert.Throws<NotSupportedException>(() => TiffImageLoader.Load(tiff));
+    }
+
+    [Fact]
+    public void Tiff_CcittG3_Compression3_ThrowsNotSupportedException()
+    {
+        var tiff = CreateRgbTiffWithCompression(2, 2, compressionValue: 3);
+        Assert.Throws<NotSupportedException>(() => TiffImageLoader.Load(tiff));
+    }
+
+    // ── G4 TIFF builder helpers ───────────────────────────────────────────────
+
+    /// <summary>
+    /// Builds a minimal single-strip TIFF with Compression=4 (CCITT Group 4).
+    /// BitsPerSample defaults to 1 (bilevel). SamplesPerPixel=1.
+    /// </summary>
+    private static byte[] BuildTiffG4(int w, int h, int photometric, byte[] stripData)
+        => BuildTiffG4WithFillOrder(w, h, photometric, stripData, fillOrder: 1);
+
+    private static byte[] BuildTiffG4WithFillOrder(
+        int w, int h, int photometric, byte[] stripData, int fillOrder)
+    {
+        using var ms = new MemoryStream();
+        // Little-endian II
+        ms.WriteByte(0x49); ms.WriteByte(0x49);
+        ms.WriteByte(0x2A); ms.WriteByte(0x00);
+
+        var stripOffset = 8u;
+        var ifdOffset = stripOffset + (uint)stripData.Length;
+        WriteU32(ms, ifdOffset, true);
+        ms.Write(stripData);
+
+        var entries = new List<(ushort tag, ushort type, uint count, uint value)>
+        {
+            (256, 4, 1, (uint)w),             // ImageWidth
+            (257, 4, 1, (uint)h),             // ImageLength
+            (258, 3, 1, 1),                   // BitsPerSample = 1
+            (259, 3, 1, 4),                   // Compression = 4 (CCITT G4)
+            (262, 3, 1, (uint)photometric),   // PhotometricInterpretation
+            (266, 3, 1, (uint)fillOrder),     // FillOrder
+            (273, 4, 1, stripOffset),         // StripOffsets
+            (277, 3, 1, 1),                   // SamplesPerPixel
+            (278, 4, 1, (uint)h),             // RowsPerStrip
+            (279, 4, 1, (uint)stripData.Length), // StripByteCounts
+            (284, 3, 1, 1),                   // PlanarConfiguration
+        };
+        entries.Sort((a, b) => a.tag.CompareTo(b.tag));
+
+        WriteU16(ms, (ushort)entries.Count, true);
+        foreach (var (tag, type, count, value) in entries)
+        {
+            WriteU16(ms, tag, true);
+            WriteU16(ms, type, true);
+            WriteU32(ms, count, true);
+            if (type == 3)
+            {
+                ms.WriteByte((byte)value); ms.WriteByte((byte)(value >> 8));
+                ms.WriteByte(0); ms.WriteByte(0);
+            }
+            else
+            {
+                WriteU32(ms, value, true);
+            }
+        }
+        WriteU32(ms, 0, true);
+        return ms.ToArray();
+    }
+
+    /// <summary>
+    /// Builds a multi-strip G4 TIFF (two strips) to test the rejection path.
+    /// </summary>
+    private static byte[] BuildTiffG4MultiStrip(int w, int h, byte[] stripData)
+    {
+        using var ms = new MemoryStream();
+        ms.WriteByte(0x49); ms.WriteByte(0x49);
+        ms.WriteByte(0x2A); ms.WriteByte(0x00);
+
+        // Two strips, each half the data (approximate).
+        var half = (stripData.Length + 1) / 2;
+        var strip1 = stripData[..half];
+        var strip2 = stripData[half..];
+
+        var strip1Offset = 8u;
+        var strip2Offset = strip1Offset + (uint)strip1.Length;
+
+        // IFD will follow both strips, then the strip-array data.
+        // StripOffsets: 2 × LONG = 8 bytes; StripByteCounts: 2 × LONG = 8 bytes.
+        // We'll write strip arrays after IFD. Compute IFD size: 2 + 10*12 + 4 = 126 bytes.
+        var ifdOffset = strip2Offset + (uint)strip2.Length;
+        var stripOffsetsArrayOff = ifdOffset + 126u;
+        var stripByteCountsArrayOff = stripOffsetsArrayOff + 8u;
+
+        WriteU32(ms, ifdOffset, true);
+        ms.Write(strip1);
+        ms.Write(strip2);
+
+        var entries = new List<(ushort tag, ushort type, uint count, uint value)>
+        {
+            (256, 4, 1, (uint)w),
+            (257, 4, 1, (uint)h),
+            (258, 3, 1, 1),
+            (259, 3, 1, 4),
+            (262, 3, 1, 0),
+            (273, 4, 2, stripOffsetsArrayOff),
+            (277, 3, 1, 1),
+            (278, 4, 1, (uint)(h / 2)),
+            (279, 4, 2, stripByteCountsArrayOff),
+            (284, 3, 1, 1),
+        };
+        entries.Sort((a, b) => a.tag.CompareTo(b.tag));
+
+        WriteU16(ms, (ushort)entries.Count, true);
+        foreach (var (tag, type, count, value) in entries)
+        {
+            WriteU16(ms, tag, true);
+            WriteU16(ms, type, true);
+            WriteU32(ms, count, true);
+            if (count * GetTypeSize(type) <= 4 && type == 3)
+            {
+                ms.WriteByte((byte)value); ms.WriteByte((byte)(value >> 8));
+                ms.WriteByte(0); ms.WriteByte(0);
+            }
+            else
+            {
+                WriteU32(ms, value, true);
+            }
+        }
+        WriteU32(ms, 0, true);
+
+        // Strip offsets array
+        WriteU32(ms, strip1Offset, true);
+        WriteU32(ms, strip2Offset, true);
+
+        // Strip byte counts array
+        WriteU32(ms, (uint)strip1.Length, true);
+        WriteU32(ms, (uint)strip2.Length, true);
+
+        return ms.ToArray();
+    }
+
+    private static byte[] WriteStreamRaw(VellumPdf.Images.PdfImageXObject img)
+    {
+        using var ms = new MemoryStream();
+        var writer = new VellumPdf.IO.PdfWriter(ms);
+        img.BuildStream().WriteTo(writer);
+        return ms.ToArray();
+    }
 }

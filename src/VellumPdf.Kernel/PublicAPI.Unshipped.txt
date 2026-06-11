@@ -17,3 +17,5 @@ static VellumPdf.Images.ImageLoadOptions.Default.get -> VellumPdf.Images.ImageLo
 static readonly VellumPdf.Core.PdfName.CCITTFaxDecode -> VellumPdf.Core.PdfName!
 static VellumPdf.Images.PngImageLoader.Load(byte[]! pngBytes, VellumPdf.Images.ImageLoadOptions! options) -> VellumPdf.Images.PdfImageXObject!
 static VellumPdf.Images.TiffImageLoader.Load(byte[]! tiff, VellumPdf.Images.ImageLoadOptions! options) -> VellumPdf.Images.PdfImageXObject!
+VellumPdf.Images.CcittImageLoader
+static VellumPdf.Images.CcittImageLoader.Load(byte[]! ccittData, int columns, int rows, int k = -1, bool blackIs1 = false, bool encodedByteAlign = false) -> VellumPdf.Images.PdfImageXObject!
