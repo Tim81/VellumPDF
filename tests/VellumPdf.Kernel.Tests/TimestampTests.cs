@@ -214,6 +214,32 @@ public sealed class TimestampTests
         Assert.Contains("500", ex.Message);
     }
 
+    [Fact]
+    public void HttpTimestampClient_throws_on_timeout()
+    {
+        var handler = new HangingHttpHandler();
+        var httpClient = new HttpClient(handler);
+        var client = new HttpTimestampClient(
+            new Uri("http://tsa.example.invalid/ts"),
+            httpClient,
+            timeout: TimeSpan.FromMilliseconds(50));
+
+        var digest = SHA256.HashData(Encoding.UTF8.GetBytes("test"));
+
+        var ex = Assert.Throws<InvalidOperationException>(
+            () => client.GetTimestampToken(digest, HashAlgorithmName.SHA256));
+        Assert.Contains("timed out", ex.Message);
+    }
+
+    [Fact]
+    public void HttpTimestampClient_rejects_non_positive_timeout()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => new HttpTimestampClient(
+                new Uri("http://tsa.example.invalid/ts"),
+                timeout: TimeSpan.Zero));
+    }
+
     // ── Helpers ────────────────────────────────────────────────────────────────
 
     private static byte[] SignOnePageDoc(
@@ -349,6 +375,22 @@ public sealed class TimestampTests
 
         protected override HttpResponseMessage Send(HttpRequestMessage request, CancellationToken cancellationToken)
             => new(_status);
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+            => Task.FromResult(Send(request, cancellationToken));
+    }
+
+    /// <summary>
+    /// A handler that blocks until the request is cancelled, to exercise the client's timeout.
+    /// </summary>
+    private sealed class HangingHttpHandler : HttpMessageHandler
+    {
+        protected override HttpResponseMessage Send(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            cancellationToken.WaitHandle.WaitOne();
+            cancellationToken.ThrowIfCancellationRequested();
+            throw new InvalidOperationException("Unreachable: handler should be cancelled first.");
+        }
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
             => Task.FromResult(Send(request, cancellationToken));

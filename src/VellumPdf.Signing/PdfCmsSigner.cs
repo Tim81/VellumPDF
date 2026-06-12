@@ -23,9 +23,12 @@ namespace VellumPdf.Signing;
 /// </summary>
 internal static class PdfCmsSigner
 {
-    // Default reserved size for a timestamped (B-T) signature: the token + TSA chain
-    // typically adds several KB on top of the base 8 192-byte default.
-    private const int TimestampedDefaultReserve = 16384;
+    // Default reserved size for a timestamped (B-T) signature. A real TSA token embeds its
+    // own certificate chain on top of the signer's chain, so reserve generously (32 KB) to fit
+    // common public-TSA chains without the caller having to tune the size. An over-estimate only
+    // pads the /Contents hex with unused zeros; the explicit guard below still catches a genuine
+    // overflow with an actionable message.
+    private const int TimestampedDefaultReserve = 32768;
 
     /// <summary>
     /// Returns the effective /Contents reserve to use for <paramref name="settings"/>.

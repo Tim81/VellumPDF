@@ -16,9 +16,13 @@ public sealed class HttpTimestampClient : ITimestampClient
 {
     private static readonly HttpClient s_sharedClient = new();
 
+    /// <summary>The default per-request timeout when none is supplied.</summary>
+    private static readonly TimeSpan s_defaultTimeout = TimeSpan.FromSeconds(30);
+
     private readonly Uri _tsaUrl;
     private readonly HttpClient _httpClient;
     private readonly bool _requestTsaCertificate;
+    private readonly TimeSpan _timeout;
 
     /// <summary>
     /// Initialises a new <see cref="HttpTimestampClient"/>.
@@ -33,12 +37,27 @@ public sealed class HttpTimestampClient : ITimestampClient
     /// When <see langword="true"/> (the default), the TSA is asked to include its signing
     /// certificate in the response token.
     /// </param>
-    public HttpTimestampClient(Uri tsaUrl, HttpClient? httpClient = null, bool requestTsaCertificate = true)
+    /// <param name="timeout">
+    /// The per-request timeout. When <see langword="null"/>, a 30-second default is used.
+    /// Bounds how long a slow or unresponsive TSA can stall signing; applied independently
+    /// of any timeout configured on a shared <paramref name="httpClient"/>.
+    /// </param>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Thrown when <paramref name="timeout"/> is not a positive duration.
+    /// </exception>
+    public HttpTimestampClient(
+        Uri tsaUrl,
+        HttpClient? httpClient = null,
+        bool requestTsaCertificate = true,
+        TimeSpan? timeout = null)
     {
         ArgumentNullException.ThrowIfNull(tsaUrl);
+        if (timeout is { } t && t <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(timeout), "Timeout must be a positive duration.");
         _tsaUrl = tsaUrl;
         _httpClient = httpClient ?? s_sharedClient;
         _requestTsaCertificate = requestTsaCertificate;
+        _timeout = timeout ?? s_defaultTimeout;
     }
 
     /// <inheritdoc/>
@@ -62,13 +81,27 @@ public sealed class HttpTimestampClient : ITimestampClient
             Content = content,
         };
 
-        using var httpResp = _httpClient.Send(httpReq);
+        using var cts = new CancellationTokenSource(_timeout);
 
-        if (!httpResp.IsSuccessStatusCode)
+        HttpResponseMessage httpResp;
+        byte[] responseBytes;
+        try
+        {
+            httpResp = _httpClient.Send(httpReq, cts.Token);
+            using (httpResp)
+            {
+                if (!httpResp.IsSuccessStatusCode)
+                    throw new InvalidOperationException(
+                        $"TSA request to {_tsaUrl} failed with HTTP {(int)httpResp.StatusCode} {httpResp.ReasonPhrase}.");
+
+                responseBytes = httpResp.Content.ReadAsByteArrayAsync(cts.Token).GetAwaiter().GetResult();
+            }
+        }
+        catch (OperationCanceledException ex)
+        {
             throw new InvalidOperationException(
-                $"TSA request to {_tsaUrl} failed with HTTP {(int)httpResp.StatusCode} {httpResp.ReasonPhrase}.");
-
-        var responseBytes = httpResp.Content.ReadAsByteArrayAsync().GetAwaiter().GetResult();
+                $"TSA request to {_tsaUrl} timed out after {_timeout.TotalSeconds:0.##}s.", ex);
+        }
 
         var token = req.ProcessResponse(responseBytes, out _);
         return token.AsSignedCms().Encode();
