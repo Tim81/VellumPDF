@@ -23,6 +23,22 @@ namespace VellumPdf.Signing;
 /// </summary>
 internal static class PdfCmsSigner
 {
+    // Default reserved size for a timestamped (B-T) signature: the token + TSA chain
+    // typically adds several KB on top of the base 8 192-byte default.
+    private const int TimestampedDefaultReserve = 16384;
+
+    /// <summary>
+    /// Returns the effective /Contents reserve to use for <paramref name="settings"/>.
+    /// When a timestamp client is configured and the caller left
+    /// <see cref="PdfSignatureSettings.EstimatedSignatureSizeBytes"/> at its public default
+    /// (8192), a larger value is returned so the common timestamped path does not trip the
+    /// size guard.  An explicitly chosen value is always honoured.
+    /// </summary>
+    internal static int EffectiveReserve(PdfSignatureSettings settings)
+        => (settings.TimestampClient is not null && settings.EstimatedSignatureSizeBytes == 8192)
+            ? TimestampedDefaultReserve
+            : settings.EstimatedSignatureSizeBytes;
+
     /// <summary>
     /// Signs a PDF document previously written to <paramref name="unsignedBytes"/> and writes
     /// the signed result to <paramref name="output"/>.
@@ -32,6 +48,8 @@ internal static class PdfCmsSigner
         PdfSignatureSettings settings,
         Stream output)
     {
+        var effectiveReserve = EffectiveReserve(settings);
+
         // ── Step 1: locate the /Contents placeholder ──────────────────────────
         var posContentsKey = IndexOf(unsignedBytes, PdfSignatureHelper.ContentsKey);
         if (posContentsKey < 0)
@@ -39,8 +57,8 @@ internal static class PdfCmsSigner
 
         // posLt = index of the '<' that starts the hex string
         var posLt = posContentsKey + PdfSignatureHelper.ContentsKey.Length - 1; // last char of ContentsKey is '<'
-        // contentsTokenLen = '<' + (EstimatedSignatureSizeBytes * 2 hex chars) + '>'
-        var hexLen = settings.EstimatedSignatureSizeBytes * 2;
+        // contentsTokenLen = '<' + (effectiveReserve * 2 hex chars) + '>'
+        var hexLen = effectiveReserve * 2;
         var contentsTokenLen = 1 + hexLen + 1; // '<' + hex + '>'
 
         // Sanity: verify the token ends with '>'
@@ -66,10 +84,10 @@ internal static class PdfCmsSigner
         var sig = ComputeCmsSignature(signedContent, settings);
 
         // ── Step 6: validate size and hex-encode into the /Contents placeholder ─
-        if (sig.Length > settings.EstimatedSignatureSizeBytes)
+        if (sig.Length > effectiveReserve)
             throw new InvalidOperationException(
                 $"Computed CMS signature ({sig.Length} bytes) exceeds the reserved /Contents space " +
-                $"({settings.EstimatedSignatureSizeBytes} bytes). " +
+                $"({effectiveReserve} bytes). " +
                 "Increase PdfSignatureSettings.EstimatedSignatureSizeBytes.");
 
         PatchContents(unsignedBytes, posLt, hexLen, sig);
@@ -154,6 +172,20 @@ internal static class PdfCmsSigner
 
         var cms = new SignedCms(new ContentInfo(signedContent), detached: true);
         cms.ComputeSignature(signer);
+
+        if (settings.TimestampClient is not null)
+        {
+            var si = cms.SignerInfos[0];
+            var signatureValue = si.GetSignature();
+            var digest = SHA256.HashData(signatureValue);
+            var tokenDer = settings.TimestampClient.GetTimestampToken(digest, HashAlgorithmName.SHA256);
+            // Sanity: ensure it decodes as a valid RFC 3161 token before embedding.
+            if (!Rfc3161TimestampToken.TryDecode(tokenDer, out _, out _))
+                throw new InvalidOperationException("Timestamp client returned data that is not a valid RFC 3161 token.");
+            // OID 1.2.840.113549.1.9.16.2.14 = id-aa-signatureTimeStampToken (RFC 3161 unsigned attribute)
+            si.AddUnsignedAttribute(new AsnEncodedData(new Oid("1.2.840.113549.1.9.16.2.14"), tokenDer));
+        }
+
         return cms.Encode();
     }
 

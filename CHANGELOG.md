@@ -4,6 +4,18 @@ All notable changes to VellumPdf will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.5.0] - 2026-06-12
+
+### Added
+
+- **PAdES B-T signature timestamps.** A signature can now carry an RFC-3161 timestamp over the
+  signature value, embedded as a CMS signature-timestamp unsigned attribute, to reach PAdES B-T.
+  Set `PdfSignatureSettings.TimestampClient` to an `ITimestampClient`; the supplied
+  `HttpTimestampClient` requests a token from any RFC-3161 Time Stamping Authority over HTTP, or a
+  caller can plug in their own client. When no timestamp client is set the signature is unchanged
+  (PAdES B-B). The reserved `/Contents` space is enlarged automatically for a timestamped
+  signature left at the default size.
+
 ## [1.4.0] - 2026-06-11
 
 ### Added
@@ -90,5 +102,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   headers, and no unbounded allocations driven by attacker-controlled length
   fields.
 
+[1.5.0]: https://github.com/Tim81/VellumPDF/releases/tag/v1.5.0
+[1.4.0]: https://github.com/Tim81/VellumPDF/releases/tag/v1.4.0
+[1.3.0]: https://github.com/Tim81/VellumPDF/releases/tag/v1.3.0
+[1.2.0]: https://github.com/Tim81/VellumPDF/releases/tag/v1.2.0
 [1.1.0]: https://github.com/Tim81/VellumPDF/releases/tag/v1.1.0
 [1.0.0]: https://github.com/Tim81/VellumPDF/releases/tag/v1.0.0

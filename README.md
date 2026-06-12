@@ -34,7 +34,7 @@ clean-room from the open **ISO 32000** standard.
 | --- | --- | --- |
 | `VellumPdf.Kernel` | Stable | Object model, canvas, Standard-14 fonts, TrueType/OpenType embedding + subsetting, images (JPEG/PNG/BMP/GIF/TIFF/JBIG2/JPEG 2000), AES-256 encryption, object/cross-reference streams, AcroForm fields, tagged-PDF structure tree, PDF/A-2 metadata, and DeviceCMYK and ICC-based colour with configurable output intents. |
 | `VellumPdf.Layout` | Stable | High-level document builder: paragraphs, headings, lists, tables, images, header/footer bands, bookmarks, and automatic pagination. |
-| `VellumPdf.Signing` | Stable | PAdES / PKCS#7 detached digital signatures over an incremental-update revision. |
+| `VellumPdf.Signing` | Stable | PAdES / PKCS#7 detached digital signatures, with optional RFC-3161 signature timestamps (PAdES B-T) via a pluggable timestamp client. |
 | _(roadmap)_ `VellumPdf.Conformance` | Planned | In-process PDF/A and PDF/UA preflight validator. |
 | _(roadmap)_ `VellumPdf.Barcodes` | Planned | QR, PDF417, Code128, EAN. |
 
@@ -135,7 +135,7 @@ oracles — a missing tool fails the build, so the gates can never silently skip
 | --- | --- |
 | In-process preflight | `VellumPdf.Conformance` PDF/A and PDF/UA validator package. |
 | Linearization | "Fast web view" object ordering. |
-| Signature LTV | Long-term validation data (OCSP/CRL) for archival PAdES. |
+| Signature LTV | Embedded OCSP/CRL revocation data and an archive timestamp (PAdES B-LT / B-LTA). |
 | Barcodes | The `VellumPdf.Barcodes` package. |
 
 ## Building
