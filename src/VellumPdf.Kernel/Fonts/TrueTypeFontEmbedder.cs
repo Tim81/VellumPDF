@@ -33,6 +33,10 @@ public sealed class TrueTypeFontEmbedder
     private readonly Dictionary<int, ushort> _unicodeToGid = new();
     private readonly Tag _cffTag = new("CFF ");
 
+    // Set to true when CffSubsetter throws NotSupportedException (CID-keyed font).
+    // In that case we embed the whole font verbatim and must not use the subset-tagged name.
+    private bool _cffFellBackToWholeFont;
+
     /// <summary>The resource name used to reference this font from a page's resource dictionary.</summary>
     public string ResourceName { get; }
 
@@ -88,7 +92,10 @@ public sealed class TrueTypeFontEmbedder
     // A subsetted font's name must carry a six-uppercase-letter tag + '+' prefix
     // (ISO 32000-1 §9.6.4 / §9.7.4.2). Both CFF/OTTO and glyf-outline fonts are
     // now subsetted, so both carry the tag.
-    private string SubsetPostScriptName => $"{SubsetTag()}+{PostScriptName}";
+    // When the CFF subsetter fell back to whole-font embedding (CID-keyed font),
+    // the subset tag must NOT be applied — the font is not actually subsetted.
+    private string SubsetPostScriptName =>
+        _cffFellBackToWholeFont ? PostScriptName : $"{SubsetTag()}+{PostScriptName}";
 
     // Six uppercase letters derived deterministically from the embedded glyph set,
     // so the same subset always gets the same tag and output stays reproducible.
@@ -299,6 +306,9 @@ public sealed class TrueTypeFontEmbedder
         catch (NotSupportedException)
         {
             // CID-keyed font — fall back to whole-font embedding.
+            // Mark the flag so that /BaseFont and /FontName use the untagged PostScript name
+            // (ISO 32000 subset-tag semantics: the tag signals subsetting was actually done).
+            _cffFellBackToWholeFont = true;
             return _fontData.ToArray();
         }
 

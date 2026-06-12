@@ -201,8 +201,9 @@ public static class GifImageLoader
         tablePrefix[clearCode] = -1;
         tablePrefix[eoiCode] = -1;
 
-        // Scratch stack for reversing a table-chain into output order
-        var stack = new byte[maxTableSize];
+        // Scratch stack for reversing a table-chain into output order.
+        // Size is maxTableSize+1: the KwKwK case pushes one extra byte beyond the chain length.
+        var stack = new byte[maxTableSize + 1];
         int stackTop;
 
         while (outIdx < pixelCount)

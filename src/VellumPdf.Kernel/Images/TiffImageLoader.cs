@@ -904,7 +904,7 @@ public static class TiffImageLoader
         {
             // Value is at the offset stored in the value/offset field
             var offset = (int)ReadU32(data, entryBase + 8, le);
-            if (offset + typeSize > data.Length)
+            if (offset < 0 || offset + typeSize > data.Length)
                 throw new InvalidDataException(
                     $"TIFF IFD value offset {offset} for type {type} is out of bounds.");
             return type switch
@@ -941,7 +941,7 @@ public static class TiffImageLoader
         else
         {
             baseOffset = (int)ReadU32(data, entryBase + 8, le);
-            if ((long)baseOffset + totalBytes > data.Length)
+            if (baseOffset < 0 || (long)baseOffset + totalBytes > data.Length)
                 throw new InvalidDataException(
                     $"TIFF tag array at offset {baseOffset} (length {totalBytes}) extends beyond end of file.");
         }

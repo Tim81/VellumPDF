@@ -71,6 +71,10 @@ public static class PngImageLoader
                     break;
 
                 case "tRNS":
+                    // TODO(#85): tRNS transparency not yet applied. For colour type 3 (indexed) a
+                    // per-index alpha SMask should be built; for types 0/2 a colour-key mask should
+                    // be honoured. Applying this requires passing transparencyBytes into BuildXObject
+                    // and extending the indexed and greyscale/RGB paths — deferred to a follow-up.
                     transparencyBytes = data.ToArray();
                     break;
 
@@ -84,6 +88,8 @@ public static class PngImageLoader
             pos += 12 + (int)length;
         }
     done:
+        // Suppress unused-variable warning: transparencyBytes is stored for future use (#85).
+        _ = transparencyBytes;
 
         // Reject hostile dimensions and out-of-range IHDR fields before allocating buffers.
         ImageLimits.ValidateDimensions("PNG", width, height);
