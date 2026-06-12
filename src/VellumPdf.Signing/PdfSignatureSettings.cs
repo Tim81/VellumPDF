@@ -45,4 +45,13 @@ public sealed class PdfSignatureSettings
     /// Use "adbe.pkcs7.detached" for legacy compatibility.
     /// </summary>
     public string SubFilter { get; init; } = "ETSI.CAdES.detached";
+
+    /// <summary>
+    /// Optional RFC 3161 timestamp client. When set, an RFC 3161 <c>TimeStampToken</c> is
+    /// obtained over the CMS signature value and embedded as an unsigned attribute
+    /// (OID 1.2.840.113549.1.9.16.2.14), producing a PAdES B-T signature.
+    /// When <see langword="null"/> (the default), no timestamp is added and the
+    /// signature conforms to PAdES B-B.
+    /// </summary>
+    public ITimestampClient? TimestampClient { get; init; }
 }

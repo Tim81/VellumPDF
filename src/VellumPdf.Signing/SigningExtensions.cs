@@ -98,7 +98,7 @@ public static class SigningExtensions
         => new()
         {
             SubFilter = settings.SubFilter,
-            EstimatedSignatureSizeBytes = settings.EstimatedSignatureSizeBytes,
+            EstimatedSignatureSizeBytes = PdfCmsSigner.EffectiveReserve(settings),
             SignerName = settings.SignerName,
             Reason = settings.Reason,
             Location = settings.Location,

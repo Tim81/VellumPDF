@@ -19,4 +19,11 @@ VellumPdf.Signing.PdfSignatureSettings.SigningTime.get -> System.DateTimeOffset?
 VellumPdf.Signing.PdfSignatureSettings.SigningTime.init -> void
 VellumPdf.Signing.PdfSignatureSettings.SubFilter.get -> string!
 VellumPdf.Signing.PdfSignatureSettings.SubFilter.init -> void
+VellumPdf.Signing.PdfSignatureSettings.TimestampClient.get -> VellumPdf.Signing.ITimestampClient?
+VellumPdf.Signing.PdfSignatureSettings.TimestampClient.init -> void
 VellumPdf.Signing.SigningExtensions
+VellumPdf.Signing.HttpTimestampClient
+VellumPdf.Signing.HttpTimestampClient.GetTimestampToken(System.ReadOnlySpan<byte> messageDigest, System.Security.Cryptography.HashAlgorithmName hashAlgorithm) -> byte[]!
+VellumPdf.Signing.HttpTimestampClient.HttpTimestampClient(System.Uri! tsaUrl, System.Net.Http.HttpClient? httpClient = null, bool requestTsaCertificate = true, System.TimeSpan? timeout = null) -> void
+VellumPdf.Signing.ITimestampClient
+VellumPdf.Signing.ITimestampClient.GetTimestampToken(System.ReadOnlySpan<byte> messageDigest, System.Security.Cryptography.HashAlgorithmName hashAlgorithm) -> byte[]!
