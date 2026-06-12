@@ -71,10 +71,6 @@ public static class PngImageLoader
                     break;
 
                 case "tRNS":
-                    // TODO(#85): tRNS transparency not yet applied. For colour type 3 (indexed) a
-                    // per-index alpha SMask should be built; for types 0/2 a colour-key mask should
-                    // be honoured. Applying this requires passing transparencyBytes into BuildXObject
-                    // and extending the indexed and greyscale/RGB paths — deferred to a follow-up.
                     transparencyBytes = data.ToArray();
                     break;
 
@@ -88,9 +84,6 @@ public static class PngImageLoader
             pos += 12 + (int)length;
         }
     done:
-        // Suppress unused-variable warning: transparencyBytes is stored for future use (#85).
-        _ = transparencyBytes;
-
         // Reject hostile dimensions and out-of-range IHDR fields before allocating buffers.
         ImageLimits.ValidateDimensions("PNG", width, height);
         if (bitDepth is not (1 or 2 or 4 or 8 or 16))
@@ -151,7 +144,7 @@ public static class PngImageLoader
         }
 
         // ── Extract colour and alpha planes ──
-        return BuildXObject(unfiltered, width, height, colorType, bitDepth, palette, options);
+        return BuildXObject(unfiltered, width, height, colorType, bitDepth, palette, options, transparencyBytes);
     }
 
     /// <summary>
@@ -289,7 +282,8 @@ public static class PngImageLoader
 
     private static PdfImageXObject BuildXObject(
         byte[] pixels, int w, int h,
-        byte colorType, byte bitDepth, byte[]? palette, ImageLoadOptions options)
+        byte colorType, byte bitDepth, byte[]? palette, ImageLoadOptions options,
+        byte[]? transparencyBytes = null)
     {
         // ── Sub-byte unpacking (bit depths 1, 2, 4) ──────────────────────────
         // PNG packs multiple samples per byte for bit depths < 8.
@@ -313,7 +307,23 @@ public static class PngImageLoader
             if (palette is null)
                 throw new InvalidDataException("PNG indexed image (colour type 3) has no PLTE chunk.");
             colorBytes = ExpandPalette(pixels, w, h, palette);
-            return new PdfImageXObject(w, h, colorBytes, PdfName.FlateDecode, ImageColorSpace.DeviceRgb, 8);
+
+            // tRNS for indexed images: per-palette-index alpha table (ISO 15948 §11.3.2).
+            // Build an 8-bit DeviceGray SMask whose samples are the per-pixel alpha
+            // looked up via the palette index. Entries beyond tRNS length default to 255.
+            PdfStream? indexedSMask = null;
+            if (transparencyBytes is { Length: > 0 })
+            {
+                var alphaPlane = new byte[w * h];
+                for (var i = 0; i < w * h; i++)
+                {
+                    var idx = pixels[i]; // raw palette index (1 byte per pixel after unpack)
+                    alphaPlane[i] = idx < transparencyBytes.Length ? transparencyBytes[idx] : (byte)255;
+                }
+                indexedSMask = new PdfStream(alphaPlane);
+            }
+            return new PdfImageXObject(w, h, colorBytes, PdfName.FlateDecode, ImageColorSpace.DeviceRgb, 8,
+                indexedSMask, 8);
         }
 
         if (hasAlpha)
@@ -387,7 +397,37 @@ public static class PngImageLoader
         if (alphaBytes is not null)
             sMask = new PdfStream(alphaBytes); // grayscale SMask; will compress via FlateDecode
 
-        return new PdfImageXObject(w, h, colorBytes, PdfName.FlateDecode, cs, bitsPerComponent, sMask, sMaskBitsPerComponent);
+        // tRNS colour-key mask for greyscale (type 0) and RGB (type 2) images.
+        // ISO 32000-2 §8.9.6.3: /Mask is [min0 max0 ...] per colour component.
+        // PNG tRNS for these types stores big-endian 16-bit samples (regardless of bitDepth).
+        // After any downsampling we use the high byte; at 8-bit we shift by (16 - bitsPerComponent).
+        PdfArray? colorKeyMask = null;
+        if (!hasAlpha && transparencyBytes is { Length: > 0 } && (colorType == 0 || colorType == 2))
+        {
+            // tRNS for greyscale: 2 bytes = one 16-bit sample.
+            // tRNS for RGB: 6 bytes = three 16-bit samples (R, G, B).
+            var numComponents = colorType == 0 ? 1 : 3;
+            var expectedTrnsBytes = numComponents * 2;
+            if (transparencyBytes.Length >= expectedTrnsBytes)
+            {
+                var maskEntries = new List<PdfObject>(numComponents * 2);
+                for (var c = 0; c < numComponents; c++)
+                {
+                    // tRNS stores the sample value as a big-endian 16-bit word, but the
+                    // actual precision is the image's bitDepth. For 8-bit images the upper
+                    // byte is always 0 and the lower byte is the sample (0-255). For 16-bit
+                    // images the full 16-bit value is used. In both cases the raw16 value
+                    // is the exact sample (no shift needed) and matches the PDF /Mask range.
+                    var raw16 = (int)((transparencyBytes[c * 2] << 8) | transparencyBytes[c * 2 + 1]);
+                    maskEntries.Add(new PdfInteger(raw16));
+                    maskEntries.Add(new PdfInteger(raw16)); // [min max] pair — exact match
+                }
+                colorKeyMask = new PdfArray([.. maskEntries]);
+            }
+        }
+
+        return new PdfImageXObject(w, h, colorBytes, PdfName.FlateDecode, cs, bitsPerComponent,
+            sMask, sMaskBitsPerComponent, decodeParms: null, jbig2Globals: null, colorKeyMask: colorKeyMask);
     }
 
     /// <summary>
