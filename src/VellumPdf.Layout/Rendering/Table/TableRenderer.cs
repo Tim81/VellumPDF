@@ -16,10 +16,11 @@ namespace VellumPdf.Layout.Rendering.Table;
 ///   • Computes row heights (max cell content height in each row).
 ///   • Splits at row boundaries if the table crosses a page break.
 ///   • Header rows are repeated at the top of each continuation page.
+///   • Rowspan cells: the page break is never placed inside a rowspan group.
 ///
 /// Draw:
 ///   • Fills cell backgrounds.
-///   • Draws cell text.
+///   • Draws cell text, word-wrapped to the cell inner width.
 ///   • Draws collapsed borders (single shared line between cells).
 /// </summary>
 public sealed class TableRenderer : IRenderer
@@ -80,6 +81,12 @@ public sealed class TableRenderer : IRenderer
         var lastHeaderRow = headerRowIndices.Count > 0 ? headerRowIndices[^1] + 1 : 0;
         var dataStartRow = Math.Max(_startRow, lastHeaderRow);
 
+        // Build a set of rows that are part of a rowspan group (cannot break inside a span).
+        // For each rowspan cell, mark all rows from startRow+1 through startRow+rowSpan-1
+        // as "rowspan continuation" — we must not split after any row that has a span
+        // that continues into the next row.
+        var rowspanBlockedAfter = BuildRowspanBlockedSet(rows, lastHeaderRow);
+
         // Fit as many data rows as possible
         var y = area.Y;
         var lastFit = dataStartRow - 1;
@@ -93,9 +100,17 @@ public sealed class TableRenderer : IRenderer
             lastFit = r;
         }
 
+        // Walk back from lastFit to find a row we're allowed to break after.
+        while (lastFit >= dataStartRow && rowspanBlockedAfter.Contains(lastFit))
+        {
+            // Can't break after lastFit — back up one row.
+            runHeight -= _rowHeights[lastFit];
+            lastFit--;
+        }
+
         if (lastFit < dataStartRow)
         {
-            // Nothing fits beyond headers
+            // Nothing fits beyond headers (or all fitted rows are inside a span)
             if (dataStartRow >= rows.Count) return LayoutResult.Nothing();
             return LayoutResult.Nothing();
         }
@@ -269,20 +284,12 @@ public sealed class TableRenderer : IRenderer
             .Stroke();
         if (ctx.Tagged) ctx.Canvas.EndMarkedContent();
 
-        // Cell text
+        // Cell text — word-wrapped to the cell inner width so draw matches measurement.
         var innerBox = new LayoutBox(
             cellX + cell.Padding.Left, cellY + cell.Padding.Top,
             colW - cell.Padding.Horizontal, h - cell.Padding.Vertical);
 
-        var textW = cs.FontRef.MeasureString(cell.Content, cs.FontSize);
-        double txOffset = cell.Alignment switch
-        {
-            HorizontalAlignment.Center => (innerBox.Width - textW) / 2,
-            HorizontalAlignment.Right => innerBox.Width - textW,
-            _ => 0
-        };
-
-        var pdfTextY = ctx.ToPdfY(innerBox.Y + cs.FontSize);
+        var wrappedLines = WordWrapLines(cell.Content, cs, Math.Max(1, innerBox.Width));
 
         // Tagged PDF: TH (header) or TD (data), containing a P with the MCID.
         // Structure: TR → TH/TD → P
@@ -304,14 +311,28 @@ public sealed class TableRenderer : IRenderer
             canvas.SetFont(cf, cs.FontSize);
         }
 
-        canvas
-            .SetFillColorRgb(cs.Color.R, cs.Color.G, cs.Color.B)
-            .SetTextMatrix(1, 0, 0, 1, innerBox.X + txOffset, pdfTextY);
+        canvas.SetFillColorRgb(cs.Color.R, cs.Color.G, cs.Color.B);
 
-        if (cs.FontRef.IsEmbedded)
-            ShowEmbeddedText(canvas, cs.FontRef.Embedded, cell.Content);
-        else
-            canvas.ShowText(cell.Content);
+        var lineHeight = cs.EffectiveLeading;
+        for (var lineIdx = 0; lineIdx < wrappedLines.Count; lineIdx++)
+        {
+            var line = wrappedLines[lineIdx];
+            var lineW = cs.FontRef.MeasureString(line, cs.FontSize);
+            double txOffset = cell.Alignment switch
+            {
+                HorizontalAlignment.Center => (innerBox.Width - lineW) / 2,
+                HorizontalAlignment.Right => innerBox.Width - lineW,
+                _ => 0
+            };
+
+            var pdfTextY = ctx.ToPdfY(innerBox.Y + cs.FontSize + lineIdx * lineHeight);
+            canvas.SetTextMatrix(1, 0, 0, 1, innerBox.X + txOffset, pdfTextY);
+
+            if (cs.FontRef.IsEmbedded)
+                ShowEmbeddedText(canvas, cs.FontRef.Embedded, line);
+            else
+                canvas.ShowText(line);
+        }
 
         canvas.EndText();
 
@@ -375,5 +396,67 @@ public sealed class TableRenderer : IRenderer
             else { lines++; lineW = ww; }
         }
         return lines;
+    }
+
+    /// <summary>Word-wraps text into lines for drawing, matching the WordWrapCount algorithm.</summary>
+    private static List<string> WordWrapLines(string text, TextStyle style, double maxWidth)
+    {
+        var result = new List<string>();
+        if (string.IsNullOrEmpty(text)) { result.Add(string.Empty); return result; }
+
+        var words = text.Split(' ');
+        var spaceW = style.FontRef.MeasureString(" ", style.FontSize);
+        var lineBuilder = new System.Text.StringBuilder();
+        var lineW = 0.0;
+
+        foreach (var word in words)
+        {
+            var ww = style.FontRef.MeasureString(word, style.FontSize);
+            if (lineW == 0)
+            {
+                lineBuilder.Append(word);
+                lineW = ww;
+            }
+            else if (lineW + spaceW + ww <= maxWidth)
+            {
+                lineBuilder.Append(' ');
+                lineBuilder.Append(word);
+                lineW += spaceW + ww;
+            }
+            else
+            {
+                result.Add(lineBuilder.ToString());
+                lineBuilder.Clear();
+                lineBuilder.Append(word);
+                lineW = ww;
+            }
+        }
+        if (lineBuilder.Length > 0)
+            result.Add(lineBuilder.ToString());
+        if (result.Count == 0)
+            result.Add(string.Empty);
+        return result;
+    }
+
+    /// <summary>
+    /// Builds a set of row indices after which we must NOT split the table because
+    /// a rowspan cell starting at or before that row continues into the next row.
+    /// </summary>
+    private static HashSet<int> BuildRowspanBlockedSet(IReadOnlyList<Row> rows, int firstDataRow)
+    {
+        var blocked = new HashSet<int>();
+        for (var r = firstDataRow; r < rows.Count; r++)
+        {
+            foreach (var cell in rows[r].Cells)
+            {
+                if (cell.RowSpan > 1)
+                {
+                    // All rows from r through r+rowSpan-2 are blocked (can't split after them).
+                    for (var span = r; span < r + cell.RowSpan - 1 && span < rows.Count - 1; span++)
+                        blocked.Add(span);
+                }
+            }
+        }
+        return blocked;
     }
 }

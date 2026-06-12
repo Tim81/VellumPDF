@@ -64,10 +64,26 @@ public sealed class ListElement
     {
         ListStyle.Unordered => "•",          // •
         ListStyle.OrderedDecimal => $"{index}.",
-        ListStyle.OrderedAlpha => $"{(char)('a' + (index - 1) % 26)}.",
+        ListStyle.OrderedAlpha => $"{ToBijectiveAlpha(index)}.",
         ListStyle.OrderedRoman => $"{ToRoman(index)}.",
         _ => "•",
     };
+
+    /// <summary>
+    /// Converts a 1-based index to bijective base-26 lowercase (a..z, aa..az, ba..).
+    /// Index 1→"a", 26→"z", 27→"aa", 28→"ab".
+    /// </summary>
+    private static string ToBijectiveAlpha(int n)
+    {
+        var result = new System.Text.StringBuilder();
+        while (n > 0)
+        {
+            n--;
+            result.Insert(0, (char)('a' + n % 26));
+            n /= 26;
+        }
+        return result.ToString();
+    }
 
     private static string ToRoman(int n)
     {

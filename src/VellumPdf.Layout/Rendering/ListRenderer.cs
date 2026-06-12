@@ -23,6 +23,10 @@ public sealed class ListRenderer : IRenderer
     private readonly int _startItem;
     private int _endItem;   // exclusive
 
+    // When non-null, the content renderer for _startItem is replaced with this
+    // overflow renderer (carries the mid-item state from the previous page).
+    private readonly ParagraphRenderer? _partialContentOverrideAtStart;
+
     private LayoutBox _occupied;
 
     /// <summary>Creates a renderer for the list, optionally starting at <paramref name="startItem"/> for pagination.</summary>
@@ -32,9 +36,16 @@ public sealed class ListRenderer : IRenderer
         _startItem = startItem;
     }
 
+    private ListRenderer(ListElement list, int startItem, ParagraphRenderer? partialContentOverride)
+    {
+        _list = list;
+        _startItem = startItem;
+        _partialContentOverrideAtStart = partialContentOverride;
+    }
+
     // ── Phase 1: Layout ───────────────────────────────────────────────────────
 
-    /// <summary>Paginates the list item-by-item, splitting at item boundaries when it overflows the area.</summary>
+    /// <summary>Paginates the list item-by-item, splitting at item boundaries on overflow; handles mid-item splits by chaining content overflow renderers.</summary>
     public LayoutResult Layout(LayoutContext context)
     {
         var area = context.Area.Deflate(_list.Margins);
@@ -58,9 +69,15 @@ public sealed class ListRenderer : IRenderer
             var itemArea = new LayoutBox(area.X, y, area.Width, remaining);
             var itemCtx = context.WithArea(itemArea);
 
+            // For the first item, use the partial content override if present.
+            var contentRenderer = (i == _startItem && _partialContentOverrideAtStart is not null)
+                ? _partialContentOverrideAtStart
+                : _items[i].Content;
+            var markerRenderer = _items[i].Marker;
+
             // Layout both marker and content at the same Y (side-by-side).
-            var markerResult = _items[i].Marker.Layout(itemCtx);
-            var contentResult = _items[i].Content.Layout(itemCtx);
+            var markerResult = markerRenderer.Layout(itemCtx);
+            var contentResult = contentRenderer.Layout(itemCtx);
 
             if (markerResult.Status == LayoutResult.Outcome.Nothing
                 && contentResult.Status == LayoutResult.Outcome.Nothing)
@@ -73,7 +90,7 @@ public sealed class ListRenderer : IRenderer
                 _endItem = i;
                 _occupied = area.WithHeight(area.Height - remaining);
                 var overflow = new ListRenderer(_list, i) { _items = _items };
-                var split = new ListRenderer(_list, _startItem)
+                var split = new ListRenderer(_list, _startItem, _partialContentOverrideAtStart)
                 {
                     _items = _items,
                     _endItem = i,
@@ -89,21 +106,23 @@ public sealed class ListRenderer : IRenderer
 
             if (contentResult.Status == LayoutResult.Outcome.Partial)
             {
-                // Content is split — commit through this item's partial and overflow the rest
+                // Content is split mid-item. The split renderer draws item i partially.
+                // The overflow renderer resumes item i from where the content left off.
                 _endItem = i + 1;
                 var usedH = area.Height - remaining + itemH;
                 _occupied = area.WithHeight(usedH);
 
-                // For simplicity: treat a partial item as ending the current page at this item.
-                // Build overflow starting at i.
-                var overflow = new ListRenderer(_list, i) { _items = _items };
-                var split = new ListRenderer(_list, _startItem)
+                // The overflow for item i carries the content's OverflowRenderer.
+                var contentOverflow = (ParagraphRenderer)contentResult.OverflowRenderer!;
+                var overflowList = new ListRenderer(_list, i, contentOverflow) { _items = _items };
+
+                var split = new ListRenderer(_list, _startItem, _partialContentOverrideAtStart)
                 {
                     _items = _items,
                     _endItem = i + 1,
                     _occupied = _occupied,
                 };
-                return LayoutResult.Partial(_occupied, split, overflow);
+                return LayoutResult.Partial(_occupied, split, overflowList);
             }
 
             y += itemH;
@@ -135,7 +154,12 @@ public sealed class ListRenderer : IRenderer
 
         for (var i = _startItem; i < _endItem; i++)
         {
-            var (marker, content) = _items[i];
+            var (marker, baseContent) = _items[i];
+
+            // For the first item, use the partial content override if present.
+            var content = (i == _startItem && _partialContentOverrideAtStart is not null)
+                ? _partialContentOverrideAtStart
+                : baseContent;
 
             // Re-layout to get the occupied heights at the current y position
             var itemArea = new LayoutBox(area.X, y, area.Width, area.Bottom - y);
