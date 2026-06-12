@@ -299,6 +299,28 @@ public sealed class HardeningV152Tests
         Assert.Contains("%C3%A9", content, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void PdfLinkAnnotation_uriWithAstralChar_getsCorrectUtf8PercentEncoding()
+    {
+        var annot = new PdfLinkAnnotation
+        {
+            Rect = new PdfRectangle(0, 0, 100, 20),
+            Uri = "https://example.com/\U0001F600" // U+1F600 GRINNING FACE (a surrogate pair)
+        };
+
+        var dict = annot.BuildDictionary(destPageRef: null);
+
+        using var ms = new MemoryStream();
+        var writer = new PdfWriter(ms);
+        dict.WriteTo(writer);
+        var content = Encoding.ASCII.GetString(ms.ToArray());
+
+        // U+1F600, UTF-8 = F0 9F 98 80 → the full 4-byte sequence must appear...
+        Assert.Contains("%F0%9F%98%80", content, StringComparison.Ordinal);
+        // ...and NOT two U+FFFD replacement characters (the per-UTF-16-unit bug).
+        Assert.DoesNotContain("%EF%BF%BD", content, StringComparison.Ordinal);
+    }
+
     // ── #83c: AcroForm duplicate field names ────────────────────────────────
 
     [Fact]
