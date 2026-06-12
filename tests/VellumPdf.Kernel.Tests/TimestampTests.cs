@@ -134,6 +134,47 @@ public sealed class TimestampTests
         Assert.Throws<InvalidOperationException>(() => doc.Sign(ms, settings));
     }
 
+    // ── Test 3b: a token that stamps the wrong digest is rejected ──────────────
+
+    [Fact]
+    public void Timestamp_token_over_wrong_digest_is_rejected()
+    {
+        using var cert = CreateTestCertificate();
+
+        // A client that ignores the requested digest and always stamps a fixed,
+        // unrelated value — simulating a buggy or hostile ITimestampClient.
+        var badClient = new WrongDigestTimestampClient(s_pinnedTime);
+
+        var settings = new PdfSignatureSettings
+        {
+            Certificate = cert,
+            TimestampClient = badClient,
+        };
+
+        using var doc = new PdfDocument();
+        doc.AddPage();
+        var ms = new MemoryStream();
+
+        var ex = Assert.Throws<InvalidOperationException>(() => doc.Sign(ms, settings));
+        Assert.Contains("does not cover the signature digest", ex.Message);
+    }
+
+    /// <summary>
+    /// An <see cref="ITimestampClient"/> that always stamps a fixed unrelated digest,
+    /// regardless of the digest it is asked to timestamp.
+    /// </summary>
+    private sealed class WrongDigestTimestampClient : ITimestampClient
+    {
+        private readonly TestTimestampClient _inner;
+        public WrongDigestTimestampClient(DateTimeOffset genTime) => _inner = new TestTimestampClient(genTime);
+
+        public byte[] GetTimestampToken(ReadOnlySpan<byte> messageDigest, HashAlgorithmName hashAlgorithm)
+        {
+            var wrong = SHA256.HashData(Encoding.UTF8.GetBytes("not the signature digest"));
+            return _inner.GetTimestampToken(wrong, hashAlgorithm);
+        }
+    }
+
     // ── Test 4: HttpTimestampClient offline unit tests ─────────────────────────
 
     [Fact]

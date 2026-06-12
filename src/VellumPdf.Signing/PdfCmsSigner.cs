@@ -179,9 +179,18 @@ internal static class PdfCmsSigner
             var signatureValue = si.GetSignature();
             var digest = SHA256.HashData(signatureValue);
             var tokenDer = settings.TimestampClient.GetTimestampToken(digest, HashAlgorithmName.SHA256);
-            // Sanity: ensure it decodes as a valid RFC 3161 token before embedding.
-            if (!Rfc3161TimestampToken.TryDecode(tokenDer, out _, out _))
+            // Ensure the returned data decodes as a valid RFC 3161 token before embedding.
+            if (!Rfc3161TimestampToken.TryDecode(tokenDer, out var token, out _))
                 throw new InvalidOperationException("Timestamp client returned data that is not a valid RFC 3161 token.");
+            // Defense in depth: a custom ITimestampClient could return a structurally valid token
+            // that was computed over unrelated data. Confirm the token actually stamps THIS
+            // signature's digest with the algorithm we asked for, so we never embed a timestamp
+            // that does not cover the signature.
+            var tokenInfo = token!.TokenInfo;
+            if (tokenInfo.HashAlgorithmId.Value != "2.16.840.1.101.3.4.2.1" // SHA-256
+                || !tokenInfo.GetMessageHash().Span.SequenceEqual(digest))
+                throw new InvalidOperationException(
+                    "The RFC 3161 timestamp token does not cover the signature digest.");
             // OID 1.2.840.113549.1.9.16.2.14 = id-aa-signatureTimeStampToken (RFC 3161 unsigned attribute)
             si.AddUnsignedAttribute(new AsnEncodedData(new Oid("1.2.840.113549.1.9.16.2.14"), tokenDer));
         }
