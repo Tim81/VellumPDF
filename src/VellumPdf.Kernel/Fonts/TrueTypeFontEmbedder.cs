@@ -294,7 +294,9 @@ public sealed class TrueTypeFontEmbedder
         }
         catch (InvalidDataException)
         {
-            // Malformed CFF — fall back to whole-font embedding.
+            // Malformed CFF — fall back to whole-font embedding. Mark the flag so the
+            // untagged PostScript name is used (a subset tag would wrongly claim subsetting).
+            _cffFellBackToWholeFont = true;
             return _fontData.ToArray();
         }
 

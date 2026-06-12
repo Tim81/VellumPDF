@@ -58,7 +58,8 @@ public sealed class RegressionV151bTests
             "Expected a non-trivial multi-page PDF.");
 
         // The marker "1." must appear exactly once across all content streams.
-        var markerCount = PdfTestUtil.CountOccurrences(decompressed, "1.");
+        // Match the "(1." Tj string operand to avoid colliding with numeric coordinates.
+        var markerCount = PdfTestUtil.CountOccurrences(decompressed, "(1.");
         Assert.Equal(1, markerCount);
     }
 
@@ -84,8 +85,8 @@ public sealed class RegressionV151bTests
         Assert.Contains("SINGLEITEM001", decompressed);
 
         // The marker "1." must appear exactly once on the single page.
-        // Use a pattern unlikely to appear as a substring in item text.
-        var markerCount = PdfTestUtil.CountOccurrences(decompressed, "1.");
+        // Match the "(1." Tj string operand to avoid colliding with numeric coordinates.
+        var markerCount = PdfTestUtil.CountOccurrences(decompressed, "(1.");
         Assert.Equal(1, markerCount);
     }
 }
