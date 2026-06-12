@@ -6,7 +6,7 @@
 A modern, **dependency-free PDF generation library for .NET 10**, implemented
 clean-room from the open **ISO 32000** standard.
 
-> **Status: 1.1 — stable.** The public API is locked (analyzer-enforced) and
+> **Status: stable.** The public API is locked (analyzer-enforced) and
 > the library targets .NET 10. Core features are CI-validated — including
 > PDF/A-2a/2b/2u and PDF/UA-1 conformance proven on every push with veraPDF.
 
