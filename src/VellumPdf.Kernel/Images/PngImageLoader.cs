@@ -399,8 +399,8 @@ public static class PngImageLoader
 
         // tRNS colour-key mask for greyscale (type 0) and RGB (type 2) images.
         // ISO 32000-2 §8.9.6.3: /Mask is [min0 max0 ...] per colour component.
-        // PNG tRNS for these types stores big-endian 16-bit samples (regardless of bitDepth).
-        // After any downsampling we use the high byte; at 8-bit we shift by (16 - bitsPerComponent).
+        // PNG tRNS for these types stores big-endian 16-bit samples (regardless of bitDepth);
+        // each is rescaled below to the precision the image samples were actually written at.
         PdfArray? colorKeyMask = null;
         if (!hasAlpha && transparencyBytes is { Length: > 0 } && (colorType == 0 || colorType == 2))
         {

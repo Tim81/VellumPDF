@@ -76,16 +76,21 @@ public sealed class PdfLinkAnnotation
     private static string PercentEncodeNonAscii(string uri)
     {
         var sb = new System.Text.StringBuilder(uri.Length);
-        foreach (var c in uri)
+        Span<byte> utf8 = stackalloc byte[4]; // max UTF-8 length of a single scalar value
+        // Enumerate Unicode scalar values (runes), not UTF-16 code units, so that a
+        // codepoint above the BMP (a surrogate pair, e.g. an emoji) is encoded as its
+        // full multi-byte UTF-8 sequence rather than two replacement characters.
+        foreach (var rune in uri.AsSpan().EnumerateRunes())
         {
-            if (c < 0x80)
+            if (rune.IsAscii)
             {
-                sb.Append(c);
+                sb.Append((char)rune.Value);
             }
             else
             {
-                foreach (var b in System.Text.Encoding.UTF8.GetBytes(c.ToString()))
-                    sb.Append('%').Append(b.ToString("X2", System.Globalization.CultureInfo.InvariantCulture));
+                var n = rune.EncodeToUtf8(utf8);
+                for (var i = 0; i < n; i++)
+                    sb.Append('%').Append(utf8[i].ToString("X2", System.Globalization.CultureInfo.InvariantCulture));
             }
         }
         return sb.ToString();

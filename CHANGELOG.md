@@ -4,6 +4,14 @@ All notable changes to VellumPdf will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.5.2] - 2026-06-12
+
+### Fixed
+
+- **Link URIs with non-BMP characters.** A hyperlink URL containing a character above the Basic
+  Multilingual Plane (for example an emoji) is now percent-encoded as its full UTF-8 byte sequence
+  rather than two `U+FFFD` replacement characters. URLs without such characters are unaffected.
+
 ## [1.5.1] - 2026-06-12
 
 A hardening release from a full-library review: bug fixes, malformed-input robustness, and a
@@ -146,6 +154,7 @@ few small additions. No public API was removed.
   headers, and no unbounded allocations driven by attacker-controlled length
   fields.
 
+[1.5.2]: https://github.com/Tim81/VellumPDF/releases/tag/v1.5.2
 [1.5.1]: https://github.com/Tim81/VellumPDF/releases/tag/v1.5.1
 [1.5.0]: https://github.com/Tim81/VellumPDF/releases/tag/v1.5.0
 [1.4.0]: https://github.com/Tim81/VellumPDF/releases/tag/v1.4.0
