@@ -4,6 +4,50 @@ All notable changes to VellumPdf will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.5.1] - 2026-06-12
+
+A hardening release from a full-library review: bug fixes, malformed-input robustness, and a
+few small additions. No public API was removed.
+
+### Added
+
+- **PNG transparency.** The `tRNS` chunk is now applied — palette images gain an alpha `/SMask`
+  and greyscale/truecolour images gain a colour-key `/Mask` — instead of the transparency being
+  dropped.
+- **Outline open/closed state.** `PdfOutlineEntry.IsExpanded` (default `true`) controls whether a
+  bookmark renders expanded or collapsed and is reflected in the ISO 32000 signed `/Count`.
+
+### Fixed
+
+- **Layout pagination.** A list item taller than a page no longer loops or duplicates content — it
+  resumes on the next page via the content overflow, and the item marker is drawn once. Table cells
+  whose text wraps are drawn wrapped instead of overlapping the next row; automatic column widths
+  use the cell's own font, including embedded fonts; row spans are no longer split across a page
+  break; and the total-page count behind the `{pages}` footer token matches the rendered output.
+  Paragraph wrapping honours embedded newlines.
+- **Document integrity.** Writing the same `PdfDocument` twice, or writing a document with no
+  pages, now throws instead of producing a duplicated or invalid file. Signing a document that also
+  has form fields keeps those fields, including fields on pages other than the first.
+- **Fonts.** A malformed `hmtx` or `name` table now fails with `InvalidDataException` rather than an
+  unexpected exception, and a CID-keyed CFF that falls back to whole-font embedding no longer
+  advertises a subset tag.
+
+### Security
+
+- **Malformed-input robustness.** The CCITT, GIF, and TIFF decoders and the font tables reject
+  corrupt, truncated, or out-of-range input with `InvalidDataException` instead of over-reading,
+  looping, or crashing with an out-of-range exception; the opt-in CCITT raster path now advances
+  correctly. Cross-reference byte offsets are bounded, and an offset too large for the format is
+  rejected rather than silently truncated.
+- **Output escaping.** Caller-supplied resource and marked-content names are escaped so they cannot
+  inject content-stream operators; XML-illegal control characters are stripped from XMP metadata;
+  non-ASCII link URIs are percent-encoded; and duplicate form-field names and the reserved radio
+  `Off` export value are rejected.
+- **Signing.** The signature `/Contents` placeholder is located by a unique sentinel and fails
+  closed on an ambiguous match, so signature metadata can no longer derail the patch; the `/M` date
+  and the CMS signing-time now share a single value. An encryption decrypt round-trip is now
+  exercised on CI.
+
 ## [1.5.0] - 2026-06-12
 
 ### Added
@@ -102,6 +146,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   headers, and no unbounded allocations driven by attacker-controlled length
   fields.
 
+[1.5.1]: https://github.com/Tim81/VellumPDF/releases/tag/v1.5.1
 [1.5.0]: https://github.com/Tim81/VellumPDF/releases/tag/v1.5.0
 [1.4.0]: https://github.com/Tim81/VellumPDF/releases/tag/v1.4.0
 [1.3.0]: https://github.com/Tim81/VellumPDF/releases/tag/v1.3.0
