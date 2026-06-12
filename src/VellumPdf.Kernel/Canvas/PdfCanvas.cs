@@ -409,7 +409,8 @@ public sealed class PdfCanvas
     public PdfCanvas SetFont(PdfFontResource font, double size)
     {
         _usedFonts[font.ResourceName] = font;
-        WriteOpAscii($"/{font.ResourceName} {N(size)} Tf");
+        WriteEscapedName(font.ResourceName);
+        _ops.Write(Encoding.ASCII.GetBytes($" {N(size)} Tf\n"));
         return this;
     }
 

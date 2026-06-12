@@ -454,10 +454,10 @@ public static class CcittImageLoader
     {
         var col = 0;
         var white = true; // T.4 rows always start with a white run (even if run length is 0)
+        var zeroRunStreak = 0;
 
         while (col < columns)
         {
-            var colBefore = col;
             int runLength = ReadRunLength(ref reader, white);
 
             // Bound: total run cannot exceed remaining pixels.
@@ -484,11 +484,20 @@ public static class CcittImageLoader
 
             col += runLength;
 
-            // Zero-progress guard: a run-length pair that does not advance col at all
-            // indicates a malformed stream that would otherwise loop forever.
-            if (col == colBefore && col < columns)
-                throw new InvalidDataException(
-                    "CCITT T.4: zero-length run pair at column 0; stream may be corrupt or degenerate.");
+            // Zero-progress guard. A single zero-length run is legal — a row that begins
+            // with a black pixel opens with a zero-length white run — but two consecutive
+            // zero-length runs make no progress and indicate a corrupt/degenerate stream
+            // that would otherwise loop forever.
+            if (runLength == 0)
+            {
+                if (++zeroRunStreak >= 2)
+                    throw new InvalidDataException(
+                        "CCITT T.4: consecutive zero-length runs; stream may be corrupt or degenerate.");
+            }
+            else
+            {
+                zeroRunStreak = 0;
+            }
 
             white = !white;
         }

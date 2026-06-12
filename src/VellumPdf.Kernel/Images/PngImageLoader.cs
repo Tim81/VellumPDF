@@ -413,14 +413,26 @@ public static class PngImageLoader
                 var maskEntries = new List<PdfObject>(numComponents * 2);
                 for (var c = 0; c < numComponents; c++)
                 {
-                    // tRNS stores the sample value as a big-endian 16-bit word, but the
-                    // actual precision is the image's bitDepth. For 8-bit images the upper
-                    // byte is always 0 and the lower byte is the sample (0-255). For 16-bit
-                    // images the full 16-bit value is used. In both cases the raw16 value
-                    // is the exact sample (no shift needed) and matches the PDF /Mask range.
+                    // tRNS stores each transparent sample as a big-endian 16-bit word whose
+                    // meaningful precision is the source bitDepth. The /Mask value must match
+                    // the precision the image samples were actually written at, so apply the
+                    // same transform the pixel data went through:
+                    //   • 16-bit preserved (BitsPerComponent 16): use the full 16-bit value.
+                    //   • 16-bit reduced to 8: use the high byte (>> 8), as the samples were.
+                    //   • sub-byte greyscale (1/2/4-bit): linearly scaled to 0-255 like UnpackSubByte.
+                    //   • native 8-bit: the low byte is the exact sample.
                     var raw16 = (int)((transparencyBytes[c * 2] << 8) | transparencyBytes[c * 2 + 1]);
-                    maskEntries.Add(new PdfInteger(raw16));
-                    maskEntries.Add(new PdfInteger(raw16)); // [min max] pair — exact match
+                    int maskVal;
+                    if (bitsPerComponent == 16)
+                        maskVal = raw16;
+                    else if (bitDepth == 16)
+                        maskVal = raw16 >> 8;
+                    else if (bitDepth < 8)
+                        maskVal = raw16 * (255 / ((1 << bitDepth) - 1));
+                    else
+                        maskVal = raw16;
+                    maskEntries.Add(new PdfInteger(maskVal));
+                    maskEntries.Add(new PdfInteger(maskVal)); // [min max] pair — exact match
                 }
                 colorKeyMask = new PdfArray([.. maskEntries]);
             }

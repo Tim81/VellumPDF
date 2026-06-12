@@ -982,6 +982,15 @@ public sealed class PdfDocument : IDisposable
         if (_pages.Count > 0)
             _pages[0].AddAnnotation(sigFieldRef);
 
+        // ── AcroForm fields (must precede page dicts) ──────────────────────────
+        // AcroFormBuilder.Build wires each caller-registered form field's widget
+        // annotation onto its page via page.AddAnnotation. This MUST run before the
+        // page dictionaries are built (below) so those widgets appear in the page
+        // /Annots — otherwise a field on a page other than page 1 would be orphaned.
+        // Mirrors the ordering in the regular Save path.
+        var helveticaForForms = UseFont(Standard14.Helvetica);
+        var existingFormAcroDict = AcroFormBuilder.Build(_formFields, registry, pageRefMap, helveticaForForms);
+
         // ── Page dicts ────────────────────────────────────────────────────────
         for (var i = 0; i < _pages.Count; i++)
         {
@@ -1065,11 +1074,8 @@ public sealed class PdfDocument : IDisposable
         // ── Catalog ────────────────────────────────────────────────────────────
         // Build the merged /AcroForm: combine any caller-registered form fields
         // (text, checkbox, choice, radio, push-button) with the signature field.
-        // AcroFormBuilder.Build wires each form field's widget annotation onto its
-        // page via page.AddAnnotation; the sig widget was already added above.
-        var helveticaForForms = UseFont(Standard14.Helvetica);
-        var existingFormAcroDict = AcroFormBuilder.Build(_formFields, registry, pageRefMap, helveticaForForms);
-
+        // The form fields and their page widgets were already built above (before
+        // the page dicts); here we only assemble the catalog /AcroForm /Fields.
         PdfArray mergedFields;
         PdfDictionary acroFormDict;
         if (existingFormAcroDict is not null)
