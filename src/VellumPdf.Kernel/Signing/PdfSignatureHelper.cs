@@ -20,8 +20,17 @@ internal static class PdfSignatureHelper
     internal static readonly byte[] ByteRangePlaceholder =
         Encoding.ASCII.GetBytes(BuildByteRangePlaceholderString());
 
-    // Sentinel used to find the /Contents hex string in the raw bytes.
-    internal static readonly byte[] ContentsKey = "/Contents <"u8.ToArray();
+    // Unique sentinel written as a PDF comment on the line immediately before the
+    // /Contents hex value in the signature dictionary. The value is a fixed opaque
+    // token that cannot appear in any user-supplied metadata (Reason, Location, …).
+    // PdfCmsSigner searches for this sentinel then the following '<' to locate the
+    // /Contents placeholder unambiguously — adversarial metadata cannot match it.
+    internal const string ContentsSentinel = "%VELLUM_SIG_CONTENTS_3F8A2B1C4D5E6F70";
+
+    // Search key used by PdfCmsSigner to locate the /Contents hex string:
+    // the sentinel comment line followed immediately by the opening '<'.
+    internal static readonly byte[] ContentsKey =
+        Encoding.ASCII.GetBytes(ContentsSentinel + "\n<");
 
     private static string BuildByteRangePlaceholderString()
     {
@@ -35,11 +44,16 @@ internal static class PdfSignatureHelper
     internal static string GetByteRangePlaceholderString() => BuildByteRangePlaceholderString();
 
     /// <summary>
-    /// Returns the placeholder /Contents hex string: a hex string of
-    /// <paramref name="estimatedSizeBytes"/> * 2 zero chars, wrapped in angle brackets.
+    /// Returns the /Contents placeholder value emitted into the raw signature dictionary.
+    /// The value begins with <see cref="ContentsSentinel"/> on its own line so that
+    /// <c>VellumPdf.Signing.PdfCmsSigner</c> can locate the hex string unambiguously
+    /// even when user-supplied metadata (Reason/Location/…) contains the text
+    /// <c>/Contents &lt;</c>.  The sentinel is a valid PDF comment between the
+    /// <c>/Contents</c> key token and its hex-string value — PDF allows whitespace and
+    /// comments between tokens inside a dictionary.
     /// </summary>
     internal static string GetContentsPlaceholder(int estimatedSizeBytes)
-        => "<" + new string('0', estimatedSizeBytes * 2) + ">";
+        => ContentsSentinel + "\n<" + new string('0', estimatedSizeBytes * 2) + ">";
 
     /// <summary>
     /// Builds the PDF date string in the format D:YYYYMMDDHHmmSS+00'00'.
