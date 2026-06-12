@@ -23,11 +23,9 @@ namespace VellumPdf.IO;
 /// </summary>
 internal sealed class CrossReferenceStreamBuilder
 {
-    // W widths: [1 4 2]
+    // W widths: W1 and W3 are fixed; W2 is computed dynamically from the max offset.
     private const int W1 = 1;
-    private const int W2 = 4;
     private const int W3 = 2;
-    private const int RowSize = W1 + W2 + W3; // 7
 
     private readonly struct XrefRow
     {
@@ -90,8 +88,11 @@ internal sealed class CrossReferenceStreamBuilder
         // Record the XRef stream's own type-1 entry so /Size covers it.
         SetUncompressed(xrefObjNumber, xrefOffset);
 
+        // Compute dynamic W2 from the maximum byte offset in the table.
+        var w2 = ComputeW2(_rows);
+
         // Encode the rows into binary
-        var decoded = EncodeRows();
+        var decoded = EncodeRows(w2);
 
         // FlateDecode compress (ZLib, RFC 1950)
         var compMs = new MemoryStream();
@@ -105,7 +106,7 @@ internal sealed class CrossReferenceStreamBuilder
             .Set(PdfName.Size, Size)
             .Set(new PdfName("W"), new PdfArray([
                 new PdfInteger(W1),
-                new PdfInteger(W2),
+                new PdfInteger(w2),
                 new PdfInteger(W3)
             ]))
             .Set(PdfName.Root, catalogRef)
@@ -138,9 +139,22 @@ internal sealed class CrossReferenceStreamBuilder
         return xrefOffset;
     }
 
-    private byte[] EncodeRows()
+    private static int ComputeW2(IReadOnlyList<XrefRow> rows)
     {
-        var buf = new byte[_rows.Count * RowSize];
+        long maxField2 = 0;
+        foreach (var row in rows)
+            if (row.Field2 > maxField2) maxField2 = row.Field2;
+        if (maxField2 <= 0xFFFFFFFFL) return 4;
+        if (maxField2 <= 0xFFFFFFFFFFL) return 5;
+        throw new NotSupportedException(
+            $"Maximum byte offset {maxField2} requires more than 5 bytes in the xref stream W2 field; " +
+            "files larger than ~1 TB are not supported.");
+    }
+
+    private byte[] EncodeRows(int w2)
+    {
+        var rowSize = W1 + w2 + W3;
+        var buf = new byte[_rows.Count * rowSize];
         var pos = 0;
         foreach (var row in _rows)
         {
@@ -148,13 +162,10 @@ internal sealed class CrossReferenceStreamBuilder
             buf[pos] = row.Type;
             pos += W1;
 
-            // Field 2: 4 bytes big-endian
+            // Field 2: w2 bytes big-endian
             var f2 = row.Field2;
-            buf[pos] = (byte)((f2 >> 24) & 0xFF);
-            buf[pos + 1] = (byte)((f2 >> 16) & 0xFF);
-            buf[pos + 2] = (byte)((f2 >> 8) & 0xFF);
-            buf[pos + 3] = (byte)(f2 & 0xFF);
-            pos += W2;
+            for (var shift = (w2 - 1) * 8; shift >= 0; shift -= 8)
+                buf[pos++] = (byte)((f2 >> shift) & 0xFF);
 
             // Field 3: 2 bytes big-endian
             var f3 = row.Field3;

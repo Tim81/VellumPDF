@@ -79,12 +79,19 @@ internal static class CffSubsetter
         }
         else
         {
-            // No local subrs in source — emit empty local subr INDEX and verbatim Private DICT
+            // No local subrs in source — emit empty local subr INDEX.
+            // Strip any stale Subrs (op 19) from the Private DICT so it does not dangle.
             newLocalSubrBytes = [0x00, 0x00]; // empty INDEX (count=0)
-            newPrivateDictBytes = font.PrivateDictSize > 0 && font.PrivateDictOffset > 0
-                && font.PrivateDictOffset + font.PrivateDictSize <= font.Data.Length
-                ? font.Data.Span.Slice(font.PrivateDictOffset, font.PrivateDictSize).ToArray()
-                : [];
+            if (font.PrivateDictSize > 0 && font.PrivateDictOffset > 0
+                && font.PrivateDictOffset + font.PrivateDictSize <= font.Data.Length)
+            {
+                var privSrc = font.Data.Span.Slice(font.PrivateDictOffset, font.PrivateDictSize);
+                newPrivateDictBytes = StripPrivateDictSubrs(privSrc);
+            }
+            else
+            {
+                newPrivateDictBytes = [];
+            }
         }
 
         // ── 5. Build the new Name INDEX with subset tag ───────────────────────

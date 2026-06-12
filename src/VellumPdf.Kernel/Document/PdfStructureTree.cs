@@ -140,6 +140,14 @@ internal sealed class PdfStructureTree
             var elemsOnPage = new List<PdfStructElem>();
             CollectElemsOnPage(_documentRoot, page, elemsOnPage);
 
+            // TODO(#83): The ParentTree array is sized by leaf struct-element count on this page
+            // and validates 0 <= MCID < count (i.e., MCIDs must be exactly 0..count-1 dense).
+            // If MCIDs are assigned from a per-page counter that is also used for non-leaf
+            // (container) elements, the high-water mark may exceed the leaf count and the
+            // existing InvalidOperationException fires incorrectly. The correct fix is to size
+            // the array by (max MCID + 1) instead of leaf count, but that requires verifying
+            // no existing tagged-PDF/UA tests rely on the current dense validation.
+            // Deferred from v1.5.1 hardening to avoid regression risk.
             var n = elemsOnPage.Count;
             var indexed = new PdfObject?[n];
 

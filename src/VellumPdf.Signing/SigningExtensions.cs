@@ -54,9 +54,26 @@ public static class SigningExtensions
             throw new ArgumentException(
                 "The signing certificate must include a private key.", nameof(settings));
 
-        var options = ToPlaceholderOptions(settings);
+        // Resolve signing time once so /M (written by the Kernel) and the CMS
+        // Pkcs9SigningTime attribute (written by PdfCmsSigner) share the same value.
+        var effectiveSettings = settings.SigningTime is null
+            ? new PdfSignatureSettings
+            {
+                Certificate = settings.Certificate,
+                SignerName = settings.SignerName,
+                Reason = settings.Reason,
+                Location = settings.Location,
+                ContactInfo = settings.ContactInfo,
+                SigningTime = DateTimeOffset.UtcNow,
+                EstimatedSignatureSizeBytes = settings.EstimatedSignatureSizeBytes,
+                SubFilter = settings.SubFilter,
+                TimestampClient = settings.TimestampClient,
+            }
+            : settings;
+
+        var options = ToPlaceholderOptions(effectiveSettings);
         var unsignedBytes = doc.PrepareForSigning(options);
-        PdfCmsSigner.Sign(unsignedBytes, settings, output);
+        PdfCmsSigner.Sign(unsignedBytes, effectiveSettings, output);
     }
 
     /// <summary>
@@ -87,9 +104,26 @@ public static class SigningExtensions
             throw new ArgumentException(
                 "The signing certificate must include a private key.", nameof(settings));
 
-        var options = ToPlaceholderOptions(settings);
+        // Resolve signing time once so /M (written by the Kernel) and the CMS
+        // Pkcs9SigningTime attribute (written by PdfCmsSigner) share the same value.
+        var effectiveSettings = settings.SigningTime is null
+            ? new PdfSignatureSettings
+            {
+                Certificate = settings.Certificate,
+                SignerName = settings.SignerName,
+                Reason = settings.Reason,
+                Location = settings.Location,
+                ContactInfo = settings.ContactInfo,
+                SigningTime = DateTimeOffset.UtcNow,
+                EstimatedSignatureSizeBytes = settings.EstimatedSignatureSizeBytes,
+                SubFilter = settings.SubFilter,
+                TimestampClient = settings.TimestampClient,
+            }
+            : settings;
+
+        var options = ToPlaceholderOptions(effectiveSettings);
         var unsignedBytes = doc.PrepareForSigning(options);
-        PdfCmsSigner.Sign(unsignedBytes, settings, output);
+        PdfCmsSigner.Sign(unsignedBytes, effectiveSettings, output);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

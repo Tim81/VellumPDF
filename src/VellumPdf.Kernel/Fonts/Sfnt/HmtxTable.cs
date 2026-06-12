@@ -18,6 +18,7 @@ internal sealed class HmtxTable
     /// <summary>Returns the advance width in design units for glyph <paramref name="gid"/>.</summary>
     public int GetAdvanceWidth(int gid)
     {
+        if (_advanceWidths.Length == 0) return 0;
         if (gid < 0 || gid >= _numGlyphs) return 0;
         // Last entry repeats for glyphs beyond the hMetrics count
         var idx = Math.Min(gid, _advanceWidths.Length - 1);
@@ -28,6 +29,8 @@ internal sealed class HmtxTable
     {
         var r = font.GetTableReader(new Tag("hmtx"));
         var n = hhea.NumHMetrics;
+        if (n == 0)
+            throw new InvalidDataException("hmtx: numberOfHMetrics must be >= 1.");
         var advances = new ushort[n];
         for (var i = 0; i < n; i++)
             advances[i] = r.ReadU16(i * 4);

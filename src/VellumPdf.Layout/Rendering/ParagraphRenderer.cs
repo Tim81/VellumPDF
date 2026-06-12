@@ -406,21 +406,35 @@ public sealed class ParagraphRenderer : IRenderer
 
     /// <summary>
     /// Greedy word-wrap across all runs. Words inherit the style of the run they belong to.
-    /// A word that spans a run boundary keeps the style of the run that contains most of it
-    /// (in practice, words never straddle boundaries because we split on spaces — each space
-    /// terminates a word token which is always within one run's text).
+    /// Hard newlines (\n) in run text produce explicit line breaks; \t is treated as a space.
     /// </summary>
     private static List<LineFragment[]> WordWrap(IReadOnlyList<TextRun> runs, double maxWidth)
     {
         var lines = new List<LineFragment[]>();
 
-        // Flatten all runs into a sequence of (word, style) tokens
-        var tokens = new List<(string Word, TextStyle Style)>();
+        // Flatten all runs into a sequence of (word, style) tokens.
+        // Hard newlines in the text produce explicit line breaks.
+        var tokens = new List<(string Word, TextStyle Style, bool HardBreakBefore)>();
         foreach (var run in runs)
         {
-            var words = run.Text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            foreach (var w in words)
-                tokens.Add((w, run.Style));
+            // Split on newlines first to honour hard line breaks.
+            var hardLines = run.Text.Split('\n');
+            for (var hl = 0; hl < hardLines.Length; hl++)
+            {
+                var hardLine = hardLines[hl];
+                // Replace tabs with spaces for word splitting purposes.
+                var words = hardLine.Replace('\t', ' ').Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                var isFirstHardLine = hl == 0;
+                var isFirstWord = true;
+                foreach (var w in words)
+                {
+                    tokens.Add((w, run.Style, !isFirstHardLine && isFirstWord));
+                    isFirstWord = false;
+                }
+                // An empty hardLine (e.g. two consecutive \n) still forces a break.
+                if (words.Length == 0 && !isFirstHardLine)
+                    tokens.Add((string.Empty, run.Style, true));
+            }
         }
 
         if (tokens.Count == 0)
@@ -435,7 +449,18 @@ public sealed class ParagraphRenderer : IRenderer
 
         for (var ti = 0; ti < tokens.Count; ti++)
         {
-            var (word, style) = tokens[ti];
+            var (word, style, hardBreakBefore) = tokens[ti];
+
+            // Hard break: commit current line and start a new one.
+            if (hardBreakBefore)
+            {
+                lines.Add(BuildFragments(lineFrags));
+                lineFrags.Clear();
+                lineWidth = 0.0;
+            }
+
+            if (word.Length == 0) continue;
+
             var spaceW = style.FontRef.MeasureString(" ", style.FontSize);
             var wordW = style.FontRef.MeasureString(word, style.FontSize);
 

@@ -144,8 +144,17 @@ internal static class XmpMetadataWriter
 
     private static string XmlEscape(string s)
     {
-        // Minimal XML character escaping for element text content.
-        return s
+        // Strip XML 1.0 illegal control characters (U+0000–0008, U+000B, U+000C, U+000E–001F).
+        // Keep \t (U+0009), \n (U+000A), \r (U+000D) which are valid XML.
+        var sb = new System.Text.StringBuilder(s.Length);
+        foreach (var c in s)
+        {
+            if (c < 0x20 && c != '\t' && c != '\n' && c != '\r')
+                continue; // drop XML-illegal control char
+            sb.Append(c);
+        }
+        // Standard XML entity escaping.
+        return sb.ToString()
             .Replace("&", "&amp;")
             .Replace("<", "&lt;")
             .Replace(">", "&gt;")

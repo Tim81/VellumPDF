@@ -229,7 +229,7 @@ public sealed class RadioPushButtonTests
         var options = new[]
         {
             new RadioOption(page, new PdfRectangle(72, 700, 90, 718), "On"),
-            new RadioOption(page, new PdfRectangle(72, 680, 90, 698), "Off"),
+            new RadioOption(page, new PdfRectangle(72, 680, 90, 698), "NotSelected"),
         };
         doc.AddRadioButtonGroup("Toggle", options, selectedExportValue: "On");
 

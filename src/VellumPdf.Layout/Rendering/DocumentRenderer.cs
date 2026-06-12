@@ -43,6 +43,8 @@ public sealed class DocumentRenderer
         _pdf = pdf;
         _pageSize = pageSize ?? pdf.DefaultPageSize;
         _margins = margins ?? new EdgeInsets(72); // 1-inch default margins (72pt)
+
+        ValidateGeometry(_pageSize, _margins);
     }
 
     /// <summary>Appends a renderer to the document flow and returns this instance for chaining.</summary>
@@ -62,10 +64,18 @@ public sealed class DocumentRenderer
     /// </summary>
     internal void RunLayout()
     {
+        var contentArea = ContentArea;
+        if (contentArea.Width <= 0 || contentArea.Height <= 0)
+            throw new ArgumentException(
+                $"The computed content area has no positive size ({contentArea.Width:F1}×{contentArea.Height:F1}pt). " +
+                "The margins, header, and footer together exceed the page dimensions. " +
+                "Reduce the margins or band heights.",
+                "margins");
+
         int totalPages;
         if (Header is not null || Footer is not null)
         {
-            // Pass 1: count pages via layout-only simulation (no PDF objects created).
+            // Pass 1: count pages via the same PlaceRenderer code path (no PDF objects created).
             totalPages = CountPages();
         }
         else
@@ -247,8 +257,8 @@ public sealed class DocumentRenderer
     // ── Pass 1: page counting ─────────────────────────────────────────────────
 
     /// <summary>
-    /// Simulates the layout pass (no drawing) to determine the total page count.
-    /// Returns the number of pages that would be produced.
+    /// Counts pages by running the same placement logic as the real render pass,
+    /// but without creating PDF objects. This guarantees the count matches the actual render.
     /// </summary>
     private int CountPages()
     {
@@ -257,12 +267,12 @@ public sealed class DocumentRenderer
         var contentArea = ContentArea;
 
         foreach (var renderer in _renderers)
-            pages = SimulatePlaceRenderer(renderer, ref currentY, ref pages, contentArea);
+            CountPlaceRenderer(renderer, ref currentY, ref pages, contentArea);
 
         return pages;
     }
 
-    private int SimulatePlaceRenderer(IRenderer renderer, ref double currentY, ref int pages, LayoutBox contentArea)
+    private void CountPlaceRenderer(IRenderer renderer, ref double currentY, ref int pages, LayoutBox contentArea)
     {
         var availableArea = new LayoutBox(
             contentArea.X, currentY,
@@ -279,7 +289,7 @@ public sealed class DocumentRenderer
             case LayoutResult.Outcome.Partial:
                 pages++;
                 currentY = contentArea.Y;
-                SimulatePlaceRenderer(result.OverflowRenderer!, ref currentY, ref pages, contentArea);
+                CountPlaceRenderer(result.OverflowRenderer!, ref currentY, ref pages, contentArea);
                 break;
 
             case LayoutResult.Outcome.Nothing:
@@ -287,11 +297,35 @@ public sealed class DocumentRenderer
                 currentY = contentArea.Y;
                 var retry = renderer.Layout(new LayoutContext(contentArea));
                 if (retry.Status == LayoutResult.Outcome.Nothing)
-                    break; // Can't fit — stop counting
-                SimulatePlaceRenderer(renderer, ref currentY, ref pages, contentArea);
+                    break; // element too tall — skip (real render will throw)
+                CountPlaceRenderer(renderer, ref currentY, ref pages, contentArea);
                 break;
         }
+    }
 
-        return pages;
+    // ── Validation ────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Validates that page size and margins are finite, positive, and leave a non-empty content area.
+    /// </summary>
+    private static void ValidateGeometry(PdfRectangle pageSize, EdgeInsets margins)
+    {
+        if (!double.IsFinite(pageSize.Width) || pageSize.Width <= 0)
+            throw new ArgumentOutOfRangeException(nameof(pageSize),
+                $"Page width must be a positive finite number (was {pageSize.Width}).");
+        if (!double.IsFinite(pageSize.Height) || pageSize.Height <= 0)
+            throw new ArgumentOutOfRangeException(nameof(pageSize),
+                $"Page height must be a positive finite number (was {pageSize.Height}).");
+
+        if (margins.Horizontal >= pageSize.Width)
+            throw new ArgumentException(
+                $"Horizontal margins ({margins.Horizontal:F1}pt) meet or exceed page width ({pageSize.Width:F1}pt). " +
+                "Reduce the left/right margins.",
+                nameof(margins));
+        if (margins.Vertical >= pageSize.Height)
+            throw new ArgumentException(
+                $"Vertical margins ({margins.Vertical:F1}pt) meet or exceed page height ({pageSize.Height:F1}pt). " +
+                "Reduce the top/bottom margins.",
+                nameof(margins));
     }
 }

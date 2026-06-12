@@ -50,6 +50,13 @@ public sealed class PdfDocument : IDisposable
     private int _fontCounter;
     private int _ttFontCounter;
     private bool _disposed;
+    private bool _written;
+
+    // Tracks field /T names for duplicate detection (§83c).
+    // "Signature1" is reserved here so a caller-added form field cannot collide with the
+    // signature field that the signing path emits (which would produce a malformed AcroForm
+    // with two terminal fields of the same fully-qualified name, ISO 32000-2 §12.7.4.2).
+    private readonly HashSet<string> _fieldNames = new(StringComparer.Ordinal) { "Signature1" };
 
     // Encryption settings supplied via Encrypt(). Null = no encryption.
     private PdfEncryptionSettings? _encryptionSettings;
@@ -343,6 +350,8 @@ public sealed class PdfDocument : IDisposable
         ArgumentNullException.ThrowIfNull(page);
         ArgumentException.ThrowIfNullOrEmpty(name);
         ArgumentNullException.ThrowIfNull(rect);
+        if (!_fieldNames.Add(name))
+            throw new ArgumentException($"A field with the name '{name}' has already been added to this document.", nameof(name));
         _formFields.Add(new PdfFormField.TextField(page, name, rect, value, options ?? new()));
     }
 
@@ -359,6 +368,8 @@ public sealed class PdfDocument : IDisposable
         ArgumentNullException.ThrowIfNull(page);
         ArgumentException.ThrowIfNullOrEmpty(name);
         ArgumentNullException.ThrowIfNull(rect);
+        if (!_fieldNames.Add(name))
+            throw new ArgumentException($"A field with the name '{name}' has already been added to this document.", nameof(name));
         _formFields.Add(new PdfFormField.CheckBoxField(page, name, rect, checkedState, options ?? new()));
     }
 
@@ -378,6 +389,8 @@ public sealed class PdfDocument : IDisposable
         ArgumentException.ThrowIfNullOrEmpty(name);
         ArgumentNullException.ThrowIfNull(rect);
         ArgumentNullException.ThrowIfNull(options);
+        if (!_fieldNames.Add(name))
+            throw new ArgumentException($"A field with the name '{name}' has already been added to this document.", nameof(name));
         _formFields.Add(new PdfFormField.ChoiceField(page, name, rect, options, selected, combo, fieldOptions ?? new()));
     }
 
@@ -397,6 +410,20 @@ public sealed class PdfDocument : IDisposable
         ArgumentNullException.ThrowIfNull(options);
         if (options.Count == 0)
             throw new ArgumentException("A radio button group must have at least one option.", nameof(options));
+        if (!_fieldNames.Add(name))
+            throw new ArgumentException($"A field with the name '{name}' has already been added to this document.", nameof(name));
+        var exportValues = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var opt in options)
+        {
+            if (string.Equals(opt.ExportValue, "Off", StringComparison.Ordinal))
+                throw new ArgumentException(
+                    "Radio button export value 'Off' is reserved by PDF and cannot be used as an export value.",
+                    nameof(options));
+            if (!exportValues.Add(opt.ExportValue))
+                throw new ArgumentException(
+                    $"Duplicate radio button export value '{opt.ExportValue}' within the group.",
+                    nameof(options));
+        }
         _formFields.Add(new PdfFormField.RadioGroupField(name, options, selectedExportValue, fieldOptions ?? new()));
     }
 
@@ -415,6 +442,8 @@ public sealed class PdfDocument : IDisposable
         ArgumentException.ThrowIfNullOrEmpty(name);
         ArgumentNullException.ThrowIfNull(rect);
         ArgumentNullException.ThrowIfNull(caption);
+        if (!_fieldNames.Add(name))
+            throw new ArgumentException($"A field with the name '{name}' has already been added to this document.", nameof(name));
         _formFields.Add(new PdfFormField.PushButtonField(page, name, rect, caption, options ?? new()));
     }
 
@@ -446,6 +475,13 @@ public sealed class PdfDocument : IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(destination);
 
+        if (_written)
+            throw new InvalidOperationException(
+                "This document has already been written; create a new PdfDocument to write again.");
+
+        if (_pages.Count == 0)
+            throw new InvalidOperationException("The document has no pages.");
+
         if (UseObjectStreams && _encryptionSettings is not null)
             throw new NotSupportedException(
                 "UseObjectStreams cannot be combined with Encrypt(). " +
@@ -457,6 +493,10 @@ public sealed class PdfDocument : IDisposable
             throw new InvalidOperationException(
                 "PDF/A prohibits encryption (ISO 19005-2 §6.3.1). " +
                 "Remove Encrypt() or clear Conformance before calling Save().");
+
+        // All preconditions passed — mark written only now, so a recoverable precondition
+        // failure (no pages, incompatible options) leaves the document usable for a retry.
+        _written = true;
 
         var writer = new PdfWriter(destination);
         var xref = new CrossReferenceBuilder();
@@ -798,6 +838,17 @@ public sealed class PdfDocument : IDisposable
     /// </summary>
     private void WriteWithSignaturePlaceholders(Stream destination, SignaturePlaceholderOptions options)
     {
+        if (_written)
+            throw new InvalidOperationException(
+                "This document has already been written; create a new PdfDocument to write again.");
+
+        if (_pages.Count == 0)
+            throw new InvalidOperationException("The document has no pages.");
+
+        // All preconditions passed — mark written only now, so a recoverable precondition
+        // failure leaves the document usable for a retry.
+        _written = true;
+
         var writer = new PdfWriter(destination);
         var xref = new CrossReferenceBuilder();
         var registry = new PdfObjectRegistry();
@@ -940,6 +991,15 @@ public sealed class PdfDocument : IDisposable
         if (_pages.Count > 0)
             _pages[0].AddAnnotation(sigFieldRef);
 
+        // ── AcroForm fields (must precede page dicts) ──────────────────────────
+        // AcroFormBuilder.Build wires each caller-registered form field's widget
+        // annotation onto its page via page.AddAnnotation. This MUST run before the
+        // page dictionaries are built (below) so those widgets appear in the page
+        // /Annots — otherwise a field on a page other than page 1 would be orphaned.
+        // Mirrors the ordering in the regular Save path.
+        var helveticaForForms = UseFont(Standard14.Helvetica);
+        var existingFormAcroDict = AcroFormBuilder.Build(_formFields, registry, pageRefMap, helveticaForForms);
+
         // ── Page dicts ────────────────────────────────────────────────────────
         for (var i = 0; i < _pages.Count; i++)
         {
@@ -1021,9 +1081,33 @@ public sealed class PdfDocument : IDisposable
         registry.SetValue(sigFieldRef, sigFieldDict);
 
         // ── Catalog ────────────────────────────────────────────────────────────
-        var acroFormDict = new PdfDictionary()
-            .Set(new PdfName("Fields"), new PdfArray([sigFieldRef]))
-            .Set(new PdfName("SigFlags"), new PdfInteger(3));
+        // Build the merged /AcroForm: combine any caller-registered form fields
+        // (text, checkbox, choice, radio, push-button) with the signature field.
+        // The form fields and their page widgets were already built above (before
+        // the page dicts); here we only assemble the catalog /AcroForm /Fields.
+        PdfArray mergedFields;
+        PdfDictionary acroFormDict;
+        if (existingFormAcroDict is not null)
+        {
+            // Merge: prepend the existing field refs, then append the signature field.
+            var existingFields = (PdfArray)(existingFormAcroDict.Get(new PdfName("Fields"))!);
+            var allRefs = new List<PdfObject>(existingFields.Count + 1);
+            for (var fi = 0; fi < existingFields.Count; fi++)
+                allRefs.Add(existingFields[fi]);
+            allRefs.Add(sigFieldRef);
+            mergedFields = new PdfArray(allRefs);
+
+            acroFormDict = existingFormAcroDict;
+            acroFormDict.Set(new PdfName("Fields"), mergedFields);
+            acroFormDict.Set(new PdfName("SigFlags"), new PdfInteger(3));
+        }
+        else
+        {
+            // No other form fields — signature only.
+            acroFormDict = new PdfDictionary()
+                .Set(new PdfName("Fields"), new PdfArray([sigFieldRef]))
+                .Set(new PdfName("SigFlags"), new PdfInteger(3));
+        }
 
         var catalog = new PdfDictionary()
             .Set(PdfName.Type, PdfName.Catalog)
@@ -1362,13 +1446,17 @@ public sealed class PdfDocument : IDisposable
                 itemDict.Set(new PdfName("Next"), itemRefs[siblings[sibIdx + 1]]);
 
             // /First, /Last, /Count for items that have children.
-            // /Count is the total number of ALL open descendants (recursive), per ISO 32000-2 §12.3.3.
+            // ISO 32000-2 §12.3.3: /Count = +N when the item is open (expanded),
+            // and -N when closed (collapsed). N is the count of visible open descendants
+            // (direct children + recursively open sub-items of those children).
             if (childrenOf.TryGetValue(i, out var myChildren) && myChildren.Count > 0)
             {
+                var visibleCount = CountVisibleDescendants(i, childrenOf, _outlineEntries);
+                var countValue = entry.IsExpanded ? visibleCount : -visibleCount;
                 itemDict
                     .Set(new PdfName("First"), itemRefs[myChildren[0]])
                     .Set(new PdfName("Last"), itemRefs[myChildren[^1]])
-                    .Set(new PdfName("Count"), new PdfInteger(CountAllDescendants(i, childrenOf)));
+                    .Set(new PdfName("Count"), new PdfInteger(countValue));
             }
 
             registry.SetValue(itemRefs[i], itemDict);
@@ -1376,8 +1464,9 @@ public sealed class PdfDocument : IDisposable
 
         // Build the /Outlines root dict.
         var rootChildren = siblingsByParent.TryGetValue(-1, out var rootSiblings) ? rootSiblings : [];
-        // Root /Count = total open (visible) items = number of direct top-level children.
-        var rootCountAll = rootChildren.Count;
+        // Root /Count = number of visible (open) items at the first level plus all
+        // recursively visible descendants of those that are open (ISO 32000-2 §12.3.3).
+        var rootCountAll = CountVisibleDescendants(-1, childrenOf, _outlineEntries);
 
         var outlinesDict = new PdfDictionary()
             .Set(PdfName.Type, new PdfName("Outlines"));
@@ -1395,16 +1484,28 @@ public sealed class PdfDocument : IDisposable
     }
 
     /// <summary>
-    /// Recursively counts all descendants of outline item <paramref name="itemIndex"/>
-    /// (i.e. children + their children + …) to produce the correct ISO 32000-2 §12.3.3 /Count.
+    /// Counts the visible descendants of <paramref name="itemIndex"/> per ISO 32000-2 §12.3.3.
+    /// For a given parent, the visible count is the number of its direct children plus, for each
+    /// child that is open (<see cref="PdfOutlineEntry.IsExpanded"/> = true), its own visible
+    /// descendants recursively.
     /// </summary>
-    private static int CountAllDescendants(int itemIndex, Dictionary<int, List<int>> childrenOf)
+    /// <param name="itemIndex">The parent's index into <paramref name="entries"/>, or -1 for the root outline dict.</param>
+    /// <param name="childrenOf">Map of parent index → list of child entry indices.</param>
+    /// <param name="entries">The flat ordered list of outline entries.</param>
+    private static int CountVisibleDescendants(
+        int itemIndex,
+        Dictionary<int, List<int>> childrenOf,
+        IReadOnlyList<PdfOutlineEntry> entries)
     {
         if (!childrenOf.TryGetValue(itemIndex, out var children) || children.Count == 0)
             return 0;
         var total = children.Count;
         foreach (var child in children)
-            total += CountAllDescendants(child, childrenOf);
+        {
+            // Only recurse into children that are open — closed children hide their subtrees.
+            if (entries[child].IsExpanded)
+                total += CountVisibleDescendants(child, childrenOf, entries);
+        }
         return total;
     }
 

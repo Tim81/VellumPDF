@@ -27,6 +27,15 @@ public sealed class LayoutImageRenderer : IRenderer
         var imgW = _img.Image.Width;
         var imgH = _img.Image.Height;
 
+        if (!double.IsFinite(imgW) || imgW <= 0)
+            throw new ArgumentException(
+                $"Image width must be a positive finite number (was {imgW}).",
+                nameof(_img));
+        if (!double.IsFinite(imgH) || imgH <= 0)
+            throw new ArgumentException(
+                $"Image height must be a positive finite number (was {imgH}).",
+                nameof(_img));
+
         _w = _img.Width ?? area.Width;
         _h = _img.Height ?? (_w / imgW * imgH);
 

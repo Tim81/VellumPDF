@@ -21,18 +21,22 @@ internal sealed class UncompressedPdfStream : PdfStream
     {
         // No /Filter — plain uncompressed bytes (or encrypted body when active).
         byte[] body;
+        int length;
         if (writer.Encryptor is { } enc)
         {
             body = enc.Encrypt(_data);
-            Dictionary.Set(PdfName.Length, body.Length);
+            length = body.Length;
         }
         else
         {
             body = _data;
-            Dictionary.Set(PdfName.Length, _data.Length);
+            length = _data.Length;
         }
 
-        Dictionary.WriteTo(writer);
+        // Write a serialisation-time copy so we never mutate the shared Dictionary.
+        var serialDict = Dictionary.ShallowCopy().Set(PdfName.Length, length);
+
+        serialDict.WriteTo(writer);
         writer.WriteAscii("\nstream\n"u8);
         writer.WriteRaw(body);
         writer.WriteAscii("\nendstream"u8);

@@ -1,7 +1,6 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
-using VellumPdf.Fonts;
 using VellumPdf.Layout.Core;
 using VellumPdf.Layout.Elements.Table;
 
@@ -54,8 +53,8 @@ internal sealed class TableGridResolver
                 if (col >= cols) break;
                 var cellStyle = cell.Style ?? style;
                 var words = cell.Content.Split(' ');
-                var longest = words.Max(w => Standard14Metrics.MeasureString(cellStyle.Font, w, cellStyle.FontSize));
-                var full = Standard14Metrics.MeasureString(cellStyle.Font, cell.Content, cellStyle.FontSize)
+                var longest = words.Max(w => cellStyle.FontRef.MeasureString(w, cellStyle.FontSize));
+                var full = cellStyle.FontRef.MeasureString(cell.Content, cellStyle.FontSize)
                               + cell.Padding.Horizontal;
 
                 var share = cell.ColSpan;

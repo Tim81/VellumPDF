@@ -39,7 +39,10 @@ internal sealed class NameTable
             // Prefer platform 3 (Windows), encoding 1, US English
             if (platform != 3 || encoding != 1 || language != 0x0409) continue;
 
-            var s = Encoding.BigEndianUnicode.GetString(r.Span.Slice(strOff + offset, length));
+            // Bounds-check before slicing: a malformed record must not throw
+            // ArgumentOutOfRangeException; route through Slice which throws InvalidDataException.
+            var strData = r.Slice(strOff + offset, length);
+            var s = Encoding.BigEndianUnicode.GetString(strData.Span);
             switch (nameId)
             {
                 case 1: familyName = s; break;

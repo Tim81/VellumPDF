@@ -299,10 +299,11 @@ public sealed class TimestampTests
         Assert.Equal(4, brParts.Length);
         var byteRange = brParts.Select(long.Parse).ToArray();
 
-        const string contentsMarker = "/Contents <";
-        var cStart = text.IndexOf(contentsMarker, StringComparison.Ordinal);
-        Assert.True(cStart >= 0, "/Contents not found in signed PDF");
-        var posLt = cStart + contentsMarker.Length - 1;
+        // Locate the hex value via the unique sentinel emitted before '<'.
+        var sentinelMarker = PdfSignatureHelper.ContentsSentinel + "\n<";
+        var sStart = text.IndexOf(sentinelMarker, StringComparison.Ordinal);
+        Assert.True(sStart >= 0, "/Contents sentinel not found in signed PDF");
+        var posLt = sStart + sentinelMarker.Length - 1; // index of '<'
         var cEnd = text.IndexOf('>', posLt);
         Assert.True(cEnd >= 0, "/Contents closing '>' not found");
         var hexContent = text[(posLt + 1)..cEnd];

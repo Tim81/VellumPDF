@@ -54,11 +54,23 @@ internal static class PdfCmsSigner
         var effectiveReserve = EffectiveReserve(settings);
 
         // ── Step 1: locate the /Contents placeholder ──────────────────────────
+        // ContentsKey = "%VELLUM_SIG_CONTENTS_…\n<" — a unique sentinel comment emitted
+        // by PdfDocument.WriteWithSignaturePlaceholders immediately before the hex value.
+        // Searching for this sentinel instead of the bare "/Contents <" string ensures
+        // that adversarial metadata (Reason/Location/… containing "/Contents <") cannot
+        // match first and derail the patch.
+        var matchCount = CountOf(unsignedBytes, PdfSignatureHelper.ContentsKey);
+        if (matchCount == 0)
+            throw new InvalidOperationException(
+                "PDF byte stream does not contain the /Contents sentinel. Internal error in signature field construction.");
+        if (matchCount > 1)
+            throw new InvalidOperationException(
+                $"PDF byte stream contains {matchCount} occurrences of the /Contents sentinel; expected exactly 1. Internal error.");
+
         var posContentsKey = IndexOf(unsignedBytes, PdfSignatureHelper.ContentsKey);
-        if (posContentsKey < 0)
-            throw new InvalidOperationException("PDF byte stream does not contain the /Contents placeholder. Internal error in signature field construction.");
 
         // posLt = index of the '<' that starts the hex string
+        // ContentsKey ends with '\n<', so the '<' is the last byte of the match.
         var posLt = posContentsKey + PdfSignatureHelper.ContentsKey.Length - 1; // last char of ContentsKey is '<'
         // contentsTokenLen = '<' + (effectiveReserve * 2 hex chars) + '>'
         var hexLen = effectiveReserve * 2;
@@ -201,7 +213,7 @@ internal static class PdfCmsSigner
         return cms.Encode();
     }
 
-    // ── Byte-search helper ────────────────────────────────────────────────────
+    // ── Byte-search helpers ────────────────────────────────────────────────────
 
     /// <summary>Returns the index of the first occurrence of <paramref name="needle"/> in
     /// <paramref name="haystack"/>, or -1 if not found.</summary>
@@ -215,5 +227,23 @@ internal static class PdfCmsSigner
                 return i;
         }
         return -1;
+    }
+
+    /// <summary>Returns the number of non-overlapping occurrences of <paramref name="needle"/>
+    /// in <paramref name="haystack"/>.</summary>
+    private static int CountOf(byte[] haystack, byte[] needle)
+    {
+        var count = 0;
+        var span = haystack.AsSpan();
+        var needleSpan = needle.AsSpan();
+        for (var i = 0; i <= haystack.Length - needle.Length; i++)
+        {
+            if (span[i..].StartsWith(needleSpan))
+            {
+                count++;
+                i += needle.Length - 1; // skip past match (loop will increment i by 1 more)
+            }
+        }
+        return count;
     }
 }

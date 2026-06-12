@@ -26,6 +26,10 @@ public sealed class PdfImageXObject
     private readonly PdfDictionary? _decodeParms;
     private readonly byte[]? _jbig2Globals;
 
+    // Colour-key /Mask for greyscale (type 0) and RGB (type 2) PNG tRNS transparency.
+    // When non-null, written as /Mask [min max ...] per ISO 32000-2 §8.9.6.3.
+    private readonly PdfArray? _colorKeyMask;
+
     // When true, the stream bytes are passed verbatim (pre-compressed by the
     // encoder named in _filter). When false, PdfStream applies FlateDecode.
     private readonly bool _passthrough;
@@ -34,7 +38,7 @@ public sealed class PdfImageXObject
         int width, int height, byte[] streamData, PdfName filter,
         ImageColorSpace colorSpace, int bitsPerComponent, PdfStream? sMask = null,
         int sMaskBitsPerComponent = 8, PdfDictionary? decodeParms = null,
-        byte[]? jbig2Globals = null)
+        byte[]? jbig2Globals = null, PdfArray? colorKeyMask = null)
     {
         Width = width;
         Height = height;
@@ -46,6 +50,7 @@ public sealed class PdfImageXObject
         _sMaskBitsPerComponent = sMaskBitsPerComponent;
         _decodeParms = decodeParms;
         _jbig2Globals = jbig2Globals;
+        _colorKeyMask = colorKeyMask;
 
         // Passthrough: any filter that is not the implicit-FlateDecode sentinel.
         // Loaders pass PdfName.FlateDecode when the bytes are raw pixels that
@@ -147,6 +152,9 @@ public sealed class PdfImageXObject
 
         if (sMaskRef is not null)
             d.Set(new PdfName("SMask"), sMaskRef);
+
+        if (_colorKeyMask is not null)
+            d.Set(new PdfName("Mask"), _colorKeyMask);
     }
 
     private PdfObject ColorSpaceName() => _colorSpace switch

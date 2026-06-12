@@ -438,7 +438,7 @@ public static class CcittImageLoader
 
             // Decode one 1D row.
             var rowBase = row * rowBytes;
-            DecodeRow1D(reader, raster, rowBase, columns, blackIs1);
+            DecodeRow1D(ref reader, raster, rowBase, columns, blackIs1);
         }
 
         return raster;
@@ -446,7 +446,7 @@ public static class CcittImageLoader
 
     /// <summary>Decodes one T.4 1D Modified Huffman encoded row into <paramref name="raster"/>.</summary>
     private static void DecodeRow1D(
-        BitReader reader,
+        ref BitReader reader,
         byte[] raster,
         int rowBase,
         int columns,
@@ -454,10 +454,11 @@ public static class CcittImageLoader
     {
         var col = 0;
         var white = true; // T.4 rows always start with a white run (even if run length is 0)
+        var zeroRunStreak = 0;
 
         while (col < columns)
         {
-            int runLength = ReadRunLength(reader, white);
+            int runLength = ReadRunLength(ref reader, white);
 
             // Bound: total run cannot exceed remaining pixels.
             if (runLength < 0 || col + runLength > columns)
@@ -482,6 +483,22 @@ public static class CcittImageLoader
             // else: bits are already 0 from array initialisation.
 
             col += runLength;
+
+            // Zero-progress guard. A single zero-length run is legal — a row that begins
+            // with a black pixel opens with a zero-length white run — but two consecutive
+            // zero-length runs make no progress and indicate a corrupt/degenerate stream
+            // that would otherwise loop forever.
+            if (runLength == 0)
+            {
+                if (++zeroRunStreak >= 2)
+                    throw new InvalidDataException(
+                        "CCITT T.4: consecutive zero-length runs; stream may be corrupt or degenerate.");
+            }
+            else
+            {
+                zeroRunStreak = 0;
+            }
+
             white = !white;
         }
     }
@@ -491,14 +508,14 @@ public static class CcittImageLoader
     /// Returns the total run length. Throws <see cref="InvalidDataException"/> on truncation
     /// or unrecognised code.
     /// </summary>
-    private static int ReadRunLength(BitReader reader, bool white)
+    private static int ReadRunLength(ref BitReader reader, bool white)
     {
         var total = 0;
 
         // Read make-up codes (each adds a multiple of 64) until we get a terminating code.
         while (true)
         {
-            int run = TryMatchCodes(reader, white);
+            int run = TryMatchCodes(ref reader, white);
             if (run < 0)
                 throw new InvalidDataException(
                     $"CCITT T.4: unrecognised Huffman code reading {(white ? "white" : "black")} run.");
@@ -525,7 +542,7 @@ public static class CcittImageLoader
     /// Returns the run length on match, or -1 if no code matched.
     /// Advances the reader only on a successful match.
     /// </summary>
-    private static int TryMatchCodes(BitReader reader, bool white)
+    private static int TryMatchCodes(ref BitReader reader, bool white)
     {
         var terminating = white ? WhiteTerminating : BlackTerminating;
         var makeUp = white ? WhiteMakeUp : BlackMakeUp;
@@ -533,16 +550,16 @@ public static class CcittImageLoader
         // Try terminating codes first (they share prefixes with make-up in some cases;
         // we try all and pick longest match — actually T.4 codes are prefix-free within
         // each table, so we just scan for the first match).
-        int runLen = TryScan(reader, terminating);
+        int runLen = TryScan(ref reader, terminating);
         if (runLen >= 0)
             return runLen;
 
-        runLen = TryScan(reader, makeUp);
+        runLen = TryScan(ref reader, makeUp);
         if (runLen >= 0)
             return runLen;
 
         // Extended make-up codes (shared).
-        runLen = TryScan(reader, ExtendedMakeUp);
+        runLen = TryScan(ref reader, ExtendedMakeUp);
         if (runLen >= 0)
             return runLen;
 
@@ -550,7 +567,7 @@ public static class CcittImageLoader
     }
 
     /// <summary>Scans a code table, returning the run length of the first match.</summary>
-    private static int TryScan(BitReader reader, (ushort Code, int Len, int Run)[] table)
+    private static int TryScan(ref BitReader reader, (ushort Code, int Len, int Run)[] table)
     {
         foreach (var (code, len, run) in table)
         {

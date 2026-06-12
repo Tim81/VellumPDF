@@ -42,6 +42,19 @@ public sealed class PdfDictionary : PdfObject
     /// <summary>Returns the value for <paramref name="key"/>, or <see langword="null"/> when absent.</summary>
     public PdfObject? Get(PdfName key) => TryGet(key, out var v) ? v : null;
 
+    /// <summary>
+    /// Returns a new <see cref="PdfDictionary"/> with a shallow copy of all entries.
+    /// Used by stream <c>WriteTo</c> overrides to add serialisation-only entries
+    /// (e.g. <c>/Length</c>, <c>/Filter</c>) without mutating the shared dictionary.
+    /// </summary>
+    internal PdfDictionary ShallowCopy()
+    {
+        var copy = new PdfDictionary();
+        foreach (var kv in _entries)
+            copy._entries.Add(kv);
+        return copy;
+    }
+
     /// <summary>Writes the serialised PDF representation to <paramref name="writer"/>.</summary>
     public override void WriteTo(PdfWriter writer)
     {

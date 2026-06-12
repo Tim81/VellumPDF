@@ -24,6 +24,8 @@ static readonly VellumPdf.Core.PdfName.JBIG2Decode -> VellumPdf.Core.PdfName!
 static readonly VellumPdf.Core.PdfName.JPXDecode -> VellumPdf.Core.PdfName!
 static VellumPdf.Images.PngImageLoader.Load(byte[]! pngBytes, VellumPdf.Images.ImageLoadOptions! options) -> VellumPdf.Images.PdfImageXObject!
 static VellumPdf.Images.TiffImageLoader.Load(byte[]! tiff, VellumPdf.Images.ImageLoadOptions! options) -> VellumPdf.Images.PdfImageXObject!
+VellumPdf.Annotations.PdfOutlineEntry.IsExpanded.get -> bool
+VellumPdf.Annotations.PdfOutlineEntry.IsExpanded.init -> void
 VellumPdf.Images.CcittImageLoader
 static VellumPdf.Images.CcittImageLoader.Load(byte[]! ccittData, int columns, int rows, int k = -1, bool blackIs1 = false, bool encodedByteAlign = false, bool endOfLine = false) -> VellumPdf.Images.PdfImageXObject!
 static VellumPdf.Images.CcittImageLoader.Load(byte[]! ccittData, int columns, int rows, VellumPdf.Images.ImageLoadOptions! options) -> VellumPdf.Images.PdfImageXObject!
