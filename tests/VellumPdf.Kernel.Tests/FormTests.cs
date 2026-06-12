@@ -303,6 +303,52 @@ public sealed class FormTests
         Assert.True(count >= 2, $"Expected /Annots on both pages, found {count} occurrence(s).");
     }
 
+    // ── Signature1 field-name reservation (issue #83c) ───────────────────────
+
+    /// <summary>
+    /// "Signature1" is pre-seeded in <c>_fieldNames</c> so that a caller-added form
+    /// field cannot collide with the invisible signature widget that the signing path
+    /// emits under the name "Signature1" (ISO 32000-2 §12.7.4.2 prohibits duplicate
+    /// fully-qualified field names).
+    ///
+    /// This test verifies that <c>AddTextField</c> with the reserved name throws
+    /// <see cref="ArgumentException"/> containing the duplicate-field message.
+    /// </summary>
+    [Fact]
+    public void AddTextField_nameIsSignature1_throwsArgumentException()
+    {
+        using var doc = new PdfDocument();
+        var page = doc.AddPage();
+        var rect = new PdfRectangle(72, 700, 300, 720);
+
+        var ex = Assert.Throws<ArgumentException>(() =>
+            doc.AddTextField(page, "Signature1", rect));
+
+        Assert.Contains("Signature1", ex.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A field with a name OTHER than "Signature1" can be added and saved without error.
+    /// Positive counterpart to <see cref="AddTextField_nameIsSignature1_throwsArgumentException"/>.
+    /// </summary>
+    [Fact]
+    public void AddTextField_nameNotSignature1_succeedsAndAppearsinOutput()
+    {
+        using var doc = new PdfDocument();
+        var page = doc.AddPage();
+        var rect = new PdfRectangle(72, 700, 300, 720);
+
+        // Must not throw.
+        doc.AddTextField(page, "ContactName", rect, value: "Alice");
+
+        var ms = new MemoryStream();
+        doc.Save(ms);
+        var content = Encoding.Latin1.GetString(ms.ToArray());
+
+        Assert.Contains("/AcroForm", content);
+        Assert.Contains("/FT /Tx", content);
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     private static int CountOccurrences(string text, string pattern)

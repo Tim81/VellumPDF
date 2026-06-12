@@ -53,7 +53,10 @@ public sealed class PdfDocument : IDisposable
     private bool _written;
 
     // Tracks field /T names for duplicate detection (§83c).
-    private readonly HashSet<string> _fieldNames = new(StringComparer.Ordinal);
+    // "Signature1" is reserved here so a caller-added form field cannot collide with the
+    // signature field that the signing path emits (which would produce a malformed AcroForm
+    // with two terminal fields of the same fully-qualified name, ISO 32000-2 §12.7.4.2).
+    private readonly HashSet<string> _fieldNames = new(StringComparer.Ordinal) { "Signature1" };
 
     // Encryption settings supplied via Encrypt(). Null = no encryption.
     private PdfEncryptionSettings? _encryptionSettings;
@@ -475,7 +478,6 @@ public sealed class PdfDocument : IDisposable
         if (_written)
             throw new InvalidOperationException(
                 "This document has already been written; create a new PdfDocument to write again.");
-        _written = true;
 
         if (_pages.Count == 0)
             throw new InvalidOperationException("The document has no pages.");
@@ -491,6 +493,10 @@ public sealed class PdfDocument : IDisposable
             throw new InvalidOperationException(
                 "PDF/A prohibits encryption (ISO 19005-2 §6.3.1). " +
                 "Remove Encrypt() or clear Conformance before calling Save().");
+
+        // All preconditions passed — mark written only now, so a recoverable precondition
+        // failure (no pages, incompatible options) leaves the document usable for a retry.
+        _written = true;
 
         var writer = new PdfWriter(destination);
         var xref = new CrossReferenceBuilder();
@@ -835,10 +841,13 @@ public sealed class PdfDocument : IDisposable
         if (_written)
             throw new InvalidOperationException(
                 "This document has already been written; create a new PdfDocument to write again.");
-        _written = true;
 
         if (_pages.Count == 0)
             throw new InvalidOperationException("The document has no pages.");
+
+        // All preconditions passed — mark written only now, so a recoverable precondition
+        // failure leaves the document usable for a retry.
+        _written = true;
 
         var writer = new PdfWriter(destination);
         var xref = new CrossReferenceBuilder();

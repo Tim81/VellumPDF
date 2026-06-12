@@ -66,33 +66,12 @@ public sealed class HardeningV151Tests
         Assert.Throws<InvalidDataException>(() => NameTable.Parse(sfnt));
     }
 
-    // ── F2b: CFF fallback uses untagged PostScript name (issue #82) ──────────
-
-    /// <summary>
-    /// Checks the SubsetPostScriptName logic indirectly: the _cffFellBackToWholeFont
-    /// field is only set inside BuildFontFileStream (which calls BuildSubsetCffFont).
-    /// We verify that the name property contract is correct by testing that a non-CFF
-    /// font (glyf path) always carries a subset tag, and that the flag starts false.
-    /// (Full CID-keyed fallback requires a real CID-keyed font; the flag logic is
-    /// unit-tested by confirming the field only flips in the CID fallback path.)
-    ///
-    /// This is a compile-time verification that the field exists and the property
-    /// reads it; a full integration test requires a real CID-keyed OTF.
-    /// </summary>
-    [Fact]
-    public void TrueTypeFontEmbedder_cffFallbackFlag_initiallyFalse()
-    {
-        // The field is private; we verify via reflection that it exists and is false initially.
-        var fontData = BuildTrueTypeStub();
-        // If this throws during construction, an earlier issue triggered.
-        // We just want to confirm the field exists (compile-time) and the embedder
-        // constructs without exception on a minimal stub.
-        // Construction-time access to hhea/hmtx etc. will parse the stub tables.
-        // We skip any assertion about BuildFontDictionary here as it requires BuildFontFileStream
-        // to have been called first (which sets the flag) — that is tested at integration level.
-        // This test guards the compile path only.
-        _ = fontData; // field verified to exist by compilation of this file (uses VellumPdf.Fonts)
-    }
+    // ── F2b: CFF fallback — no-op test removed (issue #82) ──────────────────
+    // The previous test TrueTypeFontEmbedder_cffFallbackFlag_initiallyFalse
+    // contained no assertions (the body was `_ = fontData;`). A full integration
+    // test for the CID-keyed fallback path requires a real CID-keyed OTF font,
+    // which is not available as a test asset. The test has been removed rather than
+    // left as a false-positive assertion-free placeholder.
 
     // ── I1: CCITT 1D BitReader by-ref fix (issue #76) ────────────────────────
 
@@ -118,6 +97,70 @@ public sealed class HardeningV151Tests
         // All-white in CCITTFaxDecode BlackIs1=false means all-zero bits in the raster.
         Assert.Equal(2, raster.Length); // 8 columns → 1 byte/row × 2 rows
         Assert.All(raster, b => Assert.Equal(0, b));
+    }
+
+    /// <summary>
+    /// Guards the #76 <c>ref BitReader</c> fix: a 2-row 8-wide stream where the two rows
+    /// have DIFFERENT content, encoded WITHOUT byte-alignment between rows.
+    ///
+    /// <para>
+    /// Stream layout (MSB-first, <c>encodedByteAlign=false</c>):
+    /// <list type="bullet">
+    ///   <item>Row 0 — black-leading: white=0 (8 bits), black=3 (2 bits), white=5 (4 bits).
+    ///         Total = 14 bits. Expected raster byte = 0xE0 (3 MSBs set).</item>
+    ///   <item>Row 1 — all-white: white=8 (5 bits), starting at bit offset 14.
+    ///         Expected raster byte = 0x00.</item>
+    /// </list>
+    /// </para>
+    ///
+    /// <para>
+    /// WHY this fails with the old by-value pass: when <c>DecodeRow1D</c> received the
+    /// <see cref="BitReader"/> by value, advancing the reader inside row 0's decode did not
+    /// update the outer loop variable.  For row 1 the loop re-issued a fresh copy of the
+    /// <em>original</em> reader (bit offset 0), causing row 1 to re-read the same bits as
+    /// row 0 and produce raster byte 0xE0 instead of 0x00.  The assertion
+    /// <c>raster[1] == 0x00</c> therefore FAILS pre-fix and PASSES post-fix.
+    /// </para>
+    ///
+    /// <para>
+    /// Stream bytes: Row 0 bits: 00110101 10 1100 = bits 0..13 → bytes 0..1 partially.
+    ///               Row 1 bits: 10011     = bits 14..18 → spans byte 1 (bits 14-15) and byte 2.
+    ///   byte 0 = 0x35 (bits 0-7:  00110101 = white-run-0 code)
+    ///   byte 1 = 0xB2 (bits 8-15: 10 1100 10 = black=3, white=5, first 2 bits of white=8)
+    ///   byte 2 = 0x60 (bits 16-18: 011 then zero-padding = 0110_0000)
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void Ccitt1D_twoRows_differentContent_nonByteAligned_decodesCorrectly()
+    {
+        // Row 0: white=0 (00110101, 8b), black=3 (10, 2b), white=5 (1100, 4b) → 14 bits total.
+        // Row 1: white=8 (10011, 5b) → starts at bit 14, ends at bit 18 → 3 bytes total.
+        //
+        // bit layout (MSB first):
+        //  b  0- 7: 00110101 (white-run=0)
+        //  b  8- 9: 10       (black-run=3)
+        //  b 10-13: 1100     (white-run=5)
+        //  b 14-18: 10011    (white-run=8)
+        //
+        // byte 0 = bits  0- 7 = 0b00110101 = 0x35
+        // byte 1 = bits  8-15 = 0b10110010 = 0xB2
+        //          (10 from black=3) + (1100 from white=5) + (10 = first 2 bits of white-run=8 code)
+        // byte 2 = bits 16-18 = 0b011 then 5 pad zeros = 0b01100000 = 0x60
+        var stream = new byte[] { 0x35, 0xB2, 0x60 };
+
+        var raster = CcittImageLoader.DecodeCcittToRaster(stream, columns: 8, rows: 2, k: 0,
+            blackIs1: false, encodedByteAlign: false);
+
+        Assert.Equal(2, raster.Length);
+
+        // Row 0: pixels 0-2 black → MSBs set; pixels 3-7 white → lower bits clear.
+        // BlackIs1=false: black→bit=1, white→bit=0.
+        // bits 7,6,5 set = 0b11100000 = 0xE0.
+        Assert.Equal(0xE0, raster[0]);
+
+        // Row 1: all-white → all bits 0 = 0x00.
+        // Pre-fix (by-value reader) this would be 0xE0 because row 1 re-reads from bit 0.
+        Assert.Equal(0x00, raster[1]);
     }
 
     /// <summary>
