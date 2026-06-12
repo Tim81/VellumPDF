@@ -21,22 +21,24 @@ internal sealed class RawPdfStream : PdfStream
     public override void WriteTo(PdfWriter writer)
     {
         byte[] body;
+        int length;
         if (writer.Encryptor is { } enc)
         {
             body = enc.Encrypt(_rawData);
-            Dictionary
-                .Set(PdfName.Filter, _filter)
-                .Set(PdfName.Length, body.Length);
+            length = body.Length;
         }
         else
         {
             body = _rawData;
-            Dictionary
-                .Set(PdfName.Filter, _filter)
-                .Set(PdfName.Length, _rawData.Length);
+            length = _rawData.Length;
         }
 
-        Dictionary.WriteTo(writer);
+        // Write a serialisation-time copy so we never mutate the shared Dictionary.
+        var serialDict = Dictionary.ShallowCopy()
+            .Set(PdfName.Filter, _filter)
+            .Set(PdfName.Length, length);
+
+        serialDict.WriteTo(writer);
         writer.WriteAscii("\nstream\n"u8);
         writer.WriteRaw(body);
         writer.WriteAscii("\nendstream"u8);

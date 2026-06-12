@@ -94,14 +94,24 @@ public sealed class PdfCanvas
     /// <see cref="Document.PdfDocument.RegisterIccBasedColorSpace"/>.
     /// </summary>
     public PdfCanvas SetFillColorSpace(string resourceName)
-    { WriteOpAscii($"/{resourceName} cs"); return this; }
+    {
+        WriteEscapedName(resourceName);
+        _ops.Write(" cs"u8);
+        _ops.WriteByte((byte)'\n');
+        return this;
+    }
 
     /// <summary>
     /// Selects the named colour space as the current stroking colour space.
     /// Emits <c>/resourceName CS</c>.
     /// </summary>
     public PdfCanvas SetStrokeColorSpace(string resourceName)
-    { WriteOpAscii($"/{resourceName} CS"); return this; }
+    {
+        WriteEscapedName(resourceName);
+        _ops.Write(" CS"u8);
+        _ops.WriteByte((byte)'\n');
+        return this;
+    }
 
     /// <summary>
     /// Sets the fill (non-stroking) colour components for the current colour space.
@@ -410,7 +420,8 @@ public sealed class PdfCanvas
     /// </summary>
     public PdfCanvas SetFontByName(string resourceName, double size)
     {
-        WriteOpAscii($"/{resourceName} {N(size)} Tf");
+        WriteEscapedName(resourceName);
+        _ops.Write(Encoding.ASCII.GetBytes($" {N(size)} Tf\n"));
         return this;
     }
 
@@ -474,7 +485,8 @@ public sealed class PdfCanvas
     {
         var mcid = _mcidCounter++;
         // /<tag> <</MCID mcid>> BDC
-        _ops.Write(Encoding.ASCII.GetBytes($"/{tag} <</MCID {mcid}>> BDC\n"));
+        WriteEscapedName(tag);
+        _ops.Write(Encoding.ASCII.GetBytes($" <</MCID {mcid}>> BDC\n"));
         return mcid;
     }
 
@@ -491,7 +503,11 @@ public sealed class PdfCanvas
 
     /// <summary>Paints the named XObject (image or form) from the page resources. Emits <c>Do</c>.</summary>
     public PdfCanvas DoXObject(string resourceName)
-    { WriteOpAscii($"/{resourceName} Do"); return this; }
+    {
+        WriteEscapedName(resourceName);
+        _ops.Write(" Do\n"u8);
+        return this;
+    }
 
     // ── Finalise ────────────────────────────────────────────────────────────
 
@@ -509,7 +525,38 @@ public sealed class PdfCanvas
 
     // ── Private helpers ─────────────────────────────────────────────────────
 
-    private static string N(double v) => v.ToString("0.####", CultureInfo.InvariantCulture);
+    // TODO(#80): Aligned to 5dp to match PdfReal.WriteTo ("0.#####").
+    private static string N(double v) => v.ToString("0.#####", CultureInfo.InvariantCulture);
+
+    // PDF delimiters that must be #XX-escaped in a name token (ISO 32000-2 §7.3.5).
+    // Mirrors PdfName._delimiters so both escaping paths stay in sync.
+    private static readonly System.Collections.Generic.HashSet<byte> _nameDelimiters = new()
+    {
+        (byte)'(', (byte)')', (byte)'<', (byte)'>', (byte)'[', (byte)']',
+        (byte)'{', (byte)'}', (byte)'/', (byte)'%'
+    };
+
+    /// <summary>
+    /// Writes a PDF name token (with leading '/') to the content stream,
+    /// applying the same #XX escaping as <see cref="VellumPdf.Core.PdfName.WriteTo"/>.
+    /// </summary>
+    private void WriteEscapedName(string name)
+    {
+        _ops.WriteByte((byte)'/');
+        foreach (var b in Encoding.Latin1.GetBytes(name))
+        {
+            if (b == '#' || b < 0x21 || b > 0x7E || _nameDelimiters.Contains(b))
+            {
+                _ops.WriteByte((byte)'#');
+                _ops.WriteByte(HexNibble(b >> 4));
+                _ops.WriteByte(HexNibble(b & 0xF));
+            }
+            else
+            {
+                _ops.WriteByte(b);
+            }
+        }
+    }
 
     private void WriteOp(ReadOnlySpan<byte> op)
     {

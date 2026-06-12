@@ -110,6 +110,10 @@ public sealed class CrossReferenceBuilder
 
     private static void Write10Digits(PdfWriter w, long n)
     {
+        if (n > 9_999_999_999L)
+            throw new NotSupportedException(
+                $"Byte offset {n} exceeds 9,999,999,999 — the classic xref table " +
+                "cannot represent offsets beyond 10 digits. Use UseObjectStreams = true for files > ~9 GB.");
         Span<byte> buf = stackalloc byte[10];
         buf.Fill((byte)'0');
         var tmp = n;

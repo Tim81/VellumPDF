@@ -50,6 +50,10 @@ public sealed class PdfDocument : IDisposable
     private int _fontCounter;
     private int _ttFontCounter;
     private bool _disposed;
+    private bool _written;
+
+    // Tracks field /T names for duplicate detection (§83c).
+    private readonly HashSet<string> _fieldNames = new(StringComparer.Ordinal);
 
     // Encryption settings supplied via Encrypt(). Null = no encryption.
     private PdfEncryptionSettings? _encryptionSettings;
@@ -343,6 +347,8 @@ public sealed class PdfDocument : IDisposable
         ArgumentNullException.ThrowIfNull(page);
         ArgumentException.ThrowIfNullOrEmpty(name);
         ArgumentNullException.ThrowIfNull(rect);
+        if (!_fieldNames.Add(name))
+            throw new ArgumentException($"A field with the name '{name}' has already been added to this document.", nameof(name));
         _formFields.Add(new PdfFormField.TextField(page, name, rect, value, options ?? new()));
     }
 
@@ -359,6 +365,8 @@ public sealed class PdfDocument : IDisposable
         ArgumentNullException.ThrowIfNull(page);
         ArgumentException.ThrowIfNullOrEmpty(name);
         ArgumentNullException.ThrowIfNull(rect);
+        if (!_fieldNames.Add(name))
+            throw new ArgumentException($"A field with the name '{name}' has already been added to this document.", nameof(name));
         _formFields.Add(new PdfFormField.CheckBoxField(page, name, rect, checkedState, options ?? new()));
     }
 
@@ -378,6 +386,8 @@ public sealed class PdfDocument : IDisposable
         ArgumentException.ThrowIfNullOrEmpty(name);
         ArgumentNullException.ThrowIfNull(rect);
         ArgumentNullException.ThrowIfNull(options);
+        if (!_fieldNames.Add(name))
+            throw new ArgumentException($"A field with the name '{name}' has already been added to this document.", nameof(name));
         _formFields.Add(new PdfFormField.ChoiceField(page, name, rect, options, selected, combo, fieldOptions ?? new()));
     }
 
@@ -397,6 +407,20 @@ public sealed class PdfDocument : IDisposable
         ArgumentNullException.ThrowIfNull(options);
         if (options.Count == 0)
             throw new ArgumentException("A radio button group must have at least one option.", nameof(options));
+        if (!_fieldNames.Add(name))
+            throw new ArgumentException($"A field with the name '{name}' has already been added to this document.", nameof(name));
+        var exportValues = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var opt in options)
+        {
+            if (string.Equals(opt.ExportValue, "Off", StringComparison.Ordinal))
+                throw new ArgumentException(
+                    "Radio button export value 'Off' is reserved by PDF and cannot be used as an export value.",
+                    nameof(options));
+            if (!exportValues.Add(opt.ExportValue))
+                throw new ArgumentException(
+                    $"Duplicate radio button export value '{opt.ExportValue}' within the group.",
+                    nameof(options));
+        }
         _formFields.Add(new PdfFormField.RadioGroupField(name, options, selectedExportValue, fieldOptions ?? new()));
     }
 
@@ -415,6 +439,8 @@ public sealed class PdfDocument : IDisposable
         ArgumentException.ThrowIfNullOrEmpty(name);
         ArgumentNullException.ThrowIfNull(rect);
         ArgumentNullException.ThrowIfNull(caption);
+        if (!_fieldNames.Add(name))
+            throw new ArgumentException($"A field with the name '{name}' has already been added to this document.", nameof(name));
         _formFields.Add(new PdfFormField.PushButtonField(page, name, rect, caption, options ?? new()));
     }
 
@@ -445,6 +471,14 @@ public sealed class PdfDocument : IDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(destination);
+
+        if (_written)
+            throw new InvalidOperationException(
+                "This document has already been written; create a new PdfDocument to write again.");
+        _written = true;
+
+        if (_pages.Count == 0)
+            throw new InvalidOperationException("The document has no pages.");
 
         if (UseObjectStreams && _encryptionSettings is not null)
             throw new NotSupportedException(
@@ -798,6 +832,14 @@ public sealed class PdfDocument : IDisposable
     /// </summary>
     private void WriteWithSignaturePlaceholders(Stream destination, SignaturePlaceholderOptions options)
     {
+        if (_written)
+            throw new InvalidOperationException(
+                "This document has already been written; create a new PdfDocument to write again.");
+        _written = true;
+
+        if (_pages.Count == 0)
+            throw new InvalidOperationException("The document has no pages.");
+
         var writer = new PdfWriter(destination);
         var xref = new CrossReferenceBuilder();
         var registry = new PdfObjectRegistry();

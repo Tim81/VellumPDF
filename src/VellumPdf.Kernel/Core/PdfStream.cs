@@ -34,22 +34,25 @@ public class PdfStream : PdfObject
         // the encrypted length. The /Filter chain stays as FlateDecode because
         // PDF readers decrypt first, then decompress.
         byte[] body;
+        int length;
         if (writer.Encryptor is { } enc)
         {
             body = enc.Encrypt(compressed);
-            Dictionary
-                .Set(PdfName.Filter, PdfName.FlateDecode)
-                .Set(PdfName.Length, body.Length);
+            length = body.Length;
         }
         else
         {
             body = compressed;
-            Dictionary
-                .Set(PdfName.Filter, PdfName.FlateDecode)
-                .Set(PdfName.Length, compressed.Length);
+            length = compressed.Length;
         }
 
-        Dictionary.WriteTo(writer);
+        // Write a serialisation-time copy of the dictionary so we never mutate
+        // the shared Dictionary (enables write-once, idempotent calls).
+        var serialDict = Dictionary.ShallowCopy()
+            .Set(PdfName.Filter, PdfName.FlateDecode)
+            .Set(PdfName.Length, length);
+
+        serialDict.WriteTo(writer);
         writer.WriteAscii("\nstream\n"u8);
         writer.WriteRaw(body);
         writer.WriteAscii("\nendstream"u8);

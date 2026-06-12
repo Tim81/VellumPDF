@@ -44,9 +44,12 @@ public sealed class PdfLinkAnnotation
         if (Uri is not null)
         {
             // /A << /S /URI /URI (url) >>
+            // Percent-encode non-ASCII codepoints (U+0080+) as UTF-8 bytes so the URI
+            // is representable as ASCII; avoids lossy Latin-1 '?' substitution.
             var action = new PdfDictionary()
                 .Set(new PdfName("S"), new PdfName("URI"))
-                .Set(new PdfName("URI"), new PdfLiteralString(System.Text.Encoding.Latin1.GetBytes(Uri)));
+                .Set(new PdfName("URI"), new PdfLiteralString(
+                    System.Text.Encoding.Latin1.GetBytes(PercentEncodeNonAscii(Uri))));
             dict.Set(new PdfName("A"), action);
         }
         else if (destPageRef is not null)
@@ -63,5 +66,28 @@ public sealed class PdfLinkAnnotation
         }
 
         return dict;
+    }
+
+    /// <summary>
+    /// Percent-encodes non-ASCII codepoints (U+0080 and above) as their UTF-8 byte sequence,
+    /// producing a string that is representable in ASCII (and therefore in Latin-1).
+    /// ASCII characters are passed through unchanged.
+    /// </summary>
+    private static string PercentEncodeNonAscii(string uri)
+    {
+        var sb = new System.Text.StringBuilder(uri.Length);
+        foreach (var c in uri)
+        {
+            if (c < 0x80)
+            {
+                sb.Append(c);
+            }
+            else
+            {
+                foreach (var b in System.Text.Encoding.UTF8.GetBytes(c.ToString()))
+                    sb.Append('%').Append(b.ToString("X2", System.Globalization.CultureInfo.InvariantCulture));
+            }
+        }
+        return sb.ToString();
     }
 }

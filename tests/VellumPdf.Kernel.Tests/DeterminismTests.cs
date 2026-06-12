@@ -109,6 +109,7 @@ public sealed class DeterminismTests
         static byte[] SaveWith(byte[] idArray, bool mutateAfterSet)
         {
             using var doc = new PdfDocument { Timestamp = PinnedTime };
+            doc.AddPage();
             doc.DocumentId = idArray;
             if (mutateAfterSet) idArray[0] ^= 0xFF;
             var ms = new MemoryStream();
