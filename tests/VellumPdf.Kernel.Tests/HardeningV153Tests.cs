@@ -59,34 +59,26 @@ public sealed class HardeningV153Tests
     }
 
     /// <summary>
-    /// Verifies that the sentinel search fails closed: a PDF byte stream that does not
-    /// contain the sentinel throws <see cref="InvalidOperationException"/>.
-    /// (Fabricated buffer without the sentinel — simulates internal construction error.)
+    /// Verifies the /Contents size guard fires when the computed CMS signature exceeds
+    /// the reserved space. A tiny <see cref="PdfSignatureSettings.EstimatedSignatureSizeBytes"/>
+    /// (1 byte) reaches the size-exceeded guard, which confirms the /Contents placeholder
+    /// was located (via the /ByteRange anchor) before the size was validated.
     /// </summary>
     [Fact]
-    public void Sign_throws_when_sentinel_absent_from_byte_stream()
+    public void Sign_throws_when_signature_exceeds_reserved_contents_space()
     {
-        // Produce a minimal unsigned PDF with no /Contents sentinel at all.
-        // The simplest way: use PrepareForSigning on a real doc (which DOES have the
-        // sentinel) and then wipe the sentinel bytes before calling Sign directly.
-        // But PdfCmsSigner is internal, so we exercise the path via doc.Sign with
-        // a pre-built document.
-
-        // We can't easily fabricate a sentinelless stream without calling internal APIs,
-        // so instead verify that a doc produced with a tiny EstimatedSignatureSizeBytes
-        // (1 byte) still finds the sentinel — the sentinel is not size-dependent.
         using var cert = CreateTestCertificate();
         var settings = new PdfSignatureSettings
         {
             Certificate = cert,
-            EstimatedSignatureSizeBytes = 1, // will throw size-exceeded, NOT sentinel-not-found
+            EstimatedSignatureSizeBytes = 1, // forces the size-exceeded guard
         };
 
         using var doc = new PdfDocument();
         doc.AddPage();
         var ms = new MemoryStream();
-        // This must throw InvalidOperationException about the signature SIZE, not about
-        // the sentinel being missing — confirming the sentinel IS found first.
+        // Must throw about the reserved signature SIZE — reaching that guard confirms the
+        // /Contents placeholder was found first via the /ByteRange anchor.
         var ex = Assert.Throws<InvalidOperationException>(() => doc.Sign(ms, settings));
         Assert.Contains("reserved", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
@@ -197,11 +189,10 @@ public sealed class HardeningV153Tests
         Assert.Equal(4, brParts.Length);
         var byteRange = brParts.Select(long.Parse).ToArray();
 
-        // Locate the hex value via the sentinel emitted before '<'.
-        var sentinelMarker = PdfSignatureHelper.ContentsSentinel + "\n<";
-        var sStart = text.IndexOf(sentinelMarker, StringComparison.Ordinal);
-        Assert.True(sStart >= 0, "/Contents sentinel not found in signed PDF");
-        var posLt = sStart + sentinelMarker.Length - 1; // index of '<'
+        // Locate the '<' of the /Contents hex string by anchoring on /ByteRange:
+        // the first '<' after the ByteRange ']' is the /Contents opening angle bracket.
+        var posLt = text.IndexOf('<', brEnd);
+        Assert.True(posLt >= 0, "/Contents '<' not found after /ByteRange");
         var cEnd = text.IndexOf('>', posLt);
         Assert.True(cEnd >= 0, "/Contents closing '>' not found");
         var hexContent = text[(posLt + 1)..cEnd];

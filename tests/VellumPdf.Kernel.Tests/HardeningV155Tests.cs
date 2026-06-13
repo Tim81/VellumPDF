@@ -457,6 +457,51 @@ public sealed class HardeningV155Tests
         return ms.ToArray();
     }
 
+    // ── Issue #89: no sentinel comment in signed output (veraPDF 6.4.3-1) ────
+
+    /// <summary>
+    /// Regression test for GitHub issue #89: the signed byte stream must contain no
+    /// proprietary %VELLUM comment between /Contents and its hex-string value.
+    /// veraPDF clause 6.4.3-1 rejects a /Contents token whose value is not a direct
+    /// hex string.
+    /// </summary>
+    [Fact]
+    public void Signed_doc_contents_value_has_no_sentinel_comment()
+    {
+        using var cert = CreateTestCertificate();
+        using var doc = new PdfDocument();
+        var page = doc.AddPage();
+        var canvas = new PdfCanvas(page);
+        canvas.Finish();
+
+        var ms = new MemoryStream();
+        doc.Sign(ms, new PdfSignatureSettings { Certificate = cert });
+        var signedBytes = ms.ToArray();
+        var text = Encoding.Latin1.GetString(signedBytes);
+
+        // No proprietary sentinel comment may appear anywhere in the output.
+        Assert.DoesNotContain("%VELLUM", text);
+
+        // Locate the signature dictionary's /Contents key by searching within the
+        // ByteRange context. The signature dict always contains "/ByteRange [" followed
+        // shortly by "\n/Contents " then the hex value. Find /ByteRange first to
+        // skip any page-content /Contents entries that appear earlier in the file.
+        const string byteRangeMarker = "/ByteRange [";
+        var brIdx = text.IndexOf(byteRangeMarker, StringComparison.Ordinal);
+        Assert.True(brIdx >= 0, "/ByteRange not found in signed PDF");
+        const string contentsKey = "/Contents ";
+        var ckIdx = text.IndexOf(contentsKey, brIdx + byteRangeMarker.Length, StringComparison.Ordinal);
+        Assert.True(ckIdx >= 0, "Signature /Contents key not found after /ByteRange in signed PDF");
+
+        // The char immediately after "/Contents " (plus optional PDF whitespace, but
+        // no '%' comment) must be '<'. A newline between the key and the hex value is
+        // valid PDF whitespace; a '%' comment is what veraPDF 6.4.3-1 rejects.
+        var nextNonWs = ckIdx + contentsKey.Length;
+        while (nextNonWs < text.Length && text[nextNonWs] is ' ' or '\t' or '\r' or '\n')
+            nextNonWs++;
+        Assert.Equal('<', text[nextNonWs]);
+    }
+
     // ── Signature helpers ─────────────────────────────────────────────────────
 
     private static X509Certificate2 CreateTestCertificate()
@@ -484,10 +529,10 @@ public sealed class HardeningV155Tests
             .Split(' ', StringSplitOptions.RemoveEmptyEntries);
         var byteRange = brParts.Select(long.Parse).ToArray();
 
-        var sentinelMarker = PdfSignatureHelper.ContentsSentinel + "\n<";
-        var sStart = text.IndexOf(sentinelMarker, StringComparison.Ordinal);
-        Assert.True(sStart >= 0, "/Contents sentinel not found");
-        var posLt = sStart + sentinelMarker.Length - 1;
+        // Locate the '<' of the /Contents hex string by anchoring on /ByteRange:
+        // the first '<' after the ByteRange ']' is the /Contents opening angle bracket.
+        var posLt = text.IndexOf('<', brEnd);
+        Assert.True(posLt >= 0, "/Contents '<' not found after /ByteRange");
         var cEnd = text.IndexOf('>', posLt);
         var hexContent = text[(posLt + 1)..cEnd];
 

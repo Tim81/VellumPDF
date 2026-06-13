@@ -13,7 +13,7 @@ namespace VellumPdf.Signing;
 /// and patches the result in-place.
 ///
 /// Algorithm:
-/// 1. Locate the /Contents token in the byte stream.
+/// 1. Locate the /Contents &lt;…&gt; hex token by anchoring on the unique /ByteRange placeholder.
 /// 2. Compute ByteRange as the two segments that exclude the &lt;…&gt; token.
 /// 3. Overwrite the /ByteRange placeholder digits in-place (fixed-width fields).
 /// 4. Concatenate the two ByteRange segments and compute a detached SHA-256 CMS
@@ -54,24 +54,27 @@ internal static class PdfCmsSigner
         var effectiveReserve = EffectiveReserve(settings);
 
         // ── Step 1: locate the /Contents placeholder ──────────────────────────
-        // ContentsKey = "%VELLUM_SIG_CONTENTS_…\n<" — a unique sentinel comment emitted
-        // by PdfDocument.WriteWithSignaturePlaceholders immediately before the hex value.
-        // Searching for this sentinel instead of the bare "/Contents <" string ensures
-        // that adversarial metadata (Reason/Location/… containing "/Contents <") cannot
-        // match first and derail the patch.
-        var matchCount = CountOf(unsignedBytes, PdfSignatureHelper.ContentsKey);
-        if (matchCount == 0)
+        // Anchor on the /ByteRange placeholder (unique, and overwritten in-place so it
+        // leaves no trace in the output). The bytes between the end of the ByteRange
+        // placeholder and the opening '<' of the /Contents hex string are the fixed
+        // sequence "]\n/Contents " — no caller-controlled data intervenes, so adversarial
+        // metadata (Reason/Location/… containing "/Contents <") cannot match first.
+        var brMatchCount = CountOf(unsignedBytes, PdfSignatureHelper.ByteRangePlaceholder);
+        if (brMatchCount == 0)
             throw new InvalidOperationException(
-                "PDF byte stream does not contain the /Contents sentinel. Internal error in signature field construction.");
-        if (matchCount > 1)
+                "PDF byte stream does not contain the /ByteRange placeholder. Internal error in signature field construction.");
+        if (brMatchCount > 1)
             throw new InvalidOperationException(
-                $"PDF byte stream contains {matchCount} occurrences of the /Contents sentinel; expected exactly 1. Internal error.");
+                $"PDF byte stream contains {brMatchCount} occurrences of the /ByteRange placeholder; expected exactly 1. Internal error.");
 
-        var posContentsKey = IndexOf(unsignedBytes, PdfSignatureHelper.ContentsKey);
+        var posBrEnd = IndexOf(unsignedBytes, PdfSignatureHelper.ByteRangePlaceholder)
+                       + PdfSignatureHelper.ByteRangePlaceholder.Length;
 
-        // posLt = index of the '<' that starts the hex string
-        // ContentsKey ends with '\n<', so the '<' is the last byte of the match.
-        var posLt = posContentsKey + PdfSignatureHelper.ContentsKey.Length - 1; // last char of ContentsKey is '<'
+        // posLt = index of the first '<' at or after the end of the ByteRange placeholder.
+        var posLt = IndexOfByte(unsignedBytes, (byte)'<', posBrEnd);
+        if (posLt < 0)
+            throw new InvalidOperationException(
+                "No '<' found after /ByteRange placeholder — /Contents hex string missing. Internal error.");
         // contentsTokenLen = '<' + (effectiveReserve * 2 hex chars) + '>'
         var hexLen = effectiveReserve * 2;
         var contentsTokenLen = 1 + hexLen + 1; // '<' + hex + '>'
@@ -214,6 +217,18 @@ internal static class PdfCmsSigner
     }
 
     // ── Byte-search helpers ────────────────────────────────────────────────────
+
+    /// <summary>Returns the index of the first occurrence of <paramref name="needle"/> in
+    /// <paramref name="haystack"/> at or after <paramref name="start"/>, or -1 if not found.</summary>
+    private static int IndexOfByte(byte[] haystack, byte needle, int start)
+    {
+        for (var i = start; i < haystack.Length; i++)
+        {
+            if (haystack[i] == needle)
+                return i;
+        }
+        return -1;
+    }
 
     /// <summary>Returns the index of the first occurrence of <paramref name="needle"/> in
     /// <paramref name="haystack"/>, or -1 if not found.</summary>
