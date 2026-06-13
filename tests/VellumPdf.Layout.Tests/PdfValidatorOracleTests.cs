@@ -700,6 +700,60 @@ public sealed class PdfValidatorOracleTests : IDisposable
         AssertVeraPdfCompliant(pdfPath, "2b");
     }
 
+    // Regression for issue #89: a PAdES-signed PDF/A-2b document must pass veraPDF.
+    // The previous signer wrote a comment between the /Contents key and its hex value,
+    // which veraPDF 1.30+ rejected on clause 6.4.3-1 (doesByteRangeCoverEntireDocument)
+    // even though the byte range and CMS signature were correct. This is the gate that
+    // exercises the real validator against a signed conformance document — the structural
+    // unit test in HardeningV155Tests asserts the absence of the comment, this proves the
+    // validator accepts the result.
+    [Fact]
+    public void Signed_PdfA2b_veraPdf_reportsCompliant()
+    {
+        var fontPath = FindPlatformFont();
+        if (fontPath is null) { GateOnCi("platform font for signed PDF/A oracle"); return; }
+
+        var pdfPath = Path.Combine(_tempDir, "signed_pdfa2b_verapdf.pdf");
+        GenerateSignedPdfA2bDoc(pdfPath, fontPath);
+        AssertVeraPdfCompliant(pdfPath, "2b");
+    }
+
+    /// <summary>
+    /// Generates a signed PDF/A-2b document with an embedded font (issue #89 regression).
+    /// The signing path runs through <c>SigningExtensions.Sign</c>, which preserves the
+    /// document's PDF/A conformance.
+    /// </summary>
+    private static void GenerateSignedPdfA2bDoc(string path, string fontPath)
+    {
+        using var rsa = RSA.Create(2048);
+        var req = new CertificateRequest(
+            "CN=VellumPdf Signed PDF/A Oracle",
+            rsa,
+            HashAlgorithmName.SHA256,
+            RSASignaturePadding.Pkcs1);
+        using var cert = req.CreateSelfSigned(
+            DateTimeOffset.UtcNow.AddDays(-1),
+            DateTimeOffset.UtcNow.AddYears(1));
+
+        using var doc = new Document();
+        doc.Conformance = PdfConformance.PdfA2b;
+        doc.Info.Title = "VellumPdf veraPDF Oracle — Signed PDF/A-2b";
+        doc.Info.Producer = "VellumPdf";
+
+        var style = EmbeddedStyle(doc, fontPath);
+        doc.Add(new Paragraph("Signed PDF/A-2b body with an embedded font.", style));
+
+        var settings = new PdfSignatureSettings
+        {
+            Certificate = cert,
+            SignerName = "VellumPdf Oracle",
+            Reason = "Issue #89 regression",
+        };
+
+        using var fs = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None);
+        doc.Sign(fs, settings);
+    }
+
     // PDF/A-2a (conformance level A) requires full accessible tagging — catalog /Lang,
     // a role map, and validated marked-content↔structure linkage — all now implemented
     // (#37, #38). This strict veraPDF 2a gate validates a fully-tagged document (heading,

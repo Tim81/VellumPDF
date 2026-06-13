@@ -57,7 +57,6 @@ public sealed class SignatureTests
         // /Contents value is preceded by the unique sentinel comment on the same line,
         // with the '<hex>' on the following line — assert both the key and the sentinel.
         Assert.Contains("/Contents", text);
-        Assert.Contains(PdfSignatureHelper.ContentsSentinel, text);
         Assert.Contains("/AcroForm", text);
         Assert.Contains("/FT /Sig", text);
         Assert.Contains("/SigFlags", text);
@@ -287,13 +286,10 @@ public sealed class SignatureTests
         var byteRange = brParts.Select(long.Parse).ToArray();
 
         // ── Parse /Contents <hex…> ──────────────────────────────────────────
-        // The sentinel comment is emitted immediately before the '<' of the hex value
-        // (between the /Contents key token and its hex-string value). Search for the
-        // sentinel + newline + '<' to locate the hex string unambiguously.
-        var sentinelMarker = VellumPdf.Document.PdfSignatureHelper.ContentsSentinel + "\n<";
-        var sStart = text.IndexOf(sentinelMarker, StringComparison.Ordinal);
-        Assert.True(sStart >= 0, "/Contents sentinel not found in signed PDF");
-        var posLt = sStart + sentinelMarker.Length - 1; // index of '<' in text (= in bytes for Latin-1)
+        // Locate the '<' of the /Contents hex string by anchoring on /ByteRange:
+        // the first '<' after the ByteRange ']' is the /Contents opening angle bracket.
+        var posLt = text.IndexOf('<', brEnd);
+        Assert.True(posLt >= 0, "/Contents '<' not found after /ByteRange in signed PDF");
         var cEnd = text.IndexOf('>', posLt);
         Assert.True(cEnd >= 0, "/Contents closing '>' not found");
         var hexContent = text[(posLt + 1)..cEnd];

@@ -20,18 +20,6 @@ internal static class PdfSignatureHelper
     internal static readonly byte[] ByteRangePlaceholder =
         Encoding.ASCII.GetBytes(BuildByteRangePlaceholderString());
 
-    // Unique sentinel written as a PDF comment on the line immediately before the
-    // /Contents hex value in the signature dictionary. The value is a fixed opaque
-    // token that cannot appear in any user-supplied metadata (Reason, Location, …).
-    // PdfCmsSigner searches for this sentinel then the following '<' to locate the
-    // /Contents placeholder unambiguously — adversarial metadata cannot match it.
-    internal const string ContentsSentinel = "%VELLUM_SIG_CONTENTS_3F8A2B1C4D5E6F70";
-
-    // Search key used by PdfCmsSigner to locate the /Contents hex string:
-    // the sentinel comment line followed immediately by the opening '<'.
-    internal static readonly byte[] ContentsKey =
-        Encoding.ASCII.GetBytes(ContentsSentinel + "\n<");
-
     private static string BuildByteRangePlaceholderString()
     {
         var val = new string('9', ByteRangeFieldWidth);
@@ -45,15 +33,15 @@ internal static class PdfSignatureHelper
 
     /// <summary>
     /// Returns the /Contents placeholder value emitted into the raw signature dictionary.
-    /// The value begins with <see cref="ContentsSentinel"/> on its own line so that
-    /// <c>VellumPdf.Signing.PdfCmsSigner</c> can locate the hex string unambiguously
-    /// even when user-supplied metadata (Reason/Location/…) contains the text
-    /// <c>/Contents &lt;</c>.  The sentinel is a valid PDF comment between the
-    /// <c>/Contents</c> key token and its hex-string value — PDF allows whitespace and
-    /// comments between tokens inside a dictionary.
+    /// The value is a plain hex-string token (<c>&lt;000…0&gt;</c>) with no intervening
+    /// comment or whitespace.  <c>VellumPdf.Signing.PdfCmsSigner</c> locates it by
+    /// anchoring on the (unique, in-place-overwritten) <see cref="ByteRangePlaceholder"/>:
+    /// the only bytes between the end of the ByteRange placeholder and the opening
+    /// <c>&lt;</c> of the /Contents hex string are the fixed sequence <c>]\n/Contents </c>,
+    /// which contains no caller-controlled data, so adversarial metadata cannot match it.
     /// </summary>
     internal static string GetContentsPlaceholder(int estimatedSizeBytes)
-        => ContentsSentinel + "\n<" + new string('0', estimatedSizeBytes * 2) + ">";
+        => "<" + new string('0', estimatedSizeBytes * 2) + ">";
 
     /// <summary>
     /// Builds the PDF date string in the format D:YYYYMMDDHHmmSS+00'00'.

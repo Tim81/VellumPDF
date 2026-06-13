@@ -4,6 +4,17 @@ All notable changes to VellumPdf will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.5.3] - 2026-06-13
+
+### Fixed
+
+- **Signature byte-range coverage.** A signed PDF no longer writes a comment between the
+  `/Contents` key and its hex-string value, so the value is a direct hex string as signature
+  validators expect. veraPDF 1.30+ rejected the previous output on clause 6.4.3-1
+  (`doesByteRangeCoverEntireDocument`) even though the byte range and the CMS signature were
+  correct. The internal placeholder is now located by anchoring on the `/ByteRange` placeholder,
+  which keeps the patch resistant to crafted `Reason`/`Location` metadata.
+
 ## [1.5.2] - 2026-06-12
 
 ### Fixed

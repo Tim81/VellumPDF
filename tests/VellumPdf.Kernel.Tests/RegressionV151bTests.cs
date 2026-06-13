@@ -384,10 +384,10 @@ public sealed class RegressionV151bTests
             .Split(' ', StringSplitOptions.RemoveEmptyEntries);
         var byteRange = brParts.Select(long.Parse).ToArray();
 
-        var sentinelMarker = PdfSignatureHelper.ContentsSentinel + "\n<";
-        var sStart = text.IndexOf(sentinelMarker, StringComparison.Ordinal);
-        Assert.True(sStart >= 0, "/Contents sentinel not found");
-        var posLt = sStart + sentinelMarker.Length - 1;
+        // Locate the '<' of the /Contents hex string by anchoring on /ByteRange:
+        // the first '<' after the ByteRange ']' is the /Contents opening angle bracket.
+        var posLt = text.IndexOf('<', brEnd);
+        Assert.True(posLt >= 0, "/Contents '<' not found after /ByteRange");
         var cEnd = text.IndexOf('>', posLt);
         var hexContent = text[(posLt + 1)..cEnd];
 
