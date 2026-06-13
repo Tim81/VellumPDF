@@ -136,8 +136,15 @@ public sealed class PdfImageXObject
          .Set(PdfName.Subtype, new PdfName("Image"))
          .Set(new PdfName("Width"), new PdfInteger(Width))
          .Set(new PdfName("Height"), new PdfInteger(Height))
-         .Set(new PdfName("ColorSpace"), ColorSpaceName())
-         .Set(new PdfName("BitsPerComponent"), new PdfInteger(_bitsPerComponent));
+         .Set(new PdfName("ColorSpace"), ColorSpaceName());
+
+        // /BitsPerComponent: required for every filter except JPXDecode, where the value comes
+        // from the JPEG 2000 codestream and the entry is optional (ISO 32000-1 §7.4.9). JPEG 2000
+        // permits bit depths (e.g. 10, 12) outside the {1,2,4,8,16} set that PDF/A-2 clause 6.2.8-4
+        // allows for this entry, so for a JPXDecode image we emit it only when its value is
+        // PDF/A-legal and omit it otherwise — the codestream still defines the true depth.
+        if (!_filter.Equals(PdfName.JPXDecode) || _bitsPerComponent is 1 or 2 or 4 or 8 or 16)
+            d.Set(new PdfName("BitsPerComponent"), new PdfInteger(_bitsPerComponent));
 
         if (_decodeParms is not null || jbig2GlobalsRef is not null)
         {

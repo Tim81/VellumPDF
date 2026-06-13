@@ -6,8 +6,12 @@ using VellumPdf.Core;
 namespace VellumPdf.Images;
 
 /// <summary>
-/// Creates a PDF Image XObject from JPEG 2000 data by passing the codestream
-/// through verbatim as a <c>/JPXDecode</c> stream.
+/// Creates a PDF Image XObject from JPEG 2000 data, emitted as a <c>/JPXDecode</c> stream.
+/// The JPEG 2000 codestream is always preserved verbatim (lossless); the surrounding JP2
+/// box structure is normalised so the image satisfies PDF/A-2 clause 6.2.8.3, which reads the
+/// colour-channel count and bit depth from the JP2 <c>ihdr</c>/<c>colr</c> boxes rather than
+/// the codestream <c>SIZ</c> marker. Embedding only the bare codestream (the historical
+/// behaviour) leaves those boxes absent, so veraPDF reads 0/0 and PDF/A validation fails.
 ///
 /// <para>Input may be either of the two standard JPEG 2000 container formats:</para>
 /// <list type="bullet">
@@ -15,13 +19,18 @@ namespace VellumPdf.Images;
 ///     <b>JP2 box file</b> — begins with the 12-byte JP2 signature box
 ///     (<c>00 00 00 0C 6A 50 20 20 0D 0A 87 0A</c>). The box structure is walked
 ///     to extract geometry from the <c>jp2h</c>/<c>ihdr</c> box and colour space from
-///     the optional <c>colr</c> box; the contiguous codestream (<c>jp2c</c>) box payload
-///     is then embedded.
+///     the optional <c>colr</c> box. A minimal conformant JP2 — signature + <c>ftyp</c> +
+///     <c>jp2h</c> + <c>jp2c</c> — is then embedded, preserving the <c>jp2h</c> superbox
+///     (and therefore its <c>colr</c>/<c>bpcc</c>/<c>pclr</c>/<c>cmap</c>/<c>cdef</c> sub-boxes)
+///     and the codestream verbatim, while dropping only ancillary top-level metadata boxes
+///     (<c>xml</c>/<c>uuid</c>/…). This never increases — and usually reduces — the embedded size.
 ///   </item>
 ///   <item>
 ///     <b>Raw codestream</b> (<c>.j2k</c>/<c>.j2c</c>) — begins with the SOC marker
 ///     (<c>FF 4F</c>). The <c>SIZ</c> marker is scanned to extract width, height,
-///     component count, and bit depth; the entire byte array is embedded verbatim.
+///     component count, and bit depth; the codestream is then wrapped verbatim in a minimal
+///     JP2 box structure (signature + <c>ftyp</c> + synthesised <c>jp2h</c> + <c>jp2c</c>) so it
+///     carries the boxes PDF/A-2 requires. The codestream bytes are unchanged.
 ///   </item>
 /// </list>
 ///
@@ -140,8 +149,15 @@ public static class JpxImageLoader
 
         ImageLimits.ValidateDimensions("JPEG 2000", width, height);
 
-        var cs = InferColorSpace(components, colrEnum: null);
-        return new PdfImageXObject(width, height, data, PdfName.JPXDecode, cs, bpc);
+        var enumCs = EnumCsForComponents(components);
+        var cs = InferColorSpace(components, enumCs);
+
+        // A bare codestream carries no JP2 boxes, so PDF/A-2 clause 6.2.8.3 — which reads the
+        // colour-channel count and bit depth from the JP2 ihdr/colr boxes, not the SIZ marker —
+        // would see 0/0. Wrap the codestream verbatim in a minimal JP2 so the image is
+        // conformant. The codestream bytes are unchanged: lossless passthrough.
+        var jp2 = BuildMinimalJp2(width, height, components, bpc, enumCs, MakeBox(BoxTypeJp2c, data));
+        return new PdfImageXObject(width, height, jp2, PdfName.JPXDecode, cs, bpc);
     }
 
     // ── JP2 box file path ─────────────────────────────────────────────────────
@@ -150,8 +166,12 @@ public static class JpxImageLoader
     {
         int width = 0, height = 0, nc = 0, bpc = 8;
         int? colrEnum = null;
-        int jp2cOffset = -1;
-        int jp2cLength = -1;
+        // Box byte ranges captured for verbatim re-emission. The first occurrence of each
+        // wins (a baseline JP2 has exactly one of each; capturing the first is correct for
+        // the primary image in the unusual multi-codestream case).
+        int jp2cBoxStart = -1, jp2cBoxTotal = -1, jp2cPayloadOffset = -1, jp2cPayloadLength = -1;
+        int jp2hBoxStart = -1, jp2hBoxTotal = -1;
+        int ftypBoxStart = -1, ftypBoxTotal = -1;
 
         var pos = 0;
         while (pos < data.Length)
@@ -164,30 +184,48 @@ public static class JpxImageLoader
 
             switch (boxType)
             {
+                case BoxTypeFtyp:
+                    if (ftypBoxStart < 0)
+                    {
+                        ftypBoxStart = pos;
+                        ftypBoxTotal = boxTotalLength;
+                    }
+                    break;
+
                 case BoxTypeJp2h:
-                    ParseJp2Header(data, boxPayloadOffset, boxPayloadLength,
-                        ref width, ref height, ref nc, ref bpc, ref colrEnum);
+                    if (jp2hBoxStart < 0)
+                    {
+                        jp2hBoxStart = pos;
+                        jp2hBoxTotal = boxTotalLength;
+                        ParseJp2Header(data, boxPayloadOffset, boxPayloadLength,
+                            ref width, ref height, ref nc, ref bpc, ref colrEnum);
+                    }
                     break;
 
                 case BoxTypeJp2c:
-                    jp2cOffset = boxPayloadOffset;
-                    jp2cLength = boxPayloadLength;
+                    if (jp2cBoxStart < 0)
+                    {
+                        jp2cBoxStart = pos;
+                        jp2cBoxTotal = boxTotalLength;
+                        jp2cPayloadOffset = boxPayloadOffset;
+                        jp2cPayloadLength = boxPayloadLength;
+                    }
                     break;
             }
 
             pos += boxTotalLength;
         }
 
-        if (jp2cOffset < 0)
+        if (jp2cBoxStart < 0)
             throw new InvalidDataException("JP2 file contains no contiguous codestream (jp2c) box.");
 
         // If jp2h was missing or did not yield dimensions, parse from the codestream's SIZ.
         if (width == 0 || height == 0)
         {
-            if (jp2cLength < 2 || data[jp2cOffset] != 0xFF || data[jp2cOffset + 1] != 0x4F)
+            if (jp2cPayloadLength < 2 || data[jp2cPayloadOffset] != 0xFF || data[jp2cPayloadOffset + 1] != 0x4F)
                 throw new InvalidDataException(
                     "jp2c codestream is missing the SOC marker (FF4F).");
-            var (w, h, c, b) = ParseSizFromCodestream(data, jp2cOffset);
+            var (w, h, c, b) = ParseSizFromCodestream(data, jp2cPayloadOffset);
             width = w;
             height = h;
             nc = c;
@@ -196,10 +234,31 @@ public static class JpxImageLoader
 
         ImageLimits.ValidateDimensions("JPEG 2000 (JP2)", width, height);
 
-        // Extract the jp2c payload (the actual codestream bytes).
-        var codestream = data[jp2cOffset..(jp2cOffset + jp2cLength)];
         var cs = InferColorSpace(nc, colrEnum);
-        return new PdfImageXObject(width, height, codestream, PdfName.JPXDecode, cs, bpc);
+        var jp2cBox = data[jp2cBoxStart..(jp2cBoxStart + jp2cBoxTotal)];
+
+        byte[] jp2;
+        if (jp2hBoxStart >= 0)
+        {
+            // Preserve the colour/geometry-defining jp2h superbox and the codestream verbatim;
+            // emit a minimal conformant JP2 (signature + ftyp + jp2h + jp2c), dropping only
+            // ancillary top-level metadata boxes (xml/uuid/…). Keeps the image PDF/A-2 conformant
+            // (clause 6.2.8.3 reads these boxes) and lossless, while never increasing the embedded
+            // size versus the source. Box order is normalised to the JP2-required sequence.
+            var ftyp = ftypBoxStart >= 0
+                ? data[ftypBoxStart..(ftypBoxStart + ftypBoxTotal)]
+                : DefaultFtypBox();
+            var jp2h = data[jp2hBoxStart..(jp2hBoxStart + jp2hBoxTotal)];
+            jp2 = Concat(Jp2SignatureBoxBytes, ftyp, jp2h, jp2cBox);
+        }
+        else
+        {
+            // jp2h absent (malformed source): synthesise one from the SIZ-derived geometry so the
+            // result is still conformant.
+            jp2 = BuildMinimalJp2(width, height, nc, bpc, colrEnum ?? EnumCsForComponents(nc), jp2cBox);
+        }
+
+        return new PdfImageXObject(width, height, jp2, PdfName.JPXDecode, cs, bpc);
     }
 
     // ── Box reading ───────────────────────────────────────────────────────────
@@ -496,6 +555,108 @@ public static class JpxImageLoader
         4 => ImageColorSpace.DeviceCmyk,
         _ => ImageColorSpace.DeviceRgb,
     };
+
+    // ── Minimal JP2 construction (PDF/A-2 clause 6.2.8.3 conformance) ──────────
+
+    // The fixed 12-byte JP2 signature box: LBox=0x0000000C, TBox="jP  ", magic 0D 0A 87 0A.
+    private static readonly byte[] Jp2SignatureBoxBytes =
+        [0x00, 0x00, 0x00, 0x0C, 0x6A, 0x50, 0x20, 0x20, 0x0D, 0x0A, 0x87, 0x0A];
+
+    /// <summary>
+    /// Builds a complete minimal JP2 file (signature + ftyp + jp2h{ihdr,colr} + the supplied
+    /// jp2c box) from synthesised geometry/colour. Used for raw codestreams and for JP2 sources
+    /// that lack a usable jp2h box. The jp2c box (and the codestream it carries) is verbatim.
+    /// </summary>
+    private static byte[] BuildMinimalJp2(int width, int height, int nc, int bpc, int enumCs, byte[] jp2cBox)
+    {
+        var jp2h = MakeBox(BoxTypeJp2h, Concat(MakeIhdrBox(width, height, nc, bpc), MakeColrBox(enumCs)));
+        return Concat(Jp2SignatureBoxBytes, DefaultFtypBox(), jp2h, jp2cBox);
+    }
+
+    // ftyp box with brand "jp2 ", minor version 0, and a single compatible brand "jp2 ".
+    private static byte[] DefaultFtypBox()
+    {
+        ReadOnlySpan<byte> payload =
+        [
+            0x6A, 0x70, 0x32, 0x20, // brand "jp2 "
+            0x00, 0x00, 0x00, 0x00, // minor version
+            0x6A, 0x70, 0x32, 0x20, // compatible brand "jp2 "
+        ];
+        return MakeBox(BoxTypeFtyp, payload);
+    }
+
+    // ihdr payload (ISO 15444-1): Height(4) Width(4) NC(2) BPC(1) C(1) UnkC(1) IPR(1) = 14 bytes.
+    private static byte[] MakeIhdrBox(int width, int height, int nc, int bpc)
+    {
+        Span<byte> payload = stackalloc byte[14];
+        WriteUInt32Be(payload, 0, (uint)height);
+        WriteUInt32Be(payload, 4, (uint)width);
+        WriteUInt16Be(payload, 8, (ushort)nc);
+        payload[10] = (byte)((bpc - 1) & 0x7F); // BPC: unsigned, uniform bit depth across channels
+        payload[11] = 0x07;                     // C: wavelet (JPEG 2000) compression
+        payload[12] = 0x00;                     // UnkC: colourspace is known
+        payload[13] = 0x00;                     // IPR: no intellectual-property rights box
+        return MakeBox(BoxTypeIhdr, payload);
+    }
+
+    // colr payload (METH=1 enumerated): METH(1) PREC(1) APPROX(1) EnumCS(4) = 7 bytes.
+    private static byte[] MakeColrBox(int enumCs)
+    {
+        Span<byte> payload = stackalloc byte[7];
+        payload[0] = 0x01; // METH = enumerated colour space (valid per clause 6.2.8.3-3)
+        payload[1] = 0x00; // PREC
+        payload[2] = 0x00; // APPROX
+        WriteUInt32Be(payload, 3, (uint)enumCs);
+        return MakeBox(BoxTypeColr, payload);
+    }
+
+    // Maps a component count to a JP2 enumerated colour space (ISO 15444-1 Table I.11;
+    // CMYK=12 is permitted in PDF per ISO 32000 §7.4.9). CIEJab (19) is never produced.
+    private static int EnumCsForComponents(int nc) => nc switch
+    {
+        1 => ColrEnumGreyscale, // 17
+        4 => 12,                // CMYK
+        _ => ColrEnumSRgb,      // 16 (sRGB); also the safe default for 3 components
+    };
+
+    // Builds a JP2 box: LBox(4) TBox(4) payload.
+    private static byte[] MakeBox(uint type, ReadOnlySpan<byte> payload)
+    {
+        var box = new byte[8 + payload.Length];
+        WriteUInt32Be(box, 0, (uint)box.Length);
+        WriteUInt32Be(box, 4, type);
+        payload.CopyTo(box.AsSpan(8));
+        return box;
+    }
+
+    private static byte[] Concat(params byte[][] parts)
+    {
+        var total = 0;
+        foreach (var p in parts)
+            total += p.Length;
+        var result = new byte[total];
+        var offset = 0;
+        foreach (var p in parts)
+        {
+            p.CopyTo(result.AsSpan(offset));
+            offset += p.Length;
+        }
+        return result;
+    }
+
+    private static void WriteUInt32Be(Span<byte> buf, int offset, uint v)
+    {
+        buf[offset] = (byte)(v >> 24);
+        buf[offset + 1] = (byte)(v >> 16);
+        buf[offset + 2] = (byte)(v >> 8);
+        buf[offset + 3] = (byte)v;
+    }
+
+    private static void WriteUInt16Be(Span<byte> buf, int offset, ushort v)
+    {
+        buf[offset] = (byte)(v >> 8);
+        buf[offset + 1] = (byte)v;
+    }
 
     // ── Binary helpers ────────────────────────────────────────────────────────
 

@@ -40,6 +40,17 @@ public sealed class Jbig2ImageTests
         return -1;
     }
 
+    // Extracts the raw bytes between the PDF stream's "stream\n" and "\nendstream" markers.
+    private static byte[] ExtractStreamBody(byte[] raw)
+    {
+        var start = FindSequence(raw, "\nstream\n"u8);
+        if (start < 0) throw new InvalidOperationException("stream marker not found");
+        var bodyStart = start + "\nstream\n"u8.Length;
+        var end = FindSequence(raw, "\nendstream"u8);
+        if (end < 0) throw new InvalidOperationException("endstream marker not found");
+        return raw[bodyStart..end];
+    }
+
     // ── Minimal JBIG2 byte-array builders ────────────────────────────────────
 
     /// <summary>
@@ -270,6 +281,33 @@ public sealed class Jbig2ImageTests
         var jbig2 = BuildMinimalJbig2(100, 80);
         var img = Jbig2ImageLoader.Load(jbig2);
         Assert.Null(img.Jbig2Globals);
+    }
+
+    [Fact]
+    public void Load_WithNoGlobals_DictHasNoDecodeParms()
+    {
+        // With no global segments there is nothing for /DecodeParms to reference, so the image
+        // dictionary must not carry a (previously emitted, empty) /DecodeParms entry.
+        var img = Jbig2ImageLoader.Load(BuildMinimalJbig2(100, 80));
+        Assert.Null(img.Jbig2Globals);
+        Assert.DoesNotContain("/DecodeParms", DictText(img));
+    }
+
+    [Fact]
+    public void Load_DropsEndOfPageSegment_FromPageStream()
+    {
+        // The end-of-page segment (type 49) is file framing with no place in the PDF embedded
+        // organisation, so it is dropped — leaving only the page-info segment in the page stream.
+        byte[] header = [0x97, 0x4A, 0x42, 0x32, 0x0D, 0x0A, 0x1A, 0x0A];
+        var pageInfoSeg = BuildSegment(segNumber: 0, type: 48, pageAssociation: 1, BuildPageInfoSegmentData(16, 16));
+        var endOfPageSeg = BuildSegment(segNumber: 1, type: 49, pageAssociation: 1, []);
+        byte[] jbig2 = [.. header, .. pageInfoSeg, .. endOfPageSeg];
+
+        var img = Jbig2ImageLoader.Load(jbig2);
+        var body = ExtractStreamBody(Serialize(img));
+
+        // Only the page-info segment survives verbatim; the end-of-page segment is gone.
+        Assert.Equal(pageInfoSeg, body);
     }
 
     [Fact]

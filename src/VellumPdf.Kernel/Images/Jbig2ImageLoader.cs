@@ -307,8 +307,11 @@ public static class Jbig2ImageLoader
 
         foreach (var seg in segments)
         {
-            // End-of-file segment is not placed in either PDF stream.
-            if (seg.Type == SegmentTypeEndOfFile)
+            // File-framing segments have no place in the PDF embedded organisation (ISO 32000-1
+            // §7.4.7): the end-of-file (51) and end-of-page (49) segments are dropped. End-of-stripe
+            // (50) is deliberately retained — for a striped page it records the stripe's end row,
+            // which is image data the decoder needs, not file framing.
+            if (seg.Type is SegmentTypeEndOfFile or SegmentTypeEndOfPage)
                 continue;
 
             // Variable-length segments cannot be reliably partitioned; skip them.
@@ -330,12 +333,16 @@ public static class Jbig2ImageLoader
         var pageBytes = pageBuf.ToArray();
         var globalsBytes = globalBuf.Length > 0 ? globalBuf.ToArray() : null;
 
+        // Pass no /DecodeParms here: when global segments exist, PdfDocument supplies a
+        // /DecodeParms << /JBIG2Globals … >> dictionary while wiring the side-stream reference;
+        // when there are none, the image needs no /DecodeParms at all (emitting an empty
+        // << >> dictionary is unnecessary clutter).
         return new PdfImageXObject(
             width, height, pageBytes,
             PdfName.JBIG2Decode,
             ImageColorSpace.DeviceGray,
             bitsPerComponent: 1,
-            decodeParms: new PdfDictionary(),
+            decodeParms: null,
             jbig2Globals: globalsBytes);
     }
 
