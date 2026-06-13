@@ -689,6 +689,38 @@ public sealed class PdfValidatorOracleTests : IDisposable
         AssertVeraPdfCompliant(pdfPath, "2b");
     }
 
+    // Regression for issue #91: a real RGB JPEG 2000 image in a PDF/A-2b document must pass
+    // veraPDF clause 6.2.8.3 (colour channels / bit depth). The historical loader embedded only
+    // the bare jp2c codestream, stripping the ihdr/colr boxes veraPDF reads, so it saw 0/0.
+    // The fixture below is a 16×16 RGB 8-bit JP2 produced by Pillow/OpenJPEG (the exact case in
+    // the report), embedded as base64 so the test is self-contained and needs no JP2 encoder on CI.
+    [Fact]
+    public void PdfA2b_Jpx_veraPdf_reportsCompliant()
+    {
+        var fontPath = FindPlatformFont();
+        if (fontPath is null) { GateOnCi("platform font for JPEG 2000 PDF/A oracle"); return; }
+
+        var pdfPath = Path.Combine(_tempDir, "pdfa2b_jpx_verapdf.pdf");
+        GeneratePdfAJpxDoc(pdfPath, fontPath);
+        AssertVeraPdfCompliant(pdfPath, "2b");
+    }
+
+    // Companion to PdfA2b_Jpx (issue #91 follow-up): JBIG2 in PDF/A-2b. PDF/A-2 imposes no
+    // JBIG2-specific structural rules — only the generic image-dictionary rules plus "filter
+    // allowed" (6.1.7.2-1) — so this gates the passthrough path end-to-end: embedded organisation,
+    // /DecodeParms omitted when there are no globals, and bpc=1 DeviceGray under the auto sRGB
+    // output intent. veraPDF validates the PDF/A structure; it does not decode JBIG2 samples.
+    [Fact]
+    public void PdfA2b_Jbig2_veraPdf_reportsCompliant()
+    {
+        var fontPath = FindPlatformFont();
+        if (fontPath is null) { GateOnCi("platform font for JBIG2 PDF/A oracle"); return; }
+
+        var pdfPath = Path.Combine(_tempDir, "pdfa2b_jbig2_verapdf.pdf");
+        GeneratePdfAJbig2Doc(pdfPath, fontPath);
+        AssertVeraPdfCompliant(pdfPath, "2b");
+    }
+
     [Fact]
     public void PdfA2b_Tagged_veraPdf_reportsCompliant()
     {
@@ -903,6 +935,92 @@ public sealed class PdfValidatorOracleTests : IDisposable
         doc.Add(table);
 
         doc.Save(path);
+    }
+
+    // A real 16×16 RGB 8-bit JPEG 2000 (JP2 box file) written by Pillow/OpenJPEG 2.5.4.
+    // ihdr: NC=3, BPC=8; colr: METH=1, EnumCS=16 (sRGB). 249 bytes.
+    private const string RealRgbJp2Base64 =
+        "AAAADGpQICANCocKAAAAFGZ0eXBqcDIgAAAAAGpwMiAAAAAtanAyaAAAABZpaGRyAAAAEAAAABAAAwcH" +
+        "AAAAAAAPY29scgEAAAAAABAAAACsanAyY/9P/1EALwAAAAAAEAAAABAAAAAAAAAAAAAAABAAAAAQAAAA" +
+        "AAAAAAAAAwcBAQcBAQcBAf9SAAwAAAABAAQEBAAB/1wAEEBASEhQSEhQSEhQSEhQ/2QAJQABQ3JlYXRl" +
+        "ZCBieSBPcGVuSlBFRyB2ZXJzaW9uIDIuNS40/5AACgAAAAAAKAAB/5PB8gEHx9QEAb/PtAgHL4CAgICA" +
+        "gICAgICAgP/Z";
+
+    private static void GeneratePdfAJpxDoc(string path, string fontPath)
+    {
+        using var doc = new Document();
+        doc.Conformance = PdfConformance.PdfA2b;
+        doc.Info.Title = "VellumPdf veraPDF Oracle — JPEG 2000";
+        doc.Info.Producer = "VellumPdf";
+
+        var style = EmbeddedStyle(doc, fontPath);
+        doc.Add(new Paragraph("PDF/A-2b JPEG 2000 document.", style));
+
+        var imgXObj = VellumPdf.Images.JpxImageLoader.Load(Convert.FromBase64String(RealRgbJp2Base64));
+        doc.Add(new LayoutImage(imgXObj) { Width = 40, AltText = "RGB JPEG 2000 test image" });
+
+        doc.Save(path);
+    }
+
+    private static void GeneratePdfAJbig2Doc(string path, string fontPath)
+    {
+        using var doc = new Document();
+        doc.Conformance = PdfConformance.PdfA2b;
+        doc.Info.Title = "VellumPdf veraPDF Oracle — JBIG2";
+        doc.Info.Producer = "VellumPdf";
+
+        var style = EmbeddedStyle(doc, fontPath);
+        doc.Add(new Paragraph("PDF/A-2b JBIG2 document.", style));
+
+        var imgXObj = VellumPdf.Images.Jbig2ImageLoader.Load(BuildMinimalEmbeddedJbig2(16, 16));
+        doc.Add(new LayoutImage(imgXObj) { Width = 40, AltText = "JBIG2 bilevel test image" });
+
+        doc.Save(path);
+    }
+
+    // Builds a minimal embedded-organisation JBIG2 (no file header): a page-information segment
+    // plus one immediate-lossless generic region (MMR-coded, all-white 16×16). This is enough
+    // structure for a valid /JBIG2Decode image; veraPDF validates PDF/A structure, not the codestream.
+    private static byte[] BuildMinimalEmbeddedJbig2(int width, int height)
+    {
+        // page-info data (§7.4.8): width(4) height(4) xres(4) yres(4) flags(1) striping(2) = 19 bytes.
+        var pageInfo = new byte[19];
+        WriteJbig2Int32(pageInfo, 0, width);
+        WriteJbig2Int32(pageInfo, 4, height);
+        var pageInfoSeg = BuildJbig2Segment(0, type: 48, pageAssociation: 1, pageInfo);
+
+        // generic region: region-info(17) + generic-region flags(1) + MMR data.
+        var region = new byte[17 + 1 + 2];
+        WriteJbig2Int32(region, 0, width);   // region bitmap width
+        WriteJbig2Int32(region, 4, height);  // region bitmap height
+        // region x=0, y=0, combination operator=0 — already zero.
+        region[17] = 0x01;                   // generic-region flags: MMR = 1
+        region[18] = 0xFF;                   // 16 rows of MMR vertical-0 codes => all-white
+        region[19] = 0xFF;
+        var regionSeg = BuildJbig2Segment(1, type: 39, pageAssociation: 1, region);
+
+        return [.. pageInfoSeg, .. regionSeg];
+    }
+
+    private static byte[] BuildJbig2Segment(int segNumber, int type, int pageAssociation, byte[] data)
+    {
+        var seg = new byte[4 + 1 + 1 + 1 + 4 + data.Length];
+        var pos = 0;
+        WriteJbig2Int32(seg, pos, segNumber); pos += 4;
+        seg[pos++] = (byte)(type & 0x3F); // header flags: segment type, 1-byte page association
+        seg[pos++] = 0x00;                // referred-to-segment count (0) + retention flags
+        seg[pos++] = (byte)pageAssociation;
+        WriteJbig2Int32(seg, pos, data.Length); pos += 4;
+        Array.Copy(data, 0, seg, pos, data.Length);
+        return seg;
+    }
+
+    private static void WriteJbig2Int32(byte[] buf, int offset, int value)
+    {
+        buf[offset] = (byte)(value >> 24);
+        buf[offset + 1] = (byte)(value >> 16);
+        buf[offset + 2] = (byte)(value >> 8);
+        buf[offset + 3] = (byte)value;
     }
 
     private static void GeneratePdfAImageDoc(string path, string fontPath)

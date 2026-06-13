@@ -81,11 +81,15 @@ public sealed class JpxImageTests
     }
 
     [Fact]
-    public void RawCodestream_BitsPerComponent_12()
+    public void RawCodestream_BitsPerComponent_12_OmittedForPdfAConformance()
     {
+        // 12 is not in PDF/A-2's allowed /BitsPerComponent set {1,2,4,8,16}. For JPXDecode the
+        // entry is optional (the codestream carries the real depth), so it must be omitted rather
+        // than emit a value veraPDF 6.2.8-4 would reject. Width/height/colour are still detected.
         var j2k = BuildRawCodestream(width: 4, height: 4, components: 3, bpc: 12);
         var img = JpxImageLoader.Load(j2k);
-        Assert.Contains("/BitsPerComponent 12", StreamDictText(img));
+        Assert.DoesNotContain("/BitsPerComponent", StreamDictText(img));
+        Assert.Equal(4, img.Width);
     }
 
     [Fact]
@@ -98,13 +102,21 @@ public sealed class JpxImageTests
     }
 
     [Fact]
-    public void RawCodestream_StreamBytes_AreVerbatim()
+    public void RawCodestream_WrappedInJp2_CodestreamPreservedVerbatim()
     {
         var j2k = BuildRawCodestream(width: 4, height: 4, components: 1, bpc: 8);
         var img = JpxImageLoader.Load(j2k);
-        var raw = WriteStream(img);
-        var body = ExtractStreamBody(raw);
-        Assert.Equal(j2k, body);
+        var body = ExtractStreamBody(WriteStream(img));
+
+        // A bare codestream is now wrapped in a minimal JP2 box structure so PDF/A-2 clause
+        // 6.2.8.3 (which reads colour channels / bit depth from the JP2 boxes) is satisfied.
+        // The embedded stream is therefore a JP2 file, not the bare codestream — but the
+        // codestream must be preserved verbatim inside the jp2c box.
+        Assert.True(StartsWithJp2Signature(body), "Embedded stream must be a JP2 box file.");
+        Assert.True(ContainsSequence(body, j2k), "Original codestream must be embedded verbatim.");
+        Assert.True(body.Length > j2k.Length, "The JP2 wrapper adds box structure.");
+        Assert.True(ContainsBoxType(body, "ihdr"u8), "Synthesised JP2 must contain an ihdr box.");
+        Assert.True(ContainsBoxType(body, "colr"u8), "Synthesised JP2 must contain a colr box.");
     }
 
     // ── JP2 box file ──────────────────────────────────────────────────────────
@@ -158,23 +170,55 @@ public sealed class JpxImageTests
     }
 
     [Fact]
-    public void Jp2_BitsPerComponent_12()
+    public void Jp2_BitsPerComponent_12_OmittedForPdfAConformance()
     {
+        // See RawCodestream_BitsPerComponent_12_OmittedForPdfAConformance: 12-bit is outside the
+        // PDF/A-2 {1,2,4,8,16} set, so the optional JPXDecode /BitsPerComponent entry is omitted.
         var jp2 = BuildJp2File(width: 4, height: 4, nc: 3, bpc: 12);
         var img = JpxImageLoader.Load(jp2.File);
-        Assert.Contains("/BitsPerComponent 12", StreamDictText(img));
+        Assert.DoesNotContain("/BitsPerComponent", StreamDictText(img));
     }
 
     [Fact]
-    public void Jp2_StreamBytes_AreJp2cPayload_NotWholeFile()
+    public void Jp2_StreamBytes_AreConformantJp2WithBoxes_NotBareCodestream()
     {
         var jp2 = BuildJp2File(width: 4, height: 4, nc: 1, bpc: 8);
         var img = JpxImageLoader.Load(jp2.File);
-        var raw = WriteStream(img);
-        var body = ExtractStreamBody(raw);
-        // The embedded bytes must equal the jp2c payload (codestream), not the whole JP2 file.
-        Assert.Equal(jp2.Codestream, body);
-        Assert.True(jp2.File.Length > body.Length, "Embedded bytes must be smaller than the JP2 file.");
+        var body = ExtractStreamBody(WriteStream(img));
+
+        // The embedded bytes are a minimal conformant JP2 (signature + ftyp + jp2h + jp2c) so the
+        // ihdr/colr boxes PDF/A-2 6.2.8.3 inspects are present — NOT the bare codestream that the
+        // historical behaviour embedded (which made veraPDF read 0 channels / 0 bit depth).
+        Assert.True(StartsWithJp2Signature(body));
+        Assert.True(ContainsBoxType(body, "jp2h"u8), "jp2h superbox must be preserved.");
+        Assert.True(ContainsBoxType(body, "ihdr"u8), "ihdr box must be preserved.");
+        Assert.NotEqual(jp2.Codestream, body);
+        Assert.True(ContainsSequence(body, jp2.Codestream), "Codestream must be preserved verbatim.");
+
+        // The source carries no ancillary boxes, so the minimal JP2 equals the whole source file.
+        Assert.Equal(jp2.File, body);
+    }
+
+    [Fact]
+    public void Jp2_AncillaryBoxes_AreDropped_NeverExpandingSize()
+    {
+        var jp2 = BuildJp2File(width: 4, height: 4, nc: 3, bpc: 8, colrEnum: 16);
+        // Append a top-level ancillary "xml " metadata box that PDF/A does not require for the
+        // image and that the PDF carries its own metadata for. It must not bloat the embedded image.
+        var xmlBox = MakeBox(0x786D6C20u /* "xml " */, "<meta>padding metadata payload bytes</meta>"u8.ToArray());
+        var bloated = Concat(jp2.File, xmlBox);
+
+        var img = JpxImageLoader.Load(bloated);
+        var body = ExtractStreamBody(WriteStream(img));
+
+        Assert.True(body.Length < bloated.Length, "Ancillary boxes must be dropped, not embedded.");
+        Assert.False(ContainsSequence(body, xmlBox), "The xml box must not appear in the embedded stream.");
+        // Colour/geometry boxes and the codestream survive intact.
+        Assert.True(ContainsBoxType(body, "ihdr"u8));
+        Assert.True(ContainsBoxType(body, "colr"u8));
+        Assert.True(ContainsSequence(body, jp2.Codestream));
+        // Equals the minimal JP2 (source minus the dropped ancillary box).
+        Assert.Equal(jp2.File, body);
     }
 
     // ── JP2 colr box: enumerated colour space refinement ─────────────────────
@@ -357,6 +401,28 @@ public sealed class JpxImageTests
                 return i;
         }
         return -1;
+    }
+
+    private static bool ContainsSequence(byte[] haystack, ReadOnlySpan<byte> needle)
+        => FindSequence(haystack, needle) >= 0;
+
+    // True when the bytes begin with the 12-byte JP2 signature box.
+    private static bool StartsWithJp2Signature(byte[] data)
+    {
+        ReadOnlySpan<byte> sig = [0x00, 0x00, 0x00, 0x0C, 0x6A, 0x50, 0x20, 0x20, 0x0D, 0x0A, 0x87, 0x0A];
+        return data.Length >= 12 && data.AsSpan(0, 12).SequenceEqual(sig);
+    }
+
+    // True when a box of the given 4-byte type appears (matches the TBox field anywhere).
+    private static bool ContainsBoxType(byte[] data, ReadOnlySpan<byte> type)
+        => FindSequence(data, type) >= 0;
+
+    private static byte[] Concat(params byte[][] parts)
+    {
+        var result = new List<byte>();
+        foreach (var p in parts)
+            result.AddRange(p);
+        return [.. result];
     }
 
     // ── Raw codestream builder ────────────────────────────────────────────────

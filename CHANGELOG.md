@@ -4,6 +4,25 @@ All notable changes to VellumPdf will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.5.4] - 2026-06-13
+
+### Fixed
+
+- **JPEG 2000 in PDF/A.** A JPEG 2000 image in a PDF/A-2 document now carries the JP2 box
+  structure (`ihdr`/`colr`) that veraPDF reads for clause 6.2.8.3, rather than only the bare
+  codestream — which reported 0 colour channels and 0 bit depth and failed validation. The
+  codestream is preserved byte-for-byte: for a JP2 source only ancillary metadata boxes are
+  dropped, so the embedded image never grows and usually shrinks; a raw `.j2k` codestream is
+  wrapped in a minimal JP2. For a `/JPXDecode` image, `/BitsPerComponent` is emitted only when
+  its value is one PDF/A permits (1, 2, 4, 8, 16) — the codestream still defines the bit depth.
+
+### Changed
+
+- **JBIG2 embedding.** A JBIG2 image no longer writes an empty `/DecodeParms` dictionary when it
+  has no global segments, and the end-of-page segment is dropped from the embedded stream
+  (alongside the end-of-file segment) to match the PDF embedded organisation. The end-of-stripe
+  segment is retained because it carries image data for striped pages.
+
 ## [1.5.3] - 2026-06-13
 
 ### Fixed
