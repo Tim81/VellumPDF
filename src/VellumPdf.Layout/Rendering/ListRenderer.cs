@@ -258,9 +258,12 @@ public sealed class ListRenderer : IRenderer
                 foreach (var child in item.Children)
                 {
                     var childStyle = child.Style ?? itemStyle;
+                    // Nested unordered items use an open-bullet "◦"; nested ordered items
+                    // route through ListElement.FormatMarker so OrderedAlpha/OrderedRoman
+                    // are honoured (the default was decimal regardless of the scheme).
                     var childMarker = _list.Style == ListStyle.Unordered
                         ? "◦"
-                        : $"{seq}.";
+                        : _list.FormatMarker(seq);
                     seq++;
 
                     var childMarkerPara = new Paragraph(childMarker, childStyle)

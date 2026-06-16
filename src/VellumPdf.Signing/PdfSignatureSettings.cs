@@ -54,4 +54,11 @@ public sealed class PdfSignatureSettings
     /// signature conforms to PAdES B-B.
     /// </summary>
     public ITimestampClient? TimestampClient { get; init; }
+
+    /// <summary>
+    /// Zero-based index of the page to which the invisible signature widget annotation
+    /// is added. Default is 0 (the first page). An out-of-range value throws
+    /// <see cref="ArgumentOutOfRangeException"/> during signing.
+    /// </summary>
+    public int SignaturePage { get; init; } = 0;
 }

@@ -128,11 +128,16 @@ internal sealed class PdfStructureTree
         var structTreeRootRef = registry.Reserve();
 
         // Build ParentTree: structParentsKey → array of struct elem refs indexed by MCID.
-        // For each page, gather leaf struct elems (Mcid >= 0) and place each at index == MCID.
-        // This validates the marked-content ↔ structure bijection:
-        //   • no two elems may share an MCID on the same page (duplicate),
-        //   • no MCID may be out of range [0, n) (dangling),
-        //   • after placement all n slots are filled ⇒ MCIDs are exactly 0..n-1.
+        // For each page, gather leaf struct elems (Mcid >= 0) and place each at its MCID index.
+        // The array is sized by (max MCID + 1) so non-contiguous or sparse MCID assignments
+        // (e.g. when the MCID counter is shared with non-leaf container elements) produce a
+        // valid sparse array rather than an out-of-range error. Gaps are left as null objects,
+        // which is valid per ISO 32000-2 §14.7.4: the ParentTree maps each MCID to its struct
+        // elem, and holes simply mean "no struct elem claims that MCID on this page".
+        // The bijection that veraPDF validates (StructParent integer ↔ ParentTree entry ↔
+        // struct elem /K MCID) is preserved because each elem is still placed at exactly
+        // index == its own MCID.
+        // Only negative MCIDs are rejected (they are unconditionally invalid).
         var parentTreeArrayRefs = new PdfIndirectReference[pageOrder.Count];
         for (var pi = 0; pi < pageOrder.Count; pi++)
         {
@@ -140,35 +145,35 @@ internal sealed class PdfStructureTree
             var elemsOnPage = new List<PdfStructElem>();
             CollectElemsOnPage(_documentRoot, page, elemsOnPage);
 
-            // TODO(#83): The ParentTree array is sized by leaf struct-element count on this page
-            // and validates 0 <= MCID < count (i.e., MCIDs must be exactly 0..count-1 dense).
-            // If MCIDs are assigned from a per-page counter that is also used for non-leaf
-            // (container) elements, the high-water mark may exceed the leaf count and the
-            // existing InvalidOperationException fires incorrectly. The correct fix is to size
-            // the array by (max MCID + 1) instead of leaf count, but that requires verifying
-            // no existing tagged-PDF/UA tests rely on the current dense validation.
-            // Deferred from v1.5.1 hardening to avoid regression risk.
-            var n = elemsOnPage.Count;
+            // Compute (max MCID + 1) as the array size; 0 when there are no leaf elems.
+            var maxMcid = -1;
+            foreach (var elem in elemsOnPage)
+            {
+                if (elem.Mcid < 0)
+                    throw new InvalidOperationException(
+                        $"Structure element on page {pi} has negative MCID {elem.Mcid}. " +
+                        "MCIDs must be non-negative integers.");
+                if (elem.Mcid > maxMcid)
+                    maxMcid = elem.Mcid;
+            }
+
+            var n = maxMcid + 1; // 0 when elemsOnPage is empty
             var indexed = new PdfObject?[n];
 
             foreach (var elem in elemsOnPage)
             {
-                if (elem.Mcid < 0 || elem.Mcid >= n)
-                    throw new InvalidOperationException(
-                        $"Structure element on page {pi} has MCID {elem.Mcid} which is out of range [0, {n}). " +
-                        $"The page has {n} leaf structure element(s).");
-
                 if (indexed[elem.Mcid] is not null)
                     throw new InvalidOperationException(
                         $"Structure element on page {pi} has duplicate MCID {elem.Mcid}. " +
-                        $"Two structure elements claim the same MCID on the same page.");
+                        "Two structure elements claim the same MCID on the same page.");
 
                 indexed[elem.Mcid] = elemRefs[elem];
             }
 
+            // Build the array; null slots become PDF null objects (valid sparse holes).
             var refList = new List<PdfObject>(n);
             for (var i = 0; i < n; i++)
-                refList.Add(indexed[i]!);
+                refList.Add(indexed[i] ?? PdfNull.Instance);
 
             var arr = new PdfArray(refList);
             parentTreeArrayRefs[pi] = registry.Reserve();

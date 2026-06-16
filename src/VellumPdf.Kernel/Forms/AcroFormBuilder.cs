@@ -135,9 +135,9 @@ internal static class AcroFormBuilder
             .Set(PdfName.Type, new PdfName("Annot"))
             .Set(PdfName.Subtype, new PdfName("Widget"))
             .Set(new PdfName("FT"), new PdfName("Tx"))
-            .Set(new PdfName("T"), LiteralFromLatin1(field.Name))
+            .Set(new PdfName("T"), TextString(field.Name))
             .Set(new PdfName("Rect"), rect.ToArray())
-            .Set(new PdfName("V"), LiteralFromLatin1(field.Value))
+            .Set(new PdfName("V"), TextString(field.Value))
             .Set(new PdfName("DA"), da)
             .Set(new PdfName("F"), new PdfInteger(AnnotFlagPrint))
             .Set(new PdfName("MK"), BuildMk())
@@ -193,13 +193,13 @@ internal static class AcroFormBuilder
         var valueName = field.CheckedState ? "Yes" : "Off";
 
         var mk = new PdfDictionary()
-            .Set(new PdfName("CA"), LiteralFromLatin1("4"));
+            .Set(new PdfName("CA"), TextString("4"));
 
         var dict = new PdfDictionary()
             .Set(PdfName.Type, new PdfName("Annot"))
             .Set(PdfName.Subtype, new PdfName("Widget"))
             .Set(new PdfName("FT"), new PdfName("Btn"))
-            .Set(new PdfName("T"), LiteralFromLatin1(field.Name))
+            .Set(new PdfName("T"), TextString(field.Name))
             .Set(new PdfName("Rect"), rect.ToArray())
             .Set(new PdfName("V"), new PdfName(valueName))
             .Set(new PdfName("AS"), new PdfName(valueName))
@@ -238,10 +238,10 @@ internal static class AcroFormBuilder
         var apRef = registry.Reserve();
         registry.SetValue(apRef, apStream);
 
-        // /Opt array: each element is a literal string
+        // /Opt array: each element is a PDF text string
         var optArray = new PdfArray();
         foreach (var opt in field.ChoiceOptions)
-            optArray.Add(LiteralFromLatin1(opt));
+            optArray.Add(TextString(opt));
 
         var ff = 0;
         if (opts.ReadOnly) ff |= FfReadOnly;
@@ -254,11 +254,11 @@ internal static class AcroFormBuilder
             .Set(PdfName.Type, new PdfName("Annot"))
             .Set(PdfName.Subtype, new PdfName("Widget"))
             .Set(new PdfName("FT"), new PdfName("Ch"))
-            .Set(new PdfName("T"), LiteralFromLatin1(field.Name))
+            .Set(new PdfName("T"), TextString(field.Name))
             .Set(new PdfName("Rect"), rect.ToArray())
             .Set(new PdfName("Ff"), new PdfInteger(ff))
             .Set(new PdfName("Opt"), optArray)
-            .Set(new PdfName("V"), LiteralFromLatin1(selectedValue))
+            .Set(new PdfName("V"), TextString(selectedValue))
             .Set(new PdfName("DA"), da)
             .Set(new PdfName("F"), new PdfInteger(AnnotFlagPrint))
             .Set(new PdfName("MK"), BuildMk())
@@ -324,7 +324,7 @@ internal static class AcroFormBuilder
                 : "Off";
 
             var mk = new PdfDictionary()
-                .Set(new PdfName("CA"), LiteralFromLatin1("l"));
+                .Set(new PdfName("CA"), TextString("l"));
 
             pageRefMap.TryGetValue(option.Page, out var kidPageRef);
 
@@ -354,7 +354,7 @@ internal static class AcroFormBuilder
         // The parent field dict has no /Rect (it is a non-terminal field node).
         var fieldDict = new PdfDictionary()
             .Set(new PdfName("FT"), new PdfName("Btn"))
-            .Set(new PdfName("T"), LiteralFromLatin1(field.Name))
+            .Set(new PdfName("T"), TextString(field.Name))
             .Set(new PdfName("Ff"), new PdfInteger(ff))
             .Set(new PdfName("V"), new PdfName(valueName))
             .Set(new PdfName("DA"), new PdfLiteralString("/ZaDb 0 Tf 0 g"u8.ToArray()))
@@ -388,7 +388,7 @@ internal static class AcroFormBuilder
         if (opts.ReadOnly) ff |= FfReadOnly;
 
         var mk = new PdfDictionary()
-            .Set(new PdfName("CA"), LiteralFromLatin1(field.Caption))
+            .Set(new PdfName("CA"), TextString(field.Caption))
             .Set(new PdfName("BG"), new PdfArray([new PdfReal(0.8), new PdfReal(0.8), new PdfReal(0.8)]))
             .Set(new PdfName("BC"), new PdfArray([new PdfReal(0), new PdfReal(0), new PdfReal(0)]));
 
@@ -397,7 +397,7 @@ internal static class AcroFormBuilder
             .Set(PdfName.Subtype, new PdfName("Widget"))
             .Set(new PdfName("FT"), new PdfName("Btn"))
             .Set(new PdfName("Ff"), new PdfInteger(ff))
-            .Set(new PdfName("T"), LiteralFromLatin1(field.Name))
+            .Set(new PdfName("T"), TextString(field.Name))
             .Set(new PdfName("Rect"), rect.ToArray())
             .Set(new PdfName("F"), new PdfInteger(AnnotFlagPrint))
             .Set(new PdfName("MK"), mk)
@@ -598,12 +598,31 @@ internal static class AcroFormBuilder
     private static PdfLiteralString BuildDa(double fontSize) =>
         new(Encoding.Latin1.GetBytes($"/Helv {fontSize:0.###} Tf 0 g"));
 
-    private static PdfLiteralString LiteralFromLatin1(string value) =>
-        new(Encoding.Latin1.GetBytes(value));
+    /// <summary>
+    /// Encodes a PDF <em>text string</em> (ISO 32000-2 §7.9.2) for use in field dictionary
+    /// entries such as <c>/T</c>, <c>/V</c>, <c>/TU</c>, and <c>/Opt</c> display strings.
+    /// Emits a compact Latin-1 literal when every character is representable in Latin-1
+    /// (preserving byte-identical output for ASCII/Latin-1 input); otherwise emits UTF-16BE
+    /// with a leading U+FEFF BOM so viewers that support only text-string encoding
+    /// (not arbitrary Latin-1) can still decode the value correctly.
+    /// </summary>
+    private static PdfLiteralString TextString(string value)
+    {
+        foreach (var c in value)
+        {
+            if (c > 0xFF)
+                return PdfLiteralString.FromUnicode(value);
+        }
+        // All characters fit in Latin-1: emit the compact form (byte-identical to the
+        // previous LiteralFromLatin1 path for ASCII/Latin-1 input).
+        return new PdfLiteralString(Encoding.Latin1.GetBytes(value));
+    }
 
     /// <summary>
-    /// Escapes a string value for inclusion between ( ) in a PDF content stream.
-    /// Escapes (, ), \, \n, \r.
+    /// Escapes a string value for inclusion between ( ) in a PDF content stream
+    /// (appearance-stream caption). Only characters representable in Latin-1 (below 0x100)
+    /// are supported; anything outside that range indicates a mismatch between the field
+    /// caption and the Helvetica/Standard-14 appearance font, which cannot render it.
     /// </summary>
     private static string EscapePdfString(string value)
     {
@@ -623,8 +642,14 @@ internal static class AcroFormBuilder
                 default:
                     if (c < 0x80)
                         sb.Append(c);
+                    else if (c <= 0xFF)
+                        sb.Append(c);
                     else
-                        sb.Append('?'); // non-Latin-1 fallback; fields are Latin-1
+                        throw new ArgumentException(
+                            $"Character U+{(int)c:X4} ('{c}') cannot be represented in the " +
+                            "Standard-14 Helvetica appearance font. Use an embedded font that " +
+                            "supports the required characters for the field caption.",
+                            nameof(value));
                     break;
             }
         }
