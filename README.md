@@ -135,7 +135,9 @@ oracles — a missing tool fails the build, so the gates can never silently skip
 | --- | --- |
 | In-process preflight | `VellumPdf.Conformance` PDF/A and PDF/UA validator package. |
 | Linearization | "Fast web view" object ordering. |
-| Signature LTV | Embedded OCSP/CRL revocation data and an archive timestamp (PAdES B-LT / B-LTA). |
+| Signature LTV | Embedded OCSP/CRL revocation data and an archive timestamp (PAdES B-LT / B-LTA). v1.6 ships this on an MVP reader (#49). |
+| PDF reading | `VellumPdf.Reader` — read and interpret any PDF. Grows the v1.6 LTV MVP reader into a full parser (Epic #100). |
+| Editing existing PDFs | Read-modify-write on existing documents, built on the reader (Epic #101). |
 | Barcodes | The `VellumPdf.Barcodes` package. |
 
 ## Building

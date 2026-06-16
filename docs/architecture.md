@@ -7,7 +7,12 @@
 
 A full-featured PDF **generation** library for .NET 10, comparable in capability
 to a mature commercial PDF SDK, implemented **clean-room** from the open
-**ISO 32000** standard. Editing existing PDFs is out of scope for now.
+**ISO 32000** standard.
+
+Reading existing PDFs is being added incrementally: v1.6 introduces an MVP reader
+(`VellumPdf.Reader`) for the signing LTV path (classic xref, unencrypted; see #49).
+A full general reader (Epic #100) and editing existing PDFs (Epic #101) are
+roadmapped on the "PDF reading & editing" milestone.
 
 ## Clean-room policy (non-negotiable)
 
