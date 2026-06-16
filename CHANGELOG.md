@@ -4,6 +4,16 @@ All notable changes to VellumPdf will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.5.6] - 2026-06-16
+
+### Fixed
+
+- **Structure tree allocation guard.** A hand-built tagged structure tree whose
+  `PdfStructElem.Mcid` is set to a very large value (or `int.MaxValue`) now raises a clear
+  exception instead of overflowing or attempting a multi-gigabyte ParentTree allocation. The
+  per-page ParentTree array is indexed by MCID; documents tagged through the canvas are
+  unaffected (their MCIDs are dense and sequential).
+
 ## [1.5.5] - 2026-06-16
 
 Closes the residual hardening items from the 2026-06-12 full-library review (#83, #84).

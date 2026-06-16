@@ -72,6 +72,10 @@ public sealed class PdfStructElem
 /// </summary>
 internal sealed class PdfStructureTree
 {
+    // Upper bound on a per-page MCID, used to cap the ParentTree array allocation against a
+    // pathological hand-built value. Far above any real page's marked-content count.
+    private const int MaxParentTreeIndex = 1_000_000;
+
     // The top-level /Document struct elem that holds all other elems as children.
     private readonly PdfStructElem _documentRoot = new("Document");
 
@@ -156,6 +160,17 @@ internal sealed class PdfStructureTree
                 if (elem.Mcid > maxMcid)
                     maxMcid = elem.Mcid;
             }
+
+            // The per-page ParentTree is an array indexed by MCID, sized by (max MCID + 1).
+            // Guard a pathological MCID from a hand-built struct tree (PdfStructElem.Mcid is a
+            // public setter): without a bound, a huge value would allocate gigabytes and
+            // int.MaxValue would overflow (max MCID + 1) to a negative length. Real marked-content
+            // sequences are bounded by the content stream, so this ceiling is far above any
+            // legitimate page; it is a robustness guard, not a conformance limit.
+            if (maxMcid > MaxParentTreeIndex)
+                throw new InvalidOperationException(
+                    $"Structure element on page {pi} has MCID {maxMcid}, which exceeds the maximum " +
+                    $"supported value ({MaxParentTreeIndex}). This indicates a malformed structure tree.");
 
             var n = maxMcid + 1; // 0 when elemsOnPage is empty
             var indexed = new PdfObject?[n];
