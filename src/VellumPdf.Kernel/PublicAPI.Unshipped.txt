@@ -37,3 +37,4 @@ static VellumPdf.Images.Jbig2ImageLoader.Load(byte[]! jbig2, VellumPdf.Images.Im
 VellumPdf.Images.JpxImageLoader
 static VellumPdf.Images.JpxImageLoader.Load(byte[]! jpx) -> VellumPdf.Images.PdfImageXObject!
 static VellumPdf.Images.JpxImageLoader.Load(byte[]! jpx, VellumPdf.Images.ImageLoadOptions! options) -> VellumPdf.Images.PdfImageXObject!
+VellumPdf.IO.PdfWriter.PdfWriter(System.IO.Stream! stream, long initialPosition) -> void

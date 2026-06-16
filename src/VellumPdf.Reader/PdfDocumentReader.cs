@@ -3,6 +3,7 @@
 
 using System.Text;
 using VellumPdf.Core;
+using VellumPdf.IO;
 
 namespace VellumPdf.Reader;
 
@@ -85,6 +86,82 @@ public sealed class PdfDocumentReader : IDisposable
 
     /// <inheritdoc />
     public void Dispose() { }
+
+    // ── Incremental update / append ──────────────────────────────────────────
+
+    /// <summary>
+    /// The current object count from the base trailer's /Size field.
+    /// Callers assign new object numbers starting here (Size, Size+1, …).
+    /// </summary>
+    internal int Size
+    {
+        get
+        {
+            if (Trailer.TryGet(PdfName.Size, out var sizeObj) && sizeObj is PdfInteger sizeInt)
+                return (int)sizeInt.Value;
+            return 0;
+        }
+    }
+
+    /// <summary>
+    /// Appends a new revision to this document and returns the full updated byte array.
+    ///
+    /// Each element of <paramref name="objects"/> is written as an indirect object at
+    /// absolute file offsets, then a classic incremental xref section and trailer are
+    /// appended with <c>/Prev</c> pointing at the base document's <c>startxref</c>.
+    ///
+    /// The returned bytes can be passed back to <see cref="PdfReader.Open(byte[])"/> — the newer
+    /// revision's object overrides take effect automatically via the /Prev chain.
+    /// </summary>
+    /// <param name="objects">
+    /// Pairs of (objectNumber, value) to write. Object numbers must be unique; existing
+    /// object numbers override the base revision; new numbers must be &gt;= <see cref="Size"/>.
+    /// May be supplied in any order.
+    /// </param>
+    internal byte[] AppendRevision(IReadOnlyList<(int ObjectNumber, PdfObject Value)> objects)
+    {
+        if (objects.Count == 0)
+            throw new ArgumentException("At least one object is required.", nameof(objects));
+
+        var ms = new MemoryStream(Bytes.Length + 4096);
+        ms.Write(Bytes.Span);
+
+        var writer = new PdfWriter(ms, Bytes.Length);
+
+        // Write each indirect object, recording its absolute file offset.
+        var written = new List<(int ObjectNumber, long ByteOffset)>(objects.Count);
+        foreach (var (objNum, value) in objects)
+        {
+            var offset = writer.Position;
+            new PdfIndirectObject(objNum, value).WriteTo(writer);
+            writer.WriteByte((byte)'\n');
+            written.Add((objNum, offset));
+        }
+
+        // Extract the base /Root reference.
+        PdfIndirectReference catalogRef;
+        if (Trailer.TryGet(PdfName.Root, out var rootRaw) && rootRaw is PdfIndirectReference rootRef)
+            catalogRef = rootRef;
+        else
+            throw new InvalidDataException("Base trailer does not contain a valid /Root indirect reference.");
+
+        // Extract the base /ID array if present.
+        PdfArray? documentId = null;
+        if (Trailer.TryGet(PdfName.ID, out var idRaw) && idRaw is PdfArray idArr)
+            documentId = idArr;
+
+        // Write the incremental xref + trailer.
+        IncrementalCrossReferenceBuilder.WriteIncrementalXrefAndTrailer(
+            writer,
+            written,
+            Size,
+            catalogRef,
+            StartXrefOffset,
+            documentId);
+
+        writer.Flush();
+        return ms.ToArray();
+    }
 
     // ── Signature navigation ─────────────────────────────────────────────────
 
