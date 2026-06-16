@@ -11,8 +11,10 @@ to a mature commercial PDF SDK, implemented **clean-room** from the open
 
 Reading existing PDFs is being added incrementally: v1.6 introduces an MVP reader
 (`VellumPdf.Reader`) for the signing LTV path (classic xref, unencrypted; see #49).
-A full general reader (Epic #100) and editing existing PDFs (Epic #101) are
-roadmapped on the "PDF reading & editing" milestone.
+The full general reader is roadmapped as v2.1 (structural parser, Epic #100) and
+v2.2 (text/image extraction). Editing existing PDFs lands at v3.0 as a unified
+read-modify-write model that supersedes the write-once document API (Epic #101) —
+a breaking change, hence the major bump.
 
 ## Clean-room policy (non-negotiable)
 
