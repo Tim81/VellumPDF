@@ -68,6 +68,7 @@ public static class SigningExtensions
                 EstimatedSignatureSizeBytes = settings.EstimatedSignatureSizeBytes,
                 SubFilter = settings.SubFilter,
                 TimestampClient = settings.TimestampClient,
+                SignaturePage = settings.SignaturePage,
             }
             : settings;
 
@@ -118,6 +119,7 @@ public static class SigningExtensions
                 EstimatedSignatureSizeBytes = settings.EstimatedSignatureSizeBytes,
                 SubFilter = settings.SubFilter,
                 TimestampClient = settings.TimestampClient,
+                SignaturePage = settings.SignaturePage,
             }
             : settings;
 
@@ -138,5 +140,6 @@ public static class SigningExtensions
             Location = settings.Location,
             ContactInfo = settings.ContactInfo,
             SigningTime = settings.SigningTime,
+            SignaturePage = settings.SignaturePage,
         };
 }

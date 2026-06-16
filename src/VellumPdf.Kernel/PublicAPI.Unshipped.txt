@@ -19,6 +19,8 @@ VellumPdf.Images.ImageLoadOptions.<Clone>$() -> VellumPdf.Images.ImageLoadOption
 static VellumPdf.Images.ImageLoadOptions.operator ==(VellumPdf.Images.ImageLoadOptions? left, VellumPdf.Images.ImageLoadOptions? right) -> bool
 static VellumPdf.Images.ImageLoadOptions.operator !=(VellumPdf.Images.ImageLoadOptions? left, VellumPdf.Images.ImageLoadOptions? right) -> bool
 static VellumPdf.Images.ImageLoadOptions.Default.get -> VellumPdf.Images.ImageLoadOptions!
+VellumPdf.Document.SignaturePlaceholderOptions.SignaturePage.get -> int
+VellumPdf.Document.SignaturePlaceholderOptions.SignaturePage.init -> void
 static readonly VellumPdf.Core.PdfName.CCITTFaxDecode -> VellumPdf.Core.PdfName!
 static readonly VellumPdf.Core.PdfName.JBIG2Decode -> VellumPdf.Core.PdfName!
 static readonly VellumPdf.Core.PdfName.JPXDecode -> VellumPdf.Core.PdfName!

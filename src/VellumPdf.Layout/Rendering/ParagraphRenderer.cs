@@ -340,35 +340,13 @@ public sealed class ParagraphRenderer : IRenderer
         canvas.ShowGlyphs(gids.AsSpan(0, count));
     }
 
-    // ── Word-gap counting ─────────────────────────────────────────────────────
+    // ── Word-gap / word-token helpers (shared by measure and draw) ───────────
 
     /// <summary>
-    /// Counts the number of inter-word gaps on a line (spaces between consecutive words).
-    /// We define a gap as: the number of space characters within each fragment's text
-    /// (since WordWrap preserves spaces between words within a fragment) plus cross-fragment
-    /// boundaries that represent a space join.
+    /// Tokenises <paramref name="fragments"/> into word-tokens (non-space text) and
+    /// space-tokens (" "), using the same split logic for both the gap-count path and
+    /// the draw path so the two always agree on the number of inter-word gaps.
     /// </summary>
-    private static int CountWordGaps(LineFragment[] fragments)
-    {
-        var count = 0;
-        for (var i = 0; i < fragments.Length; i++)
-        {
-            var text = fragments[i].Text;
-            // Count internal spaces
-            foreach (var ch in text)
-                if (ch == ' ') count++;
-
-            // Count cross-fragment boundary gaps:
-            // if this fragment ends without space AND the next starts without space,
-            // there is an implicit gap between them (they were split at a run boundary
-            // in the middle of what was originally word spacing).
-            // We do NOT add a gap here because WordWrap joins them without an extra space.
-        }
-        return count;
-    }
-
-    // ── Word-token splitting for embedded justified lines ─────────────────────
-
     private static List<(string Text, TextStyle Style, double Width)> SplitToWordTokens(LineFragment[] fragments)
     {
         var tokens = new List<(string, TextStyle, double)>();
@@ -380,13 +358,14 @@ public sealed class ParagraphRenderer : IRenderer
                 var part = parts[i];
                 if (part.Length == 0)
                 {
-                    // Empty between two spaces — counts as a gap but no token
+                    // Empty between two spaces — counts as a gap but no visible token.
                     continue;
                 }
                 var w = frag.Style.FontRef.MeasureString(part, frag.Style.FontSize);
                 tokens.Add((part, frag.Style, w));
 
-                // If there's a space after this part (not the last), insert a space token
+                // If there is a space after this part (not the last split segment),
+                // insert a space token so the gap is explicit and countable.
                 if (i < parts.Length - 1)
                 {
                     var sw = frag.Style.FontRef.MeasureString(" ", frag.Style.FontSize);
@@ -402,11 +381,80 @@ public sealed class ParagraphRenderer : IRenderer
         (string Text, TextStyle Style, double Width) right) =>
         left.Text == " " || right.Text == " ";
 
+    /// <summary>
+    /// Counts the number of inter-word gaps on a line by tokenising via
+    /// <see cref="SplitToWordTokens"/> — the same model used by the draw path —
+    /// so the count is always consistent with the gaps actually distributed.
+    /// </summary>
+    private static int CountWordGaps(LineFragment[] fragments)
+    {
+        var tokens = SplitToWordTokens(fragments);
+        var count = 0;
+        for (var t = 0; t < tokens.Count - 1; t++)
+        {
+            if (IsWordGap(tokens[t], tokens[t + 1]))
+                count++;
+        }
+        return count;
+    }
+
     // ── Word-wrap ─────────────────────────────────────────────────────────────
 
     /// <summary>
+    /// Replaces whitespace characters that are word-split points with a plain ASCII space
+    /// so that word splitting via <c>Split(' ')</c> handles them uniformly.
+    /// <para>
+    /// Characters that are <em>not</em> normalised (pass through unchanged):
+    /// <list type="bullet">
+    ///   <item><c>\n</c> — consumed as the hard-break sentinel by the caller.</item>
+    ///   <item>U+00A0 (NBSP) — non-breaking space must keep words together.</item>
+    ///   <item>Any non-whitespace character.</item>
+    /// </list>
+    /// All other characters for which <see cref="char.IsWhiteSpace(char)"/> returns
+    /// <see langword="true"/> (tab, thin space, en/em space, …) are mapped to <c>' '</c>.
+    /// </para>
+    /// </summary>
+    private static string NormaliseWhitespace(string s)
+    {
+        const char nbsp = ' ';
+
+        // Fast path: if there is nothing but regular printable chars and plain spaces, return as-is.
+        var needsNorm = false;
+        foreach (var c in s)
+        {
+            if (c != '\n' && c != nbsp && char.IsWhiteSpace(c))
+            {
+                needsNorm = true;
+                break;
+            }
+        }
+        if (!needsNorm) return s;
+
+        var sb = new System.Text.StringBuilder(s.Length);
+        foreach (var c in s)
+        {
+            // \n is the hard-break sentinel; NBSP is a non-breaking word character.
+            if (c != '\n' && c != nbsp && char.IsWhiteSpace(c))
+                sb.Append(' ');
+            else
+                sb.Append(c);
+        }
+        return sb.ToString();
+    }
+
+    /// <summary>
     /// Greedy word-wrap across all runs. Words inherit the style of the run they belong to.
-    /// Hard newlines (\n) in run text produce explicit line breaks; \t is treated as a space.
+    /// <para>
+    /// Hard line breaks: <c>\n</c>, <c>\r\n</c>, and lone <c>\r</c> all produce explicit line
+    /// breaks. Input is normalised so that <c>\r\n</c> and lone <c>\r</c> are replaced with
+    /// <c>\n</c> before splitting, preventing stray <c>\r</c> glyphs in Standard-14 output.
+    /// </para>
+    /// <para>
+    /// Word splitting uses <see cref="NormaliseWhitespace"/> to convert Unicode whitespace
+    /// (tab, thin space, en/em space, etc.) to plain spaces, then splits on space. Non-breaking
+    /// space (U+00A0) is intentionally <em>not</em> a split point because it is semantically
+    /// a non-breaking join between words.
+    /// </para>
     /// </summary>
     private static List<LineFragment[]> WordWrap(IReadOnlyList<TextRun> runs, double maxWidth)
     {
@@ -417,13 +465,18 @@ public sealed class ParagraphRenderer : IRenderer
         var tokens = new List<(string Word, TextStyle Style, bool HardBreakBefore)>();
         foreach (var run in runs)
         {
-            // Split on newlines first to honour hard line breaks.
-            var hardLines = run.Text.Split('\n');
+            // Normalise line endings: \r\n => \n, lone \r => \n.
+            var normalised = run.Text.Replace("\r\n", "\n").Replace('\r', '\n');
+
+            // Split on \n first to honour hard line breaks.
+            var hardLines = normalised.Split('\n');
             for (var hl = 0; hl < hardLines.Length; hl++)
             {
                 var hardLine = hardLines[hl];
-                // Replace tabs with spaces for word splitting purposes.
-                var words = hardLine.Replace('\t', ' ').Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                // Normalise all Unicode whitespace (except \n and NBSP) to plain spaces,
+                // then split on space so tabs, en/em spaces, etc. all act as word separators.
+                var normalizedLine = NormaliseWhitespace(hardLine);
+                var words = normalizedLine.Split(' ', StringSplitOptions.RemoveEmptyEntries);
                 var isFirstHardLine = hl == 0;
                 var isFirstWord = true;
                 foreach (var w in words)

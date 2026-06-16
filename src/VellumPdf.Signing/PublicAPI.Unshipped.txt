@@ -21,6 +21,8 @@ VellumPdf.Signing.PdfSignatureSettings.SubFilter.get -> string!
 VellumPdf.Signing.PdfSignatureSettings.SubFilter.init -> void
 VellumPdf.Signing.PdfSignatureSettings.TimestampClient.get -> VellumPdf.Signing.ITimestampClient?
 VellumPdf.Signing.PdfSignatureSettings.TimestampClient.init -> void
+VellumPdf.Signing.PdfSignatureSettings.SignaturePage.get -> int
+VellumPdf.Signing.PdfSignatureSettings.SignaturePage.init -> void
 VellumPdf.Signing.SigningExtensions
 VellumPdf.Signing.HttpTimestampClient
 VellumPdf.Signing.HttpTimestampClient.GetTimestampToken(System.ReadOnlySpan<byte> messageDigest, System.Security.Cryptography.HashAlgorithmName hashAlgorithm) -> byte[]!

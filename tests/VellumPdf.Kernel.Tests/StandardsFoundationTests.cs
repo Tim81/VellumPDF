@@ -842,9 +842,11 @@ public sealed class StandardsFoundationTests
     }
 
     [Fact]
-    public void Tagged_outOfRangeMcidOnPage_throwsInvalidOperationException()
+    public void Tagged_sparseMcidOnPage_producesSparseParentTree_noThrow()
     {
-        // One leaf elem on a page (n=1) but Mcid = 5 → out-of-range, Save must throw.
+        // One leaf elem on a page with Mcid = 5 (no elems at 0-4). Since v1.5.5 (#83) the
+        // per-page ParentTree is sized by max(MCID)+1 = 6 with null holes for the gap, rather
+        // than sized by leaf count and throwing. A sparse number-tree array is valid PDF.
         using var doc = new PdfDocument();
         doc.Tagged = true;
         var page = doc.AddPage();
@@ -853,11 +855,12 @@ public sealed class StandardsFoundationTests
         canvas.EndMarkedContent();
         canvas.Finish();
 
-        // Manually assign an out-of-range MCID (only 1 leaf elem exists, so valid range is [0,1)).
         doc.RegisterStructElem(new PdfStructElem("P") { Page = page, Mcid = 5 });
 
         var ms = new MemoryStream();
-        Assert.Throws<InvalidOperationException>(() => { doc.Save(ms); });
+        var ex = Record.Exception(() => doc.Save(ms));
+        Assert.Null(ex); // must not throw on a non-contiguous / sparse MCID
+        Assert.Contains("/ParentTree", System.Text.Encoding.Latin1.GetString(ms.ToArray()));
     }
 
     // ── 9. PDF/UA-1 conformance ───────────────────────────────────────────────

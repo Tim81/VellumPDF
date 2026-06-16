@@ -986,10 +986,17 @@ public sealed class PdfDocument : IDisposable
                 page.StructParentsKey = key;
         }
 
-        // ── Add signature widget annotation to page 1 ──────────────────────────
-        // The invisible widget is added to the first page's /Annots.
-        if (_pages.Count > 0)
-            _pages[0].AddAnnotation(sigFieldRef);
+        // ── Validate and resolve the target signature-widget page ─────────────
+        var sigPageIndex = options.SignaturePage;
+        if (sigPageIndex < 0 || sigPageIndex >= _pages.Count)
+            throw new ArgumentOutOfRangeException(
+                nameof(options),
+                sigPageIndex,
+                $"SignaturePage {sigPageIndex} is out of range; the document has {_pages.Count} page(s) (0-based index).");
+
+        // ── Add signature widget annotation to the chosen page ────────────────
+        // The invisible widget (Rect [0 0 0 0]) is added to the selected page's /Annots.
+        _pages[sigPageIndex].AddAnnotation(sigFieldRef);
 
         // ── AcroForm fields (must precede page dicts) ──────────────────────────
         // AcroFormBuilder.Build wires each caller-registered form field's widget
@@ -1066,7 +1073,8 @@ public sealed class PdfDocument : IDisposable
         // This is both the AcroForm field (/FT /Sig) and the invisible widget annotation
         // (/Subtype /Widget /Rect [0 0 0 0]). Per ISO 32000-2, a signature field may
         // merge the field and its widget annotation into one dictionary.
-        var page1Ref = _pages.Count > 0 ? pageDictRefs[0] : (PdfObject)PdfNull.Instance;
+        // /P points to the page chosen via options.SignaturePage (validated above).
+        var sigPageRef = (PdfObject)pageDictRefs[sigPageIndex];
 
         var sigFieldDict = new PdfDictionary()
             .Set(PdfName.Type, new PdfName("Annot"))
@@ -1075,7 +1083,7 @@ public sealed class PdfDocument : IDisposable
             .Set(new PdfName("T"), new PdfLiteralString(System.Text.Encoding.Latin1.GetBytes("Signature1")))
             .Set(new PdfName("Rect"), new PdfArray([new PdfInteger(0), new PdfInteger(0), new PdfInteger(0), new PdfInteger(0)]))
             .Set(new PdfName("F"), new PdfInteger(132))
-            .Set(new PdfName("P"), page1Ref)
+            .Set(new PdfName("P"), sigPageRef)
             .Set(new PdfName("V"), sigDictRef);
 
         registry.SetValue(sigFieldRef, sigFieldDict);

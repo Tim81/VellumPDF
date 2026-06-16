@@ -39,4 +39,12 @@ public sealed class SignaturePlaceholderOptions
     /// used at the time <see cref="PdfDocument.PrepareForSigning"/> is called.
     /// </summary>
     public DateTimeOffset? SigningTime { get; init; }
+
+    /// <summary>
+    /// Zero-based index of the page to which the invisible signature widget annotation
+    /// is added. Default is 0 (the first page). The caller is responsible for ensuring
+    /// this is a valid page index; <see cref="PdfDocument.PrepareForSigning"/> throws
+    /// <see cref="ArgumentOutOfRangeException"/> if the value is out of range.
+    /// </summary>
+    public int SignaturePage { get; init; } = 0;
 }

@@ -4,6 +4,33 @@ All notable changes to VellumPdf will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.5.5] - 2026-06-16
+
+Closes the residual hardening items from the 2026-06-12 full-library review (#83, #84).
+
+### Added
+
+- **Signature widget page.** `PdfSignatureSettings.SignaturePage` (0-based, default 0) chooses
+  which page carries the invisible signature widget; an out-of-range index is rejected.
+
+### Fixed
+
+- **Tagged-PDF MCID range.** The per-page structure ParentTree is sized by the highest MCID on
+  the page rather than the leaf-element count, so non-contiguous MCIDs (for example when the MCID
+  counter is shared with container elements) produce a valid sparse array instead of aborting the
+  save. The marked-content-to-structure mapping is unchanged.
+- **Form field text encoding.** AcroForm field names, values, and choice options are written as
+  proper PDF text strings — Latin-1 when representable, otherwise UTF-16BE with a byte-order mark —
+  instead of silently replacing non-Latin-1 characters with `?`. Field text that the Standard-14
+  appearance font cannot render now raises a clear error rather than writing `?` into the appearance.
+- **Word wrap.** Wrapping handles `\r\n` and lone `\r` as line breaks and splits on Unicode
+  whitespace, so Windows line endings no longer leave a stray carriage-return glyph and tabs and
+  runs of spaces wrap correctly.
+- **Nested list markers.** A nested ordered list uses its configured numbering scheme
+  (alphabetic, roman, decimal) instead of always falling back to decimal.
+- **Justified text.** Word-gap counting uses one tokenization for both measurement and drawing,
+  so justified spacing is consistent between embedded and Standard-14 fonts.
+
 ## [1.5.4] - 2026-06-13
 
 ### Fixed
