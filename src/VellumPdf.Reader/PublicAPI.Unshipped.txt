@@ -1,1 +1,16 @@
 #nullable enable
+VellumPdf.Reader.PdfDocumentReader
+VellumPdf.Reader.PdfDocumentReader.Catalog.get -> VellumPdf.Core.PdfDictionary!
+VellumPdf.Reader.PdfDocumentReader.Dispose() -> void
+VellumPdf.Reader.PdfDocumentReader.Signatures.get -> System.Collections.Generic.IReadOnlyList<VellumPdf.Reader.PdfSignature!>!
+VellumPdf.Reader.PdfReader
+static VellumPdf.Reader.PdfReader.Open(byte[]! bytes) -> VellumPdf.Reader.PdfDocumentReader!
+static VellumPdf.Reader.PdfReader.Open(System.IO.Stream! stream) -> VellumPdf.Reader.PdfDocumentReader!
+VellumPdf.Reader.PdfSignature
+VellumPdf.Reader.PdfSignature.ByteRange.get -> int[]!
+VellumPdf.Reader.PdfSignature.Contents.get -> System.ReadOnlyMemory<byte>
+VellumPdf.Reader.PdfSignature.SigningTime.get -> string?
+VellumPdf.Reader.PdfSignature.SubFilter.get -> VellumPdf.Core.PdfName?
+VellumPdf.Reader.UnsupportedPdfFeatureException
+VellumPdf.Reader.UnsupportedPdfFeatureException.UnsupportedPdfFeatureException(string! message) -> void
+VellumPdf.Reader.UnsupportedPdfFeatureException.UnsupportedPdfFeatureException(string! message, System.Exception! inner) -> void
