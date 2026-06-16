@@ -195,6 +195,27 @@ public sealed class HardeningV155CloseoutTests
     }
 
     /// <summary>
+    /// A pathological MCID on a hand-built structure tree must throw a clear
+    /// <see cref="InvalidOperationException"/> rather than overflow or attempt a multi-gigabyte
+    /// ParentTree allocation (v1.5.6 guard; the per-page array is sized by max MCID + 1).
+    /// </summary>
+    [Fact]
+    public void StructureTree_pathologicalMcid_throwsInsteadOfOom()
+    {
+        using var doc = new PdfDocument();
+        doc.Tagged = true;
+        var page = doc.AddPage();
+        var canvas = new PdfCanvas(page);
+        canvas.Finish();
+
+        doc.RegisterStructElem(new PdfStructElem("P") { Page = page, Mcid = int.MaxValue });
+
+        var ms = new MemoryStream();
+        var ex = Assert.Throws<InvalidOperationException>(() => doc.Save(ms));
+        Assert.Contains("exceeds the maximum", ex.Message);
+    }
+
+    /// <summary>
     /// Duplicate MCIDs on the same page must still throw — the bijection is broken.
     /// </summary>
     [Fact]
