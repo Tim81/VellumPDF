@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\VellumPdf.Kernel\VellumPdf.Kernel.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <RootNamespace>VellumPdf.Reader</RootNamespace>
+    <AssemblyName>VellumPdf.Reader</AssemblyName>
+    <PackageId>VellumPdf.Reader</PackageId>
+    <Description>PDF lexer and object parser for VellumPdf: tokenises raw PDF bytes and parses the eight basic object types per ISO 32000-2 §7.2–7.3. BCL-only; zero runtime dependencies. Foundation for xref/document reading (Phase 2+).</Description>
+    <PackageTags>pdf;reader;parser;aot</PackageTags>
+  </PropertyGroup>
+
+</Project>
