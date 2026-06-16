@@ -4,6 +4,27 @@ All notable changes to VellumPdf will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.6.0] - 2026-06-16
+
+### Added
+
+- **PAdES long-term validation (B-LT and B-LTA).** `PdfSignatureSettings.Level` selects the
+  signature level: `B_B` (baseline), `B_T` (signature timestamp), `B_LT` (embedded revocation
+  evidence), and `B_LTA` (archive timestamp). At `B_LT` and above, signing gathers the signer
+  and timestamp-authority certificate chains, fetches OCSP/CRL revocation data through
+  `PdfSignatureSettings.RevocationClient`, and writes a `/DSS` (Document Security Store) with
+  per-signature `/VRI` as an incremental revision. `B_LTA` adds a `/DocTimeStamp`
+  (`/SubFilter /ETSI.RFC3161`) over that revision. The original signature is left byte-for-byte
+  intact, so it stays valid. (#49)
+- **`IRevocationClient` and `HttpRevocationClient`.** A pluggable revocation surface mirroring
+  the timestamp client. The default HTTP client reads the OCSP responder (AIA) and CRL
+  distribution points from a certificate and fetches the evidence over HTTP; the abstraction
+  keeps the core offline and the tests deterministic.
+- **`VellumPdf.Reader` package.** Opens an existing signed PDF (classic cross-reference tables,
+  unencrypted) and exposes its catalog and signatures. It is the foundation the LTV path builds
+  on, and the first slice of a general reader (see the roadmap). Cross-reference streams, object
+  streams, and encryption are not supported yet and raise a clear error.
+
 ## [1.5.6] - 2026-06-16
 
 ### Fixed

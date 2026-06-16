@@ -34,7 +34,8 @@ clean-room from the open **ISO 32000** standard.
 | --- | --- | --- |
 | `VellumPdf.Kernel` | Stable | Object model, canvas, Standard-14 fonts, TrueType/OpenType embedding + subsetting, images (JPEG/PNG/BMP/GIF/TIFF/JBIG2/JPEG 2000), AES-256 encryption, object/cross-reference streams, AcroForm fields, tagged-PDF structure tree, PDF/A-2 metadata, and DeviceCMYK and ICC-based colour with configurable output intents. |
 | `VellumPdf.Layout` | Stable | High-level document builder: paragraphs, headings, lists, tables, images, header/footer bands, bookmarks, and automatic pagination. |
-| `VellumPdf.Signing` | Stable | PAdES / PKCS#7 detached digital signatures, with optional RFC-3161 signature timestamps (PAdES B-T) via a pluggable timestamp client. |
+| `VellumPdf.Signing` | Stable | PAdES / PKCS#7 detached digital signatures with RFC-3161 signature timestamps and long-term validation. Levels B-T, B-LT (embedded OCSP/CRL in a `/DSS`), and B-LTA (archive document timestamp), via pluggable timestamp and revocation clients. |
+| `VellumPdf.Reader` | Preview | Opens existing signed PDFs (classic cross-reference, unencrypted) and exposes the catalog and signatures; the basis for the signing LTV path and the first slice of a general reader. |
 | _(roadmap)_ `VellumPdf.Conformance` | Planned | In-process PDF/A and PDF/UA preflight validator. |
 | _(roadmap)_ `VellumPdf.Barcodes` | Planned | QR, PDF417, Code128, EAN. |
 
@@ -135,7 +136,6 @@ oracles — a missing tool fails the build, so the gates can never silently skip
 | --- | --- |
 | In-process preflight | `VellumPdf.Conformance` PDF/A and PDF/UA validator package. |
 | Linearization | "Fast web view" object ordering. |
-| Signature LTV | Embedded OCSP/CRL revocation data and an archive timestamp (PAdES B-LT / B-LTA). v1.6 ships this on an MVP reader (#49). |
 | PDF reader (v2.1) | `VellumPdf.Reader` — read any PDF. Grows the v1.6 LTV MVP reader into a full structural parser: xref streams, object streams, encryption (Epic #100). |
 | Content extraction (v2.2) | Text and image extraction on the reader (#98). |
 | Editing existing PDFs (v3.0) | Unified read-modify-write document model; supersedes the write-once `PdfDocument` (Epic #101). |
