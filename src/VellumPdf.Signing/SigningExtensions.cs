@@ -27,6 +27,7 @@ public static class SigningExtensions
     ///   <item>Compute a detached SHA-256 CMS signature over the signed content
     ///     (bytes selected by the ByteRange).</item>
     ///   <item>Hex-encode the DER signature and patch <c>/Contents</c> in-place.</item>
+    ///   <item>Apply post-processing for B-LT/B-LTA levels (DSS, archive timestamp).</item>
     ///   <item>Write the result to <paramref name="output"/>.</item>
     /// </list>
     /// </para>
@@ -39,7 +40,8 @@ public static class SigningExtensions
     /// <paramref name="settings"/> is null.
     /// </exception>
     /// <exception cref="ArgumentException">
-    /// Thrown when the certificate in <paramref name="settings"/> does not include a private key.
+    /// Thrown when the certificate in <paramref name="settings"/> does not include a private key,
+    /// or when the chosen <see cref="PadesLevel"/> requires a client that is not set.
     /// </exception>
     /// <exception cref="NotSupportedException">
     /// Thrown when encryption has already been configured on the document.
@@ -54,27 +56,15 @@ public static class SigningExtensions
             throw new ArgumentException(
                 "The signing certificate must include a private key.", nameof(settings));
 
+        ValidateLevel(settings);
+
         // Resolve signing time once so /M (written by the Kernel) and the CMS
         // Pkcs9SigningTime attribute (written by PdfCmsSigner) share the same value.
-        var effectiveSettings = settings.SigningTime is null
-            ? new PdfSignatureSettings
-            {
-                Certificate = settings.Certificate,
-                SignerName = settings.SignerName,
-                Reason = settings.Reason,
-                Location = settings.Location,
-                ContactInfo = settings.ContactInfo,
-                SigningTime = DateTimeOffset.UtcNow,
-                EstimatedSignatureSizeBytes = settings.EstimatedSignatureSizeBytes,
-                SubFilter = settings.SubFilter,
-                TimestampClient = settings.TimestampClient,
-                SignaturePage = settings.SignaturePage,
-            }
-            : settings;
+        var effectiveSettings = ResolveSigningTime(settings);
 
         var options = ToPlaceholderOptions(effectiveSettings);
         var unsignedBytes = doc.PrepareForSigning(options);
-        PdfCmsSigner.Sign(unsignedBytes, effectiveSettings, output);
+        SignCore(unsignedBytes, effectiveSettings, output);
     }
 
     /// <summary>
@@ -90,7 +80,8 @@ public static class SigningExtensions
     /// <paramref name="settings"/> is null.
     /// </exception>
     /// <exception cref="ArgumentException">
-    /// Thrown when the certificate in <paramref name="settings"/> does not include a private key.
+    /// Thrown when the certificate in <paramref name="settings"/> does not include a private key,
+    /// or when the chosen <see cref="PadesLevel"/> requires a client that is not set.
     /// </exception>
     /// <exception cref="NotSupportedException">
     /// Thrown when encryption has already been configured on the document.
@@ -105,9 +96,42 @@ public static class SigningExtensions
             throw new ArgumentException(
                 "The signing certificate must include a private key.", nameof(settings));
 
+        ValidateLevel(settings);
+
         // Resolve signing time once so /M (written by the Kernel) and the CMS
         // Pkcs9SigningTime attribute (written by PdfCmsSigner) share the same value.
-        var effectiveSettings = settings.SigningTime is null
+        var effectiveSettings = ResolveSigningTime(settings);
+
+        var options = ToPlaceholderOptions(effectiveSettings);
+        var unsignedBytes = doc.PrepareForSigning(options);
+        SignCore(unsignedBytes, effectiveSettings, output);
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Validates that the chosen <see cref="PadesLevel"/> has all required clients configured.
+    /// Throws <see cref="ArgumentException"/> on any violation.
+    /// </summary>
+    private static void ValidateLevel(PdfSignatureSettings settings)
+    {
+        if (settings.Level >= PadesLevel.B_T && settings.TimestampClient is null)
+            throw new ArgumentException(
+                "PAdES B-T/B-LT/B-LTA require a signature timestamp; set PdfSignatureSettings.TimestampClient.",
+                nameof(settings));
+
+        if (settings.Level >= PadesLevel.B_LT && settings.RevocationClient is null)
+            throw new ArgumentException(
+                "PAdES B-LT/B-LTA require PdfSignatureSettings.RevocationClient to fetch OCSP/CRL evidence.",
+                nameof(settings));
+    }
+
+    /// <summary>
+    /// Returns <paramref name="settings"/> unchanged when <c>SigningTime</c> is already set,
+    /// or a copy with <c>SigningTime = UtcNow</c> otherwise. All other properties are preserved.
+    /// </summary>
+    private static PdfSignatureSettings ResolveSigningTime(PdfSignatureSettings settings)
+        => settings.SigningTime is null
             ? new PdfSignatureSettings
             {
                 Certificate = settings.Certificate,
@@ -120,15 +144,40 @@ public static class SigningExtensions
                 SubFilter = settings.SubFilter,
                 TimestampClient = settings.TimestampClient,
                 SignaturePage = settings.SignaturePage,
+                Level = settings.Level,
+                RevocationClient = settings.RevocationClient,
             }
             : settings;
 
-        var options = ToPlaceholderOptions(effectiveSettings);
-        var unsignedBytes = doc.PrepareForSigning(options);
-        PdfCmsSigner.Sign(unsignedBytes, effectiveSettings, output);
-    }
+    /// <summary>
+    /// Core signing pipeline shared by both public <c>Sign</c> overloads.
+    /// Signs the unsigned placeholder bytes and writes the final (possibly multi-revision)
+    /// PDF to <paramref name="output"/>, applying DSS and archive-timestamp post-processing
+    /// according to <see cref="PdfSignatureSettings.Level"/>.
+    /// </summary>
+    private static void SignCore(byte[] unsignedBytes, PdfSignatureSettings settings, Stream output)
+    {
+        if (settings.Level >= PadesLevel.B_LT)
+        {
+            // Buffer into a MemoryStream so post-processing can work on the full byte array.
+            var ms = new MemoryStream();
+            PdfCmsSigner.Sign(unsignedBytes, settings, ms);
+            var signed = ms.ToArray();
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
+            // B-LT and B-LTA both require a DSS revision with revocation evidence.
+            signed = DssBuilder.AddLongTermValidation(signed, settings.RevocationClient!);
+
+            if (settings.Level == PadesLevel.B_LTA)
+                signed = ArchiveTimestampBuilder.AddArchiveTimestamp(signed, settings.TimestampClient!);
+
+            output.Write(signed, 0, signed.Length);
+        }
+        else
+        {
+            // B-B and B-T: write directly to the caller's stream (no extra buffering).
+            PdfCmsSigner.Sign(unsignedBytes, settings, output);
+        }
+    }
 
     private static SignaturePlaceholderOptions ToPlaceholderOptions(PdfSignatureSettings settings)
         => new()

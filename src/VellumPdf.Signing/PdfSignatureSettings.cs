@@ -61,4 +61,24 @@ public sealed class PdfSignatureSettings
     /// <see cref="ArgumentOutOfRangeException"/> during signing.
     /// </summary>
     public int SignaturePage { get; init; } = 0;
+
+    /// <summary>
+    /// PAdES conformance level to produce. Default is <see cref="PadesLevel.B_B"/>.
+    /// <list type="bullet">
+    ///   <item><see cref="PadesLevel.B_T"/> requires <see cref="TimestampClient"/>.</item>
+    ///   <item><see cref="PadesLevel.B_LT"/> requires both <see cref="TimestampClient"/>
+    ///     and <see cref="RevocationClient"/>.</item>
+    ///   <item><see cref="PadesLevel.B_LTA"/> requires both <see cref="TimestampClient"/>
+    ///     and <see cref="RevocationClient"/>.</item>
+    /// </list>
+    /// </summary>
+    public PadesLevel Level { get; init; } = PadesLevel.B_B;
+
+    /// <summary>
+    /// Optional revocation client used to fetch OCSP responses and/or CRLs for each
+    /// certificate in the signing chain. Required when <see cref="Level"/> is
+    /// <see cref="PadesLevel.B_LT"/> or <see cref="PadesLevel.B_LTA"/>.
+    /// When <see langword="null"/> (the default), no revocation evidence is collected.
+    /// </summary>
+    public IRevocationClient? RevocationClient { get; init; }
 }

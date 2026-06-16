@@ -42,3 +42,12 @@ VellumPdf.Signing.HttpRevocationClient
 VellumPdf.Signing.HttpRevocationClient.HttpRevocationClient() -> void
 VellumPdf.Signing.HttpRevocationClient.HttpRevocationClient(System.Net.Http.HttpClient! httpClient, System.TimeSpan timeout) -> void
 VellumPdf.Signing.HttpRevocationClient.GetRevocationData(System.Security.Cryptography.X509Certificates.X509Certificate2! certificate, System.Security.Cryptography.X509Certificates.X509Certificate2! issuer) -> VellumPdf.Signing.RevocationData!
+VellumPdf.Signing.PadesLevel
+VellumPdf.Signing.PadesLevel.B_B = 0 -> VellumPdf.Signing.PadesLevel
+VellumPdf.Signing.PadesLevel.B_T = 1 -> VellumPdf.Signing.PadesLevel
+VellumPdf.Signing.PadesLevel.B_LT = 2 -> VellumPdf.Signing.PadesLevel
+VellumPdf.Signing.PadesLevel.B_LTA = 3 -> VellumPdf.Signing.PadesLevel
+VellumPdf.Signing.PdfSignatureSettings.Level.get -> VellumPdf.Signing.PadesLevel
+VellumPdf.Signing.PdfSignatureSettings.Level.init -> void
+VellumPdf.Signing.PdfSignatureSettings.RevocationClient.get -> VellumPdf.Signing.IRevocationClient?
+VellumPdf.Signing.PdfSignatureSettings.RevocationClient.init -> void
