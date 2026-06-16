@@ -29,3 +29,16 @@ VellumPdf.Signing.HttpTimestampClient.GetTimestampToken(System.ReadOnlySpan<byte
 VellumPdf.Signing.HttpTimestampClient.HttpTimestampClient(System.Uri! tsaUrl, System.Net.Http.HttpClient? httpClient = null, bool requestTsaCertificate = true, System.TimeSpan? timeout = null) -> void
 VellumPdf.Signing.ITimestampClient
 VellumPdf.Signing.ITimestampClient.GetTimestampToken(System.ReadOnlySpan<byte> messageDigest, System.Security.Cryptography.HashAlgorithmName hashAlgorithm) -> byte[]!
+VellumPdf.Signing.IRevocationClient
+VellumPdf.Signing.IRevocationClient.GetRevocationData(System.Security.Cryptography.X509Certificates.X509Certificate2! certificate, System.Security.Cryptography.X509Certificates.X509Certificate2! issuer) -> VellumPdf.Signing.RevocationData!
+VellumPdf.Signing.RevocationData
+VellumPdf.Signing.RevocationData.RevocationData() -> void
+VellumPdf.Signing.RevocationData.Ocsp.get -> System.ReadOnlyMemory<byte>?
+VellumPdf.Signing.RevocationData.Ocsp.init -> void
+VellumPdf.Signing.RevocationData.Crl.get -> System.ReadOnlyMemory<byte>?
+VellumPdf.Signing.RevocationData.Crl.init -> void
+VellumPdf.Signing.RevocationData.IsEmpty.get -> bool
+VellumPdf.Signing.HttpRevocationClient
+VellumPdf.Signing.HttpRevocationClient.HttpRevocationClient() -> void
+VellumPdf.Signing.HttpRevocationClient.HttpRevocationClient(System.Net.Http.HttpClient! httpClient, System.TimeSpan timeout) -> void
+VellumPdf.Signing.HttpRevocationClient.GetRevocationData(System.Security.Cryptography.X509Certificates.X509Certificate2! certificate, System.Security.Cryptography.X509Certificates.X509Certificate2! issuer) -> VellumPdf.Signing.RevocationData!
