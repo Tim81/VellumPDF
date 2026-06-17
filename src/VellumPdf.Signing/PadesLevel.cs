@@ -9,9 +9,11 @@ namespace VellumPdf.Signing;
 /// </summary>
 /// <remarks>
 /// The <see cref="B_LT"/> and <see cref="B_LTA"/> levels write their DSS and archive-timestamp
-/// data as incremental-update revisions. Signing a PDF/A-2b document at these levels preserves
-/// PDF/A-2b conformance: the signed B-LT and B-LTA output validates against veraPDF's PDF/A-2b
-/// profile (the <c>Signed_PdfA2b_BLT/BLTA_veraPdf_reportsCompliant</c> oracle tests gate this).
+/// data as incremental-update revisions. Signing a conformance document at these levels preserves
+/// its conformance: the signed B-LT/B-LTA output validates against veraPDF for PDF/A-2b, PDF/A-2u,
+/// PDF/A-2a, and PDF/UA-1 (gated by the <c>Signed_*_BLTA_veraPdf_reportsCompliant</c> oracle
+/// tests). Note that veraPDF's PDF/A profiles validate the structural coexistence of the LTV
+/// revisions, not the cryptographic validity of the embedded OCSP/CRL evidence.
 /// </remarks>
 public enum PadesLevel
 {

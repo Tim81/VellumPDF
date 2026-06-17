@@ -26,6 +26,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   on, and the first slice of a general reader (see the roadmap). Cross-reference streams, object
   streams, and encryption are not supported yet and raise a clear error.
 
+### Fixed
+
+- **Signed PDF/UA-1 tab order.** A page that carries an annotation now declares `/Tabs /S` under
+  PDF/UA-1 (ISO 14289-1 §7.18.3). Signing adds a signature (and, at B-LTA, a document-timestamp)
+  widget annotation, so without this a signed PDF/UA-1 document was rejected by veraPDF. Signed
+  B-LTA output now validates as PDF/A-2b, PDF/A-2u, PDF/A-2a, and PDF/UA-1.
+
 ## [1.5.6] - 2026-06-16
 
 ### Fixed

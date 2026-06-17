@@ -672,7 +672,8 @@ public sealed class PdfDocument : IDisposable
         // ── Fill page dict values ──────────────────────────────────────────
         for (var i = 0; i < _pages.Count; i++)
         {
-            var dict = _pages[i].BuildDictionary(pageTreeRef, pageContentRefs[i]);
+            var dict = _pages[i].BuildDictionary(
+                pageTreeRef, pageContentRefs[i], structureTabOrder: Conformance == PdfConformance.PdfUA1);
             registry.SetValue(pageDictRefs[i], dict);
         }
 
@@ -1010,7 +1011,8 @@ public sealed class PdfDocument : IDisposable
         // ── Page dicts ────────────────────────────────────────────────────────
         for (var i = 0; i < _pages.Count; i++)
         {
-            var dict = _pages[i].BuildDictionary(pageTreeRef, pageContentRefs[i]);
+            var dict = _pages[i].BuildDictionary(
+                pageTreeRef, pageContentRefs[i], structureTabOrder: Conformance == PdfConformance.PdfUA1);
             registry.SetValue(pageDictRefs[i], dict);
         }
 
