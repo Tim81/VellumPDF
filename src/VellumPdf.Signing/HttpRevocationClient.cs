@@ -209,9 +209,11 @@ public sealed class HttpRevocationClient : IRevocationClient
                 using var httpReq = new HttpRequestMessage(HttpMethod.Get, cdp);
                 byte[] body = Send(httpReq);
 
-                // Accept only a body that parses as a DER CertificateList; skip anything
-                // else (PEM, an HTML error page, or a misrouted OCSP response).
-                if (IsCertificateList(body))
+                // Accept the CRL only when it is a DER CertificateList issued by this
+                // certificate's issuer and that does not list the certificate as revoked.
+                // This rejects a misrouted/wrong-issuer CRL and avoids embedding evidence
+                // that the signing certificate is revoked.
+                if (IsValidCrlForCertificate(body, certificate))
                     return body;
             }
             catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException or InvalidOperationException)
@@ -330,19 +332,57 @@ public sealed class HttpRevocationClient : IRevocationClient
     }
 
     /// <summary>
-    /// Returns true when <paramref name="der"/> parses as a DER <c>CertificateList</c>
-    /// (a SEQUENCE whose first element is the <c>tbsCertList</c> SEQUENCE). This rejects an
-    /// OCSP response or other DER object that is not a CRL.
+    /// Returns true when <paramref name="der"/> is a DER <c>CertificateList</c> (RFC 5280)
+    /// whose <c>issuer</c> matches <paramref name="certificate"/>'s issuer and whose
+    /// <c>revokedCertificates</c> list does not contain the certificate's serial number.
+    /// Rejects a non-CRL body, a CRL from a different issuer, and a CRL that revokes the
+    /// certificate. Does not verify the CRL signature — that is the validator's responsibility.
     /// </summary>
-    private static bool IsCertificateList(byte[] der)
+    private static bool IsValidCrlForCertificate(byte[] der, X509Certificate2 certificate)
     {
         if (der.Length == 0)
             return false;
         try
         {
-            var reader = new AsnReader(der, AsnEncodingRules.DER);
-            var certList = reader.ReadSequence();
-            certList.ReadSequence(); // tbsCertList — must be a SEQUENCE
+            var tbs = new AsnReader(der, AsnEncodingRules.DER)
+                .ReadSequence()   // CertificateList
+                .ReadSequence();  // TBSCertList
+
+            // version OPTIONAL INTEGER (v2 == 1)
+            if (tbs.HasData && tbs.PeekTag().HasSameClassAndValue(Asn1Tag.Integer))
+                tbs.ReadEncodedValue();
+
+            tbs.ReadEncodedValue(); // signature AlgorithmIdentifier — skip
+
+            // issuer Name — must match the certificate's issuer DN.
+            var issuer = tbs.ReadEncodedValue();
+            if (!issuer.Span.SequenceEqual(certificate.IssuerName.RawData))
+                return false;
+
+            tbs.ReadEncodedValue(); // thisUpdate Time — skip
+
+            // nextUpdate OPTIONAL Time (UTCTime / GeneralizedTime)
+            if (tbs.HasData)
+            {
+                var tag = tbs.PeekTag();
+                if (tag.HasSameClassAndValue(new Asn1Tag(UniversalTagNumber.UtcTime))
+                    || tag.HasSameClassAndValue(new Asn1Tag(UniversalTagNumber.GeneralizedTime)))
+                    tbs.ReadEncodedValue();
+            }
+
+            // revokedCertificates OPTIONAL SEQUENCE OF SEQUENCE { userCertificate INTEGER, ... }
+            if (tbs.HasData && tbs.PeekTag().HasSameClassAndValue(Asn1Tag.Sequence))
+            {
+                var revoked = tbs.ReadSequence();
+                var serial = certificate.SerialNumberBytes.Span;
+                while (revoked.HasData)
+                {
+                    var entry = revoked.ReadSequence();
+                    if (entry.ReadIntegerBytes().Span.SequenceEqual(serial))
+                        return false; // certificate is listed as revoked
+                }
+            }
+
             return true;
         }
         catch (AsnContentException)

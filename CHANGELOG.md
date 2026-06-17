@@ -19,8 +19,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   left byte-for-byte intact, so it stays valid. (#49)
 - **`IRevocationClient` and `HttpRevocationClient`.** A pluggable revocation surface mirroring
   the timestamp client. The default HTTP client reads the OCSP responder (AIA) and CRL
-  distribution points from a certificate and fetches the evidence over HTTP; the abstraction
-  keeps the core offline and the tests deterministic.
+  distribution points from a certificate and fetches the evidence over HTTP. Before embedding,
+  it validates a CRL (correct issuer, and the certificate not listed as revoked) and requires a
+  successful OCSP response status. The abstraction keeps the core offline and the tests
+  deterministic.
 - **`VellumPdf.Reader` package.** Opens an existing signed PDF (classic cross-reference tables,
   unencrypted) and exposes its catalog and signatures. It is the foundation the LTV path builds
   on, and the first slice of a general reader (see the roadmap). Cross-reference streams, object

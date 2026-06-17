@@ -38,6 +38,11 @@ public sealed class RevocationTests
             rsa,
             HashAlgorithmName.SHA256,
             RSASignaturePadding.Pkcs1);
+        // A CRL issuer needs Basic Constraints (CA) and a Subject Key Identifier
+        // (CertificateRevocationListBuilder requires both to sign and to derive the CRL's AKI).
+        req.CertificateExtensions.Add(new X509BasicConstraintsExtension(
+            certificateAuthority: true, hasPathLengthConstraint: false, pathLengthConstraint: 0, critical: true));
+        req.CertificateExtensions.Add(new X509SubjectKeyIdentifierExtension(req.PublicKey, false));
         configure?.Invoke(req);
         return req.CreateSelfSigned(
             DateTimeOffset.UtcNow.AddDays(-1),
@@ -54,6 +59,23 @@ public sealed class RevocationTests
     {
         return CreateCertificate(configure: req =>
             req.CertificateExtensions.Add(BuildCdpExtension(crlUri)));
+    }
+
+    /// <summary>
+    /// Builds a real DER CRL signed by <paramref name="issuerWithKey"/>, optionally listing
+    /// <paramref name="revoked"/> as revoked. The issuer must have a private key.
+    /// </summary>
+    private static byte[] BuildCrl(X509Certificate2 issuerWithKey, X509Certificate2? revoked = null)
+    {
+        var builder = new CertificateRevocationListBuilder();
+        if (revoked is not null)
+            builder.AddEntry(revoked, DateTimeOffset.UtcNow.AddHours(-1));
+        return builder.Build(
+            issuerWithKey,
+            crlNumber: 1,
+            nextUpdate: DateTimeOffset.UtcNow.AddDays(7),
+            hashAlgorithm: HashAlgorithmName.SHA256,
+            rsaSignaturePadding: RSASignaturePadding.Pkcs1);
     }
 
     /// <summary>
@@ -206,16 +228,47 @@ public sealed class RevocationTests
     {
         using var issuer = CreateCertificate("CN=VellumPdf Test Issuer");
         using var leaf = CreateCertWithCdp("http://crl.example.invalid/list.crl");
+        // The test leaf is self-signed, so it is its own issuer; this CRL does not revoke it.
+        var crl = BuildCrl(leaf);
 
-        var handler = new FakeHandler { CrlResponse = s_cannedCrl };
+        var handler = new FakeHandler { CrlResponse = crl };
         using var http = new HttpClient(handler);
         var client = new HttpRevocationClient(http, TimeSpan.FromSeconds(5));
 
         var data = client.GetRevocationData(leaf, issuer);
 
         Assert.NotNull(data.Crl);
-        Assert.Equal(s_cannedCrl, data.Crl!.Value.ToArray());
+        Assert.Equal(crl, data.Crl!.Value.ToArray());
         Assert.Equal(new Uri("http://crl.example.invalid/list.crl"), handler.CrlRequestUri);
+    }
+
+    [Fact]
+    public void Crl_that_revokes_the_certificate_is_rejected()
+    {
+        using var issuer = CreateCertificate("CN=VellumPdf Test Issuer");
+        using var leaf = CreateCertWithCdp("http://crl.example.invalid/list.crl");
+        var crl = BuildCrl(leaf, revoked: leaf); // lists the leaf's own serial number
+
+        var handler = new FakeHandler { CrlResponse = crl };
+        using var http = new HttpClient(handler);
+        var client = new HttpRevocationClient(http, TimeSpan.FromSeconds(5));
+
+        Assert.Null(client.GetRevocationData(leaf, issuer).Crl);
+    }
+
+    [Fact]
+    public void Crl_from_a_different_issuer_is_rejected()
+    {
+        using var issuer = CreateCertificate("CN=VellumPdf Test Issuer");
+        using var leaf = CreateCertWithCdp("http://crl.example.invalid/list.crl");
+        using var other = CreateCertificate("CN=Some Other CA");
+        var crl = BuildCrl(other); // issuer DN does not match the leaf's issuer
+
+        var handler = new FakeHandler { CrlResponse = crl };
+        using var http = new HttpClient(handler);
+        var client = new HttpRevocationClient(http, TimeSpan.FromSeconds(5));
+
+        Assert.Null(client.GetRevocationData(leaf, issuer).Crl);
     }
 
     [Fact]
@@ -246,10 +299,11 @@ public sealed class RevocationTests
             req.CertificateExtensions.Add(BuildCdpExtension("http://crl.example.invalid/list.crl"));
         });
 
+        var crl = BuildCrl(leaf);
         var handler = new FakeHandler
         {
             OcspStatus = HttpStatusCode.InternalServerError,
-            CrlResponse = s_cannedCrl,
+            CrlResponse = crl,
         };
         using var http = new HttpClient(handler);
         var client = new HttpRevocationClient(http, TimeSpan.FromSeconds(5));
@@ -258,7 +312,7 @@ public sealed class RevocationTests
 
         Assert.Null(data.Ocsp);
         Assert.NotNull(data.Crl);
-        Assert.Equal(s_cannedCrl, data.Crl!.Value.ToArray());
+        Assert.Equal(crl, data.Crl!.Value.ToArray());
     }
 
     [Fact]
