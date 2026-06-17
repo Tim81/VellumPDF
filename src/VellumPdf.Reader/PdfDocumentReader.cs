@@ -17,6 +17,10 @@ public sealed class PdfDocumentReader : IDisposable
     private readonly Dictionary<int, PdfObject> _cache = new();
     private IReadOnlyList<PdfSignature>? _signatures;
 
+    // Caps AcroForm field-tree recursion. The visited-set stops cycles, but a long acyclic
+    // /Kids chain (all distinct object numbers) would still recurse to a stack overflow.
+    private const int MaxFieldTreeDepth = 512;
+
     internal ReadOnlyMemory<byte> Bytes { get; }
     internal PdfDictionary Trailer { get; }
 
@@ -193,13 +197,15 @@ public sealed class PdfDocumentReader : IDisposable
         // cannot recurse forever into a stack overflow on hostile input.
         var visited = new HashSet<int>();
         for (var i = 0; i < fieldsArray.Count; i++)
-            CollectFieldSignatures(fieldsArray[i], sigs, visited);
+            CollectFieldSignatures(fieldsArray[i], sigs, visited, 0);
 
         return sigs;
     }
 
-    private void CollectFieldSignatures(PdfObject fieldObj, List<PdfSignature> sigs, HashSet<int> visited)
+    private void CollectFieldSignatures(PdfObject fieldObj, List<PdfSignature> sigs, HashSet<int> visited, int depth)
     {
+        if (depth > MaxFieldTreeDepth)
+            return;
         if (fieldObj is PdfIndirectReference fieldRef && !visited.Add(fieldRef.ObjectNumber))
             return;
 
@@ -234,7 +240,7 @@ public sealed class PdfDocumentReader : IDisposable
             if (kids is PdfArray kidsArray)
             {
                 for (var i = 0; i < kidsArray.Count; i++)
-                    CollectFieldSignatures(kidsArray[i], sigs, visited);
+                    CollectFieldSignatures(kidsArray[i], sigs, visited, depth + 1);
             }
         }
     }

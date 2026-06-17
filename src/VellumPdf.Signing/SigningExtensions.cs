@@ -160,7 +160,7 @@ public static class SigningExtensions
         if (settings.Level >= PadesLevel.B_LT)
         {
             // Buffer into a MemoryStream so post-processing can work on the full byte array.
-            var ms = new MemoryStream();
+            using var ms = new MemoryStream();
             PdfCmsSigner.Sign(unsignedBytes, settings, ms);
             var signed = ms.ToArray();
 

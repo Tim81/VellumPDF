@@ -53,6 +53,10 @@ internal static class DssBuilder
         // Per-signature VRI data: key = uppercase hex SHA-1 of /Contents DER
         var vriData = new Dictionary<string, VriEntry>();
 
+        // X509Certificate2 instances decoded from the CMS wrap unmanaged handles; collect
+        // them so they can be disposed after use rather than waiting for finalization.
+        var ownedCerts = new List<X509Certificate2>();
+
         foreach (var sig in reader.Signatures)
         {
             if (sig.Contents.IsEmpty)
@@ -72,6 +76,7 @@ internal static class DssBuilder
 
             // Gather signer certificates (chain embedded via WholeChain)
             var sigCerts = new List<X509Certificate2>(outerCms.Certificates.Cast<X509Certificate2>());
+            ownedCerts.AddRange(sigCerts);
 
             // Decode the timestamp token if present, gather TSA chain
             if (outerCms.SignerInfos.Count > 0)
@@ -87,7 +92,10 @@ internal static class DssBuilder
                             var tst = new SignedCms();
                             tst.Decode(tokenDer);
                             foreach (X509Certificate2 tsaCert in tst.Certificates)
+                            {
                                 sigCerts.Add(tsaCert);
+                                ownedCerts.Add(tsaCert);
+                            }
                         }
                         catch (CryptographicException)
                         {
@@ -151,6 +159,9 @@ internal static class DssBuilder
 
             vriData[vriKey] = new VriEntry(vriCertKeys, vriOcspKeys, vriCrlKeys);
         }
+
+        foreach (var c in ownedCerts)
+            c.Dispose();
 
         // ── Step 2: assign object numbers and build the indirect object list ─────
 

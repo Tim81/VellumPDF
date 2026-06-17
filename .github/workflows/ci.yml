@@ -83,11 +83,15 @@ jobs:
           for f in sorted(files):
               root = ET.parse(f).getroot()
               file_lines = {}
-              for cls in root.iter("class"):
-                  fn = cls.get("filename", "")
-                  for ln in cls.iter("line"):
-                      key = (fn, ln.get("number"))
-                      file_lines[key] = file_lines.get(key, False) or int(ln.get("hits", 0)) > 0
+              # Key by (assembly, file, line) so same-named files in different assemblies
+              # (e.g. AssemblyInfo.cs) do not collide.
+              for pkg in root.iter("package"):
+                  pkgname = pkg.get("name", "")
+                  for cls in pkg.iter("class"):
+                      fn = cls.get("filename", "")
+                      for ln in cls.iter("line"):
+                          key = (pkgname, fn, ln.get("number"))
+                          file_lines[key] = file_lines.get(key, False) or int(ln.get("hits", 0)) > 0
               fc = sum(1 for v in file_lines.values() if v)
               fv = len(file_lines)
               print(f"  {os.path.relpath(f, cov_dir)}: covered={fc}, valid={fv}, line-rate={fc/fv if fv else 0:.4f}")

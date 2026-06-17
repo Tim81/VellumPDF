@@ -158,6 +158,42 @@ public sealed class PdfReaderTests
         return ms.ToArray();
     }
 
+    /// <summary>
+    /// Builds a PDF whose AcroForm field tree is a long ACYCLIC chain of distinct objects
+    /// (field K has /Kids[(K+1) 0 R]). A visited-set alone would not stop this, so it exercises
+    /// the recursion depth cap.
+    /// </summary>
+    private static byte[] BuildDeepKidsChainPdf(int chainLength)
+    {
+        var ms = new MemoryStream();
+        void Write(string s) => ms.Write(Encoding.ASCII.GetBytes(s));
+        var offsets = new List<int>();
+        void Obj(string body) { offsets.Add((int)ms.Position); Write(body); }
+
+        Write("%PDF-1.4\n");
+        Obj("1 0 obj\n<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [4 0 R] /SigFlags 3 >> >>\nendobj\n");
+        Obj("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
+        Obj("3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>\nendobj\n");
+        for (var k = 0; k < chainLength; k++)
+        {
+            var num = 4 + k;
+            Obj(k < chainLength - 1
+                ? $"{num} 0 obj\n<< /T (f) /Kids [{num + 1} 0 R] >>\nendobj\n"
+                : $"{num} 0 obj\n<< /T (f) >>\nendobj\n");
+        }
+
+        var total = 3 + chainLength;
+        var xref = (int)ms.Position;
+        Write($"xref\n0 {total + 1}\n");
+        Write($"{0:D10} 65535 f \n");
+        foreach (var off in offsets)
+            Write($"{off:D10} 00000 n \n");
+        Write($"trailer\n<< /Size {total + 1} /Root 1 0 R >>\n");
+        Write($"startxref\n{xref}\n%%EOF\n");
+
+        return ms.ToArray();
+    }
+
     // ── Tests ─────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -280,6 +316,16 @@ public sealed class PdfReaderTests
         using var reader = PdfReader.Open(bytes);
 
         // Must return (not infinite-loop / stack-overflow) and find no signatures.
+        Assert.Empty(reader.Signatures);
+    }
+
+    [Fact]
+    public void Deep_acyclic_kids_chain_terminates_without_crashing()
+    {
+        // 20k distinct chained field objects would overflow the stack without a depth cap.
+        var bytes = BuildDeepKidsChainPdf(20_000);
+        using var reader = PdfReader.Open(bytes);
+
         Assert.Empty(reader.Signatures);
     }
 

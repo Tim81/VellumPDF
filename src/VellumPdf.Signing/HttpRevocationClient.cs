@@ -307,22 +307,12 @@ public sealed class HttpRevocationClient : IRevocationClient
 
     // ── Response validation ──────────────────────────────────────────────────────
 
-    // OCSPResponseStatus ::= ENUMERATED { successful(0), malformedRequest(1),
-    //   internalError(2), tryLater(3), sigRequired(5), unauthorized(6) }
-    private enum OcspResponseStatus
-    {
-        Successful = 0,
-        MalformedRequest = 1,
-        InternalError = 2,
-        TryLater = 3,
-        SigRequired = 5,
-        Unauthorized = 6,
-    }
-
     /// <summary>
     /// Returns true when <paramref name="der"/> is a well-formed DER <c>OCSPResponse</c> whose
-    /// <c>responseStatus</c> is <c>successful</c>. Does not verify the response signature or
-    /// per-certificate status (that is the validator's responsibility).
+    /// <c>responseStatus</c> ENUMERATED is <c>successful(0)</c>. Reading the raw enumerated
+    /// octets (rather than mapping to an enum) avoids any surprise on an unexpected status
+    /// value. Does not verify the response signature or per-certificate status (that is the
+    /// validator's responsibility).
     /// </summary>
     private static bool IsSuccessfulOcspResponse(byte[] der)
     {
@@ -330,7 +320,8 @@ public sealed class HttpRevocationClient : IRevocationClient
         {
             var reader = new AsnReader(der, AsnEncodingRules.DER);
             var response = reader.ReadSequence();
-            return response.ReadEnumeratedValue<OcspResponseStatus>() == OcspResponseStatus.Successful;
+            var status = response.ReadEnumeratedBytes();
+            return status.Length == 1 && status.Span[0] == 0x00;
         }
         catch (AsnContentException)
         {
