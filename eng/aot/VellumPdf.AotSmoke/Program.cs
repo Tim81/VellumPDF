@@ -1,10 +1,14 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using VellumPdf.Layout;
 using VellumPdf.Layout.Core;
 using VellumPdf.Layout.Elements;
+using VellumPdf.Reader;
+using VellumPdf.Signing;
 
 // Exercises the public generation path under Native AOT: layout engine,
 // pagination, Standard-14 fonts, FlateDecode, and the PDF writer.
@@ -57,5 +61,37 @@ else
 {
     Console.WriteLine("(embedded-font path AOT-compiled; runtime-skipped — no system font present)");
 }
+
+// Exercise the new VellumPdf.Reader parser under Native AOT.
+using (var reader = PdfReader.Open(bytes))
+{
+    if (reader.Catalog is null)
+    {
+        Console.Error.WriteLine("FAIL: reader returned a null catalog");
+        return 1;
+    }
+    Console.WriteLine($"OK: Reader parsed the PDF under AOT ({reader.Signatures.Count} signatures).");
+}
+
+// Exercise the Signing CMS path (PAdES B-B, self-signed) plus a signed round-trip under AOT.
+using var rsa = RSA.Create(2048);
+var certReq = new CertificateRequest("CN=VellumPdf AOT Smoke", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+using var smokeCert = certReq.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddYears(1));
+
+using var signDoc = new Document();
+signDoc.Add(new Paragraph("Signed under Native AOT."));
+using var signMs = new MemoryStream();
+signDoc.Sign(signMs, new PdfSignatureSettings { Certificate = smokeCert });
+var signedBytes = signMs.ToArray();
+
+using (var signedReader = PdfReader.Open(signedBytes))
+{
+    if (signedReader.Signatures.Count != 1)
+    {
+        Console.Error.WriteLine($"FAIL: expected 1 signature, got {signedReader.Signatures.Count}");
+        return 1;
+    }
+}
+Console.WriteLine($"OK: Signing + Reader round-trip under AOT ({signedBytes.Length}-byte signed PDF).");
 
 return 0;

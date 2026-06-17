@@ -270,7 +270,8 @@ internal static class DssBuilder
 
         // ── Step 4: clone the catalog and point /DSS at the new DSS object ────────
 
-        var catalogRef = (PdfIndirectReference)reader.Trailer.Get(PdfName.Root)!;
+        if (reader.Trailer.Get(PdfName.Root) is not PdfIndirectReference catalogRef)
+            throw new InvalidDataException("Malformed PDF: trailer /Root is not an indirect reference.");
         var catalogObjNum = catalogRef.ObjectNumber;
         var newCatalog = reader.Catalog.ShallowCopy();
         newCatalog.Set(new PdfName("DSS"), new PdfIndirectReference(dssObjNum));

@@ -11,6 +11,10 @@ namespace VellumPdf.Reader;
 /// A parsed PDF document opened via <see cref="PdfReader.Open(byte[])"/>.
 /// Provides lazy object resolution, catalog access, and signature navigation.
 /// </summary>
+/// <remarks>
+/// Instances are not thread-safe: object resolution and signature collection populate an
+/// internal cache without synchronization. Use one reader per thread.
+/// </remarks>
 public sealed class PdfDocumentReader : IDisposable
 {
     private readonly Dictionary<int, int> _xref;
