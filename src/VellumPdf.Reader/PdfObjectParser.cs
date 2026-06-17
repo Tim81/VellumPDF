@@ -16,6 +16,12 @@ internal sealed class PdfObjectParser
 {
     private readonly PdfLexer _lexer;
 
+    // Guards against unbounded recursion on hostile input (e.g. deeply nested
+    // "[[[[…" or "<</a<</a…"). A StackOverflowException is uncatchable in .NET, so
+    // we cap the array/dictionary nesting depth and throw a recoverable exception.
+    private const int MaxNestingDepth = 256;
+    private int _depth;
+
     /// <summary>Creates a parser backed by <paramref name="lexer"/>.</summary>
     public PdfObjectParser(PdfLexer lexer) => _lexer = lexer;
 
@@ -246,44 +252,58 @@ internal sealed class PdfObjectParser
 
     private PdfArray ParseArray()
     {
-        var items = new List<PdfObject>();
-        while (true)
+        if (++_depth > MaxNestingDepth)
+            throw new InvalidDataException(
+                $"PDF object nesting exceeds {MaxNestingDepth} levels; aborting to prevent stack overflow.");
+        try
         {
-            _lexer.SkipWhitespaceAndComments();
-            if (_lexer.AtEnd)
-                throw new InvalidDataException("Unterminated array; missing ']'.");
-            if (_lexer.TryPeek() == (byte)']')
+            var items = new List<PdfObject>();
+            while (true)
             {
-                _lexer.NextToken(); // consume ArrayEnd
-                break;
+                _lexer.SkipWhitespaceAndComments();
+                if (_lexer.AtEnd)
+                    throw new InvalidDataException("Unterminated array; missing ']'.");
+                if (_lexer.TryPeek() == (byte)']')
+                {
+                    _lexer.NextToken(); // consume ArrayEnd
+                    break;
+                }
+                items.Add(ParseObject());
             }
-            items.Add(ParseObject());
+            return new PdfArray(items);
         }
-        return new PdfArray(items);
+        finally { _depth--; }
     }
 
     private PdfDictionary ParseDictionary()
     {
-        var dict = new PdfDictionary();
-        while (true)
+        if (++_depth > MaxNestingDepth)
+            throw new InvalidDataException(
+                $"PDF object nesting exceeds {MaxNestingDepth} levels; aborting to prevent stack overflow.");
+        try
         {
-            _lexer.SkipWhitespaceAndComments();
-            if (_lexer.AtEnd)
-                throw new InvalidDataException("Unterminated dictionary; missing '>>'.");
+            var dict = new PdfDictionary();
+            while (true)
+            {
+                _lexer.SkipWhitespaceAndComments();
+                if (_lexer.AtEnd)
+                    throw new InvalidDataException("Unterminated dictionary; missing '>>'.");
 
-            var tok = _lexer.NextToken();
-            if (tok.Kind == TokenKind.DictEnd)
-                break;
+                var tok = _lexer.NextToken();
+                if (tok.Kind == TokenKind.DictEnd)
+                    break;
 
-            if (tok.Kind != TokenKind.Name)
-                throw new InvalidDataException(
-                    $"Expected a name key in dictionary, got {tok.Kind} at offset {_lexer.Position}.");
+                if (tok.Kind != TokenKind.Name)
+                    throw new InvalidDataException(
+                        $"Expected a name key in dictionary, got {tok.Kind} at offset {_lexer.Position}.");
 
-            var key = ParseName(tok);
-            var value = ParseObject();
-            dict.Set(key, value);
+                var key = ParseName(tok);
+                var value = ParseObject();
+                dict.Set(key, value);
+            }
+            return dict;
         }
-        return dict;
+        finally { _depth--; }
     }
 
     // ── Stream parsing ─────────────────────────────────────────────────────
@@ -299,9 +319,12 @@ internal sealed class PdfObjectParser
 
         var bodyStart = _lexer.Position;
 
-        // Determine body length: prefer /Length when it's a direct integer.
+        // Determine body length: prefer /Length when it's a direct, in-range integer.
+        // A negative or > int.MaxValue value is malformed (the buffer is <= int.MaxValue);
+        // fall back to the endstream scan rather than truncating on a wrapped cast.
         int bodyLen = -1;
-        if (dict.TryGet(PdfName.Length, out var lenObj) && lenObj is PdfInteger pdfLen)
+        if (dict.TryGet(PdfName.Length, out var lenObj) && lenObj is PdfInteger pdfLen
+            && pdfLen.Value >= 0 && pdfLen.Value <= int.MaxValue)
             bodyLen = (int)pdfLen.Value;
 
         if (bodyLen >= 0)

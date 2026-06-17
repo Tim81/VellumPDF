@@ -66,6 +66,11 @@ public sealed class PdfDocumentReader : IDisposable
         var parser = new PdfObjectParser(Bytes, offset);
         var result = parser.ParseIndirectObject();
 
+        // The object found at the xref offset must be the one we asked for; a crafted
+        // xref pointing object N at the bytes of a different object is rejected.
+        if (result.ObjectNumber != objectNumber)
+            return null;
+
         PdfObject value = result.IsStream
             ? result.Stream!.Dictionary
             : result.Value ?? PdfNull.Instance;
@@ -184,14 +189,20 @@ public sealed class PdfDocumentReader : IDisposable
         if (fields is not PdfArray fieldsArray)
             return sigs;
 
+        // Track visited field object numbers so a cyclic /Kids tree (A -> B -> A)
+        // cannot recurse forever into a stack overflow on hostile input.
+        var visited = new HashSet<int>();
         for (var i = 0; i < fieldsArray.Count; i++)
-            CollectFieldSignatures(fieldsArray[i], sigs);
+            CollectFieldSignatures(fieldsArray[i], sigs, visited);
 
         return sigs;
     }
 
-    private void CollectFieldSignatures(PdfObject fieldObj, List<PdfSignature> sigs)
+    private void CollectFieldSignatures(PdfObject fieldObj, List<PdfSignature> sigs, HashSet<int> visited)
     {
+        if (fieldObj is PdfIndirectReference fieldRef && !visited.Add(fieldRef.ObjectNumber))
+            return;
+
         var resolved = ResolveValue(fieldObj);
         if (resolved is not PdfDictionary field)
             return;
@@ -223,7 +234,7 @@ public sealed class PdfDocumentReader : IDisposable
             if (kids is PdfArray kidsArray)
             {
                 for (var i = 0; i < kidsArray.Count; i++)
-                    CollectFieldSignatures(kidsArray[i], sigs);
+                    CollectFieldSignatures(kidsArray[i], sigs, visited);
             }
         }
     }

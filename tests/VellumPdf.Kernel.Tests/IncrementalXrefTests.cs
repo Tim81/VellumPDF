@@ -42,6 +42,17 @@ public sealed class IncrementalXrefTests
     // ── IncrementalCrossReferenceBuilder: single contiguous run ──────────────
 
     [Fact]
+    public void IncrementalXref_duplicateObjectNumber_throws()
+    {
+        var ms = new MemoryStream();
+        var writer = new PdfWriter(ms, 0L);
+        var written = new List<(int, long)> { (3, 100L), (3, 200L) };
+        Assert.Throws<ArgumentException>(() =>
+            IncrementalCrossReferenceBuilder.WriteIncrementalXrefAndTrailer(
+                writer, written, baseSize: 4, new PdfIndirectReference(1), prevXrefOffset: 50, documentId: null));
+    }
+
+    [Fact]
     public void IncrementalXref_singleObject_correctSubsectionAndEntry()
     {
         var ms = new MemoryStream();

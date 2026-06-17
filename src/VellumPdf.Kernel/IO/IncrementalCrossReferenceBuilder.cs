@@ -61,6 +61,11 @@ internal static class IncrementalCrossReferenceBuilder
         // recorded offset), but xref subsections must list object numbers in ascending
         // order. Sort defensively so callers may pass objects in any order.
         var sorted = writtenObjects.OrderBy(o => o.ObjectNumber).ToList();
+        for (var i = 1; i < sorted.Count; i++)
+            if (sorted[i].ObjectNumber == sorted[i - 1].ObjectNumber)
+                throw new ArgumentException(
+                    $"Duplicate object number {sorted[i].ObjectNumber} in the incremental revision.",
+                    nameof(writtenObjects));
         var runs = GroupIntoRuns(sorted);
 
         foreach (var (firstObjNum, entries) in runs)

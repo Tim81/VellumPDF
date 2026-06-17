@@ -29,6 +29,24 @@ public sealed class PdfObjectParserTests
         Assert.False(b.Value);
     }
 
+    // ── Hostile input: recursion bomb must throw, not stack-overflow ──────────
+
+    [Fact]
+    public void DeeplyNestedArray_throws_instead_of_crashing()
+    {
+        var ex = Assert.Throws<InvalidDataException>(
+            () => Parser(new string('[', 100_000)).ParseObject());
+        Assert.Contains("nesting", ex.Message);
+    }
+
+    [Fact]
+    public void DeeplyNestedDictionary_throws_instead_of_crashing()
+    {
+        var deep = string.Concat(System.Linq.Enumerable.Repeat("<</a ", 100_000));
+        var ex = Assert.Throws<InvalidDataException>(() => Parser(deep).ParseObject());
+        Assert.Contains("nesting", ex.Message);
+    }
+
     [Fact]
     public void TrueReturnsSingleton()
     {

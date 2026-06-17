@@ -96,7 +96,10 @@ public sealed class HttpRevocationClient : IRevocationClient
             httpReq.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/ocsp-response"));
 
             byte[] responseBytes = Send(httpReq);
-            if (responseBytes.Length == 0)
+            // Embed only a structurally valid, successful OCSPResponse — never an error
+            // envelope (tryLater/unauthorized/…) or an HTML error page that happens to
+            // start with a SEQUENCE tag.
+            if (responseBytes.Length == 0 || !IsSuccessfulOcspResponse(responseBytes))
                 return null;
 
             return responseBytes;
@@ -206,9 +209,9 @@ public sealed class HttpRevocationClient : IRevocationClient
                 using var httpReq = new HttpRequestMessage(HttpMethod.Get, cdp);
                 byte[] body = Send(httpReq);
 
-                // Many CRLs are served as DER. Accept only a body that begins with a
-                // SEQUENCE tag (0x30); skip anything else (e.g. PEM) for the MVP.
-                if (body.Length > 0 && body[0] == 0x30)
+                // Accept only a body that parses as a DER CertificateList; skip anything
+                // else (PEM, an HTML error page, or a misrouted OCSP response).
+                if (IsCertificateList(body))
                     return body;
             }
             catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException or InvalidOperationException)
@@ -299,6 +302,61 @@ public sealed class HttpRevocationClient : IRevocationClient
                     fullName.ReadEncodedValue();
                 }
             }
+        }
+    }
+
+    // ── Response validation ──────────────────────────────────────────────────────
+
+    // OCSPResponseStatus ::= ENUMERATED { successful(0), malformedRequest(1),
+    //   internalError(2), tryLater(3), sigRequired(5), unauthorized(6) }
+    private enum OcspResponseStatus
+    {
+        Successful = 0,
+        MalformedRequest = 1,
+        InternalError = 2,
+        TryLater = 3,
+        SigRequired = 5,
+        Unauthorized = 6,
+    }
+
+    /// <summary>
+    /// Returns true when <paramref name="der"/> is a well-formed DER <c>OCSPResponse</c> whose
+    /// <c>responseStatus</c> is <c>successful</c>. Does not verify the response signature or
+    /// per-certificate status (that is the validator's responsibility).
+    /// </summary>
+    private static bool IsSuccessfulOcspResponse(byte[] der)
+    {
+        try
+        {
+            var reader = new AsnReader(der, AsnEncodingRules.DER);
+            var response = reader.ReadSequence();
+            return response.ReadEnumeratedValue<OcspResponseStatus>() == OcspResponseStatus.Successful;
+        }
+        catch (AsnContentException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Returns true when <paramref name="der"/> parses as a DER <c>CertificateList</c>
+    /// (a SEQUENCE whose first element is the <c>tbsCertList</c> SEQUENCE). This rejects an
+    /// OCSP response or other DER object that is not a CRL.
+    /// </summary>
+    private static bool IsCertificateList(byte[] der)
+    {
+        if (der.Length == 0)
+            return false;
+        try
+        {
+            var reader = new AsnReader(der, AsnEncodingRules.DER);
+            var certList = reader.ReadSequence();
+            certList.ReadSequence(); // tbsCertList — must be a SEQUENCE
+            return true;
+        }
+        catch (AsnContentException)
+        {
+            return false;
         }
     }
 

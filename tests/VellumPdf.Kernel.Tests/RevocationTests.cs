@@ -21,8 +21,10 @@ public sealed class RevocationTests
     private const string CrlDistributionPointsOid = "2.5.29.31";
 
     // Canned response bodies returned by the fake handler.
+    // OCSPResponse ::= SEQUENCE { responseStatus ENUMERATED successful(0) }
     private static readonly byte[] s_cannedOcsp = [0x30, 0x03, 0x0A, 0x01, 0x00];
-    private static readonly byte[] s_cannedCrl = [0x30, 0x04, 0x02, 0x01, 0x2A];
+    // CertificateList ::= SEQUENCE { tbsCertList SEQUENCE {} } (minimal, structurally valid)
+    private static readonly byte[] s_cannedCrl = [0x30, 0x02, 0x30, 0x00];
 
     // ── Certificate helpers ──────────────────────────────────────────────────────
 
@@ -132,6 +134,38 @@ public sealed class RevocationTests
 
         Assert.NotNull(data.Ocsp);
         Assert.Equal(s_cannedOcsp, data.Ocsp!.Value.ToArray());
+    }
+
+    [Fact]
+    public void Ocsp_error_status_response_is_rejected()
+    {
+        using var issuer = CreateCertificate("CN=VellumPdf Test Issuer");
+        using var leaf = CreateCertWithAia("http://ocsp.example.invalid/respond");
+
+        // OCSPResponse with responseStatus tryLater(3) — must not be embedded.
+        var handler = new FakeHandler { OcspResponse = [0x30, 0x03, 0x0A, 0x01, 0x03] };
+        using var http = new HttpClient(handler);
+        var client = new HttpRevocationClient(http, TimeSpan.FromSeconds(5));
+
+        var data = client.GetRevocationData(leaf, issuer);
+
+        Assert.Null(data.Ocsp);
+    }
+
+    [Fact]
+    public void Non_certificatelist_crl_body_is_rejected()
+    {
+        using var issuer = CreateCertificate("CN=VellumPdf Test Issuer");
+        using var leaf = CreateCertWithCdp("http://crl.example.invalid/list.crl");
+
+        // SEQUENCE { INTEGER } is not a CertificateList (tbsCertList must be a SEQUENCE).
+        var handler = new FakeHandler { CrlResponse = [0x30, 0x04, 0x02, 0x01, 0x2A] };
+        using var http = new HttpClient(handler);
+        var client = new HttpRevocationClient(http, TimeSpan.FromSeconds(5));
+
+        var data = client.GetRevocationData(leaf, issuer);
+
+        Assert.Null(data.Crl);
     }
 
     [Fact]

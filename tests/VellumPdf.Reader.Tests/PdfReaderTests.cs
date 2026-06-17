@@ -126,6 +126,38 @@ public sealed class PdfReaderTests
         return ms.ToArray();
     }
 
+    /// <summary>
+    /// Builds a minimal PDF whose AcroForm field tree has a cycle (field 4 -&gt; field 5 -&gt; field 4),
+    /// neither marked /FT /Sig, to exercise the cycle guard in signature collection.
+    /// </summary>
+    private static byte[] BuildCyclicKidsPdf()
+    {
+        var ms = new MemoryStream();
+        void Write(string s) => ms.Write(Encoding.ASCII.GetBytes(s));
+
+        Write("%PDF-1.4\n");
+        var o1 = (int)ms.Position;
+        Write("1 0 obj\n<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [4 0 R] /SigFlags 3 >> >>\nendobj\n");
+        var o2 = (int)ms.Position;
+        Write("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
+        var o3 = (int)ms.Position;
+        Write("3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>\nendobj\n");
+        var o4 = (int)ms.Position;
+        Write("4 0 obj\n<< /T (A) /Kids [5 0 R] >>\nendobj\n");
+        var o5 = (int)ms.Position;
+        Write("5 0 obj\n<< /T (B) /Kids [4 0 R] >>\nendobj\n");
+
+        var xref = (int)ms.Position;
+        Write("xref\n0 6\n");
+        Write($"{0:D10} 65535 f \n");
+        foreach (var off in new[] { o1, o2, o3, o4, o5 })
+            Write($"{off:D10} 00000 n \n");
+        Write("trailer\n<< /Size 6 /Root 1 0 R >>\n");
+        Write($"startxref\n{xref}\n%%EOF\n");
+
+        return ms.ToArray();
+    }
+
     // ── Tests ─────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -239,6 +271,16 @@ public sealed class PdfReaderTests
         var bytes = BuildXrefStreamStylePdf();
 
         Assert.Throws<UnsupportedPdfFeatureException>(() => PdfReader.Open(bytes));
+    }
+
+    [Fact]
+    public void Cyclic_kids_field_tree_terminates_without_crashing()
+    {
+        var bytes = BuildCyclicKidsPdf();
+        using var reader = PdfReader.Open(bytes);
+
+        // Must return (not infinite-loop / stack-overflow) and find no signatures.
+        Assert.Empty(reader.Signatures);
     }
 
     [Fact]
