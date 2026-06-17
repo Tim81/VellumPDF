@@ -4,7 +4,7 @@ All notable changes to VellumPdf will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [1.6.0] - 2026-06-16
+## [1.6.0] - 2026-06-17
 
 ### Added
 
