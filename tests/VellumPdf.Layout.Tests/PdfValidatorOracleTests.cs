@@ -786,6 +786,70 @@ public sealed class PdfValidatorOracleTests : IDisposable
         doc.Sign(fs, settings);
     }
 
+    // Issue #106: a PAdES B-LT and B-LTA signed PDF/A-2b document carries DSS and DocTimeStamp
+    // incremental revisions. These gates establish whether those LTV revisions preserve PDF/A-2b
+    // conformance per veraPDF, using an offline test TSA and canned revocation evidence.
+    private static readonly byte[] s_cannedOcsp = [0x30, 0x03, 0x0A, 0x01, 0x00];
+    private static readonly byte[] s_cannedCrl = [0x30, 0x02, 0x30, 0x00];
+
+    private sealed class CannedRevocationClient : IRevocationClient
+    {
+        public RevocationData GetRevocationData(X509Certificate2 certificate, X509Certificate2 issuer)
+            => new() { Ocsp = s_cannedOcsp, Crl = s_cannedCrl };
+    }
+
+    [Fact]
+    public void Signed_PdfA2b_BLT_veraPdf_reportsCompliant()
+    {
+        var fontPath = FindPlatformFont();
+        if (fontPath is null) { GateOnCi("platform font for signed PDF/A LTV oracle"); return; }
+
+        var pdfPath = Path.Combine(_tempDir, "signed_pdfa2b_blt_verapdf.pdf");
+        GenerateSignedLtvPdfA2bDoc(pdfPath, fontPath, PadesLevel.B_LT);
+        AssertVeraPdfCompliant(pdfPath, "2b");
+    }
+
+    [Fact]
+    public void Signed_PdfA2b_BLTA_veraPdf_reportsCompliant()
+    {
+        var fontPath = FindPlatformFont();
+        if (fontPath is null) { GateOnCi("platform font for signed PDF/A LTV oracle"); return; }
+
+        var pdfPath = Path.Combine(_tempDir, "signed_pdfa2b_blta_verapdf.pdf");
+        GenerateSignedLtvPdfA2bDoc(pdfPath, fontPath, PadesLevel.B_LTA);
+        AssertVeraPdfCompliant(pdfPath, "2b");
+    }
+
+    private static void GenerateSignedLtvPdfA2bDoc(string path, string fontPath, PadesLevel level)
+    {
+        using var rsa = RSA.Create(2048);
+        var req = new CertificateRequest(
+            "CN=VellumPdf Signed PDF/A LTV Oracle", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        using var cert = req.CreateSelfSigned(
+            DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddYears(1));
+
+        using var doc = new Document();
+        doc.Conformance = PdfConformance.PdfA2b;
+        doc.Info.Title = "VellumPdf veraPDF Oracle — Signed PDF/A-2b LTV";
+        doc.Info.Producer = "VellumPdf";
+
+        var style = EmbeddedStyle(doc, fontPath);
+        doc.Add(new Paragraph($"Signed PDF/A-2b {level} body with an embedded font.", style));
+
+        var settings = new PdfSignatureSettings
+        {
+            Certificate = cert,
+            SignerName = "VellumPdf Oracle",
+            Reason = "Issue #106 LTV PDF/A",
+            Level = level,
+            TimestampClient = new VellumPdf.Kernel.Tests.TestTimestampClient(DateTimeOffset.UtcNow),
+            RevocationClient = new CannedRevocationClient(),
+        };
+
+        using var fs = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None);
+        doc.Sign(fs, settings);
+    }
+
     // PDF/A-2a (conformance level A) requires full accessible tagging — catalog /Lang,
     // a role map, and validated marked-content↔structure linkage — all now implemented
     // (#37, #38). This strict veraPDF 2a gate validates a fully-tagged document (heading,
