@@ -2,15 +2,13 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\VellumPdf.Kernel\VellumPdf.Kernel.csproj" />
-    <ProjectReference Include="..\..\src\VellumPdf.Layout\VellumPdf.Layout.csproj" />
     <ProjectReference Include="..\..\src\VellumPdf.Reader\VellumPdf.Reader.csproj" />
     <ProjectReference Include="..\..\src\VellumPdf.Signing\VellumPdf.Signing.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="coverlet.collector" />
-    <PackageReference Include="CsCheck" />
-    <PackageReference Include="Verify.XunitV3" />
+    <PackageReference Include="System.Security.Cryptography.Pkcs" />
   </ItemGroup>
 
 </Project>

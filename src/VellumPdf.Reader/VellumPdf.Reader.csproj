@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\VellumPdf.Kernel\VellumPdf.Kernel.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <RootNamespace>VellumPdf.Reader</RootNamespace>
+    <AssemblyName>VellumPdf.Reader</AssemblyName>
+    <PackageId>VellumPdf.Reader</PackageId>
+    <Description>PDF reader for VellumPdf: opens an existing signed PDF (classic cross-reference tables, unencrypted) and exposes its catalog and signatures, on a bounds-checked lexer and object parser (ISO 32000-2 §7.2–7.5). BCL-only; zero runtime dependencies. The foundation for PAdES long-term validation and a growing general reader; cross-reference streams, object streams, and encryption are not supported yet.</Description>
+    <PackageTags>pdf;reader;parser;aot</PackageTags>
+  </PropertyGroup>
+
+</Project>

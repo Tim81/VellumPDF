@@ -90,7 +90,8 @@ public sealed class PdfPage
 
     internal PdfDictionary BuildDictionary(
         PdfIndirectReference parentRef,
-        PdfIndirectReference contentRef)
+        PdfIndirectReference contentRef,
+        bool structureTabOrder = false)
     {
         var procSet = new PdfArray([PdfName.PDF, PdfName.Text, PdfName.ImageB, PdfName.ImageC, PdfName.ImageI]);
         var resources = new PdfDictionary()
@@ -118,7 +119,14 @@ public sealed class PdfPage
             pageDict.Set(PdfName.Rotate, Rotate);
 
         if (_hasAnnots)
+        {
             pageDict.Set(PdfName.Annots, _annots);
+
+            // PDF/UA-1 (ISO 14289-1 §7.18.3): a page with annotations must declare a tab
+            // order; /Tabs /S means "follow the structure tree" — the accessible choice.
+            if (structureTabOrder)
+                pageDict.Set(new PdfName("Tabs"), new PdfName("S"));
+        }
 
         if (StructParentsKey >= 0)
             pageDict.Set(new PdfName("StructParents"), new PdfInteger(StructParentsKey));

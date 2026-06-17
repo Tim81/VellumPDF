@@ -59,120 +59,22 @@ internal static class PdfCmsSigner
         // placeholder and the opening '<' of the /Contents hex string are the fixed
         // sequence "]\n/Contents " — no caller-controlled data intervenes, so adversarial
         // metadata (Reason/Location/… containing "/Contents <") cannot match first.
-        var brMatchCount = CountOf(unsignedBytes, PdfSignatureHelper.ByteRangePlaceholder);
-        if (brMatchCount == 0)
-            throw new InvalidOperationException(
-                "PDF byte stream does not contain the /ByteRange placeholder. Internal error in signature field construction.");
-        if (brMatchCount > 1)
-            throw new InvalidOperationException(
-                $"PDF byte stream contains {brMatchCount} occurrences of the /ByteRange placeholder; expected exactly 1. Internal error.");
+        var posLt = SignaturePlaceholderPatcher.LocateContentsToken(unsignedBytes, effectiveReserve, out var hexLen);
 
-        var posBrEnd = IndexOf(unsignedBytes, PdfSignatureHelper.ByteRangePlaceholder)
-                       + PdfSignatureHelper.ByteRangePlaceholder.Length;
-
-        // posLt = index of the first '<' at or after the end of the ByteRange placeholder.
-        var posLt = IndexOfByte(unsignedBytes, (byte)'<', posBrEnd);
-        if (posLt < 0)
-            throw new InvalidOperationException(
-                "No '<' found after /ByteRange placeholder — /Contents hex string missing. Internal error.");
-        // contentsTokenLen = '<' + (effectiveReserve * 2 hex chars) + '>'
-        var hexLen = effectiveReserve * 2;
-        var contentsTokenLen = 1 + hexLen + 1; // '<' + hex + '>'
-
-        // Sanity: verify the token ends with '>'
-        if (posLt + contentsTokenLen > unsignedBytes.Length || unsignedBytes[posLt + contentsTokenLen - 1] != (byte)'>')
-            throw new InvalidOperationException("Contents placeholder has unexpected format (missing closing '>'). Internal error.");
-
-        // ── Step 2: compute real ByteRange ────────────────────────────────────
-        var fileLen = unsignedBytes.Length;
-        long br0 = 0;
-        long br1 = posLt;                         // bytes[0..posLt)
-        long br2 = posLt + contentsTokenLen;       // bytes after '>'
-        long br3 = fileLen - br2;                  // remaining length
-
-        // ── Step 3: patch /ByteRange in-place ─────────────────────────────────
-        PatchByteRange(unsignedBytes, br0, br1, br2, br3);
+        // ── Steps 2–3: compute and patch /ByteRange in-place ──────────────────
+        var (br0, br1, br2, br3) = SignaturePlaceholderPatcher.ComputeAndPatchByteRange(unsignedBytes, posLt, hexLen);
 
         // ── Step 4: build signed content (two segments concatenated) ─────────
-        var signedContent = new byte[br1 + br3];
-        Buffer.BlockCopy(unsignedBytes, (int)br0, signedContent, 0, (int)br1);
-        Buffer.BlockCopy(unsignedBytes, (int)br2, signedContent, (int)br1, (int)br3);
+        var signedContent = SignaturePlaceholderPatcher.BuildSignedContent(unsignedBytes, br0, br1, br2, br3);
 
         // ── Step 5: compute detached CMS signature ────────────────────────────
         var sig = ComputeCmsSignature(signedContent, settings);
 
         // ── Step 6: validate size and hex-encode into the /Contents placeholder ─
-        if (sig.Length > effectiveReserve)
-            throw new InvalidOperationException(
-                $"Computed CMS signature ({sig.Length} bytes) exceeds the reserved /Contents space " +
-                $"({effectiveReserve} bytes). " +
-                "Increase PdfSignatureSettings.EstimatedSignatureSizeBytes.");
-
-        PatchContents(unsignedBytes, posLt, hexLen, sig);
+        SignaturePlaceholderPatcher.PatchContents(unsignedBytes, posLt, hexLen, sig, "CMS signature");
 
         // ── Step 7: write to output ────────────────────────────────────────────
         output.Write(unsignedBytes, 0, unsignedBytes.Length);
-    }
-
-    // ── Byte-range placeholder patching ───────────────────────────────────────
-
-    /// <summary>
-    /// Locates the /ByteRange placeholder in <paramref name="bytes"/> and overwrites
-    /// its four decimal fields with the real values, keeping total byte length unchanged.
-    /// </summary>
-    private static void PatchByteRange(byte[] bytes, long v0, long v1, long v2, long v3)
-    {
-        var pos = IndexOf(bytes, PdfSignatureHelper.ByteRangePlaceholder);
-        if (pos < 0)
-            throw new InvalidOperationException("ByteRange placeholder not found in PDF bytes. Internal error.");
-
-        // pos points to '['; skip it
-        pos++; // now at first digit field
-        pos = WriteFixedDecimal(bytes, pos, v0);
-        pos++; // skip space
-        pos = WriteFixedDecimal(bytes, pos, v1);
-        pos++; // skip space
-        pos = WriteFixedDecimal(bytes, pos, v2);
-        pos++; // skip space
-        WriteFixedDecimal(bytes, pos, v3);
-    }
-
-    /// <summary>
-    /// Writes a decimal number left-padded with spaces into <paramref name="bytes"/> at
-    /// <paramref name="offset"/>, occupying exactly <see cref="PdfSignatureHelper.ByteRangeFieldWidth"/> bytes.
-    /// Returns the offset immediately after the written field.
-    /// </summary>
-    private static int WriteFixedDecimal(byte[] bytes, int offset, long value)
-    {
-        Span<byte> buf = stackalloc byte[PdfSignatureHelper.ByteRangeFieldWidth];
-        buf.Fill((byte)' ');
-        var v = value;
-        for (var i = PdfSignatureHelper.ByteRangeFieldWidth - 1; i >= 0; i--)
-        {
-            buf[i] = (byte)('0' + v % 10);
-            v /= 10;
-            if (v == 0) break;
-        }
-        buf.CopyTo(bytes.AsSpan(offset, PdfSignatureHelper.ByteRangeFieldWidth));
-        return offset + PdfSignatureHelper.ByteRangeFieldWidth;
-    }
-
-    // ── /Contents patching ────────────────────────────────────────────────────
-
-    /// <summary>
-    /// Overwrites the hex-encoded contents of the /Contents placeholder (between the
-    /// angle brackets) with the hex encoding of <paramref name="sig"/>, zero-padded to
-    /// <paramref name="hexLen"/> characters.
-    /// </summary>
-    private static void PatchContents(byte[] bytes, int posLt, int hexLen, byte[] sig)
-    {
-        var dst = bytes.AsSpan(posLt + 1, hexLen);
-        var hexBytes = Convert.ToHexString(sig);
-        var pos = 0;
-        foreach (var c in hexBytes)
-            dst[pos++] = (byte)c;
-        while (pos < hexLen)
-            dst[pos++] = (byte)'0';
     }
 
     // ── CMS signature computation ─────────────────────────────────────────────
@@ -216,49 +118,4 @@ internal static class PdfCmsSigner
         return cms.Encode();
     }
 
-    // ── Byte-search helpers ────────────────────────────────────────────────────
-
-    /// <summary>Returns the index of the first occurrence of <paramref name="needle"/> in
-    /// <paramref name="haystack"/> at or after <paramref name="start"/>, or -1 if not found.</summary>
-    private static int IndexOfByte(byte[] haystack, byte needle, int start)
-    {
-        for (var i = start; i < haystack.Length; i++)
-        {
-            if (haystack[i] == needle)
-                return i;
-        }
-        return -1;
-    }
-
-    /// <summary>Returns the index of the first occurrence of <paramref name="needle"/> in
-    /// <paramref name="haystack"/>, or -1 if not found.</summary>
-    private static int IndexOf(byte[] haystack, byte[] needle)
-    {
-        var span = haystack.AsSpan();
-        var needleSpan = needle.AsSpan();
-        for (var i = 0; i <= haystack.Length - needle.Length; i++)
-        {
-            if (span[i..].StartsWith(needleSpan))
-                return i;
-        }
-        return -1;
-    }
-
-    /// <summary>Returns the number of non-overlapping occurrences of <paramref name="needle"/>
-    /// in <paramref name="haystack"/>.</summary>
-    private static int CountOf(byte[] haystack, byte[] needle)
-    {
-        var count = 0;
-        var span = haystack.AsSpan();
-        var needleSpan = needle.AsSpan();
-        for (var i = 0; i <= haystack.Length - needle.Length; i++)
-        {
-            if (span[i..].StartsWith(needleSpan))
-            {
-                count++;
-                i += needle.Length - 1; // skip past match (loop will increment i by 1 more)
-            }
-        }
-        return count;
-    }
 }

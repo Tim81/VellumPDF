@@ -4,6 +4,7 @@
     <PackageReference Include="System.Security.Cryptography.Pkcs" />
     <ProjectReference Include="..\VellumPdf.Kernel\VellumPdf.Kernel.csproj" />
     <ProjectReference Include="..\VellumPdf.Layout\VellumPdf.Layout.csproj" />
+    <ProjectReference Include="..\VellumPdf.Reader\VellumPdf.Reader.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

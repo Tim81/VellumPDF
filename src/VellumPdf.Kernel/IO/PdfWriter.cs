@@ -32,11 +32,20 @@ public sealed class PdfWriter
     public long Position => _position;
 
     /// <summary>Creates a writer over the given writable <paramref name="stream"/>.</summary>
-    public PdfWriter(Stream stream)
+    public PdfWriter(Stream stream) : this(stream, 0) { }
+
+    /// <summary>
+    /// Creates a writer over the given writable <paramref name="stream"/>, with the position counter
+    /// pre-seeded to <paramref name="initialPosition"/>. Use this when appending to an existing PDF so
+    /// that <see cref="Position"/> reports absolute file offsets for the cross-reference table.
+    /// </summary>
+    public PdfWriter(Stream stream, long initialPosition)
     {
         ArgumentNullException.ThrowIfNull(stream);
         if (!stream.CanWrite) throw new ArgumentException("Stream must be writable.", nameof(stream));
+        if (initialPosition < 0) throw new ArgumentOutOfRangeException(nameof(initialPosition), "Initial position must be non-negative.");
         _stream = stream;
+        _position = initialPosition;
     }
 
     /// <summary>Writes a single byte and advances the tracked position.</summary>
