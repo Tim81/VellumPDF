@@ -7,6 +7,13 @@ namespace VellumPdf.Signing;
 /// Selects the PAdES conformance level to produce when signing.
 /// Each level includes all lower levels.
 /// </summary>
+/// <remarks>
+/// The <see cref="B_LT"/> and <see cref="B_LTA"/> levels write their DSS and archive-timestamp
+/// data as incremental-update revisions. When signing a PDF/A document, those LTV revisions are
+/// not validated against the PDF/A profile: PDF/A-2 does not define a <c>/DSS</c>, so the result
+/// is a valid PAdES LTV signature whose LTV revisions are not guaranteed to remain PDF/A-2
+/// conformant. The signature and its document <c>/ID</c> are preserved correctly.
+/// </remarks>
 public enum PadesLevel
 {
     /// <summary>

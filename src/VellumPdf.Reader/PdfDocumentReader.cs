@@ -79,6 +79,10 @@ public sealed class PdfDocumentReader : IDisposable
         if (result.ObjectNumber != objectNumber)
             return null;
 
+        // For a stream object this returns only its dictionary — the body is NOT included.
+        // Callers that re-emit a resolved object (the catalog/page clone paths) only ever
+        // resolve dictionaries/arrays, so no stream body is lost; a future caller that
+        // re-emits a stream resolved this way would drop its body.
         PdfObject value = result.IsStream
             ? result.Stream!.Dictionary
             : result.Value ?? PdfNull.Instance;
