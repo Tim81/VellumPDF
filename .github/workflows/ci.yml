@@ -75,20 +75,30 @@ jobs:
 
           THRESHOLD = 68
 
-          total_covered = 0
-          total_valid = 0
+          # Each test project emits one cobertura report instrumenting the same shared
+          # assemblies, so a source line appears in several reports. Merge per (file, line):
+          # count each line once, covered if any report covered it. Summing the per-report
+          # totals would multiply the shared surface by the number of test projects.
+          merged = {}
           for f in sorted(files):
-              tree = ET.parse(f)
-              root = tree.getroot()
-              lc = int(root.get("lines-covered", 0))
-              lv = int(root.get("lines-valid", 0))
-              print(f"  {os.path.relpath(f, cov_dir)}: covered={lc}, valid={lv}, line-rate={lc/lv if lv else 0:.4f}")
-              total_covered += lc
-              total_valid += lv
+              root = ET.parse(f).getroot()
+              file_lines = {}
+              for cls in root.iter("class"):
+                  fn = cls.get("filename", "")
+                  for ln in cls.iter("line"):
+                      key = (fn, ln.get("number"))
+                      file_lines[key] = file_lines.get(key, False) or int(ln.get("hits", 0)) > 0
+              fc = sum(1 for v in file_lines.values() if v)
+              fv = len(file_lines)
+              print(f"  {os.path.relpath(f, cov_dir)}: covered={fc}, valid={fv}, line-rate={fc/fv if fv else 0:.4f}")
+              for key, v in file_lines.items():
+                  merged[key] = merged.get(key, False) or v
 
+          total_valid = len(merged)
+          total_covered = sum(1 for v in merged.values() if v)
           combined = total_covered / total_valid if total_valid else 0
           pct = combined * 100
-          print(f"Combined line coverage: {pct:.1f}% (threshold: {THRESHOLD}%)")
+          print(f"Combined (merged) line coverage: {pct:.1f}% over {total_valid} unique lines (threshold: {THRESHOLD}%)")
           if pct < THRESHOLD:
               print(f"::error::Line coverage {pct:.1f}% is below the required threshold of {THRESHOLD}%.")
               sys.exit(1)
