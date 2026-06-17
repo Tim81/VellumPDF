@@ -248,6 +248,38 @@ public sealed class PadesLevelTests : IDisposable
         verify.CheckSignature(verifySignatureOnly: true);
     }
 
+    [Fact]
+    public void Sign_BLTA_final_dss_covers_both_signature_and_archive_timestamp()
+    {
+        using var cert = CreateTestCertificate();
+        var settings = new PdfSignatureSettings
+        {
+            Certificate = cert,
+            Level = PadesLevel.B_LTA,
+            TimestampClient = new TestTimestampClient(s_pinnedTime),
+            RevocationClient = new CannedRevocationClient(),
+        };
+
+        var signedBytes = SignOnePageDoc(settings);
+        using var reader = PdfReader.Open(signedBytes);
+
+        var dssRef = (PdfIndirectReference)reader.Catalog.Get(new PdfName("DSS"))!;
+        var dss = (PdfDictionary)reader.Resolve(dssRef.ObjectNumber)!;
+        var vri = (PdfDictionary)dss.Get(new PdfName("VRI"))!;
+
+        // ETSI B-LTA: the latest (cumulative) DSS must carry a /VRI entry for BOTH the
+        // original signature AND the archive DocTimeStamp token, so the archive timestamp
+        // is itself long-term verifiable.
+        var docTs = reader.Signatures.First(s => s.SubFilter?.Value == "ETSI.RFC3161");
+        var origSig = reader.Signatures.First(s => s.SubFilter?.Value != "ETSI.RFC3161");
+        var docTsKey = Convert.ToHexString(SHA1.HashData(docTs.Contents.ToArray()));
+        var origKey = Convert.ToHexString(SHA1.HashData(origSig.Contents.ToArray()));
+
+        Assert.NotNull(vri.Get(new PdfName(docTsKey)));
+        Assert.NotNull(vri.Get(new PdfName(origKey)));
+        Assert.NotNull(dss.Get(new PdfName("Certs")));
+    }
+
     // ── Validation errors ────────────────────────────────────────────────────────
 
     [Fact]

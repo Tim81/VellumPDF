@@ -14,8 +14,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   and timestamp-authority certificate chains, fetches OCSP/CRL revocation data through
   `PdfSignatureSettings.RevocationClient`, and writes a `/DSS` (Document Security Store) with
   per-signature `/VRI` as an incremental revision. `B_LTA` adds a `/DocTimeStamp`
-  (`/SubFilter /ETSI.RFC3161`) over that revision. The original signature is left byte-for-byte
-  intact, so it stays valid. (#49)
+  (`/SubFilter /ETSI.RFC3161`) over that revision, then a final cumulative DSS so the archive
+  timestamp's own certificate chain and revocation are embedded too. The original signature is
+  left byte-for-byte intact, so it stays valid. (#49)
 - **`IRevocationClient` and `HttpRevocationClient`.** A pluggable revocation surface mirroring
   the timestamp client. The default HTTP client reads the OCSP responder (AIA) and CRL
   distribution points from a certificate and fetches the evidence over HTTP; the abstraction

@@ -64,8 +64,10 @@ internal static class DssBuilder
             var sha1Hash = SHA1.HashData(contentsDer);
             var vriKey = Convert.ToHexString(sha1Hash);
 
-            // Decode the outer CMS (detached signature)
-            var outerCms = new SignedCms(new ContentInfo([]), detached: true);
+            // Decode the signature CMS. A parameterless SignedCms handles both a detached
+            // signature (the original /Contents) and an embedded-content CMS (an archive
+            // DocTimeStamp's RFC-3161 token, whose certs we also want in the DSS).
+            var outerCms = new SignedCms();
             outerCms.Decode(contentsDer);
 
             // Gather signer certificates (chain embedded via WholeChain)

@@ -164,11 +164,21 @@ public static class SigningExtensions
             PdfCmsSigner.Sign(unsignedBytes, settings, ms);
             var signed = ms.ToArray();
 
-            // B-LT and B-LTA both require a DSS revision with revocation evidence.
+            // B-LT and B-LTA both require a DSS revision with revocation evidence for the
+            // signature and its timestamp. The archive timestamp (B-LTA) must cover this DSS,
+            // so it is added afterwards.
             signed = DssBuilder.AddLongTermValidation(signed, settings.RevocationClient!);
 
             if (settings.Level == PadesLevel.B_LTA)
+            {
                 signed = ArchiveTimestampBuilder.AddArchiveTimestamp(signed, settings.TimestampClient!);
+
+                // ETSI B-LTA: add a final cumulative DSS so the archive timestamp's own TSA
+                // chain + revocation (and a /VRI for the DocTimeStamp token) are embedded.
+                // DssBuilder enumerates every signature field, so the just-added DocTimeStamp
+                // is now included alongside the original signature.
+                signed = DssBuilder.AddLongTermValidation(signed, settings.RevocationClient!);
+            }
 
             output.Write(signed, 0, signed.Length);
         }
