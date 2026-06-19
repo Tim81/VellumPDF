@@ -1083,6 +1083,50 @@ public sealed class PdfPreflightTests
     }
 
     [Fact]
+    public void PreflightResult_Assertions_AreImmutable()
+    {
+        var result = PdfPreflight.Validate(BuildCatalogMissingTypePdf(), PdfConformance.PdfA2B);
+
+        Assert.NotEmpty(result.Assertions);
+        Assert.IsNotType<List<PreflightAssertion>>(result.Assertions);
+        Assert.Throws<NotSupportedException>(
+            () => ((IList<PreflightAssertion>)result.Assertions).Add(result.Assertions[0]));
+    }
+
+    [Fact]
+    public void Validate_EncryptedPdf_PropagatesUnsupported()
+    {
+        // An unsupported reader feature (encryption) must surface as UnsupportedPdfFeatureException,
+        // not be swallowed into a conformance finding.
+        var bytes = BuildEncryptedTrailerPdf();
+
+        Assert.Throws<UnsupportedPdfFeatureException>(
+            () => PdfPreflight.Validate(bytes, PdfConformance.PdfA2B));
+    }
+
+    private static byte[] BuildEncryptedTrailerPdf()
+    {
+        var ms = new MemoryStream();
+        void Write(string s) => ms.Write(Encoding.ASCII.GetBytes(s));
+
+        Write("%PDF-1.7\n");
+        var o1 = (int)ms.Position;
+        Write("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+        var o2 = (int)ms.Position;
+        Write("2 0 obj\n<< /Type /Pages /Kids [] /Count 0 >>\nendobj\n");
+
+        var xref = (int)ms.Position;
+        Write("xref\n0 3\n");
+        Write($"{0:D10} 65535 f \n");
+        Write($"{o1:D10} 00000 n \n");
+        Write($"{o2:D10} 00000 n \n");
+        Write("trailer\n<< /Size 3 /Root 1 0 R /Encrypt << /Filter /Standard /V 1 /R 2 >> >>\n");
+        Write($"startxref\n{xref}\n%%EOF\n");
+
+        return ms.ToArray();
+    }
+
+    [Fact]
     public void Assertion_ToString_IncludesRuleAndSeverity()
     {
         var result = PdfPreflight.Validate(BuildCatalogMissingTypePdf(), PdfConformance.PdfA2B);

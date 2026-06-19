@@ -37,7 +37,13 @@ public static class PdfPreflight
     }
 
     /// <summary>Validates an already-opened <paramref name="reader"/> against <paramref name="conformance"/>.</summary>
-    /// <remarks>The caller retains ownership of <paramref name="reader"/>; it is not disposed here.</remarks>
+    /// <remarks>
+    /// The caller retains ownership of <paramref name="reader"/>; it is not disposed here.
+    /// <para><see cref="PdfDocumentReader"/> is not thread-safe (it populates an unsynchronized
+    /// object cache), so a single reader must not be validated from multiple threads concurrently.
+    /// The <see cref="Validate(byte[], PdfConformance)"/> and <see cref="Validate(System.IO.Stream, PdfConformance)"/>
+    /// overloads open a fresh reader per call and are safe to invoke concurrently.</para>
+    /// </remarks>
     /// <exception cref="System.ArgumentNullException"><paramref name="reader"/> is null.</exception>
     /// <exception cref="System.NotSupportedException">No rule profile is registered for <paramref name="conformance"/> yet.</exception>
     public static PreflightResult Validate(PdfDocumentReader reader, PdfConformance conformance)
@@ -60,10 +66,14 @@ public static class PdfPreflight
             {
                 rule.Evaluate(context);
             }
-            catch (Exception ex) when (ex is not OutOfMemoryException)
+            catch (Exception ex)
+                when (ex is not OutOfMemoryException and not UnsupportedPdfFeatureException)
             {
                 // A single rule throwing on a malformed-but-parseable document must not abort the
                 // whole report. Record it as an error finding and continue with the other rules.
+                // UnsupportedPdfFeatureException is excluded: it means "this document uses a reader
+                // feature we cannot evaluate", which is a distinct signal that should propagate to
+                // the caller rather than be reported as a conformance violation.
                 context.Report(rule.RuleId, rule.Clause, PreflightSeverity.Error,
                     $"Rule evaluation failed: {ex.Message}");
             }
