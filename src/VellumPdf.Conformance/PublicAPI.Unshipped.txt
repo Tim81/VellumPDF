@@ -1,0 +1,25 @@
+#nullable enable
+VellumPdf.Conformance.PdfConformance
+VellumPdf.Conformance.PdfConformance.PdfA2A = 2 -> VellumPdf.Conformance.PdfConformance
+VellumPdf.Conformance.PdfConformance.PdfA2B = 0 -> VellumPdf.Conformance.PdfConformance
+VellumPdf.Conformance.PdfConformance.PdfA2U = 1 -> VellumPdf.Conformance.PdfConformance
+VellumPdf.Conformance.PdfConformance.PdfUA1 = 3 -> VellumPdf.Conformance.PdfConformance
+VellumPdf.Conformance.PdfPreflight
+VellumPdf.Conformance.PreflightAssertion
+VellumPdf.Conformance.PreflightAssertion.Clause.get -> string!
+VellumPdf.Conformance.PreflightAssertion.Message.get -> string!
+VellumPdf.Conformance.PreflightAssertion.ObjectRef.get -> string?
+VellumPdf.Conformance.PreflightAssertion.RuleId.get -> string!
+VellumPdf.Conformance.PreflightAssertion.Severity.get -> VellumPdf.Conformance.PreflightSeverity
+VellumPdf.Conformance.PreflightResult
+VellumPdf.Conformance.PreflightResult.Assertions.get -> System.Collections.Generic.IReadOnlyList<VellumPdf.Conformance.PreflightAssertion!>!
+VellumPdf.Conformance.PreflightResult.Conformance.get -> VellumPdf.Conformance.PdfConformance
+VellumPdf.Conformance.PreflightResult.IsCompliant.get -> bool
+VellumPdf.Conformance.PreflightSeverity
+VellumPdf.Conformance.PreflightSeverity.Error = 0 -> VellumPdf.Conformance.PreflightSeverity
+VellumPdf.Conformance.PreflightSeverity.Info = 2 -> VellumPdf.Conformance.PreflightSeverity
+VellumPdf.Conformance.PreflightSeverity.Warning = 1 -> VellumPdf.Conformance.PreflightSeverity
+override VellumPdf.Conformance.PreflightAssertion.ToString() -> string!
+static VellumPdf.Conformance.PdfPreflight.Validate(byte[]! bytes, VellumPdf.Conformance.PdfConformance conformance) -> VellumPdf.Conformance.PreflightResult!
+static VellumPdf.Conformance.PdfPreflight.Validate(System.IO.Stream! stream, VellumPdf.Conformance.PdfConformance conformance) -> VellumPdf.Conformance.PreflightResult!
+static VellumPdf.Conformance.PdfPreflight.Validate(VellumPdf.Reader.PdfDocumentReader! reader, VellumPdf.Conformance.PdfConformance conformance) -> VellumPdf.Conformance.PreflightResult!
