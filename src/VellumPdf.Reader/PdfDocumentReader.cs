@@ -77,6 +77,28 @@ public sealed class PdfDocumentReader : IDisposable
         return (int)offset;
     }
 
+    // Length-object numbers currently being resolved, to break a stream whose /Length references
+    // itself (directly or in a cycle) — such a reference simply falls back to the endstream scan.
+    private readonly HashSet<int> _resolvingLength = new();
+
+    /// <summary>
+    /// Resolves an indirect stream <c>/Length</c> to its integer value, or null when it cannot be
+    /// resolved (so the parser falls back to the endstream scan). Guards against self-reference.
+    /// </summary>
+    private long? ResolveLength(PdfIndirectReference reference)
+    {
+        if (!_resolvingLength.Add(reference.ObjectNumber))
+            return null;
+        try
+        {
+            return Resolve(reference.ObjectNumber) is PdfInteger length ? length.Value : null;
+        }
+        finally
+        {
+            _resolvingLength.Remove(reference.ObjectNumber);
+        }
+    }
+
     /// <summary>Resolves an indirect reference by object number, returning its dictionary or value.</summary>
     internal PdfObject? Resolve(int objectNumber)
     {
@@ -89,7 +111,7 @@ public sealed class PdfDocumentReader : IDisposable
         PdfObject value;
         if (entry.Kind == XrefEntryKind.Uncompressed)
         {
-            var parser = new PdfObjectParser(Bytes, CheckedOffset(entry.Offset));
+            var parser = new PdfObjectParser(Bytes, CheckedOffset(entry.Offset), ResolveLength);
             var result = parser.ParseIndirectObject();
 
             if (result.ObjectNumber != objectNumber)
@@ -130,7 +152,7 @@ public sealed class PdfDocumentReader : IDisposable
         if (entry.Kind == XrefEntryKind.InObjectStream)
             return null;
 
-        var parser = new PdfObjectParser(Bytes, CheckedOffset(entry.Offset));
+        var parser = new PdfObjectParser(Bytes, CheckedOffset(entry.Offset), ResolveLength);
         var result = parser.ParseIndirectObject();
 
         if (result.ObjectNumber != objectNumber)
@@ -209,7 +231,7 @@ public sealed class PdfDocumentReader : IDisposable
     private (byte[] Body, int First, int N, Dictionary<int, int> OffsetMap) LoadObjectStream(
         int containerObjNum, XrefEntry containerEntry)
     {
-        var parser = new PdfObjectParser(Bytes, CheckedOffset(containerEntry.Offset));
+        var parser = new PdfObjectParser(Bytes, CheckedOffset(containerEntry.Offset), ResolveLength);
         var result = parser.ParseIndirectObject();
 
         if (!result.IsStream)
