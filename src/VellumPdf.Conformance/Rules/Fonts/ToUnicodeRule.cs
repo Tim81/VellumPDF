@@ -20,7 +20,7 @@ namespace VellumPdf.Conformance.Rules.Fonts;
 /// </remarks>
 internal sealed class ToUnicodeRule : IConformanceRule
 {
-    public string RuleId => "ISO19005-2:6.2.11.7-tounicode";
+    public string RuleId => "ISO19005-2:6.2.11.7.2-tounicode";
 
     public string Clause => "ISO 19005-2:2011, 6.2.11.7.2";
 

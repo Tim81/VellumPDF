@@ -340,7 +340,7 @@ public sealed class PdfPreflightTests
 
         Assert.False(result.IsCompliant);
         var assertion = Assert.Single(result.Assertions);
-        Assert.Equal("ISO32000-2:7.7.2-catalog-type", assertion.RuleId);
+        Assert.Equal("ISO32000-1:7.7.2-catalog-type", assertion.RuleId);
         Assert.Equal(PreflightSeverity.Error, assertion.Severity);
         Assert.Contains("/Catalog", assertion.Message);
     }
@@ -370,6 +370,30 @@ public sealed class PdfPreflightTests
     {
         Assert.Throws<ArgumentNullException>(
             () => PdfPreflight.Validate((byte[])null!, PdfConformance.PdfA2B));
+    }
+
+    [Fact]
+    public void Validate_NullStream_Throws()
+    {
+        Assert.Throws<ArgumentNullException>(
+            () => PdfPreflight.Validate((Stream)null!, PdfConformance.PdfA2B));
+    }
+
+    [Fact]
+    public void Validate_NullReader_Throws()
+    {
+        Assert.Throws<ArgumentNullException>(
+            () => PdfPreflight.Validate((PdfDocumentReader)null!, PdfConformance.PdfA2B));
+    }
+
+    [Fact]
+    public void Validate_StreamOverload_Validates()
+    {
+        using var stream = new MemoryStream(BuildOnePagePdf());
+
+        var result = PdfPreflight.Validate(stream, PdfConformance.PdfA2B);
+
+        Assert.True(result.IsCompliant);
     }
 
     // ── §6.1 file-structure rules ──────────────────────────────────────────────
@@ -751,7 +775,7 @@ public sealed class PdfPreflightTests
 
         Assert.False(result.IsCompliant);
         var assertion = Assert.Single(result.Assertions);
-        Assert.Equal("ISO19005-2:6.2.11.7-tounicode", assertion.RuleId);
+        Assert.Equal("ISO19005-2:6.2.11.7.2-tounicode", assertion.RuleId);
     }
 
     [Fact]
@@ -1216,6 +1240,6 @@ public sealed class PdfPreflightTests
         var text = result.Assertions[0].ToString();
 
         Assert.Contains("Error", text);
-        Assert.Contains("ISO32000-2:7.7.2-catalog-type", text);
+        Assert.Contains("ISO32000-1:7.7.2-catalog-type", text);
     }
 }
