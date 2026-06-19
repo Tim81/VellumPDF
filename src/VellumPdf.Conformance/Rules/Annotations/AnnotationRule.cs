@@ -41,7 +41,7 @@ internal sealed class AnnotationRule : IConformanceRule
     {
         foreach (var annot in context.EnumerateAnnotations())
         {
-            var subtype = (annot.Get(PdfName.Subtype) as PdfName)?.Value;
+            var subtype = (context.Resolve(annot.Get(PdfName.Subtype)) as PdfName)?.Value;
 
             if (subtype is not null && _forbiddenSubtypes.Contains(subtype))
             {

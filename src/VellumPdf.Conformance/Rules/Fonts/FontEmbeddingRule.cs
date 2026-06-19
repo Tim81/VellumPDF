@@ -42,7 +42,7 @@ internal sealed class FontEmbeddingRule : IConformanceRule
 
     private void CheckFont(PreflightContext context, PdfDictionary font)
     {
-        var subtype = (font.Get(PdfName.Subtype) as PdfName)?.Value;
+        var subtype = (context.Resolve(font.Get(PdfName.Subtype)) as PdfName)?.Value;
 
         // Type3 glyphs are content streams — embedded by construction.
         if (subtype == "Type3")
@@ -61,7 +61,7 @@ internal sealed class FontEmbeddingRule : IConformanceRule
                 Report(context, font);
                 return;
             }
-            programSubtype = (cidFont.Get(PdfName.Subtype) as PdfName)?.Value;
+            programSubtype = (context.Resolve(cidFont.Get(PdfName.Subtype)) as PdfName)?.Value;
             descriptor = context.Resolve(cidFont.Get(_fontDescriptor)) as PdfDictionary;
         }
         else
@@ -70,18 +70,19 @@ internal sealed class FontEmbeddingRule : IConformanceRule
             descriptor = context.Resolve(font.Get(_fontDescriptor)) as PdfDictionary;
         }
 
-        if (descriptor is null || !HasEmbeddedProgram(descriptor, programSubtype))
+        if (descriptor is null || !HasEmbeddedProgram(context, descriptor, programSubtype))
             Report(context, font);
     }
 
     // The embedded program must be carried in the key appropriate to the font type
     // (ISO 32000-1 Table 126): Type1 -> FontFile or FontFile3 (CFF); TrueType / CIDFontType2 ->
-    // FontFile2 or FontFile3 (OpenType); CIDFontType0 -> FontFile3.
-    private bool HasEmbeddedProgram(PdfDictionary descriptor, string? subtype)
+    // FontFile2 or FontFile3 (OpenType); CIDFontType0 -> FontFile3. Each candidate is resolved to an
+    // actual stream, so a /FontFile null or a dangling reference does not count as embedded.
+    private bool HasEmbeddedProgram(PreflightContext context, PdfDictionary descriptor, string? subtype)
     {
-        var hasFontFile = descriptor.Get(_fontFile) is not null;
-        var hasFontFile2 = descriptor.Get(_fontFile2) is not null;
-        var hasFontFile3 = descriptor.Get(_fontFile3) is not null;
+        var hasFontFile = context.ResolveStream(descriptor.Get(_fontFile)) is not null;
+        var hasFontFile2 = context.ResolveStream(descriptor.Get(_fontFile2)) is not null;
+        var hasFontFile3 = context.ResolveStream(descriptor.Get(_fontFile3)) is not null;
 
         return subtype switch
         {

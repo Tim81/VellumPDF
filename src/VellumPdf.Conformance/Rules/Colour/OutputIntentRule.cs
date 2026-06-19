@@ -74,19 +74,23 @@ internal sealed class OutputIntentRule : IConformanceRule
                 continue;
             }
 
-            var nValue = context.Resolve(stream.Dictionary.Get(PdfName.N)) switch
+            if (context.Resolve(stream.Dictionary.Get(PdfName.N)) is { } nObj)
             {
-                PdfInteger ni => (long?)ni.Value,
-                PdfReal nr => (long?)nr.Value,
-                _ => null,
-            };
-            if (nValue is not null && nValue is not (1 or 3 or 4))
-            {
-                context.Report(
-                    RuleId,
-                    Clause,
-                    PreflightSeverity.Error,
-                    $"The DestOutputProfile /N shall be 1, 3, or 4 (found {nValue}).");
+                var n = nObj switch
+                {
+                    PdfInteger ni => (double)ni.Value,
+                    PdfReal nr => nr.Value,
+                    _ => double.NaN,
+                };
+                // /N is an integer that shall be 1, 3, or 4; a non-integral real (e.g. 3.9) is invalid.
+                if (!double.IsNaN(n) && (n != Math.Floor(n) || (n != 1 && n != 3 && n != 4)))
+                {
+                    context.Report(
+                        RuleId,
+                        Clause,
+                        PreflightSeverity.Error,
+                        $"The DestOutputProfile /N shall be the integer 1, 3, or 4 (found {n}).");
+                }
             }
 
             var icc = context.DecodeStream(stream);
