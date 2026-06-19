@@ -980,6 +980,64 @@ public sealed class PdfPreflightTests
     }
 
     [Fact]
+    public void Validate_FontFileDanglingReference_ReportsUnembedded()
+    {
+        // /FontFile2 points at a nonexistent object — resolving to no stream means "not embedded".
+        var bytes = BuildFontPdf(
+            new PdfObj("<< /Type /Font /Subtype /TrueType /BaseFont /Foo /FontDescriptor 7 0 R >>"),
+            new PdfObj("<< /Type /FontDescriptor /FontName /Foo /FontFile2 99 0 R >>"));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        var assertion = Assert.Single(result.Assertions);
+        Assert.Equal("ISO19005-2:6.3.4-font-embedding", assertion.RuleId);
+    }
+
+    [Fact]
+    public void Validate_Utf16XmpPacket_IsAccepted()
+    {
+        // A spec-valid UTF-16 XMP packet must be recognised (the old UTF-8-only decode broke it).
+        var xmpText =
+            "<?xml version=\"1.0\" encoding=\"UTF-16\"?>"
+            + "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF "
+            + "xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">"
+            + "<rdf:Description rdf:about=\"\" xmlns:pdfaid=\"http://www.aiim.org/pdfa/ns/id/\">"
+            + "<pdfaid:part>2</pdfaid:part><pdfaid:conformance>B</pdfaid:conformance>"
+            + "</rdf:Description></rdf:RDF></x:xmpmeta>";
+        var enc = new UnicodeEncoding(bigEndian: false, byteOrderMark: true);
+        var bom = enc.GetPreamble();
+        var body = enc.GetBytes(xmpText);
+        var xmp = new byte[bom.Length + body.Length];
+        bom.CopyTo(xmp, 0);
+        body.CopyTo(xmp, bom.Length);
+
+        var bytes = AssemblePdf(
+            [new("<< /Type /Catalog /Pages 2 0 R >>"), _pagesObj, _pageObj],
+            metadataOverride: xmp);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.True(result.IsCompliant);
+        Assert.Empty(result.Assertions);
+    }
+
+    [Fact]
+    public void Validate_OutputIntent_NonIntegralN_ReportsError()
+    {
+        var bytes = BuildOutputIntentPdf(
+            "[4 0 R]",
+            new PdfObj("<< /Type /OutputIntent /S /GTS_PDFA1 /DestOutputProfile 5 0 R >>"),
+            new PdfObj("/N 3.9", FakeIccProfile()));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        var assertion = Assert.Single(result.Assertions);
+        Assert.Equal("ISO19005-2:6.2.2-output-intent", assertion.RuleId);
+    }
+
+    [Fact]
     public void Validate_XmpWithAlternatePdfaidPrefix_IsAccepted()
     {
         // The pdfaid namespace URI is bound to a non-default prefix 'aid'. Resolution is by URI,

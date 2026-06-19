@@ -1,7 +1,6 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
-using System.Text;
 using System.Xml;
 using System.Xml.Linq;
 
@@ -29,16 +28,12 @@ internal static class XmpReader
     {
         try
         {
-            var text = Encoding.UTF8.GetString(bytes);
-
-            // Strip a leading byte-order mark, if the producer emitted one as a real character.
-            if (text.Length > 0 && text[0] == '﻿')
-                text = text[1..];
-
-            // The XMP packet is wrapped in <?xpacket?> processing instructions; XDocument treats
-            // them as prolog/epilog and parses the contained RDF. Ignore comments and whitespace.
+            // Parse from the raw bytes so the XML reader honours the byte-order mark / encoding
+            // declaration. XMP packets may be serialised as UTF-8, UTF-16, or UTF-32 (ISO 16684-1);
+            // decoding as UTF-8 up front would corrupt the latter two. The <?xpacket?> processing
+            // instructions are treated as prolog/epilog; comments and whitespace are ignored.
             var settings = new XmlReaderSettings { IgnoreComments = true, IgnoreWhitespace = true };
-            using var reader = XmlReader.Create(new StringReader(text), settings);
+            using var reader = XmlReader.Create(new MemoryStream(bytes, writable: false), settings);
             return XDocument.Load(reader);
         }
         catch (XmlException)
