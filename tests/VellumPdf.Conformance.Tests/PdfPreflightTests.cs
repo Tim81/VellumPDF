@@ -103,6 +103,98 @@ public sealed class PdfPreflightTests
         return ms.ToArray();
     }
 
+    /// <summary>
+    /// A single indirect object for <see cref="AssemblePdf"/>. For a non-stream object,
+    /// <see cref="Dict"/> is the complete object text (e.g. <c>"&lt;&lt; /Type /Catalog &gt;&gt;"</c>).
+    /// For a stream object, <see cref="Dict"/> is the dictionary's inner entries only (e.g.
+    /// <c>"/N 3"</c>); the assembler wraps it and appends the correct <c>/Length</c>.
+    /// </summary>
+    private sealed record PdfObj(string Dict, byte[]? Stream = null);
+
+    /// <summary>
+    /// Assembles a classic-xref PDF/A-shaped file (header + binary marker + trailer /ID) from a
+    /// 1-indexed list of objects, so individual colour/transparency rules can be isolated.
+    /// Object 1 is always the document catalog (/Root).
+    /// </summary>
+    private static byte[] AssemblePdf(IReadOnlyList<PdfObj> objects)
+    {
+        var ms = new MemoryStream();
+        void W(string s) => ms.Write(Encoding.ASCII.GetBytes(s));
+
+        W("%PDF-1.7\n");
+        ms.Write([(byte)'%', 0xE2, 0xE3, 0xCF, 0xD3, (byte)'\n']);
+
+        var offsets = new int[objects.Count + 1];
+        for (var i = 0; i < objects.Count; i++)
+        {
+            offsets[i + 1] = (int)ms.Position;
+            var n = i + 1;
+            if (objects[i].Stream is { } body)
+            {
+                W($"{n} 0 obj\n<< {objects[i].Dict} /Length {body.Length} >>\nstream\n");
+                ms.Write(body);
+                W("\nendstream\nendobj\n");
+            }
+            else
+            {
+                W($"{n} 0 obj\n{objects[i].Dict}\nendobj\n");
+            }
+        }
+
+        var xrefOffset = (int)ms.Position;
+        var size = objects.Count + 1;
+        W($"xref\n0 {size}\n");
+        W($"{0:D10} 65535 f \n");
+        for (var i = 1; i <= objects.Count; i++)
+            W($"{offsets[i]:D10} 00000 n \n");
+        W($"trailer\n<< /Size {size} /Root 1 0 R /ID [<00112233445566778899AABBCCDDEEFF> "
+            + "<00112233445566778899AABBCCDDEEFF>] >>\n");
+        W($"startxref\n{xrefOffset}\n%%EOF\n");
+
+        return ms.ToArray();
+    }
+
+    /// <summary>A minimal ICC profile body: zero-filled, with the 'acsp' signature at offset 36.</summary>
+    private static byte[] FakeIccProfile()
+    {
+        var icc = new byte[128];
+        icc[36] = (byte)'a';
+        icc[37] = (byte)'c';
+        icc[38] = (byte)'s';
+        icc[39] = (byte)'p';
+        return icc;
+    }
+
+    private static readonly PdfObj _pagesObj = new("<< /Type /Pages /Kids [3 0 R] /Count 1 >>");
+    private static readonly PdfObj _pageObj = new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>");
+
+    /// <summary>Builds a doc whose catalog /OutputIntents references the given extra object bodies.</summary>
+    private static byte[] BuildOutputIntentPdf(string catalogIntents, params PdfObj[] extra)
+    {
+        var objects = new List<PdfObj>
+        {
+            new($"<< /Type /Catalog /Pages 2 0 R /OutputIntents {catalogIntents} >>"),
+            _pagesObj,
+            _pageObj,
+        };
+        objects.AddRange(extra);
+        return AssemblePdf(objects);
+    }
+
+    /// <summary>Builds a one-page doc whose /Resources /ExtGState /GS0 has the given /BM body.</summary>
+    private static byte[] BuildBlendModePdf(string bmEntry)
+    {
+        return AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R >>"),
+            _pagesObj,
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources 4 0 R >>"),
+            new("<< /ExtGState 5 0 R >>"),
+            new("<< /GS0 6 0 R >>"),
+            new($"<< /Type /ExtGState /BM {bmEntry} >>"),
+        ]);
+    }
+
     // ── Tests ─────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -203,6 +295,118 @@ public sealed class PdfPreflightTests
 
         Assert.True(result.IsCompliant);
         Assert.Empty(result.Assertions);
+    }
+
+    // ── §6.2.2 output-intent rules ──────────────────────────────────────────────
+
+    [Fact]
+    public void Validate_PdfAOutputIntent_MissingDestProfile_ReportsError()
+    {
+        var bytes = BuildOutputIntentPdf(
+            "[4 0 R]",
+            new PdfObj("<< /Type /OutputIntent /S /GTS_PDFA1 >>"));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        var assertion = Assert.Single(result.Assertions);
+        Assert.Equal("ISO19005-2:6.2.2-output-intent", assertion.RuleId);
+        Assert.Contains("DestOutputProfile", assertion.Message);
+    }
+
+    [Fact]
+    public void Validate_OutputIntent_InvalidIccProfile_ReportsError()
+    {
+        var bytes = BuildOutputIntentPdf(
+            "[4 0 R]",
+            new PdfObj("<< /Type /OutputIntent /S /GTS_PDFA1 /DestOutputProfile 5 0 R >>"),
+            new PdfObj("/N 3", Encoding.ASCII.GetBytes("this is not an ICC profile")));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        var assertion = Assert.Single(result.Assertions);
+        Assert.Equal("ISO19005-2:6.2.2-output-intent", assertion.RuleId);
+        Assert.Contains("acsp", assertion.Message);
+    }
+
+    [Fact]
+    public void Validate_OutputIntent_BadComponentCount_ReportsError()
+    {
+        var bytes = BuildOutputIntentPdf(
+            "[4 0 R]",
+            new PdfObj("<< /Type /OutputIntent /S /GTS_PDFA1 /DestOutputProfile 5 0 R >>"),
+            new PdfObj("/N 2", FakeIccProfile()));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        var assertion = Assert.Single(result.Assertions);
+        Assert.Equal("ISO19005-2:6.2.2-output-intent", assertion.RuleId);
+        Assert.Contains("/N", assertion.Message);
+    }
+
+    [Fact]
+    public void Validate_OutputIntents_DifferentProfiles_ReportsError()
+    {
+        var bytes = BuildOutputIntentPdf(
+            "[4 0 R 6 0 R]",
+            new PdfObj("<< /Type /OutputIntent /S /GTS_PDFA1 /DestOutputProfile 5 0 R >>"),
+            new PdfObj("/N 3", FakeIccProfile()),
+            new PdfObj("<< /Type /OutputIntent /S /GTS_PDFX /DestOutputProfile 7 0 R >>"),
+            new PdfObj("/N 3", FakeIccProfile()));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions,
+            a => a.RuleId == "ISO19005-2:6.2.2-output-intent" && a.Message.Contains("same ICC profile"));
+    }
+
+    [Fact]
+    public void Validate_ValidOutputIntent_NoFindings()
+    {
+        var bytes = BuildOutputIntentPdf(
+            "[4 0 R]",
+            new PdfObj("<< /Type /OutputIntent /S /GTS_PDFA1 /DestOutputProfile 5 0 R >>"),
+            new PdfObj("/N 3", FakeIccProfile()));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.True(result.IsCompliant);
+        Assert.Empty(result.Assertions);
+    }
+
+    // ── §6.4 transparency (blend mode) rules ────────────────────────────────────
+
+    [Theory]
+    [InlineData("/Normal")]
+    [InlineData("/Multiply")]
+    [InlineData("/Luminosity")]
+    [InlineData("[/Multiply /Screen]")]
+    public void Validate_StandardBlendMode_NoFindings(string bm)
+    {
+        var result = PdfPreflight.Validate(BuildBlendModePdf(bm), PdfConformance.PdfA2B);
+
+        Assert.True(result.IsCompliant);
+        Assert.Empty(result.Assertions);
+    }
+
+    [Fact]
+    public void Validate_NonStandardBlendMode_ReportsError()
+    {
+        var result = PdfPreflight.Validate(BuildBlendModePdf("/FooBar"), PdfConformance.PdfA2B);
+
+        var assertion = Assert.Single(result.Assertions);
+        Assert.Equal("ISO19005-2:6.4-blend-mode", assertion.RuleId);
+        Assert.Contains("/FooBar", assertion.Message);
+    }
+
+    [Fact]
+    public void Validate_BlendModeArrayWithInvalidEntry_ReportsError()
+    {
+        var result = PdfPreflight.Validate(BuildBlendModePdf("[/Multiply /Bogus]"), PdfConformance.PdfA2B);
+
+        var assertion = Assert.Single(result.Assertions);
+        Assert.Equal("ISO19005-2:6.4-blend-mode", assertion.RuleId);
+        Assert.Contains("/Bogus", assertion.Message);
     }
 
     [Fact]

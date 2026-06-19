@@ -43,11 +43,79 @@ internal sealed class PreflightContext
     /// </summary>
     public ReadOnlyMemory<byte> FileBytes => Reader.Bytes;
 
+    // Caps page-tree and /Parent-chain traversal against cycles / pathological nesting.
+    private const int MaxPageTreeDepth = 256;
+
     /// <summary>
     /// Resolves <paramref name="obj"/> through any indirect reference, returning the target
     /// value. Returns <see langword="null"/> when the input is null or cannot be resolved.
     /// </summary>
     public PdfObject? Resolve(PdfObject? obj) => obj is null ? null : Reader.ResolveValue(obj);
+
+    /// <summary>
+    /// Enumerates the leaf page dictionaries (<c>/Type /Page</c>) reachable from the catalog's
+    /// <c>/Pages</c> node, in document order. Cycles and pathological nesting depth are guarded.
+    /// </summary>
+    public IEnumerable<PdfDictionary> EnumeratePages()
+        => WalkPages(Catalog.Get(PdfName.Pages), new HashSet<int>(), 0);
+
+    private IEnumerable<PdfDictionary> WalkPages(PdfObject? node, HashSet<int> visited, int depth)
+    {
+        if (depth > MaxPageTreeDepth)
+            yield break;
+        if (node is PdfIndirectReference r && !visited.Add(r.ObjectNumber))
+            yield break;
+        if (Resolve(node) is not PdfDictionary dict)
+            yield break;
+
+        if (dict.Get(PdfName.Type) is PdfName { Value: "Page" })
+        {
+            yield return dict;
+            yield break;
+        }
+
+        if (Resolve(dict.Get(PdfName.Kids)) is PdfArray kids)
+        {
+            for (var i = 0; i < kids.Count; i++)
+                foreach (var page in WalkPages(kids[i], visited, depth + 1))
+                    yield return page;
+        }
+        else
+        {
+            // Untyped node with no /Kids: treat as a leaf so its resources are still inspected.
+            yield return dict;
+        }
+    }
+
+    /// <summary>
+    /// Returns the value of an inheritable page attribute (e.g. <c>/Resources</c>), following the
+    /// <c>/Parent</c> chain when <paramref name="page"/> does not define it itself
+    /// (ISO 32000-2 §7.7.3.4). Returns <see langword="null"/> when no ancestor supplies it.
+    /// </summary>
+    public PdfObject? ResolveInherited(PdfDictionary page, PdfName key)
+    {
+        var current = page;
+        for (var depth = 0; depth < MaxPageTreeDepth && current is not null; depth++)
+        {
+            if (current.Get(key) is { } value)
+                return Resolve(value);
+            current = Resolve(current.Get(PdfName.Parent)) as PdfDictionary;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Resolves <paramref name="obj"/> to a stream object, or <see langword="null"/> when it is
+    /// not an indirect reference to a stream.
+    /// </summary>
+    public ParsedStream? ResolveStream(PdfObject? obj)
+        => obj is PdfIndirectReference r ? Reader.ResolveStream(r.ObjectNumber) : null;
+
+    /// <summary>
+    /// Returns the fully-decoded bytes of <paramref name="stream"/>, or <see langword="null"/>
+    /// when an image filter prevents full decoding.
+    /// </summary>
+    public byte[]? DecodeStream(ParsedStream stream) => Reader.GetDecodedStreamData(stream);
 
     /// <summary>Records a finding for the current validation pass.</summary>
     /// <param name="ruleId">Stable rule identifier (typically the rule's <see cref="IConformanceRule.RuleId"/>).</param>

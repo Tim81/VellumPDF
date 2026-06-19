@@ -1,7 +1,9 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
+using VellumPdf.Conformance.Rules.Colour;
 using VellumPdf.Conformance.Rules.Structure;
+using VellumPdf.Conformance.Rules.Transparency;
 
 namespace VellumPdf.Conformance.Rules;
 
@@ -26,10 +28,18 @@ internal static class RuleRegistry
         new FileTrailerRule(),
     ];
 
+    // ISO 19005-2 §6.2 colour / §6.4 transparency rules. Shared by every PDF/A-2 level.
+    private static readonly IConformanceRule[] PdfA2ColourAndTransparency =
+    [
+        new OutputIntentRule(),
+        new BlendModeRule(),
+    ];
+
     private static readonly IConformanceRule[] PdfA2BRules =
     [
         .. CommonStructure,
         .. PdfA2FileStructure,
+        .. PdfA2ColourAndTransparency,
     ];
 
     /// <summary>
