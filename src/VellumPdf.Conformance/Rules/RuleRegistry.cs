@@ -19,7 +19,18 @@ internal static class RuleRegistry
         new DocumentCatalogRule(),
     ];
 
-    private static readonly IConformanceRule[] PdfA2BRules = [.. CommonStructure];
+    // ISO 19005-2 §6.1 file-structure rules (header, trailer). Shared by every PDF/A-2 level.
+    private static readonly IConformanceRule[] PdfA2FileStructure =
+    [
+        new FileHeaderRule(),
+        new FileTrailerRule(),
+    ];
+
+    private static readonly IConformanceRule[] PdfA2BRules =
+    [
+        .. CommonStructure,
+        .. PdfA2FileStructure,
+    ];
 
     /// <summary>
     /// Returns the rule profile for <paramref name="conformance"/>, or <see langword="false"/>
