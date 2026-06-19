@@ -126,6 +126,9 @@ internal static class VeraPdf
         {
             try { process.Kill(entireProcessTree: true); }
             catch { /* best effort */ }
+            // Observe the drain tasks so a later fault doesn't surface as an unobserved exception.
+            ObserveAndForget(stdoutTask);
+            ObserveAndForget(stderrTask);
             throw new InvalidOperationException(
                 $"veraPDF timed out after {timeoutMs}ms (args: {string.Join(' ', args)}).");
         }
@@ -136,4 +139,7 @@ internal static class VeraPdf
         var stderr = stderrTask.Wait(5_000) ? stderrTask.Result : string.Empty;
         return (process.ExitCode, stdout, stderr);
     }
+
+    private static void ObserveAndForget(Task task)
+        => _ = task.ContinueWith(t => _ = t.Exception, TaskScheduler.Default);
 }

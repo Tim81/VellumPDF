@@ -280,6 +280,8 @@ internal sealed class XrefParser
         // /Size
         if (dict.Get(PdfName.Size) is not PdfInteger sizeObj)
             throw new InvalidDataException("Malformed PDF: xref stream missing /Size.");
+        if (sizeObj.Value is < 0 or > int.MaxValue)
+            throw new InvalidDataException($"Malformed PDF: xref stream /Size {sizeObj.Value} is out of range.");
         var streamSize = (int)sizeObj.Value;
 
         // /Index — pairs of (firstObjNum, count); default is [0 Size]
@@ -324,6 +326,11 @@ internal sealed class XrefParser
                         xref.TryAdd(objNum, XrefEntry.Uncompressed(field2));
                         break;
                     case 2:
+                        // field2 = container object number, field3 = index within it; a /W width up
+                        // to 8 bytes can exceed int range, so validate before narrowing.
+                        if (field2 is < 0 or > int.MaxValue || field3 is < 0 or > int.MaxValue)
+                            throw new InvalidDataException(
+                                "Malformed PDF: xref stream type-2 entry field is out of range.");
                         xref.TryAdd(objNum, XrefEntry.InObjStm((int)field2, (int)field3));
                         break;
                     case 0:

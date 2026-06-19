@@ -87,8 +87,8 @@ internal sealed class PdfObjectParser
             throw new InvalidDataException(
                 $"Expected 'obj' keyword, got '{Encoding.Latin1.GetString(objKw.Raw.Span)}' at offset {_lexer.Position}.");
 
-        var objectNumber = ParseLong(objNumTok.Raw);
-        var generation = (int)ParseLong(genTok.Raw);
+        var objectNumber = ParseObjectNumber(objNumTok.Raw, "object number");
+        var generation = ParseObjectNumber(genTok.Raw, "generation number");
 
         // Parse the value
         _lexer.SkipWhitespaceAndComments();
@@ -104,18 +104,18 @@ internal sealed class PdfObjectParser
             if (!_lexer.AtEnd && TryPeekKeyword("stream"u8))
             {
                 var stream = ParseStreamBody(dict);
-                return new IndirectObjectResult((int)objectNumber, generation, null, stream);
+                return new IndirectObjectResult(objectNumber, generation, null, stream);
             }
 
             // Not a stream — check for an indirect reference inside the dict value
             // (already fully parsed as a dict); now expect endobj
             ExpectEndobj();
-            return new IndirectObjectResult((int)objectNumber, generation, dict, null);
+            return new IndirectObjectResult(objectNumber, generation, dict, null);
         }
 
         var value = ParseObject();
         ExpectEndobj();
-        return new IndirectObjectResult((int)objectNumber, generation, value, null);
+        return new IndirectObjectResult(objectNumber, generation, value, null);
     }
 
     // ── Private helpers ────────────────────────────────────────────────────
@@ -536,6 +536,18 @@ internal sealed class PdfObjectParser
         if (!long.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out var v))
             throw new InvalidDataException($"Malformed integer: '{s}'.");
         return v;
+    }
+
+    /// <summary>
+    /// Parses an object or generation number and validates it fits in a non-negative int, throwing
+    /// rather than wrapping silently on an out-of-range value.
+    /// </summary>
+    private static int ParseObjectNumber(ReadOnlyMemory<byte> raw, string what)
+    {
+        var v = ParseLong(raw);
+        if (v is < 0 or > int.MaxValue)
+            throw new InvalidDataException($"Malformed PDF: {what} {v} is out of range.");
+        return (int)v;
     }
 }
 
