@@ -6,3 +6,4 @@ using System.Runtime.CompilerServices;
 [assembly: InternalsVisibleTo("VellumPdf.Kernel.Tests")]
 [assembly: InternalsVisibleTo("VellumPdf.Reader")]
 [assembly: InternalsVisibleTo("VellumPdf.Signing")]
+[assembly: InternalsVisibleTo("VellumPdf.Conformance")]
