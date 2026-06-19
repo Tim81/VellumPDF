@@ -105,6 +105,22 @@ internal sealed class PreflightContext
     }
 
     /// <summary>
+    /// Enumerates every annotation dictionary referenced by a page's <c>/Annots</c> array, across
+    /// all pages in document order.
+    /// </summary>
+    public IEnumerable<PdfDictionary> EnumerateAnnotations()
+    {
+        foreach (var page in EnumeratePages())
+        {
+            if (Resolve(page.Get(PdfName.Annots)) is not PdfArray annots)
+                continue;
+            for (var i = 0; i < annots.Count; i++)
+                if (Resolve(annots[i]) is PdfDictionary annot)
+                    yield return annot;
+        }
+    }
+
+    /// <summary>
     /// Resolves <paramref name="obj"/> to a stream object, or <see langword="null"/> when it is
     /// not an indirect reference to a stream.
     /// </summary>

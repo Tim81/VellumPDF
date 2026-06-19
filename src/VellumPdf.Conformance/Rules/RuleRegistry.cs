@@ -1,8 +1,11 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
+using VellumPdf.Conformance.Rules.Actions;
+using VellumPdf.Conformance.Rules.Annotations;
 using VellumPdf.Conformance.Rules.Colour;
 using VellumPdf.Conformance.Rules.Fonts;
+using VellumPdf.Conformance.Rules.Metadata;
 using VellumPdf.Conformance.Rules.Structure;
 using VellumPdf.Conformance.Rules.Transparency;
 
@@ -42,12 +45,22 @@ internal static class RuleRegistry
         new FontEmbeddingRule(),
     ];
 
+    // ISO 19005-2 §6.5–§6.7 metadata, annotation, and action rules. Shared by every PDF/A-2 level.
+    // The XMP rule keys off the level being validated, so it asserts B / U / A as appropriate.
+    private static readonly IConformanceRule[] PdfA2Document =
+    [
+        new XmpConformanceRule(),
+        new AnnotationRule(),
+        new ActionRule(),
+    ];
+
     private static readonly IConformanceRule[] PdfA2BRules =
     [
         .. CommonStructure,
         .. PdfA2FileStructure,
         .. PdfA2ColourAndTransparency,
         .. PdfA2Fonts,
+        .. PdfA2Document,
     ];
 
     /// <summary>

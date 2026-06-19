@@ -38,70 +38,29 @@ public sealed class PdfPreflightTests
     }
 
     /// <summary>
-    /// Hand-builds a single-revision PDF whose document catalog (object 1) is a dictionary
-    /// but is missing the required <c>/Type /Catalog</c> entry.
+    /// A catalog (object 1) that is a dictionary but is missing the required <c>/Type /Catalog</c>
+    /// entry; everything else (header, marker, /ID, XMP) is valid, so the catalog-type rule is the
+    /// only violation.
     /// </summary>
     private static byte[] BuildCatalogMissingTypePdf()
-    {
-        var ms = new MemoryStream();
-        void Write(string s) => ms.Write(Encoding.ASCII.GetBytes(s));
-
-        // Header + binary marker + trailer /ID are all present and valid, so the only
-        // violation this document carries is the catalog missing its /Type entry.
-        Write("%PDF-1.7\n");
-        ms.Write([(byte)'%', 0xE2, 0xE3, 0xCF, 0xD3, (byte)'\n']);
-
-        var o1 = (int)ms.Position;
-        Write("1 0 obj\n<< /Pages 2 0 R >>\nendobj\n");
-        var o2 = (int)ms.Position;
-        Write("2 0 obj\n<< /Type /Pages /Kids [] /Count 0 >>\nendobj\n");
-
-        var xrefOffset = (int)ms.Position;
-        Write("xref\n");
-        Write("0 3\n");
-        // Each xref entry is exactly 20 bytes: 10-digit-offset SP 5-digit-gen SP type SP LF
-        Write($"{0:D10} 65535 f \n");
-        Write($"{o1:D10} 00000 n \n");
-        Write($"{o2:D10} 00000 n \n");
-        Write("trailer\n<< /Size 3 /Root 1 0 R /ID [<00112233445566778899AABBCCDDEEFF> "
-            + "<00112233445566778899AABBCCDDEEFF>] >>\n");
-        Write($"startxref\n{xrefOffset}\n%%EOF\n");
-
-        return ms.ToArray();
-    }
+        => AssemblePdf(
+        [
+            new("<< /Pages 2 0 R >>"),
+            new("<< /Type /Pages /Kids [] /Count 0 >>"),
+        ]);
 
     /// <summary>
-    /// Hand-builds a structurally valid single-page PDF with a <c>/Type /Catalog</c> document
-    /// catalog, optionally including the §6.1.2 binary marker and the §6.1.3 trailer <c>/ID</c>.
-    /// Used to isolate each file-structure rule.
+    /// A structurally valid catalog, with the §6.1.2 binary marker and the §6.1.3 trailer
+    /// <c>/ID</c> toggleable so each file-structure rule can be exercised in isolation.
     /// </summary>
     private static byte[] BuildMinimalPdf(bool binaryMarker, bool trailerId)
-    {
-        var ms = new MemoryStream();
-        void Write(string s) => ms.Write(Encoding.ASCII.GetBytes(s));
-
-        Write("%PDF-1.7\n");
-        if (binaryMarker)
-            ms.Write([(byte)'%', 0xE2, 0xE3, 0xCF, 0xD3, (byte)'\n']);
-
-        var o1 = (int)ms.Position;
-        Write("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
-        var o2 = (int)ms.Position;
-        Write("2 0 obj\n<< /Type /Pages /Kids [] /Count 0 >>\nendobj\n");
-
-        var xrefOffset = (int)ms.Position;
-        Write("xref\n0 3\n");
-        Write($"{0:D10} 65535 f \n");
-        Write($"{o1:D10} 00000 n \n");
-        Write($"{o2:D10} 00000 n \n");
-        var id = trailerId
-            ? " /ID [<00112233445566778899AABBCCDDEEFF> <00112233445566778899AABBCCDDEEFF>]"
-            : string.Empty;
-        Write($"trailer\n<< /Size 3 /Root 1 0 R{id} >>\n");
-        Write($"startxref\n{xrefOffset}\n%%EOF\n");
-
-        return ms.ToArray();
-    }
+        => AssemblePdf(
+            [
+                new("<< /Type /Catalog /Pages 2 0 R >>"),
+                new("<< /Type /Pages /Kids [] /Count 0 >>"),
+            ],
+            binaryMarker: binaryMarker,
+            trailerId: trailerId);
 
     /// <summary>
     /// A single indirect object for <see cref="AssemblePdf"/>. For a non-stream object,
@@ -112,46 +71,87 @@ public sealed class PdfPreflightTests
     private sealed record PdfObj(string Dict, byte[]? Stream = null);
 
     /// <summary>
-    /// Assembles a classic-xref PDF/A-shaped file (header + binary marker + trailer /ID) from a
-    /// 1-indexed list of objects, so individual colour/transparency rules can be isolated.
-    /// Object 1 is always the document catalog (/Root).
+    /// Assembles a classic-xref PDF/A-shaped file from a 1-indexed object list (object 1 is the
+    /// document catalog). By default it satisfies every always-on structural rule — the %PDF-1.7
+    /// header, binary marker, trailer <c>/ID</c>, and a conforming XMP <c>/Metadata</c> stream —
+    /// so a fixture trips only the rule it is built to violate. Each flag drops the corresponding
+    /// element so a single structural rule can be exercised in isolation.
     /// </summary>
-    private static byte[] AssemblePdf(IReadOnlyList<PdfObj> objects)
+    private static byte[] AssemblePdf(
+        IReadOnlyList<PdfObj> objects,
+        bool binaryMarker = true,
+        bool trailerId = true,
+        bool metadata = true,
+        string xmpConformance = "B")
     {
+        var all = new List<PdfObj>(objects);
+
+        // Append a conforming XMP metadata stream and reference it from the catalog (object 1).
+        if (metadata)
+        {
+            var metaObjNum = all.Count + 1;
+            all.Add(new PdfObj("/Type /Metadata /Subtype /XML", XmpBytes("2", xmpConformance)));
+            all[0] = all[0] with { Dict = InjectIntoDict(all[0].Dict, $"/Metadata {metaObjNum} 0 R") };
+        }
+
         var ms = new MemoryStream();
         void W(string s) => ms.Write(Encoding.ASCII.GetBytes(s));
 
         W("%PDF-1.7\n");
-        ms.Write([(byte)'%', 0xE2, 0xE3, 0xCF, 0xD3, (byte)'\n']);
+        if (binaryMarker)
+            ms.Write([(byte)'%', 0xE2, 0xE3, 0xCF, 0xD3, (byte)'\n']);
 
-        var offsets = new int[objects.Count + 1];
-        for (var i = 0; i < objects.Count; i++)
+        var offsets = new int[all.Count + 1];
+        for (var i = 0; i < all.Count; i++)
         {
             offsets[i + 1] = (int)ms.Position;
             var n = i + 1;
-            if (objects[i].Stream is { } body)
+            if (all[i].Stream is { } body)
             {
-                W($"{n} 0 obj\n<< {objects[i].Dict} /Length {body.Length} >>\nstream\n");
+                W($"{n} 0 obj\n<< {all[i].Dict} /Length {body.Length} >>\nstream\n");
                 ms.Write(body);
                 W("\nendstream\nendobj\n");
             }
             else
             {
-                W($"{n} 0 obj\n{objects[i].Dict}\nendobj\n");
+                W($"{n} 0 obj\n{all[i].Dict}\nendobj\n");
             }
         }
 
         var xrefOffset = (int)ms.Position;
-        var size = objects.Count + 1;
+        var size = all.Count + 1;
         W($"xref\n0 {size}\n");
         W($"{0:D10} 65535 f \n");
-        for (var i = 1; i <= objects.Count; i++)
+        for (var i = 1; i <= all.Count; i++)
             W($"{offsets[i]:D10} 00000 n \n");
-        W($"trailer\n<< /Size {size} /Root 1 0 R /ID [<00112233445566778899AABBCCDDEEFF> "
-            + "<00112233445566778899AABBCCDDEEFF>] >>\n");
+        var id = trailerId
+            ? " /ID [<00112233445566778899AABBCCDDEEFF> <00112233445566778899AABBCCDDEEFF>]"
+            : string.Empty;
+        W($"trailer\n<< /Size {size} /Root 1 0 R{id} >>\n");
         W($"startxref\n{xrefOffset}\n%%EOF\n");
 
         return ms.ToArray();
+    }
+
+    /// <summary>Inserts <paramref name="entry"/> into a <c>&lt;&lt; … &gt;&gt;</c> dictionary literal, before the closing delimiter.</summary>
+    private static string InjectIntoDict(string dict, string entry)
+    {
+        var i = dict.LastIndexOf(">>", StringComparison.Ordinal);
+        return i < 0 ? dict : string.Concat(dict[..i], entry, " ", dict[i..]);
+    }
+
+    /// <summary>A minimal conforming XMP packet carrying the given pdfaid part and conformance.</summary>
+    private static byte[] XmpBytes(string part, string conformance)
+    {
+        var xmp =
+            "<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>"
+            + "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF "
+            + "xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">"
+            + "<rdf:Description rdf:about=\"\" xmlns:pdfaid=\"http://www.aiim.org/pdfa/ns/id/\">"
+            + $"<pdfaid:part>{part}</pdfaid:part>"
+            + $"<pdfaid:conformance>{conformance}</pdfaid:conformance>"
+            + "</rdf:Description></rdf:RDF></x:xmpmeta><?xpacket end=\"w\"?>";
+        return Encoding.UTF8.GetBytes(xmp);
     }
 
     /// <summary>A minimal ICC profile body: zero-filled, with the 'acsp' signature at offset 36.</summary>
@@ -211,6 +211,22 @@ public sealed class PdfPreflightTests
             new("<< /F0 6 0 R >>"),
         };
         objects.AddRange(fontObjects);
+        return AssemblePdf(objects);
+    }
+
+    /// <summary>
+    /// Builds a one-page doc where the page dictionary carries <paramref name="pageExtra"/> (e.g.
+    /// <c>"/Annots [4 0 R]"</c>) and <paramref name="extra"/> supplies objects 4..N.
+    /// </summary>
+    private static byte[] BuildPagePdf(string pageExtra, params PdfObj[] extra)
+    {
+        var objects = new List<PdfObj>
+        {
+            new("<< /Type /Catalog /Pages 2 0 R >>"),
+            _pagesObj,
+            new($"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] {pageExtra} >>"),
+        };
+        objects.AddRange(extra);
         return AssemblePdf(objects);
     }
 
@@ -493,6 +509,127 @@ public sealed class PdfPreflightTests
         var bytes = BuildFontPdf(
             new PdfObj("<< /Type /Font /Subtype /Type3 /FontBBox [0 0 1 1] /CharProcs 7 0 R >>"),
             new PdfObj("<< >>"));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.True(result.IsCompliant);
+        Assert.Empty(result.Assertions);
+    }
+
+    // ── §6.7.2 XMP metadata rules ───────────────────────────────────────────────
+
+    [Fact]
+    public void Validate_MissingXmpMetadata_ReportsError()
+    {
+        var bytes = AssemblePdf([new("<< /Type /Catalog /Pages 2 0 R >>"), _pagesObj, _pageObj], metadata: false);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        var assertion = Assert.Single(result.Assertions);
+        Assert.Equal("ISO19005-2:6.7.2-pdfaid", assertion.RuleId);
+    }
+
+    [Fact]
+    public void Validate_XmpConformanceMismatch_ReportsError()
+    {
+        // The XMP claims conformance U but it is being validated as PDF/A-2b.
+        var bytes = AssemblePdf(
+            [new("<< /Type /Catalog /Pages 2 0 R >>"), _pagesObj, _pageObj],
+            xmpConformance: "U");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        var assertion = Assert.Single(result.Assertions);
+        Assert.Equal("ISO19005-2:6.7.2-pdfaid", assertion.RuleId);
+        Assert.Contains("conformance", assertion.Message);
+    }
+
+    // ── §6.5.3 annotation rules ─────────────────────────────────────────────────
+
+    [Fact]
+    public void Validate_AnnotationMissingPrintFlagAndAppearance_ReportsErrors()
+    {
+        var bytes = BuildPagePdf(
+            "/Annots [4 0 R]",
+            new PdfObj("<< /Type /Annot /Subtype /Stamp /Rect [0 0 1 1] /F 2 >>"));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.All(result.Assertions, a => Assert.Equal("ISO19005-2:6.5.3-annotation", a.RuleId));
+        Assert.Contains(result.Assertions, a => a.Message.Contains("Print"));
+        Assert.Contains(result.Assertions, a => a.Message.Contains("Hidden"));
+        Assert.Contains(result.Assertions, a => a.Message.Contains("appearance"));
+    }
+
+    [Fact]
+    public void Validate_WellFormedAnnotation_NoFindings()
+    {
+        var bytes = BuildPagePdf(
+            "/Annots [4 0 R]",
+            new PdfObj("<< /Type /Annot /Subtype /Stamp /Rect [0 0 1 1] /F 4 /AP << /N 5 0 R >> >>"),
+            new PdfObj("/Subtype /Form /BBox [0 0 1 1]", []));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.True(result.IsCompliant);
+        Assert.Empty(result.Assertions);
+    }
+
+    [Fact]
+    public void Validate_LinkAnnotation_ExemptFromAppearance()
+    {
+        var bytes = BuildPagePdf(
+            "/Annots [4 0 R]",
+            new PdfObj("<< /Type /Annot /Subtype /Link /Rect [0 0 1 1] /F 4 >>"));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.True(result.IsCompliant);
+        Assert.Empty(result.Assertions);
+    }
+
+    // ── §6.6.1 action rules ─────────────────────────────────────────────────────
+
+    [Fact]
+    public void Validate_JavaScriptOpenAction_ReportsError()
+    {
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R /OpenAction 4 0 R >>"),
+            _pagesObj,
+            _pageObj,
+            new("<< /S /JavaScript /JS (noop) >>"),
+        ]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        var assertion = Assert.Single(result.Assertions);
+        Assert.Equal("ISO19005-2:6.6.1-action", assertion.RuleId);
+        Assert.Contains("/JavaScript", assertion.Message);
+    }
+
+    [Fact]
+    public void Validate_LaunchActionOnAnnotation_ReportsError()
+    {
+        var bytes = BuildPagePdf(
+            "/Annots [4 0 R]",
+            new PdfObj("<< /Type /Annot /Subtype /Link /Rect [0 0 1 1] /F 4 /A 5 0 R >>"),
+            new PdfObj("<< /S /Launch >>"));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        var assertion = Assert.Single(result.Assertions);
+        Assert.Equal("ISO19005-2:6.6.1-action", assertion.RuleId);
+        Assert.Contains("/Launch", assertion.Message);
+    }
+
+    [Fact]
+    public void Validate_PermittedGoToAction_NoFindings()
+    {
+        var bytes = BuildPagePdf(
+            "/Annots [4 0 R]",
+            new PdfObj("<< /Type /Annot /Subtype /Link /Rect [0 0 1 1] /F 4 /A 5 0 R >>"),
+            new PdfObj("<< /S /GoTo /D [3 0 R /Fit] >>"));
 
         var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
 
