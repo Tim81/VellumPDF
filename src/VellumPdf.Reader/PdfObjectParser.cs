@@ -16,6 +16,10 @@ internal sealed class PdfObjectParser
 {
     private readonly PdfLexer _lexer;
 
+    // Optional resolver for an indirect /Length (/Length N 0 R), supplied by the document reader
+    // which owns the xref. Without it, an indirect /Length falls back to the endstream scan.
+    private readonly Func<PdfIndirectReference, long?>? _resolveLength;
+
     // Guards against unbounded recursion on hostile input (e.g. deeply nested
     // "[[[[…" or "<</a<</a…"). A StackOverflowException is uncatchable in .NET, so
     // we cap the array/dictionary nesting depth and throw a recoverable exception.
@@ -23,13 +27,17 @@ internal sealed class PdfObjectParser
     private int _depth;
 
     /// <summary>Creates a parser backed by <paramref name="lexer"/>.</summary>
-    public PdfObjectParser(PdfLexer lexer) => _lexer = lexer;
+    public PdfObjectParser(PdfLexer lexer, Func<PdfIndirectReference, long?>? lengthResolver = null)
+    {
+        _lexer = lexer;
+        _resolveLength = lengthResolver;
+    }
 
     /// <summary>
     /// Creates a parser over <paramref name="data"/> starting at <paramref name="offset"/>.
     /// </summary>
-    public PdfObjectParser(ReadOnlyMemory<byte> data, int offset = 0)
-        : this(new PdfLexer(data, offset)) { }
+    public PdfObjectParser(ReadOnlyMemory<byte> data, int offset = 0, Func<PdfIndirectReference, long?>? lengthResolver = null)
+        : this(new PdfLexer(data, offset), lengthResolver) { }
 
     /// <summary>Current byte position within the underlying buffer.</summary>
     public int Position => _lexer.Position;
@@ -319,13 +327,21 @@ internal sealed class PdfObjectParser
 
         var bodyStart = _lexer.Position;
 
-        // Determine body length: prefer /Length when it's a direct, in-range integer.
-        // A negative or > int.MaxValue value is malformed (the buffer is <= int.MaxValue);
-        // fall back to the endstream scan rather than truncating on a wrapped cast.
+        // Determine body length: prefer /Length when it's an in-range integer (direct, or an
+        // indirect reference the reader can resolve). A negative or > int.MaxValue value is
+        // malformed; fall back to the endstream scan rather than truncating on a wrapped cast.
         int bodyLen = -1;
-        if (dict.TryGet(PdfName.Length, out var lenObj) && lenObj is PdfInteger pdfLen
-            && pdfLen.Value >= 0 && pdfLen.Value <= int.MaxValue)
-            bodyLen = (int)pdfLen.Value;
+        if (dict.TryGet(PdfName.Length, out var lenObj))
+        {
+            long? len = lenObj switch
+            {
+                PdfInteger pdfLen => pdfLen.Value,
+                PdfIndirectReference r => _resolveLength?.Invoke(r),
+                _ => null,
+            };
+            if (len is >= 0 and <= int.MaxValue)
+                bodyLen = (int)len.Value;
+        }
 
         if (bodyLen >= 0)
         {

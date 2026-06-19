@@ -506,6 +506,50 @@ public sealed class XrefStreamTests
         return ms.ToArray();
     }
 
+    [Fact]
+    public void Stream_with_indirect_length_reads_full_binary_body()
+    {
+        // The stream's /Length is indirect and its body contains the bytes "\nendstream"; resolving
+        // the indirect length must read the full body rather than truncating at the scan marker.
+        var bytes = BuildIndirectLengthStreamPdf();
+
+        using var reader = PdfReader.Open(bytes);
+        var stream = reader.ResolveStream(3);
+
+        Assert.NotNull(stream);
+        Assert.Equal("AAAA\nendstream BBBB", Encoding.ASCII.GetString(stream!.RawBody.Span));
+    }
+
+    private static byte[] BuildIndirectLengthStreamPdf()
+    {
+        var ms = new MemoryStream();
+        void W(string s) => ms.Write(Encoding.ASCII.GetBytes(s));
+
+        const string body = "AAAA\nendstream BBBB"; // 19 bytes; contains the scan marker "\nendstream"
+
+        W("%PDF-1.7\n");
+        var o1 = (int)ms.Position;
+        W("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+        var o2 = (int)ms.Position;
+        W("2 0 obj\n<< /Type /Pages /Kids [] /Count 0 >>\nendobj\n");
+        var o3 = (int)ms.Position;
+        W($"3 0 obj\n<< /Length 4 0 R >>\nstream\n{body}\nendstream\nendobj\n");
+        var o4 = (int)ms.Position;
+        W($"4 0 obj\n{body.Length}\nendobj\n");
+
+        var xref = (int)ms.Position;
+        W("xref\n0 5\n");
+        W($"{0:D10} 65535 f \n");
+        W($"{o1:D10} 00000 n \n");
+        W($"{o2:D10} 00000 n \n");
+        W($"{o3:D10} 00000 n \n");
+        W($"{o4:D10} 00000 n \n");
+        W("trailer\n<< /Size 5 /Root 1 0 R >>\n");
+        W($"startxref\n{xref}\n%%EOF\n");
+
+        return ms.ToArray();
+    }
+
     private static byte[] BuildHybridXrefStmPdf()
     {
         // Layout:
