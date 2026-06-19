@@ -8,23 +8,24 @@ using VellumPdf.Core;
 namespace VellumPdf.Reader;
 
 /// <summary>
-/// Parses a classic cross-reference table and trailer chain from a PDF byte buffer
-/// (ISO 32000-2 §7.5.4 and §7.5.5). Does not support xref streams (#95) or encryption (#97).
+/// Parses cross-reference tables and streams from a PDF byte buffer
+/// (ISO 32000-2 §7.5.4, §7.5.5, and §7.5.8). Supports classic xref tables,
+/// cross-reference streams, and hybrid (XRefStm) files.
 /// </summary>
 internal sealed class XrefParser
 {
     private static readonly byte[] StartxrefBytes = "startxref"u8.ToArray();
 
     /// <summary>
-    /// Parses the xref table and trailer chain from <paramref name="data"/>.
+    /// Parses the xref table/stream chain from <paramref name="data"/>.
     /// Returns the merged xref table (newer revisions win) and the newest trailer dictionary.
-    /// Also outputs the byte offset of the xref table from the last startxref.
+    /// Also outputs the byte offset of the xref from the last startxref.
     /// </summary>
-    public static (Dictionary<int, int> Xref, PdfDictionary Trailer, int StartXrefOffset) Parse(
+    public static (Dictionary<int, XrefEntry> Xref, PdfDictionary Trailer, int StartXrefOffset) Parse(
         ReadOnlyMemory<byte> data)
     {
         var startxrefOffset = FindLastStartxref(data);
-        var xref = new Dictionary<int, int>();
+        var xref = new Dictionary<int, XrefEntry>();
         var trailer = ParseRevisionChain(data, startxrefOffset, xref);
         return (xref, trailer, startxrefOffset);
     }
@@ -75,7 +76,7 @@ internal sealed class XrefParser
     }
 
     private static PdfDictionary ParseRevisionChain(
-        ReadOnlyMemory<byte> data, int xrefOffset, Dictionary<int, int> xref)
+        ReadOnlyMemory<byte> data, int xrefOffset, Dictionary<int, XrefEntry> xref)
     {
         var seenOffsets = new HashSet<int>();
         PdfDictionary? newestTrailer = null;
@@ -92,16 +93,13 @@ internal sealed class XrefParser
                 throw new InvalidDataException(
                     "Malformed PDF: xref chain exceeds 100 revisions; aborting to prevent infinite loop.");
 
-            var trailer = ParseOneRevision(data, currentOffset, xref);
+            var trailer = ParseOneRevision(data, currentOffset, xref, seenOffsets);
             newestTrailer ??= trailer;
 
-            // Check for unsupported features in the trailer.
+            // Check for unsupported features.
             if (trailer.Get(new PdfName("Encrypt")) is not null)
                 throw new UnsupportedPdfFeatureException(
                     "Encryption is not supported yet (see VellumPdf issue #97).");
-            if (trailer.Get(new PdfName("XRefStm")) is not null)
-                throw new UnsupportedPdfFeatureException(
-                    "Cross-reference streams are not supported yet (see VellumPdf issue #95).");
 
             if (trailer.TryGet(PdfName.Prev, out var prevObj) && prevObj is PdfInteger prevInt)
             {
@@ -121,47 +119,70 @@ internal sealed class XrefParser
     }
 
     private static PdfDictionary ParseOneRevision(
-        ReadOnlyMemory<byte> data, int xrefOffset, Dictionary<int, int> xref)
+        ReadOnlyMemory<byte> data, int xrefOffset, Dictionary<int, XrefEntry> xref,
+        HashSet<int> seenOffsets)
     {
         var span = data.Span;
 
-        // Check what's at xrefOffset: must be the 'xref' keyword.
-        // If it looks like digits (object number), it's an xref stream — unsupported.
         if (xrefOffset >= data.Length)
             throw new InvalidDataException(
                 $"Malformed PDF: xref offset {xrefOffset} is out of range.");
 
         var b = span[xrefOffset];
-        if (IsDigit(b))
-            throw new UnsupportedPdfFeatureException(
-                "Cross-reference streams are not supported yet (see VellumPdf issue #95).");
 
-        // Expect 'xref'
+        if (IsDigit(b))
+        {
+            // Cross-reference stream: "N G obj << ... >> stream ... endstream endobj"
+            return ParseXrefStream(data, xrefOffset, xref);
+        }
+
+        // Classic xref table
         if (xrefOffset + 4 > data.Length ||
             !span[xrefOffset..].StartsWith("xref"u8))
             throw new InvalidDataException(
                 $"Malformed PDF: expected 'xref' keyword at offset {xrefOffset}.");
 
-        var pos = xrefOffset + 4;
+        var trailer = ParseClassicXrefTable(data, xrefOffset, xref);
 
-        // Parse subsections until we hit 'trailer'
+        // Hybrid: if the classic trailer has /XRefStm, also parse that xref stream.
+        // Classic entries win, so we've already added them — the stream entries are added
+        // with TryAdd and will be skipped if already present.
+        if (trailer.TryGet(new PdfName("XRefStm"), out var xrefStmObj) && xrefStmObj is PdfInteger xrefStmInt)
+        {
+            var stmOffset = (int)xrefStmInt.Value;
+            if (stmOffset < 0 || stmOffset >= data.Length)
+                throw new InvalidDataException(
+                    $"Malformed PDF: /XRefStm offset {stmOffset} is out of range.");
+            // Avoid cycling into an already-processed offset
+            if (!seenOffsets.Contains(stmOffset))
+                ParseXrefStream(data, stmOffset, xref);
+        }
+
+        return trailer;
+    }
+
+    // ── Classic xref table ───────────────────────────────────────────────────
+
+    private static PdfDictionary ParseClassicXrefTable(
+        ReadOnlyMemory<byte> data, int xrefOffset, Dictionary<int, XrefEntry> xref)
+    {
+        var span = data.Span;
+        var pos = xrefOffset + 4; // skip 'xref'
+
         while (true)
         {
-            // Skip whitespace
             while (pos < span.Length && IsWhitespace(span[pos]))
                 pos++;
 
             if (pos >= span.Length)
                 throw new InvalidDataException("Malformed PDF: unexpected end of xref table.");
 
-            // Check for 'trailer' keyword
             if (pos + 7 <= span.Length && span[pos..].StartsWith("trailer"u8))
             {
                 pos += 7;
                 break;
             }
 
-            // Parse subsection header: firstObjNum count
             var (firstObjNum, afterFirst) = ReadInt(span, pos);
             pos = afterFirst;
 
@@ -171,13 +192,11 @@ internal sealed class XrefParser
             var (count, afterCount) = ReadInt(span, pos);
             pos = afterCount;
 
-            // Skip to end of line
             while (pos < span.Length && span[pos] is not 10 and not 13)
                 pos++;
             if (pos < span.Length && span[pos] == 13) pos++;
             if (pos < span.Length && span[pos] == 10) pos++;
 
-            // Parse 'count' entries of exactly 20 bytes each
             for (var i = 0; i < count; i++)
             {
                 if (pos + 20 > span.Length)
@@ -185,9 +204,6 @@ internal sealed class XrefParser
                         $"Malformed PDF: xref entry {i} in subsection starting at obj {firstObjNum} is truncated.");
 
                 var entry = span.Slice(pos, 20);
-                // bytes 0-9: offset (10 digits), byte 10: space,
-                // bytes 11-15: generation (5 digits), byte 16: space,
-                // byte 17: 'n' or 'f', bytes 18-19: ' \r\n' or '  \n' etc.
                 var objType = (char)entry[17];
                 var objNum = firstObjNum + i;
 
@@ -199,16 +215,13 @@ internal sealed class XrefParser
                         throw new InvalidDataException(
                             $"Malformed PDF: bad xref entry offset '{offsetStr}' for obj {objNum}.");
 
-                    // Newer revisions win: only add if not already present.
-                    xref.TryAdd(objNum, objOffset);
+                    xref.TryAdd(objNum, XrefEntry.Uncompressed(objOffset));
                 }
-                // 'f' entries are ignored (free list).
 
                 pos += 20;
             }
         }
 
-        // Parse the trailer dictionary after the 'trailer' keyword.
         var parser = new PdfObjectParser(data, pos);
         var trailerObj = parser.ParseObject();
         if (trailerObj is not PdfDictionary trailerDict)
@@ -216,6 +229,108 @@ internal sealed class XrefParser
                 $"Malformed PDF: expected dictionary after 'trailer', got {trailerObj.GetType().Name}.");
 
         return trailerDict;
+    }
+
+    // ── Cross-reference stream ───────────────────────────────────────────────
+
+    private static PdfDictionary ParseXrefStream(
+        ReadOnlyMemory<byte> data, int xrefOffset, Dictionary<int, XrefEntry> xref)
+    {
+        var parser = new PdfObjectParser(data, xrefOffset);
+        var result = parser.ParseIndirectObject();
+
+        if (result.Stream is null)
+            throw new InvalidDataException(
+                $"Malformed PDF: expected xref stream object at offset {xrefOffset}.");
+
+        var streamObj = result.Stream;
+        var dict = streamObj.Dictionary;
+
+        // Decode the stream body (typically FlateDecode, but use full chain for robustness)
+        var decodeResult = PdfFilters.Decode(streamObj);
+        if (decodeResult is null)
+            throw new InvalidDataException(
+                "Malformed PDF: xref stream uses an image filter that cannot be decoded.");
+        var decoded = decodeResult;
+
+        // /W [w1 w2 w3] — field widths
+        if (dict.Get(new PdfName("W")) is not PdfArray wArr || wArr.Count != 3)
+            throw new InvalidDataException("Malformed PDF: xref stream missing valid /W array.");
+
+        var w1 = GetInt(wArr[0]);
+        var w2 = GetInt(wArr[1]);
+        var w3 = GetInt(wArr[2]);
+        var rowSize = w1 + w2 + w3;
+        if (rowSize <= 0)
+            throw new InvalidDataException("Malformed PDF: xref stream /W row size is zero.");
+
+        // /Size
+        if (dict.Get(PdfName.Size) is not PdfInteger sizeObj)
+            throw new InvalidDataException("Malformed PDF: xref stream missing /Size.");
+        var streamSize = (int)sizeObj.Value;
+
+        // /Index — pairs of (firstObjNum, count); default is [0 Size]
+        var indexPairs = new List<(int First, int Count)>();
+        if (dict.Get(new PdfName("Index")) is PdfArray indexArr)
+        {
+            if (indexArr.Count % 2 != 0)
+                throw new InvalidDataException("Malformed PDF: xref stream /Index array has odd element count.");
+            for (var i = 0; i < indexArr.Count; i += 2)
+                indexPairs.Add((GetInt(indexArr[i]), GetInt(indexArr[i + 1])));
+        }
+        else
+        {
+            indexPairs.Add((0, streamSize));
+        }
+
+        var pos = 0;
+        foreach (var (firstObj, count) in indexPairs)
+        {
+            for (var i = 0; i < count; i++)
+            {
+                if (pos + rowSize > decoded.Length)
+                    throw new InvalidDataException(
+                        "Malformed PDF: xref stream body is truncated.");
+
+                var type = w1 > 0 ? ReadBigEndian(decoded, pos, w1) : 1; // default type is 1
+                var field2 = w2 > 0 ? ReadBigEndian(decoded, pos + w1, w2) : 0;
+                var field3 = w3 > 0 ? ReadBigEndian(decoded, pos + w1 + w2, w3) : 0;
+                pos += rowSize;
+
+                var objNum = firstObj + i;
+                switch (type)
+                {
+                    case 1:
+                        xref.TryAdd(objNum, XrefEntry.Uncompressed(field2));
+                        break;
+                    case 2:
+                        xref.TryAdd(objNum, XrefEntry.InObjStm((int)field2, (int)field3));
+                        break;
+                    case 0:
+                        // free entry — skip
+                        break;
+                    default:
+                        // unknown type — ignore per spec (future compatibility)
+                        break;
+                }
+            }
+        }
+
+        return dict;
+    }
+
+    private static long ReadBigEndian(byte[] data, int pos, int width)
+    {
+        long value = 0;
+        for (var i = 0; i < width; i++)
+            value = (value << 8) | data[pos + i];
+        return value;
+    }
+
+    private static int GetInt(PdfObject obj)
+    {
+        if (obj is PdfInteger pi) return (int)pi.Value;
+        throw new InvalidDataException($"Expected integer in xref stream, got {obj.GetType().Name}.");
     }
 
     private static (int Value, int NextPos) ReadInt(ReadOnlySpan<byte> span, int pos)
