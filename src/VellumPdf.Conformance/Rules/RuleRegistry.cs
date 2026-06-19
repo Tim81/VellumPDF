@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 using VellumPdf.Conformance.Rules.Colour;
+using VellumPdf.Conformance.Rules.Fonts;
 using VellumPdf.Conformance.Rules.Structure;
 using VellumPdf.Conformance.Rules.Transparency;
 
@@ -35,11 +36,18 @@ internal static class RuleRegistry
         new BlendModeRule(),
     ];
 
+    // ISO 19005-2 §6.3 font rules. Shared by every PDF/A-2 level.
+    private static readonly IConformanceRule[] PdfA2Fonts =
+    [
+        new FontEmbeddingRule(),
+    ];
+
     private static readonly IConformanceRule[] PdfA2BRules =
     [
         .. CommonStructure,
         .. PdfA2FileStructure,
         .. PdfA2ColourAndTransparency,
+        .. PdfA2Fonts,
     ];
 
     /// <summary>

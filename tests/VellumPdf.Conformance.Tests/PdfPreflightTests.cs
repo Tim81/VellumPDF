@@ -195,6 +195,25 @@ public sealed class PdfPreflightTests
         ]);
     }
 
+    /// <summary>
+    /// Builds a one-page doc whose /Resources /Font /F0 references object 6, with
+    /// <paramref name="fontObjects"/> supplying objects 6..N (the font dict and any descriptor /
+    /// font-program streams it points to).
+    /// </summary>
+    private static byte[] BuildFontPdf(params PdfObj[] fontObjects)
+    {
+        var objects = new List<PdfObj>
+        {
+            new("<< /Type /Catalog /Pages 2 0 R >>"),
+            _pagesObj,
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources 4 0 R >>"),
+            new("<< /Font 5 0 R >>"),
+            new("<< /F0 6 0 R >>"),
+        };
+        objects.AddRange(fontObjects);
+        return AssemblePdf(objects);
+    }
+
     // ── Tests ─────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -407,6 +426,78 @@ public sealed class PdfPreflightTests
         var assertion = Assert.Single(result.Assertions);
         Assert.Equal("ISO19005-2:6.4-blend-mode", assertion.RuleId);
         Assert.Contains("/Bogus", assertion.Message);
+    }
+
+    // ── §6.3 font embedding rules ───────────────────────────────────────────────
+
+    [Fact]
+    public void Validate_UnembeddedStandard14Font_ReportsError()
+    {
+        var bytes = BuildFontPdf(
+            new PdfObj("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        var assertion = Assert.Single(result.Assertions);
+        Assert.Equal("ISO19005-2:6.3.4-font-embedding", assertion.RuleId);
+        Assert.Contains("Helvetica", assertion.Message);
+    }
+
+    [Fact]
+    public void Validate_EmbeddedTrueTypeFont_NoFindings()
+    {
+        var bytes = BuildFontPdf(
+            new PdfObj("<< /Type /Font /Subtype /TrueType /BaseFont /ABCDEF+Arial /FontDescriptor 7 0 R >>"),
+            new PdfObj("<< /Type /FontDescriptor /FontName /ABCDEF+Arial /FontFile2 8 0 R >>"),
+            new PdfObj("/Length1 4", [1, 2, 3, 4]));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.True(result.IsCompliant);
+        Assert.Empty(result.Assertions);
+    }
+
+    [Fact]
+    public void Validate_UnembeddedType0Font_ReportsError()
+    {
+        var bytes = BuildFontPdf(
+            new PdfObj("<< /Type /Font /Subtype /Type0 /BaseFont /XYZ+Sub /DescendantFonts [7 0 R] >>"),
+            new PdfObj("<< /Type /Font /Subtype /CIDFontType2 /BaseFont /XYZ+Sub /FontDescriptor 8 0 R >>"),
+            new PdfObj("<< /Type /FontDescriptor /FontName /XYZ+Sub >>"));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        var assertion = Assert.Single(result.Assertions);
+        Assert.Equal("ISO19005-2:6.3.4-font-embedding", assertion.RuleId);
+    }
+
+    [Fact]
+    public void Validate_EmbeddedType0Font_NoFindings()
+    {
+        var bytes = BuildFontPdf(
+            new PdfObj("<< /Type /Font /Subtype /Type0 /BaseFont /XYZ+Sub /DescendantFonts [7 0 R] >>"),
+            new PdfObj("<< /Type /Font /Subtype /CIDFontType2 /BaseFont /XYZ+Sub /FontDescriptor 8 0 R >>"),
+            new PdfObj("<< /Type /FontDescriptor /FontName /XYZ+Sub /FontFile2 9 0 R >>"),
+            new PdfObj("/Length1 4", [1, 2, 3, 4]));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.True(result.IsCompliant);
+        Assert.Empty(result.Assertions);
+    }
+
+    [Fact]
+    public void Validate_Type3Font_IsExemptFromEmbedding()
+    {
+        // Type3 glyphs are content streams — no font program is expected.
+        var bytes = BuildFontPdf(
+            new PdfObj("<< /Type /Font /Subtype /Type3 /FontBBox [0 0 1 1] /CharProcs 7 0 R >>"),
+            new PdfObj("<< >>"));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.True(result.IsCompliant);
+        Assert.Empty(result.Assertions);
     }
 
     [Fact]
