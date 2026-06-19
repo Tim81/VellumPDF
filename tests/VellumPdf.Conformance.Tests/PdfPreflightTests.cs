@@ -82,15 +82,17 @@ public sealed class PdfPreflightTests
         bool binaryMarker = true,
         bool trailerId = true,
         bool metadata = true,
-        string xmpConformance = "B")
+        string xmpConformance = "B",
+        byte[]? metadataOverride = null)
     {
         var all = new List<PdfObj>(objects);
 
-        // Append a conforming XMP metadata stream and reference it from the catalog (object 1).
+        // Append an XMP metadata stream and reference it from the catalog (object 1).
         if (metadata)
         {
             var metaObjNum = all.Count + 1;
-            all.Add(new PdfObj("/Type /Metadata /Subtype /XML", XmpBytes("2", xmpConformance)));
+            var xmp = metadataOverride ?? XmpBytes("2", xmpConformance);
+            all.Add(new PdfObj("/Type /Metadata /Subtype /XML", xmp));
             all[0] = all[0] with { Dict = InjectIntoDict(all[0].Dict, $"/Metadata {metaObjNum} 0 R") };
         }
 
@@ -255,6 +257,56 @@ public sealed class PdfPreflightTests
         return AssemblePdf(objects, xmpConformance: xmpConformance);
     }
 
+    /// <summary>A minimal PDF/UA-1 XMP packet (pdfuaid:part + optional dc:title).</summary>
+    private static byte[] UaXmpBytes(string part = "1", bool withTitle = true)
+    {
+        var title = withTitle
+            ? "<dc:title><rdf:Alt><rdf:li xml:lang=\"x-default\">Title</rdf:li></rdf:Alt></dc:title>"
+            : string.Empty;
+        var xmp =
+            "<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>"
+            + "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF "
+            + "xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">"
+            + "<rdf:Description rdf:about=\"\" "
+            + "xmlns:pdfuaid=\"http://www.aiim.org/pdfua/ns/id/\" "
+            + "xmlns:dc=\"http://purl.org/dc/elements/1.1/\">"
+            + $"<pdfuaid:part>{part}</pdfuaid:part>"
+            + title
+            + "</rdf:Description></rdf:RDF></x:xmpmeta><?xpacket end=\"w\"?>";
+        return Encoding.UTF8.GetBytes(xmp);
+    }
+
+    /// <summary>
+    /// Builds a PDF/UA-1 fixture that is compliant by default; each flag drops one requirement so a
+    /// single UA rule can be exercised in isolation. Object 4 is always a /StructTreeRoot.
+    /// </summary>
+    private static byte[] BuildUaPdf(
+        bool lang = true,
+        bool marked = true,
+        bool structTreeRoot = true,
+        bool displayDocTitle = true,
+        byte[]? xmpOverride = null,
+        string pageExtra = "")
+    {
+        var catalog = "<< /Type /Catalog /Pages 2 0 R"
+            + (lang ? " /Lang (en-US)" : string.Empty)
+            + (marked ? " /MarkInfo << /Marked true >>" : " /MarkInfo << /Marked false >>")
+            + (structTreeRoot ? " /StructTreeRoot 4 0 R" : string.Empty)
+            + (displayDocTitle
+                ? " /ViewerPreferences << /DisplayDocTitle true >>"
+                : " /ViewerPreferences << /DisplayDocTitle false >>")
+            + " >>";
+
+        return AssemblePdf(
+            [
+                new(catalog),
+                _pagesObj,
+                new($"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] {pageExtra} >>"),
+                new("<< /Type /StructTreeRoot >>"),
+            ],
+            metadataOverride: xmpOverride ?? UaXmpBytes());
+    }
+
     /// <summary>Builds a tagged-document fixture (XMP conformance A) with the given catalog/extra objects.</summary>
     private static byte[] Build2aPdf(string catalogExtra, params PdfObj[] extra)
     {
@@ -304,12 +356,12 @@ public sealed class PdfPreflightTests
         Assert.NotNull(reader.Catalog);
     }
 
-    [Theory]
-    [InlineData(PdfConformance.PdfUA1)]
-    public void Validate_UnregisteredLevel_Throws(PdfConformance level)
+    [Fact]
+    public void Validate_UnregisteredLevel_Throws()
     {
+        // All defined levels are registered; an out-of-range value exercises the unsupported path.
         var bytes = BuildOnePagePdf();
-        Assert.Throws<NotSupportedException>(() => PdfPreflight.Validate(bytes, level));
+        Assert.Throws<NotSupportedException>(() => PdfPreflight.Validate(bytes, (PdfConformance)999));
     }
 
     [Fact]
@@ -762,6 +814,93 @@ public sealed class PdfPreflightTests
         var assertion = Assert.Single(result.Assertions);
         Assert.Equal("ISO19005-2:6.8-logical-structure", assertion.RuleId);
         Assert.Contains("circular", assertion.Message);
+    }
+
+    // ── PDF/UA-1 (ISO 14289-1) ──────────────────────────────────────────────────
+
+    [Fact]
+    public void ValidateUa_CompliantDocument_NoFindings()
+    {
+        var result = PdfPreflight.Validate(BuildUaPdf(), PdfConformance.PdfUA1);
+
+        Assert.True(result.IsCompliant);
+        Assert.Empty(result.Assertions);
+    }
+
+    [Fact]
+    public void ValidateUa_MissingLang_ReportsError()
+    {
+        var result = PdfPreflight.Validate(BuildUaPdf(lang: false), PdfConformance.PdfUA1);
+
+        var assertion = Assert.Single(result.Assertions);
+        Assert.Equal("ISO14289-1:7.2-lang", assertion.RuleId);
+    }
+
+    [Fact]
+    public void ValidateUa_NotMarked_ReportsError()
+    {
+        var result = PdfPreflight.Validate(BuildUaPdf(marked: false), PdfConformance.PdfUA1);
+
+        var assertion = Assert.Single(result.Assertions);
+        Assert.Equal("ISO14289-1:7.1-tagged", assertion.RuleId);
+    }
+
+    [Fact]
+    public void ValidateUa_MissingStructTreeRoot_ReportsError()
+    {
+        var result = PdfPreflight.Validate(BuildUaPdf(structTreeRoot: false), PdfConformance.PdfUA1);
+
+        var assertion = Assert.Single(result.Assertions);
+        Assert.Equal("ISO14289-1:7.1-tagged", assertion.RuleId);
+    }
+
+    [Fact]
+    public void ValidateUa_DisplayDocTitleFalse_ReportsError()
+    {
+        var result = PdfPreflight.Validate(BuildUaPdf(displayDocTitle: false), PdfConformance.PdfUA1);
+
+        var assertion = Assert.Single(result.Assertions);
+        Assert.Equal("ISO14289-1:7.1-title", assertion.RuleId);
+    }
+
+    [Fact]
+    public void ValidateUa_MissingDcTitle_ReportsError()
+    {
+        var result = PdfPreflight.Validate(
+            BuildUaPdf(xmpOverride: UaXmpBytes(withTitle: false)), PdfConformance.PdfUA1);
+
+        var assertion = Assert.Single(result.Assertions);
+        Assert.Equal("ISO14289-1:7.1-title", assertion.RuleId);
+    }
+
+    [Fact]
+    public void ValidateUa_WrongPdfuaidPart_ReportsError()
+    {
+        var result = PdfPreflight.Validate(
+            BuildUaPdf(xmpOverride: UaXmpBytes(part: "2")), PdfConformance.PdfUA1);
+
+        var assertion = Assert.Single(result.Assertions);
+        Assert.Equal("ISO14289-1:5-pdfuaid", assertion.RuleId);
+    }
+
+    [Fact]
+    public void ValidateUa_AnnotatedPageWithoutTabsS_ReportsError()
+    {
+        var bytes = AssemblePdf(
+            [
+                new("<< /Type /Catalog /Pages 2 0 R /Lang (en-US) /MarkInfo << /Marked true >> "
+                    + "/StructTreeRoot 4 0 R /ViewerPreferences << /DisplayDocTitle true >> >>"),
+                _pagesObj,
+                new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Annots [5 0 R] >>"),
+                new("<< /Type /StructTreeRoot >>"),
+                new("<< /Type /Annot /Subtype /Link /Rect [0 0 1 1] /F 4 >>"),
+            ],
+            metadataOverride: UaXmpBytes());
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+
+        var assertion = Assert.Single(result.Assertions);
+        Assert.Equal("ISO14289-1:7.18.3-tabs", assertion.RuleId);
     }
 
     [Fact]

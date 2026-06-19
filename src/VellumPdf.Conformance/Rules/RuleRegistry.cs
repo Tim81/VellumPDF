@@ -8,6 +8,7 @@ using VellumPdf.Conformance.Rules.Fonts;
 using VellumPdf.Conformance.Rules.Metadata;
 using VellumPdf.Conformance.Rules.Structure;
 using VellumPdf.Conformance.Rules.Transparency;
+using VellumPdf.Conformance.Rules.Ua;
 
 namespace VellumPdf.Conformance.Rules;
 
@@ -77,6 +78,18 @@ internal static class RuleRegistry
         new LogicalStructureRule(),
     ];
 
+    // PDF/UA-1 (ISO 14289-1) is a distinct standard from PDF/A: it shares the baseline catalog
+    // structure but has its own metadata, tagging, language, title, and tab-order requirements.
+    private static readonly IConformanceRule[] PdfUA1Rules =
+    [
+        .. CommonStructure,
+        new UaMetadataRule(),
+        new UaTaggingRule(),
+        new UaLangRule(),
+        new UaTitleRule(),
+        new UaTabsRule(),
+    ];
+
     /// <summary>
     /// Returns the rule profile for <paramref name="conformance"/>, or <see langword="false"/>
     /// when no profile is registered yet for that level.
@@ -93,6 +106,9 @@ internal static class RuleRegistry
                 return true;
             case PdfConformance.PdfA2A:
                 rules = PdfA2ARules;
+                return true;
+            case PdfConformance.PdfUA1:
+                rules = PdfUA1Rules;
                 return true;
             default:
                 rules = [];
