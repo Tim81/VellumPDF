@@ -117,10 +117,11 @@ internal static class PdfFilters
             // A decompression bomb: surface it, never retry.
             throw new InvalidDataException(ex.Message);
         }
-        catch
+        catch (Exception primaryError) when (primaryError is not OutOfMemoryException)
         {
             // Format error on the primary decoder — retry with the other (handles header-less
-            // raw deflate vs. zlib-wrapped). Still never swallow the size cap.
+            // raw deflate vs. zlib-wrapped). Still never swallow the size cap. OutOfMemoryException
+            // is excluded so a real OOM is not masked as malformed input or retried.
             try
             {
                 return Inflate(MakeDecompressor(input, !primaryIsZlib));
