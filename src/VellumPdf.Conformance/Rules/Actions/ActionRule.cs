@@ -12,9 +12,10 @@ namespace VellumPdf.Conformance.Rules.Actions;
 /// </summary>
 /// <remarks>
 /// Authored from ISO 19005-2:2011, 6.6.1 and ISO 32000-1:2008, 12.6. Clean-room: derived from the
-/// specification text, not from any third-party validation profile. The document catalog's
-/// <c>/OpenAction</c> and each annotation's <c>/A</c> action are inspected, following any
-/// <c>/Next</c> chain. Additional-actions (<c>/AA</c>) dictionaries are validated in a later slice.
+/// specification text, not from any third-party validation profile. Inspects the document catalog's
+/// <c>/OpenAction</c>, each annotation's <c>/A</c>, and the additional-action (<c>/AA</c>)
+/// dictionaries on the catalog, pages, and annotations, following any <c>/Next</c> chain. Form-field
+/// <c>/AA</c> reached only through the AcroForm field tree (not via a widget annotation) is deferred.
 /// </remarks>
 internal sealed class ActionRule : IConformanceRule
 {
@@ -26,6 +27,7 @@ internal sealed class ActionRule : IConformanceRule
     private static readonly PdfName _next = new("Next");
     private static readonly PdfName _openAction = new("OpenAction");
     private static readonly PdfName _a = new("A");
+    private static readonly PdfName _aa = new("AA");
 
     private static readonly HashSet<string> _forbidden = new(StringComparer.Ordinal)
     {
@@ -38,9 +40,24 @@ internal sealed class ActionRule : IConformanceRule
         var visited = new HashSet<int>();
 
         CheckAction(context, context.Catalog.Get(_openAction), visited);
+        CheckAdditionalActions(context, context.Catalog.Get(_aa), visited);
+
+        foreach (var page in context.EnumeratePages())
+            CheckAdditionalActions(context, page.Get(_aa), visited);
 
         foreach (var annot in context.EnumerateAnnotations())
+        {
             CheckAction(context, annot.Get(_a), visited);
+            CheckAdditionalActions(context, annot.Get(_aa), visited);
+        }
+    }
+
+    private void CheckAdditionalActions(PreflightContext context, PdfObject? aaObj, HashSet<int> visited)
+    {
+        if (context.Resolve(aaObj) is not PdfDictionary aa)
+            return;
+        foreach (var entry in aa.Entries)
+            CheckAction(context, entry.Value, visited);
     }
 
     private void CheckAction(PreflightContext context, PdfObject? actionObj, HashSet<int> visited)

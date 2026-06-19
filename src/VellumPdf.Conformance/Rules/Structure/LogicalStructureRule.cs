@@ -31,7 +31,7 @@ internal sealed class LogicalStructureRule : IConformanceRule
     public void Evaluate(PreflightContext context)
     {
         var markInfo = context.Resolve(context.Catalog.Get(_markInfo)) as PdfDictionary;
-        if (markInfo?.Get(_marked) is not PdfBoolean { Value: true })
+        if (context.Resolve(markInfo?.Get(_marked)) is not PdfBoolean { Value: true })
         {
             context.Report(
                 RuleId,
@@ -58,8 +58,20 @@ internal sealed class LogicalStructureRule : IConformanceRule
     {
         var map = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var entry in roleMap.Entries)
+        {
             if (context.Resolve(entry.Value) is PdfName target)
+            {
                 map[entry.Key.Value] = target.Value;
+            }
+            else
+            {
+                context.Report(
+                    RuleId,
+                    Clause,
+                    PreflightSeverity.Error,
+                    $"The structure tree /RoleMap entry /{entry.Key.Value} shall map to a name.");
+            }
+        }
 
         foreach (var start in map.Keys)
         {

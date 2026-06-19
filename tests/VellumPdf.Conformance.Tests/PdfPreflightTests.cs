@@ -904,6 +904,55 @@ public sealed class PdfPreflightTests
     }
 
     [Fact]
+    public void Validate_ForbiddenAnnotationSubtype_ReportsError()
+    {
+        var bytes = BuildPagePdf(
+            "/Annots [4 0 R]",
+            new PdfObj("<< /Type /Annot /Subtype /Movie /Rect [0 0 1 1] /F 4 >>"));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        var assertion = Assert.Single(result.Assertions);
+        Assert.Equal("ISO19005-2:6.5.3-annotation", assertion.RuleId);
+        Assert.Contains("/Movie", assertion.Message);
+    }
+
+    [Fact]
+    public void Validate_JavaScriptInAdditionalActions_ReportsError()
+    {
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R >>"),
+            _pagesObj,
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /AA << /O 4 0 R >> >>"),
+            new("<< /S /JavaScript /JS (noop) >>"),
+        ]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions,
+            a => a.RuleId == "ISO19005-2:6.6.1-action" && a.Message.Contains("/JavaScript"));
+    }
+
+    [Fact]
+    public void Validate_FontWithWrongFontFileVariant_ReportsError()
+    {
+        // A Type1 font embedded with /FontFile2 (a TrueType program) is not correctly embedded.
+        var bytes = BuildFontPdf(
+            new PdfObj("<< /Type /Font /Subtype /Type1 /BaseFont /Foo /FontDescriptor 7 0 R >>"),
+            new PdfObj("<< /Type /FontDescriptor /FontName /Foo /FontFile2 8 0 R >>"),
+            new PdfObj("/Length1 4", [1, 2, 3, 4]));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        var assertion = Assert.Single(result.Assertions);
+        Assert.Equal("ISO19005-2:6.3.4-font-embedding", assertion.RuleId);
+    }
+
+    [Fact]
     public void Validate_XmpWithAlternatePdfaidPrefix_IsAccepted()
     {
         // The pdfaid namespace URI is bound to a non-default prefix 'aid'. Resolution is by URI,
