@@ -478,8 +478,11 @@ internal sealed class PdfObjectParser
         // raw includes < and >
         var span = raw.Span[1..^1];
 
-        // collect hex digits, skip whitespace (+1 slot for an odd-length pad nibble)
-        Span<byte> nibbles = stackalloc byte[span.Length + 1];
+        // collect hex digits, skip whitespace (+1 slot for an odd-length pad nibble).
+        // The token length is attacker-controlled, so only stackalloc for small strings; a large
+        // hex string would otherwise overflow the stack (an uncatchable crash).
+        var maxNibbles = span.Length + 1;
+        Span<byte> nibbles = maxNibbles <= 1024 ? stackalloc byte[maxNibbles] : new byte[maxNibbles];
         var count = 0;
         foreach (var b in span)
         {
