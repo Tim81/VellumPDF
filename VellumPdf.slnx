@@ -1,11 +1,13 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/VellumPdf.Conformance/VellumPdf.Conformance.csproj" />
     <Project Path="src/VellumPdf.Kernel/VellumPdf.Kernel.csproj" />
     <Project Path="src/VellumPdf.Layout/VellumPdf.Layout.csproj" />
     <Project Path="src/VellumPdf.Reader/VellumPdf.Reader.csproj" />
     <Project Path="src/VellumPdf.Signing/VellumPdf.Signing.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/VellumPdf.Conformance.Tests/VellumPdf.Conformance.Tests.csproj" />
     <Project Path="tests/VellumPdf.Kernel.Tests/VellumPdf.Kernel.Tests.csproj" />
     <Project Path="tests/VellumPdf.Layout.Tests/VellumPdf.Layout.Tests.csproj" />
     <Project Path="tests/VellumPdf.Reader.Tests/VellumPdf.Reader.Tests.csproj" />
