@@ -49,8 +49,8 @@ internal sealed class XmpConformanceRule : IConformanceRule
         }
 
         var xmp = Encoding.UTF8.GetString(bytes);
-        var actualPart = ExtractValue(xmp, "pdfaid:part");
-        var actualConformance = ExtractValue(xmp, "pdfaid:conformance");
+        var actualPart = XmpReader.GetProperty(xmp, "pdfaid:part");
+        var actualConformance = XmpReader.GetProperty(xmp, "pdfaid:conformance");
 
         if (actualPart != part)
         {
@@ -74,48 +74,4 @@ internal sealed class XmpConformanceRule : IConformanceRule
     };
 
     private static string Describe(string? value) => value is null ? "absent" : $"'{value}'";
-
-    /// <summary>
-    /// Returns the value associated with <paramref name="token"/> in <paramref name="xmp"/>,
-    /// reading either the element form (<c>&gt;value&lt;</c>) or the attribute form
-    /// (<c>="value"</c>). Returns <see langword="null"/> when the token is absent.
-    /// </summary>
-    private static string? ExtractValue(string xmp, string token)
-    {
-        var idx = xmp.IndexOf(token, StringComparison.Ordinal);
-        if (idx < 0)
-            return null;
-
-        var i = idx + token.Length;
-        while (i < xmp.Length && char.IsWhiteSpace(xmp[i]))
-            i++;
-        if (i >= xmp.Length)
-            return null;
-
-        char terminator;
-        if (xmp[i] == '>')
-        {
-            i++;
-            terminator = '<';
-        }
-        else if (xmp[i] == '=')
-        {
-            i++;
-            while (i < xmp.Length && char.IsWhiteSpace(xmp[i]))
-                i++;
-            if (i >= xmp.Length || (xmp[i] != '"' && xmp[i] != '\''))
-                return null;
-            terminator = xmp[i];
-            i++;
-        }
-        else
-        {
-            return null;
-        }
-
-        var start = i;
-        while (i < xmp.Length && xmp[i] != terminator)
-            i++;
-        return xmp[start..i].Trim();
-    }
 }
