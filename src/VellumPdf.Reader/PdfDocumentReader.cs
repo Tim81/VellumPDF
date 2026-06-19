@@ -178,11 +178,14 @@ public sealed class PdfDocumentReader : IDisposable
             throw new InvalidDataException(
                 $"Object {objNum} not found in object stream {containerObjNum}.");
 
-        var absoluteOffset = first + relOffset;
-        if (absoluteOffset >= body.Length)
+        // relOffset comes from the (untrusted) object-stream header; guard against a negative or
+        // overflowing offset producing an out-of-bounds slice (a non-InvalidDataException crash).
+        if (relOffset < 0 || (long)first + relOffset >= body.Length)
             throw new InvalidDataException(
-                $"Object {objNum} offset {absoluteOffset} in object stream {containerObjNum} " +
-                $"exceeds decoded body length {body.Length}.");
+                $"Object {objNum} offset in object stream {containerObjNum} is out of range " +
+                $"(first={first}, relative={relOffset}, body length={body.Length}).");
+
+        var absoluteOffset = first + relOffset;
 
         var mem = new ReadOnlyMemory<byte>(body, absoluteOffset, body.Length - absoluteOffset);
         var parser = new PdfObjectParser(mem);
@@ -223,10 +226,13 @@ public sealed class PdfDocumentReader : IDisposable
             throw new InvalidDataException(
                 $"Object stream {containerObjNum} /First={first} is out of range for body length {body.Length}.");
 
-        // Parse the header: N pairs of (objNum, offset)
+        // Parse the header: N pairs of (objNum, offset). Do NOT pre-size the dictionary to /N:
+        // a malicious stream can declare /N up to 1,000,000 with a tiny body, and a capacity hint
+        // of that size would allocate megabytes before the header parse fails (allocation
+        // amplification). Let it grow to the number of pairs actually parsed.
         var headerMem = new ReadOnlyMemory<byte>(body, 0, first);
         var headerParser = new PdfObjectParser(headerMem);
-        var offsetMap = new Dictionary<int, int>(n);
+        var offsetMap = new Dictionary<int, int>();
 
         for (var i = 0; i < n; i++)
         {

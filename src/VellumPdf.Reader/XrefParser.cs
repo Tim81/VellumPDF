@@ -33,7 +33,10 @@ internal sealed class XrefParser
     private static int FindLastStartxref(ReadOnlyMemory<byte> data)
     {
         var span = data.Span;
-        var searchStart = Math.Max(0, span.Length - 1024);
+        // ISO 32000 does not bound the distance from EOF to the last 'startxref'; files with large
+        // trailers or trailing content after %%EOF place it further back, so scan a generous tail.
+        const int TailWindow = 2048;
+        var searchStart = Math.Max(0, span.Length - TailWindow);
         var searchSpan = span[searchStart..];
 
         // Find the last occurrence of "startxref" in the tail of the file.
@@ -46,7 +49,7 @@ internal sealed class XrefParser
 
         if (lastFound < 0)
             throw new InvalidDataException(
-                "Malformed PDF: 'startxref' not found in the last 1024 bytes.");
+                $"Malformed PDF: 'startxref' not found in the last {TailWindow} bytes.");
 
         var absolutePos = searchStart + lastFound + StartxrefBytes.Length;
 
@@ -260,6 +263,10 @@ internal sealed class XrefParser
         var w1 = GetInt(wArr[0]);
         var w2 = GetInt(wArr[1]);
         var w3 = GetInt(wArr[2]);
+        // Each field is read big-endian into a long, so a width must be 0..8; negative widths would
+        // otherwise produce silently-wrong offsets rather than an error.
+        if (w1 is < 0 or > 8 || w2 is < 0 or > 8 || w3 is < 0 or > 8)
+            throw new InvalidDataException("Malformed PDF: xref stream /W field width out of range.");
         var rowSize = w1 + w2 + w3;
         if (rowSize <= 0)
             throw new InvalidDataException("Malformed PDF: xref stream /W row size is zero.");
@@ -276,7 +283,14 @@ internal sealed class XrefParser
             if (indexArr.Count % 2 != 0)
                 throw new InvalidDataException("Malformed PDF: xref stream /Index array has odd element count.");
             for (var i = 0; i < indexArr.Count; i += 2)
-                indexPairs.Add((GetInt(indexArr[i]), GetInt(indexArr[i + 1])));
+            {
+                var first = GetInt(indexArr[i]);
+                var count = GetInt(indexArr[i + 1]);
+                // Reject negatives and any (first + count) that would overflow into bogus object numbers.
+                if (first < 0 || count < 0 || (long)first + count > int.MaxValue)
+                    throw new InvalidDataException("Malformed PDF: xref stream /Index subsection is out of range.");
+                indexPairs.Add((first, count));
+            }
         }
         else
         {
