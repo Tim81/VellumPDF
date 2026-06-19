@@ -32,6 +32,10 @@ internal sealed class AnnotationRule : IConformanceRule
     private const int NoView = 1 << 5;  // bit 6
 
     // Multimedia / dynamic annotation subtypes prohibited by PDF/A-2 (ISO 19005-2 §6.5.3).
+    // This is intentionally a deny-list of the unambiguously forbidden subtypes rather than an
+    // allow-list of permitted ones: the permitted set is large, so a deny-list avoids
+    // false-positives on valid-but-uncommon subtypes. Rejecting unknown subtypes outright (the
+    // stricter allow-list reading of §6.5.3) is a deliberate follow-up.
     private static readonly HashSet<string> _forbiddenSubtypes = new(StringComparer.Ordinal)
     {
         "Sound", "Movie", "Screen", "3D", "RichMedia",
