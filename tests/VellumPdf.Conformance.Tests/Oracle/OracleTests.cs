@@ -29,7 +29,8 @@ public sealed class InProcessOracleTests
 /// <summary>
 /// The cross-validation half of the oracle gate: for each corpus fixture, the in-process verdict
 /// must equal the verdict produced by veraPDF. When veraPDF is not on the PATH (the typical local
-/// setup) the test is skipped; CI provides it via a Docker-backed <c>verapdf</c> shim.
+/// setup) the test is skipped — unless <c>REQUIRE_VERAPDF=1</c>, which turns the absence into a
+/// failure so a misconfigured CI image cannot silently skip the entire gate.
 /// </summary>
 public sealed class VeraPdfOracleTests
 {
@@ -40,13 +41,18 @@ public sealed class VeraPdfOracleTests
     public void InProcessVerdict_EqualsVeraPdf(string name)
     {
         if (!VeraPdf.IsAvailable)
+        {
+            if (Environment.GetEnvironmentVariable("REQUIRE_VERAPDF") == "1")
+                Assert.Fail("REQUIRE_VERAPDF=1 but the veraPDF CLI is not available on PATH.");
             Assert.Skip("veraPDF is not available on PATH (set up by CI; skipped locally).");
+        }
 
         var fixture = OracleCorpus.ByName(name);
 
         // veraPDF's CLI shim mounts /tmp into the container, so the fixture must live there.
+        // A GUID keeps concurrent runs from colliding on the same path.
         var baseDir = Directory.Exists("/tmp") ? "/tmp" : Path.GetTempPath();
-        var path = Path.Combine(baseDir, $"vellum-oracle-{fixture.Name}.pdf");
+        var path = Path.Combine(baseDir, $"vellum-oracle-{fixture.Name}-{Guid.NewGuid():N}.pdf");
         File.WriteAllBytes(path, fixture.Bytes);
         try
         {
@@ -72,11 +78,7 @@ internal static class VeraPdf
     {
         try
         {
-            using var p = Start("--version");
-            if (p is null)
-                return false;
-            p.WaitForExit(60_000);
-            return true;
+            return Run("--version").Exit == 0;
         }
         catch
         {
@@ -87,21 +89,20 @@ internal static class VeraPdf
     /// <summary>Returns true when veraPDF reports <paramref name="path"/> compliant with <paramref name="flavour"/>.</summary>
     public static bool Validate(string path, string flavour)
     {
-        using var p = Start("--flavour", flavour, "--format", "text", path)
-            ?? throw new InvalidOperationException("Failed to start veraPDF.");
-        p.WaitForExit(120_000);
+        var (exit, stdout, stderr) = Run("--flavour", flavour, "--format", "text", path);
 
         // veraPDF exit codes: 0 = the file is compliant; 1 = ran, file non-compliant; >1 = error.
-        return p.ExitCode switch
+        return exit switch
         {
             0 => true,
             1 => false,
             _ => throw new InvalidOperationException(
-                $"veraPDF returned error exit code {p.ExitCode} for {path} ({flavour})."),
+                $"veraPDF returned error exit code {exit} for {path} ({flavour}).\n"
+                + $"stdout:\n{stdout}\nstderr:\n{stderr}"),
         };
     }
 
-    private static Process? Start(params string[] args)
+    private static (int Exit, string Stdout, string Stderr) Run(params string[] args)
     {
         var psi = new ProcessStartInfo("verapdf")
         {
@@ -111,6 +112,25 @@ internal static class VeraPdf
         };
         foreach (var a in args)
             psi.ArgumentList.Add(a);
-        return Process.Start(psi);
+
+        using var process = Process.Start(psi)
+            ?? throw new InvalidOperationException("Failed to start veraPDF.");
+
+        // Drain both pipes concurrently BEFORE waiting, or a report larger than the OS pipe
+        // buffer would block the child on write while we block in WaitForExit (deadlock).
+        var stdoutTask = process.StandardOutput.ReadToEndAsync();
+        var stderrTask = process.StandardError.ReadToEndAsync();
+
+        if (!process.WaitForExit(120_000))
+        {
+            try { process.Kill(entireProcessTree: true); }
+            catch { /* best effort */ }
+            throw new InvalidOperationException(
+                $"veraPDF timed out after 120s (args: {string.Join(' ', args)}).");
+        }
+
+        // Ensure the async stream reads have completed now that the process has exited.
+        process.WaitForExit();
+        return (process.ExitCode, stdoutTask.GetAwaiter().GetResult(), stderrTask.GetAwaiter().GetResult());
     }
 }
