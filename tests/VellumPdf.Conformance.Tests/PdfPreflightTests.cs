@@ -230,6 +230,44 @@ public sealed class PdfPreflightTests
         return AssemblePdf(objects);
     }
 
+    /// <summary>Builds a one-page doc with a single embedded Identity-H Type0 font, optionally with /ToUnicode.</summary>
+    private static byte[] BuildType0FontPdf(bool withToUnicode, string xmpConformance)
+    {
+        var fontDict = withToUnicode
+            ? "<< /Type /Font /Subtype /Type0 /BaseFont /X /Encoding /Identity-H /DescendantFonts [7 0 R] /ToUnicode 10 0 R >>"
+            : "<< /Type /Font /Subtype /Type0 /BaseFont /X /Encoding /Identity-H /DescendantFonts [7 0 R] >>";
+
+        var objects = new List<PdfObj>
+        {
+            new("<< /Type /Catalog /Pages 2 0 R >>"),
+            _pagesObj,
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources 4 0 R >>"),
+            new("<< /Font 5 0 R >>"),
+            new("<< /F0 6 0 R >>"),
+            new(fontDict),
+            new("<< /Type /Font /Subtype /CIDFontType2 /BaseFont /X /FontDescriptor 8 0 R >>"),
+            new("<< /Type /FontDescriptor /FontName /X /FontFile2 9 0 R >>"),
+            new("/Length1 4", [1, 2, 3, 4]),
+        };
+        if (withToUnicode)
+            objects.Add(new PdfObj("/Type /CMap", Encoding.ASCII.GetBytes("/CIDInit")));
+
+        return AssemblePdf(objects, xmpConformance: xmpConformance);
+    }
+
+    /// <summary>Builds a tagged-document fixture (XMP conformance A) with the given catalog/extra objects.</summary>
+    private static byte[] Build2aPdf(string catalogExtra, params PdfObj[] extra)
+    {
+        var objects = new List<PdfObj>
+        {
+            new($"<< /Type /Catalog /Pages 2 0 R {catalogExtra} >>"),
+            _pagesObj,
+            _pageObj,
+        };
+        objects.AddRange(extra);
+        return AssemblePdf(objects, xmpConformance: "A");
+    }
+
     // ── Tests ─────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -267,8 +305,6 @@ public sealed class PdfPreflightTests
     }
 
     [Theory]
-    [InlineData(PdfConformance.PdfA2U)]
-    [InlineData(PdfConformance.PdfA2A)]
     [InlineData(PdfConformance.PdfUA1)]
     public void Validate_UnregisteredLevel_Throws(PdfConformance level)
     {
@@ -635,6 +671,97 @@ public sealed class PdfPreflightTests
 
         Assert.True(result.IsCompliant);
         Assert.Empty(result.Assertions);
+    }
+
+    // ── PDF/A-2u §6.2.11.7 ToUnicode ────────────────────────────────────────────
+
+    [Fact]
+    public void Validate2u_IdentityType0FontWithoutToUnicode_ReportsError()
+    {
+        var bytes = BuildType0FontPdf(withToUnicode: false, xmpConformance: "U");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2U);
+
+        var assertion = Assert.Single(result.Assertions);
+        Assert.Equal("ISO19005-2:6.2.11.7-tounicode", assertion.RuleId);
+    }
+
+    [Fact]
+    public void Validate2u_IdentityType0FontWithToUnicode_NoFindings()
+    {
+        var bytes = BuildType0FontPdf(withToUnicode: true, xmpConformance: "U");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2U);
+
+        Assert.True(result.IsCompliant);
+        Assert.Empty(result.Assertions);
+    }
+
+    [Fact]
+    public void Validate2b_IdentityType0FontWithoutToUnicode_IsAllowed()
+    {
+        // ToUnicode is a 2u requirement; the same font is acceptable at level B.
+        var bytes = BuildType0FontPdf(withToUnicode: false, xmpConformance: "B");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.True(result.IsCompliant);
+        Assert.Empty(result.Assertions);
+    }
+
+    // ── PDF/A-2a §6.8 logical structure ─────────────────────────────────────────
+
+    [Fact]
+    public void Validate2a_TaggedDocument_NoFindings()
+    {
+        var bytes = Build2aPdf(
+            "/MarkInfo << /Marked true >> /StructTreeRoot 4 0 R",
+            new PdfObj("<< /Type /StructTreeRoot >>"));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2A);
+
+        Assert.True(result.IsCompliant);
+        Assert.Empty(result.Assertions);
+    }
+
+    [Fact]
+    public void Validate2a_MissingStructTreeRoot_ReportsError()
+    {
+        var bytes = Build2aPdf("/MarkInfo << /Marked true >>");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2A);
+
+        var assertion = Assert.Single(result.Assertions);
+        Assert.Equal("ISO19005-2:6.8-logical-structure", assertion.RuleId);
+        Assert.Contains("StructTreeRoot", assertion.Message);
+    }
+
+    [Fact]
+    public void Validate2a_NotMarked_ReportsError()
+    {
+        var bytes = Build2aPdf(
+            "/MarkInfo << /Marked false >> /StructTreeRoot 4 0 R",
+            new PdfObj("<< /Type /StructTreeRoot >>"));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2A);
+
+        var assertion = Assert.Single(result.Assertions);
+        Assert.Equal("ISO19005-2:6.8-logical-structure", assertion.RuleId);
+        Assert.Contains("Marked", assertion.Message);
+    }
+
+    [Fact]
+    public void Validate2a_CircularRoleMap_ReportsError()
+    {
+        var bytes = Build2aPdf(
+            "/MarkInfo << /Marked true >> /StructTreeRoot 4 0 R",
+            new PdfObj("<< /Type /StructTreeRoot /RoleMap << /Foo /Bar /Bar /Foo >> >>"));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2A);
+
+        var assertion = Assert.Single(result.Assertions);
+        Assert.Equal("ISO19005-2:6.8-logical-structure", assertion.RuleId);
+        Assert.Contains("circular", assertion.Message);
     }
 
     [Fact]
