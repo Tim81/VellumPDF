@@ -31,11 +31,24 @@ internal sealed class AnnotationRule : IConformanceRule
     private const int Print = 1 << 2;   // bit 3
     private const int NoView = 1 << 5;  // bit 6
 
+    // Multimedia / dynamic annotation subtypes prohibited by PDF/A-2 (ISO 19005-2 §6.5.3).
+    private static readonly HashSet<string> _forbiddenSubtypes = new(StringComparer.Ordinal)
+    {
+        "Sound", "Movie", "Screen", "3D", "RichMedia",
+    };
+
     public void Evaluate(PreflightContext context)
     {
         foreach (var annot in context.EnumerateAnnotations())
         {
             var subtype = (annot.Get(PdfName.Subtype) as PdfName)?.Value;
+
+            if (subtype is not null && _forbiddenSubtypes.Contains(subtype))
+            {
+                context.Report(RuleId, Clause, PreflightSeverity.Error,
+                    $"Annotations of type /{subtype} are not permitted in PDF/A.");
+                continue;
+            }
 
             // Popup annotations are driven by their parent and are exempt from these requirements.
             if (subtype == "Popup")

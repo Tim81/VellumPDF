@@ -30,8 +30,8 @@ internal sealed class FileTrailerRule : IConformanceRule
 
         if (id is not PdfArray array
             || array.Count != 2
-            || !IsByteString(array[0])
-            || !IsByteString(array[1]))
+            || !IsByteString(context.Resolve(array[0]))
+            || !IsByteString(context.Resolve(array[1])))
         {
             context.Report(
                 RuleId,
@@ -41,5 +41,5 @@ internal sealed class FileTrailerRule : IConformanceRule
         }
     }
 
-    private static bool IsByteString(PdfObject value) => value is PdfLiteralString or PdfHexString;
+    private static bool IsByteString(PdfObject? value) => value is PdfLiteralString or PdfHexString;
 }

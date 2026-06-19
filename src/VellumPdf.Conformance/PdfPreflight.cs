@@ -55,7 +55,19 @@ public static class PdfPreflight
         var context = new PreflightContext(reader, conformance, assertions);
 
         foreach (var rule in rules)
-            rule.Evaluate(context);
+        {
+            try
+            {
+                rule.Evaluate(context);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                // A single rule throwing on a malformed-but-parseable document must not abort the
+                // whole report. Record it as an error finding and continue with the other rules.
+                context.Report(rule.RuleId, rule.Clause, PreflightSeverity.Error,
+                    $"Rule evaluation failed: {ex.Message}");
+            }
+        }
 
         return new PreflightResult(conformance, assertions);
     }

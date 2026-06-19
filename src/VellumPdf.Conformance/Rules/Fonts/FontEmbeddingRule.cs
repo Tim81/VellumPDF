@@ -49,9 +49,11 @@ internal sealed class FontEmbeddingRule : IConformanceRule
             return;
 
         PdfDictionary? descriptor;
+        string? programSubtype;
         if (subtype == "Type0")
         {
-            // The embedded program lives on the descendant CIDFont's descriptor.
+            // The embedded program lives on the descendant CIDFont's descriptor, and the expected
+            // font-program key depends on the CIDFont subtype.
             if (context.Resolve(font.Get(_descendantFonts)) is not PdfArray descendants
                 || descendants.Count == 0
                 || context.Resolve(descendants[0]) is not PdfDictionary cidFont)
@@ -59,21 +61,37 @@ internal sealed class FontEmbeddingRule : IConformanceRule
                 Report(context, font);
                 return;
             }
+            programSubtype = (cidFont.Get(PdfName.Subtype) as PdfName)?.Value;
             descriptor = context.Resolve(cidFont.Get(_fontDescriptor)) as PdfDictionary;
         }
         else
         {
+            programSubtype = subtype;
             descriptor = context.Resolve(font.Get(_fontDescriptor)) as PdfDictionary;
         }
 
-        if (descriptor is null || !HasEmbeddedProgram(descriptor))
+        if (descriptor is null || !HasEmbeddedProgram(descriptor, programSubtype))
             Report(context, font);
     }
 
-    private bool HasEmbeddedProgram(PdfDictionary descriptor)
-        => descriptor.Get(_fontFile) is not null
-            || descriptor.Get(_fontFile2) is not null
-            || descriptor.Get(_fontFile3) is not null;
+    // The embedded program must be carried in the key appropriate to the font type
+    // (ISO 32000-1 Table 126): Type1 -> FontFile or FontFile3 (CFF); TrueType / CIDFontType2 ->
+    // FontFile2 or FontFile3 (OpenType); CIDFontType0 -> FontFile3.
+    private bool HasEmbeddedProgram(PdfDictionary descriptor, string? subtype)
+    {
+        var hasFontFile = descriptor.Get(_fontFile) is not null;
+        var hasFontFile2 = descriptor.Get(_fontFile2) is not null;
+        var hasFontFile3 = descriptor.Get(_fontFile3) is not null;
+
+        return subtype switch
+        {
+            "Type1" or "MMType1" => hasFontFile || hasFontFile3,
+            "TrueType" or "CIDFontType2" => hasFontFile2 || hasFontFile3,
+            "CIDFontType0" => hasFontFile3,
+            // Unknown subtype: accept any embedded program rather than risk a false positive.
+            _ => hasFontFile || hasFontFile2 || hasFontFile3,
+        };
+    }
 
     private void Report(PreflightContext context, PdfDictionary font)
     {

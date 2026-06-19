@@ -29,7 +29,7 @@ internal sealed class UaTabsRule : IConformanceRule
             if (context.Resolve(page.Get(PdfName.Annots)) is not PdfArray annots || annots.Count == 0)
                 continue;
 
-            if ((page.Get(_tabs) as PdfName)?.Value != "S")
+            if ((context.Resolve(page.Get(_tabs)) as PdfName)?.Value != "S")
             {
                 context.Report(RuleId, Clause, PreflightSeverity.Error,
                     "A page containing annotations shall set its /Tabs entry to /S (structure order).");

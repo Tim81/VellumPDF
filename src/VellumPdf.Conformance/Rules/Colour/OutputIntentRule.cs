@@ -74,13 +74,19 @@ internal sealed class OutputIntentRule : IConformanceRule
                 continue;
             }
 
-            if (stream.Dictionary.Get(PdfName.N) is PdfInteger n && n.Value is not (1 or 3 or 4))
+            var nValue = context.Resolve(stream.Dictionary.Get(PdfName.N)) switch
+            {
+                PdfInteger ni => (long?)ni.Value,
+                PdfReal nr => (long?)nr.Value,
+                _ => null,
+            };
+            if (nValue is not null && nValue is not (1 or 3 or 4))
             {
                 context.Report(
                     RuleId,
                     Clause,
                     PreflightSeverity.Error,
-                    $"The DestOutputProfile /N shall be 1, 3, or 4 (found {n.Value}).");
+                    $"The DestOutputProfile /N shall be 1, 3, or 4 (found {nValue}).");
             }
 
             var icc = context.DecodeStream(stream);

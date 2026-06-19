@@ -37,7 +37,12 @@ internal sealed class ToUnicodeRule : IConformanceRule
             if (encoding is not ("Identity-H" or "Identity-V"))
                 continue;
 
-            if (font.Get(_toUnicode) is null)
+            // A /ToUnicode of the predefined /Identity CMap provides no real mapping, so it does
+            // not satisfy the requirement.
+            var toUnicode = context.Resolve(font.Get(_toUnicode));
+            var hasEffectiveToUnicode = toUnicode is not null and not PdfName { Value: "Identity" };
+
+            if (!hasEffectiveToUnicode)
             {
                 var name = (font.Get(PdfName.BaseFont) as PdfName)?.Value;
                 var which = name is null ? "A Type0 font" : $"The Type0 font /{name}";

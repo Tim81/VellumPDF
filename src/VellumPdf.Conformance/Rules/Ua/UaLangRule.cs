@@ -27,8 +27,8 @@ internal sealed class UaLangRule : IConformanceRule
         var lang = context.Resolve(context.Catalog.Get(_lang));
         var specified = lang switch
         {
-            PdfLiteralString s => s.Bytes.Length > 0,
-            PdfHexString h => h.Bytes.Length > 0,
+            PdfLiteralString s => HasNonSpace(s.Bytes.Span),
+            PdfHexString h => HasNonSpace(h.Bytes.Span),
             _ => false,
         };
 
@@ -37,5 +37,13 @@ internal sealed class UaLangRule : IConformanceRule
             context.Report(RuleId, Clause, PreflightSeverity.Error,
                 "A PDF/UA-1 file shall specify a default natural language in the document catalog /Lang entry.");
         }
+    }
+
+    private static bool HasNonSpace(ReadOnlySpan<byte> bytes)
+    {
+        foreach (var b in bytes)
+            if (b is not (32 or 9 or 10 or 13))
+                return true;
+        return false;
     }
 }
