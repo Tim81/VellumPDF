@@ -39,6 +39,16 @@ internal sealed class XmpConformanceRule : IConformanceRule
             return;
         }
 
+        // ISO 19005-2 §6.7.3: the document metadata stream shall be plain XMP, i.e. not filtered.
+        if (context.Resolve(stream.Dictionary.Get(PdfName.Filter)) is not null)
+        {
+            context.Report(
+                "ISO19005-2:6.7.3-metadata-filter",
+                "ISO 19005-2:2011, 6.7.3",
+                PreflightSeverity.Error,
+                "The document catalog /Metadata stream shall not be filtered (it must be plain XMP).");
+        }
+
         var bytes = context.DecodeStream(stream);
         var xmp = bytes is null ? null : XmpReader.Parse(bytes);
         if (xmp is null)

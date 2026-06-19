@@ -30,19 +30,16 @@ internal sealed class ToUnicodeRule : IConformanceRule
     {
         foreach (var font in context.EnumerateFonts())
         {
-            if ((font.Get(PdfName.Subtype) as PdfName)?.Value != "Type0")
+            if ((context.Resolve(font.Get(PdfName.Subtype)) as PdfName)?.Value != "Type0")
                 continue;
 
             var encoding = (context.Resolve(font.Get(PdfName.Encoding)) as PdfName)?.Value;
             if (encoding is not ("Identity-H" or "Identity-V"))
                 continue;
 
-            // A /ToUnicode of the predefined /Identity CMap provides no real mapping, so it does
-            // not satisfy the requirement.
-            var toUnicode = context.Resolve(font.Get(_toUnicode));
-            var hasEffectiveToUnicode = toUnicode is not null and not PdfName { Value: "Identity" };
-
-            if (!hasEffectiveToUnicode)
+            // A valid /ToUnicode is a CMap *stream*; a missing, null, non-stream, or predefined
+            // /Identity (a name, not a stream) value provides no real mapping and is rejected.
+            if (context.ResolveStream(font.Get(_toUnicode)) is null)
             {
                 var name = (font.Get(PdfName.BaseFont) as PdfName)?.Value;
                 var which = name is null ? "A Type0 font" : $"The Type0 font /{name}";

@@ -29,7 +29,9 @@ internal sealed class UaTabsRule : IConformanceRule
             if (context.Resolve(page.Get(PdfName.Annots)) is not PdfArray annots || annots.Count == 0)
                 continue;
 
-            if ((context.Resolve(page.Get(_tabs)) as PdfName)?.Value != "S")
+            // /Tabs is an inheritable page-tree attribute (ISO 32000-2 §7.7.3.4), so a value set on
+            // an ancestor /Pages node satisfies the requirement for the leaf page.
+            if ((context.ResolveInherited(page, _tabs) as PdfName)?.Value != "S")
             {
                 context.Report(RuleId, Clause, PreflightSeverity.Error,
                     "A page containing annotations shall set its /Tabs entry to /S (structure order).");

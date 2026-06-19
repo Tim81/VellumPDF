@@ -54,7 +54,7 @@ internal sealed class AnnotationRule : IConformanceRule
             if (subtype == "Popup")
                 continue;
 
-            var flags = (int)((context.Resolve(annot.Get(_f)) as PdfInteger)?.Value ?? 0);
+            var flags = (int)(NumericValue(context.Resolve(annot.Get(_f))) ?? 0);
             var label = subtype is null ? "An annotation" : $"A /{subtype} annotation";
 
             if ((flags & Print) == 0)
@@ -68,9 +68,18 @@ internal sealed class AnnotationRule : IConformanceRule
             if (subtype == "Link")
                 continue;
 
-            var ap = context.Resolve(annot.Get(_ap)) as PdfDictionary;
-            if (ap is null || ap.Get(_n) is null)
+            // The normal appearance /N is either an appearance stream or a sub-dictionary keyed by
+            // appearance state; a missing/non-stream-non-dictionary value does not satisfy it.
+            var apN = (context.Resolve(annot.Get(_ap)) as PdfDictionary)?.Get(_n);
+            if (context.ResolveStream(apN) is null && context.Resolve(apN) is not PdfDictionary)
                 context.Report(RuleId, Clause, PreflightSeverity.Error, $"{label} shall have a normal appearance (/AP /N).");
         }
     }
+
+    private static long? NumericValue(PdfObject? value) => value switch
+    {
+        PdfInteger i => i.Value,
+        PdfReal r => (long)r.Value,
+        _ => null,
+    };
 }
