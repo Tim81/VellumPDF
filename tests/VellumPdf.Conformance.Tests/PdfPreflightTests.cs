@@ -995,6 +995,20 @@ public sealed class PdfPreflightTests
     }
 
     [Fact]
+    public void Validate_MalformedXmpMetadata_ReportsError()
+    {
+        var bytes = AssemblePdf(
+            [new("<< /Type /Catalog /Pages 2 0 R >>"), _pagesObj, _pageObj],
+            metadataOverride: Encoding.UTF8.GetBytes("this is not <<< well-formed xml"));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        var assertion = Assert.Single(result.Assertions);
+        Assert.Equal("ISO19005-2:6.7.2-pdfaid", assertion.RuleId);
+    }
+
+    [Fact]
     public void Validate_Utf16XmpPacket_IsAccepted()
     {
         // A spec-valid UTF-16 XMP packet must be recognised (the old UTF-8-only decode broke it).

@@ -78,7 +78,8 @@ internal static class VeraPdf
     {
         try
         {
-            return Run("--version").Exit == 0;
+            // Short timeout so a hung `verapdf --version` cannot stall the test class's static init.
+            return Run(10_000, "--version").Exit == 0;
         }
         catch
         {
@@ -89,7 +90,7 @@ internal static class VeraPdf
     /// <summary>Returns true when veraPDF reports <paramref name="path"/> compliant with <paramref name="flavour"/>.</summary>
     public static bool Validate(string path, string flavour)
     {
-        var (exit, stdout, stderr) = Run("--flavour", flavour, "--format", "text", path);
+        var (exit, stdout, stderr) = Run(120_000, "--flavour", flavour, "--format", "text", path);
 
         // veraPDF exit codes: 0 = the file is compliant; 1 = ran, file non-compliant; >1 = error.
         return exit switch
@@ -102,7 +103,7 @@ internal static class VeraPdf
         };
     }
 
-    private static (int Exit, string Stdout, string Stderr) Run(params string[] args)
+    private static (int Exit, string Stdout, string Stderr) Run(int timeoutMs, params string[] args)
     {
         var psi = new ProcessStartInfo("verapdf")
         {
@@ -121,16 +122,18 @@ internal static class VeraPdf
         var stdoutTask = process.StandardOutput.ReadToEndAsync();
         var stderrTask = process.StandardError.ReadToEndAsync();
 
-        if (!process.WaitForExit(120_000))
+        if (!process.WaitForExit(timeoutMs))
         {
             try { process.Kill(entireProcessTree: true); }
             catch { /* best effort */ }
             throw new InvalidOperationException(
-                $"veraPDF timed out after 120s (args: {string.Join(' ', args)}).");
+                $"veraPDF timed out after {timeoutMs}ms (args: {string.Join(' ', args)}).");
         }
 
-        // Ensure the async stream reads have completed now that the process has exited.
-        process.WaitForExit();
-        return (process.ExitCode, stdoutTask.GetAwaiter().GetResult(), stderrTask.GetAwaiter().GetResult());
+        // The process has exited; bound the stream drain too, so a grandchild that inherited the
+        // pipes and outlives the parent cannot make these reads hang indefinitely.
+        var stdout = stdoutTask.Wait(5_000) ? stdoutTask.Result : string.Empty;
+        var stderr = stderrTask.Wait(5_000) ? stderrTask.Result : string.Empty;
+        return (process.ExitCode, stdout, stderr);
     }
 }

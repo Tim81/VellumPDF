@@ -195,6 +195,12 @@ internal sealed class XrefParser
             var (count, afterCount) = ReadInt(span, pos);
             pos = afterCount;
 
+            // A subsection cannot declare more 20-byte entries than the file could possibly hold;
+            // reject a pathological count up front (also prevents firstObjNum + count overflow).
+            if (count < 0 || firstObjNum < 0 || (long)count * 20 > span.Length || (long)firstObjNum + count > int.MaxValue)
+                throw new InvalidDataException(
+                    $"Malformed PDF: xref subsection ({firstObjNum} {count}) is out of range.");
+
             while (pos < span.Length && span[pos] is not 10 and not 13)
                 pos++;
             if (pos < span.Length && span[pos] == 13) pos++;
