@@ -83,8 +83,11 @@ public static class OracleCorpus
         // The writer emits the marker comment bytes 0xE2 0xE3 0xCF 0xD3 on the line after the header.
         byte[] marker = [0xE2, 0xE3, 0xCF, 0xD3];
         var at = IndexOf(bytes, marker);
-        if (at < 0)
-            throw new InvalidOperationException("Fixture writer did not emit the expected binary marker.");
+        // Guard against the (astronomically unlikely) case of this 4-byte sequence appearing first
+        // inside a compressed stream: the real marker is on the header line, right after a '%'.
+        if (at is < 2 or > 20 || bytes[at - 1] != (byte)'%')
+            throw new InvalidOperationException(
+                $"Binary marker not found on the header line where expected (offset {at}).");
         for (var i = 0; i < marker.Length; i++)
             bytes[at + i] = (byte)' ';
     }
