@@ -34,6 +34,15 @@ internal sealed class PreflightContext
     /// <summary>The document catalog (/Root) dictionary.</summary>
     public PdfDictionary Catalog => Reader.Catalog;
 
+    /// <summary>The file trailer dictionary (or the cross-reference-stream dictionary acting as the trailer).</summary>
+    public PdfDictionary Trailer => Reader.Trailer;
+
+    /// <summary>
+    /// The raw PDF file bytes. Used by file-structure rules that inspect the physical layout
+    /// (header line, binary marker) rather than the parsed object graph.
+    /// </summary>
+    public ReadOnlyMemory<byte> FileBytes => Reader.Bytes;
+
     /// <summary>
     /// Resolves <paramref name="obj"/> through any indirect reference, returning the target
     /// value. Returns <see langword="null"/> when the input is null or cannot be resolved.
