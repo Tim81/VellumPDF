@@ -71,9 +71,10 @@ public static class PdfPreflight
             {
                 // A single rule throwing on a malformed-but-parseable document must not abort the
                 // whole report. Record it as an error finding and continue with the other rules.
-                // UnsupportedPdfFeatureException is excluded: it means "this document uses a reader
-                // feature we cannot evaluate", which is a distinct signal that should propagate to
-                // the caller rather than be reported as a conformance violation.
+                // UnsupportedPdfFeatureException is excluded defensively: today it is only raised at
+                // Open (before any rule runs), but should a future lazily-decoded reader feature let
+                // a rule raise it, it means "cannot evaluate" — a distinct signal that should
+                // propagate to the caller rather than be reported as a conformance violation.
                 context.Report(rule.RuleId, rule.Clause, PreflightSeverity.Error,
                     $"Rule evaluation failed: {ex.Message}");
             }

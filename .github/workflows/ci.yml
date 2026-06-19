@@ -58,6 +58,10 @@ jobs:
           sudo chmod +x /usr/local/bin/verapdf
 
       - name: Test
+        # REQUIRE_VERAPDF makes the conformance oracle fail (not silently skip) if the verapdf
+        # shim is unavailable, so a broken image can't let the cross-validation gate pass vacuously.
+        env:
+          REQUIRE_VERAPDF: '1'
         run: dotnet test VellumPdf.slnx -c Release --no-build --collect:"XPlat Code Coverage" --results-directory ${{ runner.temp }}/coverage
 
       - name: Enforce coverage threshold

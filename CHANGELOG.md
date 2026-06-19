@@ -13,11 +13,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   PDF through `VellumPdf.Reader` and runs a registry of clean-room conformance rules authored from
   the ISO specifications, returning a `PreflightResult` of machine-readable assertions (rule id, ISO
   clause, severity, object reference). Rules are registered explicitly — no reflection — so the
-  package is AOT- and trim-ready. Covered so far: PDF/A-2b file structure (§6.1), output intents
-  (§6.2.2), transparency blend modes (§6.4), font embedding (§6.3), and metadata, annotations, and
-  actions (§6.5–6.7); PDF/A-2u character-to-Unicode (§6.2.11.7); PDF/A-2a logical structure (§6.8);
-  and PDF/UA-1 tagging, natural language, document title, and tab order (ISO 14289-1). Each rule's
-  verdict is cross-validated against veraPDF 1.30.2 in CI. (#50)
+  package is AOT- and trim-ready. The rule set is a growing structural subset — each rule covers the
+  common cases and documents its deferred edges (e.g. resources nested in form XObjects, content-stream
+  colour analysis, the ParentTree↔MCID bijection). Covered so far: PDF/A-2b file structure (§6.1),
+  output intents (§6.2.2), transparency blend modes (§6.4), font embedding (§6.3), and metadata,
+  annotations, and actions (§6.5–6.7); PDF/A-2u character-to-Unicode (§6.2.11.7); PDF/A-2a logical
+  structure (§6.8); and PDF/UA-1 tagging, natural language, document title, and tab order
+  (ISO 14289-1). The PDF/A-2b structural and metadata fixtures are cross-validated against veraPDF
+  1.30.2 in CI; object-graph and 2u/2a/UA cross-validation is in progress. (#50)
 - **`VellumPdf.Reader` cross-reference and object streams.** The reader now parses cross-reference
   streams (§7.5.8), hybrid-reference files, and object streams (§7.5.7), resolving objects packed in
   object streams. It decodes the FlateDecode / LZWDecode / ASCIIHexDecode / ASCII85Decode /
