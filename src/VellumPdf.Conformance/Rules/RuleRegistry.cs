@@ -63,6 +63,20 @@ internal static class RuleRegistry
         .. PdfA2Document,
     ];
 
+    // PDF/A-2u = PDF/A-2b plus the character-to-Unicode requirement (ISO 19005-2 §6.2.11.7.2).
+    private static readonly IConformanceRule[] PdfA2URules =
+    [
+        .. PdfA2BRules,
+        new ToUnicodeRule(),
+    ];
+
+    // PDF/A-2a = PDF/A-2u plus tagged logical structure (ISO 19005-2 §6.8).
+    private static readonly IConformanceRule[] PdfA2ARules =
+    [
+        .. PdfA2URules,
+        new LogicalStructureRule(),
+    ];
+
     /// <summary>
     /// Returns the rule profile for <paramref name="conformance"/>, or <see langword="false"/>
     /// when no profile is registered yet for that level.
@@ -73,6 +87,12 @@ internal static class RuleRegistry
         {
             case PdfConformance.PdfA2B:
                 rules = PdfA2BRules;
+                return true;
+            case PdfConformance.PdfA2U:
+                rules = PdfA2URules;
+                return true;
+            case PdfConformance.PdfA2A:
+                rules = PdfA2ARules;
                 return true;
             default:
                 rules = [];

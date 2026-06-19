@@ -36,23 +36,8 @@ internal sealed class FontEmbeddingRule : IConformanceRule
 
     public void Evaluate(PreflightContext context)
     {
-        var checkedFonts = new HashSet<int>();
-
-        foreach (var page in context.EnumeratePages())
-        {
-            if (context.ResolveInherited(page, PdfName.Resources) is not PdfDictionary resources)
-                continue;
-            if (context.Resolve(resources.Get(PdfName.Font)) is not PdfDictionary fonts)
-                continue;
-
-            foreach (var entry in fonts.Entries)
-            {
-                if (entry.Value is PdfIndirectReference r && !checkedFonts.Add(r.ObjectNumber))
-                    continue;
-                if (context.Resolve(entry.Value) is PdfDictionary font)
-                    CheckFont(context, font);
-            }
-        }
+        foreach (var font in context.EnumerateFonts())
+            CheckFont(context, font);
     }
 
     private void CheckFont(PreflightContext context, PdfDictionary font)

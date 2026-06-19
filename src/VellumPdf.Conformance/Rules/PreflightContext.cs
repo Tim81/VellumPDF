@@ -105,6 +105,29 @@ internal sealed class PreflightContext
     }
 
     /// <summary>
+    /// Enumerates the distinct font dictionaries referenced by every page's <c>/Font</c> resources
+    /// (own or inherited). Each font object is yielded once even when shared across pages.
+    /// </summary>
+    public IEnumerable<PdfDictionary> EnumerateFonts()
+    {
+        var seen = new HashSet<int>();
+        foreach (var page in EnumeratePages())
+        {
+            if (ResolveInherited(page, PdfName.Resources) is not PdfDictionary resources)
+                continue;
+            if (Resolve(resources.Get(PdfName.Font)) is not PdfDictionary fonts)
+                continue;
+            foreach (var entry in fonts.Entries)
+            {
+                if (entry.Value is PdfIndirectReference r && !seen.Add(r.ObjectNumber))
+                    continue;
+                if (Resolve(entry.Value) is PdfDictionary font)
+                    yield return font;
+            }
+        }
+    }
+
+    /// <summary>
     /// Enumerates every annotation dictionary referenced by a page's <c>/Annots</c> array, across
     /// all pages in document order.
     /// </summary>
