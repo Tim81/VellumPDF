@@ -419,6 +419,93 @@ public sealed class XrefStreamTests
 
     // ── Fixture builders ─────────────────────────────────────────────────────
 
+    [Fact]
+    public void DecodeHexString_large_input_does_not_overflow_stack()
+    {
+        // A multi-KB hex string must decode via the heap, not a stack overflow.
+        var raw = new byte[2 + 4000];
+        raw[0] = (byte)'<';
+        for (var i = 0; i < 4000; i++) raw[i + 1] = (byte)'A';
+        raw[^1] = (byte)'>';
+
+        var result = PdfObjectParser.DecodeHexString(new ReadOnlyMemory<byte>(raw));
+
+        Assert.Equal(2000, result.Bytes.Length);
+    }
+
+    [Fact]
+    public void Xref_stream_with_out_of_range_offset_throws_invaliddata()
+    {
+        // An xref-stream type-1 entry whose 8-byte offset exceeds the file length must fail cleanly
+        // (InvalidDataException), not wrap to a negative parser position (IndexOutOfRangeException).
+        var bytes = BuildXrefStreamHugeOffset();
+
+        Assert.Throws<InvalidDataException>(() => PdfReader.Open(bytes));
+    }
+
+    [Fact]
+    public void Decode_FlateDecode_raw_deflate_without_zlib_header()
+    {
+        // Some producers emit raw deflate with no zlib header; the fallback must still decode it.
+        var original = Encoding.ASCII.GetBytes("raw deflate body, no zlib header");
+        var ms = new MemoryStream();
+        using (var d = new DeflateStream(ms, CompressionLevel.Optimal, leaveOpen: true))
+            d.Write(original);
+        var compressed = ms.ToArray();
+
+        var dict = new PdfDictionary()
+            .Set(PdfName.Filter, PdfName.FlateDecode)
+            .Set(PdfName.Length, compressed.Length);
+        var stream = MakeParsedStream(dict, compressed);
+
+        var decoded = PdfFilters.Decode(stream);
+
+        Assert.Equal(original, decoded);
+    }
+
+    [Fact]
+    public void Decode_ASCII85_single_char_final_group_throws()
+    {
+        var a85 = Encoding.ASCII.GetBytes("!~>"); // one char before EOD — invalid final group
+        var dict = new PdfDictionary()
+            .Set(PdfName.Filter, new PdfName("ASCII85Decode"))
+            .Set(PdfName.Length, a85.Length);
+        var stream = MakeParsedStream(dict, a85);
+
+        Assert.Throws<InvalidDataException>(() => PdfFilters.Decode(stream));
+    }
+
+    private static byte[] BuildXrefStreamHugeOffset()
+    {
+        var ms = new MemoryStream();
+        void WriteStr(string s) => ms.Write(Encoding.ASCII.GetBytes(s));
+
+        WriteStr("%PDF-1.5\n");
+
+        // /W [1 8 0] → type(1) offset(8) gen(0); rowSize 9; objects 0,1,2.
+        const int rowSize = 9;
+        var body = new byte[3 * rowSize];
+        void WriteRow(int pos, byte type, ulong offset)
+        {
+            body[pos] = type;
+            for (var k = 0; k < 8; k++)
+                body[pos + 1 + k] = (byte)(offset >> (8 * (7 - k)));
+        }
+
+        WriteRow(0, 0, 0);                      // obj 0: free
+        WriteRow(9, 1, 0x0000_0001_0000_0000);  // obj 1: offset beyond any real file length
+        WriteRow(18, 1, 0);                     // obj 2: offset irrelevant (read via startxref)
+
+        var compressed = Compress(body);
+        var xrefOffset = (int)ms.Position;
+        WriteStr($"2 0 obj\n<< /Type /XRef /Size 3 /W [1 8 0] /Root 1 0 R /Filter /FlateDecode /Length {compressed.Length} >>\nstream\n");
+        ms.Write(compressed);
+        WriteStr("\nendstream\nendobj\n");
+        WriteStr($"startxref\n{xrefOffset}\n%%EOF\n");
+
+        return ms.ToArray();
+    }
+
     private static byte[] BuildHybridXrefStmPdf()
     {
         // Layout:

@@ -63,6 +63,20 @@ public sealed class PdfDocumentReader : IDisposable
         Catalog = catalog;
     }
 
+    /// <summary>
+    /// Validates a byte offset taken from the cross-reference table — an xref-stream field can hold
+    /// a value larger than <see cref="int.MaxValue"/> — and narrows it to an int, throwing rather
+    /// than wrapping silently to a negative parser position (which would crash with an
+    /// <see cref="IndexOutOfRangeException"/>).
+    /// </summary>
+    private int CheckedOffset(long offset)
+    {
+        if (offset < 0 || offset >= Bytes.Length)
+            throw new InvalidDataException(
+                $"Malformed PDF: object offset {offset} is outside the file (length {Bytes.Length}).");
+        return (int)offset;
+    }
+
     /// <summary>Resolves an indirect reference by object number, returning its dictionary or value.</summary>
     internal PdfObject? Resolve(int objectNumber)
     {
@@ -75,7 +89,7 @@ public sealed class PdfDocumentReader : IDisposable
         PdfObject value;
         if (entry.Kind == XrefEntryKind.Uncompressed)
         {
-            var parser = new PdfObjectParser(Bytes, (int)entry.Offset);
+            var parser = new PdfObjectParser(Bytes, CheckedOffset(entry.Offset));
             var result = parser.ParseIndirectObject();
 
             if (result.ObjectNumber != objectNumber)
@@ -116,7 +130,7 @@ public sealed class PdfDocumentReader : IDisposable
         if (entry.Kind == XrefEntryKind.InObjectStream)
             return null;
 
-        var parser = new PdfObjectParser(Bytes, (int)entry.Offset);
+        var parser = new PdfObjectParser(Bytes, CheckedOffset(entry.Offset));
         var result = parser.ParseIndirectObject();
 
         if (result.ObjectNumber != objectNumber)
@@ -195,7 +209,7 @@ public sealed class PdfDocumentReader : IDisposable
     private (byte[] Body, int First, int N, Dictionary<int, int> OffsetMap) LoadObjectStream(
         int containerObjNum, XrefEntry containerEntry)
     {
-        var parser = new PdfObjectParser(Bytes, (int)containerEntry.Offset);
+        var parser = new PdfObjectParser(Bytes, CheckedOffset(containerEntry.Offset));
         var result = parser.ParseIndirectObject();
 
         if (!result.IsStream)

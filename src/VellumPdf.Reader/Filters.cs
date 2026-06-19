@@ -102,16 +102,45 @@ internal static class PdfFilters
 
     internal static byte[] InflateFlate(byte[] input)
     {
-        // Choose ZLib (RFC 1950) vs. raw Deflate by inspecting the 2-byte header rather than
-        // try-zlib-then-fall-back-to-deflate. The fallback used to also catch — and silently
-        // swallow — the decompression-size cap thrown by Inflate, masking a decompression-bomb
-        // guard and double-decompressing the input. Header inspection keeps the cap fast-failing.
-        var decompressor = LooksLikeZlib(input)
-            ? (Stream)new ZLibStream(new MemoryStream(input), CompressionMode.Decompress)
-            : new DeflateStream(new MemoryStream(input), CompressionMode.Decompress);
-
-        return Inflate(decompressor);
+        // FlateDecode is zlib (RFC 1950), but some producers emit raw deflate. Use the 2-byte
+        // header as a fast-path hint for which to try first, then fall back to the other on a
+        // format error — so neither a header-less raw-deflate stream nor a zlib stream is rejected.
+        // The fallback must NEVER swallow the decompression-size cap (that would mask a bomb and
+        // double-decompress), so the cap is thrown as a distinct exception type that is re-thrown.
+        var primaryIsZlib = LooksLikeZlib(input);
+        try
+        {
+            return Inflate(MakeDecompressor(input, primaryIsZlib));
+        }
+        catch (DecompressionLimitExceededException ex)
+        {
+            // A decompression bomb: surface it, never retry.
+            throw new InvalidDataException(ex.Message);
+        }
+        catch
+        {
+            // Format error on the primary decoder — retry with the other (handles header-less
+            // raw deflate vs. zlib-wrapped). Still never swallow the size cap.
+            try
+            {
+                return Inflate(MakeDecompressor(input, !primaryIsZlib));
+            }
+            catch (DecompressionLimitExceededException ex)
+            {
+                throw new InvalidDataException(ex.Message);
+            }
+            catch (Exception inner)
+            {
+                // Normalise any BCL decode failure (InvalidDataException, IOException, …) to a
+                // single InvalidDataException so callers see a consistent malformed-input signal.
+                throw new InvalidDataException("FlateDecode: failed to decompress stream body.", inner);
+            }
+        }
     }
+
+    private static Stream MakeDecompressor(byte[] input, bool zlib) => zlib
+        ? new ZLibStream(new MemoryStream(input), CompressionMode.Decompress)
+        : new DeflateStream(new MemoryStream(input), CompressionMode.Decompress);
 
     private static bool LooksLikeZlib(byte[] input)
     {
@@ -135,12 +164,19 @@ internal static class PdfFilters
         {
             total += read;
             if (total > MaxDecodedBytes)
-                throw new InvalidDataException(
+                throw new DecompressionLimitExceededException(
                     $"Decompressed stream size exceeds {MaxDecodedBytes / (1024 * 1024)} MB cap.");
             ms.Write(buf, 0, read);
         }
         return ms.ToArray();
     }
+
+    /// <summary>
+    /// Internal signal that decompression exceeded <see cref="MaxDecodedBytes"/>. A distinct type
+    /// lets <see cref="InflateFlate"/> distinguish the bomb guard from an ordinary format error so
+    /// it re-throws (as <see cref="InvalidDataException"/>) instead of retrying the other decoder.
+    /// </summary>
+    private sealed class DecompressionLimitExceededException(string message) : Exception(message);
 
     // ── Predictors ───────────────────────────────────────────────────────────
 
@@ -441,6 +477,11 @@ internal static class PdfFilters
             }
 
             if (count == 0) continue;
+
+            // A final group must hold 2..5 characters; a single trailing character is invalid and
+            // would otherwise emit one spurious byte.
+            if (count == 1)
+                throw new InvalidDataException("ASCII85Decode: final group has a single character.");
 
             // Pad to 5 with 'u' value = 84
             for (var p = count; p < 5; p++)
