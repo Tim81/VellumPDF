@@ -431,6 +431,7 @@ public sealed class PdfPreflightTests
 
         var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
 
+        Assert.False(result.IsCompliant);
         var assertion = Assert.Single(result.Assertions);
         Assert.Equal("ISO19005-2:6.2.2-output-intent", assertion.RuleId);
         Assert.Contains("DestOutputProfile", assertion.Message);
@@ -446,6 +447,7 @@ public sealed class PdfPreflightTests
 
         var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
 
+        Assert.False(result.IsCompliant);
         var assertion = Assert.Single(result.Assertions);
         Assert.Equal("ISO19005-2:6.2.2-output-intent", assertion.RuleId);
         Assert.Contains("acsp", assertion.Message);
@@ -461,6 +463,7 @@ public sealed class PdfPreflightTests
 
         var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
 
+        Assert.False(result.IsCompliant);
         var assertion = Assert.Single(result.Assertions);
         Assert.Equal("ISO19005-2:6.2.2-output-intent", assertion.RuleId);
         Assert.Contains("/N", assertion.Message);
@@ -517,6 +520,7 @@ public sealed class PdfPreflightTests
     {
         var result = PdfPreflight.Validate(BuildBlendModePdf("/FooBar"), PdfConformance.PdfA2B);
 
+        Assert.False(result.IsCompliant);
         var assertion = Assert.Single(result.Assertions);
         Assert.Equal("ISO19005-2:6.4-blend-mode", assertion.RuleId);
         Assert.Contains("/FooBar", assertion.Message);
@@ -527,6 +531,7 @@ public sealed class PdfPreflightTests
     {
         var result = PdfPreflight.Validate(BuildBlendModePdf("[/Multiply /Bogus]"), PdfConformance.PdfA2B);
 
+        Assert.False(result.IsCompliant);
         var assertion = Assert.Single(result.Assertions);
         Assert.Equal("ISO19005-2:6.4-blend-mode", assertion.RuleId);
         Assert.Contains("/Bogus", assertion.Message);
@@ -542,6 +547,7 @@ public sealed class PdfPreflightTests
 
         var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
 
+        Assert.False(result.IsCompliant);
         var assertion = Assert.Single(result.Assertions);
         Assert.Equal("ISO19005-2:6.3.4-font-embedding", assertion.RuleId);
         Assert.Contains("Helvetica", assertion.Message);
@@ -571,6 +577,7 @@ public sealed class PdfPreflightTests
 
         var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
 
+        Assert.False(result.IsCompliant);
         var assertion = Assert.Single(result.Assertions);
         Assert.Equal("ISO19005-2:6.3.4-font-embedding", assertion.RuleId);
     }
@@ -613,6 +620,7 @@ public sealed class PdfPreflightTests
 
         var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
 
+        Assert.False(result.IsCompliant);
         var assertion = Assert.Single(result.Assertions);
         Assert.Equal("ISO19005-2:6.7.2-pdfaid", assertion.RuleId);
     }
@@ -627,6 +635,7 @@ public sealed class PdfPreflightTests
 
         var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
 
+        Assert.False(result.IsCompliant);
         var assertion = Assert.Single(result.Assertions);
         Assert.Equal("ISO19005-2:6.7.2-pdfaid", assertion.RuleId);
         Assert.Contains("conformance", assertion.Message);
@@ -643,6 +652,9 @@ public sealed class PdfPreflightTests
 
         var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
 
+        // /F 2 sets Hidden and leaves Print clear; the /Stamp has no /AP — exactly three findings.
+        Assert.False(result.IsCompliant);
+        Assert.Equal(3, result.Assertions.Count);
         Assert.All(result.Assertions, a => Assert.Equal("ISO19005-2:6.5.3-annotation", a.RuleId));
         Assert.Contains(result.Assertions, a => a.Message.Contains("Print"));
         Assert.Contains(result.Assertions, a => a.Message.Contains("Hidden"));
@@ -691,6 +703,7 @@ public sealed class PdfPreflightTests
 
         var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
 
+        Assert.False(result.IsCompliant);
         var assertion = Assert.Single(result.Assertions);
         Assert.Equal("ISO19005-2:6.6.1-action", assertion.RuleId);
         Assert.Contains("/JavaScript", assertion.Message);
@@ -706,6 +719,7 @@ public sealed class PdfPreflightTests
 
         var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
 
+        Assert.False(result.IsCompliant);
         var assertion = Assert.Single(result.Assertions);
         Assert.Equal("ISO19005-2:6.6.1-action", assertion.RuleId);
         Assert.Contains("/Launch", assertion.Message);
@@ -734,6 +748,7 @@ public sealed class PdfPreflightTests
 
         var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2U);
 
+        Assert.False(result.IsCompliant);
         var assertion = Assert.Single(result.Assertions);
         Assert.Equal("ISO19005-2:6.2.11.7-tounicode", assertion.RuleId);
     }
@@ -783,6 +798,7 @@ public sealed class PdfPreflightTests
 
         var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2A);
 
+        Assert.False(result.IsCompliant);
         var assertion = Assert.Single(result.Assertions);
         Assert.Equal("ISO19005-2:6.8-logical-structure", assertion.RuleId);
         Assert.Contains("StructTreeRoot", assertion.Message);
@@ -797,6 +813,7 @@ public sealed class PdfPreflightTests
 
         var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2A);
 
+        Assert.False(result.IsCompliant);
         var assertion = Assert.Single(result.Assertions);
         Assert.Equal("ISO19005-2:6.8-logical-structure", assertion.RuleId);
         Assert.Contains("Marked", assertion.Message);
@@ -811,6 +828,7 @@ public sealed class PdfPreflightTests
 
         var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2A);
 
+        Assert.False(result.IsCompliant);
         var assertion = Assert.Single(result.Assertions);
         Assert.Equal("ISO19005-2:6.8-logical-structure", assertion.RuleId);
         Assert.Contains("circular", assertion.Message);
@@ -832,6 +850,7 @@ public sealed class PdfPreflightTests
     {
         var result = PdfPreflight.Validate(BuildUaPdf(lang: false), PdfConformance.PdfUA1);
 
+        Assert.False(result.IsCompliant);
         var assertion = Assert.Single(result.Assertions);
         Assert.Equal("ISO14289-1:7.2-lang", assertion.RuleId);
     }
@@ -841,8 +860,10 @@ public sealed class PdfPreflightTests
     {
         var result = PdfPreflight.Validate(BuildUaPdf(marked: false), PdfConformance.PdfUA1);
 
+        Assert.False(result.IsCompliant);
         var assertion = Assert.Single(result.Assertions);
         Assert.Equal("ISO14289-1:7.1-tagged", assertion.RuleId);
+        Assert.Contains("Marked", assertion.Message);
     }
 
     [Fact]
@@ -850,8 +871,10 @@ public sealed class PdfPreflightTests
     {
         var result = PdfPreflight.Validate(BuildUaPdf(structTreeRoot: false), PdfConformance.PdfUA1);
 
+        Assert.False(result.IsCompliant);
         var assertion = Assert.Single(result.Assertions);
         Assert.Equal("ISO14289-1:7.1-tagged", assertion.RuleId);
+        Assert.Contains("StructTreeRoot", assertion.Message);
     }
 
     [Fact]
@@ -859,6 +882,7 @@ public sealed class PdfPreflightTests
     {
         var result = PdfPreflight.Validate(BuildUaPdf(displayDocTitle: false), PdfConformance.PdfUA1);
 
+        Assert.False(result.IsCompliant);
         var assertion = Assert.Single(result.Assertions);
         Assert.Equal("ISO14289-1:7.1-title", assertion.RuleId);
     }
@@ -869,6 +893,7 @@ public sealed class PdfPreflightTests
         var result = PdfPreflight.Validate(
             BuildUaPdf(xmpOverride: UaXmpBytes(withTitle: false)), PdfConformance.PdfUA1);
 
+        Assert.False(result.IsCompliant);
         var assertion = Assert.Single(result.Assertions);
         Assert.Equal("ISO14289-1:7.1-title", assertion.RuleId);
     }
@@ -879,6 +904,7 @@ public sealed class PdfPreflightTests
         var result = PdfPreflight.Validate(
             BuildUaPdf(xmpOverride: UaXmpBytes(part: "2")), PdfConformance.PdfUA1);
 
+        Assert.False(result.IsCompliant);
         var assertion = Assert.Single(result.Assertions);
         Assert.Equal("ISO14289-1:5-pdfuaid", assertion.RuleId);
     }
@@ -899,6 +925,7 @@ public sealed class PdfPreflightTests
 
         var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
 
+        Assert.False(result.IsCompliant);
         var assertion = Assert.Single(result.Assertions);
         Assert.Equal("ISO14289-1:7.18.3-tabs", assertion.RuleId);
     }
