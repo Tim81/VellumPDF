@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\VellumPdf.Kernel\VellumPdf.Kernel.csproj" />
+    <ProjectReference Include="..\..\src\VellumPdf.Reader\VellumPdf.Reader.csproj" />
+    <ProjectReference Include="..\..\src\VellumPdf.Conformance\VellumPdf.Conformance.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" />
+  </ItemGroup>
+
+</Project>
