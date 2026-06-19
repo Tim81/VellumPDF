@@ -1,7 +1,6 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
-using System.Text;
 using VellumPdf.Core;
 
 namespace VellumPdf.Conformance.Rules.Metadata;
@@ -41,16 +40,16 @@ internal sealed class XmpConformanceRule : IConformanceRule
         }
 
         var bytes = context.DecodeStream(stream);
-        if (bytes is null)
+        var xmp = bytes is null ? null : XmpReader.Parse(bytes);
+        if (xmp is null)
         {
             context.Report(RuleId, Clause, PreflightSeverity.Error,
-                "The XMP /Metadata stream could not be decoded.");
+                "The XMP /Metadata stream could not be decoded as a well-formed XMP packet.");
             return;
         }
 
-        var xmp = Encoding.UTF8.GetString(bytes);
-        var actualPart = XmpReader.GetProperty(xmp, "pdfaid:part");
-        var actualConformance = XmpReader.GetProperty(xmp, "pdfaid:conformance");
+        var actualPart = XmpReader.Get(xmp, XmpReader.Pdfaid, "part");
+        var actualConformance = XmpReader.Get(xmp, XmpReader.Pdfaid, "conformance");
 
         if (actualPart != part)
         {

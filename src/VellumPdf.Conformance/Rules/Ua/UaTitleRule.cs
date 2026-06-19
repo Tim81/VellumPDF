@@ -1,7 +1,6 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
-using System.Text;
 using VellumPdf.Conformance.Rules.Metadata;
 using VellumPdf.Core;
 
@@ -37,10 +36,12 @@ internal sealed class UaTitleRule : IConformanceRule
 
         var stream = context.ResolveStream(context.Catalog.Get(_metadata));
         var bytes = stream is null ? null : context.DecodeStream(stream);
-        if (bytes is null || !XmpReader.Contains(Encoding.UTF8.GetString(bytes), "dc:title"))
+        var xmp = bytes is null ? null : XmpReader.Parse(bytes);
+        var title = xmp is null ? null : XmpReader.Get(xmp, XmpReader.Dc, "title");
+        if (string.IsNullOrWhiteSpace(title))
         {
             context.Report(RuleId, Clause, PreflightSeverity.Error,
-                "A PDF/UA-1 file shall provide a document title via the XMP dc:title property.");
+                "A PDF/UA-1 file shall provide a non-empty document title via the XMP dc:title property.");
         }
     }
 }
