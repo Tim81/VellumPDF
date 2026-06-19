@@ -904,6 +904,51 @@ public sealed class PdfPreflightTests
     }
 
     [Fact]
+    public void Validate_XmpWithAlternatePdfaidPrefix_IsAccepted()
+    {
+        // The pdfaid namespace URI is bound to a non-default prefix 'aid'. Resolution is by URI,
+        // so this valid PDF/A must still be recognised (the old literal-prefix scan would not).
+        var xmp = Encoding.UTF8.GetBytes(
+            "<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>"
+            + "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF "
+            + "xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">"
+            + "<rdf:Description rdf:about=\"\" xmlns:aid=\"http://www.aiim.org/pdfa/ns/id/\">"
+            + "<aid:part>2</aid:part><aid:conformance>B</aid:conformance>"
+            + "</rdf:Description></rdf:RDF></x:xmpmeta><?xpacket end=\"w\"?>");
+
+        var bytes = AssemblePdf(
+            [new("<< /Type /Catalog /Pages 2 0 R >>"), _pagesObj, _pageObj],
+            metadataOverride: xmp);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.True(result.IsCompliant);
+        Assert.Empty(result.Assertions);
+    }
+
+    [Fact]
+    public void ValidateUa_EmptyDcTitle_ReportsError()
+    {
+        // dc:title is present but its rdf:li value is empty — not a real title.
+        var xmp = Encoding.UTF8.GetBytes(
+            "<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>"
+            + "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF "
+            + "xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">"
+            + "<rdf:Description rdf:about=\"\" "
+            + "xmlns:pdfuaid=\"http://www.aiim.org/pdfua/ns/id/\" "
+            + "xmlns:dc=\"http://purl.org/dc/elements/1.1/\">"
+            + "<pdfuaid:part>1</pdfuaid:part>"
+            + "<dc:title><rdf:Alt><rdf:li xml:lang=\"x-default\"></rdf:li></rdf:Alt></dc:title>"
+            + "</rdf:Description></rdf:RDF></x:xmpmeta><?xpacket end=\"w\"?>");
+
+        var result = PdfPreflight.Validate(BuildUaPdf(xmpOverride: xmp), PdfConformance.PdfUA1);
+
+        Assert.False(result.IsCompliant);
+        var assertion = Assert.Single(result.Assertions);
+        Assert.Equal("ISO14289-1:7.1-title", assertion.RuleId);
+    }
+
+    [Fact]
     public void Assertion_ToString_IncludesRuleAndSeverity()
     {
         var result = PdfPreflight.Validate(BuildCatalogMissingTypePdf(), PdfConformance.PdfA2B);
