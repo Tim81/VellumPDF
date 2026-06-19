@@ -23,11 +23,15 @@ internal sealed class ActionRule : IConformanceRule
 
     public string Clause => "ISO 19005-2:2011, 6.6.1";
 
+    private const int MaxDepth = 64;
+
     private static readonly PdfName _s = new("S");
     private static readonly PdfName _next = new("Next");
     private static readonly PdfName _openAction = new("OpenAction");
     private static readonly PdfName _a = new("A");
     private static readonly PdfName _aa = new("AA");
+    private static readonly PdfName _names = new("Names");
+    private static readonly PdfName _javaScript = new("JavaScript");
 
     private static readonly HashSet<string> _forbidden = new(StringComparer.Ordinal)
     {
@@ -39,7 +43,7 @@ internal sealed class ActionRule : IConformanceRule
     {
         var visited = new HashSet<int>();
 
-        CheckAction(context, context.Catalog.Get(_openAction), visited);
+        CheckAction(context, context.Catalog.Get(_openAction), visited, 0);
         CheckAdditionalActions(context, context.Catalog.Get(_aa), visited);
 
         foreach (var page in context.EnumeratePages())
@@ -47,9 +51,13 @@ internal sealed class ActionRule : IConformanceRule
 
         foreach (var annot in context.EnumerateAnnotations())
         {
-            CheckAction(context, annot.Get(_a), visited);
+            CheckAction(context, annot.Get(_a), visited, 0);
             CheckAdditionalActions(context, annot.Get(_aa), visited);
         }
+
+        // Document-level JavaScript lives in the catalog /Names /JavaScript name tree.
+        if (context.Resolve(context.Catalog.Get(_names)) is PdfDictionary names)
+            CheckNameTreeActions(context, names.Get(_javaScript), new HashSet<int>(), visited, 0);
     }
 
     private void CheckAdditionalActions(PreflightContext context, PdfObject? aaObj, HashSet<int> visited)
@@ -57,17 +65,40 @@ internal sealed class ActionRule : IConformanceRule
         if (context.Resolve(aaObj) is not PdfDictionary aa)
             return;
         foreach (var entry in aa.Entries)
-            CheckAction(context, entry.Value, visited);
+            CheckAction(context, entry.Value, visited, 0);
     }
 
-    private void CheckAction(PreflightContext context, PdfObject? actionObj, HashSet<int> visited)
+    private void CheckNameTreeActions(
+        PreflightContext context, PdfObject? nodeObj, HashSet<int> seenNodes, HashSet<int> visited, int depth)
     {
+        if (depth > MaxDepth)
+            return;
+        if (nodeObj is PdfIndirectReference r && !seenNodes.Add(r.ObjectNumber))
+            return;
+        if (context.Resolve(nodeObj) is not PdfDictionary node)
+            return;
+
+        // Leaf entries: /Names is [key value key value …] where each value is an action.
+        if (context.Resolve(node.Get(_names)) is PdfArray pairs)
+            for (var i = 1; i < pairs.Count; i += 2)
+                CheckAction(context, pairs[i], visited, 0);
+
+        // Intermediate nodes: recurse into /Kids.
+        if (context.Resolve(node.Get(PdfName.Kids)) is PdfArray kids)
+            for (var i = 0; i < kids.Count; i++)
+                CheckNameTreeActions(context, kids[i], seenNodes, visited, depth + 1);
+    }
+
+    private void CheckAction(PreflightContext context, PdfObject? actionObj, HashSet<int> visited, int depth)
+    {
+        if (depth > MaxDepth)
+            return;
         if (actionObj is PdfIndirectReference r && !visited.Add(r.ObjectNumber))
             return;
         if (context.Resolve(actionObj) is not PdfDictionary action)
             return;
 
-        if (action.Get(_s) is PdfName s && _forbidden.Contains(s.Value))
+        if (context.Resolve(action.Get(_s)) is PdfName s && _forbidden.Contains(s.Value))
         {
             context.Report(
                 RuleId,
@@ -80,12 +111,12 @@ internal sealed class ActionRule : IConformanceRule
         var next = context.Resolve(action.Get(_next));
         if (next is PdfDictionary)
         {
-            CheckAction(context, action.Get(_next), visited);
+            CheckAction(context, action.Get(_next), visited, depth + 1);
         }
         else if (next is PdfArray array)
         {
             for (var i = 0; i < array.Count; i++)
-                CheckAction(context, array[i], visited);
+                CheckAction(context, array[i], visited, depth + 1);
         }
     }
 }

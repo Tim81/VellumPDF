@@ -28,7 +28,7 @@ internal sealed class UaTitleRule : IConformanceRule
     public void Evaluate(PreflightContext context)
     {
         var viewerPrefs = context.Resolve(context.Catalog.Get(_viewerPreferences)) as PdfDictionary;
-        if (viewerPrefs?.Get(_displayDocTitle) is not PdfBoolean { Value: true })
+        if (context.Resolve(viewerPrefs?.Get(_displayDocTitle)) is not PdfBoolean { Value: true })
         {
             context.Report(RuleId, Clause, PreflightSeverity.Error,
                 "A PDF/UA-1 file shall set /ViewerPreferences /DisplayDocTitle to true.");

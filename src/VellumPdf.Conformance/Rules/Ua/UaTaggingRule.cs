@@ -27,7 +27,7 @@ internal sealed class UaTaggingRule : IConformanceRule
     public void Evaluate(PreflightContext context)
     {
         var markInfo = context.Resolve(context.Catalog.Get(_markInfo)) as PdfDictionary;
-        if (markInfo?.Get(_marked) is not PdfBoolean { Value: true })
+        if (context.Resolve(markInfo?.Get(_marked)) is not PdfBoolean { Value: true })
         {
             context.Report(RuleId, Clause, PreflightSeverity.Error,
                 "A PDF/UA-1 file shall set the document catalog /MarkInfo /Marked entry to true.");

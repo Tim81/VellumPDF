@@ -1,6 +1,7 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
+using System.IO.Compression;
 using System.Text;
 using VellumPdf.Conformance;
 using VellumPdf.Document;
@@ -1137,6 +1138,74 @@ public sealed class PdfPreflightTests
         Write("trailer\n<< /Size 3 /Root 1 0 R /Encrypt << /Filter /Standard /V 1 /R 2 >> >>\n");
         Write($"startxref\n{xref}\n%%EOF\n");
 
+        return ms.ToArray();
+    }
+
+    [Fact]
+    public void Validate_FilteredMetadataStream_ReportsError()
+    {
+        // §6.7.3 — the document metadata stream shall be plain (unfiltered) XMP.
+        var compressed = ZlibCompress(XmpBytes("2", "B"));
+        var bytes = AssemblePdf(
+            [
+                new("<< /Type /Catalog /Pages 2 0 R /Metadata 4 0 R >>"),
+                _pagesObj,
+                _pageObj,
+                new("/Type /Metadata /Subtype /XML /Filter /FlateDecode", compressed),
+            ],
+            metadata: false);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        var assertion = Assert.Single(result.Assertions);
+        Assert.Equal("ISO19005-2:6.7.3-metadata-filter", assertion.RuleId);
+    }
+
+    [Fact]
+    public void Validate_DocumentLevelJavaScript_ReportsError()
+    {
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R /Names << /JavaScript << /Names [(JS1) 4 0 R] >> >> >>"),
+            _pagesObj,
+            _pageObj,
+            new("<< /S /JavaScript /JS (noop) >>"),
+        ]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions,
+            a => a.RuleId == "ISO19005-2:6.6.1-action" && a.Message.Contains("/JavaScript"));
+    }
+
+    [Fact]
+    public void ValidateUa_TabsInheritedFromPagesNode_NoFinding()
+    {
+        // /Tabs /S is set on the intermediate /Pages node; the annotated leaf inherits it.
+        var bytes = AssemblePdf(
+            [
+                new("<< /Type /Catalog /Pages 2 0 R /Lang (en-US) /MarkInfo << /Marked true >> "
+                    + "/StructTreeRoot 5 0 R /ViewerPreferences << /DisplayDocTitle true >> >>"),
+                new("<< /Type /Pages /Kids [3 0 R] /Count 1 /Tabs /S >>"),
+                new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Annots [4 0 R] >>"),
+                new("<< /Type /Annot /Subtype /Link /Rect [0 0 1 1] /F 4 >>"),
+                new("<< /Type /StructTreeRoot >>"),
+            ],
+            metadataOverride: UaXmpBytes());
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+
+        Assert.True(result.IsCompliant);
+        Assert.Empty(result.Assertions);
+    }
+
+    private static byte[] ZlibCompress(byte[] data)
+    {
+        var ms = new MemoryStream();
+        using (var z = new ZLibStream(ms, CompressionLevel.Optimal, leaveOpen: true))
+            z.Write(data);
         return ms.ToArray();
     }
 
