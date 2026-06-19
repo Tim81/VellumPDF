@@ -305,6 +305,24 @@ public sealed class XrefStreamTests
     }
 
     [Fact]
+    public void Decode_predictor_with_out_of_range_columns_throws_invaliddata()
+    {
+        // An untrusted predictor /Columns must fail cleanly (InvalidDataException), not overflow
+        // the row-size computation into an OverflowException or a huge allocation.
+        var compressed = Compress(new byte[16]);
+        var dict = new PdfDictionary()
+            .Set(PdfName.Filter, PdfName.FlateDecode)
+            .Set(new PdfName("DecodeParms"), new PdfDictionary()
+                .Set(new PdfName("Predictor"), new PdfInteger(12))
+                .Set(new PdfName("Columns"), new PdfInteger(int.MaxValue)))
+            .Set(PdfName.Length, compressed.Length);
+
+        var stream = MakeParsedStream(dict, compressed);
+
+        Assert.Throws<InvalidDataException>(() => PdfFilters.Decode(stream));
+    }
+
+    [Fact]
     public void Type2_to_type2_container_rejected()
     {
         // Build a minimal PDF with classic xref, then manually construct a reader

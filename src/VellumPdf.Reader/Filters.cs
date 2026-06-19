@@ -102,22 +102,26 @@ internal static class PdfFilters
 
     internal static byte[] InflateFlate(byte[] input)
     {
-        // Try ZLib (RFC 1950) first; fall back to raw Deflate.
-        try
-        {
-            return Inflate(new ZLibStream(new MemoryStream(input), CompressionMode.Decompress));
-        }
-        catch
-        {
-            try
-            {
-                return Inflate(new DeflateStream(new MemoryStream(input), CompressionMode.Decompress));
-            }
-            catch (Exception inner)
-            {
-                throw new InvalidDataException("FlateDecode: failed to decompress stream body.", inner);
-            }
-        }
+        // Choose ZLib (RFC 1950) vs. raw Deflate by inspecting the 2-byte header rather than
+        // try-zlib-then-fall-back-to-deflate. The fallback used to also catch — and silently
+        // swallow — the decompression-size cap thrown by Inflate, masking a decompression-bomb
+        // guard and double-decompressing the input. Header inspection keeps the cap fast-failing.
+        var decompressor = LooksLikeZlib(input)
+            ? (Stream)new ZLibStream(new MemoryStream(input), CompressionMode.Decompress)
+            : new DeflateStream(new MemoryStream(input), CompressionMode.Decompress);
+
+        return Inflate(decompressor);
+    }
+
+    private static bool LooksLikeZlib(byte[] input)
+    {
+        // RFC 1950: low nibble of CMF is the compression method (8 = deflate), and the 16-bit
+        // CMF/FLG header is a multiple of 31.
+        if (input.Length < 2)
+            return false;
+        var cmf = input[0];
+        var flg = input[1];
+        return (cmf & 0x0F) == 8 && (((cmf << 8) | flg) % 31) == 0;
     }
 
     private static byte[] Inflate(Stream decompressor)
@@ -148,15 +152,23 @@ internal static class PdfFilters
         var predictor = (int)predObj.Value;
         if (predictor == 1) return data; // None
 
-        var columns = parms.Get(_columns) is PdfInteger col ? (int)col.Value : 1;
-        var colors = parms.Get(_colors) is PdfInteger clr ? (int)clr.Value : 1;
-        var bpc = parms.Get(_bpc) is PdfInteger b ? (int)b.Value : 8;
+        var columns = parms.Get(_columns) is PdfInteger col ? col.Value : 1;
+        var colors = parms.Get(_colors) is PdfInteger clr ? clr.Value : 1;
+        var bpc = parms.Get(_bpc) is PdfInteger b ? b.Value : 8;
+
+        // Guard untrusted predictor parameters: out-of-range values could overflow the row-size
+        // computation to a negative/huge array length (an uncaught OverflowException or an
+        // allocation-amplification DoS) instead of a clean InvalidDataException.
+        // Cap columns so that columns*colors*bpc (max 1M*32*16 = 512M) cannot overflow a 32-bit int.
+        if (columns is < 1 or > (1 << 20) || colors is < 1 or > 32 || bpc is not (1 or 2 or 4 or 8 or 16))
+            throw new InvalidDataException(
+                $"FlateDecode predictor: invalid Columns/Colors/BitsPerComponent ({columns}/{colors}/{bpc}).");
 
         if (predictor == 2)
-            return ApplyTiffPredictor2(data, columns, colors, bpc);
+            return ApplyTiffPredictor2(data, (int)columns, (int)colors, (int)bpc);
 
         if (predictor >= 10 && predictor <= 15)
-            return ApplyPngPredictor(data, columns, colors, bpc);
+            return ApplyPngPredictor(data, (int)columns, (int)colors, (int)bpc);
 
         return data;
     }
