@@ -1,6 +1,8 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
+using System.Collections.ObjectModel;
+
 namespace VellumPdf.Conformance;
 
 /// <summary>
@@ -27,7 +29,6 @@ public sealed class PreflightResult
     internal PreflightResult(PdfConformance conformance, IReadOnlyList<PreflightAssertion> assertions)
     {
         Conformance = conformance;
-        Assertions = assertions;
 
         var compliant = true;
         foreach (var a in assertions)
@@ -39,5 +40,9 @@ public sealed class PreflightResult
             }
         }
         IsCompliant = compliant;
+
+        // Seal the list so a caller cannot downcast Assertions to its backing List and mutate it
+        // (which would leave IsCompliant — computed once here — inconsistent with the contents).
+        Assertions = new ReadOnlyCollection<PreflightAssertion>([.. assertions]);
     }
 }
