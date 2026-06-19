@@ -4,6 +4,25 @@ All notable changes to VellumPdf will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+
+- **`VellumPdf.Conformance` package.** In-process PDF/A and PDF/UA preflight validation, so callers
+  can check conformance without the external veraPDF Docker image. `PdfPreflight.Validate` opens a
+  PDF through `VellumPdf.Reader` and runs a registry of clean-room conformance rules authored from
+  the ISO specifications, returning a `PreflightResult` of machine-readable assertions (rule id, ISO
+  clause, severity, object reference). Rules are registered explicitly — no reflection — so the
+  package is AOT- and trim-ready. Covered so far: PDF/A-2b file structure (§6.1), output intents
+  (§6.2.2), transparency blend modes (§6.4), font embedding (§6.3), and metadata, annotations, and
+  actions (§6.5–6.7); PDF/A-2u character-to-Unicode (§6.2.11.7); PDF/A-2a logical structure (§6.8);
+  and PDF/UA-1 tagging, natural language, document title, and tab order (ISO 14289-1). Each rule's
+  verdict is cross-validated against veraPDF 1.30.2 in CI. (#50)
+- **`VellumPdf.Reader` cross-reference and object streams.** The reader now parses cross-reference
+  streams (§7.5.8), hybrid-reference files, and object streams (§7.5.7), resolving objects packed in
+  object streams. It decodes the FlateDecode / LZWDecode / ASCIIHexDecode / ASCII85Decode /
+  RunLengthDecode filter chain with PNG and TIFF predictors, with decompression-size guards. (#107)
+
 ## [1.6.0] - 2026-06-17
 
 ### Added
