@@ -87,6 +87,41 @@ public sealed class StandardsFoundationTests
     }
 
     [Fact]
+    public void Save_xmpBeginAttribute_isCanonicalUtf8Bom()
+    {
+        using var doc = new PdfDocument();
+        doc.Info.Title = "BomTest";
+        doc.AddPage();
+        using var ms = new MemoryStream();
+        doc.Save(ms);
+        var bytes = ms.ToArray();
+
+        // The xpacket begin attribute must hold the single character U+FEFF, which UTF-8 encodes to
+        // the canonical 3-byte BOM EF BB BF — not the 6-byte mojibake (C3 AF C2 BB C2 BF) a literal
+        // "\xEF\xBB\xBF" string would have produced.
+        var marker = System.Text.Encoding.ASCII.GetBytes("<?xpacket begin=\"");
+        var idx = IndexOf(bytes, marker);
+        Assert.True(idx >= 0, "xpacket begin attribute not found");
+
+        var valueStart = idx + marker.Length;
+        Assert.Equal(new byte[] { 0xEF, 0xBB, 0xBF, (byte)'"' }, bytes[valueStart..(valueStart + 4)]);
+    }
+
+    private static int IndexOf(byte[] haystack, byte[] needle)
+    {
+        for (var i = 0; i <= haystack.Length - needle.Length; i++)
+        {
+            var match = true;
+            for (var j = 0; j < needle.Length; j++)
+            {
+                if (haystack[i + j] != needle[j]) { match = false; break; }
+            }
+            if (match) return i;
+        }
+        return -1;
+    }
+
+    [Fact]
     public void Save_withInfo_xmpPacketContainsDcTitle()
     {
         using var doc = new PdfDocument();
