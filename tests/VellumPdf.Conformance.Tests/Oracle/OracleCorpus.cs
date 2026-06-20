@@ -77,7 +77,73 @@ public static class OracleCorpus
             // Liberation font. Proves the substitution path yields conformant PDF/A text out-of-the-box.
             new OracleFixture("pdfa2b-standard14-substitute", WriterPdfWithStandard14Substitute(),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // PDF/A-2u: embedded-font text with a ToUnicode CMap. Cross-validates the unicode rule
+            // set (ToUnicodeRule) and the part-2u XMP identification against veraPDF's 2u profile.
+            new OracleFixture("pdfa2u-embedded-font", WriterPdfEmbeddedText(VellumPdf.Document.PdfConformance.PdfA2u),
+                Conformance.PdfConformance.PdfA2U, "2u", ExpectedCompliant: true),
+
+            // PDF/A-2a: a tagged document (marked content + a Document→P structure tree). Cross-
+            // validates the logical-structure rule (§6.8) and the part-2a identification.
+            new OracleFixture("pdfa2a-tagged", WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfA2a),
+                Conformance.PdfConformance.PdfA2A, "2a", ExpectedCompliant: true),
+
+            // PDF/UA-1: a tagged document with /Lang, document title and DisplayDocTitle. Cross-
+            // validates the whole UA rule set (metadata, tagging, lang, title, tab order).
+            new OracleFixture("pdfua1-tagged", WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: true),
         ];
+    }
+
+    private static byte[] WriterPdfEmbeddedText(VellumPdf.Document.PdfConformance conformance)
+    {
+        using var doc = new PdfDocument { Conformance = conformance, Language = "en-US" };
+        doc.Info.Title = "VellumPdf Oracle Fixture";
+        var page = doc.AddPage(PageSize.A4);
+        var handle = doc.EmbedStandard14Font(Standard14.Helvetica);
+        doc.RegisterEmbeddedFontUsage(page, handle);
+        var canvas = new PdfCanvas(page);
+        canvas.BeginText().SetFontByName(handle.ResourceName, 12).SetTextMatrix(1, 0, 0, 1, 72, 720);
+        DrawGlyphs(canvas, handle, "Unicode-mappable embedded text.");
+        canvas.EndText();
+        canvas.Finish();
+        using var ms = new MemoryStream();
+        doc.Save(ms);
+        return ms.ToArray();
+    }
+
+    private static byte[] WriterPdfTagged(VellumPdf.Document.PdfConformance conformance)
+    {
+        using var doc = new PdfDocument { Conformance = conformance, Language = "en-US" };
+        doc.Info.Title = "VellumPdf Oracle Fixture";
+        var page = doc.AddPage(PageSize.A4);
+        var handle = doc.EmbedStandard14Font(Standard14.Helvetica);
+        doc.RegisterEmbeddedFontUsage(page, handle);
+
+        var canvas = new PdfCanvas(page);
+        var mcid = canvas.BeginMarkedContent("P");
+        canvas.BeginText().SetFontByName(handle.ResourceName, 12).SetTextMatrix(1, 0, 0, 1, 72, 720);
+        DrawGlyphs(canvas, handle, "Tagged paragraph for accessibility.");
+        canvas.EndText();
+        canvas.EndMarkedContent();
+        canvas.Finish();
+
+        // Minimal valid structure hierarchy: Document → P, the P element bound to the marked content.
+        var p = new PdfStructElem("P") { Page = page, Mcid = mcid };
+        var root = new PdfStructElem("Document");
+        root.AddChild(p);
+        doc.RegisterStructElem(root);
+
+        using var ms = new MemoryStream();
+        doc.Save(ms);
+        return ms.ToArray();
+    }
+
+    private static void DrawGlyphs(PdfCanvas canvas, EmbeddedFontHandle handle, string text)
+    {
+        var gids = new ushort[text.Length];
+        var n = handle.GetGlyphIds(text, gids);
+        canvas.ShowGlyphs(gids.AsSpan(0, n));
     }
 
     private static byte[] WriterPdfWithStandard14Substitute()
