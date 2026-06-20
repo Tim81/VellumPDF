@@ -19,6 +19,15 @@ namespace VellumPdf.Conformance.Rules.Transparency;
 /// inherited <c>/Resources</c>). Graphics states nested inside form XObjects, patterns, and
 /// annotation appearance streams are validated in a later slice of #50c.
 /// </para>
+/// <para>
+/// Known limitation (issue #127): §6.4 constrains the <em>current</em> blend mode — the one set by a
+/// <c>gs</c> operator in a content stream. This rule flags a non-standard <c>/BM</c> present in any
+/// <c>/ExtGState</c> resource without checking whether that graphics state is ever applied, so it can
+/// over-flag an unused non-standard blend mode that veraPDF accepts (a false positive on contrived
+/// input). Scoping to applied graphics states needs content-stream usage analysis, which the
+/// validator does not yet perform; for an <c>/ExtGState</c> that is actually used — the common case —
+/// the in-process and veraPDF verdicts agree.
+/// </para>
 /// </remarks>
 internal sealed class BlendModeRule : IConformanceRule
 {
