@@ -49,6 +49,18 @@ internal sealed class StreamRule : IConformanceRule
                     PreflightSeverity.Error,
                     "A stream dictionary contains an /F, /FFilter, or /FDecodeParms key (an external "
                     + "stream), which is not permitted in PDF/A-2.");
+
+            // §6.1.7.1-1: the /Length value shall equal the number of bytes of the stream body. The
+            // reader locates the real body by scanning to 'endstream' when /Length is wrong, so a
+            // declared /Length that differs from the actual body length is a stale or incorrect value.
+            if (context.Resolve(dict.Get(PdfName.Length)) is PdfInteger declared
+                && declared.Value != stream.RawBody.Length)
+                context.Report(
+                    "ISO19005-2:6.1.7.1-length",
+                    "ISO 19005-2:2011, 6.1.7.1",
+                    PreflightSeverity.Error,
+                    $"A stream's /Length ({declared.Value}) does not match its actual body length "
+                    + $"({stream.RawBody.Length}).");
         }
     }
 }
