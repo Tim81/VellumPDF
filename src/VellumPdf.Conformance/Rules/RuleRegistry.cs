@@ -5,6 +5,7 @@ using VellumPdf.Conformance.Rules.Actions;
 using VellumPdf.Conformance.Rules.Annotations;
 using VellumPdf.Conformance.Rules.Colour;
 using VellumPdf.Conformance.Rules.Fonts;
+using VellumPdf.Conformance.Rules.Graphics;
 using VellumPdf.Conformance.Rules.Metadata;
 using VellumPdf.Conformance.Rules.Structure;
 using VellumPdf.Conformance.Rules.Transparency;
@@ -40,6 +41,12 @@ internal static class RuleRegistry
         new BlendModeRule(),
     ];
 
+    // ISO 19005-2 §6.2.8 image / §6.2.9 XObject rules. Shared by every PDF/A-2 level.
+    private static readonly IConformanceRule[] PdfA2Graphics =
+    [
+        new ForbiddenXObjectRule(),
+    ];
+
     // ISO 19005-2 §6.3 font rules. Shared by every PDF/A-2 level.
     private static readonly IConformanceRule[] PdfA2Fonts =
     [
@@ -61,6 +68,7 @@ internal static class RuleRegistry
         .. CommonStructure,
         .. PdfA2FileStructure,
         .. PdfA2ColourAndTransparency,
+        .. PdfA2Graphics,
         .. PdfA2Fonts,
         .. PdfA2Document,
     ];

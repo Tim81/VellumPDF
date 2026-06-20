@@ -6,13 +6,14 @@ using VellumPdf.Core;
 namespace VellumPdf.Conformance.Rules.Colour;
 
 /// <summary>
-/// ISO 19005-2 §6.2.2 (Output intents). A document that paints device-dependent colour shall have a
-/// PDF/A (<c>GTS_PDFA1</c>) output intent with a <c>/DestOutputProfile</c>; that profile shall be a
-/// valid ICC profile stream with a component count (<c>/N</c>) of 1, 3, or 4; and when more than one
-/// output intent carries a <c>/DestOutputProfile</c>, all shall reference the same profile stream.
+/// ISO 19005-2 §6.2.3 (Output intents) and §6.2.4.3 (device colour spaces). A document that paints
+/// device-dependent colour shall have a PDF/A (<c>GTS_PDFA1</c>) output intent (§6.2.4.3); the
+/// output intent's <c>/DestOutputProfile</c> shall be a valid ICC profile stream with a component
+/// count (<c>/N</c>) of 1, 3, or 4; and when more than one output intent carries a
+/// <c>/DestOutputProfile</c>, all shall reference the same profile stream (§6.2.3).
 /// </summary>
 /// <remarks>
-/// Authored from ISO 19005-2:2011, 6.2.2 and ISO 32000-1:2008, 14.11.5 / 8.6.5.5. Clean-room:
+/// Authored from ISO 19005-2:2011, 6.2.3 and 6.2.4.3 and ISO 32000-1:2008, 14.11.5 / 8.6.5.5. Clean-room:
 /// derived from the specification text, not from any third-party validation profile.
 /// <para>
 /// The <c>/DestOutputProfile</c> requirement is scoped to documents that paint device-dependent
@@ -25,9 +26,9 @@ namespace VellumPdf.Conformance.Rules.Colour;
 /// </remarks>
 internal sealed class OutputIntentRule : IConformanceRule
 {
-    public string RuleId => "ISO19005-2:6.2.2-output-intent";
+    public string RuleId => "ISO19005-2:6.2.3-output-intent";
 
-    public string Clause => "ISO 19005-2:2011, 6.2.2";
+    public string Clause => "ISO 19005-2:2011, 6.2.3";
 
     private static readonly PdfName _outputIntents = new("OutputIntents");
     private static readonly PdfName _s = new("S");
@@ -112,14 +113,14 @@ internal sealed class OutputIntentRule : IConformanceRule
                 + "reference the same ICC profile stream.");
         }
 
-        // ISO 19005-2 §6.2.2: a document that paints device-dependent colour shall have a PDF/A
-        // output intent (GTS_PDFA1) with a DestOutputProfile. Covers both the absence of any output
-        // intent and a profile-less one (issues #122, #128).
+        // ISO 19005-2 §6.2.4.3: device colour spaces (DeviceRGB/CMYK/Gray) may be used only when the
+        // document has a PDF/A output intent (GTS_PDFA1) with a DestOutputProfile. Covers both the
+        // absence of any output intent and a profile-less one (issues #122, #128).
         if (!hasPdfAProfile && context.DocumentUsesDeviceColour())
         {
             context.Report(
-                RuleId,
-                Clause,
+                "ISO19005-2:6.2.4.3-output-intent",
+                "ISO 19005-2:2011, 6.2.4.3",
                 PreflightSeverity.Error,
                 "The document paints device-dependent colour but has no PDF/A output intent "
                 + "(GTS_PDFA1) with a DestOutputProfile.");
