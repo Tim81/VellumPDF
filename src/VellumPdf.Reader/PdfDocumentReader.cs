@@ -26,6 +26,13 @@ public sealed class PdfDocumentReader : IDisposable
     // indirectly references an object inside itself, which would recurse into LoadObjectStream
     // forever (uncatchable StackOverflow) since the cache is only populated once loading completes.
     private readonly HashSet<int> _loadingObjStm = new();
+    // Bounds the NESTING DEPTH of indirect-reference resolution. The cycle guards above reject a
+    // reference chain that revisits an in-progress object, but not an *acyclic* chain of distinct
+    // objects whose /Filter or /Length each points into the next — that would recurse one stack
+    // frame per link (Resolve → … → Resolve) until StackOverflow (uncatchable). Legitimate nesting
+    // is 1–2 deep, so a generous cap costs nothing and stays far under the thread stack limit.
+    private int _resolveDepth;
+    private const int MaxResolveDepth = 100;
     private IReadOnlyList<PdfSignature>? _signatures;
 
     // Caps AcroForm field-tree recursion.
@@ -112,31 +119,44 @@ public sealed class PdfDocumentReader : IDisposable
         if (!_xref.TryGetValue(objectNumber, out var entry))
             return null;
 
-        PdfObject value;
-        if (entry.Kind == XrefEntryKind.Uncompressed)
+        if (_resolveDepth >= MaxResolveDepth)
+            throw new InvalidDataException(
+                $"Malformed PDF: indirect-object resolution nested deeper than {MaxResolveDepth} " +
+                "(cyclic or pathologically chained /Filter or /Length references).");
+
+        _resolveDepth++;
+        try
         {
-            var parser = new PdfObjectParser(Bytes, CheckedOffset(entry.Offset), ResolveLength);
-            var result = parser.ParseIndirectObject();
+            PdfObject value;
+            if (entry.Kind == XrefEntryKind.Uncompressed)
+            {
+                var parser = new PdfObjectParser(Bytes, CheckedOffset(entry.Offset), ResolveLength);
+                var result = parser.ParseIndirectObject();
 
-            if (result.ObjectNumber != objectNumber)
-                return null;
+                if (result.ObjectNumber != objectNumber)
+                    return null;
 
-            value = result.IsStream
-                ? result.Stream!.Dictionary
-                : result.Value ?? PdfNull.Instance;
+                value = result.IsStream
+                    ? result.Stream!.Dictionary
+                    : result.Value ?? PdfNull.Instance;
 
-            if (result.IsStream)
-                _streamCache.TryAdd(objectNumber, result.Stream!);
+                if (result.IsStream)
+                    _streamCache.TryAdd(objectNumber, result.Stream!);
+            }
+            else
+            {
+                var obj = ResolveFromObjectStream(objectNumber, entry);
+                if (obj is null) return null;
+                value = obj;
+            }
+
+            _cache[objectNumber] = value;
+            return value;
         }
-        else
+        finally
         {
-            var obj = ResolveFromObjectStream(objectNumber, entry);
-            if (obj is null) return null;
-            value = obj;
+            _resolveDepth--;
         }
-
-        _cache[objectNumber] = value;
-        return value;
     }
 
     /// <summary>

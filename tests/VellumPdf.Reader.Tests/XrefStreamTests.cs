@@ -392,6 +392,18 @@ public sealed class XrefStreamTests
     }
 
     [Fact]
+    public void Resolve_deepIndirectLengthChain_throwsCleanlyNotStackOverflow()
+    {
+        // A long ACYCLIC chain of stream objects whose /Length each points to the next recurses one
+        // frame per link (Resolve -> ResolveLength -> Resolve). The cycle guards don't catch this
+        // (every object number is distinct); the resolution-depth guard must turn it into a clean
+        // InvalidDataException rather than an uncatchable StackOverflow. (Round-6 security finding.)
+        var bytes = BuildDeepIndirectLengthChainPdf(300);
+        using var reader = PdfReader.Open(bytes); // catalog (obj 1) resolves fine
+        Assert.Throws<InvalidDataException>(() => reader.Resolve(3)); // head of the 300-long chain
+    }
+
+    [Fact]
     public void GetDecodedStreamData_returns_null_for_DCT()
     {
         // A stream with /Filter /DCTDecode cannot be fully decoded — returns null.
@@ -567,6 +579,40 @@ public sealed class XrefStreamTests
         WB(bodyArr);
         W("\nendstream\nendobj\n");
         W($"startxref\n{o7}\n%%EOF\n");
+        return ms.ToArray();
+    }
+
+    private static byte[] BuildDeepIndirectLengthChainPdf(int chainLen)
+    {
+        var ms = new MemoryStream();
+        void W(string s) => ms.Write(Encoding.ASCII.GetBytes(s));
+
+        W("%PDF-1.7\n");
+        var total = 2 + chainLen; // obj1 catalog, obj2 pages, obj3..total = the chain
+        var offsets = new int[total + 1];
+
+        offsets[1] = (int)ms.Position;
+        W("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+        offsets[2] = (int)ms.Position;
+        W("2 0 obj\n<< /Type /Pages /Kids [] /Count 0 >>\nendobj\n");
+
+        // Each chain object is a stream whose /Length is an indirect reference to the next object;
+        // the final object is a plain integer terminus (resolution throws long before reaching it).
+        for (var k = 3; k < total; k++)
+        {
+            offsets[k] = (int)ms.Position;
+            W($"{k} 0 obj\n<< /Length {k + 1} 0 R >>\nstream\nx\nendstream\nendobj\n");
+        }
+        offsets[total] = (int)ms.Position;
+        W($"{total} 0 obj\n1\nendobj\n");
+
+        var xref = (int)ms.Position;
+        W($"xref\n0 {total + 1}\n");
+        W($"{0:D10} 65535 f \n");
+        for (var k = 1; k <= total; k++)
+            W($"{offsets[k]:D10} 00000 n \n");
+        W($"trailer\n<< /Size {total + 1} /Root 1 0 R >>\n");
+        W($"startxref\n{xref}\n%%EOF\n");
         return ms.ToArray();
     }
 

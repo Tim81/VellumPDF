@@ -16,7 +16,7 @@ namespace VellumPdf.Conformance.Tests.Oracle;
 /// Most fixtures derive from one PDF/A-2b baseline and apply in-place, same-length edits so
 /// cross-reference offsets stay valid; this anchors the gate on the byte-level structural and
 /// metadata rules. A few fixtures are instead whole writer-produced documents (e.g.
-/// <c>pdfa2b-link-no-print</c>, which exercises the §6.5.3 annotation rule). Further object-graph
+/// <c>pdfa2b-link</c>, which exercises the §6.5.3 annotation rule). Further object-graph
 /// rules (fonts, output intents, blend modes, actions, logical structure) and the 2u/2a/UA flavours
 /// are the next expansion: each needs a writer-produced document veraPDF agrees on, so the
 /// cross-validation gate (CI) is what confirms each new fixture's expected verdict.
