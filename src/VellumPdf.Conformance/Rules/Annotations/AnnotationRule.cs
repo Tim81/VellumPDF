@@ -73,8 +73,8 @@ internal sealed class AnnotationRule : IConformanceRule
 
             // A /Link annotation has no visible appearance of its own and is exempt from the
             // appearance-stream requirement — but NOT from the flag requirements above: veraPDF
-            // requires the Print flag on Link annotations too (confirmed by the pdfa2b-link-no-print
-            // oracle fixture, where veraPDF reports a Link with no /F as non-compliant).
+            // requires the Print flag on Link annotations too (a Link with no /F is non-compliant;
+            // the pdfa2b-link oracle fixture exercises a conformant Link with the Print flag set).
             if (subtype == "Link")
                 continue;
 

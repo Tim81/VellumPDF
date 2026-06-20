@@ -1334,15 +1334,38 @@ public sealed class PdfPreflightTests
     }
 
     [Fact]
-    public void ValidateUa_TabsInheritedFromPagesNode_NoFinding()
+    public void ValidateUa_TabsOnlyOnPagesNode_ReportsError()
     {
-        // /Tabs /S is set on the intermediate /Pages node; the annotated leaf inherits it.
+        // /Tabs /S is set ONLY on the intermediate /Pages node. /Tabs is not an inheritable page
+        // attribute (ISO 32000-1 Table 31), so the annotated leaf page does not satisfy §7.18.3 and
+        // must be flagged — a conformant reader ignores the ancestor's /Tabs. (Round-7 fix.)
         var bytes = AssemblePdf(
             [
                 new("<< /Type /Catalog /Pages 2 0 R /Lang (en-US) /MarkInfo << /Marked true >> "
                     + "/StructTreeRoot 5 0 R /ViewerPreferences << /DisplayDocTitle true >> >>"),
                 new("<< /Type /Pages /Kids [3 0 R] /Count 1 /Tabs /S >>"),
                 new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Annots [4 0 R] >>"),
+                new("<< /Type /Annot /Subtype /Link /Rect [0 0 1 1] /F 4 >>"),
+                new("<< /Type /StructTreeRoot >>"),
+            ],
+            metadataOverride: UaXmpBytes());
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.18.3-tabs");
+    }
+
+    [Fact]
+    public void ValidateUa_TabsSetOnPage_NoFinding()
+    {
+        // /Tabs /S set directly on the annotated page satisfies §7.18.3.
+        var bytes = AssemblePdf(
+            [
+                new("<< /Type /Catalog /Pages 2 0 R /Lang (en-US) /MarkInfo << /Marked true >> "
+                    + "/StructTreeRoot 5 0 R /ViewerPreferences << /DisplayDocTitle true >> >>"),
+                new("<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
+                new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Tabs /S /Annots [4 0 R] >>"),
                 new("<< /Type /Annot /Subtype /Link /Rect [0 0 1 1] /F 4 >>"),
                 new("<< /Type /StructTreeRoot >>"),
             ],
