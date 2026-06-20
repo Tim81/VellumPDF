@@ -207,6 +207,38 @@ public sealed class PdfPreflightTests
         "<pdfaProperty:name>foo</pdfaProperty:name><pdfaProperty:valueType>Text</pdfaProperty:valueType>"
         + "<pdfaProperty:category>external</pdfaProperty:category><pdfaProperty:description>d</pdfaProperty:description>";
 
+    /// <summary>A PDF/A-2b XMP packet whose RDF carries the given extra <c>rdf:Description</c> markup
+    /// after the mandatory pdfaid description.</summary>
+    private static byte[] XmpWithDescriptions(string extra)
+    {
+        var xmp =
+            "<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>"
+            + "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF "
+            + "xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">"
+            + "<rdf:Description rdf:about=\"\" xmlns:pdfaid=\"http://www.aiim.org/pdfa/ns/id/\">"
+            + "<pdfaid:part>2</pdfaid:part><pdfaid:conformance>B</pdfaid:conformance></rdf:Description>"
+            + extra + "</rdf:RDF></x:xmpmeta><?xpacket end=\"w\"?>";
+        return Encoding.UTF8.GetBytes(xmp);
+    }
+
+    // A custom property in a non-predefined namespace.
+    private const string _customProperty =
+        "<rdf:Description rdf:about=\"\" xmlns:ex=\"http://example.com/ns/\"><ex:foo>bar</ex:foo></rdf:Description>";
+
+    // A PDF/A extension schema declaring the http://example.com/ns/ namespace.
+    private const string _exampleExtensionSchema =
+        "<rdf:Description rdf:about=\"\" xmlns:pdfaExtension=\"http://www.aiim.org/pdfa/ns/extension/\" "
+        + "xmlns:pdfaSchema=\"http://www.aiim.org/pdfa/ns/schema#\" "
+        + "xmlns:pdfaProperty=\"http://www.aiim.org/pdfa/ns/property#\">"
+        + "<pdfaExtension:schemas><rdf:Bag><rdf:li rdf:parseType=\"Resource\">"
+        + "<pdfaSchema:schema>S</pdfaSchema:schema>"
+        + "<pdfaSchema:namespaceURI>http://example.com/ns/</pdfaSchema:namespaceURI>"
+        + "<pdfaSchema:prefix>ex</pdfaSchema:prefix>"
+        + "<pdfaSchema:property><rdf:Seq><rdf:li rdf:parseType=\"Resource\">"
+        + "<pdfaProperty:name>foo</pdfaProperty:name><pdfaProperty:valueType>Text</pdfaProperty:valueType>"
+        + "<pdfaProperty:category>external</pdfaProperty:category><pdfaProperty:description>d</pdfaProperty:description>"
+        + "</rdf:li></rdf:Seq></pdfaSchema:property></rdf:li></rdf:Bag></pdfaExtension:schemas></rdf:Description>";
+
     /// <summary>A minimal ICC profile body: zero-filled, with the 'acsp' signature at offset 36.</summary>
     private static byte[] FakeIccProfile()
     {
@@ -1281,6 +1313,71 @@ public sealed class PdfPreflightTests
 
         Assert.False(result.IsCompliant);
         Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.6.2.3.3-property-category");
+    }
+
+    // ── §6.6.2.3.1 XMP property-provenance rules ────────────────────────────────
+
+    [Fact]
+    public void Validate_UndeclaredXmpProperty_ReportsError()
+    {
+        // §6.6.2.3.1: a property in a non-predefined, undeclared namespace is not permitted.
+        var result = PdfPreflight.Validate(BuildXmpPdf(XmpWithDescriptions(_customProperty)), PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        var assertion = Assert.Single(result.Assertions);
+        Assert.Equal("ISO19005-2:6.6.2.3.1-undeclared-property", assertion.RuleId);
+    }
+
+    [Fact]
+    public void Validate_DeclaredCustomXmpProperty_NoFinding()
+    {
+        // The same custom property is permitted once its namespace is declared by an extension schema.
+        var result = PdfPreflight.Validate(
+            BuildXmpPdf(XmpWithDescriptions(_customProperty + _exampleExtensionSchema)), PdfConformance.PdfA2B);
+
+        Assert.True(result.IsCompliant);
+        Assert.Empty(result.Assertions);
+    }
+
+    [Fact]
+    public void Validate_PredefinedXmpSchemas_NoFinding()
+    {
+        // A property drawn from any predefined XMP schema (here Dublin Core, XMP Basic, Adobe PDF,
+        // TIFF, EXIF, and an xmpMM struct value) must not be flagged — the false-positive guard.
+        const string rich =
+            "<rdf:Description rdf:about=\"\" "
+            + "xmlns:dc=\"http://purl.org/dc/elements/1.1/\" "
+            + "xmlns:xmp=\"http://ns.adobe.com/xap/1.0/\" "
+            + "xmlns:pdf=\"http://ns.adobe.com/pdf/1.3/\" "
+            + "xmlns:tiff=\"http://ns.adobe.com/tiff/1.0/\" "
+            + "xmlns:exif=\"http://ns.adobe.com/exif/1.0/\" "
+            + "xmlns:xmpMM=\"http://ns.adobe.com/xap/1.0/mm/\" "
+            + "xmlns:stRef=\"http://ns.adobe.com/xap/1.0/sType/ResourceRef#\" "
+            + "pdf:Producer=\"P\" xmp:CreatorTool=\"T\" tiff:Make=\"M\">"
+            + "<dc:title><rdf:Alt><rdf:li xml:lang=\"x-default\">Title</rdf:li></rdf:Alt></dc:title>"
+            + "<exif:ExifVersion>0230</exif:ExifVersion>"
+            + "<xmpMM:DerivedFrom rdf:parseType=\"Resource\"><stRef:documentID>d</stRef:documentID></xmpMM:DerivedFrom>"
+            + "</rdf:Description>";
+
+        var result = PdfPreflight.Validate(BuildXmpPdf(XmpWithDescriptions(rich)), PdfConformance.PdfA2B);
+
+        Assert.True(result.IsCompliant);
+        Assert.Empty(result.Assertions);
+    }
+
+    [Fact]
+    public void Validate_UndeclaredPdfUaIdInPdfA_ReportsError()
+    {
+        // pdfuaid is NOT a predefined schema in PDF/A-2: a PDF/A document using it must declare it via
+        // an extension schema (matching veraPDF).
+        var result = PdfPreflight.Validate(
+            BuildXmpPdf(XmpWithDescriptions(
+                "<rdf:Description rdf:about=\"\" xmlns:pdfuaid=\"http://www.aiim.org/pdfua/ns/id/\">"
+                + "<pdfuaid:part>1</pdfuaid:part></rdf:Description>")),
+            PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.6.2.3.1-undeclared-property");
     }
 
     // ── §6.3 annotation rules ─────────────────────────────────────────────────
