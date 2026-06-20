@@ -77,23 +77,32 @@ internal sealed class XmpConformanceRule : IConformanceRule
         foreach (var element in doc.Descendants())
         {
             if (element.Name.Namespace == XmpReader.Pdfaid)
-                ReportPrefix(context, element.GetPrefixOfNamespace(XmpReader.Pdfaid), element.Name.LocalName);
+                CheckPrefix(context, element, element.Name.LocalName);
 
             foreach (var attribute in element.Attributes())
                 if (!attribute.IsNamespaceDeclaration && attribute.Name.Namespace == XmpReader.Pdfaid)
-                    ReportPrefix(context, element.GetPrefixOfNamespace(XmpReader.Pdfaid), attribute.Name.LocalName);
+                    CheckPrefix(context, element, attribute.Name.LocalName);
         }
     }
 
-    private void ReportPrefix(PreflightContext context, string? prefix, string localName)
+    private void CheckPrefix(PreflightContext context, System.Xml.Linq.XElement element, string localName)
     {
-        if (prefix is not null && prefix != "pdfaid")
-            context.Report(
-                "ISO19005-2:6.6.4-pdfaid-prefix",
-                Clause,
-                PreflightSeverity.Error,
-                $"The PDF/A Identification property pdfaid:{localName} uses the prefix '{prefix}'; "
-                + "it shall use the prefix 'pdfaid'.");
+        // A pdfaid property is conformant when it can be written with the canonical 'pdfaid' prefix
+        // (that prefix is bound to the pdfaid namespace in scope) or with no prefix (pdfaid is the
+        // default namespace). Only a document that exposes the pdfaid namespace EXCLUSIVELY through a
+        // non-'pdfaid' prefix violates §6.6.4. XDocument does not retain the serialised prefix of each
+        // name, so we test the available bindings rather than GetPrefixOfNamespace, which returns the
+        // nearest one and would misfire when both 'pdfaid' and an alias are in scope.
+        if (element.GetPrefixOfNamespace(XmpReader.Pdfaid) is null)
+            return; // pdfaid is the default namespace here — no prefix is used.
+        if (element.GetNamespaceOfPrefix("pdfaid") == XmpReader.Pdfaid)
+            return; // the canonical 'pdfaid' prefix is bound to the pdfaid namespace.
+
+        context.Report(
+            "ISO19005-2:6.6.4-pdfaid-prefix",
+            Clause,
+            PreflightSeverity.Error,
+            $"The PDF/A Identification property pdfaid:{localName} uses a prefix other than 'pdfaid'.");
     }
 
     private static (string Part, string Conformance)? Expected(PdfConformance conformance) => conformance switch
