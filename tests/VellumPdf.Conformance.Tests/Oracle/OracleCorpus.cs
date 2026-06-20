@@ -140,7 +140,25 @@ public static class OracleCorpus
             // device-colour-requires-an-output-intent check (#122).
             new OracleFixture("pdfa2b-devicecolour-no-outputintent", WriterPdfDeviceColourNoOutputIntent(),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // An interactive form dictionary carrying an /XFA entry, which PDF/A-2 forbids (§6.4.2).
+            // Both veraPDF and the in-process XfaRule reject it (#122).
+            new OracleFixture("pdfa2b-xfa", WriterPdfWithXfa(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
         ];
+    }
+
+    private static byte[] WriterPdfWithXfa()
+    {
+        var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+        var rootRef = (PdfIndirectReference)reader.Trailer.Get(PdfName.Root)!;
+        var catalog = CloneDict(reader.Catalog);
+        var acroForm = new PdfDictionary()
+            .Set(new PdfName("Fields"), new PdfArray([]))
+            .Set(new PdfName("XFA"), new PdfLiteralString(Encoding.ASCII.GetBytes("<xdp/>")));
+        catalog.Set(new PdfName("AcroForm"), acroForm);
+        return reader.AppendRevision([(rootRef.ObjectNumber, catalog)]);
     }
 
     private static byte[] WriterPdfDeviceColourNoOutputIntent()

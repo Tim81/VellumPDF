@@ -510,6 +510,24 @@ public sealed class PdfPreflightTests
     }
 
     [Fact]
+    public void Validate_XfaInAcroForm_ReportsError()
+    {
+        // §6.4.2: the AcroForm shall not contain an /XFA entry — XFA forms are forbidden in PDF/A. (#122)
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R /AcroForm 4 0 R >>"),
+            _pagesObj,
+            _pageObj,
+            new("<< /Fields [] /XFA (xfadata) >>"),
+        ]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.4.2-xfa");
+    }
+
+    [Fact]
     public void Validate_PdfAOutputIntent_IndirectSubtype_StillEnforced()
     {
         // /S is an indirect reference to the name GTS_PDFA1 (legal per ISO 32000-1 §7.3.10). The rule
@@ -613,7 +631,7 @@ public sealed class PdfPreflightTests
 
         Assert.False(result.IsCompliant);
         var assertion = Assert.Single(result.Assertions);
-        Assert.Equal("ISO19005-2:6.4-blend-mode", assertion.RuleId);
+        Assert.Equal("ISO19005-2:6.2.10-blend-mode", assertion.RuleId);
         Assert.Contains("/FooBar", assertion.Message);
     }
 
@@ -624,7 +642,7 @@ public sealed class PdfPreflightTests
 
         Assert.False(result.IsCompliant);
         var assertion = Assert.Single(result.Assertions);
-        Assert.Equal("ISO19005-2:6.4-blend-mode", assertion.RuleId);
+        Assert.Equal("ISO19005-2:6.2.10-blend-mode", assertion.RuleId);
         Assert.Contains("/Bogus", assertion.Message);
     }
 

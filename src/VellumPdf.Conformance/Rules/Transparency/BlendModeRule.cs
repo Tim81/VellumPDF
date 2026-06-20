@@ -6,13 +6,13 @@ using VellumPdf.Core;
 namespace VellumPdf.Conformance.Rules.Transparency;
 
 /// <summary>
-/// ISO 19005-2 §6.4 (Transparency). The current blend mode, set by the <c>/BM</c> entry of a
-/// graphics-state parameter dictionary, shall be one of the standard separable or non-separable
-/// blend modes defined in ISO 32000-1 (plus the deprecated <c>Compatible</c> alias). PDF/A-2
-/// permits transparency, but a non-standard blend mode is not allowed.
+/// ISO 19005-2 §6.2.10 (Transparency — blend modes). The current blend mode, set by the <c>/BM</c>
+/// entry of a graphics-state parameter dictionary, shall be one of the standard separable or
+/// non-separable blend modes defined in ISO 32000-1 (plus the deprecated <c>Compatible</c> alias).
+/// PDF/A-2 permits transparency, but a non-standard blend mode is not allowed.
 /// </summary>
 /// <remarks>
-/// Authored from ISO 19005-2:2011, 6.4 and ISO 32000-1:2008, 11.3.5 (Table 136). Clean-room:
+/// Authored from ISO 19005-2:2011, 6.2.10 and ISO 32000-1:2008, 11.3.5 (Table 136). Clean-room:
 /// derived from the specification text, not from any third-party validation profile.
 /// <para>
 /// This slice inspects the <c>/ExtGState</c> resources reachable through the page tree (including
@@ -20,17 +20,17 @@ namespace VellumPdf.Conformance.Rules.Transparency;
 /// annotation appearance streams are validated in a later slice of #50c.
 /// </para>
 /// <para>
-/// §6.4 constrains the <em>current</em> blend mode — the one set by a <c>gs</c> operator in a content
-/// stream. So this rule only validates the <c>/BM</c> of an <c>/ExtGState</c> that the page actually
-/// applies (determined by <see cref="ContentStreamUsage"/>); a non-standard blend mode in a resource
-/// that is never used is not a violation, matching veraPDF (issue #127).
+/// §6.2.10 constrains the <em>current</em> blend mode — the one set by a <c>gs</c> operator in a
+/// content stream. So this rule only validates the <c>/BM</c> of an <c>/ExtGState</c> that the page
+/// actually applies (determined by <see cref="ContentStreamUsage"/>); a non-standard blend mode in a
+/// resource that is never used is not a violation, matching veraPDF (issue #127).
 /// </para>
 /// </remarks>
 internal sealed class BlendModeRule : IConformanceRule
 {
-    public string RuleId => "ISO19005-2:6.4-blend-mode";
+    public string RuleId => "ISO19005-2:6.2.10-blend-mode";
 
-    public string Clause => "ISO 19005-2:2011, 6.4";
+    public string Clause => "ISO 19005-2:2011, 6.2.10";
 
     private static readonly PdfName _extGState = new("ExtGState");
     private static readonly PdfName _bm = new("BM");
