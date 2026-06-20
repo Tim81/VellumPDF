@@ -2006,6 +2006,27 @@ public sealed class PdfPreflightTests
     }
 
     [Fact]
+    public void Validate_PdfaidWithCanonicalAndAliasPrefix_NoFinding()
+    {
+        // The pdfaid properties are written with the canonical 'pdfaid' prefix, but an alias 'aid' is
+        // ALSO bound to the same URI in scope. The properties are conformant; the prefix check must
+        // not misfire on the alias (veraPDF accepts this). Regression guard for the review.
+        var xmp = Encoding.UTF8.GetBytes(
+            "<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>"
+            + "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF "
+            + "xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">"
+            + "<rdf:Description rdf:about=\"\" xmlns:pdfaid=\"http://www.aiim.org/pdfa/ns/id/\" "
+            + "xmlns:aid=\"http://www.aiim.org/pdfa/ns/id/\">"
+            + "<pdfaid:part>2</pdfaid:part><pdfaid:conformance>B</pdfaid:conformance>"
+            + "</rdf:Description></rdf:RDF></x:xmpmeta><?xpacket end=\"w\"?>");
+
+        var result = PdfPreflight.Validate(BuildXmpPdf(xmp), PdfConformance.PdfA2B);
+
+        Assert.True(result.IsCompliant);
+        Assert.Empty(result.Assertions);
+    }
+
+    [Fact]
     public void ValidateUa_EmptyDcTitle_ReportsError()
     {
         // dc:title is present but its rdf:li value is empty — not a real title.
