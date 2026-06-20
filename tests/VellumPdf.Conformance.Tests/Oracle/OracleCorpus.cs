@@ -50,12 +50,12 @@ public static class OracleCorpus
             new OracleFixture("plain-not-pdfa", WriterPdf(VellumPdf.Document.PdfConformance.None),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
 
-            // A conformant PDF/A-2b document carrying a /Link annotation. The writer emits no /F on
-            // a Link, so its Print flag is clear — which §6.5.3 permits for Link annotations (they
-            // have no printable appearance). This fixture pins the in-process Link exemption to
-            // veraPDF's verdict: if veraPDF disagrees, the cross-validation gate fails here.
+            // A PDF/A-2b document carrying a /Link annotation that the writer emits with no /F, so
+            // its Print flag is clear. veraPDF reports this as NON-compliant — the §6.5.3 Print-flag
+            // requirement is NOT relaxed for Link annotations (a hypothesis to the contrary was
+            // falsified by this very fixture). The in-process verdict must agree.
             new OracleFixture("pdfa2b-link-no-print", WriterPdfWithLink(),
-                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
         ];
     }
 

@@ -733,19 +733,21 @@ public sealed class PdfPreflightTests
     }
 
     [Fact]
-    public void Validate_LinkAnnotationWithoutPrintFlag_NoFindings()
+    public void Validate_LinkAnnotationWithoutPrintFlag_ReportsError()
     {
-        // A /Link annotation with no /F (flags 0, Print clear) is conformant: Links have no printable
-        // appearance and are exempt from the §6.5.3 flag requirements. Conformant PDF/A files (and
-        // VellumPdf's own writer) emit such Links. Round-5 false-positive fix.
+        // A /Link with no /F (flags 0, Print clear) must be flagged: §6.5.3's Print-flag requirement
+        // is NOT relaxed for Link annotations. veraPDF agrees — see the pdfa2b-link-no-print oracle
+        // fixture, which confirmed a Link without Print is non-compliant. (Link is exempt only from
+        // the appearance-stream requirement, covered by Validate_LinkAnnotation_ExemptFromAppearance.)
         var bytes = BuildPagePdf(
             "/Annots [4 0 R]",
             new PdfObj("<< /Type /Annot /Subtype /Link /Rect [0 0 1 1] >>"));
 
         var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
 
-        Assert.True(result.IsCompliant);
-        Assert.Empty(result.Assertions);
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions,
+            a => a.RuleId == "ISO19005-2:6.5.3-annotation" && a.Message.Contains("Print"));
     }
 
     // ── §6.6.1 action rules ─────────────────────────────────────────────────────
