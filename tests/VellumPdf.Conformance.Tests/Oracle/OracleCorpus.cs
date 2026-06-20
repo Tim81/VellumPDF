@@ -65,7 +65,43 @@ public static class OracleCorpus
             // Uses only the built-in standard-14 metrics, so no external font asset is needed.
             new OracleFixture("pdfa2b-nonembedded-font", WriterPdfNonEmbeddedFont(),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // A PDF/A-2b document that draws text with a properly embedded (subset) TrueType font via
+            // the Type0/CIDFontType2/Identity-H path. veraPDF accepts it (all §6.2.11.x font checks
+            // pass) and so does the in-process validator — the positive end-to-end font fixture.
+            new OracleFixture("pdfa2b-embedded-font", WriterPdfWithEmbeddedFont(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
         ];
+    }
+
+    private static byte[] WriterPdfWithEmbeddedFont()
+    {
+        var ttf = LoadAsset("DejaVuSans.ttf");
+        using var doc = new PdfDocument { Conformance = VellumPdf.Document.PdfConformance.PdfA2b };
+        doc.Info.Title = "VellumPdf Oracle Fixture";
+        var page = doc.AddPage(PageSize.A4);
+        var handle = doc.UseTrueTypeFont(ttf);
+        doc.RegisterEmbeddedFontUsage(page, handle);
+        var canvas = new PdfCanvas(page);
+        canvas.BeginText().SetFontByName(handle.ResourceName, 12).SetTextMatrix(1, 0, 0, 1, 72, 720);
+        const string text = "Embedded DejaVu Sans subset";
+        var gids = new ushort[text.Length];
+        var count = handle.GetGlyphIds(text, gids);
+        canvas.ShowGlyphs(gids.AsSpan(0, count));
+        canvas.EndText();
+        canvas.Finish();
+        using var ms = new MemoryStream();
+        doc.Save(ms);
+        return ms.ToArray();
+    }
+
+    private static byte[] LoadAsset(string logicalName)
+    {
+        using var s = typeof(OracleCorpus).Assembly.GetManifestResourceStream(logicalName)
+            ?? throw new InvalidOperationException($"Embedded asset '{logicalName}' not found.");
+        using var ms = new MemoryStream();
+        s.CopyTo(ms);
+        return ms.ToArray();
     }
 
     private static byte[] WriterPdfNonEmbeddedFont()
