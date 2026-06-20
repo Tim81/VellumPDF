@@ -1174,6 +1174,54 @@ public sealed class PdfPreflightTests
     }
 
     [Fact]
+    public void Validate_SimpleFontWidthsMismatch_ReportsError()
+    {
+        // §6.2.11.2: a non-standard simple font's /Widths length must equal LastChar−FirstChar+1.
+        var bytes = BuildFontPdf(
+            new PdfObj("<< /Type /Font /Subtype /Type1 /BaseFont /Foo /FirstChar 65 /LastChar 67 "
+                + "/Widths [600] /FontDescriptor 7 0 R >>"),
+            new PdfObj("<< /Type /FontDescriptor /FontName /Foo /FontFile3 8 0 R >>"),
+            new PdfObj("/Subtype /Type1C", [1, 2, 3, 4]));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.11.2-widths");
+    }
+
+    [Fact]
+    public void Validate_NonSymbolicTrueTypeWithoutWinAnsi_ReportsError()
+    {
+        // §6.2.11.6: a non-symbolic TrueType font's /Encoding must be MacRoman or WinAnsi (here absent).
+        var bytes = BuildFontPdf(
+            new PdfObj("<< /Type /Font /Subtype /TrueType /BaseFont /Foo /FirstChar 65 /LastChar 65 "
+                + "/Widths [600] /FontDescriptor 7 0 R >>"),
+            new PdfObj("<< /Type /FontDescriptor /FontName /Foo /Flags 32 /FontFile2 8 0 R >>"),
+            new PdfObj("/Length1 4", [1, 2, 3, 4]));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.11.6-nonsymbolic-encoding");
+    }
+
+    [Fact]
+    public void Validate_SymbolicTrueTypeWithEncoding_ReportsError()
+    {
+        // §6.2.11.6: a symbolic TrueType font shall not carry an /Encoding entry.
+        var bytes = BuildFontPdf(
+            new PdfObj("<< /Type /Font /Subtype /TrueType /BaseFont /Foo /FirstChar 65 /LastChar 65 "
+                + "/Widths [600] /Encoding /WinAnsiEncoding /FontDescriptor 7 0 R >>"),
+            new PdfObj("<< /Type /FontDescriptor /FontName /Foo /Flags 4 /FontFile2 8 0 R >>"),
+            new PdfObj("/Length1 4", [1, 2, 3, 4]));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.11.6-symbolic-encoding");
+    }
+
+    [Fact]
     public void Validate_EmbeddedCidFontType2WithoutCidToGidMap_ReportsError()
     {
         // §6.2.11.3.2: an embedded CIDFontType2 shall have a /CIDToGIDMap (here omitted).
@@ -1193,8 +1241,9 @@ public sealed class PdfPreflightTests
     public void Validate_EmbeddedTrueTypeFont_NoFindings()
     {
         var bytes = BuildFontPdf(
-            new PdfObj("<< /Type /Font /Subtype /TrueType /BaseFont /ABCDEF+Arial /FontDescriptor 7 0 R >>"),
-            new PdfObj("<< /Type /FontDescriptor /FontName /ABCDEF+Arial /FontFile2 8 0 R >>"),
+            new PdfObj("<< /Type /Font /Subtype /TrueType /BaseFont /ABCDEF+Arial /FirstChar 65 /LastChar 65 "
+                + "/Widths [600] /Encoding /WinAnsiEncoding /FontDescriptor 7 0 R >>"),
+            new PdfObj("<< /Type /FontDescriptor /FontName /ABCDEF+Arial /Flags 32 /FontFile2 8 0 R >>"),
             new PdfObj("/Length1 4", [1, 2, 3, 4]));
 
         var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
@@ -1934,7 +1983,8 @@ public sealed class PdfPreflightTests
     {
         // A Type1 font embedded with /FontFile2 (a TrueType program) is not correctly embedded.
         var bytes = BuildFontPdf(
-            new PdfObj("<< /Type /Font /Subtype /Type1 /BaseFont /Foo /FontDescriptor 7 0 R >>"),
+            new PdfObj("<< /Type /Font /Subtype /Type1 /BaseFont /Foo /FirstChar 65 /LastChar 65 "
+                + "/Widths [600] /FontDescriptor 7 0 R >>"),
             new PdfObj("<< /Type /FontDescriptor /FontName /Foo /FontFile2 8 0 R >>"),
             new PdfObj("/Length1 4", [1, 2, 3, 4]));
 
@@ -1950,7 +2000,8 @@ public sealed class PdfPreflightTests
     {
         // /FontFile2 points at a nonexistent object — resolving to no stream means "not embedded".
         var bytes = BuildFontPdf(
-            new PdfObj("<< /Type /Font /Subtype /TrueType /BaseFont /Foo /FontDescriptor 7 0 R >>"),
+            new PdfObj("<< /Type /Font /Subtype /TrueType /BaseFont /Foo /FirstChar 65 /LastChar 65 "
+                + "/Widths [600] /Encoding /WinAnsiEncoding /FontDescriptor 7 0 R >>"),
             new PdfObj("<< /Type /FontDescriptor /FontName /Foo /FontFile2 99 0 R >>"));
 
         var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
