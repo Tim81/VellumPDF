@@ -83,6 +83,17 @@ public static class OracleCorpus
             new OracleFixture("pdfa2b-glyph-not-present", WriterPdfWithOutOfRangeGlyph(),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
 
+            // A composite font shown glyph index 0 — a reference to .notdef (§6.2.11.8-1). veraPDF and
+            // the in-process rule both reject it.
+            new OracleFixture("pdfa2b-notdef-glyph", WriterPdfDrawingNotdef(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // A composite font with its /W array removed, so the drawn glyphs' declared widths fall to
+            // /DW and no longer match the embedded program (§6.2.11.5-1). veraPDF and the in-process
+            // rule both reject it.
+            new OracleFixture("pdfa2b-glyph-width", WriterPdfWithBadGlyphWidth(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
             // A hand-built but fully conformant simple WinAnsi TrueType font (full DejaVu, correct
             // widths) — the regression guard that the new simple-font checks do not false-positive.
             new OracleFixture("pdfa2b-simple-font", SimpleTrueTypeFont(_ => { }, encoding: new PdfName("WinAnsiEncoding")),
@@ -819,11 +830,14 @@ public static class OracleCorpus
             [(pageRef.ObjectNumber, newPage), (fontNum, simple), (descNum, descriptor), (ffNum, fontFile), (contentNum, content)]);
     }
 
-    private static byte[] WriterPdfWithOutOfRangeGlyph()
+    private static byte[] WriterPdfWithOutOfRangeGlyph() => WriterPdfDrawingGlyph("EA60"); // 60000, beyond the program
+
+    private static byte[] WriterPdfDrawingNotdef() => WriterPdfDrawingGlyph("0000"); // glyph index 0 = .notdef
+
+    // Appends a content stream that shows the given 2-byte hex glyph index with the embedded
+    // Identity-H font, on top of the writer's compliant embedded-font baseline.
+    private static byte[] WriterPdfDrawingGlyph(string hexGid)
     {
-        // The writer's embedded font draws valid glyphs; append a content stream that shows glyph
-        // index 60000 (well beyond DejaVu's ~6253 glyphs) with the same Identity-H font, so a glyph
-        // not present in the embedded program is referenced (§6.2.11.4.1-2).
         using var reader = PdfReader.Open(WriterPdfWithEmbeddedFont());
         var (pageRef, page) = FirstPage(reader);
         var resources = (PdfDictionary)reader.ResolveValue(page.Get(new PdfName("Resources"))!)!;
@@ -834,7 +848,7 @@ public static class OracleCorpus
         var newPage = CloneDict(page);
         newPage.Set(new PdfName("Contents"),
             new PdfArray([page.Get(new PdfName("Contents"))!, new PdfIndirectReference(contentNum)]));
-        var content = new PdfStream(Encoding.ASCII.GetBytes($"BT /{fontName} 12 Tf 72 600 Td <EA60> Tj ET"));
+        var content = new PdfStream(Encoding.ASCII.GetBytes($"BT /{fontName} 12 Tf 72 600 Td <{hexGid}> Tj ET"));
         return reader.AppendRevision([(pageRef.ObjectNumber, newPage), (contentNum, content)]);
     }
 
@@ -847,14 +861,19 @@ public static class OracleCorpus
         });
 
     private static byte[] WriterPdfWithoutCidToGidMap()
-        => CorruptDescendantFont(d =>
-        {
-            var c = new PdfDictionary();
-            foreach (var kv in d.Entries)
-                if (kv.Key.Value != "CIDToGIDMap")
-                    c.Set(kv.Key, kv.Value);
-            return c;
-        });
+        => CorruptDescendantFont(d => CloneWithout(d, "CIDToGIDMap"));
+
+    private static byte[] WriterPdfWithBadGlyphWidth()
+        => CorruptDescendantFont(d => CloneWithout(d, "W")); // widths fall to /DW, mismatching the program
+
+    private static PdfDictionary CloneWithout(PdfDictionary d, string key)
+    {
+        var c = new PdfDictionary();
+        foreach (var kv in d.Entries)
+            if (kv.Key.Value != key)
+                c.Set(kv.Key, kv.Value);
+        return c;
+    }
 
     // Rebuilds the descendant CIDFont of the writer's embedded-font fixture and returns the
     // incrementally-updated bytes. The base font is a real DejaVu subset veraPDF can parse.

@@ -8,15 +8,18 @@ using VellumPdf.Reader;
 namespace VellumPdf.Conformance.Rules.Fonts;
 
 /// <summary>
-/// ISO 19005-2 §6.2.11.4.1 (Glyph presence). Every glyph referenced for rendering shall be present
-/// in the embedded font program. For a composite font using Identity encoding, the bytes shown by a
-/// text operator are glyph indices directly, so any glyph index at or beyond the embedded program's
-/// glyph count refers to a glyph that does not exist.
+/// ISO 19005-2 §6.2.11.4.1 (Glyph presence), §6.2.11.5 (Glyph widths), and §6.2.11.8 (.notdef). Every
+/// glyph referenced for rendering shall be present in the embedded font program, the width declared
+/// for it shall match the program's advance width, and the <c>.notdef</c> glyph (index 0) shall not
+/// be referenced. For a composite font using Identity encoding, the bytes shown by a text operator
+/// are glyph indices directly, so a glyph index of 0 references <c>.notdef</c>, an index at or beyond
+/// the program's glyph count is absent, and the declared CID width (<c>/W</c> or <c>/DW</c>) is
+/// compared against the program's advance width.
 /// </summary>
 /// <remarks>
 /// Authored from ISO 19005-2:2011, 6.2.11.4.1 and ISO 32000-1:2008, 9.4.3 / 9.7.4. Clean-room:
 /// derived from the specification text. The embedded program's glyph count comes from
-/// <see cref="SfntGlyphCount"/> (the maxp table); the glyph indices used are read from the page
+/// <see cref="SfntMetrics"/> (the maxp table); the glyph indices used are read from the page
 /// content streams. Cross-validated against veraPDF (a Type0/Identity-H font shown a glyph index
 /// beyond its TrueType program's glyph count fails clause 6.2.11.4.1-2).
 /// <para>
@@ -39,7 +42,8 @@ internal sealed class GlyphPresenceRule : IConformanceRule
 
     public void Evaluate(PreflightContext context)
     {
-        var reported = new HashSet<int>(); // font-program object numbers already flagged
+        // Keyed "<program object>:<finding>" so each program is flagged at most once per finding kind.
+        var reported = new HashSet<string>();
 
         foreach (var page in context.EnumeratePages())
         {
@@ -65,10 +69,15 @@ internal sealed class GlyphPresenceRule : IConformanceRule
         }
     }
 
-    private readonly record struct IdentityFont(int ProgramObject, int NumGlyphs);
+    private sealed class IdentityFont(int programObject, SfntMetrics metrics, CidWidths widths)
+    {
+        public int ProgramObject { get; } = programObject;
+        public SfntMetrics Metrics { get; } = metrics;
+        public CidWidths Widths { get; } = widths;
+    }
 
-    // Returns the embedded TrueType glyph count for a Type0 font with Identity-H/V encoding and a
-    // CIDFontType2 descendant, or null when the font is not of that form.
+    // Returns the metrics + declared CID widths for a Type0 font with Identity-H/V encoding and an
+    // embedded CIDFontType2 descendant, or null when the font is not of that form.
     private static IdentityFont? TryGetIdentityFont(PreflightContext context, PdfObject? fontRef)
     {
         if (context.Resolve(fontRef) is not PdfDictionary font)
@@ -88,15 +97,15 @@ internal sealed class GlyphPresenceRule : IConformanceRule
             || context.ResolveStream(fontFileRef) is not { } program
             || context.DecodeStream(program) is not { } programBytes)
             return null;
-        if (SfntGlyphCount.TryGetNumGlyphs(programBytes) is not { } numGlyphs)
+        if (SfntMetrics.TryParse(programBytes) is not { } metrics)
             return null;
-        return new IdentityFont(fontFileRef.ObjectNumber, numGlyphs);
+        return new IdentityFont(fontFileRef.ObjectNumber, metrics, CidWidths.Parse(context, cidFont));
     }
 
     // Walks the content stream, tracking the current font, and for an Identity-encoded font treats
     // the bytes of each shown string as 2-byte big-endian glyph indices.
     private void ScanContent(
-        PreflightContext context, byte[] content, Dictionary<string, IdentityFont> identityFonts, HashSet<int> reported)
+        PreflightContext context, byte[] content, Dictionary<string, IdentityFont> identityFonts, HashSet<string> reported)
     {
         IdentityFont? current = null;
         try
@@ -144,24 +153,102 @@ internal sealed class GlyphPresenceRule : IConformanceRule
     }
 
     private void ConsumeGlyphs(
-        PreflightContext context, IdentityFont? current, List<byte[]> strings, HashSet<int> reported)
+        PreflightContext context, IdentityFont? current, List<byte[]> strings, HashSet<string> reported)
     {
-        if (current is not { } font || reported.Contains(font.ProgramObject))
+        if (current is not { } font)
             return;
         foreach (var bytes in strings)
         {
             for (var i = 0; i + 1 < bytes.Length; i += 2)
             {
                 var gid = (bytes[i] << 8) | bytes[i + 1];
-                if (gid >= font.NumGlyphs && reported.Add(font.ProgramObject))
-                {
+
+                // §6.2.11.8: a conforming file shall not reference the .notdef glyph (index 0).
+                if (gid == 0 && reported.Add($"{font.ProgramObject}:notdef"))
+                    context.Report("ISO19005-2:6.2.11.8-notdef", "ISO 19005-2:2011, 6.2.11.8",
+                        PreflightSeverity.Error,
+                        "The document references the .notdef glyph (glyph index 0) of a composite font, "
+                        + "which is not permitted in PDF/A-2.");
+
+                // §6.2.11.4.1: every glyph referenced shall be present in the embedded program.
+                else if (gid >= font.Metrics.NumGlyphs && reported.Add($"{font.ProgramObject}:present"))
                     context.Report(RuleId, Clause, PreflightSeverity.Error,
                         $"A glyph (index {gid}) drawn with a composite font is not present in the embedded "
-                        + $"font program, which defines {font.NumGlyphs} glyphs.");
-                    return;
-                }
+                        + $"font program, which defines {font.Metrics.NumGlyphs} glyphs.");
+
+                // §6.2.11.5: the declared width shall match the embedded program's advance width.
+                else if (font.Metrics.AdvanceWidth1000(gid) is { } programWidth
+                    && Math.Abs(font.Widths.GetWidth(gid) - programWidth) > 1
+                    && reported.Add($"{font.ProgramObject}:width"))
+                    context.Report("ISO19005-2:6.2.11.5-glyph-width", "ISO 19005-2:2011, 6.2.11.5",
+                        PreflightSeverity.Error,
+                        $"The width declared for glyph {gid} ({font.Widths.GetWidth(gid)}) does not match the "
+                        + $"embedded font program's advance width ({programWidth}).");
             }
         }
+    }
+
+    // The per-CID widths declared by a CIDFont's /W array (and /DW default), looked up without
+    // materialising large ranges (ISO 32000-1 §9.7.4.3).
+    private sealed class CidWidths
+    {
+        private readonly Dictionary<int, int> _singles = new();
+        private readonly List<(int First, int Last, int Width)> _ranges = [];
+        private readonly int _default;
+
+        private CidWidths(int defaultWidth) => _default = defaultWidth;
+
+        public int GetWidth(int cid)
+        {
+            if (_singles.TryGetValue(cid, out var w))
+                return w;
+            foreach (var (first, last, width) in _ranges)
+                if (cid >= first && cid <= last)
+                    return width;
+            return _default;
+        }
+
+        public static CidWidths Parse(PreflightContext context, PdfDictionary cidFont)
+        {
+            var dw = context.Resolve(cidFont.Get(new PdfName("DW"))) is PdfInteger d ? (int)d.Value : 1000;
+            var widths = new CidWidths(dw);
+            if (context.Resolve(cidFont.Get(new PdfName("W"))) is not PdfArray w)
+                return widths;
+
+            var i = 0;
+            while (i < w.Count)
+            {
+                if (context.Resolve(w[i]) is not PdfInteger c)
+                    break;
+                i++;
+                if (i < w.Count && context.Resolve(w[i]) is PdfArray run)
+                {
+                    for (var j = 0; j < run.Count; j++)
+                        if (AsInt(context.Resolve(run[j])) is { } value)
+                            widths._singles[(int)c.Value + j] = value;
+                    i++;
+                }
+                else if (i + 1 < w.Count
+                    && AsInt(context.Resolve(w[i])) is { } last
+                    && AsInt(context.Resolve(w[i + 1])) is { } rangeWidth)
+                {
+                    widths._ranges.Add(((int)c.Value, last, rangeWidth));
+                    i += 2;
+                }
+                else
+                {
+                    break;
+                }
+            }
+            return widths;
+        }
+
+        private static int? AsInt(PdfObject? obj) => obj switch
+        {
+            PdfInteger n => (int)n.Value,
+            PdfReal r => (int)Math.Round(r.Value),
+            _ => null,
+        };
     }
 
     private static string DecodeName(ReadOnlySpan<byte> raw)
