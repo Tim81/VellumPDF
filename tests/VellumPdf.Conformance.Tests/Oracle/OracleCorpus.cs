@@ -78,6 +78,28 @@ public static class OracleCorpus
             new OracleFixture("pdfa2b-no-cidtogidmap", WriterPdfWithoutCidToGidMap(),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
 
+            // A hand-built but fully conformant simple WinAnsi TrueType font (full DejaVu, correct
+            // widths) — the regression guard that the new simple-font checks do not false-positive.
+            new OracleFixture("pdfa2b-simple-font", SimpleTrueTypeFont(_ => { }, encoding: new PdfName("WinAnsiEncoding")),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // The same simple font with a /Widths length that does not equal LastChar−FirstChar+1
+            // (§6.2.11.2-6). veraPDF and the in-process rule both reject it.
+            new OracleFixture("pdfa2b-font-widths",
+                SimpleTrueTypeFont(f => f.Set(new PdfName("LastChar"), new PdfInteger(66)), encoding: new PdfName("WinAnsiEncoding")),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // A non-symbolic simple TrueType font with no /Encoding entry (§6.2.11.6-2). veraPDF and
+            // the in-process rule both reject it.
+            new OracleFixture("pdfa2b-font-no-encoding", SimpleTrueTypeFont(_ => { }, flags: 32, encoding: null),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // A symbolic simple TrueType font carrying an /Encoding entry (§6.2.11.6-3). veraPDF and
+            // the in-process rule both reject it.
+            new OracleFixture("pdfa2b-font-symbolic-encoding",
+                SimpleTrueTypeFont(_ => { }, flags: 4, encoding: new PdfName("WinAnsiEncoding")),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
             // A PDF/A-2b document that draws text with a properly embedded (subset) TrueType font via
             // the Type0/CIDFontType2/Identity-H path. veraPDF accepts it (all §6.2.11.x font checks
             // pass) and so does the in-process validator — the positive end-to-end font fixture.
@@ -737,6 +759,59 @@ public static class OracleCorpus
         using var ms = new MemoryStream();
         doc.Save(ms);
         return ms.ToArray();
+    }
+
+    // Builds a PDF/A-2b document that adds a simple WinAnsi TrueType font (the full DejaVu program)
+    // drawing the glyph 'A', on top of a compliant writer baseline. The caller mutates the font
+    // dictionary to introduce a single malformation; with no mutation the result is fully conformant
+    // (the 'A' advance width is computed from the font, so §6.2.11.5 stays satisfied). This is the
+    // simple-font analogue of CorruptDescendantFont — the writer itself emits only composite fonts.
+    internal static byte[] SimpleTrueTypeFont(Action<PdfDictionary> mutate, int flags = 32, PdfName? encoding = null)
+    {
+        var dejavu = LoadAsset("DejaVuSans.ttf");
+        int widthA;
+        using (var measureDoc = new PdfDocument())
+            widthA = (int)Math.Round(measureDoc.UseTrueTypeFont(dejavu).MeasureString("A", 1000));
+
+        using var reader = PdfReader.Open(WriterPdfWithEmbeddedFont());
+        var (pageRef, page) = FirstPage(reader);
+        var resources = (PdfDictionary)reader.ResolveValue(page.Get(new PdfName("Resources"))!)!;
+        var fontDict = (PdfDictionary)reader.ResolveValue(resources.Get(PdfName.Font)!)!;
+
+        var fontNum = reader.Size;
+        var descNum = fontNum + 1;
+        var ffNum = fontNum + 2;
+        var contentNum = fontNum + 3;
+
+        var fontFile = new PdfStream(dejavu);
+        fontFile.Dictionary.Set(new PdfName("Length1"), new PdfInteger(dejavu.Length));
+        var descriptor = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("FontDescriptor")).Set(new PdfName("FontName"), new PdfName("DejaVuSans"))
+            .Set(new PdfName("Flags"), new PdfInteger(flags))
+            .Set(new PdfName("FontBBox"),
+                new PdfArray([new PdfInteger(-1021), new PdfInteger(-463), new PdfInteger(1793), new PdfInteger(1232)]))
+            .Set(new PdfName("ItalicAngle"), new PdfInteger(0)).Set(new PdfName("Ascent"), new PdfInteger(928))
+            .Set(new PdfName("Descent"), new PdfInteger(-236)).Set(new PdfName("CapHeight"), new PdfInteger(928))
+            .Set(new PdfName("StemV"), new PdfInteger(80)).Set(new PdfName("FontFile2"), new PdfIndirectReference(ffNum));
+        var simple = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("Font")).Set(PdfName.Subtype, new PdfName("TrueType"))
+            .Set(PdfName.BaseFont, new PdfName("DejaVuSans"))
+            .Set(new PdfName("FirstChar"), new PdfInteger(65)).Set(new PdfName("LastChar"), new PdfInteger(65))
+            .Set(new PdfName("Widths"), new PdfArray([new PdfInteger(widthA)]))
+            .Set(new PdfName("FontDescriptor"), new PdfIndirectReference(descNum));
+        if (encoding is not null)
+            simple.Set(new PdfName("Encoding"), encoding);
+        mutate(simple);
+
+        var newFontDict = CloneDict(fontDict).Set(new PdfName("F1"), new PdfIndirectReference(fontNum));
+        var newResources = CloneDict(resources).Set(PdfName.Font, newFontDict);
+        var newPage = CloneDict(page).Set(new PdfName("Resources"), newResources);
+        newPage.Set(new PdfName("Contents"),
+            new PdfArray([page.Get(new PdfName("Contents"))!, new PdfIndirectReference(contentNum)]));
+        var content = new PdfStream(Encoding.ASCII.GetBytes("BT /F1 12 Tf 100 500 Td (A) Tj ET"));
+
+        return reader.AppendRevision(
+            [(pageRef.ObjectNumber, newPage), (fontNum, simple), (descNum, descriptor), (ffNum, fontFile), (contentNum, content)]);
     }
 
     private static byte[] WriterPdfWithBadFontSubtype()
