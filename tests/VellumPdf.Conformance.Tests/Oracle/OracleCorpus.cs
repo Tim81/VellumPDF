@@ -213,6 +213,11 @@ public static class OracleCorpus
             new OracleFixture("pdfa2b-trailing-data", AppendTrailingBytes(WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b)),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
 
+            // A stream whose /Length does not match its body length (§6.1.7.1-1). veraPDF and the
+            // in-process StreamRule both reject it.
+            new OracleFixture("pdfa2b-bad-stream-length", WriterPdfWithBadStreamLength(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
             // A drawn PostScript XObject (/Subtype /PS invoked by `Do`), which PDF/A-2 forbids
             // outright (§6.2.9). Both veraPDF (clause 6.2.9-3) and the in-process ForbiddenXObjectRule
             // reject it — the first negative cross-validation of the XObject rule.
@@ -592,6 +597,40 @@ public static class OracleCorpus
         newPage.Set(new PdfName("MediaBox"),
             new PdfArray([new PdfInteger(0), new PdfInteger(0), new PdfInteger(1), new PdfInteger(1)]));
         return reader.AppendRevision([(pageRef.ObjectNumber, newPage)]);
+    }
+
+    private static byte[] WriterPdfWithBadStreamLength()
+    {
+        // Bump the leading digit of the first multi-digit /Length so a non-empty stream's declared
+        // length no longer matches its body, without changing byte width (xref offsets stay valid).
+        var bytes = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
+        var needle = "/Length "u8.ToArray();
+        for (var from = 0; (from = IndexOf(bytes, needle, from)) >= 0; from += needle.Length)
+        {
+            var s = from + needle.Length;
+            var digits = 0;
+            while (s + digits < bytes.Length && bytes[s + digits] is >= (byte)'0' and <= (byte)'9')
+                digits++;
+            if (digits >= 3)
+            {
+                bytes[s] = bytes[s] == (byte)'9' ? (byte)'1' : (byte)(bytes[s] + 1);
+                break;
+            }
+        }
+        return bytes;
+    }
+
+    private static int IndexOf(byte[] haystack, byte[] needle, int from)
+    {
+        for (var i = from; i <= haystack.Length - needle.Length; i++)
+        {
+            var match = true;
+            for (var j = 0; j < needle.Length; j++)
+                if (haystack[i + j] != needle[j]) { match = false; break; }
+            if (match)
+                return i;
+        }
+        return -1;
     }
 
     private static byte[] AppendTrailingBytes(byte[] pdf)
