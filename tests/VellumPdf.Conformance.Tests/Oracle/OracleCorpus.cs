@@ -117,7 +117,43 @@ public static class OracleCorpus
             // tagging requirement (§7.1). Cross-validates the UA tagging rule's negative path.
             new OracleFixture("pdfua1-no-structure", WriterPdfMissingStructure(VellumPdf.Document.PdfConformance.PdfUA1),
                 Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // A non-standard blend mode in an /ExtGState resource that the page never applies (no `gs`
+            // operator). §6.4 governs only the current blend mode, so both veraPDF and the in-process
+            // rule accept it — the regression guard for the content-stream usage scoping (#127).
+            new OracleFixture("pdfa2b-unused-blendmode", WriterPdfWithUnusedBlendMode(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
         ];
+    }
+
+    private static (PdfIndirectReference Ref, PdfDictionary Dict) FirstPage(PdfDocumentReader reader)
+    {
+        var pagesRef = (PdfIndirectReference)reader.Catalog.Get(PdfName.Pages)!;
+        var pages = (PdfDictionary)reader.Resolve(pagesRef.ObjectNumber)!;
+        var kidsObj = pages.Get(new PdfName("Kids"));
+        var kids = kidsObj is PdfIndirectReference kr ? (PdfArray)reader.Resolve(kr.ObjectNumber)! : (PdfArray)kidsObj!;
+        var pageRef = (PdfIndirectReference)kids[0];
+        return (pageRef, (PdfDictionary)reader.Resolve(pageRef.ObjectNumber)!);
+    }
+
+    private static byte[] WriterPdfWithUnusedBlendMode()
+    {
+        var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var newPage = CloneDict(page);
+
+        // Merge an /ExtGState carrying a non-standard blend mode into the page resources, WITHOUT
+        // referencing it from the page content — so it is never the current blend mode.
+        var resObj = page.Get(new PdfName("Resources"));
+        var resources = (resObj is null ? null : reader.ResolveValue(resObj)) as PdfDictionary ?? new PdfDictionary();
+        var newResources = CloneDict(resources);
+        var gs = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("ExtGState"))
+            .Set(new PdfName("BM"), new PdfName("BogusMode"));
+        newResources.Set(new PdfName("ExtGState"), new PdfDictionary().Set(new PdfName("GS0"), gs));
+        newPage.Set(new PdfName("Resources"), newResources);
+        return reader.AppendRevision([(pageRef.ObjectNumber, newPage)]);
     }
 
     private static byte[] WriterPdfMissingStructure(VellumPdf.Document.PdfConformance conformance)

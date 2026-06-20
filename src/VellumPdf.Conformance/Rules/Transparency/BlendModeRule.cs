@@ -20,13 +20,10 @@ namespace VellumPdf.Conformance.Rules.Transparency;
 /// annotation appearance streams are validated in a later slice of #50c.
 /// </para>
 /// <para>
-/// Known limitation (issue #127): §6.4 constrains the <em>current</em> blend mode — the one set by a
-/// <c>gs</c> operator in a content stream. This rule flags a non-standard <c>/BM</c> present in any
-/// <c>/ExtGState</c> resource without checking whether that graphics state is ever applied, so it can
-/// over-flag an unused non-standard blend mode that veraPDF accepts (a false positive on contrived
-/// input). Scoping to applied graphics states needs content-stream usage analysis, which the
-/// validator does not yet perform; for an <c>/ExtGState</c> that is actually used — the common case —
-/// the in-process and veraPDF verdicts agree.
+/// §6.4 constrains the <em>current</em> blend mode — the one set by a <c>gs</c> operator in a content
+/// stream. So this rule only validates the <c>/BM</c> of an <c>/ExtGState</c> that the page actually
+/// applies (determined by <see cref="ContentStreamUsage"/>); a non-standard blend mode in a resource
+/// that is never used is not a violation, matching veraPDF (issue #127).
 /// </para>
 /// </remarks>
 internal sealed class BlendModeRule : IConformanceRule
@@ -57,8 +54,15 @@ internal sealed class BlendModeRule : IConformanceRule
             if (context.Resolve(resources.Get(_extGState)) is not PdfDictionary extGStates)
                 continue;
 
+            // §6.4 governs the CURRENT blend mode — the graphics states actually applied by a `gs`
+            // operator in this page's content. A non-standard /BM in an /ExtGState resource that is
+            // never applied is not a violation (and veraPDF does not flag it), so scope to used ones.
+            var applied = ContentStreamUsage.Analyze(context, page).AppliedExtGStates;
+
             foreach (var entry in extGStates.Entries)
             {
+                if (!applied.Contains(entry.Key.Value))
+                    continue;
                 if (entry.Value is PdfIndirectReference r && !checkedGStates.Add(r.ObjectNumber))
                     continue;
                 if (context.Resolve(entry.Value) is PdfDictionary gs)
