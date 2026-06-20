@@ -13,14 +13,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   PDF through `VellumPdf.Reader` and runs a registry of clean-room conformance rules authored from
   the ISO specifications, returning a `PreflightResult` of machine-readable assertions (rule id, ISO
   clause, severity, object reference). Rules are registered explicitly — no reflection — so the
-  package is AOT- and trim-ready. The rule set is a growing structural subset — each rule covers the
-  common cases and documents its deferred edges (e.g. resources nested in form XObjects, content-stream
-  colour analysis, the ParentTree↔MCID bijection). Covered so far: PDF/A-2b file structure (§6.1),
-  output intents (§6.2.2), transparency blend modes (§6.4), font embedding (§6.3), and metadata,
-  annotations, and actions (§6.5–6.7); PDF/A-2u character-to-Unicode (§6.2.11.7); PDF/A-2a logical
-  structure (§6.8); and PDF/UA-1 tagging, natural language, document title, and tab order
-  (ISO 14289-1). The PDF/A-2b structural and metadata fixtures are cross-validated against veraPDF
-  1.30.2 in CI; object-graph and 2u/2a/UA cross-validation is in progress. (#50)
+  package is AOT- and trim-ready. Each rule documents its deferred edges (e.g. resources nested in
+  form XObjects, the ParentTree↔MCID bijection). Coverage:
+  - **PDF/A-2b (ISO 19005-2)** — file structure: header and binary marker (§6.1.2), trailer `/ID`
+    (§6.1.3), no external streams (§6.1.7.1); graphics: output intents and device colour
+    (§6.2.3/§6.2.4.3), graphics-state `/TR`,`/TR2`,`/HTP` (§6.2.5), rendering intents (§6.2.6),
+    forbidden image and form-XObject keys including PostScript and reference XObjects
+    (§6.2.8/§6.2.9), blend modes (§6.2.10); fonts: embedding (§6.2.11.4.1), subtype and Widths
+    consistency (§6.2.11.2), CIDToGIDMap (§6.2.11.3.2), TrueType encoding (§6.2.11.6), and — via an
+    in-process sfnt font-program parser — glyph presence (§6.2.11.4.1), glyph-width consistency
+    (§6.2.11.5), and `.notdef` references (§6.2.11.8); annotations: flags, appearance, forbidden
+    subtypes (§6.3); interactive forms: widget/field actions, `NeedAppearances`, `NeedsRendering`,
+    XFA (§6.4); actions: forbidden and named actions, catalog/page additional-actions (§6.5); and —
+    via an in-process XMP packet parser — metadata: serialisation (§6.6.2.1), property provenance
+    and extension-schema structure (§6.6.2.3), and the PDF/A identification schema (§6.6.4).
+  - **PDF/A-2u / PDF/A-2a** — character-to-Unicode (§6.2.11.7) and tagged logical structure (§6.8).
+  - **PDF/UA-1 (ISO 14289-1)** — identification, tagging, natural language, document title, and tab
+    order.
+
+  Every rule's positive and negative paths are cross-validated against veraPDF 1.30.2 in CI through
+  a corpus of writer-produced fixtures. (#50)
 - **`VellumPdf.Reader` cross-reference and object streams.** The reader now parses cross-reference
   streams (§7.5.8), hybrid-reference files, and object streams (§7.5.7), resolving objects packed in
   object streams. It decodes the FlateDecode / LZWDecode / ASCIIHexDecode / ASCII85Decode /
