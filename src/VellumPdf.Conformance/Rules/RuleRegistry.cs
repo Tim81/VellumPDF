@@ -53,6 +53,7 @@ internal static class RuleRegistry
         new XmpConformanceRule(),
         new AnnotationRule(),
         new ActionRule(),
+        new Forms.XfaRule(),
     ];
 
     private static readonly IConformanceRule[] PdfA2BRules =
