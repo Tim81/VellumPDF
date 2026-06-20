@@ -16,9 +16,12 @@ namespace VellumPdf.Conformance.Rules.Colour;
 /// Authored from ISO 19005-2:2011, 6.2.2 and ISO 32000-1:2008, 14.11.5 / 8.6.5.5. Clean-room:
 /// derived from the specification text, not from any third-party validation profile.
 /// <para>
-/// This rule validates output intents that are present. Whether an output intent is <em>required</em>
-/// (i.e. whether device-dependent colour is actually used) depends on content-stream analysis,
-/// which lands in a later colour-rule slice of #50c.
+/// The <c>/DestOutputProfile</c> requirement is scoped to documents that paint device-dependent
+/// colour (detected via <see cref="ContentStreamUsage"/>); veraPDF does not require an output intent
+/// when no device colour is used, so neither does this rule (issue #128). Device colour reached only
+/// through images, form XObjects, or patterns is not yet detected. The remaining requirements (a
+/// present profile's ICC validity, <c>/N</c>, and the single-shared-profile constraint) are checked
+/// unconditionally.
 /// </para>
 /// </remarks>
 internal sealed class OutputIntentRule : IConformanceRule
@@ -39,6 +42,10 @@ internal sealed class OutputIntentRule : IConformanceRule
         // Distinct DestOutputProfile object numbers, for the single-profile constraint.
         var profileRefs = new HashSet<int>();
 
+        // Whether any page paints device colour — computed lazily, only if a profile-less PDF/A
+        // output intent is encountered (see the DestOutputProfile check below).
+        bool? usesDeviceColour = null;
+
         for (var i = 0; i < intents.Count; i++)
         {
             if (context.Resolve(intents[i]) is not PdfDictionary intent)
@@ -50,13 +57,21 @@ internal sealed class OutputIntentRule : IConformanceRule
 
             if (destRaw is null)
             {
+                // §6.2.2's DestOutputProfile requirement applies to documents that use device-dependent
+                // colour; veraPDF does not flag a profile-less PDF/A output intent when no device colour
+                // is painted (issue #128). Compute the (relatively expensive) usage check lazily.
                 if (isPdfA)
                 {
-                    context.Report(
-                        RuleId,
-                        Clause,
-                        PreflightSeverity.Error,
-                        "A GTS_PDFA1 output intent shall contain a DestOutputProfile entry.");
+                    usesDeviceColour ??= context.DocumentUsesDeviceColour();
+                    if (usesDeviceColour.Value)
+                    {
+                        context.Report(
+                            RuleId,
+                            Clause,
+                            PreflightSeverity.Error,
+                            "A GTS_PDFA1 output intent shall contain a DestOutputProfile entry "
+                            + "when the document uses device-dependent colour.");
+                    }
                 }
                 continue;
             }

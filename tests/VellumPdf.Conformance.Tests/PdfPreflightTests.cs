@@ -171,16 +171,21 @@ public sealed class PdfPreflightTests
     private static readonly PdfObj _pagesObj = new("<< /Type /Pages /Kids [3 0 R] /Count 1 >>");
     private static readonly PdfObj _pageObj = new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>");
 
-    /// <summary>Builds a doc whose catalog /OutputIntents references the given extra object bodies.</summary>
+    /// <summary>Builds a doc whose catalog /OutputIntents references the given extra object bodies.
+    /// The page paints device-dependent colour, so the output-intent requirements actually apply
+    /// (issue #128). The colour content stream is appended after the extras so their object numbers
+    /// — referenced by <paramref name="catalogIntents"/> — are unchanged.</summary>
     private static byte[] BuildOutputIntentPdf(string catalogIntents, params PdfObj[] extra)
     {
+        var contentObjNum = 3 + extra.Length + 1; // catalog(1) pages(2) page(3) extra… then content
         var objects = new List<PdfObj>
         {
             new($"<< /Type /Catalog /Pages 2 0 R /OutputIntents {catalogIntents} >>"),
             _pagesObj,
-            _pageObj,
+            new($"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents {contentObjNum} 0 R >>"),
         };
         objects.AddRange(extra);
+        objects.Add(new(string.Empty, Encoding.ASCII.GetBytes("1 0 0 rg 100 100 50 50 re f")));
         return AssemblePdf(objects);
     }
 
@@ -462,6 +467,26 @@ public sealed class PdfPreflightTests
         var assertion = Assert.Single(result.Assertions);
         Assert.Equal("ISO19005-2:6.2.2-output-intent", assertion.RuleId);
         Assert.Contains("DestOutputProfile", assertion.Message);
+    }
+
+    [Fact]
+    public void Validate_MissingDestProfile_NoDeviceColour_NoFinding()
+    {
+        // §6.2.2's DestOutputProfile requirement is scoped to documents that use device-dependent
+        // colour. With no colour painted, a profile-less GTS_PDFA1 output intent is tolerated —
+        // matching veraPDF (issue #128). The page here has no content stream.
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R /OutputIntents [4 0 R] >>"),
+            _pagesObj,
+            _pageObj,
+            new("<< /Type /OutputIntent /S /GTS_PDFA1 >>"),
+        ]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.True(result.IsCompliant);
+        Assert.Empty(result.Assertions);
     }
 
     [Fact]
