@@ -165,6 +165,29 @@ internal sealed class PreflightContext
         => obj is PdfIndirectReference r ? Reader.ResolveStream(r.ObjectNumber) : null;
 
     /// <summary>
+    /// Enumerates every stream object in the file, by walking the indirect-object number space.
+    /// Used by file-structure rules (§6.1.7) that constrain <em>all</em> streams — filters, external
+    /// references — independent of whether the stream is reachable through the rendered content.
+    /// </summary>
+    public IEnumerable<ParsedStream> EnumerateStreams()
+    {
+        for (var objectNumber = 1; objectNumber < Reader.Size; objectNumber++)
+        {
+            ParsedStream? stream;
+            try
+            {
+                stream = Reader.ResolveStream(objectNumber);
+            }
+            catch
+            {
+                continue; // A malformed object must not abort the whole scan.
+            }
+            if (stream is not null)
+                yield return stream;
+        }
+    }
+
+    /// <summary>
     /// Returns the fully-decoded bytes of <paramref name="stream"/>, or <see langword="null"/>
     /// when an image filter prevents full decoding.
     /// </summary>
