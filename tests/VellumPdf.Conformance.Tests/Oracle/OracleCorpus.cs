@@ -181,6 +181,21 @@ public static class OracleCorpus
             // in-process rule both reject it.
             new OracleFixture("pdfa2b-need-appearances", WriterPdfWithNeedAppearances(),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // An external stream — a stream dictionary carrying the /F key (§6.1.7.1). veraPDF and the
+            // in-process StreamRule both reject it.
+            new OracleFixture("pdfa2b-external-stream", WriterPdfWithExternalStream(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // An /AA additional-actions dictionary on the catalog (§6.5.2-1). veraPDF and the
+            // in-process ActionRule both reject it.
+            new OracleFixture("pdfa2b-catalog-aa", WriterPdfWithCatalogAdditionalActions(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // A disallowed named action (/N /GoForward) on the catalog /OpenAction (§6.5.1-2). veraPDF
+            // and the in-process ActionRule both reject it.
+            new OracleFixture("pdfa2b-named-action", WriterPdfWithDisallowedNamedAction(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
         ];
     }
 
@@ -252,6 +267,40 @@ public static class OracleCorpus
         return reader.AppendRevision(
             [(pageRef.ObjectNumber, newPage), (xobjNum, xobject), (contentNum, content)]);
     }
+
+    private static byte[] WriterPdfWithExternalStream()
+    {
+        var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+        var streamNum = reader.Size;
+        var stream = new PdfStream([]);
+        stream.Dictionary.Set(new PdfName("F"), new PdfLiteralString(Encoding.ASCII.GetBytes("external.dat")));
+        return reader.AppendRevision([(streamNum, stream)]);
+    }
+
+    private static byte[] WriterPdfWithCatalogAdditionalActions()
+    {
+        var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+        var rootRef = (PdfIndirectReference)reader.Trailer.Get(PdfName.Root)!;
+        var catalog = CloneDict(reader.Catalog);
+        catalog.Set(new PdfName("AA"), new PdfDictionary().Set(new PdfName("WC"), NamedAction("NextPage")));
+        return reader.AppendRevision([(rootRef.ObjectNumber, catalog)]);
+    }
+
+    private static byte[] WriterPdfWithDisallowedNamedAction()
+    {
+        var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+        var rootRef = (PdfIndirectReference)reader.Trailer.Get(PdfName.Root)!;
+        var catalog = CloneDict(reader.Catalog);
+        catalog.Set(new PdfName("OpenAction"), NamedAction("GoForward"));
+        return reader.AppendRevision([(rootRef.ObjectNumber, catalog)]);
+    }
+
+    private static PdfDictionary NamedAction(string name) => new PdfDictionary()
+        .Set(new PdfName("S"), new PdfName("Named"))
+        .Set(new PdfName("N"), new PdfName(name));
 
     private static byte[] WriterPdfWithNeedsRendering()
     {

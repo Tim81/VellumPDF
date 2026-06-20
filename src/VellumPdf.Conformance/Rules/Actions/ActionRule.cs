@@ -27,6 +27,7 @@ internal sealed class ActionRule : IConformanceRule
     private const int MaxDepth = 64;
 
     private static readonly PdfName _s = new("S");
+    private static readonly PdfName _n = new("N");
     private static readonly PdfName _next = new("Next");
     private static readonly PdfName _openAction = new("OpenAction");
     private static readonly PdfName _a = new("A");
@@ -40,15 +41,32 @@ internal sealed class ActionRule : IConformanceRule
         "JavaScript", "SetState", "NoOp", "SetOCGState", "Rendition", "Trans", "GoTo3DView",
     };
 
+    // The only named actions PDF/A-2 permits (§6.5.1, ISO 32000-1 §12.6.4.11, Table 215).
+    private static readonly HashSet<string> _permittedNamedActions = new(StringComparer.Ordinal)
+    {
+        "NextPage", "PrevPage", "FirstPage", "LastPage",
+    };
+
     public void Evaluate(PreflightContext context)
     {
         var visited = new HashSet<int>();
 
         CheckAction(context, context.Catalog.Get(_openAction), visited, 0);
+
+        // §6.5.2-1: the document catalog shall not contain an /AA additional-actions dictionary.
+        if (context.Catalog.Get(_aa) is not null)
+            context.Report("ISO19005-2:6.5.2-catalog-aa", "ISO 19005-2:2011, 6.5.2", PreflightSeverity.Error,
+                "The document catalog contains an /AA additional-actions dictionary, which is not permitted in PDF/A-2.");
         CheckAdditionalActions(context, context.Catalog.Get(_aa), visited);
 
         foreach (var page in context.EnumeratePages())
+        {
+            // §6.5.2-2: a page dictionary shall not contain an /AA additional-actions dictionary.
+            if (page.Get(_aa) is not null)
+                context.Report("ISO19005-2:6.5.2-page-aa", "ISO 19005-2:2011, 6.5.2", PreflightSeverity.Error,
+                    "A page dictionary contains an /AA additional-actions dictionary, which is not permitted in PDF/A-2.");
             CheckAdditionalActions(context, page.Get(_aa), visited);
+        }
 
         foreach (var annot in context.EnumerateAnnotations())
         {
@@ -99,13 +117,28 @@ internal sealed class ActionRule : IConformanceRule
         if (context.Resolve(actionObj) is not PdfDictionary action)
             return;
 
-        if (context.Resolve(action.Get(_s)) is PdfName s && _forbidden.Contains(s.Value))
+        if (context.Resolve(action.Get(_s)) is PdfName s)
         {
-            context.Report(
-                RuleId,
-                Clause,
-                PreflightSeverity.Error,
-                $"The action type /{s.Value} is not permitted in PDF/A.");
+            if (_forbidden.Contains(s.Value))
+            {
+                context.Report(
+                    RuleId,
+                    Clause,
+                    PreflightSeverity.Error,
+                    $"The action type /{s.Value} is not permitted in PDF/A.");
+            }
+            else if (s.Value == "Named"
+                && context.Resolve(action.Get(_n)) is PdfName named
+                && !_permittedNamedActions.Contains(named.Value))
+            {
+                // §6.5.1-2: only NextPage/PrevPage/FirstPage/LastPage named actions are permitted.
+                context.Report(
+                    "ISO19005-2:6.5.1-named-action",
+                    "ISO 19005-2:2011, 6.5.1",
+                    PreflightSeverity.Error,
+                    $"The named action /{named.Value} is not permitted in PDF/A "
+                    + "(only NextPage, PrevPage, FirstPage, and LastPage are allowed).");
+            }
         }
 
         // /Next is either a single action or an array of actions executed afterwards.
