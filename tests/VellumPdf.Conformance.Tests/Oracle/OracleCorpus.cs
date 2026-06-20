@@ -156,6 +156,21 @@ public static class OracleCorpus
             // and the in-process ForbiddenXObjectRule reject it.
             new OracleFixture("pdfa2b-image-interpolate", WriterPdfWithDrawnInterpolatedImage(),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // A drawn Image XObject carrying the /OPI key (§6.2.8-2). veraPDF and the in-process rule
+            // both reject it — cross-validation of the forbidden image-key family.
+            new OracleFixture("pdfa2b-image-opi", WriterPdfWithDrawnImageOpi(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // A drawn form XObject carrying the /OPI key (§6.2.9-1). veraPDF (clause 6.2.9-1) and the
+            // in-process rule both reject it.
+            new OracleFixture("pdfa2b-form-opi", WriterPdfWithDrawnFormOpi(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // A drawn reference XObject — a form XObject with a /Ref key (§6.2.9-2). veraPDF (clause
+            // 6.2.9-2) and the in-process rule both reject it.
+            new OracleFixture("pdfa2b-reference-xobject", WriterPdfWithDrawnReferenceXObject(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
         ];
     }
 
@@ -163,15 +178,36 @@ public static class OracleCorpus
         => WriterPdfWithDrawnXObject(d => d.Set(PdfName.Subtype, new PdfName("PS")), []);
 
     private static byte[] WriterPdfWithDrawnInterpolatedImage()
-        => WriterPdfWithDrawnXObject(
-            d => d
-                .Set(PdfName.Subtype, new PdfName("Image"))
-                .Set(new PdfName("Width"), new PdfInteger(1))
-                .Set(new PdfName("Height"), new PdfInteger(1))
-                .Set(new PdfName("BitsPerComponent"), new PdfInteger(8))
-                .Set(new PdfName("ColorSpace"), new PdfName("DeviceGray"))
-                .Set(new PdfName("Interpolate"), PdfBoolean.True),
-            [0]);
+        => WriterPdfWithDrawnXObject(ConfigureImage(d => d.Set(new PdfName("Interpolate"), PdfBoolean.True)), [0]);
+
+    private static byte[] WriterPdfWithDrawnImageOpi()
+        => WriterPdfWithDrawnXObject(ConfigureImage(d => d.Set(new PdfName("OPI"), new PdfDictionary())), [0]);
+
+    private static byte[] WriterPdfWithDrawnFormOpi()
+        => WriterPdfWithDrawnXObject(ConfigureForm(d => d.Set(new PdfName("OPI"), new PdfDictionary())), []);
+
+    private static byte[] WriterPdfWithDrawnReferenceXObject()
+        => WriterPdfWithDrawnXObject(ConfigureForm(d => d.Set(new PdfName("Ref"), new PdfDictionary())), []);
+
+    // A 1×1 DeviceGray image XObject, plus a caller-supplied forbidden key.
+    private static Action<PdfDictionary> ConfigureImage(Action<PdfDictionary> extra) => d =>
+    {
+        d.Set(PdfName.Subtype, new PdfName("Image"))
+            .Set(new PdfName("Width"), new PdfInteger(1))
+            .Set(new PdfName("Height"), new PdfInteger(1))
+            .Set(new PdfName("BitsPerComponent"), new PdfInteger(8))
+            .Set(new PdfName("ColorSpace"), new PdfName("DeviceGray"));
+        extra(d);
+    };
+
+    // A form XObject (with the required /BBox), plus a caller-supplied forbidden key.
+    private static Action<PdfDictionary> ConfigureForm(Action<PdfDictionary> extra) => d =>
+    {
+        d.Set(PdfName.Subtype, new PdfName("Form"))
+            .Set(new PdfName("BBox"),
+                new PdfArray([new PdfInteger(0), new PdfInteger(0), new PdfInteger(1), new PdfInteger(1)]));
+        extra(d);
+    };
 
     /// <summary>
     /// Injects an XObject (configured by <paramref name="configureXObject"/>, with raw body
