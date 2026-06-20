@@ -6,22 +6,22 @@ using VellumPdf.Core;
 namespace VellumPdf.Conformance.Rules.Metadata;
 
 /// <summary>
-/// ISO 19005-2 §6.7.2 (Metadata). The document catalog shall contain an XMP <c>/Metadata</c>
+/// ISO 19005-2 §6.6.4 (Metadata — PDF/A identification). The document catalog shall contain an XMP <c>/Metadata</c>
 /// stream, and that packet shall identify the PDF/A part and conformance level via the
 /// <c>pdfaid:part</c> and <c>pdfaid:conformance</c> properties, matching the level being
 /// validated (part 2, conformance B/U/A).
 /// </summary>
 /// <remarks>
-/// Authored from ISO 19005-2:2011, 6.7.2 and ISO 16684-1 (XMP). Clean-room: derived from the
+/// Authored from ISO 19005-2:2011, 6.6.4 and ISO 16684-1 (XMP). Clean-room: derived from the
 /// specification text, not from any third-party validation profile. The pdfaid properties are
 /// read tolerantly in either XML element (<c>&lt;pdfaid:part&gt;2&lt;/pdfaid:part&gt;</c>) or
 /// attribute (<c>pdfaid:part="2"</c>) serialisation.
 /// </remarks>
 internal sealed class XmpConformanceRule : IConformanceRule
 {
-    public string RuleId => "ISO19005-2:6.7.2-pdfaid";
+    public string RuleId => "ISO19005-2:6.6.4-pdfaid";
 
-    public string Clause => "ISO 19005-2:2011, 6.7.2";
+    public string Clause => "ISO 19005-2:2011, 6.6.4";
 
     private static readonly PdfName _metadata = new("Metadata");
 

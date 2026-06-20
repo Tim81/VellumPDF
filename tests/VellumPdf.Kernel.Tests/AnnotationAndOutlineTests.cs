@@ -56,7 +56,7 @@ public sealed class AnnotationAndOutlineTests
     [Fact]
     public void Page_withUriLinkAnnotation_setsPrintFlag()
     {
-        // ISO 19005-2 §6.5.3 requires the Print flag set (and Hidden/Invisible/NoView clear) on
+        // ISO 19005-2 §6.3.2 requires the Print flag set (and Hidden/Invisible/NoView clear) on
         // every non-Popup annotation, including Link. /F 4 satisfies it. Guards issue #123.
         using var doc = new PdfDocument();
         var page = doc.AddPage();

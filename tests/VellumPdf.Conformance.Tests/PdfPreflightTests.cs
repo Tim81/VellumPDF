@@ -206,6 +206,34 @@ public sealed class PdfPreflightTests
     }
 
     /// <summary>
+    /// Builds a one-page doc whose /Resources /XObject /X0 references the XObject described by
+    /// <paramref name="xobjectDict"/> (a stream object with body <paramref name="body"/>). When
+    /// <paramref name="draw"/> is true the page content paints it (<c>/X0 Do</c>); otherwise the
+    /// page has no /Contents, so the XObject is present in resources but never drawn.
+    /// </summary>
+    private static byte[] BuildXObjectPdf(string xobjectDict, byte[] body, bool draw)
+    {
+        var page = draw
+            ? "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources 4 0 R /Contents 7 0 R >>"
+            : "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources 4 0 R >>";
+        var objects = new List<PdfObj>
+        {
+            new("<< /Type /Catalog /Pages 2 0 R >>"),
+            _pagesObj,
+            new(page),
+            new("<< /XObject 5 0 R >>"),
+            new("<< /X0 6 0 R >>"),
+            new(xobjectDict, body),
+        };
+        if (draw)
+            objects.Add(new PdfObj(string.Empty, Encoding.ASCII.GetBytes("q /X0 Do Q")));
+        return AssemblePdf(objects);
+    }
+
+    private const string _imageDict =
+        "/Type /XObject /Subtype /Image /Width 1 /Height 1 /BitsPerComponent 8 /ColorSpace /DeviceGray";
+
+    /// <summary>
     /// Builds a one-page doc whose /Resources /Font /F0 references object 6, with
     /// <paramref name="fontObjects"/> supplying objects 6..N (the font dict and any descriptor /
     /// font-program streams it points to).
@@ -452,7 +480,7 @@ public sealed class PdfPreflightTests
         Assert.Empty(result.Assertions);
     }
 
-    // ── §6.2.2 output-intent rules ──────────────────────────────────────────────
+    // ── §6.2.3 / §6.2.4.3 output-intent rules ───────────────────────────────────
 
     [Fact]
     public void Validate_PdfAOutputIntent_MissingDestProfile_ReportsError()
@@ -465,14 +493,14 @@ public sealed class PdfPreflightTests
 
         Assert.False(result.IsCompliant);
         var assertion = Assert.Single(result.Assertions);
-        Assert.Equal("ISO19005-2:6.2.2-output-intent", assertion.RuleId);
+        Assert.Equal("ISO19005-2:6.2.4.3-output-intent", assertion.RuleId);
         Assert.Contains("DestOutputProfile", assertion.Message);
     }
 
     [Fact]
     public void Validate_MissingDestProfile_NoDeviceColour_NoFinding()
     {
-        // §6.2.2's DestOutputProfile requirement is scoped to documents that use device-dependent
+        // §6.2.4.3 scopes the output-intent requirement to documents that use device-dependent
         // colour. With no colour painted, a profile-less GTS_PDFA1 output intent is tolerated —
         // matching veraPDF (issue #128). The page here has no content stream.
         var bytes = AssemblePdf(
@@ -492,7 +520,7 @@ public sealed class PdfPreflightTests
     [Fact]
     public void Validate_DeviceColourWithoutOutputIntent_ReportsError()
     {
-        // §6.2.2: a document that paints device-dependent colour shall have a PDF/A output intent.
+        // §6.2.4.3: a document that paints device-dependent colour shall have a PDF/A output intent.
         // The page fills a device-RGB rectangle but the catalog has no /OutputIntents. (#122)
         var bytes = AssemblePdf(
         [
@@ -506,7 +534,7 @@ public sealed class PdfPreflightTests
 
         Assert.False(result.IsCompliant);
         Assert.Contains(result.Assertions,
-            a => a.RuleId == "ISO19005-2:6.2.2-output-intent" && a.Message.Contains("device-dependent colour"));
+            a => a.RuleId == "ISO19005-2:6.2.4.3-output-intent" && a.Message.Contains("device-dependent colour"));
     }
 
     [Fact]
@@ -542,7 +570,7 @@ public sealed class PdfPreflightTests
 
         Assert.False(result.IsCompliant);
         var assertion = Assert.Single(result.Assertions);
-        Assert.Equal("ISO19005-2:6.2.2-output-intent", assertion.RuleId);
+        Assert.Equal("ISO19005-2:6.2.4.3-output-intent", assertion.RuleId);
         Assert.Contains("DestOutputProfile", assertion.Message);
     }
 
@@ -558,7 +586,7 @@ public sealed class PdfPreflightTests
 
         Assert.False(result.IsCompliant);
         var assertion = Assert.Single(result.Assertions);
-        Assert.Equal("ISO19005-2:6.2.2-output-intent", assertion.RuleId);
+        Assert.Equal("ISO19005-2:6.2.3-output-intent", assertion.RuleId);
         Assert.Contains("acsp", assertion.Message);
     }
 
@@ -574,7 +602,7 @@ public sealed class PdfPreflightTests
 
         Assert.False(result.IsCompliant);
         var assertion = Assert.Single(result.Assertions);
-        Assert.Equal("ISO19005-2:6.2.2-output-intent", assertion.RuleId);
+        Assert.Equal("ISO19005-2:6.2.3-output-intent", assertion.RuleId);
         Assert.Contains("/N", assertion.Message);
     }
 
@@ -592,7 +620,7 @@ public sealed class PdfPreflightTests
 
         Assert.False(result.IsCompliant);
         Assert.Contains(result.Assertions,
-            a => a.RuleId == "ISO19005-2:6.2.2-output-intent" && a.Message.Contains("same ICC profile"));
+            a => a.RuleId == "ISO19005-2:6.2.3-output-intent" && a.Message.Contains("same ICC profile"));
     }
 
     [Fact]
@@ -663,6 +691,67 @@ public sealed class PdfPreflightTests
         ]);
 
         var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.True(result.IsCompliant);
+        Assert.Empty(result.Assertions);
+    }
+
+    // ── §6.2.8 / §6.2.9 image and XObject rules ─────────────────────────────────
+
+    [Fact]
+    public void Validate_DrawnPostScriptXObject_ReportsError()
+    {
+        var result = PdfPreflight.Validate(
+            BuildXObjectPdf("/Type /XObject /Subtype /PS", [], draw: true),
+            PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        var assertion = Assert.Single(result.Assertions);
+        Assert.Equal("ISO19005-2:6.2.9-postscript-xobject", assertion.RuleId);
+        Assert.Equal("ISO 19005-2:2011, 6.2.9", assertion.Clause);
+        Assert.Equal(PreflightSeverity.Error, assertion.Severity);
+    }
+
+    [Fact]
+    public void Validate_DrawnImageWithInterpolate_ReportsError()
+    {
+        var result = PdfPreflight.Validate(
+            BuildXObjectPdf($"{_imageDict} /Interpolate true", [0], draw: true),
+            PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        var assertion = Assert.Single(result.Assertions);
+        Assert.Equal("ISO19005-2:6.2.8-image-interpolate", assertion.RuleId);
+        Assert.Equal("ISO 19005-2:2011, 6.2.8", assertion.Clause);
+        Assert.Contains("Interpolate", assertion.Message);
+    }
+
+    [Theory]
+    [InlineData("/Type /XObject /Subtype /PS", new byte[0])]
+    [InlineData(
+        "/Type /XObject /Subtype /Image /Width 1 /Height 1 /BitsPerComponent 8 /ColorSpace /DeviceGray /Interpolate true",
+        new byte[] { 0 })]
+    public void Validate_ForbiddenXObjectPresentButNotDrawn_NoFinding(string xobjectDict, byte[] body)
+    {
+        // §6.2.8/§6.2.9 constrain XObjects that are painted. An XObject present in /Resources but
+        // never invoked by a `Do` operator is not rendered, so it is not a violation — matching
+        // veraPDF (the page here has no /Contents). See issues #127, #128.
+        var result = PdfPreflight.Validate(
+            BuildXObjectPdf(xobjectDict, body, draw: false),
+            PdfConformance.PdfA2B);
+
+        Assert.True(result.IsCompliant);
+        Assert.Empty(result.Assertions);
+    }
+
+    [Theory]
+    [InlineData("/Interpolate false")]
+    [InlineData("")]
+    public void Validate_DrawnImageWithoutInterpolation_NoFinding(string interpolate)
+    {
+        var result = PdfPreflight.Validate(
+            BuildXObjectPdf($"{_imageDict} {interpolate}".Trim(), [0], draw: true),
+            PdfConformance.PdfA2B);
 
         Assert.True(result.IsCompliant);
         Assert.Empty(result.Assertions);
@@ -742,7 +831,7 @@ public sealed class PdfPreflightTests
         Assert.Empty(result.Assertions);
     }
 
-    // ── §6.7.2 XMP metadata rules ───────────────────────────────────────────────
+    // ── §6.6.4 XMP metadata rules ───────────────────────────────────────────────
 
     [Fact]
     public void Validate_MissingXmpMetadata_ReportsError()
@@ -753,7 +842,7 @@ public sealed class PdfPreflightTests
 
         Assert.False(result.IsCompliant);
         var assertion = Assert.Single(result.Assertions);
-        Assert.Equal("ISO19005-2:6.7.2-pdfaid", assertion.RuleId);
+        Assert.Equal("ISO19005-2:6.6.4-pdfaid", assertion.RuleId);
     }
 
     [Fact]
@@ -768,11 +857,11 @@ public sealed class PdfPreflightTests
 
         Assert.False(result.IsCompliant);
         var assertion = Assert.Single(result.Assertions);
-        Assert.Equal("ISO19005-2:6.7.2-pdfaid", assertion.RuleId);
+        Assert.Equal("ISO19005-2:6.6.4-pdfaid", assertion.RuleId);
         Assert.Contains("conformance", assertion.Message);
     }
 
-    // ── §6.5.3 annotation rules ─────────────────────────────────────────────────
+    // ── §6.3 annotation rules ─────────────────────────────────────────────────
 
     [Fact]
     public void Validate_AnnotationMissingPrintFlagAndAppearance_ReportsErrors()
@@ -786,7 +875,7 @@ public sealed class PdfPreflightTests
         // /F 2 sets Hidden and leaves Print clear; the /Stamp has no /AP — exactly three findings.
         Assert.False(result.IsCompliant);
         Assert.Equal(3, result.Assertions.Count);
-        Assert.All(result.Assertions, a => Assert.Equal("ISO19005-2:6.5.3-annotation", a.RuleId));
+        Assert.All(result.Assertions, a => Assert.Equal("ISO19005-2:6.3-annotation", a.RuleId));
         Assert.Contains(result.Assertions, a => a.Message.Contains("Print"));
         Assert.Contains(result.Assertions, a => a.Message.Contains("Hidden"));
         Assert.Contains(result.Assertions, a => a.Message.Contains("appearance"));
@@ -809,7 +898,7 @@ public sealed class PdfPreflightTests
     [Fact]
     public void Validate_AnnotationWithInvisibleFlag_ReportsError()
     {
-        // §6.5.3 requires the Invisible flag (ISO 32000-1 Table 165, bit 1) clear, alongside Hidden
+        // §6.3.2 requires the Invisible flag (ISO 32000-1 Table 165, bit 1) clear, alongside Hidden
         // and NoView. /F 5 = Print(4) | Invisible(1): Print is set and an appearance is present, so
         // the only violation is the Invisible bit. Round-5 follow-up (issue #124).
         var bytes = BuildPagePdf(
@@ -821,7 +910,7 @@ public sealed class PdfPreflightTests
 
         Assert.False(result.IsCompliant);
         var assertion = Assert.Single(result.Assertions);
-        Assert.Equal("ISO19005-2:6.5.3-annotation", assertion.RuleId);
+        Assert.Equal("ISO19005-2:6.3-annotation", assertion.RuleId);
         Assert.Contains("Invisible", assertion.Message);
     }
 
@@ -841,7 +930,7 @@ public sealed class PdfPreflightTests
     [Fact]
     public void Validate_LinkAnnotationWithoutPrintFlag_ReportsError()
     {
-        // A /Link with no /F (flags 0, Print clear) must be flagged: §6.5.3's Print-flag requirement
+        // A /Link with no /F (flags 0, Print clear) must be flagged: §6.3.2's Print-flag requirement
         // is NOT relaxed for Link annotations. veraPDF agrees — see the pdfa2b-link-no-print oracle
         // fixture, which confirmed a Link without Print is non-compliant. (Link is exempt only from
         // the appearance-stream requirement, covered by Validate_LinkAnnotation_ExemptFromAppearance.)
@@ -853,10 +942,10 @@ public sealed class PdfPreflightTests
 
         Assert.False(result.IsCompliant);
         Assert.Contains(result.Assertions,
-            a => a.RuleId == "ISO19005-2:6.5.3-annotation" && a.Message.Contains("Print"));
+            a => a.RuleId == "ISO19005-2:6.3-annotation" && a.Message.Contains("Print"));
     }
 
-    // ── §6.6.1 action rules ─────────────────────────────────────────────────────
+    // ── §6.5.1 action rules ─────────────────────────────────────────────────────
 
     [Fact]
     public void Validate_JavaScriptOpenAction_ReportsError()
@@ -873,7 +962,7 @@ public sealed class PdfPreflightTests
 
         Assert.False(result.IsCompliant);
         var assertion = Assert.Single(result.Assertions);
-        Assert.Equal("ISO19005-2:6.6.1-action", assertion.RuleId);
+        Assert.Equal("ISO19005-2:6.5.1-action", assertion.RuleId);
         Assert.Contains("/JavaScript", assertion.Message);
     }
 
@@ -882,7 +971,7 @@ public sealed class PdfPreflightTests
     [InlineData("NoOp")]
     public void Validate_ForbiddenActionType_ReportsError(string actionType)
     {
-        // ISO 19005-2 §6.6.1 also forbids the (deprecated) SetState and NoOp action types.
+        // ISO 19005-2 §6.5.1 also forbids the (deprecated) SetState and NoOp action types.
         // Regression guard for review round 4.
         var bytes = AssemblePdf(
         [
@@ -896,7 +985,7 @@ public sealed class PdfPreflightTests
 
         Assert.False(result.IsCompliant);
         var assertion = Assert.Single(result.Assertions);
-        Assert.Equal("ISO19005-2:6.6.1-action", assertion.RuleId);
+        Assert.Equal("ISO19005-2:6.5.1-action", assertion.RuleId);
         Assert.Contains($"/{actionType}", assertion.Message);
     }
 
@@ -912,7 +1001,7 @@ public sealed class PdfPreflightTests
 
         Assert.False(result.IsCompliant);
         var assertion = Assert.Single(result.Assertions);
-        Assert.Equal("ISO19005-2:6.6.1-action", assertion.RuleId);
+        Assert.Equal("ISO19005-2:6.5.1-action", assertion.RuleId);
         Assert.Contains("/Launch", assertion.Message);
     }
 
@@ -1132,7 +1221,7 @@ public sealed class PdfPreflightTests
 
         Assert.False(result.IsCompliant);
         var assertion = Assert.Single(result.Assertions);
-        Assert.Equal("ISO19005-2:6.5.3-annotation", assertion.RuleId);
+        Assert.Equal("ISO19005-2:6.3-annotation", assertion.RuleId);
         Assert.Contains("/Movie", assertion.Message);
     }
 
@@ -1151,7 +1240,7 @@ public sealed class PdfPreflightTests
 
         Assert.False(result.IsCompliant);
         Assert.Contains(result.Assertions,
-            a => a.RuleId == "ISO19005-2:6.6.1-action" && a.Message.Contains("/JavaScript"));
+            a => a.RuleId == "ISO19005-2:6.5.1-action" && a.Message.Contains("/JavaScript"));
     }
 
     [Fact]
@@ -1196,7 +1285,7 @@ public sealed class PdfPreflightTests
 
         Assert.False(result.IsCompliant);
         var assertion = Assert.Single(result.Assertions);
-        Assert.Equal("ISO19005-2:6.7.2-pdfaid", assertion.RuleId);
+        Assert.Equal("ISO19005-2:6.6.4-pdfaid", assertion.RuleId);
     }
 
     [Fact]
@@ -1239,7 +1328,7 @@ public sealed class PdfPreflightTests
 
         Assert.False(result.IsCompliant);
         var assertion = Assert.Single(result.Assertions);
-        Assert.Equal("ISO19005-2:6.2.2-output-intent", assertion.RuleId);
+        Assert.Equal("ISO19005-2:6.2.3-output-intent", assertion.RuleId);
     }
 
     [Fact]
@@ -1417,7 +1506,7 @@ public sealed class PdfPreflightTests
 
         Assert.False(result.IsCompliant);
         Assert.Contains(result.Assertions,
-            a => a.RuleId == "ISO19005-2:6.6.1-action" && a.Message.Contains("/JavaScript"));
+            a => a.RuleId == "ISO19005-2:6.5.1-action" && a.Message.Contains("/JavaScript"));
     }
 
     [Fact]

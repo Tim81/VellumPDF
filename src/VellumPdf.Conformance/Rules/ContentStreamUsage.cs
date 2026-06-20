@@ -9,26 +9,29 @@ namespace VellumPdf.Conformance.Rules;
 
 /// <summary>
 /// A minimal content-stream operator scan. It reports which graphics-state (<c>/ExtGState</c>)
-/// resources a page actually applies (via the <c>gs</c> operator) and whether the page paints with
-/// device-dependent colour. Rules use this to scope checks to constructs that are exercised — matching
-/// veraPDF, which validates the <em>current</em> graphics state rather than every resource that is
-/// merely present (see issues #127, #128).
+/// resources a page actually applies (via the <c>gs</c> operator), which XObjects it actually paints
+/// (via the <c>Do</c> operator), and whether the page paints with device-dependent colour. Rules use
+/// this to scope checks to constructs that are exercised — matching veraPDF, which validates the
+/// <em>current</em> graphics state rather than every resource that is merely present (see issues
+/// #127, #128).
 /// </summary>
 /// <remarks>
 /// Best-effort and defensive: the page content is decoded and tokenised with the reader's lexer;
 /// inline-image sample data (<c>ID … EI</c>) is skipped; on any malformed or undecodable content the
 /// scan stops and returns what it gathered. It is not a full content-stream interpreter — it tracks
-/// only the operands needed for the two questions above.
+/// only the operands needed for the questions above.
 /// </remarks>
 internal static class ContentStreamUsage
 {
     private static readonly PdfName _contents = new("Contents");
 
-    /// <summary>Scans <paramref name="page"/>'s content streams for graphics-state and colour usage.</summary>
-    public static (HashSet<string> AppliedExtGStates, bool UsesDeviceColour) Analyze(
+    /// <summary>Scans <paramref name="page"/>'s content streams for graphics-state, colour, and
+    /// XObject-drawing usage.</summary>
+    public static (HashSet<string> AppliedExtGStates, bool UsesDeviceColour, HashSet<string> DrawnXObjects) Analyze(
         PreflightContext context, PdfDictionary page)
     {
         var applied = new HashSet<string>(StringComparer.Ordinal);
+        var drawnXObjects = new HashSet<string>(StringComparer.Ordinal);
         var usesDeviceColour = false;
 
         var content = GetContentBytes(context, page);
@@ -62,6 +65,11 @@ internal static class ContentStreamUsage
                         {
                             usesDeviceColour = true;
                         }
+                        else if (op == "Do")
+                        {
+                            if (lastName is not null)
+                                drawnXObjects.Add(lastName);
+                        }
                         else if (op == "ID")
                         {
                             SkipInlineImageData(lexer, content);
@@ -78,7 +86,7 @@ internal static class ContentStreamUsage
             }
         }
 
-        return (applied, usesDeviceColour);
+        return (applied, usesDeviceColour, drawnXObjects);
     }
 
     private static byte[]? GetContentBytes(PreflightContext context, PdfDictionary page)

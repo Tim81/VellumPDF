@@ -20,7 +20,7 @@ namespace VellumPdf.Conformance.Tests.Oracle;
 /// Most fixtures derive from one PDF/A-2b baseline and apply in-place, same-length edits so
 /// cross-reference offsets stay valid; this anchors the gate on the byte-level structural and
 /// metadata rules. A few fixtures are instead whole writer-produced documents (e.g.
-/// <c>pdfa2b-link</c>, which exercises the §6.5.3 annotation rule). Further object-graph
+/// <c>pdfa2b-link</c>, which exercises the §6.3 annotation rule). Further object-graph
 /// rules (fonts, output intents, blend modes, actions, logical structure) and the 2u/2a/UA flavours
 /// are the next expansion: each needs a writer-produced document veraPDF agrees on, so the
 /// cross-validation gate (CI) is what confirms each new fixture's expected verdict.
@@ -55,7 +55,7 @@ public static class OracleCorpus
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
 
             // A PDF/A-2b document carrying a writer-produced /Link annotation. The writer sets /F 4
-            // (Print) per §6.5.3, so the Link is conformant — Link is exempt from the appearance-stream
+            // (Print) per §6.3.2, so the Link is conformant — Link is exempt from the appearance-stream
             // requirement but must still satisfy the flag requirements. End-to-end guard that the
             // writer emits conformant Link annotations, cross-checked by veraPDF.
             new OracleFixture("pdfa2b-link", WriterPdfWithLink(),
@@ -100,11 +100,11 @@ public static class OracleCorpus
             // both validators agree. These give the object-graph rules their first NEGATIVE veraPDF
             // cross-validation.
 
-            // A forbidden /JavaScript action on the catalog /OpenAction (ISO 19005-2 §6.6.1).
+            // A forbidden /JavaScript action on the catalog /OpenAction (ISO 19005-2 §6.5.1).
             new OracleFixture("pdfa2b-javascript-action", WriterPdfWithJavaScriptAction(),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
 
-            // A forbidden multimedia annotation subtype (/Movie) on the page (ISO 19005-2 §6.5.3).
+            // A forbidden multimedia annotation subtype (/Movie) on the page (ISO 19005-2 §6.3.1).
             new OracleFixture("pdfa2b-movie-annotation", WriterPdfWithMovieAnnotation(),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
 
@@ -135,7 +135,7 @@ public static class OracleCorpus
             new OracleFixture("pdfa2b-nocolour-no-profile", WriterPdfMalformedOutputIntent(deviceColour: false),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
 
-            // Device colour painted with NO output intent at all. §6.2.2 requires one, so both veraPDF
+            // Device colour painted with NO output intent at all. §6.2.4.3 requires one, so both veraPDF
             // and the in-process rule reject it — the first negative coverage of the new
             // device-colour-requires-an-output-intent check (#122).
             new OracleFixture("pdfa2b-devicecolour-no-outputintent", WriterPdfDeviceColourNoOutputIntent(),
@@ -145,7 +145,66 @@ public static class OracleCorpus
             // Both veraPDF and the in-process XfaRule reject it (#122).
             new OracleFixture("pdfa2b-xfa", WriterPdfWithXfa(),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // A drawn PostScript XObject (/Subtype /PS invoked by `Do`), which PDF/A-2 forbids
+            // outright (§6.2.9). Both veraPDF (clause 6.2.9-3) and the in-process ForbiddenXObjectRule
+            // reject it — the first negative cross-validation of the XObject rule.
+            new OracleFixture("pdfa2b-postscript-xobject", WriterPdfWithDrawnPostScriptXObject(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // A drawn Image XObject whose /Interpolate is true (§6.2.8). Both veraPDF (clause 6.2.8-3)
+            // and the in-process ForbiddenXObjectRule reject it.
+            new OracleFixture("pdfa2b-image-interpolate", WriterPdfWithDrawnInterpolatedImage(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
         ];
+    }
+
+    private static byte[] WriterPdfWithDrawnPostScriptXObject()
+        => WriterPdfWithDrawnXObject(d => d.Set(PdfName.Subtype, new PdfName("PS")), []);
+
+    private static byte[] WriterPdfWithDrawnInterpolatedImage()
+        => WriterPdfWithDrawnXObject(
+            d => d
+                .Set(PdfName.Subtype, new PdfName("Image"))
+                .Set(new PdfName("Width"), new PdfInteger(1))
+                .Set(new PdfName("Height"), new PdfInteger(1))
+                .Set(new PdfName("BitsPerComponent"), new PdfInteger(8))
+                .Set(new PdfName("ColorSpace"), new PdfName("DeviceGray"))
+                .Set(new PdfName("Interpolate"), PdfBoolean.True),
+            [0]);
+
+    /// <summary>
+    /// Injects an XObject (configured by <paramref name="configureXObject"/>, with raw body
+    /// <paramref name="body"/>) into the first page's /Resources /XObject as /X0 and draws it from
+    /// the page content (<c>/X0 Do</c>), via an incremental update on a conformant baseline. The
+    /// drawn invocation is what brings the XObject into both validators' content-usage models.
+    /// </summary>
+    private static byte[] WriterPdfWithDrawnXObject(Action<PdfDictionary> configureXObject, byte[] body)
+    {
+        var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var newPage = CloneDict(page);
+
+        var xobjNum = reader.Size;
+        var contentNum = xobjNum + 1;
+
+        var xobject = new PdfStream(body);
+        xobject.Dictionary.Set(PdfName.Type, new PdfName("XObject"));
+        configureXObject(xobject.Dictionary);
+
+        var resObj = page.Get(new PdfName("Resources"));
+        var resources = (resObj is null ? null : reader.ResolveValue(resObj)) as PdfDictionary ?? new PdfDictionary();
+        var newResources = CloneDict(resources);
+        newResources.Set(
+            new PdfName("XObject"),
+            new PdfDictionary().Set(new PdfName("X0"), new PdfIndirectReference(xobjNum)));
+        newPage.Set(new PdfName("Resources"), newResources);
+        newPage.Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
+
+        var content = new PdfStream(Encoding.ASCII.GetBytes("q /X0 Do Q"));
+        return reader.AppendRevision(
+            [(pageRef.ObjectNumber, newPage), (xobjNum, xobject), (contentNum, content)]);
     }
 
     private static byte[] WriterPdfWithXfa()

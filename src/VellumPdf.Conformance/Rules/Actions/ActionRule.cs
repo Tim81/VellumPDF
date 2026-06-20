@@ -6,13 +6,13 @@ using VellumPdf.Core;
 namespace VellumPdf.Conformance.Rules.Actions;
 
 /// <summary>
-/// ISO 19005-2 §6.6.1 (Actions). A PDF/A file shall not contain certain action types:
+/// ISO 19005-2 §6.5.1 (Actions). A PDF/A file shall not contain certain action types:
 /// <c>Launch</c>, <c>Sound</c>, <c>Movie</c>, <c>ResetForm</c>, <c>ImportData</c>,
 /// <c>JavaScript</c>, <c>SetState</c>, <c>NoOp</c>, <c>SetOCGState</c>, <c>Rendition</c>,
 /// <c>Trans</c>, and <c>GoTo3DView</c>.
 /// </summary>
 /// <remarks>
-/// Authored from ISO 19005-2:2011, 6.6.1 and ISO 32000-1:2008, 12.6. Clean-room: derived from the
+/// Authored from ISO 19005-2:2011, 6.5.1 and ISO 32000-1:2008, 12.6. Clean-room: derived from the
 /// specification text, not from any third-party validation profile. Inspects the document catalog's
 /// <c>/OpenAction</c>, each annotation's <c>/A</c>, and the additional-action (<c>/AA</c>)
 /// dictionaries on the catalog, pages, and annotations, following any <c>/Next</c> chain. Form-field
@@ -20,9 +20,9 @@ namespace VellumPdf.Conformance.Rules.Actions;
 /// </remarks>
 internal sealed class ActionRule : IConformanceRule
 {
-    public string RuleId => "ISO19005-2:6.6.1-action";
+    public string RuleId => "ISO19005-2:6.5.1-action";
 
-    public string Clause => "ISO 19005-2:2011, 6.6.1";
+    public string Clause => "ISO 19005-2:2011, 6.5.1";
 
     private const int MaxDepth = 64;
 
