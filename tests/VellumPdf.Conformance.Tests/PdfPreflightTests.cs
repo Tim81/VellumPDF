@@ -157,6 +157,25 @@ public sealed class PdfPreflightTests
         return Encoding.UTF8.GetBytes(xmp);
     }
 
+    /// <summary>A conforming PDF/A-2b XMP packet with <paramref name="headerExtra"/> injected into the
+    /// <c>&lt;?xpacket?&gt;</c> header, serialised as UTF-8 (optionally with a BOM) or UTF-16.</summary>
+    private static byte[] XmpWithHeader(string headerExtra = "", Encoding? encoding = null, bool bom = false)
+    {
+        var xmp =
+            $"<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"{headerExtra}?>"
+            + "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF "
+            + "xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">"
+            + "<rdf:Description rdf:about=\"\" xmlns:pdfaid=\"http://www.aiim.org/pdfa/ns/id/\">"
+            + "<pdfaid:part>2</pdfaid:part><pdfaid:conformance>B</pdfaid:conformance>"
+            + "</rdf:Description></rdf:RDF></x:xmpmeta><?xpacket end=\"w\"?>";
+        encoding ??= Encoding.UTF8;
+        var body = encoding.GetBytes(xmp);
+        return bom ? encoding.GetPreamble().Concat(body).ToArray() : body;
+    }
+
+    private static byte[] BuildXmpPdf(byte[] metadata) => AssemblePdf(
+        [new("<< /Type /Catalog /Pages 2 0 R >>"), _pagesObj, _pageObj], metadataOverride: metadata);
+
     /// <summary>A minimal ICC profile body: zero-filled, with the 'acsp' signature at offset 36.</summary>
     private static byte[] FakeIccProfile()
     {
@@ -1143,6 +1162,32 @@ public sealed class PdfPreflightTests
         Assert.Contains("conformance", assertion.Message);
     }
 
+    // ── §6.6.2.1 XMP packet serialisation rules ─────────────────────────────────
+
+    [Theory]
+    [InlineData(" bytes=\"100\"", "ISO19005-2:6.6.2.1-xmp-bytes")]
+    [InlineData(" encoding=\"UTF-8\"", "ISO19005-2:6.6.2.1-xmp-encoding")]
+    public void Validate_XmpHeaderForbiddenAttribute_ReportsError(string headerExtra, string ruleId)
+    {
+        var result = PdfPreflight.Validate(BuildXmpPdf(XmpWithHeader(headerExtra)), PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        var assertion = Assert.Single(result.Assertions);
+        Assert.Equal(ruleId, assertion.RuleId);
+    }
+
+    [Fact]
+    public void Validate_Utf8XmpPacketWithBom_NoFinding()
+    {
+        // A UTF-8 BOM is still UTF-8 — the encoding rule must not flag it, and the header has no
+        // bytes/encoding pseudo-attribute.
+        var result = PdfPreflight.Validate(
+            BuildXmpPdf(XmpWithHeader(encoding: Encoding.UTF8, bom: true)), PdfConformance.PdfA2B);
+
+        Assert.True(result.IsCompliant);
+        Assert.Empty(result.Assertions);
+    }
+
     // ── §6.3 annotation rules ─────────────────────────────────────────────────
 
     [Fact]
@@ -1645,9 +1690,11 @@ public sealed class PdfPreflightTests
     }
 
     [Fact]
-    public void Validate_Utf16XmpPacket_IsAccepted()
+    public void Validate_Utf16XmpPacket_ReportsEncodingOnly()
     {
-        // A spec-valid UTF-16 XMP packet must be recognised (the old UTF-8-only decode broke it).
+        // A UTF-16 XMP packet is non-conformant for its encoding (§6.6.2.1-5), but its pdfaid must
+        // still be READ correctly (the old UTF-8-only decode broke that): the encoding finding shall
+        // be the ONLY one — no spurious pdfaid part/conformance mismatch from a mis-decoded packet.
         var xmpText =
             "<?xml version=\"1.0\" encoding=\"UTF-16\"?>"
             + "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF "
@@ -1662,14 +1709,11 @@ public sealed class PdfPreflightTests
         bom.CopyTo(xmp, 0);
         body.CopyTo(xmp, bom.Length);
 
-        var bytes = AssemblePdf(
-            [new("<< /Type /Catalog /Pages 2 0 R >>"), _pagesObj, _pageObj],
-            metadataOverride: xmp);
+        var result = PdfPreflight.Validate(BuildXmpPdf(xmp), PdfConformance.PdfA2B);
 
-        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
-
-        Assert.True(result.IsCompliant);
-        Assert.Empty(result.Assertions);
+        Assert.False(result.IsCompliant);
+        var assertion = Assert.Single(result.Assertions);
+        Assert.Equal("ISO19005-2:6.6.2.1-xmp-encoding-utf8", assertion.RuleId);
     }
 
     [Fact]

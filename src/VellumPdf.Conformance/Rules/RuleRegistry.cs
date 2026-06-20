@@ -61,6 +61,7 @@ internal static class RuleRegistry
     private static readonly IConformanceRule[] PdfA2Document =
     [
         new XmpConformanceRule(),
+        new MetadataRule(),
         new AnnotationRule(),
         new ActionRule(),
         new Forms.XfaRule(),

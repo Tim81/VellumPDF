@@ -206,6 +206,16 @@ public static class OracleCorpus
             // the in-process rule both reject it.
             new OracleFixture("pdfa2b-rendering-intent", WriterPdfWithBadRenderingIntent(),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // An XMP packet whose <?xpacket?> header declares a forbidden 'bytes' pseudo-attribute
+            // (§6.6.2.1-2). veraPDF and the in-process MetadataRule both reject it.
+            new OracleFixture("pdfa2b-xmp-bytes-attr", WriterPdfWithXmpHeader(" bytes=\"100\""),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // An XMP packet serialised as UTF-16 rather than UTF-8 (§6.6.2.1-5). veraPDF and the
+            // in-process rule both reject it.
+            new OracleFixture("pdfa2b-xmp-utf16", WriterPdfWithUtf16Xmp(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
         ];
     }
 
@@ -311,6 +321,32 @@ public static class OracleCorpus
         newPage.Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
         var content = new PdfStream(Encoding.ASCII.GetBytes("/FooIntent ri"));
         return reader.AppendRevision([(pageRef.ObjectNumber, newPage), (contentNum, content)]);
+    }
+
+    private static byte[] WriterPdfWithXmpHeader(string headerExtra)
+        => WriterPdfWithMetadata(Encoding.UTF8.GetBytes(Xmp2b(headerExtra)));
+
+    private static byte[] WriterPdfWithUtf16Xmp()
+        => WriterPdfWithMetadata(Encoding.Unicode.GetPreamble().Concat(Encoding.Unicode.GetBytes(Xmp2b(""))).ToArray());
+
+    // A minimal PDF/A-2b XMP packet, with optional extra text in the <?xpacket?> header.
+    private static string Xmp2b(string headerExtra) =>
+        $"<?xpacket begin=\"﻿\" id=\"W5M0MpCehiHzreSzNTczkc9d\"{headerExtra}?>"
+        + "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF "
+        + "xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">"
+        + "<rdf:Description rdf:about=\"\" xmlns:pdfaid=\"http://www.aiim.org/pdfa/ns/id/\">"
+        + "<pdfaid:part>2</pdfaid:part><pdfaid:conformance>B</pdfaid:conformance>"
+        + "</rdf:Description></rdf:RDF></x:xmpmeta><?xpacket end=\"w\"?>";
+
+    // Replaces the writer baseline's /Metadata stream with the given XMP bytes via an incremental update.
+    private static byte[] WriterPdfWithMetadata(byte[] xmp)
+    {
+        var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+        var metaRef = (PdfIndirectReference)reader.Catalog.Get(new PdfName("Metadata"))!;
+        var stream = new PdfStream(xmp);
+        stream.Dictionary.Set(PdfName.Type, new PdfName("Metadata")).Set(PdfName.Subtype, new PdfName("XML"));
+        return reader.AppendRevision([(metaRef.ObjectNumber, stream)]);
     }
 
     private static byte[] WriterPdfWithExternalStream()
