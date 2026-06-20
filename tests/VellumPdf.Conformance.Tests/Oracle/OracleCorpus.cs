@@ -196,6 +196,16 @@ public static class OracleCorpus
             // and the in-process ActionRule both reject it.
             new OracleFixture("pdfa2b-named-action", WriterPdfWithDisallowedNamedAction(),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // An applied ExtGState carrying a /TR transfer function (§6.2.5-1). veraPDF and the
+            // in-process GraphicsStateRule both reject it.
+            new OracleFixture("pdfa2b-transfer-function", WriterPdfWithTransferFunction(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // A non-standard rendering intent set by the `ri` content operator (§6.2.6). veraPDF and
+            // the in-process rule both reject it.
+            new OracleFixture("pdfa2b-rendering-intent", WriterPdfWithBadRenderingIntent(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
         ];
     }
 
@@ -266,6 +276,41 @@ public static class OracleCorpus
         var content = new PdfStream(Encoding.ASCII.GetBytes("q /X0 Do Q"));
         return reader.AppendRevision(
             [(pageRef.ObjectNumber, newPage), (xobjNum, xobject), (contentNum, content)]);
+    }
+
+    private static byte[] WriterPdfWithTransferFunction()
+    {
+        // Merge an /ExtGState carrying a /TR transfer function into the page and apply it (`/GS0 gs`).
+        var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var newPage = CloneDict(page);
+
+        var gsNum = reader.Size;
+        var contentNum = gsNum + 1;
+        var gs = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("ExtGState"))
+            .Set(new PdfName("TR"), new PdfName("Identity"));
+        newPage.Set(
+            new PdfName("Resources"),
+            new PdfDictionary().Set(
+                new PdfName("ExtGState"),
+                new PdfDictionary().Set(new PdfName("GS0"), new PdfIndirectReference(gsNum))));
+        newPage.Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
+        var content = new PdfStream(Encoding.ASCII.GetBytes("q /GS0 gs Q"));
+        return reader.AppendRevision([(pageRef.ObjectNumber, newPage), (gsNum, gs), (contentNum, content)]);
+    }
+
+    private static byte[] WriterPdfWithBadRenderingIntent()
+    {
+        var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var newPage = CloneDict(page);
+        var contentNum = reader.Size;
+        newPage.Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
+        var content = new PdfStream(Encoding.ASCII.GetBytes("/FooIntent ri"));
+        return reader.AppendRevision([(pageRef.ObjectNumber, newPage), (contentNum, content)]);
     }
 
     private static byte[] WriterPdfWithExternalStream()
