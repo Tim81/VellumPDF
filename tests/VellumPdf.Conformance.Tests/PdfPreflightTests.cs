@@ -734,6 +734,29 @@ public sealed class PdfPreflightTests
         Assert.Contains("/JavaScript", assertion.Message);
     }
 
+    [Theory]
+    [InlineData("SetState")]
+    [InlineData("NoOp")]
+    public void Validate_ForbiddenActionType_ReportsError(string actionType)
+    {
+        // ISO 19005-2 §6.6.1 also forbids the (deprecated) SetState and NoOp action types.
+        // Regression guard for review round 4.
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R /OpenAction 4 0 R >>"),
+            _pagesObj,
+            _pageObj,
+            new($"<< /S /{actionType} >>"),
+        ]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        var assertion = Assert.Single(result.Assertions);
+        Assert.Equal("ISO19005-2:6.6.1-action", assertion.RuleId);
+        Assert.Contains($"/{actionType}", assertion.Message);
+    }
+
     [Fact]
     public void Validate_LaunchActionOnAnnotation_ReportsError()
     {
@@ -1166,9 +1189,12 @@ public sealed class PdfPreflightTests
     }
 
     [Fact]
-    public void Validate_FilteredMetadataStream_ReportsError()
+    public void Validate_FlateCompressedMetadataStream_IsAccepted()
     {
-        // §6.7.3 — the document metadata stream shall be plain (unfiltered) XMP.
+        // PDF/A-2 (ISO 19005-2) relaxed PDF/A-1's plain-text metadata requirement: a FlateDecode
+        // /Metadata stream is permitted (Acrobat and Ghostscript routinely emit one), and veraPDF
+        // does not flag it. The packet must still be decoded and its pdfaid read — and a filtered
+        // stream must NOT be reported as a violation. (Regression guard for review round 4.)
         var compressed = ZlibCompress(XmpBytes("2", "B"));
         var bytes = AssemblePdf(
             [
@@ -1181,9 +1207,56 @@ public sealed class PdfPreflightTests
 
         var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
 
+        Assert.True(result.IsCompliant);
+        Assert.Empty(result.Assertions);
+    }
+
+    [Fact]
+    public void Validate_IndirectFilterOnMetadataStream_IsResolvedAndDecoded()
+    {
+        // /Filter may itself be an indirect reference (e.g. Ghostscript emits `/Filter 12 0 R`).
+        // The filter chain must dereference it; otherwise the still-compressed body is handed to the
+        // XMP parser as if decoded and the packet reads as garbage. Here object 5 is the /FlateDecode
+        // name. Correct resolution decodes the packet, reads pdfaid:part 2 / conformance B → compliant.
+        var compressed = ZlibCompress(XmpBytes("2", "B"));
+        var bytes = AssemblePdf(
+            [
+                new("<< /Type /Catalog /Pages 2 0 R /Metadata 4 0 R >>"),
+                _pagesObj,
+                _pageObj,
+                new("/Type /Metadata /Subtype /XML /Filter 5 0 R", compressed),
+                new("/FlateDecode"),
+            ],
+            metadata: false);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.True(result.IsCompliant);
+        Assert.Empty(result.Assertions);
+    }
+
+    [Fact]
+    public void Validate_MetadataWithDtd_IsRejectedNotResolved()
+    {
+        // The XMP packet is untrusted: a DOCTYPE / external entity must be refused outright
+        // (DtdProcessing.Prohibit), never resolved (XXE). The reader rejects the DTD, so the packet
+        // fails to parse and is reported as not-well-formed rather than expanding the entity.
+        var xmpWithDtd = Encoding.UTF8.GetBytes(
+            "<?xml version=\"1.0\"?>"
+            + "<!DOCTYPE x [<!ENTITY xxe SYSTEM \"file:///etc/passwd\">]>"
+            + "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF "
+            + "xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">"
+            + "<rdf:Description rdf:about=\"\" xmlns:pdfaid=\"http://www.aiim.org/pdfa/ns/id/\">"
+            + "<pdfaid:part>&xxe;</pdfaid:part><pdfaid:conformance>B</pdfaid:conformance>"
+            + "</rdf:Description></rdf:RDF></x:xmpmeta>");
+        var bytes = AssemblePdf(
+            [new("<< /Type /Catalog /Pages 2 0 R >>"), _pagesObj, _pageObj],
+            metadataOverride: xmpWithDtd);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
         Assert.False(result.IsCompliant);
-        var assertion = Assert.Single(result.Assertions);
-        Assert.Equal("ISO19005-2:6.7.3-metadata-filter", assertion.RuleId);
+        Assert.Contains(result.Assertions, a => a.Message.Contains("well-formed XMP"));
     }
 
     [Fact]

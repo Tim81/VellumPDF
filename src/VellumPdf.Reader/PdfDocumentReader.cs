@@ -174,7 +174,7 @@ public sealed class PdfDocumentReader : IDisposable
     /// Decodes the filter chain for <paramref name="stream"/> and returns the decoded bytes.
     /// Returns null when an image filter (DCTDecode, JPXDecode, etc.) prevents full decode.
     /// </summary>
-    internal byte[]? GetDecodedStreamData(ParsedStream stream) => PdfFilters.Decode(stream);
+    internal byte[]? GetDecodedStreamData(ParsedStream stream) => PdfFilters.Decode(stream, ResolveMaybe);
 
     /// <summary>Resolves an indirect reference.</summary>
     internal PdfObject? Resolve(PdfIndirectReference r) => Resolve(r.ObjectNumber);
@@ -185,6 +185,9 @@ public sealed class PdfDocumentReader : IDisposable
     /// </summary>
     internal PdfObject? ResolveValue(PdfObject obj) =>
         obj is PdfIndirectReference r ? Resolve(r) : obj;
+
+    /// <summary>Null-tolerant <see cref="ResolveValue"/> for use as a filter-chain resolver.</summary>
+    private PdfObject? ResolveMaybe(PdfObject? obj) => obj is null ? null : ResolveValue(obj);
 
     /// <inheritdoc />
     public void Dispose() { }
@@ -254,7 +257,7 @@ public sealed class PdfDocumentReader : IDisposable
         var first = (int)firstObj.Value;
 
         // Decode the stream body
-        var body = PdfFilters.Decode(streamObj)
+        var body = PdfFilters.Decode(streamObj, ResolveMaybe)
             ?? throw new InvalidDataException(
                 $"Object stream {containerObjNum} uses an image filter that cannot be decoded.");
 

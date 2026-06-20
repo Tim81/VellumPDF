@@ -106,11 +106,13 @@ internal sealed class XrefParser
 
             if (trailer.TryGet(PdfName.Prev, out var prevObj) && prevObj is PdfInteger prevInt)
             {
-                var prevOffset = (int)prevInt.Value;
-                if (prevOffset < 0 || prevOffset >= data.Length)
+                // Validate the full 64-bit value before narrowing: a value such as 0x1_0000_0005
+                // would wrap to a small in-range int and bypass the range check if cast first.
+                var prevValue = prevInt.Value;
+                if (prevValue < 0 || prevValue >= data.Length)
                     throw new InvalidDataException(
-                        $"Malformed PDF: /Prev offset {prevOffset} is out of range.");
-                currentOffset = prevOffset;
+                        $"Malformed PDF: /Prev offset {prevValue} is out of range.");
+                currentOffset = (int)prevValue;
             }
             else
             {
@@ -152,10 +154,13 @@ internal sealed class XrefParser
         // with TryAdd and will be skipped if already present.
         if (trailer.TryGet(new PdfName("XRefStm"), out var xrefStmObj) && xrefStmObj is PdfInteger xrefStmInt)
         {
-            var stmOffset = (int)xrefStmInt.Value;
-            if (stmOffset < 0 || stmOffset >= data.Length)
+            // Validate as a 64-bit value before narrowing (see /Prev above): casting first would let
+            // an offset like 0x1_0000_0005 wrap to a small in-range int and slip past the guard.
+            var stmValue = xrefStmInt.Value;
+            if (stmValue < 0 || stmValue >= data.Length)
                 throw new InvalidDataException(
-                    $"Malformed PDF: /XRefStm offset {stmOffset} is out of range.");
+                    $"Malformed PDF: /XRefStm offset {stmValue} is out of range.");
+            var stmOffset = (int)stmValue;
             // Avoid cycling into an already-processed offset
             if (!seenOffsets.Contains(stmOffset))
                 ParseXrefStream(data, stmOffset, xref);

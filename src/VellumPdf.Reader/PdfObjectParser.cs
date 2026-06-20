@@ -343,29 +343,23 @@ internal sealed class PdfObjectParser
                 bodyLen = (int)len.Value;
         }
 
-        if (bodyLen >= 0)
+        if (bodyLen >= 0 && (long)bodyStart + bodyLen <= _lexer.Length)
         {
-            // Trust /Length
-            if ((long)bodyStart + bodyLen > _lexer.Length)
-                throw new InvalidDataException(
-                    $"Stream /Length {bodyLen} exceeds buffer at offset {bodyStart}.");
+            // Prefer /Length, but only when 'endstream' actually follows the declared body. A wrong
+            // /Length (a common real-world producer bug — off by a few bytes, or stale after an edit)
+            // would otherwise truncate or over-read the stream; if the marker isn't where /Length
+            // says it should be, fall through to scanning for it instead of failing the parse.
             var body = _lexer.Slice(bodyStart, bodyLen);
             _lexer.Seek(bodyStart + bodyLen);
 
-            // Expect optional whitespace then 'endstream'
             _lexer.SkipWhitespaceAndComments();
             var endTok = _lexer.NextToken();
-            if (endTok.Kind != TokenKind.Keyword || !IsKeyword(endTok.Raw, "endstream"u8))
-                throw new InvalidDataException(
-                    $"Expected 'endstream' after stream body at offset {_lexer.Position}.");
+            if (endTok.Kind == TokenKind.Keyword && IsKeyword(endTok.Raw, "endstream"u8))
+                return new ParsedStream(dict, body);
+        }
 
-            return new ParsedStream(dict, body);
-        }
-        else
-        {
-            // Scan for 'endstream' marker
-            return ScanToEndstream(dict, bodyStart);
-        }
+        // No usable /Length, or /Length did not land on 'endstream' — locate the marker by scanning.
+        return ScanToEndstream(dict, bodyStart);
     }
 
     private ParsedStream ScanToEndstream(PdfDictionary dict, int bodyStart)

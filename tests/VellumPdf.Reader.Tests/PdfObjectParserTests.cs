@@ -575,6 +575,30 @@ public sealed class PdfObjectParserTests
     }
 
     [Fact]
+    public void ParsesStreamWithWrongLength_FallsBackToScan()
+    {
+        // A wrong /Length is a common producer bug (here declared 3 but the body is 11 bytes). The
+        // parser must not truncate at /Length and then fail because 'endstream' isn't there: it falls
+        // back to scanning for the marker and recovers the full body. Regression guard for round 4.
+        const string pdf = "1 0 obj\n<< /Length 3 >>\nstream\nHello World\nendstream\nendobj";
+        var parser = Parser(pdf);
+        var result = parser.ParseIndirectObject();
+        Assert.True(result.IsStream);
+        Assert.Equal("Hello World", System.Text.Encoding.Latin1.GetString(result.Stream!.RawBody.Span));
+    }
+
+    [Fact]
+    public void ParsesStreamWithTooLargeLength_FallsBackToScan()
+    {
+        // /Length far exceeds the buffer; rather than throwing, scan for 'endstream'.
+        const string pdf = "1 0 obj\n<< /Length 99999 >>\nstream\nABC\nendstream\nendobj";
+        var parser = Parser(pdf);
+        var result = parser.ParseIndirectObject();
+        Assert.True(result.IsStream);
+        Assert.Equal("ABC", System.Text.Encoding.Latin1.GetString(result.Stream!.RawBody.Span));
+    }
+
+    [Fact]
     public void StreamBodyCapturedVerbatim()
     {
         // Binary body with all-bytes-range (simulated with a known pattern)

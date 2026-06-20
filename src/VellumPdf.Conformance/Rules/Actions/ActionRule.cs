@@ -8,7 +8,8 @@ namespace VellumPdf.Conformance.Rules.Actions;
 /// <summary>
 /// ISO 19005-2 §6.6.1 (Actions). A PDF/A file shall not contain certain action types:
 /// <c>Launch</c>, <c>Sound</c>, <c>Movie</c>, <c>ResetForm</c>, <c>ImportData</c>,
-/// <c>JavaScript</c>, <c>SetOCGState</c>, <c>Rendition</c>, <c>Trans</c>, and <c>GoTo3DView</c>.
+/// <c>JavaScript</c>, <c>SetState</c>, <c>NoOp</c>, <c>SetOCGState</c>, <c>Rendition</c>,
+/// <c>Trans</c>, and <c>GoTo3DView</c>.
 /// </summary>
 /// <remarks>
 /// Authored from ISO 19005-2:2011, 6.6.1 and ISO 32000-1:2008, 12.6. Clean-room: derived from the
@@ -36,7 +37,7 @@ internal sealed class ActionRule : IConformanceRule
     private static readonly HashSet<string> _forbidden = new(StringComparer.Ordinal)
     {
         "Launch", "Sound", "Movie", "ResetForm", "ImportData",
-        "JavaScript", "SetOCGState", "Rendition", "Trans", "GoTo3DView",
+        "JavaScript", "SetState", "NoOp", "SetOCGState", "Rendition", "Trans", "GoTo3DView",
     };
 
     public void Evaluate(PreflightContext context)
