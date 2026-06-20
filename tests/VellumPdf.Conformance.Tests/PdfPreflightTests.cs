@@ -435,6 +435,29 @@ public sealed class PdfPreflightTests
 
     // ── §6.1 file-structure rules ──────────────────────────────────────────────
 
+    [Theory]
+    [InlineData("/F (ext.dat)")]
+    [InlineData("/FFilter /FlateDecode")]
+    [InlineData("/FDecodeParms << >>")]
+    public void Validate_ExternalStream_ReportsError(string externalKey)
+    {
+        // §6.1.7.1: a stream dictionary shall not carry /F, /FFilter, or /FDecodeParms (external
+        // streams). The stream object here is not referenced, but §6.1.7.1 constrains every stream.
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R >>"),
+            _pagesObj,
+            _pageObj,
+            new(externalKey, []),
+        ]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        var assertion = Assert.Single(result.Assertions);
+        Assert.Equal("ISO19005-2:6.1.7.1-external-stream", assertion.RuleId);
+    }
+
     [Fact]
     public void Validate_Pdf20Header_ReportsHeaderError()
     {
@@ -1166,6 +1189,80 @@ public sealed class PdfPreflightTests
 
         Assert.True(result.IsCompliant);
         Assert.Empty(result.Assertions);
+    }
+
+    [Fact]
+    public void Validate_DisallowedNamedAction_ReportsError()
+    {
+        // §6.5.1: only NextPage/PrevPage/FirstPage/LastPage named actions are permitted.
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R /OpenAction 4 0 R >>"),
+            _pagesObj,
+            _pageObj,
+            new("<< /S /Named /N /GoForward >>"),
+        ]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        var assertion = Assert.Single(result.Assertions);
+        Assert.Equal("ISO19005-2:6.5.1-named-action", assertion.RuleId);
+    }
+
+    [Fact]
+    public void Validate_PermittedNamedAction_NoFinding()
+    {
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R /OpenAction 4 0 R >>"),
+            _pagesObj,
+            _pageObj,
+            new("<< /S /Named /N /NextPage >>"),
+        ]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.True(result.IsCompliant);
+        Assert.Empty(result.Assertions);
+    }
+
+    [Fact]
+    public void Validate_CatalogAdditionalActions_ReportsError()
+    {
+        // §6.5.2: the catalog shall not contain an /AA additional-actions dictionary.
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R /AA 4 0 R >>"),
+            _pagesObj,
+            _pageObj,
+            new("<< /WC << /S /Named /N /NextPage >> >>"),
+        ]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        var assertion = Assert.Single(result.Assertions);
+        Assert.Equal("ISO19005-2:6.5.2-catalog-aa", assertion.RuleId);
+    }
+
+    [Fact]
+    public void Validate_PageAdditionalActions_ReportsError()
+    {
+        // §6.5.2: a page dictionary shall not contain an /AA additional-actions dictionary.
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R >>"),
+            _pagesObj,
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /AA 4 0 R >>"),
+            new("<< /O << /S /Named /N /NextPage >> >>"),
+        ]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        var assertion = Assert.Single(result.Assertions);
+        Assert.Equal("ISO19005-2:6.5.2-page-aa", assertion.RuleId);
     }
 
     // ── PDF/A-2u §6.2.11.7 ToUnicode ────────────────────────────────────────────
