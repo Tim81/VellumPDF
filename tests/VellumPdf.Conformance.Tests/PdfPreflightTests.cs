@@ -184,17 +184,19 @@ public sealed class PdfPreflightTests
         return AssemblePdf(objects);
     }
 
-    /// <summary>Builds a one-page doc whose /Resources /ExtGState /GS0 has the given /BM body.</summary>
+    /// <summary>Builds a one-page doc whose /Resources /ExtGState /GS0 has the given /BM body,
+    /// with page content that applies the graphics state (`/GS0 gs`) so the blend mode is current.</summary>
     private static byte[] BuildBlendModePdf(string bmEntry)
     {
         return AssemblePdf(
         [
             new("<< /Type /Catalog /Pages 2 0 R >>"),
             _pagesObj,
-            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources 4 0 R >>"),
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources 4 0 R /Contents 7 0 R >>"),
             new("<< /ExtGState 5 0 R >>"),
             new("<< /GS0 6 0 R >>"),
             new($"<< /Type /ExtGState /BM {bmEntry} >>"),
+            new(string.Empty, Encoding.ASCII.GetBytes("q /GS0 gs Q")),
         ]);
     }
 
@@ -579,6 +581,28 @@ public sealed class PdfPreflightTests
         var assertion = Assert.Single(result.Assertions);
         Assert.Equal("ISO19005-2:6.4-blend-mode", assertion.RuleId);
         Assert.Contains("/Bogus", assertion.Message);
+    }
+
+    [Fact]
+    public void Validate_UnusedNonStandardBlendMode_NoFinding()
+    {
+        // A non-standard /BM in an /ExtGState the content never applies (no `gs`) is not the current
+        // blend mode, so it is not a §6.4 violation — matching veraPDF (issue #127). The page here has
+        // no /Contents, so the graphics state is never applied.
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R >>"),
+            _pagesObj,
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources 4 0 R >>"),
+            new("<< /ExtGState 5 0 R >>"),
+            new("<< /GS0 6 0 R >>"),
+            new("<< /Type /ExtGState /BM /BogusMode >>"),
+        ]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.True(result.IsCompliant);
+        Assert.Empty(result.Assertions);
     }
 
     // ── §6.3 font embedding rules ───────────────────────────────────────────────
