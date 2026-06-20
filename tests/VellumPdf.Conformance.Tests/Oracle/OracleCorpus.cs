@@ -68,6 +68,11 @@ public static class OracleCorpus
             new OracleFixture("pdfa2b-nonembedded-font", WriterPdfNonEmbeddedFont(),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
 
+            // A real embedded TrueType whose descendant CIDFont carries an invalid /Subtype
+            // (§6.2.11.2-2). veraPDF and the in-process FontStructureRule both reject it.
+            new OracleFixture("pdfa2b-bad-font-subtype", WriterPdfWithBadFontSubtype(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
             // A PDF/A-2b document that draws text with a properly embedded (subset) TrueType font via
             // the Type0/CIDFontType2/Identity-H path. veraPDF accepts it (all §6.2.11.x font checks
             // pass) and so does the in-process validator — the positive end-to-end font fixture.
@@ -727,6 +732,23 @@ public static class OracleCorpus
         using var ms = new MemoryStream();
         doc.Save(ms);
         return ms.ToArray();
+    }
+
+    private static byte[] WriterPdfWithBadFontSubtype()
+    {
+        // A real embedded TrueType (Type0/CIDFontType2) whose descendant CIDFont /Subtype is corrupted
+        // to an invalid value — the §6.2.11.2 font-subtype violation, on a font veraPDF can parse.
+        var baseline = WriterPdfWithEmbeddedFont();
+        using var reader = PdfReader.Open(baseline);
+        var (_, page) = FirstPage(reader);
+        var resources = (PdfDictionary)reader.ResolveValue(page.Get(new PdfName("Resources"))!)!;
+        var fonts = (PdfDictionary)reader.ResolveValue(resources.Get(PdfName.Font)!)!;
+        var type0 = (PdfDictionary)reader.ResolveValue(fonts.Entries.First().Value)!;
+        var descendants = (PdfArray)reader.ResolveValue(type0.Get(new PdfName("DescendantFonts"))!)!;
+        var descRef = (PdfIndirectReference)descendants[0];
+        var descendant = CloneDict((PdfDictionary)reader.Resolve(descRef.ObjectNumber)!);
+        descendant.Set(PdfName.Subtype, new PdfName("BogusType"));
+        return reader.AppendRevision([(descRef.ObjectNumber, descendant)]);
     }
 
     private static byte[] WriterPdfWithEmbeddedFont()

@@ -54,6 +54,7 @@ internal static class RuleRegistry
     private static readonly IConformanceRule[] PdfA2Fonts =
     [
         new FontEmbeddingRule(),
+        new FontStructureRule(),
     ];
 
     // ISO 19005-2 §6.5–§6.7 metadata, annotation, and action rules. Shared by every PDF/A-2 level.

@@ -1158,6 +1158,22 @@ public sealed class PdfPreflightTests
     }
 
     [Fact]
+    public void Validate_InvalidFontSubtype_ReportsError()
+    {
+        // §6.2.11.2: a font dictionary's /Subtype must be one of the recognised font subtypes.
+        var bytes = BuildFontPdf(
+            new PdfObj("<< /Type /Font /Subtype /BogusType /BaseFont /Foo /FirstChar 0 /LastChar 0 "
+                + "/Widths [500] /FontDescriptor 7 0 R >>"),
+            new PdfObj("<< /Type /FontDescriptor /FontName /Foo /FontFile2 8 0 R >>"),
+            new PdfObj("/Length1 4", [1, 2, 3, 4]));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.11.2-font-subtype");
+    }
+
+    [Fact]
     public void Validate_EmbeddedTrueTypeFont_NoFindings()
     {
         var bytes = BuildFontPdf(
