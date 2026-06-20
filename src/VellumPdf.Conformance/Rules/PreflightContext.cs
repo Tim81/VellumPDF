@@ -164,6 +164,31 @@ internal sealed class PreflightContext
     public ParsedStream? ResolveStream(PdfObject? obj)
         => obj is PdfIndirectReference r ? Reader.ResolveStream(r.ObjectNumber) : null;
 
+    /// <summary>The number of indirect objects in the cross-reference table.</summary>
+    public int IndirectObjectCount => Reader.ObjectNumbers.Count;
+
+    /// <summary>
+    /// Enumerates the resolved value of every indirect object in the file. Used by file-structure
+    /// rules (§6.1.13) that constrain every object value regardless of reachability.
+    /// </summary>
+    public IEnumerable<PdfObject> EnumerateIndirectObjects()
+    {
+        foreach (var objectNumber in Reader.ObjectNumbers)
+        {
+            PdfObject? value;
+            try
+            {
+                value = Reader.Resolve(objectNumber);
+            }
+            catch
+            {
+                continue; // A malformed object must not abort the whole scan.
+            }
+            if (value is not null)
+                yield return value;
+        }
+    }
+
     /// <summary>
     /// Enumerates every stream object in the file, by walking the cross-reference keyspace. Used by
     /// file-structure rules (§6.1.7) that constrain <em>all</em> streams — filters, external
