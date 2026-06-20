@@ -59,6 +59,20 @@ internal sealed class PreflightContext
     public IEnumerable<PdfDictionary> EnumeratePages()
         => WalkPages(Catalog.Get(PdfName.Pages), new HashSet<int>(), 0);
 
+    /// <summary>
+    /// True if any page paints with device-dependent colour (a DeviceRGB/Gray/CMYK colour operator in
+    /// its content stream). Output-intent requirements apply only to documents that actually use
+    /// device colour (issue #128). Limitation: device colour reached only through images, form
+    /// XObjects, or patterns is not detected by this page-content scan.
+    /// </summary>
+    public bool DocumentUsesDeviceColour()
+    {
+        foreach (var page in EnumeratePages())
+            if (ContentStreamUsage.Analyze(this, page).UsesDeviceColour)
+                return true;
+        return false;
+    }
+
     private IEnumerable<PdfDictionary> WalkPages(PdfObject? node, HashSet<int> visited, int depth)
     {
         if (depth > MaxPageTreeDepth)

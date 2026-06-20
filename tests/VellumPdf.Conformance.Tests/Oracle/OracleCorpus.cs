@@ -123,7 +123,42 @@ public static class OracleCorpus
             // rule accept it — the regression guard for the content-stream usage scoping (#127).
             new OracleFixture("pdfa2b-unused-blendmode", WriterPdfWithUnusedBlendMode(),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // A GTS_PDFA1 output intent with no DestOutputProfile, on a page that paints device colour.
+            // The output-intent requirement applies, so both veraPDF and in-process reject it (#128).
+            new OracleFixture("pdfa2b-devicecolour-no-profile", WriterPdfMalformedOutputIntent(deviceColour: true),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // The same malformed output intent, but on a page that paints no colour. veraPDF tolerates
+            // it (no device colour ⇒ no output-intent requirement) and so must the in-process rule —
+            // the regression guard for the device-colour scoping (#128).
+            new OracleFixture("pdfa2b-nocolour-no-profile", WriterPdfMalformedOutputIntent(deviceColour: false),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
         ];
+    }
+
+    private static byte[] WriterPdfMalformedOutputIntent(bool deviceColour)
+    {
+        using var doc = new PdfDocument { Conformance = VellumPdf.Document.PdfConformance.PdfA2b };
+        doc.Info.Title = "VellumPdf Oracle Fixture";
+        var page = doc.AddPage(PageSize.A4);
+        if (deviceColour)
+        {
+            var canvas = new PdfCanvas(page);
+            canvas.SetFillColorRgb(1, 0, 0).Rectangle(100, 100, 50, 50).Fill();
+            canvas.Finish();
+        }
+        using var ms = new MemoryStream();
+        doc.Save(ms);
+
+        using var reader = PdfReader.Open(ms.ToArray());
+        var rootRef = (PdfIndirectReference)reader.Trailer.Get(PdfName.Root)!;
+        var catalog = CloneDict(reader.Catalog);
+        var brokenOi = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("OutputIntent"))
+            .Set(new PdfName("S"), new PdfName("GTS_PDFA1"));
+        catalog.Set(new PdfName("OutputIntents"), new PdfArray([brokenOi]));
+        return reader.AppendRevision([(rootRef.ObjectNumber, catalog)]);
     }
 
     private static (PdfIndirectReference Ref, PdfDictionary Dict) FirstPage(PdfDocumentReader reader)
