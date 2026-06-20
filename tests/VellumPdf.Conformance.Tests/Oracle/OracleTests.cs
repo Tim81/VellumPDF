@@ -27,11 +27,20 @@ public sealed class InProcessOracleTests
 }
 
 /// <summary>
+/// Serialises the veraPDF cross-validation tests. Each one spawns a veraPDF JVM (hundreds of MB), so
+/// running the whole corpus in parallel exhausts memory on small CI runners. A disabled-parallelisation
+/// collection keeps at most one veraPDF process alive at a time.
+/// </summary>
+[CollectionDefinition("veraPDF", DisableParallelization = true)]
+public sealed class VeraPdfCollection;
+
+/// <summary>
 /// The cross-validation half of the oracle gate: for each corpus fixture, the in-process verdict
 /// must equal the verdict produced by veraPDF. When veraPDF is not on the PATH (the typical local
 /// setup) the test is skipped — unless <c>REQUIRE_VERAPDF=1</c>, which turns the absence into a
 /// failure so a misconfigured CI image cannot silently skip the entire gate.
 /// </summary>
+[Collection("veraPDF")]
 public sealed class VeraPdfOracleTests
 {
     public static IEnumerable<object[]> Fixtures => OracleCorpus.All.Select(f => new object[] { f.Name });

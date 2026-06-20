@@ -6,11 +6,10 @@ using VellumPdf.Core;
 namespace VellumPdf.Conformance.Rules.Colour;
 
 /// <summary>
-/// ISO 19005-2 §6.2.2 (Output intents). Validates the structure of the document's PDF/A output
-/// intent(s): a <c>GTS_PDFA1</c> output intent shall have a <c>/DestOutputProfile</c>; that
-/// profile shall be a valid ICC profile stream with a component count (<c>/N</c>) of 1, 3, or 4;
-/// and when more than one output intent carries a <c>/DestOutputProfile</c>, all shall reference
-/// the same profile stream.
+/// ISO 19005-2 §6.2.2 (Output intents). A document that paints device-dependent colour shall have a
+/// PDF/A (<c>GTS_PDFA1</c>) output intent with a <c>/DestOutputProfile</c>; that profile shall be a
+/// valid ICC profile stream with a component count (<c>/N</c>) of 1, 3, or 4; and when more than one
+/// output intent carries a <c>/DestOutputProfile</c>, all shall reference the same profile stream.
 /// </summary>
 /// <remarks>
 /// Authored from ISO 19005-2:2011, 6.2.2 and ISO 32000-1:2008, 14.11.5 / 8.6.5.5. Clean-room:
@@ -36,17 +35,13 @@ internal sealed class OutputIntentRule : IConformanceRule
 
     public void Evaluate(PreflightContext context)
     {
-        if (context.Resolve(context.Catalog.Get(_outputIntents)) is not PdfArray intents)
-            return;
-
         // Distinct DestOutputProfile object numbers, for the single-profile constraint.
         var profileRefs = new HashSet<int>();
+        // Whether a PDF/A (GTS_PDFA1) output intent supplies a DestOutputProfile.
+        var hasPdfAProfile = false;
 
-        // Whether any page paints device colour — computed lazily, only if a profile-less PDF/A
-        // output intent is encountered (see the DestOutputProfile check below).
-        bool? usesDeviceColour = null;
-
-        for (var i = 0; i < intents.Count; i++)
+        var intents = context.Resolve(context.Catalog.Get(_outputIntents)) as PdfArray;
+        for (var i = 0; intents is not null && i < intents.Count; i++)
         {
             if (context.Resolve(intents[i]) is not PdfDictionary intent)
                 continue;
@@ -55,26 +50,13 @@ internal sealed class OutputIntentRule : IConformanceRule
             var isPdfA = context.Resolve(intent.Get(_s)) is PdfName { Value: "GTS_PDFA1" };
             var destRaw = intent.Get(_destOutputProfile);
 
+            // A profile-less output intent characterises no colour; the device-colour-requires-an-
+            // output-intent check after the loop catches a document that actually needs one.
             if (destRaw is null)
-            {
-                // §6.2.2's DestOutputProfile requirement applies to documents that use device-dependent
-                // colour; veraPDF does not flag a profile-less PDF/A output intent when no device colour
-                // is painted (issue #128). Compute the (relatively expensive) usage check lazily.
-                if (isPdfA)
-                {
-                    usesDeviceColour ??= context.DocumentUsesDeviceColour();
-                    if (usesDeviceColour.Value)
-                    {
-                        context.Report(
-                            RuleId,
-                            Clause,
-                            PreflightSeverity.Error,
-                            "A GTS_PDFA1 output intent shall contain a DestOutputProfile entry "
-                            + "when the document uses device-dependent colour.");
-                    }
-                }
                 continue;
-            }
+
+            if (isPdfA)
+                hasPdfAProfile = true;
 
             if (destRaw is PdfIndirectReference destRef)
                 profileRefs.Add(destRef.ObjectNumber);
@@ -128,6 +110,19 @@ internal sealed class OutputIntentRule : IConformanceRule
                 PreflightSeverity.Error,
                 "When multiple output intents specify a DestOutputProfile, they shall all "
                 + "reference the same ICC profile stream.");
+        }
+
+        // ISO 19005-2 §6.2.2: a document that paints device-dependent colour shall have a PDF/A
+        // output intent (GTS_PDFA1) with a DestOutputProfile. Covers both the absence of any output
+        // intent and a profile-less one (issues #122, #128).
+        if (!hasPdfAProfile && context.DocumentUsesDeviceColour())
+        {
+            context.Report(
+                RuleId,
+                Clause,
+                PreflightSeverity.Error,
+                "The document paints device-dependent colour but has no PDF/A output intent "
+                + "(GTS_PDFA1) with a DestOutputProfile.");
         }
     }
 
