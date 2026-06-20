@@ -54,6 +54,24 @@ public sealed class AnnotationAndOutlineTests
     }
 
     [Fact]
+    public void Page_withUriLinkAnnotation_setsPrintFlag()
+    {
+        // ISO 19005-2 §6.5.3 requires the Print flag set (and Hidden/Invisible/NoView clear) on
+        // every non-Popup annotation, including Link. /F 4 satisfies it. Guards issue #123.
+        using var doc = new PdfDocument();
+        var page = doc.AddPage();
+
+        doc.RegisterLinkAnnotation(page, new PdfLinkAnnotation
+        {
+            Rect = new PdfRectangle(72, 700, 200, 714),
+            Uri = "https://example.com",
+        });
+
+        var content = SaveToString(doc);
+        Assert.Contains("/F 4", content);
+    }
+
+    [Fact]
     public void Page_withUriLinkAnnotation_containsUriAction()
     {
         using var doc = new PdfDocument();

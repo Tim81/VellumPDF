@@ -39,7 +39,11 @@ public sealed class PdfLinkAnnotation
             .Set(PdfName.Type, new PdfName("Annot"))
             .Set(PdfName.Subtype, new PdfName("Link"))
             .Set(new PdfName("Rect"), Rect.ToArray())
-            .Set(new PdfName("Border"), border);
+            .Set(new PdfName("Border"), border)
+            // /F 4 sets the Print flag and clears Hidden/Invisible/NoView, as ISO 19005-2 §6.5.3
+            // requires for every non-Popup annotation. (A Link is exempt from the appearance-stream
+            // requirement, but not from the flag requirements — verified against veraPDF.)
+            .Set(new PdfName("F"), new PdfInteger(4));
 
         if (Uri is not null)
         {
