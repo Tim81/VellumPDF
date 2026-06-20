@@ -628,6 +628,36 @@ public sealed class PdfPreflightTests
     }
 
     [Fact]
+    public void Validate_TinyMediaBox_ReportsError()
+    {
+        // §6.1.13: a page-boundary side shall be between 3 and 14400 units.
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R >>"),
+            _pagesObj,
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 1 1] >>"),
+        ]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.13-page-bounds");
+    }
+
+    [Fact]
+    public void Validate_TrailingDataAfterEof_ReportsError()
+    {
+        // §6.1.3: no data after the final %%EOF except an optional single EOL.
+        var clean = AssemblePdf([new("<< /Type /Catalog /Pages 2 0 R >>"), _pagesObj, _pageObj]);
+        var withJunk = clean.Concat(Encoding.ASCII.GetBytes(" trailing-junk")).ToArray();
+
+        var result = PdfPreflight.Validate(withJunk, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.3-trailing-data");
+    }
+
+    [Fact]
     public void Validate_Pdf20Header_ReportsHeaderError()
     {
         // A plain document declares %PDF-2.0, which is not valid PDF/A-2 (§6.1.2).

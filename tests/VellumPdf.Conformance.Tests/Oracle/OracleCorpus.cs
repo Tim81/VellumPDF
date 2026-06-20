@@ -203,6 +203,16 @@ public static class OracleCorpus
             new OracleFixture("pdfa2b-oversized-name", WriterPdfWithCatalogEntry("VellumName", new PdfName(new string('A', 200))),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
 
+            // A page whose /MediaBox is 1×1 units, below the 3-unit minimum (§6.1.13-11). veraPDF and
+            // the in-process rule both reject it.
+            new OracleFixture("pdfa2b-tiny-mediabox", WriterPdfWithTinyMediaBox(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // Data after the final %%EOF marker (§6.1.3-3). veraPDF and the in-process rule both
+            // reject it.
+            new OracleFixture("pdfa2b-trailing-data", AppendTrailingBytes(WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b)),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
             // A drawn PostScript XObject (/Subtype /PS invoked by `Do`), which PDF/A-2 forbids
             // outright (§6.2.9). Both veraPDF (clause 6.2.9-3) and the in-process ForbiddenXObjectRule
             // reject it — the first negative cross-validation of the XObject rule.
@@ -571,6 +581,26 @@ public static class OracleCorpus
             .Set(new PdfName("NeedAppearances"), PdfBoolean.True);
         catalog.Set(new PdfName("AcroForm"), acroForm);
         return reader.AppendRevision([(rootRef.ObjectNumber, catalog)]);
+    }
+
+    private static byte[] WriterPdfWithTinyMediaBox()
+    {
+        var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var newPage = CloneDict(page);
+        newPage.Set(new PdfName("MediaBox"),
+            new PdfArray([new PdfInteger(0), new PdfInteger(0), new PdfInteger(1), new PdfInteger(1)]));
+        return reader.AppendRevision([(pageRef.ObjectNumber, newPage)]);
+    }
+
+    private static byte[] AppendTrailingBytes(byte[] pdf)
+    {
+        var garbage = Encoding.ASCII.GetBytes(" trailing-junk");
+        var result = new byte[pdf.Length + garbage.Length];
+        pdf.CopyTo(result, 0);
+        garbage.CopyTo(result, pdf.Length);
+        return result;
     }
 
     private static byte[] WriterPdfWithCatalogEntry(string key, PdfObject value)

@@ -16,8 +16,11 @@ namespace VellumPdf.Conformance.Rules.Structure;
 /// Authored from ISO 19005-2:2011, 6.1.13 and ISO 32000-1:2008, Annex C. Clean-room: derived from the
 /// specification text, not from any third-party validation profile. The scalar limits are checked by
 /// walking every indirect object's value graph; the indirect-object count comes from the
-/// cross-reference table. The content-stream nesting limit (§6.1.13 t8), the DeviceN colourant count
-/// (t9), the CMap CID maximum (t10), and the page-boundary sizes (t11) are separate slices.
+/// cross-reference table; and each page-boundary box (MediaBox, CropBox, BleedBox, TrimBox, ArtBox)
+/// is checked to have sides in the 3–14400 unit range (§6.1.13 t11). The content-stream q/Q nesting
+/// limit (t8) and the CMap CID maximum (t10) need content/CMap parsing. The DeviceN colourant limit
+/// (t9) is deferred: veraPDF flags it only for a DeviceN colour space actually used through content,
+/// so a present-but-unused one is not a violation — matching that needs used-colourspace analysis.
 /// </remarks>
 internal sealed class NumericLimitsRule : IConformanceRule
 {
@@ -45,7 +48,40 @@ internal sealed class NumericLimitsRule : IConformanceRule
 
         foreach (var obj in context.EnumerateIndirectObjects())
             Walk(context, obj, flagged, 0);
+
+        CheckPageBoundaries(context, flagged);
     }
+
+    private static readonly PdfName[] _boundaryBoxes =
+    [
+        new("MediaBox"), new("CropBox"), new("BleedBox"), new("TrimBox"), new("ArtBox"),
+    ];
+
+    // §6.1.13: each page-boundary box side shall be ≥ 3 and ≤ 14400 units (ISO 32000-1 §14.11.2).
+    private void CheckPageBoundaries(PreflightContext context, HashSet<string> flagged)
+    {
+        foreach (var page in context.EnumeratePages())
+            foreach (var box in _boundaryBoxes)
+                if (context.ResolveInherited(page, box) is PdfArray rect && rect.Count == 4
+                    && Side(context, rect, 0, 2) is { } width && Side(context, rect, 1, 3) is { } height
+                    && (width < 3 || width > 14400 || height < 3 || height > 14400))
+                    Report(context, flagged, "page-bounds",
+                        $"A /{box.Value} side ({width}×{height}) is outside the permitted 3–14400 unit range.");
+    }
+
+    private static double? Side(PreflightContext context, PdfArray rect, int a, int b)
+    {
+        if (Number(context.Resolve(rect[a])) is { } x && Number(context.Resolve(rect[b])) is { } y)
+            return Math.Abs(y - x);
+        return null;
+    }
+
+    private static double? Number(PdfObject? obj) => obj switch
+    {
+        PdfInteger i => i.Value,
+        PdfReal r => r.Value,
+        _ => null,
+    };
 
     private void Walk(PreflightContext context, PdfObject? value, HashSet<string> flagged, int depth)
     {
