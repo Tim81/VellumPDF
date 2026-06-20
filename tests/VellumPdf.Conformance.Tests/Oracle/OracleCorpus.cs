@@ -4,8 +4,10 @@
 using System.Text;
 using VellumPdf.Annotations;
 using VellumPdf.Canvas;
+using VellumPdf.Core;
 using VellumPdf.Document;
 using VellumPdf.Fonts;
+using VellumPdf.Reader;
 
 namespace VellumPdf.Conformance.Tests.Oracle;
 
@@ -92,7 +94,62 @@ public static class OracleCorpus
             // validates the whole UA rule set (metadata, tagging, lang, title, tab order).
             new OracleFixture("pdfua1-tagged", WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1),
                 Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: true),
+
+            // NEGATIVE object-graph fixtures: a conformant baseline with a single forbidden construct
+            // injected via an incremental update, so each is non-compliant for exactly one reason and
+            // both validators agree. These give the object-graph rules their first NEGATIVE veraPDF
+            // cross-validation.
+
+            // A forbidden /JavaScript action on the catalog /OpenAction (ISO 19005-2 §6.6.1).
+            new OracleFixture("pdfa2b-javascript-action", WriterPdfWithJavaScriptAction(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // A forbidden multimedia annotation subtype (/Movie) on the page (ISO 19005-2 §6.5.3).
+            new OracleFixture("pdfa2b-movie-annotation", WriterPdfWithMovieAnnotation(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
         ];
+    }
+
+    private static byte[] WriterPdfWithJavaScriptAction()
+    {
+        var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+        var rootRef = (PdfIndirectReference)reader.Trailer.Get(PdfName.Root)!;
+        var catalog = CloneDict(reader.Catalog);
+        var jsAction = new PdfDictionary()
+            .Set(new PdfName("S"), new PdfName("JavaScript"))
+            .Set(new PdfName("JS"), new PdfLiteralString(Encoding.ASCII.GetBytes("app.alert(1);")));
+        catalog.Set(new PdfName("OpenAction"), jsAction);
+        return reader.AppendRevision([(rootRef.ObjectNumber, catalog)]);
+    }
+
+    private static byte[] WriterPdfWithMovieAnnotation()
+    {
+        var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+        var pagesRef = (PdfIndirectReference)reader.Catalog.Get(PdfName.Pages)!;
+        var pages = (PdfDictionary)reader.Resolve(pagesRef.ObjectNumber)!;
+        var kidsObj = pages.Get(new PdfName("Kids"));
+        var kids = kidsObj is PdfIndirectReference kr ? (PdfArray)reader.Resolve(kr.ObjectNumber)! : (PdfArray)kidsObj!;
+        var pageRef = (PdfIndirectReference)kids[0];
+
+        var page = CloneDict((PdfDictionary)reader.Resolve(pageRef.ObjectNumber)!);
+        var annotObjNum = reader.Size;
+        var movie = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("Annot"))
+            .Set(PdfName.Subtype, new PdfName("Movie"))
+            .Set(new PdfName("Rect"), new PdfArray([new PdfInteger(0), new PdfInteger(0), new PdfInteger(1), new PdfInteger(1)]))
+            .Set(new PdfName("F"), new PdfInteger(4));
+        page.Set(new PdfName("Annots"), new PdfArray([new PdfIndirectReference(annotObjNum)]));
+        return reader.AppendRevision([(pageRef.ObjectNumber, page), (annotObjNum, movie)]);
+    }
+
+    private static PdfDictionary CloneDict(PdfDictionary src)
+    {
+        var d = new PdfDictionary();
+        foreach (var kv in src.Entries)
+            d.Set(kv.Key, kv.Value);
+        return d;
     }
 
     private static byte[] WriterPdfEmbeddedText(VellumPdf.Document.PdfConformance conformance)
