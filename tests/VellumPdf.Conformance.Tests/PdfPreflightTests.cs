@@ -463,6 +463,25 @@ public sealed class PdfPreflightTests
     }
 
     [Fact]
+    public void Validate_PdfAOutputIntent_IndirectSubtype_StillEnforced()
+    {
+        // /S is an indirect reference to the name GTS_PDFA1 (legal per ISO 32000-1 §7.3.10). The rule
+        // must resolve it before deciding the intent is a PDF/A output intent — otherwise the
+        // mandatory DestOutputProfile check is silently skipped (a false negative). Round-5 guard.
+        var bytes = BuildOutputIntentPdf(
+            "[4 0 R]",
+            new PdfObj("<< /Type /OutputIntent /S 5 0 R >>"),
+            new PdfObj("/GTS_PDFA1"));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        var assertion = Assert.Single(result.Assertions);
+        Assert.Equal("ISO19005-2:6.2.2-output-intent", assertion.RuleId);
+        Assert.Contains("DestOutputProfile", assertion.Message);
+    }
+
+    [Fact]
     public void Validate_OutputIntent_InvalidIccProfile_ReportsError()
     {
         var bytes = BuildOutputIntentPdf(
@@ -706,6 +725,22 @@ public sealed class PdfPreflightTests
         var bytes = BuildPagePdf(
             "/Annots [4 0 R]",
             new PdfObj("<< /Type /Annot /Subtype /Link /Rect [0 0 1 1] /F 4 >>"));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.True(result.IsCompliant);
+        Assert.Empty(result.Assertions);
+    }
+
+    [Fact]
+    public void Validate_LinkAnnotationWithoutPrintFlag_NoFindings()
+    {
+        // A /Link annotation with no /F (flags 0, Print clear) is conformant: Links have no printable
+        // appearance and are exempt from the §6.5.3 flag requirements. Conformant PDF/A files (and
+        // VellumPdf's own writer) emit such Links. Round-5 false-positive fix.
+        var bytes = BuildPagePdf(
+            "/Annots [4 0 R]",
+            new PdfObj("<< /Type /Annot /Subtype /Link /Rect [0 0 1 1] >>"));
 
         var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
 

@@ -271,13 +271,15 @@ internal sealed class XrefParser
         if (dict.Get(new PdfName("W")) is not PdfArray wArr || wArr.Count != 3)
             throw new InvalidDataException("Malformed PDF: xref stream missing valid /W array.");
 
-        var w1 = GetInt(wArr[0]);
-        var w2 = GetInt(wArr[1]);
-        var w3 = GetInt(wArr[2]);
-        // Each field is read big-endian into a long, so a width must be 0..8; negative widths would
-        // otherwise produce silently-wrong offsets rather than an error.
-        if (w1 is < 0 or > 8 || w2 is < 0 or > 8 || w3 is < 0 or > 8)
+        // Validate each width as a 64-bit value BEFORE narrowing to int: a value like 0x1_0000_0008
+        // would wrap to a valid-looking 8 if cast first. Each field is read big-endian into a long,
+        // so a width must be 0..8; negative widths would produce silently-wrong offsets.
+        var w1L = GetInt(wArr[0]);
+        var w2L = GetInt(wArr[1]);
+        var w3L = GetInt(wArr[2]);
+        if (w1L is < 0 or > 8 || w2L is < 0 or > 8 || w3L is < 0 or > 8)
             throw new InvalidDataException("Malformed PDF: xref stream /W field width out of range.");
+        int w1 = (int)w1L, w2 = (int)w2L, w3 = (int)w3L;
         var rowSize = w1 + w2 + w3;
         if (rowSize <= 0)
             throw new InvalidDataException("Malformed PDF: xref stream /W row size is zero.");
@@ -297,12 +299,13 @@ internal sealed class XrefParser
                 throw new InvalidDataException("Malformed PDF: xref stream /Index array has odd element count.");
             for (var i = 0; i < indexArr.Count; i += 2)
             {
+                // Validate as 64-bit before narrowing: a value such as 0x1_0000_0000 would wrap to a
+                // small in-range int and slip past the guard (producing bogus object numbers).
                 var first = GetInt(indexArr[i]);
                 var count = GetInt(indexArr[i + 1]);
-                // Reject negatives and any (first + count) that would overflow into bogus object numbers.
-                if (first < 0 || count < 0 || (long)first + count > int.MaxValue)
+                if (first is < 0 or > int.MaxValue || count is < 0 or > int.MaxValue || first + count > int.MaxValue)
                     throw new InvalidDataException("Malformed PDF: xref stream /Index subsection is out of range.");
-                indexPairs.Add((first, count));
+                indexPairs.Add(((int)first, (int)count));
             }
         }
         else
@@ -359,9 +362,9 @@ internal sealed class XrefParser
         return value;
     }
 
-    private static int GetInt(PdfObject obj)
+    private static long GetInt(PdfObject obj)
     {
-        if (obj is PdfInteger pi) return (int)pi.Value;
+        if (obj is PdfInteger pi) return pi.Value;
         throw new InvalidDataException($"Expected integer in xref stream, got {obj.GetType().Name}.");
     }
 

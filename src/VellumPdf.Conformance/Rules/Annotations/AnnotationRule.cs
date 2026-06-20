@@ -7,9 +7,9 @@ namespace VellumPdf.Conformance.Rules.Annotations;
 
 /// <summary>
 /// ISO 19005-2 §6.5.3 (Annotations). An annotation's flags shall have the <c>Print</c> bit set
-/// and the <c>Hidden</c> and <c>NoView</c> bits clear, and — except for <c>/Popup</c> and
-/// <c>/Link</c> annotations — the annotation shall provide a normal appearance stream
-/// (<c>/AP</c> with an <c>/N</c> entry).
+/// and the <c>Hidden</c> and <c>NoView</c> bits clear, and the annotation shall provide a normal
+/// appearance stream (<c>/AP</c> with an <c>/N</c> entry). <c>/Popup</c> and <c>/Link</c>
+/// annotations have no visible appearance of their own and are exempt from both requirements.
 /// </summary>
 /// <remarks>
 /// Authored from ISO 19005-2:2011, 6.5.3 and ISO 32000-1:2008, 12.5.3 (Table 165 annotation
@@ -54,8 +54,11 @@ internal sealed class AnnotationRule : IConformanceRule
                 continue;
             }
 
-            // Popup annotations are driven by their parent and are exempt from these requirements.
-            if (subtype == "Popup")
+            // Popup annotations are driven by their parent, and Link annotations have no visible
+            // appearance of their own — conformant PDF/A files routinely carry Link annotations with
+            // no /F (flags 0, Print clear). Both subtypes are exempt from the flag and appearance
+            // requirements of §6.5.3, so they must be skipped BEFORE the Print/Hidden/NoView checks.
+            if (subtype is "Popup" or "Link")
                 continue;
 
             var flags = (int)(NumericValue(context.Resolve(annot.Get(_f))) ?? 0);
@@ -67,10 +70,6 @@ internal sealed class AnnotationRule : IConformanceRule
                 context.Report(RuleId, Clause, PreflightSeverity.Error, $"{label} shall not have the Hidden flag set.");
             if ((flags & NoView) != 0)
                 context.Report(RuleId, Clause, PreflightSeverity.Error, $"{label} shall not have the NoView flag set.");
-
-            // A /Link annotation has no visible appearance of its own and is exempt.
-            if (subtype == "Link")
-                continue;
 
             // The normal appearance /N is either an appearance stream or a sub-dictionary keyed by
             // appearance state; a missing/non-stream-non-dictionary value does not satisfy it.

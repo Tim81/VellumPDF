@@ -22,6 +22,10 @@ public sealed class PdfDocumentReader : IDisposable
     private readonly Dictionary<int, ParsedStream> _streamCache = new();
     // ObjStm cache: container obj number → (decoded body, First offset, N count, header offset map)
     private readonly Dictionary<int, (byte[] Body, int First, int N, Dictionary<int, int> OffsetMap)> _objStmCache = new();
+    // Containers currently being loaded — guards against a container whose /Filter (or /Length)
+    // indirectly references an object inside itself, which would recurse into LoadObjectStream
+    // forever (uncatchable StackOverflow) since the cache is only populated once loading completes.
+    private readonly HashSet<int> _loadingObjStm = new();
     private IReadOnlyList<PdfSignature>? _signatures;
 
     // Caps AcroForm field-tree recursion.
@@ -232,6 +236,25 @@ public sealed class PdfDocumentReader : IDisposable
     }
 
     private (byte[] Body, int First, int N, Dictionary<int, int> OffsetMap) LoadObjectStream(
+        int containerObjNum, XrefEntry containerEntry)
+    {
+        // Re-entry on the same container means a cyclic reference (e.g. the container's /Filter is an
+        // indirect reference to an object stored inside the container). The cache is not populated
+        // until this method returns, so without this guard the recursion is unbounded.
+        if (!_loadingObjStm.Add(containerObjNum))
+            throw new InvalidDataException(
+                $"Malformed PDF: object stream {containerObjNum} is defined in terms of itself.");
+        try
+        {
+            return LoadObjectStreamCore(containerObjNum, containerEntry);
+        }
+        finally
+        {
+            _loadingObjStm.Remove(containerObjNum);
+        }
+    }
+
+    private (byte[] Body, int First, int N, Dictionary<int, int> OffsetMap) LoadObjectStreamCore(
         int containerObjNum, XrefEntry containerEntry)
     {
         var parser = new PdfObjectParser(Bytes, CheckedOffset(containerEntry.Offset), ResolveLength);
