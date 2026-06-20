@@ -490,6 +490,26 @@ public sealed class PdfPreflightTests
     }
 
     [Fact]
+    public void Validate_DeviceColourWithoutOutputIntent_ReportsError()
+    {
+        // §6.2.2: a document that paints device-dependent colour shall have a PDF/A output intent.
+        // The page fills a device-RGB rectangle but the catalog has no /OutputIntents. (#122)
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R >>"),
+            _pagesObj,
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R >>"),
+            new(string.Empty, Encoding.ASCII.GetBytes("1 0 0 rg 100 100 50 50 re f")),
+        ]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions,
+            a => a.RuleId == "ISO19005-2:6.2.2-output-intent" && a.Message.Contains("device-dependent colour"));
+    }
+
+    [Fact]
     public void Validate_PdfAOutputIntent_IndirectSubtype_StillEnforced()
     {
         // /S is an indirect reference to the name GTS_PDFA1 (legal per ISO 32000-1 §7.3.10). The rule

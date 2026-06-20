@@ -134,7 +134,34 @@ public static class OracleCorpus
             // the regression guard for the device-colour scoping (#128).
             new OracleFixture("pdfa2b-nocolour-no-profile", WriterPdfMalformedOutputIntent(deviceColour: false),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // Device colour painted with NO output intent at all. §6.2.2 requires one, so both veraPDF
+            // and the in-process rule reject it — the first negative coverage of the new
+            // device-colour-requires-an-output-intent check (#122).
+            new OracleFixture("pdfa2b-devicecolour-no-outputintent", WriterPdfDeviceColourNoOutputIntent(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
         ];
+    }
+
+    private static byte[] WriterPdfDeviceColourNoOutputIntent()
+    {
+        using var doc = new PdfDocument { Conformance = VellumPdf.Document.PdfConformance.PdfA2b };
+        doc.Info.Title = "VellumPdf Oracle Fixture";
+        var page = doc.AddPage(PageSize.A4);
+        var canvas = new PdfCanvas(page);
+        canvas.SetFillColorRgb(1, 0, 0).Rectangle(100, 100, 50, 50).Fill();
+        canvas.Finish();
+        using var ms = new MemoryStream();
+        doc.Save(ms);
+
+        using var reader = PdfReader.Open(ms.ToArray());
+        var rootRef = (PdfIndirectReference)reader.Trailer.Get(PdfName.Root)!;
+        // Remove /OutputIntents from the catalog, keeping the device-colour content.
+        var catalog = new PdfDictionary();
+        foreach (var kv in reader.Catalog.Entries)
+            if (kv.Key.Value != "OutputIntents")
+                catalog.Set(kv.Key, kv.Value);
+        return reader.AppendRevision([(rootRef.ObjectNumber, catalog)]);
     }
 
     private static byte[] WriterPdfMalformedOutputIntent(bool deviceColour)
