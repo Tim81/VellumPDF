@@ -65,6 +65,35 @@ internal sealed class XmpConformanceRule : IConformanceRule
             context.Report(RuleId, Clause, PreflightSeverity.Error,
                 $"The XMP pdfaid:conformance shall be {conformance} (found {Describe(actualConformance)}).");
         }
+
+        CheckPdfaidPrefixes(context, xmp);
+    }
+
+    // §6.6.4: the PDF/A Identification properties (part, conformance, amd, corr) shall use the
+    // namespace prefix "pdfaid" (or the default namespace, i.e. no prefix). A producer that binds the
+    // pdfaid URI to an alternate prefix is non-conformant even though the value is still resolvable.
+    private void CheckPdfaidPrefixes(PreflightContext context, System.Xml.Linq.XDocument doc)
+    {
+        foreach (var element in doc.Descendants())
+        {
+            if (element.Name.Namespace == XmpReader.Pdfaid)
+                ReportPrefix(context, element.GetPrefixOfNamespace(XmpReader.Pdfaid), element.Name.LocalName);
+
+            foreach (var attribute in element.Attributes())
+                if (!attribute.IsNamespaceDeclaration && attribute.Name.Namespace == XmpReader.Pdfaid)
+                    ReportPrefix(context, element.GetPrefixOfNamespace(XmpReader.Pdfaid), attribute.Name.LocalName);
+        }
+    }
+
+    private void ReportPrefix(PreflightContext context, string? prefix, string localName)
+    {
+        if (prefix is not null && prefix != "pdfaid")
+            context.Report(
+                "ISO19005-2:6.6.4-pdfaid-prefix",
+                Clause,
+                PreflightSeverity.Error,
+                $"The PDF/A Identification property pdfaid:{localName} uses the prefix '{prefix}'; "
+                + "it shall use the prefix 'pdfaid'.");
     }
 
     private static (string Part, string Conformance)? Expected(PdfConformance conformance) => conformance switch

@@ -241,6 +241,16 @@ public static class OracleCorpus
             // properties are not falsely rejected as undeclared (§6.6.2.3.1).
             new OracleFixture("pdfa2b-rich-xmp", WriterPdfWithMetadata(Encoding.UTF8.GetBytes(RichXmp2b())),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // The pdfaid properties bound to a non-canonical prefix ('aid' instead of 'pdfaid')
+            // (§6.6.4-4/-5). veraPDF and the in-process rule both reject it.
+            new OracleFixture("pdfa2b-pdfaid-prefix", WriterPdfWithMetadata(Encoding.UTF8.GetBytes(AltPrefixXmp2b())),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // An extension schema declaring a custom value type (pdfaType) whose first field omits the
+            // mandatory 'type' name (§6.6.2.3.3-11). veraPDF and the in-process rule both reject it.
+            new OracleFixture("pdfa2b-extension-valuetype-bad", WriterPdfWithMetadata(Encoding.UTF8.GetBytes(BadValueTypeXmp2b())),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
         ];
     }
 
@@ -396,6 +406,30 @@ public static class OracleCorpus
         + "<exif:ExifVersion>0230</exif:ExifVersion>"
         + "<xmpMM:DerivedFrom rdf:parseType=\"Resource\"><stRef:documentID>d</stRef:documentID></xmpMM:DerivedFrom>"
         + "</rdf:Description>");
+
+    // A PDF/A-2b XMP packet whose pdfaid namespace is bound to the non-canonical prefix 'aid'.
+    private static string AltPrefixXmp2b() =>
+        "<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>"
+        + "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">"
+        + "<rdf:Description rdf:about=\"\" xmlns:aid=\"http://www.aiim.org/pdfa/ns/id/\">"
+        + "<aid:part>2</aid:part><aid:conformance>B</aid:conformance></rdf:Description>"
+        + "</rdf:RDF></x:xmpmeta><?xpacket end=\"w\"?>";
+
+    // A PDF/A-2b XMP packet declaring a custom value type whose pdfaType omits the 'type' field.
+    private static string BadValueTypeXmp2b() => RdfPacket(
+        "<rdf:Description rdf:about=\"\" xmlns:pdfaExtension=\"http://www.aiim.org/pdfa/ns/extension/\" "
+        + "xmlns:pdfaSchema=\"http://www.aiim.org/pdfa/ns/schema#\" xmlns:pdfaProperty=\"http://www.aiim.org/pdfa/ns/property#\" "
+        + "xmlns:pdfaType=\"http://www.aiim.org/pdfa/ns/type#\" xmlns:pdfaField=\"http://www.aiim.org/pdfa/ns/field#\">"
+        + "<pdfaExtension:schemas><rdf:Bag><rdf:li rdf:parseType=\"Resource\">"
+        + "<pdfaSchema:schema>S</pdfaSchema:schema><pdfaSchema:namespaceURI>http://example.com/ns/</pdfaSchema:namespaceURI>"
+        + "<pdfaSchema:prefix>ex</pdfaSchema:prefix>"
+        + "<pdfaSchema:valueType><rdf:Seq><rdf:li rdf:parseType=\"Resource\">"
+        + "<pdfaType:namespaceURI>http://example.com/t/</pdfaType:namespaceURI><pdfaType:prefix>mt</pdfaType:prefix>"
+        + "<pdfaType:description>d</pdfaType:description>"
+        + "<pdfaType:field><rdf:Seq><rdf:li rdf:parseType=\"Resource\">"
+        + "<pdfaField:name>f</pdfaField:name><pdfaField:valueType>Text</pdfaField:valueType><pdfaField:description>d</pdfaField:description>"
+        + "</rdf:li></rdf:Seq></pdfaType:field></rdf:li></rdf:Seq></pdfaSchema:valueType>"
+        + "</rdf:li></rdf:Bag></pdfaExtension:schemas></rdf:Description>");
 
     private static string RdfPacket(string extra) =>
         "<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>"

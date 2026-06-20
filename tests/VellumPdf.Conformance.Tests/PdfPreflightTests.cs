@@ -225,6 +225,26 @@ public sealed class PdfPreflightTests
     private const string _customProperty =
         "<rdf:Description rdf:about=\"\" xmlns:ex=\"http://example.com/ns/\"><ex:foo>bar</ex:foo></rdf:Description>";
 
+    private const string _validValueTypeFields =
+        "<pdfaType:type>MyType</pdfaType:type><pdfaType:namespaceURI>http://example.com/t/</pdfaType:namespaceURI>"
+        + "<pdfaType:prefix>mt</pdfaType:prefix><pdfaType:description>d</pdfaType:description>";
+
+    private const string _validValueTypeField =
+        "<pdfaField:name>f</pdfaField:name><pdfaField:valueType>Text</pdfaField:valueType><pdfaField:description>d</pdfaField:description>";
+
+    /// <summary>An extension schema declaring a custom value type (pdfaType) with one field (pdfaField).</summary>
+    private static string ValueTypeSchema(string typeFields, string fieldFields) =>
+        "<rdf:Description rdf:about=\"\" xmlns:pdfaExtension=\"http://www.aiim.org/pdfa/ns/extension/\" "
+        + "xmlns:pdfaSchema=\"http://www.aiim.org/pdfa/ns/schema#\" xmlns:pdfaProperty=\"http://www.aiim.org/pdfa/ns/property#\" "
+        + "xmlns:pdfaType=\"http://www.aiim.org/pdfa/ns/type#\" xmlns:pdfaField=\"http://www.aiim.org/pdfa/ns/field#\">"
+        + "<pdfaExtension:schemas><rdf:Bag><rdf:li rdf:parseType=\"Resource\">"
+        + "<pdfaSchema:schema>S</pdfaSchema:schema><pdfaSchema:namespaceURI>http://example.com/ns/</pdfaSchema:namespaceURI>"
+        + "<pdfaSchema:prefix>ex</pdfaSchema:prefix>"
+        + "<pdfaSchema:valueType><rdf:Seq><rdf:li rdf:parseType=\"Resource\">" + typeFields
+        + "<pdfaType:field><rdf:Seq><rdf:li rdf:parseType=\"Resource\">" + fieldFields
+        + "</rdf:li></rdf:Seq></pdfaType:field></rdf:li></rdf:Seq></pdfaSchema:valueType>"
+        + "</rdf:li></rdf:Bag></pdfaExtension:schemas></rdf:Description>";
+
     // A PDF/A extension schema declaring the http://example.com/ns/ namespace.
     private const string _exampleExtensionSchema =
         "<rdf:Description rdf:about=\"\" xmlns:pdfaExtension=\"http://www.aiim.org/pdfa/ns/extension/\" "
@@ -1315,6 +1335,47 @@ public sealed class PdfPreflightTests
         Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.6.2.3.3-property-category");
     }
 
+    // ── §6.6.4 pdfaid prefix + §6.6.2.3.3 value-type rules ──────────────────────
+
+    [Fact]
+    public void Validate_CanonicalPdfaidPrefix_NoFinding()
+    {
+        // The control for the alternate-prefix test: the canonical 'pdfaid' prefix is accepted.
+        var result = PdfPreflight.Validate(
+            BuildXmpPdf(XmpWithDescriptions(string.Empty)), PdfConformance.PdfA2B);
+
+        Assert.True(result.IsCompliant);
+        Assert.Empty(result.Assertions);
+    }
+
+    [Fact]
+    public void Validate_ValidExtensionValueType_NoFinding()
+    {
+        var result = PdfPreflight.Validate(
+            BuildXmpPdf(XmpWithDescriptions(ValueTypeSchema(_validValueTypeFields, _validValueTypeField))),
+            PdfConformance.PdfA2B);
+
+        Assert.True(result.IsCompliant);
+        Assert.Empty(result.Assertions);
+    }
+
+    [Theory]
+    [InlineData(
+        "<pdfaType:namespaceURI>http://example.com/t/</pdfaType:namespaceURI><pdfaType:prefix>mt</pdfaType:prefix><pdfaType:description>d</pdfaType:description>",
+        _validValueTypeField, "ISO19005-2:6.6.2.3.3-type")]
+    [InlineData(
+        _validValueTypeFields,
+        "<pdfaField:valueType>Text</pdfaField:valueType><pdfaField:description>d</pdfaField:description>",
+        "ISO19005-2:6.6.2.3.3-name")]
+    public void Validate_ExtensionValueTypeMissingField_ReportsError(string typeFields, string fieldFields, string ruleId)
+    {
+        var result = PdfPreflight.Validate(
+            BuildXmpPdf(XmpWithDescriptions(ValueTypeSchema(typeFields, fieldFields))), PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.RuleId == ruleId);
+    }
+
     // ── §6.6.2.3.1 XMP property-provenance rules ────────────────────────────────
 
     [Fact]
@@ -1924,10 +1985,11 @@ public sealed class PdfPreflightTests
     }
 
     [Fact]
-    public void Validate_XmpWithAlternatePdfaidPrefix_IsAccepted()
+    public void Validate_XmpWithAlternatePdfaidPrefix_ReportsPrefixError()
     {
-        // The pdfaid namespace URI is bound to a non-default prefix 'aid'. Resolution is by URI,
-        // so this valid PDF/A must still be recognised (the old literal-prefix scan would not).
+        // §6.6.4: the pdfaid properties shall use the prefix 'pdfaid'. Here the namespace URI is bound
+        // to 'aid', which veraPDF rejects. The values are still READ correctly (resolution is by URI),
+        // so the only findings are the prefix violations — no spurious part/conformance mismatch.
         var xmp = Encoding.UTF8.GetBytes(
             "<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>"
             + "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF "
@@ -1936,14 +1998,11 @@ public sealed class PdfPreflightTests
             + "<aid:part>2</aid:part><aid:conformance>B</aid:conformance>"
             + "</rdf:Description></rdf:RDF></x:xmpmeta><?xpacket end=\"w\"?>");
 
-        var bytes = AssemblePdf(
-            [new("<< /Type /Catalog /Pages 2 0 R >>"), _pagesObj, _pageObj],
-            metadataOverride: xmp);
+        var result = PdfPreflight.Validate(BuildXmpPdf(xmp), PdfConformance.PdfA2B);
 
-        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
-
-        Assert.True(result.IsCompliant);
-        Assert.Empty(result.Assertions);
+        Assert.False(result.IsCompliant);
+        Assert.NotEmpty(result.Assertions);
+        Assert.All(result.Assertions, a => Assert.Equal("ISO19005-2:6.6.4-pdfaid-prefix", a.RuleId));
     }
 
     [Fact]

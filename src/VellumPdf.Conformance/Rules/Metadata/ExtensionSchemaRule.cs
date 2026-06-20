@@ -8,10 +8,13 @@ namespace VellumPdf.Conformance.Rules.Metadata;
 
 /// <summary>
 /// ISO 19005-2 §6.6.2.3.3 (PDF/A extension schema structure). When the document XMP declares
-/// extension schemas (via the <c>pdfaExtension:schemas</c> bag), each declared schema and property
-/// shall carry the required fields: a schema needs a <c>schema</c> description, a
-/// <c>namespaceURI</c>, and a <c>prefix</c>; each property needs a <c>name</c>, a <c>valueType</c>,
-/// a <c>category</c> of <c>internal</c> or <c>external</c>, and a <c>description</c>.
+/// extension schemas (via the <c>pdfaExtension:schemas</c> bag), each declared schema, property, and
+/// custom value type shall carry the required fields: a schema needs a <c>schema</c> description, a
+/// <c>namespaceURI</c>, and a <c>prefix</c>; a property needs a <c>name</c>, a <c>valueType</c>, a
+/// <c>category</c> of <c>internal</c> or <c>external</c>, and a <c>description</c>; a value type
+/// (<c>pdfaType</c>) needs a <c>type</c>, <c>namespaceURI</c>, <c>prefix</c>, and <c>description</c>,
+/// and each of its fields (<c>pdfaField</c>) needs a <c>name</c>, <c>valueType</c>, and
+/// <c>description</c>.
 /// </summary>
 /// <remarks>
 /// Authored from ISO 19005-2:2011, 6.6.2.3.3 and the PDF/A extension-schema container schema.
@@ -19,12 +22,10 @@ namespace VellumPdf.Conformance.Rules.Metadata;
 /// Consumes the parsed packet from <see cref="XmpPacket"/>; both the element-content and
 /// attribute serialisations of each field are accepted.
 /// <para>
-/// This slice validates the structure of <em>declared</em> extension schemas (a document with no
+/// This rule validates the structure of <em>declared</em> extension schemas (a document with no
 /// extension schema, or a well-formed one, is unaffected — so there is no risk to conforming
-/// metadata). Two related requirements are deferred: the rule that a used property must itself be
-/// predefined or declared (§6.6.2.3.1), which needs the full predefined-schema catalogue and RDF
-/// property enumeration; and the custom value-type containers (<c>pdfaType</c> / <c>pdfaField</c>,
-/// §6.6.2.3.3 t11–t18).
+/// metadata). The companion requirement that a <em>used</em> property must itself be predefined or
+/// declared (§6.6.2.3.1) lives in <see cref="PropertyUsageRule"/>.
 /// </para>
 /// </remarks>
 internal sealed class ExtensionSchemaRule : IConformanceRule
@@ -37,6 +38,8 @@ internal sealed class ExtensionSchemaRule : IConformanceRule
     private static readonly XNamespace _ext = "http://www.aiim.org/pdfa/ns/extension/";
     private static readonly XNamespace _schema = "http://www.aiim.org/pdfa/ns/schema#";
     private static readonly XNamespace _property = "http://www.aiim.org/pdfa/ns/property#";
+    private static readonly XNamespace _type = "http://www.aiim.org/pdfa/ns/type#";
+    private static readonly XNamespace _field = "http://www.aiim.org/pdfa/ns/field#";
 
     private static readonly PdfName _metadata = new("Metadata");
 
@@ -65,10 +68,33 @@ internal sealed class ExtensionSchemaRule : IConformanceRule
         RequireField(context, schema, _schema, "prefix", "a declared extension schema is missing its 'prefix'");
 
         var propertyContainer = schema.Element(_schema + "property");
-        if (propertyContainer is null)
+        if (propertyContainer is not null)
+            foreach (var property in Items(propertyContainer))
+                CheckProperty(context, property);
+
+        // §6.6.2.3.3 t11–t18: custom value types declared in the schema's valueType container.
+        var valueTypeContainer = schema.Element(_schema + "valueType");
+        if (valueTypeContainer is not null)
+            foreach (var valueType in Items(valueTypeContainer))
+                CheckValueType(context, valueType);
+    }
+
+    private void CheckValueType(PreflightContext context, XElement valueType)
+    {
+        RequireField(context, valueType, _type, "type", "a declared value type is missing its 'type' name");
+        RequireField(context, valueType, _type, "namespaceURI", "a declared value type is missing its 'namespaceURI'");
+        RequireField(context, valueType, _type, "prefix", "a declared value type is missing its 'prefix'");
+        RequireField(context, valueType, _type, "description", "a declared value type is missing its 'description'");
+
+        var fieldContainer = valueType.Element(_type + "field");
+        if (fieldContainer is null)
             return;
-        foreach (var property in Items(propertyContainer))
-            CheckProperty(context, property);
+        foreach (var field in Items(fieldContainer))
+        {
+            RequireField(context, field, _field, "name", "a value-type field is missing its 'name'");
+            RequireField(context, field, _field, "valueType", "a value-type field is missing its 'valueType'");
+            RequireField(context, field, _field, "description", "a value-type field is missing its 'description'");
+        }
     }
 
     private void CheckProperty(PreflightContext context, XElement property)
