@@ -415,7 +415,7 @@ public sealed class PdfPreflightTests
             new("<< /Font 5 0 R >>"),
             new("<< /F0 6 0 R >>"),
             new(fontDict),
-            new("<< /Type /Font /Subtype /CIDFontType2 /BaseFont /X /FontDescriptor 8 0 R >>"),
+            new("<< /Type /Font /Subtype /CIDFontType2 /BaseFont /X /FontDescriptor 8 0 R /CIDToGIDMap /Identity >>"),
             new("<< /Type /FontDescriptor /FontName /X /FontFile2 9 0 R >>"),
             new("/Length1 4", [1, 2, 3, 4]),
         };
@@ -1174,6 +1174,22 @@ public sealed class PdfPreflightTests
     }
 
     [Fact]
+    public void Validate_EmbeddedCidFontType2WithoutCidToGidMap_ReportsError()
+    {
+        // §6.2.11.3.2: an embedded CIDFontType2 shall have a /CIDToGIDMap (here omitted).
+        var bytes = BuildFontPdf(
+            new PdfObj("<< /Type /Font /Subtype /Type0 /BaseFont /X /Encoding /Identity-H /DescendantFonts [7 0 R] >>"),
+            new PdfObj("<< /Type /Font /Subtype /CIDFontType2 /BaseFont /X /FontDescriptor 8 0 R >>"),
+            new PdfObj("<< /Type /FontDescriptor /FontName /X /FontFile2 9 0 R >>"),
+            new PdfObj("/Length1 4", [1, 2, 3, 4]));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.11.3.2-cidtogidmap");
+    }
+
+    [Fact]
     public void Validate_EmbeddedTrueTypeFont_NoFindings()
     {
         var bytes = BuildFontPdf(
@@ -1207,7 +1223,7 @@ public sealed class PdfPreflightTests
     {
         var bytes = BuildFontPdf(
             new PdfObj("<< /Type /Font /Subtype /Type0 /BaseFont /XYZ+Sub /DescendantFonts [7 0 R] >>"),
-            new PdfObj("<< /Type /Font /Subtype /CIDFontType2 /BaseFont /XYZ+Sub /FontDescriptor 8 0 R >>"),
+            new PdfObj("<< /Type /Font /Subtype /CIDFontType2 /BaseFont /XYZ+Sub /FontDescriptor 8 0 R /CIDToGIDMap /Identity >>"),
             new PdfObj("<< /Type /FontDescriptor /FontName /XYZ+Sub /FontFile2 9 0 R >>"),
             new PdfObj("/Length1 4", [1, 2, 3, 4]));
 

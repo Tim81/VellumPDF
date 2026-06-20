@@ -73,6 +73,11 @@ public static class OracleCorpus
             new OracleFixture("pdfa2b-bad-font-subtype", WriterPdfWithBadFontSubtype(),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
 
+            // A real embedded CIDFontType2 with its /CIDToGIDMap removed (§6.2.11.3.2-1). veraPDF and
+            // the in-process FontStructureRule both reject it.
+            new OracleFixture("pdfa2b-no-cidtogidmap", WriterPdfWithoutCidToGidMap(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
             // A PDF/A-2b document that draws text with a properly embedded (subset) TrueType font via
             // the Type0/CIDFontType2/Identity-H path. veraPDF accepts it (all §6.2.11.x font checks
             // pass) and so does the in-process validator — the positive end-to-end font fixture.
@@ -735,9 +740,27 @@ public static class OracleCorpus
     }
 
     private static byte[] WriterPdfWithBadFontSubtype()
+        => CorruptDescendantFont(d =>
+        {
+            var c = CloneDict(d);
+            c.Set(PdfName.Subtype, new PdfName("BogusType"));
+            return c;
+        });
+
+    private static byte[] WriterPdfWithoutCidToGidMap()
+        => CorruptDescendantFont(d =>
+        {
+            var c = new PdfDictionary();
+            foreach (var kv in d.Entries)
+                if (kv.Key.Value != "CIDToGIDMap")
+                    c.Set(kv.Key, kv.Value);
+            return c;
+        });
+
+    // Rebuilds the descendant CIDFont of the writer's embedded-font fixture and returns the
+    // incrementally-updated bytes. The base font is a real DejaVu subset veraPDF can parse.
+    private static byte[] CorruptDescendantFont(Func<PdfDictionary, PdfDictionary> rebuild)
     {
-        // A real embedded TrueType (Type0/CIDFontType2) whose descendant CIDFont /Subtype is corrupted
-        // to an invalid value — the §6.2.11.2 font-subtype violation, on a font veraPDF can parse.
         var baseline = WriterPdfWithEmbeddedFont();
         using var reader = PdfReader.Open(baseline);
         var (_, page) = FirstPage(reader);
@@ -746,9 +769,8 @@ public static class OracleCorpus
         var type0 = (PdfDictionary)reader.ResolveValue(fonts.Entries.First().Value)!;
         var descendants = (PdfArray)reader.ResolveValue(type0.Get(new PdfName("DescendantFonts"))!)!;
         var descRef = (PdfIndirectReference)descendants[0];
-        var descendant = CloneDict((PdfDictionary)reader.Resolve(descRef.ObjectNumber)!);
-        descendant.Set(PdfName.Subtype, new PdfName("BogusType"));
-        return reader.AppendRevision([(descRef.ObjectNumber, descendant)]);
+        var descendant = (PdfDictionary)reader.Resolve(descRef.ObjectNumber)!;
+        return reader.AppendRevision([(descRef.ObjectNumber, rebuild(descendant))]);
     }
 
     private static byte[] WriterPdfWithEmbeddedFont()
