@@ -1,0 +1,3 @@
+#nullable enable
+VellumPdf.Fonts.Standard14FontExtensions
+static VellumPdf.Fonts.Standard14FontExtensions.EmbedStandard14Font(this VellumPdf.Document.PdfDocument! doc, VellumPdf.Fonts.Standard14 font) -> VellumPdf.Fonts.EmbeddedFontHandle!
