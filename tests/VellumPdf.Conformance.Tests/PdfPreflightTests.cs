@@ -233,6 +233,8 @@ public sealed class PdfPreflightTests
     private const string _imageDict =
         "/Type /XObject /Subtype /Image /Width 1 /Height 1 /BitsPerComponent 8 /ColorSpace /DeviceGray";
 
+    private const string _formDict = "/Type /XObject /Subtype /Form /BBox [0 0 1 1]";
+
     /// <summary>
     /// Builds a one-page doc whose /Resources /Font /F0 references object 6, with
     /// <paramref name="fontObjects"/> supplying objects 6..N (the font dict and any descriptor /
@@ -752,6 +754,51 @@ public sealed class PdfPreflightTests
         var result = PdfPreflight.Validate(
             BuildXObjectPdf($"{_imageDict} {interpolate}".Trim(), [0], draw: true),
             PdfConformance.PdfA2B);
+
+        Assert.True(result.IsCompliant);
+        Assert.Empty(result.Assertions);
+    }
+
+    // Forbidden keys on a drawn Image (§6.2.8) and form (§6.2.9) XObject, each cross-validated
+    // against veraPDF: image /OPI → 6.2.8-2, /Alternates → 6.2.8-1, bad BPC → 6.2.8-4; form /OPI,
+    // /PS, /Subtype2 /PS → 6.2.9-1; reference XObject (/Ref) → 6.2.9-2.
+    [Theory]
+    [InlineData(_imageDict + " /OPI << >>", new byte[] { 0 }, "ISO19005-2:6.2.8-image-opi")]
+    [InlineData(_imageDict + " /Alternates []", new byte[] { 0 }, "ISO19005-2:6.2.8-image-alternates")]
+    [InlineData(
+        "/Type /XObject /Subtype /Image /Width 1 /Height 1 /BitsPerComponent 3 /ColorSpace /DeviceGray",
+        new byte[] { 0 }, "ISO19005-2:6.2.8-image-bitspercomponent")]
+    [InlineData(_formDict + " /OPI << >>", new byte[0], "ISO19005-2:6.2.9-form-opi")]
+    [InlineData(_formDict + " /PS (x)", new byte[0], "ISO19005-2:6.2.9-form-ps")]
+    [InlineData(_formDict + " /Subtype2 /PS", new byte[0], "ISO19005-2:6.2.9-form-subtype2-ps")]
+    [InlineData(_formDict + " /Ref << >>", new byte[0], "ISO19005-2:6.2.9-reference-xobject")]
+    public void Validate_DrawnXObjectWithForbiddenKey_ReportsError(string xobjectDict, byte[] body, string ruleId)
+    {
+        var result = PdfPreflight.Validate(BuildXObjectPdf(xobjectDict, body, draw: true), PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        var assertion = Assert.Single(result.Assertions);
+        Assert.Equal(ruleId, assertion.RuleId);
+        Assert.Equal(PreflightSeverity.Error, assertion.Severity);
+    }
+
+    [Theory]
+    [InlineData(_imageDict + " /OPI << >>", new byte[] { 0 })]
+    [InlineData(_formDict + " /Ref << >>", new byte[0])]
+    public void Validate_ForbiddenKeyXObjectPresentButNotDrawn_NoFinding(string xobjectDict, byte[] body)
+    {
+        // Like the PS/Interpolate cases, the forbidden-key XObjects are only a violation when drawn;
+        // veraPDF passes a reference XObject (or OPI image) that is present but never invoked. (#127/#128)
+        var result = PdfPreflight.Validate(BuildXObjectPdf(xobjectDict, body, draw: false), PdfConformance.PdfA2B);
+
+        Assert.True(result.IsCompliant);
+        Assert.Empty(result.Assertions);
+    }
+
+    [Fact]
+    public void Validate_DrawnValidFormXObject_NoFinding()
+    {
+        var result = PdfPreflight.Validate(BuildXObjectPdf(_formDict, [], draw: true), PdfConformance.PdfA2B);
 
         Assert.True(result.IsCompliant);
         Assert.Empty(result.Assertions);
