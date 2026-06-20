@@ -78,6 +78,11 @@ public static class OracleCorpus
             new OracleFixture("pdfa2b-no-cidtogidmap", WriterPdfWithoutCidToGidMap(),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
 
+            // A composite font shown a glyph index beyond the embedded program's glyph count
+            // (§6.2.11.4.1-2). veraPDF and the in-process GlyphPresenceRule both reject it.
+            new OracleFixture("pdfa2b-glyph-not-present", WriterPdfWithOutOfRangeGlyph(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
             // A hand-built but fully conformant simple WinAnsi TrueType font (full DejaVu, correct
             // widths) — the regression guard that the new simple-font checks do not false-positive.
             new OracleFixture("pdfa2b-simple-font", SimpleTrueTypeFont(_ => { }, encoding: new PdfName("WinAnsiEncoding")),
@@ -812,6 +817,25 @@ public static class OracleCorpus
 
         return reader.AppendRevision(
             [(pageRef.ObjectNumber, newPage), (fontNum, simple), (descNum, descriptor), (ffNum, fontFile), (contentNum, content)]);
+    }
+
+    private static byte[] WriterPdfWithOutOfRangeGlyph()
+    {
+        // The writer's embedded font draws valid glyphs; append a content stream that shows glyph
+        // index 60000 (well beyond DejaVu's ~6253 glyphs) with the same Identity-H font, so a glyph
+        // not present in the embedded program is referenced (§6.2.11.4.1-2).
+        using var reader = PdfReader.Open(WriterPdfWithEmbeddedFont());
+        var (pageRef, page) = FirstPage(reader);
+        var resources = (PdfDictionary)reader.ResolveValue(page.Get(new PdfName("Resources"))!)!;
+        var fonts = (PdfDictionary)reader.ResolveValue(resources.Get(PdfName.Font)!)!;
+        var fontName = fonts.Entries.First().Key.Value;
+
+        var contentNum = reader.Size;
+        var newPage = CloneDict(page);
+        newPage.Set(new PdfName("Contents"),
+            new PdfArray([page.Get(new PdfName("Contents"))!, new PdfIndirectReference(contentNum)]));
+        var content = new PdfStream(Encoding.ASCII.GetBytes($"BT /{fontName} 12 Tf 72 600 Td <EA60> Tj ET"));
+        return reader.AppendRevision([(pageRef.ObjectNumber, newPage), (contentNum, content)]);
     }
 
     private static byte[] WriterPdfWithBadFontSubtype()
