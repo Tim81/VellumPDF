@@ -171,6 +171,16 @@ public static class OracleCorpus
             // 6.2.9-2) and the in-process rule both reject it.
             new OracleFixture("pdfa2b-reference-xobject", WriterPdfWithDrawnReferenceXObject(),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // A catalog carrying the /NeedsRendering key (§6.4.2-2). veraPDF and the in-process
+            // InteractiveFormRule both reject it.
+            new OracleFixture("pdfa2b-needs-rendering", WriterPdfWithNeedsRendering(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // An interactive form dictionary with /NeedAppearances true (§6.4.1-3). veraPDF and the
+            // in-process rule both reject it.
+            new OracleFixture("pdfa2b-need-appearances", WriterPdfWithNeedAppearances(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
         ];
     }
 
@@ -241,6 +251,29 @@ public static class OracleCorpus
         var content = new PdfStream(Encoding.ASCII.GetBytes("q /X0 Do Q"));
         return reader.AppendRevision(
             [(pageRef.ObjectNumber, newPage), (xobjNum, xobject), (contentNum, content)]);
+    }
+
+    private static byte[] WriterPdfWithNeedsRendering()
+    {
+        var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+        var rootRef = (PdfIndirectReference)reader.Trailer.Get(PdfName.Root)!;
+        var catalog = CloneDict(reader.Catalog);
+        catalog.Set(new PdfName("NeedsRendering"), PdfBoolean.True);
+        return reader.AppendRevision([(rootRef.ObjectNumber, catalog)]);
+    }
+
+    private static byte[] WriterPdfWithNeedAppearances()
+    {
+        var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+        var rootRef = (PdfIndirectReference)reader.Trailer.Get(PdfName.Root)!;
+        var catalog = CloneDict(reader.Catalog);
+        var acroForm = new PdfDictionary()
+            .Set(new PdfName("Fields"), new PdfArray([]))
+            .Set(new PdfName("NeedAppearances"), PdfBoolean.True);
+        catalog.Set(new PdfName("AcroForm"), acroForm);
+        return reader.AppendRevision([(rootRef.ObjectNumber, catalog)]);
     }
 
     private static byte[] WriterPdfWithXfa()
