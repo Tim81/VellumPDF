@@ -371,6 +371,27 @@ public sealed class XrefStreamTests
     }
 
     [Fact]
+    public void Resolve_objectStreamWithSelfReferencingFilter_throwsCleanly()
+    {
+        // Object stream 5's /Filter is the indirect reference `6 0 R`, and object 6 is itself stored
+        // inside object stream 5. Decoding 5 must resolve its /Filter → resolve 6 → re-enter
+        // LoadObjectStream(5). Without an in-progress guard this recurses until StackOverflow (an
+        // uncatchable crash). The guard must turn it into a clean InvalidDataException.
+        var bytes = BuildSelfReferencingObjStmPdf();
+        using var reader = PdfReader.Open(bytes);
+        Assert.Throws<InvalidDataException>(() => reader.Resolve(6));
+    }
+
+    [Fact]
+    public void Xref_stream_with_wrapping_Index_throws_invaliddata()
+    {
+        // /Index 4294967296 (0x1_0000_0000) wraps to 0 if narrowed to int before the range check.
+        // Validating the full 64-bit value rejects it instead of producing bogus object numbers.
+        var bytes = BuildXrefStreamWrappingIndex();
+        Assert.Throws<InvalidDataException>(() => PdfReader.Open(bytes));
+    }
+
+    [Fact]
     public void GetDecodedStreamData_returns_null_for_DCT()
     {
         // A stream with /Filter /DCTDecode cannot be fully decoded — returns null.
@@ -503,6 +524,65 @@ public sealed class XrefStreamTests
         WriteStr("\nendstream\nendobj\n");
         WriteStr($"startxref\n{xrefOffset}\n%%EOF\n");
 
+        return ms.ToArray();
+    }
+
+    private static byte[] BuildSelfReferencingObjStmPdf()
+    {
+        var ms = new MemoryStream();
+        void W(string s) => ms.Write(Encoding.ASCII.GetBytes(s));
+        void WB(byte[] b) => ms.Write(b);
+
+        W("%PDF-1.5\n");
+        var o1 = (int)ms.Position;
+        W("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+        var o2 = (int)ms.Position;
+        W("2 0 obj\n<< /Type /Pages /Kids [] /Count 0 >>\nendobj\n");
+
+        // Object stream 5 (N=1, First=4): header "6 0" then the object body "/FlateDecode".
+        // Its /Filter is `6 0 R` — an object stored inside this very stream.
+        var objStmBody = Encoding.ASCII.GetBytes("6 0\n/FlateDecode");
+        var o5 = (int)ms.Position;
+        W($"5 0 obj\n<< /Type /ObjStm /N 1 /First 4 /Filter 6 0 R /Length {objStmBody.Length} >>\nstream\n");
+        WB(objStmBody);
+        W("\nendstream\nendobj\n");
+
+        // Uncompressed xref stream (obj 7), /W [1 4 2] (rowSize 7), /Index [0 3] [5 3].
+        byte[] Row(byte type, long f2, long f3) =>
+        [
+            type,
+            (byte)((f2 >> 24) & 0xFF), (byte)((f2 >> 16) & 0xFF), (byte)((f2 >> 8) & 0xFF), (byte)(f2 & 0xFF),
+            (byte)((f3 >> 8) & 0xFF), (byte)(f3 & 0xFF),
+        ];
+        var body = new MemoryStream();
+        body.Write(Row(0, 0, 0));   // obj 0: free
+        body.Write(Row(1, o1, 0));  // obj 1
+        body.Write(Row(1, o2, 0));  // obj 2
+        body.Write(Row(1, o5, 0));  // obj 5: ObjStm container
+        body.Write(Row(2, 5, 0));   // obj 6: type-2, container 5, index 0
+        var o7 = (int)ms.Position;
+        body.Write(Row(1, o7, 0));  // obj 7: this xref stream
+        var bodyArr = body.ToArray();
+        W($"7 0 obj\n<< /Type /XRef /Size 8 /W [1 4 2] /Index [0 3 5 3] /Root 1 0 R /Length {bodyArr.Length} >>\nstream\n");
+        WB(bodyArr);
+        W("\nendstream\nendobj\n");
+        W($"startxref\n{o7}\n%%EOF\n");
+        return ms.ToArray();
+    }
+
+    private static byte[] BuildXrefStreamWrappingIndex()
+    {
+        var ms = new MemoryStream();
+        void W(string s) => ms.Write(Encoding.ASCII.GetBytes(s));
+        W("%PDF-1.5\n");
+        var o1 = (int)ms.Position;
+        W("1 0 obj\n<< /Type /Catalog >>\nendobj\n");
+        var body = new byte[7]; // one /W [1 4 2] row; never actually consumed
+        var o2 = (int)ms.Position;
+        W($"2 0 obj\n<< /Type /XRef /Size 3 /W [1 4 2] /Index [4294967296 1] /Root 1 0 R /Length {body.Length} >>\nstream\n");
+        ms.Write(body);
+        W("\nendstream\nendobj\n");
+        W($"startxref\n{o2}\n%%EOF\n");
         return ms.ToArray();
     }
 

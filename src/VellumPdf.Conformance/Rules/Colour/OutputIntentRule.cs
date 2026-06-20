@@ -44,7 +44,8 @@ internal sealed class OutputIntentRule : IConformanceRule
             if (context.Resolve(intents[i]) is not PdfDictionary intent)
                 continue;
 
-            var isPdfA = intent.Get(_s) is PdfName { Value: "GTS_PDFA1" };
+            // /S may be an indirect reference (ISO 32000-1 §7.3.10), like every other value here.
+            var isPdfA = context.Resolve(intent.Get(_s)) is PdfName { Value: "GTS_PDFA1" };
             var destRaw = intent.Get(_destOutputProfile);
 
             if (destRaw is null)

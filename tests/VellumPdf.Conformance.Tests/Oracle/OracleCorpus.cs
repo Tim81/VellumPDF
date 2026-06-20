@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 using System.Text;
+using VellumPdf.Annotations;
 using VellumPdf.Document;
 
 namespace VellumPdf.Conformance.Tests.Oracle;
@@ -12,12 +13,13 @@ namespace VellumPdf.Conformance.Tests.Oracle;
 /// same-length byte edit — keeping the in-process verdict and the veraPDF verdict comparable.
 /// </summary>
 /// <remarks>
-/// All fixtures derive from one PDF/A-2b baseline and apply in-place, same-length edits so
-/// cross-reference offsets stay valid. The corpus anchors the gate on the byte-level structural and
-/// metadata rules. Object-graph rules (fonts, output intents, blend modes, annotations, actions,
-/// logical structure) and the 2u/2a/UA flavours are the next expansion: each needs a writer-produced
-/// document confirmed veraPDF-valid except for the injected defect, which requires a local veraPDF
-/// run to author safely.
+/// Most fixtures derive from one PDF/A-2b baseline and apply in-place, same-length edits so
+/// cross-reference offsets stay valid; this anchors the gate on the byte-level structural and
+/// metadata rules. A few fixtures are instead whole writer-produced documents (e.g.
+/// <c>pdfa2b-link-no-print</c>, which exercises the §6.5.3 annotation rule). Further object-graph
+/// rules (fonts, output intents, blend modes, actions, logical structure) and the 2u/2a/UA flavours
+/// are the next expansion: each needs a writer-produced document veraPDF agrees on, so the
+/// cross-validation gate (CI) is what confirms each new fixture's expected verdict.
 /// </remarks>
 public static class OracleCorpus
 {
@@ -47,7 +49,29 @@ public static class OracleCorpus
             // A plain (non-PDF/A) document validated as PDF/A-2b: non-compliant.
             new OracleFixture("plain-not-pdfa", WriterPdf(VellumPdf.Document.PdfConformance.None),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // A conformant PDF/A-2b document carrying a /Link annotation. The writer emits no /F on
+            // a Link, so its Print flag is clear — which §6.5.3 permits for Link annotations (they
+            // have no printable appearance). This fixture pins the in-process Link exemption to
+            // veraPDF's verdict: if veraPDF disagrees, the cross-validation gate fails here.
+            new OracleFixture("pdfa2b-link-no-print", WriterPdfWithLink(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
         ];
+    }
+
+    private static byte[] WriterPdfWithLink()
+    {
+        using var doc = new PdfDocument { Conformance = VellumPdf.Document.PdfConformance.PdfA2b };
+        doc.Info.Title = "VellumPdf Oracle Fixture";
+        var page = doc.AddPage();
+        doc.RegisterLinkAnnotation(page, new PdfLinkAnnotation
+        {
+            Rect = new PdfRectangle(72, 72, 200, 90),
+            Uri = "https://example.com/",
+        });
+        using var ms = new MemoryStream();
+        doc.Save(ms);
+        return ms.ToArray();
     }
 
     private static byte[] WriterPdf(VellumPdf.Document.PdfConformance conformance)
