@@ -46,6 +46,9 @@ internal sealed class GraphicsStateRule : IConformanceRule
     public void Evaluate(PreflightContext context)
     {
         var checkedGStates = new HashSet<int>();
+        // Each distinct non-standard rendering intent is reported once, regardless of how many pages
+        // (via the `ri` operator) or graphics states (via /RI) set it.
+        var reportedIntents = new HashSet<string>(StringComparer.Ordinal);
 
         foreach (var page in context.EnumeratePages())
         {
@@ -53,8 +56,7 @@ internal sealed class GraphicsStateRule : IConformanceRule
 
             // §6.2.6: rendering intents set by the `ri` content operator.
             foreach (var intent in usage.RenderingIntents)
-                if (!_standardIntents.Contains(intent))
-                    ReportIntent(context, intent);
+                CheckIntent(context, intent, reportedIntents);
 
             if (context.ResolveInherited(page, PdfName.Resources) is not PdfDictionary resources)
                 continue;
@@ -68,12 +70,12 @@ internal sealed class GraphicsStateRule : IConformanceRule
                 if (entry.Value is PdfIndirectReference r && !checkedGStates.Add(r.ObjectNumber))
                     continue;
                 if (context.Resolve(entry.Value) is PdfDictionary gs)
-                    CheckGState(context, gs);
+                    CheckGState(context, gs, reportedIntents);
             }
         }
     }
 
-    private void CheckGState(PreflightContext context, PdfDictionary gs)
+    private void CheckGState(PreflightContext context, PdfDictionary gs, HashSet<string> reportedIntents)
     {
         // §6.2.5-1: an ExtGState shall not contain the TR (transfer function) key.
         if (gs.Get(_tr) is not null)
@@ -91,13 +93,16 @@ internal sealed class GraphicsStateRule : IConformanceRule
                 "An applied ExtGState contains the /HTP key, which is not permitted in PDF/A-2.");
 
         // §6.2.6: a rendering intent set via the ExtGState /RI shall be one of the standard intents.
-        if (context.Resolve(gs.Get(_ri)) is PdfName intent && !_standardIntents.Contains(intent.Value))
-            ReportIntent(context, intent.Value);
+        if (context.Resolve(gs.Get(_ri)) is PdfName intent)
+            CheckIntent(context, intent.Value, reportedIntents);
     }
 
-    private static void ReportIntent(PreflightContext context, string intent)
-        => Report(context, "6.2.6-rendering-intent", "6.2.6",
-            $"The rendering intent /{intent} is not one of the four standard rendering intents permitted in PDF/A-2.");
+    private static void CheckIntent(PreflightContext context, string intent, HashSet<string> reportedIntents)
+    {
+        if (!_standardIntents.Contains(intent) && reportedIntents.Add(intent))
+            Report(context, "6.2.6-rendering-intent", "6.2.6",
+                $"The rendering intent /{intent} is not one of the four standard rendering intents permitted in PDF/A-2.");
+    }
 
     private static void Report(PreflightContext context, string ruleSuffix, string clauseSuffix, string message)
         => context.Report(

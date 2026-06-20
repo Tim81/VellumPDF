@@ -349,6 +349,13 @@ public sealed class PdfDocumentReader : IDisposable
     }
 
     /// <summary>
+    /// Every object number present in the resolved cross-reference table. More robust than
+    /// <c>1..Size</c> for whole-document scans: independent of a direct/absent <c>/Size</c> and
+    /// inclusive of object numbers introduced by incremental updates.
+    /// </summary>
+    internal IReadOnlyCollection<int> ObjectNumbers => _xref.Keys;
+
+    /// <summary>
     /// Appends a new revision to this document and returns the full updated byte array.
     /// </summary>
     internal byte[] AppendRevision(IReadOnlyList<(int ObjectNumber, PdfObject Value)> objects)

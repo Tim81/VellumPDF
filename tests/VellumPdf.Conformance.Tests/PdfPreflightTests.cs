@@ -711,6 +711,30 @@ public sealed class PdfPreflightTests
     }
 
     [Fact]
+    public void Validate_MergedWidgetField_ReportsActionOnce()
+    {
+        // A combined field/widget (object 5, referenced from both the page /Annots and the AcroForm
+        // /Fields) carrying an /A is a single object; it must yield exactly one finding, attributed to
+        // the widget rule — matching veraPDF, which reports the merged object once.
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R /AcroForm 4 0 R >>"),
+            _pagesObj,
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Annots [5 0 R] >>"),
+            new("<< /Fields [5 0 R] >>"),
+            new("<< /Type /Annot /Subtype /Widget /FT /Btn /T (b) /Rect [0 0 1 1] /F 4 "
+                + "/AP << /N 6 0 R >> /A << /S /Named /N /NextPage >> >>"),
+            new("/Type /XObject /Subtype /Form /BBox [0 0 1 1]", []),
+        ]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        var assertion = Assert.Single(result.Assertions);
+        Assert.Equal("ISO19005-2:6.4.1-widget-action", assertion.RuleId);
+    }
+
+    [Fact]
     public void Validate_PdfAOutputIntent_IndirectSubtype_StillEnforced()
     {
         // /S is an indirect reference to the name GTS_PDFA1 (legal per ISO 32000-1 §7.3.10). The rule

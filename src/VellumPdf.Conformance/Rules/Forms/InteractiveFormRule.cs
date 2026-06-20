@@ -40,6 +40,19 @@ internal sealed class InteractiveFormRule : IConformanceRule
             Report(context, "6.4.2-needs-rendering", "6.4.2",
                 "The document catalog contains the /NeedsRendering key, which is not permitted in PDF/A-2.");
 
+        // A combined field/widget dictionary is reached both here (as a /Widget annotation) and by
+        // WalkFields (as a form field). Track the dictionaries already reported so such a merged
+        // object yields a single finding (matching veraPDF, which reports it once).
+        var reported = new HashSet<PdfDictionary>(ReferenceEqualityComparer.Instance);
+
+        // §6.4.1-1: no widget annotation shall contain an /A or /AA action. Checked first so a
+        // merged field/widget is attributed to the widget rule (as veraPDF does).
+        foreach (var annot in context.EnumerateAnnotations())
+        {
+            if (context.Resolve(annot.Get(PdfName.Subtype)) is PdfName { Value: "Widget" })
+                CheckActionKeys(context, annot, "A widget annotation", "6.4.1-widget-action", reported);
+        }
+
         if (context.Resolve(context.Catalog.Get(_acroForm)) is PdfDictionary acroForm)
         {
             // §6.4.1-3: the interactive form's NeedAppearances flag shall be absent or false.
@@ -49,18 +62,12 @@ internal sealed class InteractiveFormRule : IConformanceRule
 
             // §6.4.1-2: no form field shall contain an /A or /AA action.
             if (context.Resolve(acroForm.Get(_fields)) is PdfArray fields)
-                WalkFields(context, fields, new HashSet<int>(), 0);
-        }
-
-        // §6.4.1-1: no widget annotation shall contain an /A or /AA action.
-        foreach (var annot in context.EnumerateAnnotations())
-        {
-            if (context.Resolve(annot.Get(PdfName.Subtype)) is PdfName { Value: "Widget" })
-                CheckActionKeys(context, annot, "A widget annotation", "6.4.1-widget-action");
+                WalkFields(context, fields, new HashSet<int>(), 0, reported);
         }
     }
 
-    private void WalkFields(PreflightContext context, PdfArray fields, HashSet<int> visited, int depth)
+    private void WalkFields(
+        PreflightContext context, PdfArray fields, HashSet<int> visited, int depth, HashSet<PdfDictionary> reported)
     {
         if (depth > MaxDepth)
             return;
@@ -71,17 +78,19 @@ internal sealed class InteractiveFormRule : IConformanceRule
             if (context.Resolve(fields[i]) is not PdfDictionary field)
                 continue;
 
-            // A merged field/widget is also enumerated as a /Widget annotation (§6.4.1-1); reporting
-            // both matches veraPDF, which validates the field and the widget as distinct objects.
-            CheckActionKeys(context, field, "A form field", "6.4.1-field-action");
+            CheckActionKeys(context, field, "A form field", "6.4.1-field-action", reported);
 
             if (context.Resolve(field.Get(PdfName.Kids)) is PdfArray kids)
-                WalkFields(context, kids, visited, depth + 1);
+                WalkFields(context, kids, visited, depth + 1, reported);
         }
     }
 
-    private void CheckActionKeys(PreflightContext context, PdfDictionary dict, string label, string ruleSuffix)
+    private void CheckActionKeys(
+        PreflightContext context, PdfDictionary dict, string label, string ruleSuffix, HashSet<PdfDictionary> reported)
     {
+        // Report a given dictionary's action keys once, even if it is both a widget and a field.
+        if (!reported.Add(dict))
+            return;
         if (dict.Get(_a) is not null)
             Report(context, ruleSuffix, "6.4.1", $"{label} contains an /A action, which is not permitted in PDF/A-2.");
         if (dict.Get(_aa) is not null)
