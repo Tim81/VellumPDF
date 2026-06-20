@@ -96,6 +96,11 @@ internal static class ContentStreamUsage
         return (applied, usesDeviceColour, drawnXObjects, renderingIntents);
     }
 
+    /// <summary>The page's concatenated, decoded content-stream bytes (or null when empty/undecodable).
+    /// Exposed for rules that need a deeper content scan than the operand tracking above.</summary>
+    public static byte[]? GetPageContent(PreflightContext context, PdfDictionary page)
+        => GetContentBytes(context, page);
+
     private static byte[]? GetContentBytes(PreflightContext context, PdfDictionary page)
     {
         var contentsObj = page.Get(_contents);
