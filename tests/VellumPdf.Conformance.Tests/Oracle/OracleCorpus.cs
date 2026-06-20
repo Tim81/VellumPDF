@@ -3,7 +3,9 @@
 
 using System.Text;
 using VellumPdf.Annotations;
+using VellumPdf.Canvas;
 using VellumPdf.Document;
+using VellumPdf.Fonts;
 
 namespace VellumPdf.Conformance.Tests.Oracle;
 
@@ -56,7 +58,29 @@ public static class OracleCorpus
             // writer emits conformant Link annotations, cross-checked by veraPDF.
             new OracleFixture("pdfa2b-link", WriterPdfWithLink(),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // A PDF/A-2b document that draws text with a non-embedded standard-14 font. PDF/A requires
+            // every font embedded (ISO 19005-2 §6.2.11.4.1 / §6.3.4), so both veraPDF and the in-process
+            // FontEmbeddingRule reject it. Cross-validates the font-embedding rule's negative path.
+            // Uses only the built-in standard-14 metrics, so no external font asset is needed.
+            new OracleFixture("pdfa2b-nonembedded-font", WriterPdfNonEmbeddedFont(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
         ];
+    }
+
+    private static byte[] WriterPdfNonEmbeddedFont()
+    {
+        using var doc = new PdfDocument { Conformance = VellumPdf.Document.PdfConformance.PdfA2b };
+        doc.Info.Title = "VellumPdf Oracle Fixture";
+        var page = doc.AddPage(PageSize.A4);
+        var font = doc.UseFont(Standard14.Helvetica);
+        var canvas = new PdfCanvas(page);
+        canvas.BeginText().SetFont(font, 12).SetTextMatrix(1, 0, 0, 1, 72, 720)
+            .ShowText("Non-embedded standard-14 font").EndText();
+        canvas.Finish();
+        using var ms = new MemoryStream();
+        doc.Save(ms);
+        return ms.ToArray();
     }
 
     private static byte[] WriterPdfWithLink()
