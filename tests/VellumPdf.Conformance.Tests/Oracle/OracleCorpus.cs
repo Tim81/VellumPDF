@@ -50,12 +50,12 @@ public static class OracleCorpus
             new OracleFixture("plain-not-pdfa", WriterPdf(VellumPdf.Document.PdfConformance.None),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
 
-            // A PDF/A-2b document carrying a /Link annotation that the writer emits with no /F, so
-            // its Print flag is clear. veraPDF reports this as NON-compliant — the §6.5.3 Print-flag
-            // requirement is NOT relaxed for Link annotations (a hypothesis to the contrary was
-            // falsified by this very fixture). The in-process verdict must agree.
-            new OracleFixture("pdfa2b-link-no-print", WriterPdfWithLink(),
-                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+            // A PDF/A-2b document carrying a writer-produced /Link annotation. The writer sets /F 4
+            // (Print) per §6.5.3, so the Link is conformant — Link is exempt from the appearance-stream
+            // requirement but must still satisfy the flag requirements. End-to-end guard that the
+            // writer emits conformant Link annotations, cross-checked by veraPDF.
+            new OracleFixture("pdfa2b-link", WriterPdfWithLink(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
         ];
     }
 

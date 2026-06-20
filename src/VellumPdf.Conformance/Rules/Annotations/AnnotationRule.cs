@@ -27,9 +27,10 @@ internal sealed class AnnotationRule : IConformanceRule
     private static readonly PdfName _n = new("N");
 
     // Annotation flag bit values (ISO 32000-1 Table 165).
-    private const int Hidden = 1 << 1;  // bit 2
-    private const int Print = 1 << 2;   // bit 3
-    private const int NoView = 1 << 5;  // bit 6
+    private const int Invisible = 1 << 0;  // bit 1
+    private const int Hidden = 1 << 1;     // bit 2
+    private const int Print = 1 << 2;      // bit 3
+    private const int NoView = 1 << 5;     // bit 6
 
     // Multimedia / dynamic annotation subtypes prohibited by PDF/A-2 (ISO 19005-2 §6.5.3).
     // This is intentionally a deny-list of the unambiguously forbidden subtypes rather than an
@@ -65,6 +66,8 @@ internal sealed class AnnotationRule : IConformanceRule
                 context.Report(RuleId, Clause, PreflightSeverity.Error, $"{label} shall have the Print flag set.");
             if ((flags & Hidden) != 0)
                 context.Report(RuleId, Clause, PreflightSeverity.Error, $"{label} shall not have the Hidden flag set.");
+            if ((flags & Invisible) != 0)
+                context.Report(RuleId, Clause, PreflightSeverity.Error, $"{label} shall not have the Invisible flag set.");
             if ((flags & NoView) != 0)
                 context.Report(RuleId, Clause, PreflightSeverity.Error, $"{label} shall not have the NoView flag set.");
 

@@ -720,6 +720,25 @@ public sealed class PdfPreflightTests
     }
 
     [Fact]
+    public void Validate_AnnotationWithInvisibleFlag_ReportsError()
+    {
+        // §6.5.3 requires the Invisible flag (ISO 32000-1 Table 165, bit 1) clear, alongside Hidden
+        // and NoView. /F 5 = Print(4) | Invisible(1): Print is set and an appearance is present, so
+        // the only violation is the Invisible bit. Round-5 follow-up (issue #124).
+        var bytes = BuildPagePdf(
+            "/Annots [4 0 R]",
+            new PdfObj("<< /Type /Annot /Subtype /Stamp /Rect [0 0 1 1] /F 5 /AP << /N 5 0 R >> >>"),
+            new PdfObj("/Subtype /Form /BBox [0 0 1 1]", []));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        var assertion = Assert.Single(result.Assertions);
+        Assert.Equal("ISO19005-2:6.5.3-annotation", assertion.RuleId);
+        Assert.Contains("Invisible", assertion.Message);
+    }
+
+    [Fact]
     public void Validate_LinkAnnotation_ExemptFromAppearance()
     {
         var bytes = BuildPagePdf(
