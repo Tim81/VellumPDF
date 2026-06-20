@@ -205,6 +205,34 @@ public sealed class PdfPreflightTests
         ]);
     }
 
+    /// <summary>Builds a one-page doc whose /Resources /ExtGState /GS0 carries the given inner
+    /// entries; the page content applies it (<c>/GS0 gs</c>) when <paramref name="apply"/> is true.</summary>
+    private static byte[] BuildExtGStatePdf(string gsEntries, bool apply = true)
+    {
+        return AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R >>"),
+            _pagesObj,
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources 4 0 R /Contents 7 0 R >>"),
+            new("<< /ExtGState 5 0 R >>"),
+            new("<< /GS0 6 0 R >>"),
+            new($"<< /Type /ExtGState {gsEntries} >>"),
+            new(string.Empty, Encoding.ASCII.GetBytes(apply ? "q /GS0 gs Q" : "q Q")),
+        ]);
+    }
+
+    /// <summary>Builds a one-page doc whose single content stream is <paramref name="content"/>.</summary>
+    private static byte[] BuildContentStreamPdf(string content)
+    {
+        return AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R >>"),
+            _pagesObj,
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R >>"),
+            new(string.Empty, Encoding.ASCII.GetBytes(content)),
+        ]);
+    }
+
     /// <summary>
     /// Builds a one-page doc whose /Resources /XObject /X0 references the XObject described by
     /// <paramref name="xobjectDict"/> (a stream object with body <paramref name="body"/>). When
@@ -818,6 +846,64 @@ public sealed class PdfPreflightTests
         ]);
 
         var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.True(result.IsCompliant);
+        Assert.Empty(result.Assertions);
+    }
+
+    // ── §6.2.5 graphics-state / §6.2.6 rendering-intent rules ───────────────────
+
+    [Theory]
+    [InlineData("/TR /Identity", "ISO19005-2:6.2.5-transfer-function")]
+    [InlineData("/TR2 /Identity", "ISO19005-2:6.2.5-transfer-function-2")]
+    [InlineData("/HTP []", "ISO19005-2:6.2.5-halftone-phase")]
+    [InlineData("/RI /FooIntent", "ISO19005-2:6.2.6-rendering-intent")]
+    public void Validate_AppliedExtGStateWithForbiddenEntry_ReportsError(string gsEntry, string ruleId)
+    {
+        var result = PdfPreflight.Validate(BuildExtGStatePdf(gsEntry), PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        var assertion = Assert.Single(result.Assertions);
+        Assert.Equal(ruleId, assertion.RuleId);
+    }
+
+    [Theory]
+    [InlineData("/TR2 /Default")]
+    [InlineData("/RI /RelativeColorimetric")]
+    public void Validate_AppliedExtGStatePermittedEntry_NoFinding(string gsEntry)
+    {
+        var result = PdfPreflight.Validate(BuildExtGStatePdf(gsEntry), PdfConformance.PdfA2B);
+
+        Assert.True(result.IsCompliant);
+        Assert.Empty(result.Assertions);
+    }
+
+    [Fact]
+    public void Validate_UnappliedExtGStateTransferFunction_NoFinding()
+    {
+        // §6.2.5 governs the current graphics state. A /TR in an /ExtGState the page never applies
+        // (no `gs`) is not a violation — matching veraPDF (issue #127).
+        var result = PdfPreflight.Validate(BuildExtGStatePdf("/TR /Identity", apply: false), PdfConformance.PdfA2B);
+
+        Assert.True(result.IsCompliant);
+        Assert.Empty(result.Assertions);
+    }
+
+    [Fact]
+    public void Validate_NonStandardRenderingIntentOperator_ReportsError()
+    {
+        // §6.2.6: a rendering intent set by the `ri` operator shall be one of the four standard ones.
+        var result = PdfPreflight.Validate(BuildContentStreamPdf("/FooIntent ri"), PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        var assertion = Assert.Single(result.Assertions);
+        Assert.Equal("ISO19005-2:6.2.6-rendering-intent", assertion.RuleId);
+    }
+
+    [Fact]
+    public void Validate_StandardRenderingIntentOperator_NoFinding()
+    {
+        var result = PdfPreflight.Validate(BuildContentStreamPdf("/Perceptual ri"), PdfConformance.PdfA2B);
 
         Assert.True(result.IsCompliant);
         Assert.Empty(result.Assertions);

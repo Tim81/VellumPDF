@@ -25,13 +25,14 @@ internal static class ContentStreamUsage
 {
     private static readonly PdfName _contents = new("Contents");
 
-    /// <summary>Scans <paramref name="page"/>'s content streams for graphics-state, colour, and
-    /// XObject-drawing usage.</summary>
-    public static (HashSet<string> AppliedExtGStates, bool UsesDeviceColour, HashSet<string> DrawnXObjects) Analyze(
-        PreflightContext context, PdfDictionary page)
+    /// <summary>Scans <paramref name="page"/>'s content streams for graphics-state, colour,
+    /// XObject-drawing, and rendering-intent usage.</summary>
+    public static (HashSet<string> AppliedExtGStates, bool UsesDeviceColour, HashSet<string> DrawnXObjects,
+        HashSet<string> RenderingIntents) Analyze(PreflightContext context, PdfDictionary page)
     {
         var applied = new HashSet<string>(StringComparer.Ordinal);
         var drawnXObjects = new HashSet<string>(StringComparer.Ordinal);
+        var renderingIntents = new HashSet<string>(StringComparer.Ordinal);
         var usesDeviceColour = false;
 
         var content = GetContentBytes(context, page);
@@ -70,6 +71,12 @@ internal static class ContentStreamUsage
                             if (lastName is not null)
                                 drawnXObjects.Add(lastName);
                         }
+                        else if (op == "ri")
+                        {
+                            // The `ri` operator sets the current rendering intent to its name operand.
+                            if (lastName is not null)
+                                renderingIntents.Add(lastName);
+                        }
                         else if (op == "ID")
                         {
                             SkipInlineImageData(lexer, content);
@@ -86,7 +93,7 @@ internal static class ContentStreamUsage
             }
         }
 
-        return (applied, usesDeviceColour, drawnXObjects);
+        return (applied, usesDeviceColour, drawnXObjects, renderingIntents);
     }
 
     private static byte[]? GetContentBytes(PreflightContext context, PdfDictionary page)
