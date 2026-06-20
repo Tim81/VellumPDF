@@ -589,6 +589,45 @@ public sealed class PdfPreflightTests
     }
 
     [Fact]
+    public void Validate_OversizedInteger_ReportsError()
+    {
+        // §6.1.13: no integer greater than 2147483647.
+        var bytes = AssemblePdf(
+            [new("<< /Type /Catalog /Pages 2 0 R /VellumBig 9999999999 >>"), _pagesObj, _pageObj]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.13-integer");
+    }
+
+    [Fact]
+    public void Validate_OversizedName_ReportsError()
+    {
+        // §6.1.13: no name longer than 127 bytes.
+        var bytes = AssemblePdf(
+            [new($"<< /Type /Catalog /Pages 2 0 R /{new string('A', 200)} 0 >>"), _pagesObj, _pageObj]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.13-name");
+    }
+
+    [Fact]
+    public void Validate_OversizedString_ReportsError()
+    {
+        // §6.1.13: no string longer than 32767 bytes.
+        var bytes = AssemblePdf(
+            [new($"<< /Type /Catalog /Pages 2 0 R /VellumStr ({new string('x', 32768)}) >>"), _pagesObj, _pageObj]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.13-string");
+    }
+
+    [Fact]
     public void Validate_Pdf20Header_ReportsHeaderError()
     {
         // A plain document declares %PDF-2.0, which is not valid PDF/A-2 (§6.1.2).

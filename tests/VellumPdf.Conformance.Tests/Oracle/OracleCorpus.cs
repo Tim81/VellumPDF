@@ -194,6 +194,15 @@ public static class OracleCorpus
             new OracleFixture("pdfa2b-xfa", WriterPdfWithXfa(),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
 
+            // An integer beyond 2147483647 (§6.1.13-1). veraPDF and the in-process NumericLimitsRule
+            // both reject it.
+            new OracleFixture("pdfa2b-oversized-integer", WriterPdfWithCatalogEntry("VellumBig", new PdfInteger(9999999999L)),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // A name longer than 127 bytes (§6.1.13-4). veraPDF and the in-process rule both reject it.
+            new OracleFixture("pdfa2b-oversized-name", WriterPdfWithCatalogEntry("VellumName", new PdfName(new string('A', 200))),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
             // A drawn PostScript XObject (/Subtype /PS invoked by `Do`), which PDF/A-2 forbids
             // outright (§6.2.9). Both veraPDF (clause 6.2.9-3) and the in-process ForbiddenXObjectRule
             // reject it — the first negative cross-validation of the XObject rule.
@@ -561,6 +570,16 @@ public static class OracleCorpus
             .Set(new PdfName("Fields"), new PdfArray([]))
             .Set(new PdfName("NeedAppearances"), PdfBoolean.True);
         catalog.Set(new PdfName("AcroForm"), acroForm);
+        return reader.AppendRevision([(rootRef.ObjectNumber, catalog)]);
+    }
+
+    private static byte[] WriterPdfWithCatalogEntry(string key, PdfObject value)
+    {
+        var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+        var rootRef = (PdfIndirectReference)reader.Trailer.Get(PdfName.Root)!;
+        var catalog = CloneDict(reader.Catalog);
+        catalog.Set(new PdfName(key), value);
         return reader.AppendRevision([(rootRef.ObjectNumber, catalog)]);
     }
 
