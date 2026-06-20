@@ -71,7 +71,33 @@ public static class OracleCorpus
             // pass) and so does the in-process validator — the positive end-to-end font fixture.
             new OracleFixture("pdfa2b-embedded-font", WriterPdfWithEmbeddedFont(),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // A PDF/A-2b document drawing text with a standard-14 font (Helvetica) via the
+            // VellumPdf.Fonts.Standard14 substitution package, which embeds a metric-compatible
+            // Liberation font. Proves the substitution path yields conformant PDF/A text out-of-the-box.
+            new OracleFixture("pdfa2b-standard14-substitute", WriterPdfWithStandard14Substitute(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
         ];
+    }
+
+    private static byte[] WriterPdfWithStandard14Substitute()
+    {
+        using var doc = new PdfDocument { Conformance = VellumPdf.Document.PdfConformance.PdfA2b };
+        doc.Info.Title = "VellumPdf Oracle Fixture";
+        var page = doc.AddPage(PageSize.A4);
+        var handle = doc.EmbedStandard14Font(Standard14.Helvetica);
+        doc.RegisterEmbeddedFontUsage(page, handle);
+        var canvas = new PdfCanvas(page);
+        canvas.BeginText().SetFontByName(handle.ResourceName, 12).SetTextMatrix(1, 0, 0, 1, 72, 720);
+        const string text = "Standard-14 Helvetica, embedded substitute";
+        var gids = new ushort[text.Length];
+        var count = handle.GetGlyphIds(text, gids);
+        canvas.ShowGlyphs(gids.AsSpan(0, count));
+        canvas.EndText();
+        canvas.Finish();
+        using var ms = new MemoryStream();
+        doc.Save(ms);
+        return ms.ToArray();
     }
 
     private static byte[] WriterPdfWithEmbeddedFont()
