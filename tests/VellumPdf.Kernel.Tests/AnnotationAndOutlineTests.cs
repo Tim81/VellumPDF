@@ -72,6 +72,24 @@ public sealed class AnnotationAndOutlineTests
     }
 
     [Fact]
+    public void Page_withUriLinkAnnotation_honorsCustomFlags()
+    {
+        // The Print-flag default is overridable for non-PDF/A output (e.g. a non-printing link).
+        using var doc = new PdfDocument();
+        var page = doc.AddPage();
+
+        doc.RegisterLinkAnnotation(page, new PdfLinkAnnotation
+        {
+            Rect = new PdfRectangle(72, 700, 200, 714),
+            Uri = "https://example.com",
+            Flags = 0,
+        });
+
+        var content = SaveToString(doc);
+        Assert.Contains("/F 0", content);
+    }
+
+    [Fact]
     public void Page_withUriLinkAnnotation_containsUriAction()
     {
         using var doc = new PdfDocument();
