@@ -230,6 +230,17 @@ public static class OracleCorpus
                     "<pdfaProperty:name>foo</pdfaProperty:name><pdfaProperty:valueType>Text</pdfaProperty:valueType>"
                     + "<pdfaProperty:category>bogus</pdfaProperty:category><pdfaProperty:description>d</pdfaProperty:description>"))),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // A custom XMP property in a namespace that is neither predefined nor declared by an
+            // extension schema (§6.6.2.3.1). veraPDF and the in-process PropertyUsageRule both reject it.
+            new OracleFixture("pdfa2b-undeclared-xmp-property", WriterPdfWithMetadata(Encoding.UTF8.GetBytes(CustomPropertyXmp2b())),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // An XMP packet drawing on several predefined schemas (Dublin Core, XMP Basic, Adobe PDF,
+            // TIFF, EXIF, plus an xmpMM struct value) — the regression guard that predefined-schema
+            // properties are not falsely rejected as undeclared (§6.6.2.3.1).
+            new OracleFixture("pdfa2b-rich-xmp", WriterPdfWithMetadata(Encoding.UTF8.GetBytes(RichXmp2b())),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
         ];
     }
 
@@ -368,6 +379,31 @@ public static class OracleCorpus
             + "</rdf:li></rdf:Seq></pdfaSchema:property></rdf:li></rdf:Bag></pdfaExtension:schemas></rdf:Description>"
             + "</rdf:RDF></x:xmpmeta><?xpacket end=\"w\"?>";
     }
+
+    // A PDF/A-2b XMP packet using a custom property in a non-predefined, undeclared namespace.
+    private static string CustomPropertyXmp2b() => RdfPacket(
+        "<rdf:Description rdf:about=\"\" xmlns:ex=\"http://example.com/ns/\"><ex:foo>bar</ex:foo></rdf:Description>");
+
+    // A PDF/A-2b XMP packet drawing on several predefined schemas, including an xmpMM struct value.
+    private static string RichXmp2b() => RdfPacket(
+        "<rdf:Description rdf:about=\"\" "
+        + "xmlns:dc=\"http://purl.org/dc/elements/1.1/\" xmlns:xmp=\"http://ns.adobe.com/xap/1.0/\" "
+        + "xmlns:pdf=\"http://ns.adobe.com/pdf/1.3/\" xmlns:tiff=\"http://ns.adobe.com/tiff/1.0/\" "
+        + "xmlns:exif=\"http://ns.adobe.com/exif/1.0/\" xmlns:xmpMM=\"http://ns.adobe.com/xap/1.0/mm/\" "
+        + "xmlns:stRef=\"http://ns.adobe.com/xap/1.0/sType/ResourceRef#\" "
+        + "pdf:Producer=\"P\" xmp:CreatorTool=\"T\" tiff:Make=\"M\">"
+        + "<dc:title><rdf:Alt><rdf:li xml:lang=\"x-default\">Title</rdf:li></rdf:Alt></dc:title>"
+        + "<exif:ExifVersion>0230</exif:ExifVersion>"
+        + "<xmpMM:DerivedFrom rdf:parseType=\"Resource\"><stRef:documentID>d</stRef:documentID></xmpMM:DerivedFrom>"
+        + "</rdf:Description>");
+
+    private static string RdfPacket(string extra) =>
+        "<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>"
+        + "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF "
+        + "xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">"
+        + "<rdf:Description rdf:about=\"\" xmlns:pdfaid=\"http://www.aiim.org/pdfa/ns/id/\">"
+        + "<pdfaid:part>2</pdfaid:part><pdfaid:conformance>B</pdfaid:conformance></rdf:Description>"
+        + extra + "</rdf:RDF></x:xmpmeta><?xpacket end=\"w\"?>";
 
     // A minimal PDF/A-2b XMP packet, with optional extra text in the <?xpacket?> header.
     private static string Xmp2b(string headerExtra) =>
