@@ -107,7 +107,29 @@ public static class OracleCorpus
             // A forbidden multimedia annotation subtype (/Movie) on the page (ISO 19005-2 §6.5.3).
             new OracleFixture("pdfa2b-movie-annotation", WriterPdfWithMovieAnnotation(),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // A PDF/A-2a document with /Lang and a title but NO tagged content, so it has no
+            // structure tree — the one violation. Cross-validates the logical-structure rule (§6.8).
+            new OracleFixture("pdfa2a-no-structure", WriterPdfMissingStructure(VellumPdf.Document.PdfConformance.PdfA2a),
+                Conformance.PdfConformance.PdfA2A, "2a", ExpectedCompliant: false),
+
+            // The same for PDF/UA-1: lang + title present but no structure tree, isolating the
+            // tagging requirement (§7.1). Cross-validates the UA tagging rule's negative path.
+            new OracleFixture("pdfua1-no-structure", WriterPdfMissingStructure(VellumPdf.Document.PdfConformance.PdfUA1),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
         ];
+    }
+
+    private static byte[] WriterPdfMissingStructure(VellumPdf.Document.PdfConformance conformance)
+    {
+        // A tagged-conformance document (2a/UA-1) with language and title set but no tagged content,
+        // so the writer emits no /StructTreeRoot — non-conformant for lack of a structure tree only.
+        using var doc = new PdfDocument { Conformance = conformance, Language = "en-US" };
+        doc.Info.Title = "VellumPdf Oracle Fixture";
+        doc.AddPage(PageSize.A4);
+        using var ms = new MemoryStream();
+        doc.Save(ms);
+        return ms.ToArray();
     }
 
     private static byte[] WriterPdfWithJavaScriptAction()
