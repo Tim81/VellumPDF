@@ -176,6 +176,37 @@ public sealed class PdfPreflightTests
     private static byte[] BuildXmpPdf(byte[] metadata) => AssemblePdf(
         [new("<< /Type /Catalog /Pages 2 0 R >>"), _pagesObj, _pageObj], metadataOverride: metadata);
 
+    /// <summary>A PDF/A-2b XMP packet declaring one extension schema (element serialisation) with the
+    /// given <paramref name="schemaFields"/> and one property with <paramref name="propertyFields"/>.</summary>
+    private static byte[] ExtensionSchemaXmp(string schemaFields, string propertyFields)
+    {
+        const string ns =
+            "xmlns:pdfaExtension=\"http://www.aiim.org/pdfa/ns/extension/\" "
+            + "xmlns:pdfaSchema=\"http://www.aiim.org/pdfa/ns/schema#\" "
+            + "xmlns:pdfaProperty=\"http://www.aiim.org/pdfa/ns/property#\"";
+        var xmp =
+            "<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>"
+            + "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF "
+            + "xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">"
+            + "<rdf:Description rdf:about=\"\" xmlns:pdfaid=\"http://www.aiim.org/pdfa/ns/id/\">"
+            + "<pdfaid:part>2</pdfaid:part><pdfaid:conformance>B</pdfaid:conformance></rdf:Description>"
+            + $"<rdf:Description rdf:about=\"\" {ns}><pdfaExtension:schemas><rdf:Bag>"
+            + "<rdf:li rdf:parseType=\"Resource\">" + schemaFields
+            + "<pdfaSchema:property><rdf:Seq><rdf:li rdf:parseType=\"Resource\">" + propertyFields
+            + "</rdf:li></rdf:Seq></pdfaSchema:property></rdf:li></rdf:Bag></pdfaExtension:schemas></rdf:Description>"
+            + "</rdf:RDF></x:xmpmeta><?xpacket end=\"w\"?>";
+        return Encoding.UTF8.GetBytes(xmp);
+    }
+
+    private const string _validSchemaFields =
+        "<pdfaSchema:schema>S</pdfaSchema:schema>"
+        + "<pdfaSchema:namespaceURI>http://example.com/ns/</pdfaSchema:namespaceURI>"
+        + "<pdfaSchema:prefix>ex</pdfaSchema:prefix>";
+
+    private const string _validPropertyFields =
+        "<pdfaProperty:name>foo</pdfaProperty:name><pdfaProperty:valueType>Text</pdfaProperty:valueType>"
+        + "<pdfaProperty:category>external</pdfaProperty:category><pdfaProperty:description>d</pdfaProperty:description>";
+
     /// <summary>A minimal ICC profile body: zero-filled, with the 'acsp' signature at offset 36.</summary>
     private static byte[] FakeIccProfile()
     {
@@ -1186,6 +1217,70 @@ public sealed class PdfPreflightTests
 
         Assert.True(result.IsCompliant);
         Assert.Empty(result.Assertions);
+    }
+
+    // ── §6.6.2.3.3 extension-schema structure rules ─────────────────────────────
+
+    [Fact]
+    public void Validate_ValidExtensionSchema_NoFinding()
+    {
+        // A well-formed PDF/A extension schema must not be flagged (no false positive).
+        var result = PdfPreflight.Validate(
+            BuildXmpPdf(ExtensionSchemaXmp(_validSchemaFields, _validPropertyFields)), PdfConformance.PdfA2B);
+
+        Assert.True(result.IsCompliant);
+        Assert.Empty(result.Assertions);
+    }
+
+    [Theory]
+    [InlineData(
+        "<pdfaSchema:namespaceURI>http://example.com/ns/</pdfaSchema:namespaceURI><pdfaSchema:prefix>ex</pdfaSchema:prefix>",
+        "ISO19005-2:6.6.2.3.3-schema")]
+    [InlineData(
+        "<pdfaSchema:schema>S</pdfaSchema:schema><pdfaSchema:prefix>ex</pdfaSchema:prefix>",
+        "ISO19005-2:6.6.2.3.3-namespaceuri")]
+    public void Validate_ExtensionSchemaMissingSchemaField_ReportsError(string schemaFields, string ruleId)
+    {
+        var result = PdfPreflight.Validate(
+            BuildXmpPdf(ExtensionSchemaXmp(schemaFields, _validPropertyFields)), PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.RuleId == ruleId);
+    }
+
+    [Theory]
+    [InlineData(
+        "<pdfaProperty:valueType>Text</pdfaProperty:valueType><pdfaProperty:category>external</pdfaProperty:category><pdfaProperty:description>d</pdfaProperty:description>",
+        "ISO19005-2:6.6.2.3.3-name")]
+    [InlineData(
+        "<pdfaProperty:name>foo</pdfaProperty:name><pdfaProperty:category>external</pdfaProperty:category><pdfaProperty:description>d</pdfaProperty:description>",
+        "ISO19005-2:6.6.2.3.3-valuetype")]
+    [InlineData(
+        "<pdfaProperty:name>foo</pdfaProperty:name><pdfaProperty:valueType>Text</pdfaProperty:valueType><pdfaProperty:category>external</pdfaProperty:category>",
+        "ISO19005-2:6.6.2.3.3-description")]
+    public void Validate_ExtensionSchemaPropertyMissingField_ReportsError(string propertyFields, string ruleId)
+    {
+        var result = PdfPreflight.Validate(
+            BuildXmpPdf(ExtensionSchemaXmp(_validSchemaFields, propertyFields)), PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.RuleId == ruleId);
+    }
+
+    [Theory]
+    [InlineData("<pdfaProperty:category>bogus</pdfaProperty:category>")]
+    [InlineData("")]
+    public void Validate_ExtensionSchemaPropertyBadCategory_ReportsError(string categoryField)
+    {
+        var propertyFields =
+            "<pdfaProperty:name>foo</pdfaProperty:name><pdfaProperty:valueType>Text</pdfaProperty:valueType>"
+            + categoryField + "<pdfaProperty:description>d</pdfaProperty:description>";
+
+        var result = PdfPreflight.Validate(
+            BuildXmpPdf(ExtensionSchemaXmp(_validSchemaFields, propertyFields)), PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.6.2.3.3-property-category");
     }
 
     // ── §6.3 annotation rules ─────────────────────────────────────────────────

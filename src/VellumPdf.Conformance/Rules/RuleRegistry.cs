@@ -62,6 +62,7 @@ internal static class RuleRegistry
     [
         new XmpConformanceRule(),
         new MetadataRule(),
+        new ExtensionSchemaRule(),
         new AnnotationRule(),
         new ActionRule(),
         new Forms.XfaRule(),

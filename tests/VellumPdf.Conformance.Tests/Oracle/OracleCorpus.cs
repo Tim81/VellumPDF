@@ -216,6 +216,20 @@ public static class OracleCorpus
             // in-process rule both reject it.
             new OracleFixture("pdfa2b-xmp-utf16", WriterPdfWithUtf16Xmp(),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // A well-formed PDF/A extension schema declaring a custom property. Both veraPDF and the
+            // in-process ExtensionSchemaRule accept it — the regression guard that a valid extension
+            // schema is not falsely rejected (§6.6.2.3.3).
+            new OracleFixture("pdfa2b-extension-schema", WriterPdfWithMetadata(Encoding.UTF8.GetBytes(ExtensionSchemaXmp2b(ValidPropertyFields))),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // An extension-schema property whose 'category' is neither internal nor external
+            // (§6.6.2.3.3-9). veraPDF and the in-process rule both reject it.
+            new OracleFixture("pdfa2b-extension-schema-bad-category",
+                WriterPdfWithMetadata(Encoding.UTF8.GetBytes(ExtensionSchemaXmp2b(
+                    "<pdfaProperty:name>foo</pdfaProperty:name><pdfaProperty:valueType>Text</pdfaProperty:valueType>"
+                    + "<pdfaProperty:category>bogus</pdfaProperty:category><pdfaProperty:description>d</pdfaProperty:description>"))),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
         ];
     }
 
@@ -328,6 +342,32 @@ public static class OracleCorpus
 
     private static byte[] WriterPdfWithUtf16Xmp()
         => WriterPdfWithMetadata(Encoding.Unicode.GetPreamble().Concat(Encoding.Unicode.GetBytes(Xmp2b(""))).ToArray());
+
+    internal const string ValidPropertyFields =
+        "<pdfaProperty:name>foo</pdfaProperty:name><pdfaProperty:valueType>Text</pdfaProperty:valueType>"
+        + "<pdfaProperty:category>external</pdfaProperty:category><pdfaProperty:description>d</pdfaProperty:description>";
+
+    // A PDF/A-2b XMP packet declaring one valid extension schema with one property carrying the
+    // given <paramref name="propertyFields"/> (element serialisation).
+    private static string ExtensionSchemaXmp2b(string propertyFields)
+    {
+        const string ns =
+            "xmlns:pdfaExtension=\"http://www.aiim.org/pdfa/ns/extension/\" "
+            + "xmlns:pdfaSchema=\"http://www.aiim.org/pdfa/ns/schema#\" "
+            + "xmlns:pdfaProperty=\"http://www.aiim.org/pdfa/ns/property#\"";
+        return "<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>"
+            + "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF "
+            + "xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">"
+            + "<rdf:Description rdf:about=\"\" xmlns:pdfaid=\"http://www.aiim.org/pdfa/ns/id/\">"
+            + "<pdfaid:part>2</pdfaid:part><pdfaid:conformance>B</pdfaid:conformance></rdf:Description>"
+            + $"<rdf:Description rdf:about=\"\" {ns}><pdfaExtension:schemas><rdf:Bag>"
+            + "<rdf:li rdf:parseType=\"Resource\"><pdfaSchema:schema>S</pdfaSchema:schema>"
+            + "<pdfaSchema:namespaceURI>http://example.com/ns/</pdfaSchema:namespaceURI>"
+            + "<pdfaSchema:prefix>ex</pdfaSchema:prefix>"
+            + "<pdfaSchema:property><rdf:Seq><rdf:li rdf:parseType=\"Resource\">" + propertyFields
+            + "</rdf:li></rdf:Seq></pdfaSchema:property></rdf:li></rdf:Bag></pdfaExtension:schemas></rdf:Description>"
+            + "</rdf:RDF></x:xmpmeta><?xpacket end=\"w\"?>";
+    }
 
     // A minimal PDF/A-2b XMP packet, with optional extra text in the <?xpacket?> header.
     private static string Xmp2b(string headerExtra) =>
