@@ -558,6 +558,108 @@ public sealed class PdfPreflightTests
     }
 
     [Fact]
+    public void Validate_CatalogNeedsRendering_ReportsError()
+    {
+        // §6.4.2: the catalog shall not contain the /NeedsRendering key.
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R /NeedsRendering true >>"),
+            _pagesObj,
+            _pageObj,
+        ]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        var assertion = Assert.Single(result.Assertions);
+        Assert.Equal("ISO19005-2:6.4.2-needs-rendering", assertion.RuleId);
+    }
+
+    [Fact]
+    public void Validate_AcroFormNeedAppearances_ReportsError()
+    {
+        // §6.4.1: the interactive form's /NeedAppearances shall be absent or false.
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R /AcroForm 4 0 R >>"),
+            _pagesObj,
+            _pageObj,
+            new("<< /Fields [] /NeedAppearances true >>"),
+        ]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        var assertion = Assert.Single(result.Assertions);
+        Assert.Equal("ISO19005-2:6.4.1-need-appearances", assertion.RuleId);
+    }
+
+    [Theory]
+    [InlineData("/A << /S /Named /N /NextPage >>")]
+    [InlineData("/AA << /U << /S /Named /N /NextPage >> >>")]
+    public void Validate_WidgetWithAction_ReportsError(string actionEntry)
+    {
+        // §6.4.1: a widget annotation shall not contain /A or /AA. The widget is otherwise conformant
+        // (Print flag set, valid appearance), and the action type (Named) is itself permitted, so the
+        // form-action rule is the only violation.
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R >>"),
+            _pagesObj,
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Annots [4 0 R] >>"),
+            new($"<< /Type /Annot /Subtype /Widget /Rect [0 0 1 1] /F 4 /AP << /N 5 0 R >> {actionEntry} >>"),
+            new("/Type /XObject /Subtype /Form /BBox [0 0 1 1]", []),
+        ]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        var assertion = Assert.Single(result.Assertions);
+        Assert.Equal("ISO19005-2:6.4.1-widget-action", assertion.RuleId);
+    }
+
+    [Theory]
+    [InlineData("/A << /S /Named /N /NextPage >>")]
+    [InlineData("/AA << /U << /S /Named /N /NextPage >> >>")]
+    public void Validate_FormFieldWithAction_ReportsError(string actionEntry)
+    {
+        // §6.4.1: a form field (in the AcroForm /Fields tree, here not a widget annotation) shall not
+        // contain /A or /AA.
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R /AcroForm 4 0 R >>"),
+            _pagesObj,
+            _pageObj,
+            new("<< /Fields [5 0 R] >>"),
+            new($"<< /FT /Btn /T (b) {actionEntry} >>"),
+        ]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        var assertion = Assert.Single(result.Assertions);
+        Assert.Equal("ISO19005-2:6.4.1-field-action", assertion.RuleId);
+    }
+
+    [Fact]
+    public void Validate_CompliantAcroForm_NoFinding()
+    {
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R /AcroForm 4 0 R >>"),
+            _pagesObj,
+            _pageObj,
+            new("<< /Fields [5 0 R] /NeedAppearances false >>"),
+            new("<< /FT /Btn /T (b) >>"),
+        ]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.True(result.IsCompliant);
+        Assert.Empty(result.Assertions);
+    }
+
+    [Fact]
     public void Validate_PdfAOutputIntent_IndirectSubtype_StillEnforced()
     {
         // /S is an indirect reference to the name GTS_PDFA1 (legal per ISO 32000-1 §7.3.10). The rule
