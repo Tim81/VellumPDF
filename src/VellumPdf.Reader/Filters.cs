@@ -39,10 +39,18 @@ internal static class PdfFilters
     /// (in which case <paramref name="decoded"/> contains the partially decoded bytes
     /// up to and not including the image filter).
     /// </summary>
-    internal static bool TryDecode(ParsedStream stream, out byte[] decoded)
+    /// <param name="stream">The parsed stream whose filter chain is applied.</param>
+    /// <param name="decoded">Receives the decoded (or partially decoded) bytes.</param>
+    /// <param name="resolve">
+    /// Optional indirect-reference resolver. <c>/Filter</c> and <c>/DecodeParms</c> (and their array
+    /// elements) may be indirect references — e.g. Ghostscript emits <c>/Filter 12 0 R</c>. When a
+    /// resolver is supplied those references are dereferenced; without one only direct values are
+    /// honoured (the bootstrap xref-stream path, where the object graph is not yet resolvable).
+    /// </param>
+    internal static bool TryDecode(ParsedStream stream, out byte[] decoded, Func<PdfObject?, PdfObject?>? resolve = null)
     {
-        var filters = GetFilterList(stream.Dictionary);
-        var parms = GetParmsList(stream.Dictionary, filters.Count);
+        var filters = GetFilterList(stream.Dictionary, resolve);
+        var parms = GetParmsList(stream.Dictionary, filters.Count, resolve);
 
         var data = stream.RawBody.ToArray();
         var fullyDecoded = true;
@@ -66,9 +74,12 @@ internal static class PdfFilters
     }
 
     /// <summary>Returns decoded bytes or null if an image filter prevents full decode.</summary>
-    internal static byte[]? Decode(ParsedStream stream)
+    /// <param name="stream">The parsed stream whose filter chain is applied.</param>
+    /// <param name="resolve">Optional indirect-reference resolver for <c>/Filter</c>/<c>/DecodeParms</c>;
+    /// see <see cref="TryDecode"/>.</param>
+    internal static byte[]? Decode(ParsedStream stream, Func<PdfObject?, PdfObject?>? resolve = null)
     {
-        if (!TryDecode(stream, out var decoded))
+        if (!TryDecode(stream, out var decoded, resolve))
             return null;
         return decoded;
     }
@@ -548,11 +559,15 @@ internal static class PdfFilters
 
     // ── Helpers ──────────────────────────────────────────────────────────────
 
-    private static List<PdfName> GetFilterList(PdfDictionary dict)
+    private static PdfObject? Deref(Func<PdfObject?, PdfObject?>? resolve, PdfObject? obj)
+        => resolve is null ? obj : resolve(obj);
+
+    private static List<PdfName> GetFilterList(PdfDictionary dict, Func<PdfObject?, PdfObject?>? resolve)
     {
         // /Filter only. /F in a stream dictionary is the (external) file specification,
         // not a filter abbreviation, so it must not be consulted here.
-        var filterObj = dict.Get(PdfName.Filter);
+        // /Filter (and each array element) may be an indirect reference — resolve when able.
+        var filterObj = Deref(resolve, dict.Get(PdfName.Filter));
         if (filterObj is null) return [];
         if (filterObj is PdfName n) return [n];
         if (filterObj is PdfArray arr)
@@ -560,16 +575,16 @@ internal static class PdfFilters
             var list = new List<PdfName>(arr.Count);
             for (var i = 0; i < arr.Count; i++)
             {
-                if (arr[i] is PdfName fn) list.Add(fn);
+                if (Deref(resolve, arr[i]) is PdfName fn) list.Add(fn);
             }
             return list;
         }
         return [];
     }
 
-    private static List<PdfDictionary?> GetParmsList(PdfDictionary dict, int filterCount)
+    private static List<PdfDictionary?> GetParmsList(PdfDictionary dict, int filterCount, Func<PdfObject?, PdfObject?>? resolve)
     {
-        var pObj = dict.Get(_dp) ?? dict.Get(_dp2);
+        var pObj = Deref(resolve, dict.Get(_dp) ?? dict.Get(_dp2));
         if (pObj is null)
         {
             var list = new List<PdfDictionary?>(filterCount);
@@ -581,7 +596,7 @@ internal static class PdfFilters
         {
             var list = new List<PdfDictionary?>(arr.Count);
             for (var i = 0; i < arr.Count; i++)
-                list.Add(arr[i] is PdfDictionary d ? d : null);
+                list.Add(Deref(resolve, arr[i]) is PdfDictionary d ? d : null);
             return list;
         }
         return [];

@@ -361,4 +361,27 @@ public sealed class PdfReaderTests
         Assert.True(reader.StartXrefOffset > 0);
         Assert.True(reader.StartXrefOffset < bytes.Length);
     }
+
+    [Fact]
+    public void Open_PrevOffsetThatWrapsInt_IsRejected()
+    {
+        // /Prev is validated as a 64-bit value BEFORE narrowing to int. 0x1_0000_0005 (4294967301)
+        // would wrap to 5 — an in-range offset — if cast first, slipping past the range guard and
+        // sending the parser to a bogus location. The guard must reject the full value. The error
+        // message therefore reports 4294967301, not 5. (Regression guard for review round 4.)
+        var sb = new StringBuilder();
+        sb.Append("%PDF-1.7\n");
+        var obj1Off = sb.Length;
+        sb.Append("1 0 obj\n<< /Type /Catalog >>\nendobj\n");
+        var xrefOff = sb.Length;
+        sb.Append("xref\n0 2\n");
+        sb.Append("0000000000 65535 f \n");
+        sb.Append($"{obj1Off:D10} 00000 n \n");
+        sb.Append("trailer\n<< /Size 2 /Root 1 0 R /Prev 4294967301 >>\n");
+        sb.Append($"startxref\n{xrefOff}\n%%EOF\n");
+        var bytes = Encoding.ASCII.GetBytes(sb.ToString());
+
+        var ex = Assert.Throws<InvalidDataException>(() => PdfReader.Open(bytes));
+        Assert.Contains("4294967301", ex.Message);
+    }
 }

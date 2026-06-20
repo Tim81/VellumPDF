@@ -28,6 +28,8 @@ public static class PdfPreflight
     /// <exception cref="System.ArgumentNullException"><paramref name="stream"/> is null.</exception>
     /// <exception cref="System.NotSupportedException">No rule profile is registered for <paramref name="conformance"/> yet.</exception>
     /// <exception cref="System.IO.InvalidDataException">The input is not a well-formed PDF.</exception>
+    /// <exception cref="System.IO.IOException">Reading <paramref name="stream"/> failed.</exception>
+    /// <exception cref="System.ObjectDisposedException"><paramref name="stream"/> has been disposed.</exception>
     /// <exception cref="UnsupportedPdfFeatureException">The PDF uses a reader feature that is not yet supported.</exception>
     public static PreflightResult Validate(Stream stream, PdfConformance conformance)
     {
@@ -46,6 +48,8 @@ public static class PdfPreflight
     /// </remarks>
     /// <exception cref="System.ArgumentNullException"><paramref name="reader"/> is null.</exception>
     /// <exception cref="System.NotSupportedException">No rule profile is registered for <paramref name="conformance"/> yet.</exception>
+    /// <exception cref="UnsupportedPdfFeatureException">A rule encountered a reader feature that is not yet
+    /// supported; unlike other rule failures this is not captured as a finding but propagates to the caller.</exception>
     public static PreflightResult Validate(PdfDocumentReader reader, PdfConformance conformance)
     {
         ArgumentNullException.ThrowIfNull(reader);

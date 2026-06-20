@@ -32,7 +32,16 @@ internal static class XmpReader
             // declaration. XMP packets may be serialised as UTF-8, UTF-16, or UTF-32 (ISO 16684-1);
             // decoding as UTF-8 up front would corrupt the latter two. The <?xpacket?> processing
             // instructions are treated as prolog/epilog; comments and whitespace are ignored.
-            var settings = new XmlReaderSettings { IgnoreComments = true, IgnoreWhitespace = true };
+            // The XMP packet is untrusted input, so disable DTD processing and external entity
+            // resolution outright (defence in depth against XXE / entity-expansion). Modern .NET
+            // defaults to Prohibit, but set it explicitly so the posture cannot silently change.
+            var settings = new XmlReaderSettings
+            {
+                IgnoreComments = true,
+                IgnoreWhitespace = true,
+                DtdProcessing = DtdProcessing.Prohibit,
+                XmlResolver = null,
+            };
             using var reader = XmlReader.Create(new MemoryStream(bytes, writable: false), settings);
             return XDocument.Load(reader);
         }
