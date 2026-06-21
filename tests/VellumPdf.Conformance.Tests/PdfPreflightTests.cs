@@ -1062,6 +1062,26 @@ public sealed class PdfPreflightTests
         Assert.Equal(ruleId, assertion.RuleId);
     }
 
+    [Fact]
+    public void Validate_AppliedHalftoneBadType_ReportsError()
+    {
+        var result = PdfPreflight.Validate(
+            BuildExtGStatePdf("/HT << /Type /Halftone /HalftoneType 6 >>"), PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.5-halftone-type");
+    }
+
+    [Fact]
+    public void Validate_AppliedHalftoneWithName_ReportsError()
+    {
+        var result = PdfPreflight.Validate(
+            BuildExtGStatePdf("/HT << /Type /Halftone /HalftoneType 1 /HalftoneName (X) >>"), PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.5-halftone-name");
+    }
+
     [Theory]
     [InlineData("/TR2 /Default")]
     [InlineData("/RI /RelativeColorimetric")]
