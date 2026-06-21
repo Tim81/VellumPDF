@@ -3918,4 +3918,165 @@ public sealed class PdfPreflightTests
 
         Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.2-1");
     }
+
+    // ── §6.1.10-1 Inline-image filter checks ──────────────────────────────────
+
+    [Fact]
+    public void Validate_InlineImageLzwAbbrev_IsFlagged()
+    {
+        // /F /LZW in an inline image is forbidden (§6.1.10-1). Empirically confirmed against
+        // veraPDF 1.30.2: the probe PDF triggers clause 6.1.10 testNumber 1.
+        var bytes = BuildContentStreamPdf("BI /W 1 /H 1 /BPC 8 /CS /G /F /LZW ID \x80 EI");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.10-1");
+    }
+
+    [Fact]
+    public void Validate_InlineImageLzwFullName_IsFlagged()
+    {
+        // /F /LZWDecode (full name) in an inline image is also forbidden (§6.1.10-1). veraPDF
+        // flags this in the same way as the abbreviated form.
+        var bytes = BuildContentStreamPdf("BI /W 1 /H 1 /BPC 8 /CS /G /F /LZWDecode ID \x80 EI");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.10-1");
+    }
+
+    [Fact]
+    public void Validate_InlineImageFilterKeyLzw_IsFlagged()
+    {
+        // /Filter /LZWDecode (using the full /Filter key instead of abbreviated /F) is also
+        // forbidden. ISO 32000-1 §8.9.7 permits both key names in inline images; veraPDF honours
+        // both — confirmed empirically.
+        var bytes = BuildContentStreamPdf("BI /W 1 /H 1 /BPC 8 /CS /G /Filter /LZWDecode ID \x80 EI");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.10-1");
+    }
+
+    [Fact]
+    public void Validate_InlineImageCrypt_IsFlagged()
+    {
+        // /F /Crypt is explicitly forbidden (§6.1.10-1). Empirically confirmed against veraPDF.
+        var bytes = BuildContentStreamPdf("BI /W 1 /H 1 /BPC 8 /CS /G /F /Crypt ID \x80 EI");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.10-1");
+    }
+
+    [Fact]
+    public void Validate_InlineImageBogusFilter_IsFlagged()
+    {
+        // A filter name not in ISO 32000-1 Table 6 (e.g. /Foo) is forbidden (§6.1.10-1).
+        // Empirically confirmed against veraPDF.
+        var bytes = BuildContentStreamPdf("BI /W 1 /H 1 /BPC 8 /CS /G /F /Foo ID \x80 EI");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.10-1");
+    }
+
+    [Fact]
+    public void Validate_InlineImageJpxDecode_IsFlagged()
+    {
+        // JPXDecode is NOT in ISO 32000-1 Table 6's inline-image permitted set (§6.1.10-1).
+        // Empirically confirmed: veraPDF flags it.
+        var bytes = BuildContentStreamPdf("BI /W 1 /H 1 /BPC 8 /CS /G /F /JPXDecode ID \x80 EI");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.10-1");
+    }
+
+    [Fact]
+    public void Validate_InlineImageArrayWithBadMember_IsFlagged()
+    {
+        // An array filter where any member is forbidden causes a §6.1.10-1 finding. Here
+        // /AHx is permitted but /LZW is not — the array fails. Empirically confirmed against
+        // veraPDF.
+        var bytes = BuildContentStreamPdf("BI /W 1 /H 1 /BPC 8 /CS /G /F [/AHx /LZW] ID \x80 EI");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.10-1");
+    }
+
+    [Fact]
+    public void Validate_InlineImageFlateAbbrev_NoFilterFinding()
+    {
+        // /F /Fl (abbreviated FlateDecode) is permitted (§6.1.10-1). Empirically confirmed:
+        // veraPDF does not flag it.
+        var bytes = BuildContentStreamPdf("BI /W 1 /H 1 /BPC 8 /CS /G /F /Fl ID \x80 EI");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.10-1");
+    }
+
+    [Fact]
+    public void Validate_InlineImageFlateFullName_NoFilterFinding()
+    {
+        // /Filter /FlateDecode (full key, full name) is permitted. Empirically confirmed.
+        var bytes = BuildContentStreamPdf("BI /W 1 /H 1 /BPC 8 /CS /G /Filter /FlateDecode ID \x80 EI");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.10-1");
+    }
+
+    [Fact]
+    public void Validate_InlineImageNoFilter_NoFilterFinding()
+    {
+        // An inline image with no /F or /Filter key (raw uncompressed samples) is permitted.
+        // Empirically confirmed: veraPDF does not flag it.
+        var bytes = BuildContentStreamPdf("BI /W 1 /H 1 /BPC 8 /CS /G ID \x80 EI");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.10-1");
+    }
+
+    [Fact]
+    public void Validate_InlineImageAllPermittedAbbrevFilters_NoFilterFinding()
+    {
+        // Each of the six permitted abbreviated filter names must not cause a §6.1.10-1 finding.
+        // Empirically confirmed: AHx, A85, RL, CCF, DCT are all accepted by veraPDF.
+        string[] filters = ["AHx", "A85", "RL", "CCF", "DCT"];
+        foreach (var f in filters)
+        {
+            var bytes = BuildContentStreamPdf($"BI /W 1 /H 1 /BPC 8 /CS /G /F /{f} ID \x80 EI");
+            var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+            Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.10-1");
+        }
+    }
+
+    [Fact]
+    public void Validate_InlineImageBooleanInDict_NoFilterFinding()
+    {
+        // Regression: the lexer emits true/false/null as Keyword tokens. An inline image that
+        // has boolean entries such as /IM true or /I true alongside no /F key must not cause a
+        // §6.1.10-1 finding. The rule must not mistake the boolean value keyword for a filter name.
+        var bytes = BuildContentStreamPdf("BI /W 1 /H 1 /BPC 8 /CS /G /IM true /I true ID \x80 EI");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.10-1");
+    }
+
+    [Fact]
+    public void Validate_InlineImageValidArrayFilter_NoFilterFinding()
+    {
+        // An array whose members are all permitted filters is accepted (§6.1.10-1). Empirically
+        // confirmed: veraPDF does not flag [/Fl /DCT].
+        var bytes = BuildContentStreamPdf("BI /W 1 /H 1 /BPC 8 /CS /G /F [/Fl /DCT] ID \x80 EI");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.10-1");
+    }
 }
