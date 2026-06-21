@@ -3841,4 +3841,81 @@ public sealed class PdfPreflightTests
         Assert.Contains("Error", text);
         Assert.Contains("ISO32000-1:7.7.2-catalog-type", text);
     }
+
+    // ── §6.2.2-1 Content-stream operator checks ───────────────────────────────
+
+    [Fact]
+    public void Validate_UnknownContentStreamOperator_IsFlagged()
+    {
+        // A page content stream containing an operator keyword ('zz') that is not defined in
+        // ISO 32000-1 must be rejected (§6.2.2-1). Empirically confirmed against veraPDF.
+        var bytes = BuildContentStreamPdf("q zz Q");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.2-1");
+    }
+
+    [Fact]
+    public void Validate_UnknownOperatorInBxEx_IsFlagged()
+    {
+        // The BX/EX compatibility brackets do NOT exempt an unknown operator (§6.2.2-1 explicitly
+        // states "even if such operators are bracketed by the BX/EX compatibility operators").
+        // Empirically confirmed: veraPDF flags 'zz' inside BX...EX with the same 6.2.2-1 rule.
+        var bytes = BuildContentStreamPdf("BX zz EX");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.2-1");
+    }
+
+    [Fact]
+    public void Validate_StandardOperatorsOnly_NoOperatorFinding()
+    {
+        // A page content stream using only ISO 32000-1 operators must NOT be flagged. This guards
+        // against false positives: 'q', 'Q', 'BT', 'ET', 'BX', 'EX', 'n', 're', 'W', 'W*', etc.
+        var bytes = BuildContentStreamPdf("q BX q Q EX 10 10 100 100 re W n Q");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.2-1");
+    }
+
+    [Fact]
+    public void Validate_EmptyContentStream_NoOperatorFinding()
+    {
+        // An empty (or whitespace-only) page must not produce a 6.2.2-1 finding.
+        var bytes = BuildContentStreamPdf("");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.2-1");
+    }
+
+    [Fact]
+    public void Validate_UnknownOperatorReportedOnce()
+    {
+        // Even when the same unknown operator appears multiple times, it is reported at most once
+        // per document to avoid flooding the finding list.
+        var bytes = BuildContentStreamPdf("foo foo foo");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Equal(1, result.Assertions.Count(a => a.RuleId == "ISO19005-2:6.2.2-1"));
+    }
+
+    [Fact]
+    public void Validate_BooleanOperandInContent_NoOperatorFinding()
+    {
+        // Regression: the content-stream lexer emits true/false/null as Keyword tokens, but they are
+        // operands, not operators. An inline image with `/I true` (Interpolate) and a BDC inline
+        // property dict carrying a boolean/null are valid ISO 32000-1 content — veraPDF does not flag
+        // them under 6.2.2-1. The rule must not mistake the value keyword for an unknown operator.
+        var bytes = BuildContentStreamPdf(
+            "q /Tag << /B true /N null >> BDC BI /W 1 /H 1 /BPC 8 /CS /G /I true ID A EI EMC Q");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.2-1");
+    }
 }
