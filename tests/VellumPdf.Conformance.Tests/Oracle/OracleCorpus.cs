@@ -456,6 +456,16 @@ public static class OracleCorpus
             new OracleFixture("pdfa2b-tx-appearance-dict", WriterPdfWithAppearanceKind("Widget", "Tx", nAsSubDictionary: true),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
 
+            // A /Popup annotation whose /AP /N is a sub-dictionary instead of a stream (§6.3.3-4).
+            // veraPDF flags it (Popup has no appearance-kind exemption) and so does the in-process rule.
+            new OracleFixture("pdfa2b-popup-appearance-dict", WriterPdfWithAppearanceKind("Popup", null, nAsSubDictionary: true),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // The same /Popup with a stream /AP /N — both validators accept it (the regression guard
+            // that a Popup keeps its flag/appearance-presence exemptions after the §6.3.3-4 fix).
+            new OracleFixture("pdfa2b-popup-appearance-stream", WriterPdfWithAppearanceKind("Popup", null, nAsSubDictionary: false),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
             // A /Hide action on the catalog /OpenAction (§6.5.1-1). /Hide is one of the action types
             // the deny-list previously missed; the allow-list rejects it, as does veraPDF.
             new OracleFixture("pdfa2b-hide-action", WriterPdfWithOpenAction(
