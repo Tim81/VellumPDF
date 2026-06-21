@@ -49,6 +49,7 @@ internal static class RuleRegistry
     private static readonly IConformanceRule[] PdfA2ColourAndTransparency =
     [
         new OutputIntentRule(),
+        new IccProfileRule(),
         new BlendModeRule(),
         new DeviceNColorantRule(),
         new DeviceNColorantsRule(),
