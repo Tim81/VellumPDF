@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\VellumPdf.Kernel\VellumPdf.Kernel.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <RootNamespace>VellumPdf.Fonts</RootNamespace>
+    <AssemblyName>VellumPdf.Fonts.Standard14</AssemblyName>
+    <PackageId>VellumPdf.Fonts.Standard14</PackageId>
+    <Description>Optional metric-compatible, embeddable substitutes for the PDF standard-14 fonts, so VellumPdf can produce conformant (fully embedded) PDF/A text without a caller-supplied font program. Bundles the Liberation fonts (Sans/Serif/Mono, SIL OFL 1.1) covering the Helvetica, Times and Courier families. Adds the doc.EmbedStandard14Font(...) extension.</Description>
+    <PackageTags>pdf;pdfa;fonts;standard14;liberation;embedding</PackageTags>
+    <!-- This package bundles OFL-1.1 font assets alongside Apache-2.0 code. -->
+    <PackageLicenseExpression>Apache-2.0 AND OFL-1.1</PackageLicenseExpression>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The 12 Liberation TTFs, embedded so the package is self-contained (no runtime font path). -->
+    <EmbeddedResource Include="Fonts\*.ttf">
+      <LogicalName>%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <None Include="Fonts\LICENSE.txt" Pack="true" PackagePath="fonts" />
+  </ItemGroup>
+
+</Project>

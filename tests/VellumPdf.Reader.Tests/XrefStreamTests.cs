@@ -305,6 +305,24 @@ public sealed class XrefStreamTests
     }
 
     [Fact]
+    public void Decode_predictor_with_out_of_range_columns_throws_invaliddata()
+    {
+        // An untrusted predictor /Columns must fail cleanly (InvalidDataException), not overflow
+        // the row-size computation into an OverflowException or a huge allocation.
+        var compressed = Compress(new byte[16]);
+        var dict = new PdfDictionary()
+            .Set(PdfName.Filter, PdfName.FlateDecode)
+            .Set(new PdfName("DecodeParms"), new PdfDictionary()
+                .Set(new PdfName("Predictor"), new PdfInteger(12))
+                .Set(new PdfName("Columns"), new PdfInteger(int.MaxValue)))
+            .Set(PdfName.Length, compressed.Length);
+
+        var stream = MakeParsedStream(dict, compressed);
+
+        Assert.Throws<InvalidDataException>(() => PdfFilters.Decode(stream));
+    }
+
+    [Fact]
     public void Type2_to_type2_container_rejected()
     {
         // Build a minimal PDF with classic xref, then manually construct a reader
@@ -350,6 +368,39 @@ public sealed class XrefStreamTests
         // A /Prev chain that cycles back to an already-seen offset should throw.
         var bytes = BuildCyclicPrevPdf();
         Assert.Throws<InvalidDataException>(() => PdfReader.Open(bytes));
+    }
+
+    [Fact]
+    public void Resolve_objectStreamWithSelfReferencingFilter_throwsCleanly()
+    {
+        // Object stream 5's /Filter is the indirect reference `6 0 R`, and object 6 is itself stored
+        // inside object stream 5. Decoding 5 must resolve its /Filter → resolve 6 → re-enter
+        // LoadObjectStream(5). Without an in-progress guard this recurses until StackOverflow (an
+        // uncatchable crash). The guard must turn it into a clean InvalidDataException.
+        var bytes = BuildSelfReferencingObjStmPdf();
+        using var reader = PdfReader.Open(bytes);
+        Assert.Throws<InvalidDataException>(() => reader.Resolve(6));
+    }
+
+    [Fact]
+    public void Xref_stream_with_wrapping_Index_throws_invaliddata()
+    {
+        // /Index 4294967296 (0x1_0000_0000) wraps to 0 if narrowed to int before the range check.
+        // Validating the full 64-bit value rejects it instead of producing bogus object numbers.
+        var bytes = BuildXrefStreamWrappingIndex();
+        Assert.Throws<InvalidDataException>(() => PdfReader.Open(bytes));
+    }
+
+    [Fact]
+    public void Resolve_deepIndirectLengthChain_throwsCleanlyNotStackOverflow()
+    {
+        // A long ACYCLIC chain of stream objects whose /Length each points to the next recurses one
+        // frame per link (Resolve -> ResolveLength -> Resolve). The cycle guards don't catch this
+        // (every object number is distinct); the resolution-depth guard must turn it into a clean
+        // InvalidDataException rather than an uncatchable StackOverflow. (Round-6 security finding.)
+        var bytes = BuildDeepIndirectLengthChainPdf(300);
+        using var reader = PdfReader.Open(bytes); // catalog (obj 1) resolves fine
+        Assert.Throws<InvalidDataException>(() => reader.Resolve(3)); // head of the 300-long chain
     }
 
     [Fact]
@@ -400,6 +451,230 @@ public sealed class XrefStreamTests
     }
 
     // ── Fixture builders ─────────────────────────────────────────────────────
+
+    [Fact]
+    public void DecodeHexString_large_input_does_not_overflow_stack()
+    {
+        // A multi-KB hex string must decode via the heap, not a stack overflow.
+        var raw = new byte[2 + 4000];
+        raw[0] = (byte)'<';
+        for (var i = 0; i < 4000; i++) raw[i + 1] = (byte)'A';
+        raw[^1] = (byte)'>';
+
+        var result = PdfObjectParser.DecodeHexString(new ReadOnlyMemory<byte>(raw));
+
+        Assert.Equal(2000, result.Bytes.Length);
+    }
+
+    [Fact]
+    public void Xref_stream_with_out_of_range_offset_throws_invaliddata()
+    {
+        // An xref-stream type-1 entry whose 8-byte offset exceeds the file length must fail cleanly
+        // (InvalidDataException), not wrap to a negative parser position (IndexOutOfRangeException).
+        var bytes = BuildXrefStreamHugeOffset();
+
+        Assert.Throws<InvalidDataException>(() => PdfReader.Open(bytes));
+    }
+
+    [Fact]
+    public void Decode_FlateDecode_raw_deflate_without_zlib_header()
+    {
+        // Some producers emit raw deflate with no zlib header; the fallback must still decode it.
+        var original = Encoding.ASCII.GetBytes("raw deflate body, no zlib header");
+        var ms = new MemoryStream();
+        using (var d = new DeflateStream(ms, CompressionLevel.Optimal, leaveOpen: true))
+            d.Write(original);
+        var compressed = ms.ToArray();
+
+        var dict = new PdfDictionary()
+            .Set(PdfName.Filter, PdfName.FlateDecode)
+            .Set(PdfName.Length, compressed.Length);
+        var stream = MakeParsedStream(dict, compressed);
+
+        var decoded = PdfFilters.Decode(stream);
+
+        Assert.Equal(original, decoded);
+    }
+
+    [Fact]
+    public void Decode_ASCII85_single_char_final_group_throws()
+    {
+        var a85 = Encoding.ASCII.GetBytes("!~>"); // one char before EOD — invalid final group
+        var dict = new PdfDictionary()
+            .Set(PdfName.Filter, new PdfName("ASCII85Decode"))
+            .Set(PdfName.Length, a85.Length);
+        var stream = MakeParsedStream(dict, a85);
+
+        Assert.Throws<InvalidDataException>(() => PdfFilters.Decode(stream));
+    }
+
+    private static byte[] BuildXrefStreamHugeOffset()
+    {
+        var ms = new MemoryStream();
+        void WriteStr(string s) => ms.Write(Encoding.ASCII.GetBytes(s));
+
+        WriteStr("%PDF-1.5\n");
+
+        // /W [1 8 0] → type(1) offset(8) gen(0); rowSize 9; objects 0,1,2.
+        const int rowSize = 9;
+        var body = new byte[3 * rowSize];
+        void WriteRow(int pos, byte type, ulong offset)
+        {
+            body[pos] = type;
+            for (var k = 0; k < 8; k++)
+                body[pos + 1 + k] = (byte)(offset >> (8 * (7 - k)));
+        }
+
+        WriteRow(0, 0, 0);                      // obj 0: free
+        WriteRow(9, 1, 0x0000_0001_0000_0000);  // obj 1: offset beyond any real file length
+        WriteRow(18, 1, 0);                     // obj 2: offset irrelevant (read via startxref)
+
+        var compressed = Compress(body);
+        var xrefOffset = (int)ms.Position;
+        WriteStr($"2 0 obj\n<< /Type /XRef /Size 3 /W [1 8 0] /Root 1 0 R /Filter /FlateDecode /Length {compressed.Length} >>\nstream\n");
+        ms.Write(compressed);
+        WriteStr("\nendstream\nendobj\n");
+        WriteStr($"startxref\n{xrefOffset}\n%%EOF\n");
+
+        return ms.ToArray();
+    }
+
+    private static byte[] BuildSelfReferencingObjStmPdf()
+    {
+        var ms = new MemoryStream();
+        void W(string s) => ms.Write(Encoding.ASCII.GetBytes(s));
+        void WB(byte[] b) => ms.Write(b);
+
+        W("%PDF-1.5\n");
+        var o1 = (int)ms.Position;
+        W("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+        var o2 = (int)ms.Position;
+        W("2 0 obj\n<< /Type /Pages /Kids [] /Count 0 >>\nendobj\n");
+
+        // Object stream 5 (N=1, First=4): header "6 0" then the object body "/FlateDecode".
+        // Its /Filter is `6 0 R` — an object stored inside this very stream.
+        var objStmBody = Encoding.ASCII.GetBytes("6 0\n/FlateDecode");
+        var o5 = (int)ms.Position;
+        W($"5 0 obj\n<< /Type /ObjStm /N 1 /First 4 /Filter 6 0 R /Length {objStmBody.Length} >>\nstream\n");
+        WB(objStmBody);
+        W("\nendstream\nendobj\n");
+
+        // Uncompressed xref stream (obj 7), /W [1 4 2] (rowSize 7), /Index [0 3] [5 3].
+        byte[] Row(byte type, long f2, long f3) =>
+        [
+            type,
+            (byte)((f2 >> 24) & 0xFF), (byte)((f2 >> 16) & 0xFF), (byte)((f2 >> 8) & 0xFF), (byte)(f2 & 0xFF),
+            (byte)((f3 >> 8) & 0xFF), (byte)(f3 & 0xFF),
+        ];
+        var body = new MemoryStream();
+        body.Write(Row(0, 0, 0));   // obj 0: free
+        body.Write(Row(1, o1, 0));  // obj 1
+        body.Write(Row(1, o2, 0));  // obj 2
+        body.Write(Row(1, o5, 0));  // obj 5: ObjStm container
+        body.Write(Row(2, 5, 0));   // obj 6: type-2, container 5, index 0
+        var o7 = (int)ms.Position;
+        body.Write(Row(1, o7, 0));  // obj 7: this xref stream
+        var bodyArr = body.ToArray();
+        W($"7 0 obj\n<< /Type /XRef /Size 8 /W [1 4 2] /Index [0 3 5 3] /Root 1 0 R /Length {bodyArr.Length} >>\nstream\n");
+        WB(bodyArr);
+        W("\nendstream\nendobj\n");
+        W($"startxref\n{o7}\n%%EOF\n");
+        return ms.ToArray();
+    }
+
+    private static byte[] BuildDeepIndirectLengthChainPdf(int chainLen)
+    {
+        var ms = new MemoryStream();
+        void W(string s) => ms.Write(Encoding.ASCII.GetBytes(s));
+
+        W("%PDF-1.7\n");
+        var total = 2 + chainLen; // obj1 catalog, obj2 pages, obj3..total = the chain
+        var offsets = new int[total + 1];
+
+        offsets[1] = (int)ms.Position;
+        W("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+        offsets[2] = (int)ms.Position;
+        W("2 0 obj\n<< /Type /Pages /Kids [] /Count 0 >>\nendobj\n");
+
+        // Each chain object is a stream whose /Length is an indirect reference to the next object;
+        // the final object is a plain integer terminus (resolution throws long before reaching it).
+        for (var k = 3; k < total; k++)
+        {
+            offsets[k] = (int)ms.Position;
+            W($"{k} 0 obj\n<< /Length {k + 1} 0 R >>\nstream\nx\nendstream\nendobj\n");
+        }
+        offsets[total] = (int)ms.Position;
+        W($"{total} 0 obj\n1\nendobj\n");
+
+        var xref = (int)ms.Position;
+        W($"xref\n0 {total + 1}\n");
+        W($"{0:D10} 65535 f \n");
+        for (var k = 1; k <= total; k++)
+            W($"{offsets[k]:D10} 00000 n \n");
+        W($"trailer\n<< /Size {total + 1} /Root 1 0 R >>\n");
+        W($"startxref\n{xref}\n%%EOF\n");
+        return ms.ToArray();
+    }
+
+    private static byte[] BuildXrefStreamWrappingIndex()
+    {
+        var ms = new MemoryStream();
+        void W(string s) => ms.Write(Encoding.ASCII.GetBytes(s));
+        W("%PDF-1.5\n");
+        var o1 = (int)ms.Position;
+        W("1 0 obj\n<< /Type /Catalog >>\nendobj\n");
+        var body = new byte[7]; // one /W [1 4 2] row; never actually consumed
+        var o2 = (int)ms.Position;
+        W($"2 0 obj\n<< /Type /XRef /Size 3 /W [1 4 2] /Index [4294967296 1] /Root 1 0 R /Length {body.Length} >>\nstream\n");
+        ms.Write(body);
+        W("\nendstream\nendobj\n");
+        W($"startxref\n{o2}\n%%EOF\n");
+        return ms.ToArray();
+    }
+
+    [Fact]
+    public void Stream_with_indirect_length_reads_full_binary_body()
+    {
+        // The stream's /Length is indirect and its body contains the bytes "\nendstream"; resolving
+        // the indirect length must read the full body rather than truncating at the scan marker.
+        var bytes = BuildIndirectLengthStreamPdf();
+
+        using var reader = PdfReader.Open(bytes);
+        var stream = reader.ResolveStream(3);
+
+        Assert.NotNull(stream);
+        Assert.Equal("AAAA\nendstream BBBB", Encoding.ASCII.GetString(stream!.RawBody.Span));
+    }
+
+    private static byte[] BuildIndirectLengthStreamPdf()
+    {
+        var ms = new MemoryStream();
+        void W(string s) => ms.Write(Encoding.ASCII.GetBytes(s));
+
+        const string body = "AAAA\nendstream BBBB"; // 19 bytes; contains the scan marker "\nendstream"
+
+        W("%PDF-1.7\n");
+        var o1 = (int)ms.Position;
+        W("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+        var o2 = (int)ms.Position;
+        W("2 0 obj\n<< /Type /Pages /Kids [] /Count 0 >>\nendobj\n");
+        var o3 = (int)ms.Position;
+        W($"3 0 obj\n<< /Length 4 0 R >>\nstream\n{body}\nendstream\nendobj\n");
+        var o4 = (int)ms.Position;
+        W($"4 0 obj\n{body.Length}\nendobj\n");
+
+        var xref = (int)ms.Position;
+        W("xref\n0 5\n");
+        W($"{0:D10} 65535 f \n");
+        W($"{o1:D10} 00000 n \n");
+        W($"{o2:D10} 00000 n \n");
+        W($"{o3:D10} 00000 n \n");
+        W($"{o4:D10} 00000 n \n");
+        W("trailer\n<< /Size 5 /Root 1 0 R >>\n");
+        W($"startxref\n{xref}\n%%EOF\n");
+
+        return ms.ToArray();
+    }
 
     private static byte[] BuildHybridXrefStmPdf()
     {

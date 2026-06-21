@@ -28,6 +28,8 @@ public static class PdfPreflight
     /// <exception cref="System.ArgumentNullException"><paramref name="stream"/> is null.</exception>
     /// <exception cref="System.NotSupportedException">No rule profile is registered for <paramref name="conformance"/> yet.</exception>
     /// <exception cref="System.IO.InvalidDataException">The input is not a well-formed PDF.</exception>
+    /// <exception cref="System.IO.IOException">Reading <paramref name="stream"/> failed.</exception>
+    /// <exception cref="System.ObjectDisposedException"><paramref name="stream"/> has been disposed.</exception>
     /// <exception cref="UnsupportedPdfFeatureException">The PDF uses a reader feature that is not yet supported.</exception>
     public static PreflightResult Validate(Stream stream, PdfConformance conformance)
     {
@@ -37,9 +39,17 @@ public static class PdfPreflight
     }
 
     /// <summary>Validates an already-opened <paramref name="reader"/> against <paramref name="conformance"/>.</summary>
-    /// <remarks>The caller retains ownership of <paramref name="reader"/>; it is not disposed here.</remarks>
+    /// <remarks>
+    /// The caller retains ownership of <paramref name="reader"/>; it is not disposed here.
+    /// <para><see cref="PdfDocumentReader"/> is not thread-safe (it populates an unsynchronized
+    /// object cache), so a single reader must not be validated from multiple threads concurrently.
+    /// The <see cref="Validate(byte[], PdfConformance)"/> and <see cref="Validate(System.IO.Stream, PdfConformance)"/>
+    /// overloads open a fresh reader per call and are safe to invoke concurrently.</para>
+    /// </remarks>
     /// <exception cref="System.ArgumentNullException"><paramref name="reader"/> is null.</exception>
     /// <exception cref="System.NotSupportedException">No rule profile is registered for <paramref name="conformance"/> yet.</exception>
+    /// <exception cref="UnsupportedPdfFeatureException">A rule encountered a reader feature that is not yet
+    /// supported; unlike other rule failures this is not captured as a finding but propagates to the caller.</exception>
     public static PreflightResult Validate(PdfDocumentReader reader, PdfConformance conformance)
     {
         ArgumentNullException.ThrowIfNull(reader);
@@ -55,7 +65,24 @@ public static class PdfPreflight
         var context = new PreflightContext(reader, conformance, assertions);
 
         foreach (var rule in rules)
-            rule.Evaluate(context);
+        {
+            try
+            {
+                rule.Evaluate(context);
+            }
+            catch (Exception ex)
+                when (ex is not OutOfMemoryException and not UnsupportedPdfFeatureException)
+            {
+                // A single rule throwing on a malformed-but-parseable document must not abort the
+                // whole report. Record it as an error finding and continue with the other rules.
+                // UnsupportedPdfFeatureException is excluded defensively: today it is only raised at
+                // Open (before any rule runs), but should a future lazily-decoded reader feature let
+                // a rule raise it, it means "cannot evaluate" — a distinct signal that should
+                // propagate to the caller rather than be reported as a conformance violation.
+                context.Report(rule.RuleId, rule.Clause, PreflightSeverity.Error,
+                    $"Rule evaluation failed: {ex.Message}");
+            }
+        }
 
         return new PreflightResult(conformance, assertions);
     }

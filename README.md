@@ -35,8 +35,8 @@ clean-room from the open **ISO 32000** standard.
 | `VellumPdf.Kernel` | Stable | Object model, canvas, Standard-14 fonts, TrueType/OpenType embedding + subsetting, images (JPEG/PNG/BMP/GIF/TIFF/JBIG2/JPEG 2000), AES-256 encryption, object/cross-reference streams, AcroForm fields, tagged-PDF structure tree, PDF/A-2 metadata, and DeviceCMYK and ICC-based colour with configurable output intents. |
 | `VellumPdf.Layout` | Stable | High-level document builder: paragraphs, headings, lists, tables, images, header/footer bands, bookmarks, and automatic pagination. |
 | `VellumPdf.Signing` | Stable | PAdES / PKCS#7 detached digital signatures with RFC-3161 signature timestamps and long-term validation. Levels B-T, B-LT (embedded OCSP/CRL in a `/DSS`), and B-LTA (archive document timestamp), via pluggable timestamp and revocation clients. |
-| `VellumPdf.Reader` | Preview | Opens existing signed PDFs (classic cross-reference, unencrypted) and exposes the catalog and signatures; the basis for the signing LTV path and the first slice of a general reader. |
-| _(roadmap)_ `VellumPdf.Conformance` | Planned | In-process PDF/A and PDF/UA preflight validator. |
+| `VellumPdf.Reader` | Preview | Opens existing PDFs (classic cross-reference tables, cross-reference and object streams, hybrid-reference files; unencrypted) and exposes the catalog, signatures, and decoded stream data. The basis for the signing LTV path, the conformance validator, and a general reader. |
+| `VellumPdf.Conformance` | Preview | In-process PDF/A-2b/2u/2a and PDF/UA-1 preflight: runs clean-room conformance rules authored from the ISO specifications and returns machine-readable assertions (rule id, ISO clause, severity, object reference) — no external veraPDF Docker image needed. AOT- and trim-ready (rules registered explicitly, no reflection). Covers file structure, colour and output intents, transparency, images and XObjects, fonts (including an in-process sfnt font-program parser for glyph presence and widths), annotations, interactive forms, actions, and XMP metadata (via an in-process XMP parser), plus the 2u/2a and PDF/UA-1 deltas. Each rule documents its deferred edges; every rule's positive and negative paths are cross-validated against veraPDF in CI. |
 | _(roadmap)_ `VellumPdf.Barcodes` | Planned | QR, PDF417, Code128, EAN. |
 
 ## Quick start
@@ -134,7 +134,6 @@ oracles — a missing tool fails the build, so the gates can never silently skip
 
 | Area | Notes |
 | --- | --- |
-| In-process preflight | `VellumPdf.Conformance` PDF/A and PDF/UA validator package. |
 | Linearization | "Fast web view" object ordering. |
 | PDF reader (v2.1) | `VellumPdf.Reader` — read any PDF. Grows the v1.6 LTV MVP reader into a full structural parser: xref streams, object streams, encryption (Epic #100). |
 | Content extraction (v2.2) | Text and image extraction on the reader (#98). |

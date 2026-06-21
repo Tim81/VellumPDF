@@ -33,7 +33,10 @@ internal sealed class XrefParser
     private static int FindLastStartxref(ReadOnlyMemory<byte> data)
     {
         var span = data.Span;
-        var searchStart = Math.Max(0, span.Length - 1024);
+        // ISO 32000 does not bound the distance from EOF to the last 'startxref'; files with large
+        // trailers or trailing content after %%EOF place it further back, so scan a generous tail.
+        const int TailWindow = 2048;
+        var searchStart = Math.Max(0, span.Length - TailWindow);
         var searchSpan = span[searchStart..];
 
         // Find the last occurrence of "startxref" in the tail of the file.
@@ -46,7 +49,7 @@ internal sealed class XrefParser
 
         if (lastFound < 0)
             throw new InvalidDataException(
-                "Malformed PDF: 'startxref' not found in the last 1024 bytes.");
+                $"Malformed PDF: 'startxref' not found in the last {TailWindow} bytes.");
 
         var absolutePos = searchStart + lastFound + StartxrefBytes.Length;
 
@@ -103,11 +106,13 @@ internal sealed class XrefParser
 
             if (trailer.TryGet(PdfName.Prev, out var prevObj) && prevObj is PdfInteger prevInt)
             {
-                var prevOffset = (int)prevInt.Value;
-                if (prevOffset < 0 || prevOffset >= data.Length)
+                // Validate the full 64-bit value before narrowing: a value such as 0x1_0000_0005
+                // would wrap to a small in-range int and bypass the range check if cast first.
+                var prevValue = prevInt.Value;
+                if (prevValue < 0 || prevValue >= data.Length)
                     throw new InvalidDataException(
-                        $"Malformed PDF: /Prev offset {prevOffset} is out of range.");
-                currentOffset = prevOffset;
+                        $"Malformed PDF: /Prev offset {prevValue} is out of range.");
+                currentOffset = (int)prevValue;
             }
             else
             {
@@ -149,12 +154,16 @@ internal sealed class XrefParser
         // with TryAdd and will be skipped if already present.
         if (trailer.TryGet(new PdfName("XRefStm"), out var xrefStmObj) && xrefStmObj is PdfInteger xrefStmInt)
         {
-            var stmOffset = (int)xrefStmInt.Value;
-            if (stmOffset < 0 || stmOffset >= data.Length)
+            // Validate as a 64-bit value before narrowing (see /Prev above): casting first would let
+            // an offset like 0x1_0000_0005 wrap to a small in-range int and slip past the guard.
+            var stmValue = xrefStmInt.Value;
+            if (stmValue < 0 || stmValue >= data.Length)
                 throw new InvalidDataException(
-                    $"Malformed PDF: /XRefStm offset {stmOffset} is out of range.");
-            // Avoid cycling into an already-processed offset
-            if (!seenOffsets.Contains(stmOffset))
+                    $"Malformed PDF: /XRefStm offset {stmValue} is out of range.");
+            var stmOffset = (int)stmValue;
+            // Avoid cycling into an already-processed offset, and record this one so a later /Prev
+            // revision pointing at the same stream does not re-parse it.
+            if (seenOffsets.Add(stmOffset))
                 ParseXrefStream(data, stmOffset, xref);
         }
 
@@ -191,6 +200,12 @@ internal sealed class XrefParser
 
             var (count, afterCount) = ReadInt(span, pos);
             pos = afterCount;
+
+            // A subsection cannot declare more 20-byte entries than the file could possibly hold;
+            // reject a pathological count up front (also prevents firstObjNum + count overflow).
+            if (count < 0 || firstObjNum < 0 || (long)count * 20 > span.Length || (long)firstObjNum + count > int.MaxValue)
+                throw new InvalidDataException(
+                    $"Malformed PDF: xref subsection ({firstObjNum} {count}) is out of range.");
 
             while (pos < span.Length && span[pos] is not 10 and not 13)
                 pos++;
@@ -257,9 +272,15 @@ internal sealed class XrefParser
         if (dict.Get(new PdfName("W")) is not PdfArray wArr || wArr.Count != 3)
             throw new InvalidDataException("Malformed PDF: xref stream missing valid /W array.");
 
-        var w1 = GetInt(wArr[0]);
-        var w2 = GetInt(wArr[1]);
-        var w3 = GetInt(wArr[2]);
+        // Validate each width as a 64-bit value BEFORE narrowing to int: a value like 0x1_0000_0008
+        // would wrap to a valid-looking 8 if cast first. Each field is read big-endian into a long,
+        // so a width must be 0..8; negative widths would produce silently-wrong offsets.
+        var w1L = GetInt(wArr[0]);
+        var w2L = GetInt(wArr[1]);
+        var w3L = GetInt(wArr[2]);
+        if (w1L is < 0 or > 8 || w2L is < 0 or > 8 || w3L is < 0 or > 8)
+            throw new InvalidDataException("Malformed PDF: xref stream /W field width out of range.");
+        int w1 = (int)w1L, w2 = (int)w2L, w3 = (int)w3L;
         var rowSize = w1 + w2 + w3;
         if (rowSize <= 0)
             throw new InvalidDataException("Malformed PDF: xref stream /W row size is zero.");
@@ -267,6 +288,8 @@ internal sealed class XrefParser
         // /Size
         if (dict.Get(PdfName.Size) is not PdfInteger sizeObj)
             throw new InvalidDataException("Malformed PDF: xref stream missing /Size.");
+        if (sizeObj.Value is < 0 or > int.MaxValue)
+            throw new InvalidDataException($"Malformed PDF: xref stream /Size {sizeObj.Value} is out of range.");
         var streamSize = (int)sizeObj.Value;
 
         // /Index — pairs of (firstObjNum, count); default is [0 Size]
@@ -276,7 +299,15 @@ internal sealed class XrefParser
             if (indexArr.Count % 2 != 0)
                 throw new InvalidDataException("Malformed PDF: xref stream /Index array has odd element count.");
             for (var i = 0; i < indexArr.Count; i += 2)
-                indexPairs.Add((GetInt(indexArr[i]), GetInt(indexArr[i + 1])));
+            {
+                // Validate as 64-bit before narrowing: a value such as 0x1_0000_0000 would wrap to a
+                // small in-range int and slip past the guard (producing bogus object numbers).
+                var first = GetInt(indexArr[i]);
+                var count = GetInt(indexArr[i + 1]);
+                if (first is < 0 or > int.MaxValue || count is < 0 or > int.MaxValue || first + count > int.MaxValue)
+                    throw new InvalidDataException("Malformed PDF: xref stream /Index subsection is out of range.");
+                indexPairs.Add(((int)first, (int)count));
+            }
         }
         else
         {
@@ -304,6 +335,11 @@ internal sealed class XrefParser
                         xref.TryAdd(objNum, XrefEntry.Uncompressed(field2));
                         break;
                     case 2:
+                        // field2 = container object number, field3 = index within it; a /W width up
+                        // to 8 bytes can exceed int range, so validate before narrowing.
+                        if (field2 is < 0 or > int.MaxValue || field3 is < 0 or > int.MaxValue)
+                            throw new InvalidDataException(
+                                "Malformed PDF: xref stream type-2 entry field is out of range.");
                         xref.TryAdd(objNum, XrefEntry.InObjStm((int)field2, (int)field3));
                         break;
                     case 0:
@@ -327,9 +363,9 @@ internal sealed class XrefParser
         return value;
     }
 
-    private static int GetInt(PdfObject obj)
+    private static long GetInt(PdfObject obj)
     {
-        if (obj is PdfInteger pi) return (int)pi.Value;
+        if (obj is PdfInteger pi) return pi.Value;
         throw new InvalidDataException($"Expected integer in xref stream, got {obj.GetType().Name}.");
     }
 
