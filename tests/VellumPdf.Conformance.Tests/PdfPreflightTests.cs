@@ -1067,6 +1067,30 @@ public sealed class PdfPreflightTests
     }
 
     [Fact]
+    public void Validate_SymbolicTrueTypeNoSymbolCmap_ReportsError()
+    {
+        // §6.2.11.6-4: a symbolic TrueType program's cmap must be exactly one subtable or include the
+        // Microsoft Symbol (3,0) encoding. DejaVu's cmap has 5 subtables and no (3,0).
+        var bytes = Oracle.OracleCorpus.SimpleTrueTypeFont(_ => { }, flags: 4, encoding: null);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.11.6-symbolic-cmap");
+    }
+
+    [Fact]
+    public void Validate_NonSymbolicTrueType_NoCmapFalsePositive()
+    {
+        // §6.2.11.6-4 must not fire on a non-symbolic font — the regression guard.
+        var bytes = Oracle.OracleCorpus.SimpleTrueTypeFont(_ => { }, encoding: new VellumPdf.Core.PdfName("WinAnsiEncoding"));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.11.6-symbolic-cmap");
+    }
+
+    [Fact]
     public void Validate_PopupAppearanceSubDictionary_ReportsError()
     {
         // §6.3.3-4: a /Popup with an /AP /N sub-dictionary is non-compliant (Popup has no kind exemption).

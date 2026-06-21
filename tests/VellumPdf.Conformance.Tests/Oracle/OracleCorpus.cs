@@ -116,6 +116,13 @@ public static class OracleCorpus
                 SimpleTrueTypeFont(_ => { }, flags: 4, encoding: new PdfName("WinAnsiEncoding")),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
 
+            // A symbolic simple TrueType font (no /Encoding) whose embedded program has a 5-subtable
+            // cmap with no Microsoft Symbol (3,0) encoding (§6.2.11.6-4). veraPDF and the in-process
+            // FontStructureRule both reject it.
+            new OracleFixture("pdfa2b-font-symbolic-cmap",
+                SimpleTrueTypeFont(_ => { }, flags: 4, encoding: null),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
             // A PDF/A-2b document that draws text with a properly embedded (subset) TrueType font via
             // the Type0/CIDFontType2/Identity-H path. veraPDF accepts it (all §6.2.11.x font checks
             // pass) and so does the in-process validator — the positive end-to-end font fixture.
