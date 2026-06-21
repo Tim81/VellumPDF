@@ -600,7 +600,98 @@ public static class OracleCorpus
             // and so does the in-process StreamRule (which walks the full xref keyspace).
             new OracleFixture("pdfa2b-lzw-filter", WriterPdfWithLzwStream(),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // A DeviceN colour space in the first page's /Resources /ColorSpace with 33 colourant
+            // names — one above the §6.1.13-9 limit of 32 — that the page paints via `/CS0 cs`. The
+            // tint-transform function is a Type 4 PostScript calculator that pops all 33 inputs and
+            // pushes 4 (C M Y K) zero outputs, so veraPDF parses it and cleanly reports 6.1.13-9
+            // rather than erroring on the function. Both veraPDF (clause 6.1.13, test 9) and the
+            // in-process DeviceNColorantRule reject it.
+            new OracleFixture("pdfa2b-devicen-33-colourants", WriterPdfWithDeviceN33Colourants(paint: true),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // The same 33-colourant DeviceN present in /Resources but never painted by content. veraPDF
+            // only flags §6.1.13-9 for a colour space that is actually used, so it accepts this file —
+            // and so must the in-process rule (the no-false-positive guard for the usage scoping).
+            new OracleFixture("pdfa2b-devicen-33-unused", WriterPdfWithDeviceN33Colourants(paint: false),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
         ];
+    }
+
+    /// <summary>
+    /// Injects a DeviceN colour space with 33 colourant names into the first page's
+    /// <c>/Resources /ColorSpace</c> via an incremental update on a conformant baseline. When
+    /// <paramref name="paint"/> is true the page also gets a content stream that selects the space
+    /// (<c>/CS0 cs 0 … 0 scn</c>) and fills a rectangle; when false the space is present but unused.
+    /// The tint-transform function is a Type 4 PostScript calculator that pops all 33 inputs from the
+    /// operand stack and pushes four zero literals (one per CMYK channel), so veraPDF can parse and
+    /// execute the function and reaches the colourant-count check cleanly.
+    /// </summary>
+    /// <remarks>
+    /// veraPDF only flags ISO 19005-2 §6.1.13-9 when the DeviceN colour space is actually painted by
+    /// content; a present-but-unused space is not flagged. The two variants (painted / unused) pin
+    /// both sides of that usage scoping against the oracle.
+    /// </remarks>
+    private static byte[] WriterPdfWithDeviceN33Colourants(bool paint)
+    {
+        const int n = 33;
+        var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var newPage = CloneDict(page);
+
+        // Type 4 PostScript calculator: pop all n inputs, push 0 0 0 0 for CMYK.
+        // The body "{ pop pop ... pop 0 0 0 0 }" balances the operand stack.
+        var tintBody = Encoding.ASCII.GetBytes("{ " + string.Concat(Enumerable.Repeat("pop ", n)) + "0 0 0 0 }");
+
+        // /Domain: [0 1] repeated n times; /Range: [0 1] four times for CMYK.
+        var domainValues = Enumerable.Range(0, n * 2).Select(i => (PdfObject)new PdfInteger(i % 2)).ToArray();
+        var rangeValues = new PdfObject[] {
+            new PdfInteger(0), new PdfInteger(1), new PdfInteger(0), new PdfInteger(1),
+            new PdfInteger(0), new PdfInteger(1), new PdfInteger(0), new PdfInteger(1) };
+
+        var tintFuncNum = reader.Size;
+        var tintFunc = new PdfStream(tintBody);
+        tintFunc.Dictionary
+            .Set(new PdfName("FunctionType"), new PdfInteger(4))
+            .Set(new PdfName("Domain"), new PdfArray(domainValues))
+            .Set(new PdfName("Range"), new PdfArray(rangeValues));
+
+        // Build the colourant-names array: /c0 /c1 ... /c{n-1}.
+        var names = new PdfArray(Enumerable.Range(0, n).Select(i => (PdfObject)new PdfName("c" + i)).ToArray());
+
+        // [/DeviceN [/c0../c32] /DeviceCMYK <tintFunc>]
+        var csNum = tintFuncNum + 1;
+        var csArray = new PdfArray([
+            new PdfName("DeviceN"),
+            names,
+            new PdfName("DeviceCMYK"),
+            new PdfIndirectReference(tintFuncNum),
+        ]);
+
+        var resObj = page.Get(new PdfName("Resources"));
+        var resources = (resObj is null ? null : reader.ResolveValue(resObj)) as PdfDictionary ?? new PdfDictionary();
+        var newResources = CloneDict(resources);
+        newResources.Set(
+            new PdfName("ColorSpace"),
+            new PdfDictionary().Set(new PdfName("CS0"), new PdfIndirectReference(csNum)));
+        newPage.Set(new PdfName("Resources"), newResources);
+
+        var revision = new List<(int, PdfObject)>
+        {
+            (pageRef.ObjectNumber, newPage), (tintFuncNum, tintFunc), (csNum, csArray),
+        };
+
+        if (paint)
+        {
+            // Activate CS0 as the fill colour space, set all 33 components to 0, fill a rectangle.
+            var zeros = string.Join(" ", Enumerable.Repeat("0", n));
+            var contentNum = csNum + 1;
+            newPage.Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
+            revision.Add((contentNum, new PdfStream(Encoding.ASCII.GetBytes($"/CS0 cs {zeros} scn 10 10 50 50 re f"))));
+        }
+
+        return reader.AppendRevision(revision);
     }
 
     private static byte[] WriterPdfWithDrawnPostScriptXObject()

@@ -3430,6 +3430,54 @@ public sealed class PdfPreflightTests
         Assert.Empty(result.Assertions);
     }
 
+    // ── §6.1.13-9 DeviceN colourant limit ─────────────────────────────────────
+
+    /// <summary>Builds a one-page doc whose /Resources /ColorSpace /CS0 is the given colour-space
+    /// array body (object 4), with object 5 as a minimal tint-function stub.</summary>
+    private static byte[] BuildColourSpacePdf(string csArray)
+        => BuildPagePdf(
+            "/Resources << /ColorSpace << /CS0 4 0 R >> >> /Contents 6 0 R",
+            new PdfObj(csArray),             // 4 0 obj — the colour space array
+            new PdfObj("<< /FunctionType 2 /Domain [0 1] /N 1 >>"), // 5 0 obj — tint function stub
+            new PdfObj(string.Empty, Encoding.ASCII.GetBytes("/CS0 cs"))); // 6 0 obj — selects the space
+
+    [Fact]
+    public void Validate_DeviceN33Colourants_ReportsError()
+    {
+        // §6.1.13-9: a DeviceN with 33 colourant names (one over the limit) must be flagged.
+        var names = string.Join(" ", Enumerable.Range(0, 33).Select(i => "/c" + i));
+        var bytes = BuildColourSpacePdf($"[/DeviceN [{names}] /DeviceCMYK 5 0 R]");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.13-9-devicen");
+    }
+
+    [Fact]
+    public void Validate_DeviceN32Colourants_IsAllowed()
+    {
+        // §6.1.13-9: exactly 32 colourant names is the permitted maximum — no false positive.
+        var names = string.Join(" ", Enumerable.Range(0, 32).Select(i => "/c" + i));
+        var bytes = BuildColourSpacePdf($"[/DeviceN [{names}] /DeviceCMYK 5 0 R]");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.13-9-devicen");
+    }
+
+    [Fact]
+    public void Validate_SeparationColourSpace_IsNotFlagged()
+    {
+        // §6.1.13-9: a Separation colour space [/Separation /Spot /DeviceCMYK tint] is a
+        // 1-colourant special case and must never trip the DeviceN rule.
+        var bytes = BuildColourSpacePdf("[/Separation /Spot /DeviceCMYK 5 0 R]");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.13-9-devicen");
+    }
+
     private static byte[] ZlibCompress(byte[] data)
     {
         var ms = new MemoryStream();

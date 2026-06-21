@@ -26,13 +26,15 @@ internal static class ContentStreamUsage
     private static readonly PdfName _contents = new("Contents");
 
     /// <summary>Scans <paramref name="page"/>'s content streams for graphics-state, colour,
-    /// XObject-drawing, and rendering-intent usage.</summary>
+    /// XObject-drawing, rendering-intent, and selected-colour-space usage.</summary>
     public static (HashSet<string> AppliedExtGStates, bool UsesDeviceColour, HashSet<string> DrawnXObjects,
-        HashSet<string> RenderingIntents) Analyze(PreflightContext context, PdfDictionary page)
+        HashSet<string> RenderingIntents, HashSet<string> SelectedColorSpaces) Analyze(
+        PreflightContext context, PdfDictionary page)
     {
         var applied = new HashSet<string>(StringComparer.Ordinal);
         var drawnXObjects = new HashSet<string>(StringComparer.Ordinal);
         var renderingIntents = new HashSet<string>(StringComparer.Ordinal);
+        var selectedColorSpaces = new HashSet<string>(StringComparer.Ordinal);
         var usesDeviceColour = false;
 
         var content = GetContentBytes(context, page);
@@ -77,6 +79,12 @@ internal static class ContentStreamUsage
                             if (lastName is not null)
                                 renderingIntents.Add(lastName);
                         }
+                        else if (op is "cs" or "CS")
+                        {
+                            // `cs`/`CS` set the current fill/stroke colour space to the named resource.
+                            if (lastName is not null)
+                                selectedColorSpaces.Add(lastName);
+                        }
                         else if (op == "ID")
                         {
                             SkipInlineImageData(lexer, content);
@@ -93,7 +101,7 @@ internal static class ContentStreamUsage
             }
         }
 
-        return (applied, usesDeviceColour, drawnXObjects, renderingIntents);
+        return (applied, usesDeviceColour, drawnXObjects, renderingIntents, selectedColorSpaces);
     }
 
     /// <summary>The page's concatenated, decoded content-stream bytes (or null when empty/undecodable).
