@@ -945,6 +945,63 @@ public sealed class PdfPreflightTests
         Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.8-2-embedded-file-names");
     }
 
+    // ── §6.8-5 embedded-file PDF/A conformance ────────────────────────────────
+
+    /// <summary>
+    /// Builds a minimal PDF/A-2b file spec dict with an embedded PDF stream having the given
+    /// body bytes. The filespec carries both /F and /UF so §6.8-2 is satisfied; only §6.8-5 is
+    /// under test.
+    /// </summary>
+    private static byte[] BuildPdfWithEmbeddedBytes(byte[] innerBytes) => AssemblePdf(
+    [
+        new("<< /Type /Catalog /Pages 2 0 R /Names << /EmbeddedFiles << /Names [(a.pdf) 4 0 R] >> >> >>"),
+        _pagesObj,
+        _pageObj,
+        new("<< /Type /Filespec /F (a.pdf) /UF (a.pdf) /EF << /F 5 0 R >> >>"),
+        new("/Type /EmbeddedFile", Stream: innerBytes),
+    ]);
+
+    [Fact]
+    public void Validate_EmbeddedNonPdfADocument_ReportsError()
+    {
+        // §6.8-5: an embedded PDF that carries no pdfaid identification is not a valid PDF/A-1 or
+        // PDF/A-2 document. The inner PDF is produced with PdfConformance.None (no XMP pdfaid).
+        var innerBytes = BuildPlainPdf20();
+        var bytes = BuildPdfWithEmbeddedBytes(innerBytes);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.8-5-embedded-pdfa");
+    }
+
+    [Fact]
+    public void Validate_EmbeddedCompliantPdfA2b_IsAllowed()
+    {
+        // §6.8-5: an embedded PDF that is itself a compliant PDF/A-2b document must not be flagged —
+        // the no-false-positive guard for the recursive embedded-PDF/A check.
+        var innerBytes = BuildOnePagePdf(); // produces a compliant PDF/A-2b
+        var bytes = BuildPdfWithEmbeddedBytes(innerBytes);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.8-5-embedded-pdfa");
+    }
+
+    [Fact]
+    public void Validate_EmbeddedNonPdfAttachment_ReportsError()
+    {
+        // §6.8-5: a non-PDF attachment (plain text) is not a valid PDF/A-1 or PDF/A-2 document.
+        // veraPDF (confirmed in STEP 0) flags this case; the in-process rule must agree.
+        var textBytes = System.Text.Encoding.UTF8.GetBytes("Hello world — plain text, not a PDF.");
+        var bytes = BuildPdfWithEmbeddedBytes(textBytes);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.8-5-embedded-pdfa");
+    }
+
     [Fact]
     public void Validate_PdfXOutputIntentDestOutputProfileRef_ReportsError()
     {

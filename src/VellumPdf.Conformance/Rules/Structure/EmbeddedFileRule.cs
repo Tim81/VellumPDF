@@ -24,10 +24,10 @@ namespace VellumPdf.Conformance.Rules.Structure;
 /// veraPDF does instead.
 /// </para>
 /// <para>
-/// Deferred: §6.8-5 (the embedded file itself shall be a valid PDF/A-1 or PDF/A-2 document) needs a
-/// recursive validation of the embedded stream and is a separate, later vector. A file specification
-/// reached only through an <c>/AF</c> associated-files array (a PDF 2.0 construct, not part of
-/// PDF/A-2) is not identified here.
+/// §6.8-5 (the embedded file itself shall be a valid PDF/A-1 or PDF/A-2 document) is implemented
+/// as a separate <see cref="EmbeddedFilePdfaRule"/> so that the two checks can be evaluated and
+/// reported independently. A file specification reached only through an <c>/AF</c> associated-files
+/// array (a PDF 2.0 construct, not part of PDF/A-2) is not identified here.
 /// </para>
 /// </remarks>
 internal sealed class EmbeddedFileRule : IConformanceRule
