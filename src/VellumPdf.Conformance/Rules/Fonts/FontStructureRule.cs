@@ -6,18 +6,20 @@ using VellumPdf.Core;
 namespace VellumPdf.Conformance.Rules.Fonts;
 
 /// <summary>
-/// ISO 19005-2 §6.2.11.2 / §6.2.11.3.2 / §6.2.11.6 (Font dictionary structure). Every font dictionary
-/// — including the descendant CIDFonts of a composite (Type 0) font — shall carry <c>/Type /Font</c>,
-/// a <c>/BaseFont</c> name (except a Type 3 font), and a recognised <c>/Subtype</c>; a non-standard
-/// simple font shall carry <c>/FirstChar</c>, <c>/LastChar</c>, and a <c>/Widths</c> array of length
-/// <c>LastChar − FirstChar + 1</c>; an embedded <c>/FontFile3</c> program's <c>/Subtype</c> shall be
-/// <c>Type1C</c>, <c>CIDFontType0C</c>, or <c>OpenType</c>; a non-symbolic TrueType font's
-/// <c>/Encoding</c> shall be MacRoman or WinAnsi and a symbolic one shall have none; an embedded
-/// subset Type 1 font's <c>/CharSet</c> (when present) shall list every glyph in the program; and an
-/// embedded Type 2 CIDFont shall carry a <c>/CIDToGIDMap</c>.
+/// ISO 19005-2 §6.2.11.2 / §6.2.11.3.1 / §6.2.11.3.2 / §6.2.11.6 (Font dictionary structure). Every
+/// font dictionary — including the descendant CIDFonts of a composite (Type 0) font — shall carry
+/// <c>/Type /Font</c>, a <c>/BaseFont</c> name (except a Type 3 font), and a recognised <c>/Subtype</c>;
+/// a non-standard simple font shall carry <c>/FirstChar</c>, <c>/LastChar</c>, and a <c>/Widths</c>
+/// array of length <c>LastChar − FirstChar + 1</c>; an embedded <c>/FontFile3</c> program's
+/// <c>/Subtype</c> shall be <c>Type1C</c>, <c>CIDFontType0C</c>, or <c>OpenType</c>; a non-symbolic
+/// TrueType font's <c>/Encoding</c> shall be MacRoman or WinAnsi and a symbolic one shall have none;
+/// an embedded subset Type 1 font's <c>/CharSet</c> (when present) shall list every glyph in the
+/// program; an embedded Type 2 CIDFont shall carry a <c>/CIDToGIDMap</c>; and a composite font's
+/// CIDFont <c>/CIDSystemInfo</c> and its CMap's <c>/CIDSystemInfo</c> must be compatible.
 /// </summary>
 /// <remarks>
-/// Authored from ISO 19005-2:2011, 6.2.11.2 / 6.2.11.3.2 / 6.2.11.6 and ISO 32000-1:2008, 9.6–9.7.
+/// Authored from ISO 19005-2:2011, 6.2.11.2 / 6.2.11.3.1 / 6.2.11.3.2 / 6.2.11.6 and ISO 32000-1:2008,
+/// 9.6–9.7.
 /// Clean-room: derived from the specification text, not from any third-party validation profile.
 /// Every check is cross-validated against veraPDF on real embedded fonts — a hand-built compliant
 /// simple TrueType (full DejaVu, WinAnsi, correct widths) anchors the positive path, and single
@@ -58,6 +60,11 @@ internal sealed class FontStructureRule : IConformanceRule
     private static readonly PdfName _flags = new("Flags");
     private static readonly PdfName _encoding = new("Encoding");
     private static readonly PdfName _baseEncoding = new("BaseEncoding");
+    private static readonly PdfName _cidSystemInfo = new("CIDSystemInfo");
+    private static readonly PdfName _registry = new("Registry");
+    private static readonly PdfName _ordering = new("Ordering");
+    private static readonly PdfName _supplement = new("Supplement");
+    private static readonly PdfName _cmapName = new("CMapName");
 
     private const int SymbolicFlag = 1 << 2; // ISO 32000-1 Table 121, bit 3 (Symbolic).
 
@@ -123,6 +130,7 @@ internal sealed class FontStructureRule : IConformanceRule
             CheckSimpleFont(context, font);
             CheckFontFile3Subtype(context, font);
             CheckCMapEncoding(context, font);
+            CheckCidSystemInfo(context, font);
 
             // A composite font's descendant CIDFont is itself a font dictionary (§6.2.11.2 applies).
             if (context.Resolve(font.Get(PdfName.Subtype)) is PdfName { Value: "Type0" }
@@ -409,6 +417,96 @@ internal sealed class FontStructureRule : IConformanceRule
             Report(context, "6.2.11.3.3-cmap-name", "ISO 19005-2:2011, 6.2.11.3.3",
                 $"A composite font's /Encoding names the CMap /{name.Value}, which is neither one of the "
                 + "predefined CMaps nor an embedded CMap stream.");
+    }
+
+    // §6.2.11.3.1-1: the CIDSystemInfo of a composite font's descendant CIDFont and its CMap must be
+    // compatible. If /Encoding is Identity-H or Identity-V the check always passes. If /Encoding is any
+    // other predefined CMap name (a name that is NOT an indirect reference to a stream) the registry
+    // table for the named CMap is not embedded, so this path is deferred — no finding is generated.
+    // Only when /Encoding resolves to an embedded CMap stream (an indirect reference) are the two
+    // CIDSystemInfo dictionaries compared: Registry and Ordering must be byte-equal, and
+    // CIDFont.Supplement must be ≤ CMap.Supplement (all four values must be present).
+    // <remarks>
+    // Deferred edge: predefined-CMap names other than Identity-H/V (e.g. UniGB-UCS2-H). The rule as
+    // implemented therefore covers Identity-H/V (always pass) and embedded-CMap streams (compared).
+    // The predefined-name registry table is not in scope for this partial implementation.
+    // </remarks>
+    private void CheckCidSystemInfo(PreflightContext context, PdfDictionary font)
+    {
+        if (context.Resolve(font.Get(PdfName.Subtype)) is not PdfName { Value: "Type0" })
+            return;
+
+        var rawEncoding = font.Get(_encoding);
+        var encoding = context.Resolve(rawEncoding);
+
+        // Identity-H / Identity-V: always conformant — no check.
+        if (encoding is PdfName { Value: "Identity-H" or "Identity-V" })
+            return;
+
+        // Any other predefined name (not a stream reference): deferred, no finding.
+        if (encoding is PdfName)
+            return;
+
+        // Only proceed if /Encoding resolves to an embedded CMap stream.
+        if (context.ResolveStream(rawEncoding) is not { } cmapStream)
+            return;
+
+        // An embedded CMap whose own /CMapName is Identity-H/V is exempt too — veraPDF keys the
+        // exemption on the CMap name, not the /Encoding reference (avoids a false positive on the
+        // unusual case of an embedded Identity CMap).
+        if (context.Resolve(cmapStream.Dictionary.Get(_cmapName)) is PdfName { Value: "Identity-H" or "Identity-V" })
+            return;
+
+        // Read CIDSystemInfo from the CMap stream's dictionary.
+        if (context.Resolve(cmapStream.Dictionary.Get(_cidSystemInfo)) is not PdfDictionary cmapSi)
+            return;
+        var cmapRegistry = PdfStringToLatin1(context, cmapSi.Get(_registry));
+        var cmapOrdering = PdfStringToLatin1(context, cmapSi.Get(_ordering));
+        var cmapSupplement = (context.Resolve(cmapSi.Get(_supplement)) as PdfInteger)?.Value;
+
+        // Get the descendant CIDFont's CIDSystemInfo.
+        if (context.Resolve(font.Get(_descendantFonts)) is not PdfArray descendants || descendants.Count == 0)
+            return;
+        if (context.Resolve(descendants[0]) is not PdfDictionary cidFont)
+            return;
+        if (context.Resolve(cidFont.Get(_cidSystemInfo)) is not PdfDictionary cidSi)
+            return;
+        var cidRegistry = PdfStringToLatin1(context, cidSi.Get(_registry));
+        var cidOrdering = PdfStringToLatin1(context, cidSi.Get(_ordering));
+        var cidSupplement = (context.Resolve(cidSi.Get(_supplement)) as PdfInteger)?.Value;
+
+        // All four required values must be present.
+        if (cmapRegistry is null || cmapOrdering is null || cmapSupplement is null
+            || cidRegistry is null || cidOrdering is null || cidSupplement is null)
+        {
+            Report(context, "6.2.11.3.1-cidsysteminfo", "ISO 19005-2:2011, 6.2.11.3.1",
+                "A composite font's CIDSystemInfo or its CMap's CIDSystemInfo is missing a required "
+                + "/Registry, /Ordering, or /Supplement entry.");
+            return;
+        }
+
+        if (!string.Equals(cidRegistry, cmapRegistry, StringComparison.Ordinal)
+            || !string.Equals(cidOrdering, cmapOrdering, StringComparison.Ordinal)
+            || cidSupplement.Value > cmapSupplement.Value)
+        {
+            Report(context, "6.2.11.3.1-cidsysteminfo", "ISO 19005-2:2011, 6.2.11.3.1",
+                "CIDSystemInfo entries of the CIDFont and CMap dictionaries of a Type 0 font are not "
+                + $"compatible (CIDSystemInfo Ordering = {cidOrdering}, CMap Ordering = {cmapOrdering}, "
+                + $"CIDSystemInfo Registry = {cidRegistry}, CMap Registry = {cmapRegistry}, "
+                + $"CIDSystemInfo Supplement = {cidSupplement}, CMap Supplement = {cmapSupplement}).");
+        }
+    }
+
+    // Decodes a PDF string object (literal or hex) to a Latin-1 string, or null when absent/not a string.
+    private string? PdfStringToLatin1(PreflightContext context, PdfObject? raw)
+    {
+        var bytes = context.Resolve(raw) switch
+        {
+            PdfLiteralString s => s.Bytes,
+            PdfHexString h => h.Bytes,
+            _ => (ReadOnlyMemory<byte>?)null,
+        };
+        return bytes is { } b ? System.Text.Encoding.Latin1.GetString(b.Span) : null;
     }
 
     private void CheckSubtype(PreflightContext context, PdfDictionary font)

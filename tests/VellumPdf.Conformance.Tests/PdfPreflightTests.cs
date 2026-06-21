@@ -2270,6 +2270,69 @@ public sealed class PdfPreflightTests
     }
 
     [Fact]
+    public void Validate_Type0EmbeddedCMapOrderingMismatch_ReportsError()
+    {
+        // §6.2.11.3.1-1: CMap CIDSystemInfo ordering (Japan1) differs from CIDFont CIDSystemInfo
+        // ordering (Identity) → incompatible → must be flagged.
+        // Objects: 6=Type0 7=CMapStream 8=CIDFont 9=FontDescriptor 10=FontFile2; content=obj 11.
+        var cmapBody = Encoding.ASCII.GetBytes(
+            "/CIDInit /ProcSet findresource begin 12 dict begin begincmap "
+            + "/CIDSystemInfo 3 dict dup begin /Registry (Adobe) def /Ordering (Japan1) def /Supplement 0 def end def "
+            + "/CMapName /CustomCMap def /CMapType 1 def "
+            + "1 begincodespacerange <0020> <007E> endcodespacerange "
+            + "1 begincidrange <0020> <007E> 32 endcidrange "
+            + "endcmap CMapName currentdict /CMap defineresource pop end end");
+        var bytes = BuildFontPdf(
+            new PdfObj("<< /Type /Font /Subtype /Type0 /BaseFont /X /Encoding 7 0 R /DescendantFonts [8 0 R] >>"),
+            new PdfObj("/Type /CMap /CMapName /CustomCMap /CIDSystemInfo << /Registry (Adobe) /Ordering (Japan1) /Supplement 0 >> /WMode 0", cmapBody),
+            new PdfObj("<< /Type /Font /Subtype /CIDFontType2 /BaseFont /X /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> /FontDescriptor 9 0 R /CIDToGIDMap /Identity >>"),
+            new PdfObj("<< /Type /FontDescriptor /FontName /X /FontFile2 10 0 R >>"),
+            new PdfObj("/Length1 4", [1, 2, 3, 4]));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.11.3.1-cidsysteminfo");
+    }
+
+    [Fact]
+    public void Validate_Type0EmbeddedCMapMatchingCidSystemInfo_IsNotFlagged()
+    {
+        // §6.2.11.3.1-1 no-false-positive: CMap and CIDFont CIDSystemInfo match → compliant.
+        var cmapBody = Encoding.ASCII.GetBytes(
+            "/CIDInit /ProcSet findresource begin 12 dict begin begincmap "
+            + "/CIDSystemInfo 3 dict dup begin /Registry (Adobe) def /Ordering (Japan1) def /Supplement 1 def end def "
+            + "/CMapName /CustomCMap def /CMapType 1 def "
+            + "1 begincodespacerange <0020> <007E> endcodespacerange "
+            + "1 begincidrange <0020> <007E> 32 endcidrange "
+            + "endcmap CMapName currentdict /CMap defineresource pop end end");
+        var bytes = BuildFontPdf(
+            new PdfObj("<< /Type /Font /Subtype /Type0 /BaseFont /X /Encoding 7 0 R /DescendantFonts [8 0 R] >>"),
+            new PdfObj("/Type /CMap /CMapName /CustomCMap /CIDSystemInfo << /Registry (Adobe) /Ordering (Japan1) /Supplement 1 >> /WMode 0", cmapBody),
+            new PdfObj("<< /Type /Font /Subtype /CIDFontType2 /BaseFont /X /CIDSystemInfo << /Registry (Adobe) /Ordering (Japan1) /Supplement 0 >> /FontDescriptor 9 0 R /CIDToGIDMap /Identity >>"),
+            new PdfObj("<< /Type /FontDescriptor /FontName /X /FontFile2 10 0 R >>"),
+            new PdfObj("/Length1 4", [1, 2, 3, 4]));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.11.3.1-cidsysteminfo");
+    }
+
+    [Fact]
+    public void Validate_Type0IdentityHEncoding_CidSystemInfoNotFlagged()
+    {
+        // §6.2.11.3.1-1 exempt path: Identity-H is always conformant regardless of CIDSystemInfo.
+        var bytes = BuildFontPdf(
+            new PdfObj("<< /Type /Font /Subtype /Type0 /BaseFont /X /Encoding /Identity-H /DescendantFonts [7 0 R] >>"),
+            new PdfObj("<< /Type /Font /Subtype /CIDFontType2 /BaseFont /X /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> /FontDescriptor 8 0 R /CIDToGIDMap /Identity >>"),
+            new PdfObj("<< /Type /FontDescriptor /FontName /X /FontFile2 9 0 R >>"),
+            new PdfObj("/Length1 4", [1, 2, 3, 4]));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.11.3.1-cidsysteminfo");
+    }
+
+    [Fact]
     public void Validate_Type1SubsetIncompleteCharSet_ReportsError()
     {
         // §6.2.11.4.2-1: a subset Type 1 font's /CharSet must list every glyph in the program.

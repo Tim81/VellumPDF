@@ -194,6 +194,7 @@ public static class ConformanceCatalog
         ["6.6.2.3.3-15"] = "field container is read but not validated as Seq Field",
         ["6.6.2.3.3-17"] = "field valueType presence checked, not that it is a defined type",
         ["6.1.9-1"] = "object/generation/obj spacing + EOL checked; the endobj-EOL sub-conditions not",
+        ["6.2.11.3.1-1"] = "Identity and embedded-CMap CIDSystemInfo compared; predefined-CMap registry table deferred",
         ["6.7.2.2-1"] = "StructTreeRoot presence checked; full structure-tree validation not",
     };
 
@@ -214,7 +215,6 @@ public static class ConformanceCatalog
         ["6.2.8.3-3"] = "JPEG2000 codestream parser",
         ["6.2.8.3-4"] = "JPEG2000 codestream parser",
         ["6.2.8.3-5"] = "JPEG2000 codestream parser",
-        ["6.2.11.3.1-1"] = "object-graph: CIDSystemInfo match",
         ["6.2.11.3.3-2"] = "CMap parser",
         ["6.2.11.3.3-3"] = "CMap parser",
         ["6.4.3-1"] = "digital-signature parser",
