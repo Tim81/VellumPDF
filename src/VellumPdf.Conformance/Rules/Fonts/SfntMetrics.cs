@@ -83,7 +83,10 @@ internal sealed class SfntMetrics
         }
         if (maxp < 0 || head < 0 || hhea < 0 || hmtx < 0)
             return null;
-        if (maxp + 6 > font.Length || head + 20 > font.Length || hhea + 36 > font.Length)
+        // Bounds are compared in 64-bit arithmetic: a table offset near int.MaxValue (read from the
+        // untrusted font) would otherwise overflow `offset + len` to a negative int and slip past the
+        // check, leading to an out-of-range read. TryParse must never throw (it returns null instead).
+        if ((long)maxp + 6 > font.Length || (long)head + 20 > font.Length || (long)hhea + 36 > font.Length)
             return null;
 
         var numGlyphs = ReadU16(font, maxp + 4);
@@ -97,18 +100,19 @@ internal sealed class SfntMetrics
     // subtable is present. A missing or truncated cmap yields (0, false) rather than failing the parse.
     private static (int Count, bool HasSymbol) ParseCmap(byte[] font, int cmap)
     {
-        if (cmap < 0 || cmap + 4 > font.Length)
+        if (cmap < 0 || (long)cmap + 4 > font.Length)
             return (0, false);
         var numSubtables = ReadU16(font, cmap + 2);
         var count = 0;
         var hasSymbol = false;
         for (var i = 0; i < numSubtables; i++)
         {
-            var record = cmap + 4 + i * 8;
+            var record = (long)cmap + 4 + i * 8;
             if (record + 8 > font.Length)
                 break;
+            var r = (int)record;
             count++;
-            if (ReadU16(font, record) == 3 && ReadU16(font, record + 2) == 0)
+            if (ReadU16(font, r) == 3 && ReadU16(font, r + 2) == 0)
                 hasSymbol = true;
         }
         return (count, hasSymbol);

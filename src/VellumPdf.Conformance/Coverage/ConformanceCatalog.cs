@@ -95,8 +95,10 @@ public static class ConformanceCatalog
     private static IReadOnlyList<ConformanceCheck>? _all;
 
     /// <summary>Every catalogued check, across all target profiles.</summary>
-    // Lazily built so the static data arrays (declared below) are initialised first.
-    public static IReadOnlyList<ConformanceCheck> All => _all ??= Build();
+    // Lazily built so the static data arrays (declared below) are initialised first; built once even
+    // under concurrent first access (the result is immutable either way).
+    public static IReadOnlyList<ConformanceCheck> All
+        => System.Threading.LazyInitializer.EnsureInitialized(ref _all, Build);
 
     /// <summary>The checks that belong to <paramref name="profile"/>.</summary>
     public static IEnumerable<ConformanceCheck> For(PdfConformance profile)
