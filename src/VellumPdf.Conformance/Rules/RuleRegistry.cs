@@ -50,6 +50,7 @@ internal static class RuleRegistry
     [
         new OutputIntentRule(),
         new IccProfileRule(),
+        new OverprintRule(),
         new BlendModeRule(),
         new DeviceNColorantRule(),
         new DeviceNColorantsRule(),

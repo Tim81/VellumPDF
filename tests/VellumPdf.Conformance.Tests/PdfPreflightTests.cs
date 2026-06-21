@@ -6021,4 +6021,237 @@ public sealed class PdfPreflightTests
         var findings = result.Assertions.Where(a => a.RuleId == "ISO19005-2:6.2.4.4-2").ToList();
         Assert.Single(findings);
     }
+
+    // ── §6.2.4.2-2 Overprint (OPM) with ICCBased CMYK colour space ───────────
+
+    /// <summary>
+    /// Builds a one-page PDF/A-2b with:
+    /// <list type="bullet">
+    ///   <item>CS0 = ICCBased CMYK (N=4) in /Resources /ColorSpace</item>
+    ///   <item>GS1 = ExtGState with the given overprint parameters</item>
+    ///   <item>content = the given content stream string</item>
+    /// </list>
+    /// The ICC profile bytes come from the kernel's built-in generic CMYK profile (prtr/CMYK/v2).
+    /// </summary>
+    private static byte[] BuildOverprintPdf(string extGStateEntries, string content, int iccN = 4)
+    {
+        // Build either CMYK (N=4, prtr) or RGB (N=3, mntr) ICC profile bytes via MakeIccHeader.
+        byte[] iccBytes = iccN == 4
+            ? MakeIccHeader("prtr", "CMYK", 2)
+            : MakeIccHeader("mntr", "RGB ", 2);
+        var compressed = ZlibCompress(iccBytes);
+        return AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R >>"),
+            _pagesObj,
+            new($"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 5 0 R "
+                + $"/Resources << /ColorSpace << /CS0 [/ICCBased 4 0 R] >> "
+                + $"/ExtGState << /GS1 << {extGStateEntries} >> >> >> >>"),
+            new($"/Filter /FlateDecode /N {iccN}", compressed),
+            new(string.Empty, Encoding.ASCII.GetBytes(content)),
+        ]);
+    }
+
+    // -- fill + ICCBased CMYK + op true + OPM 1 → finding
+    // Confirmed against veraPDF 1.30.2 (probe P1).
+
+    [Fact]
+    public void Validate_Overprint_FillIccCmyk_OpTrue_Opm1_ReportsError()
+    {
+        // Fill colour space = ICCBased CMYK (cs), fill overprint true (/op true), OPM 1.
+        // veraPDF probe P1: FAIL §6.2.4.2-2.
+        var bytes = BuildOverprintPdf("/op true /OPM 1", "/CS0 cs\n0 0 0 1 sc\n/GS1 gs\n0 0 100 100 re\nf\n");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.2-2");
+    }
+
+    // -- OPM 0 → no finding (PASS condition)
+    // Confirmed against veraPDF 1.30.2 (probe P2).
+
+    [Fact]
+    public void Validate_Overprint_FillIccCmyk_OpTrue_Opm0_NoFinding()
+    {
+        // Same but OPM = 0 → PASS: OPM 0 is always permitted.
+        // veraPDF probe P2: compliant.
+        var bytes = BuildOverprintPdf("/op true /OPM 0", "/CS0 cs\n0 0 0 1 sc\n/GS1 gs\n0 0 100 100 re\nf\n");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.2-2");
+    }
+
+    // -- fill overprint false → no finding (PASS condition)
+    // Confirmed against veraPDF 1.30.2 (probe P3).
+
+    [Fact]
+    public void Validate_Overprint_FillIccCmyk_OpFalse_Opm1_NoFinding()
+    {
+        // Fill overprint disabled (/op false); OPM 1 alone is not a violation.
+        // veraPDF probe P3: compliant.
+        var bytes = BuildOverprintPdf("/op false /OPM 1", "/CS0 cs\n0 0 0 1 sc\n/GS1 gs\n0 0 100 100 re\nf\n");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.2-2");
+    }
+
+    // -- no gs operator applied (default OPM=0, overprint=false) → no finding
+    // Confirmed against veraPDF 1.30.2 (probe P4).
+
+    [Fact]
+    public void Validate_Overprint_FillIccCmyk_NoGsApplied_NoFinding()
+    {
+        // GS1 is in resources but the content never calls `gs` — defaults remain (OPM=0, op=false).
+        // veraPDF probe P4: compliant.
+        var bytes = BuildOverprintPdf("/op true /OPM 1", "/CS0 cs\n0 0 0 1 sc\n0 0 100 100 re\nf\n");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.2-2");
+    }
+
+    // -- stroke variant: /OP true + OPM 1 → finding
+    // Confirmed against veraPDF 1.30.2 (probe P5).
+
+    [Fact]
+    public void Validate_Overprint_StrokeIccCmyk_OP_True_Opm1_ReportsError()
+    {
+        // Stroke colour space = ICCBased CMYK (CS), stroke overprint true (/OP true), OPM 1.
+        // veraPDF probe P5: FAIL §6.2.4.2-2.
+        var bytes = BuildOverprintPdf("/OP true /OPM 1", "/CS0 CS\n0 0 0 1 SC\n/GS1 gs\n0 0 100 100 re\nS\n");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.2-2");
+    }
+
+    // -- ICCBased RGB (N=3, not CMYK) → no finding
+    // Confirmed against veraPDF 1.30.2 (probe P6).
+
+    [Fact]
+    public void Validate_Overprint_FillIccRgb_OpTrue_Opm1_NoFinding()
+    {
+        // CS0 is ICCBased with N=3 (RGB) — only ICCBased CMYK (N=4) triggers this rule.
+        // veraPDF probe P6: compliant.
+        var bytes = BuildOverprintPdf("/op true /OPM 1",
+            "/CS0 cs\n0.5 0.5 0.5 sc\n/GS1 gs\n0 0 100 100 re\nf\n", iccN: 3);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.2-2");
+    }
+
+    // -- DeviceCMYK (k operator) with op true + OPM 1 → no finding for §6.2.4.2-2
+    // Confirmed against veraPDF 1.30.2 (probe P7 triggers 6.2.4.3 but NOT 6.2.4.2-2).
+
+    [Fact]
+    public void Validate_Overprint_DeviceCmyk_K_Operator_NoOverprintFinding()
+    {
+        // `k` sets DeviceCMYK fill colour — that is NOT an ICCBased colour space, so the rule
+        // must not fire. (veraPDF probe P7: non-compliant only due to §6.2.4.3, not §6.2.4.2-2.)
+        var bytes = BuildOverprintPdf("/op true /OPM 1", "/GS1 gs\n0 0 0 1 k\n0 0 100 100 re\nf\n");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.2-2");
+    }
+
+    // -- /OP only (no /op key) propagates to fill overprint → finding
+    // Confirmed against veraPDF 1.30.2 (probe P8): FAIL.
+    // Per ISO 32000-1 §8.4.5: /OP sets fill overprint when /op is absent.
+
+    [Fact]
+    public void Validate_Overprint_FillIccCmyk_OP_Only_Opm1_ReportsError()
+    {
+        // ExtGState has /OP true but no /op key. /OP propagates to fill overprint per §8.4.5.
+        // veraPDF probe P8: FAIL §6.2.4.2-2.
+        var bytes = BuildOverprintPdf("/OP true /OPM 1", "/CS0 cs\n0 0 0 1 sc\n/GS1 gs\n0 0 100 100 re\nf\n");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.2-2");
+    }
+
+    // -- /OP true but /op explicitly false → no finding (/op wins)
+    // Confirmed against veraPDF 1.30.2 (probe P14): PASS.
+
+    [Fact]
+    public void Validate_Overprint_FillIccCmyk_OP_True_OpExplicitFalse_NoFinding()
+    {
+        // /OP true sets stroke overprint; /op false explicitly overrides fill overprint.
+        // veraPDF probe P14: compliant.
+        var bytes = BuildOverprintPdf("/OP true /op false /OPM 1",
+            "/CS0 cs\n0 0 0 1 sc\n/GS1 gs\n0 0 100 100 re\nf\n");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.2-2");
+    }
+
+    // -- q/Q restores state: gs inside q, paint after Q → no finding
+    // Confirmed against veraPDF 1.30.2 (probe P9): PASS.
+
+    [Fact]
+    public void Validate_Overprint_QQ_RestoresState_NoFinding()
+    {
+        // gs is applied inside q…Q; after Q the state is restored to defaults.
+        // Paint occurs after Q → OPM and overprint are back to 0/false → no violation.
+        // veraPDF probe P9: compliant.
+        var bytes = BuildOverprintPdf("/op true /OPM 1",
+            "/CS0 cs\n0 0 0 1 sc\nq\n/GS1 gs\nQ\n0 0 100 100 re\nf\n");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.2-2");
+    }
+
+    // -- gs before q, paint after Q: state from before q persists → finding
+    // Confirmed against veraPDF 1.30.2 (probe P10): FAIL.
+
+    [Fact]
+    public void Validate_Overprint_GsBeforeQ_PaintAfterQ_ReportsError()
+    {
+        // gs is applied before q; q pushes a copy of that state; Q pops back to the same state.
+        // The overprint condition is still active when painting occurs after Q.
+        // veraPDF probe P10: FAIL §6.2.4.2-2.
+        var bytes = BuildOverprintPdf("/op true /OPM 1",
+            "/CS0 cs\n/GS1 gs\nq\nQ\n0 0 100 100 re\nf\n");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.2-2");
+    }
+
+    // -- fill-and-stroke (B) operator with fill ICCBased CMYK + op true + OPM 1 → finding
+    // Confirmed against veraPDF 1.30.2 (probe P13): FAIL.
+
+    [Fact]
+    public void Validate_Overprint_FillStroke_B_Operator_ReportsError()
+    {
+        // The `B` operator (fill then stroke, nonzero winding) checks both fill and stroke
+        // conditions. With fill ICCBased CMYK + op true + OPM 1, fill condition fires.
+        // veraPDF probe P13: FAIL §6.2.4.2-2.
+        var bytes = BuildOverprintPdf("/op true /OPM 1",
+            "/CS0 cs\n0 0 0 1 sc\n/GS1 gs\n0 0 100 100 re\nB\n");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.2-2");
+    }
+
+    // -- writer-produced PDF/A (no overprint, default state) → no false positive
+
+    [Fact]
+    public void Validate_Overprint_WriterProducedPdfA_NoFinding()
+    {
+        // A PDF/A-2b document produced by the VellumPdf writer has no overprint operators;
+        // the rule must not produce a false positive.
+        var bytes = BuildOnePagePdf();
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.2-2");
+    }
 }
