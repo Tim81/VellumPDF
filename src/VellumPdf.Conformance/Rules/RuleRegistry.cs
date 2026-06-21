@@ -59,6 +59,7 @@ internal static class RuleRegistry
     [
         new ContentStreamOperatorRule(),
         new InlineImageFilterRule(),
+        new InheritedResourceRule(),
         new GraphicsStateRule(),
         new GraphicsStateNestingRule(),
         new ForbiddenXObjectRule(),
