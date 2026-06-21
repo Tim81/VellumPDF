@@ -212,11 +212,9 @@ public static class ConformanceCatalog
         ["6.2.4.2-1"] = "ICC profile parser",
         ["6.2.4.2-2"] = "ExtGState overprint (OPM) analysis",
         ["6.2.4.4-2"] = "Separation tint/alternate consistency",
-        ["6.2.8.3-1"] = "JPEG2000 codestream parser",
-        ["6.2.8.3-2"] = "JPEG2000 codestream parser",
-        ["6.2.8.3-3"] = "JPEG2000 codestream parser",
-        ["6.2.8.3-4"] = "JPEG2000 codestream parser",
-        ["6.2.8.3-5"] = "JPEG2000 codestream parser",
+        // 6.2.8.3-1..-5: removed from Deferred; Jpeg2000Rule now implements all five for both
+        // JP2 box files and raw codestreams. -2/-3/-4 correctly do not apply to raw codestreams
+        // (which carry no colr boxes) — this is not a gap but correct per-spec scoping.
         ["6.4.3-1"] = "digital-signature parser",
         ["6.4.3-2"] = "digital-signature parser",
         ["6.4.3-3"] = "digital-signature parser",
