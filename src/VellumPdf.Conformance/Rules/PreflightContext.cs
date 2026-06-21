@@ -167,6 +167,16 @@ internal sealed class PreflightContext
     /// <summary>The number of indirect objects in the cross-reference table.</summary>
     public int IndirectObjectCount => Reader.ObjectNumbers.Count;
 
+    /// <summary>The object numbers present in the cross-reference table.</summary>
+    public IReadOnlyCollection<int> ObjectNumbers => Reader.ObjectNumbers;
+
+    /// <summary>
+    /// The byte offset where indirect object <paramref name="objectNumber"/> is written (the start of
+    /// its <c>N G obj</c> header), or <see langword="null"/> for an object that lives in an object
+    /// stream or is absent from the cross-reference table. Used by byte-level layout checks (§6.1.9).
+    /// </summary>
+    public long? ObjectOffset(int objectNumber) => Reader.UncompressedObjectOffset(objectNumber);
+
     /// <summary>
     /// Enumerates the resolved value of every indirect object in the file. Used by file-structure
     /// rules (§6.1.13) that constrain every object value regardless of reachability.

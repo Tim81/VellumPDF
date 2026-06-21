@@ -151,6 +151,12 @@ public static class OracleCorpus
             new OracleFixture("pdfa2b-endstream-bad-eol", AssembleClassicXref(corruptEndstreamEol: true),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
 
+            // An indirect object whose object and generation numbers are separated by two spaces
+            // rather than a single white-space (§6.1.9-1). veraPDF and the in-process ObjectLayoutRule
+            // both reject it.
+            new OracleFixture("pdfa2b-obj-bad-spacing", AssembleClassicXref(corruptObjSpacing: true),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
             // An embedded subset CIDFontType2 with a /CIDSet that does not identify the present CIDs
             // (§6.2.11.4.2-2). veraPDF and the in-process rule both reject it.
             new OracleFixture("pdfa2b-cidset-incomplete", WriterPdfWithCidSet(complete: false),
@@ -1545,7 +1551,8 @@ public static class OracleCorpus
     // keyword and the first subsection header is replaced by a space (same length, so offsets stay
     // valid), violating §6.1.4-2.
     internal static byte[] AssembleClassicXref(
-        bool corruptXrefEol = false, bool corruptStreamEol = false, bool corruptEndstreamEol = false)
+        bool corruptXrefEol = false, bool corruptStreamEol = false, bool corruptEndstreamEol = false,
+        bool corruptObjSpacing = false)
     {
         var xmp = Encoding.UTF8.GetBytes(
             "<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>"
@@ -1567,7 +1574,10 @@ public static class OracleCorpus
         for (var i = 0; i < objs.Length; i++)
         {
             offsets[i + 1] = (int)ms.Position;
-            W($"{i + 1} 0 obj\n{objs[i]}\nendobj\n");
+            // The xref records the start of each object, so a doubled space inside the header keeps
+            // the offsets valid while violating §6.1.9-1 (a single white-space is required).
+            var sep = corruptObjSpacing && i + 1 == 3 ? "  " : " ";
+            W($"{i + 1}{sep}0 obj\n{objs[i]}\nendobj\n");
         }
         offsets[4] = (int)ms.Position;
         W($"4 0 obj\n<< /Type /Metadata /Subtype /XML /Length {xmp.Length} >>\nstream\n");
