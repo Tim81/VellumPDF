@@ -17,6 +17,11 @@
     <EmbeddedResource Include="Assets\DejaVuSans.ttf">
       <LogicalName>DejaVuSans.ttf</LogicalName>
     </EmbeddedResource>
+    <!-- SourceSans3-ExtraLight (SIL OFL 1.1; see Assets/SourceSans3-LICENSE.md).
+         OpenType/CFF font used for CFF-outline fixture probes (groundwork only — throwaway). -->
+    <EmbeddedResource Include="Assets\SourceSans3-ExtraLight.otf">
+      <LogicalName>SourceSans3-ExtraLight.otf</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
 
 </Project>
