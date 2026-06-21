@@ -871,6 +871,43 @@ public sealed class PdfPreflightTests
     }
 
     [Fact]
+    public void Validate_AnnotToggleNoView_ReportsError()
+    {
+        // §6.3.2-2: the ToggleNoView flag bit (256) shall be clear. F = Print(4) | ToggleNoView(256).
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R >>"),
+            _pagesObj,
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Annots [4 0 R] >>"),
+            new("<< /Type /Annot /Subtype /Link /Rect [10 10 50 50] /F 260 >>"),
+        ]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.Message.Contains("ToggleNoView", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Validate_AnnotAppearanceExtraKey_ReportsError()
+    {
+        // §6.3.3-2: an annotation's /AP appearance dictionary shall contain only /N (here it has /D too).
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R >>"),
+            _pagesObj,
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Annots [4 0 R] >>"),
+            new("<< /Type /Annot /Subtype /Text /Rect [10 10 50 50] /F 4 /Contents (n) /AP << /N 5 0 R /D 5 0 R >> >>"),
+            new("/Type /XObject /Subtype /Form /BBox [0 0 1 1]", Stream: []),
+        ]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.Message.Contains("/AP", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Validate_Pdf20Header_ReportsHeaderError()
     {
         // A plain document declares %PDF-2.0, which is not valid PDF/A-2 (§6.1.2).

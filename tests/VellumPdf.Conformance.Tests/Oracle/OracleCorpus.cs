@@ -400,6 +400,16 @@ public static class OracleCorpus
             // bare /EF presence (an adversarial false-positive that was found and fixed).
             new OracleFixture("pdfa2b-ef-on-page", WriterPdfWithEfOnPage(),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // A Link annotation whose flags set the ToggleNoView bit (§6.3.2-2). veraPDF and the
+            // in-process AnnotationRule both reject it.
+            new OracleFixture("pdfa2b-annot-togglenoview", WriterPdfWithAnnotFlags(1 << 2 | 1 << 8),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // A Text annotation whose appearance dictionary (/AP) carries a /D entry besides /N
+            // (§6.3.3-2). veraPDF and the in-process rule both reject it.
+            new OracleFixture("pdfa2b-annot-ap-extra-key", WriterPdfWithApExtraKey(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
         ];
     }
 
@@ -797,6 +807,45 @@ public static class OracleCorpus
         var newPage = CloneDict(page).Set(new PdfName("EF"),
             new PdfDictionary().Set(new PdfName("F"), new PdfIndirectReference(efStreamNum)));
         return reader.AppendRevision([(pageRef.ObjectNumber, newPage), (efStreamNum, EmbeddedFileStream())]);
+    }
+
+    // Attaches a Link annotation with the given annotation flags to the first page. (Link is exempt
+    // from the appearance-stream requirement, so the flag value is the only thing under test.)
+    private static byte[] WriterPdfWithAnnotFlags(int flags)
+    {
+        var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var annotNum = reader.Size;
+        var annot = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("Annot")).Set(PdfName.Subtype, new PdfName("Link"))
+            .Set(new PdfName("Rect"), new PdfArray([new PdfInteger(10), new PdfInteger(10), new PdfInteger(50), new PdfInteger(50)]))
+            .Set(new PdfName("F"), new PdfInteger(flags));
+        var newPage = CloneDict(page).Set(new PdfName("Annots"), new PdfArray([new PdfIndirectReference(annotNum)]));
+        return reader.AppendRevision([(pageRef.ObjectNumber, newPage), (annotNum, annot)]);
+    }
+
+    // Attaches a Text annotation whose /AP appearance dictionary carries a /D entry in addition to /N.
+    private static byte[] WriterPdfWithApExtraKey()
+    {
+        var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var apNum = reader.Size;
+        var annotNum = apNum + 1;
+        var ap = new PdfStream([]);
+        ap.Dictionary.Set(PdfName.Type, new PdfName("XObject")).Set(PdfName.Subtype, new PdfName("Form"))
+            .Set(new PdfName("BBox"), new PdfArray([new PdfInteger(0), new PdfInteger(0), new PdfInteger(1), new PdfInteger(1)]));
+        var annot = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("Annot")).Set(PdfName.Subtype, new PdfName("Text"))
+            .Set(new PdfName("Rect"), new PdfArray([new PdfInteger(10), new PdfInteger(10), new PdfInteger(50), new PdfInteger(50)]))
+            .Set(new PdfName("F"), new PdfInteger(1 << 2))
+            .Set(new PdfName("Contents"), new PdfLiteralString(Encoding.ASCII.GetBytes("note")))
+            .Set(new PdfName("AP"), new PdfDictionary()
+                .Set(new PdfName("N"), new PdfIndirectReference(apNum))
+                .Set(new PdfName("D"), new PdfIndirectReference(apNum)));
+        var newPage = CloneDict(page).Set(new PdfName("Annots"), new PdfArray([new PdfIndirectReference(annotNum)]));
+        return reader.AppendRevision([(pageRef.ObjectNumber, newPage), (apNum, ap), (annotNum, annot)]);
     }
 
     private static byte[] WriterPdfWithPresSteps()
