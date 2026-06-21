@@ -4,6 +4,7 @@
 using System.Text;
 using VellumPdf.Annotations;
 using VellumPdf.Canvas;
+using VellumPdf.Conformance.Rules.Fonts;
 using VellumPdf.Core;
 using VellumPdf.Document;
 using VellumPdf.Fonts;
@@ -183,6 +184,17 @@ public static class OracleCorpus
             // accept it (the no-false-positive guard for §6.2.11.4.2-2).
             new OracleFixture("pdfa2b-cidset-complete", WriterPdfWithCidSet(complete: true),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // An embedded subset Type 1 font (real Noto Sans Shavian PFB) whose FontDescriptor /CharSet
+            // lists every glyph in the program — both validators accept it (the no-false-positive guard
+            // for §6.2.11.4.2-1).
+            new OracleFixture("pdfa2b-type1-charset-complete", WriterPdfWithType1CharSet(complete: true),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // The same font with one present glyph omitted from /CharSet (§6.2.11.4.2-1). veraPDF and
+            // the in-process FontStructureRule both reject it.
+            new OracleFixture("pdfa2b-type1-charset-incomplete", WriterPdfWithType1CharSet(complete: false),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
 
             // A PDF/A-2b document that draws text with a properly embedded (subset) TrueType font via
             // the Type0/CIDFontType2/Identity-H path. veraPDF accepts it (all §6.2.11.x font checks
@@ -1536,6 +1548,66 @@ public static class OracleCorpus
         var newFf3 = new PdfStream(program);
         newFf3.Dictionary.Set(PdfName.Subtype, new PdfName("Type2"));
         return reader.AppendRevision([(ff3Ref.ObjectNumber, newFf3)]);
+    }
+
+    // Embeds the Noto Sans Shavian Type 1 program as a subset-tagged simple Type1 font on a
+    // compliant PDF/A-2b baseline, with a /CharSet string in the FontDescriptor. When complete the
+    // CharSet lists every glyph in the program; otherwise it omits one (§6.2.11.4.2-1).
+    private static byte[] WriterPdfWithType1CharSet(bool complete)
+    {
+        var (fontFile, length1, length2, length3) = Type1FontAsset.ToFontFile();
+        var names = Type1Glyphs.TryEnumerate(fontFile, length1)!.OrderBy(n => n, StringComparer.Ordinal).ToList();
+        if (!complete)
+            names.Remove("u1047F"); // drop one present glyph so the CharSet is incomplete.
+        var charSet = string.Concat(names.Select(n => "/" + n));
+
+        using var reader = PdfReader.Open(WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b));
+        var (pageRef, page) = FirstPage(reader);
+
+        var fontNum = reader.Size;
+        var descNum = fontNum + 1;
+        var ffNum = fontNum + 2;
+        var contentNum = fontNum + 3;
+
+        var program = new PdfStream(fontFile);
+        program.Dictionary
+            .Set(new PdfName("Length1"), new PdfInteger(length1))
+            .Set(new PdfName("Length2"), new PdfInteger(length2))
+            .Set(new PdfName("Length3"), new PdfInteger(length3));
+        var descriptor = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("FontDescriptor"))
+            .Set(new PdfName("FontName"), new PdfName("AAAAAA+NotoSansShavian"))
+            .Set(new PdfName("Flags"), new PdfInteger(4)) // symbolic
+            .Set(new PdfName("FontBBox"),
+                new PdfArray([new PdfInteger(0), new PdfInteger(-502), new PdfInteger(1396), new PdfInteger(1600)]))
+            .Set(new PdfName("ItalicAngle"), new PdfInteger(0)).Set(new PdfName("Ascent"), new PdfInteger(1600))
+            .Set(new PdfName("Descent"), new PdfInteger(-502)).Set(new PdfName("CapHeight"), new PdfInteger(1600))
+            .Set(new PdfName("StemV"), new PdfInteger(80))
+            .Set(new PdfName("CharSet"), new PdfLiteralString(Encoding.ASCII.GetBytes(charSet)))
+            .Set(new PdfName("FontFile"), new PdfIndirectReference(ffNum));
+        var font = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("Font")).Set(PdfName.Subtype, new PdfName("Type1"))
+            .Set(PdfName.BaseFont, new PdfName("AAAAAA+NotoSansShavian"))
+            .Set(new PdfName("FirstChar"), new PdfInteger(32)).Set(new PdfName("LastChar"), new PdfInteger(32))
+            .Set(new PdfName("Widths"), new PdfArray([new PdfInteger(1000)]))
+            .Set(new PdfName("FontDescriptor"), new PdfIndirectReference(descNum));
+
+        var resObj = page.Get(new PdfName("Resources"));
+        var resources = (resObj is null ? null : reader.ResolveValue(resObj)) as PdfDictionary ?? new PdfDictionary();
+        var newResources = CloneDict(resources)
+            .Set(PdfName.Font, new PdfDictionary().Set(new PdfName("F1"), new PdfIndirectReference(fontNum)));
+        var newPage = CloneDict(page).Set(new PdfName("Resources"), newResources);
+        // veraPDF only validates a font's /CharSet when the font is actually used, so select it.
+        newPage.Set(new PdfName("Contents"),
+            new PdfArray([page.Get(new PdfName("Contents"))!, new PdfIndirectReference(contentNum)]));
+        // Render the glyph invisibly (text rendering mode 3): the font counts as used — so veraPDF
+        // validates its /CharSet — but the §6.2.11.5 width check is skipped, keeping this fixture
+        // about /CharSet alone. Code 32 maps to /uni00A0 via the program's built-in encoding.
+        var content = new PdfStream(Encoding.ASCII.GetBytes("BT 3 Tr /F1 12 Tf 72 700 Td (\x20) Tj ET"));
+
+        return reader.AppendRevision(
+            [(pageRef.ObjectNumber, newPage), (fontNum, font), (descNum, descriptor), (ffNum, program),
+                (contentNum, content)]);
     }
 
     private static int NumGlyphsOf(byte[] program)

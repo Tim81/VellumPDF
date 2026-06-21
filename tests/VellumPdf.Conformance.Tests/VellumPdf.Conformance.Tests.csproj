@@ -18,9 +18,15 @@
       <LogicalName>DejaVuSans.ttf</LogicalName>
     </EmbeddedResource>
     <!-- SourceSans3-ExtraLight (SIL OFL 1.1; see Assets/SourceSans3-LICENSE.md).
-         OpenType/CFF font used for CFF-outline fixture probes (groundwork only — throwaway). -->
+         OpenType/CFF font used for the §6.2.11.2-7 FontFile3 /Subtype fixtures. -->
     <EmbeddedResource Include="Assets\SourceSans3-ExtraLight.otf">
       <LogicalName>SourceSans3-ExtraLight.otf</LogicalName>
+    </EmbeddedResource>
+    <!-- Noto Sans Shavian (SIL OFL 1.1; see Assets/NotoSansShavian-LICENSE.txt).
+         A real classic Type 1 (PFB) program — the only font flavour that embeds via /FontFile —
+         used for the §6.2.11.4.2-1 Type1 /CharSet completeness fixtures. -->
+    <EmbeddedResource Include="Assets\NotoSansShavian-Regular.pfb">
+      <LogicalName>NotoSansShavian-Regular.pfb</LogicalName>
     </EmbeddedResource>
   </ItemGroup>
 

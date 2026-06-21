@@ -2,8 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 using System.IO.Compression;
+using System.Linq;
 using System.Text;
 using VellumPdf.Conformance;
+using VellumPdf.Conformance.Rules.Fonts;
+using VellumPdf.Conformance.Tests.Oracle;
 using VellumPdf.Document;
 using VellumPdf.Reader;
 
@@ -1996,6 +1999,46 @@ public sealed class PdfPreflightTests
 
         Assert.DoesNotContain(
             result.Assertions, a => a.RuleId == "ISO19005-2:6.2.11.2-fontfile3-subtype");
+    }
+
+    [Fact]
+    public void Validate_Type1SubsetIncompleteCharSet_ReportsError()
+    {
+        // §6.2.11.4.2-1: a subset Type 1 font's /CharSet must list every glyph in the program.
+        var (fontFile, len1, len2, len3) = Type1FontAsset.ToFontFile();
+        var names = Type1Glyphs.TryEnumerate(fontFile, len1)!.Where(n => n != "u1047F"); // omit one glyph
+        var charSet = string.Concat(names.Select(n => "/" + n));
+        var bytes = BuildFontPdf(
+            new PdfObj("<< /Type /Font /Subtype /Type1 /BaseFont /AAAAAA+NotoSansShavian "
+                + "/FirstChar 0 /LastChar 0 /Widths [0] /FontDescriptor 7 0 R >>"),
+            new PdfObj("<< /Type /FontDescriptor /FontName /AAAAAA+NotoSansShavian /Flags 4 "
+                + "/FontBBox [0 -502 1396 1600] /ItalicAngle 0 /Ascent 1600 /Descent -502 /CapHeight 1600 "
+                + $"/StemV 80 /CharSet ({charSet}) /FontFile 8 0 R >>"),
+            new PdfObj($"/Length1 {len1} /Length2 {len2} /Length3 {len3}", fontFile));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.11.4.2-charset");
+    }
+
+    [Fact]
+    public void Validate_Type1NonSubsetIncompleteCharSet_IsNotFlagged()
+    {
+        // §6.2.11.4.2-1 applies only to subset fonts; a non-subset /BaseFont is exempt even with a
+        // wildly incomplete /CharSet.
+        var (fontFile, len1, len2, len3) = Type1FontAsset.ToFontFile();
+        var bytes = BuildFontPdf(
+            new PdfObj("<< /Type /Font /Subtype /Type1 /BaseFont /NotoSansShavian "
+                + "/FirstChar 0 /LastChar 0 /Widths [0] /FontDescriptor 7 0 R >>"),
+            new PdfObj("<< /Type /FontDescriptor /FontName /NotoSansShavian /Flags 4 "
+                + "/FontBBox [0 -502 1396 1600] /ItalicAngle 0 /Ascent 1600 /Descent -502 /CapHeight 1600 "
+                + "/StemV 80 /CharSet (/.notdef) /FontFile 8 0 R >>"),
+            new PdfObj($"/Length1 {len1} /Length2 {len2} /Length3 {len3}", fontFile));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.11.4.2-charset");
     }
 
     [Fact]
