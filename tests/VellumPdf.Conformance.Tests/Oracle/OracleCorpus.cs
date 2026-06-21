@@ -157,6 +157,13 @@ public static class OracleCorpus
             new OracleFixture("pdfa2b-obj-bad-spacing", AssembleClassicXref(corruptObjSpacing: true),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
 
+            // A hexadecimal string with an odd number of hex digits (§6.1.6-1). veraPDF and the
+            // in-process HexStringRule both reject it. (§6.1.6-2, a non-hex digit, is not fixtured: the
+            // reader rejects an invalid hex digit while parsing, so such a file cannot be opened to
+            // validate — HexStringRule still flags it best-effort when the document does parse.)
+            new OracleFixture("pdfa2b-hex-odd", AssembleClassicXref(injectOddHex: true),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
             // An embedded subset CIDFontType2 with a /CIDSet that does not identify the present CIDs
             // (§6.2.11.4.2-2). veraPDF and the in-process rule both reject it.
             new OracleFixture("pdfa2b-cidset-incomplete", WriterPdfWithCidSet(complete: false),
@@ -1552,7 +1559,7 @@ public static class OracleCorpus
     // valid), violating §6.1.4-2.
     internal static byte[] AssembleClassicXref(
         bool corruptXrefEol = false, bool corruptStreamEol = false, bool corruptEndstreamEol = false,
-        bool corruptObjSpacing = false)
+        bool corruptObjSpacing = false, bool injectOddHex = false)
     {
         var xmp = Encoding.UTF8.GetBytes(
             "<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>"
@@ -1564,7 +1571,9 @@ public static class OracleCorpus
         {
             "<< /Type /Catalog /Pages 2 0 R /Metadata 4 0 R >>",
             "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>",
+            // An odd-length hexadecimal string (3 hex digits) violates §6.1.6-1 when injected.
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792]"
+                + (injectOddHex ? " /VellumHex <ABC>" : "") + " >>",
         };
         var ms = new MemoryStream();
         void W(string s) { var b = Encoding.Latin1.GetBytes(s); ms.Write(b, 0, b.Length); }

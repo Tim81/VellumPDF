@@ -197,8 +197,7 @@ public static class ConformanceCatalog
 
     private static readonly Dictionary<string, string> PdfADeferred = new(StringComparer.Ordinal)
     {
-        ["6.1.6-1"] = "byte-offset token scanner",
-        ["6.1.6-2"] = "byte-offset token scanner",
+        ["6.1.6-2"] = "byte scan implemented, but the reader rejects an invalid hex digit before validation",
         ["6.1.8-1"] = "byte-offset token scanner",
         ["6.1.7.2-1"] = "used-stream filter analysis",
         ["6.1.10-1"] = "inline-image content parser",
