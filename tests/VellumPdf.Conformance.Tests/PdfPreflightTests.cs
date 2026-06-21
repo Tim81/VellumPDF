@@ -1080,6 +1080,19 @@ public sealed class PdfPreflightTests
     }
 
     [Fact]
+    public void Validate_NonSymbolicTrueTypeSymbolOnlyCmap_ReportsError()
+    {
+        // §6.2.11.6-1: a non-symbolic TrueType whose embedded cmap is a single (3,0) symbol subtable
+        // cannot serve glyph lookups.
+        var bytes = Oracle.OracleCorpus.SimpleTrueTypeFontSymbolOnlyCmap();
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.11.6-nonsymbolic-cmap");
+    }
+
+    [Fact]
     public void Validate_NonSymbolicTrueType_NoCmapFalsePositive()
     {
         // §6.2.11.6-4 must not fire on a non-symbolic font — the regression guard.
