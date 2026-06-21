@@ -615,6 +615,14 @@ public static class OracleCorpus
             // and so must the in-process rule (the no-false-positive guard for the usage scoping).
             new OracleFixture("pdfa2b-devicen-33-unused", WriterPdfWithDeviceN33Colourants(paint: false),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // An unembedded simple Type1 font (/Helvetica) added to the first page's /Resources /Font
+            // under the key /F99, with NO page content selecting it (no `Tf` operator referencing /F99).
+            // veraPDF accepts this document — fonts not selected by page content are not validated.
+            // The in-process validator must now also accept it (font rules scope to used fonts only,
+            // issue #118). This is the regression guard that unused fonts do not produce a false positive.
+            new OracleFixture("pdfa2b-unused-nonembedded-font", WriterPdfWithUnusedNonEmbeddedFont(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
         ];
     }
 
@@ -692,6 +700,47 @@ public static class OracleCorpus
         }
 
         return reader.AppendRevision(revision);
+    }
+
+    /// <summary>
+    /// Injects an unembedded simple Type 1 font (<c>/Helvetica</c>) into the first page's
+    /// <c>/Resources /Font</c> under the key <c>/F99</c> via an incremental update on a conformant
+    /// baseline. The page content is NOT changed — no <c>Tf</c> operator references <c>/F99</c> —
+    /// so the font is present in resources but never selected by page content.
+    /// </summary>
+    /// <remarks>
+    /// veraPDF only validates fonts that are actually used (selected by the current graphics state).
+    /// This fixture has an unembedded font that veraPDF therefore ignores, so it accepts the file.
+    /// The in-process validator must agree — this is the regression guard for issue #118 that prevents
+    /// unused fonts from triggering a false positive in the font-embedding or font-structure rules.
+    /// </remarks>
+    private static byte[] WriterPdfWithUnusedNonEmbeddedFont()
+    {
+        var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var newPage = CloneDict(page);
+
+        // Build a bare unembedded Type1 font — no /FontDescriptor, no /FontFile.
+        var font = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("Font"))
+            .Set(PdfName.Subtype, new PdfName("Type1"))
+            .Set(PdfName.BaseFont, new PdfName("Helvetica"));
+
+        var fontNum = reader.Size;
+
+        // Inject the font into the page resources under key /F99, which nothing in the page
+        // content ever references with a Tf operator.
+        var resObj = page.Get(new PdfName("Resources"));
+        var resources = (resObj is null ? null : reader.ResolveValue(resObj)) as PdfDictionary ?? new PdfDictionary();
+        var newResources = CloneDict(resources);
+        newResources.Set(
+            PdfName.Font,
+            new PdfDictionary().Set(new PdfName("F99"), new PdfIndirectReference(fontNum)));
+        newPage.Set(new PdfName("Resources"), newResources);
+
+        // No /Contents update — the page has no content selecting /F99.
+        return reader.AppendRevision([(pageRef.ObjectNumber, newPage), (fontNum, font)]);
     }
 
     private static byte[] WriterPdfWithDrawnPostScriptXObject()

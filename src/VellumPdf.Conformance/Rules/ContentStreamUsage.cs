@@ -10,10 +10,10 @@ namespace VellumPdf.Conformance.Rules;
 /// <summary>
 /// A minimal content-stream operator scan. It reports which graphics-state (<c>/ExtGState</c>)
 /// resources a page actually applies (via the <c>gs</c> operator), which XObjects it actually paints
-/// (via the <c>Do</c> operator), and whether the page paints with device-dependent colour. Rules use
-/// this to scope checks to constructs that are exercised — matching veraPDF, which validates the
-/// <em>current</em> graphics state rather than every resource that is merely present (see issues
-/// #127, #128).
+/// (via the <c>Do</c> operator), which font resource names the page selects (via the <c>Tf</c>
+/// operator), and whether the page paints with device-dependent colour. Rules use this to scope
+/// checks to constructs that are exercised — matching veraPDF, which validates the <em>current</em>
+/// graphics state rather than every resource that is merely present (see issues #118, #127, #128).
 /// </summary>
 /// <remarks>
 /// Best-effort and defensive: the page content is decoded and tokenised with the reader's lexer;
@@ -26,15 +26,16 @@ internal static class ContentStreamUsage
     private static readonly PdfName _contents = new("Contents");
 
     /// <summary>Scans <paramref name="page"/>'s content streams for graphics-state, colour,
-    /// XObject-drawing, rendering-intent, and selected-colour-space usage.</summary>
+    /// XObject-drawing, rendering-intent, selected-colour-space, and selected-font usage.</summary>
     public static (HashSet<string> AppliedExtGStates, bool UsesDeviceColour, HashSet<string> DrawnXObjects,
-        HashSet<string> RenderingIntents, HashSet<string> SelectedColorSpaces) Analyze(
+        HashSet<string> RenderingIntents, HashSet<string> SelectedColorSpaces, HashSet<string> UsedFonts) Analyze(
         PreflightContext context, PdfDictionary page)
     {
         var applied = new HashSet<string>(StringComparer.Ordinal);
         var drawnXObjects = new HashSet<string>(StringComparer.Ordinal);
         var renderingIntents = new HashSet<string>(StringComparer.Ordinal);
         var selectedColorSpaces = new HashSet<string>(StringComparer.Ordinal);
+        var usedFonts = new HashSet<string>(StringComparer.Ordinal);
         var usesDeviceColour = false;
 
         var content = GetContentBytes(context, page);
@@ -85,14 +86,23 @@ internal static class ContentStreamUsage
                             if (lastName is not null)
                                 selectedColorSpaces.Add(lastName);
                         }
+                        else if (op == "Tf")
+                        {
+                            // `Tf` selects the current font: `/FontName size Tf`.
+                            if (lastName is not null)
+                                usedFonts.Add(lastName);
+                        }
                         else if (op == "ID")
                         {
                             SkipInlineImageData(lexer, content);
                         }
                     }
 
-                    // Any operator or non-name operand clears the pending name (operators consume operands).
-                    lastName = null;
+                    // Keywords (operators) consume all pending operands; clear the tracked name.
+                    // Non-name, non-keyword tokens (numbers, strings, booleans) are allowed between a
+                    // name operand and its operator — e.g. `/F0 12 Tf` — so they do not clear lastName.
+                    if (token.Kind == TokenKind.Keyword)
+                        lastName = null;
                 }
             }
             catch
@@ -101,7 +111,7 @@ internal static class ContentStreamUsage
             }
         }
 
-        return (applied, usesDeviceColour, drawnXObjects, renderingIntents, selectedColorSpaces);
+        return (applied, usesDeviceColour, drawnXObjects, renderingIntents, selectedColorSpaces, usedFonts);
     }
 
     /// <summary>The page's concatenated, decoded content-stream bytes (or null when empty/undecodable).

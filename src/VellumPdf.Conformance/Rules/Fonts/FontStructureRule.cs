@@ -25,6 +25,13 @@ namespace VellumPdf.Conformance.Rules.Fonts;
 /// Encoding on a symbolic font) reproduce clauses 6.2.11.2-6, 6.2.11.6-2, and 6.2.11.6-3; corrupting
 /// a composite font's descendant reproduces 6.2.11.2-2 and 6.2.11.3.2-1.
 /// <para>
+/// Only fonts that a page actually selects via a <c>Tf</c> operator in its content stream are
+/// validated (matching veraPDF, which validates only the current graphics state — issue #118).
+/// Fonts present in <c>/Resources /Font</c> but never selected are not checked. Fonts used only
+/// within form XObjects, Type 3 glyph procedures, or annotation appearance streams are a deferred
+/// edge and are not yet detected here.
+/// </para>
+/// <para>
 /// Deferred to the font-<em>program</em> parser: glyph presence (§6.2.11.4.1), glyph-width
 /// consistency (§6.2.11.5), and the embedded-cmap requirements (§6.2.11.6 t1/t4). Embedding itself is
 /// enforced by <see cref="FontEmbeddingRule"/>.
@@ -108,7 +115,7 @@ internal sealed class FontStructureRule : IConformanceRule
     {
         var checkedFonts = new HashSet<int>();
 
-        foreach (var font in context.EnumerateFonts())
+        foreach (var font in context.EnumerateUsedFonts())
         {
             CheckType(context, font);
             CheckBaseFont(context, font);
