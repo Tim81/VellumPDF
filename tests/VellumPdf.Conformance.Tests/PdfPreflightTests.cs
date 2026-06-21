@@ -1067,6 +1067,44 @@ public sealed class PdfPreflightTests
     }
 
     [Fact]
+    public void Validate_PopupAppearanceSubDictionary_ReportsError()
+    {
+        // §6.3.3-4: a /Popup with an /AP /N sub-dictionary is non-compliant (Popup has no kind exemption).
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R >>"),
+            _pagesObj,
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Annots [4 0 R] >>"),
+            new("<< /Type /Annot /Subtype /Popup /Rect [10 10 50 50] /AP << /N << /S 5 0 R >> >> >>"),
+            new("/Type /XObject /Subtype /Form /BBox [0 0 1 1]", Stream: []),
+        ]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.Message.Contains("appearance stream", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Validate_PopupWithoutPrintFlag_IsAllowed()
+    {
+        // §6.3.2: a /Popup is exempt from the flag requirements — a Popup with no /F (and a stream /AP)
+        // must not be flagged for a missing Print flag. Guards the §6.3.3-4 fix against a regression.
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R >>"),
+            _pagesObj,
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Annots [4 0 R] >>"),
+            new("<< /Type /Annot /Subtype /Popup /Rect [10 10 50 50] /AP << /N 5 0 R >> >>"),
+            new("/Type /XObject /Subtype /Form /BBox [0 0 1 1]", Stream: []),
+        ]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.3-annotation");
+    }
+
+    [Fact]
     public void Validate_ButtonWidgetAppearanceStream_ReportsError()
     {
         // §6.3.3-3: a Widget /Btn field's /AP /N shall be an appearance sub-dictionary, not a stream.

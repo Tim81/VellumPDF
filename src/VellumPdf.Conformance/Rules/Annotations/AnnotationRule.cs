@@ -62,24 +62,26 @@ internal sealed class AnnotationRule : IConformanceRule
                 continue;
             }
 
-            // Popup annotations are driven by their parent and are exempt from these requirements.
-            if (subtype == "Popup")
-                continue;
-
-            var flags = (int)(NumericValue(context.Resolve(annot.Get(_f))) ?? 0);
             var label = subtype is null ? "An annotation" : $"A /{subtype} annotation";
 
-            if ((flags & Print) == 0)
-                context.Report(RuleId, Clause, PreflightSeverity.Error, $"{label} shall have the Print flag set.");
-            if ((flags & Hidden) != 0)
-                context.Report(RuleId, Clause, PreflightSeverity.Error, $"{label} shall not have the Hidden flag set.");
-            if ((flags & Invisible) != 0)
-                context.Report(RuleId, Clause, PreflightSeverity.Error, $"{label} shall not have the Invisible flag set.");
-            if ((flags & NoView) != 0)
-                context.Report(RuleId, Clause, PreflightSeverity.Error, $"{label} shall not have the NoView flag set.");
-            // §6.3.2-2: the ToggleNoView flag shall also be clear.
-            if ((flags & ToggleNoView) != 0)
-                context.Report(RuleId, Clause, PreflightSeverity.Error, $"{label} shall not have the ToggleNoView flag set.");
+            // §6.3.2: a /Popup annotation is driven by its parent and is exempt from the annotation
+            // flag requirements (it need not even carry an /F). Every other annotation's flags are
+            // constrained. The appearance-dictionary requirements below still apply to Popup.
+            if (subtype != "Popup")
+            {
+                var flags = (int)(NumericValue(context.Resolve(annot.Get(_f))) ?? 0);
+                if ((flags & Print) == 0)
+                    context.Report(RuleId, Clause, PreflightSeverity.Error, $"{label} shall have the Print flag set.");
+                if ((flags & Hidden) != 0)
+                    context.Report(RuleId, Clause, PreflightSeverity.Error, $"{label} shall not have the Hidden flag set.");
+                if ((flags & Invisible) != 0)
+                    context.Report(RuleId, Clause, PreflightSeverity.Error, $"{label} shall not have the Invisible flag set.");
+                if ((flags & NoView) != 0)
+                    context.Report(RuleId, Clause, PreflightSeverity.Error, $"{label} shall not have the NoView flag set.");
+                // §6.3.2-2: the ToggleNoView flag shall also be clear.
+                if ((flags & ToggleNoView) != 0)
+                    context.Report(RuleId, Clause, PreflightSeverity.Error, $"{label} shall not have the ToggleNoView flag set.");
+            }
 
             // §6.3.3-2: when an annotation has an /AP, the appearance dictionary shall contain only the
             // /N (normal) entry — no /D (down) or /R (rollover). This applies to every annotation that
@@ -119,11 +121,11 @@ internal sealed class AnnotationRule : IConformanceRule
                 }
             }
 
-            // A /Link annotation has no visible appearance of its own and is exempt from the
-            // appearance-stream requirement — but NOT from the flag requirements above: veraPDF
-            // requires the Print flag on Link annotations too (a Link with no /F is non-compliant;
-            // the pdfa2b-link oracle fixture exercises a conformant Link with the Print flag set).
-            if (subtype == "Link")
+            // A /Link (and a /Popup) annotation has no visible appearance of its own and is exempt from
+            // the appearance-PRESENCE requirement (§6.3.3-1) — but NOT from the /AP-kind checks above
+            // (a /Popup with an /AP /N sub-dictionary is non-compliant), nor, for /Link, from the flag
+            // requirements (the pdfa2b-link oracle fixture exercises a conformant Link with /F Print).
+            if (subtype == "Link" || subtype == "Popup")
                 continue;
 
             // The normal appearance /N is either an appearance stream or a sub-dictionary keyed by
