@@ -40,6 +40,12 @@ internal sealed class GraphicsStateRule : IConformanceRule
     private static readonly PdfName _ht = new("HT");
     private static readonly PdfName _halftoneType = new("HalftoneType");
     private static readonly PdfName _halftoneName = new("HalftoneName");
+    private static readonly PdfName _transferFunction = new("TransferFunction");
+
+    private static readonly HashSet<string> _processColorants = new(StringComparer.Ordinal)
+    {
+        "Cyan", "Magenta", "Yellow", "Black",
+    };
 
     private static readonly HashSet<string> _standardIntents = new(StringComparer.Ordinal)
     {
@@ -108,6 +114,63 @@ internal sealed class GraphicsStateRule : IConformanceRule
             if (halftone.Get(_halftoneName) is not null)
                 Report(context, "6.2.5-halftone-name", "6.2.5",
                     "An applied ExtGState's halftone contains a /HalftoneName entry, which is not permitted in PDF/A-2.");
+
+            // §6.2.5-6: TransferFunction rules per colorant:
+            //   colorantName == 'Default' → exempt;
+            //   null or standard process colorant (Cyan/Magenta/Yellow/Black) → TransferFunction MUST be absent;
+            //   other (spot/custom) → TransferFunction MUST be present.
+            // A type-1 halftone is used directly (colorantName == null); for type-5 each sub-entry's key is the colorantName.
+            CheckHalftoneTransferFunction(context, halftone, colorantName: null);
+        }
+    }
+
+    private static void CheckHalftoneTransferFunction(
+        PreflightContext context, PdfDictionary halftone, string? colorantName, int depth = 0)
+    {
+        var halftoneTypeObj = context.Resolve(halftone.Get(_halftoneType));
+        var halftoneTypeValue = (halftoneTypeObj as PdfInteger)?.Value ?? 1;
+
+        // A type-5 halftone's colorant entries are themselves halftones of type 1/6/10/16 — never
+        // type 5 — so only the top-level halftone is expanded. The depth guard means a malformed file
+        // nesting a type-5 inside a type-5 is treated as a leaf rather than recursing without bound.
+        if (halftoneTypeValue == 5 && depth == 0)
+        {
+            // Type-5: iterate colorant entries; skip the structural keys.
+            foreach (var entry in halftone.Entries)
+            {
+                var key = entry.Key.Value;
+                if (key is "Type" or "HalftoneType" or "HalftoneName")
+                    continue;
+                // Each value is a halftone sub-dictionary (or stream) keyed by colorant name.
+                if (context.Resolve(entry.Value) is PdfDictionary subHalftone)
+                    CheckHalftoneTransferFunction(context, subHalftone, colorantName: key, depth: depth + 1);
+            }
+        }
+        else
+        {
+            // Type-1 (or unknown type): colorantName comes from the caller (null for a top-level halftone).
+            // /Default is always exempt.
+            if (colorantName == "Default")
+                return;
+
+            var hasTf = halftone.Get(_transferFunction) is not null;
+
+            if (colorantName == null || _processColorants.Contains(colorantName))
+            {
+                // Standard process colorants and null (type-1) must NOT have a TransferFunction.
+                if (hasTf)
+                    Report(context, "6.2.5-halftone-transfer", "6.2.5",
+                        colorantName == null
+                            ? "An applied ExtGState's halftone contains a /TransferFunction entry, which is not permitted in PDF/A-2."
+                            : $"An applied ExtGState's type-5 halftone entry /{colorantName} contains a /TransferFunction entry, which is not permitted in PDF/A-2.");
+            }
+            else
+            {
+                // Spot / other colorant — TransferFunction MUST be present.
+                if (!hasTf)
+                    Report(context, "6.2.5-halftone-transfer", "6.2.5",
+                        $"An applied ExtGState's type-5 halftone entry /{colorantName} is missing a required /TransferFunction entry.");
+            }
         }
     }
 
