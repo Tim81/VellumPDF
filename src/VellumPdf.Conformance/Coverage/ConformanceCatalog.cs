@@ -196,7 +196,6 @@ public static class ConformanceCatalog
 
     private static readonly Dictionary<string, string> PdfADeferred = new(StringComparer.Ordinal)
     {
-        ["6.1.4-2"] = "byte-offset token scanner",
         ["6.1.6-1"] = "byte-offset token scanner",
         ["6.1.6-2"] = "byte-offset token scanner",
         ["6.1.7.1-2"] = "byte-offset token scanner",

@@ -129,6 +129,17 @@ public static class OracleCorpus
             new OracleFixture("pdfa2b-font-nonsymbolic-cmap", SimpleTrueTypeFontSymbolOnlyCmap(),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
 
+            // A hand-built classic-cross-reference PDF where the xref keyword and the first subsection
+            // header are separated by a space rather than a single EOL (§6.1.4-2). veraPDF and the
+            // in-process CrossReferenceRule both reject it.
+            new OracleFixture("pdfa2b-xref-bad-eol", AssembleClassicXref(corruptXrefEol: true),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // The same classic-cross-reference document, uncorrupted — both validators accept it (the
+            // no-false-positive guard for §6.1.4-2, and that a hand-built classic xref is conformant).
+            new OracleFixture("pdfa2b-classic-xref", AssembleClassicXref(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
             // An embedded subset CIDFontType2 with a /CIDSet that does not identify the present CIDs
             // (§6.2.11.4.2-2). veraPDF and the in-process rule both reject it.
             new OracleFixture("pdfa2b-cidset-incomplete", WriterPdfWithCidSet(complete: false),
@@ -1515,6 +1526,63 @@ public static class OracleCorpus
         using var ms = new MemoryStream();
         doc.Save(ms);
         return ms.ToArray();
+    }
+
+    // A hand-built, classic-cross-reference-table PDF/A-2b document (catalog, pages, page, XMP
+    // metadata), so the cross-reference and object byte layout is under our control. veraPDF accepts
+    // it as compliant. When <paramref name="corruptXrefEol"/> is set, the single EOL between the xref
+    // keyword and the first subsection header is replaced by a space (same length, so offsets stay
+    // valid), violating §6.1.4-2.
+    internal static byte[] AssembleClassicXref(bool corruptXrefEol = false)
+    {
+        var xmp = Encoding.UTF8.GetBytes(
+            "<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>"
+            + "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">"
+            + "<rdf:Description rdf:about=\"\" xmlns:pdfaid=\"http://www.aiim.org/pdfa/ns/id/\">"
+            + "<pdfaid:part>2</pdfaid:part><pdfaid:conformance>B</pdfaid:conformance>"
+            + "</rdf:Description></rdf:RDF></x:xmpmeta><?xpacket end=\"w\"?>");
+        var objs = new[]
+        {
+            "<< /Type /Catalog /Pages 2 0 R /Metadata 4 0 R >>",
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>",
+        };
+        var ms = new MemoryStream();
+        void W(string s) { var b = Encoding.Latin1.GetBytes(s); ms.Write(b, 0, b.Length); }
+        W("%PDF-1.7\n%âãÏÓ\n");
+        var size = objs.Length + 2; // 3 objects + metadata object + the free (object 0) entry
+        var offsets = new int[size];
+        for (var i = 0; i < objs.Length; i++)
+        {
+            offsets[i + 1] = (int)ms.Position;
+            W($"{i + 1} 0 obj\n{objs[i]}\nendobj\n");
+        }
+        offsets[4] = (int)ms.Position;
+        W($"4 0 obj\n<< /Type /Metadata /Subtype /XML /Length {xmp.Length} >>\nstream\n");
+        ms.Write(xmp, 0, xmp.Length);
+        W("\nendstream\nendobj\n");
+        var xrefOffset = (int)ms.Position;
+        W($"xref\n0 {size}\n0000000000 65535 f \n");
+        for (var i = 1; i < size; i++)
+            W($"{offsets[i]:D10} 00000 n \n");
+        W($"trailer\n<< /Size {size} /Root 1 0 R "
+            + "/ID [<00112233445566778899AABBCCDDEEFF> <00112233445566778899AABBCCDDEEFF>] >>\n");
+        W($"startxref\n{xrefOffset}\n%%EOF\n");
+
+        var pdf = ms.ToArray();
+        if (corruptXrefEol)
+            ReplaceSameLength(pdf, "xref\n0 "u8, "xref 0 "u8);
+        return pdf;
+    }
+
+    // Replaces the first occurrence of <paramref name="find"/> with the equal-length <paramref
+    // name="replacement"/>, in place.
+    private static void ReplaceSameLength(byte[] bytes, ReadOnlySpan<byte> find, ReadOnlySpan<byte> replacement)
+    {
+        var at = bytes.AsSpan().IndexOf(find);
+        if (at < 0)
+            throw new InvalidOperationException("pattern not found.");
+        replacement.CopyTo(bytes.AsSpan(at));
     }
 
     private static byte[] WriterPdf(VellumPdf.Document.PdfConformance conformance)

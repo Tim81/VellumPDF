@@ -1080,6 +1080,29 @@ public sealed class PdfPreflightTests
     }
 
     [Fact]
+    public void Validate_XrefKeywordBadEol_ReportsError()
+    {
+        // §6.1.4-2: a space (not a single EOL) between the xref keyword and the subsection header.
+        var bytes = Oracle.OracleCorpus.AssembleClassicXref(corruptXrefEol: true);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.4-xref-eol");
+    }
+
+    [Fact]
+    public void Validate_ClassicXref_IsAllowed()
+    {
+        // §6.1.4-2: a well-formed classic xref (single EOL after the keyword) is accepted — no FP.
+        var bytes = Oracle.OracleCorpus.AssembleClassicXref();
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.4-xref-eol");
+    }
+
+    [Fact]
     public void Validate_IncompleteCidSet_ReportsError()
     {
         // §6.2.11.4.2-2: a subset CIDFontType2's /CIDSet must identify exactly the present CIDs.
