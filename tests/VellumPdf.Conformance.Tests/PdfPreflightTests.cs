@@ -4849,4 +4849,446 @@ public sealed class PdfPreflightTests
 
         Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.11.3.3-3");
     }
+
+    // ── §6.2.8.3 JPEG2000 codestream constraints ──────────────────────────────────────────────────
+
+    /// <summary>
+    /// Builds a one-page PDF whose /Resources /XObject /X0 is a JPXDecode image stream carrying
+    /// the given raw JP2/JPEG2000 <paramref name="jp2Bytes"/>. The page draws the image with Do so
+    /// the rule's content-usage scoping selects it.
+    /// </summary>
+    private static byte[] BuildJpxImagePdf(byte[] jp2Bytes)
+        => BuildXObjectPdf(
+            "/Type /XObject /Subtype /Image /Width 4 /Height 4 /Filter /JPXDecode /ColorSpace /DeviceRGB",
+            jp2Bytes,
+            draw: true);
+
+    // ── JP2 box file builder (mirrors JpxImageTests, reusable in this file) ───────────────────────
+
+    private sealed record Jp2FileData(byte[] File, byte[] Codestream);
+
+    /// <summary>
+    /// Builds a minimal JP2 box file: signature + ftyp + jp2h(ihdr[+bpcc][+colr…]) + jp2c.
+    /// Supports multiple colr boxes, per-component bpcc, and controllable APPROX/EnumCS fields.
+    /// </summary>
+    private static Jp2FileData BuildJp2(
+        int nc,
+        int bpc,
+        int[]? perComponentBpc = null,
+        IReadOnlyList<(byte Meth, byte Approx, int? EnumCs)>? colrBoxes = null)
+    {
+        var codestream = Jp2BuildRawCodestream(nc, perComponentBpc ?? Enumerable.Repeat(bpc, nc).ToArray());
+        var buf = new List<byte>();
+
+        // Signature box: LBox=12, TBox="jP  ", magic=0D 0A 87 0A
+        Jp2Append32(buf, 12u);
+        buf.AddRange([0x6A, 0x50, 0x20, 0x20]);
+        buf.AddRange([0x0D, 0x0A, 0x87, 0x0A]);
+
+        // ftyp box
+        var ftyp = new List<byte>();
+        ftyp.AddRange([0x6A, 0x70, 0x32, 0x20]); // brand "jp2 "
+        Jp2Append32(ftyp, 0u);                     // MinV
+        ftyp.AddRange([0x6A, 0x70, 0x32, 0x20]); // compat "jp2 "
+        Jp2AppendBox(buf, 0x66747970u, [.. ftyp]);
+
+        // ihdr box: Height(4) Width(4) NC(2) BPC(1) C(1) UnkC(1) IPR(1)
+        var ihdr = new List<byte>();
+        Jp2Append32(ihdr, 4u); // height
+        Jp2Append32(ihdr, 4u); // width
+        Jp2Append16(ihdr, (ushort)nc);
+        var bpcByte = perComponentBpc is not null && nc > 1 ? (byte)0xFF : (byte)((bpc - 1) & 0x7F);
+        ihdr.Add(bpcByte);
+        ihdr.Add(0x07); // C
+        ihdr.Add(0x00); // UnkC
+        ihdr.Add(0x00); // IPR
+        var ihdrBox = Jp2MakeBox(0x69686472u, [.. ihdr]);
+
+        // Optional bpcc box when per-component bit depths differ.
+        byte[] bpccBox = [];
+        if (bpcByte == 0xFF && perComponentBpc is not null)
+        {
+            var bpcc = new List<byte>();
+            foreach (var d in perComponentBpc)
+                bpcc.Add((byte)((d - 1) & 0x7F));
+            bpccBox = Jp2MakeBox(0x62706363u, [.. bpcc]);
+        }
+
+        // colr boxes
+        var colrContent = new List<byte>();
+        if (colrBoxes is not null)
+        {
+            foreach (var (meth, approx, enumCs) in colrBoxes)
+            {
+                var colr = new List<byte> { meth, 0x00, approx }; // METH, PREC, APPROX
+                if (meth == 1 && enumCs.HasValue)
+                    Jp2Append32(colr, (uint)enumCs.Value);
+                colrContent.AddRange(Jp2MakeBox(0x636F6C72u, [.. colr]));
+            }
+        }
+        else
+        {
+            // Default: single colr with METH=1, EnumCS=16 (sRGB), APPROX=0
+            var colr = new List<byte> { 0x01, 0x00, 0x00 };
+            Jp2Append32(colr, 16u);
+            colrContent.AddRange(Jp2MakeBox(0x636F6C72u, [.. colr]));
+        }
+
+        // jp2h superbox
+        var jp2h = new List<byte>();
+        jp2h.AddRange(ihdrBox);
+        jp2h.AddRange(bpccBox);
+        jp2h.AddRange(colrContent);
+        Jp2AppendBox(buf, 0x6A703268u, [.. jp2h]);
+
+        // jp2c box
+        Jp2AppendBox(buf, 0x6A703263u, codestream);
+
+        return new Jp2FileData([.. buf], codestream);
+    }
+
+    /// <summary>Builds a minimal raw JPEG2000 codestream (SOC + SIZ + EOC) for nc components.</summary>
+    private static byte[] Jp2BuildRawCodestream(int nc, int[] bpcs)
+    {
+        var lsiz = 38 + 3 * nc;
+        var buf = new List<byte>();
+        buf.AddRange([0xFF, 0x4F]);       // SOC
+        buf.AddRange([0xFF, 0x51]);       // SIZ
+        Jp2Append16(buf, (ushort)lsiz);   // Lsiz
+        Jp2Append16(buf, 0);              // Rsiz
+        Jp2Append32(buf, 4u);             // Xsiz
+        Jp2Append32(buf, 4u);             // Ysiz
+        Jp2Append32(buf, 0u);             // XOsiz
+        Jp2Append32(buf, 0u);             // YOsiz
+        Jp2Append32(buf, 4u);             // XTsiz
+        Jp2Append32(buf, 4u);             // YTsiz
+        Jp2Append32(buf, 0u);             // XTOsiz
+        Jp2Append32(buf, 0u);             // YTOsiz
+        Jp2Append16(buf, (ushort)nc);     // Csiz
+        foreach (var d in bpcs)
+        {
+            buf.Add((byte)((d - 1) & 0x7F)); // Ssiz
+            buf.Add(0x01); buf.Add(0x01);     // XRsiz, YRsiz
+        }
+        buf.AddRange([0xFF, 0xD9]);       // EOC
+        return [.. buf];
+    }
+
+    private static void Jp2Append32(List<byte> buf, uint v)
+    {
+        buf.Add((byte)(v >> 24)); buf.Add((byte)((v >> 16) & 0xFF));
+        buf.Add((byte)((v >> 8) & 0xFF)); buf.Add((byte)(v & 0xFF));
+    }
+
+    private static void Jp2Append16(List<byte> buf, ushort v)
+        => buf.AddRange([(byte)(v >> 8), (byte)(v & 0xFF)]);
+
+    private static byte[] Jp2MakeBox(uint type, byte[] payload)
+    {
+        var box = new List<byte>();
+        Jp2Append32(box, (uint)(8 + payload.Length));
+        Jp2Append32(box, type);
+        box.AddRange(payload);
+        return [.. box];
+    }
+
+    private static void Jp2AppendBox(List<byte> buf, uint type, byte[] payload)
+        => buf.AddRange(Jp2MakeBox(type, payload));
+
+    // ── §6.2.8.3-1: colour channel count ──────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Validate_Jpeg2000_NcEquals2_IsFlagged_6283_1()
+    {
+        // NC=2 is not in {1,3,4} — must be flagged.
+        var jp2 = BuildJp2(nc: 2, bpc: 8);
+        var pdf = BuildJpxImagePdf(jp2.File);
+        var result = PdfPreflight.Validate(pdf, PdfConformance.PdfA2B);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.8.3-1");
+    }
+
+    [Fact]
+    public void Validate_Jpeg2000_NcEquals5_IsFlagged_6283_1()
+    {
+        // NC=5 is not in {1,3,4}.
+        var jp2 = BuildJp2(nc: 5, bpc: 8);
+        var pdf = BuildJpxImagePdf(jp2.File);
+        var result = PdfPreflight.Validate(pdf, PdfConformance.PdfA2B);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.8.3-1");
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(3)]
+    [InlineData(4)]
+    public void Validate_Jpeg2000_NcValid_NoFinding_6283_1(int nc)
+    {
+        // NC ∈ {1,3,4}: no §6.2.8.3-1 finding.
+        var jp2 = BuildJp2(nc: nc, bpc: 8);
+        var pdf = BuildJpxImagePdf(jp2.File);
+        var result = PdfPreflight.Validate(pdf, PdfConformance.PdfA2B);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.8.3-1");
+    }
+
+    [Fact]
+    public void Validate_Jpeg2000_RawCodestream_NcEquals2_IsFlagged_6283_1()
+    {
+        // Raw codestream (no JP2 wrapper), Csiz=2.
+        var raw = Jp2BuildRawCodestream(2, [8, 8]);
+        var pdf = BuildJpxImagePdf(raw);
+        var result = PdfPreflight.Validate(pdf, PdfConformance.PdfA2B);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.8.3-1");
+    }
+
+    [Fact]
+    public void Validate_Jpeg2000_RawCodestream_NcEquals3_NoFinding_6283_1()
+    {
+        var raw = Jp2BuildRawCodestream(3, [8, 8, 8]);
+        var pdf = BuildJpxImagePdf(raw);
+        var result = PdfPreflight.Validate(pdf, PdfConformance.PdfA2B);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.8.3-1");
+    }
+
+    // ── §6.2.8.3-2: APPROX field when multiple colr boxes ─────────────────────────────────────────
+
+    [Fact]
+    public void Validate_Jpeg2000_MultipleColr_ZeroApproxOnes_IsFlagged_6283_2()
+    {
+        // Two colr boxes, neither has APPROX=1. Must be flagged.
+        var jp2 = BuildJp2(nc: 3, bpc: 8, colrBoxes:
+        [
+            (0x01, 0x00, 16),  // METH=1, APPROX=0, sRGB
+            (0x01, 0x00, 17),  // METH=1, APPROX=0, Greyscale
+        ]);
+        var pdf = BuildJpxImagePdf(jp2.File);
+        var result = PdfPreflight.Validate(pdf, PdfConformance.PdfA2B);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.8.3-2");
+    }
+
+    [Fact]
+    public void Validate_Jpeg2000_MultipleColr_TwoApproxOnes_IsFlagged_6283_2()
+    {
+        // Two colr boxes, both have APPROX=1. Must be flagged (exactly one required).
+        var jp2 = BuildJp2(nc: 3, bpc: 8, colrBoxes:
+        [
+            (0x01, 0x01, 16),
+            (0x01, 0x01, 17),
+        ]);
+        var pdf = BuildJpxImagePdf(jp2.File);
+        var result = PdfPreflight.Validate(pdf, PdfConformance.PdfA2B);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.8.3-2");
+    }
+
+    [Fact]
+    public void Validate_Jpeg2000_MultipleColr_ExactlyOneApprox1_NoFinding_6283_2()
+    {
+        // Two colr boxes, exactly one has APPROX=1. No finding.
+        var jp2 = BuildJp2(nc: 3, bpc: 8, colrBoxes:
+        [
+            (0x01, 0x01, 16),  // APPROX=1
+            (0x02, 0x00, null), // METH=2 (ICC), APPROX=0
+        ]);
+        var pdf = BuildJpxImagePdf(jp2.File);
+        var result = PdfPreflight.Validate(pdf, PdfConformance.PdfA2B);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.8.3-2");
+    }
+
+    [Fact]
+    public void Validate_Jpeg2000_SingleColr_ApproxRuleNotApplied_NoFinding_6283_2()
+    {
+        // Rule only applies when colr count > 1. Single colr APPROX=0 is fine.
+        var jp2 = BuildJp2(nc: 3, bpc: 8, colrBoxes: [(0x01, 0x00, 16)]);
+        var pdf = BuildJpxImagePdf(jp2.File);
+        var result = PdfPreflight.Validate(pdf, PdfConformance.PdfA2B);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.8.3-2");
+    }
+
+    // ── §6.2.8.3-3: METH field constraint ─────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Validate_Jpeg2000_ColrMeth0_IsFlagged_6283_3()
+    {
+        // METH=0 is not in {1,2,3}.
+        var jp2 = BuildJp2(nc: 3, bpc: 8, colrBoxes: [(0x00, 0x00, null)]);
+        var pdf = BuildJpxImagePdf(jp2.File);
+        var result = PdfPreflight.Validate(pdf, PdfConformance.PdfA2B);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.8.3-3");
+    }
+
+    [Fact]
+    public void Validate_Jpeg2000_ColrMeth4_IsFlagged_6283_3()
+    {
+        // METH=4 is not in {1,2,3}.
+        var jp2 = BuildJp2(nc: 3, bpc: 8, colrBoxes: [(0x04, 0x00, null)]);
+        var pdf = BuildJpxImagePdf(jp2.File);
+        var result = PdfPreflight.Validate(pdf, PdfConformance.PdfA2B);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.8.3-3");
+    }
+
+    [Theory]
+    [InlineData(0x01)]
+    [InlineData(0x02)]
+    [InlineData(0x03)]
+    public void Validate_Jpeg2000_ColrMethValid_NoFinding_6283_3(int meth)
+    {
+        var colrBoxes = meth == 1
+            ? new[] { ((byte)meth, (byte)0x00, (int?)16) }
+            : new[] { ((byte)meth, (byte)0x00, (int?)null) };
+        var jp2 = BuildJp2(nc: 3, bpc: 8, colrBoxes: colrBoxes);
+        var pdf = BuildJpxImagePdf(jp2.File);
+        var result = PdfPreflight.Validate(pdf, PdfConformance.PdfA2B);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.8.3-3");
+    }
+
+    // ── §6.2.8.3-4: CIEJab (EnumCS=19) prohibited ────────────────────────────────────────────────
+
+    [Fact]
+    public void Validate_Jpeg2000_ColrEnumCs19_IsFlagged_6283_4()
+    {
+        // METH=1, EnumCS=19 (CIEJab) — forbidden.
+        var jp2 = BuildJp2(nc: 3, bpc: 8, colrBoxes: [(0x01, 0x00, 19)]);
+        var pdf = BuildJpxImagePdf(jp2.File);
+        var result = PdfPreflight.Validate(pdf, PdfConformance.PdfA2B);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.8.3-4");
+    }
+
+    [Fact]
+    public void Validate_Jpeg2000_ColrEnumCs16_NoFinding_6283_4()
+    {
+        // METH=1, EnumCS=16 (sRGB) — permitted.
+        var jp2 = BuildJp2(nc: 3, bpc: 8, colrBoxes: [(0x01, 0x00, 16)]);
+        var pdf = BuildJpxImagePdf(jp2.File);
+        var result = PdfPreflight.Validate(pdf, PdfConformance.PdfA2B);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.8.3-4");
+    }
+
+    // ── §6.2.8.3-5: bit depth in 1..38, all equal ─────────────────────────────────────────────────
+
+    [Fact]
+    public void Validate_Jpeg2000_BitDepth0_IsFlagged_6283_5()
+    {
+        // BPC byte = 0xFF (per-component), bpcc has component with depth 0: (0 & 0x7F)+1 = 1 → OK
+        // Actually depth 0 means bpcc byte = 0xFF → (0xFF & 0x7F)+1 = 128 > 38 → out of range.
+        // Build a JP2 where ihdr BPC=0xFF and bpcc has a byte of 0xFF (depth=128).
+        var codestream = Jp2BuildRawCodestream(1, [8]);
+        var buf = new List<byte>();
+        // Signature
+        Jp2Append32(buf, 12u);
+        buf.AddRange([0x6A, 0x50, 0x20, 0x20]);
+        buf.AddRange([0x0D, 0x0A, 0x87, 0x0A]);
+        // ftyp
+        var ftyp = new List<byte>();
+        ftyp.AddRange([0x6A, 0x70, 0x32, 0x20]);
+        Jp2Append32(ftyp, 0u);
+        ftyp.AddRange([0x6A, 0x70, 0x32, 0x20]);
+        Jp2AppendBox(buf, 0x66747970u, [.. ftyp]);
+        // ihdr with BPC=0xFF (per-component depths in bpcc)
+        var ihdr = new List<byte>();
+        Jp2Append32(ihdr, 4u); Jp2Append32(ihdr, 4u);
+        Jp2Append16(ihdr, 1);   // NC=1
+        ihdr.Add(0xFF);          // BPC = 0xFF → read bpcc box
+        ihdr.Add(0x07); ihdr.Add(0x00); ihdr.Add(0x00);
+        // bpcc box: single component with depth byte=0xFF → (0x7F)+1 = 128, out of range
+        var bpcc = new List<byte> { 0xFF };
+        // jp2h
+        var jp2h = new List<byte>();
+        jp2h.AddRange(Jp2MakeBox(0x69686472u, [.. ihdr]));
+        jp2h.AddRange(Jp2MakeBox(0x62706363u, [.. bpcc]));
+        // colr
+        var colr = new List<byte> { 0x01, 0x00, 0x00 };
+        Jp2Append32(colr, 17u);  // Greyscale
+        jp2h.AddRange(Jp2MakeBox(0x636F6C72u, [.. colr]));
+        Jp2AppendBox(buf, 0x6A703268u, [.. jp2h]);
+        Jp2AppendBox(buf, 0x6A703263u, codestream);
+
+        var pdf = BuildJpxImagePdf([.. buf]);
+        var result = PdfPreflight.Validate(pdf, PdfConformance.PdfA2B);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.8.3-5");
+    }
+
+    [Fact]
+    public void Validate_Jpeg2000_NonUniformBitDepths_IsFlagged_6283_5()
+    {
+        // Three components with differing bit depths: {8, 8, 16} — not uniform.
+        var jp2 = BuildJp2(nc: 3, bpc: 8, perComponentBpc: [8, 8, 16]);
+        var pdf = BuildJpxImagePdf(jp2.File);
+        var result = PdfPreflight.Validate(pdf, PdfConformance.PdfA2B);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.8.3-5");
+    }
+
+    [Fact]
+    public void Validate_Jpeg2000_BitDepthUniform8_NoFinding_6283_5()
+    {
+        // Uniform BPC=8 — no violation.
+        var jp2 = BuildJp2(nc: 3, bpc: 8);
+        var pdf = BuildJpxImagePdf(jp2.File);
+        var result = PdfPreflight.Validate(pdf, PdfConformance.PdfA2B);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.8.3-5");
+    }
+
+    [Fact]
+    public void Validate_Jpeg2000_RawCodestream_NonUniformBitDepths_IsFlagged_6283_5()
+    {
+        // Raw codestream, Csiz=3, Ssiz bytes giving depths {8,8,16}.
+        var raw = Jp2BuildRawCodestream(3, [8, 8, 16]);
+        var pdf = BuildJpxImagePdf(raw);
+        var result = PdfPreflight.Validate(pdf, PdfConformance.PdfA2B);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.8.3-5");
+    }
+
+    [Fact]
+    public void Validate_Jpeg2000_RawCodestream_UniformBitDepths_NoFinding_6283_5()
+    {
+        // Raw codestream, uniform BPC=8 — no violation.
+        var raw = Jp2BuildRawCodestream(3, [8, 8, 8]);
+        var pdf = BuildJpxImagePdf(raw);
+        var result = PdfPreflight.Validate(pdf, PdfConformance.PdfA2B);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.8.3-5");
+    }
+
+    // ── Overall no-false-positive guard: fully conformant JP2 (NC=3, METH=1, sRGB, BPC=8) ─────────
+
+    [Fact]
+    public void Validate_Jpeg2000_ConformantJp2_NoFindings_6283()
+    {
+        // A fully conformant JP2: NC=3, single colr METH=1 EnumCS=16 (sRGB), APPROX=0, uniform BPC=8.
+        // Must produce no 6.2.8.3-* findings.
+        var jp2 = BuildJp2(nc: 3, bpc: 8, colrBoxes: [(0x01, 0x00, 16)]);
+        var pdf = BuildJpxImagePdf(jp2.File);
+        var result = PdfPreflight.Validate(pdf, PdfConformance.PdfA2B);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId.StartsWith("ISO19005-2:6.2.8.3-", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Validate_Jpeg2000_Grayscale_ConformantJp2_NoFindings_6283()
+    {
+        // Greyscale JP2: NC=1, METH=1, EnumCS=17, BPC=8.
+        var jp2 = BuildJp2(nc: 1, bpc: 8, colrBoxes: [(0x01, 0x00, 17)]);
+        var pdf = BuildJpxImagePdf(jp2.File);
+        var result = PdfPreflight.Validate(pdf, PdfConformance.PdfA2B);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId.StartsWith("ISO19005-2:6.2.8.3-", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Validate_Jpeg2000_NotDrawn_NoFinding_6283()
+    {
+        // An invalid JP2 (NC=5) present in resources but NOT drawn → no finding (scoping guard).
+        var jp2 = BuildJp2(nc: 5, bpc: 8);
+        var pdf = BuildXObjectPdf(
+            "/Type /XObject /Subtype /Image /Width 4 /Height 4 /Filter /JPXDecode /ColorSpace /DeviceRGB",
+            jp2.File,
+            draw: false);
+        var result = PdfPreflight.Validate(pdf, PdfConformance.PdfA2B);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.8.3-1");
+    }
+
+    [Fact]
+    public void Validate_Jpeg2000_MalformedBytes_NoFinding_6283()
+    {
+        // Completely garbage bytes in a JPXDecode stream → no spurious finding (defensive guard).
+        var garbage = new byte[] { 0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0x01, 0x02, 0x03, 0xFF, 0x00 };
+        var pdf = BuildJpxImagePdf(garbage);
+        var result = PdfPreflight.Validate(pdf, PdfConformance.PdfA2B);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId.StartsWith("ISO19005-2:6.2.8.3-", StringComparison.Ordinal));
+    }
 }

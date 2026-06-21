@@ -64,6 +64,7 @@ internal static class RuleRegistry
         new GraphicsStateRule(),
         new GraphicsStateNestingRule(),
         new ForbiddenXObjectRule(),
+        new Jpeg2000Rule(),
     ];
 
     // ISO 19005-2 §6.3 font rules. Shared by every PDF/A-2 level.
