@@ -188,6 +188,7 @@ public static class ConformanceCatalog
         ["6.2.11.4.1-2"] = "only the embedded Identity-H CIDFontType2 path is checked",
         ["6.2.11.5-1"] = "only the embedded Identity-H CIDFontType2 path is checked",
         ["6.6.2.1-4"] = "only the catalog XMP packet is validated, not every metadata stream",
+        ["6.1.10-1"] = "inline images in page content streams checked; those in Form XObject / Type 3 CharProc / annotation appearance streams not walked",
         ["6.6.2.3.3-1"] = "pdfaExtension prefix/bag structure not fully validated",
         ["6.6.2.3.3-5"] = "property container is read but not validated as Seq Property",
         ["6.6.2.3.3-6"] = "valueType container is read but not validated as Seq ValueType",
@@ -204,7 +205,6 @@ public static class ConformanceCatalog
     {
         ["6.1.6-2"] = "byte scan implemented, but the reader rejects an invalid hex digit before validation",
         ["6.1.8-1"] = "byte-offset token scanner",
-        ["6.1.10-1"] = "inline-image content parser",
         ["6.1.12-2"] = "signature-reference traversal",
         ["6.1.13-10"] = "CMap CID-range parser",
         ["6.2.2-2"] = "content-stream resource analysis",
