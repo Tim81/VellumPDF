@@ -372,6 +372,24 @@ public static class OracleCorpus
                     .Set(new PdfName("Category"), new PdfArray([new PdfName("View")]))]))),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
 
+            // Two optional-content configuration dictionaries (/D and a /Configs entry) sharing the
+            // same /Name (§6.9-2). veraPDF and the in-process rule both reject it.
+            new OracleFixture("pdfa2b-oc-dup-name", WriterPdfWithOptionalContentGroups(
+                (_, _) => NamedConfig(), (_, _) => new PdfArray([NamedConfig()])),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // A /D configuration dictionary whose /Order array omits one of the file's OCGs (§6.9-3).
+            // veraPDF and the in-process rule both reject it.
+            new OracleFixture("pdfa2b-oc-order-incomplete", WriterPdfWithOptionalContentGroups(
+                (ocg1, _) => NamedConfig().Set(new PdfName("Order"), new PdfArray([new PdfIndirectReference(ocg1)]))),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // The same /Order referencing every OCG (§6.9-3 satisfied) — the no-false-positive guard.
+            new OracleFixture("pdfa2b-oc-order-complete", WriterPdfWithOptionalContentGroups(
+                (ocg1, ocg2) => NamedConfig().Set(new PdfName("Order"),
+                    new PdfArray([new PdfIndirectReference(ocg1), new PdfIndirectReference(ocg2)]))),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
             // A catalog /Perms permissions dictionary carrying a key other than /UR3 or /DocMDP
             // (§6.1.12-1). veraPDF and the in-process PermissionsRule both reject it.
             new OracleFixture("pdfa2b-permissions-bad-key", WriterPdfWithCatalogEntry("Perms",
@@ -874,6 +892,29 @@ public static class OracleCorpus
                 .Set(new PdfName("D"), new PdfIndirectReference(apNum)));
         var newPage = CloneDict(page).Set(new PdfName("Annots"), new PdfArray([new PdfIndirectReference(annotNum)]));
         return reader.AppendRevision([(pageRef.ObjectNumber, newPage), (apNum, ap), (annotNum, annot)]);
+    }
+
+    // Injects an /OCProperties dictionary with two OCGs, a caller-built /D config and optional
+    // /Configs, into the catalog. The builders receive the two OCG object numbers so an /Order array
+    // can reference them.
+    private static byte[] WriterPdfWithOptionalContentGroups(
+        Func<int, int, PdfDictionary> buildD, Func<int, int, PdfArray?>? buildConfigs = null)
+    {
+        var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+        var rootRef = (PdfIndirectReference)reader.Trailer.Get(PdfName.Root)!;
+        var catalog = CloneDict(reader.Catalog);
+        var ocg1 = reader.Size;
+        var ocg2 = ocg1 + 1;
+        PdfDictionary Ocg(string n) => new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("OCG")).Set(new PdfName("Name"), new PdfLiteralString(Encoding.ASCII.GetBytes(n)));
+        var ocp = new PdfDictionary()
+            .Set(new PdfName("OCGs"), new PdfArray([new PdfIndirectReference(ocg1), new PdfIndirectReference(ocg2)]))
+            .Set(new PdfName("D"), buildD(ocg1, ocg2));
+        if (buildConfigs?.Invoke(ocg1, ocg2) is { } configs)
+            ocp.Set(new PdfName("Configs"), configs);
+        catalog.Set(new PdfName("OCProperties"), ocp);
+        return reader.AppendRevision([(rootRef.ObjectNumber, catalog), (ocg1, Ocg("Layer 1")), (ocg2, Ocg("Layer 2"))]);
     }
 
     private static byte[] WriterPdfWithPresSteps()
