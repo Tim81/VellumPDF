@@ -209,7 +209,6 @@ public static class ConformanceCatalog
         ["6.1.13-10"] = "CMap CID-range parser",
         ["6.2.2-1"] = "content-stream operator interpreter",
         ["6.2.2-2"] = "content-stream resource analysis",
-        ["6.2.3-2"] = "object-graph: shared DestOutputProfile across intents",
         ["6.2.4.2-1"] = "ICC profile parser",
         ["6.2.4.2-2"] = "ExtGState overprint (OPM) analysis",
         ["6.2.4.4-1"] = "DeviceN/Separation colourant graph",
