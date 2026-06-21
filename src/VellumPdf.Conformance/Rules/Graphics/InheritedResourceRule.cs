@@ -43,6 +43,15 @@ internal sealed class InheritedResourceRule : IConformanceRule
 
     public string Clause => "ISO 19005-2:2011, 6.2.2";
 
+    // Colour-space names that `cs`/`CS` resolve directly, WITHOUT a lookup in the page's
+    // /Resources /ColorSpace subdictionary (ISO 32000-1 §8.6.3, Table 73; §8.6.8 for Pattern). A
+    // page using only these needs no /Resources entry, so they are not "inherited resource names"
+    // and must never be reported by this rule — veraPDF accepts them on a resource-less page.
+    private static readonly HashSet<string> _directColorSpaces = new(StringComparer.Ordinal)
+    {
+        "DeviceGray", "DeviceRGB", "DeviceCMYK", "Pattern",
+    };
+
     public void Evaluate(PreflightContext context)
     {
         foreach (var page in context.EnumeratePages())
@@ -89,7 +98,8 @@ internal sealed class InheritedResourceRule : IConformanceRule
         foreach (var name in appliedExtGStates)
             ReportIfNew(context, name, reported);
         foreach (var name in selectedColorSpaces)
-            ReportIfNew(context, name, reported);
+            if (!_directColorSpaces.Contains(name))
+                ReportIfNew(context, name, reported);
         foreach (var name in paintedShadings)
             ReportIfNew(context, name, reported);
     }

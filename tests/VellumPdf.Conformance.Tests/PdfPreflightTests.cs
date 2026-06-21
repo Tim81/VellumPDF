@@ -4058,6 +4058,20 @@ public sealed class PdfPreflightTests
         Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.2-2");
     }
 
+    [Fact]
+    public void Validate_PageDeviceColourSpaceNoResources_NeverReports6222()
+    {
+        // §6.2.2-2 false-positive guard: /DeviceGray, /DeviceRGB, /DeviceCMYK and /Pattern are
+        // resolved directly by cs/CS without a /Resources /ColorSpace lookup (ISO 32000-1 §8.6.3),
+        // so a resource-less page selecting only these is valid PDF/A — veraPDF accepts it and the
+        // rule must not flag the device names as inherited resources.
+        var bytes = BuildInheritedResourcePdf("/DeviceRGB CS /DeviceRGB cs 1 0 0 SC 0 0 1 sc 10 10 50 50 re B");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.2-2");
+    }
+
     // ── §6.1.10-1 Inline-image filter checks ──────────────────────────────────
 
     [Fact]
