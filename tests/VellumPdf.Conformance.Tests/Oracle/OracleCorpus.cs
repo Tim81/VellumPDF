@@ -129,6 +129,16 @@ public static class OracleCorpus
             new OracleFixture("pdfa2b-font-nonsymbolic-cmap", SimpleTrueTypeFontSymbolOnlyCmap(),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
 
+            // An embedded subset CIDFontType2 with a /CIDSet that does not identify the present CIDs
+            // (§6.2.11.4.2-2). veraPDF and the in-process rule both reject it.
+            new OracleFixture("pdfa2b-cidset-incomplete", WriterPdfWithCidSet(complete: false),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // The same font with a /CIDSet that marks exactly CIDs 0..NumGlyphs−1 — both validators
+            // accept it (the no-false-positive guard for §6.2.11.4.2-2).
+            new OracleFixture("pdfa2b-cidset-complete", WriterPdfWithCidSet(complete: true),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
             // A PDF/A-2b document that draws text with a properly embedded (subset) TrueType font via
             // the Type0/CIDFontType2/Identity-H path. veraPDF accepts it (all §6.2.11.x font checks
             // pass) and so does the in-process validator — the positive end-to-end font fixture.
@@ -1404,6 +1414,47 @@ public static class OracleCorpus
         var descRef = (PdfIndirectReference)descendants[0];
         var descendant = (PdfDictionary)reader.Resolve(descRef.ObjectNumber)!;
         return reader.AppendRevision([(descRef.ObjectNumber, rebuild(descendant))]);
+    }
+
+    // Adds a /CIDSet to the embedded subset CIDFontType2's FontDescriptor. When complete, the bitmap
+    // marks exactly CIDs 0..NumGlyphs−1 (Identity CIDToGIDMap); otherwise it is a single empty byte,
+    // so it fails to identify the present CIDs (§6.2.11.4.2-2).
+    private static byte[] WriterPdfWithCidSet(bool complete)
+    {
+        using var reader = PdfReader.Open(WriterPdfWithEmbeddedFont());
+        var (_, page) = FirstPage(reader);
+        var resources = (PdfDictionary)reader.ResolveValue(page.Get(new PdfName("Resources"))!)!;
+        var fonts = (PdfDictionary)reader.ResolveValue(resources.Get(PdfName.Font)!)!;
+        var type0 = (PdfDictionary)reader.ResolveValue(fonts.Entries.First().Value)!;
+        var descArr = (PdfArray)reader.ResolveValue(type0.Get(new PdfName("DescendantFonts"))!)!;
+        var cidFont = (PdfDictionary)reader.Resolve(((PdfIndirectReference)descArr[0]).ObjectNumber)!;
+        var fdRef = (PdfIndirectReference)cidFont.Get(new PdfName("FontDescriptor"))!;
+        var fd = (PdfDictionary)reader.Resolve(fdRef.ObjectNumber)!;
+        var ff2 = reader.ResolveStream(((PdfIndirectReference)fd.Get(new PdfName("FontFile2"))!).ObjectNumber)!;
+        var program = reader.GetDecodedStreamData(ff2)!;
+
+        var numGlyphs = NumGlyphsOf(program);
+        byte[] cidSet;
+        if (complete)
+        {
+            cidSet = new byte[(numGlyphs + 7) / 8];
+            for (var i = 0; i < numGlyphs; i++)
+                cidSet[i / 8] |= (byte)(0x80 >> (i % 8));
+        }
+        else
+        {
+            cidSet = [0x00];
+        }
+
+        var cidSetNum = reader.Size;
+        var newFd = CloneDict(fd).Set(new PdfName("CIDSet"), new PdfIndirectReference(cidSetNum));
+        return reader.AppendRevision([(fdRef.ObjectNumber, newFd), (cidSetNum, new PdfStream(cidSet))]);
+    }
+
+    private static int NumGlyphsOf(byte[] program)
+    {
+        var maxp = SfntTableOffset(program, "maxp");
+        return (program[maxp + 4] << 8) | program[maxp + 5];
     }
 
     private static byte[] WriterPdfWithEmbeddedFont()
