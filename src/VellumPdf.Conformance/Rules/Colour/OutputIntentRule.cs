@@ -33,6 +33,7 @@ internal sealed class OutputIntentRule : IConformanceRule
     private static readonly PdfName _outputIntents = new("OutputIntents");
     private static readonly PdfName _s = new("S");
     private static readonly PdfName _destOutputProfile = new("DestOutputProfile");
+    private static readonly PdfName _destOutputProfileRef = new("DestOutputProfileRef");
 
     public void Evaluate(PreflightContext context)
     {
@@ -48,7 +49,18 @@ internal sealed class OutputIntentRule : IConformanceRule
                 continue;
 
             // /S may be an indirect reference (ISO 32000-1 §7.3.10), like every other value here.
-            var isPdfA = context.Resolve(intent.Get(_s)) is PdfName { Value: "GTS_PDFA1" };
+            var s = (context.Resolve(intent.Get(_s)) as PdfName)?.Value;
+            var isPdfA = s == "GTS_PDFA1";
+
+            // §6.2.3-3: a PDF/X output intent shall not carry the DestOutputProfileRef key (ISO
+            // 15930-7:2010, Annex A). This is independent of DestOutputProfile, so it is checked first.
+            if (s == "GTS_PDFX" && intent.Get(_destOutputProfileRef) is not null)
+                context.Report(
+                    "ISO19005-2:6.2.3-3-dest-output-profile-ref",
+                    Clause,
+                    PreflightSeverity.Error,
+                    "A PDF/X output intent contains a /DestOutputProfileRef key, which is not permitted in PDF/A-2.");
+
             var destRaw = intent.Get(_destOutputProfile);
 
             // A profile-less output intent characterises no colour; the device-colour-requires-an-

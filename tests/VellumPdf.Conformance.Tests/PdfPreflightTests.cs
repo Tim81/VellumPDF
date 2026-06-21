@@ -929,6 +929,40 @@ public sealed class PdfPreflightTests
     }
 
     [Fact]
+    public void Validate_PdfXOutputIntentDestOutputProfileRef_ReportsError()
+    {
+        // §6.2.3-3: a GTS_PDFX output intent shall not carry /DestOutputProfileRef.
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R /OutputIntents "
+                + "[<< /Type /OutputIntent /S /GTS_PDFX /DestOutputProfileRef << >> >>] >>"),
+            _pagesObj,
+            _pageObj,
+        ]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.3-3-dest-output-profile-ref");
+    }
+
+    [Fact]
+    public void Validate_PdfXOutputIntentWithoutRef_IsAllowed()
+    {
+        // §6.2.3-3 applies only to /DestOutputProfileRef — a PDF/X intent without it is fine here.
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R /OutputIntents [<< /Type /OutputIntent /S /GTS_PDFX >>] >>"),
+            _pagesObj,
+            _pageObj,
+        ]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.3-3-dest-output-profile-ref");
+    }
+
+    [Fact]
     public void Validate_HideAction_ReportsError()
     {
         // §6.5.1-1: /Hide is not among the permitted action types.
