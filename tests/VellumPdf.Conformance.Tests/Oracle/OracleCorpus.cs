@@ -89,6 +89,11 @@ public static class OracleCorpus
             new OracleFixture("pdfa2b-font-no-basefont", WriterPdfWithoutBaseFont(),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
 
+            // A composite font whose /Encoding names a non-predefined, non-embedded CMap
+            // (§6.2.11.3.3-1). veraPDF and the in-process FontStructureRule both reject it.
+            new OracleFixture("pdfa2b-bad-cmap-name", WriterPdfWithBadCMapName(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
             // A composite font shown a glyph index beyond the embedded program's glyph count
             // (§6.2.11.4.1-2). veraPDF and the in-process GlyphPresenceRule both reject it.
             new OracleFixture("pdfa2b-glyph-not-present", WriterPdfWithOutOfRangeGlyph(),
@@ -1461,6 +1466,20 @@ public static class OracleCorpus
 
     private static byte[] WriterPdfWithoutFontType()
         => CorruptDescendantFont(d => CloneWithout(d, "Type"));
+
+    // Rewrites the embedded Type0 font's /Encoding from /Identity-H to a non-predefined CMap name
+    // (§6.2.11.3.3-1), leaving everything else intact.
+    private static byte[] WriterPdfWithBadCMapName()
+    {
+        using var reader = PdfReader.Open(WriterPdfWithEmbeddedFont());
+        var (_, page) = FirstPage(reader);
+        var resources = (PdfDictionary)reader.ResolveValue(page.Get(new PdfName("Resources"))!)!;
+        var fonts = (PdfDictionary)reader.ResolveValue(resources.Get(PdfName.Font)!)!;
+        var type0Ref = (PdfIndirectReference)fonts.Entries.First().Value;
+        var type0 = (PdfDictionary)reader.Resolve(type0Ref.ObjectNumber)!;
+        var newType0 = CloneDict(type0).Set(new PdfName("Encoding"), new PdfName("FooBarCMap"));
+        return reader.AppendRevision([(type0Ref.ObjectNumber, newType0)]);
+    }
 
     private static byte[] WriterPdfWithoutBaseFont()
         => SimpleTrueTypeFont(_ => { }, encoding: new PdfName("WinAnsiEncoding"), omitBaseFont: true);

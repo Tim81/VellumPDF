@@ -221,7 +221,6 @@ public static class ConformanceCatalog
         ["6.2.8.3-4"] = "JPEG2000 codestream parser",
         ["6.2.8.3-5"] = "JPEG2000 codestream parser",
         ["6.2.11.3.1-1"] = "object-graph: CIDSystemInfo match",
-        ["6.2.11.3.3-1"] = "CMap parser",
         ["6.2.11.3.3-2"] = "CMap parser",
         ["6.2.11.3.3-3"] = "CMap parser",
         ["6.4.3-1"] = "digital-signature parser",

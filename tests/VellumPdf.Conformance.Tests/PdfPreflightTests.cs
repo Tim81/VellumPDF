@@ -2002,6 +2002,41 @@ public sealed class PdfPreflightTests
     }
 
     [Fact]
+    public void Validate_Type0NonPredefinedCMapName_ReportsError()
+    {
+        // §6.2.11.3.3-1: a composite font's /Encoding must name a predefined CMap or be embedded.
+        var bytes = BuildFontPdf(
+            new PdfObj("<< /Type /Font /Subtype /Type0 /BaseFont /X /Encoding /FooBarCMap "
+                + "/DescendantFonts [7 0 R] >>"),
+            new PdfObj("<< /Type /Font /Subtype /CIDFontType2 /BaseFont /X /FontDescriptor 8 0 R "
+                + "/CIDToGIDMap /Identity >>"),
+            new PdfObj("<< /Type /FontDescriptor /FontName /X /FontFile2 9 0 R >>"),
+            new PdfObj("/Length1 4", [1, 2, 3, 4]));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.11.3.3-cmap-name");
+    }
+
+    [Fact]
+    public void Validate_Type0IdentityHEncoding_IsNotFlagged()
+    {
+        // §6.2.11.3.3-1 no-false-positive: Identity-H is a predefined CMap.
+        var bytes = BuildFontPdf(
+            new PdfObj("<< /Type /Font /Subtype /Type0 /BaseFont /X /Encoding /Identity-H "
+                + "/DescendantFonts [7 0 R] >>"),
+            new PdfObj("<< /Type /Font /Subtype /CIDFontType2 /BaseFont /X /FontDescriptor 8 0 R "
+                + "/CIDToGIDMap /Identity >>"),
+            new PdfObj("<< /Type /FontDescriptor /FontName /X /FontFile2 9 0 R >>"),
+            new PdfObj("/Length1 4", [1, 2, 3, 4]));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.11.3.3-cmap-name");
+    }
+
+    [Fact]
     public void Validate_Type1SubsetIncompleteCharSet_ReportsError()
     {
         // §6.2.11.4.2-1: a subset Type 1 font's /CharSet must list every glyph in the program.
