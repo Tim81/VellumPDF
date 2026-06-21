@@ -1575,6 +1575,105 @@ public sealed class PdfPreflightTests
         Assert.Empty(result.Assertions);
     }
 
+    // ── §6.1.8-1 name UTF-8 validity ─────────────────────────────────────────────
+
+    // The helpers below embed the non-ASCII bytes directly via #XX PDF-name escaping.
+    // /BaseFont /#80Name has one lone continuation byte (0x80) — invalid UTF-8.
+    // /BaseFont /ABCDEF#2BBold has a '+' (#2B, 0x2B) escape — valid ASCII, valid UTF-8.
+
+    [Fact]
+    public void Validate_InvalidUtf8BaseFontName_ReportsError()
+    {
+        // §6.1.8-1: a /BaseFont name whose escaped bytes are not valid UTF-8 shall be flagged.
+        // 0x80 is a lone UTF-8 continuation byte with no leading byte — invalid.
+        var bytes = BuildFontPdf(
+            new PdfObj("<< /Type /Font /Subtype /Type1 /BaseFont /#80InvalidFont /FirstChar 65 /LastChar 65 /Widths [600] /Encoding /WinAnsiEncoding >>"));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.8-1");
+    }
+
+    [Fact]
+    public void Validate_ValidEscapedBaseFontName_IsAllowed()
+    {
+        // §6.1.8-1: a /BaseFont whose escaped bytes are valid UTF-8 must not be flagged.
+        // #2B expands to '+' (0x2B, ASCII) — trivially valid UTF-8.
+        var bytes = BuildFontPdf(
+            new PdfObj("<< /Type /Font /Subtype /Type1 /BaseFont /ABCDEF#2BBold /FirstChar 65 /LastChar 65 /Widths [600] /Encoding /WinAnsiEncoding >>"));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.8-1");
+    }
+
+    [Fact]
+    public void Validate_InvalidUtf8SeparationColourantName_ReportsError()
+    {
+        // §6.1.8-1: a Separation colourant name with invalid UTF-8 bytes shall be flagged.
+        // #C0#C0 is an overlong sequence — invalid UTF-8.
+        var bytes = BuildColourSpacePdf("[/Separation /Bad#C0#C0Spot /DeviceCMYK 5 0 R]");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.8-1");
+    }
+
+    [Fact]
+    public void Validate_ValidSeparationColourantName_IsAllowed()
+    {
+        // §6.1.8-1: a plain ASCII Separation colourant name must not be flagged.
+        var bytes = BuildColourSpacePdf("[/Separation /SpotColor /DeviceCMYK 5 0 R]");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.8-1");
+    }
+
+    [Fact]
+    public void Validate_InvalidUtf8DeviceNColourantName_ReportsError()
+    {
+        // §6.1.8-1: a DeviceN colourant name with invalid UTF-8 bytes shall be flagged.
+        // #80 is a lone continuation byte — invalid UTF-8.
+        var bytes = BuildColourSpacePdf("[/DeviceN [/GoodSpot /Bad#80Spot] /DeviceCMYK 5 0 R]");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.8-1");
+    }
+
+    [Fact]
+    public void Validate_InvalidUtf8StructureTypeName_ReportsError()
+    {
+        // §6.1.8-1: a structure element /S name with invalid UTF-8 bytes shall be flagged.
+        // Uses a tagged PDF (PDF/A-2a profile needed for full coverage, but the rule runs on 2b too).
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R /MarkInfo << /Marked true >> /StructTreeRoot 4 0 R >>"),
+            _pagesObj,
+            _pageObj,
+            new("<< /Type /StructTreeRoot /K [5 0 R] >>"),
+            new("<< /Type /StructElem /S /Bad#80Type /P 4 0 R >>"),
+        ]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.8-1");
+    }
+
+    [Fact]
+    public void Validate_AllAsciiNames_NoNameUtf8Finding()
+    {
+        // §6.1.8-1: a writer-produced PDF/A with all-ASCII font, colour, and structure names
+        // must never be flagged — no false positive.
+        var bytes = BuildOnePagePdf();
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.8-1");
+    }
+
     // ── §6.2.3 / §6.2.4.3 output-intent rules ───────────────────────────────────
 
     [Fact]

@@ -179,6 +179,7 @@ public static class ConformanceCatalog
 
     private static readonly Dictionary<string, string> PdfAPartial = new(StringComparer.Ordinal)
     {
+        ["6.1.8-1"] = "font BaseFont and colour colourant names checked (presence-based); structure-type names checked for direct /StructTreeRoot /K children only — deeper nesting not yet walked",
         ["6.2.3-1"] = "DestOutputProfile signature/N checked; ICC device-class not parsed",
         ["6.2.4.3-2"] = "device-colour requires an output intent checked; DefaultRGB path not",
         ["6.2.4.3-3"] = "device-colour requires an output intent checked; DefaultCMYK path not",
@@ -206,7 +207,7 @@ public static class ConformanceCatalog
     private static readonly Dictionary<string, string> PdfADeferred = new(StringComparer.Ordinal)
     {
         ["6.1.6-2"] = "byte scan implemented, but the reader rejects an invalid hex digit before validation",
-        ["6.1.8-1"] = "byte-offset token scanner",
+        // 6.1.8-1 moved to PdfAPartial (font BaseFont + colour colourant + structure-type names).
         ["6.1.12-2"] = "signature-reference traversal",
         ["6.2.4.2-1"] = "ICC profile parser",
         ["6.2.4.2-2"] = "ExtGState overprint (OPM) analysis",
