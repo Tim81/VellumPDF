@@ -11,14 +11,14 @@ namespace VellumPdf.Conformance.Rules.Structure;
 /// PDF/A and PDF/UA level from ISO 32000.
 /// </summary>
 /// <remarks>
-/// Authored from ISO 32000-2:2020, 7.7.2 ("Document catalog"). Clean-room: derived from the
+/// Authored from ISO 32000-1:2008, 7.7.2 ("Document catalog"). Clean-room: derived from the
 /// specification text, not from any third-party validation profile.
 /// </remarks>
 internal sealed class DocumentCatalogRule : IConformanceRule
 {
-    public string RuleId => "ISO32000-2:7.7.2-catalog-type";
+    public string RuleId => "ISO32000-1:7.7.2-catalog-type";
 
-    public string Clause => "ISO 32000-2:2020, 7.7.2";
+    public string Clause => "ISO 32000-1:2008, 7.7.2";
 
     public void Evaluate(PreflightContext context)
     {

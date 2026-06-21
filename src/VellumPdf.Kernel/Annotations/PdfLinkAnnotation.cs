@@ -30,6 +30,13 @@ public sealed class PdfLinkAnnotation
     /// <summary>Y coordinate of the destination viewport origin (PDF user-space).</summary>
     public double DestTop { get; init; }
 
+    /// <summary>
+    /// Annotation flags (ISO 32000-1 Table 165). Defaults to <c>4</c> (the Print bit set, all
+    /// others clear), which ISO 19005-2 §6.3.2 requires of every non-Popup annotation for PDF/A
+    /// conformance. Override only for non-PDF/A output (e.g. a non-printing link).
+    /// </summary>
+    public int Flags { get; init; } = 4;
+
     /// <summary>Builds the annotation dictionary given the resolved destination page reference.</summary>
     internal PdfDictionary BuildDictionary(PdfIndirectReference? destPageRef)
     {
@@ -39,7 +46,12 @@ public sealed class PdfLinkAnnotation
             .Set(PdfName.Type, new PdfName("Annot"))
             .Set(PdfName.Subtype, new PdfName("Link"))
             .Set(new PdfName("Rect"), Rect.ToArray())
-            .Set(new PdfName("Border"), border);
+            .Set(new PdfName("Border"), border)
+            // Emit the annotation flags (default /F 4 = Print). ISO 19005-2 §6.3.2 requires the
+            // Print bit set and Hidden/Invisible/NoView clear on every non-Popup annotation; a Link
+            // is exempt from the appearance-stream requirement but not the flag requirements
+            // (verified against veraPDF). The default keeps writer output PDF/A-conformant.
+            .Set(new PdfName("F"), new PdfInteger(Flags));
 
         if (Uri is not null)
         {

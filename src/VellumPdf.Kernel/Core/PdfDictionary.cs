@@ -43,6 +43,13 @@ public sealed class PdfDictionary : PdfObject
     public PdfObject? Get(PdfName key) => TryGet(key, out var v) ? v : null;
 
     /// <summary>
+    /// All entries in insertion order. Exposed to sibling assemblies (e.g. the conformance
+    /// validator) that must iterate dictionaries whose keys are not known ahead of time, such
+    /// as a resource sub-dictionary.
+    /// </summary>
+    internal IReadOnlyList<KeyValuePair<PdfName, PdfObject>> Entries => _entries;
+
+    /// <summary>
     /// Returns a new <see cref="PdfDictionary"/> with a shallow copy of all entries.
     /// Used by stream <c>WriteTo</c> overrides to add serialisation-only entries
     /// (e.g. <c>/Length</c>, <c>/Filter</c>) without mutating the shared dictionary.

@@ -22,6 +22,17 @@ public sealed class PdfDocumentReader : IDisposable
     private readonly Dictionary<int, ParsedStream> _streamCache = new();
     // ObjStm cache: container obj number → (decoded body, First offset, N count, header offset map)
     private readonly Dictionary<int, (byte[] Body, int First, int N, Dictionary<int, int> OffsetMap)> _objStmCache = new();
+    // Containers currently being loaded — guards against a container whose /Filter (or /Length)
+    // indirectly references an object inside itself, which would recurse into LoadObjectStream
+    // forever (uncatchable StackOverflow) since the cache is only populated once loading completes.
+    private readonly HashSet<int> _loadingObjStm = new();
+    // Bounds the NESTING DEPTH of indirect-reference resolution. The cycle guards above reject a
+    // reference chain that revisits an in-progress object, but not an *acyclic* chain of distinct
+    // objects whose /Filter or /Length each points into the next — that would recurse one stack
+    // frame per link (Resolve → … → Resolve) until StackOverflow (uncatchable). Legitimate nesting
+    // is 1–2 deep, so a generous cap costs nothing and stays far under the thread stack limit.
+    private int _resolveDepth;
+    private const int MaxResolveDepth = 100;
     private IReadOnlyList<PdfSignature>? _signatures;
 
     // Caps AcroForm field-tree recursion.
@@ -63,6 +74,42 @@ public sealed class PdfDocumentReader : IDisposable
         Catalog = catalog;
     }
 
+    /// <summary>
+    /// Validates a byte offset taken from the cross-reference table — an xref-stream field can hold
+    /// a value larger than <see cref="int.MaxValue"/> — and narrows it to an int, throwing rather
+    /// than wrapping silently to a negative parser position (which would crash with an
+    /// <see cref="IndexOutOfRangeException"/>).
+    /// </summary>
+    private int CheckedOffset(long offset)
+    {
+        if (offset < 0 || offset >= Bytes.Length)
+            throw new InvalidDataException(
+                $"Malformed PDF: object offset {offset} is outside the file (length {Bytes.Length}).");
+        return (int)offset;
+    }
+
+    // Length-object numbers currently being resolved, to break a stream whose /Length references
+    // itself (directly or in a cycle) — such a reference simply falls back to the endstream scan.
+    private readonly HashSet<int> _resolvingLength = new();
+
+    /// <summary>
+    /// Resolves an indirect stream <c>/Length</c> to its integer value, or null when it cannot be
+    /// resolved (so the parser falls back to the endstream scan). Guards against self-reference.
+    /// </summary>
+    private long? ResolveLength(PdfIndirectReference reference)
+    {
+        if (!_resolvingLength.Add(reference.ObjectNumber))
+            return null;
+        try
+        {
+            return Resolve(reference.ObjectNumber) is PdfInteger length ? length.Value : null;
+        }
+        finally
+        {
+            _resolvingLength.Remove(reference.ObjectNumber);
+        }
+    }
+
     /// <summary>Resolves an indirect reference by object number, returning its dictionary or value.</summary>
     internal PdfObject? Resolve(int objectNumber)
     {
@@ -72,31 +119,44 @@ public sealed class PdfDocumentReader : IDisposable
         if (!_xref.TryGetValue(objectNumber, out var entry))
             return null;
 
-        PdfObject value;
-        if (entry.Kind == XrefEntryKind.Uncompressed)
+        if (_resolveDepth >= MaxResolveDepth)
+            throw new InvalidDataException(
+                $"Malformed PDF: indirect-object resolution nested deeper than {MaxResolveDepth} " +
+                "(cyclic or pathologically chained /Filter or /Length references).");
+
+        _resolveDepth++;
+        try
         {
-            var parser = new PdfObjectParser(Bytes, (int)entry.Offset);
-            var result = parser.ParseIndirectObject();
+            PdfObject value;
+            if (entry.Kind == XrefEntryKind.Uncompressed)
+            {
+                var parser = new PdfObjectParser(Bytes, CheckedOffset(entry.Offset), ResolveLength);
+                var result = parser.ParseIndirectObject();
 
-            if (result.ObjectNumber != objectNumber)
-                return null;
+                if (result.ObjectNumber != objectNumber)
+                    return null;
 
-            value = result.IsStream
-                ? result.Stream!.Dictionary
-                : result.Value ?? PdfNull.Instance;
+                value = result.IsStream
+                    ? result.Stream!.Dictionary
+                    : result.Value ?? PdfNull.Instance;
 
-            if (result.IsStream)
-                _streamCache.TryAdd(objectNumber, result.Stream!);
+                if (result.IsStream)
+                    _streamCache.TryAdd(objectNumber, result.Stream!);
+            }
+            else
+            {
+                var obj = ResolveFromObjectStream(objectNumber, entry);
+                if (obj is null) return null;
+                value = obj;
+            }
+
+            _cache[objectNumber] = value;
+            return value;
         }
-        else
+        finally
         {
-            var obj = ResolveFromObjectStream(objectNumber, entry);
-            if (obj is null) return null;
-            value = obj;
+            _resolveDepth--;
         }
-
-        _cache[objectNumber] = value;
-        return value;
     }
 
     /// <summary>
@@ -116,7 +176,7 @@ public sealed class PdfDocumentReader : IDisposable
         if (entry.Kind == XrefEntryKind.InObjectStream)
             return null;
 
-        var parser = new PdfObjectParser(Bytes, (int)entry.Offset);
+        var parser = new PdfObjectParser(Bytes, CheckedOffset(entry.Offset), ResolveLength);
         var result = parser.ParseIndirectObject();
 
         if (result.ObjectNumber != objectNumber)
@@ -138,7 +198,7 @@ public sealed class PdfDocumentReader : IDisposable
     /// Decodes the filter chain for <paramref name="stream"/> and returns the decoded bytes.
     /// Returns null when an image filter (DCTDecode, JPXDecode, etc.) prevents full decode.
     /// </summary>
-    internal byte[]? GetDecodedStreamData(ParsedStream stream) => PdfFilters.Decode(stream);
+    internal byte[]? GetDecodedStreamData(ParsedStream stream) => PdfFilters.Decode(stream, ResolveMaybe);
 
     /// <summary>Resolves an indirect reference.</summary>
     internal PdfObject? Resolve(PdfIndirectReference r) => Resolve(r.ObjectNumber);
@@ -149,6 +209,9 @@ public sealed class PdfDocumentReader : IDisposable
     /// </summary>
     internal PdfObject? ResolveValue(PdfObject obj) =>
         obj is PdfIndirectReference r ? Resolve(r) : obj;
+
+    /// <summary>Null-tolerant <see cref="ResolveValue"/> for use as a filter-chain resolver.</summary>
+    private PdfObject? ResolveMaybe(PdfObject? obj) => obj is null ? null : ResolveValue(obj);
 
     /// <inheritdoc />
     public void Dispose() { }
@@ -178,11 +241,14 @@ public sealed class PdfDocumentReader : IDisposable
             throw new InvalidDataException(
                 $"Object {objNum} not found in object stream {containerObjNum}.");
 
-        var absoluteOffset = first + relOffset;
-        if (absoluteOffset >= body.Length)
+        // relOffset comes from the (untrusted) object-stream header; guard against a negative or
+        // overflowing offset producing an out-of-bounds slice (a non-InvalidDataException crash).
+        if (relOffset < 0 || (long)first + relOffset >= body.Length)
             throw new InvalidDataException(
-                $"Object {objNum} offset {absoluteOffset} in object stream {containerObjNum} " +
-                $"exceeds decoded body length {body.Length}.");
+                $"Object {objNum} offset in object stream {containerObjNum} is out of range " +
+                $"(first={first}, relative={relOffset}, body length={body.Length}).");
+
+        var absoluteOffset = first + relOffset;
 
         var mem = new ReadOnlyMemory<byte>(body, absoluteOffset, body.Length - absoluteOffset);
         var parser = new PdfObjectParser(mem);
@@ -192,7 +258,26 @@ public sealed class PdfDocumentReader : IDisposable
     private (byte[] Body, int First, int N, Dictionary<int, int> OffsetMap) LoadObjectStream(
         int containerObjNum, XrefEntry containerEntry)
     {
-        var parser = new PdfObjectParser(Bytes, (int)containerEntry.Offset);
+        // Re-entry on the same container means a cyclic reference (e.g. the container's /Filter is an
+        // indirect reference to an object stored inside the container). The cache is not populated
+        // until this method returns, so without this guard the recursion is unbounded.
+        if (!_loadingObjStm.Add(containerObjNum))
+            throw new InvalidDataException(
+                $"Malformed PDF: object stream {containerObjNum} is defined in terms of itself.");
+        try
+        {
+            return LoadObjectStreamCore(containerObjNum, containerEntry);
+        }
+        finally
+        {
+            _loadingObjStm.Remove(containerObjNum);
+        }
+    }
+
+    private (byte[] Body, int First, int N, Dictionary<int, int> OffsetMap) LoadObjectStreamCore(
+        int containerObjNum, XrefEntry containerEntry)
+    {
+        var parser = new PdfObjectParser(Bytes, CheckedOffset(containerEntry.Offset), ResolveLength);
         var result = parser.ParseIndirectObject();
 
         if (!result.IsStream)
@@ -215,7 +300,7 @@ public sealed class PdfDocumentReader : IDisposable
         var first = (int)firstObj.Value;
 
         // Decode the stream body
-        var body = PdfFilters.Decode(streamObj)
+        var body = PdfFilters.Decode(streamObj, ResolveMaybe)
             ?? throw new InvalidDataException(
                 $"Object stream {containerObjNum} uses an image filter that cannot be decoded.");
 
@@ -223,10 +308,13 @@ public sealed class PdfDocumentReader : IDisposable
             throw new InvalidDataException(
                 $"Object stream {containerObjNum} /First={first} is out of range for body length {body.Length}.");
 
-        // Parse the header: N pairs of (objNum, offset)
+        // Parse the header: N pairs of (objNum, offset). Do NOT pre-size the dictionary to /N:
+        // a malicious stream can declare /N up to 1,000,000 with a tiny body, and a capacity hint
+        // of that size would allocate megabytes before the header parse fails (allocation
+        // amplification). Let it grow to the number of pairs actually parsed.
         var headerMem = new ReadOnlyMemory<byte>(body, 0, first);
         var headerParser = new PdfObjectParser(headerMem);
-        var offsetMap = new Dictionary<int, int>(n);
+        var offsetMap = new Dictionary<int, int>();
 
         for (var i = 0; i < n; i++)
         {
@@ -259,6 +347,24 @@ public sealed class PdfDocumentReader : IDisposable
             return 0;
         }
     }
+
+    /// <summary>
+    /// Every object number present in the resolved cross-reference table. More robust than
+    /// <c>1..Size</c> for whole-document scans: independent of a direct/absent <c>/Size</c> and
+    /// inclusive of object numbers introduced by incremental updates.
+    /// </summary>
+    internal IReadOnlyCollection<int> ObjectNumbers => _xref.Keys;
+
+    /// <summary>
+    /// The byte offset at which the indirect object <paramref name="objectNumber"/> is written
+    /// (the start of its <c>N G obj</c> header), or <see langword="null"/> when the object is not in
+    /// the cross-reference table or lives inside an object stream (and so has no file offset of its
+    /// own). Used by the §6.1.9 byte-level layout checks.
+    /// </summary>
+    internal long? UncompressedObjectOffset(int objectNumber)
+        => _xref.TryGetValue(objectNumber, out var entry) && entry.Kind == XrefEntryKind.Uncompressed
+            ? entry.Offset
+            : null;
 
     /// <summary>
     /// Appends a new revision to this document and returns the full updated byte array.

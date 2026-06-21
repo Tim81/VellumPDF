@@ -39,10 +39,18 @@ internal static class PdfFilters
     /// (in which case <paramref name="decoded"/> contains the partially decoded bytes
     /// up to and not including the image filter).
     /// </summary>
-    internal static bool TryDecode(ParsedStream stream, out byte[] decoded)
+    /// <param name="stream">The parsed stream whose filter chain is applied.</param>
+    /// <param name="decoded">Receives the decoded (or partially decoded) bytes.</param>
+    /// <param name="resolve">
+    /// Optional indirect-reference resolver. <c>/Filter</c> and <c>/DecodeParms</c> (and their array
+    /// elements) may be indirect references — e.g. Ghostscript emits <c>/Filter 12 0 R</c>. When a
+    /// resolver is supplied those references are dereferenced; without one only direct values are
+    /// honoured (the bootstrap xref-stream path, where the object graph is not yet resolvable).
+    /// </param>
+    internal static bool TryDecode(ParsedStream stream, out byte[] decoded, Func<PdfObject?, PdfObject?>? resolve = null)
     {
-        var filters = GetFilterList(stream.Dictionary);
-        var parms = GetParmsList(stream.Dictionary, filters.Count);
+        var filters = GetFilterList(stream.Dictionary, resolve);
+        var parms = GetParmsList(stream.Dictionary, filters.Count, resolve);
 
         var data = stream.RawBody.ToArray();
         var fullyDecoded = true;
@@ -66,9 +74,12 @@ internal static class PdfFilters
     }
 
     /// <summary>Returns decoded bytes or null if an image filter prevents full decode.</summary>
-    internal static byte[]? Decode(ParsedStream stream)
+    /// <param name="stream">The parsed stream whose filter chain is applied.</param>
+    /// <param name="resolve">Optional indirect-reference resolver for <c>/Filter</c>/<c>/DecodeParms</c>;
+    /// see <see cref="TryDecode"/>.</param>
+    internal static byte[]? Decode(ParsedStream stream, Func<PdfObject?, PdfObject?>? resolve = null)
     {
-        if (!TryDecode(stream, out var decoded))
+        if (!TryDecode(stream, out var decoded, resolve))
             return null;
         return decoded;
     }
@@ -102,22 +113,56 @@ internal static class PdfFilters
 
     internal static byte[] InflateFlate(byte[] input)
     {
-        // Try ZLib (RFC 1950) first; fall back to raw Deflate.
+        // FlateDecode is zlib (RFC 1950), but some producers emit raw deflate. Use the 2-byte
+        // header as a fast-path hint for which to try first, then fall back to the other on a
+        // format error — so neither a header-less raw-deflate stream nor a zlib stream is rejected.
+        // The fallback must NEVER swallow the decompression-size cap (that would mask a bomb and
+        // double-decompress), so the cap is thrown as a distinct exception type that is re-thrown.
+        var primaryIsZlib = LooksLikeZlib(input);
         try
         {
-            return Inflate(new ZLibStream(new MemoryStream(input), CompressionMode.Decompress));
+            return Inflate(MakeDecompressor(input, primaryIsZlib));
         }
-        catch
+        catch (DecompressionLimitExceededException ex)
         {
+            // A decompression bomb: surface it, never retry.
+            throw new InvalidDataException(ex.Message);
+        }
+        catch (Exception primaryError) when (primaryError is not OutOfMemoryException)
+        {
+            // Format error on the primary decoder — retry with the other (handles header-less
+            // raw deflate vs. zlib-wrapped). Still never swallow the size cap. OutOfMemoryException
+            // is excluded so a real OOM is not masked as malformed input or retried.
             try
             {
-                return Inflate(new DeflateStream(new MemoryStream(input), CompressionMode.Decompress));
+                return Inflate(MakeDecompressor(input, !primaryIsZlib));
+            }
+            catch (DecompressionLimitExceededException ex)
+            {
+                throw new InvalidDataException(ex.Message);
             }
             catch (Exception inner)
             {
+                // Normalise any BCL decode failure (InvalidDataException, IOException, …) to a
+                // single InvalidDataException so callers see a consistent malformed-input signal.
                 throw new InvalidDataException("FlateDecode: failed to decompress stream body.", inner);
             }
         }
+    }
+
+    private static Stream MakeDecompressor(byte[] input, bool zlib) => zlib
+        ? new ZLibStream(new MemoryStream(input), CompressionMode.Decompress)
+        : new DeflateStream(new MemoryStream(input), CompressionMode.Decompress);
+
+    private static bool LooksLikeZlib(byte[] input)
+    {
+        // RFC 1950: low nibble of CMF is the compression method (8 = deflate), and the 16-bit
+        // CMF/FLG header is a multiple of 31.
+        if (input.Length < 2)
+            return false;
+        var cmf = input[0];
+        var flg = input[1];
+        return (cmf & 0x0F) == 8 && (((cmf << 8) | flg) % 31) == 0;
     }
 
     private static byte[] Inflate(Stream decompressor)
@@ -131,12 +176,19 @@ internal static class PdfFilters
         {
             total += read;
             if (total > MaxDecodedBytes)
-                throw new InvalidDataException(
+                throw new DecompressionLimitExceededException(
                     $"Decompressed stream size exceeds {MaxDecodedBytes / (1024 * 1024)} MB cap.");
             ms.Write(buf, 0, read);
         }
         return ms.ToArray();
     }
+
+    /// <summary>
+    /// Internal signal that decompression exceeded <see cref="MaxDecodedBytes"/>. A distinct type
+    /// lets <see cref="InflateFlate"/> distinguish the bomb guard from an ordinary format error so
+    /// it re-throws (as <see cref="InvalidDataException"/>) instead of retrying the other decoder.
+    /// </summary>
+    private sealed class DecompressionLimitExceededException(string message) : Exception(message);
 
     // ── Predictors ───────────────────────────────────────────────────────────
 
@@ -148,15 +200,23 @@ internal static class PdfFilters
         var predictor = (int)predObj.Value;
         if (predictor == 1) return data; // None
 
-        var columns = parms.Get(_columns) is PdfInteger col ? (int)col.Value : 1;
-        var colors = parms.Get(_colors) is PdfInteger clr ? (int)clr.Value : 1;
-        var bpc = parms.Get(_bpc) is PdfInteger b ? (int)b.Value : 8;
+        var columns = parms.Get(_columns) is PdfInteger col ? col.Value : 1;
+        var colors = parms.Get(_colors) is PdfInteger clr ? clr.Value : 1;
+        var bpc = parms.Get(_bpc) is PdfInteger b ? b.Value : 8;
+
+        // Guard untrusted predictor parameters: out-of-range values could overflow the row-size
+        // computation to a negative/huge array length (an uncaught OverflowException or an
+        // allocation-amplification DoS) instead of a clean InvalidDataException.
+        // Cap columns so that columns*colors*bpc (max 1M*32*16 = 512M) cannot overflow a 32-bit int.
+        if (columns is < 1 or > (1 << 20) || colors is < 1 or > 32 || bpc is not (1 or 2 or 4 or 8 or 16))
+            throw new InvalidDataException(
+                $"FlateDecode predictor: invalid Columns/Colors/BitsPerComponent ({columns}/{colors}/{bpc}).");
 
         if (predictor == 2)
-            return ApplyTiffPredictor2(data, columns, colors, bpc);
+            return ApplyTiffPredictor2(data, (int)columns, (int)colors, (int)bpc);
 
         if (predictor >= 10 && predictor <= 15)
-            return ApplyPngPredictor(data, columns, colors, bpc);
+            return ApplyPngPredictor(data, (int)columns, (int)colors, (int)bpc);
 
         return data;
     }
@@ -430,6 +490,11 @@ internal static class PdfFilters
 
             if (count == 0) continue;
 
+            // A final group must hold 2..5 characters; a single trailing character is invalid and
+            // would otherwise emit one spurious byte.
+            if (count == 1)
+                throw new InvalidDataException("ASCII85Decode: final group has a single character.");
+
             // Pad to 5 with 'u' value = 84
             for (var p = count; p < 5; p++)
                 group[p] = 84;
@@ -494,11 +559,15 @@ internal static class PdfFilters
 
     // ── Helpers ──────────────────────────────────────────────────────────────
 
-    private static List<PdfName> GetFilterList(PdfDictionary dict)
+    private static PdfObject? Deref(Func<PdfObject?, PdfObject?>? resolve, PdfObject? obj)
+        => resolve is null ? obj : resolve(obj);
+
+    private static List<PdfName> GetFilterList(PdfDictionary dict, Func<PdfObject?, PdfObject?>? resolve)
     {
         // /Filter only. /F in a stream dictionary is the (external) file specification,
         // not a filter abbreviation, so it must not be consulted here.
-        var filterObj = dict.Get(PdfName.Filter);
+        // /Filter (and each array element) may be an indirect reference — resolve when able.
+        var filterObj = Deref(resolve, dict.Get(PdfName.Filter));
         if (filterObj is null) return [];
         if (filterObj is PdfName n) return [n];
         if (filterObj is PdfArray arr)
@@ -506,16 +575,16 @@ internal static class PdfFilters
             var list = new List<PdfName>(arr.Count);
             for (var i = 0; i < arr.Count; i++)
             {
-                if (arr[i] is PdfName fn) list.Add(fn);
+                if (Deref(resolve, arr[i]) is PdfName fn) list.Add(fn);
             }
             return list;
         }
         return [];
     }
 
-    private static List<PdfDictionary?> GetParmsList(PdfDictionary dict, int filterCount)
+    private static List<PdfDictionary?> GetParmsList(PdfDictionary dict, int filterCount, Func<PdfObject?, PdfObject?>? resolve)
     {
-        var pObj = dict.Get(_dp) ?? dict.Get(_dp2);
+        var pObj = Deref(resolve, dict.Get(_dp) ?? dict.Get(_dp2));
         if (pObj is null)
         {
             var list = new List<PdfDictionary?>(filterCount);
@@ -527,7 +596,7 @@ internal static class PdfFilters
         {
             var list = new List<PdfDictionary?>(arr.Count);
             for (var i = 0; i < arr.Count; i++)
-                list.Add(arr[i] is PdfDictionary d ? d : null);
+                list.Add(Deref(resolve, arr[i]) is PdfDictionary d ? d : null);
             return list;
         }
         return [];
