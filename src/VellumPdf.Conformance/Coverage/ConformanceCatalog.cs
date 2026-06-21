@@ -204,7 +204,6 @@ public static class ConformanceCatalog
         ["6.1.7.2-1"] = "used-stream filter analysis",
         ["6.1.10-1"] = "inline-image content parser",
         ["6.1.12-2"] = "signature-reference traversal",
-        ["6.1.13-8"] = "content-stream q/Q nesting counter",
         ["6.1.13-9"] = "used DeviceN colourant analysis",
         ["6.1.13-10"] = "CMap CID-range parser",
         ["6.2.2-1"] = "content-stream operator interpreter",

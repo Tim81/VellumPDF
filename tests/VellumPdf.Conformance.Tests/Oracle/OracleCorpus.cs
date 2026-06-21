@@ -1,6 +1,7 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
+using System.Linq;
 using System.Text;
 using VellumPdf.Annotations;
 using VellumPdf.Canvas;
@@ -586,6 +587,12 @@ public static class OracleCorpus
             new OracleFixture("pdfa2b-action-no-s", WriterPdfWithOpenAction(
                 new PdfDictionary().Set(PdfName.Type, new PdfName("Action"))),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // A page content stream that nests 29 q/Q pairs — one beyond the §6.1.13-8 limit of 28.
+            // veraPDF (rule Op_q_gsave, test number 8) and the in-process GraphicsStateNestingRule both
+            // reject it. The 29 matching Q operators are appended so the stream is well-formed otherwise.
+            new OracleFixture("pdfa2b-q-nesting-too-deep", WriterPdfWithDeepQNesting(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
         ];
     }
 
@@ -715,6 +722,22 @@ public static class OracleCorpus
         var contentNum = reader.Size;
         newPage.Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
         var content = new PdfStream(Encoding.ASCII.GetBytes("/FooIntent ri"));
+        return reader.AppendRevision([(pageRef.ObjectNumber, newPage), (contentNum, content)]);
+    }
+
+    private static byte[] WriterPdfWithDeepQNesting()
+    {
+        // 29 nested `q` operators followed by 29 `Q` operators — depth reaches 29, which exceeds
+        // the §6.1.13-8 limit of 28. The Q operators close the stack so the stream is otherwise
+        // well-formed (no resource mismatches or other violations).
+        var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var newPage = CloneDict(page);
+        var contentNum = reader.Size;
+        newPage.Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
+        var streamText = string.Concat(Enumerable.Repeat("q ", 29)) + string.Concat(Enumerable.Repeat("Q ", 29));
+        var content = new PdfStream(Encoding.ASCII.GetBytes(streamText));
         return reader.AppendRevision([(pageRef.ObjectNumber, newPage), (contentNum, content)]);
     }
 
