@@ -381,6 +381,11 @@ public static class OracleCorpus
             new OracleFixture("pdfa2b-halftone-name", WriterPdfWithHalftoneName(),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
 
+            // An applied ExtGState whose type-1 halftone carries a /TransferFunction (§6.2.5-6). veraPDF
+            // and the in-process GraphicsStateRule both reject it.
+            new OracleFixture("pdfa2b-halftone-transfer", WriterPdfWithHalftoneTransferFunction(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
             // A non-standard rendering intent set by the `ri` content operator (§6.2.6). veraPDF and
             // the in-process rule both reject it.
             new OracleFixture("pdfa2b-rendering-intent", WriterPdfWithBadRenderingIntent(),
@@ -671,6 +676,15 @@ public static class OracleCorpus
                 .Set(new PdfName("HalftoneName"), new PdfLiteralString(Encoding.ASCII.GetBytes("X")))
                 .Set(new PdfName("Frequency"), new PdfInteger(60)).Set(new PdfName("Angle"), new PdfInteger(45))
                 .Set(new PdfName("SpotFunction"), new PdfName("SimpleDot"))));
+
+    private static byte[] WriterPdfWithHalftoneTransferFunction()
+        => WriterPdfWithAppliedExtGState(new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("ExtGState"))
+            .Set(new PdfName("HT"), new PdfDictionary()
+                .Set(new PdfName("Type"), new PdfName("Halftone")).Set(new PdfName("HalftoneType"), new PdfInteger(1))
+                .Set(new PdfName("Frequency"), new PdfInteger(60)).Set(new PdfName("Angle"), new PdfInteger(45))
+                .Set(new PdfName("SpotFunction"), new PdfName("SimpleDot"))
+                .Set(new PdfName("TransferFunction"), new PdfName("Identity"))));
 
     // Merges an /ExtGState into the page and applies it (`/GS0 gs`) on a compliant writer baseline.
     private static byte[] WriterPdfWithAppliedExtGState(PdfDictionary gs)

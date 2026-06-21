@@ -1756,6 +1756,60 @@ public sealed class PdfPreflightTests
         Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.5-halftone-name");
     }
 
+    [Fact]
+    public void Validate_Type1HalftoneWithTransferFunction_ReportsError()
+    {
+        // §6.2.5-6: a type-1 halftone (colorantName == null) must NOT carry a /TransferFunction.
+        var result = PdfPreflight.Validate(
+            BuildExtGStatePdf("/HT << /Type /Halftone /HalftoneType 1 /TransferFunction /Identity >>"),
+            PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.5-halftone-transfer");
+    }
+
+    [Fact]
+    public void Validate_Type5HalftoneWithProcessColorantTransferFunction_ReportsError()
+    {
+        // §6.2.5-6: in a type-5 halftone, a process colorant entry (e.g. /Cyan) must NOT have a /TransferFunction.
+        var result = PdfPreflight.Validate(
+            BuildExtGStatePdf(
+                "/HT << /HalftoneType 5"
+                + " /Default << /HalftoneType 1 /Frequency 60 /Angle 45 /SpotFunction /SimpleDot >>"
+                + " /Cyan << /HalftoneType 1 /Frequency 60 /Angle 15 /SpotFunction /SimpleDot /TransferFunction /Identity >> >>"),
+            PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.5-halftone-transfer");
+    }
+
+    [Fact]
+    public void Validate_Type5HalftoneCompliant_NoFinding()
+    {
+        // §6.2.5-6: type-5 with /Default (exempt) and /Cyan without TransferFunction → compliant.
+        var result = PdfPreflight.Validate(
+            BuildExtGStatePdf(
+                "/HT << /HalftoneType 5"
+                + " /Default << /HalftoneType 1 /Frequency 60 /Angle 45 /SpotFunction /SimpleDot >>"
+                + " /Cyan << /HalftoneType 1 /Frequency 60 /Angle 15 /SpotFunction /SimpleDot >> >>"),
+            PdfConformance.PdfA2B);
+
+        Assert.True(result.IsCompliant);
+        Assert.Empty(result.Assertions);
+    }
+
+    [Fact]
+    public void Validate_Type1HalftoneWithoutTransferFunction_NoFinding()
+    {
+        // §6.2.5-6: a type-1 halftone without a /TransferFunction is compliant.
+        var result = PdfPreflight.Validate(
+            BuildExtGStatePdf("/HT << /Type /Halftone /HalftoneType 1 /Frequency 60 /Angle 45 /SpotFunction /SimpleDot >>"),
+            PdfConformance.PdfA2B);
+
+        Assert.True(result.IsCompliant);
+        Assert.Empty(result.Assertions);
+    }
+
     [Theory]
     [InlineData("/TR2 /Default")]
     [InlineData("/RI /RelativeColorimetric")]
