@@ -1080,6 +1080,29 @@ public sealed class PdfPreflightTests
     }
 
     [Fact]
+    public void Validate_IncompleteCidSet_ReportsError()
+    {
+        // §6.2.11.4.2-2: a subset CIDFontType2's /CIDSet must identify exactly the present CIDs.
+        var bytes = Oracle.OracleCorpus.ByName("pdfa2b-cidset-incomplete").Bytes;
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.11.4.2-cidset");
+    }
+
+    [Fact]
+    public void Validate_CompleteCidSet_IsAllowed()
+    {
+        // §6.2.11.4.2-2: a /CIDSet marking exactly CIDs 0..NumGlyphs-1 is accepted — no false positive.
+        var bytes = Oracle.OracleCorpus.ByName("pdfa2b-cidset-complete").Bytes;
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.11.4.2-cidset");
+    }
+
+    [Fact]
     public void Validate_NonSymbolicTrueTypeSymbolOnlyCmap_ReportsError()
     {
         // §6.2.11.6-1: a non-symbolic TrueType whose embedded cmap is a single (3,0) symbol subtable

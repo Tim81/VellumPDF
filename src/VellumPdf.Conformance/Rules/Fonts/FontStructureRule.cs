@@ -37,6 +37,7 @@ internal sealed class FontStructureRule : IConformanceRule
     private static readonly PdfName _fontDescriptor = new("FontDescriptor");
     private static readonly PdfName _fontFile2 = new("FontFile2");
     private static readonly PdfName _cidToGidMap = new("CIDToGIDMap");
+    private static readonly PdfName _cidSet = new("CIDSet");
     private static readonly PdfName _firstChar = new("FirstChar");
     private static readonly PdfName _lastChar = new("LastChar");
     private static readonly PdfName _widths = new("Widths");
@@ -91,6 +92,7 @@ internal sealed class FontStructureRule : IConformanceRule
                     {
                         CheckSubtype(context, cidFont);
                         CheckCidToGidMap(context, cidFont);
+                        CheckCidSet(context, cidFont);
                     }
                 }
             }
@@ -180,6 +182,57 @@ internal sealed class FontStructureRule : IConformanceRule
             Report(context, "6.2.11.6-nonsymbolic-cmap", "ISO 19005-2:2011, 6.2.11.6",
                 "A non-symbolic TrueType font's embedded cmap does not provide the encoding subtables "
                 + "required for glyph lookup.");
+    }
+
+    // §6.2.11.4.2-2: if an embedded subset CIDFontType2 carries a /CIDSet, that bitmap shall identify
+    // exactly the CIDs present in the font program. With an Identity /CIDToGIDMap a CID equals its
+    // glyph index, so the present CIDs are 0..NumGlyphs−1: bits 0..NumGlyphs−1 shall be set and every
+    // higher bit clear. A non-Identity (stream) /CIDToGIDMap would make the present-CID set depend on
+    // that map, so the check is skipped there (deferred) to avoid a false positive.
+    private void CheckCidSet(PreflightContext context, PdfDictionary cidFont)
+    {
+        if (context.Resolve(cidFont.Get(PdfName.Subtype)) is not PdfName { Value: "CIDFontType2" })
+            return;
+        if ((context.Resolve(cidFont.Get(PdfName.BaseFont)) as PdfName)?.Value is not { } baseFont
+            || !IsSubsetTag(baseFont))
+            return; // the CIDSet-completeness constraint applies only to subset fonts.
+        if (context.Resolve(cidFont.Get(_cidToGidMap)) is { } map && map is not PdfName { Value: "Identity" })
+            return; // a stream CIDToGIDMap is deferred.
+        if (context.Resolve(cidFont.Get(_fontDescriptor)) is not PdfDictionary descriptor
+            || context.ResolveStream(descriptor.Get(_cidSet)) is not { } cidSetStream)
+            return; // /CIDSet is optional.
+        if (EmbeddedTrueTypeProgram(context, cidFont) is not { } program
+            || context.DecodeStream(cidSetStream) is not { } cidSet)
+            return;
+
+        if (!CidSetListsAllGlyphs(cidSet, program.NumGlyphs))
+            Report(context, "6.2.11.4.2-cidset", "ISO 19005-2:2011, 6.2.11.4.2",
+                "An embedded subset CIDFontType2's /CIDSet does not identify exactly the CIDs present in "
+                + "the font program (§6.2.11.4.2).");
+    }
+
+    // True when every CID in 0..numGlyphs−1 has its bit set and every bit beyond is clear.
+    private static bool CidSetListsAllGlyphs(byte[] cidSet, int numGlyphs)
+    {
+        var totalBits = cidSet.Length * 8;
+        for (var i = 0; i < numGlyphs; i++)
+            if (i >= totalBits || (cidSet[i / 8] & (0x80 >> (i % 8))) == 0)
+                return false;
+        for (var i = numGlyphs; i < totalBits; i++)
+            if ((cidSet[i / 8] & (0x80 >> (i % 8))) != 0)
+                return false;
+        return true;
+    }
+
+    // A subset font name is "ABCDEF+ActualName": six uppercase letters then '+'.
+    private static bool IsSubsetTag(string baseFont)
+    {
+        if (baseFont.Length < 7 || baseFont[6] != '+')
+            return false;
+        for (var i = 0; i < 6; i++)
+            if (baseFont[i] is < 'A' or > 'Z')
+                return false;
+        return true;
     }
 
     // The parsed sfnt program of an embedded TrueType font (its /FontDescriptor /FontFile2), or null
