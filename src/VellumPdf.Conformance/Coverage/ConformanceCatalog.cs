@@ -184,6 +184,7 @@ public static class ConformanceCatalog
         ["6.2.4.3-2"] = "device-colour requires an output intent checked; DefaultRGB path not",
         ["6.2.4.3-3"] = "device-colour requires an output intent checked; DefaultCMYK path not",
         ["6.2.4.3-4"] = "page-content device grey covered; image/pattern colour not detected",
+        ["6.2.4.4-2"] = "Separations selected by cs/CS operators and those in /Colorants of used DeviceN spaces are compared; Separations reachable only via Form XObjects, Type 3 CharProcs, annotation appearance streams, image /ColorSpace, or alternate spaces of other colour spaces are not yet walked",
         ["6.2.2-1"] = "page content-stream operators checked against ISO 32000-1; Form XObject / Type 3 CharProc / annotation appearance streams not yet walked",
         ["6.2.2-2"] = "page content streams checked (Font/XObject/ExtGState/ColorSpace/Shading); Pattern names (scn/SCN in Pattern colour space) and Properties names (BDC/DP with name operand) not detected — stateful colour-space tracking required; Form XObject / Type 3 / appearance streams not walked",
         ["6.2.11.4.1-1"] = "only the embedded Identity-H CIDFontType2 path is checked",
@@ -211,7 +212,6 @@ public static class ConformanceCatalog
         // 6.1.8-1 moved to PdfAPartial (font BaseFont + colour colourant + structure-type names).
         ["6.1.12-2"] = "signature-reference traversal",
         ["6.2.4.2-2"] = "ExtGState overprint (OPM) analysis",
-        ["6.2.4.4-2"] = "Separation tint/alternate consistency",
         // 6.2.8.3-1..-5: removed from Deferred; Jpeg2000Rule now implements all five for both
         // JP2 box files and raw codestreams. -2/-3/-4 correctly do not apply to raw codestreams
         // (which carry no colr boxes) — this is not a gap but correct per-spec scoping.

@@ -53,6 +53,7 @@ internal static class RuleRegistry
         new BlendModeRule(),
         new DeviceNColorantRule(),
         new DeviceNColorantsRule(),
+        new SeparationConsistencyRule(),
     ];
 
     // ISO 19005-2 §6.1.10 / §6.1.13 / §6.2.2 / §6.2.5 graphics-state / §6.2.6 rendering-intent /
