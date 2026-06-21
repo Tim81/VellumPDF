@@ -138,7 +138,7 @@ oracles — a missing tool fails the build, so the gates can never silently skip
 | --- | --- |
 | Linearization (v1.8) | "Fast web view" object ordering. |
 | Barcodes (v1.9) | The `VellumPdf.Barcodes` package — QR, PDF417, Code128, EAN. |
-| Preflight CLI | Native-AOT `vellum-preflight` command-line binary over `VellumPdf.Conformance`, with per-platform release binaries — validate a PDF without a JVM or Docker (#130). |
+| Preflight CLI (v1.7.x) | Native-AOT `vellum-preflight` command-line binary over `VellumPdf.Conformance`, with per-platform release binaries — validate a PDF without a JVM or Docker. Capstone of the in-process preflight line, shipped once coverage is high enough (#130). |
 | PDF reader (v2.1) | `VellumPdf.Reader` — read any PDF. xref streams, object streams, and hybrid-reference files shipped in v1.7; v2.1 grows it into a full structural parser including encrypted-file reading (Epic #100). |
 | Content extraction (v2.2) | Text and image extraction on the reader (#98). |
 | Editing existing PDFs (v3.0) | Unified read-modify-write document model; supersedes the write-once `PdfDocument` (Epic #101). |
