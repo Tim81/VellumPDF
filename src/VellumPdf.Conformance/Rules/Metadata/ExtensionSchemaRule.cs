@@ -209,12 +209,29 @@ internal sealed class ExtensionSchemaRule : IConformanceRule
     }
 
     // The members of an rdf:Bag / rdf:Seq: its rdf:li children (or the children of a single nested
-    // container). An rdf:li with rdf:parseType="Resource" carries the fields as its own children.
+    // container). An rdf:li with rdf:parseType="Resource" carries the fields as its own children; the
+    // equivalent blank-node serialisation wraps them in a single rdf:Description — Unwrap descends
+    // into that so both forms expose the same field children.
     private static IEnumerable<XElement> Items(XElement container)
     {
         var collection = container.Element(_rdf + "Bag") ?? container.Element(_rdf + "Seq");
         var source = collection ?? container;
-        return source.Elements(_rdf + "li");
+        foreach (var li in source.Elements(_rdf + "li"))
+            yield return Unwrap(li);
+    }
+
+    // Descends into a lone <rdf:Description> child (the blank-node serialisation of a container);
+    // when the item carries its fields directly (rdf:parseType="Resource") it is returned unchanged.
+    private static XElement Unwrap(XElement item)
+    {
+        XElement? only = null;
+        foreach (var child in item.Elements())
+        {
+            if (only is not null)
+                return item; // more than one element child — fields are carried directly
+            only = child;
+        }
+        return only is not null && only.Name == _rdf + "Description" ? only : item;
     }
 
     // A field serialised either as a child element or as an attribute on <paramref name="parent"/>.

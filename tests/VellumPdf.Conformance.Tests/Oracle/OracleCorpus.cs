@@ -408,6 +408,14 @@ public static class OracleCorpus
             new OracleFixture("pdfa2b-extension-schema", WriterPdfWithMetadata(Encoding.UTF8.GetBytes(ExtensionSchemaXmp2b(ValidPropertyFields))),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
 
+            // The same valid extension schema serialised with the equivalent rdf:Description blank-node
+            // form instead of rdf:parseType="Resource". veraPDF normalises the RDF and accepts it, and
+            // the in-process rule (which unwraps a lone rdf:Description) must too — the regression guard
+            // that the §6.6.2.3.2/§6.6.2.3.3 checks do not over-reject the alternate serialisation.
+            new OracleFixture("pdfa2b-extension-schema-rdf-description",
+                WriterPdfWithMetadata(Encoding.UTF8.GetBytes(RdfDescriptionExtensionSchemaXmp2b())),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
             // An extension-schema property whose 'category' is neither internal nor external
             // (§6.6.2.3.3-9). veraPDF and the in-process rule both reject it.
             new OracleFixture("pdfa2b-extension-schema-bad-category",
@@ -1111,6 +1119,30 @@ public static class OracleCorpus
             + schemaExtra
             + "<pdfaSchema:property><rdf:Seq><rdf:li rdf:parseType=\"Resource\">" + propertyFields
             + "</rdf:li></rdf:Seq></pdfaSchema:property></rdf:li></rdf:Bag></pdfaExtension:schemas></rdf:Description>"
+            + "</rdf:RDF></x:xmpmeta><?xpacket end=\"w\"?>";
+    }
+
+    // A valid PDF/A extension schema serialised with the equivalent rdf:Description blank-node form
+    // (each container's fields wrapped in <rdf:Description> rather than rdf:parseType="Resource").
+    // veraPDF normalises both forms and accepts it; the in-process rule must unwrap the Description.
+    private static string RdfDescriptionExtensionSchemaXmp2b()
+    {
+        const string ns =
+            "xmlns:pdfaExtension=\"http://www.aiim.org/pdfa/ns/extension/\" "
+            + "xmlns:pdfaSchema=\"http://www.aiim.org/pdfa/ns/schema#\" "
+            + "xmlns:pdfaProperty=\"http://www.aiim.org/pdfa/ns/property#\"";
+        return "<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>"
+            + "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF "
+            + "xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">"
+            + "<rdf:Description rdf:about=\"\" xmlns:pdfaid=\"http://www.aiim.org/pdfa/ns/id/\">"
+            + "<pdfaid:part>2</pdfaid:part><pdfaid:conformance>B</pdfaid:conformance></rdf:Description>"
+            + $"<rdf:Description rdf:about=\"\" {ns}><pdfaExtension:schemas><rdf:Bag>"
+            + "<rdf:li><rdf:Description><pdfaSchema:schema>S</pdfaSchema:schema>"
+            + "<pdfaSchema:namespaceURI>http://example.com/ns/</pdfaSchema:namespaceURI>"
+            + "<pdfaSchema:prefix>ex</pdfaSchema:prefix>"
+            + "<pdfaSchema:property><rdf:Seq><rdf:li><rdf:Description>" + ValidPropertyFields
+            + "</rdf:Description></rdf:li></rdf:Seq></pdfaSchema:property>"
+            + "</rdf:Description></rdf:li></rdf:Bag></pdfaExtension:schemas></rdf:Description>"
             + "</rdf:RDF></x:xmpmeta><?xpacket end=\"w\"?>";
     }
 
