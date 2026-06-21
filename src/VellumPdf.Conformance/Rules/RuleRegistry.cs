@@ -34,6 +34,8 @@ internal static class RuleRegistry
         new FileTrailerRule(),
         new StreamRule(),
         new NumericLimitsRule(),
+        new CatalogRestrictionsRule(),
+        new OptionalContentRule(),
     ];
 
     // ISO 19005-2 §6.2 colour / §6.4 transparency rules. Shared by every PDF/A-2 level.

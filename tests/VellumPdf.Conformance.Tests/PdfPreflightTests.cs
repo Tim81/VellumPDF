@@ -658,6 +658,111 @@ public sealed class PdfPreflightTests
     }
 
     [Fact]
+    public void Validate_CatalogRequirements_ReportsError()
+    {
+        // §6.11-1: the document catalog shall not contain the Requirements key.
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R /Requirements [<< /Type /Requirement /S /EnableJavaScripts >>] >>"),
+            _pagesObj,
+            _pageObj,
+        ]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.11-1-requirements");
+    }
+
+    [Fact]
+    public void Validate_AlternatePresentations_ReportsError()
+    {
+        // §6.10-1: no AlternatePresentations entry in the document's name dictionary.
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R /Names << /AlternatePresentations << >> >> >>"),
+            _pagesObj,
+            _pageObj,
+        ]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.10-1-alternate-presentations");
+    }
+
+    [Fact]
+    public void Validate_PagePresSteps_ReportsError()
+    {
+        // §6.10-2: no PresSteps entry in any page dictionary.
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R >>"),
+            _pagesObj,
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /PresSteps << /Type /NavNode >> >>"),
+        ]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.10-2-pres-steps");
+    }
+
+    [Fact]
+    public void Validate_OptionalContentNoName_ReportsError()
+    {
+        // §6.9-1: each optional-content configuration dictionary needs a non-empty /Name.
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R /OCProperties << /OCGs [4 0 R] /D << >> >> >>"),
+            _pagesObj,
+            _pageObj,
+            new("<< /Type /OCG /Name (Layer 1) >>"),
+        ]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.9-1-config-name");
+    }
+
+    [Fact]
+    public void Validate_OptionalContentAutomaticState_ReportsError()
+    {
+        // §6.9-4: the AS key shall not appear in any configuration dictionary.
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R /OCProperties << /OCGs [4 0 R] "
+                + "/D << /Name (Default) /AS [<< /Event /View /OCGs [] /Category [/View] >>] >> >> >>"),
+            _pagesObj,
+            _pageObj,
+            new("<< /Type /OCG /Name (Layer 1) >>"),
+        ]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.9-4-config-as");
+    }
+
+    [Fact]
+    public void Validate_ValidOptionalContent_IsCompliant()
+    {
+        // §6.9: a named /D config with one OCG is valid — the no-false-positive guard.
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R /OCProperties << /OCGs [4 0 R] /D << /Name (Default) >> >> >>"),
+            _pagesObj,
+            _pageObj,
+            new("<< /Type /OCG /Name (Layer 1) >>"),
+        ]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId.StartsWith("ISO19005-2:6.9", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Validate_Pdf20Header_ReportsHeaderError()
     {
         // A plain document declares %PDF-2.0, which is not valid PDF/A-2 (§6.1.2).
