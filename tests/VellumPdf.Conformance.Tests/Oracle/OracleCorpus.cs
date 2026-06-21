@@ -442,6 +442,20 @@ public static class OracleCorpus
             new OracleFixture("pdfa2b-annot-ap-extra-key", WriterPdfWithApExtraKey(),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
 
+            // A Widget button field whose /AP /N is a stream instead of an appearance sub-dictionary
+            // (§6.3.3-3). veraPDF and the in-process rule both reject it.
+            new OracleFixture("pdfa2b-btn-appearance-stream", WriterPdfWithAppearanceKind("Widget", "Btn", nAsSubDictionary: false),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // The same Widget button with /AP /N a sub-dictionary (§6.3.3-3 satisfied) — a guard.
+            new OracleFixture("pdfa2b-btn-appearance-dict", WriterPdfWithAppearanceKind("Widget", "Btn", nAsSubDictionary: true),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // A Widget text field (/FT /Tx) whose /AP /N is a sub-dictionary instead of a stream
+            // (§6.3.3-4). veraPDF and the in-process rule both reject it.
+            new OracleFixture("pdfa2b-tx-appearance-dict", WriterPdfWithAppearanceKind("Widget", "Tx", nAsSubDictionary: true),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
             // A /Hide action on the catalog /OpenAction (§6.5.1-1). /Hide is one of the action types
             // the deny-list previously missed; the allow-list rejects it, as does veraPDF.
             new OracleFixture("pdfa2b-hide-action", WriterPdfWithOpenAction(
@@ -892,6 +906,44 @@ public static class OracleCorpus
             .Set(new PdfName("F"), new PdfInteger(flags));
         var newPage = CloneDict(page).Set(new PdfName("Annots"), new PdfArray([new PdfIndirectReference(annotNum)]));
         return reader.AppendRevision([(pageRef.ObjectNumber, newPage), (annotNum, annot)]);
+    }
+
+    // Attaches a Widget (or other-subtype) annotation whose /AP /N is built from the appearance-stream
+    // object number, with an AcroForm registration. Used to exercise the §6.3.3-3/-4 N-kind rules.
+    private static byte[] WriterPdfWithAppearanceKind(string subtype, string? fieldType, bool nAsSubDictionary)
+    {
+        var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+        var rootRef = (PdfIndirectReference)reader.Trailer.Get(PdfName.Root)!;
+        var (pageRef, page) = FirstPage(reader);
+        var apNum = reader.Size;
+        var annotNum = apNum + 1;
+
+        var ap = new PdfStream([]);
+        ap.Dictionary.Set(PdfName.Type, new PdfName("XObject")).Set(PdfName.Subtype, new PdfName("Form"))
+            .Set(new PdfName("BBox"), new PdfArray([new PdfInteger(0), new PdfInteger(0), new PdfInteger(1), new PdfInteger(1)]));
+        PdfObject n = nAsSubDictionary
+            ? new PdfDictionary().Set(new PdfName("On"), new PdfIndirectReference(apNum)).Set(new PdfName("Off"), new PdfIndirectReference(apNum))
+            : new PdfIndirectReference(apNum);
+
+        var annot = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("Annot")).Set(PdfName.Subtype, new PdfName(subtype))
+            .Set(new PdfName("Rect"), new PdfArray([new PdfInteger(10), new PdfInteger(10), new PdfInteger(50), new PdfInteger(50)]))
+            .Set(new PdfName("F"), new PdfInteger(1 << 2))
+            .Set(new PdfName("AP"), new PdfDictionary().Set(new PdfName("N"), n));
+        if (fieldType is not null)
+            annot.Set(new PdfName("FT"), new PdfName(fieldType));
+        if (subtype != "Widget")
+            annot.Set(new PdfName("Contents"), new PdfLiteralString(Encoding.ASCII.GetBytes("note")));
+
+        var newPage = CloneDict(page).Set(new PdfName("Annots"), new PdfArray([new PdfIndirectReference(annotNum)]));
+        var catalog = CloneDict(reader.Catalog);
+        if (subtype == "Widget")
+            catalog.Set(new PdfName("AcroForm"), new PdfDictionary()
+                .Set(new PdfName("Fields"), new PdfArray([new PdfIndirectReference(annotNum)])));
+
+        return reader.AppendRevision([
+            (rootRef.ObjectNumber, catalog), (pageRef.ObjectNumber, newPage), (apNum, ap), (annotNum, annot)]);
     }
 
     // Attaches a Text annotation whose /AP appearance dictionary carries a /D entry in addition to /N.
