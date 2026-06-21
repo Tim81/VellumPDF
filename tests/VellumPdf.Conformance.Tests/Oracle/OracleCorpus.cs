@@ -416,6 +416,14 @@ public static class OracleCorpus
                     + "<pdfaProperty:category>bogus</pdfaProperty:category><pdfaProperty:description>d</pdfaProperty:description>"))),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
 
+            // An extension schema container carrying a child element (pdfaSchema:bogusField) whose name
+            // is not in the allowed set for the pdfaSchema container (§6.6.2.3.2-1). veraPDF and the
+            // in-process ExtensionSchemaRule both reject it. The existing pdfa2b-extension-schema
+            // fixture (ExpectedCompliant: true) serves as the no-false-positive guard.
+            new OracleFixture("pdfa2b-extension-schema-undefined-field",
+                WriterPdfWithMetadata(Encoding.UTF8.GetBytes(UndefinedSchemaFieldXmp2b())),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
             // A custom XMP property in a namespace that is neither predefined nor declared by an
             // extension schema (§6.6.2.3.1). veraPDF and the in-process PropertyUsageRule both reject it.
             new OracleFixture("pdfa2b-undeclared-xmp-property", WriterPdfWithMetadata(Encoding.UTF8.GetBytes(CustomPropertyXmp2b())),
@@ -1085,7 +1093,7 @@ public static class OracleCorpus
 
     // A PDF/A-2b XMP packet declaring one valid extension schema with one property carrying the
     // given <paramref name="propertyFields"/> (element serialisation).
-    private static string ExtensionSchemaXmp2b(string propertyFields)
+    private static string ExtensionSchemaXmp2b(string propertyFields, string schemaExtra = "")
     {
         const string ns =
             "xmlns:pdfaExtension=\"http://www.aiim.org/pdfa/ns/extension/\" "
@@ -1100,6 +1108,7 @@ public static class OracleCorpus
             + "<rdf:li rdf:parseType=\"Resource\"><pdfaSchema:schema>S</pdfaSchema:schema>"
             + "<pdfaSchema:namespaceURI>http://example.com/ns/</pdfaSchema:namespaceURI>"
             + "<pdfaSchema:prefix>ex</pdfaSchema:prefix>"
+            + schemaExtra
             + "<pdfaSchema:property><rdf:Seq><rdf:li rdf:parseType=\"Resource\">" + propertyFields
             + "</rdf:li></rdf:Seq></pdfaSchema:property></rdf:li></rdf:Bag></pdfaExtension:schemas></rdf:Description>"
             + "</rdf:RDF></x:xmpmeta><?xpacket end=\"w\"?>";
@@ -1139,6 +1148,13 @@ public static class OracleCorpus
         + "<aid:part>2</aid:part><aid:conformance>B</aid:conformance>"
         + "<aid:amd>2010</aid:amd><aid:corr>1</aid:corr></rdf:Description>"
         + "</rdf:RDF></x:xmpmeta><?xpacket end=\"w\"?>";
+
+    // A PDF/A-2b XMP packet whose extension schema container carries a bogus child field
+    // (pdfaSchema:bogusField) not defined by the PDF/A extension-schema container schema (§6.6.2.3.2-1).
+    private static string UndefinedSchemaFieldXmp2b() =>
+        ExtensionSchemaXmp2b(
+            ValidPropertyFields,
+            schemaExtra: "<pdfaSchema:bogusField>x</pdfaSchema:bogusField>");
 
     // A PDF/A-2b XMP packet declaring a custom value type whose pdfaType omits the 'type' field.
     private static string BadValueTypeXmp2b() => RdfPacket(

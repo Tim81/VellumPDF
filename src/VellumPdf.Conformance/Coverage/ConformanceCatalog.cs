@@ -221,7 +221,6 @@ public static class ConformanceCatalog
         ["6.4.3-2"] = "digital-signature parser",
         ["6.4.3-3"] = "digital-signature parser",
         ["6.6.2.3.1-2"] = "XMP per-property value-type match",
-        ["6.6.2.3.2-1"] = "extension-schema-container schema",
         ["6.8-5"] = "recursive embedded-file PDF/A validation",
         ["6.7.3.3-1"] = "structure-tree walker",
         ["6.7.3.4-1"] = "structure-tree walker",
