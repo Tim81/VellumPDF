@@ -27,7 +27,7 @@ internal sealed class HexStringRule : IConformanceRule
     public void Evaluate(PreflightContext context)
     {
         var bytes = context.FileBytes.Span;
-        var streams = StreamRegions(bytes);
+        var streams = StreamRegions(context, bytes);
         var streamIndex = 0;
 
         var i = 0;
@@ -140,9 +140,19 @@ internal sealed class HexStringRule : IConformanceRule
     // directly in the bytes — not via the cross-reference table — so that bodies of superseded objects
     // left behind by an incremental update (whose markup must equally not be read as hex strings) are
     // masked too.
-    private static List<(int Start, int End)> StreamRegions(ReadOnlySpan<byte> bytes)
+    private static List<(int Start, int End)> StreamRegions(PreflightContext context, ReadOnlySpan<byte> bytes)
     {
         var regions = new List<(int Start, int End)>();
+
+        // The exact, /Length-accurate body extents of the current (cross-referenced) streams. These
+        // span a body correctly even when it contains the literal bytes 'endstream' — which the
+        // keyword scan below cannot, so they are merged in to take precedence.
+        foreach (var stream in context.EnumerateStreams())
+            if (stream.BodyOffset > 0)
+                regions.Add((stream.BodyOffset, stream.BodyOffset + stream.RawBody.Length));
+
+        // The keyword 'stream'/'endstream' pairs, which additionally cover bodies of objects
+        // superseded by an incremental update (not present in the cross-reference table).
         var i = 0;
         while (i <= bytes.Length - _streamKw.Length)
         {
@@ -163,7 +173,28 @@ internal sealed class HexStringRule : IConformanceRule
             regions.Add((body, end));
             i = end + _endstreamKw.Length;
         }
-        return regions;
+
+        return Merge(regions, bytes.Length);
+    }
+
+    // Sorts and coalesces overlapping/adjacent regions into a sorted, non-overlapping list (so a body
+    // masked exactly and again, more narrowly, by the keyword scan is covered by the wider extent).
+    private static List<(int Start, int End)> Merge(List<(int Start, int End)> regions, int limit)
+    {
+        regions.Sort((a, b) => a.Start.CompareTo(b.Start));
+        var merged = new List<(int Start, int End)>();
+        foreach (var (s, e) in regions)
+        {
+            var start = Math.Max(0, s);
+            var end = Math.Min(e, limit);
+            if (start >= end)
+                continue;
+            if (merged.Count > 0 && start <= merged[^1].End)
+                merged[^1] = (merged[^1].Start, Math.Max(merged[^1].End, end));
+            else
+                merged.Add((start, end));
+        }
+        return merged;
     }
 
     // A standalone 'stream' keyword (preceded by whitespace or '>' — not the tail of 'endstream' — and
