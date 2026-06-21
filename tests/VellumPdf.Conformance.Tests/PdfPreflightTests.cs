@@ -763,6 +763,76 @@ public sealed class PdfPreflightTests
     }
 
     [Fact]
+    public void Validate_PermissionsBadKey_ReportsError()
+    {
+        // §6.1.12-1: a /Perms permissions dictionary may contain only /UR3 and /DocMDP.
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R /Perms << /Foo << /Type /Sig >> >> >>"),
+            _pagesObj,
+            _pageObj,
+        ]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.12-1-permissions");
+    }
+
+    [Fact]
+    public void Validate_PermissionsDocMdp_IsAllowed()
+    {
+        // §6.1.12-1: /DocMDP is a permitted permissions-dictionary key — no false positive.
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R /Perms << /DocMDP << /Type /Sig >> >> >>"),
+            _pagesObj,
+            _pageObj,
+        ]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.12-1-permissions");
+    }
+
+    [Fact]
+    public void Validate_EmbeddedFileMissingUf_ReportsError()
+    {
+        // §6.8-2: a file specification with /EF must contain both /F and /UF (here /UF is absent).
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R /Names << /EmbeddedFiles << /Names [(a.bin) 4 0 R] >> >> >>"),
+            _pagesObj,
+            _pageObj,
+            new("<< /Type /Filespec /F (a.bin) /EF << /F 5 0 R >> >>"),
+            new("/Type /EmbeddedFile", Stream: Encoding.ASCII.GetBytes("data")),
+        ]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.8-2-embedded-file-names");
+    }
+
+    [Fact]
+    public void Validate_EmbeddedFileWithFAndUf_IsAllowed()
+    {
+        // §6.8-2: a file specification carrying both /F and /UF is accepted — no false positive.
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R /Names << /EmbeddedFiles << /Names [(a.bin) 4 0 R] >> >> >>"),
+            _pagesObj,
+            _pageObj,
+            new("<< /Type /Filespec /F (a.bin) /UF (a.bin) /EF << /F 5 0 R >> >>"),
+            new("/Type /EmbeddedFile", Stream: Encoding.ASCII.GetBytes("data")),
+        ]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.8-2-embedded-file-names");
+    }
+
+    [Fact]
     public void Validate_Pdf20Header_ReportsHeaderError()
     {
         // A plain document declares %PDF-2.0, which is not valid PDF/A-2 (§6.1.2).
