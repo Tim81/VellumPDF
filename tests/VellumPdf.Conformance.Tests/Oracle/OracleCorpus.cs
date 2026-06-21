@@ -329,6 +329,19 @@ public static class OracleCorpus
             new OracleFixture("pdfa2b-pdfaid-prefix", WriterPdfWithMetadata(Encoding.UTF8.GetBytes(AltPrefixXmp2b())),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
 
+            // The pdfaid 'amd' and 'corr' identification properties bound to a non-canonical prefix
+            // (§6.6.4-6/-7, alongside -4/-5). veraPDF and the in-process rule both reject it.
+            new OracleFixture("pdfa2b-pdfaid-amd-corr-prefix", WriterPdfWithMetadata(Encoding.UTF8.GetBytes(AmdCorrAliasedXmp2b())),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // A GTS_PDFX output intent carrying the /DestOutputProfileRef key (§6.2.3-3). veraPDF and
+            // the in-process OutputIntentRule both reject it.
+            new OracleFixture("pdfa2b-pdfx-dest-output-profile-ref", WriterPdfWithCatalogEntry("OutputIntents",
+                new PdfArray([new PdfDictionary()
+                    .Set(PdfName.Type, new PdfName("OutputIntent")).Set(new PdfName("S"), new PdfName("GTS_PDFX"))
+                    .Set(new PdfName("DestOutputProfileRef"), new PdfDictionary())])),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
             // An extension schema declaring a custom value type (pdfaType) whose first field omits the
             // mandatory 'type' name (§6.6.2.3.3-11). veraPDF and the in-process rule both reject it.
             new OracleFixture("pdfa2b-extension-valuetype-bad", WriterPdfWithMetadata(Encoding.UTF8.GetBytes(BadValueTypeXmp2b())),
@@ -625,6 +638,16 @@ public static class OracleCorpus
         + "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">"
         + "<rdf:Description rdf:about=\"\" xmlns:aid=\"http://www.aiim.org/pdfa/ns/id/\">"
         + "<aid:part>2</aid:part><aid:conformance>B</aid:conformance></rdf:Description>"
+        + "</rdf:RDF></x:xmpmeta><?xpacket end=\"w\"?>";
+
+    // The same, additionally carrying the 'amd' and 'corr' identification properties under the
+    // non-canonical prefix (so §6.6.4-6/-7 fire alongside -4/-5).
+    private static string AmdCorrAliasedXmp2b() =>
+        "<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>"
+        + "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">"
+        + "<rdf:Description rdf:about=\"\" xmlns:aid=\"http://www.aiim.org/pdfa/ns/id/\">"
+        + "<aid:part>2</aid:part><aid:conformance>B</aid:conformance>"
+        + "<aid:amd>2010</aid:amd><aid:corr>1</aid:corr></rdf:Description>"
         + "</rdf:RDF></x:xmpmeta><?xpacket end=\"w\"?>";
 
     // A PDF/A-2b XMP packet declaring a custom value type whose pdfaType omits the 'type' field.
