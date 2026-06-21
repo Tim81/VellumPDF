@@ -3717,7 +3717,7 @@ public sealed class PdfPreflightTests
         => BuildPagePdf(
             "/Resources << /ColorSpace << /CS0 4 0 R >> >> /Contents 6 0 R",
             new PdfObj(csBody),  // 4: colour-space array
-            // 5: 2-input tint function for DeviceN → DeviceCMYK
+                                 // 5: 2-input tint function for DeviceN → DeviceCMYK
             new PdfObj("/FunctionType 4 /Domain [0 1 0 1] /Range [0 1 0 1 0 1 0 1]",
                 Encoding.ASCII.GetBytes("{ pop pop 0 0 0 0 }")),
             // 6: content stream — selects CS0 as fill space and sets both components to 0
