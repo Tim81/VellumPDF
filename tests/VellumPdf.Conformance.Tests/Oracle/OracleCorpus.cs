@@ -371,6 +371,23 @@ public static class OracleCorpus
                     .Set(new PdfName("OCGs"), new PdfArray([]))
                     .Set(new PdfName("Category"), new PdfArray([new PdfName("View")]))]))),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // A catalog /Perms permissions dictionary carrying a key other than /UR3 or /DocMDP
+            // (§6.1.12-1). veraPDF and the in-process PermissionsRule both reject it.
+            new OracleFixture("pdfa2b-permissions-bad-key", WriterPdfWithCatalogEntry("Perms",
+                new PdfDictionary().Set(new PdfName("Foo"), new PdfDictionary().Set(PdfName.Type, new PdfName("Sig")))),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // A valid embedded-file specification: the attachment IS a compliant PDF/A-2b document and
+            // the filespec carries both /F and /UF. Both validators accept it — the no-false-positive
+            // guard for the §6.8 embedded-file rule (and §6.8-5 stays satisfied).
+            new OracleFixture("pdfa2b-embedded-file", WriterPdfWithEmbeddedFile(includeUf: true),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // The same embedded-file specification missing /UF (§6.8-2). veraPDF and the in-process
+            // EmbeddedFileRule both reject it.
+            new OracleFixture("pdfa2b-embedded-file-no-uf", WriterPdfWithEmbeddedFile(includeUf: false),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
         ];
     }
 
@@ -714,6 +731,40 @@ public static class OracleCorpus
         var catalog = CloneDict(reader.Catalog);
         catalog.Set(new PdfName(key), value);
         return reader.AppendRevision([(rootRef.ObjectNumber, catalog)]);
+    }
+
+    // Attaches an embedded file (a compliant PDF/A-2b document, so §6.8-5 stays satisfied) via the
+    // catalog /Names /EmbeddedFiles name tree. The filespec carries /F always and /UF when requested,
+    // so the §6.8-2 F/UF requirement can be exercised in isolation.
+    private static byte[] WriterPdfWithEmbeddedFile(bool includeUf)
+    {
+        var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+        var rootRef = (PdfIndirectReference)reader.Trailer.Get(PdfName.Root)!;
+        var catalog = CloneDict(reader.Catalog);
+
+        var efStreamNum = reader.Size;
+        var filespecNum = efStreamNum + 1;
+
+        var efStream = new PdfStream(WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b));
+        efStream.Dictionary.Set(PdfName.Type, new PdfName("EmbeddedFile"))
+            .Set(PdfName.Subtype, new PdfName("application/pdf"));
+
+        var filespec = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("Filespec"))
+            .Set(new PdfName("F"), new PdfLiteralString(Encoding.ASCII.GetBytes("attach.pdf")))
+            .Set(new PdfName("EF"), new PdfDictionary().Set(new PdfName("F"), new PdfIndirectReference(efStreamNum)));
+        if (includeUf)
+            filespec.Set(new PdfName("UF"), new PdfLiteralString(Encoding.ASCII.GetBytes("attach.pdf")));
+
+        catalog.Set(new PdfName("Names"), new PdfDictionary()
+            .Set(new PdfName("EmbeddedFiles"), new PdfDictionary()
+                .Set(new PdfName("Names"), new PdfArray([
+                    new PdfLiteralString(Encoding.ASCII.GetBytes("attach.pdf")),
+                    new PdfIndirectReference(filespecNum)]))));
+
+        return reader.AppendRevision([
+            (rootRef.ObjectNumber, catalog), (efStreamNum, efStream), (filespecNum, filespec)]);
     }
 
     private static byte[] WriterPdfWithPresSteps()
