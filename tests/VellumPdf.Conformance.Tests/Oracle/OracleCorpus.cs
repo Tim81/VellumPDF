@@ -333,6 +333,44 @@ public static class OracleCorpus
             // mandatory 'type' name (§6.6.2.3.3-11). veraPDF and the in-process rule both reject it.
             new OracleFixture("pdfa2b-extension-valuetype-bad", WriterPdfWithMetadata(Encoding.UTF8.GetBytes(BadValueTypeXmp2b())),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // A catalog carrying the /Requirements key (§6.11-1). veraPDF and the in-process
+            // CatalogRestrictionsRule both reject it.
+            new OracleFixture("pdfa2b-requirements", WriterPdfWithCatalogEntry("Requirements",
+                new PdfArray([new PdfDictionary()
+                    .Set(PdfName.Type, new PdfName("Requirement")).Set(new PdfName("S"), new PdfName("EnableJavaScripts"))])),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // An /AlternatePresentations entry in the document name dictionary (§6.10-1). veraPDF and
+            // the in-process rule both reject it.
+            new OracleFixture("pdfa2b-alternate-presentations", WriterPdfWithCatalogEntry("Names",
+                new PdfDictionary().Set(new PdfName("AlternatePresentations"), new PdfDictionary())),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // A /PresSteps entry on a page dictionary (§6.10-2). veraPDF and the in-process rule both
+            // reject it.
+            new OracleFixture("pdfa2b-pres-steps", WriterPdfWithPresSteps(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // A minimal but valid optional-content configuration (/OCProperties with a named /D config
+            // and one OCG). Both veraPDF and the in-process OptionalContentRule accept it — the
+            // regression guard that a valid optional-content dictionary is not falsely rejected (§6.9).
+            new OracleFixture("pdfa2b-optional-content", WriterPdfWithOptionalContent(NamedConfig()),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // An optional-content configuration dictionary with no /Name (§6.9-1). veraPDF and the
+            // in-process rule both reject it.
+            new OracleFixture("pdfa2b-oc-no-name", WriterPdfWithOptionalContent(new PdfDictionary()),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // An optional-content configuration dictionary carrying an /AS entry (§6.9-4). veraPDF and
+            // the in-process rule both reject it.
+            new OracleFixture("pdfa2b-oc-as", WriterPdfWithOptionalContent(NamedConfig().Set(new PdfName("AS"),
+                new PdfArray([new PdfDictionary()
+                    .Set(new PdfName("Event"), new PdfName("View"))
+                    .Set(new PdfName("OCGs"), new PdfArray([]))
+                    .Set(new PdfName("Category"), new PdfArray([new PdfName("View")]))]))),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
         ];
     }
 
@@ -676,6 +714,37 @@ public static class OracleCorpus
         var catalog = CloneDict(reader.Catalog);
         catalog.Set(new PdfName(key), value);
         return reader.AppendRevision([(rootRef.ObjectNumber, catalog)]);
+    }
+
+    private static byte[] WriterPdfWithPresSteps()
+    {
+        var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var newPage = CloneDict(page);
+        newPage.Set(new PdfName("PresSteps"), new PdfDictionary().Set(PdfName.Type, new PdfName("NavNode")));
+        return reader.AppendRevision([(pageRef.ObjectNumber, newPage)]);
+    }
+
+    private static PdfDictionary NamedConfig()
+        => new PdfDictionary().Set(new PdfName("Name"), new PdfLiteralString(Encoding.ASCII.GetBytes("Default")));
+
+    // Injects an /OCProperties dictionary (one OCG plus the given /D configuration) into the catalog
+    // via an incremental update on a conformant baseline.
+    private static byte[] WriterPdfWithOptionalContent(PdfDictionary defaultConfig)
+    {
+        var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+        var rootRef = (PdfIndirectReference)reader.Trailer.Get(PdfName.Root)!;
+        var catalog = CloneDict(reader.Catalog);
+        var ocgNum = reader.Size;
+        var ocg = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("OCG"))
+            .Set(new PdfName("Name"), new PdfLiteralString(Encoding.ASCII.GetBytes("Layer 1")));
+        catalog.Set(new PdfName("OCProperties"), new PdfDictionary()
+            .Set(new PdfName("OCGs"), new PdfArray([new PdfIndirectReference(ocgNum)]))
+            .Set(new PdfName("D"), defaultConfig));
+        return reader.AppendRevision([(rootRef.ObjectNumber, catalog), (ocgNum, ocg)]);
     }
 
     private static byte[] WriterPdfWithXfa()
