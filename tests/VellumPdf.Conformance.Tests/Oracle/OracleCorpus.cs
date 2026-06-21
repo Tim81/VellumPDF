@@ -123,6 +123,12 @@ public static class OracleCorpus
                 SimpleTrueTypeFont(_ => { }, flags: 4, encoding: null),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
 
+            // A non-symbolic simple TrueType font whose embedded program's cmap is a single (3,0)
+            // symbol subtable — insufficient for a non-symbolic font (§6.2.11.6-1). veraPDF and the
+            // in-process rule both reject it.
+            new OracleFixture("pdfa2b-font-nonsymbolic-cmap", SimpleTrueTypeFontSymbolOnlyCmap(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
             // A PDF/A-2b document that draws text with a properly embedded (subset) TrueType font via
             // the Type0/CIDFontType2/Identity-H path. veraPDF accepts it (all §6.2.11.x font checks
             // pass) and so does the in-process validator — the positive end-to-end font fixture.
@@ -1258,12 +1264,45 @@ public static class OracleCorpus
     // dictionary to introduce a single malformation; with no mutation the result is fully conformant
     // (the 'A' advance width is computed from the font, so §6.2.11.5 stays satisfied). This is the
     // simple-font analogue of CorruptDescendantFont — the writer itself emits only composite fonts.
-    internal static byte[] SimpleTrueTypeFont(Action<PdfDictionary> mutate, int flags = 32, PdfName? encoding = null)
+    // A non-symbolic simple TrueType font whose embedded program's cmap has been patched down to a
+    // single Microsoft Symbol (3,0) subtable — which alone cannot serve a non-symbolic font
+    // (§6.2.11.6-1).
+    internal static byte[] SimpleTrueTypeFontSymbolOnlyCmap()
     {
         var dejavu = LoadAsset("DejaVuSans.ttf");
+        var cmap = SfntTableOffset(dejavu, "cmap");
+        dejavu[cmap + 2] = 0;
+        dejavu[cmap + 3] = 1;       // numSubtables = 1
+        dejavu[cmap + 4] = 0;
+        dejavu[cmap + 5] = 3;       // record 0 platform = 3
+        dejavu[cmap + 6] = 0;
+        dejavu[cmap + 7] = 0;       // record 0 encoding = 0 (Microsoft Symbol)
+        return SimpleTrueTypeFont(_ => { }, encoding: new PdfName("WinAnsiEncoding"), fontProgram: dejavu);
+    }
+
+    private static int SfntTableOffset(byte[] font, string tag)
+    {
+        var numTables = (font[4] << 8) | font[5];
+        for (var i = 0; i < numTables; i++)
+        {
+            var rec = 12 + i * 16;
+            if (font[rec] == tag[0] && font[rec + 1] == tag[1] && font[rec + 2] == tag[2] && font[rec + 3] == tag[3])
+                return (font[rec + 8] << 24) | (font[rec + 9] << 16) | (font[rec + 10] << 8) | font[rec + 11];
+        }
+        throw new InvalidOperationException($"sfnt table '{tag}' not found.");
+    }
+
+    internal static byte[] SimpleTrueTypeFont(
+        Action<PdfDictionary> mutate, int flags = 32, PdfName? encoding = null, byte[]? fontProgram = null)
+    {
+        // Width is always measured from the unmodified asset (so a caller-patched program — e.g. a
+        // mangled cmap — does not perturb the /Widths and trip §6.2.11.5); only the embedded
+        // FontFile2 bytes are overridden.
+        var asset = LoadAsset("DejaVuSans.ttf");
+        var dejavu = fontProgram ?? asset;
         int widthA;
         using (var measureDoc = new PdfDocument())
-            widthA = (int)Math.Round(measureDoc.UseTrueTypeFont(dejavu).MeasureString("A", 1000));
+            widthA = (int)Math.Round(measureDoc.UseTrueTypeFont(asset).MeasureString("A", 1000));
 
         using var reader = PdfReader.Open(WriterPdfWithEmbeddedFont());
         var (pageRef, page) = FirstPage(reader);

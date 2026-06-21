@@ -171,6 +171,15 @@ internal sealed class FontStructureRule : IConformanceRule
             Report(context, "6.2.11.6-nonsymbolic-encoding", "ISO 19005-2:2011, 6.2.11.6",
                 "A non-symbolic TrueType font shall use MacRomanEncoding or WinAnsiEncoding "
                 + $"({(encodingName is null ? "no usable Encoding" : $"/{encodingName}")} found).");
+
+        // §6.2.11.6-1: the embedded program's cmap shall provide the subtables needed for glyph
+        // lookup — at least one subtable, and more than one when a (3,0) symbol subtable is present
+        // (the symbol subtable alone does not suffice for a non-symbolic font).
+        if (EmbeddedTrueTypeProgram(context, font) is { } prog
+            && !(prog.HasSymbolCmap ? prog.CmapSubtableCount > 1 : prog.CmapSubtableCount > 0))
+            Report(context, "6.2.11.6-nonsymbolic-cmap", "ISO 19005-2:2011, 6.2.11.6",
+                "A non-symbolic TrueType font's embedded cmap does not provide the encoding subtables "
+                + "required for glyph lookup.");
     }
 
     // The parsed sfnt program of an embedded TrueType font (its /FontDescriptor /FontFile2), or null
