@@ -86,6 +86,7 @@ internal static class RuleRegistry
         new MetadataRule(),
         new ExtensionSchemaRule(),
         new PropertyUsageRule(),
+        new PropertyValueTypeRule(),
         new AnnotationRule(),
         new ActionRule(),
         new Forms.XfaRule(),
