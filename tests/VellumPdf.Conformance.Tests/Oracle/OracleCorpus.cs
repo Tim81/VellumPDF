@@ -190,6 +190,18 @@ public static class OracleCorpus
             new OracleFixture("pdfa2b-embedded-font", WriterPdfWithEmbeddedFont(),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
 
+            // A PDF/A-2b document drawing text with a properly embedded OpenType-CFF font via the
+            // Type0/CIDFontType0 path, so its descendant carries /FontFile3 /Subtype /OpenType. Both
+            // veraPDF and the in-process validator accept it — the positive guard that the §6.2.11.2-7
+            // FontFile3 /Subtype check does not false-positive on a conformant CFF program.
+            new OracleFixture("pdfa2b-embedded-cff-font", WriterPdfWithEmbeddedCffFont(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // The same embedded OpenType-CFF font with its /FontFile3 /Subtype changed from /OpenType
+            // to /Type2 (§6.2.11.2-7). veraPDF and the in-process FontStructureRule both reject it.
+            new OracleFixture("pdfa2b-cff-bad-fontfile3-subtype", WriterPdfWithBadFontFile3Subtype(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
             // A PDF/A-2b document drawing text with a standard-14 font (Helvetica) via the
             // VellumPdf.Fonts.Standard14 substitution package, which embeds a metric-compatible
             // Liberation font. Proves the substitution path yields conformant PDF/A text out-of-the-box.
@@ -1504,10 +1516,56 @@ public static class OracleCorpus
         return reader.AppendRevision([(fdRef.ObjectNumber, newFd), (cidSetNum, new PdfStream(cidSet))]);
     }
 
+    // Rewrites the embedded OpenType-CFF font's /FontFile3 /Subtype from /OpenType to an invalid
+    // value (/Type2), preserving the (decoded) program bytes so veraPDF still parses the program and
+    // flags only the disallowed subtype (§6.2.11.2-7).
+    private static byte[] WriterPdfWithBadFontFile3Subtype()
+    {
+        using var reader = PdfReader.Open(WriterPdfWithEmbeddedCffFont());
+        var (_, page) = FirstPage(reader);
+        var resources = (PdfDictionary)reader.ResolveValue(page.Get(new PdfName("Resources"))!)!;
+        var fonts = (PdfDictionary)reader.ResolveValue(resources.Get(PdfName.Font)!)!;
+        var type0 = (PdfDictionary)reader.ResolveValue(fonts.Entries.First().Value)!;
+        var descArr = (PdfArray)reader.ResolveValue(type0.Get(new PdfName("DescendantFonts"))!)!;
+        var cidFont = (PdfDictionary)reader.Resolve(((PdfIndirectReference)descArr[0]).ObjectNumber)!;
+        var fd = (PdfDictionary)reader.ResolveValue(cidFont.Get(new PdfName("FontDescriptor"))!)!;
+        var ff3Ref = (PdfIndirectReference)fd.Get(new PdfName("FontFile3"))!;
+        var ff3 = reader.ResolveStream(ff3Ref.ObjectNumber)!;
+        var program = reader.GetDecodedStreamData(ff3)!;
+
+        var newFf3 = new PdfStream(program);
+        newFf3.Dictionary.Set(PdfName.Subtype, new PdfName("Type2"));
+        return reader.AppendRevision([(ff3Ref.ObjectNumber, newFf3)]);
+    }
+
     private static int NumGlyphsOf(byte[] program)
     {
         var maxp = SfntTableOffset(program, "maxp");
         return (program[maxp + 4] << 8) | program[maxp + 5];
+    }
+
+    // Embeds the SourceSans3 OpenType-CFF program (so the writer emits a CIDFontType0 descendant
+    // with /FontFile3 /Subtype /OpenType), drawing a short string. The CFF analogue of
+    // WriterPdfWithEmbeddedFont — the positive baseline for the FontFile3 /Subtype check (§6.2.11.2-7).
+    private static byte[] WriterPdfWithEmbeddedCffFont()
+    {
+        var otf = LoadAsset("SourceSans3-ExtraLight.otf");
+        using var doc = new PdfDocument { Conformance = VellumPdf.Document.PdfConformance.PdfA2b };
+        doc.Info.Title = "VellumPdf Oracle Fixture";
+        var page = doc.AddPage(PageSize.A4);
+        var handle = doc.UseTrueTypeFont(otf);
+        doc.RegisterEmbeddedFontUsage(page, handle);
+        var canvas = new PdfCanvas(page);
+        canvas.BeginText().SetFontByName(handle.ResourceName, 12).SetTextMatrix(1, 0, 0, 1, 72, 720);
+        const string text = "Embedded Source Sans 3 CFF subset";
+        var gids = new ushort[text.Length];
+        var count = handle.GetGlyphIds(text, gids);
+        canvas.ShowGlyphs(gids.AsSpan(0, count));
+        canvas.EndText();
+        canvas.Finish();
+        using var ms = new MemoryStream();
+        doc.Save(ms);
+        return ms.ToArray();
     }
 
     private static byte[] WriterPdfWithEmbeddedFont()
