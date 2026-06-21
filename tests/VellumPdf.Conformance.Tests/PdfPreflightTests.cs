@@ -905,6 +905,23 @@ public sealed class PdfPreflightTests
     }
 
     [Fact]
+    public void Validate_ActionWithoutS_ReportsError()
+    {
+        // §6.5.1-1: an action dictionary with no /S action-type key is not a permitted action.
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R /OpenAction << /Type /Action >> >>"),
+            _pagesObj,
+            _pageObj,
+        ]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.5.1-action");
+    }
+
+    [Fact]
     public void Validate_PermittedGoToAction_IsAllowed()
     {
         // §6.5.1-1: /GoTo is a permitted action type — no false positive from the allow-list.

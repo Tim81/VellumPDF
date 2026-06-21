@@ -124,28 +124,32 @@ internal sealed class ActionRule : IConformanceRule
         if (context.Resolve(actionObj) is not PdfDictionary action)
             return;
 
-        if (context.Resolve(action.Get(_s)) is PdfName s)
+        // §6.5.1-1: an action is permitted only if its /S is one of the seven allowed names. veraPDF's
+        // test (S == "GoTo" || …) fails when /S is absent or not a name, so a recognised action with no
+        // resolvable permitted /S is itself a violation — not just one bearing a forbidden type.
+        var s = context.Resolve(action.Get(_s)) as PdfName;
+        if (s is null || !_permittedActions.Contains(s.Value))
         {
-            if (!_permittedActions.Contains(s.Value))
-            {
-                context.Report(
-                    RuleId,
-                    Clause,
-                    PreflightSeverity.Error,
-                    $"The action type /{s.Value} is not permitted in PDF/A.");
-            }
-            else if (s.Value == "Named"
-                && context.Resolve(action.Get(_n)) is PdfName named
-                && !_permittedNamedActions.Contains(named.Value))
-            {
-                // §6.5.1-2: only NextPage/PrevPage/FirstPage/LastPage named actions are permitted.
-                context.Report(
-                    "ISO19005-2:6.5.1-named-action",
-                    "ISO 19005-2:2011, 6.5.1",
-                    PreflightSeverity.Error,
-                    $"The named action /{named.Value} is not permitted in PDF/A "
-                    + "(only NextPage, PrevPage, FirstPage, and LastPage are allowed).");
-            }
+            context.Report(
+                RuleId,
+                Clause,
+                PreflightSeverity.Error,
+                s is null
+                    ? "An action dictionary has no /S action-type key (only GoTo, GoToR, GoToE, Thread, "
+                      + "URI, Named, and SubmitForm are permitted in PDF/A)."
+                    : $"The action type /{s.Value} is not permitted in PDF/A.");
+        }
+        else if (s.Value == "Named"
+            && context.Resolve(action.Get(_n)) is PdfName named
+            && !_permittedNamedActions.Contains(named.Value))
+        {
+            // §6.5.1-2: only NextPage/PrevPage/FirstPage/LastPage named actions are permitted.
+            context.Report(
+                "ISO19005-2:6.5.1-named-action",
+                "ISO 19005-2:2011, 6.5.1",
+                PreflightSeverity.Error,
+                $"The named action /{named.Value} is not permitted in PDF/A "
+                + "(only NextPage, PrevPage, FirstPage, and LastPage are allowed).");
         }
 
         // /Next is either a single action or an array of actions executed afterwards.
