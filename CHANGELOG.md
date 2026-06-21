@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.7.1] - 2026-06-21
+
+### Added
+
+- **`VellumPdf.Conformance` content-stream rules.** Four PDF/A-2b/2u/2a preflight checks driven by
+  an in-process content-stream scan: content-stream operators must be defined in ISO 32000-1, even
+  inside `BX`/`EX` (§6.2.2-1); a page that references named resources must have an explicitly
+  associated `/Resources` dictionary rather than relying on an inherited one (§6.2.2-2); an inline
+  image's filter must be one of the ISO 32000-1 Table 6 filters permitted for inline images, not
+  LZW, Crypt, or JPXDecode (§6.1.10-1); and a composite (Type 0) font with an embedded CMap must not
+  produce a CID greater than 65,535 (§6.1.13-10). Each is scoped to page content streams (form
+  XObject, Type 3 glyph, and annotation appearance streams are deferred) and cross-validated against
+  veraPDF 1.30.2. Parity coverage rises to PDF/A-2b 80.9%, 2u 81.2%, 2a 78.4%.
+
+## [1.7.0] - 2026-06-21
+
 ### Added
 
 - **`VellumPdf.Conformance` package.** In-process PDF/A and PDF/UA preflight validation, so callers
@@ -286,6 +302,14 @@ few small additions. No public API was removed.
   headers, and no unbounded allocations driven by attacker-controlled length
   fields.
 
+[Unreleased]: https://github.com/Tim81/VellumPDF/compare/v1.7.1...HEAD
+[1.7.1]: https://github.com/Tim81/VellumPDF/releases/tag/v1.7.1
+[1.7.0]: https://github.com/Tim81/VellumPDF/releases/tag/v1.7.0
+[1.6.0]: https://github.com/Tim81/VellumPDF/releases/tag/v1.6.0
+[1.5.6]: https://github.com/Tim81/VellumPDF/releases/tag/v1.5.6
+[1.5.5]: https://github.com/Tim81/VellumPDF/releases/tag/v1.5.5
+[1.5.4]: https://github.com/Tim81/VellumPDF/releases/tag/v1.5.4
+[1.5.3]: https://github.com/Tim81/VellumPDF/releases/tag/v1.5.3
 [1.5.2]: https://github.com/Tim81/VellumPDF/releases/tag/v1.5.2
 [1.5.1]: https://github.com/Tim81/VellumPDF/releases/tag/v1.5.1
 [1.5.0]: https://github.com/Tim81/VellumPDF/releases/tag/v1.5.0

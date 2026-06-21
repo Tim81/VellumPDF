@@ -3841,4 +3841,598 @@ public sealed class PdfPreflightTests
         Assert.Contains("Error", text);
         Assert.Contains("ISO32000-1:7.7.2-catalog-type", text);
     }
+
+    // ── §6.2.2-1 Content-stream operator checks ───────────────────────────────
+
+    [Fact]
+    public void Validate_UnknownContentStreamOperator_IsFlagged()
+    {
+        // A page content stream containing an operator keyword ('zz') that is not defined in
+        // ISO 32000-1 must be rejected (§6.2.2-1). Empirically confirmed against veraPDF.
+        var bytes = BuildContentStreamPdf("q zz Q");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.2-1");
+    }
+
+    [Fact]
+    public void Validate_UnknownOperatorInBxEx_IsFlagged()
+    {
+        // The BX/EX compatibility brackets do NOT exempt an unknown operator (§6.2.2-1 explicitly
+        // states "even if such operators are bracketed by the BX/EX compatibility operators").
+        // Empirically confirmed: veraPDF flags 'zz' inside BX...EX with the same 6.2.2-1 rule.
+        var bytes = BuildContentStreamPdf("BX zz EX");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.2-1");
+    }
+
+    [Fact]
+    public void Validate_StandardOperatorsOnly_NoOperatorFinding()
+    {
+        // A page content stream using only ISO 32000-1 operators must NOT be flagged. This guards
+        // against false positives: 'q', 'Q', 'BT', 'ET', 'BX', 'EX', 'n', 're', 'W', 'W*', etc.
+        var bytes = BuildContentStreamPdf("q BX q Q EX 10 10 100 100 re W n Q");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.2-1");
+    }
+
+    [Fact]
+    public void Validate_EmptyContentStream_NoOperatorFinding()
+    {
+        // An empty (or whitespace-only) page must not produce a 6.2.2-1 finding.
+        var bytes = BuildContentStreamPdf("");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.2-1");
+    }
+
+    [Fact]
+    public void Validate_UnknownOperatorReportedOnce()
+    {
+        // Even when the same unknown operator appears multiple times, it is reported at most once
+        // per document to avoid flooding the finding list.
+        var bytes = BuildContentStreamPdf("foo foo foo");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Equal(1, result.Assertions.Count(a => a.RuleId == "ISO19005-2:6.2.2-1"));
+    }
+
+    [Fact]
+    public void Validate_BooleanOperandInContent_NoOperatorFinding()
+    {
+        // Regression: the content-stream lexer emits true/false/null as Keyword tokens, but they are
+        // operands, not operators. An inline image with `/I true` (Interpolate) and a BDC inline
+        // property dict carrying a boolean/null are valid ISO 32000-1 content — veraPDF does not flag
+        // them under 6.2.2-1. The rule must not mistake the value keyword for an unknown operator.
+        var bytes = BuildContentStreamPdf(
+            "q /Tag << /B true /N null >> BDC BI /W 1 /H 1 /BPC 8 /CS /G /I true ID A EI EMC Q");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.2-1");
+    }
+
+    // ── §6.2.2-2 Inherited-resource checks ──────────────────────────────────────
+
+    /// <summary>
+    /// Builds a two-level page tree where the <c>/Resources</c> dictionary lives only on the
+    /// parent <c>Pages</c> node (inherited), and the leaf page has NO <c>/Resources</c> key.
+    /// The page content <paramref name="content"/> uses the named resource. This is the
+    /// structure veraPDF empirically flags with §6.2.2-2.
+    /// Objects: 1=catalog 2=pages(with Resources) 3=page(no Resources) 4=resources 5=content.
+    /// </summary>
+    private static byte[] BuildInheritedResourcePdf(string content)
+    {
+        var contentBytes = Encoding.ASCII.GetBytes(content);
+        return AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R >>"),
+            // Pages node carries the /Resources — the page inherits them from here.
+            new($"<< /Type /Pages /Kids [3 0 R] /Count 1 /Resources 4 0 R >>"),
+            // Page has NO /Resources key — so resources are only reachable via inheritance.
+            new($"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 5 0 R >>"),
+            // Shared resources dict (obj 4): a stub font and a stub form XObject.
+            new("<< /Font << /F0 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> >> /XObject << /X0 << /Type /XObject /Subtype /Form /BBox [0 0 1 1] >> >> /ExtGState << /GS0 << /Type /ExtGState >> >> >>"),
+            // Content stream (obj 5).
+            new(string.Empty, contentBytes),
+        ]);
+    }
+
+    /// <summary>
+    /// Builds a one-page doc where the page has its OWN <c>/Resources</c> key (even if not
+    /// fully populated), satisfying §6.2.2-2's "explicitly associated Resources dictionary"
+    /// requirement. The content <paramref name="content"/> may use named resources.
+    /// Objects: 1=catalog 2=pages(no Resources) 3=page(owns Resources) 4=resources 5=content.
+    /// </summary>
+    private static byte[] BuildExplicitResourcePdf(string content)
+    {
+        var contentBytes = Encoding.ASCII.GetBytes(content);
+        return AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R >>"),
+            // Pages node has NO /Resources.
+            new("<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
+            // Page has its OWN /Resources — rule is satisfied.
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources 4 0 R /Contents 5 0 R >>"),
+            // Own resources dict with a stub font.
+            new("<< /Font << /F0 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> >> >>"),
+            // Content stream.
+            new(string.Empty, contentBytes),
+        ]);
+    }
+
+    [Fact]
+    public void Validate_UsedFontInheritedOnly_IsReported()
+    {
+        // §6.2.2-2: the page uses /F0 via Tf but /F0 is only in the parent Pages /Resources
+        // (the page itself has no /Resources key). veraPDF empirically flags this.
+        var bytes = BuildInheritedResourcePdf("BT /F0 12 Tf (Hi) Tj ET");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a =>
+            a.RuleId == "ISO19005-2:6.2.2-2" && a.Message.Contains("F0", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Validate_UsedXObjectInheritedOnly_IsReported()
+    {
+        // §6.2.2-2: the page paints /X0 via Do but /X0 is only in the parent Pages /Resources.
+        var bytes = BuildInheritedResourcePdf("q /X0 Do Q");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a =>
+            a.RuleId == "ISO19005-2:6.2.2-2" && a.Message.Contains("X0", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Validate_UsedExtGStateInheritedOnly_IsReported()
+    {
+        // §6.2.2-2: the page applies /GS0 via gs but /GS0 is only in the parent Pages /Resources.
+        var bytes = BuildInheritedResourcePdf("q /GS0 gs Q");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a =>
+            a.RuleId == "ISO19005-2:6.2.2-2" && a.Message.Contains("GS0", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Validate_PageWithExplicitResources_NeverReports6222()
+    {
+        // §6.2.2-2 false-positive guard: a page that has its OWN /Resources key (even if empty
+        // or not fully covering used names) must NOT be flagged — veraPDF empirically confirmed
+        // that the presence of the /Resources key on the page itself satisfies the clause.
+        var bytes = BuildExplicitResourcePdf("BT /F0 12 Tf (Hi) Tj ET");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.2-2");
+    }
+
+    [Fact]
+    public void Validate_PageWithNoContentUsesNoResources_NeverReports6222()
+    {
+        // §6.2.2-2: a page that uses NO named resources (even without /Resources) must not be
+        // flagged — there are no "inherited resource names" to complain about.
+        var bytes = BuildInheritedResourcePdf("100 100 50 50 re f");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.2-2");
+    }
+
+    [Fact]
+    public void Validate_EmptyPage_NeverReports6222()
+    {
+        // §6.2.2-2: an empty page (no /Contents) with no /Resources must not be flagged.
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R >>"),
+            new("<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>"),
+        ]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.2-2");
+    }
+
+    [Fact]
+    public void Validate_WriterProducedPdfA_NeverReports6222()
+    {
+        // §6.2.2-2 false-positive guard: VellumPdf's own writer always puts /Resources on each
+        // page, so a writer-produced PDF/A-2b document must never trigger the rule.
+        var bytes = BuildOnePagePdf();
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.2-2");
+    }
+
+    [Fact]
+    public void Validate_PageDeviceColourSpaceNoResources_NeverReports6222()
+    {
+        // §6.2.2-2 false-positive guard: /DeviceGray, /DeviceRGB, /DeviceCMYK and /Pattern are
+        // resolved directly by cs/CS without a /Resources /ColorSpace lookup (ISO 32000-1 §8.6.3),
+        // so a resource-less page selecting only these is valid PDF/A — veraPDF accepts it and the
+        // rule must not flag the device names as inherited resources.
+        var bytes = BuildInheritedResourcePdf("/DeviceRGB CS /DeviceRGB cs 1 0 0 SC 0 0 1 sc 10 10 50 50 re B");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.2-2");
+    }
+
+    // ── §6.1.10-1 Inline-image filter checks ──────────────────────────────────
+
+    [Fact]
+    public void Validate_InlineImageLzwAbbrev_IsFlagged()
+    {
+        // /F /LZW in an inline image is forbidden (§6.1.10-1). Empirically confirmed against
+        // veraPDF 1.30.2: the probe PDF triggers clause 6.1.10 testNumber 1.
+        var bytes = BuildContentStreamPdf("BI /W 1 /H 1 /BPC 8 /CS /G /F /LZW ID \x80 EI");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.10-1");
+    }
+
+    [Fact]
+    public void Validate_InlineImageLzwFullName_IsFlagged()
+    {
+        // /F /LZWDecode (full name) in an inline image is also forbidden (§6.1.10-1). veraPDF
+        // flags this in the same way as the abbreviated form.
+        var bytes = BuildContentStreamPdf("BI /W 1 /H 1 /BPC 8 /CS /G /F /LZWDecode ID \x80 EI");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.10-1");
+    }
+
+    [Fact]
+    public void Validate_InlineImageFilterKeyLzw_IsFlagged()
+    {
+        // /Filter /LZWDecode (using the full /Filter key instead of abbreviated /F) is also
+        // forbidden. ISO 32000-1 §8.9.7 permits both key names in inline images; veraPDF honours
+        // both — confirmed empirically.
+        var bytes = BuildContentStreamPdf("BI /W 1 /H 1 /BPC 8 /CS /G /Filter /LZWDecode ID \x80 EI");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.10-1");
+    }
+
+    [Fact]
+    public void Validate_InlineImageCrypt_IsFlagged()
+    {
+        // /F /Crypt is explicitly forbidden (§6.1.10-1). Empirically confirmed against veraPDF.
+        var bytes = BuildContentStreamPdf("BI /W 1 /H 1 /BPC 8 /CS /G /F /Crypt ID \x80 EI");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.10-1");
+    }
+
+    [Fact]
+    public void Validate_InlineImageBogusFilter_IsFlagged()
+    {
+        // A filter name not in ISO 32000-1 Table 6 (e.g. /Foo) is forbidden (§6.1.10-1).
+        // Empirically confirmed against veraPDF.
+        var bytes = BuildContentStreamPdf("BI /W 1 /H 1 /BPC 8 /CS /G /F /Foo ID \x80 EI");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.10-1");
+    }
+
+    [Fact]
+    public void Validate_InlineImageJpxDecode_IsFlagged()
+    {
+        // JPXDecode is NOT in ISO 32000-1 Table 6's inline-image permitted set (§6.1.10-1).
+        // Empirically confirmed: veraPDF flags it.
+        var bytes = BuildContentStreamPdf("BI /W 1 /H 1 /BPC 8 /CS /G /F /JPXDecode ID \x80 EI");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.10-1");
+    }
+
+    [Fact]
+    public void Validate_InlineImageArrayWithBadMember_IsFlagged()
+    {
+        // An array filter where any member is forbidden causes a §6.1.10-1 finding. Here
+        // /AHx is permitted but /LZW is not — the array fails. Empirically confirmed against
+        // veraPDF.
+        var bytes = BuildContentStreamPdf("BI /W 1 /H 1 /BPC 8 /CS /G /F [/AHx /LZW] ID \x80 EI");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.10-1");
+    }
+
+    [Fact]
+    public void Validate_InlineImageFlateAbbrev_NoFilterFinding()
+    {
+        // /F /Fl (abbreviated FlateDecode) is permitted (§6.1.10-1). Empirically confirmed:
+        // veraPDF does not flag it.
+        var bytes = BuildContentStreamPdf("BI /W 1 /H 1 /BPC 8 /CS /G /F /Fl ID \x80 EI");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.10-1");
+    }
+
+    [Fact]
+    public void Validate_InlineImageFlateFullName_NoFilterFinding()
+    {
+        // /Filter /FlateDecode (full key, full name) is permitted. Empirically confirmed.
+        var bytes = BuildContentStreamPdf("BI /W 1 /H 1 /BPC 8 /CS /G /Filter /FlateDecode ID \x80 EI");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.10-1");
+    }
+
+    [Fact]
+    public void Validate_InlineImageNoFilter_NoFilterFinding()
+    {
+        // An inline image with no /F or /Filter key (raw uncompressed samples) is permitted.
+        // Empirically confirmed: veraPDF does not flag it.
+        var bytes = BuildContentStreamPdf("BI /W 1 /H 1 /BPC 8 /CS /G ID \x80 EI");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.10-1");
+    }
+
+    [Fact]
+    public void Validate_InlineImageAllPermittedAbbrevFilters_NoFilterFinding()
+    {
+        // Each of the six permitted abbreviated filter names must not cause a §6.1.10-1 finding.
+        // Empirically confirmed: AHx, A85, RL, CCF, DCT are all accepted by veraPDF.
+        string[] filters = ["AHx", "A85", "RL", "CCF", "DCT"];
+        foreach (var f in filters)
+        {
+            var bytes = BuildContentStreamPdf($"BI /W 1 /H 1 /BPC 8 /CS /G /F /{f} ID \x80 EI");
+            var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+            Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.10-1");
+        }
+    }
+
+    [Fact]
+    public void Validate_InlineImageBooleanInDict_NoFilterFinding()
+    {
+        // Regression: the lexer emits true/false/null as Keyword tokens. An inline image that
+        // has boolean entries such as /IM true or /I true alongside no /F key must not cause a
+        // §6.1.10-1 finding. The rule must not mistake the boolean value keyword for a filter name.
+        var bytes = BuildContentStreamPdf("BI /W 1 /H 1 /BPC 8 /CS /G /IM true /I true ID \x80 EI");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.10-1");
+    }
+
+    [Fact]
+    public void Validate_InlineImageValidArrayFilter_NoFilterFinding()
+    {
+        // An array whose members are all permitted filters is accepted (§6.1.10-1). Empirically
+        // confirmed: veraPDF does not flag [/Fl /DCT].
+        var bytes = BuildContentStreamPdf("BI /W 1 /H 1 /BPC 8 /CS /G /F [/Fl /DCT] ID \x80 EI");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.10-1");
+    }
+
+    // ── §6.1.13-10: CID value must not exceed 65,535 ─────────────────────────
+
+    /// <summary>
+    /// Builds a one-page PDF with a Type0 font whose /Encoding is an embedded CMap stream. The
+    /// CMap body is supplied by the caller; the content stream selects F0 and shows
+    /// <paramref name="shownCharHex"/> as a hex string (e.g. "0000").
+    /// Objects: 1=catalog 2=pages 3=page 4=resources 5=font-map 6=Type0 7=CMapStream
+    /// 8=CIDFont 9=FontDescriptor 10=FontFile2 11=content [12=XMP via AssemblePdf].
+    /// </summary>
+    private static byte[] BuildEmbeddedCMapFontPdf(byte[] cmapBody, string shownCharHex)
+    {
+        var cisys = "/Registry (Adobe) /Ordering (Japan1) /Supplement 6";
+        var objects = new List<PdfObj>
+        {
+            new("<< /Type /Catalog /Pages 2 0 R >>"),                                                    // 1
+            _pagesObj,                                                                                    // 2
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources 4 0 R /Contents 11 0 R >>"), // 3
+            new("<< /Font 5 0 R >>"),                                                                    // 4
+            new("<< /F0 6 0 R >>"),                                                                      // 5
+            new("<< /Type /Font /Subtype /Type0 /BaseFont /X /Encoding 7 0 R /DescendantFonts [8 0 R] >>"), // 6
+            new($"/Type /CMap /CMapName /CustomCMap /CIDSystemInfo << {cisys} >> /WMode 0", cmapBody),  // 7
+            new($"<< /Type /Font /Subtype /CIDFontType2 /BaseFont /X /CIDSystemInfo << {cisys} >> /FontDescriptor 9 0 R /CIDToGIDMap /Identity >>"), // 8
+            new("<< /Type /FontDescriptor /FontName /X /Flags 4 /FontBBox [0 0 1000 1000] /ItalicAngle 0 /Ascent 1000 /Descent -200 /CapHeight 800 /StemV 80 /FontFile2 10 0 R >>"), // 9
+            new("/Length1 4", [1, 2, 3, 4]),                                                             // 10
+            new(string.Empty, Encoding.ASCII.GetBytes($"BT /F0 12 Tf <{shownCharHex}> Tj ET")),        // 11
+        };
+        return AssemblePdf(objects);
+    }
+
+    private static byte[] MakeCidRangeCMap(string cidRangeLine)
+    {
+        return Encoding.ASCII.GetBytes(
+            "/CIDInit /ProcSet findresource begin 12 dict begin begincmap "
+            + "/CIDSystemInfo 3 dict dup begin /Registry (Adobe) def /Ordering (Japan1) def /Supplement 6 def end def "
+            + "/CMapName /CustomCMap def /CMapType 1 def "
+            + "1 begincodespacerange <0000> <FFFF> endcodespacerange "
+            + $"1 begincidrange {cidRangeLine} endcidrange "
+            + "endcmap CMapName currentdict /CMap defineresource pop end end");
+    }
+
+    private static byte[] MakeCidCharCMap(string cidCharLine)
+    {
+        return Encoding.ASCII.GetBytes(
+            "/CIDInit /ProcSet findresource begin 12 dict begin begincmap "
+            + "/CIDSystemInfo 3 dict dup begin /Registry (Adobe) def /Ordering (Japan1) def /Supplement 6 def end def "
+            + "/CMapName /CustomCMap def /CMapType 1 def "
+            + "1 begincodespacerange <0000> <FFFF> endcodespacerange "
+            + $"1 begincidchar {cidCharLine} endcidchar "
+            + "endcmap CMapName currentdict /CMap defineresource pop end end");
+    }
+
+    [Fact]
+    public void Validate_EmbeddedCMap_CidRangeDestExceeds65535_ReportsError()
+    {
+        // §6.1.13-10: an embedded CMap mapping char code 0x0000 to CID 70000 exceeds the limit.
+        // The content stream renders char code <0000>, producing CID 70000. Expect a finding.
+        // veraPDF oracle: probe PDF with CMap <0000> <0000> 70000 and <0000> Tj → 6.1.13-10 FAIL.
+        var cmapBody = MakeCidRangeCMap("<0000> <0000> 70000");
+        var bytes = BuildEmbeddedCMapFontPdf(cmapBody, "0000");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.13-10");
+    }
+
+    [Fact]
+    public void Validate_EmbeddedCMap_CidRangeEndExceeds65535_ReportsError()
+    {
+        // §6.1.13-10: CMap range <0000> <00FF> 65500 → max producible CID = 65500+255 = 65755.
+        // Content shows char code <00FF> → resolves to CID 65755 > 65535. Expect a finding.
+        // veraPDF oracle: probe PDF with this range and <00FF> Tj → 6.1.13-10 FAIL (CID 65755).
+        var cmapBody = MakeCidRangeCMap("<0000> <00FF> 65500");
+        var bytes = BuildEmbeddedCMapFontPdf(cmapBody, "00FF");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.13-10");
+    }
+
+    [Fact]
+    public void Validate_EmbeddedCMap_CidCharDestExceeds65535_ReportsError()
+    {
+        // §6.1.13-10: begincidchar mapping <0020> to CID 70000 exceeds the limit.
+        // Content shows char code <0020> → resolves to CID 70000. Expect a finding.
+        // veraPDF oracle: probe with cidchar 70000 and <0020> Tj → 6.1.13-10 FAIL.
+        var cmapBody = MakeCidCharCMap("<0020> 70000");
+        var bytes = BuildEmbeddedCMapFontPdf(cmapBody, "0020");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.13-10");
+    }
+
+    [Fact]
+    public void Validate_EmbeddedCMap_AllCidsWithin65535_NoFinding()
+    {
+        // §6.1.13-10 no-false-positive: CMap range <0020> <007E> 32 → max CID = 32+94 = 126.
+        // All CIDs are well within the 65535 limit. Expect no finding.
+        var cmapBody = MakeCidRangeCMap("<0020> <007E> 32");
+        var bytes = BuildEmbeddedCMapFontPdf(cmapBody, "0020");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.13-10");
+    }
+
+    [Fact]
+    public void Validate_EmbeddedCMap_CidAtExactBoundary65535_NoFinding()
+    {
+        // §6.1.13-10 boundary: CID exactly 65535 must not be flagged (rule is maximalCID <= 65535).
+        var cmapBody = MakeCidCharCMap("<0000> 65535");
+        var bytes = BuildEmbeddedCMapFontPdf(cmapBody, "0000");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.13-10");
+    }
+
+    [Fact]
+    public void Validate_IdentityHEncoding_CidExceedCheck_NoFinding()
+    {
+        // §6.1.13-10 exempt: Identity-H maps char codes to equal CIDs, so the max is structurally
+        // 65535 — the rule should never fire. Uses BuildFontPdf (content: BT /F0 12 Tf ET).
+        var bytes = BuildFontPdf(
+            new PdfObj("<< /Type /Font /Subtype /Type0 /BaseFont /X /Encoding /Identity-H /DescendantFonts [7 0 R] >>"),
+            new PdfObj("<< /Type /Font /Subtype /CIDFontType2 /BaseFont /X /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> /FontDescriptor 8 0 R /CIDToGIDMap /Identity >>"),
+            new PdfObj("<< /Type /FontDescriptor /FontName /X /FontFile2 9 0 R >>"),
+            new PdfObj("/Length1 4", [1, 2, 3, 4]));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.13-10");
+    }
+
+    [Fact]
+    public void Validate_PredefinedNamedCMap_CidExceedCheck_NoFinding()
+    {
+        // §6.1.13-10 deferred: a predefined named CMap (UniGB-UCS2-H) has no embedded program to
+        // parse, so the rule is deferred — no finding shall be generated.
+        var bytes = BuildFontPdf(
+            new PdfObj("<< /Type /Font /Subtype /Type0 /BaseFont /X /Encoding /UniGB-UCS2-H /DescendantFonts [7 0 R] >>"),
+            new PdfObj("<< /Type /Font /Subtype /CIDFontType0 /BaseFont /X /CIDSystemInfo << /Registry (Adobe) /Ordering (GB1) /Supplement 5 >> /FontDescriptor 8 0 R >>"),
+            new PdfObj("<< /Type /FontDescriptor /FontName /X /FontFile3 9 0 R >>"),
+            new PdfObj("/Subtype /CIDFontType0C", [1, 2, 3, 4]));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.13-10");
+    }
+
+    [Fact]
+    public void Validate_EmbeddedCMap_FontPresentButNotUsedInContent_NoFinding()
+    {
+        // §6.1.13-10 scoping: the rule only fires on CIDs produced from text-show operators.
+        // A font in /Resources with an overflow CMap but no Tf/Tj operators is not checked.
+        // This matches veraPDF's behaviour of evaluating only CIDs actually rendered.
+        var cmapBody = MakeCidRangeCMap("<0000> <0000> 70000");
+        // Build using AssemblePdf directly with empty content (no BT/Tf/ET).
+        var cisys = "/Registry (Adobe) /Ordering (Japan1) /Supplement 6";
+        var objects = new List<PdfObj>
+        {
+            new("<< /Type /Catalog /Pages 2 0 R >>"),
+            _pagesObj,
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources 4 0 R /Contents 11 0 R >>"),
+            new("<< /Font 5 0 R >>"),
+            new("<< /F0 6 0 R >>"),
+            new("<< /Type /Font /Subtype /Type0 /BaseFont /X /Encoding 7 0 R /DescendantFonts [8 0 R] >>"),
+            new($"/Type /CMap /CMapName /CustomCMap /CIDSystemInfo << {cisys} >> /WMode 0", cmapBody),
+            new($"<< /Type /Font /Subtype /CIDFontType2 /BaseFont /X /CIDSystemInfo << {cisys} >> /FontDescriptor 9 0 R /CIDToGIDMap /Identity >>"),
+            new("<< /Type /FontDescriptor /FontName /X /Flags 4 /FontBBox [0 0 1000 1000] /ItalicAngle 0 /Ascent 1000 /Descent -200 /CapHeight 800 /StemV 80 /FontFile2 10 0 R >>"),
+            new("/Length1 4", [1, 2, 3, 4]),
+            new(string.Empty, []/* empty content — no Tf, no text */),
+        };
+        var bytes = AssemblePdf(objects);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.13-10");
+    }
+
+    [Fact]
+    public void Validate_EmbeddedCMap_OneByteCodespace_DoesNotSynthesizeWideCid()
+    {
+        // §6.1.13-10 false-positive guard for the codespace-aware decoder. The CMap declares a
+        // ONE-byte codespace (<00>..<FF>) but also an (inconsistent) two-byte cidrange that would
+        // map code 0x0100 to CID 70000. Content shows the two bytes 01 00. Decoding per the
+        // codespace yields two single-byte codes (0x01, 0x00) — neither maps to a CID — so there is
+        // no finding. A naive fixed-width-2 split would instead form code 0x0100, hit the range, and
+        // wrongly report CID 70000. veraPDF decodes per codespace, so it does not flag this.
+        var cmapBody = Encoding.ASCII.GetBytes(
+            "/CIDInit /ProcSet findresource begin 12 dict begin begincmap "
+            + "/CIDSystemInfo 3 dict dup begin /Registry (Adobe) def /Ordering (Japan1) def /Supplement 6 def end def "
+            + "/CMapName /CustomCMap def /CMapType 1 def "
+            + "1 begincodespacerange <00> <FF> endcodespacerange "
+            + "1 begincidrange <0100> <0100> 70000 endcidrange "
+            + "endcmap CMapName currentdict /CMap defineresource pop end end");
+        var bytes = BuildEmbeddedCMapFontPdf(cmapBody, "0100");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.13-10");
+    }
 }
