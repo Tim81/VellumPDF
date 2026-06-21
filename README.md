@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/Tim81/VellumPDF/actions/workflows/ci.yml/badge.svg)](https://github.com/Tim81/VellumPDF/actions/workflows/ci.yml)
 [![NuGet](https://img.shields.io/nuget/v/VellumPdf.Kernel.svg?label=VellumPdf.Kernel)](https://www.nuget.org/packages/VellumPdf.Kernel)
+[![NuGet](https://img.shields.io/nuget/v/VellumPdf.Conformance.svg?label=VellumPdf.Conformance)](https://www.nuget.org/packages/VellumPdf.Conformance)
 
 A modern, **dependency-free PDF generation library for .NET 10**, implemented
 clean-room from the open **ISO 32000** standard.
@@ -33,10 +34,11 @@ clean-room from the open **ISO 32000** standard.
 | Package | Status | Description |
 | --- | --- | --- |
 | `VellumPdf.Kernel` | Stable | Object model, canvas, Standard-14 fonts, TrueType/OpenType embedding + subsetting, images (JPEG/PNG/BMP/GIF/TIFF/JBIG2/JPEG 2000), AES-256 encryption, object/cross-reference streams, AcroForm fields, tagged-PDF structure tree, PDF/A-2 metadata, and DeviceCMYK and ICC-based colour with configurable output intents. |
+| `VellumPdf.Fonts.Standard14` | Stable | Optional, embeddable metric-compatible substitutes for the standard-14 fonts (Liberation Sans/Serif/Mono, SIL OFL 1.1, covering the Helvetica/Times/Courier families). The built-in `Standard14` fonts are not embedded — fine for ordinary PDFs but disallowed by PDF/A's font-embedding rule; `doc.EmbedStandard14Font(...)` registers a subset, embedded substitute so standard-14-style text is PDF/A-conformant without a caller-supplied font program. (Symbol and ZapfDingbats are not covered.) |
 | `VellumPdf.Layout` | Stable | High-level document builder: paragraphs, headings, lists, tables, images, header/footer bands, bookmarks, and automatic pagination. |
 | `VellumPdf.Signing` | Stable | PAdES / PKCS#7 detached digital signatures with RFC-3161 signature timestamps and long-term validation. Levels B-T, B-LT (embedded OCSP/CRL in a `/DSS`), and B-LTA (archive document timestamp), via pluggable timestamp and revocation clients. |
 | `VellumPdf.Reader` | Preview | Opens existing PDFs (classic cross-reference tables, cross-reference and object streams, hybrid-reference files; unencrypted) and exposes the catalog, signatures, and decoded stream data. The basis for the signing LTV path, the conformance validator, and a general reader. |
-| `VellumPdf.Conformance` | Preview | In-process PDF/A-2b/2u/2a and PDF/UA-1 preflight: runs clean-room conformance rules authored from the ISO specifications and returns machine-readable assertions (rule id, ISO clause, severity, object reference) — no external veraPDF Docker image needed. AOT- and trim-ready (rules registered explicitly, no reflection). Covers file structure, colour and output intents, transparency, images and XObjects, fonts (including an in-process sfnt font-program parser for glyph presence and widths), annotations, interactive forms, actions, and XMP metadata (via an in-process XMP parser), plus the 2u/2a and PDF/UA-1 deltas. Each rule documents its deferred edges; every rule's positive and negative paths are cross-validated against veraPDF in CI. |
+| `VellumPdf.Conformance` | Preview | In-process PDF/A-2b/2u/2a and PDF/UA-1 preflight: runs clean-room conformance rules authored from the ISO specifications and returns machine-readable assertions (rule id, ISO clause, severity, object reference) — no external veraPDF Docker image needed. AOT- and trim-ready (rules registered explicitly, no reflection). Covers file structure, colour and output intents, transparency, images and XObjects, fonts (including an in-process sfnt font-program parser for glyph presence and widths, and embedded-CMap CID limits), content streams (ISO 32000-1 operator and inline-image-filter validation), annotations, interactive forms, actions, and XMP metadata (via an in-process XMP parser), plus the 2u/2a and PDF/UA-1 deltas. Each rule documents its deferred edges; every rule's positive and negative paths are cross-validated against veraPDF in CI. |
 | _(roadmap)_ `VellumPdf.Barcodes` | Planned | QR, PDF417, Code128, EAN. |
 
 ## Quick start
@@ -134,11 +136,12 @@ oracles — a missing tool fails the build, so the gates can never silently skip
 
 | Area | Notes |
 | --- | --- |
-| Linearization | "Fast web view" object ordering. |
-| PDF reader (v2.1) | `VellumPdf.Reader` — read any PDF. Grows the v1.6 LTV MVP reader into a full structural parser: xref streams, object streams, encryption (Epic #100). |
+| Linearization (v1.8) | "Fast web view" object ordering. |
+| Barcodes (v1.9) | The `VellumPdf.Barcodes` package — QR, PDF417, Code128, EAN. |
+| Preflight CLI (v1.7.x) | Native-AOT `vellum-preflight` command-line binary over `VellumPdf.Conformance`, with per-platform release binaries — validate a PDF without a JVM or Docker. Capstone of the in-process preflight line, shipped once coverage is high enough (#130). |
+| PDF reader (v2.1) | `VellumPdf.Reader` — read any PDF. xref streams, object streams, and hybrid-reference files shipped in v1.7; v2.1 grows it into a full structural parser including encrypted-file reading (Epic #100). |
 | Content extraction (v2.2) | Text and image extraction on the reader (#98). |
 | Editing existing PDFs (v3.0) | Unified read-modify-write document model; supersedes the write-once `PdfDocument` (Epic #101). |
-| Barcodes | The `VellumPdf.Barcodes` package. |
 
 ## Building
 
