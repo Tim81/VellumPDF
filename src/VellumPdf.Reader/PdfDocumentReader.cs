@@ -356,6 +356,17 @@ public sealed class PdfDocumentReader : IDisposable
     internal IReadOnlyCollection<int> ObjectNumbers => _xref.Keys;
 
     /// <summary>
+    /// The byte offset at which the indirect object <paramref name="objectNumber"/> is written
+    /// (the start of its <c>N G obj</c> header), or <see langword="null"/> when the object is not in
+    /// the cross-reference table or lives inside an object stream (and so has no file offset of its
+    /// own). Used by the §6.1.9 byte-level layout checks.
+    /// </summary>
+    internal long? UncompressedObjectOffset(int objectNumber)
+        => _xref.TryGetValue(objectNumber, out var entry) && entry.Kind == XrefEntryKind.Uncompressed
+            ? entry.Offset
+            : null;
+
+    /// <summary>
     /// Appends a new revision to this document and returns the full updated byte array.
     /// </summary>
     internal byte[] AppendRevision(IReadOnlyList<(int ObjectNumber, PdfObject Value)> objects)

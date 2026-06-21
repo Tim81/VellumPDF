@@ -33,6 +33,7 @@ internal static class RuleRegistry
         new FileHeaderRule(),
         new FileTrailerRule(),
         new CrossReferenceRule(),
+        new ObjectLayoutRule(),
         new StreamRule(),
         new NumericLimitsRule(),
         new CatalogRestrictionsRule(),

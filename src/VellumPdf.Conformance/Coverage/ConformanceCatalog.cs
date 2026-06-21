@@ -191,6 +191,7 @@ public static class ConformanceCatalog
         ["6.6.2.3.3-8"] = "property valueType presence checked, not that it is a defined type",
         ["6.6.2.3.3-15"] = "field container is read but not validated as Seq Field",
         ["6.6.2.3.3-17"] = "field valueType presence checked, not that it is a defined type",
+        ["6.1.9-1"] = "object/generation/obj spacing + EOL checked; the endobj-EOL sub-conditions not",
         ["6.7.2.2-1"] = "StructTreeRoot presence checked; full structure-tree validation not",
     };
 
@@ -199,7 +200,6 @@ public static class ConformanceCatalog
         ["6.1.6-1"] = "byte-offset token scanner",
         ["6.1.6-2"] = "byte-offset token scanner",
         ["6.1.8-1"] = "byte-offset token scanner",
-        ["6.1.9-1"] = "byte-offset token scanner",
         ["6.1.7.2-1"] = "used-stream filter analysis",
         ["6.1.10-1"] = "inline-image content parser",
         ["6.1.12-2"] = "signature-reference traversal",
