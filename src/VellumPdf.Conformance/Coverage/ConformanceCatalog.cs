@@ -205,20 +205,22 @@ public static class ConformanceCatalog
         ["6.2.11.3.1-1"] = "Identity and embedded-CMap CIDSystemInfo compared; predefined-CMap registry table deferred",
         ["6.7.2.2-1"] = "StructTreeRoot presence checked; full structure-tree validation not",
         ["6.8-5"] = "embedded PDF/A-2 validated recursively; embedded PDF/A-1 deferred (no PDF/A-1 profile)",
+        ["6.4.3-1"] = "ByteRange unambiguous violations flagged (a!=0, or c+d>fileLength); the "
+            + "under-coverage case (c+d<fileLength) is deferred to avoid over-rejecting conformant "
+            + "PAdES B-LT/B-LTA signatures whose /DSS or document timestamp is appended after EOF; "
+            + "signatures reachable only via /Perms /DocMDP (no AcroForm /V) are not enumerated",
     };
 
     private static readonly Dictionary<string, string> PdfADeferred = new(StringComparer.Ordinal)
     {
         ["6.1.6-2"] = "byte scan implemented, but the reader rejects an invalid hex digit before validation",
         // 6.1.8-1 moved to PdfAPartial (font BaseFont + colour colourant + structure-type names).
-        ["6.1.12-2"] = "signature-reference traversal",
+        // 6.1.12-2 moved to Implemented (DocMdpReferenceRule).
         // 6.2.4.2-2 moved to PdfAPartial; implemented via OverprintRule with page-content interpreter.
         // 6.2.8.3-1..-5: removed from Deferred; Jpeg2000Rule now implements all five for both
         // JP2 box files and raw codestreams. -2/-3/-4 correctly do not apply to raw codestreams
         // (which carry no colr boxes) — this is not a gap but correct per-spec scoping.
-        ["6.4.3-1"] = "digital-signature parser",
-        ["6.4.3-2"] = "digital-signature parser",
-        ["6.4.3-3"] = "digital-signature parser",
+        // 6.4.3-1/-2/-3 moved to Implemented/Partial (SignatureRule).
         ["6.7.3.3-1"] = "structure-tree walker",
         ["6.7.3.4-1"] = "structure-tree walker",
         ["6.7.3.4-2"] = "structure-tree walker",
