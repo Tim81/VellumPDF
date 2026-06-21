@@ -5801,4 +5801,224 @@ public sealed class PdfPreflightTests
         var result = PdfPreflight.Validate(pdf, PdfConformance.PdfA2B);
         Assert.DoesNotContain(result.Assertions, a => a.RuleId.StartsWith("ISO19005-2:6.2.8.3-", StringComparison.Ordinal));
     }
+
+    // ── §6.2.4.4-2 Separation tint/alternate consistency ──────────────────────
+
+    /// <summary>
+    /// Builds a two-page PDF/A-2b PDF where each page uses a different /ColorSpace resource
+    /// entry for a Separation colour space. The caller supplies the two colour-space array
+    /// literals (<paramref name="cs1Body"/> and <paramref name="cs2Body"/>) and two tint-function
+    /// bodies (<paramref name="tint1Dict"/> and <paramref name="tint2Dict"/>).
+    ///
+    /// Object map:
+    ///   1 = catalog   2 = pages   3 = page1   4 = page2
+    ///   5 = CS1 array (cs1Body)   6 = tint1 (tint1Dict)
+    ///   7 = CS2 array (cs2Body)   8 = tint2 (tint2Dict)
+    ///   9 = content stream page1 (/CS1 cs 0.5 scn …)
+    ///  10 = content stream page2 (/CS2 cs 0.5 scn …)
+    /// </summary>
+    private static byte[] BuildTwoPageSeparationPdf(
+        string cs1Body,
+        string tint1Dict,
+        string cs2Body,
+        string tint2Dict)
+        => AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R >>"),
+            new("<< /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >>"),
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+                + "/Resources << /ColorSpace << /CS1 5 0 R >> >> /Contents 9 0 R >>"),
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+                + "/Resources << /ColorSpace << /CS2 7 0 R >> >> /Contents 10 0 R >>"),
+            new(cs1Body),                                                          // 5: CS1
+            new(tint1Dict),                                                        // 6: tint1
+            new(cs2Body),                                                          // 7: CS2
+            new(tint2Dict),                                                        // 8: tint2
+            new(string.Empty, Encoding.ASCII.GetBytes("/CS1 cs 0.5 scn 10 10 50 50 re f")),  // 9
+            new(string.Empty, Encoding.ASCII.GetBytes("/CS2 cs 0.5 scn 10 10 50 50 re f")),  // 10
+        ]);
+
+    /// <summary>
+    /// Separation (SpotA, /DeviceCMYK, Type-2 tint) — minimal tint dict for reuse. Returns
+    /// a /FunctionType 2 with the given /C1 values so callers can vary only the output colour.
+    /// </summary>
+    private static string SepTintDict(string c1) =>
+        $"<< /FunctionType 2 /Domain [0 1] /C0 [0 0 0 0] /C1 [{c1}] /N 1 >>";
+
+    [Fact]
+    public void Validate_SeparationConsistency_IdenticalStructureDistinctObjects_NoFinding()
+    {
+        // §6.2.4.4-2: two same-name Separations with structurally identical tintTransforms but
+        // at different object numbers must NOT be flagged — the spec says object identity is
+        // irrelevant ("whether an object is direct or indirect shall be ignored"). This is the
+        // key no-false-positive guard (veraPDF probe A).
+        var tintDict = SepTintDict("0 0 0 1");
+        var bytes = BuildTwoPageSeparationPdf(
+            "[/Separation /SpotA /DeviceCMYK 6 0 R]", tintDict,
+            "[/Separation /SpotA /DeviceCMYK 8 0 R]", tintDict);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.4-2");
+    }
+
+    [Fact]
+    public void Validate_SeparationConsistency_DifferentTintTransform_ReportsError()
+    {
+        // §6.2.4.4-2: two same-name Separations (SpotA) with different tint functions → error.
+        var bytes = BuildTwoPageSeparationPdf(
+            "[/Separation /SpotA /DeviceCMYK 6 0 R]", SepTintDict("0 0 0 1"),   // black
+            "[/Separation /SpotA /DeviceCMYK 8 0 R]", SepTintDict("1 0 0 0"));  // cyan
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.4-2");
+    }
+
+    [Fact]
+    public void Validate_SeparationConsistency_DifferentAlternateSpace_ReportsError()
+    {
+        // §6.2.4.4-2: same name, different alternateSpace (/DeviceCMYK vs /DeviceRGB) → error.
+        var bytes = BuildTwoPageSeparationPdf(
+            "[/Separation /SpotA /DeviceCMYK 6 0 R]",
+            "<< /FunctionType 2 /Domain [0 1] /C0 [0 0 0 0] /C1 [0 0 0 1] /N 1 >>",
+            "[/Separation /SpotA /DeviceRGB 8 0 R]",
+            "<< /FunctionType 2 /Domain [0 1] /C0 [0 0 0] /C1 [0 0 1] /N 1 >>");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.4-2");
+    }
+
+    [Fact]
+    public void Validate_SeparationConsistency_DifferentColourantNames_NoFinding()
+    {
+        // §6.2.4.4-2: SpotA and SpotB are different names — they are never compared → no error.
+        var bytes = BuildTwoPageSeparationPdf(
+            "[/Separation /SpotA /DeviceCMYK 6 0 R]", SepTintDict("0 0 0 1"),
+            "[/Separation /SpotB /DeviceCMYK 8 0 R]", SepTintDict("1 0 0 0"));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.4-2");
+    }
+
+    [Fact]
+    public void Validate_SeparationConsistency_SingleOccurrence_NoFinding()
+    {
+        // §6.2.4.4-2: a single Separation occurrence has nothing to compare → no error.
+        var bytes = BuildColourSpacePdf("[/Separation /SpotA /DeviceCMYK 5 0 R]");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.4-2");
+    }
+
+    [Fact]
+    public void Validate_SeparationConsistency_ColorantsDictInconsistent_ReportsError()
+    {
+        // §6.2.4.4-2: a top-level Separation (page1) and a Separation in a USED DeviceN
+        // /Colorants dict (page2) with the same name but different tintTransform → error.
+        // Verified empirically (veraPDF probe F).
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R >>"),
+            new("<< /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >>"),
+            // page1: uses CS1 = [/Separation /SpotA /DeviceCMYK 5 0 R]
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+                + "/Resources << /ColorSpace << /CS1 5 0 R >> >> /Contents 7 0 R >>"),
+            // page2: uses CS2 = DeviceN with SpotA in /Colorants (tint at obj 6)
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+                + "/Resources << /ColorSpace << /CS2 8 0 R >> >> /Contents 10 0 R >>"),
+            // 5: top-level SpotA, tint → black (C1 = 0 0 0 1)
+            new("[/Separation /SpotA /DeviceCMYK 6 0 R]"),
+            // 6: tint for page1 SpotA
+            new("<< /FunctionType 2 /Domain [0 1] /C0 [0 0 0 0] /C1 [0 0 0 1] /N 1 >>"),
+            // 7: content stream page1
+            new(string.Empty, Encoding.ASCII.GetBytes("/CS1 cs 0.5 scn 10 10 50 50 re f")),
+            // 8: DeviceN with SpotA in /Colorants using tint obj 9 (DIFFERENT from obj 6)
+            new("[/DeviceN [/SpotA] /DeviceCMYK 11 0 R "
+                + "<< /Subtype /DeviceN /Colorants "
+                + "<< /SpotA [/Separation /SpotA /DeviceCMYK 9 0 R] >> >>]"),
+            // 9: tint for Colorants SpotA — DIFFERENT (C1 = 1 0 0 0 = cyan)
+            new("<< /FunctionType 2 /Domain [0 1] /C0 [0 0 0 0] /C1 [1 0 0 0] /N 1 >>"),
+            // 10: content stream page2
+            new(string.Empty, Encoding.ASCII.GetBytes("/CS2 cs 0 scn 10 10 50 50 re f")),
+            // 11: DeviceN tint function (1→4 input)
+            new("<< /FunctionType 2 /Domain [0 1] /C0 [0 0 0 0] /C1 [0 0 0 1] /N 1 >>"),
+        ]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.4-2");
+    }
+
+    [Fact]
+    public void Validate_SeparationConsistency_UnusedInconsistentPair_NoFinding()
+    {
+        // §6.2.4.4-2 scope: a Separation present in /Resources but never selected by a cs/CS
+        // operator is not in scope — the inconsistent pair must NOT be flagged.
+        // Scope verified empirically (veraPDF probes G2 and G4).
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R >>"),
+            _pagesObj,
+            // Page has CS1 and CS2 (SpotA with different tints) in Resources but the
+            // content stream does not select either.
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+                + "/Resources << /ColorSpace << /CS1 4 0 R /CS2 6 0 R >> >> >>"),
+            new("[/Separation /SpotA /DeviceCMYK 5 0 R]"),
+            new("<< /FunctionType 2 /Domain [0 1] /C0 [0 0 0 0] /C1 [0 0 0 1] /N 1 >>"),
+            new("[/Separation /SpotA /DeviceCMYK 8 0 R]"),
+            new("<< /FunctionType 2 /Domain [0 1] /C0 [0 0 0 0] /C1 [1 0 0 0] /N 1 >>"),
+            // placeholder 8 was the tint — pad so obj numbers are correct
+            new("<< /FunctionType 2 /Domain [0 1] /C0 [0 0 0 0] /C1 [1 0 0 0] /N 1 >>"),
+        ]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.4-2");
+    }
+
+    [Fact]
+    public void Validate_SeparationConsistency_WriterProducedConsistentSeparation_NoFinding()
+    {
+        // §6.2.4.4-2: a writer that consistently emits SpotA with the same tint function
+        // (shared indirect reference) on multiple pages must NOT trigger a false positive.
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R >>"),
+            new("<< /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >>"),
+            // page1 and page2 both point to the SAME colour-space object (5 0 R)
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+                + "/Resources << /ColorSpace << /CS1 5 0 R >> >> /Contents 7 0 R >>"),
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+                + "/Resources << /ColorSpace << /CS1 5 0 R >> >> /Contents 8 0 R >>"),
+            // 5: shared Separation colour space
+            new("[/Separation /SpotA /DeviceCMYK 6 0 R]"),
+            // 6: shared tint function
+            new("<< /FunctionType 2 /Domain [0 1] /C0 [0 0 0 0] /C1 [0 0 0 1] /N 1 >>"),
+            new(string.Empty, Encoding.ASCII.GetBytes("/CS1 cs 0.5 scn 10 10 50 50 re f")),
+            new(string.Empty, Encoding.ASCII.GetBytes("/CS1 cs 0.5 scn 20 20 80 80 re f")),
+        ]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.4-2");
+    }
+
+    [Fact]
+    public void Validate_SeparationConsistency_ReportsOncePerName()
+    {
+        // §6.2.4.4-2: when multiple pages all use SpotA inconsistently, only one finding per
+        // colourant name is emitted (no duplicate findings for the same name).
+        var bytes = BuildTwoPageSeparationPdf(
+            "[/Separation /SpotA /DeviceCMYK 6 0 R]", SepTintDict("0 0 0 1"),
+            "[/Separation /SpotA /DeviceCMYK 8 0 R]", SepTintDict("1 0 0 0"));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        var findings = result.Assertions.Where(a => a.RuleId == "ISO19005-2:6.2.4.4-2").ToList();
+        Assert.Single(findings);
+    }
 }
