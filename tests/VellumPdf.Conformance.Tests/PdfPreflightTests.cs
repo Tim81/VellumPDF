@@ -2552,6 +2552,90 @@ public sealed class PdfPreflightTests
         Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.6.2.3.3-property-category");
     }
 
+    // ── §6.6.2.3.2 extension-schema undefined-field rules ────────────────────────
+
+    [Fact]
+    public void Validate_ExtensionSchemaUndefinedField_SchemaContainer_ReportsError()
+    {
+        // A bogus field in the pdfaSchema namespace inside the schema container is an undefined field
+        // (§6.6.2.3.2-1). Corresponds to veraPDF Probe B.
+        var schemaFields =
+            "<pdfaSchema:schema>S</pdfaSchema:schema>"
+            + "<pdfaSchema:namespaceURI>http://example.com/ns/</pdfaSchema:namespaceURI>"
+            + "<pdfaSchema:prefix>ex</pdfaSchema:prefix>"
+            + "<pdfaSchema:bogusField>x</pdfaSchema:bogusField>";
+
+        var result = PdfPreflight.Validate(
+            BuildXmpPdf(ExtensionSchemaXmp(schemaFields, _validPropertyFields)), PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.6.2.3.2-undefined-field");
+    }
+
+    [Fact]
+    public void Validate_ExtensionSchemaUndefinedField_PropertyContainer_ReportsError()
+    {
+        // A bogus field in the pdfaProperty namespace inside a property entry is an undefined field
+        // (§6.6.2.3.2-1). Corresponds to veraPDF Probe C.
+        var propertyFields =
+            "<pdfaProperty:name>foo</pdfaProperty:name>"
+            + "<pdfaProperty:valueType>Text</pdfaProperty:valueType>"
+            + "<pdfaProperty:category>external</pdfaProperty:category>"
+            + "<pdfaProperty:description>d</pdfaProperty:description>"
+            + "<pdfaProperty:bogus>x</pdfaProperty:bogus>";
+
+        var result = PdfPreflight.Validate(
+            BuildXmpPdf(ExtensionSchemaXmp(_validSchemaFields, propertyFields)), PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.6.2.3.2-undefined-field");
+    }
+
+    [Fact]
+    public void Validate_ExtensionSchemaUndefinedField_ForeignNsChild_ReportsError()
+    {
+        // An unrelated-namespace child (dc:foo) inside the schema container is also an undefined field
+        // (§6.6.2.3.2-1). veraPDF flags all namespaces uniformly — Probe D confirmed this.
+        const string ns =
+            "xmlns:pdfaExtension=\"http://www.aiim.org/pdfa/ns/extension/\" "
+            + "xmlns:pdfaSchema=\"http://www.aiim.org/pdfa/ns/schema#\" "
+            + "xmlns:pdfaProperty=\"http://www.aiim.org/pdfa/ns/property#\" "
+            + "xmlns:dc=\"http://purl.org/dc/elements/1.1/\"";
+        var xmp =
+            "<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>"
+            + "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF "
+            + "xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">"
+            + "<rdf:Description rdf:about=\"\" xmlns:pdfaid=\"http://www.aiim.org/pdfa/ns/id/\">"
+            + "<pdfaid:part>2</pdfaid:part><pdfaid:conformance>B</pdfaid:conformance></rdf:Description>"
+            + $"<rdf:Description rdf:about=\"\" {ns}><pdfaExtension:schemas><rdf:Bag>"
+            + "<rdf:li rdf:parseType=\"Resource\">"
+            + "<pdfaSchema:schema>S</pdfaSchema:schema>"
+            + "<pdfaSchema:namespaceURI>http://example.com/ns/</pdfaSchema:namespaceURI>"
+            + "<pdfaSchema:prefix>ex</pdfaSchema:prefix>"
+            + "<dc:foo>x</dc:foo>"
+            + "<pdfaSchema:property><rdf:Seq><rdf:li rdf:parseType=\"Resource\">" + _validPropertyFields
+            + "</rdf:li></rdf:Seq></pdfaSchema:property>"
+            + "</rdf:li></rdf:Bag></pdfaExtension:schemas></rdf:Description>"
+            + "</rdf:RDF></x:xmpmeta><?xpacket end=\"w\"?>";
+
+        var result = PdfPreflight.Validate(BuildXmpPdf(Encoding.UTF8.GetBytes(xmp)), PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.6.2.3.2-undefined-field");
+    }
+
+    [Fact]
+    public void Validate_ValidExtensionSchema_NoUndefinedFieldFinding()
+    {
+        // A well-formed PDF/A extension schema with only the defined fields must not trigger
+        // the §6.6.2.3.2-1 undefined-field check (no false positive).
+        var result = PdfPreflight.Validate(
+            BuildXmpPdf(ExtensionSchemaXmp(_validSchemaFields, _validPropertyFields)), PdfConformance.PdfA2B);
+
+        Assert.True(result.IsCompliant);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.6.2.3.2-undefined-field");
+    }
+
     // ── §6.6.4 pdfaid prefix + §6.6.2.3.3 value-type rules ──────────────────────
 
     [Fact]
