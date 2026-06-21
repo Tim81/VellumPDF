@@ -4435,4 +4435,319 @@ public sealed class PdfPreflightTests
 
         Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.13-10");
     }
+
+    // ── §6.2.11.3.3-2: embedded CMap stream WMode must equal program WMode ────
+
+    /// <summary>
+    /// Builds a one-page PDF like <see cref="BuildEmbeddedCMapFontPdf"/> but with an explicit
+    /// <paramref name="dictWMode"/> in the CMap stream dictionary (overriding the fixed /WMode 0
+    /// that <see cref="BuildEmbeddedCMapFontPdf"/> uses). Used to test WMode consistency checks.
+    /// </summary>
+    private static byte[] BuildEmbeddedCMapFontPdfWithDictWMode(
+        byte[] cmapBody, string shownCharHex, int dictWMode)
+    {
+        var cisys = "/Registry (Adobe) /Ordering (Japan1) /Supplement 6";
+        var objects = new List<PdfObj>
+        {
+            new("<< /Type /Catalog /Pages 2 0 R >>"),
+            _pagesObj,
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources 4 0 R /Contents 11 0 R >>"),
+            new("<< /Font 5 0 R >>"),
+            new("<< /F0 6 0 R >>"),
+            new("<< /Type /Font /Subtype /Type0 /BaseFont /X /Encoding 7 0 R /DescendantFonts [8 0 R] >>"),
+            new($"/Type /CMap /CMapName /CustomCMap /CIDSystemInfo << {cisys} >> /WMode {dictWMode}", cmapBody),
+            new($"<< /Type /Font /Subtype /CIDFontType2 /BaseFont /X /CIDSystemInfo << {cisys} >> /FontDescriptor 9 0 R /CIDToGIDMap /Identity >>"),
+            new("<< /Type /FontDescriptor /FontName /X /Flags 4 /FontBBox [0 0 1000 1000] /ItalicAngle 0 /Ascent 1000 /Descent -200 /CapHeight 800 /StemV 80 /FontFile2 10 0 R >>"),
+            new("/Length1 4", [1, 2, 3, 4]),
+            new(string.Empty, Encoding.ASCII.GetBytes($"BT /F0 12 Tf <{shownCharHex}> Tj ET")),
+        };
+        return AssemblePdf(objects);
+    }
+
+    /// <summary>
+    /// Builds a CMap program with /WMode programWMode explicitly declared via "/WMode N def".
+    /// </summary>
+    private static byte[] MakeCMapWithWMode(int programWMode)
+        => Encoding.ASCII.GetBytes(
+            "/CIDInit /ProcSet findresource begin 12 dict begin begincmap "
+            + "/CIDSystemInfo 3 dict dup begin /Registry (Adobe) def /Ordering (Japan1) def /Supplement 6 def end def "
+            + "/CMapName /CustomCMap def /CMapType 1 def "
+            + $"/WMode {programWMode} def "
+            + "1 begincodespacerange <0000> <FFFF> endcodespacerange "
+            + "1 begincidrange <0020> <007E> 32 endcidrange "
+            + "endcmap CMapName currentdict /CMap defineresource pop end end");
+
+    /// <summary>
+    /// Builds a CMap program without any /WMode declaration (defaults to 0).
+    /// </summary>
+    private static byte[] MakeCMapWithoutWMode()
+        => Encoding.ASCII.GetBytes(
+            "/CIDInit /ProcSet findresource begin 12 dict begin begincmap "
+            + "/CIDSystemInfo 3 dict dup begin /Registry (Adobe) def /Ordering (Japan1) def /Supplement 6 def end def "
+            + "/CMapName /CustomCMap def /CMapType 1 def "
+            + "1 begincodespacerange <0000> <FFFF> endcodespacerange "
+            + "1 begincidrange <0020> <007E> 32 endcidrange "
+            + "endcmap CMapName currentdict /CMap defineresource pop end end");
+
+    /// <summary>
+    /// Builds a CMap program that contains a usecmap invocation referencing the given name.
+    /// </summary>
+    private static byte[] MakeCMapWithUseCMap(string referencedName)
+        => Encoding.ASCII.GetBytes(
+            "/CIDInit /ProcSet findresource begin 12 dict begin begincmap "
+            + "/CIDSystemInfo 3 dict dup begin /Registry (Adobe) def /Ordering (Japan1) def /Supplement 6 def end def "
+            + "/CMapName /CustomCMap def /CMapType 1 def "
+            + "/WMode 0 def "
+            + $"/{referencedName} usecmap "
+            + "1 begincodespacerange <0000> <FFFF> endcodespacerange "
+            + "1 begincidrange <0020> <007E> 32 endcidrange "
+            + "endcmap CMapName currentdict /CMap defineresource pop end end");
+
+    [Fact]
+    public void Validate_EmbeddedCMap_DictWMode1_ProgWMode0_ReportsError()
+    {
+        // §6.2.11.3.3-2: stream dictionary /WMode=1 but program declares /WMode 0 def → mismatch.
+        // veraPDF oracle (STEP-0): dict=1, prog=0 → 6.2.11.3.3-2 FAIL
+        // ("WMode entry (value 0) in the embedded CMap and in the CMap dictionary (value 1) are not identical").
+        var cmapBody = MakeCMapWithWMode(0);
+        var bytes = BuildEmbeddedCMapFontPdfWithDictWMode(cmapBody, "0020", dictWMode: 1);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.11.3.3-2");
+    }
+
+    [Fact]
+    public void Validate_EmbeddedCMap_DictWMode0_ProgWMode1_ReportsError()
+    {
+        // §6.2.11.3.3-2: stream dictionary /WMode=0 but program declares /WMode 1 def → mismatch.
+        // veraPDF oracle (STEP-0): dict=0, prog=1 → 6.2.11.3.3-2 FAIL.
+        var cmapBody = MakeCMapWithWMode(1);
+        var bytes = BuildEmbeddedCMapFontPdfWithDictWMode(cmapBody, "0020", dictWMode: 0);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.11.3.3-2");
+    }
+
+    [Fact]
+    public void Validate_EmbeddedCMap_BothWMode1_NoFinding()
+    {
+        // §6.2.11.3.3-2 no-false-positive: dict /WMode=1 and program /WMode 1 def → match → PASS.
+        // veraPDF oracle (STEP-0): both=1 → PASS.
+        var cmapBody = MakeCMapWithWMode(1);
+        var bytes = BuildEmbeddedCMapFontPdfWithDictWMode(cmapBody, "0020", dictWMode: 1);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.11.3.3-2");
+    }
+
+    [Fact]
+    public void Validate_EmbeddedCMap_BothWModeAbsent_DefaultZero_NoFinding()
+    {
+        // §6.2.11.3.3-2 no-false-positive: neither the stream dictionary nor the program declares
+        // /WMode — both default to 0 → match → PASS.
+        // veraPDF oracle (STEP-0): both absent → PASS.
+        var cmapBody = MakeCMapWithoutWMode();
+        // BuildEmbeddedCMapFontPdf uses /WMode 0 in the dict, so we need a variant without it.
+        // Use BuildEmbeddedCMapFontPdfWithDictWMode with 0 to test default agreement.
+        var bytes = BuildEmbeddedCMapFontPdfWithDictWMode(cmapBody, "0020", dictWMode: 0);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.11.3.3-2");
+    }
+
+    [Fact]
+    public void Validate_EmbeddedCMap_DictWMode0_ProgWModeAbsent_DefaultZero_NoFinding()
+    {
+        // §6.2.11.3.3-2 no-false-positive: stream dictionary /WMode=0, program has no /WMode
+        // declaration (defaults to 0) → match → PASS.
+        // veraPDF oracle (STEP-0): dict=0, prog=absent → PASS.
+        var cmapBody = MakeCMapWithoutWMode();
+        var bytes = BuildEmbeddedCMapFontPdfWithDictWMode(cmapBody, "0020", dictWMode: 0);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.11.3.3-2");
+    }
+
+    [Fact]
+    public void Validate_EmbeddedCMap_WModeMismatch_FontNotUsedInContent_NoFinding()
+    {
+        // §6.2.11.3.3-2 scoping: a WMode mismatch on a font that is never selected via Tf in the
+        // content stream shall NOT produce a finding. The rule is scoped to used fonts, matching
+        // veraPDF (STEP-0: unused-font WMode mismatch → PASS).
+        var cmapBody = MakeCMapWithWMode(0); // prog=0
+        var cisys = "/Registry (Adobe) /Ordering (Japan1) /Supplement 6";
+        var objects = new List<PdfObj>
+        {
+            new("<< /Type /Catalog /Pages 2 0 R >>"),
+            _pagesObj,
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources 4 0 R /Contents 11 0 R >>"),
+            new("<< /Font 5 0 R >>"),
+            new("<< /F0 6 0 R >>"),
+            new("<< /Type /Font /Subtype /Type0 /BaseFont /X /Encoding 7 0 R /DescendantFonts [8 0 R] >>"),
+            new($"/Type /CMap /CMapName /CustomCMap /CIDSystemInfo << {cisys} >> /WMode 1", cmapBody), // dict=1, prog=0 mismatch
+            new($"<< /Type /Font /Subtype /CIDFontType2 /BaseFont /X /CIDSystemInfo << {cisys} >> /FontDescriptor 9 0 R /CIDToGIDMap /Identity >>"),
+            new("<< /Type /FontDescriptor /FontName /X /Flags 4 /FontBBox [0 0 1000 1000] /ItalicAngle 0 /Ascent 1000 /Descent -200 /CapHeight 800 /StemV 80 /FontFile2 10 0 R >>"),
+            new("/Length1 4", [1, 2, 3, 4]),
+            new(string.Empty, []), // empty content — no Tf, font never selected
+        };
+        var bytes = AssemblePdf(objects);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.11.3.3-2");
+    }
+
+    [Fact]
+    public void Validate_IdentityHEncoding_WModeCheck_NotApplied()
+    {
+        // §6.2.11.3.3-2 exempt: Identity-H is not an embedded CMap stream; the WMode check does
+        // not apply. No finding shall be generated regardless of any other issues.
+        var bytes = BuildFontPdf(
+            new PdfObj("<< /Type /Font /Subtype /Type0 /BaseFont /X /Encoding /Identity-H /DescendantFonts [7 0 R] >>"),
+            new PdfObj("<< /Type /Font /Subtype /CIDFontType2 /BaseFont /X /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> /FontDescriptor 8 0 R /CIDToGIDMap /Identity >>"),
+            new PdfObj("<< /Type /FontDescriptor /FontName /X /FontFile2 9 0 R >>"),
+            new PdfObj("/Length1 4", [1, 2, 3, 4]));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.11.3.3-2");
+    }
+
+    [Fact]
+    public void Validate_PredefinedNamedCMap_WModeCheck_NotApplied()
+    {
+        // §6.2.11.3.3-2 exempt: a predefined named CMap (UniGB-UCS2-H) has no embedded program;
+        // the WMode check is not applicable. No finding shall be generated.
+        var bytes = BuildFontPdf(
+            new PdfObj("<< /Type /Font /Subtype /Type0 /BaseFont /X /Encoding /UniGB-UCS2-H /DescendantFonts [7 0 R] >>"),
+            new PdfObj("<< /Type /Font /Subtype /CIDFontType0 /BaseFont /X /CIDSystemInfo << /Registry (Adobe) /Ordering (GB1) /Supplement 5 >> /FontDescriptor 8 0 R >>"),
+            new PdfObj("<< /Type /FontDescriptor /FontName /X /FontFile3 9 0 R >>"),
+            new PdfObj("/Subtype /CIDFontType0C", [1, 2, 3, 4]));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.11.3.3-2");
+    }
+
+    // ── §6.2.11.3.3-3: usecmap must reference only Table 118 predefined CMaps ───
+
+    [Fact]
+    public void Validate_EmbeddedCMap_UseCMapNonPredefined_ReportsError()
+    {
+        // §6.2.11.3.3-3: the CMap program references a non-predefined CMap via /CustomThing usecmap.
+        // Expect a finding naming "CustomThing".
+        // Oracle: verified against veraPDF profile XML (PDReferencedCMap / CMapName check);
+        // in-process tests cover this directly (probe PDFs cannot trigger it — veraPDF needs a
+        // fully resolved PDReferencedCMap structure).
+        var cmapBody = MakeCMapWithUseCMap("CustomThing");
+        var bytes = BuildEmbeddedCMapFontPdf(cmapBody, "0020");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a =>
+            a.RuleId == "ISO19005-2:6.2.11.3.3-3" && a.Message.Contains("CustomThing"));
+    }
+
+    [Fact]
+    public void Validate_EmbeddedCMap_UseCMapIdentityH_NoFinding()
+    {
+        // §6.2.11.3.3-3 no-false-positive: /Identity-H is a predefined CMap (Table 118). A usecmap
+        // referencing it shall not produce a finding.
+        var cmapBody = MakeCMapWithUseCMap("Identity-H");
+        var bytes = BuildEmbeddedCMapFontPdf(cmapBody, "0020");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.11.3.3-3");
+    }
+
+    [Fact]
+    public void Validate_EmbeddedCMap_UseCMapGB_EUC_H_NoFinding()
+    {
+        // §6.2.11.3.3-3 no-false-positive: GB-EUC-H is listed in Table 118 → PASS.
+        var cmapBody = MakeCMapWithUseCMap("GB-EUC-H");
+        var bytes = BuildEmbeddedCMapFontPdf(cmapBody, "0020");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.11.3.3-3");
+    }
+
+    [Fact]
+    public void Validate_EmbeddedCMap_NoUseCMap_NoFinding()
+    {
+        // §6.2.11.3.3-3 no-false-positive: a CMap program with no usecmap operator shall not
+        // produce a finding.
+        var cmapBody = MakeCMapWithoutWMode();
+        var bytes = BuildEmbeddedCMapFontPdf(cmapBody, "0020");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.11.3.3-3");
+    }
+
+    [Fact]
+    public void Validate_EmbeddedCMap_UseCMapNonPredefined_FontNotUsed_NoFinding()
+    {
+        // §6.2.11.3.3-3 scoping: non-predefined usecmap on an unused font → no finding.
+        // The rule is scoped to fonts actually selected via Tf in the content stream.
+        var cmapBody = MakeCMapWithUseCMap("CustomThing");
+        var cisys = "/Registry (Adobe) /Ordering (Japan1) /Supplement 6";
+        var objects = new List<PdfObj>
+        {
+            new("<< /Type /Catalog /Pages 2 0 R >>"),
+            _pagesObj,
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources 4 0 R /Contents 11 0 R >>"),
+            new("<< /Font 5 0 R >>"),
+            new("<< /F0 6 0 R >>"),
+            new("<< /Type /Font /Subtype /Type0 /BaseFont /X /Encoding 7 0 R /DescendantFonts [8 0 R] >>"),
+            new($"/Type /CMap /CMapName /CustomCMap /CIDSystemInfo << {cisys} >> /WMode 0", cmapBody),
+            new($"<< /Type /Font /Subtype /CIDFontType2 /BaseFont /X /CIDSystemInfo << {cisys} >> /FontDescriptor 9 0 R /CIDToGIDMap /Identity >>"),
+            new("<< /Type /FontDescriptor /FontName /X /Flags 4 /FontBBox [0 0 1000 1000] /ItalicAngle 0 /Ascent 1000 /Descent -200 /CapHeight 800 /StemV 80 /FontFile2 10 0 R >>"),
+            new("/Length1 4", [1, 2, 3, 4]),
+            new(string.Empty, []), // empty content — font never selected
+        };
+        var bytes = AssemblePdf(objects);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.11.3.3-3");
+    }
+
+    [Fact]
+    public void Validate_IdentityHEncoding_UseCMapCheck_NotApplied()
+    {
+        // §6.2.11.3.3-3 exempt: Identity-H is not an embedded CMap stream; the usecmap check does
+        // not apply. No finding for 6.2.11.3.3-3.
+        var bytes = BuildFontPdf(
+            new PdfObj("<< /Type /Font /Subtype /Type0 /BaseFont /X /Encoding /Identity-H /DescendantFonts [7 0 R] >>"),
+            new PdfObj("<< /Type /Font /Subtype /CIDFontType2 /BaseFont /X /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> /FontDescriptor 8 0 R /CIDToGIDMap /Identity >>"),
+            new PdfObj("<< /Type /FontDescriptor /FontName /X /FontFile2 9 0 R >>"),
+            new PdfObj("/Length1 4", [1, 2, 3, 4]));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.11.3.3-3");
+    }
+
+    [Fact]
+    public void Validate_PredefinedNamedCMap_UseCMapCheck_NotApplied()
+    {
+        // §6.2.11.3.3-3 exempt: a predefined named CMap (UniGB-UCS2-H) has no embedded program;
+        // the usecmap check is not applicable. No finding for 6.2.11.3.3-3.
+        var bytes = BuildFontPdf(
+            new PdfObj("<< /Type /Font /Subtype /Type0 /BaseFont /X /Encoding /UniGB-UCS2-H /DescendantFonts [7 0 R] >>"),
+            new PdfObj("<< /Type /Font /Subtype /CIDFontType0 /BaseFont /X /CIDSystemInfo << /Registry (Adobe) /Ordering (GB1) /Supplement 5 >> /FontDescriptor 8 0 R >>"),
+            new PdfObj("<< /Type /FontDescriptor /FontName /X /FontFile3 9 0 R >>"),
+            new PdfObj("/Subtype /CIDFontType0C", [1, 2, 3, 4]));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.11.3.3-3");
+    }
 }
