@@ -26,9 +26,10 @@ internal static class ContentStreamUsage
     private static readonly PdfName _contents = new("Contents");
 
     /// <summary>Scans <paramref name="page"/>'s content streams for graphics-state, colour,
-    /// XObject-drawing, rendering-intent, selected-colour-space, and selected-font usage.</summary>
+    /// XObject-drawing, rendering-intent, selected-colour-space, selected-font, and shading usage.</summary>
     public static (HashSet<string> AppliedExtGStates, bool UsesDeviceColour, HashSet<string> DrawnXObjects,
-        HashSet<string> RenderingIntents, HashSet<string> SelectedColorSpaces, HashSet<string> UsedFonts) Analyze(
+        HashSet<string> RenderingIntents, HashSet<string> SelectedColorSpaces, HashSet<string> UsedFonts,
+        HashSet<string> PaintedShadings) Analyze(
         PreflightContext context, PdfDictionary page)
     {
         var applied = new HashSet<string>(StringComparer.Ordinal);
@@ -36,6 +37,7 @@ internal static class ContentStreamUsage
         var renderingIntents = new HashSet<string>(StringComparer.Ordinal);
         var selectedColorSpaces = new HashSet<string>(StringComparer.Ordinal);
         var usedFonts = new HashSet<string>(StringComparer.Ordinal);
+        var paintedShadings = new HashSet<string>(StringComparer.Ordinal);
         var usesDeviceColour = false;
 
         var content = GetContentBytes(context, page);
@@ -92,6 +94,12 @@ internal static class ContentStreamUsage
                             if (lastName is not null)
                                 usedFonts.Add(lastName);
                         }
+                        else if (op == "sh")
+                        {
+                            // `sh` paints a shading: `/ShadingName sh`.
+                            if (lastName is not null)
+                                paintedShadings.Add(lastName);
+                        }
                         else if (op == "ID")
                         {
                             SkipInlineImageData(lexer, content);
@@ -111,7 +119,8 @@ internal static class ContentStreamUsage
             }
         }
 
-        return (applied, usesDeviceColour, drawnXObjects, renderingIntents, selectedColorSpaces, usedFonts);
+        return (applied, usesDeviceColour, drawnXObjects, renderingIntents, selectedColorSpaces, usedFonts,
+            paintedShadings);
     }
 
     /// <summary>The page's concatenated, decoded content-stream bytes (or null when empty/undecodable).

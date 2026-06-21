@@ -3919,6 +3919,145 @@ public sealed class PdfPreflightTests
         Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.2-1");
     }
 
+    // ── §6.2.2-2 Inherited-resource checks ──────────────────────────────────────
+
+    /// <summary>
+    /// Builds a two-level page tree where the <c>/Resources</c> dictionary lives only on the
+    /// parent <c>Pages</c> node (inherited), and the leaf page has NO <c>/Resources</c> key.
+    /// The page content <paramref name="content"/> uses the named resource. This is the
+    /// structure veraPDF empirically flags with §6.2.2-2.
+    /// Objects: 1=catalog 2=pages(with Resources) 3=page(no Resources) 4=resources 5=content.
+    /// </summary>
+    private static byte[] BuildInheritedResourcePdf(string content)
+    {
+        var contentBytes = Encoding.ASCII.GetBytes(content);
+        return AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R >>"),
+            // Pages node carries the /Resources — the page inherits them from here.
+            new($"<< /Type /Pages /Kids [3 0 R] /Count 1 /Resources 4 0 R >>"),
+            // Page has NO /Resources key — so resources are only reachable via inheritance.
+            new($"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 5 0 R >>"),
+            // Shared resources dict (obj 4): a stub font and a stub form XObject.
+            new("<< /Font << /F0 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> >> /XObject << /X0 << /Type /XObject /Subtype /Form /BBox [0 0 1 1] >> >> /ExtGState << /GS0 << /Type /ExtGState >> >> >>"),
+            // Content stream (obj 5).
+            new(string.Empty, contentBytes),
+        ]);
+    }
+
+    /// <summary>
+    /// Builds a one-page doc where the page has its OWN <c>/Resources</c> key (even if not
+    /// fully populated), satisfying §6.2.2-2's "explicitly associated Resources dictionary"
+    /// requirement. The content <paramref name="content"/> may use named resources.
+    /// Objects: 1=catalog 2=pages(no Resources) 3=page(owns Resources) 4=resources 5=content.
+    /// </summary>
+    private static byte[] BuildExplicitResourcePdf(string content)
+    {
+        var contentBytes = Encoding.ASCII.GetBytes(content);
+        return AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R >>"),
+            // Pages node has NO /Resources.
+            new("<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
+            // Page has its OWN /Resources — rule is satisfied.
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources 4 0 R /Contents 5 0 R >>"),
+            // Own resources dict with a stub font.
+            new("<< /Font << /F0 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> >> >>"),
+            // Content stream.
+            new(string.Empty, contentBytes),
+        ]);
+    }
+
+    [Fact]
+    public void Validate_UsedFontInheritedOnly_IsReported()
+    {
+        // §6.2.2-2: the page uses /F0 via Tf but /F0 is only in the parent Pages /Resources
+        // (the page itself has no /Resources key). veraPDF empirically flags this.
+        var bytes = BuildInheritedResourcePdf("BT /F0 12 Tf (Hi) Tj ET");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a =>
+            a.RuleId == "ISO19005-2:6.2.2-2" && a.Message.Contains("F0", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Validate_UsedXObjectInheritedOnly_IsReported()
+    {
+        // §6.2.2-2: the page paints /X0 via Do but /X0 is only in the parent Pages /Resources.
+        var bytes = BuildInheritedResourcePdf("q /X0 Do Q");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a =>
+            a.RuleId == "ISO19005-2:6.2.2-2" && a.Message.Contains("X0", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Validate_UsedExtGStateInheritedOnly_IsReported()
+    {
+        // §6.2.2-2: the page applies /GS0 via gs but /GS0 is only in the parent Pages /Resources.
+        var bytes = BuildInheritedResourcePdf("q /GS0 gs Q");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a =>
+            a.RuleId == "ISO19005-2:6.2.2-2" && a.Message.Contains("GS0", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Validate_PageWithExplicitResources_NeverReports6222()
+    {
+        // §6.2.2-2 false-positive guard: a page that has its OWN /Resources key (even if empty
+        // or not fully covering used names) must NOT be flagged — veraPDF empirically confirmed
+        // that the presence of the /Resources key on the page itself satisfies the clause.
+        var bytes = BuildExplicitResourcePdf("BT /F0 12 Tf (Hi) Tj ET");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.2-2");
+    }
+
+    [Fact]
+    public void Validate_PageWithNoContentUsesNoResources_NeverReports6222()
+    {
+        // §6.2.2-2: a page that uses NO named resources (even without /Resources) must not be
+        // flagged — there are no "inherited resource names" to complain about.
+        var bytes = BuildInheritedResourcePdf("100 100 50 50 re f");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.2-2");
+    }
+
+    [Fact]
+    public void Validate_EmptyPage_NeverReports6222()
+    {
+        // §6.2.2-2: an empty page (no /Contents) with no /Resources must not be flagged.
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R >>"),
+            new("<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>"),
+        ]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.2-2");
+    }
+
+    [Fact]
+    public void Validate_WriterProducedPdfA_NeverReports6222()
+    {
+        // §6.2.2-2 false-positive guard: VellumPdf's own writer always puts /Resources on each
+        // page, so a writer-produced PDF/A-2b document must never trigger the rule.
+        var bytes = BuildOnePagePdf();
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.2-2");
+    }
+
     // ── §6.1.10-1 Inline-image filter checks ──────────────────────────────────
 
     [Fact]
