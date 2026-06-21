@@ -53,10 +53,11 @@ internal static class RuleRegistry
         new DeviceNColorantsRule(),
     ];
 
-    // ISO 19005-2 §6.1.13 / §6.2.5 graphics-state / §6.2.6 rendering-intent / §6.2.8 image / §6.2.9
-    // XObject rules. Shared by every PDF/A-2 level.
+    // ISO 19005-2 §6.1.13 / §6.2.2 / §6.2.5 graphics-state / §6.2.6 rendering-intent / §6.2.8 image /
+    // §6.2.9 XObject rules. Shared by every PDF/A-2 level.
     private static readonly IConformanceRule[] PdfA2Graphics =
     [
+        new ContentStreamOperatorRule(),
         new GraphicsStateRule(),
         new GraphicsStateNestingRule(),
         new ForbiddenXObjectRule(),

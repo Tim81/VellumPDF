@@ -174,7 +174,7 @@ internal static class ContentStreamUsage
         _ => -1,
     };
 
-    private static void SkipInlineImageData(PdfLexer lexer, ReadOnlySpan<byte> content)
+    internal static void SkipInlineImageData(PdfLexer lexer, ReadOnlySpan<byte> content)
     {
         // After 'ID' a single whitespace precedes the raw samples, which run to a whitespace-delimited
         // 'EI'. Resume tokenising after that marker so binary samples are not mis-read as operators.

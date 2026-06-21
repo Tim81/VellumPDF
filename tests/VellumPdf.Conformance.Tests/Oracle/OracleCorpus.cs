@@ -662,6 +662,27 @@ public static class OracleCorpus
             new OracleFixture("pdfa2b-devicen-complete-colorants",
                 WriterPdfWithDeviceNCompleteColorants(),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // A page content stream containing the unknown keyword 'zz', which is not defined in
+            // ISO 32000-1 (§6.2.2-1). veraPDF flags clause 6.2.2 testNumber 1 and the in-process
+            // ContentStreamOperatorRule agrees. The hand-built PDF produces exactly one failing rule
+            // (confirmed empirically against veraPDF 1.30.2 before implementing the rule).
+            new OracleFixture("pdfa2b-unknown-operator",
+                HandBuiltPdfWithContent("q zz Q"),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // The same PDF with the unknown operator bracketed inside BX...EX. §6.2.2-1 explicitly
+            // prohibits unknown operators even within compatibility sections. veraPDF and the in-process
+            // rule both reject it — confirming the BX/EX brackets do not exempt the operator.
+            new OracleFixture("pdfa2b-unknown-operator-in-bxex",
+                HandBuiltPdfWithContent("BX zz EX"),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // The same structure with only ISO 32000-1 operators inside BX...EX. Both veraPDF and the
+            // in-process rule accept it — the no-false-positive guard for the BX/EX handling.
+            new OracleFixture("pdfa2b-bxex-standard-operators",
+                HandBuiltPdfWithContent("BX q Q EX"),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
         ];
     }
 
@@ -2249,6 +2270,61 @@ public static class OracleCorpus
         if (at < 0)
             throw new InvalidOperationException("pattern not found.");
         replacement.CopyTo(bytes.AsSpan(at));
+    }
+
+    /// <summary>
+    /// Builds a hand-assembled minimal PDF/A-2b document (classic cross-reference) whose single page
+    /// contains a content stream with the bytes in <paramref name="content"/>. Used for oracle fixtures
+    /// that need to inject arbitrary content-stream bytes without going through the writer (which would
+    /// only emit standard ISO 32000-1 operators).
+    /// </summary>
+    /// <remarks>
+    /// The document satisfies all always-on structural constraints (§6.1.2 binary marker, §6.1.3 /ID,
+    /// conforming XMP) so that the only failing rule is the one the content stream triggers.
+    /// </remarks>
+    private static byte[] HandBuiltPdfWithContent(string content)
+    {
+        var contentBytes = Encoding.Latin1.GetBytes(content);
+        var xmp = Encoding.UTF8.GetBytes(
+            "<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>"
+            + "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">"
+            + "<rdf:Description rdf:about=\"\" xmlns:pdfaid=\"http://www.aiim.org/pdfa/ns/id/\">"
+            + "<pdfaid:part>2</pdfaid:part><pdfaid:conformance>B</pdfaid:conformance>"
+            + "</rdf:Description></rdf:RDF></x:xmpmeta><?xpacket end=\"w\"?>");
+
+        // Object layout: 1=catalog, 2=pages, 3=page, 4=content, 5=metadata.
+        using var ms = new MemoryStream();
+        void W(string s) { var b = Encoding.Latin1.GetBytes(s); ms.Write(b, 0, b.Length); }
+
+        W("%PDF-1.7\n");
+        ms.Write([0x25, 0xE2, 0xE3, 0xCF, 0xD3, 0x0A]); // % + 4 high bytes + LF (binary marker)
+
+        var offsets = new int[6];
+        offsets[1] = (int)ms.Position;
+        W("1 0 obj\n<< /Type /Catalog /Pages 2 0 R /Metadata 5 0 R >>\nendobj\n");
+        offsets[2] = (int)ms.Position;
+        W("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
+        offsets[3] = (int)ms.Position;
+        W("3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R >>\nendobj\n");
+
+        offsets[4] = (int)ms.Position;
+        W($"4 0 obj\n<< /Length {contentBytes.Length} >>\nstream\n");
+        ms.Write(contentBytes);
+        W("\nendstream\nendobj\n");
+
+        offsets[5] = (int)ms.Position;
+        W($"5 0 obj\n<< /Type /Metadata /Subtype /XML /Length {xmp.Length} >>\nstream\n");
+        ms.Write(xmp);
+        W("\nendstream\nendobj\n");
+
+        var xrefOffset = (int)ms.Position;
+        W("xref\n0 6\n0000000000 65535 f \n");
+        for (var i = 1; i <= 5; i++)
+            W($"{offsets[i]:D10} 00000 n \n");
+        W("trailer\n<< /Size 6 /Root 1 0 R "
+            + "/ID [<00112233445566778899AABBCCDDEEFF> <00112233445566778899AABBCCDDEEFF>] >>\n");
+        W($"startxref\n{xrefOffset}\n%%EOF\n");
+        return ms.ToArray();
     }
 
     private static byte[] WriterPdf(VellumPdf.Document.PdfConformance conformance)
