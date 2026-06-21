@@ -388,6 +388,18 @@ public static class OracleCorpus
             // EmbeddedFileRule both reject it.
             new OracleFixture("pdfa2b-embedded-file-no-uf", WriterPdfWithEmbeddedFile(includeUf: false),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // An untyped (/Type omitted) file specification reached through the /Names /EmbeddedFiles
+            // name tree, missing /UF (§6.8-2). veraPDF and the in-process rule both reject it — the
+            // name-tree identification path, which catches filespecs that omit /Type /Filespec.
+            new OracleFixture("pdfa2b-embedded-file-untyped-no-uf", WriterPdfWithEmbeddedFile(includeUf: false, typed: false),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // An /EF key on a page dictionary, which is NOT a file specification. Both validators accept
+            // it — the regression guard that the §6.8 rule keys on genuine file specifications, not on
+            // bare /EF presence (an adversarial false-positive that was found and fixed).
+            new OracleFixture("pdfa2b-ef-on-page", WriterPdfWithEfOnPage(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
         ];
     }
 
@@ -733,10 +745,20 @@ public static class OracleCorpus
         return reader.AppendRevision([(rootRef.ObjectNumber, catalog)]);
     }
 
-    // Attaches an embedded file (a compliant PDF/A-2b document, so §6.8-5 stays satisfied) via the
-    // catalog /Names /EmbeddedFiles name tree. The filespec carries /F always and /UF when requested,
-    // so the §6.8-2 F/UF requirement can be exercised in isolation.
-    private static byte[] WriterPdfWithEmbeddedFile(bool includeUf)
+    // A compliant PDF/A-2b document wrapped as an /EmbeddedFile stream, so an embedding fixture keeps
+    // §6.8-5 (the embedded file must itself be PDF/A) satisfied.
+    private static PdfStream EmbeddedFileStream()
+    {
+        var s = new PdfStream(WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b));
+        s.Dictionary.Set(PdfName.Type, new PdfName("EmbeddedFile")).Set(PdfName.Subtype, new PdfName("application/pdf"));
+        return s;
+    }
+
+    // Attaches an embedded file via the catalog /Names /EmbeddedFiles name tree. The filespec carries
+    // /F always and /UF when requested, and is typed /Filespec unless <paramref name="typed"/> is
+    // false, so the §6.8-2 F/UF requirement can be exercised on both the typed and the name-tree
+    // (untyped) identification paths.
+    private static byte[] WriterPdfWithEmbeddedFile(bool includeUf, bool typed = true)
     {
         var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
         using var reader = PdfReader.Open(baseline);
@@ -746,14 +768,11 @@ public static class OracleCorpus
         var efStreamNum = reader.Size;
         var filespecNum = efStreamNum + 1;
 
-        var efStream = new PdfStream(WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b));
-        efStream.Dictionary.Set(PdfName.Type, new PdfName("EmbeddedFile"))
-            .Set(PdfName.Subtype, new PdfName("application/pdf"));
-
         var filespec = new PdfDictionary()
-            .Set(PdfName.Type, new PdfName("Filespec"))
             .Set(new PdfName("F"), new PdfLiteralString(Encoding.ASCII.GetBytes("attach.pdf")))
             .Set(new PdfName("EF"), new PdfDictionary().Set(new PdfName("F"), new PdfIndirectReference(efStreamNum)));
+        if (typed)
+            filespec.Set(PdfName.Type, new PdfName("Filespec"));
         if (includeUf)
             filespec.Set(new PdfName("UF"), new PdfLiteralString(Encoding.ASCII.GetBytes("attach.pdf")));
 
@@ -764,7 +783,20 @@ public static class OracleCorpus
                     new PdfIndirectReference(filespecNum)]))));
 
         return reader.AppendRevision([
-            (rootRef.ObjectNumber, catalog), (efStreamNum, efStream), (filespecNum, filespec)]);
+            (rootRef.ObjectNumber, catalog), (efStreamNum, EmbeddedFileStream()), (filespecNum, filespec)]);
+    }
+
+    // Places an /EF key on the first page dictionary — a dictionary that is NOT a file specification.
+    // §6.8-2 must not fire here (the regression guard for the bare-/EF false positive).
+    private static byte[] WriterPdfWithEfOnPage()
+    {
+        var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var efStreamNum = reader.Size;
+        var newPage = CloneDict(page).Set(new PdfName("EF"),
+            new PdfDictionary().Set(new PdfName("F"), new PdfIndirectReference(efStreamNum)));
+        return reader.AppendRevision([(pageRef.ObjectNumber, newPage), (efStreamNum, EmbeddedFileStream())]);
     }
 
     private static byte[] WriterPdfWithPresSteps()

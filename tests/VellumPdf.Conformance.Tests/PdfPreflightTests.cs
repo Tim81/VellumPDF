@@ -815,6 +815,44 @@ public sealed class PdfPreflightTests
     }
 
     [Fact]
+    public void Validate_EfKeyOnNonFilespec_IsAllowed()
+    {
+        // §6.8-2 applies only to genuine file specifications. An /EF key on a page dictionary (not a
+        // filespec) must not trip the rule — regression guard for the bare-/EF false positive.
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R >>"),
+            _pagesObj,
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /EF << /F 4 0 R >> >>"),
+            new("/Type /EmbeddedFile", Stream: Encoding.ASCII.GetBytes("data")),
+        ]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.8-2-embedded-file-names");
+    }
+
+    [Fact]
+    public void Validate_UntypedFilespecInNameTreeMissingUf_ReportsError()
+    {
+        // §6.8-2: a filespec reached through the EmbeddedFiles name tree is identified even when it
+        // omits /Type /Filespec; missing /UF must still be flagged.
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R /Names << /EmbeddedFiles << /Names [(a.bin) 4 0 R] >> >> >>"),
+            _pagesObj,
+            _pageObj,
+            new("<< /F (a.bin) /EF << /F 5 0 R >> >>"), // no /Type, no /UF
+            new("/Type /EmbeddedFile", Stream: Encoding.ASCII.GetBytes("data")),
+        ]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.8-2-embedded-file-names");
+    }
+
+    [Fact]
     public void Validate_EmbeddedFileWithFAndUf_IsAllowed()
     {
         // §6.8-2: a file specification carrying both /F and /UF is accepted — no false positive.
