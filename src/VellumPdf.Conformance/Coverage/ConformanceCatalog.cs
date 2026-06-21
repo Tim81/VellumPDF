@@ -209,7 +209,6 @@ public static class ConformanceCatalog
         ["6.1.6-2"] = "byte scan implemented, but the reader rejects an invalid hex digit before validation",
         // 6.1.8-1 moved to PdfAPartial (font BaseFont + colour colourant + structure-type names).
         ["6.1.12-2"] = "signature-reference traversal",
-        ["6.2.4.2-1"] = "ICC profile parser",
         ["6.2.4.2-2"] = "ExtGState overprint (OPM) analysis",
         ["6.2.4.4-2"] = "Separation tint/alternate consistency",
         // 6.2.8.3-1..-5: removed from Deferred; Jpeg2000Rule now implements all five for both

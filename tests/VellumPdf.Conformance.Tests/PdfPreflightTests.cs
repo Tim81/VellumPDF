@@ -3931,6 +3931,255 @@ public sealed class PdfPreflightTests
         return ms.ToArray();
     }
 
+    // ── §6.2.4.2-1 ICCBased colour space — ICC profile validity ──────────────
+
+    /// <summary>
+    /// Builds a one-page PDF whose /Resources /ColorSpace /CS0 is [/ICCBased &lt;stream&gt;].
+    /// The stream carries <paramref name="iccBytes"/> compressed with FlateDecode. When
+    /// <paramref name="usedInContent"/> is true the page content selects CS0 via the
+    /// <c>cs</c> operator so the rule fires; when false CS0 is merely present in resources.
+    /// </summary>
+    private static byte[] BuildIccBasedPdf(byte[] iccBytes, int n = 3, bool usedInContent = true)
+    {
+        var compressed = ZlibCompress(iccBytes);
+        // Objects: 1=catalog 2=pages 3=page 4=ICC stream 5=content (optional)
+        if (usedInContent)
+        {
+            return AssemblePdf(
+            [
+                new("<< /Type /Catalog /Pages 2 0 R >>"),
+                _pagesObj,
+                new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+                    + "/Resources << /ColorSpace << /CS0 [/ICCBased 4 0 R] >> >> "
+                    + "/Contents 5 0 R >>"),
+                new($"/Filter /FlateDecode /N {n}", compressed),
+                new(string.Empty, Encoding.ASCII.GetBytes("/CS0 cs\n0 sc")),
+            ]);
+        }
+        else
+        {
+            // CS0 in resources but no content selects it.
+            return AssemblePdf(
+            [
+                new("<< /Type /Catalog /Pages 2 0 R >>"),
+                _pagesObj,
+                new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+                    + "/Resources << /ColorSpace << /CS0 [/ICCBased 4 0 R] >> >> >>"),
+                new($"/Filter /FlateDecode /N {n}", compressed),
+            ]);
+        }
+    }
+
+    /// <summary>
+    /// Builds a synthetic 128-byte ICC profile header with the 'acsp' signature and the given
+    /// device class, data colour space, and major version.
+    /// </summary>
+    private static byte[] MakeIccHeader(string deviceClass, string colorSpace, byte majorVersion)
+    {
+        var hdr = new byte[128];
+        // bytes 0–3: profile size
+        hdr[0] = 0; hdr[1] = 0; hdr[2] = 0; hdr[3] = 128;
+        // byte 8: major version
+        hdr[8] = majorVersion;
+        hdr[9] = 0x10; // minor version (irrelevant to the check)
+        // bytes 12–15: device class (4 ASCII, space-padded)
+        for (var i = 0; i < 4; i++)
+            hdr[12 + i] = i < deviceClass.Length ? (byte)deviceClass[i] : (byte)' ';
+        // bytes 16–19: data colour space (4 ASCII, space-padded)
+        for (var i = 0; i < 4; i++)
+            hdr[16 + i] = i < colorSpace.Length ? (byte)colorSpace[i] : (byte)' ';
+        // bytes 20–23: PCS (irrelevant)
+        hdr[20] = (byte)'X'; hdr[21] = (byte)'Y'; hdr[22] = (byte)'Z'; hdr[23] = (byte)' ';
+        // bytes 36–39: 'acsp' signature (required for the profile to be parsed)
+        hdr[36] = (byte)'a'; hdr[37] = (byte)'c'; hdr[38] = (byte)'s'; hdr[39] = (byte)'p';
+        return hdr;
+    }
+
+    // -- invalid device class → finding
+
+    [Fact]
+    public void Validate_IccBased_InvalidDeviceClass_ReportsError()
+    {
+        // Device class 'link' is not in the allowed set (prtr/mntr/scnr/spac).
+        // Confirmed against veraPDF 1.30.2: probe 3 (link/RGB/v2) triggers 6.2.4.2-1.
+        var bytes = BuildIccBasedPdf(MakeIccHeader("link", "RGB ", 2));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.2-1");
+    }
+
+    [Fact]
+    public void Validate_IccBased_AbstractDeviceClass_ReportsError()
+    {
+        // Device class 'abst' is not in the allowed set.
+        // Confirmed against veraPDF 1.30.2: probe 8 (abst/RGB/v2) triggers 6.2.4.2-1.
+        var bytes = BuildIccBasedPdf(MakeIccHeader("abst", "RGB ", 2));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.2-1");
+    }
+
+    // -- invalid colour space → finding
+
+    [Fact]
+    public void Validate_IccBased_InvalidColorSpace_ReportsError()
+    {
+        // Data colour space 'XYZ ' is not in the allowed set (RGB /CMYK/GRAY/Lab ).
+        // Confirmed against veraPDF 1.30.2: probe 4 (mntr/XYZ/v2) triggers 6.2.4.2-1.
+        var bytes = BuildIccBasedPdf(MakeIccHeader("mntr", "XYZ ", 2));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.2-1");
+    }
+
+    // -- version 5 → finding; version 4 → no finding
+
+    [Fact]
+    public void Validate_IccBased_Version5_ReportsError()
+    {
+        // ICC major version 5 is not permitted (version < 5.0 required).
+        // Confirmed against veraPDF 1.30.2: probe 5/11 (mntr/RGB/v5) triggers 6.2.4.2-1;
+        // byte[8] = 5 is the major version boundary.
+        var bytes = BuildIccBasedPdf(MakeIccHeader("mntr", "RGB ", 5));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.2-1");
+    }
+
+    [Fact]
+    public void Validate_IccBased_Version4_NoFinding()
+    {
+        // ICC major version 4 is permitted (byte[8] < 5).
+        // Confirmed against veraPDF 1.30.2: probe 2/10 (mntr/RGB/v4) does not trigger 6.2.4.2-1.
+        var bytes = BuildIccBasedPdf(MakeIccHeader("mntr", "RGB ", 4));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.2-1");
+    }
+
+    // -- valid profiles → no finding
+
+    [Fact]
+    public void Validate_IccBased_ValidMntrRgbV2_NoFinding()
+    {
+        // mntr/RGB /v2 is fully valid. Probe 1 (veraPDF 1.30.2): no 6.2.4.2-1 finding.
+        var bytes = BuildIccBasedPdf(MakeIccHeader("mntr", "RGB ", 2));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.2-1");
+    }
+
+    [Fact]
+    public void Validate_IccBased_ValidScnrGrayV4_NoFinding()
+    {
+        // scnr/GRAY/v4 is fully valid. Probe 6 (veraPDF 1.30.2): no 6.2.4.2-1 finding.
+        var bytes = BuildIccBasedPdf(MakeIccHeader("scnr", "GRAY", 4), n: 1);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.2-1");
+    }
+
+    [Fact]
+    public void Validate_IccBased_ValidSpacLabV4_NoFinding()
+    {
+        // spac/Lab /v4 is fully valid. Probe 7 (veraPDF 1.30.2): no 6.2.4.2-1 finding.
+        var bytes = BuildIccBasedPdf(MakeIccHeader("spac", "Lab ", 4), n: 3);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.2-1");
+    }
+
+    [Fact]
+    public void Validate_IccBased_ValidPrtrCmykV4_NoFinding()
+    {
+        // prtr/CMYK/v4 is fully valid. Probe 9 (veraPDF 1.30.2): no 6.2.4.2-1 finding.
+        var bytes = BuildIccBasedPdf(MakeIccHeader("prtr", "CMYK", 4), n: 4);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.2-1");
+    }
+
+    // -- defensive: truncated / no-acsp → no finding (never a spurious finding)
+
+    [Fact]
+    public void Validate_IccBased_TruncatedProfile_NoFinding()
+    {
+        // A profile shorter than 128 bytes cannot be parsed; the rule skips it defensively.
+        var bytes = BuildIccBasedPdf(new byte[64]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.2-1");
+    }
+
+    [Fact]
+    public void Validate_IccBased_MissingAcspSignature_NoFinding()
+    {
+        // A 128-byte block with the wrong signature at offset 36 is not a recognisable ICC
+        // profile; the rule skips it defensively rather than producing a spurious finding.
+        var hdr = new byte[128];
+        hdr[8] = 2; // valid version
+        hdr[12] = (byte)'l'; hdr[13] = (byte)'i'; hdr[14] = (byte)'n'; hdr[15] = (byte)'k'; // bad class
+        hdr[16] = (byte)'R'; hdr[17] = (byte)'G'; hdr[18] = (byte)'B'; hdr[19] = (byte)' ';
+        // bytes 36-39 are zero — NOT 'acsp'
+        var bytes = BuildIccBasedPdf(hdr);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.2-1");
+    }
+
+    // -- scoping: present but not used in content → no finding
+
+    [Fact]
+    public void Validate_IccBased_UnusedInvalidProfile_NoFinding()
+    {
+        // An invalid ICCBased colour space (device class 'link') that is present in /Resources
+        // but never selected by a cs/CS operator must NOT be flagged — matching veraPDF 1.30.2
+        // (probes 13–14: unused invalid spaces are not reported).
+        var bytes = BuildIccBasedPdf(MakeIccHeader("link", "RGB ", 2), usedInContent: false);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.2-1");
+    }
+
+    // -- no-false-positive with a real writer-produced sRGB ICC profile
+
+    [Fact]
+    public void Validate_IccBased_RealSrgbProfile_NoFinding()
+    {
+        // The VellumPdf kernel's built-in sRGB ICC v2 profile (mntr/RGB /v2) embedded as an
+        // ICCBased colour space must NOT trigger 6.2.4.2-1. This guards against false positives
+        // on profiles produced by the library itself.
+        var bytes = BuildIccBasedPdf(IccProfiles.Srgb, n: 3);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.2-1");
+    }
+
+    [Fact]
+    public void Validate_IccBased_RealCmykProfile_NoFinding()
+    {
+        // The VellumPdf kernel's built-in generic CMYK ICC profile embedded as an ICCBased
+        // colour space must NOT trigger 6.2.4.2-1.
+        var bytes = BuildIccBasedPdf(IccProfiles.GenericCmyk, n: 4);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.2-1");
+    }
+
     [Fact]
     public void Assertion_ToString_IncludesRuleAndSeverity()
     {
