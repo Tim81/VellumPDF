@@ -3492,6 +3492,134 @@ public sealed class PdfPreflightTests
         Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.13-9-devicen");
     }
 
+    // ── §6.2.4.4-1 DeviceN Colorants dictionary ───────────────────────────────
+
+    /// <summary>
+    /// Builds a PDF with a USED DeviceN colour space that has a 2-input Type 4 tint function
+    /// at object 5, and optional Separation colour spaces for its colourants at objects 7 and 8
+    /// (each backed by the single-input tint stub at object 5). The attributes dict and its
+    /// /Colorants sub-dict are embedded inline in the colour-space array literal at object 4.
+    /// Object 6 is the content stream that selects CS0 via <c>/CS0 cs</c>.
+    ///
+    /// Object map:
+    ///   1 = catalog, 2 = pages, 3 = page
+    ///   4 = DeviceN array  (csBody)
+    ///   5 = tint func (2-input Type 4 pop pop → 0 0 0 0)
+    ///   6 = content stream (/CS0 cs 0 0 scn 10 10 50 50 re f)
+    ///   7 = single-input tint func for Spot1 Separation (FunctionType 2)
+    ///   8 = single-input tint func for Spot2 Separation (FunctionType 2)
+    /// </summary>
+    private static byte[] BuildDeviceNColorantsPdf(string csBody)
+        => BuildPagePdf(
+            "/Resources << /ColorSpace << /CS0 4 0 R >> >> /Contents 6 0 R",
+            new PdfObj(csBody),  // 4: colour-space array
+            // 5: 2-input tint function for DeviceN → DeviceCMYK
+            new PdfObj("/FunctionType 4 /Domain [0 1 0 1] /Range [0 1 0 1 0 1 0 1]",
+                Encoding.ASCII.GetBytes("{ pop pop 0 0 0 0 }")),
+            // 6: content stream — selects CS0 as fill space and sets both components to 0
+            new PdfObj(string.Empty, Encoding.ASCII.GetBytes("/CS0 cs 0 0 scn 10 10 50 50 re f")),
+            // 7: single-input tint function for Spot1's Separation entry
+            new PdfObj("<< /FunctionType 2 /Domain [0 1] /N 1 >>"),
+            // 8: single-input tint function for Spot2's Separation entry
+            new PdfObj("<< /FunctionType 2 /Domain [0 1] /N 1 >>"));
+
+    [Fact]
+    public void Validate_DeviceNMissingColorant_ReportsError()
+    {
+        // §6.2.4.4-1: Spot2 is listed in the DeviceN names array but absent from /Colorants.
+        // veraPDF flags this; the in-process rule must agree.
+        var bytes = BuildDeviceNColorantsPdf(
+            "[/DeviceN [/Spot1 /Spot2] /DeviceCMYK 5 0 R"
+            + " << /Subtype /DeviceN /Colorants"
+            + " << /Spot1 [/Separation /Spot1 /DeviceCMYK 7 0 R] >> >>]");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.4-1-colorants");
+    }
+
+    [Fact]
+    public void Validate_DeviceNAllColorantsPresent_IsAllowed()
+    {
+        // §6.2.4.4-1: both Spot1 and Spot2 have /Colorants entries — no violation.
+        var bytes = BuildDeviceNColorantsPdf(
+            "[/DeviceN [/Spot1 /Spot2] /DeviceCMYK 5 0 R"
+            + " << /Subtype /DeviceN /Colorants"
+            + " << /Spot1 [/Separation /Spot1 /DeviceCMYK 7 0 R]"
+            + "    /Spot2 [/Separation /Spot2 /DeviceCMYK 8 0 R] >> >>]");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.4-1-colorants");
+    }
+
+    [Fact]
+    public void Validate_DeviceNNoAttributesDict_ReportsError()
+    {
+        // §6.2.4.4-1: a DeviceN with a spot colourant but no attributes dict (4 elements only)
+        // is flagged by veraPDF — the missing attributes means /Colorants is absent.
+        // Uses a 1-input tint function (object 5 stub is /FunctionType 2 so reuse BuildColourSpacePdf).
+        var bytes = BuildColourSpacePdf("[/DeviceN [/Spot1] /DeviceCMYK 5 0 R]");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.4-1-colorants");
+    }
+
+    [Fact]
+    public void Validate_DeviceNProcessColorantExempt_IsAllowed()
+    {
+        // §6.2.4.4-1: process colourants (Cyan, Magenta, Yellow, Black) and None do not require
+        // a /Colorants entry. A DeviceN [/Cyan /Magenta /Yellow /Black] with no attributes dict
+        // must NOT be flagged. Verified empirically (probe C, H).
+        // Uses a 4-input tint function; reuse the inline structure from BuildColourSpacePdf
+        // (obj 5 = FunctionType 2 stub) — veraPDF does not execute it during this check.
+        var bytes = BuildPagePdf(
+            "/Resources << /ColorSpace << /CS0 4 0 R >> >> /Contents 6 0 R",
+            // 4: DeviceN array — no attributes dict
+            new PdfObj("[/DeviceN [/Cyan /Magenta /Yellow /Black] /DeviceCMYK 5 0 R]"),
+            // 5: 4-input tint function stub
+            new PdfObj("/FunctionType 4 /Domain [0 1 0 1 0 1 0 1] /Range [0 1 0 1 0 1 0 1]",
+                Encoding.ASCII.GetBytes("{ pop pop pop pop 0 0 0 0 }")),
+            // 6: content stream
+            new PdfObj(string.Empty, Encoding.ASCII.GetBytes("/CS0 cs 0 0 0 0 scn 10 10 50 50 re f")));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.4-1-colorants");
+    }
+
+    [Fact]
+    public void Validate_DeviceNNoneColorantExempt_IsAllowed()
+    {
+        // §6.2.4.4-1: the special colourant name /None is exempt from the /Colorants requirement.
+        // Verified empirically (probe D).
+        var bytes = BuildColourSpacePdf("[/DeviceN [/None] /DeviceCMYK 5 0 R]");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.4-1-colorants");
+    }
+
+    [Fact]
+    public void Validate_DeviceNUnusedMissingColorant_IsAllowed()
+    {
+        // §6.2.4.4-1: a DeviceN with a missing /Colorants entry but never selected by page
+        // content (no cs/CS operator) must NOT be flagged — veraPDF validates only used spaces.
+        // The page has no /Contents, so the colour space is purely in /Resources.
+        var bytes = BuildPagePdf(
+            "/Resources << /ColorSpace << /CS0 4 0 R >> >>",
+            // 4: DeviceN with incomplete /Colorants (Spot2 absent)
+            new PdfObj("[/DeviceN [/Spot1 /Spot2] /DeviceCMYK 5 0 R"
+                + " << /Subtype /DeviceN /Colorants << /Spot1 [/Separation /Spot1 /DeviceCMYK 5 0 R] >> >>]"),
+            // 5: tint function stub (any shape — rule never reaches it)
+            new PdfObj("<< /FunctionType 2 /Domain [0 1] /N 1 >>"));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.4-1-colorants");
+    }
+
     private static byte[] ZlibCompress(byte[] data)
     {
         var ms = new MemoryStream();
