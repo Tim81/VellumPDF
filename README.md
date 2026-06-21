@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/Tim81/VellumPDF/actions/workflows/ci.yml/badge.svg)](https://github.com/Tim81/VellumPDF/actions/workflows/ci.yml)
 [![NuGet](https://img.shields.io/nuget/v/VellumPdf.Kernel.svg?label=VellumPdf.Kernel)](https://www.nuget.org/packages/VellumPdf.Kernel)
+[![NuGet](https://img.shields.io/nuget/v/VellumPdf.Conformance.svg?label=VellumPdf.Conformance)](https://www.nuget.org/packages/VellumPdf.Conformance)
 
 A modern, **dependency-free PDF generation library for .NET 10**, implemented
 clean-room from the open **ISO 32000** standard.
