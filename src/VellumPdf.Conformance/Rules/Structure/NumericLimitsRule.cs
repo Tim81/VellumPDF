@@ -19,8 +19,7 @@ namespace VellumPdf.Conformance.Rules.Structure;
 /// cross-reference table; and each page-boundary box (MediaBox, CropBox, BleedBox, TrimBox, ArtBox)
 /// is checked to have sides in the 3–14400 unit range (§6.1.13 t11). The content-stream q/Q nesting
 /// limit (t8) and the CMap CID maximum (t10) need content/CMap parsing. The DeviceN colourant limit
-/// (t9) is deferred: veraPDF flags it only for a DeviceN colour space actually used through content,
-/// so a present-but-unused one is not a violation — matching that needs used-colourspace analysis.
+/// (t9) is implemented in <see cref="VellumPdf.Conformance.Rules.Colour.DeviceNColorantRule"/>.
 /// </remarks>
 internal sealed class NumericLimitsRule : IConformanceRule
 {

@@ -48,6 +48,7 @@ internal static class RuleRegistry
     [
         new OutputIntentRule(),
         new BlendModeRule(),
+        new DeviceNColorantRule(),
     ];
 
     // ISO 19005-2 §6.1.13 / §6.2.5 graphics-state / §6.2.6 rendering-intent / §6.2.8 image / §6.2.9

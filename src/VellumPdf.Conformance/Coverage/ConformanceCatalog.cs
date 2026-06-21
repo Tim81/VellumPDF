@@ -203,7 +203,6 @@ public static class ConformanceCatalog
         ["6.1.8-1"] = "byte-offset token scanner",
         ["6.1.10-1"] = "inline-image content parser",
         ["6.1.12-2"] = "signature-reference traversal",
-        ["6.1.13-9"] = "used DeviceN colourant analysis",
         ["6.1.13-10"] = "CMap CID-range parser",
         ["6.2.2-1"] = "content-stream operator interpreter",
         ["6.2.2-2"] = "content-stream resource analysis",
