@@ -593,6 +593,13 @@ public static class OracleCorpus
             // reject it. The 29 matching Q operators are appended so the stream is well-formed otherwise.
             new OracleFixture("pdfa2b-q-nesting-too-deep", WriterPdfWithDeepQNesting(),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // A conformant writer baseline with an unreferenced stream whose /Filter is /LZWDecode
+            // (ISO 19005-2 §6.1.7.2-1). The stream is not reachable from the document tree, so no
+            // decoder is invoked — veraPDF still flags the forbidden filter name (CosFilter check),
+            // and so does the in-process StreamRule (which walks the full xref keyspace).
+            new OracleFixture("pdfa2b-lzw-filter", WriterPdfWithLzwStream(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
         ];
     }
 
@@ -1877,6 +1884,74 @@ public static class OracleCorpus
                 $"Expected '{(char)expected}' after '{needle}' but found '{(char)bytes[valueIndex]}'; "
                 + "the writer's output changed and the corruption would target the wrong byte.");
         bytes[valueIndex] = replacement;
+    }
+
+    // A conformant writer baseline with an extra unreferenced indirect stream object whose /Filter
+    // is /LZWDecode. §6.1.7.2-1 applies to ALL stream filter names — not only decoded streams — so
+    // both veraPDF (CosFilter check) and the in-process StreamRule flag it. The stream is
+    // unreferenced so neither validator attempts to decode it; the body is a minimal valid LZW
+    // bitstream (clear-code + EOD packed MSB-first in 9-bit codes) out of caution. The revision is
+    // assembled by hand because the writer manages /Filter itself and will not emit a forbidden one.
+    private static byte[] WriterPdfWithLzwStream()
+    {
+        var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
+
+        // Locate the base document's startxref value by scanning backwards for "startxref\n".
+        var prevXrefOffset = FindStartXref(baseline, "startxref\n"u8.ToArray());
+
+        // The next free object number follows the base document's xref /Size.
+        using var reader = PdfReader.Open(baseline);
+        var newObjNum = reader.Size;
+        var rootRef = (PdfIndirectReference)reader.Trailer.Get(PdfName.Root)!;
+        var docId = reader.Trailer.Get(PdfName.ID) as PdfArray;
+
+        // Minimal valid LZW bitstream: clear code (0x100, 9-bit) + EOD (0x101, 9-bit) packed MSB-first.
+        // Clear = 100000000b, EOD = 100000001b → 18 bits → 0x80 0x40 0x40 (padded to 3 bytes).
+        byte[] lzwBody = [0x80, 0x40, 0x40];
+
+        var ms = new MemoryStream(baseline.Length + 512);
+        ms.Write(baseline);
+        void W(string s) { var b = Encoding.ASCII.GetBytes(s); ms.Write(b, 0, b.Length); }
+
+        var newObjStart = (long)ms.Position;
+        W($"{newObjNum} 0 obj\n<< /Filter /LZWDecode /Length {lzwBody.Length} >>\nstream\n");
+        ms.Write(lzwBody);
+        W("\nendstream\nendobj\n");
+
+        var xrefOffset = (long)ms.Position;
+        // Incremental xref: free-list head subsection + one entry for the new object.
+        W($"xref\n0 1\n0000000000 65535 f\r\n{newObjNum} 1\n{newObjStart:D10} 00000 n\r\n");
+
+        // Incremental trailer: /Size = newObjNum + 1, /Prev = previous startxref, /Root and /ID carried.
+        var idEntry = docId is not null
+            ? " /ID [<00112233445566778899AABBCCDDEEFF> <00112233445566778899AABBCCDDEEFF>]"
+            : string.Empty;
+        W($"trailer\n<< /Size {newObjNum + 1} /Root {rootRef.ObjectNumber} 0 R /Prev {prevXrefOffset}{idEntry} >>\n");
+        W($"startxref\n{xrefOffset}\n%%EOF\n");
+
+        return ms.ToArray();
+    }
+
+    // Parses the startxref value from the end of a PDF byte array by scanning for the "startxref\n"
+    // keyword and reading the decimal integer on the following line.
+    private static long FindStartXref(byte[] pdf, byte[] tag)
+    {
+        // Scan backwards from the end (the value is near %%EOF).
+        for (var i = pdf.Length - tag.Length; i >= 0; i--)
+        {
+            var match = true;
+            for (var j = 0; j < tag.Length; j++)
+                if (pdf[i + j] != tag[j]) { match = false; break; }
+            if (!match)
+                continue;
+            // Parse the decimal integer that immediately follows the tag.
+            var start = i + tag.Length;
+            long value = 0;
+            while (start < pdf.Length && pdf[start] is >= (byte)'0' and <= (byte)'9')
+                value = value * 10 + (pdf[start++] - '0');
+            return value;
+        }
+        throw new InvalidOperationException("startxref not found in the PDF baseline.");
     }
 
     private static int IndexOf(byte[] haystack, byte[] needle)

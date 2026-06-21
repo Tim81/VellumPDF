@@ -1187,6 +1187,134 @@ public sealed class PdfPreflightTests
         Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.4-xref-eol");
     }
 
+    // ── §6.1.7.2-1 stream filter tests ────────────────────────────────────────
+
+    [Fact]
+    public void Validate_LzwDecodeFilter_ReportsError()
+    {
+        // §6.1.7.2-1: LZWDecode is not in the permitted filter list for PDF/A-2.
+        // The stream is unreferenced; §6.1.7.2 applies to ALL streams regardless of reachability.
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R >>"),
+            _pagesObj,
+            _pageObj,
+            new("/Filter /LZWDecode", []),
+        ]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.7.2-1-filter");
+    }
+
+    [Fact]
+    public void Validate_UnknownFilter_ReportsError()
+    {
+        // §6.1.7.2-1: any filter name not in the allowlist (e.g. a vendor extension) is forbidden.
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R >>"),
+            _pagesObj,
+            _pageObj,
+            new("/Filter /VellumFooFilter", []),
+        ]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.7.2-1-filter");
+    }
+
+    [Fact]
+    public void Validate_AllowedFilter_IsNotFlagged()
+    {
+        // §6.1.7.2-1: FlateDecode is in the allowlist — must NOT be flagged (no false positive).
+        // Uses a dummy body so /Length matches (the stream body is raw, zero bytes is fine for FlateDecode
+        // when we pass an empty raw body; the rule reads the dictionary only).
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R >>"),
+            _pagesObj,
+            _pageObj,
+            new("/Filter /FlateDecode", []),
+        ]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.7.2-1-filter");
+    }
+
+    [Fact]
+    public void Validate_AllowedFilterArray_IsNotFlagged()
+    {
+        // §6.1.7.2-1: an array of two allowed filters must NOT be flagged.
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R >>"),
+            _pagesObj,
+            _pageObj,
+            new("/Filter [/ASCII85Decode /FlateDecode]", []),
+        ]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.7.2-1-filter");
+    }
+
+    [Fact]
+    public void Validate_CryptFilterWithIdentity_IsNotFlagged()
+    {
+        // §6.1.7.2-1: /Crypt is permitted when the matching /DecodeParms dict has /Name /Identity.
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R >>"),
+            _pagesObj,
+            _pageObj,
+            new("/Filter /Crypt /DecodeParms << /Name /Identity >>", []),
+        ]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.7.2-1-filter");
+    }
+
+    [Fact]
+    public void Validate_CryptFilterWithoutIdentity_ReportsError()
+    {
+        // §6.1.7.2-1: /Crypt without /Name /Identity in its /DecodeParms is not permitted.
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R >>"),
+            _pagesObj,
+            _pageObj,
+            new("/Filter /Crypt /DecodeParms << /Name /StdCF >>", []),
+        ]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.7.2-1-filter");
+    }
+
+    [Fact]
+    public void Validate_CryptFilterNoParms_ReportsError()
+    {
+        // §6.1.7.2-1: /Crypt with no /DecodeParms at all is not permitted.
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R >>"),
+            _pagesObj,
+            _pageObj,
+            new("/Filter /Crypt", []),
+        ]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.7.2-1-filter");
+    }
+
     [Fact]
     public void Validate_IncompleteCidSet_ReportsError()
     {
