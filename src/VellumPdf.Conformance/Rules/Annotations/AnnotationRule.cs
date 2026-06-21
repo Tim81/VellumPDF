@@ -7,9 +7,11 @@ namespace VellumPdf.Conformance.Rules.Annotations;
 
 /// <summary>
 /// ISO 19005-2 §6.3 (Annotations). An annotation's flags shall have the <c>Print</c> bit set
-/// and the <c>Hidden</c> and <c>NoView</c> bits clear, and — except for <c>/Popup</c> and
-/// <c>/Link</c> annotations — the annotation shall provide a normal appearance stream
-/// (<c>/AP</c> with an <c>/N</c> entry). The flag requirements still apply to <c>/Link</c>.
+/// and the <c>Invisible</c>, <c>Hidden</c>, <c>NoView</c>, and <c>ToggleNoView</c> bits clear
+/// (§6.3.2-2); when an annotation has an <c>/AP</c>, that appearance dictionary shall contain only
+/// the <c>/N</c> entry (§6.3.3-2); and — except for <c>/Popup</c> and <c>/Link</c> annotations — the
+/// annotation shall provide a normal appearance stream (<c>/AP</c> with an <c>/N</c> entry). The flag
+/// and appearance-dictionary requirements still apply to <c>/Link</c>.
 /// </summary>
 /// <remarks>
 /// Authored from ISO 19005-2:2011, 6.3 (forbidden subtypes §6.3.1, flags §6.3.2, appearance
@@ -27,10 +29,11 @@ internal sealed class AnnotationRule : IConformanceRule
     private static readonly PdfName _n = new("N");
 
     // Annotation flag bit values (ISO 32000-1 Table 165).
-    private const int Invisible = 1 << 0;  // bit 1
-    private const int Hidden = 1 << 1;     // bit 2
-    private const int Print = 1 << 2;      // bit 3
-    private const int NoView = 1 << 5;     // bit 6
+    private const int Invisible = 1 << 0;     // bit 1
+    private const int Hidden = 1 << 1;        // bit 2
+    private const int Print = 1 << 2;         // bit 3
+    private const int NoView = 1 << 5;        // bit 6
+    private const int ToggleNoView = 1 << 8;  // bit 9
 
     // Multimedia / dynamic annotation subtypes prohibited by PDF/A-2 (ISO 19005-2 §6.3.1).
     // This is intentionally a deny-list of the unambiguously forbidden subtypes rather than an
@@ -70,6 +73,22 @@ internal sealed class AnnotationRule : IConformanceRule
                 context.Report(RuleId, Clause, PreflightSeverity.Error, $"{label} shall not have the Invisible flag set.");
             if ((flags & NoView) != 0)
                 context.Report(RuleId, Clause, PreflightSeverity.Error, $"{label} shall not have the NoView flag set.");
+            // §6.3.2-2: the ToggleNoView flag shall also be clear.
+            if ((flags & ToggleNoView) != 0)
+                context.Report(RuleId, Clause, PreflightSeverity.Error, $"{label} shall not have the ToggleNoView flag set.");
+
+            // §6.3.3-2: when an annotation has an /AP, the appearance dictionary shall contain only the
+            // /N (normal) entry — no /D (down) or /R (rollover). This applies to every annotation that
+            // has an /AP, including /Link.
+            var ap = context.Resolve(annot.Get(_ap)) as PdfDictionary;
+            if (ap is not null)
+                foreach (var entry in ap.Entries)
+                    if (entry.Key.Value != "N")
+                    {
+                        context.Report(RuleId, Clause, PreflightSeverity.Error,
+                            $"{label}'s appearance dictionary (/AP) shall contain only the /N entry (found /{entry.Key.Value}).");
+                        break;
+                    }
 
             // A /Link annotation has no visible appearance of its own and is exempt from the
             // appearance-stream requirement — but NOT from the flag requirements above: veraPDF
@@ -80,7 +99,7 @@ internal sealed class AnnotationRule : IConformanceRule
 
             // The normal appearance /N is either an appearance stream or a sub-dictionary keyed by
             // appearance state; a missing/non-stream-non-dictionary value does not satisfy it.
-            var apN = (context.Resolve(annot.Get(_ap)) as PdfDictionary)?.Get(_n);
+            var apN = ap?.Get(_n);
             if (context.ResolveStream(apN) is null && context.Resolve(apN) is not PdfDictionary)
                 context.Report(RuleId, Clause, PreflightSeverity.Error, $"{label} shall have a normal appearance (/AP /N).");
         }
