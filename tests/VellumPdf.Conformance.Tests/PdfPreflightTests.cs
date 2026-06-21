@@ -1934,6 +1934,71 @@ public sealed class PdfPreflightTests
     }
 
     [Fact]
+    public void Validate_FontMissingType_ReportsError()
+    {
+        // §6.2.11.2-1: a font dictionary must carry /Type /Font.
+        var bytes = BuildFontPdf(
+            new PdfObj("<< /Subtype /Type1 /BaseFont /Foo /FirstChar 65 /LastChar 65 "
+                + "/Widths [600] /FontDescriptor 7 0 R >>"),
+            new PdfObj("<< /Type /FontDescriptor /FontName /Foo /FontFile3 8 0 R >>"),
+            new PdfObj("/Subtype /Type1C", [1, 2, 3, 4]));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.11.2-type");
+    }
+
+    [Fact]
+    public void Validate_NonType3FontMissingBaseFont_ReportsError()
+    {
+        // §6.2.11.2-3: every font other than a Type 3 font must carry a /BaseFont name.
+        var bytes = BuildFontPdf(
+            new PdfObj("<< /Type /Font /Subtype /TrueType /FirstChar 65 /LastChar 65 "
+                + "/Widths [600] /Encoding /WinAnsiEncoding /FontDescriptor 7 0 R >>"),
+            new PdfObj("<< /Type /FontDescriptor /FontName /Foo /Flags 32 /FontFile2 8 0 R >>"),
+            new PdfObj("/Length1 4", [1, 2, 3, 4]));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.11.2-basefont");
+    }
+
+    [Fact]
+    public void Validate_FontFile3WithDisallowedSubtype_ReportsError()
+    {
+        // §6.2.11.2-7: an embedded FontFile3 program's /Subtype must be Type1C, CIDFontType0C, or
+        // OpenType (here /Type2, which is not permitted).
+        var bytes = BuildFontPdf(
+            new PdfObj("<< /Type /Font /Subtype /Type1 /BaseFont /Foo /FirstChar 65 /LastChar 65 "
+                + "/Widths [600] /FontDescriptor 7 0 R >>"),
+            new PdfObj("<< /Type /FontDescriptor /FontName /Foo /FontFile3 8 0 R >>"),
+            new PdfObj("/Subtype /Type2", [1, 2, 3, 4]));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.11.2-fontfile3-subtype");
+    }
+
+    [Fact]
+    public void Validate_FontFile3WithOpenTypeSubtype_IsNotFlagged()
+    {
+        // §6.2.11.2-7 no-false-positive: /Subtype /OpenType is one of the permitted values.
+        var bytes = BuildFontPdf(
+            new PdfObj("<< /Type /Font /Subtype /Type1 /BaseFont /Foo /FirstChar 65 /LastChar 65 "
+                + "/Widths [600] /FontDescriptor 7 0 R >>"),
+            new PdfObj("<< /Type /FontDescriptor /FontName /Foo /FontFile3 8 0 R >>"),
+            new PdfObj("/Subtype /OpenType", [1, 2, 3, 4]));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(
+            result.Assertions, a => a.RuleId == "ISO19005-2:6.2.11.2-fontfile3-subtype");
+    }
+
+    [Fact]
     public void Validate_SimpleFontWidthsMismatch_ReportsError()
     {
         // §6.2.11.2: a non-standard simple font's /Widths length must equal LastChar−FirstChar+1.

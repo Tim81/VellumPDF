@@ -78,6 +78,16 @@ public static class OracleCorpus
             new OracleFixture("pdfa2b-no-cidtogidmap", WriterPdfWithoutCidToGidMap(),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
 
+            // A composite font's descendant CIDFont with its /Type /Font entry removed (§6.2.11.2-1).
+            // veraPDF and the in-process FontStructureRule both reject it.
+            new OracleFixture("pdfa2b-font-no-type", WriterPdfWithoutFontType(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // A simple embedded TrueType font with its /BaseFont (PostScript name) removed
+            // (§6.2.11.2-3). veraPDF and the in-process FontStructureRule both reject it.
+            new OracleFixture("pdfa2b-font-no-basefont", WriterPdfWithoutBaseFont(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
             // A composite font shown a glyph index beyond the embedded program's glyph count
             // (§6.2.11.4.1-2). veraPDF and the in-process GlyphPresenceRule both reject it.
             new OracleFixture("pdfa2b-glyph-not-present", WriterPdfWithOutOfRangeGlyph(),
@@ -1338,7 +1348,8 @@ public static class OracleCorpus
     }
 
     internal static byte[] SimpleTrueTypeFont(
-        Action<PdfDictionary> mutate, int flags = 32, PdfName? encoding = null, byte[]? fontProgram = null)
+        Action<PdfDictionary> mutate, int flags = 32, PdfName? encoding = null, byte[]? fontProgram = null,
+        bool omitBaseFont = false)
     {
         // Width is always measured from the unmodified asset (so a caller-patched program — e.g. a
         // mangled cmap — does not perturb the /Widths and trip §6.2.11.5); only the embedded
@@ -1371,10 +1382,11 @@ public static class OracleCorpus
             .Set(new PdfName("StemV"), new PdfInteger(80)).Set(new PdfName("FontFile2"), new PdfIndirectReference(ffNum));
         var simple = new PdfDictionary()
             .Set(PdfName.Type, new PdfName("Font")).Set(PdfName.Subtype, new PdfName("TrueType"))
-            .Set(PdfName.BaseFont, new PdfName("DejaVuSans"))
             .Set(new PdfName("FirstChar"), new PdfInteger(65)).Set(new PdfName("LastChar"), new PdfInteger(65))
             .Set(new PdfName("Widths"), new PdfArray([new PdfInteger(widthA)]))
             .Set(new PdfName("FontDescriptor"), new PdfIndirectReference(descNum));
+        if (!omitBaseFont)
+            simple.Set(PdfName.BaseFont, new PdfName("DejaVuSans"));
         if (encoding is not null)
             simple.Set(new PdfName("Encoding"), encoding);
         mutate(simple);
@@ -1422,6 +1434,12 @@ public static class OracleCorpus
 
     private static byte[] WriterPdfWithoutCidToGidMap()
         => CorruptDescendantFont(d => CloneWithout(d, "CIDToGIDMap"));
+
+    private static byte[] WriterPdfWithoutFontType()
+        => CorruptDescendantFont(d => CloneWithout(d, "Type"));
+
+    private static byte[] WriterPdfWithoutBaseFont()
+        => SimpleTrueTypeFont(_ => { }, encoding: new PdfName("WinAnsiEncoding"), omitBaseFont: true);
 
     private static byte[] WriterPdfWithBadGlyphWidth()
         => CorruptDescendantFont(d => CloneWithout(d, "W")); // widths fall to /DW, mismatching the program

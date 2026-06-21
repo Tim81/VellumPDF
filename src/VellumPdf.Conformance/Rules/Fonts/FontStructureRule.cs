@@ -7,9 +7,11 @@ namespace VellumPdf.Conformance.Rules.Fonts;
 
 /// <summary>
 /// ISO 19005-2 §6.2.11.2 / §6.2.11.3.2 / §6.2.11.6 (Font dictionary structure). Every font dictionary
-/// — including the descendant CIDFonts of a composite (Type 0) font — shall have a recognised
-/// <c>/Subtype</c>; a non-standard simple font shall carry <c>/FirstChar</c>, <c>/LastChar</c>, and a
-/// <c>/Widths</c> array of length <c>LastChar − FirstChar + 1</c>; a non-symbolic TrueType font's
+/// — including the descendant CIDFonts of a composite (Type 0) font — shall carry <c>/Type /Font</c>,
+/// a <c>/BaseFont</c> name (except a Type 3 font), and a recognised <c>/Subtype</c>; a non-standard
+/// simple font shall carry <c>/FirstChar</c>, <c>/LastChar</c>, and a <c>/Widths</c> array of length
+/// <c>LastChar − FirstChar + 1</c>; an embedded <c>/FontFile3</c> program's <c>/Subtype</c> shall be
+/// <c>Type1C</c>, <c>CIDFontType0C</c>, or <c>OpenType</c>; a non-symbolic TrueType font's
 /// <c>/Encoding</c> shall be MacRoman or WinAnsi and a symbolic one shall have none; and an embedded
 /// Type 2 CIDFont shall carry a <c>/CIDToGIDMap</c>.
 /// </summary>
@@ -36,6 +38,7 @@ internal sealed class FontStructureRule : IConformanceRule
     private static readonly PdfName _descendantFonts = new("DescendantFonts");
     private static readonly PdfName _fontDescriptor = new("FontDescriptor");
     private static readonly PdfName _fontFile2 = new("FontFile2");
+    private static readonly PdfName _fontFile3 = new("FontFile3");
     private static readonly PdfName _cidToGidMap = new("CIDToGIDMap");
     private static readonly PdfName _cidSet = new("CIDSet");
     private static readonly PdfName _firstChar = new("FirstChar");
@@ -62,6 +65,13 @@ internal sealed class FontStructureRule : IConformanceRule
         "MacRomanEncoding", "WinAnsiEncoding",
     };
 
+    // ISO 32000-1 Table 126: the only /Subtype values permitted on an embedded FontFile3 (CFF /
+    // OpenType) program stream (§6.2.11.2-7).
+    private static readonly HashSet<string> _fontFile3Subtypes = new(StringComparer.Ordinal)
+    {
+        "Type1C", "CIDFontType0C", "OpenType",
+    };
+
     // The 14 standard fonts are exempt from the FirstChar/LastChar/Widths requirements (§6.2.11.2).
     private static readonly HashSet<string> _standard14 = new(StringComparer.Ordinal)
     {
@@ -77,8 +87,11 @@ internal sealed class FontStructureRule : IConformanceRule
 
         foreach (var font in context.EnumerateFonts())
         {
+            CheckType(context, font);
+            CheckBaseFont(context, font);
             CheckSubtype(context, font);
             CheckSimpleFont(context, font);
+            CheckFontFile3Subtype(context, font);
 
             // A composite font's descendant CIDFont is itself a font dictionary (§6.2.11.2 applies).
             if (context.Resolve(font.Get(PdfName.Subtype)) is PdfName { Value: "Type0" }
@@ -90,9 +103,12 @@ internal sealed class FontStructureRule : IConformanceRule
                         continue;
                     if (context.Resolve(descendants[i]) is PdfDictionary cidFont)
                     {
+                        CheckType(context, cidFont);
+                        CheckBaseFont(context, cidFont);
                         CheckSubtype(context, cidFont);
                         CheckCidToGidMap(context, cidFont);
                         CheckCidSet(context, cidFont);
+                        CheckFontFile3Subtype(context, cidFont);
                     }
                 }
             }
@@ -261,6 +277,42 @@ internal sealed class FontStructureRule : IConformanceRule
                 "ISO 19005-2:2011, 6.2.11.3.2",
                 PreflightSeverity.Error,
                 "An embedded CIDFontType2 is missing the required /CIDToGIDMap entry.");
+    }
+
+    // §6.2.11.2-1: every font dictionary (including a composite font's descendant CIDFont) shall
+    // carry /Type /Font.
+    private void CheckType(PreflightContext context, PdfDictionary font)
+    {
+        if (context.Resolve(font.Get(PdfName.Type)) is not PdfName { Value: "Font" })
+            Report(context, "6.2.11.2-type", Clause,
+                "A font dictionary has a missing or invalid /Type; it shall be /Font.");
+    }
+
+    // §6.2.11.2-3: every font dictionary other than a Type 3 font shall carry a /BaseFont
+    // (PostScript) name.
+    private void CheckBaseFont(PreflightContext context, PdfDictionary font)
+    {
+        if (context.Resolve(font.Get(PdfName.Subtype)) is PdfName { Value: "Type3" })
+            return;
+        if (context.Resolve(font.Get(PdfName.BaseFont)) is not PdfName)
+            Report(context, "6.2.11.2-basefont", Clause,
+                "A non-Type3 font dictionary is missing the required /BaseFont (PostScript) name.");
+    }
+
+    // §6.2.11.2-7: an embedded FontFile3 program's /Subtype shall be Type1C (CFF Type 1),
+    // CIDFontType0C (CFF CIDFont), or OpenType. A FontFile3 with no /Subtype, or a font that embeds
+    // its program via FontFile/FontFile2 instead, is not constrained here.
+    private void CheckFontFile3Subtype(PreflightContext context, PdfDictionary font)
+    {
+        if (context.Resolve(font.Get(_fontDescriptor)) is not PdfDictionary descriptor)
+            return;
+        if (context.ResolveStream(descriptor.Get(_fontFile3)) is not { } fontFile3)
+            return;
+        if ((context.Resolve(fontFile3.Dictionary.Get(PdfName.Subtype)) as PdfName)?.Value is { } subtype
+            && !_fontFile3Subtypes.Contains(subtype))
+            Report(context, "6.2.11.2-fontfile3-subtype", Clause,
+                $"An embedded FontFile3 font program has /Subtype /{subtype}; PDF/A-2 permits only "
+                + "Type1C, CIDFontType0C, or OpenType.");
     }
 
     private void CheckSubtype(PreflightContext context, PdfDictionary font)
