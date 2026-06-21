@@ -12,8 +12,9 @@ namespace VellumPdf.Conformance.Rules.Fonts;
 /// simple font shall carry <c>/FirstChar</c>, <c>/LastChar</c>, and a <c>/Widths</c> array of length
 /// <c>LastChar − FirstChar + 1</c>; an embedded <c>/FontFile3</c> program's <c>/Subtype</c> shall be
 /// <c>Type1C</c>, <c>CIDFontType0C</c>, or <c>OpenType</c>; a non-symbolic TrueType font's
-/// <c>/Encoding</c> shall be MacRoman or WinAnsi and a symbolic one shall have none; and an embedded
-/// Type 2 CIDFont shall carry a <c>/CIDToGIDMap</c>.
+/// <c>/Encoding</c> shall be MacRoman or WinAnsi and a symbolic one shall have none; an embedded
+/// subset Type 1 font's <c>/CharSet</c> (when present) shall list every glyph in the program; and an
+/// embedded Type 2 CIDFont shall carry a <c>/CIDToGIDMap</c>.
 /// </summary>
 /// <remarks>
 /// Authored from ISO 19005-2:2011, 6.2.11.2 / 6.2.11.3.2 / 6.2.11.6 and ISO 32000-1:2008, 9.6–9.7.
@@ -37,8 +38,11 @@ internal sealed class FontStructureRule : IConformanceRule
 
     private static readonly PdfName _descendantFonts = new("DescendantFonts");
     private static readonly PdfName _fontDescriptor = new("FontDescriptor");
+    private static readonly PdfName _fontFile = new("FontFile");
     private static readonly PdfName _fontFile2 = new("FontFile2");
     private static readonly PdfName _fontFile3 = new("FontFile3");
+    private static readonly PdfName _charSet = new("CharSet");
+    private static readonly PdfName _length1 = new("Length1");
     private static readonly PdfName _cidToGidMap = new("CIDToGIDMap");
     private static readonly PdfName _cidSet = new("CIDSet");
     private static readonly PdfName _firstChar = new("FirstChar");
@@ -125,6 +129,58 @@ internal sealed class FontStructureRule : IConformanceRule
         CheckSimpleFontMetrics(context, font, subtype, baseFont);
         if (subtype == "TrueType")
             CheckTrueTypeEncoding(context, font);
+        else
+            CheckType1CharSet(context, font, subtype, baseFont);
+    }
+
+    // §6.2.11.4.2-1: if an embedded subset Type 1 font's FontDescriptor carries a /CharSet string, it
+    // shall list the character names of every glyph present in the font program. The program glyph
+    // names come from the eexec-decrypted /CharStrings via the in-process Type1 parser; .notdef is not
+    // required to be listed (subsetters vary on whether they include it).
+    private void CheckType1CharSet(PreflightContext context, PdfDictionary font, string subtype, string? baseFont)
+    {
+        if (subtype is not ("Type1" or "MMType1"))
+            return;
+        if (baseFont is null || !IsSubsetTag(baseFont))
+            return; // the CharSet-completeness constraint applies only to subset fonts.
+        if (context.Resolve(font.Get(_fontDescriptor)) is not PdfDictionary descriptor)
+            return;
+        if (CharSetNames(context, descriptor) is not { } declared)
+            return; // /CharSet is optional.
+        if (context.ResolveStream(descriptor.Get(_fontFile)) is not { } fontFile
+            || context.DecodeStream(fontFile) is not { } programBytes)
+            return; // only an embedded Type 1 program (a /FontFile) is constrained here.
+        var length1 = context.Resolve(fontFile.Dictionary.Get(_length1)) is PdfInteger l ? (int)l.Value : -1;
+        if (Type1Glyphs.TryEnumerate(programBytes, length1) is not { Count: > 0 } programGlyphs)
+            return; // an unparseable program degrades to no finding rather than a false positive.
+
+        foreach (var glyph in programGlyphs)
+            if (glyph != ".notdef" && !declared.Contains(glyph))
+            {
+                Report(context, "6.2.11.4.2-charset", "ISO 19005-2:2011, 6.2.11.4.2",
+                    "An embedded subset Type 1 font's /CharSet does not list every glyph present in the "
+                    + $"font program (e.g. /{glyph} is missing), which §6.2.11.4.2 requires.");
+                return;
+            }
+    }
+
+    // Parses a FontDescriptor /CharSet string ("/name/name…") into its set of glyph names, or null
+    // when no /CharSet is present.
+    private static HashSet<string>? CharSetNames(PreflightContext context, PdfDictionary descriptor)
+    {
+        var raw = context.Resolve(descriptor.Get(_charSet)) switch
+        {
+            PdfLiteralString s => s.Bytes,
+            PdfHexString h => h.Bytes,
+            _ => (ReadOnlyMemory<byte>?)null,
+        };
+        if (raw is not { } bytes)
+            return null;
+        var text = System.Text.Encoding.Latin1.GetString(bytes.Span);
+        var set = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var part in text.Split('/', StringSplitOptions.RemoveEmptyEntries))
+            set.Add(part.Trim());
+        return set;
     }
 
     // §6.2.11.2-4/-5/-6: a non-standard simple font shall carry FirstChar, LastChar, and a Widths
