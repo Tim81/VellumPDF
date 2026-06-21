@@ -3,12 +3,15 @@
 
 using System.IO.Compression;
 using System.Linq;
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using VellumPdf.Conformance;
 using VellumPdf.Conformance.Rules.Fonts;
 using VellumPdf.Conformance.Tests.Oracle;
 using VellumPdf.Document;
 using VellumPdf.Reader;
+using VellumPdf.Signing;
 
 namespace VellumPdf.Conformance.Tests;
 
@@ -6253,5 +6256,488 @@ public sealed class PdfPreflightTests
         var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
 
         Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.2-2");
+    }
+
+    // ── §6.4.3 Digital-signature rules ───────────────────────────────────────
+
+    // ── §6.4.3-1 ByteRange coverage ──────────────────────────────────────────
+
+    /// <summary>
+    /// Creates a self-signed RSA-2048 / SHA-256 certificate for signing tests.
+    /// The returned certificate includes the private key.
+    /// </summary>
+    private static X509Certificate2 CreateSigningCertificate()
+    {
+        using var rsa = RSA.Create(2048);
+        var req = new CertificateRequest(
+            "CN=VellumPdf Conformance Test",
+            rsa,
+            HashAlgorithmName.SHA256,
+            RSASignaturePadding.Pkcs1);
+        return req.CreateSelfSigned(
+            DateTimeOffset.UtcNow.AddDays(-1),
+            DateTimeOffset.UtcNow.AddYears(1));
+    }
+
+    /// <summary>Signs a one-page PdfDocument with the given certificate, returning the signed bytes.</summary>
+    private static byte[] SignMinimalPdf(X509Certificate2 cert)
+    {
+        using var doc = new PdfDocument { Conformance = VellumPdf.Document.PdfConformance.PdfA2b };
+        doc.AddPage();
+        var settings = new PdfSignatureSettings { Certificate = cert };
+        var ms = new MemoryStream();
+        doc.Sign(ms, settings);
+        return ms.ToArray();
+    }
+
+    [Fact]
+    public void Validate_RealSignedPdf_NoSignatureFinding()
+    {
+        // A genuinely signed PDF produced by the Signing package must NOT trigger any §6.4.3-*
+        // or §6.1.12-2 finding. This is the critical no-false-positive baseline.
+        using var cert = CreateSigningCertificate();
+        var signed = SignMinimalPdf(cert);
+
+        var result = PdfPreflight.Validate(signed, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.4.3-1");
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.4.3-2");
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.4.3-3");
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.12-2");
+    }
+
+    [Fact]
+    public void Validate_ByteRange_UnderCoverage_DeferredNoFinding()
+    {
+        // A /ByteRange that ends before EOF (c+d < fileLength) is DEFERRED, not flagged: it is
+        // indistinguishable from a conformant PAdES B-LT/B-LTA signature whose later /DSS or
+        // document timestamp was appended after signing (veraPDF reports those compliant). The
+        // companion a!=0 test proves the signature IS enumerated, so this no-finding is meaningful.
+        var bytes = BuildSignedPdfWithByteRange(0, 50, 70, 10); // c+d = 80; file is longer
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.4.3-1");
+    }
+
+    [Fact]
+    public void Validate_ByteRange_ExceedsFileLength_ReportsError()
+    {
+        // /ByteRange claiming more bytes than the file contains (c+d > fileLength) is an
+        // unambiguous, revision-independent violation and must be flagged.
+        var pdf = BuildSignedPdfWithByteRange(0, 50, 70, 1_000_000); // c+d ≫ fileLength → violation
+
+        var result = PdfPreflight.Validate(pdf, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.4.3-1");
+    }
+
+    [Fact]
+    public void Validate_ByteRange_NotStartingAtZero_ReportsError()
+    {
+        // /ByteRange where br[0] != 0 — an unambiguous violation regardless of revisions.
+        var pdf = BuildSignedPdfWithByteRange(1, 49, 70, 30); // a=1 → violation
+
+        var result = PdfPreflight.Validate(pdf, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.4.3-1");
+    }
+
+    // ── §6.4.3-2 Certificate presence ────────────────────────────────────────
+
+    [Fact]
+    public void Validate_CmsNoCertificates_ReportsError()
+    {
+        // Hand-built CMS DER with certificates [0] explicitly set to empty.
+        var der = BuildCmsDer(certCount: 0, signerCount: 1);
+        var pdf = BuildPdfWithFakeCms(der);
+
+        var result = PdfPreflight.Validate(pdf, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.4.3-2");
+    }
+
+    [Fact]
+    public void Validate_CmsOneCertificate_NoFinding()
+    {
+        // Single signer, one certificate → compliant for §6.4.3-2 and §6.4.3-3.
+        var der = BuildCmsDer(certCount: 1, signerCount: 1);
+        var pdf = BuildPdfWithFakeCms(der);
+
+        var result = PdfPreflight.Validate(pdf, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.4.3-2");
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.4.3-3");
+    }
+
+    // ── §6.4.3-3 Single signer ────────────────────────────────────────────────
+
+    [Fact]
+    public void Validate_CmsTwoSigners_ReportsError()
+    {
+        // Hand-built CMS DER with two entries in the signerInfos SET.
+        var der = BuildCmsDer(certCount: 1, signerCount: 2);
+        var pdf = BuildPdfWithFakeCms(der);
+
+        var result = PdfPreflight.Validate(pdf, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.4.3-3");
+    }
+
+    [Fact]
+    public void Validate_CmsSingleSigner_NoFinding()
+    {
+        var der = BuildCmsDer(certCount: 1, signerCount: 1);
+        var pdf = BuildPdfWithFakeCms(der);
+
+        var result = PdfPreflight.Validate(pdf, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.4.3-3");
+    }
+
+    [Fact]
+    public void Validate_CmsMalformedContents_NoFinding()
+    {
+        // Garbage /Contents bytes → TryParse returns false → no finding (defensive).
+        var junk = new byte[] { 0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0x00, 0x00 };
+        var pdf = BuildPdfWithFakeCms(junk);
+
+        var result = PdfPreflight.Validate(pdf, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.4.3-2");
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.4.3-3");
+    }
+
+    // ── §6.1.12-2 DocMDP reference keys ──────────────────────────────────────
+
+    [Fact]
+    public void Validate_DocMdp_WithDigestMethod_ReportsError()
+    {
+        // /Perms /DocMDP signature dict whose /Reference array contains /DigestMethod.
+        var pdf = BuildDocMdpPdfDirect(withForbiddenKeys: true);
+
+        var result = PdfPreflight.Validate(pdf, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.12-2");
+    }
+
+    [Fact]
+    public void Validate_DocMdp_NoForbiddenKeys_NoFinding()
+    {
+        // /Perms /DocMDP with a clean reference dict (no Digest* keys).
+        var pdf = BuildDocMdpPdfDirect(withForbiddenKeys: false);
+
+        var result = PdfPreflight.Validate(pdf, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.12-2");
+    }
+
+    [Fact]
+    public void Validate_NoDocMdp_NoFinding()
+    {
+        // Document without /Perms at all → §6.1.12-2 must not fire.
+        var bytes = BuildOnePagePdf();
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.12-2");
+    }
+
+    // ── Signature test helpers ────────────────────────────────────────────────
+
+    /// <summary>
+    /// Builds a minimal PDF that has a signature dictionary with the given /ByteRange values,
+    /// but whose actual /Contents is trivial (so the CMS check is indeterminate, not finding).
+    /// The file bytes end at a fixed length so the ByteRange check is testable.
+    /// </summary>
+    private static byte[] BuildSignedPdfWithByteRange(int a, int b, int c, int d)
+    {
+        // We construct a raw PDF whose AcroForm /Fields contains a /Sig field with a
+        // signature dict carrying the requested /ByteRange values. The /Contents is
+        // a 4-byte hex string (2 bytes DER, enough to be parsed as junk → indeterminate).
+        // The ByteRange itself is the focus of this fixture.
+        var br = $"[{a} {b} {c} {d}]";
+        // Contents is a hex-encoded placeholder (4 zero bytes → malformed CMS → no §6.4.3-2/3 finding)
+        const string contentsHex = "<00000000>";
+
+        // We need the file to be exactly c+d bytes long for a conformant ByteRange to pass, but
+        // we're deliberately testing non-conformant values so any length works here.
+        var ms = new MemoryStream();
+        void W(string s) => ms.Write(Encoding.ASCII.GetBytes(s));
+
+        W("%PDF-1.7\n");
+        ms.Write([(byte)'%', 0xE2, 0xE3, 0xCF, 0xD3, (byte)'\n']);
+
+        // Object 1: catalog with AcroForm
+        var off1 = (int)ms.Position;
+        W("1 0 obj\n<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [4 0 R] /SigFlags 3 >> /Metadata 5 0 R >>\nendobj\n");
+
+        // Object 2: pages
+        var off2 = (int)ms.Position;
+        W("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
+
+        // Object 3: page
+        var off3 = (int)ms.Position;
+        W("3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>\nendobj\n");
+
+        // Object 4: sig field
+        var off4 = (int)ms.Position;
+        W($"4 0 obj\n<< /Type /Annot /Subtype /Widget /FT /Sig /T (Sig1) /V << /Type /Sig /SubFilter /ETSI.CAdES.detached /ByteRange {br} /Contents {contentsHex} >> >>\nendobj\n");
+
+        // Object 5: minimal XMP metadata
+        var xmp = XmpBytes("2", "B");
+        var off5 = (int)ms.Position;
+        W($"5 0 obj\n<< /Type /Metadata /Subtype /XML /Length {xmp.Length} >>\nstream\n");
+        ms.Write(xmp);
+        W("\nendstream\nendobj\n");
+
+        var xrefOffset = (int)ms.Position;
+        W("xref\n0 6\n");
+        W($"{0:D10} 65535 f \n");
+        W($"{off1:D10} 00000 n \n");
+        W($"{off2:D10} 00000 n \n");
+        W($"{off3:D10} 00000 n \n");
+        W($"{off4:D10} 00000 n \n");
+        W($"{off5:D10} 00000 n \n");
+        W($"trailer\n<< /Size 6 /Root 1 0 R /ID [<AABBCCDDEEFF00112233445566778899> <AABBCCDDEEFF00112233445566778899>] >>\n");
+        W($"startxref\n{xrefOffset}\n%%EOF\n");
+
+        return ms.ToArray();
+    }
+
+    /// <summary>
+    /// Builds a minimal but structurally valid CMS SignedData DER with
+    /// <paramref name="certCount"/> dummy certificates and <paramref name="signerCount"/> dummy signerInfos.
+    ///
+    /// DER structure:
+    ///   SEQUENCE (ContentInfo) {
+    ///     OID 1.2.840.113549.1.7.2
+    ///     [0] EXPLICIT {
+    ///       SEQUENCE (SignedData) {
+    ///         INTEGER (version=1)
+    ///         SET (digestAlgorithms) { SEQUENCE { OID(SHA-256) NULL } }
+    ///         SEQUENCE (encapContentInfo) { OID 1.2.840.113549.1.7.1 }
+    ///         [0] (certificates) { <certCount> SEQUENCE { dummy } }
+    ///         SET (signerInfos) { <signerCount> SEQUENCE { dummy } }
+    ///       }
+    ///     }
+    ///   }
+    /// </summary>
+    private static byte[] BuildCmsDer(int certCount, int signerCount)
+    {
+        // OIDs
+        var oidSignedData = new byte[] { 0x06, 0x09, 0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x07, 0x02 };
+        var oidData = new byte[] { 0x06, 0x09, 0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x07, 0x01 };
+        var oidSha256 = new byte[] { 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01 };
+
+        // A dummy 1-byte "certificate" SEQUENCE (just a placeholder for structural validity)
+        var dummyCert = WrapSequence([0x01]); // SEQUENCE { BOOLEAN TRUE }
+        var certsField = certCount > 0 ? WrapContextImplicit0(Repeat(dummyCert, certCount)) : WrapContextImplicit0([]);
+
+        // A dummy signerInfo SEQUENCE
+        var dummySigner = WrapSequence([0x01]); // minimal placeholder
+        var signerInfosSet = WrapSet(Repeat(dummySigner, signerCount));
+
+        // digestAlgorithms SET: one SHA-256 algorithm identifier
+        var sha256AlgId = WrapSequence([.. oidSha256, 0x05, 0x00]); // OID + NULL
+        var digestAlgorithms = WrapSet([.. sha256AlgId]);
+
+        // encapContentInfo: OID id-data
+        var encapContentInfo = WrapSequence([.. oidData]);
+
+        // version INTEGER (1)
+        var version = new byte[] { 0x02, 0x01, 0x01 };
+
+        // SignedData SEQUENCE
+        byte[] signedDataValue = [
+            .. version,
+            .. digestAlgorithms,
+            .. encapContentInfo,
+            .. certsField,
+            .. signerInfosSet,
+        ];
+        var signedData = WrapSequence(signedDataValue);
+
+        // [0] EXPLICIT wrapping SignedData
+        var explicitWrapper = WrapContextImplicit0(signedData);
+
+        // ContentInfo SEQUENCE: OID + [0] EXPLICIT SignedData
+        return WrapSequence([.. oidSignedData, .. explicitWrapper]);
+    }
+
+    private static byte[] WrapSequence(byte[] value) => WrapTag(0x30, value);
+    private static byte[] WrapSet(byte[] value) => WrapTag(0x31, value);
+    private static byte[] WrapContextImplicit0(byte[] value) => WrapTag(0xA0, value);
+
+    private static byte[] WrapTag(byte tag, byte[] value)
+    {
+        var lenBytes = EncodeLength(value.Length);
+        var result = new byte[1 + lenBytes.Length + value.Length];
+        result[0] = tag;
+        lenBytes.CopyTo(result, 1);
+        value.CopyTo(result, 1 + lenBytes.Length);
+        return result;
+    }
+
+    private static byte[] EncodeLength(int len)
+    {
+        if (len <= 0x7F)
+            return [(byte)len];
+        if (len <= 0xFF)
+            return [0x81, (byte)len];
+        if (len <= 0xFFFF)
+            return [0x82, (byte)(len >> 8), (byte)(len & 0xFF)];
+        return [0x83, (byte)(len >> 16), (byte)((len >> 8) & 0xFF), (byte)(len & 0xFF)];
+    }
+
+    private static byte[] Repeat(byte[] item, int count)
+    {
+        if (count == 0) return [];
+        var result = new byte[item.Length * count];
+        for (var i = 0; i < count; i++)
+            item.CopyTo(result, i * item.Length);
+        return result;
+    }
+
+    /// <summary>
+    /// Builds a minimal signed PDF whose /Contents hex string is the hex encoding of
+    /// <paramref name="derBytes"/> (zero-padded to 8192 bytes as the Signing package does).
+    /// The /ByteRange is computed to cover the actual file bytes, so §6.4.3-1 passes.
+    /// </summary>
+    private static byte[] BuildPdfWithFakeCms(byte[] derBytes)
+    {
+        // Reserve 8192 bytes for /Contents (matching the Signing package default).
+        const int reserve = 8192;
+        var contentsPlaceholder = "<" + new string('0', reserve * 2) + ">";
+
+        var ms = new MemoryStream();
+        void W(string s) => ms.Write(Encoding.ASCII.GetBytes(s));
+
+        W("%PDF-1.7\n");
+        ms.Write([(byte)'%', 0xE2, 0xE3, 0xCF, 0xD3, (byte)'\n']);
+
+        var off1 = (int)ms.Position;
+        // Catalog — ByteRange and Contents will be patched in-place after we know offsets.
+        // Build sig dict so /ByteRange is before /Contents (matches Signing package convention).
+        W("1 0 obj\n<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [4 0 R] /SigFlags 3 >> /Metadata 5 0 R >>\nendobj\n");
+
+        var off2 = (int)ms.Position;
+        W("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
+
+        var off3 = (int)ms.Position;
+        W("3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>\nendobj\n");
+
+        var off4 = (int)ms.Position;
+        // Write the sig dict with a known-width /ByteRange placeholder and the /Contents placeholder.
+        // We use 10-digit fixed-width fields (matching PdfSignatureHelper.ByteRangeFieldWidth).
+        var brPlaceholderStr = "[9999999999 9999999999 9999999999 9999999999]";
+        W($"4 0 obj\n<< /Type /Annot /Subtype /Widget /FT /Sig /T (Sig1) /V << /Type /Sig /SubFilter /ETSI.CAdES.detached /ByteRange {brPlaceholderStr}\n/Contents {contentsPlaceholder} >> >>\nendobj\n");
+
+        // Object 5: XMP metadata
+        var xmp = XmpBytes("2", "B");
+        var off5 = (int)ms.Position;
+        W($"5 0 obj\n<< /Type /Metadata /Subtype /XML /Length {xmp.Length} >>\nstream\n");
+        ms.Write(xmp);
+        W("\nendstream\nendobj\n");
+
+        var xrefOffset = (int)ms.Position;
+        W("xref\n0 6\n");
+        W($"{0:D10} 65535 f \n");
+        W($"{off1:D10} 00000 n \n");
+        W($"{off2:D10} 00000 n \n");
+        W($"{off3:D10} 00000 n \n");
+        W($"{off4:D10} 00000 n \n");
+        W($"{off5:D10} 00000 n \n");
+        W($"trailer\n<< /Size 6 /Root 1 0 R /ID [<AABBCCDDEEFF00112233445566778899> <AABBCCDDEEFF00112233445566778899>] >>\n");
+        W($"startxref\n{xrefOffset}\n%%EOF\n");
+
+        var pdfBytes = ms.ToArray();
+        var text = Encoding.Latin1.GetString(pdfBytes);
+
+        // Locate and patch /ByteRange in-place.
+        var brPos = text.IndexOf(brPlaceholderStr, StringComparison.Ordinal);
+        var posLt = text.IndexOf('<', brPos + brPlaceholderStr.Length); // opening '<' of /Contents
+        var posGt = text.IndexOf('>', posLt); // closing '>'
+        var tokenLen = posGt - posLt + 1; // length of the hex token including '<' and '>'
+
+        var br0 = 0;
+        var br1 = posLt;
+        var br2 = posLt + tokenLen;
+        var br3 = pdfBytes.Length - br2;
+
+        // Write the ByteRange in-place (fixed-width, 10 digits each).
+        var brValueStr = $"[{br0,-10} {br1,-10} {br2,-10} {br3,-10}]";
+        // Ensure same total length as placeholder.
+        Assert.Equal(brPlaceholderStr.Length, brValueStr.Length);
+        var brValueBytes = Encoding.ASCII.GetBytes(brValueStr);
+        brValueBytes.CopyTo(pdfBytes, brPos);
+
+        // Write the hex-encoded DER into the /Contents placeholder (zero-padded to reserve).
+        var hexDer = Convert.ToHexString(derBytes).ToLowerInvariant();
+        // Pad with zeros to fill the reserved space.
+        var hexPadded = hexDer.PadRight(reserve * 2, '0');
+        Assert.Equal(reserve * 2, hexPadded.Length); // must fit
+        var contentsBytes = Encoding.ASCII.GetBytes(hexPadded);
+        contentsBytes.CopyTo(pdfBytes, posLt + 1); // +1 to skip '<'
+
+        return pdfBytes;
+    }
+
+    /// <summary>
+    /// Builds a minimal PDF with /Perms /DocMDP pointing to a signature dict whose /Reference
+    /// array either contains or omits the forbidden /Digest* keys.
+    /// </summary>
+    private static byte[] BuildDocMdpPdfDirect(bool withForbiddenKeys)
+    {
+        var refDictContent = withForbiddenKeys
+            ? "/TransformMethod /DocMDP /DigestMethod /SHA1 /DigestLocation [0 0] /DigestValue <AABB>"
+            : "/TransformMethod /DocMDP";
+
+        var ms = new MemoryStream();
+        void W(string s) => ms.Write(Encoding.ASCII.GetBytes(s));
+
+        W("%PDF-1.7\n");
+        ms.Write([(byte)'%', 0xE2, 0xE3, 0xCF, 0xD3, (byte)'\n']);
+
+        // Object 1: catalog with /Perms pointing to object 4 (sig dict)
+        var off1 = (int)ms.Position;
+        W("1 0 obj\n<< /Type /Catalog /Pages 2 0 R /Perms << /DocMDP 4 0 R >> /Metadata 6 0 R >>\nendobj\n");
+
+        // Object 2: pages
+        var off2 = (int)ms.Position;
+        W("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
+
+        // Object 3: page
+        var off3 = (int)ms.Position;
+        W("3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>\nendobj\n");
+
+        // Object 4: DocMDP signature dict with /Reference array pointing to object 5
+        var off4 = (int)ms.Position;
+        W("4 0 obj\n<< /Type /Sig /Reference [5 0 R] >>\nendobj\n");
+
+        // Object 5: signature reference dict
+        var off5 = (int)ms.Position;
+        W($"5 0 obj\n<< {refDictContent} >>\nendobj\n");
+
+        // Object 6: XMP metadata
+        var xmp = XmpBytes("2", "B");
+        var off6 = (int)ms.Position;
+        W($"6 0 obj\n<< /Type /Metadata /Subtype /XML /Length {xmp.Length} >>\nstream\n");
+        ms.Write(xmp);
+        W("\nendstream\nendobj\n");
+
+        var xrefOffset = (int)ms.Position;
+        W("xref\n0 7\n");
+        W($"{0:D10} 65535 f \n");
+        W($"{off1:D10} 00000 n \n");
+        W($"{off2:D10} 00000 n \n");
+        W($"{off3:D10} 00000 n \n");
+        W($"{off4:D10} 00000 n \n");
+        W($"{off5:D10} 00000 n \n");
+        W($"{off6:D10} 00000 n \n");
+        W($"trailer\n<< /Size 7 /Root 1 0 R /ID [<AABBCCDDEEFF00112233445566778899> <AABBCCDDEEFF00112233445566778899>] >>\n");
+        W($"startxref\n{xrefOffset}\n%%EOF\n");
+
+        return ms.ToArray();
     }
 }

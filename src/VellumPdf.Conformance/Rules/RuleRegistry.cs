@@ -7,6 +7,7 @@ using VellumPdf.Conformance.Rules.Colour;
 using VellumPdf.Conformance.Rules.Fonts;
 using VellumPdf.Conformance.Rules.Graphics;
 using VellumPdf.Conformance.Rules.Metadata;
+using VellumPdf.Conformance.Rules.Signature;
 using VellumPdf.Conformance.Rules.Structure;
 using VellumPdf.Conformance.Rules.Transparency;
 using VellumPdf.Conformance.Rules.Ua;
@@ -95,6 +96,13 @@ internal static class RuleRegistry
         new Forms.InteractiveFormRule(),
     ];
 
+    // ISO 19005-2 §6.4.3 digital-signature rules and §6.1.12-2 DocMDP reference constraint.
+    private static readonly IConformanceRule[] PdfA2Signatures =
+    [
+        new SignatureRule(),
+        new DocMdpReferenceRule(),
+    ];
+
     private static readonly IConformanceRule[] PdfA2BRules =
     [
         .. CommonStructure,
@@ -103,6 +111,7 @@ internal static class RuleRegistry
         .. PdfA2Graphics,
         .. PdfA2Fonts,
         .. PdfA2Document,
+        .. PdfA2Signatures,
     ];
 
     // PDF/A-2u = PDF/A-2b plus the character-to-Unicode requirement (ISO 19005-2 §6.2.11.7.2).
