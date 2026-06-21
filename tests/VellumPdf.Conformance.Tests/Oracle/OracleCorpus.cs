@@ -136,9 +136,20 @@ public static class OracleCorpus
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
 
             // The same classic-cross-reference document, uncorrupted — both validators accept it (the
-            // no-false-positive guard for §6.1.4-2, and that a hand-built classic xref is conformant).
+            // no-false-positive guard for §6.1.4-2/§6.1.7.1-2, and that a hand-built classic xref is
+            // conformant).
             new OracleFixture("pdfa2b-classic-xref", AssembleClassicXref(),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // A stream whose 'stream' keyword is followed by a lone CR instead of CRLF or LF
+            // (§6.1.7.1-2). veraPDF and the in-process StreamRule both reject it.
+            new OracleFixture("pdfa2b-stream-bad-eol", AssembleClassicXref(corruptStreamEol: true),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // A stream whose 'endstream' keyword is preceded by a space instead of an EOL marker
+            // (§6.1.7.1-2). veraPDF and the in-process rule both reject it.
+            new OracleFixture("pdfa2b-endstream-bad-eol", AssembleClassicXref(corruptEndstreamEol: true),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
 
             // An embedded subset CIDFontType2 with a /CIDSet that does not identify the present CIDs
             // (§6.2.11.4.2-2). veraPDF and the in-process rule both reject it.
@@ -1533,7 +1544,8 @@ public static class OracleCorpus
     // it as compliant. When <paramref name="corruptXrefEol"/> is set, the single EOL between the xref
     // keyword and the first subsection header is replaced by a space (same length, so offsets stay
     // valid), violating §6.1.4-2.
-    internal static byte[] AssembleClassicXref(bool corruptXrefEol = false)
+    internal static byte[] AssembleClassicXref(
+        bool corruptXrefEol = false, bool corruptStreamEol = false, bool corruptEndstreamEol = false)
     {
         var xmp = Encoding.UTF8.GetBytes(
             "<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>"
@@ -1572,6 +1584,10 @@ public static class OracleCorpus
         var pdf = ms.ToArray();
         if (corruptXrefEol)
             ReplaceSameLength(pdf, "xref\n0 "u8, "xref 0 "u8);
+        if (corruptStreamEol) // 'stream' followed by a lone CR instead of CRLF/LF (§6.1.7.1-2)
+            ReplaceSameLength(pdf, "stream\n"u8, "stream\r"u8);
+        if (corruptEndstreamEol) // 'endstream' preceded by a space instead of an EOL (§6.1.7.1-2)
+            ReplaceSameLength(pdf, "\nendstream"u8, " endstream"u8);
         return pdf;
     }
 

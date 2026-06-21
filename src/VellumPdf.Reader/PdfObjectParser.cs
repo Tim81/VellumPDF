@@ -355,7 +355,7 @@ internal sealed class PdfObjectParser
             _lexer.SkipWhitespaceAndComments();
             var endTok = _lexer.NextToken();
             if (endTok.Kind == TokenKind.Keyword && IsKeyword(endTok.Raw, "endstream"u8))
-                return new ParsedStream(dict, body);
+                return new ParsedStream(dict, body, bodyStart);
         }
 
         // No usable /Length, or /Length did not land on 'endstream' — locate the marker by scanning.
@@ -382,7 +382,7 @@ internal sealed class PdfObjectParser
 
                 var body = _lexer.Slice(bodyStart, bodyEnd);
                 _lexer.Seek(bodyStart + i + marker.Length);
-                return new ParsedStream(dict, body);
+                return new ParsedStream(dict, body, bodyStart);
             }
         }
         throw new InvalidDataException(

@@ -198,7 +198,6 @@ public static class ConformanceCatalog
     {
         ["6.1.6-1"] = "byte-offset token scanner",
         ["6.1.6-2"] = "byte-offset token scanner",
-        ["6.1.7.1-2"] = "byte-offset token scanner",
         ["6.1.8-1"] = "byte-offset token scanner",
         ["6.1.9-1"] = "byte-offset token scanner",
         ["6.1.7.2-1"] = "used-stream filter analysis",

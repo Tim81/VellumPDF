@@ -1080,6 +1080,41 @@ public sealed class PdfPreflightTests
     }
 
     [Fact]
+    public void Validate_StreamKeywordBadEol_ReportsError()
+    {
+        // §6.1.7.1-2: the stream keyword followed by a lone CR (not CRLF/LF).
+        var bytes = Oracle.OracleCorpus.AssembleClassicXref(corruptStreamEol: true);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.7.1-stream-eol");
+    }
+
+    [Fact]
+    public void Validate_EndstreamBadEol_ReportsError()
+    {
+        // §6.1.7.1-2: the endstream keyword preceded by a space (not an EOL marker).
+        var bytes = Oracle.OracleCorpus.AssembleClassicXref(corruptEndstreamEol: true);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.7.1-stream-eol");
+    }
+
+    [Fact]
+    public void Validate_StreamWellFormedEol_IsAllowed()
+    {
+        // §6.1.7.1-2: a stream with proper LF EOLs around the keywords is accepted — no false positive.
+        var bytes = Oracle.OracleCorpus.AssembleClassicXref();
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.7.1-stream-eol");
+    }
+
+    [Fact]
     public void Validate_XrefKeywordBadEol_ReportsError()
     {
         // §6.1.4-2: a space (not a single EOL) between the xref keyword and the subsection header.
