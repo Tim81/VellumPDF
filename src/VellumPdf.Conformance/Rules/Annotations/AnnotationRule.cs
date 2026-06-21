@@ -27,6 +27,10 @@ internal sealed class AnnotationRule : IConformanceRule
     private static readonly PdfName _f = new("F");
     private static readonly PdfName _ap = new("AP");
     private static readonly PdfName _n = new("N");
+    private static readonly PdfName _ft = new("FT");
+    private static readonly PdfName _parent = new("Parent");
+
+    private const int MaxFieldDepth = 64;
 
     // Annotation flag bit values (ISO 32000-1 Table 165).
     private const int Invisible = 1 << 0;     // bit 1
@@ -81,14 +85,39 @@ internal sealed class AnnotationRule : IConformanceRule
             // /N (normal) entry — no /D (down) or /R (rollover). This applies to every annotation that
             // has an /AP, including /Link.
             var ap = context.Resolve(annot.Get(_ap)) as PdfDictionary;
+            var apHasOnlyN = ap is not null;
             if (ap is not null)
                 foreach (var entry in ap.Entries)
                     if (entry.Key.Value != "N")
                     {
+                        apHasOnlyN = false;
                         context.Report(RuleId, Clause, PreflightSeverity.Error,
                             $"{label}'s appearance dictionary (/AP) shall contain only the /N entry (found /{entry.Key.Value}).");
                         break;
                     }
+
+            // §6.3.3-3 / §6.3.3-4: when the appearance dictionary holds only /N, the kind of that /N
+            // depends on the annotation. A Widget whose field type (its own /FT or one inherited
+            // through the /Parent field chain) is /Btn shall have an appearance SUB-DICTIONARY (keyed
+            // by appearance state); every other annotation shall have an appearance STREAM. Note that
+            // resolving a stream object yields its dictionary, so the kind is told apart by whether the
+            // value resolves as a stream — not by "is it a dictionary".
+            if (apHasOnlyN)
+            {
+                var n = ap!.Get(_n);
+                var isStream = context.ResolveStream(n) is not null;
+                var isSubDictionary = !isStream && context.Resolve(n) is PdfDictionary;
+                if (isStream || isSubDictionary)
+                {
+                    var isButtonWidget = subtype == "Widget" && FieldType(context, annot) == "Btn";
+                    if (isButtonWidget && !isSubDictionary)
+                        context.Report(RuleId, Clause, PreflightSeverity.Error,
+                            $"{label} (a Widget button field) shall have an appearance sub-dictionary as its /AP /N.");
+                    else if (!isButtonWidget && !isStream)
+                        context.Report(RuleId, Clause, PreflightSeverity.Error,
+                            $"{label} shall have an appearance stream as its /AP /N.");
+                }
+            }
 
             // A /Link annotation has no visible appearance of its own and is exempt from the
             // appearance-stream requirement — but NOT from the flag requirements above: veraPDF
@@ -103,6 +132,20 @@ internal sealed class AnnotationRule : IConformanceRule
             if (context.ResolveStream(apN) is null && context.Resolve(apN) is not PdfDictionary)
                 context.Report(RuleId, Clause, PreflightSeverity.Error, $"{label} shall have a normal appearance (/AP /N).");
         }
+    }
+
+    // The field type (/FT) of a widget annotation: its own, or — for a widget that is a child of a
+    // field — the one inherited through the /Parent field chain (ISO 32000-1 §12.7.3.1).
+    private static string? FieldType(PreflightContext context, PdfDictionary annot)
+    {
+        var current = annot;
+        for (var depth = 0; depth < MaxFieldDepth && current is not null; depth++)
+        {
+            if (context.Resolve(current.Get(_ft)) is PdfName ft)
+                return ft.Value;
+            current = context.Resolve(current.Get(_parent)) as PdfDictionary;
+        }
+        return null;
     }
 
     private static long? NumericValue(PdfObject? value) => value switch

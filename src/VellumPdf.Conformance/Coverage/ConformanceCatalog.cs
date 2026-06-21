@@ -233,8 +233,6 @@ public static class ConformanceCatalog
         ["6.2.11.4.2-2"] = "font CharSet/CIDSet completeness",
         ["6.2.11.6-1"] = "embedded-font cmap parser",
         ["6.2.11.6-4"] = "embedded-font cmap parser",
-        ["6.3.3-3"] = "object-graph: Widget/Btn appearance sub-dictionary",
-        ["6.3.3-4"] = "object-graph: non-Widget appearance stream",
         ["6.4.3-1"] = "digital-signature parser",
         ["6.4.3-2"] = "digital-signature parser",
         ["6.4.3-3"] = "digital-signature parser",

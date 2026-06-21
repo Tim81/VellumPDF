@@ -1067,6 +1067,63 @@ public sealed class PdfPreflightTests
     }
 
     [Fact]
+    public void Validate_ButtonWidgetAppearanceStream_ReportsError()
+    {
+        // §6.3.3-3: a Widget /Btn field's /AP /N shall be an appearance sub-dictionary, not a stream.
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [4 0 R] >> >>"),
+            _pagesObj,
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Annots [4 0 R] >>"),
+            new("<< /Type /Annot /Subtype /Widget /FT /Btn /Rect [10 10 50 50] /F 4 /AP << /N 5 0 R >> >>"),
+            new("/Type /XObject /Subtype /Form /BBox [0 0 1 1]", Stream: []),
+        ]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.Message.Contains("sub-dictionary", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Validate_TextFieldAppearanceSubDictionary_ReportsError()
+    {
+        // §6.3.3-4: a non-button annotation's /AP /N shall be an appearance stream, not a sub-dictionary.
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [4 0 R] >> >>"),
+            _pagesObj,
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Annots [4 0 R] >>"),
+            new("<< /Type /Annot /Subtype /Widget /FT /Tx /Rect [10 10 50 50] /F 4 /AP << /N << /S 5 0 R >> >> >>"),
+            new("/Type /XObject /Subtype /Form /BBox [0 0 1 1]", Stream: []),
+        ]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.Message.Contains("appearance stream", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Validate_ButtonWidgetAppearanceSubDictionary_IsAllowed()
+    {
+        // §6.3.3-3: a Widget /Btn field with an /AP /N sub-dictionary is correct — no false positive.
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [4 0 R] >> >>"),
+            _pagesObj,
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Annots [4 0 R] >>"),
+            new("<< /Type /Annot /Subtype /Widget /FT /Btn /Rect [10 10 50 50] /F 4 /AP << /N << /On 5 0 R /Off 5 0 R >> >> >>"),
+            new("/Type /XObject /Subtype /Form /BBox [0 0 1 1]", Stream: []),
+        ]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions,
+            a => a.Message.Contains("sub-dictionary", StringComparison.Ordinal) || a.Message.Contains("appearance stream", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Validate_Pdf20Header_ReportsHeaderError()
     {
         // A plain document declares %PDF-2.0, which is not valid PDF/A-2 (§6.1.2).
@@ -1302,8 +1359,10 @@ public sealed class PdfPreflightTests
             _pagesObj,
             new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Annots [5 0 R] >>"),
             new("<< /Fields [5 0 R] >>"),
+            // /AP /N is a sub-dictionary (correct for a /Btn widget per §6.3.3-3) so this fixture
+            // isolates the action-dedup concern; the /A is the single intended violation.
             new("<< /Type /Annot /Subtype /Widget /FT /Btn /T (b) /Rect [0 0 1 1] /F 4 "
-                + "/AP << /N 6 0 R >> /A << /S /Named /N /NextPage >> >>"),
+                + "/AP << /N << /On 6 0 R /Off 6 0 R >> >> /A << /S /Named /N /NextPage >> >>"),
             new("/Type /XObject /Subtype /Form /BBox [0 0 1 1]", []),
         ]);
 
