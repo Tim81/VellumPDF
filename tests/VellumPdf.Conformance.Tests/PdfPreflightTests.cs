@@ -4218,4 +4218,207 @@ public sealed class PdfPreflightTests
 
         Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.10-1");
     }
+
+    // ── §6.1.13-10: CID value must not exceed 65,535 ─────────────────────────
+
+    /// <summary>
+    /// Builds a one-page PDF with a Type0 font whose /Encoding is an embedded CMap stream. The
+    /// CMap body is supplied by the caller; the content stream selects F0 and shows
+    /// <paramref name="shownCharHex"/> as a hex string (e.g. "0000").
+    /// Objects: 1=catalog 2=pages 3=page 4=resources 5=font-map 6=Type0 7=CMapStream
+    /// 8=CIDFont 9=FontDescriptor 10=FontFile2 11=content [12=XMP via AssemblePdf].
+    /// </summary>
+    private static byte[] BuildEmbeddedCMapFontPdf(byte[] cmapBody, string shownCharHex)
+    {
+        var cisys = "/Registry (Adobe) /Ordering (Japan1) /Supplement 6";
+        var objects = new List<PdfObj>
+        {
+            new("<< /Type /Catalog /Pages 2 0 R >>"),                                                    // 1
+            _pagesObj,                                                                                    // 2
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources 4 0 R /Contents 11 0 R >>"), // 3
+            new("<< /Font 5 0 R >>"),                                                                    // 4
+            new("<< /F0 6 0 R >>"),                                                                      // 5
+            new("<< /Type /Font /Subtype /Type0 /BaseFont /X /Encoding 7 0 R /DescendantFonts [8 0 R] >>"), // 6
+            new($"/Type /CMap /CMapName /CustomCMap /CIDSystemInfo << {cisys} >> /WMode 0", cmapBody),  // 7
+            new($"<< /Type /Font /Subtype /CIDFontType2 /BaseFont /X /CIDSystemInfo << {cisys} >> /FontDescriptor 9 0 R /CIDToGIDMap /Identity >>"), // 8
+            new("<< /Type /FontDescriptor /FontName /X /Flags 4 /FontBBox [0 0 1000 1000] /ItalicAngle 0 /Ascent 1000 /Descent -200 /CapHeight 800 /StemV 80 /FontFile2 10 0 R >>"), // 9
+            new("/Length1 4", [1, 2, 3, 4]),                                                             // 10
+            new(string.Empty, Encoding.ASCII.GetBytes($"BT /F0 12 Tf <{shownCharHex}> Tj ET")),        // 11
+        };
+        return AssemblePdf(objects);
+    }
+
+    private static byte[] MakeCidRangeCMap(string cidRangeLine)
+    {
+        return Encoding.ASCII.GetBytes(
+            "/CIDInit /ProcSet findresource begin 12 dict begin begincmap "
+            + "/CIDSystemInfo 3 dict dup begin /Registry (Adobe) def /Ordering (Japan1) def /Supplement 6 def end def "
+            + "/CMapName /CustomCMap def /CMapType 1 def "
+            + "1 begincodespacerange <0000> <FFFF> endcodespacerange "
+            + $"1 begincidrange {cidRangeLine} endcidrange "
+            + "endcmap CMapName currentdict /CMap defineresource pop end end");
+    }
+
+    private static byte[] MakeCidCharCMap(string cidCharLine)
+    {
+        return Encoding.ASCII.GetBytes(
+            "/CIDInit /ProcSet findresource begin 12 dict begin begincmap "
+            + "/CIDSystemInfo 3 dict dup begin /Registry (Adobe) def /Ordering (Japan1) def /Supplement 6 def end def "
+            + "/CMapName /CustomCMap def /CMapType 1 def "
+            + "1 begincodespacerange <0000> <FFFF> endcodespacerange "
+            + $"1 begincidchar {cidCharLine} endcidchar "
+            + "endcmap CMapName currentdict /CMap defineresource pop end end");
+    }
+
+    [Fact]
+    public void Validate_EmbeddedCMap_CidRangeDestExceeds65535_ReportsError()
+    {
+        // §6.1.13-10: an embedded CMap mapping char code 0x0000 to CID 70000 exceeds the limit.
+        // The content stream renders char code <0000>, producing CID 70000. Expect a finding.
+        // veraPDF oracle: probe PDF with CMap <0000> <0000> 70000 and <0000> Tj → 6.1.13-10 FAIL.
+        var cmapBody = MakeCidRangeCMap("<0000> <0000> 70000");
+        var bytes = BuildEmbeddedCMapFontPdf(cmapBody, "0000");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.13-10");
+    }
+
+    [Fact]
+    public void Validate_EmbeddedCMap_CidRangeEndExceeds65535_ReportsError()
+    {
+        // §6.1.13-10: CMap range <0000> <00FF> 65500 → max producible CID = 65500+255 = 65755.
+        // Content shows char code <00FF> → resolves to CID 65755 > 65535. Expect a finding.
+        // veraPDF oracle: probe PDF with this range and <00FF> Tj → 6.1.13-10 FAIL (CID 65755).
+        var cmapBody = MakeCidRangeCMap("<0000> <00FF> 65500");
+        var bytes = BuildEmbeddedCMapFontPdf(cmapBody, "00FF");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.13-10");
+    }
+
+    [Fact]
+    public void Validate_EmbeddedCMap_CidCharDestExceeds65535_ReportsError()
+    {
+        // §6.1.13-10: begincidchar mapping <0020> to CID 70000 exceeds the limit.
+        // Content shows char code <0020> → resolves to CID 70000. Expect a finding.
+        // veraPDF oracle: probe with cidchar 70000 and <0020> Tj → 6.1.13-10 FAIL.
+        var cmapBody = MakeCidCharCMap("<0020> 70000");
+        var bytes = BuildEmbeddedCMapFontPdf(cmapBody, "0020");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.13-10");
+    }
+
+    [Fact]
+    public void Validate_EmbeddedCMap_AllCidsWithin65535_NoFinding()
+    {
+        // §6.1.13-10 no-false-positive: CMap range <0020> <007E> 32 → max CID = 32+94 = 126.
+        // All CIDs are well within the 65535 limit. Expect no finding.
+        var cmapBody = MakeCidRangeCMap("<0020> <007E> 32");
+        var bytes = BuildEmbeddedCMapFontPdf(cmapBody, "0020");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.13-10");
+    }
+
+    [Fact]
+    public void Validate_EmbeddedCMap_CidAtExactBoundary65535_NoFinding()
+    {
+        // §6.1.13-10 boundary: CID exactly 65535 must not be flagged (rule is maximalCID <= 65535).
+        var cmapBody = MakeCidCharCMap("<0000> 65535");
+        var bytes = BuildEmbeddedCMapFontPdf(cmapBody, "0000");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.13-10");
+    }
+
+    [Fact]
+    public void Validate_IdentityHEncoding_CidExceedCheck_NoFinding()
+    {
+        // §6.1.13-10 exempt: Identity-H maps char codes to equal CIDs, so the max is structurally
+        // 65535 — the rule should never fire. Uses BuildFontPdf (content: BT /F0 12 Tf ET).
+        var bytes = BuildFontPdf(
+            new PdfObj("<< /Type /Font /Subtype /Type0 /BaseFont /X /Encoding /Identity-H /DescendantFonts [7 0 R] >>"),
+            new PdfObj("<< /Type /Font /Subtype /CIDFontType2 /BaseFont /X /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> /FontDescriptor 8 0 R /CIDToGIDMap /Identity >>"),
+            new PdfObj("<< /Type /FontDescriptor /FontName /X /FontFile2 9 0 R >>"),
+            new PdfObj("/Length1 4", [1, 2, 3, 4]));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.13-10");
+    }
+
+    [Fact]
+    public void Validate_PredefinedNamedCMap_CidExceedCheck_NoFinding()
+    {
+        // §6.1.13-10 deferred: a predefined named CMap (UniGB-UCS2-H) has no embedded program to
+        // parse, so the rule is deferred — no finding shall be generated.
+        var bytes = BuildFontPdf(
+            new PdfObj("<< /Type /Font /Subtype /Type0 /BaseFont /X /Encoding /UniGB-UCS2-H /DescendantFonts [7 0 R] >>"),
+            new PdfObj("<< /Type /Font /Subtype /CIDFontType0 /BaseFont /X /CIDSystemInfo << /Registry (Adobe) /Ordering (GB1) /Supplement 5 >> /FontDescriptor 8 0 R >>"),
+            new PdfObj("<< /Type /FontDescriptor /FontName /X /FontFile3 9 0 R >>"),
+            new PdfObj("/Subtype /CIDFontType0C", [1, 2, 3, 4]));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.13-10");
+    }
+
+    [Fact]
+    public void Validate_EmbeddedCMap_FontPresentButNotUsedInContent_NoFinding()
+    {
+        // §6.1.13-10 scoping: the rule only fires on CIDs produced from text-show operators.
+        // A font in /Resources with an overflow CMap but no Tf/Tj operators is not checked.
+        // This matches veraPDF's behaviour of evaluating only CIDs actually rendered.
+        var cmapBody = MakeCidRangeCMap("<0000> <0000> 70000");
+        // Build using AssemblePdf directly with empty content (no BT/Tf/ET).
+        var cisys = "/Registry (Adobe) /Ordering (Japan1) /Supplement 6";
+        var objects = new List<PdfObj>
+        {
+            new("<< /Type /Catalog /Pages 2 0 R >>"),
+            _pagesObj,
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources 4 0 R /Contents 11 0 R >>"),
+            new("<< /Font 5 0 R >>"),
+            new("<< /F0 6 0 R >>"),
+            new("<< /Type /Font /Subtype /Type0 /BaseFont /X /Encoding 7 0 R /DescendantFonts [8 0 R] >>"),
+            new($"/Type /CMap /CMapName /CustomCMap /CIDSystemInfo << {cisys} >> /WMode 0", cmapBody),
+            new($"<< /Type /Font /Subtype /CIDFontType2 /BaseFont /X /CIDSystemInfo << {cisys} >> /FontDescriptor 9 0 R /CIDToGIDMap /Identity >>"),
+            new("<< /Type /FontDescriptor /FontName /X /Flags 4 /FontBBox [0 0 1000 1000] /ItalicAngle 0 /Ascent 1000 /Descent -200 /CapHeight 800 /StemV 80 /FontFile2 10 0 R >>"),
+            new("/Length1 4", [1, 2, 3, 4]),
+            new(string.Empty, []/* empty content — no Tf, no text */),
+        };
+        var bytes = AssemblePdf(objects);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.13-10");
+    }
+
+    [Fact]
+    public void Validate_EmbeddedCMap_OneByteCodespace_DoesNotSynthesizeWideCid()
+    {
+        // §6.1.13-10 false-positive guard for the codespace-aware decoder. The CMap declares a
+        // ONE-byte codespace (<00>..<FF>) but also an (inconsistent) two-byte cidrange that would
+        // map code 0x0100 to CID 70000. Content shows the two bytes 01 00. Decoding per the
+        // codespace yields two single-byte codes (0x01, 0x00) — neither maps to a CID — so there is
+        // no finding. A naive fixed-width-2 split would instead form code 0x0100, hit the range, and
+        // wrongly report CID 70000. veraPDF decodes per codespace, so it does not flag this.
+        var cmapBody = Encoding.ASCII.GetBytes(
+            "/CIDInit /ProcSet findresource begin 12 dict begin begincmap "
+            + "/CIDSystemInfo 3 dict dup begin /Registry (Adobe) def /Ordering (Japan1) def /Supplement 6 def end def "
+            + "/CMapName /CustomCMap def /CMapType 1 def "
+            + "1 begincodespacerange <00> <FF> endcodespacerange "
+            + "1 begincidrange <0100> <0100> 70000 endcidrange "
+            + "endcmap CMapName currentdict /CMap defineresource pop end end");
+        var bytes = BuildEmbeddedCMapFontPdf(cmapBody, "0100");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.13-10");
+    }
 }

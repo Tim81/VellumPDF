@@ -71,6 +71,7 @@ internal static class RuleRegistry
         new FontEmbeddingRule(),
         new FontStructureRule(),
         new GlyphPresenceRule(),
+        new CidRangeRule(),
     ];
 
     // ISO 19005-2 §6.5–§6.7 metadata, annotation, and action rules. Shared by every PDF/A-2 level.
