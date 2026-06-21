@@ -1852,6 +1852,43 @@ public sealed class PdfPreflightTests
         Assert.Empty(result.Assertions);
     }
 
+    // ── §6.1.13-8 q/Q nesting rules ──────────────────────────────────────────────
+
+    [Fact]
+    public void Validate_QNestingExceeds28_ReportsError()
+    {
+        // 29 nested `q` operators pushes depth to 29, which exceeds the allowed 28 (§6.1.13-8).
+        var content = string.Concat(Enumerable.Repeat("q ", 29)) + string.Concat(Enumerable.Repeat("Q ", 29));
+        var result = PdfPreflight.Validate(BuildContentStreamPdf(content), PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.13-8-q-nesting");
+    }
+
+    [Fact]
+    public void Validate_QNestingExactly28_NoFinding()
+    {
+        // Exactly 28 nested `q` operators reaches depth 28, which is the allowed maximum.
+        var content = string.Concat(Enumerable.Repeat("q ", 28)) + string.Concat(Enumerable.Repeat("Q ", 28));
+        var result = PdfPreflight.Validate(BuildContentStreamPdf(content), PdfConformance.PdfA2B);
+
+        Assert.True(result.IsCompliant);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.13-8-q-nesting");
+    }
+
+    [Fact]
+    public void Validate_QNestingRepeatedShallow_NoFinding()
+    {
+        // Repeated q/Q pairs that open and close — depth 2 at most — must not be flagged.
+        // Proves we track running depth, not a cumulative count of q tokens.
+        var pair = "q q Q Q ";
+        var content = string.Concat(Enumerable.Repeat(pair, 20));
+        var result = PdfPreflight.Validate(BuildContentStreamPdf(content), PdfConformance.PdfA2B);
+
+        Assert.True(result.IsCompliant);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.13-8-q-nesting");
+    }
+
     // ── §6.2.8 / §6.2.9 image and XObject rules ─────────────────────────────────
 
     [Fact]
