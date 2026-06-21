@@ -23,10 +23,19 @@ internal sealed class ParsedStream
     /// </summary>
     public ReadOnlyMemory<byte> RawBody { get; }
 
-    /// <summary>Creates a parsed stream from a dictionary and its raw body bytes.</summary>
-    public ParsedStream(PdfDictionary dictionary, ReadOnlyMemory<byte> rawBody)
+    /// <summary>
+    /// The byte offset, in the source file, at which <see cref="RawBody"/> begins — i.e. immediately
+    /// after the EOL that follows the <c>stream</c> keyword. Used by byte-level conformance checks
+    /// (§6.1.7.1) that inspect the bytes around the <c>stream</c>/<c>endstream</c> keywords. Zero when
+    /// the stream did not come from a file position (e.g. an object-stream member).
+    /// </summary>
+    public int BodyOffset { get; }
+
+    /// <summary>Creates a parsed stream from a dictionary, its raw body bytes, and the body's file offset.</summary>
+    public ParsedStream(PdfDictionary dictionary, ReadOnlyMemory<byte> rawBody, int bodyOffset = 0)
     {
         Dictionary = dictionary;
         RawBody = rawBody;
+        BodyOffset = bodyOffset;
     }
 }

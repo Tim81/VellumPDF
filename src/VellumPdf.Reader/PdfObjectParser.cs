@@ -16,6 +16,10 @@ internal sealed class PdfObjectParser
 {
     private readonly PdfLexer _lexer;
 
+    // Optional resolver for an indirect /Length (/Length N 0 R), supplied by the document reader
+    // which owns the xref. Without it, an indirect /Length falls back to the endstream scan.
+    private readonly Func<PdfIndirectReference, long?>? _resolveLength;
+
     // Guards against unbounded recursion on hostile input (e.g. deeply nested
     // "[[[[…" or "<</a<</a…"). A StackOverflowException is uncatchable in .NET, so
     // we cap the array/dictionary nesting depth and throw a recoverable exception.
@@ -23,13 +27,17 @@ internal sealed class PdfObjectParser
     private int _depth;
 
     /// <summary>Creates a parser backed by <paramref name="lexer"/>.</summary>
-    public PdfObjectParser(PdfLexer lexer) => _lexer = lexer;
+    public PdfObjectParser(PdfLexer lexer, Func<PdfIndirectReference, long?>? lengthResolver = null)
+    {
+        _lexer = lexer;
+        _resolveLength = lengthResolver;
+    }
 
     /// <summary>
     /// Creates a parser over <paramref name="data"/> starting at <paramref name="offset"/>.
     /// </summary>
-    public PdfObjectParser(ReadOnlyMemory<byte> data, int offset = 0)
-        : this(new PdfLexer(data, offset)) { }
+    public PdfObjectParser(ReadOnlyMemory<byte> data, int offset = 0, Func<PdfIndirectReference, long?>? lengthResolver = null)
+        : this(new PdfLexer(data, offset), lengthResolver) { }
 
     /// <summary>Current byte position within the underlying buffer.</summary>
     public int Position => _lexer.Position;
@@ -87,8 +95,8 @@ internal sealed class PdfObjectParser
             throw new InvalidDataException(
                 $"Expected 'obj' keyword, got '{Encoding.Latin1.GetString(objKw.Raw.Span)}' at offset {_lexer.Position}.");
 
-        var objectNumber = ParseLong(objNumTok.Raw);
-        var generation = (int)ParseLong(genTok.Raw);
+        var objectNumber = ParseObjectNumber(objNumTok.Raw, "object number");
+        var generation = ParseObjectNumber(genTok.Raw, "generation number");
 
         // Parse the value
         _lexer.SkipWhitespaceAndComments();
@@ -104,18 +112,18 @@ internal sealed class PdfObjectParser
             if (!_lexer.AtEnd && TryPeekKeyword("stream"u8))
             {
                 var stream = ParseStreamBody(dict);
-                return new IndirectObjectResult((int)objectNumber, generation, null, stream);
+                return new IndirectObjectResult(objectNumber, generation, null, stream);
             }
 
             // Not a stream — check for an indirect reference inside the dict value
             // (already fully parsed as a dict); now expect endobj
             ExpectEndobj();
-            return new IndirectObjectResult((int)objectNumber, generation, dict, null);
+            return new IndirectObjectResult(objectNumber, generation, dict, null);
         }
 
         var value = ParseObject();
         ExpectEndobj();
-        return new IndirectObjectResult((int)objectNumber, generation, value, null);
+        return new IndirectObjectResult(objectNumber, generation, value, null);
     }
 
     // ── Private helpers ────────────────────────────────────────────────────
@@ -319,37 +327,39 @@ internal sealed class PdfObjectParser
 
         var bodyStart = _lexer.Position;
 
-        // Determine body length: prefer /Length when it's a direct, in-range integer.
-        // A negative or > int.MaxValue value is malformed (the buffer is <= int.MaxValue);
-        // fall back to the endstream scan rather than truncating on a wrapped cast.
+        // Determine body length: prefer /Length when it's an in-range integer (direct, or an
+        // indirect reference the reader can resolve). A negative or > int.MaxValue value is
+        // malformed; fall back to the endstream scan rather than truncating on a wrapped cast.
         int bodyLen = -1;
-        if (dict.TryGet(PdfName.Length, out var lenObj) && lenObj is PdfInteger pdfLen
-            && pdfLen.Value >= 0 && pdfLen.Value <= int.MaxValue)
-            bodyLen = (int)pdfLen.Value;
-
-        if (bodyLen >= 0)
+        if (dict.TryGet(PdfName.Length, out var lenObj))
         {
-            // Trust /Length
-            if ((long)bodyStart + bodyLen > _lexer.Length)
-                throw new InvalidDataException(
-                    $"Stream /Length {bodyLen} exceeds buffer at offset {bodyStart}.");
+            long? len = lenObj switch
+            {
+                PdfInteger pdfLen => pdfLen.Value,
+                PdfIndirectReference r => _resolveLength?.Invoke(r),
+                _ => null,
+            };
+            if (len is >= 0 and <= int.MaxValue)
+                bodyLen = (int)len.Value;
+        }
+
+        if (bodyLen >= 0 && (long)bodyStart + bodyLen <= _lexer.Length)
+        {
+            // Prefer /Length, but only when 'endstream' actually follows the declared body. A wrong
+            // /Length (a common real-world producer bug — off by a few bytes, or stale after an edit)
+            // would otherwise truncate or over-read the stream; if the marker isn't where /Length
+            // says it should be, fall through to scanning for it instead of failing the parse.
             var body = _lexer.Slice(bodyStart, bodyLen);
             _lexer.Seek(bodyStart + bodyLen);
 
-            // Expect optional whitespace then 'endstream'
             _lexer.SkipWhitespaceAndComments();
             var endTok = _lexer.NextToken();
-            if (endTok.Kind != TokenKind.Keyword || !IsKeyword(endTok.Raw, "endstream"u8))
-                throw new InvalidDataException(
-                    $"Expected 'endstream' after stream body at offset {_lexer.Position}.");
+            if (endTok.Kind == TokenKind.Keyword && IsKeyword(endTok.Raw, "endstream"u8))
+                return new ParsedStream(dict, body, bodyStart);
+        }
 
-            return new ParsedStream(dict, body);
-        }
-        else
-        {
-            // Scan for 'endstream' marker
-            return ScanToEndstream(dict, bodyStart);
-        }
+        // No usable /Length, or /Length did not land on 'endstream' — locate the marker by scanning.
+        return ScanToEndstream(dict, bodyStart);
     }
 
     private ParsedStream ScanToEndstream(PdfDictionary dict, int bodyStart)
@@ -372,7 +382,7 @@ internal sealed class PdfObjectParser
 
                 var body = _lexer.Slice(bodyStart, bodyEnd);
                 _lexer.Seek(bodyStart + i + marker.Length);
-                return new ParsedStream(dict, body);
+                return new ParsedStream(dict, body, bodyStart);
             }
         }
         throw new InvalidDataException(
@@ -478,8 +488,11 @@ internal sealed class PdfObjectParser
         // raw includes < and >
         var span = raw.Span[1..^1];
 
-        // collect hex digits, skip whitespace (+1 slot for an odd-length pad nibble)
-        Span<byte> nibbles = stackalloc byte[span.Length + 1];
+        // collect hex digits, skip whitespace (+1 slot for an odd-length pad nibble).
+        // The token length is attacker-controlled, so only stackalloc for small strings; a large
+        // hex string would otherwise overflow the stack (an uncatchable crash).
+        var maxNibbles = span.Length + 1;
+        Span<byte> nibbles = maxNibbles <= 1024 ? stackalloc byte[maxNibbles] : new byte[maxNibbles];
         var count = 0;
         foreach (var b in span)
         {
@@ -533,6 +546,18 @@ internal sealed class PdfObjectParser
         if (!long.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out var v))
             throw new InvalidDataException($"Malformed integer: '{s}'.");
         return v;
+    }
+
+    /// <summary>
+    /// Parses an object or generation number and validates it fits in a non-negative int, throwing
+    /// rather than wrapping silently on an out-of-range value.
+    /// </summary>
+    private static int ParseObjectNumber(ReadOnlyMemory<byte> raw, string what)
+    {
+        var v = ParseLong(raw);
+        if (v is < 0 or > int.MaxValue)
+            throw new InvalidDataException($"Malformed PDF: {what} {v} is out of range.");
+        return (int)v;
     }
 }
 

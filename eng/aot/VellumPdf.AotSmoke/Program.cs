@@ -73,6 +73,15 @@ using (var reader = PdfReader.Open(bytes))
     Console.WriteLine($"OK: Reader parsed the PDF under AOT ({reader.Signatures.Count} signatures).");
 }
 
+// Exercise the in-process conformance validator under Native AOT. The rule registry is
+// reflection-free, so every rule must be reachable without trimming surprises; running the
+// PDF/A-2b profile end-to-end here proves the Conformance package is AOT-safe.
+var preflight = VellumPdf.Conformance.PdfPreflight.Validate(
+    bytes, VellumPdf.Conformance.PdfConformance.PdfA2B);
+Console.WriteLine(
+    $"OK: Conformance preflight ran under AOT (compliant={preflight.IsCompliant}, "
+    + $"{preflight.Assertions.Count} assertions).");
+
 // Exercise the Signing CMS path (PAdES B-B, self-signed) plus a signed round-trip under AOT.
 using var rsa = RSA.Create(2048);
 var certReq = new CertificateRequest("CN=VellumPdf AOT Smoke", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
