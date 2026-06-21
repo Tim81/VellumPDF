@@ -37,6 +37,9 @@ internal sealed class GraphicsStateRule : IConformanceRule
     private static readonly PdfName _tr2 = new("TR2");
     private static readonly PdfName _htp = new("HTP");
     private static readonly PdfName _ri = new("RI");
+    private static readonly PdfName _ht = new("HT");
+    private static readonly PdfName _halftoneType = new("HalftoneType");
+    private static readonly PdfName _halftoneName = new("HalftoneName");
 
     private static readonly HashSet<string> _standardIntents = new(StringComparer.Ordinal)
     {
@@ -95,6 +98,17 @@ internal sealed class GraphicsStateRule : IConformanceRule
         // §6.2.6: a rendering intent set via the ExtGState /RI shall be one of the standard intents.
         if (context.Resolve(gs.Get(_ri)) is PdfName intent)
             CheckIntent(context, intent.Value, reportedIntents);
+
+        // §6.2.5: a halftone (dictionary or stream) shall have HalftoneType 1 or 5 and no HalftoneName.
+        if (context.Resolve(gs.Get(_ht)) is PdfDictionary halftone)
+        {
+            if (context.Resolve(halftone.Get(_halftoneType)) is PdfInteger type && type.Value != 1 && type.Value != 5)
+                Report(context, "6.2.5-halftone-type", "6.2.5",
+                    $"An applied ExtGState's halftone has /HalftoneType {type.Value}; PDF/A-2 permits only 1 or 5.");
+            if (halftone.Get(_halftoneName) is not null)
+                Report(context, "6.2.5-halftone-name", "6.2.5",
+                    "An applied ExtGState's halftone contains a /HalftoneName entry, which is not permitted in PDF/A-2.");
+        }
     }
 
     private static void CheckIntent(PreflightContext context, string intent, HashSet<string> reportedIntents)

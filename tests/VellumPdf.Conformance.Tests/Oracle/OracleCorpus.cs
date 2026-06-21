@@ -274,6 +274,16 @@ public static class OracleCorpus
             new OracleFixture("pdfa2b-transfer-function", WriterPdfWithTransferFunction(),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
 
+            // An applied ExtGState whose halftone has an invalid /HalftoneType (§6.2.5-4). veraPDF and
+            // the in-process rule both reject it.
+            new OracleFixture("pdfa2b-halftone-type", WriterPdfWithBadHalftoneType(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // An applied ExtGState whose halftone carries a /HalftoneName (§6.2.5-5). veraPDF and the
+            // in-process rule both reject it.
+            new OracleFixture("pdfa2b-halftone-name", WriterPdfWithHalftoneName(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
             // A non-standard rendering intent set by the `ri` content operator (§6.2.6). veraPDF and
             // the in-process rule both reject it.
             new OracleFixture("pdfa2b-rendering-intent", WriterPdfWithBadRenderingIntent(),
@@ -396,8 +406,27 @@ public static class OracleCorpus
     }
 
     private static byte[] WriterPdfWithTransferFunction()
+        => WriterPdfWithAppliedExtGState(new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("ExtGState")).Set(new PdfName("TR"), new PdfName("Identity")));
+
+    private static byte[] WriterPdfWithBadHalftoneType()
+        => WriterPdfWithAppliedExtGState(new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("ExtGState"))
+            .Set(new PdfName("HT"), new PdfDictionary()
+                .Set(new PdfName("Type"), new PdfName("Halftone")).Set(new PdfName("HalftoneType"), new PdfInteger(6))));
+
+    private static byte[] WriterPdfWithHalftoneName()
+        => WriterPdfWithAppliedExtGState(new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("ExtGState"))
+            .Set(new PdfName("HT"), new PdfDictionary()
+                .Set(new PdfName("Type"), new PdfName("Halftone")).Set(new PdfName("HalftoneType"), new PdfInteger(1))
+                .Set(new PdfName("HalftoneName"), new PdfLiteralString(Encoding.ASCII.GetBytes("X")))
+                .Set(new PdfName("Frequency"), new PdfInteger(60)).Set(new PdfName("Angle"), new PdfInteger(45))
+                .Set(new PdfName("SpotFunction"), new PdfName("SimpleDot"))));
+
+    // Merges an /ExtGState into the page and applies it (`/GS0 gs`) on a compliant writer baseline.
+    private static byte[] WriterPdfWithAppliedExtGState(PdfDictionary gs)
     {
-        // Merge an /ExtGState carrying a /TR transfer function into the page and apply it (`/GS0 gs`).
         var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
         using var reader = PdfReader.Open(baseline);
         var (pageRef, page) = FirstPage(reader);
@@ -405,9 +434,6 @@ public static class OracleCorpus
 
         var gsNum = reader.Size;
         var contentNum = gsNum + 1;
-        var gs = new PdfDictionary()
-            .Set(PdfName.Type, new PdfName("ExtGState"))
-            .Set(new PdfName("TR"), new PdfName("Identity"));
         newPage.Set(
             new PdfName("Resources"),
             new PdfDictionary().Set(
