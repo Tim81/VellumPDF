@@ -142,6 +142,41 @@ internal sealed class PreflightContext
     }
 
     /// <summary>
+    /// Enumerates the distinct font dictionaries that are actually <em>used</em> by page content:
+    /// only fonts whose resource key appears in a <c>Tf</c> text-font operator in that page's
+    /// content stream are yielded. Each font object is yielded once even when shared across pages,
+    /// matching veraPDF's behaviour of validating only fonts selected by the current graphics state
+    /// rather than every font merely present in <c>/Resources /Font</c> (issue #118).
+    /// </summary>
+    /// <remarks>
+    /// Limitation: fonts referenced only from form XObjects, Type 3 glyph procedures, or annotation
+    /// appearance streams are not yet detected here — they are a deferred edge. This means
+    /// fonts used <em>only</em> in those contexts are currently under-detected (not validated)
+    /// rather than over-rejected, which is the conservative direction.
+    /// </remarks>
+    public IEnumerable<PdfDictionary> EnumerateUsedFonts()
+    {
+        var seen = new HashSet<int>();
+        foreach (var page in EnumeratePages())
+        {
+            if (ResolveInherited(page, PdfName.Resources) is not PdfDictionary resources)
+                continue;
+            if (Resolve(resources.Get(PdfName.Font)) is not PdfDictionary fonts)
+                continue;
+            var usedFontNames = ContentStreamUsage.Analyze(this, page).UsedFonts;
+            foreach (var entry in fonts.Entries)
+            {
+                if (!usedFontNames.Contains(entry.Key.Value))
+                    continue;
+                if (entry.Value is PdfIndirectReference r && !seen.Add(r.ObjectNumber))
+                    continue;
+                if (Resolve(entry.Value) is PdfDictionary font)
+                    yield return font;
+            }
+        }
+    }
+
+    /// <summary>
     /// Enumerates every annotation dictionary referenced by a page's <c>/Annots</c> array, across
     /// all pages in document order.
     /// </summary>

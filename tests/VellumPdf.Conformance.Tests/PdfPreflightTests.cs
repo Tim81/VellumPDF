@@ -371,19 +371,25 @@ public sealed class PdfPreflightTests
     /// <summary>
     /// Builds a one-page doc whose /Resources /Font /F0 references object 6, with
     /// <paramref name="fontObjects"/> supplying objects 6..N (the font dict and any descriptor /
-    /// font-program streams it points to).
+    /// font-program streams it points to). The page content selects the font via <c>/F0 12 Tf</c>
+    /// so that font rules — which now scope to fonts actually used by page content (issue #118) —
+    /// still exercise the font.
     /// </summary>
     private static byte[] BuildFontPdf(params PdfObj[] fontObjects)
     {
+        // Objects: 1=catalog 2=pages 3=page 4=resources-dict 5=font-dict-map 6..=fontObjects
+        // The content stream comes after the font objects; its number is 6 + fontObjects.Length.
+        var contentObjNum = 6 + fontObjects.Length;
         var objects = new List<PdfObj>
         {
             new("<< /Type /Catalog /Pages 2 0 R >>"),
             _pagesObj,
-            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources 4 0 R >>"),
+            new($"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources 4 0 R /Contents {contentObjNum} 0 R >>"),
             new("<< /Font 5 0 R >>"),
             new("<< /F0 6 0 R >>"),
         };
         objects.AddRange(fontObjects);
+        objects.Add(new PdfObj(string.Empty, Encoding.ASCII.GetBytes("BT /F0 12 Tf ET")));
         return AssemblePdf(objects);
     }
 
@@ -403,18 +409,25 @@ public sealed class PdfPreflightTests
         return AssemblePdf(objects);
     }
 
-    /// <summary>Builds a one-page doc with a single embedded Identity-H Type0 font, optionally with /ToUnicode.</summary>
+    /// <summary>Builds a one-page doc with a single embedded Identity-H Type0 font, optionally with /ToUnicode.
+    /// The page content selects the font via <c>/F0 12 Tf</c> so that font rules — which now scope to
+    /// fonts actually used by page content (issue #118) — still exercise the font.</summary>
     private static byte[] BuildType0FontPdf(bool withToUnicode, string xmpConformance)
     {
+        // Objects: 1=catalog 2=pages 3=page 4=resources-dict 5=font-dict-map 6=Type0 7=CIDFont
+        // 8=FontDescriptor 9=FontFile2 [10=ToUnicode if withToUnicode] then content stream.
+        var toUnicodeObjNum = 10;
+        var contentObjNum = withToUnicode ? 11 : 10;
+
         var fontDict = withToUnicode
-            ? "<< /Type /Font /Subtype /Type0 /BaseFont /X /Encoding /Identity-H /DescendantFonts [7 0 R] /ToUnicode 10 0 R >>"
+            ? $"<< /Type /Font /Subtype /Type0 /BaseFont /X /Encoding /Identity-H /DescendantFonts [7 0 R] /ToUnicode {toUnicodeObjNum} 0 R >>"
             : "<< /Type /Font /Subtype /Type0 /BaseFont /X /Encoding /Identity-H /DescendantFonts [7 0 R] >>";
 
         var objects = new List<PdfObj>
         {
             new("<< /Type /Catalog /Pages 2 0 R >>"),
             _pagesObj,
-            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources 4 0 R >>"),
+            new($"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources 4 0 R /Contents {contentObjNum} 0 R >>"),
             new("<< /Font 5 0 R >>"),
             new("<< /F0 6 0 R >>"),
             new(fontDict),
@@ -424,6 +437,7 @@ public sealed class PdfPreflightTests
         };
         if (withToUnicode)
             objects.Add(new PdfObj("/Type /CMap", Encoding.ASCII.GetBytes("/CIDInit")));
+        objects.Add(new PdfObj(string.Empty, Encoding.ASCII.GetBytes("BT /F0 12 Tf ET")));
 
         return AssemblePdf(objects, xmpConformance: xmpConformance);
     }

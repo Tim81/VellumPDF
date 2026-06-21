@@ -17,9 +17,11 @@ namespace VellumPdf.Conformance.Rules.Fonts;
 /// from the specification text, not from any third-party validation profile. <c>/Type3</c> fonts
 /// define their glyphs as content streams and so are embedded by construction.
 /// <para>
-/// This slice inspects the <c>/Font</c> resources reachable through the page tree (own or
-/// inherited). Fonts referenced only from form XObjects, patterns, or annotation appearance
-/// streams are validated in a later slice of #50c/#50d.
+/// Only fonts that a page actually selects via a <c>Tf</c> operator in its content stream are
+/// validated (matching veraPDF, which validates only the current graphics state — issue #118).
+/// Fonts present in <c>/Resources /Font</c> but never selected are not checked. Fonts used only
+/// within form XObjects, Type 3 glyph procedures, or annotation appearance streams are a deferred
+/// edge and are not yet detected here.
 /// </para>
 /// </remarks>
 internal sealed class FontEmbeddingRule : IConformanceRule
@@ -36,7 +38,7 @@ internal sealed class FontEmbeddingRule : IConformanceRule
 
     public void Evaluate(PreflightContext context)
     {
-        foreach (var font in context.EnumerateFonts())
+        foreach (var font in context.EnumerateUsedFonts())
             CheckFont(context, font);
     }
 

@@ -17,6 +17,13 @@ namespace VellumPdf.Conformance.Rules.Fonts;
 /// unambiguous Identity-encoded case; simple fonts whose Unicode values are derivable from a
 /// standard encoding, and Type0 fonts using a predefined non-Identity CMap, are mappable without a
 /// /ToUnicode entry and are validated in a later slice.
+/// <para>
+/// Only fonts that a page actually selects via a <c>Tf</c> operator in its content stream are
+/// validated (matching veraPDF, which validates only the current graphics state — issue #118).
+/// Fonts present in <c>/Resources /Font</c> but never selected are not checked. Fonts used only
+/// within form XObjects, Type 3 glyph procedures, or annotation appearance streams are a deferred
+/// edge and are not yet detected here.
+/// </para>
 /// </remarks>
 internal sealed class ToUnicodeRule : IConformanceRule
 {
@@ -28,7 +35,7 @@ internal sealed class ToUnicodeRule : IConformanceRule
 
     public void Evaluate(PreflightContext context)
     {
-        foreach (var font in context.EnumerateFonts())
+        foreach (var font in context.EnumerateUsedFonts())
         {
             if ((context.Resolve(font.Get(PdfName.Subtype)) as PdfName)?.Value != "Type0")
                 continue;
