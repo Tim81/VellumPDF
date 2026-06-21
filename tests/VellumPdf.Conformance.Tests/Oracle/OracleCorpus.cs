@@ -422,6 +422,13 @@ public static class OracleCorpus
             new OracleFixture("pdfa2b-unknown-action", WriterPdfWithOpenAction(
                 new PdfDictionary().Set(new PdfName("S"), new PdfName("VellumFoo"))),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // An action dictionary with no /S action-type key (§6.5.1-1). veraPDF rejects it (the
+            // permitted-type test fails when /S is absent); the in-process rule now does too — a false
+            // negative found by adversarial review and fixed.
+            new OracleFixture("pdfa2b-action-no-s", WriterPdfWithOpenAction(
+                new PdfDictionary().Set(PdfName.Type, new PdfName("Action"))),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
         ];
     }
 
