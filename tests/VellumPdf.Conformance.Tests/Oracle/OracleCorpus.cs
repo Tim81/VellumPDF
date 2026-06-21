@@ -551,6 +551,15 @@ public static class OracleCorpus
             new OracleFixture("pdfa2b-ef-on-page", WriterPdfWithEfOnPage(),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
 
+            // A file specification whose /EF /F stream is a plain (non-PDF/A) PDF: it carries the
+            // %PDF- header but has no pdfaid identification. §6.8-5 requires the embedded file to be
+            // a valid PDF/A-1 or PDF/A-2 document, so both veraPDF (clause 6.8, testNumber 5) and the
+            // in-process EmbeddedFilePdfaRule reject it. The filespec carries both /F and /UF so only
+            // §6.8-5 is the isolating violation. Chosen as a clear-cut negative so the in-process and
+            // veraPDF verdicts cannot diverge due to the parity gap.
+            new OracleFixture("pdfa2b-embedded-nonpdfa", WriterPdfWithNonPdfAEmbeddedFile(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
             // A Link annotation whose flags set the ToggleNoView bit (§6.3.2-2). veraPDF and the
             // in-process AnnotationRule both reject it.
             new OracleFixture("pdfa2b-annot-togglenoview", WriterPdfWithAnnotFlags(1 << 2 | 1 << 8),
@@ -1401,6 +1410,44 @@ public static class OracleCorpus
 
         return reader.AppendRevision([
             (rootRef.ObjectNumber, catalog), (efStreamNum, EmbeddedFileStream()), (filespecNum, filespec)]);
+    }
+
+    // Attaches a plain (non-PDF/A) PDF as an embedded file via the /Names /EmbeddedFiles name tree.
+    // The outer document is a compliant PDF/A-2b; the inner attached PDF has the %PDF- header but
+    // carries no pdfaid:part identification — it is not a valid PDF/A-1 or PDF/A-2 document.
+    // The filespec carries both /F and /UF so §6.8-2 is satisfied; only §6.8-5 is violated.
+    // Clear-cut negative: both the in-process rule and veraPDF agree it is non-compliant.
+    private static byte[] WriterPdfWithNonPdfAEmbeddedFile()
+    {
+        // The inner PDF uses PdfConformance.None — the writer emits a PDF 2.0 header with no XMP
+        // pdfaid claim, so it is definitively not a valid PDF/A-1 or PDF/A-2 document.
+        var innerBytes = WriterPdf(VellumPdf.Document.PdfConformance.None);
+
+        var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+        var rootRef = (PdfIndirectReference)reader.Trailer.Get(PdfName.Root)!;
+        var catalog = CloneDict(reader.Catalog);
+
+        var efStreamNum = reader.Size;
+        var filespecNum = efStreamNum + 1;
+
+        var efStream = new PdfStream(innerBytes);
+        efStream.Dictionary.Set(PdfName.Type, new PdfName("EmbeddedFile"));
+
+        var filespec = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("Filespec"))
+            .Set(new PdfName("F"), new PdfLiteralString(Encoding.ASCII.GetBytes("plain.pdf")))
+            .Set(new PdfName("UF"), new PdfLiteralString(Encoding.ASCII.GetBytes("plain.pdf")))
+            .Set(new PdfName("EF"), new PdfDictionary().Set(new PdfName("F"), new PdfIndirectReference(efStreamNum)));
+
+        catalog.Set(new PdfName("Names"), new PdfDictionary()
+            .Set(new PdfName("EmbeddedFiles"), new PdfDictionary()
+                .Set(new PdfName("Names"), new PdfArray([
+                    new PdfLiteralString(Encoding.ASCII.GetBytes("plain.pdf")),
+                    new PdfIndirectReference(filespecNum)]))));
+
+        return reader.AppendRevision([
+            (rootRef.ObjectNumber, catalog), (efStreamNum, efStream), (filespecNum, filespec)]);
     }
 
     // Places an /EF key on the first page dictionary — a dictionary that is NOT a file specification.

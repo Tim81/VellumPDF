@@ -196,6 +196,7 @@ public static class ConformanceCatalog
         ["6.1.9-1"] = "object/generation/obj spacing + EOL checked; the endobj-EOL sub-conditions not",
         ["6.2.11.3.1-1"] = "Identity and embedded-CMap CIDSystemInfo compared; predefined-CMap registry table deferred",
         ["6.7.2.2-1"] = "StructTreeRoot presence checked; full structure-tree validation not",
+        ["6.8-5"] = "embedded PDF/A-2 validated recursively; embedded PDF/A-1 deferred (no PDF/A-1 profile)",
     };
 
     private static readonly Dictionary<string, string> PdfADeferred = new(StringComparer.Ordinal)
@@ -221,7 +222,6 @@ public static class ConformanceCatalog
         ["6.4.3-2"] = "digital-signature parser",
         ["6.4.3-3"] = "digital-signature parser",
         ["6.6.2.3.1-2"] = "XMP per-property value-type match",
-        ["6.8-5"] = "recursive embedded-file PDF/A validation",
         ["6.7.3.3-1"] = "structure-tree walker",
         ["6.7.3.4-1"] = "structure-tree walker",
         ["6.7.3.4-2"] = "structure-tree walker",

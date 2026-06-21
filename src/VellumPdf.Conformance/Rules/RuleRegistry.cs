@@ -41,6 +41,7 @@ internal static class RuleRegistry
         new OptionalContentRule(),
         new PermissionsRule(),
         new EmbeddedFileRule(),
+        new EmbeddedFilePdfaRule(),
     ];
 
     // ISO 19005-2 §6.2 colour / §6.4 transparency rules. Shared by every PDF/A-2 level.
