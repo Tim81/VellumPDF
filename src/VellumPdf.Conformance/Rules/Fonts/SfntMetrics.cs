@@ -22,18 +22,28 @@ internal sealed class SfntMetrics
     private readonly int _hmtxOffset;
     private readonly int _numberOfHMetrics;
 
-    private SfntMetrics(byte[] font, int numGlyphs, int unitsPerEm, int hmtxOffset, int numberOfHMetrics)
+    private SfntMetrics(
+        byte[] font, int numGlyphs, int unitsPerEm, int hmtxOffset, int numberOfHMetrics,
+        int cmapSubtableCount, bool hasSymbolCmap)
     {
         _font = font;
         NumGlyphs = numGlyphs;
         UnitsPerEm = unitsPerEm;
         _hmtxOffset = hmtxOffset;
         _numberOfHMetrics = numberOfHMetrics;
+        CmapSubtableCount = cmapSubtableCount;
+        HasSymbolCmap = hasSymbolCmap;
     }
 
     public int NumGlyphs { get; }
 
     public int UnitsPerEm { get; }
+
+    /// <summary>The number of encoding subtables in the font program's <c>cmap</c> table (0 if absent).</summary>
+    public int CmapSubtableCount { get; }
+
+    /// <summary>True when the <c>cmap</c> table has a Microsoft Symbol (platform 3, encoding 0) subtable.</summary>
+    public bool HasSymbolCmap { get; }
 
     /// <summary>The advance width of <paramref name="gid"/> scaled to the 1000-unit PDF glyph space,
     /// or <see langword="null"/> when it cannot be read.</summary>
@@ -58,7 +68,7 @@ internal sealed class SfntMetrics
             return null;
 
         var numTables = ReadU16(font, 4);
-        int maxp = -1, head = -1, hhea = -1, hmtx = -1;
+        int maxp = -1, head = -1, hhea = -1, hmtx = -1, cmap = -1;
         for (var i = 0; i < numTables; i++)
         {
             var record = 12 + i * 16;
@@ -69,6 +79,7 @@ internal sealed class SfntMetrics
             else if (Tag(font, record, 'h', 'e', 'a', 'd')) head = offset;
             else if (Tag(font, record, 'h', 'h', 'e', 'a')) hhea = offset;
             else if (Tag(font, record, 'h', 'm', 't', 'x')) hmtx = offset;
+            else if (Tag(font, record, 'c', 'm', 'a', 'p')) cmap = offset;
         }
         if (maxp < 0 || head < 0 || hhea < 0 || hmtx < 0)
             return null;
@@ -78,7 +89,29 @@ internal sealed class SfntMetrics
         var numGlyphs = ReadU16(font, maxp + 4);
         var unitsPerEm = ReadU16(font, head + 18);
         var numberOfHMetrics = ReadU16(font, hhea + 34);
-        return new SfntMetrics(font, numGlyphs, unitsPerEm, hmtx, numberOfHMetrics);
+        var (cmapCount, hasSymbol) = ParseCmap(font, cmap);
+        return new SfntMetrics(font, numGlyphs, unitsPerEm, hmtx, numberOfHMetrics, cmapCount, hasSymbol);
+    }
+
+    // Reads the cmap header: the count of encoding subtables and whether a Microsoft Symbol (3,0)
+    // subtable is present. A missing or truncated cmap yields (0, false) rather than failing the parse.
+    private static (int Count, bool HasSymbol) ParseCmap(byte[] font, int cmap)
+    {
+        if (cmap < 0 || cmap + 4 > font.Length)
+            return (0, false);
+        var numSubtables = ReadU16(font, cmap + 2);
+        var count = 0;
+        var hasSymbol = false;
+        for (var i = 0; i < numSubtables; i++)
+        {
+            var record = cmap + 4 + i * 8;
+            if (record + 8 > font.Length)
+                break;
+            count++;
+            if (ReadU16(font, record) == 3 && ReadU16(font, record + 2) == 0)
+                hasSymbol = true;
+        }
+        return (count, hasSymbol);
     }
 
     private static bool Tag(byte[] b, int o, char a, char c, char d, char e)

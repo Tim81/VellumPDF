@@ -149,6 +149,14 @@ internal sealed class FontStructureRule : IConformanceRule
             if (font.Get(_encoding) is not null)
                 Report(context, "6.2.11.6-symbolic-encoding", "ISO 19005-2:2011, 6.2.11.6",
                     "A symbolic TrueType font carries an /Encoding entry, which is not permitted in PDF/A-2.");
+
+            // §6.2.11.6-4: the embedded program's cmap shall contain exactly one subtable, or contain
+            // the Microsoft Symbol (3,0) encoding.
+            if (EmbeddedTrueTypeProgram(context, font) is { } program
+                && program.CmapSubtableCount != 1 && !program.HasSymbolCmap)
+                Report(context, "6.2.11.6-symbolic-cmap", "ISO 19005-2:2011, 6.2.11.6",
+                    "A symbolic TrueType font's embedded cmap shall have exactly one subtable or include "
+                    + "the Microsoft Symbol (3,0) encoding.");
             return;
         }
 
@@ -163,6 +171,18 @@ internal sealed class FontStructureRule : IConformanceRule
             Report(context, "6.2.11.6-nonsymbolic-encoding", "ISO 19005-2:2011, 6.2.11.6",
                 "A non-symbolic TrueType font shall use MacRomanEncoding or WinAnsiEncoding "
                 + $"({(encodingName is null ? "no usable Encoding" : $"/{encodingName}")} found).");
+    }
+
+    // The parsed sfnt program of an embedded TrueType font (its /FontDescriptor /FontFile2), or null
+    // when the font is not embedded or the program cannot be parsed.
+    private static SfntMetrics? EmbeddedTrueTypeProgram(PreflightContext context, PdfDictionary font)
+    {
+        if (context.Resolve(font.Get(_fontDescriptor)) is not PdfDictionary descriptor)
+            return null;
+        if (context.ResolveStream(descriptor.Get(_fontFile2)) is not { } stream)
+            return null;
+        var bytes = context.DecodeStream(stream);
+        return bytes is null ? null : SfntMetrics.TryParse(bytes);
     }
 
     // §6.2.11.3.2: an embedded Type 2 CIDFont shall carry a /CIDToGIDMap (Identity or a stream).
