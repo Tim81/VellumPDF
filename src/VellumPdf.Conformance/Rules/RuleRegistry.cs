@@ -34,6 +34,7 @@ internal static class RuleRegistry
         new FileTrailerRule(),
         new CrossReferenceRule(),
         new ObjectLayoutRule(),
+        new HexStringRule(),
         new StreamRule(),
         new NumericLimitsRule(),
         new CatalogRestrictionsRule(),

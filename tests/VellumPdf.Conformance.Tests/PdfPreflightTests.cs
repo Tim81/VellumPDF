@@ -1080,6 +1080,30 @@ public sealed class PdfPreflightTests
     }
 
     [Fact]
+    public void Validate_OddLengthHexString_ReportsError()
+    {
+        // §6.1.6-1: a hexadecimal string with an odd number of hex digits.
+        var bytes = Oracle.OracleCorpus.AssembleClassicXref(injectOddHex: true);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.6-hex-string");
+    }
+
+    [Fact]
+    public void Validate_WellFormedHexStrings_IsAllowed()
+    {
+        // §6.1.6: even-length, hex-only strings (the /ID) are accepted — no false positive, and the
+        // XMP stream's markup is masked out.
+        var bytes = Oracle.OracleCorpus.AssembleClassicXref();
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.6-hex-string");
+    }
+
+    [Fact]
     public void Validate_ObjectBadSpacing_ReportsError()
     {
         // §6.1.9-1: the object and generation numbers separated by two spaces, not one.
