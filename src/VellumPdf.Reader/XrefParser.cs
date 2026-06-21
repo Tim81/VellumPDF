@@ -161,8 +161,9 @@ internal sealed class XrefParser
                 throw new InvalidDataException(
                     $"Malformed PDF: /XRefStm offset {stmValue} is out of range.");
             var stmOffset = (int)stmValue;
-            // Avoid cycling into an already-processed offset
-            if (!seenOffsets.Contains(stmOffset))
+            // Avoid cycling into an already-processed offset, and record this one so a later /Prev
+            // revision pointing at the same stream does not re-parse it.
+            if (seenOffsets.Add(stmOffset))
                 ParseXrefStream(data, stmOffset, xref);
         }
 
