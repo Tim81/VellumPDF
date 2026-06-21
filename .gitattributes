@@ -9,6 +9,7 @@
 *.pdf binary
 *.ttf binary
 *.otf binary
+*.pfb binary
 *.woff binary
 *.woff2 binary
 *.icc binary

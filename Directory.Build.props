@@ -14,7 +14,7 @@
     <Company>Timothy van der Ham</Company>
     <Product>VellumPdf</Product>
     <Copyright>Copyright © Timothy van der Ham (@Tim81)</Copyright>
-    <VersionPrefix>1.6.0</VersionPrefix>
+    <VersionPrefix>1.7.0</VersionPrefix>
   </PropertyGroup>
 
 </Project>

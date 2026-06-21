@@ -20,6 +20,7 @@
     <ProjectReference Include="..\..\..\src\VellumPdf.Layout\VellumPdf.Layout.csproj" />
     <ProjectReference Include="..\..\..\src\VellumPdf.Signing\VellumPdf.Signing.csproj" />
     <ProjectReference Include="..\..\..\src\VellumPdf.Reader\VellumPdf.Reader.csproj" />
+    <ProjectReference Include="..\..\..\src\VellumPdf.Conformance\VellumPdf.Conformance.csproj" />
   </ItemGroup>
 
 </Project>

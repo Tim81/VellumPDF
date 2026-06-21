@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\VellumPdf.Reader\VellumPdf.Reader.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <RootNamespace>VellumPdf.Conformance</RootNamespace>
+    <AssemblyName>VellumPdf.Conformance</AssemblyName>
+    <PackageId>VellumPdf.Conformance</PackageId>
+    <Description>In-process PDF/A and PDF/UA preflight validation for VellumPdf: opens a PDF through VellumPdf.Reader and runs a registry of clean-room conformance rules authored from the ISO specifications, returning machine-readable assertions (rule id, ISO clause, severity, object reference). No external veraPDF Docker image required. BCL-only, AOT- and trim-ready; rules are registered explicitly with no reflection. Rule coverage is growing toward PDF/A-2b/2u/2a and PDF/UA-1.</Description>
+    <PackageTags>pdf;pdfa;pdfua;preflight;conformance;validation;aot</PackageTags>
+  </PropertyGroup>
+
+</Project>
