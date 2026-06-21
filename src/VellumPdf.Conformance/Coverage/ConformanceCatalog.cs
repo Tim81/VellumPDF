@@ -208,7 +208,6 @@ public static class ConformanceCatalog
         ["6.2.2-2"] = "content-stream resource analysis",
         ["6.2.4.2-1"] = "ICC profile parser",
         ["6.2.4.2-2"] = "ExtGState overprint (OPM) analysis",
-        ["6.2.4.4-1"] = "DeviceN/Separation colourant graph",
         ["6.2.4.4-2"] = "Separation tint/alternate consistency",
         ["6.2.8.3-1"] = "JPEG2000 codestream parser",
         ["6.2.8.3-2"] = "JPEG2000 codestream parser",

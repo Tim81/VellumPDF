@@ -623,6 +623,20 @@ public static class OracleCorpus
             // issue #118). This is the regression guard that unused fonts do not produce a false positive.
             new OracleFixture("pdfa2b-unused-nonembedded-font", WriterPdfWithUnusedNonEmbeddedFont(),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // A USED DeviceN colour space with 2 spot colourants (/Spot1 /Spot2) where /Spot2 is absent
+            // from the /Colorants dictionary (ISO 19005-2 §6.2.4.4-1). veraPDF flags clause 6.2.4.4
+            // testNumber 1 and the in-process DeviceNColorantsRule must agree. The negative oracle
+            // cross-validates the new rule against veraPDF.
+            new OracleFixture("pdfa2b-devicen-missing-colorant",
+                WriterPdfWithDeviceNMissingColorant(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // The same DeviceN with both /Spot1 and /Spot2 present in /Colorants. Both veraPDF and the
+            // in-process rule accept it — the no-false-positive guard for §6.2.4.4-1.
+            new OracleFixture("pdfa2b-devicen-complete-colorants",
+                WriterPdfWithDeviceNCompleteColorants(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
         ];
     }
 
@@ -700,6 +714,177 @@ public static class OracleCorpus
         }
 
         return reader.AppendRevision(revision);
+    }
+
+    /// <summary>
+    /// Injects a USED DeviceN colour space with 2 spot colourants (<c>/Spot1 /Spot2</c>) into the
+    /// first page's <c>/Resources /ColorSpace</c>. The <c>/Colorants</c> dictionary includes an entry
+    /// for <c>/Spot1</c> only; <c>/Spot2</c> is absent. The page paints the space via
+    /// <c>/CS0 cs 0 0 scn 10 10 50 50 re f</c>. Both veraPDF (clause 6.2.4.4, testNumber 1) and the
+    /// in-process <c>DeviceNColorantsRule</c> flag it.
+    /// </summary>
+    private static byte[] WriterPdfWithDeviceNMissingColorant()
+    {
+        var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var newPage = CloneDict(page);
+
+        // Two-input tint function: pop /Spot1 and /Spot2 inputs → 0 0 0 0 (CMYK).
+        var tintBody = Encoding.ASCII.GetBytes("{ pop pop 0 0 0 0 }");
+        var tintFuncNum = reader.Size;
+        var tintFunc = new PdfStream(tintBody);
+        tintFunc.Dictionary
+            .Set(new PdfName("FunctionType"), new PdfInteger(4))
+            .Set(new PdfName("Domain"), new PdfArray([
+                new PdfInteger(0), new PdfInteger(1), new PdfInteger(0), new PdfInteger(1)]))
+            .Set(new PdfName("Range"), new PdfArray([
+                new PdfInteger(0), new PdfInteger(1), new PdfInteger(0), new PdfInteger(1),
+                new PdfInteger(0), new PdfInteger(1), new PdfInteger(0), new PdfInteger(1)]));
+
+        // Single-input tint function for the Spot1 Separation entry in /Colorants.
+        var spot1TintNum = tintFuncNum + 1;
+        var spot1Tint = new PdfStream(Encoding.ASCII.GetBytes("{ pop 0 0 0 0 }"));
+        spot1Tint.Dictionary
+            .Set(new PdfName("FunctionType"), new PdfInteger(4))
+            .Set(new PdfName("Domain"), new PdfArray([new PdfInteger(0), new PdfInteger(1)]))
+            .Set(new PdfName("Range"), new PdfArray([
+                new PdfInteger(0), new PdfInteger(1), new PdfInteger(0), new PdfInteger(1),
+                new PdfInteger(0), new PdfInteger(1), new PdfInteger(0), new PdfInteger(1)]));
+
+        // /Colorants dict: /Spot1 only (Spot2 deliberately absent → violation).
+        var spot1Sep = new PdfArray([
+            new PdfName("Separation"),
+            new PdfName("Spot1"),
+            new PdfName("DeviceCMYK"),
+            new PdfIndirectReference(spot1TintNum),
+        ]);
+        var colorantsDict = new PdfDictionary()
+            .Set(new PdfName("Spot1"), spot1Sep);
+
+        // Attributes dict with /Colorants.
+        var attrsDict = new PdfDictionary()
+            .Set(new PdfName("Subtype"), new PdfName("DeviceN"))
+            .Set(new PdfName("Colorants"), colorantsDict);
+
+        // DeviceN array: [/DeviceN [/Spot1 /Spot2] /DeviceCMYK <tintFunc> <attrsDict>]
+        var csNum = spot1TintNum + 1;
+        var csArray = new PdfArray([
+            new PdfName("DeviceN"),
+            new PdfArray([new PdfName("Spot1"), new PdfName("Spot2")]),
+            new PdfName("DeviceCMYK"),
+            new PdfIndirectReference(tintFuncNum),
+            attrsDict,
+        ]);
+
+        var resObj = page.Get(new PdfName("Resources"));
+        var resources = (resObj is null ? null : reader.ResolveValue(resObj)) as PdfDictionary ?? new PdfDictionary();
+        var newResources = CloneDict(resources);
+        newResources.Set(
+            new PdfName("ColorSpace"),
+            new PdfDictionary().Set(new PdfName("CS0"), new PdfIndirectReference(csNum)));
+        newPage.Set(new PdfName("Resources"), newResources);
+
+        var contentNum = csNum + 1;
+        newPage.Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
+        var content = new PdfStream(Encoding.ASCII.GetBytes("/CS0 cs 0 0 scn 10 10 50 50 re f"));
+
+        return reader.AppendRevision([
+            (pageRef.ObjectNumber, newPage),
+            (tintFuncNum, tintFunc),
+            (spot1TintNum, spot1Tint),
+            (csNum, csArray),
+            (contentNum, content),
+        ]);
+    }
+
+    /// <summary>
+    /// Same as <see cref="WriterPdfWithDeviceNMissingColorant"/> but with both <c>/Spot1</c> and
+    /// <c>/Spot2</c> present in the <c>/Colorants</c> dictionary. Both veraPDF and the in-process
+    /// <c>DeviceNColorantsRule</c> accept it — the no-false-positive guard for §6.2.4.4-1.
+    /// </summary>
+    private static byte[] WriterPdfWithDeviceNCompleteColorants()
+    {
+        var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var newPage = CloneDict(page);
+
+        // Two-input tint function for DeviceN → DeviceRGB (3 outputs). Using DeviceRGB as the
+        // alternate space avoids the §6.2.4.3-3 violation that arises when DeviceCMYK is used as
+        // the alternate space without a CMYK output intent — the writer baseline has an sRGB intent.
+        var tintBody = Encoding.ASCII.GetBytes("{ pop pop 0 0 0 }");
+        var tintFuncNum = reader.Size;
+        var tintFunc = new PdfStream(tintBody);
+        tintFunc.Dictionary
+            .Set(new PdfName("FunctionType"), new PdfInteger(4))
+            .Set(new PdfName("Domain"), new PdfArray([
+                new PdfInteger(0), new PdfInteger(1), new PdfInteger(0), new PdfInteger(1)]))
+            .Set(new PdfName("Range"), new PdfArray([
+                new PdfInteger(0), new PdfInteger(1), new PdfInteger(0), new PdfInteger(1),
+                new PdfInteger(0), new PdfInteger(1)]));
+
+        // Single-input tint functions for Spot1 and Spot2 Separation entries → DeviceRGB.
+        var spot1TintNum = tintFuncNum + 1;
+        var spot1Tint = new PdfStream(Encoding.ASCII.GetBytes("{ pop 0 0 0 }"));
+        spot1Tint.Dictionary
+            .Set(new PdfName("FunctionType"), new PdfInteger(4))
+            .Set(new PdfName("Domain"), new PdfArray([new PdfInteger(0), new PdfInteger(1)]))
+            .Set(new PdfName("Range"), new PdfArray([
+                new PdfInteger(0), new PdfInteger(1), new PdfInteger(0), new PdfInteger(1),
+                new PdfInteger(0), new PdfInteger(1)]));
+
+        var spot2TintNum = spot1TintNum + 1;
+        var spot2Tint = new PdfStream(Encoding.ASCII.GetBytes("{ pop 0 0 0 }"));
+        spot2Tint.Dictionary
+            .Set(new PdfName("FunctionType"), new PdfInteger(4))
+            .Set(new PdfName("Domain"), new PdfArray([new PdfInteger(0), new PdfInteger(1)]))
+            .Set(new PdfName("Range"), new PdfArray([
+                new PdfInteger(0), new PdfInteger(1), new PdfInteger(0), new PdfInteger(1),
+                new PdfInteger(0), new PdfInteger(1)]));
+
+        // /Colorants dict: both spots present (Separation → DeviceRGB, matching the DeviceN alternate).
+        var colorantsDict = new PdfDictionary()
+            .Set(new PdfName("Spot1"), new PdfArray([
+                new PdfName("Separation"), new PdfName("Spot1"),
+                new PdfName("DeviceRGB"), new PdfIndirectReference(spot1TintNum)]))
+            .Set(new PdfName("Spot2"), new PdfArray([
+                new PdfName("Separation"), new PdfName("Spot2"),
+                new PdfName("DeviceRGB"), new PdfIndirectReference(spot2TintNum)]));
+
+        var attrsDict = new PdfDictionary()
+            .Set(new PdfName("Subtype"), new PdfName("DeviceN"))
+            .Set(new PdfName("Colorants"), colorantsDict);
+
+        var csNum = spot2TintNum + 1;
+        var csArray = new PdfArray([
+            new PdfName("DeviceN"),
+            new PdfArray([new PdfName("Spot1"), new PdfName("Spot2")]),
+            new PdfName("DeviceRGB"),
+            new PdfIndirectReference(tintFuncNum),
+            attrsDict,
+        ]);
+
+        var resObj = page.Get(new PdfName("Resources"));
+        var resources = (resObj is null ? null : reader.ResolveValue(resObj)) as PdfDictionary ?? new PdfDictionary();
+        var newResources = CloneDict(resources);
+        newResources.Set(
+            new PdfName("ColorSpace"),
+            new PdfDictionary().Set(new PdfName("CS0"), new PdfIndirectReference(csNum)));
+        newPage.Set(new PdfName("Resources"), newResources);
+
+        var contentNum = csNum + 1;
+        newPage.Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
+        var content = new PdfStream(Encoding.ASCII.GetBytes("/CS0 cs 0 0 scn 10 10 50 50 re f"));
+
+        return reader.AppendRevision([
+            (pageRef.ObjectNumber, newPage),
+            (tintFuncNum, tintFunc),
+            (spot1TintNum, spot1Tint),
+            (spot2TintNum, spot2Tint),
+            (csNum, csArray),
+            (contentNum, content),
+        ]);
     }
 
     /// <summary>
