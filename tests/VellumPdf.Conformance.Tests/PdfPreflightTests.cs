@@ -871,6 +871,56 @@ public sealed class PdfPreflightTests
     }
 
     [Fact]
+    public void Validate_HideAction_ReportsError()
+    {
+        // §6.5.1-1: /Hide is not among the permitted action types.
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R /OpenAction << /S /Hide >> >>"),
+            _pagesObj,
+            _pageObj,
+        ]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.5.1-action");
+    }
+
+    [Fact]
+    public void Validate_UnknownActionType_ReportsError()
+    {
+        // §6.5.1-1: an unknown/vendor action type is rejected by the allow-list.
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R /OpenAction << /S /VellumFoo >> >>"),
+            _pagesObj,
+            _pageObj,
+        ]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.5.1-action");
+    }
+
+    [Fact]
+    public void Validate_PermittedGoToAction_IsAllowed()
+    {
+        // §6.5.1-1: /GoTo is a permitted action type — no false positive from the allow-list.
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R /OpenAction << /S /GoTo /D [3 0 R /Fit] >> >>"),
+            _pagesObj,
+            _pageObj,
+        ]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.5.1-action");
+    }
+
+    [Fact]
     public void Validate_AnnotToggleNoView_ReportsError()
     {
         // §6.3.2-2: the ToggleNoView flag bit (256) shall be clear. F = Print(4) | ToggleNoView(256).
