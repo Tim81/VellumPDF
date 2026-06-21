@@ -2961,6 +2961,267 @@ public sealed class PdfPreflightTests
         Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.6.2.3.1-undeclared-property");
     }
 
+    // ── §6.6.2.3.1-2 XMP property value-type rules ──────────────────────────
+
+    /// <summary>
+    /// Builds an XMP packet that declares one extension-schema property with
+    /// <paramref name="declaredType"/> and emits one usage of that property whose value
+    /// element body is <paramref name="valueBody"/> (inserted as raw XML inside the property
+    /// element, so callers can inject either a scalar string or an rdf:Bag/Seq/Alt).
+    /// </summary>
+    private static byte[] PropertyValueTypeXmpRaw(string declaredType, string valueBody)
+    {
+        const string ns = "http://example.com/ns/";
+        var ext =
+            "<rdf:Description rdf:about=\"\" "
+            + "xmlns:pdfaExtension=\"http://www.aiim.org/pdfa/ns/extension/\" "
+            + "xmlns:pdfaSchema=\"http://www.aiim.org/pdfa/ns/schema#\" "
+            + "xmlns:pdfaProperty=\"http://www.aiim.org/pdfa/ns/property#\">"
+            + "<pdfaExtension:schemas><rdf:Bag><rdf:li rdf:parseType=\"Resource\">"
+            + "<pdfaSchema:schema>T</pdfaSchema:schema>"
+            + "<pdfaSchema:namespaceURI>" + ns + "</pdfaSchema:namespaceURI>"
+            + "<pdfaSchema:prefix>ex</pdfaSchema:prefix>"
+            + "<pdfaSchema:property><rdf:Seq><rdf:li rdf:parseType=\"Resource\">"
+            + "<pdfaProperty:name>p</pdfaProperty:name>"
+            + "<pdfaProperty:valueType>" + declaredType + "</pdfaProperty:valueType>"
+            + "<pdfaProperty:category>external</pdfaProperty:category>"
+            + "<pdfaProperty:description>d</pdfaProperty:description>"
+            + "</rdf:li></rdf:Seq></pdfaSchema:property>"
+            + "</rdf:li></rdf:Bag></pdfaExtension:schemas>"
+            + "</rdf:Description>";
+        var usage =
+            "<rdf:Description rdf:about=\"\" xmlns:ex=\"" + ns + "\""
+            + " xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">"
+            + "<ex:p>" + valueBody + "</ex:p>"
+            + "</rdf:Description>";
+        return BuildXmpPdf(XmpWithDescriptions(ext + usage));
+    }
+
+    // ── §6.6.2.3.1-2: writer-produced conformant PDF/A-2b — no false positive ──
+
+    [Fact]
+    public void Validate_PropertyValueType_WriterProducedPdfA_NoFinding()
+    {
+        // A fully-writer-produced PDF/A-2b document must not trigger the property-value-type
+        // rule — this is the critical false-positive guard. The writer emits dc:title as
+        // rdf:Alt, xmp:CreateDate as an ISO-8601 date, pdf:Producer as text, etc.
+        var bytes = BuildOnePagePdf();
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.6.2.3.1-2");
+    }
+
+    // ── §6.6.2.3.1-2: extension-schema Integer type ──────────────────────────
+
+    [Theory]
+    [InlineData("42")]
+    [InlineData("-1")]
+    [InlineData("+5")]
+    [InlineData("0")]
+    public void Validate_PropertyValueType_IntegerCorrect_NoFinding(string value)
+    {
+        // An extension-schema Integer property with a valid integer value must not be flagged.
+        var result = PdfPreflight.Validate(
+            PropertyValueTypeXmpRaw("Integer", value), PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.6.2.3.1-2");
+    }
+
+    [Theory]
+    [InlineData("hello")]
+    [InlineData("3.14")]
+    [InlineData("")]
+    [InlineData("  ")]
+    public void Validate_PropertyValueType_IntegerWrong_ReportsError(string value)
+    {
+        // An extension-schema Integer property with a non-integer value must trigger the rule.
+        var result = PdfPreflight.Validate(
+            PropertyValueTypeXmpRaw("Integer", value), PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.6.2.3.1-2");
+    }
+
+    // ── §6.6.2.3.1-2: extension-schema Boolean type ──────────────────────────
+
+    [Theory]
+    [InlineData("True")]
+    [InlineData("False")]
+    public void Validate_PropertyValueType_BooleanCorrect_NoFinding(string value)
+    {
+        // XMP Boolean is exactly "True" or "False" (case-sensitive per XMP Spec §8.2.1.3).
+        var result = PdfPreflight.Validate(
+            PropertyValueTypeXmpRaw("Boolean", value), PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.6.2.3.1-2");
+    }
+
+    [Theory]
+    [InlineData("true")]    // lowercase — not valid XMP Boolean
+    [InlineData("false")]
+    [InlineData("yes")]
+    [InlineData("1")]
+    public void Validate_PropertyValueType_BooleanWrong_ReportsError(string value)
+    {
+        var result = PdfPreflight.Validate(
+            PropertyValueTypeXmpRaw("Boolean", value), PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.6.2.3.1-2");
+    }
+
+    // ── §6.6.2.3.1-2: extension-schema Date type ─────────────────────────────
+
+    [Theory]
+    [InlineData("2024-01-15T12:00:00+00:00")]
+    [InlineData("2024-01-15")]
+    [InlineData("2024-01")]
+    [InlineData("2024")]
+    public void Validate_PropertyValueType_DateCorrect_NoFinding(string value)
+    {
+        var result = PdfPreflight.Validate(
+            PropertyValueTypeXmpRaw("Date", value), PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.6.2.3.1-2");
+    }
+
+    [Theory]
+    [InlineData("not-a-date")]
+    [InlineData("Jan 15 2024")]
+    public void Validate_PropertyValueType_DateWrong_ReportsError(string value)
+    {
+        var result = PdfPreflight.Validate(
+            PropertyValueTypeXmpRaw("Date", value), PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.6.2.3.1-2");
+    }
+
+    // ── §6.6.2.3.1-2: extension-schema container types ───────────────────────
+
+    [Fact]
+    public void Validate_PropertyValueType_BagTextCorrect_NoFinding()
+    {
+        // bag Text: value must be an rdf:Bag; correct usage must not fire.
+        const string bagValue = "<rdf:Bag><rdf:li>item1</rdf:li><rdf:li>item2</rdf:li></rdf:Bag>";
+        var result = PdfPreflight.Validate(
+            PropertyValueTypeXmpRaw("bag Text", bagValue), PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.6.2.3.1-2");
+    }
+
+    [Fact]
+    public void Validate_PropertyValueType_BagTextScalar_ReportsError()
+    {
+        // A "bag Text" property serialised as a scalar instead of rdf:Bag must be flagged.
+        var result = PdfPreflight.Validate(
+            PropertyValueTypeXmpRaw("bag Text", "scalar value"), PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.6.2.3.1-2");
+    }
+
+    [Fact]
+    public void Validate_PropertyValueType_SeqIntegerCorrect_NoFinding()
+    {
+        const string seqValue = "<rdf:Seq><rdf:li>1</rdf:li><rdf:li>2</rdf:li></rdf:Seq>";
+        var result = PdfPreflight.Validate(
+            PropertyValueTypeXmpRaw("seq Integer", seqValue), PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.6.2.3.1-2");
+    }
+
+    [Fact]
+    public void Validate_PropertyValueType_SeqIntegerScalar_ReportsError()
+    {
+        // A "seq Integer" property serialised as a scalar must be flagged.
+        var result = PdfPreflight.Validate(
+            PropertyValueTypeXmpRaw("seq Integer", "42"), PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.6.2.3.1-2");
+    }
+
+    [Fact]
+    public void Validate_PropertyValueType_LangAltCorrect_NoFinding()
+    {
+        // Lang Alt: value must be an rdf:Alt; correct rdf:Alt usage must not fire.
+        const string altValue =
+            "<rdf:Alt><rdf:li xml:lang=\"x-default\">Hello</rdf:li></rdf:Alt>";
+        var result = PdfPreflight.Validate(
+            PropertyValueTypeXmpRaw("Lang Alt", altValue), PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.6.2.3.1-2");
+    }
+
+    [Fact]
+    public void Validate_PropertyValueType_LangAltScalar_ReportsError()
+    {
+        // A "Lang Alt" property serialised as a scalar instead of rdf:Alt must be flagged.
+        var result = PdfPreflight.Validate(
+            PropertyValueTypeXmpRaw("Lang Alt", "plain text"), PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.6.2.3.1-2");
+    }
+
+    // ── §6.6.2.3.1-2: Text type (scalar) — no container allowed ──────────────
+
+    [Fact]
+    public void Validate_PropertyValueType_TextScalar_NoFinding()
+    {
+        // A "Text" property with a plain string value must not be flagged.
+        var result = PdfPreflight.Validate(
+            PropertyValueTypeXmpRaw("Text", "hello world"), PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.6.2.3.1-2");
+    }
+
+    [Fact]
+    public void Validate_PropertyValueType_TextWithBagContainer_ReportsError()
+    {
+        // A "Text" property carrying an rdf:Bag is wrong-typed (should be scalar).
+        const string bagValue = "<rdf:Bag><rdf:li>item</rdf:li></rdf:Bag>";
+        var result = PdfPreflight.Validate(
+            PropertyValueTypeXmpRaw("Text", bagValue), PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.6.2.3.1-2");
+    }
+
+    // ── §6.6.2.3.1-2: deferred cases — no finding even when value looks wrong ─
+
+    [Fact]
+    public void Validate_PropertyValueType_UnknownDeclaredType_NoFinding()
+    {
+        // A property whose declared type is unrecognised (custom value type, struct type, etc.)
+        // is deferred — the rule must not flag it even with an arbitrary value.
+        var result = PdfPreflight.Validate(
+            PropertyValueTypeXmpRaw("MyCustomType", "some value"), PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.6.2.3.1-2");
+    }
+
+    [Fact]
+    public void Validate_PropertyValueType_NoPredefinedSchemaChecks_NoFinding()
+    {
+        // Predefined-schema properties (dc:, xmp:, pdfaid:, …) are not type-checked by this
+        // rule (Partial implementation) — even a dc:title serialised as a scalar must not
+        // trigger 6.6.2.3.1-2.  (veraPDF does flag dc:title as scalar, but this rule defers
+        // predefined schemas to avoid false-positives from an incomplete built-in type table.)
+        const string dcTitleScalar =
+            "<rdf:Description rdf:about=\"\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\">"
+            + "<dc:title>Simple scalar title</dc:title>"
+            + "</rdf:Description>";
+        var result = PdfPreflight.Validate(
+            BuildXmpPdf(XmpWithDescriptions(dcTitleScalar)), PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.6.2.3.1-2");
+    }
+
+    [Fact]
+    public void Validate_PropertyValueType_NoExtensionSchema_NoFinding()
+    {
+        // A document with no extension schemas has nothing to type-check — must be silent.
+        var result = PdfPreflight.Validate(
+            BuildXmpPdf(XmpWithDescriptions(string.Empty)), PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.6.2.3.1-2");
+    }
+
     // ── §6.3 annotation rules ─────────────────────────────────────────────────
 
     [Fact]
