@@ -727,6 +727,64 @@ public sealed class PdfPreflightTests
     }
 
     [Fact]
+    public void Validate_OptionalContentDuplicateName_ReportsError()
+    {
+        // §6.9-2: configuration dictionaries' /Name values shall be unique.
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R /OCProperties << /OCGs [4 0 R] "
+                + "/D << /Name (Default) >> /Configs [<< /Name (Default) >>] >> >>"),
+            _pagesObj,
+            _pageObj,
+            new("<< /Type /OCG /Name (Layer 1) >>"),
+        ]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.9-2-config-name-unique");
+    }
+
+    [Fact]
+    public void Validate_OptionalContentOrderIncomplete_ReportsError()
+    {
+        // §6.9-3: a config /Order array shall reference every OCG (here OCG 5 0 R is omitted).
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R /OCProperties << /OCGs [4 0 R 5 0 R] "
+                + "/D << /Name (Default) /Order [4 0 R] >> >> >>"),
+            _pagesObj,
+            _pageObj,
+            new("<< /Type /OCG /Name (Layer 1) >>"),
+            new("<< /Type /OCG /Name (Layer 2) >>"),
+        ]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.9-3-order-complete");
+    }
+
+    [Fact]
+    public void Validate_OptionalContentOrderComplete_IsAllowed()
+    {
+        // §6.9-3: an /Order referencing every OCG is accepted — no false positive.
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R /OCProperties << /OCGs [4 0 R 5 0 R] "
+                + "/D << /Name (Default) /Order [4 0 R 5 0 R] >> >> >>"),
+            _pagesObj,
+            _pageObj,
+            new("<< /Type /OCG /Name (Layer 1) >>"),
+            new("<< /Type /OCG /Name (Layer 2) >>"),
+        ]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId.StartsWith("ISO19005-2:6.9-3", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Validate_OptionalContentAutomaticState_ReportsError()
     {
         // §6.9-4: the AS key shall not appear in any configuration dictionary.

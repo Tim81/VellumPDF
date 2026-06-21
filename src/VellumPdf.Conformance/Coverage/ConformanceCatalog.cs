@@ -244,8 +244,6 @@ public static class ConformanceCatalog
         ["6.6.4-6"] = "object-graph: pdfaid amd prefix",
         ["6.6.4-7"] = "object-graph: pdfaid corr prefix",
         ["6.8-5"] = "recursive embedded-file PDF/A validation",
-        ["6.9-2"] = "object-graph: OCG Name uniqueness",
-        ["6.9-3"] = "object-graph: Order references all OCGs",
         ["6.7.3.3-1"] = "structure-tree walker",
         ["6.7.3.4-1"] = "structure-tree walker",
         ["6.7.3.4-2"] = "structure-tree walker",
