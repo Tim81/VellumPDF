@@ -410,6 +410,18 @@ public static class OracleCorpus
             // (§6.3.3-2). veraPDF and the in-process rule both reject it.
             new OracleFixture("pdfa2b-annot-ap-extra-key", WriterPdfWithApExtraKey(),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // A /Hide action on the catalog /OpenAction (§6.5.1-1). /Hide is one of the action types
+            // the deny-list previously missed; the allow-list rejects it, as does veraPDF.
+            new OracleFixture("pdfa2b-hide-action", WriterPdfWithOpenAction(
+                new PdfDictionary().Set(new PdfName("S"), new PdfName("Hide"))),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // An unknown/vendor action type on the catalog /OpenAction (§6.5.1-1). veraPDF rejects any
+            // action type outside the permitted seven; the allow-list does too (a deny-list would not).
+            new OracleFixture("pdfa2b-unknown-action", WriterPdfWithOpenAction(
+                new PdfDictionary().Set(new PdfName("S"), new PdfName("VellumFoo"))),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
         ];
     }
 
@@ -651,6 +663,15 @@ public static class OracleCorpus
         var rootRef = (PdfIndirectReference)reader.Trailer.Get(PdfName.Root)!;
         var catalog = CloneDict(reader.Catalog);
         catalog.Set(new PdfName("AA"), new PdfDictionary().Set(new PdfName("WC"), NamedAction("NextPage")));
+        return reader.AppendRevision([(rootRef.ObjectNumber, catalog)]);
+    }
+
+    private static byte[] WriterPdfWithOpenAction(PdfDictionary action)
+    {
+        var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+        var rootRef = (PdfIndirectReference)reader.Trailer.Get(PdfName.Root)!;
+        var catalog = CloneDict(reader.Catalog).Set(new PdfName("OpenAction"), action);
         return reader.AppendRevision([(rootRef.ObjectNumber, catalog)]);
     }
 

@@ -6,14 +6,20 @@ using VellumPdf.Core;
 namespace VellumPdf.Conformance.Rules.Actions;
 
 /// <summary>
-/// ISO 19005-2 §6.5.1 (Actions). A PDF/A file shall not contain certain action types:
-/// <c>Launch</c>, <c>Sound</c>, <c>Movie</c>, <c>ResetForm</c>, <c>ImportData</c>,
-/// <c>JavaScript</c>, <c>SetState</c>, <c>NoOp</c>, <c>SetOCGState</c>, <c>Rendition</c>,
-/// <c>Trans</c>, and <c>GoTo3DView</c>.
+/// ISO 19005-2 §6.5.1 (Actions). A PDF/A file shall contain only the permitted action types —
+/// <c>GoTo</c>, <c>GoToR</c>, <c>GoToE</c>, <c>Thread</c>, <c>URI</c>, <c>Named</c>, and
+/// <c>SubmitForm</c> (§6.5.1-1) — and, for <c>Named</c> actions, only the four navigation actions
+/// <c>NextPage</c>, <c>PrevPage</c>, <c>FirstPage</c>, and <c>LastPage</c> (§6.5.1-2). Every other
+/// action type (e.g. <c>Launch</c>, <c>Sound</c>, <c>Movie</c>, <c>Hide</c>, <c>ResetForm</c>,
+/// <c>ImportData</c>, <c>JavaScript</c>, <c>SetOCGState</c>, <c>Rendition</c>, <c>Trans</c>,
+/// <c>GoTo3DView</c>, the deprecated <c>SetState</c>/<c>NoOp</c>, and any vendor/unknown type) is
+/// forbidden.
 /// </summary>
 /// <remarks>
 /// Authored from ISO 19005-2:2011, 6.5.1 and ISO 32000-1:2008, 12.6. Clean-room: derived from the
-/// specification text, not from any third-party validation profile. Inspects the document catalog's
+/// specification text, not from any third-party validation profile. The clause is an allow-list (an
+/// action's <c>/S</c> must be one of the seven permitted types), so the rule is too — this rejects
+/// unknown and vendor action types, not just a fixed deny-list. Inspects the document catalog's
 /// <c>/OpenAction</c>, each annotation's <c>/A</c>, and the additional-action (<c>/AA</c>)
 /// dictionaries on the catalog, pages, and annotations, following any <c>/Next</c> chain. Form-field
 /// <c>/AA</c> reached only through the AcroForm field tree (not via a widget annotation) is deferred.
@@ -35,10 +41,11 @@ internal sealed class ActionRule : IConformanceRule
     private static readonly PdfName _names = new("Names");
     private static readonly PdfName _javaScript = new("JavaScript");
 
-    private static readonly HashSet<string> _forbidden = new(StringComparer.Ordinal)
+    // §6.5.1-1: the only action types PDF/A-2 permits (ISO 32000-1 §12.6.4). Every other /S value —
+    // including unknown/vendor types — is forbidden, so this is an allow-list, not a deny-list.
+    private static readonly HashSet<string> _permittedActions = new(StringComparer.Ordinal)
     {
-        "Launch", "Sound", "Movie", "ResetForm", "ImportData",
-        "JavaScript", "SetState", "NoOp", "SetOCGState", "Rendition", "Trans", "GoTo3DView",
+        "GoTo", "GoToR", "GoToE", "Thread", "URI", "Named", "SubmitForm",
     };
 
     // The only named actions PDF/A-2 permits (§6.5.1, ISO 32000-1 §12.6.4.11, Table 215).
@@ -119,7 +126,7 @@ internal sealed class ActionRule : IConformanceRule
 
         if (context.Resolve(action.Get(_s)) is PdfName s)
         {
-            if (_forbidden.Contains(s.Value))
+            if (!_permittedActions.Contains(s.Value))
             {
                 context.Report(
                     RuleId,
