@@ -161,6 +161,8 @@ internal static class RuleRegistry
         // Batch A5b — font clauses §7.21.8-1 (.notdef) and §7.21.7-2 (forbidden ToUnicode values):
         new UaNotdefGlyphRule(),
         new UaToUnicodeForbiddenRule(),
+        // Batch A5c — font clause §7.21.4.1-2 (glyph presence, Tr-3-exempt):
+        new UaGlyphPresenceRule(),
     ];
 
     /// <summary>

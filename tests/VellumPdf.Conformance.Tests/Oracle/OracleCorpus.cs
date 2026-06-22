@@ -937,6 +937,33 @@ public static class OracleCorpus
             // NOT fire. Both verdicts diverge on unrelated rules (untagged content → 7.1-3 in veraPDF,
             // which the in-process validator defers), so this is tested as a unit test only — see
             // UaToUnicodeUnusedBadMapping_DoesNotFire72172() in PdfPreflightTests.cs.
+
+            // ── PDF/UA-1 Batch A5c — §7.21.4.1-2 glyph presence (Tr-3-exempt) fixtures ─────────────
+
+            // §7.21.4.1-2 violation: a composite Identity-H CIDFontType2 font shows GID 0xEA60
+            // (60000, beyond the embedded program's glyph count) in a VISIBLE rendering mode (Tr 0).
+            // veraPDF fires clause 7.21.4.1-2 (isGlyphPresent == false, renderingMode != 3).
+            // In-process: UaGlyphPresenceRule fires.
+            new OracleFixture("pdfua1-glyph-not-present",
+                Ua1OutOfRangeGlyphVisible(),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.21.4.1-2 compliant baseline: the standard UA-1 tagged baseline draws only glyphs
+            // that are present in the embedded subset (in-range GIDs). Both veraPDF and the in-process
+            // UaGlyphPresenceRule accept it — the positive control confirming no false positive on
+            // a well-formed embedded-font document.
+            new OracleFixture("pdfua1-glyph-presence-compliant",
+                Ua1TaggedWithEmbeddedFont(),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: true),
+
+            // §7.21.4.1-2 FP-SAFETY guard (Tr-3 exemption): the SAME out-of-range GID (0xEA60) is
+            // drawn ONLY with text rendering mode 3 (invisible text). veraPDF does NOT fire
+            // 7.21.4.1-2 (renderingMode == 3 → exempt per predicate). In-process: UaGlyphPresenceRule
+            // must also NOT fire. The overall document fails other UA rules (7.21.7-1, 7.21.8-1)
+            // that veraPDF fires but the in-process validator defers — verdicts diverge on unrelated
+            // rules, so this is validated per-clause in a unit test only; see
+            // UaOutOfRangeGlyphInvisible_DoesNotFire7214121() in PdfPreflightTests.cs.
+            // (Not in the oracle All list to avoid the in-process / veraPDF verdict mismatch.)
         ];
     }
 
@@ -3465,6 +3492,51 @@ public static class OracleCorpus
         sb.AppendLine("end");
         sb.AppendLine("end");
         return sb.ToString();
+    }
+
+    // ── Batch A5c — §7.21.4.1-2 glyph presence (Tr-3-exempt) fixtures ───────────────────────────
+
+    /// <summary>
+    /// §7.21.4.1-2 violation: the UA-1 tagged baseline's embedded Identity-H CIDFontType2 font is
+    /// asked to show GID 0xEA60 (60000) in a VISIBLE text rendering mode (Tr 0, the default). The
+    /// embedded program is a small subset — GID 60000 is far beyond numGlyphs. veraPDF fires
+    /// clause 7.21.4.1-2 (isGlyphPresent == false, renderingMode != 3).
+    /// </summary>
+    internal static byte[] Ua1OutOfRangeGlyphVisible()
+        => Ua1AppendOutOfRangeGlyph(invisible: false);
+
+    /// <summary>
+    /// §7.21.4.1-2 FP-safety guard (Tr-3 exemption): the SAME out-of-range GID (0xEA60) is shown
+    /// ONLY with text rendering mode 3 (invisible text). veraPDF does NOT fire 7.21.4.1-2 because
+    /// the predicate includes <c>renderingMode == 3</c> as an exemption. The in-process rule must
+    /// also NOT fire. Cross-validated against veraPDF 1.30.2: clause 7.21.4.1-2 absent from failures.
+    /// </summary>
+    internal static byte[] Ua1OutOfRangeGlyphInvisible()
+        => Ua1AppendOutOfRangeGlyph(invisible: true);
+
+    // Appends a content stream that shows GID 0xEA60 (60000) using the existing embedded Identity-H
+    // font from the UA-1 tagged baseline. When invisible=true, the stream starts with `3 Tr` so the
+    // draw is invisible (text rendering mode 3). The GID is 60000 — beyond any small font subset.
+    private static byte[] Ua1AppendOutOfRangeGlyph(bool invisible)
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var resources = (PdfDictionary)reader.ResolveValue(page.Get(new PdfName("Resources"))!)!;
+        var fonts = (PdfDictionary)reader.ResolveValue(resources.Get(PdfName.Font)!)!;
+        var fontName = fonts.Entries.First().Key.Value;
+
+        var contentNum = reader.Size;
+        var newPage = CloneDict(page);
+        newPage.Set(new PdfName("Contents"),
+            new PdfArray([page.Get(new PdfName("Contents"))!, new PdfIndirectReference(contentNum)]));
+
+        // GID 0xEA60 = 60000 — always beyond the small embedded subset.
+        var trOp = invisible ? "3 Tr " : "";
+        var content = new PdfStream(
+            Encoding.ASCII.GetBytes($"BT {trOp}/{fontName} 12 Tf 72 600 Td <EA60> Tj ET"));
+
+        return reader.AppendRevision([(pageRef.ObjectNumber, newPage), (contentNum, content)]);
     }
 
 }
