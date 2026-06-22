@@ -9099,4 +9099,345 @@ public sealed class PdfPreflightTests
         Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-25");
     }
 
+    // ── §7.2-15/41/42/43 (UaTableGridRule) ──────────────────────────────────────────────────────────
+
+    // ── §7.2-15 (SETableCell intersection) ──────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// §7.2-15 VIOLATION (UaTableGridRule): a ColSpan=3 cell in row1 whose span hits a slot
+    /// already occupied by a RowSpan=2 cell from row0 fires 7.2-15 on both cells.
+    /// Grid: row0=[TH(RowSpan=2,col0), TD(ColSpan=2,col1+col2), TH(RowSpan=2,col3)].
+    /// Row1 has 1 TD placed at col1 (col0 occupied by span); it has ColSpan=3 → tries to occupy
+    /// col1+col2+col3 but col3 is already occupied by TH(RowSpan=2) → intersection.
+    /// Cross-validated against veraPDF 1.30.2: probe5a_colspan_hits_rowspan → fires 7.2-15 (exit 1).
+    /// </summary>
+    [Fact]
+    public void UaTableGridColspanHitsRowspan_Fires72_15()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /Table /P 5 0 R /K [7 0 R 8 0 R] >>",
+            // row0: TH(RowSpan=2,col0) + TD(ColSpan=2,col1+col2) + TH(RowSpan=2,col3)
+            "<< /Type /StructElem /S /TR /P 6 0 R /K [9 0 R 10 0 R 11 0 R] >>",
+            // row1: TD(ColSpan=3) → placed at col1, wants col1+col2+col3, col3 occupied!
+            "<< /Type /StructElem /S /TR /P 6 0 R /K [12 0 R] >>",
+            // TH RowSpan=2 (col0)
+            "<< /Type /StructElem /S /TH /P 7 0 R /A << /O /Table /RowSpan 2 >> >>",
+            // TD ColSpan=2 (col1+col2)
+            "<< /Type /StructElem /S /TD /P 7 0 R /A << /O /Table /ColSpan 2 >> >>",
+            // TH RowSpan=2 (col3)
+            "<< /Type /StructElem /S /TH /P 7 0 R /A << /O /Table /RowSpan 2 >> >>",
+            // TD ColSpan=3 in row1 (col1 is first free; span hits col3 which is occupied)
+            "<< /Type /StructElem /S /TD /P 8 0 R /A << /O /Table /ColSpan 3 >> >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-15");
+    }
+
+    /// <summary>
+    /// §7.2-15 FP guard: a well-formed 2×2 table (no spans) must not fire 7.2-15.
+    /// Cross-validated: probe1_2x2_no_spans → PASS (exit 0).
+    /// </summary>
+    [Fact]
+    public void UaTableGrid2x2NoSpans_DoesNotFire72_15()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /Table /P 5 0 R /K [7 0 R 8 0 R] >>",
+            "<< /Type /StructElem /S /TR /P 6 0 R /K [9 0 R 10 0 R] >>",
+            "<< /Type /StructElem /S /TR /P 6 0 R /K [11 0 R 12 0 R] >>",
+            "<< /Type /StructElem /S /TD /P 7 0 R >>",
+            "<< /Type /StructElem /S /TD /P 7 0 R >>",
+            "<< /Type /StructElem /S /TD /P 8 0 R >>",
+            "<< /Type /StructElem /S /TD /P 8 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-15");
+    }
+
+    /// <summary>
+    /// §7.2-15 FP guard: a well-formed RowSpan=2 table (row0=[TH(RowSpan=2),TD], row1=[TD])
+    /// must not fire 7.2-15. The row1 TD is placed at col1 (col0 occupied by rowspan), no overlap.
+    /// Cross-validated: probe3b_rowspan2_with_scope → PASS (exit 0).
+    /// </summary>
+    [Fact]
+    public void UaTableGridRowspan2Pass_DoesNotFire72_15()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /Table /P 5 0 R /K [7 0 R 8 0 R] >>",
+            // row0: TH(RowSpan=2) + TD
+            "<< /Type /StructElem /S /TR /P 6 0 R /K [9 0 R 10 0 R] >>",
+            // row1: 1 TD (col0 occupied by rowspan, so placed at col1)
+            "<< /Type /StructElem /S /TR /P 6 0 R /K [11 0 R] >>",
+            "<< /Type /StructElem /S /TH /P 7 0 R /A << /O /Table /RowSpan 2 /Scope /Row >> >>",
+            "<< /Type /StructElem /S /TD /P 7 0 R >>",
+            "<< /Type /StructElem /S /TD /P 8 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-15");
+    }
+
+    // ── §7.2-42 (SETable rows wrong column span — more columns) ─────────────────────────────────────
+
+    /// <summary>
+    /// §7.2-42 VIOLATION (UaTableGridRule): row0 has 2 cells, row1 has 3 cells → rows have
+    /// different column counts (row1 is wider) → fires 7.2-42.
+    /// Cross-validated: probe5_ragged_rows → fires 7.2-42 (exit 1).
+    /// </summary>
+    [Fact]
+    public void UaTableGridRaggedRowsMoreCols_Fires72_42()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /Table /P 5 0 R /K [7 0 R 8 0 R] >>",
+            // row0: 2 cells
+            "<< /Type /StructElem /S /TR /P 6 0 R /K [9 0 R 10 0 R] >>",
+            // row1: 3 cells
+            "<< /Type /StructElem /S /TR /P 6 0 R /K [11 0 R 12 0 R 13 0 R] >>",
+            "<< /Type /StructElem /S /TD /P 7 0 R >>",
+            "<< /Type /StructElem /S /TD /P 7 0 R >>",
+            "<< /Type /StructElem /S /TD /P 8 0 R >>",
+            "<< /Type /StructElem /S /TD /P 8 0 R >>",
+            "<< /Type /StructElem /S /TD /P 8 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-42");
+    }
+
+    // ── §7.2-43 (SETable rows wrong column span — fewer columns) ────────────────────────────────────
+
+    /// <summary>
+    /// §7.2-43 VIOLATION (UaTableGridRule): row0 has 2 cells, row1 has 1 cell → rows have
+    /// different column counts (row1 is narrower) → fires 7.2-43.
+    /// Cross-validated: probe6_ragged_cols → fires 7.2-43 (exit 1).
+    /// </summary>
+    [Fact]
+    public void UaTableGridRaggedRowsFewerCols_Fires72_43()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /Table /P 5 0 R /K [7 0 R 8 0 R] >>",
+            // row0: 2 cells
+            "<< /Type /StructElem /S /TR /P 6 0 R /K [9 0 R 10 0 R] >>",
+            // row1: 1 cell
+            "<< /Type /StructElem /S /TR /P 6 0 R /K [11 0 R] >>",
+            "<< /Type /StructElem /S /TD /P 7 0 R >>",
+            "<< /Type /StructElem /S /TD /P 7 0 R >>",
+            "<< /Type /StructElem /S /TD /P 8 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-43");
+    }
+
+    // ── §7.2-41 (SETable columns wrong row span) ──────────────────────────────────────────────────────
+
+    /// <summary>
+    /// §7.2-41 VIOLATION (UaTableGridRule): col0 has RowSpan=2 (covers rows 0+1) but col1 has
+    /// RowSpan=3 (covers rows 0+1+2) in a 3-row table. The third TD in row1 skips col0+col1
+    /// (both occupied by spans) and lands on col2. Columns now have different row coverage:
+    /// col0=2, col1=3, col2=1 → fires 7.2-41.
+    /// Cross-validated: probe9a_col0_rowspan2_col1_rowspan3 → fires 7.2-41 only (exit 1).
+    /// </summary>
+    [Fact]
+    public void UaTableGridColsUnequalRowSpan_Fires72_41()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /Table /P 5 0 R /K [7 0 R 8 0 R 9 0 R] >>",
+            // row0: TD(col0,RowSpan=2) + TD(col1,RowSpan=3)
+            "<< /Type /StructElem /S /TR /P 6 0 R /K [10 0 R 11 0 R] >>",
+            // row1: 1 TD (col0 occupied, col1 occupied → placed at col2)
+            "<< /Type /StructElem /S /TR /P 6 0 R /K [12 0 R] >>",
+            // row2: empty TR (col1 still occupied by RowSpan=3 from row0)
+            "<< /Type /StructElem /S /TR /P 6 0 R >>",
+            // TD col0 RowSpan=2
+            "<< /Type /StructElem /S /TD /P 7 0 R /A << /O /Table /RowSpan 2 >> >>",
+            // TD col1 RowSpan=3
+            "<< /Type /StructElem /S /TD /P 7 0 R /A << /O /Table /RowSpan 3 >> >>",
+            // TD at row1 col2 (both col0 and col1 are span-occupied in row1)
+            "<< /Type /StructElem /S /TD /P 8 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-41");
+    }
+
+    // ── §7.2-42/43 FP guards ─────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// §7.2-42/43 FP guard: a well-formed 2×2 table must not fire 7.2-42 or 7.2-43.
+    /// Cross-validated: probe1_2x2_no_spans → PASS (exit 0).
+    /// </summary>
+    [Fact]
+    public void UaTableGrid2x2_DoesNotFire72_42_43()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /Table /P 5 0 R /K [7 0 R 8 0 R] >>",
+            "<< /Type /StructElem /S /TR /P 6 0 R /K [9 0 R 10 0 R] >>",
+            "<< /Type /StructElem /S /TR /P 6 0 R /K [11 0 R 12 0 R] >>",
+            "<< /Type /StructElem /S /TD /P 7 0 R >>",
+            "<< /Type /StructElem /S /TD /P 7 0 R >>",
+            "<< /Type /StructElem /S /TD /P 8 0 R >>",
+            "<< /Type /StructElem /S /TD /P 8 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-42");
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-43");
+    }
+
+    /// <summary>
+    /// §7.2-41/42/43 FP guard: a ColSpan=2 header row over a 2-column body must not fire any grid rule.
+    /// Cross-validated: probe2b_colspan2_with_scope → PASS (exit 0).
+    /// </summary>
+    [Fact]
+    public void UaTableGridColspan2Header_DoesNotFireGridRules()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /Table /P 5 0 R /K [7 0 R 8 0 R] >>",
+            // row0: TH(ColSpan=2) spans both columns
+            "<< /Type /StructElem /S /TR /P 6 0 R /K [9 0 R] >>",
+            // row1: 2 TDs
+            "<< /Type /StructElem /S /TR /P 6 0 R /K [10 0 R 11 0 R] >>",
+            "<< /Type /StructElem /S /TH /P 7 0 R /A << /O /Table /ColSpan 2 /Scope /Column >> >>",
+            "<< /Type /StructElem /S /TD /P 8 0 R >>",
+            "<< /Type /StructElem /S /TD /P 8 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-15");
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-41");
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-42");
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-43");
+    }
+
+    /// <summary>
+    /// §7.2-41/42/43 FP guard: a THead+TBody with consistent 2-column layout (all rows have 2 TH
+    /// or TD cells) must not fire any grid rule.
+    /// Cross-validated: probe9b_thead_tbody_with_scope → PASS (exit 0).
+    /// </summary>
+    [Fact]
+    public void UaTableGridTheadTbodyConsistent_DoesNotFireGridRules()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /Table /P 5 0 R /K [7 0 R 8 0 R] >>",
+            // THead
+            "<< /Type /StructElem /S /THead /P 6 0 R /K [9 0 R] >>",
+            // TBody
+            "<< /Type /StructElem /S /TBody /P 6 0 R /K [10 0 R 11 0 R] >>",
+            // TR in THead
+            "<< /Type /StructElem /S /TR /P 7 0 R /K [12 0 R 13 0 R] >>",
+            // TRs in TBody
+            "<< /Type /StructElem /S /TR /P 8 0 R /K [14 0 R 15 0 R] >>",
+            "<< /Type /StructElem /S /TR /P 8 0 R /K [16 0 R 17 0 R] >>",
+            "<< /Type /StructElem /S /TH /P 9 0 R /A << /O /Table /Scope /Column >> >>",
+            "<< /Type /StructElem /S /TH /P 9 0 R /A << /O /Table /Scope /Column >> >>",
+            "<< /Type /StructElem /S /TD /P 10 0 R >>",
+            "<< /Type /StructElem /S /TD /P 10 0 R >>",
+            "<< /Type /StructElem /S /TD /P 11 0 R >>",
+            "<< /Type /StructElem /S /TD /P 11 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-15");
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-41");
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-42");
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-43");
+    }
+
+    /// <summary>
+    /// §7.2-41/42/43 FP guard: an empty table (no TRs) must not fire any grid rule.
+    /// Cross-validated: probe10_empty_table → PASS (exit 0).
+    /// </summary>
+    [Fact]
+    public void UaTableGridEmptyTable_DoesNotFireGridRules()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /Table /P 5 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-15");
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-41");
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-42");
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-43");
+    }
+
+    /// <summary>
+    /// §7.2-41/42/43 FP guard: a /A attribute with non-Table owner (/O /Layout) must be
+    /// ignored for span computation (treated as ColSpan=1). A well-formed 2×2 table with such
+    /// attributes on cells must not fire any grid rule.
+    /// Cross-validated: probe11a_A_non_table_owner → PASS (exit 0).
+    /// </summary>
+    [Fact]
+    public void UaTableGridNonTableOwnerAttr_DoesNotFireGridRules()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /Table /P 5 0 R /K [7 0 R 8 0 R] >>",
+            "<< /Type /StructElem /S /TR /P 6 0 R /K [9 0 R 10 0 R] >>",
+            "<< /Type /StructElem /S /TR /P 6 0 R /K [11 0 R 12 0 R] >>",
+            // TD with /A that has non-Table /O (ColSpan=3 ignored → treated as ColSpan=1)
+            "<< /Type /StructElem /S /TD /P 7 0 R /A << /O /Layout /ColSpan 3 >> >>",
+            "<< /Type /StructElem /S /TD /P 7 0 R >>",
+            "<< /Type /StructElem /S /TD /P 8 0 R >>",
+            "<< /Type /StructElem /S /TD /P 8 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-15");
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-41");
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-42");
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-43");
+    }
+
+    /// <summary>
+    /// §7.2-41/42/43 FP guard: /A as array of dicts with Table-owner ColSpan=2 must be
+    /// correctly parsed. A header row with ColSpan=2 over a 2-col body must pass all grid rules.
+    /// Cross-validated: probe7b_A_array_with_scope → PASS (exit 0).
+    /// </summary>
+    [Fact]
+    public void UaTableGridAArrayColspan_DoesNotFireGridRules()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /Table /P 5 0 R /K [7 0 R 8 0 R] >>",
+            "<< /Type /StructElem /S /TR /P 6 0 R /K [9 0 R] >>",
+            "<< /Type /StructElem /S /TR /P 6 0 R /K [10 0 R 11 0 R] >>",
+            // TH with ColSpan=2 via array of dicts
+            "<< /Type /StructElem /S /TH /P 7 0 R /A [<< /O /Table /ColSpan 2 /Scope /Column >>] >>",
+            "<< /Type /StructElem /S /TD /P 8 0 R >>",
+            "<< /Type /StructElem /S /TD /P 8 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-15");
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-41");
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-42");
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-43");
+    }
+
+    /// <summary>
+    /// §7.2-41/42/43 FP guard: /A as [dict revisionNumber] form with Table-owner ColSpan=2 must
+    /// be correctly parsed. A header row with ColSpan=2 over a 2-col body must pass all grid rules.
+    /// Cross-validated: probe8b_A_array_revision_with_scope → PASS (exit 0).
+    /// </summary>
+    [Fact]
+    public void UaTableGridAArrayRevisionColspan_DoesNotFireGridRules()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /Table /P 5 0 R /K [7 0 R 8 0 R] >>",
+            "<< /Type /StructElem /S /TR /P 6 0 R /K [9 0 R] >>",
+            "<< /Type /StructElem /S /TR /P 6 0 R /K [10 0 R 11 0 R] >>",
+            // TH with ColSpan=2 via [dict revNum] form
+            "<< /Type /StructElem /S /TH /P 7 0 R /A [<< /O /Table /ColSpan 2 /Scope /Column >> 0] >>",
+            "<< /Type /StructElem /S /TD /P 8 0 R >>",
+            "<< /Type /StructElem /S /TD /P 8 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-15");
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-41");
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-42");
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-43");
+    }
+
 }
