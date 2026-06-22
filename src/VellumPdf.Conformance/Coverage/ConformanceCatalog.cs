@@ -252,6 +252,9 @@ public static class ConformanceCatalog
         "7.21.4.2-2",          // UaCidSetRule: CIDFontType2 subset CIDSet must list all CIDs
         // Batch A5a — rendering-mode-scoped font embedding:
         "7.21.4.1-1",          // UaFontEmbeddingRule: non-embedded simple font drawn visibly
+        // Batch A5b — glyph-level clauses (Identity-H/V CIDFontType2-Identity scope):
+        "7.21.8-1",            // UaNotdefGlyphRule: shown code 0x0000 == .notdef forbidden
+        "7.21.7-2",            // UaToUnicodeForbiddenRule: shown glyph mapped to U+0000/FEFF/FFFE
     };
 
     // PDF/UA-1 checks the rules cover only partially (the common case is detected; some conditions
@@ -319,16 +322,8 @@ public static class ConformanceCatalog
             + "encoding for standard-encoded simple fonts, so requiring a /ToUnicode stream would "
             + "over-reject conformant WinAnsi/MacRoman simple fonts; deferred until the glyph-level "
             + "Unicode-derivation model is fully understood for all font types)",
-        "7.21.7-2" =>
-            "forbidden ToUnicode values (U+0000/FEFF/FFFE): veraPDF checks only glyphs actually shown, "
-            + "so a whole-CMap scan over-rejects an UNUSED bfchar/bfrange entry mapping to a forbidden "
-            + "value (proven: veraPDF PASSes a doc with an unused <0025> <0000> entry). Needs "
-            + "shown-glyph-code extraction from content streams to scope to used glyphs, like 7.21.8-1",
-        "7.21.8-1" =>
-            ".notdef glyph reference: needs per-font text-rendering-mode tracking (Tr 3 invisible text "
-            + "is exempt) and code-to-GID resolution for simple fonts (encoding+cmap lookup); "
-            + "the existing PDF/A-2 GlyphPresenceRule covers only Identity-H CIDFontType2 — "
-            + "implementing without those prerequisites would over-reject conformant documents",
+        // 7.21.7-2 moved to PdfUaImplemented (Batch A5b — UaToUnicodeForbiddenRule, shown-glyph-scoped).
+        // 7.21.8-1 moved to PdfUaImplemented (Batch A5b — UaNotdefGlyphRule, Identity-H scope).
 
         _ => "structure-tree walker",
     };
