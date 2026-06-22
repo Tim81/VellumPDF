@@ -7377,4 +7377,410 @@ public sealed class PdfPreflightTests
         Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.1-6");
     }
 
+    // ── Batch B2 — §7.2 table / list / TOC containment unit tests ────────────────────────────────
+
+    // Helper: builds a UA-1 PDF with a custom structure tree.
+    // catalog/pages/page are objects 1/2/3; StructTreeRoot is object 4.
+    // extraObjects are objects 5, 6, … (StructElems, etc.).
+    private static byte[] BuildUaPdfWithStructTree(
+        string structTreeRoot,
+        params string[] extraObjects)
+    {
+        var objs = new List<PdfObj>
+        {
+            new("<< /Type /Catalog /Pages 2 0 R /MarkInfo << /Marked true >> /Lang (en-US) "
+                + "/ViewerPreferences << /DisplayDocTitle true >> /StructTreeRoot 4 0 R >>"),
+            _pagesObj,
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Tabs /S >>"),
+            new(structTreeRoot),
+        };
+        foreach (var extra in extraObjects)
+            objs.Add(new(extra));
+        return AssemblePdf(objs, metadataOverride: UaXmpBytes());
+    }
+
+    // ── §7.2-3 (SETable) ─────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// §7.2-3 VIOLATION (UaTableContainmentRule): a Table with a Sect child fires 7.2-3.
+    /// Cross-validated against veraPDF 1.30.2: probe_table_bad_kid → fires 7.2-3 (exit 1).
+    /// </summary>
+    [Fact]
+    public void UaTableBadKid_Fires72_3()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /Table /P 5 0 R /K [7 0 R] >>",
+            "<< /Type /StructElem /S /Sect /P 6 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-3");
+    }
+
+    /// <summary>
+    /// §7.2-3 FP guard: a Table with only a TR child is valid — no 7.2-3 fire.
+    /// Cross-validated against veraPDF 1.30.2: probe_table_compliant → PASS (exit 0).
+    /// </summary>
+    [Fact]
+    public void UaTableValidKids_DoesNotFire72_3()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /Table /P 5 0 R /K [7 0 R] >>",
+            "<< /Type /StructElem /S /TR /P 6 0 R /K [8 0 R 9 0 R] >>",
+            "<< /Type /StructElem /S /TH /P 7 0 R >>",
+            "<< /Type /StructElem /S /TD /P 7 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-3");
+    }
+
+    // ── §7.2-4 (SETR parent) ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// §7.2-4 VIOLATION: TR whose parent is Document (not Table/THead/TBody/TFoot) fires 7.2-4.
+    /// Cross-validated: probe_tr_wrong_parent → fires 7.2-4 (exit 1).
+    /// </summary>
+    [Fact]
+    public void UaTrWrongParent_Fires72_4()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /TR /P 5 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-4");
+    }
+
+    /// <summary>
+    /// §7.2-4 VIOLATION (null parent): TR as direct StructTreeRoot child fires 7.2-4.
+    /// Cross-validated: probe_tr_root → fires 7.2-4 (exit 1).
+    /// </summary>
+    [Fact]
+    public void UaTrAtRoot_Fires72_4()
+    {
+        // TR is a direct /K child of the StructTreeRoot (parent node is null).
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /TR /P 4 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-4");
+    }
+
+    /// <summary>
+    /// §7.2-4 FP guard: TR inside THead (one of the allowed parents) must not fire.
+    /// Cross-validated: probe_tr_in_thead_valid (with THead+TBody) → PASS (exit 0).
+    /// </summary>
+    [Fact]
+    public void UaTrInThead_DoesNotFire72_4()
+    {
+        // Table with THead + TBody (satisfies 7.2-14 deferred rule); TR in both.
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /Table /P 5 0 R /K [7 0 R 10 0 R] >>",
+            "<< /Type /StructElem /S /THead /P 6 0 R /K [8 0 R] >>",
+            "<< /Type /StructElem /S /TR /P 7 0 R /K [9 0 R] >>",
+            "<< /Type /StructElem /S /TH /P 8 0 R >>",
+            "<< /Type /StructElem /S /TBody /P 6 0 R /K [11 0 R] >>",
+            "<< /Type /StructElem /S /TR /P 10 0 R /K [12 0 R] >>",
+            "<< /Type /StructElem /S /TD /P 11 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-4");
+    }
+
+    // ── §7.2-5/6/7 (THead/TBody/TFoot parent) ───────────────────────────────────────────────────
+
+    /// <summary>
+    /// §7.2-5 VIOLATION: THead inside Document fires 7.2-5.
+    /// Cross-validated: probe_thead_wrong_parent → fires 7.2-5 (exit 1).
+    /// </summary>
+    [Fact]
+    public void UaTheadWrongParent_Fires72_5()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /THead /P 5 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-5");
+    }
+
+    /// <summary>
+    /// §7.2-6 VIOLATION: TBody inside Document fires 7.2-6.
+    /// Cross-validated: probe_tbody_wrong_parent → fires 7.2-6 (exit 1).
+    /// </summary>
+    [Fact]
+    public void UaTbodyWrongParent_Fires72_6()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /TBody /P 5 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-6");
+    }
+
+    /// <summary>
+    /// §7.2-7 VIOLATION: TFoot inside Document fires 7.2-7.
+    /// Cross-validated: probe_tfoot_wrong_parent → fires 7.2-7 (exit 1).
+    /// </summary>
+    [Fact]
+    public void UaTfootWrongParent_Fires72_7()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /TFoot /P 5 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-7");
+    }
+
+    // ── §7.2-8/9 (TH/TD parent) ──────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// §7.2-8 VIOLATION: TH inside Table (not TR) fires 7.2-8.
+    /// Cross-validated: probe_th_wrong_parent → fires 7.2-8 (exit 1).
+    /// </summary>
+    [Fact]
+    public void UaThWrongParent_Fires72_8()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /Table /P 5 0 R /K [7 0 R] >>",
+            "<< /Type /StructElem /S /TH /P 6 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-8");
+    }
+
+    /// <summary>
+    /// §7.2-9 VIOLATION: TD inside Table (not TR) fires 7.2-9.
+    /// Cross-validated: probe_td_wrong_parent → fires 7.2-9 (exit 1).
+    /// </summary>
+    [Fact]
+    public void UaTdWrongParent_Fires72_9()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /Table /P 5 0 R /K [7 0 R] >>",
+            "<< /Type /StructElem /S /TD /P 6 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-9");
+    }
+
+    // ── §7.2-10 (SETR kids) ──────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// §7.2-10 VIOLATION: TR with a Sect kid fires 7.2-10.
+    /// Cross-validated: probe_tr_mixed_kids (TR with TH + Sect) → fires 7.2-10 (exit 1).
+    /// </summary>
+    [Fact]
+    public void UaTrBadKid_Fires72_10()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /Table /P 5 0 R /K [7 0 R] >>",
+            "<< /Type /StructElem /S /TR /P 6 0 R /K [8 0 R 9 0 R] >>",
+            "<< /Type /StructElem /S /TH /P 7 0 R >>",
+            "<< /Type /StructElem /S /Sect /P 7 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-10");
+    }
+
+    /// <summary>
+    /// §7.2-10 FP guard: TR with only a custom unmapped kid must NOT fire 7.2-10 — veraPDF
+    /// skips null-StandardType kids in the kidsStandardTypes predicate. Probe-confirmed:
+    /// probe_tr_custom_kid → PASS (exit 0).
+    /// </summary>
+    [Fact]
+    public void UaTrCustomUnmappedKid_DoesNotFire72_10()
+    {
+        // TR with /MyCustomCell (non-standard, no /RoleMap) — null StandardType kid
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /Table /P 5 0 R /K [7 0 R] >>",
+            "<< /Type /StructElem /S /TR /P 6 0 R /K [8 0 R] >>",
+            "<< /Type /StructElem /S /MyCustomCell /P 7 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-10");
+    }
+
+    // ── §7.2-17/18 (LI/LBody parent) ────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// §7.2-17 VIOLATION: LI inside Document (not L) fires 7.2-17.
+    /// Cross-validated: probe_li_wrong_parent → fires 7.2-17 (exit 1).
+    /// </summary>
+    [Fact]
+    public void UaLiWrongParent_Fires72_17()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /LI /P 5 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-17");
+    }
+
+    /// <summary>
+    /// §7.2-18 VIOLATION: LBody inside L (not LI) fires 7.2-18.
+    /// Cross-validated: probe_lbody_wrong_parent → fires 7.2-18 (exit 1).
+    /// </summary>
+    [Fact]
+    public void UaLBodyWrongParent_Fires72_18()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /L /P 5 0 R /K [7 0 R] >>",
+            "<< /Type /StructElem /S /LBody /P 6 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-18");
+    }
+
+    // ── §7.2-19/20 (L/LI kids) ───────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// §7.2-19 VIOLATION: L with a Sect kid fires 7.2-19.
+    /// Cross-validated: probe_l_bad_kid → fires 7.2-19 (exit 1).
+    /// </summary>
+    [Fact]
+    public void UaLBadKid_Fires72_19()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /L /P 5 0 R /K [7 0 R] >>",
+            "<< /Type /StructElem /S /Sect /P 6 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-19");
+    }
+
+    /// <summary>
+    /// §7.2-19/20 FP guard: a well-formed list (L→LI→Lbl+LBody) must not fire.
+    /// Cross-validated: probe_list_compliant → PASS (exit 0).
+    /// </summary>
+    [Fact]
+    public void UaListCompliant_DoesNotFire72_19_Or_20()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /L /P 5 0 R /K [7 0 R] >>",
+            "<< /Type /StructElem /S /LI /P 6 0 R /K [8 0 R 9 0 R] >>",
+            "<< /Type /StructElem /S /Lbl /P 7 0 R >>",
+            "<< /Type /StructElem /S /LBody /P 7 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-19");
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-20");
+    }
+
+    // ── §7.2-26/27 (TOCI/TOC) ────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// §7.2-26 VIOLATION: TOCI inside Document fires 7.2-26.
+    /// Cross-validated: probe_toci_wrong_parent → fires 7.2-26 (exit 1).
+    /// </summary>
+    [Fact]
+    public void UaTociWrongParent_Fires72_26()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /TOCI /P 5 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-26");
+    }
+
+    /// <summary>
+    /// §7.2-27 VIOLATION: TOC with a Sect kid fires 7.2-27.
+    /// Cross-validated: probe_toc_bad_kid → fires 7.2-27 (exit 1).
+    /// </summary>
+    [Fact]
+    public void UaTocBadKid_Fires72_27()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /TOC /P 5 0 R /K [7 0 R] >>",
+            "<< /Type /StructElem /S /Sect /P 6 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-27");
+    }
+
+    /// <summary>
+    /// §7.2-26/27 FP guard: a well-formed TOC (TOC→TOCI) must not fire.
+    /// Cross-validated: probe_table_compliant analogy; TOC→TOCI is the intended structure.
+    /// </summary>
+    [Fact]
+    public void UaTocCompliant_DoesNotFire72_26_Or_27()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /TOC /P 5 0 R /K [7 0 R] >>",
+            "<< /Type /StructElem /S /TOCI /P 6 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-26");
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-27");
+    }
+
+    // ── §7.2-36/37/38 (THead/TBody/TFoot kids) ──────────────────────────────────────────────────
+
+    /// <summary>
+    /// §7.2-36 VIOLATION: THead with a TD kid fires 7.2-36.
+    /// Cross-validated: probe_thead_bad_kid → fires 7.2-36 (exit 1).
+    /// </summary>
+    [Fact]
+    public void UaTheadBadKid_Fires72_36()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /Table /P 5 0 R /K [7 0 R] >>",
+            "<< /Type /StructElem /S /THead /P 6 0 R /K [8 0 R] >>",
+            // TD directly inside THead — violation; TD also fires 7.2-9 (parent must be TR)
+            "<< /Type /StructElem /S /TD /P 7 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-36");
+    }
+
+    /// <summary>
+    /// §7.2-37 VIOLATION: TBody with a TH kid fires 7.2-37.
+    /// Cross-validated: probe_thead_in_tbody → fires 7.2-37 (THead inside TBody → TBody kids
+    /// must be TR only, exit 1).
+    /// </summary>
+    [Fact]
+    public void UaTbodyBadKid_Fires72_37()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /Table /P 5 0 R /K [7 0 R] >>",
+            "<< /Type /StructElem /S /TBody /P 6 0 R /K [8 0 R] >>",
+            "<< /Type /StructElem /S /TH /P 7 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-37");
+    }
+
+    /// <summary>
+    /// §7.2-38 VIOLATION: TFoot with a TH kid fires 7.2-38.
+    /// </summary>
+    [Fact]
+    public void UaTfootBadKid_Fires72_38()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /Table /P 5 0 R /K [7 0 R] >>",
+            "<< /Type /StructElem /S /TFoot /P 6 0 R /K [8 0 R] >>",
+            "<< /Type /StructElem /S /TH /P 7 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-38");
+    }
+
 }
