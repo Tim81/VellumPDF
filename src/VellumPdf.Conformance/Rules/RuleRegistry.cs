@@ -182,6 +182,8 @@ internal static class RuleRegistry
         new UaAnnotStructureRule(),
         // Batch B6 — §7.2 natural-language determination (7.2-21/-22/-23/-24/-25):
         new UaNaturalLanguageRule(),
+        // Batch B8 — §7.2 natural-language determination (7.2-2 outline, 7.2-33 XMP lang-alt):
+        new UaOutlineLangRule(),
     ];
 
     /// <summary>

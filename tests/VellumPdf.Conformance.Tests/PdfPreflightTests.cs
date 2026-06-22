@@ -3656,8 +3656,9 @@ public sealed class PdfPreflightTests
         var result = PdfPreflight.Validate(BuildUaPdf(lang: false), PdfConformance.PdfUA1);
 
         Assert.False(result.IsCompliant);
-        var assertion = Assert.Single(result.Assertions);
-        Assert.Equal("ISO14289-1:7.2-lang", assertion.RuleId);
+        // Note: also fires 7.2-33 (XMP x-default lang-alt requires catalog /Lang) because
+        // BuildUaPdf uses UaXmpBytes() which contains a dc:title with x-default.
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-lang");
     }
 
     [Fact]
@@ -9438,6 +9439,223 @@ public sealed class PdfPreflightTests
         Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-41");
         Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-42");
         Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-43");
+    }
+
+    // ── Batch B8 — §7.2-2 (PDOutline) and §7.2-33 (XMPLangAlt) — UaOutlineLangRule ────────────────
+
+    // Helper: build a PDF/UA-1 without a catalog /Lang, with an /Outlines dict.
+    // Object layout:
+    //   1 = Catalog (no /Lang, /Outlines 5 0 R)
+    //   2 = Pages
+    //   3 = Page
+    //   4 = StructTreeRoot
+    //   5 = Outlines dict (/First 6 0 R etc.)
+    //   6 = outline item
+    //   7 = XMP metadata
+    // xmpOverride: pass null for standard UaXmpBytes() (has x-default dc:title).
+    private static byte[] BuildUaPdfNoCatalogLangWithOutline(byte[]? xmpOverride = null)
+    {
+        var objs = new List<PdfObj>
+        {
+            new("<< /Type /Catalog /Pages 2 0 R /MarkInfo << /Marked true >> "
+                + "/ViewerPreferences << /DisplayDocTitle true >> /StructTreeRoot 4 0 R "
+                + "/Outlines 5 0 R >>"),
+            _pagesObj,
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Tabs /S >>"),
+            new("<< /Type /StructTreeRoot >>"),
+            new("<< /Type /Outlines /First 6 0 R /Last 6 0 R /Count 1 >>"),
+            new("<< /Title (Item 1) /Parent 5 0 R /Count 0 >>"),
+        };
+        return AssemblePdf(objs, metadataOverride: xmpOverride ?? UaXmpBytes());
+    }
+
+    // Helper: build a PDF/UA-1 without a catalog /Lang and without /Outlines.
+    // Used to confirm 7.2-2 does not fire when there is no outline tree.
+    private static byte[] BuildUaPdfNoCatalogLangNoOutline(byte[]? xmpOverride = null)
+    {
+        var objs = new List<PdfObj>
+        {
+            new("<< /Type /Catalog /Pages 2 0 R /MarkInfo << /Marked true >> "
+                + "/ViewerPreferences << /DisplayDocTitle true >> /StructTreeRoot 4 0 R >>"),
+            _pagesObj,
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Tabs /S >>"),
+            new("<< /Type /StructTreeRoot >>"),
+        };
+        return AssemblePdf(objs, metadataOverride: xmpOverride ?? UaXmpBytes());
+    }
+
+    // ── §7.2-2 (PDOutline — gContainsCatalogLang dominance) ──────────────────────────────────────
+
+    /// <summary>
+    /// §7.2-2 FP guard (DOMINANT PATH): WITH catalog /Lang and a non-empty /Outlines tree,
+    /// must NOT fire 7.2-2. gContainsCatalogLang = true satisfies the predicate.
+    /// Cross-validated against veraPDF 1.30.2: with_lang+outline → PASS (no 7.2-2).
+    /// </summary>
+    [Fact]
+    public void UaOutline_WithCatalogLang_DoesNotFire72_2()
+    {
+        // BuildUaPdfWithStructTree adds /Lang (en-US); add /Outlines via extra catalog entry.
+        var objs = new List<PdfObj>
+        {
+            new("<< /Type /Catalog /Pages 2 0 R /MarkInfo << /Marked true >> /Lang (en-US) "
+                + "/ViewerPreferences << /DisplayDocTitle true >> /StructTreeRoot 4 0 R "
+                + "/Outlines 5 0 R >>"),
+            _pagesObj,
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Tabs /S >>"),
+            new("<< /Type /StructTreeRoot >>"),
+            new("<< /Type /Outlines /First 6 0 R /Last 6 0 R /Count 1 >>"),
+            new("<< /Title (Item 1) /Parent 5 0 R /Count 0 >>"),
+        };
+        var bytes = AssemblePdf(objs, metadataOverride: UaXmpBytes());
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-2");
+    }
+
+    /// <summary>
+    /// §7.2-2 VIOLATION: WITHOUT catalog /Lang, WITH a non-empty /Outlines tree, fires 7.2-2.
+    /// Cross-validated against veraPDF 1.30.2: no_lang+outline → fires 7.2-2 (exit 1).
+    /// </summary>
+    [Fact]
+    public void UaOutline_NoCatalogLang_WithOutline_Fires72_2()
+    {
+        var bytes = BuildUaPdfNoCatalogLangWithOutline();
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-2");
+    }
+
+    /// <summary>
+    /// §7.2-2 FP guard: WITHOUT catalog /Lang, WITHOUT any /Outlines entry, must NOT fire 7.2-2.
+    /// The outline must be present to activate the check.
+    /// Cross-validated against veraPDF 1.30.2: no_lang+no_outline → no 7.2-2.
+    /// </summary>
+    [Fact]
+    public void UaOutline_NoCatalogLang_NoOutline_DoesNotFire72_2()
+    {
+        var bytes = BuildUaPdfNoCatalogLangNoOutline();
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-2");
+    }
+
+    /// <summary>
+    /// §7.2-2 FP guard: WITHOUT catalog /Lang, WITH an /Outlines dict that has NO /First
+    /// (empty outline tree), must NOT fire 7.2-2.
+    /// An empty outline tree is equivalent to no outline for 7.2-2 purposes.
+    /// Cross-validated against veraPDF 1.30.2: no_lang+empty_outline → no 7.2-2.
+    /// </summary>
+    [Fact]
+    public void UaOutline_NoCatalogLang_EmptyOutlineDict_DoesNotFire72_2()
+    {
+        var objs = new List<PdfObj>
+        {
+            new("<< /Type /Catalog /Pages 2 0 R /MarkInfo << /Marked true >> "
+                + "/ViewerPreferences << /DisplayDocTitle true >> /StructTreeRoot 4 0 R "
+                + "/Outlines 5 0 R >>"),
+            _pagesObj,
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Tabs /S >>"),
+            new("<< /Type /StructTreeRoot >>"),
+            new("<< /Type /Outlines /Count 0 >>"),    // no /First — empty outline
+        };
+        var bytes = AssemblePdf(objs, metadataOverride: UaXmpBytes());
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-2");
+    }
+
+    // ── §7.2-33 (XMPLangAlt — gContainsCatalogLang dominance) ───────────────────────────────────
+
+    /// <summary>
+    /// §7.2-33 FP guard (DOMINANT PATH): WITH catalog /Lang and XMP with x-default dc:title,
+    /// must NOT fire 7.2-33. gContainsCatalogLang = true satisfies the predicate.
+    /// Cross-validated against veraPDF 1.30.2: with_lang+xdefault → PASS (no 7.2-33).
+    /// </summary>
+    [Fact]
+    public void UaXmpLangAlt_WithCatalogLang_DoesNotFire72_33()
+    {
+        // BuildUaPdf(lang: true) adds /Lang (en-US); UaXmpBytes() has x-default dc:title.
+        var bytes = BuildUaPdf(lang: true);
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-33");
+    }
+
+    /// <summary>
+    /// §7.2-33 VIOLATION: WITHOUT catalog /Lang, WITH x-default dc:title in XMP, fires 7.2-33.
+    /// UaXmpBytes() already has an x-default dc:title, so BuildUaPdfNoCatalogLangNoOutline
+    /// naturally triggers this check.
+    /// Cross-validated against veraPDF 1.30.2: no_lang+xdefault_dctitle → fires 7.2-33 (exit 1).
+    /// </summary>
+    [Fact]
+    public void UaXmpLangAlt_NoCatalogLang_XDefaultTitle_Fires72_33()
+    {
+        var bytes = BuildUaPdfNoCatalogLangNoOutline();
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-33");
+    }
+
+    /// <summary>
+    /// §7.2-33 FP guard: WITHOUT catalog /Lang, lang-alt WITHOUT any x-default item, must NOT
+    /// fire 7.2-33. Only the presence of an x-default item activates the check.
+    /// Cross-validated against veraPDF 1.30.2: no_lang+no_xdefault → no 7.2-33.
+    /// </summary>
+    [Fact]
+    public void UaXmpLangAlt_NoCatalogLang_NoXDefault_DoesNotFire72_33()
+    {
+        // Build XMP with dc:title but with xml:lang="en" (not x-default).
+        var xmpNoXDefault = Encoding.UTF8.GetBytes(
+            "<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>"
+            + "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF "
+            + "xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">"
+            + "<rdf:Description rdf:about=\"\" "
+            + "xmlns:pdfuaid=\"http://www.aiim.org/pdfua/ns/id/\" "
+            + "xmlns:dc=\"http://purl.org/dc/elements/1.1/\">"
+            + "<pdfuaid:part>1</pdfuaid:part>"
+            + "<dc:title><rdf:Alt><rdf:li xml:lang=\"en\">Title</rdf:li></rdf:Alt></dc:title>"
+            + "</rdf:Description></rdf:RDF></x:xmpmeta><?xpacket end=\"w\"?>");
+        var bytes = BuildUaPdfNoCatalogLangNoOutline(xmpOverride: xmpNoXDefault);
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-33");
+    }
+
+    /// <summary>
+    /// §7.2-33 FP guard: WITHOUT catalog /Lang, NO dc:title or lang-alt in XMP at all, must NOT
+    /// fire 7.2-33. No lang-alt means no x-default entry to check.
+    /// Cross-validated against veraPDF 1.30.2: no_lang+no_title → no 7.2-33.
+    /// </summary>
+    [Fact]
+    public void UaXmpLangAlt_NoCatalogLang_NoLangAlt_DoesNotFire72_33()
+    {
+        var xmpNoTitle = Encoding.UTF8.GetBytes(
+            "<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>"
+            + "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF "
+            + "xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">"
+            + "<rdf:Description rdf:about=\"\" "
+            + "xmlns:pdfuaid=\"http://www.aiim.org/pdfua/ns/id/\">"
+            + "<pdfuaid:part>1</pdfuaid:part>"
+            + "</rdf:Description></rdf:RDF></x:xmpmeta><?xpacket end=\"w\"?>");
+        var bytes = BuildUaPdfNoCatalogLangNoOutline(xmpOverride: xmpNoTitle);
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-33");
+    }
+
+    /// <summary>
+    /// §7.2-33 VIOLATION: WITHOUT catalog /Lang, x-default item in dc:description (not dc:title)
+    /// fires 7.2-33 — the rule applies to ANY lang-alt with x-default.
+    /// Cross-validated against veraPDF 1.30.2: no_lang+xdefault_dcdescription → fires 7.2-33.
+    /// </summary>
+    [Fact]
+    public void UaXmpLangAlt_NoCatalogLang_XDefaultDescription_Fires72_33()
+    {
+        var xmpDescXDefault = Encoding.UTF8.GetBytes(
+            "<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>"
+            + "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF "
+            + "xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">"
+            + "<rdf:Description rdf:about=\"\" "
+            + "xmlns:pdfuaid=\"http://www.aiim.org/pdfua/ns/id/\" "
+            + "xmlns:dc=\"http://purl.org/dc/elements/1.1/\">"
+            + "<pdfuaid:part>1</pdfuaid:part>"
+            + "<dc:description><rdf:Alt><rdf:li xml:lang=\"x-default\">Desc</rdf:li></rdf:Alt></dc:description>"
+            + "</rdf:Description></rdf:RDF></x:xmpmeta><?xpacket end=\"w\"?>");
+        var bytes = BuildUaPdfNoCatalogLangNoOutline(xmpOverride: xmpDescXDefault);
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-33");
     }
 
 }
