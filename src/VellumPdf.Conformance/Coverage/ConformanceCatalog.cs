@@ -232,7 +232,8 @@ public static class ConformanceCatalog
     // (tagged-content) walker, which does not yet exist.
     private static readonly HashSet<string> PdfUaImplemented = new(StringComparer.Ordinal)
     {
-        "5-1", "5-2", "6.2-1", "7.1-8", "7.1-9", "7.1-10", "7.1-11", "7.18.3-1",
+        "5-1", "5-2", "6.1-1", "6.2-1", "7.1-4", "7.1-8", "7.1-9", "7.1-10", "7.1-11", "7.18.3-1",
+        "7.2-29",
     };
 
     private static IReadOnlyList<ConformanceCheck> Build()
@@ -252,11 +253,17 @@ public static class ConformanceCatalog
             checks.Add(new ConformanceCheck(
                 id, [PdfConformance.PdfUA1], ClauseOf(id),
                 implemented ? CoverageStatus.Implemented : CoverageStatus.Deferred,
-                implemented ? null : "structure-tree walker"));
+                implemented ? null : PdfUaDeferredNote(id)));
         }
 
         return checks;
     }
+
+    private static string PdfUaDeferredNote(string id) => id switch
+    {
+        "5-3" or "5-4" or "5-5" => "prefix-aware XMP parsing (XmpReader matches by namespace URI, not prefix)",
+        _ => "structure-tree walker",
+    };
 
     private static ConformanceCheck MakePdfA(string id, PdfConformance[] profiles)
     {
