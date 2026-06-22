@@ -995,6 +995,40 @@ public static class OracleCorpus
             new OracleFixture("pdfua1-non-standard-type-unmapped",
                 Ua1NonStandardTypeUnmapped(),
                 Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // ── Batch B10 — §7.4.2-1 heading-nesting + §7.5-1/-2 connected-header fixtures ──────────
+
+            // §7.4.2-1 VIOLATION: H1 then H3 (skipping H2). veraPDF fires 7.4.2-1
+            // (hasCorrectNestingLevel == false on the H3 element). In-process: UaHeadingNestingRule fires.
+            new OracleFixture("pdfua1-heading-skip-h1-h3",
+                Ua1HeadingsSkip(),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.4.2-1 COMPLIANT: H1 then H2 then H3 (no skip). veraPDF does not fire 7.4.2-1.
+            // In-process: UaHeadingNestingRule must NOT fire. (The document is otherwise the tagged
+            // baseline — all other UA rules pass too.)
+            new OracleFixture("pdfua1-heading-no-skip",
+                Ua1HeadingsNoSkip(),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: true),
+
+            // §7.5-1 VIOLATION: a Table with a TH (no /Scope) and a TD (no /Headers). veraPDF fires
+            // 7.5-1 (hasConnectedHeader == false, unknownHeaders == ''). In-process: UaTableHeaderRule fires.
+            new OracleFixture("pdfua1-td-no-connected-header",
+                Ua1TdNoConnectedHeader(),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.5-2 VIOLATION: a TD with /Headers referencing an ID that does not exist on any TH.
+            // veraPDF fires 7.5-2 (hasConnectedHeader == false, unknownHeaders != ''). In-process: fires.
+            new OracleFixture("pdfua1-td-unknown-header-id",
+                Ua1TdUnknownHeaderId(),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.5 COMPLIANT: a Table with TH /Scope /Column and TD (no /Headers). veraPDF does not
+            // fire 7.5-1 or 7.5-2. In-process: UaTableHeaderRule must NOT fire.
+            // (The document is otherwise the tagged baseline — all other UA rules pass too.)
+            new OracleFixture("pdfua1-td-scoped-header",
+                Ua1TdScopedHeader(),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: true),
         ];
     }
 
@@ -3781,6 +3815,190 @@ public static class OracleCorpus
             (docRef.ObjectNumber, newDoc),
             (customElemNum, customElem),
         ]);
+    }
+
+    // ── Batch B10 — §7.4.2-1 heading nesting + §7.5-1/-2 connected headers ──────────────────────
+
+    /// <summary>
+    /// §7.4.2-1 VIOLATION: injects H1 then H3 (skipping H2) into the Document StructElem's /K.
+    /// veraPDF fires clause 7.4.2, testNumber 1 (hasCorrectNestingLevel == false on H3).
+    /// In-process: UaHeadingNestingRule fires "ISO14289-1:7.4.2-1".
+    /// </summary>
+    private static byte[] Ua1HeadingsSkip()
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+        using var reader = PdfReader.Open(baseline);
+        return InjectHeadingElems(reader, ["H1", "H3"]);
+    }
+
+    /// <summary>
+    /// §7.4.2-1 COMPLIANT: injects H1, H2, H3 (no skip) into the Document StructElem's /K.
+    /// veraPDF does not fire 7.4.2-1. In-process: UaHeadingNestingRule must NOT fire.
+    /// </summary>
+    private static byte[] Ua1HeadingsNoSkip()
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+        using var reader = PdfReader.Open(baseline);
+        return InjectHeadingElems(reader, ["H1", "H2", "H3"]);
+    }
+
+    /// <summary>
+    /// Injects a sequence of Hn StructElem children into the Document StructElem's /K array,
+    /// appended after the existing children.
+    /// </summary>
+    private static byte[] InjectHeadingElems(PdfDocumentReader reader, string[] headingTypes)
+    {
+        var strRef = (PdfIndirectReference)reader.Catalog.Get(new PdfName("StructTreeRoot"))!;
+        var str = (PdfDictionary)reader.Resolve(strRef.ObjectNumber)!;
+
+        var docRef = str.Get(new PdfName("K")) as PdfIndirectReference
+            ?? throw new InvalidOperationException("Expected Document StructElem ref");
+        var doc = (PdfDictionary)reader.Resolve(docRef.ObjectNumber)!;
+        var existingK = doc.Get(new PdfName("K"));
+
+        var revision = new List<(int, PdfObject)>();
+        int nextNum = reader.Size;
+        var headingRefs = new List<PdfIndirectReference>();
+
+        foreach (var hType in headingTypes)
+        {
+            var hNum = nextNum++;
+            var hElem = new PdfDictionary()
+                .Set(PdfName.Type, new PdfName("StructElem"))
+                .Set(new PdfName("S"), new PdfName(hType))
+                .Set(new PdfName("P"), docRef);
+            revision.Add((hNum, hElem));
+            headingRefs.Add(new PdfIndirectReference(hNum));
+        }
+
+        var kItems = new List<PdfObject>();
+        if (existingK is PdfIndirectReference kRef) kItems.Add(kRef);
+        else if (existingK is PdfArray kArr)
+            for (int i = 0; i < kArr.Count; i++) kItems.Add(kArr[i]);
+        kItems.AddRange(headingRefs);
+
+        var newDoc = CloneDict(doc);
+        newDoc.Set(new PdfName("K"), new PdfArray(kItems.ToArray()));
+        revision.Add((docRef.ObjectNumber, newDoc));
+
+        return reader.AppendRevision(revision);
+    }
+
+    /// <summary>
+    /// §7.5-1 VIOLATION: injects a Table → TR → [TH (no /Scope), TD (no /Headers)] structure.
+    /// veraPDF fires 7.5-1 (hasConnectedHeader == false, unknownHeaders == '').
+    /// </summary>
+    private static byte[] Ua1TdNoConnectedHeader()
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+        using var reader = PdfReader.Open(baseline);
+        return InjectSimpleTable(reader, thScope: null, tdHeadersId: null, thId: null);
+    }
+
+    /// <summary>
+    /// §7.5-2 VIOLATION: injects a Table → TR → [TH (no /Scope), TD (/Headers = ["nonexistent"])].
+    /// veraPDF fires 7.5-2 (hasConnectedHeader == false, unknownHeaders != '').
+    /// </summary>
+    private static byte[] Ua1TdUnknownHeaderId()
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+        using var reader = PdfReader.Open(baseline);
+        return InjectSimpleTable(reader, thScope: null, tdHeadersId: "nonexistent", thId: null);
+    }
+
+    /// <summary>
+    /// §7.5 COMPLIANT: injects a Table → TR → [TH (/Scope /Column), TD (no /Headers)].
+    /// veraPDF does not fire 7.5-1 or 7.5-2. In-process: UaTableHeaderRule must NOT fire.
+    /// </summary>
+    private static byte[] Ua1TdScopedHeader()
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+        using var reader = PdfReader.Open(baseline);
+        return InjectSimpleTable(reader, thScope: "Column", tdHeadersId: null, thId: null);
+    }
+
+    /// <summary>
+    /// Injects a minimal table (Table → TR → [TH, TD]) with the given TH scope and TD headers.
+    /// </summary>
+    private static byte[] InjectSimpleTable(
+        PdfDocumentReader reader,
+        string? thScope,
+        string? tdHeadersId,
+        string? thId)
+    {
+        var strRef = (PdfIndirectReference)reader.Catalog.Get(new PdfName("StructTreeRoot"))!;
+        var str = (PdfDictionary)reader.Resolve(strRef.ObjectNumber)!;
+
+        var docRef = str.Get(new PdfName("K")) as PdfIndirectReference
+            ?? throw new InvalidOperationException("Expected Document StructElem ref");
+        var doc = (PdfDictionary)reader.Resolve(docRef.ObjectNumber)!;
+        var existingK = doc.Get(new PdfName("K"));
+
+        int nextNum = reader.Size;
+        var revision = new List<(int, PdfObject)>();
+
+        var tableNum = nextNum++;
+        var trNum = nextNum++;
+        var thNum = nextNum++;
+        var tdNum = nextNum++;
+
+        var tableRef = new PdfIndirectReference(tableNum);
+        var trRef = new PdfIndirectReference(trNum);
+
+        // TH element
+        var thDict = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("StructElem"))
+            .Set(new PdfName("S"), new PdfName("TH"))
+            .Set(new PdfName("P"), trRef);
+        if (thId != null)
+            thDict.Set(new PdfName("ID"), new PdfLiteralString(Encoding.ASCII.GetBytes(thId)));
+        if (thScope != null)
+            thDict.Set(new PdfName("A"), new PdfDictionary()
+                .Set(new PdfName("O"), new PdfName("Table"))
+                .Set(new PdfName("Scope"), new PdfName(thScope)));
+
+        // TD element
+        var tdDict = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("StructElem"))
+            .Set(new PdfName("S"), new PdfName("TD"))
+            .Set(new PdfName("P"), trRef);
+        if (tdHeadersId != null)
+            tdDict.Set(new PdfName("A"), new PdfDictionary()
+                .Set(new PdfName("O"), new PdfName("Table"))
+                .Set(new PdfName("Headers"), new PdfArray([
+                    new PdfLiteralString(Encoding.ASCII.GetBytes(tdHeadersId))
+                ])));
+
+        revision.Add((thNum, thDict));
+        revision.Add((tdNum, tdDict));
+
+        revision.Add((trNum, new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("StructElem"))
+            .Set(new PdfName("S"), new PdfName("TR"))
+            .Set(new PdfName("P"), tableRef)
+            .Set(new PdfName("K"), new PdfArray([
+                new PdfIndirectReference(thNum),
+                new PdfIndirectReference(tdNum),
+            ]))));
+
+        revision.Add((tableNum, new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("StructElem"))
+            .Set(new PdfName("S"), new PdfName("Table"))
+            .Set(new PdfName("P"), docRef)
+            .Set(new PdfName("K"), new PdfArray([trRef]))));
+
+        // Update Document /K
+        var kItems = new List<PdfObject>();
+        if (existingK is PdfIndirectReference kRef2) kItems.Add(kRef2);
+        else if (existingK is PdfArray kArr2)
+            for (int i = 0; i < kArr2.Count; i++) kItems.Add(kArr2[i]);
+        kItems.Add(tableRef);
+
+        var newDoc = CloneDict(doc);
+        newDoc.Set(new PdfName("K"), new PdfArray(kItems.ToArray()));
+        revision.Add((docRef.ObjectNumber, newDoc));
+
+        return reader.AppendRevision(revision);
     }
 
 }
