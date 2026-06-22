@@ -148,6 +148,9 @@ internal static class RuleRegistry
         new UaTrapNetAnnotRule(),
         new UaLinkAnnotRule(),
         new UaAnnotContentsRule(),
+        // Batch A3 — font clauses §7.21:
+        new UaCidToGidMapRule(),
+        new UaSymbolicFontRule(),
     ];
 
     /// <summary>

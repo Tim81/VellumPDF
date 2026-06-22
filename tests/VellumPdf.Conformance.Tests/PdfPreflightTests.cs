@@ -6883,4 +6883,49 @@ public sealed class PdfPreflightTests
 
         return ms.ToArray();
     }
+
+    // ── Batch A3 — §7.21 font clause unit tests ─────────────────────────────────────────────────
+
+    /// <summary>
+    /// False-positive guard for §7.21.6-3 (UaSymbolicFontRule): a symbolic TrueType font (Flags
+    /// bit 3 = Symbolic) with NO /Encoding entry must NOT fire §7.21.6-3 — the absence of
+    /// /Encoding is exactly what the rule requires. This fixture also fails other UA-1 rules
+    /// (7.21.6-4 for the cmap subtable count, 7.1-3 for untagged text) but must not produce a
+    /// §7.21.6-3 finding. Verified directly against veraPDF 1.30.2: that validator does NOT list
+    /// clause 7.21.6, testNumber 3 in its failures for this document.
+    /// </summary>
+    [Fact]
+    public void SymbolicFontNoEncoding_DoesNotFire7216_3()
+    {
+        var bytes = OracleCorpus.Ua1SymbolicFontNoEncoding();
+        var result = PdfPreflight.Validate(bytes, Conformance.PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.21.6-3");
+    }
+
+    /// <summary>
+    /// Positive control for §7.21.6-3: a symbolic TrueType font (Flags = 4) WITH an /Encoding
+    /// entry fires §7.21.6-3. Both veraPDF 1.30.2 (clause 7.21.6-3) and the in-process
+    /// UaSymbolicFontRule must flag it.
+    /// </summary>
+    [Fact]
+    public void SymbolicFontWithEncoding_Fires7216_3()
+    {
+        var bytes = OracleCorpus.Ua1SymbolicFontWithEncoding();
+        var result = PdfPreflight.Validate(bytes, Conformance.PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.21.6-3");
+    }
+
+    /// <summary>
+    /// False-positive guard for §7.21.6-3: a non-symbolic TrueType font (Flags = 32,
+    /// NonSymbolic) with /Encoding /WinAnsiEncoding must NOT fire §7.21.6-3 (the rule is only
+    /// for symbolic fonts). Verified against veraPDF 1.30.2: clause 7.21.6-3 does not appear
+    /// in the validation report for this fixture.
+    /// </summary>
+    [Fact]
+    public void NonSymbolicFontWinAnsi_DoesNotFire7216_3()
+    {
+        var bytes = OracleCorpus.Ua1NonSymbolicFontWinAnsi();
+        var result = PdfPreflight.Validate(bytes, Conformance.PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.21.6-3");
+    }
 }

@@ -838,6 +838,32 @@ public static class OracleCorpus
             new OracleFixture("pdfua1-xfa-static",
                 WriterUa1WithXfa(dynamic: false),
                 Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: true),
+
+            // ── Batch A3 — font clause §7.21 fixtures ────────────────────────────────────────────
+
+            // §7.21.3.2-1: embedded CIDFontType2 must carry /CIDToGIDMap.
+            // The baseline document has a real Type0/CIDFontType2 font with /CIDToGIDMap /Identity.
+            // veraPDF accepts the baseline and rejects the variant with /CIDToGIDMap removed.
+            new OracleFixture("pdfua1-cidtogidmap-compliant",
+                Ua1TaggedWithEmbeddedFont(),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: true),
+            new OracleFixture("pdfua1-cidtogidmap-missing",
+                Ua1EmbeddedFontNoCidToGidMap(),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.21.6-3: a symbolic TrueType font (Flags bit 3 = Symbolic) must have no /Encoding.
+            // The failing fixture adds /Encoding /WinAnsiEncoding to a symbolic (Flags=4) TrueType
+            // font, causing both veraPDF (7.21.6-3) and the in-process UaSymbolicFontRule to fire.
+            // The negative-path (symbolic, no encoding) fixture is handled by a unit test rather than
+            // here: the no-encoding document also fails 7.21.6-4 (cmap subtables) which we don't
+            // implement yet, so the overall verdict would misalign with the in-process result.
+            new OracleFixture("pdfua1-symbolic-font-with-encoding",
+                Ua1SymbolicFontWithEncoding(),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // (§7.21.7-2 ToUnicode-forbidden-value fixtures were removed together with the rule: the
+            // whole-CMap scan over-rejected an UNUSED forbidden mapping that veraPDF — which validates
+            // only glyphs actually shown — accepts. Deferred pending shown-glyph-code extraction.)
         ];
     }
 
@@ -2917,4 +2943,108 @@ public static class OracleCorpus
         }
         return -1;
     }
+
+    // ── UA-1 font-clause probe fixtures (Batch A3) ───────────────────────────────────────────────
+
+    /// <summary>
+    /// UA-1 tagged PDF baseline with a real embedded Type0/CIDFontType2 font (DejaVu, Identity-H).
+    /// Used as the positive-path anchor for §7.21 font clauses.
+    /// </summary>
+    internal static byte[] Ua1TaggedWithEmbeddedFont()
+        => WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+
+    /// <summary>
+    /// §7.21.3.2-1 violation: the embedded CIDFontType2's /CIDToGIDMap entry is stripped.
+    /// veraPDF should fire clause 7.21.3.2-1.
+    /// </summary>
+    internal static byte[] Ua1EmbeddedFontNoCidToGidMap()
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+        using var reader = PdfReader.Open(baseline);
+        var (_, page) = FirstPage(reader);
+        var resources = (PdfDictionary)reader.ResolveValue(page.Get(new PdfName("Resources"))!)!;
+        var fontDict = (PdfDictionary)reader.ResolveValue(resources.Get(PdfName.Font)!)!;
+        var type0 = (PdfDictionary)reader.ResolveValue(fontDict.Entries.First().Value)!;
+        var descendants = (PdfArray)reader.ResolveValue(type0.Get(new PdfName("DescendantFonts"))!)!;
+        var descRef = (PdfIndirectReference)descendants[0];
+        var desc = (PdfDictionary)reader.Resolve(descRef.ObjectNumber)!;
+        return reader.AppendRevision([(descRef.ObjectNumber, CloneWithout(desc, "CIDToGIDMap"))]);
+    }
+
+    /// <summary>
+    /// §7.21.6-3 violation: a symbolic TrueType font (Flags bit 3 = 4) with an /Encoding entry.
+    /// veraPDF should fire clause 7.21.6-3.
+    /// </summary>
+    internal static byte[] Ua1SymbolicFontWithEncoding()
+        => Ua1AddSimpleTrueType(flags: 4, encoding: new PdfName("WinAnsiEncoding"));
+
+    /// <summary>
+    /// §7.21.6-3 conformant: a symbolic TrueType font with no /Encoding entry.
+    /// veraPDF should NOT fire clause 7.21.6-3.
+    /// </summary>
+    internal static byte[] Ua1SymbolicFontNoEncoding()
+        => Ua1AddSimpleTrueType(flags: 4, encoding: null);
+
+    /// <summary>
+    /// §7.21.6-3 conformant: a non-symbolic TrueType font (Flags = 32) with WinAnsiEncoding.
+    /// veraPDF should NOT fire clause 7.21.6-3.
+    /// </summary>
+    internal static byte[] Ua1NonSymbolicFontWinAnsi()
+        => Ua1AddSimpleTrueType(flags: 32, encoding: new PdfName("WinAnsiEncoding"));
+
+    // Helper: adds a simple TrueType font (DejaVu, drawing 'A') to the UA-1 tagged baseline.
+    // flags = 4 → Symbolic; flags = 32 → NonSymbolic. encoding = null → no /Encoding entry.
+    private static byte[] Ua1AddSimpleTrueType(int flags, PdfName? encoding)
+    {
+        var asset = LoadAsset("DejaVuSans.ttf");
+        int widthA;
+        using (var measureDoc = new PdfDocument())
+            widthA = (int)Math.Round(measureDoc.UseTrueTypeFont(asset).MeasureString("A", 1000));
+
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var resources = (PdfDictionary)reader.ResolveValue(page.Get(new PdfName("Resources"))!)!;
+        var fontResources = (PdfDictionary)reader.ResolveValue(resources.Get(PdfName.Font)!)!;
+
+        var fontNum = reader.Size;
+        var descNum = fontNum + 1;
+        var ffNum = fontNum + 2;
+        var contentNum = fontNum + 3;
+
+        var fontFile = new PdfStream(asset);
+        fontFile.Dictionary.Set(new PdfName("Length1"), new PdfInteger(asset.Length));
+        var descriptor = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("FontDescriptor"))
+            .Set(new PdfName("FontName"), new PdfName("DejaVuSans"))
+            .Set(new PdfName("Flags"), new PdfInteger(flags))
+            .Set(new PdfName("FontBBox"), new PdfArray([new PdfInteger(-1021), new PdfInteger(-463), new PdfInteger(1793), new PdfInteger(1232)]))
+            .Set(new PdfName("ItalicAngle"), new PdfInteger(0))
+            .Set(new PdfName("Ascent"), new PdfInteger(928))
+            .Set(new PdfName("Descent"), new PdfInteger(-236))
+            .Set(new PdfName("CapHeight"), new PdfInteger(928))
+            .Set(new PdfName("StemV"), new PdfInteger(80))
+            .Set(new PdfName("FontFile2"), new PdfIndirectReference(ffNum));
+        var simple = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("Font"))
+            .Set(PdfName.Subtype, new PdfName("TrueType"))
+            .Set(PdfName.BaseFont, new PdfName("DejaVuSans"))
+            .Set(new PdfName("FirstChar"), new PdfInteger(65))
+            .Set(new PdfName("LastChar"), new PdfInteger(65))
+            .Set(new PdfName("Widths"), new PdfArray([new PdfInteger(widthA)]))
+            .Set(new PdfName("FontDescriptor"), new PdfIndirectReference(descNum));
+        if (encoding is not null)
+            simple.Set(new PdfName("Encoding"), encoding);
+
+        var newFontResources = CloneDict(fontResources).Set(new PdfName("F1"), new PdfIndirectReference(fontNum));
+        var newResources = CloneDict(resources).Set(PdfName.Font, newFontResources);
+        var newPage = CloneDict(page).Set(new PdfName("Resources"), newResources);
+        newPage.Set(new PdfName("Contents"),
+            new PdfArray([page.Get(new PdfName("Contents"))!, new PdfIndirectReference(contentNum)]));
+        var content = new PdfStream(Encoding.ASCII.GetBytes("BT /F1 12 Tf 100 500 Td (A) Tj ET"));
+
+        return reader.AppendRevision(
+            [(pageRef.ObjectNumber, newPage), (fontNum, simple), (descNum, descriptor), (ffNum, fontFile), (contentNum, content)]);
+    }
+
 }

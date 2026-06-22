@@ -241,6 +241,9 @@ public static class ConformanceCatalog
         "7.18.2-1",            // UaTrapNetAnnotRule: TrapNet annots forbidden unless hidden/outside-crop
         "7.18.5-2",            // UaLinkAnnotRule: Link annots require non-empty /Contents
         "7.20-1",              // UaReferenceXObjectRule: Form XObjects shall not contain /Ref
+        // Batch A3 — font clauses:
+        "7.21.3.2-1",          // UaCidToGidMapRule: embedded CIDFontType2 must have /CIDToGIDMap
+        "7.21.6-3",            // UaSymbolicFontRule: symbolic TrueType must have no /Encoding
     };
 
     // PDF/UA-1 checks the rules cover only partially (the common case is detected; some conditions
@@ -283,6 +286,52 @@ public static class ConformanceCatalog
         "5-3" or "5-4" or "5-5" => "prefix-aware XMP parsing (XmpReader matches by namespace URI, not prefix)",
         "7.16-1" => "encrypted-document support: the reader does not surface the P permission bits for encrypted files",
         "7.18.6.2-1" or "7.18.6.2-2" => "media clip data dictionary traversal (requires walking Screen-annotation rendition actions)",
+
+        // §7.21 font deferred notes — Batch A3 assessment:
+        "7.21.4.1-1" =>
+            "renderingMode == 3 (invisible text) exemption: veraPDF exempts fonts used ONLY with Tr 3 "
+            + "from the embedding requirement; ContentStreamUsage does not yet track per-font text "
+            + "rendering mode, so implementing this without that tracking would over-reject conformant "
+            + "invisible-text usage",
+        "7.21.4.1-2" or "7.21.5-1" =>
+            "glyph presence and width checks: only the Identity-H CIDFontType2 path is currently covered "
+            + "by the PDF/A-2 GlyphPresenceRule; full UA-1 coverage requires the Tr 3 exemption and "
+            + "coverage of simple fonts (which need encoding+cmap resolution) — deferred to avoid FP",
+        "7.21.4.2-1" =>
+            "Type1 /CharSet completeness for UA-1: mirrors §6.2.11.4.2-1 in PDF/A-2 and is structurally "
+            + "identical (FontStructureRule already covers it for PDF/A-2); deferred as a UA-1 alias "
+            + "pending a UA-specific rule wiring",
+        "7.21.4.2-2" =>
+            "CIDSet completeness for UA-1: mirrors §6.2.11.4.2-2 in PDF/A-2 (FontStructureRule covers it "
+            + "for PDF/A-2); deferred as a UA-1 alias pending a UA-specific rule wiring",
+        "7.21.3.1-1" =>
+            "Type0 CIDSystemInfo/CMap compatibility for UA-1: mirrors §6.2.11.3.1-1 in PDF/A-2 "
+            + "(FontStructureRule covers it for PDF/A-2); deferred as a UA-1 alias pending a UA-specific rule wiring",
+        "7.21.3.3-1" or "7.21.3.3-2" or "7.21.3.3-3" =>
+            "CMap embedding/WMode/referenced checks for UA-1: mirror §6.2.11.3.3-1/-2/-3 in PDF/A-2 "
+            + "(FontStructureRule covers them for PDF/A-2); deferred as UA-1 aliases pending rule wiring",
+        "7.21.6-1" or "7.21.6-2" or "7.21.6-4" =>
+            "TrueType non-symbolic cmap / Differences-compliance checks: §7.21.6-2 requires "
+            + "differencesAreUnicodeCompliant (every /Differences glyph name must resolve to Unicode — "
+            + "FP-prone without a complete AGL table); §7.21.6-1 and §7.21.6-4 check the embedded cmap "
+            + "subtable structure (overlaps with PDF/A-2 §6.2.11.6-1/-4 in FontStructureRule); "
+            + "deferred to avoid false positives from incomplete glyph-name resolution",
+        "7.21.7-1" =>
+            "glyph-level ToUnicode presence (veraPDF's Glyph.toUnicode model derives Unicode from font "
+            + "encoding for standard-encoded simple fonts, so requiring a /ToUnicode stream would "
+            + "over-reject conformant WinAnsi/MacRoman simple fonts; deferred until the glyph-level "
+            + "Unicode-derivation model is fully understood for all font types)",
+        "7.21.7-2" =>
+            "forbidden ToUnicode values (U+0000/FEFF/FFFE): veraPDF checks only glyphs actually shown, "
+            + "so a whole-CMap scan over-rejects an UNUSED bfchar/bfrange entry mapping to a forbidden "
+            + "value (proven: veraPDF PASSes a doc with an unused <0025> <0000> entry). Needs "
+            + "shown-glyph-code extraction from content streams to scope to used glyphs, like 7.21.8-1",
+        "7.21.8-1" =>
+            ".notdef glyph reference: needs per-font text-rendering-mode tracking (Tr 3 invisible text "
+            + "is exempt) and code-to-GID resolution for simple fonts (encoding+cmap lookup); "
+            + "the existing PDF/A-2 GlyphPresenceRule covers only Identity-H CIDFontType2 — "
+            + "implementing without those prerequisites would over-reject conformant documents",
+
         _ => "structure-tree walker",
     };
 
