@@ -74,36 +74,36 @@ internal sealed class UaTocContainmentRule : IConformanceRule
                 // 7.2-27: TOC kids must be TOC/TOCI/Caption (or unmapped/null)
                 // 7.2-28: Caption (if present) may only be the FIRST kid of TOC
                 case "TOC":
-                {
-                    var kidTypes = node.Children
-                        .Select(c => c.StandardType)
-                        .Where(t => t != null)
-                        .Select(t => t!)
-                        .ToList();
-
-                    // 7.2-27: kid-type membership
-                    foreach (var kidType in kidTypes)
                     {
-                        if (!TocKids.Contains(kidType))
-                        {
-                            Report(context, "ISO14289-1:7.2-27",
-                                "A TOC structure element has a child that is not TOC, TOCI, or Caption (§7.2-27).");
-                            return;
-                        }
-                    }
+                        var kidTypes = node.Children
+                            .Select(c => c.StandardType)
+                            .Where(t => t != null)
+                            .Select(t => t!)
+                            .ToList();
 
-                    // 7.2-28: Caption may only be the first kid (index 0 in null-omitted list)
-                    for (int i = 1; i < kidTypes.Count; i++)
-                    {
-                        if (kidTypes[i] == "Caption")
+                        // 7.2-27: kid-type membership
+                        foreach (var kidType in kidTypes)
                         {
-                            Report(context, "ISO14289-1:7.2-28",
-                                "A TOC structure element has a Caption child that is not the first child (§7.2-28).");
-                            return;
+                            if (!TocKids.Contains(kidType))
+                            {
+                                Report(context, "ISO14289-1:7.2-27",
+                                    "A TOC structure element has a child that is not TOC, TOCI, or Caption (§7.2-27).");
+                                return;
+                            }
                         }
+
+                        // 7.2-28: Caption may only be the first kid (index 0 in null-omitted list)
+                        for (int i = 1; i < kidTypes.Count; i++)
+                        {
+                            if (kidTypes[i] == "Caption")
+                            {
+                                Report(context, "ISO14289-1:7.2-28",
+                                    "A TOC structure element has a Caption child that is not the first child (§7.2-28).");
+                                return;
+                            }
+                        }
+                        break;
                     }
-                    break;
-                }
             }
         }
     }
