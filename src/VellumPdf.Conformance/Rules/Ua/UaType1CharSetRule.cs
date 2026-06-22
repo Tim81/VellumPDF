@@ -1,8 +1,8 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
-using VellumPdf.Core;
 using VellumPdf.Conformance.Rules.Fonts;
+using VellumPdf.Core;
 
 namespace VellumPdf.Conformance.Rules.Ua;
 

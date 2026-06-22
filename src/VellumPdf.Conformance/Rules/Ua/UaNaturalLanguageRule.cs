@@ -73,15 +73,15 @@ internal sealed class UaNaturalLanguageRule : IConformanceRule
 
     public string Clause => "ISO 14289-1:2014, 7.2";
 
-    private static readonly PdfName _lang        = new("Lang");
-    private static readonly PdfName _alt         = new("Alt");
-    private static readonly PdfName _actualText  = new("ActualText");
-    private static readonly PdfName _e           = new("E");
-    private static readonly PdfName _contents    = new("Contents");
-    private static readonly PdfName _tu          = new("TU");
+    private static readonly PdfName _lang = new("Lang");
+    private static readonly PdfName _alt = new("Alt");
+    private static readonly PdfName _actualText = new("ActualText");
+    private static readonly PdfName _e = new("E");
+    private static readonly PdfName _contents = new("Contents");
+    private static readonly PdfName _tu = new("TU");
     private static readonly PdfName _structParent = new("StructParent");
-    private static readonly PdfName _acroForm    = new("AcroForm");
-    private static readonly PdfName _fields      = new("Fields");
+    private static readonly PdfName _acroForm = new("AcroForm");
+    private static readonly PdfName _fields = new("Fields");
 
     private const int MaxFieldDepth = 64;
 
@@ -291,8 +291,8 @@ internal sealed class UaNaturalLanguageRule : IConformanceRule
     private static bool IsNonEmptyString(PdfObject? obj) => obj switch
     {
         PdfLiteralString s => s.Bytes.Length > 0,
-        PdfHexString h     => h.Bytes.Length > 0,
-        _                  => false,
+        PdfHexString h => h.Bytes.Length > 0,
+        _ => false,
     };
 
     // Returns true when the PDF object is a non-empty literal or hex string
