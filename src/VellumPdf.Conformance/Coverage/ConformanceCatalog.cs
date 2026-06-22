@@ -250,6 +250,8 @@ public static class ConformanceCatalog
         "7.21.3.3-3",          // UaCMapRule: usecmap-referenced name must be a predefined CMap
         "7.21.4.2-1",          // UaType1CharSetRule: Type1 subset CharSet must list all glyphs
         "7.21.4.2-2",          // UaCidSetRule: CIDFontType2 subset CIDSet must list all CIDs
+        // Batch A5a — rendering-mode-scoped font embedding:
+        "7.21.4.1-1",          // UaFontEmbeddingRule: non-embedded simple font drawn visibly
     };
 
     // PDF/UA-1 checks the rules cover only partially (the common case is detected; some conditions
@@ -297,11 +299,7 @@ public static class ConformanceCatalog
         "7.18.6.2-1" or "7.18.6.2-2" => "media clip data dictionary traversal (requires walking Screen-annotation rendition actions)",
 
         // §7.21 font deferred notes — Batch A3 assessment:
-        "7.21.4.1-1" =>
-            "renderingMode == 3 (invisible text) exemption: veraPDF exempts fonts used ONLY with Tr 3 "
-            + "from the embedding requirement; ContentStreamUsage does not yet track per-font text "
-            + "rendering mode, so implementing this without that tracking would over-reject conformant "
-            + "invisible-text usage",
+        // 7.21.4.1-1 moved to PdfUaImplemented (Batch A5a — UaFontEmbeddingRule, rendering-mode-scoped).
         "7.21.4.1-2" or "7.21.5-1" =>
             "glyph presence and width checks: only the Identity-H CIDFontType2 path is currently covered "
             + "by the PDF/A-2 GlyphPresenceRule; full UA-1 coverage requires the Tr 3 exemption and "
