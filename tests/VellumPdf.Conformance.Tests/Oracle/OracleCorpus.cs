@@ -259,6 +259,65 @@ public static class OracleCorpus
             new OracleFixture("pdfa2a-no-structure", WriterPdfMissingStructure(VellumPdf.Document.PdfConformance.PdfA2a),
                 Conformance.PdfConformance.PdfA2A, "2a", ExpectedCompliant: false),
 
+            // §6.7.3.4-1 VIOLATION: a StructElem with /S /MyCustomTag and NO /RoleMap entry.
+            // veraPDF fires 6.7.3.4-1 (isNotMappedToStandardType == true).
+            // In-process: A2aStructureTypeRule fires "ISO19005-2:6.7.3.4-1".
+            new OracleFixture("pdfa2a-nonstandard-type-unmapped",
+                Pdfa2aNonStandardTypeUnmapped(),
+                Conformance.PdfConformance.PdfA2A, "2a", ExpectedCompliant: false),
+
+            // §6.7.3.4-1 FP-safety: StructElem /S /MyCustomTag with /RoleMap /MyCustomTag /Div.
+            // veraPDF PASSES (isNotMappedToStandardType == false).
+            // In-process: A2aStructureTypeRule must NOT fire.
+            new OracleFixture("pdfa2a-nonstandard-type-rolemapped",
+                Pdfa2aNonStandardTypeRoleMapped(),
+                Conformance.PdfConformance.PdfA2A, "2a", ExpectedCompliant: true),
+
+            // §6.7.3.4-2 VIOLATION: /RoleMap /Foo /Bar /Bar /Foo with a StructElem /S /Foo.
+            // veraPDF fires 6.7.3.4-2 (circularMappingExist == true on the element).
+            // In-process: A2aStructureTypeRule fires "ISO19005-2:6.7.3.4-2".
+            new OracleFixture("pdfa2a-circular-rolemap",
+                Pdfa2aCircularRoleMap(),
+                Conformance.PdfConformance.PdfA2A, "2a", ExpectedCompliant: false),
+
+            // §6.7.3.4-3 VIOLATION: /RoleMap /P /MyNonStd with a StructElem /S /P. Standard type
+            // /P is remapped to non-standard /MyNonStd. veraPDF fires 6.7.3.4-3.
+            // In-process: A2aStructureTypeRule fires "ISO19005-2:6.7.3.4-3".
+            new OracleFixture("pdfa2a-standard-type-remap-nonstd",
+                Pdfa2aStandardTypeRemapNonStd(),
+                Conformance.PdfConformance.PdfA2A, "2a", ExpectedCompliant: false),
+
+            // §6.7.3.4-3 FP-safety: /RoleMap /P /Div (standard remapped to another standard).
+            // veraPDF PASSES (empirically confirmed). In-process: A2aStructureTypeRule must NOT fire.
+            new OracleFixture("pdfa2a-standard-type-remap-std",
+                Pdfa2aStandardTypeRemapStd(),
+                Conformance.PdfConformance.PdfA2A, "2a", ExpectedCompliant: true),
+
+            // §6.7.3.4-3 FP-safety (multi-hop): /RoleMap /P /Foo  /Foo /Span — standard /P remapped
+            // through a NON-standard intermediate /Foo that itself resolves to the standard type
+            // /Span. veraPDF resolves the FULL chain and PASSES (exit 0, no 6.7.3.4 failure —
+            // empirically confirmed). Guards against a regression to the immediate-target check,
+            // which would over-reject this document. In-process: A2aStructureTypeRule must NOT fire.
+            new OracleFixture("pdfa2a-standard-type-remap-multihop",
+                Pdfa2aStandardTypeRemapMultihop(),
+                Conformance.PdfConformance.PdfA2A, "2a", ExpectedCompliant: true),
+
+            // §6.7.4-1 VIOLATION: document catalog /Lang (invalid!!bad) — not a valid RFC 3066 tag.
+            // veraPDF fires 6.7.4-1. In-process: A2aLangSyntaxRule fires "ISO19005-2:6.7.4-1".
+            new OracleFixture("pdfa2a-bad-catalog-lang",
+                Pdfa2aBadCatalogLang(),
+                Conformance.PdfConformance.PdfA2A, "2a", ExpectedCompliant: false),
+
+            // §6.7.4-1 VIOLATION: StructElem /Lang (xyz!!bad) — bad tag on a structure element.
+            // veraPDF fires 6.7.4-1. In-process: A2aLangSyntaxRule fires "ISO19005-2:6.7.4-1".
+            new OracleFixture("pdfa2a-bad-structelem-lang",
+                Pdfa2aBadStructElemLang(),
+                Conformance.PdfConformance.PdfA2A, "2a", ExpectedCompliant: false),
+
+            // §6.7.4-1 FP-safety: catalog /Lang (en-US) — valid BCP-47 tag.
+            // veraPDF PASSES. In-process: A2aLangSyntaxRule must NOT fire.
+            // (re-uses the pdfa2a-tagged fixture via WriterPdfTagged which sets Language = "en-US")
+
             // The same for PDF/UA-1: lang + title present but no structure tree, isolating the
             // tagging requirement (§7.1). Cross-validates the UA tagging rule's negative path.
             new OracleFixture("pdfua1-no-structure", WriterPdfMissingStructure(VellumPdf.Document.PdfConformance.PdfUA1),
@@ -2059,6 +2118,239 @@ public static class OracleCorpus
         using var ms = new MemoryStream();
         doc.Save(ms);
         return ms.ToArray();
+    }
+
+    // ── PDF/A-2a §6.7.3.4 / §6.7.4 oracle fixture helpers ───────────────────────────────────────
+
+    /// <summary>
+    /// §6.7.3.4-1 VIOLATION: injects a StructElem with <c>/S /MyCustomTag</c> and NO <c>/RoleMap</c>
+    /// entry. veraPDF fires 6.7.3.4-1 (<c>isNotMappedToStandardType == true</c>).
+    /// </summary>
+    private static byte[] Pdfa2aNonStandardTypeUnmapped()
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfA2a);
+        using var reader = PdfReader.Open(baseline);
+        var strRef = (PdfIndirectReference)reader.Catalog.Get(new PdfName("StructTreeRoot"))!;
+        var str = (PdfDictionary)reader.Resolve(strRef.ObjectNumber)!;
+
+        var docRef = str.Get(new PdfName("K")) as PdfIndirectReference
+            ?? throw new InvalidOperationException("Expected Document StructElem ref");
+        var doc = (PdfDictionary)reader.Resolve(docRef.ObjectNumber)!;
+        var docK = doc.Get(new PdfName("K"));
+
+        var customElemNum = reader.Size;
+        var customElem = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("StructElem"))
+            .Set(new PdfName("S"), new PdfName("MyCustomTag"))
+            .Set(new PdfName("P"), strRef);
+
+        var newDoc = CloneDict(doc);
+        newDoc.Set(new PdfName("K"), new PdfArray([
+            (PdfObject)(docK is PdfIndirectReference ? docK : new PdfIndirectReference(docRef.ObjectNumber)),
+            new PdfIndirectReference(customElemNum),
+        ]));
+
+        return reader.AppendRevision([
+            (docRef.ObjectNumber, newDoc),
+            (customElemNum, customElem),
+        ]);
+    }
+
+    /// <summary>
+    /// §6.7.3.4-1 FP-safety: injects a StructElem with <c>/S /MyCustomTag</c> role-mapped to the
+    /// standard type <c>/Div</c> via the StructTreeRoot <c>/RoleMap</c>. veraPDF PASSES.
+    /// </summary>
+    private static byte[] Pdfa2aNonStandardTypeRoleMapped()
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfA2a);
+        using var reader = PdfReader.Open(baseline);
+        var strRef = (PdfIndirectReference)reader.Catalog.Get(new PdfName("StructTreeRoot"))!;
+        var str = (PdfDictionary)reader.Resolve(strRef.ObjectNumber)!;
+
+        var docRef = str.Get(new PdfName("K")) as PdfIndirectReference
+            ?? throw new InvalidOperationException("Expected Document StructElem ref");
+        var doc = (PdfDictionary)reader.Resolve(docRef.ObjectNumber)!;
+        var docK = doc.Get(new PdfName("K"));
+
+        var customElemNum = reader.Size;
+        var customElem = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("StructElem"))
+            .Set(new PdfName("S"), new PdfName("MyCustomTag"))
+            .Set(new PdfName("P"), strRef);
+
+        var newDoc = CloneDict(doc);
+        newDoc.Set(new PdfName("K"), new PdfArray([
+            (PdfObject)(docK is PdfIndirectReference ? docK : new PdfIndirectReference(docRef.ObjectNumber)),
+            new PdfIndirectReference(customElemNum),
+        ]));
+
+        var newStr = CloneDict(str);
+        newStr.Set(new PdfName("RoleMap"), new PdfDictionary()
+            .Set(new PdfName("MyCustomTag"), new PdfName("Div")));
+
+        return reader.AppendRevision([
+            (strRef.ObjectNumber, newStr),
+            (docRef.ObjectNumber, newDoc),
+            (customElemNum, customElem),
+        ]);
+    }
+
+    /// <summary>
+    /// §6.7.3.4-2 VIOLATION: <c>/RoleMap &lt;&lt; /Foo /Bar /Bar /Foo &gt;&gt;</c> with a StructElem
+    /// <c>/S /Foo</c>. veraPDF fires 6.7.3.4-2 (<c>circularMappingExist == true</c>).
+    /// </summary>
+    private static byte[] Pdfa2aCircularRoleMap()
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfA2a);
+        using var reader = PdfReader.Open(baseline);
+        var strRef = (PdfIndirectReference)reader.Catalog.Get(new PdfName("StructTreeRoot"))!;
+        var str = (PdfDictionary)reader.Resolve(strRef.ObjectNumber)!;
+
+        var docRef = str.Get(new PdfName("K")) as PdfIndirectReference
+            ?? throw new InvalidOperationException("Expected Document StructElem ref");
+        var doc = (PdfDictionary)reader.Resolve(docRef.ObjectNumber)!;
+        var docK = doc.Get(new PdfName("K"));
+
+        var fooElemNum = reader.Size;
+        var fooElem = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("StructElem"))
+            .Set(new PdfName("S"), new PdfName("Foo"))
+            .Set(new PdfName("P"), strRef);
+
+        var newDoc = CloneDict(doc);
+        newDoc.Set(new PdfName("K"), new PdfArray([
+            (PdfObject)(docK is PdfIndirectReference ? docK : new PdfIndirectReference(docRef.ObjectNumber)),
+            new PdfIndirectReference(fooElemNum),
+        ]));
+
+        var newStr = CloneDict(str);
+        newStr.Set(new PdfName("RoleMap"), new PdfDictionary()
+            .Set(new PdfName("Foo"), new PdfName("Bar"))
+            .Set(new PdfName("Bar"), new PdfName("Foo")));
+
+        return reader.AppendRevision([
+            (strRef.ObjectNumber, newStr),
+            (docRef.ObjectNumber, newDoc),
+            (fooElemNum, fooElem),
+        ]);
+    }
+
+    /// <summary>
+    /// §6.7.3.4-3 VIOLATION: <c>/RoleMap &lt;&lt; /P /MyNonStd &gt;&gt;</c> with a StructElem
+    /// <c>/S /P</c>. Standard type /P is remapped to the non-standard type /MyNonStd.
+    /// veraPDF fires 6.7.3.4-3 (<c>remappedStandardType != null</c>).
+    /// </summary>
+    private static byte[] Pdfa2aStandardTypeRemapNonStd()
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfA2a);
+        using var reader = PdfReader.Open(baseline);
+        var strRef = (PdfIndirectReference)reader.Catalog.Get(new PdfName("StructTreeRoot"))!;
+        var str = (PdfDictionary)reader.Resolve(strRef.ObjectNumber)!;
+
+        // The baseline already has a Document → P structure. We just add the /RoleMap to remap /P
+        // to a non-standard type. The existing /P element satisfies the "element uses /P" condition.
+        var newStr = CloneDict(str);
+        newStr.Set(new PdfName("RoleMap"), new PdfDictionary()
+            .Set(new PdfName("P"), new PdfName("MyNonStd")));
+
+        return reader.AppendRevision([
+            (strRef.ObjectNumber, newStr),
+        ]);
+    }
+
+    /// <summary>
+    /// §6.7.3.4-3 FP-safety: <c>/RoleMap &lt;&lt; /P /Div &gt;&gt;</c> with a StructElem
+    /// <c>/S /P</c>. Standard type /P remapped to another STANDARD type /Div.
+    /// veraPDF PASSES (empirically confirmed against veraPDF 1.30.2).
+    /// </summary>
+    private static byte[] Pdfa2aStandardTypeRemapStd()
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfA2a);
+        using var reader = PdfReader.Open(baseline);
+        var strRef = (PdfIndirectReference)reader.Catalog.Get(new PdfName("StructTreeRoot"))!;
+        var str = (PdfDictionary)reader.Resolve(strRef.ObjectNumber)!;
+
+        var newStr = CloneDict(str);
+        newStr.Set(new PdfName("RoleMap"), new PdfDictionary()
+            .Set(new PdfName("P"), new PdfName("Div")));
+
+        return reader.AppendRevision([
+            (strRef.ObjectNumber, newStr),
+        ]);
+    }
+
+    /// <summary>
+    /// §6.7.3.4-3 FP-safety (multi-hop): <c>/RoleMap &lt;&lt; /P /Foo  /Foo /Span &gt;&gt;</c> with a
+    /// StructElem <c>/S /P</c>. The standard type /P is remapped through the non-standard intermediate
+    /// /Foo, which itself maps to the standard type /Span. veraPDF resolves the full chain and PASSES
+    /// (confirmed against veraPDF 1.30.2). The rule must walk the chain — not just the immediate
+    /// target — or it raises a false positive here.
+    /// </summary>
+    private static byte[] Pdfa2aStandardTypeRemapMultihop()
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfA2a);
+        using var reader = PdfReader.Open(baseline);
+        var strRef = (PdfIndirectReference)reader.Catalog.Get(new PdfName("StructTreeRoot"))!;
+        var str = (PdfDictionary)reader.Resolve(strRef.ObjectNumber)!;
+
+        var newStr = CloneDict(str);
+        newStr.Set(new PdfName("RoleMap"), new PdfDictionary()
+            .Set(new PdfName("P"), new PdfName("Foo"))
+            .Set(new PdfName("Foo"), new PdfName("Span")));
+
+        return reader.AppendRevision([
+            (strRef.ObjectNumber, newStr),
+        ]);
+    }
+
+    /// <summary>
+    /// §6.7.4-1 VIOLATION: injects a bad <c>/Lang (invalid!!bad)</c> entry into the document
+    /// catalog. veraPDF fires 6.7.4-1 (<c>unicodeValue</c> does not match the BCP-47 pattern).
+    /// </summary>
+    private static byte[] Pdfa2aBadCatalogLang()
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfA2a);
+        using var reader = PdfReader.Open(baseline);
+        var rootRef = (PdfIndirectReference)reader.Trailer.Get(PdfName.Root)!;
+        var catalog = CloneDict(reader.Catalog);
+        catalog.Set(new PdfName("Lang"), new PdfLiteralString(Encoding.ASCII.GetBytes("invalid!!bad")));
+        return reader.AppendRevision([(rootRef.ObjectNumber, (PdfObject)catalog)]);
+    }
+
+    /// <summary>
+    /// §6.7.4-1 VIOLATION: injects a StructElem with <c>/Lang (xyz!!bad)</c>. The structure
+    /// element's /Lang value is not a valid RFC 3066 language tag.
+    /// veraPDF fires 6.7.4-1.
+    /// </summary>
+    private static byte[] Pdfa2aBadStructElemLang()
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfA2a);
+        using var reader = PdfReader.Open(baseline);
+        var strRef = (PdfIndirectReference)reader.Catalog.Get(new PdfName("StructTreeRoot"))!;
+        var str = (PdfDictionary)reader.Resolve(strRef.ObjectNumber)!;
+
+        var docRef = str.Get(new PdfName("K")) as PdfIndirectReference
+            ?? throw new InvalidOperationException("Expected Document StructElem ref");
+        var doc = (PdfDictionary)reader.Resolve(docRef.ObjectNumber)!;
+        var docK = doc.Get(new PdfName("K"));
+
+        var badLangElemNum = reader.Size;
+        var badLangElem = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("StructElem"))
+            .Set(new PdfName("S"), new PdfName("P"))
+            .Set(new PdfName("P"), strRef)
+            .Set(new PdfName("Lang"), new PdfLiteralString(Encoding.ASCII.GetBytes("xyz!!bad")));
+
+        var newDoc = CloneDict(doc);
+        newDoc.Set(new PdfName("K"), new PdfArray([
+            (PdfObject)(docK is PdfIndirectReference ? docK : new PdfIndirectReference(docRef.ObjectNumber)),
+            new PdfIndirectReference(badLangElemNum),
+        ]));
+
+        return reader.AppendRevision([
+            (docRef.ObjectNumber, newDoc),
+            (badLangElemNum, badLangElem),
+        ]);
     }
 
     private static byte[] WriterPdfWithJavaScriptAction()

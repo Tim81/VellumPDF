@@ -121,11 +121,17 @@ internal static class RuleRegistry
         new ToUnicodeRule(),
     ];
 
-    // PDF/A-2a = PDF/A-2u plus tagged logical structure (ISO 19005-2 §6.8).
+    // PDF/A-2a = PDF/A-2u plus tagged logical structure (ISO 19005-2 §6.8) and
+    // §6.7 structure-type and language-tag rules.
     private static readonly IConformanceRule[] PdfA2ARules =
     [
         .. PdfA2URules,
         new LogicalStructureRule(),
+        // §6.7.3.4-1/-2/-3 — structure element type conformance (non-standard mapping,
+        // circular mapping, standard-type-to-non-standard remap):
+        new A2aStructureTypeRule(),
+        // §6.7.4-1 — /Lang value syntax (catalog + structure elements):
+        new A2aLangSyntaxRule(),
     ];
 
     // PDF/UA-1 (ISO 14289-1) is a distinct standard from PDF/A: it shares the baseline catalog

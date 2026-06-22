@@ -222,10 +222,9 @@ public static class ConformanceCatalog
         // (which carry no colr boxes) — this is not a gap but correct per-spec scoping.
         // 6.4.3-1/-2/-3 moved to Implemented/Partial (SignatureRule).
         ["6.7.3.3-1"] = "structure-tree walker",
-        ["6.7.3.4-1"] = "structure-tree walker",
-        ["6.7.3.4-2"] = "structure-tree walker",
-        ["6.7.3.4-3"] = "structure-tree walker",
-        ["6.7.4-1"] = "structure-tree walker",
+        // 6.7.3.4-1/-2/-3 moved to Implemented (A2aStructureTypeRule: structure-tree walker —
+        //   non-standard type unmapped, circular role-map, standard type remapped to non-standard).
+        // 6.7.4-1 moved to Implemented (A2aLangSyntaxRule: catalog /Lang + struct-elem /Lang syntax).
     };
 
     // PDF/UA-1: the few checks the current rules cover. Everything else needs the logical-structure
