@@ -192,6 +192,8 @@ internal static class RuleRegistry
         new UaNaturalLanguageRule(),
         // Batch B8 — §7.2 natural-language determination (7.2-2 outline, 7.2-33 XMP lang-alt):
         new UaOutlineLangRule(),
+        // Batch C1 — §7.2 natural-language determination for marked-content sequences (7.2-30/-31/-32/-34):
+        new UaMarkedContentLangRule(),
         // Batch B10 — §7.4.2 heading nesting, §7.5 connected headers:
         new UaHeadingNestingRule(),
         new UaTableHeaderRule(),

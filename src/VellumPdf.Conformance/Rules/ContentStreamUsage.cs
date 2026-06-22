@@ -17,8 +17,75 @@ namespace VellumPdf.Conformance.Rules;
 internal sealed record TextShow(string? FontResourceName, int RenderingMode, byte[] Bytes);
 
 /// <summary>
+/// One marked-content sequence (BMC/BDC … EMC) captured from a page content stream.
+/// Properties come from the inline property dict of a BDC operator; they are null for
+/// BMC sequences and for BDC sequences that reference a named Properties resource rather than
+/// carrying an inline dict.
+/// </summary>
+internal sealed class MarkedContentSequence
+{
+    internal MarkedContentSequence(
+        string tag,
+        int? mcid,
+        string? lang,
+        string? actualText,
+        string? alt,
+        string? expansion,
+        string? inheritedLang)
+    {
+        Tag = tag;
+        Mcid = mcid;
+        Lang = lang;
+        ActualText = actualText;
+        Alt = alt;
+        Expansion = expansion;
+        InheritedLang = inheritedLang;
+        IsArtifact = string.Equals(tag, "Artifact", StringComparison.Ordinal);
+    }
+
+    /// <summary>The tag name from the BMC/BDC operator (e.g. "Artifact", "P", "Span").</summary>
+    public string Tag { get; }
+
+    /// <summary>The /MCID integer from the BDC inline property dict, or null.</summary>
+    public int? Mcid { get; }
+
+    /// <summary>The /Lang string from the BDC inline property dict, or null.</summary>
+    public string? Lang { get; }
+
+    /// <summary>The /ActualText string from the BDC inline property dict, or null.</summary>
+    public string? ActualText { get; }
+
+    /// <summary>The /Alt string from the BDC inline property dict, or null.</summary>
+    public string? Alt { get; }
+
+    /// <summary>The /E (expansion) string from the BDC inline property dict, or null.</summary>
+    public string? Expansion { get; }
+
+    /// <summary>
+    /// The /Lang inherited from the nearest enclosing BDC ancestor that carries /Lang,
+    /// or null if no ancestor has /Lang. Does not include <see cref="Lang"/> itself.
+    /// </summary>
+    public string? InheritedLang { get; }
+
+    /// <summary>True when <see cref="Tag"/> is "Artifact".</summary>
+    public bool IsArtifact { get; }
+}
+
+/// <summary>
+/// The marked-content context at the time of one text-show operator. Used by
+/// §7.2-34 (SETextItem natural-language determination) to check whether a text show
+/// has a determinable language.
+/// </summary>
+internal sealed record TextShowMcContext(
+    int ShowIndex,   // zero-based index into ContentUsage.TextShows
+    int? Mcid,       // MCID of the innermost BDC at the time of the show, or null
+    string? DirectLang,    // /Lang from the innermost BDC's own property dict, or null
+    string? InheritedLang); // /Lang inherited from any ancestor BDC, or null
+
+/// <summary>
 /// The result of scanning a page's content streams for graphics-state usage. All properties
-/// mirror the seven operands tracked before Batch A5a, extended with <see cref="TextShows"/>.
+/// mirror the seven operands tracked before Batch A5a, extended with <see cref="TextShows"/>,
+/// <see cref="MarkedContentSequences"/>, and <see cref="TextShowContexts"/>.
 /// </summary>
 internal sealed class ContentUsage
 {
@@ -30,7 +97,9 @@ internal sealed class ContentUsage
         HashSet<string> selectedColorSpaces,
         HashSet<string> usedFonts,
         HashSet<string> paintedShadings,
-        List<TextShow> textShows)
+        List<TextShow> textShows,
+        List<MarkedContentSequence> markedContentSequences,
+        List<TextShowMcContext> textShowContexts)
     {
         AppliedExtGStates = appliedExtGStates;
         UsesDeviceColour = usesDeviceColour;
@@ -40,6 +109,8 @@ internal sealed class ContentUsage
         UsedFonts = usedFonts;
         PaintedShadings = paintedShadings;
         TextShows = textShows;
+        MarkedContentSequences = markedContentSequences;
+        TextShowContexts = textShowContexts;
     }
 
     /// <summary>The ExtGState resource names actually applied by a <c>gs</c> operator.</summary>
@@ -70,15 +141,31 @@ internal sealed class ContentUsage
     /// string element in the array; number elements (spacing adjustments) are skipped.
     /// </summary>
     public IReadOnlyList<TextShow> TextShows { get; }
+
+    /// <summary>
+    /// Every marked-content sequence (BMC/BDC … EMC) encountered in the page content stream,
+    /// in the order they were opened. Includes only sequences from the page content streams
+    /// (not Form XObjects, Type 3 CharProcs, or annotation appearance streams).
+    /// For BDC sequences with an inline property dict the <see cref="MarkedContentSequence"/>
+    /// carries its MCID, Lang, ActualText, Alt, and E properties; for BMC sequences and BDC
+    /// sequences referencing a named Properties resource these properties are null.
+    /// </summary>
+    public IReadOnlyList<MarkedContentSequence> MarkedContentSequences { get; }
+
+    /// <summary>
+    /// One entry per text-show operator, recording the marked-content context (MCID, direct
+    /// /Lang, inherited /Lang) in effect at the moment of each show. The <see cref="TextShowMcContext.ShowIndex"/>
+    /// matches the corresponding index in <see cref="TextShows"/>.
+    /// </summary>
+    public IReadOnlyList<TextShowMcContext> TextShowContexts { get; }
 }
 
 /// <summary>
 /// A minimal content-stream operator scan. It reports which graphics-state (<c>/ExtGState</c>)
 /// resources a page actually applies (via the <c>gs</c> operator), which XObjects it actually paints
 /// (via the <c>Do</c> operator), which font resource names the page selects (via the <c>Tf</c>
-/// operator), and whether the page paints with device-dependent colour. Rules use this to scope
-/// checks to constructs that are exercised — matching veraPDF, which validates the <em>current</em>
-/// graphics state rather than every resource that is merely present (see issues #118, #127, #128).
+/// operator), whether the page paints with device-dependent colour, and the marked-content
+/// sequences (BMC/BDC … EMC) with their inline property-dict attributes.
 /// </summary>
 /// <remarks>
 /// Best-effort and defensive: the page content is decoded and tokenised with the reader's lexer;
@@ -92,7 +179,7 @@ internal static class ContentStreamUsage
 
     /// <summary>Scans <paramref name="page"/>'s content streams for graphics-state, colour,
     /// XObject-drawing, rendering-intent, selected-colour-space, selected-font, shading usage,
-    /// and per-show text rendering mode.</summary>
+    /// per-show text rendering mode, and marked-content sequences with their inline properties.</summary>
     public static ContentUsage Analyze(PreflightContext context, PdfDictionary page)
     {
         var applied = new HashSet<string>(StringComparer.Ordinal);
@@ -103,12 +190,18 @@ internal static class ContentStreamUsage
         var paintedShadings = new HashSet<string>(StringComparer.Ordinal);
         var usesDeviceColour = false;
         var textShows = new List<TextShow>();
+        var markedContentSequences = new List<MarkedContentSequence>();
+        var textShowContexts = new List<TextShowMcContext>();
 
         // Graphics-state stack for q/Q save-restore. Each entry is (fontResourceName, renderingMode).
         // Default rendering mode = 0 (fill text), default font = null (not yet selected).
         var gsStack = new Stack<(string? Font, int Mode)>();
         var currentFont = (string?)null;
         var currentRenderingMode = 0;
+
+        // Marked-content stack: BMC/BDC pushes, EMC pops. Independent of q/Q (ISO 32000-1 §8.7.2).
+        // Each entry is the sequence descriptor for the currently-open MC region.
+        var mcStack = new Stack<MarkedContentSequence>();
 
         var content = GetContentBytes(context, page);
         if (content is { Length: > 0 })
@@ -123,11 +216,20 @@ internal static class ContentStreamUsage
                 // All three are cleared only when a keyword (operator) is encountered, because
                 // an operator consumes all its pending operands.
                 string? lastName = null;
+                string? prevName = null; // second-to-last name (for /Tag /Resource BDC case)
                 int? lastInt = null;
                 byte[]? lastStringBytes = null;
                 // Pending string operands for TJ: collected between [ and ]
                 var tjStrings = new List<byte[]>();
                 var inArray = false;
+                // Inline dict collection for BDC property dicts.
+                // When we see DictBegin the preceding lastName is the BDC tag; we collect
+                // key-value pairs until DictEnd.
+                string? pendingBdcTag = null;
+                InlineDictProps? pendingProps = null;
+                int dictDepth = 0;           // nesting depth inside a << ... >> we're collecting
+                string? currentDictKey = null;
+                InlineDictProps? buildingProps = null; // props being built for current dict
 
                 while (!lexer.AtEnd)
                 {
@@ -135,9 +237,89 @@ internal static class ContentStreamUsage
                     if (token.Kind == TokenKind.EndOfInput)
                         break;
 
+                    // ── Inline dict collection for BDC property dicts ──────────────────────────
+                    // When we see a DictBegin after a Name token (which becomes the BDC tag),
+                    // we enter dict-collection mode. DictEnd at depth 1 finishes collection.
+                    if (token.Kind == TokenKind.DictBegin)
+                    {
+                        dictDepth++;
+                        if (dictDepth == 1)
+                        {
+                            // Outer << starts a new inline dict — the preceding lastName is the BDC tag.
+                            pendingBdcTag = lastName;
+                            buildingProps = new InlineDictProps();
+                            currentDictKey = null;
+                        }
+                        // Nested dicts inside the property dict: skip them (value is a dict,
+                        // we don't need nested dict values for MCID/Lang/ActualText/Alt/E).
+                        continue;
+                    }
+
+                    if (token.Kind == TokenKind.DictEnd)
+                    {
+                        if (dictDepth > 0)
+                        {
+                            dictDepth--;
+                            if (dictDepth == 0)
+                            {
+                                // Finished collecting the outer dict.
+                                pendingProps = buildingProps;
+                                buildingProps = null;
+                                currentDictKey = null;
+                            }
+                        }
+                        continue;
+                    }
+
+                    // While inside a dict, collect key-value pairs for depth==1 entries only.
+                    if (dictDepth > 0)
+                    {
+                        if (dictDepth == 1)
+                        {
+                            if (token.Kind == TokenKind.Name)
+                            {
+                                var n = DecodeName(token.Raw.Span);
+                                if (currentDictKey is null)
+                                    currentDictKey = n;
+                                else
+                                {
+                                    // Previous key had a Name value — store it (e.g. /Type /Pagination)
+                                    StoreInlineProp(buildingProps!, currentDictKey, null, null, n);
+                                    currentDictKey = n;
+                                }
+                            }
+                            else if (token.Kind == TokenKind.Integer && currentDictKey is not null)
+                            {
+                                var intVal = ParseInt(token.Raw.Span);
+                                StoreInlineProp(buildingProps!, currentDictKey, intVal, null, null);
+                                currentDictKey = null;
+                            }
+                            else if (token.Kind is TokenKind.LiteralString or TokenKind.HexString
+                                     && currentDictKey is not null)
+                            {
+                                var strVal = DecodeStringToUtf16(token);
+                                StoreInlineProp(buildingProps!, currentDictKey, null, strVal, null);
+                                currentDictKey = null;
+                            }
+                            else if (token.Kind == TokenKind.Keyword && currentDictKey is not null)
+                            {
+                                // Booleans (true/false/null) as dict values — skip (no tracked attrs use them).
+                                currentDictKey = null;
+                            }
+                            else if (token.Kind is TokenKind.Real && currentDictKey is not null)
+                            {
+                                currentDictKey = null;
+                            }
+                        }
+                        // Inside dict at any depth — don't process as main-stream tokens.
+                        continue;
+                    }
+
                     if (token.Kind == TokenKind.Name)
                     {
-                        // Name token — update lastName; does NOT clear lastInt or lastStringBytes.
+                        // Name token — shift lastName to prevName, update lastName.
+                        // Does NOT clear lastInt or lastStringBytes.
+                        prevName = lastName;
                         lastName = DecodeName(token.Raw.Span);
                         continue;
                     }
@@ -226,11 +408,6 @@ internal static class ContentStreamUsage
 
                             case "Tr":
                                 // integer Tr — sets text rendering mode. lastInt is the operand.
-                                // If lastInt is null the operand was indeterminate (e.g. a real such as
-                                // "3.0 Tr", which the Real branch above cleared): set the mode to -1
-                                // (unknown) rather than KEEP a possibly-visible value, so a later show
-                                // is treated as "not a confirmed visible draw" — the false-positive-safe
-                                // direction. A subsequent well-formed `N Tr` restores a known mode.
                                 currentRenderingMode = lastInt ?? -1;
                                 break;
 
@@ -248,27 +425,100 @@ internal static class ContentStreamUsage
                             case "Tj":
                                 // string Tj
                                 if (lastStringBytes is not null)
-                                    textShows.Add(new TextShow(currentFont, currentRenderingMode, lastStringBytes));
+                                {
+                                    var show = new TextShow(currentFont, currentRenderingMode, lastStringBytes);
+                                    textShowContexts.Add(BuildMcContext(textShows.Count, mcStack));
+                                    textShows.Add(show);
+                                }
                                 break;
 
                             case "TJ":
                                 // [ ... ] TJ — emit one TextShow per string element collected
                                 foreach (var bytes in tjStrings)
-                                    textShows.Add(new TextShow(currentFont, currentRenderingMode, bytes));
+                                {
+                                    var show = new TextShow(currentFont, currentRenderingMode, bytes);
+                                    textShowContexts.Add(BuildMcContext(textShows.Count, mcStack));
+                                    textShows.Add(show);
+                                }
                                 tjStrings.Clear();
                                 break;
 
                             case "'":
                                 // string ' — move to next line then show string
                                 if (lastStringBytes is not null)
-                                    textShows.Add(new TextShow(currentFont, currentRenderingMode, lastStringBytes));
+                                {
+                                    var show = new TextShow(currentFont, currentRenderingMode, lastStringBytes);
+                                    textShowContexts.Add(BuildMcContext(textShows.Count, mcStack));
+                                    textShows.Add(show);
+                                }
                                 break;
 
                             case "\"":
                                 // aw ac string " — word spacing, char spacing, then show string.
-                                // The string is in lastStringBytes.
                                 if (lastStringBytes is not null)
-                                    textShows.Add(new TextShow(currentFont, currentRenderingMode, lastStringBytes));
+                                {
+                                    var show = new TextShow(currentFont, currentRenderingMode, lastStringBytes);
+                                    textShowContexts.Add(BuildMcContext(textShows.Count, mcStack));
+                                    textShows.Add(show);
+                                }
+                                break;
+
+                            case "BMC":
+                                // /tag BMC — tag is in lastName.
+                                if (lastName is not null)
+                                {
+                                    var seq = new MarkedContentSequence(
+                                        lastName, null, null, null, null, null,
+                                        FindInheritedLang(mcStack));
+                                    mcStack.Push(seq);
+                                    markedContentSequences.Add(seq);
+                                }
+                                break;
+
+                            case "BDC":
+                                // /tag name BDC (named resource) or /tag << ... >> BDC (inline dict).
+                                // pendingBdcTag + pendingProps are set if we saw a << ... >> before this.
+                                // Otherwise lastName holds the tag (second-to-last name before operator).
+                                {
+                                    string? bdcTag;
+                                    InlineDictProps? props;
+                                    if (pendingProps is not null && pendingBdcTag is not null)
+                                    {
+                                        // Inline dict case: tag is pendingBdcTag, dict is pendingProps.
+                                        bdcTag = pendingBdcTag;
+                                        props = pendingProps;
+                                    }
+                                    else
+                                    {
+                                        // Named resource case: /Tag /ResourceName BDC.
+                                        // prevName holds the tag; lastName holds the resource name.
+                                        // (For /Tag BDC with a single name, prevName is null and
+                                        // lastName is the tag — use lastName as fallback.)
+                                        bdcTag = prevName ?? lastName;
+                                        props = null;
+                                    }
+
+                                    if (bdcTag is not null)
+                                    {
+                                        var seq = new MarkedContentSequence(
+                                            bdcTag,
+                                            props?.Mcid,
+                                            props?.Lang,
+                                            props?.ActualText,
+                                            props?.Alt,
+                                            props?.E,
+                                            FindInheritedLang(mcStack));
+                                        mcStack.Push(seq);
+                                        markedContentSequences.Add(seq);
+                                    }
+                                    pendingBdcTag = null;
+                                    pendingProps = null;
+                                }
+                                break;
+
+                            case "EMC":
+                                if (mcStack.Count > 0)
+                                    mcStack.Pop();
                                 break;
 
                             case "ID":
@@ -277,13 +527,11 @@ internal static class ContentStreamUsage
                         }
 
                         // Keywords (operators) consume all pending operands; clear all tracking state.
-                        // This preserves the original contract: each operator's operands are exactly
-                        // the tokens that appeared since the previous operator.
                         lastName = null;
+                        prevName = null;
                         lastInt = null;
                         lastStringBytes = null;
-                        // Note: inArray is NOT reset here because an ArrayEnd token closes it;
-                        // a keyword inside an array (malformed content) is handled defensively.
+                        // Note: inArray is NOT reset here.
                     }
                 }
             }
@@ -294,7 +542,65 @@ internal static class ContentStreamUsage
         }
 
         return new ContentUsage(applied, usesDeviceColour, drawnXObjects, renderingIntents,
-            selectedColorSpaces, usedFonts, paintedShadings, textShows);
+            selectedColorSpaces, usedFonts, paintedShadings, textShows,
+            markedContentSequences, textShowContexts);
+    }
+
+    // Build a TextShowMcContext from the current MC stack state.
+    private static TextShowMcContext BuildMcContext(int showIndex, Stack<MarkedContentSequence> mcStack)
+    {
+        if (mcStack.Count == 0)
+            return new TextShowMcContext(showIndex, null, null, null);
+        var top = mcStack.Peek();
+        // DirectLang = /Lang on the innermost BDC itself.
+        // InheritedLang = /Lang from any ancestor (stored on each MarkedContentSequence at push time).
+        return new TextShowMcContext(showIndex, top.Mcid, top.Lang, top.InheritedLang);
+    }
+
+    // Returns the first /Lang found in the ancestor chain (not including the element itself).
+    private static string? FindInheritedLang(Stack<MarkedContentSequence> mcStack)
+    {
+        foreach (var ancestor in mcStack)
+        {
+            if (ancestor.Lang is not null)
+                return ancestor.Lang;
+            if (ancestor.InheritedLang is not null)
+                return ancestor.InheritedLang;
+        }
+        return null;
+    }
+
+    // Stores one key-value entry from an inline property dict into the collector.
+    private static void StoreInlineProp(InlineDictProps props, string key, int? intVal, string? strVal, string? nameVal)
+    {
+        switch (key)
+        {
+            case "MCID" when intVal is not null:
+                props.Mcid = intVal;
+                break;
+            case "Lang" when strVal is not null:
+                props.Lang = strVal;
+                break;
+            case "ActualText" when strVal is not null:
+                props.ActualText = strVal;
+                break;
+            case "Alt" when strVal is not null:
+                props.Alt = strVal;
+                break;
+            case "E" when strVal is not null:
+                props.E = strVal;
+                break;
+        }
+    }
+
+    // Mutable bag for inline dict properties being collected.
+    private sealed class InlineDictProps
+    {
+        public int? Mcid;
+        public string? Lang;
+        public string? ActualText;
+        public string? Alt;
+        public string? E;
     }
 
     /// <summary>The page's concatenated, decoded content-stream bytes (or null when empty/undecodable).
@@ -368,8 +674,6 @@ internal static class ContentStreamUsage
     }
 
     // Decodes the raw bytes of a LiteralString or HexString token to the content bytes.
-    // For LiteralString this strips ( ) and resolves escape sequences.
-    // For HexString this strips < > and converts hex pairs to bytes.
     private static byte[] DecodeStringBytes(Token token)
     {
         if (token.Kind == TokenKind.LiteralString)
@@ -377,6 +681,20 @@ internal static class ContentStreamUsage
         if (token.Kind == TokenKind.HexString)
             return PdfObjectParser.DecodeHexString(token.Raw).Bytes.ToArray();
         return [];
+    }
+
+    // Decodes a string token to a UTF-16 / Latin-1 string for property dict values.
+    private static string DecodeStringToUtf16(Token token)
+    {
+        var bytes = DecodeStringBytes(token);
+        if (bytes.Length == 0) return string.Empty;
+        // PDF strings: if starts with BOM (FE FF → UTF-16 BE, FF FE → UTF-16 LE), decode accordingly;
+        // otherwise treat as PDFDocEncoding / Latin-1.
+        if (bytes.Length >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF)
+            return Encoding.BigEndianUnicode.GetString(bytes, 2, bytes.Length - 2);
+        if (bytes.Length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE)
+            return Encoding.Unicode.GetString(bytes, 2, bytes.Length - 2);
+        return Encoding.Latin1.GetString(bytes);
     }
 
     private static int Hex(byte b) => b switch
