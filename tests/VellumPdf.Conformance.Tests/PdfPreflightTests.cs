@@ -10375,4 +10375,157 @@ public sealed class PdfPreflightTests
         Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-34");
     }
 
+    // ── §7.1-1/-2 (UaArtifactTaggingRule) ───────────────────────────────────────────────────────
+
+    // Builds a UA-1 PDF with the given content stream, a /P struct element (MCID 0 → obj 8 0 R)
+    // in the ParentTree, and a catalog /Lang (en-US). Suitable for 7.1-1/-2 tests that need
+    // MCID→struct resolution.
+    private static byte[] BuildUaPdfWithParentTree(string contentStream)
+    {
+        var content = Encoding.ASCII.GetBytes(contentStream);
+        return AssemblePdf(
+        [
+            // 1: Catalog (with /Lang so 7.2 checks don't interfere)
+            new("<< /Type /Catalog /Pages 2 0 R /Lang (en-US) /MarkInfo << /Marked true >>"
+                + " /ViewerPreferences << /DisplayDocTitle true >> /StructTreeRoot 4 0 R >>"),
+            // 2: Pages
+            _pagesObj,
+            // 3: Page — /StructParents 0 links to ParentTree key 0
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792]"
+                + " /StructParents 0 /Contents 7 0 R >>"),
+            // 4: StructTreeRoot
+            new("<< /Type /StructTreeRoot /K 5 0 R /ParentTree 6 0 R >>"),
+            // 5: Document StructElem
+            new("<< /Type /StructElem /S /Document /K [8 0 R] >>"),
+            // 6: ParentTree — MCID 0 → obj 8 0 R (the P struct elem)
+            new("<< /Nums [0 [8 0 R]] >>"),
+            // 7: Content stream
+            new(string.Empty, content),
+            // 8: P StructElem with /Lang; MCID 0 on page 3 0 R
+            new("<< /Type /StructElem /S /P /Lang (en-US) /P 5 0 R /Pg 3 0 R /K 0 >>"),
+        ],
+        metadataOverride: UaXmpBytes());
+    }
+
+    /// <summary>
+    /// §7.1-1 VIOLATION: /Artifact BMC nested inside /P BDC (MCID 0, linked to struct elem in
+    /// ParentTree). Rule fires "ISO14289-1:7.1-1".
+    /// Predicate: tag == 'Artifact' AND isTaggedContent == true (ancestor MCID resolves in PT).
+    /// Cross-validated against veraPDF 1.30.2: fires clause="7.1" testNumber="1" status="failed".
+    /// </summary>
+    [Fact]
+    public void UaArtifactInTagged_Fires711()
+    {
+        var bytes = BuildUaPdfWithParentTree(
+            "/P << /MCID 0 >> BDC (Tagged) Tj /Artifact BMC (Art) Tj EMC EMC");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.1-1");
+    }
+
+    /// <summary>
+    /// §7.1-1 FP GUARD: /Artifact BMC at top level (no ancestor BDC with MCID in ParentTree).
+    /// Rule must NOT fire 7.1-1 (isTaggedContent == false for the Artifact).
+    /// Cross-validated against veraPDF 1.30.2: clause 7.1 testNumber 1 is silent.
+    /// </summary>
+    [Fact]
+    public void UaArtifactAtTopLevel_NoFire711()
+    {
+        var bytes = BuildUaPdfWithParentTree(
+            "/Artifact BMC (Art) Tj EMC /P << /MCID 0 >> BDC (Tagged) Tj EMC");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.1-1");
+    }
+
+    /// <summary>
+    /// §7.1-1 FP GUARD: /Artifact BMC inside a /P BDC whose MCID (99) is NOT in the ParentTree
+    /// (only MCID 0 is mapped). Rule must NOT fire 7.1-1 (ancestor MCID does not resolve).
+    /// Cross-validated against veraPDF 1.30.2: no 7.1-1 failure when ancestor MCID unresolvable.
+    /// </summary>
+    [Fact]
+    public void UaArtifactInsideUnresolvedMcidBdc_NoFire711()
+    {
+        // MCID 99 is NOT in the ParentTree → the ancestor is not tagged content → no 7.1-1.
+        var bytes = BuildUaPdfWithParentTree(
+            "/P << /MCID 99 >> BDC (P no struct) Tj /Artifact BMC (Art) Tj EMC EMC"
+            + " /P << /MCID 0 >> BDC (Tagged) Tj EMC");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.1-1");
+    }
+
+    /// <summary>
+    /// §7.1-2 VIOLATION: /P BDC (MCID 0, linked to struct elem in ParentTree) nested inside
+    /// /Artifact BMC. Rule fires "ISO14289-1:7.1-2".
+    /// Predicate: isTaggedContent == true AND parentsTags.contains('Artifact').
+    /// Cross-validated against veraPDF 1.30.2: fires clause="7.1" testNumber="2" status="failed".
+    /// </summary>
+    [Fact]
+    public void UaTaggedInArtifact_Fires712()
+    {
+        var bytes = BuildUaPdfWithParentTree(
+            "/Artifact BMC /P << /MCID 0 >> BDC (Tagged inside artifact) Tj EMC EMC");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.1-2");
+    }
+
+    /// <summary>
+    /// §7.1-2 FP GUARD: /P BDC (MCID 0) NOT inside any Artifact ancestor. Rule must NOT fire
+    /// 7.1-2 (parentsTags does not contain 'Artifact').
+    /// Cross-validated against veraPDF 1.30.2: clause 7.1 testNumber 2 is silent.
+    /// </summary>
+    [Fact]
+    public void UaTaggedNotInArtifact_NoFire712()
+    {
+        var bytes = BuildUaPdfWithParentTree("/P << /MCID 0 >> BDC (Tagged) Tj EMC");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.1-2");
+    }
+
+    /// <summary>
+    /// §7.1-2 FP GUARD: /P BDC (MCID 0) inside /Artifact BMC, but MCID 0 is NOT in the
+    /// ParentTree. Rule must NOT fire 7.1-2 (isTaggedContent == false for MCID not in PT).
+    /// Cross-validated against veraPDF 1.30.2: no 7.1-2 failure when MCID unresolvable.
+    /// </summary>
+    [Fact]
+    public void UaTaggedInArtifact_McidNotInParentTree_NoFire712()
+    {
+        // Build a PDF where the ParentTree has NO entries (empty Nums array) so MCID 0 doesn't
+        // resolve to any struct elem → isTaggedContent == false → no 7.1-2.
+        var content = Encoding.ASCII.GetBytes(
+            "/Artifact BMC /P << /MCID 0 >> BDC (P no struct) Tj EMC EMC");
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R /Lang (en-US) /MarkInfo << /Marked true >>"
+                + " /ViewerPreferences << /DisplayDocTitle true >> /StructTreeRoot 4 0 R >>"),
+            _pagesObj,
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792]"
+                + " /StructParents 0 /Contents 7 0 R >>"),
+            new("<< /Type /StructTreeRoot /K 5 0 R /ParentTree 6 0 R >>"),
+            new("<< /Type /StructElem /S /Document /K [] >>"),
+            // Empty ParentTree — MCID 0 is not mapped to any struct elem
+            new("<< /Nums [] >>"),
+            new(string.Empty, content),
+            // Dummy obj 8 to keep count consistent (not referenced)
+            new("<< /Type /StructElem /S /P /P 5 0 R >>"),
+        ],
+        metadataOverride: UaXmpBytes());
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.1-2");
+    }
+
+    /// <summary>
+    /// §7.1-2 FP GUARD: /Artifact nested inside /Artifact — inner Artifact has an Artifact
+    /// ancestor, but it's not tagged content (no MCID in ParentTree). Rule must NOT fire 7.1-2
+    /// (isTaggedContent == false for the inner Artifact).
+    /// Cross-validated against veraPDF 1.30.2: nested Artifacts are silent.
+    /// </summary>
+    [Fact]
+    public void UaArtifactInsideArtifact_NoFire712()
+    {
+        var bytes = BuildUaPdfWithParentTree(
+            "/Artifact BMC /Artifact BMC (nested art) Tj EMC EMC"
+            + " /P << /MCID 0 >> BDC (Tagged) Tj EMC");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.1-2");
+    }
+
 }

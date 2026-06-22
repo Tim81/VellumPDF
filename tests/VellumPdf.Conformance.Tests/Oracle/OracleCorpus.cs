@@ -1115,6 +1115,21 @@ public static class OracleCorpus
             new OracleFixture("pdfua1-mc-text-struct-elem-lang",
                 Ua1McTextStructElemLang(),
                 Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.1-1 VIOLATION: Artifact BMC nested inside a /P BDC whose MCID (0) is linked to a
+            // struct element in the /ParentTree. veraPDF fires 7.1-1 (and 7.1-2). In-process
+            // UaArtifactTaggingRule must also fire.
+            // veraPDF grep: clause="7.1" testNumber="1" status="failed"
+            new OracleFixture("pdfua1-artifact-in-tagged",
+                Ua1ArtifactInTagged(),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.1-2 VIOLATION: /P BDC with MCID (0) linked to a struct element is nested inside
+            // an /Artifact BMC. veraPDF fires 7.1-2. In-process UaArtifactTaggingRule must also fire.
+            // veraPDF grep: clause="7.1" testNumber="2" status="failed"
+            new OracleFixture("pdfua1-tagged-in-artifact",
+                Ua1TaggedInArtifact(),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
         ];
     }
 
@@ -4372,6 +4387,73 @@ public static class OracleCorpus
         newElem.Set(new PdfName("Lang"), new PdfLiteralString(Encoding.ASCII.GetBytes("en-US")));
 
         return reader.AppendRevision([(elemRef.ObjectNumber, newElem)]);
+    }
+
+    /// <summary>
+    /// §7.1-1 VIOLATION: replaces the page content stream with one that nests an <c>/Artifact BMC</c>
+    /// inside a <c>/P BDC</c> whose MCID (0) is linked to a struct element in the /ParentTree.
+    /// veraPDF fires 7.1-1 (and 7.1-2): an Artifact is present inside tagged content.
+    /// </summary>
+    private static byte[] Ua1ArtifactInTagged()
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+        using var reader = PdfReader.Open(baseline);
+
+        var (pageRef, page) = FirstPage(reader);
+        var resources = reader.ResolveValue(page.Get(new PdfName("Resources"))!) as PdfDictionary;
+        var fontDict = resources?.Get(PdfName.Font) is PdfObject fo
+            ? reader.ResolveValue(fo) as PdfDictionary : null;
+        var fontName = fontDict?.Entries.FirstOrDefault().Key.Value ?? "F1";
+
+        // Replace the page content stream: /P BDC (MCID 0) with /Artifact BMC nested inside.
+        // MCID 0 is already linked to the P struct elem in the baseline ParentTree.
+        var contentNum = reader.Size;
+        var contentBytes = Encoding.ASCII.GetBytes(
+            $"/P << /MCID 0 >> BDC\n"
+            + $"BT\n/{fontName} 12 Tf\n1 0 0 1 72 720 Tm\n(Tagged text) Tj\nET\n"
+            + "/Artifact BMC\n"
+            + $"BT\n/{fontName} 12 Tf\n1 0 0 1 72 700 Tm\n(Artifact inside tagged) Tj\nET\n"
+            + "EMC\n"
+            + "EMC\n");
+        var newContentStream = new PdfStream(contentBytes);
+
+        var newPage = CloneDict(page);
+        newPage.Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
+
+        return reader.AppendRevision([(pageRef.ObjectNumber, newPage), (contentNum, newContentStream)]);
+    }
+
+    /// <summary>
+    /// §7.1-2 VIOLATION: replaces the page content stream with one that nests a <c>/P BDC</c>
+    /// (MCID 0 linked to a struct element in the /ParentTree) inside an <c>/Artifact BMC</c>.
+    /// veraPDF fires 7.1-2: tagged content is present inside content marked as Artifact.
+    /// </summary>
+    private static byte[] Ua1TaggedInArtifact()
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+        using var reader = PdfReader.Open(baseline);
+
+        var (pageRef, page) = FirstPage(reader);
+        var resources = reader.ResolveValue(page.Get(new PdfName("Resources"))!) as PdfDictionary;
+        var fontDict = resources?.Get(PdfName.Font) is PdfObject fo
+            ? reader.ResolveValue(fo) as PdfDictionary : null;
+        var fontName = fontDict?.Entries.FirstOrDefault().Key.Value ?? "F1";
+
+        // Replace the page content stream: /Artifact BMC with /P BDC (MCID 0) nested inside.
+        // MCID 0 is already linked to the P struct elem in the baseline ParentTree.
+        var contentNum = reader.Size;
+        var contentBytes = Encoding.ASCII.GetBytes(
+            "/Artifact BMC\n"
+            + $"/P << /MCID 0 >> BDC\n"
+            + $"BT\n/{fontName} 12 Tf\n1 0 0 1 72 720 Tm\n(Tagged inside artifact) Tj\nET\n"
+            + "EMC\n"
+            + "EMC\n");
+        var newContentStream = new PdfStream(contentBytes);
+
+        var newPage = CloneDict(page);
+        newPage.Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
+
+        return reader.AppendRevision([(pageRef.ObjectNumber, newPage), (contentNum, newContentStream)]);
     }
 
     // Walks a number-tree node and returns the PdfArray at the given integer key, or null.
