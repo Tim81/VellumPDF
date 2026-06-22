@@ -232,7 +232,7 @@ public static class ConformanceCatalog
     // (tagged-content) walker, which does not yet exist.
     private static readonly HashSet<string> PdfUaImplemented = new(StringComparer.Ordinal)
     {
-        "5-1", "5-2", "6.1-1", "6.2-1", "7.1-4", "7.1-6", "7.1-7", "7.1-8", "7.1-9", "7.1-10", "7.1-11", "7.1-12", "7.18.3-1",
+        "5-1", "5-2", "6.1-1", "6.2-1", "7.1-4", "7.1-5", "7.1-6", "7.1-7", "7.1-8", "7.1-9", "7.1-10", "7.1-11", "7.1-12", "7.18.3-1",
         "7.2-29",
         // Batch B2 — §7.2 table, list, TOC containment:
         "7.2-3",   // UaTableContainmentRule: Table kids ∈ {TR, THead, TBody, TFoot, Caption}
@@ -381,6 +381,8 @@ public static class ConformanceCatalog
         // 7.21.7-2 moved to PdfUaImplemented (Batch A5b — UaToUnicodeForbiddenRule, shown-glyph-scoped).
         // 7.21.8-1 moved to PdfUaImplemented (Batch A5b — UaNotdefGlyphRule, Identity-H scope).
         // 7.21.4.1-2 moved to PdfUaImplemented (Batch A5c — UaGlyphPresenceRule, Tr-3-exempt).
+        // 7.1-5 moved to PdfUaImplemented (Batch B9 — UaNonStandardTypeRule, non-standard type
+        //   unmapped; standard-type set empirically verified complete against veraPDF 1.30.2).
         // 7.1-6 moved to PdfUaImplemented (Batch B1 — UaRoleMapRule, circular role-map).
         // 7.1-7 moved to PdfUaImplemented (Batch B1 — UaRoleMapRule, standard-type remapped).
         // 7.1-12 moved to PdfUaImplemented (Batch B1 — UaStructElemParentRule, missing /P).

@@ -988,6 +988,13 @@ public static class OracleCorpus
             new OracleFixture("pdfua1-standard-type-remapped",
                 Ua1StandardTypeRemapped(),
                 Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.1-5 VIOLATION: a StructElem with /S /MyCustomTag and no /RoleMap mapping. veraPDF
+            // fires 7.1-5 (isNotMappedToStandardType == true). In-process: UaNonStandardTypeRule fires
+            // "ISO14289-1:7.1-5". Oracle: ExpectedCompliant: false.
+            new OracleFixture("pdfua1-non-standard-type-unmapped",
+                Ua1NonStandardTypeUnmapped(),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
         ];
     }
 
@@ -3693,6 +3700,86 @@ public static class OracleCorpus
             (strRef.ObjectNumber, newStr),
             (docRef.ObjectNumber, newDoc),
             (tableElemNum, tableElem),
+        ]);
+    }
+
+    // ── Batch B9 — §7.1-5 non-standard structure type (SENonStandard) ────────────────────────────
+
+    /// <summary>
+    /// §7.1-5 violation: injects a StructElem with <c>/S /MyCustomTag</c> (a non-standard type)
+    /// and NO <c>/RoleMap</c> entry for it. veraPDF fires clause 7.1, testNumber 5
+    /// (<c>isNotMappedToStandardType == true</c>).
+    /// </summary>
+    internal static byte[] Ua1NonStandardTypeUnmapped()
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+        using var reader = PdfReader.Open(baseline);
+        var strRef = (PdfIndirectReference)reader.Catalog.Get(new PdfName("StructTreeRoot"))!;
+        var str = (PdfDictionary)reader.Resolve(strRef.ObjectNumber)!;
+
+        var docRef = str.Get(new PdfName("K")) as PdfIndirectReference
+            ?? throw new InvalidOperationException("Expected Document StructElem ref");
+        var doc = (PdfDictionary)reader.Resolve(docRef.ObjectNumber)!;
+        var docK = doc.Get(new PdfName("K"));
+
+        // Add a new StructElem with a custom non-standard /S that has no /RoleMap entry.
+        var customElemNum = reader.Size;
+        var customElem = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("StructElem"))
+            .Set(new PdfName("S"), new PdfName("MyCustomTag"))
+            .Set(new PdfName("P"), strRef);
+
+        var newDoc = CloneDict(doc);
+        newDoc.Set(new PdfName("K"), new PdfArray([
+            (PdfObject)(docK is PdfIndirectReference ? docK : new PdfIndirectReference(docRef.ObjectNumber)),
+            new PdfIndirectReference(customElemNum),
+        ]));
+
+        return reader.AppendRevision([
+            (docRef.ObjectNumber, newDoc),
+            (customElemNum, customElem),
+        ]);
+    }
+
+    /// <summary>
+    /// §7.1-5 FP-safety guard: injects a StructElem with <c>/S /MyCustomTag</c> and a
+    /// <c>/RoleMap &lt;&lt; /MyCustomTag /Div &gt;&gt;</c> entry so the type resolves to the
+    /// standard type <c>/Div</c>. veraPDF must NOT fire 7.1-5.
+    /// </summary>
+    internal static byte[] Ua1NonStandardTypeRoleMapped()
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+        using var reader = PdfReader.Open(baseline);
+        var strRef = (PdfIndirectReference)reader.Catalog.Get(new PdfName("StructTreeRoot"))!;
+        var str = (PdfDictionary)reader.Resolve(strRef.ObjectNumber)!;
+
+        var docRef = str.Get(new PdfName("K")) as PdfIndirectReference
+            ?? throw new InvalidOperationException("Expected Document StructElem ref");
+        var doc = (PdfDictionary)reader.Resolve(docRef.ObjectNumber)!;
+        var docK = doc.Get(new PdfName("K"));
+
+        // Add a StructElem with /S /MyCustomTag, role-mapped to the standard type /Div.
+        var customElemNum = reader.Size;
+        var customElem = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("StructElem"))
+            .Set(new PdfName("S"), new PdfName("MyCustomTag"))
+            .Set(new PdfName("P"), strRef);
+
+        var newDoc = CloneDict(doc);
+        newDoc.Set(new PdfName("K"), new PdfArray([
+            (PdfObject)(docK is PdfIndirectReference ? docK : new PdfIndirectReference(docRef.ObjectNumber)),
+            new PdfIndirectReference(customElemNum),
+        ]));
+
+        // StructTreeRoot with /RoleMap << /MyCustomTag /Div >>
+        var newStr = CloneDict(str);
+        newStr.Set(new PdfName("RoleMap"), new PdfDictionary()
+            .Set(new PdfName("MyCustomTag"), new PdfName("Div")));
+
+        return reader.AppendRevision([
+            (strRef.ObjectNumber, newStr),
+            (docRef.ObjectNumber, newDoc),
+            (customElemNum, customElem),
         ]);
     }
 

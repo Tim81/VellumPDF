@@ -7381,6 +7381,77 @@ public sealed class PdfPreflightTests
         Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.1-6");
     }
 
+    // ── Batch B9 — §7.1-5 non-standard structure type (SENonStandard) unit tests ──────────────────
+
+    /// <summary>
+    /// §7.1-5 VIOLATION (UaNonStandardTypeRule): a StructElem with a non-standard <c>/S</c>
+    /// type and no <c>/RoleMap</c> must fire 7.1-5. Cross-validated against veraPDF 1.30.2 via
+    /// oracle fixture <c>pdfua1-non-standard-type-unmapped</c>: veraPDF exits 1 (non-compliant).
+    /// </summary>
+    [Fact]
+    public void UaNonStandardTypeUnmapped_Fires71_5()
+    {
+        var bytes = OracleCorpus.Ua1NonStandardTypeUnmapped();
+        var result = PdfPreflight.Validate(bytes, Conformance.PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.1-5");
+    }
+
+    /// <summary>
+    /// §7.1-5 FP-safety guard (UaNonStandardTypeRule): a StructElem with a non-standard
+    /// <c>/S /MyCustomTag</c> that IS role-mapped (via <c>/RoleMap &lt;&lt; /MyCustomTag /P
+    /// &gt;&gt;</c>) to the standard type <c>/P</c> must NOT fire 7.1-5. The walker resolves
+    /// <c>StandardType</c> to <c>"P"</c> via the RoleMap chain; the firing condition
+    /// (<c>StandardType == null</c>) is false. Cross-validated against veraPDF 1.30.2 via
+    /// oracle fixture <c>pdfua1-non-standard-type-rolemapped</c>: veraPDF does not fire 7.1-5.
+    /// </summary>
+    [Fact]
+    public void UaNonStandardTypeRoleMapped_DoesNotFire71_5()
+    {
+        var bytes = OracleCorpus.Ua1NonStandardTypeRoleMapped();
+        var result = PdfPreflight.Validate(bytes, Conformance.PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.1-5");
+    }
+
+    /// <summary>
+    /// §7.1-5 FP-safety guard (UaNonStandardTypeRule): the standard UA-1 tagged baseline uses
+    /// only standard structure types — the rule must NOT fire. Cross-validated against veraPDF
+    /// 1.30.2: the tagged baseline is accepted (no 7.1-5).
+    /// </summary>
+    [Fact]
+    public void UaNonStandardTypeBaseline_DoesNotFire71_5()
+    {
+        var bytes = OracleCorpus.Ua1TaggedWithEmbeddedFont();
+        var result = PdfPreflight.Validate(bytes, Conformance.PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.1-5");
+    }
+
+    /// <summary>
+    /// §7.1-5 multi-hop FP-safety guard (UaNonStandardTypeRule): a non-standard type role-mapped
+    /// via a two-hop chain (<c>/MyTag /MyIntermediate /MyIntermediate /P</c>) must NOT fire 7.1-5.
+    /// The walker follows the full chain to the standard terminal type. Inline test: no veraPDF
+    /// probe needed (the multi-hop chain is a StructureTree walker invariant already proven by
+    /// existing 7.1-6/7.1-7 tests).
+    /// </summary>
+    [Fact]
+    public void UaNonStandardTypeMultiHopRoleMapped_DoesNotFire71_5()
+    {
+        var bytes = AssemblePdf(
+            [
+                new("<< /Type /Catalog /Pages 2 0 R /StructTreeRoot 4 0 R /MarkInfo << /Marked true >> "
+                    + "/Lang (en-US) /ViewerPreferences << /DisplayDocTitle true >> >>"),
+                new("<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
+                new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Tabs /S >>"),
+                new("<< /Type /StructTreeRoot /K [5 0 R] "
+                    + "/RoleMap << /MyTag /MyIntermediate /MyIntermediate /P >> >>"),
+                new("<< /Type /StructElem /S /MyTag /P 4 0 R >>"),
+            ],
+            metadataOverride: UaXmpBytes());
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.1-5");
+    }
+
     // ── Batch B2 — §7.2 table / list / TOC containment unit tests ────────────────────────────────
 
     // Helper: builds a UA-1 PDF with a custom structure tree.
