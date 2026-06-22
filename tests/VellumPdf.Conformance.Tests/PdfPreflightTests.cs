@@ -9729,4 +9729,233 @@ public sealed class PdfPreflightTests
         Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-33");
     }
 
+    // ── Batch B10 — §7.4.2-1 (SEHn heading nesting) — UaHeadingNestingRule ──────────────────────────
+
+    /// <summary>
+    /// §7.4.2-1 VIOLATION (UaHeadingNestingRule): H1 followed immediately by H3 (skipping H2)
+    /// fires 7.4.2-1. previousLevel=1 after H1; H3 → 3 &gt; 1+1=2 → violation.
+    /// Cross-validated against veraPDF 1.30.2: 742-h1-h3-skip → fires 7.4.2-1 (exit 1).
+    /// </summary>
+    [Fact]
+    public void UaHeadingSkipH1ToH3_Fires742_1()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R 7 0 R] >>",
+            "<< /Type /StructElem /S /H1 /P 5 0 R >>",
+            "<< /Type /StructElem /S /H3 /P 5 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.4.2-1");
+    }
+
+    /// <summary>
+    /// §7.4.2-1 VIOLATION (UaHeadingNestingRule): H2 as the very first heading fires 7.4.2-1.
+    /// previousLevel=0; H2 → 2 &gt; 0+1=1 → violation.
+    /// Cross-validated against veraPDF 1.30.2: 742-h2-first → fires 7.4.2-1 (exit 1).
+    /// </summary>
+    [Fact]
+    public void UaHeadingH2First_Fires742_1()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /H2 /P 5 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.4.2-1");
+    }
+
+    /// <summary>
+    /// §7.4.2-1 VIOLATION (UaHeadingNestingRule): H1→H2→H1→H3 — after going back to H1,
+    /// an H3 fires. previousLevel=1 after the second H1; H3 → 3 &gt; 1+1=2 → violation.
+    /// Cross-validated against veraPDF 1.30.2: 742-h1-h2-h1-h3 → fires 7.4.2-1 (exit 1).
+    /// </summary>
+    [Fact]
+    public void UaHeadingH1H2H1H3_Fires742_1()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R 7 0 R 8 0 R 9 0 R] >>",
+            "<< /Type /StructElem /S /H1 /P 5 0 R >>",
+            "<< /Type /StructElem /S /H2 /P 5 0 R >>",
+            "<< /Type /StructElem /S /H1 /P 5 0 R >>",
+            "<< /Type /StructElem /S /H3 /P 5 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.4.2-1");
+    }
+
+    /// <summary>
+    /// §7.4.2-1 FP guard: H1→H2→H3 in document order must NOT fire 7.4.2-1 — each heading
+    /// advances by exactly one level.
+    /// Cross-validated against veraPDF 1.30.2: 742-h1-h2-h3-ok → PASS (exit 0).
+    /// </summary>
+    [Fact]
+    public void UaHeadingH1H2H3_DoesNotFire742_1()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R 7 0 R 8 0 R] >>",
+            "<< /Type /StructElem /S /H1 /P 5 0 R >>",
+            "<< /Type /StructElem /S /H2 /P 5 0 R >>",
+            "<< /Type /StructElem /S /H3 /P 5 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.4.2-1");
+    }
+
+    /// <summary>
+    /// §7.4.2-1 FP guard: H1→H2→H3→H2→H3 — going back to H2 then H3 again is valid (H3=H2+1).
+    /// Cross-validated against veraPDF 1.30.2: 742-h1-h2-h3-h2-h3-ok → PASS (exit 0).
+    /// </summary>
+    [Fact]
+    public void UaHeadingH1H2H3H2H3_DoesNotFire742_1()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R 7 0 R 8 0 R 9 0 R 10 0 R] >>",
+            "<< /Type /StructElem /S /H1 /P 5 0 R >>",
+            "<< /Type /StructElem /S /H2 /P 5 0 R >>",
+            "<< /Type /StructElem /S /H3 /P 5 0 R >>",
+            "<< /Type /StructElem /S /H2 /P 5 0 R >>",
+            "<< /Type /StructElem /S /H3 /P 5 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.4.2-1");
+    }
+
+    /// <summary>
+    /// §7.4.2-1 FP guard: H1→H2→H3→H1 — going back down to H1 is always valid
+    /// (decreasing levels never fire).
+    /// Cross-validated against veraPDF 1.30.2: 742-h1-h2-h3-h1-down → PASS (exit 0).
+    /// </summary>
+    [Fact]
+    public void UaHeadingH1H2H3H1Down_DoesNotFire742_1()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R 7 0 R 8 0 R 9 0 R] >>",
+            "<< /Type /StructElem /S /H1 /P 5 0 R >>",
+            "<< /Type /StructElem /S /H2 /P 5 0 R >>",
+            "<< /Type /StructElem /S /H3 /P 5 0 R >>",
+            "<< /Type /StructElem /S /H1 /P 5 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.4.2-1");
+    }
+
+    // ── Batch B10 — §7.5-1/-2 (SETD connected header) — UaTableHeaderRule ───────────────────────────
+
+    /// <summary>
+    /// §7.5-1 VIOLATION (UaTableHeaderRule): Table with a TH (no /Scope) and a TD (no /Headers)
+    /// fires 7.5-1. hasConnectedHeader=false and unknownHeaders=''.
+    /// Cross-validated against veraPDF 1.30.2: 75-no-scope-no-headers → fires 7.5-1 (exit 1).
+    /// </summary>
+    [Fact]
+    public void UaTableTdNoConnectedHeader_Fires75_1()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /Table /P 5 0 R /K [7 0 R] >>",
+            "<< /Type /StructElem /S /TR /P 6 0 R /K [8 0 R 9 0 R] >>",
+            "<< /Type /StructElem /S /TH /P 7 0 R >>",
+            "<< /Type /StructElem /S /TD /P 7 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.5-1");
+    }
+
+    /// <summary>
+    /// §7.5-2 VIOLATION (UaTableHeaderRule): Table with a TH (no /Scope, /ID=(th1)) and
+    /// a TD with /Headers referencing a nonexistent ID fires 7.5-2 (unknownHeaders != '').
+    /// Cross-validated against veraPDF 1.30.2: 75-invalid-headers → fires 7.5-2 (exit 1).
+    /// </summary>
+    [Fact]
+    public void UaTableTdUnknownHeaderId_Fires75_2()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /Table /P 5 0 R /K [7 0 R] >>",
+            "<< /Type /StructElem /S /TR /P 6 0 R /K [8 0 R 9 0 R] >>",
+            "<< /Type /StructElem /S /TH /P 7 0 R /ID (th1) >>",
+            "<< /Type /StructElem /S /TD /P 7 0 R /A << /O /Table /Headers [(nonexistent)] >> >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.5-2");
+    }
+
+    /// <summary>
+    /// §7.5 FP guard: Table with TH /Scope /Column and TD (no /Headers) must NOT fire.
+    /// A scoped TH satisfies all TDs in the table table-wide.
+    /// Cross-validated against veraPDF 1.30.2: 75-scoped-col-no-headers → PASS (exit 0).
+    /// </summary>
+    [Fact]
+    public void UaTableThScopedColumn_DoesNotFire75()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /Table /P 5 0 R /K [7 0 R] >>",
+            "<< /Type /StructElem /S /TR /P 6 0 R /K [8 0 R 9 0 R] >>",
+            "<< /Type /StructElem /S /TH /P 7 0 R /A << /O /Table /Scope /Column >> >>",
+            "<< /Type /StructElem /S /TD /P 7 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.5-1");
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.5-2");
+    }
+
+    /// <summary>
+    /// §7.5 FP guard: Table with no TH at all — only TD cells — must NOT fire.
+    /// hasConnectedHeader is undefined (not false) when there is no TH to connect to.
+    /// Cross-validated against veraPDF 1.30.2: 75-td-only-no-th → PASS (exit 0).
+    /// </summary>
+    [Fact]
+    public void UaTableNoThAtAll_DoesNotFire75()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /Table /P 5 0 R /K [7 0 R] >>",
+            "<< /Type /StructElem /S /TR /P 6 0 R /K [8 0 R 9 0 R] >>",
+            "<< /Type /StructElem /S /TD /P 7 0 R >>",
+            "<< /Type /StructElem /S /TD /P 7 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.5-1");
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.5-2");
+    }
+
+    /// <summary>
+    /// §7.5 FP guard: TH /Scope overrides a TD with invalid /Headers — scope wins
+    /// even when the explicit /Headers on the TD reference a nonexistent ID.
+    /// Cross-validated against veraPDF 1.30.2: 75-scope-and-bad-headers → PASS (exit 0).
+    /// </summary>
+    [Fact]
+    public void UaTableThScopedBadTdHeaders_DoesNotFire75()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /Table /P 5 0 R /K [7 0 R] >>",
+            "<< /Type /StructElem /S /TR /P 6 0 R /K [8 0 R 9 0 R] >>",
+            "<< /Type /StructElem /S /TH /P 7 0 R /A << /O /Table /Scope /Column >> >>",
+            "<< /Type /StructElem /S /TD /P 7 0 R /A << /O /Table /Headers [(nonexistent)] >> >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.5-1");
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.5-2");
+    }
+
+    /// <summary>
+    /// §7.5 FP guard: TH (no /Scope) with /ID and TD with matching /Headers resolves correctly.
+    /// Cross-validated against veraPDF 1.30.2: 75-no-scope-valid-headers → PASS (exit 0).
+    /// </summary>
+    [Fact]
+    public void UaTableTdValidHeaders_DoesNotFire75()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /Table /P 5 0 R /K [7 0 R] >>",
+            "<< /Type /StructElem /S /TR /P 6 0 R /K [8 0 R 9 0 R] >>",
+            "<< /Type /StructElem /S /TH /P 7 0 R /ID (th1) >>",
+            "<< /Type /StructElem /S /TD /P 7 0 R /A << /O /Table /Headers [(th1)] >> >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.5-1");
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.5-2");
+    }
+
 }

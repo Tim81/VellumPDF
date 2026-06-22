@@ -312,6 +312,10 @@ public static class ConformanceCatalog
         "7.2-23",              // UaNaturalLanguageRule: StructElem /E → element or ancestor must have /Lang
         "7.2-24",              // UaNaturalLanguageRule: Annot /Contents → direct struct-elem must have /Lang
         "7.2-25",              // UaNaturalLanguageRule: FormField /TU → associated struct-elem must have /Lang
+        // Batch B10 — §7.4.2 heading nesting, §7.5 connected headers:
+        "7.4.2-1",             // UaHeadingNestingRule: Hn heading levels must not skip (hasCorrectNestingLevel)
+        "7.5-1",               // UaTableHeaderRule: TD must have connected header (hasConnectedHeader, unknownHeaders='')
+        "7.5-2",               // UaTableHeaderRule: TD /Headers references unknown IDs (hasConnectedHeader, unknownHeaders!='')
     };
 
     // PDF/UA-1 checks the rules cover only partially (the common case is detected; some conditions
@@ -425,6 +429,13 @@ public static class ConformanceCatalog
         // 7.2-33 moved to PdfUaImplemented (Batch B8 — UaOutlineLangRule: XMP rdf:Alt with
         //   x-default requires catalog /Lang; any lang-alt with x-default triggers (not just
         //   dc:title); confirmed by veraPDF 1.30.2 probe; XmpReader.HasXDefaultLangAlt helper).
+        // 7.4.2-1 moved to PdfUaImplemented (Batch B10 — UaHeadingNestingRule: heading levels must
+        //   not skip; tracks previous heading level in document order; fires when n > prevLevel + 1;
+        //   prevLevel starts at 0; empirically verified against veraPDF 1.30.2 probe series).
+        // 7.5-1/-2 moved to PdfUaImplemented (Batch B10 — UaTableHeaderRule: TD connected-header
+        //   check; scoped TH in same table satisfies all TDs; explicit /Headers resolved against TH
+        //   /ID set; no-TH table passes (undefined, not false); empirically verified against
+        //   veraPDF 1.30.2 probe series).
 
         _ => "structure-tree walker",
     };
