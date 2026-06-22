@@ -176,6 +176,8 @@ internal static class RuleRegistry
         new UaAltTextRule(),
         new UaNoteIdRule(),
         new UaHeadingRule(),
+        // Batch B5 — §7.18 annotation↔structure binding (7.18.1-1, 7.18.4-1, 7.18.5-1, 7.18.8-1):
+        new UaAnnotStructureRule(),
     ];
 
     /// <summary>

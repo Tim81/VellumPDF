@@ -265,6 +265,7 @@ public static class ConformanceCatalog
         "7.10-1", "7.10-2",   // UaOptionalContentRule: OC config /Name (non-empty) and no /AS
         "7.11-1",              // UaEmbeddedFileRule: embedded-file /F and /UF requirement
         "7.15-1",              // UaXfaRule: dynamic XFA (dynamicRender == "required") forbidden
+        "7.18.1-2",            // UaAnnotContentsRule: non-Widget visible annot needs /Contents or /Alt (direct struct-elem Alt now resolved via B5 ParentTree index)
         "7.18.2-1",            // UaTrapNetAnnotRule: TrapNet annots forbidden unless hidden/outside-crop
         "7.18.5-2",            // UaLinkAnnotRule: Link annots require non-empty /Contents
         "7.20-1",              // UaReferenceXObjectRule: Form XObjects shall not contain /Ref
@@ -292,16 +293,19 @@ public static class ConformanceCatalog
         "7.4.4-1",             // UaHeadingRule: at most one H child per element
         "7.4.4-2",             // UaHeadingRule: H forbidden when document also uses Hn
         "7.4.4-3",             // UaHeadingRule: Hn forbidden when document also uses H
+        // Batch B5 — §7.18 annotation↔structure binding (ParentTree reverse index):
+        "7.18.1-1",            // UaAnnotStructureRule: non-Widget/Link/PrinterMark annot must be in Annot tag
+        "7.18.4-1",            // UaAnnotStructureRule: Widget annot must be in Form tag
+        "7.18.5-1",            // UaAnnotStructureRule: Link annot must be in Link tag
+        "7.18.8-1",            // UaAnnotStructureRule: PrinterMark must not be in structure tree
     };
 
     // PDF/UA-1 checks the rules cover only partially (the common case is detected; some conditions
     // need a subsystem we do not have yet). The note records the gap, mirroring PdfAPartial.
     private static readonly Dictionary<string, string> PdfUaPartial = new(StringComparer.Ordinal)
     {
-        ["7.18.1-2"] = "non-Widget annotations with no /StructParent are checked for a non-empty "
-            + "/Contents or /Alt; an annotation bound into the structure tree is skipped because its "
-            + "alternate text may live in the enclosing structure element's /Alt, which needs the "
-            + "structure-tree walker to resolve (skipping avoids over-rejecting conformant tagged annotations)",
+        // 7.18.1-2 moved to PdfUaImplemented (Batch B5 — UaAnnotContentsRule now resolves the
+        // direct enclosing struct element's /Alt via the ParentTree reverse index).
         // Batch A4:
         ["7.21.3.1-1"] = "Identity and embedded-CMap CIDSystemInfo compared; predefined-CMap "
             + "registry table deferred (mirrors PDF/A-2 §6.2.11.3.1-1 partial scope)",
@@ -377,6 +381,16 @@ public static class ConformanceCatalog
         // 7.9-1 moved to PdfUaImplemented (Batch B3 — UaNoteIdRule: Note non-empty /ID).
         // 7.9-2 moved to PdfUaImplemented (Batch B3 — UaNoteIdRule: Note unique /IDs).
         // 7.4.4-1/-2/-3 moved to PdfUaImplemented (Batch B3 — UaHeadingRule: H/Hn structure).
+        // 7.18.1-2 moved to PdfUaImplemented (Batch B5 — UaAnnotContentsRule, struct-elem /Alt
+        //   resolved via ParentTree reverse index; direct enclosing elem only, no ancestors).
+        // 7.18.1-1 moved to PdfUaImplemented (Batch B5 — UaAnnotStructureRule: non-Widget/Link/
+        //   PrinterMark annots must be in Annot tag).
+        // 7.18.4-1 moved to PdfUaImplemented (Batch B5 — UaAnnotStructureRule: Widget must be
+        //   in Form tag).
+        // 7.18.5-1 moved to PdfUaImplemented (Batch B5 — UaAnnotStructureRule: Link must be in
+        //   Link tag).
+        // 7.18.8-1 moved to PdfUaImplemented (Batch B5 — UaAnnotStructureRule: PrinterMark must
+        //   not be in the structure tree).
 
         _ => "structure-tree walker",
     };
