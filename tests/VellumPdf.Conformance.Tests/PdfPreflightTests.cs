@@ -648,6 +648,31 @@ public sealed class PdfPreflightTests
     }
 
     [Fact]
+    public void Validate_SigContentsOversized_NoStringFinding()
+    {
+        // §6.1.13 false-positive guard: the /Contents entry of a signature dictionary is a DER-
+        // encoded CMS blob whose size is dictated by the CMS structure. PAdES B-T/B-LTA signatures
+        // (as produced by the Signing package's TimestampedDefaultReserve path) use a placeholder
+        // of 32768 decoded bytes. The string-length check shall not fire for this entry because the
+        // signature value is not document text subject to the implementation-limit table.
+        // A non-signature string of the same length STILL fires (see Validate_OversizedString_ReportsError).
+        var bigHex = "<" + new string('0', 32768 * 2) + ">"; // 32768 decoded bytes
+        var bytes = AssemblePdf(
+        [
+            new($"<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [4 0 R] /SigFlags 3 >> >>"),
+            _pagesObj,
+            _pageObj,
+            new($"<< /Type /Annot /Subtype /Widget /FT /Sig /T (Sig1) /Rect [0 0 0 0] /F 4"
+                + $" /V << /Type /Sig /Filter /Adobe.PPKLite /SubFilter /ETSI.CAdES.detached"
+                + $" /ByteRange [0 1 2 3] /Contents {bigHex} >> >>"),
+        ]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.13-string");
+    }
+
+    [Fact]
     public void Validate_TinyMediaBox_ReportsError()
     {
         // §6.1.13: a page-boundary side shall be between 3 and 14400 units.
@@ -3307,6 +3332,68 @@ public sealed class PdfPreflightTests
         Assert.False(result.IsCompliant);
         Assert.Contains(result.Assertions,
             a => a.RuleId == "ISO19005-2:6.3-annotation" && a.Message.Contains("Print"));
+    }
+
+    [Fact]
+    public void Validate_InvisibleSigWidget_DegenerateRect_NoAnnotationFinding()
+    {
+        // §6.3.3-1 false-positive guard: a signature Widget annotation with /Rect [0 0 0 0] (zero
+        // area) has no visible extent and is exempt from the appearance-stream presence requirement.
+        // veraPDF 1.30.2 accepts such annotations without flagging a missing /AP. The flag
+        // requirements (/F Print set, Hidden/Invisible/NoView/ToggleNoView clear) still apply.
+        // This mirrors the invisible signature widget the Signing package writes via doc.Sign().
+        var bytes = BuildPagePdf(
+            "/Annots [4 0 R]",
+            new PdfObj("<< /Type /Annot /Subtype /Widget /FT /Sig /T (Sig1) /Rect [0 0 0 0] /F 4 >>"));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.3-annotation");
+    }
+
+    [Fact]
+    public void Validate_InvisibleStampAnnotation_DegenerateRect_NoAnnotationFinding()
+    {
+        // §6.3.3-1 false-positive guard (non-Widget): a /Stamp annotation with /Rect [0 0 0 0]
+        // is also exempt from the appearance requirement. The exemption is rect-based, not
+        // limited to signature widgets.
+        var bytes = BuildPagePdf(
+            "/Annots [4 0 R]",
+            new PdfObj("<< /Type /Annot /Subtype /Stamp /Rect [0 0 0 0] /F 4 >>"));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.3-annotation");
+    }
+
+    [Fact]
+    public void Validate_VisibleAnnotationMissingAP_DegenerateRectExemptionDoesNotApply()
+    {
+        // Regression guard: a non-degenerate /Rect annotation with no /AP still fires the
+        // 6.3-annotation rule. The degenerate-rect exemption must not over-broaden.
+        var bytes = BuildPagePdf(
+            "/Annots [4 0 R]",
+            new PdfObj("<< /Type /Annot /Subtype /Stamp /Rect [10 10 200 100] /F 4 >>"));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions,
+            a => a.RuleId == "ISO19005-2:6.3-annotation" && a.Message.Contains("appearance"));
+    }
+
+    [Fact]
+    public void Validate_RealSignedPdf_NoAnnotationOrStringFinding()
+    {
+        // The signing package produces an invisible signature widget with /Rect [0 0 0 0] and no
+        // /AP — historically flagged as 6.3-annotation. After the degenerate-rect fix, both the
+        // 6.3-annotation and 6.1.13-string rules must be silent on a well-formed signed PDF.
+        using var cert = CreateSigningCertificate();
+        var signed = SignMinimalPdf(cert);
+
+        var result = PdfPreflight.Validate(signed, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.3-annotation");
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.13-string");
     }
 
     // ── §6.5.1 action rules ─────────────────────────────────────────────────────

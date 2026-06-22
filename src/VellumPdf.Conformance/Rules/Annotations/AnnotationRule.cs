@@ -29,6 +29,7 @@ internal sealed class AnnotationRule : IConformanceRule
     private static readonly PdfName _n = new("N");
     private static readonly PdfName _ft = new("FT");
     private static readonly PdfName _parent = new("Parent");
+    private static readonly PdfName _rect = new("Rect");
 
     private const int MaxFieldDepth = 64;
 
@@ -128,12 +129,37 @@ internal sealed class AnnotationRule : IConformanceRule
             if (subtype == "Link" || subtype == "Popup")
                 continue;
 
+            // §6.3.3-1: an annotation whose /Rect is degenerate (zero width or zero height) has no
+            // visible extent and is exempt from the appearance-presence requirement. veraPDF 1.30.2
+            // accepts such annotations (including invisible signature widgets with /Rect [0 0 0 0])
+            // without flagging the missing /AP. The flag and /AP-kind checks above still apply.
+            if (HasDegenerateRect(context, annot))
+                continue;
+
             // The normal appearance /N is either an appearance stream or a sub-dictionary keyed by
             // appearance state; a missing/non-stream-non-dictionary value does not satisfy it.
             var apN = ap?.Get(_n);
             if (context.ResolveStream(apN) is null && context.Resolve(apN) is not PdfDictionary)
                 context.Report(RuleId, Clause, PreflightSeverity.Error, $"{label} shall have a normal appearance (/AP /N).");
         }
+    }
+
+    // Returns true when the annotation's /Rect is degenerate — i.e. has zero width (x0 == x2) or
+    // zero height (y1 == y3). A degenerate rect means the annotation has no visible area, so it
+    // carries no renderable content and is exempt from the appearance-stream presence requirement
+    // (§6.3.3-1). veraPDF 1.30.2 confirms: it accepts annotations with /Rect [0 0 0 0] (and any
+    // other zero-area rectangle) without flagging a missing /AP.
+    private static bool HasDegenerateRect(PreflightContext context, PdfDictionary annot)
+    {
+        if (context.Resolve(annot.Get(_rect)) is not PdfArray { Count: 4 } rect)
+            return false;
+        var x0 = NumericValue(context.Resolve(rect[0]));
+        var y1 = NumericValue(context.Resolve(rect[1]));
+        var x2 = NumericValue(context.Resolve(rect[2]));
+        var y3 = NumericValue(context.Resolve(rect[3]));
+        if (x0 is null || y1 is null || x2 is null || y3 is null)
+            return false;
+        return x0 == x2 || y1 == y3; // zero width or zero height
     }
 
     // The field type (/FT) of a widget annotation: its own, or — for a widget that is a child of a

@@ -82,7 +82,28 @@ internal sealed class NumericLimitsRule : IConformanceRule
         _ => null,
     };
 
-    private void Walk(PreflightContext context, PdfObject? value, HashSet<string> flagged, int depth)
+    private static readonly PdfName _contents = new("Contents");
+    private static readonly PdfName _byteRange = new("ByteRange");
+    private static readonly PdfName _sig = new("Sig");
+    private static readonly PdfName _subFilter = new("SubFilter");
+
+    // Returns true when <paramref name="dict"/> is a PDF signature dictionary. ISO 32000-1 §12.8.1
+    // defines the signature dict as a dictionary with a /ByteRange entry (or /Type /Sig). We use
+    // /ByteRange as the primary predicate because /Type /Sig may be omitted by some producers, while
+    // /SubFilter is present in all PAdES/CMS signature dicts. Any of the three is sufficient.
+    private static bool IsSignatureDictionary(PreflightContext context, PdfDictionary dict)
+    {
+        if (dict.Get(_byteRange) is not null)
+            return true;
+        if (context.Resolve(dict.Get(PdfName.Type)) is PdfName t && t.Value == _sig.Value)
+            return true;
+        if (dict.Get(_subFilter) is not null)
+            return true;
+        return false;
+    }
+
+    private void Walk(PreflightContext context, PdfObject? value, HashSet<string> flagged, int depth,
+        bool isSignatureContents = false)
     {
         if (depth > MaxDepth)
             return;
@@ -101,8 +122,13 @@ internal sealed class NumericLimitsRule : IConformanceRule
                 Report(context, flagged, "real-precision",
                     $"A non-zero real value ({r.Value}) is closer to zero than the permitted ±1.175×10^-38.");
                 break;
-            case PdfLiteralString s when s.Bytes.Length > MaxStringBytes:
-            case PdfHexString { Bytes.Length: > MaxStringBytes }:
+            // The /Contents entry of a signature dictionary is a DER-encoded CMS blob whose size is
+            // governed by the CMS structure rather than the PDF string limit. veraPDF 1.30.2 accepts
+            // signature /Contents strings that exceed 32767 decoded bytes (the CMS placeholder used by
+            // PAdES B-T/B-LTA signatures reserves 32768 bytes by convention). Skip the length check
+            // for this specific entry only; all other strings are still subject to the limit.
+            case PdfLiteralString s when !isSignatureContents && s.Bytes.Length > MaxStringBytes:
+            case PdfHexString hs when !isSignatureContents && hs.Bytes.Length > MaxStringBytes:
                 Report(context, flagged, "string", $"A string longer than {MaxStringBytes} bytes is not permitted.");
                 break;
             case PdfName n when Encoding.UTF8.GetByteCount(n.Value) > MaxNameBytes:
@@ -113,11 +139,13 @@ internal sealed class NumericLimitsRule : IConformanceRule
                     Walk(context, array[k], flagged, depth + 1);
                 break;
             case PdfDictionary dict:
+                var isSigDict = IsSignatureDictionary(context, dict);
                 foreach (var entry in dict.Entries)
                 {
                     if (Encoding.UTF8.GetByteCount(entry.Key.Value) > MaxNameBytes)
                         Report(context, flagged, "name", $"A name longer than {MaxNameBytes} bytes is not permitted.");
-                    Walk(context, entry.Value, flagged, depth + 1);
+                    var entryIsSignatureContents = isSigDict && entry.Key.Value == _contents.Value;
+                    Walk(context, entry.Value, flagged, depth + 1, entryIsSignatureContents);
                 }
                 break;
         }
