@@ -3639,6 +3639,158 @@ public sealed class PdfPreflightTests
         Assert.Contains("circular", assertion.Message);
     }
 
+    // ── PDF/A-2a §6.7.3.4 structure-element type conformance ───────────────────
+
+    [Fact]
+    public void Validate2a_NonStandardTypeUnmapped_ReportsError()
+    {
+        // §6.7.3.4-1: StructElem /S /MyCustomTag with no /RoleMap entry — non-standard type
+        // is not mapped to a standard type. Expects A2aStructureTypeRule to fire.
+        var bytes = Build2aPdf(
+            "/MarkInfo << /Marked true >> /StructTreeRoot 4 0 R",
+            new PdfObj("<< /Type /StructTreeRoot /K 5 0 R >>"),
+            new PdfObj("<< /Type /StructElem /S /MyCustomTag /P 4 0 R >>"));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2A);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a =>
+            a.RuleId == "ISO19005-2:6.7.3.4-1"
+            && a.Message.Contains("MyCustomTag"));
+    }
+
+    [Fact]
+    public void Validate2a_NonStandardTypeRoleMapped_NoFindings()
+    {
+        // §6.7.3.4-1 FP-safety: StructElem /S /MyCustomTag with /RoleMap /MyCustomTag /Div —
+        // non-standard type IS role-mapped to standard type /Div. Must NOT fire.
+        var bytes = Build2aPdf(
+            "/MarkInfo << /Marked true >> /StructTreeRoot 4 0 R",
+            new PdfObj("<< /Type /StructTreeRoot /K 5 0 R /RoleMap << /MyCustomTag /Div >> >>"),
+            new PdfObj("<< /Type /StructElem /S /MyCustomTag /P 4 0 R >>"));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2A);
+
+        Assert.True(result.IsCompliant);
+        Assert.Empty(result.Assertions);
+    }
+
+    [Fact]
+    public void Validate2a_CircularRoleMapWithElem_ReportsError()
+    {
+        // §6.7.3.4-2: StructElem /S /Foo, /RoleMap /Foo /Bar /Bar /Foo — circular chain.
+        // A2aStructureTypeRule fires (element uses the cycling type).
+        var bytes = Build2aPdf(
+            "/MarkInfo << /Marked true >> /StructTreeRoot 4 0 R",
+            new PdfObj("<< /Type /StructTreeRoot /K 5 0 R /RoleMap << /Foo /Bar /Bar /Foo >> >>"),
+            new PdfObj("<< /Type /StructElem /S /Foo /P 4 0 R >>"));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2A);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a =>
+            a.RuleId == "ISO19005-2:6.7.3.4-2"
+            && a.Message.Contains("circular"));
+    }
+
+    [Fact]
+    public void Validate2a_StandardTypeRemappedToNonStandard_ReportsError()
+    {
+        // §6.7.3.4-3: /RoleMap /P /MyNonStd; element /S /P — standard type remapped to
+        // a non-standard type. A2aStructureTypeRule must fire.
+        var bytes = Build2aPdf(
+            "/MarkInfo << /Marked true >> /StructTreeRoot 4 0 R",
+            new PdfObj("<< /Type /StructTreeRoot /K 5 0 R /RoleMap << /P /MyNonStd >> >>"),
+            new PdfObj("<< /Type /StructElem /S /P /P 4 0 R >>"));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2A);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a =>
+            a.RuleId == "ISO19005-2:6.7.3.4-3"
+            && a.Message.Contains("/P"));
+    }
+
+    [Fact]
+    public void Validate2a_StandardTypeRemappedToStandard_NoFindings()
+    {
+        // §6.7.3.4-3 FP-safety: /RoleMap /P /Div — standard remapped to another STANDARD type.
+        // veraPDF 1.30.2 accepts this (empirically confirmed); must NOT fire.
+        var bytes = Build2aPdf(
+            "/MarkInfo << /Marked true >> /StructTreeRoot 4 0 R",
+            new PdfObj("<< /Type /StructTreeRoot /K 5 0 R /RoleMap << /P /Div >> >>"),
+            new PdfObj("<< /Type /StructElem /S /P /P 4 0 R >>"));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2A);
+
+        Assert.True(result.IsCompliant);
+        Assert.Empty(result.Assertions);
+    }
+
+    // ── PDF/A-2a §6.7.4 language tag syntax ────────────────────────────────────
+
+    [Fact]
+    public void Validate2a_BadCatalogLang_ReportsError()
+    {
+        // §6.7.4-1: catalog /Lang (invalid!!bad) is not a valid RFC 3066 language tag.
+        var bytes = Build2aPdf(
+            "/MarkInfo << /Marked true >> /StructTreeRoot 4 0 R /Lang (invalid!!bad)",
+            new PdfObj("<< /Type /StructTreeRoot >>"));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2A);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a =>
+            a.RuleId == "ISO19005-2:6.7.4-1"
+            && a.Message.Contains("invalid!!bad"));
+    }
+
+    [Fact]
+    public void Validate2a_GoodCatalogLang_NoFindings()
+    {
+        // §6.7.4-1 FP-safety: catalog /Lang (en-US) is a valid BCP-47 tag. Must NOT fire.
+        var bytes = Build2aPdf(
+            "/MarkInfo << /Marked true >> /StructTreeRoot 4 0 R /Lang (en-US)",
+            new PdfObj("<< /Type /StructTreeRoot >>"));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2A);
+
+        Assert.True(result.IsCompliant);
+        Assert.Empty(result.Assertions);
+    }
+
+    [Fact]
+    public void Validate2a_BadStructElemLang_ReportsError()
+    {
+        // §6.7.4-1: StructElem /Lang (xyz!!bad) — bad syntax on a structure element /Lang.
+        var bytes = Build2aPdf(
+            "/MarkInfo << /Marked true >> /StructTreeRoot 4 0 R",
+            new PdfObj("<< /Type /StructTreeRoot /K 5 0 R >>"),
+            new PdfObj("<< /Type /StructElem /S /P /P 4 0 R /Lang (xyz!!bad) >>"));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2A);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a =>
+            a.RuleId == "ISO19005-2:6.7.4-1"
+            && a.Message.Contains("xyz!!bad"));
+    }
+
+    [Fact]
+    public void Validate2a_GoodStructElemLang_NoFindings()
+    {
+        // §6.7.4-1 FP-safety: StructElem /Lang (fr) — valid BCP-47 tag. Must NOT fire.
+        var bytes = Build2aPdf(
+            "/MarkInfo << /Marked true >> /StructTreeRoot 4 0 R",
+            new PdfObj("<< /Type /StructTreeRoot /K 5 0 R >>"),
+            new PdfObj("<< /Type /StructElem /S /P /P 4 0 R /Lang (fr) >>"));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2A);
+
+        Assert.True(result.IsCompliant);
+        Assert.Empty(result.Assertions);
+    }
+
     // ── PDF/UA-1 (ISO 14289-1) ──────────────────────────────────────────────────
 
     [Fact]
