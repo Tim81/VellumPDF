@@ -252,6 +252,15 @@ public static class ConformanceCatalog
         "7.2-36",  // UaTableContainmentRule: THead kids ∈ {TR}
         "7.2-37",  // UaTableContainmentRule: TBody kids ∈ {TR}
         "7.2-38",  // UaTableContainmentRule: TFoot kids ∈ {TR}
+        // Batch B4 — §7.2 count and caption-position rules:
+        "7.2-11",  // UaTableCountRule: at most one THead child of Table
+        "7.2-12",  // UaTableCountRule: at most one TFoot child of Table
+        "7.2-13",  // UaTableCountRule: TFoot requires TBody sibling
+        "7.2-14",  // UaTableCountRule: THead requires TBody sibling
+        "7.2-39",  // UaTableCountRule: at most one Caption child of Table
+        "7.2-16",  // UaTableCountRule: Caption must be first or last kid of Table
+        "7.2-28",  // UaTocContainmentRule: Caption must be first kid of TOC
+        "7.2-40",  // UaListContainmentRule: Caption must be first kid of L
         // Batch A2 additions:
         "7.10-1", "7.10-2",   // UaOptionalContentRule: OC config /Name (non-empty) and no /AS
         "7.11-1",              // UaEmbeddedFileRule: embedded-file /F and /UF requirement
@@ -360,6 +369,9 @@ public static class ConformanceCatalog
         // 7.2-3/-4/-5/-6/-7/-8/-9/-10/-17/-18/-19/-20/-26/-27/-36/-37/-38 moved to
         //   PdfUaImplemented (Batch B2 — UaTableContainmentRule, UaListContainmentRule,
         //   UaTocContainmentRule: table/list/TOC containment parent-type and kid-type rules).
+        // 7.2-11/-12/-13/-14/-16/-28/-39/-40 moved to PdfUaImplemented (Batch B4 —
+        //   UaTableCountRule: table count/caption-position; UaTocContainmentRule +7.2-28;
+        //   UaListContainmentRule +7.2-40: TOC/list caption-position rules).
         // 7.3-1 moved to PdfUaImplemented (Batch B3 — UaAltTextRule: Figure alt-text).
         // 7.7-1 moved to PdfUaImplemented (Batch B3 — UaAltTextRule: Formula alt-text).
         // 7.9-1 moved to PdfUaImplemented (Batch B3 — UaNoteIdRule: Note non-empty /ID).
