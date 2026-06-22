@@ -320,6 +320,9 @@ public static class ConformanceCatalog
         "7.2-31",              // UaMarkedContentLangRule: /Span BDC /Alt → BDC or ancestor must have /Lang
         "7.2-32",              // UaMarkedContentLangRule: /Span BDC /E → BDC or ancestor must have /Lang
         "7.2-34",              // UaMarkedContentLangRule: text-show → enclosing BDC or ancestor must have /Lang
+        // Batch C2 — §7.1 artifact/tagged-content nesting:
+        "7.1-1",               // UaArtifactTaggingRule: Artifact BDC inside struct-linked (tagged) ancestor BDC
+        "7.1-2",               // UaArtifactTaggingRule: non-Artifact BDC with MCID in ParentTree inside Artifact ancestor
     };
 
     // PDF/UA-1 checks the rules cover only partially (the common case is detected; some conditions
@@ -364,25 +367,21 @@ public static class ConformanceCatalog
         "7.16-1" => "encrypted-document support: the reader does not surface the P permission bits for encrypted files",
         "7.18.6.2-1" or "7.18.6.2-2" => "media clip data dictionary traversal (requires walking Screen-annotation rendition actions)",
 
-        // §7.1 artifact/tagging rules — Batch C1 assessment:
-        // Infrastructure built (BMC/BDC/EMC stack in ContentStreamUsage, MarkedContentSequence,
-        // TextShowContexts). Rules deferred because:
-        // 7.1-1/7.1-2: isTaggedContent (MCID in ParentTree) and parentsTags (ancestor BDC chain
-        //   correlated with structure tree) require full structure-tree/content-stream correlation;
-        //   FP risk too high without implementing veraPDF's SEMarkedContent model exactly.
-        // 7.1-3: SESimpleContentItem is per-content-item (text shows, path painting operators);
-        //   veraPDF's definition of "content item" is implementation-specific and exempts many
-        //   operator categories; FP risk too high without replicating the veraPDF operator exemption model.
-        "7.1-1" or "7.1-2" =>
-            "marked-content interpreter infrastructure built (Batch C1); deferred: isTaggedContent "
-            + "(MCID presence in ParentTree) + parentsTags (ancestor BDC chain correlation with "
-            + "structure tree) require full structure-tree/content-stream correlation; FP risk too "
-            + "high without replicating veraPDF's SEMarkedContent model",
+        // §7.1 artifact/tagging rules — Batch C2:
+        // 7.1-1 and 7.1-2 moved to PdfUaImplemented (Batch C2 — UaArtifactTaggingRule: Artifact
+        //   BDC inside struct-linked ancestor; non-Artifact BDC with MCID in ParentTree inside
+        //   Artifact ancestor. MarkedContentSequence extended with HasArtifactAncestor and
+        //   AncestorMcid; empirically verified against veraPDF 1.30.2 probe series).
+        // 7.1-3: SESimpleContentItem is per-content-item (text shows AND path painting operators);
+        //   veraPDF fires 7.1-3 for untagged path painting operators (m/l/c/re + S/f/B etc.),
+        //   which ContentStreamUsage does not track. A text-show-only implementation would produce
+        //   false negatives (miss path violations) and cannot be verified complete without tracking
+        //   path ops. Deferred until path-painting operator tracking is added.
         "7.1-3" =>
-            "marked-content interpreter infrastructure built (Batch C1); deferred: SESimpleContentItem "
-            + "is per-content-item (text shows, path painting); veraPDF's definition of what constitutes "
-            + "a 'content item' is implementation-specific and exempts many operator categories; FP risk "
-            + "too high without replicating veraPDF's operator exemption model",
+            "SESimpleContentItem scope includes path painting operators (m/l/c/re + S/f/B etc.) in "
+            + "addition to text-show operators; veraPDF fires 7.1-3 for untagged path operations, "
+            + "which ContentStreamUsage does not yet track; a text-show-only implementation would "
+            + "produce false negatives and cannot be verified complete",
 
         // §7.21 font deferred notes — Batch A3 assessment:
         // 7.21.4.1-1 moved to PdfUaImplemented (Batch A5a — UaFontEmbeddingRule, rendering-mode-scoped).
@@ -464,7 +463,12 @@ public static class ConformanceCatalog
         //   BDC with /ActualText, /Alt, /E, and text-show operators require determinable language;
         //   gContainsCatalogLang short-circuit; content-stream BMC/BDC/EMC stack + inline-dict
         //   property parser added to ContentStreamUsage; veraPDF 1.30.2 probe confirmed).
-        // 7.1-1/-2/-3 remain deferred (Batch C1 assessment — see PdfUaDeferredNote switch above).
+        // 7.1-1/-2 moved to PdfUaImplemented (Batch C2 — UaArtifactTaggingRule: Artifact BDC inside
+        //   struct-linked ancestor; non-Artifact BDC with MCID in ParentTree inside Artifact ancestor;
+        //   MarkedContentSequence extended with HasArtifactAncestor + AncestorMcid; verified against
+        //   veraPDF 1.30.2 probe series).
+        // 7.1-3 remains deferred (Batch C2 assessment — SESimpleContentItem includes path painting
+        //   operators that ContentStreamUsage does not track — see PdfUaDeferredNote switch above).
 
         _ => "structure-tree walker",
     };

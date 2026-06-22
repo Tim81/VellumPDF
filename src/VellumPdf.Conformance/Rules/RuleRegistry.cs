@@ -194,6 +194,8 @@ internal static class RuleRegistry
         new UaOutlineLangRule(),
         // Batch C1 — §7.2 natural-language determination for marked-content sequences (7.2-30/-31/-32/-34):
         new UaMarkedContentLangRule(),
+        // Batch C2 — §7.1-1/-2 artifact/tagged-content nesting (Artifact inside tagged; tagged inside Artifact):
+        new UaArtifactTaggingRule(),
         // Batch B10 — §7.4.2 heading nesting, §7.5 connected headers:
         new UaHeadingNestingRule(),
         new UaTableHeaderRule(),

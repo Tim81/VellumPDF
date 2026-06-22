@@ -31,7 +31,9 @@ internal sealed class MarkedContentSequence
         string? actualText,
         string? alt,
         string? expansion,
-        string? inheritedLang)
+        string? inheritedLang,
+        bool hasArtifactAncestor,
+        int? ancestorMcid)
     {
         Tag = tag;
         Mcid = mcid;
@@ -41,6 +43,8 @@ internal sealed class MarkedContentSequence
         Expansion = expansion;
         InheritedLang = inheritedLang;
         IsArtifact = string.Equals(tag, "Artifact", StringComparison.Ordinal);
+        HasArtifactAncestor = hasArtifactAncestor;
+        AncestorMcid = ancestorMcid;
     }
 
     /// <summary>The tag name from the BMC/BDC operator (e.g. "Artifact", "P", "Span").</summary>
@@ -69,6 +73,21 @@ internal sealed class MarkedContentSequence
 
     /// <summary>True when <see cref="Tag"/> is "Artifact".</summary>
     public bool IsArtifact { get; }
+
+    /// <summary>
+    /// True when any enclosing ancestor BDC/BMC in the marked-content stack at the time this
+    /// sequence was opened carries the tag "Artifact". Used by §7.1-2 to detect tagged content
+    /// nested inside an artifact.
+    /// </summary>
+    public bool HasArtifactAncestor { get; }
+
+    /// <summary>
+    /// The /MCID from the nearest enclosing ancestor BDC that carries an MCID, or null when no
+    /// ancestor carries an MCID. Used by §7.1-1 to determine whether an Artifact BDC is nested
+    /// inside a struct-linked (tagged) ancestor sequence (i.e., <c>isTaggedContent</c> for the
+    /// Artifact in veraPDF's model).
+    /// </summary>
+    public int? AncestorMcid { get; }
 }
 
 /// <summary>
@@ -469,7 +488,9 @@ internal static class ContentStreamUsage
                                 {
                                     var seq = new MarkedContentSequence(
                                         lastName, null, null, null, null, null,
-                                        FindInheritedLang(mcStack));
+                                        FindInheritedLang(mcStack),
+                                        FindHasArtifactAncestor(mcStack),
+                                        FindAncestorMcid(mcStack));
                                     mcStack.Push(seq);
                                     markedContentSequences.Add(seq);
                                 }
@@ -507,7 +528,9 @@ internal static class ContentStreamUsage
                                             props?.ActualText,
                                             props?.Alt,
                                             props?.E,
-                                            FindInheritedLang(mcStack));
+                                            FindInheritedLang(mcStack),
+                                            FindHasArtifactAncestor(mcStack),
+                                            FindAncestorMcid(mcStack));
                                         mcStack.Push(seq);
                                         markedContentSequences.Add(seq);
                                     }
@@ -566,6 +589,37 @@ internal static class ContentStreamUsage
                 return ancestor.Lang;
             if (ancestor.InheritedLang is not null)
                 return ancestor.InheritedLang;
+        }
+        return null;
+    }
+
+    // Returns true when any ancestor BDC/BMC in the stack has tag "Artifact".
+    // Used to populate MarkedContentSequence.HasArtifactAncestor for §7.1-2.
+    private static bool FindHasArtifactAncestor(Stack<MarkedContentSequence> mcStack)
+    {
+        foreach (var ancestor in mcStack)
+        {
+            if (ancestor.IsArtifact)
+                return true;
+            // Short-circuit: if the ancestor itself already knows it has an Artifact ancestor
+            // there's no need to look further up the chain.
+            if (ancestor.HasArtifactAncestor)
+                return true;
+        }
+        return false;
+    }
+
+    // Returns the MCID from the nearest ancestor BDC that carries an MCID, or null.
+    // Used to populate MarkedContentSequence.AncestorMcid for §7.1-1.
+    private static int? FindAncestorMcid(Stack<MarkedContentSequence> mcStack)
+    {
+        foreach (var ancestor in mcStack)
+        {
+            if (ancestor.Mcid is not null)
+                return ancestor.Mcid;
+            // If the ancestor itself has an ancestor MCID, propagate it upward.
+            if (ancestor.AncestorMcid is not null)
+                return ancestor.AncestorMcid;
         }
         return null;
     }
