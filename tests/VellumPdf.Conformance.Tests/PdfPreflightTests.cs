@@ -7260,4 +7260,121 @@ public sealed class PdfPreflightTests
         return clone;
     }
 
+    // ── Batch B1 — §7.1 structure-tree walker foundation unit tests ──────────────────────────────
+
+    /// <summary>
+    /// §7.1-12 VIOLATION (UaStructElemParentRule): a StructElem whose /P entry has been removed
+    /// must fire rule 7.1-12. Cross-validated against veraPDF 1.30.2 via oracle fixture
+    /// <c>pdfua1-structelem-missing-parent</c>: veraPDF exits 1 (non-compliant).
+    /// </summary>
+    [Fact]
+    public void UaStructElemMissingParent_Fires71_12()
+    {
+        var bytes = OracleCorpus.Ua1StructElemMissingParent();
+        var result = PdfPreflight.Validate(bytes, Conformance.PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.1-12");
+    }
+
+    /// <summary>
+    /// §7.1-12 FP-safety guard (UaStructElemParentRule): the standard UA-1 tagged baseline
+    /// has /P on every StructElem — the rule must NOT fire. Cross-validated against veraPDF
+    /// 1.30.2 via oracle fixture <c>pdfua1-cidtogidmap-compliant</c>: veraPDF exits 0.
+    /// </summary>
+    [Fact]
+    public void UaStructElemBaseline_DoesNotFire71_12()
+    {
+        var bytes = OracleCorpus.Ua1TaggedWithEmbeddedFont();
+        var result = PdfPreflight.Validate(bytes, Conformance.PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.1-12");
+    }
+
+    /// <summary>
+    /// §7.1-6 VIOLATION (UaRoleMapRule): a circular /RoleMap (/Foo→/Bar→/Foo) combined with
+    /// a StructElem of /S /Foo must fire rule 7.1-6. Cross-validated against veraPDF 1.30.2
+    /// via oracle fixture <c>pdfua1-circular-rolemap</c>: veraPDF exits 1 (non-compliant).
+    /// </summary>
+    [Fact]
+    public void UaCircularRoleMap_Fires71_6()
+    {
+        var bytes = OracleCorpus.Ua1CircularRoleMap();
+        var result = PdfPreflight.Validate(bytes, Conformance.PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.1-6");
+    }
+
+    /// <summary>
+    /// §7.1-7 VIOLATION (UaRoleMapRule): /RoleMap &lt;&lt; /Table /Div &gt;&gt; combined with
+    /// a StructElem of /S /Table must fire rule 7.1-7. Cross-validated against veraPDF 1.30.2
+    /// via oracle fixture <c>pdfua1-standard-type-remapped</c>: veraPDF exits 1 (non-compliant).
+    /// </summary>
+    [Fact]
+    public void UaStandardTypeRemapped_Fires71_7()
+    {
+        var bytes = OracleCorpus.Ua1StandardTypeRemapped();
+        var result = PdfPreflight.Validate(bytes, Conformance.PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.1-7");
+    }
+
+    /// <summary>
+    /// §7.1-6/7.1-7 FP-safety guard (UaRoleMapRule): the standard UA-1 tagged baseline has
+    /// no /RoleMap — neither rule must fire. Cross-validated against veraPDF 1.30.2.
+    /// </summary>
+    [Fact]
+    public void UaRoleMapBaseline_DoesNotFire71_6_Or_71_7()
+    {
+        var bytes = OracleCorpus.Ua1TaggedWithEmbeddedFont();
+        var result = PdfPreflight.Validate(bytes, Conformance.PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.1-6");
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.1-7");
+    }
+
+    /// <summary>
+    /// §7.1-7 FP-safety guard (UaRoleMapRule): a /RoleMap that remaps a standard type
+    /// (<c>/Table /Div</c>) but where NO structure element uses the remapped type (the only element
+    /// is /S /Document) must NOT fire 7.1-7. veraPDF 1.30.2 accepts such a document (the predicate
+    /// is evaluated on a PDStructElem that uses the type, not on the /RoleMap dict) — confirmed by
+    /// direct probe. The rule must be element-driven, not RoleMap-driven.
+    /// </summary>
+    [Fact]
+    public void UaStandardTypeRemappedButUnused_DoesNotFire71_7()
+    {
+        var bytes = AssemblePdf(
+            [
+                new("<< /Type /Catalog /Pages 2 0 R /StructTreeRoot 4 0 R /MarkInfo << /Marked true >> "
+                    + "/Lang (en-US) /ViewerPreferences << /DisplayDocTitle true >> >>"),
+                new("<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
+                new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Tabs /S /StructParents 0 >>"),
+                new("<< /Type /StructTreeRoot /K [5 0 R] /RoleMap << /Table /Div >> >>"),
+                new("<< /Type /StructElem /S /Document /P 4 0 R >>"),
+            ],
+            metadataOverride: UaXmpBytes());
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.1-7");
+    }
+
+    /// <summary>
+    /// §7.1-6 FP-safety guard (UaRoleMapRule): a circular /RoleMap (<c>/Foo /Bar /Bar /Foo</c>)
+    /// where NO structure element uses the cyclic type (the only element is /S /Document) must NOT
+    /// fire 7.1-6. veraPDF 1.30.2 accepts such a document — confirmed by direct probe.
+    /// </summary>
+    [Fact]
+    public void UaCircularRoleMapButUnused_DoesNotFire71_6()
+    {
+        var bytes = AssemblePdf(
+            [
+                new("<< /Type /Catalog /Pages 2 0 R /StructTreeRoot 4 0 R /MarkInfo << /Marked true >> "
+                    + "/Lang (en-US) /ViewerPreferences << /DisplayDocTitle true >> >>"),
+                new("<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
+                new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Tabs /S /StructParents 0 >>"),
+                new("<< /Type /StructTreeRoot /K [5 0 R] /RoleMap << /Foo /Bar /Bar /Foo >> >>"),
+                new("<< /Type /StructElem /S /Document /P 4 0 R >>"),
+            ],
+            metadataOverride: UaXmpBytes());
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.1-6");
+    }
+
 }

@@ -964,6 +964,30 @@ public static class OracleCorpus
             // rules, so this is validated per-clause in a unit test only; see
             // UaOutOfRangeGlyphInvisible_DoesNotFire7214121() in PdfPreflightTests.cs.
             // (Not in the oracle All list to avoid the in-process / veraPDF verdict mismatch.)
+
+            // ── PDF/UA-1 Batch B1 — structure-tree walker foundation (§7.1) ────────────────────────
+
+            // §7.1-12 VIOLATION: a StructElem (the leaf /P element) has its /P (parent pointer) entry
+            // removed. veraPDF cannot trace the content back to the tagged structure tree and fires
+            // 7.1-3 (content not tagged) or 7.1-12 — either way, exit 1 = non-compliant. In-process:
+            // UaStructElemParentRule fires 7.1-12. Oracle confirms exit 1 (ExpectedCompliant: false).
+            new OracleFixture("pdfua1-structelem-missing-parent",
+                Ua1StructElemMissingParent(),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.1-6 VIOLATION: a circular RoleMap (/Foo→/Bar→/Foo) plus a StructElem with /S /Foo.
+            // veraPDF evaluates circularMappingExist on the /Foo element and fires 7.1-6.
+            // In-process: UaRoleMapRule fires "ISO14289-1:7.1-6". Oracle: ExpectedCompliant: false.
+            new OracleFixture("pdfua1-circular-rolemap",
+                Ua1CircularRoleMap(),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.1-7 VIOLATION: /RoleMap << /Table /Div >> remaps a standard type, plus a StructElem
+            // with /S /Table. veraPDF evaluates remappedStandardType on the /Table element and fires
+            // 7.1-7. In-process: UaRoleMapRule fires "ISO14289-1:7.1-7". Oracle: ExpectedCompliant: false.
+            new OracleFixture("pdfua1-standard-type-remapped",
+                Ua1StandardTypeRemapped(),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
         ];
     }
 
@@ -3537,6 +3561,139 @@ public static class OracleCorpus
             Encoding.ASCII.GetBytes($"BT {trOp}/{fontName} 12 Tf 72 600 Td <EA60> Tj ET"));
 
         return reader.AppendRevision([(pageRef.ObjectNumber, newPage), (contentNum, content)]);
+    }
+
+    // ── Batch B1 — §7.1 structure-tree walker foundation ─────────────────────────────────────────
+
+    /// <summary>
+    /// §7.1-12 violation: removes the <c>/P</c> (parent) entry from the leaf P StructElem in the
+    /// UA-1 tagged baseline. veraPDF fires clause 7.1, testNumber 12 (containsParent == false).
+    /// </summary>
+    internal static byte[] Ua1StructElemMissingParent()
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+        using var reader = PdfReader.Open(baseline);
+
+        // Walk: StructTreeRoot -> Document StructElem -> P StructElem (the leaf)
+        var strRef = (PdfIndirectReference)reader.Catalog.Get(new PdfName("StructTreeRoot"))!;
+        var str = (PdfDictionary)reader.Resolve(strRef.ObjectNumber)!;
+
+        // /K on StructTreeRoot is the Document StructElem ref
+        var docRef = str.Get(new PdfName("K")) as PdfIndirectReference;
+        if (docRef is null) throw new InvalidOperationException("Expected Document StructElem ref");
+        var doc = (PdfDictionary)reader.Resolve(docRef.ObjectNumber)!;
+
+        // /K on Document StructElem is the P StructElem ref (or array of refs)
+        var docK = doc.Get(new PdfName("K"));
+        PdfIndirectReference pElemRef;
+        if (docK is PdfIndirectReference pr)
+            pElemRef = pr;
+        else if (docK is PdfArray arr && arr.Count > 0 && arr[0] is PdfIndirectReference ar)
+            pElemRef = ar;
+        else
+            throw new InvalidOperationException("Expected P StructElem ref");
+
+        var pElem = (PdfDictionary)reader.Resolve(pElemRef.ObjectNumber)!;
+        // Remove /P
+        var newPElem = CloneWithout(pElem, "P");
+
+        return reader.AppendRevision([(pElemRef.ObjectNumber, newPElem)]);
+    }
+
+    /// <summary>
+    /// §7.1-6 violation: adds a circular role mapping <c>/Foo /Bar /Bar /Foo</c> to the
+    /// StructTreeRoot /RoleMap, AND injects a StructElem with <c>/S /Foo</c> so that
+    /// veraPDF's <c>circularMappingExist</c> property is <c>true</c> on a real PDStructElem
+    /// (the rule only fires when an element actually exercises the circular chain).
+    /// </summary>
+    internal static byte[] Ua1CircularRoleMap()
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+        using var reader = PdfReader.Open(baseline);
+        var strRef = (PdfIndirectReference)reader.Catalog.Get(new PdfName("StructTreeRoot"))!;
+        var str = (PdfDictionary)reader.Resolve(strRef.ObjectNumber)!;
+
+        // Walk to the Document StructElem (root)
+        var docRef = str.Get(new PdfName("K")) as PdfIndirectReference
+            ?? throw new InvalidOperationException("Expected Document StructElem ref");
+        var doc = (PdfDictionary)reader.Resolve(docRef.ObjectNumber)!;
+
+        // Walk to the P StructElem (leaf)
+        var docK = doc.Get(new PdfName("K"));
+        PdfIndirectReference pElemRef;
+        if (docK is PdfIndirectReference pr) pElemRef = pr;
+        else if (docK is PdfArray arr && arr.Count > 0 && arr[0] is PdfIndirectReference ar) pElemRef = ar;
+        else throw new InvalidOperationException("Expected P StructElem ref");
+        var pElem = (PdfDictionary)reader.Resolve(pElemRef.ObjectNumber)!;
+
+        // Add a new /Foo StructElem (child of Document, sibling of P) that uses the circular type.
+        // The existing P StructElem keeps its /K MCID; the new /Foo element has no /K.
+        var fooElemNum = reader.Size;
+        var fooElem = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("StructElem"))
+            .Set(new PdfName("S"), new PdfName("Foo"))
+            .Set(new PdfName("P"), strRef); // parent = StructTreeRoot (simplified; still a /P)
+
+        // Update Document to have /K [P, Foo]
+        var newDoc = CloneDict(doc);
+        newDoc.Set(new PdfName("K"), new PdfArray([
+            (PdfObject)(docK is PdfIndirectReference ? docK : new PdfIndirectReference(pElemRef.ObjectNumber)),
+            new PdfIndirectReference(fooElemNum),
+        ]));
+
+        // Update StructTreeRoot: add circular RoleMap
+        var newStr = CloneDict(str);
+        newStr.Set(new PdfName("RoleMap"), new PdfDictionary()
+            .Set(new PdfName("Foo"), new PdfName("Bar"))
+            .Set(new PdfName("Bar"), new PdfName("Foo")));
+
+        return reader.AppendRevision([
+            (strRef.ObjectNumber, newStr),
+            (docRef.ObjectNumber, newDoc),
+            (fooElemNum, fooElem),
+        ]);
+    }
+
+    /// <summary>
+    /// §7.1-7 violation: adds a /RoleMap entry whose KEY is the standard structure type
+    /// <c>/Table</c> remapped to <c>/Div</c>, AND injects a StructElem with <c>/S /Table</c>
+    /// so that veraPDF's <c>remappedStandardType</c> property is non-null on a real PDStructElem.
+    /// </summary>
+    internal static byte[] Ua1StandardTypeRemapped()
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+        using var reader = PdfReader.Open(baseline);
+        var strRef = (PdfIndirectReference)reader.Catalog.Get(new PdfName("StructTreeRoot"))!;
+        var str = (PdfDictionary)reader.Resolve(strRef.ObjectNumber)!;
+
+        var docRef = str.Get(new PdfName("K")) as PdfIndirectReference
+            ?? throw new InvalidOperationException("Expected Document StructElem ref");
+        var doc = (PdfDictionary)reader.Resolve(docRef.ObjectNumber)!;
+
+        var docK = doc.Get(new PdfName("K"));
+
+        // Add a new /Table StructElem (child of Document) that uses the remapped standard type.
+        var tableElemNum = reader.Size;
+        var tableElem = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("StructElem"))
+            .Set(new PdfName("S"), new PdfName("Table"))
+            .Set(new PdfName("P"), strRef); // parent reference (simplified)
+
+        var newDoc = CloneDict(doc);
+        newDoc.Set(new PdfName("K"), new PdfArray([
+            (PdfObject)(docK is PdfIndirectReference ? docK : new PdfIndirectReference((int)(docK is PdfInteger pi ? pi.Value : 0))),
+            new PdfIndirectReference(tableElemNum),
+        ]));
+
+        var newStr = CloneDict(str);
+        newStr.Set(new PdfName("RoleMap"), new PdfDictionary()
+            .Set(new PdfName("Table"), new PdfName("Div")));
+
+        return reader.AppendRevision([
+            (strRef.ObjectNumber, newStr),
+            (docRef.ObjectNumber, newDoc),
+            (tableElemNum, tableElem),
+        ]);
     }
 
 }
