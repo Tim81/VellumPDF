@@ -166,6 +166,10 @@ internal static class RuleRegistry
         // Batch B1 — structure-tree walker foundation (§7.1 role-map + §7.1-12 parent entry):
         new UaRoleMapRule(),
         new UaStructElemParentRule(),
+        // Batch B2 — §7.2 structure containment (table, list, TOC):
+        new UaTableContainmentRule(),
+        new UaListContainmentRule(),
+        new UaTocContainmentRule(),
     ];
 
     /// <summary>

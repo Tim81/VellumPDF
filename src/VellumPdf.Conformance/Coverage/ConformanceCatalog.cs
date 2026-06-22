@@ -234,6 +234,24 @@ public static class ConformanceCatalog
     {
         "5-1", "5-2", "6.1-1", "6.2-1", "7.1-4", "7.1-6", "7.1-7", "7.1-8", "7.1-9", "7.1-10", "7.1-11", "7.1-12", "7.18.3-1",
         "7.2-29",
+        // Batch B2 — §7.2 table, list, TOC containment:
+        "7.2-3",   // UaTableContainmentRule: Table kids ∈ {TR, THead, TBody, TFoot, Caption}
+        "7.2-4",   // UaTableContainmentRule: TR parent ∈ {Table, THead, TBody, TFoot}
+        "7.2-5",   // UaTableContainmentRule: THead parent == Table
+        "7.2-6",   // UaTableContainmentRule: TBody parent == Table
+        "7.2-7",   // UaTableContainmentRule: TFoot parent == Table
+        "7.2-8",   // UaTableContainmentRule: TH parent == TR
+        "7.2-9",   // UaTableContainmentRule: TD parent == TR
+        "7.2-10",  // UaTableContainmentRule: TR kids ∈ {TH, TD}
+        "7.2-17",  // UaListContainmentRule: LI parent == L
+        "7.2-18",  // UaListContainmentRule: LBody parent == LI
+        "7.2-19",  // UaListContainmentRule: L kids ∈ {L, LI, Caption}
+        "7.2-20",  // UaListContainmentRule: LI kids ∈ {Lbl, LBody}
+        "7.2-26",  // UaTocContainmentRule: TOCI parent == TOC
+        "7.2-27",  // UaTocContainmentRule: TOC kids ∈ {TOC, TOCI, Caption}
+        "7.2-36",  // UaTableContainmentRule: THead kids ∈ {TR}
+        "7.2-37",  // UaTableContainmentRule: TBody kids ∈ {TR}
+        "7.2-38",  // UaTableContainmentRule: TFoot kids ∈ {TR}
         // Batch A2 additions:
         "7.10-1", "7.10-2",   // UaOptionalContentRule: OC config /Name (non-empty) and no /AS
         "7.11-1",              // UaEmbeddedFileRule: embedded-file /F and /UF requirement
@@ -331,6 +349,9 @@ public static class ConformanceCatalog
         // 7.1-6 moved to PdfUaImplemented (Batch B1 — UaRoleMapRule, circular role-map).
         // 7.1-7 moved to PdfUaImplemented (Batch B1 — UaRoleMapRule, standard-type remapped).
         // 7.1-12 moved to PdfUaImplemented (Batch B1 — UaStructElemParentRule, missing /P).
+        // 7.2-3/-4/-5/-6/-7/-8/-9/-10/-17/-18/-19/-20/-26/-27/-36/-37/-38 moved to
+        //   PdfUaImplemented (Batch B2 — UaTableContainmentRule, UaListContainmentRule,
+        //   UaTocContainmentRule: table/list/TOC containment parent-type and kid-type rules).
 
         _ => "structure-tree walker",
     };
