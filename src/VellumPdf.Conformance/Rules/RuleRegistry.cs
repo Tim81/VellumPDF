@@ -172,6 +172,8 @@ internal static class RuleRegistry
         new UaTocContainmentRule(),
         // Batch B4 — §7.2 count and caption-position rules:
         new UaTableCountRule(),
+        // Batch B7 — §7.2 table grid rules (intersection, column/row span consistency):
+        new UaTableGridRule(),
         // Batch B3 — §7.3/§7.7 alt-text, §7.9 Note IDs, §7.4.4 heading structure:
         new UaAltTextRule(),
         new UaNoteIdRule(),

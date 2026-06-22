@@ -300,6 +300,11 @@ public static class ConformanceCatalog
         "7.18.8-1",            // UaAnnotStructureRule: PrinterMark must not be in structure tree
         // Batch B6 — §7.2 natural-language determination (struct-elem attributes, annot /Contents, form /TU):
         "7.2-21",              // UaNaturalLanguageRule: StructElem /ActualText → element or ancestor must have /Lang
+        // Batch B7 — §7.2 table grid rules (intersection + column/row span consistency):
+        "7.2-15",              // UaTableGridRule: no two cells overlap in the table grid (hasIntersection)
+        "7.2-41",              // UaTableGridRule: all columns span same number of rows (numberOfColumnWithWrongRowSpan)
+        "7.2-42",              // UaTableGridRule: rows with same number of columns — wider-row branch (wrongColumnSpan != null)
+        "7.2-43",              // UaTableGridRule: rows with same number of columns — narrower-row branch (wrongColumnSpan == null)
         "7.2-22",              // UaNaturalLanguageRule: StructElem /Alt → element or ancestor must have /Lang
         "7.2-23",              // UaNaturalLanguageRule: StructElem /E → element or ancestor must have /Lang
         "7.2-24",              // UaNaturalLanguageRule: Annot /Contents → direct struct-elem must have /Lang
@@ -406,6 +411,9 @@ public static class ConformanceCatalog
         // 7.2-25 moved to PdfUaImplemented (Batch B6 — UaNaturalLanguageRule: FormField /TU
         //   requires Widget's struct-elem /Lang via /StructParent→/ParentTree; gContainsCatalogLang
         //   short-circuit; field-dict /Lang does not satisfy per veraPDF probe).
+        // 7.2-15/-41/-42/-43 moved to PdfUaImplemented (Batch B7 — UaTableGridRule: table cell
+        //   intersection check and column/row span consistency; skip-occupied-cell placement
+        //   algorithm verified against veraPDF 1.30.2 probe series).
 
         _ => "structure-tree walker",
     };
