@@ -170,6 +170,10 @@ internal static class RuleRegistry
         new UaTableContainmentRule(),
         new UaListContainmentRule(),
         new UaTocContainmentRule(),
+        // Batch B3 — §7.3/§7.7 alt-text, §7.9 Note IDs, §7.4.4 heading structure:
+        new UaAltTextRule(),
+        new UaNoteIdRule(),
+        new UaHeadingRule(),
     ];
 
     /// <summary>

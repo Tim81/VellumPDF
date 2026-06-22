@@ -7783,4 +7783,268 @@ public sealed class PdfPreflightTests
         Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-38");
     }
 
+    // ── §7.3-1 (SEFigure alt-text) ───────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// §7.3-1 VIOLATION (UaAltTextRule): a Figure with no /Alt and no /ActualText fires 7.3-1.
+    /// Cross-validated against veraPDF 1.30.2: probe_figure_no_alt → fires 7.3-1 (exit 1).
+    /// </summary>
+    [Fact]
+    public void UaFigureNoAlt_Fires73_1()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /Figure /P 5 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.3-1");
+    }
+
+    /// <summary>
+    /// §7.3-1 VIOLATION (UaAltTextRule): a Figure with empty /Alt and no /ActualText fires 7.3-1.
+    /// Cross-validated: probe_figure_empty_alt → fires 7.3-1 (exit 1).
+    /// </summary>
+    [Fact]
+    public void UaFigureEmptyAlt_Fires73_1()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /Figure /P 5 0 R /Alt () >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.3-1");
+    }
+
+    /// <summary>
+    /// §7.3-1 FP guard: a Figure with a non-empty /Alt must not fire 7.3-1.
+    /// Cross-validated: probe_figure_good_alt → PASS (exit 0).
+    /// </summary>
+    [Fact]
+    public void UaFigureGoodAlt_DoesNotFire73_1()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /Figure /P 5 0 R /Alt (A figure description) >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.3-1");
+    }
+
+    /// <summary>
+    /// §7.3-1 FP guard: a Figure with an empty /ActualText (key present, value empty) must not fire 7.3-1.
+    /// veraPDF accepts presence of /ActualText regardless of value.
+    /// Cross-validated: probe_figure_actualtext_empty → PASS (exit 0).
+    /// </summary>
+    [Fact]
+    public void UaFigureActualTextEmpty_DoesNotFire73_1()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /Figure /P 5 0 R /ActualText () >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.3-1");
+    }
+
+    // ── §7.7-1 (SEFormula alt-text) ──────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// §7.7-1 VIOLATION (UaAltTextRule): a Formula with no /Alt and no /ActualText fires 7.7-1.
+    /// Cross-validated: probe_formula_no_alt → fires 7.7-1 (exit 1).
+    /// </summary>
+    [Fact]
+    public void UaFormulaNdAlt_Fires77_1()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /Formula /P 5 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.7-1");
+    }
+
+    /// <summary>
+    /// §7.7-1 FP guard: a Formula with a non-empty /Alt must not fire 7.7-1.
+    /// Cross-validated: probe_formula_good_alt → PASS (exit 0).
+    /// </summary>
+    [Fact]
+    public void UaFormulaGoodAlt_DoesNotFire77_1()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /Formula /P 5 0 R /Alt (x squared) >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.7-1");
+    }
+
+    // ── §7.9-1 (SENote non-empty ID) ─────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// §7.9-1 VIOLATION (UaNoteIdRule): a Note with no /ID fires 7.9-1.
+    /// Cross-validated: probe_note_no_id → fires 7.9-1 (exit 1).
+    /// </summary>
+    [Fact]
+    public void UaNoteNoId_Fires79_1()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /Note /P 5 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.9-1");
+    }
+
+    /// <summary>
+    /// §7.9-1 VIOLATION (UaNoteIdRule): a Note with an empty /ID fires 7.9-1.
+    /// Cross-validated: probe_note_empty_id → fires 7.9-1 (exit 1).
+    /// </summary>
+    [Fact]
+    public void UaNoteEmptyId_Fires79_1()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /Note /P 5 0 R /ID () >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.9-1");
+    }
+
+    /// <summary>
+    /// §7.9-1 FP guard: a Note with a non-empty /ID must not fire 7.9-1.
+    /// Cross-validated: probe_note_good_id → PASS (exit 0).
+    /// </summary>
+    [Fact]
+    public void UaNoteGoodId_DoesNotFire79_1()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /Note /P 5 0 R /ID (note1) >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.9-1");
+    }
+
+    // ── §7.9-2 (SENote unique IDs) ───────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// §7.9-2 VIOLATION (UaNoteIdRule): two Notes with the same /ID fire 7.9-2.
+    /// Cross-validated: probe_note_duplicate_id → fires 7.9-2 (exit 1).
+    /// </summary>
+    [Fact]
+    public void UaNoteDuplicateId_Fires79_2()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R 7 0 R] >>",
+            "<< /Type /StructElem /S /Note /P 5 0 R /ID (dup) >>",
+            "<< /Type /StructElem /S /Note /P 5 0 R /ID (dup) >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.9-2");
+    }
+
+    /// <summary>
+    /// §7.9-2 FP guard: two Notes with distinct /IDs must not fire 7.9-2.
+    /// Cross-validated: probe_note_unique_ids → PASS (exit 0).
+    /// </summary>
+    [Fact]
+    public void UaNoteUniqueIds_DoesNotFire79_2()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R 7 0 R] >>",
+            "<< /Type /StructElem /S /Note /P 5 0 R /ID (note1) >>",
+            "<< /Type /StructElem /S /Note /P 5 0 R /ID (note2) >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.9-2");
+    }
+
+    // ── §7.4.4-1 (at most one H child) ───────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// §7.4.4-1 VIOLATION (UaHeadingRule): a Document with two H children fires 7.4.4-1.
+    /// Cross-validated: probe_two_H_kids → fires 7.4.4-1 (exit 1).
+    /// </summary>
+    [Fact]
+    public void UaTwoHKids_Fires744_1()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R 7 0 R 8 0 R] >>",
+            "<< /Type /StructElem /S /H /P 5 0 R >>",
+            "<< /Type /StructElem /S /H /P 5 0 R >>",
+            "<< /Type /StructElem /S /P /P 5 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.4.4-1");
+    }
+
+    /// <summary>
+    /// §7.4.4-1 FP guard: one H + one H1 child — only one H, so 7.4.4-1 must NOT fire.
+    /// (H1 is Hn, not H; only H children are counted toward 7.4.4-1.)
+    /// Cross-validated: probe_one_H_one_H1 → does NOT fire 7.4.4-1 (fires 7.4.4-2 and 7.4.4-3 instead).
+    /// </summary>
+    [Fact]
+    public void UaOneHOneH1_DoesNotFire744_1()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R 7 0 R] >>",
+            "<< /Type /StructElem /S /H /P 5 0 R >>",
+            "<< /Type /StructElem /S /H1 /P 5 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.4.4-1");
+    }
+
+    // ── §7.4.4-2 / §7.4.4-3 (H and Hn must not be mixed) ────────────────────────────────────────
+
+    /// <summary>
+    /// §7.4.4-2 + §7.4.4-3 VIOLATION (UaHeadingRule): a document using both H and H1 fires both rules.
+    /// Cross-validated: probe_H_and_H1 → fires 7.4.4-2 AND 7.4.4-3 (exit 1).
+    /// </summary>
+    [Fact]
+    public void UaHAndH1_Fires744_2And3()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R 7 0 R] >>",
+            "<< /Type /StructElem /S /H /P 5 0 R >>",
+            "<< /Type /StructElem /S /H1 /P 5 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.4.4-2");
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.4.4-3");
+    }
+
+    /// <summary>
+    /// §7.4.4-2 / §7.4.4-3 FP guard: a document using only H1 and H2 (no H) must not fire either rule.
+    /// Cross-validated: probe_only_Hn → PASS (exit 0).
+    /// </summary>
+    [Fact]
+    public void UaOnlyHn_DoesNotFire744_2Or3()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R 7 0 R] >>",
+            "<< /Type /StructElem /S /H1 /P 5 0 R >>",
+            "<< /Type /StructElem /S /H2 /P 5 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.4.4-2");
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.4.4-3");
+    }
+
+    /// <summary>
+    /// §7.4.4-2 / §7.4.4-3 FP guard: a document using only H (no H1–H6) must not fire either rule.
+    /// Cross-validated: probe_only_H → PASS (exit 0).
+    /// </summary>
+    [Fact]
+    public void UaOnlyH_DoesNotFire744_2Or3()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /H /P 5 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.4.4-2");
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.4.4-3");
+    }
+
 }
