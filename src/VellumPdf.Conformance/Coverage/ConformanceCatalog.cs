@@ -302,6 +302,9 @@ public static class ConformanceCatalog
         "7.2-21",              // UaNaturalLanguageRule: StructElem /ActualText → element or ancestor must have /Lang
         // Batch B7 — §7.2 table grid rules (intersection + column/row span consistency):
         "7.2-15",              // UaTableGridRule: no two cells overlap in the table grid (hasIntersection)
+        // Batch B8 — §7.2 natural-language determination (outline, XMP lang-alt):
+        "7.2-2",               // UaOutlineLangRule: non-empty /Outlines requires catalog /Lang
+        "7.2-33",              // UaOutlineLangRule: XMP rdf:Alt with x-default requires catalog /Lang
         "7.2-41",              // UaTableGridRule: all columns span same number of rows (numberOfColumnWithWrongRowSpan)
         "7.2-42",              // UaTableGridRule: rows with same number of columns — wider-row branch (wrongColumnSpan != null)
         "7.2-43",              // UaTableGridRule: rows with same number of columns — narrower-row branch (wrongColumnSpan == null)
@@ -414,6 +417,12 @@ public static class ConformanceCatalog
         // 7.2-15/-41/-42/-43 moved to PdfUaImplemented (Batch B7 — UaTableGridRule: table cell
         //   intersection check and column/row span consistency; skip-occupied-cell placement
         //   algorithm verified against veraPDF 1.30.2 probe series).
+        // 7.2-2 moved to PdfUaImplemented (Batch B8 — UaOutlineLangRule: non-empty /Outlines
+        //   requires catalog /Lang; fires only when /Outlines /First is present; gContainsCatalogLang
+        //   short-circuit; no-outline case confirmed non-firing by veraPDF 1.30.2 probe).
+        // 7.2-33 moved to PdfUaImplemented (Batch B8 — UaOutlineLangRule: XMP rdf:Alt with
+        //   x-default requires catalog /Lang; any lang-alt with x-default triggers (not just
+        //   dc:title); confirmed by veraPDF 1.30.2 probe; XmpReader.HasXDefaultLangAlt helper).
 
         _ => "structure-tree walker",
     };
