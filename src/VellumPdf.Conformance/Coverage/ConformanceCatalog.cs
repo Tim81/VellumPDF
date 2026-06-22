@@ -275,6 +275,14 @@ public static class ConformanceCatalog
         "7.21.7-2",            // UaToUnicodeForbiddenRule: shown glyph mapped to U+0000/FEFF/FFFE
         // Batch A5c — glyph presence (Identity-H/V CIDFontType2-Identity, Tr-3-exempt):
         "7.21.4.1-2",          // UaGlyphPresenceRule: shown visible glyph must be in the embedded program
+        // Batch B3 — §7.3/§7.7 alt-text, §7.9 Note IDs, §7.4.4 heading structure:
+        "7.3-1",               // UaAltTextRule: Figure element must have non-empty /Alt or /ActualText
+        "7.7-1",               // UaAltTextRule: Formula element must have non-empty /Alt or /ActualText
+        "7.9-1",               // UaNoteIdRule: Note element must have a non-empty /ID
+        "7.9-2",               // UaNoteIdRule: Note /ID values must be unique
+        "7.4.4-1",             // UaHeadingRule: at most one H child per element
+        "7.4.4-2",             // UaHeadingRule: H forbidden when document also uses Hn
+        "7.4.4-3",             // UaHeadingRule: Hn forbidden when document also uses H
     };
 
     // PDF/UA-1 checks the rules cover only partially (the common case is detected; some conditions
@@ -352,6 +360,11 @@ public static class ConformanceCatalog
         // 7.2-3/-4/-5/-6/-7/-8/-9/-10/-17/-18/-19/-20/-26/-27/-36/-37/-38 moved to
         //   PdfUaImplemented (Batch B2 — UaTableContainmentRule, UaListContainmentRule,
         //   UaTocContainmentRule: table/list/TOC containment parent-type and kid-type rules).
+        // 7.3-1 moved to PdfUaImplemented (Batch B3 — UaAltTextRule: Figure alt-text).
+        // 7.7-1 moved to PdfUaImplemented (Batch B3 — UaAltTextRule: Formula alt-text).
+        // 7.9-1 moved to PdfUaImplemented (Batch B3 — UaNoteIdRule: Note non-empty /ID).
+        // 7.9-2 moved to PdfUaImplemented (Batch B3 — UaNoteIdRule: Note unique /IDs).
+        // 7.4.4-1/-2/-3 moved to PdfUaImplemented (Batch B3 — UaHeadingRule: H/Hn structure).
 
         _ => "structure-tree walker",
     };
