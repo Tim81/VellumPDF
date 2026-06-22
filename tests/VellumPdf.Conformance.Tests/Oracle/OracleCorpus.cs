@@ -864,6 +864,36 @@ public static class OracleCorpus
             // (§7.21.7-2 ToUnicode-forbidden-value fixtures were removed together with the rule: the
             // whole-CMap scan over-rejected an UNUSED forbidden mapping that veraPDF — which validates
             // only glyphs actually shown — accepts. Deferred pending shown-glyph-code extraction.)
+
+            // ── Batch A4 — font clause §7.21 fixtures ────────────────────────────────────────────
+
+            // §7.21.3.3-1: a composite font's /Encoding must be a predefined CMap name or an embedded
+            // CMap stream. Using a non-predefined name (/FooBarCMap) triggers both veraPDF and the
+            // in-process UaCMapRule. The compliant path uses the existing baseline (Identity-H).
+            new OracleFixture("pdfua1-bad-cmap-name",
+                Ua1BadCMapName(),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.21.4.2-1: an embedded subset Type1 font with /CharSet that omits a glyph.
+            // The Noto Sans Shavian PFB is embedded in a UA-1-tagged document using the invisible-draw
+            // trick (Tr 3). veraPDF fires 7.21.4.2-1 (and 7.1-3 / 7.21.7-1 for the untagged content
+            // and missing ToUnicode — deferred infrastructure gaps). In-process: 7.21.4.2-1 fires.
+            // The no-false-positive guard (complete CharSet) is an in-process unit test only: the
+            // compliant-Type1 document would pass our rules but fail other unimplemented UA-1 rules,
+            // so a veraPDF-gated oracle fixture would show a verdict mismatch — unit test is sufficient.
+            new OracleFixture("pdfua1-type1-charset-incomplete",
+                WriterPdfWithType1CharSetUa1(complete: false),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.21.4.2-2: an embedded subset CIDFontType2 with /CIDSet must list all present CIDs.
+            // The DejaVu subset from Ua1TaggedWithEmbeddedFont() gets a /CIDSet injected. When
+            // incomplete (single zero byte) veraPDF fires 7.21.4.2-2; when correct it accepts.
+            new OracleFixture("pdfua1-cidset-complete",
+                WriterPdfWithCidSetUa1(complete: true),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: true),
+            new OracleFixture("pdfua1-cidset-incomplete",
+                WriterPdfWithCidSetUa1(complete: false),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
         ];
     }
 
@@ -3045,6 +3075,127 @@ public static class OracleCorpus
 
         return reader.AppendRevision(
             [(pageRef.ObjectNumber, newPage), (fontNum, simple), (descNum, descriptor), (ffNum, fontFile), (contentNum, content)]);
+    }
+
+    // ── Batch A4 — font-clause probe fixtures ────────────────────────────────────────────────────
+
+    /// <summary>
+    /// §7.21.3.3-1 violation: rewrites the embedded Type0 font's /Encoding from /Identity-H to
+    /// a non-predefined, non-embedded CMap name (/FooBarCMap). veraPDF fires clause 7.21.3.3-1.
+    /// </summary>
+    internal static byte[] Ua1BadCMapName()
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+        using var reader = PdfReader.Open(baseline);
+        var (_, page) = FirstPage(reader);
+        var resources = (PdfDictionary)reader.ResolveValue(page.Get(new PdfName("Resources"))!)!;
+        var fontDict = (PdfDictionary)reader.ResolveValue(resources.Get(PdfName.Font)!)!;
+        var type0Ref = (PdfIndirectReference)fontDict.Entries.First().Value;
+        var type0 = (PdfDictionary)reader.Resolve(type0Ref.ObjectNumber)!;
+        var newType0 = CloneDict(type0).Set(new PdfName("Encoding"), new PdfName("FooBarCMap"));
+        return reader.AppendRevision([(type0Ref.ObjectNumber, newType0)]);
+    }
+
+    /// <summary>
+    /// §7.21.4.2-1: embeds the Noto Sans Shavian Type 1 font in a UA-1-tagged document. When
+    /// <paramref name="complete"/> the /CharSet lists every glyph in the program; otherwise it
+    /// omits one so veraPDF fires clause 7.21.4.2-1.
+    /// Uses the invisible-draw trick (text rendering mode 3) so veraPDF counts the font as used
+    /// (validating its /CharSet) but the §7.21.5 width check does not fire on a stale width.
+    /// </summary>
+    internal static byte[] WriterPdfWithType1CharSetUa1(bool complete)
+    {
+        var (fontFile, length1, length2, length3) = Type1FontAsset.ToFontFile();
+        var names = Type1Glyphs.TryEnumerate(fontFile, length1)!.OrderBy(n => n, StringComparer.Ordinal).ToList();
+        if (!complete)
+            names.Remove("u1047F"); // drop one present glyph so the CharSet is incomplete.
+        var charSet = string.Concat(names.Select(n => "/" + n));
+
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+
+        var fontNum = reader.Size;
+        var descNum = fontNum + 1;
+        var ffNum = fontNum + 2;
+        var contentNum = fontNum + 3;
+
+        var program = new PdfStream(fontFile);
+        program.Dictionary
+            .Set(new PdfName("Length1"), new PdfInteger(length1))
+            .Set(new PdfName("Length2"), new PdfInteger(length2))
+            .Set(new PdfName("Length3"), new PdfInteger(length3));
+        var descriptor = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("FontDescriptor"))
+            .Set(new PdfName("FontName"), new PdfName("AAAAAA+NotoSansShavian"))
+            .Set(new PdfName("Flags"), new PdfInteger(4)) // symbolic
+            .Set(new PdfName("FontBBox"),
+                new PdfArray([new PdfInteger(0), new PdfInteger(-502), new PdfInteger(1396), new PdfInteger(1600)]))
+            .Set(new PdfName("ItalicAngle"), new PdfInteger(0)).Set(new PdfName("Ascent"), new PdfInteger(1600))
+            .Set(new PdfName("Descent"), new PdfInteger(-502)).Set(new PdfName("CapHeight"), new PdfInteger(1600))
+            .Set(new PdfName("StemV"), new PdfInteger(80))
+            .Set(new PdfName("CharSet"), new PdfLiteralString(Encoding.ASCII.GetBytes(charSet)))
+            .Set(new PdfName("FontFile"), new PdfIndirectReference(ffNum));
+        var font = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("Font")).Set(PdfName.Subtype, new PdfName("Type1"))
+            .Set(PdfName.BaseFont, new PdfName("AAAAAA+NotoSansShavian"))
+            .Set(new PdfName("FirstChar"), new PdfInteger(32)).Set(new PdfName("LastChar"), new PdfInteger(32))
+            .Set(new PdfName("Widths"), new PdfArray([new PdfInteger(1000)]))
+            .Set(new PdfName("FontDescriptor"), new PdfIndirectReference(descNum));
+
+        var resObj = page.Get(new PdfName("Resources"));
+        var resources = (resObj is null ? null : reader.ResolveValue(resObj)) as PdfDictionary ?? new PdfDictionary();
+        var existingFonts = resources.Get(PdfName.Font) is { } ef
+            ? (PdfDictionary)reader.ResolveValue(ef)!
+            : new PdfDictionary();
+        var newFonts = CloneDict(existingFonts).Set(new PdfName("F1"), new PdfIndirectReference(fontNum));
+        var newResources = CloneDict(resources).Set(PdfName.Font, newFonts);
+        var newPage = CloneDict(page).Set(new PdfName("Resources"), newResources);
+        // Append an additional content stream using the Type1 font (Tr 3 = invisible, avoids width check).
+        newPage.Set(new PdfName("Contents"),
+            new PdfArray([page.Get(new PdfName("Contents"))!, new PdfIndirectReference(contentNum)]));
+        var content = new PdfStream(Encoding.ASCII.GetBytes("BT 3 Tr /F1 12 Tf 72 700 Td (\x20) Tj ET"));
+
+        return reader.AppendRevision(
+            [(pageRef.ObjectNumber, newPage), (fontNum, font), (descNum, descriptor), (ffNum, program),
+                (contentNum, content)]);
+    }
+
+    /// <summary>
+    /// §7.21.4.2-2: adds a /CIDSet to the embedded subset CIDFontType2's FontDescriptor in a
+    /// UA-1-tagged document. When <paramref name="complete"/> the bitmap marks exactly
+    /// CIDs 0..NumGlyphs−1; otherwise it is a single zero byte so veraPDF fires 7.21.4.2-2.
+    /// </summary>
+    internal static byte[] WriterPdfWithCidSetUa1(bool complete)
+    {
+        using var reader = PdfReader.Open(Ua1TaggedWithEmbeddedFont());
+        var (_, page) = FirstPage(reader);
+        var resources = (PdfDictionary)reader.ResolveValue(page.Get(new PdfName("Resources"))!)!;
+        var fonts = (PdfDictionary)reader.ResolveValue(resources.Get(PdfName.Font)!)!;
+        var type0 = (PdfDictionary)reader.ResolveValue(fonts.Entries.First().Value)!;
+        var descArr = (PdfArray)reader.ResolveValue(type0.Get(new PdfName("DescendantFonts"))!)!;
+        var cidFont = (PdfDictionary)reader.Resolve(((PdfIndirectReference)descArr[0]).ObjectNumber)!;
+        var fdRef = (PdfIndirectReference)cidFont.Get(new PdfName("FontDescriptor"))!;
+        var fd = (PdfDictionary)reader.Resolve(fdRef.ObjectNumber)!;
+        var ff2 = reader.ResolveStream(((PdfIndirectReference)fd.Get(new PdfName("FontFile2"))!).ObjectNumber)!;
+        var program = reader.GetDecodedStreamData(ff2)!;
+
+        var numGlyphs = NumGlyphsOf(program);
+        byte[] cidSet;
+        if (complete)
+        {
+            cidSet = new byte[(numGlyphs + 7) / 8];
+            for (var i = 0; i < numGlyphs; i++)
+                cidSet[i / 8] |= (byte)(0x80 >> (i % 8));
+        }
+        else
+        {
+            cidSet = [0x00];
+        }
+
+        var cidSetNum = reader.Size;
+        var newFd = CloneDict(fd).Set(new PdfName("CIDSet"), new PdfIndirectReference(cidSetNum));
+        return reader.AppendRevision([(fdRef.ObjectNumber, newFd), (cidSetNum, new PdfStream(cidSet))]);
     }
 
 }

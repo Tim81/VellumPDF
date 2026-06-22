@@ -244,6 +244,12 @@ public static class ConformanceCatalog
         // Batch A3 — font clauses:
         "7.21.3.2-1",          // UaCidToGidMapRule: embedded CIDFontType2 must have /CIDToGIDMap
         "7.21.6-3",            // UaSymbolicFontRule: symbolic TrueType must have no /Encoding
+        // Batch A4 — font clauses (CMap, CharSet, CIDSet):
+        "7.21.3.3-1",          // UaCMapRule: composite /Encoding must be predefined or embedded CMap
+        "7.21.3.3-2",          // UaCMapRule: embedded CMap WMode dict must equal program WMode
+        "7.21.3.3-3",          // UaCMapRule: usecmap-referenced name must be a predefined CMap
+        "7.21.4.2-1",          // UaType1CharSetRule: Type1 subset CharSet must list all glyphs
+        "7.21.4.2-2",          // UaCidSetRule: CIDFontType2 subset CIDSet must list all CIDs
     };
 
     // PDF/UA-1 checks the rules cover only partially (the common case is detected; some conditions
@@ -254,6 +260,9 @@ public static class ConformanceCatalog
             + "/Contents or /Alt; an annotation bound into the structure tree is skipped because its "
             + "alternate text may live in the enclosing structure element's /Alt, which needs the "
             + "structure-tree walker to resolve (skipping avoids over-rejecting conformant tagged annotations)",
+        // Batch A4:
+        ["7.21.3.1-1"] = "Identity and embedded-CMap CIDSystemInfo compared; predefined-CMap "
+            + "registry table deferred (mirrors PDF/A-2 §6.2.11.3.1-1 partial scope)",
     };
 
     private static IReadOnlyList<ConformanceCheck> Build()
@@ -297,19 +306,10 @@ public static class ConformanceCatalog
             "glyph presence and width checks: only the Identity-H CIDFontType2 path is currently covered "
             + "by the PDF/A-2 GlyphPresenceRule; full UA-1 coverage requires the Tr 3 exemption and "
             + "coverage of simple fonts (which need encoding+cmap resolution) — deferred to avoid FP",
-        "7.21.4.2-1" =>
-            "Type1 /CharSet completeness for UA-1: mirrors §6.2.11.4.2-1 in PDF/A-2 and is structurally "
-            + "identical (FontStructureRule already covers it for PDF/A-2); deferred as a UA-1 alias "
-            + "pending a UA-specific rule wiring",
-        "7.21.4.2-2" =>
-            "CIDSet completeness for UA-1: mirrors §6.2.11.4.2-2 in PDF/A-2 (FontStructureRule covers it "
-            + "for PDF/A-2); deferred as a UA-1 alias pending a UA-specific rule wiring",
-        "7.21.3.1-1" =>
-            "Type0 CIDSystemInfo/CMap compatibility for UA-1: mirrors §6.2.11.3.1-1 in PDF/A-2 "
-            + "(FontStructureRule covers it for PDF/A-2); deferred as a UA-1 alias pending a UA-specific rule wiring",
-        "7.21.3.3-1" or "7.21.3.3-2" or "7.21.3.3-3" =>
-            "CMap embedding/WMode/referenced checks for UA-1: mirror §6.2.11.3.3-1/-2/-3 in PDF/A-2 "
-            + "(FontStructureRule covers them for PDF/A-2); deferred as UA-1 aliases pending rule wiring",
+        // 7.21.3.1-1 moved to PdfUaPartial (Batch A4 — UaCidSystemInfoRule).
+        // 7.21.3.3-1/-2/-3 moved to PdfUaImplemented (Batch A4 — UaCMapRule).
+        // 7.21.4.2-1 moved to PdfUaImplemented (Batch A4 — UaType1CharSetRule).
+        // 7.21.4.2-2 moved to PdfUaImplemented (Batch A4 — UaCidSetRule).
         "7.21.6-1" or "7.21.6-2" or "7.21.6-4" =>
             "TrueType non-symbolic cmap / Differences-compliance checks: §7.21.6-2 requires "
             + "differencesAreUnicodeCompliant (every /Differences glyph name must resolve to Unicode — "

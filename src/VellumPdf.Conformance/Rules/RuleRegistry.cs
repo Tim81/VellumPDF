@@ -151,6 +151,11 @@ internal static class RuleRegistry
         // Batch A3 — font clauses §7.21:
         new UaCidToGidMapRule(),
         new UaSymbolicFontRule(),
+        // Batch A4 — font clauses §7.21 (CMap, CharSet, CIDSet, CIDSystemInfo):
+        new UaCMapRule(),
+        new UaType1CharSetRule(),
+        new UaCidSetRule(),
+        new UaCidSystemInfoRule(),
     ];
 
     /// <summary>
