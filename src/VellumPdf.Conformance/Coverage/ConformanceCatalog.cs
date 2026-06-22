@@ -232,7 +232,89 @@ public static class ConformanceCatalog
     // (tagged-content) walker, which does not yet exist.
     private static readonly HashSet<string> PdfUaImplemented = new(StringComparer.Ordinal)
     {
-        "5-1", "5-2", "6.2-1", "7.1-8", "7.1-9", "7.1-10", "7.1-11", "7.18.3-1",
+        "5-1", "5-2", "6.1-1", "6.2-1", "7.1-4", "7.1-6", "7.1-7", "7.1-8", "7.1-9", "7.1-10", "7.1-11", "7.1-12", "7.18.3-1",
+        "7.2-29",
+        // Batch B2 — §7.2 table, list, TOC containment:
+        "7.2-3",   // UaTableContainmentRule: Table kids ∈ {TR, THead, TBody, TFoot, Caption}
+        "7.2-4",   // UaTableContainmentRule: TR parent ∈ {Table, THead, TBody, TFoot}
+        "7.2-5",   // UaTableContainmentRule: THead parent == Table
+        "7.2-6",   // UaTableContainmentRule: TBody parent == Table
+        "7.2-7",   // UaTableContainmentRule: TFoot parent == Table
+        "7.2-8",   // UaTableContainmentRule: TH parent == TR
+        "7.2-9",   // UaTableContainmentRule: TD parent == TR
+        "7.2-10",  // UaTableContainmentRule: TR kids ∈ {TH, TD}
+        "7.2-17",  // UaListContainmentRule: LI parent == L
+        "7.2-18",  // UaListContainmentRule: LBody parent == LI
+        "7.2-19",  // UaListContainmentRule: L kids ∈ {L, LI, Caption}
+        "7.2-20",  // UaListContainmentRule: LI kids ∈ {Lbl, LBody}
+        "7.2-26",  // UaTocContainmentRule: TOCI parent == TOC
+        "7.2-27",  // UaTocContainmentRule: TOC kids ∈ {TOC, TOCI, Caption}
+        "7.2-36",  // UaTableContainmentRule: THead kids ∈ {TR}
+        "7.2-37",  // UaTableContainmentRule: TBody kids ∈ {TR}
+        "7.2-38",  // UaTableContainmentRule: TFoot kids ∈ {TR}
+        // Batch B4 — §7.2 count and caption-position rules:
+        "7.2-11",  // UaTableCountRule: at most one THead child of Table
+        "7.2-12",  // UaTableCountRule: at most one TFoot child of Table
+        "7.2-13",  // UaTableCountRule: TFoot requires TBody sibling
+        "7.2-14",  // UaTableCountRule: THead requires TBody sibling
+        "7.2-39",  // UaTableCountRule: at most one Caption child of Table
+        "7.2-16",  // UaTableCountRule: Caption must be first or last kid of Table
+        "7.2-28",  // UaTocContainmentRule: Caption must be first kid of TOC
+        "7.2-40",  // UaListContainmentRule: Caption must be first kid of L
+        // Batch A2 additions:
+        "7.10-1", "7.10-2",   // UaOptionalContentRule: OC config /Name (non-empty) and no /AS
+        "7.11-1",              // UaEmbeddedFileRule: embedded-file /F and /UF requirement
+        "7.15-1",              // UaXfaRule: dynamic XFA (dynamicRender == "required") forbidden
+        "7.18.1-2",            // UaAnnotContentsRule: non-Widget visible annot needs /Contents or /Alt (direct struct-elem Alt now resolved via B5 ParentTree index)
+        "7.18.2-1",            // UaTrapNetAnnotRule: TrapNet annots forbidden unless hidden/outside-crop
+        "7.18.5-2",            // UaLinkAnnotRule: Link annots require non-empty /Contents
+        "7.20-1",              // UaReferenceXObjectRule: Form XObjects shall not contain /Ref
+        // Batch A3 — font clauses:
+        "7.21.3.2-1",          // UaCidToGidMapRule: embedded CIDFontType2 must have /CIDToGIDMap
+        "7.21.6-3",            // UaSymbolicFontRule: symbolic TrueType must have no /Encoding
+        // Batch A4 — font clauses (CMap, CharSet, CIDSet):
+        "7.21.3.3-1",          // UaCMapRule: composite /Encoding must be predefined or embedded CMap
+        "7.21.3.3-2",          // UaCMapRule: embedded CMap WMode dict must equal program WMode
+        "7.21.3.3-3",          // UaCMapRule: usecmap-referenced name must be a predefined CMap
+        "7.21.4.2-1",          // UaType1CharSetRule: Type1 subset CharSet must list all glyphs
+        "7.21.4.2-2",          // UaCidSetRule: CIDFontType2 subset CIDSet must list all CIDs
+        // Batch A5a — rendering-mode-scoped font embedding:
+        "7.21.4.1-1",          // UaFontEmbeddingRule: non-embedded simple font drawn visibly
+        // Batch A5b — glyph-level clauses (Identity-H/V CIDFontType2-Identity scope):
+        "7.21.8-1",            // UaNotdefGlyphRule: shown code 0x0000 == .notdef forbidden
+        "7.21.7-2",            // UaToUnicodeForbiddenRule: shown glyph mapped to U+0000/FEFF/FFFE
+        // Batch A5c — glyph presence (Identity-H/V CIDFontType2-Identity, Tr-3-exempt):
+        "7.21.4.1-2",          // UaGlyphPresenceRule: shown visible glyph must be in the embedded program
+        // Batch B3 — §7.3/§7.7 alt-text, §7.9 Note IDs, §7.4.4 heading structure:
+        "7.3-1",               // UaAltTextRule: Figure element must have non-empty /Alt or /ActualText
+        "7.7-1",               // UaAltTextRule: Formula element must have non-empty /Alt or /ActualText
+        "7.9-1",               // UaNoteIdRule: Note element must have a non-empty /ID
+        "7.9-2",               // UaNoteIdRule: Note /ID values must be unique
+        "7.4.4-1",             // UaHeadingRule: at most one H child per element
+        "7.4.4-2",             // UaHeadingRule: H forbidden when document also uses Hn
+        "7.4.4-3",             // UaHeadingRule: Hn forbidden when document also uses H
+        // Batch B5 — §7.18 annotation↔structure binding (ParentTree reverse index):
+        "7.18.1-1",            // UaAnnotStructureRule: non-Widget/Link/PrinterMark annot must be in Annot tag
+        "7.18.4-1",            // UaAnnotStructureRule: Widget annot must be in Form tag
+        "7.18.5-1",            // UaAnnotStructureRule: Link annot must be in Link tag
+        "7.18.8-1",            // UaAnnotStructureRule: PrinterMark must not be in structure tree
+        // Batch B6 — §7.2 natural-language determination (struct-elem attributes, annot /Contents, form /TU):
+        "7.2-21",              // UaNaturalLanguageRule: StructElem /ActualText → element or ancestor must have /Lang
+        "7.2-22",              // UaNaturalLanguageRule: StructElem /Alt → element or ancestor must have /Lang
+        "7.2-23",              // UaNaturalLanguageRule: StructElem /E → element or ancestor must have /Lang
+        "7.2-24",              // UaNaturalLanguageRule: Annot /Contents → direct struct-elem must have /Lang
+        "7.2-25",              // UaNaturalLanguageRule: FormField /TU → associated struct-elem must have /Lang
+    };
+
+    // PDF/UA-1 checks the rules cover only partially (the common case is detected; some conditions
+    // need a subsystem we do not have yet). The note records the gap, mirroring PdfAPartial.
+    private static readonly Dictionary<string, string> PdfUaPartial = new(StringComparer.Ordinal)
+    {
+        // 7.18.1-2 moved to PdfUaImplemented (Batch B5 — UaAnnotContentsRule now resolves the
+        // direct enclosing struct element's /Alt via the ParentTree reverse index).
+        // Batch A4:
+        ["7.21.3.1-1"] = "Identity and embedded-CMap CIDSystemInfo compared; predefined-CMap "
+            + "registry table deferred (mirrors PDF/A-2 §6.2.11.3.1-1 partial scope)",
     };
 
     private static IReadOnlyList<ConformanceCheck> Build()
@@ -248,15 +330,85 @@ public static class ConformanceCatalog
 
         foreach (var id in PdfUa1Ids)
         {
-            var implemented = PdfUaImplemented.Contains(id);
-            checks.Add(new ConformanceCheck(
-                id, [PdfConformance.PdfUA1], ClauseOf(id),
-                implemented ? CoverageStatus.Implemented : CoverageStatus.Deferred,
-                implemented ? null : "structure-tree walker"));
+            if (PdfUaImplemented.Contains(id))
+                checks.Add(new ConformanceCheck(id, [PdfConformance.PdfUA1], ClauseOf(id), CoverageStatus.Implemented));
+            else if (PdfUaPartial.TryGetValue(id, out var note))
+                checks.Add(new ConformanceCheck(id, [PdfConformance.PdfUA1], ClauseOf(id), CoverageStatus.Partial, note));
+            else
+                checks.Add(new ConformanceCheck(
+                    id, [PdfConformance.PdfUA1], ClauseOf(id), CoverageStatus.Deferred, PdfUaDeferredNote(id)));
         }
 
         return checks;
     }
+
+    private static string PdfUaDeferredNote(string id) => id switch
+    {
+        "5-3" or "5-4" or "5-5" => "prefix-aware XMP parsing (XmpReader matches by namespace URI, not prefix)",
+        "7.16-1" => "encrypted-document support: the reader does not surface the P permission bits for encrypted files",
+        "7.18.6.2-1" or "7.18.6.2-2" => "media clip data dictionary traversal (requires walking Screen-annotation rendition actions)",
+
+        // §7.21 font deferred notes — Batch A3 assessment:
+        // 7.21.4.1-1 moved to PdfUaImplemented (Batch A5a — UaFontEmbeddingRule, rendering-mode-scoped).
+        // 7.21.4.1-2 moved to PdfUaImplemented (Batch A5c — UaGlyphPresenceRule, Tr-3-exempt).
+        "7.21.5-1" =>
+            "glyph width checks: only the Identity-H CIDFontType2 path is currently covered "
+            + "by the PDF/A-2 GlyphPresenceRule; a UA-1 specific rule with the Tr 3 exemption "
+            + "is deferred to avoid FP until the scope is fully proven",
+        // 7.21.3.1-1 moved to PdfUaPartial (Batch A4 — UaCidSystemInfoRule).
+        // 7.21.3.3-1/-2/-3 moved to PdfUaImplemented (Batch A4 — UaCMapRule).
+        // 7.21.4.2-1 moved to PdfUaImplemented (Batch A4 — UaType1CharSetRule).
+        // 7.21.4.2-2 moved to PdfUaImplemented (Batch A4 — UaCidSetRule).
+        "7.21.6-1" or "7.21.6-2" or "7.21.6-4" =>
+            "TrueType non-symbolic cmap / Differences-compliance checks: §7.21.6-2 requires "
+            + "differencesAreUnicodeCompliant (every /Differences glyph name must resolve to Unicode — "
+            + "FP-prone without a complete AGL table); §7.21.6-1 and §7.21.6-4 check the embedded cmap "
+            + "subtable structure (overlaps with PDF/A-2 §6.2.11.6-1/-4 in FontStructureRule); "
+            + "deferred to avoid false positives from incomplete glyph-name resolution",
+        "7.21.7-1" =>
+            "glyph-level ToUnicode presence (veraPDF's Glyph.toUnicode model derives Unicode from font "
+            + "encoding for standard-encoded simple fonts, so requiring a /ToUnicode stream would "
+            + "over-reject conformant WinAnsi/MacRoman simple fonts; deferred until the glyph-level "
+            + "Unicode-derivation model is fully understood for all font types)",
+        // 7.21.7-2 moved to PdfUaImplemented (Batch A5b — UaToUnicodeForbiddenRule, shown-glyph-scoped).
+        // 7.21.8-1 moved to PdfUaImplemented (Batch A5b — UaNotdefGlyphRule, Identity-H scope).
+        // 7.21.4.1-2 moved to PdfUaImplemented (Batch A5c — UaGlyphPresenceRule, Tr-3-exempt).
+        // 7.1-6 moved to PdfUaImplemented (Batch B1 — UaRoleMapRule, circular role-map).
+        // 7.1-7 moved to PdfUaImplemented (Batch B1 — UaRoleMapRule, standard-type remapped).
+        // 7.1-12 moved to PdfUaImplemented (Batch B1 — UaStructElemParentRule, missing /P).
+        // 7.2-3/-4/-5/-6/-7/-8/-9/-10/-17/-18/-19/-20/-26/-27/-36/-37/-38 moved to
+        //   PdfUaImplemented (Batch B2 — UaTableContainmentRule, UaListContainmentRule,
+        //   UaTocContainmentRule: table/list/TOC containment parent-type and kid-type rules).
+        // 7.2-11/-12/-13/-14/-16/-28/-39/-40 moved to PdfUaImplemented (Batch B4 —
+        //   UaTableCountRule: table count/caption-position; UaTocContainmentRule +7.2-28;
+        //   UaListContainmentRule +7.2-40: TOC/list caption-position rules).
+        // 7.3-1 moved to PdfUaImplemented (Batch B3 — UaAltTextRule: Figure alt-text).
+        // 7.7-1 moved to PdfUaImplemented (Batch B3 — UaAltTextRule: Formula alt-text).
+        // 7.9-1 moved to PdfUaImplemented (Batch B3 — UaNoteIdRule: Note non-empty /ID).
+        // 7.9-2 moved to PdfUaImplemented (Batch B3 — UaNoteIdRule: Note unique /IDs).
+        // 7.4.4-1/-2/-3 moved to PdfUaImplemented (Batch B3 — UaHeadingRule: H/Hn structure).
+        // 7.18.1-2 moved to PdfUaImplemented (Batch B5 — UaAnnotContentsRule, struct-elem /Alt
+        //   resolved via ParentTree reverse index; direct enclosing elem only, no ancestors).
+        // 7.18.1-1 moved to PdfUaImplemented (Batch B5 — UaAnnotStructureRule: non-Widget/Link/
+        //   PrinterMark annots must be in Annot tag).
+        // 7.18.4-1 moved to PdfUaImplemented (Batch B5 — UaAnnotStructureRule: Widget must be
+        //   in Form tag).
+        // 7.18.5-1 moved to PdfUaImplemented (Batch B5 — UaAnnotStructureRule: Link must be in
+        //   Link tag).
+        // 7.18.8-1 moved to PdfUaImplemented (Batch B5 — UaAnnotStructureRule: PrinterMark must
+        //   not be in the structure tree).
+        // 7.2-21/-22/-23 moved to PdfUaImplemented (Batch B6 — UaNaturalLanguageRule: StructElem
+        //   /ActualText, /Alt, /E require element or ancestor /Lang; gContainsCatalogLang
+        //   short-circuit; empty /Lang () counts as containsLang=true per veraPDF probe).
+        // 7.2-24 moved to PdfUaImplemented (Batch B6 — UaNaturalLanguageRule: Annot /Contents
+        //   requires direct struct-elem /Lang via /StructParent→/ParentTree; gContainsCatalogLang
+        //   short-circuit; annotation-dict /Lang does not satisfy per veraPDF probe).
+        // 7.2-25 moved to PdfUaImplemented (Batch B6 — UaNaturalLanguageRule: FormField /TU
+        //   requires Widget's struct-elem /Lang via /StructParent→/ParentTree; gContainsCatalogLang
+        //   short-circuit; field-dict /Lang does not satisfy per veraPDF probe).
+
+        _ => "structure-tree walker",
+    };
 
     private static ConformanceCheck MakePdfA(string id, PdfConformance[] profiles)
     {

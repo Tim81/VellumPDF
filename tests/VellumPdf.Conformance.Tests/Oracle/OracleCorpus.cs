@@ -264,6 +264,56 @@ public static class OracleCorpus
             new OracleFixture("pdfua1-no-structure", WriterPdfMissingStructure(VellumPdf.Document.PdfConformance.PdfUA1),
                 Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
 
+            // §7.1-4 (Suspects): the compliant tagged baseline has no /Suspects entry — both accept.
+            new OracleFixture("pdfua1-suspects-absent", WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: true),
+
+            // §7.1-4 (Suspects): /MarkInfo /Suspects = true is forbidden; both veraPDF and the in-process
+            // UaSuspectsRule reject it.
+            new OracleFixture("pdfua1-suspects-true", WriterUa1WithSuspectsTrue(),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.1-4 (Suspects): /MarkInfo /Suspects = false is explicitly permitted (same as absent).
+            // Both veraPDF and the in-process rule accept this document.
+            new OracleFixture("pdfua1-suspects-false", WriterUa1WithSuspectsFalse(),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: true),
+
+            // §6.1-1 (File header): the compliant tagged baseline has a well-formed %PDF-1.7 header
+            // with no trailing characters — both validators accept it.
+            new OracleFixture("pdfua1-header-valid", WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: true),
+
+            // §6.1-1 (File header): replacing the version digit '7' with '8' (in-place, same-length
+            // so xref offsets remain valid) produces a header "%PDF-1.8" with a digit outside the
+            // permitted 0–7 range. Both veraPDF (6.1-1) and the in-process UaFileHeaderRule reject it.
+            new OracleFixture("pdfua1-header-bad-digit", WriterUa1WithBadHeaderDigit(),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §6.1-1 (File header): a trailing character after the version digit but before the EOL.
+            // Replacing the header-terminating LF (index 8) with a space (in-place, same-length) makes
+            // line 1 read "%PDF-1.7 %…" so the regex /^%PDF-1\.[0-7]$/ no longer matches. This is the
+            // case that exercises the rule's distinguishing EOL check (vs the bad-digit case above):
+            // veraPDF 1.30.2 rejects it for 6.1-1 (empirically confirmed), and the in-process
+            // UaFileHeaderRule flags the non-EOL byte immediately after the version digit.
+            new OracleFixture("pdfua1-header-trailing-char", WriterUa1WithTrailingHeaderChar(),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.2-29 (Lang syntax): a catalog /Lang of "fr-FR" is a syntactically valid BCP-47 tag.
+            // Both validators accept it.
+            new OracleFixture("pdfua1-lang-valid-fr", WriterUa1WithLang("fr-FR"),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: true),
+
+            // §7.2-29 (Lang syntax): a catalog /Lang of "not!!valid" is not a valid BCP-47 tag.
+            // Both veraPDF (7.2-29) and the in-process UaLangSyntaxRule reject it.
+            new OracleFixture("pdfua1-lang-invalid", WriterUa1WithLang("not!!valid"),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.2-29 (Lang syntax): an empty catalog /Lang string is not a valid BCP-47 tag.
+            // Both veraPDF (7.2-29) and the in-process UaLangSyntaxRule reject it.
+            // (Note: veraPDF 1.30.2 empirically rejects empty /Lang for 7.2-29 — not exempt.)
+            new OracleFixture("pdfua1-lang-empty", WriterUa1WithEmptyLang(),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
             // A non-standard blend mode in an /ExtGState resource that the page never applies (no `gs`
             // operator). §6.4 governs only the current blend mode, so both veraPDF and the in-process
             // rule accept it — the regression guard for the content-stream usage scoping (#127).
@@ -683,6 +733,261 @@ public static class OracleCorpus
             new OracleFixture("pdfa2b-bxex-standard-operators",
                 HandBuiltPdfWithContent("BX q Q EX"),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // ── PDF/UA-1 Batch A2 fixtures ──────────────────────────────────────────────────────────
+
+            // §7.18.2-1 (TrapNet annotation): a visible TrapNet annotation inside the crop box is
+            // forbidden. Both veraPDF (clause 7.18.2, testNumber 1) and the in-process
+            // UaTrapNetAnnotRule reject it.
+            new OracleFixture("pdfua1-trapnet-visible",
+                WriterUa1WithTrapNetAnnotation(hidden: false),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.18.2-1 (TrapNet hidden): a TrapNet annotation with the Hidden flag set (F & 2) is
+            // exempt — the veraPDF predicate passes and so does the in-process rule.
+            // (The document still fails other UA rules like 7.18.3-1 tab-order; this fixture is
+            // validated per-clause via --format xml to confirm 7.18.2-1 is NOT among the failures.)
+            new OracleFixture("pdfua1-trapnet-hidden",
+                WriterUa1WithTrapNetAnnotation(hidden: true),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.18.5-2 (Link annotation without /Contents): a Link without a /Contents entry fails
+            // 7.18.5-2. Both veraPDF and the in-process UaLinkAnnotRule reject it.
+            new OracleFixture("pdfua1-link-no-contents",
+                WriterUa1WithLinkAnnotation(includeContents: false),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.18.5-2 (Link annotation with /Contents): a Link with a non-empty /Contents entry
+            // passes 7.18.5-2. Both veraPDF and the in-process rule agree.
+            // (The document still fails 7.18.5-1 and 7.18.3-1 — structure rules — confirmed via XML.)
+            new OracleFixture("pdfua1-link-with-contents",
+                WriterUa1WithLinkAnnotation(includeContents: true),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.18.1-2 (Non-Widget annotation without /Contents or /Alt): a Text annotation with
+            // neither /Contents nor /Alt fails 7.18.1-2. Both veraPDF and the in-process
+            // UaAnnotContentsRule reject it.
+            new OracleFixture("pdfua1-annot-no-contents",
+                WriterUa1WithTextAnnotation(includeContents: false),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.18.1-2 (Non-Widget annotation with /Contents): a Text annotation with a non-empty
+            // /Contents passes 7.18.1-2. (Still fails 7.18.1-1 and 7.18.3-1 — structure rules.)
+            new OracleFixture("pdfua1-annot-with-contents",
+                WriterUa1WithTextAnnotation(includeContents: true),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.18.2-1 / §7.18.5-2 / §7.18.1-2 (outside crop box): a Link annotation whose /Rect
+            // is entirely outside the page's MediaBox is exempt from ALL §7.18 requirements.
+            // veraPDF passes 7.18.5-2 for such a Link even without /Contents — confirmed empirically.
+            // The overall document still has other failures (7.18.3-1 tab order); this is a
+            // per-clause guard that only 7.18.5-2 and 7.18.1-2 do NOT fire.
+            new OracleFixture("pdfua1-link-outside-cropbox",
+                WriterUa1WithAnnotOutsideCropBox(),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.20-1 (reference XObject): a drawn Form XObject with a /Ref entry fails 7.20-1.
+            // Both veraPDF (clause 7.20, testNumber 1) and the in-process UaReferenceXObjectRule
+            // reject it.
+            new OracleFixture("pdfua1-ref-xobject",
+                WriterUa1WithReferenceXObject(),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.11-1 (embedded file without /UF): a file-specification with /EF but no /UF fails
+            // 7.11-1. Both veraPDF (clause 7.11, testNumber 1) and the in-process
+            // UaEmbeddedFileRule reject it.
+            new OracleFixture("pdfua1-embedded-no-uf",
+                WriterUa1WithEmbeddedFile(includeUf: false),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.11-1 (embedded file with /F and /UF): a file-specification with /EF, /F, and /UF
+            // passes 7.11-1. Both veraPDF and the in-process rule accept it.
+            new OracleFixture("pdfua1-embedded-with-uf",
+                WriterUa1WithEmbeddedFile(includeUf: true),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: true),
+
+            // §7.10-1 (OC config without /Name): an optional-content configuration dictionary
+            // without a /Name fails 7.10-1. Both veraPDF and the in-process UaOptionalContentRule
+            // reject it.
+            new OracleFixture("pdfua1-oc-no-name",
+                WriterUa1WithOptionalContent(hasName: false, hasAs: false),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.10-2 (OC config with /AS): an optional-content configuration dictionary with an
+            // /AS entry fails 7.10-2. Both veraPDF and the in-process rule reject it.
+            new OracleFixture("pdfua1-oc-with-as",
+                WriterUa1WithOptionalContent(hasName: true, hasAs: true),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.10 (OC config valid): a configuration with a non-empty /Name and no /AS passes
+            // 7.10-1 and 7.10-2. Both veraPDF and the in-process rule accept it.
+            new OracleFixture("pdfua1-oc-valid",
+                WriterUa1WithOptionalContent(hasName: true, hasAs: false),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: true),
+
+            // §7.15-1 (dynamic XFA): an AcroForm with an XFA stream containing
+            // xdp:xdp > config > acrobat > acrobat7 > dynamicRender = "required"
+            // fails 7.15-1. Both veraPDF and the in-process UaXfaRule reject it.
+            new OracleFixture("pdfua1-xfa-dynamic",
+                WriterUa1WithXfa(dynamic: true),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.15-1 (static XFA): the same structure with dynamicRender = "forbidden" passes
+            // 7.15-1. Both veraPDF and the in-process rule accept it (the document may still fail
+            // other rules if the XFA template triggers them; these are confirmed via XML).
+            new OracleFixture("pdfua1-xfa-static",
+                WriterUa1WithXfa(dynamic: false),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: true),
+
+            // ── Batch A3 — font clause §7.21 fixtures ────────────────────────────────────────────
+
+            // §7.21.3.2-1: embedded CIDFontType2 must carry /CIDToGIDMap.
+            // The baseline document has a real Type0/CIDFontType2 font with /CIDToGIDMap /Identity.
+            // veraPDF accepts the baseline and rejects the variant with /CIDToGIDMap removed.
+            new OracleFixture("pdfua1-cidtogidmap-compliant",
+                Ua1TaggedWithEmbeddedFont(),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: true),
+            new OracleFixture("pdfua1-cidtogidmap-missing",
+                Ua1EmbeddedFontNoCidToGidMap(),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.21.6-3: a symbolic TrueType font (Flags bit 3 = Symbolic) must have no /Encoding.
+            // The failing fixture adds /Encoding /WinAnsiEncoding to a symbolic (Flags=4) TrueType
+            // font, causing both veraPDF (7.21.6-3) and the in-process UaSymbolicFontRule to fire.
+            // The negative-path (symbolic, no encoding) fixture is handled by a unit test rather than
+            // here: the no-encoding document also fails 7.21.6-4 (cmap subtables) which we don't
+            // implement yet, so the overall verdict would misalign with the in-process result.
+            new OracleFixture("pdfua1-symbolic-font-with-encoding",
+                Ua1SymbolicFontWithEncoding(),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // (§7.21.7-2 ToUnicode-forbidden-value fixtures were removed together with the rule: the
+            // whole-CMap scan over-rejected an UNUSED forbidden mapping that veraPDF — which validates
+            // only glyphs actually shown — accepts. Deferred pending shown-glyph-code extraction.)
+
+            // ── Batch A4 — font clause §7.21 fixtures ────────────────────────────────────────────
+
+            // §7.21.3.3-1: a composite font's /Encoding must be a predefined CMap name or an embedded
+            // CMap stream. Using a non-predefined name (/FooBarCMap) triggers both veraPDF and the
+            // in-process UaCMapRule. The compliant path uses the existing baseline (Identity-H).
+            new OracleFixture("pdfua1-bad-cmap-name",
+                Ua1BadCMapName(),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.21.4.2-1: an embedded subset Type1 font with /CharSet that omits a glyph.
+            // The Noto Sans Shavian PFB is embedded in a UA-1-tagged document using the invisible-draw
+            // trick (Tr 3). veraPDF fires 7.21.4.2-1 (and 7.1-3 / 7.21.7-1 for the untagged content
+            // and missing ToUnicode — deferred infrastructure gaps). In-process: 7.21.4.2-1 fires.
+            // The no-false-positive guard (complete CharSet) is an in-process unit test only: the
+            // compliant-Type1 document would pass our rules but fail other unimplemented UA-1 rules,
+            // so a veraPDF-gated oracle fixture would show a verdict mismatch — unit test is sufficient.
+            new OracleFixture("pdfua1-type1-charset-incomplete",
+                WriterPdfWithType1CharSetUa1(complete: false),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.21.4.2-2: an embedded subset CIDFontType2 with /CIDSet must list all present CIDs.
+            // The DejaVu subset from Ua1TaggedWithEmbeddedFont() gets a /CIDSet injected. When
+            // incomplete (single zero byte) veraPDF fires 7.21.4.2-2; when correct it accepts.
+            new OracleFixture("pdfua1-cidset-complete",
+                WriterPdfWithCidSetUa1(complete: true),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: true),
+            new OracleFixture("pdfua1-cidset-incomplete",
+                WriterPdfWithCidSetUa1(complete: false),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // ── Batch A5a — §7.21.4.1-1 rendering-mode-scoped font embedding fixtures ────────────
+
+            // §7.21.4.1-1 VIOLATION: a non-embedded simple TrueType font drawn with a visible
+            // rendering mode (default Tr 0). veraPDF fires 7.21.4.1-1 (containsFontFile == false
+            // AND renderingMode != 3) and the in-process UaFontEmbeddingRule must agree.
+            new OracleFixture("pdfua1-nonembedded-font-visible",
+                Ua1NonEmbeddedFontVisibleDraw(),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.21.4.1-1 COMPLIANT (Tr 3 exemption) and §7.21.4.1-1 COMPLIANT (embedded font):
+            // These fixtures are tested as unit tests only (not oracle fixtures): the compliant
+            // documents fail OTHER unimplemented UA-1 rules (e.g. 7.21.6-4 TrueType cmap check,
+            // 7.1-3 untagged text), so veraPDF reports non-compliant for those reasons while the
+            // in-process validator (which does not implement those rules) reports compliant — the
+            // verdicts diverge for rule-gap reasons unrelated to §7.21.4.1-1. The unit tests verify
+            // the specific absence of the §7.21.4.1-1 finding, matching the Batch A4 pattern used
+            // for the Type1-CharSet-complete and CIDSet-complete FP-guards.
+
+            // ── Batch A5b — §7.21.8-1 .notdef + §7.21.7-2 forbidden-ToUnicode ──────────────────────
+
+            // §7.21.8-1 VIOLATION: appends a content stream that shows glyph index 0 (0x0000 = .notdef)
+            // with the existing Identity-H CIDFontType2 font. veraPDF fires 7.21.8-1 (.notdef
+            // referenced). In-process: UaNotdefGlyphRule must also fire.
+            // (The extra untagged content stream also triggers 7.1-3 in veraPDF; the fixture is
+            // ExpectedCompliant: false so any non-compliance satisfies the oracle.)
+            new OracleFixture("pdfua1-notdef-glyph",
+                Ua1PdfDrawingNotdef(),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.21.7-2 VIOLATION: the Type0 font's /ToUnicode maps a SHOWN code to U+0000. veraPDF
+            // fires 7.21.7-2. In-process: UaToUnicodeForbiddenRule must also fire.
+            // (The extra untagged content stream also triggers 7.1-3; fixture is non-compliant overall.)
+            new OracleFixture("pdfua1-tounicode-forbidden-shown",
+                Ua1ToUnicodeForbiddenShownCode(),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.21.7-2 REGRESSION GUARD: the Type0 font's /ToUnicode maps an UNUSED code (0xFFFF)
+            // to U+0000; the SHOWN code (0x0041) maps to U+0041 (valid). veraPDF must NOT fire
+            // 7.21.7-2 (only shown codes are checked). In-process: UaToUnicodeForbiddenRule must also
+            // NOT fire. Both verdicts diverge on unrelated rules (untagged content → 7.1-3 in veraPDF,
+            // which the in-process validator defers), so this is tested as a unit test only — see
+            // UaToUnicodeUnusedBadMapping_DoesNotFire72172() in PdfPreflightTests.cs.
+
+            // ── PDF/UA-1 Batch A5c — §7.21.4.1-2 glyph presence (Tr-3-exempt) fixtures ─────────────
+
+            // §7.21.4.1-2 violation: a composite Identity-H CIDFontType2 font shows GID 0xEA60
+            // (60000, beyond the embedded program's glyph count) in a VISIBLE rendering mode (Tr 0).
+            // veraPDF fires clause 7.21.4.1-2 (isGlyphPresent == false, renderingMode != 3).
+            // In-process: UaGlyphPresenceRule fires.
+            new OracleFixture("pdfua1-glyph-not-present",
+                Ua1OutOfRangeGlyphVisible(),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.21.4.1-2 compliant baseline: the standard UA-1 tagged baseline draws only glyphs
+            // that are present in the embedded subset (in-range GIDs). Both veraPDF and the in-process
+            // UaGlyphPresenceRule accept it — the positive control confirming no false positive on
+            // a well-formed embedded-font document.
+            new OracleFixture("pdfua1-glyph-presence-compliant",
+                Ua1TaggedWithEmbeddedFont(),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: true),
+
+            // §7.21.4.1-2 FP-SAFETY guard (Tr-3 exemption): the SAME out-of-range GID (0xEA60) is
+            // drawn ONLY with text rendering mode 3 (invisible text). veraPDF does NOT fire
+            // 7.21.4.1-2 (renderingMode == 3 → exempt per predicate). In-process: UaGlyphPresenceRule
+            // must also NOT fire. The overall document fails other UA rules (7.21.7-1, 7.21.8-1)
+            // that veraPDF fires but the in-process validator defers — verdicts diverge on unrelated
+            // rules, so this is validated per-clause in a unit test only; see
+            // UaOutOfRangeGlyphInvisible_DoesNotFire7214121() in PdfPreflightTests.cs.
+            // (Not in the oracle All list to avoid the in-process / veraPDF verdict mismatch.)
+
+            // ── PDF/UA-1 Batch B1 — structure-tree walker foundation (§7.1) ────────────────────────
+
+            // §7.1-12 VIOLATION: a StructElem (the leaf /P element) has its /P (parent pointer) entry
+            // removed. veraPDF cannot trace the content back to the tagged structure tree and fires
+            // 7.1-3 (content not tagged) or 7.1-12 — either way, exit 1 = non-compliant. In-process:
+            // UaStructElemParentRule fires 7.1-12. Oracle confirms exit 1 (ExpectedCompliant: false).
+            new OracleFixture("pdfua1-structelem-missing-parent",
+                Ua1StructElemMissingParent(),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.1-6 VIOLATION: a circular RoleMap (/Foo→/Bar→/Foo) plus a StructElem with /S /Foo.
+            // veraPDF evaluates circularMappingExist on the /Foo element and fires 7.1-6.
+            // In-process: UaRoleMapRule fires "ISO14289-1:7.1-6". Oracle: ExpectedCompliant: false.
+            new OracleFixture("pdfua1-circular-rolemap",
+                Ua1CircularRoleMap(),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.1-7 VIOLATION: /RoleMap << /Table /Div >> remaps a standard type, plus a StructElem
+            // with /S /Table. veraPDF evaluates remappedStandardType on the /Table element and fires
+            // 7.1-7. In-process: UaRoleMapRule fires "ISO14289-1:7.1-7". Oracle: ExpectedCompliant: false.
+            new OracleFixture("pdfua1-standard-type-remapped",
+                Ua1StandardTypeRemapped(),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
         ];
     }
 
@@ -1801,6 +2106,300 @@ public static class OracleCorpus
         return ms.ToArray();
     }
 
+    // Builds a tagged PDF/UA-1 baseline and injects /MarkInfo /Suspects = true via an incremental
+    // update. The resulting document violates §7.1-4 and is rejected by both validators.
+    private static byte[] WriterUa1WithSuspectsTrue()
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+        using var reader = PdfReader.Open(baseline);
+        var rootRef = (PdfIndirectReference)reader.Trailer.Get(PdfName.Root)!;
+        var catalog = CloneDict(reader.Catalog);
+        var markInfo = new PdfDictionary();
+        markInfo.Set(new PdfName("Marked"), PdfBoolean.True);
+        markInfo.Set(new PdfName("Suspects"), PdfBoolean.True);
+        catalog.Set(new PdfName("MarkInfo"), markInfo);
+        return reader.AppendRevision([(rootRef.ObjectNumber, catalog)]);
+    }
+
+    // The same injection but with /Suspects = false — explicitly permitted (no violation).
+    private static byte[] WriterUa1WithSuspectsFalse()
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+        using var reader = PdfReader.Open(baseline);
+        var rootRef = (PdfIndirectReference)reader.Trailer.Get(PdfName.Root)!;
+        var catalog = CloneDict(reader.Catalog);
+        var markInfo = new PdfDictionary();
+        markInfo.Set(new PdfName("Marked"), PdfBoolean.True);
+        markInfo.Set(new PdfName("Suspects"), PdfBoolean.False);
+        catalog.Set(new PdfName("MarkInfo"), markInfo);
+        return reader.AppendRevision([(rootRef.ObjectNumber, catalog)]);
+    }
+
+    // Replaces the PDF version digit '7' with '8' (in-place, same-length) so the header reads
+    // "%PDF-1.8\n" — digit 8 is outside the 0–7 range and violates §6.1-1.
+    // An in-place edit preserves all cross-reference offsets; a byte-insertion would shift
+    // them and make the file unreadable by the parser.
+    private static byte[] WriterUa1WithBadHeaderDigit()
+    {
+        var bytes = (byte[])WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1).Clone();
+        // "%PDF-1.7" = bytes[0..7]; the digit is at index 7.
+        if (bytes.Length < 9 || bytes[7] != (byte)'7')
+            throw new InvalidOperationException("WriterPdfTagged produced an unexpected header layout.");
+        bytes[7] = (byte)'8'; // version digit 8 is out of the permitted 0–7 range
+        return bytes;
+    }
+
+    // Replaces the header-terminating LF (index 8) with a space (in-place, same-length) so line 1
+    // reads "%PDF-1.7 %…" — a trailing character after the version digit, before the EOL. This trips
+    // the §6.1-1 "$" anchor (no chars allowed between the digit and the EOL) without disturbing any
+    // cross-reference offset. The writer emits "%PDF-1.7\n%<binary marker>\n", so index 8 is the LF;
+    // turning it into a space merges the (still comment-prefixed) marker onto line 1, which the
+    // reader parses while veraPDF and UaFileHeaderRule both reject the header.
+    private static byte[] WriterUa1WithTrailingHeaderChar()
+    {
+        var bytes = (byte[])WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1).Clone();
+        // "%PDF-1.7" = bytes[0..7]; bytes[8] is the header-terminating LF.
+        if (bytes.Length < 10 || bytes[7] != (byte)'7' || bytes[8] != (byte)'\n')
+            throw new InvalidOperationException("WriterPdfTagged produced an unexpected header layout.");
+        bytes[8] = (byte)' '; // a trailing space before the (now-merged) EOL
+        return bytes;
+    }
+
+    // Builds a tagged PDF/UA-1 baseline and replaces the catalog /Lang with the given value.
+    private static byte[] WriterUa1WithLang(string lang)
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+        using var reader = PdfReader.Open(baseline);
+        var rootRef = (PdfIndirectReference)reader.Trailer.Get(PdfName.Root)!;
+        var catalog = CloneDict(reader.Catalog);
+        catalog.Set(new PdfName("Lang"), new PdfLiteralString(Encoding.ASCII.GetBytes(lang)));
+        return reader.AppendRevision([(rootRef.ObjectNumber, catalog)]);
+    }
+
+    // Same as WriterUa1WithLang but sets the catalog /Lang to the empty string, exercising the
+    // §7.2-29 rejection of empty language tags (empirically confirmed against veraPDF 1.30.2).
+    private static byte[] WriterUa1WithEmptyLang()
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+        using var reader = PdfReader.Open(baseline);
+        var rootRef = (PdfIndirectReference)reader.Trailer.Get(PdfName.Root)!;
+        var catalog = CloneDict(reader.Catalog);
+        catalog.Set(new PdfName("Lang"), new PdfLiteralString(Array.Empty<byte>()));
+        return reader.AppendRevision([(rootRef.ObjectNumber, catalog)]);
+    }
+
+    // ── PDF/UA-1 Batch A2 fixture helpers ────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Injects a TrapNet annotation into the first page of the UA-1 tagged baseline.
+    /// When <paramref name="hidden"/> is true, the Hidden flag (F = 2) is set so the annotation
+    /// is exempt from §7.18.2-1; when false, the annotation is visible and violates the clause.
+    /// </summary>
+    private static byte[] WriterUa1WithTrapNetAnnotation(bool hidden)
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var newPage = CloneDict(page);
+        var apNum = reader.Size;
+        var annotNum = reader.Size + 1;
+        // Minimal appearance stream so PDF/A annotation-AP rules do not fire.
+        var apStream = new PdfStream(Array.Empty<byte>());
+        apStream.Dictionary
+            .Set(new PdfName("Type"), new PdfName("XObject"))
+            .Set(new PdfName("Subtype"), new PdfName("Form"))
+            .Set(new PdfName("BBox"), new PdfArray([new PdfInteger(0), new PdfInteger(0), new PdfInteger(40), new PdfInteger(40)]));
+        var annot = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("Annot"))
+            .Set(PdfName.Subtype, new PdfName("TrapNet"))
+            .Set(new PdfName("Rect"), new PdfArray([new PdfInteger(10), new PdfInteger(10), new PdfInteger(50), new PdfInteger(50)]))
+            .Set(new PdfName("AP"), new PdfDictionary().Set(new PdfName("N"), new PdfIndirectReference(apNum)));
+        if (hidden)
+            annot.Set(new PdfName("F"), new PdfInteger(2)); // Hidden flag
+        newPage.Set(new PdfName("Annots"), new PdfArray([new PdfIndirectReference(annotNum)]));
+        return reader.AppendRevision([(pageRef.ObjectNumber, newPage), (apNum, apStream), (annotNum, annot)]);
+    }
+
+    /// <summary>
+    /// Injects a Link annotation into the UA-1 tagged baseline. When <paramref name="includeContents"/>
+    /// is true, /Contents is set (satisfying §7.18.5-2); when false, it is absent (violation).
+    /// </summary>
+    private static byte[] WriterUa1WithLinkAnnotation(bool includeContents)
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var newPage = CloneDict(page);
+        var annotNum = reader.Size;
+        var annot = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("Annot"))
+            .Set(PdfName.Subtype, new PdfName("Link"))
+            .Set(new PdfName("Rect"), new PdfArray([new PdfInteger(10), new PdfInteger(10), new PdfInteger(50), new PdfInteger(50)]));
+        if (includeContents)
+            annot.Set(new PdfName("Contents"), new PdfLiteralString(Encoding.ASCII.GetBytes("Click here")));
+        newPage.Set(new PdfName("Annots"), new PdfArray([new PdfIndirectReference(annotNum)]));
+        return reader.AppendRevision([(pageRef.ObjectNumber, newPage), (annotNum, annot)]);
+    }
+
+    /// <summary>
+    /// Injects a Text annotation into the UA-1 tagged baseline. When <paramref name="includeContents"/>
+    /// is true, /Contents is set (satisfying §7.18.1-2); when false, it is absent (violation).
+    /// </summary>
+    private static byte[] WriterUa1WithTextAnnotation(bool includeContents)
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var newPage = CloneDict(page);
+        var apNum = reader.Size;
+        var annotNum = reader.Size + 1;
+        var apStream = new PdfStream(Array.Empty<byte>());
+        apStream.Dictionary
+            .Set(new PdfName("Type"), new PdfName("XObject"))
+            .Set(new PdfName("Subtype"), new PdfName("Form"))
+            .Set(new PdfName("BBox"), new PdfArray([new PdfInteger(0), new PdfInteger(0), new PdfInteger(40), new PdfInteger(40)]));
+        var annot = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("Annot"))
+            .Set(PdfName.Subtype, new PdfName("Text"))
+            .Set(new PdfName("Rect"), new PdfArray([new PdfInteger(10), new PdfInteger(10), new PdfInteger(50), new PdfInteger(50)]))
+            .Set(new PdfName("AP"), new PdfDictionary().Set(new PdfName("N"), new PdfIndirectReference(apNum)));
+        if (includeContents)
+            annot.Set(new PdfName("Contents"), new PdfLiteralString(Encoding.ASCII.GetBytes("A note")));
+        newPage.Set(new PdfName("Annots"), new PdfArray([new PdfIndirectReference(annotNum)]));
+        return reader.AppendRevision([(pageRef.ObjectNumber, newPage), (apNum, apStream), (annotNum, annot)]);
+    }
+
+    /// <summary>
+    /// Injects a Link annotation whose /Rect is entirely outside the page's MediaBox (A4 = [0 0 595 842]).
+    /// Rect = [600 10 650 50] lies outside the right edge, so the annotation is exempt from §7.18
+    /// requirements: veraPDF does not fire 7.18.5-2 or 7.18.1-2 for it (confirmed empirically).
+    /// </summary>
+    private static byte[] WriterUa1WithAnnotOutsideCropBox()
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var newPage = CloneDict(page);
+        var annotNum = reader.Size;
+        // /Rect entirely to the right of A4 (width 595) — outside the MediaBox.
+        var annot = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("Annot"))
+            .Set(PdfName.Subtype, new PdfName("Link"))
+            .Set(new PdfName("Rect"), new PdfArray([new PdfInteger(600), new PdfInteger(10), new PdfInteger(650), new PdfInteger(50)]));
+        newPage.Set(new PdfName("Annots"), new PdfArray([new PdfIndirectReference(annotNum)]));
+        return reader.AppendRevision([(pageRef.ObjectNumber, newPage), (annotNum, annot)]);
+    }
+
+    /// <summary>
+    /// Injects a drawn Form XObject with a /Ref entry into the UA-1 tagged baseline, violating §7.20-1.
+    /// The /Ref entry makes the XObject a reference XObject, which is forbidden in PDF/UA-1.
+    /// veraPDF fires clause 7.20, testNumber 1.
+    /// </summary>
+    private static byte[] WriterUa1WithReferenceXObject()
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var newPage = CloneDict(page);
+        var xobjNum = reader.Size;
+        var contentNum = reader.Size + 1;
+        var xobj = new PdfStream(Array.Empty<byte>());
+        xobj.Dictionary
+            .Set(new PdfName("Type"), new PdfName("XObject"))
+            .Set(new PdfName("Subtype"), new PdfName("Form"))
+            .Set(new PdfName("BBox"), new PdfArray([new PdfInteger(0), new PdfInteger(0), new PdfInteger(100), new PdfInteger(100)]))
+            .Set(new PdfName("Ref"), new PdfDictionary().Set(new PdfName("Page"), new PdfInteger(0)));
+        var content = new PdfStream(Encoding.ASCII.GetBytes("/Fm0 Do"));
+        var resources = new PdfDictionary()
+            .Set(new PdfName("XObject"), new PdfDictionary().Set(new PdfName("Fm0"), new PdfIndirectReference(xobjNum)));
+        newPage.Set(new PdfName("Resources"), resources);
+        newPage.Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
+        return reader.AppendRevision([(pageRef.ObjectNumber, newPage), (xobjNum, xobj), (contentNum, content)]);
+    }
+
+    /// <summary>
+    /// Injects an embedded file into the UA-1 tagged baseline. When <paramref name="includeUf"/> is
+    /// true, /UF is present (satisfying §7.11-1); when false, it is absent (violation).
+    /// </summary>
+    private static byte[] WriterUa1WithEmbeddedFile(bool includeUf)
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+        using var reader = PdfReader.Open(baseline);
+        var rootRef = (PdfIndirectReference)reader.Trailer.Get(PdfName.Root)!;
+        var catalog = CloneDict(reader.Catalog);
+        var efStreamNum = reader.Size;
+        var filespecNum = reader.Size + 1;
+        var efStream = new PdfStream(Array.Empty<byte>());
+        efStream.Dictionary.Set(new PdfName("Type"), new PdfName("EmbeddedFile"));
+        var filespec = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("Filespec"))
+            .Set(new PdfName("F"), new PdfLiteralString(Encoding.ASCII.GetBytes("attach.txt")))
+            .Set(new PdfName("EF"), new PdfDictionary().Set(new PdfName("F"), new PdfIndirectReference(efStreamNum)));
+        if (includeUf)
+            filespec.Set(new PdfName("UF"), new PdfLiteralString(Encoding.ASCII.GetBytes("attach.txt")));
+        catalog.Set(new PdfName("Names"), new PdfDictionary()
+            .Set(new PdfName("EmbeddedFiles"), new PdfDictionary()
+                .Set(new PdfName("Names"), new PdfArray([
+                    new PdfLiteralString(Encoding.ASCII.GetBytes("attach.txt")),
+                    new PdfIndirectReference(filespecNum)]))));
+        return reader.AppendRevision([(rootRef.ObjectNumber, catalog), (efStreamNum, efStream), (filespecNum, filespec)]);
+    }
+
+    /// <summary>
+    /// Injects an optional-content configuration into the UA-1 tagged baseline. Used to exercise
+    /// §7.10-1 (/Name required) and §7.10-2 (/AS forbidden).
+    /// </summary>
+    private static byte[] WriterUa1WithOptionalContent(bool hasName, bool hasAs)
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+        using var reader = PdfReader.Open(baseline);
+        var rootRef = (PdfIndirectReference)reader.Trailer.Get(PdfName.Root)!;
+        var catalog = CloneDict(reader.Catalog);
+        var ocgNum = reader.Size;
+        var ocg = new PdfDictionary()
+            .Set(new PdfName("Type"), new PdfName("OCG"))
+            .Set(new PdfName("Name"), new PdfLiteralString(Encoding.ASCII.GetBytes("Layer 1")));
+        var ocConfig = new PdfDictionary();
+        if (hasName)
+            ocConfig.Set(new PdfName("Name"), new PdfLiteralString(Encoding.ASCII.GetBytes("Default")));
+        if (hasAs)
+            ocConfig.Set(new PdfName("AS"), new PdfArray([new PdfDictionary()
+                .Set(new PdfName("Event"), new PdfName("View"))
+                .Set(new PdfName("OCGs"), new PdfArray([]))
+                .Set(new PdfName("Category"), new PdfArray([new PdfName("View")]))]));
+        catalog.Set(new PdfName("OCProperties"), new PdfDictionary()
+            .Set(new PdfName("OCGs"), new PdfArray([new PdfIndirectReference(ocgNum)]))
+            .Set(new PdfName("D"), ocConfig));
+        return reader.AppendRevision([(rootRef.ObjectNumber, catalog), (ocgNum, ocg)]);
+    }
+
+    /// <summary>
+    /// Injects an XFA stream into the UA-1 tagged baseline. When <paramref name="dynamic"/> is true,
+    /// the XFA config specifies <c>dynamicRender = "required"</c> (violates §7.15-1); when false,
+    /// <c>dynamicRender = "forbidden"</c> (static XFA — passes §7.15-1).
+    /// The XFA config structure follows the veraPDF model:
+    /// <c>xdp:xdp &gt; config &gt; acrobat &gt; acrobat7 &gt; dynamicRender</c>.
+    /// </summary>
+    private static byte[] WriterUa1WithXfa(bool dynamic)
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+        using var reader = PdfReader.Open(baseline);
+        var rootRef = (PdfIndirectReference)reader.Trailer.Get(PdfName.Root)!;
+        var catalog = CloneDict(reader.Catalog);
+        var xfaStreamNum = reader.Size;
+        var renderValue = dynamic ? "required" : "forbidden";
+        var xfaXml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+            + "<xdp:xdp xmlns:xdp=\"http://ns.adobe.com/xdp/\">"
+            + "<config xmlns=\"http://www.xfa.org/schema/xci/1.0/\">"
+            + $"<acrobat><acrobat7><dynamicRender>{renderValue}</dynamicRender></acrobat7></acrobat>"
+            + "</config></xdp:xdp>";
+        var xfaStream = new PdfStream(Encoding.UTF8.GetBytes(xfaXml));
+        var acroForm = new PdfDictionary()
+            .Set(new PdfName("XFA"), new PdfIndirectReference(xfaStreamNum));
+        catalog.Set(new PdfName("AcroForm"), acroForm);
+        return reader.AppendRevision([(rootRef.ObjectNumber, catalog), (xfaStreamNum, xfaStream)]);
+    }
+
     private static void DrawGlyphs(PdfCanvas canvas, EmbeddedFontHandle handle, string text)
     {
         var gids = new ushort[text.Length];
@@ -2468,4 +3067,633 @@ public static class OracleCorpus
         }
         return -1;
     }
+
+    // ── UA-1 font-clause probe fixtures (Batch A3) ───────────────────────────────────────────────
+
+    /// <summary>
+    /// UA-1 tagged PDF baseline with a real embedded Type0/CIDFontType2 font (DejaVu, Identity-H).
+    /// Used as the positive-path anchor for §7.21 font clauses.
+    /// </summary>
+    internal static byte[] Ua1TaggedWithEmbeddedFont()
+        => WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+
+    /// <summary>
+    /// §7.21.3.2-1 violation: the embedded CIDFontType2's /CIDToGIDMap entry is stripped.
+    /// veraPDF should fire clause 7.21.3.2-1.
+    /// </summary>
+    internal static byte[] Ua1EmbeddedFontNoCidToGidMap()
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+        using var reader = PdfReader.Open(baseline);
+        var (_, page) = FirstPage(reader);
+        var resources = (PdfDictionary)reader.ResolveValue(page.Get(new PdfName("Resources"))!)!;
+        var fontDict = (PdfDictionary)reader.ResolveValue(resources.Get(PdfName.Font)!)!;
+        var type0 = (PdfDictionary)reader.ResolveValue(fontDict.Entries.First().Value)!;
+        var descendants = (PdfArray)reader.ResolveValue(type0.Get(new PdfName("DescendantFonts"))!)!;
+        var descRef = (PdfIndirectReference)descendants[0];
+        var desc = (PdfDictionary)reader.Resolve(descRef.ObjectNumber)!;
+        return reader.AppendRevision([(descRef.ObjectNumber, CloneWithout(desc, "CIDToGIDMap"))]);
+    }
+
+    /// <summary>
+    /// §7.21.6-3 violation: a symbolic TrueType font (Flags bit 3 = 4) with an /Encoding entry.
+    /// veraPDF should fire clause 7.21.6-3.
+    /// </summary>
+    internal static byte[] Ua1SymbolicFontWithEncoding()
+        => Ua1AddSimpleTrueType(flags: 4, encoding: new PdfName("WinAnsiEncoding"));
+
+    /// <summary>
+    /// §7.21.6-3 conformant: a symbolic TrueType font with no /Encoding entry.
+    /// veraPDF should NOT fire clause 7.21.6-3.
+    /// </summary>
+    internal static byte[] Ua1SymbolicFontNoEncoding()
+        => Ua1AddSimpleTrueType(flags: 4, encoding: null);
+
+    /// <summary>
+    /// §7.21.6-3 conformant: a non-symbolic TrueType font (Flags = 32) with WinAnsiEncoding.
+    /// veraPDF should NOT fire clause 7.21.6-3.
+    /// </summary>
+    internal static byte[] Ua1NonSymbolicFontWinAnsi()
+        => Ua1AddSimpleTrueType(flags: 32, encoding: new PdfName("WinAnsiEncoding"));
+
+    // Helper: adds a simple TrueType font (DejaVu, drawing 'A') to the UA-1 tagged baseline.
+    // flags = 4 → Symbolic; flags = 32 → NonSymbolic. encoding = null → no /Encoding entry.
+    private static byte[] Ua1AddSimpleTrueType(int flags, PdfName? encoding)
+    {
+        var asset = LoadAsset("DejaVuSans.ttf");
+        int widthA;
+        using (var measureDoc = new PdfDocument())
+            widthA = (int)Math.Round(measureDoc.UseTrueTypeFont(asset).MeasureString("A", 1000));
+
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var resources = (PdfDictionary)reader.ResolveValue(page.Get(new PdfName("Resources"))!)!;
+        var fontResources = (PdfDictionary)reader.ResolveValue(resources.Get(PdfName.Font)!)!;
+
+        var fontNum = reader.Size;
+        var descNum = fontNum + 1;
+        var ffNum = fontNum + 2;
+        var contentNum = fontNum + 3;
+
+        var fontFile = new PdfStream(asset);
+        fontFile.Dictionary.Set(new PdfName("Length1"), new PdfInteger(asset.Length));
+        var descriptor = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("FontDescriptor"))
+            .Set(new PdfName("FontName"), new PdfName("DejaVuSans"))
+            .Set(new PdfName("Flags"), new PdfInteger(flags))
+            .Set(new PdfName("FontBBox"), new PdfArray([new PdfInteger(-1021), new PdfInteger(-463), new PdfInteger(1793), new PdfInteger(1232)]))
+            .Set(new PdfName("ItalicAngle"), new PdfInteger(0))
+            .Set(new PdfName("Ascent"), new PdfInteger(928))
+            .Set(new PdfName("Descent"), new PdfInteger(-236))
+            .Set(new PdfName("CapHeight"), new PdfInteger(928))
+            .Set(new PdfName("StemV"), new PdfInteger(80))
+            .Set(new PdfName("FontFile2"), new PdfIndirectReference(ffNum));
+        var simple = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("Font"))
+            .Set(PdfName.Subtype, new PdfName("TrueType"))
+            .Set(PdfName.BaseFont, new PdfName("DejaVuSans"))
+            .Set(new PdfName("FirstChar"), new PdfInteger(65))
+            .Set(new PdfName("LastChar"), new PdfInteger(65))
+            .Set(new PdfName("Widths"), new PdfArray([new PdfInteger(widthA)]))
+            .Set(new PdfName("FontDescriptor"), new PdfIndirectReference(descNum));
+        if (encoding is not null)
+            simple.Set(new PdfName("Encoding"), encoding);
+
+        var newFontResources = CloneDict(fontResources).Set(new PdfName("F1"), new PdfIndirectReference(fontNum));
+        var newResources = CloneDict(resources).Set(PdfName.Font, newFontResources);
+        var newPage = CloneDict(page).Set(new PdfName("Resources"), newResources);
+        newPage.Set(new PdfName("Contents"),
+            new PdfArray([page.Get(new PdfName("Contents"))!, new PdfIndirectReference(contentNum)]));
+        var content = new PdfStream(Encoding.ASCII.GetBytes("BT /F1 12 Tf 100 500 Td (A) Tj ET"));
+
+        return reader.AppendRevision(
+            [(pageRef.ObjectNumber, newPage), (fontNum, simple), (descNum, descriptor), (ffNum, fontFile), (contentNum, content)]);
+    }
+
+    // ── Batch A4 — font-clause probe fixtures ────────────────────────────────────────────────────
+
+    /// <summary>
+    /// §7.21.3.3-1 violation: rewrites the embedded Type0 font's /Encoding from /Identity-H to
+    /// a non-predefined, non-embedded CMap name (/FooBarCMap). veraPDF fires clause 7.21.3.3-1.
+    /// </summary>
+    internal static byte[] Ua1BadCMapName()
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+        using var reader = PdfReader.Open(baseline);
+        var (_, page) = FirstPage(reader);
+        var resources = (PdfDictionary)reader.ResolveValue(page.Get(new PdfName("Resources"))!)!;
+        var fontDict = (PdfDictionary)reader.ResolveValue(resources.Get(PdfName.Font)!)!;
+        var type0Ref = (PdfIndirectReference)fontDict.Entries.First().Value;
+        var type0 = (PdfDictionary)reader.Resolve(type0Ref.ObjectNumber)!;
+        var newType0 = CloneDict(type0).Set(new PdfName("Encoding"), new PdfName("FooBarCMap"));
+        return reader.AppendRevision([(type0Ref.ObjectNumber, newType0)]);
+    }
+
+    /// <summary>
+    /// §7.21.4.2-1: embeds the Noto Sans Shavian Type 1 font in a UA-1-tagged document. When
+    /// <paramref name="complete"/> the /CharSet lists every glyph in the program; otherwise it
+    /// omits one so veraPDF fires clause 7.21.4.2-1.
+    /// Uses the invisible-draw trick (text rendering mode 3) so veraPDF counts the font as used
+    /// (validating its /CharSet) but the §7.21.5 width check does not fire on a stale width.
+    /// </summary>
+    internal static byte[] WriterPdfWithType1CharSetUa1(bool complete)
+    {
+        var (fontFile, length1, length2, length3) = Type1FontAsset.ToFontFile();
+        var names = Type1Glyphs.TryEnumerate(fontFile, length1)!.OrderBy(n => n, StringComparer.Ordinal).ToList();
+        if (!complete)
+            names.Remove("u1047F"); // drop one present glyph so the CharSet is incomplete.
+        var charSet = string.Concat(names.Select(n => "/" + n));
+
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+
+        var fontNum = reader.Size;
+        var descNum = fontNum + 1;
+        var ffNum = fontNum + 2;
+        var contentNum = fontNum + 3;
+
+        var program = new PdfStream(fontFile);
+        program.Dictionary
+            .Set(new PdfName("Length1"), new PdfInteger(length1))
+            .Set(new PdfName("Length2"), new PdfInteger(length2))
+            .Set(new PdfName("Length3"), new PdfInteger(length3));
+        var descriptor = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("FontDescriptor"))
+            .Set(new PdfName("FontName"), new PdfName("AAAAAA+NotoSansShavian"))
+            .Set(new PdfName("Flags"), new PdfInteger(4)) // symbolic
+            .Set(new PdfName("FontBBox"),
+                new PdfArray([new PdfInteger(0), new PdfInteger(-502), new PdfInteger(1396), new PdfInteger(1600)]))
+            .Set(new PdfName("ItalicAngle"), new PdfInteger(0)).Set(new PdfName("Ascent"), new PdfInteger(1600))
+            .Set(new PdfName("Descent"), new PdfInteger(-502)).Set(new PdfName("CapHeight"), new PdfInteger(1600))
+            .Set(new PdfName("StemV"), new PdfInteger(80))
+            .Set(new PdfName("CharSet"), new PdfLiteralString(Encoding.ASCII.GetBytes(charSet)))
+            .Set(new PdfName("FontFile"), new PdfIndirectReference(ffNum));
+        var font = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("Font")).Set(PdfName.Subtype, new PdfName("Type1"))
+            .Set(PdfName.BaseFont, new PdfName("AAAAAA+NotoSansShavian"))
+            .Set(new PdfName("FirstChar"), new PdfInteger(32)).Set(new PdfName("LastChar"), new PdfInteger(32))
+            .Set(new PdfName("Widths"), new PdfArray([new PdfInteger(1000)]))
+            .Set(new PdfName("FontDescriptor"), new PdfIndirectReference(descNum));
+
+        var resObj = page.Get(new PdfName("Resources"));
+        var resources = (resObj is null ? null : reader.ResolveValue(resObj)) as PdfDictionary ?? new PdfDictionary();
+        var existingFonts = resources.Get(PdfName.Font) is { } ef
+            ? (PdfDictionary)reader.ResolveValue(ef)!
+            : new PdfDictionary();
+        var newFonts = CloneDict(existingFonts).Set(new PdfName("F1"), new PdfIndirectReference(fontNum));
+        var newResources = CloneDict(resources).Set(PdfName.Font, newFonts);
+        var newPage = CloneDict(page).Set(new PdfName("Resources"), newResources);
+        // Append an additional content stream using the Type1 font (Tr 3 = invisible, avoids width check).
+        newPage.Set(new PdfName("Contents"),
+            new PdfArray([page.Get(new PdfName("Contents"))!, new PdfIndirectReference(contentNum)]));
+        var content = new PdfStream(Encoding.ASCII.GetBytes("BT 3 Tr /F1 12 Tf 72 700 Td (\x20) Tj ET"));
+
+        return reader.AppendRevision(
+            [(pageRef.ObjectNumber, newPage), (fontNum, font), (descNum, descriptor), (ffNum, program),
+                (contentNum, content)]);
+    }
+
+    /// <summary>
+    /// §7.21.4.2-2: adds a /CIDSet to the embedded subset CIDFontType2's FontDescriptor in a
+    /// UA-1-tagged document. When <paramref name="complete"/> the bitmap marks exactly
+    /// CIDs 0..NumGlyphs−1; otherwise it is a single zero byte so veraPDF fires 7.21.4.2-2.
+    /// </summary>
+    internal static byte[] WriterPdfWithCidSetUa1(bool complete)
+    {
+        using var reader = PdfReader.Open(Ua1TaggedWithEmbeddedFont());
+        var (_, page) = FirstPage(reader);
+        var resources = (PdfDictionary)reader.ResolveValue(page.Get(new PdfName("Resources"))!)!;
+        var fonts = (PdfDictionary)reader.ResolveValue(resources.Get(PdfName.Font)!)!;
+        var type0 = (PdfDictionary)reader.ResolveValue(fonts.Entries.First().Value)!;
+        var descArr = (PdfArray)reader.ResolveValue(type0.Get(new PdfName("DescendantFonts"))!)!;
+        var cidFont = (PdfDictionary)reader.Resolve(((PdfIndirectReference)descArr[0]).ObjectNumber)!;
+        var fdRef = (PdfIndirectReference)cidFont.Get(new PdfName("FontDescriptor"))!;
+        var fd = (PdfDictionary)reader.Resolve(fdRef.ObjectNumber)!;
+        var ff2 = reader.ResolveStream(((PdfIndirectReference)fd.Get(new PdfName("FontFile2"))!).ObjectNumber)!;
+        var program = reader.GetDecodedStreamData(ff2)!;
+
+        var numGlyphs = NumGlyphsOf(program);
+        byte[] cidSet;
+        if (complete)
+        {
+            cidSet = new byte[(numGlyphs + 7) / 8];
+            for (var i = 0; i < numGlyphs; i++)
+                cidSet[i / 8] |= (byte)(0x80 >> (i % 8));
+        }
+        else
+        {
+            cidSet = [0x00];
+        }
+
+        var cidSetNum = reader.Size;
+        var newFd = CloneDict(fd).Set(new PdfName("CIDSet"), new PdfIndirectReference(cidSetNum));
+        return reader.AppendRevision([(fdRef.ObjectNumber, newFd), (cidSetNum, new PdfStream(cidSet))]);
+    }
+
+    // ── Batch A5a — §7.21.4.1-1 rendering-mode-scoped font embedding fixtures ──────────────────────
+
+    /// <summary>
+    /// §7.21.4.1-1 violation: a non-embedded simple TrueType font (no /FontFile2, no /FontDescriptor
+    /// font program at all) drawn with a normal (visible) text rendering mode. veraPDF fires
+    /// clause 7.21.4.1-1 (containsFontFile == false AND renderingMode != 3).
+    /// </summary>
+    internal static byte[] Ua1NonEmbeddedFontVisibleDraw()
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var resources = (PdfDictionary)reader.ResolveValue(page.Get(new PdfName("Resources"))!)!;
+        var fontResources = (PdfDictionary)reader.ResolveValue(resources.Get(PdfName.Font)!)!;
+
+        var fontNum = reader.Size;
+        var descNum = fontNum + 1;
+        var contentNum = fontNum + 2;
+
+        // Build a bare non-embedded TrueType font — /FontDescriptor present but no /FontFile2.
+        var descriptor = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("FontDescriptor"))
+            .Set(new PdfName("FontName"), new PdfName("VellumTestNonEmbedded"))
+            .Set(new PdfName("Flags"), new PdfInteger(32)) // NonSymbolic
+            .Set(new PdfName("FontBBox"), new PdfArray([new PdfInteger(0), new PdfInteger(-200), new PdfInteger(1000), new PdfInteger(800)]))
+            .Set(new PdfName("ItalicAngle"), new PdfInteger(0))
+            .Set(new PdfName("Ascent"), new PdfInteger(800))
+            .Set(new PdfName("Descent"), new PdfInteger(-200))
+            .Set(new PdfName("CapHeight"), new PdfInteger(700))
+            .Set(new PdfName("StemV"), new PdfInteger(80));
+        // Deliberately NO /FontFile2 — not embedded.
+
+        var simple = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("Font"))
+            .Set(PdfName.Subtype, new PdfName("TrueType"))
+            .Set(PdfName.BaseFont, new PdfName("VellumTestNonEmbedded"))
+            .Set(new PdfName("Encoding"), new PdfName("WinAnsiEncoding"))
+            .Set(new PdfName("FirstChar"), new PdfInteger(65))
+            .Set(new PdfName("LastChar"), new PdfInteger(65))
+            .Set(new PdfName("Widths"), new PdfArray([new PdfInteger(722)]))
+            .Set(new PdfName("FontDescriptor"), new PdfIndirectReference(descNum));
+
+        // Draw with default Tr 0 (fill text, visible).
+        var content = new PdfStream(Encoding.ASCII.GetBytes("BT /F2 12 Tf 100 500 Td (A) Tj ET"));
+
+        var newFontResources = CloneDict(fontResources).Set(new PdfName("F2"), new PdfIndirectReference(fontNum));
+        var newResources = CloneDict(resources).Set(PdfName.Font, newFontResources);
+        var newPage = CloneDict(page).Set(new PdfName("Resources"), newResources);
+        newPage.Set(new PdfName("Contents"),
+            new PdfArray([page.Get(new PdfName("Contents"))!, new PdfIndirectReference(contentNum)]));
+
+        return reader.AppendRevision(
+            [(pageRef.ObjectNumber, newPage), (fontNum, simple), (descNum, descriptor), (contentNum, content)]);
+    }
+
+    /// <summary>
+    /// §7.21.4.1-1 compliant (3-Tr exemption): the same non-embedded simple TrueType font as
+    /// <see cref="Ua1NonEmbeddedFontVisibleDraw"/>, but drawn ONLY with text rendering mode 3
+    /// (invisible text). veraPDF does NOT fire clause 7.21.4.1-1 because renderingMode == 3.
+    /// This is the FP-safety fixture: if the in-process rule fired here it would be a false positive.
+    /// </summary>
+    internal static byte[] Ua1NonEmbeddedFontInvisibleOnly()
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var resources = (PdfDictionary)reader.ResolveValue(page.Get(new PdfName("Resources"))!)!;
+        var fontResources = (PdfDictionary)reader.ResolveValue(resources.Get(PdfName.Font)!)!;
+
+        var fontNum = reader.Size;
+        var descNum = fontNum + 1;
+        var contentNum = fontNum + 2;
+
+        var descriptor = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("FontDescriptor"))
+            .Set(new PdfName("FontName"), new PdfName("VellumTestNonEmbeddedInvis"))
+            .Set(new PdfName("Flags"), new PdfInteger(32))
+            .Set(new PdfName("FontBBox"), new PdfArray([new PdfInteger(0), new PdfInteger(-200), new PdfInteger(1000), new PdfInteger(800)]))
+            .Set(new PdfName("ItalicAngle"), new PdfInteger(0))
+            .Set(new PdfName("Ascent"), new PdfInteger(800))
+            .Set(new PdfName("Descent"), new PdfInteger(-200))
+            .Set(new PdfName("CapHeight"), new PdfInteger(700))
+            .Set(new PdfName("StemV"), new PdfInteger(80));
+        // No /FontFile2 — not embedded.
+
+        var simple = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("Font"))
+            .Set(PdfName.Subtype, new PdfName("TrueType"))
+            .Set(PdfName.BaseFont, new PdfName("VellumTestNonEmbeddedInvis"))
+            .Set(new PdfName("Encoding"), new PdfName("WinAnsiEncoding"))
+            .Set(new PdfName("FirstChar"), new PdfInteger(65))
+            .Set(new PdfName("LastChar"), new PdfInteger(65))
+            .Set(new PdfName("Widths"), new PdfArray([new PdfInteger(722)]))
+            .Set(new PdfName("FontDescriptor"), new PdfIndirectReference(descNum));
+
+        // Draw ONLY with Tr 3 (invisible text). The font is used but only invisibly.
+        var content = new PdfStream(Encoding.ASCII.GetBytes("BT 3 Tr /F2 12 Tf 100 500 Td (A) Tj ET"));
+
+        var newFontResources = CloneDict(fontResources).Set(new PdfName("F2"), new PdfIndirectReference(fontNum));
+        var newResources = CloneDict(resources).Set(PdfName.Font, newFontResources);
+        var newPage = CloneDict(page).Set(new PdfName("Resources"), newResources);
+        newPage.Set(new PdfName("Contents"),
+            new PdfArray([page.Get(new PdfName("Contents"))!, new PdfIndirectReference(contentNum)]));
+
+        return reader.AppendRevision(
+            [(pageRef.ObjectNumber, newPage), (fontNum, simple), (descNum, descriptor), (contentNum, content)]);
+    }
+
+    /// <summary>
+    /// §7.21.4.1-1 compliant (embedded): a simple TrueType font WITH an embedded font program
+    /// (DejaVu, /FontFile2) drawn with a normal (visible) rendering mode. veraPDF does NOT fire
+    /// clause 7.21.4.1-1 because containsFontFile == true.
+    /// </summary>
+    internal static byte[] Ua1EmbeddedSimpleFontVisibleDraw()
+        => Ua1AddSimpleTrueType(flags: 32, encoding: new PdfName("WinAnsiEncoding"));
+
+    // ── Batch A5b — §7.21.8-1 .notdef + §7.21.7-2 forbidden-ToUnicode fixtures ─────────────────────
+
+    /// <summary>
+    /// §7.21.8-1 violation: appends a content stream to the UA-1 tagged baseline that shows glyph
+    /// index 0 (0x0000 = .notdef) using the existing Identity-H / CIDFontType2 font. veraPDF fires
+    /// clause 7.21.8-1 (.notdef referenced). The UA-1 baseline already has real glyphs shown by the
+    /// tagged text; this adds one extra show with the .notdef code.
+    /// </summary>
+    internal static byte[] Ua1PdfDrawingNotdef()
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var resources = (PdfDictionary)reader.ResolveValue(page.Get(new PdfName("Resources"))!)!;
+        var fonts = (PdfDictionary)reader.ResolveValue(resources.Get(PdfName.Font)!)!;
+        var fontName = fonts.Entries.First().Key.Value;
+
+        var contentNum = reader.Size;
+        var newPage = CloneDict(page);
+        newPage.Set(new PdfName("Contents"),
+            new PdfArray([page.Get(new PdfName("Contents"))!, new PdfIndirectReference(contentNum)]));
+        // Show glyph index 0 (0x0000 = .notdef) using the Identity-H font.
+        var content = new PdfStream(Encoding.ASCII.GetBytes($"BT /{fontName} 12 Tf 72 600 Td <0000> Tj ET"));
+        return reader.AppendRevision([(pageRef.ObjectNumber, newPage), (contentNum, content)]);
+    }
+
+    /// <summary>
+    /// §7.21.7-2 violation: the Type0 font's /ToUnicode CMap maps a SHOWN code (0x0041) to U+0000,
+    /// a forbidden value. The page content shows code 0x0041 using the existing Identity-H font;
+    /// veraPDF fires clause 7.21.7-2 (toUnicode maps to U+0000).
+    /// </summary>
+    internal static byte[] Ua1ToUnicodeForbiddenShownCode()
+        => Ua1WithCustomToUnicode(shownCode: 0x0041, shownCodeUnicode: " ", unusedCode: 0x0042, unusedCodeUnicode: "B");
+
+    /// <summary>
+    /// §7.21.7-2 compliant: the /ToUnicode CMap maps the SHOWN code (0x0041) to U+0041 (a valid
+    /// Unicode value). The page also has an UNUSED code entry (0xFFFF → U+0000), which is a forbidden
+    /// value but for an unused code — veraPDF does NOT fire 7.21.7-2 because only shown codes are checked.
+    /// This is the critical regression guard for the prior false positive (git ab5dc76).
+    /// </summary>
+    internal static byte[] Ua1ToUnicodeUnusedBadMappingCompliant()
+        => Ua1WithCustomToUnicode(shownCode: 0x0041, shownCodeUnicode: "A", unusedCode: 0xFFFF, unusedCodeUnicode: " ");
+
+    // Builds a UA-1 tagged baseline, finds the first Identity-H Type0 font, replaces its /ToUnicode
+    // with a custom CMap that:
+    //   - maps shownCode to shownCodeUnicode (the code that the injected content stream shows)
+    //   - maps unusedCode to unusedCodeUnicode (a code that is NOT shown)
+    // Then appends a content stream that shows only shownCode with the font.
+    private static byte[] Ua1WithCustomToUnicode(
+        int shownCode, string shownCodeUnicode, int unusedCode, string unusedCodeUnicode)
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var resources = (PdfDictionary)reader.ResolveValue(page.Get(new PdfName("Resources"))!)!;
+        var fonts = (PdfDictionary)reader.ResolveValue(resources.Get(PdfName.Font)!)!;
+        var type0Ref = (PdfIndirectReference)fonts.Entries.First().Value;
+        var type0 = (PdfDictionary)reader.Resolve(type0Ref.ObjectNumber)!;
+        var fontName = fonts.Entries.First().Key.Value;
+
+        // Build a minimal ToUnicode CMap with exactly two bfchar entries.
+        var toUnicodeCMap = BuildToUnicodeCMap(
+            [(shownCode, shownCodeUnicode), (unusedCode, unusedCodeUnicode)]);
+        var toUnicodeNum = reader.Size;
+        var toUnicodeStream = new PdfStream(Encoding.Latin1.GetBytes(toUnicodeCMap));
+
+        // Replace the Type0 font's /ToUnicode with our custom stream.
+        var newType0 = CloneDict(type0).Set(new PdfName("ToUnicode"), new PdfIndirectReference(toUnicodeNum));
+
+        // Append a content stream that shows only shownCode (2-byte big-endian) with the font.
+        var contentNum = reader.Size + 1;
+        var newPage = CloneDict(page);
+        newPage.Set(new PdfName("Contents"),
+            new PdfArray([page.Get(new PdfName("Contents"))!, new PdfIndirectReference(contentNum)]));
+        var content = new PdfStream(
+            Encoding.ASCII.GetBytes($"BT /{fontName} 12 Tf 72 580 Td <{shownCode:X4}> Tj ET"));
+
+        return reader.AppendRevision(
+            [(type0Ref.ObjectNumber, newType0),
+             (toUnicodeNum, toUnicodeStream),
+             (pageRef.ObjectNumber, newPage),
+             (contentNum, content)]);
+    }
+
+    // Builds a minimal ToUnicode CMap text with a beginbfchar section.
+    // Each entry is (srcCode, dstUnicode string). The destination is encoded as UTF-16BE hex.
+    private static string BuildToUnicodeCMap(IEnumerable<(int Code, string Unicode)> entries)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("/CIDInit /ProcSet findresource begin");
+        sb.AppendLine("12 dict begin");
+        sb.AppendLine("begincmap");
+        sb.AppendLine("/CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def");
+        sb.AppendLine("/CMapName /Adobe-Identity-UCS def");
+        sb.AppendLine("/CMapType 2 def");
+        var list = entries.ToList();
+        sb.AppendLine($"{list.Count} beginbfchar");
+        foreach (var (code, unicode) in list)
+        {
+            var destHex = string.Concat(Encoding.BigEndianUnicode.GetBytes(unicode).Select(b => b.ToString("X2")));
+            sb.AppendLine($"<{code:X4}> <{destHex}>");
+        }
+        sb.AppendLine("endbfchar");
+        sb.AppendLine("endcmap");
+        sb.AppendLine("CMapName currentdict /CMap defineresource pop");
+        sb.AppendLine("end");
+        sb.AppendLine("end");
+        return sb.ToString();
+    }
+
+    // ── Batch A5c — §7.21.4.1-2 glyph presence (Tr-3-exempt) fixtures ───────────────────────────
+
+    /// <summary>
+    /// §7.21.4.1-2 violation: the UA-1 tagged baseline's embedded Identity-H CIDFontType2 font is
+    /// asked to show GID 0xEA60 (60000) in a VISIBLE text rendering mode (Tr 0, the default). The
+    /// embedded program is a small subset — GID 60000 is far beyond numGlyphs. veraPDF fires
+    /// clause 7.21.4.1-2 (isGlyphPresent == false, renderingMode != 3).
+    /// </summary>
+    internal static byte[] Ua1OutOfRangeGlyphVisible()
+        => Ua1AppendOutOfRangeGlyph(invisible: false);
+
+    /// <summary>
+    /// §7.21.4.1-2 FP-safety guard (Tr-3 exemption): the SAME out-of-range GID (0xEA60) is shown
+    /// ONLY with text rendering mode 3 (invisible text). veraPDF does NOT fire 7.21.4.1-2 because
+    /// the predicate includes <c>renderingMode == 3</c> as an exemption. The in-process rule must
+    /// also NOT fire. Cross-validated against veraPDF 1.30.2: clause 7.21.4.1-2 absent from failures.
+    /// </summary>
+    internal static byte[] Ua1OutOfRangeGlyphInvisible()
+        => Ua1AppendOutOfRangeGlyph(invisible: true);
+
+    // Appends a content stream that shows GID 0xEA60 (60000) using the existing embedded Identity-H
+    // font from the UA-1 tagged baseline. When invisible=true, the stream starts with `3 Tr` so the
+    // draw is invisible (text rendering mode 3). The GID is 60000 — beyond any small font subset.
+    private static byte[] Ua1AppendOutOfRangeGlyph(bool invisible)
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var resources = (PdfDictionary)reader.ResolveValue(page.Get(new PdfName("Resources"))!)!;
+        var fonts = (PdfDictionary)reader.ResolveValue(resources.Get(PdfName.Font)!)!;
+        var fontName = fonts.Entries.First().Key.Value;
+
+        var contentNum = reader.Size;
+        var newPage = CloneDict(page);
+        newPage.Set(new PdfName("Contents"),
+            new PdfArray([page.Get(new PdfName("Contents"))!, new PdfIndirectReference(contentNum)]));
+
+        // GID 0xEA60 = 60000 — always beyond the small embedded subset.
+        var trOp = invisible ? "3 Tr " : "";
+        var content = new PdfStream(
+            Encoding.ASCII.GetBytes($"BT {trOp}/{fontName} 12 Tf 72 600 Td <EA60> Tj ET"));
+
+        return reader.AppendRevision([(pageRef.ObjectNumber, newPage), (contentNum, content)]);
+    }
+
+    // ── Batch B1 — §7.1 structure-tree walker foundation ─────────────────────────────────────────
+
+    /// <summary>
+    /// §7.1-12 violation: removes the <c>/P</c> (parent) entry from the leaf P StructElem in the
+    /// UA-1 tagged baseline. veraPDF fires clause 7.1, testNumber 12 (containsParent == false).
+    /// </summary>
+    internal static byte[] Ua1StructElemMissingParent()
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+        using var reader = PdfReader.Open(baseline);
+
+        // Walk: StructTreeRoot -> Document StructElem -> P StructElem (the leaf)
+        var strRef = (PdfIndirectReference)reader.Catalog.Get(new PdfName("StructTreeRoot"))!;
+        var str = (PdfDictionary)reader.Resolve(strRef.ObjectNumber)!;
+
+        // /K on StructTreeRoot is the Document StructElem ref
+        var docRef = str.Get(new PdfName("K")) as PdfIndirectReference;
+        if (docRef is null) throw new InvalidOperationException("Expected Document StructElem ref");
+        var doc = (PdfDictionary)reader.Resolve(docRef.ObjectNumber)!;
+
+        // /K on Document StructElem is the P StructElem ref (or array of refs)
+        var docK = doc.Get(new PdfName("K"));
+        PdfIndirectReference pElemRef;
+        if (docK is PdfIndirectReference pr)
+            pElemRef = pr;
+        else if (docK is PdfArray arr && arr.Count > 0 && arr[0] is PdfIndirectReference ar)
+            pElemRef = ar;
+        else
+            throw new InvalidOperationException("Expected P StructElem ref");
+
+        var pElem = (PdfDictionary)reader.Resolve(pElemRef.ObjectNumber)!;
+        // Remove /P
+        var newPElem = CloneWithout(pElem, "P");
+
+        return reader.AppendRevision([(pElemRef.ObjectNumber, newPElem)]);
+    }
+
+    /// <summary>
+    /// §7.1-6 violation: adds a circular role mapping <c>/Foo /Bar /Bar /Foo</c> to the
+    /// StructTreeRoot /RoleMap, AND injects a StructElem with <c>/S /Foo</c> so that
+    /// veraPDF's <c>circularMappingExist</c> property is <c>true</c> on a real PDStructElem
+    /// (the rule only fires when an element actually exercises the circular chain).
+    /// </summary>
+    internal static byte[] Ua1CircularRoleMap()
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+        using var reader = PdfReader.Open(baseline);
+        var strRef = (PdfIndirectReference)reader.Catalog.Get(new PdfName("StructTreeRoot"))!;
+        var str = (PdfDictionary)reader.Resolve(strRef.ObjectNumber)!;
+
+        // Walk to the Document StructElem (root)
+        var docRef = str.Get(new PdfName("K")) as PdfIndirectReference
+            ?? throw new InvalidOperationException("Expected Document StructElem ref");
+        var doc = (PdfDictionary)reader.Resolve(docRef.ObjectNumber)!;
+
+        // Walk to the P StructElem (leaf)
+        var docK = doc.Get(new PdfName("K"));
+        PdfIndirectReference pElemRef;
+        if (docK is PdfIndirectReference pr) pElemRef = pr;
+        else if (docK is PdfArray arr && arr.Count > 0 && arr[0] is PdfIndirectReference ar) pElemRef = ar;
+        else throw new InvalidOperationException("Expected P StructElem ref");
+        var pElem = (PdfDictionary)reader.Resolve(pElemRef.ObjectNumber)!;
+
+        // Add a new /Foo StructElem (child of Document, sibling of P) that uses the circular type.
+        // The existing P StructElem keeps its /K MCID; the new /Foo element has no /K.
+        var fooElemNum = reader.Size;
+        var fooElem = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("StructElem"))
+            .Set(new PdfName("S"), new PdfName("Foo"))
+            .Set(new PdfName("P"), strRef); // parent = StructTreeRoot (simplified; still a /P)
+
+        // Update Document to have /K [P, Foo]
+        var newDoc = CloneDict(doc);
+        newDoc.Set(new PdfName("K"), new PdfArray([
+            (PdfObject)(docK is PdfIndirectReference ? docK : new PdfIndirectReference(pElemRef.ObjectNumber)),
+            new PdfIndirectReference(fooElemNum),
+        ]));
+
+        // Update StructTreeRoot: add circular RoleMap
+        var newStr = CloneDict(str);
+        newStr.Set(new PdfName("RoleMap"), new PdfDictionary()
+            .Set(new PdfName("Foo"), new PdfName("Bar"))
+            .Set(new PdfName("Bar"), new PdfName("Foo")));
+
+        return reader.AppendRevision([
+            (strRef.ObjectNumber, newStr),
+            (docRef.ObjectNumber, newDoc),
+            (fooElemNum, fooElem),
+        ]);
+    }
+
+    /// <summary>
+    /// §7.1-7 violation: adds a /RoleMap entry whose KEY is the standard structure type
+    /// <c>/Table</c> remapped to <c>/Div</c>, AND injects a StructElem with <c>/S /Table</c>
+    /// so that veraPDF's <c>remappedStandardType</c> property is non-null on a real PDStructElem.
+    /// </summary>
+    internal static byte[] Ua1StandardTypeRemapped()
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+        using var reader = PdfReader.Open(baseline);
+        var strRef = (PdfIndirectReference)reader.Catalog.Get(new PdfName("StructTreeRoot"))!;
+        var str = (PdfDictionary)reader.Resolve(strRef.ObjectNumber)!;
+
+        var docRef = str.Get(new PdfName("K")) as PdfIndirectReference
+            ?? throw new InvalidOperationException("Expected Document StructElem ref");
+        var doc = (PdfDictionary)reader.Resolve(docRef.ObjectNumber)!;
+
+        var docK = doc.Get(new PdfName("K"));
+
+        // Add a new /Table StructElem (child of Document) that uses the remapped standard type.
+        var tableElemNum = reader.Size;
+        var tableElem = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("StructElem"))
+            .Set(new PdfName("S"), new PdfName("Table"))
+            .Set(new PdfName("P"), strRef); // parent reference (simplified)
+
+        var newDoc = CloneDict(doc);
+        newDoc.Set(new PdfName("K"), new PdfArray([
+            (PdfObject)(docK is PdfIndirectReference ? docK : new PdfIndirectReference((int)(docK is PdfInteger pi ? pi.Value : 0))),
+            new PdfIndirectReference(tableElemNum),
+        ]));
+
+        var newStr = CloneDict(str);
+        newStr.Set(new PdfName("RoleMap"), new PdfDictionary()
+            .Set(new PdfName("Table"), new PdfName("Div")));
+
+        return reader.AppendRevision([
+            (strRef.ObjectNumber, newStr),
+            (docRef.ObjectNumber, newDoc),
+            (tableElemNum, tableElem),
+        ]);
+    }
+
 }
