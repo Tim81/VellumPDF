@@ -6928,4 +6928,109 @@ public sealed class PdfPreflightTests
         var result = PdfPreflight.Validate(bytes, Conformance.PdfConformance.PdfUA1);
         Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.21.6-3");
     }
+
+    // ── Batch A4 — §7.21 font clause unit tests ─────────────────────────────────────────────────
+
+    /// <summary>
+    /// §7.21.3.3-1 (UaCMapRule): a composite font's /Encoding must be a predefined CMap name or
+    /// an embedded stream. A non-predefined named /Encoding (/FooBarCMap) fires 7.21.3.3-1.
+    /// Cross-validated against veraPDF 1.30.2 via the oracle fixture.
+    /// </summary>
+    [Fact]
+    public void UaBadCMapName_Fires72133_1()
+    {
+        var bytes = OracleCorpus.Ua1BadCMapName();
+        var result = PdfPreflight.Validate(bytes, Conformance.PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.21.3.3-1");
+    }
+
+    /// <summary>
+    /// §7.21.3.3-1 false-positive guard: the standard UA-1 tagged baseline uses /Identity-H
+    /// (a predefined CMap) and must NOT fire 7.21.3.3-1.
+    /// </summary>
+    [Fact]
+    public void UaBaselineIdentityH_DoesNotFire72133_1()
+    {
+        var bytes = OracleCorpus.Ua1TaggedWithEmbeddedFont();
+        var result = PdfPreflight.Validate(bytes, Conformance.PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.21.3.3-1");
+    }
+
+    /// <summary>
+    /// §7.21.4.2-1 (UaType1CharSetRule): an embedded subset Type1 font whose /CharSet lists
+    /// every program glyph must NOT fire 7.21.4.2-1.
+    /// Cross-validated against veraPDF 1.30.2 via the oracle fixture.
+    /// </summary>
+    [Fact]
+    public void UaType1CharSetComplete_DoesNotFire72142_1()
+    {
+        var bytes = OracleCorpus.WriterPdfWithType1CharSetUa1(complete: true);
+        var result = PdfPreflight.Validate(bytes, Conformance.PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.21.4.2-1");
+    }
+
+    /// <summary>
+    /// §7.21.4.2-1 positive control: an embedded subset Type1 font whose /CharSet omits one
+    /// glyph must fire 7.21.4.2-1.
+    /// Cross-validated against veraPDF 1.30.2 via the oracle fixture.
+    /// </summary>
+    [Fact]
+    public void UaType1CharSetIncomplete_Fires72142_1()
+    {
+        var bytes = OracleCorpus.WriterPdfWithType1CharSetUa1(complete: false);
+        var result = PdfPreflight.Validate(bytes, Conformance.PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.21.4.2-1");
+    }
+
+    /// <summary>
+    /// §7.21.4.2-2 (UaCidSetRule): an embedded subset CIDFontType2 whose /CIDSet correctly
+    /// marks all CIDs must NOT fire 7.21.4.2-2.
+    /// Cross-validated against veraPDF 1.30.2 via the oracle fixture.
+    /// </summary>
+    [Fact]
+    public void UaCidSetComplete_DoesNotFire72142_2()
+    {
+        var bytes = OracleCorpus.WriterPdfWithCidSetUa1(complete: true);
+        var result = PdfPreflight.Validate(bytes, Conformance.PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.21.4.2-2");
+    }
+
+    /// <summary>
+    /// §7.21.4.2-2 positive control: an embedded subset CIDFontType2 with an incomplete /CIDSet
+    /// (single zero byte) must fire 7.21.4.2-2.
+    /// Cross-validated against veraPDF 1.30.2 via the oracle fixture.
+    /// </summary>
+    [Fact]
+    public void UaCidSetIncomplete_Fires72142_2()
+    {
+        var bytes = OracleCorpus.WriterPdfWithCidSetUa1(complete: false);
+        var result = PdfPreflight.Validate(bytes, Conformance.PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.21.4.2-2");
+    }
+
+    /// <summary>
+    /// §7.21.3.3-2/-3 false-positive guard (UaCMapRule): the standard UA-1 tagged baseline uses
+    /// /Identity-H (a named predefined CMap, not an embedded stream) so 7.21.3.3-2 and 7.21.3.3-3
+    /// do not apply and must NOT fire. (They only apply to embedded CMap programs.)
+    /// </summary>
+    [Fact]
+    public void UaBaselineIdentityH_DoesNotFire72133_2or3()
+    {
+        var bytes = OracleCorpus.Ua1TaggedWithEmbeddedFont();
+        var result = PdfPreflight.Validate(bytes, Conformance.PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.21.3.3-2");
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.21.3.3-3");
+    }
+
+    /// <summary>
+    /// §7.21.3.1-1 false-positive guard (UaCidSystemInfoRule): the standard UA-1 tagged baseline
+    /// uses /Identity-H (always conformant) and must NOT fire 7.21.3.1-1.
+    /// </summary>
+    [Fact]
+    public void UaBaselineIdentityH_DoesNotFire72131_1()
+    {
+        var bytes = OracleCorpus.Ua1TaggedWithEmbeddedFont();
+        var result = PdfPreflight.Validate(bytes, Conformance.PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.21.3.1-1");
+    }
 }
