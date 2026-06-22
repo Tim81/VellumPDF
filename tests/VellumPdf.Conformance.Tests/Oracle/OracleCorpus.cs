@@ -1088,6 +1088,33 @@ public static class OracleCorpus
             new OracleFixture("pdfua1-td-scoped-header",
                 Ua1TdScopedHeader(),
                 Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: true),
+
+            // §7.2-34 VIOLATION: tagged UA-1 with the catalog /Lang key removed entirely (absent,
+            // not empty — so gContainsCatalogLang == false in veraPDF terms), with text shows inside
+            // a /P BDC that carries no /Lang property. veraPDF fires 7.2-34 (SETextItem natural
+            // language cannot be determined). In-process UaMarkedContentLangRule must also fire.
+            // NOTE: this doc also fails 7.2-lang (absent /Lang), so veraPDF reports multiple
+            // failures; we check only the boolean verdict here. Clause-level evidence:
+            // ~/verapdf/verapdf --flavour ua1 --format xml FILE | grep testNumber=\"34\"
+            new OracleFixture("pdfua1-mc-text-no-lang",
+                Ua1McTextNoLang(),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.2-30 VIOLATION: tagged UA-1 with the catalog /Lang key removed entirely (absent,
+            // not empty), containing a /Span BDC with /ActualText and no /Lang. veraPDF fires 7.2-30
+            // (SEMarkedContent ActualText no lang). In-process UaMarkedContentLangRule must also fire.
+            new OracleFixture("pdfua1-mc-span-actualtext-no-lang",
+                Ua1McSpanActualTextNoLang(),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.2-34 REGRESSION (FP fix): tagged UA-1 with NO catalog /Lang, but the /P struct
+            // element (reached via MCID→ParentTree) has /Lang (en-US). veraPDF does NOT fire 7.2-34;
+            // the fixed in-process rule must also NOT fire. This fixture pins the confirmed FP fix.
+            // NOTE: veraPDF fires 7.2-lang (missing catalog /Lang) and 7.2-33 (XMP x-default title
+            // with no catalog /Lang), so the document is non-compliant — but NOT due to 7.2-34.
+            new OracleFixture("pdfua1-mc-text-struct-elem-lang",
+                Ua1McTextStructElemLang(),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
         ];
     }
 
@@ -4291,6 +4318,151 @@ public static class OracleCorpus
         revision.Add((docRef.ObjectNumber, newDoc));
 
         return reader.AppendRevision(revision);
+    }
+
+    // ── Batch C1: marked-content lang fixtures ──────────────────────────────────────────────────
+
+    /// <summary>
+    /// §7.2-34 REGRESSION (FP fix): tagged UA-1 with NO catalog /Lang, but with the owning struct
+    /// element carrying /Lang (en-US). veraPDF resolves language via MCID→ParentTree→struct-elem
+    /// and does NOT fire 7.2-34. The in-process UaMarkedContentLangRule must also NOT fire.
+    /// This fixture captures the confirmed false positive fixed by MCID→struct-elem /Lang resolution.
+    ///
+    /// Construction: start from WriterPdfTagged (which writes a proper ParentTree), remove catalog
+    /// /Lang, then walk the ParentTree for MCID 0 on page 0 to find the /P struct elem, and stamp
+    /// /Lang (en-US) onto it via AppendRevision.
+    /// </summary>
+    private static byte[] Ua1McTextStructElemLang()
+    {
+        // Step 1: build a no-catalog-/Lang baseline (has proper struct tree + ParentTree).
+        var baseline = Ua1McTextNoLang();
+        using var reader = PdfReader.Open(baseline);
+
+        // Step 2: resolve page → /StructParents integer.
+        var (pageRef, page) = FirstPage(reader);
+        var spRaw = page.Get(new PdfName("StructParents"));
+        var structParentsObj = spRaw is null ? null : reader.ResolveValue(spRaw);
+        if (structParentsObj is not PdfInteger structParentsInt)
+            throw new InvalidOperationException("Page has no /StructParents.");
+        var structParentsKey = (int)structParentsInt.Value;
+
+        // Step 3: find the StructTreeRoot → /ParentTree.
+        var strRaw = reader.Catalog.Get(new PdfName("StructTreeRoot"));
+        var strRootObj = strRaw is null ? null : reader.ResolveValue(strRaw);
+        if (strRootObj is not PdfDictionary strRoot)
+            throw new InvalidOperationException("No StructTreeRoot.");
+        var ptRaw = strRoot.Get(new PdfName("ParentTree"));
+        var parentTreeObj = ptRaw is null ? null : reader.ResolveValue(ptRaw);
+        if (parentTreeObj is not PdfDictionary parentTree)
+            throw new InvalidOperationException("No ParentTree.");
+
+        // Step 4: walk the /Nums number-tree to find the array for structParentsKey.
+        var mcidArray = FindNumsArray(reader, parentTree, structParentsKey);
+        if (mcidArray is null || mcidArray.Count == 0)
+            throw new InvalidOperationException("ParentTree entry not found for page StructParents key.");
+
+        // Step 5: array[0] is the indirect ref to the /P struct elem for MCID 0.
+        var elemRef = mcidArray[0] as PdfIndirectReference
+            ?? throw new InvalidOperationException("ParentTree MCID entry is not an indirect reference.");
+        var elemDict = reader.Resolve(elemRef.ObjectNumber) as PdfDictionary
+            ?? throw new InvalidOperationException("Struct elem dict could not be resolved.");
+
+        // Step 6: clone the struct elem and add /Lang (en-US).
+        var newElem = CloneDict(elemDict);
+        newElem.Set(new PdfName("Lang"), new PdfLiteralString(Encoding.ASCII.GetBytes("en-US")));
+
+        return reader.AppendRevision([(elemRef.ObjectNumber, newElem)]);
+    }
+
+    // Walks a number-tree node and returns the PdfArray at the given integer key, or null.
+    private static PdfArray? FindNumsArray(PdfDocumentReader reader, PdfDictionary node, int key)
+    {
+        var numsRaw = node.Get(new PdfName("Nums"));
+        if (numsRaw is not null && reader.ResolveValue(numsRaw) is PdfArray nums)
+        {
+            for (var i = 0; i + 1 < nums.Count; i += 2)
+            {
+                var k = reader.ResolveValue(nums[i]) as PdfInteger;
+                if (k is null) continue;
+                if ((int)k.Value == key)
+                    return reader.ResolveValue(nums[i + 1]) as PdfArray;
+            }
+        }
+        var kidsRaw = node.Get(new PdfName("Kids"));
+        if (kidsRaw is not null && reader.ResolveValue(kidsRaw) is PdfArray kids)
+        {
+            for (var i = 0; i < kids.Count; i++)
+            {
+                if (reader.ResolveValue(kids[i]) is PdfDictionary child)
+                {
+                    var result = FindNumsArray(reader, child, key);
+                    if (result is not null) return result;
+                }
+            }
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// §7.2-34 VIOLATION: tagged UA-1 with the catalog /Lang key removed entirely (absent, not
+    /// empty), so gContainsCatalogLang == false in veraPDF terms. The page content stream contains
+    /// text shows inside a /P BDC with no /Lang property — no determinable language for those text
+    /// items. veraPDF fires 7.2-34 (and 7.2-lang); the in-process UaMarkedContentLangRule fires
+    /// 7.2-34. NOTE: /Lang must be ABSENT, not empty — an empty /Lang () still satisfies veraPDF's
+    /// containsLang, which would suppress 7.2-34 (it would only fire the Lang-syntax rule 7.2-29).
+    /// </summary>
+    private static byte[] Ua1McTextNoLang()
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+        using var reader = PdfReader.Open(baseline);
+        var rootRef = (PdfIndirectReference)reader.Trailer.Get(PdfName.Root)!;
+        var catalog = CloneWithout(reader.Catalog, "Lang");
+        return reader.AppendRevision([(rootRef.ObjectNumber, catalog)]);
+    }
+
+    /// <summary>
+    /// §7.2-30 VIOLATION: tagged UA-1 with the catalog /Lang key removed entirely (absent, not
+    /// empty), plus an injected /Span BDC carrying /ActualText with no /Lang. veraPDF fires 7.2-30
+    /// (and 7.2-lang). NOTE: /Lang must be ABSENT, not empty — an empty /Lang () still satisfies
+    /// veraPDF's containsLang and would suppress 7.2-30.
+    /// </summary>
+    private static byte[] Ua1McSpanActualTextNoLang()
+    {
+        // Start from the empty-lang baseline.
+        var noLangBaseline = Ua1McTextNoLang();
+        using var reader = PdfReader.Open(noLangBaseline);
+
+        var (pageRef, page) = FirstPage(reader);
+        var resourcesObj = page.Get(new PdfName("Resources"));
+        var resources = resourcesObj is not null ? reader.ResolveValue(resourcesObj) as PdfDictionary : null;
+        var fontDictObj = resources?.Get(PdfName.Font);
+        var fontDict = fontDictObj is not null ? reader.ResolveValue(fontDictObj) as PdfDictionary : null;
+        var fontName = fontDict?.Entries.FirstOrDefault().Key.Value ?? "F1";
+
+        var contentNum = reader.Size;
+        // /Span BDC with /ActualText and no /Lang → violates 7.2-30 when gContainsCatalogLang==false.
+        var spanContent = Encoding.ASCII.GetBytes(
+            $"BT\n/{fontName} 12 Tf\n1 0 0 1 72 700 Tm\n/Span << /MCID 99 /ActualText (probe) >> BDC\n(A) Tj\nEMC\nET");
+        var contentStream = new PdfStream(spanContent);
+
+        // Append new content stream to the page's /Contents array.
+        var newPage = CloneDict(page);
+        var oldContents = page.Get(new PdfName("Contents"));
+        PdfArray contentsArray;
+        if (oldContents is PdfArray arr)
+        {
+            var items = new PdfObject[arr.Count + 1];
+            for (var i = 0; i < arr.Count; i++) items[i] = arr[i];
+            items[arr.Count] = new PdfIndirectReference(contentNum);
+            contentsArray = new PdfArray(items);
+        }
+        else
+        {
+            contentsArray = new PdfArray([oldContents!, new PdfIndirectReference(contentNum)]);
+        }
+        newPage.Set(new PdfName("Contents"), contentsArray);
+
+        return reader.AppendRevision([(pageRef.ObjectNumber, newPage), (contentNum, contentStream)]);
     }
 
 }

@@ -315,6 +315,11 @@ public static class ConformanceCatalog
         "7.4.2-1",             // UaHeadingNestingRule: Hn heading levels must not skip (hasCorrectNestingLevel)
         "7.5-1",               // UaTableHeaderRule: TD must have connected header (hasConnectedHeader, unknownHeaders='')
         "7.5-2",               // UaTableHeaderRule: TD /Headers references unknown IDs (hasConnectedHeader, unknownHeaders!='')
+        // Batch C1 — §7.2 natural-language determination for marked-content sequences:
+        "7.2-30",              // UaMarkedContentLangRule: /Span BDC /ActualText → BDC or ancestor must have /Lang
+        "7.2-31",              // UaMarkedContentLangRule: /Span BDC /Alt → BDC or ancestor must have /Lang
+        "7.2-32",              // UaMarkedContentLangRule: /Span BDC /E → BDC or ancestor must have /Lang
+        "7.2-34",              // UaMarkedContentLangRule: text-show → enclosing BDC or ancestor must have /Lang
     };
 
     // PDF/UA-1 checks the rules cover only partially (the common case is detected; some conditions
@@ -358,6 +363,26 @@ public static class ConformanceCatalog
         "5-3" or "5-4" or "5-5" => "prefix-aware XMP parsing (XmpReader matches by namespace URI, not prefix)",
         "7.16-1" => "encrypted-document support: the reader does not surface the P permission bits for encrypted files",
         "7.18.6.2-1" or "7.18.6.2-2" => "media clip data dictionary traversal (requires walking Screen-annotation rendition actions)",
+
+        // §7.1 artifact/tagging rules — Batch C1 assessment:
+        // Infrastructure built (BMC/BDC/EMC stack in ContentStreamUsage, MarkedContentSequence,
+        // TextShowContexts). Rules deferred because:
+        // 7.1-1/7.1-2: isTaggedContent (MCID in ParentTree) and parentsTags (ancestor BDC chain
+        //   correlated with structure tree) require full structure-tree/content-stream correlation;
+        //   FP risk too high without implementing veraPDF's SEMarkedContent model exactly.
+        // 7.1-3: SESimpleContentItem is per-content-item (text shows, path painting operators);
+        //   veraPDF's definition of "content item" is implementation-specific and exempts many
+        //   operator categories; FP risk too high without replicating the veraPDF operator exemption model.
+        "7.1-1" or "7.1-2" =>
+            "marked-content interpreter infrastructure built (Batch C1); deferred: isTaggedContent "
+            + "(MCID presence in ParentTree) + parentsTags (ancestor BDC chain correlation with "
+            + "structure tree) require full structure-tree/content-stream correlation; FP risk too "
+            + "high without replicating veraPDF's SEMarkedContent model",
+        "7.1-3" =>
+            "marked-content interpreter infrastructure built (Batch C1); deferred: SESimpleContentItem "
+            + "is per-content-item (text shows, path painting); veraPDF's definition of what constitutes "
+            + "a 'content item' is implementation-specific and exempts many operator categories; FP risk "
+            + "too high without replicating veraPDF's operator exemption model",
 
         // §7.21 font deferred notes — Batch A3 assessment:
         // 7.21.4.1-1 moved to PdfUaImplemented (Batch A5a — UaFontEmbeddingRule, rendering-mode-scoped).
@@ -435,6 +460,11 @@ public static class ConformanceCatalog
         //   check; scoped TH in same table satisfies all TDs; explicit /Headers resolved against TH
         //   /ID set; no-TH table passes (undefined, not false); empirically verified against
         //   veraPDF 1.30.2 probe series).
+        // 7.2-30/-31/-32/-34 moved to PdfUaImplemented (Batch C1 — UaMarkedContentLangRule: /Span
+        //   BDC with /ActualText, /Alt, /E, and text-show operators require determinable language;
+        //   gContainsCatalogLang short-circuit; content-stream BMC/BDC/EMC stack + inline-dict
+        //   property parser added to ContentStreamUsage; veraPDF 1.30.2 probe confirmed).
+        // 7.1-1/-2/-3 remain deferred (Batch C1 assessment — see PdfUaDeferredNote switch above).
 
         _ => "structure-tree walker",
     };

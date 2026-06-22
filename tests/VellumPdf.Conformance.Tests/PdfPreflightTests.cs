@@ -10110,4 +10110,269 @@ public sealed class PdfPreflightTests
         Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.5-2");
     }
 
+    // ── §7.2-30/31/32/34 (UaMarkedContentLangRule) ───────────────────────────────────────────────
+
+    // Builds a UA-1 PDF with the given content stream on the first page.
+    // When lang=true the catalog has /Lang (en-US) — gContainsCatalogLang triggers the short-circuit.
+    // When lang=false the catalog has no /Lang — per-MC checks run.
+    private static byte[] BuildUaPdfWithContent(string content, bool lang = true)
+    {
+        var catalogLangEntry = lang ? "/Lang (en-US)" : string.Empty;
+        return AssemblePdf(
+        [
+            new($"<< /Type /Catalog /Pages 2 0 R /MarkInfo << /Marked true >> {catalogLangEntry} "
+                + "/ViewerPreferences << /DisplayDocTitle true >> /StructTreeRoot 4 0 R >>"),
+            _pagesObj,
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 5 0 R >>"),
+            new("<< /Type /StructTreeRoot >>"),
+            new(string.Empty, Encoding.ASCII.GetBytes(content)),
+        ],
+        metadataOverride: UaXmpBytes());
+    }
+
+    /// <summary>
+    /// §7.2-34 FP guard: catalog has /Lang (en-US), so gContainsCatalogLang == true.
+    /// Text shows inside a /P BDC with no /Lang: rule must NOT fire (short-circuit).
+    /// </summary>
+    [Fact]
+    public void UaMcTextNoLang_WithCatalogLang_NoFire()
+    {
+        var bytes = BuildUaPdfWithContent("/P << /MCID 0 >> BDC BT (hello) Tj ET EMC", lang: true);
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-34");
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-30-31-32-34");
+    }
+
+    /// <summary>
+    /// §7.2-34 VIOLATION: catalog has no /Lang, text shows inside a /P BDC with no /Lang.
+    /// Rule fires 7.2-34.
+    /// Cross-validated against veraPDF 1.30.2: pdfua1-mc-text-no-lang oracle fixture.
+    /// </summary>
+    [Fact]
+    public void UaMcTextNoLang_NoCatalogLang_Fires7234()
+    {
+        var bytes = BuildUaPdfWithContent("/P << /MCID 0 >> BDC BT (hello) Tj ET EMC", lang: false);
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-34");
+    }
+
+    /// <summary>
+    /// §7.2-34 FP guard: catalog has no /Lang, but text show is inside a BDC with /Lang.
+    /// Rule must NOT fire 7.2-34 (DirectLang is present).
+    /// </summary>
+    [Fact]
+    public void UaMcTextWithBdcLang_NoCatalogLang_NoFire7234()
+    {
+        var bytes = BuildUaPdfWithContent(
+            "/Span << /MCID 0 /Lang (en-US) >> BDC BT (hello) Tj ET EMC", lang: false);
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-34");
+    }
+
+    /// <summary>
+    /// §7.2-34 FP guard: catalog has no /Lang, text show is inside a nested BDC whose ancestor
+    /// has /Lang (inherited lang). Rule must NOT fire 7.2-34 (InheritedLang is present).
+    /// </summary>
+    [Fact]
+    public void UaMcTextWithInheritedLang_NoCatalogLang_NoFire7234()
+    {
+        // Outer BDC has /Lang (en-US), inner BDC (Span) has no /Lang — lang is inherited.
+        var bytes = BuildUaPdfWithContent(
+            "/P << /MCID 0 /Lang (en-US) >> BDC /Span << /MCID 1 >> BDC BT (hello) Tj ET EMC EMC",
+            lang: false);
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-34");
+    }
+
+    /// <summary>
+    /// §7.2-30 VIOLATION: catalog has no /Lang, /Span BDC has /ActualText and no /Lang.
+    /// Rule fires the specific 7.2-30 clause id.
+    /// Cross-validated against veraPDF 1.30.2: pdfua1-mc-span-actualtext-no-lang oracle fixture.
+    /// </summary>
+    [Fact]
+    public void UaMcSpanActualTextNoLang_Fires7230()
+    {
+        var bytes = BuildUaPdfWithContent(
+            "/Span << /MCID 0 /ActualText (hello) >> BDC BT (A) Tj ET EMC", lang: false);
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-30");
+    }
+
+    /// <summary>
+    /// §7.2-30 FP guard: catalog has no /Lang but /Span BDC has /ActualText AND /Lang.
+    /// Rule must NOT fire 7.2-30.
+    /// </summary>
+    [Fact]
+    public void UaMcSpanActualTextWithLang_NoFire7230()
+    {
+        var bytes = BuildUaPdfWithContent(
+            "/Span << /MCID 0 /ActualText (hello) /Lang (en-US) >> BDC BT (A) Tj ET EMC", lang: false);
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-30");
+    }
+
+    /// <summary>
+    /// §7.2-31 VIOLATION: /Span BDC with /Alt and no /Lang, no catalog /Lang.
+    /// Rule fires 7.2-31.
+    /// </summary>
+    [Fact]
+    public void UaMcSpanAltNoLang_Fires7231()
+    {
+        var bytes = BuildUaPdfWithContent(
+            "/Span << /MCID 0 /Alt (desc) >> BDC BT (A) Tj ET EMC", lang: false);
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-31");
+    }
+
+    /// <summary>
+    /// §7.2-32 VIOLATION: /Span BDC with /E and no /Lang, no catalog /Lang.
+    /// Rule fires 7.2-32.
+    /// </summary>
+    [Fact]
+    public void UaMcSpanExpansionNoLang_Fires7232()
+    {
+        var bytes = BuildUaPdfWithContent(
+            "/Span << /MCID 0 /E (expansion) >> BDC BT (A) Tj ET EMC", lang: false);
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-32");
+    }
+
+    /// <summary>
+    /// §7.2-30 FP guard: BMC (not BDC) with tag /Span — no property dict, so no /ActualText
+    /// is extractable. Rule must NOT fire 7.2-30 even with no catalog /Lang.
+    /// </summary>
+    [Fact]
+    public void UaMcBmcSpan_NoFire7230()
+    {
+        var bytes = BuildUaPdfWithContent(
+            "/Span BMC BT (A) Tj ET EMC", lang: false);
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-30");
+    }
+
+    /// <summary>
+    /// §7.2-30/34 FP guard: a non-Span BDC with /ActualText and no /Lang must NOT fire 7.2-30.
+    /// (7.2-34 may fire since no BDC /Lang and no catalog /Lang, but not 7.2-30.)
+    /// </summary>
+    [Fact]
+    public void UaMcNonSpanActualText_NoFire7230()
+    {
+        // /P BDC (not /Span) with /ActualText — 7.2-30 scoped to /Span only
+        var bytes = BuildUaPdfWithContent(
+            "/P << /MCID 0 /ActualText (hello) >> BDC BT (A) Tj ET EMC", lang: false);
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-30");
+    }
+
+    // Builds a UA-1 PDF with no catalog /Lang, a proper ParentTree mapping MCID 0 → P struct elem,
+    // and /Lang (en-US) on the P struct elem.  Used to test the MCID→struct-element→/Lang
+    // resolution path (the FP fix for 7.2-34/30/31/32).
+    // Objects: 1=Catalog, 2=Pages, 3=Page, 4=StructTreeRoot, 5=Document-elem,
+    //          6=ParentTree, 7=content, 8=P-elem, (9=XMP added by AssemblePdf).
+    private static byte[] BuildUaPdfWithStructElemLang(string contentStream, string structElemType = "P")
+    {
+        var content = Encoding.ASCII.GetBytes(contentStream);
+        return AssemblePdf(
+        [
+            // 1: Catalog — NO catalog /Lang so the per-MC checks run
+            new("<< /Type /Catalog /Pages 2 0 R /MarkInfo << /Marked true >>"
+                + " /ViewerPreferences << /DisplayDocTitle true >> /StructTreeRoot 4 0 R >>"),
+            // 2: Pages
+            _pagesObj,
+            // 3: Page — /StructParents 0 links this page to the ParentTree entry at key 0
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792]"
+                + " /StructParents 0 /Contents 7 0 R >>"),
+            // 4: StructTreeRoot — /K 5 0 R = Document elem; /ParentTree 6 0 R
+            new("<< /Type /StructTreeRoot /K 5 0 R /ParentTree 6 0 R >>"),
+            // 5: Document StructElem — parent of the leaf P elem
+            new("<< /Type /StructElem /S /Document /K [8 0 R] >>"),
+            // 6: ParentTree — key 0 (= page /StructParents 0) maps to array [8 0 R] (MCID 0 → P elem)
+            new("<< /Nums [0 [8 0 R]] >>"),
+            // 7: Content stream
+            new(string.Empty, content),
+            // 8: P StructElem — has /Lang (en-US); this is what resolves the language
+            new($"<< /Type /StructElem /S /{structElemType} /Lang (en-US) /P 5 0 R /Pg 3 0 R >>"),
+        ],
+        metadataOverride: UaXmpBytes());
+    }
+
+    /// <summary>
+    /// §7.2-34 REGRESSION (FP fix): catalog has no /Lang, text show inside /P BDC with MCID 0,
+    /// but the P struct element (reached via ParentTree[page/StructParents=0][MCID=0]) has /Lang
+    /// (en-US). veraPDF does NOT fire 7.2-34. Fixed rule must NOT fire 7.2-34.
+    ///
+    /// This is the confirmed false positive: pre-fix the rule ignored struct-elem /Lang and fired;
+    /// post-fix it resolves MCID→ParentTree→struct-elem→/Lang and is silent.
+    ///
+    /// Cross-validated against veraPDF 1.30.2: struct-elem /Lang, no catalog /Lang → no 7.2-34
+    /// (only 7.2-33 XMP fires, which is unrelated to this rule).
+    /// </summary>
+    [Fact]
+    public void UaMcTextStructElemLang_NoCatalogLang_NoFire7234()
+    {
+        var bytes = BuildUaPdfWithStructElemLang("/P << /MCID 0 >> BDC BT (hello) Tj ET EMC");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-34");
+    }
+
+    /// <summary>
+    /// §7.2-30 REGRESSION (FP fix): catalog has no /Lang, /Span BDC with /ActualText and MCID 0,
+    /// but the Span struct element has /Lang (en-US). veraPDF does NOT fire 7.2-30.
+    /// Fixed rule must NOT fire 7.2-30.
+    ///
+    /// Cross-validated against veraPDF 1.30.2: struct-elem /Lang → no 7.2-30.
+    /// </summary>
+    [Fact]
+    public void UaMcSpanActualTextStructElemLang_NoCatalogLang_NoFire7230()
+    {
+        var bytes = BuildUaPdfWithStructElemLang(
+            "/Span << /MCID 0 /ActualText (hi) >> BDC BT (A) Tj ET EMC", structElemType: "Span");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-30");
+    }
+
+    /// <summary>
+    /// §7.2-31 REGRESSION (FP fix): catalog has no /Lang, /Span BDC with /Alt and MCID 0,
+    /// but the Span struct element has /Lang (en-US). Fixed rule must NOT fire 7.2-31.
+    ///
+    /// Cross-validated against veraPDF 1.30.2: struct-elem /Lang → no 7.2-31.
+    /// </summary>
+    [Fact]
+    public void UaMcSpanAltStructElemLang_NoCatalogLang_NoFire7231()
+    {
+        var bytes = BuildUaPdfWithStructElemLang(
+            "/Span << /MCID 0 /Alt (desc) >> BDC BT (A) Tj ET EMC", structElemType: "Span");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-31");
+    }
+
+    /// <summary>
+    /// §7.2-32 REGRESSION (FP fix): catalog has no /Lang, /Span BDC with /E and MCID 0,
+    /// but the Span struct element has /Lang (en-US). Fixed rule must NOT fire 7.2-32.
+    ///
+    /// Cross-validated against veraPDF 1.30.2: struct-elem /Lang → no 7.2-32.
+    /// </summary>
+    [Fact]
+    public void UaMcSpanExpansionStructElemLang_NoCatalogLang_NoFire7232()
+    {
+        var bytes = BuildUaPdfWithStructElemLang(
+            "/Span << /MCID 0 /E (expansion) >> BDC BT (A) Tj ET EMC", structElemType: "Span");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-32");
+    }
+
+    /// <summary>
+    /// §7.2-34 FP guard: struct-elem has /Lang but MCID doesn't match (MCID=1 in BDC,
+    /// ParentTree only has MCID=0 mapped). Rule must still fire 7.2-34 — the struct-elem
+    /// lookup fails (MCID 1 out of range for a 1-element array), so no lang is found.
+    /// </summary>
+    [Fact]
+    public void UaMcTextMcidMismatch_Fires7234()
+    {
+        // MCID 1 in the BDC, but the ParentTree only maps MCID 0 → struct elem
+        var bytes = BuildUaPdfWithStructElemLang("/P << /MCID 1 >> BDC BT (hello) Tj ET EMC");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-34");
+    }
+
 }

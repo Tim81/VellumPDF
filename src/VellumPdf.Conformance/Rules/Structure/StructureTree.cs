@@ -155,10 +155,23 @@ internal sealed class StructureTree
     // Built lazily from the StructTreeRoot's /ParentTree NUMBER tree. Only entries whose
     // value is a SINGLE StructElem dict (not an array of MCID→elem pairs) are indexed here —
     // those are annotation/OBJR parents (ISO 32000-1 §14.7.4.4). A /Nums value that is an
-    // array is a page's MCID map; those are ignored for this batch.
+    // array is a page's MCID map; those are stored in _mcidParentMap instead.
     // The index is null when the StructTreeRoot has no /ParentTree, and empty when the tree
     // exists but contains no single-elem values. Lookup by key returns null for missing keys.
     private readonly Dictionary<int, StructureTreeNode>? _parentTreeIndex;
+
+    // MCID parent map: page /StructParents integer key → MCID-indexed PdfArray of struct elem refs.
+    // Built alongside _parentTreeIndex from the same number-tree walk. Entry [structParentsKey]
+    // is the array whose element at index [mcid] is an indirect ref to the owning struct elem.
+    // Null when there is no /ParentTree.
+    private readonly Dictionary<int, PdfArray>? _mcidParentMap;
+
+    // dict-identity→node map used by StructNodeForMcid; built during construction when
+    // the ParentTree is present so we can resolve MCID-array entries to walked nodes.
+    private readonly Dictionary<PdfDictionary, StructureTreeNode>? _dictToNode;
+
+    private static readonly PdfName _structParents = new("StructParents");
+    private static readonly PdfName _lang = new("Lang");
 
     /// <summary>
     /// Returns the <see cref="StructureTreeNode"/> whose StructElem is the parent of the
@@ -185,6 +198,57 @@ internal sealed class StructureTree
             return null;
         _parentTreeIndex.TryGetValue(structParentKey, out var node);
         return node;
+    }
+
+    /// <summary>
+    /// Returns the <see cref="StructureTreeNode"/> that owns the marked-content sequence
+    /// identified by <paramref name="mcid"/> on the given page, or <see langword="null"/>
+    /// when the mapping cannot be resolved.
+    ///
+    /// <para>Resolution: page /StructParents → /ParentTree[structParentsKey] → array[mcid]
+    /// → indirect ref → matched StructureTreeNode (by dict identity).</para>
+    ///
+    /// <para>Null is the FP-safe result: treat as "unknown ownership", not as "no lang".</para>
+    /// </summary>
+    public StructureTreeNode? StructNodeForMcid(Rules.PreflightContext context, PdfDictionary pageDict, int mcid)
+    {
+        if (_mcidParentMap is null || _dictToNode is null)
+            return null;
+
+        var structParentsObj = context.Resolve(pageDict.Get(_structParents));
+        if (structParentsObj is not PdfInteger structParentsInt)
+            return null;
+        var structParentsKey = (int)structParentsInt.Value;
+
+        if (!_mcidParentMap.TryGetValue(structParentsKey, out var mcidArray))
+            return null;
+
+        if (mcid < 0 || mcid >= mcidArray.Count)
+            return null;
+
+        var elemRef = context.Resolve(mcidArray[mcid]);
+        if (elemRef is not PdfDictionary elemDict)
+            return null;
+
+        _dictToNode.TryGetValue(elemDict, out var node);
+        return node;
+    }
+
+    /// <summary>
+    /// Returns <see langword="true"/> when <paramref name="node"/> or any of its ancestors
+    /// carries a /Lang key (any value — veraPDF treats /Lang () as containsLang=true).
+    /// Returns <see langword="false"/> when <paramref name="node"/> is null.
+    /// </summary>
+    public static bool HasLangInHierarchy(StructureTreeNode? node)
+    {
+        var current = node;
+        while (current is not null)
+        {
+            if (current.Dict.Get(_lang) is not null)
+                return true;
+            current = current.Parent;
+        }
+        return false;
     }
 
     private StructureTree(Rules.PreflightContext context)
@@ -242,21 +306,24 @@ internal sealed class StructureTree
             foreach (var node in allNodes)
                 dictToNode.TryAdd(node.Dict, node);
 
+            _dictToNode = dictToNode;
             _parentTreeIndex = new Dictionary<int, StructureTreeNode>();
-            WalkParentTree(context, parentTreeDict, _parentTreeIndex, dictToNode, depth: 0);
+            _mcidParentMap = new Dictionary<int, PdfArray>();
+            WalkParentTree(context, parentTreeDict, _parentTreeIndex, _mcidParentMap, dictToNode, depth: 0);
         }
     }
 
     // ── ParentTree walker ────────────────────────────────────────────────────────────────────────
 
     // Recursively walks a NUMBER tree node (the StructTreeRoot's /ParentTree or a /Kids sub-node).
-    // For each /Nums entry whose value is a SINGLE StructElem dict (not an array), resolves the
-    // dict to a StructureTreeNode and records key→node in the index.
-    // /Nums entries whose values are arrays are page MCID maps — ignored for annotation lookup.
+    // For each /Nums entry:
+    //   - Single StructElem dict value → recorded in annotIndex (annotation/OBJR parents).
+    //   - Array value → recorded in mcidParentMap (page MCID→elem maps, ISO 32000-1 §14.7.4.4).
     private static void WalkParentTree(
         Rules.PreflightContext context,
         PdfDictionary node,
-        Dictionary<int, StructureTreeNode> index,
+        Dictionary<int, StructureTreeNode> annotIndex,
+        Dictionary<int, PdfArray> mcidParentMap,
         Dictionary<PdfDictionary, StructureTreeNode> dictToNode,
         int depth)
     {
@@ -265,7 +332,7 @@ internal sealed class StructureTree
 
         // Process /Nums entries on this node.
         if (context.Resolve(node.Get(_nums)) is PdfArray nums)
-            IndexNumsArray(context, nums, index, dictToNode);
+            IndexNumsArray(context, nums, annotIndex, mcidParentMap, dictToNode);
 
         // Recurse into /Kids sub-nodes.
         if (context.Resolve(node.Get(_kids)) is PdfArray kids)
@@ -273,18 +340,19 @@ internal sealed class StructureTree
             for (var i = 0; i < kids.Count; i++)
             {
                 if (context.Resolve(kids[i]) is PdfDictionary child)
-                    WalkParentTree(context, child, index, dictToNode, depth + 1);
+                    WalkParentTree(context, child, annotIndex, mcidParentMap, dictToNode, depth + 1);
             }
         }
     }
 
     // Processes one /Nums array: [key1 val1 key2 val2 …]. Each pair is: integer key → value.
-    // When the value resolves to a single StructElem dict (not an array), look it up in dictToNode
-    // and index it. When the value is an array it is a page's MCID→elem map — skip it.
+    // Single StructElem dict values → annotIndex (annotation parents).
+    // Array values → mcidParentMap (page MCID→elem maps).
     private static void IndexNumsArray(
         Rules.PreflightContext context,
         PdfArray nums,
-        Dictionary<int, StructureTreeNode> index,
+        Dictionary<int, StructureTreeNode> annotIndex,
+        Dictionary<int, PdfArray> mcidParentMap,
         Dictionary<PdfDictionary, StructureTreeNode> dictToNode)
     {
         // /Nums is always an even-length [key val key val …] sequence.
@@ -295,16 +363,23 @@ internal sealed class StructureTree
                 continue; // malformed key — skip
             var key = (int)keyInt.Value;
 
+            // The raw (unresolved) value is used for arrays — we want the array object itself,
+            // not the elements; resolve only the top level.
             var valObj = context.Resolve(nums[i + 1]);
-            if (valObj is PdfArray)
-                continue; // page MCID map — not an annotation parent
+
+            if (valObj is PdfArray mcidArr)
+            {
+                // Page MCID map: array[mcid] = indirect ref to owning struct elem.
+                mcidParentMap.TryAdd(key, mcidArr);
+                continue;
+            }
 
             if (valObj is not PdfDictionary valDict)
                 continue; // unexpected value type — skip defensively
 
             // Match the dict to a walked node by identity.
             if (dictToNode.TryGetValue(valDict, out var matched))
-                index.TryAdd(key, matched);
+                annotIndex.TryAdd(key, matched);
             // If the dict is not in dictToNode (e.g. it was skipped during the walk due to
             // cycles or malformed structure) we simply do not index it. A lookup will return
             // null, which is the FP-safe result (caller treats as "unknown").
