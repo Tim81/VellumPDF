@@ -6,6 +6,37 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.7.2] - 2026-06-22
+
+### Added
+
+- **`VellumPdf.Conformance` — digital signatures, JPEG2000, and colour/metadata checks.** Sixteen
+  further PDF/A-2b/2u/2a preflight checks, taking build-verified parity to PDF/A-2b **90.3%**, 2u
+  **90.4%**, 2a **87.3%** (from ~80%). All are cross-validated against veraPDF 1.30.2, and a
+  whole-batch adversarial sweep against real fixtures (a genuine JPEG2000 image, B-B/B-LT/B-LTA
+  signed PDFs, conformant writer output) found no over-rejections.
+  - **Digital signatures** via a hand-rolled, zero-dependency CMS/ASN.1 reader (no
+    `System.Security.Cryptography.Pkcs`): the signature must include an X.509 certificate
+    (§6.4.3-2) and exactly one signer (§6.4.3-3); when `/Perms /DocMDP` is present the signature
+    reference dictionary must not carry `DigestLocation`/`DigestMethod`/`DigestValue` (§6.1.12-2);
+    and the `/ByteRange` coverage check (§6.4.3-1).
+  - **JPEG2000** (`JPXDecode`): colour-channel count, colour-space-specification APPROX field,
+    `colr` METH value, no CIEJab enumerated colour space, and bit-depth constraints (§6.2.8.3-1…5).
+  - **Colour:** ICCBased profile device-class/colour-space/version validity (§6.2.4.2-1); overprint
+    mode must be 0 when an ICCBased-CMYK space is used with overprinting, via a content-stream
+    graphics-state interpreter (§6.2.4.2-2); same-named Separation colourants must share
+    tintTransform and alternateSpace (§6.2.4.4-2).
+  - **Fonts / metadata / structure:** embedded-CMap WMode consistency and `usecmap`
+    predefined-only (§6.2.11.3.3-2/-3); font/colourant/structure-type names must be valid UTF-8
+    (§6.1.8-1); XMP extension-schema property value-type match (§6.6.2.3.1-2).
+
+### Fixed
+
+- **`VellumPdf.Conformance` — two false positives on signed PDFs.** An invisible signature widget
+  (a `/Widget` with a degenerate, zero-area `/Rect` and no `/AP`) is no longer flagged for lacking a
+  normal appearance (§6.3); and a signature dictionary's `/Contents` (the CMS placeholder, which can
+  exceed 32767 bytes) is no longer flagged by the string-length limit (§6.1.13). Both match veraPDF.
+
 ## [1.7.1] - 2026-06-21
 
 ### Added
@@ -302,7 +333,8 @@ few small additions. No public API was removed.
   headers, and no unbounded allocations driven by attacker-controlled length
   fields.
 
-[Unreleased]: https://github.com/Tim81/VellumPDF/compare/v1.7.1...HEAD
+[Unreleased]: https://github.com/Tim81/VellumPDF/compare/v1.7.2...HEAD
+[1.7.2]: https://github.com/Tim81/VellumPDF/releases/tag/v1.7.2
 [1.7.1]: https://github.com/Tim81/VellumPDF/releases/tag/v1.7.1
 [1.7.0]: https://github.com/Tim81/VellumPDF/releases/tag/v1.7.0
 [1.6.0]: https://github.com/Tim81/VellumPDF/releases/tag/v1.6.0
