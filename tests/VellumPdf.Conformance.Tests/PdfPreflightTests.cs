@@ -7163,4 +7163,101 @@ public sealed class PdfPreflightTests
         Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.21.7-2");
     }
 
+    // ── Batch A5c — §7.21.4.1-2 glyph presence (Tr-3-exempt) unit tests ─────────────────────────
+
+    /// <summary>
+    /// §7.21.4.1-2 positive control (UaGlyphPresenceRule): a document that shows GID 0xEA60 (60000,
+    /// beyond the embedded program's glyph count) with a VISIBLE rendering mode (Tr 0) must fire
+    /// 7.21.4.1-2. Cross-validated against veraPDF 1.30.2 via the oracle fixture
+    /// <c>pdfua1-glyph-not-present</c>: veraPDF fires clause 7.21.4.1-2 (exit 1).
+    /// </summary>
+    [Fact]
+    public void UaOutOfRangeGlyphVisible_Fires7214121()
+    {
+        var bytes = OracleCorpus.Ua1OutOfRangeGlyphVisible();
+        var result = PdfPreflight.Validate(bytes, Conformance.PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.21.4.1-2");
+    }
+
+    /// <summary>
+    /// §7.21.4.1-2 FP-safety guard — Tr-3 exemption (UaGlyphPresenceRule): the SAME out-of-range
+    /// GID (0xEA60) drawn ONLY with text rendering mode 3 (invisible text) must NOT fire 7.21.4.1-2.
+    /// veraPDF 1.30.2 does not fire 7.21.4.1-2 for this document (renderingMode == 3 exemption).
+    /// Cross-validated via the oracle fixture <c>pdfua1-glyph-not-present-invisible</c>.
+    /// </summary>
+    [Fact]
+    public void UaOutOfRangeGlyphInvisible_DoesNotFire7214121()
+    {
+        var bytes = OracleCorpus.Ua1OutOfRangeGlyphInvisible();
+        var result = PdfPreflight.Validate(bytes, Conformance.PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.21.4.1-2");
+    }
+
+    /// <summary>
+    /// §7.21.4.1-2 FP-safety guard — in-range glyphs (UaGlyphPresenceRule): the standard UA-1
+    /// tagged baseline draws only glyphs present in the embedded subset. The rule must NOT fire.
+    /// Cross-validated against veraPDF 1.30.2: clause 7.21.4.1-2 is absent from failures (exit 0).
+    /// </summary>
+    [Fact]
+    public void UaInRangeGlyphsBaseline_DoesNotFire7214121()
+    {
+        var bytes = OracleCorpus.Ua1TaggedWithEmbeddedFont();
+        var result = PdfPreflight.Validate(bytes, Conformance.PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.21.4.1-2");
+    }
+
+    /// <summary>
+    /// §7.21.4.1-2 FP-safety guard — unknown rendering mode (UaGlyphPresenceRule): when the
+    /// rendering mode cannot be determined (RenderingMode == -1 from an indeterminate Tr operand)
+    /// the rule must NOT fire. A rendering mode of -1 maps to "can't determine" (isGlyphPresent ==
+    /// null direction), which the veraPDF predicate treats as compliant.
+    /// </summary>
+    [Fact]
+    public void UaUnknownRenderingMode_DoesNotFire7214121()
+    {
+        // Build a UA-1 document where Tr is set to an indeterminate value (a name operand instead
+        // of an integer, which ContentStreamUsage tracks as RenderingMode -1). The glyph is
+        // out-of-range (GID 60000), but since the rendering mode is unknown, the rule must not fire.
+        var bytes = Ua1OutOfRangeGlyphUnknownTr();
+        var result = PdfPreflight.Validate(bytes, Conformance.PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.21.4.1-2");
+    }
+
+    // Builds a UA-1 document where an out-of-range glyph (GID 0xEA60) is shown after setting
+    // Tr to a name operand (/foo Tr), which ContentStreamUsage parses as RenderingMode == -1.
+    private static byte[] Ua1OutOfRangeGlyphUnknownTr()
+    {
+        var baseline = OracleCorpus.Ua1TaggedWithEmbeddedFont();
+        using var reader = VellumPdf.Reader.PdfReader.Open(baseline);
+        var pagesRef = (VellumPdf.Core.PdfIndirectReference)reader.Catalog.Get(new VellumPdf.Core.PdfName("Pages"))!;
+        var pages = (VellumPdf.Core.PdfDictionary)reader.Resolve(pagesRef.ObjectNumber)!;
+        var kidsObj = pages.Get(new VellumPdf.Core.PdfName("Kids"));
+        var kids = kidsObj is VellumPdf.Core.PdfIndirectReference kr
+            ? (VellumPdf.Core.PdfArray)reader.Resolve(kr.ObjectNumber)!
+            : (VellumPdf.Core.PdfArray)kidsObj!;
+        var pageRef = (VellumPdf.Core.PdfIndirectReference)kids[0];
+        var page = (VellumPdf.Core.PdfDictionary)reader.Resolve(pageRef.ObjectNumber)!;
+        var resources = (VellumPdf.Core.PdfDictionary)reader.ResolveValue(page.Get(new VellumPdf.Core.PdfName("Resources"))!)!;
+        var fonts = (VellumPdf.Core.PdfDictionary)reader.ResolveValue(resources.Get(VellumPdf.Core.PdfName.Font)!)!;
+        var fontName = fonts.Entries.First().Key.Value;
+
+        var contentNum = reader.Size;
+        var newPage = ClonePageDict(page);
+        newPage.Set(new VellumPdf.Core.PdfName("Contents"),
+            new VellumPdf.Core.PdfArray([page.Get(new VellumPdf.Core.PdfName("Contents"))!, new VellumPdf.Core.PdfIndirectReference(contentNum)]));
+
+        // `/foo Tr` — a name operand for Tr, which ContentStreamUsage resolves to RenderingMode -1 (unknown).
+        var content = new VellumPdf.Core.PdfStream(
+            System.Text.Encoding.ASCII.GetBytes($"BT /foo Tr /{fontName} 12 Tf 72 600 Td <EA60> Tj ET"));
+        return reader.AppendRevision([(pageRef.ObjectNumber, newPage), (contentNum, content)]);
+    }
+
+    private static VellumPdf.Core.PdfDictionary ClonePageDict(VellumPdf.Core.PdfDictionary d)
+    {
+        var clone = new VellumPdf.Core.PdfDictionary();
+        foreach (var e in d.Entries)
+            clone.Set(e.Key, e.Value);
+        return clone;
+    }
+
 }

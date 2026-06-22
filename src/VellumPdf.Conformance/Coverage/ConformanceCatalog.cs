@@ -255,6 +255,8 @@ public static class ConformanceCatalog
         // Batch A5b — glyph-level clauses (Identity-H/V CIDFontType2-Identity scope):
         "7.21.8-1",            // UaNotdefGlyphRule: shown code 0x0000 == .notdef forbidden
         "7.21.7-2",            // UaToUnicodeForbiddenRule: shown glyph mapped to U+0000/FEFF/FFFE
+        // Batch A5c — glyph presence (Identity-H/V CIDFontType2-Identity, Tr-3-exempt):
+        "7.21.4.1-2",          // UaGlyphPresenceRule: shown visible glyph must be in the embedded program
     };
 
     // PDF/UA-1 checks the rules cover only partially (the common case is detected; some conditions
@@ -303,10 +305,11 @@ public static class ConformanceCatalog
 
         // §7.21 font deferred notes — Batch A3 assessment:
         // 7.21.4.1-1 moved to PdfUaImplemented (Batch A5a — UaFontEmbeddingRule, rendering-mode-scoped).
-        "7.21.4.1-2" or "7.21.5-1" =>
-            "glyph presence and width checks: only the Identity-H CIDFontType2 path is currently covered "
-            + "by the PDF/A-2 GlyphPresenceRule; full UA-1 coverage requires the Tr 3 exemption and "
-            + "coverage of simple fonts (which need encoding+cmap resolution) — deferred to avoid FP",
+        // 7.21.4.1-2 moved to PdfUaImplemented (Batch A5c — UaGlyphPresenceRule, Tr-3-exempt).
+        "7.21.5-1" =>
+            "glyph width checks: only the Identity-H CIDFontType2 path is currently covered "
+            + "by the PDF/A-2 GlyphPresenceRule; a UA-1 specific rule with the Tr 3 exemption "
+            + "is deferred to avoid FP until the scope is fully proven",
         // 7.21.3.1-1 moved to PdfUaPartial (Batch A4 — UaCidSystemInfoRule).
         // 7.21.3.3-1/-2/-3 moved to PdfUaImplemented (Batch A4 — UaCMapRule).
         // 7.21.4.2-1 moved to PdfUaImplemented (Batch A4 — UaType1CharSetRule).
@@ -324,6 +327,7 @@ public static class ConformanceCatalog
             + "Unicode-derivation model is fully understood for all font types)",
         // 7.21.7-2 moved to PdfUaImplemented (Batch A5b — UaToUnicodeForbiddenRule, shown-glyph-scoped).
         // 7.21.8-1 moved to PdfUaImplemented (Batch A5b — UaNotdefGlyphRule, Identity-H scope).
+        // 7.21.4.1-2 moved to PdfUaImplemented (Batch A5c — UaGlyphPresenceRule, Tr-3-exempt).
 
         _ => "structure-tree walker",
     };
