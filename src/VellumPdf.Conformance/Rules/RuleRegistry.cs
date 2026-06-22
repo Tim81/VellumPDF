@@ -158,6 +158,9 @@ internal static class RuleRegistry
         new UaCidSystemInfoRule(),
         // Batch A5a — font clause §7.21.4.1-1 (rendering-mode-scoped embedding):
         new UaFontEmbeddingRule(),
+        // Batch A5b — font clauses §7.21.8-1 (.notdef) and §7.21.7-2 (forbidden ToUnicode values):
+        new UaNotdefGlyphRule(),
+        new UaToUnicodeForbiddenRule(),
     ];
 
     /// <summary>

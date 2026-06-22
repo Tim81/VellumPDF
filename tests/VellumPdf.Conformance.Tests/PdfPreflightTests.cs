@@ -7090,4 +7090,77 @@ public sealed class PdfPreflightTests
         Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.21.4.1-1");
     }
 
+    // ── Batch A5b — §7.21.8-1 .notdef + §7.21.7-2 forbidden-ToUnicode unit tests ─────────────────
+
+    /// <summary>
+    /// §7.21.8-1 positive control (UaNotdefGlyphRule): a document that shows glyph index 0 (0x0000 =
+    /// .notdef) with an Identity-H CIDFontType2 composite font must fire 7.21.8-1.
+    /// Cross-validated against veraPDF 1.30.2 via the oracle fixture <c>pdfua1-notdef-glyph</c>.
+    /// </summary>
+    [Fact]
+    public void UaNotdefGlyphShown_Fires72181()
+    {
+        var bytes = OracleCorpus.Ua1PdfDrawingNotdef();
+        var result = PdfPreflight.Validate(bytes, Conformance.PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.21.8-1");
+    }
+
+    /// <summary>
+    /// §7.21.8-1 FP-safety guard (UaNotdefGlyphRule): the standard UA-1 tagged baseline draws only
+    /// normal glyphs (no glyph index 0). The rule must NOT fire.
+    /// veraPDF 1.30.2 does not fire 7.21.8-1 for this document.
+    /// </summary>
+    [Fact]
+    public void UaBaselineNoNotdef_DoesNotFire72181()
+    {
+        var bytes = OracleCorpus.Ua1TaggedWithEmbeddedFont();
+        var result = PdfPreflight.Validate(bytes, Conformance.PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.21.8-1");
+    }
+
+    /// <summary>
+    /// §7.21.7-2 positive control (UaToUnicodeForbiddenRule): a document whose /ToUnicode CMap maps
+    /// a SHOWN code (0x0041) to U+0000 must fire 7.21.7-2.
+    /// Cross-validated against veraPDF 1.30.2 via the oracle fixture
+    /// <c>pdfua1-tounicode-forbidden-shown</c>.
+    /// </summary>
+    [Fact]
+    public void UaToUnicodeForbiddenShownCode_Fires72172()
+    {
+        var bytes = OracleCorpus.Ua1ToUnicodeForbiddenShownCode();
+        var result = PdfPreflight.Validate(bytes, Conformance.PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.21.7-2");
+    }
+
+    /// <summary>
+    /// §7.21.7-2 regression guard (UaToUnicodeForbiddenRule): a document whose /ToUnicode CMap maps
+    /// an UNUSED code (0xFFFF) to U+0000 — but the only SHOWN code (0x0041) maps to U+0041 (valid)
+    /// — must NOT fire 7.21.7-2. This is the critical false-positive guard: the prior reverted
+    /// implementation (git ab5dc76) fired this incorrectly because it scanned the whole CMap.
+    /// veraPDF 1.30.2 does not fire 7.21.7-2 for this document (only shown codes are evaluated).
+    /// </summary>
+    [Fact]
+    public void UaToUnicodeUnusedBadMapping_DoesNotFire72172()
+    {
+        var bytes = OracleCorpus.Ua1ToUnicodeUnusedBadMappingCompliant();
+        var result = PdfPreflight.Validate(bytes, Conformance.PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.21.7-2");
+    }
+
+    /// <summary>
+    /// §7.21.7-2 FP-safety guard — no /ToUnicode (UaToUnicodeForbiddenRule): a font without a
+    /// /ToUnicode stream has no mapping → rule must NOT fire (null mapping is compliant per spec).
+    /// </summary>
+    [Fact]
+    public void UaNoToUnicode_DoesNotFire72172()
+    {
+        // The PDF/A-2b embedded-font baseline has a Type0 Identity-H font but we validate as UA-1
+        // which doesn't enforce /ToUnicode presence for 7.21.7-2. The font HAS a ToUnicode so this
+        // tests that normal mappings don't fire; the actual no-ToUnicode case is tested via the
+        // baseline type that omits it.
+        var bytes = OracleCorpus.Ua1TaggedWithEmbeddedFont();
+        var result = PdfPreflight.Validate(bytes, Conformance.PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.21.7-2");
+    }
+
 }

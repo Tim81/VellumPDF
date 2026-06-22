@@ -912,6 +912,31 @@ public static class OracleCorpus
             // verdicts diverge for rule-gap reasons unrelated to §7.21.4.1-1. The unit tests verify
             // the specific absence of the §7.21.4.1-1 finding, matching the Batch A4 pattern used
             // for the Type1-CharSet-complete and CIDSet-complete FP-guards.
+
+            // ── Batch A5b — §7.21.8-1 .notdef + §7.21.7-2 forbidden-ToUnicode ──────────────────────
+
+            // §7.21.8-1 VIOLATION: appends a content stream that shows glyph index 0 (0x0000 = .notdef)
+            // with the existing Identity-H CIDFontType2 font. veraPDF fires 7.21.8-1 (.notdef
+            // referenced). In-process: UaNotdefGlyphRule must also fire.
+            // (The extra untagged content stream also triggers 7.1-3 in veraPDF; the fixture is
+            // ExpectedCompliant: false so any non-compliance satisfies the oracle.)
+            new OracleFixture("pdfua1-notdef-glyph",
+                Ua1PdfDrawingNotdef(),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.21.7-2 VIOLATION: the Type0 font's /ToUnicode maps a SHOWN code to U+0000. veraPDF
+            // fires 7.21.7-2. In-process: UaToUnicodeForbiddenRule must also fire.
+            // (The extra untagged content stream also triggers 7.1-3; fixture is non-compliant overall.)
+            new OracleFixture("pdfua1-tounicode-forbidden-shown",
+                Ua1ToUnicodeForbiddenShownCode(),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.21.7-2 REGRESSION GUARD: the Type0 font's /ToUnicode maps an UNUSED code (0xFFFF)
+            // to U+0000; the SHOWN code (0x0041) maps to U+0041 (valid). veraPDF must NOT fire
+            // 7.21.7-2 (only shown codes are checked). In-process: UaToUnicodeForbiddenRule must also
+            // NOT fire. Both verdicts diverge on unrelated rules (untagged content → 7.1-3 in veraPDF,
+            // which the in-process validator defers), so this is tested as a unit test only — see
+            // UaToUnicodeUnusedBadMapping_DoesNotFire72172() in PdfPreflightTests.cs.
         ];
     }
 
@@ -3331,5 +3356,115 @@ public static class OracleCorpus
     /// </summary>
     internal static byte[] Ua1EmbeddedSimpleFontVisibleDraw()
         => Ua1AddSimpleTrueType(flags: 32, encoding: new PdfName("WinAnsiEncoding"));
+
+    // ── Batch A5b — §7.21.8-1 .notdef + §7.21.7-2 forbidden-ToUnicode fixtures ─────────────────────
+
+    /// <summary>
+    /// §7.21.8-1 violation: appends a content stream to the UA-1 tagged baseline that shows glyph
+    /// index 0 (0x0000 = .notdef) using the existing Identity-H / CIDFontType2 font. veraPDF fires
+    /// clause 7.21.8-1 (.notdef referenced). The UA-1 baseline already has real glyphs shown by the
+    /// tagged text; this adds one extra show with the .notdef code.
+    /// </summary>
+    internal static byte[] Ua1PdfDrawingNotdef()
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var resources = (PdfDictionary)reader.ResolveValue(page.Get(new PdfName("Resources"))!)!;
+        var fonts = (PdfDictionary)reader.ResolveValue(resources.Get(PdfName.Font)!)!;
+        var fontName = fonts.Entries.First().Key.Value;
+
+        var contentNum = reader.Size;
+        var newPage = CloneDict(page);
+        newPage.Set(new PdfName("Contents"),
+            new PdfArray([page.Get(new PdfName("Contents"))!, new PdfIndirectReference(contentNum)]));
+        // Show glyph index 0 (0x0000 = .notdef) using the Identity-H font.
+        var content = new PdfStream(Encoding.ASCII.GetBytes($"BT /{fontName} 12 Tf 72 600 Td <0000> Tj ET"));
+        return reader.AppendRevision([(pageRef.ObjectNumber, newPage), (contentNum, content)]);
+    }
+
+    /// <summary>
+    /// §7.21.7-2 violation: the Type0 font's /ToUnicode CMap maps a SHOWN code (0x0041) to U+0000,
+    /// a forbidden value. The page content shows code 0x0041 using the existing Identity-H font;
+    /// veraPDF fires clause 7.21.7-2 (toUnicode maps to U+0000).
+    /// </summary>
+    internal static byte[] Ua1ToUnicodeForbiddenShownCode()
+        => Ua1WithCustomToUnicode(shownCode: 0x0041, shownCodeUnicode: " ", unusedCode: 0x0042, unusedCodeUnicode: "B");
+
+    /// <summary>
+    /// §7.21.7-2 compliant: the /ToUnicode CMap maps the SHOWN code (0x0041) to U+0041 (a valid
+    /// Unicode value). The page also has an UNUSED code entry (0xFFFF → U+0000), which is a forbidden
+    /// value but for an unused code — veraPDF does NOT fire 7.21.7-2 because only shown codes are checked.
+    /// This is the critical regression guard for the prior false positive (git ab5dc76).
+    /// </summary>
+    internal static byte[] Ua1ToUnicodeUnusedBadMappingCompliant()
+        => Ua1WithCustomToUnicode(shownCode: 0x0041, shownCodeUnicode: "A", unusedCode: 0xFFFF, unusedCodeUnicode: " ");
+
+    // Builds a UA-1 tagged baseline, finds the first Identity-H Type0 font, replaces its /ToUnicode
+    // with a custom CMap that:
+    //   - maps shownCode to shownCodeUnicode (the code that the injected content stream shows)
+    //   - maps unusedCode to unusedCodeUnicode (a code that is NOT shown)
+    // Then appends a content stream that shows only shownCode with the font.
+    private static byte[] Ua1WithCustomToUnicode(
+        int shownCode, string shownCodeUnicode, int unusedCode, string unusedCodeUnicode)
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var resources = (PdfDictionary)reader.ResolveValue(page.Get(new PdfName("Resources"))!)!;
+        var fonts = (PdfDictionary)reader.ResolveValue(resources.Get(PdfName.Font)!)!;
+        var type0Ref = (PdfIndirectReference)fonts.Entries.First().Value;
+        var type0 = (PdfDictionary)reader.Resolve(type0Ref.ObjectNumber)!;
+        var fontName = fonts.Entries.First().Key.Value;
+
+        // Build a minimal ToUnicode CMap with exactly two bfchar entries.
+        var toUnicodeCMap = BuildToUnicodeCMap(
+            [(shownCode, shownCodeUnicode), (unusedCode, unusedCodeUnicode)]);
+        var toUnicodeNum = reader.Size;
+        var toUnicodeStream = new PdfStream(Encoding.Latin1.GetBytes(toUnicodeCMap));
+
+        // Replace the Type0 font's /ToUnicode with our custom stream.
+        var newType0 = CloneDict(type0).Set(new PdfName("ToUnicode"), new PdfIndirectReference(toUnicodeNum));
+
+        // Append a content stream that shows only shownCode (2-byte big-endian) with the font.
+        var contentNum = reader.Size + 1;
+        var newPage = CloneDict(page);
+        newPage.Set(new PdfName("Contents"),
+            new PdfArray([page.Get(new PdfName("Contents"))!, new PdfIndirectReference(contentNum)]));
+        var content = new PdfStream(
+            Encoding.ASCII.GetBytes($"BT /{fontName} 12 Tf 72 580 Td <{shownCode:X4}> Tj ET"));
+
+        return reader.AppendRevision(
+            [(type0Ref.ObjectNumber, newType0),
+             (toUnicodeNum, toUnicodeStream),
+             (pageRef.ObjectNumber, newPage),
+             (contentNum, content)]);
+    }
+
+    // Builds a minimal ToUnicode CMap text with a beginbfchar section.
+    // Each entry is (srcCode, dstUnicode string). The destination is encoded as UTF-16BE hex.
+    private static string BuildToUnicodeCMap(IEnumerable<(int Code, string Unicode)> entries)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("/CIDInit /ProcSet findresource begin");
+        sb.AppendLine("12 dict begin");
+        sb.AppendLine("begincmap");
+        sb.AppendLine("/CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def");
+        sb.AppendLine("/CMapName /Adobe-Identity-UCS def");
+        sb.AppendLine("/CMapType 2 def");
+        var list = entries.ToList();
+        sb.AppendLine($"{list.Count} beginbfchar");
+        foreach (var (code, unicode) in list)
+        {
+            var destHex = string.Concat(Encoding.BigEndianUnicode.GetBytes(unicode).Select(b => b.ToString("X2")));
+            sb.AppendLine($"<{code:X4}> <{destHex}>");
+        }
+        sb.AppendLine("endbfchar");
+        sb.AppendLine("endcmap");
+        sb.AppendLine("CMapName currentdict /CMap defineresource pop");
+        sb.AppendLine("end");
+        sb.AppendLine("end");
+        return sb.ToString();
+    }
 
 }
