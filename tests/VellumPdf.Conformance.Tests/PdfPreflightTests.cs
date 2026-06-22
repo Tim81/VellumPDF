@@ -7033,4 +7033,61 @@ public sealed class PdfPreflightTests
         var result = PdfPreflight.Validate(bytes, Conformance.PdfConformance.PdfUA1);
         Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.21.3.1-1");
     }
+
+    // ── Batch A5a — §7.21.4.1-1 rendering-mode-scoped font embedding unit tests ────────────────────
+
+    /// <summary>
+    /// §7.21.4.1-1 positive control (UaFontEmbeddingRule): a non-embedded simple TrueType font
+    /// drawn with a visible text rendering mode (default Tr 0) must fire 7.21.4.1-1.
+    /// Cross-validated against veraPDF 1.30.2 via the oracle fixture
+    /// <c>pdfua1-nonembedded-font-visible</c>.
+    /// </summary>
+    [Fact]
+    public void UaNonEmbeddedFontVisibleDraw_Fires72141_1()
+    {
+        var bytes = OracleCorpus.Ua1NonEmbeddedFontVisibleDraw();
+        var result = PdfPreflight.Validate(bytes, Conformance.PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.21.4.1-1");
+    }
+
+    /// <summary>
+    /// §7.21.4.1-1 FP-safety guard — Tr 3 exemption (UaFontEmbeddingRule): a non-embedded simple
+    /// TrueType font drawn ONLY with text rendering mode 3 (invisible text) must NOT fire 7.21.4.1-1.
+    /// veraPDF 1.30.2 does not fire 7.21.4.1-1 for this document (renderingMode == 3 exemption).
+    /// This is the critical false-positive guard: if the rule fired here it would be an FP.
+    /// </summary>
+    [Fact]
+    public void UaNonEmbeddedFontInvisibleOnly_DoesNotFire72141_1()
+    {
+        var bytes = OracleCorpus.Ua1NonEmbeddedFontInvisibleOnly();
+        var result = PdfPreflight.Validate(bytes, Conformance.PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.21.4.1-1");
+    }
+
+    /// <summary>
+    /// §7.21.4.1-1 FP-safety guard — embedded font (UaFontEmbeddingRule): a simple TrueType font
+    /// WITH an embedded font program (/FontFile2, DejaVu) drawn visibly must NOT fire 7.21.4.1-1.
+    /// veraPDF 1.30.2 does not fire 7.21.4.1-1 for this document (containsFontFile == true).
+    /// </summary>
+    [Fact]
+    public void UaEmbeddedSimpleFontVisibleDraw_DoesNotFire72141_1()
+    {
+        var bytes = OracleCorpus.Ua1EmbeddedSimpleFontVisibleDraw();
+        var result = PdfPreflight.Validate(bytes, Conformance.PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.21.4.1-1");
+    }
+
+    /// <summary>
+    /// §7.21.4.1-1 FP-safety guard — Type0 composite font (UaFontEmbeddingRule): the standard
+    /// UA-1 tagged baseline uses a Type0 / CIDFontType2 composite font, which is exempt from
+    /// 7.21.4.1-1. The rule must NOT fire for the baseline.
+    /// </summary>
+    [Fact]
+    public void UaBaselineType0Font_DoesNotFire72141_1()
+    {
+        var bytes = OracleCorpus.Ua1TaggedWithEmbeddedFont();
+        var result = PdfPreflight.Validate(bytes, Conformance.PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.21.4.1-1");
+    }
+
 }

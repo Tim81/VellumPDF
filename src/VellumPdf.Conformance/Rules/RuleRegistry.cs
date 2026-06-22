@@ -156,6 +156,8 @@ internal static class RuleRegistry
         new UaType1CharSetRule(),
         new UaCidSetRule(),
         new UaCidSystemInfoRule(),
+        // Batch A5a — font clause §7.21.4.1-1 (rendering-mode-scoped embedding):
+        new UaFontEmbeddingRule(),
     ];
 
     /// <summary>

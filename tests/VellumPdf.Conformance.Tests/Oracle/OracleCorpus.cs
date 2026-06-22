@@ -894,6 +894,24 @@ public static class OracleCorpus
             new OracleFixture("pdfua1-cidset-incomplete",
                 WriterPdfWithCidSetUa1(complete: false),
                 Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // ── Batch A5a — §7.21.4.1-1 rendering-mode-scoped font embedding fixtures ────────────
+
+            // §7.21.4.1-1 VIOLATION: a non-embedded simple TrueType font drawn with a visible
+            // rendering mode (default Tr 0). veraPDF fires 7.21.4.1-1 (containsFontFile == false
+            // AND renderingMode != 3) and the in-process UaFontEmbeddingRule must agree.
+            new OracleFixture("pdfua1-nonembedded-font-visible",
+                Ua1NonEmbeddedFontVisibleDraw(),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.21.4.1-1 COMPLIANT (Tr 3 exemption) and §7.21.4.1-1 COMPLIANT (embedded font):
+            // These fixtures are tested as unit tests only (not oracle fixtures): the compliant
+            // documents fail OTHER unimplemented UA-1 rules (e.g. 7.21.6-4 TrueType cmap check,
+            // 7.1-3 untagged text), so veraPDF reports non-compliant for those reasons while the
+            // in-process validator (which does not implement those rules) reports compliant — the
+            // verdicts diverge for rule-gap reasons unrelated to §7.21.4.1-1. The unit tests verify
+            // the specific absence of the §7.21.4.1-1 finding, matching the Batch A4 pattern used
+            // for the Type1-CharSet-complete and CIDSet-complete FP-guards.
         ];
     }
 
@@ -3197,5 +3215,121 @@ public static class OracleCorpus
         var newFd = CloneDict(fd).Set(new PdfName("CIDSet"), new PdfIndirectReference(cidSetNum));
         return reader.AppendRevision([(fdRef.ObjectNumber, newFd), (cidSetNum, new PdfStream(cidSet))]);
     }
+
+    // ── Batch A5a — §7.21.4.1-1 rendering-mode-scoped font embedding fixtures ──────────────────────
+
+    /// <summary>
+    /// §7.21.4.1-1 violation: a non-embedded simple TrueType font (no /FontFile2, no /FontDescriptor
+    /// font program at all) drawn with a normal (visible) text rendering mode. veraPDF fires
+    /// clause 7.21.4.1-1 (containsFontFile == false AND renderingMode != 3).
+    /// </summary>
+    internal static byte[] Ua1NonEmbeddedFontVisibleDraw()
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var resources = (PdfDictionary)reader.ResolveValue(page.Get(new PdfName("Resources"))!)!;
+        var fontResources = (PdfDictionary)reader.ResolveValue(resources.Get(PdfName.Font)!)!;
+
+        var fontNum = reader.Size;
+        var descNum = fontNum + 1;
+        var contentNum = fontNum + 2;
+
+        // Build a bare non-embedded TrueType font — /FontDescriptor present but no /FontFile2.
+        var descriptor = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("FontDescriptor"))
+            .Set(new PdfName("FontName"), new PdfName("VellumTestNonEmbedded"))
+            .Set(new PdfName("Flags"), new PdfInteger(32)) // NonSymbolic
+            .Set(new PdfName("FontBBox"), new PdfArray([new PdfInteger(0), new PdfInteger(-200), new PdfInteger(1000), new PdfInteger(800)]))
+            .Set(new PdfName("ItalicAngle"), new PdfInteger(0))
+            .Set(new PdfName("Ascent"), new PdfInteger(800))
+            .Set(new PdfName("Descent"), new PdfInteger(-200))
+            .Set(new PdfName("CapHeight"), new PdfInteger(700))
+            .Set(new PdfName("StemV"), new PdfInteger(80));
+        // Deliberately NO /FontFile2 — not embedded.
+
+        var simple = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("Font"))
+            .Set(PdfName.Subtype, new PdfName("TrueType"))
+            .Set(PdfName.BaseFont, new PdfName("VellumTestNonEmbedded"))
+            .Set(new PdfName("Encoding"), new PdfName("WinAnsiEncoding"))
+            .Set(new PdfName("FirstChar"), new PdfInteger(65))
+            .Set(new PdfName("LastChar"), new PdfInteger(65))
+            .Set(new PdfName("Widths"), new PdfArray([new PdfInteger(722)]))
+            .Set(new PdfName("FontDescriptor"), new PdfIndirectReference(descNum));
+
+        // Draw with default Tr 0 (fill text, visible).
+        var content = new PdfStream(Encoding.ASCII.GetBytes("BT /F2 12 Tf 100 500 Td (A) Tj ET"));
+
+        var newFontResources = CloneDict(fontResources).Set(new PdfName("F2"), new PdfIndirectReference(fontNum));
+        var newResources = CloneDict(resources).Set(PdfName.Font, newFontResources);
+        var newPage = CloneDict(page).Set(new PdfName("Resources"), newResources);
+        newPage.Set(new PdfName("Contents"),
+            new PdfArray([page.Get(new PdfName("Contents"))!, new PdfIndirectReference(contentNum)]));
+
+        return reader.AppendRevision(
+            [(pageRef.ObjectNumber, newPage), (fontNum, simple), (descNum, descriptor), (contentNum, content)]);
+    }
+
+    /// <summary>
+    /// §7.21.4.1-1 compliant (3-Tr exemption): the same non-embedded simple TrueType font as
+    /// <see cref="Ua1NonEmbeddedFontVisibleDraw"/>, but drawn ONLY with text rendering mode 3
+    /// (invisible text). veraPDF does NOT fire clause 7.21.4.1-1 because renderingMode == 3.
+    /// This is the FP-safety fixture: if the in-process rule fired here it would be a false positive.
+    /// </summary>
+    internal static byte[] Ua1NonEmbeddedFontInvisibleOnly()
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var resources = (PdfDictionary)reader.ResolveValue(page.Get(new PdfName("Resources"))!)!;
+        var fontResources = (PdfDictionary)reader.ResolveValue(resources.Get(PdfName.Font)!)!;
+
+        var fontNum = reader.Size;
+        var descNum = fontNum + 1;
+        var contentNum = fontNum + 2;
+
+        var descriptor = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("FontDescriptor"))
+            .Set(new PdfName("FontName"), new PdfName("VellumTestNonEmbeddedInvis"))
+            .Set(new PdfName("Flags"), new PdfInteger(32))
+            .Set(new PdfName("FontBBox"), new PdfArray([new PdfInteger(0), new PdfInteger(-200), new PdfInteger(1000), new PdfInteger(800)]))
+            .Set(new PdfName("ItalicAngle"), new PdfInteger(0))
+            .Set(new PdfName("Ascent"), new PdfInteger(800))
+            .Set(new PdfName("Descent"), new PdfInteger(-200))
+            .Set(new PdfName("CapHeight"), new PdfInteger(700))
+            .Set(new PdfName("StemV"), new PdfInteger(80));
+        // No /FontFile2 — not embedded.
+
+        var simple = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("Font"))
+            .Set(PdfName.Subtype, new PdfName("TrueType"))
+            .Set(PdfName.BaseFont, new PdfName("VellumTestNonEmbeddedInvis"))
+            .Set(new PdfName("Encoding"), new PdfName("WinAnsiEncoding"))
+            .Set(new PdfName("FirstChar"), new PdfInteger(65))
+            .Set(new PdfName("LastChar"), new PdfInteger(65))
+            .Set(new PdfName("Widths"), new PdfArray([new PdfInteger(722)]))
+            .Set(new PdfName("FontDescriptor"), new PdfIndirectReference(descNum));
+
+        // Draw ONLY with Tr 3 (invisible text). The font is used but only invisibly.
+        var content = new PdfStream(Encoding.ASCII.GetBytes("BT 3 Tr /F2 12 Tf 100 500 Td (A) Tj ET"));
+
+        var newFontResources = CloneDict(fontResources).Set(new PdfName("F2"), new PdfIndirectReference(fontNum));
+        var newResources = CloneDict(resources).Set(PdfName.Font, newFontResources);
+        var newPage = CloneDict(page).Set(new PdfName("Resources"), newResources);
+        newPage.Set(new PdfName("Contents"),
+            new PdfArray([page.Get(new PdfName("Contents"))!, new PdfIndirectReference(contentNum)]));
+
+        return reader.AppendRevision(
+            [(pageRef.ObjectNumber, newPage), (fontNum, simple), (descNum, descriptor), (contentNum, content)]);
+    }
+
+    /// <summary>
+    /// §7.21.4.1-1 compliant (embedded): a simple TrueType font WITH an embedded font program
+    /// (DejaVu, /FontFile2) drawn with a normal (visible) rendering mode. veraPDF does NOT fire
+    /// clause 7.21.4.1-1 because containsFontFile == true.
+    /// </summary>
+    internal static byte[] Ua1EmbeddedSimpleFontVisibleDraw()
+        => Ua1AddSimpleTrueType(flags: 32, encoding: new PdfName("WinAnsiEncoding"));
 
 }
