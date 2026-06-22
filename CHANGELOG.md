@@ -6,6 +6,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.7.3] - 2026-06-22
+
+### Added
+
+- **`VellumPdf.Conformance` — PDF/UA-1 (ISO 14289-1) accessibility conformance.** Build-verified
+  veraPDF parity for PDF/UA-1 rises from **~7.5% to ~71%** (75 of 106 checks implemented, 1 partial).
+  Every rule is authored clean-room from the ISO text, cross-validated against veraPDF 1.30.2 in CI,
+  and a 37-fixture adversarial sweep across crop-box geometry, structure-parent resolution,
+  multi-hop role-mapping, font usage-scoping, and indirect references found no over-rejections.
+  - **A reusable tagged-structure walker** (`/StructTreeRoot` → `/K` → `StructElem`, with role-map
+    resolution to ISO 32000-1 Table 333 standard types, a `/ParentTree` reverse index for
+    annotation↔structure binding, and cycle/depth guards) underpins the structure rules.
+  - **Document & metadata:** file header (§6.1-1), `/Suspects` (§7.1-4), `/Lang` BCP-47 syntax
+    (§7.2-29), `/RoleMap` acyclic / no-standard-remap and `/P` presence (§7.1-6/-7/-12).
+  - **Logical structure:** table / list / table-of-contents containment, count and caption-position
+    (§7.2-3…40); Figure & Formula alternate text (§7.3-1, §7.7-1); Note IDs (§7.9-1/-2); heading
+    H/Hn consistency (§7.4.4-1/-2/-3); natural-language determination (§7.2-21…25).
+  - **Annotations:** alternate descriptions and structure nesting for general, Link, Widget, and
+    PrinterMark annotations (§7.18.1-1/-2, §7.18.4-1, §7.18.5-1/-2, §7.18.8-1), TrapNet (§7.18.2);
+    plus optional-content configurations (§7.10), embedded-file names (§7.11), dynamic XFA
+    (§7.15), and reference XObjects (§7.20).
+  - **Fonts:** a content-stream glyph-extraction pass (per-glyph text rendering mode via a q/Q
+    graphics-state stack and shown character codes) drives `.notdef`-reference, glyph-presence,
+    and embedding checks (§7.21.4.1-1/-2, §7.21.8-1); plus CIDToGIDMap, CMap, CharSet/CIDSet,
+    CIDSystemInfo, symbolic-TrueType, and used-glyph ToUnicode checks (§7.21.3.x / 4.2.x / 6-3 / 7-2).
+
 ## [1.7.2] - 2026-06-22
 
 ### Added
