@@ -298,6 +298,12 @@ public static class ConformanceCatalog
         "7.18.4-1",            // UaAnnotStructureRule: Widget annot must be in Form tag
         "7.18.5-1",            // UaAnnotStructureRule: Link annot must be in Link tag
         "7.18.8-1",            // UaAnnotStructureRule: PrinterMark must not be in structure tree
+        // Batch B6 — §7.2 natural-language determination (struct-elem attributes, annot /Contents, form /TU):
+        "7.2-21",              // UaNaturalLanguageRule: StructElem /ActualText → element or ancestor must have /Lang
+        "7.2-22",              // UaNaturalLanguageRule: StructElem /Alt → element or ancestor must have /Lang
+        "7.2-23",              // UaNaturalLanguageRule: StructElem /E → element or ancestor must have /Lang
+        "7.2-24",              // UaNaturalLanguageRule: Annot /Contents → direct struct-elem must have /Lang
+        "7.2-25",              // UaNaturalLanguageRule: FormField /TU → associated struct-elem must have /Lang
     };
 
     // PDF/UA-1 checks the rules cover only partially (the common case is detected; some conditions
@@ -391,6 +397,15 @@ public static class ConformanceCatalog
         //   Link tag).
         // 7.18.8-1 moved to PdfUaImplemented (Batch B5 — UaAnnotStructureRule: PrinterMark must
         //   not be in the structure tree).
+        // 7.2-21/-22/-23 moved to PdfUaImplemented (Batch B6 — UaNaturalLanguageRule: StructElem
+        //   /ActualText, /Alt, /E require element or ancestor /Lang; gContainsCatalogLang
+        //   short-circuit; empty /Lang () counts as containsLang=true per veraPDF probe).
+        // 7.2-24 moved to PdfUaImplemented (Batch B6 — UaNaturalLanguageRule: Annot /Contents
+        //   requires direct struct-elem /Lang via /StructParent→/ParentTree; gContainsCatalogLang
+        //   short-circuit; annotation-dict /Lang does not satisfy per veraPDF probe).
+        // 7.2-25 moved to PdfUaImplemented (Batch B6 — UaNaturalLanguageRule: FormField /TU
+        //   requires Widget's struct-elem /Lang via /StructParent→/ParentTree; gContainsCatalogLang
+        //   short-circuit; field-dict /Lang does not satisfy per veraPDF probe).
 
         _ => "structure-tree walker",
     };

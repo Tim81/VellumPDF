@@ -8670,4 +8670,433 @@ public sealed class PdfPreflightTests
         Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.18.1-2");
     }
 
+    // ── Batch B6 — §7.2 natural-language determination (UaNaturalLanguageRule) ──────────────────
+
+    // Helper: build a PDF/UA-1 without a catalog /Lang (so gContainsCatalogLang = false).
+    // Mirrors BuildUaPdfWithStructTree but omits /Lang from the catalog.
+    // Object layout (identical to BuildUaPdfWithStructTree):
+    //   1 = Catalog (NO /Lang — deliberately violates 7.2-lang to let B6 checks fire)
+    //   2 = Pages
+    //   3 = Page
+    //   4 = StructTreeRoot  ← first argument (structTreeRoot)
+    //   5 .. N = extra struct elements (remaining arguments)
+    //   N+1 = XMP metadata (injected by AssemblePdf)
+    // Cross-validation note: every "no catalog /Lang" probe also fires 7.2-lang (and 7.2-33
+    // because the test XMP has an x-default dc:title). The tests below assert on specific B6 IDs.
+    private static byte[] BuildUaPdfNoCatalogLang(string structTreeRoot, params string[] extraObjects)
+    {
+        var objs = new List<PdfObj>
+        {
+            // Catalog without /Lang — deliberately violates 7.2-lang to allow B6 checks to fire.
+            new("<< /Type /Catalog /Pages 2 0 R /MarkInfo << /Marked true >> "
+                + "/ViewerPreferences << /DisplayDocTitle true >> /StructTreeRoot 4 0 R >>"),
+            _pagesObj,
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Tabs /S >>"),
+            new(structTreeRoot),   // obj 4 — the StructTreeRoot
+        };
+        foreach (var extra in extraObjects)
+            objs.Add(new(extra));
+        return AssemblePdf(objs, metadataOverride: UaXmpBytes());
+    }
+
+    // Variant that also carries a /ParentTree and /Annots for 7.2-24/25 tests.
+    // Object layout:
+    //   1 = Catalog (no /Lang, no AcroForm unless extraCatalog given)
+    //   2 = Pages
+    //   3 = Page (with /Annots [annot 0 R])
+    //   4 = StructTreeRoot (with /ParentTree)
+    //   5 = annotStructElem  (e.g. "<< /Type /StructElem /S /Annot /P 4 0 R >>")
+    //   6 = annotation dict  (e.g. "<< /Type /Annot /Subtype /Text … /StructParent 0 >>")
+    //   7 = ParentTree number tree (<< /Nums [0 5 0 R] >>)
+    //   8 .. N = extra objects (e.g. AcroForm, more fields)
+    //   N+1 = XMP metadata
+    private static byte[] BuildUaAnnotNoCatalogLang(
+        string annotStructElem,
+        string annotation,
+        string extraCatalog = "",
+        params string[] extraObjects)
+    {
+        var objs = new List<PdfObj>
+        {
+            new($"<< /Type /Catalog /Pages 2 0 R /MarkInfo << /Marked true >> "
+                + $"/ViewerPreferences << /DisplayDocTitle true >> /StructTreeRoot 4 0 R{extraCatalog} >>"),
+            _pagesObj,
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Tabs /S /Annots [6 0 R] >>"),
+            new("<< /Type /StructTreeRoot /K [5 0 R] /ParentTree 7 0 R >>"),
+            new(annotStructElem),
+            new(annotation),
+            new("<< /Nums [0 5 0 R] >>"),
+        };
+        foreach (var extra in extraObjects)
+            objs.Add(new(extra));
+        return AssemblePdf(objs, metadataOverride: UaXmpBytes());
+    }
+
+    // ── §7.2-22 (StructElem /Alt — gContainsCatalogLang dominance) ───────────────────────────────
+
+    /// <summary>
+    /// §7.2-22 FP guard (DOMINANT PATH): WITH catalog /Lang, a struct element that has /Alt but
+    /// no element /Lang must NOT fire 7.2-22. gContainsCatalogLang = true satisfies the predicate.
+    /// Cross-validated against veraPDF 1.30.2: WITH_catalog_lang+alt_no_elemLang → PASS (exit 0).
+    /// </summary>
+    [Fact]
+    public void UaStructElemAlt_WithCatalogLang_DoesNotFire7222()
+    {
+        // BuildUaPdfWithStructTree already adds catalog /Lang (en-US).
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /P /P 4 0 R /Alt (some text) >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-22");
+    }
+
+    /// <summary>
+    /// §7.2-22 VIOLATION: WITHOUT catalog /Lang, a struct element with /Alt but no element /Lang
+    /// and no ancestor /Lang fires 7.2-22.
+    /// Cross-validated: NO_catalog_lang+alt_no_elemLang → fires 7.2-22 (exit 1).
+    /// </summary>
+    [Fact]
+    public void UaStructElemAlt_NoCatalogLang_NoElemLang_Fires7222()
+    {
+        var bytes = BuildUaPdfNoCatalogLang(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /P /P 4 0 R /Alt (some text) >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-22");
+    }
+
+    /// <summary>
+    /// §7.2-22 FP guard: WITHOUT catalog /Lang, a struct element with /Alt AND a non-empty element
+    /// /Lang must NOT fire 7.2-22 (containsLang = true).
+    /// Cross-validated: NO_catalog_lang+alt+elemLang → no 7.2-22 (exit 1 only for 7.2-lang).
+    /// </summary>
+    [Fact]
+    public void UaStructElemAlt_NoCatalogLang_ElemHasLang_DoesNotFire7222()
+    {
+        var bytes = BuildUaPdfNoCatalogLang(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /P /P 4 0 R /Alt (some text) /Lang (en) >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-22");
+    }
+
+    /// <summary>
+    /// §7.2-22 FP guard: WITHOUT catalog /Lang, a struct element with /Alt and an ancestor that
+    /// carries /Lang must NOT fire 7.2-22 (parentLang satisfies the predicate).
+    /// Cross-validated: NO_catalog_lang+alt+ancestorLang(Document) → no 7.2-22 (exit 1 for 7.2-lang).
+    /// </summary>
+    [Fact]
+    public void UaStructElemAlt_NoCatalogLang_AncestorHasLang_DoesNotFire7222()
+    {
+        var bytes = BuildUaPdfNoCatalogLang(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] /Lang (en) >>",
+            "<< /Type /StructElem /S /P /P 5 0 R /Alt (some text) >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-22");
+    }
+
+    /// <summary>
+    /// §7.2-22 FP guard: an empty /Lang () on the element counts as containsLang=true in veraPDF
+    /// (any key presence, even empty value, satisfies the predicate).
+    /// Cross-validated: NO_catalog_lang+alt+empty_elemLang → no 7.2-22 fire.
+    /// </summary>
+    [Fact]
+    public void UaStructElemAlt_NoCatalogLang_EmptyElemLang_DoesNotFire7222()
+    {
+        var bytes = BuildUaPdfNoCatalogLang(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /P /P 4 0 R /Alt (some text) /Lang () >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-22");
+    }
+
+    /// <summary>
+    /// §7.2-22 FP guard: a struct element with NO /Alt must NOT fire 7.2-22 even without /Lang.
+    /// The attribute must be present to activate the check.
+    /// Cross-validated: struct no /Alt, no /Lang, no catalog lang → no 7.2-22 fire.
+    /// </summary>
+    [Fact]
+    public void UaStructElemNoAlt_NoCatalogLang_DoesNotFire7222()
+    {
+        var bytes = BuildUaPdfNoCatalogLang(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /P /P 4 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-22");
+    }
+
+    // ── §7.2-21 (StructElem /ActualText) ─────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// §7.2-21 VIOLATION: WITHOUT catalog /Lang, a struct element with /ActualText but no /Lang
+    /// and no ancestor /Lang fires 7.2-21.
+    /// Cross-validated: NO_catalog_lang+ActualText_no_elemLang → fires 7.2-21 (exit 1).
+    /// </summary>
+    [Fact]
+    public void UaStructElemActualText_NoCatalogLang_NoLang_Fires7221()
+    {
+        var bytes = BuildUaPdfNoCatalogLang(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /P /P 4 0 R /ActualText (hello) >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-21");
+    }
+
+    /// <summary>
+    /// §7.2-21 FP guard: WITH catalog /Lang, a struct element with /ActualText must NOT fire 7.2-21.
+    /// Cross-validated: WITH_catalog_lang → PASS.
+    /// </summary>
+    [Fact]
+    public void UaStructElemActualText_WithCatalogLang_DoesNotFire7221()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /P /P 4 0 R /ActualText (hello) >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-21");
+    }
+
+    /// <summary>
+    /// §7.2-21 FP guard: WITHOUT catalog /Lang, a struct element with /ActualText and element /Lang
+    /// must NOT fire 7.2-21.
+    /// Cross-validated: NO_catalog_lang+ActualText+elemLang → no 7.2-21 fire.
+    /// </summary>
+    [Fact]
+    public void UaStructElemActualText_NoCatalogLang_ElemHasLang_DoesNotFire7221()
+    {
+        var bytes = BuildUaPdfNoCatalogLang(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /P /P 4 0 R /ActualText (hello) /Lang (en) >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-21");
+    }
+
+    /// <summary>
+    /// §7.2-21 edge: an empty /ActualText () still triggers 7.2-21 when no lang is present —
+    /// the key's presence (not value) activates the check.
+    /// Cross-validated: NO_catalog_lang+ActualText_empty_no_elemLang → fires 7.2-21.
+    /// </summary>
+    [Fact]
+    public void UaStructElemActualTextEmpty_NoCatalogLang_Fires7221()
+    {
+        var bytes = BuildUaPdfNoCatalogLang(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /P /P 4 0 R /ActualText () >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-21");
+    }
+
+    // ── §7.2-23 (StructElem /E) ───────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// §7.2-23 VIOLATION: WITHOUT catalog /Lang, a struct element with /E but no /Lang fires 7.2-23.
+    /// Cross-validated: NO_catalog_lang+E_no_elemLang → fires 7.2-23 (exit 1).
+    /// </summary>
+    [Fact]
+    public void UaStructElemE_NoCatalogLang_NoLang_Fires7223()
+    {
+        var bytes = BuildUaPdfNoCatalogLang(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Span /P 4 0 R /E (hello) >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-23");
+    }
+
+    /// <summary>
+    /// §7.2-23 FP guard: WITH catalog /Lang, a struct element with /E must NOT fire 7.2-23.
+    /// Cross-validated: WITH catalog lang → PASS.
+    /// </summary>
+    [Fact]
+    public void UaStructElemE_WithCatalogLang_DoesNotFire7223()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Span /P 4 0 R /E (hello) >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-23");
+    }
+
+    /// <summary>
+    /// §7.2-23 FP guard: WITHOUT catalog /Lang, a struct element with /E AND element /Lang must
+    /// NOT fire 7.2-23.
+    /// Cross-validated: NO_catalog_lang+E+elemLang → no 7.2-23 fire.
+    /// </summary>
+    [Fact]
+    public void UaStructElemE_NoCatalogLang_ElemHasLang_DoesNotFire7223()
+    {
+        var bytes = BuildUaPdfNoCatalogLang(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Span /P 4 0 R /E (hello) /Lang (en) >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-23");
+    }
+
+    // ── §7.2-24 (PDAnnot /Contents) ───────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// §7.2-24 FP guard (DOMINANT PATH): WITH catalog /Lang, an annotation with /Contents but no
+    /// struct-element /Lang must NOT fire 7.2-24. gContainsCatalogLang = true satisfies.
+    /// Cross-validated: WITH_catalog_lang+annot_Contents_no_annot_Lang → PASS (exit 0).
+    /// </summary>
+    [Fact]
+    public void UaAnnotContents_WithCatalogLang_DoesNotFire7224()
+    {
+        var bytes = BuildAnnotStructPdf(
+            "/Annot", "/Text",
+            structElemExtra: " /Contents (note)");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-24");
+    }
+
+    /// <summary>
+    /// §7.2-24 VIOLATION: WITHOUT catalog /Lang, an annotation with /Contents but no struct-element
+    /// /Lang (struct elem is bound via /StructParent → /ParentTree) fires 7.2-24.
+    /// Cross-validated: NO_catalog_lang+annot_Contents_no_struct_lang → fires 7.2-24 (exit 1).
+    /// </summary>
+    [Fact]
+    public void UaAnnotContents_NoCatalogLang_NoStructLang_Fires7224()
+    {
+        var bytes = BuildUaAnnotNoCatalogLang(
+            "<< /Type /StructElem /S /Annot /P 4 0 R >>",
+            "<< /Type /Annot /Subtype /Text /Rect [10 10 100 100] /Contents (note) /StructParent 0 >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-24");
+    }
+
+    /// <summary>
+    /// §7.2-24 FP guard: WITHOUT catalog /Lang, when the direct struct element (via
+    /// /StructParent→/ParentTree) has a /Lang entry, 7.2-24 must NOT fire.
+    /// Cross-validated: NO_catalog_lang+annot_Contents+struct_elem_lang → no 7.2-24 fire.
+    /// </summary>
+    [Fact]
+    public void UaAnnotContents_NoCatalogLang_StructElemHasLang_DoesNotFire7224()
+    {
+        var bytes = BuildUaAnnotNoCatalogLang(
+            "<< /Type /StructElem /S /Annot /P 4 0 R /Lang (en) >>",
+            "<< /Type /Annot /Subtype /Text /Rect [10 10 100 100] /Contents (note) /StructParent 0 >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-24");
+    }
+
+    /// <summary>
+    /// §7.2-24 FP guard: an annotation with NO /Contents must NOT fire 7.2-24 regardless of /Lang.
+    /// The /Contents key must be present (and non-empty) to activate the check.
+    /// Cross-validated: annot no /Contents → no 7.2-24 fire.
+    /// </summary>
+    [Fact]
+    public void UaAnnotNoContents_NoCatalogLang_DoesNotFire7224()
+    {
+        var bytes = BuildUaAnnotNoCatalogLang(
+            "<< /Type /StructElem /S /Annot /P 4 0 R >>",
+            "<< /Type /Annot /Subtype /Text /Rect [10 10 100 100] /StructParent 0 >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-24");
+    }
+
+    // ── §7.2-25 (PDFormField /TU) ─────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// §7.2-25 FP guard (DOMINANT PATH): WITH catalog /Lang, a form field with /TU but no struct
+    /// element /Lang must NOT fire 7.2-25. gContainsCatalogLang = true satisfies.
+    /// Cross-validated: WITH_catalog_lang+field_TU → PASS (exit 0).
+    /// </summary>
+    [Fact]
+    public void UaFormFieldTu_WithCatalogLang_DoesNotFire7225()
+    {
+        // Use AssemblePdf directly to build a full PDF/UA-1 with catalog /Lang and an AcroForm.
+        var bytes = AssemblePdf(
+            [
+                new("<< /Type /Catalog /Pages 2 0 R /Lang (en-US) /MarkInfo << /Marked true >> "
+                    + "/ViewerPreferences << /DisplayDocTitle true >> /StructTreeRoot 4 0 R "
+                    + "/AcroForm << /Fields [5 0 R] >> >>"),
+                _pagesObj,
+                new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Tabs /S /Annots [5 0 R] >>"),
+                new("<< /Type /StructTreeRoot >>"),
+                new("<< /Type /Annot /Subtype /Widget /Rect [10 10 100 100] /FT /Tx /T (f1) /TU (tooltip) >>"),
+            ],
+            metadataOverride: UaXmpBytes());
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-25");
+    }
+
+    /// <summary>
+    /// §7.2-25 VIOLATION: WITHOUT catalog /Lang, a form field with /TU whose Widget annotation's
+    /// enclosing struct element has no /Lang fires 7.2-25.
+    /// Cross-validated: NO_catalog_lang+field_TU_no_struct_lang → fires 7.2-25 (exit 1).
+    /// </summary>
+    [Fact]
+    public void UaFormFieldTu_NoCatalogLang_NoStructLang_Fires7225()
+    {
+        // Object layout: 1=catalog(no /Lang), 2=pages, 3=page, 4=STR, 5=Form-struct-elem(no /Lang),
+        // 6=Widget, 7=ParentTree, 8=AcroForm
+        var bytes = AssemblePdf(
+            [
+                new("<< /Type /Catalog /Pages 2 0 R /MarkInfo << /Marked true >> "
+                    + "/ViewerPreferences << /DisplayDocTitle true >> /StructTreeRoot 4 0 R "
+                    + "/AcroForm 8 0 R >>"),
+                _pagesObj,
+                new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Tabs /S /Annots [6 0 R] >>"),
+                new("<< /Type /StructTreeRoot /K [5 0 R] /ParentTree 7 0 R >>"),
+                new("<< /Type /StructElem /S /Form /P 4 0 R >>"),
+                new("<< /Type /Annot /Subtype /Widget /Rect [10 10 100 100] /FT /Tx /T (f1) /TU (tooltip) /StructParent 0 >>"),
+                new("<< /Nums [0 5 0 R] >>"),
+                new("<< /Fields [6 0 R] >>"),
+            ],
+            metadataOverride: UaXmpBytes());
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-25");
+    }
+
+    /// <summary>
+    /// §7.2-25 FP guard: WITHOUT catalog /Lang, when the Form struct element (via
+    /// /StructParent→/ParentTree) has a /Lang entry, 7.2-25 must NOT fire.
+    /// Cross-validated: NO_catalog_lang+struct_elem_lang → no 7.2-25 fire.
+    /// </summary>
+    [Fact]
+    public void UaFormFieldTu_NoCatalogLang_StructElemHasLang_DoesNotFire7225()
+    {
+        var bytes = AssemblePdf(
+            [
+                new("<< /Type /Catalog /Pages 2 0 R /MarkInfo << /Marked true >> "
+                    + "/ViewerPreferences << /DisplayDocTitle true >> /StructTreeRoot 4 0 R "
+                    + "/AcroForm 8 0 R >>"),
+                _pagesObj,
+                new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Tabs /S /Annots [6 0 R] >>"),
+                new("<< /Type /StructTreeRoot /K [5 0 R] /ParentTree 7 0 R >>"),
+                new("<< /Type /StructElem /S /Form /P 4 0 R /Lang (en) >>"),
+                new("<< /Type /Annot /Subtype /Widget /Rect [10 10 100 100] /FT /Tx /T (f1) /TU (tooltip) /StructParent 0 >>"),
+                new("<< /Nums [0 5 0 R] >>"),
+                new("<< /Fields [6 0 R] >>"),
+            ],
+            metadataOverride: UaXmpBytes());
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-25");
+    }
+
+    /// <summary>
+    /// §7.2-25 FP guard: a form field with NO /TU must NOT fire 7.2-25.
+    /// Cross-validated: field no /TU → no 7.2-25 fire.
+    /// </summary>
+    [Fact]
+    public void UaFormFieldNoTu_NoCatalogLang_DoesNotFire7225()
+    {
+        var bytes = AssemblePdf(
+            [
+                new("<< /Type /Catalog /Pages 2 0 R /MarkInfo << /Marked true >> "
+                    + "/ViewerPreferences << /DisplayDocTitle true >> /StructTreeRoot 4 0 R "
+                    + "/AcroForm 8 0 R >>"),
+                _pagesObj,
+                new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Tabs /S /Annots [6 0 R] >>"),
+                new("<< /Type /StructTreeRoot /K [5 0 R] /ParentTree 7 0 R >>"),
+                new("<< /Type /StructElem /S /Form /P 4 0 R >>"),
+                new("<< /Type /Annot /Subtype /Widget /Rect [10 10 100 100] /FT /Tx /T (f1) /StructParent 0 >>"),
+                new("<< /Nums [0 5 0 R] >>"),
+                new("<< /Fields [6 0 R] >>"),
+            ],
+            metadataOverride: UaXmpBytes());
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-25");
+    }
+
 }
