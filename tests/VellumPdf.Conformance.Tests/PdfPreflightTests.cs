@@ -7783,6 +7783,291 @@ public sealed class PdfPreflightTests
         Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-38");
     }
 
+    // ── §7.2-11 (SETable at-most-one THead) ──────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// §7.2-11 VIOLATION (UaTableCountRule): a Table with two THead children fires 7.2-11.
+    /// Cross-validated against veraPDF 1.30.2: 7211_two_thead → fires 7.2-11 (exit 1).
+    /// </summary>
+    [Fact]
+    public void UaTableTwoThead_Fires72_11()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /Table /P 5 0 R /K [7 0 R 8 0 R 9 0 R] >>",
+            "<< /Type /StructElem /S /THead /P 6 0 R /K [10 0 R] >>",
+            "<< /Type /StructElem /S /THead /P 6 0 R /K [11 0 R] >>",
+            "<< /Type /StructElem /S /TBody /P 6 0 R /K [12 0 R] >>",
+            "<< /Type /StructElem /S /TR /P 9 0 R >>",
+            "<< /Type /StructElem /S /TR /P 7 0 R >>",
+            "<< /Type /StructElem /S /TR /P 8 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-11");
+    }
+
+    /// <summary>
+    /// §7.2-11 FP guard: a Table with one THead and one TBody must not fire 7.2-11.
+    /// Cross-validated: 7211_one_thead_pass → PASS (exit 0).
+    /// </summary>
+    [Fact]
+    public void UaTableOneThead_DoesNotFire72_11()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /Table /P 5 0 R /K [7 0 R 8 0 R] >>",
+            "<< /Type /StructElem /S /THead /P 6 0 R /K [9 0 R] >>",
+            "<< /Type /StructElem /S /TBody /P 6 0 R /K [10 0 R] >>",
+            "<< /Type /StructElem /S /TR /P 7 0 R >>",
+            "<< /Type /StructElem /S /TR /P 8 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-11");
+    }
+
+    // ── §7.2-12 (SETable at-most-one TFoot) ──────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// §7.2-12 VIOLATION (UaTableCountRule): a Table with two TFoot children fires 7.2-12.
+    /// Cross-validated: 7212_two_tfoot → fires 7.2-12 (exit 1).
+    /// </summary>
+    [Fact]
+    public void UaTableTwoTfoot_Fires72_12()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /Table /P 5 0 R /K [7 0 R 8 0 R 9 0 R] >>",
+            "<< /Type /StructElem /S /TBody /P 6 0 R /K [10 0 R] >>",
+            "<< /Type /StructElem /S /TFoot /P 6 0 R /K [11 0 R] >>",
+            "<< /Type /StructElem /S /TFoot /P 6 0 R /K [12 0 R] >>",
+            "<< /Type /StructElem /S /TR /P 7 0 R >>",
+            "<< /Type /StructElem /S /TR /P 8 0 R >>",
+            "<< /Type /StructElem /S /TR /P 9 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-12");
+    }
+
+    // ── §7.2-13 (SETable TFoot requires TBody) ───────────────────────────────────────────────────────
+
+    /// <summary>
+    /// §7.2-13 VIOLATION (UaTableCountRule): a Table with TFoot but no TBody fires 7.2-13.
+    /// Cross-validated: 7213_tfoot_no_tbody → fires 7.2-13 (exit 1).
+    /// </summary>
+    [Fact]
+    public void UaTableTfootNoTbody_Fires72_13()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /Table /P 5 0 R /K [7 0 R] >>",
+            "<< /Type /StructElem /S /TFoot /P 6 0 R /K [8 0 R] >>",
+            "<< /Type /StructElem /S /TR /P 7 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-13");
+    }
+
+    /// <summary>
+    /// §7.2-13 FP guard: a Table with both TBody and TFoot must not fire 7.2-13.
+    /// Cross-validated: 7213_tfoot_with_tbody_pass → PASS (exit 0).
+    /// </summary>
+    [Fact]
+    public void UaTableTfootWithTbody_DoesNotFire72_13()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /Table /P 5 0 R /K [7 0 R 8 0 R] >>",
+            "<< /Type /StructElem /S /TBody /P 6 0 R /K [9 0 R] >>",
+            "<< /Type /StructElem /S /TFoot /P 6 0 R /K [10 0 R] >>",
+            "<< /Type /StructElem /S /TR /P 7 0 R >>",
+            "<< /Type /StructElem /S /TR /P 8 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-13");
+    }
+
+    // ── §7.2-14 (SETable THead requires TBody) ───────────────────────────────────────────────────────
+
+    /// <summary>
+    /// §7.2-14 VIOLATION (UaTableCountRule): a Table with THead but no TBody fires 7.2-14.
+    /// Cross-validated: 7214_thead_no_tbody → fires 7.2-14 (exit 1).
+    /// </summary>
+    [Fact]
+    public void UaTableTheadNoTbody_Fires72_14()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /Table /P 5 0 R /K [7 0 R] >>",
+            "<< /Type /StructElem /S /THead /P 6 0 R /K [8 0 R] >>",
+            "<< /Type /StructElem /S /TR /P 7 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-14");
+    }
+
+    // ── §7.2-39 (SETable at-most-one Caption) ────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// §7.2-39 VIOLATION (UaTableCountRule): a Table with two Caption children fires 7.2-39.
+    /// Cross-validated: 7239_two_captions → fires 7.2-39 (exit 1).
+    /// </summary>
+    [Fact]
+    public void UaTableTwoCaptions_Fires72_39()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /Table /P 5 0 R /K [7 0 R 8 0 R 9 0 R] >>",
+            "<< /Type /StructElem /S /Caption /P 6 0 R >>",
+            "<< /Type /StructElem /S /TR /P 6 0 R >>",
+            "<< /Type /StructElem /S /Caption /P 6 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-39");
+    }
+
+    /// <summary>
+    /// §7.2-39 FP guard: a Table with one Caption must not fire 7.2-39.
+    /// Cross-validated: 7239_one_caption_pass → PASS (exit 0).
+    /// </summary>
+    [Fact]
+    public void UaTableOneCaption_DoesNotFire72_39()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /Table /P 5 0 R /K [7 0 R 8 0 R] >>",
+            "<< /Type /StructElem /S /Caption /P 6 0 R >>",
+            "<< /Type /StructElem /S /TR /P 6 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-39");
+    }
+
+    // ── §7.2-16 (SETable Caption position) ───────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// §7.2-16 VIOLATION (UaTableCountRule): Table [TR, Caption, TR] — Caption in middle — fires 7.2-16.
+    /// Cross-validated: 7216_caption_middle → fires 7.2-16 (exit 1).
+    /// </summary>
+    [Fact]
+    public void UaTableCaptionMiddle_Fires72_16()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /Table /P 5 0 R /K [7 0 R 8 0 R 9 0 R] >>",
+            "<< /Type /StructElem /S /TR /P 6 0 R >>",
+            "<< /Type /StructElem /S /Caption /P 6 0 R >>",
+            "<< /Type /StructElem /S /TR /P 6 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-16");
+    }
+
+    /// <summary>
+    /// §7.2-16 FP guard: Table [Caption, TR] — Caption first — must not fire 7.2-16.
+    /// Cross-validated: 7216_caption_first_pass → PASS (exit 0).
+    /// </summary>
+    [Fact]
+    public void UaTableCaptionFirst_DoesNotFire72_16()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /Table /P 5 0 R /K [7 0 R 8 0 R] >>",
+            "<< /Type /StructElem /S /Caption /P 6 0 R >>",
+            "<< /Type /StructElem /S /TR /P 6 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-16");
+    }
+
+    /// <summary>
+    /// §7.2-16 FP guard: Table [TR, Caption] — Caption last — must not fire 7.2-16.
+    /// Cross-validated: 7216_caption_last_pass → PASS (exit 0).
+    /// </summary>
+    [Fact]
+    public void UaTableCaptionLast_DoesNotFire72_16()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /Table /P 5 0 R /K [7 0 R 8 0 R] >>",
+            "<< /Type /StructElem /S /TR /P 6 0 R >>",
+            "<< /Type /StructElem /S /Caption /P 6 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-16");
+    }
+
+    // ── §7.2-28 (SETOC Caption first) ────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// §7.2-28 VIOLATION (UaTocContainmentRule): TOC [TOCI, Caption] — Caption not first — fires 7.2-28.
+    /// Cross-validated: 7228_toc_caption_second → fires 7.2-28 (exit 1).
+    /// </summary>
+    [Fact]
+    public void UaTocCaptionNotFirst_Fires72_28()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /TOC /P 5 0 R /K [7 0 R 8 0 R] >>",
+            "<< /Type /StructElem /S /TOCI /P 6 0 R >>",
+            "<< /Type /StructElem /S /Caption /P 6 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-28");
+    }
+
+    /// <summary>
+    /// §7.2-28 FP guard: TOC [Caption, TOCI] — Caption first — must not fire 7.2-28.
+    /// Cross-validated: 7228_toc_caption_first_pass → PASS (exit 0).
+    /// </summary>
+    [Fact]
+    public void UaTocCaptionFirst_DoesNotFire72_28()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /TOC /P 5 0 R /K [7 0 R 8 0 R] >>",
+            "<< /Type /StructElem /S /Caption /P 6 0 R >>",
+            "<< /Type /StructElem /S /TOCI /P 6 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-28");
+    }
+
+    // ── §7.2-40 (SEL Caption first) ──────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// §7.2-40 VIOLATION (UaListContainmentRule): L [LI, Caption] — Caption not first — fires 7.2-40.
+    /// Cross-validated: 7240_l_caption_second → fires 7.2-40 (exit 1).
+    /// </summary>
+    [Fact]
+    public void UaLCaptionNotFirst_Fires72_40()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /L /P 5 0 R /K [7 0 R 8 0 R] >>",
+            "<< /Type /StructElem /S /LI /P 6 0 R >>",
+            "<< /Type /StructElem /S /Caption /P 6 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-40");
+    }
+
+    /// <summary>
+    /// §7.2-40 FP guard: L [Caption, LI] — Caption first — must not fire 7.2-40.
+    /// Cross-validated: 7240_l_caption_first_pass → PASS (exit 0).
+    /// </summary>
+    [Fact]
+    public void UaLCaptionFirst_DoesNotFire72_40()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /L /P 5 0 R /K [7 0 R 8 0 R] >>",
+            "<< /Type /StructElem /S /Caption /P 6 0 R >>",
+            "<< /Type /StructElem /S /LI /P 6 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-40");
+    }
+
     // ── §7.3-1 (SEFigure alt-text) ───────────────────────────────────────────────────────────────
 
     /// <summary>
