@@ -3,12 +3,15 @@
 
 using System.IO.Compression;
 using System.Linq;
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using VellumPdf.Conformance;
 using VellumPdf.Conformance.Rules.Fonts;
 using VellumPdf.Conformance.Tests.Oracle;
 using VellumPdf.Document;
 using VellumPdf.Reader;
+using VellumPdf.Signing;
 
 namespace VellumPdf.Conformance.Tests;
 
@@ -642,6 +645,31 @@ public sealed class PdfPreflightTests
 
         Assert.False(result.IsCompliant);
         Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.13-string");
+    }
+
+    [Fact]
+    public void Validate_SigContentsOversized_NoStringFinding()
+    {
+        // §6.1.13 false-positive guard: the /Contents entry of a signature dictionary is a DER-
+        // encoded CMS blob whose size is dictated by the CMS structure. PAdES B-T/B-LTA signatures
+        // (as produced by the Signing package's TimestampedDefaultReserve path) use a placeholder
+        // of 32768 decoded bytes. The string-length check shall not fire for this entry because the
+        // signature value is not document text subject to the implementation-limit table.
+        // A non-signature string of the same length STILL fires (see Validate_OversizedString_ReportsError).
+        var bigHex = "<" + new string('0', 32768 * 2) + ">"; // 32768 decoded bytes
+        var bytes = AssemblePdf(
+        [
+            new($"<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [4 0 R] /SigFlags 3 >> >>"),
+            _pagesObj,
+            _pageObj,
+            new($"<< /Type /Annot /Subtype /Widget /FT /Sig /T (Sig1) /Rect [0 0 0 0] /F 4"
+                + $" /V << /Type /Sig /Filter /Adobe.PPKLite /SubFilter /ETSI.CAdES.detached"
+                + $" /ByteRange [0 1 2 3] /Contents {bigHex} >> >>"),
+        ]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.13-string");
     }
 
     [Fact]
@@ -1573,6 +1601,105 @@ public sealed class PdfPreflightTests
 
         Assert.True(result.IsCompliant);
         Assert.Empty(result.Assertions);
+    }
+
+    // ── §6.1.8-1 name UTF-8 validity ─────────────────────────────────────────────
+
+    // The helpers below embed the non-ASCII bytes directly via #XX PDF-name escaping.
+    // /BaseFont /#80Name has one lone continuation byte (0x80) — invalid UTF-8.
+    // /BaseFont /ABCDEF#2BBold has a '+' (#2B, 0x2B) escape — valid ASCII, valid UTF-8.
+
+    [Fact]
+    public void Validate_InvalidUtf8BaseFontName_ReportsError()
+    {
+        // §6.1.8-1: a /BaseFont name whose escaped bytes are not valid UTF-8 shall be flagged.
+        // 0x80 is a lone UTF-8 continuation byte with no leading byte — invalid.
+        var bytes = BuildFontPdf(
+            new PdfObj("<< /Type /Font /Subtype /Type1 /BaseFont /#80InvalidFont /FirstChar 65 /LastChar 65 /Widths [600] /Encoding /WinAnsiEncoding >>"));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.8-1");
+    }
+
+    [Fact]
+    public void Validate_ValidEscapedBaseFontName_IsAllowed()
+    {
+        // §6.1.8-1: a /BaseFont whose escaped bytes are valid UTF-8 must not be flagged.
+        // #2B expands to '+' (0x2B, ASCII) — trivially valid UTF-8.
+        var bytes = BuildFontPdf(
+            new PdfObj("<< /Type /Font /Subtype /Type1 /BaseFont /ABCDEF#2BBold /FirstChar 65 /LastChar 65 /Widths [600] /Encoding /WinAnsiEncoding >>"));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.8-1");
+    }
+
+    [Fact]
+    public void Validate_InvalidUtf8SeparationColourantName_ReportsError()
+    {
+        // §6.1.8-1: a Separation colourant name with invalid UTF-8 bytes shall be flagged.
+        // #C0#C0 is an overlong sequence — invalid UTF-8.
+        var bytes = BuildColourSpacePdf("[/Separation /Bad#C0#C0Spot /DeviceCMYK 5 0 R]");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.8-1");
+    }
+
+    [Fact]
+    public void Validate_ValidSeparationColourantName_IsAllowed()
+    {
+        // §6.1.8-1: a plain ASCII Separation colourant name must not be flagged.
+        var bytes = BuildColourSpacePdf("[/Separation /SpotColor /DeviceCMYK 5 0 R]");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.8-1");
+    }
+
+    [Fact]
+    public void Validate_InvalidUtf8DeviceNColourantName_ReportsError()
+    {
+        // §6.1.8-1: a DeviceN colourant name with invalid UTF-8 bytes shall be flagged.
+        // #80 is a lone continuation byte — invalid UTF-8.
+        var bytes = BuildColourSpacePdf("[/DeviceN [/GoodSpot /Bad#80Spot] /DeviceCMYK 5 0 R]");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.8-1");
+    }
+
+    [Fact]
+    public void Validate_InvalidUtf8StructureTypeName_ReportsError()
+    {
+        // §6.1.8-1: a structure element /S name with invalid UTF-8 bytes shall be flagged.
+        // Uses a tagged PDF (PDF/A-2a profile needed for full coverage, but the rule runs on 2b too).
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R /MarkInfo << /Marked true >> /StructTreeRoot 4 0 R >>"),
+            _pagesObj,
+            _pageObj,
+            new("<< /Type /StructTreeRoot /K [5 0 R] >>"),
+            new("<< /Type /StructElem /S /Bad#80Type /P 4 0 R >>"),
+        ]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.8-1");
+    }
+
+    [Fact]
+    public void Validate_AllAsciiNames_NoNameUtf8Finding()
+    {
+        // §6.1.8-1: a writer-produced PDF/A with all-ASCII font, colour, and structure names
+        // must never be flagged — no false positive.
+        var bytes = BuildOnePagePdf();
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.8-1");
     }
 
     // ── §6.2.3 / §6.2.4.3 output-intent rules ───────────────────────────────────
@@ -2862,6 +2989,267 @@ public sealed class PdfPreflightTests
         Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.6.2.3.1-undeclared-property");
     }
 
+    // ── §6.6.2.3.1-2 XMP property value-type rules ──────────────────────────
+
+    /// <summary>
+    /// Builds an XMP packet that declares one extension-schema property with
+    /// <paramref name="declaredType"/> and emits one usage of that property whose value
+    /// element body is <paramref name="valueBody"/> (inserted as raw XML inside the property
+    /// element, so callers can inject either a scalar string or an rdf:Bag/Seq/Alt).
+    /// </summary>
+    private static byte[] PropertyValueTypeXmpRaw(string declaredType, string valueBody)
+    {
+        const string ns = "http://example.com/ns/";
+        var ext =
+            "<rdf:Description rdf:about=\"\" "
+            + "xmlns:pdfaExtension=\"http://www.aiim.org/pdfa/ns/extension/\" "
+            + "xmlns:pdfaSchema=\"http://www.aiim.org/pdfa/ns/schema#\" "
+            + "xmlns:pdfaProperty=\"http://www.aiim.org/pdfa/ns/property#\">"
+            + "<pdfaExtension:schemas><rdf:Bag><rdf:li rdf:parseType=\"Resource\">"
+            + "<pdfaSchema:schema>T</pdfaSchema:schema>"
+            + "<pdfaSchema:namespaceURI>" + ns + "</pdfaSchema:namespaceURI>"
+            + "<pdfaSchema:prefix>ex</pdfaSchema:prefix>"
+            + "<pdfaSchema:property><rdf:Seq><rdf:li rdf:parseType=\"Resource\">"
+            + "<pdfaProperty:name>p</pdfaProperty:name>"
+            + "<pdfaProperty:valueType>" + declaredType + "</pdfaProperty:valueType>"
+            + "<pdfaProperty:category>external</pdfaProperty:category>"
+            + "<pdfaProperty:description>d</pdfaProperty:description>"
+            + "</rdf:li></rdf:Seq></pdfaSchema:property>"
+            + "</rdf:li></rdf:Bag></pdfaExtension:schemas>"
+            + "</rdf:Description>";
+        var usage =
+            "<rdf:Description rdf:about=\"\" xmlns:ex=\"" + ns + "\""
+            + " xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">"
+            + "<ex:p>" + valueBody + "</ex:p>"
+            + "</rdf:Description>";
+        return BuildXmpPdf(XmpWithDescriptions(ext + usage));
+    }
+
+    // ── §6.6.2.3.1-2: writer-produced conformant PDF/A-2b — no false positive ──
+
+    [Fact]
+    public void Validate_PropertyValueType_WriterProducedPdfA_NoFinding()
+    {
+        // A fully-writer-produced PDF/A-2b document must not trigger the property-value-type
+        // rule — this is the critical false-positive guard. The writer emits dc:title as
+        // rdf:Alt, xmp:CreateDate as an ISO-8601 date, pdf:Producer as text, etc.
+        var bytes = BuildOnePagePdf();
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.6.2.3.1-2");
+    }
+
+    // ── §6.6.2.3.1-2: extension-schema Integer type ──────────────────────────
+
+    [Theory]
+    [InlineData("42")]
+    [InlineData("-1")]
+    [InlineData("+5")]
+    [InlineData("0")]
+    public void Validate_PropertyValueType_IntegerCorrect_NoFinding(string value)
+    {
+        // An extension-schema Integer property with a valid integer value must not be flagged.
+        var result = PdfPreflight.Validate(
+            PropertyValueTypeXmpRaw("Integer", value), PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.6.2.3.1-2");
+    }
+
+    [Theory]
+    [InlineData("hello")]
+    [InlineData("3.14")]
+    [InlineData("")]
+    [InlineData("  ")]
+    public void Validate_PropertyValueType_IntegerWrong_ReportsError(string value)
+    {
+        // An extension-schema Integer property with a non-integer value must trigger the rule.
+        var result = PdfPreflight.Validate(
+            PropertyValueTypeXmpRaw("Integer", value), PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.6.2.3.1-2");
+    }
+
+    // ── §6.6.2.3.1-2: extension-schema Boolean type ──────────────────────────
+
+    [Theory]
+    [InlineData("True")]
+    [InlineData("False")]
+    public void Validate_PropertyValueType_BooleanCorrect_NoFinding(string value)
+    {
+        // XMP Boolean is exactly "True" or "False" (case-sensitive per XMP Spec §8.2.1.3).
+        var result = PdfPreflight.Validate(
+            PropertyValueTypeXmpRaw("Boolean", value), PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.6.2.3.1-2");
+    }
+
+    [Theory]
+    [InlineData("true")]    // lowercase — not valid XMP Boolean
+    [InlineData("false")]
+    [InlineData("yes")]
+    [InlineData("1")]
+    public void Validate_PropertyValueType_BooleanWrong_ReportsError(string value)
+    {
+        var result = PdfPreflight.Validate(
+            PropertyValueTypeXmpRaw("Boolean", value), PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.6.2.3.1-2");
+    }
+
+    // ── §6.6.2.3.1-2: extension-schema Date type ─────────────────────────────
+
+    [Theory]
+    [InlineData("2024-01-15T12:00:00+00:00")]
+    [InlineData("2024-01-15")]
+    [InlineData("2024-01")]
+    [InlineData("2024")]
+    public void Validate_PropertyValueType_DateCorrect_NoFinding(string value)
+    {
+        var result = PdfPreflight.Validate(
+            PropertyValueTypeXmpRaw("Date", value), PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.6.2.3.1-2");
+    }
+
+    [Theory]
+    [InlineData("not-a-date")]
+    [InlineData("Jan 15 2024")]
+    public void Validate_PropertyValueType_DateWrong_ReportsError(string value)
+    {
+        var result = PdfPreflight.Validate(
+            PropertyValueTypeXmpRaw("Date", value), PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.6.2.3.1-2");
+    }
+
+    // ── §6.6.2.3.1-2: extension-schema container types ───────────────────────
+
+    [Fact]
+    public void Validate_PropertyValueType_BagTextCorrect_NoFinding()
+    {
+        // bag Text: value must be an rdf:Bag; correct usage must not fire.
+        const string bagValue = "<rdf:Bag><rdf:li>item1</rdf:li><rdf:li>item2</rdf:li></rdf:Bag>";
+        var result = PdfPreflight.Validate(
+            PropertyValueTypeXmpRaw("bag Text", bagValue), PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.6.2.3.1-2");
+    }
+
+    [Fact]
+    public void Validate_PropertyValueType_BagTextScalar_ReportsError()
+    {
+        // A "bag Text" property serialised as a scalar instead of rdf:Bag must be flagged.
+        var result = PdfPreflight.Validate(
+            PropertyValueTypeXmpRaw("bag Text", "scalar value"), PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.6.2.3.1-2");
+    }
+
+    [Fact]
+    public void Validate_PropertyValueType_SeqIntegerCorrect_NoFinding()
+    {
+        const string seqValue = "<rdf:Seq><rdf:li>1</rdf:li><rdf:li>2</rdf:li></rdf:Seq>";
+        var result = PdfPreflight.Validate(
+            PropertyValueTypeXmpRaw("seq Integer", seqValue), PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.6.2.3.1-2");
+    }
+
+    [Fact]
+    public void Validate_PropertyValueType_SeqIntegerScalar_ReportsError()
+    {
+        // A "seq Integer" property serialised as a scalar must be flagged.
+        var result = PdfPreflight.Validate(
+            PropertyValueTypeXmpRaw("seq Integer", "42"), PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.6.2.3.1-2");
+    }
+
+    [Fact]
+    public void Validate_PropertyValueType_LangAltCorrect_NoFinding()
+    {
+        // Lang Alt: value must be an rdf:Alt; correct rdf:Alt usage must not fire.
+        const string altValue =
+            "<rdf:Alt><rdf:li xml:lang=\"x-default\">Hello</rdf:li></rdf:Alt>";
+        var result = PdfPreflight.Validate(
+            PropertyValueTypeXmpRaw("Lang Alt", altValue), PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.6.2.3.1-2");
+    }
+
+    [Fact]
+    public void Validate_PropertyValueType_LangAltScalar_ReportsError()
+    {
+        // A "Lang Alt" property serialised as a scalar instead of rdf:Alt must be flagged.
+        var result = PdfPreflight.Validate(
+            PropertyValueTypeXmpRaw("Lang Alt", "plain text"), PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.6.2.3.1-2");
+    }
+
+    // ── §6.6.2.3.1-2: Text type (scalar) — no container allowed ──────────────
+
+    [Fact]
+    public void Validate_PropertyValueType_TextScalar_NoFinding()
+    {
+        // A "Text" property with a plain string value must not be flagged.
+        var result = PdfPreflight.Validate(
+            PropertyValueTypeXmpRaw("Text", "hello world"), PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.6.2.3.1-2");
+    }
+
+    [Fact]
+    public void Validate_PropertyValueType_TextWithBagContainer_ReportsError()
+    {
+        // A "Text" property carrying an rdf:Bag is wrong-typed (should be scalar).
+        const string bagValue = "<rdf:Bag><rdf:li>item</rdf:li></rdf:Bag>";
+        var result = PdfPreflight.Validate(
+            PropertyValueTypeXmpRaw("Text", bagValue), PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.6.2.3.1-2");
+    }
+
+    // ── §6.6.2.3.1-2: deferred cases — no finding even when value looks wrong ─
+
+    [Fact]
+    public void Validate_PropertyValueType_UnknownDeclaredType_NoFinding()
+    {
+        // A property whose declared type is unrecognised (custom value type, struct type, etc.)
+        // is deferred — the rule must not flag it even with an arbitrary value.
+        var result = PdfPreflight.Validate(
+            PropertyValueTypeXmpRaw("MyCustomType", "some value"), PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.6.2.3.1-2");
+    }
+
+    [Fact]
+    public void Validate_PropertyValueType_NoPredefinedSchemaChecks_NoFinding()
+    {
+        // Predefined-schema properties (dc:, xmp:, pdfaid:, …) are not type-checked by this
+        // rule (Partial implementation) — even a dc:title serialised as a scalar must not
+        // trigger 6.6.2.3.1-2.  (veraPDF does flag dc:title as scalar, but this rule defers
+        // predefined schemas to avoid false-positives from an incomplete built-in type table.)
+        const string dcTitleScalar =
+            "<rdf:Description rdf:about=\"\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\">"
+            + "<dc:title>Simple scalar title</dc:title>"
+            + "</rdf:Description>";
+        var result = PdfPreflight.Validate(
+            BuildXmpPdf(XmpWithDescriptions(dcTitleScalar)), PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.6.2.3.1-2");
+    }
+
+    [Fact]
+    public void Validate_PropertyValueType_NoExtensionSchema_NoFinding()
+    {
+        // A document with no extension schemas has nothing to type-check — must be silent.
+        var result = PdfPreflight.Validate(
+            BuildXmpPdf(XmpWithDescriptions(string.Empty)), PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.6.2.3.1-2");
+    }
+
     // ── §6.3 annotation rules ─────────────────────────────────────────────────
 
     [Fact]
@@ -2944,6 +3332,68 @@ public sealed class PdfPreflightTests
         Assert.False(result.IsCompliant);
         Assert.Contains(result.Assertions,
             a => a.RuleId == "ISO19005-2:6.3-annotation" && a.Message.Contains("Print"));
+    }
+
+    [Fact]
+    public void Validate_InvisibleSigWidget_DegenerateRect_NoAnnotationFinding()
+    {
+        // §6.3.3-1 false-positive guard: a signature Widget annotation with /Rect [0 0 0 0] (zero
+        // area) has no visible extent and is exempt from the appearance-stream presence requirement.
+        // veraPDF 1.30.2 accepts such annotations without flagging a missing /AP. The flag
+        // requirements (/F Print set, Hidden/Invisible/NoView/ToggleNoView clear) still apply.
+        // This mirrors the invisible signature widget the Signing package writes via doc.Sign().
+        var bytes = BuildPagePdf(
+            "/Annots [4 0 R]",
+            new PdfObj("<< /Type /Annot /Subtype /Widget /FT /Sig /T (Sig1) /Rect [0 0 0 0] /F 4 >>"));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.3-annotation");
+    }
+
+    [Fact]
+    public void Validate_InvisibleStampAnnotation_DegenerateRect_NoAnnotationFinding()
+    {
+        // §6.3.3-1 false-positive guard (non-Widget): a /Stamp annotation with /Rect [0 0 0 0]
+        // is also exempt from the appearance requirement. The exemption is rect-based, not
+        // limited to signature widgets.
+        var bytes = BuildPagePdf(
+            "/Annots [4 0 R]",
+            new PdfObj("<< /Type /Annot /Subtype /Stamp /Rect [0 0 0 0] /F 4 >>"));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.3-annotation");
+    }
+
+    [Fact]
+    public void Validate_VisibleAnnotationMissingAP_DegenerateRectExemptionDoesNotApply()
+    {
+        // Regression guard: a non-degenerate /Rect annotation with no /AP still fires the
+        // 6.3-annotation rule. The degenerate-rect exemption must not over-broaden.
+        var bytes = BuildPagePdf(
+            "/Annots [4 0 R]",
+            new PdfObj("<< /Type /Annot /Subtype /Stamp /Rect [10 10 200 100] /F 4 >>"));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions,
+            a => a.RuleId == "ISO19005-2:6.3-annotation" && a.Message.Contains("appearance"));
+    }
+
+    [Fact]
+    public void Validate_RealSignedPdf_NoAnnotationOrStringFinding()
+    {
+        // The signing package produces an invisible signature widget with /Rect [0 0 0 0] and no
+        // /AP — historically flagged as 6.3-annotation. After the degenerate-rect fix, both the
+        // 6.3-annotation and 6.1.13-string rules must be silent on a well-formed signed PDF.
+        using var cert = CreateSigningCertificate();
+        var signed = SignMinimalPdf(cert);
+
+        var result = PdfPreflight.Validate(signed, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.3-annotation");
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.13-string");
     }
 
     // ── §6.5.1 action rules ─────────────────────────────────────────────────────
@@ -3832,6 +4282,255 @@ public sealed class PdfPreflightTests
         return ms.ToArray();
     }
 
+    // ── §6.2.4.2-1 ICCBased colour space — ICC profile validity ──────────────
+
+    /// <summary>
+    /// Builds a one-page PDF whose /Resources /ColorSpace /CS0 is [/ICCBased &lt;stream&gt;].
+    /// The stream carries <paramref name="iccBytes"/> compressed with FlateDecode. When
+    /// <paramref name="usedInContent"/> is true the page content selects CS0 via the
+    /// <c>cs</c> operator so the rule fires; when false CS0 is merely present in resources.
+    /// </summary>
+    private static byte[] BuildIccBasedPdf(byte[] iccBytes, int n = 3, bool usedInContent = true)
+    {
+        var compressed = ZlibCompress(iccBytes);
+        // Objects: 1=catalog 2=pages 3=page 4=ICC stream 5=content (optional)
+        if (usedInContent)
+        {
+            return AssemblePdf(
+            [
+                new("<< /Type /Catalog /Pages 2 0 R >>"),
+                _pagesObj,
+                new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+                    + "/Resources << /ColorSpace << /CS0 [/ICCBased 4 0 R] >> >> "
+                    + "/Contents 5 0 R >>"),
+                new($"/Filter /FlateDecode /N {n}", compressed),
+                new(string.Empty, Encoding.ASCII.GetBytes("/CS0 cs\n0 sc")),
+            ]);
+        }
+        else
+        {
+            // CS0 in resources but no content selects it.
+            return AssemblePdf(
+            [
+                new("<< /Type /Catalog /Pages 2 0 R >>"),
+                _pagesObj,
+                new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+                    + "/Resources << /ColorSpace << /CS0 [/ICCBased 4 0 R] >> >> >>"),
+                new($"/Filter /FlateDecode /N {n}", compressed),
+            ]);
+        }
+    }
+
+    /// <summary>
+    /// Builds a synthetic 128-byte ICC profile header with the 'acsp' signature and the given
+    /// device class, data colour space, and major version.
+    /// </summary>
+    private static byte[] MakeIccHeader(string deviceClass, string colorSpace, byte majorVersion)
+    {
+        var hdr = new byte[128];
+        // bytes 0–3: profile size
+        hdr[0] = 0; hdr[1] = 0; hdr[2] = 0; hdr[3] = 128;
+        // byte 8: major version
+        hdr[8] = majorVersion;
+        hdr[9] = 0x10; // minor version (irrelevant to the check)
+        // bytes 12–15: device class (4 ASCII, space-padded)
+        for (var i = 0; i < 4; i++)
+            hdr[12 + i] = i < deviceClass.Length ? (byte)deviceClass[i] : (byte)' ';
+        // bytes 16–19: data colour space (4 ASCII, space-padded)
+        for (var i = 0; i < 4; i++)
+            hdr[16 + i] = i < colorSpace.Length ? (byte)colorSpace[i] : (byte)' ';
+        // bytes 20–23: PCS (irrelevant)
+        hdr[20] = (byte)'X'; hdr[21] = (byte)'Y'; hdr[22] = (byte)'Z'; hdr[23] = (byte)' ';
+        // bytes 36–39: 'acsp' signature (required for the profile to be parsed)
+        hdr[36] = (byte)'a'; hdr[37] = (byte)'c'; hdr[38] = (byte)'s'; hdr[39] = (byte)'p';
+        return hdr;
+    }
+
+    // -- invalid device class → finding
+
+    [Fact]
+    public void Validate_IccBased_InvalidDeviceClass_ReportsError()
+    {
+        // Device class 'link' is not in the allowed set (prtr/mntr/scnr/spac).
+        // Confirmed against veraPDF 1.30.2: probe 3 (link/RGB/v2) triggers 6.2.4.2-1.
+        var bytes = BuildIccBasedPdf(MakeIccHeader("link", "RGB ", 2));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.2-1");
+    }
+
+    [Fact]
+    public void Validate_IccBased_AbstractDeviceClass_ReportsError()
+    {
+        // Device class 'abst' is not in the allowed set.
+        // Confirmed against veraPDF 1.30.2: probe 8 (abst/RGB/v2) triggers 6.2.4.2-1.
+        var bytes = BuildIccBasedPdf(MakeIccHeader("abst", "RGB ", 2));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.2-1");
+    }
+
+    // -- invalid colour space → finding
+
+    [Fact]
+    public void Validate_IccBased_InvalidColorSpace_ReportsError()
+    {
+        // Data colour space 'XYZ ' is not in the allowed set (RGB /CMYK/GRAY/Lab ).
+        // Confirmed against veraPDF 1.30.2: probe 4 (mntr/XYZ/v2) triggers 6.2.4.2-1.
+        var bytes = BuildIccBasedPdf(MakeIccHeader("mntr", "XYZ ", 2));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.2-1");
+    }
+
+    // -- version 5 → finding; version 4 → no finding
+
+    [Fact]
+    public void Validate_IccBased_Version5_ReportsError()
+    {
+        // ICC major version 5 is not permitted (version < 5.0 required).
+        // Confirmed against veraPDF 1.30.2: probe 5/11 (mntr/RGB/v5) triggers 6.2.4.2-1;
+        // byte[8] = 5 is the major version boundary.
+        var bytes = BuildIccBasedPdf(MakeIccHeader("mntr", "RGB ", 5));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.2-1");
+    }
+
+    [Fact]
+    public void Validate_IccBased_Version4_NoFinding()
+    {
+        // ICC major version 4 is permitted (byte[8] < 5).
+        // Confirmed against veraPDF 1.30.2: probe 2/10 (mntr/RGB/v4) does not trigger 6.2.4.2-1.
+        var bytes = BuildIccBasedPdf(MakeIccHeader("mntr", "RGB ", 4));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.2-1");
+    }
+
+    // -- valid profiles → no finding
+
+    [Fact]
+    public void Validate_IccBased_ValidMntrRgbV2_NoFinding()
+    {
+        // mntr/RGB /v2 is fully valid. Probe 1 (veraPDF 1.30.2): no 6.2.4.2-1 finding.
+        var bytes = BuildIccBasedPdf(MakeIccHeader("mntr", "RGB ", 2));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.2-1");
+    }
+
+    [Fact]
+    public void Validate_IccBased_ValidScnrGrayV4_NoFinding()
+    {
+        // scnr/GRAY/v4 is fully valid. Probe 6 (veraPDF 1.30.2): no 6.2.4.2-1 finding.
+        var bytes = BuildIccBasedPdf(MakeIccHeader("scnr", "GRAY", 4), n: 1);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.2-1");
+    }
+
+    [Fact]
+    public void Validate_IccBased_ValidSpacLabV4_NoFinding()
+    {
+        // spac/Lab /v4 is fully valid. Probe 7 (veraPDF 1.30.2): no 6.2.4.2-1 finding.
+        var bytes = BuildIccBasedPdf(MakeIccHeader("spac", "Lab ", 4), n: 3);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.2-1");
+    }
+
+    [Fact]
+    public void Validate_IccBased_ValidPrtrCmykV4_NoFinding()
+    {
+        // prtr/CMYK/v4 is fully valid. Probe 9 (veraPDF 1.30.2): no 6.2.4.2-1 finding.
+        var bytes = BuildIccBasedPdf(MakeIccHeader("prtr", "CMYK", 4), n: 4);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.2-1");
+    }
+
+    // -- defensive: truncated / no-acsp → no finding (never a spurious finding)
+
+    [Fact]
+    public void Validate_IccBased_TruncatedProfile_NoFinding()
+    {
+        // A profile shorter than 128 bytes cannot be parsed; the rule skips it defensively.
+        var bytes = BuildIccBasedPdf(new byte[64]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.2-1");
+    }
+
+    [Fact]
+    public void Validate_IccBased_MissingAcspSignature_NoFinding()
+    {
+        // A 128-byte block with the wrong signature at offset 36 is not a recognisable ICC
+        // profile; the rule skips it defensively rather than producing a spurious finding.
+        var hdr = new byte[128];
+        hdr[8] = 2; // valid version
+        hdr[12] = (byte)'l'; hdr[13] = (byte)'i'; hdr[14] = (byte)'n'; hdr[15] = (byte)'k'; // bad class
+        hdr[16] = (byte)'R'; hdr[17] = (byte)'G'; hdr[18] = (byte)'B'; hdr[19] = (byte)' ';
+        // bytes 36-39 are zero — NOT 'acsp'
+        var bytes = BuildIccBasedPdf(hdr);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.2-1");
+    }
+
+    // -- scoping: present but not used in content → no finding
+
+    [Fact]
+    public void Validate_IccBased_UnusedInvalidProfile_NoFinding()
+    {
+        // An invalid ICCBased colour space (device class 'link') that is present in /Resources
+        // but never selected by a cs/CS operator must NOT be flagged — matching veraPDF 1.30.2
+        // (probes 13–14: unused invalid spaces are not reported).
+        var bytes = BuildIccBasedPdf(MakeIccHeader("link", "RGB ", 2), usedInContent: false);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.2-1");
+    }
+
+    // -- no-false-positive with a real writer-produced sRGB ICC profile
+
+    [Fact]
+    public void Validate_IccBased_RealSrgbProfile_NoFinding()
+    {
+        // The VellumPdf kernel's built-in sRGB ICC v2 profile (mntr/RGB /v2) embedded as an
+        // ICCBased colour space must NOT trigger 6.2.4.2-1. This guards against false positives
+        // on profiles produced by the library itself.
+        var bytes = BuildIccBasedPdf(IccProfiles.Srgb, n: 3);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.2-1");
+    }
+
+    [Fact]
+    public void Validate_IccBased_RealCmykProfile_NoFinding()
+    {
+        // The VellumPdf kernel's built-in generic CMYK ICC profile embedded as an ICCBased
+        // colour space must NOT trigger 6.2.4.2-1.
+        var bytes = BuildIccBasedPdf(IccProfiles.GenericCmyk, n: 4);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.2-1");
+    }
+
     [Fact]
     public void Assertion_ToString_IncludesRuleAndSeverity()
     {
@@ -4434,5 +5133,1698 @@ public sealed class PdfPreflightTests
         var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
 
         Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.13-10");
+    }
+
+    // ── §6.2.11.3.3-2: embedded CMap stream WMode must equal program WMode ────
+
+    /// <summary>
+    /// Builds a one-page PDF like <see cref="BuildEmbeddedCMapFontPdf"/> but with an explicit
+    /// <paramref name="dictWMode"/> in the CMap stream dictionary (overriding the fixed /WMode 0
+    /// that <see cref="BuildEmbeddedCMapFontPdf"/> uses). Used to test WMode consistency checks.
+    /// </summary>
+    private static byte[] BuildEmbeddedCMapFontPdfWithDictWMode(
+        byte[] cmapBody, string shownCharHex, int dictWMode)
+    {
+        var cisys = "/Registry (Adobe) /Ordering (Japan1) /Supplement 6";
+        var objects = new List<PdfObj>
+        {
+            new("<< /Type /Catalog /Pages 2 0 R >>"),
+            _pagesObj,
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources 4 0 R /Contents 11 0 R >>"),
+            new("<< /Font 5 0 R >>"),
+            new("<< /F0 6 0 R >>"),
+            new("<< /Type /Font /Subtype /Type0 /BaseFont /X /Encoding 7 0 R /DescendantFonts [8 0 R] >>"),
+            new($"/Type /CMap /CMapName /CustomCMap /CIDSystemInfo << {cisys} >> /WMode {dictWMode}", cmapBody),
+            new($"<< /Type /Font /Subtype /CIDFontType2 /BaseFont /X /CIDSystemInfo << {cisys} >> /FontDescriptor 9 0 R /CIDToGIDMap /Identity >>"),
+            new("<< /Type /FontDescriptor /FontName /X /Flags 4 /FontBBox [0 0 1000 1000] /ItalicAngle 0 /Ascent 1000 /Descent -200 /CapHeight 800 /StemV 80 /FontFile2 10 0 R >>"),
+            new("/Length1 4", [1, 2, 3, 4]),
+            new(string.Empty, Encoding.ASCII.GetBytes($"BT /F0 12 Tf <{shownCharHex}> Tj ET")),
+        };
+        return AssemblePdf(objects);
+    }
+
+    /// <summary>
+    /// Builds a CMap program with /WMode programWMode explicitly declared via "/WMode N def".
+    /// </summary>
+    private static byte[] MakeCMapWithWMode(int programWMode)
+        => Encoding.ASCII.GetBytes(
+            "/CIDInit /ProcSet findresource begin 12 dict begin begincmap "
+            + "/CIDSystemInfo 3 dict dup begin /Registry (Adobe) def /Ordering (Japan1) def /Supplement 6 def end def "
+            + "/CMapName /CustomCMap def /CMapType 1 def "
+            + $"/WMode {programWMode} def "
+            + "1 begincodespacerange <0000> <FFFF> endcodespacerange "
+            + "1 begincidrange <0020> <007E> 32 endcidrange "
+            + "endcmap CMapName currentdict /CMap defineresource pop end end");
+
+    /// <summary>
+    /// Builds a CMap program without any /WMode declaration (defaults to 0).
+    /// </summary>
+    private static byte[] MakeCMapWithoutWMode()
+        => Encoding.ASCII.GetBytes(
+            "/CIDInit /ProcSet findresource begin 12 dict begin begincmap "
+            + "/CIDSystemInfo 3 dict dup begin /Registry (Adobe) def /Ordering (Japan1) def /Supplement 6 def end def "
+            + "/CMapName /CustomCMap def /CMapType 1 def "
+            + "1 begincodespacerange <0000> <FFFF> endcodespacerange "
+            + "1 begincidrange <0020> <007E> 32 endcidrange "
+            + "endcmap CMapName currentdict /CMap defineresource pop end end");
+
+    /// <summary>
+    /// Builds a CMap program that contains a usecmap invocation referencing the given name.
+    /// </summary>
+    private static byte[] MakeCMapWithUseCMap(string referencedName)
+        => Encoding.ASCII.GetBytes(
+            "/CIDInit /ProcSet findresource begin 12 dict begin begincmap "
+            + "/CIDSystemInfo 3 dict dup begin /Registry (Adobe) def /Ordering (Japan1) def /Supplement 6 def end def "
+            + "/CMapName /CustomCMap def /CMapType 1 def "
+            + "/WMode 0 def "
+            + $"/{referencedName} usecmap "
+            + "1 begincodespacerange <0000> <FFFF> endcodespacerange "
+            + "1 begincidrange <0020> <007E> 32 endcidrange "
+            + "endcmap CMapName currentdict /CMap defineresource pop end end");
+
+    [Fact]
+    public void Validate_EmbeddedCMap_DictWMode1_ProgWMode0_ReportsError()
+    {
+        // §6.2.11.3.3-2: stream dictionary /WMode=1 but program declares /WMode 0 def → mismatch.
+        // veraPDF oracle (STEP-0): dict=1, prog=0 → 6.2.11.3.3-2 FAIL
+        // ("WMode entry (value 0) in the embedded CMap and in the CMap dictionary (value 1) are not identical").
+        var cmapBody = MakeCMapWithWMode(0);
+        var bytes = BuildEmbeddedCMapFontPdfWithDictWMode(cmapBody, "0020", dictWMode: 1);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.11.3.3-2");
+    }
+
+    [Fact]
+    public void Validate_EmbeddedCMap_DictWMode0_ProgWMode1_ReportsError()
+    {
+        // §6.2.11.3.3-2: stream dictionary /WMode=0 but program declares /WMode 1 def → mismatch.
+        // veraPDF oracle (STEP-0): dict=0, prog=1 → 6.2.11.3.3-2 FAIL.
+        var cmapBody = MakeCMapWithWMode(1);
+        var bytes = BuildEmbeddedCMapFontPdfWithDictWMode(cmapBody, "0020", dictWMode: 0);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.11.3.3-2");
+    }
+
+    [Fact]
+    public void Validate_EmbeddedCMap_BothWMode1_NoFinding()
+    {
+        // §6.2.11.3.3-2 no-false-positive: dict /WMode=1 and program /WMode 1 def → match → PASS.
+        // veraPDF oracle (STEP-0): both=1 → PASS.
+        var cmapBody = MakeCMapWithWMode(1);
+        var bytes = BuildEmbeddedCMapFontPdfWithDictWMode(cmapBody, "0020", dictWMode: 1);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.11.3.3-2");
+    }
+
+    [Fact]
+    public void Validate_EmbeddedCMap_BothWModeAbsent_DefaultZero_NoFinding()
+    {
+        // §6.2.11.3.3-2 no-false-positive: neither the stream dictionary nor the program declares
+        // /WMode — both default to 0 → match → PASS.
+        // veraPDF oracle (STEP-0): both absent → PASS.
+        var cmapBody = MakeCMapWithoutWMode();
+        // BuildEmbeddedCMapFontPdf uses /WMode 0 in the dict, so we need a variant without it.
+        // Use BuildEmbeddedCMapFontPdfWithDictWMode with 0 to test default agreement.
+        var bytes = BuildEmbeddedCMapFontPdfWithDictWMode(cmapBody, "0020", dictWMode: 0);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.11.3.3-2");
+    }
+
+    [Fact]
+    public void Validate_EmbeddedCMap_DictWMode0_ProgWModeAbsent_DefaultZero_NoFinding()
+    {
+        // §6.2.11.3.3-2 no-false-positive: stream dictionary /WMode=0, program has no /WMode
+        // declaration (defaults to 0) → match → PASS.
+        // veraPDF oracle (STEP-0): dict=0, prog=absent → PASS.
+        var cmapBody = MakeCMapWithoutWMode();
+        var bytes = BuildEmbeddedCMapFontPdfWithDictWMode(cmapBody, "0020", dictWMode: 0);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.11.3.3-2");
+    }
+
+    [Fact]
+    public void Validate_EmbeddedCMap_WModeMismatch_FontNotUsedInContent_NoFinding()
+    {
+        // §6.2.11.3.3-2 scoping: a WMode mismatch on a font that is never selected via Tf in the
+        // content stream shall NOT produce a finding. The rule is scoped to used fonts, matching
+        // veraPDF (STEP-0: unused-font WMode mismatch → PASS).
+        var cmapBody = MakeCMapWithWMode(0); // prog=0
+        var cisys = "/Registry (Adobe) /Ordering (Japan1) /Supplement 6";
+        var objects = new List<PdfObj>
+        {
+            new("<< /Type /Catalog /Pages 2 0 R >>"),
+            _pagesObj,
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources 4 0 R /Contents 11 0 R >>"),
+            new("<< /Font 5 0 R >>"),
+            new("<< /F0 6 0 R >>"),
+            new("<< /Type /Font /Subtype /Type0 /BaseFont /X /Encoding 7 0 R /DescendantFonts [8 0 R] >>"),
+            new($"/Type /CMap /CMapName /CustomCMap /CIDSystemInfo << {cisys} >> /WMode 1", cmapBody), // dict=1, prog=0 mismatch
+            new($"<< /Type /Font /Subtype /CIDFontType2 /BaseFont /X /CIDSystemInfo << {cisys} >> /FontDescriptor 9 0 R /CIDToGIDMap /Identity >>"),
+            new("<< /Type /FontDescriptor /FontName /X /Flags 4 /FontBBox [0 0 1000 1000] /ItalicAngle 0 /Ascent 1000 /Descent -200 /CapHeight 800 /StemV 80 /FontFile2 10 0 R >>"),
+            new("/Length1 4", [1, 2, 3, 4]),
+            new(string.Empty, []), // empty content — no Tf, font never selected
+        };
+        var bytes = AssemblePdf(objects);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.11.3.3-2");
+    }
+
+    [Fact]
+    public void Validate_IdentityHEncoding_WModeCheck_NotApplied()
+    {
+        // §6.2.11.3.3-2 exempt: Identity-H is not an embedded CMap stream; the WMode check does
+        // not apply. No finding shall be generated regardless of any other issues.
+        var bytes = BuildFontPdf(
+            new PdfObj("<< /Type /Font /Subtype /Type0 /BaseFont /X /Encoding /Identity-H /DescendantFonts [7 0 R] >>"),
+            new PdfObj("<< /Type /Font /Subtype /CIDFontType2 /BaseFont /X /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> /FontDescriptor 8 0 R /CIDToGIDMap /Identity >>"),
+            new PdfObj("<< /Type /FontDescriptor /FontName /X /FontFile2 9 0 R >>"),
+            new PdfObj("/Length1 4", [1, 2, 3, 4]));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.11.3.3-2");
+    }
+
+    [Fact]
+    public void Validate_PredefinedNamedCMap_WModeCheck_NotApplied()
+    {
+        // §6.2.11.3.3-2 exempt: a predefined named CMap (UniGB-UCS2-H) has no embedded program;
+        // the WMode check is not applicable. No finding shall be generated.
+        var bytes = BuildFontPdf(
+            new PdfObj("<< /Type /Font /Subtype /Type0 /BaseFont /X /Encoding /UniGB-UCS2-H /DescendantFonts [7 0 R] >>"),
+            new PdfObj("<< /Type /Font /Subtype /CIDFontType0 /BaseFont /X /CIDSystemInfo << /Registry (Adobe) /Ordering (GB1) /Supplement 5 >> /FontDescriptor 8 0 R >>"),
+            new PdfObj("<< /Type /FontDescriptor /FontName /X /FontFile3 9 0 R >>"),
+            new PdfObj("/Subtype /CIDFontType0C", [1, 2, 3, 4]));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.11.3.3-2");
+    }
+
+    // ── §6.2.11.3.3-3: usecmap must reference only Table 118 predefined CMaps ───
+
+    [Fact]
+    public void Validate_EmbeddedCMap_UseCMapNonPredefined_ReportsError()
+    {
+        // §6.2.11.3.3-3: the CMap program references a non-predefined CMap via /CustomThing usecmap.
+        // Expect a finding naming "CustomThing".
+        // Oracle: verified against veraPDF profile XML (PDReferencedCMap / CMapName check);
+        // in-process tests cover this directly (probe PDFs cannot trigger it — veraPDF needs a
+        // fully resolved PDReferencedCMap structure).
+        var cmapBody = MakeCMapWithUseCMap("CustomThing");
+        var bytes = BuildEmbeddedCMapFontPdf(cmapBody, "0020");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a =>
+            a.RuleId == "ISO19005-2:6.2.11.3.3-3" && a.Message.Contains("CustomThing"));
+    }
+
+    [Fact]
+    public void Validate_EmbeddedCMap_UseCMapIdentityH_NoFinding()
+    {
+        // §6.2.11.3.3-3 no-false-positive: /Identity-H is a predefined CMap (Table 118). A usecmap
+        // referencing it shall not produce a finding.
+        var cmapBody = MakeCMapWithUseCMap("Identity-H");
+        var bytes = BuildEmbeddedCMapFontPdf(cmapBody, "0020");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.11.3.3-3");
+    }
+
+    [Fact]
+    public void Validate_EmbeddedCMap_UseCMapGB_EUC_H_NoFinding()
+    {
+        // §6.2.11.3.3-3 no-false-positive: GB-EUC-H is listed in Table 118 → PASS.
+        var cmapBody = MakeCMapWithUseCMap("GB-EUC-H");
+        var bytes = BuildEmbeddedCMapFontPdf(cmapBody, "0020");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.11.3.3-3");
+    }
+
+    [Fact]
+    public void Validate_EmbeddedCMap_NoUseCMap_NoFinding()
+    {
+        // §6.2.11.3.3-3 no-false-positive: a CMap program with no usecmap operator shall not
+        // produce a finding.
+        var cmapBody = MakeCMapWithoutWMode();
+        var bytes = BuildEmbeddedCMapFontPdf(cmapBody, "0020");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.11.3.3-3");
+    }
+
+    [Fact]
+    public void Validate_EmbeddedCMap_UseCMapNonPredefined_FontNotUsed_NoFinding()
+    {
+        // §6.2.11.3.3-3 scoping: non-predefined usecmap on an unused font → no finding.
+        // The rule is scoped to fonts actually selected via Tf in the content stream.
+        var cmapBody = MakeCMapWithUseCMap("CustomThing");
+        var cisys = "/Registry (Adobe) /Ordering (Japan1) /Supplement 6";
+        var objects = new List<PdfObj>
+        {
+            new("<< /Type /Catalog /Pages 2 0 R >>"),
+            _pagesObj,
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources 4 0 R /Contents 11 0 R >>"),
+            new("<< /Font 5 0 R >>"),
+            new("<< /F0 6 0 R >>"),
+            new("<< /Type /Font /Subtype /Type0 /BaseFont /X /Encoding 7 0 R /DescendantFonts [8 0 R] >>"),
+            new($"/Type /CMap /CMapName /CustomCMap /CIDSystemInfo << {cisys} >> /WMode 0", cmapBody),
+            new($"<< /Type /Font /Subtype /CIDFontType2 /BaseFont /X /CIDSystemInfo << {cisys} >> /FontDescriptor 9 0 R /CIDToGIDMap /Identity >>"),
+            new("<< /Type /FontDescriptor /FontName /X /Flags 4 /FontBBox [0 0 1000 1000] /ItalicAngle 0 /Ascent 1000 /Descent -200 /CapHeight 800 /StemV 80 /FontFile2 10 0 R >>"),
+            new("/Length1 4", [1, 2, 3, 4]),
+            new(string.Empty, []), // empty content — font never selected
+        };
+        var bytes = AssemblePdf(objects);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.11.3.3-3");
+    }
+
+    [Fact]
+    public void Validate_IdentityHEncoding_UseCMapCheck_NotApplied()
+    {
+        // §6.2.11.3.3-3 exempt: Identity-H is not an embedded CMap stream; the usecmap check does
+        // not apply. No finding for 6.2.11.3.3-3.
+        var bytes = BuildFontPdf(
+            new PdfObj("<< /Type /Font /Subtype /Type0 /BaseFont /X /Encoding /Identity-H /DescendantFonts [7 0 R] >>"),
+            new PdfObj("<< /Type /Font /Subtype /CIDFontType2 /BaseFont /X /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> /FontDescriptor 8 0 R /CIDToGIDMap /Identity >>"),
+            new PdfObj("<< /Type /FontDescriptor /FontName /X /FontFile2 9 0 R >>"),
+            new PdfObj("/Length1 4", [1, 2, 3, 4]));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.11.3.3-3");
+    }
+
+    [Fact]
+    public void Validate_PredefinedNamedCMap_UseCMapCheck_NotApplied()
+    {
+        // §6.2.11.3.3-3 exempt: a predefined named CMap (UniGB-UCS2-H) has no embedded program;
+        // the usecmap check is not applicable. No finding for 6.2.11.3.3-3.
+        var bytes = BuildFontPdf(
+            new PdfObj("<< /Type /Font /Subtype /Type0 /BaseFont /X /Encoding /UniGB-UCS2-H /DescendantFonts [7 0 R] >>"),
+            new PdfObj("<< /Type /Font /Subtype /CIDFontType0 /BaseFont /X /CIDSystemInfo << /Registry (Adobe) /Ordering (GB1) /Supplement 5 >> /FontDescriptor 8 0 R >>"),
+            new PdfObj("<< /Type /FontDescriptor /FontName /X /FontFile3 9 0 R >>"),
+            new PdfObj("/Subtype /CIDFontType0C", [1, 2, 3, 4]));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.11.3.3-3");
+    }
+
+    // ── §6.2.8.3 JPEG2000 codestream constraints ──────────────────────────────────────────────────
+
+    /// <summary>
+    /// Builds a one-page PDF whose /Resources /XObject /X0 is a JPXDecode image stream carrying
+    /// the given raw JP2/JPEG2000 <paramref name="jp2Bytes"/>. The page draws the image with Do so
+    /// the rule's content-usage scoping selects it.
+    /// </summary>
+    private static byte[] BuildJpxImagePdf(byte[] jp2Bytes)
+        => BuildXObjectPdf(
+            "/Type /XObject /Subtype /Image /Width 4 /Height 4 /Filter /JPXDecode /ColorSpace /DeviceRGB",
+            jp2Bytes,
+            draw: true);
+
+    // ── JP2 box file builder (mirrors JpxImageTests, reusable in this file) ───────────────────────
+
+    private sealed record Jp2FileData(byte[] File, byte[] Codestream);
+
+    /// <summary>
+    /// Builds a minimal JP2 box file: signature + ftyp + jp2h(ihdr[+bpcc][+colr…]) + jp2c.
+    /// Supports multiple colr boxes, per-component bpcc, and controllable APPROX/EnumCS fields.
+    /// </summary>
+    private static Jp2FileData BuildJp2(
+        int nc,
+        int bpc,
+        int[]? perComponentBpc = null,
+        IReadOnlyList<(byte Meth, byte Approx, int? EnumCs)>? colrBoxes = null)
+    {
+        var codestream = Jp2BuildRawCodestream(nc, perComponentBpc ?? Enumerable.Repeat(bpc, nc).ToArray());
+        var buf = new List<byte>();
+
+        // Signature box: LBox=12, TBox="jP  ", magic=0D 0A 87 0A
+        Jp2Append32(buf, 12u);
+        buf.AddRange([0x6A, 0x50, 0x20, 0x20]);
+        buf.AddRange([0x0D, 0x0A, 0x87, 0x0A]);
+
+        // ftyp box
+        var ftyp = new List<byte>();
+        ftyp.AddRange([0x6A, 0x70, 0x32, 0x20]); // brand "jp2 "
+        Jp2Append32(ftyp, 0u);                     // MinV
+        ftyp.AddRange([0x6A, 0x70, 0x32, 0x20]); // compat "jp2 "
+        Jp2AppendBox(buf, 0x66747970u, [.. ftyp]);
+
+        // ihdr box: Height(4) Width(4) NC(2) BPC(1) C(1) UnkC(1) IPR(1)
+        var ihdr = new List<byte>();
+        Jp2Append32(ihdr, 4u); // height
+        Jp2Append32(ihdr, 4u); // width
+        Jp2Append16(ihdr, (ushort)nc);
+        var bpcByte = perComponentBpc is not null && nc > 1 ? (byte)0xFF : (byte)((bpc - 1) & 0x7F);
+        ihdr.Add(bpcByte);
+        ihdr.Add(0x07); // C
+        ihdr.Add(0x00); // UnkC
+        ihdr.Add(0x00); // IPR
+        var ihdrBox = Jp2MakeBox(0x69686472u, [.. ihdr]);
+
+        // Optional bpcc box when per-component bit depths differ.
+        byte[] bpccBox = [];
+        if (bpcByte == 0xFF && perComponentBpc is not null)
+        {
+            var bpcc = new List<byte>();
+            foreach (var d in perComponentBpc)
+                bpcc.Add((byte)((d - 1) & 0x7F));
+            bpccBox = Jp2MakeBox(0x62706363u, [.. bpcc]);
+        }
+
+        // colr boxes
+        var colrContent = new List<byte>();
+        if (colrBoxes is not null)
+        {
+            foreach (var (meth, approx, enumCs) in colrBoxes)
+            {
+                var colr = new List<byte> { meth, 0x00, approx }; // METH, PREC, APPROX
+                if (meth == 1 && enumCs.HasValue)
+                    Jp2Append32(colr, (uint)enumCs.Value);
+                colrContent.AddRange(Jp2MakeBox(0x636F6C72u, [.. colr]));
+            }
+        }
+        else
+        {
+            // Default: single colr with METH=1, EnumCS=16 (sRGB), APPROX=0
+            var colr = new List<byte> { 0x01, 0x00, 0x00 };
+            Jp2Append32(colr, 16u);
+            colrContent.AddRange(Jp2MakeBox(0x636F6C72u, [.. colr]));
+        }
+
+        // jp2h superbox
+        var jp2h = new List<byte>();
+        jp2h.AddRange(ihdrBox);
+        jp2h.AddRange(bpccBox);
+        jp2h.AddRange(colrContent);
+        Jp2AppendBox(buf, 0x6A703268u, [.. jp2h]);
+
+        // jp2c box
+        Jp2AppendBox(buf, 0x6A703263u, codestream);
+
+        return new Jp2FileData([.. buf], codestream);
+    }
+
+    /// <summary>Builds a minimal raw JPEG2000 codestream (SOC + SIZ + EOC) for nc components.</summary>
+    private static byte[] Jp2BuildRawCodestream(int nc, int[] bpcs)
+    {
+        var lsiz = 38 + 3 * nc;
+        var buf = new List<byte>();
+        buf.AddRange([0xFF, 0x4F]);       // SOC
+        buf.AddRange([0xFF, 0x51]);       // SIZ
+        Jp2Append16(buf, (ushort)lsiz);   // Lsiz
+        Jp2Append16(buf, 0);              // Rsiz
+        Jp2Append32(buf, 4u);             // Xsiz
+        Jp2Append32(buf, 4u);             // Ysiz
+        Jp2Append32(buf, 0u);             // XOsiz
+        Jp2Append32(buf, 0u);             // YOsiz
+        Jp2Append32(buf, 4u);             // XTsiz
+        Jp2Append32(buf, 4u);             // YTsiz
+        Jp2Append32(buf, 0u);             // XTOsiz
+        Jp2Append32(buf, 0u);             // YTOsiz
+        Jp2Append16(buf, (ushort)nc);     // Csiz
+        foreach (var d in bpcs)
+        {
+            buf.Add((byte)((d - 1) & 0x7F)); // Ssiz
+            buf.Add(0x01); buf.Add(0x01);     // XRsiz, YRsiz
+        }
+        buf.AddRange([0xFF, 0xD9]);       // EOC
+        return [.. buf];
+    }
+
+    private static void Jp2Append32(List<byte> buf, uint v)
+    {
+        buf.Add((byte)(v >> 24)); buf.Add((byte)((v >> 16) & 0xFF));
+        buf.Add((byte)((v >> 8) & 0xFF)); buf.Add((byte)(v & 0xFF));
+    }
+
+    private static void Jp2Append16(List<byte> buf, ushort v)
+        => buf.AddRange([(byte)(v >> 8), (byte)(v & 0xFF)]);
+
+    private static byte[] Jp2MakeBox(uint type, byte[] payload)
+    {
+        var box = new List<byte>();
+        Jp2Append32(box, (uint)(8 + payload.Length));
+        Jp2Append32(box, type);
+        box.AddRange(payload);
+        return [.. box];
+    }
+
+    private static void Jp2AppendBox(List<byte> buf, uint type, byte[] payload)
+        => buf.AddRange(Jp2MakeBox(type, payload));
+
+    // ── §6.2.8.3-1: colour channel count ──────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Validate_Jpeg2000_NcEquals2_IsFlagged_6283_1()
+    {
+        // NC=2 is not in {1,3,4} — must be flagged.
+        var jp2 = BuildJp2(nc: 2, bpc: 8);
+        var pdf = BuildJpxImagePdf(jp2.File);
+        var result = PdfPreflight.Validate(pdf, PdfConformance.PdfA2B);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.8.3-1");
+    }
+
+    [Fact]
+    public void Validate_Jpeg2000_NcEquals5_IsFlagged_6283_1()
+    {
+        // NC=5 is not in {1,3,4}.
+        var jp2 = BuildJp2(nc: 5, bpc: 8);
+        var pdf = BuildJpxImagePdf(jp2.File);
+        var result = PdfPreflight.Validate(pdf, PdfConformance.PdfA2B);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.8.3-1");
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(3)]
+    [InlineData(4)]
+    public void Validate_Jpeg2000_NcValid_NoFinding_6283_1(int nc)
+    {
+        // NC ∈ {1,3,4}: no §6.2.8.3-1 finding.
+        var jp2 = BuildJp2(nc: nc, bpc: 8);
+        var pdf = BuildJpxImagePdf(jp2.File);
+        var result = PdfPreflight.Validate(pdf, PdfConformance.PdfA2B);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.8.3-1");
+    }
+
+    [Fact]
+    public void Validate_Jpeg2000_RawCodestream_NcEquals2_IsFlagged_6283_1()
+    {
+        // Raw codestream (no JP2 wrapper), Csiz=2.
+        var raw = Jp2BuildRawCodestream(2, [8, 8]);
+        var pdf = BuildJpxImagePdf(raw);
+        var result = PdfPreflight.Validate(pdf, PdfConformance.PdfA2B);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.8.3-1");
+    }
+
+    [Fact]
+    public void Validate_Jpeg2000_RawCodestream_NcEquals3_NoFinding_6283_1()
+    {
+        var raw = Jp2BuildRawCodestream(3, [8, 8, 8]);
+        var pdf = BuildJpxImagePdf(raw);
+        var result = PdfPreflight.Validate(pdf, PdfConformance.PdfA2B);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.8.3-1");
+    }
+
+    // ── §6.2.8.3-2: APPROX field when multiple colr boxes ─────────────────────────────────────────
+
+    [Fact]
+    public void Validate_Jpeg2000_MultipleColr_ZeroApproxOnes_IsFlagged_6283_2()
+    {
+        // Two colr boxes, neither has APPROX=1. Must be flagged.
+        var jp2 = BuildJp2(nc: 3, bpc: 8, colrBoxes:
+        [
+            (0x01, 0x00, 16),  // METH=1, APPROX=0, sRGB
+            (0x01, 0x00, 17),  // METH=1, APPROX=0, Greyscale
+        ]);
+        var pdf = BuildJpxImagePdf(jp2.File);
+        var result = PdfPreflight.Validate(pdf, PdfConformance.PdfA2B);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.8.3-2");
+    }
+
+    [Fact]
+    public void Validate_Jpeg2000_MultipleColr_TwoApproxOnes_IsFlagged_6283_2()
+    {
+        // Two colr boxes, both have APPROX=1. Must be flagged (exactly one required).
+        var jp2 = BuildJp2(nc: 3, bpc: 8, colrBoxes:
+        [
+            (0x01, 0x01, 16),
+            (0x01, 0x01, 17),
+        ]);
+        var pdf = BuildJpxImagePdf(jp2.File);
+        var result = PdfPreflight.Validate(pdf, PdfConformance.PdfA2B);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.8.3-2");
+    }
+
+    [Fact]
+    public void Validate_Jpeg2000_MultipleColr_ExactlyOneApprox1_NoFinding_6283_2()
+    {
+        // Two colr boxes, exactly one has APPROX=1. No finding.
+        var jp2 = BuildJp2(nc: 3, bpc: 8, colrBoxes:
+        [
+            (0x01, 0x01, 16),  // APPROX=1
+            (0x02, 0x00, null), // METH=2 (ICC), APPROX=0
+        ]);
+        var pdf = BuildJpxImagePdf(jp2.File);
+        var result = PdfPreflight.Validate(pdf, PdfConformance.PdfA2B);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.8.3-2");
+    }
+
+    [Fact]
+    public void Validate_Jpeg2000_SingleColr_ApproxRuleNotApplied_NoFinding_6283_2()
+    {
+        // Rule only applies when colr count > 1. Single colr APPROX=0 is fine.
+        var jp2 = BuildJp2(nc: 3, bpc: 8, colrBoxes: [(0x01, 0x00, 16)]);
+        var pdf = BuildJpxImagePdf(jp2.File);
+        var result = PdfPreflight.Validate(pdf, PdfConformance.PdfA2B);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.8.3-2");
+    }
+
+    // ── §6.2.8.3-3: METH field constraint ─────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Validate_Jpeg2000_ColrMeth0_IsFlagged_6283_3()
+    {
+        // METH=0 is not in {1,2,3}.
+        var jp2 = BuildJp2(nc: 3, bpc: 8, colrBoxes: [(0x00, 0x00, null)]);
+        var pdf = BuildJpxImagePdf(jp2.File);
+        var result = PdfPreflight.Validate(pdf, PdfConformance.PdfA2B);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.8.3-3");
+    }
+
+    [Fact]
+    public void Validate_Jpeg2000_ColrMeth4_IsFlagged_6283_3()
+    {
+        // METH=4 is not in {1,2,3}.
+        var jp2 = BuildJp2(nc: 3, bpc: 8, colrBoxes: [(0x04, 0x00, null)]);
+        var pdf = BuildJpxImagePdf(jp2.File);
+        var result = PdfPreflight.Validate(pdf, PdfConformance.PdfA2B);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.8.3-3");
+    }
+
+    [Theory]
+    [InlineData(0x01)]
+    [InlineData(0x02)]
+    [InlineData(0x03)]
+    public void Validate_Jpeg2000_ColrMethValid_NoFinding_6283_3(int meth)
+    {
+        var colrBoxes = meth == 1
+            ? new[] { ((byte)meth, (byte)0x00, (int?)16) }
+            : new[] { ((byte)meth, (byte)0x00, (int?)null) };
+        var jp2 = BuildJp2(nc: 3, bpc: 8, colrBoxes: colrBoxes);
+        var pdf = BuildJpxImagePdf(jp2.File);
+        var result = PdfPreflight.Validate(pdf, PdfConformance.PdfA2B);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.8.3-3");
+    }
+
+    // ── §6.2.8.3-4: CIEJab (EnumCS=19) prohibited ────────────────────────────────────────────────
+
+    [Fact]
+    public void Validate_Jpeg2000_ColrEnumCs19_IsFlagged_6283_4()
+    {
+        // METH=1, EnumCS=19 (CIEJab) — forbidden.
+        var jp2 = BuildJp2(nc: 3, bpc: 8, colrBoxes: [(0x01, 0x00, 19)]);
+        var pdf = BuildJpxImagePdf(jp2.File);
+        var result = PdfPreflight.Validate(pdf, PdfConformance.PdfA2B);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.8.3-4");
+    }
+
+    [Fact]
+    public void Validate_Jpeg2000_ColrEnumCs16_NoFinding_6283_4()
+    {
+        // METH=1, EnumCS=16 (sRGB) — permitted.
+        var jp2 = BuildJp2(nc: 3, bpc: 8, colrBoxes: [(0x01, 0x00, 16)]);
+        var pdf = BuildJpxImagePdf(jp2.File);
+        var result = PdfPreflight.Validate(pdf, PdfConformance.PdfA2B);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.8.3-4");
+    }
+
+    // ── §6.2.8.3-5: bit depth in 1..38, all equal ─────────────────────────────────────────────────
+
+    [Fact]
+    public void Validate_Jpeg2000_BitDepth0_IsFlagged_6283_5()
+    {
+        // BPC byte = 0xFF (per-component), bpcc has component with depth 0: (0 & 0x7F)+1 = 1 → OK
+        // Actually depth 0 means bpcc byte = 0xFF → (0xFF & 0x7F)+1 = 128 > 38 → out of range.
+        // Build a JP2 where ihdr BPC=0xFF and bpcc has a byte of 0xFF (depth=128).
+        var codestream = Jp2BuildRawCodestream(1, [8]);
+        var buf = new List<byte>();
+        // Signature
+        Jp2Append32(buf, 12u);
+        buf.AddRange([0x6A, 0x50, 0x20, 0x20]);
+        buf.AddRange([0x0D, 0x0A, 0x87, 0x0A]);
+        // ftyp
+        var ftyp = new List<byte>();
+        ftyp.AddRange([0x6A, 0x70, 0x32, 0x20]);
+        Jp2Append32(ftyp, 0u);
+        ftyp.AddRange([0x6A, 0x70, 0x32, 0x20]);
+        Jp2AppendBox(buf, 0x66747970u, [.. ftyp]);
+        // ihdr with BPC=0xFF (per-component depths in bpcc)
+        var ihdr = new List<byte>();
+        Jp2Append32(ihdr, 4u); Jp2Append32(ihdr, 4u);
+        Jp2Append16(ihdr, 1);   // NC=1
+        ihdr.Add(0xFF);          // BPC = 0xFF → read bpcc box
+        ihdr.Add(0x07); ihdr.Add(0x00); ihdr.Add(0x00);
+        // bpcc box: single component with depth byte=0xFF → (0x7F)+1 = 128, out of range
+        var bpcc = new List<byte> { 0xFF };
+        // jp2h
+        var jp2h = new List<byte>();
+        jp2h.AddRange(Jp2MakeBox(0x69686472u, [.. ihdr]));
+        jp2h.AddRange(Jp2MakeBox(0x62706363u, [.. bpcc]));
+        // colr
+        var colr = new List<byte> { 0x01, 0x00, 0x00 };
+        Jp2Append32(colr, 17u);  // Greyscale
+        jp2h.AddRange(Jp2MakeBox(0x636F6C72u, [.. colr]));
+        Jp2AppendBox(buf, 0x6A703268u, [.. jp2h]);
+        Jp2AppendBox(buf, 0x6A703263u, codestream);
+
+        var pdf = BuildJpxImagePdf([.. buf]);
+        var result = PdfPreflight.Validate(pdf, PdfConformance.PdfA2B);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.8.3-5");
+    }
+
+    [Fact]
+    public void Validate_Jpeg2000_NonUniformBitDepths_IsFlagged_6283_5()
+    {
+        // Three components with differing bit depths: {8, 8, 16} — not uniform.
+        var jp2 = BuildJp2(nc: 3, bpc: 8, perComponentBpc: [8, 8, 16]);
+        var pdf = BuildJpxImagePdf(jp2.File);
+        var result = PdfPreflight.Validate(pdf, PdfConformance.PdfA2B);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.8.3-5");
+    }
+
+    [Fact]
+    public void Validate_Jpeg2000_BitDepthUniform8_NoFinding_6283_5()
+    {
+        // Uniform BPC=8 — no violation.
+        var jp2 = BuildJp2(nc: 3, bpc: 8);
+        var pdf = BuildJpxImagePdf(jp2.File);
+        var result = PdfPreflight.Validate(pdf, PdfConformance.PdfA2B);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.8.3-5");
+    }
+
+    [Fact]
+    public void Validate_Jpeg2000_RawCodestream_NonUniformBitDepths_IsFlagged_6283_5()
+    {
+        // Raw codestream, Csiz=3, Ssiz bytes giving depths {8,8,16}.
+        var raw = Jp2BuildRawCodestream(3, [8, 8, 16]);
+        var pdf = BuildJpxImagePdf(raw);
+        var result = PdfPreflight.Validate(pdf, PdfConformance.PdfA2B);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.8.3-5");
+    }
+
+    [Fact]
+    public void Validate_Jpeg2000_RawCodestream_UniformBitDepths_NoFinding_6283_5()
+    {
+        // Raw codestream, uniform BPC=8 — no violation.
+        var raw = Jp2BuildRawCodestream(3, [8, 8, 8]);
+        var pdf = BuildJpxImagePdf(raw);
+        var result = PdfPreflight.Validate(pdf, PdfConformance.PdfA2B);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.8.3-5");
+    }
+
+    // ── Overall no-false-positive guard: fully conformant JP2 (NC=3, METH=1, sRGB, BPC=8) ─────────
+
+    [Fact]
+    public void Validate_Jpeg2000_ConformantJp2_NoFindings_6283()
+    {
+        // A fully conformant JP2: NC=3, single colr METH=1 EnumCS=16 (sRGB), APPROX=0, uniform BPC=8.
+        // Must produce no 6.2.8.3-* findings.
+        var jp2 = BuildJp2(nc: 3, bpc: 8, colrBoxes: [(0x01, 0x00, 16)]);
+        var pdf = BuildJpxImagePdf(jp2.File);
+        var result = PdfPreflight.Validate(pdf, PdfConformance.PdfA2B);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId.StartsWith("ISO19005-2:6.2.8.3-", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Validate_Jpeg2000_Grayscale_ConformantJp2_NoFindings_6283()
+    {
+        // Greyscale JP2: NC=1, METH=1, EnumCS=17, BPC=8.
+        var jp2 = BuildJp2(nc: 1, bpc: 8, colrBoxes: [(0x01, 0x00, 17)]);
+        var pdf = BuildJpxImagePdf(jp2.File);
+        var result = PdfPreflight.Validate(pdf, PdfConformance.PdfA2B);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId.StartsWith("ISO19005-2:6.2.8.3-", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Validate_Jpeg2000_NotDrawn_NoFinding_6283()
+    {
+        // An invalid JP2 (NC=5) present in resources but NOT drawn → no finding (scoping guard).
+        var jp2 = BuildJp2(nc: 5, bpc: 8);
+        var pdf = BuildXObjectPdf(
+            "/Type /XObject /Subtype /Image /Width 4 /Height 4 /Filter /JPXDecode /ColorSpace /DeviceRGB",
+            jp2.File,
+            draw: false);
+        var result = PdfPreflight.Validate(pdf, PdfConformance.PdfA2B);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.8.3-1");
+    }
+
+    [Fact]
+    public void Validate_Jpeg2000_MalformedBytes_NoFinding_6283()
+    {
+        // Completely garbage bytes in a JPXDecode stream → no spurious finding (defensive guard).
+        var garbage = new byte[] { 0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0x01, 0x02, 0x03, 0xFF, 0x00 };
+        var pdf = BuildJpxImagePdf(garbage);
+        var result = PdfPreflight.Validate(pdf, PdfConformance.PdfA2B);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId.StartsWith("ISO19005-2:6.2.8.3-", StringComparison.Ordinal));
+    }
+
+    // ── §6.2.4.4-2 Separation tint/alternate consistency ──────────────────────
+
+    /// <summary>
+    /// Builds a two-page PDF/A-2b PDF where each page uses a different /ColorSpace resource
+    /// entry for a Separation colour space. The caller supplies the two colour-space array
+    /// literals (<paramref name="cs1Body"/> and <paramref name="cs2Body"/>) and two tint-function
+    /// bodies (<paramref name="tint1Dict"/> and <paramref name="tint2Dict"/>).
+    ///
+    /// Object map:
+    ///   1 = catalog   2 = pages   3 = page1   4 = page2
+    ///   5 = CS1 array (cs1Body)   6 = tint1 (tint1Dict)
+    ///   7 = CS2 array (cs2Body)   8 = tint2 (tint2Dict)
+    ///   9 = content stream page1 (/CS1 cs 0.5 scn …)
+    ///  10 = content stream page2 (/CS2 cs 0.5 scn …)
+    /// </summary>
+    private static byte[] BuildTwoPageSeparationPdf(
+        string cs1Body,
+        string tint1Dict,
+        string cs2Body,
+        string tint2Dict)
+        => AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R >>"),
+            new("<< /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >>"),
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+                + "/Resources << /ColorSpace << /CS1 5 0 R >> >> /Contents 9 0 R >>"),
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+                + "/Resources << /ColorSpace << /CS2 7 0 R >> >> /Contents 10 0 R >>"),
+            new(cs1Body),                                                          // 5: CS1
+            new(tint1Dict),                                                        // 6: tint1
+            new(cs2Body),                                                          // 7: CS2
+            new(tint2Dict),                                                        // 8: tint2
+            new(string.Empty, Encoding.ASCII.GetBytes("/CS1 cs 0.5 scn 10 10 50 50 re f")),  // 9
+            new(string.Empty, Encoding.ASCII.GetBytes("/CS2 cs 0.5 scn 10 10 50 50 re f")),  // 10
+        ]);
+
+    /// <summary>
+    /// Separation (SpotA, /DeviceCMYK, Type-2 tint) — minimal tint dict for reuse. Returns
+    /// a /FunctionType 2 with the given /C1 values so callers can vary only the output colour.
+    /// </summary>
+    private static string SepTintDict(string c1) =>
+        $"<< /FunctionType 2 /Domain [0 1] /C0 [0 0 0 0] /C1 [{c1}] /N 1 >>";
+
+    [Fact]
+    public void Validate_SeparationConsistency_IdenticalStructureDistinctObjects_NoFinding()
+    {
+        // §6.2.4.4-2: two same-name Separations with structurally identical tintTransforms but
+        // at different object numbers must NOT be flagged — the spec says object identity is
+        // irrelevant ("whether an object is direct or indirect shall be ignored"). This is the
+        // key no-false-positive guard (veraPDF probe A).
+        var tintDict = SepTintDict("0 0 0 1");
+        var bytes = BuildTwoPageSeparationPdf(
+            "[/Separation /SpotA /DeviceCMYK 6 0 R]", tintDict,
+            "[/Separation /SpotA /DeviceCMYK 8 0 R]", tintDict);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.4-2");
+    }
+
+    [Fact]
+    public void Validate_SeparationConsistency_DifferentTintTransform_ReportsError()
+    {
+        // §6.2.4.4-2: two same-name Separations (SpotA) with different tint functions → error.
+        var bytes = BuildTwoPageSeparationPdf(
+            "[/Separation /SpotA /DeviceCMYK 6 0 R]", SepTintDict("0 0 0 1"),   // black
+            "[/Separation /SpotA /DeviceCMYK 8 0 R]", SepTintDict("1 0 0 0"));  // cyan
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.4-2");
+    }
+
+    [Fact]
+    public void Validate_SeparationConsistency_DifferentAlternateSpace_ReportsError()
+    {
+        // §6.2.4.4-2: same name, different alternateSpace (/DeviceCMYK vs /DeviceRGB) → error.
+        var bytes = BuildTwoPageSeparationPdf(
+            "[/Separation /SpotA /DeviceCMYK 6 0 R]",
+            "<< /FunctionType 2 /Domain [0 1] /C0 [0 0 0 0] /C1 [0 0 0 1] /N 1 >>",
+            "[/Separation /SpotA /DeviceRGB 8 0 R]",
+            "<< /FunctionType 2 /Domain [0 1] /C0 [0 0 0] /C1 [0 0 1] /N 1 >>");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.4-2");
+    }
+
+    [Fact]
+    public void Validate_SeparationConsistency_DifferentColourantNames_NoFinding()
+    {
+        // §6.2.4.4-2: SpotA and SpotB are different names — they are never compared → no error.
+        var bytes = BuildTwoPageSeparationPdf(
+            "[/Separation /SpotA /DeviceCMYK 6 0 R]", SepTintDict("0 0 0 1"),
+            "[/Separation /SpotB /DeviceCMYK 8 0 R]", SepTintDict("1 0 0 0"));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.4-2");
+    }
+
+    [Fact]
+    public void Validate_SeparationConsistency_SingleOccurrence_NoFinding()
+    {
+        // §6.2.4.4-2: a single Separation occurrence has nothing to compare → no error.
+        var bytes = BuildColourSpacePdf("[/Separation /SpotA /DeviceCMYK 5 0 R]");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.4-2");
+    }
+
+    [Fact]
+    public void Validate_SeparationConsistency_ColorantsDictInconsistent_ReportsError()
+    {
+        // §6.2.4.4-2: a top-level Separation (page1) and a Separation in a USED DeviceN
+        // /Colorants dict (page2) with the same name but different tintTransform → error.
+        // Verified empirically (veraPDF probe F).
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R >>"),
+            new("<< /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >>"),
+            // page1: uses CS1 = [/Separation /SpotA /DeviceCMYK 5 0 R]
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+                + "/Resources << /ColorSpace << /CS1 5 0 R >> >> /Contents 7 0 R >>"),
+            // page2: uses CS2 = DeviceN with SpotA in /Colorants (tint at obj 6)
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+                + "/Resources << /ColorSpace << /CS2 8 0 R >> >> /Contents 10 0 R >>"),
+            // 5: top-level SpotA, tint → black (C1 = 0 0 0 1)
+            new("[/Separation /SpotA /DeviceCMYK 6 0 R]"),
+            // 6: tint for page1 SpotA
+            new("<< /FunctionType 2 /Domain [0 1] /C0 [0 0 0 0] /C1 [0 0 0 1] /N 1 >>"),
+            // 7: content stream page1
+            new(string.Empty, Encoding.ASCII.GetBytes("/CS1 cs 0.5 scn 10 10 50 50 re f")),
+            // 8: DeviceN with SpotA in /Colorants using tint obj 9 (DIFFERENT from obj 6)
+            new("[/DeviceN [/SpotA] /DeviceCMYK 11 0 R "
+                + "<< /Subtype /DeviceN /Colorants "
+                + "<< /SpotA [/Separation /SpotA /DeviceCMYK 9 0 R] >> >>]"),
+            // 9: tint for Colorants SpotA — DIFFERENT (C1 = 1 0 0 0 = cyan)
+            new("<< /FunctionType 2 /Domain [0 1] /C0 [0 0 0 0] /C1 [1 0 0 0] /N 1 >>"),
+            // 10: content stream page2
+            new(string.Empty, Encoding.ASCII.GetBytes("/CS2 cs 0 scn 10 10 50 50 re f")),
+            // 11: DeviceN tint function (1→4 input)
+            new("<< /FunctionType 2 /Domain [0 1] /C0 [0 0 0 0] /C1 [0 0 0 1] /N 1 >>"),
+        ]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.4-2");
+    }
+
+    [Fact]
+    public void Validate_SeparationConsistency_UnusedInconsistentPair_NoFinding()
+    {
+        // §6.2.4.4-2 scope: a Separation present in /Resources but never selected by a cs/CS
+        // operator is not in scope — the inconsistent pair must NOT be flagged.
+        // Scope verified empirically (veraPDF probes G2 and G4).
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R >>"),
+            _pagesObj,
+            // Page has CS1 and CS2 (SpotA with different tints) in Resources but the
+            // content stream does not select either.
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+                + "/Resources << /ColorSpace << /CS1 4 0 R /CS2 6 0 R >> >> >>"),
+            new("[/Separation /SpotA /DeviceCMYK 5 0 R]"),
+            new("<< /FunctionType 2 /Domain [0 1] /C0 [0 0 0 0] /C1 [0 0 0 1] /N 1 >>"),
+            new("[/Separation /SpotA /DeviceCMYK 8 0 R]"),
+            new("<< /FunctionType 2 /Domain [0 1] /C0 [0 0 0 0] /C1 [1 0 0 0] /N 1 >>"),
+            // placeholder 8 was the tint — pad so obj numbers are correct
+            new("<< /FunctionType 2 /Domain [0 1] /C0 [0 0 0 0] /C1 [1 0 0 0] /N 1 >>"),
+        ]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.4-2");
+    }
+
+    [Fact]
+    public void Validate_SeparationConsistency_WriterProducedConsistentSeparation_NoFinding()
+    {
+        // §6.2.4.4-2: a writer that consistently emits SpotA with the same tint function
+        // (shared indirect reference) on multiple pages must NOT trigger a false positive.
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R >>"),
+            new("<< /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >>"),
+            // page1 and page2 both point to the SAME colour-space object (5 0 R)
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+                + "/Resources << /ColorSpace << /CS1 5 0 R >> >> /Contents 7 0 R >>"),
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+                + "/Resources << /ColorSpace << /CS1 5 0 R >> >> /Contents 8 0 R >>"),
+            // 5: shared Separation colour space
+            new("[/Separation /SpotA /DeviceCMYK 6 0 R]"),
+            // 6: shared tint function
+            new("<< /FunctionType 2 /Domain [0 1] /C0 [0 0 0 0] /C1 [0 0 0 1] /N 1 >>"),
+            new(string.Empty, Encoding.ASCII.GetBytes("/CS1 cs 0.5 scn 10 10 50 50 re f")),
+            new(string.Empty, Encoding.ASCII.GetBytes("/CS1 cs 0.5 scn 20 20 80 80 re f")),
+        ]);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.4-2");
+    }
+
+    [Fact]
+    public void Validate_SeparationConsistency_ReportsOncePerName()
+    {
+        // §6.2.4.4-2: when multiple pages all use SpotA inconsistently, only one finding per
+        // colourant name is emitted (no duplicate findings for the same name).
+        var bytes = BuildTwoPageSeparationPdf(
+            "[/Separation /SpotA /DeviceCMYK 6 0 R]", SepTintDict("0 0 0 1"),
+            "[/Separation /SpotA /DeviceCMYK 8 0 R]", SepTintDict("1 0 0 0"));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        var findings = result.Assertions.Where(a => a.RuleId == "ISO19005-2:6.2.4.4-2").ToList();
+        Assert.Single(findings);
+    }
+
+    // ── §6.2.4.2-2 Overprint (OPM) with ICCBased CMYK colour space ───────────
+
+    /// <summary>
+    /// Builds a one-page PDF/A-2b with:
+    /// <list type="bullet">
+    ///   <item>CS0 = ICCBased CMYK (N=4) in /Resources /ColorSpace</item>
+    ///   <item>GS1 = ExtGState with the given overprint parameters</item>
+    ///   <item>content = the given content stream string</item>
+    /// </list>
+    /// The ICC profile bytes come from the kernel's built-in generic CMYK profile (prtr/CMYK/v2).
+    /// </summary>
+    private static byte[] BuildOverprintPdf(string extGStateEntries, string content, int iccN = 4)
+    {
+        // Build either CMYK (N=4, prtr) or RGB (N=3, mntr) ICC profile bytes via MakeIccHeader.
+        byte[] iccBytes = iccN == 4
+            ? MakeIccHeader("prtr", "CMYK", 2)
+            : MakeIccHeader("mntr", "RGB ", 2);
+        var compressed = ZlibCompress(iccBytes);
+        return AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R >>"),
+            _pagesObj,
+            new($"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 5 0 R "
+                + $"/Resources << /ColorSpace << /CS0 [/ICCBased 4 0 R] >> "
+                + $"/ExtGState << /GS1 << {extGStateEntries} >> >> >> >>"),
+            new($"/Filter /FlateDecode /N {iccN}", compressed),
+            new(string.Empty, Encoding.ASCII.GetBytes(content)),
+        ]);
+    }
+
+    // -- fill + ICCBased CMYK + op true + OPM 1 → finding
+    // Confirmed against veraPDF 1.30.2 (probe P1).
+
+    [Fact]
+    public void Validate_Overprint_FillIccCmyk_OpTrue_Opm1_ReportsError()
+    {
+        // Fill colour space = ICCBased CMYK (cs), fill overprint true (/op true), OPM 1.
+        // veraPDF probe P1: FAIL §6.2.4.2-2.
+        var bytes = BuildOverprintPdf("/op true /OPM 1", "/CS0 cs\n0 0 0 1 sc\n/GS1 gs\n0 0 100 100 re\nf\n");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.2-2");
+    }
+
+    // -- OPM 0 → no finding (PASS condition)
+    // Confirmed against veraPDF 1.30.2 (probe P2).
+
+    [Fact]
+    public void Validate_Overprint_FillIccCmyk_OpTrue_Opm0_NoFinding()
+    {
+        // Same but OPM = 0 → PASS: OPM 0 is always permitted.
+        // veraPDF probe P2: compliant.
+        var bytes = BuildOverprintPdf("/op true /OPM 0", "/CS0 cs\n0 0 0 1 sc\n/GS1 gs\n0 0 100 100 re\nf\n");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.2-2");
+    }
+
+    // -- fill overprint false → no finding (PASS condition)
+    // Confirmed against veraPDF 1.30.2 (probe P3).
+
+    [Fact]
+    public void Validate_Overprint_FillIccCmyk_OpFalse_Opm1_NoFinding()
+    {
+        // Fill overprint disabled (/op false); OPM 1 alone is not a violation.
+        // veraPDF probe P3: compliant.
+        var bytes = BuildOverprintPdf("/op false /OPM 1", "/CS0 cs\n0 0 0 1 sc\n/GS1 gs\n0 0 100 100 re\nf\n");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.2-2");
+    }
+
+    // -- no gs operator applied (default OPM=0, overprint=false) → no finding
+    // Confirmed against veraPDF 1.30.2 (probe P4).
+
+    [Fact]
+    public void Validate_Overprint_FillIccCmyk_NoGsApplied_NoFinding()
+    {
+        // GS1 is in resources but the content never calls `gs` — defaults remain (OPM=0, op=false).
+        // veraPDF probe P4: compliant.
+        var bytes = BuildOverprintPdf("/op true /OPM 1", "/CS0 cs\n0 0 0 1 sc\n0 0 100 100 re\nf\n");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.2-2");
+    }
+
+    // -- stroke variant: /OP true + OPM 1 → finding
+    // Confirmed against veraPDF 1.30.2 (probe P5).
+
+    [Fact]
+    public void Validate_Overprint_StrokeIccCmyk_OP_True_Opm1_ReportsError()
+    {
+        // Stroke colour space = ICCBased CMYK (CS), stroke overprint true (/OP true), OPM 1.
+        // veraPDF probe P5: FAIL §6.2.4.2-2.
+        var bytes = BuildOverprintPdf("/OP true /OPM 1", "/CS0 CS\n0 0 0 1 SC\n/GS1 gs\n0 0 100 100 re\nS\n");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.2-2");
+    }
+
+    // -- ICCBased RGB (N=3, not CMYK) → no finding
+    // Confirmed against veraPDF 1.30.2 (probe P6).
+
+    [Fact]
+    public void Validate_Overprint_FillIccRgb_OpTrue_Opm1_NoFinding()
+    {
+        // CS0 is ICCBased with N=3 (RGB) — only ICCBased CMYK (N=4) triggers this rule.
+        // veraPDF probe P6: compliant.
+        var bytes = BuildOverprintPdf("/op true /OPM 1",
+            "/CS0 cs\n0.5 0.5 0.5 sc\n/GS1 gs\n0 0 100 100 re\nf\n", iccN: 3);
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.2-2");
+    }
+
+    // -- DeviceCMYK (k operator) with op true + OPM 1 → no finding for §6.2.4.2-2
+    // Confirmed against veraPDF 1.30.2 (probe P7 triggers 6.2.4.3 but NOT 6.2.4.2-2).
+
+    [Fact]
+    public void Validate_Overprint_DeviceCmyk_K_Operator_NoOverprintFinding()
+    {
+        // `k` sets DeviceCMYK fill colour — that is NOT an ICCBased colour space, so the rule
+        // must not fire. (veraPDF probe P7: non-compliant only due to §6.2.4.3, not §6.2.4.2-2.)
+        var bytes = BuildOverprintPdf("/op true /OPM 1", "/GS1 gs\n0 0 0 1 k\n0 0 100 100 re\nf\n");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.2-2");
+    }
+
+    // -- /OP only (no /op key) propagates to fill overprint → finding
+    // Confirmed against veraPDF 1.30.2 (probe P8): FAIL.
+    // Per ISO 32000-1 §8.4.5: /OP sets fill overprint when /op is absent.
+
+    [Fact]
+    public void Validate_Overprint_FillIccCmyk_OP_Only_Opm1_ReportsError()
+    {
+        // ExtGState has /OP true but no /op key. /OP propagates to fill overprint per §8.4.5.
+        // veraPDF probe P8: FAIL §6.2.4.2-2.
+        var bytes = BuildOverprintPdf("/OP true /OPM 1", "/CS0 cs\n0 0 0 1 sc\n/GS1 gs\n0 0 100 100 re\nf\n");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.2-2");
+    }
+
+    // -- /OP true but /op explicitly false → no finding (/op wins)
+    // Confirmed against veraPDF 1.30.2 (probe P14): PASS.
+
+    [Fact]
+    public void Validate_Overprint_FillIccCmyk_OP_True_OpExplicitFalse_NoFinding()
+    {
+        // /OP true sets stroke overprint; /op false explicitly overrides fill overprint.
+        // veraPDF probe P14: compliant.
+        var bytes = BuildOverprintPdf("/OP true /op false /OPM 1",
+            "/CS0 cs\n0 0 0 1 sc\n/GS1 gs\n0 0 100 100 re\nf\n");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.2-2");
+    }
+
+    // -- q/Q restores state: gs inside q, paint after Q → no finding
+    // Confirmed against veraPDF 1.30.2 (probe P9): PASS.
+
+    [Fact]
+    public void Validate_Overprint_QQ_RestoresState_NoFinding()
+    {
+        // gs is applied inside q…Q; after Q the state is restored to defaults.
+        // Paint occurs after Q → OPM and overprint are back to 0/false → no violation.
+        // veraPDF probe P9: compliant.
+        var bytes = BuildOverprintPdf("/op true /OPM 1",
+            "/CS0 cs\n0 0 0 1 sc\nq\n/GS1 gs\nQ\n0 0 100 100 re\nf\n");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.2-2");
+    }
+
+    // -- gs before q, paint after Q: state from before q persists → finding
+    // Confirmed against veraPDF 1.30.2 (probe P10): FAIL.
+
+    [Fact]
+    public void Validate_Overprint_GsBeforeQ_PaintAfterQ_ReportsError()
+    {
+        // gs is applied before q; q pushes a copy of that state; Q pops back to the same state.
+        // The overprint condition is still active when painting occurs after Q.
+        // veraPDF probe P10: FAIL §6.2.4.2-2.
+        var bytes = BuildOverprintPdf("/op true /OPM 1",
+            "/CS0 cs\n/GS1 gs\nq\nQ\n0 0 100 100 re\nf\n");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.2-2");
+    }
+
+    // -- fill-and-stroke (B) operator with fill ICCBased CMYK + op true + OPM 1 → finding
+    // Confirmed against veraPDF 1.30.2 (probe P13): FAIL.
+
+    [Fact]
+    public void Validate_Overprint_FillStroke_B_Operator_ReportsError()
+    {
+        // The `B` operator (fill then stroke, nonzero winding) checks both fill and stroke
+        // conditions. With fill ICCBased CMYK + op true + OPM 1, fill condition fires.
+        // veraPDF probe P13: FAIL §6.2.4.2-2.
+        var bytes = BuildOverprintPdf("/op true /OPM 1",
+            "/CS0 cs\n0 0 0 1 sc\n/GS1 gs\n0 0 100 100 re\nB\n");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.2-2");
+    }
+
+    // -- writer-produced PDF/A (no overprint, default state) → no false positive
+
+    [Fact]
+    public void Validate_Overprint_WriterProducedPdfA_NoFinding()
+    {
+        // A PDF/A-2b document produced by the VellumPdf writer has no overprint operators;
+        // the rule must not produce a false positive.
+        var bytes = BuildOnePagePdf();
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.2-2");
+    }
+
+    // ── §6.4.3 Digital-signature rules ───────────────────────────────────────
+
+    // ── §6.4.3-1 ByteRange coverage ──────────────────────────────────────────
+
+    /// <summary>
+    /// Creates a self-signed RSA-2048 / SHA-256 certificate for signing tests.
+    /// The returned certificate includes the private key.
+    /// </summary>
+    private static X509Certificate2 CreateSigningCertificate()
+    {
+        using var rsa = RSA.Create(2048);
+        var req = new CertificateRequest(
+            "CN=VellumPdf Conformance Test",
+            rsa,
+            HashAlgorithmName.SHA256,
+            RSASignaturePadding.Pkcs1);
+        return req.CreateSelfSigned(
+            DateTimeOffset.UtcNow.AddDays(-1),
+            DateTimeOffset.UtcNow.AddYears(1));
+    }
+
+    /// <summary>Signs a one-page PdfDocument with the given certificate, returning the signed bytes.</summary>
+    private static byte[] SignMinimalPdf(X509Certificate2 cert)
+    {
+        using var doc = new PdfDocument { Conformance = VellumPdf.Document.PdfConformance.PdfA2b };
+        doc.AddPage();
+        var settings = new PdfSignatureSettings { Certificate = cert };
+        var ms = new MemoryStream();
+        doc.Sign(ms, settings);
+        return ms.ToArray();
+    }
+
+    [Fact]
+    public void Validate_RealSignedPdf_NoSignatureFinding()
+    {
+        // A genuinely signed PDF produced by the Signing package must NOT trigger any §6.4.3-*
+        // or §6.1.12-2 finding. This is the critical no-false-positive baseline.
+        using var cert = CreateSigningCertificate();
+        var signed = SignMinimalPdf(cert);
+
+        var result = PdfPreflight.Validate(signed, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.4.3-1");
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.4.3-2");
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.4.3-3");
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.12-2");
+    }
+
+    [Fact]
+    public void Validate_ByteRange_UnderCoverage_DeferredNoFinding()
+    {
+        // A /ByteRange that ends before EOF (c+d < fileLength) is DEFERRED, not flagged: it is
+        // indistinguishable from a conformant PAdES B-LT/B-LTA signature whose later /DSS or
+        // document timestamp was appended after signing (veraPDF reports those compliant). The
+        // companion a!=0 test proves the signature IS enumerated, so this no-finding is meaningful.
+        var bytes = BuildSignedPdfWithByteRange(0, 50, 70, 10); // c+d = 80; file is longer
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.4.3-1");
+    }
+
+    [Fact]
+    public void Validate_ByteRange_ExceedsFileLength_ReportsError()
+    {
+        // /ByteRange claiming more bytes than the file contains (c+d > fileLength) is an
+        // unambiguous, revision-independent violation and must be flagged.
+        var pdf = BuildSignedPdfWithByteRange(0, 50, 70, 1_000_000); // c+d ≫ fileLength → violation
+
+        var result = PdfPreflight.Validate(pdf, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.4.3-1");
+    }
+
+    [Fact]
+    public void Validate_ByteRange_NotStartingAtZero_ReportsError()
+    {
+        // /ByteRange where br[0] != 0 — an unambiguous violation regardless of revisions.
+        var pdf = BuildSignedPdfWithByteRange(1, 49, 70, 30); // a=1 → violation
+
+        var result = PdfPreflight.Validate(pdf, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.4.3-1");
+    }
+
+    // ── §6.4.3-2 Certificate presence ────────────────────────────────────────
+
+    [Fact]
+    public void Validate_CmsNoCertificates_ReportsError()
+    {
+        // Hand-built CMS DER with certificates [0] explicitly set to empty.
+        var der = BuildCmsDer(certCount: 0, signerCount: 1);
+        var pdf = BuildPdfWithFakeCms(der);
+
+        var result = PdfPreflight.Validate(pdf, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.4.3-2");
+    }
+
+    [Fact]
+    public void Validate_CmsOneCertificate_NoFinding()
+    {
+        // Single signer, one certificate → compliant for §6.4.3-2 and §6.4.3-3.
+        var der = BuildCmsDer(certCount: 1, signerCount: 1);
+        var pdf = BuildPdfWithFakeCms(der);
+
+        var result = PdfPreflight.Validate(pdf, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.4.3-2");
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.4.3-3");
+    }
+
+    // ── §6.4.3-3 Single signer ────────────────────────────────────────────────
+
+    [Fact]
+    public void Validate_CmsTwoSigners_ReportsError()
+    {
+        // Hand-built CMS DER with two entries in the signerInfos SET.
+        var der = BuildCmsDer(certCount: 1, signerCount: 2);
+        var pdf = BuildPdfWithFakeCms(der);
+
+        var result = PdfPreflight.Validate(pdf, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.4.3-3");
+    }
+
+    [Fact]
+    public void Validate_CmsSingleSigner_NoFinding()
+    {
+        var der = BuildCmsDer(certCount: 1, signerCount: 1);
+        var pdf = BuildPdfWithFakeCms(der);
+
+        var result = PdfPreflight.Validate(pdf, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.4.3-3");
+    }
+
+    [Fact]
+    public void Validate_CmsMalformedContents_NoFinding()
+    {
+        // Garbage /Contents bytes → TryParse returns false → no finding (defensive).
+        var junk = new byte[] { 0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0x00, 0x00 };
+        var pdf = BuildPdfWithFakeCms(junk);
+
+        var result = PdfPreflight.Validate(pdf, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.4.3-2");
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.4.3-3");
+    }
+
+    // ── §6.1.12-2 DocMDP reference keys ──────────────────────────────────────
+
+    [Fact]
+    public void Validate_DocMdp_WithDigestMethod_ReportsError()
+    {
+        // /Perms /DocMDP signature dict whose /Reference array contains /DigestMethod.
+        var pdf = BuildDocMdpPdfDirect(withForbiddenKeys: true);
+
+        var result = PdfPreflight.Validate(pdf, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.12-2");
+    }
+
+    [Fact]
+    public void Validate_DocMdp_NoForbiddenKeys_NoFinding()
+    {
+        // /Perms /DocMDP with a clean reference dict (no Digest* keys).
+        var pdf = BuildDocMdpPdfDirect(withForbiddenKeys: false);
+
+        var result = PdfPreflight.Validate(pdf, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.12-2");
+    }
+
+    [Fact]
+    public void Validate_NoDocMdp_NoFinding()
+    {
+        // Document without /Perms at all → §6.1.12-2 must not fire.
+        var bytes = BuildOnePagePdf();
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.12-2");
+    }
+
+    // ── Signature test helpers ────────────────────────────────────────────────
+
+    /// <summary>
+    /// Builds a minimal PDF that has a signature dictionary with the given /ByteRange values,
+    /// but whose actual /Contents is trivial (so the CMS check is indeterminate, not finding).
+    /// The file bytes end at a fixed length so the ByteRange check is testable.
+    /// </summary>
+    private static byte[] BuildSignedPdfWithByteRange(int a, int b, int c, int d)
+    {
+        // We construct a raw PDF whose AcroForm /Fields contains a /Sig field with a
+        // signature dict carrying the requested /ByteRange values. The /Contents is
+        // a 4-byte hex string (2 bytes DER, enough to be parsed as junk → indeterminate).
+        // The ByteRange itself is the focus of this fixture.
+        var br = $"[{a} {b} {c} {d}]";
+        // Contents is a hex-encoded placeholder (4 zero bytes → malformed CMS → no §6.4.3-2/3 finding)
+        const string contentsHex = "<00000000>";
+
+        // We need the file to be exactly c+d bytes long for a conformant ByteRange to pass, but
+        // we're deliberately testing non-conformant values so any length works here.
+        var ms = new MemoryStream();
+        void W(string s) => ms.Write(Encoding.ASCII.GetBytes(s));
+
+        W("%PDF-1.7\n");
+        ms.Write([(byte)'%', 0xE2, 0xE3, 0xCF, 0xD3, (byte)'\n']);
+
+        // Object 1: catalog with AcroForm
+        var off1 = (int)ms.Position;
+        W("1 0 obj\n<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [4 0 R] /SigFlags 3 >> /Metadata 5 0 R >>\nendobj\n");
+
+        // Object 2: pages
+        var off2 = (int)ms.Position;
+        W("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
+
+        // Object 3: page
+        var off3 = (int)ms.Position;
+        W("3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>\nendobj\n");
+
+        // Object 4: sig field
+        var off4 = (int)ms.Position;
+        W($"4 0 obj\n<< /Type /Annot /Subtype /Widget /FT /Sig /T (Sig1) /V << /Type /Sig /SubFilter /ETSI.CAdES.detached /ByteRange {br} /Contents {contentsHex} >> >>\nendobj\n");
+
+        // Object 5: minimal XMP metadata
+        var xmp = XmpBytes("2", "B");
+        var off5 = (int)ms.Position;
+        W($"5 0 obj\n<< /Type /Metadata /Subtype /XML /Length {xmp.Length} >>\nstream\n");
+        ms.Write(xmp);
+        W("\nendstream\nendobj\n");
+
+        var xrefOffset = (int)ms.Position;
+        W("xref\n0 6\n");
+        W($"{0:D10} 65535 f \n");
+        W($"{off1:D10} 00000 n \n");
+        W($"{off2:D10} 00000 n \n");
+        W($"{off3:D10} 00000 n \n");
+        W($"{off4:D10} 00000 n \n");
+        W($"{off5:D10} 00000 n \n");
+        W($"trailer\n<< /Size 6 /Root 1 0 R /ID [<AABBCCDDEEFF00112233445566778899> <AABBCCDDEEFF00112233445566778899>] >>\n");
+        W($"startxref\n{xrefOffset}\n%%EOF\n");
+
+        return ms.ToArray();
+    }
+
+    /// <summary>
+    /// Builds a minimal but structurally valid CMS SignedData DER with
+    /// <paramref name="certCount"/> dummy certificates and <paramref name="signerCount"/> dummy signerInfos.
+    ///
+    /// DER structure:
+    ///   SEQUENCE (ContentInfo) {
+    ///     OID 1.2.840.113549.1.7.2
+    ///     [0] EXPLICIT {
+    ///       SEQUENCE (SignedData) {
+    ///         INTEGER (version=1)
+    ///         SET (digestAlgorithms) { SEQUENCE { OID(SHA-256) NULL } }
+    ///         SEQUENCE (encapContentInfo) { OID 1.2.840.113549.1.7.1 }
+    ///         [0] (certificates) { <certCount> SEQUENCE { dummy } }
+    ///         SET (signerInfos) { <signerCount> SEQUENCE { dummy } }
+    ///       }
+    ///     }
+    ///   }
+    /// </summary>
+    private static byte[] BuildCmsDer(int certCount, int signerCount)
+    {
+        // OIDs
+        var oidSignedData = new byte[] { 0x06, 0x09, 0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x07, 0x02 };
+        var oidData = new byte[] { 0x06, 0x09, 0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01, 0x07, 0x01 };
+        var oidSha256 = new byte[] { 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01 };
+
+        // A dummy 1-byte "certificate" SEQUENCE (just a placeholder for structural validity)
+        var dummyCert = WrapSequence([0x01]); // SEQUENCE { BOOLEAN TRUE }
+        var certsField = certCount > 0 ? WrapContextImplicit0(Repeat(dummyCert, certCount)) : WrapContextImplicit0([]);
+
+        // A dummy signerInfo SEQUENCE
+        var dummySigner = WrapSequence([0x01]); // minimal placeholder
+        var signerInfosSet = WrapSet(Repeat(dummySigner, signerCount));
+
+        // digestAlgorithms SET: one SHA-256 algorithm identifier
+        var sha256AlgId = WrapSequence([.. oidSha256, 0x05, 0x00]); // OID + NULL
+        var digestAlgorithms = WrapSet([.. sha256AlgId]);
+
+        // encapContentInfo: OID id-data
+        var encapContentInfo = WrapSequence([.. oidData]);
+
+        // version INTEGER (1)
+        var version = new byte[] { 0x02, 0x01, 0x01 };
+
+        // SignedData SEQUENCE
+        byte[] signedDataValue = [
+            .. version,
+            .. digestAlgorithms,
+            .. encapContentInfo,
+            .. certsField,
+            .. signerInfosSet,
+        ];
+        var signedData = WrapSequence(signedDataValue);
+
+        // [0] EXPLICIT wrapping SignedData
+        var explicitWrapper = WrapContextImplicit0(signedData);
+
+        // ContentInfo SEQUENCE: OID + [0] EXPLICIT SignedData
+        return WrapSequence([.. oidSignedData, .. explicitWrapper]);
+    }
+
+    private static byte[] WrapSequence(byte[] value) => WrapTag(0x30, value);
+    private static byte[] WrapSet(byte[] value) => WrapTag(0x31, value);
+    private static byte[] WrapContextImplicit0(byte[] value) => WrapTag(0xA0, value);
+
+    private static byte[] WrapTag(byte tag, byte[] value)
+    {
+        var lenBytes = EncodeLength(value.Length);
+        var result = new byte[1 + lenBytes.Length + value.Length];
+        result[0] = tag;
+        lenBytes.CopyTo(result, 1);
+        value.CopyTo(result, 1 + lenBytes.Length);
+        return result;
+    }
+
+    private static byte[] EncodeLength(int len)
+    {
+        if (len <= 0x7F)
+            return [(byte)len];
+        if (len <= 0xFF)
+            return [0x81, (byte)len];
+        if (len <= 0xFFFF)
+            return [0x82, (byte)(len >> 8), (byte)(len & 0xFF)];
+        return [0x83, (byte)(len >> 16), (byte)((len >> 8) & 0xFF), (byte)(len & 0xFF)];
+    }
+
+    private static byte[] Repeat(byte[] item, int count)
+    {
+        if (count == 0) return [];
+        var result = new byte[item.Length * count];
+        for (var i = 0; i < count; i++)
+            item.CopyTo(result, i * item.Length);
+        return result;
+    }
+
+    /// <summary>
+    /// Builds a minimal signed PDF whose /Contents hex string is the hex encoding of
+    /// <paramref name="derBytes"/> (zero-padded to 8192 bytes as the Signing package does).
+    /// The /ByteRange is computed to cover the actual file bytes, so §6.4.3-1 passes.
+    /// </summary>
+    private static byte[] BuildPdfWithFakeCms(byte[] derBytes)
+    {
+        // Reserve 8192 bytes for /Contents (matching the Signing package default).
+        const int reserve = 8192;
+        var contentsPlaceholder = "<" + new string('0', reserve * 2) + ">";
+
+        var ms = new MemoryStream();
+        void W(string s) => ms.Write(Encoding.ASCII.GetBytes(s));
+
+        W("%PDF-1.7\n");
+        ms.Write([(byte)'%', 0xE2, 0xE3, 0xCF, 0xD3, (byte)'\n']);
+
+        var off1 = (int)ms.Position;
+        // Catalog — ByteRange and Contents will be patched in-place after we know offsets.
+        // Build sig dict so /ByteRange is before /Contents (matches Signing package convention).
+        W("1 0 obj\n<< /Type /Catalog /Pages 2 0 R /AcroForm << /Fields [4 0 R] /SigFlags 3 >> /Metadata 5 0 R >>\nendobj\n");
+
+        var off2 = (int)ms.Position;
+        W("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
+
+        var off3 = (int)ms.Position;
+        W("3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>\nendobj\n");
+
+        var off4 = (int)ms.Position;
+        // Write the sig dict with a known-width /ByteRange placeholder and the /Contents placeholder.
+        // We use 10-digit fixed-width fields (matching PdfSignatureHelper.ByteRangeFieldWidth).
+        var brPlaceholderStr = "[9999999999 9999999999 9999999999 9999999999]";
+        W($"4 0 obj\n<< /Type /Annot /Subtype /Widget /FT /Sig /T (Sig1) /V << /Type /Sig /SubFilter /ETSI.CAdES.detached /ByteRange {brPlaceholderStr}\n/Contents {contentsPlaceholder} >> >>\nendobj\n");
+
+        // Object 5: XMP metadata
+        var xmp = XmpBytes("2", "B");
+        var off5 = (int)ms.Position;
+        W($"5 0 obj\n<< /Type /Metadata /Subtype /XML /Length {xmp.Length} >>\nstream\n");
+        ms.Write(xmp);
+        W("\nendstream\nendobj\n");
+
+        var xrefOffset = (int)ms.Position;
+        W("xref\n0 6\n");
+        W($"{0:D10} 65535 f \n");
+        W($"{off1:D10} 00000 n \n");
+        W($"{off2:D10} 00000 n \n");
+        W($"{off3:D10} 00000 n \n");
+        W($"{off4:D10} 00000 n \n");
+        W($"{off5:D10} 00000 n \n");
+        W($"trailer\n<< /Size 6 /Root 1 0 R /ID [<AABBCCDDEEFF00112233445566778899> <AABBCCDDEEFF00112233445566778899>] >>\n");
+        W($"startxref\n{xrefOffset}\n%%EOF\n");
+
+        var pdfBytes = ms.ToArray();
+        var text = Encoding.Latin1.GetString(pdfBytes);
+
+        // Locate and patch /ByteRange in-place.
+        var brPos = text.IndexOf(brPlaceholderStr, StringComparison.Ordinal);
+        var posLt = text.IndexOf('<', brPos + brPlaceholderStr.Length); // opening '<' of /Contents
+        var posGt = text.IndexOf('>', posLt); // closing '>'
+        var tokenLen = posGt - posLt + 1; // length of the hex token including '<' and '>'
+
+        var br0 = 0;
+        var br1 = posLt;
+        var br2 = posLt + tokenLen;
+        var br3 = pdfBytes.Length - br2;
+
+        // Write the ByteRange in-place (fixed-width, 10 digits each).
+        var brValueStr = $"[{br0,-10} {br1,-10} {br2,-10} {br3,-10}]";
+        // Ensure same total length as placeholder.
+        Assert.Equal(brPlaceholderStr.Length, brValueStr.Length);
+        var brValueBytes = Encoding.ASCII.GetBytes(brValueStr);
+        brValueBytes.CopyTo(pdfBytes, brPos);
+
+        // Write the hex-encoded DER into the /Contents placeholder (zero-padded to reserve).
+        var hexDer = Convert.ToHexString(derBytes).ToLowerInvariant();
+        // Pad with zeros to fill the reserved space.
+        var hexPadded = hexDer.PadRight(reserve * 2, '0');
+        Assert.Equal(reserve * 2, hexPadded.Length); // must fit
+        var contentsBytes = Encoding.ASCII.GetBytes(hexPadded);
+        contentsBytes.CopyTo(pdfBytes, posLt + 1); // +1 to skip '<'
+
+        return pdfBytes;
+    }
+
+    /// <summary>
+    /// Builds a minimal PDF with /Perms /DocMDP pointing to a signature dict whose /Reference
+    /// array either contains or omits the forbidden /Digest* keys.
+    /// </summary>
+    private static byte[] BuildDocMdpPdfDirect(bool withForbiddenKeys)
+    {
+        var refDictContent = withForbiddenKeys
+            ? "/TransformMethod /DocMDP /DigestMethod /SHA1 /DigestLocation [0 0] /DigestValue <AABB>"
+            : "/TransformMethod /DocMDP";
+
+        var ms = new MemoryStream();
+        void W(string s) => ms.Write(Encoding.ASCII.GetBytes(s));
+
+        W("%PDF-1.7\n");
+        ms.Write([(byte)'%', 0xE2, 0xE3, 0xCF, 0xD3, (byte)'\n']);
+
+        // Object 1: catalog with /Perms pointing to object 4 (sig dict)
+        var off1 = (int)ms.Position;
+        W("1 0 obj\n<< /Type /Catalog /Pages 2 0 R /Perms << /DocMDP 4 0 R >> /Metadata 6 0 R >>\nendobj\n");
+
+        // Object 2: pages
+        var off2 = (int)ms.Position;
+        W("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
+
+        // Object 3: page
+        var off3 = (int)ms.Position;
+        W("3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>\nendobj\n");
+
+        // Object 4: DocMDP signature dict with /Reference array pointing to object 5
+        var off4 = (int)ms.Position;
+        W("4 0 obj\n<< /Type /Sig /Reference [5 0 R] >>\nendobj\n");
+
+        // Object 5: signature reference dict
+        var off5 = (int)ms.Position;
+        W($"5 0 obj\n<< {refDictContent} >>\nendobj\n");
+
+        // Object 6: XMP metadata
+        var xmp = XmpBytes("2", "B");
+        var off6 = (int)ms.Position;
+        W($"6 0 obj\n<< /Type /Metadata /Subtype /XML /Length {xmp.Length} >>\nstream\n");
+        ms.Write(xmp);
+        W("\nendstream\nendobj\n");
+
+        var xrefOffset = (int)ms.Position;
+        W("xref\n0 7\n");
+        W($"{0:D10} 65535 f \n");
+        W($"{off1:D10} 00000 n \n");
+        W($"{off2:D10} 00000 n \n");
+        W($"{off3:D10} 00000 n \n");
+        W($"{off4:D10} 00000 n \n");
+        W($"{off5:D10} 00000 n \n");
+        W($"{off6:D10} 00000 n \n");
+        W($"trailer\n<< /Size 7 /Root 1 0 R /ID [<AABBCCDDEEFF00112233445566778899> <AABBCCDDEEFF00112233445566778899>] >>\n");
+        W($"startxref\n{xrefOffset}\n%%EOF\n");
+
+        return ms.ToArray();
     }
 }

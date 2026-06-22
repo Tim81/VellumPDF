@@ -179,10 +179,13 @@ public static class ConformanceCatalog
 
     private static readonly Dictionary<string, string> PdfAPartial = new(StringComparer.Ordinal)
     {
+        ["6.1.8-1"] = "font BaseFont and colour colourant names checked (presence-based); structure-type names checked for direct /StructTreeRoot /K children only — deeper nesting not yet walked",
         ["6.2.3-1"] = "DestOutputProfile signature/N checked; ICC device-class not parsed",
+        ["6.2.4.2-2"] = "page content-stream OPM/overprint/ICCBased-CMYK correlation checked with q/Q-stack interpreter; Form XObjects, Type 3 CharProcs, and annotation appearance streams not yet walked",
         ["6.2.4.3-2"] = "device-colour requires an output intent checked; DefaultRGB path not",
         ["6.2.4.3-3"] = "device-colour requires an output intent checked; DefaultCMYK path not",
         ["6.2.4.3-4"] = "page-content device grey covered; image/pattern colour not detected",
+        ["6.2.4.4-2"] = "Separations selected by cs/CS operators and those in /Colorants of used DeviceN spaces are compared; Separations reachable only via Form XObjects, Type 3 CharProcs, annotation appearance streams, image /ColorSpace, or alternate spaces of other colour spaces are not yet walked",
         ["6.2.2-1"] = "page content-stream operators checked against ISO 32000-1; Form XObject / Type 3 CharProc / annotation appearance streams not yet walked",
         ["6.2.2-2"] = "page content streams checked (Font/XObject/ExtGState/ColorSpace/Shading); Pattern names (scn/SCN in Pattern colour space) and Properties names (BDC/DP with name operand) not detected — stateful colour-space tracking required; Form XObject / Type 3 / appearance streams not walked",
         ["6.2.11.4.1-1"] = "only the embedded Identity-H CIDFontType2 path is checked",
@@ -193,6 +196,7 @@ public static class ConformanceCatalog
         ["6.6.2.3.3-1"] = "pdfaExtension prefix/bag structure not fully validated",
         ["6.6.2.3.3-5"] = "property container is read but not validated as Seq Property",
         ["6.6.2.3.3-6"] = "valueType container is read but not validated as Seq ValueType",
+        ["6.6.2.3.1-2"] = "extension-schema properties with primitive/container types (Text, Integer, Real, Boolean, Date, URI/URL, bag/seq/alt/Lang Alt) are type-checked; predefined XMP-Specification properties (dc:, xmp:, pdf:, pdfaid:, …) are deferred to avoid false-positives from an incomplete built-in type table; extension-schema properties whose declared type resolves to an unrecognised name (custom value types, XMP structure types) are also deferred",
         ["6.6.2.3.3-8"] = "property valueType presence checked, not that it is a defined type",
         ["6.6.2.3.3-15"] = "field container is read but not validated as Seq Field",
         ["6.6.2.3.3-17"] = "field valueType presence checked, not that it is a defined type",
@@ -201,27 +205,22 @@ public static class ConformanceCatalog
         ["6.2.11.3.1-1"] = "Identity and embedded-CMap CIDSystemInfo compared; predefined-CMap registry table deferred",
         ["6.7.2.2-1"] = "StructTreeRoot presence checked; full structure-tree validation not",
         ["6.8-5"] = "embedded PDF/A-2 validated recursively; embedded PDF/A-1 deferred (no PDF/A-1 profile)",
+        ["6.4.3-1"] = "ByteRange unambiguous violations flagged (a!=0, or c+d>fileLength); the "
+            + "under-coverage case (c+d<fileLength) is deferred to avoid over-rejecting conformant "
+            + "PAdES B-LT/B-LTA signatures whose /DSS or document timestamp is appended after EOF; "
+            + "signatures reachable only via /Perms /DocMDP (no AcroForm /V) are not enumerated",
     };
 
     private static readonly Dictionary<string, string> PdfADeferred = new(StringComparer.Ordinal)
     {
         ["6.1.6-2"] = "byte scan implemented, but the reader rejects an invalid hex digit before validation",
-        ["6.1.8-1"] = "byte-offset token scanner",
-        ["6.1.12-2"] = "signature-reference traversal",
-        ["6.2.4.2-1"] = "ICC profile parser",
-        ["6.2.4.2-2"] = "ExtGState overprint (OPM) analysis",
-        ["6.2.4.4-2"] = "Separation tint/alternate consistency",
-        ["6.2.8.3-1"] = "JPEG2000 codestream parser",
-        ["6.2.8.3-2"] = "JPEG2000 codestream parser",
-        ["6.2.8.3-3"] = "JPEG2000 codestream parser",
-        ["6.2.8.3-4"] = "JPEG2000 codestream parser",
-        ["6.2.8.3-5"] = "JPEG2000 codestream parser",
-        ["6.2.11.3.3-2"] = "CMap parser",
-        ["6.2.11.3.3-3"] = "CMap parser",
-        ["6.4.3-1"] = "digital-signature parser",
-        ["6.4.3-2"] = "digital-signature parser",
-        ["6.4.3-3"] = "digital-signature parser",
-        ["6.6.2.3.1-2"] = "XMP per-property value-type match",
+        // 6.1.8-1 moved to PdfAPartial (font BaseFont + colour colourant + structure-type names).
+        // 6.1.12-2 moved to Implemented (DocMdpReferenceRule).
+        // 6.2.4.2-2 moved to PdfAPartial; implemented via OverprintRule with page-content interpreter.
+        // 6.2.8.3-1..-5: removed from Deferred; Jpeg2000Rule now implements all five for both
+        // JP2 box files and raw codestreams. -2/-3/-4 correctly do not apply to raw codestreams
+        // (which carry no colr boxes) — this is not a gap but correct per-spec scoping.
+        // 6.4.3-1/-2/-3 moved to Implemented/Partial (SignatureRule).
         ["6.7.3.3-1"] = "structure-tree walker",
         ["6.7.3.4-1"] = "structure-tree walker",
         ["6.7.3.4-2"] = "structure-tree walker",

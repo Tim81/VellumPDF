@@ -7,6 +7,7 @@ using VellumPdf.Conformance.Rules.Colour;
 using VellumPdf.Conformance.Rules.Fonts;
 using VellumPdf.Conformance.Rules.Graphics;
 using VellumPdf.Conformance.Rules.Metadata;
+using VellumPdf.Conformance.Rules.Signature;
 using VellumPdf.Conformance.Rules.Structure;
 using VellumPdf.Conformance.Rules.Transparency;
 using VellumPdf.Conformance.Rules.Ua;
@@ -42,15 +43,19 @@ internal static class RuleRegistry
         new PermissionsRule(),
         new EmbeddedFileRule(),
         new EmbeddedFilePdfaRule(),
+        new NameUtf8Rule(),
     ];
 
     // ISO 19005-2 §6.2 colour / §6.4 transparency rules. Shared by every PDF/A-2 level.
     private static readonly IConformanceRule[] PdfA2ColourAndTransparency =
     [
         new OutputIntentRule(),
+        new IccProfileRule(),
+        new OverprintRule(),
         new BlendModeRule(),
         new DeviceNColorantRule(),
         new DeviceNColorantsRule(),
+        new SeparationConsistencyRule(),
     ];
 
     // ISO 19005-2 §6.1.10 / §6.1.13 / §6.2.2 / §6.2.5 graphics-state / §6.2.6 rendering-intent /
@@ -63,6 +68,7 @@ internal static class RuleRegistry
         new GraphicsStateRule(),
         new GraphicsStateNestingRule(),
         new ForbiddenXObjectRule(),
+        new Jpeg2000Rule(),
     ];
 
     // ISO 19005-2 §6.3 font rules. Shared by every PDF/A-2 level.
@@ -72,6 +78,7 @@ internal static class RuleRegistry
         new FontStructureRule(),
         new GlyphPresenceRule(),
         new CidRangeRule(),
+        new CMapContentRule(),
     ];
 
     // ISO 19005-2 §6.5–§6.7 metadata, annotation, and action rules. Shared by every PDF/A-2 level.
@@ -82,10 +89,18 @@ internal static class RuleRegistry
         new MetadataRule(),
         new ExtensionSchemaRule(),
         new PropertyUsageRule(),
+        new PropertyValueTypeRule(),
         new AnnotationRule(),
         new ActionRule(),
         new Forms.XfaRule(),
         new Forms.InteractiveFormRule(),
+    ];
+
+    // ISO 19005-2 §6.4.3 digital-signature rules and §6.1.12-2 DocMDP reference constraint.
+    private static readonly IConformanceRule[] PdfA2Signatures =
+    [
+        new SignatureRule(),
+        new DocMdpReferenceRule(),
     ];
 
     private static readonly IConformanceRule[] PdfA2BRules =
@@ -96,6 +111,7 @@ internal static class RuleRegistry
         .. PdfA2Graphics,
         .. PdfA2Fonts,
         .. PdfA2Document,
+        .. PdfA2Signatures,
     ];
 
     // PDF/A-2u = PDF/A-2b plus the character-to-Unicode requirement (ISO 19005-2 §6.2.11.7.2).
