@@ -141,6 +141,13 @@ internal static class RuleRegistry
         new UaLangSyntaxRule(),
         new UaTitleRule(),
         new UaTabsRule(),
+        new UaOptionalContentRule(),
+        new UaEmbeddedFileRule(),
+        new UaReferenceXObjectRule(),
+        new UaXfaRule(),
+        new UaTrapNetAnnotRule(),
+        new UaLinkAnnotRule(),
+        new UaAnnotContentsRule(),
     ];
 
     /// <summary>

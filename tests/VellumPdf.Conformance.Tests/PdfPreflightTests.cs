@@ -3717,6 +3717,8 @@ public sealed class PdfPreflightTests
     [Fact]
     public void ValidateUa_AnnotatedPageWithoutTabsS_ReportsError()
     {
+        // The Link annotation includes /Contents so that §7.18.5-2 and §7.18.1-2 do not fire,
+        // isolating the §7.18.3 tab-order violation as the only finding.
         var bytes = AssemblePdf(
             [
                 new("<< /Type /Catalog /Pages 2 0 R /Lang (en-US) /MarkInfo << /Marked true >> "
@@ -3724,7 +3726,7 @@ public sealed class PdfPreflightTests
                 _pagesObj,
                 new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Annots [5 0 R] >>"),
                 new("<< /Type /StructTreeRoot >>"),
-                new("<< /Type /Annot /Subtype /Link /Rect [0 0 1 1] /F 4 >>"),
+                new("<< /Type /Annot /Subtype /Link /Rect [0 0 1 1] /F 4 /Contents (link) >>"),
             ],
             metadataOverride: UaXmpBytes());
 
@@ -4081,13 +4083,15 @@ public sealed class PdfPreflightTests
     public void ValidateUa_TabsSetOnPage_NoFinding()
     {
         // /Tabs /S set directly on the annotated page satisfies §7.18.3.
+        // The Link annotation includes /Contents so §7.18.5-2 and §7.18.1-2 also pass —
+        // all §7.18 requirements are satisfied, so the document is fully compliant.
         var bytes = AssemblePdf(
             [
                 new("<< /Type /Catalog /Pages 2 0 R /Lang (en-US) /MarkInfo << /Marked true >> "
                     + "/StructTreeRoot 5 0 R /ViewerPreferences << /DisplayDocTitle true >> >>"),
                 new("<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
                 new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Tabs /S /Annots [4 0 R] >>"),
-                new("<< /Type /Annot /Subtype /Link /Rect [0 0 1 1] /F 4 >>"),
+                new("<< /Type /Annot /Subtype /Link /Rect [0 0 1 1] /F 4 /Contents (link) >>"),
                 new("<< /Type /StructTreeRoot >>"),
             ],
             metadataOverride: UaXmpBytes());
@@ -4096,6 +4100,58 @@ public sealed class PdfPreflightTests
 
         Assert.True(result.IsCompliant);
         Assert.Empty(result.Assertions);
+    }
+
+    [Fact]
+    public void ValidateUa_AnnotWithoutContentsButStructElementAlt_DoesNotReport7181_2()
+    {
+        // False-positive guard for §7.18.1-2 (UaAnnotContentsRule): a Text annotation with NO
+        // /Contents and NO annotation-level /Alt, but bound into the structure tree via /StructParent
+        // to a struct element that DOES carry /Alt. veraPDF 1.30.2 resolves the alt-text from the
+        // enclosing structure element and does NOT fail 7.18.1-2 here (verified directly). Our rule
+        // cannot read the struct-element /Alt without the walker, so it must skip /StructParent-bound
+        // annotations rather than over-reject this conformant tagged annotation.
+        var bytes = AssemblePdf(
+            [
+                new("<< /Type /Catalog /Pages 2 0 R /Lang (en-US) /MarkInfo << /Marked true >> "
+                    + "/StructTreeRoot 4 0 R /ViewerPreferences << /DisplayDocTitle true >> >>"),
+                new("<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
+                new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Tabs /S /Annots [6 0 R] "
+                    + "/StructParents 1 >>"),
+                new("<< /Type /StructTreeRoot /K [5 0 R] /ParentTree 7 0 R >>"),
+                new("<< /Type /StructElem /S /Annot /P 4 0 R /Alt (annotation description) /Pg 3 0 R "
+                    + "/K [ << /Type /OBJR /Obj 6 0 R >> ] >>"),
+                new("<< /Type /Annot /Subtype /Text /Rect [100 100 120 120] /F 4 /StructParent 0 >>"),
+                new("<< /Nums [0 5 0 R] >>"),
+            ],
+            metadataOverride: UaXmpBytes());
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+
+        // The struct-bound annotation must NOT trip the annotation-Contents/Alt rule.
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.18.1-2");
+    }
+
+    [Fact]
+    public void ValidateUa_UntaggedAnnotWithoutContents_Reports7181_2()
+    {
+        // Positive control for the guard above: the SAME annotation with no /StructParent (not bound
+        // into the structure tree) has no possible struct-element alt-text, so §7.18.1-2 fires —
+        // matching veraPDF, which fails 7.18.1-2 for an untagged annotation lacking /Contents.
+        var bytes = AssemblePdf(
+            [
+                new("<< /Type /Catalog /Pages 2 0 R /Lang (en-US) /MarkInfo << /Marked true >> "
+                    + "/StructTreeRoot 4 0 R /ViewerPreferences << /DisplayDocTitle true >> >>"),
+                new("<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
+                new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Tabs /S /Annots [5 0 R] >>"),
+                new("<< /Type /StructTreeRoot >>"),
+                new("<< /Type /Annot /Subtype /Text /Rect [100 100 120 120] /F 4 >>"),
+            ],
+            metadataOverride: UaXmpBytes());
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.18.1-2");
     }
 
     // ── §6.1.13-9 DeviceN colourant limit ─────────────────────────────────────

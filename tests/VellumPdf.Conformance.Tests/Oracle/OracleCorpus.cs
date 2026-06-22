@@ -733,6 +733,111 @@ public static class OracleCorpus
             new OracleFixture("pdfa2b-bxex-standard-operators",
                 HandBuiltPdfWithContent("BX q Q EX"),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // ── PDF/UA-1 Batch A2 fixtures ──────────────────────────────────────────────────────────
+
+            // §7.18.2-1 (TrapNet annotation): a visible TrapNet annotation inside the crop box is
+            // forbidden. Both veraPDF (clause 7.18.2, testNumber 1) and the in-process
+            // UaTrapNetAnnotRule reject it.
+            new OracleFixture("pdfua1-trapnet-visible",
+                WriterUa1WithTrapNetAnnotation(hidden: false),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.18.2-1 (TrapNet hidden): a TrapNet annotation with the Hidden flag set (F & 2) is
+            // exempt — the veraPDF predicate passes and so does the in-process rule.
+            // (The document still fails other UA rules like 7.18.3-1 tab-order; this fixture is
+            // validated per-clause via --format xml to confirm 7.18.2-1 is NOT among the failures.)
+            new OracleFixture("pdfua1-trapnet-hidden",
+                WriterUa1WithTrapNetAnnotation(hidden: true),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.18.5-2 (Link annotation without /Contents): a Link without a /Contents entry fails
+            // 7.18.5-2. Both veraPDF and the in-process UaLinkAnnotRule reject it.
+            new OracleFixture("pdfua1-link-no-contents",
+                WriterUa1WithLinkAnnotation(includeContents: false),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.18.5-2 (Link annotation with /Contents): a Link with a non-empty /Contents entry
+            // passes 7.18.5-2. Both veraPDF and the in-process rule agree.
+            // (The document still fails 7.18.5-1 and 7.18.3-1 — structure rules — confirmed via XML.)
+            new OracleFixture("pdfua1-link-with-contents",
+                WriterUa1WithLinkAnnotation(includeContents: true),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.18.1-2 (Non-Widget annotation without /Contents or /Alt): a Text annotation with
+            // neither /Contents nor /Alt fails 7.18.1-2. Both veraPDF and the in-process
+            // UaAnnotContentsRule reject it.
+            new OracleFixture("pdfua1-annot-no-contents",
+                WriterUa1WithTextAnnotation(includeContents: false),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.18.1-2 (Non-Widget annotation with /Contents): a Text annotation with a non-empty
+            // /Contents passes 7.18.1-2. (Still fails 7.18.1-1 and 7.18.3-1 — structure rules.)
+            new OracleFixture("pdfua1-annot-with-contents",
+                WriterUa1WithTextAnnotation(includeContents: true),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.18.2-1 / §7.18.5-2 / §7.18.1-2 (outside crop box): a Link annotation whose /Rect
+            // is entirely outside the page's MediaBox is exempt from ALL §7.18 requirements.
+            // veraPDF passes 7.18.5-2 for such a Link even without /Contents — confirmed empirically.
+            // The overall document still has other failures (7.18.3-1 tab order); this is a
+            // per-clause guard that only 7.18.5-2 and 7.18.1-2 do NOT fire.
+            new OracleFixture("pdfua1-link-outside-cropbox",
+                WriterUa1WithAnnotOutsideCropBox(),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.20-1 (reference XObject): a drawn Form XObject with a /Ref entry fails 7.20-1.
+            // Both veraPDF (clause 7.20, testNumber 1) and the in-process UaReferenceXObjectRule
+            // reject it.
+            new OracleFixture("pdfua1-ref-xobject",
+                WriterUa1WithReferenceXObject(),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.11-1 (embedded file without /UF): a file-specification with /EF but no /UF fails
+            // 7.11-1. Both veraPDF (clause 7.11, testNumber 1) and the in-process
+            // UaEmbeddedFileRule reject it.
+            new OracleFixture("pdfua1-embedded-no-uf",
+                WriterUa1WithEmbeddedFile(includeUf: false),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.11-1 (embedded file with /F and /UF): a file-specification with /EF, /F, and /UF
+            // passes 7.11-1. Both veraPDF and the in-process rule accept it.
+            new OracleFixture("pdfua1-embedded-with-uf",
+                WriterUa1WithEmbeddedFile(includeUf: true),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: true),
+
+            // §7.10-1 (OC config without /Name): an optional-content configuration dictionary
+            // without a /Name fails 7.10-1. Both veraPDF and the in-process UaOptionalContentRule
+            // reject it.
+            new OracleFixture("pdfua1-oc-no-name",
+                WriterUa1WithOptionalContent(hasName: false, hasAs: false),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.10-2 (OC config with /AS): an optional-content configuration dictionary with an
+            // /AS entry fails 7.10-2. Both veraPDF and the in-process rule reject it.
+            new OracleFixture("pdfua1-oc-with-as",
+                WriterUa1WithOptionalContent(hasName: true, hasAs: true),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.10 (OC config valid): a configuration with a non-empty /Name and no /AS passes
+            // 7.10-1 and 7.10-2. Both veraPDF and the in-process rule accept it.
+            new OracleFixture("pdfua1-oc-valid",
+                WriterUa1WithOptionalContent(hasName: true, hasAs: false),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: true),
+
+            // §7.15-1 (dynamic XFA): an AcroForm with an XFA stream containing
+            // xdp:xdp > config > acrobat > acrobat7 > dynamicRender = "required"
+            // fails 7.15-1. Both veraPDF and the in-process UaXfaRule reject it.
+            new OracleFixture("pdfua1-xfa-dynamic",
+                WriterUa1WithXfa(dynamic: true),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.15-1 (static XFA): the same structure with dynamicRender = "forbidden" passes
+            // 7.15-1. Both veraPDF and the in-process rule accept it (the document may still fail
+            // other rules if the XFA template triggers them; these are confirmed via XML).
+            new OracleFixture("pdfua1-xfa-static",
+                WriterUa1WithXfa(dynamic: false),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: true),
         ];
     }
 
@@ -1931,6 +2036,218 @@ public static class OracleCorpus
         var catalog = CloneDict(reader.Catalog);
         catalog.Set(new PdfName("Lang"), new PdfLiteralString(Array.Empty<byte>()));
         return reader.AppendRevision([(rootRef.ObjectNumber, catalog)]);
+    }
+
+    // ── PDF/UA-1 Batch A2 fixture helpers ────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Injects a TrapNet annotation into the first page of the UA-1 tagged baseline.
+    /// When <paramref name="hidden"/> is true, the Hidden flag (F = 2) is set so the annotation
+    /// is exempt from §7.18.2-1; when false, the annotation is visible and violates the clause.
+    /// </summary>
+    private static byte[] WriterUa1WithTrapNetAnnotation(bool hidden)
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var newPage = CloneDict(page);
+        var apNum = reader.Size;
+        var annotNum = reader.Size + 1;
+        // Minimal appearance stream so PDF/A annotation-AP rules do not fire.
+        var apStream = new PdfStream(Array.Empty<byte>());
+        apStream.Dictionary
+            .Set(new PdfName("Type"), new PdfName("XObject"))
+            .Set(new PdfName("Subtype"), new PdfName("Form"))
+            .Set(new PdfName("BBox"), new PdfArray([new PdfInteger(0), new PdfInteger(0), new PdfInteger(40), new PdfInteger(40)]));
+        var annot = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("Annot"))
+            .Set(PdfName.Subtype, new PdfName("TrapNet"))
+            .Set(new PdfName("Rect"), new PdfArray([new PdfInteger(10), new PdfInteger(10), new PdfInteger(50), new PdfInteger(50)]))
+            .Set(new PdfName("AP"), new PdfDictionary().Set(new PdfName("N"), new PdfIndirectReference(apNum)));
+        if (hidden)
+            annot.Set(new PdfName("F"), new PdfInteger(2)); // Hidden flag
+        newPage.Set(new PdfName("Annots"), new PdfArray([new PdfIndirectReference(annotNum)]));
+        return reader.AppendRevision([(pageRef.ObjectNumber, newPage), (apNum, apStream), (annotNum, annot)]);
+    }
+
+    /// <summary>
+    /// Injects a Link annotation into the UA-1 tagged baseline. When <paramref name="includeContents"/>
+    /// is true, /Contents is set (satisfying §7.18.5-2); when false, it is absent (violation).
+    /// </summary>
+    private static byte[] WriterUa1WithLinkAnnotation(bool includeContents)
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var newPage = CloneDict(page);
+        var annotNum = reader.Size;
+        var annot = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("Annot"))
+            .Set(PdfName.Subtype, new PdfName("Link"))
+            .Set(new PdfName("Rect"), new PdfArray([new PdfInteger(10), new PdfInteger(10), new PdfInteger(50), new PdfInteger(50)]));
+        if (includeContents)
+            annot.Set(new PdfName("Contents"), new PdfLiteralString(Encoding.ASCII.GetBytes("Click here")));
+        newPage.Set(new PdfName("Annots"), new PdfArray([new PdfIndirectReference(annotNum)]));
+        return reader.AppendRevision([(pageRef.ObjectNumber, newPage), (annotNum, annot)]);
+    }
+
+    /// <summary>
+    /// Injects a Text annotation into the UA-1 tagged baseline. When <paramref name="includeContents"/>
+    /// is true, /Contents is set (satisfying §7.18.1-2); when false, it is absent (violation).
+    /// </summary>
+    private static byte[] WriterUa1WithTextAnnotation(bool includeContents)
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var newPage = CloneDict(page);
+        var apNum = reader.Size;
+        var annotNum = reader.Size + 1;
+        var apStream = new PdfStream(Array.Empty<byte>());
+        apStream.Dictionary
+            .Set(new PdfName("Type"), new PdfName("XObject"))
+            .Set(new PdfName("Subtype"), new PdfName("Form"))
+            .Set(new PdfName("BBox"), new PdfArray([new PdfInteger(0), new PdfInteger(0), new PdfInteger(40), new PdfInteger(40)]));
+        var annot = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("Annot"))
+            .Set(PdfName.Subtype, new PdfName("Text"))
+            .Set(new PdfName("Rect"), new PdfArray([new PdfInteger(10), new PdfInteger(10), new PdfInteger(50), new PdfInteger(50)]))
+            .Set(new PdfName("AP"), new PdfDictionary().Set(new PdfName("N"), new PdfIndirectReference(apNum)));
+        if (includeContents)
+            annot.Set(new PdfName("Contents"), new PdfLiteralString(Encoding.ASCII.GetBytes("A note")));
+        newPage.Set(new PdfName("Annots"), new PdfArray([new PdfIndirectReference(annotNum)]));
+        return reader.AppendRevision([(pageRef.ObjectNumber, newPage), (apNum, apStream), (annotNum, annot)]);
+    }
+
+    /// <summary>
+    /// Injects a Link annotation whose /Rect is entirely outside the page's MediaBox (A4 = [0 0 595 842]).
+    /// Rect = [600 10 650 50] lies outside the right edge, so the annotation is exempt from §7.18
+    /// requirements: veraPDF does not fire 7.18.5-2 or 7.18.1-2 for it (confirmed empirically).
+    /// </summary>
+    private static byte[] WriterUa1WithAnnotOutsideCropBox()
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var newPage = CloneDict(page);
+        var annotNum = reader.Size;
+        // /Rect entirely to the right of A4 (width 595) — outside the MediaBox.
+        var annot = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("Annot"))
+            .Set(PdfName.Subtype, new PdfName("Link"))
+            .Set(new PdfName("Rect"), new PdfArray([new PdfInteger(600), new PdfInteger(10), new PdfInteger(650), new PdfInteger(50)]));
+        newPage.Set(new PdfName("Annots"), new PdfArray([new PdfIndirectReference(annotNum)]));
+        return reader.AppendRevision([(pageRef.ObjectNumber, newPage), (annotNum, annot)]);
+    }
+
+    /// <summary>
+    /// Injects a drawn Form XObject with a /Ref entry into the UA-1 tagged baseline, violating §7.20-1.
+    /// The /Ref entry makes the XObject a reference XObject, which is forbidden in PDF/UA-1.
+    /// veraPDF fires clause 7.20, testNumber 1.
+    /// </summary>
+    private static byte[] WriterUa1WithReferenceXObject()
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var newPage = CloneDict(page);
+        var xobjNum = reader.Size;
+        var contentNum = reader.Size + 1;
+        var xobj = new PdfStream(Array.Empty<byte>());
+        xobj.Dictionary
+            .Set(new PdfName("Type"), new PdfName("XObject"))
+            .Set(new PdfName("Subtype"), new PdfName("Form"))
+            .Set(new PdfName("BBox"), new PdfArray([new PdfInteger(0), new PdfInteger(0), new PdfInteger(100), new PdfInteger(100)]))
+            .Set(new PdfName("Ref"), new PdfDictionary().Set(new PdfName("Page"), new PdfInteger(0)));
+        var content = new PdfStream(Encoding.ASCII.GetBytes("/Fm0 Do"));
+        var resources = new PdfDictionary()
+            .Set(new PdfName("XObject"), new PdfDictionary().Set(new PdfName("Fm0"), new PdfIndirectReference(xobjNum)));
+        newPage.Set(new PdfName("Resources"), resources);
+        newPage.Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
+        return reader.AppendRevision([(pageRef.ObjectNumber, newPage), (xobjNum, xobj), (contentNum, content)]);
+    }
+
+    /// <summary>
+    /// Injects an embedded file into the UA-1 tagged baseline. When <paramref name="includeUf"/> is
+    /// true, /UF is present (satisfying §7.11-1); when false, it is absent (violation).
+    /// </summary>
+    private static byte[] WriterUa1WithEmbeddedFile(bool includeUf)
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+        using var reader = PdfReader.Open(baseline);
+        var rootRef = (PdfIndirectReference)reader.Trailer.Get(PdfName.Root)!;
+        var catalog = CloneDict(reader.Catalog);
+        var efStreamNum = reader.Size;
+        var filespecNum = reader.Size + 1;
+        var efStream = new PdfStream(Array.Empty<byte>());
+        efStream.Dictionary.Set(new PdfName("Type"), new PdfName("EmbeddedFile"));
+        var filespec = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("Filespec"))
+            .Set(new PdfName("F"), new PdfLiteralString(Encoding.ASCII.GetBytes("attach.txt")))
+            .Set(new PdfName("EF"), new PdfDictionary().Set(new PdfName("F"), new PdfIndirectReference(efStreamNum)));
+        if (includeUf)
+            filespec.Set(new PdfName("UF"), new PdfLiteralString(Encoding.ASCII.GetBytes("attach.txt")));
+        catalog.Set(new PdfName("Names"), new PdfDictionary()
+            .Set(new PdfName("EmbeddedFiles"), new PdfDictionary()
+                .Set(new PdfName("Names"), new PdfArray([
+                    new PdfLiteralString(Encoding.ASCII.GetBytes("attach.txt")),
+                    new PdfIndirectReference(filespecNum)]))));
+        return reader.AppendRevision([(rootRef.ObjectNumber, catalog), (efStreamNum, efStream), (filespecNum, filespec)]);
+    }
+
+    /// <summary>
+    /// Injects an optional-content configuration into the UA-1 tagged baseline. Used to exercise
+    /// §7.10-1 (/Name required) and §7.10-2 (/AS forbidden).
+    /// </summary>
+    private static byte[] WriterUa1WithOptionalContent(bool hasName, bool hasAs)
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+        using var reader = PdfReader.Open(baseline);
+        var rootRef = (PdfIndirectReference)reader.Trailer.Get(PdfName.Root)!;
+        var catalog = CloneDict(reader.Catalog);
+        var ocgNum = reader.Size;
+        var ocg = new PdfDictionary()
+            .Set(new PdfName("Type"), new PdfName("OCG"))
+            .Set(new PdfName("Name"), new PdfLiteralString(Encoding.ASCII.GetBytes("Layer 1")));
+        var ocConfig = new PdfDictionary();
+        if (hasName)
+            ocConfig.Set(new PdfName("Name"), new PdfLiteralString(Encoding.ASCII.GetBytes("Default")));
+        if (hasAs)
+            ocConfig.Set(new PdfName("AS"), new PdfArray([new PdfDictionary()
+                .Set(new PdfName("Event"), new PdfName("View"))
+                .Set(new PdfName("OCGs"), new PdfArray([]))
+                .Set(new PdfName("Category"), new PdfArray([new PdfName("View")]))]));
+        catalog.Set(new PdfName("OCProperties"), new PdfDictionary()
+            .Set(new PdfName("OCGs"), new PdfArray([new PdfIndirectReference(ocgNum)]))
+            .Set(new PdfName("D"), ocConfig));
+        return reader.AppendRevision([(rootRef.ObjectNumber, catalog), (ocgNum, ocg)]);
+    }
+
+    /// <summary>
+    /// Injects an XFA stream into the UA-1 tagged baseline. When <paramref name="dynamic"/> is true,
+    /// the XFA config specifies <c>dynamicRender = "required"</c> (violates §7.15-1); when false,
+    /// <c>dynamicRender = "forbidden"</c> (static XFA — passes §7.15-1).
+    /// The XFA config structure follows the veraPDF model:
+    /// <c>xdp:xdp &gt; config &gt; acrobat &gt; acrobat7 &gt; dynamicRender</c>.
+    /// </summary>
+    private static byte[] WriterUa1WithXfa(bool dynamic)
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+        using var reader = PdfReader.Open(baseline);
+        var rootRef = (PdfIndirectReference)reader.Trailer.Get(PdfName.Root)!;
+        var catalog = CloneDict(reader.Catalog);
+        var xfaStreamNum = reader.Size;
+        var renderValue = dynamic ? "required" : "forbidden";
+        var xfaXml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+            + "<xdp:xdp xmlns:xdp=\"http://ns.adobe.com/xdp/\">"
+            + "<config xmlns=\"http://www.xfa.org/schema/xci/1.0/\">"
+            + $"<acrobat><acrobat7><dynamicRender>{renderValue}</dynamicRender></acrobat7></acrobat>"
+            + "</config></xdp:xdp>";
+        var xfaStream = new PdfStream(Encoding.UTF8.GetBytes(xfaXml));
+        var acroForm = new PdfDictionary()
+            .Set(new PdfName("XFA"), new PdfIndirectReference(xfaStreamNum));
+        catalog.Set(new PdfName("AcroForm"), acroForm);
+        return reader.AppendRevision([(rootRef.ObjectNumber, catalog), (xfaStreamNum, xfaStream)]);
     }
 
     private static void DrawGlyphs(PdfCanvas canvas, EmbeddedFontHandle handle, string text)
