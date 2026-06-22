@@ -3717,8 +3717,9 @@ public sealed class PdfPreflightTests
     [Fact]
     public void ValidateUa_AnnotatedPageWithoutTabsS_ReportsError()
     {
-        // The Link annotation includes /Contents so that §7.18.5-2 and §7.18.1-2 do not fire,
-        // isolating the §7.18.3 tab-order violation as the only finding.
+        // The Link annotation has /Contents so §7.18.5-2 and §7.18.1-2 do not fire.
+        // The annotation is not bound into the structure tree (no /StructParent) so §7.18.5-1
+        // also fires alongside §7.18.3 — both are genuine violations in this fixture.
         var bytes = AssemblePdf(
             [
                 new("<< /Type /Catalog /Pages 2 0 R /Lang (en-US) /MarkInfo << /Marked true >> "
@@ -3733,8 +3734,7 @@ public sealed class PdfPreflightTests
         var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
 
         Assert.False(result.IsCompliant);
-        var assertion = Assert.Single(result.Assertions);
-        Assert.Equal("ISO14289-1:7.18.3-tabs", assertion.RuleId);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.18.3-tabs");
     }
 
     [Fact]
@@ -4083,16 +4083,19 @@ public sealed class PdfPreflightTests
     public void ValidateUa_TabsSetOnPage_NoFinding()
     {
         // /Tabs /S set directly on the annotated page satisfies §7.18.3.
-        // The Link annotation includes /Contents so §7.18.5-2 and §7.18.1-2 also pass —
-        // all §7.18 requirements are satisfied, so the document is fully compliant.
+        // The Link annotation has /Contents (§7.18.5-2), is bound to a Link struct elem via
+        // /StructParent (§7.18.5-1), and the struct elem has /Alt (§7.18.1-2) — all §7.18
+        // requirements are satisfied, so the document is fully compliant.
         var bytes = AssemblePdf(
             [
                 new("<< /Type /Catalog /Pages 2 0 R /Lang (en-US) /MarkInfo << /Marked true >> "
                     + "/StructTreeRoot 5 0 R /ViewerPreferences << /DisplayDocTitle true >> >>"),
                 new("<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
                 new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Tabs /S /Annots [4 0 R] >>"),
-                new("<< /Type /Annot /Subtype /Link /Rect [0 0 1 1] /F 4 /Contents (link) >>"),
-                new("<< /Type /StructTreeRoot >>"),
+                new("<< /Type /Annot /Subtype /Link /Rect [0 0 1 1] /F 4 /Contents (link) /StructParent 0 >>"),
+                new("<< /Type /StructTreeRoot /K [6 0 R] /ParentTree 7 0 R >>"),
+                new("<< /Type /StructElem /S /Link /P 5 0 R /Alt (link description) /Pg 3 0 R /K [ << /Type /OBJR /Obj 4 0 R >> ] >>"),
+                new("<< /Nums [0 6 0 R] >>"),
             ],
             metadataOverride: UaXmpBytes());
 
@@ -8330,6 +8333,341 @@ public sealed class PdfPreflightTests
         var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
         Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.4.4-2");
         Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.4.4-3");
+    }
+
+    // ── Batch B5 — §7.18 annotation↔structure-binding (UaAnnotStructureRule) ───────────────────
+
+    // Helper: build a one-page PDF/UA-1 doc with a /ParentTree, one annotation on the page,
+    // and one struct element enclosing it. The page has /Tabs /S and an /Annots array.
+    // Object layout:
+    //   1 = Catalog (w/ /StructTreeRoot 4 0 R)
+    //   2 = Pages
+    //   3 = Page (w/ /Annots [6 0 R])
+    //   4 = StructTreeRoot (w/ /K [5 0 R] and /ParentTree 7 0 R)
+    //   5 = StructElem (parameterised: /S, /Alt presence)
+    //   6 = annotation (parameterised: /Subtype, /F, /Rect, /StructParent)
+    //   7 = ParentTree (<< /Nums [0 5 0 R] >>)
+    //   + XMP metadata (appended by AssemblePdf)
+    private static byte[] BuildAnnotStructPdf(
+        string structElemS,          // e.g. "/Annot" or "/Form"
+        string annotSubtype,         // e.g. "/Text" or "/Widget"
+        bool structElemHasAlt = false,
+        bool annotHidden = false,
+        bool annotHasStructParent = true,
+        string structElemExtra = "") // extra entries on the struct elem (e.g. empty)
+    {
+        var altEntry = structElemHasAlt ? " /Alt (struct alt)" : string.Empty;
+        var hiddenF = annotHidden ? " /F 2" : string.Empty;
+        var structParentEntry = annotHasStructParent ? " /StructParent 0" : string.Empty;
+
+        return AssemblePdf(
+            [
+                new("<< /Type /Catalog /Pages 2 0 R /Lang (en-US) /MarkInfo << /Marked true >> "
+                    + "/StructTreeRoot 4 0 R /ViewerPreferences << /DisplayDocTitle true >> >>"),
+                new("<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
+                new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Tabs /S /Annots [6 0 R] >>"),
+                new($"<< /Type /StructTreeRoot /K [5 0 R] /ParentTree 7 0 R >>"),
+                new($"<< /Type /StructElem /S {structElemS} /P 4 0 R /Pg 3 0 R"
+                    + altEntry + structElemExtra
+                    + " /K [ << /Type /OBJR /Obj 6 0 R >> ] >>"),
+                new($"<< /Type /Annot /Subtype {annotSubtype} /Rect [100 100 120 120]"
+                    + hiddenF + structParentEntry + " >>"),
+                new("<< /Nums [0 5 0 R] >>"),
+            ],
+            metadataOverride: UaXmpBytes());
+    }
+
+    // Variant: annotation has NO /StructParent (not bound into the structure tree at all).
+    private static byte[] BuildAnnotNoStructPdf(string annotSubtype, bool annotHidden = false)
+    {
+        var hiddenF = annotHidden ? " /F 2" : string.Empty;
+        return AssemblePdf(
+            [
+                new("<< /Type /Catalog /Pages 2 0 R /Lang (en-US) /MarkInfo << /Marked true >> "
+                    + "/StructTreeRoot 4 0 R /ViewerPreferences << /DisplayDocTitle true >> >>"),
+                new("<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
+                new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Tabs /S /Annots [5 0 R] >>"),
+                new("<< /Type /StructTreeRoot /K [] >>"),
+                new($"<< /Type /Annot /Subtype {annotSubtype} /Rect [100 100 120 120]{hiddenF} >>"),
+            ],
+            metadataOverride: UaXmpBytes());
+    }
+
+    // ── §7.18.1-1 (PDAnnot — non-Widget/Link/PrinterMark must be in Annot tag) ──────────────────
+
+    /// <summary>
+    /// §7.18.1-1 VIOLATION: a visible /Text annotation with no /StructParent fires 7.18.1-1.
+    /// Cross-validated against veraPDF 1.30.2: p1_text_no_struct → fires 7.18.1-1 (exit 1).
+    /// </summary>
+    [Fact]
+    public void UaTextAnnotNoStruct_Fires7181_1()
+    {
+        var bytes = BuildAnnotNoStructPdf("/Text");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.18.1-1");
+    }
+
+    /// <summary>
+    /// §7.18.1-1 VIOLATION: a visible /Text annotation with /StructParent → /S /P (not Annot)
+    /// fires 7.18.1-1.
+    /// Cross-validated: p3_text_struct_p → fires 7.18.1-1 (exit 1).
+    /// </summary>
+    [Fact]
+    public void UaTextAnnotStructP_Fires7181_1()
+    {
+        var bytes = BuildAnnotStructPdf("/P", "/Text");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.18.1-1");
+    }
+
+    /// <summary>
+    /// §7.18.1-1 FP guard: a visible /Text annotation with /StructParent → /S /Annot must NOT
+    /// fire 7.18.1-1.
+    /// Cross-validated: p2_text_struct_annot → PASS (exit 0).
+    /// </summary>
+    [Fact]
+    public void UaTextAnnotStructAnnot_DoesNotFire7181_1()
+    {
+        var bytes = BuildAnnotStructPdf("/Annot", "/Text");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.18.1-1");
+    }
+
+    /// <summary>
+    /// §7.18.1-1 FP guard: a role-mapped /S /MyAnnot (mapped to /Annot) satisfies 7.18.1-1.
+    /// Cross-validated: p_rolemap_annot → PASS (exit 0).
+    /// </summary>
+    [Fact]
+    public void UaTextAnnotRoleMappedAnnot_DoesNotFire7181_1()
+    {
+        // Build with a /RoleMap in the StructTreeRoot and /S /MyAnnot on the struct elem.
+        var bytes = AssemblePdf(
+            [
+                new("<< /Type /Catalog /Pages 2 0 R /Lang (en-US) /MarkInfo << /Marked true >> "
+                    + "/StructTreeRoot 4 0 R /ViewerPreferences << /DisplayDocTitle true >> >>"),
+                new("<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
+                new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Tabs /S /Annots [6 0 R] >>"),
+                new("<< /Type /StructTreeRoot /K [5 0 R] /ParentTree 7 0 R /RoleMap << /MyAnnot /Annot >> >>"),
+                new("<< /Type /StructElem /S /MyAnnot /P 4 0 R /Alt (alt) /Pg 3 0 R /K [ << /Type /OBJR /Obj 6 0 R >> ] >>"),
+                new("<< /Type /Annot /Subtype /Text /Rect [100 100 120 120] /Contents (desc) /StructParent 0 >>"),
+                new("<< /Nums [0 5 0 R] >>"),
+            ],
+            metadataOverride: UaXmpBytes());
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.18.1-1");
+    }
+
+    /// <summary>
+    /// §7.18.1-1 FP guard: a /Text annotation with hidden flag (F&amp;2) and no /StructParent
+    /// must NOT fire 7.18.1-1.
+    /// Cross-validated: p10_hidden_text_no_struct → PASS (exit 0).
+    /// </summary>
+    [Fact]
+    public void UaHiddenTextAnnotNoStruct_DoesNotFire7181_1()
+    {
+        var bytes = BuildAnnotNoStructPdf("/Text", annotHidden: true);
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.18.1-1");
+    }
+
+    // ── §7.18.4-1 (PDWidgetAnnot — Widget must be in Form tag) ──────────────────────────────────
+
+    /// <summary>
+    /// §7.18.4-1 VIOLATION: a visible Widget annotation with no /StructParent fires 7.18.4-1.
+    /// Cross-validated: p13_widget_no_struct → fires 7.18.4-1 (exit 1).
+    /// </summary>
+    [Fact]
+    public void UaWidgetAnnotNoStruct_Fires7184_1()
+    {
+        var bytes = BuildAnnotNoStructPdf("/Widget");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.18.4-1");
+    }
+
+    /// <summary>
+    /// §7.18.4-1 VIOLATION: a visible Widget annotation with /StructParent → /S /Annot (not Form)
+    /// fires 7.18.4-1.
+    /// Cross-validated: p5_widget_struct_annot → fires 7.18.4-1 (exit 1).
+    /// </summary>
+    [Fact]
+    public void UaWidgetAnnotStructAnnot_Fires7184_1()
+    {
+        var bytes = BuildAnnotStructPdf("/Annot", "/Widget");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.18.4-1");
+    }
+
+    /// <summary>
+    /// §7.18.4-1 FP guard: a visible Widget annotation with /StructParent → /S /Form must NOT
+    /// fire 7.18.4-1.
+    /// Cross-validated: p4_widget_struct_form → PASS (exit 0).
+    /// </summary>
+    [Fact]
+    public void UaWidgetAnnotStructForm_DoesNotFire7184_1()
+    {
+        var bytes = BuildAnnotStructPdf("/Form", "/Widget");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.18.4-1");
+    }
+
+    // ── §7.18.5-1 (PDLinkAnnot — Link must be in Link tag) ──────────────────────────────────────
+
+    /// <summary>
+    /// §7.18.5-1 VIOLATION: a visible Link annotation with no /StructParent fires 7.18.5-1.
+    /// Cross-validated: p_link_no_struct → fires 7.18.5-1 (exit 1).
+    /// </summary>
+    [Fact]
+    public void UaLinkAnnotNoStruct_Fires7185_1()
+    {
+        // Link with /Contents so 7.18.5-2 and 7.18.1-2 do not also fire — isolating 7.18.5-1.
+        var bytes = AssemblePdf(
+            [
+                new("<< /Type /Catalog /Pages 2 0 R /Lang (en-US) /MarkInfo << /Marked true >> "
+                    + "/StructTreeRoot 4 0 R /ViewerPreferences << /DisplayDocTitle true >> >>"),
+                new("<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
+                new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Tabs /S /Annots [5 0 R] >>"),
+                new("<< /Type /StructTreeRoot /K [] >>"),
+                new("<< /Type /Annot /Subtype /Link /Rect [100 100 120 120] /Contents (desc) >>"),
+            ],
+            metadataOverride: UaXmpBytes());
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.18.5-1");
+    }
+
+    /// <summary>
+    /// §7.18.5-1 VIOLATION: a visible Link annotation with /StructParent → /S /Annot (not Link)
+    /// fires 7.18.5-1.
+    /// Cross-validated: p7_link_struct_annot → fires 7.18.5-1 (exit 1).
+    /// </summary>
+    [Fact]
+    public void UaLinkAnnotStructAnnot_Fires7185_1()
+    {
+        var bytes = BuildAnnotStructPdf("/Annot", "/Link", structElemHasAlt: true);
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.18.5-1");
+    }
+
+    /// <summary>
+    /// §7.18.5-1 FP guard: a visible Link annotation with /StructParent → /S /Link must NOT
+    /// fire 7.18.5-1.
+    /// Cross-validated: p6_link_struct_link → PASS (exit 0).
+    /// </summary>
+    [Fact]
+    public void UaLinkAnnotStructLink_DoesNotFire7185_1()
+    {
+        // Link with /Contents to also satisfy 7.18.5-2; struct-elem with /Alt to satisfy 7.18.1-2.
+        var bytes = AssemblePdf(
+            [
+                new("<< /Type /Catalog /Pages 2 0 R /Lang (en-US) /MarkInfo << /Marked true >> "
+                    + "/StructTreeRoot 4 0 R /ViewerPreferences << /DisplayDocTitle true >> >>"),
+                new("<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
+                new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Tabs /S /Annots [6 0 R] >>"),
+                new("<< /Type /StructTreeRoot /K [5 0 R] /ParentTree 7 0 R >>"),
+                new("<< /Type /StructElem /S /Link /P 4 0 R /Alt (alt) /Pg 3 0 R /K [ << /Type /OBJR /Obj 6 0 R >> ] >>"),
+                new("<< /Type /Annot /Subtype /Link /Rect [100 100 120 120] /Contents (desc) /StructParent 0 >>"),
+                new("<< /Nums [0 5 0 R] >>"),
+            ],
+            metadataOverride: UaXmpBytes());
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.18.5-1");
+    }
+
+    // ── §7.18.8-1 (PDPrinterMarkAnnot — PrinterMark must not be in structure tree) ──────────────
+
+    /// <summary>
+    /// §7.18.8-1 VIOLATION: a visible PrinterMark annotation with /StructParent (bound into
+    /// the structure tree) fires 7.18.8-1.
+    /// Cross-validated: p9_printermark_with_struct → fires 7.18.8-1 (exit 1).
+    /// </summary>
+    [Fact]
+    public void UaPrinterMarkWithStruct_Fires7188_1()
+    {
+        var bytes = BuildAnnotStructPdf("/Annot", "/PrinterMark");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.18.8-1");
+    }
+
+    /// <summary>
+    /// §7.18.8-1 FP guard: a visible PrinterMark annotation with no /StructParent (artifact) must
+    /// NOT fire 7.18.8-1.
+    /// Cross-validated: p8_printermark_no_struct → PASS on 7.18.8-1 (exit 0 for that rule).
+    /// </summary>
+    [Fact]
+    public void UaPrinterMarkNoStruct_DoesNotFire7188_1()
+    {
+        var bytes = BuildAnnotNoStructPdf("/PrinterMark");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.18.8-1");
+    }
+
+    /// <summary>
+    /// §7.18.8-1 FP guard: a PrinterMark annotation that is hidden (F&amp;2) even though it
+    /// has a /StructParent must NOT fire 7.18.8-1.
+    /// Cross-validated: p_printermark_hidden → PASS (exit 0).
+    /// </summary>
+    [Fact]
+    public void UaHiddenPrinterMarkWithStruct_DoesNotFire7188_1()
+    {
+        var bytes = BuildAnnotStructPdf("/Annot", "/PrinterMark", annotHidden: true);
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.18.8-1");
+    }
+
+    // ── §7.18.1-2 promoted: struct-element /Alt now resolved via ParentTree ─────────────────────
+
+    /// <summary>
+    /// §7.18.1-2 FP guard (B5 promotion): a /Text annotation with no /Contents and no
+    /// annotation-level /Alt, but whose DIRECT enclosing struct element has a non-empty /Alt,
+    /// must NOT fire 7.18.1-2. (Previously this guard was only possible because we skipped
+    /// /StructParent-bound annotations; now we resolve the struct-elem /Alt directly.)
+    /// Cross-validated: p11_struct_alt_passes_7181_2 → PASS (exit 0 for 7.18.1-2).
+    /// </summary>
+    [Fact]
+    public void UaAnnotBoundStructElemHasAlt_DoesNotFire7181_2()
+    {
+        var bytes = BuildAnnotStructPdf("/Annot", "/Text", structElemHasAlt: true);
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.18.1-2");
+    }
+
+    /// <summary>
+    /// §7.18.1-2 VIOLATION: a /Text annotation with no /Contents, no annotation-level /Alt,
+    /// and whose direct enclosing struct element also has no /Alt fires 7.18.1-2.
+    /// Cross-validated: p12_struct_no_alt_fires_7181_2 → fires 7.18.1-2 (exit 1).
+    /// </summary>
+    [Fact]
+    public void UaAnnotBoundStructElemNoAlt_Fires7181_2()
+    {
+        var bytes = BuildAnnotStructPdf("/Annot", "/Text", structElemHasAlt: false);
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.18.1-2");
+    }
+
+    /// <summary>
+    /// §7.18.1-2 FP guard: ancestor-level /Alt (on the parent of the direct struct elem) does NOT
+    /// satisfy 7.18.1-2 — veraPDF checks the DIRECT enclosing struct elem only.
+    /// Cross-validated: p_ancestor_alt → fires 7.18.1-2 (exit 1).
+    /// </summary>
+    [Fact]
+    public void UaAnnotAncestorAltOnly_Fires7181_2()
+    {
+        // Structure: StructTreeRoot → /S /Div (has /Alt, ancestor) → /S /Annot (no /Alt, direct) → OBJR→annot
+        var bytes = AssemblePdf(
+            [
+                new("<< /Type /Catalog /Pages 2 0 R /Lang (en-US) /MarkInfo << /Marked true >> "
+                    + "/StructTreeRoot 4 0 R /ViewerPreferences << /DisplayDocTitle true >> >>"),
+                new("<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
+                new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Tabs /S /Annots [7 0 R] >>"),
+                new("<< /Type /StructTreeRoot /K [5 0 R] /ParentTree 8 0 R >>"),
+                new("<< /Type /StructElem /S /Div /P 4 0 R /Alt (ancestor alt) /Pg 3 0 R /K [6 0 R] >>"),
+                new("<< /Type /StructElem /S /Annot /P 5 0 R /Pg 3 0 R /K [ << /Type /OBJR /Obj 7 0 R >> ] >>"),
+                new("<< /Type /Annot /Subtype /Text /Rect [100 100 120 120] /StructParent 0 >>"),
+                new("<< /Nums [0 6 0 R] >>"),
+            ],
+            metadataOverride: UaXmpBytes());
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        // Ancestor /Alt does NOT satisfy 7.18.1-2 — direct struct elem has no /Alt and no /Contents.
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.18.1-2");
     }
 
 }
