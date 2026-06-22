@@ -133,11 +133,53 @@ internal static class RuleRegistry
     private static readonly IConformanceRule[] PdfUA1Rules =
     [
         .. CommonStructure,
+        new UaFileHeaderRule(),
         new UaMetadataRule(),
         new UaTaggingRule(),
+        new UaSuspectsRule(),
         new UaLangRule(),
+        new UaLangSyntaxRule(),
         new UaTitleRule(),
         new UaTabsRule(),
+        new UaOptionalContentRule(),
+        new UaEmbeddedFileRule(),
+        new UaReferenceXObjectRule(),
+        new UaXfaRule(),
+        new UaTrapNetAnnotRule(),
+        new UaLinkAnnotRule(),
+        new UaAnnotContentsRule(),
+        // Batch A3 — font clauses §7.21:
+        new UaCidToGidMapRule(),
+        new UaSymbolicFontRule(),
+        // Batch A4 — font clauses §7.21 (CMap, CharSet, CIDSet, CIDSystemInfo):
+        new UaCMapRule(),
+        new UaType1CharSetRule(),
+        new UaCidSetRule(),
+        new UaCidSystemInfoRule(),
+        // Batch A5a — font clause §7.21.4.1-1 (rendering-mode-scoped embedding):
+        new UaFontEmbeddingRule(),
+        // Batch A5b — font clauses §7.21.8-1 (.notdef) and §7.21.7-2 (forbidden ToUnicode values):
+        new UaNotdefGlyphRule(),
+        new UaToUnicodeForbiddenRule(),
+        // Batch A5c — font clause §7.21.4.1-2 (glyph presence, Tr-3-exempt):
+        new UaGlyphPresenceRule(),
+        // Batch B1 — structure-tree walker foundation (§7.1 role-map + §7.1-12 parent entry):
+        new UaRoleMapRule(),
+        new UaStructElemParentRule(),
+        // Batch B2 — §7.2 structure containment (table, list, TOC):
+        new UaTableContainmentRule(),
+        new UaListContainmentRule(),
+        new UaTocContainmentRule(),
+        // Batch B4 — §7.2 count and caption-position rules:
+        new UaTableCountRule(),
+        // Batch B3 — §7.3/§7.7 alt-text, §7.9 Note IDs, §7.4.4 heading structure:
+        new UaAltTextRule(),
+        new UaNoteIdRule(),
+        new UaHeadingRule(),
+        // Batch B5 — §7.18 annotation↔structure binding (7.18.1-1, 7.18.4-1, 7.18.5-1, 7.18.8-1):
+        new UaAnnotStructureRule(),
+        // Batch B6 — §7.2 natural-language determination (7.2-21/-22/-23/-24/-25):
+        new UaNaturalLanguageRule(),
     ];
 
     /// <summary>
