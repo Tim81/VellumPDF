@@ -178,6 +178,8 @@ internal static class RuleRegistry
         new UaHeadingRule(),
         // Batch B5 — §7.18 annotation↔structure binding (7.18.1-1, 7.18.4-1, 7.18.5-1, 7.18.8-1):
         new UaAnnotStructureRule(),
+        // Batch B6 — §7.2 natural-language determination (7.2-21/-22/-23/-24/-25):
+        new UaNaturalLanguageRule(),
     ];
 
     /// <summary>
