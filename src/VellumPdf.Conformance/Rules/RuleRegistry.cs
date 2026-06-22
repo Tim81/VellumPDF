@@ -133,9 +133,12 @@ internal static class RuleRegistry
     private static readonly IConformanceRule[] PdfUA1Rules =
     [
         .. CommonStructure,
+        new UaFileHeaderRule(),
         new UaMetadataRule(),
         new UaTaggingRule(),
+        new UaSuspectsRule(),
         new UaLangRule(),
+        new UaLangSyntaxRule(),
         new UaTitleRule(),
         new UaTabsRule(),
     ];

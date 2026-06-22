@@ -264,6 +264,56 @@ public static class OracleCorpus
             new OracleFixture("pdfua1-no-structure", WriterPdfMissingStructure(VellumPdf.Document.PdfConformance.PdfUA1),
                 Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
 
+            // §7.1-4 (Suspects): the compliant tagged baseline has no /Suspects entry — both accept.
+            new OracleFixture("pdfua1-suspects-absent", WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: true),
+
+            // §7.1-4 (Suspects): /MarkInfo /Suspects = true is forbidden; both veraPDF and the in-process
+            // UaSuspectsRule reject it.
+            new OracleFixture("pdfua1-suspects-true", WriterUa1WithSuspectsTrue(),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.1-4 (Suspects): /MarkInfo /Suspects = false is explicitly permitted (same as absent).
+            // Both veraPDF and the in-process rule accept this document.
+            new OracleFixture("pdfua1-suspects-false", WriterUa1WithSuspectsFalse(),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: true),
+
+            // §6.1-1 (File header): the compliant tagged baseline has a well-formed %PDF-1.7 header
+            // with no trailing characters — both validators accept it.
+            new OracleFixture("pdfua1-header-valid", WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: true),
+
+            // §6.1-1 (File header): replacing the version digit '7' with '8' (in-place, same-length
+            // so xref offsets remain valid) produces a header "%PDF-1.8" with a digit outside the
+            // permitted 0–7 range. Both veraPDF (6.1-1) and the in-process UaFileHeaderRule reject it.
+            new OracleFixture("pdfua1-header-bad-digit", WriterUa1WithBadHeaderDigit(),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §6.1-1 (File header): a trailing character after the version digit but before the EOL.
+            // Replacing the header-terminating LF (index 8) with a space (in-place, same-length) makes
+            // line 1 read "%PDF-1.7 %…" so the regex /^%PDF-1\.[0-7]$/ no longer matches. This is the
+            // case that exercises the rule's distinguishing EOL check (vs the bad-digit case above):
+            // veraPDF 1.30.2 rejects it for 6.1-1 (empirically confirmed), and the in-process
+            // UaFileHeaderRule flags the non-EOL byte immediately after the version digit.
+            new OracleFixture("pdfua1-header-trailing-char", WriterUa1WithTrailingHeaderChar(),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.2-29 (Lang syntax): a catalog /Lang of "fr-FR" is a syntactically valid BCP-47 tag.
+            // Both validators accept it.
+            new OracleFixture("pdfua1-lang-valid-fr", WriterUa1WithLang("fr-FR"),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: true),
+
+            // §7.2-29 (Lang syntax): a catalog /Lang of "not!!valid" is not a valid BCP-47 tag.
+            // Both veraPDF (7.2-29) and the in-process UaLangSyntaxRule reject it.
+            new OracleFixture("pdfua1-lang-invalid", WriterUa1WithLang("not!!valid"),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.2-29 (Lang syntax): an empty catalog /Lang string is not a valid BCP-47 tag.
+            // Both veraPDF (7.2-29) and the in-process UaLangSyntaxRule reject it.
+            // (Note: veraPDF 1.30.2 empirically rejects empty /Lang for 7.2-29 — not exempt.)
+            new OracleFixture("pdfua1-lang-empty", WriterUa1WithEmptyLang(),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
             // A non-standard blend mode in an /ExtGState resource that the page never applies (no `gs`
             // operator). §6.4 governs only the current blend mode, so both veraPDF and the in-process
             // rule accept it — the regression guard for the content-stream usage scoping (#127).
@@ -1799,6 +1849,88 @@ public static class OracleCorpus
         using var ms = new MemoryStream();
         doc.Save(ms);
         return ms.ToArray();
+    }
+
+    // Builds a tagged PDF/UA-1 baseline and injects /MarkInfo /Suspects = true via an incremental
+    // update. The resulting document violates §7.1-4 and is rejected by both validators.
+    private static byte[] WriterUa1WithSuspectsTrue()
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+        using var reader = PdfReader.Open(baseline);
+        var rootRef = (PdfIndirectReference)reader.Trailer.Get(PdfName.Root)!;
+        var catalog = CloneDict(reader.Catalog);
+        var markInfo = new PdfDictionary();
+        markInfo.Set(new PdfName("Marked"), PdfBoolean.True);
+        markInfo.Set(new PdfName("Suspects"), PdfBoolean.True);
+        catalog.Set(new PdfName("MarkInfo"), markInfo);
+        return reader.AppendRevision([(rootRef.ObjectNumber, catalog)]);
+    }
+
+    // The same injection but with /Suspects = false — explicitly permitted (no violation).
+    private static byte[] WriterUa1WithSuspectsFalse()
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+        using var reader = PdfReader.Open(baseline);
+        var rootRef = (PdfIndirectReference)reader.Trailer.Get(PdfName.Root)!;
+        var catalog = CloneDict(reader.Catalog);
+        var markInfo = new PdfDictionary();
+        markInfo.Set(new PdfName("Marked"), PdfBoolean.True);
+        markInfo.Set(new PdfName("Suspects"), PdfBoolean.False);
+        catalog.Set(new PdfName("MarkInfo"), markInfo);
+        return reader.AppendRevision([(rootRef.ObjectNumber, catalog)]);
+    }
+
+    // Replaces the PDF version digit '7' with '8' (in-place, same-length) so the header reads
+    // "%PDF-1.8\n" — digit 8 is outside the 0–7 range and violates §6.1-1.
+    // An in-place edit preserves all cross-reference offsets; a byte-insertion would shift
+    // them and make the file unreadable by the parser.
+    private static byte[] WriterUa1WithBadHeaderDigit()
+    {
+        var bytes = (byte[])WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1).Clone();
+        // "%PDF-1.7" = bytes[0..7]; the digit is at index 7.
+        if (bytes.Length < 9 || bytes[7] != (byte)'7')
+            throw new InvalidOperationException("WriterPdfTagged produced an unexpected header layout.");
+        bytes[7] = (byte)'8'; // version digit 8 is out of the permitted 0–7 range
+        return bytes;
+    }
+
+    // Replaces the header-terminating LF (index 8) with a space (in-place, same-length) so line 1
+    // reads "%PDF-1.7 %…" — a trailing character after the version digit, before the EOL. This trips
+    // the §6.1-1 "$" anchor (no chars allowed between the digit and the EOL) without disturbing any
+    // cross-reference offset. The writer emits "%PDF-1.7\n%<binary marker>\n", so index 8 is the LF;
+    // turning it into a space merges the (still comment-prefixed) marker onto line 1, which the
+    // reader parses while veraPDF and UaFileHeaderRule both reject the header.
+    private static byte[] WriterUa1WithTrailingHeaderChar()
+    {
+        var bytes = (byte[])WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1).Clone();
+        // "%PDF-1.7" = bytes[0..7]; bytes[8] is the header-terminating LF.
+        if (bytes.Length < 10 || bytes[7] != (byte)'7' || bytes[8] != (byte)'\n')
+            throw new InvalidOperationException("WriterPdfTagged produced an unexpected header layout.");
+        bytes[8] = (byte)' '; // a trailing space before the (now-merged) EOL
+        return bytes;
+    }
+
+    // Builds a tagged PDF/UA-1 baseline and replaces the catalog /Lang with the given value.
+    private static byte[] WriterUa1WithLang(string lang)
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+        using var reader = PdfReader.Open(baseline);
+        var rootRef = (PdfIndirectReference)reader.Trailer.Get(PdfName.Root)!;
+        var catalog = CloneDict(reader.Catalog);
+        catalog.Set(new PdfName("Lang"), new PdfLiteralString(Encoding.ASCII.GetBytes(lang)));
+        return reader.AppendRevision([(rootRef.ObjectNumber, catalog)]);
+    }
+
+    // Same as WriterUa1WithLang but sets the catalog /Lang to the empty string, exercising the
+    // §7.2-29 rejection of empty language tags (empirically confirmed against veraPDF 1.30.2).
+    private static byte[] WriterUa1WithEmptyLang()
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+        using var reader = PdfReader.Open(baseline);
+        var rootRef = (PdfIndirectReference)reader.Trailer.Get(PdfName.Root)!;
+        var catalog = CloneDict(reader.Catalog);
+        catalog.Set(new PdfName("Lang"), new PdfLiteralString(Array.Empty<byte>()));
+        return reader.AppendRevision([(rootRef.ObjectNumber, catalog)]);
     }
 
     private static void DrawGlyphs(PdfCanvas canvas, EmbeddedFontHandle handle, string text)
