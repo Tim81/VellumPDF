@@ -234,6 +234,23 @@ public static class ConformanceCatalog
     {
         "5-1", "5-2", "6.1-1", "6.2-1", "7.1-4", "7.1-8", "7.1-9", "7.1-10", "7.1-11", "7.18.3-1",
         "7.2-29",
+        // Batch A2 additions:
+        "7.10-1", "7.10-2",   // UaOptionalContentRule: OC config /Name (non-empty) and no /AS
+        "7.11-1",              // UaEmbeddedFileRule: embedded-file /F and /UF requirement
+        "7.15-1",              // UaXfaRule: dynamic XFA (dynamicRender == "required") forbidden
+        "7.18.2-1",            // UaTrapNetAnnotRule: TrapNet annots forbidden unless hidden/outside-crop
+        "7.18.5-2",            // UaLinkAnnotRule: Link annots require non-empty /Contents
+        "7.20-1",              // UaReferenceXObjectRule: Form XObjects shall not contain /Ref
+    };
+
+    // PDF/UA-1 checks the rules cover only partially (the common case is detected; some conditions
+    // need a subsystem we do not have yet). The note records the gap, mirroring PdfAPartial.
+    private static readonly Dictionary<string, string> PdfUaPartial = new(StringComparer.Ordinal)
+    {
+        ["7.18.1-2"] = "non-Widget annotations with no /StructParent are checked for a non-empty "
+            + "/Contents or /Alt; an annotation bound into the structure tree is skipped because its "
+            + "alternate text may live in the enclosing structure element's /Alt, which needs the "
+            + "structure-tree walker to resolve (skipping avoids over-rejecting conformant tagged annotations)",
     };
 
     private static IReadOnlyList<ConformanceCheck> Build()
@@ -249,11 +266,13 @@ public static class ConformanceCatalog
 
         foreach (var id in PdfUa1Ids)
         {
-            var implemented = PdfUaImplemented.Contains(id);
-            checks.Add(new ConformanceCheck(
-                id, [PdfConformance.PdfUA1], ClauseOf(id),
-                implemented ? CoverageStatus.Implemented : CoverageStatus.Deferred,
-                implemented ? null : PdfUaDeferredNote(id)));
+            if (PdfUaImplemented.Contains(id))
+                checks.Add(new ConformanceCheck(id, [PdfConformance.PdfUA1], ClauseOf(id), CoverageStatus.Implemented));
+            else if (PdfUaPartial.TryGetValue(id, out var note))
+                checks.Add(new ConformanceCheck(id, [PdfConformance.PdfUA1], ClauseOf(id), CoverageStatus.Partial, note));
+            else
+                checks.Add(new ConformanceCheck(
+                    id, [PdfConformance.PdfUA1], ClauseOf(id), CoverageStatus.Deferred, PdfUaDeferredNote(id)));
         }
 
         return checks;
@@ -262,6 +281,8 @@ public static class ConformanceCatalog
     private static string PdfUaDeferredNote(string id) => id switch
     {
         "5-3" or "5-4" or "5-5" => "prefix-aware XMP parsing (XmpReader matches by namespace URI, not prefix)",
+        "7.16-1" => "encrypted-document support: the reader does not surface the P permission bits for encrypted files",
+        "7.18.6.2-1" or "7.18.6.2-2" => "media clip data dictionary traversal (requires walking Screen-annotation rendition actions)",
         _ => "structure-tree walker",
     };
 
