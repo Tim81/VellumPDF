@@ -24,7 +24,7 @@ internal sealed class SfntMetrics
 
     private SfntMetrics(
         byte[] font, int numGlyphs, int unitsPerEm, int hmtxOffset, int numberOfHMetrics,
-        int cmapSubtableCount, bool hasSymbolCmap)
+        int cmapSubtableCount, bool hasSymbolCmap, bool hasUnicodeCmap)
     {
         _font = font;
         NumGlyphs = numGlyphs;
@@ -33,6 +33,7 @@ internal sealed class SfntMetrics
         _numberOfHMetrics = numberOfHMetrics;
         CmapSubtableCount = cmapSubtableCount;
         HasSymbolCmap = hasSymbolCmap;
+        HasUnicodeCmap = hasUnicodeCmap;
     }
 
     public int NumGlyphs { get; }
@@ -44,6 +45,9 @@ internal sealed class SfntMetrics
 
     /// <summary>True when the <c>cmap</c> table has a Microsoft Symbol (platform 3, encoding 0) subtable.</summary>
     public bool HasSymbolCmap { get; }
+
+    /// <summary>True when the <c>cmap</c> table has a Microsoft Unicode (platform 3, encoding 1) subtable.</summary>
+    public bool HasUnicodeCmap { get; }
 
     /// <summary>The advance width of <paramref name="gid"/> scaled to the 1000-unit PDF glyph space,
     /// or <see langword="null"/> when it cannot be read.</summary>
@@ -92,19 +96,21 @@ internal sealed class SfntMetrics
         var numGlyphs = ReadU16(font, maxp + 4);
         var unitsPerEm = ReadU16(font, head + 18);
         var numberOfHMetrics = ReadU16(font, hhea + 34);
-        var (cmapCount, hasSymbol) = ParseCmap(font, cmap);
-        return new SfntMetrics(font, numGlyphs, unitsPerEm, hmtx, numberOfHMetrics, cmapCount, hasSymbol);
+        var (cmapCount, hasSymbol, hasUnicode) = ParseCmap(font, cmap);
+        return new SfntMetrics(font, numGlyphs, unitsPerEm, hmtx, numberOfHMetrics, cmapCount, hasSymbol, hasUnicode);
     }
 
-    // Reads the cmap header: the count of encoding subtables and whether a Microsoft Symbol (3,0)
-    // subtable is present. A missing or truncated cmap yields (0, false) rather than failing the parse.
-    private static (int Count, bool HasSymbol) ParseCmap(byte[] font, int cmap)
+    // Reads the cmap header: the count of encoding subtables, whether a Microsoft Symbol (3,0)
+    // subtable is present, and whether a Microsoft Unicode (3,1) subtable is present.
+    // A missing or truncated cmap yields (0, false, false) rather than failing the parse.
+    private static (int Count, bool HasSymbol, bool HasUnicode) ParseCmap(byte[] font, int cmap)
     {
         if (cmap < 0 || (long)cmap + 4 > font.Length)
-            return (0, false);
+            return (0, false, false);
         var numSubtables = ReadU16(font, cmap + 2);
         var count = 0;
         var hasSymbol = false;
+        var hasUnicode = false;
         for (var i = 0; i < numSubtables; i++)
         {
             var record = (long)cmap + 4 + i * 8;
@@ -114,8 +120,10 @@ internal sealed class SfntMetrics
             count++;
             if (ReadU16(font, r) == 3 && ReadU16(font, r + 2) == 0)
                 hasSymbol = true;
+            if (ReadU16(font, r) == 3 && ReadU16(font, r + 2) == 1)
+                hasUnicode = true;
         }
-        return (count, hasSymbol);
+        return (count, hasSymbol, hasUnicode);
     }
 
     private static bool Tag(byte[] b, int o, char a, char c, char d, char e)

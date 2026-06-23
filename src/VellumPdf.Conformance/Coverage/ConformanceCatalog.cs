@@ -222,17 +222,16 @@ public static class ConformanceCatalog
         // (which carry no colr boxes) — this is not a gap but correct per-spec scoping.
         // 6.4.3-1/-2/-3 moved to Implemented/Partial (SignatureRule).
         ["6.7.3.3-1"] = "structure-tree walker",
-        ["6.7.3.4-1"] = "structure-tree walker",
-        ["6.7.3.4-2"] = "structure-tree walker",
-        ["6.7.3.4-3"] = "structure-tree walker",
-        ["6.7.4-1"] = "structure-tree walker",
+        // 6.7.3.4-1/-2/-3 moved to Implemented (A2aStructureTypeRule: structure-tree walker —
+        //   non-standard type unmapped, circular role-map, standard type remapped to non-standard).
+        // 6.7.4-1 moved to Implemented (A2aLangSyntaxRule: catalog /Lang + struct-elem /Lang syntax).
     };
 
     // PDF/UA-1: the few checks the current rules cover. Everything else needs the logical-structure
     // (tagged-content) walker, which does not yet exist.
     private static readonly HashSet<string> PdfUaImplemented = new(StringComparer.Ordinal)
     {
-        "5-1", "5-2", "6.1-1", "6.2-1", "7.1-4", "7.1-6", "7.1-7", "7.1-8", "7.1-9", "7.1-10", "7.1-11", "7.1-12", "7.18.3-1",
+        "5-1", "5-2", "6.1-1", "6.2-1", "7.1-4", "7.1-5", "7.1-6", "7.1-7", "7.1-8", "7.1-9", "7.1-10", "7.1-11", "7.1-12", "7.18.3-1",
         "7.2-29",
         // Batch B2 — §7.2 table, list, TOC containment:
         "7.2-3",   // UaTableContainmentRule: Table kids ∈ {TR, THead, TBody, TFoot, Caption}
@@ -272,6 +271,10 @@ public static class ConformanceCatalog
         // Batch A3 — font clauses:
         "7.21.3.2-1",          // UaCidToGidMapRule: embedded CIDFontType2 must have /CIDToGIDMap
         "7.21.6-3",            // UaSymbolicFontRule: symbolic TrueType must have no /Encoding
+        // Batch A6 — TrueType cmap / Differences-compliance:
+        "7.21.6-1",            // UaTrueTypeCmapRule: non-symbolic TrueType must have non-symbol cmap entries
+        "7.21.6-2",            // UaTrueTypeCmapRule: non-symbolic TrueType Differences must be AGL-compliant + (3,1) cmap
+        "7.21.6-4",            // UaTrueTypeCmapRule: symbolic TrueType must have exactly 1 cmap or include (3,0)
         // Batch A4 — font clauses (CMap, CharSet, CIDSet):
         "7.21.3.3-1",          // UaCMapRule: composite /Encoding must be predefined or embedded CMap
         "7.21.3.3-2",          // UaCMapRule: embedded CMap WMode dict must equal program WMode
@@ -285,6 +288,8 @@ public static class ConformanceCatalog
         "7.21.7-2",            // UaToUnicodeForbiddenRule: shown glyph mapped to U+0000/FEFF/FFFE
         // Batch A5c — glyph presence (Identity-H/V CIDFontType2-Identity, Tr-3-exempt):
         "7.21.4.1-2",          // UaGlyphPresenceRule: shown visible glyph must be in the embedded program
+        // Batch A5d — glyph width consistency (Identity-H/V CIDFontType2-Identity, Tr-3-exempt):
+        "7.21.5-1",            // UaGlyphWidthRule: shown glyph /W or /DW width must match hmtx advance ±1
         // Batch B3 — §7.3/§7.7 alt-text, §7.9 Note IDs, §7.4.4 heading structure:
         "7.3-1",               // UaAltTextRule: Figure element must have non-empty /Alt or /ActualText
         "7.7-1",               // UaAltTextRule: Formula element must have non-empty /Alt or /ActualText
@@ -300,10 +305,32 @@ public static class ConformanceCatalog
         "7.18.8-1",            // UaAnnotStructureRule: PrinterMark must not be in structure tree
         // Batch B6 — §7.2 natural-language determination (struct-elem attributes, annot /Contents, form /TU):
         "7.2-21",              // UaNaturalLanguageRule: StructElem /ActualText → element or ancestor must have /Lang
+        // Batch B7 — §7.2 table grid rules (intersection + column/row span consistency):
+        "7.2-15",              // UaTableGridRule: no two cells overlap in the table grid (hasIntersection)
+        // Batch B8 — §7.2 natural-language determination (outline, XMP lang-alt):
+        "7.2-2",               // UaOutlineLangRule: non-empty /Outlines requires catalog /Lang
+        "7.2-33",              // UaOutlineLangRule: XMP rdf:Alt with x-default requires catalog /Lang
+        "7.2-41",              // UaTableGridRule: all columns span same number of rows (numberOfColumnWithWrongRowSpan)
+        "7.2-42",              // UaTableGridRule: rows with same number of columns — wider-row branch (wrongColumnSpan != null)
+        "7.2-43",              // UaTableGridRule: rows with same number of columns — narrower-row branch (wrongColumnSpan == null)
         "7.2-22",              // UaNaturalLanguageRule: StructElem /Alt → element or ancestor must have /Lang
         "7.2-23",              // UaNaturalLanguageRule: StructElem /E → element or ancestor must have /Lang
         "7.2-24",              // UaNaturalLanguageRule: Annot /Contents → direct struct-elem must have /Lang
         "7.2-25",              // UaNaturalLanguageRule: FormField /TU → associated struct-elem must have /Lang
+        // Batch B10 — §7.4.2 heading nesting, §7.5 connected headers:
+        "7.4.2-1",             // UaHeadingNestingRule: Hn heading levels must not skip (hasCorrectNestingLevel)
+        "7.5-1",               // UaTableHeaderRule: TD must have connected header (hasConnectedHeader, unknownHeaders='')
+        "7.5-2",               // UaTableHeaderRule: TD /Headers references unknown IDs (hasConnectedHeader, unknownHeaders!='')
+        // Batch C1 — §7.2 natural-language determination for marked-content sequences:
+        "7.2-30",              // UaMarkedContentLangRule: /Span BDC /ActualText → BDC or ancestor must have /Lang
+        "7.2-31",              // UaMarkedContentLangRule: /Span BDC /Alt → BDC or ancestor must have /Lang
+        "7.2-32",              // UaMarkedContentLangRule: /Span BDC /E → BDC or ancestor must have /Lang
+        "7.2-34",              // UaMarkedContentLangRule: text-show → enclosing BDC or ancestor must have /Lang
+        // Batch C2 — §7.1 artifact/tagged-content nesting:
+        "7.1-1",               // UaArtifactTaggingRule: Artifact BDC inside struct-linked (tagged) ancestor BDC
+        "7.1-2",               // UaArtifactTaggingRule: non-Artifact BDC with MCID in ParentTree inside Artifact ancestor
+        // Batch C3 — §7.1-3 SESimpleContentItem: real content must be tagged or marked as Artifact:
+        "7.1-3",               // UaSimpleContentItemRule: content item (text/path/image/sh/EI) with no MCID and no Artifact ancestor
     };
 
     // PDF/UA-1 checks the rules cover only partially (the common case is detected; some conditions
@@ -348,23 +375,28 @@ public static class ConformanceCatalog
         "7.16-1" => "encrypted-document support: the reader does not surface the P permission bits for encrypted files",
         "7.18.6.2-1" or "7.18.6.2-2" => "media clip data dictionary traversal (requires walking Screen-annotation rendition actions)",
 
+        // §7.1 artifact/tagging rules — Batch C2:
+        // 7.1-1 and 7.1-2 moved to PdfUaImplemented (Batch C2 — UaArtifactTaggingRule: Artifact
+        //   BDC inside struct-linked ancestor; non-Artifact BDC with MCID in ParentTree inside
+        //   Artifact ancestor. MarkedContentSequence extended with HasArtifactAncestor and
+        //   AncestorMcid; empirically verified against veraPDF 1.30.2 probe series).
+        // 7.1-3 moved to PdfUaImplemented (Batch C3 — UaSimpleContentItemRule: SESimpleContentItem
+        //   operator set Tj/TJ/'/", S/s/f/F/f*/B/B*/b/b*, EI (at ID), image-Do, sh; fires when
+        //   EffectiveMcid==null AND !IsInsideArtifact; verified FP-free against veraPDF 1.30.2
+        //   battery: tagged-text, named-ref-BDC, artifact+decoration, image-figure, path-in-tagged,
+        //   path-in-artifact, color/state/clip, form-Do, artifact-only, writer UA-1 doc).
+
         // §7.21 font deferred notes — Batch A3 assessment:
         // 7.21.4.1-1 moved to PdfUaImplemented (Batch A5a — UaFontEmbeddingRule, rendering-mode-scoped).
         // 7.21.4.1-2 moved to PdfUaImplemented (Batch A5c — UaGlyphPresenceRule, Tr-3-exempt).
-        "7.21.5-1" =>
-            "glyph width checks: only the Identity-H CIDFontType2 path is currently covered "
-            + "by the PDF/A-2 GlyphPresenceRule; a UA-1 specific rule with the Tr 3 exemption "
-            + "is deferred to avoid FP until the scope is fully proven",
+        // 7.21.5-1 moved to PdfUaImplemented (Batch A5d — UaGlyphWidthRule, Identity-H CIDFontType2;
+        //   Tr-3-exempt; cross-validated against veraPDF 1.30.2: violation fires, unused and Tr-3 silent).
         // 7.21.3.1-1 moved to PdfUaPartial (Batch A4 — UaCidSystemInfoRule).
         // 7.21.3.3-1/-2/-3 moved to PdfUaImplemented (Batch A4 — UaCMapRule).
         // 7.21.4.2-1 moved to PdfUaImplemented (Batch A4 — UaType1CharSetRule).
         // 7.21.4.2-2 moved to PdfUaImplemented (Batch A4 — UaCidSetRule).
-        "7.21.6-1" or "7.21.6-2" or "7.21.6-4" =>
-            "TrueType non-symbolic cmap / Differences-compliance checks: §7.21.6-2 requires "
-            + "differencesAreUnicodeCompliant (every /Differences glyph name must resolve to Unicode — "
-            + "FP-prone without a complete AGL table); §7.21.6-1 and §7.21.6-4 check the embedded cmap "
-            + "subtable structure (overlaps with PDF/A-2 §6.2.11.6-1/-4 in FontStructureRule); "
-            + "deferred to avoid false positives from incomplete glyph-name resolution",
+        // 7.21.6-1/-2/-4 moved to PdfUaImplemented (Batch A6 — UaTrueTypeCmapRule: non-symbolic TrueType
+        //   cmap structure and Differences-AGL compliance; verified FP-free against veraPDF 1.30.2).
         "7.21.7-1" =>
             "glyph-level ToUnicode presence (veraPDF's Glyph.toUnicode model derives Unicode from font "
             + "encoding for standard-encoded simple fonts, so requiring a /ToUnicode stream would "
@@ -373,6 +405,8 @@ public static class ConformanceCatalog
         // 7.21.7-2 moved to PdfUaImplemented (Batch A5b — UaToUnicodeForbiddenRule, shown-glyph-scoped).
         // 7.21.8-1 moved to PdfUaImplemented (Batch A5b — UaNotdefGlyphRule, Identity-H scope).
         // 7.21.4.1-2 moved to PdfUaImplemented (Batch A5c — UaGlyphPresenceRule, Tr-3-exempt).
+        // 7.1-5 moved to PdfUaImplemented (Batch B9 — UaNonStandardTypeRule, non-standard type
+        //   unmapped; standard-type set empirically verified complete against veraPDF 1.30.2).
         // 7.1-6 moved to PdfUaImplemented (Batch B1 — UaRoleMapRule, circular role-map).
         // 7.1-7 moved to PdfUaImplemented (Batch B1 — UaRoleMapRule, standard-type remapped).
         // 7.1-12 moved to PdfUaImplemented (Batch B1 — UaStructElemParentRule, missing /P).
@@ -406,6 +440,32 @@ public static class ConformanceCatalog
         // 7.2-25 moved to PdfUaImplemented (Batch B6 — UaNaturalLanguageRule: FormField /TU
         //   requires Widget's struct-elem /Lang via /StructParent→/ParentTree; gContainsCatalogLang
         //   short-circuit; field-dict /Lang does not satisfy per veraPDF probe).
+        // 7.2-15/-41/-42/-43 moved to PdfUaImplemented (Batch B7 — UaTableGridRule: table cell
+        //   intersection check and column/row span consistency; skip-occupied-cell placement
+        //   algorithm verified against veraPDF 1.30.2 probe series).
+        // 7.2-2 moved to PdfUaImplemented (Batch B8 — UaOutlineLangRule: non-empty /Outlines
+        //   requires catalog /Lang; fires only when /Outlines /First is present; gContainsCatalogLang
+        //   short-circuit; no-outline case confirmed non-firing by veraPDF 1.30.2 probe).
+        // 7.2-33 moved to PdfUaImplemented (Batch B8 — UaOutlineLangRule: XMP rdf:Alt with
+        //   x-default requires catalog /Lang; any lang-alt with x-default triggers (not just
+        //   dc:title); confirmed by veraPDF 1.30.2 probe; XmpReader.HasXDefaultLangAlt helper).
+        // 7.4.2-1 moved to PdfUaImplemented (Batch B10 — UaHeadingNestingRule: heading levels must
+        //   not skip; tracks previous heading level in document order; fires when n > prevLevel + 1;
+        //   prevLevel starts at 0; empirically verified against veraPDF 1.30.2 probe series).
+        // 7.5-1/-2 moved to PdfUaImplemented (Batch B10 — UaTableHeaderRule: TD connected-header
+        //   check; scoped TH in same table satisfies all TDs; explicit /Headers resolved against TH
+        //   /ID set; no-TH table passes (undefined, not false); empirically verified against
+        //   veraPDF 1.30.2 probe series).
+        // 7.2-30/-31/-32/-34 moved to PdfUaImplemented (Batch C1 — UaMarkedContentLangRule: /Span
+        //   BDC with /ActualText, /Alt, /E, and text-show operators require determinable language;
+        //   gContainsCatalogLang short-circuit; content-stream BMC/BDC/EMC stack + inline-dict
+        //   property parser added to ContentStreamUsage; veraPDF 1.30.2 probe confirmed).
+        // 7.1-1/-2 moved to PdfUaImplemented (Batch C2 — UaArtifactTaggingRule: Artifact BDC inside
+        //   struct-linked ancestor; non-Artifact BDC with MCID in ParentTree inside Artifact ancestor;
+        //   MarkedContentSequence extended with HasArtifactAncestor + AncestorMcid; verified against
+        //   veraPDF 1.30.2 probe series).
+        // 7.1-3 remains deferred (Batch C3 probe — operator set fully pinned; blocker is Properties
+        //   named-reference BDC resolution, see PdfUaDeferredNote switch above for details).
 
         _ => "structure-tree walker",
     };

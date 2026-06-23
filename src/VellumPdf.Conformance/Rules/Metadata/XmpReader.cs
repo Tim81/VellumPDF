@@ -16,6 +16,7 @@ namespace VellumPdf.Conformance.Rules.Metadata;
 /// </summary>
 internal static class XmpReader
 {
+    public static readonly XNamespace Rdf = "http://www.w3.org/1999/02/22-rdf-syntax-ns#";
     public static readonly XNamespace Pdfaid = "http://www.aiim.org/pdfa/ns/id/";
     public static readonly XNamespace Pdfuaid = "http://www.aiim.org/pdfua/ns/id/";
     public static readonly XNamespace Dc = "http://purl.org/dc/elements/1.1/";
@@ -76,5 +77,27 @@ internal static class XmpReader
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Returns <see langword="true"/> when the XMP document contains at least one
+    /// <c>rdf:Alt</c> language-alternative array that carries an <c>x-default</c> item
+    /// (<c>&lt;rdf:li xml:lang="x-default"&gt;</c>). Confirmed by veraPDF 1.30.2 probe:
+    /// any lang-alt with an x-default item in the catalog XMP triggers §7.2 testNumber 33
+    /// when the document catalog has no <c>/Lang</c> — not just <c>dc:title</c>.
+    /// </summary>
+    public static bool HasXDefaultLangAlt(XDocument doc)
+    {
+        var xmlLang = XNamespace.Xml + "lang";
+        foreach (var alt in doc.Descendants(Rdf + "Alt"))
+        {
+            foreach (var li in alt.Elements(Rdf + "li"))
+            {
+                var lang = (string?)li.Attribute(xmlLang);
+                if (string.Equals(lang, "x-default", StringComparison.Ordinal))
+                    return true;
+            }
+        }
+        return false;
     }
 }
