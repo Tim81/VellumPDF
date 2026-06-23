@@ -329,6 +329,8 @@ public static class ConformanceCatalog
         // Batch C2 — §7.1 artifact/tagged-content nesting:
         "7.1-1",               // UaArtifactTaggingRule: Artifact BDC inside struct-linked (tagged) ancestor BDC
         "7.1-2",               // UaArtifactTaggingRule: non-Artifact BDC with MCID in ParentTree inside Artifact ancestor
+        // Batch C3 — §7.1-3 SESimpleContentItem: real content must be tagged or marked as Artifact:
+        "7.1-3",               // UaSimpleContentItemRule: content item (text/path/image/sh/EI) with no MCID and no Artifact ancestor
     };
 
     // PDF/UA-1 checks the rules cover only partially (the common case is detected; some conditions
@@ -378,25 +380,11 @@ public static class ConformanceCatalog
         //   BDC inside struct-linked ancestor; non-Artifact BDC with MCID in ParentTree inside
         //   Artifact ancestor. MarkedContentSequence extended with HasArtifactAncestor and
         //   AncestorMcid; empirically verified against veraPDF 1.30.2 probe series).
-        // 7.1-3: SESimpleContentItem operator set PINNED (Batch C3 probe series, veraPDF 1.30.2):
-        //   Content items that trigger 7.1-3 = Tj/TJ/'/", S/s/f/F/f*/B/B*/b/b* (all PAINTING path
-        //   ops; n/W n/W* n confirmed NOT content items), inline-image EI, image-Do (not form-Do),
-        //   and sh. Color/state ops (rg, cm, gs etc.) and path-construction-only (m/l/c/re with no
-        //   terminal) are NOT content items. Confirmed by per-operator probes against veraPDF 1.30.2.
-        //
-        //   The named-reference-BDC blocker is now RESOLVED: ContentStreamUsage resolves
-        //   /Tag /ResourceName BDC via the page /Resources /Properties map (BuildNamedPropertiesMcids),
-        //   so seq.Mcid / seq.AncestorMcid are populated for named-reference BDCs too. The remaining
-        //   blocker is the content-item operator tracking itself: ContentStreamUsage does not yet
-        //   emit a content item per painting operator (S/s/f/F/f*/B/B*/b/b*, EI, image-Do, sh), only
-        //   per text-show. Implementing that operator set + the tagged/artifact check is the work
-        //   left; deferred until it can be built and clause-level-verified FP-safe against veraPDF.
-        "7.1-3" =>
-            "SESimpleContentItem operator set pinned: Tj/TJ/'/\", S/s/f/F/f*/B/B*/b/b*, EI, "
-            + "image-Do, and sh create content items (n/W n/W* n do not). Named-reference-BDC "
-            + "resolution is done (Properties map); remaining work is emitting a content item per "
-            + "painting/image/shading operator with MC context, then the tagged-or-artifact check — "
-            + "deferred until that operator tracking can be clause-level-verified FP-safe",
+        // 7.1-3 moved to PdfUaImplemented (Batch C3 — UaSimpleContentItemRule: SESimpleContentItem
+        //   operator set Tj/TJ/'/", S/s/f/F/f*/B/B*/b/b*, EI (at ID), image-Do, sh; fires when
+        //   EffectiveMcid==null AND !IsInsideArtifact; verified FP-free against veraPDF 1.30.2
+        //   battery: tagged-text, named-ref-BDC, artifact+decoration, image-figure, path-in-tagged,
+        //   path-in-artifact, color/state/clip, form-Do, artifact-only, writer UA-1 doc).
 
         // §7.21 font deferred notes — Batch A3 assessment:
         // 7.21.4.1-1 moved to PdfUaImplemented (Batch A5a — UaFontEmbeddingRule, rendering-mode-scoped).

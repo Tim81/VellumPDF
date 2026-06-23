@@ -33,6 +33,9 @@ public static class OracleCorpus
 
     public static OracleFixture ByName(string name) => All.Single(f => f.Name == name);
 
+    /// <summary>Public accessor for the §7.1-3 untagged-real-content violation fixture (for unit tests).</summary>
+    internal static byte[] Ua1UntaggedRealContentPublic() => Ua1UntaggedRealContent();
+
     private static IReadOnlyList<OracleFixture> Build()
     {
         // One baseline, cloned per fixture so the documents are byte-identical except for the edit.
@@ -1177,6 +1180,14 @@ public static class OracleCorpus
             // Cross-validated against veraPDF 1.30.2: clause 7.2 testNumber 34 is NOT in the failures.
             new OracleFixture("pdfua1-mc-named-ref-struct-elem-lang",
                 Ua1McTextNamedRefBdcStructElemLang(),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.1-3 VIOLATION: the tagged UA-1 baseline with an additional content stream appended
+            // that paints a path (S operator) outside any BDC — untagged real content.
+            // veraPDF fires clause 7.1 testNumber 3 (SESimpleContentItem).
+            // In-process UaSimpleContentItemRule fires "ISO14289-1:7.1-3".
+            new OracleFixture("pdfua1-untagged-real-content",
+                Ua1UntaggedRealContent(),
                 Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
         ];
     }
@@ -4886,6 +4897,44 @@ public static class OracleCorpus
         var contentStream = new PdfStream(spanContent);
 
         // Append new content stream to the page's /Contents array.
+        var newPage = CloneDict(page);
+        var oldContents = page.Get(new PdfName("Contents"));
+        PdfArray contentsArray;
+        if (oldContents is PdfArray arr)
+        {
+            var items = new PdfObject[arr.Count + 1];
+            for (var i = 0; i < arr.Count; i++) items[i] = arr[i];
+            items[arr.Count] = new PdfIndirectReference(contentNum);
+            contentsArray = new PdfArray(items);
+        }
+        else
+        {
+            contentsArray = new PdfArray([oldContents!, new PdfIndirectReference(contentNum)]);
+        }
+        newPage.Set(new PdfName("Contents"), contentsArray);
+
+        return reader.AppendRevision([(pageRef.ObjectNumber, newPage), (contentNum, contentStream)]);
+    }
+
+    /// <summary>
+    /// §7.1-3 VIOLATION: appends a content stream to the UA-1 tagged baseline's page that paints
+    /// a path (<c>S</c>) outside any BDC — untagged real content.
+    /// veraPDF fires clause 7.1 testNumber 3 (SESimpleContentItem: isTaggedContent==false,
+    /// parentsTags.contains('Artifact')==false).
+    /// In-process: <c>UaSimpleContentItemRule</c> fires <c>ISO14289-1:7.1-3</c>.
+    /// </summary>
+    private static byte[] Ua1UntaggedRealContent()
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+        using var reader = PdfReader.Open(baseline);
+
+        var (pageRef, page) = FirstPage(reader);
+
+        var contentNum = reader.Size;
+        // Path-painting outside any BDC: bare S operator (no font required, so no parse errors).
+        var extraContent = Encoding.ASCII.GetBytes("0 0 m 100 0 l S\n");
+        var contentStream = new PdfStream(extraContent);
+
         var newPage = CloneDict(page);
         var oldContents = page.Get(new PdfName("Contents"));
         PdfArray contentsArray;

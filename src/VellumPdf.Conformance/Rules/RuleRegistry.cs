@@ -200,6 +200,8 @@ internal static class RuleRegistry
         new UaMarkedContentLangRule(),
         // Batch C2 — §7.1-1/-2 artifact/tagged-content nesting (Artifact inside tagged; tagged inside Artifact):
         new UaArtifactTaggingRule(),
+        // Batch C3 — §7.1-3 SESimpleContentItem: real content must be tagged or marked as Artifact:
+        new UaSimpleContentItemRule(),
         // Batch B10 — §7.4.2 heading nesting, §7.5 connected headers:
         new UaHeadingNestingRule(),
         new UaTableHeaderRule(),
