@@ -8,6 +8,66 @@ using VellumPdf.Reader;
 namespace VellumPdf.Conformance.Rules;
 
 /// <summary>
+/// The kind of non-page content stream returned by
+/// <see cref="ContentStreamUsage.GetReachableContentStreams"/>.
+/// Used by future rules to scope resource lookups to the correct dictionary.
+/// </summary>
+internal enum ContentStreamKind
+{
+    /// <summary>
+    /// A Form XObject stream reachable from the page via a drawn <c>Do</c> invocation (direct or
+    /// through intermediate Form XObjects). Only streams actually invoked during rendering are
+    /// included; Form XObjects present in <c>/Resources /XObject</c> but never drawn are excluded
+    /// because veraPDF does not validate their content (empirically confirmed, 2026-06-23).
+    /// </summary>
+    FormXObject,
+
+    /// <summary>
+    /// A glyph procedure stream from a Type 3 font's <c>/CharProcs</c> dictionary. All CharProcs in
+    /// every Type 3 font that is <em>selected</em> by a <c>Tf</c> operator on the page are included,
+    /// regardless of whether each individual glyph was actually shown. Type 3 fonts present in
+    /// <c>/Resources /Font</c> but never selected by a <c>Tf</c> operator are excluded — veraPDF
+    /// validates all CharProcs of selected Type 3 fonts, but not unselected ones
+    /// (empirically confirmed, 2026-06-23).
+    /// </summary>
+    Type3CharProc,
+
+    /// <summary>
+    /// An annotation appearance stream — the <c>/N</c> entry of an annotation's <c>/AP</c>
+    /// dictionary (either directly as a stream, or every state stream inside a sub-dictionary).
+    /// All appearance streams for every annotation on the page are included regardless of annotation
+    /// visibility flags — veraPDF validates appearance content even for hidden annotations
+    /// (empirically confirmed, 2026-06-23).
+    /// </summary>
+    AnnotationAppearance,
+}
+
+/// <summary>
+/// One non-page content stream reachable from a page, as returned by
+/// <see cref="ContentStreamUsage.GetReachableContentStreams"/>.
+/// </summary>
+/// <param name="Bytes">
+/// The fully-decoded content-stream bytes. Never null or empty — streams that could not be decoded
+/// are silently dropped by the collector.
+/// </param>
+/// <param name="Resources">
+/// The effective <c>/Resources</c> dictionary for this content stream, resolved per the rules in
+/// ISO 32000-1:
+/// <list type="bullet">
+///   <item><description>Form XObject: the XObject's own <c>/Resources</c> (or <see langword="null"/>
+///   when the XObject omits it — in which case the caller's resources apply, but the collector does
+///   not inherit them; individual rules must decide how to fall back).</description></item>
+///   <item><description>Type 3 CharProc: the parent Type 3 font's <c>/Resources</c> entry (or
+///   <see langword="null"/> when absent).</description></item>
+///   <item><description>Annotation appearance: the appearance Form XObject's own <c>/Resources</c>
+///   (or <see langword="null"/> — annotations do not inherit from the page per ISO 32000-1
+///   §12.5.5).</description></item>
+/// </list>
+/// </param>
+/// <param name="Kind">The origin of this content stream (for resource-scoping by future rules).</param>
+internal sealed record ReachableContentStream(byte[] Bytes, PdfDictionary? Resources, ContentStreamKind Kind);
+
+/// <summary>
 /// Records one text-show event in a page content stream: the font resource name selected by the
 /// most recent <c>Tf</c> operator, the text rendering mode (<c>Tr</c>, default 0), and the raw
 /// string bytes that were shown. <c>FontResourceName</c> may be <see langword="null"/> when no
@@ -129,6 +189,9 @@ internal sealed class ContentUsage
     internal ContentUsage(
         HashSet<string> appliedExtGStates,
         bool usesDeviceColour,
+        bool usesDeviceRgb,
+        bool usesDeviceCmyk,
+        bool usesDeviceGray,
         HashSet<string> drawnXObjects,
         HashSet<string> renderingIntents,
         HashSet<string> selectedColorSpaces,
@@ -141,6 +204,9 @@ internal sealed class ContentUsage
     {
         AppliedExtGStates = appliedExtGStates;
         UsesDeviceColour = usesDeviceColour;
+        UsesDeviceRgb = usesDeviceRgb;
+        UsesDeviceCmyk = usesDeviceCmyk;
+        UsesDeviceGray = usesDeviceGray;
         DrawnXObjects = drawnXObjects;
         RenderingIntents = renderingIntents;
         SelectedColorSpaces = selectedColorSpaces;
@@ -157,6 +223,15 @@ internal sealed class ContentUsage
 
     /// <summary>True when the page paints with device-dependent colour.</summary>
     public bool UsesDeviceColour { get; }
+
+    /// <summary>True when the page uses DeviceRGB colour (<c>rg</c>/<c>RG</c> operators).</summary>
+    public bool UsesDeviceRgb { get; }
+
+    /// <summary>True when the page uses DeviceCMYK colour (<c>k</c>/<c>K</c> operators).</summary>
+    public bool UsesDeviceCmyk { get; }
+
+    /// <summary>True when the page uses DeviceGray colour (<c>g</c>/<c>G</c> operators).</summary>
+    public bool UsesDeviceGray { get; }
 
     /// <summary>The XObject resource names actually painted by a <c>Do</c> operator.</summary>
     public HashSet<string> DrawnXObjects { get; }
@@ -246,6 +321,9 @@ internal static class ContentStreamUsage
         var usedFonts = new HashSet<string>(StringComparer.Ordinal);
         var paintedShadings = new HashSet<string>(StringComparer.Ordinal);
         var usesDeviceColour = false;
+        var usesDeviceRgb = false;
+        var usesDeviceCmyk = false;
+        var usesDeviceGray = false;
         var textShows = new List<TextShow>();
         var markedContentSequences = new List<MarkedContentSequence>();
         var textShowContexts = new List<TextShowMcContext>();
@@ -439,8 +517,19 @@ internal static class ContentStreamUsage
                                     applied.Add(lastName);
                                 break;
 
-                            case "rg" or "g" or "k" or "RG" or "G" or "K":
+                            case "rg" or "RG":
                                 usesDeviceColour = true;
+                                usesDeviceRgb = true;
+                                break;
+
+                            case "k" or "K":
+                                usesDeviceColour = true;
+                                usesDeviceCmyk = true;
+                                break;
+
+                            case "g" or "G":
+                                usesDeviceColour = true;
+                                usesDeviceGray = true;
                                 break;
 
                             case "Do":
@@ -643,7 +732,8 @@ internal static class ContentStreamUsage
             }
         }
 
-        return new ContentUsage(applied, usesDeviceColour, drawnXObjects, renderingIntents,
+        return new ContentUsage(applied, usesDeviceColour, usesDeviceRgb, usesDeviceCmyk, usesDeviceGray,
+            drawnXObjects, renderingIntents,
             selectedColorSpaces, usedFonts, paintedShadings, textShows,
             markedContentSequences, textShowContexts, simpleContentItems);
     }
@@ -791,6 +881,312 @@ internal static class ContentStreamUsage
         }
         return set;
     }
+
+    // ── Non-page content stream collector ─────────────────────────────────────────────────────────
+
+    private const int MaxFormXObjectDepth = 32; // defensive recursion cap for nested Do chains
+
+    private static readonly PdfName _font = new("Font");
+    private static readonly PdfName _charProcs = new("CharProcs");
+    private static readonly PdfName _annots = new("Annots");
+    private static readonly PdfName _ap = new("AP");
+    private static readonly PdfName _n = new("N");
+    private static readonly PdfName _form = new("Form");
+
+    /// <summary>
+    /// Returns every non-page content stream reachable from <paramref name="page"/>, decoded and
+    /// tagged with its kind and effective resource dictionary. The collector is:
+    /// <list type="bullet">
+    ///   <item><description><strong>Form XObjects:</strong> only those actually drawn by a <c>Do</c>
+    ///   operator in the page content stream or in a drawn ancestor Form XObject (depth-first
+    ///   traversal). A Form XObject that is present in <c>/Resources /XObject</c> but never
+    ///   invoked is excluded — veraPDF does not validate its content (empirically confirmed,
+    ///   2026-06-23).</description></item>
+    ///   <item><description><strong>Type 3 CharProcs:</strong> all <c>/CharProcs</c> entries of
+    ///   every Type 3 font <em>selected</em> by a <c>Tf</c> operator on the page, regardless of
+    ///   whether each individual glyph was shown. Type 3 fonts in <c>/Resources /Font</c> but never
+    ///   selected via <c>Tf</c> are excluded — veraPDF validates all CharProcs of selected fonts, not
+    ///   unselected ones (empirically confirmed, 2026-06-23).</description></item>
+    ///   <item><description><strong>Annotation appearances:</strong> all <c>/AP /N</c> streams
+    ///   (and all state streams within an <c>/AP /N</c> sub-dictionary) for every annotation on
+    ///   the page, regardless of annotation visibility flags — veraPDF validates appearance content
+    ///   even for hidden annotations (empirically confirmed, 2026-06-23).</description></item>
+    /// </list>
+    /// <para>
+    /// <strong>Cycle guard:</strong> Form XObject traversal tracks visited stream object numbers in a
+    /// <see cref="HashSet{T}"/>; cycles (A draws B draws A) are detected and skipped.
+    /// Recursion is also bounded to <see cref="MaxFormXObjectDepth"/> levels.
+    /// </para>
+    /// <para>
+    /// <strong>Defensive:</strong> any decode or resolve failure on a single stream is silently
+    /// swallowed; the collector never throws. The list may be empty when no non-page content streams
+    /// are present or all fail to decode.
+    /// </para>
+    /// <para>
+    /// Clean-room: derived from ISO 32000-1:2008 §8.8 (Form XObjects), §9.6.4 (Type 3 fonts),
+    /// §12.5.5 (annotation appearances), and empirical veraPDF-oracle probing — not from any
+    /// third-party validation profile.
+    /// </para>
+    /// </summary>
+    public static IReadOnlyList<ReachableContentStream> GetReachableContentStreams(
+        PreflightContext context, PdfDictionary page)
+    {
+        var result = new List<ReachableContentStream>();
+        // Cycle guard: tracks object numbers of Form XObject streams already visited,
+        // so a recursive Do chain (A → B → A) terminates.
+        var visitedFormObjNums = new HashSet<int>();
+
+        // ── 1. Form XObjects (drawn-only) ─────────────────────────────────────
+        // Parse the page content to find all Do-drawn XObjects, then recurse.
+        try
+        {
+            var pageBytes = GetContentBytes(context, page);
+            if (pageBytes is { Length: > 0 })
+            {
+                if (context.ResolveInherited(page, _resources) is PdfDictionary pageResources)
+                    CollectDrawnFormXObjects(context, pageBytes, pageResources, result, visitedFormObjNums, 0);
+            }
+        }
+        catch
+        {
+            // Page content failure — skip Form XObject collection; do not abort other kinds.
+        }
+
+        // ── 2. Type 3 CharProcs (all glyphs for USED fonts) ──────────────────
+        // veraPDF validates all CharProcs of every Type 3 font that is selected by a Tf operator
+        // in the page content — not just the glyphs actually shown, but also not fonts that are
+        // merely present in /Resources but never selected (empirically confirmed, 2026-06-23).
+        try
+        {
+            if (context.ResolveInherited(page, _resources) is PdfDictionary pageResources
+                && context.Resolve(pageResources.Get(_font)) is PdfDictionary fonts)
+            {
+                // Determine which font resource names are actually selected by Tf on this page.
+                // Re-use the existing Analyze pass; the cost is one extra page-content scan.
+                var usedFontNames = Analyze(context, page).UsedFonts;
+
+                foreach (var fontEntry in fonts.Entries)
+                {
+                    // Only process Type3 fonts that are actually selected by content (Tf).
+                    if (!usedFontNames.Contains(fontEntry.Key.Value))
+                        continue;
+
+                    try
+                    {
+                        if (context.Resolve(fontEntry.Value) is not PdfDictionary fontDict)
+                            continue;
+                        if (context.Resolve(fontDict.Get(_subtype)) is not PdfName subtypeName
+                            || subtypeName.Value != "Type3")
+                            continue;
+                        if (context.Resolve(fontDict.Get(_charProcs)) is not PdfDictionary charProcs)
+                            continue;
+
+                        // The Type3 font's own /Resources (ISO 32000-1 §9.6.4 / Table 111).
+                        var type3Resources = context.Resolve(fontDict.Get(_resources)) as PdfDictionary;
+
+                        foreach (var procEntry in charProcs.Entries)
+                        {
+                            try
+                            {
+                                var stream = context.ResolveStream(procEntry.Value);
+                                if (stream is null) continue;
+                                var bytes = context.DecodeStream(stream);
+                                if (bytes is not { Length: > 0 }) continue;
+                                result.Add(new ReachableContentStream(bytes, type3Resources, ContentStreamKind.Type3CharProc));
+                            }
+                            catch { /* skip one bad CharProc */ }
+                        }
+                    }
+                    catch { /* skip one bad font */ }
+                }
+            }
+        }
+        catch
+        {
+            // Font enumeration failure — skip; do not abort.
+        }
+
+        // ── 3. Annotation appearance streams (all, regardless of visibility) ───
+        try
+        {
+            if (context.Resolve(page.Get(_annots)) is PdfArray annots)
+            {
+                for (var i = 0; i < annots.Count; i++)
+                {
+                    try
+                    {
+                        if (context.Resolve(annots[i]) is not PdfDictionary annot) continue;
+                        if (context.Resolve(annot.Get(_ap)) is not PdfDictionary ap) continue;
+
+                        // /AP /N: can be a stream (direct appearance) or a sub-dictionary
+                        // (keyed appearance states, e.g. for button fields).
+                        // ISO 32000-1 §12.5.5 Table 168: /N = normal appearance.
+                        CollectApNStream(context, ap.Get(_n), result);
+                    }
+                    catch { /* skip one bad annotation */ }
+                }
+            }
+        }
+        catch
+        {
+            // Annots enumeration failure — skip; do not abort.
+        }
+
+        return result;
+    }
+
+    // Scans the content bytes for Do operators, resolves each drawn XObject that is a Form,
+    // and recurses into its own content stream (depth-first, cycle-guarded).
+    private static void CollectDrawnFormXObjects(
+        PreflightContext context,
+        byte[] contentBytes,
+        PdfDictionary resources,
+        List<ReachableContentStream> result,
+        HashSet<int> visitedObjNums,
+        int depth)
+    {
+        if (depth > MaxFormXObjectDepth)
+            return;
+
+        if (context.Resolve(resources.Get(_xObject)) is not PdfDictionary xObjects)
+            return;
+
+        string? lastName = null;
+        try
+        {
+            var lexer = new PdfLexer(contentBytes);
+            while (!lexer.AtEnd)
+            {
+                var token = lexer.NextToken();
+                if (token.Kind == TokenKind.EndOfInput) break;
+
+                if (token.Kind == TokenKind.Name)
+                {
+                    lastName = DecodeName(token.Raw.Span);
+                    continue;
+                }
+
+                if (token.Kind == TokenKind.Keyword)
+                {
+                    var op = Encoding.Latin1.GetString(token.Raw.Span);
+                    if (op == "ID")
+                    {
+                        // Skip inline-image binary data.
+                        SkipInlineImageData(lexer, contentBytes);
+                    }
+                    else if (op == "Do" && lastName is not null)
+                    {
+                        // Resolve the XObject named by lastName.
+                        var xObjRef = xObjects.Get(new PdfName(lastName));
+                        if (xObjRef is PdfIndirectReference r)
+                        {
+                            // Cycle guard: skip if already visited.
+                            if (!visitedObjNums.Add(r.ObjectNumber))
+                            {
+                                lastName = null;
+                                continue;
+                            }
+
+                            try
+                            {
+                                if (context.Resolve(xObjRef) is PdfDictionary xObjDict
+                                    && context.Resolve(xObjDict.Get(_subtype)) is PdfName xSubtype
+                                    && xSubtype.Value == _form.Value)
+                                {
+                                    var stream = context.ResolveStream(xObjRef);
+                                    if (stream is not null)
+                                    {
+                                        var bytes = context.DecodeStream(stream);
+                                        if (bytes is { Length: > 0 })
+                                        {
+                                            // The Form XObject's own /Resources (may be null).
+                                            var formResources = context.Resolve(xObjDict.Get(_resources)) as PdfDictionary;
+                                            result.Add(new ReachableContentStream(bytes, formResources, ContentStreamKind.FormXObject));
+
+                                            // Recurse: the Form XObject may itself draw other Forms.
+                                            // Use formResources if present, otherwise fall back to parent resources.
+                                            var resourcesForChildren = formResources ?? resources;
+                                            CollectDrawnFormXObjects(context, bytes, resourcesForChildren, result, visitedObjNums, depth + 1);
+                                        }
+                                    }
+                                }
+                            }
+                            catch { /* skip one bad XObject; cycle-guard entry already added */ }
+                        }
+                    }
+
+                    lastName = null;
+                }
+            }
+        }
+        catch { /* lexer error — keep what was collected */ }
+    }
+
+    // Collects appearance streams from /AP /N (either a direct stream or a sub-dictionary
+    // keyed by appearance state names per ISO 32000-1 §12.5.5).
+    //
+    // The branch decision uses ResolveStream to probe whether /N (or the object it references)
+    // IS a stream.  The reader's Resolve() method returns the stream's inline dictionary (a
+    // PdfDictionary, not a PdfStream) for stream objects, so "resolved is PdfDictionary" is true
+    // for BOTH a stream object and a plain dictionary — making type-testing on the resolved value
+    // unreliable.  ResolveStream, by contrast, returns non-null only when the object is actually
+    // a stream.
+    //
+    // FIX 1 (indirect sub-dict):
+    //   When /N = 8 0 R where object 8 is << /Off 6 0 R /On 7 0 R >> (a plain dictionary, not a
+    //   stream), the old code branched on `nObj is PdfIndirectReference` and called
+    //   ResolveStream(nRef), which returned null (object 8 is not a stream) and silently dropped all
+    //   state streams.  The fix below calls ResolveStream(nObj) first; if it returns null the object
+    //   is not a stream so we fall through to the sub-dictionary path, which now works for both
+    //   direct and indirect sub-dicts.
+    private static void CollectApNStream(
+        PreflightContext context,
+        PdfObject? nObj,
+        List<ReachableContentStream> result)
+    {
+        if (nObj is null) return;
+
+        // Try to resolve as a stream first.  ResolveStream returns non-null only for actual PDF
+        // stream objects (regardless of whether /N is a direct or indirect reference).
+        ParsedStream? directStream = null;
+        try { directStream = context.ResolveStream(nObj); } catch { }
+
+        if (directStream is not null)
+        {
+            // Direct appearance: /N is (or points to) a stream.
+            try
+            {
+                var bytes = context.DecodeStream(directStream);
+                if (bytes is not { Length: > 0 }) return;
+                var apResources = context.Resolve(directStream.Dictionary.Get(_resources)) as PdfDictionary;
+                result.Add(new ReachableContentStream(bytes, apResources, ContentStreamKind.AnnotationAppearance));
+            }
+            catch { }
+        }
+        else
+        {
+            // Not a stream: /N is (or points to) a sub-dictionary keyed by appearance state names,
+            // e.g. << /Off 6 0 R /On 7 0 R >>.  Works whether the sub-dict is direct or indirect.
+            var resolved = context.Resolve(nObj);
+            if (resolved is not PdfDictionary subDict) return;
+
+            foreach (var entry in subDict.Entries)
+            {
+                try
+                {
+                    var stream = context.ResolveStream(entry.Value);
+                    if (stream is null) continue;
+                    var bytes = context.DecodeStream(stream);
+                    if (bytes is not { Length: > 0 }) continue;
+                    var apResources = context.Resolve(stream.Dictionary.Get(_resources)) as PdfDictionary;
+                    result.Add(new ReachableContentStream(bytes, apResources, ContentStreamKind.AnnotationAppearance));
+                }
+                catch { /* skip one bad appearance state */ }
+            }
+        }
+    }
+
+    // ── End of non-page content stream collector ───────────────────────────────────────────────────
 
     /// <summary>The page's concatenated, decoded content-stream bytes (or null when empty/undecodable).
     /// Exposed for rules that need a deeper content scan than the operand tracking above.</summary>

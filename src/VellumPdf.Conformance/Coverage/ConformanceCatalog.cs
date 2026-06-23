@@ -181,25 +181,36 @@ public static class ConformanceCatalog
     {
         ["6.1.8-1"] = "font BaseFont and colour colourant names checked (presence-based); structure-type names checked for direct /StructTreeRoot /K children only — deeper nesting not yet walked",
         ["6.2.3-1"] = "DestOutputProfile signature/N checked; ICC device-class not parsed",
-        ["6.2.4.2-2"] = "page content-stream OPM/overprint/ICCBased-CMYK correlation checked with q/Q-stack interpreter; Form XObjects, Type 3 CharProcs, and annotation appearance streams not yet walked",
-        ["6.2.4.3-2"] = "device-colour requires an output intent checked; DefaultRGB path not",
-        ["6.2.4.3-3"] = "device-colour requires an output intent checked; DefaultCMYK path not",
-        ["6.2.4.3-4"] = "page-content device grey covered; image/pattern colour not detected",
-        ["6.2.4.4-2"] = "Separations selected by cs/CS operators and those in /Colorants of used DeviceN spaces are compared; Separations reachable only via Form XObjects, Type 3 CharProcs, annotation appearance streams, image /ColorSpace, or alternate spaces of other colour spaces are not yet walked",
-        ["6.2.2-1"] = "page content-stream operators checked against ISO 32000-1; Form XObject / Type 3 CharProc / annotation appearance streams not yet walked",
-        ["6.2.2-2"] = "page content streams checked (Font/XObject/ExtGState/ColorSpace/Shading); Pattern names (scn/SCN in Pattern colour space) and Properties names (BDC/DP with name operand) not detected — stateful colour-space tracking required; Form XObject / Type 3 / appearance streams not walked",
+        ["6.2.4.2-2"] = "page content streams plus drawn Form XObjects, all CharProcs of Tf-selected Type 3 fonts, and annotation /AP /N appearance streams are now interpreted in isolation with a fresh default GState (Batch N3, 2026-06-23); graphics state inherited across Do boundaries is NOT threaded — a violation established only by state set in the calling stream and painted inside a form (without the form re-establishing the state itself) is under-detected (residual gap, FP-safe; empirically confirmed against veraPDF 1.30.2: both self-contained and inherited-state form violations fire in veraPDF, but only the self-contained case is reachable by isolated scanning)",
+        ["6.2.4.3-2"] = "page-content DeviceRGB checked; DefaultRGB exemption and RGB-profile intent matching implemented (2026-06-23); image/pattern DeviceRGB not detected",
+        ["6.2.4.3-3"] = "page-content DeviceCMYK checked; DefaultCMYK exemption and CMYK-profile intent matching implemented (2026-06-23); image/pattern DeviceCMYK not detected",
+        ["6.2.4.3-4"] = "page-content DeviceGray checked; DefaultGray exemption implemented (2026-06-23); image/pattern colour not detected",
+        ["6.2.4.4-2"] = "Separations selected by cs/CS operators and those in /Colorants of used DeviceN spaces are compared; drawn Form XObjects, all CharProcs of Tf-selected Type 3 fonts, and annotation /AP /N appearance streams are now also walked (Batch N4, 2026-06-23); image /ColorSpace and alternate spaces of other colour spaces are not yet walked",
+        // 6.2.2-1 moved to Implemented (Batch N1 — ContentStreamOperatorRule now scans drawn Form
+        //   XObjects, all CharProcs of Tf-selected Type 3 fonts, and all annotation /AP /N appearance
+        //   streams via GetReachableContentStreams; reachability policy empirically confirmed against
+        //   veraPDF 1.30.2 on 2026-06-23).
+        // 6.1.10-1 moved to Implemented (Batch N2 — InlineImageFilterRule now scans drawn Form
+        //   XObjects, all CharProcs of Tf-selected Type 3 fonts, and all annotation /AP /N appearance
+        //   streams via GetReachableContentStreams; same reachability policy as ContentStreamOperatorRule).
+        ["6.2.2-2"] = "page + non-page streams checked (Font/XObject/ExtGState/ColorSpace/Shading) via GetReachableContentStreams (drawn Form XObjects, Type 3 CharProcs, annotation /AP /N appearance streams; Batch N5, 2026-06-23); both page-level and non-page checks scoped to streams with null own /Resources AND where the used name IS defined in the ancestor resource scope (veraPDF's inheritedResourceNames model: only names that resolve via the ancestor chain are flagged — a name absent from all ancestor scopes is not fired; confirmed probe A1/A2 2026-06-23); non-page check uses the PAGE's resolved resource scope as the ancestor; streams with a non-null /Resources skipped (FP-safe under-detection); nested-form B1 (inner no /Resources, name in page scope) fires; B2 (name only in outer form scope, not page scope) is FP-safe under-detection (confirmed probe B1/B2 2026-06-23); Pattern names (scn/SCN in Pattern colour space) and Properties names (BDC/DP with name operand) not detected in either pass — stateful colour-space tracking required",
         ["6.2.11.4.1-1"] = "only the embedded Identity-H CIDFontType2 path is checked",
         ["6.2.11.4.1-2"] = "only the embedded Identity-H CIDFontType2 path is checked",
         ["6.2.11.5-1"] = "only the embedded Identity-H CIDFontType2 path is checked",
         ["6.6.2.1-4"] = "only the catalog XMP packet is validated, not every metadata stream",
-        ["6.1.10-1"] = "inline images in page content streams checked; those in Form XObject / Type 3 CharProc / annotation appearance streams not walked",
-        ["6.6.2.3.3-1"] = "pdfaExtension prefix/bag structure not fully validated",
-        ["6.6.2.3.3-5"] = "property container is read but not validated as Seq Property",
-        ["6.6.2.3.3-6"] = "valueType container is read but not validated as Seq ValueType",
+        // 6.6.2.3.3-1 moved to Implemented: pdfaExtension:schemas rdf:Bag check + pdfaExtension
+        //   prefix check added; probe-confirmed against veraPDF 1.30.2 (2026-06-23).
+        // 6.6.2.3.3-5 moved to Implemented: pdfaSchema:property rdf:Seq check + null/pdfaSchema
+        //   prefix check added (null-prefix leniency probe-confirmed 2026-06-23).
+        // 6.6.2.3.3-6 moved to Implemented: pdfaSchema:valueType rdf:Seq check + null/pdfaSchema
+        //   prefix check added (same null-prefix leniency as -5, probe-confirmed 2026-06-23).
+        // 6.6.2.3.3-15 moved to Implemented: pdfaType:field rdf:Seq check + null/pdfaType
+        //   prefix check added (same null-prefix leniency, probe-confirmed 2026-06-23).
         ["6.6.2.3.1-2"] = "extension-schema properties with primitive/container types (Text, Integer, Real, Boolean, Date, URI/URL, bag/seq/alt/Lang Alt) are type-checked; predefined XMP-Specification properties (dc:, xmp:, pdf:, pdfaid:, …) are deferred to avoid false-positives from an incomplete built-in type table; extension-schema properties whose declared type resolves to an unrecognised name (custom value types, XMP structure types) are also deferred",
-        ["6.6.2.3.3-8"] = "property valueType presence checked, not that it is a defined type",
-        ["6.6.2.3.3-15"] = "field container is read but not validated as Seq Field",
-        ["6.6.2.3.3-17"] = "field valueType presence checked, not that it is a defined type",
+        ["6.6.2.3.3-8"] = "pdfaProperty prefix on the valueType field is now checked (probe-confirmed 2026-06-23); "
+            + "the 'isValueTypeDefined' condition (verifying that the declared type name is a known/declared type) is not yet checked",
+        ["6.6.2.3.3-17"] = "pdfaField prefix on the valueType field is now checked (probe-confirmed 2026-06-23); "
+            + "the 'isValueTypeDefined' condition (verifying that the declared type name is a known/declared type) is not yet checked",
         ["6.1.9-1"] = "object/generation/obj spacing + EOL checked; the endobj-EOL sub-conditions not",
         ["6.1.13-10"] = "embedded-CMap cidrange/cidchar CIDs resolved from content text-show operators; predefined named-CMap character-collection maxima deferred (no Adobe registry table)",
         ["6.2.11.3.1-1"] = "Identity and embedded-CMap CIDSystemInfo compared; predefined-CMap registry table deferred",
@@ -216,12 +227,15 @@ public static class ConformanceCatalog
         ["6.1.6-2"] = "byte scan implemented, but the reader rejects an invalid hex digit before validation",
         // 6.1.8-1 moved to PdfAPartial (font BaseFont + colour colourant + structure-type names).
         // 6.1.12-2 moved to Implemented (DocMdpReferenceRule).
-        // 6.2.4.2-2 moved to PdfAPartial; implemented via OverprintRule with page-content interpreter.
+        // 6.2.4.2-2 moved to PdfAPartial; OverprintRule now covers page + non-page streams (Batch N3);
+        //   graphics-state inheritance across Do remains the residual gap (FP-safe under-detection).
         // 6.2.8.3-1..-5: removed from Deferred; Jpeg2000Rule now implements all five for both
         // JP2 box files and raw codestreams. -2/-3/-4 correctly do not apply to raw codestreams
         // (which carry no colr boxes) — this is not a gap but correct per-spec scoping.
         // 6.4.3-1/-2/-3 moved to Implemented/Partial (SignatureRule).
-        ["6.7.3.3-1"] = "structure-tree walker",
+        // 6.7.3.3-1 moved to Implemented (LogicalStructureRule: /StructTreeRoot presence check in
+        //   the document catalog; veraPDF clause 6.7.3.3 testNumber 1 confirmed on the
+        //   pdfa2a-no-structure oracle fixture — the only failed check on that document).
         // 6.7.3.4-1/-2/-3 moved to Implemented (A2aStructureTypeRule: structure-tree walker —
         //   non-standard type unmapped, circular role-map, standard type remapped to non-standard).
         // 6.7.4-1 moved to Implemented (A2aLangSyntaxRule: catalog /Lang + struct-elem /Lang syntax).

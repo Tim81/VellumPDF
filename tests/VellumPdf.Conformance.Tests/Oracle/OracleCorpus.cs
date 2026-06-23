@@ -257,8 +257,12 @@ public static class OracleCorpus
             new OracleFixture("pdfa2b-movie-annotation", WriterPdfWithMovieAnnotation(),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
 
-            // A PDF/A-2a document with /Lang and a title but NO tagged content, so it has no
-            // structure tree — the one violation. Cross-validates the logical-structure rule (§6.8).
+            // §6.7.3.3-1 VIOLATION: a PDF/A-2a document with /Lang and a title but NO tagged
+            // content, so the writer emits no /StructTreeRoot — the one violation.
+            // veraPDF fires clause 6.7.3.3 testNumber 1 (containsStructTreeRoot == true) and that
+            // is the ONLY failed check (failedRules=1), confirming clause-level isolation.
+            // In-process: LogicalStructureRule fires "ISO19005-2:6.8-logical-structure" with the
+            // /StructTreeRoot error. Cross-validates §6.7.3.3-1 and the logical-structure rule (§6.8).
             new OracleFixture("pdfa2a-no-structure", WriterPdfMissingStructure(VellumPdf.Document.PdfConformance.PdfA2a),
                 Conformance.PdfConformance.PdfA2A, "2a", ExpectedCompliant: false),
 
@@ -398,6 +402,54 @@ public static class OracleCorpus
             // device-colour-requires-an-output-intent check (#122).
             new OracleFixture("pdfa2b-devicecolour-no-outputintent", WriterPdfDeviceColourNoOutputIntent(),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // ── §6.2.4.3 Default* colour space FP-safety guards (2026-06-23) ──────────────────────
+            // A /DefaultRGB colour space in the page /Resources/ColorSpace satisfies §6.2.4.3-2 for
+            // DeviceRGB WITHOUT any output intent. veraPDF 1.30.2 ACCEPTS these; the in-process rule
+            // must be silent (was a false positive before the Default* exemption was added).
+            new OracleFixture("pdfa2b-devicergb-defaultrgb-nointent",
+                Pdfa2bDeviceColourWithDefaultCs(DeviceColourKind.Rgb, DeviceColourKind.Rgb, hasOutputIntent: false),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // /DefaultCMYK satisfies §6.2.4.3-3 for DeviceCMYK WITHOUT any output intent.
+            new OracleFixture("pdfa2b-devicecmyk-defaultcmyk-nointent",
+                Pdfa2bDeviceColourWithDefaultCs(DeviceColourKind.Cmyk, DeviceColourKind.Cmyk, hasOutputIntent: false),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // /DefaultGray satisfies §6.2.4.3-4 for DeviceGray WITHOUT any output intent.
+            new OracleFixture("pdfa2b-devicegray-defaultgray-nointent",
+                Pdfa2bDeviceColourWithDefaultCs(DeviceColourKind.Gray, DeviceColourKind.Gray, hasOutputIntent: false),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // ── §6.2.4.3 true-positive guards: device colour without Default*, wrong or missing intent ──
+            // DeviceRGB with a CMYK output intent and no DefaultRGB: §6.2.4.3-2 requires an RGB intent.
+            // veraPDF 1.30.2 FIRES 6.2.4.3-2; in-process must also fire.
+            new OracleFixture("pdfa2b-devicergb-cmykintent",
+                Pdfa2bDeviceColourWithDefaultCs(DeviceColourKind.Rgb, DeviceColourKind.None, hasOutputIntent: true, intentColour: DeviceColourKind.Cmyk),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // DeviceCMYK with an RGB output intent and no DefaultCMYK: §6.2.4.3-3 requires a CMYK intent.
+            // veraPDF 1.30.2 FIRES 6.2.4.3-3; in-process must also fire.
+            new OracleFixture("pdfa2b-devicecmyk-rgbintent",
+                Pdfa2bDeviceColourWithDefaultCs(DeviceColourKind.Cmyk, DeviceColourKind.None, hasOutputIntent: true, intentColour: DeviceColourKind.Rgb),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // ── §6.2.4.3 FP-safety: correct matching intents ────────────────────────────────────
+            // DeviceRGB with an RGB output intent (no Default*): §6.2.4.3-2 satisfied. veraPDF ACCEPTS.
+            new OracleFixture("pdfa2b-devicergb-rgbintent",
+                Pdfa2bDeviceColourWithDefaultCs(DeviceColourKind.Rgb, DeviceColourKind.None, hasOutputIntent: true, intentColour: DeviceColourKind.Rgb),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // DeviceCMYK with a CMYK output intent (no Default*): §6.2.4.3-3 satisfied. veraPDF ACCEPTS.
+            new OracleFixture("pdfa2b-devicecmyk-cmykintent",
+                Pdfa2bDeviceColourWithDefaultCs(DeviceColourKind.Cmyk, DeviceColourKind.None, hasOutputIntent: true, intentColour: DeviceColourKind.Cmyk),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // DeviceGray with a CMYK output intent (no DefaultGray): §6.2.4.3-4 allows ANY intent for Gray.
+            // veraPDF 1.30.2 ACCEPTS; in-process must be silent.
+            new OracleFixture("pdfa2b-devicegray-cmykintent",
+                Pdfa2bDeviceColourWithDefaultCs(DeviceColourKind.Gray, DeviceColourKind.None, hasOutputIntent: true, intentColour: DeviceColourKind.Cmyk),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
 
             // An interactive form dictionary carrying an /XFA entry, which PDF/A-2 forbids (§6.4.2).
             // Both veraPDF and the in-process XfaRule reject it (#122).
@@ -577,6 +629,74 @@ public static class OracleCorpus
             // mandatory 'type' name (§6.6.2.3.3-11). veraPDF and the in-process rule both reject it.
             new OracleFixture("pdfa2b-extension-valuetype-bad", WriterPdfWithMetadata(Encoding.UTF8.GetBytes(BadValueTypeXmp2b())),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // ── §6.6.2.3.3 container-type + prefix checks (Batch C1, 2026-06-23) ──────────────
+
+            // pdfaExtension:schemas uses rdf:Seq instead of rdf:Bag (§6.6.2.3.3-1). veraPDF fires
+            // testNumber=1; in-process rule now also fires Clause_1. Probe-confirmed 2026-06-23.
+            new OracleFixture("pdfa2b-ext-schemas-seq",
+                WriterPdfWithMetadata(Encoding.UTF8.GetBytes(SchemasSeqXmp2b())),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // pdfaExtension:schemas uses the correct rdf:Bag but the extension namespace is bound to
+            // a non-canonical prefix "ext:" instead of "pdfaExtension" (§6.6.2.3.3-1). veraPDF fires
+            // testNumber=1; in-process rule fires Clause_1. Probe-confirmed 2026-06-23.
+            new OracleFixture("pdfa2b-ext-schemas-wrong-prefix",
+                WriterPdfWithMetadata(Encoding.UTF8.GetBytes(SchemasWrongExtPrefixXmp2b())),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // pdfaSchema:property uses rdf:Bag instead of rdf:Seq (§6.6.2.3.3-5). veraPDF fires
+            // testNumber=5; in-process rule fires Clause_5. Probe-confirmed 2026-06-23.
+            new OracleFixture("pdfa2b-property-bag",
+                WriterPdfWithMetadata(Encoding.UTF8.GetBytes(PropertyBagXmp2b())),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // pdfaSchema:valueType uses rdf:Bag instead of rdf:Seq (§6.6.2.3.3-6). veraPDF fires
+            // testNumber=6; in-process rule fires Clause_6. Probe-confirmed 2026-06-23.
+            new OracleFixture("pdfa2b-valuetype-container-bag",
+                WriterPdfWithMetadata(Encoding.UTF8.GetBytes(ValueTypeContainerBagXmp2b())),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // pdfaType:field uses rdf:Bag instead of rdf:Seq (§6.6.2.3.3-15). veraPDF fires
+            // testNumber=15; in-process rule fires Clause_15. Probe-confirmed 2026-06-23.
+            new OracleFixture("pdfa2b-field-container-bag",
+                WriterPdfWithMetadata(Encoding.UTF8.GetBytes(FieldContainerBagXmp2b())),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // pdfaProperty:valueType uses wrong prefix "prop:" instead of "pdfaProperty"
+            // (§6.6.2.3.3-8). veraPDF fires testNumber=8; in-process rule fires Clause_8.
+            // Probe-confirmed 2026-06-23.
+            new OracleFixture("pdfa2b-property-valuetype-wrong-prefix",
+                WriterPdfWithMetadata(Encoding.UTF8.GetBytes(PropertyValueTypeWrongPrefixXmp2b())),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // pdfaField:valueType uses wrong prefix "fld:" instead of "pdfaField" (§6.6.2.3.3-17).
+            // veraPDF fires testNumber=17; in-process rule fires Clause_17. Probe-confirmed 2026-06-23.
+            new OracleFixture("pdfa2b-field-valuetype-wrong-prefix",
+                WriterPdfWithMetadata(Encoding.UTF8.GetBytes(FieldValueTypeWrongPrefixXmp2b())),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // FP-safety guard (§6.6.2.3.3-5): a well-formed schema with pdfaSchema:property (canonical
+            // prefix) and a correct rdf:Seq. veraPDF accepts it; in-process must not fire -5.
+            // Exercises the null-prefix leniency path in HasNullOrCanonicalPrefix — canonical prefix
+            // passes via GetNamespaceOfPrefix, never the null branch.
+            new OracleFixture("pdfa2b-property-null-prefix-valid",
+                WriterPdfWithMetadata(Encoding.UTF8.GetBytes(PropertyNullPrefixValidXmp2b())),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // FP-safety guard (§6.6.2.3.3-15): a valueType schema with pdfaType:field (canonical prefix)
+            // and a correct rdf:Seq. veraPDF accepts it; in-process must not fire -15.
+            new OracleFixture("pdfa2b-field-null-prefix-valid",
+                WriterPdfWithMetadata(Encoding.UTF8.GetBytes(FieldNullPrefixValidXmp2b())),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // FP-safety guard: a fully valid extension schema with correct Bag/Seq containers and all
+            // canonical prefixes, including a custom valueType with a field — veraPDF accepts it and
+            // in-process must stay compliant after the new checks. (Extends the existing
+            // pdfa2b-extension-schema guard to also cover valueType/field container checks.)
+            new OracleFixture("pdfa2b-ext-full-valid",
+                WriterPdfWithMetadata(Encoding.UTF8.GetBytes(FullValidExtensionXmp2b())),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
 
             // A catalog carrying the /Requirements key (§6.11-1). veraPDF and the in-process
             // CatalogRestrictionsRule both reject it.
@@ -794,6 +914,183 @@ public static class OracleCorpus
             // in-process rule accept it — the no-false-positive guard for the BX/EX handling.
             new OracleFixture("pdfa2b-bxex-standard-operators",
                 HandBuiltPdfWithContent("BX q Q EX"),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // ── Batch N1 — §6.2.2-1 non-page stream coverage ──────────────────────────────────────
+            // These fixtures extend the operator-allowlist check to Form XObjects, annotation
+            // appearance streams, and Type 3 CharProcs. Reachability policy confirmed empirically
+            // against veraPDF 1.30.2 on 2026-06-23.
+
+            // §6.2.2-1 VIOLATION: a Form XObject whose content stream contains the unknown operator
+            // 'zz', and the XObject IS drawn from the page (/Fm0 Do). veraPDF flags clause 6.2.2
+            // testNumber 1 (confirmed: exactly one failing rule). In-process: ContentStreamOperatorRule
+            // must also fire.
+            new OracleFixture("pdfa2b-unknown-op-in-drawn-form",
+                HandBuiltPdfWithDrawnFormXObject("zz"),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // §6.2.2-1 FP-SAFETY: a Form XObject with only legal operators (q Q), drawn on the page.
+            // veraPDF accepts it. In-process: ContentStreamOperatorRule must NOT fire.
+            new OracleFixture("pdfa2b-valid-drawn-form",
+                HandBuiltPdfWithDrawnFormXObject("q Q"),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // §6.2.2-1 FP-SAFETY: a Form XObject with an unknown operator 'zz' that is PRESENT in
+            // /Resources /XObject but NEVER drawn (no Do operator). veraPDF accepts it — only drawn
+            // Form XObject content is validated (confirmed: compliant, no 6.2.2 failure).
+            // In-process: ContentStreamOperatorRule must also accept it (drawn-only policy).
+            new OracleFixture("pdfa2b-undrawn-form-with-bad-op",
+                HandBuiltPdfWithUndrawnFormXObject("zz"),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // §6.2.2-1 VIOLATION: an annotation whose /AP /N appearance stream contains 'zz'.
+            // veraPDF flags clause 6.2.2 testNumber 1 for annotation appearance streams regardless
+            // of whether the annotation is rendered (confirmed empirically). In-process: must also fire.
+            new OracleFixture("pdfa2b-unknown-op-in-annot-ap",
+                HandBuiltPdfWithAnnotAppearance("zz"),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // §6.2.2-1 FP-SAFETY: an annotation with a valid appearance stream (q Q only).
+            // veraPDF accepts it. In-process: ContentStreamOperatorRule must NOT fire.
+            new OracleFixture("pdfa2b-valid-annot-ap",
+                HandBuiltPdfWithAnnotAppearance("q Q"),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // ── Batch N1 extension — §6.2.2-1 nested-form and keyed-appearance fixtures ─────────────
+            // Confirmed empirically against veraPDF 1.30.2 on 2026-06-23.
+
+            // §6.2.2-1 VIOLATION: page draws Form A, Form A draws Form B, Form B contains 'zz'.
+            // Confirms that CollectDrawnFormXObjects recurses into the full drawn-XObject chain and
+            // reaches nested content. veraPDF flags clause 6.2.2 testNumber 1 (confirmed empirically).
+            // In-process: ContentStreamOperatorRule must also fire.
+            new OracleFixture("pdfa2b-unknown-op-in-nested-form",
+                HandBuiltPdfWithNestedFormXObject("zz"),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // §6.2.2-1 FP-SAFETY: nested forms A→B with only legal operators (q Q).
+            // veraPDF accepts it. In-process: ContentStreamOperatorRule must NOT fire.
+            new OracleFixture("pdfa2b-valid-nested-form",
+                HandBuiltPdfWithNestedFormXObject("q Q"),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // §6.2.2-1 VIOLATION: Widget button annotation whose /AP /N is an INDIRECT reference to
+            // a sub-dictionary << /Off stream1 /On stream2 >> where the /Off state contains 'zz'.
+            // Exercises FIX 1 in CollectApNStream (branch decision on resolved type, not ref wrapper).
+            // veraPDF flags clause 6.2.2 testNumber 1 (confirmed empirically). The fixture also
+            // triggers 6.3.3-4 (Widget /N must be a direct stream for a field-less Widget) which is
+            // expected — ExpectedCompliant: false covers both findings.
+            // In-process: ContentStreamOperatorRule must fire (6.3-annotation may also fire).
+            new OracleFixture("pdfa2b-unknown-op-in-keyed-ap",
+                HandBuiltPdfWithKeyedApSubDict("zz"),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // §6.2.2-1 FP-SAFETY: Widget /AP /N indirect sub-dict with only legal operators (q Q).
+            // veraPDF does not flag 6.2.2 (only 6.3.3-4 which is unrelated to the appearance content).
+            // In-process: ContentStreamOperatorRule must NOT fire for appearance content.
+            // Note: this fixture is non-compliant due to 6.3-annotation (Widget field-less /N must
+            // be a stream), so ExpectedCompliant: false. Divergence on 6.2.2 would be a false positive.
+            new OracleFixture("pdfa2b-valid-keyed-ap",
+                HandBuiltPdfWithKeyedApSubDict("q Q"),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // ── Batch N2 — §6.1.10-1 non-page inline-image filter coverage ────────────────────────
+            // These fixtures extend the inline-image forbidden-filter check to Form XObjects and
+            // annotation appearance streams via GetReachableContentStreams.
+            // Reachability policy matches ContentStreamOperatorRule (Batch N1), confirmed against
+            // veraPDF 1.30.2 on 2026-06-23.
+
+            // §6.1.10-1 VIOLATION: a Form XObject (drawn by the page via /Fm0 Do) whose content
+            // stream contains an inline image with /F /LZWDecode — a forbidden filter. veraPDF fires
+            // clause 6.1.10 testNumber 1 (confirmed: one failing rule). In-process:
+            // InlineImageFilterRule must also fire.
+            new OracleFixture("pdfa2b-inline-img-bad-filter-in-form",
+                WriterPdfWithDrawnFormXObjectBytes(InlineImageBadFilterBytes()),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // §6.1.10-1 FP-SAFETY: the same Form XObject structure but the inline image uses
+            // /F /AHx (ASCIIHexDecode) — a permitted filter. veraPDF accepts it (no 6.1.10 failure).
+            // In-process: InlineImageFilterRule must NOT fire.
+            new OracleFixture("pdfa2b-inline-img-permitted-filter-in-form",
+                WriterPdfWithDrawnFormXObjectBytes(InlineImagePermittedFilterBytes()),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // §6.1.10-1 VIOLATION (nested Form): the SAME bad-filter inline image sits in
+            // Form B, drawn by Form A which is drawn by the page. Confirms the collector recurses
+            // into the full drawn-XObject chain and the rule fires at any nesting depth.
+            // veraPDF fires 6.1.10-1 (confirmed: one failing rule). In-process must also fire.
+            new OracleFixture("pdfa2b-inline-img-bad-filter-in-nested-form",
+                WriterPdfWithNestedFormXObjectBytes(InlineImageBadFilterBytes()),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // §6.1.10-1 FP-SAFETY (nested Form, permitted filter): the same nested Form A→B
+            // structure but the inline image in Form B uses /F /AHx. veraPDF accepts it.
+            // In-process: InlineImageFilterRule must NOT fire.
+            new OracleFixture("pdfa2b-inline-img-permitted-filter-in-nested-form",
+                WriterPdfWithNestedFormXObjectBytes(InlineImagePermittedFilterBytes()),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // §6.1.10-1 VIOLATION: a /Text annotation whose /AP /N appearance stream contains
+            // an inline image with /F /LZWDecode. veraPDF fires 6.1.10-1 (confirmed).
+            // In-process: InlineImageFilterRule must also fire.
+            new OracleFixture("pdfa2b-inline-img-bad-filter-in-ap",
+                WriterPdfWithAnnotAppearanceBytes(InlineImageBadFilterBytes()),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // §6.1.10-1 FP-SAFETY (annotation AP, permitted filter): the same annotation
+            // structure with /F /AHx. veraPDF accepts it. In-process must NOT fire.
+            new OracleFixture("pdfa2b-inline-img-permitted-filter-in-ap",
+                WriterPdfWithAnnotAppearanceBytes(InlineImagePermittedFilterBytes()),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // §6.1.10-1 FP-SAFETY (binary data resembling a dict): an inline image with NO /F key
+            // whose raw sample data (between ID and EI) contains the byte sequence
+            // "/F /LZWDecode". SkipInlineImageData must skip past this, leaving the scanner to
+            // see only "EI" as the end of the inline image — no forbidden-filter finding.
+            // veraPDF accepts this document (the data bytes are not parsed as filter names).
+            // In-process: InlineImageFilterRule must NOT fire.
+            new OracleFixture("pdfa2b-inline-img-data-resembles-filter-dict",
+                WriterPdfWithDrawnFormXObjectBytes(InlineImageDataResemblesFilterDictBytes()),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // ── Batch N3 — §6.2.4.2-2 overprint/OPM in non-page content streams ─────────────────────
+            // Extends the OPM/ICCBased-CMYK check to Form XObjects, Type 3 CharProcs, and annotation
+            // /AP /N appearance streams via GetReachableContentStreams. Each non-page stream is
+            // interpreted in ISOLATION with a fresh default GState resolved against the stream's OWN
+            // /Resources; graphics state inherited across Do boundaries is NOT threaded (residual gap,
+            // FP-safe under-detection). Empirical veraPDF probe results (2026-06-23):
+            //   Probe N3-A (Form self-contained violation): veraPDF FIRES 6.2.4.2-2 ✓
+            //   Probe N3-B (inherited-across-Do): veraPDF FIRES; isolated scanning under-detects (gap)
+            //   Probe N3-C (Form self-contained, OPM 0): veraPDF PASSES ✓
+
+            // §6.2.4.2-2 VIOLATION: a drawn Form XObject whose content stream itself selects an
+            // ICCBased CMYK colour space (/CS0 cs) and applies an ExtGState with /op true + /OPM 1
+            // (/GS1 gs), then fills. The form carries its own /Resources with both the ICC stream
+            // and the ExtGState — it is self-contained. veraPDF fires clause 6.2.4.2 testNumber 2
+            // (confirmed: isCompliant=false, failedRules=1, context=xObject[0]/contentStream[0]).
+            // In-process: OverprintRule must fire "ISO19005-2:6.2.4.2-2".
+            new OracleFixture("pdfa2b-overprint-opm-in-form",
+                OverprintFormSelfViolation(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // §6.2.4.2-2 FP-SAFETY: same drawn Form XObject with ICCBased CMYK + /op true, but
+            // /OPM 0 (not 1). OPM 0 is always compliant — veraPDF accepts (isCompliant=true,
+            // failedRules=0). In-process: OverprintRule must NOT fire.
+            new OracleFixture("pdfa2b-overprint-opm0-in-form",
+                OverprintFormSelfOpm0(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // §6.2.4.2-2 FP-SAFETY (null /Resources): a drawn Form XObject that omits its own
+            // /Resources dictionary. The rule must skip it (cannot resolve colour-space or gs names)
+            // and must not crash or emit a spurious finding. The form content selects a hypothetical
+            // /CS0 cs and /GS1 gs but those names resolve to nothing (the page's /Resources does NOT
+            // define /CS0 or /GS1 in this fixture — only /XObject /Fm0 is added). In-process:
+            // OverprintRule must NOT fire (no 6.2.4.2-2 finding). §6.2.2-2 does NOT fire either:
+            // veraPDF's inheritedResourceNames model only flags names that ARE defined in the page's
+            // ancestor resource scope; /CS0 and /GS1 are undefined in the page's /Resources here, so
+            // they are not "inherited" — veraPDF accepts (isCompliant=true, confirmed 2026-06-23,
+            // re-confirmed when Batch N5 established the precise inheritedResourceNames semantics).
+            new OracleFixture("pdfa2b-overprint-form-no-resources",
+                OverprintFormNoResources(),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
 
             // ── PDF/UA-1 Batch A2 fixtures ──────────────────────────────────────────────────────────
@@ -1189,6 +1486,107 @@ public static class OracleCorpus
             new OracleFixture("pdfua1-untagged-real-content",
                 Ua1UntaggedRealContent(),
                 Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // ── Batch N4 — §6.2.4.4-2 Separation consistency in non-page content streams ────────────
+            // Extends the Separation consistency check to drawn Form XObjects, all CharProcs of
+            // Tf-selected Type 3 fonts, and annotation /AP /N appearance streams via
+            // GetReachableContentStreams. Empirical veraPDF 1.30.2 probes (2026-06-23):
+            //   N4-A (page Spot1→DeviceRGB, drawn form Spot1→DeviceGray): veraPDF FIRES 6.2.4.4-2 ✓
+            //   N4-B (page Spot1→DeviceRGB, drawn form Spot1→DeviceRGB same tint): veraPDF PASSES ✓
+            //   N4-C (page Spot1→DeviceRGB, undrawn form Spot1→DeviceGray): veraPDF PASSES ✓
+
+            // §6.2.4.4-2 VIOLATION: page uses Separation /Spot1 with DeviceRGB alternate and a
+            // specific tint function; a drawn Form XObject also uses /Spot1 but with a DIFFERENT
+            // alternate space (DeviceGray) and a single-component tint function. The alternateSpace
+            // mismatch is the positively established difference.
+            // veraPDF fires clause 6.2.4.4 testNumber 2 (confirmed 2026-06-23).
+            // In-process: SeparationConsistencyRule must fire "ISO19005-2:6.2.4.4-2".
+            new OracleFixture("pdfa2b-sep-form-inconsistent",
+                SepFormXObjectInconsistent(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // §6.2.4.4-2 FP-SAFETY: page and drawn Form XObject both use /Spot1 with the SAME
+            // DeviceRGB alternate space and structurally-identical tint functions. No inconsistency —
+            // veraPDF accepts (confirmed 2026-06-23). In-process must NOT fire.
+            new OracleFixture("pdfa2b-sep-form-consistent",
+                SepFormXObjectConsistent(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // ── Batch N5 — §6.2.2-2 non-page stream coverage ───────────────────────────────────────
+            // Extends the inherited-resource check to drawn Form XObjects, Type 3 CharProcs, and
+            // annotation /AP /N appearance streams via GetReachableContentStreams. The per-stream
+            // check fires when the stream's own /Resources is absent (null) AND it uses ≥1 named
+            // resource. Empirical veraPDF 1.30.2 probes (2026-06-23):
+            //   N5-A (form NO /Resources, uses /GS1 gs; page HAS /Resources): veraPDF FIRES 6.2.2-2 ✓
+            //     context: root/.../xObject[0]/contentStream[0](N 0 obj PDContentStream)
+            //   N5-B (form HAS /Resources defining /GS1, uses /GS1 gs): veraPDF PASSES ✓
+            //   N5-C (form NO /Resources, no named resource usage — q Q only): veraPDF PASSES ✓
+
+            // §6.2.2-2 VIOLATION: a drawn Form XObject with NO own /Resources that uses the named
+            // ExtGState /GS1 via the gs operator. Even though the page has its own /Resources with
+            // /GS1 defined, the FORM stream must have its own /Resources associating the name.
+            // veraPDF fires clause 6.2.2 testNumber 2 on the form's content stream (confirmed
+            // empirically against veraPDF 1.30.2, probe N5-A, 2026-06-23).
+            // In-process: InheritedResourceRule must fire "ISO19005-2:6.2.2-2".
+            new OracleFixture("pdfa2b-inherited-resource-form-no-resources-uses-gs",
+                InheritedResourceFormNoResourcesUsesGs(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // §6.2.2-2 FP-SAFETY: same drawn Form XObject structure but the form HAS its own
+            // /Resources defining /GS1. The form is self-contained — the rule must NOT fire.
+            // veraPDF accepts (confirmed empirically, probe N5-B, 2026-06-23).
+            // In-process: InheritedResourceRule must NOT fire.
+            new OracleFixture("pdfa2b-inherited-resource-form-with-resources-uses-gs",
+                InheritedResourceFormWithResourcesUsesGs(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // §6.2.2-2 FP-SAFETY: a drawn Form XObject with NO own /Resources that uses ONLY
+            // operators that do not reference named resources (q Q). No named resource usage means
+            // no §6.2.2-2 finding regardless of the missing /Resources. veraPDF accepts (confirmed
+            // empirically, probe N5-C, 2026-06-23). In-process must NOT fire.
+            new OracleFixture("pdfa2b-inherited-resource-form-no-resources-no-usage",
+                InheritedResourceFormNoResourcesNoUsage(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // ── Batch N6 — §6.2.2-2 page-level undefined-name + nested-form probes ───────────────
+            // Empirical veraPDF 1.30.2 probes (2026-06-23):
+            //   Probe A1: page no own /Resources, no ancestor /Resources either, uses /GS0 gs
+            //             (UNDEFINED in all scopes). veraPDF PASSES — undefined name is not an
+            //             "inheritedResourceName". In-process must NOT fire (was a latent FP before fix).
+            //   Probe A2: canonical violation — page no own /Resources, ancestor /Pages HAS /GS0,
+            //             uses /GS0 gs. veraPDF FIRES 6.2.2-2. Existing tests cover this case.
+            //   Probe B1: page draws OUTER form (own /Resources, NO /GS1), OUTER draws INNER form
+            //             (NO /Resources, uses /GS1 gs); /GS1 IS in PAGE scope. veraPDF FIRES
+            //             6.2.2-2 on inner form. In-process must fire.
+            //   Probe B2: same nested structure but /GS1 in OUTER form's /Resources (not page).
+            //             veraPDF PASSES — /GS1 not in page scope → not an inherited resource name
+            //             for the INNER form. In-process does NOT fire (checks page scope only).
+
+            // §6.2.2-2 FP-SAFETY (probe A1): page has NO own /Resources AND NO ancestor /Resources
+            // at all; page content uses /GS0 gs (name undefined in ALL ancestor scopes). veraPDF
+            // accepts because the name is not an "inheritedResourceName" (confirmed empirically,
+            // probe A1, 2026-06-23). In-process: InheritedResourceRule must NOT fire.
+            new OracleFixture("pdfa2b-page-no-resources-undefined-name",
+                PageNoResourcesUndefinedName(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // §6.2.2-2 VIOLATION (probe B1): page draws OUTER form that has its own /Resources
+            // (but NOT /GS1). OUTER form draws INNER form that has NO /Resources and uses /GS1 gs.
+            // /GS1 IS defined in the PAGE's /Resources /ExtGState. veraPDF fires 6.2.2-2 on the
+            // INNER form's content stream (confirmed empirically, probe B1, 2026-06-23).
+            // In-process: InheritedResourceRule must fire "ISO19005-2:6.2.2-2".
+            new OracleFixture("pdfa2b-nested-form-inner-no-resources-page-defined",
+                NestedFormInnerNoResourcesPageDefined(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // §6.2.2-2 FP-SAFETY (probe B2): same nested structure but /GS1 is defined ONLY in the
+            // OUTER form's /Resources, NOT in the page's /Resources. The INNER form (no /Resources,
+            // uses /GS1 gs) would inherit from the outer form scope, not the page scope. veraPDF
+            // accepts (confirmed empirically, probe B2, 2026-06-23). In-process must NOT fire
+            // (page-scope check → /GS1 not found on page → no finding).
+            new OracleFixture("pdfa2b-nested-form-inner-no-resources-outer-defined",
+                NestedFormInnerNoResourcesOuterDefined(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
         ];
     }
 
@@ -1740,6 +2138,208 @@ public static class OracleCorpus
         + "</rdf:li></rdf:Seq></pdfaType:field></rdf:li></rdf:Seq></pdfaSchema:valueType>"
         + "</rdf:li></rdf:Bag></pdfaExtension:schemas></rdf:Description>");
 
+    // ── Batch C1 (2026-06-23): container-type + prefix probe helpers ─────────────────────────────
+
+    // Shared namespace declarations re-used across the Batch C1 helpers.
+    private const string ExtNs =
+        "xmlns:pdfaExtension=\"http://www.aiim.org/pdfa/ns/extension/\" " +
+        "xmlns:pdfaSchema=\"http://www.aiim.org/pdfa/ns/schema#\" " +
+        "xmlns:pdfaProperty=\"http://www.aiim.org/pdfa/ns/property#\"";
+
+    private const string ExtNsType =
+        ExtNs + " xmlns:pdfaType=\"http://www.aiim.org/pdfa/ns/type#\" " +
+        "xmlns:pdfaField=\"http://www.aiim.org/pdfa/ns/field#\"";
+
+    // §6.6.2.3.3-1 violation: pdfaExtension:schemas is rdf:Seq instead of rdf:Bag.
+    // veraPDF probe-confirmed 2026-06-23: fires testNumber=1.
+    private static string SchemasSeqXmp2b() => RdfPacket(
+        $"<rdf:Description rdf:about=\"\" {ExtNs}>" +
+        "<pdfaExtension:schemas><rdf:Seq><rdf:li rdf:parseType=\"Resource\">" +
+        "<pdfaSchema:schema>S</pdfaSchema:schema>" +
+        "<pdfaSchema:namespaceURI>http://example.com/ns/</pdfaSchema:namespaceURI>" +
+        "<pdfaSchema:prefix>ex</pdfaSchema:prefix>" +
+        "<pdfaSchema:property><rdf:Seq><rdf:li rdf:parseType=\"Resource\">" +
+        ValidPropertyFields + "</rdf:li></rdf:Seq></pdfaSchema:property>" +
+        "</rdf:li></rdf:Seq></pdfaExtension:schemas></rdf:Description>");
+
+    // §6.6.2.3.3-1 violation: pdfaExtension namespace bound to prefix "ext" (wrong prefix).
+    // veraPDF probe-confirmed 2026-06-23: fires testNumber=1.
+    private static string SchemasWrongExtPrefixXmp2b() => RdfPacket(
+        "<rdf:Description rdf:about=\"\" " +
+        "xmlns:ext=\"http://www.aiim.org/pdfa/ns/extension/\" " +
+        "xmlns:pdfaSchema=\"http://www.aiim.org/pdfa/ns/schema#\" " +
+        "xmlns:pdfaProperty=\"http://www.aiim.org/pdfa/ns/property#\">" +
+        "<ext:schemas><rdf:Bag><rdf:li rdf:parseType=\"Resource\">" +
+        "<pdfaSchema:schema>S</pdfaSchema:schema>" +
+        "<pdfaSchema:namespaceURI>http://example.com/ns/</pdfaSchema:namespaceURI>" +
+        "<pdfaSchema:prefix>ex</pdfaSchema:prefix>" +
+        "<pdfaSchema:property><rdf:Seq><rdf:li rdf:parseType=\"Resource\">" +
+        ValidPropertyFields + "</rdf:li></rdf:Seq></pdfaSchema:property>" +
+        "</rdf:li></rdf:Bag></ext:schemas></rdf:Description>");
+
+    // §6.6.2.3.3-5 violation: pdfaSchema:property container is rdf:Bag instead of rdf:Seq.
+    // veraPDF probe-confirmed 2026-06-23: fires testNumber=5.
+    private static string PropertyBagXmp2b() => RdfPacket(
+        $"<rdf:Description rdf:about=\"\" {ExtNs}>" +
+        "<pdfaExtension:schemas><rdf:Bag><rdf:li rdf:parseType=\"Resource\">" +
+        "<pdfaSchema:schema>S</pdfaSchema:schema>" +
+        "<pdfaSchema:namespaceURI>http://example.com/ns/</pdfaSchema:namespaceURI>" +
+        "<pdfaSchema:prefix>ex</pdfaSchema:prefix>" +
+        "<pdfaSchema:property><rdf:Bag><rdf:li rdf:parseType=\"Resource\">" +
+        ValidPropertyFields + "</rdf:li></rdf:Bag></pdfaSchema:property>" +
+        "</rdf:li></rdf:Bag></pdfaExtension:schemas></rdf:Description>");
+
+    // §6.6.2.3.3-6 violation: pdfaSchema:valueType container is rdf:Bag instead of rdf:Seq.
+    // veraPDF probe-confirmed 2026-06-23: fires testNumber=6.
+    private static string ValueTypeContainerBagXmp2b() => RdfPacket(
+        $"<rdf:Description rdf:about=\"\" {ExtNsType}>" +
+        "<pdfaExtension:schemas><rdf:Bag><rdf:li rdf:parseType=\"Resource\">" +
+        "<pdfaSchema:schema>S</pdfaSchema:schema>" +
+        "<pdfaSchema:namespaceURI>http://example.com/ns/</pdfaSchema:namespaceURI>" +
+        "<pdfaSchema:prefix>ex</pdfaSchema:prefix>" +
+        "<pdfaSchema:property><rdf:Seq><rdf:li rdf:parseType=\"Resource\">" +
+        ValidPropertyFields + "</rdf:li></rdf:Seq></pdfaSchema:property>" +
+        "<pdfaSchema:valueType><rdf:Bag><rdf:li rdf:parseType=\"Resource\">" +
+        "<pdfaType:type>MyType</pdfaType:type>" +
+        "<pdfaType:namespaceURI>http://example.com/t/</pdfaType:namespaceURI>" +
+        "<pdfaType:prefix>mt</pdfaType:prefix><pdfaType:description>d</pdfaType:description>" +
+        "<pdfaType:field><rdf:Seq><rdf:li rdf:parseType=\"Resource\">" +
+        "<pdfaField:name>f</pdfaField:name><pdfaField:valueType>Text</pdfaField:valueType>" +
+        "<pdfaField:description>d</pdfaField:description>" +
+        "</rdf:li></rdf:Seq></pdfaType:field>" +
+        "</rdf:li></rdf:Bag></pdfaSchema:valueType>" +
+        "</rdf:li></rdf:Bag></pdfaExtension:schemas></rdf:Description>");
+
+    // §6.6.2.3.3-15 violation: pdfaType:field container is rdf:Bag instead of rdf:Seq.
+    // veraPDF probe-confirmed 2026-06-23: fires testNumber=15.
+    private static string FieldContainerBagXmp2b() => RdfPacket(
+        $"<rdf:Description rdf:about=\"\" {ExtNsType}>" +
+        "<pdfaExtension:schemas><rdf:Bag><rdf:li rdf:parseType=\"Resource\">" +
+        "<pdfaSchema:schema>S</pdfaSchema:schema>" +
+        "<pdfaSchema:namespaceURI>http://example.com/ns/</pdfaSchema:namespaceURI>" +
+        "<pdfaSchema:prefix>ex</pdfaSchema:prefix>" +
+        "<pdfaSchema:property><rdf:Seq><rdf:li rdf:parseType=\"Resource\">" +
+        ValidPropertyFields + "</rdf:li></rdf:Seq></pdfaSchema:property>" +
+        "<pdfaSchema:valueType><rdf:Seq><rdf:li rdf:parseType=\"Resource\">" +
+        "<pdfaType:type>MyType</pdfaType:type>" +
+        "<pdfaType:namespaceURI>http://example.com/t/</pdfaType:namespaceURI>" +
+        "<pdfaType:prefix>mt</pdfaType:prefix><pdfaType:description>d</pdfaType:description>" +
+        "<pdfaType:field><rdf:Bag><rdf:li rdf:parseType=\"Resource\">" +
+        "<pdfaField:name>f</pdfaField:name><pdfaField:valueType>Text</pdfaField:valueType>" +
+        "<pdfaField:description>d</pdfaField:description>" +
+        "</rdf:li></rdf:Bag></pdfaType:field>" +
+        "</rdf:li></rdf:Seq></pdfaSchema:valueType>" +
+        "</rdf:li></rdf:Bag></pdfaExtension:schemas></rdf:Description>");
+
+    // §6.6.2.3.3-8 violation: pdfaProperty namespace bound to wrong prefix "prop".
+    // veraPDF probe-confirmed 2026-06-23: fires testNumber=8 (and also -7/-9/-10 for other
+    // pdfaProperty fields). Only the valueType prefix is checked by Clause_8; presence of
+    // other fields still covered by RequireField / property-category checks.
+    private static string PropertyValueTypeWrongPrefixXmp2b() => RdfPacket(
+        $"<rdf:Description rdf:about=\"\" " +
+        "xmlns:pdfaExtension=\"http://www.aiim.org/pdfa/ns/extension/\" " +
+        "xmlns:pdfaSchema=\"http://www.aiim.org/pdfa/ns/schema#\" " +
+        "xmlns:prop=\"http://www.aiim.org/pdfa/ns/property#\">" +
+        "<pdfaExtension:schemas><rdf:Bag><rdf:li rdf:parseType=\"Resource\">" +
+        "<pdfaSchema:schema>S</pdfaSchema:schema>" +
+        "<pdfaSchema:namespaceURI>http://example.com/ns/</pdfaSchema:namespaceURI>" +
+        "<pdfaSchema:prefix>ex</pdfaSchema:prefix>" +
+        "<pdfaSchema:property><rdf:Seq><rdf:li rdf:parseType=\"Resource\">" +
+        "<prop:name>foo</prop:name><prop:valueType>Text</prop:valueType>" +
+        "<prop:category>external</prop:category><prop:description>d</prop:description>" +
+        "</rdf:li></rdf:Seq></pdfaSchema:property>" +
+        "</rdf:li></rdf:Bag></pdfaExtension:schemas></rdf:Description>");
+
+    // §6.6.2.3.3-17 violation: pdfaField namespace bound to wrong prefix "fld".
+    // veraPDF probe-confirmed 2026-06-23: fires testNumber=17 (and also -16/-18).
+    private static string FieldValueTypeWrongPrefixXmp2b() => RdfPacket(
+        "<rdf:Description rdf:about=\"\" " +
+        "xmlns:pdfaExtension=\"http://www.aiim.org/pdfa/ns/extension/\" " +
+        "xmlns:pdfaSchema=\"http://www.aiim.org/pdfa/ns/schema#\" " +
+        "xmlns:pdfaProperty=\"http://www.aiim.org/pdfa/ns/property#\" " +
+        "xmlns:pdfaType=\"http://www.aiim.org/pdfa/ns/type#\" " +
+        "xmlns:fld=\"http://www.aiim.org/pdfa/ns/field#\">" +
+        "<pdfaExtension:schemas><rdf:Bag><rdf:li rdf:parseType=\"Resource\">" +
+        "<pdfaSchema:schema>S</pdfaSchema:schema>" +
+        "<pdfaSchema:namespaceURI>http://example.com/ns/</pdfaSchema:namespaceURI>" +
+        "<pdfaSchema:prefix>ex</pdfaSchema:prefix>" +
+        "<pdfaSchema:property><rdf:Seq><rdf:li rdf:parseType=\"Resource\">" +
+        ValidPropertyFields + "</rdf:li></rdf:Seq></pdfaSchema:property>" +
+        "<pdfaSchema:valueType><rdf:Seq><rdf:li rdf:parseType=\"Resource\">" +
+        "<pdfaType:type>MyType</pdfaType:type>" +
+        "<pdfaType:namespaceURI>http://example.com/t/</pdfaType:namespaceURI>" +
+        "<pdfaType:prefix>mt</pdfaType:prefix><pdfaType:description>d</pdfaType:description>" +
+        "<pdfaType:field><rdf:Seq><rdf:li rdf:parseType=\"Resource\">" +
+        "<fld:name>f</fld:name><fld:valueType>Text</fld:valueType><fld:description>d</fld:description>" +
+        "</rdf:li></rdf:Seq></pdfaType:field>" +
+        "</rdf:li></rdf:Seq></pdfaSchema:valueType>" +
+        "</rdf:li></rdf:Bag></pdfaExtension:schemas></rdf:Description>");
+
+    // FP-safety guard (§6.6.2.3.3-5): a schema with pdfaSchema:property using canonical prefix
+    // and a correct rdf:Seq. veraPDF accepts this; the in-process rule must not fire -5.
+    // The null-prefix leniency for -5 (HasNullOrCanonicalPrefix returns true for null prefix)
+    // is implemented at the code level; the common serialisation uses the canonical prefix here.
+    private static string PropertyNullPrefixValidXmp2b() => RdfPacket(
+        "<rdf:Description rdf:about=\"\" " +
+        "xmlns:pdfaExtension=\"http://www.aiim.org/pdfa/ns/extension/\" " +
+        "xmlns:pdfaSchema=\"http://www.aiim.org/pdfa/ns/schema#\" " +
+        "xmlns:pdfaProperty=\"http://www.aiim.org/pdfa/ns/property#\">" +
+        "<pdfaExtension:schemas><rdf:Bag><rdf:li rdf:parseType=\"Resource\">" +
+        "<pdfaSchema:schema>S</pdfaSchema:schema>" +
+        "<pdfaSchema:namespaceURI>http://example.com/ns/</pdfaSchema:namespaceURI>" +
+        "<pdfaSchema:prefix>ex</pdfaSchema:prefix>" +
+        "<pdfaSchema:property><rdf:Seq><rdf:li rdf:parseType=\"Resource\">" +
+        ValidPropertyFields + "</rdf:li></rdf:Seq></pdfaSchema:property>" +
+        "</rdf:li></rdf:Bag></pdfaExtension:schemas></rdf:Description>");
+
+    // FP-safety guard (§6.6.2.3.3-15): a valueType schema with pdfaType:field using canonical
+    // prefix and a correct rdf:Seq. veraPDF accepts this; the in-process rule must not fire -15.
+    private static string FieldNullPrefixValidXmp2b() => RdfPacket(
+        "<rdf:Description rdf:about=\"\" " +
+        "xmlns:pdfaExtension=\"http://www.aiim.org/pdfa/ns/extension/\" " +
+        "xmlns:pdfaSchema=\"http://www.aiim.org/pdfa/ns/schema#\" " +
+        "xmlns:pdfaProperty=\"http://www.aiim.org/pdfa/ns/property#\" " +
+        "xmlns:pdfaType=\"http://www.aiim.org/pdfa/ns/type#\" " +
+        "xmlns:pdfaField=\"http://www.aiim.org/pdfa/ns/field#\">" +
+        "<pdfaExtension:schemas><rdf:Bag><rdf:li rdf:parseType=\"Resource\">" +
+        "<pdfaSchema:schema>S</pdfaSchema:schema>" +
+        "<pdfaSchema:namespaceURI>http://example.com/ns/</pdfaSchema:namespaceURI>" +
+        "<pdfaSchema:prefix>ex</pdfaSchema:prefix>" +
+        "<pdfaSchema:property><rdf:Seq><rdf:li rdf:parseType=\"Resource\">" +
+        ValidPropertyFields + "</rdf:li></rdf:Seq></pdfaSchema:property>" +
+        "<pdfaSchema:valueType><rdf:Seq><rdf:li rdf:parseType=\"Resource\">" +
+        "<pdfaType:type>MyType</pdfaType:type>" +
+        "<pdfaType:namespaceURI>http://example.com/t/</pdfaType:namespaceURI>" +
+        "<pdfaType:prefix>mt</pdfaType:prefix><pdfaType:description>d</pdfaType:description>" +
+        "<pdfaType:field><rdf:Seq><rdf:li rdf:parseType=\"Resource\">" +
+        "<pdfaField:name>f</pdfaField:name><pdfaField:valueType>Text</pdfaField:valueType>" +
+        "<pdfaField:description>d</pdfaField:description>" +
+        "</rdf:li></rdf:Seq></pdfaType:field>" +
+        "</rdf:li></rdf:Seq></pdfaSchema:valueType>" +
+        "</rdf:li></rdf:Bag></pdfaExtension:schemas></rdf:Description>");
+
+    // FP-safety guard: a fully valid extension schema including a custom valueType with a field,
+    // all using canonical Bag/Seq containers and the correct namespace prefixes.
+    // Both veraPDF and the in-process rule must accept this without any findings.
+    private static string FullValidExtensionXmp2b() => RdfPacket(
+        $"<rdf:Description rdf:about=\"\" {ExtNsType}>" +
+        "<pdfaExtension:schemas><rdf:Bag><rdf:li rdf:parseType=\"Resource\">" +
+        "<pdfaSchema:schema>S</pdfaSchema:schema>" +
+        "<pdfaSchema:namespaceURI>http://example.com/ns/</pdfaSchema:namespaceURI>" +
+        "<pdfaSchema:prefix>ex</pdfaSchema:prefix>" +
+        "<pdfaSchema:property><rdf:Seq><rdf:li rdf:parseType=\"Resource\">" +
+        ValidPropertyFields + "</rdf:li></rdf:Seq></pdfaSchema:property>" +
+        "<pdfaSchema:valueType><rdf:Seq><rdf:li rdf:parseType=\"Resource\">" +
+        "<pdfaType:type>MyType</pdfaType:type>" +
+        "<pdfaType:namespaceURI>http://example.com/t/</pdfaType:namespaceURI>" +
+        "<pdfaType:prefix>mt</pdfaType:prefix><pdfaType:description>d</pdfaType:description>" +
+        "<pdfaType:field><rdf:Seq><rdf:li rdf:parseType=\"Resource\">" +
+        "<pdfaField:name>f</pdfaField:name><pdfaField:valueType>Text</pdfaField:valueType>" +
+        "<pdfaField:description>d</pdfaField:description>" +
+        "</rdf:li></rdf:Seq></pdfaType:field>" +
+        "</rdf:li></rdf:Seq></pdfaSchema:valueType>" +
+        "</rdf:li></rdf:Bag></pdfaExtension:schemas></rdf:Description>");
+
     private static string RdfPacket(string extra) =>
         "<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>"
         + "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF "
@@ -2177,6 +2777,191 @@ public static class OracleCorpus
             .Set(new PdfName("S"), new PdfName("GTS_PDFA1"));
         catalog.Set(new PdfName("OutputIntents"), new PdfArray([brokenOi]));
         return reader.AppendRevision([(rootRef.ObjectNumber, catalog)]);
+    }
+
+    // ── §6.2.4.3 Default* colour space fixture helpers (2026-06-23) ────────────────────────────────
+    // Encodes which device colour type is used in the content stream or supplied by the Default*/intent.
+    private enum DeviceColourKind { None, Rgb, Cmyk, Gray }
+
+    /// <summary>
+    /// Builds a hand-crafted PDF/A-2b document that paints <paramref name="paintedColour"/> via a
+    /// device colour operator, optionally carries a <c>/Default*</c> colour space for
+    /// <paramref name="defaultCsColour"/> in the page <c>/Resources/ColorSpace</c>, and optionally
+    /// includes a PDF/A output intent whose ICC profile has the colour space of
+    /// <paramref name="intentColour"/>.
+    /// <para>
+    /// Verified against veraPDF 1.30.2, 2026-06-23: see probe suite in /tmp/vellum_probes/
+    /// (probe1a–1c = Default* FP-safety; probe2a–2e = matching-strictness).
+    /// </para>
+    /// </summary>
+    private static byte[] Pdfa2bDeviceColourWithDefaultCs(
+        DeviceColourKind paintedColour,
+        DeviceColourKind defaultCsColour,
+        bool hasOutputIntent,
+        DeviceColourKind intentColour = DeviceColourKind.None)
+    {
+        var xmp = Encoding.UTF8.GetBytes(
+            "<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>"
+            + "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">"
+            + "<rdf:Description rdf:about=\"\" xmlns:pdfaid=\"http://www.aiim.org/pdfa/ns/id/\">"
+            + "<pdfaid:part>2</pdfaid:part><pdfaid:conformance>B</pdfaid:conformance>"
+            + "</rdf:Description></rdf:RDF></x:xmpmeta><?xpacket end=\"w\"?>");
+
+        // Device colour paint operator for the page content.
+        var contentStr = paintedColour switch
+        {
+            DeviceColourKind.Rgb => "0.5 0 0 rg 100 100 50 50 re f",
+            DeviceColourKind.Cmyk => "0.1 0.2 0.3 0.4 k 100 100 50 50 re f",
+            DeviceColourKind.Gray => "0.5 g 100 100 50 50 re f",
+            _ => "q Q",
+        };
+        var content = Encoding.Latin1.GetBytes(contentStr);
+
+        // Build a minimal ICC header: 128 bytes with 'acsp' at offset 36 and colour-space tag at 16.
+        // Derived from ISO 15076-1:2010 §7.2 — only the header fields required for veraPDF checks.
+        static byte[] MakeIcc(DeviceColourKind cs)
+        {
+            var h = new byte[128];
+            // Profile size (big-endian u32)
+            h[0] = 0; h[1] = 0; h[2] = 0; h[3] = 128;
+            // Profile version 4.0.0
+            h[8] = 0x04;
+            // Device class: prtr (output device)
+            h[12] = (byte)'p'; h[13] = (byte)'r'; h[14] = (byte)'t'; h[15] = (byte)'r';
+            // Data colour space at offset 16
+            switch (cs)
+            {
+                case DeviceColourKind.Rgb:
+                    h[16] = (byte)'R'; h[17] = (byte)'G'; h[18] = (byte)'B'; h[19] = (byte)' '; break;
+                case DeviceColourKind.Cmyk:
+                    h[16] = (byte)'C'; h[17] = (byte)'M'; h[18] = (byte)'Y'; h[19] = (byte)'K'; break;
+                case DeviceColourKind.Gray:
+                    h[16] = (byte)'G'; h[17] = (byte)'R'; h[18] = (byte)'A'; h[19] = (byte)'Y'; break;
+            }
+            // PCS: XYZ
+            h[20] = (byte)'X'; h[21] = (byte)'Y'; h[22] = (byte)'Z'; h[23] = (byte)' ';
+            // ICC signature 'acsp' at offset 36
+            h[36] = (byte)'a'; h[37] = (byte)'c'; h[38] = (byte)'s'; h[39] = (byte)'p';
+            return h;
+        }
+
+        // /ColorSpace dict entry and value for a Default* colour space.
+        // DefaultRGB: CalRGB (device-independent three-component). DefaultCMYK: ICCBased (N=4).
+        // DefaultGray: CalGray (device-independent single-component).
+        // ICCBased for DefaultCMYK requires a stream, so it uses an indirect reference to object 6.
+        static string DefaultCsResourceEntry(DeviceColourKind cs) => cs switch
+        {
+            DeviceColourKind.Rgb => "/DefaultRGB [/CalRGB << /Gamma [2.2 2.2 2.2] /Matrix [0.4124 0.2126 0.0193 0.3576 0.7152 0.1192 0.1805 0.0722 0.9505] /WhitePoint [0.9505 1.0 1.089] >>]",
+            DeviceColourKind.Cmyk => "/DefaultCMYK [/ICCBased 6 0 R]",
+            DeviceColourKind.Gray => "/DefaultGray [/CalGray << /WhitePoint [0.9505 1.0 1.089] >>]",
+            _ => string.Empty,
+        };
+
+        // Object layout (hand-built, veraPDF-parseable):
+        //   1=catalog, 2=pages, 3=page, 4=content, 5=metadata
+        //   6=icc-for-defaultcmyk (optional), 7=intent-icc (optional), 8=outputintent (optional)
+        // Not all objects are present in every configuration; we write a contiguous xref.
+        using var ms = new MemoryStream();
+        void W(string s) { var b = Encoding.Latin1.GetBytes(s); ms.Write(b, 0, b.Length); }
+        void WB(byte[] b) { ms.Write(b, 0, b.Length); }
+
+        ms.Write([0x25, 0x50, 0x44, 0x46, 0x2D, 0x31, 0x2E, 0x37, 0x0A]); // %PDF-1.7\n
+        ms.Write([0x25, 0xE2, 0xE3, 0xCF, 0xD3, 0x0A]);                    // binary comment
+
+        // Assign object numbers dynamically.
+        int obj = 1;
+        int catalogObj = obj++;  // 1
+        int pagesObj = obj++;  // 2
+        int pageObj = obj++;  // 3
+        int contentObj = obj++;  // 4
+        int metaObj = obj++;  // 5
+        int cmykDefaultIccObj = -1;
+        int intentIccObj = -1;
+        int outputIntentObj = -1;
+
+        // DefaultCMYK needs an embedded ICC stream (ICCBased requires a stream object).
+        if (defaultCsColour == DeviceColourKind.Cmyk)
+            cmykDefaultIccObj = obj++;
+
+        if (hasOutputIntent && intentColour != DeviceColourKind.None)
+        {
+            intentIccObj = obj++;
+            outputIntentObj = obj++;
+        }
+        else if (hasOutputIntent)
+        {
+            // Profile-less output intent — shouldn't normally reach here, but guard anyway.
+            outputIntentObj = obj++;
+        }
+
+        int maxObj = obj - 1;
+        var offsets = new int[maxObj + 1];
+
+        // /OutputIntents ref in catalog (only when we have one)
+        var catalogOiEntry = outputIntentObj > 0
+            ? $" /OutputIntents [{outputIntentObj} 0 R]"
+            : string.Empty;
+
+        offsets[catalogObj] = (int)ms.Position;
+        W($"{catalogObj} 0 obj\n<< /Type /Catalog /Pages {pagesObj} 0 R /Metadata {metaObj} 0 R{catalogOiEntry} >>\nendobj\n");
+
+        offsets[pagesObj] = (int)ms.Position;
+        W($"{pagesObj} 0 obj\n<< /Type /Pages /Kids [{pageObj} 0 R] /Count 1 >>\nendobj\n");
+
+        // Page resources: /ColorSpace dict with Default* when requested.
+        var csEntry = DefaultCsResourceEntry(defaultCsColour);
+        var resourcesEntry = csEntry.Length > 0
+            ? $" /Resources << /ColorSpace << {csEntry} >> >>"
+            : string.Empty;
+
+        offsets[pageObj] = (int)ms.Position;
+        W($"{pageObj} 0 obj\n<< /Type /Page /Parent {pagesObj} 0 R /MediaBox [0 0 612 792] /Contents {contentObj} 0 R{resourcesEntry} >>\nendobj\n");
+
+        offsets[contentObj] = (int)ms.Position;
+        W($"{contentObj} 0 obj\n<< /Length {content.Length} >>\nstream\n");
+        WB(content);
+        W("\nendstream\nendobj\n");
+
+        offsets[metaObj] = (int)ms.Position;
+        W($"{metaObj} 0 obj\n<< /Type /Metadata /Subtype /XML /Length {xmp.Length} >>\nstream\n");
+        WB(xmp);
+        W("\nendstream\nendobj\n");
+
+        if (cmykDefaultIccObj > 0)
+        {
+            var icc = MakeIcc(DeviceColourKind.Cmyk);
+            offsets[cmykDefaultIccObj] = (int)ms.Position;
+            W($"{cmykDefaultIccObj} 0 obj\n<< /Length {icc.Length} /N 4 >>\nstream\n");
+            WB(icc);
+            W("\nendstream\nendobj\n");
+        }
+
+        if (intentIccObj > 0)
+        {
+            var icc = MakeIcc(intentColour);
+            var n = intentColour == DeviceColourKind.Cmyk ? 4 : intentColour == DeviceColourKind.Gray ? 1 : 3;
+            offsets[intentIccObj] = (int)ms.Position;
+            W($"{intentIccObj} 0 obj\n<< /Length {icc.Length} /N {n} >>\nstream\n");
+            WB(icc);
+            W("\nendstream\nendobj\n");
+        }
+
+        if (outputIntentObj > 0)
+        {
+            offsets[outputIntentObj] = (int)ms.Position;
+            var destEntry = intentIccObj > 0 ? $" /DestOutputProfile {intentIccObj} 0 R" : string.Empty;
+            W($"{outputIntentObj} 0 obj\n<< /Type /OutputIntent /S /GTS_PDFA1 /OutputConditionIdentifier (Custom){destEntry} >>\nendobj\n");
+        }
+
+        var xrefOff = (int)ms.Position;
+        W($"xref\n0 {maxObj + 1}\n0000000000 65535 f \n");
+        for (var i = 1; i <= maxObj; i++)
+            W($"{offsets[i]:D10} 00000 n \n");
+        W($"trailer\n<< /Size {maxObj + 1} /Root {catalogObj} 0 R "
+          + "/ID [<CCAA00BB11DD22EE33FF44AA> <CCAA00BB11DD22EE33FF44AA>] >>\n");
+        W($"startxref\n{xrefOff}\n%%EOF\n");
+
+        return ms.ToArray();
     }
 
     private static (PdfIndirectReference Ref, PdfDictionary Dict) FirstPage(PdfDocumentReader reader)
@@ -3359,6 +4144,1344 @@ public static class OracleCorpus
         W($"startxref\n{xrefOffset}\n%%EOF\n");
         return ms.ToArray();
     }
+
+    // ── Batch N1 helpers — §6.2.2-1 non-page stream fixtures ──────────────────────────────────────
+    // These build hand-constructed PDF/A-2b documents (minimal but fully spec-compliant in structure)
+    // so veraPDF can parse them. Object layout:
+    //   1=catalog, 2=pages, 3=page, 4=page-content, 5=form-XObject/AP-stream, 6=metadata.
+    // (Annotation fixture adds 7=annotation dictionary.)
+    // Verified against veraPDF 1.30.2 on 2026-06-23 before committing.
+
+    private static byte[] MakeBatchN1Xmp() => Encoding.UTF8.GetBytes(
+        "<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>"
+        + "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">"
+        + "<rdf:Description rdf:about=\"\" xmlns:pdfaid=\"http://www.aiim.org/pdfa/ns/id/\">"
+        + "<pdfaid:part>2</pdfaid:part><pdfaid:conformance>B</pdfaid:conformance>"
+        + "</rdf:Description></rdf:RDF></x:xmpmeta><?xpacket end=\"w\"?>");
+
+    /// <summary>
+    /// Builds a PDF/A-2b document with a Form XObject whose content is <paramref name="formContent"/>
+    /// and the page content draws it via <c>/Fm0 Do</c>.
+    /// veraPDF confirms: clause 6.2.2 testNumber 1 fires when <paramref name="formContent"/> contains
+    /// an unknown operator, and is absent when it contains only ISO 32000-1 operators (2026-06-23).
+    /// </summary>
+    private static byte[] HandBuiltPdfWithDrawnFormXObject(string formContent)
+    {
+        var formBytes = Encoding.Latin1.GetBytes(formContent);
+        var pageContent = Encoding.Latin1.GetBytes("/Fm0 Do");
+
+        using var ms = new MemoryStream();
+        void W(string s) { var b = Encoding.Latin1.GetBytes(s); ms.Write(b, 0, b.Length); }
+
+        W("%PDF-1.7\n");
+        ms.Write([0x25, 0xE2, 0xE3, 0xCF, 0xD3, 0x0A]);
+
+        var off = new int[7];
+        off[1] = (int)ms.Position;
+        W("1 0 obj\n<< /Type /Catalog /Pages 2 0 R /Metadata 6 0 R >>\nendobj\n");
+        off[2] = (int)ms.Position;
+        W("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
+        off[3] = (int)ms.Position;
+        W("3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R"
+            + " /Resources << /XObject << /Fm0 5 0 R >> >> >>\nendobj\n");
+        off[4] = (int)ms.Position;
+        W($"4 0 obj\n<< /Length {pageContent.Length} >>\nstream\n");
+        ms.Write(pageContent);
+        W("\nendstream\nendobj\n");
+        off[5] = (int)ms.Position;
+        W($"5 0 obj\n<< /Type /XObject /Subtype /Form /BBox [0 0 100 100] /Length {formBytes.Length} >>\nstream\n");
+        ms.Write(formBytes);
+        W("\nendstream\nendobj\n");
+        off[6] = (int)ms.Position;
+        W($"6 0 obj\n<< /Type /Metadata /Subtype /XML /Length {MakeBatchN1Xmp().Length} >>\nstream\n");
+        ms.Write(MakeBatchN1Xmp());
+        W("\nendstream\nendobj\n");
+
+        var xrefOffset = (int)ms.Position;
+        W("xref\n0 7\n0000000000 65535 f \n");
+        for (var i = 1; i <= 6; i++) W($"{off[i]:D10} 00000 n \n");
+        W("trailer\n<< /Size 7 /Root 1 0 R /ID [<00112233> <00112233>] >>\n");
+        W($"startxref\n{xrefOffset}\n%%EOF\n");
+        return ms.ToArray();
+    }
+
+    /// <summary>
+    /// Builds a PDF/A-2b document with a Form XObject whose content is <paramref name="formContent"/>
+    /// that is <em>present</em> in <c>/Resources /XObject</c> but <em>never drawn</em> (no <c>Do</c>
+    /// operator in the page content). veraPDF confirms: clause 6.2.2 does NOT fire for undrawn Form
+    /// XObjects regardless of their content (2026-06-23). Guards the drawn-only policy.
+    /// </summary>
+    private static byte[] HandBuiltPdfWithUndrawnFormXObject(string formContent)
+    {
+        var formBytes = Encoding.Latin1.GetBytes(formContent);
+        var pageContent = Encoding.Latin1.GetBytes("q Q"); // no Do
+
+        using var ms = new MemoryStream();
+        void W(string s) { var b = Encoding.Latin1.GetBytes(s); ms.Write(b, 0, b.Length); }
+
+        W("%PDF-1.7\n");
+        ms.Write([0x25, 0xE2, 0xE3, 0xCF, 0xD3, 0x0A]);
+
+        var off = new int[7];
+        off[1] = (int)ms.Position;
+        W("1 0 obj\n<< /Type /Catalog /Pages 2 0 R /Metadata 6 0 R >>\nendobj\n");
+        off[2] = (int)ms.Position;
+        W("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
+        off[3] = (int)ms.Position;
+        W("3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R"
+            + " /Resources << /XObject << /Fm0 5 0 R >> >> >>\nendobj\n");
+        off[4] = (int)ms.Position;
+        W($"4 0 obj\n<< /Length {pageContent.Length} >>\nstream\n");
+        ms.Write(pageContent);
+        W("\nendstream\nendobj\n");
+        off[5] = (int)ms.Position;
+        W($"5 0 obj\n<< /Type /XObject /Subtype /Form /BBox [0 0 100 100] /Length {formBytes.Length} >>\nstream\n");
+        ms.Write(formBytes);
+        W("\nendstream\nendobj\n");
+        off[6] = (int)ms.Position;
+        W($"6 0 obj\n<< /Type /Metadata /Subtype /XML /Length {MakeBatchN1Xmp().Length} >>\nstream\n");
+        ms.Write(MakeBatchN1Xmp());
+        W("\nendstream\nendobj\n");
+
+        var xrefOffset = (int)ms.Position;
+        W("xref\n0 7\n0000000000 65535 f \n");
+        for (var i = 1; i <= 6; i++) W($"{off[i]:D10} 00000 n \n");
+        W("trailer\n<< /Size 7 /Root 1 0 R /ID [<00112233> <00112233>] >>\n");
+        W($"startxref\n{xrefOffset}\n%%EOF\n");
+        return ms.ToArray();
+    }
+
+    /// <summary>
+    /// Builds a PDF/A-2b document with a <c>/Text</c> annotation whose <c>/AP /N</c> appearance
+    /// stream contains <paramref name="apContent"/>. veraPDF confirms: clause 6.2.2 testNumber 1
+    /// fires when the appearance stream contains an unknown operator, and is absent for valid content —
+    /// regardless of annotation visibility flags (2026-06-23).
+    /// </summary>
+    private static byte[] HandBuiltPdfWithAnnotAppearance(string apContent)
+    {
+        var apBytes = Encoding.Latin1.GetBytes(apContent);
+        var pageContent = Encoding.Latin1.GetBytes("q Q");
+
+        using var ms = new MemoryStream();
+        void W(string s) { var b = Encoding.Latin1.GetBytes(s); ms.Write(b, 0, b.Length); }
+
+        W("%PDF-1.7\n");
+        ms.Write([0x25, 0xE2, 0xE3, 0xCF, 0xD3, 0x0A]);
+
+        var off = new int[8];
+        off[1] = (int)ms.Position;
+        W("1 0 obj\n<< /Type /Catalog /Pages 2 0 R /Metadata 6 0 R >>\nendobj\n");
+        off[2] = (int)ms.Position;
+        W("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
+        off[3] = (int)ms.Position;
+        W("3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R"
+            + " /Annots [7 0 R] >>\nendobj\n");
+        off[4] = (int)ms.Position;
+        W($"4 0 obj\n<< /Length {pageContent.Length} >>\nstream\n");
+        ms.Write(pageContent);
+        W("\nendstream\nendobj\n");
+        // Object 5: appearance stream (Form XObject)
+        off[5] = (int)ms.Position;
+        W($"5 0 obj\n<< /Type /XObject /Subtype /Form /BBox [0 0 100 100] /Length {apBytes.Length} >>\nstream\n");
+        ms.Write(apBytes);
+        W("\nendstream\nendobj\n");
+        off[6] = (int)ms.Position;
+        W($"6 0 obj\n<< /Type /Metadata /Subtype /XML /Length {MakeBatchN1Xmp().Length} >>\nstream\n");
+        ms.Write(MakeBatchN1Xmp());
+        W("\nendstream\nendobj\n");
+        // Object 7: annotation with /AP /N pointing to the appearance stream.
+        // /F 4 = Print flag (required by PDF/A §6.3.2 for annotations that have appearance streams).
+        // /Contents is required for non-markup annotation types that have an /AP.
+        off[7] = (int)ms.Position;
+        W("7 0 obj\n<< /Type /Annot /Subtype /Text /Rect [10 10 50 50] /F 4"
+            + " /Contents (note) /AP << /N 5 0 R >> >>\nendobj\n");
+
+        var xrefOffset = (int)ms.Position;
+        W("xref\n0 8\n0000000000 65535 f \n");
+        for (var i = 1; i <= 7; i++) W($"{off[i]:D10} 00000 n \n");
+        W("trailer\n<< /Size 8 /Root 1 0 R /ID [<00112233> <00112233>] >>\n");
+        W($"startxref\n{xrefOffset}\n%%EOF\n");
+        return ms.ToArray();
+    }
+
+    /// <summary>
+    /// Builds a PDF/A-2b document with a two-level nested Form XObject chain: the page draws
+    /// Form A via <c>/FmA Do</c>, and Form A draws Form B via <c>/FmB Do</c>. Form B's content
+    /// is <paramref name="innerContent"/>. Tests that <see cref="ContentStreamUsage.GetReachableContentStreams"/>
+    /// recurses through the full drawn-XObject chain.
+    /// veraPDF confirms: clause 6.2.2 testNumber 1 fires when Form B contains an unknown operator;
+    /// no finding when both forms contain only legal operators (confirmed empirically, 2026-06-23).
+    /// </summary>
+    private static byte[] HandBuiltPdfWithNestedFormXObject(string innerContent)
+    {
+        var xmpBytes = MakeBatchN1Xmp();
+        var innerBytes = Encoding.Latin1.GetBytes(innerContent);
+        var formABytes = Encoding.Latin1.GetBytes("/FmB Do");
+        var pageBytes = Encoding.Latin1.GetBytes("/FmA Do");
+
+        using var ms = new MemoryStream();
+        void W(string s) { var b = Encoding.Latin1.GetBytes(s); ms.Write(b, 0, b.Length); }
+
+        W("%PDF-1.7\n");
+        ms.Write([0x25, 0xE2, 0xE3, 0xCF, 0xD3, 0x0A]);
+
+        // 1=catalog, 2=pages, 3=page, 4=page-content, 5=metadata, 6=FormA, 7=FormB
+        var off = new int[8];
+        off[1] = (int)ms.Position;
+        W("1 0 obj\n<< /Type /Catalog /Pages 2 0 R /Metadata 5 0 R >>\nendobj\n");
+        off[2] = (int)ms.Position;
+        W("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
+        off[3] = (int)ms.Position;
+        // Page /Resources: only Form A listed; Form B is in Form A's own resources.
+        W("3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R"
+            + " /Resources << /XObject << /FmA 6 0 R >> >> >>\nendobj\n");
+        off[4] = (int)ms.Position;
+        W($"4 0 obj\n<< /Length {pageBytes.Length} >>\nstream\n");
+        ms.Write(pageBytes);
+        W("\nendstream\nendobj\n");
+        off[5] = (int)ms.Position;
+        W($"5 0 obj\n<< /Type /Metadata /Subtype /XML /Length {xmpBytes.Length} >>\nstream\n");
+        ms.Write(xmpBytes);
+        W("\nendstream\nendobj\n");
+        // Form A: draws Form B; has /Resources with /FmB → 7 0 R.
+        off[6] = (int)ms.Position;
+        W($"6 0 obj\n<< /Type /XObject /Subtype /Form /BBox [0 0 100 100]"
+            + " /Resources << /XObject << /FmB 7 0 R >> >>"
+            + $" /Length {formABytes.Length} >>\nstream\n");
+        ms.Write(formABytes);
+        W("\nendstream\nendobj\n");
+        // Form B: contains the inner content under test.
+        off[7] = (int)ms.Position;
+        W($"7 0 obj\n<< /Type /XObject /Subtype /Form /BBox [0 0 100 100]"
+            + $" /Length {innerBytes.Length} >>\nstream\n");
+        ms.Write(innerBytes);
+        W("\nendstream\nendobj\n");
+
+        var xrefOffset = (int)ms.Position;
+        W("xref\n0 8\n0000000000 65535 f \n");
+        for (var i = 1; i <= 7; i++) W($"{off[i]:D10} 00000 n \n");
+        W("trailer\n<< /Size 8 /Root 1 0 R /ID [<CC001122> <CC001122>] >>\n");
+        W($"startxref\n{xrefOffset}\n%%EOF\n");
+        return ms.ToArray();
+    }
+
+    /// <summary>
+    /// Builds a PDF/A-2b document with a Widget button annotation whose <c>/AP /N</c> is an
+    /// <em>indirect reference</em> to a sub-dictionary <c>&lt;&lt; /Off stream1 /On stream2 &gt;&gt;</c>.
+    /// The <c>/Off</c> state stream contains <paramref name="offContent"/>.
+    /// This is the FIX 1 exercise: the sub-dict is stored as object <c>8 0 R</c> and /N points
+    /// to it indirectly, so the old branch on <c>nObj is PdfIndirectReference</c> silently dropped
+    /// all state streams; the fixed branch on the <em>resolved type</em> correctly collects them.
+    /// veraPDF confirms: clause 6.2.2 testNumber 1 fires when <paramref name="offContent"/> contains
+    /// an unknown operator (both veraPDF and in-process agree, confirmed empirically 2026-06-23).
+    /// Note: this fixture also triggers 6.3.3-4 (Widget /N must be a direct stream for a field-less
+    /// Widget), so <c>ExpectedCompliant</c> is always false regardless of <paramref name="offContent"/>.
+    /// </summary>
+    private static byte[] HandBuiltPdfWithKeyedApSubDict(string offContent)
+    {
+        var xmpBytes = MakeBatchN1Xmp();
+        var offBytes = Encoding.Latin1.GetBytes(offContent);
+        var onBytes = Encoding.Latin1.GetBytes("q Q");
+        var pageBytes = Encoding.Latin1.GetBytes("q Q");
+
+        using var ms = new MemoryStream();
+        void W(string s) { var b = Encoding.Latin1.GetBytes(s); ms.Write(b, 0, b.Length); }
+
+        W("%PDF-1.7\n");
+        ms.Write([0x25, 0xE2, 0xE3, 0xCF, 0xD3, 0x0A]);
+
+        // 1=catalog, 2=pages, 3=page, 4=page-content, 5=metadata,
+        // 6=/Off AP stream, 7=/On AP stream, 8=sub-dict (indirect), 9=Widget annotation
+        var off = new int[10];
+        off[1] = (int)ms.Position;
+        W("1 0 obj\n<< /Type /Catalog /Pages 2 0 R /Metadata 5 0 R >>\nendobj\n");
+        off[2] = (int)ms.Position;
+        W("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
+        off[3] = (int)ms.Position;
+        W("3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R"
+            + " /Annots [9 0 R] >>\nendobj\n");
+        off[4] = (int)ms.Position;
+        W($"4 0 obj\n<< /Length {pageBytes.Length} >>\nstream\n");
+        ms.Write(pageBytes);
+        W("\nendstream\nendobj\n");
+        off[5] = (int)ms.Position;
+        W($"5 0 obj\n<< /Type /Metadata /Subtype /XML /Length {xmpBytes.Length} >>\nstream\n");
+        ms.Write(xmpBytes);
+        W("\nendstream\nendobj\n");
+        // Object 6: /Off state appearance stream (contains the content under test).
+        off[6] = (int)ms.Position;
+        W($"6 0 obj\n<< /Type /XObject /Subtype /Form /BBox [0 0 100 100] /Length {offBytes.Length} >>\nstream\n");
+        ms.Write(offBytes);
+        W("\nendstream\nendobj\n");
+        // Object 7: /On state appearance stream (always legal).
+        off[7] = (int)ms.Position;
+        W($"7 0 obj\n<< /Type /XObject /Subtype /Form /BBox [0 0 100 100] /Length {onBytes.Length} >>\nstream\n");
+        ms.Write(onBytes);
+        W("\nendstream\nendobj\n");
+        // Object 8: the keyed-state sub-dictionary stored as an indirect object.
+        // /AP /N = 8 0 R means /N is an indirect reference to a PdfDictionary, exercising FIX 1.
+        off[8] = (int)ms.Position;
+        W("8 0 obj\n<< /Off 6 0 R /On 7 0 R >>\nendobj\n");
+        // Object 9: Widget annotation — /AP /N points to the sub-dict INDIRECTLY.
+        off[9] = (int)ms.Position;
+        W("9 0 obj\n<< /Type /Annot /Subtype /Widget /Rect [10 10 50 50] /F 4"
+            + " /AP << /N 8 0 R >> >>\nendobj\n");
+
+        var xrefOffset = (int)ms.Position;
+        W("xref\n0 10\n0000000000 65535 f \n");
+        for (var i = 1; i <= 9; i++) W($"{off[i]:D10} 00000 n \n");
+        W("trailer\n<< /Size 10 /Root 1 0 R /ID [<CC007788> <CC007788>] >>\n");
+        W($"startxref\n{xrefOffset}\n%%EOF\n");
+        return ms.ToArray();
+    }
+
+    // ── End of Batch N1 helpers ─────────────────────────────────────────────────────────────────────
+
+    // ── Batch N2 helpers — §6.1.10-1 non-page inline-image filter fixtures ────────────────────────
+    // All fixtures use the writer-produced PDF/A-2b baseline (via WriterPdf / AppendRevision), which
+    // already carries a valid sRGB output intent. This avoids spurious §6.2.4.3-4 failures from the
+    // DeviceGray colour space that an inline image's /CS /G would trigger in a hand-built PDF without
+    // an output intent. Verified against veraPDF 1.30.2 on 2026-06-23.
+    //
+    // Inline image colour space: /CS /G (DeviceGray abbreviated). The writer baseline's sRGB
+    // OutputIntent satisfies §6.2.4.3-4 for DeviceGray (empirically confirmed — the sRGB intent
+    // is accepted as the device-independent DefaultGray stand-in by veraPDF when /CS /G is used).
+    //
+    // Content-stream bytes for a 1×1 greyscale inline image with /F /LZWDecode (forbidden).
+    // BI introduces the inline-image dict; /F /LZWDecode names the filter; ID ends the dict;
+    // one raw data byte (0x80) follows; EI ends the inline image. The LZW data is not decoded
+    // by veraPDF for the §6.1.10-1 filter-name check — the forbidden name alone triggers the rule.
+    // veraPDF clause 6.1.10 testNumber 1: confirmed to fire (2026-06-23).
+    private static byte[] InlineImageBadFilterBytes()
+    {
+        // "BI /W 1 /H 1 /CS /G /BPC 8 /F /LZWDecode ID " + 0x80 + "\nEI\n"
+        var prefix = Encoding.Latin1.GetBytes("BI /W 1 /H 1 /CS /G /BPC 8 /F /LZWDecode ID ");
+        var suffix = Encoding.Latin1.GetBytes("\nEI\n");
+        var result = new byte[prefix.Length + 1 + suffix.Length];
+        prefix.CopyTo(result, 0);
+        result[prefix.Length] = 0x80; // one raw data byte
+        suffix.CopyTo(result, prefix.Length + 1);
+        return result;
+    }
+
+    // Content-stream bytes for a 1×1 greyscale inline image with /F /AHx (ASCIIHexDecode, permitted).
+    // The AHx data is the hex encoding of one greyscale byte (0x00 = "00" + ">" terminator).
+    // veraPDF clause 6.1.10 testNumber 1: confirmed NOT to fire (2026-06-23).
+    private static byte[] InlineImagePermittedFilterBytes()
+        => Encoding.Latin1.GetBytes("BI /W 1 /H 1 /CS /G /BPC 8 /F /AHx ID 00>\nEI\n");
+
+    // Content-stream bytes for a 1×1 greyscale inline image with NO /F key (unfiltered), whose
+    // raw sample data between ID and EI contains the byte sequence "/F /LZWDecode". This tests
+    // that SkipInlineImageData correctly consumes the data region and the scanner does NOT
+    // misinterpret the embedded text as a filter-name declaration.
+    // The raw data bytes are: "/F /LZWDecode " (14 bytes of ASCII) followed by a space then EI.
+    // SkipInlineImageData scans for whitespace+EI and finds the space before EI. The inline-
+    // image dict parser stops at ID before seeing any /F, so no filter name is collected.
+    // veraPDF: no 6.1.10-1 finding (no /F key in the BI dict). In-process: must also be silent.
+    // NOTE: the unfiltered 1×1 grey sample must be exactly 1 byte (the 0x00 inside the text is it).
+    private static byte[] InlineImageDataResemblesFilterDictBytes()
+        => Encoding.Latin1.GetBytes("BI /W 1 /H 1 /CS /G /BPC 8 ID /F /LZWDecode EI\n");
+
+    /// <summary>
+    /// Injects a drawn Form XObject (key <c>/Fm0</c>) whose content is <paramref name="formBytes"/>
+    /// into the writer-produced PDF/A-2b baseline via an incremental update. The page content
+    /// stream is replaced to invoke the form via <c>/Fm0 Do</c>. The writer baseline already has
+    /// a valid sRGB output intent, so device-colour rules (§6.2.4.3-4) pass for DeviceGray inline
+    /// images inside the form.
+    /// </summary>
+    private static byte[] WriterPdfWithDrawnFormXObjectBytes(byte[] formBytes)
+    {
+        var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var newPage = CloneDict(page);
+
+        var formNum = reader.Size;
+        var formStream = new PdfStream(formBytes);
+        formStream.Dictionary
+            .Set(PdfName.Type, new PdfName("XObject"))
+            .Set(new PdfName("Subtype"), new PdfName("Form"))
+            .Set(new PdfName("BBox"), new PdfArray([
+                new PdfInteger(0), new PdfInteger(0),
+                new PdfInteger(100), new PdfInteger(100)]));
+
+        var contentNum = formNum + 1;
+        var pageContentBytes = Encoding.Latin1.GetBytes("/Fm0 Do");
+        var contentStream = new PdfStream(pageContentBytes);
+
+        var resObj = page.Get(new PdfName("Resources"));
+        var resources = (resObj is null ? null : reader.ResolveValue(resObj)) as PdfDictionary ?? new PdfDictionary();
+        var newResources = CloneDict(resources);
+        newResources.Set(
+            new PdfName("XObject"),
+            new PdfDictionary().Set(new PdfName("Fm0"), new PdfIndirectReference(formNum)));
+        newPage
+            .Set(new PdfName("Resources"), newResources)
+            .Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
+
+        return reader.AppendRevision([
+            (pageRef.ObjectNumber, newPage),
+            (formNum, formStream),
+            (contentNum, contentStream),
+        ]);
+    }
+
+    /// <summary>
+    /// Injects a two-level nested Form XObject chain (Form A draws Form B whose content is
+    /// <paramref name="innerBytes"/>) into the writer-produced PDF/A-2b baseline via an
+    /// incremental update. The page draws Form A via <c>/FmA Do</c>.
+    /// </summary>
+    private static byte[] WriterPdfWithNestedFormXObjectBytes(byte[] innerBytes)
+    {
+        var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var newPage = CloneDict(page);
+
+        var formBNum = reader.Size;
+        var formBStream = new PdfStream(innerBytes);
+        formBStream.Dictionary
+            .Set(PdfName.Type, new PdfName("XObject"))
+            .Set(new PdfName("Subtype"), new PdfName("Form"))
+            .Set(new PdfName("BBox"), new PdfArray([
+                new PdfInteger(0), new PdfInteger(0),
+                new PdfInteger(100), new PdfInteger(100)]));
+
+        var formANum = formBNum + 1;
+        var formABytes = Encoding.Latin1.GetBytes("/FmB Do");
+        var formAStream = new PdfStream(formABytes);
+        formAStream.Dictionary
+            .Set(PdfName.Type, new PdfName("XObject"))
+            .Set(new PdfName("Subtype"), new PdfName("Form"))
+            .Set(new PdfName("BBox"), new PdfArray([
+                new PdfInteger(0), new PdfInteger(0),
+                new PdfInteger(100), new PdfInteger(100)]))
+            .Set(new PdfName("Resources"), new PdfDictionary()
+                .Set(new PdfName("XObject"), new PdfDictionary()
+                    .Set(new PdfName("FmB"), new PdfIndirectReference(formBNum))));
+
+        var contentNum = formANum + 1;
+        var pageContentBytes = Encoding.Latin1.GetBytes("/FmA Do");
+        var contentStream = new PdfStream(pageContentBytes);
+
+        var resObj = page.Get(new PdfName("Resources"));
+        var resources = (resObj is null ? null : reader.ResolveValue(resObj)) as PdfDictionary ?? new PdfDictionary();
+        var newResources = CloneDict(resources);
+        newResources.Set(
+            new PdfName("XObject"),
+            new PdfDictionary().Set(new PdfName("FmA"), new PdfIndirectReference(formANum)));
+        newPage
+            .Set(new PdfName("Resources"), newResources)
+            .Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
+
+        return reader.AppendRevision([
+            (pageRef.ObjectNumber, newPage),
+            (formBNum, formBStream),
+            (formANum, formAStream),
+            (contentNum, contentStream),
+        ]);
+    }
+
+    /// <summary>
+    /// Injects a /Text annotation whose /AP /N appearance stream contains the raw content bytes
+    /// <paramref name="apBytes"/> into the writer-produced PDF/A-2b baseline via an incremental
+    /// update.
+    /// </summary>
+    private static byte[] WriterPdfWithAnnotAppearanceBytes(byte[] apBytes)
+    {
+        var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var newPage = CloneDict(page);
+
+        var apStreamNum = reader.Size;
+        var apStream = new PdfStream(apBytes);
+        apStream.Dictionary
+            .Set(PdfName.Type, new PdfName("XObject"))
+            .Set(new PdfName("Subtype"), new PdfName("Form"))
+            .Set(new PdfName("BBox"), new PdfArray([
+                new PdfInteger(0), new PdfInteger(0),
+                new PdfInteger(100), new PdfInteger(100)]));
+
+        var annotNum = apStreamNum + 1;
+        var annotDict = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("Annot"))
+            .Set(new PdfName("Subtype"), new PdfName("Text"))
+            .Set(new PdfName("Rect"), new PdfArray([
+                new PdfInteger(10), new PdfInteger(10),
+                new PdfInteger(50), new PdfInteger(50)]))
+            .Set(new PdfName("F"), new PdfInteger(4))
+            .Set(new PdfName("Contents"), new PdfLiteralString(Encoding.Latin1.GetBytes("note")))
+            .Set(new PdfName("AP"), new PdfDictionary()
+                .Set(new PdfName("N"), new PdfIndirectReference(apStreamNum)));
+
+        // Inject the annotation into the page /Annots array.
+        var annotsObj = page.Get(new PdfName("Annots"));
+        var existingAnnots = (annotsObj is not null ? reader.ResolveValue(annotsObj) : null) as PdfArray;
+        var annotsList = existingAnnots is not null
+            ? Enumerable.Range(0, existingAnnots.Count).Select(i => existingAnnots[i]).ToList()
+            : new List<PdfObject>();
+        annotsList.Add(new PdfIndirectReference(annotNum));
+        newPage.Set(new PdfName("Annots"), new PdfArray([.. annotsList]));
+
+        return reader.AppendRevision([
+            (pageRef.ObjectNumber, newPage),
+            (apStreamNum, apStream),
+            (annotNum, annotDict),
+        ]);
+    }
+
+    // ── End of Batch N2 helpers ─────────────────────────────────────────────────────────────────────
+
+    // ── Batch N3 helpers — §6.2.4.2-2 overprint/OPM in non-page content streams ──────────────────
+    // All fixtures use the writer-produced PDF/A-2b baseline (via WriterPdf / AppendRevision) which
+    // carries a valid sRGB output intent. This avoids §6.2.4.3-4 false positives.
+    //
+    // The ICC profile bytes use a 128-byte prtr/CMYK/v4 header with the 'acsp' ICC signature —
+    // the same MakeIccHeader("prtr","CMYK",4) profile that the existing §6.2.4.2-1 probes confirm
+    // as valid for veraPDF's §6.2.4.2-1 ICC-profile-validity check (oracle probe P9, 2026-06-22).
+    // /N is set to 4 in the ICC stream's dictionary so BuildIccCmykSet resolves it as CMYK.
+    //
+    // Empirical veraPDF 1.30.2 probe results (2026-06-23):
+    //   N3-A (self-contained violation in form): isCompliant=false, failedRules=1, clause 6.2.4.2-2
+    //   N3-B (inherited-across-Do): isCompliant=false, failedRules=1 (residual gap for isolated scan)
+    //   N3-C (self-contained, OPM 0): isCompliant=true, failedRules=0
+    //   N3-D (form no /Resources): isCompliant=true, failedRules=0
+
+    // Minimal prtr/CMYK/v4 ICC header with 'acsp' signature — passes §6.2.4.2-1.
+    private static byte[] N3IccCmykHeader()
+    {
+        var hdr = new byte[128];
+        hdr[0] = 0; hdr[1] = 0; hdr[2] = 0; hdr[3] = 128; // profile size
+        hdr[8] = 4; hdr[9] = 0x10;                          // v4.1
+        // device class: 'prtr'
+        hdr[12] = (byte)'p'; hdr[13] = (byte)'r'; hdr[14] = (byte)'t'; hdr[15] = (byte)'r';
+        // colour space: 'CMYK'
+        hdr[16] = (byte)'C'; hdr[17] = (byte)'M'; hdr[18] = (byte)'Y'; hdr[19] = (byte)'K';
+        // PCS: 'XYZ '
+        hdr[20] = (byte)'X'; hdr[21] = (byte)'Y'; hdr[22] = (byte)'Z'; hdr[23] = (byte)' ';
+        // 'acsp' signature at offset 36
+        hdr[36] = (byte)'a'; hdr[37] = (byte)'c'; hdr[38] = (byte)'s'; hdr[39] = (byte)'p';
+        return hdr;
+    }
+
+    /// <summary>
+    /// §6.2.4.2-2 VIOLATION in a drawn Form XObject. The form's own <c>/Resources</c>
+    /// defines <c>/CS0 = [/ICCBased &lt;CMYK-N4 stream&gt;]</c> and
+    /// <c>/GS1 = &lt;&lt; /op true /OPM 1 &gt;&gt;</c>. The form content stream:
+    /// <c>/CS0 cs /GS1 gs 10 10 50 50 re f</c> — self-contained violation.
+    /// The page content stream merely draws the form via <c>/Fm0 Do</c> and sets no colour state.
+    /// veraPDF fires clause 6.2.4.2 testNumber 2 (context: xObject[0]/contentStream[0]).
+    /// </summary>
+    private static byte[] OverprintFormSelfViolation()
+    {
+        var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var newPage = CloneDict(page);
+
+        var iccNum = reader.Size;
+        var formNum = iccNum + 1;
+        var contentNum = formNum + 1;
+
+        // ICC stream: prtr/CMYK/v4, /N 4
+        var iccStream = new PdfStream(N3IccCmykHeader());
+        iccStream.Dictionary.Set(new PdfName("N"), new PdfInteger(4));
+
+        // Form resources: /ColorSpace /CS0 = [/ICCBased <icc>], /ExtGState /GS1 = op true OPM 1
+        var formResources = new PdfDictionary()
+            .Set(new PdfName("ColorSpace"), new PdfDictionary()
+                .Set(new PdfName("CS0"), new PdfArray([
+                    new PdfName("ICCBased"),
+                    new PdfIndirectReference(iccNum)])))
+            .Set(new PdfName("ExtGState"), new PdfDictionary()
+                .Set(new PdfName("GS1"), new PdfDictionary()
+                    .Set(new PdfName("Type"), new PdfName("ExtGState"))
+                    .Set(new PdfName("op"), PdfBoolean.True)
+                    .Set(new PdfName("OPM"), new PdfInteger(1))));
+
+        // Form content: select ICCBased-CMYK, apply gs with op+OPM violation, fill
+        var formStream = new PdfStream(Encoding.Latin1.GetBytes("/CS0 cs /GS1 gs 10 10 50 50 re f"));
+        formStream.Dictionary
+            .Set(PdfName.Type, new PdfName("XObject"))
+            .Set(new PdfName("Subtype"), new PdfName("Form"))
+            .Set(new PdfName("BBox"), new PdfArray([
+                new PdfInteger(0), new PdfInteger(0),
+                new PdfInteger(100), new PdfInteger(100)]))
+            .Set(new PdfName("Resources"), formResources);
+
+        // Page content: draw the form only (no page-level colour state)
+        var pageContent = new PdfStream(Encoding.Latin1.GetBytes("/Fm0 Do"));
+        var resObj = page.Get(new PdfName("Resources"));
+        var resources = (resObj is null ? null : reader.ResolveValue(resObj)) as PdfDictionary ?? new PdfDictionary();
+        var newRes = CloneDict(resources);
+        newRes.Set(new PdfName("XObject"),
+            new PdfDictionary().Set(new PdfName("Fm0"), new PdfIndirectReference(formNum)));
+        newPage.Set(new PdfName("Resources"), newRes)
+               .Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
+
+        return reader.AppendRevision([
+            (pageRef.ObjectNumber, newPage),
+            (iccNum, iccStream),
+            (formNum, formStream),
+            (contentNum, pageContent),
+        ]);
+    }
+
+    /// <summary>
+    /// §6.2.4.2-2 FP-SAFETY: same drawn Form XObject structure as
+    /// <see cref="OverprintFormSelfViolation"/> but <c>/OPM 0</c> (not 1) in the ExtGState.
+    /// OPM 0 is always compliant even when overprinting is enabled. veraPDF accepts this document
+    /// (isCompliant=true, failedRules=0; confirmed 2026-06-23). In-process must NOT fire.
+    /// </summary>
+    private static byte[] OverprintFormSelfOpm0()
+    {
+        var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var newPage = CloneDict(page);
+
+        var iccNum = reader.Size;
+        var formNum = iccNum + 1;
+        var contentNum = formNum + 1;
+
+        var iccStream = new PdfStream(N3IccCmykHeader());
+        iccStream.Dictionary.Set(new PdfName("N"), new PdfInteger(4));
+
+        // ExtGState: /op true but /OPM 0 — not a violation
+        var formResources = new PdfDictionary()
+            .Set(new PdfName("ColorSpace"), new PdfDictionary()
+                .Set(new PdfName("CS0"), new PdfArray([
+                    new PdfName("ICCBased"),
+                    new PdfIndirectReference(iccNum)])))
+            .Set(new PdfName("ExtGState"), new PdfDictionary()
+                .Set(new PdfName("GS1"), new PdfDictionary()
+                    .Set(new PdfName("Type"), new PdfName("ExtGState"))
+                    .Set(new PdfName("op"), PdfBoolean.True)
+                    .Set(new PdfName("OPM"), new PdfInteger(0))));
+
+        var formStream = new PdfStream(Encoding.Latin1.GetBytes("/CS0 cs /GS1 gs 10 10 50 50 re f"));
+        formStream.Dictionary
+            .Set(PdfName.Type, new PdfName("XObject"))
+            .Set(new PdfName("Subtype"), new PdfName("Form"))
+            .Set(new PdfName("BBox"), new PdfArray([
+                new PdfInteger(0), new PdfInteger(0),
+                new PdfInteger(100), new PdfInteger(100)]))
+            .Set(new PdfName("Resources"), formResources);
+
+        var pageContent = new PdfStream(Encoding.Latin1.GetBytes("/Fm0 Do"));
+        var resObj = page.Get(new PdfName("Resources"));
+        var resources = (resObj is null ? null : reader.ResolveValue(resObj)) as PdfDictionary ?? new PdfDictionary();
+        var newRes = CloneDict(resources);
+        newRes.Set(new PdfName("XObject"),
+            new PdfDictionary().Set(new PdfName("Fm0"), new PdfIndirectReference(formNum)));
+        newPage.Set(new PdfName("Resources"), newRes)
+               .Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
+
+        return reader.AppendRevision([
+            (pageRef.ObjectNumber, newPage),
+            (iccNum, iccStream),
+            (formNum, formStream),
+            (contentNum, pageContent),
+        ]);
+    }
+
+    /// <summary>
+    /// §6.2.4.2-2 FP-SAFETY (null /Resources): a drawn Form XObject that omits its own
+    /// <c>/Resources</c> dictionary. The form content references <c>/CS0</c> and <c>/GS1</c>
+    /// that would be a violation — but those names resolve to nothing because the form has no
+    /// /Resources. The rule must skip this stream (under-detection, FP-safe) and must not crash
+    /// or emit a spurious finding. veraPDF accepts this document (isCompliant=true, failedRules=0;
+    /// names that cannot be resolved are silently dropped — confirmed 2026-06-23).
+    /// In-process: OverprintRule must NOT fire.
+    /// </summary>
+    private static byte[] OverprintFormNoResources()
+    {
+        var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var newPage = CloneDict(page);
+
+        var formNum = reader.Size;
+        var contentNum = formNum + 1;
+
+        // Form: deliberately NO /Resources dict — colour-space + gs names are unresolvable
+        var formStream = new PdfStream(Encoding.Latin1.GetBytes("/CS0 cs /GS1 gs 10 10 50 50 re f"));
+        formStream.Dictionary
+            .Set(PdfName.Type, new PdfName("XObject"))
+            .Set(new PdfName("Subtype"), new PdfName("Form"))
+            .Set(new PdfName("BBox"), new PdfArray([
+                new PdfInteger(0), new PdfInteger(0),
+                new PdfInteger(100), new PdfInteger(100)]));
+        // NOTE: no .Set("Resources", ...) — the XObject deliberately omits /Resources.
+
+        var pageContent = new PdfStream(Encoding.Latin1.GetBytes("/Fm0 Do"));
+        var resObj = page.Get(new PdfName("Resources"));
+        var resources = (resObj is null ? null : reader.ResolveValue(resObj)) as PdfDictionary ?? new PdfDictionary();
+        var newRes = CloneDict(resources);
+        newRes.Set(new PdfName("XObject"),
+            new PdfDictionary().Set(new PdfName("Fm0"), new PdfIndirectReference(formNum)));
+        newPage.Set(new PdfName("Resources"), newRes)
+               .Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
+
+        return reader.AppendRevision([
+            (pageRef.ObjectNumber, newPage),
+            (formNum, formStream),
+            (contentNum, pageContent),
+        ]);
+    }
+
+    // ── Batch N3 adversarial FP-sweep helpers (internal — used by PdfPreflightTests) ────────────────
+
+    /// <summary>Form XObject with ICCBased CMYK + /op false + /OPM 1: overprint disabled → PASS.</summary>
+    internal static byte[] OverprintFormOpFalseOpm1()
+    {
+        var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var newPage = CloneDict(page);
+
+        var iccNum = reader.Size;
+        var formNum = iccNum + 1;
+        var contentNum = formNum + 1;
+
+        var iccStream = new PdfStream(N3IccCmykHeader());
+        iccStream.Dictionary.Set(new PdfName("N"), new PdfInteger(4));
+
+        // ExtGState: /op false — fill overprint disabled; OPM alone is irrelevant.
+        var formResources = new PdfDictionary()
+            .Set(new PdfName("ColorSpace"), new PdfDictionary()
+                .Set(new PdfName("CS0"), new PdfArray([
+                    new PdfName("ICCBased"),
+                    new PdfIndirectReference(iccNum)])))
+            .Set(new PdfName("ExtGState"), new PdfDictionary()
+                .Set(new PdfName("GS1"), new PdfDictionary()
+                    .Set(new PdfName("Type"), new PdfName("ExtGState"))
+                    .Set(new PdfName("op"), PdfBoolean.False)
+                    .Set(new PdfName("OPM"), new PdfInteger(1))));
+
+        var formStream = new PdfStream(Encoding.Latin1.GetBytes("/CS0 cs /GS1 gs 10 10 50 50 re f"));
+        formStream.Dictionary
+            .Set(PdfName.Type, new PdfName("XObject"))
+            .Set(new PdfName("Subtype"), new PdfName("Form"))
+            .Set(new PdfName("BBox"), new PdfArray([
+                new PdfInteger(0), new PdfInteger(0),
+                new PdfInteger(100), new PdfInteger(100)]))
+            .Set(new PdfName("Resources"), formResources);
+
+        var pageContent = new PdfStream(Encoding.Latin1.GetBytes("/Fm0 Do"));
+        var resObj = page.Get(new PdfName("Resources"));
+        var resources = (resObj is null ? null : reader.ResolveValue(resObj)) as PdfDictionary ?? new PdfDictionary();
+        var newRes = CloneDict(resources);
+        newRes.Set(new PdfName("XObject"),
+            new PdfDictionary().Set(new PdfName("Fm0"), new PdfIndirectReference(formNum)));
+        newPage.Set(new PdfName("Resources"), newRes)
+               .Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
+
+        return reader.AppendRevision([
+            (pageRef.ObjectNumber, newPage),
+            (iccNum, iccStream),
+            (formNum, formStream),
+            (contentNum, pageContent),
+        ]);
+    }
+
+    /// <summary>Form XObject that sets ICCBased CMYK + gs with op/OPM but NEVER paints → PASS.</summary>
+    internal static byte[] OverprintFormSetStateNoPaint()
+    {
+        var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var newPage = CloneDict(page);
+
+        var iccNum = reader.Size;
+        var formNum = iccNum + 1;
+        var contentNum = formNum + 1;
+
+        var iccStream = new PdfStream(N3IccCmykHeader());
+        iccStream.Dictionary.Set(new PdfName("N"), new PdfInteger(4));
+
+        var formResources = new PdfDictionary()
+            .Set(new PdfName("ColorSpace"), new PdfDictionary()
+                .Set(new PdfName("CS0"), new PdfArray([
+                    new PdfName("ICCBased"),
+                    new PdfIndirectReference(iccNum)])))
+            .Set(new PdfName("ExtGState"), new PdfDictionary()
+                .Set(new PdfName("GS1"), new PdfDictionary()
+                    .Set(new PdfName("Type"), new PdfName("ExtGState"))
+                    .Set(new PdfName("op"), PdfBoolean.True)
+                    .Set(new PdfName("OPM"), new PdfInteger(1))));
+
+        // State is set but no painting operator follows — violation condition is never checked.
+        var formStream = new PdfStream(Encoding.Latin1.GetBytes("/CS0 cs /GS1 gs 10 10 50 50 re n"));
+        // 're n' = construct rect path + end-path (no-op fill/stroke), NOT a paint op.
+        formStream.Dictionary
+            .Set(PdfName.Type, new PdfName("XObject"))
+            .Set(new PdfName("Subtype"), new PdfName("Form"))
+            .Set(new PdfName("BBox"), new PdfArray([
+                new PdfInteger(0), new PdfInteger(0),
+                new PdfInteger(100), new PdfInteger(100)]))
+            .Set(new PdfName("Resources"), formResources);
+
+        var pageContent = new PdfStream(Encoding.Latin1.GetBytes("/Fm0 Do"));
+        var resObj = page.Get(new PdfName("Resources"));
+        var resources = (resObj is null ? null : reader.ResolveValue(resObj)) as PdfDictionary ?? new PdfDictionary();
+        var newRes = CloneDict(resources);
+        newRes.Set(new PdfName("XObject"),
+            new PdfDictionary().Set(new PdfName("Fm0"), new PdfIndirectReference(formNum)));
+        newPage.Set(new PdfName("Resources"), newRes)
+               .Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
+
+        return reader.AppendRevision([
+            (pageRef.ObjectNumber, newPage),
+            (iccNum, iccStream),
+            (formNum, formStream),
+            (contentNum, pageContent),
+        ]);
+    }
+
+    /// <summary>Form with DeviceCMYK (<c>k</c> operator) + op true + OPM 1: device colour, NOT ICCBased → PASS.</summary>
+    internal static byte[] OverprintFormDeviceCmykOverprint()
+    {
+        var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var newPage = CloneDict(page);
+
+        var formNum = reader.Size;
+        var contentNum = formNum + 1;
+
+        var formResources = new PdfDictionary()
+            .Set(new PdfName("ExtGState"), new PdfDictionary()
+                .Set(new PdfName("GS1"), new PdfDictionary()
+                    .Set(new PdfName("Type"), new PdfName("ExtGState"))
+                    .Set(new PdfName("op"), PdfBoolean.True)
+                    .Set(new PdfName("OPM"), new PdfInteger(1))));
+
+        // 'k' sets DeviceCMYK — NOT ICCBased; rule must not fire.
+        // NOTE: `k` on a page without a device-CMYK output intent triggers §6.2.4.3, but for the
+        // overprint rule (§6.2.4.2-2) specifically it must be silent (only ICCBased N=4 triggers).
+        // The sRGB output intent in the writer baseline satisfies §6.2.4.3 for device colours
+        // when the ICC intent covers that device space (empirically confirmed for DeviceGray,
+        // but not necessarily DeviceCMYK). To avoid any §6.2.4.3 finding interfering with this
+        // FP-sweep's focus on §6.2.4.2-2, we use the 'n' path-end op (no paint) after 'k'.
+        var formStream = new PdfStream(Encoding.Latin1.GetBytes("/GS1 gs 0 0 0 1 k 10 10 50 50 re n"));
+        formStream.Dictionary
+            .Set(PdfName.Type, new PdfName("XObject"))
+            .Set(new PdfName("Subtype"), new PdfName("Form"))
+            .Set(new PdfName("BBox"), new PdfArray([
+                new PdfInteger(0), new PdfInteger(0),
+                new PdfInteger(100), new PdfInteger(100)]))
+            .Set(new PdfName("Resources"), formResources);
+
+        var pageContent = new PdfStream(Encoding.Latin1.GetBytes("/Fm0 Do"));
+        var resObj = page.Get(new PdfName("Resources"));
+        var resources = (resObj is null ? null : reader.ResolveValue(resObj)) as PdfDictionary ?? new PdfDictionary();
+        var newRes = CloneDict(resources);
+        newRes.Set(new PdfName("XObject"),
+            new PdfDictionary().Set(new PdfName("Fm0"), new PdfIndirectReference(formNum)));
+        newPage.Set(new PdfName("Resources"), newRes)
+               .Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
+
+        return reader.AppendRevision([
+            (pageRef.ObjectNumber, newPage),
+            (formNum, formStream),
+            (contentNum, pageContent),
+        ]);
+    }
+
+    /// <summary>Form with ICCBased RGB (N=3) colour space + op true + OPM 1: only N=4 CMYK triggers → PASS.</summary>
+    internal static byte[] OverprintFormIccRgbOverprint()
+    {
+        var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var newPage = CloneDict(page);
+
+        var iccNum = reader.Size;
+        var formNum = iccNum + 1;
+        var contentNum = formNum + 1;
+
+        // ICC stream with /N 3 (RGB monitor profile — mntr/RGB/v4)
+        var iccRgbHdr = new byte[128];
+        iccRgbHdr[0] = 0; iccRgbHdr[1] = 0; iccRgbHdr[2] = 0; iccRgbHdr[3] = 128;
+        iccRgbHdr[8] = 4; iccRgbHdr[9] = 0x10;
+        iccRgbHdr[12] = (byte)'m'; iccRgbHdr[13] = (byte)'n'; iccRgbHdr[14] = (byte)'t'; iccRgbHdr[15] = (byte)'r';
+        iccRgbHdr[16] = (byte)'R'; iccRgbHdr[17] = (byte)'G'; iccRgbHdr[18] = (byte)'B'; iccRgbHdr[19] = (byte)' ';
+        iccRgbHdr[20] = (byte)'X'; iccRgbHdr[21] = (byte)'Y'; iccRgbHdr[22] = (byte)'Z'; iccRgbHdr[23] = (byte)' ';
+        iccRgbHdr[36] = (byte)'a'; iccRgbHdr[37] = (byte)'c'; iccRgbHdr[38] = (byte)'s'; iccRgbHdr[39] = (byte)'p';
+
+        var iccStream = new PdfStream(iccRgbHdr);
+        iccStream.Dictionary.Set(new PdfName("N"), new PdfInteger(3));  // N=3 = RGB
+
+        var formResources = new PdfDictionary()
+            .Set(new PdfName("ColorSpace"), new PdfDictionary()
+                .Set(new PdfName("CS0"), new PdfArray([
+                    new PdfName("ICCBased"),
+                    new PdfIndirectReference(iccNum)])))
+            .Set(new PdfName("ExtGState"), new PdfDictionary()
+                .Set(new PdfName("GS1"), new PdfDictionary()
+                    .Set(new PdfName("Type"), new PdfName("ExtGState"))
+                    .Set(new PdfName("op"), PdfBoolean.True)
+                    .Set(new PdfName("OPM"), new PdfInteger(1))));
+
+        var formStream = new PdfStream(Encoding.Latin1.GetBytes("/CS0 cs /GS1 gs 10 10 50 50 re f"));
+        formStream.Dictionary
+            .Set(PdfName.Type, new PdfName("XObject"))
+            .Set(new PdfName("Subtype"), new PdfName("Form"))
+            .Set(new PdfName("BBox"), new PdfArray([
+                new PdfInteger(0), new PdfInteger(0),
+                new PdfInteger(100), new PdfInteger(100)]))
+            .Set(new PdfName("Resources"), formResources);
+
+        var pageContent = new PdfStream(Encoding.Latin1.GetBytes("/Fm0 Do"));
+        var resObj = page.Get(new PdfName("Resources"));
+        var resources = (resObj is null ? null : reader.ResolveValue(resObj)) as PdfDictionary ?? new PdfDictionary();
+        var newRes = CloneDict(resources);
+        newRes.Set(new PdfName("XObject"),
+            new PdfDictionary().Set(new PdfName("Fm0"), new PdfIndirectReference(formNum)));
+        newPage.Set(new PdfName("Resources"), newRes)
+               .Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
+
+        return reader.AppendRevision([
+            (pageRef.ObjectNumber, newPage),
+            (iccNum, iccStream),
+            (formNum, formStream),
+            (contentNum, pageContent),
+        ]);
+    }
+
+    // ── End of Batch N3 adversarial FP-sweep helpers ───────────────────────────────────────────────
+
+    // ── End of Batch N3 helpers ─────────────────────────────────────────────────────────────────────
+
+    // ── Batch N4 helpers — §6.2.4.4-2 Separation consistency in non-page content streams ──────────
+    // All fixtures use the writer-produced PDF/A-2b baseline (via WriterPdf / AppendRevision) which
+    // carries a valid sRGB output intent. Using DeviceRGB as the consistent alternate space avoids
+    // §6.2.4.3-2 false positives. The inconsistent fixture uses DeviceGray as the form's alternate
+    // space, triggering 6.2.4.4-2 (confirmed empirically against veraPDF 1.30.2, 2026-06-23).
+    //
+    // Tint functions are Type 4 PostScript calculator streams:
+    //   N4TintRgb:  { pop 0.5 0.5 0.5 } — single-component input → DeviceRGB output
+    //   N4TintGray: { pop 0.5 }          — single-component input → DeviceGray output
+    //
+    // Empirical veraPDF 1.30.2 probe results (2026-06-23):
+    //   N4-A (page Spot1→DeviceRGB, form Spot1→DeviceGray, drawn): FIRES 6.2.4.4-2 ✓
+    //   N4-B (page Spot1→DeviceRGB, form Spot1→DeviceRGB same tint, drawn): PASSES ✓
+    //   N4-C (page Spot1→DeviceRGB, form Spot1→DeviceGray, NOT drawn): PASSES ✓
+
+    /// <summary>
+    /// §6.2.4.4-2 VIOLATION: page uses <c>/Spot1</c> Separation with <c>DeviceRGB</c> alternate;
+    /// a drawn Form XObject also uses <c>/Spot1</c> but with <c>DeviceGray</c> alternate and a
+    /// single-grey tint function. The <c>alternateSpace</c> differs → inconsistency.
+    /// veraPDF fires clause 6.2.4.4 testNumber 2 (confirmed 2026-06-23).
+    /// </summary>
+    private static byte[] SepFormXObjectInconsistent()
+    {
+        var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var newPage = CloneDict(page);
+
+        // Page tint: { pop 0.5 0.5 0.5 } → DeviceRGB
+        var pageTintNum = reader.Size;
+        var pageTint = new PdfStream(Encoding.ASCII.GetBytes("{ pop 0.5 0.5 0.5 }"));
+        pageTint.Dictionary
+            .Set(new PdfName("FunctionType"), new PdfInteger(4))
+            .Set(new PdfName("Domain"), new PdfArray([new PdfInteger(0), new PdfInteger(1)]))
+            .Set(new PdfName("Range"), new PdfArray([
+                new PdfInteger(0), new PdfInteger(1), new PdfInteger(0), new PdfInteger(1),
+                new PdfInteger(0), new PdfInteger(1)]));
+
+        // Form tint: { pop 0.5 } → DeviceGray (DIFFERENT alternate space)
+        var formTintNum = pageTintNum + 1;
+        var formTint = new PdfStream(Encoding.ASCII.GetBytes("{ pop 0.5 }"));
+        formTint.Dictionary
+            .Set(new PdfName("FunctionType"), new PdfInteger(4))
+            .Set(new PdfName("Domain"), new PdfArray([new PdfInteger(0), new PdfInteger(1)]))
+            .Set(new PdfName("Range"), new PdfArray([new PdfInteger(0), new PdfInteger(1)]));
+
+        // Page CS: [/Separation /Spot1 /DeviceRGB pageTint]
+        var pageCsNum = formTintNum + 1;
+        var pageCs = new PdfArray([
+            new PdfName("Separation"),
+            new PdfName("Spot1"),
+            new PdfName("DeviceRGB"),
+            new PdfIndirectReference(pageTintNum),
+        ]);
+
+        // Form CS: [/Separation /Spot1 /DeviceGray formTint]  ← alternateSpace differs!
+        var formCsNum = pageCsNum + 1;
+        var formCs = new PdfArray([
+            new PdfName("Separation"),
+            new PdfName("Spot1"),
+            new PdfName("DeviceGray"),
+            new PdfIndirectReference(formTintNum),
+        ]);
+
+        // Form stream: select /CS1 cs, fill rectangle
+        var formNum = formCsNum + 1;
+        var formStream = new PdfStream(Encoding.ASCII.GetBytes("/CS1 cs 0.5 scn 10 10 40 40 re f"));
+        formStream.Dictionary
+            .Set(PdfName.Type, new PdfName("XObject"))
+            .Set(new PdfName("Subtype"), new PdfName("Form"))
+            .Set(new PdfName("BBox"), new PdfArray([
+                new PdfInteger(0), new PdfInteger(0),
+                new PdfInteger(100), new PdfInteger(100)]))
+            .Set(new PdfName("Resources"), new PdfDictionary()
+                .Set(new PdfName("ColorSpace"), new PdfDictionary()
+                    .Set(new PdfName("CS1"), new PdfIndirectReference(formCsNum))));
+
+        // Page content: select /CS0 cs (page Spot1→DeviceRGB), draw rectangle, draw form
+        var contentNum = formNum + 1;
+        var pageContent = new PdfStream(Encoding.ASCII.GetBytes("/CS0 cs 0.5 scn 50 50 40 40 re f\n/Fm0 Do"));
+
+        var resObj = page.Get(new PdfName("Resources"));
+        var resources = (resObj is null ? null : reader.ResolveValue(resObj)) as PdfDictionary ?? new PdfDictionary();
+        var newRes = CloneDict(resources);
+        newRes.Set(new PdfName("ColorSpace"),
+                new PdfDictionary().Set(new PdfName("CS0"), new PdfIndirectReference(pageCsNum)))
+              .Set(new PdfName("XObject"),
+                new PdfDictionary().Set(new PdfName("Fm0"), new PdfIndirectReference(formNum)));
+        newPage.Set(new PdfName("Resources"), newRes)
+               .Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
+
+        return reader.AppendRevision([
+            (pageRef.ObjectNumber, newPage),
+            (pageTintNum, pageTint),
+            (formTintNum, formTint),
+            (pageCsNum, pageCs),
+            (formCsNum, formCs),
+            (formNum, formStream),
+            (contentNum, pageContent),
+        ]);
+    }
+
+    /// <summary>
+    /// §6.2.4.4-2 FP-SAFETY: page and drawn Form XObject both use <c>/Spot1</c> with
+    /// <c>DeviceRGB</c> alternate and <em>structurally identical</em> tint functions (same
+    /// decoded PostScript body, same domain/range). No inconsistency — veraPDF accepts
+    /// (confirmed 2026-06-23). In-process must NOT fire.
+    /// </summary>
+    private static byte[] SepFormXObjectConsistent()
+    {
+        var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var newPage = CloneDict(page);
+
+        // Page tint: { pop 0.5 0.5 0.5 } → DeviceRGB
+        var pageTintNum = reader.Size;
+        var pageTint = new PdfStream(Encoding.ASCII.GetBytes("{ pop 0.5 0.5 0.5 }"));
+        pageTint.Dictionary
+            .Set(new PdfName("FunctionType"), new PdfInteger(4))
+            .Set(new PdfName("Domain"), new PdfArray([new PdfInteger(0), new PdfInteger(1)]))
+            .Set(new PdfName("Range"), new PdfArray([
+                new PdfInteger(0), new PdfInteger(1), new PdfInteger(0), new PdfInteger(1),
+                new PdfInteger(0), new PdfInteger(1)]));
+
+        // Form tint: identical body + domain + range → structurally equal
+        var formTintNum = pageTintNum + 1;
+        var formTint = new PdfStream(Encoding.ASCII.GetBytes("{ pop 0.5 0.5 0.5 }"));
+        formTint.Dictionary
+            .Set(new PdfName("FunctionType"), new PdfInteger(4))
+            .Set(new PdfName("Domain"), new PdfArray([new PdfInteger(0), new PdfInteger(1)]))
+            .Set(new PdfName("Range"), new PdfArray([
+                new PdfInteger(0), new PdfInteger(1), new PdfInteger(0), new PdfInteger(1),
+                new PdfInteger(0), new PdfInteger(1)]));
+
+        // Page CS: [/Separation /Spot1 /DeviceRGB pageTint]
+        var pageCsNum = formTintNum + 1;
+        var pageCs = new PdfArray([
+            new PdfName("Separation"),
+            new PdfName("Spot1"),
+            new PdfName("DeviceRGB"),
+            new PdfIndirectReference(pageTintNum),
+        ]);
+
+        // Form CS: [/Separation /Spot1 /DeviceRGB formTint] ← same alternateSpace, same body
+        var formCsNum = pageCsNum + 1;
+        var formCs = new PdfArray([
+            new PdfName("Separation"),
+            new PdfName("Spot1"),
+            new PdfName("DeviceRGB"),
+            new PdfIndirectReference(formTintNum),
+        ]);
+
+        // Form stream: select /CS1 cs, fill rectangle
+        var formNum = formCsNum + 1;
+        var formStream = new PdfStream(Encoding.ASCII.GetBytes("/CS1 cs 0.5 scn 10 10 40 40 re f"));
+        formStream.Dictionary
+            .Set(PdfName.Type, new PdfName("XObject"))
+            .Set(new PdfName("Subtype"), new PdfName("Form"))
+            .Set(new PdfName("BBox"), new PdfArray([
+                new PdfInteger(0), new PdfInteger(0),
+                new PdfInteger(100), new PdfInteger(100)]))
+            .Set(new PdfName("Resources"), new PdfDictionary()
+                .Set(new PdfName("ColorSpace"), new PdfDictionary()
+                    .Set(new PdfName("CS1"), new PdfIndirectReference(formCsNum))));
+
+        // Page content: select /CS0 cs (page Spot1→DeviceRGB), draw rectangle, draw form
+        var contentNum = formNum + 1;
+        var pageContent = new PdfStream(Encoding.ASCII.GetBytes("/CS0 cs 0.5 scn 50 50 40 40 re f\n/Fm0 Do"));
+
+        var resObj = page.Get(new PdfName("Resources"));
+        var resources = (resObj is null ? null : reader.ResolveValue(resObj)) as PdfDictionary ?? new PdfDictionary();
+        var newRes = CloneDict(resources);
+        newRes.Set(new PdfName("ColorSpace"),
+                new PdfDictionary().Set(new PdfName("CS0"), new PdfIndirectReference(pageCsNum)))
+              .Set(new PdfName("XObject"),
+                new PdfDictionary().Set(new PdfName("Fm0"), new PdfIndirectReference(formNum)));
+        newPage.Set(new PdfName("Resources"), newRes)
+               .Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
+
+        return reader.AppendRevision([
+            (pageRef.ObjectNumber, newPage),
+            (pageTintNum, pageTint),
+            (formTintNum, formTint),
+            (pageCsNum, pageCs),
+            (formCsNum, formCs),
+            (formNum, formStream),
+            (contentNum, pageContent),
+        ]);
+    }
+
+    // ── Batch N4 adversarial FP-sweep helpers (internal — used by PdfPreflightTests) ──────────────
+
+    /// <summary>
+    /// FP-sweep: drawn Form XObject with no <c>/Resources</c> — the rule must skip it, not crash.
+    /// Page uses /Spot1 (consistent). veraPDF accepts (confirmed 2026-06-23).
+    /// </summary>
+    internal static byte[] SepFormNoResources()
+    {
+        var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var newPage = CloneDict(page);
+
+        var pageTintNum = reader.Size;
+        var pageTint = new PdfStream(Encoding.ASCII.GetBytes("{ pop 0.5 0.5 0.5 }"));
+        pageTint.Dictionary
+            .Set(new PdfName("FunctionType"), new PdfInteger(4))
+            .Set(new PdfName("Domain"), new PdfArray([new PdfInteger(0), new PdfInteger(1)]))
+            .Set(new PdfName("Range"), new PdfArray([
+                new PdfInteger(0), new PdfInteger(1), new PdfInteger(0), new PdfInteger(1),
+                new PdfInteger(0), new PdfInteger(1)]));
+
+        var pageCsNum = pageTintNum + 1;
+        var pageCs = new PdfArray([
+            new PdfName("Separation"),
+            new PdfName("Spot1"),
+            new PdfName("DeviceRGB"),
+            new PdfIndirectReference(pageTintNum),
+        ]);
+
+        // Form deliberately has NO /Resources — its colour-space names cannot be resolved.
+        var formNum = pageCsNum + 1;
+        var formStream = new PdfStream(Encoding.ASCII.GetBytes("/CS1 cs 0.5 scn 10 10 40 40 re f"));
+        formStream.Dictionary
+            .Set(PdfName.Type, new PdfName("XObject"))
+            .Set(new PdfName("Subtype"), new PdfName("Form"))
+            .Set(new PdfName("BBox"), new PdfArray([
+                new PdfInteger(0), new PdfInteger(0),
+                new PdfInteger(100), new PdfInteger(100)]));
+        // NOTE: no .Set("Resources", ...) — form deliberately omits /Resources.
+
+        var contentNum = formNum + 1;
+        var pageContent = new PdfStream(Encoding.ASCII.GetBytes("/CS0 cs 0.5 scn 50 50 40 40 re f\n/Fm0 Do"));
+
+        var resObj = page.Get(new PdfName("Resources"));
+        var resources = (resObj is null ? null : reader.ResolveValue(resObj)) as PdfDictionary ?? new PdfDictionary();
+        var newRes = CloneDict(resources);
+        newRes.Set(new PdfName("ColorSpace"),
+                new PdfDictionary().Set(new PdfName("CS0"), new PdfIndirectReference(pageCsNum)))
+              .Set(new PdfName("XObject"),
+                new PdfDictionary().Set(new PdfName("Fm0"), new PdfIndirectReference(formNum)));
+        newPage.Set(new PdfName("Resources"), newRes)
+               .Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
+
+        return reader.AppendRevision([
+            (pageRef.ObjectNumber, newPage),
+            (pageTintNum, pageTint),
+            (pageCsNum, pageCs),
+            (formNum, formStream),
+            (contentNum, pageContent),
+        ]);
+    }
+
+    /// <summary>
+    /// FP-sweep: two drawn Form XObjects both using consistent /Spot1→DeviceRGB with identical tint.
+    /// No inconsistency — veraPDF accepts (confirmed 2026-06-23). In-process must NOT fire.
+    /// </summary>
+    internal static byte[] SepTwoFormsConsistent()
+    {
+        var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var newPage = CloneDict(page);
+
+        // Three structurally-identical tint functions (distinct object numbers).
+        var tint1Num = reader.Size;
+        var tint2Num = tint1Num + 1;
+        var tint3Num = tint2Num + 1;
+        static PdfStream MakeTintRgb()
+        {
+            var t = new PdfStream(Encoding.ASCII.GetBytes("{ pop 0.5 0.5 0.5 }"));
+            t.Dictionary
+                .Set(new PdfName("FunctionType"), new PdfInteger(4))
+                .Set(new PdfName("Domain"), new PdfArray([new PdfInteger(0), new PdfInteger(1)]))
+                .Set(new PdfName("Range"), new PdfArray([
+                    new PdfInteger(0), new PdfInteger(1), new PdfInteger(0), new PdfInteger(1),
+                    new PdfInteger(0), new PdfInteger(1)]));
+            return t;
+        }
+
+        // Page CS, Form1 CS, Form2 CS — all /Spot1 → DeviceRGB, each with its own tint object.
+        var pageCsNum = tint3Num + 1;
+        var pageCs = new PdfArray([
+            new PdfName("Separation"), new PdfName("Spot1"),
+            new PdfName("DeviceRGB"), new PdfIndirectReference(tint1Num)]);
+
+        var form1CsNum = pageCsNum + 1;
+        var form1Cs = new PdfArray([
+            new PdfName("Separation"), new PdfName("Spot1"),
+            new PdfName("DeviceRGB"), new PdfIndirectReference(tint2Num)]);
+
+        var form2CsNum = form1CsNum + 1;
+        var form2Cs = new PdfArray([
+            new PdfName("Separation"), new PdfName("Spot1"),
+            new PdfName("DeviceRGB"), new PdfIndirectReference(tint3Num)]);
+
+        // Form 1
+        var form1Num = form2CsNum + 1;
+        var form1 = new PdfStream(Encoding.ASCII.GetBytes("/CS1 cs 0.5 scn 10 10 30 30 re f"));
+        form1.Dictionary
+            .Set(PdfName.Type, new PdfName("XObject"))
+            .Set(new PdfName("Subtype"), new PdfName("Form"))
+            .Set(new PdfName("BBox"), new PdfArray([
+                new PdfInteger(0), new PdfInteger(0), new PdfInteger(100), new PdfInteger(100)]))
+            .Set(new PdfName("Resources"), new PdfDictionary()
+                .Set(new PdfName("ColorSpace"), new PdfDictionary()
+                    .Set(new PdfName("CS1"), new PdfIndirectReference(form1CsNum))));
+
+        // Form 2
+        var form2Num = form1Num + 1;
+        var form2 = new PdfStream(Encoding.ASCII.GetBytes("/CS2 cs 0.5 scn 50 50 30 30 re f"));
+        form2.Dictionary
+            .Set(PdfName.Type, new PdfName("XObject"))
+            .Set(new PdfName("Subtype"), new PdfName("Form"))
+            .Set(new PdfName("BBox"), new PdfArray([
+                new PdfInteger(0), new PdfInteger(0), new PdfInteger(100), new PdfInteger(100)]))
+            .Set(new PdfName("Resources"), new PdfDictionary()
+                .Set(new PdfName("ColorSpace"), new PdfDictionary()
+                    .Set(new PdfName("CS2"), new PdfIndirectReference(form2CsNum))));
+
+        var contentNum = form2Num + 1;
+        var pageContent = new PdfStream(Encoding.ASCII.GetBytes(
+            "/CS0 cs 0.5 scn 80 80 30 30 re f\n/Fm0 Do\n/Fm1 Do"));
+
+        var resObj = page.Get(new PdfName("Resources"));
+        var resources = (resObj is null ? null : reader.ResolveValue(resObj)) as PdfDictionary ?? new PdfDictionary();
+        var newRes = CloneDict(resources);
+        newRes.Set(new PdfName("ColorSpace"),
+                new PdfDictionary().Set(new PdfName("CS0"), new PdfIndirectReference(pageCsNum)))
+              .Set(new PdfName("XObject"), new PdfDictionary()
+                .Set(new PdfName("Fm0"), new PdfIndirectReference(form1Num))
+                .Set(new PdfName("Fm1"), new PdfIndirectReference(form2Num)));
+        newPage.Set(new PdfName("Resources"), newRes)
+               .Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
+
+        return reader.AppendRevision([
+            (pageRef.ObjectNumber, newPage),
+            (tint1Num, MakeTintRgb()),
+            (tint2Num, MakeTintRgb()),
+            (tint3Num, MakeTintRgb()),
+            (pageCsNum, pageCs),
+            (form1CsNum, form1Cs),
+            (form2CsNum, form2Cs),
+            (form1Num, form1),
+            (form2Num, form2),
+            (contentNum, pageContent),
+        ]);
+    }
+
+    /// <summary>
+    /// FP-sweep: undrawn Form XObject with inconsistent /Spot1 (DeviceGray) — not reachable so must
+    /// NOT fire. Page uses /Spot1→DeviceRGB. veraPDF accepts (confirmed 2026-06-23).
+    /// </summary>
+    internal static byte[] SepUndrawnFormInconsistent()
+    {
+        var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var newPage = CloneDict(page);
+
+        var pageTintNum = reader.Size;
+        var pageTint = new PdfStream(Encoding.ASCII.GetBytes("{ pop 0.5 0.5 0.5 }"));
+        pageTint.Dictionary
+            .Set(new PdfName("FunctionType"), new PdfInteger(4))
+            .Set(new PdfName("Domain"), new PdfArray([new PdfInteger(0), new PdfInteger(1)]))
+            .Set(new PdfName("Range"), new PdfArray([
+                new PdfInteger(0), new PdfInteger(1), new PdfInteger(0), new PdfInteger(1),
+                new PdfInteger(0), new PdfInteger(1)]));
+
+        var formTintNum = pageTintNum + 1;
+        var formTint = new PdfStream(Encoding.ASCII.GetBytes("{ pop 0.5 }"));
+        formTint.Dictionary
+            .Set(new PdfName("FunctionType"), new PdfInteger(4))
+            .Set(new PdfName("Domain"), new PdfArray([new PdfInteger(0), new PdfInteger(1)]))
+            .Set(new PdfName("Range"), new PdfArray([new PdfInteger(0), new PdfInteger(1)]));
+
+        var pageCsNum = formTintNum + 1;
+        var pageCs = new PdfArray([
+            new PdfName("Separation"), new PdfName("Spot1"),
+            new PdfName("DeviceRGB"), new PdfIndirectReference(pageTintNum)]);
+
+        var formCsNum = pageCsNum + 1;
+        var formCs = new PdfArray([
+            new PdfName("Separation"), new PdfName("Spot1"),
+            new PdfName("DeviceGray"), new PdfIndirectReference(formTintNum)]);
+
+        // Form: present in /Resources /XObject but NOT drawn (no Do in page content).
+        var formNum = formCsNum + 1;
+        var formStream = new PdfStream(Encoding.ASCII.GetBytes("/CS1 cs 0.5 scn 10 10 40 40 re f"));
+        formStream.Dictionary
+            .Set(PdfName.Type, new PdfName("XObject"))
+            .Set(new PdfName("Subtype"), new PdfName("Form"))
+            .Set(new PdfName("BBox"), new PdfArray([
+                new PdfInteger(0), new PdfInteger(0), new PdfInteger(100), new PdfInteger(100)]))
+            .Set(new PdfName("Resources"), new PdfDictionary()
+                .Set(new PdfName("ColorSpace"), new PdfDictionary()
+                    .Set(new PdfName("CS1"), new PdfIndirectReference(formCsNum))));
+
+        // Page content: use /CS0 (Spot1→DeviceRGB), draw a rectangle — NO /Fm0 Do.
+        var contentNum = formNum + 1;
+        var pageContent = new PdfStream(Encoding.ASCII.GetBytes("/CS0 cs 0.5 scn 50 50 40 40 re f"));
+
+        var resObj = page.Get(new PdfName("Resources"));
+        var resources = (resObj is null ? null : reader.ResolveValue(resObj)) as PdfDictionary ?? new PdfDictionary();
+        var newRes = CloneDict(resources);
+        newRes.Set(new PdfName("ColorSpace"),
+                new PdfDictionary().Set(new PdfName("CS0"), new PdfIndirectReference(pageCsNum)))
+              .Set(new PdfName("XObject"),
+                new PdfDictionary().Set(new PdfName("Fm0"), new PdfIndirectReference(formNum)));
+        newPage.Set(new PdfName("Resources"), newRes)
+               .Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
+
+        return reader.AppendRevision([
+            (pageRef.ObjectNumber, newPage),
+            (pageTintNum, pageTint),
+            (formTintNum, formTint),
+            (pageCsNum, pageCs),
+            (formCsNum, formCs),
+            (formNum, formStream),
+            (contentNum, pageContent),
+        ]);
+    }
+
+    // ── End of Batch N4 adversarial FP-sweep helpers ───────────────────────────────────────────────
+
+    // ── End of Batch N4 helpers ─────────────────────────────────────────────────────────────────────
 
     private static byte[] WriterPdf(VellumPdf.Document.PdfConformance conformance)
     {
@@ -4952,6 +7075,338 @@ public static class OracleCorpus
         newPage.Set(new PdfName("Contents"), contentsArray);
 
         return reader.AppendRevision([(pageRef.ObjectNumber, newPage), (contentNum, contentStream)]);
+    }
+
+    // ── Batch N5 helpers — §6.2.2-2 non-page stream fixtures ───────────────────────────────────────
+    // All fixtures use the writer-produced PDF/A-2b baseline (via WriterPdf / AppendRevision).
+    // veraPDF probes confirmed 2026-06-23 (see Batch N5 fixture comments for per-probe results).
+
+    /// <summary>
+    /// §6.2.2-2 VIOLATION (probe N5-A): a drawn Form XObject with NO own <c>/Resources</c>
+    /// dictionary that uses the named ExtGState <c>/GS1</c> via the <c>gs</c> operator.
+    /// The page has its own <c>/Resources</c> with <c>/GS1</c> defined — but that does not
+    /// satisfy the requirement for the form's content stream, which must carry its own
+    /// <c>/Resources</c>. veraPDF fires clause 6.2.2 testNumber 2 on the form's content stream
+    /// (context: <c>…/xObject[0]/contentStream[0](N 0 obj PDContentStream)</c>; isCompliant=false,
+    /// failedRules=1; confirmed empirically against veraPDF 1.30.2 on 2026-06-23).
+    /// In-process: InheritedResourceRule must fire "ISO19005-2:6.2.2-2".
+    /// </summary>
+    internal static byte[] InheritedResourceFormNoResourcesUsesGsPublic() => InheritedResourceFormNoResourcesUsesGs();
+    private static byte[] InheritedResourceFormNoResourcesUsesGs()
+    {
+        var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var newPage = CloneDict(page);
+
+        var formNum = reader.Size;
+        var contentNum = formNum + 1;
+
+        // Form XObject: NO /Resources — /GS1 name is unresolvable in the form's own scope.
+        var formStream = new PdfStream(Encoding.Latin1.GetBytes("q /GS1 gs Q"));
+        formStream.Dictionary
+            .Set(PdfName.Type, new PdfName("XObject"))
+            .Set(new PdfName("Subtype"), new PdfName("Form"))
+            .Set(new PdfName("BBox"), new PdfArray([
+                new PdfInteger(0), new PdfInteger(0),
+                new PdfInteger(100), new PdfInteger(100)]));
+        // NOTE: deliberately no /Resources on the form — the violation trigger.
+
+        var pageContent = new PdfStream(Encoding.Latin1.GetBytes("/Fm0 Do"));
+
+        var resObj = page.Get(new PdfName("Resources"));
+        var resources = (resObj is null ? null : reader.ResolveValue(resObj)) as PdfDictionary ?? new PdfDictionary();
+        var newRes = CloneDict(resources);
+        newRes
+            .Set(new PdfName("XObject"),
+                new PdfDictionary().Set(new PdfName("Fm0"), new PdfIndirectReference(formNum)))
+            .Set(new PdfName("ExtGState"),
+                new PdfDictionary().Set(new PdfName("GS1"),
+                    new PdfDictionary()
+                        .Set(PdfName.Type, new PdfName("ExtGState"))
+                        .Set(new PdfName("ca"), new PdfReal(1.0))));
+        newPage
+            .Set(new PdfName("Resources"), newRes)
+            .Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
+
+        return reader.AppendRevision([
+            (pageRef.ObjectNumber, newPage),
+            (formNum, formStream),
+            (contentNum, pageContent),
+        ]);
+    }
+
+    /// <summary>
+    /// §6.2.2-2 FP-SAFETY (probe N5-B): same drawn Form XObject structure but the form HAS its
+    /// own <c>/Resources</c> defining <c>/GS1</c>. The form is self-contained and satisfies the
+    /// "explicitly associated Resources dictionary" requirement. veraPDF accepts (isCompliant=true,
+    /// failedRules=0; confirmed empirically against veraPDF 1.30.2 on 2026-06-23).
+    /// In-process: InheritedResourceRule must NOT fire.
+    /// </summary>
+    internal static byte[] InheritedResourceFormWithResourcesUsesGsPublic() => InheritedResourceFormWithResourcesUsesGs();
+    private static byte[] InheritedResourceFormWithResourcesUsesGs()
+    {
+        var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var newPage = CloneDict(page);
+
+        var formNum = reader.Size;
+        var contentNum = formNum + 1;
+
+        // Form XObject WITH its own /Resources defining /GS1 — compliant.
+        var formGs = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("ExtGState"))
+            .Set(new PdfName("ca"), new PdfReal(1.0));
+        var formResources = new PdfDictionary()
+            .Set(new PdfName("ExtGState"),
+                new PdfDictionary().Set(new PdfName("GS1"), formGs));
+
+        var formStream = new PdfStream(Encoding.Latin1.GetBytes("q /GS1 gs Q"));
+        formStream.Dictionary
+            .Set(PdfName.Type, new PdfName("XObject"))
+            .Set(new PdfName("Subtype"), new PdfName("Form"))
+            .Set(new PdfName("BBox"), new PdfArray([
+                new PdfInteger(0), new PdfInteger(0),
+                new PdfInteger(100), new PdfInteger(100)]))
+            .Set(new PdfName("Resources"), formResources);
+
+        var pageContent = new PdfStream(Encoding.Latin1.GetBytes("/Fm0 Do"));
+
+        var resObj = page.Get(new PdfName("Resources"));
+        var resources = (resObj is null ? null : reader.ResolveValue(resObj)) as PdfDictionary ?? new PdfDictionary();
+        var newRes = CloneDict(resources);
+        newRes.Set(new PdfName("XObject"),
+            new PdfDictionary().Set(new PdfName("Fm0"), new PdfIndirectReference(formNum)));
+        newPage
+            .Set(new PdfName("Resources"), newRes)
+            .Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
+
+        return reader.AppendRevision([
+            (pageRef.ObjectNumber, newPage),
+            (formNum, formStream),
+            (contentNum, pageContent),
+        ]);
+    }
+
+    /// <summary>
+    /// §6.2.2-2 FP-SAFETY (probe N5-C): a drawn Form XObject with NO own <c>/Resources</c> that
+    /// uses ONLY operators that do not reference named resources (<c>q Q</c>). No named resource
+    /// usage means §6.2.2-2 does not apply. veraPDF accepts (isCompliant=true, failedRules=0;
+    /// confirmed empirically against veraPDF 1.30.2 on 2026-06-23).
+    /// In-process: InheritedResourceRule must NOT fire.
+    /// </summary>
+    internal static byte[] InheritedResourceFormNoResourcesNoUsagePublic() => InheritedResourceFormNoResourcesNoUsage();
+    private static byte[] InheritedResourceFormNoResourcesNoUsage()
+    {
+        var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var newPage = CloneDict(page);
+
+        var formNum = reader.Size;
+        var contentNum = formNum + 1;
+
+        // Form XObject: NO /Resources, no named resource usage (q Q only).
+        var formStream = new PdfStream(Encoding.Latin1.GetBytes("q Q"));
+        formStream.Dictionary
+            .Set(PdfName.Type, new PdfName("XObject"))
+            .Set(new PdfName("Subtype"), new PdfName("Form"))
+            .Set(new PdfName("BBox"), new PdfArray([
+                new PdfInteger(0), new PdfInteger(0),
+                new PdfInteger(100), new PdfInteger(100)]));
+        // No /Resources — but no named resource usage either, so this is fine.
+
+        var pageContent = new PdfStream(Encoding.Latin1.GetBytes("/Fm0 Do"));
+
+        var resObj = page.Get(new PdfName("Resources"));
+        var resources = (resObj is null ? null : reader.ResolveValue(resObj)) as PdfDictionary ?? new PdfDictionary();
+        var newRes = CloneDict(resources);
+        newRes.Set(new PdfName("XObject"),
+            new PdfDictionary().Set(new PdfName("Fm0"), new PdfIndirectReference(formNum)));
+        newPage
+            .Set(new PdfName("Resources"), newRes)
+            .Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
+
+        return reader.AppendRevision([
+            (pageRef.ObjectNumber, newPage),
+            (formNum, formStream),
+            (contentNum, pageContent),
+        ]);
+    }
+
+    // ── Batch N6 helpers — §6.2.2-2 page-level undefined-name + nested-form probes ──────────────
+    // All three fixtures are hand-assembled PDFs (not AppendRevision-based) because the writer
+    // always adds /Resources to every page. The XMP stream satisfies the PDF/A-2b metadata rule.
+
+    /// <summary>
+    /// §6.2.2-2 FP-SAFETY (probe A1): a page with NO own <c>/Resources</c> and NO ancestor
+    /// <c>/Resources</c> at all, whose content stream uses <c>/GS0 gs</c> — a name that is
+    /// <em>undefined in all ancestor scopes</em>. veraPDF accepts because the name is not an
+    /// <c>inheritedResourceName</c> (isCompliant=true, failedRules=0; confirmed empirically
+    /// against veraPDF 1.30.2 on 2026-06-23). In-process: InheritedResourceRule must NOT fire.
+    /// </summary>
+    internal static byte[] PageNoResourcesUndefinedNamePublic() => PageNoResourcesUndefinedName();
+    private static byte[] PageNoResourcesUndefinedName()
+    {
+        // Objects: 1=catalog, 2=pages(NO /Resources), 3=page(NO /Resources), 4=content, 5=xmp.
+        var xmp = MakeBatchN1Xmp();
+        var content = Encoding.Latin1.GetBytes("q /GS0 gs Q");
+        using var ms = new MemoryStream();
+        void W(string s) { var b = Encoding.Latin1.GetBytes(s); ms.Write(b); }
+
+        W("%PDF-1.7\n");
+        ms.Write([0x25, 0xE2, 0xE3, 0xCF, 0xD3, 0x0A]);
+        var off = new int[6];
+        off[1] = (int)ms.Position;
+        W("1 0 obj\n<< /Type /Catalog /Pages 2 0 R /Metadata 5 0 R >>\nendobj\n");
+        off[2] = (int)ms.Position;
+        // Pages node: NO /Resources key.
+        W("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
+        off[3] = (int)ms.Position;
+        // Page: NO /Resources key.
+        W("3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R >>\nendobj\n");
+        off[4] = (int)ms.Position;
+        W($"4 0 obj\n<< /Length {content.Length} >>\nstream\n");
+        ms.Write(content);
+        W("\nendstream\nendobj\n");
+        off[5] = (int)ms.Position;
+        W($"5 0 obj\n<< /Type /Metadata /Subtype /XML /Length {xmp.Length} >>\nstream\n");
+        ms.Write(xmp);
+        W("\nendstream\nendobj\n");
+        var xrefOff = (int)ms.Position;
+        W("xref\n0 6\n0000000000 65535 f \n");
+        for (var i = 1; i <= 5; i++) W($"{off[i]:D10} 00000 n \n");
+        W("trailer\n<< /Size 6 /Root 1 0 R /ID [<00112233> <00112233>] >>\n");
+        W($"startxref\n{xrefOff}\n%%EOF\n");
+        return ms.ToArray();
+    }
+
+    /// <summary>
+    /// §6.2.2-2 VIOLATION (probe B1): a page draws OUTER Form XObject that has its own
+    /// <c>/Resources</c> (not defining <c>/GS1</c>). The outer form draws INNER Form XObject
+    /// that has NO <c>/Resources</c> and uses <c>/GS1 gs</c>. <c>/GS1</c> IS defined in the
+    /// page's <c>/Resources /ExtGState</c>. veraPDF fires clause 6.2.2 testNumber 2 on the inner
+    /// form's content stream (isCompliant=false, failedRules=1; context:
+    /// <c>…/xObject[0]/contentStream[0]/operators[0]/xObject[0]/contentStream[0]</c>;
+    /// confirmed empirically against veraPDF 1.30.2 on 2026-06-23).
+    /// In-process: InheritedResourceRule must fire "ISO19005-2:6.2.2-2".
+    /// </summary>
+    internal static byte[] NestedFormInnerNoResourcesPageDefinedPublic() => NestedFormInnerNoResourcesPageDefined();
+    private static byte[] NestedFormInnerNoResourcesPageDefined()
+    {
+        // Objects:
+        //   1=catalog, 2=pages, 3=page(Resources: XObject/Fm0, ExtGState/GS1),
+        //   4=page-content(/Fm0 Do), 5=outer-form(Resources: XObject/Fm1, no GS1; content: /Fm1 Do),
+        //   6=inner-form(NO Resources; content: /GS1 gs), 7=xmp.
+        var xmp = MakeBatchN1Xmp();
+        var pageContent = Encoding.Latin1.GetBytes("/Fm0 Do");
+        var outerContent = Encoding.Latin1.GetBytes("/Fm1 Do");
+        var innerContent = Encoding.Latin1.GetBytes("q /GS1 gs Q");
+        using var ms = new MemoryStream();
+        void W(string s) { var b = Encoding.Latin1.GetBytes(s); ms.Write(b); }
+
+        W("%PDF-1.7\n");
+        ms.Write([0x25, 0xE2, 0xE3, 0xCF, 0xD3, 0x0A]);
+        var off = new int[8];
+        off[1] = (int)ms.Position;
+        W("1 0 obj\n<< /Type /Catalog /Pages 2 0 R /Metadata 7 0 R >>\nendobj\n");
+        off[2] = (int)ms.Position;
+        W("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
+        off[3] = (int)ms.Position;
+        // Page: has own /Resources with /Fm0 (outer form) AND /GS1 (ExtGState).
+        W("3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R"
+            + " /Resources << /XObject << /Fm0 5 0 R >> /ExtGState << /GS1 << /Type /ExtGState /ca 1 >> >> >> >>\nendobj\n");
+        off[4] = (int)ms.Position;
+        W($"4 0 obj\n<< /Length {pageContent.Length} >>\nstream\n");
+        ms.Write(pageContent);
+        W("\nendstream\nendobj\n");
+        off[5] = (int)ms.Position;
+        // Outer form: HAS own /Resources (defines /Fm1 but NOT /GS1).
+        W($"5 0 obj\n<< /Type /XObject /Subtype /Form /BBox [0 0 100 100]"
+            + " /Resources << /XObject << /Fm1 6 0 R >> >>"
+            + $" /Length {outerContent.Length} >>\nstream\n");
+        ms.Write(outerContent);
+        W("\nendstream\nendobj\n");
+        off[6] = (int)ms.Position;
+        // Inner form: NO /Resources, uses /GS1 gs (defined in page scope but NOT in outer scope).
+        W($"6 0 obj\n<< /Type /XObject /Subtype /Form /BBox [0 0 100 100]"
+            + $" /Length {innerContent.Length} >>\nstream\n");
+        ms.Write(innerContent);
+        W("\nendstream\nendobj\n");
+        off[7] = (int)ms.Position;
+        W($"7 0 obj\n<< /Type /Metadata /Subtype /XML /Length {xmp.Length} >>\nstream\n");
+        ms.Write(xmp);
+        W("\nendstream\nendobj\n");
+        var xrefOff = (int)ms.Position;
+        W("xref\n0 8\n0000000000 65535 f \n");
+        for (var i = 1; i <= 7; i++) W($"{off[i]:D10} 00000 n \n");
+        W("trailer\n<< /Size 8 /Root 1 0 R /ID [<00112233> <00112233>] >>\n");
+        W($"startxref\n{xrefOff}\n%%EOF\n");
+        return ms.ToArray();
+    }
+
+    /// <summary>
+    /// §6.2.2-2 FP-SAFETY (probe B2): same nested outer/inner form structure as probe B1, but
+    /// <c>/GS1</c> is defined ONLY in the OUTER form's <c>/Resources /ExtGState</c> — it is NOT
+    /// in the page's <c>/Resources</c>. The INNER form has no <c>/Resources</c> and uses
+    /// <c>/GS1 gs</c>. veraPDF accepts because <c>/GS1</c> is not an inherited resource name for
+    /// the inner form relative to the page scope (isCompliant=true, failedRules=0; confirmed
+    /// empirically against veraPDF 1.30.2 on 2026-06-23). In-process: InheritedResourceRule must
+    /// NOT fire (page-scope check: /GS1 not in page's /ExtGState → no finding).
+    /// </summary>
+    internal static byte[] NestedFormInnerNoResourcesOuterDefinedPublic() => NestedFormInnerNoResourcesOuterDefined();
+    private static byte[] NestedFormInnerNoResourcesOuterDefined()
+    {
+        // Objects:
+        //   1=catalog, 2=pages, 3=page(Resources: XObject/Fm0 only — NO ExtGState),
+        //   4=page-content(/Fm0 Do), 5=outer-form(Resources: XObject/Fm1 + ExtGState/GS1; content: /Fm1 Do),
+        //   6=inner-form(NO Resources; content: /GS1 gs), 7=xmp.
+        var xmp = MakeBatchN1Xmp();
+        var pageContent = Encoding.Latin1.GetBytes("/Fm0 Do");
+        var outerContent = Encoding.Latin1.GetBytes("/Fm1 Do");
+        var innerContent = Encoding.Latin1.GetBytes("q /GS1 gs Q");
+        using var ms = new MemoryStream();
+        void W(string s) { var b = Encoding.Latin1.GetBytes(s); ms.Write(b); }
+
+        W("%PDF-1.7\n");
+        ms.Write([0x25, 0xE2, 0xE3, 0xCF, 0xD3, 0x0A]);
+        var off = new int[8];
+        off[1] = (int)ms.Position;
+        W("1 0 obj\n<< /Type /Catalog /Pages 2 0 R /Metadata 7 0 R >>\nendobj\n");
+        off[2] = (int)ms.Position;
+        W("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
+        off[3] = (int)ms.Position;
+        // Page: own /Resources with /Fm0 ONLY — no /ExtGState /GS1 on the page.
+        W("3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R"
+            + " /Resources << /XObject << /Fm0 5 0 R >> >> >>\nendobj\n");
+        off[4] = (int)ms.Position;
+        W($"4 0 obj\n<< /Length {pageContent.Length} >>\nstream\n");
+        ms.Write(pageContent);
+        W("\nendstream\nendobj\n");
+        off[5] = (int)ms.Position;
+        // Outer form: HAS own /Resources with /Fm1 AND /GS1.
+        W($"5 0 obj\n<< /Type /XObject /Subtype /Form /BBox [0 0 100 100]"
+            + " /Resources << /XObject << /Fm1 6 0 R >> /ExtGState << /GS1 << /Type /ExtGState /ca 1 >> >> >>"
+            + $" /Length {outerContent.Length} >>\nstream\n");
+        ms.Write(outerContent);
+        W("\nendstream\nendobj\n");
+        off[6] = (int)ms.Position;
+        // Inner form: NO /Resources, uses /GS1 gs (defined only in outer scope, not page scope).
+        W($"6 0 obj\n<< /Type /XObject /Subtype /Form /BBox [0 0 100 100]"
+            + $" /Length {innerContent.Length} >>\nstream\n");
+        ms.Write(innerContent);
+        W("\nendstream\nendobj\n");
+        off[7] = (int)ms.Position;
+        W($"7 0 obj\n<< /Type /Metadata /Subtype /XML /Length {xmp.Length} >>\nstream\n");
+        ms.Write(xmp);
+        W("\nendstream\nendobj\n");
+        var xrefOff = (int)ms.Position;
+        W("xref\n0 8\n0000000000 65535 f \n");
+        for (var i = 1; i <= 7; i++) W($"{off[i]:D10} 00000 n \n");
+        W("trailer\n<< /Size 8 /Root 1 0 R /ID [<00112233> <00112233>] >>\n");
+        W($"startxref\n{xrefOff}\n%%EOF\n");
+        return ms.ToArray();
     }
 
 }
