@@ -181,7 +181,7 @@ public static class ConformanceCatalog
     {
         ["6.1.8-1"] = "font BaseFont and colour colourant names checked (presence-based); structure-type names checked for direct /StructTreeRoot /K children only — deeper nesting not yet walked",
         ["6.2.3-1"] = "DestOutputProfile signature/N checked; ICC device-class not parsed",
-        ["6.2.4.2-2"] = "page content-stream OPM/overprint/ICCBased-CMYK correlation checked with q/Q-stack interpreter; Form XObjects, Type 3 CharProcs, and annotation appearance streams not yet walked",
+        ["6.2.4.2-2"] = "page content streams plus drawn Form XObjects, all CharProcs of Tf-selected Type 3 fonts, and annotation /AP /N appearance streams are now interpreted in isolation with a fresh default GState (Batch N3, 2026-06-23); graphics state inherited across Do boundaries is NOT threaded — a violation established only by state set in the calling stream and painted inside a form (without the form re-establishing the state itself) is under-detected (residual gap, FP-safe; empirically confirmed against veraPDF 1.30.2: both self-contained and inherited-state form violations fire in veraPDF, but only the self-contained case is reachable by isolated scanning)",
         ["6.2.4.3-2"] = "device-colour requires an output intent checked; DefaultRGB path not",
         ["6.2.4.3-3"] = "device-colour requires an output intent checked; DefaultCMYK path not",
         ["6.2.4.3-4"] = "page-content device grey covered; image/pattern colour not detected",
@@ -221,7 +221,8 @@ public static class ConformanceCatalog
         ["6.1.6-2"] = "byte scan implemented, but the reader rejects an invalid hex digit before validation",
         // 6.1.8-1 moved to PdfAPartial (font BaseFont + colour colourant + structure-type names).
         // 6.1.12-2 moved to Implemented (DocMdpReferenceRule).
-        // 6.2.4.2-2 moved to PdfAPartial; implemented via OverprintRule with page-content interpreter.
+        // 6.2.4.2-2 moved to PdfAPartial; OverprintRule now covers page + non-page streams (Batch N3);
+        //   graphics-state inheritance across Do remains the residual gap (FP-safe under-detection).
         // 6.2.8.3-1..-5: removed from Deferred; Jpeg2000Rule now implements all five for both
         // JP2 box files and raw codestreams. -2/-3/-4 correctly do not apply to raw codestreams
         // (which carry no colr boxes) — this is not a gap but correct per-spec scoping.
