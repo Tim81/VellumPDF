@@ -966,9 +966,13 @@ public static class OracleCorpus
             // §6.2.4.2-2 FP-SAFETY (null /Resources): a drawn Form XObject that omits its own
             // /Resources dictionary. The rule must skip it (cannot resolve colour-space or gs names)
             // and must not crash or emit a spurious finding. The form content selects a hypothetical
-            // /CS0 cs and /GS1 gs but those names resolve to nothing. veraPDF accepts (the names
-            // silently fail to resolve in veraPDF's own model too — isCompliant=true, failedRules=0,
-            // confirmed 2026-06-23). In-process: OverprintRule must NOT fire.
+            // /CS0 cs and /GS1 gs but those names resolve to nothing (the page's /Resources does NOT
+            // define /CS0 or /GS1 in this fixture — only /XObject /Fm0 is added). In-process:
+            // OverprintRule must NOT fire (no 6.2.4.2-2 finding). §6.2.2-2 does NOT fire either:
+            // veraPDF's inheritedResourceNames model only flags names that ARE defined in the page's
+            // ancestor resource scope; /CS0 and /GS1 are undefined in the page's /Resources here, so
+            // they are not "inherited" — veraPDF accepts (isCompliant=true, confirmed 2026-06-23,
+            // re-confirmed when Batch N5 established the precise inheritedResourceNames semantics).
             new OracleFixture("pdfa2b-overprint-form-no-resources",
                 OverprintFormNoResources(),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
@@ -1390,6 +1394,82 @@ public static class OracleCorpus
             // veraPDF accepts (confirmed 2026-06-23). In-process must NOT fire.
             new OracleFixture("pdfa2b-sep-form-consistent",
                 SepFormXObjectConsistent(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // ── Batch N5 — §6.2.2-2 non-page stream coverage ───────────────────────────────────────
+            // Extends the inherited-resource check to drawn Form XObjects, Type 3 CharProcs, and
+            // annotation /AP /N appearance streams via GetReachableContentStreams. The per-stream
+            // check fires when the stream's own /Resources is absent (null) AND it uses ≥1 named
+            // resource. Empirical veraPDF 1.30.2 probes (2026-06-23):
+            //   N5-A (form NO /Resources, uses /GS1 gs; page HAS /Resources): veraPDF FIRES 6.2.2-2 ✓
+            //     context: root/.../xObject[0]/contentStream[0](N 0 obj PDContentStream)
+            //   N5-B (form HAS /Resources defining /GS1, uses /GS1 gs): veraPDF PASSES ✓
+            //   N5-C (form NO /Resources, no named resource usage — q Q only): veraPDF PASSES ✓
+
+            // §6.2.2-2 VIOLATION: a drawn Form XObject with NO own /Resources that uses the named
+            // ExtGState /GS1 via the gs operator. Even though the page has its own /Resources with
+            // /GS1 defined, the FORM stream must have its own /Resources associating the name.
+            // veraPDF fires clause 6.2.2 testNumber 2 on the form's content stream (confirmed
+            // empirically against veraPDF 1.30.2, probe N5-A, 2026-06-23).
+            // In-process: InheritedResourceRule must fire "ISO19005-2:6.2.2-2".
+            new OracleFixture("pdfa2b-inherited-resource-form-no-resources-uses-gs",
+                InheritedResourceFormNoResourcesUsesGs(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // §6.2.2-2 FP-SAFETY: same drawn Form XObject structure but the form HAS its own
+            // /Resources defining /GS1. The form is self-contained — the rule must NOT fire.
+            // veraPDF accepts (confirmed empirically, probe N5-B, 2026-06-23).
+            // In-process: InheritedResourceRule must NOT fire.
+            new OracleFixture("pdfa2b-inherited-resource-form-with-resources-uses-gs",
+                InheritedResourceFormWithResourcesUsesGs(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // §6.2.2-2 FP-SAFETY: a drawn Form XObject with NO own /Resources that uses ONLY
+            // operators that do not reference named resources (q Q). No named resource usage means
+            // no §6.2.2-2 finding regardless of the missing /Resources. veraPDF accepts (confirmed
+            // empirically, probe N5-C, 2026-06-23). In-process must NOT fire.
+            new OracleFixture("pdfa2b-inherited-resource-form-no-resources-no-usage",
+                InheritedResourceFormNoResourcesNoUsage(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // ── Batch N6 — §6.2.2-2 page-level undefined-name + nested-form probes ───────────────
+            // Empirical veraPDF 1.30.2 probes (2026-06-23):
+            //   Probe A1: page no own /Resources, no ancestor /Resources either, uses /GS0 gs
+            //             (UNDEFINED in all scopes). veraPDF PASSES — undefined name is not an
+            //             "inheritedResourceName". In-process must NOT fire (was a latent FP before fix).
+            //   Probe A2: canonical violation — page no own /Resources, ancestor /Pages HAS /GS0,
+            //             uses /GS0 gs. veraPDF FIRES 6.2.2-2. Existing tests cover this case.
+            //   Probe B1: page draws OUTER form (own /Resources, NO /GS1), OUTER draws INNER form
+            //             (NO /Resources, uses /GS1 gs); /GS1 IS in PAGE scope. veraPDF FIRES
+            //             6.2.2-2 on inner form. In-process must fire.
+            //   Probe B2: same nested structure but /GS1 in OUTER form's /Resources (not page).
+            //             veraPDF PASSES — /GS1 not in page scope → not an inherited resource name
+            //             for the INNER form. In-process does NOT fire (checks page scope only).
+
+            // §6.2.2-2 FP-SAFETY (probe A1): page has NO own /Resources AND NO ancestor /Resources
+            // at all; page content uses /GS0 gs (name undefined in ALL ancestor scopes). veraPDF
+            // accepts because the name is not an "inheritedResourceName" (confirmed empirically,
+            // probe A1, 2026-06-23). In-process: InheritedResourceRule must NOT fire.
+            new OracleFixture("pdfa2b-page-no-resources-undefined-name",
+                PageNoResourcesUndefinedName(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // §6.2.2-2 VIOLATION (probe B1): page draws OUTER form that has its own /Resources
+            // (but NOT /GS1). OUTER form draws INNER form that has NO /Resources and uses /GS1 gs.
+            // /GS1 IS defined in the PAGE's /Resources /ExtGState. veraPDF fires 6.2.2-2 on the
+            // INNER form's content stream (confirmed empirically, probe B1, 2026-06-23).
+            // In-process: InheritedResourceRule must fire "ISO19005-2:6.2.2-2".
+            new OracleFixture("pdfa2b-nested-form-inner-no-resources-page-defined",
+                NestedFormInnerNoResourcesPageDefined(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // §6.2.2-2 FP-SAFETY (probe B2): same nested structure but /GS1 is defined ONLY in the
+            // OUTER form's /Resources, NOT in the page's /Resources. The INNER form (no /Resources,
+            // uses /GS1 gs) would inherit from the outer form scope, not the page scope. veraPDF
+            // accepts (confirmed empirically, probe B2, 2026-06-23). In-process must NOT fire
+            // (page-scope check → /GS1 not found on page → no finding).
+            new OracleFixture("pdfa2b-nested-form-inner-no-resources-outer-defined",
+                NestedFormInnerNoResourcesOuterDefined(),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
         ];
     }
@@ -6492,6 +6572,338 @@ public static class OracleCorpus
         newPage.Set(new PdfName("Contents"), contentsArray);
 
         return reader.AppendRevision([(pageRef.ObjectNumber, newPage), (contentNum, contentStream)]);
+    }
+
+    // ── Batch N5 helpers — §6.2.2-2 non-page stream fixtures ───────────────────────────────────────
+    // All fixtures use the writer-produced PDF/A-2b baseline (via WriterPdf / AppendRevision).
+    // veraPDF probes confirmed 2026-06-23 (see Batch N5 fixture comments for per-probe results).
+
+    /// <summary>
+    /// §6.2.2-2 VIOLATION (probe N5-A): a drawn Form XObject with NO own <c>/Resources</c>
+    /// dictionary that uses the named ExtGState <c>/GS1</c> via the <c>gs</c> operator.
+    /// The page has its own <c>/Resources</c> with <c>/GS1</c> defined — but that does not
+    /// satisfy the requirement for the form's content stream, which must carry its own
+    /// <c>/Resources</c>. veraPDF fires clause 6.2.2 testNumber 2 on the form's content stream
+    /// (context: <c>…/xObject[0]/contentStream[0](N 0 obj PDContentStream)</c>; isCompliant=false,
+    /// failedRules=1; confirmed empirically against veraPDF 1.30.2 on 2026-06-23).
+    /// In-process: InheritedResourceRule must fire "ISO19005-2:6.2.2-2".
+    /// </summary>
+    internal static byte[] InheritedResourceFormNoResourcesUsesGsPublic() => InheritedResourceFormNoResourcesUsesGs();
+    private static byte[] InheritedResourceFormNoResourcesUsesGs()
+    {
+        var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var newPage = CloneDict(page);
+
+        var formNum = reader.Size;
+        var contentNum = formNum + 1;
+
+        // Form XObject: NO /Resources — /GS1 name is unresolvable in the form's own scope.
+        var formStream = new PdfStream(Encoding.Latin1.GetBytes("q /GS1 gs Q"));
+        formStream.Dictionary
+            .Set(PdfName.Type, new PdfName("XObject"))
+            .Set(new PdfName("Subtype"), new PdfName("Form"))
+            .Set(new PdfName("BBox"), new PdfArray([
+                new PdfInteger(0), new PdfInteger(0),
+                new PdfInteger(100), new PdfInteger(100)]));
+        // NOTE: deliberately no /Resources on the form — the violation trigger.
+
+        var pageContent = new PdfStream(Encoding.Latin1.GetBytes("/Fm0 Do"));
+
+        var resObj = page.Get(new PdfName("Resources"));
+        var resources = (resObj is null ? null : reader.ResolveValue(resObj)) as PdfDictionary ?? new PdfDictionary();
+        var newRes = CloneDict(resources);
+        newRes
+            .Set(new PdfName("XObject"),
+                new PdfDictionary().Set(new PdfName("Fm0"), new PdfIndirectReference(formNum)))
+            .Set(new PdfName("ExtGState"),
+                new PdfDictionary().Set(new PdfName("GS1"),
+                    new PdfDictionary()
+                        .Set(PdfName.Type, new PdfName("ExtGState"))
+                        .Set(new PdfName("ca"), new PdfReal(1.0))));
+        newPage
+            .Set(new PdfName("Resources"), newRes)
+            .Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
+
+        return reader.AppendRevision([
+            (pageRef.ObjectNumber, newPage),
+            (formNum, formStream),
+            (contentNum, pageContent),
+        ]);
+    }
+
+    /// <summary>
+    /// §6.2.2-2 FP-SAFETY (probe N5-B): same drawn Form XObject structure but the form HAS its
+    /// own <c>/Resources</c> defining <c>/GS1</c>. The form is self-contained and satisfies the
+    /// "explicitly associated Resources dictionary" requirement. veraPDF accepts (isCompliant=true,
+    /// failedRules=0; confirmed empirically against veraPDF 1.30.2 on 2026-06-23).
+    /// In-process: InheritedResourceRule must NOT fire.
+    /// </summary>
+    internal static byte[] InheritedResourceFormWithResourcesUsesGsPublic() => InheritedResourceFormWithResourcesUsesGs();
+    private static byte[] InheritedResourceFormWithResourcesUsesGs()
+    {
+        var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var newPage = CloneDict(page);
+
+        var formNum = reader.Size;
+        var contentNum = formNum + 1;
+
+        // Form XObject WITH its own /Resources defining /GS1 — compliant.
+        var formGs = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("ExtGState"))
+            .Set(new PdfName("ca"), new PdfReal(1.0));
+        var formResources = new PdfDictionary()
+            .Set(new PdfName("ExtGState"),
+                new PdfDictionary().Set(new PdfName("GS1"), formGs));
+
+        var formStream = new PdfStream(Encoding.Latin1.GetBytes("q /GS1 gs Q"));
+        formStream.Dictionary
+            .Set(PdfName.Type, new PdfName("XObject"))
+            .Set(new PdfName("Subtype"), new PdfName("Form"))
+            .Set(new PdfName("BBox"), new PdfArray([
+                new PdfInteger(0), new PdfInteger(0),
+                new PdfInteger(100), new PdfInteger(100)]))
+            .Set(new PdfName("Resources"), formResources);
+
+        var pageContent = new PdfStream(Encoding.Latin1.GetBytes("/Fm0 Do"));
+
+        var resObj = page.Get(new PdfName("Resources"));
+        var resources = (resObj is null ? null : reader.ResolveValue(resObj)) as PdfDictionary ?? new PdfDictionary();
+        var newRes = CloneDict(resources);
+        newRes.Set(new PdfName("XObject"),
+            new PdfDictionary().Set(new PdfName("Fm0"), new PdfIndirectReference(formNum)));
+        newPage
+            .Set(new PdfName("Resources"), newRes)
+            .Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
+
+        return reader.AppendRevision([
+            (pageRef.ObjectNumber, newPage),
+            (formNum, formStream),
+            (contentNum, pageContent),
+        ]);
+    }
+
+    /// <summary>
+    /// §6.2.2-2 FP-SAFETY (probe N5-C): a drawn Form XObject with NO own <c>/Resources</c> that
+    /// uses ONLY operators that do not reference named resources (<c>q Q</c>). No named resource
+    /// usage means §6.2.2-2 does not apply. veraPDF accepts (isCompliant=true, failedRules=0;
+    /// confirmed empirically against veraPDF 1.30.2 on 2026-06-23).
+    /// In-process: InheritedResourceRule must NOT fire.
+    /// </summary>
+    internal static byte[] InheritedResourceFormNoResourcesNoUsagePublic() => InheritedResourceFormNoResourcesNoUsage();
+    private static byte[] InheritedResourceFormNoResourcesNoUsage()
+    {
+        var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var newPage = CloneDict(page);
+
+        var formNum = reader.Size;
+        var contentNum = formNum + 1;
+
+        // Form XObject: NO /Resources, no named resource usage (q Q only).
+        var formStream = new PdfStream(Encoding.Latin1.GetBytes("q Q"));
+        formStream.Dictionary
+            .Set(PdfName.Type, new PdfName("XObject"))
+            .Set(new PdfName("Subtype"), new PdfName("Form"))
+            .Set(new PdfName("BBox"), new PdfArray([
+                new PdfInteger(0), new PdfInteger(0),
+                new PdfInteger(100), new PdfInteger(100)]));
+        // No /Resources — but no named resource usage either, so this is fine.
+
+        var pageContent = new PdfStream(Encoding.Latin1.GetBytes("/Fm0 Do"));
+
+        var resObj = page.Get(new PdfName("Resources"));
+        var resources = (resObj is null ? null : reader.ResolveValue(resObj)) as PdfDictionary ?? new PdfDictionary();
+        var newRes = CloneDict(resources);
+        newRes.Set(new PdfName("XObject"),
+            new PdfDictionary().Set(new PdfName("Fm0"), new PdfIndirectReference(formNum)));
+        newPage
+            .Set(new PdfName("Resources"), newRes)
+            .Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
+
+        return reader.AppendRevision([
+            (pageRef.ObjectNumber, newPage),
+            (formNum, formStream),
+            (contentNum, pageContent),
+        ]);
+    }
+
+    // ── Batch N6 helpers — §6.2.2-2 page-level undefined-name + nested-form probes ──────────────
+    // All three fixtures are hand-assembled PDFs (not AppendRevision-based) because the writer
+    // always adds /Resources to every page. The XMP stream satisfies the PDF/A-2b metadata rule.
+
+    /// <summary>
+    /// §6.2.2-2 FP-SAFETY (probe A1): a page with NO own <c>/Resources</c> and NO ancestor
+    /// <c>/Resources</c> at all, whose content stream uses <c>/GS0 gs</c> — a name that is
+    /// <em>undefined in all ancestor scopes</em>. veraPDF accepts because the name is not an
+    /// <c>inheritedResourceName</c> (isCompliant=true, failedRules=0; confirmed empirically
+    /// against veraPDF 1.30.2 on 2026-06-23). In-process: InheritedResourceRule must NOT fire.
+    /// </summary>
+    internal static byte[] PageNoResourcesUndefinedNamePublic() => PageNoResourcesUndefinedName();
+    private static byte[] PageNoResourcesUndefinedName()
+    {
+        // Objects: 1=catalog, 2=pages(NO /Resources), 3=page(NO /Resources), 4=content, 5=xmp.
+        var xmp = MakeBatchN1Xmp();
+        var content = Encoding.Latin1.GetBytes("q /GS0 gs Q");
+        using var ms = new MemoryStream();
+        void W(string s) { var b = Encoding.Latin1.GetBytes(s); ms.Write(b); }
+
+        W("%PDF-1.7\n");
+        ms.Write([0x25, 0xE2, 0xE3, 0xCF, 0xD3, 0x0A]);
+        var off = new int[6];
+        off[1] = (int)ms.Position;
+        W("1 0 obj\n<< /Type /Catalog /Pages 2 0 R /Metadata 5 0 R >>\nendobj\n");
+        off[2] = (int)ms.Position;
+        // Pages node: NO /Resources key.
+        W("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
+        off[3] = (int)ms.Position;
+        // Page: NO /Resources key.
+        W("3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R >>\nendobj\n");
+        off[4] = (int)ms.Position;
+        W($"4 0 obj\n<< /Length {content.Length} >>\nstream\n");
+        ms.Write(content);
+        W("\nendstream\nendobj\n");
+        off[5] = (int)ms.Position;
+        W($"5 0 obj\n<< /Type /Metadata /Subtype /XML /Length {xmp.Length} >>\nstream\n");
+        ms.Write(xmp);
+        W("\nendstream\nendobj\n");
+        var xrefOff = (int)ms.Position;
+        W("xref\n0 6\n0000000000 65535 f \n");
+        for (var i = 1; i <= 5; i++) W($"{off[i]:D10} 00000 n \n");
+        W("trailer\n<< /Size 6 /Root 1 0 R /ID [<00112233> <00112233>] >>\n");
+        W($"startxref\n{xrefOff}\n%%EOF\n");
+        return ms.ToArray();
+    }
+
+    /// <summary>
+    /// §6.2.2-2 VIOLATION (probe B1): a page draws OUTER Form XObject that has its own
+    /// <c>/Resources</c> (not defining <c>/GS1</c>). The outer form draws INNER Form XObject
+    /// that has NO <c>/Resources</c> and uses <c>/GS1 gs</c>. <c>/GS1</c> IS defined in the
+    /// page's <c>/Resources /ExtGState</c>. veraPDF fires clause 6.2.2 testNumber 2 on the inner
+    /// form's content stream (isCompliant=false, failedRules=1; context:
+    /// <c>…/xObject[0]/contentStream[0]/operators[0]/xObject[0]/contentStream[0]</c>;
+    /// confirmed empirically against veraPDF 1.30.2 on 2026-06-23).
+    /// In-process: InheritedResourceRule must fire "ISO19005-2:6.2.2-2".
+    /// </summary>
+    internal static byte[] NestedFormInnerNoResourcesPageDefinedPublic() => NestedFormInnerNoResourcesPageDefined();
+    private static byte[] NestedFormInnerNoResourcesPageDefined()
+    {
+        // Objects:
+        //   1=catalog, 2=pages, 3=page(Resources: XObject/Fm0, ExtGState/GS1),
+        //   4=page-content(/Fm0 Do), 5=outer-form(Resources: XObject/Fm1, no GS1; content: /Fm1 Do),
+        //   6=inner-form(NO Resources; content: /GS1 gs), 7=xmp.
+        var xmp = MakeBatchN1Xmp();
+        var pageContent = Encoding.Latin1.GetBytes("/Fm0 Do");
+        var outerContent = Encoding.Latin1.GetBytes("/Fm1 Do");
+        var innerContent = Encoding.Latin1.GetBytes("q /GS1 gs Q");
+        using var ms = new MemoryStream();
+        void W(string s) { var b = Encoding.Latin1.GetBytes(s); ms.Write(b); }
+
+        W("%PDF-1.7\n");
+        ms.Write([0x25, 0xE2, 0xE3, 0xCF, 0xD3, 0x0A]);
+        var off = new int[8];
+        off[1] = (int)ms.Position;
+        W("1 0 obj\n<< /Type /Catalog /Pages 2 0 R /Metadata 7 0 R >>\nendobj\n");
+        off[2] = (int)ms.Position;
+        W("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
+        off[3] = (int)ms.Position;
+        // Page: has own /Resources with /Fm0 (outer form) AND /GS1 (ExtGState).
+        W("3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R"
+            + " /Resources << /XObject << /Fm0 5 0 R >> /ExtGState << /GS1 << /Type /ExtGState /ca 1 >> >> >> >>\nendobj\n");
+        off[4] = (int)ms.Position;
+        W($"4 0 obj\n<< /Length {pageContent.Length} >>\nstream\n");
+        ms.Write(pageContent);
+        W("\nendstream\nendobj\n");
+        off[5] = (int)ms.Position;
+        // Outer form: HAS own /Resources (defines /Fm1 but NOT /GS1).
+        W($"5 0 obj\n<< /Type /XObject /Subtype /Form /BBox [0 0 100 100]"
+            + " /Resources << /XObject << /Fm1 6 0 R >> >>"
+            + $" /Length {outerContent.Length} >>\nstream\n");
+        ms.Write(outerContent);
+        W("\nendstream\nendobj\n");
+        off[6] = (int)ms.Position;
+        // Inner form: NO /Resources, uses /GS1 gs (defined in page scope but NOT in outer scope).
+        W($"6 0 obj\n<< /Type /XObject /Subtype /Form /BBox [0 0 100 100]"
+            + $" /Length {innerContent.Length} >>\nstream\n");
+        ms.Write(innerContent);
+        W("\nendstream\nendobj\n");
+        off[7] = (int)ms.Position;
+        W($"7 0 obj\n<< /Type /Metadata /Subtype /XML /Length {xmp.Length} >>\nstream\n");
+        ms.Write(xmp);
+        W("\nendstream\nendobj\n");
+        var xrefOff = (int)ms.Position;
+        W("xref\n0 8\n0000000000 65535 f \n");
+        for (var i = 1; i <= 7; i++) W($"{off[i]:D10} 00000 n \n");
+        W("trailer\n<< /Size 8 /Root 1 0 R /ID [<00112233> <00112233>] >>\n");
+        W($"startxref\n{xrefOff}\n%%EOF\n");
+        return ms.ToArray();
+    }
+
+    /// <summary>
+    /// §6.2.2-2 FP-SAFETY (probe B2): same nested outer/inner form structure as probe B1, but
+    /// <c>/GS1</c> is defined ONLY in the OUTER form's <c>/Resources /ExtGState</c> — it is NOT
+    /// in the page's <c>/Resources</c>. The INNER form has no <c>/Resources</c> and uses
+    /// <c>/GS1 gs</c>. veraPDF accepts because <c>/GS1</c> is not an inherited resource name for
+    /// the inner form relative to the page scope (isCompliant=true, failedRules=0; confirmed
+    /// empirically against veraPDF 1.30.2 on 2026-06-23). In-process: InheritedResourceRule must
+    /// NOT fire (page-scope check: /GS1 not in page's /ExtGState → no finding).
+    /// </summary>
+    internal static byte[] NestedFormInnerNoResourcesOuterDefinedPublic() => NestedFormInnerNoResourcesOuterDefined();
+    private static byte[] NestedFormInnerNoResourcesOuterDefined()
+    {
+        // Objects:
+        //   1=catalog, 2=pages, 3=page(Resources: XObject/Fm0 only — NO ExtGState),
+        //   4=page-content(/Fm0 Do), 5=outer-form(Resources: XObject/Fm1 + ExtGState/GS1; content: /Fm1 Do),
+        //   6=inner-form(NO Resources; content: /GS1 gs), 7=xmp.
+        var xmp = MakeBatchN1Xmp();
+        var pageContent = Encoding.Latin1.GetBytes("/Fm0 Do");
+        var outerContent = Encoding.Latin1.GetBytes("/Fm1 Do");
+        var innerContent = Encoding.Latin1.GetBytes("q /GS1 gs Q");
+        using var ms = new MemoryStream();
+        void W(string s) { var b = Encoding.Latin1.GetBytes(s); ms.Write(b); }
+
+        W("%PDF-1.7\n");
+        ms.Write([0x25, 0xE2, 0xE3, 0xCF, 0xD3, 0x0A]);
+        var off = new int[8];
+        off[1] = (int)ms.Position;
+        W("1 0 obj\n<< /Type /Catalog /Pages 2 0 R /Metadata 7 0 R >>\nendobj\n");
+        off[2] = (int)ms.Position;
+        W("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
+        off[3] = (int)ms.Position;
+        // Page: own /Resources with /Fm0 ONLY — no /ExtGState /GS1 on the page.
+        W("3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R"
+            + " /Resources << /XObject << /Fm0 5 0 R >> >> >>\nendobj\n");
+        off[4] = (int)ms.Position;
+        W($"4 0 obj\n<< /Length {pageContent.Length} >>\nstream\n");
+        ms.Write(pageContent);
+        W("\nendstream\nendobj\n");
+        off[5] = (int)ms.Position;
+        // Outer form: HAS own /Resources with /Fm1 AND /GS1.
+        W($"5 0 obj\n<< /Type /XObject /Subtype /Form /BBox [0 0 100 100]"
+            + " /Resources << /XObject << /Fm1 6 0 R >> /ExtGState << /GS1 << /Type /ExtGState /ca 1 >> >> >>"
+            + $" /Length {outerContent.Length} >>\nstream\n");
+        ms.Write(outerContent);
+        W("\nendstream\nendobj\n");
+        off[6] = (int)ms.Position;
+        // Inner form: NO /Resources, uses /GS1 gs (defined only in outer scope, not page scope).
+        W($"6 0 obj\n<< /Type /XObject /Subtype /Form /BBox [0 0 100 100]"
+            + $" /Length {innerContent.Length} >>\nstream\n");
+        ms.Write(innerContent);
+        W("\nendstream\nendobj\n");
+        off[7] = (int)ms.Position;
+        W($"7 0 obj\n<< /Type /Metadata /Subtype /XML /Length {xmp.Length} >>\nstream\n");
+        ms.Write(xmp);
+        W("\nendstream\nendobj\n");
+        var xrefOff = (int)ms.Position;
+        W("xref\n0 8\n0000000000 65535 f \n");
+        for (var i = 1; i <= 7; i++) W($"{off[i]:D10} 00000 n \n");
+        W("trailer\n<< /Size 8 /Root 1 0 R /ID [<00112233> <00112233>] >>\n");
+        W($"startxref\n{xrefOff}\n%%EOF\n");
+        return ms.ToArray();
     }
 
 }
