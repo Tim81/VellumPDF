@@ -186,7 +186,10 @@ public static class ConformanceCatalog
         ["6.2.4.3-3"] = "device-colour requires an output intent checked; DefaultCMYK path not",
         ["6.2.4.3-4"] = "page-content device grey covered; image/pattern colour not detected",
         ["6.2.4.4-2"] = "Separations selected by cs/CS operators and those in /Colorants of used DeviceN spaces are compared; Separations reachable only via Form XObjects, Type 3 CharProcs, annotation appearance streams, image /ColorSpace, or alternate spaces of other colour spaces are not yet walked",
-        ["6.2.2-1"] = "page content-stream operators checked against ISO 32000-1; Form XObject / Type 3 CharProc / annotation appearance streams not yet walked",
+        // 6.2.2-1 moved to Implemented (Batch N1 — ContentStreamOperatorRule now scans drawn Form
+        //   XObjects, all CharProcs of Tf-selected Type 3 fonts, and all annotation /AP /N appearance
+        //   streams via GetReachableContentStreams; reachability policy empirically confirmed against
+        //   veraPDF 1.30.2 on 2026-06-23).
         ["6.2.2-2"] = "page content streams checked (Font/XObject/ExtGState/ColorSpace/Shading); Pattern names (scn/SCN in Pattern colour space) and Properties names (BDC/DP with name operand) not detected — stateful colour-space tracking required; Form XObject / Type 3 / appearance streams not walked",
         ["6.2.11.4.1-1"] = "only the embedded Identity-H CIDFontType2 path is checked",
         ["6.2.11.4.1-2"] = "only the embedded Identity-H CIDFontType2 path is checked",

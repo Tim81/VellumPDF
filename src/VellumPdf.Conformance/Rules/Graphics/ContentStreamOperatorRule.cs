@@ -19,12 +19,28 @@ namespace VellumPdf.Conformance.Rules.Graphics;
 /// Clean-room: derived from the specification text and empirical veraPDF-oracle probing, not from
 /// any third-party validation profile.
 /// <para>
-/// <strong>Scope:</strong> page content streams only, via
-/// <see cref="ContentStreamUsage.GetPageContent"/>. Inline-image binary sample data (between
-/// <c>ID</c> and <c>EI</c>) is skipped by the shared lexer helper
-/// <see cref="ContentStreamUsage"/>. Form XObject streams and Type 3 glyph procedures are not
-/// scanned here; those content streams are reachable only when the XObject / glyph is actually
-/// drawn, and adding that traversal is deferred to avoid false-positives from unused streams.
+/// <strong>Scope:</strong> page content streams (via <see cref="ContentStreamUsage.GetPageContent"/>)
+/// plus all non-page content streams reachable from each page (via
+/// <see cref="ContentStreamUsage.GetReachableContentStreams"/>):
+/// <list type="bullet">
+///   <item><description>Form XObjects that are actually drawn by a <c>Do</c> operator (directly
+///   from the page or from a drawn ancestor Form XObject — depth-first, cycle-guarded). Form XObjects
+///   present in <c>/Resources /XObject</c> but never <c>Do</c>-invoked are excluded; veraPDF does not
+///   validate their operators (empirically confirmed, 2026-06-23).</description></item>
+///   <item><description>All <c>/CharProcs</c> entries of every Type 3 font that is selected by a
+///   <c>Tf</c> operator in the page content, regardless of which glyphs are actually shown. Type 3
+///   fonts that are never selected by <c>Tf</c> are excluded (empirically confirmed,
+///   2026-06-23).</description></item>
+///   <item><description>All annotation <c>/AP /N</c> appearance streams (and every state within a
+///   sub-dictionary <c>/N</c>), regardless of annotation visibility flags. veraPDF validates
+///   appearance content even for hidden annotations (empirically confirmed,
+///   2026-06-23).</description></item>
+/// </list>
+/// </para>
+/// <para>
+/// Inline-image binary sample data (between <c>ID</c> and <c>EI</c>) is skipped by the shared
+/// <see cref="ContentStreamUsage.SkipInlineImageData"/> helper to prevent binary samples from
+/// being mis-read as operator keywords.
 /// </para>
 /// <para>
 /// <strong>Defensive operation:</strong> on any decode failure or lexer error the scan stops and
@@ -98,7 +114,10 @@ internal sealed class ContentStreamOperatorRule : IConformanceRule
         var reported = new HashSet<string>(StringComparer.Ordinal);
 
         foreach (var page in context.EnumeratePages())
+        {
             ScanPage(context, page, reported);
+            ScanNonPageStreams(context, page, reported);
+        }
     }
 
     private void ScanPage(PreflightContext context, PdfDictionary page, HashSet<string> reported)
@@ -117,6 +136,34 @@ internal sealed class ContentStreamOperatorRule : IConformanceRule
         if (content is not { Length: > 0 })
             return;
 
+        ScanBytes(content, reported, context);
+    }
+
+    /// <summary>
+    /// Scans non-page content streams reachable from <paramref name="page"/>: drawn Form XObjects,
+    /// Type 3 CharProcs (of selected fonts), and annotation appearance streams. Uses the shared
+    /// <see cref="ContentStreamUsage.GetReachableContentStreams"/> collector whose reachability policy
+    /// was determined by empirical veraPDF probing (2026-06-23).
+    /// </summary>
+    private void ScanNonPageStreams(PreflightContext context, PdfDictionary page, HashSet<string> reported)
+    {
+        IReadOnlyList<ReachableContentStream> streams;
+        try
+        {
+            streams = ContentStreamUsage.GetReachableContentStreams(context, page);
+        }
+        catch
+        {
+            // Collector failure — skip non-page streams for this page; do not emit a finding.
+            return;
+        }
+
+        foreach (var cs in streams)
+            ScanBytes(cs.Bytes, reported, context);
+    }
+
+    private void ScanBytes(byte[] content, HashSet<string> reported, PreflightContext context)
+    {
         try
         {
             var lexer = new PdfLexer(content);
