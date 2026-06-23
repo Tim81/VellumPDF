@@ -1,6 +1,7 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
+using System.Text;
 using VellumPdf.Core;
 using VellumPdf.Reader;
 
@@ -19,12 +20,13 @@ namespace VellumPdf.Conformance.Rules.Colour;
 /// not from any third-party validation profile.
 /// </para>
 /// <para>
-/// <b>Scope (determined empirically via veraPDF 1.30.2):</b> veraPDF compares only Separation
-/// colour spaces that are <em>used</em> by page content — a Separation present in
-/// <c>/Resources /ColorSpace</c> but never selected triggers no violation. A Separation is
-/// "used" when:
+/// <b>Scope (determined empirically via veraPDF 1.30.2):</b> veraPDF compares Separation colour
+/// spaces that are <em>used</em> by page content AND by non-page content streams reachable from
+/// the page (drawn Form XObjects, all CharProcs of Tf-selected Type 3 fonts, annotation /AP /N
+/// appearance streams). A Separation present in <c>/Resources /ColorSpace</c> but never selected
+/// by a <c>cs</c> or <c>CS</c> operator triggers no violation. A Separation is "used" when:
 /// <list type="bullet">
-/// <item>it is selected by a <c>cs</c> or <c>CS</c> operator via a named resource on a page, or</item>
+/// <item>it is selected by a <c>cs</c> or <c>CS</c> operator via a named resource, or</item>
 /// <item>it appears in the <c>/Colorants</c> dictionary of a DeviceN colour space that is itself
 /// selected by a <c>cs</c> or <c>CS</c> operator.</item>
 /// </list>
@@ -51,9 +53,17 @@ namespace VellumPdf.Conformance.Rules.Colour;
 /// Probe A (structurally identical tint functions at distinct object numbers) → no finding.
 /// </para>
 /// <para>
-/// <b>Deferred edges:</b> Separations reached only via Form XObjects, Type 3 CharProcs,
-/// annotation appearance streams, image <c>/ColorSpace</c>, pattern colour spaces, or alternate
-/// spaces of other colour spaces are not yet walked — under-detection rather than over-rejection.
+/// <b>FP-safety (pool growth):</b> adding non-page used-Separations only GROWS the comparison
+/// pool toward what veraPDF already compares. Any inconsistency we detect, veraPDF also detects;
+/// we never flag a pair that veraPDF accepts. Empirically confirmed via probes N4-A/B/C
+/// (veraPDF 1.30.2, 2026-06-23): veraPDF fires 6.2.4.4-2 when page and a drawn Form XObject
+/// share a Separation name with different alternateSpace; it does NOT fire when alt/tint match,
+/// or when the inconsistent form is not drawn.
+/// </para>
+/// <para>
+/// <b>Deferred edges:</b> image <c>/ColorSpace</c> and alternate spaces of other colour spaces
+/// are not yet walked — under-detection rather than over-rejection. Non-page streams with a null
+/// <c>/Resources</c> are skipped (names cannot be resolved; under-detection, FP-safe).
 /// </para>
 /// </remarks>
 internal sealed class SeparationConsistencyRule : IConformanceRule
@@ -83,52 +93,147 @@ internal sealed class SeparationConsistencyRule : IConformanceRule
         var firstSeen = new Dictionary<string, (PdfObject alt, PdfObject tint)>(StringComparer.Ordinal);
         var reported = new HashSet<string>(StringComparer.Ordinal);
 
-        // Colour-space objects shared via the same indirect reference across pages are
+        // Colour-space objects shared via the same indirect reference across pages / forms are
         // deduped so they count as one occurrence, not N.
         var seenCsObjects = new HashSet<int>();
 
         foreach (var page in context.EnumeratePages())
         {
-            if (context.ResolveInherited(page, PdfName.Resources) is not PdfDictionary resources)
-                continue;
-            if (context.Resolve(resources.Get(_colorSpace)) is not PdfDictionary colorSpaces)
-                continue;
-
-            // Only colour spaces selected by this page's content are in scope — matching veraPDF.
-            var selected = ContentStreamUsage.Analyze(context, page).SelectedColorSpaces;
-            if (selected.Count == 0)
-                continue;
-
-            foreach (var entry in colorSpaces.Entries)
+            // ── Page content ───────────────────────────────────────────────────────────────────────
+            if (context.ResolveInherited(page, PdfName.Resources) is PdfDictionary pageResources)
             {
-                if (!selected.Contains(entry.Key.Value))
+                var selected = ContentStreamUsage.Analyze(context, page).SelectedColorSpaces;
+                if (selected.Count > 0)
+                    ProcessResourceScope(context, pageResources, selected, firstSeen, reported, seenCsObjects);
+            }
+
+            // ── Non-page content streams (N4 batch, 2026-06-23) ───────────────────────────────────
+            // FP-safety: adding non-page used-Separations only GROWS the comparison pool toward
+            // what veraPDF already compares (veraPDF's used-Separation set ⊇ ours both before and
+            // after this extension); any inconsistency detected here, veraPDF also detects; we
+            // never flag a pair veraPDF accepts.
+            IReadOnlyList<ReachableContentStream> reachable;
+            try
+            {
+                reachable = ContentStreamUsage.GetReachableContentStreams(context, page);
+            }
+            catch
+            {
+                continue; // collector failure — skip non-page streams for this page
+            }
+
+            foreach (var cs in reachable)
+            {
+                // Skip streams with no /Resources: colour-space names cannot be resolved.
+                // Under-detection is FP-safe.
+                if (cs.Resources is null)
                     continue;
 
-                // Deduplicate shared colour-space objects (same indirect reference → same object).
-                if (entry.Value is PdfIndirectReference csRef && !seenCsObjects.Add(csRef.ObjectNumber))
-                    continue;
-
-                var csObj = context.Resolve(entry.Value);
-                if (csObj is not PdfArray csArray || csArray.Count < 4)
-                    continue;
-
-                var csType = context.Resolve(csArray[0]) as PdfName;
-                if (csType is null)
-                    continue;
-
-                if (csType.Value == "Separation")
+                try
                 {
-                    // [/Separation name alt tint]
-                    if (context.Resolve(csArray[1]) is PdfName name)
-                        CheckSeparation(context, name.Value, csArray[2], csArray[3], firstSeen, reported);
+                    var selected = ScanSelectedColorSpaces(cs.Bytes);
+                    if (selected.Count > 0)
+                        ProcessResourceScope(context, cs.Resources, selected, firstSeen, reported, seenCsObjects);
                 }
-                else if (csType.Value == "DeviceN" && csArray.Count >= 5)
+                catch
                 {
-                    // [/DeviceN names alt tint attrs] — inspect /Colorants
-                    CollectFromColorants(context, csArray[4], firstSeen, reported);
+                    // Malformed stream or resources — skip; do not abort.
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// Iterates the <c>/ColorSpace</c> subdictionary of <paramref name="resources"/>, filters to
+    /// entries whose key is in <paramref name="selected"/>, and feeds each Separation (or DeviceN
+    /// /Colorants entry) to <see cref="CheckSeparation"/> via the shared comparison state.
+    /// </summary>
+    private void ProcessResourceScope(
+        PreflightContext context,
+        PdfDictionary resources,
+        IReadOnlySet<string> selected,
+        Dictionary<string, (PdfObject alt, PdfObject tint)> firstSeen,
+        HashSet<string> reported,
+        HashSet<int> seenCsObjects)
+    {
+        if (context.Resolve(resources.Get(_colorSpace)) is not PdfDictionary colorSpaces)
+            return;
+
+        foreach (var entry in colorSpaces.Entries)
+        {
+            if (!selected.Contains(entry.Key.Value))
+                continue;
+
+            // Deduplicate shared colour-space objects (same indirect reference → same object).
+            if (entry.Value is PdfIndirectReference csRef && !seenCsObjects.Add(csRef.ObjectNumber))
+                continue;
+
+            var csObj = context.Resolve(entry.Value);
+            if (csObj is not PdfArray csArray || csArray.Count < 4)
+                continue;
+
+            var csType = context.Resolve(csArray[0]) as PdfName;
+            if (csType is null)
+                continue;
+
+            if (csType.Value == "Separation")
+            {
+                // [/Separation name alt tint]
+                if (context.Resolve(csArray[1]) is PdfName name)
+                    CheckSeparation(context, name.Value, csArray[2], csArray[3], firstSeen, reported);
+            }
+            else if (csType.Value == "DeviceN" && csArray.Count >= 5)
+            {
+                // [/DeviceN names alt tint attrs] — inspect /Colorants
+                CollectFromColorants(context, csArray[4], firstSeen, reported);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Scans <paramref name="bytes"/> for <c>cs</c> and <c>CS</c> operators, collecting every
+    /// colour-space resource name that precedes one. This mirrors <c>ContentStreamUsage.Analyze</c>'s
+    /// <c>SelectedColorSpaces</c> tracking but operates on arbitrary stream bytes without needing
+    /// the full <c>Analyze</c> pass. Best-effort and defensive (inline-image data is skipped;
+    /// any parse error produces an empty set).
+    /// </summary>
+    private static IReadOnlySet<string> ScanSelectedColorSpaces(byte[] bytes)
+    {
+        var selected = new HashSet<string>(StringComparer.Ordinal);
+        try
+        {
+            var lexer = new PdfLexer(bytes);
+            string? lastName = null;
+
+            while (!lexer.AtEnd)
+            {
+                var token = lexer.NextToken();
+                if (token.Kind == TokenKind.EndOfInput)
+                    break;
+
+                if (token.Kind == TokenKind.Name)
+                {
+                    lastName = DecodeName(token.Raw.Span);
+                    continue;
+                }
+
+                if (token.Kind == TokenKind.Keyword)
+                {
+                    var op = Encoding.Latin1.GetString(token.Raw.Span);
+                    if ((op == "cs" || op == "CS") && lastName is not null)
+                        selected.Add(lastName);
+                    else if (op == "ID")
+                        ContentStreamUsage.SkipInlineImageData(lexer, bytes);
+
+                    lastName = null;
+                }
+            }
+        }
+        catch
+        {
+            // Malformed content — return whatever was collected.
+        }
+        return selected;
     }
 
     /// <summary>
@@ -391,4 +496,31 @@ internal sealed class SeparationConsistencyRule : IConformanceRule
         }
         return true;
     }
+
+    // Decodes a name token's raw bytes (strips leading '/'; handles #XX escapes).
+    private static string DecodeName(ReadOnlySpan<byte> raw)
+    {
+        var sb = new StringBuilder(raw.Length);
+        for (var i = 1; i < raw.Length; i++)
+        {
+            if (raw[i] == (byte)'#' && i + 2 < raw.Length && Hex(raw[i + 1]) >= 0 && Hex(raw[i + 2]) >= 0)
+            {
+                sb.Append((char)((Hex(raw[i + 1]) << 4) | Hex(raw[i + 2])));
+                i += 2;
+            }
+            else
+            {
+                sb.Append((char)raw[i]);
+            }
+        }
+        return sb.ToString();
+    }
+
+    private static int Hex(byte b) => b switch
+    {
+        >= (byte)'0' and <= (byte)'9' => b - '0',
+        >= (byte)'a' and <= (byte)'f' => b - 'a' + 10,
+        >= (byte)'A' and <= (byte)'F' => b - 'A' + 10,
+        _ => -1,
+    };
 }

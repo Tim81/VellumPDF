@@ -11044,4 +11044,36 @@ public sealed class PdfPreflightTests
 
     // ── END §6.2.4.2-2 Batch N3 adversarial FP sweep ─────────────────────────────────
 
+    // ── §6.2.4.4-2 Batch N4 — adversarial FP sweep (in-process only) ─────────────────
+    // These tests probe edge cases for the non-page Separation consistency extension.
+    // Each uses OracleCorpus.Sep* helpers (writer-baseline, non-page stream scope).
+
+    // FP-SWEEP-N4-1: drawn Form XObject with no /Resources — must skip, not crash, not fire.
+    [Fact]
+    public void N4_Sweep_FormNoResources_NoFinding()
+    {
+        var result = PdfPreflight.Validate(OracleCorpus.SepFormNoResources(), PdfConformance.PdfA2B);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.4-2");
+    }
+
+    // FP-SWEEP-N4-2: two drawn forms with consistent /Spot1→DeviceRGB (distinct tint object numbers).
+    // Structural comparator must see equality across distinct object numbers — must NOT fire.
+    [Fact]
+    public void N4_Sweep_TwoFormsConsistent_NoFinding()
+    {
+        var result = PdfPreflight.Validate(OracleCorpus.SepTwoFormsConsistent(), PdfConformance.PdfA2B);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.4-2");
+    }
+
+    // FP-SWEEP-N4-3: undrawn Form XObject with inconsistent /Spot1→DeviceGray.
+    // The form is in /Resources /XObject but never drawn (no Do). Must NOT fire.
+    [Fact]
+    public void N4_Sweep_UndrawnFormInconsistent_NoFinding()
+    {
+        var result = PdfPreflight.Validate(OracleCorpus.SepUndrawnFormInconsistent(), PdfConformance.PdfA2B);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.4-2");
+    }
+
+    // ── END §6.2.4.4-2 Batch N4 adversarial FP sweep ─────────────────────────────────
+
 }
