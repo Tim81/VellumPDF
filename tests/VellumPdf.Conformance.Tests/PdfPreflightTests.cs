@@ -1707,6 +1707,10 @@ public sealed class PdfPreflightTests
     [Fact]
     public void Validate_PdfAOutputIntent_MissingDestProfile_ReportsError()
     {
+        // A GTS_PDFA1 intent with no /DestOutputProfile, on a page that paints DeviceRGB.
+        // hasPdfAProfile stays false (only set when DestOutputProfile is present), so
+        // §6.2.4.3-2-device-rgb fires. The old rule ID "6.2.4.3-output-intent" was replaced
+        // by the per-type rule IDs in the Default*-exemption refactor (2026-06-23).
         var bytes = BuildOutputIntentPdf(
             "[4 0 R]",
             new PdfObj("<< /Type /OutputIntent /S /GTS_PDFA1 >>"));
@@ -1715,8 +1719,8 @@ public sealed class PdfPreflightTests
 
         Assert.False(result.IsCompliant);
         var assertion = Assert.Single(result.Assertions);
-        Assert.Equal("ISO19005-2:6.2.4.3-output-intent", assertion.RuleId);
-        Assert.Contains("DestOutputProfile", assertion.Message);
+        Assert.Equal("ISO19005-2:6.2.4.3-2-device-rgb", assertion.RuleId);
+        Assert.Contains("DeviceRGB", assertion.Message);
     }
 
     [Fact]
@@ -1742,8 +1746,9 @@ public sealed class PdfPreflightTests
     [Fact]
     public void Validate_DeviceColourWithoutOutputIntent_ReportsError()
     {
-        // §6.2.4.3: a document that paints device-dependent colour shall have a PDF/A output intent.
-        // The page fills a device-RGB rectangle but the catalog has no /OutputIntents. (#122)
+        // §6.2.4.3-2: a document that paints DeviceRGB shall have a PDF/A output intent with an RGB
+        // profile (or a /DefaultRGB colour space). No /OutputIntents here → rule fires. (#122)
+        // Rule ID updated to the per-type variant in the Default*-exemption refactor (2026-06-23).
         var bytes = AssemblePdf(
         [
             new("<< /Type /Catalog /Pages 2 0 R >>"),
@@ -1756,7 +1761,7 @@ public sealed class PdfPreflightTests
 
         Assert.False(result.IsCompliant);
         Assert.Contains(result.Assertions,
-            a => a.RuleId == "ISO19005-2:6.2.4.3-output-intent" && a.Message.Contains("device-dependent colour"));
+            a => a.RuleId == "ISO19005-2:6.2.4.3-2-device-rgb" && a.Message.Contains("DeviceRGB"));
     }
 
     [Fact]
@@ -1911,6 +1916,7 @@ public sealed class PdfPreflightTests
         // /S is an indirect reference to the name GTS_PDFA1 (legal per ISO 32000-1 §7.3.10). The rule
         // must resolve it before deciding the intent is a PDF/A output intent — otherwise the
         // mandatory DestOutputProfile check is silently skipped (a false negative). Round-5 guard.
+        // hasPdfAProfile stays false (no DestOutputProfile) → §6.2.4.3-2-device-rgb fires.
         var bytes = BuildOutputIntentPdf(
             "[4 0 R]",
             new PdfObj("<< /Type /OutputIntent /S 5 0 R >>"),
@@ -1920,8 +1926,8 @@ public sealed class PdfPreflightTests
 
         Assert.False(result.IsCompliant);
         var assertion = Assert.Single(result.Assertions);
-        Assert.Equal("ISO19005-2:6.2.4.3-output-intent", assertion.RuleId);
-        Assert.Contains("DestOutputProfile", assertion.Message);
+        Assert.Equal("ISO19005-2:6.2.4.3-2-device-rgb", assertion.RuleId);
+        Assert.Contains("DeviceRGB", assertion.Message);
     }
 
     [Fact]
