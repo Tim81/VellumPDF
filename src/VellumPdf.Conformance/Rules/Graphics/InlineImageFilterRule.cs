@@ -26,15 +26,25 @@ namespace VellumPdf.Conformance.Rules.Graphics;
 /// accepted as permitted values.
 /// </para>
 /// <para>
-/// <strong>Scope:</strong> page content streams only, via
-/// <see cref="ContentStreamUsage.GetPageContent"/>. Inline images inside Form XObject streams,
-/// Type 3 CharProc streams, and annotation appearance streams are not walked here; those content
-/// streams are reachable only when the XObject or glyph is actually painted, and adding that
-/// traversal is deferred to avoid false-positives from unused streams.
+/// <strong>Scope:</strong> page content streams (via <see cref="ContentStreamUsage.GetPageContent"/>)
+/// plus all non-page content streams reachable from each page (via
+/// <see cref="ContentStreamUsage.GetReachableContentStreams"/>):
+/// <list type="bullet">
+///   <item><description>Form XObjects that are actually drawn by a <c>Do</c> operator (directly
+///   from the page or from a drawn ancestor Form XObject — depth-first, cycle-guarded). Form XObjects
+///   present in <c>/Resources /XObject</c> but never <c>Do</c>-invoked are excluded (reachability
+///   policy empirically confirmed against veraPDF 1.30.2 on 2026-06-23).</description></item>
+///   <item><description>All <c>/CharProcs</c> entries of every Type 3 font that is selected by a
+///   <c>Tf</c> operator in the page content.</description></item>
+///   <item><description>All annotation <c>/AP /N</c> appearance streams (and every state within a
+///   sub-dictionary <c>/N</c>), regardless of annotation visibility flags.</description></item>
+/// </list>
 /// </para>
 /// <para>
 /// <strong>Defensive operation:</strong> on any decode failure or lexer error the scan stops
 /// and retains findings already collected; no spurious finding is emitted for malformed content.
+/// Collector failure for non-page streams is silently swallowed — the page content scan always
+/// proceeds regardless.
 /// </para>
 /// </remarks>
 internal sealed class InlineImageFilterRule : IConformanceRule
@@ -64,7 +74,10 @@ internal sealed class InlineImageFilterRule : IConformanceRule
     public void Evaluate(PreflightContext context)
     {
         foreach (var page in context.EnumeratePages())
+        {
             ScanPage(context, page);
+            ScanNonPageStreams(context, page);
+        }
     }
 
     private void ScanPage(PreflightContext context, PdfDictionary page)
@@ -83,6 +96,34 @@ internal sealed class InlineImageFilterRule : IConformanceRule
         if (content is not { Length: > 0 })
             return;
 
+        ScanBytes(content, context);
+    }
+
+    /// <summary>
+    /// Scans non-page content streams reachable from <paramref name="page"/>: drawn Form XObjects,
+    /// Type 3 CharProcs (of selected fonts), and annotation appearance streams. Uses the shared
+    /// <see cref="ContentStreamUsage.GetReachableContentStreams"/> collector whose reachability policy
+    /// was determined by empirical veraPDF probing (2026-06-23).
+    /// </summary>
+    private void ScanNonPageStreams(PreflightContext context, PdfDictionary page)
+    {
+        IReadOnlyList<ReachableContentStream> streams;
+        try
+        {
+            streams = ContentStreamUsage.GetReachableContentStreams(context, page);
+        }
+        catch
+        {
+            // Collector failure — skip non-page streams for this page; do not emit a finding.
+            return;
+        }
+
+        foreach (var cs in streams)
+            ScanBytes(cs.Bytes, context);
+    }
+
+    private void ScanBytes(byte[] content, PreflightContext context)
+    {
         try
         {
             var lexer = new PdfLexer(content);

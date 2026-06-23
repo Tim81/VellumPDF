@@ -204,6 +204,32 @@ public sealed class PdfPreflightTests
         return Encoding.UTF8.GetBytes(xmp);
     }
 
+    /// <summary>Builds a PDF/A-2b XMP packet with a pdfaExtension:schemas block whose container types
+    /// are controlled by the caller. Used to test §6.6.2.3.3 container-type violations.
+    /// <paramref name="schemaContainer"/> is the rdf:Bag/Seq wrapping the schema list;
+    /// <paramref name="propertyContainer"/> is the rdf:Bag/Seq wrapping the property list.</summary>
+    private static string ExtensionSchemaXmpWith(string schemaContainer, string propertyContainer)
+    {
+        var openSchema = $"<{schemaContainer}>";
+        var closeSchema = $"</{schemaContainer}>";
+        var openProp = $"<{propertyContainer}>";
+        var closeProp = $"</{propertyContainer}>";
+        return
+            "<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>"
+            + "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">"
+            + "<rdf:Description rdf:about=\"\" xmlns:pdfaid=\"http://www.aiim.org/pdfa/ns/id/\">"
+            + "<pdfaid:part>2</pdfaid:part><pdfaid:conformance>B</pdfaid:conformance></rdf:Description>"
+            + "<rdf:Description rdf:about=\"\" xmlns:pdfaExtension=\"http://www.aiim.org/pdfa/ns/extension/\" "
+            + "xmlns:pdfaSchema=\"http://www.aiim.org/pdfa/ns/schema#\" "
+            + "xmlns:pdfaProperty=\"http://www.aiim.org/pdfa/ns/property#\">"
+            + $"<pdfaExtension:schemas>{openSchema}<rdf:li rdf:parseType=\"Resource\">"
+            + _validSchemaFields
+            + $"<pdfaSchema:property>{openProp}<rdf:li rdf:parseType=\"Resource\">" + _validPropertyFields
+            + $"</rdf:li>{closeProp}</pdfaSchema:property>"
+            + $"</rdf:li>{closeSchema}</pdfaExtension:schemas>"
+            + "</rdf:Description></rdf:RDF></x:xmpmeta><?xpacket end=\"w\"?>";
+    }
+
     private const string _validSchemaFields =
         "<pdfaSchema:schema>S</pdfaSchema:schema>"
         + "<pdfaSchema:namespaceURI>http://example.com/ns/</pdfaSchema:namespaceURI>"
@@ -1707,6 +1733,10 @@ public sealed class PdfPreflightTests
     [Fact]
     public void Validate_PdfAOutputIntent_MissingDestProfile_ReportsError()
     {
+        // A GTS_PDFA1 intent with no /DestOutputProfile, on a page that paints DeviceRGB.
+        // hasPdfAProfile stays false (only set when DestOutputProfile is present), so
+        // §6.2.4.3-2-device-rgb fires. The old rule ID "6.2.4.3-output-intent" was replaced
+        // by the per-type rule IDs in the Default*-exemption refactor (2026-06-23).
         var bytes = BuildOutputIntentPdf(
             "[4 0 R]",
             new PdfObj("<< /Type /OutputIntent /S /GTS_PDFA1 >>"));
@@ -1715,8 +1745,8 @@ public sealed class PdfPreflightTests
 
         Assert.False(result.IsCompliant);
         var assertion = Assert.Single(result.Assertions);
-        Assert.Equal("ISO19005-2:6.2.4.3-output-intent", assertion.RuleId);
-        Assert.Contains("DestOutputProfile", assertion.Message);
+        Assert.Equal("ISO19005-2:6.2.4.3-2-device-rgb", assertion.RuleId);
+        Assert.Contains("DeviceRGB", assertion.Message);
     }
 
     [Fact]
@@ -1742,8 +1772,9 @@ public sealed class PdfPreflightTests
     [Fact]
     public void Validate_DeviceColourWithoutOutputIntent_ReportsError()
     {
-        // §6.2.4.3: a document that paints device-dependent colour shall have a PDF/A output intent.
-        // The page fills a device-RGB rectangle but the catalog has no /OutputIntents. (#122)
+        // §6.2.4.3-2: a document that paints DeviceRGB shall have a PDF/A output intent with an RGB
+        // profile (or a /DefaultRGB colour space). No /OutputIntents here → rule fires. (#122)
+        // Rule ID updated to the per-type variant in the Default*-exemption refactor (2026-06-23).
         var bytes = AssemblePdf(
         [
             new("<< /Type /Catalog /Pages 2 0 R >>"),
@@ -1756,7 +1787,7 @@ public sealed class PdfPreflightTests
 
         Assert.False(result.IsCompliant);
         Assert.Contains(result.Assertions,
-            a => a.RuleId == "ISO19005-2:6.2.4.3-output-intent" && a.Message.Contains("device-dependent colour"));
+            a => a.RuleId == "ISO19005-2:6.2.4.3-2-device-rgb" && a.Message.Contains("DeviceRGB"));
     }
 
     [Fact]
@@ -1911,6 +1942,7 @@ public sealed class PdfPreflightTests
         // /S is an indirect reference to the name GTS_PDFA1 (legal per ISO 32000-1 §7.3.10). The rule
         // must resolve it before deciding the intent is a PDF/A output intent — otherwise the
         // mandatory DestOutputProfile check is silently skipped (a false negative). Round-5 guard.
+        // hasPdfAProfile stays false (no DestOutputProfile) → §6.2.4.3-2-device-rgb fires.
         var bytes = BuildOutputIntentPdf(
             "[4 0 R]",
             new PdfObj("<< /Type /OutputIntent /S 5 0 R >>"),
@@ -1920,8 +1952,8 @@ public sealed class PdfPreflightTests
 
         Assert.False(result.IsCompliant);
         var assertion = Assert.Single(result.Assertions);
-        Assert.Equal("ISO19005-2:6.2.4.3-output-intent", assertion.RuleId);
-        Assert.Contains("DestOutputProfile", assertion.Message);
+        Assert.Equal("ISO19005-2:6.2.4.3-2-device-rgb", assertion.RuleId);
+        Assert.Contains("DeviceRGB", assertion.Message);
     }
 
     [Fact]
@@ -2881,6 +2913,151 @@ public sealed class PdfPreflightTests
 
         Assert.True(result.IsCompliant);
         Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.6.2.3.2-undefined-field");
+    }
+
+    // ── §6.6.2.3.3 container-type and prefix rules (Batch C1, 2026-06-23) ──────────
+
+    [Theory]
+    [InlineData(
+        "<rdf:Seq>", "</rdf:Seq>",
+        "ISO19005-2:6.6.2.3.3-1")]   // schemas uses rdf:Seq instead of rdf:Bag
+    public void Validate_SchemasContainerWrongType_ReportsError(
+        string openTag, string closeTag, string ruleId)
+    {
+        // §6.6.2.3.3-1: pdfaExtension:schemas shall be rdf:Bag. Using rdf:Seq fires -1.
+        var xmp =
+            "<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>"
+            + "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">"
+            + "<rdf:Description rdf:about=\"\" xmlns:pdfaid=\"http://www.aiim.org/pdfa/ns/id/\">"
+            + "<pdfaid:part>2</pdfaid:part><pdfaid:conformance>B</pdfaid:conformance></rdf:Description>"
+            + "<rdf:Description rdf:about=\"\" xmlns:pdfaExtension=\"http://www.aiim.org/pdfa/ns/extension/\" "
+            + "xmlns:pdfaSchema=\"http://www.aiim.org/pdfa/ns/schema#\" "
+            + "xmlns:pdfaProperty=\"http://www.aiim.org/pdfa/ns/property#\">"
+            + $"<pdfaExtension:schemas>{openTag}<rdf:li rdf:parseType=\"Resource\">"
+            + _validSchemaFields
+            + "<pdfaSchema:property><rdf:Seq><rdf:li rdf:parseType=\"Resource\">" + _validPropertyFields
+            + $"</rdf:li></rdf:Seq></pdfaSchema:property></rdf:li>{closeTag}</pdfaExtension:schemas>"
+            + "</rdf:Description></rdf:RDF></x:xmpmeta><?xpacket end=\"w\"?>";
+
+        var result = PdfPreflight.Validate(BuildXmpPdf(Encoding.UTF8.GetBytes(xmp)), PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.RuleId == ruleId);
+    }
+
+    [Fact]
+    public void Validate_SchemasWrongExtPrefix_ReportsClause1()
+    {
+        // §6.6.2.3.3-1: pdfaExtension:schemas shall use the namespace prefix "pdfaExtension".
+        // Using prefix "ext:" for the extension namespace fires -1.
+        var xmp =
+            "<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>"
+            + "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">"
+            + "<rdf:Description rdf:about=\"\" xmlns:pdfaid=\"http://www.aiim.org/pdfa/ns/id/\">"
+            + "<pdfaid:part>2</pdfaid:part><pdfaid:conformance>B</pdfaid:conformance></rdf:Description>"
+            + "<rdf:Description rdf:about=\"\" xmlns:ext=\"http://www.aiim.org/pdfa/ns/extension/\" "
+            + "xmlns:pdfaSchema=\"http://www.aiim.org/pdfa/ns/schema#\" "
+            + "xmlns:pdfaProperty=\"http://www.aiim.org/pdfa/ns/property#\">"
+            + "<ext:schemas><rdf:Bag><rdf:li rdf:parseType=\"Resource\">"
+            + _validSchemaFields
+            + "<pdfaSchema:property><rdf:Seq><rdf:li rdf:parseType=\"Resource\">" + _validPropertyFields
+            + "</rdf:li></rdf:Seq></pdfaSchema:property></rdf:li></rdf:Bag></ext:schemas>"
+            + "</rdf:Description></rdf:RDF></x:xmpmeta><?xpacket end=\"w\"?>";
+
+        var result = PdfPreflight.Validate(BuildXmpPdf(Encoding.UTF8.GetBytes(xmp)), PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.6.2.3.3-1");
+    }
+
+    [Fact]
+    public void Validate_PropertyContainerBag_ReportsClause5()
+    {
+        // §6.6.2.3.3-5: pdfaSchema:property shall be rdf:Seq. Using rdf:Bag fires -5.
+        var xmp = ExtensionSchemaXmpWith(
+            schemaContainer: "rdf:Bag", propertyContainer: "rdf:Bag");
+
+        var result = PdfPreflight.Validate(BuildXmpPdf(Encoding.UTF8.GetBytes(xmp)), PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.6.2.3.3-5");
+    }
+
+    [Fact]
+    public void Validate_PropertyContainerSeq_NoClause5Finding()
+    {
+        // §6.6.2.3.3-5 FP guard: a correct rdf:Seq for property must not fire -5.
+        var xmp = ExtensionSchemaXmpWith(schemaContainer: "rdf:Bag", propertyContainer: "rdf:Seq");
+
+        var result = PdfPreflight.Validate(BuildXmpPdf(Encoding.UTF8.GetBytes(xmp)), PdfConformance.PdfA2B);
+
+        Assert.True(result.IsCompliant);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.6.2.3.3-5");
+    }
+
+    [Fact]
+    public void Validate_PropertyValueTypeWrongPrefix_ReportsClause8()
+    {
+        // §6.6.2.3.3-8: pdfaProperty:valueType shall use prefix "pdfaProperty".
+        // Using "prop:" prefix for the pdfaProperty namespace fires -8.
+        var xmp =
+            "<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>"
+            + "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">"
+            + "<rdf:Description rdf:about=\"\" xmlns:pdfaid=\"http://www.aiim.org/pdfa/ns/id/\">"
+            + "<pdfaid:part>2</pdfaid:part><pdfaid:conformance>B</pdfaid:conformance></rdf:Description>"
+            + "<rdf:Description rdf:about=\"\" xmlns:pdfaExtension=\"http://www.aiim.org/pdfa/ns/extension/\" "
+            + "xmlns:pdfaSchema=\"http://www.aiim.org/pdfa/ns/schema#\" "
+            + "xmlns:prop=\"http://www.aiim.org/pdfa/ns/property#\">"
+            + "<pdfaExtension:schemas><rdf:Bag><rdf:li rdf:parseType=\"Resource\">"
+            + _validSchemaFields
+            + "<pdfaSchema:property><rdf:Seq><rdf:li rdf:parseType=\"Resource\">"
+            + "<prop:name>foo</prop:name><prop:valueType>Text</prop:valueType>"
+            + "<prop:category>external</prop:category><prop:description>d</prop:description>"
+            + "</rdf:li></rdf:Seq></pdfaSchema:property>"
+            + "</rdf:li></rdf:Bag></pdfaExtension:schemas>"
+            + "</rdf:Description></rdf:RDF></x:xmpmeta><?xpacket end=\"w\"?>";
+
+        var result = PdfPreflight.Validate(BuildXmpPdf(Encoding.UTF8.GetBytes(xmp)), PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.6.2.3.3-8");
+    }
+
+    [Fact]
+    public void Validate_FieldValueTypeWrongPrefix_ReportsClause17()
+    {
+        // §6.6.2.3.3-17: pdfaField:valueType shall use prefix "pdfaField".
+        // Using "fld:" prefix for the pdfaField namespace fires -17.
+        var xmp =
+            "<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>"
+            + "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">"
+            + "<rdf:Description rdf:about=\"\" xmlns:pdfaid=\"http://www.aiim.org/pdfa/ns/id/\">"
+            + "<pdfaid:part>2</pdfaid:part><pdfaid:conformance>B</pdfaid:conformance></rdf:Description>"
+            + "<rdf:Description rdf:about=\"\" xmlns:pdfaExtension=\"http://www.aiim.org/pdfa/ns/extension/\" "
+            + "xmlns:pdfaSchema=\"http://www.aiim.org/pdfa/ns/schema#\" "
+            + "xmlns:pdfaProperty=\"http://www.aiim.org/pdfa/ns/property#\" "
+            + "xmlns:pdfaType=\"http://www.aiim.org/pdfa/ns/type#\" "
+            + "xmlns:fld=\"http://www.aiim.org/pdfa/ns/field#\">"
+            + "<pdfaExtension:schemas><rdf:Bag><rdf:li rdf:parseType=\"Resource\">"
+            + "<pdfaSchema:schema>S</pdfaSchema:schema>"
+            + "<pdfaSchema:namespaceURI>http://example.com/ns/</pdfaSchema:namespaceURI>"
+            + "<pdfaSchema:prefix>ex</pdfaSchema:prefix>"
+            + "<pdfaSchema:property><rdf:Seq><rdf:li rdf:parseType=\"Resource\">"
+            + _validPropertyFields
+            + "</rdf:li></rdf:Seq></pdfaSchema:property>"
+            + "<pdfaSchema:valueType><rdf:Seq><rdf:li rdf:parseType=\"Resource\">"
+            + _validValueTypeFields
+            + "<pdfaType:field><rdf:Seq><rdf:li rdf:parseType=\"Resource\">"
+            + "<fld:name>f</fld:name><fld:valueType>Text</fld:valueType><fld:description>d</fld:description>"
+            + "</rdf:li></rdf:Seq></pdfaType:field>"
+            + "</rdf:li></rdf:Seq></pdfaSchema:valueType>"
+            + "</rdf:li></rdf:Bag></pdfaExtension:schemas>"
+            + "</rdf:Description></rdf:RDF></x:xmpmeta><?xpacket end=\"w\"?>";
+
+        var result = PdfPreflight.Validate(BuildXmpPdf(Encoding.UTF8.GetBytes(xmp)), PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.6.2.3.3-17");
     }
 
     // ── §6.6.4 pdfaid prefix + §6.6.2.3.3 value-type rules ──────────────────────
@@ -4977,6 +5154,99 @@ public sealed class PdfPreflightTests
         // so a resource-less page selecting only these is valid PDF/A — veraPDF accepts it and the
         // rule must not flag the device names as inherited resources.
         var bytes = BuildInheritedResourcePdf("/DeviceRGB CS /DeviceRGB cs 1 0 0 SC 0 0 1 sc 10 10 50 50 re B");
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.2-2");
+    }
+
+    // ── §6.2.2-2 Non-page stream checks (Batch N5) ───────────────────────────────────────────────
+
+    [Fact]
+    public void Validate_FormNoResourcesUsesGs_IsReported()
+    {
+        // §6.2.2-2 VIOLATION (Batch N5): a drawn Form XObject with NO own /Resources that uses
+        // the named ExtGState /GS1 via the gs operator. The page has its own /Resources with
+        // /GS1 defined — but that does not satisfy the form stream's own requirement.
+        // Empirically confirmed: veraPDF 1.30.2 fires clause 6.2.2 testNumber 2 on the form's
+        // content stream (context: …/xObject[0]/contentStream[0]; confirmed 2026-06-23).
+        var bytes = OracleCorpus.InheritedResourceFormNoResourcesUsesGsPublic();
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a =>
+            a.RuleId == "ISO19005-2:6.2.2-2" && a.Message.Contains("GS1", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Validate_FormWithResourcesUsesGs_NeverReports6222()
+    {
+        // §6.2.2-2 FP-SAFETY (Batch N5): same drawn Form XObject structure but the form HAS its
+        // own /Resources defining /GS1. The form is self-contained — the rule must NOT fire.
+        // Confirmed: veraPDF accepts this document (2026-06-23).
+        var bytes = OracleCorpus.InheritedResourceFormWithResourcesUsesGsPublic();
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.2-2");
+    }
+
+    [Fact]
+    public void Validate_FormNoResourcesNoUsage_NeverReports6222()
+    {
+        // §6.2.2-2 FP-SAFETY (Batch N5): a drawn Form XObject with NO own /Resources that uses
+        // ONLY operators that do not reference named resources (q Q). No named resource usage
+        // means §6.2.2-2 does not apply. Confirmed: veraPDF accepts (2026-06-23).
+        var bytes = OracleCorpus.InheritedResourceFormNoResourcesNoUsagePublic();
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.2-2");
+    }
+
+    // ── §6.2.2-2 Page-level undefined-name + nested-form probes (Batch N6) ──────────────────────
+
+    [Fact]
+    public void Validate_PageNoResourcesUndefinedName_NeverReports6222()
+    {
+        // §6.2.2-2 FP-SAFETY (Batch N6, probe A1): a page with NO own /Resources and NO ancestor
+        // /Resources at all. The page content uses /GS0 gs — a name UNDEFINED in all ancestor
+        // scopes. Per veraPDF's "inheritedResourceNames" model: an undefined name is NOT an
+        // inherited resource name, so the rule does not fire. veraPDF 1.30.2 accepts this document
+        // (isCompliant=true; confirmed empirically, probe A1, 2026-06-23). After the EvaluatePage
+        // fix that gates on the ancestor scope, the in-process rule must also NOT fire.
+        var bytes = OracleCorpus.PageNoResourcesUndefinedNamePublic();
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.2-2");
+    }
+
+    [Fact]
+    public void Validate_NestedFormInnerNoResourcesPageDefined_IsReported()
+    {
+        // §6.2.2-2 VIOLATION (Batch N6, probe B1): page draws OUTER form (own /Resources, no /GS1).
+        // OUTER draws INNER form (NO /Resources, uses /GS1 gs). /GS1 IS defined in the page's
+        // /Resources /ExtGState. veraPDF fires 6.2.2-2 on the inner form's content stream
+        // (confirmed empirically, probe B1, 2026-06-23). In-process must fire.
+        var bytes = OracleCorpus.NestedFormInnerNoResourcesPageDefinedPublic();
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a =>
+            a.RuleId == "ISO19005-2:6.2.2-2" && a.Message.Contains("GS1", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Validate_NestedFormInnerNoResourcesOuterDefined_NeverReports6222()
+    {
+        // §6.2.2-2 FP-SAFETY (Batch N6, probe B2): same nested outer/inner form structure, but
+        // /GS1 is defined ONLY in the OUTER form's /Resources (not the page's /Resources). The
+        // INNER form has no /Resources and uses /GS1 gs. veraPDF accepts because /GS1 is not in
+        // the page resource scope (confirmed empirically, probe B2, 2026-06-23). In-process must
+        // NOT fire: the non-page stream check looks up used names in the PAGE's resource scope, and
+        // /GS1 is absent from the page's /ExtGState, so no finding is emitted.
+        var bytes = OracleCorpus.NestedFormInnerNoResourcesOuterDefinedPublic();
 
         var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
 
@@ -11000,5 +11270,80 @@ public sealed class PdfPreflightTests
         var result = PdfPreflight.Validate(OracleCorpus.Ua1GlyphWidthMismatchInvisible(), Conformance.PdfConformance.PdfUA1);
         Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.21.5-1");
     }
+
+    // ── §6.2.4.2-2 Batch N3 — adversarial FP sweep (in-process only) ─────────────────
+    // These tests probe edge cases that should NEVER produce a false positive.
+    // Each uses either BuildOverprintPdf (hand-built, page-scope) or
+    // OracleCorpus.OverprintForm* (writer-baseline, non-page stream scope).
+
+    // FP-SWEEP-1: Form with op false + OPM 1: overprint disabled → no violation.
+    [Fact]
+    public void N3_Sweep_FormOpFalse_NoFinding()
+    {
+        // op false means fill overprint is disabled; OPM alone cannot trigger the rule.
+        var result = PdfPreflight.Validate(OracleCorpus.OverprintFormOpFalseOpm1(), PdfConformance.PdfA2B);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.2-2");
+    }
+
+    // FP-SWEEP-2: Form with ICCBased CMYK + gs applied but NO paint operator → no violation.
+    [Fact]
+    public void N3_Sweep_FormStateSetNoPaint_NoFinding()
+    {
+        // gs sets op true + OPM 1 + cs selects CMYK, but no painting op → condition never checked.
+        var result = PdfPreflight.Validate(OracleCorpus.OverprintFormSetStateNoPaint(), PdfConformance.PdfA2B);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.2-2");
+    }
+
+    // FP-SWEEP-3: Form with DeviceCMYK (k operator) + op true + OPM 1: device colour not ICCBased → no violation.
+    [Fact]
+    public void N3_Sweep_FormDeviceCmykKOperator_NoFinding()
+    {
+        // k sets DeviceCMYK fill colour — NOT an ICCBased space, so rule must not fire.
+        var result = PdfPreflight.Validate(OracleCorpus.OverprintFormDeviceCmykOverprint(), PdfConformance.PdfA2B);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.2-2");
+    }
+
+    // FP-SWEEP-4: Form with ICCBased RGB (N=3) + op true + OPM 1: only N=4 (CMYK) triggers → no violation.
+    [Fact]
+    public void N3_Sweep_FormIccRgbN3_NoFinding()
+    {
+        // ICCBased with N=3 is RGB, not CMYK — the rule explicitly requires N=4.
+        var result = PdfPreflight.Validate(OracleCorpus.OverprintFormIccRgbOverprint(), PdfConformance.PdfA2B);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.2-2");
+    }
+
+    // ── END §6.2.4.2-2 Batch N3 adversarial FP sweep ─────────────────────────────────
+
+    // ── §6.2.4.4-2 Batch N4 — adversarial FP sweep (in-process only) ─────────────────
+    // These tests probe edge cases for the non-page Separation consistency extension.
+    // Each uses OracleCorpus.Sep* helpers (writer-baseline, non-page stream scope).
+
+    // FP-SWEEP-N4-1: drawn Form XObject with no /Resources — must skip, not crash, not fire.
+    [Fact]
+    public void N4_Sweep_FormNoResources_NoFinding()
+    {
+        var result = PdfPreflight.Validate(OracleCorpus.SepFormNoResources(), PdfConformance.PdfA2B);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.4-2");
+    }
+
+    // FP-SWEEP-N4-2: two drawn forms with consistent /Spot1→DeviceRGB (distinct tint object numbers).
+    // Structural comparator must see equality across distinct object numbers — must NOT fire.
+    [Fact]
+    public void N4_Sweep_TwoFormsConsistent_NoFinding()
+    {
+        var result = PdfPreflight.Validate(OracleCorpus.SepTwoFormsConsistent(), PdfConformance.PdfA2B);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.4-2");
+    }
+
+    // FP-SWEEP-N4-3: undrawn Form XObject with inconsistent /Spot1→DeviceGray.
+    // The form is in /Resources /XObject but never drawn (no Do). Must NOT fire.
+    [Fact]
+    public void N4_Sweep_UndrawnFormInconsistent_NoFinding()
+    {
+        var result = PdfPreflight.Validate(OracleCorpus.SepUndrawnFormInconsistent(), PdfConformance.PdfA2B);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.4-2");
+    }
+
+    // ── END §6.2.4.4-2 Batch N4 adversarial FP sweep ─────────────────────────────────
 
 }

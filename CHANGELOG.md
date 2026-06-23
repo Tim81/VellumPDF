@@ -6,6 +6,44 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.7.5] - 2026-06-23
+
+### Added
+
+- **`VellumPdf.Conformance` — PDF/A-2 coverage deepened across non-page content streams and XMP.**
+  Build-verified veraPDF parity rises to **~92% for PDF/A-2b/2u/2a** (up from ~90%); PDF/UA-1 stays
+  at **~90%**. Every rule is authored clean-room from the ISO text and cross-validated against
+  veraPDF 1.30.2 in CI; adversarial false-positive sweeps across the new and changed rules found no
+  over-rejections.
+  - **A reusable reachable-content-stream collector** walks the non-page content streams reachable
+    from each page — drawn Form XObjects (recursively, cycle-guarded), the glyph procedures of every
+    Type 3 font selected by a `Tf` operator, and annotation `/AP /N` appearance streams (including
+    keyed appearance sub-dictionaries). Its reachability policy is pinned empirically to veraPDF.
+  - **Now applied to non-page streams** (previously page-content only): the ISO 32000-1 operator
+    allowlist (§6.2.2-1) and inline-image filter check (§6.1.10-1) — both now **fully implemented**;
+    plus the overprint/OPM check (§6.2.4.2-2), Separation-consistency check (§6.2.4.4-2), and the
+    inherited-resource check (§6.2.2-2).
+  - **PDF/A-2a logical structure:** the document structure tree presence check (§6.7.3.3-1) is now
+    implemented.
+  - **XMP extension schema (§6.6.2.3.3):** the PDF/A extension-schema containers are now validated
+    for RDF container type and namespace prefix — `pdfaExtension:schemas` must be an `rdf:Bag`
+    (§6.6.2.3.3-1), and the `property`, `valueType`, and `field` containers must be `rdf:Seq`
+    (§6.6.2.3.3-5/-6/-15), honoring the XMP default-namespace (null-prefix) form.
+
+### Fixed
+
+- **`VellumPdf.Conformance` — two false positives eliminated** (a conformance rule must never reject
+  a file veraPDF accepts):
+  - **§6.2.4.3 (device colour spaces).** The check rejected any device colour used without a PDF/A
+    output intent, ignoring `/Default*` colour spaces entirely — so a file using DeviceRGB with a
+    `/DefaultRGB` colour space (and no output intent) was wrongly rejected. It now follows veraPDF's
+    per-type semantics: DeviceRGB is satisfied by `/DefaultRGB` or an RGB output-intent profile,
+    DeviceCMYK by `/DefaultCMYK` or a CMYK profile, and DeviceGray by `/DefaultGray` or any output
+    intent.
+  - **§6.2.2-2 (inherited resources).** A page lacking its own `/Resources` was flagged for *every*
+    resource name it used, even names that are undefined in the inheritance chain (which veraPDF
+    accepts). It now flags only names that are actually defined in the inherited resource scope.
+
 ## [1.7.4] - 2026-06-23
 
 ### Added

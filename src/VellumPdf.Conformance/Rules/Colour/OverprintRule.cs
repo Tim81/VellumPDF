@@ -18,7 +18,7 @@ namespace VellumPdf.Conformance.Rules.Colour;
 /// painting operator.
 /// </para>
 /// <para>
-/// <b>Graphics-state model:</b> This rule implements a minimal per-page content-stream
+/// <b>Graphics-state model:</b> This rule implements a minimal per-content-stream
 /// graphics-state interpreter with a full q/Q save-restore stack. The following state
 /// components are tracked:
 /// <list type="bullet">
@@ -54,9 +54,18 @@ namespace VellumPdf.Conformance.Rules.Colour;
 /// that does not explicitly enable overprinting — never fires.
 /// </para>
 /// <para>
-/// <b>Scope (Partial):</b> Only page content streams are interpreted. Form XObjects, Type 3
-/// character procedures, and annotation appearance streams are not yet walked. A violation
-/// reachable only through those paths will not be detected.
+/// <b>Scope (Partial):</b> Page content streams and non-page content streams reachable from
+/// each page (drawn Form XObjects, all CharProcs of Tf-selected Type 3 fonts, annotation /AP
+/// /N appearance streams) are all interpreted. Each stream is scanned in ISOLATION with a
+/// fresh default GState (OPM 0, overprint false). Graphics state is NOT threaded across
+/// Do boundaries — the graphics state that the calling stream has established is invisible to
+/// the callee. Violations detectable only through inherited graphics state (e.g. a page sets
+/// ICCBased-CMYK + overprint + OPM 1, then invokes a Form that merely fills without
+/// establishing any state itself) are under-detected. This is FP-safe: isolated scanning can
+/// only fail to find violations that veraPDF sees, never flag ones that veraPDF accepts.
+/// This inherited-state path remains the residual gap (Partial).
+/// Non-page streams whose <c>/Resources</c> dictionary is absent are skipped (null Resources
+/// means the stream's name references cannot be resolved; under-detection, FP-safe).
 /// </para>
 /// <para>
 /// <b>Oracle probes (veraPDF 1.30.2):</b>
@@ -72,6 +81,11 @@ namespace VellumPdf.Conformance.Rules.Colour;
 ///   <item>P9 gs inside q, paint after Q → PASS (state restored)</item>
 ///   <item>P10 gs before q, paint after Q → FAIL (state from before q persists)</item>
 ///   <item>P14 /OP true + /op explicitly false + fill → PASS (explicit /op wins)</item>
+///   <item>N3-A Form XObject self-contains cs+gs (op/OPM violation) + fill → FAIL §6.2.4.2-2
+///   (veraPDF validated 2026-06-23; context: xObject[0]/contentStream[0])</item>
+///   <item>N3-B Page sets cs+gs (op/OPM), form only fills (inherited state) → FAIL §6.2.4.2-2
+///   (veraPDF validated 2026-06-23; isolated per-stream scan under-detects this — Partial gap)</item>
+///   <item>N3-C Form self-contains cs + op true + OPM 0 + fill → PASS (OPM 0 allowed)</item>
 /// </list>
 /// </para>
 /// <para>
@@ -96,8 +110,6 @@ internal sealed class OverprintRule : IConformanceRule
 
     public void Evaluate(PreflightContext context)
     {
-        // Per-document state: report at most once per page (per violation type) to avoid
-        // drowning the caller in duplicated findings.
         foreach (var page in context.EnumeratePages())
         {
             try
@@ -107,6 +119,15 @@ internal sealed class OverprintRule : IConformanceRule
             catch
             {
                 // Malformed page or content — skip rather than propagate.
+            }
+
+            try
+            {
+                EvaluateNonPageStreams(context, page);
+            }
+            catch
+            {
+                // Collector or scan failure — skip non-page streams for this page.
             }
         }
     }
@@ -120,19 +141,74 @@ internal sealed class OverprintRule : IConformanceRule
         if (content is null || content.Length == 0)
             return;
 
-        // Build a lookup of colour-space names → is-ICCBased-N4 (from the page's /Resources).
-        // Unresolvable or non-ICCBased entries simply don't appear in the true-set — safe.
+        // Build lookup tables from the PAGE's own /Resources; report at most once.
         var iccCmykNames = BuildIccCmykSet(context, resources);
-
-        // Build a lookup of ExtGState resource names → (OPM, strokeOverprint, fillOverprint).
-        // Entries that can't be resolved are omitted; they don't affect state on `gs`.
         var extGStates = BuildExtGStateTable(context, resources);
+        var reported = false;
+        InterpretStream(context, content, iccCmykNames, extGStates, ref reported);
+    }
 
-        // ── Graphics-state machine ─────────────────────────────────────────
-        // Stack entry: (opm, strokeOverprint, fillOverprint, fillIsIccCmyk, strokeIsIccCmyk)
+    /// <summary>
+    /// Scans non-page content streams reachable from <paramref name="page"/> via
+    /// <see cref="ContentStreamUsage.GetReachableContentStreams"/>. Each stream is
+    /// interpreted in ISOLATION with a fresh default GState, resolved against that
+    /// stream's OWN <c>/Resources</c> dictionary. Streams with a null
+    /// <c>Resources</c> property are skipped (cannot resolve names; under-detection,
+    /// FP-safe). See the Scope note in the class remarks for the inherited-state gap.
+    /// </summary>
+    private void EvaluateNonPageStreams(PreflightContext context, PdfDictionary page)
+    {
+        IReadOnlyList<ReachableContentStream> streams;
+        try
+        {
+            streams = ContentStreamUsage.GetReachableContentStreams(context, page);
+        }
+        catch
+        {
+            return;
+        }
+
+        var reported = false; // report at most once across all non-page streams per page
+        foreach (var cs in streams)
+        {
+            if (reported)
+                break;
+
+            // Skip streams with no /Resources: names in the content cannot be resolved,
+            // so we cannot safely determine whether any cs/gs operator establishes the
+            // violation condition. Skipping is under-detection, not over-detection.
+            if (cs.Resources is null)
+                continue;
+
+            try
+            {
+                var iccCmykNames = BuildIccCmykSet(context, cs.Resources);
+                var extGStates = BuildExtGStateTable(context, cs.Resources);
+                InterpretStream(context, cs.Bytes, iccCmykNames, extGStates, ref reported);
+            }
+            catch
+            {
+                // Malformed stream or resources — skip this stream; continue to the next.
+            }
+        }
+    }
+
+    /// <summary>
+    /// Runs the graphics-state machine over <paramref name="content"/> using the
+    /// pre-built resource lookups. Sets <paramref name="reported"/> to true and emits a
+    /// finding on the first detected violation. The state machine always starts from the
+    /// PDF default GState (OPM 0, overprint false, no ICCBased colour space) — no
+    /// inherited state from a calling stream is threaded in.
+    /// </summary>
+    private void InterpretStream(
+        PreflightContext context,
+        byte[] content,
+        HashSet<string> iccCmykNames,
+        Dictionary<string, GsParams> extGStates,
+        ref bool reported)
+    {
         var state = new GState();
         var stack = new Stack<GState>();
-        var reported = false; // report at most once per page
 
         try
         {
