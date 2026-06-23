@@ -189,6 +189,9 @@ internal sealed class ContentUsage
     internal ContentUsage(
         HashSet<string> appliedExtGStates,
         bool usesDeviceColour,
+        bool usesDeviceRgb,
+        bool usesDeviceCmyk,
+        bool usesDeviceGray,
         HashSet<string> drawnXObjects,
         HashSet<string> renderingIntents,
         HashSet<string> selectedColorSpaces,
@@ -201,6 +204,9 @@ internal sealed class ContentUsage
     {
         AppliedExtGStates = appliedExtGStates;
         UsesDeviceColour = usesDeviceColour;
+        UsesDeviceRgb = usesDeviceRgb;
+        UsesDeviceCmyk = usesDeviceCmyk;
+        UsesDeviceGray = usesDeviceGray;
         DrawnXObjects = drawnXObjects;
         RenderingIntents = renderingIntents;
         SelectedColorSpaces = selectedColorSpaces;
@@ -217,6 +223,15 @@ internal sealed class ContentUsage
 
     /// <summary>True when the page paints with device-dependent colour.</summary>
     public bool UsesDeviceColour { get; }
+
+    /// <summary>True when the page uses DeviceRGB colour (<c>rg</c>/<c>RG</c> operators).</summary>
+    public bool UsesDeviceRgb { get; }
+
+    /// <summary>True when the page uses DeviceCMYK colour (<c>k</c>/<c>K</c> operators).</summary>
+    public bool UsesDeviceCmyk { get; }
+
+    /// <summary>True when the page uses DeviceGray colour (<c>g</c>/<c>G</c> operators).</summary>
+    public bool UsesDeviceGray { get; }
 
     /// <summary>The XObject resource names actually painted by a <c>Do</c> operator.</summary>
     public HashSet<string> DrawnXObjects { get; }
@@ -306,6 +321,9 @@ internal static class ContentStreamUsage
         var usedFonts = new HashSet<string>(StringComparer.Ordinal);
         var paintedShadings = new HashSet<string>(StringComparer.Ordinal);
         var usesDeviceColour = false;
+        var usesDeviceRgb = false;
+        var usesDeviceCmyk = false;
+        var usesDeviceGray = false;
         var textShows = new List<TextShow>();
         var markedContentSequences = new List<MarkedContentSequence>();
         var textShowContexts = new List<TextShowMcContext>();
@@ -499,8 +517,19 @@ internal static class ContentStreamUsage
                                     applied.Add(lastName);
                                 break;
 
-                            case "rg" or "g" or "k" or "RG" or "G" or "K":
+                            case "rg" or "RG":
                                 usesDeviceColour = true;
+                                usesDeviceRgb = true;
+                                break;
+
+                            case "k" or "K":
+                                usesDeviceColour = true;
+                                usesDeviceCmyk = true;
+                                break;
+
+                            case "g" or "G":
+                                usesDeviceColour = true;
+                                usesDeviceGray = true;
                                 break;
 
                             case "Do":
@@ -703,7 +732,8 @@ internal static class ContentStreamUsage
             }
         }
 
-        return new ContentUsage(applied, usesDeviceColour, drawnXObjects, renderingIntents,
+        return new ContentUsage(applied, usesDeviceColour, usesDeviceRgb, usesDeviceCmyk, usesDeviceGray,
+            drawnXObjects, renderingIntents,
             selectedColorSpaces, usedFonts, paintedShadings, textShows,
             markedContentSequences, textShowContexts, simpleContentItems);
     }

@@ -403,6 +403,54 @@ public static class OracleCorpus
             new OracleFixture("pdfa2b-devicecolour-no-outputintent", WriterPdfDeviceColourNoOutputIntent(),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
 
+            // ── §6.2.4.3 Default* colour space FP-safety guards (2026-06-23) ──────────────────────
+            // A /DefaultRGB colour space in the page /Resources/ColorSpace satisfies §6.2.4.3-2 for
+            // DeviceRGB WITHOUT any output intent. veraPDF 1.30.2 ACCEPTS these; the in-process rule
+            // must be silent (was a false positive before the Default* exemption was added).
+            new OracleFixture("pdfa2b-devicergb-defaultrgb-nointent",
+                Pdfa2bDeviceColourWithDefaultCs(DeviceColourKind.Rgb, DeviceColourKind.Rgb, hasOutputIntent: false),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // /DefaultCMYK satisfies §6.2.4.3-3 for DeviceCMYK WITHOUT any output intent.
+            new OracleFixture("pdfa2b-devicecmyk-defaultcmyk-nointent",
+                Pdfa2bDeviceColourWithDefaultCs(DeviceColourKind.Cmyk, DeviceColourKind.Cmyk, hasOutputIntent: false),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // /DefaultGray satisfies §6.2.4.3-4 for DeviceGray WITHOUT any output intent.
+            new OracleFixture("pdfa2b-devicegray-defaultgray-nointent",
+                Pdfa2bDeviceColourWithDefaultCs(DeviceColourKind.Gray, DeviceColourKind.Gray, hasOutputIntent: false),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // ── §6.2.4.3 true-positive guards: device colour without Default*, wrong or missing intent ──
+            // DeviceRGB with a CMYK output intent and no DefaultRGB: §6.2.4.3-2 requires an RGB intent.
+            // veraPDF 1.30.2 FIRES 6.2.4.3-2; in-process must also fire.
+            new OracleFixture("pdfa2b-devicergb-cmykintent",
+                Pdfa2bDeviceColourWithDefaultCs(DeviceColourKind.Rgb, DeviceColourKind.None, hasOutputIntent: true, intentColour: DeviceColourKind.Cmyk),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // DeviceCMYK with an RGB output intent and no DefaultCMYK: §6.2.4.3-3 requires a CMYK intent.
+            // veraPDF 1.30.2 FIRES 6.2.4.3-3; in-process must also fire.
+            new OracleFixture("pdfa2b-devicecmyk-rgbintent",
+                Pdfa2bDeviceColourWithDefaultCs(DeviceColourKind.Cmyk, DeviceColourKind.None, hasOutputIntent: true, intentColour: DeviceColourKind.Rgb),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // ── §6.2.4.3 FP-safety: correct matching intents ────────────────────────────────────
+            // DeviceRGB with an RGB output intent (no Default*): §6.2.4.3-2 satisfied. veraPDF ACCEPTS.
+            new OracleFixture("pdfa2b-devicergb-rgbintent",
+                Pdfa2bDeviceColourWithDefaultCs(DeviceColourKind.Rgb, DeviceColourKind.None, hasOutputIntent: true, intentColour: DeviceColourKind.Rgb),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // DeviceCMYK with a CMYK output intent (no Default*): §6.2.4.3-3 satisfied. veraPDF ACCEPTS.
+            new OracleFixture("pdfa2b-devicecmyk-cmykintent",
+                Pdfa2bDeviceColourWithDefaultCs(DeviceColourKind.Cmyk, DeviceColourKind.None, hasOutputIntent: true, intentColour: DeviceColourKind.Cmyk),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // DeviceGray with a CMYK output intent (no DefaultGray): §6.2.4.3-4 allows ANY intent for Gray.
+            // veraPDF 1.30.2 ACCEPTS; in-process must be silent.
+            new OracleFixture("pdfa2b-devicegray-cmykintent",
+                Pdfa2bDeviceColourWithDefaultCs(DeviceColourKind.Gray, DeviceColourKind.None, hasOutputIntent: true, intentColour: DeviceColourKind.Cmyk),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
             // An interactive form dictionary carrying an /XFA entry, which PDF/A-2 forbids (§6.4.2).
             // Both veraPDF and the in-process XfaRule reject it (#122).
             new OracleFixture("pdfa2b-xfa", WriterPdfWithXfa(),
@@ -2459,6 +2507,191 @@ public static class OracleCorpus
             .Set(new PdfName("S"), new PdfName("GTS_PDFA1"));
         catalog.Set(new PdfName("OutputIntents"), new PdfArray([brokenOi]));
         return reader.AppendRevision([(rootRef.ObjectNumber, catalog)]);
+    }
+
+    // ── §6.2.4.3 Default* colour space fixture helpers (2026-06-23) ────────────────────────────────
+    // Encodes which device colour type is used in the content stream or supplied by the Default*/intent.
+    private enum DeviceColourKind { None, Rgb, Cmyk, Gray }
+
+    /// <summary>
+    /// Builds a hand-crafted PDF/A-2b document that paints <paramref name="paintedColour"/> via a
+    /// device colour operator, optionally carries a <c>/Default*</c> colour space for
+    /// <paramref name="defaultCsColour"/> in the page <c>/Resources/ColorSpace</c>, and optionally
+    /// includes a PDF/A output intent whose ICC profile has the colour space of
+    /// <paramref name="intentColour"/>.
+    /// <para>
+    /// Verified against veraPDF 1.30.2, 2026-06-23: see probe suite in /tmp/vellum_probes/
+    /// (probe1a–1c = Default* FP-safety; probe2a–2e = matching-strictness).
+    /// </para>
+    /// </summary>
+    private static byte[] Pdfa2bDeviceColourWithDefaultCs(
+        DeviceColourKind paintedColour,
+        DeviceColourKind defaultCsColour,
+        bool hasOutputIntent,
+        DeviceColourKind intentColour = DeviceColourKind.None)
+    {
+        var xmp = Encoding.UTF8.GetBytes(
+            "<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>"
+            + "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">"
+            + "<rdf:Description rdf:about=\"\" xmlns:pdfaid=\"http://www.aiim.org/pdfa/ns/id/\">"
+            + "<pdfaid:part>2</pdfaid:part><pdfaid:conformance>B</pdfaid:conformance>"
+            + "</rdf:Description></rdf:RDF></x:xmpmeta><?xpacket end=\"w\"?>");
+
+        // Device colour paint operator for the page content.
+        var contentStr = paintedColour switch
+        {
+            DeviceColourKind.Rgb => "0.5 0 0 rg 100 100 50 50 re f",
+            DeviceColourKind.Cmyk => "0.1 0.2 0.3 0.4 k 100 100 50 50 re f",
+            DeviceColourKind.Gray => "0.5 g 100 100 50 50 re f",
+            _ => "q Q",
+        };
+        var content = Encoding.Latin1.GetBytes(contentStr);
+
+        // Build a minimal ICC header: 128 bytes with 'acsp' at offset 36 and colour-space tag at 16.
+        // Derived from ISO 15076-1:2010 §7.2 — only the header fields required for veraPDF checks.
+        static byte[] MakeIcc(DeviceColourKind cs)
+        {
+            var h = new byte[128];
+            // Profile size (big-endian u32)
+            h[0] = 0; h[1] = 0; h[2] = 0; h[3] = 128;
+            // Profile version 4.0.0
+            h[8] = 0x04;
+            // Device class: prtr (output device)
+            h[12] = (byte)'p'; h[13] = (byte)'r'; h[14] = (byte)'t'; h[15] = (byte)'r';
+            // Data colour space at offset 16
+            switch (cs)
+            {
+                case DeviceColourKind.Rgb:
+                    h[16] = (byte)'R'; h[17] = (byte)'G'; h[18] = (byte)'B'; h[19] = (byte)' '; break;
+                case DeviceColourKind.Cmyk:
+                    h[16] = (byte)'C'; h[17] = (byte)'M'; h[18] = (byte)'Y'; h[19] = (byte)'K'; break;
+                case DeviceColourKind.Gray:
+                    h[16] = (byte)'G'; h[17] = (byte)'R'; h[18] = (byte)'A'; h[19] = (byte)'Y'; break;
+            }
+            // PCS: XYZ
+            h[20] = (byte)'X'; h[21] = (byte)'Y'; h[22] = (byte)'Z'; h[23] = (byte)' ';
+            // ICC signature 'acsp' at offset 36
+            h[36] = (byte)'a'; h[37] = (byte)'c'; h[38] = (byte)'s'; h[39] = (byte)'p';
+            return h;
+        }
+
+        // /ColorSpace dict entry and value for a Default* colour space.
+        // DefaultRGB: CalRGB (device-independent three-component). DefaultCMYK: ICCBased (N=4).
+        // DefaultGray: CalGray (device-independent single-component).
+        // ICCBased for DefaultCMYK requires a stream, so it uses an indirect reference to object 6.
+        static string DefaultCsResourceEntry(DeviceColourKind cs) => cs switch
+        {
+            DeviceColourKind.Rgb => "/DefaultRGB [/CalRGB << /Gamma [2.2 2.2 2.2] /Matrix [0.4124 0.2126 0.0193 0.3576 0.7152 0.1192 0.1805 0.0722 0.9505] /WhitePoint [0.9505 1.0 1.089] >>]",
+            DeviceColourKind.Cmyk => "/DefaultCMYK [/ICCBased 6 0 R]",
+            DeviceColourKind.Gray => "/DefaultGray [/CalGray << /WhitePoint [0.9505 1.0 1.089] >>]",
+            _ => string.Empty,
+        };
+
+        // Object layout (hand-built, veraPDF-parseable):
+        //   1=catalog, 2=pages, 3=page, 4=content, 5=metadata
+        //   6=icc-for-defaultcmyk (optional), 7=intent-icc (optional), 8=outputintent (optional)
+        // Not all objects are present in every configuration; we write a contiguous xref.
+        using var ms = new MemoryStream();
+        void W(string s) { var b = Encoding.Latin1.GetBytes(s); ms.Write(b, 0, b.Length); }
+        void WB(byte[] b) { ms.Write(b, 0, b.Length); }
+
+        ms.Write([0x25, 0x50, 0x44, 0x46, 0x2D, 0x31, 0x2E, 0x37, 0x0A]); // %PDF-1.7\n
+        ms.Write([0x25, 0xE2, 0xE3, 0xCF, 0xD3, 0x0A]);                    // binary comment
+
+        // Assign object numbers dynamically.
+        int obj = 1;
+        int catalogObj = obj++;  // 1
+        int pagesObj = obj++;  // 2
+        int pageObj = obj++;  // 3
+        int contentObj = obj++;  // 4
+        int metaObj = obj++;  // 5
+        int cmykDefaultIccObj = -1;
+        int intentIccObj = -1;
+        int outputIntentObj = -1;
+
+        // DefaultCMYK needs an embedded ICC stream (ICCBased requires a stream object).
+        if (defaultCsColour == DeviceColourKind.Cmyk)
+            cmykDefaultIccObj = obj++;
+
+        if (hasOutputIntent && intentColour != DeviceColourKind.None)
+        {
+            intentIccObj = obj++;
+            outputIntentObj = obj++;
+        }
+        else if (hasOutputIntent)
+        {
+            // Profile-less output intent — shouldn't normally reach here, but guard anyway.
+            outputIntentObj = obj++;
+        }
+
+        int maxObj = obj - 1;
+        var offsets = new int[maxObj + 1];
+
+        // /OutputIntents ref in catalog (only when we have one)
+        var catalogOiEntry = outputIntentObj > 0
+            ? $" /OutputIntents [{outputIntentObj} 0 R]"
+            : string.Empty;
+
+        offsets[catalogObj] = (int)ms.Position;
+        W($"{catalogObj} 0 obj\n<< /Type /Catalog /Pages {pagesObj} 0 R /Metadata {metaObj} 0 R{catalogOiEntry} >>\nendobj\n");
+
+        offsets[pagesObj] = (int)ms.Position;
+        W($"{pagesObj} 0 obj\n<< /Type /Pages /Kids [{pageObj} 0 R] /Count 1 >>\nendobj\n");
+
+        // Page resources: /ColorSpace dict with Default* when requested.
+        var csEntry = DefaultCsResourceEntry(defaultCsColour);
+        var resourcesEntry = csEntry.Length > 0
+            ? $" /Resources << /ColorSpace << {csEntry} >> >>"
+            : string.Empty;
+
+        offsets[pageObj] = (int)ms.Position;
+        W($"{pageObj} 0 obj\n<< /Type /Page /Parent {pagesObj} 0 R /MediaBox [0 0 612 792] /Contents {contentObj} 0 R{resourcesEntry} >>\nendobj\n");
+
+        offsets[contentObj] = (int)ms.Position;
+        W($"{contentObj} 0 obj\n<< /Length {content.Length} >>\nstream\n");
+        WB(content);
+        W("\nendstream\nendobj\n");
+
+        offsets[metaObj] = (int)ms.Position;
+        W($"{metaObj} 0 obj\n<< /Type /Metadata /Subtype /XML /Length {xmp.Length} >>\nstream\n");
+        WB(xmp);
+        W("\nendstream\nendobj\n");
+
+        if (cmykDefaultIccObj > 0)
+        {
+            var icc = MakeIcc(DeviceColourKind.Cmyk);
+            offsets[cmykDefaultIccObj] = (int)ms.Position;
+            W($"{cmykDefaultIccObj} 0 obj\n<< /Length {icc.Length} /N 4 >>\nstream\n");
+            WB(icc);
+            W("\nendstream\nendobj\n");
+        }
+
+        if (intentIccObj > 0)
+        {
+            var icc = MakeIcc(intentColour);
+            var n = intentColour == DeviceColourKind.Cmyk ? 4 : intentColour == DeviceColourKind.Gray ? 1 : 3;
+            offsets[intentIccObj] = (int)ms.Position;
+            W($"{intentIccObj} 0 obj\n<< /Length {icc.Length} /N {n} >>\nstream\n");
+            WB(icc);
+            W("\nendstream\nendobj\n");
+        }
+
+        if (outputIntentObj > 0)
+        {
+            offsets[outputIntentObj] = (int)ms.Position;
+            var destEntry = intentIccObj > 0 ? $" /DestOutputProfile {intentIccObj} 0 R" : string.Empty;
+            W($"{outputIntentObj} 0 obj\n<< /Type /OutputIntent /S /GTS_PDFA1 /OutputConditionIdentifier (Custom){destEntry} >>\nendobj\n");
+        }
+
+        var xrefOff = (int)ms.Position;
+        W($"xref\n0 {maxObj + 1}\n0000000000 65535 f \n");
+        for (var i = 1; i <= maxObj; i++)
+            W($"{offsets[i]:D10} 00000 n \n");
+        W($"trailer\n<< /Size {maxObj + 1} /Root {catalogObj} 0 R "
+          + "/ID [<CCAA00BB11DD22EE33FF44AA> <CCAA00BB11DD22EE33FF44AA>] >>\n");
+        W($"startxref\n{xrefOff}\n%%EOF\n");
+
+        return ms.ToArray();
     }
 
     private static (PdfIndirectReference Ref, PdfDictionary Dict) FirstPage(PdfDocumentReader reader)

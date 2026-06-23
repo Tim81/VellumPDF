@@ -73,6 +73,24 @@ internal sealed class PreflightContext
         return false;
     }
 
+    /// <summary>
+    /// Returns which device colour types are used across all pages. Each flag is true when ANY page
+    /// uses that type via a colour-setting operator in its content stream.
+    /// Limitation: device colour reached only through images, form XObjects, or patterns is not detected.
+    /// </summary>
+    public (bool Rgb, bool Cmyk, bool Gray) DocumentDeviceColourTypes()
+    {
+        bool rgb = false, cmyk = false, gray = false;
+        foreach (var page in EnumeratePages())
+        {
+            var usage = ContentStreamUsage.Analyze(this, page);
+            if (usage.UsesDeviceRgb) rgb = true;
+            if (usage.UsesDeviceCmyk) cmyk = true;
+            if (usage.UsesDeviceGray) gray = true;
+        }
+        return (rgb, cmyk, gray);
+    }
+
     private IEnumerable<PdfDictionary> WalkPages(PdfObject? node, HashSet<int> visited, int depth)
     {
         if (depth > MaxPageTreeDepth)

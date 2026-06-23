@@ -14,7 +14,20 @@ namespace VellumPdf.Conformance.Rules.Colour;
 /// </summary>
 /// <remarks>
 /// Authored from ISO 19005-2:2011, 6.2.3 and 6.2.4.3 and ISO 32000-1:2008, 14.11.5 / 8.6.5.5. Clean-room:
-/// derived from the specification text, not from any third-party validation profile.
+/// derived from the specification text and empirical veraPDF-oracle probing (2026-06-23), not from any
+/// third-party validation profile.
+/// <para>
+/// Per-type §6.2.4.3 semantics (confirmed empirically against veraPDF 1.30.2, 2026-06-23):
+/// <list type="bullet">
+///   <item><description>DeviceRGB: satisfied by a <c>/DefaultRGB</c> colour space in the page's
+///   <c>/Resources /ColorSpace</c> dict, OR a PDF/A output intent whose <c>/DestOutputProfile</c>
+///   is an ICC profile with data colour space <c>'RGB '</c> (offset 16).</description></item>
+///   <item><description>DeviceCMYK: satisfied by <c>/DefaultCMYK</c>, OR a <c>'CMYK'</c>
+///   output-intent ICC profile.</description></item>
+///   <item><description>DeviceGray: satisfied by <c>/DefaultGray</c>, OR ANY PDF/A output intent
+///   (the colour space of the intent's ICC profile does not matter for Gray).</description></item>
+/// </list>
+/// </para>
 /// <para>
 /// The <c>/DestOutputProfile</c> requirement is scoped to documents that paint device-dependent
 /// colour (detected via <see cref="ContentStreamUsage"/>); veraPDF does not require an output intent
@@ -34,6 +47,11 @@ internal sealed class OutputIntentRule : IConformanceRule
     private static readonly PdfName _s = new("S");
     private static readonly PdfName _destOutputProfile = new("DestOutputProfile");
     private static readonly PdfName _destOutputProfileRef = new("DestOutputProfileRef");
+    private static readonly PdfName _colorSpace = new("ColorSpace");
+    private static readonly PdfName _resources = new("Resources");
+    private static readonly PdfName _defaultRgb = new("DefaultRGB");
+    private static readonly PdfName _defaultCmyk = new("DefaultCMYK");
+    private static readonly PdfName _defaultGray = new("DefaultGray");
 
     public void Evaluate(PreflightContext context)
     {
@@ -41,6 +59,9 @@ internal sealed class OutputIntentRule : IConformanceRule
         var profileRefs = new HashSet<int>();
         // Whether a PDF/A (GTS_PDFA1) output intent supplies a DestOutputProfile.
         var hasPdfAProfile = false;
+        // ICC colour space tags of PDF/A output-intent profiles found ('RGB ', 'CMYK', 'GRAY').
+        // Populated from the ICC header data-colour-space field at byte offset 16 (ISO 15076-1 §7.2.6).
+        var intentColourSpaces = new HashSet<string>(StringComparer.Ordinal);
 
         var intents = context.Resolve(context.Catalog.Get(_outputIntents)) as PdfArray;
         for (var i = 0; intents is not null && i < intents.Count; i++)
@@ -112,6 +133,19 @@ internal sealed class OutputIntentRule : IConformanceRule
                     Clause,
                     PreflightSeverity.Error,
                     "The DestOutputProfile shall be a valid ICC profile (missing 'acsp' signature).");
+                // Invalid profile: do not attempt per-type colour-space matching. The §6.2.3 error
+                // already covers this profile; firing §6.2.4.3 additionally would be double-reporting
+                // and risks false positives on malformed-but-present intents.
+            }
+            else if (isPdfA)
+            {
+                // Read the ICC data colour space from the profile header at byte offset 16 (4 bytes,
+                // ISO 15076-1:2010 §7.2.6). Recognised values: 'RGB ', 'CMYK', 'GRAY'.
+                // Only add when the tag is a known value — unknown/zero tags are ignored (lenient,
+                // FP-safe: we fire only when we POSITIVELY know the colour space is wrong).
+                var cs = ReadIccDataColourSpace(icc);
+                if (cs is "RGB " or "CMYK" or "GRAY")
+                    intentColourSpaces.Add(cs);
             }
         }
 
@@ -125,18 +159,86 @@ internal sealed class OutputIntentRule : IConformanceRule
                 + "reference the same ICC profile stream.");
         }
 
-        // ISO 19005-2 §6.2.4.3: device colour spaces (DeviceRGB/CMYK/Gray) may be used only when the
-        // document has a PDF/A output intent (GTS_PDFA1) with a DestOutputProfile. Covers both the
-        // absence of any output intent and a profile-less one (issues #122, #128).
-        if (!hasPdfAProfile && context.DocumentUsesDeviceColour())
+        // ISO 19005-2 §6.2.4.3: per-type device colour space requirements.
+        // Each device colour type is satisfied independently by either a matching Default* colour space
+        // in the page resources OR the appropriate output intent (with colour-matching for RGB/CMYK,
+        // any intent for Gray). Empirically confirmed against veraPDF 1.30.2, 2026-06-23.
+        var (usesRgb, usesCmyk, usesGray) = context.DocumentDeviceColourTypes();
+
+        if (usesRgb || usesCmyk || usesGray)
         {
-            context.Report(
-                "ISO19005-2:6.2.4.3-output-intent",
-                "ISO 19005-2:2011, 6.2.4.3",
-                PreflightSeverity.Error,
-                "The document paints device-dependent colour but has no PDF/A output intent "
-                + "(GTS_PDFA1) with a DestOutputProfile.");
+            // Collect Default* colour space presence across all pages.
+            var (hasDefaultRgb, hasDefaultCmyk, hasDefaultGray) = CollectDefaultColourSpaces(context);
+
+            // §6.2.4.3-2: DeviceRGB — satisfied by DefaultRGB OR an RGB-profile output intent.
+            // We fire only when we POSITIVELY know the requirement is unmet: no intent at all, OR
+            // we could read at least one intent colour space and none was RGB. When we have an
+            // intent but could not determine its colour space (unknown ICC tag), we stay silent
+            // (FP-safe: the §6.2.3 ICC-validity error covers the malformed profile).
+            var rgbIntentSatisfied = hasPdfAProfile && (intentColourSpaces.Count == 0 || intentColourSpaces.Contains("RGB "));
+            if (usesRgb && !hasDefaultRgb && !rgbIntentSatisfied)
+            {
+                context.Report(
+                    "ISO19005-2:6.2.4.3-2-device-rgb",
+                    "ISO 19005-2:2011, 6.2.4.3",
+                    PreflightSeverity.Error,
+                    "The document paints DeviceRGB but has neither a /DefaultRGB colour space nor a "
+                    + "PDF/A output intent (GTS_PDFA1) with an RGB DestOutputProfile.");
+            }
+
+            // §6.2.4.3-3: DeviceCMYK — satisfied by DefaultCMYK OR a CMYK-profile output intent.
+            var cmykIntentSatisfied = hasPdfAProfile && (intentColourSpaces.Count == 0 || intentColourSpaces.Contains("CMYK"));
+            if (usesCmyk && !hasDefaultCmyk && !cmykIntentSatisfied)
+            {
+                context.Report(
+                    "ISO19005-2:6.2.4.3-3-device-cmyk",
+                    "ISO 19005-2:2011, 6.2.4.3",
+                    PreflightSeverity.Error,
+                    "The document paints DeviceCMYK but has neither a /DefaultCMYK colour space nor a "
+                    + "PDF/A output intent (GTS_PDFA1) with a CMYK DestOutputProfile.");
+            }
+
+            // §6.2.4.3-4: DeviceGray — satisfied by DefaultGray OR ANY PDF/A output intent.
+            if (usesGray && !hasDefaultGray && !hasPdfAProfile)
+            {
+                context.Report(
+                    "ISO19005-2:6.2.4.3-4-device-gray",
+                    "ISO 19005-2:2011, 6.2.4.3",
+                    PreflightSeverity.Error,
+                    "The document paints DeviceGray but has neither a /DefaultGray colour space nor a "
+                    + "PDF/A output intent (GTS_PDFA1) with a DestOutputProfile.");
+            }
         }
+    }
+
+    // Returns which Default* colour space names are present in ANY page's /Resources /ColorSpace dict.
+    // A Default* entry in page resources satisfies the §6.2.4.3 requirement for all pages that use
+    // the corresponding device colour type (empirically confirmed: veraPDF evaluates presence in
+    // page resources, not document-wide or in inherited resources only — 2026-06-23).
+    private static (bool DefaultRgb, bool DefaultCmyk, bool DefaultGray) CollectDefaultColourSpaces(
+        PreflightContext context)
+    {
+        bool rgb = false, cmyk = false, gray = false;
+        foreach (var page in context.EnumeratePages())
+        {
+            if (context.ResolveInherited(page, _resources) is not PdfDictionary resources)
+                continue;
+            if (context.Resolve(resources.Get(_colorSpace)) is not PdfDictionary csDict)
+                continue;
+            if (csDict.Get(_defaultRgb) is not null) rgb = true;
+            if (csDict.Get(_defaultCmyk) is not null) cmyk = true;
+            if (csDict.Get(_defaultGray) is not null) gray = true;
+        }
+        return (rgb, cmyk, gray);
+    }
+
+    // Reads the ICC data colour space tag from the profile header at byte offset 16 (4 bytes).
+    // Returns the 4-byte ASCII tag (e.g. "RGB ", "CMYK", "GRAY") or null when unreadable.
+    // ISO 15076-1:2010 §7.2.6: the data colour space field is a 4-character ASCII signature.
+    private static string? ReadIccDataColourSpace(byte[] icc)
+    {
+        if (icc.Length < 20) return null;
+        return System.Text.Encoding.ASCII.GetString(icc, 16, 4);
     }
 
     // An ICC profile carries the file signature 'acsp' at byte offset 36 (ISO 15076-1, §7.2.4).

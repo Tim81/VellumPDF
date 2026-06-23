@@ -182,9 +182,9 @@ public static class ConformanceCatalog
         ["6.1.8-1"] = "font BaseFont and colour colourant names checked (presence-based); structure-type names checked for direct /StructTreeRoot /K children only — deeper nesting not yet walked",
         ["6.2.3-1"] = "DestOutputProfile signature/N checked; ICC device-class not parsed",
         ["6.2.4.2-2"] = "page content streams plus drawn Form XObjects, all CharProcs of Tf-selected Type 3 fonts, and annotation /AP /N appearance streams are now interpreted in isolation with a fresh default GState (Batch N3, 2026-06-23); graphics state inherited across Do boundaries is NOT threaded — a violation established only by state set in the calling stream and painted inside a form (without the form re-establishing the state itself) is under-detected (residual gap, FP-safe; empirically confirmed against veraPDF 1.30.2: both self-contained and inherited-state form violations fire in veraPDF, but only the self-contained case is reachable by isolated scanning)",
-        ["6.2.4.3-2"] = "device-colour requires an output intent checked; DefaultRGB path not",
-        ["6.2.4.3-3"] = "device-colour requires an output intent checked; DefaultCMYK path not",
-        ["6.2.4.3-4"] = "page-content device grey covered; image/pattern colour not detected",
+        ["6.2.4.3-2"] = "page-content DeviceRGB checked; DefaultRGB exemption and RGB-profile intent matching implemented (2026-06-23); image/pattern DeviceRGB not detected",
+        ["6.2.4.3-3"] = "page-content DeviceCMYK checked; DefaultCMYK exemption and CMYK-profile intent matching implemented (2026-06-23); image/pattern DeviceCMYK not detected",
+        ["6.2.4.3-4"] = "page-content DeviceGray checked; DefaultGray exemption implemented (2026-06-23); image/pattern colour not detected",
         ["6.2.4.4-2"] = "Separations selected by cs/CS operators and those in /Colorants of used DeviceN spaces are compared; drawn Form XObjects, all CharProcs of Tf-selected Type 3 fonts, and annotation /AP /N appearance streams are now also walked (Batch N4, 2026-06-23); image /ColorSpace and alternate spaces of other colour spaces are not yet walked",
         // 6.2.2-1 moved to Implemented (Batch N1 — ContentStreamOperatorRule now scans drawn Form
         //   XObjects, all CharProcs of Tf-selected Type 3 fonts, and all annotation /AP /N appearance
