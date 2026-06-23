@@ -257,8 +257,12 @@ public static class OracleCorpus
             new OracleFixture("pdfa2b-movie-annotation", WriterPdfWithMovieAnnotation(),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
 
-            // A PDF/A-2a document with /Lang and a title but NO tagged content, so it has no
-            // structure tree — the one violation. Cross-validates the logical-structure rule (§6.8).
+            // §6.7.3.3-1 VIOLATION: a PDF/A-2a document with /Lang and a title but NO tagged
+            // content, so the writer emits no /StructTreeRoot — the one violation.
+            // veraPDF fires clause 6.7.3.3 testNumber 1 (containsStructTreeRoot == true) and that
+            // is the ONLY failed check (failedRules=1), confirming clause-level isolation.
+            // In-process: LogicalStructureRule fires "ISO19005-2:6.8-logical-structure" with the
+            // /StructTreeRoot error. Cross-validates §6.7.3.3-1 and the logical-structure rule (§6.8).
             new OracleFixture("pdfa2a-no-structure", WriterPdfMissingStructure(VellumPdf.Document.PdfConformance.PdfA2a),
                 Conformance.PdfConformance.PdfA2A, "2a", ExpectedCompliant: false),
 

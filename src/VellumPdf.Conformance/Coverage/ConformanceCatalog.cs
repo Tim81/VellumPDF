@@ -221,7 +221,9 @@ public static class ConformanceCatalog
         // JP2 box files and raw codestreams. -2/-3/-4 correctly do not apply to raw codestreams
         // (which carry no colr boxes) — this is not a gap but correct per-spec scoping.
         // 6.4.3-1/-2/-3 moved to Implemented/Partial (SignatureRule).
-        ["6.7.3.3-1"] = "structure-tree walker",
+        // 6.7.3.3-1 moved to Implemented (LogicalStructureRule: /StructTreeRoot presence check in
+        //   the document catalog; veraPDF clause 6.7.3.3 testNumber 1 confirmed on the
+        //   pdfa2a-no-structure oracle fixture — the only failed check on that document).
         // 6.7.3.4-1/-2/-3 moved to Implemented (A2aStructureTypeRule: structure-tree walker —
         //   non-standard type unmapped, circular role-map, standard type remapped to non-standard).
         // 6.7.4-1 moved to Implemented (A2aLangSyntaxRule: catalog /Lang + struct-elem /Lang syntax).
