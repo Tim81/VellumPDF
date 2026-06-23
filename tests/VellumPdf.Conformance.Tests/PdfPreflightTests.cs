@@ -11001,4 +11001,47 @@ public sealed class PdfPreflightTests
         Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.21.5-1");
     }
 
+    // ── §6.2.4.2-2 Batch N3 — adversarial FP sweep (in-process only) ─────────────────
+    // These tests probe edge cases that should NEVER produce a false positive.
+    // Each uses either BuildOverprintPdf (hand-built, page-scope) or
+    // OracleCorpus.OverprintForm* (writer-baseline, non-page stream scope).
+
+    // FP-SWEEP-1: Form with op false + OPM 1: overprint disabled → no violation.
+    [Fact]
+    public void N3_Sweep_FormOpFalse_NoFinding()
+    {
+        // op false means fill overprint is disabled; OPM alone cannot trigger the rule.
+        var result = PdfPreflight.Validate(OracleCorpus.OverprintFormOpFalseOpm1(), PdfConformance.PdfA2B);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.2-2");
+    }
+
+    // FP-SWEEP-2: Form with ICCBased CMYK + gs applied but NO paint operator → no violation.
+    [Fact]
+    public void N3_Sweep_FormStateSetNoPaint_NoFinding()
+    {
+        // gs sets op true + OPM 1 + cs selects CMYK, but no painting op → condition never checked.
+        var result = PdfPreflight.Validate(OracleCorpus.OverprintFormSetStateNoPaint(), PdfConformance.PdfA2B);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.2-2");
+    }
+
+    // FP-SWEEP-3: Form with DeviceCMYK (k operator) + op true + OPM 1: device colour not ICCBased → no violation.
+    [Fact]
+    public void N3_Sweep_FormDeviceCmykKOperator_NoFinding()
+    {
+        // k sets DeviceCMYK fill colour — NOT an ICCBased space, so rule must not fire.
+        var result = PdfPreflight.Validate(OracleCorpus.OverprintFormDeviceCmykOverprint(), PdfConformance.PdfA2B);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.2-2");
+    }
+
+    // FP-SWEEP-4: Form with ICCBased RGB (N=3) + op true + OPM 1: only N=4 (CMYK) triggers → no violation.
+    [Fact]
+    public void N3_Sweep_FormIccRgbN3_NoFinding()
+    {
+        // ICCBased with N=3 is RGB, not CMYK — the rule explicitly requires N=4.
+        var result = PdfPreflight.Validate(OracleCorpus.OverprintFormIccRgbOverprint(), PdfConformance.PdfA2B);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.4.2-2");
+    }
+
+    // ── END §6.2.4.2-2 Batch N3 adversarial FP sweep ─────────────────────────────────
+
 }
