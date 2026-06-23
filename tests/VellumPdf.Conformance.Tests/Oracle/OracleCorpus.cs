@@ -800,6 +800,83 @@ public static class OracleCorpus
                 HandBuiltPdfWithContent("BX q Q EX"),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
 
+            // ── Batch N1 — §6.2.2-1 non-page stream coverage ──────────────────────────────────────
+            // These fixtures extend the operator-allowlist check to Form XObjects, annotation
+            // appearance streams, and Type 3 CharProcs. Reachability policy confirmed empirically
+            // against veraPDF 1.30.2 on 2026-06-23.
+
+            // §6.2.2-1 VIOLATION: a Form XObject whose content stream contains the unknown operator
+            // 'zz', and the XObject IS drawn from the page (/Fm0 Do). veraPDF flags clause 6.2.2
+            // testNumber 1 (confirmed: exactly one failing rule). In-process: ContentStreamOperatorRule
+            // must also fire.
+            new OracleFixture("pdfa2b-unknown-op-in-drawn-form",
+                HandBuiltPdfWithDrawnFormXObject("zz"),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // §6.2.2-1 FP-SAFETY: a Form XObject with only legal operators (q Q), drawn on the page.
+            // veraPDF accepts it. In-process: ContentStreamOperatorRule must NOT fire.
+            new OracleFixture("pdfa2b-valid-drawn-form",
+                HandBuiltPdfWithDrawnFormXObject("q Q"),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // §6.2.2-1 FP-SAFETY: a Form XObject with an unknown operator 'zz' that is PRESENT in
+            // /Resources /XObject but NEVER drawn (no Do operator). veraPDF accepts it — only drawn
+            // Form XObject content is validated (confirmed: compliant, no 6.2.2 failure).
+            // In-process: ContentStreamOperatorRule must also accept it (drawn-only policy).
+            new OracleFixture("pdfa2b-undrawn-form-with-bad-op",
+                HandBuiltPdfWithUndrawnFormXObject("zz"),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // §6.2.2-1 VIOLATION: an annotation whose /AP /N appearance stream contains 'zz'.
+            // veraPDF flags clause 6.2.2 testNumber 1 for annotation appearance streams regardless
+            // of whether the annotation is rendered (confirmed empirically). In-process: must also fire.
+            new OracleFixture("pdfa2b-unknown-op-in-annot-ap",
+                HandBuiltPdfWithAnnotAppearance("zz"),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // §6.2.2-1 FP-SAFETY: an annotation with a valid appearance stream (q Q only).
+            // veraPDF accepts it. In-process: ContentStreamOperatorRule must NOT fire.
+            new OracleFixture("pdfa2b-valid-annot-ap",
+                HandBuiltPdfWithAnnotAppearance("q Q"),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // ── Batch N1 extension — §6.2.2-1 nested-form and keyed-appearance fixtures ─────────────
+            // Confirmed empirically against veraPDF 1.30.2 on 2026-06-23.
+
+            // §6.2.2-1 VIOLATION: page draws Form A, Form A draws Form B, Form B contains 'zz'.
+            // Confirms that CollectDrawnFormXObjects recurses into the full drawn-XObject chain and
+            // reaches nested content. veraPDF flags clause 6.2.2 testNumber 1 (confirmed empirically).
+            // In-process: ContentStreamOperatorRule must also fire.
+            new OracleFixture("pdfa2b-unknown-op-in-nested-form",
+                HandBuiltPdfWithNestedFormXObject("zz"),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // §6.2.2-1 FP-SAFETY: nested forms A→B with only legal operators (q Q).
+            // veraPDF accepts it. In-process: ContentStreamOperatorRule must NOT fire.
+            new OracleFixture("pdfa2b-valid-nested-form",
+                HandBuiltPdfWithNestedFormXObject("q Q"),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // §6.2.2-1 VIOLATION: Widget button annotation whose /AP /N is an INDIRECT reference to
+            // a sub-dictionary << /Off stream1 /On stream2 >> where the /Off state contains 'zz'.
+            // Exercises FIX 1 in CollectApNStream (branch decision on resolved type, not ref wrapper).
+            // veraPDF flags clause 6.2.2 testNumber 1 (confirmed empirically). The fixture also
+            // triggers 6.3.3-4 (Widget /N must be a direct stream for a field-less Widget) which is
+            // expected — ExpectedCompliant: false covers both findings.
+            // In-process: ContentStreamOperatorRule must fire (6.3-annotation may also fire).
+            new OracleFixture("pdfa2b-unknown-op-in-keyed-ap",
+                HandBuiltPdfWithKeyedApSubDict("zz"),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // §6.2.2-1 FP-SAFETY: Widget /AP /N indirect sub-dict with only legal operators (q Q).
+            // veraPDF does not flag 6.2.2 (only 6.3.3-4 which is unrelated to the appearance content).
+            // In-process: ContentStreamOperatorRule must NOT fire for appearance content.
+            // Note: this fixture is non-compliant due to 6.3-annotation (Widget field-less /N must
+            // be a stream), so ExpectedCompliant: false. Divergence on 6.2.2 would be a false positive.
+            new OracleFixture("pdfa2b-valid-keyed-ap",
+                HandBuiltPdfWithKeyedApSubDict("q Q"),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
             // ── PDF/UA-1 Batch A2 fixtures ──────────────────────────────────────────────────────────
 
             // §7.18.2-1 (TrapNet annotation): a visible TrapNet annotation inside the crop box is
@@ -3363,6 +3440,298 @@ public static class OracleCorpus
         W($"startxref\n{xrefOffset}\n%%EOF\n");
         return ms.ToArray();
     }
+
+    // ── Batch N1 helpers — §6.2.2-1 non-page stream fixtures ──────────────────────────────────────
+    // These build hand-constructed PDF/A-2b documents (minimal but fully spec-compliant in structure)
+    // so veraPDF can parse them. Object layout:
+    //   1=catalog, 2=pages, 3=page, 4=page-content, 5=form-XObject/AP-stream, 6=metadata.
+    // (Annotation fixture adds 7=annotation dictionary.)
+    // Verified against veraPDF 1.30.2 on 2026-06-23 before committing.
+
+    private static byte[] MakeBatchN1Xmp() => Encoding.UTF8.GetBytes(
+        "<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>"
+        + "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">"
+        + "<rdf:Description rdf:about=\"\" xmlns:pdfaid=\"http://www.aiim.org/pdfa/ns/id/\">"
+        + "<pdfaid:part>2</pdfaid:part><pdfaid:conformance>B</pdfaid:conformance>"
+        + "</rdf:Description></rdf:RDF></x:xmpmeta><?xpacket end=\"w\"?>");
+
+    /// <summary>
+    /// Builds a PDF/A-2b document with a Form XObject whose content is <paramref name="formContent"/>
+    /// and the page content draws it via <c>/Fm0 Do</c>.
+    /// veraPDF confirms: clause 6.2.2 testNumber 1 fires when <paramref name="formContent"/> contains
+    /// an unknown operator, and is absent when it contains only ISO 32000-1 operators (2026-06-23).
+    /// </summary>
+    private static byte[] HandBuiltPdfWithDrawnFormXObject(string formContent)
+    {
+        var formBytes = Encoding.Latin1.GetBytes(formContent);
+        var pageContent = Encoding.Latin1.GetBytes("/Fm0 Do");
+
+        using var ms = new MemoryStream();
+        void W(string s) { var b = Encoding.Latin1.GetBytes(s); ms.Write(b, 0, b.Length); }
+
+        W("%PDF-1.7\n");
+        ms.Write([0x25, 0xE2, 0xE3, 0xCF, 0xD3, 0x0A]);
+
+        var off = new int[7];
+        off[1] = (int)ms.Position;
+        W("1 0 obj\n<< /Type /Catalog /Pages 2 0 R /Metadata 6 0 R >>\nendobj\n");
+        off[2] = (int)ms.Position;
+        W("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
+        off[3] = (int)ms.Position;
+        W("3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R"
+            + " /Resources << /XObject << /Fm0 5 0 R >> >> >>\nendobj\n");
+        off[4] = (int)ms.Position;
+        W($"4 0 obj\n<< /Length {pageContent.Length} >>\nstream\n");
+        ms.Write(pageContent);
+        W("\nendstream\nendobj\n");
+        off[5] = (int)ms.Position;
+        W($"5 0 obj\n<< /Type /XObject /Subtype /Form /BBox [0 0 100 100] /Length {formBytes.Length} >>\nstream\n");
+        ms.Write(formBytes);
+        W("\nendstream\nendobj\n");
+        off[6] = (int)ms.Position;
+        W($"6 0 obj\n<< /Type /Metadata /Subtype /XML /Length {MakeBatchN1Xmp().Length} >>\nstream\n");
+        ms.Write(MakeBatchN1Xmp());
+        W("\nendstream\nendobj\n");
+
+        var xrefOffset = (int)ms.Position;
+        W("xref\n0 7\n0000000000 65535 f \n");
+        for (var i = 1; i <= 6; i++) W($"{off[i]:D10} 00000 n \n");
+        W("trailer\n<< /Size 7 /Root 1 0 R /ID [<00112233> <00112233>] >>\n");
+        W($"startxref\n{xrefOffset}\n%%EOF\n");
+        return ms.ToArray();
+    }
+
+    /// <summary>
+    /// Builds a PDF/A-2b document with a Form XObject whose content is <paramref name="formContent"/>
+    /// that is <em>present</em> in <c>/Resources /XObject</c> but <em>never drawn</em> (no <c>Do</c>
+    /// operator in the page content). veraPDF confirms: clause 6.2.2 does NOT fire for undrawn Form
+    /// XObjects regardless of their content (2026-06-23). Guards the drawn-only policy.
+    /// </summary>
+    private static byte[] HandBuiltPdfWithUndrawnFormXObject(string formContent)
+    {
+        var formBytes = Encoding.Latin1.GetBytes(formContent);
+        var pageContent = Encoding.Latin1.GetBytes("q Q"); // no Do
+
+        using var ms = new MemoryStream();
+        void W(string s) { var b = Encoding.Latin1.GetBytes(s); ms.Write(b, 0, b.Length); }
+
+        W("%PDF-1.7\n");
+        ms.Write([0x25, 0xE2, 0xE3, 0xCF, 0xD3, 0x0A]);
+
+        var off = new int[7];
+        off[1] = (int)ms.Position;
+        W("1 0 obj\n<< /Type /Catalog /Pages 2 0 R /Metadata 6 0 R >>\nendobj\n");
+        off[2] = (int)ms.Position;
+        W("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
+        off[3] = (int)ms.Position;
+        W("3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R"
+            + " /Resources << /XObject << /Fm0 5 0 R >> >> >>\nendobj\n");
+        off[4] = (int)ms.Position;
+        W($"4 0 obj\n<< /Length {pageContent.Length} >>\nstream\n");
+        ms.Write(pageContent);
+        W("\nendstream\nendobj\n");
+        off[5] = (int)ms.Position;
+        W($"5 0 obj\n<< /Type /XObject /Subtype /Form /BBox [0 0 100 100] /Length {formBytes.Length} >>\nstream\n");
+        ms.Write(formBytes);
+        W("\nendstream\nendobj\n");
+        off[6] = (int)ms.Position;
+        W($"6 0 obj\n<< /Type /Metadata /Subtype /XML /Length {MakeBatchN1Xmp().Length} >>\nstream\n");
+        ms.Write(MakeBatchN1Xmp());
+        W("\nendstream\nendobj\n");
+
+        var xrefOffset = (int)ms.Position;
+        W("xref\n0 7\n0000000000 65535 f \n");
+        for (var i = 1; i <= 6; i++) W($"{off[i]:D10} 00000 n \n");
+        W("trailer\n<< /Size 7 /Root 1 0 R /ID [<00112233> <00112233>] >>\n");
+        W($"startxref\n{xrefOffset}\n%%EOF\n");
+        return ms.ToArray();
+    }
+
+    /// <summary>
+    /// Builds a PDF/A-2b document with a <c>/Text</c> annotation whose <c>/AP /N</c> appearance
+    /// stream contains <paramref name="apContent"/>. veraPDF confirms: clause 6.2.2 testNumber 1
+    /// fires when the appearance stream contains an unknown operator, and is absent for valid content —
+    /// regardless of annotation visibility flags (2026-06-23).
+    /// </summary>
+    private static byte[] HandBuiltPdfWithAnnotAppearance(string apContent)
+    {
+        var apBytes = Encoding.Latin1.GetBytes(apContent);
+        var pageContent = Encoding.Latin1.GetBytes("q Q");
+
+        using var ms = new MemoryStream();
+        void W(string s) { var b = Encoding.Latin1.GetBytes(s); ms.Write(b, 0, b.Length); }
+
+        W("%PDF-1.7\n");
+        ms.Write([0x25, 0xE2, 0xE3, 0xCF, 0xD3, 0x0A]);
+
+        var off = new int[8];
+        off[1] = (int)ms.Position;
+        W("1 0 obj\n<< /Type /Catalog /Pages 2 0 R /Metadata 6 0 R >>\nendobj\n");
+        off[2] = (int)ms.Position;
+        W("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
+        off[3] = (int)ms.Position;
+        W("3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R"
+            + " /Annots [7 0 R] >>\nendobj\n");
+        off[4] = (int)ms.Position;
+        W($"4 0 obj\n<< /Length {pageContent.Length} >>\nstream\n");
+        ms.Write(pageContent);
+        W("\nendstream\nendobj\n");
+        // Object 5: appearance stream (Form XObject)
+        off[5] = (int)ms.Position;
+        W($"5 0 obj\n<< /Type /XObject /Subtype /Form /BBox [0 0 100 100] /Length {apBytes.Length} >>\nstream\n");
+        ms.Write(apBytes);
+        W("\nendstream\nendobj\n");
+        off[6] = (int)ms.Position;
+        W($"6 0 obj\n<< /Type /Metadata /Subtype /XML /Length {MakeBatchN1Xmp().Length} >>\nstream\n");
+        ms.Write(MakeBatchN1Xmp());
+        W("\nendstream\nendobj\n");
+        // Object 7: annotation with /AP /N pointing to the appearance stream.
+        // /F 4 = Print flag (required by PDF/A §6.3.2 for annotations that have appearance streams).
+        // /Contents is required for non-markup annotation types that have an /AP.
+        off[7] = (int)ms.Position;
+        W("7 0 obj\n<< /Type /Annot /Subtype /Text /Rect [10 10 50 50] /F 4"
+            + " /Contents (note) /AP << /N 5 0 R >> >>\nendobj\n");
+
+        var xrefOffset = (int)ms.Position;
+        W("xref\n0 8\n0000000000 65535 f \n");
+        for (var i = 1; i <= 7; i++) W($"{off[i]:D10} 00000 n \n");
+        W("trailer\n<< /Size 8 /Root 1 0 R /ID [<00112233> <00112233>] >>\n");
+        W($"startxref\n{xrefOffset}\n%%EOF\n");
+        return ms.ToArray();
+    }
+
+    /// <summary>
+    /// Builds a PDF/A-2b document with a two-level nested Form XObject chain: the page draws
+    /// Form A via <c>/FmA Do</c>, and Form A draws Form B via <c>/FmB Do</c>. Form B's content
+    /// is <paramref name="innerContent"/>. Tests that <see cref="ContentStreamUsage.GetReachableContentStreams"/>
+    /// recurses through the full drawn-XObject chain.
+    /// veraPDF confirms: clause 6.2.2 testNumber 1 fires when Form B contains an unknown operator;
+    /// no finding when both forms contain only legal operators (confirmed empirically, 2026-06-23).
+    /// </summary>
+    private static byte[] HandBuiltPdfWithNestedFormXObject(string innerContent)
+    {
+        var xmpBytes = MakeBatchN1Xmp();
+        var innerBytes = Encoding.Latin1.GetBytes(innerContent);
+        var formABytes = Encoding.Latin1.GetBytes("/FmB Do");
+        var pageBytes = Encoding.Latin1.GetBytes("/FmA Do");
+
+        using var ms = new MemoryStream();
+        void W(string s) { var b = Encoding.Latin1.GetBytes(s); ms.Write(b, 0, b.Length); }
+
+        W("%PDF-1.7\n");
+        ms.Write([0x25, 0xE2, 0xE3, 0xCF, 0xD3, 0x0A]);
+
+        // 1=catalog, 2=pages, 3=page, 4=page-content, 5=metadata, 6=FormA, 7=FormB
+        var off = new int[8];
+        off[1] = (int)ms.Position;
+        W("1 0 obj\n<< /Type /Catalog /Pages 2 0 R /Metadata 5 0 R >>\nendobj\n");
+        off[2] = (int)ms.Position;
+        W("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
+        off[3] = (int)ms.Position;
+        // Page /Resources: only Form A listed; Form B is in Form A's own resources.
+        W("3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R"
+            + " /Resources << /XObject << /FmA 6 0 R >> >> >>\nendobj\n");
+        off[4] = (int)ms.Position;
+        W($"4 0 obj\n<< /Length {pageBytes.Length} >>\nstream\n");
+        ms.Write(pageBytes);
+        W("\nendstream\nendobj\n");
+        off[5] = (int)ms.Position;
+        W($"5 0 obj\n<< /Type /Metadata /Subtype /XML /Length {xmpBytes.Length} >>\nstream\n");
+        ms.Write(xmpBytes);
+        W("\nendstream\nendobj\n");
+        // Form A: draws Form B; has /Resources with /FmB → 7 0 R.
+        off[6] = (int)ms.Position;
+        W($"6 0 obj\n<< /Type /XObject /Subtype /Form /BBox [0 0 100 100]"
+            + " /Resources << /XObject << /FmB 7 0 R >> >>"
+            + $" /Length {formABytes.Length} >>\nstream\n");
+        ms.Write(formABytes);
+        W("\nendstream\nendobj\n");
+        // Form B: contains the inner content under test.
+        off[7] = (int)ms.Position;
+        W($"7 0 obj\n<< /Type /XObject /Subtype /Form /BBox [0 0 100 100]"
+            + $" /Length {innerBytes.Length} >>\nstream\n");
+        ms.Write(innerBytes);
+        W("\nendstream\nendobj\n");
+
+        var xrefOffset = (int)ms.Position;
+        W("xref\n0 8\n0000000000 65535 f \n");
+        for (var i = 1; i <= 7; i++) W($"{off[i]:D10} 00000 n \n");
+        W("trailer\n<< /Size 8 /Root 1 0 R /ID [<CC001122> <CC001122>] >>\n");
+        W($"startxref\n{xrefOffset}\n%%EOF\n");
+        return ms.ToArray();
+    }
+
+    /// <summary>
+    /// Builds a PDF/A-2b document with a Widget button annotation whose <c>/AP /N</c> is an
+    /// <em>indirect reference</em> to a sub-dictionary <c>&lt;&lt; /Off stream1 /On stream2 &gt;&gt;</c>.
+    /// The <c>/Off</c> state stream contains <paramref name="offContent"/>.
+    /// This is the FIX 1 exercise: the sub-dict is stored as object <c>8 0 R</c> and /N points
+    /// to it indirectly, so the old branch on <c>nObj is PdfIndirectReference</c> silently dropped
+    /// all state streams; the fixed branch on the <em>resolved type</em> correctly collects them.
+    /// veraPDF confirms: clause 6.2.2 testNumber 1 fires when <paramref name="offContent"/> contains
+    /// an unknown operator (both veraPDF and in-process agree, confirmed empirically 2026-06-23).
+    /// Note: this fixture also triggers 6.3.3-4 (Widget /N must be a direct stream for a field-less
+    /// Widget), so <c>ExpectedCompliant</c> is always false regardless of <paramref name="offContent"/>.
+    /// </summary>
+    private static byte[] HandBuiltPdfWithKeyedApSubDict(string offContent)
+    {
+        var xmpBytes = MakeBatchN1Xmp();
+        var offBytes = Encoding.Latin1.GetBytes(offContent);
+        var onBytes = Encoding.Latin1.GetBytes("q Q");
+        var pageBytes = Encoding.Latin1.GetBytes("q Q");
+
+        using var ms = new MemoryStream();
+        void W(string s) { var b = Encoding.Latin1.GetBytes(s); ms.Write(b, 0, b.Length); }
+
+        W("%PDF-1.7\n");
+        ms.Write([0x25, 0xE2, 0xE3, 0xCF, 0xD3, 0x0A]);
+
+        // 1=catalog, 2=pages, 3=page, 4=page-content, 5=metadata,
+        // 6=/Off AP stream, 7=/On AP stream, 8=sub-dict (indirect), 9=Widget annotation
+        var off = new int[10];
+        off[1] = (int)ms.Position;
+        W("1 0 obj\n<< /Type /Catalog /Pages 2 0 R /Metadata 5 0 R >>\nendobj\n");
+        off[2] = (int)ms.Position;
+        W("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
+        off[3] = (int)ms.Position;
+        W("3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R"
+            + " /Annots [9 0 R] >>\nendobj\n");
+        off[4] = (int)ms.Position;
+        W($"4 0 obj\n<< /Length {pageBytes.Length} >>\nstream\n");
+        ms.Write(pageBytes);
+        W("\nendstream\nendobj\n");
+        off[5] = (int)ms.Position;
+        W($"5 0 obj\n<< /Type /Metadata /Subtype /XML /Length {xmpBytes.Length} >>\nstream\n");
+        ms.Write(xmpBytes);
+        W("\nendstream\nendobj\n");
+        // Object 6: /Off state appearance stream (contains the content under test).
+        off[6] = (int)ms.Position;
+        W($"6 0 obj\n<< /Type /XObject /Subtype /Form /BBox [0 0 100 100] /Length {offBytes.Length} >>\nstream\n");
+        ms.Write(offBytes);
+        W("\nendstream\nendobj\n");
+        // Object 7: /On state appearance stream (always legal).
+        off[7] = (int)ms.Position;
+        W($"7 0 obj\n<< /Type /XObject /Subtype /Form /BBox [0 0 100 100] /Length {onBytes.Length} >>\nstream\n");
+        ms.Write(onBytes);
+        W("\nendstream\nendobj\n");
+        // Object 8: the keyed-state sub-dictionary stored as an indirect object.
+        // /AP /N = 8 0 R means /N is an indirect reference to a PdfDictionary, exercising FIX 1.
+        off[8] = (int)ms.Position;
+        W("8 0 obj\n<< /Off 6 0 R /On 7 0 R >>\nendobj\n");
+        // Object 9: Widget annotation — /AP /N points to the sub-dict INDIRECTLY.
+        off[9] = (int)ms.Position;
+        W("9 0 obj\n<< /Type /Annot /Subtype /Widget /Rect [10 10 50 50] /F 4"
+            + " /AP << /N 8 0 R >> >>\nendobj\n");
+
+        var xrefOffset = (int)ms.Position;
+        W("xref\n0 10\n0000000000 65535 f \n");
+        for (var i = 1; i <= 9; i++) W($"{off[i]:D10} 00000 n \n");
+        W("trailer\n<< /Size 10 /Root 1 0 R /ID [<CC007788> <CC007788>] >>\n");
+        W($"startxref\n{xrefOffset}\n%%EOF\n");
+        return ms.ToArray();
+    }
+
+    // ── End of Batch N1 helpers ─────────────────────────────────────────────────────────────────────
 
     private static byte[] WriterPdf(VellumPdf.Document.PdfConformance conformance)
     {
