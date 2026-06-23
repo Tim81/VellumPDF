@@ -204,6 +204,32 @@ public sealed class PdfPreflightTests
         return Encoding.UTF8.GetBytes(xmp);
     }
 
+    /// <summary>Builds a PDF/A-2b XMP packet with a pdfaExtension:schemas block whose container types
+    /// are controlled by the caller. Used to test §6.6.2.3.3 container-type violations.
+    /// <paramref name="schemaContainer"/> is the rdf:Bag/Seq wrapping the schema list;
+    /// <paramref name="propertyContainer"/> is the rdf:Bag/Seq wrapping the property list.</summary>
+    private static string ExtensionSchemaXmpWith(string schemaContainer, string propertyContainer)
+    {
+        var openSchema = $"<{schemaContainer}>";
+        var closeSchema = $"</{schemaContainer}>";
+        var openProp = $"<{propertyContainer}>";
+        var closeProp = $"</{propertyContainer}>";
+        return
+            "<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>"
+            + "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">"
+            + "<rdf:Description rdf:about=\"\" xmlns:pdfaid=\"http://www.aiim.org/pdfa/ns/id/\">"
+            + "<pdfaid:part>2</pdfaid:part><pdfaid:conformance>B</pdfaid:conformance></rdf:Description>"
+            + "<rdf:Description rdf:about=\"\" xmlns:pdfaExtension=\"http://www.aiim.org/pdfa/ns/extension/\" "
+            + "xmlns:pdfaSchema=\"http://www.aiim.org/pdfa/ns/schema#\" "
+            + "xmlns:pdfaProperty=\"http://www.aiim.org/pdfa/ns/property#\">"
+            + $"<pdfaExtension:schemas>{openSchema}<rdf:li rdf:parseType=\"Resource\">"
+            + _validSchemaFields
+            + $"<pdfaSchema:property>{openProp}<rdf:li rdf:parseType=\"Resource\">" + _validPropertyFields
+            + $"</rdf:li>{closeProp}</pdfaSchema:property>"
+            + $"</rdf:li>{closeSchema}</pdfaExtension:schemas>"
+            + "</rdf:Description></rdf:RDF></x:xmpmeta><?xpacket end=\"w\"?>";
+    }
+
     private const string _validSchemaFields =
         "<pdfaSchema:schema>S</pdfaSchema:schema>"
         + "<pdfaSchema:namespaceURI>http://example.com/ns/</pdfaSchema:namespaceURI>"
@@ -2887,6 +2913,151 @@ public sealed class PdfPreflightTests
 
         Assert.True(result.IsCompliant);
         Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.6.2.3.2-undefined-field");
+    }
+
+    // ── §6.6.2.3.3 container-type and prefix rules (Batch C1, 2026-06-23) ──────────
+
+    [Theory]
+    [InlineData(
+        "<rdf:Seq>", "</rdf:Seq>",
+        "ISO19005-2:6.6.2.3.3-1")]   // schemas uses rdf:Seq instead of rdf:Bag
+    public void Validate_SchemasContainerWrongType_ReportsError(
+        string openTag, string closeTag, string ruleId)
+    {
+        // §6.6.2.3.3-1: pdfaExtension:schemas shall be rdf:Bag. Using rdf:Seq fires -1.
+        var xmp =
+            "<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>"
+            + "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">"
+            + "<rdf:Description rdf:about=\"\" xmlns:pdfaid=\"http://www.aiim.org/pdfa/ns/id/\">"
+            + "<pdfaid:part>2</pdfaid:part><pdfaid:conformance>B</pdfaid:conformance></rdf:Description>"
+            + "<rdf:Description rdf:about=\"\" xmlns:pdfaExtension=\"http://www.aiim.org/pdfa/ns/extension/\" "
+            + "xmlns:pdfaSchema=\"http://www.aiim.org/pdfa/ns/schema#\" "
+            + "xmlns:pdfaProperty=\"http://www.aiim.org/pdfa/ns/property#\">"
+            + $"<pdfaExtension:schemas>{openTag}<rdf:li rdf:parseType=\"Resource\">"
+            + _validSchemaFields
+            + "<pdfaSchema:property><rdf:Seq><rdf:li rdf:parseType=\"Resource\">" + _validPropertyFields
+            + $"</rdf:li></rdf:Seq></pdfaSchema:property></rdf:li>{closeTag}</pdfaExtension:schemas>"
+            + "</rdf:Description></rdf:RDF></x:xmpmeta><?xpacket end=\"w\"?>";
+
+        var result = PdfPreflight.Validate(BuildXmpPdf(Encoding.UTF8.GetBytes(xmp)), PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.RuleId == ruleId);
+    }
+
+    [Fact]
+    public void Validate_SchemasWrongExtPrefix_ReportsClause1()
+    {
+        // §6.6.2.3.3-1: pdfaExtension:schemas shall use the namespace prefix "pdfaExtension".
+        // Using prefix "ext:" for the extension namespace fires -1.
+        var xmp =
+            "<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>"
+            + "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">"
+            + "<rdf:Description rdf:about=\"\" xmlns:pdfaid=\"http://www.aiim.org/pdfa/ns/id/\">"
+            + "<pdfaid:part>2</pdfaid:part><pdfaid:conformance>B</pdfaid:conformance></rdf:Description>"
+            + "<rdf:Description rdf:about=\"\" xmlns:ext=\"http://www.aiim.org/pdfa/ns/extension/\" "
+            + "xmlns:pdfaSchema=\"http://www.aiim.org/pdfa/ns/schema#\" "
+            + "xmlns:pdfaProperty=\"http://www.aiim.org/pdfa/ns/property#\">"
+            + "<ext:schemas><rdf:Bag><rdf:li rdf:parseType=\"Resource\">"
+            + _validSchemaFields
+            + "<pdfaSchema:property><rdf:Seq><rdf:li rdf:parseType=\"Resource\">" + _validPropertyFields
+            + "</rdf:li></rdf:Seq></pdfaSchema:property></rdf:li></rdf:Bag></ext:schemas>"
+            + "</rdf:Description></rdf:RDF></x:xmpmeta><?xpacket end=\"w\"?>";
+
+        var result = PdfPreflight.Validate(BuildXmpPdf(Encoding.UTF8.GetBytes(xmp)), PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.6.2.3.3-1");
+    }
+
+    [Fact]
+    public void Validate_PropertyContainerBag_ReportsClause5()
+    {
+        // §6.6.2.3.3-5: pdfaSchema:property shall be rdf:Seq. Using rdf:Bag fires -5.
+        var xmp = ExtensionSchemaXmpWith(
+            schemaContainer: "rdf:Bag", propertyContainer: "rdf:Bag");
+
+        var result = PdfPreflight.Validate(BuildXmpPdf(Encoding.UTF8.GetBytes(xmp)), PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.6.2.3.3-5");
+    }
+
+    [Fact]
+    public void Validate_PropertyContainerSeq_NoClause5Finding()
+    {
+        // §6.6.2.3.3-5 FP guard: a correct rdf:Seq for property must not fire -5.
+        var xmp = ExtensionSchemaXmpWith(schemaContainer: "rdf:Bag", propertyContainer: "rdf:Seq");
+
+        var result = PdfPreflight.Validate(BuildXmpPdf(Encoding.UTF8.GetBytes(xmp)), PdfConformance.PdfA2B);
+
+        Assert.True(result.IsCompliant);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.6.2.3.3-5");
+    }
+
+    [Fact]
+    public void Validate_PropertyValueTypeWrongPrefix_ReportsClause8()
+    {
+        // §6.6.2.3.3-8: pdfaProperty:valueType shall use prefix "pdfaProperty".
+        // Using "prop:" prefix for the pdfaProperty namespace fires -8.
+        var xmp =
+            "<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>"
+            + "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">"
+            + "<rdf:Description rdf:about=\"\" xmlns:pdfaid=\"http://www.aiim.org/pdfa/ns/id/\">"
+            + "<pdfaid:part>2</pdfaid:part><pdfaid:conformance>B</pdfaid:conformance></rdf:Description>"
+            + "<rdf:Description rdf:about=\"\" xmlns:pdfaExtension=\"http://www.aiim.org/pdfa/ns/extension/\" "
+            + "xmlns:pdfaSchema=\"http://www.aiim.org/pdfa/ns/schema#\" "
+            + "xmlns:prop=\"http://www.aiim.org/pdfa/ns/property#\">"
+            + "<pdfaExtension:schemas><rdf:Bag><rdf:li rdf:parseType=\"Resource\">"
+            + _validSchemaFields
+            + "<pdfaSchema:property><rdf:Seq><rdf:li rdf:parseType=\"Resource\">"
+            + "<prop:name>foo</prop:name><prop:valueType>Text</prop:valueType>"
+            + "<prop:category>external</prop:category><prop:description>d</prop:description>"
+            + "</rdf:li></rdf:Seq></pdfaSchema:property>"
+            + "</rdf:li></rdf:Bag></pdfaExtension:schemas>"
+            + "</rdf:Description></rdf:RDF></x:xmpmeta><?xpacket end=\"w\"?>";
+
+        var result = PdfPreflight.Validate(BuildXmpPdf(Encoding.UTF8.GetBytes(xmp)), PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.6.2.3.3-8");
+    }
+
+    [Fact]
+    public void Validate_FieldValueTypeWrongPrefix_ReportsClause17()
+    {
+        // §6.6.2.3.3-17: pdfaField:valueType shall use prefix "pdfaField".
+        // Using "fld:" prefix for the pdfaField namespace fires -17.
+        var xmp =
+            "<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>"
+            + "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">"
+            + "<rdf:Description rdf:about=\"\" xmlns:pdfaid=\"http://www.aiim.org/pdfa/ns/id/\">"
+            + "<pdfaid:part>2</pdfaid:part><pdfaid:conformance>B</pdfaid:conformance></rdf:Description>"
+            + "<rdf:Description rdf:about=\"\" xmlns:pdfaExtension=\"http://www.aiim.org/pdfa/ns/extension/\" "
+            + "xmlns:pdfaSchema=\"http://www.aiim.org/pdfa/ns/schema#\" "
+            + "xmlns:pdfaProperty=\"http://www.aiim.org/pdfa/ns/property#\" "
+            + "xmlns:pdfaType=\"http://www.aiim.org/pdfa/ns/type#\" "
+            + "xmlns:fld=\"http://www.aiim.org/pdfa/ns/field#\">"
+            + "<pdfaExtension:schemas><rdf:Bag><rdf:li rdf:parseType=\"Resource\">"
+            + "<pdfaSchema:schema>S</pdfaSchema:schema>"
+            + "<pdfaSchema:namespaceURI>http://example.com/ns/</pdfaSchema:namespaceURI>"
+            + "<pdfaSchema:prefix>ex</pdfaSchema:prefix>"
+            + "<pdfaSchema:property><rdf:Seq><rdf:li rdf:parseType=\"Resource\">"
+            + _validPropertyFields
+            + "</rdf:li></rdf:Seq></pdfaSchema:property>"
+            + "<pdfaSchema:valueType><rdf:Seq><rdf:li rdf:parseType=\"Resource\">"
+            + _validValueTypeFields
+            + "<pdfaType:field><rdf:Seq><rdf:li rdf:parseType=\"Resource\">"
+            + "<fld:name>f</fld:name><fld:valueType>Text</fld:valueType><fld:description>d</fld:description>"
+            + "</rdf:li></rdf:Seq></pdfaType:field>"
+            + "</rdf:li></rdf:Seq></pdfaSchema:valueType>"
+            + "</rdf:li></rdf:Bag></pdfaExtension:schemas>"
+            + "</rdf:Description></rdf:RDF></x:xmpmeta><?xpacket end=\"w\"?>";
+
+        var result = PdfPreflight.Validate(BuildXmpPdf(Encoding.UTF8.GetBytes(xmp)), PdfConformance.PdfA2B);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.6.2.3.3-17");
     }
 
     // ── §6.6.4 pdfaid prefix + §6.6.2.3.3 value-type rules ──────────────────────

@@ -630,6 +630,74 @@ public static class OracleCorpus
             new OracleFixture("pdfa2b-extension-valuetype-bad", WriterPdfWithMetadata(Encoding.UTF8.GetBytes(BadValueTypeXmp2b())),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
 
+            // ── §6.6.2.3.3 container-type + prefix checks (Batch C1, 2026-06-23) ──────────────
+
+            // pdfaExtension:schemas uses rdf:Seq instead of rdf:Bag (§6.6.2.3.3-1). veraPDF fires
+            // testNumber=1; in-process rule now also fires Clause_1. Probe-confirmed 2026-06-23.
+            new OracleFixture("pdfa2b-ext-schemas-seq",
+                WriterPdfWithMetadata(Encoding.UTF8.GetBytes(SchemasSeqXmp2b())),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // pdfaExtension:schemas uses the correct rdf:Bag but the extension namespace is bound to
+            // a non-canonical prefix "ext:" instead of "pdfaExtension" (§6.6.2.3.3-1). veraPDF fires
+            // testNumber=1; in-process rule fires Clause_1. Probe-confirmed 2026-06-23.
+            new OracleFixture("pdfa2b-ext-schemas-wrong-prefix",
+                WriterPdfWithMetadata(Encoding.UTF8.GetBytes(SchemasWrongExtPrefixXmp2b())),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // pdfaSchema:property uses rdf:Bag instead of rdf:Seq (§6.6.2.3.3-5). veraPDF fires
+            // testNumber=5; in-process rule fires Clause_5. Probe-confirmed 2026-06-23.
+            new OracleFixture("pdfa2b-property-bag",
+                WriterPdfWithMetadata(Encoding.UTF8.GetBytes(PropertyBagXmp2b())),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // pdfaSchema:valueType uses rdf:Bag instead of rdf:Seq (§6.6.2.3.3-6). veraPDF fires
+            // testNumber=6; in-process rule fires Clause_6. Probe-confirmed 2026-06-23.
+            new OracleFixture("pdfa2b-valuetype-container-bag",
+                WriterPdfWithMetadata(Encoding.UTF8.GetBytes(ValueTypeContainerBagXmp2b())),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // pdfaType:field uses rdf:Bag instead of rdf:Seq (§6.6.2.3.3-15). veraPDF fires
+            // testNumber=15; in-process rule fires Clause_15. Probe-confirmed 2026-06-23.
+            new OracleFixture("pdfa2b-field-container-bag",
+                WriterPdfWithMetadata(Encoding.UTF8.GetBytes(FieldContainerBagXmp2b())),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // pdfaProperty:valueType uses wrong prefix "prop:" instead of "pdfaProperty"
+            // (§6.6.2.3.3-8). veraPDF fires testNumber=8; in-process rule fires Clause_8.
+            // Probe-confirmed 2026-06-23.
+            new OracleFixture("pdfa2b-property-valuetype-wrong-prefix",
+                WriterPdfWithMetadata(Encoding.UTF8.GetBytes(PropertyValueTypeWrongPrefixXmp2b())),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // pdfaField:valueType uses wrong prefix "fld:" instead of "pdfaField" (§6.6.2.3.3-17).
+            // veraPDF fires testNumber=17; in-process rule fires Clause_17. Probe-confirmed 2026-06-23.
+            new OracleFixture("pdfa2b-field-valuetype-wrong-prefix",
+                WriterPdfWithMetadata(Encoding.UTF8.GetBytes(FieldValueTypeWrongPrefixXmp2b())),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // FP-safety guard (§6.6.2.3.3-5): a well-formed schema with pdfaSchema:property (canonical
+            // prefix) and a correct rdf:Seq. veraPDF accepts it; in-process must not fire -5.
+            // Exercises the null-prefix leniency path in HasNullOrCanonicalPrefix — canonical prefix
+            // passes via GetNamespaceOfPrefix, never the null branch.
+            new OracleFixture("pdfa2b-property-null-prefix-valid",
+                WriterPdfWithMetadata(Encoding.UTF8.GetBytes(PropertyNullPrefixValidXmp2b())),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // FP-safety guard (§6.6.2.3.3-15): a valueType schema with pdfaType:field (canonical prefix)
+            // and a correct rdf:Seq. veraPDF accepts it; in-process must not fire -15.
+            new OracleFixture("pdfa2b-field-null-prefix-valid",
+                WriterPdfWithMetadata(Encoding.UTF8.GetBytes(FieldNullPrefixValidXmp2b())),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // FP-safety guard: a fully valid extension schema with correct Bag/Seq containers and all
+            // canonical prefixes, including a custom valueType with a field — veraPDF accepts it and
+            // in-process must stay compliant after the new checks. (Extends the existing
+            // pdfa2b-extension-schema guard to also cover valueType/field container checks.)
+            new OracleFixture("pdfa2b-ext-full-valid",
+                WriterPdfWithMetadata(Encoding.UTF8.GetBytes(FullValidExtensionXmp2b())),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
             // A catalog carrying the /Requirements key (§6.11-1). veraPDF and the in-process
             // CatalogRestrictionsRule both reject it.
             new OracleFixture("pdfa2b-requirements", WriterPdfWithCatalogEntry("Requirements",
@@ -2069,6 +2137,208 @@ public static class OracleCorpus
         + "<pdfaField:name>f</pdfaField:name><pdfaField:valueType>Text</pdfaField:valueType><pdfaField:description>d</pdfaField:description>"
         + "</rdf:li></rdf:Seq></pdfaType:field></rdf:li></rdf:Seq></pdfaSchema:valueType>"
         + "</rdf:li></rdf:Bag></pdfaExtension:schemas></rdf:Description>");
+
+    // ── Batch C1 (2026-06-23): container-type + prefix probe helpers ─────────────────────────────
+
+    // Shared namespace declarations re-used across the Batch C1 helpers.
+    private const string ExtNs =
+        "xmlns:pdfaExtension=\"http://www.aiim.org/pdfa/ns/extension/\" " +
+        "xmlns:pdfaSchema=\"http://www.aiim.org/pdfa/ns/schema#\" " +
+        "xmlns:pdfaProperty=\"http://www.aiim.org/pdfa/ns/property#\"";
+
+    private const string ExtNsType =
+        ExtNs + " xmlns:pdfaType=\"http://www.aiim.org/pdfa/ns/type#\" " +
+        "xmlns:pdfaField=\"http://www.aiim.org/pdfa/ns/field#\"";
+
+    // §6.6.2.3.3-1 violation: pdfaExtension:schemas is rdf:Seq instead of rdf:Bag.
+    // veraPDF probe-confirmed 2026-06-23: fires testNumber=1.
+    private static string SchemasSeqXmp2b() => RdfPacket(
+        $"<rdf:Description rdf:about=\"\" {ExtNs}>" +
+        "<pdfaExtension:schemas><rdf:Seq><rdf:li rdf:parseType=\"Resource\">" +
+        "<pdfaSchema:schema>S</pdfaSchema:schema>" +
+        "<pdfaSchema:namespaceURI>http://example.com/ns/</pdfaSchema:namespaceURI>" +
+        "<pdfaSchema:prefix>ex</pdfaSchema:prefix>" +
+        "<pdfaSchema:property><rdf:Seq><rdf:li rdf:parseType=\"Resource\">" +
+        ValidPropertyFields + "</rdf:li></rdf:Seq></pdfaSchema:property>" +
+        "</rdf:li></rdf:Seq></pdfaExtension:schemas></rdf:Description>");
+
+    // §6.6.2.3.3-1 violation: pdfaExtension namespace bound to prefix "ext" (wrong prefix).
+    // veraPDF probe-confirmed 2026-06-23: fires testNumber=1.
+    private static string SchemasWrongExtPrefixXmp2b() => RdfPacket(
+        "<rdf:Description rdf:about=\"\" " +
+        "xmlns:ext=\"http://www.aiim.org/pdfa/ns/extension/\" " +
+        "xmlns:pdfaSchema=\"http://www.aiim.org/pdfa/ns/schema#\" " +
+        "xmlns:pdfaProperty=\"http://www.aiim.org/pdfa/ns/property#\">" +
+        "<ext:schemas><rdf:Bag><rdf:li rdf:parseType=\"Resource\">" +
+        "<pdfaSchema:schema>S</pdfaSchema:schema>" +
+        "<pdfaSchema:namespaceURI>http://example.com/ns/</pdfaSchema:namespaceURI>" +
+        "<pdfaSchema:prefix>ex</pdfaSchema:prefix>" +
+        "<pdfaSchema:property><rdf:Seq><rdf:li rdf:parseType=\"Resource\">" +
+        ValidPropertyFields + "</rdf:li></rdf:Seq></pdfaSchema:property>" +
+        "</rdf:li></rdf:Bag></ext:schemas></rdf:Description>");
+
+    // §6.6.2.3.3-5 violation: pdfaSchema:property container is rdf:Bag instead of rdf:Seq.
+    // veraPDF probe-confirmed 2026-06-23: fires testNumber=5.
+    private static string PropertyBagXmp2b() => RdfPacket(
+        $"<rdf:Description rdf:about=\"\" {ExtNs}>" +
+        "<pdfaExtension:schemas><rdf:Bag><rdf:li rdf:parseType=\"Resource\">" +
+        "<pdfaSchema:schema>S</pdfaSchema:schema>" +
+        "<pdfaSchema:namespaceURI>http://example.com/ns/</pdfaSchema:namespaceURI>" +
+        "<pdfaSchema:prefix>ex</pdfaSchema:prefix>" +
+        "<pdfaSchema:property><rdf:Bag><rdf:li rdf:parseType=\"Resource\">" +
+        ValidPropertyFields + "</rdf:li></rdf:Bag></pdfaSchema:property>" +
+        "</rdf:li></rdf:Bag></pdfaExtension:schemas></rdf:Description>");
+
+    // §6.6.2.3.3-6 violation: pdfaSchema:valueType container is rdf:Bag instead of rdf:Seq.
+    // veraPDF probe-confirmed 2026-06-23: fires testNumber=6.
+    private static string ValueTypeContainerBagXmp2b() => RdfPacket(
+        $"<rdf:Description rdf:about=\"\" {ExtNsType}>" +
+        "<pdfaExtension:schemas><rdf:Bag><rdf:li rdf:parseType=\"Resource\">" +
+        "<pdfaSchema:schema>S</pdfaSchema:schema>" +
+        "<pdfaSchema:namespaceURI>http://example.com/ns/</pdfaSchema:namespaceURI>" +
+        "<pdfaSchema:prefix>ex</pdfaSchema:prefix>" +
+        "<pdfaSchema:property><rdf:Seq><rdf:li rdf:parseType=\"Resource\">" +
+        ValidPropertyFields + "</rdf:li></rdf:Seq></pdfaSchema:property>" +
+        "<pdfaSchema:valueType><rdf:Bag><rdf:li rdf:parseType=\"Resource\">" +
+        "<pdfaType:type>MyType</pdfaType:type>" +
+        "<pdfaType:namespaceURI>http://example.com/t/</pdfaType:namespaceURI>" +
+        "<pdfaType:prefix>mt</pdfaType:prefix><pdfaType:description>d</pdfaType:description>" +
+        "<pdfaType:field><rdf:Seq><rdf:li rdf:parseType=\"Resource\">" +
+        "<pdfaField:name>f</pdfaField:name><pdfaField:valueType>Text</pdfaField:valueType>" +
+        "<pdfaField:description>d</pdfaField:description>" +
+        "</rdf:li></rdf:Seq></pdfaType:field>" +
+        "</rdf:li></rdf:Bag></pdfaSchema:valueType>" +
+        "</rdf:li></rdf:Bag></pdfaExtension:schemas></rdf:Description>");
+
+    // §6.6.2.3.3-15 violation: pdfaType:field container is rdf:Bag instead of rdf:Seq.
+    // veraPDF probe-confirmed 2026-06-23: fires testNumber=15.
+    private static string FieldContainerBagXmp2b() => RdfPacket(
+        $"<rdf:Description rdf:about=\"\" {ExtNsType}>" +
+        "<pdfaExtension:schemas><rdf:Bag><rdf:li rdf:parseType=\"Resource\">" +
+        "<pdfaSchema:schema>S</pdfaSchema:schema>" +
+        "<pdfaSchema:namespaceURI>http://example.com/ns/</pdfaSchema:namespaceURI>" +
+        "<pdfaSchema:prefix>ex</pdfaSchema:prefix>" +
+        "<pdfaSchema:property><rdf:Seq><rdf:li rdf:parseType=\"Resource\">" +
+        ValidPropertyFields + "</rdf:li></rdf:Seq></pdfaSchema:property>" +
+        "<pdfaSchema:valueType><rdf:Seq><rdf:li rdf:parseType=\"Resource\">" +
+        "<pdfaType:type>MyType</pdfaType:type>" +
+        "<pdfaType:namespaceURI>http://example.com/t/</pdfaType:namespaceURI>" +
+        "<pdfaType:prefix>mt</pdfaType:prefix><pdfaType:description>d</pdfaType:description>" +
+        "<pdfaType:field><rdf:Bag><rdf:li rdf:parseType=\"Resource\">" +
+        "<pdfaField:name>f</pdfaField:name><pdfaField:valueType>Text</pdfaField:valueType>" +
+        "<pdfaField:description>d</pdfaField:description>" +
+        "</rdf:li></rdf:Bag></pdfaType:field>" +
+        "</rdf:li></rdf:Seq></pdfaSchema:valueType>" +
+        "</rdf:li></rdf:Bag></pdfaExtension:schemas></rdf:Description>");
+
+    // §6.6.2.3.3-8 violation: pdfaProperty namespace bound to wrong prefix "prop".
+    // veraPDF probe-confirmed 2026-06-23: fires testNumber=8 (and also -7/-9/-10 for other
+    // pdfaProperty fields). Only the valueType prefix is checked by Clause_8; presence of
+    // other fields still covered by RequireField / property-category checks.
+    private static string PropertyValueTypeWrongPrefixXmp2b() => RdfPacket(
+        $"<rdf:Description rdf:about=\"\" " +
+        "xmlns:pdfaExtension=\"http://www.aiim.org/pdfa/ns/extension/\" " +
+        "xmlns:pdfaSchema=\"http://www.aiim.org/pdfa/ns/schema#\" " +
+        "xmlns:prop=\"http://www.aiim.org/pdfa/ns/property#\">" +
+        "<pdfaExtension:schemas><rdf:Bag><rdf:li rdf:parseType=\"Resource\">" +
+        "<pdfaSchema:schema>S</pdfaSchema:schema>" +
+        "<pdfaSchema:namespaceURI>http://example.com/ns/</pdfaSchema:namespaceURI>" +
+        "<pdfaSchema:prefix>ex</pdfaSchema:prefix>" +
+        "<pdfaSchema:property><rdf:Seq><rdf:li rdf:parseType=\"Resource\">" +
+        "<prop:name>foo</prop:name><prop:valueType>Text</prop:valueType>" +
+        "<prop:category>external</prop:category><prop:description>d</prop:description>" +
+        "</rdf:li></rdf:Seq></pdfaSchema:property>" +
+        "</rdf:li></rdf:Bag></pdfaExtension:schemas></rdf:Description>");
+
+    // §6.6.2.3.3-17 violation: pdfaField namespace bound to wrong prefix "fld".
+    // veraPDF probe-confirmed 2026-06-23: fires testNumber=17 (and also -16/-18).
+    private static string FieldValueTypeWrongPrefixXmp2b() => RdfPacket(
+        "<rdf:Description rdf:about=\"\" " +
+        "xmlns:pdfaExtension=\"http://www.aiim.org/pdfa/ns/extension/\" " +
+        "xmlns:pdfaSchema=\"http://www.aiim.org/pdfa/ns/schema#\" " +
+        "xmlns:pdfaProperty=\"http://www.aiim.org/pdfa/ns/property#\" " +
+        "xmlns:pdfaType=\"http://www.aiim.org/pdfa/ns/type#\" " +
+        "xmlns:fld=\"http://www.aiim.org/pdfa/ns/field#\">" +
+        "<pdfaExtension:schemas><rdf:Bag><rdf:li rdf:parseType=\"Resource\">" +
+        "<pdfaSchema:schema>S</pdfaSchema:schema>" +
+        "<pdfaSchema:namespaceURI>http://example.com/ns/</pdfaSchema:namespaceURI>" +
+        "<pdfaSchema:prefix>ex</pdfaSchema:prefix>" +
+        "<pdfaSchema:property><rdf:Seq><rdf:li rdf:parseType=\"Resource\">" +
+        ValidPropertyFields + "</rdf:li></rdf:Seq></pdfaSchema:property>" +
+        "<pdfaSchema:valueType><rdf:Seq><rdf:li rdf:parseType=\"Resource\">" +
+        "<pdfaType:type>MyType</pdfaType:type>" +
+        "<pdfaType:namespaceURI>http://example.com/t/</pdfaType:namespaceURI>" +
+        "<pdfaType:prefix>mt</pdfaType:prefix><pdfaType:description>d</pdfaType:description>" +
+        "<pdfaType:field><rdf:Seq><rdf:li rdf:parseType=\"Resource\">" +
+        "<fld:name>f</fld:name><fld:valueType>Text</fld:valueType><fld:description>d</fld:description>" +
+        "</rdf:li></rdf:Seq></pdfaType:field>" +
+        "</rdf:li></rdf:Seq></pdfaSchema:valueType>" +
+        "</rdf:li></rdf:Bag></pdfaExtension:schemas></rdf:Description>");
+
+    // FP-safety guard (§6.6.2.3.3-5): a schema with pdfaSchema:property using canonical prefix
+    // and a correct rdf:Seq. veraPDF accepts this; the in-process rule must not fire -5.
+    // The null-prefix leniency for -5 (HasNullOrCanonicalPrefix returns true for null prefix)
+    // is implemented at the code level; the common serialisation uses the canonical prefix here.
+    private static string PropertyNullPrefixValidXmp2b() => RdfPacket(
+        "<rdf:Description rdf:about=\"\" " +
+        "xmlns:pdfaExtension=\"http://www.aiim.org/pdfa/ns/extension/\" " +
+        "xmlns:pdfaSchema=\"http://www.aiim.org/pdfa/ns/schema#\" " +
+        "xmlns:pdfaProperty=\"http://www.aiim.org/pdfa/ns/property#\">" +
+        "<pdfaExtension:schemas><rdf:Bag><rdf:li rdf:parseType=\"Resource\">" +
+        "<pdfaSchema:schema>S</pdfaSchema:schema>" +
+        "<pdfaSchema:namespaceURI>http://example.com/ns/</pdfaSchema:namespaceURI>" +
+        "<pdfaSchema:prefix>ex</pdfaSchema:prefix>" +
+        "<pdfaSchema:property><rdf:Seq><rdf:li rdf:parseType=\"Resource\">" +
+        ValidPropertyFields + "</rdf:li></rdf:Seq></pdfaSchema:property>" +
+        "</rdf:li></rdf:Bag></pdfaExtension:schemas></rdf:Description>");
+
+    // FP-safety guard (§6.6.2.3.3-15): a valueType schema with pdfaType:field using canonical
+    // prefix and a correct rdf:Seq. veraPDF accepts this; the in-process rule must not fire -15.
+    private static string FieldNullPrefixValidXmp2b() => RdfPacket(
+        "<rdf:Description rdf:about=\"\" " +
+        "xmlns:pdfaExtension=\"http://www.aiim.org/pdfa/ns/extension/\" " +
+        "xmlns:pdfaSchema=\"http://www.aiim.org/pdfa/ns/schema#\" " +
+        "xmlns:pdfaProperty=\"http://www.aiim.org/pdfa/ns/property#\" " +
+        "xmlns:pdfaType=\"http://www.aiim.org/pdfa/ns/type#\" " +
+        "xmlns:pdfaField=\"http://www.aiim.org/pdfa/ns/field#\">" +
+        "<pdfaExtension:schemas><rdf:Bag><rdf:li rdf:parseType=\"Resource\">" +
+        "<pdfaSchema:schema>S</pdfaSchema:schema>" +
+        "<pdfaSchema:namespaceURI>http://example.com/ns/</pdfaSchema:namespaceURI>" +
+        "<pdfaSchema:prefix>ex</pdfaSchema:prefix>" +
+        "<pdfaSchema:property><rdf:Seq><rdf:li rdf:parseType=\"Resource\">" +
+        ValidPropertyFields + "</rdf:li></rdf:Seq></pdfaSchema:property>" +
+        "<pdfaSchema:valueType><rdf:Seq><rdf:li rdf:parseType=\"Resource\">" +
+        "<pdfaType:type>MyType</pdfaType:type>" +
+        "<pdfaType:namespaceURI>http://example.com/t/</pdfaType:namespaceURI>" +
+        "<pdfaType:prefix>mt</pdfaType:prefix><pdfaType:description>d</pdfaType:description>" +
+        "<pdfaType:field><rdf:Seq><rdf:li rdf:parseType=\"Resource\">" +
+        "<pdfaField:name>f</pdfaField:name><pdfaField:valueType>Text</pdfaField:valueType>" +
+        "<pdfaField:description>d</pdfaField:description>" +
+        "</rdf:li></rdf:Seq></pdfaType:field>" +
+        "</rdf:li></rdf:Seq></pdfaSchema:valueType>" +
+        "</rdf:li></rdf:Bag></pdfaExtension:schemas></rdf:Description>");
+
+    // FP-safety guard: a fully valid extension schema including a custom valueType with a field,
+    // all using canonical Bag/Seq containers and the correct namespace prefixes.
+    // Both veraPDF and the in-process rule must accept this without any findings.
+    private static string FullValidExtensionXmp2b() => RdfPacket(
+        $"<rdf:Description rdf:about=\"\" {ExtNsType}>" +
+        "<pdfaExtension:schemas><rdf:Bag><rdf:li rdf:parseType=\"Resource\">" +
+        "<pdfaSchema:schema>S</pdfaSchema:schema>" +
+        "<pdfaSchema:namespaceURI>http://example.com/ns/</pdfaSchema:namespaceURI>" +
+        "<pdfaSchema:prefix>ex</pdfaSchema:prefix>" +
+        "<pdfaSchema:property><rdf:Seq><rdf:li rdf:parseType=\"Resource\">" +
+        ValidPropertyFields + "</rdf:li></rdf:Seq></pdfaSchema:property>" +
+        "<pdfaSchema:valueType><rdf:Seq><rdf:li rdf:parseType=\"Resource\">" +
+        "<pdfaType:type>MyType</pdfaType:type>" +
+        "<pdfaType:namespaceURI>http://example.com/t/</pdfaType:namespaceURI>" +
+        "<pdfaType:prefix>mt</pdfaType:prefix><pdfaType:description>d</pdfaType:description>" +
+        "<pdfaType:field><rdf:Seq><rdf:li rdf:parseType=\"Resource\">" +
+        "<pdfaField:name>f</pdfaField:name><pdfaField:valueType>Text</pdfaField:valueType>" +
+        "<pdfaField:description>d</pdfaField:description>" +
+        "</rdf:li></rdf:Seq></pdfaType:field>" +
+        "</rdf:li></rdf:Seq></pdfaSchema:valueType>" +
+        "</rdf:li></rdf:Bag></pdfaExtension:schemas></rdf:Description>");
 
     private static string RdfPacket(string extra) =>
         "<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>"
