@@ -10474,6 +10474,80 @@ public sealed class PdfPreflightTests
         Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-34");
     }
 
+    // ── Named-reference BDC FP fix (§7.2-34/30/31/32) ──────────────────────────────────────────
+    // Builds a UA-1 PDF where MCID 0 is reached via a named-reference BDC (/P /MC0 BDC) rather
+    // than an inline dict (/P << /MCID 0 >> BDC). The page /Resources/Properties/MC0 = obj 8,
+    // which is << /MCID 0 >>; the P struct elem (obj 9) has /Lang (en-US); catalog has NO /Lang.
+    // Objects: 1=Catalog, 2=Pages, 3=Page, 4=StructTreeRoot, 5=Document-elem, 6=ParentTree,
+    //          7=content, 8=MC0-props (MCID 0), 9=P-elem with /Lang, (10=XMP by AssemblePdf).
+    private static byte[] BuildUaPdfWithNamedRefBdc(string contentStream, string structElemType = "P",
+        bool structElemHasLang = true)
+    {
+        var content = Encoding.ASCII.GetBytes(contentStream);
+        var langEntry = structElemHasLang ? " /Lang (en-US)" : string.Empty;
+        return AssemblePdf(
+        [
+            // 1: Catalog — NO catalog /Lang
+            new("<< /Type /Catalog /Pages 2 0 R /MarkInfo << /Marked true >>"
+                + " /ViewerPreferences << /DisplayDocTitle true >> /StructTreeRoot 4 0 R >>"),
+            // 2: Pages
+            _pagesObj,
+            // 3: Page — /Resources/Properties maps name MC0 to obj 8 (MCID 0 properties dict)
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792]"
+                + " /StructParents 0 /Contents 7 0 R"
+                + " /Resources << /Properties << /MC0 8 0 R >> >> >>"),
+            // 4: StructTreeRoot
+            new("<< /Type /StructTreeRoot /K 5 0 R /ParentTree 6 0 R >>"),
+            // 5: Document StructElem — child is the leaf P/Span elem (obj 9)
+            new("<< /Type /StructElem /S /Document /K [9 0 R] >>"),
+            // 6: ParentTree — MCID 0 on page → P elem (obj 9)
+            new("<< /Nums [0 [9 0 R]] >>"),
+            // 7: content stream
+            new(string.Empty, content),
+            // 8: named Properties resource for MC0 — just carries /MCID 0
+            new("<< /MCID 0 >>"),
+            // 9: leaf StructElem — /Lang resolves the language for the MCID 0 content
+            new($"<< /Type /StructElem /S /{structElemType}{langEntry} /P 5 0 R /Pg 3 0 R /K 0 >>"),
+        ],
+        metadataOverride: UaXmpBytes());
+    }
+
+    /// <summary>
+    /// §7.2-34 FP fix — NAMED-REFERENCE BDC: catalog has no /Lang; text show tagged via
+    /// /P /MC0 BDC where page /Resources/Properties/MC0 = &lt;&lt; /MCID 0 &gt;&gt; and the P
+    /// struct elem carries /Lang (en-US).
+    ///
+    /// Pre-fix: ContentStreamUsage saw no inline dict for the named-ref BDC and left Mcid == null,
+    /// so the struct-elem /Lang lookup was skipped and 7.2-34 fired — FALSE POSITIVE.
+    /// Post-fix: named-ref MCID is resolved from /Resources/Properties; struct-elem /Lang is found;
+    /// rule is silent.
+    ///
+    /// Cross-validated against veraPDF 1.30.2: no 7.2-34 failure on this document.
+    /// </summary>
+    [Fact]
+    public void UaMcTextNamedRefBdc_StructElemLang_NoFire7234()
+    {
+        var bytes = BuildUaPdfWithNamedRefBdc("/P /MC0 BDC BT (hello) Tj ET EMC");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-34");
+    }
+
+    /// <summary>
+    /// §7.2-34 GENUINE VIOLATION — NAMED-REFERENCE BDC: catalog has no /Lang; text show tagged via
+    /// /P /MC0 BDC (MCID 0 resolved from /Properties), but the struct elem has NO /Lang.
+    /// Rule must still fire 7.2-34 — no language anywhere in the hierarchy.
+    ///
+    /// Cross-validated against veraPDF 1.30.2: fires 7.2-34.
+    /// </summary>
+    [Fact]
+    public void UaMcTextNamedRefBdc_NoStructElemLang_Fires7234()
+    {
+        var bytes = BuildUaPdfWithNamedRefBdc("/P /MC0 BDC BT (hello) Tj ET EMC",
+            structElemHasLang: false);
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-34");
+    }
+
     // ── §7.1-1/-2 (UaArtifactTaggingRule) ───────────────────────────────────────────────────────
 
     // Builds a UA-1 PDF with the given content stream, a /P struct element (MCID 0 → obj 8 0 R)
@@ -10625,6 +10699,71 @@ public sealed class PdfPreflightTests
             + " /P << /MCID 0 >> BDC (Tagged) Tj EMC");
         var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
         Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.1-2");
+    }
+
+    // ── Named-reference BDC 7.1-1/-2 clause-level confirmation ──────────────────────────────────
+    // Builds a UA-1 PDF like BuildUaPdfWithParentTree but with /Resources/Properties on the page
+    // so named-ref BDC (/P /MC0 BDC) can be used to reference MCID 0.
+    // Objects: 1=Catalog(/Lang), 2=Pages, 3=Page+/Properties, 4=STRoot, 5=DocElem,
+    //          6=ParentTree, 7=content, 8=MC0-props(MCID 0), 9=P-elem, (10=XMP).
+    private static byte[] BuildUaPdfWithParentTreeNamedRef(string contentStream)
+    {
+        var content = Encoding.ASCII.GetBytes(contentStream);
+        return AssemblePdf(
+        [
+            // 1: Catalog with /Lang so 7.2 doesn't fire
+            new("<< /Type /Catalog /Pages 2 0 R /Lang (en-US) /MarkInfo << /Marked true >>"
+                + " /ViewerPreferences << /DisplayDocTitle true >> /StructTreeRoot 4 0 R >>"),
+            // 2: Pages
+            _pagesObj,
+            // 3: Page — /Resources/Properties/MC0 → obj 8 (the MCID 0 props dict)
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792]"
+                + " /StructParents 0 /Contents 7 0 R"
+                + " /Resources << /Properties << /MC0 8 0 R >> >> >>"),
+            // 4: StructTreeRoot
+            new("<< /Type /StructTreeRoot /K 5 0 R /ParentTree 6 0 R >>"),
+            // 5: Document StructElem — child is leaf P elem (obj 9)
+            new("<< /Type /StructElem /S /Document /K [9 0 R] >>"),
+            // 6: ParentTree — MCID 0 → obj 9 (P elem)
+            new("<< /Nums [0 [9 0 R]] >>"),
+            // 7: content stream
+            new(string.Empty, content),
+            // 8: named Properties resource for MC0
+            new("<< /MCID 0 >>"),
+            // 9: P StructElem
+            new("<< /Type /StructElem /S /P /Lang (en-US) /P 5 0 R /Pg 3 0 R /K 0 >>"),
+        ],
+        metadataOverride: UaXmpBytes());
+    }
+
+    /// <summary>
+    /// §7.1-1 VIOLATION — NAMED-REFERENCE BDC: /Artifact BMC nested inside /P /MC0 BDC where
+    /// MC0 resolves to MCID 0 in ParentTree. Post-fix: AncestorMcid is populated from named-ref;
+    /// 7.1-1 fires. veraPDF also fires 7.1-1 on this structure.
+    /// Cross-validated against veraPDF 1.30.2: fires 7.1-1.
+    /// </summary>
+    [Fact]
+    public void UaArtifactInTaggedNamedRef_Fires711()
+    {
+        var bytes = BuildUaPdfWithParentTreeNamedRef(
+            "/P /MC0 BDC (Tagged) Tj /Artifact BMC (Art) Tj EMC EMC");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.1-1");
+    }
+
+    /// <summary>
+    /// §7.1-2 VIOLATION — NAMED-REFERENCE BDC: /P /MC0 BDC (MCID 0 in ParentTree) nested inside
+    /// /Artifact BMC. Post-fix: Mcid is populated from named-ref Properties lookup; 7.1-2 fires.
+    /// veraPDF also fires 7.1-2 on this structure.
+    /// Cross-validated against veraPDF 1.30.2: fires 7.1-2.
+    /// </summary>
+    [Fact]
+    public void UaTaggedInArtifactNamedRef_Fires712()
+    {
+        var bytes = BuildUaPdfWithParentTreeNamedRef(
+            "/Artifact BMC /P /MC0 BDC (Tagged inside artifact) Tj EMC EMC");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.1-2");
     }
 
     // ── Batch A5d — §7.21.5-1 glyph width consistency (UaGlyphWidthRule) ────────────────────────

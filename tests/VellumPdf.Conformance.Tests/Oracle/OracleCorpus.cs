@@ -1165,6 +1165,19 @@ public static class OracleCorpus
             new OracleFixture("pdfua1-tagged-in-artifact",
                 Ua1TaggedInArtifact(),
                 Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.2-34 REGRESSION GUARD — named-reference BDC FP fix: tagged UA-1 with NO catalog /Lang,
+            // content tagged via /P /MC0 BDC (named-reference form — not inline dict), where
+            // /Resources/Properties/MC0 = << /MCID 0 >>, and the P struct element has /Lang (en-US).
+            // veraPDF does NOT fire 7.2-34 (struct-elem /Lang covers the content via MCID→ParentTree).
+            // Pre-fix the in-process rule fired 7.2-34 (false positive — named-ref MCID was not
+            // resolved, so struct-elem /Lang was never checked). Post-fix: silent on 7.2-34.
+            // Both veraPDF and the in-process validator reject the document for other reasons (7.2-lang,
+            // 7.2-33), so ExpectedCompliant: false.
+            // Cross-validated against veraPDF 1.30.2: clause 7.2 testNumber 34 is NOT in the failures.
+            new OracleFixture("pdfua1-mc-named-ref-struct-elem-lang",
+                Ua1McTextNamedRefBdcStructElemLang(),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
         ];
     }
 
@@ -4683,6 +4696,55 @@ public static class OracleCorpus
         newElem.Set(new PdfName("Lang"), new PdfLiteralString(Encoding.ASCII.GetBytes("en-US")));
 
         return reader.AppendRevision([(elemRef.ObjectNumber, newElem)]);
+    }
+
+    /// <summary>
+    /// §7.2-34 FP fix guard — named-reference BDC: same as <see cref="Ua1McTextStructElemLang"/>
+    /// but the page content uses the named-reference BDC form (<c>/P /MC0 BDC</c>) rather than an
+    /// inline property dict. The page's /Resources/Properties/MC0 dict carries /MCID 0; the P struct
+    /// element has /Lang (en-US). veraPDF does NOT fire 7.2-34 (resolves named-ref MCID → struct
+    /// elem /Lang). Post-fix, the in-process rule must also not fire 7.2-34.
+    /// </summary>
+    private static byte[] Ua1McTextNamedRefBdcStructElemLang()
+    {
+        // Start from the struct-elem-lang baseline (inline BDC, no catalog /Lang, /Lang on P elem).
+        var baseline = Ua1McTextStructElemLang();
+        using var reader = PdfReader.Open(baseline);
+
+        var (pageRef, page) = FirstPage(reader);
+
+        // Find the existing font name to keep the content valid.
+        var resourcesObj = page.Get(new PdfName("Resources"));
+        var resources = resourcesObj is not null ? reader.ResolveValue(resourcesObj) as PdfDictionary : null;
+        var fontDictObj = resources?.Get(PdfName.Font);
+        var fontDict = fontDictObj is not null ? reader.ResolveValue(fontDictObj) as PdfDictionary : null;
+        var fontName = fontDict?.Entries.FirstOrDefault().Key.Value ?? "F1";
+
+        // Add a new /Properties dict object: /MC0 = << /MCID 0 >>
+        var propsNum = reader.Size;
+        var propsDict = new PdfDictionary().Set(new PdfName("MCID"), new PdfInteger(0));
+
+        // Replace content stream: use named-ref BDC instead of inline dict BDC.
+        var contentNum = reader.Size + 1;
+        var contentBytes = Encoding.ASCII.GetBytes(
+            $"BT\n/{fontName} 12 Tf\n1 0 0 1 72 720 Tm\n"
+            + "/P /MC0 BDC\n(hello) Tj\nEMC\nET\n");
+        var newContent = new PdfStream(contentBytes);
+
+        // Patch the page: update /Resources to add /Properties, update /Contents.
+        var newPage = CloneDict(page);
+        var newResources = resources is not null ? CloneDict(resources) : new PdfDictionary();
+        var newPropertiesDict = new PdfDictionary()
+            .Set(new PdfName("MC0"), new PdfIndirectReference(propsNum));
+        newResources.Set(new PdfName("Properties"), newPropertiesDict);
+        newPage.Set(new PdfName("Resources"), newResources);
+        newPage.Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
+
+        return reader.AppendRevision([
+            (pageRef.ObjectNumber, newPage),
+            (propsNum, propsDict),
+            (contentNum, newContent),
+        ]);
     }
 
     /// <summary>

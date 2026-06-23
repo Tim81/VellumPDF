@@ -378,16 +378,25 @@ public static class ConformanceCatalog
         //   BDC inside struct-linked ancestor; non-Artifact BDC with MCID in ParentTree inside
         //   Artifact ancestor. MarkedContentSequence extended with HasArtifactAncestor and
         //   AncestorMcid; empirically verified against veraPDF 1.30.2 probe series).
-        // 7.1-3: SESimpleContentItem is per-content-item (text shows AND path painting operators);
-        //   veraPDF fires 7.1-3 for untagged path painting operators (m/l/c/re + S/f/B etc.),
-        //   which ContentStreamUsage does not track. A text-show-only implementation would produce
-        //   false negatives (miss path violations) and cannot be verified complete without tracking
-        //   path ops. Deferred until path-painting operator tracking is added.
+        // 7.1-3: SESimpleContentItem operator set PINNED (Batch C3 probe series, veraPDF 1.30.2):
+        //   Content items that trigger 7.1-3 = Tj/TJ/'/", S/s/f/F/f*/B/B*/b/b* (all PAINTING path
+        //   ops; n/W n/W* n confirmed NOT content items), inline-image EI, image-Do (not form-Do),
+        //   and sh. Color/state ops (rg, cm, gs etc.) and path-construction-only (m/l/c/re with no
+        //   terminal) are NOT content items. Confirmed by per-operator probes against veraPDF 1.30.2.
+        //
+        //   The named-reference-BDC blocker is now RESOLVED: ContentStreamUsage resolves
+        //   /Tag /ResourceName BDC via the page /Resources /Properties map (BuildNamedPropertiesMcids),
+        //   so seq.Mcid / seq.AncestorMcid are populated for named-reference BDCs too. The remaining
+        //   blocker is the content-item operator tracking itself: ContentStreamUsage does not yet
+        //   emit a content item per painting operator (S/s/f/F/f*/B/B*/b/b*, EI, image-Do, sh), only
+        //   per text-show. Implementing that operator set + the tagged/artifact check is the work
+        //   left; deferred until it can be built and clause-level-verified FP-safe against veraPDF.
         "7.1-3" =>
-            "SESimpleContentItem scope includes path painting operators (m/l/c/re + S/f/B etc.) in "
-            + "addition to text-show operators; veraPDF fires 7.1-3 for untagged path operations, "
-            + "which ContentStreamUsage does not yet track; a text-show-only implementation would "
-            + "produce false negatives and cannot be verified complete",
+            "SESimpleContentItem operator set pinned: Tj/TJ/'/\", S/s/f/F/f*/B/B*/b/b*, EI, "
+            + "image-Do, and sh create content items (n/W n/W* n do not). Named-reference-BDC "
+            + "resolution is done (Properties map); remaining work is emitting a content item per "
+            + "painting/image/shading operator with MC context, then the tagged-or-artifact check — "
+            + "deferred until that operator tracking can be clause-level-verified FP-safe",
 
         // §7.21 font deferred notes — Batch A3 assessment:
         // 7.21.4.1-1 moved to PdfUaImplemented (Batch A5a — UaFontEmbeddingRule, rendering-mode-scoped).
@@ -467,8 +476,8 @@ public static class ConformanceCatalog
         //   struct-linked ancestor; non-Artifact BDC with MCID in ParentTree inside Artifact ancestor;
         //   MarkedContentSequence extended with HasArtifactAncestor + AncestorMcid; verified against
         //   veraPDF 1.30.2 probe series).
-        // 7.1-3 remains deferred (Batch C2 assessment — SESimpleContentItem includes path painting
-        //   operators that ContentStreamUsage does not track — see PdfUaDeferredNote switch above).
+        // 7.1-3 remains deferred (Batch C3 probe — operator set fully pinned; blocker is Properties
+        //   named-reference BDC resolution, see PdfUaDeferredNote switch above for details).
 
         _ => "structure-tree walker",
     };
