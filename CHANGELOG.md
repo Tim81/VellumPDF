@@ -6,6 +6,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.7.4] - 2026-06-23
+
+### Added
+
+- **`VellumPdf.Conformance` — PDF/UA-1 and PDF/A-2a conformance deepened.** Build-verified veraPDF
+  parity rises to **~90% for PDF/UA-1** (95 of 106 checks implemented, 1 partial — up from ~71%) and
+  **~90% for PDF/A-2a** (up from ~87%). Every rule is authored clean-room from the ISO text and
+  cross-validated against veraPDF 1.30.2 in CI; two adversarial false-positive sweeps (content-stream
+  /marked-content rules and the new font rules, plus an earlier structure-rule sweep) found no
+  over-rejections.
+  - **A marked-content interpreter** over page content streams: BMC/BDC/EMC nesting, marked-content
+    tags and properties, MCID resolution for both the inline (`/Tag << /MCID n >>`) and
+    named-reference (`/Tag /Name` via `/Resources /Properties`) forms, artifact ancestry, and a
+    content-item model per real-content operator. It underpins the §7.1 and §7.2 marked-content rules.
+  - **Logical structure (PDF/UA-1):** table grid — cell intersection and row/column spans
+    (§7.2-15/-41/-42/-43); heading nesting level (§7.4.2-1); table cell connected-header (§7.5-1/-2);
+    non-standard structure types must role-map to a standard type (§7.1-5).
+  - **Marked content (PDF/UA-1):** real content must be tagged or marked as Artifact, and the
+    artifact/tagged-content nesting rules (§7.1-1/-2/-3); marked-content and outline natural-language
+    determination (§7.2-2/-30/-31/-32/-33/-34), resolving language through the structure tree.
+  - **Fonts (PDF/UA-1):** TrueType cmap and encoding requirements (§7.21.6-1/-2/-4), backed by an
+    embedded copy of the Adobe Glyph List (BSD-3-Clause, attributed in `NOTICE`); glyph-width
+    consistency between the font dictionary and the embedded program for Identity-H CIDFontType2
+    fonts (§7.21.5-1).
+  - **PDF/A-2a logical structure (§6.7):** non-standard structure-type role-mapping, RoleMap
+    acyclicity, and standard-type remap rules (§6.7.3.4-1/-2/-3); `/Lang` BCP-47 syntax (§6.7.4-1).
+  - Each rule documents its deferred edges; the remaining PDF/UA-1 checks are deferred with concrete
+    reasons (each would either over-reject conformant files or needs a subsystem the library does not
+    yet have).
+
 ## [1.7.3] - 2026-06-22
 
 ### Added
