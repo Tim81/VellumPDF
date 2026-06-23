@@ -121,11 +121,17 @@ internal static class RuleRegistry
         new ToUnicodeRule(),
     ];
 
-    // PDF/A-2a = PDF/A-2u plus tagged logical structure (ISO 19005-2 §6.8).
+    // PDF/A-2a = PDF/A-2u plus tagged logical structure (ISO 19005-2 §6.8) and
+    // §6.7 structure-type and language-tag rules.
     private static readonly IConformanceRule[] PdfA2ARules =
     [
         .. PdfA2URules,
         new LogicalStructureRule(),
+        // §6.7.3.4-1/-2/-3 — structure element type conformance (non-standard mapping,
+        // circular mapping, standard-type-to-non-standard remap):
+        new A2aStructureTypeRule(),
+        // §6.7.4-1 — /Lang value syntax (catalog + structure elements):
+        new A2aLangSyntaxRule(),
     ];
 
     // PDF/UA-1 (ISO 14289-1) is a distinct standard from PDF/A: it shares the baseline catalog
@@ -151,6 +157,8 @@ internal static class RuleRegistry
         // Batch A3 — font clauses §7.21:
         new UaCidToGidMapRule(),
         new UaSymbolicFontRule(),
+        // Batch A6 — TrueType cmap / Differences-compliance (§7.21.6-1/-2/-4):
+        new UaTrueTypeCmapRule(),
         // Batch A4 — font clauses §7.21 (CMap, CharSet, CIDSet, CIDSystemInfo):
         new UaCMapRule(),
         new UaType1CharSetRule(),
@@ -163,15 +171,21 @@ internal static class RuleRegistry
         new UaToUnicodeForbiddenRule(),
         // Batch A5c — font clause §7.21.4.1-2 (glyph presence, Tr-3-exempt):
         new UaGlyphPresenceRule(),
+        // Batch A5d — §7.21.5-1 (glyph width consistency, Identity-H CIDFontType2 scope):
+        new UaGlyphWidthRule(),
         // Batch B1 — structure-tree walker foundation (§7.1 role-map + §7.1-12 parent entry):
         new UaRoleMapRule(),
         new UaStructElemParentRule(),
+        // Batch B9 — §7.1-5 non-standard structure type (SENonStandard):
+        new UaNonStandardTypeRule(),
         // Batch B2 — §7.2 structure containment (table, list, TOC):
         new UaTableContainmentRule(),
         new UaListContainmentRule(),
         new UaTocContainmentRule(),
         // Batch B4 — §7.2 count and caption-position rules:
         new UaTableCountRule(),
+        // Batch B7 — §7.2 table grid rules (intersection, column/row span consistency):
+        new UaTableGridRule(),
         // Batch B3 — §7.3/§7.7 alt-text, §7.9 Note IDs, §7.4.4 heading structure:
         new UaAltTextRule(),
         new UaNoteIdRule(),
@@ -180,6 +194,17 @@ internal static class RuleRegistry
         new UaAnnotStructureRule(),
         // Batch B6 — §7.2 natural-language determination (7.2-21/-22/-23/-24/-25):
         new UaNaturalLanguageRule(),
+        // Batch B8 — §7.2 natural-language determination (7.2-2 outline, 7.2-33 XMP lang-alt):
+        new UaOutlineLangRule(),
+        // Batch C1 — §7.2 natural-language determination for marked-content sequences (7.2-30/-31/-32/-34):
+        new UaMarkedContentLangRule(),
+        // Batch C2 — §7.1-1/-2 artifact/tagged-content nesting (Artifact inside tagged; tagged inside Artifact):
+        new UaArtifactTaggingRule(),
+        // Batch C3 — §7.1-3 SESimpleContentItem: real content must be tagged or marked as Artifact:
+        new UaSimpleContentItemRule(),
+        // Batch B10 — §7.4.2 heading nesting, §7.5 connected headers:
+        new UaHeadingNestingRule(),
+        new UaTableHeaderRule(),
     ];
 
     /// <summary>

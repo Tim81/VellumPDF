@@ -3639,6 +3639,158 @@ public sealed class PdfPreflightTests
         Assert.Contains("circular", assertion.Message);
     }
 
+    // ── PDF/A-2a §6.7.3.4 structure-element type conformance ───────────────────
+
+    [Fact]
+    public void Validate2a_NonStandardTypeUnmapped_ReportsError()
+    {
+        // §6.7.3.4-1: StructElem /S /MyCustomTag with no /RoleMap entry — non-standard type
+        // is not mapped to a standard type. Expects A2aStructureTypeRule to fire.
+        var bytes = Build2aPdf(
+            "/MarkInfo << /Marked true >> /StructTreeRoot 4 0 R",
+            new PdfObj("<< /Type /StructTreeRoot /K 5 0 R >>"),
+            new PdfObj("<< /Type /StructElem /S /MyCustomTag /P 4 0 R >>"));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2A);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a =>
+            a.RuleId == "ISO19005-2:6.7.3.4-1"
+            && a.Message.Contains("MyCustomTag"));
+    }
+
+    [Fact]
+    public void Validate2a_NonStandardTypeRoleMapped_NoFindings()
+    {
+        // §6.7.3.4-1 FP-safety: StructElem /S /MyCustomTag with /RoleMap /MyCustomTag /Div —
+        // non-standard type IS role-mapped to standard type /Div. Must NOT fire.
+        var bytes = Build2aPdf(
+            "/MarkInfo << /Marked true >> /StructTreeRoot 4 0 R",
+            new PdfObj("<< /Type /StructTreeRoot /K 5 0 R /RoleMap << /MyCustomTag /Div >> >>"),
+            new PdfObj("<< /Type /StructElem /S /MyCustomTag /P 4 0 R >>"));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2A);
+
+        Assert.True(result.IsCompliant);
+        Assert.Empty(result.Assertions);
+    }
+
+    [Fact]
+    public void Validate2a_CircularRoleMapWithElem_ReportsError()
+    {
+        // §6.7.3.4-2: StructElem /S /Foo, /RoleMap /Foo /Bar /Bar /Foo — circular chain.
+        // A2aStructureTypeRule fires (element uses the cycling type).
+        var bytes = Build2aPdf(
+            "/MarkInfo << /Marked true >> /StructTreeRoot 4 0 R",
+            new PdfObj("<< /Type /StructTreeRoot /K 5 0 R /RoleMap << /Foo /Bar /Bar /Foo >> >>"),
+            new PdfObj("<< /Type /StructElem /S /Foo /P 4 0 R >>"));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2A);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a =>
+            a.RuleId == "ISO19005-2:6.7.3.4-2"
+            && a.Message.Contains("circular"));
+    }
+
+    [Fact]
+    public void Validate2a_StandardTypeRemappedToNonStandard_ReportsError()
+    {
+        // §6.7.3.4-3: /RoleMap /P /MyNonStd; element /S /P — standard type remapped to
+        // a non-standard type. A2aStructureTypeRule must fire.
+        var bytes = Build2aPdf(
+            "/MarkInfo << /Marked true >> /StructTreeRoot 4 0 R",
+            new PdfObj("<< /Type /StructTreeRoot /K 5 0 R /RoleMap << /P /MyNonStd >> >>"),
+            new PdfObj("<< /Type /StructElem /S /P /P 4 0 R >>"));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2A);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a =>
+            a.RuleId == "ISO19005-2:6.7.3.4-3"
+            && a.Message.Contains("/P"));
+    }
+
+    [Fact]
+    public void Validate2a_StandardTypeRemappedToStandard_NoFindings()
+    {
+        // §6.7.3.4-3 FP-safety: /RoleMap /P /Div — standard remapped to another STANDARD type.
+        // veraPDF 1.30.2 accepts this (empirically confirmed); must NOT fire.
+        var bytes = Build2aPdf(
+            "/MarkInfo << /Marked true >> /StructTreeRoot 4 0 R",
+            new PdfObj("<< /Type /StructTreeRoot /K 5 0 R /RoleMap << /P /Div >> >>"),
+            new PdfObj("<< /Type /StructElem /S /P /P 4 0 R >>"));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2A);
+
+        Assert.True(result.IsCompliant);
+        Assert.Empty(result.Assertions);
+    }
+
+    // ── PDF/A-2a §6.7.4 language tag syntax ────────────────────────────────────
+
+    [Fact]
+    public void Validate2a_BadCatalogLang_ReportsError()
+    {
+        // §6.7.4-1: catalog /Lang (invalid!!bad) is not a valid RFC 3066 language tag.
+        var bytes = Build2aPdf(
+            "/MarkInfo << /Marked true >> /StructTreeRoot 4 0 R /Lang (invalid!!bad)",
+            new PdfObj("<< /Type /StructTreeRoot >>"));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2A);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a =>
+            a.RuleId == "ISO19005-2:6.7.4-1"
+            && a.Message.Contains("invalid!!bad"));
+    }
+
+    [Fact]
+    public void Validate2a_GoodCatalogLang_NoFindings()
+    {
+        // §6.7.4-1 FP-safety: catalog /Lang (en-US) is a valid BCP-47 tag. Must NOT fire.
+        var bytes = Build2aPdf(
+            "/MarkInfo << /Marked true >> /StructTreeRoot 4 0 R /Lang (en-US)",
+            new PdfObj("<< /Type /StructTreeRoot >>"));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2A);
+
+        Assert.True(result.IsCompliant);
+        Assert.Empty(result.Assertions);
+    }
+
+    [Fact]
+    public void Validate2a_BadStructElemLang_ReportsError()
+    {
+        // §6.7.4-1: StructElem /Lang (xyz!!bad) — bad syntax on a structure element /Lang.
+        var bytes = Build2aPdf(
+            "/MarkInfo << /Marked true >> /StructTreeRoot 4 0 R",
+            new PdfObj("<< /Type /StructTreeRoot /K 5 0 R >>"),
+            new PdfObj("<< /Type /StructElem /S /P /P 4 0 R /Lang (xyz!!bad) >>"));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2A);
+
+        Assert.False(result.IsCompliant);
+        Assert.Contains(result.Assertions, a =>
+            a.RuleId == "ISO19005-2:6.7.4-1"
+            && a.Message.Contains("xyz!!bad"));
+    }
+
+    [Fact]
+    public void Validate2a_GoodStructElemLang_NoFindings()
+    {
+        // §6.7.4-1 FP-safety: StructElem /Lang (fr) — valid BCP-47 tag. Must NOT fire.
+        var bytes = Build2aPdf(
+            "/MarkInfo << /Marked true >> /StructTreeRoot 4 0 R",
+            new PdfObj("<< /Type /StructTreeRoot /K 5 0 R >>"),
+            new PdfObj("<< /Type /StructElem /S /P /P 4 0 R /Lang (fr) >>"));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2A);
+
+        Assert.True(result.IsCompliant);
+        Assert.Empty(result.Assertions);
+    }
+
     // ── PDF/UA-1 (ISO 14289-1) ──────────────────────────────────────────────────
 
     [Fact]
@@ -3656,8 +3808,9 @@ public sealed class PdfPreflightTests
         var result = PdfPreflight.Validate(BuildUaPdf(lang: false), PdfConformance.PdfUA1);
 
         Assert.False(result.IsCompliant);
-        var assertion = Assert.Single(result.Assertions);
-        Assert.Equal("ISO14289-1:7.2-lang", assertion.RuleId);
+        // Note: also fires 7.2-33 (XMP x-default lang-alt requires catalog /Lang) because
+        // BuildUaPdf uses UaXmpBytes() which contains a dc:title with x-default.
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-lang");
     }
 
     [Fact]
@@ -6891,11 +7044,9 @@ public sealed class PdfPreflightTests
 
     /// <summary>
     /// False-positive guard for §7.21.6-3 (UaSymbolicFontRule): a symbolic TrueType font (Flags
-    /// bit 3 = Symbolic) with NO /Encoding entry must NOT fire §7.21.6-3 — the absence of
-    /// /Encoding is exactly what the rule requires. This fixture also fails other UA-1 rules
-    /// (7.21.6-4 for the cmap subtable count, 7.1-3 for untagged text) but must not produce a
-    /// §7.21.6-3 finding. Verified directly against veraPDF 1.30.2: that validator does NOT list
-    /// clause 7.21.6, testNumber 3 in its failures for this document.
+    /// bit 3 = Symbolic) with NO /Encoding entry must NOT fire §7.21.6-3. DejaVu has 5 cmap
+    /// subtables with no (3,0), so this fixture also fires §7.21.6-4 and §7.1-3 (untagged text).
+    /// The test checks only that §7.21.6-3 is absent. Verified against veraPDF 1.30.2.
     /// </summary>
     [Fact]
     public void SymbolicFontNoEncoding_DoesNotFire7216_3()
@@ -6930,6 +7081,107 @@ public sealed class PdfPreflightTests
         var bytes = OracleCorpus.Ua1NonSymbolicFontWinAnsi();
         var result = PdfPreflight.Validate(bytes, Conformance.PdfConformance.PdfUA1);
         Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.21.6-3");
+    }
+
+    // ── Batch A6 — §7.21.6-1/-2/-4 TrueType cmap unit tests ────────────────────────────────────
+
+    /// <summary>
+    /// §7.21.6-1 VIOLATION (UaTrueTypeCmapRule): a non-symbolic TrueType font (Flags=32,
+    /// WinAnsiEncoding) whose embedded program cmap is patched to a single Microsoft Symbol (3,0)
+    /// subtable must fire §7.21.6-1. veraPDF predicate: isSymbolic==false, cmap30Present==true,
+    /// nrCmaps==1 → nrCmaps &gt; 1 fails. Cross-validated via oracle fixture.
+    /// </summary>
+    [Fact]
+    public void UaNonSymbolicSymbolOnlyCmap_Fires7216_1()
+    {
+        var bytes = OracleCorpus.Ua1NonSymbolicTrueTypeSymbolOnlyCmap();
+        var result = PdfPreflight.Validate(bytes, Conformance.PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.21.6-1");
+    }
+
+    /// <summary>
+    /// §7.21.6-2 VIOLATION (UaTrueTypeCmapRule): a non-symbolic TrueType font with /Differences
+    /// containing /BADNAME_XYZ (not in the Adobe Glyph List) must fire §7.21.6-2.
+    /// veraPDF predicate: differencesAreUnicodeCompliant==false. Cross-validated via oracle fixture.
+    /// </summary>
+    [Fact]
+    public void UaNonSymbolicBadDifferences_Fires7216_2()
+    {
+        var bytes = OracleCorpus.Ua1NonSymbolicTrueTypeBadDifferences();
+        var result = PdfPreflight.Validate(bytes, Conformance.PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.21.6-2");
+    }
+
+    /// <summary>
+    /// §7.21.6-1 and §7.21.6-2 VIOLATION: a non-symbolic TrueType font with AGL-compliant
+    /// /Differences (/Alpha) but cmap patched to symbol-only (3,0) must fire both 7.21.6-1
+    /// (program lacks non-symbol entries) and 7.21.6-2 (differencesAreUnicodeCompliant also
+    /// requires the (3,1) cmap). Cross-validated via oracle fixture.
+    /// </summary>
+    [Fact]
+    public void UaNonSymbolicAglDiffBadCmap_FiresBoth72161And72162()
+    {
+        var bytes = OracleCorpus.Ua1NonSymbolicTrueTypeAglDiffBadCmap();
+        var result = PdfPreflight.Validate(bytes, Conformance.PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.21.6-1");
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.21.6-2");
+    }
+
+    /// <summary>
+    /// §7.21.6-1 and §7.21.6-2 false-positive guard: a non-symbolic TrueType font with
+    /// AGL-compliant /Differences (/Alpha) and the standard DejaVu program (which has a (3,1) cmap)
+    /// must NOT fire 7.21.6-1 or 7.21.6-2. Verified against veraPDF 1.30.2: neither clause fires
+    /// for this fixture (only 7.1-3 for untagged content).
+    /// </summary>
+    [Fact]
+    public void UaNonSymbolicAglDiffCompliant_DoesNotFire72161Or72162()
+    {
+        var bytes = OracleCorpus.Ua1NonSymbolicTrueTypeAglDiffCompliant();
+        var result = PdfPreflight.Validate(bytes, Conformance.PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.21.6-1");
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.21.6-2");
+    }
+
+    /// <summary>
+    /// §7.21.6-2 false-positive guard (usage-scoped): a non-symbolic TrueType font with bad
+    /// /Differences (/BADNAME_XYZ) but NOT selected via Tf in any content stream must NOT fire
+    /// §7.21.6-2. Verified against veraPDF 1.30.2: the rule is scoped to used fonts.
+    /// </summary>
+    [Fact]
+    public void UaNonSymbolicBadDifferencesUnused_DoesNotFire72162()
+    {
+        var bytes = OracleCorpus.Ua1NonSymbolicTrueTypeBadDifferencesUnused();
+        var result = PdfPreflight.Validate(bytes, Conformance.PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.21.6-2");
+    }
+
+    /// <summary>
+    /// §7.21.6-4 false-positive guard: a symbolic TrueType font (Flags=4) with no /Encoding
+    /// (satisfying §7.21.6-3) and exactly 1 cmap subtable must NOT fire §7.21.6-4.
+    /// veraPDF predicate: isSymbolic==true, nrCmaps==1 → compliant.
+    /// Verified against veraPDF 1.30.2: clause 7.21.6-4 does not fire for this fixture.
+    /// </summary>
+    [Fact]
+    public void UaSymbolicFontOneCmap_DoesNotFire7216_4()
+    {
+        var bytes = OracleCorpus.Ua1SymbolicFontNoEncodingOneCmap();
+        var result = PdfPreflight.Validate(bytes, Conformance.PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.21.6-4");
+    }
+
+    /// <summary>
+    /// §7.21.6-4 VIOLATION: a symbolic TrueType font (Flags=4) using the DejaVu program, which has
+    /// 5 cmap subtables but NO Microsoft Symbol (3,0) subtable. The 7.21.6-4 predicate requires
+    /// isSymbolic==false || nrCmaps==1 || cmap30Present==true; with symbolic=true, nrCmaps=5,
+    /// cmap30Present=false, it fires. This also fires 7.21.6-3 due to the /Encoding entry.
+    /// Cross-validated against veraPDF 1.30.2 via the oracle fixture pdfua1-symbolic-font-with-encoding.
+    /// </summary>
+    [Fact]
+    public void UaSymbolicFontWithEncoding_Fires7216_4()
+    {
+        var bytes = OracleCorpus.Ua1SymbolicFontWithEncoding();
+        var result = PdfPreflight.Validate(bytes, Conformance.PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.21.6-4");
     }
 
     // ── Batch A4 — §7.21 font clause unit tests ─────────────────────────────────────────────────
@@ -7378,6 +7630,77 @@ public sealed class PdfPreflightTests
         var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
 
         Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.1-6");
+    }
+
+    // ── Batch B9 — §7.1-5 non-standard structure type (SENonStandard) unit tests ──────────────────
+
+    /// <summary>
+    /// §7.1-5 VIOLATION (UaNonStandardTypeRule): a StructElem with a non-standard <c>/S</c>
+    /// type and no <c>/RoleMap</c> must fire 7.1-5. Cross-validated against veraPDF 1.30.2 via
+    /// oracle fixture <c>pdfua1-non-standard-type-unmapped</c>: veraPDF exits 1 (non-compliant).
+    /// </summary>
+    [Fact]
+    public void UaNonStandardTypeUnmapped_Fires71_5()
+    {
+        var bytes = OracleCorpus.Ua1NonStandardTypeUnmapped();
+        var result = PdfPreflight.Validate(bytes, Conformance.PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.1-5");
+    }
+
+    /// <summary>
+    /// §7.1-5 FP-safety guard (UaNonStandardTypeRule): a StructElem with a non-standard
+    /// <c>/S /MyCustomTag</c> that IS role-mapped (via <c>/RoleMap &lt;&lt; /MyCustomTag /P
+    /// &gt;&gt;</c>) to the standard type <c>/P</c> must NOT fire 7.1-5. The walker resolves
+    /// <c>StandardType</c> to <c>"P"</c> via the RoleMap chain; the firing condition
+    /// (<c>StandardType == null</c>) is false. Cross-validated against veraPDF 1.30.2 via
+    /// oracle fixture <c>pdfua1-non-standard-type-rolemapped</c>: veraPDF does not fire 7.1-5.
+    /// </summary>
+    [Fact]
+    public void UaNonStandardTypeRoleMapped_DoesNotFire71_5()
+    {
+        var bytes = OracleCorpus.Ua1NonStandardTypeRoleMapped();
+        var result = PdfPreflight.Validate(bytes, Conformance.PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.1-5");
+    }
+
+    /// <summary>
+    /// §7.1-5 FP-safety guard (UaNonStandardTypeRule): the standard UA-1 tagged baseline uses
+    /// only standard structure types — the rule must NOT fire. Cross-validated against veraPDF
+    /// 1.30.2: the tagged baseline is accepted (no 7.1-5).
+    /// </summary>
+    [Fact]
+    public void UaNonStandardTypeBaseline_DoesNotFire71_5()
+    {
+        var bytes = OracleCorpus.Ua1TaggedWithEmbeddedFont();
+        var result = PdfPreflight.Validate(bytes, Conformance.PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.1-5");
+    }
+
+    /// <summary>
+    /// §7.1-5 multi-hop FP-safety guard (UaNonStandardTypeRule): a non-standard type role-mapped
+    /// via a two-hop chain (<c>/MyTag /MyIntermediate /MyIntermediate /P</c>) must NOT fire 7.1-5.
+    /// The walker follows the full chain to the standard terminal type. Inline test: no veraPDF
+    /// probe needed (the multi-hop chain is a StructureTree walker invariant already proven by
+    /// existing 7.1-6/7.1-7 tests).
+    /// </summary>
+    [Fact]
+    public void UaNonStandardTypeMultiHopRoleMapped_DoesNotFire71_5()
+    {
+        var bytes = AssemblePdf(
+            [
+                new("<< /Type /Catalog /Pages 2 0 R /StructTreeRoot 4 0 R /MarkInfo << /Marked true >> "
+                    + "/Lang (en-US) /ViewerPreferences << /DisplayDocTitle true >> >>"),
+                new("<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
+                new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Tabs /S >>"),
+                new("<< /Type /StructTreeRoot /K [5 0 R] "
+                    + "/RoleMap << /MyTag /MyIntermediate /MyIntermediate /P >> >>"),
+                new("<< /Type /StructElem /S /MyTag /P 4 0 R >>"),
+            ],
+            metadataOverride: UaXmpBytes());
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.1-5");
     }
 
     // ── Batch B2 — §7.2 table / list / TOC containment unit tests ────────────────────────────────
@@ -9097,6 +9420,1585 @@ public sealed class PdfPreflightTests
             metadataOverride: UaXmpBytes());
         var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
         Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-25");
+    }
+
+    // ── §7.2-15/41/42/43 (UaTableGridRule) ──────────────────────────────────────────────────────────
+
+    // ── §7.2-15 (SETableCell intersection) ──────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// §7.2-15 VIOLATION (UaTableGridRule): a ColSpan=3 cell in row1 whose span hits a slot
+    /// already occupied by a RowSpan=2 cell from row0 fires 7.2-15 on both cells.
+    /// Grid: row0=[TH(RowSpan=2,col0), TD(ColSpan=2,col1+col2), TH(RowSpan=2,col3)].
+    /// Row1 has 1 TD placed at col1 (col0 occupied by span); it has ColSpan=3 → tries to occupy
+    /// col1+col2+col3 but col3 is already occupied by TH(RowSpan=2) → intersection.
+    /// Cross-validated against veraPDF 1.30.2: probe5a_colspan_hits_rowspan → fires 7.2-15 (exit 1).
+    /// </summary>
+    [Fact]
+    public void UaTableGridColspanHitsRowspan_Fires72_15()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /Table /P 5 0 R /K [7 0 R 8 0 R] >>",
+            // row0: TH(RowSpan=2,col0) + TD(ColSpan=2,col1+col2) + TH(RowSpan=2,col3)
+            "<< /Type /StructElem /S /TR /P 6 0 R /K [9 0 R 10 0 R 11 0 R] >>",
+            // row1: TD(ColSpan=3) → placed at col1, wants col1+col2+col3, col3 occupied!
+            "<< /Type /StructElem /S /TR /P 6 0 R /K [12 0 R] >>",
+            // TH RowSpan=2 (col0)
+            "<< /Type /StructElem /S /TH /P 7 0 R /A << /O /Table /RowSpan 2 >> >>",
+            // TD ColSpan=2 (col1+col2)
+            "<< /Type /StructElem /S /TD /P 7 0 R /A << /O /Table /ColSpan 2 >> >>",
+            // TH RowSpan=2 (col3)
+            "<< /Type /StructElem /S /TH /P 7 0 R /A << /O /Table /RowSpan 2 >> >>",
+            // TD ColSpan=3 in row1 (col1 is first free; span hits col3 which is occupied)
+            "<< /Type /StructElem /S /TD /P 8 0 R /A << /O /Table /ColSpan 3 >> >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-15");
+    }
+
+    /// <summary>
+    /// §7.2-15 FP guard: a well-formed 2×2 table (no spans) must not fire 7.2-15.
+    /// Cross-validated: probe1_2x2_no_spans → PASS (exit 0).
+    /// </summary>
+    [Fact]
+    public void UaTableGrid2x2NoSpans_DoesNotFire72_15()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /Table /P 5 0 R /K [7 0 R 8 0 R] >>",
+            "<< /Type /StructElem /S /TR /P 6 0 R /K [9 0 R 10 0 R] >>",
+            "<< /Type /StructElem /S /TR /P 6 0 R /K [11 0 R 12 0 R] >>",
+            "<< /Type /StructElem /S /TD /P 7 0 R >>",
+            "<< /Type /StructElem /S /TD /P 7 0 R >>",
+            "<< /Type /StructElem /S /TD /P 8 0 R >>",
+            "<< /Type /StructElem /S /TD /P 8 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-15");
+    }
+
+    /// <summary>
+    /// §7.2-15 FP guard: a well-formed RowSpan=2 table (row0=[TH(RowSpan=2),TD], row1=[TD])
+    /// must not fire 7.2-15. The row1 TD is placed at col1 (col0 occupied by rowspan), no overlap.
+    /// Cross-validated: probe3b_rowspan2_with_scope → PASS (exit 0).
+    /// </summary>
+    [Fact]
+    public void UaTableGridRowspan2Pass_DoesNotFire72_15()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /Table /P 5 0 R /K [7 0 R 8 0 R] >>",
+            // row0: TH(RowSpan=2) + TD
+            "<< /Type /StructElem /S /TR /P 6 0 R /K [9 0 R 10 0 R] >>",
+            // row1: 1 TD (col0 occupied by rowspan, so placed at col1)
+            "<< /Type /StructElem /S /TR /P 6 0 R /K [11 0 R] >>",
+            "<< /Type /StructElem /S /TH /P 7 0 R /A << /O /Table /RowSpan 2 /Scope /Row >> >>",
+            "<< /Type /StructElem /S /TD /P 7 0 R >>",
+            "<< /Type /StructElem /S /TD /P 8 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-15");
+    }
+
+    // ── §7.2-42 (SETable rows wrong column span — more columns) ─────────────────────────────────────
+
+    /// <summary>
+    /// §7.2-42 VIOLATION (UaTableGridRule): row0 has 2 cells, row1 has 3 cells → rows have
+    /// different column counts (row1 is wider) → fires 7.2-42.
+    /// Cross-validated: probe5_ragged_rows → fires 7.2-42 (exit 1).
+    /// </summary>
+    [Fact]
+    public void UaTableGridRaggedRowsMoreCols_Fires72_42()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /Table /P 5 0 R /K [7 0 R 8 0 R] >>",
+            // row0: 2 cells
+            "<< /Type /StructElem /S /TR /P 6 0 R /K [9 0 R 10 0 R] >>",
+            // row1: 3 cells
+            "<< /Type /StructElem /S /TR /P 6 0 R /K [11 0 R 12 0 R 13 0 R] >>",
+            "<< /Type /StructElem /S /TD /P 7 0 R >>",
+            "<< /Type /StructElem /S /TD /P 7 0 R >>",
+            "<< /Type /StructElem /S /TD /P 8 0 R >>",
+            "<< /Type /StructElem /S /TD /P 8 0 R >>",
+            "<< /Type /StructElem /S /TD /P 8 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-42");
+    }
+
+    // ── §7.2-43 (SETable rows wrong column span — fewer columns) ────────────────────────────────────
+
+    /// <summary>
+    /// §7.2-43 VIOLATION (UaTableGridRule): row0 has 2 cells, row1 has 1 cell → rows have
+    /// different column counts (row1 is narrower) → fires 7.2-43.
+    /// Cross-validated: probe6_ragged_cols → fires 7.2-43 (exit 1).
+    /// </summary>
+    [Fact]
+    public void UaTableGridRaggedRowsFewerCols_Fires72_43()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /Table /P 5 0 R /K [7 0 R 8 0 R] >>",
+            // row0: 2 cells
+            "<< /Type /StructElem /S /TR /P 6 0 R /K [9 0 R 10 0 R] >>",
+            // row1: 1 cell
+            "<< /Type /StructElem /S /TR /P 6 0 R /K [11 0 R] >>",
+            "<< /Type /StructElem /S /TD /P 7 0 R >>",
+            "<< /Type /StructElem /S /TD /P 7 0 R >>",
+            "<< /Type /StructElem /S /TD /P 8 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-43");
+    }
+
+    // ── §7.2-41 (SETable columns wrong row span) ──────────────────────────────────────────────────────
+
+    /// <summary>
+    /// §7.2-41 VIOLATION (UaTableGridRule): col0 has RowSpan=2 (covers rows 0+1) but col1 has
+    /// RowSpan=3 (covers rows 0+1+2) in a 3-row table. The third TD in row1 skips col0+col1
+    /// (both occupied by spans) and lands on col2. Columns now have different row coverage:
+    /// col0=2, col1=3, col2=1 → fires 7.2-41.
+    /// Cross-validated: probe9a_col0_rowspan2_col1_rowspan3 → fires 7.2-41 only (exit 1).
+    /// </summary>
+    [Fact]
+    public void UaTableGridColsUnequalRowSpan_Fires72_41()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /Table /P 5 0 R /K [7 0 R 8 0 R 9 0 R] >>",
+            // row0: TD(col0,RowSpan=2) + TD(col1,RowSpan=3)
+            "<< /Type /StructElem /S /TR /P 6 0 R /K [10 0 R 11 0 R] >>",
+            // row1: 1 TD (col0 occupied, col1 occupied → placed at col2)
+            "<< /Type /StructElem /S /TR /P 6 0 R /K [12 0 R] >>",
+            // row2: empty TR (col1 still occupied by RowSpan=3 from row0)
+            "<< /Type /StructElem /S /TR /P 6 0 R >>",
+            // TD col0 RowSpan=2
+            "<< /Type /StructElem /S /TD /P 7 0 R /A << /O /Table /RowSpan 2 >> >>",
+            // TD col1 RowSpan=3
+            "<< /Type /StructElem /S /TD /P 7 0 R /A << /O /Table /RowSpan 3 >> >>",
+            // TD at row1 col2 (both col0 and col1 are span-occupied in row1)
+            "<< /Type /StructElem /S /TD /P 8 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-41");
+    }
+
+    // ── §7.2-42/43 FP guards ─────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// §7.2-42/43 FP guard: a well-formed 2×2 table must not fire 7.2-42 or 7.2-43.
+    /// Cross-validated: probe1_2x2_no_spans → PASS (exit 0).
+    /// </summary>
+    [Fact]
+    public void UaTableGrid2x2_DoesNotFire72_42_43()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /Table /P 5 0 R /K [7 0 R 8 0 R] >>",
+            "<< /Type /StructElem /S /TR /P 6 0 R /K [9 0 R 10 0 R] >>",
+            "<< /Type /StructElem /S /TR /P 6 0 R /K [11 0 R 12 0 R] >>",
+            "<< /Type /StructElem /S /TD /P 7 0 R >>",
+            "<< /Type /StructElem /S /TD /P 7 0 R >>",
+            "<< /Type /StructElem /S /TD /P 8 0 R >>",
+            "<< /Type /StructElem /S /TD /P 8 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-42");
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-43");
+    }
+
+    /// <summary>
+    /// §7.2-41/42/43 FP guard: a ColSpan=2 header row over a 2-column body must not fire any grid rule.
+    /// Cross-validated: probe2b_colspan2_with_scope → PASS (exit 0).
+    /// </summary>
+    [Fact]
+    public void UaTableGridColspan2Header_DoesNotFireGridRules()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /Table /P 5 0 R /K [7 0 R 8 0 R] >>",
+            // row0: TH(ColSpan=2) spans both columns
+            "<< /Type /StructElem /S /TR /P 6 0 R /K [9 0 R] >>",
+            // row1: 2 TDs
+            "<< /Type /StructElem /S /TR /P 6 0 R /K [10 0 R 11 0 R] >>",
+            "<< /Type /StructElem /S /TH /P 7 0 R /A << /O /Table /ColSpan 2 /Scope /Column >> >>",
+            "<< /Type /StructElem /S /TD /P 8 0 R >>",
+            "<< /Type /StructElem /S /TD /P 8 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-15");
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-41");
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-42");
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-43");
+    }
+
+    /// <summary>
+    /// §7.2-41/42/43 FP guard: a THead+TBody with consistent 2-column layout (all rows have 2 TH
+    /// or TD cells) must not fire any grid rule.
+    /// Cross-validated: probe9b_thead_tbody_with_scope → PASS (exit 0).
+    /// </summary>
+    [Fact]
+    public void UaTableGridTheadTbodyConsistent_DoesNotFireGridRules()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /Table /P 5 0 R /K [7 0 R 8 0 R] >>",
+            // THead
+            "<< /Type /StructElem /S /THead /P 6 0 R /K [9 0 R] >>",
+            // TBody
+            "<< /Type /StructElem /S /TBody /P 6 0 R /K [10 0 R 11 0 R] >>",
+            // TR in THead
+            "<< /Type /StructElem /S /TR /P 7 0 R /K [12 0 R 13 0 R] >>",
+            // TRs in TBody
+            "<< /Type /StructElem /S /TR /P 8 0 R /K [14 0 R 15 0 R] >>",
+            "<< /Type /StructElem /S /TR /P 8 0 R /K [16 0 R 17 0 R] >>",
+            "<< /Type /StructElem /S /TH /P 9 0 R /A << /O /Table /Scope /Column >> >>",
+            "<< /Type /StructElem /S /TH /P 9 0 R /A << /O /Table /Scope /Column >> >>",
+            "<< /Type /StructElem /S /TD /P 10 0 R >>",
+            "<< /Type /StructElem /S /TD /P 10 0 R >>",
+            "<< /Type /StructElem /S /TD /P 11 0 R >>",
+            "<< /Type /StructElem /S /TD /P 11 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-15");
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-41");
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-42");
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-43");
+    }
+
+    /// <summary>
+    /// §7.2-41/42/43 FP guard: an empty table (no TRs) must not fire any grid rule.
+    /// Cross-validated: probe10_empty_table → PASS (exit 0).
+    /// </summary>
+    [Fact]
+    public void UaTableGridEmptyTable_DoesNotFireGridRules()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /Table /P 5 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-15");
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-41");
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-42");
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-43");
+    }
+
+    /// <summary>
+    /// §7.2-41/42/43 FP guard: a /A attribute with non-Table owner (/O /Layout) must be
+    /// ignored for span computation (treated as ColSpan=1). A well-formed 2×2 table with such
+    /// attributes on cells must not fire any grid rule.
+    /// Cross-validated: probe11a_A_non_table_owner → PASS (exit 0).
+    /// </summary>
+    [Fact]
+    public void UaTableGridNonTableOwnerAttr_DoesNotFireGridRules()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /Table /P 5 0 R /K [7 0 R 8 0 R] >>",
+            "<< /Type /StructElem /S /TR /P 6 0 R /K [9 0 R 10 0 R] >>",
+            "<< /Type /StructElem /S /TR /P 6 0 R /K [11 0 R 12 0 R] >>",
+            // TD with /A that has non-Table /O (ColSpan=3 ignored → treated as ColSpan=1)
+            "<< /Type /StructElem /S /TD /P 7 0 R /A << /O /Layout /ColSpan 3 >> >>",
+            "<< /Type /StructElem /S /TD /P 7 0 R >>",
+            "<< /Type /StructElem /S /TD /P 8 0 R >>",
+            "<< /Type /StructElem /S /TD /P 8 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-15");
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-41");
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-42");
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-43");
+    }
+
+    /// <summary>
+    /// §7.2-41/42/43 FP guard: /A as array of dicts with Table-owner ColSpan=2 must be
+    /// correctly parsed. A header row with ColSpan=2 over a 2-col body must pass all grid rules.
+    /// Cross-validated: probe7b_A_array_with_scope → PASS (exit 0).
+    /// </summary>
+    [Fact]
+    public void UaTableGridAArrayColspan_DoesNotFireGridRules()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /Table /P 5 0 R /K [7 0 R 8 0 R] >>",
+            "<< /Type /StructElem /S /TR /P 6 0 R /K [9 0 R] >>",
+            "<< /Type /StructElem /S /TR /P 6 0 R /K [10 0 R 11 0 R] >>",
+            // TH with ColSpan=2 via array of dicts
+            "<< /Type /StructElem /S /TH /P 7 0 R /A [<< /O /Table /ColSpan 2 /Scope /Column >>] >>",
+            "<< /Type /StructElem /S /TD /P 8 0 R >>",
+            "<< /Type /StructElem /S /TD /P 8 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-15");
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-41");
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-42");
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-43");
+    }
+
+    /// <summary>
+    /// §7.2-41/42/43 FP guard: /A as [dict revisionNumber] form with Table-owner ColSpan=2 must
+    /// be correctly parsed. A header row with ColSpan=2 over a 2-col body must pass all grid rules.
+    /// Cross-validated: probe8b_A_array_revision_with_scope → PASS (exit 0).
+    /// </summary>
+    [Fact]
+    public void UaTableGridAArrayRevisionColspan_DoesNotFireGridRules()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /Table /P 5 0 R /K [7 0 R 8 0 R] >>",
+            "<< /Type /StructElem /S /TR /P 6 0 R /K [9 0 R] >>",
+            "<< /Type /StructElem /S /TR /P 6 0 R /K [10 0 R 11 0 R] >>",
+            // TH with ColSpan=2 via [dict revNum] form
+            "<< /Type /StructElem /S /TH /P 7 0 R /A [<< /O /Table /ColSpan 2 /Scope /Column >> 0] >>",
+            "<< /Type /StructElem /S /TD /P 8 0 R >>",
+            "<< /Type /StructElem /S /TD /P 8 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-15");
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-41");
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-42");
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-43");
+    }
+
+    // ── Batch B8 — §7.2-2 (PDOutline) and §7.2-33 (XMPLangAlt) — UaOutlineLangRule ────────────────
+
+    // Helper: build a PDF/UA-1 without a catalog /Lang, with an /Outlines dict.
+    // Object layout:
+    //   1 = Catalog (no /Lang, /Outlines 5 0 R)
+    //   2 = Pages
+    //   3 = Page
+    //   4 = StructTreeRoot
+    //   5 = Outlines dict (/First 6 0 R etc.)
+    //   6 = outline item
+    //   7 = XMP metadata
+    // xmpOverride: pass null for standard UaXmpBytes() (has x-default dc:title).
+    private static byte[] BuildUaPdfNoCatalogLangWithOutline(byte[]? xmpOverride = null)
+    {
+        var objs = new List<PdfObj>
+        {
+            new("<< /Type /Catalog /Pages 2 0 R /MarkInfo << /Marked true >> "
+                + "/ViewerPreferences << /DisplayDocTitle true >> /StructTreeRoot 4 0 R "
+                + "/Outlines 5 0 R >>"),
+            _pagesObj,
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Tabs /S >>"),
+            new("<< /Type /StructTreeRoot >>"),
+            new("<< /Type /Outlines /First 6 0 R /Last 6 0 R /Count 1 >>"),
+            new("<< /Title (Item 1) /Parent 5 0 R /Count 0 >>"),
+        };
+        return AssemblePdf(objs, metadataOverride: xmpOverride ?? UaXmpBytes());
+    }
+
+    // Helper: build a PDF/UA-1 without a catalog /Lang and without /Outlines.
+    // Used to confirm 7.2-2 does not fire when there is no outline tree.
+    private static byte[] BuildUaPdfNoCatalogLangNoOutline(byte[]? xmpOverride = null)
+    {
+        var objs = new List<PdfObj>
+        {
+            new("<< /Type /Catalog /Pages 2 0 R /MarkInfo << /Marked true >> "
+                + "/ViewerPreferences << /DisplayDocTitle true >> /StructTreeRoot 4 0 R >>"),
+            _pagesObj,
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Tabs /S >>"),
+            new("<< /Type /StructTreeRoot >>"),
+        };
+        return AssemblePdf(objs, metadataOverride: xmpOverride ?? UaXmpBytes());
+    }
+
+    // ── §7.2-2 (PDOutline — gContainsCatalogLang dominance) ──────────────────────────────────────
+
+    /// <summary>
+    /// §7.2-2 FP guard (DOMINANT PATH): WITH catalog /Lang and a non-empty /Outlines tree,
+    /// must NOT fire 7.2-2. gContainsCatalogLang = true satisfies the predicate.
+    /// Cross-validated against veraPDF 1.30.2: with_lang+outline → PASS (no 7.2-2).
+    /// </summary>
+    [Fact]
+    public void UaOutline_WithCatalogLang_DoesNotFire72_2()
+    {
+        // BuildUaPdfWithStructTree adds /Lang (en-US); add /Outlines via extra catalog entry.
+        var objs = new List<PdfObj>
+        {
+            new("<< /Type /Catalog /Pages 2 0 R /MarkInfo << /Marked true >> /Lang (en-US) "
+                + "/ViewerPreferences << /DisplayDocTitle true >> /StructTreeRoot 4 0 R "
+                + "/Outlines 5 0 R >>"),
+            _pagesObj,
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Tabs /S >>"),
+            new("<< /Type /StructTreeRoot >>"),
+            new("<< /Type /Outlines /First 6 0 R /Last 6 0 R /Count 1 >>"),
+            new("<< /Title (Item 1) /Parent 5 0 R /Count 0 >>"),
+        };
+        var bytes = AssemblePdf(objs, metadataOverride: UaXmpBytes());
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-2");
+    }
+
+    /// <summary>
+    /// §7.2-2 VIOLATION: WITHOUT catalog /Lang, WITH a non-empty /Outlines tree, fires 7.2-2.
+    /// Cross-validated against veraPDF 1.30.2: no_lang+outline → fires 7.2-2 (exit 1).
+    /// </summary>
+    [Fact]
+    public void UaOutline_NoCatalogLang_WithOutline_Fires72_2()
+    {
+        var bytes = BuildUaPdfNoCatalogLangWithOutline();
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-2");
+    }
+
+    /// <summary>
+    /// §7.2-2 FP guard: WITHOUT catalog /Lang, WITHOUT any /Outlines entry, must NOT fire 7.2-2.
+    /// The outline must be present to activate the check.
+    /// Cross-validated against veraPDF 1.30.2: no_lang+no_outline → no 7.2-2.
+    /// </summary>
+    [Fact]
+    public void UaOutline_NoCatalogLang_NoOutline_DoesNotFire72_2()
+    {
+        var bytes = BuildUaPdfNoCatalogLangNoOutline();
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-2");
+    }
+
+    /// <summary>
+    /// §7.2-2 FP guard: WITHOUT catalog /Lang, WITH an /Outlines dict that has NO /First
+    /// (empty outline tree), must NOT fire 7.2-2.
+    /// An empty outline tree is equivalent to no outline for 7.2-2 purposes.
+    /// Cross-validated against veraPDF 1.30.2: no_lang+empty_outline → no 7.2-2.
+    /// </summary>
+    [Fact]
+    public void UaOutline_NoCatalogLang_EmptyOutlineDict_DoesNotFire72_2()
+    {
+        var objs = new List<PdfObj>
+        {
+            new("<< /Type /Catalog /Pages 2 0 R /MarkInfo << /Marked true >> "
+                + "/ViewerPreferences << /DisplayDocTitle true >> /StructTreeRoot 4 0 R "
+                + "/Outlines 5 0 R >>"),
+            _pagesObj,
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Tabs /S >>"),
+            new("<< /Type /StructTreeRoot >>"),
+            new("<< /Type /Outlines /Count 0 >>"),    // no /First — empty outline
+        };
+        var bytes = AssemblePdf(objs, metadataOverride: UaXmpBytes());
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-2");
+    }
+
+    // ── §7.2-33 (XMPLangAlt — gContainsCatalogLang dominance) ───────────────────────────────────
+
+    /// <summary>
+    /// §7.2-33 FP guard (DOMINANT PATH): WITH catalog /Lang and XMP with x-default dc:title,
+    /// must NOT fire 7.2-33. gContainsCatalogLang = true satisfies the predicate.
+    /// Cross-validated against veraPDF 1.30.2: with_lang+xdefault → PASS (no 7.2-33).
+    /// </summary>
+    [Fact]
+    public void UaXmpLangAlt_WithCatalogLang_DoesNotFire72_33()
+    {
+        // BuildUaPdf(lang: true) adds /Lang (en-US); UaXmpBytes() has x-default dc:title.
+        var bytes = BuildUaPdf(lang: true);
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-33");
+    }
+
+    /// <summary>
+    /// §7.2-33 VIOLATION: WITHOUT catalog /Lang, WITH x-default dc:title in XMP, fires 7.2-33.
+    /// UaXmpBytes() already has an x-default dc:title, so BuildUaPdfNoCatalogLangNoOutline
+    /// naturally triggers this check.
+    /// Cross-validated against veraPDF 1.30.2: no_lang+xdefault_dctitle → fires 7.2-33 (exit 1).
+    /// </summary>
+    [Fact]
+    public void UaXmpLangAlt_NoCatalogLang_XDefaultTitle_Fires72_33()
+    {
+        var bytes = BuildUaPdfNoCatalogLangNoOutline();
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-33");
+    }
+
+    /// <summary>
+    /// §7.2-33 FP guard: WITHOUT catalog /Lang, lang-alt WITHOUT any x-default item, must NOT
+    /// fire 7.2-33. Only the presence of an x-default item activates the check.
+    /// Cross-validated against veraPDF 1.30.2: no_lang+no_xdefault → no 7.2-33.
+    /// </summary>
+    [Fact]
+    public void UaXmpLangAlt_NoCatalogLang_NoXDefault_DoesNotFire72_33()
+    {
+        // Build XMP with dc:title but with xml:lang="en" (not x-default).
+        var xmpNoXDefault = Encoding.UTF8.GetBytes(
+            "<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>"
+            + "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF "
+            + "xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">"
+            + "<rdf:Description rdf:about=\"\" "
+            + "xmlns:pdfuaid=\"http://www.aiim.org/pdfua/ns/id/\" "
+            + "xmlns:dc=\"http://purl.org/dc/elements/1.1/\">"
+            + "<pdfuaid:part>1</pdfuaid:part>"
+            + "<dc:title><rdf:Alt><rdf:li xml:lang=\"en\">Title</rdf:li></rdf:Alt></dc:title>"
+            + "</rdf:Description></rdf:RDF></x:xmpmeta><?xpacket end=\"w\"?>");
+        var bytes = BuildUaPdfNoCatalogLangNoOutline(xmpOverride: xmpNoXDefault);
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-33");
+    }
+
+    /// <summary>
+    /// §7.2-33 FP guard: WITHOUT catalog /Lang, NO dc:title or lang-alt in XMP at all, must NOT
+    /// fire 7.2-33. No lang-alt means no x-default entry to check.
+    /// Cross-validated against veraPDF 1.30.2: no_lang+no_title → no 7.2-33.
+    /// </summary>
+    [Fact]
+    public void UaXmpLangAlt_NoCatalogLang_NoLangAlt_DoesNotFire72_33()
+    {
+        var xmpNoTitle = Encoding.UTF8.GetBytes(
+            "<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>"
+            + "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF "
+            + "xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">"
+            + "<rdf:Description rdf:about=\"\" "
+            + "xmlns:pdfuaid=\"http://www.aiim.org/pdfua/ns/id/\">"
+            + "<pdfuaid:part>1</pdfuaid:part>"
+            + "</rdf:Description></rdf:RDF></x:xmpmeta><?xpacket end=\"w\"?>");
+        var bytes = BuildUaPdfNoCatalogLangNoOutline(xmpOverride: xmpNoTitle);
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-33");
+    }
+
+    /// <summary>
+    /// §7.2-33 VIOLATION: WITHOUT catalog /Lang, x-default item in dc:description (not dc:title)
+    /// fires 7.2-33 — the rule applies to ANY lang-alt with x-default.
+    /// Cross-validated against veraPDF 1.30.2: no_lang+xdefault_dcdescription → fires 7.2-33.
+    /// </summary>
+    [Fact]
+    public void UaXmpLangAlt_NoCatalogLang_XDefaultDescription_Fires72_33()
+    {
+        var xmpDescXDefault = Encoding.UTF8.GetBytes(
+            "<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>"
+            + "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF "
+            + "xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">"
+            + "<rdf:Description rdf:about=\"\" "
+            + "xmlns:pdfuaid=\"http://www.aiim.org/pdfua/ns/id/\" "
+            + "xmlns:dc=\"http://purl.org/dc/elements/1.1/\">"
+            + "<pdfuaid:part>1</pdfuaid:part>"
+            + "<dc:description><rdf:Alt><rdf:li xml:lang=\"x-default\">Desc</rdf:li></rdf:Alt></dc:description>"
+            + "</rdf:Description></rdf:RDF></x:xmpmeta><?xpacket end=\"w\"?>");
+        var bytes = BuildUaPdfNoCatalogLangNoOutline(xmpOverride: xmpDescXDefault);
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-33");
+    }
+
+    // ── Batch B10 — §7.4.2-1 (SEHn heading nesting) — UaHeadingNestingRule ──────────────────────────
+
+    /// <summary>
+    /// §7.4.2-1 VIOLATION (UaHeadingNestingRule): H1 followed immediately by H3 (skipping H2)
+    /// fires 7.4.2-1. previousLevel=1 after H1; H3 → 3 &gt; 1+1=2 → violation.
+    /// Cross-validated against veraPDF 1.30.2: 742-h1-h3-skip → fires 7.4.2-1 (exit 1).
+    /// </summary>
+    [Fact]
+    public void UaHeadingSkipH1ToH3_Fires742_1()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R 7 0 R] >>",
+            "<< /Type /StructElem /S /H1 /P 5 0 R >>",
+            "<< /Type /StructElem /S /H3 /P 5 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.4.2-1");
+    }
+
+    /// <summary>
+    /// §7.4.2-1 VIOLATION (UaHeadingNestingRule): H2 as the very first heading fires 7.4.2-1.
+    /// previousLevel=0; H2 → 2 &gt; 0+1=1 → violation.
+    /// Cross-validated against veraPDF 1.30.2: 742-h2-first → fires 7.4.2-1 (exit 1).
+    /// </summary>
+    [Fact]
+    public void UaHeadingH2First_Fires742_1()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /H2 /P 5 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.4.2-1");
+    }
+
+    /// <summary>
+    /// §7.4.2-1 VIOLATION (UaHeadingNestingRule): H1→H2→H1→H3 — after going back to H1,
+    /// an H3 fires. previousLevel=1 after the second H1; H3 → 3 &gt; 1+1=2 → violation.
+    /// Cross-validated against veraPDF 1.30.2: 742-h1-h2-h1-h3 → fires 7.4.2-1 (exit 1).
+    /// </summary>
+    [Fact]
+    public void UaHeadingH1H2H1H3_Fires742_1()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R 7 0 R 8 0 R 9 0 R] >>",
+            "<< /Type /StructElem /S /H1 /P 5 0 R >>",
+            "<< /Type /StructElem /S /H2 /P 5 0 R >>",
+            "<< /Type /StructElem /S /H1 /P 5 0 R >>",
+            "<< /Type /StructElem /S /H3 /P 5 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.4.2-1");
+    }
+
+    /// <summary>
+    /// §7.4.2-1 FP guard: H1→H2→H3 in document order must NOT fire 7.4.2-1 — each heading
+    /// advances by exactly one level.
+    /// Cross-validated against veraPDF 1.30.2: 742-h1-h2-h3-ok → PASS (exit 0).
+    /// </summary>
+    [Fact]
+    public void UaHeadingH1H2H3_DoesNotFire742_1()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R 7 0 R 8 0 R] >>",
+            "<< /Type /StructElem /S /H1 /P 5 0 R >>",
+            "<< /Type /StructElem /S /H2 /P 5 0 R >>",
+            "<< /Type /StructElem /S /H3 /P 5 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.4.2-1");
+    }
+
+    /// <summary>
+    /// §7.4.2-1 FP guard: H1→H2→H3→H2→H3 — going back to H2 then H3 again is valid (H3=H2+1).
+    /// Cross-validated against veraPDF 1.30.2: 742-h1-h2-h3-h2-h3-ok → PASS (exit 0).
+    /// </summary>
+    [Fact]
+    public void UaHeadingH1H2H3H2H3_DoesNotFire742_1()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R 7 0 R 8 0 R 9 0 R 10 0 R] >>",
+            "<< /Type /StructElem /S /H1 /P 5 0 R >>",
+            "<< /Type /StructElem /S /H2 /P 5 0 R >>",
+            "<< /Type /StructElem /S /H3 /P 5 0 R >>",
+            "<< /Type /StructElem /S /H2 /P 5 0 R >>",
+            "<< /Type /StructElem /S /H3 /P 5 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.4.2-1");
+    }
+
+    /// <summary>
+    /// §7.4.2-1 FP guard: H1→H2→H3→H1 — going back down to H1 is always valid
+    /// (decreasing levels never fire).
+    /// Cross-validated against veraPDF 1.30.2: 742-h1-h2-h3-h1-down → PASS (exit 0).
+    /// </summary>
+    [Fact]
+    public void UaHeadingH1H2H3H1Down_DoesNotFire742_1()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R 7 0 R 8 0 R 9 0 R] >>",
+            "<< /Type /StructElem /S /H1 /P 5 0 R >>",
+            "<< /Type /StructElem /S /H2 /P 5 0 R >>",
+            "<< /Type /StructElem /S /H3 /P 5 0 R >>",
+            "<< /Type /StructElem /S /H1 /P 5 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.4.2-1");
+    }
+
+    // ── Batch B10 — §7.5-1/-2 (SETD connected header) — UaTableHeaderRule ───────────────────────────
+
+    /// <summary>
+    /// §7.5-1 VIOLATION (UaTableHeaderRule): Table with a TH (no /Scope) and a TD (no /Headers)
+    /// fires 7.5-1. hasConnectedHeader=false and unknownHeaders=''.
+    /// Cross-validated against veraPDF 1.30.2: 75-no-scope-no-headers → fires 7.5-1 (exit 1).
+    /// </summary>
+    [Fact]
+    public void UaTableTdNoConnectedHeader_Fires75_1()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /Table /P 5 0 R /K [7 0 R] >>",
+            "<< /Type /StructElem /S /TR /P 6 0 R /K [8 0 R 9 0 R] >>",
+            "<< /Type /StructElem /S /TH /P 7 0 R >>",
+            "<< /Type /StructElem /S /TD /P 7 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.5-1");
+    }
+
+    /// <summary>
+    /// §7.5-2 VIOLATION (UaTableHeaderRule): Table with a TH (no /Scope, /ID=(th1)) and
+    /// a TD with /Headers referencing a nonexistent ID fires 7.5-2 (unknownHeaders != '').
+    /// Cross-validated against veraPDF 1.30.2: 75-invalid-headers → fires 7.5-2 (exit 1).
+    /// </summary>
+    [Fact]
+    public void UaTableTdUnknownHeaderId_Fires75_2()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /Table /P 5 0 R /K [7 0 R] >>",
+            "<< /Type /StructElem /S /TR /P 6 0 R /K [8 0 R 9 0 R] >>",
+            "<< /Type /StructElem /S /TH /P 7 0 R /ID (th1) >>",
+            "<< /Type /StructElem /S /TD /P 7 0 R /A << /O /Table /Headers [(nonexistent)] >> >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.5-2");
+    }
+
+    /// <summary>
+    /// §7.5 FP guard: Table with TH /Scope /Column and TD (no /Headers) must NOT fire.
+    /// A scoped TH satisfies all TDs in the table table-wide.
+    /// Cross-validated against veraPDF 1.30.2: 75-scoped-col-no-headers → PASS (exit 0).
+    /// </summary>
+    [Fact]
+    public void UaTableThScopedColumn_DoesNotFire75()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /Table /P 5 0 R /K [7 0 R] >>",
+            "<< /Type /StructElem /S /TR /P 6 0 R /K [8 0 R 9 0 R] >>",
+            "<< /Type /StructElem /S /TH /P 7 0 R /A << /O /Table /Scope /Column >> >>",
+            "<< /Type /StructElem /S /TD /P 7 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.5-1");
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.5-2");
+    }
+
+    /// <summary>
+    /// §7.5 FP guard: Table with no TH at all — only TD cells — must NOT fire.
+    /// hasConnectedHeader is undefined (not false) when there is no TH to connect to.
+    /// Cross-validated against veraPDF 1.30.2: 75-td-only-no-th → PASS (exit 0).
+    /// </summary>
+    [Fact]
+    public void UaTableNoThAtAll_DoesNotFire75()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /Table /P 5 0 R /K [7 0 R] >>",
+            "<< /Type /StructElem /S /TR /P 6 0 R /K [8 0 R 9 0 R] >>",
+            "<< /Type /StructElem /S /TD /P 7 0 R >>",
+            "<< /Type /StructElem /S /TD /P 7 0 R >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.5-1");
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.5-2");
+    }
+
+    /// <summary>
+    /// §7.5 FP guard: TH /Scope overrides a TD with invalid /Headers — scope wins
+    /// even when the explicit /Headers on the TD reference a nonexistent ID.
+    /// Cross-validated against veraPDF 1.30.2: 75-scope-and-bad-headers → PASS (exit 0).
+    /// </summary>
+    [Fact]
+    public void UaTableThScopedBadTdHeaders_DoesNotFire75()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /Table /P 5 0 R /K [7 0 R] >>",
+            "<< /Type /StructElem /S /TR /P 6 0 R /K [8 0 R 9 0 R] >>",
+            "<< /Type /StructElem /S /TH /P 7 0 R /A << /O /Table /Scope /Column >> >>",
+            "<< /Type /StructElem /S /TD /P 7 0 R /A << /O /Table /Headers [(nonexistent)] >> >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.5-1");
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.5-2");
+    }
+
+    /// <summary>
+    /// §7.5 FP guard: TH (no /Scope) with /ID and TD with matching /Headers resolves correctly.
+    /// Cross-validated against veraPDF 1.30.2: 75-no-scope-valid-headers → PASS (exit 0).
+    /// </summary>
+    [Fact]
+    public void UaTableTdValidHeaders_DoesNotFire75()
+    {
+        var bytes = BuildUaPdfWithStructTree(
+            "<< /Type /StructTreeRoot /K [5 0 R] >>",
+            "<< /Type /StructElem /S /Document /P 4 0 R /K [6 0 R] >>",
+            "<< /Type /StructElem /S /Table /P 5 0 R /K [7 0 R] >>",
+            "<< /Type /StructElem /S /TR /P 6 0 R /K [8 0 R 9 0 R] >>",
+            "<< /Type /StructElem /S /TH /P 7 0 R /ID (th1) >>",
+            "<< /Type /StructElem /S /TD /P 7 0 R /A << /O /Table /Headers [(th1)] >> >>");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.5-1");
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.5-2");
+    }
+
+    // ── §7.2-30/31/32/34 (UaMarkedContentLangRule) ───────────────────────────────────────────────
+
+    // Builds a UA-1 PDF with the given content stream on the first page.
+    // When lang=true the catalog has /Lang (en-US) — gContainsCatalogLang triggers the short-circuit.
+    // When lang=false the catalog has no /Lang — per-MC checks run.
+    private static byte[] BuildUaPdfWithContent(string content, bool lang = true)
+    {
+        var catalogLangEntry = lang ? "/Lang (en-US)" : string.Empty;
+        return AssemblePdf(
+        [
+            new($"<< /Type /Catalog /Pages 2 0 R /MarkInfo << /Marked true >> {catalogLangEntry} "
+                + "/ViewerPreferences << /DisplayDocTitle true >> /StructTreeRoot 4 0 R >>"),
+            _pagesObj,
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 5 0 R >>"),
+            new("<< /Type /StructTreeRoot >>"),
+            new(string.Empty, Encoding.ASCII.GetBytes(content)),
+        ],
+        metadataOverride: UaXmpBytes());
+    }
+
+    /// <summary>
+    /// §7.2-34 FP guard: catalog has /Lang (en-US), so gContainsCatalogLang == true.
+    /// Text shows inside a /P BDC with no /Lang: rule must NOT fire (short-circuit).
+    /// </summary>
+    [Fact]
+    public void UaMcTextNoLang_WithCatalogLang_NoFire()
+    {
+        var bytes = BuildUaPdfWithContent("/P << /MCID 0 >> BDC BT (hello) Tj ET EMC", lang: true);
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-34");
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-30-31-32-34");
+    }
+
+    /// <summary>
+    /// §7.2-34 VIOLATION: catalog has no /Lang, text shows inside a /P BDC with no /Lang.
+    /// Rule fires 7.2-34.
+    /// Cross-validated against veraPDF 1.30.2: pdfua1-mc-text-no-lang oracle fixture.
+    /// </summary>
+    [Fact]
+    public void UaMcTextNoLang_NoCatalogLang_Fires7234()
+    {
+        var bytes = BuildUaPdfWithContent("/P << /MCID 0 >> BDC BT (hello) Tj ET EMC", lang: false);
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-34");
+    }
+
+    /// <summary>
+    /// §7.2-34 FP guard: catalog has no /Lang, but text show is inside a BDC with /Lang.
+    /// Rule must NOT fire 7.2-34 (DirectLang is present).
+    /// </summary>
+    [Fact]
+    public void UaMcTextWithBdcLang_NoCatalogLang_NoFire7234()
+    {
+        var bytes = BuildUaPdfWithContent(
+            "/Span << /MCID 0 /Lang (en-US) >> BDC BT (hello) Tj ET EMC", lang: false);
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-34");
+    }
+
+    /// <summary>
+    /// §7.2-34 FP guard: catalog has no /Lang, text show is inside a nested BDC whose ancestor
+    /// has /Lang (inherited lang). Rule must NOT fire 7.2-34 (InheritedLang is present).
+    /// </summary>
+    [Fact]
+    public void UaMcTextWithInheritedLang_NoCatalogLang_NoFire7234()
+    {
+        // Outer BDC has /Lang (en-US), inner BDC (Span) has no /Lang — lang is inherited.
+        var bytes = BuildUaPdfWithContent(
+            "/P << /MCID 0 /Lang (en-US) >> BDC /Span << /MCID 1 >> BDC BT (hello) Tj ET EMC EMC",
+            lang: false);
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-34");
+    }
+
+    /// <summary>
+    /// §7.2-30 VIOLATION: catalog has no /Lang, /Span BDC has /ActualText and no /Lang.
+    /// Rule fires the specific 7.2-30 clause id.
+    /// Cross-validated against veraPDF 1.30.2: pdfua1-mc-span-actualtext-no-lang oracle fixture.
+    /// </summary>
+    [Fact]
+    public void UaMcSpanActualTextNoLang_Fires7230()
+    {
+        var bytes = BuildUaPdfWithContent(
+            "/Span << /MCID 0 /ActualText (hello) >> BDC BT (A) Tj ET EMC", lang: false);
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-30");
+    }
+
+    /// <summary>
+    /// §7.2-30 FP guard: catalog has no /Lang but /Span BDC has /ActualText AND /Lang.
+    /// Rule must NOT fire 7.2-30.
+    /// </summary>
+    [Fact]
+    public void UaMcSpanActualTextWithLang_NoFire7230()
+    {
+        var bytes = BuildUaPdfWithContent(
+            "/Span << /MCID 0 /ActualText (hello) /Lang (en-US) >> BDC BT (A) Tj ET EMC", lang: false);
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-30");
+    }
+
+    /// <summary>
+    /// §7.2-31 VIOLATION: /Span BDC with /Alt and no /Lang, no catalog /Lang.
+    /// Rule fires 7.2-31.
+    /// </summary>
+    [Fact]
+    public void UaMcSpanAltNoLang_Fires7231()
+    {
+        var bytes = BuildUaPdfWithContent(
+            "/Span << /MCID 0 /Alt (desc) >> BDC BT (A) Tj ET EMC", lang: false);
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-31");
+    }
+
+    /// <summary>
+    /// §7.2-32 VIOLATION: /Span BDC with /E and no /Lang, no catalog /Lang.
+    /// Rule fires 7.2-32.
+    /// </summary>
+    [Fact]
+    public void UaMcSpanExpansionNoLang_Fires7232()
+    {
+        var bytes = BuildUaPdfWithContent(
+            "/Span << /MCID 0 /E (expansion) >> BDC BT (A) Tj ET EMC", lang: false);
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-32");
+    }
+
+    /// <summary>
+    /// §7.2-30 FP guard: BMC (not BDC) with tag /Span — no property dict, so no /ActualText
+    /// is extractable. Rule must NOT fire 7.2-30 even with no catalog /Lang.
+    /// </summary>
+    [Fact]
+    public void UaMcBmcSpan_NoFire7230()
+    {
+        var bytes = BuildUaPdfWithContent(
+            "/Span BMC BT (A) Tj ET EMC", lang: false);
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-30");
+    }
+
+    /// <summary>
+    /// §7.2-30/34 FP guard: a non-Span BDC with /ActualText and no /Lang must NOT fire 7.2-30.
+    /// (7.2-34 may fire since no BDC /Lang and no catalog /Lang, but not 7.2-30.)
+    /// </summary>
+    [Fact]
+    public void UaMcNonSpanActualText_NoFire7230()
+    {
+        // /P BDC (not /Span) with /ActualText — 7.2-30 scoped to /Span only
+        var bytes = BuildUaPdfWithContent(
+            "/P << /MCID 0 /ActualText (hello) >> BDC BT (A) Tj ET EMC", lang: false);
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-30");
+    }
+
+    // Builds a UA-1 PDF with no catalog /Lang, a proper ParentTree mapping MCID 0 → P struct elem,
+    // and /Lang (en-US) on the P struct elem.  Used to test the MCID→struct-element→/Lang
+    // resolution path (the FP fix for 7.2-34/30/31/32).
+    // Objects: 1=Catalog, 2=Pages, 3=Page, 4=StructTreeRoot, 5=Document-elem,
+    //          6=ParentTree, 7=content, 8=P-elem, (9=XMP added by AssemblePdf).
+    private static byte[] BuildUaPdfWithStructElemLang(string contentStream, string structElemType = "P")
+    {
+        var content = Encoding.ASCII.GetBytes(contentStream);
+        return AssemblePdf(
+        [
+            // 1: Catalog — NO catalog /Lang so the per-MC checks run
+            new("<< /Type /Catalog /Pages 2 0 R /MarkInfo << /Marked true >>"
+                + " /ViewerPreferences << /DisplayDocTitle true >> /StructTreeRoot 4 0 R >>"),
+            // 2: Pages
+            _pagesObj,
+            // 3: Page — /StructParents 0 links this page to the ParentTree entry at key 0
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792]"
+                + " /StructParents 0 /Contents 7 0 R >>"),
+            // 4: StructTreeRoot — /K 5 0 R = Document elem; /ParentTree 6 0 R
+            new("<< /Type /StructTreeRoot /K 5 0 R /ParentTree 6 0 R >>"),
+            // 5: Document StructElem — parent of the leaf P elem
+            new("<< /Type /StructElem /S /Document /K [8 0 R] >>"),
+            // 6: ParentTree — key 0 (= page /StructParents 0) maps to array [8 0 R] (MCID 0 → P elem)
+            new("<< /Nums [0 [8 0 R]] >>"),
+            // 7: Content stream
+            new(string.Empty, content),
+            // 8: P StructElem — has /Lang (en-US); this is what resolves the language
+            new($"<< /Type /StructElem /S /{structElemType} /Lang (en-US) /P 5 0 R /Pg 3 0 R >>"),
+        ],
+        metadataOverride: UaXmpBytes());
+    }
+
+    /// <summary>
+    /// §7.2-34 REGRESSION (FP fix): catalog has no /Lang, text show inside /P BDC with MCID 0,
+    /// but the P struct element (reached via ParentTree[page/StructParents=0][MCID=0]) has /Lang
+    /// (en-US). veraPDF does NOT fire 7.2-34. Fixed rule must NOT fire 7.2-34.
+    ///
+    /// This is the confirmed false positive: pre-fix the rule ignored struct-elem /Lang and fired;
+    /// post-fix it resolves MCID→ParentTree→struct-elem→/Lang and is silent.
+    ///
+    /// Cross-validated against veraPDF 1.30.2: struct-elem /Lang, no catalog /Lang → no 7.2-34
+    /// (only 7.2-33 XMP fires, which is unrelated to this rule).
+    /// </summary>
+    [Fact]
+    public void UaMcTextStructElemLang_NoCatalogLang_NoFire7234()
+    {
+        var bytes = BuildUaPdfWithStructElemLang("/P << /MCID 0 >> BDC BT (hello) Tj ET EMC");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-34");
+    }
+
+    /// <summary>
+    /// §7.2-30 REGRESSION (FP fix): catalog has no /Lang, /Span BDC with /ActualText and MCID 0,
+    /// but the Span struct element has /Lang (en-US). veraPDF does NOT fire 7.2-30.
+    /// Fixed rule must NOT fire 7.2-30.
+    ///
+    /// Cross-validated against veraPDF 1.30.2: struct-elem /Lang → no 7.2-30.
+    /// </summary>
+    [Fact]
+    public void UaMcSpanActualTextStructElemLang_NoCatalogLang_NoFire7230()
+    {
+        var bytes = BuildUaPdfWithStructElemLang(
+            "/Span << /MCID 0 /ActualText (hi) >> BDC BT (A) Tj ET EMC", structElemType: "Span");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-30");
+    }
+
+    /// <summary>
+    /// §7.2-31 REGRESSION (FP fix): catalog has no /Lang, /Span BDC with /Alt and MCID 0,
+    /// but the Span struct element has /Lang (en-US). Fixed rule must NOT fire 7.2-31.
+    ///
+    /// Cross-validated against veraPDF 1.30.2: struct-elem /Lang → no 7.2-31.
+    /// </summary>
+    [Fact]
+    public void UaMcSpanAltStructElemLang_NoCatalogLang_NoFire7231()
+    {
+        var bytes = BuildUaPdfWithStructElemLang(
+            "/Span << /MCID 0 /Alt (desc) >> BDC BT (A) Tj ET EMC", structElemType: "Span");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-31");
+    }
+
+    /// <summary>
+    /// §7.2-32 REGRESSION (FP fix): catalog has no /Lang, /Span BDC with /E and MCID 0,
+    /// but the Span struct element has /Lang (en-US). Fixed rule must NOT fire 7.2-32.
+    ///
+    /// Cross-validated against veraPDF 1.30.2: struct-elem /Lang → no 7.2-32.
+    /// </summary>
+    [Fact]
+    public void UaMcSpanExpansionStructElemLang_NoCatalogLang_NoFire7232()
+    {
+        var bytes = BuildUaPdfWithStructElemLang(
+            "/Span << /MCID 0 /E (expansion) >> BDC BT (A) Tj ET EMC", structElemType: "Span");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-32");
+    }
+
+    /// <summary>
+    /// §7.2-34 FP guard: struct-elem has /Lang but MCID doesn't match (MCID=1 in BDC,
+    /// ParentTree only has MCID=0 mapped). Rule must still fire 7.2-34 — the struct-elem
+    /// lookup fails (MCID 1 out of range for a 1-element array), so no lang is found.
+    /// </summary>
+    [Fact]
+    public void UaMcTextMcidMismatch_Fires7234()
+    {
+        // MCID 1 in the BDC, but the ParentTree only maps MCID 0 → struct elem
+        var bytes = BuildUaPdfWithStructElemLang("/P << /MCID 1 >> BDC BT (hello) Tj ET EMC");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-34");
+    }
+
+    // ── Named-reference BDC FP fix (§7.2-34/30/31/32) ──────────────────────────────────────────
+    // Builds a UA-1 PDF where MCID 0 is reached via a named-reference BDC (/P /MC0 BDC) rather
+    // than an inline dict (/P << /MCID 0 >> BDC). The page /Resources/Properties/MC0 = obj 8,
+    // which is << /MCID 0 >>; the P struct elem (obj 9) has /Lang (en-US); catalog has NO /Lang.
+    // Objects: 1=Catalog, 2=Pages, 3=Page, 4=StructTreeRoot, 5=Document-elem, 6=ParentTree,
+    //          7=content, 8=MC0-props (MCID 0), 9=P-elem with /Lang, (10=XMP by AssemblePdf).
+    private static byte[] BuildUaPdfWithNamedRefBdc(string contentStream, string structElemType = "P",
+        bool structElemHasLang = true)
+    {
+        var content = Encoding.ASCII.GetBytes(contentStream);
+        var langEntry = structElemHasLang ? " /Lang (en-US)" : string.Empty;
+        return AssemblePdf(
+        [
+            // 1: Catalog — NO catalog /Lang
+            new("<< /Type /Catalog /Pages 2 0 R /MarkInfo << /Marked true >>"
+                + " /ViewerPreferences << /DisplayDocTitle true >> /StructTreeRoot 4 0 R >>"),
+            // 2: Pages
+            _pagesObj,
+            // 3: Page — /Resources/Properties maps name MC0 to obj 8 (MCID 0 properties dict)
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792]"
+                + " /StructParents 0 /Contents 7 0 R"
+                + " /Resources << /Properties << /MC0 8 0 R >> >> >>"),
+            // 4: StructTreeRoot
+            new("<< /Type /StructTreeRoot /K 5 0 R /ParentTree 6 0 R >>"),
+            // 5: Document StructElem — child is the leaf P/Span elem (obj 9)
+            new("<< /Type /StructElem /S /Document /K [9 0 R] >>"),
+            // 6: ParentTree — MCID 0 on page → P elem (obj 9)
+            new("<< /Nums [0 [9 0 R]] >>"),
+            // 7: content stream
+            new(string.Empty, content),
+            // 8: named Properties resource for MC0 — just carries /MCID 0
+            new("<< /MCID 0 >>"),
+            // 9: leaf StructElem — /Lang resolves the language for the MCID 0 content
+            new($"<< /Type /StructElem /S /{structElemType}{langEntry} /P 5 0 R /Pg 3 0 R /K 0 >>"),
+        ],
+        metadataOverride: UaXmpBytes());
+    }
+
+    /// <summary>
+    /// §7.2-34 FP fix — NAMED-REFERENCE BDC: catalog has no /Lang; text show tagged via
+    /// /P /MC0 BDC where page /Resources/Properties/MC0 = &lt;&lt; /MCID 0 &gt;&gt; and the P
+    /// struct elem carries /Lang (en-US).
+    ///
+    /// Pre-fix: ContentStreamUsage saw no inline dict for the named-ref BDC and left Mcid == null,
+    /// so the struct-elem /Lang lookup was skipped and 7.2-34 fired — FALSE POSITIVE.
+    /// Post-fix: named-ref MCID is resolved from /Resources/Properties; struct-elem /Lang is found;
+    /// rule is silent.
+    ///
+    /// Cross-validated against veraPDF 1.30.2: no 7.2-34 failure on this document.
+    /// </summary>
+    [Fact]
+    public void UaMcTextNamedRefBdc_StructElemLang_NoFire7234()
+    {
+        var bytes = BuildUaPdfWithNamedRefBdc("/P /MC0 BDC BT (hello) Tj ET EMC");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-34");
+    }
+
+    /// <summary>
+    /// §7.2-34 GENUINE VIOLATION — NAMED-REFERENCE BDC: catalog has no /Lang; text show tagged via
+    /// /P /MC0 BDC (MCID 0 resolved from /Properties), but the struct elem has NO /Lang.
+    /// Rule must still fire 7.2-34 — no language anywhere in the hierarchy.
+    ///
+    /// Cross-validated against veraPDF 1.30.2: fires 7.2-34.
+    /// </summary>
+    [Fact]
+    public void UaMcTextNamedRefBdc_NoStructElemLang_Fires7234()
+    {
+        var bytes = BuildUaPdfWithNamedRefBdc("/P /MC0 BDC BT (hello) Tj ET EMC",
+            structElemHasLang: false);
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.2-34");
+    }
+
+    // ── §7.1-1/-2 (UaArtifactTaggingRule) ───────────────────────────────────────────────────────
+
+    // Builds a UA-1 PDF with the given content stream, a /P struct element (MCID 0 → obj 8 0 R)
+    // in the ParentTree, and a catalog /Lang (en-US). Suitable for 7.1-1/-2 tests that need
+    // MCID→struct resolution.
+    private static byte[] BuildUaPdfWithParentTree(string contentStream)
+    {
+        var content = Encoding.ASCII.GetBytes(contentStream);
+        return AssemblePdf(
+        [
+            // 1: Catalog (with /Lang so 7.2 checks don't interfere)
+            new("<< /Type /Catalog /Pages 2 0 R /Lang (en-US) /MarkInfo << /Marked true >>"
+                + " /ViewerPreferences << /DisplayDocTitle true >> /StructTreeRoot 4 0 R >>"),
+            // 2: Pages
+            _pagesObj,
+            // 3: Page — /StructParents 0 links to ParentTree key 0
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792]"
+                + " /StructParents 0 /Contents 7 0 R >>"),
+            // 4: StructTreeRoot
+            new("<< /Type /StructTreeRoot /K 5 0 R /ParentTree 6 0 R >>"),
+            // 5: Document StructElem
+            new("<< /Type /StructElem /S /Document /K [8 0 R] >>"),
+            // 6: ParentTree — MCID 0 → obj 8 0 R (the P struct elem)
+            new("<< /Nums [0 [8 0 R]] >>"),
+            // 7: Content stream
+            new(string.Empty, content),
+            // 8: P StructElem with /Lang; MCID 0 on page 3 0 R
+            new("<< /Type /StructElem /S /P /Lang (en-US) /P 5 0 R /Pg 3 0 R /K 0 >>"),
+        ],
+        metadataOverride: UaXmpBytes());
+    }
+
+    /// <summary>
+    /// §7.1-1 VIOLATION: /Artifact BMC nested inside /P BDC (MCID 0, linked to struct elem in
+    /// ParentTree). Rule fires "ISO14289-1:7.1-1".
+    /// Predicate: tag == 'Artifact' AND isTaggedContent == true (ancestor MCID resolves in PT).
+    /// Cross-validated against veraPDF 1.30.2: fires clause="7.1" testNumber="1" status="failed".
+    /// </summary>
+    [Fact]
+    public void UaArtifactInTagged_Fires711()
+    {
+        var bytes = BuildUaPdfWithParentTree(
+            "/P << /MCID 0 >> BDC (Tagged) Tj /Artifact BMC (Art) Tj EMC EMC");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.1-1");
+    }
+
+    /// <summary>
+    /// §7.1-1 FP GUARD: /Artifact BMC at top level (no ancestor BDC with MCID in ParentTree).
+    /// Rule must NOT fire 7.1-1 (isTaggedContent == false for the Artifact).
+    /// Cross-validated against veraPDF 1.30.2: clause 7.1 testNumber 1 is silent.
+    /// </summary>
+    [Fact]
+    public void UaArtifactAtTopLevel_NoFire711()
+    {
+        var bytes = BuildUaPdfWithParentTree(
+            "/Artifact BMC (Art) Tj EMC /P << /MCID 0 >> BDC (Tagged) Tj EMC");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.1-1");
+    }
+
+    /// <summary>
+    /// §7.1-1 FP GUARD: /Artifact BMC inside a /P BDC whose MCID (99) is NOT in the ParentTree
+    /// (only MCID 0 is mapped). Rule must NOT fire 7.1-1 (ancestor MCID does not resolve).
+    /// Cross-validated against veraPDF 1.30.2: no 7.1-1 failure when ancestor MCID unresolvable.
+    /// </summary>
+    [Fact]
+    public void UaArtifactInsideUnresolvedMcidBdc_NoFire711()
+    {
+        // MCID 99 is NOT in the ParentTree → the ancestor is not tagged content → no 7.1-1.
+        var bytes = BuildUaPdfWithParentTree(
+            "/P << /MCID 99 >> BDC (P no struct) Tj /Artifact BMC (Art) Tj EMC EMC"
+            + " /P << /MCID 0 >> BDC (Tagged) Tj EMC");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.1-1");
+    }
+
+    /// <summary>
+    /// §7.1-2 VIOLATION: /P BDC (MCID 0, linked to struct elem in ParentTree) nested inside
+    /// /Artifact BMC. Rule fires "ISO14289-1:7.1-2".
+    /// Predicate: isTaggedContent == true AND parentsTags.contains('Artifact').
+    /// Cross-validated against veraPDF 1.30.2: fires clause="7.1" testNumber="2" status="failed".
+    /// </summary>
+    [Fact]
+    public void UaTaggedInArtifact_Fires712()
+    {
+        var bytes = BuildUaPdfWithParentTree(
+            "/Artifact BMC /P << /MCID 0 >> BDC (Tagged inside artifact) Tj EMC EMC");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.1-2");
+    }
+
+    /// <summary>
+    /// §7.1-2 FP GUARD: /P BDC (MCID 0) NOT inside any Artifact ancestor. Rule must NOT fire
+    /// 7.1-2 (parentsTags does not contain 'Artifact').
+    /// Cross-validated against veraPDF 1.30.2: clause 7.1 testNumber 2 is silent.
+    /// </summary>
+    [Fact]
+    public void UaTaggedNotInArtifact_NoFire712()
+    {
+        var bytes = BuildUaPdfWithParentTree("/P << /MCID 0 >> BDC (Tagged) Tj EMC");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.1-2");
+    }
+
+    /// <summary>
+    /// §7.1-2 FP GUARD: /P BDC (MCID 0) inside /Artifact BMC, but MCID 0 is NOT in the
+    /// ParentTree. Rule must NOT fire 7.1-2 (isTaggedContent == false for MCID not in PT).
+    /// Cross-validated against veraPDF 1.30.2: no 7.1-2 failure when MCID unresolvable.
+    /// </summary>
+    [Fact]
+    public void UaTaggedInArtifact_McidNotInParentTree_NoFire712()
+    {
+        // Build a PDF where the ParentTree has NO entries (empty Nums array) so MCID 0 doesn't
+        // resolve to any struct elem → isTaggedContent == false → no 7.1-2.
+        var content = Encoding.ASCII.GetBytes(
+            "/Artifact BMC /P << /MCID 0 >> BDC (P no struct) Tj EMC EMC");
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R /Lang (en-US) /MarkInfo << /Marked true >>"
+                + " /ViewerPreferences << /DisplayDocTitle true >> /StructTreeRoot 4 0 R >>"),
+            _pagesObj,
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792]"
+                + " /StructParents 0 /Contents 7 0 R >>"),
+            new("<< /Type /StructTreeRoot /K 5 0 R /ParentTree 6 0 R >>"),
+            new("<< /Type /StructElem /S /Document /K [] >>"),
+            // Empty ParentTree — MCID 0 is not mapped to any struct elem
+            new("<< /Nums [] >>"),
+            new(string.Empty, content),
+            // Dummy obj 8 to keep count consistent (not referenced)
+            new("<< /Type /StructElem /S /P /P 5 0 R >>"),
+        ],
+        metadataOverride: UaXmpBytes());
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.1-2");
+    }
+
+    /// <summary>
+    /// §7.1-2 FP GUARD: /Artifact nested inside /Artifact — inner Artifact has an Artifact
+    /// ancestor, but it's not tagged content (no MCID in ParentTree). Rule must NOT fire 7.1-2
+    /// (isTaggedContent == false for the inner Artifact).
+    /// Cross-validated against veraPDF 1.30.2: nested Artifacts are silent.
+    /// </summary>
+    [Fact]
+    public void UaArtifactInsideArtifact_NoFire712()
+    {
+        var bytes = BuildUaPdfWithParentTree(
+            "/Artifact BMC /Artifact BMC (nested art) Tj EMC EMC"
+            + " /P << /MCID 0 >> BDC (Tagged) Tj EMC");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.1-2");
+    }
+
+    // ── Named-reference BDC 7.1-1/-2 clause-level confirmation ──────────────────────────────────
+    // Builds a UA-1 PDF like BuildUaPdfWithParentTree but with /Resources/Properties on the page
+    // so named-ref BDC (/P /MC0 BDC) can be used to reference MCID 0.
+    // Objects: 1=Catalog(/Lang), 2=Pages, 3=Page+/Properties, 4=STRoot, 5=DocElem,
+    //          6=ParentTree, 7=content, 8=MC0-props(MCID 0), 9=P-elem, (10=XMP).
+    private static byte[] BuildUaPdfWithParentTreeNamedRef(string contentStream)
+    {
+        var content = Encoding.ASCII.GetBytes(contentStream);
+        return AssemblePdf(
+        [
+            // 1: Catalog with /Lang so 7.2 doesn't fire
+            new("<< /Type /Catalog /Pages 2 0 R /Lang (en-US) /MarkInfo << /Marked true >>"
+                + " /ViewerPreferences << /DisplayDocTitle true >> /StructTreeRoot 4 0 R >>"),
+            // 2: Pages
+            _pagesObj,
+            // 3: Page — /Resources/Properties/MC0 → obj 8 (the MCID 0 props dict)
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792]"
+                + " /StructParents 0 /Contents 7 0 R"
+                + " /Resources << /Properties << /MC0 8 0 R >> >> >>"),
+            // 4: StructTreeRoot
+            new("<< /Type /StructTreeRoot /K 5 0 R /ParentTree 6 0 R >>"),
+            // 5: Document StructElem — child is leaf P elem (obj 9)
+            new("<< /Type /StructElem /S /Document /K [9 0 R] >>"),
+            // 6: ParentTree — MCID 0 → obj 9 (P elem)
+            new("<< /Nums [0 [9 0 R]] >>"),
+            // 7: content stream
+            new(string.Empty, content),
+            // 8: named Properties resource for MC0
+            new("<< /MCID 0 >>"),
+            // 9: P StructElem
+            new("<< /Type /StructElem /S /P /Lang (en-US) /P 5 0 R /Pg 3 0 R /K 0 >>"),
+        ],
+        metadataOverride: UaXmpBytes());
+    }
+
+    /// <summary>
+    /// §7.1-1 VIOLATION — NAMED-REFERENCE BDC: /Artifact BMC nested inside /P /MC0 BDC where
+    /// MC0 resolves to MCID 0 in ParentTree. Post-fix: AncestorMcid is populated from named-ref;
+    /// 7.1-1 fires. veraPDF also fires 7.1-1 on this structure.
+    /// Cross-validated against veraPDF 1.30.2: fires 7.1-1.
+    /// </summary>
+    [Fact]
+    public void UaArtifactInTaggedNamedRef_Fires711()
+    {
+        var bytes = BuildUaPdfWithParentTreeNamedRef(
+            "/P /MC0 BDC (Tagged) Tj /Artifact BMC (Art) Tj EMC EMC");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.1-1");
+    }
+
+    /// <summary>
+    /// §7.1-2 VIOLATION — NAMED-REFERENCE BDC: /P /MC0 BDC (MCID 0 in ParentTree) nested inside
+    /// /Artifact BMC. Post-fix: Mcid is populated from named-ref Properties lookup; 7.1-2 fires.
+    /// veraPDF also fires 7.1-2 on this structure.
+    /// Cross-validated against veraPDF 1.30.2: fires 7.1-2.
+    /// </summary>
+    [Fact]
+    public void UaTaggedInArtifactNamedRef_Fires712()
+    {
+        var bytes = BuildUaPdfWithParentTreeNamedRef(
+            "/Artifact BMC /P /MC0 BDC (Tagged inside artifact) Tj EMC EMC");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.1-2");
+    }
+
+    // ── §7.1-3 (UaSimpleContentItemRule) ─────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// §7.1-3 VIOLATION: plain text-show (Tj) outside any BDC — no MCID, no Artifact.
+    /// Rule fires "ISO14289-1:7.1-3".
+    /// Predicate: isTaggedContent==false AND parentsTags.contains('Artifact')==false.
+    /// </summary>
+    [Fact]
+    public void UaUntaggedTextShow_Fires713()
+    {
+        // Plain Tj outside any BDC — no MCID, no Artifact. Pure untagged real content.
+        // BuildUaPdfWithContent gives no /ParentTree: the BDC has MCID but we want NO BDC at all.
+        // Use a standalone assembly with no content BDC.
+        var content = Encoding.ASCII.GetBytes("BT (hello) Tj ET");
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R /Lang (en-US) /MarkInfo << /Marked true >>"
+                + " /ViewerPreferences << /DisplayDocTitle true >> /StructTreeRoot 4 0 R >>"),
+            _pagesObj,
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 5 0 R >>"),
+            new("<< /Type /StructTreeRoot >>"),
+            new(string.Empty, content),
+        ],
+        metadataOverride: UaXmpBytes());
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.1-3");
+    }
+
+    /// <summary>
+    /// §7.1-3 VIOLATION: path painting (S) outside any BDC — no MCID, no Artifact.
+    /// Rule fires "ISO14289-1:7.1-3".
+    /// </summary>
+    [Fact]
+    public void UaUntaggedPathPaint_Fires713()
+    {
+        var content = Encoding.ASCII.GetBytes("0 0 m 100 0 l S");
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R /Lang (en-US) /MarkInfo << /Marked true >>"
+                + " /ViewerPreferences << /DisplayDocTitle true >> /StructTreeRoot 4 0 R >>"),
+            _pagesObj,
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 5 0 R >>"),
+            new("<< /Type /StructTreeRoot >>"),
+            new(string.Empty, content),
+        ],
+        metadataOverride: UaXmpBytes());
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.1-3");
+    }
+
+    /// <summary>
+    /// §7.1-3 FP guard: text-show inside /P BDC with MCID 0 wired to ParentTree.
+    /// Rule must NOT fire 7.1-3 (EffectiveMcid != null — tagged).
+    /// </summary>
+    [Fact]
+    public void UaTaggedTextShow_NoFire713()
+    {
+        var bytes = BuildUaPdfWithParentTree("/P << /MCID 0 >> BDC BT (hello) Tj ET EMC");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.1-3");
+    }
+
+    /// <summary>
+    /// §7.1-3 FP guard: text-show inside named-reference BDC (/P /MC0 BDC, MCID 0 via Properties).
+    /// Named-ref BDC resolution is done; EffectiveMcid != null → silent.
+    /// </summary>
+    [Fact]
+    public void UaTaggedTextShowNamedRefBdc_NoFire713()
+    {
+        var bytes = BuildUaPdfWithParentTreeNamedRef("/P /MC0 BDC BT (hello) Tj ET EMC");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.1-3");
+    }
+
+    /// <summary>
+    /// §7.1-3 FP guard: text-show inside /P BDC (MCID 0, tagged) plus path line inside /Artifact BMC.
+    /// Both items are covered: tagged Tj and artifact S. Rule must NOT fire 7.1-3.
+    /// </summary>
+    [Fact]
+    public void UaTaggedTextPlusArtifactPath_NoFire713()
+    {
+        var bytes = BuildUaPdfWithParentTree(
+            "/P << /MCID 0 >> BDC BT (hello) Tj ET EMC "
+            + "/Artifact BMC 0 0 m 100 0 l S EMC");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.1-3");
+    }
+
+    /// <summary>
+    /// §7.1-3 FP guard: path painting (S) inside /P BDC (MCID 0) — tagged. Must NOT fire 7.1-3.
+    /// </summary>
+    [Fact]
+    public void UaPathPaintInTaggedBdc_NoFire713()
+    {
+        var bytes = BuildUaPdfWithParentTree(
+            "/P << /MCID 0 >> BDC 0 0 m 100 0 l S EMC");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.1-3");
+    }
+
+    /// <summary>
+    /// §7.1-3 FP guard: path painting (S) inside /Artifact BMC — IsInsideArtifact = true. Silent.
+    /// </summary>
+    [Fact]
+    public void UaPathPaintInArtifactBmc_NoFire713()
+    {
+        var bytes = BuildUaPdfWithParentTree("/Artifact BMC 0 0 m 100 0 l S EMC");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.1-3");
+    }
+
+    /// <summary>
+    /// §7.1-3 FP guard: color ops (rg), state ops (cm), clipping (W n), and path-construction (m/l)
+    /// outside any BDC are NOT content items — no SimpleContentItem is emitted. Must NOT fire 7.1-3.
+    /// </summary>
+    [Fact]
+    public void UaColorStateClipOps_NoFire713()
+    {
+        // rg/cm/gs are color/state ops; m/l are path-construction; W n is clip/no-paint.
+        // None of these create content items per the operator set.
+        var bytes = BuildUaPdfWithParentTree(
+            "1 0 0 rg 1 0 0 1 0 0 cm 0 0 m 100 0 l W n "
+            + "/P << /MCID 0 >> BDC BT (tagged) Tj ET EMC");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.1-3");
+    }
+
+    /// <summary>
+    /// §7.1-3 FP guard: a document with ONLY artifact content (all S ops inside /Artifact BMC).
+    /// No tagged content. Rule must NOT fire 7.1-3.
+    /// </summary>
+    [Fact]
+    public void UaOnlyArtifacts_NoFire713()
+    {
+        var content = Encoding.ASCII.GetBytes(
+            "/Artifact BMC 0 0 m 100 0 l S EMC /Artifact BMC 0 10 m 100 10 l S EMC");
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R /Lang (en-US) /MarkInfo << /Marked true >>"
+                + " /ViewerPreferences << /DisplayDocTitle true >> /StructTreeRoot 4 0 R >>"),
+            _pagesObj,
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 5 0 R >>"),
+            new("<< /Type /StructTreeRoot >>"),
+            new(string.Empty, content),
+        ],
+        metadataOverride: UaXmpBytes());
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.1-3");
+    }
+
+    /// <summary>
+    /// §7.1-3 VIOLATION oracle: the pdfua1-untagged-real-content oracle fixture (path-painting S
+    /// outside any BDC). Cross-validated against veraPDF 1.30.2: fires clause 7.1 testNumber 3.
+    /// In-process rule must also fire.
+    /// </summary>
+    [Fact]
+    public void UaUntaggedRealContent_Fires713_OracleFixture()
+    {
+        var bytes = OracleCorpus.Ua1UntaggedRealContentPublic();
+        var result = PdfPreflight.Validate(bytes, Conformance.PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.1-3");
+    }
+
+    /// <summary>
+    /// §7.1-3 FP guard: a Do operator on a non-Image XObject is NOT a content item.
+    /// The content has a tagged Tj (inside /P BDC with MCID 0) plus a bare /Fm0 Do.
+    /// Since /Fm0 does not exist as an XObject resource here (no /Resources), the Do lookup
+    /// returns null and no content item is emitted. Rule must NOT fire 7.1-3.
+    /// </summary>
+    [Fact]
+    public void UaFormDoNotContentItem_NoFire713()
+    {
+        // No /Resources/XObject on the page, so xObjectIsImage is empty.
+        // /Fm0 Do: lastName="Fm0", xObjectIsImage.Contains("Fm0")==false → no content item.
+        // The tagged Tj inside /P BDC (MCID 0) is a content item but has EffectiveMcid != null.
+        var bytes = BuildUaPdfWithParentTree(
+            "/P << /MCID 0 >> BDC BT (hello) Tj ET EMC /Fm0 Do");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.1-3");
+    }
+
+    // ── Batch A5d — §7.21.5-1 glyph width consistency (UaGlyphWidthRule) ────────────────────────
+
+    /// <summary>
+    /// §7.21.5-1 positive control (UaGlyphWidthRule): the UA-1 tagged baseline's CIDFontType2 has
+    /// its /W array removed so all shown glyphs fall to /DW=1000. The actual hmtx advances differ
+    /// from 1000 by more than 1, triggering the mismatch. Must fire 7.21.5-1.
+    /// Cross-validated against veraPDF 1.30.2: clause 7.21.5-1 status="failed" with 19 checks.
+    /// </summary>
+    [Fact]
+    public void UaGlyphWidthMismatch_Fires72151()
+    {
+        var result = PdfPreflight.Validate(OracleCorpus.Ua1GlyphWidthMismatch(), Conformance.PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.21.5-1");
+    }
+
+    /// <summary>
+    /// §7.21.5-1 FP guard (compliant baseline): the standard UA-1 tagged baseline has matching
+    /// /W widths and hmtx advances. Must NOT fire 7.21.5-1.
+    /// Cross-validated against veraPDF 1.30.2: isCompliant=true, 0 failed checks.
+    /// </summary>
+    [Fact]
+    public void UaGlyphWidthCompliant_DoesNotFire72151()
+    {
+        var result = PdfPreflight.Validate(OracleCorpus.Ua1TaggedWithEmbeddedFont(), Conformance.PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.21.5-1");
+    }
+
+    /// <summary>
+    /// §7.21.5-1 FP guard (unused font): a corrupted font (bad /W) added to resources but never
+    /// selected via Tf. Usage-scoping means only shown glyphs are checked. Must NOT fire.
+    /// Cross-validated against veraPDF 1.30.2: isCompliant=true, 0 failed checks.
+    /// </summary>
+    [Fact]
+    public void UaGlyphWidthMismatchUnused_DoesNotFire72151()
+    {
+        var result = PdfPreflight.Validate(OracleCorpus.Ua1GlyphWidthMismatchUnused(), Conformance.PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.21.5-1");
+    }
+
+    /// <summary>
+    /// §7.21.5-1 FP guard (Tr-3 exemption): the corrupted font is shown only with text rendering
+    /// mode 3 (invisible). The veraPDF predicate exempts renderingMode==3. Must NOT fire.
+    /// Cross-validated against veraPDF 1.30.2: isCompliant=true, 0 failed checks.
+    /// </summary>
+    [Fact]
+    public void UaGlyphWidthMismatchInvisible_DoesNotFire72151()
+    {
+        var result = PdfPreflight.Validate(OracleCorpus.Ua1GlyphWidthMismatchInvisible(), Conformance.PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.21.5-1");
     }
 
 }
