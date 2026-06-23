@@ -11,7 +11,7 @@ namespace VellumPdf.Document;
 ///
 /// <para>
 /// The generated packet uses UTF-8, the standard RDF/XML serialisation, and is
-/// wrapped in <c>&lt;?xpacket begin="﻿" id="W5M0MpCehiHzreSzNTczkc9d"?&gt;</c> /
+/// wrapped in <c>&lt;?xpacket begin="U+FEFF" id="W5M0MpCehiHzreSzNTczkc9d"?&gt;</c> /
 /// <c>&lt;?xpacket end="r"?&gt;</c> as required by the XMP specification.
 /// </para>
 ///
@@ -38,8 +38,11 @@ internal static class XmpMetadataWriter
     {
         var sb = new StringBuilder(1024);
 
-        // XMP packet header — the begin attribute contains U+FEFF encoded as UTF-8 (\xEF\xBB\xBF).
-        sb.Append("<?xpacket begin=\"\xEF\xBB\xBF\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>\n");
+        // XMP packet header — the begin attribute contains the U+FEFF byte-order mark, which the
+        // UTF-8 encoding below serialises to the canonical EF BB BF bytes (ISO 16684-1 §7.3.2).
+        // It must be the single character U+FEFF: the literal "\xEF\xBB\xBF" would instead be three
+        // separate characters (U+00EF U+00BB U+00BF) and serialise to six mojibake bytes.
+        sb.Append("<?xpacket begin=\"\uFEFF\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>\n");
         sb.Append("<x:xmpmeta xmlns:x=\"adobe:ns:meta/\">\n");
         sb.Append("<rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">\n");
         sb.Append("  <rdf:Description rdf:about=\"\"\n");
