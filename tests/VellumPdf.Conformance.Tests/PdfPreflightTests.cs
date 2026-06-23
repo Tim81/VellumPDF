@@ -10627,4 +10627,55 @@ public sealed class PdfPreflightTests
         Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.1-2");
     }
 
+    // ── Batch A5d — §7.21.5-1 glyph width consistency (UaGlyphWidthRule) ────────────────────────
+
+    /// <summary>
+    /// §7.21.5-1 positive control (UaGlyphWidthRule): the UA-1 tagged baseline's CIDFontType2 has
+    /// its /W array removed so all shown glyphs fall to /DW=1000. The actual hmtx advances differ
+    /// from 1000 by more than 1, triggering the mismatch. Must fire 7.21.5-1.
+    /// Cross-validated against veraPDF 1.30.2: clause 7.21.5-1 status="failed" with 19 checks.
+    /// </summary>
+    [Fact]
+    public void UaGlyphWidthMismatch_Fires72151()
+    {
+        var result = PdfPreflight.Validate(OracleCorpus.Ua1GlyphWidthMismatch(), Conformance.PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.21.5-1");
+    }
+
+    /// <summary>
+    /// §7.21.5-1 FP guard (compliant baseline): the standard UA-1 tagged baseline has matching
+    /// /W widths and hmtx advances. Must NOT fire 7.21.5-1.
+    /// Cross-validated against veraPDF 1.30.2: isCompliant=true, 0 failed checks.
+    /// </summary>
+    [Fact]
+    public void UaGlyphWidthCompliant_DoesNotFire72151()
+    {
+        var result = PdfPreflight.Validate(OracleCorpus.Ua1TaggedWithEmbeddedFont(), Conformance.PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.21.5-1");
+    }
+
+    /// <summary>
+    /// §7.21.5-1 FP guard (unused font): a corrupted font (bad /W) added to resources but never
+    /// selected via Tf. Usage-scoping means only shown glyphs are checked. Must NOT fire.
+    /// Cross-validated against veraPDF 1.30.2: isCompliant=true, 0 failed checks.
+    /// </summary>
+    [Fact]
+    public void UaGlyphWidthMismatchUnused_DoesNotFire72151()
+    {
+        var result = PdfPreflight.Validate(OracleCorpus.Ua1GlyphWidthMismatchUnused(), Conformance.PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.21.5-1");
+    }
+
+    /// <summary>
+    /// §7.21.5-1 FP guard (Tr-3 exemption): the corrupted font is shown only with text rendering
+    /// mode 3 (invisible). The veraPDF predicate exempts renderingMode==3. Must NOT fire.
+    /// Cross-validated against veraPDF 1.30.2: isCompliant=true, 0 failed checks.
+    /// </summary>
+    [Fact]
+    public void UaGlyphWidthMismatchInvisible_DoesNotFire72151()
+    {
+        var result = PdfPreflight.Validate(OracleCorpus.Ua1GlyphWidthMismatchInvisible(), Conformance.PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.21.5-1");
+    }
+
 }

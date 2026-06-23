@@ -171,6 +171,8 @@ internal static class RuleRegistry
         new UaToUnicodeForbiddenRule(),
         // Batch A5c — font clause §7.21.4.1-2 (glyph presence, Tr-3-exempt):
         new UaGlyphPresenceRule(),
+        // Batch A5d — §7.21.5-1 (glyph width consistency, Identity-H CIDFontType2 scope):
+        new UaGlyphWidthRule(),
         // Batch B1 — structure-tree walker foundation (§7.1 role-map + §7.1-12 parent entry):
         new UaRoleMapRule(),
         new UaStructElemParentRule(),
