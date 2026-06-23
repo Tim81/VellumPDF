@@ -1366,6 +1366,31 @@ public static class OracleCorpus
             new OracleFixture("pdfua1-untagged-real-content",
                 Ua1UntaggedRealContent(),
                 Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // ── Batch N4 — §6.2.4.4-2 Separation consistency in non-page content streams ────────────
+            // Extends the Separation consistency check to drawn Form XObjects, all CharProcs of
+            // Tf-selected Type 3 fonts, and annotation /AP /N appearance streams via
+            // GetReachableContentStreams. Empirical veraPDF 1.30.2 probes (2026-06-23):
+            //   N4-A (page Spot1→DeviceRGB, drawn form Spot1→DeviceGray): veraPDF FIRES 6.2.4.4-2 ✓
+            //   N4-B (page Spot1→DeviceRGB, drawn form Spot1→DeviceRGB same tint): veraPDF PASSES ✓
+            //   N4-C (page Spot1→DeviceRGB, undrawn form Spot1→DeviceGray): veraPDF PASSES ✓
+
+            // §6.2.4.4-2 VIOLATION: page uses Separation /Spot1 with DeviceRGB alternate and a
+            // specific tint function; a drawn Form XObject also uses /Spot1 but with a DIFFERENT
+            // alternate space (DeviceGray) and a single-component tint function. The alternateSpace
+            // mismatch is the positively established difference.
+            // veraPDF fires clause 6.2.4.4 testNumber 2 (confirmed 2026-06-23).
+            // In-process: SeparationConsistencyRule must fire "ISO19005-2:6.2.4.4-2".
+            new OracleFixture("pdfa2b-sep-form-inconsistent",
+                SepFormXObjectInconsistent(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // §6.2.4.4-2 FP-SAFETY: page and drawn Form XObject both use /Spot1 with the SAME
+            // DeviceRGB alternate space and structurally-identical tint functions. No inconsistency —
+            // veraPDF accepts (confirmed 2026-06-23). In-process must NOT fire.
+            new OracleFixture("pdfa2b-sep-form-consistent",
+                SepFormXObjectConsistent(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
         ];
     }
 
@@ -4446,6 +4471,434 @@ public static class OracleCorpus
     // ── End of Batch N3 adversarial FP-sweep helpers ───────────────────────────────────────────────
 
     // ── End of Batch N3 helpers ─────────────────────────────────────────────────────────────────────
+
+    // ── Batch N4 helpers — §6.2.4.4-2 Separation consistency in non-page content streams ──────────
+    // All fixtures use the writer-produced PDF/A-2b baseline (via WriterPdf / AppendRevision) which
+    // carries a valid sRGB output intent. Using DeviceRGB as the consistent alternate space avoids
+    // §6.2.4.3-2 false positives. The inconsistent fixture uses DeviceGray as the form's alternate
+    // space, triggering 6.2.4.4-2 (confirmed empirically against veraPDF 1.30.2, 2026-06-23).
+    //
+    // Tint functions are Type 4 PostScript calculator streams:
+    //   N4TintRgb:  { pop 0.5 0.5 0.5 } — single-component input → DeviceRGB output
+    //   N4TintGray: { pop 0.5 }          — single-component input → DeviceGray output
+    //
+    // Empirical veraPDF 1.30.2 probe results (2026-06-23):
+    //   N4-A (page Spot1→DeviceRGB, form Spot1→DeviceGray, drawn): FIRES 6.2.4.4-2 ✓
+    //   N4-B (page Spot1→DeviceRGB, form Spot1→DeviceRGB same tint, drawn): PASSES ✓
+    //   N4-C (page Spot1→DeviceRGB, form Spot1→DeviceGray, NOT drawn): PASSES ✓
+
+    /// <summary>
+    /// §6.2.4.4-2 VIOLATION: page uses <c>/Spot1</c> Separation with <c>DeviceRGB</c> alternate;
+    /// a drawn Form XObject also uses <c>/Spot1</c> but with <c>DeviceGray</c> alternate and a
+    /// single-grey tint function. The <c>alternateSpace</c> differs → inconsistency.
+    /// veraPDF fires clause 6.2.4.4 testNumber 2 (confirmed 2026-06-23).
+    /// </summary>
+    private static byte[] SepFormXObjectInconsistent()
+    {
+        var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var newPage = CloneDict(page);
+
+        // Page tint: { pop 0.5 0.5 0.5 } → DeviceRGB
+        var pageTintNum = reader.Size;
+        var pageTint = new PdfStream(Encoding.ASCII.GetBytes("{ pop 0.5 0.5 0.5 }"));
+        pageTint.Dictionary
+            .Set(new PdfName("FunctionType"), new PdfInteger(4))
+            .Set(new PdfName("Domain"), new PdfArray([new PdfInteger(0), new PdfInteger(1)]))
+            .Set(new PdfName("Range"), new PdfArray([
+                new PdfInteger(0), new PdfInteger(1), new PdfInteger(0), new PdfInteger(1),
+                new PdfInteger(0), new PdfInteger(1)]));
+
+        // Form tint: { pop 0.5 } → DeviceGray (DIFFERENT alternate space)
+        var formTintNum = pageTintNum + 1;
+        var formTint = new PdfStream(Encoding.ASCII.GetBytes("{ pop 0.5 }"));
+        formTint.Dictionary
+            .Set(new PdfName("FunctionType"), new PdfInteger(4))
+            .Set(new PdfName("Domain"), new PdfArray([new PdfInteger(0), new PdfInteger(1)]))
+            .Set(new PdfName("Range"), new PdfArray([new PdfInteger(0), new PdfInteger(1)]));
+
+        // Page CS: [/Separation /Spot1 /DeviceRGB pageTint]
+        var pageCsNum = formTintNum + 1;
+        var pageCs = new PdfArray([
+            new PdfName("Separation"),
+            new PdfName("Spot1"),
+            new PdfName("DeviceRGB"),
+            new PdfIndirectReference(pageTintNum),
+        ]);
+
+        // Form CS: [/Separation /Spot1 /DeviceGray formTint]  ← alternateSpace differs!
+        var formCsNum = pageCsNum + 1;
+        var formCs = new PdfArray([
+            new PdfName("Separation"),
+            new PdfName("Spot1"),
+            new PdfName("DeviceGray"),
+            new PdfIndirectReference(formTintNum),
+        ]);
+
+        // Form stream: select /CS1 cs, fill rectangle
+        var formNum = formCsNum + 1;
+        var formStream = new PdfStream(Encoding.ASCII.GetBytes("/CS1 cs 0.5 scn 10 10 40 40 re f"));
+        formStream.Dictionary
+            .Set(PdfName.Type, new PdfName("XObject"))
+            .Set(new PdfName("Subtype"), new PdfName("Form"))
+            .Set(new PdfName("BBox"), new PdfArray([
+                new PdfInteger(0), new PdfInteger(0),
+                new PdfInteger(100), new PdfInteger(100)]))
+            .Set(new PdfName("Resources"), new PdfDictionary()
+                .Set(new PdfName("ColorSpace"), new PdfDictionary()
+                    .Set(new PdfName("CS1"), new PdfIndirectReference(formCsNum))));
+
+        // Page content: select /CS0 cs (page Spot1→DeviceRGB), draw rectangle, draw form
+        var contentNum = formNum + 1;
+        var pageContent = new PdfStream(Encoding.ASCII.GetBytes("/CS0 cs 0.5 scn 50 50 40 40 re f\n/Fm0 Do"));
+
+        var resObj = page.Get(new PdfName("Resources"));
+        var resources = (resObj is null ? null : reader.ResolveValue(resObj)) as PdfDictionary ?? new PdfDictionary();
+        var newRes = CloneDict(resources);
+        newRes.Set(new PdfName("ColorSpace"),
+                new PdfDictionary().Set(new PdfName("CS0"), new PdfIndirectReference(pageCsNum)))
+              .Set(new PdfName("XObject"),
+                new PdfDictionary().Set(new PdfName("Fm0"), new PdfIndirectReference(formNum)));
+        newPage.Set(new PdfName("Resources"), newRes)
+               .Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
+
+        return reader.AppendRevision([
+            (pageRef.ObjectNumber, newPage),
+            (pageTintNum, pageTint),
+            (formTintNum, formTint),
+            (pageCsNum, pageCs),
+            (formCsNum, formCs),
+            (formNum, formStream),
+            (contentNum, pageContent),
+        ]);
+    }
+
+    /// <summary>
+    /// §6.2.4.4-2 FP-SAFETY: page and drawn Form XObject both use <c>/Spot1</c> with
+    /// <c>DeviceRGB</c> alternate and <em>structurally identical</em> tint functions (same
+    /// decoded PostScript body, same domain/range). No inconsistency — veraPDF accepts
+    /// (confirmed 2026-06-23). In-process must NOT fire.
+    /// </summary>
+    private static byte[] SepFormXObjectConsistent()
+    {
+        var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var newPage = CloneDict(page);
+
+        // Page tint: { pop 0.5 0.5 0.5 } → DeviceRGB
+        var pageTintNum = reader.Size;
+        var pageTint = new PdfStream(Encoding.ASCII.GetBytes("{ pop 0.5 0.5 0.5 }"));
+        pageTint.Dictionary
+            .Set(new PdfName("FunctionType"), new PdfInteger(4))
+            .Set(new PdfName("Domain"), new PdfArray([new PdfInteger(0), new PdfInteger(1)]))
+            .Set(new PdfName("Range"), new PdfArray([
+                new PdfInteger(0), new PdfInteger(1), new PdfInteger(0), new PdfInteger(1),
+                new PdfInteger(0), new PdfInteger(1)]));
+
+        // Form tint: identical body + domain + range → structurally equal
+        var formTintNum = pageTintNum + 1;
+        var formTint = new PdfStream(Encoding.ASCII.GetBytes("{ pop 0.5 0.5 0.5 }"));
+        formTint.Dictionary
+            .Set(new PdfName("FunctionType"), new PdfInteger(4))
+            .Set(new PdfName("Domain"), new PdfArray([new PdfInteger(0), new PdfInteger(1)]))
+            .Set(new PdfName("Range"), new PdfArray([
+                new PdfInteger(0), new PdfInteger(1), new PdfInteger(0), new PdfInteger(1),
+                new PdfInteger(0), new PdfInteger(1)]));
+
+        // Page CS: [/Separation /Spot1 /DeviceRGB pageTint]
+        var pageCsNum = formTintNum + 1;
+        var pageCs = new PdfArray([
+            new PdfName("Separation"),
+            new PdfName("Spot1"),
+            new PdfName("DeviceRGB"),
+            new PdfIndirectReference(pageTintNum),
+        ]);
+
+        // Form CS: [/Separation /Spot1 /DeviceRGB formTint] ← same alternateSpace, same body
+        var formCsNum = pageCsNum + 1;
+        var formCs = new PdfArray([
+            new PdfName("Separation"),
+            new PdfName("Spot1"),
+            new PdfName("DeviceRGB"),
+            new PdfIndirectReference(formTintNum),
+        ]);
+
+        // Form stream: select /CS1 cs, fill rectangle
+        var formNum = formCsNum + 1;
+        var formStream = new PdfStream(Encoding.ASCII.GetBytes("/CS1 cs 0.5 scn 10 10 40 40 re f"));
+        formStream.Dictionary
+            .Set(PdfName.Type, new PdfName("XObject"))
+            .Set(new PdfName("Subtype"), new PdfName("Form"))
+            .Set(new PdfName("BBox"), new PdfArray([
+                new PdfInteger(0), new PdfInteger(0),
+                new PdfInteger(100), new PdfInteger(100)]))
+            .Set(new PdfName("Resources"), new PdfDictionary()
+                .Set(new PdfName("ColorSpace"), new PdfDictionary()
+                    .Set(new PdfName("CS1"), new PdfIndirectReference(formCsNum))));
+
+        // Page content: select /CS0 cs (page Spot1→DeviceRGB), draw rectangle, draw form
+        var contentNum = formNum + 1;
+        var pageContent = new PdfStream(Encoding.ASCII.GetBytes("/CS0 cs 0.5 scn 50 50 40 40 re f\n/Fm0 Do"));
+
+        var resObj = page.Get(new PdfName("Resources"));
+        var resources = (resObj is null ? null : reader.ResolveValue(resObj)) as PdfDictionary ?? new PdfDictionary();
+        var newRes = CloneDict(resources);
+        newRes.Set(new PdfName("ColorSpace"),
+                new PdfDictionary().Set(new PdfName("CS0"), new PdfIndirectReference(pageCsNum)))
+              .Set(new PdfName("XObject"),
+                new PdfDictionary().Set(new PdfName("Fm0"), new PdfIndirectReference(formNum)));
+        newPage.Set(new PdfName("Resources"), newRes)
+               .Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
+
+        return reader.AppendRevision([
+            (pageRef.ObjectNumber, newPage),
+            (pageTintNum, pageTint),
+            (formTintNum, formTint),
+            (pageCsNum, pageCs),
+            (formCsNum, formCs),
+            (formNum, formStream),
+            (contentNum, pageContent),
+        ]);
+    }
+
+    // ── Batch N4 adversarial FP-sweep helpers (internal — used by PdfPreflightTests) ──────────────
+
+    /// <summary>
+    /// FP-sweep: drawn Form XObject with no <c>/Resources</c> — the rule must skip it, not crash.
+    /// Page uses /Spot1 (consistent). veraPDF accepts (confirmed 2026-06-23).
+    /// </summary>
+    internal static byte[] SepFormNoResources()
+    {
+        var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var newPage = CloneDict(page);
+
+        var pageTintNum = reader.Size;
+        var pageTint = new PdfStream(Encoding.ASCII.GetBytes("{ pop 0.5 0.5 0.5 }"));
+        pageTint.Dictionary
+            .Set(new PdfName("FunctionType"), new PdfInteger(4))
+            .Set(new PdfName("Domain"), new PdfArray([new PdfInteger(0), new PdfInteger(1)]))
+            .Set(new PdfName("Range"), new PdfArray([
+                new PdfInteger(0), new PdfInteger(1), new PdfInteger(0), new PdfInteger(1),
+                new PdfInteger(0), new PdfInteger(1)]));
+
+        var pageCsNum = pageTintNum + 1;
+        var pageCs = new PdfArray([
+            new PdfName("Separation"),
+            new PdfName("Spot1"),
+            new PdfName("DeviceRGB"),
+            new PdfIndirectReference(pageTintNum),
+        ]);
+
+        // Form deliberately has NO /Resources — its colour-space names cannot be resolved.
+        var formNum = pageCsNum + 1;
+        var formStream = new PdfStream(Encoding.ASCII.GetBytes("/CS1 cs 0.5 scn 10 10 40 40 re f"));
+        formStream.Dictionary
+            .Set(PdfName.Type, new PdfName("XObject"))
+            .Set(new PdfName("Subtype"), new PdfName("Form"))
+            .Set(new PdfName("BBox"), new PdfArray([
+                new PdfInteger(0), new PdfInteger(0),
+                new PdfInteger(100), new PdfInteger(100)]));
+        // NOTE: no .Set("Resources", ...) — form deliberately omits /Resources.
+
+        var contentNum = formNum + 1;
+        var pageContent = new PdfStream(Encoding.ASCII.GetBytes("/CS0 cs 0.5 scn 50 50 40 40 re f\n/Fm0 Do"));
+
+        var resObj = page.Get(new PdfName("Resources"));
+        var resources = (resObj is null ? null : reader.ResolveValue(resObj)) as PdfDictionary ?? new PdfDictionary();
+        var newRes = CloneDict(resources);
+        newRes.Set(new PdfName("ColorSpace"),
+                new PdfDictionary().Set(new PdfName("CS0"), new PdfIndirectReference(pageCsNum)))
+              .Set(new PdfName("XObject"),
+                new PdfDictionary().Set(new PdfName("Fm0"), new PdfIndirectReference(formNum)));
+        newPage.Set(new PdfName("Resources"), newRes)
+               .Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
+
+        return reader.AppendRevision([
+            (pageRef.ObjectNumber, newPage),
+            (pageTintNum, pageTint),
+            (pageCsNum, pageCs),
+            (formNum, formStream),
+            (contentNum, pageContent),
+        ]);
+    }
+
+    /// <summary>
+    /// FP-sweep: two drawn Form XObjects both using consistent /Spot1→DeviceRGB with identical tint.
+    /// No inconsistency — veraPDF accepts (confirmed 2026-06-23). In-process must NOT fire.
+    /// </summary>
+    internal static byte[] SepTwoFormsConsistent()
+    {
+        var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var newPage = CloneDict(page);
+
+        // Three structurally-identical tint functions (distinct object numbers).
+        var tint1Num = reader.Size;
+        var tint2Num = tint1Num + 1;
+        var tint3Num = tint2Num + 1;
+        static PdfStream MakeTintRgb()
+        {
+            var t = new PdfStream(Encoding.ASCII.GetBytes("{ pop 0.5 0.5 0.5 }"));
+            t.Dictionary
+                .Set(new PdfName("FunctionType"), new PdfInteger(4))
+                .Set(new PdfName("Domain"), new PdfArray([new PdfInteger(0), new PdfInteger(1)]))
+                .Set(new PdfName("Range"), new PdfArray([
+                    new PdfInteger(0), new PdfInteger(1), new PdfInteger(0), new PdfInteger(1),
+                    new PdfInteger(0), new PdfInteger(1)]));
+            return t;
+        }
+
+        // Page CS, Form1 CS, Form2 CS — all /Spot1 → DeviceRGB, each with its own tint object.
+        var pageCsNum = tint3Num + 1;
+        var pageCs = new PdfArray([
+            new PdfName("Separation"), new PdfName("Spot1"),
+            new PdfName("DeviceRGB"), new PdfIndirectReference(tint1Num)]);
+
+        var form1CsNum = pageCsNum + 1;
+        var form1Cs = new PdfArray([
+            new PdfName("Separation"), new PdfName("Spot1"),
+            new PdfName("DeviceRGB"), new PdfIndirectReference(tint2Num)]);
+
+        var form2CsNum = form1CsNum + 1;
+        var form2Cs = new PdfArray([
+            new PdfName("Separation"), new PdfName("Spot1"),
+            new PdfName("DeviceRGB"), new PdfIndirectReference(tint3Num)]);
+
+        // Form 1
+        var form1Num = form2CsNum + 1;
+        var form1 = new PdfStream(Encoding.ASCII.GetBytes("/CS1 cs 0.5 scn 10 10 30 30 re f"));
+        form1.Dictionary
+            .Set(PdfName.Type, new PdfName("XObject"))
+            .Set(new PdfName("Subtype"), new PdfName("Form"))
+            .Set(new PdfName("BBox"), new PdfArray([
+                new PdfInteger(0), new PdfInteger(0), new PdfInteger(100), new PdfInteger(100)]))
+            .Set(new PdfName("Resources"), new PdfDictionary()
+                .Set(new PdfName("ColorSpace"), new PdfDictionary()
+                    .Set(new PdfName("CS1"), new PdfIndirectReference(form1CsNum))));
+
+        // Form 2
+        var form2Num = form1Num + 1;
+        var form2 = new PdfStream(Encoding.ASCII.GetBytes("/CS2 cs 0.5 scn 50 50 30 30 re f"));
+        form2.Dictionary
+            .Set(PdfName.Type, new PdfName("XObject"))
+            .Set(new PdfName("Subtype"), new PdfName("Form"))
+            .Set(new PdfName("BBox"), new PdfArray([
+                new PdfInteger(0), new PdfInteger(0), new PdfInteger(100), new PdfInteger(100)]))
+            .Set(new PdfName("Resources"), new PdfDictionary()
+                .Set(new PdfName("ColorSpace"), new PdfDictionary()
+                    .Set(new PdfName("CS2"), new PdfIndirectReference(form2CsNum))));
+
+        var contentNum = form2Num + 1;
+        var pageContent = new PdfStream(Encoding.ASCII.GetBytes(
+            "/CS0 cs 0.5 scn 80 80 30 30 re f\n/Fm0 Do\n/Fm1 Do"));
+
+        var resObj = page.Get(new PdfName("Resources"));
+        var resources = (resObj is null ? null : reader.ResolveValue(resObj)) as PdfDictionary ?? new PdfDictionary();
+        var newRes = CloneDict(resources);
+        newRes.Set(new PdfName("ColorSpace"),
+                new PdfDictionary().Set(new PdfName("CS0"), new PdfIndirectReference(pageCsNum)))
+              .Set(new PdfName("XObject"), new PdfDictionary()
+                .Set(new PdfName("Fm0"), new PdfIndirectReference(form1Num))
+                .Set(new PdfName("Fm1"), new PdfIndirectReference(form2Num)));
+        newPage.Set(new PdfName("Resources"), newRes)
+               .Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
+
+        return reader.AppendRevision([
+            (pageRef.ObjectNumber, newPage),
+            (tint1Num, MakeTintRgb()),
+            (tint2Num, MakeTintRgb()),
+            (tint3Num, MakeTintRgb()),
+            (pageCsNum, pageCs),
+            (form1CsNum, form1Cs),
+            (form2CsNum, form2Cs),
+            (form1Num, form1),
+            (form2Num, form2),
+            (contentNum, pageContent),
+        ]);
+    }
+
+    /// <summary>
+    /// FP-sweep: undrawn Form XObject with inconsistent /Spot1 (DeviceGray) — not reachable so must
+    /// NOT fire. Page uses /Spot1→DeviceRGB. veraPDF accepts (confirmed 2026-06-23).
+    /// </summary>
+    internal static byte[] SepUndrawnFormInconsistent()
+    {
+        var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var newPage = CloneDict(page);
+
+        var pageTintNum = reader.Size;
+        var pageTint = new PdfStream(Encoding.ASCII.GetBytes("{ pop 0.5 0.5 0.5 }"));
+        pageTint.Dictionary
+            .Set(new PdfName("FunctionType"), new PdfInteger(4))
+            .Set(new PdfName("Domain"), new PdfArray([new PdfInteger(0), new PdfInteger(1)]))
+            .Set(new PdfName("Range"), new PdfArray([
+                new PdfInteger(0), new PdfInteger(1), new PdfInteger(0), new PdfInteger(1),
+                new PdfInteger(0), new PdfInteger(1)]));
+
+        var formTintNum = pageTintNum + 1;
+        var formTint = new PdfStream(Encoding.ASCII.GetBytes("{ pop 0.5 }"));
+        formTint.Dictionary
+            .Set(new PdfName("FunctionType"), new PdfInteger(4))
+            .Set(new PdfName("Domain"), new PdfArray([new PdfInteger(0), new PdfInteger(1)]))
+            .Set(new PdfName("Range"), new PdfArray([new PdfInteger(0), new PdfInteger(1)]));
+
+        var pageCsNum = formTintNum + 1;
+        var pageCs = new PdfArray([
+            new PdfName("Separation"), new PdfName("Spot1"),
+            new PdfName("DeviceRGB"), new PdfIndirectReference(pageTintNum)]);
+
+        var formCsNum = pageCsNum + 1;
+        var formCs = new PdfArray([
+            new PdfName("Separation"), new PdfName("Spot1"),
+            new PdfName("DeviceGray"), new PdfIndirectReference(formTintNum)]);
+
+        // Form: present in /Resources /XObject but NOT drawn (no Do in page content).
+        var formNum = formCsNum + 1;
+        var formStream = new PdfStream(Encoding.ASCII.GetBytes("/CS1 cs 0.5 scn 10 10 40 40 re f"));
+        formStream.Dictionary
+            .Set(PdfName.Type, new PdfName("XObject"))
+            .Set(new PdfName("Subtype"), new PdfName("Form"))
+            .Set(new PdfName("BBox"), new PdfArray([
+                new PdfInteger(0), new PdfInteger(0), new PdfInteger(100), new PdfInteger(100)]))
+            .Set(new PdfName("Resources"), new PdfDictionary()
+                .Set(new PdfName("ColorSpace"), new PdfDictionary()
+                    .Set(new PdfName("CS1"), new PdfIndirectReference(formCsNum))));
+
+        // Page content: use /CS0 (Spot1→DeviceRGB), draw a rectangle — NO /Fm0 Do.
+        var contentNum = formNum + 1;
+        var pageContent = new PdfStream(Encoding.ASCII.GetBytes("/CS0 cs 0.5 scn 50 50 40 40 re f"));
+
+        var resObj = page.Get(new PdfName("Resources"));
+        var resources = (resObj is null ? null : reader.ResolveValue(resObj)) as PdfDictionary ?? new PdfDictionary();
+        var newRes = CloneDict(resources);
+        newRes.Set(new PdfName("ColorSpace"),
+                new PdfDictionary().Set(new PdfName("CS0"), new PdfIndirectReference(pageCsNum)))
+              .Set(new PdfName("XObject"),
+                new PdfDictionary().Set(new PdfName("Fm0"), new PdfIndirectReference(formNum)));
+        newPage.Set(new PdfName("Resources"), newRes)
+               .Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
+
+        return reader.AppendRevision([
+            (pageRef.ObjectNumber, newPage),
+            (pageTintNum, pageTint),
+            (formTintNum, formTint),
+            (pageCsNum, pageCs),
+            (formCsNum, formCs),
+            (formNum, formStream),
+            (contentNum, pageContent),
+        ]);
+    }
+
+    // ── End of Batch N4 adversarial FP-sweep helpers ───────────────────────────────────────────────
+
+    // ── End of Batch N4 helpers ─────────────────────────────────────────────────────────────────────
 
     private static byte[] WriterPdf(VellumPdf.Document.PdfConformance conformance)
     {

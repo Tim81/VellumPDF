@@ -185,7 +185,7 @@ public static class ConformanceCatalog
         ["6.2.4.3-2"] = "device-colour requires an output intent checked; DefaultRGB path not",
         ["6.2.4.3-3"] = "device-colour requires an output intent checked; DefaultCMYK path not",
         ["6.2.4.3-4"] = "page-content device grey covered; image/pattern colour not detected",
-        ["6.2.4.4-2"] = "Separations selected by cs/CS operators and those in /Colorants of used DeviceN spaces are compared; Separations reachable only via Form XObjects, Type 3 CharProcs, annotation appearance streams, image /ColorSpace, or alternate spaces of other colour spaces are not yet walked",
+        ["6.2.4.4-2"] = "Separations selected by cs/CS operators and those in /Colorants of used DeviceN spaces are compared; drawn Form XObjects, all CharProcs of Tf-selected Type 3 fonts, and annotation /AP /N appearance streams are now also walked (Batch N4, 2026-06-23); image /ColorSpace and alternate spaces of other colour spaces are not yet walked",
         // 6.2.2-1 moved to Implemented (Batch N1 — ContentStreamOperatorRule now scans drawn Form
         //   XObjects, all CharProcs of Tf-selected Type 3 fonts, and all annotation /AP /N appearance
         //   streams via GetReachableContentStreams; reachability policy empirically confirmed against
