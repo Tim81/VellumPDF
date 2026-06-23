@@ -195,6 +195,9 @@ internal sealed class ContentUsage
 internal static class ContentStreamUsage
 {
     private static readonly PdfName _contents = new("Contents");
+    private static readonly PdfName _resources = new("Resources");
+    private static readonly PdfName _properties = new("Properties");
+    private static readonly PdfName _mcidKey = new("MCID");
 
     /// <summary>Scans <paramref name="page"/>'s content streams for graphics-state, colour,
     /// XObject-drawing, rendering-intent, selected-colour-space, selected-font, shading usage,
@@ -221,6 +224,10 @@ internal static class ContentStreamUsage
         // Marked-content stack: BMC/BDC pushes, EMC pops. Independent of q/Q (ISO 32000-1 §8.7.2).
         // Each entry is the sequence descriptor for the currently-open MC region.
         var mcStack = new Stack<MarkedContentSequence>();
+
+        // Pre-build the named-Properties MCID map for this page (ISO 32000-1 §8.7.3.3).
+        // Resolves /Resources /Properties /Name → /MCID for the named-reference BDC form.
+        var namedPropertiesMcids = BuildNamedPropertiesMcids(context, page);
 
         var content = GetContentBytes(context, page);
         if (content is { Length: > 0 })
@@ -516,7 +523,17 @@ internal static class ContentStreamUsage
                                         // (For /Tag BDC with a single name, prevName is null and
                                         // lastName is the tag — use lastName as fallback.)
                                         bdcTag = prevName ?? lastName;
-                                        props = null;
+                                        // Resolve the named Properties resource to get its MCID
+                                        // (ISO 32000-1 §8.7.3.3: /Resources /Properties /Name → dict).
+                                        if (lastName is not null && prevName is not null
+                                            && namedPropertiesMcids.TryGetValue(lastName, out var namedMcid))
+                                        {
+                                            props = new InlineDictProps { Mcid = namedMcid };
+                                        }
+                                        else
+                                        {
+                                            props = null;
+                                        }
                                     }
 
                                     if (bdcTag is not null)
@@ -655,6 +672,28 @@ internal static class ContentStreamUsage
         public string? ActualText;
         public string? Alt;
         public string? E;
+    }
+
+    // Builds a map of resource name → MCID for every entry in the page's
+    // /Resources /Properties that resolves to a dict carrying /MCID (integer).
+    // Empty when the page has no /Resources/Properties or no MCID entries.
+    private static Dictionary<string, int> BuildNamedPropertiesMcids(
+        PreflightContext context, PdfDictionary page)
+    {
+        var map = new Dictionary<string, int>(StringComparer.Ordinal);
+        if (context.ResolveInherited(page, _resources) is not PdfDictionary resources)
+            return map;
+        if (context.Resolve(resources.Get(_properties)) is not PdfDictionary properties)
+            return map;
+        foreach (var entry in properties.Entries)
+        {
+            if (context.Resolve(entry.Value) is PdfDictionary propDict
+                && context.Resolve(propDict.Get(_mcidKey)) is PdfInteger mcidInt)
+            {
+                map[entry.Key.Value] = (int)mcidInt.Value;
+            }
+        }
+        return map;
     }
 
     /// <summary>The page's concatenated, decoded content-stream bytes (or null when empty/undecodable).
