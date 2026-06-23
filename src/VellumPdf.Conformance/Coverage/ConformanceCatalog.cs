@@ -271,6 +271,10 @@ public static class ConformanceCatalog
         // Batch A3 — font clauses:
         "7.21.3.2-1",          // UaCidToGidMapRule: embedded CIDFontType2 must have /CIDToGIDMap
         "7.21.6-3",            // UaSymbolicFontRule: symbolic TrueType must have no /Encoding
+        // Batch A6 — TrueType cmap / Differences-compliance:
+        "7.21.6-1",            // UaTrueTypeCmapRule: non-symbolic TrueType must have non-symbol cmap entries
+        "7.21.6-2",            // UaTrueTypeCmapRule: non-symbolic TrueType Differences must be AGL-compliant + (3,1) cmap
+        "7.21.6-4",            // UaTrueTypeCmapRule: symbolic TrueType must have exactly 1 cmap or include (3,0)
         // Batch A4 — font clauses (CMap, CharSet, CIDSet):
         "7.21.3.3-1",          // UaCMapRule: composite /Encoding must be predefined or embedded CMap
         "7.21.3.3-2",          // UaCMapRule: embedded CMap WMode dict must equal program WMode
@@ -394,12 +398,8 @@ public static class ConformanceCatalog
         // 7.21.3.3-1/-2/-3 moved to PdfUaImplemented (Batch A4 — UaCMapRule).
         // 7.21.4.2-1 moved to PdfUaImplemented (Batch A4 — UaType1CharSetRule).
         // 7.21.4.2-2 moved to PdfUaImplemented (Batch A4 — UaCidSetRule).
-        "7.21.6-1" or "7.21.6-2" or "7.21.6-4" =>
-            "TrueType non-symbolic cmap / Differences-compliance checks: §7.21.6-2 requires "
-            + "differencesAreUnicodeCompliant (every /Differences glyph name must resolve to Unicode — "
-            + "FP-prone without a complete AGL table); §7.21.6-1 and §7.21.6-4 check the embedded cmap "
-            + "subtable structure (overlaps with PDF/A-2 §6.2.11.6-1/-4 in FontStructureRule); "
-            + "deferred to avoid false positives from incomplete glyph-name resolution",
+        // 7.21.6-1/-2/-4 moved to PdfUaImplemented (Batch A6 — UaTrueTypeCmapRule: non-symbolic TrueType
+        //   cmap structure and Differences-AGL compliance; verified FP-free against veraPDF 1.30.2).
         "7.21.7-1" =>
             "glyph-level ToUnicode presence (veraPDF's Glyph.toUnicode model derives Unicode from font "
             + "encoding for standard-encoded simple fonts, so requiring a /ToUnicode stream would "

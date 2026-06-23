@@ -4,6 +4,13 @@
     <ProjectReference Include="..\VellumPdf.Reader\VellumPdf.Reader.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Adobe Glyph List (BSD-3-Clause; see NOTICE). Embedded for AOT-safe lookup in §7.21.6-2. -->
+    <EmbeddedResource Include="Resources\AdobeGlyphList.txt">
+      <LogicalName>AdobeGlyphList.txt</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
   <PropertyGroup>
     <RootNamespace>VellumPdf.Conformance</RootNamespace>
     <AssemblyName>VellumPdf.Conformance</AssemblyName>

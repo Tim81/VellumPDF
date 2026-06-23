@@ -7044,11 +7044,9 @@ public sealed class PdfPreflightTests
 
     /// <summary>
     /// False-positive guard for §7.21.6-3 (UaSymbolicFontRule): a symbolic TrueType font (Flags
-    /// bit 3 = Symbolic) with NO /Encoding entry must NOT fire §7.21.6-3 — the absence of
-    /// /Encoding is exactly what the rule requires. This fixture also fails other UA-1 rules
-    /// (7.21.6-4 for the cmap subtable count, 7.1-3 for untagged text) but must not produce a
-    /// §7.21.6-3 finding. Verified directly against veraPDF 1.30.2: that validator does NOT list
-    /// clause 7.21.6, testNumber 3 in its failures for this document.
+    /// bit 3 = Symbolic) with NO /Encoding entry must NOT fire §7.21.6-3. DejaVu has 5 cmap
+    /// subtables with no (3,0), so this fixture also fires §7.21.6-4 and §7.1-3 (untagged text).
+    /// The test checks only that §7.21.6-3 is absent. Verified against veraPDF 1.30.2.
     /// </summary>
     [Fact]
     public void SymbolicFontNoEncoding_DoesNotFire7216_3()
@@ -7083,6 +7081,107 @@ public sealed class PdfPreflightTests
         var bytes = OracleCorpus.Ua1NonSymbolicFontWinAnsi();
         var result = PdfPreflight.Validate(bytes, Conformance.PdfConformance.PdfUA1);
         Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.21.6-3");
+    }
+
+    // ── Batch A6 — §7.21.6-1/-2/-4 TrueType cmap unit tests ────────────────────────────────────
+
+    /// <summary>
+    /// §7.21.6-1 VIOLATION (UaTrueTypeCmapRule): a non-symbolic TrueType font (Flags=32,
+    /// WinAnsiEncoding) whose embedded program cmap is patched to a single Microsoft Symbol (3,0)
+    /// subtable must fire §7.21.6-1. veraPDF predicate: isSymbolic==false, cmap30Present==true,
+    /// nrCmaps==1 → nrCmaps &gt; 1 fails. Cross-validated via oracle fixture.
+    /// </summary>
+    [Fact]
+    public void UaNonSymbolicSymbolOnlyCmap_Fires7216_1()
+    {
+        var bytes = OracleCorpus.Ua1NonSymbolicTrueTypeSymbolOnlyCmap();
+        var result = PdfPreflight.Validate(bytes, Conformance.PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.21.6-1");
+    }
+
+    /// <summary>
+    /// §7.21.6-2 VIOLATION (UaTrueTypeCmapRule): a non-symbolic TrueType font with /Differences
+    /// containing /BADNAME_XYZ (not in the Adobe Glyph List) must fire §7.21.6-2.
+    /// veraPDF predicate: differencesAreUnicodeCompliant==false. Cross-validated via oracle fixture.
+    /// </summary>
+    [Fact]
+    public void UaNonSymbolicBadDifferences_Fires7216_2()
+    {
+        var bytes = OracleCorpus.Ua1NonSymbolicTrueTypeBadDifferences();
+        var result = PdfPreflight.Validate(bytes, Conformance.PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.21.6-2");
+    }
+
+    /// <summary>
+    /// §7.21.6-1 and §7.21.6-2 VIOLATION: a non-symbolic TrueType font with AGL-compliant
+    /// /Differences (/Alpha) but cmap patched to symbol-only (3,0) must fire both 7.21.6-1
+    /// (program lacks non-symbol entries) and 7.21.6-2 (differencesAreUnicodeCompliant also
+    /// requires the (3,1) cmap). Cross-validated via oracle fixture.
+    /// </summary>
+    [Fact]
+    public void UaNonSymbolicAglDiffBadCmap_FiresBoth72161And72162()
+    {
+        var bytes = OracleCorpus.Ua1NonSymbolicTrueTypeAglDiffBadCmap();
+        var result = PdfPreflight.Validate(bytes, Conformance.PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.21.6-1");
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.21.6-2");
+    }
+
+    /// <summary>
+    /// §7.21.6-1 and §7.21.6-2 false-positive guard: a non-symbolic TrueType font with
+    /// AGL-compliant /Differences (/Alpha) and the standard DejaVu program (which has a (3,1) cmap)
+    /// must NOT fire 7.21.6-1 or 7.21.6-2. Verified against veraPDF 1.30.2: neither clause fires
+    /// for this fixture (only 7.1-3 for untagged content).
+    /// </summary>
+    [Fact]
+    public void UaNonSymbolicAglDiffCompliant_DoesNotFire72161Or72162()
+    {
+        var bytes = OracleCorpus.Ua1NonSymbolicTrueTypeAglDiffCompliant();
+        var result = PdfPreflight.Validate(bytes, Conformance.PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.21.6-1");
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.21.6-2");
+    }
+
+    /// <summary>
+    /// §7.21.6-2 false-positive guard (usage-scoped): a non-symbolic TrueType font with bad
+    /// /Differences (/BADNAME_XYZ) but NOT selected via Tf in any content stream must NOT fire
+    /// §7.21.6-2. Verified against veraPDF 1.30.2: the rule is scoped to used fonts.
+    /// </summary>
+    [Fact]
+    public void UaNonSymbolicBadDifferencesUnused_DoesNotFire72162()
+    {
+        var bytes = OracleCorpus.Ua1NonSymbolicTrueTypeBadDifferencesUnused();
+        var result = PdfPreflight.Validate(bytes, Conformance.PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.21.6-2");
+    }
+
+    /// <summary>
+    /// §7.21.6-4 false-positive guard: a symbolic TrueType font (Flags=4) with no /Encoding
+    /// (satisfying §7.21.6-3) and exactly 1 cmap subtable must NOT fire §7.21.6-4.
+    /// veraPDF predicate: isSymbolic==true, nrCmaps==1 → compliant.
+    /// Verified against veraPDF 1.30.2: clause 7.21.6-4 does not fire for this fixture.
+    /// </summary>
+    [Fact]
+    public void UaSymbolicFontOneCmap_DoesNotFire7216_4()
+    {
+        var bytes = OracleCorpus.Ua1SymbolicFontNoEncodingOneCmap();
+        var result = PdfPreflight.Validate(bytes, Conformance.PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.21.6-4");
+    }
+
+    /// <summary>
+    /// §7.21.6-4 VIOLATION: a symbolic TrueType font (Flags=4) using the DejaVu program, which has
+    /// 5 cmap subtables but NO Microsoft Symbol (3,0) subtable. The 7.21.6-4 predicate requires
+    /// isSymbolic==false || nrCmaps==1 || cmap30Present==true; with symbolic=true, nrCmaps=5,
+    /// cmap30Present=false, it fires. This also fires 7.21.6-3 due to the /Encoding entry.
+    /// Cross-validated against veraPDF 1.30.2 via the oracle fixture pdfua1-symbolic-font-with-encoding.
+    /// </summary>
+    [Fact]
+    public void UaSymbolicFontWithEncoding_Fires7216_4()
+    {
+        var bytes = OracleCorpus.Ua1SymbolicFontWithEncoding();
+        var result = PdfPreflight.Validate(bytes, Conformance.PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.21.6-4");
     }
 
     // ── Batch A4 — §7.21 font clause unit tests ─────────────────────────────────────────────────
