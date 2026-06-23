@@ -1049,6 +1049,16 @@ public static class OracleCorpus
             // UaOutOfRangeGlyphInvisible_DoesNotFire7214121() in PdfPreflightTests.cs.
             // (Not in the oracle All list to avoid the in-process / veraPDF verdict mismatch.)
 
+            // ── PDF/UA-1 Batch A5d — §7.21.5-1 glyph width consistency (Tr-3-exempt) ─────────────
+
+            // §7.21.5-1 violation: the UA-1 tagged baseline's CIDFontType2 has /W removed so all
+            // shown glyphs fall to /DW=1000, while the hmtx advances differ by more than 1.
+            // veraPDF fires clause 7.21.5-1 (19 failed checks, one per shown glyph). In-process:
+            // UaGlyphWidthRule fires. Cross-validated against veraPDF 1.30.2.
+            new OracleFixture("pdfua1-glyph-width-mismatch",
+                Ua1GlyphWidthMismatch(),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
             // ── PDF/UA-1 Batch B1 — structure-tree walker foundation (§7.1) ────────────────────────
 
             // §7.1-12 VIOLATION: a StructElem (the leaf /P element) has its /P (parent pointer) entry
@@ -4081,6 +4091,123 @@ public static class OracleCorpus
     /// </summary>
     internal static byte[] Ua1OutOfRangeGlyphInvisible()
         => Ua1AppendOutOfRangeGlyph(invisible: true);
+
+    // ── Batch A5d — §7.21.5-1 glyph width consistency (Identity-H scope) ────────────────────────
+
+    /// <summary>
+    /// §7.21.5-1 violation: the UA-1 tagged baseline's embedded CIDFontType2 has its /W array
+    /// removed, so every shown glyph falls back to /DW=1000. The DejaVu subset glyphs have actual
+    /// hmtx advances that differ from 1000 by more than 1 (e.g. 'T' ≈ 333), making
+    /// <c>|widthFromFontProgram − widthFromDictionary| &gt; 1</c>. veraPDF fires clause 7.21.5-1.
+    /// Cross-validated against veraPDF 1.30.2 (clause 7.21.5, testNumber 1, status failed).
+    /// </summary>
+    internal static byte[] Ua1GlyphWidthMismatch()
+    {
+        var baseline = Ua1TaggedWithEmbeddedFont();
+        using var reader = PdfReader.Open(baseline);
+        var (_, page) = FirstPage(reader);
+        var resources = (PdfDictionary)reader.ResolveValue(page.Get(new PdfName("Resources"))!)!;
+        var fonts = (PdfDictionary)reader.ResolveValue(resources.Get(PdfName.Font)!)!;
+        var type0 = (PdfDictionary)reader.ResolveValue(fonts.Entries.First().Value)!;
+        var descArr = (PdfArray)reader.ResolveValue(type0.Get(new PdfName("DescendantFonts"))!)!;
+        var descRef = (PdfIndirectReference)descArr[0];
+        var descendant = (PdfDictionary)reader.Resolve(descRef.ObjectNumber)!;
+        // Remove /W: shown glyphs fall to /DW=1000, but their actual hmtx widths differ > 1.
+        return reader.AppendRevision([(descRef.ObjectNumber, CloneWithout(descendant, "W"))]);
+    }
+
+    /// <summary>
+    /// §7.21.5-1 FP-safety (unused font): a second CIDFontType2 font with /W removed is added to
+    /// the page resources but is NEVER selected via a <c>Tf</c> operator. Since no glyph from that
+    /// font is actually shown, veraPDF must NOT fire clause 7.21.5-1 (usage-scoped check).
+    /// Cross-validated against veraPDF 1.30.2: clause 7.21.5-1 absent when font is unused.
+    /// </summary>
+    internal static byte[] Ua1GlyphWidthMismatchUnused()
+    {
+        // Strategy: take the violation fixture (bad /W on the embedded font) and patch the page's
+        // content stream to remove the Tf operator so the corrupted font is never selected.
+        // Simpler: start from the baseline, add a corrupted copy of the font to resources with a
+        // different resource name, but never reference it in the content stream.
+        var baseline = Ua1TaggedWithEmbeddedFont();
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var resources = (PdfDictionary)reader.ResolveValue(page.Get(new PdfName("Resources"))!)!;
+        var fonts = (PdfDictionary)reader.ResolveValue(resources.Get(PdfName.Font)!)!;
+        var type0Ref = (PdfIndirectReference)fonts.Entries.First().Value;
+        var type0 = (PdfDictionary)reader.Resolve(type0Ref.ObjectNumber)!;
+        var descArr = (PdfArray)reader.ResolveValue(type0.Get(new PdfName("DescendantFonts"))!)!;
+        var descRef = (PdfIndirectReference)descArr[0];
+        var descendant = (PdfDictionary)reader.Resolve(descRef.ObjectNumber)!;
+
+        // Inject a second font entry that points to a clone of the same Type0 font but whose
+        // descendant has /W removed. The content stream never selects "/F2 Tf", so it is unused.
+        var badDescNum = reader.Size;
+        var badDesc = CloneWithout(descendant, "W");
+        var badDescendants = new PdfArray([new PdfIndirectReference(badDescNum)]);
+        var badType0 = CloneDict(type0).Set(new PdfName("DescendantFonts"), badDescendants);
+        var badType0Num = badDescNum + 1;
+        var newFonts = CloneDict(fonts).Set(new PdfName("F2"), new PdfIndirectReference(badType0Num));
+        var newResources = CloneDict(resources).Set(PdfName.Font, newFonts);
+        var newPage = CloneDict(page).Set(new PdfName("Resources"), newResources);
+
+        return reader.AppendRevision([
+            (badDescNum, badDesc),
+            (badType0Num, badType0),
+            (pageRef.ObjectNumber, newPage),
+        ]);
+    }
+
+    /// <summary>
+    /// §7.21.5-1 FP-safety (Tr-3 exemption): the /W array is removed (mismatch for all glyphs),
+    /// but the font is shown ONLY with text rendering mode 3 (invisible text). The veraPDF predicate
+    /// includes <c>renderingMode == 3</c> as an unconditional exemption, so it must NOT fire.
+    /// Cross-validated against veraPDF 1.30.2: clause 7.21.5-1 absent when renderingMode==3.
+    /// </summary>
+    internal static byte[] Ua1GlyphWidthMismatchInvisible()
+    {
+        var baseline = Ua1TaggedWithEmbeddedFont();
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var resources = (PdfDictionary)reader.ResolveValue(page.Get(new PdfName("Resources"))!)!;
+        var fonts = (PdfDictionary)reader.ResolveValue(resources.Get(PdfName.Font)!)!;
+        var type0 = (PdfDictionary)reader.ResolveValue(fonts.Entries.First().Value)!;
+        var descArr = (PdfArray)reader.ResolveValue(type0.Get(new PdfName("DescendantFonts"))!)!;
+        var descRef = (PdfIndirectReference)descArr[0];
+        var descendant = (PdfDictionary)reader.Resolve(descRef.ObjectNumber)!;
+
+        // Replace the existing content stream with one that prepends "3 Tr" so every draw
+        // uses invisible rendering mode, AND corrupt /W on the CIDFont to introduce a mismatch.
+        var contentsObj = page.Get(new PdfName("Contents"));
+        PdfIndirectReference oldContentRef;
+        if (contentsObj is PdfIndirectReference r)
+            oldContentRef = r;
+        else if (contentsObj is PdfArray arr && arr.Count > 0 && arr[0] is PdfIndirectReference ar)
+            oldContentRef = ar;
+        else
+            throw new InvalidOperationException("Expected content stream ref");
+
+        // Read existing content, prepend "3 Tr " to make all draws invisible.
+        var existingStream = reader.ResolveStream(oldContentRef.ObjectNumber)
+            ?? throw new InvalidOperationException("Expected content stream");
+        var existingBytes = reader.GetDecodedStreamData(existingStream)
+            ?? throw new InvalidOperationException("Expected decoded stream data");
+
+        var trPrefix = Encoding.ASCII.GetBytes("3 Tr ");
+        var newBytes = new byte[trPrefix.Length + existingBytes.Length];
+        trPrefix.CopyTo(newBytes, 0);
+        existingBytes.CopyTo(newBytes, trPrefix.Length);
+
+        var newContentNum = reader.Size;
+
+        var newPage = CloneDict(page).Set(new PdfName("Contents"), new PdfIndirectReference(newContentNum));
+        var badDesc = CloneWithout(descendant, "W");
+
+        return reader.AppendRevision([
+            (pageRef.ObjectNumber, newPage),
+            (newContentNum, new PdfStream(newBytes)),
+            (descRef.ObjectNumber, badDesc),
+        ]);
+    }
 
     // Appends a content stream that shows GID 0xEA60 (60000) using the existing embedded Identity-H
     // font from the UA-1 tagged baseline. When invisible=true, the stream starts with `3 Tr` so the

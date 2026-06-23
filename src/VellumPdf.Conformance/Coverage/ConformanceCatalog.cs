@@ -288,6 +288,8 @@ public static class ConformanceCatalog
         "7.21.7-2",            // UaToUnicodeForbiddenRule: shown glyph mapped to U+0000/FEFF/FFFE
         // Batch A5c — glyph presence (Identity-H/V CIDFontType2-Identity, Tr-3-exempt):
         "7.21.4.1-2",          // UaGlyphPresenceRule: shown visible glyph must be in the embedded program
+        // Batch A5d — glyph width consistency (Identity-H/V CIDFontType2-Identity, Tr-3-exempt):
+        "7.21.5-1",            // UaGlyphWidthRule: shown glyph /W or /DW width must match hmtx advance ±1
         // Batch B3 — §7.3/§7.7 alt-text, §7.9 Note IDs, §7.4.4 heading structure:
         "7.3-1",               // UaAltTextRule: Figure element must have non-empty /Alt or /ActualText
         "7.7-1",               // UaAltTextRule: Formula element must have non-empty /Alt or /ActualText
@@ -390,10 +392,8 @@ public static class ConformanceCatalog
         // §7.21 font deferred notes — Batch A3 assessment:
         // 7.21.4.1-1 moved to PdfUaImplemented (Batch A5a — UaFontEmbeddingRule, rendering-mode-scoped).
         // 7.21.4.1-2 moved to PdfUaImplemented (Batch A5c — UaGlyphPresenceRule, Tr-3-exempt).
-        "7.21.5-1" =>
-            "glyph width checks: only the Identity-H CIDFontType2 path is currently covered "
-            + "by the PDF/A-2 GlyphPresenceRule; a UA-1 specific rule with the Tr 3 exemption "
-            + "is deferred to avoid FP until the scope is fully proven",
+        // 7.21.5-1 moved to PdfUaImplemented (Batch A5d — UaGlyphWidthRule, Identity-H CIDFontType2;
+        //   Tr-3-exempt; cross-validated against veraPDF 1.30.2: violation fires, unused and Tr-3 silent).
         // 7.21.3.1-1 moved to PdfUaPartial (Batch A4 — UaCidSystemInfoRule).
         // 7.21.3.3-1/-2/-3 moved to PdfUaImplemented (Batch A4 — UaCMapRule).
         // 7.21.4.2-1 moved to PdfUaImplemented (Batch A4 — UaType1CharSetRule).
