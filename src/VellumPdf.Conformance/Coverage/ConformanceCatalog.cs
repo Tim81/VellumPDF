@@ -198,13 +198,19 @@ public static class ConformanceCatalog
         ["6.2.11.4.1-2"] = "only the embedded Identity-H CIDFontType2 path is checked",
         ["6.2.11.5-1"] = "only the embedded Identity-H CIDFontType2 path is checked",
         ["6.6.2.1-4"] = "only the catalog XMP packet is validated, not every metadata stream",
-        ["6.6.2.3.3-1"] = "pdfaExtension prefix/bag structure not fully validated",
-        ["6.6.2.3.3-5"] = "property container is read but not validated as Seq Property",
-        ["6.6.2.3.3-6"] = "valueType container is read but not validated as Seq ValueType",
+        // 6.6.2.3.3-1 moved to Implemented: pdfaExtension:schemas rdf:Bag check + pdfaExtension
+        //   prefix check added; probe-confirmed against veraPDF 1.30.2 (2026-06-23).
+        // 6.6.2.3.3-5 moved to Implemented: pdfaSchema:property rdf:Seq check + null/pdfaSchema
+        //   prefix check added (null-prefix leniency probe-confirmed 2026-06-23).
+        // 6.6.2.3.3-6 moved to Implemented: pdfaSchema:valueType rdf:Seq check + null/pdfaSchema
+        //   prefix check added (same null-prefix leniency as -5, probe-confirmed 2026-06-23).
+        // 6.6.2.3.3-15 moved to Implemented: pdfaType:field rdf:Seq check + null/pdfaType
+        //   prefix check added (same null-prefix leniency, probe-confirmed 2026-06-23).
         ["6.6.2.3.1-2"] = "extension-schema properties with primitive/container types (Text, Integer, Real, Boolean, Date, URI/URL, bag/seq/alt/Lang Alt) are type-checked; predefined XMP-Specification properties (dc:, xmp:, pdf:, pdfaid:, …) are deferred to avoid false-positives from an incomplete built-in type table; extension-schema properties whose declared type resolves to an unrecognised name (custom value types, XMP structure types) are also deferred",
-        ["6.6.2.3.3-8"] = "property valueType presence checked, not that it is a defined type",
-        ["6.6.2.3.3-15"] = "field container is read but not validated as Seq Field",
-        ["6.6.2.3.3-17"] = "field valueType presence checked, not that it is a defined type",
+        ["6.6.2.3.3-8"] = "pdfaProperty prefix on the valueType field is now checked (probe-confirmed 2026-06-23); "
+            + "the 'isValueTypeDefined' condition (verifying that the declared type name is a known/declared type) is not yet checked",
+        ["6.6.2.3.3-17"] = "pdfaField prefix on the valueType field is now checked (probe-confirmed 2026-06-23); "
+            + "the 'isValueTypeDefined' condition (verifying that the declared type name is a known/declared type) is not yet checked",
         ["6.1.9-1"] = "object/generation/obj spacing + EOL checked; the endobj-EOL sub-conditions not",
         ["6.1.13-10"] = "embedded-CMap cidrange/cidchar CIDs resolved from content text-show operators; predefined named-CMap character-collection maxima deferred (no Adobe registry table)",
         ["6.2.11.3.1-1"] = "Identity and embedded-CMap CIDSystemInfo compared; predefined-CMap registry table deferred",
