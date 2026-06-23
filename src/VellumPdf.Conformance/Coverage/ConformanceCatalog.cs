@@ -190,12 +190,14 @@ public static class ConformanceCatalog
         //   XObjects, all CharProcs of Tf-selected Type 3 fonts, and all annotation /AP /N appearance
         //   streams via GetReachableContentStreams; reachability policy empirically confirmed against
         //   veraPDF 1.30.2 on 2026-06-23).
+        // 6.1.10-1 moved to Implemented (Batch N2 — InlineImageFilterRule now scans drawn Form
+        //   XObjects, all CharProcs of Tf-selected Type 3 fonts, and all annotation /AP /N appearance
+        //   streams via GetReachableContentStreams; same reachability policy as ContentStreamOperatorRule).
         ["6.2.2-2"] = "page content streams checked (Font/XObject/ExtGState/ColorSpace/Shading); Pattern names (scn/SCN in Pattern colour space) and Properties names (BDC/DP with name operand) not detected — stateful colour-space tracking required; Form XObject / Type 3 / appearance streams not walked",
         ["6.2.11.4.1-1"] = "only the embedded Identity-H CIDFontType2 path is checked",
         ["6.2.11.4.1-2"] = "only the embedded Identity-H CIDFontType2 path is checked",
         ["6.2.11.5-1"] = "only the embedded Identity-H CIDFontType2 path is checked",
         ["6.6.2.1-4"] = "only the catalog XMP packet is validated, not every metadata stream",
-        ["6.1.10-1"] = "inline images in page content streams checked; those in Form XObject / Type 3 CharProc / annotation appearance streams not walked",
         ["6.6.2.3.3-1"] = "pdfaExtension prefix/bag structure not fully validated",
         ["6.6.2.3.3-5"] = "property container is read but not validated as Seq Property",
         ["6.6.2.3.3-6"] = "valueType container is read but not validated as Seq ValueType",

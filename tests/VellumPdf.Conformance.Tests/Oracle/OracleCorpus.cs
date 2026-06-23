@@ -877,6 +877,65 @@ public static class OracleCorpus
                 HandBuiltPdfWithKeyedApSubDict("q Q"),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
 
+            // ── Batch N2 — §6.1.10-1 non-page inline-image filter coverage ────────────────────────
+            // These fixtures extend the inline-image forbidden-filter check to Form XObjects and
+            // annotation appearance streams via GetReachableContentStreams.
+            // Reachability policy matches ContentStreamOperatorRule (Batch N1), confirmed against
+            // veraPDF 1.30.2 on 2026-06-23.
+
+            // §6.1.10-1 VIOLATION: a Form XObject (drawn by the page via /Fm0 Do) whose content
+            // stream contains an inline image with /F /LZWDecode — a forbidden filter. veraPDF fires
+            // clause 6.1.10 testNumber 1 (confirmed: one failing rule). In-process:
+            // InlineImageFilterRule must also fire.
+            new OracleFixture("pdfa2b-inline-img-bad-filter-in-form",
+                WriterPdfWithDrawnFormXObjectBytes(InlineImageBadFilterBytes()),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // §6.1.10-1 FP-SAFETY: the same Form XObject structure but the inline image uses
+            // /F /AHx (ASCIIHexDecode) — a permitted filter. veraPDF accepts it (no 6.1.10 failure).
+            // In-process: InlineImageFilterRule must NOT fire.
+            new OracleFixture("pdfa2b-inline-img-permitted-filter-in-form",
+                WriterPdfWithDrawnFormXObjectBytes(InlineImagePermittedFilterBytes()),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // §6.1.10-1 VIOLATION (nested Form): the SAME bad-filter inline image sits in
+            // Form B, drawn by Form A which is drawn by the page. Confirms the collector recurses
+            // into the full drawn-XObject chain and the rule fires at any nesting depth.
+            // veraPDF fires 6.1.10-1 (confirmed: one failing rule). In-process must also fire.
+            new OracleFixture("pdfa2b-inline-img-bad-filter-in-nested-form",
+                WriterPdfWithNestedFormXObjectBytes(InlineImageBadFilterBytes()),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // §6.1.10-1 FP-SAFETY (nested Form, permitted filter): the same nested Form A→B
+            // structure but the inline image in Form B uses /F /AHx. veraPDF accepts it.
+            // In-process: InlineImageFilterRule must NOT fire.
+            new OracleFixture("pdfa2b-inline-img-permitted-filter-in-nested-form",
+                WriterPdfWithNestedFormXObjectBytes(InlineImagePermittedFilterBytes()),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // §6.1.10-1 VIOLATION: a /Text annotation whose /AP /N appearance stream contains
+            // an inline image with /F /LZWDecode. veraPDF fires 6.1.10-1 (confirmed).
+            // In-process: InlineImageFilterRule must also fire.
+            new OracleFixture("pdfa2b-inline-img-bad-filter-in-ap",
+                WriterPdfWithAnnotAppearanceBytes(InlineImageBadFilterBytes()),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // §6.1.10-1 FP-SAFETY (annotation AP, permitted filter): the same annotation
+            // structure with /F /AHx. veraPDF accepts it. In-process must NOT fire.
+            new OracleFixture("pdfa2b-inline-img-permitted-filter-in-ap",
+                WriterPdfWithAnnotAppearanceBytes(InlineImagePermittedFilterBytes()),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // §6.1.10-1 FP-SAFETY (binary data resembling a dict): an inline image with NO /F key
+            // whose raw sample data (between ID and EI) contains the byte sequence
+            // "/F /LZWDecode". SkipInlineImageData must skip past this, leaving the scanner to
+            // see only "EI" as the end of the inline image — no forbidden-filter finding.
+            // veraPDF accepts this document (the data bytes are not parsed as filter names).
+            // In-process: InlineImageFilterRule must NOT fire.
+            new OracleFixture("pdfa2b-inline-img-data-resembles-filter-dict",
+                WriterPdfWithDrawnFormXObjectBytes(InlineImageDataResemblesFilterDictBytes()),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
             // ── PDF/UA-1 Batch A2 fixtures ──────────────────────────────────────────────────────────
 
             // §7.18.2-1 (TrapNet annotation): a visible TrapNet annotation inside the crop box is
@@ -3732,6 +3791,202 @@ public static class OracleCorpus
     }
 
     // ── End of Batch N1 helpers ─────────────────────────────────────────────────────────────────────
+
+    // ── Batch N2 helpers — §6.1.10-1 non-page inline-image filter fixtures ────────────────────────
+    // All fixtures use the writer-produced PDF/A-2b baseline (via WriterPdf / AppendRevision), which
+    // already carries a valid sRGB output intent. This avoids spurious §6.2.4.3-4 failures from the
+    // DeviceGray colour space that an inline image's /CS /G would trigger in a hand-built PDF without
+    // an output intent. Verified against veraPDF 1.30.2 on 2026-06-23.
+    //
+    // Inline image colour space: /CS /G (DeviceGray abbreviated). The writer baseline's sRGB
+    // OutputIntent satisfies §6.2.4.3-4 for DeviceGray (empirically confirmed — the sRGB intent
+    // is accepted as the device-independent DefaultGray stand-in by veraPDF when /CS /G is used).
+    //
+    // Content-stream bytes for a 1×1 greyscale inline image with /F /LZWDecode (forbidden).
+    // BI introduces the inline-image dict; /F /LZWDecode names the filter; ID ends the dict;
+    // one raw data byte (0x80) follows; EI ends the inline image. The LZW data is not decoded
+    // by veraPDF for the §6.1.10-1 filter-name check — the forbidden name alone triggers the rule.
+    // veraPDF clause 6.1.10 testNumber 1: confirmed to fire (2026-06-23).
+    private static byte[] InlineImageBadFilterBytes()
+    {
+        // "BI /W 1 /H 1 /CS /G /BPC 8 /F /LZWDecode ID " + 0x80 + "\nEI\n"
+        var prefix = Encoding.Latin1.GetBytes("BI /W 1 /H 1 /CS /G /BPC 8 /F /LZWDecode ID ");
+        var suffix = Encoding.Latin1.GetBytes("\nEI\n");
+        var result = new byte[prefix.Length + 1 + suffix.Length];
+        prefix.CopyTo(result, 0);
+        result[prefix.Length] = 0x80; // one raw data byte
+        suffix.CopyTo(result, prefix.Length + 1);
+        return result;
+    }
+
+    // Content-stream bytes for a 1×1 greyscale inline image with /F /AHx (ASCIIHexDecode, permitted).
+    // The AHx data is the hex encoding of one greyscale byte (0x00 = "00" + ">" terminator).
+    // veraPDF clause 6.1.10 testNumber 1: confirmed NOT to fire (2026-06-23).
+    private static byte[] InlineImagePermittedFilterBytes()
+        => Encoding.Latin1.GetBytes("BI /W 1 /H 1 /CS /G /BPC 8 /F /AHx ID 00>\nEI\n");
+
+    // Content-stream bytes for a 1×1 greyscale inline image with NO /F key (unfiltered), whose
+    // raw sample data between ID and EI contains the byte sequence "/F /LZWDecode". This tests
+    // that SkipInlineImageData correctly consumes the data region and the scanner does NOT
+    // misinterpret the embedded text as a filter-name declaration.
+    // The raw data bytes are: "/F /LZWDecode " (14 bytes of ASCII) followed by a space then EI.
+    // SkipInlineImageData scans for whitespace+EI and finds the space before EI. The inline-
+    // image dict parser stops at ID before seeing any /F, so no filter name is collected.
+    // veraPDF: no 6.1.10-1 finding (no /F key in the BI dict). In-process: must also be silent.
+    // NOTE: the unfiltered 1×1 grey sample must be exactly 1 byte (the 0x00 inside the text is it).
+    private static byte[] InlineImageDataResemblesFilterDictBytes()
+        => Encoding.Latin1.GetBytes("BI /W 1 /H 1 /CS /G /BPC 8 ID /F /LZWDecode EI\n");
+
+    /// <summary>
+    /// Injects a drawn Form XObject (key <c>/Fm0</c>) whose content is <paramref name="formBytes"/>
+    /// into the writer-produced PDF/A-2b baseline via an incremental update. The page content
+    /// stream is replaced to invoke the form via <c>/Fm0 Do</c>. The writer baseline already has
+    /// a valid sRGB output intent, so device-colour rules (§6.2.4.3-4) pass for DeviceGray inline
+    /// images inside the form.
+    /// </summary>
+    private static byte[] WriterPdfWithDrawnFormXObjectBytes(byte[] formBytes)
+    {
+        var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var newPage = CloneDict(page);
+
+        var formNum = reader.Size;
+        var formStream = new PdfStream(formBytes);
+        formStream.Dictionary
+            .Set(PdfName.Type, new PdfName("XObject"))
+            .Set(new PdfName("Subtype"), new PdfName("Form"))
+            .Set(new PdfName("BBox"), new PdfArray([
+                new PdfInteger(0), new PdfInteger(0),
+                new PdfInteger(100), new PdfInteger(100)]));
+
+        var contentNum = formNum + 1;
+        var pageContentBytes = Encoding.Latin1.GetBytes("/Fm0 Do");
+        var contentStream = new PdfStream(pageContentBytes);
+
+        var resObj = page.Get(new PdfName("Resources"));
+        var resources = (resObj is null ? null : reader.ResolveValue(resObj)) as PdfDictionary ?? new PdfDictionary();
+        var newResources = CloneDict(resources);
+        newResources.Set(
+            new PdfName("XObject"),
+            new PdfDictionary().Set(new PdfName("Fm0"), new PdfIndirectReference(formNum)));
+        newPage
+            .Set(new PdfName("Resources"), newResources)
+            .Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
+
+        return reader.AppendRevision([
+            (pageRef.ObjectNumber, newPage),
+            (formNum, formStream),
+            (contentNum, contentStream),
+        ]);
+    }
+
+    /// <summary>
+    /// Injects a two-level nested Form XObject chain (Form A draws Form B whose content is
+    /// <paramref name="innerBytes"/>) into the writer-produced PDF/A-2b baseline via an
+    /// incremental update. The page draws Form A via <c>/FmA Do</c>.
+    /// </summary>
+    private static byte[] WriterPdfWithNestedFormXObjectBytes(byte[] innerBytes)
+    {
+        var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var newPage = CloneDict(page);
+
+        var formBNum = reader.Size;
+        var formBStream = new PdfStream(innerBytes);
+        formBStream.Dictionary
+            .Set(PdfName.Type, new PdfName("XObject"))
+            .Set(new PdfName("Subtype"), new PdfName("Form"))
+            .Set(new PdfName("BBox"), new PdfArray([
+                new PdfInteger(0), new PdfInteger(0),
+                new PdfInteger(100), new PdfInteger(100)]));
+
+        var formANum = formBNum + 1;
+        var formABytes = Encoding.Latin1.GetBytes("/FmB Do");
+        var formAStream = new PdfStream(formABytes);
+        formAStream.Dictionary
+            .Set(PdfName.Type, new PdfName("XObject"))
+            .Set(new PdfName("Subtype"), new PdfName("Form"))
+            .Set(new PdfName("BBox"), new PdfArray([
+                new PdfInteger(0), new PdfInteger(0),
+                new PdfInteger(100), new PdfInteger(100)]))
+            .Set(new PdfName("Resources"), new PdfDictionary()
+                .Set(new PdfName("XObject"), new PdfDictionary()
+                    .Set(new PdfName("FmB"), new PdfIndirectReference(formBNum))));
+
+        var contentNum = formANum + 1;
+        var pageContentBytes = Encoding.Latin1.GetBytes("/FmA Do");
+        var contentStream = new PdfStream(pageContentBytes);
+
+        var resObj = page.Get(new PdfName("Resources"));
+        var resources = (resObj is null ? null : reader.ResolveValue(resObj)) as PdfDictionary ?? new PdfDictionary();
+        var newResources = CloneDict(resources);
+        newResources.Set(
+            new PdfName("XObject"),
+            new PdfDictionary().Set(new PdfName("FmA"), new PdfIndirectReference(formANum)));
+        newPage
+            .Set(new PdfName("Resources"), newResources)
+            .Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
+
+        return reader.AppendRevision([
+            (pageRef.ObjectNumber, newPage),
+            (formBNum, formBStream),
+            (formANum, formAStream),
+            (contentNum, contentStream),
+        ]);
+    }
+
+    /// <summary>
+    /// Injects a /Text annotation whose /AP /N appearance stream contains the raw content bytes
+    /// <paramref name="apBytes"/> into the writer-produced PDF/A-2b baseline via an incremental
+    /// update.
+    /// </summary>
+    private static byte[] WriterPdfWithAnnotAppearanceBytes(byte[] apBytes)
+    {
+        var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var newPage = CloneDict(page);
+
+        var apStreamNum = reader.Size;
+        var apStream = new PdfStream(apBytes);
+        apStream.Dictionary
+            .Set(PdfName.Type, new PdfName("XObject"))
+            .Set(new PdfName("Subtype"), new PdfName("Form"))
+            .Set(new PdfName("BBox"), new PdfArray([
+                new PdfInteger(0), new PdfInteger(0),
+                new PdfInteger(100), new PdfInteger(100)]));
+
+        var annotNum = apStreamNum + 1;
+        var annotDict = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("Annot"))
+            .Set(new PdfName("Subtype"), new PdfName("Text"))
+            .Set(new PdfName("Rect"), new PdfArray([
+                new PdfInteger(10), new PdfInteger(10),
+                new PdfInteger(50), new PdfInteger(50)]))
+            .Set(new PdfName("F"), new PdfInteger(4))
+            .Set(new PdfName("Contents"), new PdfLiteralString(Encoding.Latin1.GetBytes("note")))
+            .Set(new PdfName("AP"), new PdfDictionary()
+                .Set(new PdfName("N"), new PdfIndirectReference(apStreamNum)));
+
+        // Inject the annotation into the page /Annots array.
+        var annotsObj = page.Get(new PdfName("Annots"));
+        var existingAnnots = (annotsObj is not null ? reader.ResolveValue(annotsObj) : null) as PdfArray;
+        var annotsList = existingAnnots is not null
+            ? Enumerable.Range(0, existingAnnots.Count).Select(i => existingAnnots[i]).ToList()
+            : new List<PdfObject>();
+        annotsList.Add(new PdfIndirectReference(annotNum));
+        newPage.Set(new PdfName("Annots"), new PdfArray([.. annotsList]));
+
+        return reader.AppendRevision([
+            (pageRef.ObjectNumber, newPage),
+            (apStreamNum, apStream),
+            (annotNum, annotDict),
+        ]);
+    }
+
+    // ── End of Batch N2 helpers ─────────────────────────────────────────────────────────────────────
 
     private static byte[] WriterPdf(VellumPdf.Document.PdfConformance conformance)
     {
