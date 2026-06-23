@@ -4983,6 +4983,99 @@ public sealed class PdfPreflightTests
         Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.2-2");
     }
 
+    // ── §6.2.2-2 Non-page stream checks (Batch N5) ───────────────────────────────────────────────
+
+    [Fact]
+    public void Validate_FormNoResourcesUsesGs_IsReported()
+    {
+        // §6.2.2-2 VIOLATION (Batch N5): a drawn Form XObject with NO own /Resources that uses
+        // the named ExtGState /GS1 via the gs operator. The page has its own /Resources with
+        // /GS1 defined — but that does not satisfy the form stream's own requirement.
+        // Empirically confirmed: veraPDF 1.30.2 fires clause 6.2.2 testNumber 2 on the form's
+        // content stream (context: …/xObject[0]/contentStream[0]; confirmed 2026-06-23).
+        var bytes = OracleCorpus.InheritedResourceFormNoResourcesUsesGsPublic();
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a =>
+            a.RuleId == "ISO19005-2:6.2.2-2" && a.Message.Contains("GS1", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Validate_FormWithResourcesUsesGs_NeverReports6222()
+    {
+        // §6.2.2-2 FP-SAFETY (Batch N5): same drawn Form XObject structure but the form HAS its
+        // own /Resources defining /GS1. The form is self-contained — the rule must NOT fire.
+        // Confirmed: veraPDF accepts this document (2026-06-23).
+        var bytes = OracleCorpus.InheritedResourceFormWithResourcesUsesGsPublic();
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.2-2");
+    }
+
+    [Fact]
+    public void Validate_FormNoResourcesNoUsage_NeverReports6222()
+    {
+        // §6.2.2-2 FP-SAFETY (Batch N5): a drawn Form XObject with NO own /Resources that uses
+        // ONLY operators that do not reference named resources (q Q). No named resource usage
+        // means §6.2.2-2 does not apply. Confirmed: veraPDF accepts (2026-06-23).
+        var bytes = OracleCorpus.InheritedResourceFormNoResourcesNoUsagePublic();
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.2-2");
+    }
+
+    // ── §6.2.2-2 Page-level undefined-name + nested-form probes (Batch N6) ──────────────────────
+
+    [Fact]
+    public void Validate_PageNoResourcesUndefinedName_NeverReports6222()
+    {
+        // §6.2.2-2 FP-SAFETY (Batch N6, probe A1): a page with NO own /Resources and NO ancestor
+        // /Resources at all. The page content uses /GS0 gs — a name UNDEFINED in all ancestor
+        // scopes. Per veraPDF's "inheritedResourceNames" model: an undefined name is NOT an
+        // inherited resource name, so the rule does not fire. veraPDF 1.30.2 accepts this document
+        // (isCompliant=true; confirmed empirically, probe A1, 2026-06-23). After the EvaluatePage
+        // fix that gates on the ancestor scope, the in-process rule must also NOT fire.
+        var bytes = OracleCorpus.PageNoResourcesUndefinedNamePublic();
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.2-2");
+    }
+
+    [Fact]
+    public void Validate_NestedFormInnerNoResourcesPageDefined_IsReported()
+    {
+        // §6.2.2-2 VIOLATION (Batch N6, probe B1): page draws OUTER form (own /Resources, no /GS1).
+        // OUTER draws INNER form (NO /Resources, uses /GS1 gs). /GS1 IS defined in the page's
+        // /Resources /ExtGState. veraPDF fires 6.2.2-2 on the inner form's content stream
+        // (confirmed empirically, probe B1, 2026-06-23). In-process must fire.
+        var bytes = OracleCorpus.NestedFormInnerNoResourcesPageDefinedPublic();
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a =>
+            a.RuleId == "ISO19005-2:6.2.2-2" && a.Message.Contains("GS1", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Validate_NestedFormInnerNoResourcesOuterDefined_NeverReports6222()
+    {
+        // §6.2.2-2 FP-SAFETY (Batch N6, probe B2): same nested outer/inner form structure, but
+        // /GS1 is defined ONLY in the OUTER form's /Resources (not the page's /Resources). The
+        // INNER form has no /Resources and uses /GS1 gs. veraPDF accepts because /GS1 is not in
+        // the page resource scope (confirmed empirically, probe B2, 2026-06-23). In-process must
+        // NOT fire: the non-page stream check looks up used names in the PAGE's resource scope, and
+        // /GS1 is absent from the page's /ExtGState, so no finding is emitted.
+        var bytes = OracleCorpus.NestedFormInnerNoResourcesOuterDefinedPublic();
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.2-2");
+    }
+
     // ── §6.1.10-1 Inline-image filter checks ──────────────────────────────────
 
     [Fact]
