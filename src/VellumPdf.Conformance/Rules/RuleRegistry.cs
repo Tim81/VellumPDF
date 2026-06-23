@@ -157,6 +157,8 @@ internal static class RuleRegistry
         // Batch A3 — font clauses §7.21:
         new UaCidToGidMapRule(),
         new UaSymbolicFontRule(),
+        // Batch A6 — TrueType cmap / Differences-compliance (§7.21.6-1/-2/-4):
+        new UaTrueTypeCmapRule(),
         // Batch A4 — font clauses §7.21 (CMap, CharSet, CIDSet, CIDSystemInfo):
         new UaCMapRule(),
         new UaType1CharSetRule(),

@@ -912,12 +912,38 @@ public static class OracleCorpus
 
             // §7.21.6-3: a symbolic TrueType font (Flags bit 3 = Symbolic) must have no /Encoding.
             // The failing fixture adds /Encoding /WinAnsiEncoding to a symbolic (Flags=4) TrueType
-            // font, causing both veraPDF (7.21.6-3) and the in-process UaSymbolicFontRule to fire.
-            // The negative-path (symbolic, no encoding) fixture is handled by a unit test rather than
-            // here: the no-encoding document also fails 7.21.6-4 (cmap subtables) which we don't
-            // implement yet, so the overall verdict would misalign with the in-process result.
+            // font. DejaVu has 5 cmap subtables but NO (3,0) — both veraPDF and the in-process
+            // UaSymbolicFontRule+UaTrueTypeCmapRule fire 7.21.6-3 and 7.21.6-4.
+            // The 7.21.6-3 FP guard (symbolic, no encoding) is tested as a unit test only.
+            // The 7.21.6-4 FP guard (1 cmap, (3,0) present) is Ua1SymbolicFontNoEncodingOneCmap.
             new OracleFixture("pdfua1-symbolic-font-with-encoding",
                 Ua1SymbolicFontWithEncoding(),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // ── Batch A6 — §7.21.6-1/-2/-4 TrueType cmap / Differences-compliance fixtures ─────────
+
+            // §7.21.6-1 VIOLATION: a non-symbolic TrueType font (Flags=32, WinAnsiEncoding) whose
+            // embedded cmap has been patched to a single Microsoft Symbol (3,0) subtable. veraPDF
+            // fires 7.21.6-1 (isSymbolic==false, cmap30Present==true, nrCmaps==1 → not > 1).
+            // In-process: UaTrueTypeCmapRule fires 7.21.6-1.
+            new OracleFixture("pdfua1-nonsymb-symbol-only-cmap",
+                Ua1NonSymbolicTrueTypeSymbolOnlyCmap(),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.21.6-2 VIOLATION: a non-symbolic TrueType font with /Differences containing /BADNAME_XYZ
+            // (not in the Adobe Glyph List). veraPDF fires 7.21.6-2 (differencesAreUnicodeCompliant==false).
+            // In-process: UaTrueTypeCmapRule fires 7.21.6-2.
+            new OracleFixture("pdfua1-nonsymb-bad-differences",
+                Ua1NonSymbolicTrueTypeBadDifferences(),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.21.6-1 and §7.21.6-2 VIOLATION: a non-symbolic TrueType font with AGL-compliant
+            // /Differences (/Alpha at code 65) but whose cmap is patched to symbol-only (3,0).
+            // veraPDF fires both 7.21.6-1 (symbol-only cmap for non-symbolic font) and 7.21.6-2
+            // (differencesAreUnicodeCompliant requires the (3,1) cmap).
+            // In-process: UaTrueTypeCmapRule fires both 7.21.6-1 and 7.21.6-2.
+            new OracleFixture("pdfua1-nonsymb-agl-diff-bad-cmap",
+                Ua1NonSymbolicTrueTypeAglDiffBadCmap(),
                 Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
 
             // (§7.21.7-2 ToUnicode-forbidden-value fixtures were removed together with the rule: the
@@ -965,10 +991,9 @@ public static class OracleCorpus
 
             // §7.21.4.1-1 COMPLIANT (Tr 3 exemption) and §7.21.4.1-1 COMPLIANT (embedded font):
             // These fixtures are tested as unit tests only (not oracle fixtures): the compliant
-            // documents fail OTHER unimplemented UA-1 rules (e.g. 7.21.6-4 TrueType cmap check,
-            // 7.1-3 untagged text), so veraPDF reports non-compliant for those reasons while the
-            // in-process validator (which does not implement those rules) reports compliant — the
-            // verdicts diverge for rule-gap reasons unrelated to §7.21.4.1-1. The unit tests verify
+            // documents fail OTHER UA-1 rules (7.1-3 untagged text), so veraPDF reports non-compliant
+            // for those reasons while the in-process validator (which defers 7.1-3) reports compliant
+            // — the verdicts diverge for rule-gap reasons unrelated to §7.21.4.1-1. The unit tests verify
             // the specific absence of the §7.21.4.1-1 finding, matching the Batch A4 pattern used
             // for the Type1-CharSet-complete and CIDSet-complete FP-guards.
 
@@ -3491,11 +3516,86 @@ public static class OracleCorpus
     internal static byte[] Ua1NonSymbolicFontWinAnsi()
         => Ua1AddSimpleTrueType(flags: 32, encoding: new PdfName("WinAnsiEncoding"));
 
-    // Helper: adds a simple TrueType font (DejaVu, drawing 'A') to the UA-1 tagged baseline.
-    // flags = 4 → Symbolic; flags = 32 → NonSymbolic. encoding = null → no /Encoding entry.
-    private static byte[] Ua1AddSimpleTrueType(int flags, PdfName? encoding)
+    // ── Batch A6 — §7.21.6-1/-2/-4 oracle fixtures ──────────────────────────────────────────────
+
+    /// <summary>
+    /// §7.21.6-1 violation: a non-symbolic TrueType font whose embedded program's cmap has been
+    /// patched to a single Microsoft Symbol (3,0) subtable. veraPDF fires clause 7.21.6-1 because a
+    /// non-symbolic font's program must contain at least one non-symbol-only cmap entry.
+    /// </summary>
+    internal static byte[] Ua1NonSymbolicTrueTypeSymbolOnlyCmap()
     {
         var asset = LoadAsset("DejaVuSans.ttf");
+        var cmap = Ua1SfntTableOffset(asset, "cmap");
+        asset[cmap + 2] = 0; asset[cmap + 3] = 1;   // numSubtables = 1
+        asset[cmap + 4] = 0; asset[cmap + 5] = 3;   // platform = 3
+        asset[cmap + 6] = 0; asset[cmap + 7] = 0;   // encoding = 0 (Symbol)
+        return Ua1AddSimpleTrueType(flags: 32, encoding: new PdfName("WinAnsiEncoding"), fontProgram: asset);
+    }
+
+    /// <summary>
+    /// §7.21.6-2 violation: a non-symbolic TrueType font with /Differences containing a glyph name
+    /// not in the Adobe Glyph List (/BADNAME_XYZ). veraPDF fires clause 7.21.6-2 because
+    /// differencesAreUnicodeCompliant is false.
+    /// </summary>
+    internal static byte[] Ua1NonSymbolicTrueTypeBadDifferences()
+        => Ua1AddSimpleTrueType(flags: 32, encoding: Ua1MakeEncodingWithDiffs("WinAnsiEncoding", 65, "BADNAME_XYZ"));
+
+    /// <summary>
+    /// §7.21.6-1 and §7.21.6-2 violation: a non-symbolic TrueType font with AGL-compliant
+    /// /Differences (/Alpha at code 65) but whose embedded program's cmap has been patched to
+    /// symbol-only. veraPDF fires both 7.21.6-1 (program lacks non-symbol cmap) and 7.21.6-2
+    /// (differencesAreUnicodeCompliant also requires the (3,1) cmap).
+    /// </summary>
+    internal static byte[] Ua1NonSymbolicTrueTypeAglDiffBadCmap()
+    {
+        var asset = LoadAsset("DejaVuSans.ttf");
+        var cmap = Ua1SfntTableOffset(asset, "cmap");
+        asset[cmap + 2] = 0; asset[cmap + 3] = 1;   // numSubtables = 1
+        asset[cmap + 4] = 0; asset[cmap + 5] = 3;   // platform = 3
+        asset[cmap + 6] = 0; asset[cmap + 7] = 0;   // encoding = 0 (Symbol)
+        return Ua1AddSimpleTrueType(flags: 32, encoding: Ua1MakeEncodingWithDiffs("WinAnsiEncoding", 65, "Alpha"), fontProgram: asset);
+    }
+
+    /// <summary>
+    /// §7.21.6-1/-2 conformant FP guard: a non-symbolic TrueType font with an AGL-compliant
+    /// /Differences (/Alpha at code 65) and the standard DejaVu program (which has (3,1) cmap).
+    /// veraPDF should NOT fire 7.21.6-1 or 7.21.6-2. Unit-test only (not an oracle violation).
+    /// </summary>
+    internal static byte[] Ua1NonSymbolicTrueTypeAglDiffCompliant()
+        => Ua1AddSimpleTrueType(flags: 32, encoding: Ua1MakeEncodingWithDiffs("WinAnsiEncoding", 65, "Alpha"));
+
+    /// <summary>
+    /// §7.21.6-2 conformant FP guard: a non-symbolic TrueType font with bad /Differences
+    /// (/BADNAME_XYZ at code 65) but the font is NOT selected via Tf in any content stream.
+    /// veraPDF should NOT fire 7.21.6-2 because the font is unused. Unit-test only.
+    /// </summary>
+    internal static byte[] Ua1NonSymbolicTrueTypeBadDifferencesUnused()
+        => Ua1AddSimpleTrueTypeUnused(flags: 32, encoding: Ua1MakeEncodingWithDiffs("WinAnsiEncoding", 65, "BADNAME_XYZ"));
+
+    /// <summary>
+    /// §7.21.6-4 conformant FP guard: a symbolic TrueType font with no /Encoding (satisfying
+    /// §7.21.6-3) and a single cmap subtable. veraPDF should NOT fire 7.21.6-4 (nrCmaps == 1).
+    /// Unit-test only (not an oracle violation).
+    /// </summary>
+    internal static byte[] Ua1SymbolicFontNoEncodingOneCmap()
+    {
+        var asset = LoadAsset("DejaVuSans.ttf");
+        // Patch cmap to 1 subtable, keeping the (3,0) Symbol entry as the sole record.
+        var cmap = Ua1SfntTableOffset(asset, "cmap");
+        asset[cmap + 2] = 0; asset[cmap + 3] = 1;   // numSubtables = 1
+        asset[cmap + 4] = 0; asset[cmap + 5] = 3;   // platform = 3
+        asset[cmap + 6] = 0; asset[cmap + 7] = 0;   // encoding = 0 (Symbol)
+        return Ua1AddSimpleTrueType(flags: 4, encoding: null, fontProgram: asset);
+    }
+
+    // Helper: adds a simple TrueType font (DejaVu, drawing 'A') to the UA-1 tagged baseline.
+    // flags = 4 → Symbolic; flags = 32 → NonSymbolic. encoding = null → no /Encoding entry.
+    // fontProgram overrides the embedded bytes (e.g. for cmap-patched programs).
+    private static byte[] Ua1AddSimpleTrueType(int flags, PdfObject? encoding, byte[]? fontProgram = null)
+    {
+        var asset = LoadAsset("DejaVuSans.ttf");
+        var programBytes = fontProgram ?? asset;
         int widthA;
         using (var measureDoc = new PdfDocument())
             widthA = (int)Math.Round(measureDoc.UseTrueTypeFont(asset).MeasureString("A", 1000));
@@ -3511,8 +3611,8 @@ public static class OracleCorpus
         var ffNum = fontNum + 2;
         var contentNum = fontNum + 3;
 
-        var fontFile = new PdfStream(asset);
-        fontFile.Dictionary.Set(new PdfName("Length1"), new PdfInteger(asset.Length));
+        var fontFile = new PdfStream(programBytes);
+        fontFile.Dictionary.Set(new PdfName("Length1"), new PdfInteger(programBytes.Length));
         var descriptor = new PdfDictionary()
             .Set(PdfName.Type, new PdfName("FontDescriptor"))
             .Set(new PdfName("FontName"), new PdfName("DejaVuSans"))
@@ -3544,6 +3644,75 @@ public static class OracleCorpus
 
         return reader.AppendRevision(
             [(pageRef.ObjectNumber, newPage), (fontNum, simple), (descNum, descriptor), (ffNum, fontFile), (contentNum, content)]);
+    }
+
+    // Like Ua1AddSimpleTrueType but adds the font to /Resources without any content stream Tf call.
+    private static byte[] Ua1AddSimpleTrueTypeUnused(int flags, PdfObject? encoding)
+    {
+        var asset = LoadAsset("DejaVuSans.ttf");
+        int widthA;
+        using (var measureDoc = new PdfDocument())
+            widthA = (int)Math.Round(measureDoc.UseTrueTypeFont(asset).MeasureString("A", 1000));
+
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var resources = (PdfDictionary)reader.ResolveValue(page.Get(new PdfName("Resources"))!)!;
+        var fontResources = (PdfDictionary)reader.ResolveValue(resources.Get(PdfName.Font)!)!;
+
+        var fontNum = reader.Size;
+        var descNum = fontNum + 1;
+        var ffNum = fontNum + 2;
+
+        var fontFile = new PdfStream(asset);
+        fontFile.Dictionary.Set(new PdfName("Length1"), new PdfInteger(asset.Length));
+        var descriptor = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("FontDescriptor"))
+            .Set(new PdfName("FontName"), new PdfName("DejaVuSans"))
+            .Set(new PdfName("Flags"), new PdfInteger(flags))
+            .Set(new PdfName("FontBBox"), new PdfArray([new PdfInteger(-1021), new PdfInteger(-463), new PdfInteger(1793), new PdfInteger(1232)]))
+            .Set(new PdfName("ItalicAngle"), new PdfInteger(0))
+            .Set(new PdfName("Ascent"), new PdfInteger(928))
+            .Set(new PdfName("Descent"), new PdfInteger(-236))
+            .Set(new PdfName("CapHeight"), new PdfInteger(928))
+            .Set(new PdfName("StemV"), new PdfInteger(80))
+            .Set(new PdfName("FontFile2"), new PdfIndirectReference(ffNum));
+        var simple = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("Font"))
+            .Set(PdfName.Subtype, new PdfName("TrueType"))
+            .Set(PdfName.BaseFont, new PdfName("DejaVuSans"))
+            .Set(new PdfName("FirstChar"), new PdfInteger(65))
+            .Set(new PdfName("LastChar"), new PdfInteger(65))
+            .Set(new PdfName("Widths"), new PdfArray([new PdfInteger(widthA)]))
+            .Set(new PdfName("FontDescriptor"), new PdfIndirectReference(descNum));
+        if (encoding is not null)
+            simple.Set(new PdfName("Encoding"), encoding);
+
+        // Font present in Resources but no content stream uses it (no Tf).
+        var newFontResources = CloneDict(fontResources).Set(new PdfName("F99"), new PdfIndirectReference(fontNum));
+        var newResources = CloneDict(resources).Set(PdfName.Font, newFontResources);
+        var newPage = CloneDict(page).Set(new PdfName("Resources"), newResources);
+
+        return reader.AppendRevision(
+            [(pageRef.ObjectNumber, newPage), (fontNum, simple), (descNum, descriptor), (ffNum, fontFile)]);
+    }
+
+    private static PdfDictionary Ua1MakeEncodingWithDiffs(string baseEnc, int atCode, string glyphName)
+        => new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("Encoding"))
+            .Set(new PdfName("BaseEncoding"), new PdfName(baseEnc))
+            .Set(new PdfName("Differences"), new PdfArray([new PdfInteger(atCode), new PdfName(glyphName)]));
+
+    private static int Ua1SfntTableOffset(byte[] font, string tag)
+    {
+        var numTables = (font[4] << 8) | font[5];
+        for (var i = 0; i < numTables; i++)
+        {
+            var rec = 12 + i * 16;
+            if (font[rec] == tag[0] && font[rec + 1] == tag[1] && font[rec + 2] == tag[2] && font[rec + 3] == tag[3])
+                return (font[rec + 8] << 24) | (font[rec + 9] << 16) | (font[rec + 10] << 8) | font[rec + 11];
+        }
+        throw new InvalidOperationException($"sfnt table '{tag}' not found.");
     }
 
     // ── Batch A4 — font-clause probe fixtures ────────────────────────────────────────────────────
