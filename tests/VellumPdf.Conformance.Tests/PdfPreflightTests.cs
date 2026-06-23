@@ -10766,6 +10766,190 @@ public sealed class PdfPreflightTests
         Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.1-2");
     }
 
+    // ── §7.1-3 (UaSimpleContentItemRule) ─────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// §7.1-3 VIOLATION: plain text-show (Tj) outside any BDC — no MCID, no Artifact.
+    /// Rule fires "ISO14289-1:7.1-3".
+    /// Predicate: isTaggedContent==false AND parentsTags.contains('Artifact')==false.
+    /// </summary>
+    [Fact]
+    public void UaUntaggedTextShow_Fires713()
+    {
+        // Plain Tj outside any BDC — no MCID, no Artifact. Pure untagged real content.
+        // BuildUaPdfWithContent gives no /ParentTree: the BDC has MCID but we want NO BDC at all.
+        // Use a standalone assembly with no content BDC.
+        var content = Encoding.ASCII.GetBytes("BT (hello) Tj ET");
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R /Lang (en-US) /MarkInfo << /Marked true >>"
+                + " /ViewerPreferences << /DisplayDocTitle true >> /StructTreeRoot 4 0 R >>"),
+            _pagesObj,
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 5 0 R >>"),
+            new("<< /Type /StructTreeRoot >>"),
+            new(string.Empty, content),
+        ],
+        metadataOverride: UaXmpBytes());
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.1-3");
+    }
+
+    /// <summary>
+    /// §7.1-3 VIOLATION: path painting (S) outside any BDC — no MCID, no Artifact.
+    /// Rule fires "ISO14289-1:7.1-3".
+    /// </summary>
+    [Fact]
+    public void UaUntaggedPathPaint_Fires713()
+    {
+        var content = Encoding.ASCII.GetBytes("0 0 m 100 0 l S");
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R /Lang (en-US) /MarkInfo << /Marked true >>"
+                + " /ViewerPreferences << /DisplayDocTitle true >> /StructTreeRoot 4 0 R >>"),
+            _pagesObj,
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 5 0 R >>"),
+            new("<< /Type /StructTreeRoot >>"),
+            new(string.Empty, content),
+        ],
+        metadataOverride: UaXmpBytes());
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.1-3");
+    }
+
+    /// <summary>
+    /// §7.1-3 FP guard: text-show inside /P BDC with MCID 0 wired to ParentTree.
+    /// Rule must NOT fire 7.1-3 (EffectiveMcid != null — tagged).
+    /// </summary>
+    [Fact]
+    public void UaTaggedTextShow_NoFire713()
+    {
+        var bytes = BuildUaPdfWithParentTree("/P << /MCID 0 >> BDC BT (hello) Tj ET EMC");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.1-3");
+    }
+
+    /// <summary>
+    /// §7.1-3 FP guard: text-show inside named-reference BDC (/P /MC0 BDC, MCID 0 via Properties).
+    /// Named-ref BDC resolution is done; EffectiveMcid != null → silent.
+    /// </summary>
+    [Fact]
+    public void UaTaggedTextShowNamedRefBdc_NoFire713()
+    {
+        var bytes = BuildUaPdfWithParentTreeNamedRef("/P /MC0 BDC BT (hello) Tj ET EMC");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.1-3");
+    }
+
+    /// <summary>
+    /// §7.1-3 FP guard: text-show inside /P BDC (MCID 0, tagged) plus path line inside /Artifact BMC.
+    /// Both items are covered: tagged Tj and artifact S. Rule must NOT fire 7.1-3.
+    /// </summary>
+    [Fact]
+    public void UaTaggedTextPlusArtifactPath_NoFire713()
+    {
+        var bytes = BuildUaPdfWithParentTree(
+            "/P << /MCID 0 >> BDC BT (hello) Tj ET EMC "
+            + "/Artifact BMC 0 0 m 100 0 l S EMC");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.1-3");
+    }
+
+    /// <summary>
+    /// §7.1-3 FP guard: path painting (S) inside /P BDC (MCID 0) — tagged. Must NOT fire 7.1-3.
+    /// </summary>
+    [Fact]
+    public void UaPathPaintInTaggedBdc_NoFire713()
+    {
+        var bytes = BuildUaPdfWithParentTree(
+            "/P << /MCID 0 >> BDC 0 0 m 100 0 l S EMC");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.1-3");
+    }
+
+    /// <summary>
+    /// §7.1-3 FP guard: path painting (S) inside /Artifact BMC — IsInsideArtifact = true. Silent.
+    /// </summary>
+    [Fact]
+    public void UaPathPaintInArtifactBmc_NoFire713()
+    {
+        var bytes = BuildUaPdfWithParentTree("/Artifact BMC 0 0 m 100 0 l S EMC");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.1-3");
+    }
+
+    /// <summary>
+    /// §7.1-3 FP guard: color ops (rg), state ops (cm), clipping (W n), and path-construction (m/l)
+    /// outside any BDC are NOT content items — no SimpleContentItem is emitted. Must NOT fire 7.1-3.
+    /// </summary>
+    [Fact]
+    public void UaColorStateClipOps_NoFire713()
+    {
+        // rg/cm/gs are color/state ops; m/l are path-construction; W n is clip/no-paint.
+        // None of these create content items per the operator set.
+        var bytes = BuildUaPdfWithParentTree(
+            "1 0 0 rg 1 0 0 1 0 0 cm 0 0 m 100 0 l W n "
+            + "/P << /MCID 0 >> BDC BT (tagged) Tj ET EMC");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.1-3");
+    }
+
+    /// <summary>
+    /// §7.1-3 FP guard: a document with ONLY artifact content (all S ops inside /Artifact BMC).
+    /// No tagged content. Rule must NOT fire 7.1-3.
+    /// </summary>
+    [Fact]
+    public void UaOnlyArtifacts_NoFire713()
+    {
+        var content = Encoding.ASCII.GetBytes(
+            "/Artifact BMC 0 0 m 100 0 l S EMC /Artifact BMC 0 10 m 100 10 l S EMC");
+        var bytes = AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R /Lang (en-US) /MarkInfo << /Marked true >>"
+                + " /ViewerPreferences << /DisplayDocTitle true >> /StructTreeRoot 4 0 R >>"),
+            _pagesObj,
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 5 0 R >>"),
+            new("<< /Type /StructTreeRoot >>"),
+            new(string.Empty, content),
+        ],
+        metadataOverride: UaXmpBytes());
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.1-3");
+    }
+
+    /// <summary>
+    /// §7.1-3 VIOLATION oracle: the pdfua1-untagged-real-content oracle fixture (path-painting S
+    /// outside any BDC). Cross-validated against veraPDF 1.30.2: fires clause 7.1 testNumber 3.
+    /// In-process rule must also fire.
+    /// </summary>
+    [Fact]
+    public void UaUntaggedRealContent_Fires713_OracleFixture()
+    {
+        var bytes = OracleCorpus.Ua1UntaggedRealContentPublic();
+        var result = PdfPreflight.Validate(bytes, Conformance.PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.1-3");
+    }
+
+    /// <summary>
+    /// §7.1-3 FP guard: a Do operator on a non-Image XObject is NOT a content item.
+    /// The content has a tagged Tj (inside /P BDC with MCID 0) plus a bare /Fm0 Do.
+    /// Since /Fm0 does not exist as an XObject resource here (no /Resources), the Do lookup
+    /// returns null and no content item is emitted. Rule must NOT fire 7.1-3.
+    /// </summary>
+    [Fact]
+    public void UaFormDoNotContentItem_NoFire713()
+    {
+        // No /Resources/XObject on the page, so xObjectIsImage is empty.
+        // /Fm0 Do: lastName="Fm0", xObjectIsImage.Contains("Fm0")==false → no content item.
+        // The tagged Tj inside /P BDC (MCID 0) is a content item but has EffectiveMcid != null.
+        var bytes = BuildUaPdfWithParentTree(
+            "/P << /MCID 0 >> BDC BT (hello) Tj ET EMC /Fm0 Do");
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.1-3");
+    }
+
     // ── Batch A5d — §7.21.5-1 glyph width consistency (UaGlyphWidthRule) ────────────────────────
 
     /// <summary>

@@ -102,9 +102,27 @@ internal sealed record TextShowMcContext(
     string? InheritedLang); // /Lang inherited from any ancestor BDC, or null
 
 /// <summary>
+/// One "simple content item" as defined by ISO 14289-1 §7.1-3: an operator that creates a
+/// content item (Tj/TJ/'/", S/s/f/F/f*/B/B*/b/b*, EI, image-Do, sh). Used by
+/// <c>UaSimpleContentItemRule</c> to check that every real-content operator is either tagged
+/// (its nearest enclosing BDC with an MCID resolves in the ParentTree) or inside an Artifact.
+/// </summary>
+/// <param name="EffectiveMcid">
+/// The MCID of the nearest enclosing BDC that carries any MCID (direct <c>Mcid</c> or inherited
+/// <c>AncestorMcid</c> from the MC-stack top), or <see langword="null"/> when the content item
+/// is outside any MCID-carrying BDC. <see langword="null"/> + no Artifact = untagged real content.
+/// </param>
+/// <param name="IsInsideArtifact">
+/// <see langword="true"/> when the content item's current MC-stack context is an Artifact sequence
+/// or has any Artifact ancestor. Corresponds to veraPDF's <c>parentsTags.contains('Artifact')</c>.
+/// </param>
+internal sealed record SimpleContentItem(int? EffectiveMcid, bool IsInsideArtifact);
+
+/// <summary>
 /// The result of scanning a page's content streams for graphics-state usage. All properties
 /// mirror the seven operands tracked before Batch A5a, extended with <see cref="TextShows"/>,
-/// <see cref="MarkedContentSequences"/>, and <see cref="TextShowContexts"/>.
+/// <see cref="MarkedContentSequences"/>, <see cref="TextShowContexts"/>, and
+/// <see cref="SimpleContentItems"/>.
 /// </summary>
 internal sealed class ContentUsage
 {
@@ -118,7 +136,8 @@ internal sealed class ContentUsage
         HashSet<string> paintedShadings,
         List<TextShow> textShows,
         List<MarkedContentSequence> markedContentSequences,
-        List<TextShowMcContext> textShowContexts)
+        List<TextShowMcContext> textShowContexts,
+        List<SimpleContentItem> simpleContentItems)
     {
         AppliedExtGStates = appliedExtGStates;
         UsesDeviceColour = usesDeviceColour;
@@ -130,6 +149,7 @@ internal sealed class ContentUsage
         TextShows = textShows;
         MarkedContentSequences = markedContentSequences;
         TextShowContexts = textShowContexts;
+        SimpleContentItems = simpleContentItems;
     }
 
     /// <summary>The ExtGState resource names actually applied by a <c>gs</c> operator.</summary>
@@ -177,6 +197,18 @@ internal sealed class ContentUsage
     /// matches the corresponding index in <see cref="TextShows"/>.
     /// </summary>
     public IReadOnlyList<TextShowMcContext> TextShowContexts { get; }
+
+    /// <summary>
+    /// One entry per "simple content item" operator in document order: Tj/TJ/'/",
+    /// S/s/f/F/f*/B/B*/b/b* (painting path ops), sh (shading), EI (inline-image terminator),
+    /// and Do when the named XObject has <c>/Subtype /Image</c>. Used by
+    /// §7.1-3 (SESimpleContentItem) to verify that every real-content operator is either tagged
+    /// or inside an Artifact. Path-construction-only ops (m/l/c/re), clip-only ops (W n/W* n),
+    /// color/state ops, and Do on Form XObjects are NOT content items and are never emitted.
+    /// Scope: page content streams only (Form XObjects, Type 3 CharProcs, annotation appearances
+    /// not walked — under-detection, FP-safe).
+    /// </summary>
+    public IReadOnlyList<SimpleContentItem> SimpleContentItems { get; }
 }
 
 /// <summary>
@@ -198,6 +230,9 @@ internal static class ContentStreamUsage
     private static readonly PdfName _resources = new("Resources");
     private static readonly PdfName _properties = new("Properties");
     private static readonly PdfName _mcidKey = new("MCID");
+    private static readonly PdfName _xObject = new("XObject");
+    private static readonly PdfName _subtype = new("Subtype");
+    private static readonly PdfName _imageSubtype = new("Image");
 
     /// <summary>Scans <paramref name="page"/>'s content streams for graphics-state, colour,
     /// XObject-drawing, rendering-intent, selected-colour-space, selected-font, shading usage,
@@ -214,6 +249,7 @@ internal static class ContentStreamUsage
         var textShows = new List<TextShow>();
         var markedContentSequences = new List<MarkedContentSequence>();
         var textShowContexts = new List<TextShowMcContext>();
+        var simpleContentItems = new List<SimpleContentItem>();
 
         // Graphics-state stack for q/Q save-restore. Each entry is (fontResourceName, renderingMode).
         // Default rendering mode = 0 (fill text), default font = null (not yet selected).
@@ -228,6 +264,10 @@ internal static class ContentStreamUsage
         // Pre-build the named-Properties MCID map for this page (ISO 32000-1 §8.7.3.3).
         // Resolves /Resources /Properties /Name → /MCID for the named-reference BDC form.
         var namedPropertiesMcids = BuildNamedPropertiesMcids(context, page);
+
+        // Pre-build the XObject subtype map: XObject resource name → true when /Subtype == /Image.
+        // Used by the Do-operator content-item check (§7.1-3): only image Do ops create content items.
+        var xObjectIsImage = BuildXObjectImageSet(context, page);
 
         var content = GetContentBytes(context, page);
         if (content is { Length: > 0 })
@@ -405,7 +445,12 @@ internal static class ContentStreamUsage
 
                             case "Do":
                                 if (lastName is not null)
+                                {
                                     drawnXObjects.Add(lastName);
+                                    // Emit a content item only for image XObjects (not Form).
+                                    if (xObjectIsImage.Contains(lastName))
+                                        simpleContentItems.Add(BuildSimpleContentItem(mcStack));
+                                }
                                 break;
 
                             case "ri":
@@ -429,7 +474,10 @@ internal static class ContentStreamUsage
 
                             case "sh":
                                 if (lastName is not null)
+                                {
                                     paintedShadings.Add(lastName);
+                                    simpleContentItems.Add(BuildSimpleContentItem(mcStack));
+                                }
                                 break;
 
                             case "Tr":
@@ -455,16 +503,19 @@ internal static class ContentStreamUsage
                                     var show = new TextShow(currentFont, currentRenderingMode, lastStringBytes);
                                     textShowContexts.Add(BuildMcContext(textShows.Count, mcStack));
                                     textShows.Add(show);
+                                    simpleContentItems.Add(BuildSimpleContentItem(mcStack));
                                 }
                                 break;
 
                             case "TJ":
-                                // [ ... ] TJ — emit one TextShow per string element collected
+                                // [ ... ] TJ — emit one TextShow per string element collected;
+                                // emit one content item per string element (each is a separate text item).
                                 foreach (var bytes in tjStrings)
                                 {
                                     var show = new TextShow(currentFont, currentRenderingMode, bytes);
                                     textShowContexts.Add(BuildMcContext(textShows.Count, mcStack));
                                     textShows.Add(show);
+                                    simpleContentItems.Add(BuildSimpleContentItem(mcStack));
                                 }
                                 tjStrings.Clear();
                                 break;
@@ -476,6 +527,7 @@ internal static class ContentStreamUsage
                                     var show = new TextShow(currentFont, currentRenderingMode, lastStringBytes);
                                     textShowContexts.Add(BuildMcContext(textShows.Count, mcStack));
                                     textShows.Add(show);
+                                    simpleContentItems.Add(BuildSimpleContentItem(mcStack));
                                 }
                                 break;
 
@@ -486,6 +538,7 @@ internal static class ContentStreamUsage
                                     var show = new TextShow(currentFont, currentRenderingMode, lastStringBytes);
                                     textShowContexts.Add(BuildMcContext(textShows.Count, mcStack));
                                     textShows.Add(show);
+                                    simpleContentItems.Add(BuildSimpleContentItem(mcStack));
                                 }
                                 break;
 
@@ -561,7 +614,16 @@ internal static class ContentStreamUsage
                                     mcStack.Pop();
                                 break;
 
+                            case "S" or "s" or "f" or "F" or "f*" or "B" or "B*" or "b" or "b*":
+                                // Painting path operators — each creates a content item.
+                                simpleContentItems.Add(BuildSimpleContentItem(mcStack));
+                                break;
+
                             case "ID":
+                                // Inline image: the ID … EI pair is one content item.
+                                // EI is consumed by SkipInlineImageData and not seen as a separate token,
+                                // so we emit here (semantically equivalent: one item per inline image).
+                                simpleContentItems.Add(BuildSimpleContentItem(mcStack));
                                 SkipInlineImageData(lexer, content);
                                 break;
                         }
@@ -583,7 +645,7 @@ internal static class ContentStreamUsage
 
         return new ContentUsage(applied, usesDeviceColour, drawnXObjects, renderingIntents,
             selectedColorSpaces, usedFonts, paintedShadings, textShows,
-            markedContentSequences, textShowContexts);
+            markedContentSequences, textShowContexts, simpleContentItems);
     }
 
     // Build a TextShowMcContext from the current MC stack state.
@@ -595,6 +657,19 @@ internal static class ContentStreamUsage
         // DirectLang = /Lang on the innermost BDC itself.
         // InheritedLang = /Lang from any ancestor (stored on each MarkedContentSequence at push time).
         return new TextShowMcContext(showIndex, top.Mcid, top.Lang, top.InheritedLang);
+    }
+
+    // Builds a SimpleContentItem from the current MC stack for §7.1-3.
+    // EffectiveMcid = top.Mcid (if set) else top.AncestorMcid (propagated from ancestors).
+    // IsInsideArtifact = top is Artifact OR top has any Artifact ancestor.
+    private static SimpleContentItem BuildSimpleContentItem(Stack<MarkedContentSequence> mcStack)
+    {
+        if (mcStack.Count == 0)
+            return new SimpleContentItem(null, false);
+        var top = mcStack.Peek();
+        var effectiveMcid = top.Mcid ?? top.AncestorMcid;
+        var isInsideArtifact = top.IsArtifact || top.HasArtifactAncestor;
+        return new SimpleContentItem(effectiveMcid, isInsideArtifact);
     }
 
     // Returns the first /Lang found in the ancestor chain (not including the element itself).
@@ -694,6 +769,27 @@ internal static class ContentStreamUsage
             }
         }
         return map;
+    }
+
+    // Builds the set of XObject resource names whose /Subtype is /Image.
+    // Used by the Do-operator content-item check: only image-Do creates a content item (not form-Do).
+    private static HashSet<string> BuildXObjectImageSet(PreflightContext context, PdfDictionary page)
+    {
+        var set = new HashSet<string>(StringComparer.Ordinal);
+        if (context.ResolveInherited(page, _resources) is not PdfDictionary resources)
+            return set;
+        if (context.Resolve(resources.Get(_xObject)) is not PdfDictionary xObjects)
+            return set;
+        foreach (var entry in xObjects.Entries)
+        {
+            if (context.Resolve(entry.Value) is PdfDictionary xobj
+                && context.Resolve(xobj.Get(_subtype)) is PdfName subtypeName
+                && subtypeName.Value == _imageSubtype.Value)
+            {
+                set.Add(entry.Key.Value);
+            }
+        }
+        return set;
     }
 
     /// <summary>The page's concatenated, decoded content-stream bytes (or null when empty/undecodable).
