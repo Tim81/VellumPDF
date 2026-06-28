@@ -264,6 +264,60 @@ public sealed class PdfCanvas
     public PdfCanvas CurveTo(double x1, double y1, double x2, double y2, double x3, double y3)
     { WriteOpAscii($"{N(x1)} {N(y1)} {N(x2)} {N(y2)} {N(x3)} {N(y3)} c"); return this; }
 
+    /// <summary>
+    /// Appends a circular arc centred at (<paramref name="cx"/>, <paramref name="cy"/>) with the
+    /// given <paramref name="radius"/>, sweeping from <paramref name="startAngle"/> to
+    /// <paramref name="endAngle"/>, approximated by cubic Bézier segments (one <c>c</c> per ≤90°).
+    ///
+    /// <para>
+    /// Angles are in radians, measured counter-clockwise from the +X axis in PDF user space
+    /// (Y-up). A sweep where <paramref name="endAngle"/> &lt; <paramref name="startAngle"/>
+    /// runs clockwise.
+    /// </para>
+    /// <para>
+    /// This is an append-only path operator: it emits no <c>m</c>. The caller must already have
+    /// positioned the current point at the arc start
+    /// (cx + radius·cos(startAngle), cy + radius·sin(startAngle)) via <see cref="MoveTo"/> or
+    /// <see cref="LineTo"/>, otherwise an implicit straight segment is drawn to the first
+    /// control span.
+    /// </para>
+    /// </summary>
+    public PdfCanvas AppendArc(double cx, double cy, double radius, double startAngle, double endAngle)
+    {
+        if (radius < 0)
+            throw new ArgumentOutOfRangeException(nameof(radius), radius, "Radius must be non-negative.");
+
+        var sweep = endAngle - startAngle;
+        if (radius == 0 || sweep == 0 || !double.IsFinite(sweep) || !double.IsFinite(radius))
+            return this;
+
+        var segments = (int)Math.Ceiling(Math.Abs(sweep) / (Math.PI / 2));
+        var delta = sweep / segments;
+        var kappa = (4.0 / 3.0) * Math.Tan(delta / 4);
+
+        var theta1 = startAngle;
+        for (var i = 0; i < segments; i++)
+        {
+            var theta2 = theta1 + delta;
+            var cos1 = Math.Cos(theta1);
+            var sin1 = Math.Sin(theta1);
+            var cos2 = Math.Cos(theta2);
+            var sin2 = Math.Sin(theta2);
+
+            var c1x = cx + (radius * (cos1 - (kappa * sin1)));
+            var c1y = cy + (radius * (sin1 + (kappa * cos1)));
+            var c2x = cx + (radius * (cos2 + (kappa * sin2)));
+            var c2y = cy + (radius * (sin2 - (kappa * cos2)));
+            var ex = cx + (radius * cos2);
+            var ey = cy + (radius * sin2);
+
+            CurveTo(c1x, c1y, c2x, c2y, ex, ey);
+            theta1 = theta2;
+        }
+
+        return this;
+    }
+
     /// <summary>Appends a rectangle with lower-left corner (<paramref name="x"/>, <paramref name="y"/>), width <paramref name="w"/> and height <paramref name="h"/> as a complete subpath. Emits <c>re</c>.</summary>
     public PdfCanvas Rectangle(double x, double y, double w, double h)
     { WriteOpAscii($"{N(x)} {N(y)} {N(w)} {N(h)} re"); return this; }

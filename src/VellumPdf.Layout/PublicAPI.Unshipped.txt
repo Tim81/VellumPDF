@@ -1,1 +1,44 @@
-﻿#nullable enable
+#nullable enable
+VellumPdf.Layout.Document.Add(VellumPdf.Layout.Elements.PieChart! chart) -> VellumPdf.Layout.Document!
+VellumPdf.Layout.Elements.PieChart
+VellumPdf.Layout.Elements.PieChart.Alignment.get -> VellumPdf.Layout.Core.HorizontalAlignment
+VellumPdf.Layout.Elements.PieChart.AltText.get -> string?
+VellumPdf.Layout.Elements.PieChart.AltText.init -> void
+VellumPdf.Layout.Elements.PieChart.Alignment.init -> void
+VellumPdf.Layout.Elements.PieChart.Clockwise.get -> bool
+VellumPdf.Layout.Elements.PieChart.Clockwise.init -> void
+VellumPdf.Layout.Elements.PieChart.Decorative.get -> bool
+VellumPdf.Layout.Elements.PieChart.Decorative.init -> void
+VellumPdf.Layout.Elements.PieChart.Diameter.get -> double
+VellumPdf.Layout.Elements.PieChart.Diameter.init -> void
+VellumPdf.Layout.Elements.PieChart.Margins.get -> VellumPdf.Layout.Core.EdgeInsets
+VellumPdf.Layout.Elements.PieChart.Margins.init -> void
+VellumPdf.Layout.Elements.PieChart.PieChart() -> void
+VellumPdf.Layout.Elements.PieChart.Slices.get -> System.Collections.Generic.IReadOnlyList<VellumPdf.Layout.Elements.PieSlice>!
+VellumPdf.Layout.Elements.PieChart.Slices.init -> void
+VellumPdf.Layout.Elements.PieChart.StartAngle.get -> double
+VellumPdf.Layout.Elements.PieChart.StartAngle.init -> void
+VellumPdf.Layout.Elements.PieChart.StrokeColor.get -> VellumPdf.Layout.Core.ColorRgb?
+VellumPdf.Layout.Elements.PieChart.StrokeColor.init -> void
+VellumPdf.Layout.Elements.PieChart.StrokeWidth.get -> double
+VellumPdf.Layout.Elements.PieChart.StrokeWidth.init -> void
+VellumPdf.Layout.Elements.PieSlice
+VellumPdf.Layout.Elements.PieSlice.Color.get -> VellumPdf.Layout.Core.ColorRgb
+VellumPdf.Layout.Elements.PieSlice.Color.init -> void
+VellumPdf.Layout.Elements.PieSlice.Deconstruct(out double Value, out VellumPdf.Layout.Core.ColorRgb Color, out string? Label) -> void
+VellumPdf.Layout.Elements.PieSlice.Equals(VellumPdf.Layout.Elements.PieSlice other) -> bool
+VellumPdf.Layout.Elements.PieSlice.Label.get -> string?
+VellumPdf.Layout.Elements.PieSlice.Label.init -> void
+VellumPdf.Layout.Elements.PieSlice.PieSlice() -> void
+VellumPdf.Layout.Elements.PieSlice.PieSlice(double Value, VellumPdf.Layout.Core.ColorRgb Color, string? Label = null) -> void
+VellumPdf.Layout.Elements.PieSlice.Value.get -> double
+VellumPdf.Layout.Elements.PieSlice.Value.init -> void
+VellumPdf.Layout.Rendering.PieChartRenderer
+VellumPdf.Layout.Rendering.PieChartRenderer.Draw(VellumPdf.Layout.Core.DrawContext! ctx) -> void
+VellumPdf.Layout.Rendering.PieChartRenderer.Layout(VellumPdf.Layout.Core.LayoutContext! ctx) -> VellumPdf.Layout.Core.LayoutResult!
+VellumPdf.Layout.Rendering.PieChartRenderer.PieChartRenderer(VellumPdf.Layout.Elements.PieChart! chart) -> void
+~override VellumPdf.Layout.Elements.PieSlice.Equals(object obj) -> bool
+override VellumPdf.Layout.Elements.PieSlice.GetHashCode() -> int
+~override VellumPdf.Layout.Elements.PieSlice.ToString() -> string
+static VellumPdf.Layout.Elements.PieSlice.operator !=(VellumPdf.Layout.Elements.PieSlice left, VellumPdf.Layout.Elements.PieSlice right) -> bool
+static VellumPdf.Layout.Elements.PieSlice.operator ==(VellumPdf.Layout.Elements.PieSlice left, VellumPdf.Layout.Elements.PieSlice right) -> bool

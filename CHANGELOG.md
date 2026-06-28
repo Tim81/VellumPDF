@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Arc drawing primitive.** `PdfCanvas.AppendArc(cx, cy, radius, startAngle, endAngle)` appends a
+  circular arc to the current path, approximated by cubic Bézier segments (one per 90° or less).
+  Angles are in radians, counter-clockwise from the +X axis in PDF space; a sweep where the end
+  angle is below the start runs clockwise. It is append-only and emits no `m`, so the caller
+  positions the current point at the arc start.
+- **`PieChart` layout element.** Draws a pie chart as a set of filled wedges. Each `PieSlice`
+  carries a value, a fill colour, and an optional label. The chart exposes a configurable start
+  angle and sweep direction (clockwise by default), diameter, margins, horizontal alignment, and
+  an optional per-wedge separator stroke. A lone slice is drawn as a full circle rather than a
+  360° wedge, so it has no radial seam. In a tagged document the chart is written as a `/Figure`
+  with alternate text, composed from the slice labels or set explicitly via `AltText`; set
+  `Decorative` to mark it as an artifact instead when the data is already in accessible text
+  nearby. Add it with `Document.Add(PieChart)`.
+
 ## [1.7.5] - 2026-06-23
 
 ### Added

@@ -112,6 +112,33 @@ canvas.Finish();
 Path-ending operators: `Fill()`, `Stroke()`, `FillAndStroke()`,
 `FillEvenOdd()`, `CloseAndStroke()`, `EndPath()`.
 
+### Arcs and circles
+
+PDF has no arc operator, so `AppendArc` approximates one with cubic Bézier
+curves (one per 90° or less). Angles are in radians, measured counter-clockwise
+from the +X axis. It appends to the current path and emits no `MoveTo`, so move
+to the arc's start point first. A sweep whose end angle is below the start runs
+clockwise.
+
+```csharp
+// Full circle: start at the right edge (angle 0) and sweep one full turn.
+canvas
+    .MoveTo(230, 150)                          // start point at (cx + r, cy)
+    .AppendArc(150, 150, 80, 0, 2 * Math.PI)   // centre (150,150), radius 80
+    .Stroke();
+
+// A 90° pie wedge from the centre.
+canvas
+    .MoveTo(150, 150)                          // centre
+    .LineTo(230, 150)                          // out to the rim at angle 0
+    .AppendArc(150, 150, 80, 0, Math.PI / 2)
+    .ClosePath()
+    .Fill();
+```
+
+For whole pie charts, the `VellumPdf.Layout` package has a higher-level
+`PieChart` element that handles slice angles, colours, and labels for you.
+
 ### Colors
 
 ```csharp
