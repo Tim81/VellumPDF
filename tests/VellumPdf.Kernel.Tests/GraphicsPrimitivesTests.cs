@@ -323,6 +323,64 @@ public sealed class GraphicsPrimitivesTests
         Assert.Contains("/ShadingType 3", text);
     }
 
+    // ── Arc primitive ────────────────────────────────────────────────────────
+
+    [Fact]
+    public void AppendArc_quarterCircle_emitsCurveOperator()
+    {
+        var pdfBytes = BuildPdf(canvas =>
+            canvas.MoveTo(100, 0)
+                  .AppendArc(0, 0, 100, 0, Math.PI / 2)
+                  .Stroke());
+        var ops = DecompressContentStream(pdfBytes);
+
+        Assert.Contains(" c\n", ops, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AppendArc_fullCircle_emitsFourCurveOperators()
+    {
+        var pdfBytes = BuildPdf(canvas =>
+            canvas.MoveTo(100, 0)
+                  .AppendArc(0, 0, 100, 0, 2 * Math.PI)
+                  .Stroke());
+        var ops = DecompressContentStream(pdfBytes);
+
+        var count = 0;
+        var idx = 0;
+        while ((idx = ops.IndexOf(" c\n", idx, StringComparison.Ordinal)) >= 0)
+        {
+            count++;
+            idx += 3;
+        }
+        Assert.Equal(4, count);
+    }
+
+    [Fact]
+    public void AppendArc_nonFiniteRadius_emitsNoCurve()
+    {
+        var pdfBytes = BuildPdf(canvas =>
+            canvas.MoveTo(0, 0)
+                  .AppendArc(0, 0, double.NaN, 0, Math.PI)
+                  .Stroke());
+        var ops = DecompressContentStream(pdfBytes);
+
+        Assert.DoesNotContain(" c\n", ops, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AppendArc_filledWedge_roundTripsToValidPdf()
+    {
+        var pdfBytes = BuildPdf(canvas =>
+            canvas.MoveTo(0, 0)
+                  .LineTo(100, 0)
+                  .AppendArc(0, 0, 100, 0, Math.PI / 3)
+                  .ClosePath()
+                  .Fill());
+
+        Assert.Equal("%PDF-2.0"u8.ToArray(), pdfBytes[..8]);
+    }
+
     // ── Combined: full page exercise ─────────────────────────────────────────
 
     [Fact]

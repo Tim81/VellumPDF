@@ -162,6 +162,13 @@ public sealed class Document : IDisposable
         return this;
     }
 
+    /// <summary>Adds a pie chart to the document content. Returns this document for chaining.</summary>
+    public Document Add(PieChart chart)
+    {
+        _content.Add(new PieChartRenderer(chart));
+        return this;
+    }
+
     /// <summary>Adds a bulleted or numbered list to the document content. Returns this document for chaining.</summary>
     public Document Add(ListElement list)
     {

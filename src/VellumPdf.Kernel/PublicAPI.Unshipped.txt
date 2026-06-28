@@ -40,3 +40,4 @@ VellumPdf.Images.JpxImageLoader
 static VellumPdf.Images.JpxImageLoader.Load(byte[]! jpx) -> VellumPdf.Images.PdfImageXObject!
 static VellumPdf.Images.JpxImageLoader.Load(byte[]! jpx, VellumPdf.Images.ImageLoadOptions! options) -> VellumPdf.Images.PdfImageXObject!
 VellumPdf.IO.PdfWriter.PdfWriter(System.IO.Stream! stream, long initialPosition) -> void
+VellumPdf.Canvas.PdfCanvas.AppendArc(double cx, double cy, double radius, double startAngle, double endAngle) -> VellumPdf.Canvas.PdfCanvas!
