@@ -451,6 +451,60 @@ public static class OracleCorpus
                 Pdfa2bDeviceColourWithDefaultCs(DeviceColourKind.Gray, DeviceColourKind.None, hasOutputIntent: true, intentColour: DeviceColourKind.Cmyk),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
 
+            // ── COL batch — §6.2.4.3 device colour via image /ColorSpace (2026-07-02) ──────────────
+            // These fixtures exercise DocumentDeviceColourTypes() detection of device colour that is
+            // reached only through an image XObject's /ColorSpace, not via any content-stream
+            // operator. The content stream itself paints no device colour (only /Fm0 Do to draw the
+            // image). This is the path added by the COL batch — previously the detour via image was
+            // a gap, now it is closed.
+            //
+            // FP-safety: the image is actually drawn (listed in DrawnXObjects), so the detection
+            // mirrors what veraPDF observes. The compliant counterparts use /DefaultRGB (or an RGB
+            // output intent) to satisfy the per-type requirement, confirming no over-rejection.
+
+            // §6.2.4.3-2 VIOLATION: a drawn image XObject whose /ColorSpace is /DeviceRGB, with no
+            // output intent and no /DefaultRGB in the page resources. The only device colour is the
+            // image's /ColorSpace — the content stream uses no rg/RG operator. Both the in-process
+            // rule and veraPDF must reject it (§6.2.4.3-2 requires an output intent or DefaultRGB
+            // when DeviceRGB is used, regardless of whether it is reached via operators or images).
+            new OracleFixture("pdfa2b-img-devicergb-no-intent",
+                Pdfa2bImageDeviceColour(DeviceColourKind.Rgb, hasDefaultCs: false, hasOutputIntent: false, intentColour: DeviceColourKind.None),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // §6.2.4.3-2 COMPLIANT: same drawn DeviceRGB image, but /DefaultRGB is present in the
+            // page /Resources /ColorSpace — §6.2.4.3-2 is satisfied without any output intent.
+            // veraPDF accepts; in-process must be silent.
+            new OracleFixture("pdfa2b-img-devicergb-defaultrgb",
+                Pdfa2bImageDeviceColour(DeviceColourKind.Rgb, hasDefaultCs: true, hasOutputIntent: false, intentColour: DeviceColourKind.None),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // §6.2.4.3-3 VIOLATION: a drawn image with /ColorSpace /DeviceCMYK, with an RGB output
+            // intent but no /DefaultCMYK. A CMYK-profile intent is required for DeviceCMYK (the RGB
+            // intent satisfies DeviceRGB only, not CMYK — §6.2.4.3-3). veraPDF rejects; in-process
+            // must also reject.
+            new OracleFixture("pdfa2b-img-devicecmyk-rgbintent",
+                Pdfa2bImageDeviceColour(DeviceColourKind.Cmyk, hasDefaultCs: false, hasOutputIntent: true, intentColour: DeviceColourKind.Rgb),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // §6.2.4.3-3 COMPLIANT: same drawn DeviceCMYK image, with a CMYK output intent — the
+            // per-type requirement is satisfied. veraPDF accepts; in-process must be silent.
+            new OracleFixture("pdfa2b-img-devicecmyk-cmykintent",
+                Pdfa2bImageDeviceColour(DeviceColourKind.Cmyk, hasDefaultCs: false, hasOutputIntent: true, intentColour: DeviceColourKind.Cmyk),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // §6.2.4.3-4 VIOLATION: a drawn image with /ColorSpace /DeviceGray, with no output intent
+            // and no /DefaultGray. veraPDF rejects (§6.2.4.3-4 requires any PDF/A output intent or
+            // DefaultGray); in-process must also reject.
+            new OracleFixture("pdfa2b-img-devicegray-no-intent",
+                Pdfa2bImageDeviceColour(DeviceColourKind.Gray, hasDefaultCs: false, hasOutputIntent: false, intentColour: DeviceColourKind.None),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // §6.2.4.3-4 COMPLIANT: same drawn DeviceGray image, with any PDF/A output intent (RGB
+            // here — Gray allows any intent). veraPDF accepts; in-process must be silent.
+            new OracleFixture("pdfa2b-img-devicegray-rgbintent",
+                Pdfa2bImageDeviceColour(DeviceColourKind.Gray, hasDefaultCs: false, hasOutputIntent: true, intentColour: DeviceColourKind.Rgb),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
             // An interactive form dictionary carrying an /XFA entry, which PDF/A-2 forbids (§6.4.2).
             // Both veraPDF and the in-process XfaRule reject it (#122).
             new OracleFixture("pdfa2b-xfa", WriterPdfWithXfa(),
@@ -1510,6 +1564,30 @@ public static class OracleCorpus
             // veraPDF accepts (confirmed 2026-06-23). In-process must NOT fire.
             new OracleFixture("pdfa2b-sep-form-consistent",
                 SepFormXObjectConsistent(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // ── COL batch — §6.2.4.4-2 Separation consistency via image /ColorSpace (2026-07-02) ──
+            // The COL batch extends the comparison pool to include Separation colour spaces found in
+            // drawn image XObject /ColorSpace entries. A Separation in an image that shares a name
+            // with a page-selected Separation but differs in alternateSpace or tintTransform must be
+            // flagged. FP-safety is preserved: we only grow the comparison pool toward what veraPDF
+            // already compares; the baseline writer PDF carries a valid sRGB output intent so no
+            // §6.2.4.3-2 false positive is introduced by the DeviceRGB alternate space choice.
+
+            // §6.2.4.4-2 VIOLATION: the page selects /Spot1 Separation → DeviceRGB (via cs operator),
+            // and a drawn image XObject has /ColorSpace [/Separation /Spot1 /DeviceGray ...] with a
+            // different alternate space. The alternateSpace mismatch triggers the inconsistency.
+            // In-process: SeparationConsistencyRule must fire.
+            new OracleFixture("pdfa2b-sep-img-inconsistent",
+                SepImageInconsistent(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // §6.2.4.4-2 COMPLIANT: the page selects /Spot1 Separation → DeviceRGB, and a drawn
+            // image XObject has /ColorSpace [/Separation /Spot1 /DeviceRGB ...] with the SAME
+            // alternate space and structurally-identical tint function. No inconsistency.
+            // In-process: SeparationConsistencyRule must NOT fire.
+            new OracleFixture("pdfa2b-sep-img-consistent",
+                SepImageConsistent(),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
 
             // ── Batch N5 — §6.2.2-2 non-page stream coverage ───────────────────────────────────────
@@ -7556,6 +7634,372 @@ public static class OracleCorpus
         W("trailer\n<< /Size 8 /Root 1 0 R /ID [<00112233> <00112233>] >>\n");
         W($"startxref\n{xrefOff}\n%%EOF\n");
         return ms.ToArray();
+    }
+
+    // ── COL batch helpers — §6.2.4.3 device colour via image /ColorSpace (2026-07-02) ────────────
+    // Builds a hand-crafted PDF/A-2b document where device colour is reached ONLY through a drawn
+    // image XObject's /ColorSpace entry — the page content stream contains no device-colour operators,
+    // just "/Fm0 Do" to invoke the image. This isolates the image-/ColorSpace detection path added
+    // by DocumentDeviceColourTypes() in the COL batch.
+    //
+    // Object layout:
+    //   1=catalog, 2=pages, 3=page, 4=page-content(/Fm0 Do), 5=image XObject,
+    //   6=metadata, 7=icc-for-defaultcmyk (if needed), 8=intent-icc (if needed), 9=output-intent (if needed)
+    //
+    // The image is a 2×2 pixel sample using the given device colour space. It is listed in the page
+    // /Resources /XObject as /Fm0, and the page content draws it — so it appears in DrawnXObjects
+    // and is picked up by ScanImagesForDeviceColour.
+    //
+    // FP-safety note: the writer-produced baseline carries a valid sRGB output intent; here we build
+    // hand-crafted documents with explicit intent control so the §6.2.4.3 per-type verdict is isolated.
+    private static byte[] Pdfa2bImageDeviceColour(
+        DeviceColourKind imageCs,
+        bool hasDefaultCs,
+        bool hasOutputIntent,
+        DeviceColourKind intentColour)
+    {
+        var xmp = Encoding.UTF8.GetBytes(
+            "<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>"
+            + "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">"
+            + "<rdf:Description rdf:about=\"\" xmlns:pdfaid=\"http://www.aiim.org/pdfa/ns/id/\">"
+            + "<pdfaid:part>2</pdfaid:part><pdfaid:conformance>B</pdfaid:conformance>"
+            + "</rdf:Description></rdf:RDF></x:xmpmeta><?xpacket end=\"w\"?>");
+
+        // Minimal ICC header (same helper as Pdfa2bDeviceColourWithDefaultCs above).
+        static byte[] MakeIcc(DeviceColourKind cs)
+        {
+            var h = new byte[128];
+            h[0] = 0; h[1] = 0; h[2] = 0; h[3] = 128;
+            h[8] = 0x04;
+            h[12] = (byte)'p'; h[13] = (byte)'r'; h[14] = (byte)'t'; h[15] = (byte)'r';
+            switch (cs)
+            {
+                case DeviceColourKind.Rgb:
+                    h[16] = (byte)'R'; h[17] = (byte)'G'; h[18] = (byte)'B'; h[19] = (byte)' '; break;
+                case DeviceColourKind.Cmyk:
+                    h[16] = (byte)'C'; h[17] = (byte)'M'; h[18] = (byte)'Y'; h[19] = (byte)'K'; break;
+                case DeviceColourKind.Gray:
+                    h[16] = (byte)'G'; h[17] = (byte)'R'; h[18] = (byte)'A'; h[19] = (byte)'Y'; break;
+            }
+            h[20] = (byte)'X'; h[21] = (byte)'Y'; h[22] = (byte)'Z'; h[23] = (byte)' ';
+            h[36] = (byte)'a'; h[37] = (byte)'c'; h[38] = (byte)'s'; h[39] = (byte)'p';
+            return h;
+        }
+
+        // Image sample data: 2 rows × 2 columns of minimal zero-value samples.
+        // Components per pixel: 3 for RGB, 4 for CMYK, 1 for Gray.
+        var components = imageCs switch
+        {
+            DeviceColourKind.Rgb => 3,
+            DeviceColourKind.Cmyk => 4,
+            _ => 1,
+        };
+        var imageData = new byte[2 * 2 * components]; // 4 pixels of zeros
+
+        // Image /ColorSpace name.
+        var csName = imageCs switch
+        {
+            DeviceColourKind.Rgb => "DeviceRGB",
+            DeviceColourKind.Cmyk => "DeviceCMYK",
+            _ => "DeviceGray",
+        };
+
+        // /ColorSpace dict entry for Default* when requested (same as in Pdfa2bDeviceColourWithDefaultCs).
+        static string DefaultCsEntry(DeviceColourKind cs, int iccObjNum) => cs switch
+        {
+            DeviceColourKind.Rgb => "/DefaultRGB [/CalRGB << /Gamma [2.2 2.2 2.2] /Matrix [0.4124 0.2126 0.0193 0.3576 0.7152 0.1192 0.1805 0.0722 0.9505] /WhitePoint [0.9505 1.0 1.089] >>]",
+            DeviceColourKind.Cmyk => $"/DefaultCMYK [/ICCBased {iccObjNum} 0 R]",
+            DeviceColourKind.Gray => "/DefaultGray [/CalGray << /WhitePoint [0.9505 1.0 1.089] >>]",
+            _ => string.Empty,
+        };
+
+        // Page content: just invoke the image XObject — no device-colour operators.
+        var pageContent = Encoding.Latin1.GetBytes("/Fm0 Do");
+
+        using var ms = new MemoryStream();
+        void W(string s) { ms.Write(Encoding.Latin1.GetBytes(s)); }
+        void WB(byte[] b) { ms.Write(b); }
+
+        ms.Write([0x25, 0x50, 0x44, 0x46, 0x2D, 0x31, 0x2E, 0x37, 0x0A]);
+        ms.Write([0x25, 0xE2, 0xE3, 0xCF, 0xD3, 0x0A]);
+
+        int nextObj = 1;
+        int catalogObj = nextObj++;
+        int pagesObj = nextObj++;
+        int pageObj = nextObj++;
+        int contentObj = nextObj++;
+        int imageObj = nextObj++;
+        int metaObj = nextObj++;
+        int cmykDefaultIccObj = -1;
+        int intentIccObj = -1;
+        int outputIntentObj = -1;
+
+        if (hasDefaultCs && imageCs == DeviceColourKind.Cmyk)
+            cmykDefaultIccObj = nextObj++;
+
+        if (hasOutputIntent && intentColour != DeviceColourKind.None)
+        {
+            intentIccObj = nextObj++;
+            outputIntentObj = nextObj++;
+        }
+        else if (hasOutputIntent)
+        {
+            outputIntentObj = nextObj++;
+        }
+
+        int maxObj = nextObj - 1;
+        var offsets = new int[maxObj + 1];
+
+        var catalogOiEntry = outputIntentObj > 0
+            ? $" /OutputIntents [{outputIntentObj} 0 R]"
+            : string.Empty;
+
+        offsets[catalogObj] = (int)ms.Position;
+        W($"{catalogObj} 0 obj\n<< /Type /Catalog /Pages {pagesObj} 0 R /Metadata {metaObj} 0 R{catalogOiEntry} >>\nendobj\n");
+
+        offsets[pagesObj] = (int)ms.Position;
+        W($"{pagesObj} 0 obj\n<< /Type /Pages /Kids [{pageObj} 0 R] /Count 1 >>\nendobj\n");
+
+        // Page /Resources: /XObject with the image, plus optional /ColorSpace for Default*.
+        var defaultCsEntry = hasDefaultCs ? DefaultCsEntry(imageCs, cmykDefaultIccObj) : string.Empty;
+        var pageResources = defaultCsEntry.Length > 0
+            ? $" /Resources << /XObject << /Fm0 {imageObj} 0 R >> /ColorSpace << {defaultCsEntry} >> >>"
+            : $" /Resources << /XObject << /Fm0 {imageObj} 0 R >> >>";
+
+        offsets[pageObj] = (int)ms.Position;
+        W($"{pageObj} 0 obj\n<< /Type /Page /Parent {pagesObj} 0 R /MediaBox [0 0 612 792] /Contents {contentObj} 0 R{pageResources} >>\nendobj\n");
+
+        offsets[contentObj] = (int)ms.Position;
+        W($"{contentObj} 0 obj\n<< /Length {pageContent.Length} >>\nstream\n");
+        WB(pageContent);
+        W("\nendstream\nendobj\n");
+
+        // Image XObject: 2×2 pixels, BitsPerComponent 8, /ColorSpace = device colour type.
+        offsets[imageObj] = (int)ms.Position;
+        W($"{imageObj} 0 obj\n<< /Type /XObject /Subtype /Image /Width 2 /Height 2"
+            + $" /ColorSpace /{csName} /BitsPerComponent 8 /Length {imageData.Length} >>\nstream\n");
+        WB(imageData);
+        W("\nendstream\nendobj\n");
+
+        offsets[metaObj] = (int)ms.Position;
+        W($"{metaObj} 0 obj\n<< /Type /Metadata /Subtype /XML /Length {xmp.Length} >>\nstream\n");
+        WB(xmp);
+        W("\nendstream\nendobj\n");
+
+        if (cmykDefaultIccObj > 0)
+        {
+            var icc = MakeIcc(DeviceColourKind.Cmyk);
+            offsets[cmykDefaultIccObj] = (int)ms.Position;
+            W($"{cmykDefaultIccObj} 0 obj\n<< /Length {icc.Length} /N 4 >>\nstream\n");
+            WB(icc);
+            W("\nendstream\nendobj\n");
+        }
+
+        if (intentIccObj > 0)
+        {
+            var icc = MakeIcc(intentColour);
+            var n = intentColour == DeviceColourKind.Cmyk ? 4 : intentColour == DeviceColourKind.Gray ? 1 : 3;
+            offsets[intentIccObj] = (int)ms.Position;
+            W($"{intentIccObj} 0 obj\n<< /Length {icc.Length} /N {n} >>\nstream\n");
+            WB(icc);
+            W("\nendstream\nendobj\n");
+        }
+
+        if (outputIntentObj > 0)
+        {
+            offsets[outputIntentObj] = (int)ms.Position;
+            var destEntry = intentIccObj > 0 ? $" /DestOutputProfile {intentIccObj} 0 R" : string.Empty;
+            W($"{outputIntentObj} 0 obj\n<< /Type /OutputIntent /S /GTS_PDFA1 /OutputConditionIdentifier (Custom){destEntry} >>\nendobj\n");
+        }
+
+        var xrefOff = (int)ms.Position;
+        W($"xref\n0 {maxObj + 1}\n0000000000 65535 f \n");
+        for (var i = 1; i <= maxObj; i++)
+            W($"{offsets[i]:D10} 00000 n \n");
+        W($"trailer\n<< /Size {maxObj + 1} /Root {catalogObj} 0 R "
+            + "/ID [<DD00112233EE44FF> <DD00112233EE44FF>] >>\n");
+        W($"startxref\n{xrefOff}\n%%EOF\n");
+        return ms.ToArray();
+    }
+
+    // ── COL batch helpers — §6.2.4.4-2 Separation consistency via image /ColorSpace (2026-07-02) ──
+    // Both fixtures use the writer-produced PDF/A-2b baseline (which carries a valid sRGB output
+    // intent) so §6.2.4.3-2 is already satisfied. The page selects /Spot1 via a cs operator; the
+    // drawn image XObject has /ColorSpace [/Separation /Spot1 ...]. In the inconsistent fixture the
+    // image uses /DeviceGray as the alternate space, causing a positively-established difference;
+    // in the consistent fixture both the page CS and the image CS use /DeviceRGB and structurally-
+    // identical tint functions.
+
+    /// <summary>
+    /// §6.2.4.4-2 VIOLATION: page selects <c>/Spot1</c> Separation with <c>DeviceRGB</c> alternate;
+    /// a drawn image XObject has <c>/ColorSpace [/Separation /Spot1 /DeviceGray ...]</c> — the
+    /// <c>alternateSpace</c> differs. In-process: SeparationConsistencyRule must fire.
+    /// </summary>
+    private static byte[] SepImageInconsistent()
+    {
+        var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var newPage = CloneDict(page);
+
+        // Page tint function: { pop 0.5 0.5 0.5 } → DeviceRGB
+        var pageTintNum = reader.Size;
+        var pageTint = new PdfStream(Encoding.ASCII.GetBytes("{ pop 0.5 0.5 0.5 }"));
+        pageTint.Dictionary
+            .Set(new PdfName("FunctionType"), new PdfInteger(4))
+            .Set(new PdfName("Domain"), new PdfArray([new PdfInteger(0), new PdfInteger(1)]))
+            .Set(new PdfName("Range"), new PdfArray([
+                new PdfInteger(0), new PdfInteger(1),
+                new PdfInteger(0), new PdfInteger(1),
+                new PdfInteger(0), new PdfInteger(1)]));
+
+        // Image tint function: { pop 0.5 } → DeviceGray (DIFFERENT alternate space)
+        var imgTintNum = pageTintNum + 1;
+        var imgTint = new PdfStream(Encoding.ASCII.GetBytes("{ pop 0.5 }"));
+        imgTint.Dictionary
+            .Set(new PdfName("FunctionType"), new PdfInteger(4))
+            .Set(new PdfName("Domain"), new PdfArray([new PdfInteger(0), new PdfInteger(1)]))
+            .Set(new PdfName("Range"), new PdfArray([new PdfInteger(0), new PdfInteger(1)]));
+
+        // Page CS: [/Separation /Spot1 /DeviceRGB pageTint]
+        var pageCsNum = imgTintNum + 1;
+        var pageCs = new PdfArray([
+            new PdfName("Separation"),
+            new PdfName("Spot1"),
+            new PdfName("DeviceRGB"),
+            new PdfIndirectReference(pageTintNum),
+        ]);
+
+        // Image XObject: 2×2 gray pixels; /ColorSpace = [/Separation /Spot1 /DeviceGray imgTint]
+        var imgCsNum = pageCsNum + 1;
+        var imgCs = new PdfArray([
+            new PdfName("Separation"),
+            new PdfName("Spot1"),
+            new PdfName("DeviceGray"),
+            new PdfIndirectReference(imgTintNum),
+        ]);
+        var imgNum = imgCsNum + 1;
+        var imgStream = new PdfStream([0x80, 0x80, 0x80, 0x80]); // 2×2 gray samples
+        imgStream.Dictionary
+            .Set(new PdfName("Type"), new PdfName("XObject"))
+            .Set(new PdfName("Subtype"), new PdfName("Image"))
+            .Set(new PdfName("Width"), new PdfInteger(2))
+            .Set(new PdfName("Height"), new PdfInteger(2))
+            .Set(new PdfName("ColorSpace"), new PdfIndirectReference(imgCsNum))
+            .Set(new PdfName("BitsPerComponent"), new PdfInteger(8));
+
+        // New page content: select /Spot1 from page resources, draw image.
+        var newContentNum = imgNum + 1;
+        var newContentStream = new PdfStream(Encoding.ASCII.GetBytes("/CS0 cs 0.5 scn /Im0 Do"));
+        newContentStream.Dictionary.Set(new PdfName("Length"), new PdfInteger(22));
+
+        // Page resources: /ColorSpace /CS0 = pageSep; /XObject /Im0 = image.
+        var resObj = page.Get(new PdfName("Resources"));
+        var resources = (resObj is null ? null : reader.ResolveValue(resObj)) as PdfDictionary ?? new PdfDictionary();
+        var newResources = CloneDict(resources);
+        newResources.Set(new PdfName("ColorSpace"), new PdfDictionary()
+            .Set(new PdfName("CS0"), new PdfIndirectReference(pageCsNum)));
+        newResources.Set(new PdfName("XObject"), new PdfDictionary()
+            .Set(new PdfName("Im0"), new PdfIndirectReference(imgNum)));
+        newPage.Set(new PdfName("Resources"), newResources);
+        newPage.Set(new PdfName("Contents"), new PdfIndirectReference(newContentNum));
+
+        return reader.AppendRevision([
+            (pageRef.ObjectNumber, newPage),
+            (pageTintNum, pageTint),
+            (imgTintNum, imgTint),
+            (pageCsNum, pageCs),
+            (imgCsNum, imgCs),
+            (imgNum, imgStream),
+            (newContentNum, newContentStream),
+        ]);
+    }
+
+    /// <summary>
+    /// §6.2.4.4-2 COMPLIANT: page selects <c>/Spot1</c> Separation with <c>DeviceRGB</c> alternate;
+    /// a drawn image XObject also has <c>/ColorSpace [/Separation /Spot1 /DeviceRGB ...]</c> with
+    /// the same alternate space and a structurally-identical tint function. No inconsistency.
+    /// In-process: SeparationConsistencyRule must NOT fire.
+    /// </summary>
+    private static byte[] SepImageConsistent()
+    {
+        var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var newPage = CloneDict(page);
+
+        // Page tint function: { pop 0.5 0.5 0.5 } → DeviceRGB
+        var pageTintNum = reader.Size;
+        var pageTint = new PdfStream(Encoding.ASCII.GetBytes("{ pop 0.5 0.5 0.5 }"));
+        pageTint.Dictionary
+            .Set(new PdfName("FunctionType"), new PdfInteger(4))
+            .Set(new PdfName("Domain"), new PdfArray([new PdfInteger(0), new PdfInteger(1)]))
+            .Set(new PdfName("Range"), new PdfArray([
+                new PdfInteger(0), new PdfInteger(1),
+                new PdfInteger(0), new PdfInteger(1),
+                new PdfInteger(0), new PdfInteger(1)]));
+
+        // Image tint function: same body and range → DeviceRGB (structurally identical)
+        var imgTintNum = pageTintNum + 1;
+        var imgTint = new PdfStream(Encoding.ASCII.GetBytes("{ pop 0.5 0.5 0.5 }"));
+        imgTint.Dictionary
+            .Set(new PdfName("FunctionType"), new PdfInteger(4))
+            .Set(new PdfName("Domain"), new PdfArray([new PdfInteger(0), new PdfInteger(1)]))
+            .Set(new PdfName("Range"), new PdfArray([
+                new PdfInteger(0), new PdfInteger(1),
+                new PdfInteger(0), new PdfInteger(1),
+                new PdfInteger(0), new PdfInteger(1)]));
+
+        // Page CS: [/Separation /Spot1 /DeviceRGB pageTint]
+        var pageCsNum = imgTintNum + 1;
+        var pageCs = new PdfArray([
+            new PdfName("Separation"),
+            new PdfName("Spot1"),
+            new PdfName("DeviceRGB"),
+            new PdfIndirectReference(pageTintNum),
+        ]);
+
+        // Image XObject: 2×2 RGB pixels; /ColorSpace = [/Separation /Spot1 /DeviceRGB imgTint]
+        var imgCsNum = pageCsNum + 1;
+        var imgCs = new PdfArray([
+            new PdfName("Separation"),
+            new PdfName("Spot1"),
+            new PdfName("DeviceRGB"),
+            new PdfIndirectReference(imgTintNum),
+        ]);
+        var imgNum = imgCsNum + 1;
+        var imgStream = new PdfStream([0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80]); // 2×2 @ 3 components
+        imgStream.Dictionary
+            .Set(new PdfName("Type"), new PdfName("XObject"))
+            .Set(new PdfName("Subtype"), new PdfName("Image"))
+            .Set(new PdfName("Width"), new PdfInteger(2))
+            .Set(new PdfName("Height"), new PdfInteger(2))
+            .Set(new PdfName("ColorSpace"), new PdfIndirectReference(imgCsNum))
+            .Set(new PdfName("BitsPerComponent"), new PdfInteger(8));
+
+        var newContentNum = imgNum + 1;
+        var newContentStream = new PdfStream(Encoding.ASCII.GetBytes("/CS0 cs 0.5 scn /Im0 Do"));
+        newContentStream.Dictionary.Set(new PdfName("Length"), new PdfInteger(22));
+
+        var resObj = page.Get(new PdfName("Resources"));
+        var resources = (resObj is null ? null : reader.ResolveValue(resObj)) as PdfDictionary ?? new PdfDictionary();
+        var newResources = CloneDict(resources);
+        newResources.Set(new PdfName("ColorSpace"), new PdfDictionary()
+            .Set(new PdfName("CS0"), new PdfIndirectReference(pageCsNum)));
+        newResources.Set(new PdfName("XObject"), new PdfDictionary()
+            .Set(new PdfName("Im0"), new PdfIndirectReference(imgNum)));
+        newPage.Set(new PdfName("Resources"), newResources);
+        newPage.Set(new PdfName("Contents"), new PdfIndirectReference(newContentNum));
+
+        return reader.AppendRevision([
+            (pageRef.ObjectNumber, newPage),
+            (pageTintNum, pageTint),
+            (imgTintNum, imgTint),
+            (pageCsNum, pageCs),
+            (imgCsNum, imgCs),
+            (imgNum, imgStream),
+            (newContentNum, newContentStream),
+        ]);
     }
 
 }
