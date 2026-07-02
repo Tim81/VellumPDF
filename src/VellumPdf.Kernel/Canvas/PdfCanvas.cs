@@ -497,6 +497,11 @@ public sealed class PdfCanvas
     /// A Standard-14 font must have been set with <see cref="SetFont"/> first; if only
     /// <see cref="SetFontByName"/> was used (embedded fonts), call
     /// <see cref="ShowGlyphsAligned"/> and supply the measured width instead.</para>
+    ///
+    /// <para>The width comes from the last <see cref="SetFont"/> call. It does not track a
+    /// font restored by <see cref="RestoreState"/>, nor does it include character spacing
+    /// (<c>Tc</c>), word spacing (<c>Tw</c>), or horizontal scaling (<c>Tz</c>) set on the canvas.
+    /// Alignment is exact only when the drawn text uses that base font with none of those applied.</para>
     /// </summary>
     /// <exception cref="InvalidOperationException">
     /// Thrown when no measurable font has been set (e.g. only <see cref="SetFontByName"/> was called).
@@ -528,7 +533,10 @@ public sealed class PdfCanvas
     /// Use this with fonts set via <see cref="SetFontByName"/>; obtain
     /// <paramref name="measuredWidth"/> from <c>EmbeddedFontHandle.MeasureString</c>.
     ///
-    /// <para>Must be called between <see cref="BeginText"/> and <see cref="EndText"/>.</para>
+    /// <para>Must be called between <see cref="BeginText"/> and <see cref="EndText"/>.
+    /// The offset uses <paramref name="measuredWidth"/> verbatim, so include the effect of any
+    /// character spacing (<c>Tc</c>), word spacing (<c>Tw</c>), or horizontal scaling (<c>Tz</c>)
+    /// in that value when those are set on the canvas.</para>
     /// </summary>
     public PdfCanvas ShowGlyphsAligned(ReadOnlySpan<ushort> glyphIds, double measuredWidth, double x, double y, TextAlignment align = TextAlignment.Left)
     {
