@@ -247,8 +247,9 @@ public static class ConformanceCatalog
         //   prefix check added (same null-prefix leniency as -5, probe-confirmed 2026-06-23).
         // 6.6.2.3.3-15 moved to Implemented: pdfaType:field rdf:Seq check + null/pdfaType
         //   prefix check added (same null-prefix leniency, probe-confirmed 2026-06-23).
-        // 6.6.2.3.1-2 moved to PdfAOutOfScope: predefined XMP-Specification expected-type catalogue
-        //   (isValueTypeCorrect) cannot be replicated clean-room without over-rejection.
+        // 6.6.2.3.1-2 moved to Implemented: clean-room predefined property type table added for
+        //   dc:, xmp:, pdf:, and pdfaid: namespaces (XMP Spec 2005 §8); FP-safe by construction —
+        //   any property not in the table is skipped (unknown → no finding).
         // 6.6.2.3.3-8 moved to Implemented (META batch, 2026-07-02): ExtensionSchemaRule now enforces
         //   isValueTypeDefined on pdfaProperty:valueType — the declared type must be a predefined XMP
         //   value type, a container form (bag/seq/alt/Lang Alt) over a defined item type, or a custom
@@ -309,7 +310,6 @@ public static class ConformanceCatalog
         //   CharProcs and annotation appearances remain isolated (FP-safe under-detection). Oracle
         //   fixtures: pdfa2b-overprint-inherited-violation (VIOLATING) and
         //   pdfa2b-overprint-inherited-compliant (COMPLIANT). Confirmed FP-safe against veraPDF 1.30.2.
-        ["6.6.2.3.1-2"] = "Out of scope for v1.7 (Backlog issue TBD): the check is XMPProperty isValueTypeCorrect — every property's value must match its schema-defined type. Extension-schema-declared property types are validated; the predefined XMP-Specification schemas (dc:, xmp:, pdf:, pdfaid:, …) need veraPDF's exact built-in expected-type catalogue, which cannot be replicated clean-room without over-rejecting.",
     };
 
     // PDF/UA-1: the few checks the current rules cover. Everything else needs the logical-structure

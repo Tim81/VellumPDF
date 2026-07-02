@@ -3425,12 +3425,10 @@ public sealed class PdfPreflightTests
     }
 
     [Fact]
-    public void Validate_PropertyValueType_NoPredefinedSchemaChecks_NoFinding()
+    public void Validate_PropertyValueType_DcTitleScalar_ReportsError()
     {
-        // Predefined-schema properties (dc:, xmp:, pdfaid:, …) are not type-checked by this
-        // rule (Partial implementation) — even a dc:title serialised as a scalar must not
-        // trigger 6.6.2.3.1-2.  (veraPDF does flag dc:title as scalar, but this rule defers
-        // predefined schemas to avoid false-positives from an incomplete built-in type table.)
+        // dc:title must be an rdf:Alt language-alternative container (Lang Alt) per XMP Spec §8.4.
+        // A scalar text value is a definite type mismatch; the rule fires §6.6.2.3.1-2.
         const string dcTitleScalar =
             "<rdf:Description rdf:about=\"\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\">"
             + "<dc:title>Simple scalar title</dc:title>"
@@ -3438,7 +3436,7 @@ public sealed class PdfPreflightTests
         var result = PdfPreflight.Validate(
             BuildXmpPdf(XmpWithDescriptions(dcTitleScalar)), PdfConformance.PdfA2B);
 
-        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.6.2.3.1-2");
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.6.2.3.1-2");
     }
 
     [Fact]

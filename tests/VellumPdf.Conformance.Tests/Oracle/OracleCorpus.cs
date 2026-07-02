@@ -879,6 +879,23 @@ public static class OracleCorpus
                 WriterPdfWithMetadata(Encoding.UTF8.GetBytes(FullValidExtensionXmp2b())),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
 
+            // ── §6.6.2.3.1-2 predefined-namespace property value-type (clean-room table) ─────
+
+            // Predefined XMP properties in their correct container forms — the FP-safety guard.
+            // dc:title = Lang Alt, dc:creator = seq Text, dc:subject = bag Text, pdfaid:part =
+            // Integer, xmp:CreateDate = Date scalar, pdf:Producer = Text scalar. veraPDF accepts;
+            // in-process rule must not fire (§6.6.2.3.1-2).
+            new OracleFixture("pdfa2b-predefined-property-types-compliant",
+                WriterPdfWithMetadata(Encoding.UTF8.GetBytes(PredefinedPropertyTypesCompliantXmp2b())),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // dc:title serialised as a plain text literal instead of an rdf:Alt Lang Alt container
+            // (§6.6.2.3.1-2, isValueTypeCorrect). veraPDF and the in-process PropertyValueTypeRule
+            // both reject it.
+            new OracleFixture("pdfa2b-predefined-property-types-violation",
+                WriterPdfWithMetadata(Encoding.UTF8.GetBytes(PredefinedPropertyTypesViolationXmp2b())),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
             // A catalog carrying the /Requirements key (§6.11-1). veraPDF and the in-process
             // CatalogRestrictionsRule both reject it.
             new OracleFixture("pdfa2b-requirements", WriterPdfWithCatalogEntry("Requirements",
@@ -2524,6 +2541,28 @@ public static class OracleCorpus
         + "<dc:title><rdf:Alt><rdf:li xml:lang=\"x-default\">Title</rdf:li></rdf:Alt></dc:title>"
         + "<exif:ExifVersion>0230</exif:ExifVersion>"
         + "<xmpMM:DerivedFrom rdf:parseType=\"Resource\"><stRef:documentID>d</stRef:documentID></xmpMM:DerivedFrom>"
+        + "</rdf:Description>");
+
+    // Predefined XMP properties in their correct container / scalar forms — §6.6.2.3.1-2 FP guard.
+    // dc:title = rdf:Alt (Lang Alt), dc:creator = rdf:Seq, dc:subject = rdf:Bag,
+    // xmp:CreateDate = Date scalar, pdf:Producer = Text scalar, pdfaid:part = Integer.
+    private static string PredefinedPropertyTypesCompliantXmp2b() => RdfPacket(
+        "<rdf:Description rdf:about=\"\" "
+        + "xmlns:dc=\"http://purl.org/dc/elements/1.1/\" "
+        + "xmlns:xmp=\"http://ns.adobe.com/xap/1.0/\" "
+        + "xmlns:pdf=\"http://ns.adobe.com/pdf/1.3/\">"
+        + "<dc:title><rdf:Alt><rdf:li xml:lang=\"x-default\">Title</rdf:li></rdf:Alt></dc:title>"
+        + "<dc:creator><rdf:Seq><rdf:li>Author</rdf:li></rdf:Seq></dc:creator>"
+        + "<dc:subject><rdf:Bag><rdf:li>keyword</rdf:li></rdf:Bag></dc:subject>"
+        + "<xmp:CreateDate>2024-01-01</xmp:CreateDate>"
+        + "<pdf:Producer>VellumPdf</pdf:Producer>"
+        + "</rdf:Description>");
+
+    // §6.6.2.3.1-2 violation: dc:title serialised as a plain text literal instead of Lang Alt.
+    // The XMP Specification requires dc:title to be an rdf:Alt language-alternative container.
+    private static string PredefinedPropertyTypesViolationXmp2b() => RdfPacket(
+        "<rdf:Description rdf:about=\"\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\">"
+        + "<dc:title>Plain text title</dc:title>"
         + "</rdf:Description>");
 
     // A PDF/A-2b XMP packet whose pdfaid namespace is bound to the non-canonical prefix 'aid'.

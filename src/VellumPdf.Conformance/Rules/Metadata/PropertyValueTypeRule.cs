@@ -8,20 +8,23 @@ using VellumPdf.Core;
 namespace VellumPdf.Conformance.Rules.Metadata;
 
 /// <summary>
-/// ISO 19005-2 §6.6.2.3.1 (XMP property value-type match). A property in an extension schema
-/// shall carry a value whose RDF/XMP serialisation matches the value type declared for that property
-/// by the extension-schema declaration (<c>pdfaProperty:valueType</c>).
+/// ISO 19005-2 §6.6.2.3.1 (XMP property value-type match). Every XMP property — whether in an
+/// extension schema or one of the predefined XMP-Specification namespaces — shall carry a value
+/// whose RDF/XMP serialisation matches the property's declared value type.
 /// </summary>
 /// <remarks>
 /// <para>
-/// <strong>Scope (Partial implementation).</strong>  Only extension-schema-declared properties
-/// are checked: the document itself states the expected type for each such property via the
-/// <c>pdfaProperty:valueType</c> field, so the validation is entirely self-contained and carries
-/// zero false-positive risk from a wrong built-in type table.  Predefined XMP-Specification
-/// properties (dc:, xmp:, pdf:, pdfaid:, …) require a full catalogue of their declared types;
-/// that catalogue is deferred (Partial) to avoid false-positives from any wrong expected-type
-/// assumption.  Extension-schema properties whose declared type resolves to an unrecognised name
-/// are also deferred for the same reason.
+/// <strong>Extension-schema properties.</strong>  The document itself states the expected type
+/// for each such property via the <c>pdfaProperty:valueType</c> field, so the validation is
+/// entirely self-contained. Properties whose declared type resolves to an unrecognised name are
+/// skipped (deferred, FP-safe).
+/// </para>
+/// <para>
+/// <strong>Predefined-namespace properties.</strong>  A clean-room catalogue of well-established
+/// Dublin Core (dc:), XMP Basic (xmp:), Adobe PDF (pdf:), and PDF/A identification (pdfaid:)
+/// properties is checked against the XMP Specification 2005 §8 type tables. Only properties
+/// whose expected type is documented unambiguously in the spec are included; any property not in
+/// the table is skipped (unknown → no finding), making the check FP-safe by construction.
 /// </para>
 /// <para>
 /// <strong>Type families checked.</strong>
@@ -49,8 +52,8 @@ namespace VellumPdf.Conformance.Rules.Metadata;
 /// </list>
 /// </para>
 /// <para>
-/// Authored from ISO 19005-2:2011, 6.6.2.3.1, XMP Specification Part 1 (Sept 2012) §8.2, and
-/// empirical veraPDF 1.30.2 behaviour. Clean-room: no veraPDF profile text reproduced.
+/// Authored from ISO 19005-2:2011 §6.6.2.3.1, XMP Specification Part 1 (2005) §8.2, and
+/// the PDF/A-1 Extension Schema specification. Clean-room: no veraPDF profile text reproduced.
 /// </para>
 /// <para>
 /// ALL per-document state (declared property map, reported set) is local to
@@ -68,6 +71,60 @@ internal sealed class PropertyValueTypeRule : IConformanceRule
     private static readonly XNamespace _ext = "http://www.aiim.org/pdfa/ns/extension/";
     private static readonly XNamespace _schema = "http://www.aiim.org/pdfa/ns/schema#";
     private static readonly XNamespace _property = "http://www.aiim.org/pdfa/ns/property#";
+
+    // Clean-room predefined property type table. Authored from:
+    //   XMP Specification Part 1 (Adobe, Sept 2005) §8 "Standard XMP Namespaces"
+    //   PDF/A-1 Extension Schema specification (ISO 19005-1:2005)
+    // FP-safety: only include entries whose expected type is unambiguously documented.
+    // Unknown properties (not in this table) are skipped — no finding.
+    private static readonly IReadOnlyDictionary<(string Ns, string Local), ValueTypeKind> _predefined =
+        new Dictionary<(string, string), ValueTypeKind>(ValueTypeEqualityComparer.Instance)
+        {
+            // ── Dublin Core (XMP Spec §8.4, sourced from Dublin Core Metadata Element Set 1.1) ──
+            // dc:title, dc:description, dc:rights → Lang Alt (rdf:Alt of language alternatives)
+            { ("http://purl.org/dc/elements/1.1/", "title"),       ValueTypeKind.LangAlt },
+            { ("http://purl.org/dc/elements/1.1/", "description"), ValueTypeKind.LangAlt },
+            { ("http://purl.org/dc/elements/1.1/", "rights"),      ValueTypeKind.LangAlt },
+            // dc:creator, dc:date → ordered array (rdf:Seq)
+            { ("http://purl.org/dc/elements/1.1/", "creator"),     ValueTypeKind.ContainerSeq },
+            { ("http://purl.org/dc/elements/1.1/", "date"),        ValueTypeKind.ContainerSeq },
+            // dc:subject, dc:publisher, dc:contributor, dc:language, dc:type,
+            // dc:relation → unordered bag (rdf:Bag)
+            { ("http://purl.org/dc/elements/1.1/", "subject"),     ValueTypeKind.ContainerBag },
+            { ("http://purl.org/dc/elements/1.1/", "publisher"),   ValueTypeKind.ContainerBag },
+            { ("http://purl.org/dc/elements/1.1/", "contributor"), ValueTypeKind.ContainerBag },
+            { ("http://purl.org/dc/elements/1.1/", "language"),    ValueTypeKind.ContainerBag },
+            { ("http://purl.org/dc/elements/1.1/", "type"),        ValueTypeKind.ContainerBag },
+            { ("http://purl.org/dc/elements/1.1/", "relation"),    ValueTypeKind.ContainerBag },
+            // dc:format, dc:identifier, dc:source, dc:coverage → simple Text
+            { ("http://purl.org/dc/elements/1.1/", "format"),      ValueTypeKind.ScalarText },
+            { ("http://purl.org/dc/elements/1.1/", "identifier"),  ValueTypeKind.ScalarText },
+            { ("http://purl.org/dc/elements/1.1/", "source"),      ValueTypeKind.ScalarText },
+            { ("http://purl.org/dc/elements/1.1/", "coverage"),    ValueTypeKind.ScalarText },
+
+            // ── XMP Basic (XMP Spec §8.1) ────────────────────────────────────────────────────
+            { ("http://ns.adobe.com/xap/1.0/", "CreateDate"),   ValueTypeKind.Date },
+            { ("http://ns.adobe.com/xap/1.0/", "ModifyDate"),   ValueTypeKind.Date },
+            { ("http://ns.adobe.com/xap/1.0/", "MetadataDate"), ValueTypeKind.Date },
+            { ("http://ns.adobe.com/xap/1.0/", "CreatorTool"),  ValueTypeKind.ScalarText },
+            { ("http://ns.adobe.com/xap/1.0/", "BaseURL"),      ValueTypeKind.ScalarText },
+            { ("http://ns.adobe.com/xap/1.0/", "Nickname"),     ValueTypeKind.ScalarText },
+            { ("http://ns.adobe.com/xap/1.0/", "Label"),        ValueTypeKind.ScalarText },
+            { ("http://ns.adobe.com/xap/1.0/", "Rating"),       ValueTypeKind.Integer },
+            // xmp:Identifier → unordered bag of Text
+            { ("http://ns.adobe.com/xap/1.0/", "Identifier"),   ValueTypeKind.ContainerBag },
+
+            // ── Adobe PDF (XMP Spec §8.7) ────────────────────────────────────────────────────
+            { ("http://ns.adobe.com/pdf/1.3/", "Producer"),   ValueTypeKind.ScalarText },
+            { ("http://ns.adobe.com/pdf/1.3/", "Keywords"),   ValueTypeKind.ScalarText },
+            { ("http://ns.adobe.com/pdf/1.3/", "PDFVersion"), ValueTypeKind.ScalarText },
+
+            // ── PDF/A identification (ISO 19005-1:2005 Annex B) ─────────────────────────────
+            // pdfaid:part → Integer; pdfaid:conformance, pdfaid:amd → Text
+            { ("http://www.aiim.org/pdfa/ns/id/", "part"),        ValueTypeKind.Integer },
+            { ("http://www.aiim.org/pdfa/ns/id/", "conformance"), ValueTypeKind.ScalarText },
+            { ("http://www.aiim.org/pdfa/ns/id/", "amd"),         ValueTypeKind.ScalarText },
+        };
 
     private static readonly PdfName _metadata = new("Metadata");
 
@@ -121,18 +178,15 @@ internal sealed class PropertyValueTypeRule : IConformanceRule
         if (packet.Document is not { } doc)
             return; // Malformed XMP is reported by XmpConformanceRule.
 
-        // Collect the declared properties from every extension schema: maps
-        // (namespaceURI, localName) → declared valueType kind.
-        // Only well-structured schemas are harvested; structural defects are
-        // reported by ExtensionSchemaRule (§6.6.2.3.3). Properties with an
-        // unrecognised declared type are omitted (deferred).
-        var declared = CollectDeclaredPropertyTypes(doc);
-
-        if (declared.Count == 0)
-            return; // No extension schemas or no recognised property types — nothing to check.
+        // Build the combined type map: extension-schema declared properties (from this document)
+        // merged with the predefined XMP-Specification table. Extension-schema declarations take
+        // precedence; predefined entries fill in the rest.
+        var combined = CollectDeclaredPropertyTypes(doc);
+        foreach (var (key, kind) in _predefined)
+            combined.TryAdd(key, kind);
 
         // Walk every element in the document and check any whose (ns, name) is
-        // in the declared map. Use a local per-call reported set for dedup
+        // in the combined map. Use a local per-call reported set for dedup
         // (singleton rule — NO instance state).
         var reported = new HashSet<(string, string)>(ValueTypeEqualityComparer.Instance);
 
@@ -145,7 +199,7 @@ internal sealed class PropertyValueTypeRule : IConformanceRule
                 continue;
 
             var key = (ns, local);
-            if (!declared.TryGetValue(key, out var kind))
+            if (!combined.TryGetValue(key, out var kind))
                 continue;
 
             // Deduplicate: only report the first occurrence of each property.
