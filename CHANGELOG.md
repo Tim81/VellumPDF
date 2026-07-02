@@ -8,6 +8,35 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **`VellumPdf.Conformance` — 100% of the in-process-feasible PDF/A-2 and PDF/UA-1 checks.**
+  Build-verified veraPDF parity rises to **100% of the feasible check surface** for PDF/A-2b/2u/2a
+  and PDF/UA-1 (from ~92% and ~90%). Every rule is authored clean-room from the ISO text and
+  cross-validated against veraPDF 1.30.2. A few checks are marked out of scope and tracked in
+  follow-up issues, either because they cannot be replicated clean-room without over-rejection or
+  because they need a subsystem outside this release; those are excluded from the feasible
+  denominator rather than left silently missing. The coverage catalog now asserts this: no check is
+  left partial or deferred.
+  - **Fonts.** Glyph presence and advance width are now checked across every embedded font path —
+    CIDFontType2 with a stream `/CIDToGIDMap`, `Type0` with an embedded non-Identity CMap, simple
+    non-symbolic TrueType, CIDFontType0/CFF (a Type2 charstring width interpreter with Private-DICT
+    widths and FDSelect/FDArray), and simple Type1 (charstring `hsbw`/`sbw`). Widths are FontMatrix-
+    scaled to text space; an unresolvable width is skipped rather than misreported.
+  - **Colour.** Device colour reached through an image `/ColorSpace`, a pattern space, or a colour
+    space's `/Alternate` now requires an output intent (§6.2.4.3); Separation consistency walks image
+    and alternate spaces (§6.2.4.4-2); inherited `/Pattern` and `/Properties` resource names are
+    detected (§6.2.2-2).
+  - **Metadata, structure, signatures.** Every metadata stream is validated, not just the catalog
+    (§6.6.2.1-4); extension-schema `valueType` names must be defined (§6.6.2.3.3-8/-17); the output-
+    intent `DestOutputProfile` ICC device class is checked (§6.2.3-1); structure-element type names
+    are validated at arbitrary depth (§6.1.8-1) and must be defined types (§6.7.2.2-1); the `endobj`
+    end-of-line and signature `ByteRange` under-coverage (against incremental-update revisions) are
+    checked (§6.1.9-1, §6.4.3-1).
+  - **PDF/UA-1.** The pdfuaid identification properties must use the `pdfuaid` prefix (§5-3/-4/-5);
+    media-clip data dictionaries require `/CT` and `/Alt` (§7.18.6.2); form fields require `/TU` or a
+    widget `/Alt` (§7.18.1-3); role-less `Form` structure elements must hold a single object reference
+    (§7.18.4-2).
+  - `VellumPdf.Reader` now surfaces object end-offsets and incremental-update revision boundaries
+    (internal), which the layout/signature checks above build on.
 - **Aligned text on the canvas.** `PdfCanvas.ShowTextAligned(text, x, y, align)` draws a Latin-1
   string so that `x` is the alignment edge — left edge, midpoint, or right edge for the
   `TextAlignment` value. The width is measured from the Standard-14 font set with `SetFont`, using
