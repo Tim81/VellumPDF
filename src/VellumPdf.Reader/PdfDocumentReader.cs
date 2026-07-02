@@ -44,6 +44,12 @@ public sealed class PdfDocumentReader : IDisposable
     /// <summary>The byte offset recorded in the last startxref.</summary>
     internal int StartXrefOffset { get; }
 
+    /// <summary>
+    /// Xref revisions in the file, oldest-first. Used by PDF/A §6.4.3-1 under-coverage analysis.
+    /// A single-revision file yields a one-element list.
+    /// </summary>
+    internal IReadOnlyList<XrefRevision> Revisions { get; }
+
     /// <summary>Total length of the PDF byte buffer.</summary>
     internal int TotalLength => Bytes.Length;
 
@@ -57,12 +63,14 @@ public sealed class PdfDocumentReader : IDisposable
         ReadOnlyMemory<byte> bytes,
         Dictionary<int, XrefEntry> xref,
         PdfDictionary trailer,
-        int startXrefOffset)
+        int startXrefOffset,
+        IReadOnlyList<XrefRevision> revisions)
     {
         Bytes = bytes;
         _xref = xref;
         Trailer = trailer;
         StartXrefOffset = startXrefOffset;
+        Revisions = revisions;
 
         if (!trailer.TryGet(PdfName.Root, out var rootObj) || rootObj is null)
             throw new InvalidDataException("Malformed PDF: trailer is missing /Root.");
@@ -365,6 +373,53 @@ public sealed class PdfDocumentReader : IDisposable
         => _xref.TryGetValue(objectNumber, out var entry) && entry.Kind == XrefEntryKind.Uncompressed
             ? entry.Offset
             : null;
+
+    /// <summary>
+    /// Returns the exclusive byte offset just after the <c>endobj</c> keyword for
+    /// <paramref name="objectNumber"/>, scanning at most <paramref name="maxScanBytes"/> bytes
+    /// forward from the object's xref offset.
+    /// Returns <see langword="null"/> when the object is absent from the xref table, lives in an
+    /// object stream (which has no in-file <c>endobj</c>), or <c>endobj</c> is not found within
+    /// the scan window (truncated or malformed file).
+    /// </summary>
+    internal int? UncompressedObjectEndOffset(int objectNumber, int maxScanBytes = 1 << 20)
+    {
+        if (!_xref.TryGetValue(objectNumber, out var entry) || entry.Kind != XrefEntryKind.Uncompressed)
+            return null;
+
+        var start = (int)entry.Offset;
+        var windowEnd = Math.Min(Bytes.Length, start + maxScanBytes);
+        var span = Bytes.Span[start..windowEnd];
+        var needle = "endobj"u8;
+
+        for (var i = 0; i <= span.Length - needle.Length; i++)
+        {
+            if (!span[i..].StartsWith(needle))
+                continue;
+
+            // Check word boundary: preceding byte must be non-regular or we're at window start.
+            var precedingOk = i == 0 || !IsRegular(span[i - 1]);
+            if (!precedingOk)
+                continue;
+
+            // Check word boundary: following byte must be non-regular or we're at window end.
+            var afterIndex = i + needle.Length;
+            var followingOk = afterIndex >= span.Length || !IsRegular(span[afterIndex]);
+            if (!followingOk)
+                continue;
+
+            return start + afterIndex;
+        }
+
+        return null;
+    }
+
+    // A byte is "regular" if it is NOT PDF whitespace and NOT a PDF delimiter.
+    // PDF whitespace: NUL, HT, LF, FF, CR, SP  (ISO 32000-2 Table 1)
+    // PDF delimiters: ( ) < > [ ] { } / %       (ISO 32000-2 Table 2)
+    private static bool IsRegular(byte b) => b is not (0 or 9 or 10 or 12 or 13 or 32
+        or (byte)'(' or (byte)')' or (byte)'<' or (byte)'>' or (byte)'['
+        or (byte)']' or (byte)'{' or (byte)'}' or (byte)'/' or (byte)'%');
 
     /// <summary>
     /// Appends a new revision to this document and returns the full updated byte array.
