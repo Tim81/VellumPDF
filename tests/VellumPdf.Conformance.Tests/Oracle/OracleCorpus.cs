@@ -1274,6 +1274,27 @@ public static class OracleCorpus
                 OverprintFormNoResources(),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
 
+            // ── Batch N3 continued — §6.2.4.2-2 inherited-state threading ────────────────────────────
+            // §6.2.4.2-2 VIOLATION via inherited state: the PAGE content stream selects an ICCBased
+            // CMYK colour space (/CS0 cs) and applies an ExtGState with /op true + /OPM 1 (/GS1 gs),
+            // then invokes a Form XObject via Do. The Form XObject does NOT re-establish any colour
+            // state — it only fills (re f). The violation is established entirely by the caller's
+            // state at the Do site, threaded into the form as its initial GState. veraPDF 1.30.2
+            // fires §6.2.4.2-2 on this pattern (probe N3-B, confirmed 2026-06-23). In-process:
+            // OverprintRule must fire via state-threading through Do.
+            new OracleFixture("pdfa2b-overprint-inherited-violation",
+                OverprintInheritedViolation(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // §6.2.4.2-2 COMPLIANT (inherited state, form resets OPM): the PAGE content stream
+            // selects ICCBased CMYK + /op true + /OPM 1 (same as above), then invokes a Form XObject.
+            // The Form XObject applies its OWN ExtGState (/GS2 gs) which sets /OPM 0, then fills.
+            // The form-local gs overrides the inherited OPM; OPM 0 is always permitted. veraPDF
+            // accepts this document. In-process: OverprintRule must NOT fire.
+            new OracleFixture("pdfa2b-overprint-inherited-compliant",
+                OverprintInheritedCompliant(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
             // ── PDF/UA-1 Batch A2 fixtures ──────────────────────────────────────────────────────────
 
             // §7.18.2-1 (TrapNet annotation): a visible TrapNet annotation inside the crop box is
@@ -6127,6 +6148,140 @@ public static class OracleCorpus
     }
 
     // ── End of Batch N3 adversarial FP-sweep helpers ───────────────────────────────────────────────
+
+    // ── Batch N3 inherited-state fixtures ─────────────────────────────────────────────────────────
+    // These fixtures exercise the state-threading path: the PAGE content stream establishes the
+    // overprint violation state (ICCBased CMYK fill + op true + OPM 1), then invokes a Form via Do.
+    // The Form XObject itself does NOT set any colour or overprint state — it only fills (or resets
+    // OPM to 0 in the compliant variant). veraPDF 1.30.2 probe N3-B (2026-06-23): FIRES on the
+    // inherited-violation case; PASSES when the form resets the state.
+
+    /// <summary>
+    /// §6.2.4.2-2 VIOLATION via inherited state: page sets ICCBased CMYK + /op true + /OPM 1,
+    /// then invokes a Form XObject that only fills without resetting any state. The violation is
+    /// detected by threading the page's current graphics state into the form as its initial GState.
+    /// veraPDF fires §6.2.4.2-2 on this pattern (probe N3-B, confirmed 2026-06-23).
+    /// </summary>
+    private static byte[] OverprintInheritedViolation()
+    {
+        var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var newPage = CloneDict(page);
+
+        var iccNum = reader.Size;
+        var formNum = iccNum + 1;
+        var contentNum = formNum + 1;
+
+        var iccStream = new PdfStream(N3IccCmykHeader());
+        iccStream.Dictionary.Set(new PdfName("N"), new PdfInteger(4));
+
+        // Form XObject: no /ColorSpace or /ExtGState in its own resources — only a BBox.
+        // The form content simply fills a rectangle without establishing any colour state.
+        var formStream = new PdfStream(Encoding.Latin1.GetBytes("10 10 50 50 re f"));
+        formStream.Dictionary
+            .Set(PdfName.Type, new PdfName("XObject"))
+            .Set(new PdfName("Subtype"), new PdfName("Form"))
+            .Set(new PdfName("BBox"), new PdfArray([
+                new PdfInteger(0), new PdfInteger(0),
+                new PdfInteger(100), new PdfInteger(100)]));
+
+        // Page content: select ICCBased CMYK, apply ExtGState (op true + OPM 1), draw form.
+        var pageContent = new PdfStream(
+            Encoding.Latin1.GetBytes("/CS0 cs /GS1 gs /Fm0 Do"));
+
+        var resObj = page.Get(new PdfName("Resources"));
+        var resources = (resObj is null ? null : reader.ResolveValue(resObj)) as PdfDictionary ?? new PdfDictionary();
+        var newRes = CloneDict(resources);
+        newRes
+            .Set(new PdfName("ColorSpace"), new PdfDictionary()
+                .Set(new PdfName("CS0"), new PdfArray([
+                    new PdfName("ICCBased"),
+                    new PdfIndirectReference(iccNum)])))
+            .Set(new PdfName("ExtGState"), new PdfDictionary()
+                .Set(new PdfName("GS1"), new PdfDictionary()
+                    .Set(new PdfName("Type"), new PdfName("ExtGState"))
+                    .Set(new PdfName("op"), PdfBoolean.True)
+                    .Set(new PdfName("OPM"), new PdfInteger(1))))
+            .Set(new PdfName("XObject"), new PdfDictionary()
+                .Set(new PdfName("Fm0"), new PdfIndirectReference(formNum)));
+        newPage.Set(new PdfName("Resources"), newRes)
+               .Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
+
+        return reader.AppendRevision([
+            (pageRef.ObjectNumber, newPage),
+            (iccNum, iccStream),
+            (formNum, formStream),
+            (contentNum, pageContent),
+        ]);
+    }
+
+    /// <summary>
+    /// §6.2.4.2-2 COMPLIANT (inherited state, form resets OPM): page sets ICCBased CMYK +
+    /// /op true + /OPM 1, then invokes a Form XObject. The form applies its own ExtGState
+    /// (/GS2 gs) which sets /OPM 0 before filling. The form-local override makes it compliant.
+    /// veraPDF accepts this document. In-process: OverprintRule must NOT fire.
+    /// </summary>
+    private static byte[] OverprintInheritedCompliant()
+    {
+        var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var newPage = CloneDict(page);
+
+        var iccNum = reader.Size;
+        var formNum = iccNum + 1;
+        var contentNum = formNum + 1;
+
+        var iccStream = new PdfStream(N3IccCmykHeader());
+        iccStream.Dictionary.Set(new PdfName("N"), new PdfInteger(4));
+
+        // Form's own resources: an ExtGState that resets OPM to 0.
+        var formResources = new PdfDictionary()
+            .Set(new PdfName("ExtGState"), new PdfDictionary()
+                .Set(new PdfName("GS2"), new PdfDictionary()
+                    .Set(new PdfName("Type"), new PdfName("ExtGState"))
+                    .Set(new PdfName("OPM"), new PdfInteger(0))));
+
+        // Form content: reset OPM via its own gs, then fill.
+        var formStream = new PdfStream(Encoding.Latin1.GetBytes("/GS2 gs 10 10 50 50 re f"));
+        formStream.Dictionary
+            .Set(PdfName.Type, new PdfName("XObject"))
+            .Set(new PdfName("Subtype"), new PdfName("Form"))
+            .Set(new PdfName("BBox"), new PdfArray([
+                new PdfInteger(0), new PdfInteger(0),
+                new PdfInteger(100), new PdfInteger(100)]))
+            .Set(new PdfName("Resources"), formResources);
+
+        // Page content: select ICCBased CMYK, apply gs (op true + OPM 1), draw form.
+        var pageContent = new PdfStream(
+            Encoding.Latin1.GetBytes("/CS0 cs /GS1 gs /Fm0 Do"));
+
+        var resObj = page.Get(new PdfName("Resources"));
+        var resources = (resObj is null ? null : reader.ResolveValue(resObj)) as PdfDictionary ?? new PdfDictionary();
+        var newRes = CloneDict(resources);
+        newRes
+            .Set(new PdfName("ColorSpace"), new PdfDictionary()
+                .Set(new PdfName("CS0"), new PdfArray([
+                    new PdfName("ICCBased"),
+                    new PdfIndirectReference(iccNum)])))
+            .Set(new PdfName("ExtGState"), new PdfDictionary()
+                .Set(new PdfName("GS1"), new PdfDictionary()
+                    .Set(new PdfName("Type"), new PdfName("ExtGState"))
+                    .Set(new PdfName("op"), PdfBoolean.True)
+                    .Set(new PdfName("OPM"), new PdfInteger(1))))
+            .Set(new PdfName("XObject"), new PdfDictionary()
+                .Set(new PdfName("Fm0"), new PdfIndirectReference(formNum)));
+        newPage.Set(new PdfName("Resources"), newRes)
+               .Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
+
+        return reader.AppendRevision([
+            (pageRef.ObjectNumber, newPage),
+            (iccNum, iccStream),
+            (formNum, formStream),
+            (contentNum, pageContent),
+        ]);
+    }
 
     // ── End of Batch N3 helpers ─────────────────────────────────────────────────────────────────────
 
