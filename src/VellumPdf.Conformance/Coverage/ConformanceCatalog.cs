@@ -299,9 +299,9 @@ public static class ConformanceCatalog
     // the feasible-coverage denominator).
     private static readonly Dictionary<string, string> PdfAOutOfScope = new(StringComparer.Ordinal)
     {
-        ["6.1.13-10"] = "Out of scope for v1.7 (tracked in Backlog issue TBD): predefined named-CMap character-collection maxima need Adobe registry tables; Identity/embedded-CMap paths are already covered.",
-        ["6.2.11.3.1-1"] = "Out of scope for v1.7 (Backlog issue TBD): predefined-CMap CIDSystemInfo registry table; Identity and embedded-CMap paths already compared.",
-        ["6.8-5"] = "Out of scope for v1.7 (Backlog issue TBD): embedded PDF/A-1 recursion needs a PDF/A-1 profile (not on roadmap); embedded PDF/A-2 is validated recursively.",
+        ["6.1.13-10"] = "Out of scope (tracked in #139): predefined named-CMap character-collection maxima need the Adobe code->CID tables and a conformant CJK CIDFont oracle asset; Identity/embedded-CMap paths are already covered.",
+        ["6.2.11.3.1-1"] = "Out of scope (tracked in #139): predefined-CMap CIDSystemInfo check needs a conformant CJK CIDFont oracle asset to cross-validate; Identity and embedded-CMap paths already compared.",
+        ["6.8-5"] = "Out of scope (tracked in #140): embedded PDF/A-1 recursion needs a PDF/A-1 profile (not on roadmap); embedded PDF/A-2 is validated recursively.",
         // 6.2.4.2-2 moved to Implemented (Batch N3 continued, 2026-07-02): overprint state (OP/op/OPM,
         //   fill/stroke ICCBased-CMYK flags) is now threaded into Form XObjects at every Do site in the
         //   page-level scan, using the caller's current GState as the form's initial state. Form-local
@@ -441,8 +441,8 @@ public static class ConformanceCatalog
     // from the feasible-coverage denominator).
     private static readonly Dictionary<string, string> PdfUaOutOfScope = new(StringComparer.Ordinal)
     {
-        ["7.16-1"] = "Out of scope for v1.7 (tracked in the v2.1 reader/encryption epic #97/#100): needs the reader to decrypt encrypted files to cross-validate against veraPDF; exposing /Encrypt /P alone cannot match veraPDF's whole-file verdict.",
-        ["7.21.3.1-1"] = "Out of scope for v1.7 (Backlog issue TBD): predefined-CMap CIDSystemInfo registry table (mirrors PDF/A-2 6.2.11.3.1-1); Identity/embedded-CMap paths already compared.",
+        ["7.16-1"] = "Out of scope (tracked in #138, v2.1 reader/encryption epic #97/#100): needs the reader to decrypt encrypted files to cross-validate against veraPDF; exposing /Encrypt /P alone cannot match veraPDF's whole-file verdict.",
+        ["7.21.3.1-1"] = "Out of scope (tracked in #139): predefined-CMap CIDSystemInfo check needs a conformant CJK CIDFont oracle asset (mirrors PDF/A-2 6.2.11.3.1-1); Identity/embedded-CMap paths already compared.",
         // 7.20-2 moved to PdfUaImplemented (UaFormXObjectSemanticParentRule: a Form XObject with
         //   /StructParents drawn via Do from 2+ distinct pages is always a structural violation —
         //   the form has exactly one /ParentTree MCID-array, so it can record only one set of
