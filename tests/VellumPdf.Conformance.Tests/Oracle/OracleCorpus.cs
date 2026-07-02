@@ -261,6 +261,37 @@ public static class OracleCorpus
             new OracleFixture("pdfa2b-cff-bad-fontfile3-subtype", WriterPdfWithBadFontFile3Subtype(),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
 
+            // ── Wave 2b — §6.2.11.4.1/§6.2.11.5 CIDFontType0 + Type1 ──────────────────────────────
+
+            // A CIDFontType0 font (SourceSans3 OpenType-CFF, Identity-H) with a /W entry that
+            // correctly declares the advance width for every shown glyph. The in-process rule must
+            // accept it (§6.2.11.4.1 and §6.2.11.5 satisfied). Note: veraPDF cross-validation is
+            // deferred — it fires on the /W mismatch variant (see pdfa2b-cff0-bad-width below).
+            new OracleFixture("pdfa2b-cff0-compliant", WriterPdfCidFontType0Compliant(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // The same CIDFontType0 font with every /W entry replaced by 1 (forcing a mismatch
+            // with the program's real advance widths). The in-process GlyphPresenceRule must reject
+            // it (§6.2.11.5-1: declared width does not match the embedded CFF program's width).
+            // Note: veraPDF cross-validation is deferred pending local availability.
+            new OracleFixture("pdfa2b-cff0-bad-width", WriterPdfCidFontType0BadWidth(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // A simple Type1 font (Noto Sans Shavian, /FontFile) with an explicit /Encoding
+            // /Differences that maps code 32 to /uni00A0, which IS in the program's CharStrings,
+            // and a /Widths entry that correctly declares the advance width from the charstring.
+            // The in-process rule must accept it (§6.2.11.4.1 and §6.2.11.5 satisfied).
+            // Note: veraPDF cross-validation is deferred — the presence/width verdict requires a
+            // visible rendering mode (Tr ≠ 3) which this fixture uses (Tr 0 default).
+            new OracleFixture("pdfa2b-type1-glyph-compliant", WriterPdfType1GlyphCompliant(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // The same simple Type1 font, but the /Widths entry for code 32 declares width 1
+            // instead of the charstring's real advance width. The in-process GlyphPresenceRule
+            // must reject it (§6.2.11.5-1).
+            new OracleFixture("pdfa2b-type1-glyph-bad-width", WriterPdfType1GlyphBadWidth(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
             // A PDF/A-2b document drawing text with a standard-14 font (Helvetica) via the
             // VellumPdf.Fonts.Standard14 substitution package, which embeds a metric-compatible
             // Liberation font. Proves the substitution path yields conformant PDF/A text out-of-the-box.
@@ -4689,6 +4720,111 @@ public static class OracleCorpus
         var newFf3 = new PdfStream(program);
         newFf3.Dictionary.Set(PdfName.Subtype, new PdfName("Type2"));
         return reader.AppendRevision([(ff3Ref.ObjectNumber, newFf3)]);
+    }
+
+    // ── Wave 2b — CIDFontType0C + Type1 glyph presence / width fixtures ──────────────────────────
+
+    // A CIDFontType0 (SourceSans3 OTF, Identity-H) with correct /W entries — the no-FP guard.
+    // Uses the same embedded font as WriterPdfWithEmbeddedCffFont; the writer already emits a
+    // correct /W array, so this document is compliant (§6.2.11.4.1 and §6.2.11.5 satisfied).
+    private static byte[] WriterPdfCidFontType0Compliant() => WriterPdfWithEmbeddedCffFont();
+
+    // The same CIDFontType0 document, but every /W entry replaced by 1 to force a width mismatch.
+    private static byte[] WriterPdfCidFontType0BadWidth()
+    {
+        using var reader = PdfReader.Open(WriterPdfWithEmbeddedCffFont());
+        var (_, page) = FirstPage(reader);
+        var resources = (PdfDictionary)reader.ResolveValue(page.Get(new PdfName("Resources"))!)!;
+        var fonts = (PdfDictionary)reader.ResolveValue(resources.Get(PdfName.Font)!)!;
+        var type0 = (PdfDictionary)reader.ResolveValue(fonts.Entries.First().Value)!;
+        var descArr = (PdfArray)reader.ResolveValue(type0.Get(new PdfName("DescendantFonts"))!)!;
+        var cidFontRef = (PdfIndirectReference)descArr[0];
+        var cidFont = (PdfDictionary)reader.Resolve(cidFontRef.ObjectNumber)!;
+
+        // Replace /W with a single range covering any shown CID, width 1 (a guaranteed mismatch).
+        // Format: [c [w1 w2 ...]] or [c1 c2 w]. Use the widest safe range [0 255 1].
+        var newW = new PdfArray([new PdfInteger(0), new PdfInteger(255), new PdfInteger(1)]);
+        var newCidFont = CloneDict(cidFont).Set(new PdfName("W"), newW);
+        return reader.AppendRevision([(cidFontRef.ObjectNumber, newCidFont)]);
+    }
+
+    // A simple Type1 font (Noto Sans Shavian /FontFile) with an explicit /Encoding /Differences
+    // that maps code 32 to /uni00A0 (which IS in the program's CharStrings) and a /Widths entry
+    // that correctly matches the charstring advance width. The in-process rule must accept it.
+    private static byte[] WriterPdfType1GlyphCompliant() => WriterPdfType1GlyphImpl(badWidth: false);
+
+    // The same font but /Widths[0] = 1 (a guaranteed mismatch with the program width).
+    private static byte[] WriterPdfType1GlyphBadWidth() => WriterPdfType1GlyphImpl(badWidth: true);
+
+    private static byte[] WriterPdfType1GlyphImpl(bool badWidth)
+    {
+        var (fontFile, length1, length2, length3) = Type1FontAsset.ToFontFile();
+
+        // Extract the actual advance width of "uni00A0" from the charstring so the compliant
+        // fixture has a correct /Widths entry. If extraction fails, fall back to 1000.
+        var csWidths = Type1Glyphs.TryGetWidths(fontFile, length1);
+        var realWidth = csWidths is not null && csWidths.TryGetValue("uni00A0", out var w)
+            ? (int)Math.Round(w)
+            : 1000;
+        var declaredWidth = badWidth ? 1 : realWidth;
+
+        using var reader = PdfReader.Open(WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b));
+        var (pageRef, page) = FirstPage(reader);
+
+        var fontNum = reader.Size;
+        var descNum = fontNum + 1;
+        var ffNum = fontNum + 2;
+        var contentNum = fontNum + 3;
+
+        var program = new PdfStream(fontFile);
+        program.Dictionary
+            .Set(new PdfName("Length1"), new PdfInteger(length1))
+            .Set(new PdfName("Length2"), new PdfInteger(length2))
+            .Set(new PdfName("Length3"), new PdfInteger(length3));
+
+        var descriptor = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("FontDescriptor"))
+            .Set(new PdfName("FontName"), new PdfName("NotoSansShavian"))
+            .Set(new PdfName("Flags"), new PdfInteger(4))
+            .Set(new PdfName("FontBBox"),
+                new PdfArray([new PdfInteger(0), new PdfInteger(-502), new PdfInteger(1396), new PdfInteger(1600)]))
+            .Set(new PdfName("ItalicAngle"), new PdfInteger(0))
+            .Set(new PdfName("Ascent"), new PdfInteger(1600))
+            .Set(new PdfName("Descent"), new PdfInteger(-502))
+            .Set(new PdfName("CapHeight"), new PdfInteger(1600))
+            .Set(new PdfName("StemV"), new PdfInteger(80))
+            .Set(new PdfName("FontFile"), new PdfIndirectReference(ffNum));
+
+        // Explicit /Encoding: /Differences [32 /uni00A0] maps code 32 (space byte) to /uni00A0.
+        var encodingDict = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("Encoding"))
+            .Set(new PdfName("Differences"),
+                new PdfArray([new PdfInteger(32), new PdfName("uni00A0")]));
+
+        var font = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("Font"))
+            .Set(PdfName.Subtype, new PdfName("Type1"))
+            .Set(PdfName.BaseFont, new PdfName("NotoSansShavian"))
+            .Set(new PdfName("Encoding"), encodingDict)
+            .Set(new PdfName("FirstChar"), new PdfInteger(32))
+            .Set(new PdfName("LastChar"), new PdfInteger(32))
+            .Set(new PdfName("Widths"), new PdfArray([new PdfInteger(declaredWidth)]))
+            .Set(new PdfName("FontDescriptor"), new PdfIndirectReference(descNum));
+
+        var resObj = page.Get(new PdfName("Resources"));
+        var resources = (resObj is null ? null : reader.ResolveValue(resObj)) as PdfDictionary ?? new PdfDictionary();
+        var newResources = CloneDict(resources)
+            .Set(PdfName.Font, new PdfDictionary().Set(new PdfName("F1"), new PdfIndirectReference(fontNum)));
+        var newPage = CloneDict(page).Set(new PdfName("Resources"), newResources);
+        // Draw code 32 with visible rendering mode (Tr 0 = default), not Tr 3, so the
+        // presence and width checks run (§6.2.11.4.1 and §6.2.11.5 apply to rendered glyphs).
+        newPage.Set(new PdfName("Contents"),
+            new PdfArray([page.Get(new PdfName("Contents"))!, new PdfIndirectReference(contentNum)]));
+        var content = new PdfStream(Encoding.ASCII.GetBytes("BT /F1 12 Tf 72 700 Td (\x20) Tj ET"));
+
+        return reader.AppendRevision(
+            [(pageRef.ObjectNumber, newPage), (fontNum, font), (descNum, descriptor), (ffNum, program),
+                (contentNum, content)]);
     }
 
     // Embeds the Noto Sans Shavian Type 1 program as a subset-tagged simple Type1 font on a

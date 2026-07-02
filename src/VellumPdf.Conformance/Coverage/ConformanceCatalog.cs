@@ -219,9 +219,12 @@ public static class ConformanceCatalog
         //   XObjects, all CharProcs of Tf-selected Type 3 fonts, and all annotation /AP /N appearance
         //   streams via GetReachableContentStreams; same reachability policy as ContentStreamOperatorRule).
         ["6.2.2-2"] = "page + non-page streams checked (Font/XObject/ExtGState/ColorSpace/Shading) via GetReachableContentStreams (drawn Form XObjects, Type 3 CharProcs, annotation /AP /N appearance streams; Batch N5, 2026-06-23); both page-level and non-page checks scoped to streams with null own /Resources AND where the used name IS defined in the ancestor resource scope (veraPDF's inheritedResourceNames model: only names that resolve via the ancestor chain are flagged — a name absent from all ancestor scopes is not fired; confirmed probe A1/A2 2026-06-23); non-page check uses the PAGE's resolved resource scope as the ancestor; streams with a non-null /Resources skipped (FP-safe under-detection); nested-form B1 (inner no /Resources, name in page scope) fires; B2 (name only in outer form scope, not page scope) is FP-safe under-detection (confirmed probe B1/B2 2026-06-23); Pattern names (scn/SCN in Pattern colour space) and Properties names (BDC/DP with name operand) not detected in either pass — stateful colour-space tracking required",
-        ["6.2.11.4.1-1"] = "Wave 2a: CIDFontType2/Identity-H (Identity or stream CIDToGIDMap), CIDFontType2/embedded-CMap-stream, and simple non-symbolic TrueType (WinAnsi/MacRoman) are checked; CFF/CIDFontType0/Type1 remain (Wave 2b)",
-        ["6.2.11.4.1-2"] = "Wave 2a: CIDFontType2/Identity-H (Identity or stream CIDToGIDMap), CIDFontType2/embedded-CMap-stream, and simple non-symbolic TrueType (WinAnsi/MacRoman) are checked; CFF/CIDFontType0/Type1 remain (Wave 2b)",
-        ["6.2.11.5-1"] = "Wave 2a: CIDFontType2/Identity-H (Identity or stream CIDToGIDMap), CIDFontType2/embedded-CMap-stream, and simple non-symbolic TrueType (WinAnsi/MacRoman) are checked; CFF/CIDFontType0/Type1 remain (Wave 2b)",
+        // 6.2.11.4.1-1/-2 and 6.2.11.5-1 moved to Implemented (Wave 2a+2b, 2026-07-02): glyph presence
+        //   and width are checked across every embedded font path — CIDFontType2 (Identity or stream
+        //   CIDToGIDMap), Type0 with an embedded non-Identity CMap, simple non-symbolic TrueType,
+        //   CIDFontType0/CFF (Type2 charstring width interpreter + FDSelect/FDArray), and simple Type1
+        //   (charstring hsbw/sbw). Widths are FontMatrix-scaled to PDF text space; an unresolvable
+        //   width is skipped (FP-safe). Cross-validated against veraPDF 1.30.2.
         // 6.6.2.1-4 moved to Implemented (META batch, 2026-07-02): MetadataRule now runs the
         //   bytes/encoding/UTF-8 packet checks on the catalog /Metadata, every page /Metadata, every
         //   AcroForm field /Metadata (field tree incl. terminal-field /Kids), and every embedded-file
