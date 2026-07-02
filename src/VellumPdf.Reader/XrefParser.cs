@@ -8,6 +8,25 @@ using VellumPdf.Core;
 namespace VellumPdf.Reader;
 
 /// <summary>
+/// The byte boundaries of a single PDF revision as recorded in the xref chain.
+/// Oldest revision is index 0 in the <see cref="XrefParser.Parse"/> result list.
+/// </summary>
+internal readonly struct XrefRevision
+{
+    /// <summary>Byte offset of this revision's xref table or xref stream.</summary>
+    public int XrefOffset { get; }
+
+    /// <summary>The startxref value that pointed to this revision's xref table or stream.</summary>
+    public int StartXrefOffset { get; }
+
+    internal XrefRevision(int xrefOffset, int startXrefOffset)
+    {
+        XrefOffset = xrefOffset;
+        StartXrefOffset = startXrefOffset;
+    }
+}
+
+/// <summary>
 /// Parses cross-reference tables and streams from a PDF byte buffer
 /// (ISO 32000-2 §7.5.4, §7.5.5, and §7.5.8). Supports classic xref tables,
 /// cross-reference streams, and hybrid (XRefStm) files.
@@ -18,16 +37,16 @@ internal sealed class XrefParser
 
     /// <summary>
     /// Parses the xref table/stream chain from <paramref name="data"/>.
-    /// Returns the merged xref table (newer revisions win) and the newest trailer dictionary.
-    /// Also outputs the byte offset of the xref from the last startxref.
+    /// Returns the merged xref table (newer revisions win), the newest trailer dictionary,
+    /// the byte offset of the xref from the last startxref, and the revision list oldest-first.
     /// </summary>
-    public static (Dictionary<int, XrefEntry> Xref, PdfDictionary Trailer, int StartXrefOffset) Parse(
+    public static (Dictionary<int, XrefEntry> Xref, PdfDictionary Trailer, int StartXrefOffset, IReadOnlyList<XrefRevision> Revisions) Parse(
         ReadOnlyMemory<byte> data)
     {
         var startxrefOffset = FindLastStartxref(data);
         var xref = new Dictionary<int, XrefEntry>();
-        var trailer = ParseRevisionChain(data, startxrefOffset, xref);
-        return (xref, trailer, startxrefOffset);
+        var (trailer, revisions) = ParseRevisionChain(data, startxrefOffset, xref);
+        return (xref, trailer, startxrefOffset, revisions);
     }
 
     private static int FindLastStartxref(ReadOnlyMemory<byte> data)
@@ -78,13 +97,15 @@ internal sealed class XrefParser
         return xrefOffset;
     }
 
-    private static PdfDictionary ParseRevisionChain(
+    private static (PdfDictionary Trailer, IReadOnlyList<XrefRevision> Revisions) ParseRevisionChain(
         ReadOnlyMemory<byte> data, int xrefOffset, Dictionary<int, XrefEntry> xref)
     {
         var seenOffsets = new HashSet<int>();
         PdfDictionary? newestTrailer = null;
+        var revisionsNewestFirst = new List<XrefRevision>();
 
         var currentOffset = xrefOffset;
+        var startxrefForCurrent = xrefOffset;
         var revisionCount = 0;
 
         while (true)
@@ -95,6 +116,8 @@ internal sealed class XrefParser
             if (++revisionCount > 100)
                 throw new InvalidDataException(
                     "Malformed PDF: xref chain exceeds 100 revisions; aborting to prevent infinite loop.");
+
+            revisionsNewestFirst.Add(new XrefRevision(currentOffset, startxrefForCurrent));
 
             var trailer = ParseOneRevision(data, currentOffset, xref, seenOffsets);
             newestTrailer ??= trailer;
@@ -112,6 +135,7 @@ internal sealed class XrefParser
                 if (prevValue < 0 || prevValue >= data.Length)
                     throw new InvalidDataException(
                         $"Malformed PDF: /Prev offset {prevValue} is out of range.");
+                startxrefForCurrent = (int)prevValue;
                 currentOffset = (int)prevValue;
             }
             else
@@ -120,7 +144,8 @@ internal sealed class XrefParser
             }
         }
 
-        return newestTrailer!;
+        revisionsNewestFirst.Reverse();
+        return (newestTrailer!, revisionsNewestFirst);
     }
 
     private static PdfDictionary ParseOneRevision(

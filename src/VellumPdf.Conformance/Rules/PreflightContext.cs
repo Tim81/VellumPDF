@@ -231,6 +231,15 @@ internal sealed class PreflightContext
     public long? ObjectOffset(int objectNumber) => Reader.UncompressedObjectOffset(objectNumber);
 
     /// <summary>
+    /// Byte offset just after the <c>endobj</c> keyword for the specified object, or
+    /// <see langword="null"/> if the object is in an object stream or not found within the scan window.
+    /// </summary>
+    public int? ObjectEndOffset(int objectNumber) => Reader.UncompressedObjectEndOffset(objectNumber);
+
+    /// <summary>Xref revisions in the file, oldest-first. Used by PDF/A §6.4.3-1 analysis.</summary>
+    public IReadOnlyList<XrefRevision> Revisions => Reader.Revisions;
+
+    /// <summary>
     /// Enumerates the resolved value of every indirect object in the file. Used by file-structure
     /// rules (§6.1.13) that constrain every object value regardless of reachability.
     /// </summary>
