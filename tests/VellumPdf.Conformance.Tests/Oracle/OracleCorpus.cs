@@ -378,6 +378,21 @@ public static class OracleCorpus
                 Pdfa2aStandardTypeRemapMultihop(),
                 Conformance.PdfConformance.PdfA2A, "2a", ExpectedCompliant: true),
 
+            // §6.7.2.2-1 VIOLATION: a StructElem with /S /UndefinedTag and NO /RoleMap entry.
+            // The type is undefined — not standard and not role-mapped. veraPDF fires 6.7.2.2-1
+            // (isDefined == false) and co-fires 6.7.3.4-1 (isNotMappedToStandardType == true).
+            // In-process: A2aStructureTypeRule fires "ISO19005-2:6.7.2.2-1" and "ISO19005-2:6.7.3.4-1".
+            new OracleFixture("pdfa2a-defined-type-unmapped",
+                Pdfa2aDefinedTypeUnmapped(),
+                Conformance.PdfConformance.PdfA2A, "2a", ExpectedCompliant: false),
+
+            // §6.7.2.2-1 FP-safety: a StructElem with /S /MyMappedTag role-mapped via /RoleMap to
+            // the standard type /Div. The type IS defined (role-map resolves to standard).
+            // veraPDF PASSES (isDefined == true). In-process: A2aStructureTypeRule must NOT fire.
+            new OracleFixture("pdfa2a-defined-type-rolemapped",
+                Pdfa2aDefinedTypeRoleMapped(),
+                Conformance.PdfConformance.PdfA2A, "2a", ExpectedCompliant: true),
+
             // §6.7.4-1 VIOLATION: document catalog /Lang (invalid!!bad) — not a valid RFC 3066 tag.
             // veraPDF fires 6.7.4-1. In-process: A2aLangSyntaxRule fires "ISO19005-2:6.7.4-1".
             new OracleFixture("pdfa2a-bad-catalog-lang",
@@ -3675,6 +3690,85 @@ public static class OracleCorpus
 
         return reader.AppendRevision([
             (strRef.ObjectNumber, newStr),
+        ]);
+    }
+
+    // ── PDF/A-2a §6.7.2.2-1 oracle fixture helpers ───────────────────────────────────────────────
+
+    /// <summary>
+    /// §6.7.2.2-1 VIOLATION: injects a StructElem with <c>/S /UndefinedTag</c> and NO
+    /// <c>/RoleMap</c> entry. The type is undefined — not a standard ISO 32000-1 Table 333 type
+    /// and not mapped (via <c>/RoleMap</c>) to one. veraPDF fires 6.7.2.2-1
+    /// (<c>isDefined == false</c>) and co-fires 6.7.3.4-1 (<c>isNotMappedToStandardType == true</c>).
+    /// </summary>
+    private static byte[] Pdfa2aDefinedTypeUnmapped()
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfA2a);
+        using var reader = PdfReader.Open(baseline);
+        var strRef = (PdfIndirectReference)reader.Catalog.Get(new PdfName("StructTreeRoot"))!;
+        var str = (PdfDictionary)reader.Resolve(strRef.ObjectNumber)!;
+
+        var docRef = str.Get(new PdfName("K")) as PdfIndirectReference
+            ?? throw new InvalidOperationException("Expected Document StructElem ref");
+        var doc = (PdfDictionary)reader.Resolve(docRef.ObjectNumber)!;
+        var docK = doc.Get(new PdfName("K"));
+
+        var customElemNum = reader.Size;
+        var customElem = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("StructElem"))
+            .Set(new PdfName("S"), new PdfName("UndefinedTag"))
+            .Set(new PdfName("P"), strRef);
+
+        var newDoc = CloneDict(doc);
+        newDoc.Set(new PdfName("K"), new PdfArray([
+            (PdfObject)(docK is PdfIndirectReference ? docK : new PdfIndirectReference(docRef.ObjectNumber)),
+            new PdfIndirectReference(customElemNum),
+        ]));
+
+        return reader.AppendRevision([
+            (docRef.ObjectNumber, newDoc),
+            (customElemNum, customElem),
+        ]);
+    }
+
+    /// <summary>
+    /// §6.7.2.2-1 FP-safety: injects a StructElem with <c>/S /MyMappedTag</c> role-mapped via
+    /// the StructTreeRoot <c>/RoleMap</c> to the standard type <c>/Div</c>. The type is defined
+    /// (the role-map chain resolves to a Table 333 standard type). veraPDF PASSES
+    /// (<c>isDefined == true</c>). In-process: A2aStructureTypeRule must NOT fire.
+    /// </summary>
+    private static byte[] Pdfa2aDefinedTypeRoleMapped()
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfA2a);
+        using var reader = PdfReader.Open(baseline);
+        var strRef = (PdfIndirectReference)reader.Catalog.Get(new PdfName("StructTreeRoot"))!;
+        var str = (PdfDictionary)reader.Resolve(strRef.ObjectNumber)!;
+
+        var docRef = str.Get(new PdfName("K")) as PdfIndirectReference
+            ?? throw new InvalidOperationException("Expected Document StructElem ref");
+        var doc = (PdfDictionary)reader.Resolve(docRef.ObjectNumber)!;
+        var docK = doc.Get(new PdfName("K"));
+
+        var customElemNum = reader.Size;
+        var customElem = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("StructElem"))
+            .Set(new PdfName("S"), new PdfName("MyMappedTag"))
+            .Set(new PdfName("P"), strRef);
+
+        var newDoc = CloneDict(doc);
+        newDoc.Set(new PdfName("K"), new PdfArray([
+            (PdfObject)(docK is PdfIndirectReference ? docK : new PdfIndirectReference(docRef.ObjectNumber)),
+            new PdfIndirectReference(customElemNum),
+        ]));
+
+        var newStr = CloneDict(str);
+        newStr.Set(new PdfName("RoleMap"), new PdfDictionary()
+            .Set(new PdfName("MyMappedTag"), new PdfName("Div")));
+
+        return reader.AppendRevision([
+            (strRef.ObjectNumber, newStr),
+            (docRef.ObjectNumber, newDoc),
+            (customElemNum, customElem),
         ]);
     }
 

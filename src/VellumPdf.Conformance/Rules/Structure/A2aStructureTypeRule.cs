@@ -4,9 +4,14 @@
 namespace VellumPdf.Conformance.Rules.Structure;
 
 /// <summary>
-/// ISO 19005-2 §6.7.3.4 — structure-element type conformance for PDF/A-2a.
+/// ISO 19005-2 §6.7.2.2 and §6.7.3.4 — structure-element type conformance for PDF/A-2a.
 ///
-/// <para>Three sub-clauses, each evaluated on every walked <see cref="StructureTreeNode"/>:</para>
+/// <para>§6.7.2.2-1 — <c>isDefined</c>: every structure element's <c>/S</c> type must be
+/// "defined" — either a standard ISO 32000-1 Table 333 type, or a non-standard type that is
+/// role-mapped (via the <c>/RoleMap</c> chain) to a standard type. A non-standard type with no
+/// valid role-map path to a standard type is undefined and fires this check.</para>
+///
+/// <para>§6.7.3.4 — three sub-clauses, each evaluated on every walked <see cref="StructureTreeNode"/>:</para>
 /// <list type="number">
 ///   <item>
 ///     <strong>testNumber 1</strong> — <c>isNotMappedToStandardType == false</c><br/>
@@ -29,7 +34,15 @@ namespace VellumPdf.Conformance.Rules.Structure;
 ///   </item>
 /// </list>
 ///
-/// <para>FP-safety — all three sub-clauses are scoped to structure elements ACTUALLY USED in
+/// <para>Relationship between §6.7.2.2-1 and §6.7.3.4-1: both predicates fire on the same
+/// condition — a non-standard <c>/S</c> type whose <c>/RoleMap</c> chain does not terminate at
+/// a Table 333 standard type. §6.7.2.2-1 (<c>isDefined</c>) is the structural requirement;
+/// §6.7.3.4-1 (<c>isNotMappedToStandardType</c>) is the role-map enforcement. Both test IDs
+/// are co-reported on the same element so veraPDF sees both fired. Standard types are
+/// inherently defined, so §6.7.2.2-1 adds no additional condition beyond §6.7.3.4-1 for
+/// elements whose <c>/S</c> is already in Table 333.</para>
+///
+/// <para>FP-safety — all sub-clauses are scoped to structure elements ACTUALLY USED in
 /// the walked tree, NOT to the <c>/RoleMap</c> dictionary alone. veraPDF evaluates these
 /// predicates on a <c>PDStructElem</c> that uses the type in its <c>/S</c>; a <c>/RoleMap</c>
 /// entry that is never referenced by any element does not trigger these rules. This is
@@ -50,6 +63,9 @@ namespace VellumPdf.Conformance.Rules.Structure;
 internal sealed class A2aStructureTypeRule : IConformanceRule
 {
     public string RuleId => "ISO19005-2:6.7.3.4";
+
+    private const string DefinedTypeClause = "ISO 19005-2:2011, 6.7.2.2";
+    private const string DefinedTypeTestId = "ISO19005-2:6.7.2.2-1";
 
     public string Clause => "ISO 19005-2:2011, 6.7.3.4";
 
@@ -108,6 +124,18 @@ internal sealed class A2aStructureTypeRule : IConformanceRule
 
                 if (node.StandardType is null)
                 {
+                    // §6.7.2.2-1: the type is undefined (not standard, not role-mapped to standard).
+                    // This co-fires with §6.7.3.4-1 on the same element: both predicates are
+                    // triggered by the same condition (non-standard /S with no valid role-map path).
+                    context.Report(
+                        DefinedTypeTestId,
+                        DefinedTypeClause,
+                        PreflightSeverity.Error,
+                        $"A structure element uses the structure type /{rawType}, which is neither "
+                        + "one of the ISO 32000-1 Table 333 standard structure types nor mapped "
+                        + "(via the StructTreeRoot /RoleMap) to a standard type. "
+                        + "ISO 19005-2 §6.7.2.2 requires every structure element type to be defined.");
+
                     // testNumber 1: non-standard type is not role-mapped to any standard type.
                     context.Report(
                         RuleId + "-1",
