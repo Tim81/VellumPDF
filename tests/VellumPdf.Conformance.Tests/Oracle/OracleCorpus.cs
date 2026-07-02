@@ -1738,6 +1738,76 @@ public static class OracleCorpus
             new OracleFixture("pdfa2b-deep-struct-valid-utf8",
                 Pdfa2bDeepStructValidUtf8(),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // ── UA batch — §5-3/5-4/5-5 XMP prefix fixtures ─────────────────────────────────────
+
+            // §5-3/5-4/5-5 COMPLIANT: the tagged PDF/UA-1 baseline uses the pdfuaid prefix in its
+            // XMP (the writer produces the standard binding). Both veraPDF and the in-process
+            // UaMetadataRule accept it. (Shares the pdfua1-tagged baseline.)
+            new OracleFixture("pdfua1-xmp-prefix-compliant",
+                WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: true),
+
+            // §5-3 VIOLATION: the pdfuaid namespace is bound to "xua" instead of "pdfuaid". The
+            // in-process UaMetadataRule fires 5-3. veraPDF fires 5-3.
+            new OracleFixture("pdfua1-xmp-prefix-wrong",
+                WriterUa1WithWrongXmpPrefix(),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // ── UA batch — §7.18.6.2-1/-2 media clip data fixtures ─────────────────────────────
+
+            // §7.18.6.2-1/-2 COMPLIANT: a Screen annotation with a Rendition action that has a
+            // media clip data dict containing both /CT and /Alt. The in-process UaMediaClipRule
+            // passes, and the document also fails other UA rules (no struct binding for Screen);
+            // the oracle is per-clause and veraPDF confirms 7.18.6.2-1/-2 do NOT fire.
+            // NOTE: this document still fails other UA rules so ExpectedCompliant=false; we use
+            // the in-process unit test (InProcessVerdict_MatchesExpectation) to confirm 7.18.6.2
+            // does not fire. The oracle fixture purpose here is to guard FP safety.
+            new OracleFixture("pdfua1-media-clip-compliant",
+                WriterUa1WithScreenAnnotation(includeCt: true, includeAlt: true),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.18.6.2-1 VIOLATION: media clip data dict missing /CT.
+            new OracleFixture("pdfua1-media-clip-no-ct",
+                WriterUa1WithScreenAnnotation(includeCt: false, includeAlt: true),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.18.6.2-2 VIOLATION: media clip data dict missing /Alt.
+            new OracleFixture("pdfua1-media-clip-no-alt",
+                WriterUa1WithScreenAnnotation(includeCt: true, includeAlt: false),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // ── UA batch — §7.18.1-3 form field alternate name fixtures ─────────────────────────
+
+            // §7.18.1-3 COMPLIANT: a Widget with /TU present. The document still fails other UA
+            // rules (no struct binding); oracle guards FP safety for this clause.
+            new OracleFixture("pdfua1-field-with-tu",
+                WriterUa1WithWidgetField(includeTu: true),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.18.1-3 VIOLATION: a Widget with no /TU and no struct-elem /Alt.
+            new OracleFixture("pdfua1-field-no-tu-no-alt",
+                WriterUa1WithWidgetField(includeTu: false),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // ── UA batch — §7.18.4-2 Form structure element fixtures ────────────────────────────
+
+            // §7.18.4-2 COMPLIANT: a Form struct element with exactly one OBJR child (no /Role).
+            // Document still fails other UA rules; oracle guards FP safety.
+            new OracleFixture("pdfua1-form-struct-one-objr",
+                WriterUa1WithFormStructElem(addExtraChild: false, addRole: false),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.18.4-2 VIOLATION: a Form struct element with an extra StructElem child (no /Role).
+            new OracleFixture("pdfua1-form-struct-extra-child",
+                WriterUa1WithFormStructElem(addExtraChild: true, addRole: false),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.18.4-2 FP guard: a Form struct element WITH a /Role attribute. Even with multiple
+            // children the rule must NOT fire. Document still fails other UA rules.
+            new OracleFixture("pdfua1-form-struct-with-role",
+                WriterUa1WithFormStructElem(addExtraChild: true, addRole: true),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
         ];
     }
 
@@ -3602,6 +3672,236 @@ public static class OracleCorpus
             .Set(new PdfName("F"), new PdfInteger(4));
         page.Set(new PdfName("Annots"), new PdfArray([new PdfIndirectReference(annotObjNum)]));
         return reader.AppendRevision([(pageRef.ObjectNumber, page), (annotObjNum, movie)]);
+    }
+
+    // ── UA batch fixture helpers ──────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Produces a tagged PDF/UA-1 baseline whose XMP /Metadata packet has the PDF/UA identification
+    /// namespace bound to the prefix "xua" instead of "pdfuaid". This violates §5-3 (and §5-4/5-5
+    /// if the respective properties are also present, which they are not here — only "part" is
+    /// set). The packet is replaced via an incremental update so the file structure stays valid.
+    /// </summary>
+    private static byte[] WriterUa1WithWrongXmpPrefix()
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+        using var reader = PdfReader.Open(baseline);
+        var rootRef = (PdfIndirectReference)reader.Trailer.Get(PdfName.Root)!;
+        var catalog = CloneDict(reader.Catalog);
+
+        // Build a replacement XMP packet that binds the pdfuaid namespace to prefix "xua".
+        var xmpBytes = Encoding.UTF8.GetBytes(
+            "<?xpacket begin=\"\xEF\xBB\xBF\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>"
+            + "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\">"
+            + "<rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">"
+            + "<rdf:Description rdf:about=\"\""
+            + " xmlns:xua=\"http://www.aiim.org/pdfua/ns/id/\""
+            + " xmlns:pdfaid=\"http://www.aiim.org/pdfa/ns/id/\""
+            + " xmlns:dc=\"http://purl.org/dc/elements/1.1/\""
+            + " xua:part=\"1\""
+            + " pdfaid:part=\"2\""
+            + " pdfaid:conformance=\"B\""
+            + "/>"
+            + "</rdf:RDF>"
+            + "</x:xmpmeta>"
+            + "<?xpacket end=\"w\"?>");
+
+        var metaStream = new PdfStream(xmpBytes);
+        metaStream.Dictionary
+            .Set(new PdfName("Type"), new PdfName("Metadata"))
+            .Set(new PdfName("Subtype"), new PdfName("XML"));
+
+        var metaNum = reader.Size;
+        catalog.Set(new PdfName("Metadata"), new PdfIndirectReference(metaNum));
+        return reader.AppendRevision([(rootRef.ObjectNumber, catalog), (metaNum, metaStream)]);
+    }
+
+    /// <summary>
+    /// Injects a Screen annotation with a Rendition action pointing at a media clip data dict.
+    /// When <paramref name="includeCt"/> is true, the MCD has /CT; when false, /CT is absent
+    /// (§7.18.6.2-1 violation). When <paramref name="includeAlt"/> is true, the MCD has /Alt;
+    /// when false, /Alt is absent (§7.18.6.2-2 violation).
+    /// </summary>
+    private static byte[] WriterUa1WithScreenAnnotation(bool includeCt, bool includeAlt)
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var newPage = CloneDict(page);
+
+        var mcdNum = reader.Size;
+        var renditionNum = reader.Size + 1;
+        var actionNum = reader.Size + 2;
+        var annotNum = reader.Size + 3;
+
+        // Media clip data dict (/S /MCD).
+        var mcd = new PdfDictionary()
+            .Set(new PdfName("S"), new PdfName("MCD"));
+        if (includeCt)
+            mcd.Set(new PdfName("CT"), new PdfLiteralString(Encoding.ASCII.GetBytes("video/mp4")));
+        if (includeAlt)
+            mcd.Set(new PdfName("Alt"), new PdfArray([
+                new PdfLiteralString(Encoding.ASCII.GetBytes("")),
+                new PdfLiteralString(Encoding.ASCII.GetBytes("A video clip"))]));
+
+        // Media rendition (/S /MR) referencing the MCD via /C.
+        var rendition = new PdfDictionary()
+            .Set(new PdfName("S"), new PdfName("MR"))
+            .Set(new PdfName("C"), new PdfIndirectReference(mcdNum));
+
+        // Rendition action (/S /Rendition).
+        var action = new PdfDictionary()
+            .Set(new PdfName("S"), new PdfName("Rendition"))
+            .Set(new PdfName("R"), new PdfIndirectReference(renditionNum))
+            .Set(new PdfName("OP"), new PdfInteger(0));
+
+        var annot = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("Annot"))
+            .Set(PdfName.Subtype, new PdfName("Screen"))
+            .Set(new PdfName("Rect"), new PdfArray([new PdfInteger(10), new PdfInteger(10), new PdfInteger(100), new PdfInteger(100)]))
+            .Set(new PdfName("A"), new PdfIndirectReference(actionNum));
+
+        newPage.Set(new PdfName("Annots"), new PdfArray([new PdfIndirectReference(annotNum)]));
+        return reader.AppendRevision([
+            (pageRef.ObjectNumber, newPage),
+            (mcdNum, mcd),
+            (renditionNum, rendition),
+            (actionNum, action),
+            (annotNum, annot),
+        ]);
+    }
+
+    /// <summary>
+    /// Injects a Widget annotation (AcroForm text field) into the UA-1 tagged baseline.
+    /// When <paramref name="includeTu"/> is true, the field has /TU (satisfying §7.18.1-3);
+    /// when false, /TU is absent and no struct-elem /Alt is set either (violation).
+    /// </summary>
+    private static byte[] WriterUa1WithWidgetField(bool includeTu)
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var newPage = CloneDict(page);
+        var rootRef = (PdfIndirectReference)reader.Trailer.Get(PdfName.Root)!;
+        var catalog = CloneDict(reader.Catalog);
+
+        var widgetNum = reader.Size;
+        var widget = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("Annot"))
+            .Set(PdfName.Subtype, new PdfName("Widget"))
+            .Set(new PdfName("FT"), new PdfName("Tx"))
+            .Set(new PdfName("T"), new PdfLiteralString(Encoding.ASCII.GetBytes("Name")))
+            .Set(new PdfName("Rect"), new PdfArray([new PdfInteger(50), new PdfInteger(700), new PdfInteger(200), new PdfInteger(720)]));
+        if (includeTu)
+            widget.Set(new PdfName("TU"), new PdfLiteralString(Encoding.ASCII.GetBytes("Full Name")));
+
+        newPage.Set(new PdfName("Annots"), new PdfArray([new PdfIndirectReference(widgetNum)]));
+
+        // Add AcroForm with the field.
+        var acroForm = new PdfDictionary()
+            .Set(new PdfName("Fields"), new PdfArray([new PdfIndirectReference(widgetNum)]));
+        catalog.Set(new PdfName("AcroForm"), acroForm);
+
+        return reader.AppendRevision([
+            (pageRef.ObjectNumber, newPage),
+            (rootRef.ObjectNumber, catalog),
+            (widgetNum, widget),
+        ]);
+    }
+
+    /// <summary>
+    /// Injects a Form structure element into the UA-1 tagged baseline.
+    /// When <paramref name="addExtraChild"/> is true, a second StructElem child is added (violation
+    /// of §7.18.4-2 when /Role is absent). When <paramref name="addRole"/> is true, a /Role
+    /// attribute is added to the Form struct element (exempt from §7.18.4-2).
+    /// </summary>
+    private static byte[] WriterUa1WithFormStructElem(bool addExtraChild, bool addRole)
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+        using var reader = PdfReader.Open(baseline);
+        var rootRef = (PdfIndirectReference)reader.Trailer.Get(PdfName.Root)!;
+        var catalog = CloneDict(reader.Catalog);
+
+        // Find the StructTreeRoot.
+        var strRef = reader.Catalog.Get(new PdfName("StructTreeRoot")) as PdfIndirectReference
+            ?? throw new InvalidOperationException("No StructTreeRoot ref");
+        var str = (PdfDictionary)reader.Resolve(strRef.ObjectNumber)!;
+        var newStr = CloneDict(str);
+
+        // Build a widget annotation (minimal, for the OBJR reference).
+        var (pageRef, page) = FirstPage(reader);
+        var newPage = CloneDict(page);
+        var widgetNum = reader.Size;
+        var widget = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("Annot"))
+            .Set(PdfName.Subtype, new PdfName("Widget"))
+            .Set(new PdfName("FT"), new PdfName("Tx"))
+            .Set(new PdfName("T"), new PdfLiteralString(Encoding.ASCII.GetBytes("Field")))
+            .Set(new PdfName("Rect"), new PdfArray([new PdfInteger(50), new PdfInteger(700), new PdfInteger(200), new PdfInteger(720)]));
+
+        // OBJR pointing at the widget.
+        var objrNum = reader.Size + 1;
+        var objr = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("OBJR"))
+            .Set(new PdfName("Obj"), new PdfIndirectReference(widgetNum));
+
+        // Optionally add a second P StructElem child to violate §7.18.4-2.
+        var extraChildNum = reader.Size + 2;
+        var extraChild = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("StructElem"))
+            .Set(new PdfName("S"), new PdfName("P"))
+            .Set(new PdfName("P"), new PdfIndirectReference(reader.Size + 3));
+
+        // The Form struct element.
+        var formElemNum = reader.Size + 3;
+        var kArray = addExtraChild
+            ? new PdfArray([new PdfIndirectReference(objrNum), new PdfIndirectReference(extraChildNum)])
+            : new PdfArray([new PdfIndirectReference(objrNum)]);
+
+        var formElem = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("StructElem"))
+            .Set(new PdfName("S"), new PdfName("Form"))
+            .Set(new PdfName("P"), new PdfIndirectReference(strRef.ObjectNumber))
+            .Set(new PdfName("K"), kArray);
+
+        if (addRole)
+        {
+            var attrDict = new PdfDictionary()
+                .Set(new PdfName("O"), new PdfName("Layout"))
+                .Set(new PdfName("Role"), new PdfName("rb"));
+            formElem.Set(new PdfName("A"), attrDict);
+        }
+
+        // Update StructTreeRoot /K to include the new Form elem.
+        var existingK = str.Get(new PdfName("K"));
+        PdfArray newK;
+        if (existingK is PdfArray ka)
+        {
+            var items = new List<PdfObject>(ka.Count + 1);
+            for (var i = 0; i < ka.Count; i++) items.Add(ka[i]);
+            items.Add(new PdfIndirectReference(formElemNum));
+            newK = new PdfArray(items);
+        }
+        else
+        {
+            newK = new PdfArray([existingK!, new PdfIndirectReference(formElemNum)]);
+        }
+        newStr.Set(new PdfName("K"), newK);
+
+        newPage.Set(new PdfName("Annots"), new PdfArray([new PdfIndirectReference(widgetNum)]));
+
+        var updates = new List<(int, PdfObject)>
+        {
+            (strRef.ObjectNumber, newStr),
+            (pageRef.ObjectNumber, newPage),
+            (widgetNum, widget),
+            (objrNum, objr),
+            (formElemNum, formElem),
+        };
+        if (addExtraChild)
+            updates.Add((extraChildNum, extraChild));
+
+        return reader.AppendRevision(updates);
     }
 
     private static PdfDictionary CloneDict(PdfDictionary src)
