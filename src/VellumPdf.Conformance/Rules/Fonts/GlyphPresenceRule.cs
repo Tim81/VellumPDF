@@ -739,10 +739,9 @@ internal sealed class GlyphPresenceRule : IConformanceRule
 
             if (_cffWidths.TryGetWidth(gid, out var programWidthRaw))
             {
-                // CFF widths are in glyph-space units. For CIDFontType0 fonts the unitsPerEm may differ;
-                // however, the PDF /W array is already in thousandths-of-a-unit (same units as the glyph
-                // space for a 1000-unit-em CFF font, which is the overwhelming common case). We compare
-                // the raw CFF width to the declared /W value with a tolerance of 1 unit.
+                // CffWidths.TryGetWidth applies the font's FontMatrix scaling and returns a width in
+                // 1000-unit text space — the same units as the PDF /W array. We compare this scaled
+                // width to the declared /W value with a tolerance of 1 unit.
                 var declaredWidth = _cidWidths.GetWidth(cid);
                 var programWidth = (int)Math.Round(programWidthRaw);
                 if (Math.Abs(declaredWidth - programWidth) > 1 && reported.Add($"{ProgramObject}:width"))
@@ -999,14 +998,43 @@ internal sealed class GlyphPresenceRule : IConformanceRule
             if (raw[i] == (byte)'\\' && i + 1 < raw.Length)
             {
                 i++;
-                bytes.Add(raw[i] switch
+                var next = raw[i];
+                // Line continuation: \CR, \LF, or \CRLF → drop the backslash and EOL.
+                if (next == (byte)'\r')
+                {
+                    if (i + 1 < raw.Length && raw[i + 1] == (byte)'\n')
+                        i++; // consume the LF of CRLF
+                    continue;
+                }
+                if (next == (byte)'\n')
+                    continue;
+
+                // Octal escape: \ followed by 1–3 octal digits, value mod 256.
+                if (next is >= (byte)'0' and <= (byte)'7')
+                {
+                    var val = next - '0';
+                    if (i + 1 < raw.Length && raw[i + 1] is >= (byte)'0' and <= (byte)'7')
+                    {
+                        i++;
+                        val = val * 8 + (raw[i] - '0');
+                        if (i + 1 < raw.Length && raw[i + 1] is >= (byte)'0' and <= (byte)'7')
+                        {
+                            i++;
+                            val = val * 8 + (raw[i] - '0');
+                        }
+                    }
+                    bytes.Add((byte)(val & 0xFF));
+                    continue;
+                }
+
+                bytes.Add(next switch
                 {
                     (byte)'n' => (byte)'\n',
                     (byte)'r' => (byte)'\r',
                     (byte)'t' => (byte)'\t',
                     (byte)'b' => (byte)'\b',
                     (byte)'f' => (byte)'\f',
-                    _ => raw[i],
+                    _ => next,
                 });
             }
             else

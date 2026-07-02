@@ -100,6 +100,48 @@ public sealed class RevisionAndEndOffsetTests
     }
 
     [Fact]
+    public void EndOffset_outOfRangeOffset_returnsNull()
+    {
+        // Build a PDF where object 4 is present in the xref but its offset points beyond
+        // the end of the file. The xref table lies, so PdfDocumentReader must guard against
+        // the arithmetic overflow / out-of-bounds access and return null rather than throwing.
+        var ms = new MemoryStream();
+        void W(string s) => WriteStr(ms, s);
+
+        W("%PDF-1.4\n");
+        var o1 = (int)ms.Position;
+        W("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+        var o2 = (int)ms.Position;
+        W("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
+        var o3 = (int)ms.Position;
+        W("3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>\nendobj\n");
+
+        var fileSize = (int)ms.Position; // capture before writing xref
+
+        // Object 4 is listed in the xref with an offset beyond the file — never actually written.
+        const int bogusOffset = 999999999;
+
+        var xrefOffset = (int)ms.Position;
+        W("xref\n0 5\n");
+        W($"{0:D10} 65535 f \n");
+        W($"{o1:D10} 00000 n \n");
+        W($"{o2:D10} 00000 n \n");
+        W($"{o3:D10} 00000 n \n");
+        W($"{bogusOffset:D10} 00000 n \n"); // obj 4 at a far-beyond-end offset
+        W("trailer\n<< /Size 5 /Root 1 0 R >>\n");
+        W($"startxref\n{xrefOffset}\n%%EOF\n");
+
+        var pdfBytes = ms.ToArray();
+        using var reader = PdfReader.Open(pdfBytes);
+
+        // Object 4's xref entry exists (Uncompressed kind) but its offset is beyond file length.
+        // UncompressedObjectEndOffset must return null instead of throwing or reading garbage.
+        var result = reader.UncompressedObjectEndOffset(4);
+
+        Assert.Null(result);
+    }
+
+    [Fact]
     public void EndOffset_objectStreamMember_returnsNull()
     {
         // Build an xref-stream PDF with object-stream members (type-2 entries).

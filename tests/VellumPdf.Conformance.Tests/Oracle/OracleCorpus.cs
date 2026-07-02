@@ -39,6 +39,62 @@ public static class OracleCorpus
     /// <summary>Public accessor for the §7.20-2 dual-page Form XObject violation fixture (for unit tests).</summary>
     internal static byte[] Ua1FormXObjectDualPagePublic() => Ua1FormXObjectDualPage();
 
+    /// <summary>Public accessor for §5-3/5-4/5-5 unit tests: the pdfuaid namespace bound to the
+    /// correct "pdfuaid" prefix — must NOT fire 5-3/5-4/5-5.</summary>
+    internal static byte[] Ua1XmpPrefixCompliantPublic()
+        => WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+
+    /// <summary>Public accessor for §5-3 unit tests: the pdfuaid namespace bound to "xua" instead of
+    /// "pdfuaid" — must fire ISO14289-1:5-3.</summary>
+    internal static byte[] Ua1XmpPrefixWrongPublic() => WriterUa1WithWrongXmpPrefix();
+
+    /// <summary>Public accessor for §7.18.6.2-1/-2 unit tests: media clip WITH /CT and /Alt —
+    /// must NOT fire 7.18.6.2-1 or 7.18.6.2-2.</summary>
+    internal static byte[] Ua1MediaClipCompliantPublic()
+        => WriterUa1WithScreenAnnotation(includeCt: true, includeAlt: true);
+
+    /// <summary>Public accessor for §7.18.6.2-1 unit tests: media clip missing /CT —
+    /// must fire ISO14289-1:7.18.6.2-1.</summary>
+    internal static byte[] Ua1MediaClipNoCtPublic()
+        => WriterUa1WithScreenAnnotation(includeCt: false, includeAlt: true);
+
+    /// <summary>Public accessor for §7.18.6.2-2 unit tests: media clip missing /Alt —
+    /// must fire ISO14289-1:7.18.6.2-2.</summary>
+    internal static byte[] Ua1MediaClipNoAltPublic()
+        => WriterUa1WithScreenAnnotation(includeCt: true, includeAlt: false);
+
+    /// <summary>Public accessor for §7.18.1-3 unit tests: Widget WITH /TU —
+    /// must NOT fire ISO14289-1:7.18.1-3.</summary>
+    internal static byte[] Ua1WidgetWithTuPublic()
+        => WriterUa1WithWidgetField(includeTu: true);
+
+    /// <summary>Public accessor for §7.18.1-3 unit tests: Widget with no /TU and no struct /Alt —
+    /// must fire ISO14289-1:7.18.1-3.</summary>
+    internal static byte[] Ua1WidgetNoTuPublic()
+        => WriterUa1WithWidgetField(includeTu: false);
+
+    /// <summary>Public accessor for §7.18.4-2 unit tests: Form struct elem with exactly one OBJR —
+    /// must NOT fire ISO14289-1:7.18.4-2.</summary>
+    internal static byte[] Ua1FormStructOneObjrPublic()
+        => WriterUa1WithFormStructElem(addExtraChild: false, addRole: false);
+
+    /// <summary>Public accessor for §7.18.4-2 unit tests: Form struct elem with an extra StructElem
+    /// child — must fire ISO14289-1:7.18.4-2.</summary>
+    internal static byte[] Ua1FormStructExtraChildPublic()
+        => WriterUa1WithFormStructElem(addExtraChild: true, addRole: false);
+
+    /// <summary>Public accessor for Fix 1 regression: a simple WinAnsi TrueType font drawing code 65
+    /// via the octal literal-string escape <c>(\101)</c>. Glyph IS present; must NOT fire
+    /// ISO19005-2:6.2.11.4.1.</summary>
+    internal static byte[] SimpleTrueTypeFontOctalEscapePublic()
+        => SimpleTrueTypeFontOctalEscape();
+
+    /// <summary>Public accessor for Fix 2 regression: a simple TrueType font with a /Differences name
+    /// <c>g17</c> on code 65, and a 2-digit ToUnicode entry <c>&lt;41&gt; &lt;0041&gt;</c> mapping
+    /// that code. Must NOT fire ISO14289-1:7.21.7-1.</summary>
+    internal static byte[] Ua1SimpleFontTwoDigitToUnicodePublic()
+        => Ua1SimpleFontTwoDigitToUnicode();
+
     private static IReadOnlyList<OracleFixture> Build()
     {
         // One baseline, cloned per fixture so the documents are byte-identical except for the edit.
@@ -4657,6 +4713,149 @@ public static class OracleCorpus
 
         return reader.AppendRevision(
             [(pageRef.ObjectNumber, newPage), (fontNum, simple), (descNum, descriptor), (ffNum, fontFile), (contentNum, content)]);
+    }
+
+    // Fix 1 regression fixture: same as the conformant pdfa2b-simple-font fixture but the content
+    // stream uses the octal escape (\101) instead of the literal (A) to show code 65. Before the
+    // fix, DecodeString mis-decoded \101 as a literal '1', so the glyph lookup returned nothing and
+    // GlyphPresenceRule incorrectly fired §6.2.11.4.1. After the fix (\101 → byte 0x41 = 65 = 'A'),
+    // the lookup succeeds and the rule must NOT fire.
+    private static byte[] SimpleTrueTypeFontOctalEscape()
+    {
+        var asset = LoadAsset("DejaVuSans.ttf");
+        int widthA;
+        using (var measureDoc = new PdfDocument())
+            widthA = (int)Math.Round(measureDoc.UseTrueTypeFont(asset).MeasureString("A", 1000));
+
+        using var reader = PdfReader.Open(WriterPdfWithEmbeddedFont());
+        var (pageRef, page) = FirstPage(reader);
+        var resources = (PdfDictionary)reader.ResolveValue(page.Get(new PdfName("Resources"))!)!;
+        var fontDict = (PdfDictionary)reader.ResolveValue(resources.Get(PdfName.Font)!)!;
+
+        var fontNum = reader.Size;
+        var descNum = fontNum + 1;
+        var ffNum = fontNum + 2;
+        var contentNum = fontNum + 3;
+
+        var fontFile = new PdfStream(asset);
+        fontFile.Dictionary.Set(new PdfName("Length1"), new PdfInteger(asset.Length));
+        var descriptor = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("FontDescriptor")).Set(new PdfName("FontName"), new PdfName("DejaVuSans"))
+            .Set(new PdfName("Flags"), new PdfInteger(32))
+            .Set(new PdfName("FontBBox"),
+                new PdfArray([new PdfInteger(-1021), new PdfInteger(-463), new PdfInteger(1793), new PdfInteger(1232)]))
+            .Set(new PdfName("ItalicAngle"), new PdfInteger(0)).Set(new PdfName("Ascent"), new PdfInteger(928))
+            .Set(new PdfName("Descent"), new PdfInteger(-236)).Set(new PdfName("CapHeight"), new PdfInteger(928))
+            .Set(new PdfName("StemV"), new PdfInteger(80)).Set(new PdfName("FontFile2"), new PdfIndirectReference(ffNum));
+        var simple = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("Font")).Set(PdfName.Subtype, new PdfName("TrueType"))
+            .Set(PdfName.BaseFont, new PdfName("DejaVuSans"))
+            .Set(new PdfName("FirstChar"), new PdfInteger(65)).Set(new PdfName("LastChar"), new PdfInteger(65))
+            .Set(new PdfName("Widths"), new PdfArray([new PdfInteger(widthA)]))
+            .Set(new PdfName("Encoding"), new PdfName("WinAnsiEncoding"))
+            .Set(new PdfName("FontDescriptor"), new PdfIndirectReference(descNum));
+
+        var newFontDict = CloneDict(fontDict).Set(new PdfName("F1"), new PdfIndirectReference(fontNum));
+        var newResources = CloneDict(resources).Set(PdfName.Font, newFontDict);
+        var newPage = CloneDict(page).Set(new PdfName("Resources"), newResources);
+        newPage.Set(new PdfName("Contents"),
+            new PdfArray([page.Get(new PdfName("Contents"))!, new PdfIndirectReference(contentNum)]));
+        // (\101) is the octal escape for byte 0x41 = 65 = 'A' (ISO 32000-1 §7.3.4.2)
+        var content = new PdfStream(Encoding.ASCII.GetBytes("BT /F1 12 Tf 100 500 Td (\\101) Tj ET"));
+
+        return reader.AppendRevision(
+            [(pageRef.ObjectNumber, newPage), (fontNum, simple), (descNum, descriptor), (ffNum, fontFile), (contentNum, content)]);
+    }
+
+    // Fix 2 regression fixture: a simple TrueType font with /Differences mapping code 65 to the
+    // custom name /g17 (not in AGL), but WITH a ToUnicode CMap using the 2-digit source form
+    // <41> → <0041>. Before the fix, TryReadHex required exactly 4 digits so <41> was rejected,
+    // the ToUnicode entry was not found, and the rule fired §7.21.7-1. After the fix, <41> is
+    // accepted as a 2-digit source code, the mapping is found, and the rule must NOT fire.
+    private static byte[] Ua1SimpleFontTwoDigitToUnicode()
+    {
+        var asset = LoadAsset("DejaVuSans.ttf");
+        int widthA;
+        using (var measureDoc = new PdfDocument())
+            widthA = (int)Math.Round(measureDoc.UseTrueTypeFont(asset).MeasureString("A", 1000));
+
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var resources = (PdfDictionary)reader.ResolveValue(page.Get(new PdfName("Resources"))!)!;
+        var fontResources = (PdfDictionary)reader.ResolveValue(resources.Get(PdfName.Font)!)!;
+
+        var fontNum = reader.Size;
+        var descNum = fontNum + 1;
+        var ffNum = fontNum + 2;
+        var toUnicodeNum = fontNum + 3;
+        var contentNum = fontNum + 4;
+
+        var fontFile = new PdfStream(asset);
+        fontFile.Dictionary.Set(new PdfName("Length1"), new PdfInteger(asset.Length));
+        var descriptor = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("FontDescriptor"))
+            .Set(new PdfName("FontName"), new PdfName("DejaVuSans"))
+            .Set(new PdfName("Flags"), new PdfInteger(32))
+            .Set(new PdfName("FontBBox"),
+                new PdfArray([new PdfInteger(-1021), new PdfInteger(-463), new PdfInteger(1793), new PdfInteger(1232)]))
+            .Set(new PdfName("ItalicAngle"), new PdfInteger(0))
+            .Set(new PdfName("Ascent"), new PdfInteger(928))
+            .Set(new PdfName("Descent"), new PdfInteger(-236))
+            .Set(new PdfName("CapHeight"), new PdfInteger(928))
+            .Set(new PdfName("StemV"), new PdfInteger(80))
+            .Set(new PdfName("FontFile2"), new PdfIndirectReference(ffNum));
+
+        // ToUnicode CMap using 2-digit source code <41> for code 65.
+        var toUnicodeCmap = Encoding.ASCII.GetBytes(
+            "/CIDInit /ProcSet findresource begin\n"
+            + "12 dict begin\n"
+            + "begincmap\n"
+            + "/CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def\n"
+            + "/CMapName /Adobe-Identity-UCS def\n"
+            + "/CMapType 1 def\n"
+            + "1 beginbfchar\n"
+            + "<41> <0041>\n"
+            + "endbfchar\n"
+            + "endcmap\n"
+            + "CMapName currentdict /CMap defineresource pop\n"
+            + "end\nend\n");
+        var toUnicodeStream = new PdfStream(toUnicodeCmap);
+
+        // /Differences maps code 65 to /g17 (not in AGL) — so without the ToUnicode entry the
+        // rule would have nowhere to derive Unicode from and would fire §7.21.7-1.
+        var encoding = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("Encoding"))
+            .Set(new PdfName("BaseEncoding"), new PdfName("WinAnsiEncoding"))
+            .Set(new PdfName("Differences"), new PdfArray([new PdfInteger(65), new PdfName("g17")]));
+
+        var simple = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("Font"))
+            .Set(PdfName.Subtype, new PdfName("TrueType"))
+            .Set(PdfName.BaseFont, new PdfName("DejaVuSans"))
+            .Set(new PdfName("FirstChar"), new PdfInteger(65))
+            .Set(new PdfName("LastChar"), new PdfInteger(65))
+            .Set(new PdfName("Widths"), new PdfArray([new PdfInteger(widthA)]))
+            .Set(new PdfName("Encoding"), encoding)
+            .Set(new PdfName("ToUnicode"), new PdfIndirectReference(toUnicodeNum))
+            .Set(new PdfName("FontDescriptor"), new PdfIndirectReference(descNum));
+
+        var newFontResources = CloneDict(fontResources).Set(new PdfName("F1"), new PdfIndirectReference(fontNum));
+        var newResources = CloneDict(resources).Set(PdfName.Font, newFontResources);
+        var newPage = CloneDict(page).Set(new PdfName("Resources"), newResources);
+        newPage.Set(new PdfName("Contents"),
+            new PdfArray([page.Get(new PdfName("Contents"))!, new PdfIndirectReference(contentNum)]));
+        var content = new PdfStream(Encoding.ASCII.GetBytes("BT /F1 12 Tf 100 500 Td (A) Tj ET"));
+
+        return reader.AppendRevision(
+        [
+            (pageRef.ObjectNumber, newPage),
+            (fontNum, simple),
+            (descNum, descriptor),
+            (ffNum, fontFile),
+            (toUnicodeNum, toUnicodeStream),
+            (contentNum, content),
+        ]);
     }
 
     private static byte[] WriterPdfWithOutOfRangeGlyph() => WriterPdfDrawingGlyph("EA60"); // 60000, beyond the program

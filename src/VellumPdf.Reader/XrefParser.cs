@@ -357,7 +357,10 @@ internal sealed class XrefParser
                 switch (type)
                 {
                     case 1:
-                        xref.TryAdd(objNum, XrefEntry.Uncompressed(field2));
+                        // field2 is a byte offset into the file; reject any value that cannot
+                        // resolve (negative, or beyond the file's last byte).
+                        if (field2 >= 0 && field2 < data.Length)
+                            xref.TryAdd(objNum, XrefEntry.Uncompressed(field2));
                         break;
                     case 2:
                         // field2 = container object number, field3 = index within it; a /W width up
