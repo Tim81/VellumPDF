@@ -169,6 +169,8 @@ internal static class RuleRegistry
         // Batch A5b — font clauses §7.21.8-1 (.notdef) and §7.21.7-2 (forbidden ToUnicode values):
         new UaNotdefGlyphRule(),
         new UaToUnicodeForbiddenRule(),
+        // §7.21.7-1 — used-code Unicode mapping (derived; simple-font AGL model, composite skipped):
+        new UaToUnicodeCharMappingRule(),
         // Batch A5c — font clause §7.21.4.1-2 (glyph presence, Tr-3-exempt):
         new UaGlyphPresenceRule(),
         // Batch A5d — §7.21.5-1 (glyph width consistency, Identity-H CIDFontType2 scope):

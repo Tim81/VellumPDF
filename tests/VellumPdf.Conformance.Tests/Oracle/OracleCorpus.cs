@@ -1465,6 +1465,16 @@ public static class OracleCorpus
                 Ua1NonSymbolicTrueTypeAglDiffBadCmap(),
                 Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
 
+            // §7.21.7-1 VIOLATION: a simple non-symbolic TrueType font whose /Differences maps the
+            // shown code 65 to a custom glyph name /g17 that is NOT in the Adobe Glyph List, with no
+            // /ToUnicode stream. There is thus no Unicode value for the used code by any route.
+            // veraPDF fires 7.21.7-1 (toUnicode == null for the shown glyph); it also fires 7.21.6-2
+            // (differencesAreUnicodeCompliant == false — same non-AGL name). In-process:
+            // UaToUnicodeCharMappingRule fires 7.21.7-1 (and UaTrueTypeCmapRule fires 7.21.6-2).
+            new OracleFixture("pdfua1-nounicode-custom-diff",
+                Ua1SimpleFontNonAglDifferenceNoToUnicode(),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
             // (§7.21.7-2 ToUnicode-forbidden-value fixtures were removed together with the rule: the
             // whole-CMap scan over-rejected an UNUSED forbidden mapping that veraPDF — which validates
             // only glyphs actually shown — accepts. Deferred pending shown-glyph-code extraction.)
@@ -6998,6 +7008,24 @@ public static class OracleCorpus
     /// </summary>
     internal static byte[] Ua1NonSymbolicTrueTypeBadDifferencesUnused()
         => Ua1AddSimpleTrueTypeUnused(flags: 32, encoding: Ua1MakeEncodingWithDiffs("WinAnsiEncoding", 65, "BADNAME_XYZ"));
+
+    /// <summary>
+    /// §7.21.7-1 violation: a simple non-symbolic TrueType font drawing the shown code 65 whose
+    /// /Differences maps that code to a custom glyph name /g17 (not in the Adobe Glyph List), with no
+    /// /ToUnicode stream. The used code therefore has no Unicode value by any route — veraPDF fires
+    /// 7.21.7-1 (and 7.21.6-2 for the same non-AGL name).
+    /// </summary>
+    internal static byte[] Ua1SimpleFontNonAglDifferenceNoToUnicode()
+        => Ua1AddSimpleTrueType(flags: 32, encoding: Ua1MakeEncodingWithDiffs("WinAnsiEncoding", 65, "g17"));
+
+    /// <summary>
+    /// §7.21.7-1 false-positive guard: a simple non-symbolic WinAnsi TrueType font drawing code 65,
+    /// which resolves through the encoding to glyph name "A" → U+0041 via the Adobe Glyph List. With
+    /// no /ToUnicode stream the Unicode value is still derivable, so veraPDF does NOT fire 7.21.7-1.
+    /// Unit-test only (the fully-compliant no-ToUnicode document fails other UA-1 rules such as 7.1-3).
+    /// </summary>
+    internal static byte[] Ua1SimpleFontWinAnsiNoToUnicode()
+        => Ua1AddSimpleTrueType(flags: 32, encoding: new PdfName("WinAnsiEncoding"));
 
     /// <summary>
     /// §7.21.6-4 conformant FP guard: a symbolic TrueType font with no /Encoding (satisfying
