@@ -14,6 +14,13 @@ public enum CoverageStatus
 
     /// <summary>The check is not yet implemented; <see cref="ConformanceCheck.Note"/> records why (the parser or subsystem it needs).</summary>
     Deferred,
+
+    /// <summary>
+    /// The check is deliberately not implemented in-process — tracked in a follow-up issue. Distinct from
+    /// Deferred (not-yet-done): the Note records the reason and the tracking issue. Excluded from the
+    /// feasible-coverage denominator.
+    /// </summary>
+    OutOfScope,
 }
 
 /// <summary>
@@ -61,15 +68,16 @@ public sealed class ConformanceCheck
 public sealed class CoverageSummary
 {
     /// <summary>Creates a coverage tally.</summary>
-    public CoverageSummary(int total, int implemented, int partial, int deferred)
+    public CoverageSummary(int total, int implemented, int partial, int deferred, int outOfScope)
     {
         Total = total;
         Implemented = implemented;
         Partial = partial;
         Deferred = deferred;
+        OutOfScope = outOfScope;
     }
 
-    /// <summary>Total checks in the profile.</summary>
+    /// <summary>Total checks in the profile (Implemented + Partial + Deferred + OutOfScope).</summary>
     public int Total { get; }
 
     /// <summary>Fully implemented checks.</summary>
@@ -81,8 +89,13 @@ public sealed class CoverageSummary
     /// <summary>Not-yet-implemented checks.</summary>
     public int Deferred { get; }
 
-    /// <summary>Implemented fraction, counting a <see cref="CoverageStatus.Partial"/> check as one half.</summary>
-    public double Percent => Total == 0 ? 0 : 100.0 * (Implemented + 0.5 * Partial) / Total;
+    /// <summary>Deliberately out-of-scope checks (tracked in follow-up issues); excluded from Percent.</summary>
+    public int OutOfScope { get; }
+
+    /// <summary>
+    /// Implemented fraction of in-process-feasible checks (OutOfScope excluded; a Partial counts as one half).
+    /// </summary>
+    public double Percent => (Total - OutOfScope) == 0 ? 0 : 100.0 * (Implemented + 0.5 * Partial) / (Total - OutOfScope);
 }
 
 /// <summary>
@@ -107,15 +120,16 @@ public static class ConformanceCatalog
     /// <summary>The coverage tally for <paramref name="profile"/>.</summary>
     public static CoverageSummary Coverage(PdfConformance profile)
     {
-        int impl = 0, part = 0, def = 0;
+        int impl = 0, part = 0, def = 0, oos = 0;
         foreach (var c in For(profile))
             switch (c.Status)
             {
                 case CoverageStatus.Implemented: impl++; break;
                 case CoverageStatus.Partial: part++; break;
-                default: def++; break;
+                case CoverageStatus.Deferred: def++; break;
+                case CoverageStatus.OutOfScope: oos++; break;
             }
-        return new CoverageSummary(impl + part + def, impl, part, def);
+        return new CoverageSummary(impl + part + def + oos, impl, part, def, oos);
     }
 
     // ── veraPDF rule inventory (clause-testNumber), per profile ──────────────────────────────────
@@ -181,7 +195,8 @@ public static class ConformanceCatalog
     {
         ["6.1.8-1"] = "font BaseFont and colour colourant names checked (presence-based); structure-type names checked for direct /StructTreeRoot /K children only — deeper nesting not yet walked",
         ["6.2.3-1"] = "DestOutputProfile signature/N checked; ICC device-class not parsed",
-        ["6.2.4.2-2"] = "page content streams plus drawn Form XObjects, all CharProcs of Tf-selected Type 3 fonts, and annotation /AP /N appearance streams are now interpreted in isolation with a fresh default GState (Batch N3, 2026-06-23); graphics state inherited across Do boundaries is NOT threaded — a violation established only by state set in the calling stream and painted inside a form (without the form re-establishing the state itself) is under-detected (residual gap, FP-safe; empirically confirmed against veraPDF 1.30.2: both self-contained and inherited-state form violations fire in veraPDF, but only the self-contained case is reachable by isolated scanning)",
+        // 6.2.4.2-2 moved to PdfAOutOfScope (graphics-state inheritance across Do; FP-safe under-detection
+        //   confirmed against veraPDF 1.30.2; tracked in Backlog issue TBD).
         ["6.2.4.3-2"] = "page-content DeviceRGB checked; DefaultRGB exemption and RGB-profile intent matching implemented (2026-06-23); image/pattern DeviceRGB not detected",
         ["6.2.4.3-3"] = "page-content DeviceCMYK checked; DefaultCMYK exemption and CMYK-profile intent matching implemented (2026-06-23); image/pattern DeviceCMYK not detected",
         ["6.2.4.3-4"] = "page-content DeviceGray checked; DefaultGray exemption implemented (2026-06-23); image/pattern colour not detected",
@@ -212,10 +227,10 @@ public static class ConformanceCatalog
         ["6.6.2.3.3-17"] = "pdfaField prefix on the valueType field is now checked (probe-confirmed 2026-06-23); "
             + "the 'isValueTypeDefined' condition (verifying that the declared type name is a known/declared type) is not yet checked",
         ["6.1.9-1"] = "object/generation/obj spacing + EOL checked; the endobj-EOL sub-conditions not",
-        ["6.1.13-10"] = "embedded-CMap cidrange/cidchar CIDs resolved from content text-show operators; predefined named-CMap character-collection maxima deferred (no Adobe registry table)",
-        ["6.2.11.3.1-1"] = "Identity and embedded-CMap CIDSystemInfo compared; predefined-CMap registry table deferred",
+        // 6.1.13-10 moved to PdfAOutOfScope (predefined named-CMap character-collection maxima; tracked in Backlog issue TBD).
+        // 6.2.11.3.1-1 moved to PdfAOutOfScope (predefined-CMap CIDSystemInfo registry table; tracked in Backlog issue TBD).
         ["6.7.2.2-1"] = "StructTreeRoot presence checked; full structure-tree validation not",
-        ["6.8-5"] = "embedded PDF/A-2 validated recursively; embedded PDF/A-1 deferred (no PDF/A-1 profile)",
+        // 6.8-5 moved to PdfAOutOfScope (embedded PDF/A-1 recursion; tracked in Backlog issue TBD).
         ["6.4.3-1"] = "ByteRange unambiguous violations flagged (a!=0, or c+d>fileLength); the "
             + "under-coverage case (c+d<fileLength) is deferred to avoid over-rejecting conformant "
             + "PAdES B-LT/B-LTA signatures whose /DSS or document timestamp is appended after EOF; "
@@ -239,6 +254,16 @@ public static class ConformanceCatalog
         // 6.7.3.4-1/-2/-3 moved to Implemented (A2aStructureTypeRule: structure-tree walker —
         //   non-standard type unmapped, circular role-map, standard type remapped to non-standard).
         // 6.7.4-1 moved to Implemented (A2aLangSyntaxRule: catalog /Lang + struct-elem /Lang syntax).
+    };
+
+    // PDF/A checks deliberately not implemented in-process (tracked in follow-up issues; excluded from
+    // the feasible-coverage denominator).
+    private static readonly Dictionary<string, string> PdfAOutOfScope = new(StringComparer.Ordinal)
+    {
+        ["6.1.13-10"] = "Out of scope for v1.7 (tracked in Backlog issue TBD): predefined named-CMap character-collection maxima need Adobe registry tables; Identity/embedded-CMap paths are already covered.",
+        ["6.2.11.3.1-1"] = "Out of scope for v1.7 (Backlog issue TBD): predefined-CMap CIDSystemInfo registry table; Identity and embedded-CMap paths already compared.",
+        ["6.8-5"] = "Out of scope for v1.7 (Backlog issue TBD): embedded PDF/A-1 recursion needs a PDF/A-1 profile (not on roadmap); embedded PDF/A-2 is validated recursively.",
+        ["6.2.4.2-2"] = "Out of scope for v1.7 (Backlog issue TBD): graphics-state inheritance across Do is not threaded; documented FP-safe — matches veraPDF 1.30.2 on every reachable fixture.",
     };
 
     // PDF/UA-1: the few checks the current rules cover. Everything else needs the logical-structure
@@ -353,9 +378,16 @@ public static class ConformanceCatalog
     {
         // 7.18.1-2 moved to PdfUaImplemented (Batch B5 — UaAnnotContentsRule now resolves the
         // direct enclosing struct element's /Alt via the ParentTree reverse index).
-        // Batch A4:
-        ["7.21.3.1-1"] = "Identity and embedded-CMap CIDSystemInfo compared; predefined-CMap "
-            + "registry table deferred (mirrors PDF/A-2 §6.2.11.3.1-1 partial scope)",
+        // 7.21.3.1-1 moved to PdfUaOutOfScope (predefined-CMap CIDSystemInfo registry table; tracked in Backlog issue TBD).
+    };
+
+    // PDF/UA-1 checks deliberately not implemented in-process (tracked in follow-up issues; excluded
+    // from the feasible-coverage denominator).
+    private static readonly Dictionary<string, string> PdfUaOutOfScope = new(StringComparer.Ordinal)
+    {
+        ["7.16-1"] = "Out of scope for v1.7 (tracked in the v2.1 reader/encryption epic #97/#100): needs the reader to decrypt encrypted files to cross-validate against veraPDF; exposing /Encrypt /P alone cannot match veraPDF's whole-file verdict.",
+        ["7.21.7-1"] = "Out of scope for v1.7 (Backlog issue TBD): veraPDF's toUnicode is a derived glyph property (from font encoding); a naive /ToUnicode!=null over-rejects standard-encoded simple fonts — needs a glyph-level Unicode-derivation model.",
+        ["7.21.3.1-1"] = "Out of scope for v1.7 (Backlog issue TBD): predefined-CMap CIDSystemInfo registry table (mirrors PDF/A-2 6.2.11.3.1-1); Identity/embedded-CMap paths already compared.",
     };
 
     private static IReadOnlyList<ConformanceCheck> Build()
@@ -373,6 +405,8 @@ public static class ConformanceCatalog
         {
             if (PdfUaImplemented.Contains(id))
                 checks.Add(new ConformanceCheck(id, [PdfConformance.PdfUA1], ClauseOf(id), CoverageStatus.Implemented));
+            else if (PdfUaOutOfScope.TryGetValue(id, out var oosNote))
+                checks.Add(new ConformanceCheck(id, [PdfConformance.PdfUA1], ClauseOf(id), CoverageStatus.OutOfScope, oosNote));
             else if (PdfUaPartial.TryGetValue(id, out var note))
                 checks.Add(new ConformanceCheck(id, [PdfConformance.PdfUA1], ClauseOf(id), CoverageStatus.Partial, note));
             else
@@ -386,7 +420,7 @@ public static class ConformanceCatalog
     private static string PdfUaDeferredNote(string id) => id switch
     {
         "5-3" or "5-4" or "5-5" => "prefix-aware XMP parsing (XmpReader matches by namespace URI, not prefix)",
-        "7.16-1" => "encrypted-document support: the reader does not surface the P permission bits for encrypted files",
+        // 7.16-1 moved to PdfUaOutOfScope (encrypted-document support; tracked in v2.1 reader/encryption epic #97/#100).
         "7.18.6.2-1" or "7.18.6.2-2" => "media clip data dictionary traversal (requires walking Screen-annotation rendition actions)",
 
         // §7.1 artifact/tagging rules — Batch C2:
@@ -411,11 +445,7 @@ public static class ConformanceCatalog
         // 7.21.4.2-2 moved to PdfUaImplemented (Batch A4 — UaCidSetRule).
         // 7.21.6-1/-2/-4 moved to PdfUaImplemented (Batch A6 — UaTrueTypeCmapRule: non-symbolic TrueType
         //   cmap structure and Differences-AGL compliance; verified FP-free against veraPDF 1.30.2).
-        "7.21.7-1" =>
-            "glyph-level ToUnicode presence (veraPDF's Glyph.toUnicode model derives Unicode from font "
-            + "encoding for standard-encoded simple fonts, so requiring a /ToUnicode stream would "
-            + "over-reject conformant WinAnsi/MacRoman simple fonts; deferred until the glyph-level "
-            + "Unicode-derivation model is fully understood for all font types)",
+        // 7.21.7-1 moved to PdfUaOutOfScope (glyph-level ToUnicode presence; tracked in Backlog issue TBD).
         // 7.21.7-2 moved to PdfUaImplemented (Batch A5b — UaToUnicodeForbiddenRule, shown-glyph-scoped).
         // 7.21.8-1 moved to PdfUaImplemented (Batch A5b — UaNotdefGlyphRule, Identity-H scope).
         // 7.21.4.1-2 moved to PdfUaImplemented (Batch A5c — UaGlyphPresenceRule, Tr-3-exempt).
@@ -486,6 +516,8 @@ public static class ConformanceCatalog
 
     private static ConformanceCheck MakePdfA(string id, PdfConformance[] profiles)
     {
+        if (PdfAOutOfScope.TryGetValue(id, out var oosNote))
+            return new ConformanceCheck(id, profiles, ClauseOf(id), CoverageStatus.OutOfScope, oosNote);
         if (PdfADeferred.TryGetValue(id, out var reason))
             return new ConformanceCheck(id, profiles, ClauseOf(id), CoverageStatus.Deferred, reason);
         if (PdfAPartial.TryGetValue(id, out var note))

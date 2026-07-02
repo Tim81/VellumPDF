@@ -11,12 +11,14 @@ VellumPdf.Conformance.Coverage.CoverageStatus
 VellumPdf.Conformance.Coverage.CoverageStatus.Implemented = 0 -> VellumPdf.Conformance.Coverage.CoverageStatus
 VellumPdf.Conformance.Coverage.CoverageStatus.Partial = 1 -> VellumPdf.Conformance.Coverage.CoverageStatus
 VellumPdf.Conformance.Coverage.CoverageStatus.Deferred = 2 -> VellumPdf.Conformance.Coverage.CoverageStatus
+VellumPdf.Conformance.Coverage.CoverageStatus.OutOfScope = 3 -> VellumPdf.Conformance.Coverage.CoverageStatus
 VellumPdf.Conformance.Coverage.CoverageSummary
-VellumPdf.Conformance.Coverage.CoverageSummary.CoverageSummary(int total, int implemented, int partial, int deferred) -> void
+VellumPdf.Conformance.Coverage.CoverageSummary.CoverageSummary(int total, int implemented, int partial, int deferred, int outOfScope) -> void
 VellumPdf.Conformance.Coverage.CoverageSummary.Total.get -> int
 VellumPdf.Conformance.Coverage.CoverageSummary.Implemented.get -> int
 VellumPdf.Conformance.Coverage.CoverageSummary.Partial.get -> int
 VellumPdf.Conformance.Coverage.CoverageSummary.Deferred.get -> int
+VellumPdf.Conformance.Coverage.CoverageSummary.OutOfScope.get -> int
 VellumPdf.Conformance.Coverage.CoverageSummary.Percent.get -> double
 static VellumPdf.Conformance.Coverage.ConformanceCatalog.All.get -> System.Collections.Generic.IReadOnlyList<VellumPdf.Conformance.Coverage.ConformanceCheck!>!
 static VellumPdf.Conformance.Coverage.ConformanceCatalog.For(VellumPdf.Conformance.PdfConformance profile) -> System.Collections.Generic.IEnumerable<VellumPdf.Conformance.Coverage.ConformanceCheck!>!
