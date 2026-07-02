@@ -1587,6 +1587,36 @@ public static class OracleCorpus
             new OracleFixture("pdfa2b-nested-form-inner-no-resources-outer-defined",
                 NestedFormInnerNoResourcesOuterDefined(),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // ── STRUCT batch ──────────────────────────────────────────────────────────────────────
+
+            // §6.1.6-2 VIOLATION: a hexadecimal string containing the invalid hex character 'G'
+            // (0x47). HexStringRule scans raw file bytes and fires before any lazy object resolution
+            // decodes the page dictionary. veraPDF and the in-process rule both reject it.
+            new OracleFixture("pdfa2b-hex-invalid-digit", AssembleClassicXref(injectInvalidHex: true),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // §6.1.9-1 endobj EOL VIOLATION: an indirect object whose 'endobj' keyword is followed
+            // by a space character instead of an EOL marker. veraPDF and the in-process
+            // ObjectLayoutRule (endobj boundary check) both reject it.
+            new OracleFixture("pdfa2b-endobj-bad-eol", AssembleClassicXref(corruptEndobjEol: true),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // §6.1.8-1 VIOLATION: a PDF/A-2b document with a two-level deep structure tree where
+            // the innermost element's /S name contains a byte sequence that is not valid UTF-8
+            // (0xA0 as a stand-alone byte is not a valid UTF-8 encoding). The deep-walk via
+            // StructureTree.Analyze reaches it; the shallow walk would have missed it. veraPDF and
+            // the in-process NameUtf8Rule both reject it.
+            new OracleFixture("pdfa2b-deep-struct-invalid-utf8",
+                Pdfa2bDeepStructInvalidUtf8(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // §6.1.8-1 FP-SAFETY: a PDF/A-2b document with a two-level deep structure tree where
+            // all element /S names are valid ASCII (and therefore valid UTF-8). The deep-walk must
+            // NOT fire. veraPDF accepts it.
+            new OracleFixture("pdfa2b-deep-struct-valid-utf8",
+                Pdfa2bDeepStructValidUtf8(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
         ];
     }
 
@@ -1604,6 +1634,90 @@ public static class OracleCorpus
     /// content; a present-but-unused space is not flagged. The two variants (painted / unused) pin
     /// both sides of that usage scoping against the oracle.
     /// </remarks>
+    // ── STRUCT batch helper methods ───────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// §6.1.8-1 VIOLATION: a PDF/A-2b tagged document where a second-level StructElem's /S name
+    /// contains byte 0xA0 (a stand-alone high byte that is not valid UTF-8). The deep walk via
+    /// StructureTree.Analyze reaches the second level; a shallow walk of StructTreeRoot /K misses it.
+    /// veraPDF fires 6.1.8-1 on the /S name; in-process NameUtf8Rule must also fire.
+    /// </summary>
+    private static byte[] Pdfa2bDeepStructInvalidUtf8()
+    {
+        // Build a tagged PDF/A-2b with an invalid-UTF-8 structure type name. The badElem is
+        // injected as a sibling of the Document StructElem inside the StructTreeRoot's /K array,
+        // making the tree: StructTreeRoot → [Document, badElem]. badElem's /S = /#A0BadType
+        // (byte 0xA0, not valid UTF-8 as a lead byte). NameUtf8Rule fires on the /S name.
+        var baseline = WriterPdfTaggedExplicit(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+
+        var strRef = (PdfIndirectReference)reader.Catalog.Get(new PdfName("StructTreeRoot"))!;
+        var str = (PdfDictionary)reader.Resolve(strRef.ObjectNumber)!;
+        var docRef = str.Get(new PdfName("K")) as PdfIndirectReference
+            ?? throw new InvalidOperationException("Expected Document StructElem as single /K child of StructTreeRoot");
+
+        var badElemNum = reader.Size;
+        // The /S name value holds char U+00A0, which the writer Latin1-encodes to raw byte 0xA0 and
+        // emits as /#A0BadType. On read-back the reader decodes #A0 back to byte 0xA0. A lone 0xA0 is
+        // a UTF-8 continuation byte with no lead byte, so the name is not valid UTF-8 → §6.1.8-1 fires.
+        // The character is built at runtime as (char)0xA0 to avoid embedding a non-ASCII byte in
+        // the source and to sidestep C# "\x" greedy hex-escape ambiguity.
+        var badName = (char)0xA0 + "BadType";
+        var badElem = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("StructElem"))
+            .Set(new PdfName("S"), new PdfName(badName))
+            .Set(new PdfName("P"), strRef);
+
+        // Rebuild the StructTreeRoot's /K as an array: [existing Document ref, badElem ref].
+        // This makes badElem a direct child of StructTreeRoot, depth = 1 from the root,
+        // which is what veraPDF walks when checking §6.1.8-1 on /S names.
+        var newStr = CloneDict(str);
+        newStr.Set(new PdfName("K"), new PdfArray([docRef, new PdfIndirectReference(badElemNum)]));
+
+        return reader.AppendRevision([
+            (strRef.ObjectNumber, newStr),
+            (badElemNum, badElem),
+        ]);
+    }
+
+    /// <summary>
+    /// §6.1.8-1 FP-SAFETY: a PDF/A-2b tagged document with a two-level structure tree where all
+    /// /S names are valid ASCII. veraPDF accepts it; NameUtf8Rule must not fire. Guards that the
+    /// deep-walk extension does not introduce false positives.
+    /// </summary>
+    private static byte[] Pdfa2bDeepStructValidUtf8()
+    {
+        // Inject a child StructElem with /S /P (valid ASCII) under the Document element.
+        var baseline = WriterPdfTaggedExplicit(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+
+        var strRef = (PdfIndirectReference)reader.Catalog.Get(new PdfName("StructTreeRoot"))!;
+        var str = (PdfDictionary)reader.Resolve(strRef.ObjectNumber)!;
+        var docRef = str.Get(new PdfName("K")) as PdfIndirectReference
+            ?? throw new InvalidOperationException("Expected Document StructElem ref");
+        var doc = (PdfDictionary)reader.Resolve(docRef.ObjectNumber)!;
+        var docK = doc.Get(new PdfName("K"));
+
+        var goodElemNum = reader.Size;
+        var goodElem = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("StructElem"))
+            .Set(new PdfName("S"), new PdfName("P"))
+            .Set(new PdfName("P"), docRef);
+
+        var existingKids = docK is PdfArray kArr
+            ? Enumerable.Range(0, kArr.Count).Select(i => kArr[i]).ToList()
+            : docK is not null ? [docK] : new List<PdfObject>();
+        existingKids.Add(new PdfIndirectReference(goodElemNum));
+
+        var newDoc = CloneDict(doc);
+        newDoc.Set(new PdfName("K"), new PdfArray(existingKids));
+
+        return reader.AppendRevision([
+            (docRef.ObjectNumber, newDoc),
+            (goodElemNum, goodElem),
+        ]);
+    }
+
     private static byte[] WriterPdfWithDeviceN33Colourants(bool paint)
     {
         const int n = 33;
@@ -3325,6 +3439,34 @@ public static class OracleCorpus
         return ms.ToArray();
     }
 
+    // Like WriterPdfTagged but forces Tagged = true so conformance levels that do not imply tagging
+    // (e.g. PdfA2b) still produce a StructTreeRoot. Used by fixtures that need a tagged-2b baseline.
+    private static byte[] WriterPdfTaggedExplicit(VellumPdf.Document.PdfConformance conformance)
+    {
+        using var doc = new PdfDocument { Conformance = conformance, Language = "en-US", Tagged = true };
+        doc.Info.Title = "VellumPdf Oracle Fixture";
+        var page = doc.AddPage(PageSize.A4);
+        var handle = doc.EmbedStandard14Font(Standard14.Helvetica);
+        doc.RegisterEmbeddedFontUsage(page, handle);
+
+        var canvas = new PdfCanvas(page);
+        var mcid = canvas.BeginMarkedContent("P");
+        canvas.BeginText().SetFontByName(handle.ResourceName, 12).SetTextMatrix(1, 0, 0, 1, 72, 720);
+        DrawGlyphs(canvas, handle, "Tagged paragraph for accessibility.");
+        canvas.EndText();
+        canvas.EndMarkedContent();
+        canvas.Finish();
+
+        var p = new PdfStructElem("P") { Page = page, Mcid = mcid };
+        var root = new PdfStructElem("Document");
+        root.AddChild(p);
+        doc.RegisterStructElem(root);
+
+        using var ms = new MemoryStream();
+        doc.Save(ms);
+        return ms.ToArray();
+    }
+
     // Builds a tagged PDF/UA-1 baseline and injects /MarkInfo /Suspects = true via an incremental
     // update. The resulting document violates §7.1-4 and is rejected by both validators.
     private static byte[] WriterUa1WithSuspectsTrue()
@@ -4029,7 +4171,8 @@ public static class OracleCorpus
     // valid), violating §6.1.4-2.
     internal static byte[] AssembleClassicXref(
         bool corruptXrefEol = false, bool corruptStreamEol = false, bool corruptEndstreamEol = false,
-        bool corruptObjSpacing = false, bool injectOddHex = false)
+        bool corruptObjSpacing = false, bool injectOddHex = false, bool injectInvalidHex = false,
+        bool corruptEndobjEol = false)
     {
         var xmp = Encoding.UTF8.GetBytes(
             "<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>"
@@ -4037,13 +4180,17 @@ public static class OracleCorpus
             + "<rdf:Description rdf:about=\"\" xmlns:pdfaid=\"http://www.aiim.org/pdfa/ns/id/\">"
             + "<pdfaid:part>2</pdfaid:part><pdfaid:conformance>B</pdfaid:conformance>"
             + "</rdf:Description></rdf:RDF></x:xmpmeta><?xpacket end=\"w\"?>");
+        // The hex injection must be same-length to keep xref offsets valid after a ReplaceSameLength.
+        // <ABC> (5 bytes) = odd hex digits (§6.1.6-1). <1G0> (5 bytes) = invalid hex char G (§6.1.6-2).
         var objs = new[]
         {
             "<< /Type /Catalog /Pages 2 0 R /Metadata 4 0 R >>",
             "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
             // An odd-length hexadecimal string (3 hex digits) violates §6.1.6-1 when injected.
+            // An invalid hex digit ('G') in <1G0> violates §6.1.6-2 when injectInvalidHex is set.
             "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792]"
-                + (injectOddHex ? " /VellumHex <ABC>" : "") + " >>",
+                + (injectOddHex ? " /VellumHex <ABC>" : "")
+                + (injectInvalidHex ? " /VellumHex <1G0>" : "") + " >>",
         };
         var ms = new MemoryStream();
         void W(string s) { var b = Encoding.Latin1.GetBytes(s); ms.Write(b, 0, b.Length); }
@@ -4077,6 +4224,8 @@ public static class OracleCorpus
             ReplaceSameLength(pdf, "stream\n"u8, "stream\r"u8);
         if (corruptEndstreamEol) // 'endstream' preceded by a space instead of an EOL (§6.1.7.1-2)
             ReplaceSameLength(pdf, "\nendstream"u8, " endstream"u8);
+        if (corruptEndobjEol) // 'endobj' followed by a space instead of an EOL (§6.1.9-1)
+            ReplaceSameLength(pdf, "endobj\n"u8, "endobj "u8);
         return pdf;
     }
 

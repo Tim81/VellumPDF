@@ -1,6 +1,7 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
+using VellumPdf.Core;
 using VellumPdf.Reader;
 
 namespace VellumPdf.Conformance.Rules.Signature;
@@ -20,23 +21,27 @@ namespace VellumPdf.Conformance.Rules.Signature;
 /// Authored from ISO 19005-2:2011, 6.4.3. Clean-room: derived from the specification text
 /// and RFC 5652, not from any third-party validation profile.
 ///
-/// §6.4.3-1 scope note (Partial): the ByteRange check flags only the unambiguous,
-/// revision-independent violations — the first segment not starting at byte 0, or the range
-/// claiming more bytes than the file holds. The under-coverage case (the range ending before
-/// EOF) is deferred, because a conformant PAdES B-LT/B-LTA signature legitimately ends before
-/// EOF (a /DSS or document timestamp is appended afterwards) and veraPDF reports such files
-/// compliant; distinguishing that from genuinely-uncovered trailing bytes needs revision-boundary
-/// analysis. Also, signatures stored outside the AcroForm field tree (e.g. /Perms /DocMDP only,
-/// without a /V reachable via the field tree) are not enumerated by the Reader.
+/// Signatures are enumerated from two sources: the AcroForm field tree (/AcroForm /Fields),
+/// and the catalog /Perms /DocMDP entry (ISO 32000-1 §12.8.2.2). The same signature dictionary
+/// may be reachable from both; deduplication is by /ByteRange + /Contents identity.
+///
+/// §6.4.3-1 under-coverage (c+d &lt; fileLength): the uncovered tail is checked against the
+/// revision list. If any revision's XrefOffset falls within the gap [c+d, fileLength), the tail
+/// is a legitimate incremental update and the check does not fire. Otherwise the tail is
+/// trailing garbage and the check fires. This correctly handles PAdES B-LT/B-LTA (whose /DSS
+/// or document timestamp forms a valid later revision) while catching genuinely uncovered bytes.
 /// </remarks>
 internal sealed class SignatureRule : IConformanceRule
 {
     public string RuleId => "ISO19005-2:6.4.3";
     public string Clause => "ISO 19005-2:2011, 6.4.3";
 
+    private static readonly PdfName _perms = new("Perms");
+    private static readonly PdfName _docMdp = new("DocMDP");
+
     public void Evaluate(PreflightContext context)
     {
-        var sigs = context.Reader.Signatures;
+        var sigs = CollectAllSignatures(context);
         if (sigs.Count == 0)
             return; // No signatures — nothing to check.
 
@@ -53,26 +58,99 @@ internal sealed class SignatureRule : IConformanceRule
         }
     }
 
+    // Collects signatures from both the AcroForm field tree and the catalog /Perms /DocMDP.
+    // Deduplication: a signature appearing in both sources is only checked once.
+    private static IReadOnlyList<PdfSignature> CollectAllSignatures(PreflightContext context)
+    {
+        // Start with AcroForm signatures (already collected by the reader).
+        var acroSigs = context.Reader.Signatures;
+
+        // Build a deduplication key from (ByteRange[0], ByteRange[1], ByteRange[2], ByteRange[3])
+        // — sufficient to identify a unique signature position in the file.
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var s in acroSigs)
+            seen.Add(SigKey(s));
+
+        List<PdfSignature>? extra = null;
+
+        // /Perms /DocMDP: ISO 32000-1 §12.8.2.2 — a DocMDP permission dictionary whose
+        // value is the signature dictionary for the document modification detection signature.
+        if (context.Resolve(context.Catalog.Get(_perms)) is PdfDictionary perms)
+        {
+            if (context.Resolve(perms.Get(_docMdp)) is PdfDictionary docMdpSig)
+            {
+                var sig = ExtractSignature(docMdpSig);
+                if (sig is not null && seen.Add(SigKey(sig)))
+                {
+                    extra ??= [];
+                    extra.Add(sig);
+                }
+            }
+        }
+
+        if (extra is null)
+            return acroSigs;
+
+        var all = new List<PdfSignature>(acroSigs.Count + extra.Count);
+        all.AddRange(acroSigs);
+        all.AddRange(extra);
+        return all;
+    }
+
+    private static string SigKey(PdfSignature sig)
+        => sig.ByteRange.Length == 4
+            ? $"{sig.ByteRange[0]}:{sig.ByteRange[1]}:{sig.ByteRange[2]}:{sig.ByteRange[3]}"
+            : string.Empty;
+
+    // Extracts a PdfSignature from a raw signature dictionary (without going through the reader's
+    // AcroForm path). Returns null for a dictionary that cannot be parsed as a valid signature.
+    private static PdfSignature? ExtractSignature(PdfDictionary sigDict)
+    {
+        PdfName? subFilter = null;
+        if (sigDict.Get(new PdfName("SubFilter")) is PdfName sfName)
+            subFilter = sfName;
+
+        var brObj = sigDict.Get(new PdfName("ByteRange"));
+        int[] byteRange = [];
+        if (brObj is PdfArray brArr)
+        {
+            byteRange = new int[brArr.Count];
+            for (var i = 0; i < brArr.Count; i++)
+            {
+                if (brArr[i] is PdfInteger pi)
+                    byteRange[i] = (int)pi.Value;
+            }
+        }
+
+        ReadOnlyMemory<byte> contents = ReadOnlyMemory<byte>.Empty;
+        if (sigDict.Get(PdfName.Contents) is PdfHexString hexStr)
+            contents = hexStr.Bytes;
+
+        if (contents.IsEmpty && byteRange.Length == 0)
+            return null;
+
+        return new PdfSignature(subFilter, byteRange, contents, signingTime: null);
+    }
+
     // ── §6.4.3-1 ─────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Verifies that /ByteRange [a b c d] exactly covers the entire file:
-    ///   a == 0, b+c+d == fileLength, and b+len(Contents token) == c.
-    /// In other words, the excluded region is exactly [b .. c) and
-    /// b + (c - b) + d == fileLength, i.e. c + d == fileLength.
+    /// Verifies that /ByteRange [a b c d] covers the file appropriately.
     ///
     /// Per ISO 32000-1:2008 §12.8.1, the ByteRange is [offset0 length0 offset1 length1]:
     ///   Signed segment 0: bytes[0 .. b)
     ///   Excluded (Contents hex token): bytes[b .. c)
     ///   Signed segment 1: bytes[c .. c+d)
-    ///   File total: c + d bytes.
     ///
-    /// A valid ByteRange must satisfy:
-    ///   br[0] == 0
-    ///   br[1] > 0       (segment 0 is non-empty)
-    ///   br[2] > br[1]   (excluded region is after segment 0)
-    ///   br[3] > 0       (segment 1 is non-empty)
-    ///   br[2] + br[3] == fileLength  (segment 1 ends exactly at EOF)
+    /// Unconditional violations (fired regardless of revision count):
+    ///   a != 0                — first signed segment must start at byte 0.
+    ///   c + d &gt; fileLength — ByteRange claims more bytes than the file contains.
+    ///
+    /// Under-coverage (c + d &lt; fileLength): the gap [c+d, fileLength) is checked against
+    /// the revision list. If any revision's XrefOffset lies in the gap, the tail is a
+    /// legitimate later incremental revision and the check does not fire (correct for PAdES
+    /// B-LT/B-LTA). If no revision's XrefOffset lies in the gap, the tail is trailing garbage
+    /// and the check fires.
     /// </summary>
     private void CheckByteRange(PreflightContext context, PdfSignature sig, ReadOnlyMemory<byte> fileBytes)
     {
@@ -91,27 +169,39 @@ internal sealed class SignatureRule : IConformanceRule
         // Basic sanity guards before arithmetic — negative or overflowing values → indeterminate.
         if (a < 0 || b <= 0 || c <= 0 || d <= 0)
             return;
-        if ((long)c + d < 0) // overflow guard
+
+        var cdSum = (long)c + d;
+        if (cdSum < 0) // overflow guard
             return;
 
-        // Flag only UNAMBIGUOUS, revision-independent violations:
-        //   * a != 0                — the first signed segment must start at the file beginning;
-        //   * c + d  > fileLength   — the ByteRange claims more bytes than the file contains.
-        //
-        // The under-coverage case (c + d < fileLength) is DEFERRED, not flagged: it cannot be
-        // distinguished from a valid later incremental revision without revision-boundary
-        // analysis. PAdES B-LT appends a /DSS and B-LTA appends a document timestamp AFTER the
-        // signature, so a conformant LTV signature's ByteRange legitimately ends before EOF —
-        // veraPDF 1.30.2 reports such files compliant (see the Signed_*_BLTA oracle tests). Flagging
-        // under-coverage would therefore over-reject valid LTV documents, so we do not.
-        var impossible = a != 0 || ((long)c + d > fileLength);
-        if (impossible)
+        if (a != 0 || cdSum > fileLength)
         {
             context.Report(
                 "ISO19005-2:6.4.3-1", Clause, PreflightSeverity.Error,
                 "ByteRange array of the digital signature does not cover the entire file "
                 + "(excluding the PDF Signature itself).");
+            return;
         }
+
+        // Under-coverage: the signed range ends before EOF. Check whether the gap contains
+        // a valid revision's xref offset. If so, it is a legitimate later incremental update
+        // (e.g. a PAdES B-LT /DSS block or a B-LTA document timestamp revision) and we do
+        // not fire. If no revision's xref falls in the gap, the tail bytes are not part of
+        // any revision known to the cross-reference chain — trailing garbage → violation.
+        if (cdSum == fileLength)
+            return; // exact coverage — compliant
+
+        var gapStart = (int)cdSum;
+        foreach (var rev in context.Revisions)
+        {
+            if (rev.XrefOffset >= gapStart && rev.XrefOffset < fileLength)
+                return; // a later revision occupies the gap — legitimate, do not fire
+        }
+
+        context.Report(
+            "ISO19005-2:6.4.3-1", Clause, PreflightSeverity.Error,
+            "ByteRange array of the digital signature does not cover the entire file "
+            + "(excluding the PDF Signature itself).");
     }
 
     // ── §6.4.3-2 and §6.4.3-3 ────────────────────────────────────────────────
