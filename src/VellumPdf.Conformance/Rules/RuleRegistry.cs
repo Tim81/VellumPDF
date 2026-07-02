@@ -211,6 +211,8 @@ internal static class RuleRegistry
         new UaMediaClipRule(),
         new UaFormFieldAltRule(),
         new UaFormStructElemRule(),
+        // §7.20-2 — Form XObject unique semantic parent (structure-linked form drawn from 2+ pages):
+        new UaFormXObjectSemanticParentRule(),
     ];
 
     /// <summary>

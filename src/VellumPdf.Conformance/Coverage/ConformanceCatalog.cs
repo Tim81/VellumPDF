@@ -360,6 +360,7 @@ public static class ConformanceCatalog
         "7.18.6.2-1",          // UaMediaClipRule: media clip data dict must have /CT
         "7.18.6.2-2",          // UaMediaClipRule: media clip data dict must have /Alt
         "7.20-1",              // UaReferenceXObjectRule: Form XObjects shall not contain /Ref
+        "7.20-2",              // UaFormXObjectSemanticParentRule: structure-linked form drawn from 2+ distinct pages
         // Batch A3 — font clauses:
         "7.21.3.2-1",          // UaCidToGidMapRule: embedded CIDFontType2 must have /CIDToGIDMap
         "7.21.6-3",            // UaSymbolicFontRule: symbolic TrueType must have no /Encoding
@@ -442,7 +443,11 @@ public static class ConformanceCatalog
     {
         ["7.16-1"] = "Out of scope for v1.7 (tracked in the v2.1 reader/encryption epic #97/#100): needs the reader to decrypt encrypted files to cross-validate against veraPDF; exposing /Encrypt /P alone cannot match veraPDF's whole-file verdict.",
         ["7.21.3.1-1"] = "Out of scope for v1.7 (Backlog issue TBD): predefined-CMap CIDSystemInfo registry table (mirrors PDF/A-2 6.2.11.3.1-1); Identity/embedded-CMap paths already compared.",
-        ["7.20-2"] = "Out of scope for v1.7 (Backlog issue TBD): Form XObject unique semantic parent needs the marked-content-stack context at every Do across all content streams (a form with /StructParents drawn twice is only a violation when the two sites give different structural parents; artifact-wrapped reuse is conformant). Requires a tagged-content interpreter for Form XObject content to stay FP-safe.",
+        // 7.20-2 moved to PdfUaImplemented (UaFormXObjectSemanticParentRule: a Form XObject with
+        //   /StructParents drawn via Do from 2+ distinct pages is always a structural violation —
+        //   the form has exactly one /ParentTree MCID-array, so it can record only one set of
+        //   structural parents; multi-page invocation is the unambiguous FP-safe firing condition.
+        //   Forms without /StructParents and single-page invocations are silently skipped.)
     };
 
     private static IReadOnlyList<ConformanceCheck> Build()
@@ -577,8 +582,9 @@ public static class ConformanceCatalog
         // 7.1-3 remains deferred (Batch C3 probe — operator set fully pinned; blocker is Properties
         //   named-reference BDC resolution, see PdfUaDeferredNote switch above for details).
 
-        // 7.20-2 moved to PdfUaOutOfScope (Form XObject unique semantic parent needs a tagged-content
-        //   interpreter for Form XObject content to stay FP-safe).
+        // 7.20-2 moved to PdfUaImplemented (UaFormXObjectSemanticParentRule: /StructParents-bearing
+        //   Form XObject drawn from 2+ distinct pages → structural violation; /StructParents absence
+        //   and single-page invocations silently skipped; FP-safe under-detection preserved).
 
         _ => "structure-tree walker",
     };

@@ -11412,4 +11412,152 @@ public sealed class PdfPreflightTests
 
     // ── END §6.2.4.4-2 Batch N4 adversarial FP sweep ─────────────────────────────────
 
+    // ── §7.20-2 (UaFormXObjectSemanticParentRule) unit tests ─────────────────────────────────────
+
+    /// <summary>
+    /// §7.20-2 VIOLATION: a Form XObject with /StructParents is drawn from two distinct pages.
+    /// Rule fires "ISO14289-1:7.20-2". Uses the oracle fixture builder (in-process half only).
+    /// </summary>
+    [Fact]
+    public void Ua_FormXObjectDualPage_Fires7202()
+    {
+        var bytes = OracleCorpus.Ua1FormXObjectDualPagePublic();
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.20-2");
+    }
+
+    /// <summary>
+    /// §7.20-2 FP guard: a Form XObject WITHOUT /StructParents drawn from two pages must NOT fire
+    /// 7.20-2. A form with no /StructParents has no structure-linked content and may be reused freely.
+    /// </summary>
+    [Fact]
+    public void Ua_FormXObjectNoStructParents_NoFire7202()
+    {
+        // Two-page doc: page 1 and page 2 both draw /Fm0, but the form has no /StructParents.
+        var formContent = Encoding.ASCII.GetBytes("q Q");
+        var pageContent = Encoding.ASCII.GetBytes("/Fm0 Do");
+        var bytes = BuildUa1TwoPageFormDoc(formContent, addStructParents: false, pageContent);
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.20-2");
+    }
+
+    /// <summary>
+    /// §7.20-2 FP guard: a Form XObject WITH /StructParents drawn from only ONE page must NOT fire
+    /// 7.20-2. A single invocation context is the conformant case.
+    /// </summary>
+    [Fact]
+    public void Ua_FormXObjectStructParentsSinglePage_NoFire7202()
+    {
+        // Single-page doc: only page 1 draws /Fm0; the form has /StructParents.
+        var formContent = Encoding.ASCII.GetBytes("/P << /MCID 0 >> BDC q Q EMC");
+        var pageContent = Encoding.ASCII.GetBytes("/Fm0 Do");
+        var bytes = BuildUa1SinglePageFormDoc(formContent, addStructParents: true, pageContent);
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.20-2");
+    }
+
+    /// <summary>
+    /// §7.20-2 FP guard: a Form XObject with /StructParents present in /Resources but NEVER drawn
+    /// (no Do operator) must NOT fire 7.20-2. Only actually-drawn forms are checked.
+    /// </summary>
+    [Fact]
+    public void Ua_FormXObjectStructParentsNotDrawn_NoFire7202()
+    {
+        // Two-page doc: /Fm0 is in both pages' /Resources but neither page's content stream has a Do.
+        var formContent = Encoding.ASCII.GetBytes("/P << /MCID 0 >> BDC q Q EMC");
+        var pageContent = Encoding.ASCII.GetBytes("q Q"); // no Do
+        var bytes = BuildUa1TwoPageFormDoc(formContent, addStructParents: true, pageContent);
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.20-2");
+    }
+
+    // Builds a minimal PDF/UA-1 document with one page and a Form XObject in /Resources /XObject.
+    // The form has /StructParents 0 in its stream dict when addStructParents is true.
+    // The page content is pageContent (may or may not invoke /Fm0 via Do).
+    private static byte[] BuildUa1SinglePageFormDoc(byte[] formContent, bool addStructParents, byte[] pageContent)
+    {
+        var structParentsEntry = addStructParents ? " /StructParents 0" : string.Empty;
+        return AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R /Lang (en-US) /MarkInfo << /Marked true >>"
+                + " /ViewerPreferences << /DisplayDocTitle true >> /StructTreeRoot 4 0 R >>"),
+            _pagesObj,
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792]"
+                + " /Resources << /XObject << /Fm0 5 0 R >> >> /Contents 6 0 R >>"),
+            new("<< /Type /StructTreeRoot >>"),
+            new($"/Type /XObject /Subtype /Form /BBox [0 0 612 792]{structParentsEntry}", formContent),
+            new(string.Empty, pageContent),
+        ],
+        metadataOverride: UaXmpBytes());
+    }
+
+    // Builds a minimal PDF/UA-1 document with TWO pages, both listing the same Form XObject.
+    // The form has /StructParents 0 in its stream dict when addStructParents is true.
+    // Both pages use the same pageContent (may or may not invoke /Fm0 via Do).
+    private static byte[] BuildUa1TwoPageFormDoc(byte[] formContent, bool addStructParents, byte[] pageContent)
+    {
+        // Build manually so we can have 2 pages sharing object 5 (the form).
+        var structParentsEntry = addStructParents ? " /StructParents 0" : string.Empty;
+
+        var ms = new MemoryStream();
+        void W(string s) => ms.Write(Encoding.ASCII.GetBytes(s));
+        var xmp = UaXmpBytes();
+
+        W("%PDF-1.7\n");
+        ms.Write([0x25, 0xE2, 0xE3, 0xCF, 0xD3, 0x0A]);
+
+        // 1: Catalog, 2: Pages (2 kids), 3: Page1, 4: Page2, 5: Form XObject,
+        // 6: Content stream (used by both pages), 7: StructTreeRoot, 8: Metadata
+        var offsets = new int[9];
+
+        offsets[1] = (int)ms.Position;
+        W("1 0 obj\n<< /Type /Catalog /Pages 2 0 R /Lang (en-US)"
+            + " /MarkInfo << /Marked true >>"
+            + " /StructTreeRoot 7 0 R"
+            + " /ViewerPreferences << /DisplayDocTitle true >>"
+            + " /Metadata 8 0 R >>\nendobj\n");
+
+        offsets[2] = (int)ms.Position;
+        W("2 0 obj\n<< /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >>\nendobj\n");
+
+        offsets[3] = (int)ms.Position;
+        W("3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792]"
+            + " /Resources << /XObject << /Fm0 5 0 R >> >> /Contents 6 0 R >>\nendobj\n");
+
+        offsets[4] = (int)ms.Position;
+        W("4 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792]"
+            + " /Resources << /XObject << /Fm0 5 0 R >> >> /Contents 6 0 R >>\nendobj\n");
+
+        offsets[5] = (int)ms.Position;
+        W($"5 0 obj\n<< /Type /XObject /Subtype /Form /BBox [0 0 612 792]{structParentsEntry}"
+            + $" /Length {formContent.Length} >>\nstream\n");
+        ms.Write(formContent);
+        W("\nendstream\nendobj\n");
+
+        offsets[6] = (int)ms.Position;
+        W($"6 0 obj\n<< /Length {pageContent.Length} >>\nstream\n");
+        ms.Write(pageContent);
+        W("\nendstream\nendobj\n");
+
+        offsets[7] = (int)ms.Position;
+        W("7 0 obj\n<< /Type /StructTreeRoot >>\nendobj\n");
+
+        offsets[8] = (int)ms.Position;
+        W($"8 0 obj\n<< /Type /Metadata /Subtype /XML /Length {xmp.Length} >>\nstream\n");
+        ms.Write(xmp);
+        W("\nendstream\nendobj\n");
+
+        var xrefOff = (int)ms.Position;
+        W("xref\n0 9\n0000000000 65535 f \n");
+        for (var i = 1; i <= 8; i++) W($"{offsets[i]:D10} 00000 n \n");
+        W("trailer\n<< /Size 9 /Root 1 0 R"
+            + " /ID [<BB112233445566778899AABBCCDDEEFF> <BB112233445566778899AABBCCDDEEFF>] >>\n");
+        W($"startxref\n{xrefOff}\n%%EOF\n");
+        return ms.ToArray();
+    }
+
+    // ── END §7.20-2 unit tests ────────────────────────────────────────────────────────────────────
+
+    // ── END §6.2.4.4-2 Batch N4 adversarial FP sweep ─────────────────────────────────
+
 }
