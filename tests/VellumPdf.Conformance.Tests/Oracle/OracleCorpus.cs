@@ -114,6 +114,44 @@ public static class OracleCorpus
             new OracleFixture("pdfa2b-glyph-width", WriterPdfWithBadGlyphWidth(),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
 
+            // ── Wave 2a — §6.2.11.4.1/§6.2.11.5 stream CIDToGIDMap, embedded CMap, simple TrueType ──
+
+            // Path 4a: a CIDFontType2 whose /CIDToGIDMap is a stream (not /Identity) that maps every
+            // CID to itself — equivalent to Identity. Both the in-process rule and veraPDF accept it.
+            new OracleFixture("pdfa2b-stream-cidtogidmap-compliant", WriterPdfWithStreamCidToGidMap(corrupt: false),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // Path 4a: the same stream CIDToGIDMap, but every entry maps to GID 0xFFFF — beyond the
+            // embedded program's glyph count. Both the in-process rule and veraPDF reject it
+            // (§6.2.11.4.1-2: glyph not present in the embedded program).
+            new OracleFixture("pdfa2b-stream-cidtogidmap-out-of-range", WriterPdfWithStreamCidToGidMap(corrupt: true),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // Path 4b: a Type0 font with an embedded CMap stream (non-Identity-H) using a 2-byte identity
+            // mapping (<0000><FFFF>→CID 0). The existing page content (GIDs from the original Identity-H
+            // stream) passes through unchanged — same CIDs, same declared widths. Both the in-process rule
+            // and veraPDF accept it.
+            new OracleFixture("pdfa2b-embedded-cmap-compliant", WriterPdfWithEmbeddedCMapFont(corrupt: false),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // Path 4b: the same embedded CMap font, but adds a cidchar entry mapping <EA60>→CID 60000
+            // and a content stream that shows <EA60> — CID 60000 is beyond the embedded program's glyph
+            // count. Both the in-process rule and veraPDF reject it (§6.2.11.4.1-2).
+            new OracleFixture("pdfa2b-embedded-cmap-out-of-range", WriterPdfWithEmbeddedCMapFont(corrupt: true),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // Path 4c: a simple non-symbolic TrueType font (WinAnsi) whose /Widths entry for 'A'
+            // declares the correct advance width from the embedded program. The in-process rule must
+            // accept it (re-uses the existing simple-font fixture body — see pdfa2b-simple-font below).
+
+            // Path 4c VIOLATION: the same simple WinAnsi TrueType font, but with a wrong width (1)
+            // for 'A'. The in-process rule rejects it (§6.2.11.5-1: declared width does not match the
+            // embedded program). veraPDF also rejects it.
+            new OracleFixture("pdfa2b-simple-font-bad-width",
+                SimpleTrueTypeFont(f => f.Set(new PdfName("Widths"), new PdfArray([new PdfInteger(1)])),
+                    encoding: new PdfName("WinAnsiEncoding")),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
             // A hand-built but fully conformant simple WinAnsi TrueType font (full DejaVu, correct
             // widths) — the regression guard that the new simple-font checks do not false-positive.
             new OracleFixture("pdfa2b-simple-font", SimpleTrueTypeFont(_ => { }, encoding: new PdfName("WinAnsiEncoding")),
@@ -4445,6 +4483,128 @@ public static class OracleCorpus
 
     private static byte[] WriterPdfWithoutBaseFont()
         => SimpleTrueTypeFont(_ => { }, encoding: new PdfName("WinAnsiEncoding"), omitBaseFont: true);
+
+    // Wave 2a (4a): replace the embedded font's /CIDToGIDMap from /Identity to a real stream. When
+    // corrupt=false every entry maps CID n → GID n (Identity-equivalent, compliant). When corrupt=true
+    // every entry maps to GID 0xFFFF, which exceeds the program's glyph count (§6.2.11.4.1-2).
+    private static byte[] WriterPdfWithStreamCidToGidMap(bool corrupt)
+    {
+        using var reader = PdfReader.Open(WriterPdfWithEmbeddedFont());
+        var (_, page) = FirstPage(reader);
+        var resources = (PdfDictionary)reader.ResolveValue(page.Get(new PdfName("Resources"))!)!;
+        var fonts = (PdfDictionary)reader.ResolveValue(resources.Get(PdfName.Font)!)!;
+        var type0 = (PdfDictionary)reader.ResolveValue(fonts.Entries.First().Value)!;
+        var descArr = (PdfArray)reader.ResolveValue(type0.Get(new PdfName("DescendantFonts"))!)!;
+        var descRef = (PdfIndirectReference)descArr[0];
+        var cidFont = (PdfDictionary)reader.Resolve(descRef.ObjectNumber)!;
+        var fdRef = (PdfIndirectReference)cidFont.Get(new PdfName("FontDescriptor"))!;
+        var fd = (PdfDictionary)reader.Resolve(fdRef.ObjectNumber)!;
+        var ff2Stream = reader.ResolveStream(((PdfIndirectReference)fd.Get(new PdfName("FontFile2"))!).ObjectNumber)!;
+        var program = reader.GetDecodedStreamData(ff2Stream)!;
+        var numGlyphs = NumGlyphsOf(program);
+
+        // Build a 2-byte-BE CIDToGIDMap stream covering CIDs 0..numGlyphs-1.
+        var mapBytes = new byte[numGlyphs * 2];
+        for (var cid = 0; cid < numGlyphs; cid++)
+        {
+            var gid = corrupt ? 0xFFFF : cid; // corrupt: every GID is out-of-range
+            mapBytes[cid * 2] = (byte)(gid >> 8);
+            mapBytes[cid * 2 + 1] = (byte)(gid & 0xFF);
+        }
+
+        var mapNum = reader.Size;
+        var mapStream = new PdfStream(mapBytes);
+
+        var newDesc = CloneDict(cidFont);
+        newDesc.Set(new PdfName("CIDToGIDMap"), new PdfIndirectReference(mapNum));
+
+        return reader.AppendRevision([(descRef.ObjectNumber, newDesc), (mapNum, mapStream)]);
+    }
+
+    // Wave 2a (4b): replace the embedded font's /Encoding from /Identity-H to an embedded CMap stream.
+    // Compliant: 2-byte identity CMap (<0000><FFFF> → CID 0), reusing the original content stream so the
+    // CIDs referenced are the same GIDs already declared in the CIDFont's /W array.
+    // Corrupt: adds a cidchar entry that maps <EA60> → CID 60000 (beyond glyph count), plus a new
+    // content stream that shows <EA60>, triggering §6.2.11.4.1-2.
+    private static byte[] WriterPdfWithEmbeddedCMapFont(bool corrupt)
+    {
+        using var reader = PdfReader.Open(WriterPdfWithEmbeddedFont());
+        var (pageRef, page) = FirstPage(reader);
+        var resources = (PdfDictionary)reader.ResolveValue(page.Get(new PdfName("Resources"))!)!;
+        var fonts = (PdfDictionary)reader.ResolveValue(resources.Get(PdfName.Font)!)!;
+        var type0Ref = (PdfIndirectReference)fonts.Entries.First().Value;
+        var type0 = (PdfDictionary)reader.Resolve(type0Ref.ObjectNumber)!;
+        var fontName = fonts.Entries.First().Key.Value;
+
+        // 2-byte identity CMap: every 2-byte code maps to the same CID (code→CID, same as Identity-H),
+        // but delivered as an embedded stream rather than a named encoding — exercises path 4b.
+        var corruptEntry = corrupt
+            ? "1 begincidchar\n<EA60> 60000\nendcidchar\n"
+            : "";
+        var cmapSrc = "%!PS-Adobe-3.0 Resource-CMap\n"
+            + "%%DocumentNeededResources: ProcSet (CIDInit)\n"
+            + "%%IncludeResource: ProcSet (CIDInit)\n"
+            + "%%BeginResource: CMap (VellumWave2a)\n"
+            + "%%Title: (VellumWave2a)\n"
+            + "%%Version: 1.000\n"
+            + "%%EndComments\n"
+            + "/CIDInit /ProcSet findresource begin\n"
+            + "12 dict begin\n"
+            + "begincmap\n"
+            + "/CIDSystemInfo 3 dict dup begin\n"
+            + "  /Registry (Adobe) def\n"
+            + "  /Ordering (Identity) def\n"
+            + "  /Supplement 0 def\n"
+            + "end def\n"
+            + "/CMapName /VellumWave2a def\n"
+            + "/CMapType 1 def\n"
+            + "1 begincodespacerange\n"
+            + "<0000> <FFFF>\n"
+            + "endcodespacerange\n"
+            + "1 begincidrange\n"
+            + "<0000> <FFFF> 0\n"
+            + "endcidrange\n"
+            + corruptEntry
+            + "endcmap\n"
+            + "CMapName currentdict /CMap defineresource pop\n"
+            + "end\n"
+            + "end\n"
+            + "%%EndResource\n"
+            + "%%EOF\n";
+        var cmapBytes = Encoding.Latin1.GetBytes(cmapSrc);
+
+        var cmapNum = reader.Size;
+
+        var cmapStream = new PdfStream(cmapBytes);
+        cmapStream.Dictionary
+            .Set(PdfName.Type, new PdfName("CMap"))
+            .Set(new PdfName("CMapName"), new PdfName("VellumWave2a"))
+            .Set(new PdfName("CIDSystemInfo"), new PdfDictionary()
+                .Set(new PdfName("Registry"), new PdfLiteralString(Encoding.ASCII.GetBytes("Adobe")))
+                .Set(new PdfName("Ordering"), new PdfLiteralString(Encoding.ASCII.GetBytes("Identity")))
+                .Set(new PdfName("Supplement"), new PdfInteger(0)));
+
+        var newType0 = CloneDict(type0).Set(new PdfName("Encoding"), new PdfIndirectReference(cmapNum));
+
+        if (!corrupt)
+        {
+            // Reuse the original content stream — the 2-byte GIDs it contains map identity through the
+            // new CMap to the same CIDs, which are declared in /W, so no width mismatch.
+            return reader.AppendRevision(
+                [(type0Ref.ObjectNumber, newType0), (cmapNum, cmapStream)]);
+        }
+
+        // Corrupt: append a content stream that shows <EA60> (CID 60000, beyond glyph count).
+        var contentNum = cmapNum + 1;
+        var newPage = CloneDict(page);
+        newPage.Set(new PdfName("Contents"),
+            new PdfArray([page.Get(new PdfName("Contents"))!, new PdfIndirectReference(contentNum)]));
+        var content = new PdfStream(Encoding.ASCII.GetBytes($"BT /{fontName} 12 Tf 72 600 Td <EA60> Tj ET"));
+
+        return reader.AppendRevision(
+            [(pageRef.ObjectNumber, newPage), (type0Ref.ObjectNumber, newType0),
+             (cmapNum, cmapStream), (contentNum, content)]);
+    }
 
     private static byte[] WriterPdfWithBadGlyphWidth()
         => CorruptDescendantFont(d => CloneWithout(d, "W")); // widths fall to /DW, mismatching the program
