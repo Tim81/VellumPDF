@@ -41,3 +41,9 @@ static VellumPdf.Images.JpxImageLoader.Load(byte[]! jpx) -> VellumPdf.Images.Pdf
 static VellumPdf.Images.JpxImageLoader.Load(byte[]! jpx, VellumPdf.Images.ImageLoadOptions! options) -> VellumPdf.Images.PdfImageXObject!
 VellumPdf.IO.PdfWriter.PdfWriter(System.IO.Stream! stream, long initialPosition) -> void
 VellumPdf.Canvas.PdfCanvas.AppendArc(double cx, double cy, double radius, double startAngle, double endAngle) -> VellumPdf.Canvas.PdfCanvas!
+VellumPdf.Canvas.PdfCanvas.ShowGlyphsAligned(System.ReadOnlySpan<ushort> glyphIds, double measuredWidth, double x, double y, VellumPdf.Canvas.TextAlignment align = VellumPdf.Canvas.TextAlignment.Left) -> VellumPdf.Canvas.PdfCanvas!
+VellumPdf.Canvas.PdfCanvas.ShowTextAligned(string! text, double x, double y, VellumPdf.Canvas.TextAlignment align = VellumPdf.Canvas.TextAlignment.Left) -> VellumPdf.Canvas.PdfCanvas!
+VellumPdf.Canvas.TextAlignment
+VellumPdf.Canvas.TextAlignment.Center = 1 -> VellumPdf.Canvas.TextAlignment
+VellumPdf.Canvas.TextAlignment.Left = 0 -> VellumPdf.Canvas.TextAlignment
+VellumPdf.Canvas.TextAlignment.Right = 2 -> VellumPdf.Canvas.TextAlignment

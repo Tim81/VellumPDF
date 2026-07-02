@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Aligned text on the canvas.** `PdfCanvas.ShowTextAligned(text, x, y, align)` draws a Latin-1
+  string so that `x` is the alignment edge — left edge, midpoint, or right edge for the
+  `TextAlignment` value. The width is measured from the Standard-14 font set with `SetFont`, using
+  the same metrics the layout engine renders with, so a right-aligned line ends exactly at `x`.
+  For embedded fonts, `ShowGlyphsAligned(glyphIds, measuredWidth, x, y, align)` takes a width from
+  `EmbeddedFontHandle.MeasureString` and positions the glyph run the same way. Both must be called
+  between `BeginText` and `EndText`; `ShowTextAligned` throws if no measurable font is set.
+
 ## [1.7.6] - 2026-06-28
 
 ### Added
