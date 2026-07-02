@@ -199,10 +199,15 @@ public static class ConformanceCatalog
         ["6.2.3-1"] = "DestOutputProfile signature/N checked; ICC device-class not parsed",
         // 6.2.4.2-2 moved to PdfAOutOfScope (graphics-state inheritance across Do; FP-safe under-detection
         //   confirmed against veraPDF 1.30.2; tracked in Backlog issue TBD).
-        ["6.2.4.3-2"] = "page-content DeviceRGB checked; DefaultRGB exemption and RGB-profile intent matching implemented (2026-06-23); image/pattern DeviceRGB not detected",
-        ["6.2.4.3-3"] = "page-content DeviceCMYK checked; DefaultCMYK exemption and CMYK-profile intent matching implemented (2026-06-23); image/pattern DeviceCMYK not detected",
-        ["6.2.4.3-4"] = "page-content DeviceGray checked; DefaultGray exemption implemented (2026-06-23); image/pattern colour not detected",
-        ["6.2.4.4-2"] = "Separations selected by cs/CS operators and those in /Colorants of used DeviceN spaces are compared; drawn Form XObjects, all CharProcs of Tf-selected Type 3 fonts, and annotation /AP /N appearance streams are now also walked (Batch N4, 2026-06-23); image /ColorSpace and alternate spaces of other colour spaces are not yet walked",
+        // 6.2.4.3-2/-3/-4 moved to Implemented (COL batch, 2026-07-02): DocumentDeviceColourTypes now
+        //   also detects device colour reached via image XObject /ColorSpace entries (drawn images from
+        //   page content and reachable non-page streams) and via the /Alternate space of named colour
+        //   spaces selected by cs/CS operators (Separation, DeviceN, uncoloured Pattern base); the
+        //   DefaultRGB/CMYK/Gray exemptions and per-type output-intent matching are unchanged.
+        // 6.2.4.4-2 moved to Implemented (COL batch, 2026-07-02): SeparationConsistencyRule now
+        //   collects Separations from drawn image /ColorSpace entries and from the /Alternate spaces
+        //   of selected named colour spaces; FP-safety invariant preserved (pool only grows toward
+        //   what veraPDF already compares).
         // 6.2.2-1 moved to Implemented (Batch N1 — ContentStreamOperatorRule now scans drawn Form
         //   XObjects, all CharProcs of Tf-selected Type 3 fonts, and all annotation /AP /N appearance
         //   streams via GetReachableContentStreams; reachability policy empirically confirmed against

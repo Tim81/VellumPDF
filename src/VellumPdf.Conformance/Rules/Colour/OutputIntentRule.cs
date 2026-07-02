@@ -30,11 +30,12 @@ namespace VellumPdf.Conformance.Rules.Colour;
 /// </para>
 /// <para>
 /// The <c>/DestOutputProfile</c> requirement is scoped to documents that paint device-dependent
-/// colour (detected via <see cref="ContentStreamUsage"/>); veraPDF does not require an output intent
-/// when no device colour is used, so neither does this rule (issue #128). Device colour reached only
-/// through images, form XObjects, or patterns is not yet detected. The remaining requirements (a
-/// present profile's ICC validity, <c>/N</c>, and the single-shared-profile constraint) are checked
-/// unconditionally.
+/// colour (detected via <see cref="PreflightContext.DocumentDeviceColourTypes"/>); veraPDF does not
+/// require an output intent when no device colour is used, so neither does this rule (issue #128).
+/// Device colour reached through image <c>/ColorSpace</c> entries and through the <c>/Alternate</c>
+/// space of selected named colour spaces (Separation, DeviceN, uncoloured Pattern) is also detected.
+/// The remaining requirements (a present profile's ICC validity, <c>/N</c>, and the
+/// single-shared-profile constraint) are checked unconditionally.
 /// </para>
 /// </remarks>
 internal sealed class OutputIntentRule : IConformanceRule

@@ -97,14 +97,30 @@ internal sealed class SeparationConsistencyRule : IConformanceRule
         // deduped so they count as one occurrence, not N.
         var seenCsObjects = new HashSet<int>();
 
+        // Image objects whose /ColorSpace is scanned; deduplicated across pages.
+        var seenImageObjNums = new HashSet<int>();
+
         foreach (var page in context.EnumeratePages())
         {
             // ── Page content ───────────────────────────────────────────────────────────────────────
             if (context.ResolveInherited(page, PdfName.Resources) is PdfDictionary pageResources)
             {
-                var selected = ContentStreamUsage.Analyze(context, page).SelectedColorSpaces;
+                var usage = ContentStreamUsage.Analyze(context, page);
+                var selected = usage.SelectedColorSpaces;
                 if (selected.Count > 0)
                     ProcessResourceScope(context, pageResources, selected, firstSeen, reported, seenCsObjects);
+
+                // ── Image XObject /ColorSpace (COL batch, 2026-07-02) ─────────────────────────────
+                // FP-safety: we only grow the comparison pool; any inconsistency we detect here,
+                // veraPDF also detects. Images not drawn (absent from DrawnXObjects) are skipped.
+                if (context.Resolve(pageResources.Get(PdfName.XObject)) is PdfDictionary xObjects)
+                    CollectSeparationsFromDrawnImages(context, usage.DrawnXObjects, xObjects,
+                        firstSeen, reported, seenImageObjNums);
+
+                // ── Alternate spaces of selected named colour spaces ───────────────────────────────
+                if (selected.Count > 0)
+                    CollectSeparationsFromCsAlternates(context, pageResources, selected,
+                        firstSeen, reported, seenCsObjects);
             }
 
             // ── Non-page content streams (N4 batch, 2026-06-23) ───────────────────────────────────
@@ -134,6 +150,15 @@ internal sealed class SeparationConsistencyRule : IConformanceRule
                     var selected = ScanSelectedColorSpaces(cs.Bytes);
                     if (selected.Count > 0)
                         ProcessResourceScope(context, cs.Resources, selected, firstSeen, reported, seenCsObjects);
+
+                    // Also scan image XObjects in non-page stream resources.
+                    if (context.Resolve(cs.Resources.Get(PdfName.XObject)) is PdfDictionary csXObjects)
+                        CollectSeparationsFromAllImages(context, csXObjects, firstSeen, reported, seenImageObjNums);
+
+                    // Also scan alternate spaces of named colour spaces in non-page stream resources.
+                    if (selected.Count > 0)
+                        CollectSeparationsFromCsAlternates(context, cs.Resources, selected,
+                            firstSeen, reported, seenCsObjects);
                 }
                 catch
                 {
@@ -187,6 +212,116 @@ internal sealed class SeparationConsistencyRule : IConformanceRule
                 // [/DeviceN names alt tint attrs] — inspect /Colorants
                 CollectFromColorants(context, csArray[4], firstSeen, reported);
             }
+        }
+    }
+
+    // Collects Separations from image XObjects that are actually drawn (DrawnXObjects).
+    private void CollectSeparationsFromDrawnImages(
+        PreflightContext context,
+        IReadOnlyCollection<string> drawnXObjects,
+        PdfDictionary xObjects,
+        Dictionary<string, (PdfObject alt, PdfObject tint)> firstSeen,
+        HashSet<string> reported,
+        HashSet<int> seenImageObjNums)
+    {
+        foreach (var name in drawnXObjects)
+        {
+            var xRef = xObjects.Get(new PdfName(name));
+            if (xRef is null) continue;
+            CollectSeparationsFromImageRef(context, xRef, firstSeen, reported, seenImageObjNums);
+        }
+    }
+
+    // Collects Separations from ALL image XObjects in an XObject dictionary (used for non-page streams
+    // where we don't have a drawn-list — all XObjects in the dict are candidates).
+    private void CollectSeparationsFromAllImages(
+        PreflightContext context,
+        PdfDictionary xObjects,
+        Dictionary<string, (PdfObject alt, PdfObject tint)> firstSeen,
+        HashSet<string> reported,
+        HashSet<int> seenImageObjNums)
+    {
+        foreach (var entry in xObjects.Entries)
+            CollectSeparationsFromImageRef(context, entry.Value, firstSeen, reported, seenImageObjNums);
+    }
+
+    // Resolves one XObject reference; if it is an image, recursively collects Separation colour
+    // spaces from its /ColorSpace entry.
+    private void CollectSeparationsFromImageRef(
+        PreflightContext context,
+        PdfObject xRef,
+        Dictionary<string, (PdfObject alt, PdfObject tint)> firstSeen,
+        HashSet<string> reported,
+        HashSet<int> seenImageObjNums)
+    {
+        if (xRef is PdfIndirectReference r && !seenImageObjNums.Add(r.ObjectNumber))
+            return;
+        try
+        {
+            var xDict = context.Resolve(xRef) as PdfDictionary;
+            if (xDict is null) return;
+            if (context.Resolve(xDict.Get(PdfName.Subtype)) is not PdfName { Value: "Image" })
+                return;
+            var csObj = xDict.Get(new PdfName("ColorSpace"));
+            if (csObj is null) return;
+            CollectSeparationsFromCsObject(context, context.Resolve(csObj), firstSeen, reported);
+        }
+        catch { }
+    }
+
+    // Collects Separation colour spaces from the /Alternate of selected named colour spaces.
+    // Only one level of alternate (no deep recursion) to stay FP-safe.
+    private void CollectSeparationsFromCsAlternates(
+        PreflightContext context,
+        PdfDictionary resources,
+        IReadOnlyCollection<string> selectedNames,
+        Dictionary<string, (PdfObject alt, PdfObject tint)> firstSeen,
+        HashSet<string> reported,
+        HashSet<int> seenCsObjects)
+    {
+        if (context.Resolve(resources.Get(_colorSpace)) is not PdfDictionary csDict)
+            return;
+
+        foreach (var name in selectedNames)
+        {
+            try
+            {
+                var csObj = context.Resolve(csDict.Get(new PdfName(name)));
+                if (csObj is not PdfArray csArray || csArray.Count < 3) continue;
+                var csType = context.Resolve(csArray[0]) as PdfName;
+                if (csType is null) continue;
+
+                // For Separation and DeviceN, the alternate space is at index 2.
+                // The alternate space itself may be a Separation (unusual but valid).
+                if (csType.Value is "Separation" or "DeviceN")
+                    CollectSeparationsFromCsObject(context, context.Resolve(csArray[2]), firstSeen, reported);
+            }
+            catch { }
+        }
+    }
+
+    // Recursively extracts Separation colour spaces from a resolved colour space object, registering
+    // each in the consistency comparison state. Only one level of alternate-space recursion.
+    private void CollectSeparationsFromCsObject(
+        PreflightContext context,
+        PdfObject? cs,
+        Dictionary<string, (PdfObject alt, PdfObject tint)> firstSeen,
+        HashSet<string> reported)
+    {
+        if (cs is not PdfArray arr || arr.Count < 1) return;
+        var typeObj = context.Resolve(arr[0]) as PdfName;
+        if (typeObj is null) return;
+
+        if (typeObj.Value == "Separation" && arr.Count >= 4)
+        {
+            // [/Separation name alt tint]
+            if (context.Resolve(arr[1]) is PdfName sepName)
+                CheckSeparation(context, sepName.Value, arr[2], arr[3], firstSeen, reported);
+        }
+        else if (typeObj.Value == "DeviceN" && arr.Count >= 5)
+        {
+            // [/DeviceN names alt tint attrs] — inspect /Colorants for Separations.
+            CollectFromColorants(context, arr[4], firstSeen, reported);
         }
     }
 
