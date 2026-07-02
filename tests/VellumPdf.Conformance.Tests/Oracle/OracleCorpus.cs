@@ -36,6 +36,9 @@ public static class OracleCorpus
     /// <summary>Public accessor for the §7.1-3 untagged-real-content violation fixture (for unit tests).</summary>
     internal static byte[] Ua1UntaggedRealContentPublic() => Ua1UntaggedRealContent();
 
+    /// <summary>Public accessor for the §7.20-2 dual-page Form XObject violation fixture (for unit tests).</summary>
+    internal static byte[] Ua1FormXObjectDualPagePublic() => Ua1FormXObjectDualPage();
+
     private static IReadOnlyList<OracleFixture> Build()
     {
         // One baseline, cloned per fixture so the documents are byte-identical except for the edit.
@@ -1958,6 +1961,17 @@ public static class OracleCorpus
             // children the rule must NOT fire. Document still fails other UA rules.
             new OracleFixture("pdfua1-form-struct-with-role",
                 WriterUa1WithFormStructElem(addExtraChild: true, addRole: true),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // ── §7.20-2 — Form XObject unique semantic parent ───────────────────────────────────────
+
+            // §7.20-2 VIOLATION: a Form XObject with /StructParents drawn from two distinct pages.
+            // The form has exactly one /StructParents key in its stream dict, so it can record only
+            // one set of structure parents; drawing it from page 1 and page 2 gives it two invocation
+            // contexts — a structural violation. Both veraPDF (clause 7.20, testNumber 2) and the
+            // in-process UaFormXObjectSemanticParentRule reject it.
+            new OracleFixture("pdfua1-form-xobject-dual-page",
+                Ua1FormXObjectDualPage(),
                 Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
         ];
     }
@@ -9173,6 +9187,141 @@ public static class OracleCorpus
             (imgNum, imgStream),
             (newContentNum, newContentStream),
         ]);
+    }
+
+    // ── §7.20-2 Form XObject unique semantic parent ──────────────────────────────────────────────
+
+    /// <summary>
+    /// Builds a minimal hand-crafted two-page PDF/UA-1 document in which a Form XObject with a
+    /// <c>/StructParents</c> entry is drawn via <c>Do</c> from <em>both</em> pages, violating the
+    /// unique-semantic-parent requirement (ISO 14289-1:2014, §7.20; veraPDF clause 7.20-2).
+    ///
+    /// <para>
+    /// The Form XObject (object 6) carries <c>/StructParents 0</c> in its stream dictionary
+    /// (key 0 in the /ParentTree's Nums array). Page 1 (object 3) and page 2 (object 4) each list
+    /// the same XObject in their <c>/Resources /XObject</c> and draw it via <c>/Fm0 Do</c>.
+    /// Drawing a structure-linked form from two page contexts gives its MCIDs two invocation sites
+    /// while the /ParentTree can only record one set of structural parents — the violation.
+    /// </para>
+    ///
+    /// <para>
+    /// The document also has other UA rule failures (no embedded fonts, minimal structure, no
+    /// title), but all those fire alongside 7.20-2, satisfying <c>ExpectedCompliant: false</c>.
+    /// </para>
+    /// </summary>
+    private static byte[] Ua1FormXObjectDualPage()
+    {
+        // XMP packet: PDF/UA-1 identity (pdfuaid:part = 1). No dc:title (violates 7.1-8, but we
+        // only need ExpectedCompliant: false so additional violations are acceptable).
+        var xmp = Encoding.UTF8.GetBytes(
+            "<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>"
+            + "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF "
+            + "xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">"
+            + "<rdf:Description rdf:about=\"\" "
+            + "xmlns:pdfuaid=\"http://www.aiim.org/pdfua/ns/id/\">"
+            + "<pdfuaid:part>1</pdfuaid:part>"
+            + "</rdf:Description></rdf:RDF></x:xmpmeta><?xpacket end=\"w\"?>");
+
+        // Form XObject content: a single marked-content sequence with MCID 0.
+        // The form has /StructParents 0 in its dict; the ParentTree records key 0 → MCID array.
+        var formContent = Encoding.Latin1.GetBytes("/P << /MCID 0 >> BDC q Q EMC");
+
+        // Page content: draws the form XObject via Do.
+        var pageContent = Encoding.Latin1.GetBytes("/Fm0 Do");
+
+        using var ms = new MemoryStream();
+        void W(string s) { ms.Write(Encoding.Latin1.GetBytes(s)); }
+
+        W("%PDF-1.7\n");
+        ms.Write([0x25, 0xE2, 0xE3, 0xCF, 0xD3, 0x0A]);
+
+        // Object layout:
+        //  1: Catalog  (with /Lang, /MarkInfo, /StructTreeRoot, /ViewerPreferences, /Metadata)
+        //  2: Pages    (two children: 3 and 4)
+        //  3: Page 1   (/StructParents 1, /Resources → XObject /Fm0 = 6 0 R, /Contents 7 0 R)
+        //  4: Page 2   (/StructParents 2, /Resources → XObject /Fm0 = 6 0 R, /Contents 8 0 R)
+        //  5: StructTreeRoot (/K 9 0 R, /ParentTree 10 0 R)
+        //  6: Form XObject stream (the shared form; has /StructParents 0)
+        //  7: Content stream for page 1
+        //  8: Content stream for page 2
+        //  9: Document StructElem
+        // 10: ParentTree (Nums [0 [11 0 R] 1 [] 2 []])
+        // 11: P StructElem (MCID 0 in the form's MCID array)
+        // 12: Metadata stream (XMP)
+        var offsets = new int[13];
+
+        offsets[1] = (int)ms.Position;
+        W("1 0 obj\n<< /Type /Catalog /Pages 2 0 R /Lang (en-US)"
+            + " /MarkInfo << /Marked true >>"
+            + " /StructTreeRoot 5 0 R"
+            + " /ViewerPreferences << /DisplayDocTitle true >>"
+            + " /Metadata 12 0 R >>\nendobj\n");
+
+        offsets[2] = (int)ms.Position;
+        W("2 0 obj\n<< /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >>\nendobj\n");
+
+        // Page 1: /StructParents 1 (key 1 in ParentTree = empty MCID array, no MCIDs on page itself).
+        // The form is drawn from this page.
+        offsets[3] = (int)ms.Position;
+        W("3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792]"
+            + " /StructParents 1"
+            + " /Resources << /XObject << /Fm0 6 0 R >> >>"
+            + " /Contents 7 0 R >>\nendobj\n");
+
+        // Page 2: /StructParents 2 (key 2 in ParentTree = empty MCID array).
+        // The same form is drawn from this page too — the violation.
+        offsets[4] = (int)ms.Position;
+        W("4 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792]"
+            + " /StructParents 2"
+            + " /Resources << /XObject << /Fm0 6 0 R >> >>"
+            + " /Contents 8 0 R >>\nendobj\n");
+
+        offsets[5] = (int)ms.Position;
+        W("5 0 obj\n<< /Type /StructTreeRoot /K 9 0 R /ParentTree 10 0 R >>\nendobj\n");
+
+        // Form XObject: /StructParents 0 = key 0 in the ParentTree's Nums array.
+        offsets[6] = (int)ms.Position;
+        W($"6 0 obj\n<< /Type /XObject /Subtype /Form /BBox [0 0 612 792]"
+            + " /StructParents 0"
+            + $" /Length {formContent.Length} >>\nstream\n");
+        ms.Write(formContent);
+        W("\nendstream\nendobj\n");
+
+        offsets[7] = (int)ms.Position;
+        W($"7 0 obj\n<< /Length {pageContent.Length} >>\nstream\n");
+        ms.Write(pageContent);
+        W("\nendstream\nendobj\n");
+
+        offsets[8] = (int)ms.Position;
+        W($"8 0 obj\n<< /Length {pageContent.Length} >>\nstream\n");
+        ms.Write(pageContent);
+        W("\nendstream\nendobj\n");
+
+        offsets[9] = (int)ms.Position;
+        W("9 0 obj\n<< /Type /StructElem /S /Document /P 5 0 R /K [11 0 R] >>\nendobj\n");
+
+        // ParentTree: key 0 = [11 0 R] (the P struct elem owning MCID 0 in the form's content).
+        // Key 1 = [] (page 1 has no own MCIDs). Key 2 = [] (page 2 has no own MCIDs).
+        offsets[10] = (int)ms.Position;
+        W("10 0 obj\n<< /Nums [0 [11 0 R] 1 [] 2 []] >>\nendobj\n");
+
+        offsets[11] = (int)ms.Position;
+        W("11 0 obj\n<< /Type /StructElem /S /P /P 9 0 R /Pg 3 0 R /K 0 >>\nendobj\n");
+
+        offsets[12] = (int)ms.Position;
+        W($"12 0 obj\n<< /Type /Metadata /Subtype /XML /Length {xmp.Length} >>\nstream\n");
+        ms.Write(xmp);
+        W("\nendstream\nendobj\n");
+
+        var xrefOff = (int)ms.Position;
+        W("xref\n0 13\n0000000000 65535 f \n");
+        for (var i = 1; i <= 12; i++)
+            W($"{offsets[i]:D10} 00000 n \n");
+        W("trailer\n<< /Size 13 /Root 1 0 R"
+            + " /ID [<AA112233445566778899AABBCCDDEEFF> <AA112233445566778899AABBCCDDEEFF>] >>\n");
+        W($"startxref\n{xrefOff}\n%%EOF\n");
+
+        return ms.ToArray();
     }
 
 }
