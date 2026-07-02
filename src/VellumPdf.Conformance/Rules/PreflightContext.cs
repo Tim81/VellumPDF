@@ -62,8 +62,8 @@ internal sealed class PreflightContext
     /// <summary>
     /// True if any page paints with device-dependent colour (a DeviceRGB/Gray/CMYK colour operator in
     /// its content stream). Output-intent requirements apply only to documents that actually use
-    /// device colour (issue #128). Limitation: device colour reached only through images, form
-    /// XObjects, or patterns is not detected by this page-content scan.
+    /// device colour (issue #128). For the extended detection that also covers image XObjects and
+    /// named-CS alternates, use <see cref="DocumentDeviceColourTypes"/>.
     /// </summary>
     public bool DocumentUsesDeviceColour()
     {
@@ -75,20 +75,223 @@ internal sealed class PreflightContext
 
     /// <summary>
     /// Returns which device colour types are used across all pages. Each flag is true when ANY page
-    /// uses that type via a colour-setting operator in its content stream.
-    /// Limitation: device colour reached only through images, form XObjects, or patterns is not detected.
+    /// uses that device colour type — via direct operators (<c>rg</c>/<c>RG</c>, etc.), an image
+    /// XObject's <c>/ColorSpace</c>, or the <c>/Alternate</c> space of a selected named colour space.
     /// </summary>
+    /// <remarks>
+    /// Detection is extended beyond content-stream operators (ISO 19005-2 §6.2.4.3):
+    /// <list type="bullet">
+    ///   <item>Image XObjects drawn from page content or reachable non-page streams: the image's
+    ///   <c>/ColorSpace</c> entry is classified (one level deep, recursing into array forms).</item>
+    ///   <item>Named colour spaces selected by <c>cs</c>/<c>CS</c>: their <c>/Alternate</c> field
+    ///   (for <c>Separation</c> and <c>DeviceN</c>) and the base type (for <c>ICCBased</c>) are
+    ///   classified. Pattern with an uncoloured base colour space: the base space is classified.</item>
+    /// </list>
+    /// Visited image object numbers are deduplicated. All existing exemptions (DefaultRGB/CMYK/Gray
+    /// and output-intent matching) are applied by the caller.
+    /// </remarks>
     public (bool Rgb, bool Cmyk, bool Gray) DocumentDeviceColourTypes()
     {
         bool rgb = false, cmyk = false, gray = false;
+        var visitedImages = new HashSet<int>();
+
         foreach (var page in EnumeratePages())
         {
             var usage = ContentStreamUsage.Analyze(this, page);
             if (usage.UsesDeviceRgb) rgb = true;
             if (usage.UsesDeviceCmyk) cmyk = true;
             if (usage.UsesDeviceGray) gray = true;
+
+            if (ResolveInherited(page, PdfName.Resources) is PdfDictionary pageResources)
+            {
+                // Scan drawn image XObjects for device colour in their /ColorSpace.
+                ScanImagesForDeviceColour(this, page, pageResources, usage, visitedImages, ref rgb, ref cmyk, ref gray);
+
+                // Scan selected named colour spaces for device colour in their /Alternate.
+                if (usage.SelectedColorSpaces.Count > 0)
+                    ScanNamedCsAlternatesForDeviceColour(this, pageResources, usage.SelectedColorSpaces, ref rgb, ref cmyk, ref gray);
+            }
+
+            if (rgb && cmyk && gray)
+                return (true, true, true); // Short-circuit when all found.
         }
         return (rgb, cmyk, gray);
+    }
+
+    // Scans drawn image XObjects reachable from the page for device colour in their /ColorSpace.
+    private static void ScanImagesForDeviceColour(
+        PreflightContext context,
+        PdfDictionary page,
+        PdfDictionary pageResources,
+        ContentUsage usage,
+        HashSet<int> visitedImages,
+        ref bool rgb, ref bool cmyk, ref bool gray)
+    {
+        if (context.Resolve(pageResources.Get(PdfName.XObject)) is not PdfDictionary xObjects)
+            return;
+
+        foreach (var drawn in usage.DrawnXObjects)
+        {
+            var xRef = xObjects.Get(new PdfName(drawn));
+            if (xRef is null) continue;
+            CheckImageColourSpace(context, xRef, visitedImages, ref rgb, ref cmyk, ref gray);
+        }
+
+        // Also walk reachable non-page streams (Form XObjects, Type 3 CharProcs, AP streams).
+        try
+        {
+            var reachable = ContentStreamUsage.GetReachableContentStreams(context, page);
+            foreach (var cs in reachable)
+            {
+                if (cs.Resources is null) continue;
+                if (context.Resolve(cs.Resources.Get(PdfName.XObject)) is not PdfDictionary csXObjects) continue;
+                foreach (var entry in csXObjects.Entries)
+                    CheckImageColourSpace(context, entry.Value, visitedImages, ref rgb, ref cmyk, ref gray);
+            }
+        }
+        catch { }
+    }
+
+    // Checks whether a single XObject (by reference) is an image with a device /ColorSpace.
+    private static void CheckImageColourSpace(
+        PreflightContext context,
+        PdfObject xRef,
+        HashSet<int> visitedImages,
+        ref bool rgb, ref bool cmyk, ref bool gray)
+    {
+        if (xRef is PdfIndirectReference r && !visitedImages.Add(r.ObjectNumber))
+            return;
+        try
+        {
+            var xDict = context.Resolve(xRef) as PdfDictionary;
+            if (xDict is null) return;
+            if (context.Resolve(xDict.Get(PdfName.Subtype)) is not PdfName { Value: "Image" })
+                return;
+            var cs = xDict.Get(new PdfName("ColorSpace"));
+            if (cs is null) return;
+            ClassifyColourSpaceObject(context, context.Resolve(cs), ref rgb, ref cmyk, ref gray);
+        }
+        catch { }
+    }
+
+    // Scans selected named colour spaces for device colour in their /Alternate (Separation/DeviceN)
+    // or uncoloured-pattern base space. Only one level of alternate (no deep recursion) to stay FP-safe.
+    private static void ScanNamedCsAlternatesForDeviceColour(
+        PreflightContext context,
+        PdfDictionary resources,
+        IReadOnlyCollection<string> selectedNames,
+        ref bool rgb, ref bool cmyk, ref bool gray)
+    {
+        if (context.Resolve(resources.Get(new PdfName("ColorSpace"))) is not PdfDictionary csDict)
+            return;
+
+        foreach (var name in selectedNames)
+        {
+            try
+            {
+                var csObj = context.Resolve(csDict.Get(new PdfName(name)));
+                if (csObj is not PdfArray csArray || csArray.Count < 2) continue;
+                var csType = context.Resolve(csArray[0]) as PdfName;
+                if (csType is null) continue;
+
+                switch (csType.Value)
+                {
+                    case "Separation" when csArray.Count >= 3:
+                        // [/Separation name alternate tint] — check the alternate space.
+                        ClassifyColourSpaceObject(context, context.Resolve(csArray[2]), ref rgb, ref cmyk, ref gray);
+                        break;
+
+                    case "DeviceN" when csArray.Count >= 3:
+                        // [/DeviceN names alternate tint (attrs?)] — check the alternate space.
+                        ClassifyColourSpaceObject(context, context.Resolve(csArray[2]), ref rgb, ref cmyk, ref gray);
+                        break;
+
+                    case "Pattern" when csArray.Count >= 2:
+                        // [/Pattern baseCS] — uncoloured tiling pattern; check the base colour space.
+                        ClassifyColourSpaceObject(context, context.Resolve(csArray[1]), ref rgb, ref cmyk, ref gray);
+                        break;
+                }
+            }
+            catch { }
+        }
+    }
+
+    /// <summary>
+    /// Classifies a resolved PDF colour space object, setting <paramref name="rgb"/>,
+    /// <paramref name="cmyk"/>, or <paramref name="gray"/> when the object is (or directly
+    /// contains) a device-dependent colour space. One level of resolution; does not recurse
+    /// into alternates of alternates.
+    /// </summary>
+    internal static void ClassifyColourSpaceObject(
+        PreflightContext context,
+        PdfObject? cs,
+        ref bool rgb, ref bool cmyk, ref bool gray)
+    {
+        if (cs is PdfName n)
+        {
+            switch (n.Value)
+            {
+                case "DeviceRGB": rgb = true; break;
+                case "DeviceCMYK": cmyk = true; break;
+                case "DeviceGray": gray = true; break;
+            }
+            return;
+        }
+
+        if (cs is not PdfArray arr || arr.Count < 1) return;
+        var typeObj = context.Resolve(arr[0]) as PdfName;
+        if (typeObj is null) return;
+
+        switch (typeObj.Value)
+        {
+            case "DeviceRGB": rgb = true; break;
+            case "DeviceCMYK": cmyk = true; break;
+            case "DeviceGray": gray = true; break;
+
+            case "Separation" when arr.Count >= 3:
+                // Alternate space at index 2.
+                ClassifyColourSpaceNameOrArray(context, context.Resolve(arr[2]), ref rgb, ref cmyk, ref gray);
+                break;
+
+            case "DeviceN" when arr.Count >= 3:
+                ClassifyColourSpaceNameOrArray(context, context.Resolve(arr[2]), ref rgb, ref cmyk, ref gray);
+                break;
+
+            case "Pattern" when arr.Count >= 2:
+                ClassifyColourSpaceNameOrArray(context, context.Resolve(arr[1]), ref rgb, ref cmyk, ref gray);
+                break;
+        }
+    }
+
+    // Helper: classifies a colour space that may be a Name or an Array (one level only, no recursion).
+    private static void ClassifyColourSpaceNameOrArray(
+        PreflightContext context,
+        PdfObject? cs,
+        ref bool rgb, ref bool cmyk, ref bool gray)
+    {
+        if (cs is PdfName n)
+        {
+            switch (n.Value)
+            {
+                case "DeviceRGB": rgb = true; break;
+                case "DeviceCMYK": cmyk = true; break;
+                case "DeviceGray": gray = true; break;
+            }
+            return;
+        }
+
+        if (cs is PdfArray arr && arr.Count >= 1)
+        {
+            if (context.Resolve(arr[0]) is PdfName typeName)
+            {
+                switch (typeName.Value)
+                {
+                    case "DeviceRGB": rgb = true; break;
+                    case "DeviceCMYK": cmyk = true; break;
+                    case "DeviceGray": gray = true; break;
+                }
+            }
+        }
     }
 
     private IEnumerable<PdfDictionary> WalkPages(PdfObject? node, HashSet<int> visited, int depth)
@@ -229,6 +432,15 @@ internal sealed class PreflightContext
     /// stream or is absent from the cross-reference table. Used by byte-level layout checks (§6.1.9).
     /// </summary>
     public long? ObjectOffset(int objectNumber) => Reader.UncompressedObjectOffset(objectNumber);
+
+    /// <summary>
+    /// Byte offset just after the <c>endobj</c> keyword for the specified object, or
+    /// <see langword="null"/> if the object is in an object stream or not found within the scan window.
+    /// </summary>
+    public int? ObjectEndOffset(int objectNumber) => Reader.UncompressedObjectEndOffset(objectNumber);
+
+    /// <summary>Xref revisions in the file, oldest-first. Used by PDF/A §6.4.3-1 analysis.</summary>
+    public IReadOnlyList<XrefRevision> Revisions => Reader.Revisions;
 
     /// <summary>
     /// Enumerates the resolved value of every indirect object in the file. Used by file-structure

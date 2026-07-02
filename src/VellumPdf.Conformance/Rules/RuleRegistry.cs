@@ -169,6 +169,8 @@ internal static class RuleRegistry
         // Batch A5b — font clauses §7.21.8-1 (.notdef) and §7.21.7-2 (forbidden ToUnicode values):
         new UaNotdefGlyphRule(),
         new UaToUnicodeForbiddenRule(),
+        // §7.21.7-1 — used-code Unicode mapping (derived; simple-font AGL model, composite skipped):
+        new UaToUnicodeCharMappingRule(),
         // Batch A5c — font clause §7.21.4.1-2 (glyph presence, Tr-3-exempt):
         new UaGlyphPresenceRule(),
         // Batch A5d — §7.21.5-1 (glyph width consistency, Identity-H CIDFontType2 scope):
@@ -205,6 +207,12 @@ internal static class RuleRegistry
         // Batch B10 — §7.4.2 heading nesting, §7.5 connected headers:
         new UaHeadingNestingRule(),
         new UaTableHeaderRule(),
+        // Batch UA batch (this PR) — §5-3/5-4/5-5, §7.18.1-3, §7.18.4-2, §7.18.6.2-1/-2:
+        new UaMediaClipRule(),
+        new UaFormFieldAltRule(),
+        new UaFormStructElemRule(),
+        // §7.20-2 — Form XObject unique semantic parent (structure-linked form drawn from 2+ pages):
+        new UaFormXObjectSemanticParentRule(),
     ];
 
     /// <summary>

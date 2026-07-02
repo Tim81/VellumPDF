@@ -36,6 +36,65 @@ public static class OracleCorpus
     /// <summary>Public accessor for the §7.1-3 untagged-real-content violation fixture (for unit tests).</summary>
     internal static byte[] Ua1UntaggedRealContentPublic() => Ua1UntaggedRealContent();
 
+    /// <summary>Public accessor for the §7.20-2 dual-page Form XObject violation fixture (for unit tests).</summary>
+    internal static byte[] Ua1FormXObjectDualPagePublic() => Ua1FormXObjectDualPage();
+
+    /// <summary>Public accessor for §5-3/5-4/5-5 unit tests: the pdfuaid namespace bound to the
+    /// correct "pdfuaid" prefix — must NOT fire 5-3/5-4/5-5.</summary>
+    internal static byte[] Ua1XmpPrefixCompliantPublic()
+        => WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+
+    /// <summary>Public accessor for §5-3 unit tests: the pdfuaid namespace bound to "xua" instead of
+    /// "pdfuaid" — must fire ISO14289-1:5-3.</summary>
+    internal static byte[] Ua1XmpPrefixWrongPublic() => WriterUa1WithWrongXmpPrefix();
+
+    /// <summary>Public accessor for §7.18.6.2-1/-2 unit tests: media clip WITH /CT and /Alt —
+    /// must NOT fire 7.18.6.2-1 or 7.18.6.2-2.</summary>
+    internal static byte[] Ua1MediaClipCompliantPublic()
+        => WriterUa1WithScreenAnnotation(includeCt: true, includeAlt: true);
+
+    /// <summary>Public accessor for §7.18.6.2-1 unit tests: media clip missing /CT —
+    /// must fire ISO14289-1:7.18.6.2-1.</summary>
+    internal static byte[] Ua1MediaClipNoCtPublic()
+        => WriterUa1WithScreenAnnotation(includeCt: false, includeAlt: true);
+
+    /// <summary>Public accessor for §7.18.6.2-2 unit tests: media clip missing /Alt —
+    /// must fire ISO14289-1:7.18.6.2-2.</summary>
+    internal static byte[] Ua1MediaClipNoAltPublic()
+        => WriterUa1WithScreenAnnotation(includeCt: true, includeAlt: false);
+
+    /// <summary>Public accessor for §7.18.1-3 unit tests: Widget WITH /TU —
+    /// must NOT fire ISO14289-1:7.18.1-3.</summary>
+    internal static byte[] Ua1WidgetWithTuPublic()
+        => WriterUa1WithWidgetField(includeTu: true);
+
+    /// <summary>Public accessor for §7.18.1-3 unit tests: Widget with no /TU and no struct /Alt —
+    /// must fire ISO14289-1:7.18.1-3.</summary>
+    internal static byte[] Ua1WidgetNoTuPublic()
+        => WriterUa1WithWidgetField(includeTu: false);
+
+    /// <summary>Public accessor for §7.18.4-2 unit tests: Form struct elem with exactly one OBJR —
+    /// must NOT fire ISO14289-1:7.18.4-2.</summary>
+    internal static byte[] Ua1FormStructOneObjrPublic()
+        => WriterUa1WithFormStructElem(addExtraChild: false, addRole: false);
+
+    /// <summary>Public accessor for §7.18.4-2 unit tests: Form struct elem with an extra StructElem
+    /// child — must fire ISO14289-1:7.18.4-2.</summary>
+    internal static byte[] Ua1FormStructExtraChildPublic()
+        => WriterUa1WithFormStructElem(addExtraChild: true, addRole: false);
+
+    /// <summary>Public accessor for Fix 1 regression: a simple WinAnsi TrueType font drawing code 65
+    /// via the octal literal-string escape <c>(\101)</c>. Glyph IS present; must NOT fire
+    /// ISO19005-2:6.2.11.4.1.</summary>
+    internal static byte[] SimpleTrueTypeFontOctalEscapePublic()
+        => SimpleTrueTypeFontOctalEscape();
+
+    /// <summary>Public accessor for Fix 2 regression: a simple TrueType font with a /Differences name
+    /// <c>g17</c> on code 65, and a 2-digit ToUnicode entry <c>&lt;41&gt; &lt;0041&gt;</c> mapping
+    /// that code. Must NOT fire ISO14289-1:7.21.7-1.</summary>
+    internal static byte[] Ua1SimpleFontTwoDigitToUnicodePublic()
+        => Ua1SimpleFontTwoDigitToUnicode();
+
     private static IReadOnlyList<OracleFixture> Build()
     {
         // One baseline, cloned per fixture so the documents are byte-identical except for the edit.
@@ -112,6 +171,44 @@ public static class OracleCorpus
             // /DW and no longer match the embedded program (§6.2.11.5-1). veraPDF and the in-process
             // rule both reject it.
             new OracleFixture("pdfa2b-glyph-width", WriterPdfWithBadGlyphWidth(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // ── Wave 2a — §6.2.11.4.1/§6.2.11.5 stream CIDToGIDMap, embedded CMap, simple TrueType ──
+
+            // Path 4a: a CIDFontType2 whose /CIDToGIDMap is a stream (not /Identity) that maps every
+            // CID to itself — equivalent to Identity. Both the in-process rule and veraPDF accept it.
+            new OracleFixture("pdfa2b-stream-cidtogidmap-compliant", WriterPdfWithStreamCidToGidMap(corrupt: false),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // Path 4a: the same stream CIDToGIDMap, but every entry maps to GID 0xFFFF — beyond the
+            // embedded program's glyph count. Both the in-process rule and veraPDF reject it
+            // (§6.2.11.4.1-2: glyph not present in the embedded program).
+            new OracleFixture("pdfa2b-stream-cidtogidmap-out-of-range", WriterPdfWithStreamCidToGidMap(corrupt: true),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // Path 4b: a Type0 font with an embedded CMap stream (non-Identity-H) using a 2-byte identity
+            // mapping (<0000><FFFF>→CID 0). The existing page content (GIDs from the original Identity-H
+            // stream) passes through unchanged — same CIDs, same declared widths. Both the in-process rule
+            // and veraPDF accept it.
+            new OracleFixture("pdfa2b-embedded-cmap-compliant", WriterPdfWithEmbeddedCMapFont(corrupt: false),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // Path 4b: the same embedded CMap font, but adds a cidchar entry mapping <EA60>→CID 60000
+            // and a content stream that shows <EA60> — CID 60000 is beyond the embedded program's glyph
+            // count. Both the in-process rule and veraPDF reject it (§6.2.11.4.1-2).
+            new OracleFixture("pdfa2b-embedded-cmap-out-of-range", WriterPdfWithEmbeddedCMapFont(corrupt: true),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // Path 4c: a simple non-symbolic TrueType font (WinAnsi) whose /Widths entry for 'A'
+            // declares the correct advance width from the embedded program. The in-process rule must
+            // accept it (re-uses the existing simple-font fixture body — see pdfa2b-simple-font below).
+
+            // Path 4c VIOLATION: the same simple WinAnsi TrueType font, but with a wrong width (1)
+            // for 'A'. The in-process rule rejects it (§6.2.11.5-1: declared width does not match the
+            // embedded program). veraPDF also rejects it.
+            new OracleFixture("pdfa2b-simple-font-bad-width",
+                SimpleTrueTypeFont(f => f.Set(new PdfName("Widths"), new PdfArray([new PdfInteger(1)])),
+                    encoding: new PdfName("WinAnsiEncoding")),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
 
             // A hand-built but fully conformant simple WinAnsi TrueType font (full DejaVu, correct
@@ -223,6 +320,37 @@ public static class OracleCorpus
             new OracleFixture("pdfa2b-cff-bad-fontfile3-subtype", WriterPdfWithBadFontFile3Subtype(),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
 
+            // ── Wave 2b — §6.2.11.4.1/§6.2.11.5 CIDFontType0 + Type1 ──────────────────────────────
+
+            // A CIDFontType0 font (SourceSans3 OpenType-CFF, Identity-H) with a /W entry that
+            // correctly declares the advance width for every shown glyph. The in-process rule must
+            // accept it (§6.2.11.4.1 and §6.2.11.5 satisfied). Note: veraPDF cross-validation is
+            // deferred — it fires on the /W mismatch variant (see pdfa2b-cff0-bad-width below).
+            new OracleFixture("pdfa2b-cff0-compliant", WriterPdfCidFontType0Compliant(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // The same CIDFontType0 font with every /W entry replaced by 1 (forcing a mismatch
+            // with the program's real advance widths). The in-process GlyphPresenceRule must reject
+            // it (§6.2.11.5-1: declared width does not match the embedded CFF program's width).
+            // Note: veraPDF cross-validation is deferred pending local availability.
+            new OracleFixture("pdfa2b-cff0-bad-width", WriterPdfCidFontType0BadWidth(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // A simple Type1 font (Noto Sans Shavian, /FontFile) with an explicit /Encoding
+            // /Differences that maps code 32 to /uni00A0, which IS in the program's CharStrings,
+            // and a /Widths entry that correctly declares the advance width from the charstring.
+            // The in-process rule must accept it (§6.2.11.4.1 and §6.2.11.5 satisfied).
+            // Note: veraPDF cross-validation is deferred — the presence/width verdict requires a
+            // visible rendering mode (Tr ≠ 3) which this fixture uses (Tr 0 default).
+            new OracleFixture("pdfa2b-type1-glyph-compliant", WriterPdfType1GlyphCompliant(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // The same simple Type1 font, but the /Widths entry for code 32 declares width 1
+            // instead of the charstring's real advance width. The in-process GlyphPresenceRule
+            // must reject it (§6.2.11.5-1).
+            new OracleFixture("pdfa2b-type1-glyph-bad-width", WriterPdfType1GlyphBadWidth(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
             // A PDF/A-2b document drawing text with a standard-14 font (Helvetica) via the
             // VellumPdf.Fonts.Standard14 substitution package, which embeds a metric-compatible
             // Liberation font. Proves the substitution path yields conformant PDF/A text out-of-the-box.
@@ -307,6 +435,21 @@ public static class OracleCorpus
             // which would over-reject this document. In-process: A2aStructureTypeRule must NOT fire.
             new OracleFixture("pdfa2a-standard-type-remap-multihop",
                 Pdfa2aStandardTypeRemapMultihop(),
+                Conformance.PdfConformance.PdfA2A, "2a", ExpectedCompliant: true),
+
+            // §6.7.2.2-1 VIOLATION: a StructElem with /S /UndefinedTag and NO /RoleMap entry.
+            // The type is undefined — not standard and not role-mapped. veraPDF fires 6.7.2.2-1
+            // (isDefined == false) and co-fires 6.7.3.4-1 (isNotMappedToStandardType == true).
+            // In-process: A2aStructureTypeRule fires "ISO19005-2:6.7.2.2-1" and "ISO19005-2:6.7.3.4-1".
+            new OracleFixture("pdfa2a-defined-type-unmapped",
+                Pdfa2aDefinedTypeUnmapped(),
+                Conformance.PdfConformance.PdfA2A, "2a", ExpectedCompliant: false),
+
+            // §6.7.2.2-1 FP-safety: a StructElem with /S /MyMappedTag role-mapped via /RoleMap to
+            // the standard type /Div. The type IS defined (role-map resolves to standard).
+            // veraPDF PASSES (isDefined == true). In-process: A2aStructureTypeRule must NOT fire.
+            new OracleFixture("pdfa2a-defined-type-rolemapped",
+                Pdfa2aDefinedTypeRoleMapped(),
                 Conformance.PdfConformance.PdfA2A, "2a", ExpectedCompliant: true),
 
             // §6.7.4-1 VIOLATION: document catalog /Lang (invalid!!bad) — not a valid RFC 3066 tag.
@@ -449,6 +592,60 @@ public static class OracleCorpus
             // veraPDF 1.30.2 ACCEPTS; in-process must be silent.
             new OracleFixture("pdfa2b-devicegray-cmykintent",
                 Pdfa2bDeviceColourWithDefaultCs(DeviceColourKind.Gray, DeviceColourKind.None, hasOutputIntent: true, intentColour: DeviceColourKind.Cmyk),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // ── COL batch — §6.2.4.3 device colour via image /ColorSpace (2026-07-02) ──────────────
+            // These fixtures exercise DocumentDeviceColourTypes() detection of device colour that is
+            // reached only through an image XObject's /ColorSpace, not via any content-stream
+            // operator. The content stream itself paints no device colour (only /Fm0 Do to draw the
+            // image). This is the path added by the COL batch — previously the detour via image was
+            // a gap, now it is closed.
+            //
+            // FP-safety: the image is actually drawn (listed in DrawnXObjects), so the detection
+            // mirrors what veraPDF observes. The compliant counterparts use /DefaultRGB (or an RGB
+            // output intent) to satisfy the per-type requirement, confirming no over-rejection.
+
+            // §6.2.4.3-2 VIOLATION: a drawn image XObject whose /ColorSpace is /DeviceRGB, with no
+            // output intent and no /DefaultRGB in the page resources. The only device colour is the
+            // image's /ColorSpace — the content stream uses no rg/RG operator. Both the in-process
+            // rule and veraPDF must reject it (§6.2.4.3-2 requires an output intent or DefaultRGB
+            // when DeviceRGB is used, regardless of whether it is reached via operators or images).
+            new OracleFixture("pdfa2b-img-devicergb-no-intent",
+                Pdfa2bImageDeviceColour(DeviceColourKind.Rgb, hasDefaultCs: false, hasOutputIntent: false, intentColour: DeviceColourKind.None),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // §6.2.4.3-2 COMPLIANT: same drawn DeviceRGB image, but /DefaultRGB is present in the
+            // page /Resources /ColorSpace — §6.2.4.3-2 is satisfied without any output intent.
+            // veraPDF accepts; in-process must be silent.
+            new OracleFixture("pdfa2b-img-devicergb-defaultrgb",
+                Pdfa2bImageDeviceColour(DeviceColourKind.Rgb, hasDefaultCs: true, hasOutputIntent: false, intentColour: DeviceColourKind.None),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // §6.2.4.3-3 VIOLATION: a drawn image with /ColorSpace /DeviceCMYK, with an RGB output
+            // intent but no /DefaultCMYK. A CMYK-profile intent is required for DeviceCMYK (the RGB
+            // intent satisfies DeviceRGB only, not CMYK — §6.2.4.3-3). veraPDF rejects; in-process
+            // must also reject.
+            new OracleFixture("pdfa2b-img-devicecmyk-rgbintent",
+                Pdfa2bImageDeviceColour(DeviceColourKind.Cmyk, hasDefaultCs: false, hasOutputIntent: true, intentColour: DeviceColourKind.Rgb),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // §6.2.4.3-3 COMPLIANT: same drawn DeviceCMYK image, with a CMYK output intent — the
+            // per-type requirement is satisfied. veraPDF accepts; in-process must be silent.
+            new OracleFixture("pdfa2b-img-devicecmyk-cmykintent",
+                Pdfa2bImageDeviceColour(DeviceColourKind.Cmyk, hasDefaultCs: false, hasOutputIntent: true, intentColour: DeviceColourKind.Cmyk),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // §6.2.4.3-4 VIOLATION: a drawn image with /ColorSpace /DeviceGray, with no output intent
+            // and no /DefaultGray. veraPDF rejects (§6.2.4.3-4 requires any PDF/A output intent or
+            // DefaultGray); in-process must also reject.
+            new OracleFixture("pdfa2b-img-devicegray-no-intent",
+                Pdfa2bImageDeviceColour(DeviceColourKind.Gray, hasDefaultCs: false, hasOutputIntent: false, intentColour: DeviceColourKind.None),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // §6.2.4.3-4 COMPLIANT: same drawn DeviceGray image, with any PDF/A output intent (RGB
+            // here — Gray allows any intent). veraPDF accepts; in-process must be silent.
+            new OracleFixture("pdfa2b-img-devicegray-rgbintent",
+                Pdfa2bImageDeviceColour(DeviceColourKind.Gray, hasDefaultCs: false, hasOutputIntent: true, intentColour: DeviceColourKind.Rgb),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
 
             // An interactive form dictionary carrying an /XFA entry, which PDF/A-2 forbids (§6.4.2).
@@ -630,6 +827,49 @@ public static class OracleCorpus
             new OracleFixture("pdfa2b-extension-valuetype-bad", WriterPdfWithMetadata(Encoding.UTF8.GetBytes(BadValueTypeXmp2b())),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
 
+            // ── §6.6.2.3.3-8/-17 isValueTypeDefined (META batch, 2026-07-02) ──────────────────
+
+            // A pdfaProperty:valueType naming a type that is neither a predefined XMP value type nor
+            // a value type declared by the same schema (§6.6.2.3.3-8, isValueTypeDefined). veraPDF and
+            // the in-process ExtensionSchemaRule both reject it.
+            new OracleFixture("pdfa2b-property-valuetype-undefined",
+                WriterPdfWithMetadata(Encoding.UTF8.GetBytes(PropertyUndefinedValueTypeXmp2b())),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // A pdfaField:valueType naming an undefined type (§6.6.2.3.3-17, isValueTypeDefined).
+            // veraPDF and the in-process rule both reject it.
+            new OracleFixture("pdfa2b-field-valuetype-undefined",
+                WriterPdfWithMetadata(Encoding.UTF8.GetBytes(FieldUndefinedValueTypeXmp2b())),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // FP-safety guard (§6.6.2.3.3-8/-17 isValueTypeDefined): a property whose valueType names
+            // a custom value type declared in the SAME schema, and a field whose valueType is a
+            // predefined type. veraPDF accepts it; the in-process rule must not fire -8 or -17.
+            new OracleFixture("pdfa2b-valuetype-defined-custom",
+                WriterPdfWithMetadata(Encoding.UTF8.GetBytes(CustomValueTypeDefinedXmp2b())),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // ── §6.2.3-1 DestOutputProfile ICC device class (META batch, 2026-07-02) ─────────
+
+            // The PDF/A output intent's DestOutputProfile ICC header carries a device class ('abst')
+            // outside the permitted set (prtr/mntr/scnr/spac) (§6.2.3-1). veraPDF and the in-process
+            // OutputIntentRule both reject it.
+            new OracleFixture("pdfa2b-dest-profile-bad-device-class",
+                WriterPdfWithDestOutputProfileIcc(MakeIccHeader("abst", "RGB ", 4)),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // The DestOutputProfile ICC header carries an ICC major version >= 5 (§6.2.3-1). veraPDF
+            // and the in-process rule both reject it.
+            new OracleFixture("pdfa2b-dest-profile-bad-version",
+                WriterPdfWithDestOutputProfileIcc(MakeIccHeader("prtr", "RGB ", 5)),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // FP-safety guard (§6.2.3-1): a DestOutputProfile ICC header with a permitted device class
+            // ('mntr') and version 4. veraPDF accepts it; the in-process rule must not fire.
+            new OracleFixture("pdfa2b-dest-profile-valid-device-class",
+                WriterPdfWithDestOutputProfileIcc(MakeIccHeader("mntr", "RGB ", 4)),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
             // ── §6.6.2.3.3 container-type + prefix checks (Batch C1, 2026-06-23) ──────────────
 
             // pdfaExtension:schemas uses rdf:Seq instead of rdf:Bag (§6.6.2.3.3-1). veraPDF fires
@@ -697,6 +937,23 @@ public static class OracleCorpus
             new OracleFixture("pdfa2b-ext-full-valid",
                 WriterPdfWithMetadata(Encoding.UTF8.GetBytes(FullValidExtensionXmp2b())),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // ── §6.6.2.3.1-2 predefined-namespace property value-type (clean-room table) ─────
+
+            // Predefined XMP properties in their correct container forms — the FP-safety guard.
+            // dc:title = Lang Alt, dc:creator = seq Text, dc:subject = bag Text, pdfaid:part =
+            // Integer, xmp:CreateDate = Date scalar, pdf:Producer = Text scalar. veraPDF accepts;
+            // in-process rule must not fire (§6.6.2.3.1-2).
+            new OracleFixture("pdfa2b-predefined-property-types-compliant",
+                WriterPdfWithMetadata(Encoding.UTF8.GetBytes(PredefinedPropertyTypesCompliantXmp2b())),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // dc:title serialised as a plain text literal instead of an rdf:Alt Lang Alt container
+            // (§6.6.2.3.1-2, isValueTypeCorrect). veraPDF and the in-process PropertyValueTypeRule
+            // both reject it.
+            new OracleFixture("pdfa2b-predefined-property-types-violation",
+                WriterPdfWithMetadata(Encoding.UTF8.GetBytes(PredefinedPropertyTypesViolationXmp2b())),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
 
             // A catalog carrying the /Requirements key (§6.11-1). veraPDF and the in-process
             // CatalogRestrictionsRule both reject it.
@@ -1093,6 +1350,27 @@ public static class OracleCorpus
                 OverprintFormNoResources(),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
 
+            // ── Batch N3 continued — §6.2.4.2-2 inherited-state threading ────────────────────────────
+            // §6.2.4.2-2 VIOLATION via inherited state: the PAGE content stream selects an ICCBased
+            // CMYK colour space (/CS0 cs) and applies an ExtGState with /op true + /OPM 1 (/GS1 gs),
+            // then invokes a Form XObject via Do. The Form XObject does NOT re-establish any colour
+            // state — it only fills (re f). The violation is established entirely by the caller's
+            // state at the Do site, threaded into the form as its initial GState. veraPDF 1.30.2
+            // fires §6.2.4.2-2 on this pattern (probe N3-B, confirmed 2026-06-23). In-process:
+            // OverprintRule must fire via state-threading through Do.
+            new OracleFixture("pdfa2b-overprint-inherited-violation",
+                OverprintInheritedViolation(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // §6.2.4.2-2 COMPLIANT (inherited state, form resets OPM): the PAGE content stream
+            // selects ICCBased CMYK + /op true + /OPM 1 (same as above), then invokes a Form XObject.
+            // The Form XObject applies its OWN ExtGState (/GS2 gs) which sets /OPM 0, then fills.
+            // The form-local gs overrides the inherited OPM; OPM 0 is always permitted. veraPDF
+            // accepts this document. In-process: OverprintRule must NOT fire.
+            new OracleFixture("pdfa2b-overprint-inherited-compliant",
+                OverprintInheritedCompliant(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
             // ── PDF/UA-1 Batch A2 fixtures ──────────────────────────────────────────────────────────
 
             // §7.18.2-1 (TrapNet annotation): a visible TrapNet annotation inside the crop box is
@@ -1244,6 +1522,16 @@ public static class OracleCorpus
             // In-process: UaTrueTypeCmapRule fires both 7.21.6-1 and 7.21.6-2.
             new OracleFixture("pdfua1-nonsymb-agl-diff-bad-cmap",
                 Ua1NonSymbolicTrueTypeAglDiffBadCmap(),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.21.7-1 VIOLATION: a simple non-symbolic TrueType font whose /Differences maps the
+            // shown code 65 to a custom glyph name /g17 that is NOT in the Adobe Glyph List, with no
+            // /ToUnicode stream. There is thus no Unicode value for the used code by any route.
+            // veraPDF fires 7.21.7-1 (toUnicode == null for the shown glyph); it also fires 7.21.6-2
+            // (differencesAreUnicodeCompliant == false — same non-AGL name). In-process:
+            // UaToUnicodeCharMappingRule fires 7.21.7-1 (and UaTrueTypeCmapRule fires 7.21.6-2).
+            new OracleFixture("pdfua1-nounicode-custom-diff",
+                Ua1SimpleFontNonAglDifferenceNoToUnicode(),
                 Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
 
             // (§7.21.7-2 ToUnicode-forbidden-value fixtures were removed together with the rule: the
@@ -1512,6 +1800,30 @@ public static class OracleCorpus
                 SepFormXObjectConsistent(),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
 
+            // ── COL batch — §6.2.4.4-2 Separation consistency via image /ColorSpace (2026-07-02) ──
+            // The COL batch extends the comparison pool to include Separation colour spaces found in
+            // drawn image XObject /ColorSpace entries. A Separation in an image that shares a name
+            // with a page-selected Separation but differs in alternateSpace or tintTransform must be
+            // flagged. FP-safety is preserved: we only grow the comparison pool toward what veraPDF
+            // already compares; the baseline writer PDF carries a valid sRGB output intent so no
+            // §6.2.4.3-2 false positive is introduced by the DeviceRGB alternate space choice.
+
+            // §6.2.4.4-2 VIOLATION: the page selects /Spot1 Separation → DeviceRGB (via cs operator),
+            // and a drawn image XObject has /ColorSpace [/Separation /Spot1 /DeviceGray ...] with a
+            // different alternate space. The alternateSpace mismatch triggers the inconsistency.
+            // In-process: SeparationConsistencyRule must fire.
+            new OracleFixture("pdfa2b-sep-img-inconsistent",
+                SepImageInconsistent(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // §6.2.4.4-2 COMPLIANT: the page selects /Spot1 Separation → DeviceRGB, and a drawn
+            // image XObject has /ColorSpace [/Separation /Spot1 /DeviceRGB ...] with the SAME
+            // alternate space and structurally-identical tint function. No inconsistency.
+            // In-process: SeparationConsistencyRule must NOT fire.
+            new OracleFixture("pdfa2b-sep-img-consistent",
+                SepImageConsistent(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
             // ── Batch N5 — §6.2.2-2 non-page stream coverage ───────────────────────────────────────
             // Extends the inherited-resource check to drawn Form XObjects, Type 3 CharProcs, and
             // annotation /AP /N appearance streams via GetReachableContentStreams. The per-stream
@@ -1587,6 +1899,136 @@ public static class OracleCorpus
             new OracleFixture("pdfa2b-nested-form-inner-no-resources-outer-defined",
                 NestedFormInnerNoResourcesOuterDefined(),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // ── Batch N7 — §6.2.2-2 Pattern + Properties resource name coverage ────────────────
+            // Extends the inherited-resource check with Pattern names (scn/SCN when active CS is
+            // "Pattern") and Properties names (BDC/DP named-resource form). Both categories obey
+            // the same inheritedResourceNames model: only names defined in the ancestor scope fire.
+
+            // §6.2.2-2 VIOLATION: a page with NO own /Resources; the ancestor /Pages node defines
+            // /Resources /Pattern /MP0. The page content sets /Pattern cs then calls /MP0 scn.
+            // The pattern name /MP0 is an inherited resource name, so both veraPDF and the
+            // in-process InheritedResourceRule must fire.
+            new OracleFixture("pdfa2b-inherited-resource-pattern-violation",
+                InheritedResourcePatternViolation(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // §6.2.2-2 FP-SAFETY: same Pattern usage but the page HAS its own /Resources
+            // defining /MP0 in /Pattern. The page is self-contained; the rule must NOT fire.
+            new OracleFixture("pdfa2b-inherited-resource-pattern-compliant",
+                InheritedResourcePatternCompliant(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // ── STRUCT batch ──────────────────────────────────────────────────────────────────────
+
+            // §6.1.6-2 VIOLATION: a hexadecimal string containing the invalid hex character 'G'
+            // (0x47). HexStringRule scans raw file bytes and fires before any lazy object resolution
+            // decodes the page dictionary. veraPDF and the in-process rule both reject it.
+            new OracleFixture("pdfa2b-hex-invalid-digit", AssembleClassicXref(injectInvalidHex: true),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // §6.1.9-1 endobj EOL VIOLATION: an indirect object whose 'endobj' keyword is followed
+            // by a space character instead of an EOL marker. veraPDF and the in-process
+            // ObjectLayoutRule (endobj boundary check) both reject it.
+            new OracleFixture("pdfa2b-endobj-bad-eol", AssembleClassicXref(corruptEndobjEol: true),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // §6.1.8-1 VIOLATION: a PDF/A-2b document with a two-level deep structure tree where
+            // the innermost element's /S name contains a byte sequence that is not valid UTF-8
+            // (0xA0 as a stand-alone byte is not a valid UTF-8 encoding). The deep-walk via
+            // StructureTree.Analyze reaches it; the shallow walk would have missed it. veraPDF and
+            // the in-process NameUtf8Rule both reject it.
+            new OracleFixture("pdfa2b-deep-struct-invalid-utf8",
+                Pdfa2bDeepStructInvalidUtf8(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // §6.1.8-1 FP-SAFETY: a PDF/A-2b document with a two-level deep structure tree where
+            // all element /S names are valid ASCII (and therefore valid UTF-8). The deep-walk must
+            // NOT fire. veraPDF accepts it.
+            new OracleFixture("pdfa2b-deep-struct-valid-utf8",
+                Pdfa2bDeepStructValidUtf8(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // ── UA batch — §5-3/5-4/5-5 XMP prefix fixtures ─────────────────────────────────────
+
+            // §5-3/5-4/5-5 COMPLIANT: the tagged PDF/UA-1 baseline uses the pdfuaid prefix in its
+            // XMP (the writer produces the standard binding). Both veraPDF and the in-process
+            // UaMetadataRule accept it. (Shares the pdfua1-tagged baseline.)
+            new OracleFixture("pdfua1-xmp-prefix-compliant",
+                WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: true),
+
+            // §5-3 VIOLATION: the pdfuaid namespace is bound to "xua" instead of "pdfuaid". The
+            // in-process UaMetadataRule fires 5-3. veraPDF fires 5-3.
+            new OracleFixture("pdfua1-xmp-prefix-wrong",
+                WriterUa1WithWrongXmpPrefix(),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // ── UA batch — §7.18.6.2-1/-2 media clip data fixtures ─────────────────────────────
+
+            // §7.18.6.2-1/-2 COMPLIANT: a Screen annotation with a Rendition action that has a
+            // media clip data dict containing both /CT and /Alt. The in-process UaMediaClipRule
+            // passes, and the document also fails other UA rules (no struct binding for Screen);
+            // the oracle is per-clause and veraPDF confirms 7.18.6.2-1/-2 do NOT fire.
+            // NOTE: this document still fails other UA rules so ExpectedCompliant=false; we use
+            // the in-process unit test (InProcessVerdict_MatchesExpectation) to confirm 7.18.6.2
+            // does not fire. The oracle fixture purpose here is to guard FP safety.
+            new OracleFixture("pdfua1-media-clip-compliant",
+                WriterUa1WithScreenAnnotation(includeCt: true, includeAlt: true),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.18.6.2-1 VIOLATION: media clip data dict missing /CT.
+            new OracleFixture("pdfua1-media-clip-no-ct",
+                WriterUa1WithScreenAnnotation(includeCt: false, includeAlt: true),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.18.6.2-2 VIOLATION: media clip data dict missing /Alt.
+            new OracleFixture("pdfua1-media-clip-no-alt",
+                WriterUa1WithScreenAnnotation(includeCt: true, includeAlt: false),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // ── UA batch — §7.18.1-3 form field alternate name fixtures ─────────────────────────
+
+            // §7.18.1-3 COMPLIANT: a Widget with /TU present. The document still fails other UA
+            // rules (no struct binding); oracle guards FP safety for this clause.
+            new OracleFixture("pdfua1-field-with-tu",
+                WriterUa1WithWidgetField(includeTu: true),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.18.1-3 VIOLATION: a Widget with no /TU and no struct-elem /Alt.
+            new OracleFixture("pdfua1-field-no-tu-no-alt",
+                WriterUa1WithWidgetField(includeTu: false),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // ── UA batch — §7.18.4-2 Form structure element fixtures ────────────────────────────
+
+            // §7.18.4-2 COMPLIANT: a Form struct element with exactly one OBJR child (no /Role).
+            // Document still fails other UA rules; oracle guards FP safety.
+            new OracleFixture("pdfua1-form-struct-one-objr",
+                WriterUa1WithFormStructElem(addExtraChild: false, addRole: false),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.18.4-2 VIOLATION: a Form struct element with an extra StructElem child (no /Role).
+            new OracleFixture("pdfua1-form-struct-extra-child",
+                WriterUa1WithFormStructElem(addExtraChild: true, addRole: false),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.18.4-2 FP guard: a Form struct element WITH a /Role attribute. Even with multiple
+            // children the rule must NOT fire. Document still fails other UA rules.
+            new OracleFixture("pdfua1-form-struct-with-role",
+                WriterUa1WithFormStructElem(addExtraChild: true, addRole: true),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // ── §7.20-2 — Form XObject unique semantic parent ───────────────────────────────────────
+
+            // §7.20-2 VIOLATION: a Form XObject with /StructParents drawn from two distinct pages.
+            // The form has exactly one /StructParents key in its stream dict, so it can record only
+            // one set of structure parents; drawing it from page 1 and page 2 gives it two invocation
+            // contexts — a structural violation. Both veraPDF (clause 7.20, testNumber 2) and the
+            // in-process UaFormXObjectSemanticParentRule reject it.
+            new OracleFixture("pdfua1-form-xobject-dual-page",
+                Ua1FormXObjectDualPage(),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
         ];
     }
 
@@ -1604,6 +2046,90 @@ public static class OracleCorpus
     /// content; a present-but-unused space is not flagged. The two variants (painted / unused) pin
     /// both sides of that usage scoping against the oracle.
     /// </remarks>
+    // ── STRUCT batch helper methods ───────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// §6.1.8-1 VIOLATION: a PDF/A-2b tagged document where a second-level StructElem's /S name
+    /// contains byte 0xA0 (a stand-alone high byte that is not valid UTF-8). The deep walk via
+    /// StructureTree.Analyze reaches the second level; a shallow walk of StructTreeRoot /K misses it.
+    /// veraPDF fires 6.1.8-1 on the /S name; in-process NameUtf8Rule must also fire.
+    /// </summary>
+    private static byte[] Pdfa2bDeepStructInvalidUtf8()
+    {
+        // Build a tagged PDF/A-2b with an invalid-UTF-8 structure type name. The badElem is
+        // injected as a sibling of the Document StructElem inside the StructTreeRoot's /K array,
+        // making the tree: StructTreeRoot → [Document, badElem]. badElem's /S = /#A0BadType
+        // (byte 0xA0, not valid UTF-8 as a lead byte). NameUtf8Rule fires on the /S name.
+        var baseline = WriterPdfTaggedExplicit(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+
+        var strRef = (PdfIndirectReference)reader.Catalog.Get(new PdfName("StructTreeRoot"))!;
+        var str = (PdfDictionary)reader.Resolve(strRef.ObjectNumber)!;
+        var docRef = str.Get(new PdfName("K")) as PdfIndirectReference
+            ?? throw new InvalidOperationException("Expected Document StructElem as single /K child of StructTreeRoot");
+
+        var badElemNum = reader.Size;
+        // The /S name value holds char U+00A0, which the writer Latin1-encodes to raw byte 0xA0 and
+        // emits as /#A0BadType. On read-back the reader decodes #A0 back to byte 0xA0. A lone 0xA0 is
+        // a UTF-8 continuation byte with no lead byte, so the name is not valid UTF-8 → §6.1.8-1 fires.
+        // The character is built at runtime as (char)0xA0 to avoid embedding a non-ASCII byte in
+        // the source and to sidestep C# "\x" greedy hex-escape ambiguity.
+        var badName = (char)0xA0 + "BadType";
+        var badElem = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("StructElem"))
+            .Set(new PdfName("S"), new PdfName(badName))
+            .Set(new PdfName("P"), strRef);
+
+        // Rebuild the StructTreeRoot's /K as an array: [existing Document ref, badElem ref].
+        // This makes badElem a direct child of StructTreeRoot, depth = 1 from the root,
+        // which is what veraPDF walks when checking §6.1.8-1 on /S names.
+        var newStr = CloneDict(str);
+        newStr.Set(new PdfName("K"), new PdfArray([docRef, new PdfIndirectReference(badElemNum)]));
+
+        return reader.AppendRevision([
+            (strRef.ObjectNumber, newStr),
+            (badElemNum, badElem),
+        ]);
+    }
+
+    /// <summary>
+    /// §6.1.8-1 FP-SAFETY: a PDF/A-2b tagged document with a two-level structure tree where all
+    /// /S names are valid ASCII. veraPDF accepts it; NameUtf8Rule must not fire. Guards that the
+    /// deep-walk extension does not introduce false positives.
+    /// </summary>
+    private static byte[] Pdfa2bDeepStructValidUtf8()
+    {
+        // Inject a child StructElem with /S /P (valid ASCII) under the Document element.
+        var baseline = WriterPdfTaggedExplicit(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+
+        var strRef = (PdfIndirectReference)reader.Catalog.Get(new PdfName("StructTreeRoot"))!;
+        var str = (PdfDictionary)reader.Resolve(strRef.ObjectNumber)!;
+        var docRef = str.Get(new PdfName("K")) as PdfIndirectReference
+            ?? throw new InvalidOperationException("Expected Document StructElem ref");
+        var doc = (PdfDictionary)reader.Resolve(docRef.ObjectNumber)!;
+        var docK = doc.Get(new PdfName("K"));
+
+        var goodElemNum = reader.Size;
+        var goodElem = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("StructElem"))
+            .Set(new PdfName("S"), new PdfName("P"))
+            .Set(new PdfName("P"), docRef);
+
+        var existingKids = docK is PdfArray kArr
+            ? Enumerable.Range(0, kArr.Count).Select(i => kArr[i]).ToList()
+            : docK is not null ? [docK] : new List<PdfObject>();
+        existingKids.Add(new PdfIndirectReference(goodElemNum));
+
+        var newDoc = CloneDict(doc);
+        newDoc.Set(new PdfName("K"), new PdfArray(existingKids));
+
+        return reader.AppendRevision([
+            (docRef.ObjectNumber, newDoc),
+            (goodElemNum, goodElem),
+        ]);
+    }
+
     private static byte[] WriterPdfWithDeviceN33Colourants(bool paint)
     {
         const int n = 33;
@@ -2097,6 +2623,28 @@ public static class OracleCorpus
         + "<xmpMM:DerivedFrom rdf:parseType=\"Resource\"><stRef:documentID>d</stRef:documentID></xmpMM:DerivedFrom>"
         + "</rdf:Description>");
 
+    // Predefined XMP properties in their correct container / scalar forms — §6.6.2.3.1-2 FP guard.
+    // dc:title = rdf:Alt (Lang Alt), dc:creator = rdf:Seq, dc:subject = rdf:Bag,
+    // xmp:CreateDate = Date scalar, pdf:Producer = Text scalar, pdfaid:part = Integer.
+    private static string PredefinedPropertyTypesCompliantXmp2b() => RdfPacket(
+        "<rdf:Description rdf:about=\"\" "
+        + "xmlns:dc=\"http://purl.org/dc/elements/1.1/\" "
+        + "xmlns:xmp=\"http://ns.adobe.com/xap/1.0/\" "
+        + "xmlns:pdf=\"http://ns.adobe.com/pdf/1.3/\">"
+        + "<dc:title><rdf:Alt><rdf:li xml:lang=\"x-default\">Title</rdf:li></rdf:Alt></dc:title>"
+        + "<dc:creator><rdf:Seq><rdf:li>Author</rdf:li></rdf:Seq></dc:creator>"
+        + "<dc:subject><rdf:Bag><rdf:li>keyword</rdf:li></rdf:Bag></dc:subject>"
+        + "<xmp:CreateDate>2024-01-01</xmp:CreateDate>"
+        + "<pdf:Producer>VellumPdf</pdf:Producer>"
+        + "</rdf:Description>");
+
+    // §6.6.2.3.1-2 violation: dc:title serialised as a plain text literal instead of Lang Alt.
+    // The XMP Specification requires dc:title to be an rdf:Alt language-alternative container.
+    private static string PredefinedPropertyTypesViolationXmp2b() => RdfPacket(
+        "<rdf:Description rdf:about=\"\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\">"
+        + "<dc:title>Plain text title</dc:title>"
+        + "</rdf:Description>");
+
     // A PDF/A-2b XMP packet whose pdfaid namespace is bound to the non-canonical prefix 'aid'.
     private static string AltPrefixXmp2b() =>
         "<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>"
@@ -2339,6 +2887,102 @@ public static class OracleCorpus
         "</rdf:li></rdf:Seq></pdfaType:field>" +
         "</rdf:li></rdf:Seq></pdfaSchema:valueType>" +
         "</rdf:li></rdf:Bag></pdfaExtension:schemas></rdf:Description>");
+
+    // §6.6.2.3.3-8 violation (isValueTypeDefined): a pdfaProperty:valueType naming a type ("Widget")
+    // that is neither a predefined XMP value type nor declared by this schema.
+    private static string PropertyUndefinedValueTypeXmp2b() => RdfPacket(
+        $"<rdf:Description rdf:about=\"\" {ExtNs}>" +
+        "<pdfaExtension:schemas><rdf:Bag><rdf:li rdf:parseType=\"Resource\">" +
+        "<pdfaSchema:schema>S</pdfaSchema:schema>" +
+        "<pdfaSchema:namespaceURI>http://example.com/ns/</pdfaSchema:namespaceURI>" +
+        "<pdfaSchema:prefix>ex</pdfaSchema:prefix>" +
+        "<pdfaSchema:property><rdf:Seq><rdf:li rdf:parseType=\"Resource\">" +
+        "<pdfaProperty:name>foo</pdfaProperty:name><pdfaProperty:valueType>Widget</pdfaProperty:valueType>" +
+        "<pdfaProperty:category>external</pdfaProperty:category><pdfaProperty:description>d</pdfaProperty:description>" +
+        "</rdf:li></rdf:Seq></pdfaSchema:property>" +
+        "</rdf:li></rdf:Bag></pdfaExtension:schemas></rdf:Description>");
+
+    // §6.6.2.3.3-17 violation (isValueTypeDefined): a pdfaField:valueType naming an undefined type
+    // ("Widget") within an otherwise valid custom value-type declaration.
+    private static string FieldUndefinedValueTypeXmp2b() => RdfPacket(
+        $"<rdf:Description rdf:about=\"\" {ExtNsType}>" +
+        "<pdfaExtension:schemas><rdf:Bag><rdf:li rdf:parseType=\"Resource\">" +
+        "<pdfaSchema:schema>S</pdfaSchema:schema>" +
+        "<pdfaSchema:namespaceURI>http://example.com/ns/</pdfaSchema:namespaceURI>" +
+        "<pdfaSchema:prefix>ex</pdfaSchema:prefix>" +
+        "<pdfaSchema:property><rdf:Seq><rdf:li rdf:parseType=\"Resource\">" +
+        ValidPropertyFields + "</rdf:li></rdf:Seq></pdfaSchema:property>" +
+        "<pdfaSchema:valueType><rdf:Seq><rdf:li rdf:parseType=\"Resource\">" +
+        "<pdfaType:type>MyType</pdfaType:type>" +
+        "<pdfaType:namespaceURI>http://example.com/t/</pdfaType:namespaceURI>" +
+        "<pdfaType:prefix>mt</pdfaType:prefix><pdfaType:description>d</pdfaType:description>" +
+        "<pdfaType:field><rdf:Seq><rdf:li rdf:parseType=\"Resource\">" +
+        "<pdfaField:name>f</pdfaField:name><pdfaField:valueType>Widget</pdfaField:valueType>" +
+        "<pdfaField:description>d</pdfaField:description>" +
+        "</rdf:li></rdf:Seq></pdfaType:field>" +
+        "</rdf:li></rdf:Seq></pdfaSchema:valueType>" +
+        "</rdf:li></rdf:Bag></pdfaExtension:schemas></rdf:Description>");
+
+    // FP-safety guard (§6.6.2.3.3-8/-17 isValueTypeDefined): the schema declares a custom value type
+    // "MyType", a property references it as its valueType, and a field uses a predefined type.
+    // Both references resolve as defined, so neither -8 nor -17 fires.
+    private static string CustomValueTypeDefinedXmp2b() => RdfPacket(
+        $"<rdf:Description rdf:about=\"\" {ExtNsType}>" +
+        "<pdfaExtension:schemas><rdf:Bag><rdf:li rdf:parseType=\"Resource\">" +
+        "<pdfaSchema:schema>S</pdfaSchema:schema>" +
+        "<pdfaSchema:namespaceURI>http://example.com/ns/</pdfaSchema:namespaceURI>" +
+        "<pdfaSchema:prefix>ex</pdfaSchema:prefix>" +
+        "<pdfaSchema:property><rdf:Seq><rdf:li rdf:parseType=\"Resource\">" +
+        "<pdfaProperty:name>foo</pdfaProperty:name><pdfaProperty:valueType>MyType</pdfaProperty:valueType>" +
+        "<pdfaProperty:category>external</pdfaProperty:category><pdfaProperty:description>d</pdfaProperty:description>" +
+        "</rdf:li></rdf:Seq></pdfaSchema:property>" +
+        "<pdfaSchema:valueType><rdf:Seq><rdf:li rdf:parseType=\"Resource\">" +
+        "<pdfaType:type>MyType</pdfaType:type>" +
+        "<pdfaType:namespaceURI>http://example.com/t/</pdfaType:namespaceURI>" +
+        "<pdfaType:prefix>mt</pdfaType:prefix><pdfaType:description>d</pdfaType:description>" +
+        "<pdfaType:field><rdf:Seq><rdf:li rdf:parseType=\"Resource\">" +
+        "<pdfaField:name>f</pdfaField:name><pdfaField:valueType>Text</pdfaField:valueType>" +
+        "<pdfaField:description>d</pdfaField:description>" +
+        "</rdf:li></rdf:Seq></pdfaType:field>" +
+        "</rdf:li></rdf:Seq></pdfaSchema:valueType>" +
+        "</rdf:li></rdf:Bag></pdfaExtension:schemas></rdf:Description>");
+
+    // Builds a 128-byte ICC profile header with the given device class (offset 12), data colour space
+    // (offset 16), and ICC major version (byte 8), plus the mandatory 'acsp' signature at offset 36.
+    // Used by the §6.2.3-1 DestOutputProfile device-class fixtures.
+    private static byte[] MakeIccHeader(string deviceClass, string colourSpace, byte majorVersion)
+    {
+        var hdr = new byte[128];
+        hdr[0] = 0; hdr[1] = 0; hdr[2] = 0; hdr[3] = 128; // profile size
+        hdr[8] = majorVersion;
+        for (var i = 0; i < 4; i++)
+        {
+            hdr[12 + i] = (byte)deviceClass[i];
+            hdr[16 + i] = (byte)colourSpace[i];
+        }
+        // PCS 'XYZ ' at offset 20.
+        hdr[20] = (byte)'X'; hdr[21] = (byte)'Y'; hdr[22] = (byte)'Z'; hdr[23] = (byte)' ';
+        // 'acsp' signature at offset 36.
+        hdr[36] = (byte)'a'; hdr[37] = (byte)'c'; hdr[38] = (byte)'s'; hdr[39] = (byte)'p';
+        return hdr;
+    }
+
+    // Replaces the writer baseline's PDF/A output-intent DestOutputProfile stream with an ICC stream
+    // carrying the given header bytes (with /N 3), via an incremental update. Used to probe the
+    // §6.2.3-1 device-class / version validation on a real, otherwise-conformant output intent.
+    private static byte[] WriterPdfWithDestOutputProfileIcc(byte[] icc)
+    {
+        var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+
+        var intents = (PdfArray)reader.ResolveValue(reader.Catalog.Get(new PdfName("OutputIntents"))!)!;
+        var intent = (PdfDictionary)reader.ResolveValue(intents[0])!;
+        var destRef = (PdfIndirectReference)intent.Get(new PdfName("DestOutputProfile"))!;
+
+        var stream = new PdfStream(icc);
+        stream.Dictionary.Set(new PdfName("N"), new PdfInteger(3));
+        return reader.AppendRevision([(destRef.ObjectNumber, stream)]);
+    }
 
     private static string RdfPacket(string extra) =>
         "<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>"
@@ -3189,6 +3833,85 @@ public static class OracleCorpus
         ]);
     }
 
+    // ── PDF/A-2a §6.7.2.2-1 oracle fixture helpers ───────────────────────────────────────────────
+
+    /// <summary>
+    /// §6.7.2.2-1 VIOLATION: injects a StructElem with <c>/S /UndefinedTag</c> and NO
+    /// <c>/RoleMap</c> entry. The type is undefined — not a standard ISO 32000-1 Table 333 type
+    /// and not mapped (via <c>/RoleMap</c>) to one. veraPDF fires 6.7.2.2-1
+    /// (<c>isDefined == false</c>) and co-fires 6.7.3.4-1 (<c>isNotMappedToStandardType == true</c>).
+    /// </summary>
+    private static byte[] Pdfa2aDefinedTypeUnmapped()
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfA2a);
+        using var reader = PdfReader.Open(baseline);
+        var strRef = (PdfIndirectReference)reader.Catalog.Get(new PdfName("StructTreeRoot"))!;
+        var str = (PdfDictionary)reader.Resolve(strRef.ObjectNumber)!;
+
+        var docRef = str.Get(new PdfName("K")) as PdfIndirectReference
+            ?? throw new InvalidOperationException("Expected Document StructElem ref");
+        var doc = (PdfDictionary)reader.Resolve(docRef.ObjectNumber)!;
+        var docK = doc.Get(new PdfName("K"));
+
+        var customElemNum = reader.Size;
+        var customElem = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("StructElem"))
+            .Set(new PdfName("S"), new PdfName("UndefinedTag"))
+            .Set(new PdfName("P"), strRef);
+
+        var newDoc = CloneDict(doc);
+        newDoc.Set(new PdfName("K"), new PdfArray([
+            (PdfObject)(docK is PdfIndirectReference ? docK : new PdfIndirectReference(docRef.ObjectNumber)),
+            new PdfIndirectReference(customElemNum),
+        ]));
+
+        return reader.AppendRevision([
+            (docRef.ObjectNumber, newDoc),
+            (customElemNum, customElem),
+        ]);
+    }
+
+    /// <summary>
+    /// §6.7.2.2-1 FP-safety: injects a StructElem with <c>/S /MyMappedTag</c> role-mapped via
+    /// the StructTreeRoot <c>/RoleMap</c> to the standard type <c>/Div</c>. The type is defined
+    /// (the role-map chain resolves to a Table 333 standard type). veraPDF PASSES
+    /// (<c>isDefined == true</c>). In-process: A2aStructureTypeRule must NOT fire.
+    /// </summary>
+    private static byte[] Pdfa2aDefinedTypeRoleMapped()
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfA2a);
+        using var reader = PdfReader.Open(baseline);
+        var strRef = (PdfIndirectReference)reader.Catalog.Get(new PdfName("StructTreeRoot"))!;
+        var str = (PdfDictionary)reader.Resolve(strRef.ObjectNumber)!;
+
+        var docRef = str.Get(new PdfName("K")) as PdfIndirectReference
+            ?? throw new InvalidOperationException("Expected Document StructElem ref");
+        var doc = (PdfDictionary)reader.Resolve(docRef.ObjectNumber)!;
+        var docK = doc.Get(new PdfName("K"));
+
+        var customElemNum = reader.Size;
+        var customElem = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("StructElem"))
+            .Set(new PdfName("S"), new PdfName("MyMappedTag"))
+            .Set(new PdfName("P"), strRef);
+
+        var newDoc = CloneDict(doc);
+        newDoc.Set(new PdfName("K"), new PdfArray([
+            (PdfObject)(docK is PdfIndirectReference ? docK : new PdfIndirectReference(docRef.ObjectNumber)),
+            new PdfIndirectReference(customElemNum),
+        ]));
+
+        var newStr = CloneDict(str);
+        newStr.Set(new PdfName("RoleMap"), new PdfDictionary()
+            .Set(new PdfName("MyMappedTag"), new PdfName("Div")));
+
+        return reader.AppendRevision([
+            (strRef.ObjectNumber, newStr),
+            (docRef.ObjectNumber, newDoc),
+            (customElemNum, customElem),
+        ]);
+    }
+
     /// <summary>
     /// §6.7.4-1 VIOLATION: injects a bad <c>/Lang (invalid!!bad)</c> entry into the document
     /// catalog. veraPDF fires 6.7.4-1 (<c>unicodeValue</c> does not match the BCP-47 pattern).
@@ -3273,6 +3996,236 @@ public static class OracleCorpus
         return reader.AppendRevision([(pageRef.ObjectNumber, page), (annotObjNum, movie)]);
     }
 
+    // ── UA batch fixture helpers ──────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Produces a tagged PDF/UA-1 baseline whose XMP /Metadata packet has the PDF/UA identification
+    /// namespace bound to the prefix "xua" instead of "pdfuaid". This violates §5-3 (and §5-4/5-5
+    /// if the respective properties are also present, which they are not here — only "part" is
+    /// set). The packet is replaced via an incremental update so the file structure stays valid.
+    /// </summary>
+    private static byte[] WriterUa1WithWrongXmpPrefix()
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+        using var reader = PdfReader.Open(baseline);
+        var rootRef = (PdfIndirectReference)reader.Trailer.Get(PdfName.Root)!;
+        var catalog = CloneDict(reader.Catalog);
+
+        // Build a replacement XMP packet that binds the pdfuaid namespace to prefix "xua".
+        var xmpBytes = Encoding.UTF8.GetBytes(
+            "<?xpacket begin=\"\xEF\xBB\xBF\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>"
+            + "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\">"
+            + "<rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">"
+            + "<rdf:Description rdf:about=\"\""
+            + " xmlns:xua=\"http://www.aiim.org/pdfua/ns/id/\""
+            + " xmlns:pdfaid=\"http://www.aiim.org/pdfa/ns/id/\""
+            + " xmlns:dc=\"http://purl.org/dc/elements/1.1/\""
+            + " xua:part=\"1\""
+            + " pdfaid:part=\"2\""
+            + " pdfaid:conformance=\"B\""
+            + "/>"
+            + "</rdf:RDF>"
+            + "</x:xmpmeta>"
+            + "<?xpacket end=\"w\"?>");
+
+        var metaStream = new PdfStream(xmpBytes);
+        metaStream.Dictionary
+            .Set(new PdfName("Type"), new PdfName("Metadata"))
+            .Set(new PdfName("Subtype"), new PdfName("XML"));
+
+        var metaNum = reader.Size;
+        catalog.Set(new PdfName("Metadata"), new PdfIndirectReference(metaNum));
+        return reader.AppendRevision([(rootRef.ObjectNumber, catalog), (metaNum, metaStream)]);
+    }
+
+    /// <summary>
+    /// Injects a Screen annotation with a Rendition action pointing at a media clip data dict.
+    /// When <paramref name="includeCt"/> is true, the MCD has /CT; when false, /CT is absent
+    /// (§7.18.6.2-1 violation). When <paramref name="includeAlt"/> is true, the MCD has /Alt;
+    /// when false, /Alt is absent (§7.18.6.2-2 violation).
+    /// </summary>
+    private static byte[] WriterUa1WithScreenAnnotation(bool includeCt, bool includeAlt)
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var newPage = CloneDict(page);
+
+        var mcdNum = reader.Size;
+        var renditionNum = reader.Size + 1;
+        var actionNum = reader.Size + 2;
+        var annotNum = reader.Size + 3;
+
+        // Media clip data dict (/S /MCD).
+        var mcd = new PdfDictionary()
+            .Set(new PdfName("S"), new PdfName("MCD"));
+        if (includeCt)
+            mcd.Set(new PdfName("CT"), new PdfLiteralString(Encoding.ASCII.GetBytes("video/mp4")));
+        if (includeAlt)
+            mcd.Set(new PdfName("Alt"), new PdfArray([
+                new PdfLiteralString(Encoding.ASCII.GetBytes("")),
+                new PdfLiteralString(Encoding.ASCII.GetBytes("A video clip"))]));
+
+        // Media rendition (/S /MR) referencing the MCD via /C.
+        var rendition = new PdfDictionary()
+            .Set(new PdfName("S"), new PdfName("MR"))
+            .Set(new PdfName("C"), new PdfIndirectReference(mcdNum));
+
+        // Rendition action (/S /Rendition).
+        var action = new PdfDictionary()
+            .Set(new PdfName("S"), new PdfName("Rendition"))
+            .Set(new PdfName("R"), new PdfIndirectReference(renditionNum))
+            .Set(new PdfName("OP"), new PdfInteger(0));
+
+        var annot = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("Annot"))
+            .Set(PdfName.Subtype, new PdfName("Screen"))
+            .Set(new PdfName("Rect"), new PdfArray([new PdfInteger(10), new PdfInteger(10), new PdfInteger(100), new PdfInteger(100)]))
+            .Set(new PdfName("A"), new PdfIndirectReference(actionNum));
+
+        newPage.Set(new PdfName("Annots"), new PdfArray([new PdfIndirectReference(annotNum)]));
+        return reader.AppendRevision([
+            (pageRef.ObjectNumber, newPage),
+            (mcdNum, mcd),
+            (renditionNum, rendition),
+            (actionNum, action),
+            (annotNum, annot),
+        ]);
+    }
+
+    /// <summary>
+    /// Injects a Widget annotation (AcroForm text field) into the UA-1 tagged baseline.
+    /// When <paramref name="includeTu"/> is true, the field has /TU (satisfying §7.18.1-3);
+    /// when false, /TU is absent and no struct-elem /Alt is set either (violation).
+    /// </summary>
+    private static byte[] WriterUa1WithWidgetField(bool includeTu)
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var newPage = CloneDict(page);
+        var rootRef = (PdfIndirectReference)reader.Trailer.Get(PdfName.Root)!;
+        var catalog = CloneDict(reader.Catalog);
+
+        var widgetNum = reader.Size;
+        var widget = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("Annot"))
+            .Set(PdfName.Subtype, new PdfName("Widget"))
+            .Set(new PdfName("FT"), new PdfName("Tx"))
+            .Set(new PdfName("T"), new PdfLiteralString(Encoding.ASCII.GetBytes("Name")))
+            .Set(new PdfName("Rect"), new PdfArray([new PdfInteger(50), new PdfInteger(700), new PdfInteger(200), new PdfInteger(720)]));
+        if (includeTu)
+            widget.Set(new PdfName("TU"), new PdfLiteralString(Encoding.ASCII.GetBytes("Full Name")));
+
+        newPage.Set(new PdfName("Annots"), new PdfArray([new PdfIndirectReference(widgetNum)]));
+
+        // Add AcroForm with the field.
+        var acroForm = new PdfDictionary()
+            .Set(new PdfName("Fields"), new PdfArray([new PdfIndirectReference(widgetNum)]));
+        catalog.Set(new PdfName("AcroForm"), acroForm);
+
+        return reader.AppendRevision([
+            (pageRef.ObjectNumber, newPage),
+            (rootRef.ObjectNumber, catalog),
+            (widgetNum, widget),
+        ]);
+    }
+
+    /// <summary>
+    /// Injects a Form structure element into the UA-1 tagged baseline.
+    /// When <paramref name="addExtraChild"/> is true, a second StructElem child is added (violation
+    /// of §7.18.4-2 when /Role is absent). When <paramref name="addRole"/> is true, a /Role
+    /// attribute is added to the Form struct element (exempt from §7.18.4-2).
+    /// </summary>
+    private static byte[] WriterUa1WithFormStructElem(bool addExtraChild, bool addRole)
+    {
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+        using var reader = PdfReader.Open(baseline);
+        var rootRef = (PdfIndirectReference)reader.Trailer.Get(PdfName.Root)!;
+        var catalog = CloneDict(reader.Catalog);
+
+        // Find the StructTreeRoot.
+        var strRef = reader.Catalog.Get(new PdfName("StructTreeRoot")) as PdfIndirectReference
+            ?? throw new InvalidOperationException("No StructTreeRoot ref");
+        var str = (PdfDictionary)reader.Resolve(strRef.ObjectNumber)!;
+        var newStr = CloneDict(str);
+
+        // Build a widget annotation (minimal, for the OBJR reference).
+        var (pageRef, page) = FirstPage(reader);
+        var newPage = CloneDict(page);
+        var widgetNum = reader.Size;
+        var widget = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("Annot"))
+            .Set(PdfName.Subtype, new PdfName("Widget"))
+            .Set(new PdfName("FT"), new PdfName("Tx"))
+            .Set(new PdfName("T"), new PdfLiteralString(Encoding.ASCII.GetBytes("Field")))
+            .Set(new PdfName("Rect"), new PdfArray([new PdfInteger(50), new PdfInteger(700), new PdfInteger(200), new PdfInteger(720)]));
+
+        // OBJR pointing at the widget.
+        var objrNum = reader.Size + 1;
+        var objr = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("OBJR"))
+            .Set(new PdfName("Obj"), new PdfIndirectReference(widgetNum));
+
+        // Optionally add a second P StructElem child to violate §7.18.4-2.
+        var extraChildNum = reader.Size + 2;
+        var extraChild = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("StructElem"))
+            .Set(new PdfName("S"), new PdfName("P"))
+            .Set(new PdfName("P"), new PdfIndirectReference(reader.Size + 3));
+
+        // The Form struct element.
+        var formElemNum = reader.Size + 3;
+        var kArray = addExtraChild
+            ? new PdfArray([new PdfIndirectReference(objrNum), new PdfIndirectReference(extraChildNum)])
+            : new PdfArray([new PdfIndirectReference(objrNum)]);
+
+        var formElem = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("StructElem"))
+            .Set(new PdfName("S"), new PdfName("Form"))
+            .Set(new PdfName("P"), new PdfIndirectReference(strRef.ObjectNumber))
+            .Set(new PdfName("K"), kArray);
+
+        if (addRole)
+        {
+            var attrDict = new PdfDictionary()
+                .Set(new PdfName("O"), new PdfName("Layout"))
+                .Set(new PdfName("Role"), new PdfName("rb"));
+            formElem.Set(new PdfName("A"), attrDict);
+        }
+
+        // Update StructTreeRoot /K to include the new Form elem.
+        var existingK = str.Get(new PdfName("K"));
+        PdfArray newK;
+        if (existingK is PdfArray ka)
+        {
+            var items = new List<PdfObject>(ka.Count + 1);
+            for (var i = 0; i < ka.Count; i++) items.Add(ka[i]);
+            items.Add(new PdfIndirectReference(formElemNum));
+            newK = new PdfArray(items);
+        }
+        else
+        {
+            newK = new PdfArray([existingK!, new PdfIndirectReference(formElemNum)]);
+        }
+        newStr.Set(new PdfName("K"), newK);
+
+        newPage.Set(new PdfName("Annots"), new PdfArray([new PdfIndirectReference(widgetNum)]));
+
+        var updates = new List<(int, PdfObject)>
+        {
+            (strRef.ObjectNumber, newStr),
+            (pageRef.ObjectNumber, newPage),
+            (widgetNum, widget),
+            (objrNum, objr),
+            (formElemNum, formElem),
+        };
+        if (addExtraChild)
+            updates.Add((extraChildNum, extraChild));
+
+        return reader.AppendRevision(updates);
+    }
+
     private static PdfDictionary CloneDict(PdfDictionary src)
     {
         var d = new PdfDictionary();
@@ -3315,6 +4268,34 @@ public static class OracleCorpus
         canvas.Finish();
 
         // Minimal valid structure hierarchy: Document → P, the P element bound to the marked content.
+        var p = new PdfStructElem("P") { Page = page, Mcid = mcid };
+        var root = new PdfStructElem("Document");
+        root.AddChild(p);
+        doc.RegisterStructElem(root);
+
+        using var ms = new MemoryStream();
+        doc.Save(ms);
+        return ms.ToArray();
+    }
+
+    // Like WriterPdfTagged but forces Tagged = true so conformance levels that do not imply tagging
+    // (e.g. PdfA2b) still produce a StructTreeRoot. Used by fixtures that need a tagged-2b baseline.
+    private static byte[] WriterPdfTaggedExplicit(VellumPdf.Document.PdfConformance conformance)
+    {
+        using var doc = new PdfDocument { Conformance = conformance, Language = "en-US", Tagged = true };
+        doc.Info.Title = "VellumPdf Oracle Fixture";
+        var page = doc.AddPage(PageSize.A4);
+        var handle = doc.EmbedStandard14Font(Standard14.Helvetica);
+        doc.RegisterEmbeddedFontUsage(page, handle);
+
+        var canvas = new PdfCanvas(page);
+        var mcid = canvas.BeginMarkedContent("P");
+        canvas.BeginText().SetFontByName(handle.ResourceName, 12).SetTextMatrix(1, 0, 0, 1, 72, 720);
+        DrawGlyphs(canvas, handle, "Tagged paragraph for accessibility.");
+        canvas.EndText();
+        canvas.EndMarkedContent();
+        canvas.Finish();
+
         var p = new PdfStructElem("P") { Page = page, Mcid = mcid };
         var root = new PdfStructElem("Document");
         root.AddChild(p);
@@ -3734,6 +4715,149 @@ public static class OracleCorpus
             [(pageRef.ObjectNumber, newPage), (fontNum, simple), (descNum, descriptor), (ffNum, fontFile), (contentNum, content)]);
     }
 
+    // Fix 1 regression fixture: same as the conformant pdfa2b-simple-font fixture but the content
+    // stream uses the octal escape (\101) instead of the literal (A) to show code 65. Before the
+    // fix, DecodeString mis-decoded \101 as a literal '1', so the glyph lookup returned nothing and
+    // GlyphPresenceRule incorrectly fired §6.2.11.4.1. After the fix (\101 → byte 0x41 = 65 = 'A'),
+    // the lookup succeeds and the rule must NOT fire.
+    private static byte[] SimpleTrueTypeFontOctalEscape()
+    {
+        var asset = LoadAsset("DejaVuSans.ttf");
+        int widthA;
+        using (var measureDoc = new PdfDocument())
+            widthA = (int)Math.Round(measureDoc.UseTrueTypeFont(asset).MeasureString("A", 1000));
+
+        using var reader = PdfReader.Open(WriterPdfWithEmbeddedFont());
+        var (pageRef, page) = FirstPage(reader);
+        var resources = (PdfDictionary)reader.ResolveValue(page.Get(new PdfName("Resources"))!)!;
+        var fontDict = (PdfDictionary)reader.ResolveValue(resources.Get(PdfName.Font)!)!;
+
+        var fontNum = reader.Size;
+        var descNum = fontNum + 1;
+        var ffNum = fontNum + 2;
+        var contentNum = fontNum + 3;
+
+        var fontFile = new PdfStream(asset);
+        fontFile.Dictionary.Set(new PdfName("Length1"), new PdfInteger(asset.Length));
+        var descriptor = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("FontDescriptor")).Set(new PdfName("FontName"), new PdfName("DejaVuSans"))
+            .Set(new PdfName("Flags"), new PdfInteger(32))
+            .Set(new PdfName("FontBBox"),
+                new PdfArray([new PdfInteger(-1021), new PdfInteger(-463), new PdfInteger(1793), new PdfInteger(1232)]))
+            .Set(new PdfName("ItalicAngle"), new PdfInteger(0)).Set(new PdfName("Ascent"), new PdfInteger(928))
+            .Set(new PdfName("Descent"), new PdfInteger(-236)).Set(new PdfName("CapHeight"), new PdfInteger(928))
+            .Set(new PdfName("StemV"), new PdfInteger(80)).Set(new PdfName("FontFile2"), new PdfIndirectReference(ffNum));
+        var simple = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("Font")).Set(PdfName.Subtype, new PdfName("TrueType"))
+            .Set(PdfName.BaseFont, new PdfName("DejaVuSans"))
+            .Set(new PdfName("FirstChar"), new PdfInteger(65)).Set(new PdfName("LastChar"), new PdfInteger(65))
+            .Set(new PdfName("Widths"), new PdfArray([new PdfInteger(widthA)]))
+            .Set(new PdfName("Encoding"), new PdfName("WinAnsiEncoding"))
+            .Set(new PdfName("FontDescriptor"), new PdfIndirectReference(descNum));
+
+        var newFontDict = CloneDict(fontDict).Set(new PdfName("F1"), new PdfIndirectReference(fontNum));
+        var newResources = CloneDict(resources).Set(PdfName.Font, newFontDict);
+        var newPage = CloneDict(page).Set(new PdfName("Resources"), newResources);
+        newPage.Set(new PdfName("Contents"),
+            new PdfArray([page.Get(new PdfName("Contents"))!, new PdfIndirectReference(contentNum)]));
+        // (\101) is the octal escape for byte 0x41 = 65 = 'A' (ISO 32000-1 §7.3.4.2)
+        var content = new PdfStream(Encoding.ASCII.GetBytes("BT /F1 12 Tf 100 500 Td (\\101) Tj ET"));
+
+        return reader.AppendRevision(
+            [(pageRef.ObjectNumber, newPage), (fontNum, simple), (descNum, descriptor), (ffNum, fontFile), (contentNum, content)]);
+    }
+
+    // Fix 2 regression fixture: a simple TrueType font with /Differences mapping code 65 to the
+    // custom name /g17 (not in AGL), but WITH a ToUnicode CMap using the 2-digit source form
+    // <41> → <0041>. Before the fix, TryReadHex required exactly 4 digits so <41> was rejected,
+    // the ToUnicode entry was not found, and the rule fired §7.21.7-1. After the fix, <41> is
+    // accepted as a 2-digit source code, the mapping is found, and the rule must NOT fire.
+    private static byte[] Ua1SimpleFontTwoDigitToUnicode()
+    {
+        var asset = LoadAsset("DejaVuSans.ttf");
+        int widthA;
+        using (var measureDoc = new PdfDocument())
+            widthA = (int)Math.Round(measureDoc.UseTrueTypeFont(asset).MeasureString("A", 1000));
+
+        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var resources = (PdfDictionary)reader.ResolveValue(page.Get(new PdfName("Resources"))!)!;
+        var fontResources = (PdfDictionary)reader.ResolveValue(resources.Get(PdfName.Font)!)!;
+
+        var fontNum = reader.Size;
+        var descNum = fontNum + 1;
+        var ffNum = fontNum + 2;
+        var toUnicodeNum = fontNum + 3;
+        var contentNum = fontNum + 4;
+
+        var fontFile = new PdfStream(asset);
+        fontFile.Dictionary.Set(new PdfName("Length1"), new PdfInteger(asset.Length));
+        var descriptor = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("FontDescriptor"))
+            .Set(new PdfName("FontName"), new PdfName("DejaVuSans"))
+            .Set(new PdfName("Flags"), new PdfInteger(32))
+            .Set(new PdfName("FontBBox"),
+                new PdfArray([new PdfInteger(-1021), new PdfInteger(-463), new PdfInteger(1793), new PdfInteger(1232)]))
+            .Set(new PdfName("ItalicAngle"), new PdfInteger(0))
+            .Set(new PdfName("Ascent"), new PdfInteger(928))
+            .Set(new PdfName("Descent"), new PdfInteger(-236))
+            .Set(new PdfName("CapHeight"), new PdfInteger(928))
+            .Set(new PdfName("StemV"), new PdfInteger(80))
+            .Set(new PdfName("FontFile2"), new PdfIndirectReference(ffNum));
+
+        // ToUnicode CMap using 2-digit source code <41> for code 65.
+        var toUnicodeCmap = Encoding.ASCII.GetBytes(
+            "/CIDInit /ProcSet findresource begin\n"
+            + "12 dict begin\n"
+            + "begincmap\n"
+            + "/CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def\n"
+            + "/CMapName /Adobe-Identity-UCS def\n"
+            + "/CMapType 1 def\n"
+            + "1 beginbfchar\n"
+            + "<41> <0041>\n"
+            + "endbfchar\n"
+            + "endcmap\n"
+            + "CMapName currentdict /CMap defineresource pop\n"
+            + "end\nend\n");
+        var toUnicodeStream = new PdfStream(toUnicodeCmap);
+
+        // /Differences maps code 65 to /g17 (not in AGL) — so without the ToUnicode entry the
+        // rule would have nowhere to derive Unicode from and would fire §7.21.7-1.
+        var encoding = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("Encoding"))
+            .Set(new PdfName("BaseEncoding"), new PdfName("WinAnsiEncoding"))
+            .Set(new PdfName("Differences"), new PdfArray([new PdfInteger(65), new PdfName("g17")]));
+
+        var simple = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("Font"))
+            .Set(PdfName.Subtype, new PdfName("TrueType"))
+            .Set(PdfName.BaseFont, new PdfName("DejaVuSans"))
+            .Set(new PdfName("FirstChar"), new PdfInteger(65))
+            .Set(new PdfName("LastChar"), new PdfInteger(65))
+            .Set(new PdfName("Widths"), new PdfArray([new PdfInteger(widthA)]))
+            .Set(new PdfName("Encoding"), encoding)
+            .Set(new PdfName("ToUnicode"), new PdfIndirectReference(toUnicodeNum))
+            .Set(new PdfName("FontDescriptor"), new PdfIndirectReference(descNum));
+
+        var newFontResources = CloneDict(fontResources).Set(new PdfName("F1"), new PdfIndirectReference(fontNum));
+        var newResources = CloneDict(resources).Set(PdfName.Font, newFontResources);
+        var newPage = CloneDict(page).Set(new PdfName("Resources"), newResources);
+        newPage.Set(new PdfName("Contents"),
+            new PdfArray([page.Get(new PdfName("Contents"))!, new PdfIndirectReference(contentNum)]));
+        var content = new PdfStream(Encoding.ASCII.GetBytes("BT /F1 12 Tf 100 500 Td (A) Tj ET"));
+
+        return reader.AppendRevision(
+        [
+            (pageRef.ObjectNumber, newPage),
+            (fontNum, simple),
+            (descNum, descriptor),
+            (ffNum, fontFile),
+            (toUnicodeNum, toUnicodeStream),
+            (contentNum, content),
+        ]);
+    }
+
     private static byte[] WriterPdfWithOutOfRangeGlyph() => WriterPdfDrawingGlyph("EA60"); // 60000, beyond the program
 
     private static byte[] WriterPdfDrawingNotdef() => WriterPdfDrawingGlyph("0000"); // glyph index 0 = .notdef
@@ -3786,6 +4910,128 @@ public static class OracleCorpus
 
     private static byte[] WriterPdfWithoutBaseFont()
         => SimpleTrueTypeFont(_ => { }, encoding: new PdfName("WinAnsiEncoding"), omitBaseFont: true);
+
+    // Wave 2a (4a): replace the embedded font's /CIDToGIDMap from /Identity to a real stream. When
+    // corrupt=false every entry maps CID n → GID n (Identity-equivalent, compliant). When corrupt=true
+    // every entry maps to GID 0xFFFF, which exceeds the program's glyph count (§6.2.11.4.1-2).
+    private static byte[] WriterPdfWithStreamCidToGidMap(bool corrupt)
+    {
+        using var reader = PdfReader.Open(WriterPdfWithEmbeddedFont());
+        var (_, page) = FirstPage(reader);
+        var resources = (PdfDictionary)reader.ResolveValue(page.Get(new PdfName("Resources"))!)!;
+        var fonts = (PdfDictionary)reader.ResolveValue(resources.Get(PdfName.Font)!)!;
+        var type0 = (PdfDictionary)reader.ResolveValue(fonts.Entries.First().Value)!;
+        var descArr = (PdfArray)reader.ResolveValue(type0.Get(new PdfName("DescendantFonts"))!)!;
+        var descRef = (PdfIndirectReference)descArr[0];
+        var cidFont = (PdfDictionary)reader.Resolve(descRef.ObjectNumber)!;
+        var fdRef = (PdfIndirectReference)cidFont.Get(new PdfName("FontDescriptor"))!;
+        var fd = (PdfDictionary)reader.Resolve(fdRef.ObjectNumber)!;
+        var ff2Stream = reader.ResolveStream(((PdfIndirectReference)fd.Get(new PdfName("FontFile2"))!).ObjectNumber)!;
+        var program = reader.GetDecodedStreamData(ff2Stream)!;
+        var numGlyphs = NumGlyphsOf(program);
+
+        // Build a 2-byte-BE CIDToGIDMap stream covering CIDs 0..numGlyphs-1.
+        var mapBytes = new byte[numGlyphs * 2];
+        for (var cid = 0; cid < numGlyphs; cid++)
+        {
+            var gid = corrupt ? 0xFFFF : cid; // corrupt: every GID is out-of-range
+            mapBytes[cid * 2] = (byte)(gid >> 8);
+            mapBytes[cid * 2 + 1] = (byte)(gid & 0xFF);
+        }
+
+        var mapNum = reader.Size;
+        var mapStream = new PdfStream(mapBytes);
+
+        var newDesc = CloneDict(cidFont);
+        newDesc.Set(new PdfName("CIDToGIDMap"), new PdfIndirectReference(mapNum));
+
+        return reader.AppendRevision([(descRef.ObjectNumber, newDesc), (mapNum, mapStream)]);
+    }
+
+    // Wave 2a (4b): replace the embedded font's /Encoding from /Identity-H to an embedded CMap stream.
+    // Compliant: 2-byte identity CMap (<0000><FFFF> → CID 0), reusing the original content stream so the
+    // CIDs referenced are the same GIDs already declared in the CIDFont's /W array.
+    // Corrupt: adds a cidchar entry that maps <EA60> → CID 60000 (beyond glyph count), plus a new
+    // content stream that shows <EA60>, triggering §6.2.11.4.1-2.
+    private static byte[] WriterPdfWithEmbeddedCMapFont(bool corrupt)
+    {
+        using var reader = PdfReader.Open(WriterPdfWithEmbeddedFont());
+        var (pageRef, page) = FirstPage(reader);
+        var resources = (PdfDictionary)reader.ResolveValue(page.Get(new PdfName("Resources"))!)!;
+        var fonts = (PdfDictionary)reader.ResolveValue(resources.Get(PdfName.Font)!)!;
+        var type0Ref = (PdfIndirectReference)fonts.Entries.First().Value;
+        var type0 = (PdfDictionary)reader.Resolve(type0Ref.ObjectNumber)!;
+        var fontName = fonts.Entries.First().Key.Value;
+
+        // 2-byte identity CMap: every 2-byte code maps to the same CID (code→CID, same as Identity-H),
+        // but delivered as an embedded stream rather than a named encoding — exercises path 4b.
+        var corruptEntry = corrupt
+            ? "1 begincidchar\n<EA60> 60000\nendcidchar\n"
+            : "";
+        var cmapSrc = "%!PS-Adobe-3.0 Resource-CMap\n"
+            + "%%DocumentNeededResources: ProcSet (CIDInit)\n"
+            + "%%IncludeResource: ProcSet (CIDInit)\n"
+            + "%%BeginResource: CMap (VellumWave2a)\n"
+            + "%%Title: (VellumWave2a)\n"
+            + "%%Version: 1.000\n"
+            + "%%EndComments\n"
+            + "/CIDInit /ProcSet findresource begin\n"
+            + "12 dict begin\n"
+            + "begincmap\n"
+            + "/CIDSystemInfo 3 dict dup begin\n"
+            + "  /Registry (Adobe) def\n"
+            + "  /Ordering (Identity) def\n"
+            + "  /Supplement 0 def\n"
+            + "end def\n"
+            + "/CMapName /VellumWave2a def\n"
+            + "/CMapType 1 def\n"
+            + "1 begincodespacerange\n"
+            + "<0000> <FFFF>\n"
+            + "endcodespacerange\n"
+            + "1 begincidrange\n"
+            + "<0000> <FFFF> 0\n"
+            + "endcidrange\n"
+            + corruptEntry
+            + "endcmap\n"
+            + "CMapName currentdict /CMap defineresource pop\n"
+            + "end\n"
+            + "end\n"
+            + "%%EndResource\n"
+            + "%%EOF\n";
+        var cmapBytes = Encoding.Latin1.GetBytes(cmapSrc);
+
+        var cmapNum = reader.Size;
+
+        var cmapStream = new PdfStream(cmapBytes);
+        cmapStream.Dictionary
+            .Set(PdfName.Type, new PdfName("CMap"))
+            .Set(new PdfName("CMapName"), new PdfName("VellumWave2a"))
+            .Set(new PdfName("CIDSystemInfo"), new PdfDictionary()
+                .Set(new PdfName("Registry"), new PdfLiteralString(Encoding.ASCII.GetBytes("Adobe")))
+                .Set(new PdfName("Ordering"), new PdfLiteralString(Encoding.ASCII.GetBytes("Identity")))
+                .Set(new PdfName("Supplement"), new PdfInteger(0)));
+
+        var newType0 = CloneDict(type0).Set(new PdfName("Encoding"), new PdfIndirectReference(cmapNum));
+
+        if (!corrupt)
+        {
+            // Reuse the original content stream — the 2-byte GIDs it contains map identity through the
+            // new CMap to the same CIDs, which are declared in /W, so no width mismatch.
+            return reader.AppendRevision(
+                [(type0Ref.ObjectNumber, newType0), (cmapNum, cmapStream)]);
+        }
+
+        // Corrupt: append a content stream that shows <EA60> (CID 60000, beyond glyph count).
+        var contentNum = cmapNum + 1;
+        var newPage = CloneDict(page);
+        newPage.Set(new PdfName("Contents"),
+            new PdfArray([page.Get(new PdfName("Contents"))!, new PdfIndirectReference(contentNum)]));
+        var content = new PdfStream(Encoding.ASCII.GetBytes($"BT /{fontName} 12 Tf 72 600 Td <EA60> Tj ET"));
+
+        return reader.AppendRevision(
+            [(pageRef.ObjectNumber, newPage), (type0Ref.ObjectNumber, newType0),
+             (cmapNum, cmapStream), (contentNum, content)]);
+    }
 
     private static byte[] WriterPdfWithBadGlyphWidth()
         => CorruptDescendantFont(d => CloneWithout(d, "W")); // widths fall to /DW, mismatching the program
@@ -3870,6 +5116,111 @@ public static class OracleCorpus
         var newFf3 = new PdfStream(program);
         newFf3.Dictionary.Set(PdfName.Subtype, new PdfName("Type2"));
         return reader.AppendRevision([(ff3Ref.ObjectNumber, newFf3)]);
+    }
+
+    // ── Wave 2b — CIDFontType0C + Type1 glyph presence / width fixtures ──────────────────────────
+
+    // A CIDFontType0 (SourceSans3 OTF, Identity-H) with correct /W entries — the no-FP guard.
+    // Uses the same embedded font as WriterPdfWithEmbeddedCffFont; the writer already emits a
+    // correct /W array, so this document is compliant (§6.2.11.4.1 and §6.2.11.5 satisfied).
+    private static byte[] WriterPdfCidFontType0Compliant() => WriterPdfWithEmbeddedCffFont();
+
+    // The same CIDFontType0 document, but every /W entry replaced by 1 to force a width mismatch.
+    private static byte[] WriterPdfCidFontType0BadWidth()
+    {
+        using var reader = PdfReader.Open(WriterPdfWithEmbeddedCffFont());
+        var (_, page) = FirstPage(reader);
+        var resources = (PdfDictionary)reader.ResolveValue(page.Get(new PdfName("Resources"))!)!;
+        var fonts = (PdfDictionary)reader.ResolveValue(resources.Get(PdfName.Font)!)!;
+        var type0 = (PdfDictionary)reader.ResolveValue(fonts.Entries.First().Value)!;
+        var descArr = (PdfArray)reader.ResolveValue(type0.Get(new PdfName("DescendantFonts"))!)!;
+        var cidFontRef = (PdfIndirectReference)descArr[0];
+        var cidFont = (PdfDictionary)reader.Resolve(cidFontRef.ObjectNumber)!;
+
+        // Replace /W with a single range covering any shown CID, width 1 (a guaranteed mismatch).
+        // Format: [c [w1 w2 ...]] or [c1 c2 w]. Use the widest safe range [0 255 1].
+        var newW = new PdfArray([new PdfInteger(0), new PdfInteger(255), new PdfInteger(1)]);
+        var newCidFont = CloneDict(cidFont).Set(new PdfName("W"), newW);
+        return reader.AppendRevision([(cidFontRef.ObjectNumber, newCidFont)]);
+    }
+
+    // A simple Type1 font (Noto Sans Shavian /FontFile) with an explicit /Encoding /Differences
+    // that maps code 32 to /uni00A0 (which IS in the program's CharStrings) and a /Widths entry
+    // that correctly matches the charstring advance width. The in-process rule must accept it.
+    private static byte[] WriterPdfType1GlyphCompliant() => WriterPdfType1GlyphImpl(badWidth: false);
+
+    // The same font but /Widths[0] = 1 (a guaranteed mismatch with the program width).
+    private static byte[] WriterPdfType1GlyphBadWidth() => WriterPdfType1GlyphImpl(badWidth: true);
+
+    private static byte[] WriterPdfType1GlyphImpl(bool badWidth)
+    {
+        var (fontFile, length1, length2, length3) = Type1FontAsset.ToFontFile();
+
+        // Extract the actual advance width of "uni00A0" from the charstring so the compliant
+        // fixture has a correct /Widths entry. If extraction fails, fall back to 1000.
+        var csWidths = Type1Glyphs.TryGetWidths(fontFile, length1);
+        var realWidth = csWidths is not null && csWidths.TryGetValue("uni00A0", out var w)
+            ? (int)Math.Round(w)
+            : 1000;
+        var declaredWidth = badWidth ? 1 : realWidth;
+
+        using var reader = PdfReader.Open(WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b));
+        var (pageRef, page) = FirstPage(reader);
+
+        var fontNum = reader.Size;
+        var descNum = fontNum + 1;
+        var ffNum = fontNum + 2;
+        var contentNum = fontNum + 3;
+
+        var program = new PdfStream(fontFile);
+        program.Dictionary
+            .Set(new PdfName("Length1"), new PdfInteger(length1))
+            .Set(new PdfName("Length2"), new PdfInteger(length2))
+            .Set(new PdfName("Length3"), new PdfInteger(length3));
+
+        var descriptor = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("FontDescriptor"))
+            .Set(new PdfName("FontName"), new PdfName("NotoSansShavian"))
+            .Set(new PdfName("Flags"), new PdfInteger(4))
+            .Set(new PdfName("FontBBox"),
+                new PdfArray([new PdfInteger(0), new PdfInteger(-502), new PdfInteger(1396), new PdfInteger(1600)]))
+            .Set(new PdfName("ItalicAngle"), new PdfInteger(0))
+            .Set(new PdfName("Ascent"), new PdfInteger(1600))
+            .Set(new PdfName("Descent"), new PdfInteger(-502))
+            .Set(new PdfName("CapHeight"), new PdfInteger(1600))
+            .Set(new PdfName("StemV"), new PdfInteger(80))
+            .Set(new PdfName("FontFile"), new PdfIndirectReference(ffNum));
+
+        // Explicit /Encoding: /Differences [32 /uni00A0] maps code 32 (space byte) to /uni00A0.
+        var encodingDict = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("Encoding"))
+            .Set(new PdfName("Differences"),
+                new PdfArray([new PdfInteger(32), new PdfName("uni00A0")]));
+
+        var font = new PdfDictionary()
+            .Set(PdfName.Type, new PdfName("Font"))
+            .Set(PdfName.Subtype, new PdfName("Type1"))
+            .Set(PdfName.BaseFont, new PdfName("NotoSansShavian"))
+            .Set(new PdfName("Encoding"), encodingDict)
+            .Set(new PdfName("FirstChar"), new PdfInteger(32))
+            .Set(new PdfName("LastChar"), new PdfInteger(32))
+            .Set(new PdfName("Widths"), new PdfArray([new PdfInteger(declaredWidth)]))
+            .Set(new PdfName("FontDescriptor"), new PdfIndirectReference(descNum));
+
+        var resObj = page.Get(new PdfName("Resources"));
+        var resources = (resObj is null ? null : reader.ResolveValue(resObj)) as PdfDictionary ?? new PdfDictionary();
+        var newResources = CloneDict(resources)
+            .Set(PdfName.Font, new PdfDictionary().Set(new PdfName("F1"), new PdfIndirectReference(fontNum)));
+        var newPage = CloneDict(page).Set(new PdfName("Resources"), newResources);
+        // Draw code 32 with visible rendering mode (Tr 0 = default), not Tr 3, so the
+        // presence and width checks run (§6.2.11.4.1 and §6.2.11.5 apply to rendered glyphs).
+        newPage.Set(new PdfName("Contents"),
+            new PdfArray([page.Get(new PdfName("Contents"))!, new PdfIndirectReference(contentNum)]));
+        var content = new PdfStream(Encoding.ASCII.GetBytes("BT /F1 12 Tf 72 700 Td (\x20) Tj ET"));
+
+        return reader.AppendRevision(
+            [(pageRef.ObjectNumber, newPage), (fontNum, font), (descNum, descriptor), (ffNum, program),
+                (contentNum, content)]);
     }
 
     // Embeds the Noto Sans Shavian Type 1 program as a subset-tagged simple Type1 font on a
@@ -4029,7 +5380,8 @@ public static class OracleCorpus
     // valid), violating §6.1.4-2.
     internal static byte[] AssembleClassicXref(
         bool corruptXrefEol = false, bool corruptStreamEol = false, bool corruptEndstreamEol = false,
-        bool corruptObjSpacing = false, bool injectOddHex = false)
+        bool corruptObjSpacing = false, bool injectOddHex = false, bool injectInvalidHex = false,
+        bool corruptEndobjEol = false)
     {
         var xmp = Encoding.UTF8.GetBytes(
             "<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>"
@@ -4037,13 +5389,17 @@ public static class OracleCorpus
             + "<rdf:Description rdf:about=\"\" xmlns:pdfaid=\"http://www.aiim.org/pdfa/ns/id/\">"
             + "<pdfaid:part>2</pdfaid:part><pdfaid:conformance>B</pdfaid:conformance>"
             + "</rdf:Description></rdf:RDF></x:xmpmeta><?xpacket end=\"w\"?>");
+        // The hex injection must be same-length to keep xref offsets valid after a ReplaceSameLength.
+        // <ABC> (5 bytes) = odd hex digits (§6.1.6-1). <1G0> (5 bytes) = invalid hex char G (§6.1.6-2).
         var objs = new[]
         {
             "<< /Type /Catalog /Pages 2 0 R /Metadata 4 0 R >>",
             "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
             // An odd-length hexadecimal string (3 hex digits) violates §6.1.6-1 when injected.
+            // An invalid hex digit ('G') in <1G0> violates §6.1.6-2 when injectInvalidHex is set.
             "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792]"
-                + (injectOddHex ? " /VellumHex <ABC>" : "") + " >>",
+                + (injectOddHex ? " /VellumHex <ABC>" : "")
+                + (injectInvalidHex ? " /VellumHex <1G0>" : "") + " >>",
         };
         var ms = new MemoryStream();
         void W(string s) { var b = Encoding.Latin1.GetBytes(s); ms.Write(b, 0, b.Length); }
@@ -4077,6 +5433,8 @@ public static class OracleCorpus
             ReplaceSameLength(pdf, "stream\n"u8, "stream\r"u8);
         if (corruptEndstreamEol) // 'endstream' preceded by a space instead of an EOL (§6.1.7.1-2)
             ReplaceSameLength(pdf, "\nendstream"u8, " endstream"u8);
+        if (corruptEndobjEol) // 'endobj' followed by a space instead of an EOL (§6.1.9-1)
+            ReplaceSameLength(pdf, "endobj\n"u8, "endobj "u8);
         return pdf;
     }
 
@@ -5053,6 +6411,140 @@ public static class OracleCorpus
 
     // ── End of Batch N3 adversarial FP-sweep helpers ───────────────────────────────────────────────
 
+    // ── Batch N3 inherited-state fixtures ─────────────────────────────────────────────────────────
+    // These fixtures exercise the state-threading path: the PAGE content stream establishes the
+    // overprint violation state (ICCBased CMYK fill + op true + OPM 1), then invokes a Form via Do.
+    // The Form XObject itself does NOT set any colour or overprint state — it only fills (or resets
+    // OPM to 0 in the compliant variant). veraPDF 1.30.2 probe N3-B (2026-06-23): FIRES on the
+    // inherited-violation case; PASSES when the form resets the state.
+
+    /// <summary>
+    /// §6.2.4.2-2 VIOLATION via inherited state: page sets ICCBased CMYK + /op true + /OPM 1,
+    /// then invokes a Form XObject that only fills without resetting any state. The violation is
+    /// detected by threading the page's current graphics state into the form as its initial GState.
+    /// veraPDF fires §6.2.4.2-2 on this pattern (probe N3-B, confirmed 2026-06-23).
+    /// </summary>
+    private static byte[] OverprintInheritedViolation()
+    {
+        var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var newPage = CloneDict(page);
+
+        var iccNum = reader.Size;
+        var formNum = iccNum + 1;
+        var contentNum = formNum + 1;
+
+        var iccStream = new PdfStream(N3IccCmykHeader());
+        iccStream.Dictionary.Set(new PdfName("N"), new PdfInteger(4));
+
+        // Form XObject: no /ColorSpace or /ExtGState in its own resources — only a BBox.
+        // The form content simply fills a rectangle without establishing any colour state.
+        var formStream = new PdfStream(Encoding.Latin1.GetBytes("10 10 50 50 re f"));
+        formStream.Dictionary
+            .Set(PdfName.Type, new PdfName("XObject"))
+            .Set(new PdfName("Subtype"), new PdfName("Form"))
+            .Set(new PdfName("BBox"), new PdfArray([
+                new PdfInteger(0), new PdfInteger(0),
+                new PdfInteger(100), new PdfInteger(100)]));
+
+        // Page content: select ICCBased CMYK, apply ExtGState (op true + OPM 1), draw form.
+        var pageContent = new PdfStream(
+            Encoding.Latin1.GetBytes("/CS0 cs /GS1 gs /Fm0 Do"));
+
+        var resObj = page.Get(new PdfName("Resources"));
+        var resources = (resObj is null ? null : reader.ResolveValue(resObj)) as PdfDictionary ?? new PdfDictionary();
+        var newRes = CloneDict(resources);
+        newRes
+            .Set(new PdfName("ColorSpace"), new PdfDictionary()
+                .Set(new PdfName("CS0"), new PdfArray([
+                    new PdfName("ICCBased"),
+                    new PdfIndirectReference(iccNum)])))
+            .Set(new PdfName("ExtGState"), new PdfDictionary()
+                .Set(new PdfName("GS1"), new PdfDictionary()
+                    .Set(new PdfName("Type"), new PdfName("ExtGState"))
+                    .Set(new PdfName("op"), PdfBoolean.True)
+                    .Set(new PdfName("OPM"), new PdfInteger(1))))
+            .Set(new PdfName("XObject"), new PdfDictionary()
+                .Set(new PdfName("Fm0"), new PdfIndirectReference(formNum)));
+        newPage.Set(new PdfName("Resources"), newRes)
+               .Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
+
+        return reader.AppendRevision([
+            (pageRef.ObjectNumber, newPage),
+            (iccNum, iccStream),
+            (formNum, formStream),
+            (contentNum, pageContent),
+        ]);
+    }
+
+    /// <summary>
+    /// §6.2.4.2-2 COMPLIANT (inherited state, form resets OPM): page sets ICCBased CMYK +
+    /// /op true + /OPM 1, then invokes a Form XObject. The form applies its own ExtGState
+    /// (/GS2 gs) which sets /OPM 0 before filling. The form-local override makes it compliant.
+    /// veraPDF accepts this document. In-process: OverprintRule must NOT fire.
+    /// </summary>
+    private static byte[] OverprintInheritedCompliant()
+    {
+        var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var newPage = CloneDict(page);
+
+        var iccNum = reader.Size;
+        var formNum = iccNum + 1;
+        var contentNum = formNum + 1;
+
+        var iccStream = new PdfStream(N3IccCmykHeader());
+        iccStream.Dictionary.Set(new PdfName("N"), new PdfInteger(4));
+
+        // Form's own resources: an ExtGState that resets OPM to 0.
+        var formResources = new PdfDictionary()
+            .Set(new PdfName("ExtGState"), new PdfDictionary()
+                .Set(new PdfName("GS2"), new PdfDictionary()
+                    .Set(new PdfName("Type"), new PdfName("ExtGState"))
+                    .Set(new PdfName("OPM"), new PdfInteger(0))));
+
+        // Form content: reset OPM via its own gs, then fill.
+        var formStream = new PdfStream(Encoding.Latin1.GetBytes("/GS2 gs 10 10 50 50 re f"));
+        formStream.Dictionary
+            .Set(PdfName.Type, new PdfName("XObject"))
+            .Set(new PdfName("Subtype"), new PdfName("Form"))
+            .Set(new PdfName("BBox"), new PdfArray([
+                new PdfInteger(0), new PdfInteger(0),
+                new PdfInteger(100), new PdfInteger(100)]))
+            .Set(new PdfName("Resources"), formResources);
+
+        // Page content: select ICCBased CMYK, apply gs (op true + OPM 1), draw form.
+        var pageContent = new PdfStream(
+            Encoding.Latin1.GetBytes("/CS0 cs /GS1 gs /Fm0 Do"));
+
+        var resObj = page.Get(new PdfName("Resources"));
+        var resources = (resObj is null ? null : reader.ResolveValue(resObj)) as PdfDictionary ?? new PdfDictionary();
+        var newRes = CloneDict(resources);
+        newRes
+            .Set(new PdfName("ColorSpace"), new PdfDictionary()
+                .Set(new PdfName("CS0"), new PdfArray([
+                    new PdfName("ICCBased"),
+                    new PdfIndirectReference(iccNum)])))
+            .Set(new PdfName("ExtGState"), new PdfDictionary()
+                .Set(new PdfName("GS1"), new PdfDictionary()
+                    .Set(new PdfName("Type"), new PdfName("ExtGState"))
+                    .Set(new PdfName("op"), PdfBoolean.True)
+                    .Set(new PdfName("OPM"), new PdfInteger(1))))
+            .Set(new PdfName("XObject"), new PdfDictionary()
+                .Set(new PdfName("Fm0"), new PdfIndirectReference(formNum)));
+        newPage.Set(new PdfName("Resources"), newRes)
+               .Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
+
+        return reader.AppendRevision([
+            (pageRef.ObjectNumber, newPage),
+            (iccNum, iccStream),
+            (formNum, formStream),
+            (contentNum, pageContent),
+        ]);
+    }
+
     // ── End of Batch N3 helpers ─────────────────────────────────────────────────────────────────────
 
     // ── Batch N4 helpers — §6.2.4.4-2 Separation consistency in non-page content streams ──────────
@@ -5729,6 +7221,24 @@ public static class OracleCorpus
     /// </summary>
     internal static byte[] Ua1NonSymbolicTrueTypeBadDifferencesUnused()
         => Ua1AddSimpleTrueTypeUnused(flags: 32, encoding: Ua1MakeEncodingWithDiffs("WinAnsiEncoding", 65, "BADNAME_XYZ"));
+
+    /// <summary>
+    /// §7.21.7-1 violation: a simple non-symbolic TrueType font drawing the shown code 65 whose
+    /// /Differences maps that code to a custom glyph name /g17 (not in the Adobe Glyph List), with no
+    /// /ToUnicode stream. The used code therefore has no Unicode value by any route — veraPDF fires
+    /// 7.21.7-1 (and 7.21.6-2 for the same non-AGL name).
+    /// </summary>
+    internal static byte[] Ua1SimpleFontNonAglDifferenceNoToUnicode()
+        => Ua1AddSimpleTrueType(flags: 32, encoding: Ua1MakeEncodingWithDiffs("WinAnsiEncoding", 65, "g17"));
+
+    /// <summary>
+    /// §7.21.7-1 false-positive guard: a simple non-symbolic WinAnsi TrueType font drawing code 65,
+    /// which resolves through the encoding to glyph name "A" → U+0041 via the Adobe Glyph List. With
+    /// no /ToUnicode stream the Unicode value is still derivable, so veraPDF does NOT fire 7.21.7-1.
+    /// Unit-test only (the fully-compliant no-ToUnicode document fails other UA-1 rules such as 7.1-3).
+    /// </summary>
+    internal static byte[] Ua1SimpleFontWinAnsiNoToUnicode()
+        => Ua1AddSimpleTrueType(flags: 32, encoding: new PdfName("WinAnsiEncoding"));
 
     /// <summary>
     /// §7.21.6-4 conformant FP guard: a symbolic TrueType font with no /Encoding (satisfying
@@ -7406,6 +8916,610 @@ public static class OracleCorpus
         for (var i = 1; i <= 7; i++) W($"{off[i]:D10} 00000 n \n");
         W("trailer\n<< /Size 8 /Root 1 0 R /ID [<00112233> <00112233>] >>\n");
         W($"startxref\n{xrefOff}\n%%EOF\n");
+        return ms.ToArray();
+    }
+
+    // ── Batch N7 helpers — §6.2.2-2 Pattern + Properties resource name coverage ──────────────────
+    // Hand-assembled PDFs (the writer always adds /Resources to every page).
+    // Both fixtures use a /Pattern colour space and a tiling pattern in /Resources /Pattern.
+    // The tiling pattern object is a Form XObject acting as a type-1 pattern: /PatternType 1,
+    // /PaintType 1, /TilingType 1 — required structure per ISO 32000-1 §8.7.3.
+
+    /// <summary>
+    /// §6.2.2-2 VIOLATION: a page with NO own <c>/Resources</c>; the ancestor <c>/Pages</c> node
+    /// defines <c>/Resources /Pattern /MP0</c> (a tiling pattern). The page content sets
+    /// <c>/Pattern cs</c> then calls <c>/MP0 scn</c> to paint with the pattern. The name <c>/MP0</c>
+    /// is an inherited resource name. Both veraPDF and the in-process rule must fire.
+    /// </summary>
+    private static byte[] InheritedResourcePatternViolation()
+    {
+        // Objects: 1=catalog, 2=pages(/Resources /Pattern /MP0), 3=page(NO /Resources),
+        //          4=content(/Pattern cs /MP0 scn f), 5=pattern, 6=xmp.
+        var xmp = MakeBatchN1Xmp();
+        var content = Encoding.Latin1.GetBytes("/Pattern cs /MP0 scn f");
+        var patternStream = Encoding.Latin1.GetBytes("q Q");
+        using var ms = new MemoryStream();
+        void W(string s) { var b = Encoding.Latin1.GetBytes(s); ms.Write(b); }
+
+        W("%PDF-1.7\n");
+        ms.Write([0x25, 0xE2, 0xE3, 0xCF, 0xD3, 0x0A]);
+        var off = new int[7];
+        off[1] = (int)ms.Position;
+        W("1 0 obj\n<< /Type /Catalog /Pages 2 0 R /Metadata 6 0 R >>\nendobj\n");
+        off[2] = (int)ms.Position;
+        // Pages node: HAS /Resources with /Pattern /MP0 — the ancestor scope.
+        W("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1"
+            + " /Resources << /Pattern << /MP0 5 0 R >> >> >>\nendobj\n");
+        off[3] = (int)ms.Position;
+        // Page: NO own /Resources key — will inherit from /Pages.
+        W("3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R >>\nendobj\n");
+        off[4] = (int)ms.Position;
+        W($"4 0 obj\n<< /Length {content.Length} >>\nstream\n");
+        ms.Write(content);
+        W("\nendstream\nendobj\n");
+        off[5] = (int)ms.Position;
+        // Tiling pattern (ISO 32000-1 Table 75): /PatternType 1, /PaintType 1, /TilingType 1.
+        W($"5 0 obj\n<< /Type /Pattern /PatternType 1 /PaintType 1 /TilingType 1"
+            + " /BBox [0 0 10 10] /XStep 10 /YStep 10"
+            + $" /Length {patternStream.Length} >>\nstream\n");
+        ms.Write(patternStream);
+        W("\nendstream\nendobj\n");
+        off[6] = (int)ms.Position;
+        W($"6 0 obj\n<< /Type /Metadata /Subtype /XML /Length {xmp.Length} >>\nstream\n");
+        ms.Write(xmp);
+        W("\nendstream\nendobj\n");
+        var xrefOff = (int)ms.Position;
+        W("xref\n0 7\n0000000000 65535 f \n");
+        for (var i = 1; i <= 6; i++) W($"{off[i]:D10} 00000 n \n");
+        W("trailer\n<< /Size 7 /Root 1 0 R /ID [<AABB0011> <AABB0011>] >>\n");
+        W($"startxref\n{xrefOff}\n%%EOF\n");
+        return ms.ToArray();
+    }
+
+    /// <summary>
+    /// §6.2.2-2 FP-SAFETY: same <c>/Pattern cs /MP0 scn f</c> usage, but the page HAS its own
+    /// <c>/Resources</c> defining <c>/MP0</c> in <c>/Pattern</c>. The page is self-contained;
+    /// the rule must NOT fire.
+    /// </summary>
+    private static byte[] InheritedResourcePatternCompliant()
+    {
+        var xmp = MakeBatchN1Xmp();
+        var content = Encoding.Latin1.GetBytes("/Pattern cs /MP0 scn f");
+        var patternStream = Encoding.Latin1.GetBytes("q Q");
+        using var ms = new MemoryStream();
+        void W(string s) { var b = Encoding.Latin1.GetBytes(s); ms.Write(b); }
+
+        W("%PDF-1.7\n");
+        ms.Write([0x25, 0xE2, 0xE3, 0xCF, 0xD3, 0x0A]);
+        var off = new int[7];
+        off[1] = (int)ms.Position;
+        W("1 0 obj\n<< /Type /Catalog /Pages 2 0 R /Metadata 6 0 R >>\nendobj\n");
+        off[2] = (int)ms.Position;
+        W("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
+        off[3] = (int)ms.Position;
+        // Page: HAS own /Resources defining /MP0 in /Pattern — self-contained.
+        W("3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R"
+            + " /Resources << /Pattern << /MP0 5 0 R >> >> >>\nendobj\n");
+        off[4] = (int)ms.Position;
+        W($"4 0 obj\n<< /Length {content.Length} >>\nstream\n");
+        ms.Write(content);
+        W("\nendstream\nendobj\n");
+        off[5] = (int)ms.Position;
+        W($"5 0 obj\n<< /Type /Pattern /PatternType 1 /PaintType 1 /TilingType 1"
+            + " /BBox [0 0 10 10] /XStep 10 /YStep 10"
+            + $" /Length {patternStream.Length} >>\nstream\n");
+        ms.Write(patternStream);
+        W("\nendstream\nendobj\n");
+        off[6] = (int)ms.Position;
+        W($"6 0 obj\n<< /Type /Metadata /Subtype /XML /Length {xmp.Length} >>\nstream\n");
+        ms.Write(xmp);
+        W("\nendstream\nendobj\n");
+        var xrefOff = (int)ms.Position;
+        W("xref\n0 7\n0000000000 65535 f \n");
+        for (var i = 1; i <= 6; i++) W($"{off[i]:D10} 00000 n \n");
+        W("trailer\n<< /Size 7 /Root 1 0 R /ID [<AABB0022> <AABB0022>] >>\n");
+        W($"startxref\n{xrefOff}\n%%EOF\n");
+        return ms.ToArray();
+    }
+
+    // ── COL batch helpers — §6.2.4.3 device colour via image /ColorSpace (2026-07-02) ────────────
+    // Builds a hand-crafted PDF/A-2b document where device colour is reached ONLY through a drawn
+    // image XObject's /ColorSpace entry — the page content stream contains no device-colour operators,
+    // just "/Fm0 Do" to invoke the image. This isolates the image-/ColorSpace detection path added
+    // by DocumentDeviceColourTypes() in the COL batch.
+    //
+    // Object layout:
+    //   1=catalog, 2=pages, 3=page, 4=page-content(/Fm0 Do), 5=image XObject,
+    //   6=metadata, 7=icc-for-defaultcmyk (if needed), 8=intent-icc (if needed), 9=output-intent (if needed)
+    //
+    // The image is a 2×2 pixel sample using the given device colour space. It is listed in the page
+    // /Resources /XObject as /Fm0, and the page content draws it — so it appears in DrawnXObjects
+    // and is picked up by ScanImagesForDeviceColour.
+    //
+    // FP-safety note: the writer-produced baseline carries a valid sRGB output intent; here we build
+    // hand-crafted documents with explicit intent control so the §6.2.4.3 per-type verdict is isolated.
+    private static byte[] Pdfa2bImageDeviceColour(
+        DeviceColourKind imageCs,
+        bool hasDefaultCs,
+        bool hasOutputIntent,
+        DeviceColourKind intentColour)
+    {
+        var xmp = Encoding.UTF8.GetBytes(
+            "<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>"
+            + "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">"
+            + "<rdf:Description rdf:about=\"\" xmlns:pdfaid=\"http://www.aiim.org/pdfa/ns/id/\">"
+            + "<pdfaid:part>2</pdfaid:part><pdfaid:conformance>B</pdfaid:conformance>"
+            + "</rdf:Description></rdf:RDF></x:xmpmeta><?xpacket end=\"w\"?>");
+
+        // Minimal ICC header (same helper as Pdfa2bDeviceColourWithDefaultCs above).
+        static byte[] MakeIcc(DeviceColourKind cs)
+        {
+            var h = new byte[128];
+            h[0] = 0; h[1] = 0; h[2] = 0; h[3] = 128;
+            h[8] = 0x04;
+            h[12] = (byte)'p'; h[13] = (byte)'r'; h[14] = (byte)'t'; h[15] = (byte)'r';
+            switch (cs)
+            {
+                case DeviceColourKind.Rgb:
+                    h[16] = (byte)'R'; h[17] = (byte)'G'; h[18] = (byte)'B'; h[19] = (byte)' '; break;
+                case DeviceColourKind.Cmyk:
+                    h[16] = (byte)'C'; h[17] = (byte)'M'; h[18] = (byte)'Y'; h[19] = (byte)'K'; break;
+                case DeviceColourKind.Gray:
+                    h[16] = (byte)'G'; h[17] = (byte)'R'; h[18] = (byte)'A'; h[19] = (byte)'Y'; break;
+            }
+            h[20] = (byte)'X'; h[21] = (byte)'Y'; h[22] = (byte)'Z'; h[23] = (byte)' ';
+            h[36] = (byte)'a'; h[37] = (byte)'c'; h[38] = (byte)'s'; h[39] = (byte)'p';
+            return h;
+        }
+
+        // Image sample data: 2 rows × 2 columns of minimal zero-value samples.
+        // Components per pixel: 3 for RGB, 4 for CMYK, 1 for Gray.
+        var components = imageCs switch
+        {
+            DeviceColourKind.Rgb => 3,
+            DeviceColourKind.Cmyk => 4,
+            _ => 1,
+        };
+        var imageData = new byte[2 * 2 * components]; // 4 pixels of zeros
+
+        // Image /ColorSpace name.
+        var csName = imageCs switch
+        {
+            DeviceColourKind.Rgb => "DeviceRGB",
+            DeviceColourKind.Cmyk => "DeviceCMYK",
+            _ => "DeviceGray",
+        };
+
+        // /ColorSpace dict entry for Default* when requested (same as in Pdfa2bDeviceColourWithDefaultCs).
+        static string DefaultCsEntry(DeviceColourKind cs, int iccObjNum) => cs switch
+        {
+            DeviceColourKind.Rgb => "/DefaultRGB [/CalRGB << /Gamma [2.2 2.2 2.2] /Matrix [0.4124 0.2126 0.0193 0.3576 0.7152 0.1192 0.1805 0.0722 0.9505] /WhitePoint [0.9505 1.0 1.089] >>]",
+            DeviceColourKind.Cmyk => $"/DefaultCMYK [/ICCBased {iccObjNum} 0 R]",
+            DeviceColourKind.Gray => "/DefaultGray [/CalGray << /WhitePoint [0.9505 1.0 1.089] >>]",
+            _ => string.Empty,
+        };
+
+        // Page content: just invoke the image XObject — no device-colour operators.
+        var pageContent = Encoding.Latin1.GetBytes("/Fm0 Do");
+
+        using var ms = new MemoryStream();
+        void W(string s) { ms.Write(Encoding.Latin1.GetBytes(s)); }
+        void WB(byte[] b) { ms.Write(b); }
+
+        ms.Write([0x25, 0x50, 0x44, 0x46, 0x2D, 0x31, 0x2E, 0x37, 0x0A]);
+        ms.Write([0x25, 0xE2, 0xE3, 0xCF, 0xD3, 0x0A]);
+
+        int nextObj = 1;
+        int catalogObj = nextObj++;
+        int pagesObj = nextObj++;
+        int pageObj = nextObj++;
+        int contentObj = nextObj++;
+        int imageObj = nextObj++;
+        int metaObj = nextObj++;
+        int cmykDefaultIccObj = -1;
+        int intentIccObj = -1;
+        int outputIntentObj = -1;
+
+        if (hasDefaultCs && imageCs == DeviceColourKind.Cmyk)
+            cmykDefaultIccObj = nextObj++;
+
+        if (hasOutputIntent && intentColour != DeviceColourKind.None)
+        {
+            intentIccObj = nextObj++;
+            outputIntentObj = nextObj++;
+        }
+        else if (hasOutputIntent)
+        {
+            outputIntentObj = nextObj++;
+        }
+
+        int maxObj = nextObj - 1;
+        var offsets = new int[maxObj + 1];
+
+        var catalogOiEntry = outputIntentObj > 0
+            ? $" /OutputIntents [{outputIntentObj} 0 R]"
+            : string.Empty;
+
+        offsets[catalogObj] = (int)ms.Position;
+        W($"{catalogObj} 0 obj\n<< /Type /Catalog /Pages {pagesObj} 0 R /Metadata {metaObj} 0 R{catalogOiEntry} >>\nendobj\n");
+
+        offsets[pagesObj] = (int)ms.Position;
+        W($"{pagesObj} 0 obj\n<< /Type /Pages /Kids [{pageObj} 0 R] /Count 1 >>\nendobj\n");
+
+        // Page /Resources: /XObject with the image, plus optional /ColorSpace for Default*.
+        var defaultCsEntry = hasDefaultCs ? DefaultCsEntry(imageCs, cmykDefaultIccObj) : string.Empty;
+        var pageResources = defaultCsEntry.Length > 0
+            ? $" /Resources << /XObject << /Fm0 {imageObj} 0 R >> /ColorSpace << {defaultCsEntry} >> >>"
+            : $" /Resources << /XObject << /Fm0 {imageObj} 0 R >> >>";
+
+        offsets[pageObj] = (int)ms.Position;
+        W($"{pageObj} 0 obj\n<< /Type /Page /Parent {pagesObj} 0 R /MediaBox [0 0 612 792] /Contents {contentObj} 0 R{pageResources} >>\nendobj\n");
+
+        offsets[contentObj] = (int)ms.Position;
+        W($"{contentObj} 0 obj\n<< /Length {pageContent.Length} >>\nstream\n");
+        WB(pageContent);
+        W("\nendstream\nendobj\n");
+
+        // Image XObject: 2×2 pixels, BitsPerComponent 8, /ColorSpace = device colour type.
+        offsets[imageObj] = (int)ms.Position;
+        W($"{imageObj} 0 obj\n<< /Type /XObject /Subtype /Image /Width 2 /Height 2"
+            + $" /ColorSpace /{csName} /BitsPerComponent 8 /Length {imageData.Length} >>\nstream\n");
+        WB(imageData);
+        W("\nendstream\nendobj\n");
+
+        offsets[metaObj] = (int)ms.Position;
+        W($"{metaObj} 0 obj\n<< /Type /Metadata /Subtype /XML /Length {xmp.Length} >>\nstream\n");
+        WB(xmp);
+        W("\nendstream\nendobj\n");
+
+        if (cmykDefaultIccObj > 0)
+        {
+            var icc = MakeIcc(DeviceColourKind.Cmyk);
+            offsets[cmykDefaultIccObj] = (int)ms.Position;
+            W($"{cmykDefaultIccObj} 0 obj\n<< /Length {icc.Length} /N 4 >>\nstream\n");
+            WB(icc);
+            W("\nendstream\nendobj\n");
+        }
+
+        if (intentIccObj > 0)
+        {
+            var icc = MakeIcc(intentColour);
+            var n = intentColour == DeviceColourKind.Cmyk ? 4 : intentColour == DeviceColourKind.Gray ? 1 : 3;
+            offsets[intentIccObj] = (int)ms.Position;
+            W($"{intentIccObj} 0 obj\n<< /Length {icc.Length} /N {n} >>\nstream\n");
+            WB(icc);
+            W("\nendstream\nendobj\n");
+        }
+
+        if (outputIntentObj > 0)
+        {
+            offsets[outputIntentObj] = (int)ms.Position;
+            var destEntry = intentIccObj > 0 ? $" /DestOutputProfile {intentIccObj} 0 R" : string.Empty;
+            W($"{outputIntentObj} 0 obj\n<< /Type /OutputIntent /S /GTS_PDFA1 /OutputConditionIdentifier (Custom){destEntry} >>\nendobj\n");
+        }
+
+        var xrefOff = (int)ms.Position;
+        W($"xref\n0 {maxObj + 1}\n0000000000 65535 f \n");
+        for (var i = 1; i <= maxObj; i++)
+            W($"{offsets[i]:D10} 00000 n \n");
+        W($"trailer\n<< /Size {maxObj + 1} /Root {catalogObj} 0 R "
+            + "/ID [<DD00112233EE44FF> <DD00112233EE44FF>] >>\n");
+        W($"startxref\n{xrefOff}\n%%EOF\n");
+        return ms.ToArray();
+    }
+
+    // ── COL batch helpers — §6.2.4.4-2 Separation consistency via image /ColorSpace (2026-07-02) ──
+    // Both fixtures use the writer-produced PDF/A-2b baseline (which carries a valid sRGB output
+    // intent) so §6.2.4.3-2 is already satisfied. The page selects /Spot1 via a cs operator; the
+    // drawn image XObject has /ColorSpace [/Separation /Spot1 ...]. In the inconsistent fixture the
+    // image uses /DeviceGray as the alternate space, causing a positively-established difference;
+    // in the consistent fixture both the page CS and the image CS use /DeviceRGB and structurally-
+    // identical tint functions.
+
+    /// <summary>
+    /// §6.2.4.4-2 VIOLATION: page selects <c>/Spot1</c> Separation with <c>DeviceRGB</c> alternate;
+    /// a drawn image XObject has <c>/ColorSpace [/Separation /Spot1 /DeviceGray ...]</c> — the
+    /// <c>alternateSpace</c> differs. In-process: SeparationConsistencyRule must fire.
+    /// </summary>
+    private static byte[] SepImageInconsistent()
+    {
+        var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var newPage = CloneDict(page);
+
+        // Page tint function: { pop 0.5 0.5 0.5 } → DeviceRGB
+        var pageTintNum = reader.Size;
+        var pageTint = new PdfStream(Encoding.ASCII.GetBytes("{ pop 0.5 0.5 0.5 }"));
+        pageTint.Dictionary
+            .Set(new PdfName("FunctionType"), new PdfInteger(4))
+            .Set(new PdfName("Domain"), new PdfArray([new PdfInteger(0), new PdfInteger(1)]))
+            .Set(new PdfName("Range"), new PdfArray([
+                new PdfInteger(0), new PdfInteger(1),
+                new PdfInteger(0), new PdfInteger(1),
+                new PdfInteger(0), new PdfInteger(1)]));
+
+        // Image tint function: { pop 0.5 } → DeviceGray (DIFFERENT alternate space)
+        var imgTintNum = pageTintNum + 1;
+        var imgTint = new PdfStream(Encoding.ASCII.GetBytes("{ pop 0.5 }"));
+        imgTint.Dictionary
+            .Set(new PdfName("FunctionType"), new PdfInteger(4))
+            .Set(new PdfName("Domain"), new PdfArray([new PdfInteger(0), new PdfInteger(1)]))
+            .Set(new PdfName("Range"), new PdfArray([new PdfInteger(0), new PdfInteger(1)]));
+
+        // Page CS: [/Separation /Spot1 /DeviceRGB pageTint]
+        var pageCsNum = imgTintNum + 1;
+        var pageCs = new PdfArray([
+            new PdfName("Separation"),
+            new PdfName("Spot1"),
+            new PdfName("DeviceRGB"),
+            new PdfIndirectReference(pageTintNum),
+        ]);
+
+        // Image XObject: 2×2 gray pixels; /ColorSpace = [/Separation /Spot1 /DeviceGray imgTint]
+        var imgCsNum = pageCsNum + 1;
+        var imgCs = new PdfArray([
+            new PdfName("Separation"),
+            new PdfName("Spot1"),
+            new PdfName("DeviceGray"),
+            new PdfIndirectReference(imgTintNum),
+        ]);
+        var imgNum = imgCsNum + 1;
+        var imgStream = new PdfStream([0x80, 0x80, 0x80, 0x80]); // 2×2 gray samples
+        imgStream.Dictionary
+            .Set(new PdfName("Type"), new PdfName("XObject"))
+            .Set(new PdfName("Subtype"), new PdfName("Image"))
+            .Set(new PdfName("Width"), new PdfInteger(2))
+            .Set(new PdfName("Height"), new PdfInteger(2))
+            .Set(new PdfName("ColorSpace"), new PdfIndirectReference(imgCsNum))
+            .Set(new PdfName("BitsPerComponent"), new PdfInteger(8));
+
+        // New page content: select /Spot1 from page resources, draw image.
+        var newContentNum = imgNum + 1;
+        var newContentStream = new PdfStream(Encoding.ASCII.GetBytes("/CS0 cs 0.5 scn /Im0 Do"));
+        newContentStream.Dictionary.Set(new PdfName("Length"), new PdfInteger(22));
+
+        // Page resources: /ColorSpace /CS0 = pageSep; /XObject /Im0 = image.
+        var resObj = page.Get(new PdfName("Resources"));
+        var resources = (resObj is null ? null : reader.ResolveValue(resObj)) as PdfDictionary ?? new PdfDictionary();
+        var newResources = CloneDict(resources);
+        newResources.Set(new PdfName("ColorSpace"), new PdfDictionary()
+            .Set(new PdfName("CS0"), new PdfIndirectReference(pageCsNum)));
+        newResources.Set(new PdfName("XObject"), new PdfDictionary()
+            .Set(new PdfName("Im0"), new PdfIndirectReference(imgNum)));
+        newPage.Set(new PdfName("Resources"), newResources);
+        newPage.Set(new PdfName("Contents"), new PdfIndirectReference(newContentNum));
+
+        return reader.AppendRevision([
+            (pageRef.ObjectNumber, newPage),
+            (pageTintNum, pageTint),
+            (imgTintNum, imgTint),
+            (pageCsNum, pageCs),
+            (imgCsNum, imgCs),
+            (imgNum, imgStream),
+            (newContentNum, newContentStream),
+        ]);
+    }
+
+    /// <summary>
+    /// §6.2.4.4-2 COMPLIANT: page selects <c>/Spot1</c> Separation with <c>DeviceRGB</c> alternate;
+    /// a drawn image XObject also has <c>/ColorSpace [/Separation /Spot1 /DeviceRGB ...]</c> with
+    /// the same alternate space and a structurally-identical tint function. No inconsistency.
+    /// In-process: SeparationConsistencyRule must NOT fire.
+    /// </summary>
+    private static byte[] SepImageConsistent()
+    {
+        var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+        var (pageRef, page) = FirstPage(reader);
+        var newPage = CloneDict(page);
+
+        // Page tint function: { pop 0.5 0.5 0.5 } → DeviceRGB
+        var pageTintNum = reader.Size;
+        var pageTint = new PdfStream(Encoding.ASCII.GetBytes("{ pop 0.5 0.5 0.5 }"));
+        pageTint.Dictionary
+            .Set(new PdfName("FunctionType"), new PdfInteger(4))
+            .Set(new PdfName("Domain"), new PdfArray([new PdfInteger(0), new PdfInteger(1)]))
+            .Set(new PdfName("Range"), new PdfArray([
+                new PdfInteger(0), new PdfInteger(1),
+                new PdfInteger(0), new PdfInteger(1),
+                new PdfInteger(0), new PdfInteger(1)]));
+
+        // Image tint function: same body and range → DeviceRGB (structurally identical)
+        var imgTintNum = pageTintNum + 1;
+        var imgTint = new PdfStream(Encoding.ASCII.GetBytes("{ pop 0.5 0.5 0.5 }"));
+        imgTint.Dictionary
+            .Set(new PdfName("FunctionType"), new PdfInteger(4))
+            .Set(new PdfName("Domain"), new PdfArray([new PdfInteger(0), new PdfInteger(1)]))
+            .Set(new PdfName("Range"), new PdfArray([
+                new PdfInteger(0), new PdfInteger(1),
+                new PdfInteger(0), new PdfInteger(1),
+                new PdfInteger(0), new PdfInteger(1)]));
+
+        // Page CS: [/Separation /Spot1 /DeviceRGB pageTint]
+        var pageCsNum = imgTintNum + 1;
+        var pageCs = new PdfArray([
+            new PdfName("Separation"),
+            new PdfName("Spot1"),
+            new PdfName("DeviceRGB"),
+            new PdfIndirectReference(pageTintNum),
+        ]);
+
+        // Image XObject: 2×2 RGB pixels; /ColorSpace = [/Separation /Spot1 /DeviceRGB imgTint]
+        var imgCsNum = pageCsNum + 1;
+        var imgCs = new PdfArray([
+            new PdfName("Separation"),
+            new PdfName("Spot1"),
+            new PdfName("DeviceRGB"),
+            new PdfIndirectReference(imgTintNum),
+        ]);
+        var imgNum = imgCsNum + 1;
+        var imgStream = new PdfStream([0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80, 0x80]); // 2×2 @ 3 components
+        imgStream.Dictionary
+            .Set(new PdfName("Type"), new PdfName("XObject"))
+            .Set(new PdfName("Subtype"), new PdfName("Image"))
+            .Set(new PdfName("Width"), new PdfInteger(2))
+            .Set(new PdfName("Height"), new PdfInteger(2))
+            .Set(new PdfName("ColorSpace"), new PdfIndirectReference(imgCsNum))
+            .Set(new PdfName("BitsPerComponent"), new PdfInteger(8));
+
+        var newContentNum = imgNum + 1;
+        var newContentStream = new PdfStream(Encoding.ASCII.GetBytes("/CS0 cs 0.5 scn /Im0 Do"));
+        newContentStream.Dictionary.Set(new PdfName("Length"), new PdfInteger(22));
+
+        var resObj = page.Get(new PdfName("Resources"));
+        var resources = (resObj is null ? null : reader.ResolveValue(resObj)) as PdfDictionary ?? new PdfDictionary();
+        var newResources = CloneDict(resources);
+        newResources.Set(new PdfName("ColorSpace"), new PdfDictionary()
+            .Set(new PdfName("CS0"), new PdfIndirectReference(pageCsNum)));
+        newResources.Set(new PdfName("XObject"), new PdfDictionary()
+            .Set(new PdfName("Im0"), new PdfIndirectReference(imgNum)));
+        newPage.Set(new PdfName("Resources"), newResources);
+        newPage.Set(new PdfName("Contents"), new PdfIndirectReference(newContentNum));
+
+        return reader.AppendRevision([
+            (pageRef.ObjectNumber, newPage),
+            (pageTintNum, pageTint),
+            (imgTintNum, imgTint),
+            (pageCsNum, pageCs),
+            (imgCsNum, imgCs),
+            (imgNum, imgStream),
+            (newContentNum, newContentStream),
+        ]);
+    }
+
+    // ── §7.20-2 Form XObject unique semantic parent ──────────────────────────────────────────────
+
+    /// <summary>
+    /// Builds a minimal hand-crafted two-page PDF/UA-1 document in which a Form XObject with a
+    /// <c>/StructParents</c> entry is drawn via <c>Do</c> from <em>both</em> pages, violating the
+    /// unique-semantic-parent requirement (ISO 14289-1:2014, §7.20; veraPDF clause 7.20-2).
+    ///
+    /// <para>
+    /// The Form XObject (object 6) carries <c>/StructParents 0</c> in its stream dictionary
+    /// (key 0 in the /ParentTree's Nums array). Page 1 (object 3) and page 2 (object 4) each list
+    /// the same XObject in their <c>/Resources /XObject</c> and draw it via <c>/Fm0 Do</c>.
+    /// Drawing a structure-linked form from two page contexts gives its MCIDs two invocation sites
+    /// while the /ParentTree can only record one set of structural parents — the violation.
+    /// </para>
+    ///
+    /// <para>
+    /// The document also has other UA rule failures (no embedded fonts, minimal structure, no
+    /// title), but all those fire alongside 7.20-2, satisfying <c>ExpectedCompliant: false</c>.
+    /// </para>
+    /// </summary>
+    private static byte[] Ua1FormXObjectDualPage()
+    {
+        // XMP packet: PDF/UA-1 identity (pdfuaid:part = 1). No dc:title (violates 7.1-8, but we
+        // only need ExpectedCompliant: false so additional violations are acceptable).
+        var xmp = Encoding.UTF8.GetBytes(
+            "<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>"
+            + "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF "
+            + "xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">"
+            + "<rdf:Description rdf:about=\"\" "
+            + "xmlns:pdfuaid=\"http://www.aiim.org/pdfua/ns/id/\">"
+            + "<pdfuaid:part>1</pdfuaid:part>"
+            + "</rdf:Description></rdf:RDF></x:xmpmeta><?xpacket end=\"w\"?>");
+
+        // Form XObject content: a single marked-content sequence with MCID 0.
+        // The form has /StructParents 0 in its dict; the ParentTree records key 0 → MCID array.
+        var formContent = Encoding.Latin1.GetBytes("/P << /MCID 0 >> BDC q Q EMC");
+
+        // Page content: draws the form XObject via Do.
+        var pageContent = Encoding.Latin1.GetBytes("/Fm0 Do");
+
+        using var ms = new MemoryStream();
+        void W(string s) { ms.Write(Encoding.Latin1.GetBytes(s)); }
+
+        W("%PDF-1.7\n");
+        ms.Write([0x25, 0xE2, 0xE3, 0xCF, 0xD3, 0x0A]);
+
+        // Object layout:
+        //  1: Catalog  (with /Lang, /MarkInfo, /StructTreeRoot, /ViewerPreferences, /Metadata)
+        //  2: Pages    (two children: 3 and 4)
+        //  3: Page 1   (/StructParents 1, /Resources → XObject /Fm0 = 6 0 R, /Contents 7 0 R)
+        //  4: Page 2   (/StructParents 2, /Resources → XObject /Fm0 = 6 0 R, /Contents 8 0 R)
+        //  5: StructTreeRoot (/K 9 0 R, /ParentTree 10 0 R)
+        //  6: Form XObject stream (the shared form; has /StructParents 0)
+        //  7: Content stream for page 1
+        //  8: Content stream for page 2
+        //  9: Document StructElem
+        // 10: ParentTree (Nums [0 [11 0 R] 1 [] 2 []])
+        // 11: P StructElem (MCID 0 in the form's MCID array)
+        // 12: Metadata stream (XMP)
+        var offsets = new int[13];
+
+        offsets[1] = (int)ms.Position;
+        W("1 0 obj\n<< /Type /Catalog /Pages 2 0 R /Lang (en-US)"
+            + " /MarkInfo << /Marked true >>"
+            + " /StructTreeRoot 5 0 R"
+            + " /ViewerPreferences << /DisplayDocTitle true >>"
+            + " /Metadata 12 0 R >>\nendobj\n");
+
+        offsets[2] = (int)ms.Position;
+        W("2 0 obj\n<< /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >>\nendobj\n");
+
+        // Page 1: /StructParents 1 (key 1 in ParentTree = empty MCID array, no MCIDs on page itself).
+        // The form is drawn from this page.
+        offsets[3] = (int)ms.Position;
+        W("3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792]"
+            + " /StructParents 1"
+            + " /Resources << /XObject << /Fm0 6 0 R >> >>"
+            + " /Contents 7 0 R >>\nendobj\n");
+
+        // Page 2: /StructParents 2 (key 2 in ParentTree = empty MCID array).
+        // The same form is drawn from this page too — the violation.
+        offsets[4] = (int)ms.Position;
+        W("4 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792]"
+            + " /StructParents 2"
+            + " /Resources << /XObject << /Fm0 6 0 R >> >>"
+            + " /Contents 8 0 R >>\nendobj\n");
+
+        offsets[5] = (int)ms.Position;
+        W("5 0 obj\n<< /Type /StructTreeRoot /K 9 0 R /ParentTree 10 0 R >>\nendobj\n");
+
+        // Form XObject: /StructParents 0 = key 0 in the ParentTree's Nums array.
+        offsets[6] = (int)ms.Position;
+        W($"6 0 obj\n<< /Type /XObject /Subtype /Form /BBox [0 0 612 792]"
+            + " /StructParents 0"
+            + $" /Length {formContent.Length} >>\nstream\n");
+        ms.Write(formContent);
+        W("\nendstream\nendobj\n");
+
+        offsets[7] = (int)ms.Position;
+        W($"7 0 obj\n<< /Length {pageContent.Length} >>\nstream\n");
+        ms.Write(pageContent);
+        W("\nendstream\nendobj\n");
+
+        offsets[8] = (int)ms.Position;
+        W($"8 0 obj\n<< /Length {pageContent.Length} >>\nstream\n");
+        ms.Write(pageContent);
+        W("\nendstream\nendobj\n");
+
+        offsets[9] = (int)ms.Position;
+        W("9 0 obj\n<< /Type /StructElem /S /Document /P 5 0 R /K [11 0 R] >>\nendobj\n");
+
+        // ParentTree: key 0 = [11 0 R] (the P struct elem owning MCID 0 in the form's content).
+        // Key 1 = [] (page 1 has no own MCIDs). Key 2 = [] (page 2 has no own MCIDs).
+        offsets[10] = (int)ms.Position;
+        W("10 0 obj\n<< /Nums [0 [11 0 R] 1 [] 2 []] >>\nendobj\n");
+
+        offsets[11] = (int)ms.Position;
+        W("11 0 obj\n<< /Type /StructElem /S /P /P 9 0 R /Pg 3 0 R /K 0 >>\nendobj\n");
+
+        offsets[12] = (int)ms.Position;
+        W($"12 0 obj\n<< /Type /Metadata /Subtype /XML /Length {xmp.Length} >>\nstream\n");
+        ms.Write(xmp);
+        W("\nendstream\nendobj\n");
+
+        var xrefOff = (int)ms.Position;
+        W("xref\n0 13\n0000000000 65535 f \n");
+        for (var i = 1; i <= 12; i++)
+            W($"{offsets[i]:D10} 00000 n \n");
+        W("trailer\n<< /Size 13 /Root 1 0 R"
+            + " /ID [<AA112233445566778899AABBCCDDEEFF> <AA112233445566778899AABBCCDDEEFF>] >>\n");
+        W($"startxref\n{xrefOff}\n%%EOF\n");
+
         return ms.ToArray();
     }
 

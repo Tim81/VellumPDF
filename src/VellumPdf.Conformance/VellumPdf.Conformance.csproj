@@ -1,6 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <ProjectReference Include="..\VellumPdf.Kernel\VellumPdf.Kernel.csproj" />
     <ProjectReference Include="..\VellumPdf.Reader\VellumPdf.Reader.csproj" />
   </ItemGroup>
 
