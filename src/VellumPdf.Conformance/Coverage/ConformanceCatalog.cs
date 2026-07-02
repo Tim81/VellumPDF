@@ -378,6 +378,8 @@ public static class ConformanceCatalog
         // Batch A5b — glyph-level clauses (Identity-H/V CIDFontType2-Identity scope):
         "7.21.8-1",            // UaNotdefGlyphRule: shown code 0x0000 == .notdef forbidden
         "7.21.7-2",            // UaToUnicodeForbiddenRule: shown glyph mapped to U+0000/FEFF/FFFE
+        // §7.21.7-1 — used-code Unicode mapping (derived; simple-font AGL model, composite skipped):
+        "7.21.7-1",            // UaToUnicodeCharMappingRule: used simple-font code with no ToUnicode + no AGL glyph name
         // Batch A5c — glyph presence (Identity-H/V CIDFontType2-Identity, Tr-3-exempt):
         "7.21.4.1-2",          // UaGlyphPresenceRule: shown visible glyph must be in the embedded program
         // Batch A5d — glyph width consistency (Identity-H/V CIDFontType2-Identity, Tr-3-exempt):
@@ -439,7 +441,6 @@ public static class ConformanceCatalog
     private static readonly Dictionary<string, string> PdfUaOutOfScope = new(StringComparer.Ordinal)
     {
         ["7.16-1"] = "Out of scope for v1.7 (tracked in the v2.1 reader/encryption epic #97/#100): needs the reader to decrypt encrypted files to cross-validate against veraPDF; exposing /Encrypt /P alone cannot match veraPDF's whole-file verdict.",
-        ["7.21.7-1"] = "Out of scope for v1.7 (Backlog issue TBD): veraPDF's toUnicode is a derived glyph property (from font encoding); a naive /ToUnicode!=null over-rejects standard-encoded simple fonts — needs a glyph-level Unicode-derivation model.",
         ["7.21.3.1-1"] = "Out of scope for v1.7 (Backlog issue TBD): predefined-CMap CIDSystemInfo registry table (mirrors PDF/A-2 6.2.11.3.1-1); Identity/embedded-CMap paths already compared.",
         ["7.20-2"] = "Out of scope for v1.7 (Backlog issue TBD): Form XObject unique semantic parent needs the marked-content-stack context at every Do across all content streams (a form with /StructParents drawn twice is only a violation when the two sites give different structural parents; artifact-wrapped reuse is conformant). Requires a tagged-content interpreter for Form XObject content to stay FP-safe.",
     };
@@ -506,7 +507,11 @@ public static class ConformanceCatalog
         // 7.21.4.2-2 moved to PdfUaImplemented (Batch A4 — UaCidSetRule).
         // 7.21.6-1/-2/-4 moved to PdfUaImplemented (Batch A6 — UaTrueTypeCmapRule: non-symbolic TrueType
         //   cmap structure and Differences-AGL compliance; verified FP-free against veraPDF 1.30.2).
-        // 7.21.7-1 moved to PdfUaOutOfScope (glyph-level ToUnicode presence; tracked in Backlog issue TBD).
+        // 7.21.7-1 moved to PdfUaImplemented (UaToUnicodeCharMappingRule: used simple-font (Type1/TrueType)
+        //   codes must have a Unicode value by /ToUnicode or by AGL glyph-name derivation (base encoding +
+        //   /Differences, incl. uniXXXX/uXXXXXX). Fires only when a used code has a glyph name that is
+        //   non-AGL-resolvable and no /ToUnicode maps it; composite Type0 fonts and no-/Encoding fonts are
+        //   skipped (FP-safe under-detection of veraPDF's CID/program-encoding derivation).
         // 7.21.7-2 moved to PdfUaImplemented (Batch A5b — UaToUnicodeForbiddenRule, shown-glyph-scoped).
         // 7.21.8-1 moved to PdfUaImplemented (Batch A5b — UaNotdefGlyphRule, Identity-H scope).
         // 7.21.4.1-2 moved to PdfUaImplemented (Batch A5c — UaGlyphPresenceRule, Tr-3-exempt).

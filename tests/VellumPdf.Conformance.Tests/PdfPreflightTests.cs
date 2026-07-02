@@ -7710,6 +7710,50 @@ public sealed class PdfPreflightTests
         Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.21.7-2");
     }
 
+    // ── §7.21.7-1 used-code Unicode mapping (UaToUnicodeCharMappingRule) unit tests ──────────────
+
+    /// <summary>
+    /// §7.21.7-1 positive control (UaToUnicodeCharMappingRule): a simple non-symbolic TrueType font
+    /// whose /Differences maps the shown code 65 to a custom glyph name /g17 (not in the Adobe Glyph
+    /// List), with no /ToUnicode stream, must fire 7.21.7-1 — the used code has no Unicode value by
+    /// any route. veraPDF predicate: toUnicode == null for the shown glyph.
+    /// </summary>
+    [Fact]
+    public void UaNonAglDifferenceNoToUnicode_Fires72171()
+    {
+        var bytes = OracleCorpus.Ua1SimpleFontNonAglDifferenceNoToUnicode();
+        var result = PdfPreflight.Validate(bytes, Conformance.PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.21.7-1");
+    }
+
+    /// <summary>
+    /// §7.21.7-1 false-positive guard (UaToUnicodeCharMappingRule): a simple WinAnsi TrueType font
+    /// drawing code 65 → glyph name "A" → U+0041 via the Adobe Glyph List, with NO /ToUnicode stream,
+    /// must NOT fire 7.21.7-1. This is the trap the rule must avoid: standard-encoded simple fonts
+    /// have a derivable Unicode value even without a /ToUnicode stream.
+    /// </summary>
+    [Fact]
+    public void UaWinAnsiNoToUnicode_DoesNotFire72171()
+    {
+        var bytes = OracleCorpus.Ua1SimpleFontWinAnsiNoToUnicode();
+        var result = PdfPreflight.Validate(bytes, Conformance.PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.21.7-1");
+    }
+
+    /// <summary>
+    /// §7.21.7-1 false-positive guard — composite font (UaToUnicodeCharMappingRule): the standard
+    /// UA-1 tagged baseline uses a composite Type0 CIDFontType2 font. Composite fonts are out of
+    /// scope for this rule (their Unicode is derived from the CID system, not modelled here), so
+    /// 7.21.7-1 must NOT fire regardless of /ToUnicode presence.
+    /// </summary>
+    [Fact]
+    public void UaCompositeFont_DoesNotFire72171()
+    {
+        var bytes = OracleCorpus.Ua1TaggedWithEmbeddedFont();
+        var result = PdfPreflight.Validate(bytes, Conformance.PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.21.7-1");
+    }
+
     // ── Batch A5c — §7.21.4.1-2 glyph presence (Tr-3-exempt) unit tests ─────────────────────────
 
     /// <summary>
