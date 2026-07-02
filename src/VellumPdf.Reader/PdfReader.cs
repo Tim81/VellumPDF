@@ -15,8 +15,8 @@ public static class PdfReader
     {
         ArgumentNullException.ThrowIfNull(bytes);
         var data = new ReadOnlyMemory<byte>(bytes);
-        var (xref, trailer, startXrefOffset) = XrefParser.Parse(data);
-        return new PdfDocumentReader(data, xref, trailer, startXrefOffset);
+        var (xref, trailer, startXrefOffset, revisions) = XrefParser.Parse(data);
+        return new PdfDocumentReader(data, xref, trailer, startXrefOffset, revisions);
     }
 
     /// <summary>Opens a PDF document by reading all bytes from <paramref name="stream"/>.</summary>

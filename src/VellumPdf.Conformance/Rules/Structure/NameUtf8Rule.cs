@@ -44,9 +44,9 @@ namespace VellumPdf.Conformance.Rules.Structure;
 /// </para>
 /// <para>
 /// <b>Structure type names:</b> the <c>/S</c> value of every <c>/StructElem</c> reachable from
-/// the document catalog's <c>/StructTreeRoot</c> is checked (shallow walk: direct and array-of
-/// children). Structure elements found only in a deeper nesting are not yet traversed — this is
-/// a partial implementation of the structure-type branch.
+/// the document catalog's <c>/StructTreeRoot</c> is checked. The full-depth walk is delegated to
+/// <see cref="StructureTree.Analyze"/>, which traverses the entire tree (guarded against cycles
+/// and pathological depth), so deeply nested structure type names are not missed.
 /// </para>
 /// </remarks>
 internal sealed class NameUtf8Rule : IConformanceRule
@@ -56,9 +56,6 @@ internal sealed class NameUtf8Rule : IConformanceRule
     public string Clause => "ISO 19005-2:2011, 6.1.8";
 
     private static readonly PdfName _colorSpace = new("ColorSpace");
-    private static readonly PdfName _structTreeRoot = new("StructTreeRoot");
-    private static readonly PdfName _k = new("K");
-    private static readonly PdfName _s = new("S");
 
     public void Evaluate(PreflightContext context)
     {
@@ -160,66 +157,14 @@ internal sealed class NameUtf8Rule : IConformanceRule
     }
 
     // §6.1.8-1 (structure type names): check /S of every reachable structure element.
-    // Walks one level of /StructTreeRoot /K children (arrays or single elements).
+    // Uses StructureTree.Analyze for a full-depth walk so nested elements are not missed.
     private void CheckStructureTypeNames(PreflightContext context, HashSet<string> reported)
     {
-        try
+        foreach (var node in StructureTree.Analyze(context).AllNodes)
         {
-            if (context.Resolve(context.Catalog.Get(_structTreeRoot)) is not PdfDictionary root)
-                return;
-            WalkStructure(context, root, new HashSet<int>(), 0, reported);
+            if (node.RawType is not null)
+                ReportIfInvalid(context, reported, node.RawType);
         }
-        catch
-        {
-            // Malformed structure tree must not produce a spurious finding.
-        }
-    }
-
-    // Maximum depth to guard against pathological or cyclic structure trees.
-    private const int MaxStructDepth = 512;
-
-    private void WalkStructure(
-        PreflightContext context, PdfDictionary node, HashSet<int> visited, int depth, HashSet<string> reported)
-    {
-        if (depth > MaxStructDepth)
-            return;
-
-        // Check /S on this node if it is a StructElem.
-        if (context.Resolve(node.Get(PdfName.Type)) is PdfName { Value: "StructElem" }
-            || node.Get(_s) is not null) // fall back: any node with /S is treated as a StructElem
-        {
-            if (context.Resolve(node.Get(_s)) is PdfName sType)
-                ReportIfInvalid(context, reported, sType.Value);
-        }
-
-        // Walk children via /K.
-        var k = context.Resolve(node.Get(_k));
-        switch (k)
-        {
-            case PdfDictionary child:
-                WalkStructChild(context, child, visited, depth, reported);
-                break;
-            case PdfArray children:
-                for (var i = 0; i < children.Count; i++)
-                {
-                    if (context.Resolve(children[i]) is PdfDictionary childDict)
-                        WalkStructChild(context, childDict, visited, depth, reported);
-                }
-                break;
-        }
-    }
-
-    private void WalkStructChild(
-        PreflightContext context, PdfDictionary child, HashSet<int> visited, int depth, HashSet<string> reported)
-    {
-        // Only descend into structure elements (skip MCID integer leaf entries etc.).
-        if (context.Resolve(child.Get(PdfName.Type)) is not PdfName { Value: "StructElem" }
-            && child.Get(_s) is null)
-            return;
-        // Cycle guard via object number.
-        if (child.Get(PdfName.Type) is PdfIndirectReference r && !visited.Add(r.ObjectNumber))
-            return;
-        WalkStructure(context, child, visited, depth + 1, reported);
     }
 
     // Returns true when the Latin-1 string, re-encoded as raw bytes, is valid UTF-8.

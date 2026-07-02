@@ -291,11 +291,22 @@ public sealed class PdfPreflightTests
         + "<pdfaProperty:category>external</pdfaProperty:category><pdfaProperty:description>d</pdfaProperty:description>"
         + "</rdf:li></rdf:Seq></pdfaSchema:property></rdf:li></rdf:Bag></pdfaExtension:schemas></rdf:Description>";
 
-    /// <summary>A minimal ICC profile body: zero-filled, with the 'acsp' signature at offset 36.</summary>
+    /// <summary>
+    /// A minimal valid ICC profile: 128-byte header with the 'acsp' signature (bytes 36–39),
+    /// device class 'mntr' (bytes 12–15, one of the four permitted values), and major version 2
+    /// (byte 8, satisfying the version &lt; 5 constraint). All other fields are zero.
+    /// Tests that override /N to an illegal value exercise only the /N rule; the ICC header
+    /// itself passes the device-class and version checks in §6.2.3-1.
+    /// </summary>
     private static byte[] FakeIccProfile()
     {
         var icc = new byte[128];
-        icc[36] = (byte)'a';
+        icc[8] = 2; // ICC major version 2 (< 5; satisfies §6.2.3-1 version constraint)
+        icc[12] = (byte)'m'; // device class 'mntr' (bytes 12–15; satisfies §6.2.3-1 class constraint)
+        icc[13] = (byte)'n';
+        icc[14] = (byte)'t';
+        icc[15] = (byte)'r';
+        icc[36] = (byte)'a'; // ICC file signature 'acsp' (bytes 36–39; ISO 15076-1 §7.2.4)
         icc[37] = (byte)'c';
         icc[38] = (byte)'s';
         icc[39] = (byte)'p';
@@ -388,7 +399,20 @@ public sealed class PdfPreflightTests
             new(xobjectDict, body),
         };
         if (draw)
+        {
             objects.Add(new PdfObj(string.Empty, Encoding.ASCII.GetBytes("q /X0 Do Q")));
+            // A valid PDF/A output intent (GTS_PDFA1) satisfies §6.2.4.3 for any device colour
+            // space painted by a drawn image XObject. Without it, drawing an image with
+            // /ColorSpace /DeviceGray (or RGB/CMYK) fires a spurious §6.2.4.3 finding that
+            // would mask the single rule under test. Objects 8 (intent dict) and 9 (ICC stream)
+            // are appended so that objects 1–7 — including the /Contents reference on object 3
+            // and the XObject chain at objects 4–6 — keep their existing numbers.
+            var intentObjNum = objects.Count + 1; // 8
+            var iccObjNum = intentObjNum + 1; // 9
+            objects[0] = objects[0] with { Dict = InjectIntoDict(objects[0].Dict, $"/OutputIntents [{intentObjNum} 0 R]") };
+            objects.Add(new PdfObj($"<< /Type /OutputIntent /S /GTS_PDFA1 /DestOutputProfile {iccObjNum} 0 R >>"));
+            objects.Add(new PdfObj("/N 3", FakeIccProfile()));
+        }
         return AssemblePdf(objects);
     }
 
@@ -3401,12 +3425,10 @@ public sealed class PdfPreflightTests
     }
 
     [Fact]
-    public void Validate_PropertyValueType_NoPredefinedSchemaChecks_NoFinding()
+    public void Validate_PropertyValueType_DcTitleScalar_ReportsError()
     {
-        // Predefined-schema properties (dc:, xmp:, pdfaid:, …) are not type-checked by this
-        // rule (Partial implementation) — even a dc:title serialised as a scalar must not
-        // trigger 6.6.2.3.1-2.  (veraPDF does flag dc:title as scalar, but this rule defers
-        // predefined schemas to avoid false-positives from an incomplete built-in type table.)
+        // dc:title must be an rdf:Alt language-alternative container (Lang Alt) per XMP Spec §8.4.
+        // A scalar text value is a definite type mismatch; the rule fires §6.6.2.3.1-2.
         const string dcTitleScalar =
             "<rdf:Description rdf:about=\"\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\">"
             + "<dc:title>Simple scalar title</dc:title>"
@@ -3414,7 +3436,7 @@ public sealed class PdfPreflightTests
         var result = PdfPreflight.Validate(
             BuildXmpPdf(XmpWithDescriptions(dcTitleScalar)), PdfConformance.PdfA2B);
 
-        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.6.2.3.1-2");
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.6.2.3.1-2");
     }
 
     [Fact]
@@ -7688,6 +7710,50 @@ public sealed class PdfPreflightTests
         Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.21.7-2");
     }
 
+    // ── §7.21.7-1 used-code Unicode mapping (UaToUnicodeCharMappingRule) unit tests ──────────────
+
+    /// <summary>
+    /// §7.21.7-1 positive control (UaToUnicodeCharMappingRule): a simple non-symbolic TrueType font
+    /// whose /Differences maps the shown code 65 to a custom glyph name /g17 (not in the Adobe Glyph
+    /// List), with no /ToUnicode stream, must fire 7.21.7-1 — the used code has no Unicode value by
+    /// any route. veraPDF predicate: toUnicode == null for the shown glyph.
+    /// </summary>
+    [Fact]
+    public void UaNonAglDifferenceNoToUnicode_Fires72171()
+    {
+        var bytes = OracleCorpus.Ua1SimpleFontNonAglDifferenceNoToUnicode();
+        var result = PdfPreflight.Validate(bytes, Conformance.PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.21.7-1");
+    }
+
+    /// <summary>
+    /// §7.21.7-1 false-positive guard (UaToUnicodeCharMappingRule): a simple WinAnsi TrueType font
+    /// drawing code 65 → glyph name "A" → U+0041 via the Adobe Glyph List, with NO /ToUnicode stream,
+    /// must NOT fire 7.21.7-1. This is the trap the rule must avoid: standard-encoded simple fonts
+    /// have a derivable Unicode value even without a /ToUnicode stream.
+    /// </summary>
+    [Fact]
+    public void UaWinAnsiNoToUnicode_DoesNotFire72171()
+    {
+        var bytes = OracleCorpus.Ua1SimpleFontWinAnsiNoToUnicode();
+        var result = PdfPreflight.Validate(bytes, Conformance.PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.21.7-1");
+    }
+
+    /// <summary>
+    /// §7.21.7-1 false-positive guard — composite font (UaToUnicodeCharMappingRule): the standard
+    /// UA-1 tagged baseline uses a composite Type0 CIDFontType2 font. Composite fonts are out of
+    /// scope for this rule (their Unicode is derived from the CID system, not modelled here), so
+    /// 7.21.7-1 must NOT fire regardless of /ToUnicode presence.
+    /// </summary>
+    [Fact]
+    public void UaCompositeFont_DoesNotFire72171()
+    {
+        var bytes = OracleCorpus.Ua1TaggedWithEmbeddedFont();
+        var result = PdfPreflight.Validate(bytes, Conformance.PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.21.7-1");
+    }
+
     // ── Batch A5c — §7.21.4.1-2 glyph presence (Tr-3-exempt) unit tests ─────────────────────────
 
     /// <summary>
@@ -11345,5 +11411,303 @@ public sealed class PdfPreflightTests
     }
 
     // ── END §6.2.4.4-2 Batch N4 adversarial FP sweep ─────────────────────────────────
+
+    // ── §7.20-2 (UaFormXObjectSemanticParentRule) unit tests ─────────────────────────────────────
+
+    /// <summary>
+    /// §7.20-2 VIOLATION: a Form XObject with /StructParents is drawn from two distinct pages.
+    /// Rule fires "ISO14289-1:7.20-2". Uses the oracle fixture builder (in-process half only).
+    /// </summary>
+    [Fact]
+    public void Ua_FormXObjectDualPage_Fires7202()
+    {
+        var bytes = OracleCorpus.Ua1FormXObjectDualPagePublic();
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.20-2");
+    }
+
+    /// <summary>
+    /// §7.20-2 FP guard: a Form XObject WITHOUT /StructParents drawn from two pages must NOT fire
+    /// 7.20-2. A form with no /StructParents has no structure-linked content and may be reused freely.
+    /// </summary>
+    [Fact]
+    public void Ua_FormXObjectNoStructParents_NoFire7202()
+    {
+        // Two-page doc: page 1 and page 2 both draw /Fm0, but the form has no /StructParents.
+        var formContent = Encoding.ASCII.GetBytes("q Q");
+        var pageContent = Encoding.ASCII.GetBytes("/Fm0 Do");
+        var bytes = BuildUa1TwoPageFormDoc(formContent, addStructParents: false, pageContent);
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.20-2");
+    }
+
+    /// <summary>
+    /// §7.20-2 FP guard: a Form XObject WITH /StructParents drawn from only ONE page must NOT fire
+    /// 7.20-2. A single invocation context is the conformant case.
+    /// </summary>
+    [Fact]
+    public void Ua_FormXObjectStructParentsSinglePage_NoFire7202()
+    {
+        // Single-page doc: only page 1 draws /Fm0; the form has /StructParents.
+        var formContent = Encoding.ASCII.GetBytes("/P << /MCID 0 >> BDC q Q EMC");
+        var pageContent = Encoding.ASCII.GetBytes("/Fm0 Do");
+        var bytes = BuildUa1SinglePageFormDoc(formContent, addStructParents: true, pageContent);
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.20-2");
+    }
+
+    /// <summary>
+    /// §7.20-2 FP guard: a Form XObject with /StructParents present in /Resources but NEVER drawn
+    /// (no Do operator) must NOT fire 7.20-2. Only actually-drawn forms are checked.
+    /// </summary>
+    [Fact]
+    public void Ua_FormXObjectStructParentsNotDrawn_NoFire7202()
+    {
+        // Two-page doc: /Fm0 is in both pages' /Resources but neither page's content stream has a Do.
+        var formContent = Encoding.ASCII.GetBytes("/P << /MCID 0 >> BDC q Q EMC");
+        var pageContent = Encoding.ASCII.GetBytes("q Q"); // no Do
+        var bytes = BuildUa1TwoPageFormDoc(formContent, addStructParents: true, pageContent);
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.20-2");
+    }
+
+    // Builds a minimal PDF/UA-1 document with one page and a Form XObject in /Resources /XObject.
+    // The form has /StructParents 0 in its stream dict when addStructParents is true.
+    // The page content is pageContent (may or may not invoke /Fm0 via Do).
+    private static byte[] BuildUa1SinglePageFormDoc(byte[] formContent, bool addStructParents, byte[] pageContent)
+    {
+        var structParentsEntry = addStructParents ? " /StructParents 0" : string.Empty;
+        return AssemblePdf(
+        [
+            new("<< /Type /Catalog /Pages 2 0 R /Lang (en-US) /MarkInfo << /Marked true >>"
+                + " /ViewerPreferences << /DisplayDocTitle true >> /StructTreeRoot 4 0 R >>"),
+            _pagesObj,
+            new("<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792]"
+                + " /Resources << /XObject << /Fm0 5 0 R >> >> /Contents 6 0 R >>"),
+            new("<< /Type /StructTreeRoot >>"),
+            new($"/Type /XObject /Subtype /Form /BBox [0 0 612 792]{structParentsEntry}", formContent),
+            new(string.Empty, pageContent),
+        ],
+        metadataOverride: UaXmpBytes());
+    }
+
+    // Builds a minimal PDF/UA-1 document with TWO pages, both listing the same Form XObject.
+    // The form has /StructParents 0 in its stream dict when addStructParents is true.
+    // Both pages use the same pageContent (may or may not invoke /Fm0 via Do).
+    private static byte[] BuildUa1TwoPageFormDoc(byte[] formContent, bool addStructParents, byte[] pageContent)
+    {
+        // Build manually so we can have 2 pages sharing object 5 (the form).
+        var structParentsEntry = addStructParents ? " /StructParents 0" : string.Empty;
+
+        var ms = new MemoryStream();
+        void W(string s) => ms.Write(Encoding.ASCII.GetBytes(s));
+        var xmp = UaXmpBytes();
+
+        W("%PDF-1.7\n");
+        ms.Write([0x25, 0xE2, 0xE3, 0xCF, 0xD3, 0x0A]);
+
+        // 1: Catalog, 2: Pages (2 kids), 3: Page1, 4: Page2, 5: Form XObject,
+        // 6: Content stream (used by both pages), 7: StructTreeRoot, 8: Metadata
+        var offsets = new int[9];
+
+        offsets[1] = (int)ms.Position;
+        W("1 0 obj\n<< /Type /Catalog /Pages 2 0 R /Lang (en-US)"
+            + " /MarkInfo << /Marked true >>"
+            + " /StructTreeRoot 7 0 R"
+            + " /ViewerPreferences << /DisplayDocTitle true >>"
+            + " /Metadata 8 0 R >>\nendobj\n");
+
+        offsets[2] = (int)ms.Position;
+        W("2 0 obj\n<< /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >>\nendobj\n");
+
+        offsets[3] = (int)ms.Position;
+        W("3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792]"
+            + " /Resources << /XObject << /Fm0 5 0 R >> >> /Contents 6 0 R >>\nendobj\n");
+
+        offsets[4] = (int)ms.Position;
+        W("4 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792]"
+            + " /Resources << /XObject << /Fm0 5 0 R >> >> /Contents 6 0 R >>\nendobj\n");
+
+        offsets[5] = (int)ms.Position;
+        W($"5 0 obj\n<< /Type /XObject /Subtype /Form /BBox [0 0 612 792]{structParentsEntry}"
+            + $" /Length {formContent.Length} >>\nstream\n");
+        ms.Write(formContent);
+        W("\nendstream\nendobj\n");
+
+        offsets[6] = (int)ms.Position;
+        W($"6 0 obj\n<< /Length {pageContent.Length} >>\nstream\n");
+        ms.Write(pageContent);
+        W("\nendstream\nendobj\n");
+
+        offsets[7] = (int)ms.Position;
+        W("7 0 obj\n<< /Type /StructTreeRoot >>\nendobj\n");
+
+        offsets[8] = (int)ms.Position;
+        W($"8 0 obj\n<< /Type /Metadata /Subtype /XML /Length {xmp.Length} >>\nstream\n");
+        ms.Write(xmp);
+        W("\nendstream\nendobj\n");
+
+        var xrefOff = (int)ms.Position;
+        W("xref\n0 9\n0000000000 65535 f \n");
+        for (var i = 1; i <= 8; i++) W($"{offsets[i]:D10} 00000 n \n");
+        W("trailer\n<< /Size 9 /Root 1 0 R"
+            + " /ID [<BB112233445566778899AABBCCDDEEFF> <BB112233445566778899AABBCCDDEEFF>] >>\n");
+        W($"startxref\n{xrefOff}\n%%EOF\n");
+        return ms.ToArray();
+    }
+
+    // ── END §7.20-2 unit tests ────────────────────────────────────────────────────────────────────
+
+    // ── END §6.2.4.4-2 Batch N4 adversarial FP sweep ─────────────────────────────────
+
+    // ── Fix 1 regression — §6.2.11.4.1 octal escape in literal-string DecodeString ─────────────
+
+    /// <summary>
+    /// Fix 1 regression guard: a simple WinAnsi TrueType font (DejaVu, FirstChar=65, LastChar=65)
+    /// whose content stream shows code 65 via the octal literal-string escape <c>(\101)</c>.
+    /// The glyph for code 65 IS present in the embedded program. After the fix, DecodeString
+    /// correctly decodes \101 to byte 0x41 (= 65), the glyph lookup succeeds, and the rule must
+    /// NOT fire ISO19005-2:6.2.11.4.1.
+    /// </summary>
+    [Fact]
+    public void GlyphPresence_OctalEscapeCodePresent_DoesNotFire62111141()
+    {
+        var bytes = OracleCorpus.SimpleTrueTypeFontOctalEscapePublic();
+        var result = PdfPreflight.Validate(bytes, Conformance.PdfConformance.PdfA2B);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId.Contains("6.2.11.4.1"));
+    }
+
+    // ── Fix 2 regression — §7.21.7-1 2-digit ToUnicode source code ───────────────────────────────
+
+    /// <summary>
+    /// Fix 2 regression guard: a simple TrueType font with /Differences mapping code 65 to the
+    /// non-AGL name /g17, AND a ToUnicode CMap that uses the 2-digit source form <c>&lt;41&gt;</c>
+    /// (ISO 32000-1 §7.6.3.2 allows even-length hex source codes). Before the fix, TryReadHex
+    /// required exactly 4 digits, so the &lt;41&gt; entry was rejected and the rule fired a false
+    /// §7.21.7-1. After the fix, the 2-digit source code is accepted and the rule must NOT fire.
+    /// </summary>
+    [Fact]
+    public void UaToUnicode_TwoDigitSourceCode_DoesNotFire72171()
+    {
+        var bytes = OracleCorpus.Ua1SimpleFontTwoDigitToUnicodePublic();
+        var result = PdfPreflight.Validate(bytes, Conformance.PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.21.7-1");
+    }
+
+    // ── Fix 3 — §5-3/-4/-5 UaMetadataRule per-finding FP guards ─────────────────────────────────
+
+    /// <summary>
+    /// §5-3 FP guard: the PDF/UA-1 tagged baseline uses the canonical "pdfuaid" prefix, so
+    /// ISO14289-1:5-3 must NOT fire.
+    /// </summary>
+    [Fact]
+    public void UaMetadata_CanonicalPrefix_DoesNotFire53()
+    {
+        var bytes = OracleCorpus.Ua1XmpPrefixCompliantPublic();
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:5-3");
+    }
+
+    /// <summary>
+    /// §5-3 VIOLATION: the pdfuaid namespace bound to "xua" instead of "pdfuaid". Rule must fire
+    /// ISO14289-1:5-3.
+    /// </summary>
+    [Fact]
+    public void UaMetadata_WrongPrefix_Fires53()
+    {
+        var bytes = OracleCorpus.Ua1XmpPrefixWrongPublic();
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:5-3");
+    }
+
+    // ── Fix 3 — §7.18.6.2-1/-2 UaMediaClipRule per-finding FP guards ────────────────────────────
+
+    /// <summary>
+    /// §7.18.6.2-1/-2 FP guard: a media clip data dict WITH both /CT and /Alt must NOT fire either
+    /// ISO14289-1:7.18.6.2-1 or ISO14289-1:7.18.6.2-2.
+    /// </summary>
+    [Fact]
+    public void UaMediaClip_WithCtAndAlt_DoesNotFireEither()
+    {
+        var bytes = OracleCorpus.Ua1MediaClipCompliantPublic();
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.18.6.2-1");
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.18.6.2-2");
+    }
+
+    /// <summary>
+    /// §7.18.6.2-1 VIOLATION: media clip data dict missing /CT must fire ISO14289-1:7.18.6.2-1.
+    /// </summary>
+    [Fact]
+    public void UaMediaClip_MissingCt_Fires718621()
+    {
+        var bytes = OracleCorpus.Ua1MediaClipNoCtPublic();
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.18.6.2-1");
+    }
+
+    /// <summary>
+    /// §7.18.6.2-2 VIOLATION: media clip data dict missing /Alt must fire ISO14289-1:7.18.6.2-2.
+    /// </summary>
+    [Fact]
+    public void UaMediaClip_MissingAlt_Fires718622()
+    {
+        var bytes = OracleCorpus.Ua1MediaClipNoAltPublic();
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.18.6.2-2");
+    }
+
+    // ── Fix 3 — §7.18.1-3 UaFormFieldAltRule per-finding FP guards ───────────────────────────────
+
+    /// <summary>
+    /// §7.18.1-3 FP guard: a Widget field WITH /TU must NOT fire ISO14289-1:7.18.1-3.
+    /// </summary>
+    [Fact]
+    public void UaFormField_WithTu_DoesNotFire71813()
+    {
+        var bytes = OracleCorpus.Ua1WidgetWithTuPublic();
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.18.1-3");
+    }
+
+    /// <summary>
+    /// §7.18.1-3 VIOLATION: a visible Widget field with no /TU and no struct-elem /Alt must fire
+    /// ISO14289-1:7.18.1-3.
+    /// </summary>
+    [Fact]
+    public void UaFormField_NoTuNoAlt_Fires71813()
+    {
+        var bytes = OracleCorpus.Ua1WidgetNoTuPublic();
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.18.1-3");
+    }
+
+    // ── Fix 3 — §7.18.4-2 UaFormStructElemRule per-finding FP guards ─────────────────────────────
+
+    /// <summary>
+    /// §7.18.4-2 FP guard: a Form struct element without /Role that has exactly one OBJR child must
+    /// NOT fire ISO14289-1:7.18.4-2.
+    /// </summary>
+    [Fact]
+    public void UaFormStructElem_OneObjr_DoesNotFire71842()
+    {
+        var bytes = OracleCorpus.Ua1FormStructOneObjrPublic();
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.18.4-2");
+    }
+
+    /// <summary>
+    /// §7.18.4-2 VIOLATION: a Form struct element without /Role that has an extra StructElem child
+    /// (two children total) must fire ISO14289-1:7.18.4-2.
+    /// </summary>
+    [Fact]
+    public void UaFormStructElem_ExtraChild_Fires71842()
+    {
+        var bytes = OracleCorpus.Ua1FormStructExtraChildPublic();
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.18.4-2");
+    }
+
+    // ── Fix 5 regression — out-of-range xref offset returns null ─────────────────────────────────
 
 }

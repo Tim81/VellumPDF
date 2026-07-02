@@ -14,6 +14,13 @@ public enum CoverageStatus
 
     /// <summary>The check is not yet implemented; <see cref="ConformanceCheck.Note"/> records why (the parser or subsystem it needs).</summary>
     Deferred,
+
+    /// <summary>
+    /// The check is deliberately not implemented in-process — tracked in a follow-up issue. Distinct from
+    /// Deferred (not-yet-done): the Note records the reason and the tracking issue. Excluded from the
+    /// feasible-coverage denominator.
+    /// </summary>
+    OutOfScope,
 }
 
 /// <summary>
@@ -61,15 +68,16 @@ public sealed class ConformanceCheck
 public sealed class CoverageSummary
 {
     /// <summary>Creates a coverage tally.</summary>
-    public CoverageSummary(int total, int implemented, int partial, int deferred)
+    public CoverageSummary(int total, int implemented, int partial, int deferred, int outOfScope)
     {
         Total = total;
         Implemented = implemented;
         Partial = partial;
         Deferred = deferred;
+        OutOfScope = outOfScope;
     }
 
-    /// <summary>Total checks in the profile.</summary>
+    /// <summary>Total checks in the profile (Implemented + Partial + Deferred + OutOfScope).</summary>
     public int Total { get; }
 
     /// <summary>Fully implemented checks.</summary>
@@ -81,8 +89,13 @@ public sealed class CoverageSummary
     /// <summary>Not-yet-implemented checks.</summary>
     public int Deferred { get; }
 
-    /// <summary>Implemented fraction, counting a <see cref="CoverageStatus.Partial"/> check as one half.</summary>
-    public double Percent => Total == 0 ? 0 : 100.0 * (Implemented + 0.5 * Partial) / Total;
+    /// <summary>Deliberately out-of-scope checks (tracked in follow-up issues); excluded from Percent.</summary>
+    public int OutOfScope { get; }
+
+    /// <summary>
+    /// Implemented fraction of in-process-feasible checks (OutOfScope excluded; a Partial counts as one half).
+    /// </summary>
+    public double Percent => (Total - OutOfScope) == 0 ? 0 : 100.0 * (Implemented + 0.5 * Partial) / (Total - OutOfScope);
 }
 
 /// <summary>
@@ -107,15 +120,16 @@ public static class ConformanceCatalog
     /// <summary>The coverage tally for <paramref name="profile"/>.</summary>
     public static CoverageSummary Coverage(PdfConformance profile)
     {
-        int impl = 0, part = 0, def = 0;
+        int impl = 0, part = 0, def = 0, oos = 0;
         foreach (var c in For(profile))
             switch (c.Status)
             {
                 case CoverageStatus.Implemented: impl++; break;
                 case CoverageStatus.Partial: part++; break;
-                default: def++; break;
+                case CoverageStatus.Deferred: def++; break;
+                case CoverageStatus.OutOfScope: oos++; break;
             }
-        return new CoverageSummary(impl + part + def, impl, part, def);
+        return new CoverageSummary(impl + part + def + oos, impl, part, def, oos);
     }
 
     // ── veraPDF rule inventory (clause-testNumber), per profile ──────────────────────────────────
@@ -179,13 +193,29 @@ public static class ConformanceCatalog
 
     private static readonly Dictionary<string, string> PdfAPartial = new(StringComparer.Ordinal)
     {
-        ["6.1.8-1"] = "font BaseFont and colour colourant names checked (presence-based); structure-type names checked for direct /StructTreeRoot /K children only — deeper nesting not yet walked",
-        ["6.2.3-1"] = "DestOutputProfile signature/N checked; ICC device-class not parsed",
-        ["6.2.4.2-2"] = "page content streams plus drawn Form XObjects, all CharProcs of Tf-selected Type 3 fonts, and annotation /AP /N appearance streams are now interpreted in isolation with a fresh default GState (Batch N3, 2026-06-23); graphics state inherited across Do boundaries is NOT threaded — a violation established only by state set in the calling stream and painted inside a form (without the form re-establishing the state itself) is under-detected (residual gap, FP-safe; empirically confirmed against veraPDF 1.30.2: both self-contained and inherited-state form violations fire in veraPDF, but only the self-contained case is reachable by isolated scanning)",
-        ["6.2.4.3-2"] = "page-content DeviceRGB checked; DefaultRGB exemption and RGB-profile intent matching implemented (2026-06-23); image/pattern DeviceRGB not detected",
-        ["6.2.4.3-3"] = "page-content DeviceCMYK checked; DefaultCMYK exemption and CMYK-profile intent matching implemented (2026-06-23); image/pattern DeviceCMYK not detected",
-        ["6.2.4.3-4"] = "page-content DeviceGray checked; DefaultGray exemption implemented (2026-06-23); image/pattern colour not detected",
-        ["6.2.4.4-2"] = "Separations selected by cs/CS operators and those in /Colorants of used DeviceN spaces are compared; drawn Form XObjects, all CharProcs of Tf-selected Type 3 fonts, and annotation /AP /N appearance streams are now also walked (Batch N4, 2026-06-23); image /ColorSpace and alternate spaces of other colour spaces are not yet walked",
+        // Partial with an infeasible residual: the common path is implemented and veraPDF-verified,
+        // but a predefined-CJK-CMap sub-condition can't be cross-validated clean-room (needs the Adobe
+        // code->CID tables and a conformant CJK CIDFont oracle asset). Tracked in #139.
+        ["6.1.13-10"] = "Identity and embedded-CMap CIDs resolved from content text-show operators are range-checked; predefined named-CMap character-collection maxima are not (needs the Adobe code->CID tables + a conformant CJK CIDFont oracle asset). Tracked in #139.",
+        ["6.2.11.3.1-1"] = "Identity and embedded-CMap CIDSystemInfo compared; the predefined-CMap registry match is authored but not cross-validated (needs a conformant CJK CIDFont oracle asset). Tracked in #139.",
+        // 6.1.8-1 moved to Implemented (NameUtf8Rule: CheckStructureTypeNames now delegates to
+        //   StructureTree.Analyze for a full-depth walk; oracle fixture pdfa2b-deep-struct-invalid-utf8
+        //   confirmed veraPDF fires on the 2nd-level /S name; pdfa2b-deep-struct-valid-utf8 FP-safe).
+        // 6.2.3-1 moved to Implemented (META batch, 2026-07-02): OutputIntentRule now validates the
+        //   DestOutputProfile ICC header device class (prtr/mntr/scnr/spac) and major version < 5, in
+        //   addition to the acsp signature and /N; positive-knowledge/FP-safe (fires only on a
+        //   read device-class tag outside the permitted four or version >= 5), mirroring §6.2.4.2-1.
+        // 6.2.4.2-2 moved to Implemented (Batch N3 continued, 2026-07-02): overprint state threaded
+        //   into Form XObjects at every Do site; see PdfAOutOfScope comment for full detail.
+        // 6.2.4.3-2/-3/-4 moved to Implemented (COL batch, 2026-07-02): DocumentDeviceColourTypes now
+        //   also detects device colour reached via image XObject /ColorSpace entries (drawn images from
+        //   page content and reachable non-page streams) and via the /Alternate space of named colour
+        //   spaces selected by cs/CS operators (Separation, DeviceN, uncoloured Pattern base); the
+        //   DefaultRGB/CMYK/Gray exemptions and per-type output-intent matching are unchanged.
+        // 6.2.4.4-2 moved to Implemented (COL batch, 2026-07-02): SeparationConsistencyRule now
+        //   collects Separations from drawn image /ColorSpace entries and from the /Alternate spaces
+        //   of selected named colour spaces; FP-safety invariant preserved (pool only grows toward
+        //   what veraPDF already compares).
         // 6.2.2-1 moved to Implemented (Batch N1 — ContentStreamOperatorRule now scans drawn Form
         //   XObjects, all CharProcs of Tf-selected Type 3 fonts, and all annotation /AP /N appearance
         //   streams via GetReachableContentStreams; reachability policy empirically confirmed against
@@ -193,11 +223,27 @@ public static class ConformanceCatalog
         // 6.1.10-1 moved to Implemented (Batch N2 — InlineImageFilterRule now scans drawn Form
         //   XObjects, all CharProcs of Tf-selected Type 3 fonts, and all annotation /AP /N appearance
         //   streams via GetReachableContentStreams; same reachability policy as ContentStreamOperatorRule).
-        ["6.2.2-2"] = "page + non-page streams checked (Font/XObject/ExtGState/ColorSpace/Shading) via GetReachableContentStreams (drawn Form XObjects, Type 3 CharProcs, annotation /AP /N appearance streams; Batch N5, 2026-06-23); both page-level and non-page checks scoped to streams with null own /Resources AND where the used name IS defined in the ancestor resource scope (veraPDF's inheritedResourceNames model: only names that resolve via the ancestor chain are flagged — a name absent from all ancestor scopes is not fired; confirmed probe A1/A2 2026-06-23); non-page check uses the PAGE's resolved resource scope as the ancestor; streams with a non-null /Resources skipped (FP-safe under-detection); nested-form B1 (inner no /Resources, name in page scope) fires; B2 (name only in outer form scope, not page scope) is FP-safe under-detection (confirmed probe B1/B2 2026-06-23); Pattern names (scn/SCN in Pattern colour space) and Properties names (BDC/DP with name operand) not detected in either pass — stateful colour-space tracking required",
-        ["6.2.11.4.1-1"] = "only the embedded Identity-H CIDFontType2 path is checked",
-        ["6.2.11.4.1-2"] = "only the embedded Identity-H CIDFontType2 path is checked",
-        ["6.2.11.5-1"] = "only the embedded Identity-H CIDFontType2 path is checked",
-        ["6.6.2.1-4"] = "only the catalog XMP packet is validated, not every metadata stream",
+        // 6.2.2-2 moved to Implemented (Batch N7, 2026-07-02): Pattern names (scn/SCN when active
+        //   fill/stroke CS is literally "Pattern") and Properties names (BDC/DP named-resource form,
+        //   two Name operands) are now detected in both the page-level pass (via ContentStreamUsage.Analyze,
+        //   new UsedPatterns + UsedPropertiesNames) and the non-page pass (ScanStreamForInheritedResources,
+        //   colour-space state tracking + prevName slot). FP-safety: Pattern fires only when current CS
+        //   is literally "Pattern" (direct CS, not a named resource); Properties fires only when prevName
+        //   != null (named-resource form, not inline dict); both fire only when the name IS defined in
+        //   the ancestor /Pattern or /Properties subdictionary (inheritedResourceNames model). Oracle
+        //   fixtures: pdfa2b-inherited-resource-pattern-violation (VIOLATING) and
+        //   pdfa2b-inherited-resource-pattern-compliant (COMPLIANT). 2026-07-02.
+        // 6.2.11.4.1-1/-2 and 6.2.11.5-1 moved to Implemented (Wave 2a+2b, 2026-07-02): glyph presence
+        //   and width are checked across every embedded font path — CIDFontType2 (Identity or stream
+        //   CIDToGIDMap), Type0 with an embedded non-Identity CMap, simple non-symbolic TrueType,
+        //   CIDFontType0/CFF (Type2 charstring width interpreter + FDSelect/FDArray), and simple Type1
+        //   (charstring hsbw/sbw). Widths are FontMatrix-scaled to PDF text space; an unresolvable
+        //   width is skipped (FP-safe). Cross-validated against veraPDF 1.30.2.
+        // 6.6.2.1-4 moved to Implemented (META batch, 2026-07-02): MetadataRule now runs the
+        //   bytes/encoding/UTF-8 packet checks on the catalog /Metadata, every page /Metadata, every
+        //   AcroForm field /Metadata (field tree incl. terminal-field /Kids), and every embedded-file
+        //   stream /Metadata (name tree under /Names /EmbeddedFiles + annotation file attachments);
+        //   deduplicated by object number.
         // 6.6.2.3.3-1 moved to Implemented: pdfaExtension:schemas rdf:Bag check + pdfaExtension
         //   prefix check added; probe-confirmed against veraPDF 1.30.2 (2026-06-23).
         // 6.6.2.3.3-5 moved to Implemented: pdfaSchema:property rdf:Seq check + null/pdfaSchema
@@ -206,29 +252,42 @@ public static class ConformanceCatalog
         //   prefix check added (same null-prefix leniency as -5, probe-confirmed 2026-06-23).
         // 6.6.2.3.3-15 moved to Implemented: pdfaType:field rdf:Seq check + null/pdfaType
         //   prefix check added (same null-prefix leniency, probe-confirmed 2026-06-23).
-        ["6.6.2.3.1-2"] = "extension-schema properties with primitive/container types (Text, Integer, Real, Boolean, Date, URI/URL, bag/seq/alt/Lang Alt) are type-checked; predefined XMP-Specification properties (dc:, xmp:, pdf:, pdfaid:, …) are deferred to avoid false-positives from an incomplete built-in type table; extension-schema properties whose declared type resolves to an unrecognised name (custom value types, XMP structure types) are also deferred",
-        ["6.6.2.3.3-8"] = "pdfaProperty prefix on the valueType field is now checked (probe-confirmed 2026-06-23); "
-            + "the 'isValueTypeDefined' condition (verifying that the declared type name is a known/declared type) is not yet checked",
-        ["6.6.2.3.3-17"] = "pdfaField prefix on the valueType field is now checked (probe-confirmed 2026-06-23); "
-            + "the 'isValueTypeDefined' condition (verifying that the declared type name is a known/declared type) is not yet checked",
-        ["6.1.9-1"] = "object/generation/obj spacing + EOL checked; the endobj-EOL sub-conditions not",
-        ["6.1.13-10"] = "embedded-CMap cidrange/cidchar CIDs resolved from content text-show operators; predefined named-CMap character-collection maxima deferred (no Adobe registry table)",
-        ["6.2.11.3.1-1"] = "Identity and embedded-CMap CIDSystemInfo compared; predefined-CMap registry table deferred",
-        ["6.7.2.2-1"] = "StructTreeRoot presence checked; full structure-tree validation not",
-        ["6.8-5"] = "embedded PDF/A-2 validated recursively; embedded PDF/A-1 deferred (no PDF/A-1 profile)",
-        ["6.4.3-1"] = "ByteRange unambiguous violations flagged (a!=0, or c+d>fileLength); the "
-            + "under-coverage case (c+d<fileLength) is deferred to avoid over-rejecting conformant "
-            + "PAdES B-LT/B-LTA signatures whose /DSS or document timestamp is appended after EOF; "
-            + "signatures reachable only via /Perms /DocMDP (no AcroForm /V) are not enumerated",
+        // 6.6.2.3.1-2 moved to Implemented: clean-room predefined property type table added for
+        //   dc:, xmp:, pdf:, and pdfaid: namespaces (XMP Spec 2005 §8); FP-safe by construction —
+        //   any property not in the table is skipped (unknown → no finding).
+        // 6.6.2.3.3-8 moved to Implemented (META batch, 2026-07-02): ExtensionSchemaRule now enforces
+        //   isValueTypeDefined on pdfaProperty:valueType — the declared type must be a predefined XMP
+        //   value type, a container form (bag/seq/alt/Lang Alt) over a defined item type, or a custom
+        //   value type declared in the same schema; else fires -8. Predefined set is the well-established
+        //   XMP §8 catalogue (FP-safe: schema-declared custom types are always accepted).
+        // 6.6.2.3.3-17 moved to Implemented (META batch, 2026-07-02): same isValueTypeDefined check on
+        //   pdfaField:valueType (fires -17). Prefix check unchanged; the two conditions share the sub-clause.
+        // 6.1.9-1 moved to Implemented (ObjectLayoutRule: endobj-EOL boundary checks added;
+        //   scoped to newest-revision objects via Revisions; oracle fixture pdfa2b-endobj-bad-eol
+        //   confirmed veraPDF fires; single-revision files have prevXrefEnd==0 so all objects are checked).
+        // 6.1.13-10 moved to PdfAOutOfScope (predefined named-CMap character-collection maxima; tracked in Backlog issue TBD).
+        // 6.2.11.3.1-1 moved to PdfAOutOfScope (predefined-CMap CIDSystemInfo registry table; tracked in Backlog issue TBD).
+        // 6.7.2.2-1 moved to Implemented (A2aStructureTypeRule: isDefined co-fires with 6.7.3.4-1
+        //   on the same element: a non-standard /S with no role-map path to a standard Table 333
+        //   type. Standard types are inherently defined; the condition is co-occurring with
+        //   6.7.3.4-1 and adds no additional code path. Oracle fixtures:
+        //   pdfa2a-defined-type-unmapped (VIOLATING) and pdfa2a-defined-type-rolemapped (COMPLIANT)).
+        // 6.8-5 moved to PdfAOutOfScope (embedded PDF/A-1 recursion; tracked in Backlog issue TBD).
+        // 6.4.3-1 moved to Implemented (SignatureRule: under-coverage revision analysis added;
+        //   /Perms /DocMDP signature enumeration added; gap [c+d, fileLength) checked against
+        //   Revisions — a later xref in the gap is a legitimate PAdES B-LT/B-LTA revision and
+        //   does not fire; trailing garbage with no revision in gap fires; deduplication by ByteRange key).
     };
 
     private static readonly Dictionary<string, string> PdfADeferred = new(StringComparer.Ordinal)
     {
-        ["6.1.6-2"] = "byte scan implemented, but the reader rejects an invalid hex digit before validation",
+        // 6.1.6-2 moved to Implemented (HexStringRule: byte scan runs before lazy object resolution;
+        //   oracle fixture pdfa2b-hex-invalid-digit confirmed veraPDF fires on <1G0> in page dict;
+        //   reader's InvalidDataException is caught by PdfPreflight.Validate outer catch after rule fires).
         // 6.1.8-1 moved to PdfAPartial (font BaseFont + colour colourant + structure-type names).
         // 6.1.12-2 moved to Implemented (DocMdpReferenceRule).
-        // 6.2.4.2-2 moved to PdfAPartial; OverprintRule now covers page + non-page streams (Batch N3);
-        //   graphics-state inheritance across Do remains the residual gap (FP-safe under-detection).
+        // 6.2.4.2-2 moved to PdfAPartial (Batch N3), then Implemented (Batch N3 continued, 2026-07-02):
+        //   OverprintRule now threads overprint state into Form XObjects via Do; see PdfAOutOfScope.
         // 6.2.8.3-1..-5: removed from Deferred; Jpeg2000Rule now implements all five for both
         // JP2 box files and raw codestreams. -2/-3/-4 correctly do not apply to raw codestreams
         // (which carry no colr boxes) — this is not a gap but correct per-spec scoping.
@@ -241,11 +300,31 @@ public static class ConformanceCatalog
         // 6.7.4-1 moved to Implemented (A2aLangSyntaxRule: catalog /Lang + struct-elem /Lang syntax).
     };
 
+    // PDF/A checks deliberately not implemented in-process (tracked in follow-up issues; excluded from
+    // the feasible-coverage denominator).
+    private static readonly Dictionary<string, string> PdfAOutOfScope = new(StringComparer.Ordinal)
+    {
+        // 6.1.13-10 and 6.2.11.3.1-1 are Partial (see PdfAPartial): their common Identity/embedded-CMap
+        //   paths are implemented + veraPDF-verified; only the predefined-CJK-CMap residual is infeasible.
+        ["6.8-5"] = "Out of scope (tracked in #140): embedded PDF/A-1 recursion needs a PDF/A-1 profile (not on roadmap); embedded PDF/A-2 is validated recursively.",
+        // 6.2.4.2-2 moved to Implemented (Batch N3 continued, 2026-07-02): overprint state (OP/op/OPM,
+        //   fill/stroke ICCBased-CMYK flags) is now threaded into Form XObjects at every Do site in the
+        //   page-level scan, using the caller's current GState as the form's initial state. Form-local
+        //   cs/gs operators override the inherited state; on return the caller's state is unchanged
+        //   (implicit q/Q semantics). Recursion is depth-bounded and cycle-guarded by object number.
+        //   CharProcs and annotation appearances remain isolated (FP-safe under-detection). Oracle
+        //   fixtures: pdfa2b-overprint-inherited-violation (VIOLATING) and
+        //   pdfa2b-overprint-inherited-compliant (COMPLIANT). Confirmed FP-safe against veraPDF 1.30.2.
+    };
+
     // PDF/UA-1: the few checks the current rules cover. Everything else needs the logical-structure
     // (tagged-content) walker, which does not yet exist.
     private static readonly HashSet<string> PdfUaImplemented = new(StringComparer.Ordinal)
     {
-        "5-1", "5-2", "6.1-1", "6.2-1", "7.1-4", "7.1-5", "7.1-6", "7.1-7", "7.1-8", "7.1-9", "7.1-10", "7.1-11", "7.1-12", "7.18.3-1",
+        "5-1", "5-2",
+        // UA batch — §5-3/5-4/5-5 XMP prefix checks (UaMetadataRule extended):
+        "5-3", "5-4", "5-5",
+        "6.1-1", "6.2-1", "7.1-4", "7.1-5", "7.1-6", "7.1-7", "7.1-8", "7.1-9", "7.1-10", "7.1-11", "7.1-12", "7.18.3-1",
         "7.2-29",
         // Batch B2 — §7.2 table, list, TOC containment:
         "7.2-3",   // UaTableContainmentRule: Table kids ∈ {TR, THead, TBody, TFoot, Caption}
@@ -279,9 +358,14 @@ public static class ConformanceCatalog
         "7.11-1",              // UaEmbeddedFileRule: embedded-file /F and /UF requirement
         "7.15-1",              // UaXfaRule: dynamic XFA (dynamicRender == "required") forbidden
         "7.18.1-2",            // UaAnnotContentsRule: non-Widget visible annot needs /Contents or /Alt (direct struct-elem Alt now resolved via B5 ParentTree index)
+        "7.18.1-3",            // UaFormFieldAltRule: form field needs /TU or Widget struct-elem /Alt
         "7.18.2-1",            // UaTrapNetAnnotRule: TrapNet annots forbidden unless hidden/outside-crop
+        "7.18.4-2",            // UaFormStructElemRule: Form struct elem without /Role must have exactly one OBJR child
         "7.18.5-2",            // UaLinkAnnotRule: Link annots require non-empty /Contents
+        "7.18.6.2-1",          // UaMediaClipRule: media clip data dict must have /CT
+        "7.18.6.2-2",          // UaMediaClipRule: media clip data dict must have /Alt
         "7.20-1",              // UaReferenceXObjectRule: Form XObjects shall not contain /Ref
+        "7.20-2",              // UaFormXObjectSemanticParentRule: structure-linked form drawn from 2+ distinct pages
         // Batch A3 — font clauses:
         "7.21.3.2-1",          // UaCidToGidMapRule: embedded CIDFontType2 must have /CIDToGIDMap
         "7.21.6-3",            // UaSymbolicFontRule: symbolic TrueType must have no /Encoding
@@ -300,6 +384,8 @@ public static class ConformanceCatalog
         // Batch A5b — glyph-level clauses (Identity-H/V CIDFontType2-Identity scope):
         "7.21.8-1",            // UaNotdefGlyphRule: shown code 0x0000 == .notdef forbidden
         "7.21.7-2",            // UaToUnicodeForbiddenRule: shown glyph mapped to U+0000/FEFF/FFFE
+        // §7.21.7-1 — used-code Unicode mapping (derived; simple-font AGL model, composite skipped):
+        "7.21.7-1",            // UaToUnicodeCharMappingRule: used simple-font code with no ToUnicode + no AGL glyph name
         // Batch A5c — glyph presence (Identity-H/V CIDFontType2-Identity, Tr-3-exempt):
         "7.21.4.1-2",          // UaGlyphPresenceRule: shown visible glyph must be in the embedded program
         // Batch A5d — glyph width consistency (Identity-H/V CIDFontType2-Identity, Tr-3-exempt):
@@ -353,9 +439,23 @@ public static class ConformanceCatalog
     {
         // 7.18.1-2 moved to PdfUaImplemented (Batch B5 — UaAnnotContentsRule now resolves the
         // direct enclosing struct element's /Alt via the ParentTree reverse index).
-        // Batch A4:
-        ["7.21.3.1-1"] = "Identity and embedded-CMap CIDSystemInfo compared; predefined-CMap "
-            + "registry table deferred (mirrors PDF/A-2 §6.2.11.3.1-1 partial scope)",
+        // Partial with an infeasible residual (mirrors PDF/A-2 6.2.11.3.1-1): common path verified,
+        // predefined-CJK-CMap sub-condition needs a conformant CJK CIDFont oracle asset. Tracked in #139.
+        ["7.21.3.1-1"] = "Identity and embedded-CMap CIDSystemInfo compared; the predefined-CMap registry match is authored but not cross-validated (needs a conformant CJK CIDFont oracle asset). Tracked in #139.",
+    };
+
+    // PDF/UA-1 checks deliberately not implemented in-process (tracked in follow-up issues; excluded
+    // from the feasible-coverage denominator).
+    private static readonly Dictionary<string, string> PdfUaOutOfScope = new(StringComparer.Ordinal)
+    {
+        ["7.16-1"] = "Out of scope (tracked in #138, v2.1 reader/encryption epic #97/#100): needs the reader to decrypt encrypted files to cross-validate against veraPDF; exposing /Encrypt /P alone cannot match veraPDF's whole-file verdict.",
+        // 7.21.3.1-1 is Partial (see PdfUaPartial): common Identity/embedded-CMap path verified;
+        //   only the predefined-CJK-CMap residual is infeasible.
+        // 7.20-2 moved to PdfUaImplemented (UaFormXObjectSemanticParentRule: a Form XObject with
+        //   /StructParents drawn via Do from 2+ distinct pages is always a structural violation —
+        //   the form has exactly one /ParentTree MCID-array, so it can record only one set of
+        //   structural parents; multi-page invocation is the unambiguous FP-safe firing condition.
+        //   Forms without /StructParents and single-page invocations are silently skipped.)
     };
 
     private static IReadOnlyList<ConformanceCheck> Build()
@@ -373,6 +473,8 @@ public static class ConformanceCatalog
         {
             if (PdfUaImplemented.Contains(id))
                 checks.Add(new ConformanceCheck(id, [PdfConformance.PdfUA1], ClauseOf(id), CoverageStatus.Implemented));
+            else if (PdfUaOutOfScope.TryGetValue(id, out var oosNote))
+                checks.Add(new ConformanceCheck(id, [PdfConformance.PdfUA1], ClauseOf(id), CoverageStatus.OutOfScope, oosNote));
             else if (PdfUaPartial.TryGetValue(id, out var note))
                 checks.Add(new ConformanceCheck(id, [PdfConformance.PdfUA1], ClauseOf(id), CoverageStatus.Partial, note));
             else
@@ -385,9 +487,16 @@ public static class ConformanceCatalog
 
     private static string PdfUaDeferredNote(string id) => id switch
     {
-        "5-3" or "5-4" or "5-5" => "prefix-aware XMP parsing (XmpReader matches by namespace URI, not prefix)",
-        "7.16-1" => "encrypted-document support: the reader does not surface the P permission bits for encrypted files",
-        "7.18.6.2-1" or "7.18.6.2-2" => "media clip data dictionary traversal (requires walking Screen-annotation rendition actions)",
+        // 5-3/5-4/5-5 moved to PdfUaImplemented (UA batch — UaMetadataRule extended with
+        //   XmpReader.GetPrefixOfNamespace; fires when the PDF/UA-id namespace is bound to a
+        //   non-pdfuaid, non-null prefix and the property is present).
+        // 7.18.6.2-1/-2 moved to PdfUaImplemented (UA batch — UaMediaClipRule: walks Screen
+        //   annotation rendition actions to media clip data dicts; checks /CT and /Alt).
+        // 7.18.1-3 moved to PdfUaImplemented (UA batch — UaFormFieldAltRule: form field /TU
+        //   OR Widget struct-elem /Alt; hidden/outside-crop exemptions via UaAnnotationHelper).
+        // 7.18.4-2 moved to PdfUaImplemented (UA batch — UaFormStructElemRule: Form struct
+        //   elem without /Role must have exactly one OBJR child; /Role attribute exempts).
+        // 7.16-1 moved to PdfUaOutOfScope (encrypted-document support; tracked in v2.1 reader/encryption epic #97/#100).
 
         // §7.1 artifact/tagging rules — Batch C2:
         // 7.1-1 and 7.1-2 moved to PdfUaImplemented (Batch C2 — UaArtifactTaggingRule: Artifact
@@ -411,11 +520,11 @@ public static class ConformanceCatalog
         // 7.21.4.2-2 moved to PdfUaImplemented (Batch A4 — UaCidSetRule).
         // 7.21.6-1/-2/-4 moved to PdfUaImplemented (Batch A6 — UaTrueTypeCmapRule: non-symbolic TrueType
         //   cmap structure and Differences-AGL compliance; verified FP-free against veraPDF 1.30.2).
-        "7.21.7-1" =>
-            "glyph-level ToUnicode presence (veraPDF's Glyph.toUnicode model derives Unicode from font "
-            + "encoding for standard-encoded simple fonts, so requiring a /ToUnicode stream would "
-            + "over-reject conformant WinAnsi/MacRoman simple fonts; deferred until the glyph-level "
-            + "Unicode-derivation model is fully understood for all font types)",
+        // 7.21.7-1 moved to PdfUaImplemented (UaToUnicodeCharMappingRule: used simple-font (Type1/TrueType)
+        //   codes must have a Unicode value by /ToUnicode or by AGL glyph-name derivation (base encoding +
+        //   /Differences, incl. uniXXXX/uXXXXXX). Fires only when a used code has a glyph name that is
+        //   non-AGL-resolvable and no /ToUnicode maps it; composite Type0 fonts and no-/Encoding fonts are
+        //   skipped (FP-safe under-detection of veraPDF's CID/program-encoding derivation).
         // 7.21.7-2 moved to PdfUaImplemented (Batch A5b — UaToUnicodeForbiddenRule, shown-glyph-scoped).
         // 7.21.8-1 moved to PdfUaImplemented (Batch A5b — UaNotdefGlyphRule, Identity-H scope).
         // 7.21.4.1-2 moved to PdfUaImplemented (Batch A5c — UaGlyphPresenceRule, Tr-3-exempt).
@@ -481,11 +590,17 @@ public static class ConformanceCatalog
         // 7.1-3 remains deferred (Batch C3 probe — operator set fully pinned; blocker is Properties
         //   named-reference BDC resolution, see PdfUaDeferredNote switch above for details).
 
+        // 7.20-2 moved to PdfUaImplemented (UaFormXObjectSemanticParentRule: /StructParents-bearing
+        //   Form XObject drawn from 2+ distinct pages → structural violation; /StructParents absence
+        //   and single-page invocations silently skipped; FP-safe under-detection preserved).
+
         _ => "structure-tree walker",
     };
 
     private static ConformanceCheck MakePdfA(string id, PdfConformance[] profiles)
     {
+        if (PdfAOutOfScope.TryGetValue(id, out var oosNote))
+            return new ConformanceCheck(id, profiles, ClauseOf(id), CoverageStatus.OutOfScope, oosNote);
         if (PdfADeferred.TryGetValue(id, out var reason))
             return new ConformanceCheck(id, profiles, ClauseOf(id), CoverageStatus.Deferred, reason);
         if (PdfAPartial.TryGetValue(id, out var note))

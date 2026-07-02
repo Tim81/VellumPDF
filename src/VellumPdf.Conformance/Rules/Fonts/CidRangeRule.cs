@@ -73,7 +73,7 @@ internal sealed class CidRangeRule : IConformanceRule
                 continue;
 
             // Collect the embedded CMaps for every Type0 font in this page's resources.
-            var embeddedCMaps = new Dictionary<string, EmbeddedCMap>(StringComparer.Ordinal);
+            var embeddedCMaps = new Dictionary<string, EmbeddedCMapEntry>(StringComparer.Ordinal);
             foreach (var entry in fontsDict.Entries)
                 if (TryGetEmbeddedCMap(context, entry.Value) is { } cmap)
                     embeddedCMaps[entry.Key.Value] = cmap;
@@ -89,9 +89,9 @@ internal sealed class CidRangeRule : IConformanceRule
         }
     }
 
-    // Resolves a font dictionary reference to an EmbeddedCMap descriptor when it is a Type0 font
+    // Resolves a font dictionary reference to an EmbeddedCMapEntry descriptor when it is a Type0 font
     // with an embedded CMap stream (non-Identity, non-predefined-name /Encoding).
-    private static EmbeddedCMap? TryGetEmbeddedCMap(PreflightContext context, PdfObject? fontRef)
+    private static EmbeddedCMapEntry? TryGetEmbeddedCMap(PreflightContext context, PdfObject? fontRef)
     {
         if (context.Resolve(fontRef) is not PdfDictionary font)
             return null;
@@ -118,11 +118,11 @@ internal sealed class CidRangeRule : IConformanceRule
             return null;
 
         // Parse the CMap program to extract cidrange and cidchar mappings.
-        var parsedCMap = ParseCMap(cmapBytes);
+        var parsedCMap = EmbeddedCMapParser.Parse(cmapBytes);
         if (parsedCMap is null)
             return null; // malformed CMap — skip defensively
 
-        return new EmbeddedCMap(cmapRef.ObjectNumber, parsedCMap);
+        return new EmbeddedCMapEntry(cmapRef.ObjectNumber, parsedCMap);
     }
 
     // Walks the content stream, tracking the current font via Tf, and for each text-show operator
@@ -130,10 +130,10 @@ internal sealed class CidRangeRule : IConformanceRule
     private void ScanContent(
         PreflightContext context,
         byte[] content,
-        Dictionary<string, EmbeddedCMap> embeddedCMaps,
+        Dictionary<string, EmbeddedCMapEntry> embeddedCMaps,
         HashSet<int> reported)
     {
-        EmbeddedCMap? current = null;
+        EmbeddedCMapEntry? current = null;
 
         try
         {
@@ -189,7 +189,7 @@ internal sealed class CidRangeRule : IConformanceRule
     // Checks all CIDs produced from the pending strings against the 65,535 limit.
     private void CheckCids(
         PreflightContext context,
-        EmbeddedCMap? current,
+        EmbeddedCMapEntry? current,
         List<byte[]> strings,
         HashSet<int> reported)
     {
@@ -222,200 +222,6 @@ internal sealed class CidRangeRule : IConformanceRule
             PreflightSeverity.Error,
             $"A CID value ({cid}) in an embedded CMap exceeds 65,535, which §6.1.13 prohibits.");
 
-    // ── CMap program parser ────────────────────────────────────────────────────────────────────────
-
-    // Parses the CMap PostScript program bytes into a lookup structure. Returns null on malformed
-    // input (defensive: no finding on parse failure).
-    private static ParsedCMap? ParseCMap(byte[] bytes)
-    {
-        var cidRanges = new List<CidRange>();
-        var cidChars = new List<CidChar>();
-        var codespaces = new List<Codespace>();
-
-        try
-        {
-            var mem = new ReadOnlyMemory<byte>(bytes);
-            var lexer = new PdfLexer(mem);
-
-            while (!lexer.AtEnd)
-            {
-                var token = lexer.NextToken();
-                if (token.Kind == TokenKind.EndOfInput)
-                    break;
-                if (token.Kind != TokenKind.Keyword)
-                    continue;
-
-                var kw = Encoding.Latin1.GetString(token.Raw.Span);
-
-                if (kw == "begincodespacerange")
-                {
-                    ParseCodespaces(lexer, codespaces);
-                }
-                else if (kw == "begincidrange")
-                {
-                    ParseCidRanges(lexer, cidRanges);
-                }
-                else if (kw == "begincidchar")
-                {
-                    ParseCidChars(lexer, cidChars);
-                }
-            }
-        }
-        catch
-        {
-            // Parse failure — degrade to no-op rather than a spurious finding.
-            return null;
-        }
-
-        return new ParsedCMap(cidRanges, cidChars, codespaces);
-    }
-
-    // Reads `<lo> <hi>` codespace pairs until `endcodespacerange`. Each pair's hex-string byte
-    // length defines a code length, and the per-byte [lo, hi] bounds define which byte sequences
-    // are valid codes of that length. This is what lets a CMap-encoded string be split into the
-    // SAME character codes veraPDF decodes — rather than a fixed-width guess.
-    private static void ParseCodespaces(PdfLexer lexer, List<Codespace> codespaces)
-    {
-        while (!lexer.AtEnd)
-        {
-            var tok = lexer.NextToken();
-            if (tok.Kind == TokenKind.EndOfInput)
-                return;
-
-            if (tok.Kind == TokenKind.Keyword
-                && Encoding.Latin1.GetString(tok.Raw.Span) == "endcodespacerange")
-                return;
-
-            if (tok.Kind != TokenKind.HexString)
-                return; // malformed — stop
-
-            var lo = HexStringToBytes(tok.Raw.Span);
-
-            var t2 = lexer.NextToken();
-            if (t2.Kind != TokenKind.HexString)
-                return;
-            var hi = HexStringToBytes(t2.Raw.Span);
-
-            // A well-formed codespace entry has equal-length, non-empty bounds.
-            if (lo.Length > 0 && lo.Length == hi.Length)
-                codespaces.Add(new Codespace(lo, hi));
-        }
-    }
-
-    // Reads `<srcLo> <srcHi> dstCidStart` triples until `endcidrange`.
-    private static void ParseCidRanges(PdfLexer lexer, List<CidRange> ranges)
-    {
-        while (!lexer.AtEnd)
-        {
-            // Skip to the next non-whitespace token.
-            var tok = lexer.NextToken();
-            if (tok.Kind == TokenKind.EndOfInput)
-                return;
-
-            // Hit `endcidrange` — done.
-            if (tok.Kind == TokenKind.Keyword
-                && Encoding.Latin1.GetString(tok.Raw.Span) == "endcidrange")
-                return;
-
-            // Expect: <srcLo> <srcHi> dstCidStart
-            if (tok.Kind != TokenKind.HexString)
-                return; // malformed — stop
-
-            var srcLo = HexStringToInt(tok.Raw.Span);
-
-            var t2 = lexer.NextToken();
-            if (t2.Kind != TokenKind.HexString)
-                return;
-            var srcHi = HexStringToInt(t2.Raw.Span);
-
-            var t3 = lexer.NextToken();
-            if (t3.Kind != TokenKind.Integer)
-                return;
-            var dstStart = ParseInt(t3.Raw.Span);
-
-            if (srcLo >= 0 && srcHi >= 0 && dstStart >= 0)
-                ranges.Add(new CidRange(srcLo, srcHi, dstStart));
-        }
-    }
-
-    // Reads `<src> dstCid` pairs until `endcidchar`.
-    private static void ParseCidChars(PdfLexer lexer, List<CidChar> chars)
-    {
-        while (!lexer.AtEnd)
-        {
-            var tok = lexer.NextToken();
-            if (tok.Kind == TokenKind.EndOfInput)
-                return;
-
-            if (tok.Kind == TokenKind.Keyword
-                && Encoding.Latin1.GetString(tok.Raw.Span) == "endcidchar")
-                return;
-
-            if (tok.Kind != TokenKind.HexString)
-                return; // malformed — stop
-
-            var src = HexStringToInt(tok.Raw.Span);
-
-            var t2 = lexer.NextToken();
-            if (t2.Kind != TokenKind.Integer)
-                return;
-            var dst = ParseInt(t2.Raw.Span);
-
-            if (src >= 0 && dst >= 0)
-                chars.Add(new CidChar(src, dst));
-        }
-    }
-
-    // Interprets a hex-string token's bytes as a big-endian unsigned integer. Returns -1 on error.
-    // The raw token includes the delimiting '<' and '>' characters.
-    private static int HexStringToInt(ReadOnlySpan<byte> raw)
-    {
-        var result = 0;
-        for (var i = 1; i < raw.Length && raw[i] != (byte)'>'; i++)
-        {
-            var v = Hex(raw[i]);
-            if (v < 0)
-                continue;
-            result = (result << 4) | v;
-            if (result > 0x1FFFF) // overflow guard (> 17 bits is certainly invalid for a CMap code)
-                return -1;
-        }
-        return result;
-    }
-
-    // Decodes a hex-string token's content (between '<' and '>') to its raw bytes. An odd number of
-    // hex digits pads the final nibble low, matching ISO 32000-1 §7.3.4.3.
-    private static byte[] HexStringToBytes(ReadOnlySpan<byte> raw)
-    {
-        var bytes = new List<byte>(raw.Length / 2);
-        var hi = -1;
-        for (var i = 1; i < raw.Length && raw[i] != (byte)'>'; i++)
-        {
-            var v = Hex(raw[i]);
-            if (v < 0)
-                continue;
-            if (hi < 0)
-            {
-                hi = v;
-            }
-            else
-            {
-                bytes.Add((byte)((hi << 4) | v));
-                hi = -1;
-            }
-        }
-        if (hi >= 0)
-            bytes.Add((byte)(hi << 4));
-        return bytes.ToArray();
-    }
-
-    private static int ParseInt(ReadOnlySpan<byte> raw)
-    {
-        if (!int.TryParse(Encoding.Latin1.GetString(raw), out var v))
-            return -1;
-        return v < 0 ? -1 : v;
-    }
-
     private static string DecodeName(ReadOnlySpan<byte> raw)
     {
         var sb = new StringBuilder(raw.Length);
@@ -434,7 +240,6 @@ internal sealed class CidRangeRule : IConformanceRule
         return sb.ToString();
     }
 
-    // Decodes a content-stream string token (with its delimiters) to its raw bytes.
     private static byte[] DecodeString(ReadOnlySpan<byte> raw, bool hex)
     {
         var bytes = new List<byte>(raw.Length);
@@ -464,14 +269,43 @@ internal sealed class CidRangeRule : IConformanceRule
             if (raw[i] == (byte)'\\' && i + 1 < raw.Length)
             {
                 i++;
-                bytes.Add(raw[i] switch
+                var next = raw[i];
+                // Line continuation: \CR, \LF, or \CRLF → drop the backslash and EOL.
+                if (next == (byte)'\r')
+                {
+                    if (i + 1 < raw.Length && raw[i + 1] == (byte)'\n')
+                        i++; // consume the LF of CRLF
+                    continue;
+                }
+                if (next == (byte)'\n')
+                    continue;
+
+                // Octal escape: \ followed by 1–3 octal digits, value mod 256.
+                if (next is >= (byte)'0' and <= (byte)'7')
+                {
+                    var val = next - '0';
+                    if (i + 1 < raw.Length && raw[i + 1] is >= (byte)'0' and <= (byte)'7')
+                    {
+                        i++;
+                        val = val * 8 + (raw[i] - '0');
+                        if (i + 1 < raw.Length && raw[i + 1] is >= (byte)'0' and <= (byte)'7')
+                        {
+                            i++;
+                            val = val * 8 + (raw[i] - '0');
+                        }
+                    }
+                    bytes.Add((byte)(val & 0xFF));
+                    continue;
+                }
+
+                bytes.Add(next switch
                 {
                     (byte)'n' => (byte)'\n',
                     (byte)'r' => (byte)'\r',
                     (byte)'t' => (byte)'\t',
                     (byte)'b' => (byte)'\b',
                     (byte)'f' => (byte)'\f',
-                    _ => raw[i],
+                    _ => next,
                 });
             }
             else
@@ -490,123 +324,10 @@ internal sealed class CidRangeRule : IConformanceRule
         _ => -1,
     };
 
-    // ── Data types ─────────────────────────────────────────────────────────────────────────────────
-
     // Associates a CMap stream object number with its parsed CMap content.
-    private sealed class EmbeddedCMap(int cmapObjectNumber, ParsedCMap cmap)
+    private sealed class EmbeddedCMapEntry(int cmapObjectNumber, ParsedCMap cmap)
     {
         public int CmapObjectNumber { get; } = cmapObjectNumber;
         public ParsedCMap Cmap { get; } = cmap;
-    }
-
-    // A parsed subset of a CMap program: the codespace, cidrange, and cidchar sections.
-    private sealed class ParsedCMap(
-        IReadOnlyList<CidRange> ranges, IReadOnlyList<CidChar> chars, IReadOnlyList<Codespace> codespaces)
-    {
-        private readonly IReadOnlyList<CidRange> _ranges = ranges;
-        private readonly IReadOnlyList<CidChar> _chars = chars;
-        private readonly IReadOnlyList<Codespace> _codespaces = codespaces;
-
-        // Splits a CMap-encoded string into character-code values using the declared codespace
-        // ranges (ISO 32000-1 §9.7.6.2). At each position the first codespace entry whose bytes
-        // match is consumed; an unmatched lead byte advances by the shortest codespace length
-        // WITHOUT yielding a code (so an invalid byte never fabricates a spurious code). When the
-        // CMap declares no codespace, nothing is yielded — embedded CMaps always declare one, so
-        // this only suppresses checking for a malformed CMap, which is the safe direction.
-        public IEnumerable<int> DecodeCodes(byte[] bytes)
-        {
-            if (_codespaces.Count == 0)
-                yield break;
-
-            var minLen = int.MaxValue;
-            foreach (var cs in _codespaces)
-                if (cs.Length < minLen)
-                    minLen = cs.Length;
-
-            var i = 0;
-            while (i < bytes.Length)
-            {
-                var matched = false;
-                foreach (var cs in _codespaces)
-                {
-                    if (i + cs.Length <= bytes.Length && cs.Matches(bytes, i))
-                    {
-                        var code = 0;
-                        for (var k = 0; k < cs.Length; k++)
-                            code = (code << 8) | bytes[i + k];
-                        yield return code;
-                        i += cs.Length;
-                        matched = true;
-                        break;
-                    }
-                }
-
-                if (!matched)
-                    i += minLen; // skip an undecodable lead byte (or run) without yielding a code
-            }
-        }
-
-        // Returns the CID for charCode if any cidrange or cidchar mapping covers it, or false when
-        // no mapping is found. Ranges are checked before individual chars, matching PostScript CMap
-        // lookup order.
-        public bool TryLookupCid(int charCode, out int cid)
-        {
-            foreach (var r in _ranges)
-            {
-                if (charCode >= r.SrcLo && charCode <= r.SrcHi)
-                {
-                    cid = r.DstStart + (charCode - r.SrcLo);
-                    return true;
-                }
-            }
-            foreach (var c in _chars)
-            {
-                if (c.Src == charCode)
-                {
-                    cid = c.Dst;
-                    return true;
-                }
-            }
-            cid = 0;
-            return false;
-        }
-    }
-
-    // One `begincodespacerange` entry: byte sequences of length Lo.Length whose every byte k lies in
-    // [Lo[k], Hi[k]] are valid character codes of that length.
-    private sealed class Codespace(byte[] lo, byte[] hi)
-    {
-        private readonly byte[] _lo = lo;
-        private readonly byte[] _hi = hi;
-
-        public int Length => _lo.Length;
-
-        // True when the Length bytes of <paramref name="bytes"/> starting at <paramref name="off"/>
-        // are within the per-byte [lo, hi] bounds.
-        public bool Matches(byte[] bytes, int off)
-        {
-            for (var k = 0; k < _lo.Length; k++)
-            {
-                var b = bytes[off + k];
-                if (b < _lo[k] || b > _hi[k])
-                    return false;
-            }
-            return true;
-        }
-    }
-
-    // One `begincidrange` entry: maps source codes [SrcLo, SrcHi] to [DstStart, DstStart+(SrcHi−SrcLo)].
-    private readonly struct CidRange(int srcLo, int srcHi, int dstStart)
-    {
-        public int SrcLo { get; } = srcLo;
-        public int SrcHi { get; } = srcHi;
-        public int DstStart { get; } = dstStart;
-    }
-
-    // One `begincidchar` entry: maps a single source code Src to destination CID Dst.
-    private readonly struct CidChar(int src, int dst)
-    {
-        public int Src { get; } = src;
-        public int Dst { get; } = dst;
     }
 }
