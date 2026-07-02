@@ -291,11 +291,22 @@ public sealed class PdfPreflightTests
         + "<pdfaProperty:category>external</pdfaProperty:category><pdfaProperty:description>d</pdfaProperty:description>"
         + "</rdf:li></rdf:Seq></pdfaSchema:property></rdf:li></rdf:Bag></pdfaExtension:schemas></rdf:Description>";
 
-    /// <summary>A minimal ICC profile body: zero-filled, with the 'acsp' signature at offset 36.</summary>
+    /// <summary>
+    /// A minimal valid ICC profile: 128-byte header with the 'acsp' signature (bytes 36–39),
+    /// device class 'mntr' (bytes 12–15, one of the four permitted values), and major version 2
+    /// (byte 8, satisfying the version &lt; 5 constraint). All other fields are zero.
+    /// Tests that override /N to an illegal value exercise only the /N rule; the ICC header
+    /// itself passes the device-class and version checks in §6.2.3-1.
+    /// </summary>
     private static byte[] FakeIccProfile()
     {
         var icc = new byte[128];
-        icc[36] = (byte)'a';
+        icc[8] = 2; // ICC major version 2 (< 5; satisfies §6.2.3-1 version constraint)
+        icc[12] = (byte)'m'; // device class 'mntr' (bytes 12–15; satisfies §6.2.3-1 class constraint)
+        icc[13] = (byte)'n';
+        icc[14] = (byte)'t';
+        icc[15] = (byte)'r';
+        icc[36] = (byte)'a'; // ICC file signature 'acsp' (bytes 36–39; ISO 15076-1 §7.2.4)
         icc[37] = (byte)'c';
         icc[38] = (byte)'s';
         icc[39] = (byte)'p';
@@ -388,7 +399,20 @@ public sealed class PdfPreflightTests
             new(xobjectDict, body),
         };
         if (draw)
+        {
             objects.Add(new PdfObj(string.Empty, Encoding.ASCII.GetBytes("q /X0 Do Q")));
+            // A valid PDF/A output intent (GTS_PDFA1) satisfies §6.2.4.3 for any device colour
+            // space painted by a drawn image XObject. Without it, drawing an image with
+            // /ColorSpace /DeviceGray (or RGB/CMYK) fires a spurious §6.2.4.3 finding that
+            // would mask the single rule under test. Objects 8 (intent dict) and 9 (ICC stream)
+            // are appended so that objects 1–7 — including the /Contents reference on object 3
+            // and the XObject chain at objects 4–6 — keep their existing numbers.
+            var intentObjNum = objects.Count + 1; // 8
+            var iccObjNum = intentObjNum + 1; // 9
+            objects[0] = objects[0] with { Dict = InjectIntoDict(objects[0].Dict, $"/OutputIntents [{intentObjNum} 0 R]") };
+            objects.Add(new PdfObj($"<< /Type /OutputIntent /S /GTS_PDFA1 /DestOutputProfile {iccObjNum} 0 R >>"));
+            objects.Add(new PdfObj("/N 3", FakeIccProfile()));
+        }
         return AssemblePdf(objects);
     }
 
