@@ -114,12 +114,15 @@ internal static class VeraPdf
 
     private static (int Exit, string Stdout, string Stderr) Run(int timeoutMs, params string[] args)
     {
-        var psi = new ProcessStartInfo("verapdf")
+        var (file, prefix) = ResolveLauncher();
+        var psi = new ProcessStartInfo(file)
         {
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
         };
+        foreach (var a in prefix)
+            psi.ArgumentList.Add(a);
         foreach (var a in args)
             psi.ArgumentList.Add(a);
 
@@ -147,6 +150,22 @@ internal static class VeraPdf
         var stdout = stdoutTask.Wait(5_000) ? stdoutTask.Result : string.Empty;
         var stderr = stderrTask.Wait(5_000) ? stderrTask.Result : string.Empty;
         return (process.ExitCode, stdout, stderr);
+    }
+
+    // Resolves the veraPDF launcher. CI puts an extensionless `verapdf` shim on PATH (Linux), which
+    // CreateProcess runs directly. The Windows installer instead ships `verapdf.bat`, and
+    // ProcessStartInfo with UseShellExecute=false only auto-resolves `.exe` — so when VERAPDF_HOME
+    // points at an install carrying that launcher, invoke it through `cmd.exe /c`.
+    private static (string File, string[] Prefix) ResolveLauncher()
+    {
+        if (OperatingSystem.IsWindows()
+            && Environment.GetEnvironmentVariable("VERAPDF_HOME") is { Length: > 0 } home)
+        {
+            var bat = Path.Combine(home, "verapdf.bat");
+            if (File.Exists(bat))
+                return ("cmd.exe", ["/c", bat]);
+        }
+        return ("verapdf", []);
     }
 
     private static void ObserveAndForget(Task task)
