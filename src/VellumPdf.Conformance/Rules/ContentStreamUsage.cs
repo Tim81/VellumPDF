@@ -200,7 +200,9 @@ internal sealed class ContentUsage
         List<TextShow> textShows,
         List<MarkedContentSequence> markedContentSequences,
         List<TextShowMcContext> textShowContexts,
-        List<SimpleContentItem> simpleContentItems)
+        List<SimpleContentItem> simpleContentItems,
+        HashSet<string> usedPatterns,
+        HashSet<string> usedPropertiesNames)
     {
         AppliedExtGStates = appliedExtGStates;
         UsesDeviceColour = usesDeviceColour;
@@ -216,6 +218,8 @@ internal sealed class ContentUsage
         MarkedContentSequences = markedContentSequences;
         TextShowContexts = textShowContexts;
         SimpleContentItems = simpleContentItems;
+        UsedPatterns = usedPatterns;
+        UsedPropertiesNames = usedPropertiesNames;
     }
 
     /// <summary>The ExtGState resource names actually applied by a <c>gs</c> operator.</summary>
@@ -247,6 +251,21 @@ internal sealed class ContentUsage
 
     /// <summary>Shading resource names painted by <c>sh</c> operators.</summary>
     public HashSet<string> PaintedShadings { get; }
+
+    /// <summary>
+    /// Pattern resource names used by <c>scn</c>/<c>SCN</c> operators when the active fill or
+    /// stroke colour space (set by the preceding <c>cs</c>/<c>CS</c>) is literally <c>Pattern</c>.
+    /// Only the direct Pattern colour space triggers capture; named colour-space resources that
+    /// happen to be Pattern arrays are not tracked (FP-safe under-detection).
+    /// </summary>
+    public HashSet<string> UsedPatterns { get; }
+
+    /// <summary>
+    /// Properties resource names referenced by <c>BDC</c> or <c>DP</c> operators using the
+    /// named-resource form (<c>/Tag /ResourceName BDC</c>). The inline-dict form does not
+    /// contribute to this set (no resource lookup required).
+    /// </summary>
+    public HashSet<string> UsedPropertiesNames { get; }
 
     /// <summary>
     /// One entry per text-show operator (<c>Tj</c>, <c>TJ</c>, <c>'</c>, <c>"</c>) in document order.
@@ -320,6 +339,8 @@ internal static class ContentStreamUsage
         var selectedColorSpaces = new HashSet<string>(StringComparer.Ordinal);
         var usedFonts = new HashSet<string>(StringComparer.Ordinal);
         var paintedShadings = new HashSet<string>(StringComparer.Ordinal);
+        var usedPatterns = new HashSet<string>(StringComparer.Ordinal);
+        var usedPropertiesNames = new HashSet<string>(StringComparer.Ordinal);
         var usesDeviceColour = false;
         var usesDeviceRgb = false;
         var usesDeviceCmyk = false;
@@ -329,11 +350,17 @@ internal static class ContentStreamUsage
         var textShowContexts = new List<TextShowMcContext>();
         var simpleContentItems = new List<SimpleContentItem>();
 
-        // Graphics-state stack for q/Q save-restore. Each entry is (fontResourceName, renderingMode).
-        // Default rendering mode = 0 (fill text), default font = null (not yet selected).
-        var gsStack = new Stack<(string? Font, int Mode)>();
+        // Graphics-state stack for q/Q save-restore. Each entry is (fontResourceName, renderingMode,
+        // fillCs, strokeCs). Default rendering mode = 0 (fill text), default font/CS = null.
+        var gsStack = new Stack<(string? Font, int Mode, string? FillCs, string? StrokeCs)>();
         var currentFont = (string?)null;
         var currentRenderingMode = 0;
+
+        // Current fill and stroke colour space names (updated by cs/CS). Only the literal "Pattern"
+        // name triggers pattern-resource capture on scn/SCN; named-resource CS references that
+        // resolve to Pattern arrays are not tracked (FP-safe under-detection).
+        var currentFillCs = (string?)null;
+        var currentStrokeCs = (string?)null;
 
         // Marked-content stack: BMC/BDC pushes, EMC pops. Independent of q/Q (ISO 32000-1 §8.7.2).
         // Each entry is the sequence descriptor for the currently-open MC region.
@@ -547,9 +574,32 @@ internal static class ContentStreamUsage
                                     renderingIntents.Add(lastName);
                                 break;
 
-                            case "cs" or "CS":
+                            case "cs":
                                 if (lastName is not null)
+                                {
                                     selectedColorSpaces.Add(lastName);
+                                    currentFillCs = lastName;
+                                }
+                                break;
+
+                            case "CS":
+                                if (lastName is not null)
+                                {
+                                    selectedColorSpaces.Add(lastName);
+                                    currentStrokeCs = lastName;
+                                }
+                                break;
+
+                            case "scn":
+                                // /name scn — when current fill CS is Pattern, lastName is a Pattern name.
+                                if (lastName is not null && currentFillCs == "Pattern")
+                                    usedPatterns.Add(lastName);
+                                break;
+
+                            case "SCN":
+                                // /name SCN — when current stroke CS is Pattern, lastName is a Pattern name.
+                                if (lastName is not null && currentStrokeCs == "Pattern")
+                                    usedPatterns.Add(lastName);
                                 break;
 
                             case "Tf":
@@ -576,13 +626,13 @@ internal static class ContentStreamUsage
 
                             case "q":
                                 // Save graphics state.
-                                gsStack.Push((currentFont, currentRenderingMode));
+                                gsStack.Push((currentFont, currentRenderingMode, currentFillCs, currentStrokeCs));
                                 break;
 
                             case "Q":
                                 // Restore graphics state.
                                 if (gsStack.Count > 0)
-                                    (currentFont, currentRenderingMode) = gsStack.Pop();
+                                    (currentFont, currentRenderingMode, currentFillCs, currentStrokeCs) = gsStack.Pop();
                                 break;
 
                             case "Tj":
@@ -676,6 +726,11 @@ internal static class ContentStreamUsage
                                         {
                                             props = null;
                                         }
+
+                                        // Capture the Properties resource name for inherited-resource tracking.
+                                        // Only the named-resource form (prevName != null) references /Properties.
+                                        if (lastName is not null && prevName is not null)
+                                            usedPropertiesNames.Add(lastName);
                                     }
 
                                     if (bdcTag is not null)
@@ -696,6 +751,16 @@ internal static class ContentStreamUsage
                                     pendingBdcTag = null;
                                     pendingProps = null;
                                 }
+                                break;
+
+                            case "DP":
+                                // /tag name DP (named resource) or /tag << ... >> DP (inline dict).
+                                // Like BDC but marks a point rather than a region (no EMC pair).
+                                // Capture the Properties resource name only for the named-resource form.
+                                if (pendingProps is null && lastName is not null && prevName is not null)
+                                    usedPropertiesNames.Add(lastName);
+                                pendingBdcTag = null;
+                                pendingProps = null;
                                 break;
 
                             case "EMC":
@@ -735,7 +800,8 @@ internal static class ContentStreamUsage
         return new ContentUsage(applied, usesDeviceColour, usesDeviceRgb, usesDeviceCmyk, usesDeviceGray,
             drawnXObjects, renderingIntents,
             selectedColorSpaces, usedFonts, paintedShadings, textShows,
-            markedContentSequences, textShowContexts, simpleContentItems);
+            markedContentSequences, textShowContexts, simpleContentItems,
+            usedPatterns, usedPropertiesNames);
     }
 
     // Build a TextShowMcContext from the current MC stack state.

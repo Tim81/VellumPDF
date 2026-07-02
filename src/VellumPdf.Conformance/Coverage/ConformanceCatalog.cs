@@ -218,7 +218,16 @@ public static class ConformanceCatalog
         // 6.1.10-1 moved to Implemented (Batch N2 — InlineImageFilterRule now scans drawn Form
         //   XObjects, all CharProcs of Tf-selected Type 3 fonts, and all annotation /AP /N appearance
         //   streams via GetReachableContentStreams; same reachability policy as ContentStreamOperatorRule).
-        ["6.2.2-2"] = "page + non-page streams checked (Font/XObject/ExtGState/ColorSpace/Shading) via GetReachableContentStreams (drawn Form XObjects, Type 3 CharProcs, annotation /AP /N appearance streams; Batch N5, 2026-06-23); both page-level and non-page checks scoped to streams with null own /Resources AND where the used name IS defined in the ancestor resource scope (veraPDF's inheritedResourceNames model: only names that resolve via the ancestor chain are flagged — a name absent from all ancestor scopes is not fired; confirmed probe A1/A2 2026-06-23); non-page check uses the PAGE's resolved resource scope as the ancestor; streams with a non-null /Resources skipped (FP-safe under-detection); nested-form B1 (inner no /Resources, name in page scope) fires; B2 (name only in outer form scope, not page scope) is FP-safe under-detection (confirmed probe B1/B2 2026-06-23); Pattern names (scn/SCN in Pattern colour space) and Properties names (BDC/DP with name operand) not detected in either pass — stateful colour-space tracking required",
+        // 6.2.2-2 moved to Implemented (Batch N7, 2026-07-02): Pattern names (scn/SCN when active
+        //   fill/stroke CS is literally "Pattern") and Properties names (BDC/DP named-resource form,
+        //   two Name operands) are now detected in both the page-level pass (via ContentStreamUsage.Analyze,
+        //   new UsedPatterns + UsedPropertiesNames) and the non-page pass (ScanStreamForInheritedResources,
+        //   colour-space state tracking + prevName slot). FP-safety: Pattern fires only when current CS
+        //   is literally "Pattern" (direct CS, not a named resource); Properties fires only when prevName
+        //   != null (named-resource form, not inline dict); both fire only when the name IS defined in
+        //   the ancestor /Pattern or /Properties subdictionary (inheritedResourceNames model). Oracle
+        //   fixtures: pdfa2b-inherited-resource-pattern-violation (VIOLATING) and
+        //   pdfa2b-inherited-resource-pattern-compliant (COMPLIANT). 2026-07-02.
         // 6.2.11.4.1-1/-2 and 6.2.11.5-1 moved to Implemented (Wave 2a+2b, 2026-07-02): glyph presence
         //   and width are checked across every embedded font path — CIDFontType2 (Identity or stream
         //   CIDToGIDMap), Type0 with an embedded non-Identity CMap, simple non-symbolic TrueType,
@@ -548,6 +557,16 @@ public static class ConformanceCatalog
         //   veraPDF 1.30.2 probe series).
         // 7.1-3 remains deferred (Batch C3 probe — operator set fully pinned; blocker is Properties
         //   named-reference BDC resolution, see PdfUaDeferredNote switch above for details).
+
+        "7.20-2" =>
+            "Form XObject unique semantic parent: detecting this requires knowing the MC-stack context "
+            + "(BDC nesting) at every Do call across all content streams, not just counting Do "
+            + "invocations. A form with /StructParents drawn twice is only a violation when the two "
+            + "draw sites would give its MCIDs different structural parents; two draws in the same "
+            + "Artifact region may be conformant. Without full MC-context evaluation at each Do and "
+            + "veraPDF-oracle confirmation, a /StructParents-present + multi-draw check risks FP on "
+            + "conformant documents (e.g. artifact-wrapped reuse). Deferred pending tagged-content "
+            + "interpreter or veraPDF-probe series.",
 
         _ => "structure-tree walker",
     };
