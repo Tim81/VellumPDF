@@ -48,11 +48,13 @@ namespace VellumPdf.Conformance.Rules.Graphics;
 /// </list>
 /// <para>
 /// <strong>Categories detected (both page and non-page):</strong> Font (<c>Tf</c>), XObject
-/// (<c>Do</c>), ExtGState (<c>gs</c>), ColorSpace (<c>cs</c>/<c>CS</c>), and Shading (<c>sh</c>).
-/// Pattern names (<c>scn</c>/<c>SCN</c> in Pattern color space) and Properties names (<c>BDC</c>/
-/// <c>DP</c> with a name operand) are not detected because reliable identification requires
-/// stateful color-space and marked-content tracking respectively; omitting them keeps false
-/// positives impossible at the cost of under-detecting those two categories.
+/// (<c>Do</c>), ExtGState (<c>gs</c>), ColorSpace (<c>cs</c>/<c>CS</c>), Shading (<c>sh</c>),
+/// Pattern (<c>scn</c>/<c>SCN</c> when the active colour space is literally <c>Pattern</c>), and
+/// Properties (<c>BDC</c>/<c>DP</c> with a name operand — the named-resource form). Pattern
+/// tracking is restricted to the direct <c>/Pattern</c> colour space; named colour-space resources
+/// that resolve to Pattern arrays are not tracked (FP-safe under-detection). Properties tracking
+/// distinguishes the named-resource form (<c>/Tag /Name BDC</c>, two Name tokens) from the
+/// inline-dict form (<c>/Tag &lt;&lt;...&gt;&gt; BDC</c>) by the presence of a preceding Name token.
 /// </para>
 /// <para>
 /// <strong>Defensive operation:</strong> on any decode failure or lexer error the scan stops
@@ -70,6 +72,8 @@ internal sealed class InheritedResourceRule : IConformanceRule
     private static readonly PdfName _extGState = new("ExtGState");
     private static readonly PdfName _colorSpace = new("ColorSpace");
     private static readonly PdfName _shading = new("Shading");
+    private static readonly PdfName _pattern = new("Pattern");
+    private static readonly PdfName _properties = new("Properties");
 
     // Colour-space names that `cs`/`CS` resolve directly, WITHOUT a lookup in the page's
     // /Resources /ColorSpace subdictionary (ISO 32000-1 §8.6.3, Table 73; §8.6.8 for Pattern). A
@@ -121,14 +125,18 @@ internal sealed class InheritedResourceRule : IConformanceRule
         var inhExtGState = context.Resolve(inheritedResources.Get(_extGState)) as PdfDictionary;
         var inhColorSpace = context.Resolve(inheritedResources.Get(_colorSpace)) as PdfDictionary;
         var inhShading = context.Resolve(inheritedResources.Get(_shading)) as PdfDictionary;
+        var inhPattern = context.Resolve(inheritedResources.Get(_pattern)) as PdfDictionary;
+        var inhProperties = context.Resolve(inheritedResources.Get(_properties)) as PdfDictionary;
 
         // If none of the relevant subdictionaries exist in the ancestor scope, nothing to report.
         if (inhFont is null && inhXObject is null && inhExtGState is null
-            && inhColorSpace is null && inhShading is null)
+            && inhColorSpace is null && inhShading is null
+            && inhPattern is null && inhProperties is null)
             return;
 
         // Scan the page content for named-resource usage.
-        HashSet<string> usedFonts, drawnXObjects, appliedExtGStates, selectedColorSpaces, paintedShadings;
+        HashSet<string> usedFonts, drawnXObjects, appliedExtGStates, selectedColorSpaces,
+            paintedShadings, usedPatterns, usedPropertiesNames;
         try
         {
             var u = ContentStreamUsage.Analyze(context, page);
@@ -137,6 +145,8 @@ internal sealed class InheritedResourceRule : IConformanceRule
             appliedExtGStates = u.AppliedExtGStates;
             selectedColorSpaces = u.SelectedColorSpaces;
             paintedShadings = u.PaintedShadings;
+            usedPatterns = u.UsedPatterns;
+            usedPropertiesNames = u.UsedPropertiesNames;
         }
         catch
         {
@@ -164,6 +174,12 @@ internal sealed class InheritedResourceRule : IConformanceRule
                 ReportIfNew(context, name, reported);
         foreach (var name in paintedShadings)
             if (inhShading is not null && NameDefinedIn(inhShading, name))
+                ReportIfNew(context, name, reported);
+        foreach (var name in usedPatterns)
+            if (inhPattern is not null && NameDefinedIn(inhPattern, name))
+                ReportIfNew(context, name, reported);
+        foreach (var name in usedPropertiesNames)
+            if (inhProperties is not null && NameDefinedIn(inhProperties, name))
                 ReportIfNew(context, name, reported);
     }
 
@@ -205,11 +221,14 @@ internal sealed class InheritedResourceRule : IConformanceRule
         var pageExtGState = context.Resolve(pageResources.Get(_extGState)) as PdfDictionary;
         var pageColorSpace = context.Resolve(pageResources.Get(_colorSpace)) as PdfDictionary;
         var pageShading = context.Resolve(pageResources.Get(_shading)) as PdfDictionary;
+        var pagePattern = context.Resolve(pageResources.Get(_pattern)) as PdfDictionary;
+        var pageProperties = context.Resolve(pageResources.Get(_properties)) as PdfDictionary;
 
         // If none of the relevant subdictionaries exist on the page, no form can have inherited
         // resource names — skip.
         if (pageFont is null && pageXObject is null && pageExtGState is null
-            && pageColorSpace is null && pageShading is null)
+            && pageColorSpace is null && pageShading is null
+            && pagePattern is null && pageProperties is null)
             return;
 
         IReadOnlyList<ReachableContentStream> streams;
@@ -236,7 +255,8 @@ internal sealed class InheritedResourceRule : IConformanceRule
             {
                 ScanStreamForInheritedResources(
                     cs.Bytes, reported, context,
-                    pageFont, pageXObject, pageExtGState, pageColorSpace, pageShading);
+                    pageFont, pageXObject, pageExtGState, pageColorSpace, pageShading,
+                    pagePattern, pageProperties);
             }
             catch
             {
@@ -263,10 +283,21 @@ internal sealed class InheritedResourceRule : IConformanceRule
         PdfDictionary? pageXObject,
         PdfDictionary? pageExtGState,
         PdfDictionary? pageColorSpace,
-        PdfDictionary? pageShading)
+        PdfDictionary? pageShading,
+        PdfDictionary? pagePattern,
+        PdfDictionary? pageProperties)
     {
         var lexer = new PdfLexer(bytes);
         string? lastName = null;
+        string? prevName = null;
+
+        // Current fill and stroke colour space for pattern-name tracking (scn/SCN).
+        var currentFillCs = (string?)null;
+        var currentStrokeCs = (string?)null;
+
+        // Inline-dict tracking: when a DictBegin is seen, clear lastName so that BDC/DP
+        // after a << ... >> is treated as the inline-dict form (prevName==null or lastName==null).
+        var dictDepth = 0;
 
         while (!lexer.AtEnd)
         {
@@ -274,10 +305,34 @@ internal sealed class InheritedResourceRule : IConformanceRule
             if (token.Kind == TokenKind.EndOfInput)
                 break;
 
+            // Track inline dict depth so a DictBegin clears the name state.
+            if (token.Kind == TokenKind.DictBegin)
+            {
+                dictDepth++;
+                if (dictDepth == 1)
+                {
+                    // Outer << start: clears lastName so BDC/DP sees no trailing Name.
+                    prevName = null;
+                    lastName = null;
+                }
+                continue;
+            }
+
+            if (token.Kind == TokenKind.DictEnd)
+            {
+                if (dictDepth > 0)
+                    dictDepth--;
+                continue;
+            }
+
+            if (dictDepth > 0)
+                continue; // skip inside inline dicts
+
             if (token.Kind == TokenKind.Name)
             {
                 // Decode the name: strip the leading '/' and resolve '#XX' hex escapes,
                 // mirroring ContentStreamUsage's DecodeName logic (ISO 32000-1 §7.3.5).
+                prevName = lastName;
                 lastName = DecodeName(token.Raw.Span);
                 continue;
             }
@@ -290,6 +345,7 @@ internal sealed class InheritedResourceRule : IConformanceRule
                 {
                     // Skip inline-image binary sample data — do not mis-scan it as operators.
                     ContentStreamUsage.SkipInlineImageData(lexer, bytes);
+                    prevName = null;
                     lastName = null;
                     continue;
                 }
@@ -322,15 +378,26 @@ internal sealed class InheritedResourceRule : IConformanceRule
                                 ReportIfNew(context, lastName, reported);
                             break;
 
-                        case "cs":   // non-stroke colour space
-                        case "CS":   // stroke colour space
-                            // Direct colour-space names never require a /Resources lookup.
+                        case "cs":
+                            // Non-stroke colour space. Direct names never require a lookup.
                             if (!_directColorSpaces.Contains(lastName)
                                 && pageColorSpace is not null
                                 && NameDefinedIn(pageColorSpace, lastName))
                             {
                                 ReportIfNew(context, lastName, reported);
                             }
+                            currentFillCs = lastName;
+                            break;
+
+                        case "CS":
+                            // Stroke colour space. Direct names never require a lookup.
+                            if (!_directColorSpaces.Contains(lastName)
+                                && pageColorSpace is not null
+                                && NameDefinedIn(pageColorSpace, lastName))
+                            {
+                                ReportIfNew(context, lastName, reported);
+                            }
+                            currentStrokeCs = lastName;
                             break;
 
                         case "sh":
@@ -338,14 +405,46 @@ internal sealed class InheritedResourceRule : IConformanceRule
                             if (pageShading is not null && NameDefinedIn(pageShading, lastName))
                                 ReportIfNew(context, lastName, reported);
                             break;
+
+                        case "scn":
+                            // Pattern name: only when active fill CS is literally "Pattern".
+                            if (currentFillCs == "Pattern"
+                                && pagePattern is not null && NameDefinedIn(pagePattern, lastName))
+                            {
+                                ReportIfNew(context, lastName, reported);
+                            }
+                            break;
+
+                        case "SCN":
+                            // Pattern name: only when active stroke CS is literally "Pattern".
+                            if (currentStrokeCs == "Pattern"
+                                && pagePattern is not null && NameDefinedIn(pagePattern, lastName))
+                            {
+                                ReportIfNew(context, lastName, reported);
+                            }
+                            break;
+
+                        case "BDC":
+                        case "DP":
+                            // Named-resource form: /Tag /ResourceName BDC or DP.
+                            // prevName != null means we saw both tag and resource name.
+                            // Inline-dict form has prevName==null (DictBegin cleared lastName).
+                            if (prevName is not null
+                                && pageProperties is not null && NameDefinedIn(pageProperties, lastName))
+                            {
+                                ReportIfNew(context, lastName, reported);
+                            }
+                            break;
                     }
                 }
 
+                prevName = null;
                 lastName = null;
             }
             else
             {
-                // Any non-Name, non-Keyword token resets the last-name slot.
+                // Any non-Name, non-Keyword token resets both name slots.
+                prevName = null;
                 lastName = null;
             }
         }

@@ -1778,6 +1778,25 @@ public static class OracleCorpus
                 NestedFormInnerNoResourcesOuterDefined(),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
 
+            // ── Batch N7 — §6.2.2-2 Pattern + Properties resource name coverage ────────────────
+            // Extends the inherited-resource check with Pattern names (scn/SCN when active CS is
+            // "Pattern") and Properties names (BDC/DP named-resource form). Both categories obey
+            // the same inheritedResourceNames model: only names defined in the ancestor scope fire.
+
+            // §6.2.2-2 VIOLATION: a page with NO own /Resources; the ancestor /Pages node defines
+            // /Resources /Pattern /MP0. The page content sets /Pattern cs then calls /MP0 scn.
+            // The pattern name /MP0 is an inherited resource name, so both veraPDF and the
+            // in-process InheritedResourceRule must fire.
+            new OracleFixture("pdfa2b-inherited-resource-pattern-violation",
+                InheritedResourcePatternViolation(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // §6.2.2-2 FP-SAFETY: same Pattern usage but the page HAS its own /Resources
+            // defining /MP0 in /Pattern. The page is self-contained; the rule must NOT fire.
+            new OracleFixture("pdfa2b-inherited-resource-pattern-compliant",
+                InheritedResourcePatternCompliant(),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
             // ── STRUCT batch ──────────────────────────────────────────────────────────────────────
 
             // §6.1.6-2 VIOLATION: a hexadecimal string containing the invalid hex character 'G'
@@ -8367,6 +8386,109 @@ public static class OracleCorpus
         W("xref\n0 8\n0000000000 65535 f \n");
         for (var i = 1; i <= 7; i++) W($"{off[i]:D10} 00000 n \n");
         W("trailer\n<< /Size 8 /Root 1 0 R /ID [<00112233> <00112233>] >>\n");
+        W($"startxref\n{xrefOff}\n%%EOF\n");
+        return ms.ToArray();
+    }
+
+    // ── Batch N7 helpers — §6.2.2-2 Pattern + Properties resource name coverage ──────────────────
+    // Hand-assembled PDFs (the writer always adds /Resources to every page).
+    // Both fixtures use a /Pattern colour space and a tiling pattern in /Resources /Pattern.
+    // The tiling pattern object is a Form XObject acting as a type-1 pattern: /PatternType 1,
+    // /PaintType 1, /TilingType 1 — required structure per ISO 32000-1 §8.7.3.
+
+    /// <summary>
+    /// §6.2.2-2 VIOLATION: a page with NO own <c>/Resources</c>; the ancestor <c>/Pages</c> node
+    /// defines <c>/Resources /Pattern /MP0</c> (a tiling pattern). The page content sets
+    /// <c>/Pattern cs</c> then calls <c>/MP0 scn</c> to paint with the pattern. The name <c>/MP0</c>
+    /// is an inherited resource name. Both veraPDF and the in-process rule must fire.
+    /// </summary>
+    private static byte[] InheritedResourcePatternViolation()
+    {
+        // Objects: 1=catalog, 2=pages(/Resources /Pattern /MP0), 3=page(NO /Resources),
+        //          4=content(/Pattern cs /MP0 scn f), 5=pattern, 6=xmp.
+        var xmp = MakeBatchN1Xmp();
+        var content = Encoding.Latin1.GetBytes("/Pattern cs /MP0 scn f");
+        var patternStream = Encoding.Latin1.GetBytes("q Q");
+        using var ms = new MemoryStream();
+        void W(string s) { var b = Encoding.Latin1.GetBytes(s); ms.Write(b); }
+
+        W("%PDF-1.7\n");
+        ms.Write([0x25, 0xE2, 0xE3, 0xCF, 0xD3, 0x0A]);
+        var off = new int[7];
+        off[1] = (int)ms.Position;
+        W("1 0 obj\n<< /Type /Catalog /Pages 2 0 R /Metadata 6 0 R >>\nendobj\n");
+        off[2] = (int)ms.Position;
+        // Pages node: HAS /Resources with /Pattern /MP0 — the ancestor scope.
+        W("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1"
+            + " /Resources << /Pattern << /MP0 5 0 R >> >> >>\nendobj\n");
+        off[3] = (int)ms.Position;
+        // Page: NO own /Resources key — will inherit from /Pages.
+        W("3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R >>\nendobj\n");
+        off[4] = (int)ms.Position;
+        W($"4 0 obj\n<< /Length {content.Length} >>\nstream\n");
+        ms.Write(content);
+        W("\nendstream\nendobj\n");
+        off[5] = (int)ms.Position;
+        // Tiling pattern (ISO 32000-1 Table 75): /PatternType 1, /PaintType 1, /TilingType 1.
+        W($"5 0 obj\n<< /Type /Pattern /PatternType 1 /PaintType 1 /TilingType 1"
+            + " /BBox [0 0 10 10] /XStep 10 /YStep 10"
+            + $" /Length {patternStream.Length} >>\nstream\n");
+        ms.Write(patternStream);
+        W("\nendstream\nendobj\n");
+        off[6] = (int)ms.Position;
+        W($"6 0 obj\n<< /Type /Metadata /Subtype /XML /Length {xmp.Length} >>\nstream\n");
+        ms.Write(xmp);
+        W("\nendstream\nendobj\n");
+        var xrefOff = (int)ms.Position;
+        W("xref\n0 7\n0000000000 65535 f \n");
+        for (var i = 1; i <= 6; i++) W($"{off[i]:D10} 00000 n \n");
+        W("trailer\n<< /Size 7 /Root 1 0 R /ID [<AABB0011> <AABB0011>] >>\n");
+        W($"startxref\n{xrefOff}\n%%EOF\n");
+        return ms.ToArray();
+    }
+
+    /// <summary>
+    /// §6.2.2-2 FP-SAFETY: same <c>/Pattern cs /MP0 scn f</c> usage, but the page HAS its own
+    /// <c>/Resources</c> defining <c>/MP0</c> in <c>/Pattern</c>. The page is self-contained;
+    /// the rule must NOT fire.
+    /// </summary>
+    private static byte[] InheritedResourcePatternCompliant()
+    {
+        var xmp = MakeBatchN1Xmp();
+        var content = Encoding.Latin1.GetBytes("/Pattern cs /MP0 scn f");
+        var patternStream = Encoding.Latin1.GetBytes("q Q");
+        using var ms = new MemoryStream();
+        void W(string s) { var b = Encoding.Latin1.GetBytes(s); ms.Write(b); }
+
+        W("%PDF-1.7\n");
+        ms.Write([0x25, 0xE2, 0xE3, 0xCF, 0xD3, 0x0A]);
+        var off = new int[7];
+        off[1] = (int)ms.Position;
+        W("1 0 obj\n<< /Type /Catalog /Pages 2 0 R /Metadata 6 0 R >>\nendobj\n");
+        off[2] = (int)ms.Position;
+        W("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
+        off[3] = (int)ms.Position;
+        // Page: HAS own /Resources defining /MP0 in /Pattern — self-contained.
+        W("3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R"
+            + " /Resources << /Pattern << /MP0 5 0 R >> >> >>\nendobj\n");
+        off[4] = (int)ms.Position;
+        W($"4 0 obj\n<< /Length {content.Length} >>\nstream\n");
+        ms.Write(content);
+        W("\nendstream\nendobj\n");
+        off[5] = (int)ms.Position;
+        W($"5 0 obj\n<< /Type /Pattern /PatternType 1 /PaintType 1 /TilingType 1"
+            + " /BBox [0 0 10 10] /XStep 10 /YStep 10"
+            + $" /Length {patternStream.Length} >>\nstream\n");
+        ms.Write(patternStream);
+        W("\nendstream\nendobj\n");
+        off[6] = (int)ms.Position;
+        W($"6 0 obj\n<< /Type /Metadata /Subtype /XML /Length {xmp.Length} >>\nstream\n");
+        ms.Write(xmp);
+        W("\nendstream\nendobj\n");
+        var xrefOff = (int)ms.Position;
+        W("xref\n0 7\n0000000000 65535 f \n");
+        for (var i = 1; i <= 6; i++) W($"{off[i]:D10} 00000 n \n");
+        W("trailer\n<< /Size 7 /Root 1 0 R /ID [<AABB0022> <AABB0022>] >>\n");
         W($"startxref\n{xrefOff}\n%%EOF\n");
         return ms.ToArray();
     }
