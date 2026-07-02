@@ -229,6 +229,14 @@ internal static class ArgParser
                 break;
             }
 
+            // A bare "-" is the stdin input marker, not an option.
+            if (arg == "-")
+            {
+                result.Inputs.Add("-");
+                i++;
+                continue;
+            }
+
             if (arg.StartsWith('-'))
                 return $"Unknown option: {arg}";
 
