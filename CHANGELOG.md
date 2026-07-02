@@ -8,14 +8,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- **`VellumPdf.Conformance` — 100% of the in-process-feasible PDF/A-2 and PDF/UA-1 checks.**
-  Build-verified veraPDF parity rises to **100% of the feasible check surface** for PDF/A-2b/2u/2a
-  and PDF/UA-1 (from ~92% and ~90%). Every rule is authored clean-room from the ISO text and
-  cross-validated against veraPDF 1.30.2. A few checks are marked out of scope and tracked in
-  follow-up issues, either because they cannot be replicated clean-room without over-rejection or
-  because they need a subsystem outside this release; those are excluded from the feasible
-  denominator rather than left silently missing. The coverage catalog now asserts this: no check is
-  left partial or deferred.
+- **`VellumPdf.Conformance` — near-complete PDF/A-2 and PDF/UA-1 coverage (~99%).**
+  Build-verified veraPDF parity rises to about **99%** for PDF/A-2b/2u/2a and PDF/UA-1 (from ~92%
+  and ~90%). Every rule is authored clean-room from the ISO text and cross-validated against veraPDF
+  1.30.2. Only five checks are not fully covered, each tracked in a follow-up issue: three are
+  partial — their common Identity/embedded-CMap paths are implemented and verified, but the
+  predefined-CJK-CMap sub-condition can't be cross-validated clean-room without a conformant CJK font
+  asset (6.1.13-10, 6.2.11.3.1-1, 7.21.3.1-1); two need a subsystem outside this release (6.8-5 a
+  PDF/A-1 profile, 7.16-1 reader decryption). Nothing is left silently missing — the coverage catalog
+  pins the exact partial/out-of-scope set and asserts no check is merely deferred.
   - **Fonts.** Glyph presence and advance width are now checked across every embedded font path —
     CIDFontType2 with a stream `/CIDToGIDMap`, `Type0` with an embedded non-Identity CMap, simple
     non-symbolic TrueType, CIDFontType0/CFF (a Type2 charstring width interpreter with Private-DICT
