@@ -54,18 +54,18 @@ namespace VellumPdf.Conformance.Rules.Colour;
 /// that does not explicitly enable overprinting — never fires.
 /// </para>
 /// <para>
-/// <b>Scope (Partial):</b> Page content streams and non-page content streams reachable from
-/// each page (drawn Form XObjects, all CharProcs of Tf-selected Type 3 fonts, annotation /AP
-/// /N appearance streams) are all interpreted. Each stream is scanned in ISOLATION with a
-/// fresh default GState (OPM 0, overprint false). Graphics state is NOT threaded across
-/// Do boundaries — the graphics state that the calling stream has established is invisible to
-/// the callee. Violations detectable only through inherited graphics state (e.g. a page sets
-/// ICCBased-CMYK + overprint + OPM 1, then invokes a Form that merely fills without
-/// establishing any state itself) are under-detected. This is FP-safe: isolated scanning can
-/// only fail to find violations that veraPDF sees, never flag ones that veraPDF accepts.
-/// This inherited-state path remains the residual gap (Partial).
-/// Non-page streams whose <c>/Resources</c> dictionary is absent are skipped (null Resources
-/// means the stream's name references cannot be resolved; under-detection, FP-safe).
+/// <b>Scope:</b> Page content streams are scanned with a full graphics-state interpreter that
+/// threads the current overprint state (OP/op/OPM, fill/stroke ICCBased-CMYK flags) into every
+/// drawn Form XObject via <c>Do</c>. The form inherits the caller's state as its initial GState;
+/// the form's own <c>cs</c>/<c>gs</c> operators override that state locally. On return, the
+/// caller's state is unchanged (a Form XObject executes as if wrapped in an implicit
+/// <c>q</c>/<c>Q</c>). Recursion is bounded to <see cref="MaxFormDepth"/> levels and cycle-
+/// guarded by object number. Type 3 CharProcs and annotation /AP /N appearance streams are
+/// scanned in ISOLATION with a fresh default GState against their own /Resources (inherited
+/// state from the page does not reach these streams; under-detection is FP-safe). Streams with
+/// null /Resources are skipped for CharProcs/appearances; for Forms they are still entered with
+/// the inherited state (the form's own operators that need resource lookup receive empty tables,
+/// which is FP-safe).
 /// </para>
 /// <para>
 /// <b>Oracle probes (veraPDF 1.30.2):</b>
@@ -84,7 +84,7 @@ namespace VellumPdf.Conformance.Rules.Colour;
 ///   <item>N3-A Form XObject self-contains cs+gs (op/OPM violation) + fill → FAIL §6.2.4.2-2
 ///   (veraPDF validated 2026-06-23; context: xObject[0]/contentStream[0])</item>
 ///   <item>N3-B Page sets cs+gs (op/OPM), form only fills (inherited state) → FAIL §6.2.4.2-2
-///   (veraPDF validated 2026-06-23; isolated per-stream scan under-detects this — Partial gap)</item>
+///   (veraPDF validated 2026-06-23; detected via state threading through Do)</item>
 ///   <item>N3-C Form self-contains cs + op true + OPM 0 + fill → PASS (OPM 0 allowed)</item>
 /// </list>
 /// </para>
@@ -100,13 +100,18 @@ internal sealed class OverprintRule : IConformanceRule
 
     public string Clause => "ISO 19005-2:2011, 6.2.4.2";
 
+    private const int MaxFormDepth = 32;
+
     private static readonly PdfName _colorSpace = new("ColorSpace");
     private static readonly PdfName _extGState = new("ExtGState");
-    private static readonly PdfName _op = new("op");  // fill overprint (lowercase)
-    private static readonly PdfName _OP = new("OP");  // stroke overprint (uppercase)
+    private static readonly PdfName _op = new("op");
+    private static readonly PdfName _OP = new("OP");
     private static readonly PdfName _opm = new("OPM");
-    private static readonly PdfName _iccBased = new("ICCBased");
     private static readonly PdfName _n = new("N");
+    private static readonly PdfName _xObject = new("XObject");
+    private static readonly PdfName _subtype = new("Subtype");
+    private static readonly PdfName _resources = new("Resources");
+    private static readonly PdfName _formSubtype = new("Form");
 
     public void Evaluate(PreflightContext context)
     {
@@ -134,27 +139,30 @@ internal sealed class OverprintRule : IConformanceRule
 
     private void EvaluatePage(PreflightContext context, PdfDictionary page)
     {
-        if (context.ResolveInherited(page, PdfName.Resources) is not PdfDictionary resources)
+        if (context.ResolveInherited(page, PdfName.Resources) is not PdfDictionary pageResources)
             return;
 
         var content = ContentStreamUsage.GetPageContent(context, page);
         if (content is null || content.Length == 0)
             return;
 
-        // Build lookup tables from the PAGE's own /Resources; report at most once.
-        var iccCmykNames = BuildIccCmykSet(context, resources);
-        var extGStates = BuildExtGStateTable(context, resources);
+        var iccCmykNames = BuildIccCmykSet(context, pageResources);
+        var extGStates = BuildExtGStateTable(context, pageResources);
         var reported = false;
-        InterpretStream(context, content, iccCmykNames, extGStates, ref reported);
+        var visitedForms = new HashSet<int>();
+        InterpretStream(
+            context, content, iccCmykNames, extGStates, ref reported,
+            new GState(), pageResources, visitedForms, 0);
     }
 
     /// <summary>
     /// Scans non-page content streams reachable from <paramref name="page"/> via
-    /// <see cref="ContentStreamUsage.GetReachableContentStreams"/>. Each stream is
-    /// interpreted in ISOLATION with a fresh default GState, resolved against that
-    /// stream's OWN <c>/Resources</c> dictionary. Streams with a null
-    /// <c>Resources</c> property are skipped (cannot resolve names; under-detection,
-    /// FP-safe). See the Scope note in the class remarks for the inherited-state gap.
+    /// <see cref="ContentStreamUsage.GetReachableContentStreams"/>. Form XObjects are
+    /// skipped here — they are reached with inherited graphics state from the page-level
+    /// scan in <see cref="EvaluatePage"/>. Type 3 CharProcs and annotation /AP /N
+    /// appearance streams are each scanned in ISOLATION with a fresh default GState resolved
+    /// against the stream's OWN <c>/Resources</c> dictionary. Streams with a null
+    /// <c>Resources</c> property are skipped (cannot resolve names; under-detection, FP-safe).
     /// </summary>
     private void EvaluateNonPageStreams(PreflightContext context, PdfDictionary page)
     {
@@ -168,15 +176,16 @@ internal sealed class OverprintRule : IConformanceRule
             return;
         }
 
-        var reported = false; // report at most once across all non-page streams per page
+        var reported = false;
         foreach (var cs in streams)
         {
             if (reported)
                 break;
 
-            // Skip streams with no /Resources: names in the content cannot be resolved,
-            // so we cannot safely determine whether any cs/gs operator establishes the
-            // violation condition. Skipping is under-detection, not over-detection.
+            // Form XObjects are handled (with inherited state threading) in EvaluatePage.
+            if (cs.Kind == ContentStreamKind.FormXObject)
+                continue;
+
             if (cs.Resources is null)
                 continue;
 
@@ -184,7 +193,11 @@ internal sealed class OverprintRule : IConformanceRule
             {
                 var iccCmykNames = BuildIccCmykSet(context, cs.Resources);
                 var extGStates = BuildExtGStateTable(context, cs.Resources);
-                InterpretStream(context, cs.Bytes, iccCmykNames, extGStates, ref reported);
+                // Pass null xObjectResources: CharProcs and annotation appearances are
+                // scanned in isolation without Do-recursion into nested Form XObjects.
+                InterpretStream(
+                    context, cs.Bytes, iccCmykNames, extGStates, ref reported,
+                    new GState(), null, null, 0);
             }
             catch
             {
@@ -194,20 +207,23 @@ internal sealed class OverprintRule : IConformanceRule
     }
 
     /// <summary>
-    /// Runs the graphics-state machine over <paramref name="content"/> using the
-    /// pre-built resource lookups. Sets <paramref name="reported"/> to true and emits a
-    /// finding on the first detected violation. The state machine always starts from the
-    /// PDF default GState (OPM 0, overprint false, no ICCBased colour space) — no
-    /// inherited state from a calling stream is threaded in.
+    /// Runs the graphics-state machine over <paramref name="content"/>. Sets
+    /// <paramref name="reported"/> to true and emits a finding on the first violation.
+    /// Pass a non-null <paramref name="xObjectResources"/> to enable Form XObject recursion
+    /// (state threading through Do); pass null for isolated scan mode.
     /// </summary>
     private void InterpretStream(
         PreflightContext context,
         byte[] content,
         HashSet<string> iccCmykNames,
         Dictionary<string, GsParams> extGStates,
-        ref bool reported)
+        ref bool reported,
+        GState initialState,
+        PdfDictionary? xObjectResources,
+        HashSet<int>? visitedForms,
+        int depth)
     {
-        var state = new GState();
+        var state = initialState;
         var stack = new Stack<GState>();
 
         try
@@ -235,7 +251,6 @@ internal sealed class OverprintRule : IConformanceRule
                     {
                         case "q":
                             stack.Push(state);
-                            // q inherits the current state (copy-on-push).
                             break;
 
                         case "Q":
@@ -244,64 +259,64 @@ internal sealed class OverprintRule : IConformanceRule
                             break;
 
                         case "gs":
-                            // `gs` applies an ExtGState: /GsName gs
                             if (lastNameVal is not null
                                 && extGStates.TryGetValue(lastNameVal, out var gsParams))
                             {
-                                // Apply OPM if present.
                                 state.Opm = gsParams.Opm ?? state.Opm;
 
-                                // Apply fill and stroke overprint.
-                                // ISO 32000-1 §8.4.5: /OP sets stroke overprint.
-                                // /op sets fill overprint; when /op is absent, /OP also sets
-                                // fill overprint (verified empirically in probes P8 and P14).
                                 if (gsParams.StrokeOp.HasValue)
                                     state.StrokeOverprint = gsParams.StrokeOp.Value;
 
                                 if (gsParams.FillOp.HasValue)
                                 {
-                                    // /op explicitly present — it wins.
                                     state.FillOverprint = gsParams.FillOp.Value;
                                 }
                                 else if (gsParams.StrokeOp.HasValue)
                                 {
-                                    // /op absent, but /OP present → /OP also sets fill overprint.
+                                    // /op absent, /OP present → /OP also sets fill overprint.
                                     state.FillOverprint = gsParams.StrokeOp.Value;
                                 }
                             }
                             break;
 
                         case "cs":
-                            // `cs` sets fill colour space: /CSName cs
                             if (lastNameVal is not null)
                                 state.FillIsIccCmyk = iccCmykNames.Contains(lastNameVal);
                             break;
 
                         case "CS":
-                            // `CS` sets stroke colour space: /CSName CS
                             if (lastNameVal is not null)
                                 state.StrokeIsIccCmyk = iccCmykNames.Contains(lastNameVal);
                             break;
 
-                        // Device fill colour operators — clear ICCBased-CMYK fill flag.
-                        case "g":   // DeviceGray fill
-                        case "rg":  // DeviceRGB fill
-                        case "k":   // DeviceCMYK fill
+                        case "g":
+                        case "rg":
+                        case "k":
                             state.FillIsIccCmyk = false;
                             break;
 
-                        // Device stroke colour operators — clear ICCBased-CMYK stroke flag.
-                        case "G":   // DeviceGray stroke
-                        case "RG":  // DeviceRGB stroke
-                        case "K":   // DeviceCMYK stroke
+                        case "G":
+                        case "RG":
+                        case "K":
                             state.StrokeIsIccCmyk = false;
                             break;
 
-                        // ── Painting operators ─────────────────────────────────────────
-                        // Fill-only:
+                        case "Do":
+                            if (!reported
+                                && lastNameVal is not null
+                                && xObjectResources is not null
+                                && visitedForms is not null
+                                && depth < MaxFormDepth)
+                            {
+                                TryRecurseForm(
+                                    context, lastNameVal, xObjectResources, state,
+                                    visitedForms, depth, ref reported);
+                            }
+                            break;
+
                         case "f":
-                        case "F":   // same as f
-                        case "f*":  // fill using even-odd rule
+                        case "F":
+                        case "f*":
                             if (!reported && CheckFill(state))
                             {
                                 ReportFinding(context, state.Opm);
@@ -309,9 +324,8 @@ internal sealed class OverprintRule : IConformanceRule
                             }
                             break;
 
-                        // Stroke-only:
                         case "S":
-                        case "s":   // close then stroke
+                        case "s":
                             if (!reported && CheckStroke(state))
                             {
                                 ReportFinding(context, state.Opm);
@@ -319,11 +333,10 @@ internal sealed class OverprintRule : IConformanceRule
                             }
                             break;
 
-                        // Fill-and-stroke:
-                        case "B":   // fill then stroke (nonzero winding)
-                        case "B*":  // fill then stroke (even-odd)
-                        case "b":   // close, fill then stroke (nonzero)
-                        case "b*":  // close, fill then stroke (even-odd)
+                        case "B":
+                        case "B*":
+                        case "b":
+                        case "b*":
                             if (!reported && (CheckFill(state) || CheckStroke(state)))
                             {
                                 ReportFinding(context, state.Opm);
@@ -336,18 +349,89 @@ internal sealed class OverprintRule : IConformanceRule
                             break;
                     }
 
-                    lastNameVal = null; // operator consumed pending operands
+                    lastNameVal = null;
                     continue;
                 }
-
-                // Non-name, non-keyword tokens do not clear lastNameVal — a name operand
-                // may be preceded by numeric tokens (e.g. `/F1 12 Tf`). But names are
-                // re-set on each new Name token, so the last-seen-name stays relevant.
             }
         }
         catch
         {
             // Malformed content — keep whatever findings were already reported.
+        }
+    }
+
+    /// <summary>
+    /// Resolves the Form XObject named <paramref name="xObjName"/> from
+    /// <paramref name="callerResources"/>, then recursively interprets its content stream
+    /// with <paramref name="inheritedState"/> as the initial graphics state.
+    /// </summary>
+    private void TryRecurseForm(
+        PreflightContext context,
+        string xObjName,
+        PdfDictionary callerResources,
+        GState inheritedState,
+        HashSet<int> visitedForms,
+        int depth,
+        ref bool reported)
+    {
+        try
+        {
+            if (context.Resolve(callerResources.Get(_xObject)) is not PdfDictionary xObjects)
+                return;
+
+            var xObjRef = xObjects.Get(new PdfName(xObjName));
+            if (xObjRef is not PdfIndirectReference r)
+                return;
+
+            // Cycle guard: if this object is already on the call stack, skip.
+            if (!visitedForms.Add(r.ObjectNumber))
+                return;
+
+            try
+            {
+                if (context.Resolve(xObjRef) is not PdfDictionary xObjDict)
+                    return;
+                if (context.Resolve(xObjDict.Get(_subtype)) is not PdfName subtypeName
+                    || subtypeName.Value != _formSubtype.Value)
+                    return;
+
+                var stream = context.ResolveStream(xObjRef);
+                if (stream is null)
+                    return;
+
+                var bytes = context.DecodeStream(stream);
+                if (bytes is not { Length: > 0 })
+                    return;
+
+                // The form's own /Resources resolve its local cs/gs names.
+                // If the form has no /Resources, build empty tables — the inherited
+                // colour-space and overprint state still applies to painting operators.
+                var formResourceDict = context.Resolve(xObjDict.Get(_resources)) as PdfDictionary;
+                var formIccCmykNames = formResourceDict is not null
+                    ? BuildIccCmykSet(context, formResourceDict)
+                    : [];
+                var formExtGStates = formResourceDict is not null
+                    ? BuildExtGStateTable(context, formResourceDict)
+                    : new Dictionary<string, GsParams>(StringComparer.Ordinal);
+
+                // The form's own /XObject dict (for nested Do operators).
+                var formXObjectResources = formResourceDict;
+
+                InterpretStream(
+                    context, bytes, formIccCmykNames, formExtGStates, ref reported,
+                    inheritedState, formXObjectResources, visitedForms, depth + 1);
+            }
+            finally
+            {
+                // Remove from cycle guard when unwinding: the same form can be drawn multiple
+                // times by different call sites and should be checked each time (only loops
+                // are guarded, not re-entrant draws from disjoint sites).
+                visitedForms.Remove(r.ObjectNumber);
+            }
+        }
+        catch
+        {
+            // Unresolvable XObject or decode failure — FP-safe skip.
         }
     }
 
@@ -386,7 +470,6 @@ internal sealed class OverprintRule : IConformanceRule
             var stream = context.ResolveStream(csArray[1]);
             if (stream is null)
                 continue;
-            // /N gives the number of colour components. N=4 means CMYK.
             if (context.Resolve(stream.Dictionary.Get(_n)) is PdfInteger { Value: 4 })
                 result.Add(entry.Key.Value);
         }
@@ -412,12 +495,10 @@ internal sealed class OverprintRule : IConformanceRule
 
             var opm = (context.Resolve(gs.Get(_opm)) as PdfInteger)?.Value;
 
-            // /OP → stroke overprint (also sets fill when /op absent).
             bool? strokeOp = null;
             if (context.Resolve(gs.Get(_OP)) is PdfBoolean opVal)
                 strokeOp = opVal.Value;
 
-            // /op → fill overprint (explicit; when present, overrides /OP propagation).
             bool? fillOp = null;
             if (context.Resolve(gs.Get(_op)) is PdfBoolean opLower)
                 fillOp = opLower.Value;
@@ -429,7 +510,6 @@ internal sealed class OverprintRule : IConformanceRule
 
     private static string DecodeName(ReadOnlySpan<byte> raw)
     {
-        // raw includes the leading '/'. Decode #XX escapes (ISO 32000-1 §7.3.5).
         var sb = new System.Text.StringBuilder(raw.Length);
         for (var i = 1; i < raw.Length; i++)
         {

@@ -200,8 +200,8 @@ public static class ConformanceCatalog
         //   DestOutputProfile ICC header device class (prtr/mntr/scnr/spac) and major version < 5, in
         //   addition to the acsp signature and /N; positive-knowledge/FP-safe (fires only on a
         //   read device-class tag outside the permitted four or version >= 5), mirroring §6.2.4.2-1.
-        // 6.2.4.2-2 moved to PdfAOutOfScope (graphics-state inheritance across Do; FP-safe under-detection
-        //   confirmed against veraPDF 1.30.2; tracked in Backlog issue TBD).
+        // 6.2.4.2-2 moved to Implemented (Batch N3 continued, 2026-07-02): overprint state threaded
+        //   into Form XObjects at every Do site; see PdfAOutOfScope comment for full detail.
         // 6.2.4.3-2/-3/-4 moved to Implemented (COL batch, 2026-07-02): DocumentDeviceColourTypes now
         //   also detects device colour reached via image XObject /ColorSpace entries (drawn images from
         //   page content and reachable non-page streams) and via the /Alternate space of named colour
@@ -280,8 +280,8 @@ public static class ConformanceCatalog
         //   reader's InvalidDataException is caught by PdfPreflight.Validate outer catch after rule fires).
         // 6.1.8-1 moved to PdfAPartial (font BaseFont + colour colourant + structure-type names).
         // 6.1.12-2 moved to Implemented (DocMdpReferenceRule).
-        // 6.2.4.2-2 moved to PdfAPartial; OverprintRule now covers page + non-page streams (Batch N3);
-        //   graphics-state inheritance across Do remains the residual gap (FP-safe under-detection).
+        // 6.2.4.2-2 moved to PdfAPartial (Batch N3), then Implemented (Batch N3 continued, 2026-07-02):
+        //   OverprintRule now threads overprint state into Form XObjects via Do; see PdfAOutOfScope.
         // 6.2.8.3-1..-5: removed from Deferred; Jpeg2000Rule now implements all five for both
         // JP2 box files and raw codestreams. -2/-3/-4 correctly do not apply to raw codestreams
         // (which carry no colr boxes) — this is not a gap but correct per-spec scoping.
@@ -301,7 +301,14 @@ public static class ConformanceCatalog
         ["6.1.13-10"] = "Out of scope for v1.7 (tracked in Backlog issue TBD): predefined named-CMap character-collection maxima need Adobe registry tables; Identity/embedded-CMap paths are already covered.",
         ["6.2.11.3.1-1"] = "Out of scope for v1.7 (Backlog issue TBD): predefined-CMap CIDSystemInfo registry table; Identity and embedded-CMap paths already compared.",
         ["6.8-5"] = "Out of scope for v1.7 (Backlog issue TBD): embedded PDF/A-1 recursion needs a PDF/A-1 profile (not on roadmap); embedded PDF/A-2 is validated recursively.",
-        ["6.2.4.2-2"] = "Out of scope for v1.7 (Backlog issue TBD): graphics-state inheritance across Do is not threaded; documented FP-safe — matches veraPDF 1.30.2 on every reachable fixture.",
+        // 6.2.4.2-2 moved to Implemented (Batch N3 continued, 2026-07-02): overprint state (OP/op/OPM,
+        //   fill/stroke ICCBased-CMYK flags) is now threaded into Form XObjects at every Do site in the
+        //   page-level scan, using the caller's current GState as the form's initial state. Form-local
+        //   cs/gs operators override the inherited state; on return the caller's state is unchanged
+        //   (implicit q/Q semantics). Recursion is depth-bounded and cycle-guarded by object number.
+        //   CharProcs and annotation appearances remain isolated (FP-safe under-detection). Oracle
+        //   fixtures: pdfa2b-overprint-inherited-violation (VIOLATING) and
+        //   pdfa2b-overprint-inherited-compliant (COMPLIANT). Confirmed FP-safe against veraPDF 1.30.2.
         ["6.6.2.3.1-2"] = "Out of scope for v1.7 (Backlog issue TBD): the check is XMPProperty isValueTypeCorrect — every property's value must match its schema-defined type. Extension-schema-declared property types are validated; the predefined XMP-Specification schemas (dc:, xmp:, pdf:, pdfaid:, …) need veraPDF's exact built-in expected-type catalogue, which cannot be replicated clean-room without over-rejecting.",
     };
 
