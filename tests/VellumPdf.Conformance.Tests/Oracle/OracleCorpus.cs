@@ -684,6 +684,49 @@ public static class OracleCorpus
             new OracleFixture("pdfa2b-extension-valuetype-bad", WriterPdfWithMetadata(Encoding.UTF8.GetBytes(BadValueTypeXmp2b())),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
 
+            // ── §6.6.2.3.3-8/-17 isValueTypeDefined (META batch, 2026-07-02) ──────────────────
+
+            // A pdfaProperty:valueType naming a type that is neither a predefined XMP value type nor
+            // a value type declared by the same schema (§6.6.2.3.3-8, isValueTypeDefined). veraPDF and
+            // the in-process ExtensionSchemaRule both reject it.
+            new OracleFixture("pdfa2b-property-valuetype-undefined",
+                WriterPdfWithMetadata(Encoding.UTF8.GetBytes(PropertyUndefinedValueTypeXmp2b())),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // A pdfaField:valueType naming an undefined type (§6.6.2.3.3-17, isValueTypeDefined).
+            // veraPDF and the in-process rule both reject it.
+            new OracleFixture("pdfa2b-field-valuetype-undefined",
+                WriterPdfWithMetadata(Encoding.UTF8.GetBytes(FieldUndefinedValueTypeXmp2b())),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // FP-safety guard (§6.6.2.3.3-8/-17 isValueTypeDefined): a property whose valueType names
+            // a custom value type declared in the SAME schema, and a field whose valueType is a
+            // predefined type. veraPDF accepts it; the in-process rule must not fire -8 or -17.
+            new OracleFixture("pdfa2b-valuetype-defined-custom",
+                WriterPdfWithMetadata(Encoding.UTF8.GetBytes(CustomValueTypeDefinedXmp2b())),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
+            // ── §6.2.3-1 DestOutputProfile ICC device class (META batch, 2026-07-02) ─────────
+
+            // The PDF/A output intent's DestOutputProfile ICC header carries a device class ('abst')
+            // outside the permitted set (prtr/mntr/scnr/spac) (§6.2.3-1). veraPDF and the in-process
+            // OutputIntentRule both reject it.
+            new OracleFixture("pdfa2b-dest-profile-bad-device-class",
+                WriterPdfWithDestOutputProfileIcc(MakeIccHeader("abst", "RGB ", 4)),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // The DestOutputProfile ICC header carries an ICC major version >= 5 (§6.2.3-1). veraPDF
+            // and the in-process rule both reject it.
+            new OracleFixture("pdfa2b-dest-profile-bad-version",
+                WriterPdfWithDestOutputProfileIcc(MakeIccHeader("prtr", "RGB ", 5)),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
+
+            // FP-safety guard (§6.2.3-1): a DestOutputProfile ICC header with a permitted device class
+            // ('mntr') and version 4. veraPDF accepts it; the in-process rule must not fire.
+            new OracleFixture("pdfa2b-dest-profile-valid-device-class",
+                WriterPdfWithDestOutputProfileIcc(MakeIccHeader("mntr", "RGB ", 4)),
+                Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
+
             // ── §6.6.2.3.3 container-type + prefix checks (Batch C1, 2026-06-23) ──────────────
 
             // pdfaExtension:schemas uses rdf:Seq instead of rdf:Bag (§6.6.2.3.3-1). veraPDF fires
@@ -2531,6 +2574,102 @@ public static class OracleCorpus
         "</rdf:li></rdf:Seq></pdfaType:field>" +
         "</rdf:li></rdf:Seq></pdfaSchema:valueType>" +
         "</rdf:li></rdf:Bag></pdfaExtension:schemas></rdf:Description>");
+
+    // §6.6.2.3.3-8 violation (isValueTypeDefined): a pdfaProperty:valueType naming a type ("Widget")
+    // that is neither a predefined XMP value type nor declared by this schema.
+    private static string PropertyUndefinedValueTypeXmp2b() => RdfPacket(
+        $"<rdf:Description rdf:about=\"\" {ExtNs}>" +
+        "<pdfaExtension:schemas><rdf:Bag><rdf:li rdf:parseType=\"Resource\">" +
+        "<pdfaSchema:schema>S</pdfaSchema:schema>" +
+        "<pdfaSchema:namespaceURI>http://example.com/ns/</pdfaSchema:namespaceURI>" +
+        "<pdfaSchema:prefix>ex</pdfaSchema:prefix>" +
+        "<pdfaSchema:property><rdf:Seq><rdf:li rdf:parseType=\"Resource\">" +
+        "<pdfaProperty:name>foo</pdfaProperty:name><pdfaProperty:valueType>Widget</pdfaProperty:valueType>" +
+        "<pdfaProperty:category>external</pdfaProperty:category><pdfaProperty:description>d</pdfaProperty:description>" +
+        "</rdf:li></rdf:Seq></pdfaSchema:property>" +
+        "</rdf:li></rdf:Bag></pdfaExtension:schemas></rdf:Description>");
+
+    // §6.6.2.3.3-17 violation (isValueTypeDefined): a pdfaField:valueType naming an undefined type
+    // ("Widget") within an otherwise valid custom value-type declaration.
+    private static string FieldUndefinedValueTypeXmp2b() => RdfPacket(
+        $"<rdf:Description rdf:about=\"\" {ExtNsType}>" +
+        "<pdfaExtension:schemas><rdf:Bag><rdf:li rdf:parseType=\"Resource\">" +
+        "<pdfaSchema:schema>S</pdfaSchema:schema>" +
+        "<pdfaSchema:namespaceURI>http://example.com/ns/</pdfaSchema:namespaceURI>" +
+        "<pdfaSchema:prefix>ex</pdfaSchema:prefix>" +
+        "<pdfaSchema:property><rdf:Seq><rdf:li rdf:parseType=\"Resource\">" +
+        ValidPropertyFields + "</rdf:li></rdf:Seq></pdfaSchema:property>" +
+        "<pdfaSchema:valueType><rdf:Seq><rdf:li rdf:parseType=\"Resource\">" +
+        "<pdfaType:type>MyType</pdfaType:type>" +
+        "<pdfaType:namespaceURI>http://example.com/t/</pdfaType:namespaceURI>" +
+        "<pdfaType:prefix>mt</pdfaType:prefix><pdfaType:description>d</pdfaType:description>" +
+        "<pdfaType:field><rdf:Seq><rdf:li rdf:parseType=\"Resource\">" +
+        "<pdfaField:name>f</pdfaField:name><pdfaField:valueType>Widget</pdfaField:valueType>" +
+        "<pdfaField:description>d</pdfaField:description>" +
+        "</rdf:li></rdf:Seq></pdfaType:field>" +
+        "</rdf:li></rdf:Seq></pdfaSchema:valueType>" +
+        "</rdf:li></rdf:Bag></pdfaExtension:schemas></rdf:Description>");
+
+    // FP-safety guard (§6.6.2.3.3-8/-17 isValueTypeDefined): the schema declares a custom value type
+    // "MyType", a property references it as its valueType, and a field uses a predefined type.
+    // Both references resolve as defined, so neither -8 nor -17 fires.
+    private static string CustomValueTypeDefinedXmp2b() => RdfPacket(
+        $"<rdf:Description rdf:about=\"\" {ExtNsType}>" +
+        "<pdfaExtension:schemas><rdf:Bag><rdf:li rdf:parseType=\"Resource\">" +
+        "<pdfaSchema:schema>S</pdfaSchema:schema>" +
+        "<pdfaSchema:namespaceURI>http://example.com/ns/</pdfaSchema:namespaceURI>" +
+        "<pdfaSchema:prefix>ex</pdfaSchema:prefix>" +
+        "<pdfaSchema:property><rdf:Seq><rdf:li rdf:parseType=\"Resource\">" +
+        "<pdfaProperty:name>foo</pdfaProperty:name><pdfaProperty:valueType>MyType</pdfaProperty:valueType>" +
+        "<pdfaProperty:category>external</pdfaProperty:category><pdfaProperty:description>d</pdfaProperty:description>" +
+        "</rdf:li></rdf:Seq></pdfaSchema:property>" +
+        "<pdfaSchema:valueType><rdf:Seq><rdf:li rdf:parseType=\"Resource\">" +
+        "<pdfaType:type>MyType</pdfaType:type>" +
+        "<pdfaType:namespaceURI>http://example.com/t/</pdfaType:namespaceURI>" +
+        "<pdfaType:prefix>mt</pdfaType:prefix><pdfaType:description>d</pdfaType:description>" +
+        "<pdfaType:field><rdf:Seq><rdf:li rdf:parseType=\"Resource\">" +
+        "<pdfaField:name>f</pdfaField:name><pdfaField:valueType>Text</pdfaField:valueType>" +
+        "<pdfaField:description>d</pdfaField:description>" +
+        "</rdf:li></rdf:Seq></pdfaType:field>" +
+        "</rdf:li></rdf:Seq></pdfaSchema:valueType>" +
+        "</rdf:li></rdf:Bag></pdfaExtension:schemas></rdf:Description>");
+
+    // Builds a 128-byte ICC profile header with the given device class (offset 12), data colour space
+    // (offset 16), and ICC major version (byte 8), plus the mandatory 'acsp' signature at offset 36.
+    // Used by the §6.2.3-1 DestOutputProfile device-class fixtures.
+    private static byte[] MakeIccHeader(string deviceClass, string colourSpace, byte majorVersion)
+    {
+        var hdr = new byte[128];
+        hdr[0] = 0; hdr[1] = 0; hdr[2] = 0; hdr[3] = 128; // profile size
+        hdr[8] = majorVersion;
+        for (var i = 0; i < 4; i++)
+        {
+            hdr[12 + i] = (byte)deviceClass[i];
+            hdr[16 + i] = (byte)colourSpace[i];
+        }
+        // PCS 'XYZ ' at offset 20.
+        hdr[20] = (byte)'X'; hdr[21] = (byte)'Y'; hdr[22] = (byte)'Z'; hdr[23] = (byte)' ';
+        // 'acsp' signature at offset 36.
+        hdr[36] = (byte)'a'; hdr[37] = (byte)'c'; hdr[38] = (byte)'s'; hdr[39] = (byte)'p';
+        return hdr;
+    }
+
+    // Replaces the writer baseline's PDF/A output-intent DestOutputProfile stream with an ICC stream
+    // carrying the given header bytes (with /N 3), via an incremental update. Used to probe the
+    // §6.2.3-1 device-class / version validation on a real, otherwise-conformant output intent.
+    private static byte[] WriterPdfWithDestOutputProfileIcc(byte[] icc)
+    {
+        var baseline = WriterPdf(VellumPdf.Document.PdfConformance.PdfA2b);
+        using var reader = PdfReader.Open(baseline);
+
+        var intents = (PdfArray)reader.ResolveValue(reader.Catalog.Get(new PdfName("OutputIntents"))!)!;
+        var intent = (PdfDictionary)reader.ResolveValue(intents[0])!;
+        var destRef = (PdfIndirectReference)intent.Get(new PdfName("DestOutputProfile"))!;
+
+        var stream = new PdfStream(icc);
+        stream.Dictionary.Set(new PdfName("N"), new PdfInteger(3));
+        return reader.AppendRevision([(destRef.ObjectNumber, stream)]);
+    }
 
     private static string RdfPacket(string extra) =>
         "<?xpacket begin=\"\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>"

@@ -196,7 +196,10 @@ public static class ConformanceCatalog
         // 6.1.8-1 moved to Implemented (NameUtf8Rule: CheckStructureTypeNames now delegates to
         //   StructureTree.Analyze for a full-depth walk; oracle fixture pdfa2b-deep-struct-invalid-utf8
         //   confirmed veraPDF fires on the 2nd-level /S name; pdfa2b-deep-struct-valid-utf8 FP-safe).
-        ["6.2.3-1"] = "DestOutputProfile signature/N checked; ICC device-class not parsed",
+        // 6.2.3-1 moved to Implemented (META batch, 2026-07-02): OutputIntentRule now validates the
+        //   DestOutputProfile ICC header device class (prtr/mntr/scnr/spac) and major version < 5, in
+        //   addition to the acsp signature and /N; positive-knowledge/FP-safe (fires only on a
+        //   read device-class tag outside the permitted four or version >= 5), mirroring §6.2.4.2-1.
         // 6.2.4.2-2 moved to PdfAOutOfScope (graphics-state inheritance across Do; FP-safe under-detection
         //   confirmed against veraPDF 1.30.2; tracked in Backlog issue TBD).
         // 6.2.4.3-2/-3/-4 moved to Implemented (COL batch, 2026-07-02): DocumentDeviceColourTypes now
@@ -219,7 +222,11 @@ public static class ConformanceCatalog
         ["6.2.11.4.1-1"] = "only the embedded Identity-H CIDFontType2 path is checked",
         ["6.2.11.4.1-2"] = "only the embedded Identity-H CIDFontType2 path is checked",
         ["6.2.11.5-1"] = "only the embedded Identity-H CIDFontType2 path is checked",
-        ["6.6.2.1-4"] = "only the catalog XMP packet is validated, not every metadata stream",
+        // 6.6.2.1-4 moved to Implemented (META batch, 2026-07-02): MetadataRule now runs the
+        //   bytes/encoding/UTF-8 packet checks on the catalog /Metadata, every page /Metadata, every
+        //   AcroForm field /Metadata (field tree incl. terminal-field /Kids), and every embedded-file
+        //   stream /Metadata (name tree under /Names /EmbeddedFiles + annotation file attachments);
+        //   deduplicated by object number.
         // 6.6.2.3.3-1 moved to Implemented: pdfaExtension:schemas rdf:Bag check + pdfaExtension
         //   prefix check added; probe-confirmed against veraPDF 1.30.2 (2026-06-23).
         // 6.6.2.3.3-5 moved to Implemented: pdfaSchema:property rdf:Seq check + null/pdfaSchema
@@ -228,11 +235,14 @@ public static class ConformanceCatalog
         //   prefix check added (same null-prefix leniency as -5, probe-confirmed 2026-06-23).
         // 6.6.2.3.3-15 moved to Implemented: pdfaType:field rdf:Seq check + null/pdfaType
         //   prefix check added (same null-prefix leniency, probe-confirmed 2026-06-23).
-        ["6.6.2.3.1-2"] = "extension-schema properties with primitive/container types (Text, Integer, Real, Boolean, Date, URI/URL, bag/seq/alt/Lang Alt) are type-checked; predefined XMP-Specification properties (dc:, xmp:, pdf:, pdfaid:, …) are deferred to avoid false-positives from an incomplete built-in type table; extension-schema properties whose declared type resolves to an unrecognised name (custom value types, XMP structure types) are also deferred",
-        ["6.6.2.3.3-8"] = "pdfaProperty prefix on the valueType field is now checked (probe-confirmed 2026-06-23); "
-            + "the 'isValueTypeDefined' condition (verifying that the declared type name is a known/declared type) is not yet checked",
-        ["6.6.2.3.3-17"] = "pdfaField prefix on the valueType field is now checked (probe-confirmed 2026-06-23); "
-            + "the 'isValueTypeDefined' condition (verifying that the declared type name is a known/declared type) is not yet checked",
+        ["6.6.2.3.1-2"] = "extension-schema properties with primitive/container types (Text, Integer, Real, Boolean, Date, URI/URL, bag/seq/alt/Lang Alt) are type-checked; predefined XMP-Specification properties (dc:, xmp:, pdf:, pdfaid:, …) are LEFT PARTIAL (not guessed) — veraPDF's predefined expected-type set is specific and differs from the raw XMP spec, and cannot be probe-confirmed from this sandbox, so a broad built-in type table is not asserted to avoid over-rejection; extension-schema properties whose declared type resolves to an unrecognised name (custom XMP structure types) are also deferred for the same reason (META batch decision (b), 2026-07-02)",
+        // 6.6.2.3.3-8 moved to Implemented (META batch, 2026-07-02): ExtensionSchemaRule now enforces
+        //   isValueTypeDefined on pdfaProperty:valueType — the declared type must be a predefined XMP
+        //   value type, a container form (bag/seq/alt/Lang Alt) over a defined item type, or a custom
+        //   value type declared in the same schema; else fires -8. Predefined set is the well-established
+        //   XMP §8 catalogue (FP-safe: schema-declared custom types are always accepted).
+        // 6.6.2.3.3-17 moved to Implemented (META batch, 2026-07-02): same isValueTypeDefined check on
+        //   pdfaField:valueType (fires -17). Prefix check unchanged; the two conditions share the sub-clause.
         // 6.1.9-1 moved to Implemented (ObjectLayoutRule: endobj-EOL boundary checks added;
         //   scoped to newest-revision objects via Revisions; oracle fixture pdfa2b-endobj-bad-eol
         //   confirmed veraPDF fires; single-revision files have prevXrefEnd==0 so all objects are checked).

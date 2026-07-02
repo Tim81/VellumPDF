@@ -8,9 +8,11 @@ namespace VellumPdf.Conformance.Rules.Colour;
 /// <summary>
 /// ISO 19005-2 §6.2.3 (Output intents) and §6.2.4.3 (device colour spaces). A document that paints
 /// device-dependent colour shall have a PDF/A (<c>GTS_PDFA1</c>) output intent (§6.2.4.3); the
-/// output intent's <c>/DestOutputProfile</c> shall be a valid ICC profile stream with a component
-/// count (<c>/N</c>) of 1, 3, or 4; and when more than one output intent carries a
-/// <c>/DestOutputProfile</c>, all shall reference the same profile stream (§6.2.3).
+/// output intent's <c>/DestOutputProfile</c> shall be a valid ICC profile stream (carrying the
+/// <c>acsp</c> signature, a permitted device class of <c>prtr</c>/<c>mntr</c>/<c>scnr</c>/<c>spac</c>,
+/// and an ICC major version below 5) with a component count (<c>/N</c>) of 1, 3, or 4; and when more
+/// than one output intent carries a <c>/DestOutputProfile</c>, all shall reference the same profile
+/// stream (§6.2.3).
 /// </summary>
 /// <remarks>
 /// Authored from ISO 19005-2:2011, 6.2.3 and 6.2.4.3 and ISO 32000-1:2008, 14.11.5 / 8.6.5.5. Clean-room:
@@ -138,6 +140,21 @@ internal sealed class OutputIntentRule : IConformanceRule
                 // already covers this profile; firing §6.2.4.3 additionally would be double-reporting
                 // and risks false positives on malformed-but-present intents.
             }
+            else if (!HasValidDeviceClassAndVersion(icc))
+            {
+                // §6.2.3-1: the DestOutputProfile shall be a valid ICC profile, which requires a
+                // recognised device class (prtr/mntr/scnr/spac, ISO 15076-1 §7.2.5) and an ICC major
+                // version < 5. The 'acsp' signature alone is not sufficient. Fires only when we have
+                // positively read a device-class tag that is not one of the four permitted values, or
+                // a major version >= 5 — an FP-safe, positive-knowledge condition mirroring the
+                // ICCBased colour-space check (§6.2.4.2-1).
+                context.Report(
+                    RuleId,
+                    Clause,
+                    PreflightSeverity.Error,
+                    "The DestOutputProfile shall be a valid ICC profile (its device class shall be one "
+                    + "of prtr/mntr/scnr/spac and its ICC major version shall be less than 5).");
+            }
             else if (isPdfA)
             {
                 // Read the ICC data colour space from the profile header at byte offset 16 (4 bytes,
@@ -247,4 +264,22 @@ internal sealed class OutputIntentRule : IConformanceRule
         => icc.Length >= 40
             && icc[36] == (byte)'a' && icc[37] == (byte)'c'
             && icc[38] == (byte)'s' && icc[39] == (byte)'p';
+
+    // Permitted ICC device (profile) classes for a PDF/A DestOutputProfile (ISO 15076-1 §7.2.5,
+    // bytes 12–15): printer, monitor, scanner, colour-space conversion.
+    private static readonly HashSet<string> _allowedDeviceClasses = new(StringComparer.Ordinal)
+    {
+        "prtr", "mntr", "scnr", "spac",
+    };
+
+    // §6.2.3-1: an ICC profile stream is a valid DestOutputProfile only when its device class is one
+    // of the four permitted values AND its ICC major version is < 5. Byte 8 is the major version
+    // (ISO 15076-1 §7.2.4); bytes 12–15 are the profile/device class. Callers pass a profile that
+    // already carries the 'acsp' signature (length >= 40), so the header offsets are in range.
+    private static bool HasValidDeviceClassAndVersion(byte[] icc)
+    {
+        var majorVersion = icc[8];
+        var deviceClass = System.Text.Encoding.Latin1.GetString(icc, 12, 4);
+        return _allowedDeviceClasses.Contains(deviceClass) && majorVersion < 5;
+    }
 }
