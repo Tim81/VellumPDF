@@ -11560,4 +11560,154 @@ public sealed class PdfPreflightTests
 
     // ── END §6.2.4.4-2 Batch N4 adversarial FP sweep ─────────────────────────────────
 
+    // ── Fix 1 regression — §6.2.11.4.1 octal escape in literal-string DecodeString ─────────────
+
+    /// <summary>
+    /// Fix 1 regression guard: a simple WinAnsi TrueType font (DejaVu, FirstChar=65, LastChar=65)
+    /// whose content stream shows code 65 via the octal literal-string escape <c>(\101)</c>.
+    /// The glyph for code 65 IS present in the embedded program. After the fix, DecodeString
+    /// correctly decodes \101 to byte 0x41 (= 65), the glyph lookup succeeds, and the rule must
+    /// NOT fire ISO19005-2:6.2.11.4.1.
+    /// </summary>
+    [Fact]
+    public void GlyphPresence_OctalEscapeCodePresent_DoesNotFire62111141()
+    {
+        var bytes = OracleCorpus.SimpleTrueTypeFontOctalEscapePublic();
+        var result = PdfPreflight.Validate(bytes, Conformance.PdfConformance.PdfA2B);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId.Contains("6.2.11.4.1"));
+    }
+
+    // ── Fix 2 regression — §7.21.7-1 2-digit ToUnicode source code ───────────────────────────────
+
+    /// <summary>
+    /// Fix 2 regression guard: a simple TrueType font with /Differences mapping code 65 to the
+    /// non-AGL name /g17, AND a ToUnicode CMap that uses the 2-digit source form <c>&lt;41&gt;</c>
+    /// (ISO 32000-1 §7.6.3.2 allows even-length hex source codes). Before the fix, TryReadHex
+    /// required exactly 4 digits, so the &lt;41&gt; entry was rejected and the rule fired a false
+    /// §7.21.7-1. After the fix, the 2-digit source code is accepted and the rule must NOT fire.
+    /// </summary>
+    [Fact]
+    public void UaToUnicode_TwoDigitSourceCode_DoesNotFire72171()
+    {
+        var bytes = OracleCorpus.Ua1SimpleFontTwoDigitToUnicodePublic();
+        var result = PdfPreflight.Validate(bytes, Conformance.PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.21.7-1");
+    }
+
+    // ── Fix 3 — §5-3/-4/-5 UaMetadataRule per-finding FP guards ─────────────────────────────────
+
+    /// <summary>
+    /// §5-3 FP guard: the PDF/UA-1 tagged baseline uses the canonical "pdfuaid" prefix, so
+    /// ISO14289-1:5-3 must NOT fire.
+    /// </summary>
+    [Fact]
+    public void UaMetadata_CanonicalPrefix_DoesNotFire53()
+    {
+        var bytes = OracleCorpus.Ua1XmpPrefixCompliantPublic();
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:5-3");
+    }
+
+    /// <summary>
+    /// §5-3 VIOLATION: the pdfuaid namespace bound to "xua" instead of "pdfuaid". Rule must fire
+    /// ISO14289-1:5-3.
+    /// </summary>
+    [Fact]
+    public void UaMetadata_WrongPrefix_Fires53()
+    {
+        var bytes = OracleCorpus.Ua1XmpPrefixWrongPublic();
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:5-3");
+    }
+
+    // ── Fix 3 — §7.18.6.2-1/-2 UaMediaClipRule per-finding FP guards ────────────────────────────
+
+    /// <summary>
+    /// §7.18.6.2-1/-2 FP guard: a media clip data dict WITH both /CT and /Alt must NOT fire either
+    /// ISO14289-1:7.18.6.2-1 or ISO14289-1:7.18.6.2-2.
+    /// </summary>
+    [Fact]
+    public void UaMediaClip_WithCtAndAlt_DoesNotFireEither()
+    {
+        var bytes = OracleCorpus.Ua1MediaClipCompliantPublic();
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.18.6.2-1");
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.18.6.2-2");
+    }
+
+    /// <summary>
+    /// §7.18.6.2-1 VIOLATION: media clip data dict missing /CT must fire ISO14289-1:7.18.6.2-1.
+    /// </summary>
+    [Fact]
+    public void UaMediaClip_MissingCt_Fires718621()
+    {
+        var bytes = OracleCorpus.Ua1MediaClipNoCtPublic();
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.18.6.2-1");
+    }
+
+    /// <summary>
+    /// §7.18.6.2-2 VIOLATION: media clip data dict missing /Alt must fire ISO14289-1:7.18.6.2-2.
+    /// </summary>
+    [Fact]
+    public void UaMediaClip_MissingAlt_Fires718622()
+    {
+        var bytes = OracleCorpus.Ua1MediaClipNoAltPublic();
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.18.6.2-2");
+    }
+
+    // ── Fix 3 — §7.18.1-3 UaFormFieldAltRule per-finding FP guards ───────────────────────────────
+
+    /// <summary>
+    /// §7.18.1-3 FP guard: a Widget field WITH /TU must NOT fire ISO14289-1:7.18.1-3.
+    /// </summary>
+    [Fact]
+    public void UaFormField_WithTu_DoesNotFire71813()
+    {
+        var bytes = OracleCorpus.Ua1WidgetWithTuPublic();
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.18.1-3");
+    }
+
+    /// <summary>
+    /// §7.18.1-3 VIOLATION: a visible Widget field with no /TU and no struct-elem /Alt must fire
+    /// ISO14289-1:7.18.1-3.
+    /// </summary>
+    [Fact]
+    public void UaFormField_NoTuNoAlt_Fires71813()
+    {
+        var bytes = OracleCorpus.Ua1WidgetNoTuPublic();
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.18.1-3");
+    }
+
+    // ── Fix 3 — §7.18.4-2 UaFormStructElemRule per-finding FP guards ─────────────────────────────
+
+    /// <summary>
+    /// §7.18.4-2 FP guard: a Form struct element without /Role that has exactly one OBJR child must
+    /// NOT fire ISO14289-1:7.18.4-2.
+    /// </summary>
+    [Fact]
+    public void UaFormStructElem_OneObjr_DoesNotFire71842()
+    {
+        var bytes = OracleCorpus.Ua1FormStructOneObjrPublic();
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO14289-1:7.18.4-2");
+    }
+
+    /// <summary>
+    /// §7.18.4-2 VIOLATION: a Form struct element without /Role that has an extra StructElem child
+    /// (two children total) must fire ISO14289-1:7.18.4-2.
+    /// </summary>
+    [Fact]
+    public void UaFormStructElem_ExtraChild_Fires71842()
+    {
+        var bytes = OracleCorpus.Ua1FormStructExtraChildPublic();
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1);
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO14289-1:7.18.4-2");
+    }
+
+    // ── Fix 5 regression — out-of-range xref offset returns null ─────────────────────────────────
+
 }

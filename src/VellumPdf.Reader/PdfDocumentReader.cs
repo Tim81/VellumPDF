@@ -387,8 +387,9 @@ public sealed class PdfDocumentReader : IDisposable
         if (!_xref.TryGetValue(objectNumber, out var entry) || entry.Kind != XrefEntryKind.Uncompressed)
             return null;
 
+        if (entry.Offset < 0 || entry.Offset >= Bytes.Length) return null;
         var start = (int)entry.Offset;
-        var windowEnd = Math.Min(Bytes.Length, start + maxScanBytes);
+        var windowEnd = (int)Math.Min(Bytes.Length, (long)start + maxScanBytes);
         var span = Bytes.Span[start..windowEnd];
         var needle = "endobj"u8;
 

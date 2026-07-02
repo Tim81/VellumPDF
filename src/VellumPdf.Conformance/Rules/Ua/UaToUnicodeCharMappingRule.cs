@@ -243,8 +243,9 @@ internal sealed class UaToUnicodeCharMappingRule : IConformanceRule
         }
     }
 
-    // Reads a <XXXX> hex token (a 4-hex-digit source code). Returns the value, or false on any other
-    // form so range/array parsing stays aligned.
+    // Reads a <XX> or <XXXX> hex token (an even-length source code, 2 or more digits). Returns the
+    // value, or false on any other form so range/array parsing stays aligned. Simple (1-byte) fonts
+    // commonly emit 2-digit source codes; requiring exactly 4 was a false-positive source.
     private static bool TryReadHex(string text, ref int pos, out int value)
     {
         value = -1;
@@ -255,7 +256,7 @@ internal sealed class UaToUnicodeCharMappingRule : IConformanceRule
         if (close < 0) return false;
         var hex = text.Substring(start, close - start).Trim();
         pos = close + 1;
-        if (hex.Length != 4) { value = -1; return false; }
+        if (hex.Length < 2 || hex.Length % 2 != 0) { value = -1; return false; }
         return int.TryParse(hex, System.Globalization.NumberStyles.HexNumber, null, out value);
     }
 
