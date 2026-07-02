@@ -29,6 +29,10 @@ public sealed class PdfCanvas
     private readonly Dictionary<string, string> _extGStateIndex = new(StringComparer.Ordinal);
     private int _extGStateCounter;
 
+    // Current font retained for measurement (set by SetFont; null when only SetFontByName was used).
+    private PdfFontResource? _currentFont;
+    private double _currentFontSize;
+
     // Shading dedup: key is the canonical descriptor string, value is resource name.
     private readonly Dictionary<string, string> _shadingIndex = new(StringComparer.Ordinal);
     private int _shadingCounter;
@@ -463,6 +467,8 @@ public sealed class PdfCanvas
     public PdfCanvas SetFont(PdfFontResource font, double size)
     {
         _usedFonts[font.ResourceName] = font;
+        _currentFont = font;
+        _currentFontSize = size;
         WriteEscapedName(font.ResourceName);
         _ops.Write(Encoding.ASCII.GetBytes($" {N(size)} Tf\n"));
         return this;
@@ -475,9 +481,66 @@ public sealed class PdfCanvas
     /// </summary>
     public PdfCanvas SetFontByName(string resourceName, double size)
     {
+        _currentFont = null;
         WriteEscapedName(resourceName);
         _ops.Write(Encoding.ASCII.GetBytes($" {N(size)} Tf\n"));
         return this;
+    }
+
+    /// <summary>
+    /// Renders a Latin-1 string at position (<paramref name="x"/>, <paramref name="y"/>),
+    /// offsetting horizontally so that <paramref name="x"/> is the alignment edge:
+    /// left edge for <see cref="TextAlignment.Left"/>, midpoint for <see cref="TextAlignment.Center"/>,
+    /// right edge for <see cref="TextAlignment.Right"/>.
+    ///
+    /// <para>Must be called between <see cref="BeginText"/> and <see cref="EndText"/>.
+    /// A Standard-14 font must have been set with <see cref="SetFont"/> first; if only
+    /// <see cref="SetFontByName"/> was used (embedded fonts), call
+    /// <see cref="ShowGlyphsAligned"/> and supply the measured width instead.</para>
+    /// </summary>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when no measurable font has been set (e.g. only <see cref="SetFontByName"/> was called).
+    /// Call <see cref="SetFont"/> first, or use <see cref="ShowGlyphsAligned"/> for embedded fonts.
+    /// </exception>
+    public PdfCanvas ShowTextAligned(string text, double x, double y, TextAlignment align = TextAlignment.Left)
+    {
+        if (_currentFont is null)
+            throw new InvalidOperationException(
+                "No measurable font is set. Call SetFont before ShowTextAligned, " +
+                "or use ShowGlyphsAligned (supplying the width from EmbeddedFontHandle.MeasureString) " +
+                "for embedded fonts set via SetFontByName.");
+
+        var w = _currentFont.MeasureString(text, _currentFontSize);
+        var xAdjusted = align switch
+        {
+            TextAlignment.Center => x - w / 2.0,
+            TextAlignment.Right => x - w,
+            _ => x,
+        };
+
+        SetTextMatrix(1, 0, 0, 1, xAdjusted, y);
+        return ShowText(text);
+    }
+
+    /// <summary>
+    /// Renders an embedded-font glyph run at position (<paramref name="x"/>, <paramref name="y"/>),
+    /// offsetting horizontally so that <paramref name="x"/> is the alignment edge.
+    /// Use this with fonts set via <see cref="SetFontByName"/>; obtain
+    /// <paramref name="measuredWidth"/> from <c>EmbeddedFontHandle.MeasureString</c>.
+    ///
+    /// <para>Must be called between <see cref="BeginText"/> and <see cref="EndText"/>.</para>
+    /// </summary>
+    public PdfCanvas ShowGlyphsAligned(ReadOnlySpan<ushort> glyphIds, double measuredWidth, double x, double y, TextAlignment align = TextAlignment.Left)
+    {
+        var xAdjusted = align switch
+        {
+            TextAlignment.Center => x - measuredWidth / 2.0,
+            TextAlignment.Right => x - measuredWidth,
+            _ => x,
+        };
+
+        SetTextMatrix(1, 0, 0, 1, xAdjusted, y);
+        return ShowGlyphs(glyphIds);
     }
 
     /// <summary>
