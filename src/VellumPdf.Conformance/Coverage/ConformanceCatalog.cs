@@ -247,7 +247,8 @@ public static class ConformanceCatalog
         //   prefix check added (same null-prefix leniency as -5, probe-confirmed 2026-06-23).
         // 6.6.2.3.3-15 moved to Implemented: pdfaType:field rdf:Seq check + null/pdfaType
         //   prefix check added (same null-prefix leniency, probe-confirmed 2026-06-23).
-        ["6.6.2.3.1-2"] = "extension-schema properties with primitive/container types (Text, Integer, Real, Boolean, Date, URI/URL, bag/seq/alt/Lang Alt) are type-checked; predefined XMP-Specification properties (dc:, xmp:, pdf:, pdfaid:, …) are LEFT PARTIAL (not guessed) — veraPDF's predefined expected-type set is specific and differs from the raw XMP spec, and cannot be probe-confirmed from this sandbox, so a broad built-in type table is not asserted to avoid over-rejection; extension-schema properties whose declared type resolves to an unrecognised name (custom XMP structure types) are also deferred for the same reason (META batch decision (b), 2026-07-02)",
+        // 6.6.2.3.1-2 moved to PdfAOutOfScope: predefined XMP-Specification expected-type catalogue
+        //   (isValueTypeCorrect) cannot be replicated clean-room without over-rejection.
         // 6.6.2.3.3-8 moved to Implemented (META batch, 2026-07-02): ExtensionSchemaRule now enforces
         //   isValueTypeDefined on pdfaProperty:valueType — the declared type must be a predefined XMP
         //   value type, a container form (bag/seq/alt/Lang Alt) over a defined item type, or a custom
@@ -301,6 +302,7 @@ public static class ConformanceCatalog
         ["6.2.11.3.1-1"] = "Out of scope for v1.7 (Backlog issue TBD): predefined-CMap CIDSystemInfo registry table; Identity and embedded-CMap paths already compared.",
         ["6.8-5"] = "Out of scope for v1.7 (Backlog issue TBD): embedded PDF/A-1 recursion needs a PDF/A-1 profile (not on roadmap); embedded PDF/A-2 is validated recursively.",
         ["6.2.4.2-2"] = "Out of scope for v1.7 (Backlog issue TBD): graphics-state inheritance across Do is not threaded; documented FP-safe — matches veraPDF 1.30.2 on every reachable fixture.",
+        ["6.6.2.3.1-2"] = "Out of scope for v1.7 (Backlog issue TBD): the check is XMPProperty isValueTypeCorrect — every property's value must match its schema-defined type. Extension-schema-declared property types are validated; the predefined XMP-Specification schemas (dc:, xmp:, pdf:, pdfaid:, …) need veraPDF's exact built-in expected-type catalogue, which cannot be replicated clean-room without over-rejecting.",
     };
 
     // PDF/UA-1: the few checks the current rules cover. Everything else needs the logical-structure
@@ -432,6 +434,7 @@ public static class ConformanceCatalog
         ["7.16-1"] = "Out of scope for v1.7 (tracked in the v2.1 reader/encryption epic #97/#100): needs the reader to decrypt encrypted files to cross-validate against veraPDF; exposing /Encrypt /P alone cannot match veraPDF's whole-file verdict.",
         ["7.21.7-1"] = "Out of scope for v1.7 (Backlog issue TBD): veraPDF's toUnicode is a derived glyph property (from font encoding); a naive /ToUnicode!=null over-rejects standard-encoded simple fonts — needs a glyph-level Unicode-derivation model.",
         ["7.21.3.1-1"] = "Out of scope for v1.7 (Backlog issue TBD): predefined-CMap CIDSystemInfo registry table (mirrors PDF/A-2 6.2.11.3.1-1); Identity/embedded-CMap paths already compared.",
+        ["7.20-2"] = "Out of scope for v1.7 (Backlog issue TBD): Form XObject unique semantic parent needs the marked-content-stack context at every Do across all content streams (a form with /StructParents drawn twice is only a violation when the two sites give different structural parents; artifact-wrapped reuse is conformant). Requires a tagged-content interpreter for Form XObject content to stay FP-safe.",
     };
 
     private static IReadOnlyList<ConformanceCheck> Build()
@@ -562,15 +565,8 @@ public static class ConformanceCatalog
         // 7.1-3 remains deferred (Batch C3 probe — operator set fully pinned; blocker is Properties
         //   named-reference BDC resolution, see PdfUaDeferredNote switch above for details).
 
-        "7.20-2" =>
-            "Form XObject unique semantic parent: detecting this requires knowing the MC-stack context "
-            + "(BDC nesting) at every Do call across all content streams, not just counting Do "
-            + "invocations. A form with /StructParents drawn twice is only a violation when the two "
-            + "draw sites would give its MCIDs different structural parents; two draws in the same "
-            + "Artifact region may be conformant. Without full MC-context evaluation at each Do and "
-            + "veraPDF-oracle confirmation, a /StructParents-present + multi-draw check risks FP on "
-            + "conformant documents (e.g. artifact-wrapped reuse). Deferred pending tagged-content "
-            + "interpreter or veraPDF-probe series.",
+        // 7.20-2 moved to PdfUaOutOfScope (Form XObject unique semantic parent needs a tagged-content
+        //   interpreter for Form XObject content to stay FP-safe).
 
         _ => "structure-tree walker",
     };

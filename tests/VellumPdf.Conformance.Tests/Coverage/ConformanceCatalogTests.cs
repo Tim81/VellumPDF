@@ -39,6 +39,13 @@ public sealed class ConformanceCatalogTests
         {
             var s = ConformanceCatalog.Coverage(p);
             Assert.Equal(s.Total, s.Implemented + s.Partial + s.Deferred + s.OutOfScope);
+
+            // Every in-process-feasible check is fully implemented: no Partial or Deferred remains,
+            // so each profile reports 100% of its feasible surface (OutOfScope checks are tracked in
+            // follow-up issues and excluded from the denominator).
+            Assert.Equal(0, s.Partial);
+            Assert.Equal(0, s.Deferred);
+            Assert.Equal(100.0, s.Percent);
         }
     }
 
