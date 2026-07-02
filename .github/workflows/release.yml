@@ -9,6 +9,7 @@ permissions:
   id-token: write   # mint the OIDC token for NuGet Trusted Publishing
 
 jobs:
+  # ── NuGet packages (libraries + the vellum-preflight dotnet tool) + the Release ──
   release:
     runs-on: ubuntu-latest
     steps:
@@ -69,3 +70,85 @@ jobs:
             --title "$GITHUB_REF_NAME" \
             --generate-notes \
             $prerelease_flag
+
+  # ── Native-AOT vellum-preflight binaries, one per RID (built on the target OS) ──
+  # Native AOT cannot cross-compile across OS families, so this is a per-OS matrix.
+  # linux-x64, win-x64 and osx-arm64 build natively on their runners and gate the job;
+  # win-arm64 is a cross-arch build on the x64 Windows runner (needs the ARM64 MSVC
+  # toolset) and is best-effort (continue-on-error) so it can never block the release.
+  native-cli:
+    needs: release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { rid: linux-x64, os: ubuntu-latest,  experimental: false }
+          - { rid: win-x64,   os: windows-latest, experimental: false }
+          - { rid: osx-arm64, os: macos-latest,   experimental: false }
+          - { rid: win-arm64, os: windows-latest, experimental: true  }
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.experimental }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Derive version from tag
+        id: version
+        shell: bash
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Install Linux AOT prerequisites (x64)
+        if: matrix.os == 'ubuntu-latest' && matrix.rid == 'linux-x64'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends clang zlib1g-dev
+
+      - name: Install Windows ARM64 build tools (win-arm64)
+        if: matrix.rid == 'win-arm64'
+        shell: pwsh
+        run: |
+          # Native-AOT cross-compilation to win-arm64 from the x64 runner needs the VC++
+          # ARM64 toolset, which is not installed on the runner image by default.
+          $installerDir = "C:\Program Files (x86)\Microsoft Visual Studio\Installer"
+          $vsPath = & "$installerDir\vswhere.exe" -latest -property installationPath
+          & "$installerDir\vs_installer.exe" modify --installPath "$vsPath" `
+            --add Microsoft.VisualStudio.Component.VC.Tools.ARM64 --quiet --norestart | Out-Null
+          Write-Host "ARM64 VC toolset install requested for $vsPath"
+
+      - name: Publish native AOT binary
+        shell: bash
+        run: >
+          dotnet publish src/VellumPdf.Cli -c Release -r ${{ matrix.rid }}
+          -p:PublishAot=true
+          -p:Version="${{ steps.version.outputs.version }}"
+          -o publish-out
+
+      - name: Stage binary + checksum
+        id: stage
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${{ steps.version.outputs.version }}"
+          rid="${{ matrix.rid }}"
+          ext=""
+          [[ "$rid" == win-* ]] && ext=".exe"
+          out="vellum-preflight-${version}-${rid}${ext}"
+          cp "publish-out/vellum-preflight${ext}" "$out"
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum "$out" > "${out}.sha256"
+          else
+            shasum -a 256 "$out" > "${out}.sha256"
+          fi
+          echo "asset=$out" >> "$GITHUB_OUTPUT"
+
+      - name: Attach to the Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh release upload "$GITHUB_REF_NAME" \
+            "${{ steps.stage.outputs.asset }}" \
+            "${{ steps.stage.outputs.asset }}.sha256" \
+            --clobber
