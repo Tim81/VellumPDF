@@ -193,7 +193,9 @@ public static class ConformanceCatalog
 
     private static readonly Dictionary<string, string> PdfAPartial = new(StringComparer.Ordinal)
     {
-        ["6.1.8-1"] = "font BaseFont and colour colourant names checked (presence-based); structure-type names checked for direct /StructTreeRoot /K children only — deeper nesting not yet walked",
+        // 6.1.8-1 moved to Implemented (NameUtf8Rule: CheckStructureTypeNames now delegates to
+        //   StructureTree.Analyze for a full-depth walk; oracle fixture pdfa2b-deep-struct-invalid-utf8
+        //   confirmed veraPDF fires on the 2nd-level /S name; pdfa2b-deep-struct-valid-utf8 FP-safe).
         ["6.2.3-1"] = "DestOutputProfile signature/N checked; ICC device-class not parsed",
         // 6.2.4.2-2 moved to PdfAOutOfScope (graphics-state inheritance across Do; FP-safe under-detection
         //   confirmed against veraPDF 1.30.2; tracked in Backlog issue TBD).
@@ -226,20 +228,24 @@ public static class ConformanceCatalog
             + "the 'isValueTypeDefined' condition (verifying that the declared type name is a known/declared type) is not yet checked",
         ["6.6.2.3.3-17"] = "pdfaField prefix on the valueType field is now checked (probe-confirmed 2026-06-23); "
             + "the 'isValueTypeDefined' condition (verifying that the declared type name is a known/declared type) is not yet checked",
-        ["6.1.9-1"] = "object/generation/obj spacing + EOL checked; the endobj-EOL sub-conditions not",
+        // 6.1.9-1 moved to Implemented (ObjectLayoutRule: endobj-EOL boundary checks added;
+        //   scoped to newest-revision objects via Revisions; oracle fixture pdfa2b-endobj-bad-eol
+        //   confirmed veraPDF fires; single-revision files have prevXrefEnd==0 so all objects are checked).
         // 6.1.13-10 moved to PdfAOutOfScope (predefined named-CMap character-collection maxima; tracked in Backlog issue TBD).
         // 6.2.11.3.1-1 moved to PdfAOutOfScope (predefined-CMap CIDSystemInfo registry table; tracked in Backlog issue TBD).
-        ["6.7.2.2-1"] = "StructTreeRoot presence checked; full structure-tree validation not",
+        ["6.7.2.2-1"] = "StructTreeRoot presence checked; full structure-tree validation not (FP risk: veraPDF's exact mapping of 6.7.2.2-1 vs. 6.7.3.3-1 is ambiguous — empirically 6.7.3.3-1 fires on pdfa2a-no-structure, not 6.7.2.2-1; conservative, left Partial)",
         // 6.8-5 moved to PdfAOutOfScope (embedded PDF/A-1 recursion; tracked in Backlog issue TBD).
-        ["6.4.3-1"] = "ByteRange unambiguous violations flagged (a!=0, or c+d>fileLength); the "
-            + "under-coverage case (c+d<fileLength) is deferred to avoid over-rejecting conformant "
-            + "PAdES B-LT/B-LTA signatures whose /DSS or document timestamp is appended after EOF; "
-            + "signatures reachable only via /Perms /DocMDP (no AcroForm /V) are not enumerated",
+        // 6.4.3-1 moved to Implemented (SignatureRule: under-coverage revision analysis added;
+        //   /Perms /DocMDP signature enumeration added; gap [c+d, fileLength) checked against
+        //   Revisions — a later xref in the gap is a legitimate PAdES B-LT/B-LTA revision and
+        //   does not fire; trailing garbage with no revision in gap fires; deduplication by ByteRange key).
     };
 
     private static readonly Dictionary<string, string> PdfADeferred = new(StringComparer.Ordinal)
     {
-        ["6.1.6-2"] = "byte scan implemented, but the reader rejects an invalid hex digit before validation",
+        // 6.1.6-2 moved to Implemented (HexStringRule: byte scan runs before lazy object resolution;
+        //   oracle fixture pdfa2b-hex-invalid-digit confirmed veraPDF fires on <1G0> in page dict;
+        //   reader's InvalidDataException is caught by PdfPreflight.Validate outer catch after rule fires).
         // 6.1.8-1 moved to PdfAPartial (font BaseFont + colour colourant + structure-type names).
         // 6.1.12-2 moved to Implemented (DocMdpReferenceRule).
         // 6.2.4.2-2 moved to PdfAPartial; OverprintRule now covers page + non-page streams (Batch N3);
