@@ -38,7 +38,7 @@ public sealed class ConformanceCatalogTests
         foreach (var p in Profiles)
         {
             var s = ConformanceCatalog.Coverage(p);
-            Assert.Equal(s.Total, s.Implemented + s.Partial + s.Deferred);
+            Assert.Equal(s.Total, s.Implemented + s.Partial + s.Deferred + s.OutOfScope);
         }
     }
 
