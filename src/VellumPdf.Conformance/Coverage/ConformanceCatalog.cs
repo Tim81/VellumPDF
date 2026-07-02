@@ -291,7 +291,10 @@ public static class ConformanceCatalog
     // (tagged-content) walker, which does not yet exist.
     private static readonly HashSet<string> PdfUaImplemented = new(StringComparer.Ordinal)
     {
-        "5-1", "5-2", "6.1-1", "6.2-1", "7.1-4", "7.1-5", "7.1-6", "7.1-7", "7.1-8", "7.1-9", "7.1-10", "7.1-11", "7.1-12", "7.18.3-1",
+        "5-1", "5-2",
+        // UA batch — §5-3/5-4/5-5 XMP prefix checks (UaMetadataRule extended):
+        "5-3", "5-4", "5-5",
+        "6.1-1", "6.2-1", "7.1-4", "7.1-5", "7.1-6", "7.1-7", "7.1-8", "7.1-9", "7.1-10", "7.1-11", "7.1-12", "7.18.3-1",
         "7.2-29",
         // Batch B2 — §7.2 table, list, TOC containment:
         "7.2-3",   // UaTableContainmentRule: Table kids ∈ {TR, THead, TBody, TFoot, Caption}
@@ -325,8 +328,12 @@ public static class ConformanceCatalog
         "7.11-1",              // UaEmbeddedFileRule: embedded-file /F and /UF requirement
         "7.15-1",              // UaXfaRule: dynamic XFA (dynamicRender == "required") forbidden
         "7.18.1-2",            // UaAnnotContentsRule: non-Widget visible annot needs /Contents or /Alt (direct struct-elem Alt now resolved via B5 ParentTree index)
+        "7.18.1-3",            // UaFormFieldAltRule: form field needs /TU or Widget struct-elem /Alt
         "7.18.2-1",            // UaTrapNetAnnotRule: TrapNet annots forbidden unless hidden/outside-crop
+        "7.18.4-2",            // UaFormStructElemRule: Form struct elem without /Role must have exactly one OBJR child
         "7.18.5-2",            // UaLinkAnnotRule: Link annots require non-empty /Contents
+        "7.18.6.2-1",          // UaMediaClipRule: media clip data dict must have /CT
+        "7.18.6.2-2",          // UaMediaClipRule: media clip data dict must have /Alt
         "7.20-1",              // UaReferenceXObjectRule: Form XObjects shall not contain /Ref
         // Batch A3 — font clauses:
         "7.21.3.2-1",          // UaCidToGidMapRule: embedded CIDFontType2 must have /CIDToGIDMap
@@ -440,9 +447,16 @@ public static class ConformanceCatalog
 
     private static string PdfUaDeferredNote(string id) => id switch
     {
-        "5-3" or "5-4" or "5-5" => "prefix-aware XMP parsing (XmpReader matches by namespace URI, not prefix)",
+        // 5-3/5-4/5-5 moved to PdfUaImplemented (UA batch — UaMetadataRule extended with
+        //   XmpReader.GetPrefixOfNamespace; fires when the PDF/UA-id namespace is bound to a
+        //   non-pdfuaid, non-null prefix and the property is present).
+        // 7.18.6.2-1/-2 moved to PdfUaImplemented (UA batch — UaMediaClipRule: walks Screen
+        //   annotation rendition actions to media clip data dicts; checks /CT and /Alt).
+        // 7.18.1-3 moved to PdfUaImplemented (UA batch — UaFormFieldAltRule: form field /TU
+        //   OR Widget struct-elem /Alt; hidden/outside-crop exemptions via UaAnnotationHelper).
+        // 7.18.4-2 moved to PdfUaImplemented (UA batch — UaFormStructElemRule: Form struct
+        //   elem without /Role must have exactly one OBJR child; /Role attribute exempts).
         // 7.16-1 moved to PdfUaOutOfScope (encrypted-document support; tracked in v2.1 reader/encryption epic #97/#100).
-        "7.18.6.2-1" or "7.18.6.2-2" => "media clip data dictionary traversal (requires walking Screen-annotation rendition actions)",
 
         // §7.1 artifact/tagging rules — Batch C2:
         // 7.1-1 and 7.1-2 moved to PdfUaImplemented (Batch C2 — UaArtifactTaggingRule: Artifact

@@ -80,6 +80,31 @@ internal static class XmpReader
     }
 
     /// <summary>
+    /// Returns the XML namespace prefix used to bind <paramref name="ns"/> in
+    /// <paramref name="doc"/>, or <see langword="null"/> when the namespace is not declared
+    /// anywhere in the document. The search walks every element; the first binding found is
+    /// returned (XMP packets are almost always produced with a single consistent binding).
+    /// </summary>
+    /// <remarks>
+    /// Used by the §5-3/5-4/5-5 prefix checks: ISO 14289-1 requires the PDF/UA identification
+    /// schema properties to be serialised with the <c>pdfuaid</c> prefix (or the default/null
+    /// prefix). A non-<c>pdfuaid</c>, non-null prefix is a violation. This method returns the
+    /// ACTUAL prefix bound in the packet so the caller can decide whether it is conformant.
+    /// </remarks>
+    public static string? GetPrefixOfNamespace(XDocument doc, XNamespace ns)
+    {
+        foreach (var element in doc.Descendants())
+        {
+            // XDocument exposes namespace declarations as synthetic XAttributes on the element
+            // that declares them. GetPrefixOfNamespace follows the declared scope.
+            var prefix = element.GetPrefixOfNamespace(ns);
+            if (prefix is not null)
+                return prefix;
+        }
+        return null;
+    }
+
+    /// <summary>
     /// Returns <see langword="true"/> when the XMP document contains at least one
     /// <c>rdf:Alt</c> language-alternative array that carries an <c>x-default</c> item
     /// (<c>&lt;rdf:li xml:lang="x-default"&gt;</c>). Confirmed by veraPDF 1.30.2 probe:
