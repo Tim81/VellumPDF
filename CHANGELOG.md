@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.7.7] - 2026-07-02
+
 ### Added
 
 - **`VellumPdf.Conformance` — near-complete PDF/A-2 and PDF/UA-1 coverage (~99%).**
