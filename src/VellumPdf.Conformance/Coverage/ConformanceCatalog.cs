@@ -260,7 +260,11 @@ public static class ConformanceCatalog
         //   confirmed veraPDF fires; single-revision files have prevXrefEnd==0 so all objects are checked).
         // 6.1.13-10 moved to PdfAOutOfScope (predefined named-CMap character-collection maxima; tracked in Backlog issue TBD).
         // 6.2.11.3.1-1 moved to PdfAOutOfScope (predefined-CMap CIDSystemInfo registry table; tracked in Backlog issue TBD).
-        ["6.7.2.2-1"] = "StructTreeRoot presence checked; full structure-tree validation not (FP risk: veraPDF's exact mapping of 6.7.2.2-1 vs. 6.7.3.3-1 is ambiguous — empirically 6.7.3.3-1 fires on pdfa2a-no-structure, not 6.7.2.2-1; conservative, left Partial)",
+        // 6.7.2.2-1 moved to Implemented (A2aStructureTypeRule: isDefined co-fires with 6.7.3.4-1
+        //   on the same element: a non-standard /S with no role-map path to a standard Table 333
+        //   type. Standard types are inherently defined; the condition is co-occurring with
+        //   6.7.3.4-1 and adds no additional code path. Oracle fixtures:
+        //   pdfa2a-defined-type-unmapped (VIOLATING) and pdfa2a-defined-type-rolemapped (COMPLIANT)).
         // 6.8-5 moved to PdfAOutOfScope (embedded PDF/A-1 recursion; tracked in Backlog issue TBD).
         // 6.4.3-1 moved to Implemented (SignatureRule: under-coverage revision analysis added;
         //   /Perms /DocMDP signature enumeration added; gap [c+d, fileLength) checked against
