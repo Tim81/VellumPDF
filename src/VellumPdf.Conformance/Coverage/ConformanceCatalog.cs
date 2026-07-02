@@ -193,6 +193,11 @@ public static class ConformanceCatalog
 
     private static readonly Dictionary<string, string> PdfAPartial = new(StringComparer.Ordinal)
     {
+        // Partial with an infeasible residual: the common path is implemented and veraPDF-verified,
+        // but a predefined-CJK-CMap sub-condition can't be cross-validated clean-room (needs the Adobe
+        // code->CID tables and a conformant CJK CIDFont oracle asset). Tracked in #139.
+        ["6.1.13-10"] = "Identity and embedded-CMap CIDs resolved from content text-show operators are range-checked; predefined named-CMap character-collection maxima are not (needs the Adobe code->CID tables + a conformant CJK CIDFont oracle asset). Tracked in #139.",
+        ["6.2.11.3.1-1"] = "Identity and embedded-CMap CIDSystemInfo compared; the predefined-CMap registry match is authored but not cross-validated (needs a conformant CJK CIDFont oracle asset). Tracked in #139.",
         // 6.1.8-1 moved to Implemented (NameUtf8Rule: CheckStructureTypeNames now delegates to
         //   StructureTree.Analyze for a full-depth walk; oracle fixture pdfa2b-deep-struct-invalid-utf8
         //   confirmed veraPDF fires on the 2nd-level /S name; pdfa2b-deep-struct-valid-utf8 FP-safe).
@@ -299,8 +304,8 @@ public static class ConformanceCatalog
     // the feasible-coverage denominator).
     private static readonly Dictionary<string, string> PdfAOutOfScope = new(StringComparer.Ordinal)
     {
-        ["6.1.13-10"] = "Out of scope (tracked in #139): predefined named-CMap character-collection maxima need the Adobe code->CID tables and a conformant CJK CIDFont oracle asset; Identity/embedded-CMap paths are already covered.",
-        ["6.2.11.3.1-1"] = "Out of scope (tracked in #139): predefined-CMap CIDSystemInfo check needs a conformant CJK CIDFont oracle asset to cross-validate; Identity and embedded-CMap paths already compared.",
+        // 6.1.13-10 and 6.2.11.3.1-1 are Partial (see PdfAPartial): their common Identity/embedded-CMap
+        //   paths are implemented + veraPDF-verified; only the predefined-CJK-CMap residual is infeasible.
         ["6.8-5"] = "Out of scope (tracked in #140): embedded PDF/A-1 recursion needs a PDF/A-1 profile (not on roadmap); embedded PDF/A-2 is validated recursively.",
         // 6.2.4.2-2 moved to Implemented (Batch N3 continued, 2026-07-02): overprint state (OP/op/OPM,
         //   fill/stroke ICCBased-CMYK flags) is now threaded into Form XObjects at every Do site in the
@@ -434,7 +439,9 @@ public static class ConformanceCatalog
     {
         // 7.18.1-2 moved to PdfUaImplemented (Batch B5 — UaAnnotContentsRule now resolves the
         // direct enclosing struct element's /Alt via the ParentTree reverse index).
-        // 7.21.3.1-1 moved to PdfUaOutOfScope (predefined-CMap CIDSystemInfo registry table; tracked in Backlog issue TBD).
+        // Partial with an infeasible residual (mirrors PDF/A-2 6.2.11.3.1-1): common path verified,
+        // predefined-CJK-CMap sub-condition needs a conformant CJK CIDFont oracle asset. Tracked in #139.
+        ["7.21.3.1-1"] = "Identity and embedded-CMap CIDSystemInfo compared; the predefined-CMap registry match is authored but not cross-validated (needs a conformant CJK CIDFont oracle asset). Tracked in #139.",
     };
 
     // PDF/UA-1 checks deliberately not implemented in-process (tracked in follow-up issues; excluded
@@ -442,7 +449,8 @@ public static class ConformanceCatalog
     private static readonly Dictionary<string, string> PdfUaOutOfScope = new(StringComparer.Ordinal)
     {
         ["7.16-1"] = "Out of scope (tracked in #138, v2.1 reader/encryption epic #97/#100): needs the reader to decrypt encrypted files to cross-validate against veraPDF; exposing /Encrypt /P alone cannot match veraPDF's whole-file verdict.",
-        ["7.21.3.1-1"] = "Out of scope (tracked in #139): predefined-CMap CIDSystemInfo check needs a conformant CJK CIDFont oracle asset (mirrors PDF/A-2 6.2.11.3.1-1); Identity/embedded-CMap paths already compared.",
+        // 7.21.3.1-1 is Partial (see PdfUaPartial): common Identity/embedded-CMap path verified;
+        //   only the predefined-CJK-CMap residual is infeasible.
         // 7.20-2 moved to PdfUaImplemented (UaFormXObjectSemanticParentRule: a Form XObject with
         //   /StructParents drawn via Do from 2+ distinct pages is always a structural violation —
         //   the form has exactly one /ParentTree MCID-array, so it can record only one set of

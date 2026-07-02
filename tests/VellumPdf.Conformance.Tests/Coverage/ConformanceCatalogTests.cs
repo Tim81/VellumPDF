@@ -40,13 +40,26 @@ public sealed class ConformanceCatalogTests
             var s = ConformanceCatalog.Coverage(p);
             Assert.Equal(s.Total, s.Implemented + s.Partial + s.Deferred + s.OutOfScope);
 
-            // Every in-process-feasible check is fully implemented: no Partial or Deferred remains,
-            // so each profile reports 100% of its feasible surface (OutOfScope checks are tracked in
-            // follow-up issues and excluded from the denominator).
-            Assert.Equal(0, s.Partial);
+            // Nothing is left "not yet done": every check is Implemented, or one of the explicitly
+            // documented Partial/OutOfScope checks below (each with an infeasible residual + a tracker).
             Assert.Equal(0, s.Deferred);
-            Assert.Equal(100.0, s.Percent);
         }
+
+        // The ONLY non-Implemented checks are these five, each tracked in a follow-up issue:
+        //   - Partial (common path implemented + veraPDF-verified, residual infeasible clean-room):
+        //     6.1.13-10, 6.2.11.3.1-1, 7.21.3.1-1 — predefined-CJK-CMap sub-conditions (#139).
+        //   - OutOfScope (not implemented at all): 6.8-5 (needs a PDF/A-1 profile, #140),
+        //     7.16-1 (needs reader decryption, #138).
+        var expectedPartial = new HashSet<string>(StringComparer.Ordinal)
+            { "6.1.13-10", "6.2.11.3.1-1", "7.21.3.1-1" };
+        var expectedOutOfScope = new HashSet<string>(StringComparer.Ordinal)
+            { "6.8-5", "7.16-1" };
+        Assert.Equal(
+            expectedPartial,
+            all.Where(c => c.Status == CoverageStatus.Partial).Select(c => c.TestId).ToHashSet(StringComparer.Ordinal));
+        Assert.Equal(
+            expectedOutOfScope,
+            all.Where(c => c.Status == CoverageStatus.OutOfScope).Select(c => c.TestId).ToHashSet(StringComparer.Ordinal));
     }
 
     /// <summary>
