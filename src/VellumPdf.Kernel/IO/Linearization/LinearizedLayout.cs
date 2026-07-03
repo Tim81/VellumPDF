@@ -74,6 +74,18 @@ internal sealed class LinearizedLayout
     /// </summary>
     public IReadOnlyList<IReadOnlyList<int>> PageSharedRefs { get; }
 
+    /// <summary>
+    /// New object numbers for the outline group (root first, then items, in file order).
+    /// Empty when the document has no outlines.
+    /// </summary>
+    public IReadOnlyList<int> OutlineObjNums { get; }
+
+    /// <summary>
+    /// True when the outline group is placed in part 6 (appended after the first page's own
+    /// objects). False means part 9. VellumPdf always takes the part-6 path when outlines exist.
+    /// </summary>
+    public bool OutlinesInFirstPage { get; }
+
     internal LinearizedLayout(
         IReadOnlyDictionary<int, int> oldToNew,
         IReadOnlyList<(int, PdfObject)> restObjects,
@@ -87,7 +99,9 @@ internal sealed class LinearizedLayout
         IReadOnlyList<IReadOnlyList<int>> pageObjectNums,
         IReadOnlyList<int> sharedTableObjNums,
         int nsharedFirstPage,
-        IReadOnlyList<IReadOnlyList<int>> pageSharedRefs)
+        IReadOnlyList<IReadOnlyList<int>> pageSharedRefs,
+        IReadOnlyList<int>? outlineObjNums = null,
+        bool outlinesInFirstPage = false)
     {
         OldToNew = oldToNew;
         RestObjects = restObjects;
@@ -102,5 +116,7 @@ internal sealed class LinearizedLayout
         SharedTableObjNums = sharedTableObjNums;
         NsharedFirstPage = nsharedFirstPage;
         PageSharedRefs = pageSharedRefs;
+        OutlineObjNums = outlineObjNums ?? [];
+        OutlinesInFirstPage = outlinesInFirstPage;
     }
 }
