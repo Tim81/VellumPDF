@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Linearization ("fast web view").** A new opt-in `PdfDocument.Linearize` property re-orders the
+  output so a viewer can render the first page before the whole file downloads: the linearization
+  parameter dictionary, a first-page cross-reference section, a primary hint stream (page-offset and
+  shared-object hint tables), the first page's objects, then the remaining objects grouped per page,
+  and the main cross-reference section. It defaults off, so existing byte output is unchanged. Output
+  is verified against `qpdf --check` and `qpdf --show-linearization` (no warnings) for text, images,
+  embedded fonts, cross-page links, and tagged PDFs, and round-trips through `VellumPdf.Reader`.
+  Linearization uses the classic cross-reference table only; it cannot be combined with
+  `UseObjectStreams` or `Encrypt()`, and the signing path ignores it. Documents with outlines or
+  AcroForm fields are rejected for now (their hint tables need extra work — tracked in #145 and #146).
+
 ## [1.7.8] - 2026-07-02
 
 ### Added
