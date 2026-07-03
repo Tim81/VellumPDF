@@ -47,3 +47,5 @@ VellumPdf.Canvas.TextAlignment
 VellumPdf.Canvas.TextAlignment.Center = 1 -> VellumPdf.Canvas.TextAlignment
 VellumPdf.Canvas.TextAlignment.Left = 0 -> VellumPdf.Canvas.TextAlignment
 VellumPdf.Canvas.TextAlignment.Right = 2 -> VellumPdf.Canvas.TextAlignment
+VellumPdf.Document.PdfDocument.Linearize.get -> bool
+VellumPdf.Document.PdfDocument.Linearize.set -> void

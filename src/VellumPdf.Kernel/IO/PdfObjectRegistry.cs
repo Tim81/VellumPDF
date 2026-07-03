@@ -82,6 +82,22 @@ public sealed class PdfObjectRegistry
     }
 
     /// <summary>
+    /// Enumerates all registered objects as <c>(ObjectNumber, Value)</c> pairs in
+    /// object-number order. Throws <see cref="InvalidOperationException"/> for any slot
+    /// that was reserved but never assigned.
+    /// </summary>
+    internal IEnumerable<(int ObjectNumber, PdfObject Value)> Entries()
+    {
+        for (var i = 0; i < _values.Count; i++)
+        {
+            var value = _values[i];
+            if (value is null)
+                throw new InvalidOperationException($"Object {i + 1} was reserved but never assigned a value.");
+            yield return (i + 1, value);
+        }
+    }
+
+    /// <summary>
     /// Compressed write path (PDF 1.5+, ISO 32000-2 §7.5.7–7.5.8): packs non-stream
     /// indirect objects into a single ObjStm; stream objects stay as type-1 entries.
     ///

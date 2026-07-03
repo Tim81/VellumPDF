@@ -93,6 +93,14 @@ to retrofit:
 - **Tables** are the largest layout element and are phased: fixed-width →
   auto-width → spanning → cross-page split + repeating headers → collapsed
   borders.
+- **Linearization** (opt-in `PdfDocument.Linearize`) re-orders objects for
+  fast-web-view. It measures each object's length, builds the primary hint
+  stream from those lengths in a coordinate system where the hint stream has
+  zero length (so hint offsets are independent of it), then writes the file
+  once with fixed-width placeholders for the absolute offsets in the
+  linearization dictionary and first-page cross-reference table and patches
+  them in a second pass. Verified against `qpdf --show-linearization`; the
+  encoders are pinned to qpdf's exact bytes by golden tests.
 
 ## Defaults & conventions
 

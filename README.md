@@ -33,7 +33,7 @@ clean-room from the open **ISO 32000** standard.
 
 | Package | Status | Description |
 | --- | --- | --- |
-| `VellumPdf.Kernel` | Stable | Object model, canvas, Standard-14 fonts, TrueType/OpenType embedding + subsetting, images (JPEG/PNG/BMP/GIF/TIFF/JBIG2/JPEG 2000), AES-256 encryption, object/cross-reference streams, AcroForm fields, tagged-PDF structure tree, PDF/A-2 metadata, and DeviceCMYK and ICC-based colour with configurable output intents. |
+| `VellumPdf.Kernel` | Stable | Object model, canvas, Standard-14 fonts, TrueType/OpenType embedding + subsetting, images (JPEG/PNG/BMP/GIF/TIFF/JBIG2/JPEG 2000), AES-256 encryption, object/cross-reference streams, AcroForm fields, tagged-PDF structure tree, PDF/A-2 metadata, DeviceCMYK and ICC-based colour with configurable output intents, and opt-in linearization (`Linearize`) for fast-web-view first-page rendering. |
 | `VellumPdf.Fonts.Standard14` | Stable | Optional, embeddable metric-compatible substitutes for the standard-14 fonts (Liberation Sans/Serif/Mono, SIL OFL 1.1, covering the Helvetica/Times/Courier families). The built-in `Standard14` fonts are not embedded — fine for ordinary PDFs but disallowed by PDF/A's font-embedding rule; `doc.EmbedStandard14Font(...)` registers a subset, embedded substitute so standard-14-style text is PDF/A-conformant without a caller-supplied font program. (Symbol and ZapfDingbats are not covered.) |
 | `VellumPdf.Layout` | Stable | High-level document builder: paragraphs, headings, lists, tables, images, pie charts, header/footer bands, bookmarks, and automatic pagination. |
 | `VellumPdf.Signing` | Stable | PAdES / PKCS#7 detached digital signatures with RFC-3161 signature timestamps and long-term validation. Levels B-T, B-LT (embedded OCSP/CRL in a `/DSS`), and B-LTA (archive document timestamp), via pluggable timestamp and revocation clients. |
@@ -168,7 +168,7 @@ guarantee. Exit codes are `0` (conformant), `1` (non-conformant), and `2` (usage
 
 | Area | Notes |
 | --- | --- |
-| Linearization (v1.8) | "Fast web view" object ordering. |
+| Linearization for outlines &amp; forms | `Linearize` is qpdf-clean for text, images, embedded fonts, links, and tagged PDFs; documents with outlines or AcroForm fields are rejected for now ([#145](https://github.com/Tim81/VellumPDF/issues/145), [#146](https://github.com/Tim81/VellumPDF/issues/146)). |
 | Barcodes (v1.9) | The `VellumPdf.Barcodes` package — QR, PDF417, Code128, EAN. |
 | PDF reader (v2.1) | `VellumPdf.Reader` — read any PDF. xref streams, object streams, and hybrid-reference files shipped in v1.7; v2.1 grows it into a full structural parser including encrypted-file reading (Epic #100). |
 | Content extraction (v2.2) | Text and image extraction on the reader (#98). |
