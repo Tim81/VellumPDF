@@ -379,7 +379,13 @@ public sealed class LinearizationTests
 
         var ms = new MemoryStream();
         doc.Save(ms);
-        Assert.True(ms.Length > 0);
+        var bytes = ms.ToArray();
+        Assert.True(bytes.Length > 4);
+        Assert.True(bytes[0] == (byte)'%' && bytes[1] == (byte)'P' &&
+                    bytes[2] == (byte)'D' && bytes[3] == (byte)'F',
+            "Output must begin with %PDF");
+        var asText = System.Text.Encoding.Latin1.GetString(bytes);
+        Assert.Contains("/Linearized", asText);
     }
 
     [Fact]

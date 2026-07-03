@@ -259,6 +259,16 @@ public sealed class LinearizationQpdfTests : IDisposable
         Assert.True(exit == 0, $"exit {exit}.\n{stdout}\n{stderr}");
         Assert.DoesNotContain("WARNING", stdout);
         Assert.DoesNotContain("WARNING", stderr);
+
+        if (!TryRunQpdf($"--check \"{path}\"", out var checkExit, out var checkOut, out var checkErr))
+        {
+            GateOnCi("qpdf");
+            return;
+        }
+        Assert.True(checkExit == 0,
+            $"qpdf --check failed (exit {checkExit}).\nstdout: {checkOut}\nstderr: {checkErr}");
+        Assert.DoesNotContain("WARNING", checkOut);
+        Assert.DoesNotContain("WARNING", checkErr);
     }
 
     [Fact]
@@ -292,6 +302,16 @@ public sealed class LinearizationQpdfTests : IDisposable
         Assert.True(exit == 0, $"exit {exit}.\n{stdout}\n{stderr}");
         Assert.DoesNotContain("WARNING", stdout);
         Assert.DoesNotContain("WARNING", stderr);
+
+        if (!TryRunQpdf($"--check \"{path}\"", out var checkExit, out var checkOut, out var checkErr))
+        {
+            GateOnCi("qpdf");
+            return;
+        }
+        Assert.True(checkExit == 0,
+            $"qpdf --check failed (exit {checkExit}).\nstdout: {checkOut}\nstderr: {checkErr}");
+        Assert.DoesNotContain("WARNING", checkOut);
+        Assert.DoesNotContain("WARNING", checkErr);
     }
 
     [Fact]
@@ -328,6 +348,16 @@ public sealed class LinearizationQpdfTests : IDisposable
         Assert.True(exit == 0, $"exit {exit}.\n{stdout}\n{stderr}");
         Assert.DoesNotContain("WARNING", stdout);
         Assert.DoesNotContain("WARNING", stderr);
+
+        if (!TryRunQpdf($"--check \"{path}\"", out var checkExit, out var checkOut, out var checkErr))
+        {
+            GateOnCi("qpdf");
+            return;
+        }
+        Assert.True(checkExit == 0,
+            $"qpdf --check failed (exit {checkExit}).\nstdout: {checkOut}\nstderr: {checkErr}");
+        Assert.DoesNotContain("WARNING", checkOut);
+        Assert.DoesNotContain("WARNING", checkErr);
     }
 
     [Fact]
@@ -362,6 +392,58 @@ public sealed class LinearizationQpdfTests : IDisposable
         Assert.True(exit == 0, $"exit {exit}.\n{stdout}\n{stderr}");
         Assert.DoesNotContain("WARNING", stdout);
         Assert.DoesNotContain("WARNING", stderr);
+
+        if (!TryRunQpdf($"--check \"{path}\"", out var checkExit, out var checkOut, out var checkErr))
+        {
+            GateOnCi("qpdf");
+            return;
+        }
+        Assert.True(checkExit == 0,
+            $"qpdf --check failed (exit {checkExit}).\nstdout: {checkOut}\nstderr: {checkErr}");
+        Assert.DoesNotContain("WARNING", checkOut);
+        Assert.DoesNotContain("WARNING", checkErr);
+    }
+
+    [Fact]
+    public void Linearized_Tagged_QpdfClean()
+    {
+        var path = Path.Combine(_tempDir, "linearized_tagged.pdf");
+        using var doc = new PdfDocument { Timestamp = PinnedTime, DocumentId = PinnedId, Linearize = true };
+        doc.Tagged = true;
+
+        var font = doc.UseFont(Standard14.Helvetica);
+        for (var i = 0; i < 3; i++)
+        {
+            var page = doc.AddPage(PageSize.A4);
+            var canvas = new PdfCanvas(page);
+            var mcid = canvas.BeginMarkedContent("P");
+            canvas.BeginText().SetFont(font, 12).SetTextMatrix(1, 0, 0, 1, 72, 720)
+                .ShowText($"Page {i + 1}").EndText();
+            canvas.EndMarkedContent();
+            canvas.Finish();
+            doc.RegisterStructElem(new PdfStructElem("P") { Page = page, Mcid = mcid });
+        }
+
+        using (var fs = File.OpenWrite(path)) doc.Save(fs);
+
+        if (!TryRunQpdf($"--show-linearization \"{path}\"", out var exit, out var stdout, out var stderr))
+        {
+            GateOnCi("qpdf");
+            return;
+        }
+        Assert.True(exit == 0, $"exit {exit}.\n{stdout}\n{stderr}");
+        Assert.DoesNotContain("WARNING", stdout);
+        Assert.DoesNotContain("WARNING", stderr);
+
+        if (!TryRunQpdf($"--check \"{path}\"", out var checkExit, out var checkOut, out var checkErr))
+        {
+            GateOnCi("qpdf");
+            return;
+        }
+        Assert.True(checkExit == 0,
+            $"qpdf --check failed (exit {checkExit}).\nstdout: {checkOut}\nstderr: {checkErr}");
+        Assert.DoesNotContain("WARNING", checkOut);
+        Assert.DoesNotContain("WARNING", checkErr);
     }
 
     private static string? FindPlatformFont()
