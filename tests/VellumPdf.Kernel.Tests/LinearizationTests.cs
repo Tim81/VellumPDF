@@ -236,6 +236,61 @@ public sealed class LinearizationTests
         Assert.NotEmpty(layout.RestObjects);
     }
 
+    [Fact]
+    public void Planner_objectSharedAmongLaterPagesOnly_goesToPart8SharedTable()
+    {
+        // An object referenced by pages 2 and 3 but NOT page 1 is shared among later pages (part 8),
+        // so the shared-object table extends past nshared_first_page. This is the case whose
+        // first_shared_obj hint was previously wrong.
+        var registry = new PdfObjectRegistry();
+        var contentRefs = new PdfIndirectReference[3];
+        var pageDictRefs = new PdfIndirectReference[3];
+        for (var i = 0; i < 3; i++) contentRefs[i] = registry.Reserve();
+        for (var i = 0; i < 3; i++) pageDictRefs[i] = registry.Reserve();
+        var pageTreeRef = registry.Reserve();
+        var infoRef = registry.Reserve();
+        var catalogRef = registry.Reserve();
+        var sharedRef = registry.Reserve(); // referenced by pages 2 and 3 only
+
+        for (var i = 0; i < 3; i++)
+        {
+            registry.SetValue(contentRefs[i], new PdfStream([]));
+            var dict = new PdfDictionary()
+                .Set(PdfName.Type, PdfName.Page)
+                .Set(PdfName.Parent, pageTreeRef)
+                .Set(PdfName.Contents, contentRefs[i]);
+            if (i >= 1) // later pages reference the shared object via their resources
+                dict.Set(new PdfName("Resources"), new PdfDictionary()
+                    .Set(new PdfName("XObject"), new PdfDictionary().Set(new PdfName("X0"), sharedRef)));
+            registry.SetValue(pageDictRefs[i], dict);
+        }
+        registry.SetValue(sharedRef, new PdfStream([1, 2, 3]));
+        registry.SetValue(pageTreeRef, new PdfDictionary()
+            .Set(PdfName.Type, PdfName.Pages)
+            .Set(PdfName.Kids, new PdfArray(pageDictRefs.Cast<PdfObject>()))
+            .Set(PdfName.Count, 3L));
+        registry.SetValue(infoRef, new PdfDictionary());
+        registry.SetValue(catalogRef, new PdfDictionary()
+            .Set(PdfName.Type, PdfName.Catalog)
+            .Set(PdfName.Pages, pageTreeRef));
+        var metadataRef = registry.Add(new PdfStream([]));
+
+        var layout = LinearizedLayoutPlanner.Plan(
+            registry, catalogRef, pageTreeRef, pageDictRefs, contentRefs, infoRef, metadataRef);
+
+        // Part 8 is non-empty: the shared table extends past the first page's entries.
+        Assert.True(layout.SharedTableObjNums.Count > layout.NsharedFirstPage);
+
+        // The shared object is in the shared table, in the part-8 region (index >= nshared_first_page).
+        var sharedNew = layout.OldToNew[sharedRef.ObjectNumber];
+        var idx = layout.SharedTableObjNums.ToList().IndexOf(sharedNew);
+        Assert.True(idx >= layout.NsharedFirstPage, "shared-among-later-pages object must be in part 8");
+
+        // Pages 2 and 3 reference it; page 1 does not.
+        Assert.Contains(idx, layout.PageSharedRefs[1]);
+        Assert.Contains(idx, layout.PageSharedRefs[2]);
+    }
+
     // ── Linearized write + reader round-trip ─────────────────────────────────
 
     [Fact]

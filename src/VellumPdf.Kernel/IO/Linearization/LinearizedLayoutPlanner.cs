@@ -130,6 +130,8 @@ internal static class LinearizedLayoutPlanner
 
         // A page's own dict and content stream are always private to that page, never shared,
         // so every page has at least its page object in its hint group (no zero-object pages).
+        // This rests on each page having a distinct content-stream and dict object (reserved
+        // per page in PdfDocument.Save); if that ever changes, revisit the part-8 classification.
         var pageOwned = new HashSet<int>();
         for (var p = 1; p < pageCount; p++)
         {
