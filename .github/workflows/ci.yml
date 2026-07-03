@@ -92,7 +92,24 @@ jobs:
               for pkg in root.iter("package"):
                   pkgname = pkg.get("name", "")
                   for cls in pkg.iter("class"):
-                      fn = cls.get("filename", "")
+                      fn = cls.get("filename", "").replace("\\", "/")
+                      # Coverlet reports the same source file with different prefixes across
+                      # test-project reports (an absolute runner path in one, an assembly-relative
+                      # path in another). Keying on the raw filename counts each line once per
+                      # prefix, inflating the denominator. Normalize to the path relative to the
+                      # assembly root (the package name) so a line is counted once per (assembly,
+                      # relative path); fall back to a src/tests/eng anchor when the package name
+                      # is not the folder name (e.g. an assembly renamed from its directory).
+                      _root = pkgname + "/"
+                      _i = fn.find(_root)
+                      if _i != -1:
+                          fn = fn[_i + len(_root):]
+                      else:
+                          for _m in ("/src/", "/tests/", "/eng/"):
+                              _j = fn.find(_m)
+                              if _j != -1:
+                                  fn = fn[_j + len(_m):]
+                                  break
                       for ln in cls.iter("line"):
                           key = (pkgname, fn, ln.get("number"))
                           file_lines[key] = file_lines.get(key, False) or int(ln.get("hits", 0)) > 0
