@@ -114,6 +114,7 @@ internal static class HintStreamBuilder
         var minGroupLength = shared.Count > 0 ? shared.Min(s => s.GroupLength) : 0;
         var nbitsDeltaGroup = shared.Count > 0 ? NBits(shared.Max(s => s.GroupLength) - minGroupLength) : 0;
 
+        // Fields 1-2: 32-bit per spec; casts assume sub-2 GB offsets (qpdf's own limit).
         w.WriteBits((uint)firstSharedObj, 32);              // 1
         w.WriteBits((uint)firstSharedOffset, 32);           // 2
         w.WriteBits((uint)nsharedFirstPage, 32);            // 3
@@ -134,6 +135,8 @@ internal static class HintStreamBuilder
         if (outline is not null)
         {
             // Outline hint table (§F.3.4): four 32-bit big-endian fields.
+            // Casts to uint are intentional: the format stores 32-bit values and qpdf's
+            // own hint-table parser uses uint throughout, implying a sub-2 GB file limit.
             w.WriteBits((uint)outline.FirstObjNum, 32);
             w.WriteBits((uint)outline.FirstObjOffset, 32);
             w.WriteBits((uint)outline.ObjectCount, 32);

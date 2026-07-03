@@ -160,28 +160,30 @@ internal static class LinearizedLayoutPlanner
         }
 
         // Outline group: BFS from the outlines root (all page dicts are hard boundaries so
-        // outline /Dest refs don't drag pages into the group). When outlinesInFirstPage is
-        // true (the catalog sets /PageMode /UseOutlines), the group is appended to part 6
-        // after the first page's own objects. Otherwise the objects remain in part 4 (via
-        // the catalog-BFS promotion above), which is correct but untested (VellumPdf always
-        // sets /UseOutlines when outlines exist).
+        // outline /Dest refs don't drag pages into the group). Only part-6 placement is
+        // implemented: when outlines exist the caller must pass outlinesInFirstPage = true
+        // (VellumPdf always sets /UseOutlines when outlines exist, so this is always true).
+        // Part-9 placement would leave outlineObjNums empty and silently omit the /O hint
+        // table; guard it explicitly so the failure is loud rather than silent.
         var outlineGroupOld = new HashSet<int>();
         if (outlinesRef is not null)
         {
+            if (!outlinesInFirstPage)
+                throw new NotSupportedException(
+                    "Linearization with outlines placed in part 9 (outlinesInFirstPage = false) is not implemented. " +
+                    "Set PageMode = /UseOutlines on the catalog so outlines are placed in part 6.");
+
             var allPageBoundary = new HashSet<int>(pageDictRefs.Select(r => r.ObjectNumber));
             BfsFromPage(outlinesRef.ObjectNumber, allObjects, outlineGroupOld, allPageBoundary);
 
-            if (outlinesInFirstPage)
-            {
-                // Move outline objects out of part 4 (firstPageSet) and into part 6 (part6Ordered),
-                // appended after the first page's own objects. Root first, then items in order.
-                var rootNum = outlinesRef.ObjectNumber;
-                if (outlineGroupOld.Contains(rootNum) && !part6Ordered.Contains(rootNum))
-                    part6Ordered.Add(rootNum);
-                foreach (var n in outlineGroupOld.OrderBy(n => n))
-                    if (n != rootNum && !part6Ordered.Contains(n))
-                        part6Ordered.Add(n);
-            }
+            // Move outline objects out of part 4 (firstPageSet) and into part 6 (part6Ordered),
+            // appended after the first page's own objects. Root first, then items in order.
+            var rootNum = outlinesRef.ObjectNumber;
+            if (outlineGroupOld.Contains(rootNum) && !part6Ordered.Contains(rootNum))
+                part6Ordered.Add(rootNum);
+            foreach (var n in outlineGroupOld.OrderBy(n => n))
+                if (n != rootNum && !part6Ordered.Contains(n))
+                    part6Ordered.Add(n);
         }
 
         // Compute part4Ordered after all promotions and outline placement are settled.
@@ -312,13 +314,22 @@ internal static class LinearizedLayoutPlanner
             pageSharedRefs.Add(refs);
         }
 
-        // Outline object numbers in new numbering (root first, then items), for the hint table.
-        IReadOnlyList<int> outlineObjNums = outlineGroupOld.Count > 0
-            ? part6Ordered
-                .Where(o => outlineGroupOld.Contains(o))
-                .Select(o => oldToNew[o])
-                .ToList()
-            : [];
+        // Outline object numbers in new numbering (root first, then remaining items ordered by
+        // new number), for the hint table /O entry. Derived from outlineGroupOld directly so
+        // the list is correct regardless of which part list holds the objects.
+        IReadOnlyList<int> outlineObjNums;
+        if (outlineGroupOld.Count > 0 && outlinesRef is not null)
+        {
+            var rootOld = outlinesRef.ObjectNumber;
+            var nums = new List<int> { oldToNew[rootOld] };
+            foreach (var o in outlineGroupOld.Where(n => n != rootOld).OrderBy(n => oldToNew[n]))
+                nums.Add(oldToNew[o]);
+            outlineObjNums = nums;
+        }
+        else
+        {
+            outlineObjNums = [];
+        }
 
         return new LinearizedLayout(
             oldToNew,
