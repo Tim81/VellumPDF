@@ -10,6 +10,7 @@ using VellumPdf.Fonts;
 using VellumPdf.Forms;
 using VellumPdf.Images;
 using VellumPdf.IO;
+using VellumPdf.IO.Linearization;
 
 namespace VellumPdf.Document;
 
@@ -129,6 +130,32 @@ public sealed class PdfDocument : IDisposable
     /// </para>
     /// </summary>
     public bool UseObjectStreams { get; set; } = false;
+
+    /// <summary>
+    /// When true, <see cref="Save"/> writes a linearized ("fast web view") PDF: objects
+    /// are re-ordered so a viewer can render the first page before the whole file downloads,
+    /// with a linearization parameter dictionary, a first-page cross-reference section,
+    /// and hint streams.
+    ///
+    /// Default is false.
+    ///
+    /// Linearization buffers the entire output in memory during save in order to
+    /// back-fill byte offsets once all object positions are known.
+    ///
+    /// <para>
+    /// Restrictions:
+    /// <list type="bullet">
+    ///   <item>Cannot be combined with <see cref="UseObjectStreams"/> — linearization uses
+    ///         the classic cross-reference table only; throws <see cref="NotSupportedException"/>.</item>
+    ///   <item>Cannot be combined with <see cref="Encrypt"/> — linearization computes byte
+    ///         offsets over the cleartext layout; throws <see cref="NotSupportedException"/>.</item>
+    ///   <item>Ignored by the <see cref="PrepareForSigning"/> path — an incremental signature
+    ///         revision appends a second cross-reference section, which is incompatible with
+    ///         linearization.</item>
+    /// </list>
+    /// </para>
+    /// </summary>
+    public bool Linearize { get; set; } = false;
 
     /// <summary>
     /// When true, a /StructTreeRoot is written and marked-content sequences
@@ -494,11 +521,40 @@ public sealed class PdfDocument : IDisposable
                 "PDF/A prohibits encryption (ISO 19005-2 §6.3.1). " +
                 "Remove Encrypt() or clear Conformance before calling Save().");
 
+        if (Linearize && UseObjectStreams)
+            throw new NotSupportedException(
+                "Linearize cannot be combined with UseObjectStreams. " +
+                "This version of linearization uses the classic cross-reference table only. Remove one of these options.");
+
+        if (Linearize && _encryptionSettings is not null)
+            throw new NotSupportedException(
+                "Linearize cannot be combined with Encrypt(). " +
+                "Linearization computes byte offsets over the cleartext layout. Remove one of these options.");
+
+        // Outlines and form fields need per-object hint-table entries this version does not
+        // emit yet (an outline hint table, and page-membership for widget annotations), so the
+        // hint tables would be inconsistent. Reject rather than emit a warning-laden file.
+        if (Linearize && _outlineEntries.Count > 0)
+            throw new NotSupportedException(
+                "Linearize does not yet support documents with outlines (bookmarks). " +
+                "Remove the outline entries or clear Linearize. Tracked for a future version (#52).");
+
+        if (Linearize && _formFields.Count > 0)
+            throw new NotSupportedException(
+                "Linearize does not yet support documents with AcroForm fields. " +
+                "Remove the form fields or clear Linearize. Tracked for a future version (#52).");
+
         // All preconditions passed — mark written only now, so a recoverable precondition
         // failure (no pages, incompatible options) leaves the document usable for a retry.
         _written = true;
 
-        var writer = new PdfWriter(destination);
+        // Linearized path buffers everything internally; the shared writer/xref/header are
+        // not used for the linearized branch but are still needed to build the object graph.
+        // Write the header to a throwaway stream so the build code (which checks writer.Position
+        // in CrossReferenceBuilder) works; the real header is written inside WriteLinearized.
+        var writer = Linearize
+            ? new PdfWriter(new MemoryStream())
+            : new PdfWriter(destination);
         var xref = new CrossReferenceBuilder();
         var registry = new PdfObjectRegistry();
 
@@ -781,6 +837,16 @@ public sealed class PdfDocument : IDisposable
             var xrefStream = registry.WriteAllCompressed(writer, objStmObjNum, xrefObjNum);
             xrefStream.WriteXRefStream(writer, xrefObjNum, catalogRef, infoRef, documentId: documentId);
             writer.Flush();
+        }
+        else if (Linearize)
+        {
+            // ── Linearized path ────────────────────────────────────────────────
+            // Two-pass write: pass 1 buffers the whole file so all offsets are known;
+            // pass 2 patches placeholder byte ranges and copies to destination.
+            var linBytes = WriteLinearized(registry, catalogRef, pageTreeRef, pageDictRefs,
+                pageContentRefs, infoRef, metadataRef, documentId, Conformance);
+            destination.Write(linBytes);
+            destination.Flush();
         }
         else
         {
@@ -1311,6 +1377,203 @@ public sealed class PdfDocument : IDisposable
             }
             return null;
         });
+    }
+
+    /// <summary>
+    /// Writes the linearized ("fast web view") layout: the linearization dictionary, the
+    /// first-page cross-reference section, the primary hint stream, the first page's objects,
+    /// the remaining objects grouped per page, and the main cross-reference section.
+    ///
+    /// The hint stream's contents depend only on object byte lengths and their layout order
+    /// (all internal offsets are stored relative to a coordinate system where the hint stream
+    /// has zero length, per ISO 32000-2 §F), so it is computed up front from measured lengths.
+    /// The file is then written once with fixed-width placeholders for the absolute offsets in
+    /// the linearization dictionary and the first-page xref, which pass 2 patches in place.
+    /// </summary>
+    private static byte[] WriteLinearized(
+        PdfObjectRegistry registry,
+        PdfIndirectReference catalogRef,
+        PdfIndirectReference pageTreeRef,
+        PdfIndirectReference[] pageDictRefs,
+        PdfIndirectReference[] pageContentRefs,
+        PdfIndirectReference infoRef,
+        PdfIndirectReference metadataRef,
+        byte[] documentId,
+        PdfConformance conformance)
+    {
+        var layout = LinearizedLayoutPlanner.Plan(
+            registry, catalogRef, pageTreeRef,
+            pageDictRefs, pageContentRefs, infoRef, metadataRef);
+
+        var newCatalogRef = new PdfIndirectReference(layout.CatalogObjNum);
+        var newInfoRef = layout.OldToNew.TryGetValue(infoRef.ObjectNumber, out var infoNewNum)
+            ? new PdfIndirectReference(infoNewNum)
+            : (PdfIndirectReference?)null;
+
+        var npages = pageDictRefs.Length;
+        // First-page xref covers the contiguous block: lin dict, part 4, hint stream, part 6.
+        var fpFirst = layout.LinDictObjNum;
+        var fpLast = layout.LinDictObjNum + 1 + layout.Part4Objects.Count + layout.Part6Objects.Count;
+
+        // ── Measure framed byte lengths of every real object ─────────────────────
+        var objLen = new Dictionary<int, int>();
+        foreach (var (num, val) in layout.Part4Objects) objLen[num] = MeasureObject(num, val);
+        foreach (var (num, val) in layout.Part6Objects) objLen[num] = MeasureObject(num, val);
+        foreach (var (num, val) in layout.RestObjects) objLen[num] = MeasureObject(num, val);
+
+        // Fixed-width structural lengths (identical in the measure and real writes).
+        var headerLen = MeasureLength(w => WriteLinearizedHeader(w, conformance));
+        var linDictLen = MeasureLength(w =>
+            new LinearizedCrossReferenceBuilder().WriteLinearizationDict(w, layout.LinDictObjNum, layout.FirstPageObjNum, npages));
+        var xrefLen = MeasureLength(w =>
+            new LinearizedCrossReferenceBuilder().WriteFirstPageXrefPlaceholder(
+                w, fpFirst, fpLast, layout.TotalSize, newCatalogRef, newInfoRef, documentId));
+
+        // Hint-relative offset of the first page's first object (part 6). In the hint coordinate
+        // system the hint stream has zero length, so this is header + lin dict + xref + part 4.
+        var part4Length = layout.Part4Objects.Sum(o => objLen[o.NewObjNum]);
+        var firstPageOffset = headerLen + linDictLen + xrefLen + part4Length;
+
+        // ── Build the hint stream from measured lengths ──────────────────────────
+        var pageHints = new List<HintStreamBuilder.PageHint>(npages);
+        for (var p = 0; p < npages; p++)
+        {
+            var nums = layout.PageObjectNums[p];
+            pageHints.Add(new HintStreamBuilder.PageHint(
+                nums.Count, nums.Sum(n => objLen[n]), layout.PageSharedRefs[p]));
+        }
+        var sharedHints = layout.SharedTableObjNums
+            .Select(n => new HintStreamBuilder.SharedHint(objLen[n]))
+            .ToList();
+
+        // The first shared object beyond the first page (part 8). Its number and hint-relative
+        // offset are only meaningful when there are shared objects not on the first page
+        // (nshared_total > nshared_first_page); otherwise qpdf treats them as unused, so 0/0.
+        var firstSharedObj = 0;
+        var firstSharedOffset = 0;
+        if (layout.SharedTableObjNums.Count > layout.NsharedFirstPage)
+        {
+            firstSharedObj = layout.SharedTableObjNums[layout.NsharedFirstPage];
+            // Part 8 is written after every page's own objects (part 6 + all part 7), so its
+            // hint-relative offset is the first-page offset plus every page's object bytes.
+            var allPageBytes = 0;
+            for (var p = 0; p < npages; p++)
+                allPageBytes += layout.PageObjectNums[p].Sum(n => objLen[n]);
+            firstSharedOffset = firstPageOffset + allPageBytes;
+        }
+
+        var (hintBody, sharedOffset) = HintStreamBuilder.Build(
+            pageHints, firstPageOffset, sharedHints, layout.NsharedFirstPage,
+            firstSharedObj, firstSharedOffset);
+        var hintBytes = BuildHintStreamObject(layout.HintStreamObjNum, hintBody, sharedOffset);
+
+        // ── Pass 1: write the file with placeholders, recording real offsets ─────
+        var linXref = new LinearizedCrossReferenceBuilder();
+        var ms = new MemoryStream(65536);
+        var w = new PdfWriter(ms);
+
+        WriteLinearizedHeader(w, conformance);
+        linXref.RecordOffset(layout.LinDictObjNum, w.Position);
+        var linPh = linXref.WriteLinearizationDict(w, layout.LinDictObjNum, layout.FirstPageObjNum, npages);
+        var firstPageXrefOffset = linXref.WriteFirstPageXrefPlaceholder(
+            w, fpFirst, fpLast, layout.TotalSize, newCatalogRef, newInfoRef, documentId);
+
+        // Part 4 (document level) is written before the hint stream.
+        foreach (var (num, val) in layout.Part4Objects)
+        {
+            linXref.RecordOffset(num, w.Position);
+            WriteIndirectObject(w, num, val);
+        }
+
+        var hintOffset = w.Position;
+        linXref.RecordOffset(layout.HintStreamObjNum, hintOffset);
+        w.WriteRaw(hintBytes);
+
+        // Part 6 (the first page's own objects) follows the hint stream.
+        foreach (var (num, val) in layout.Part6Objects)
+        {
+            linXref.RecordOffset(num, w.Position);
+            WriteIndirectObject(w, num, val);
+        }
+        var firstPageEnd = w.Position; // /E — end of the first page (part 6)
+
+        foreach (var (num, val) in layout.RestObjects)
+        {
+            linXref.RecordOffset(num, w.Position);
+            WriteIndirectObject(w, num, val);
+        }
+
+        var (mainXrefOffset, tOffset) = linXref.WriteMainXrefAndTrailer(
+            w, layout.RestObjects.Count, layout.TotalSize, newCatalogRef, newInfoRef, documentId);
+        LinearizedCrossReferenceBuilder.WriteFinalStartxref(w, firstPageXrefOffset);
+        w.Flush();
+        var totalLength = w.Position;
+
+        // ── Pass 2: patch the fixed-width offset fields ──────────────────────────
+        var buf = ms.GetBuffer();
+        linXref.PatchFirstPageXref(buf, mainXrefOffset);
+        LinearizedCrossReferenceBuilder.PatchLinDict(
+            buf, linPh, totalLength, hintOffset, hintBytes.Length, firstPageEnd, tOffset);
+
+        return ms.ToArray();
+    }
+
+    private static void WriteLinearizedHeader(PdfWriter w, PdfConformance conformance)
+    {
+        w.WriteAscii("%PDF-"u8);
+        w.WriteAscii(conformance == PdfConformance.None ? "2.0"u8 : "1.7"u8);
+        w.WriteAscii("\n%"u8);
+        w.WriteRaw([0xE2, 0xE3, 0xCF, 0xD3]);
+        w.WriteAscii("\n"u8);
+    }
+
+    private static void WriteIndirectObject(PdfWriter writer, int objNum, PdfObject value)
+    {
+        new PdfIndirectObject(objNum, value).WriteTo(writer);
+        writer.WriteByte((byte)'\n');
+    }
+
+    /// <summary>Returns the number of bytes <paramref name="write"/> emits to a throwaway writer.</summary>
+    private static int MeasureLength(Action<PdfWriter> write)
+    {
+        var w = new PdfWriter(Stream.Null);
+        write(w);
+        return (int)w.Position;
+    }
+
+    /// <summary>Returns the framed byte length of a single indirect object (including the trailing newline).</summary>
+    private static int MeasureObject(int objNum, PdfObject value)
+        => MeasureLength(w => WriteIndirectObject(w, objNum, value));
+
+    /// <summary>
+    /// Builds the hint-stream indirect object: a FlateDecode-compressed stream carrying the
+    /// hint-table body, with <c>/S</c> pointing at the shared-object table within the decoded body.
+    /// </summary>
+    private static byte[] BuildHintStreamObject(int objNum, byte[] hintBody, int sharedOffset)
+    {
+        var compMs = new MemoryStream();
+        using (var z = new System.IO.Compression.ZLibStream(compMs, System.IO.Compression.CompressionLevel.Optimal, leaveOpen: true))
+            z.Write(hintBody);
+        var compressed = compMs.ToArray();
+
+        var ms = new MemoryStream();
+        var w = new PdfWriter(ms);
+        WriteIntAscii(w, objNum);
+        w.WriteAscii(" 0 obj\n<< /Filter /FlateDecode /S "u8);
+        WriteIntAscii(w, sharedOffset);
+        w.WriteAscii(" /Length "u8);
+        WriteIntAscii(w, compressed.Length);
+        w.WriteAscii(" >>\nstream\n"u8);
+        w.WriteRaw(compressed);
+        w.WriteAscii("\nendstream\nendobj\n"u8);
+        return ms.ToArray();
+    }
+
+    private static void WriteIntAscii(PdfWriter w, int n)
+    {
+        Span<byte> b = stackalloc byte[12];
+        System.Buffers.Text.Utf8Formatter.TryFormat(n, b, out var len);
+        w.WriteAscii(b[..len]);
     }
 
     /// <summary>
