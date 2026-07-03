@@ -344,13 +344,11 @@ public sealed class LinearizationTests
         Assert.NotEmpty(fonts.Entries);
     }
 
-    // ── Guards: Linearize is rejected with unsupported combinations ──────────────
+    // ── Guards: Linearize is rejected with still-unsupported combinations ────────
 
     [Theory]
     [InlineData("objstm")]
     [InlineData("encrypt")]
-    [InlineData("outline")]
-    [InlineData("form")]
     public void LinearizedSave_unsupportedCombination_throws(string kind)
     {
         using var doc = new PdfDocument { Linearize = true };
@@ -360,11 +358,34 @@ public sealed class LinearizationTests
         {
             case "objstm": doc.UseObjectStreams = true; break;
             case "encrypt": doc.Encrypt(new PdfEncryptionSettings { UserPassword = "pw" }); break;
+        }
+
+        Assert.Throws<NotSupportedException>(() => doc.Save(new MemoryStream()));
+    }
+
+    [Theory]
+    [InlineData("outline")]
+    [InlineData("form")]
+    public void LinearizedSave_withOutlinesOrForms_succeeds(string kind)
+    {
+        using var doc = new PdfDocument { Timestamp = PinnedTime, DocumentId = PinnedId, Linearize = true };
+        var page = doc.AddPage(PageSize.A4);
+
+        switch (kind)
+        {
             case "outline": doc.AddOutlineEntry(new PdfOutlineEntry { Title = "Ch", DestPage = page }); break;
             case "form": doc.AddTextField(page, "F", new PdfRectangle(72, 650, 300, 670)); break;
         }
 
-        Assert.Throws<NotSupportedException>(() => doc.Save(new MemoryStream()));
+        var ms = new MemoryStream();
+        doc.Save(ms);
+        var bytes = ms.ToArray();
+        Assert.True(bytes.Length > 4);
+        Assert.True(bytes[0] == (byte)'%' && bytes[1] == (byte)'P' &&
+                    bytes[2] == (byte)'D' && bytes[3] == (byte)'F',
+            "Output must begin with %PDF");
+        var asText = System.Text.Encoding.Latin1.GetString(bytes);
+        Assert.Contains("/Linearized", asText);
     }
 
     [Fact]

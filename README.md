@@ -168,7 +168,6 @@ guarantee. Exit codes are `0` (conformant), `1` (non-conformant), and `2` (usage
 
 | Area | Notes |
 | --- | --- |
-| Linearization for outlines &amp; forms | `Linearize` is qpdf-clean for text, images, embedded fonts, links, and tagged PDFs; documents with outlines or AcroForm fields are rejected for now ([#145](https://github.com/Tim81/VellumPDF/issues/145), [#146](https://github.com/Tim81/VellumPDF/issues/146)). |
 | Barcodes (v1.9) | The `VellumPdf.Barcodes` package — QR, PDF417, Code128, EAN. |
 | PDF reader (v2.1) | `VellumPdf.Reader` — read any PDF. xref streams, object streams, and hybrid-reference files shipped in v1.7; v2.1 grows it into a full structural parser including encrypted-file reading (Epic #100). |
 | Content extraction (v2.2) | Text and image extraction on the reader (#98). |

@@ -3,9 +3,11 @@
 
 using System.ComponentModel;
 using System.Diagnostics;
+using VellumPdf.Annotations;
 using VellumPdf.Canvas;
 using VellumPdf.Document;
 using VellumPdf.Fonts;
+using VellumPdf.Forms;
 
 namespace VellumPdf.Kernel.Tests;
 
@@ -218,6 +220,230 @@ public sealed class LinearizationQpdfTests : IDisposable
         }
         Assert.True(exit == 0, $"exit {exit}.\n{stdout}\n{stderr}");
         Assert.DoesNotContain("WARNING", stdout);
+    }
+
+    [Fact]
+    public void Linearized_WithOutlines_QpdfClean()
+    {
+        var path = Path.Combine(_tempDir, "linearized_outlines.pdf");
+        using var doc = new PdfDocument { Timestamp = PinnedTime, DocumentId = PinnedId, Linearize = true };
+
+        var p0 = doc.AddPage(PageSize.A4);
+        var c0 = new PdfCanvas(p0);
+        var f0 = doc.UseFont(Standard14.Helvetica);
+        c0.BeginText().SetFont(f0, 12).SetTextMatrix(1, 0, 0, 1, 72, 720).ShowText("Page 1").EndText();
+        c0.Finish();
+
+        var p1 = doc.AddPage(PageSize.A4);
+        var c1 = new PdfCanvas(p1);
+        c1.BeginText().SetFont(f0, 12).SetTextMatrix(1, 0, 0, 1, 72, 720).ShowText("Page 2").EndText();
+        c1.Finish();
+
+        var p2 = doc.AddPage(PageSize.A4);
+        var c2 = new PdfCanvas(p2);
+        c2.BeginText().SetFont(f0, 12).SetTextMatrix(1, 0, 0, 1, 72, 720).ShowText("Page 3").EndText();
+        c2.Finish();
+
+        doc.AddOutlineEntry(new PdfOutlineEntry { Title = "Chapter 1", DestPage = p0 });
+        doc.AddOutlineEntry(new PdfOutlineEntry { Title = "Section 1.1", DestPage = p1, Level = 1 });
+        doc.AddOutlineEntry(new PdfOutlineEntry { Title = "Chapter 2", DestPage = p2 });
+
+        using (var fs = File.OpenWrite(path)) doc.Save(fs);
+
+        if (!TryRunQpdf($"--show-linearization \"{path}\"", out var exit, out var stdout, out var stderr))
+        {
+            GateOnCi("qpdf");
+            return;
+        }
+
+        Assert.True(exit == 0, $"exit {exit}.\n{stdout}\n{stderr}");
+        Assert.DoesNotContain("WARNING", stdout);
+        Assert.DoesNotContain("WARNING", stderr);
+
+        if (!TryRunQpdf($"--check \"{path}\"", out var checkExit, out var checkOut, out var checkErr))
+        {
+            GateOnCi("qpdf");
+            return;
+        }
+        Assert.True(checkExit == 0,
+            $"qpdf --check failed (exit {checkExit}).\nstdout: {checkOut}\nstderr: {checkErr}");
+        Assert.DoesNotContain("WARNING", checkOut);
+        Assert.DoesNotContain("WARNING", checkErr);
+    }
+
+    [Fact]
+    public void Linearized_WithTextAndCheckBoxFields_QpdfClean()
+    {
+        var path = Path.Combine(_tempDir, "linearized_fields.pdf");
+        using var doc = new PdfDocument { Timestamp = PinnedTime, DocumentId = PinnedId, Linearize = true };
+
+        var p0 = doc.AddPage(PageSize.A4);
+        var c0 = new PdfCanvas(p0);
+        var f0 = doc.UseFont(Standard14.Helvetica);
+        c0.BeginText().SetFont(f0, 12).SetTextMatrix(1, 0, 0, 1, 72, 720).ShowText("Page 1").EndText();
+        c0.Finish();
+        doc.AddTextField(p0, "Name", new PdfRectangle(72, 650, 300, 670));
+        doc.AddCheckBox(p0, "Accept", new PdfRectangle(72, 620, 90, 638));
+
+        var p1 = doc.AddPage(PageSize.A4);
+        var c1 = new PdfCanvas(p1);
+        c1.BeginText().SetFont(f0, 12).SetTextMatrix(1, 0, 0, 1, 72, 720).ShowText("Page 2").EndText();
+        c1.Finish();
+        doc.AddTextField(p1, "Email", new PdfRectangle(72, 650, 300, 670));
+
+        using (var fs = File.OpenWrite(path)) doc.Save(fs);
+
+        if (!TryRunQpdf($"--show-linearization \"{path}\"", out var exit, out var stdout, out var stderr))
+        {
+            GateOnCi("qpdf");
+            return;
+        }
+
+        Assert.True(exit == 0, $"exit {exit}.\n{stdout}\n{stderr}");
+        Assert.DoesNotContain("WARNING", stdout);
+        Assert.DoesNotContain("WARNING", stderr);
+
+        if (!TryRunQpdf($"--check \"{path}\"", out var checkExit, out var checkOut, out var checkErr))
+        {
+            GateOnCi("qpdf");
+            return;
+        }
+        Assert.True(checkExit == 0,
+            $"qpdf --check failed (exit {checkExit}).\nstdout: {checkOut}\nstderr: {checkErr}");
+        Assert.DoesNotContain("WARNING", checkOut);
+        Assert.DoesNotContain("WARNING", checkErr);
+    }
+
+    [Fact]
+    public void Linearized_WithRadioGroupAcrossPages_QpdfClean()
+    {
+        var path = Path.Combine(_tempDir, "linearized_radio.pdf");
+        using var doc = new PdfDocument { Timestamp = PinnedTime, DocumentId = PinnedId, Linearize = true };
+
+        var p0 = doc.AddPage(PageSize.A4);
+        var c0 = new PdfCanvas(p0);
+        var f0 = doc.UseFont(Standard14.Helvetica);
+        c0.BeginText().SetFont(f0, 12).SetTextMatrix(1, 0, 0, 1, 72, 720).ShowText("Page 1").EndText();
+        c0.Finish();
+
+        var p1 = doc.AddPage(PageSize.A4);
+        var c1 = new PdfCanvas(p1);
+        c1.BeginText().SetFont(f0, 12).SetTextMatrix(1, 0, 0, 1, 72, 720).ShowText("Page 2").EndText();
+        c1.Finish();
+
+        doc.AddRadioButtonGroup("Choice", new List<RadioOption>
+        {
+            new(p0, new PdfRectangle(72, 650, 90, 668), "A"),
+            new(p1, new PdfRectangle(72, 650, 90, 668), "B"),
+        });
+
+        using (var fs = File.OpenWrite(path)) doc.Save(fs);
+
+        if (!TryRunQpdf($"--show-linearization \"{path}\"", out var exit, out var stdout, out var stderr))
+        {
+            GateOnCi("qpdf");
+            return;
+        }
+
+        Assert.True(exit == 0, $"exit {exit}.\n{stdout}\n{stderr}");
+        Assert.DoesNotContain("WARNING", stdout);
+        Assert.DoesNotContain("WARNING", stderr);
+
+        if (!TryRunQpdf($"--check \"{path}\"", out var checkExit, out var checkOut, out var checkErr))
+        {
+            GateOnCi("qpdf");
+            return;
+        }
+        Assert.True(checkExit == 0,
+            $"qpdf --check failed (exit {checkExit}).\nstdout: {checkOut}\nstderr: {checkErr}");
+        Assert.DoesNotContain("WARNING", checkOut);
+        Assert.DoesNotContain("WARNING", checkErr);
+    }
+
+    [Fact]
+    public void Linearized_WithOutlinesAndForms_QpdfClean()
+    {
+        var path = Path.Combine(_tempDir, "linearized_outlines_and_forms.pdf");
+        using var doc = new PdfDocument { Timestamp = PinnedTime, DocumentId = PinnedId, Linearize = true };
+
+        var p0 = doc.AddPage(PageSize.A4);
+        var c0 = new PdfCanvas(p0);
+        var f0 = doc.UseFont(Standard14.Helvetica);
+        c0.BeginText().SetFont(f0, 12).SetTextMatrix(1, 0, 0, 1, 72, 720).ShowText("Page 1").EndText();
+        c0.Finish();
+        doc.AddTextField(p0, "Field1", new PdfRectangle(72, 650, 300, 670));
+
+        var p1 = doc.AddPage(PageSize.A4);
+        var c1 = new PdfCanvas(p1);
+        c1.BeginText().SetFont(f0, 12).SetTextMatrix(1, 0, 0, 1, 72, 720).ShowText("Page 2").EndText();
+        c1.Finish();
+
+        doc.AddOutlineEntry(new PdfOutlineEntry { Title = "Start", DestPage = p0 });
+        doc.AddOutlineEntry(new PdfOutlineEntry { Title = "Page 2", DestPage = p1 });
+
+        using (var fs = File.OpenWrite(path)) doc.Save(fs);
+
+        if (!TryRunQpdf($"--show-linearization \"{path}\"", out var exit, out var stdout, out var stderr))
+        {
+            GateOnCi("qpdf");
+            return;
+        }
+
+        Assert.True(exit == 0, $"exit {exit}.\n{stdout}\n{stderr}");
+        Assert.DoesNotContain("WARNING", stdout);
+        Assert.DoesNotContain("WARNING", stderr);
+
+        if (!TryRunQpdf($"--check \"{path}\"", out var checkExit, out var checkOut, out var checkErr))
+        {
+            GateOnCi("qpdf");
+            return;
+        }
+        Assert.True(checkExit == 0,
+            $"qpdf --check failed (exit {checkExit}).\nstdout: {checkOut}\nstderr: {checkErr}");
+        Assert.DoesNotContain("WARNING", checkOut);
+        Assert.DoesNotContain("WARNING", checkErr);
+    }
+
+    [Fact]
+    public void Linearized_Tagged_QpdfClean()
+    {
+        var path = Path.Combine(_tempDir, "linearized_tagged.pdf");
+        using var doc = new PdfDocument { Timestamp = PinnedTime, DocumentId = PinnedId, Linearize = true };
+        doc.Tagged = true;
+
+        var font = doc.UseFont(Standard14.Helvetica);
+        for (var i = 0; i < 3; i++)
+        {
+            var page = doc.AddPage(PageSize.A4);
+            var canvas = new PdfCanvas(page);
+            var mcid = canvas.BeginMarkedContent("P");
+            canvas.BeginText().SetFont(font, 12).SetTextMatrix(1, 0, 0, 1, 72, 720)
+                .ShowText($"Page {i + 1}").EndText();
+            canvas.EndMarkedContent();
+            canvas.Finish();
+            doc.RegisterStructElem(new PdfStructElem("P") { Page = page, Mcid = mcid });
+        }
+
+        using (var fs = File.OpenWrite(path)) doc.Save(fs);
+
+        if (!TryRunQpdf($"--show-linearization \"{path}\"", out var exit, out var stdout, out var stderr))
+        {
+            GateOnCi("qpdf");
+            return;
+        }
+        Assert.True(exit == 0, $"exit {exit}.\n{stdout}\n{stderr}");
+        Assert.DoesNotContain("WARNING", stdout);
+        Assert.DoesNotContain("WARNING", stderr);
+
+        if (!TryRunQpdf($"--check \"{path}\"", out var checkExit, out var checkOut, out var checkErr))
+        {
+            GateOnCi("qpdf");
+            return;
+        }
+        Assert.True(checkExit == 0,
+            $"qpdf --check failed (exit {checkExit}).\nstdout: {checkOut}\nstderr: {checkErr}");
+        Assert.DoesNotContain("WARNING", checkOut);
+        Assert.DoesNotContain("WARNING", checkErr);
     }
 
     private static string? FindPlatformFont()

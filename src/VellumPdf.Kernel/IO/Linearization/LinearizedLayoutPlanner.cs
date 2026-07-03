@@ -31,7 +31,9 @@ internal static class LinearizedLayoutPlanner
         PdfIndirectReference[] pageDictRefs,
         PdfIndirectReference[] pageContentRefs,
         PdfIndirectReference? infoRef,
-        PdfIndirectReference? metadataRef)
+        PdfIndirectReference? metadataRef,
+        PdfIndirectReference? outlinesRef = null,
+        bool outlinesInFirstPage = false)
     {
         if (pageDictRefs.Length == 0)
             throw new InvalidOperationException("Cannot linearize a document with no pages.");
@@ -67,6 +69,24 @@ internal static class LinearizedLayoutPlanner
         firstPageSet.Add(catalogRef.ObjectNumber);
         firstPageSet.Add(pageTreeRef.ObjectNumber);
 
+        // Catalog BFS: discover all objects reachable from the catalog (AcroForm root, /DR
+        // fonts, form-field widgets and their appearance streams, non-terminal field nodes,
+        // metadata, outlines root and items) stopping at every page dict boundary.
+        var catalogReachable = new HashSet<int>();
+        BfsFromPage(catalogRef.ObjectNumber, allObjects, catalogReachable, otherPageDicts);
+
+        // Document-level objects: everything the catalog reaches except the page dicts and the
+        // page tree. qpdf classifies these as part-4 document-level objects, never page-private,
+        // even when a page's /Annots array also references them (form-field widgets are reachable
+        // both from their page and from the catalog's AcroForm /Fields). They must not be counted
+        // in any page's object total or its part-6/part-7 group, or qpdf's recomputed page object
+        // count and /E offset will disagree with the hint table. Outline objects are handled
+        // separately below (moved into part 6 when /UseOutlines is set).
+        var documentLevel = new HashSet<int>(catalogReachable);
+        documentLevel.Remove(catalogRef.ObjectNumber);
+        documentLevel.Remove(pageTreeRef.ObjectNumber);
+        foreach (var r in pageDictRefs) documentLevel.Remove(r.ObjectNumber);
+
         // Shared objects: reachable from page 0 AND at least one other page.
         // These stay in the first-page section per the spec (they benefit the first-page render).
         // Objects only reachable from pages 1+ go into the rest section.
@@ -99,6 +119,11 @@ internal static class LinearizedLayoutPlanner
         var part6Boundary = new HashSet<int>(otherPageDicts) { pageTreeRef.ObjectNumber };
         BfsFromPage(pageDictRefs[0].ObjectNumber, allObjects, part6Set, part6Boundary);
 
+        // Drop document-level objects (form-field widgets, appearance streams, /DR fonts) that the
+        // BFS pulled in through the first page's /Annots. They belong in part 4, not part 6. The
+        // page dict itself is never in documentLevel, so it is retained.
+        part6Set.ExceptWith(documentLevel);
+
         var part6Ordered = new List<int> { pageDictRefs[0].ObjectNumber };
         if (part6Set.Contains(pageContentRefs[0].ObjectNumber))
             part6Ordered.Add(pageContentRefs[0].ObjectNumber);
@@ -106,17 +131,10 @@ internal static class LinearizedLayoutPlanner
             if (!part6Ordered.Contains(n))
                 part6Ordered.Add(n);
 
-        var part4Ordered = new List<int>();
-        if (firstPageSet.Contains(catalogRef.ObjectNumber))
-            part4Ordered.Add(catalogRef.ObjectNumber);
-        foreach (var n in firstPageSet.OrderBy(n => n))
-            if (!part6Set.Contains(n) && !part4Ordered.Contains(n))
-                part4Ordered.Add(n);
-
         // ── Split the rest section into per-page private objects and shared objects ─
         // An object reachable from exactly one later page is that page's private object
         // (part 7). One reachable from two or more later pages is shared (part 8). The
-        // remainder (reachable from none, e.g. outlines) trails at the end (part 9).
+        // remainder (reachable from none, e.g. AcroForm root, outlines) trails at the end (part 9).
         var pageCount = pageDictRefs.Length;
         var reachCount = new Dictionary<int, int>();
         foreach (var n in restSet)
@@ -127,6 +145,55 @@ internal static class LinearizedLayoutPlanner
                     count++;
             reachCount[n] = count;
         }
+
+        // Promote every document-level object (catalog-reachable, non-page) into part 4,
+        // regardless of how many pages also reference it. A form-field widget on a later page,
+        // its appearance streams, and the shared /DR fonts are all reachable from the catalog's
+        // AcroForm, so qpdf treats them as document-level rather than that page's private objects.
+        // Leaving them in a page-private (part 7) or shared (part 8) slot would inflate the page's
+        // recomputed object count and shift /E.
+        foreach (var n in documentLevel)
+        {
+            if (firstPageSet.Contains(n)) continue;  // already in first-page set
+            if (!restSet.Contains(n)) continue;       // not in rest set (shouldn't happen)
+            firstPageSet.Add(n);
+        }
+
+        // Outline group: BFS from the outlines root (all page dicts are hard boundaries so
+        // outline /Dest refs don't drag pages into the group). Only part-6 placement is
+        // implemented: when outlines exist the caller must pass outlinesInFirstPage = true
+        // (VellumPdf always sets /UseOutlines when outlines exist, so this is always true).
+        // Part-9 placement would leave outlineObjNums empty and silently omit the /O hint
+        // table; guard it explicitly so the failure is loud rather than silent.
+        var outlineGroupOld = new HashSet<int>();
+        if (outlinesRef is not null)
+        {
+            if (!outlinesInFirstPage)
+                throw new NotSupportedException(
+                    "Linearization with outlines placed in part 9 (outlinesInFirstPage = false) is not implemented. " +
+                    "Set PageMode = /UseOutlines on the catalog so outlines are placed in part 6.");
+
+            var allPageBoundary = new HashSet<int>(pageDictRefs.Select(r => r.ObjectNumber));
+            BfsFromPage(outlinesRef.ObjectNumber, allObjects, outlineGroupOld, allPageBoundary);
+
+            // Move outline objects out of part 4 (firstPageSet) and into part 6 (part6Ordered),
+            // appended after the first page's own objects. Root first, then items in order.
+            var rootNum = outlinesRef.ObjectNumber;
+            if (outlineGroupOld.Contains(rootNum) && !part6Ordered.Contains(rootNum))
+                part6Ordered.Add(rootNum);
+            foreach (var n in outlineGroupOld.OrderBy(n => n))
+                if (n != rootNum && !part6Ordered.Contains(n))
+                    part6Ordered.Add(n);
+        }
+
+        // Compute part4Ordered after all promotions and outline placement are settled.
+        // Catalog comes first; then remaining first-page-set objects that are not in part 6.
+        var part4Ordered = new List<int>();
+        if (firstPageSet.Contains(catalogRef.ObjectNumber))
+            part4Ordered.Add(catalogRef.ObjectNumber);
+        foreach (var n in firstPageSet.OrderBy(n => n))
+            if (!part6Set.Contains(n) && !part6Ordered.Contains(n) && !part4Ordered.Contains(n))
+                part4Ordered.Add(n);
 
         // A page's own dict and content stream are always private to that page, never shared,
         // so every page has at least its page object in its hint group (no zero-object pages).
@@ -148,7 +215,7 @@ internal static class LinearizedLayoutPlanner
             // content follows, then any remaining private objects. The dict/content are forced in
             // even if the reachability count would otherwise classify them elsewhere.
             var privSet = restSet
-                .Where(n => (reachCount[n] == 1 && pageReachable[p].Contains(n)) || n == dictNum || n == contentNum)
+                .Where(n => (reachCount[n] == 1 && pageReachable[p].Contains(n) && !documentLevel.Contains(n)) || n == dictNum || n == contentNum)
                 .ToHashSet();
             var priv = new List<int>();
             if (privSet.Contains(dictNum)) priv.Add(dictNum);
@@ -158,8 +225,10 @@ internal static class LinearizedLayoutPlanner
                     priv.Add(n);
             pagePrivateOld.Add(priv);
         }
-        var part8Old = restSet.Where(n => reachCount[n] >= 2 && !pageOwned.Contains(n)).OrderBy(n => n).ToList();
-        var part9Old = restSet.Where(n => reachCount[n] == 0 && !pageOwned.Contains(n)).OrderBy(n => n).ToList();
+        // Shared objects (part 8) exclude document-level objects, which are now in part 4.
+        var part8Old = restSet.Where(n => reachCount[n] >= 2 && !pageOwned.Contains(n) && !documentLevel.Contains(n)).OrderBy(n => n).ToList();
+        // Exclude objects promoted to firstPageSet (part 4), including all document-level objects.
+        var part9Old = restSet.Where(n => reachCount[n] == 0 && !pageOwned.Contains(n) && !firstPageSet.Contains(n)).OrderBy(n => n).ToList();
 
         // Rest write order: page 1 private, page 2 private, …, shared, then unreferenced.
         var restOrderedOld = new List<int>();
@@ -245,6 +314,23 @@ internal static class LinearizedLayoutPlanner
             pageSharedRefs.Add(refs);
         }
 
+        // Outline object numbers in new numbering (root first, then remaining items ordered by
+        // new number), for the hint table /O entry. Derived from outlineGroupOld directly so
+        // the list is correct regardless of which part list holds the objects.
+        IReadOnlyList<int> outlineObjNums;
+        if (outlineGroupOld.Count > 0 && outlinesRef is not null)
+        {
+            var rootOld = outlinesRef.ObjectNumber;
+            var nums = new List<int> { oldToNew[rootOld] };
+            foreach (var o in outlineGroupOld.Where(n => n != rootOld).OrderBy(n => oldToNew[n]))
+                nums.Add(oldToNew[o]);
+            outlineObjNums = nums;
+        }
+        else
+        {
+            outlineObjNums = [];
+        }
+
         return new LinearizedLayout(
             oldToNew,
             restObjects,
@@ -258,7 +344,9 @@ internal static class LinearizedLayoutPlanner
             pageObjectNums,
             sharedTableObjNums,
             nsharedFirstPage,
-            pageSharedRefs);
+            pageSharedRefs,
+            outlineObjNums,
+            outlinesInFirstPage && outlineGroupOld.Count > 0);
     }
 
     // BFS over the object graph starting from a single root object number,

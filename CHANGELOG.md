@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.8.1] - 2026-07-03
+
+### Added
+
+- **Linearization now handles outlines and AcroForm fields.** `Linearize` no longer rejects
+  documents with a document outline (`AddOutlineEntry`) or interactive form fields (`AddTextField`,
+  `AddCheckBox`, `AddRadioButtonGroup`). Outlines get a page-offset outline hint table
+  (ISO 32000-2 §F.3.4) with the outline group written into the first page's section; form-field
+  widgets and their appearance streams are placed with the document-level objects the way qpdf
+  expects, so a page's recomputed object count and first-page end offset match the hint table.
+  Output is verified against `qpdf --show-linearization` (no warnings) for text fields, check boxes,
+  a radio group split across pages, an outline, and an outline-plus-form document. This resolves the
+  v1.8.0 limitation tracked in #145 and #146.
+
 ## [1.8.0] - 2026-07-03
 
 ### Added
