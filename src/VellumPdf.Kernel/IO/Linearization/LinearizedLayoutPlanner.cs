@@ -178,9 +178,21 @@ internal static class LinearizedLayoutPlanner
         var totalSize = restCount + part4Ordered.Count + part6Ordered.Count + 3; // lin dict + hint + object 0
 
         // ── Apply remap to all objects ───────────────────────────────────────────
+        // Remap each distinct object instance exactly once, keyed by reference identity.
+        // Streams are remapped in place, so if the same instance were registered under two
+        // numbers (e.g. a deduplicated image), remapping twice would double-apply the map and
+        // corrupt its references. This dedup makes that safe regardless.
         var remapped = new Dictionary<int, PdfObject>();
+        var remappedInstances = new Dictionary<PdfObject, PdfObject>(ReferenceEqualityComparer.Instance);
         foreach (var (oldNum, value) in allObjects)
-            remapped[oldNum] = PdfObjectRemapper.Remap(value, oldToNew);
+        {
+            if (!remappedInstances.TryGetValue(value, out var result))
+            {
+                result = PdfObjectRemapper.Remap(value, oldToNew);
+                remappedInstances[value] = result;
+            }
+            remapped[oldNum] = result;
+        }
 
         var restObjects = restOrderedOld.Select(o => (oldToNew[o], remapped[o])).ToList();
         var part4Objects = part4Ordered.Select(o => (oldToNew[o], remapped[o])).ToList();

@@ -531,6 +531,19 @@ public sealed class PdfDocument : IDisposable
                 "Linearize cannot be combined with Encrypt(). " +
                 "Linearization computes byte offsets over the cleartext layout. Remove one of these options.");
 
+        // Outlines and form fields need per-object hint-table entries this version does not
+        // emit yet (an outline hint table, and page-membership for widget annotations), so the
+        // hint tables would be inconsistent. Reject rather than emit a warning-laden file.
+        if (Linearize && _outlineEntries.Count > 0)
+            throw new NotSupportedException(
+                "Linearize does not yet support documents with outlines (bookmarks). " +
+                "Remove the outline entries or clear Linearize. Tracked for a future version (#52).");
+
+        if (Linearize && _formFields.Count > 0)
+            throw new NotSupportedException(
+                "Linearize does not yet support documents with AcroForm fields. " +
+                "Remove the form fields or clear Linearize. Tracked for a future version (#52).");
+
         // All preconditions passed — mark written only now, so a recoverable precondition
         // failure (no pages, incompatible options) leaves the document usable for a retry.
         _written = true;

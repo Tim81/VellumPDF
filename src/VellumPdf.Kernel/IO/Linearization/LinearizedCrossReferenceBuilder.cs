@@ -236,6 +236,7 @@ internal sealed class LinearizedCrossReferenceBuilder
 
     private static void WriteTenDigits(byte[] buf, int pos, long n)
     {
+        ArgumentOutOfRangeException.ThrowIfNegative(n);
         if (n > 9_999_999_999L)
             throw new NotSupportedException(
                 $"Byte offset {n} exceeds 9,999,999,999 — cannot fit in 10 digits.");
@@ -265,6 +266,7 @@ internal sealed class LinearizedCrossReferenceBuilder
 
     internal static void Write10Digits(PdfWriter w, long n)
     {
+        ArgumentOutOfRangeException.ThrowIfNegative(n);
         if (n > 9_999_999_999L)
             throw new NotSupportedException(
                 $"Byte offset {n} exceeds 9,999,999,999 — the classic xref table " +

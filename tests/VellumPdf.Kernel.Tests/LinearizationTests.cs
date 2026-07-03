@@ -1,9 +1,11 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
+using VellumPdf.Annotations;
 using VellumPdf.Canvas;
 using VellumPdf.Core;
 using VellumPdf.Document;
+using VellumPdf.Encryption;
 using VellumPdf.Fonts;
 using VellumPdf.IO;
 using VellumPdf.IO.Linearization;
@@ -261,6 +263,70 @@ public sealed class LinearizationTests
         Assert.NotNull(pagesDict);
         var count = pagesDict!.Get(PdfName.Count) as PdfInteger;
         Assert.Equal(3, (int)count!.Value);
+    }
+
+    [Fact]
+    public void LinearizedSave_firstPage_referencesSurviveRemap()
+    {
+        // After the planner renumbers every object, the first page's core references must still
+        // resolve: /Contents to a stream and /Resources /Font to a font dictionary.
+        var bytes = BuildLinearizedDoc(pageCount: 3);
+        using var reader = PdfReader.Open(bytes);
+
+        var pagesRef = (PdfIndirectReference)reader.Catalog.Get(PdfName.Pages)!;
+        var pagesDict = (PdfDictionary)reader.Resolve(pagesRef)!;
+        var kids = (PdfArray)pagesDict.Get(PdfName.Kids)!;
+        var firstPage = (PdfDictionary)reader.Resolve((PdfIndirectReference)kids[0])!;
+
+        Assert.Equal("Page", ((PdfName)firstPage.Get(PdfName.Type)!).Value);
+
+        var contentsRef = (PdfIndirectReference)firstPage.Get(PdfName.Contents)!;
+        Assert.NotNull(reader.Resolve(contentsRef));
+
+        // The page's font resource survives (Standard-14 fonts are written inline).
+        var resources = (PdfDictionary)firstPage.Get(new PdfName("Resources"))!;
+        var fonts = (PdfDictionary)resources.Get(new PdfName("Font"))!;
+        Assert.NotEmpty(fonts.Entries);
+    }
+
+    // ── Guards: Linearize is rejected with unsupported combinations ──────────────
+
+    [Theory]
+    [InlineData("objstm")]
+    [InlineData("encrypt")]
+    [InlineData("outline")]
+    [InlineData("form")]
+    public void LinearizedSave_unsupportedCombination_throws(string kind)
+    {
+        using var doc = new PdfDocument { Linearize = true };
+        var page = doc.AddPage(PageSize.A4);
+
+        switch (kind)
+        {
+            case "objstm": doc.UseObjectStreams = true; break;
+            case "encrypt": doc.Encrypt(new PdfEncryptionSettings { UserPassword = "pw" }); break;
+            case "outline": doc.AddOutlineEntry(new PdfOutlineEntry { Title = "Ch", DestPage = page }); break;
+            case "form": doc.AddTextField(page, "F", new PdfRectangle(72, 650, 300, 670)); break;
+        }
+
+        Assert.Throws<NotSupportedException>(() => doc.Save(new MemoryStream()));
+    }
+
+    [Fact]
+    public void LinearizedSave_guard_throwsBeforeMarkingWritten_soRetryWorks()
+    {
+        // The guards run before the document is marked written, so clearing the offending option
+        // and retrying succeeds (the document is not left in a poisoned state).
+        using var doc = new PdfDocument { Timestamp = PinnedTime, DocumentId = PinnedId, Linearize = true };
+        doc.AddPage(PageSize.A4);
+        doc.UseObjectStreams = true;
+
+        Assert.Throws<NotSupportedException>(() => doc.Save(new MemoryStream()));
+
+        doc.UseObjectStreams = false;
+        var ms = new MemoryStream();
+        doc.Save(ms); // succeeds on retry
+        Assert.True(ms.Length > 0);
     }
 
     [Fact]

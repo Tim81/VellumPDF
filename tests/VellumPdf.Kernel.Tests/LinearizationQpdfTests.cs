@@ -116,6 +116,80 @@ public sealed class LinearizationQpdfTests : IDisposable
         Assert.DoesNotContain("WARNING", stderr);
     }
 
+    [Fact]
+    public void Linearized_EqualLengthPages_QpdfClean()
+    {
+        // Byte-identical pages give equal page lengths and object counts, so several hint-table
+        // delta columns collapse to zero width. qpdf must still accept the result.
+        var path = Path.Combine(_tempDir, "linearized_equal.pdf");
+        using var doc = new PdfDocument { Timestamp = PinnedTime, DocumentId = PinnedId, Linearize = true };
+        for (var i = 0; i < 3; i++)
+        {
+            var page = doc.AddPage(PageSize.A4);
+            var canvas = new PdfCanvas(page);
+            var font = doc.UseFont(Standard14.Helvetica);
+            canvas.BeginText().SetFont(font, 12).SetTextMatrix(1, 0, 0, 1, 72, 720).ShowText("Same").EndText();
+            canvas.Finish();
+        }
+        using (var fs = File.OpenWrite(path)) doc.Save(fs);
+
+        if (!TryRunQpdf($"--show-linearization \"{path}\"", out var exit, out var stdout, out var stderr))
+        {
+            GateOnCi("qpdf");
+            return;
+        }
+        Assert.True(exit == 0, $"exit {exit}.\n{stdout}\n{stderr}");
+        Assert.DoesNotContain("WARNING", stdout);
+    }
+
+    [Fact]
+    public void Linearized_EmbeddedFontSharedAcrossPages_QpdfClean()
+    {
+        // Exercises the deepest remap chain (FontFile2 → FontDescriptor → CIDFont → Type0 → ToUnicode)
+        // and a genuinely shared object (one embedded font used on every page).
+        var fontPath = FindPlatformFont();
+        if (fontPath is null) { GateOnCi("platform TrueType font"); return; }
+
+        var path = Path.Combine(_tempDir, "linearized_embfont.pdf");
+        using var doc = new PdfDocument { Timestamp = PinnedTime, DocumentId = PinnedId, Linearize = true };
+        var handle = doc.UseTrueTypeFont(File.ReadAllBytes(fontPath));
+        for (var i = 0; i < 4; i++)
+        {
+            var page = doc.AddPage(PageSize.A4);
+            doc.RegisterEmbeddedFontUsage(page, handle);
+            var canvas = new PdfCanvas(page);
+            canvas.BeginText().SetFontByName(handle.ResourceName, 12).SetTextMatrix(1, 0, 0, 1, 72, 720);
+            var text = $"Embedded font page {i + 1}";
+            var gids = new ushort[text.Length];
+            var count = handle.GetGlyphIds(text, gids);
+            canvas.ShowGlyphs(gids.AsSpan(0, count));
+            canvas.EndText();
+            canvas.Finish();
+        }
+        using (var fs = File.OpenWrite(path)) doc.Save(fs);
+
+        if (!TryRunQpdf($"--show-linearization \"{path}\"", out var exit, out var stdout, out var stderr))
+        {
+            GateOnCi("qpdf");
+            return;
+        }
+        Assert.True(exit == 0, $"exit {exit}.\n{stdout}\n{stderr}");
+        Assert.DoesNotContain("WARNING", stdout);
+    }
+
+    private static string? FindPlatformFont()
+    {
+        string[] candidates =
+        [
+            @"C:\Windows\Fonts\arial.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        ];
+        foreach (var c in candidates)
+            if (File.Exists(c)) return c;
+        return null;
+    }
+
     // Tries the local qpdf path, then falls back to finding "qpdf" on PATH.
     private static bool TryRunQpdf(string args, out int exitCode, out string stdout, out string stderr)
     {
