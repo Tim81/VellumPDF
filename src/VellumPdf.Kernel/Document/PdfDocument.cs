@@ -10,6 +10,7 @@ using VellumPdf.Fonts;
 using VellumPdf.Forms;
 using VellumPdf.Images;
 using VellumPdf.IO;
+using VellumPdf.IO.Linearization;
 
 namespace VellumPdf.Document;
 
@@ -534,7 +535,13 @@ public sealed class PdfDocument : IDisposable
         // failure (no pages, incompatible options) leaves the document usable for a retry.
         _written = true;
 
-        var writer = new PdfWriter(destination);
+        // Linearized path buffers everything internally; the shared writer/xref/header are
+        // not used for the linearized branch but are still needed to build the object graph.
+        // Write the header to a throwaway stream so the build code (which checks writer.Position
+        // in CrossReferenceBuilder) works; the real header is written inside WriteLinearized.
+        var writer = Linearize
+            ? new PdfWriter(new MemoryStream())
+            : new PdfWriter(destination);
         var xref = new CrossReferenceBuilder();
         var registry = new PdfObjectRegistry();
 
@@ -817,6 +824,16 @@ public sealed class PdfDocument : IDisposable
             var xrefStream = registry.WriteAllCompressed(writer, objStmObjNum, xrefObjNum);
             xrefStream.WriteXRefStream(writer, xrefObjNum, catalogRef, infoRef, documentId: documentId);
             writer.Flush();
+        }
+        else if (Linearize)
+        {
+            // ── Linearized path ────────────────────────────────────────────────
+            // Two-pass write: pass 1 buffers the whole file so all offsets are known;
+            // pass 2 patches placeholder byte ranges and copies to destination.
+            var linBytes = WriteLinearized(registry, catalogRef, pageTreeRef, pageDictRefs,
+                pageContentRefs, infoRef, metadataRef, documentId, Conformance);
+            destination.Write(linBytes);
+            destination.Flush();
         }
         else
         {
@@ -1347,6 +1364,101 @@ public sealed class PdfDocument : IDisposable
             }
             return null;
         });
+    }
+
+    /// <summary>
+    /// Two-pass buffered write for the linearized path.
+    ///
+    /// Pass 1: write the entire file into a MemoryStream with 10-digit zero-padded
+    /// placeholders for all object offsets in the first-page xref and for /Prev.
+    /// Pass 2: patch those fixed-width fields in the backing array once all real
+    /// offsets are known, then return the result.
+    ///
+    /// Step 1 omits the /Linearized marker and /H entry so qpdf --check accepts the
+    /// output as a valid, correctly-ordered PDF. The real linearization dictionary
+    /// with /H and accurate /L /O /E /T /N is added in Step 2.
+    /// </summary>
+    private static byte[] WriteLinearized(
+        PdfObjectRegistry registry,
+        PdfIndirectReference catalogRef,
+        PdfIndirectReference pageTreeRef,
+        PdfIndirectReference[] pageDictRefs,
+        PdfIndirectReference[] pageContentRefs,
+        PdfIndirectReference infoRef,
+        PdfIndirectReference metadataRef,
+        byte[] documentId,
+        PdfConformance conformance)
+    {
+        var layout = LinearizedLayoutPlanner.Plan(
+            registry, catalogRef, pageTreeRef,
+            pageDictRefs, pageContentRefs, infoRef, metadataRef);
+
+        var newCatalogRef = new PdfIndirectReference(layout.CatalogObjNum);
+        var newInfoRef = layout.OldToNew.TryGetValue(infoRef.ObjectNumber, out var infoNewNum)
+            ? new PdfIndirectReference(infoNewNum)
+            : (PdfIndirectReference?)null;
+
+        var linXref = new LinearizedCrossReferenceBuilder();
+        var ms = new MemoryStream(65536);
+        var w = new PdfWriter(ms);
+
+        // ── PDF header ──────────────────────────────────────────────────────────
+        w.WriteAscii("%PDF-"u8);
+        w.WriteAscii(conformance == PdfConformance.None ? "2.0"u8 : "1.7"u8);
+        w.WriteAscii("\n%"u8);
+        w.WriteRaw([0xE2, 0xE3, 0xCF, 0xD3]);
+        w.WriteAscii("\n"u8);
+
+        // ── First-page xref placeholder (written before the body) ──────────────
+        // All entry offsets and /Prev are 10-digit zeros; patched in pass 2.
+        int fpFirst = layout.LinDictObjNum;
+        int fpLast = layout.LinDictObjNum + 1 + layout.FirstPageObjects.Count; // +1 for hint stream
+        var firstPageXrefOffset = linXref.WriteFirstPageXrefPlaceholder(
+            w, fpFirst, fpLast, layout.TotalSize, newCatalogRef, newInfoRef, documentId);
+
+        // ── Lin-dict placeholder (Step 1: empty dict, no /Linearized marker) ───
+        linXref.RecordOffset(layout.LinDictObjNum, w.Position);
+        WriteIndirectObject(w, layout.LinDictObjNum, new PdfDictionary());
+
+        // ── Placeholder hint stream (Step 1: syntactically valid empty stream) ──
+        linXref.RecordOffset(layout.HintStreamObjNum, w.Position);
+        WriteIndirectObject(w, layout.HintStreamObjNum, new PdfStream([]));
+
+        // ── First-page objects ──────────────────────────────────────────────────
+        foreach (var (newNum, value) in layout.FirstPageObjects)
+        {
+            linXref.RecordOffset(newNum, w.Position);
+            WriteIndirectObject(w, newNum, value);
+        }
+
+        // ── Rest objects ────────────────────────────────────────────────────────
+        foreach (var (newNum, value) in layout.RestObjects)
+        {
+            linXref.RecordOffset(newNum, w.Position);
+            WriteIndirectObject(w, newNum, value);
+        }
+
+        // ── Main xref + trailer ─────────────────────────────────────────────────
+        var mainXrefOffset = linXref.WriteMainXrefAndTrailer(
+            w, layout.RestObjects.Count, layout.TotalSize,
+            newCatalogRef, newInfoRef, documentId);
+
+        // ── Final startxref → first-page xref ──────────────────────────────────
+        LinearizedCrossReferenceBuilder.WriteFinalStartxref(w, firstPageXrefOffset);
+        w.Flush();
+
+        // ── Pass 2: patch first-page xref entries and /Prev ────────────────────
+        // All patched fields are exactly 10 digits (fixed-width), so this is safe
+        // in-place without shifting any byte positions.
+        linXref.PatchFirstPageXref(ms.GetBuffer(), mainXrefOffset);
+
+        return ms.ToArray();
+    }
+
+    private static void WriteIndirectObject(PdfWriter writer, int objNum, PdfObject value)
+    {
+        new PdfIndirectObject(objNum, value).WriteTo(writer);
+        writer.WriteByte((byte)'\n');
     }
 
     /// <summary>
