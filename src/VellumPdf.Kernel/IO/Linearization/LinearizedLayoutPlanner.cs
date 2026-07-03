@@ -128,26 +128,36 @@ internal static class LinearizedLayoutPlanner
             reachCount[n] = count;
         }
 
+        // A page's own dict and content stream are always private to that page, never shared,
+        // so every page has at least its page object in its hint group (no zero-object pages).
+        var pageOwned = new HashSet<int>();
+        for (var p = 1; p < pageCount; p++)
+        {
+            pageOwned.Add(pageDictRefs[p].ObjectNumber);
+            pageOwned.Add(pageContentRefs[p].ObjectNumber);
+        }
+
         var pagePrivateOld = new List<List<int>>(pageCount) { new() }; // index 0 unused (first page)
         for (var p = 1; p < pageCount; p++)
         {
-            // The page object must come first so qpdf measures the page from its page object;
-            // its content follows, then any remaining private objects.
+            var dictNum = pageDictRefs[p].ObjectNumber;
+            var contentNum = pageContentRefs[p].ObjectNumber;
+            // The page object comes first so qpdf measures the page from its page object; its
+            // content follows, then any remaining private objects. The dict/content are forced in
+            // even if the reachability count would otherwise classify them elsewhere.
             var privSet = restSet
-                .Where(n => reachCount[n] == 1 && pageReachable[p].Contains(n))
+                .Where(n => (reachCount[n] == 1 && pageReachable[p].Contains(n)) || n == dictNum || n == contentNum)
                 .ToHashSet();
             var priv = new List<int>();
-            if (privSet.Contains(pageDictRefs[p].ObjectNumber))
-                priv.Add(pageDictRefs[p].ObjectNumber);
-            if (privSet.Contains(pageContentRefs[p].ObjectNumber) && !priv.Contains(pageContentRefs[p].ObjectNumber))
-                priv.Add(pageContentRefs[p].ObjectNumber);
+            if (privSet.Contains(dictNum)) priv.Add(dictNum);
+            if (privSet.Contains(contentNum) && !priv.Contains(contentNum)) priv.Add(contentNum);
             foreach (var n in privSet.OrderBy(n => n))
                 if (!priv.Contains(n))
                     priv.Add(n);
             pagePrivateOld.Add(priv);
         }
-        var part8Old = restSet.Where(n => reachCount[n] >= 2).OrderBy(n => n).ToList();
-        var part9Old = restSet.Where(n => reachCount[n] == 0).OrderBy(n => n).ToList();
+        var part8Old = restSet.Where(n => reachCount[n] >= 2 && !pageOwned.Contains(n)).OrderBy(n => n).ToList();
+        var part9Old = restSet.Where(n => reachCount[n] == 0 && !pageOwned.Contains(n)).OrderBy(n => n).ToList();
 
         // Rest write order: page 1 private, page 2 private, …, shared, then unreferenced.
         var restOrderedOld = new List<int>();

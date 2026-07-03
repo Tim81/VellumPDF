@@ -1445,9 +1445,26 @@ public sealed class PdfDocument : IDisposable
         var sharedHints = layout.SharedTableObjNums
             .Select(n => new HintStreamBuilder.SharedHint(objLen[n]))
             .ToList();
+
+        // The first shared object beyond the first page (part 8). Its number and hint-relative
+        // offset are only meaningful when there are shared objects not on the first page
+        // (nshared_total > nshared_first_page); otherwise qpdf treats them as unused, so 0/0.
+        var firstSharedObj = 0;
+        var firstSharedOffset = 0;
+        if (layout.SharedTableObjNums.Count > layout.NsharedFirstPage)
+        {
+            firstSharedObj = layout.SharedTableObjNums[layout.NsharedFirstPage];
+            // Part 8 is written after every page's own objects (part 6 + all part 7), so its
+            // hint-relative offset is the first-page offset plus every page's object bytes.
+            var allPageBytes = 0;
+            for (var p = 0; p < npages; p++)
+                allPageBytes += layout.PageObjectNums[p].Sum(n => objLen[n]);
+            firstSharedOffset = firstPageOffset + allPageBytes;
+        }
+
         var (hintBody, sharedOffset) = HintStreamBuilder.Build(
             pageHints, firstPageOffset, sharedHints, layout.NsharedFirstPage,
-            firstSharedObj: 0, firstSharedOffset: 0);
+            firstSharedObj, firstSharedOffset);
         var hintBytes = BuildHintStreamObject(layout.HintStreamObjNum, hintBody, sharedOffset);
 
         // ── Pass 1: write the file with placeholders, recording real offsets ─────

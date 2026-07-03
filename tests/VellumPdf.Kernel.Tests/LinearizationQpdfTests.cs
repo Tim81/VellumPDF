@@ -177,6 +177,49 @@ public sealed class LinearizationQpdfTests : IDisposable
         Assert.DoesNotContain("WARNING", stdout);
     }
 
+    [Fact]
+    public void Linearized_ObjectSharedAmongLaterPagesOnly_QpdfClean()
+    {
+        // A font used only on pages 2+ (not the first page) is shared among later pages -> part 8,
+        // so nshared_total > nshared_first_page and the shared-object table's first_shared_obj must
+        // be the real object number, not 0. Regression for a hint-table mismatch qpdf flagged.
+        var fontPath = FindPlatformFont();
+        if (fontPath is null) { GateOnCi("platform TrueType font"); return; }
+
+        var path = Path.Combine(_tempDir, "linearized_part8.pdf");
+        using var doc = new PdfDocument { Timestamp = PinnedTime, DocumentId = PinnedId, Linearize = true };
+
+        var first = doc.AddPage(PageSize.A4);
+        var c0 = new PdfCanvas(first);
+        var helv = doc.UseFont(Standard14.Helvetica);
+        c0.BeginText().SetFont(helv, 12).SetTextMatrix(1, 0, 0, 1, 72, 720).ShowText("First page, Helvetica only").EndText();
+        c0.Finish();
+
+        var handle = doc.UseTrueTypeFont(File.ReadAllBytes(fontPath));
+        for (var i = 1; i < 3; i++)
+        {
+            var page = doc.AddPage(PageSize.A4);
+            doc.RegisterEmbeddedFontUsage(page, handle);
+            var canvas = new PdfCanvas(page);
+            canvas.BeginText().SetFontByName(handle.ResourceName, 12).SetTextMatrix(1, 0, 0, 1, 72, 720);
+            var text = $"Shared embedded font, page {i + 1}";
+            var gids = new ushort[text.Length];
+            var count = handle.GetGlyphIds(text, gids);
+            canvas.ShowGlyphs(gids.AsSpan(0, count));
+            canvas.EndText();
+            canvas.Finish();
+        }
+        using (var fs = File.OpenWrite(path)) doc.Save(fs);
+
+        if (!TryRunQpdf($"--show-linearization \"{path}\"", out var exit, out var stdout, out var stderr))
+        {
+            GateOnCi("qpdf");
+            return;
+        }
+        Assert.True(exit == 0, $"exit {exit}.\n{stdout}\n{stderr}");
+        Assert.DoesNotContain("WARNING", stdout);
+    }
+
     private static string? FindPlatformFont()
     {
         string[] candidates =
