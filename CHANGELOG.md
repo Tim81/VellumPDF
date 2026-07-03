@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.7.8] - 2026-07-02
+
+### Added
+
+- **`vellum-preflight` — a native command-line PDF/A and PDF/UA validator.** A new `VellumPdf.Cli`
+  validates a PDF against PDF/A-2b/2u/2a and PDF/UA-1 with no JVM or Docker, over the in-process
+  `VellumPdf.Conformance` engine. It ships two ways: a cross-platform .NET tool
+  (`dotnet tool install -g VellumPdf.Cli`) and self-contained native binaries on the GitHub Release
+  (Windows x64/Arm64, macOS Arm64, Linux x64). `vellum-preflight invoice.pdf` checks the file against
+  the conformance level its XMP claims and reports, for every file, what failed (rule id, ISO clause,
+  reason, and offending object), what passed, and what was not fully evaluated — so a clean result is
+  never mistaken for an absolute guarantee. Text, JSON, and SARIF 2.1.0 output; file, glob, directory
+  (`--recurse`), and stdin inputs; `--coverage` prints the exact implemented/partial/deferred check
+  tally; exit codes are CI-friendly (`0` conformant, `1` non-conformant, `2` usage or I/O error). The
+  tool is Native-AOT clean, guarded on every build by the AOT smoke test.
+
 ## [1.7.7] - 2026-07-02
 
 ### Added

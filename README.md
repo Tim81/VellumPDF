@@ -132,6 +132,37 @@ oracles — a missing tool fails the build, so the gates can never silently skip
   conformance over embedded-font, table, image, and tagged documents. A
   non-compliant report fails CI with the full rule list attached.
 
+## Command-line preflight
+
+`vellum-preflight` validates a PDF against PDF/A-2b/2u/2a and PDF/UA-1 in-process — no JVM or Docker.
+Install it as a cross-platform .NET tool, or download a self-contained native binary (Windows x64/Arm64,
+macOS Arm64, Linux x64) from the [latest release](https://github.com/Tim81/VellumPDF/releases/latest).
+
+```shell
+dotnet tool install -g VellumPdf.Cli   # then run: vellum-preflight <file>
+```
+
+```shell
+# Does the PDF honour the conformance level it claims? (pass/fail, with reasons)
+vellum-preflight invoice.pdf
+
+# A specific profile, machine-readable output
+vellum-preflight invoice.pdf -p 2u -f json -o report.json
+
+# Validate a whole tree; fail CI on any error
+vellum-preflight ./out --recurse --fail-on error -q
+
+# Several profiles at once
+vellum-preflight report.pdf -p 2b,2a,ua1
+
+# See exactly what the tool checks for a profile
+vellum-preflight --coverage 2b
+```
+
+Every report states three things: what failed (rule id, ISO clause, reason, offending object), what
+passed, and what was not fully evaluated — so a clean result is never mistaken for an absolute
+guarantee. Exit codes are `0` (conformant), `1` (non-conformant), and `2` (usage or I/O error).
+
 ## Not yet / roadmap
 
 | Area | Notes |

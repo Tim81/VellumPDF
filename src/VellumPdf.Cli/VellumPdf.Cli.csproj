@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>VellumPdf.Cli</RootNamespace>
+    <AssemblyName>vellum-preflight</AssemblyName>
+    <PackageId>VellumPdf.Cli</PackageId>
+    <Description>Native-AOT command-line preflight tool for VellumPdf: validates PDF files against PDF/A-2b/2u/2a and PDF/UA-1 conformance levels. Outputs text, JSON, or SARIF reports.</Description>
+    <PackageTags>pdf;pdfa;pdfua;preflight;cli;tool;aot</PackageTags>
+
+    <!-- dotnet tool packaging -->
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>vellum-preflight</ToolCommandName>
+
+    <!-- Native AOT -->
+    <PublishAot>true</PublishAot>
+    <InvariantGlobalization>true</InvariantGlobalization>
+
+    <!-- Override library-specific settings from src/Directory.Build.props -->
+    <!-- An executable does not generate an XML doc file. -->
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\VellumPdf.Conformance\VellumPdf.Conformance.csproj" />
+    <ProjectReference Include="..\VellumPdf.Reader\VellumPdf.Reader.csproj" />
+  </ItemGroup>
+
+</Project>

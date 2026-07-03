@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 using VellumPdf.Conformance.Rules;
+using VellumPdf.Conformance.Rules.Metadata;
+using VellumPdf.Core;
 using VellumPdf.Reader;
 
 namespace VellumPdf.Conformance;
@@ -12,6 +14,83 @@ namespace VellumPdf.Conformance;
 /// </summary>
 public static class PdfPreflight
 {
+    private static readonly PdfName _metadataName = new("Metadata");
+
+    /// <summary>
+    /// Reads the XMP /Metadata stream from the document catalog and returns the
+    /// conformance profiles the document claims via <c>pdfaid:part</c>/<c>pdfaid:conformance</c>
+    /// and <c>pdfuaid:part</c>. Returns an empty list when the catalog has no /Metadata or the
+    /// document makes no PDF/A or PDF/UA claim.
+    /// </summary>
+    /// <exception cref="System.ArgumentNullException"><paramref name="bytes"/> is null.</exception>
+    /// <exception cref="System.IO.InvalidDataException">The input is not a well-formed PDF.</exception>
+    /// <exception cref="UnsupportedPdfFeatureException">The PDF uses a reader feature that is not yet supported.</exception>
+    public static IReadOnlyList<PdfConformance> DetectClaimedProfiles(byte[] bytes)
+    {
+        ArgumentNullException.ThrowIfNull(bytes);
+        using var reader = PdfReader.Open(bytes);
+        return DetectClaimedProfiles(reader);
+    }
+
+    /// <summary>
+    /// Reads the XMP /Metadata stream from the document catalog and returns the
+    /// conformance profiles the document claims via <c>pdfaid:part</c>/<c>pdfaid:conformance</c>
+    /// and <c>pdfuaid:part</c>. Returns an empty list when the catalog has no /Metadata or the
+    /// document makes no PDF/A or PDF/UA claim.
+    /// </summary>
+    /// <exception cref="System.ArgumentNullException"><paramref name="stream"/> is null.</exception>
+    /// <exception cref="System.IO.InvalidDataException">The input is not a well-formed PDF.</exception>
+    /// <exception cref="System.IO.IOException">Reading <paramref name="stream"/> failed.</exception>
+    /// <exception cref="System.ObjectDisposedException"><paramref name="stream"/> has been disposed.</exception>
+    /// <exception cref="UnsupportedPdfFeatureException">The PDF uses a reader feature that is not yet supported.</exception>
+    public static IReadOnlyList<PdfConformance> DetectClaimedProfiles(Stream stream)
+    {
+        ArgumentNullException.ThrowIfNull(stream);
+        using var reader = PdfReader.Open(stream);
+        return DetectClaimedProfiles(reader);
+    }
+
+    private static IReadOnlyList<PdfConformance> DetectClaimedProfiles(PdfDocumentReader reader)
+    {
+        var metaRef = reader.Catalog.Get(_metadataName);
+        if (metaRef is not PdfIndirectReference r)
+            return [];
+
+        var parsedStream = reader.ResolveStream(r.ObjectNumber);
+        if (parsedStream is null)
+            return [];
+
+        var bytes = reader.GetDecodedStreamData(parsedStream);
+        if (bytes is null)
+            return [];
+
+        var xmp = XmpReader.Parse(bytes);
+        if (xmp is null)
+            return [];
+
+        var results = new List<PdfConformance>();
+
+        var part = XmpReader.Get(xmp, XmpReader.Pdfaid, "part");
+        var conformance = XmpReader.Get(xmp, XmpReader.Pdfaid, "conformance");
+
+        if (part == "2")
+        {
+            var level = conformance?.ToUpperInvariant();
+            if (level == "B")
+                results.Add(PdfConformance.PdfA2B);
+            else if (level == "U")
+                results.Add(PdfConformance.PdfA2U);
+            else if (level == "A")
+                results.Add(PdfConformance.PdfA2A);
+        }
+
+        var uaPart = XmpReader.Get(xmp, XmpReader.Pdfuaid, "part");
+        if (uaPart == "1")
+            results.Add(PdfConformance.PdfUA1);
+
+        return results;
+    }
+
     /// <summary>Validates the PDF contained in <paramref name="bytes"/> against <paramref name="conformance"/>.</summary>
     /// <exception cref="System.ArgumentNullException"><paramref name="bytes"/> is null.</exception>
     /// <exception cref="System.NotSupportedException">No rule profile is registered for <paramref name="conformance"/> yet.</exception>
