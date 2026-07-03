@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-07-03
+
 ### Added
 
 - **Linearization ("fast web view").** A new opt-in `PdfDocument.Linearize` property re-orders the
@@ -516,7 +518,8 @@ few small additions. No public API was removed.
   headers, and no unbounded allocations driven by attacker-controlled length
   fields.
 
-[Unreleased]: https://github.com/Tim81/VellumPDF/compare/v1.7.2...HEAD
+[Unreleased]: https://github.com/Tim81/VellumPDF/compare/v1.8.0...HEAD
+[1.8.0]: https://github.com/Tim81/VellumPDF/releases/tag/v1.8.0
 [1.7.2]: https://github.com/Tim81/VellumPDF/releases/tag/v1.7.2
 [1.7.1]: https://github.com/Tim81/VellumPDF/releases/tag/v1.7.1
 [1.7.0]: https://github.com/Tim81/VellumPDF/releases/tag/v1.7.0
