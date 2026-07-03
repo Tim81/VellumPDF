@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\VellumPdf.Cli\VellumPdf.Cli.csproj" />
+    <ProjectReference Include="..\..\src\VellumPdf.Conformance\VellumPdf.Conformance.csproj" />
+    <!-- Reuse the conformance oracle corpus so the CLI is exercised against every check. -->
+    <ProjectReference Include="..\VellumPdf.Conformance.Tests\VellumPdf.Conformance.Tests.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" />
+  </ItemGroup>
+
+</Project>
