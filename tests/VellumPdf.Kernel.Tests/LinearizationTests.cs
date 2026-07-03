@@ -124,11 +124,12 @@ public sealed class LinearizationTests
         Assert.Contains(catalogRef.ObjectNumber, layout.OldToNew);
 
         // Total size must account for all objects + lin dict + hint stream + free head.
-        var expectedBody = layout.RestObjects.Count + layout.FirstPageObjects.Count + 2; // +2 for lin dict + hint
+        var expectedBody = layout.RestObjects.Count + layout.Part4Objects.Count
+            + layout.Part6Objects.Count + 2; // +2 for lin dict + hint
         Assert.Equal(expectedBody + 1, layout.TotalSize); // +1 for object 0
 
-        // lin dict and hint stream numbers are contiguous.
-        Assert.Equal(layout.HintStreamObjNum, layout.LinDictObjNum + 1);
+        // The hint stream follows the lin dict and the part-4 (document-level) objects.
+        Assert.Equal(layout.HintStreamObjNum, layout.LinDictObjNum + 1 + layout.Part4Objects.Count);
     }
 
     [Fact]
@@ -166,8 +167,8 @@ public sealed class LinearizationTests
             registry, catalogRef, pageTreeRef,
             [pageDictRef1, pageDictRef2], [contentRef1, contentRef2], infoRef, metadataRef);
 
-        // Catalog and first-page dict must be in the first-page section.
-        var fpNums = layout.FirstPageObjects.Select(x => x.NewObjNum).ToHashSet();
+        // Catalog (document level) and the first-page dict (part 6) are both in the first-page section.
+        var fpNums = layout.Part4Objects.Concat(layout.Part6Objects).Select(x => x.NewObjNum).ToHashSet();
         Assert.Contains(layout.CatalogObjNum, fpNums);
         Assert.Contains(layout.FirstPageObjNum, fpNums);
 
@@ -215,7 +216,7 @@ public sealed class LinearizationTests
         var layout = LinearizedLayoutPlanner.Plan(
             registry, catalogRef, pageTreeRef, pageDictRefs, contentRefs, infoRef, metadataRef);
 
-        var fpNums = layout.FirstPageObjects.Select(x => x.NewObjNum).ToHashSet();
+        var fpNums = layout.Part4Objects.Concat(layout.Part6Objects).Select(x => x.NewObjNum).ToHashSet();
         var restNums = layout.RestObjects.Select(x => x.NewObjNum).ToHashSet();
 
         // Pages 2 and 3 (dicts + their exclusive content) must be in the rest section, not first-page.

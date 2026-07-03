@@ -74,6 +74,46 @@ public sealed class LinearizationQpdfTests : IDisposable
             exit == 0,
             $"qpdf --check failed (exit {exit}) on linearized 3-page doc.\n" +
             $"stdout: {stdout}\nstderr: {stderr}");
+        Assert.Contains("File is linearized", stdout);
+    }
+
+    [Fact]
+    public void Linearized_ShowLinearization_RecognizedAndClean()
+    {
+        var path = Path.Combine(_tempDir, "linearized_show.pdf");
+
+        using var doc = new PdfDocument
+        {
+            Timestamp = PinnedTime,
+            DocumentId = PinnedId,
+            Linearize = true,
+        };
+        for (var i = 0; i < 4; i++)
+        {
+            var page = doc.AddPage(PageSize.A4);
+            var canvas = new PdfCanvas(page);
+            var font = doc.UseFont(Standard14.Helvetica);
+            canvas.BeginText().SetFont(font, 12)
+                .SetTextMatrix(1, 0, 0, 1, 72, 720)
+                .ShowText($"Page {i + 1}")
+                .EndText();
+            canvas.Finish();
+        }
+        using (var fs = File.OpenWrite(path))
+            doc.Save(fs);
+
+        if (!TryRunQpdf($"--show-linearization \"{path}\"", out var exit, out var stdout, out var stderr))
+        {
+            GateOnCi("qpdf");
+            return;
+        }
+
+        // qpdf recognizes the file as linearized, reports the right page count, and emits no
+        // WARNING lines (which is where hint-table inconsistencies surface).
+        Assert.True(exit == 0, $"qpdf --show-linearization exit {exit}.\nstdout: {stdout}\nstderr: {stderr}");
+        Assert.Contains("npages: 4", stdout);
+        Assert.DoesNotContain("WARNING", stdout);
+        Assert.DoesNotContain("WARNING", stderr);
     }
 
     // Tries the local qpdf path, then falls back to finding "qpdf" on PATH.

@@ -52,11 +52,8 @@ internal sealed class LinearizedCrossReferenceBuilder
 
         writer.WriteAscii("xref\n"u8);
 
-        // Free-list head subsection (object 0)
-        writer.WriteAscii("0 1\n"u8);
-        writer.WriteAscii("0000000000 65535 f\r\n"u8);
-
-        // First-page objects subsection — one contiguous run
+        // First-page objects subsection — one contiguous run. Object 0's free-list head
+        // lives only in the main xref, matching qpdf's linearized layout.
         WriteInt(writer, firstObjInFpSection);
         writer.WriteByte((byte)' ');
         WriteInt(writer, lastObjInFpSection - firstObjInFpSection + 1);
@@ -97,9 +94,12 @@ internal sealed class LinearizedCrossReferenceBuilder
     }
 
     /// <summary>
-    /// Writes the main xref section and its trailer. Returns the offset of the xref keyword.
+    /// Writes the main xref section and its trailer as a single <c>0 M</c> subsection covering
+    /// the free-list head plus the rest objects. Returns the offset of the xref keyword (for the
+    /// first-page trailer's /Prev) and the offset of the whitespace preceding the first entry
+    /// (the linearization dictionary's /T value).
     /// </summary>
-    public long WriteMainXrefAndTrailer(
+    public (long XrefOffset, long TOffset) WriteMainXrefAndTrailer(
         PdfWriter writer,
         int restCount,
         int totalSize,
@@ -111,22 +111,18 @@ internal sealed class LinearizedCrossReferenceBuilder
 
         writer.WriteAscii("xref\n"u8);
 
-        // Free-list head
-        writer.WriteAscii("0 1\n"u8);
-        writer.WriteAscii("0000000000 65535 f\r\n"u8);
+        // Single subsection: object 0 (free head) followed by rest objects 1..restCount.
+        WriteInt(writer, 0);
+        writer.WriteByte((byte)' ');
+        WriteInt(writer, restCount + 1);
+        var tOffset = writer.Position; // /T points at the whitespace before the first entry
+        writer.WriteByte((byte)'\n');
 
-        // Rest objects: 1..restCount (contiguous)
-        if (restCount > 0)
+        writer.WriteAscii("0000000000 65535 f\r\n"u8);
+        for (var n = 1; n <= restCount; n++)
         {
-            WriteInt(writer, 1);
-            writer.WriteByte((byte)' ');
-            WriteInt(writer, restCount);
-            writer.WriteByte((byte)'\n');
-            for (var n = 1; n <= restCount; n++)
-            {
-                Write10Digits(writer, _offsets.TryGetValue(n, out var off) ? off : 0);
-                writer.WriteAscii(" 00000 n\r\n"u8);
-            }
+            Write10Digits(writer, _offsets.TryGetValue(n, out var off) ? off : 0);
+            writer.WriteAscii(" 00000 n\r\n"u8);
         }
 
         writer.WriteAscii("trailer\n"u8);
@@ -144,7 +140,55 @@ internal sealed class LinearizedCrossReferenceBuilder
         }
         trailer.WriteTo(writer);
 
-        return xrefOffset;
+        return (xrefOffset, tOffset);
+    }
+
+    /// <summary>Byte positions of the linearization dictionary's fixed-width offset fields.</summary>
+    internal readonly record struct LinDictPlaceholders(long L, long HOffset, long HLength, long E, long T);
+
+    /// <summary>
+    /// Writes the linearization parameter dictionary (ISO 32000-2 Table F.1) as the given
+    /// indirect object. Every offset/length-valued field (<c>/L</c>, both <c>/H</c> entries,
+    /// <c>/E</c>, <c>/T</c>) is a fixed-width 10-digit placeholder so the dictionary's own byte
+    /// length is deterministic; pass 2 patches the placeholders once the real values are known.
+    /// <c>/O</c> and <c>/N</c> are known up front and written directly.
+    /// </summary>
+    public LinDictPlaceholders WriteLinearizationDict(
+        PdfWriter w, int objNum, int firstPageObjNum, int npages)
+    {
+        WriteInt(w, objNum);
+        w.WriteAscii(" 0 obj\n<< /Linearized 1 /L "u8);
+        var lPos = w.Position;
+        Write10Digits(w, 0);
+        w.WriteAscii(" /H ["u8);
+        var hOffPos = w.Position;
+        Write10Digits(w, 0);
+        w.WriteByte((byte)' ');
+        var hLenPos = w.Position;
+        Write10Digits(w, 0);
+        w.WriteAscii("] /O "u8);
+        WriteInt(w, firstPageObjNum);
+        w.WriteAscii(" /E "u8);
+        var ePos = w.Position;
+        Write10Digits(w, 0);
+        w.WriteAscii(" /N "u8);
+        WriteInt(w, npages);
+        w.WriteAscii(" /T "u8);
+        var tPos = w.Position;
+        Write10Digits(w, 0);
+        w.WriteAscii(" >>\nendobj\n"u8);
+        return new LinDictPlaceholders(lPos, hOffPos, hLenPos, ePos, tPos);
+    }
+
+    /// <summary>Patches the linearization dictionary's offset fields in the backing array (pass 2).</summary>
+    public static void PatchLinDict(
+        byte[] buf, LinDictPlaceholders p, long l, long hOffset, long hLength, long e, long t)
+    {
+        WriteTenDigits(buf, (int)p.L, l);
+        WriteTenDigits(buf, (int)p.HOffset, hOffset);
+        WriteTenDigits(buf, (int)p.HLength, hLength);
+        WriteTenDigits(buf, (int)p.E, e);
+        WriteTenDigits(buf, (int)p.T, t);
     }
 
     /// <summary>Writes the final startxref pointing to the first-page xref offset.</summary>

@@ -89,90 +89,152 @@ internal static class LinearizedLayoutPlanner
                 restSet.Add(n);
         }
 
-        // ── Assign new object numbers ────────────────────────────────────────────
-        // Rest objects: 1 .. restCount (sorted for determinism).
-        var restObjNums = restSet.OrderBy(n => n).ToList();
-        var restCount = restObjNums.Count;
+        // ── Split the first-page set into document-level (part 4) and page objects (part 6) ─
+        // Part 6 is the first page's own objects (its page dict, content, and resources):
+        // a BFS from the page dict that also stops at the page tree, so document-level
+        // structure is excluded. Part 4 is everything else in the first-page set (catalog,
+        // page tree, info, metadata). qpdf places part 4 before the hint stream and part 6
+        // after it, and counts only part 6 as the first page's objects.
+        var part6Set = new HashSet<int>();
+        var part6Boundary = new HashSet<int>(otherPageDicts) { pageTreeRef.ObjectNumber };
+        BfsFromPage(pageDictRefs[0].ObjectNumber, allObjects, part6Set, part6Boundary);
 
-        // First-page section starts at restCount + 1.
-        // Layout: [linDict] [catalog] [hintStream] [first-page objects in BFS order]
-        var fpObjNums = firstPageSet.OrderBy(n => n).ToList();
+        var part6Ordered = new List<int> { pageDictRefs[0].ObjectNumber };
+        if (part6Set.Contains(pageContentRefs[0].ObjectNumber))
+            part6Ordered.Add(pageContentRefs[0].ObjectNumber);
+        foreach (var n in part6Set.OrderBy(n => n))
+            if (!part6Ordered.Contains(n))
+                part6Ordered.Add(n);
 
-        // Prioritise order: catalog first, then first-page page dict, then others.
-        // Put catalog right after the lin dict and hint stream so the reader finds it fast.
-        var fpOrdered = new List<int>();
+        var part4Ordered = new List<int>();
         if (firstPageSet.Contains(catalogRef.ObjectNumber))
-            fpOrdered.Add(catalogRef.ObjectNumber);
-        if (firstPageSet.Contains(pageDictRefs[0].ObjectNumber) && !fpOrdered.Contains(pageDictRefs[0].ObjectNumber))
-            fpOrdered.Add(pageDictRefs[0].ObjectNumber);
-        if (firstPageSet.Contains(pageContentRefs[0].ObjectNumber) && !fpOrdered.Contains(pageContentRefs[0].ObjectNumber))
-            fpOrdered.Add(pageContentRefs[0].ObjectNumber);
-        foreach (var n in fpObjNums)
+            part4Ordered.Add(catalogRef.ObjectNumber);
+        foreach (var n in firstPageSet.OrderBy(n => n))
+            if (!part6Set.Contains(n) && !part4Ordered.Contains(n))
+                part4Ordered.Add(n);
+
+        // ── Split the rest section into per-page private objects and shared objects ─
+        // An object reachable from exactly one later page is that page's private object
+        // (part 7). One reachable from two or more later pages is shared (part 8). The
+        // remainder (reachable from none, e.g. outlines) trails at the end (part 9).
+        var pageCount = pageDictRefs.Length;
+        var reachCount = new Dictionary<int, int>();
+        foreach (var n in restSet)
         {
-            if (!fpOrdered.Contains(n))
-                fpOrdered.Add(n);
+            var count = 0;
+            for (var p = 1; p < pageCount; p++)
+                if (pageReachable[p].Contains(n))
+                    count++;
+            reachCount[n] = count;
         }
 
-        // New object numbers:
-        //   1..restCount                rest objects
-        //   restCount+1                 lin dict placeholder
-        //   restCount+2                 hint stream placeholder
-        //   restCount+3 .. restCount+2+fpOrdered.Count   first-page objects
+        var pagePrivateOld = new List<List<int>>(pageCount) { new() }; // index 0 unused (first page)
+        for (var p = 1; p < pageCount; p++)
+        {
+            // The page object must come first so qpdf measures the page from its page object;
+            // its content follows, then any remaining private objects.
+            var privSet = restSet
+                .Where(n => reachCount[n] == 1 && pageReachable[p].Contains(n))
+                .ToHashSet();
+            var priv = new List<int>();
+            if (privSet.Contains(pageDictRefs[p].ObjectNumber))
+                priv.Add(pageDictRefs[p].ObjectNumber);
+            if (privSet.Contains(pageContentRefs[p].ObjectNumber) && !priv.Contains(pageContentRefs[p].ObjectNumber))
+                priv.Add(pageContentRefs[p].ObjectNumber);
+            foreach (var n in privSet.OrderBy(n => n))
+                if (!priv.Contains(n))
+                    priv.Add(n);
+            pagePrivateOld.Add(priv);
+        }
+        var part8Old = restSet.Where(n => reachCount[n] >= 2).OrderBy(n => n).ToList();
+        var part9Old = restSet.Where(n => reachCount[n] == 0).OrderBy(n => n).ToList();
+
+        // Rest write order: page 1 private, page 2 private, …, shared, then unreferenced.
+        var restOrderedOld = new List<int>();
+        for (var p = 1; p < pageCount; p++) restOrderedOld.AddRange(pagePrivateOld[p]);
+        restOrderedOld.AddRange(part8Old);
+        restOrderedOld.AddRange(part9Old);
+        var restCount = restOrderedOld.Count;
+
+        // ── Assign new object numbers ────────────────────────────────────────────
+        //   1..restCount                       rest objects (page-grouped, then shared)
+        //   restCount+1                        lin dict
+        //   restCount+2 ..                     part 4 (document level)
+        //   restCount+2+part4Count             hint stream
+        //   restCount+3+part4Count ..          part 6 (first page's own objects)
         var linDictObjNum = restCount + 1;
-        var hintStreamObjNum = restCount + 2;
+        var part4Start = restCount + 2;
+        var hintStreamObjNum = part4Start + part4Ordered.Count;
+        var part6Start = hintStreamObjNum + 1;
 
         var oldToNew = new Dictionary<int, int>();
-        for (var i = 0; i < restObjNums.Count; i++)
-            oldToNew[restObjNums[i]] = i + 1;
-        for (var i = 0; i < fpOrdered.Count; i++)
-            oldToNew[fpOrdered[i]] = restCount + 3 + i;
+        for (var i = 0; i < restOrderedOld.Count; i++)
+            oldToNew[restOrderedOld[i]] = i + 1;
+        for (var i = 0; i < part4Ordered.Count; i++)
+            oldToNew[part4Ordered[i]] = part4Start + i;
+        for (var i = 0; i < part6Ordered.Count; i++)
+            oldToNew[part6Ordered[i]] = part6Start + i;
 
-        var totalSize = restCount + 2 + fpOrdered.Count + 1; // +1 for object 0 free-head
+        var totalSize = restCount + part4Ordered.Count + part6Ordered.Count + 3; // lin dict + hint + object 0
 
         // ── Apply remap to all objects ───────────────────────────────────────────
-        // Streams: Remap mutates the dictionary in place and returns the same stream.
-        // Non-streams (dicts, arrays): Remap returns a new copy with updated references.
         var remapped = new Dictionary<int, PdfObject>();
         foreach (var (oldNum, value) in allObjects)
             remapped[oldNum] = PdfObjectRemapper.Remap(value, oldToNew);
 
-        // ── Build ordered output lists ───────────────────────────────────────────
-        var restObjects = new List<(int, PdfObject)>(restObjNums.Count);
-        foreach (var oldNum in restObjNums)
-            restObjects.Add((oldToNew[oldNum], remapped[oldNum]));
-
-        // lin dict and hint stream are synthetic — added by the caller.
-        var firstPageObjects = new List<(int, PdfObject)>(fpOrdered.Count);
-        foreach (var oldNum in fpOrdered)
-            firstPageObjects.Add((oldToNew[oldNum], remapped[oldNum]));
+        var restObjects = restOrderedOld.Select(o => (oldToNew[o], remapped[o])).ToList();
+        var part4Objects = part4Ordered.Select(o => (oldToNew[o], remapped[o])).ToList();
+        var part6Objects = part6Ordered.Select(o => (oldToNew[o], remapped[o])).ToList();
 
         var catalogObjNum = oldToNew[catalogRef.ObjectNumber];
         var firstPageObjNum = oldToNew[pageDictRefs[0].ObjectNumber];
 
-        // ── Per-page object groups (for Step 2 hint tables) ──────────────────────
-        var pageGroups = new List<IReadOnlyList<int>>(pageDictRefs.Length);
-        for (var p = 0; p < pageDictRefs.Length; p++)
+        // ── Hint-table groupings ─────────────────────────────────────────────────
+        // Page objects: first page = its own objects (part 6); later pages = their private
+        // objects (part 7). Document-level part 4 is not counted per page.
+        var pageObjectNums = new List<IReadOnlyList<int>>(pageCount)
         {
-            var group = new List<int>();
-            foreach (var oldNum in pageReachable[p])
-            {
-                if (oldToNew.TryGetValue(oldNum, out var newNum))
-                    group.Add(newNum);
-            }
-            group.Sort();
-            pageGroups.Add(group);
+            part6Ordered.Select(o => oldToNew[o]).ToList(),
+        };
+        for (var p = 1; p < pageCount; p++)
+            pageObjectNums.Add(pagePrivateOld[p].Select(o => oldToNew[o]).ToList());
+
+        // Shared-object table: part 6 then part 8. Document-level part 4 is not shared.
+        var sharedOld = new List<int>(part6Ordered);
+        sharedOld.AddRange(part8Old);
+        var sharedTableObjNums = sharedOld.Select(o => oldToNew[o]).ToList();
+        var nsharedFirstPage = part6Ordered.Count;
+        var sharedIndex = new Dictionary<int, int>();
+        for (var i = 0; i < sharedOld.Count; i++)
+            sharedIndex[sharedOld[i]] = i;
+
+        // Per page (after the first): which shared objects it references.
+        var pageSharedRefs = new List<IReadOnlyList<int>>(pageCount) { new List<int>() };
+        for (var p = 1; p < pageCount; p++)
+        {
+            var refs = pageReachable[p]
+                .Where(sharedIndex.ContainsKey)
+                .Select(n => sharedIndex[n])
+                .Distinct()
+                .OrderBy(i => i)
+                .ToList();
+            pageSharedRefs.Add(refs);
         }
 
         return new LinearizedLayout(
             oldToNew,
             restObjects,
-            firstPageObjects,
+            part4Objects,
+            part6Objects,
             linDictObjNum,
             hintStreamObjNum,
             catalogObjNum,
             firstPageObjNum,
             totalSize,
-            pageGroups);
+            pageObjectNums,
+            sharedTableObjNums,
+            nsharedFirstPage,
+            pageSharedRefs);
     }
 
     // BFS over the object graph starting from a single root object number,
