@@ -131,6 +131,32 @@ public sealed class PdfDocument : IDisposable
     public bool UseObjectStreams { get; set; } = false;
 
     /// <summary>
+    /// When true, <see cref="Save"/> writes a linearized ("fast web view") PDF: objects
+    /// are re-ordered so a viewer can render the first page before the whole file downloads,
+    /// with a linearization parameter dictionary, a first-page cross-reference section,
+    /// and hint streams.
+    ///
+    /// Default is false.
+    ///
+    /// Linearization buffers the entire output in memory during save in order to
+    /// back-fill byte offsets once all object positions are known.
+    ///
+    /// <para>
+    /// Restrictions:
+    /// <list type="bullet">
+    ///   <item>Cannot be combined with <see cref="UseObjectStreams"/> — linearization uses
+    ///         the classic cross-reference table only; throws <see cref="NotSupportedException"/>.</item>
+    ///   <item>Cannot be combined with <see cref="Encrypt"/> — linearization computes byte
+    ///         offsets over the cleartext layout; throws <see cref="NotSupportedException"/>.</item>
+    ///   <item>Ignored by the <see cref="PrepareForSigning"/> path — an incremental signature
+    ///         revision appends a second cross-reference section, which is incompatible with
+    ///         linearization.</item>
+    /// </list>
+    /// </para>
+    /// </summary>
+    public bool Linearize { get; set; } = false;
+
+    /// <summary>
     /// When true, a /StructTreeRoot is written and marked-content sequences
     /// around paragraphs and headings are registered as /StructElem objects.
     /// Default is false; set to true explicitly or implied by <see cref="PdfConformance.PdfA2a"/>.
@@ -493,6 +519,16 @@ public sealed class PdfDocument : IDisposable
             throw new InvalidOperationException(
                 "PDF/A prohibits encryption (ISO 19005-2 §6.3.1). " +
                 "Remove Encrypt() or clear Conformance before calling Save().");
+
+        if (Linearize && UseObjectStreams)
+            throw new NotSupportedException(
+                "Linearize cannot be combined with UseObjectStreams. " +
+                "This version of linearization uses the classic cross-reference table only. Remove one of these options.");
+
+        if (Linearize && _encryptionSettings is not null)
+            throw new NotSupportedException(
+                "Linearize cannot be combined with Encrypt(). " +
+                "Linearization computes byte offsets over the cleartext layout. Remove one of these options.");
 
         // All preconditions passed — mark written only now, so a recoverable precondition
         // failure (no pages, incompatible options) leaves the document usable for a retry.
