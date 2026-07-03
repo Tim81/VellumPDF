@@ -344,13 +344,11 @@ public sealed class LinearizationTests
         Assert.NotEmpty(fonts.Entries);
     }
 
-    // ── Guards: Linearize is rejected with unsupported combinations ──────────────
+    // ── Guards: Linearize is rejected with still-unsupported combinations ────────
 
     [Theory]
     [InlineData("objstm")]
     [InlineData("encrypt")]
-    [InlineData("outline")]
-    [InlineData("form")]
     public void LinearizedSave_unsupportedCombination_throws(string kind)
     {
         using var doc = new PdfDocument { Linearize = true };
@@ -360,11 +358,28 @@ public sealed class LinearizationTests
         {
             case "objstm": doc.UseObjectStreams = true; break;
             case "encrypt": doc.Encrypt(new PdfEncryptionSettings { UserPassword = "pw" }); break;
+        }
+
+        Assert.Throws<NotSupportedException>(() => doc.Save(new MemoryStream()));
+    }
+
+    [Theory]
+    [InlineData("outline")]
+    [InlineData("form")]
+    public void LinearizedSave_withOutlinesOrForms_succeeds(string kind)
+    {
+        using var doc = new PdfDocument { Timestamp = PinnedTime, DocumentId = PinnedId, Linearize = true };
+        var page = doc.AddPage(PageSize.A4);
+
+        switch (kind)
+        {
             case "outline": doc.AddOutlineEntry(new PdfOutlineEntry { Title = "Ch", DestPage = page }); break;
             case "form": doc.AddTextField(page, "F", new PdfRectangle(72, 650, 300, 670)); break;
         }
 
-        Assert.Throws<NotSupportedException>(() => doc.Save(new MemoryStream()));
+        var ms = new MemoryStream();
+        doc.Save(ms);
+        Assert.True(ms.Length > 0);
     }
 
     [Fact]

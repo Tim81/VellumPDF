@@ -32,7 +32,7 @@ public sealed class HintStreamBuilderTests
             new(GroupLength: 324),
         };
 
-        var (body, sharedOffset) = HintStreamBuilder.Build(
+        var (body, sharedOffset, _) = HintStreamBuilder.Build(
             pages,
             firstPageOffset: 529,
             shared,
@@ -51,5 +51,39 @@ public sealed class HintStreamBuilderTests
 
         Assert.Equal(47, sharedOffset);
         Assert.Equal(expected, body);
+    }
+
+    [Fact]
+    public void Build_outlineHint_writesCorrect16Bytes()
+    {
+        // Single-page document with 2 outline objects.
+        // Outline hint: FirstObjNum=10, FirstObjOffset=1000, ObjectCount=2, GroupLength=500.
+        // Expected layout: 4 × 32-bit big-endian values = 16 bytes appended after the shared table.
+        var pages = new List<HintStreamBuilder.PageHint>
+        {
+            new(ObjectCount: 1, Length: 300, SharedIds: []),
+        };
+        var shared = new List<HintStreamBuilder.SharedHint>
+        {
+            new(GroupLength: 300),
+        };
+        var outline = new HintStreamBuilder.OutlineHint(
+            FirstObjNum: 10, FirstObjOffset: 1000, ObjectCount: 2, GroupLength: 500);
+
+        var (body, sharedOffset, outlineOffset) = HintStreamBuilder.Build(
+            pages, firstPageOffset: 200, shared, nsharedFirstPage: 1,
+            firstSharedObj: 0, firstSharedOffset: 0, outline);
+
+        // Outline table is exactly 16 bytes at the end of the body.
+        Assert.Equal(body.Length - 16, outlineOffset);
+
+        // Parse the 4 big-endian uint32 fields at outlineOffset.
+        static uint ReadU32(byte[] b, int off) =>
+            ((uint)b[off] << 24) | ((uint)b[off + 1] << 16) | ((uint)b[off + 2] << 8) | b[off + 3];
+
+        Assert.Equal(10u, ReadU32(body, outlineOffset + 0));    // FirstObjNum
+        Assert.Equal(1000u, ReadU32(body, outlineOffset + 4));  // FirstObjOffset
+        Assert.Equal(2u, ReadU32(body, outlineOffset + 8));     // ObjectCount
+        Assert.Equal(500u, ReadU32(body, outlineOffset + 12));  // GroupLength
     }
 }

@@ -531,19 +531,6 @@ public sealed class PdfDocument : IDisposable
                 "Linearize cannot be combined with Encrypt(). " +
                 "Linearization computes byte offsets over the cleartext layout. Remove one of these options.");
 
-        // Outlines and form fields need per-object hint-table entries this version does not
-        // emit yet (an outline hint table, and page-membership for widget annotations), so the
-        // hint tables would be inconsistent. Reject rather than emit a warning-laden file.
-        if (Linearize && _outlineEntries.Count > 0)
-            throw new NotSupportedException(
-                "Linearize does not yet support documents with outlines (bookmarks). " +
-                "Remove the outline entries or clear Linearize. Tracked for a future version (#52).");
-
-        if (Linearize && _formFields.Count > 0)
-            throw new NotSupportedException(
-                "Linearize does not yet support documents with AcroForm fields. " +
-                "Remove the form fields or clear Linearize. Tracked for a future version (#52).");
-
         // All preconditions passed — mark written only now, so a recoverable precondition
         // failure (no pages, incompatible options) leaves the document usable for a retry.
         _written = true;
@@ -844,7 +831,8 @@ public sealed class PdfDocument : IDisposable
             // Two-pass write: pass 1 buffers the whole file so all offsets are known;
             // pass 2 patches placeholder byte ranges and copies to destination.
             var linBytes = WriteLinearized(registry, catalogRef, pageTreeRef, pageDictRefs,
-                pageContentRefs, infoRef, metadataRef, documentId, Conformance);
+                pageContentRefs, infoRef, metadataRef, documentId, Conformance,
+                outlinesRef, outlinesRef is not null);
             destination.Write(linBytes);
             destination.Flush();
         }
@@ -1399,11 +1387,14 @@ public sealed class PdfDocument : IDisposable
         PdfIndirectReference infoRef,
         PdfIndirectReference metadataRef,
         byte[] documentId,
-        PdfConformance conformance)
+        PdfConformance conformance,
+        PdfIndirectReference? outlinesRef = null,
+        bool outlinesInFirstPage = false)
     {
         var layout = LinearizedLayoutPlanner.Plan(
             registry, catalogRef, pageTreeRef,
-            pageDictRefs, pageContentRefs, infoRef, metadataRef);
+            pageDictRefs, pageContentRefs, infoRef, metadataRef,
+            outlinesRef, outlinesInFirstPage);
 
         var newCatalogRef = new PdfIndirectReference(layout.CatalogObjNum);
         var newInfoRef = layout.OldToNew.TryGetValue(infoRef.ObjectNumber, out var infoNewNum)
@@ -1462,10 +1453,30 @@ public sealed class PdfDocument : IDisposable
             firstSharedOffset = firstPageOffset + allPageBytes;
         }
 
-        var (hintBody, sharedOffset) = HintStreamBuilder.Build(
+        // Outline hint table: compute H-relative offset and group byte length when outlines exist.
+        HintStreamBuilder.OutlineHint? outlineHint = null;
+        if (layout.OutlineObjNums.Count > 0)
+        {
+            var rootNewNum = layout.OutlineObjNums[0];
+            // H-relative offset of the root: count bytes in part6Objects before the root.
+            var bytesBeforeRoot = 0;
+            foreach (var (num, _) in layout.Part6Objects)
+            {
+                if (num == rootNewNum) break;
+                bytesBeforeRoot += objLen[num];
+            }
+            outlineHint = new HintStreamBuilder.OutlineHint(
+                FirstObjNum: rootNewNum,
+                FirstObjOffset: firstPageOffset + bytesBeforeRoot,
+                ObjectCount: layout.OutlineObjNums.Count,
+                GroupLength: layout.OutlineObjNums.Sum(n => objLen[n]));
+        }
+
+        var (hintBody, sharedOffset, outlineOffset) = HintStreamBuilder.Build(
             pageHints, firstPageOffset, sharedHints, layout.NsharedFirstPage,
-            firstSharedObj, firstSharedOffset);
-        var hintBytes = BuildHintStreamObject(layout.HintStreamObjNum, hintBody, sharedOffset);
+            firstSharedObj, firstSharedOffset, outlineHint);
+        var hintBytes = BuildHintStreamObject(layout.HintStreamObjNum, hintBody, sharedOffset,
+            outlineHint is not null ? outlineOffset : -1);
 
         // ── Pass 1: write the file with placeholders, recording real offsets ─────
         var linXref = new LinearizedCrossReferenceBuilder();
@@ -1547,9 +1558,11 @@ public sealed class PdfDocument : IDisposable
 
     /// <summary>
     /// Builds the hint-stream indirect object: a FlateDecode-compressed stream carrying the
-    /// hint-table body, with <c>/S</c> pointing at the shared-object table within the decoded body.
+    /// hint-table body, with <c>/S</c> pointing at the shared-object table within the decoded
+    /// body and the optional <c>/O</c> key pointing at the outline hint table (§F.3.4).
+    /// Pass <paramref name="outlineOffset"/> as <c>-1</c> when no outlines are present.
     /// </summary>
-    private static byte[] BuildHintStreamObject(int objNum, byte[] hintBody, int sharedOffset)
+    private static byte[] BuildHintStreamObject(int objNum, byte[] hintBody, int sharedOffset, int outlineOffset = -1)
     {
         var compMs = new MemoryStream();
         using (var z = new System.IO.Compression.ZLibStream(compMs, System.IO.Compression.CompressionLevel.Optimal, leaveOpen: true))
@@ -1561,6 +1574,11 @@ public sealed class PdfDocument : IDisposable
         WriteIntAscii(w, objNum);
         w.WriteAscii(" 0 obj\n<< /Filter /FlateDecode /S "u8);
         WriteIntAscii(w, sharedOffset);
+        if (outlineOffset >= 0)
+        {
+            w.WriteAscii(" /O "u8);
+            WriteIntAscii(w, outlineOffset);
+        }
         w.WriteAscii(" /Length "u8);
         WriteIntAscii(w, compressed.Length);
         w.WriteAscii(" >>\nstream\n"u8);

@@ -30,9 +30,17 @@ internal static class HintStreamBuilder
     /// <param name="GroupLength">Byte length of the shared object (group) in the file.</param>
     internal sealed record SharedHint(int GroupLength);
 
+    /// <summary>The outline hint table entry (ISO 32000-2 §F.3.4). Present only when outlines exist.</summary>
+    /// <param name="FirstObjNum">Object number of the outlines root.</param>
+    /// <param name="FirstObjOffset">Hint-relative byte offset of the outlines root.</param>
+    /// <param name="ObjectCount">Number of objects in the outline group.</param>
+    /// <param name="GroupLength">Total byte length of the outline group in the file.</param>
+    internal sealed record OutlineHint(int FirstObjNum, int FirstObjOffset, int ObjectCount, int GroupLength);
+
     /// <summary>
-    /// Builds the hint stream body. Returns the raw (uncompressed) bytes and the byte offset
-    /// of the shared-object table within them (the <c>/S</c> value for the hint stream dict).
+    /// Builds the hint stream body. Returns the raw (uncompressed) bytes, the byte offset of the
+    /// shared-object table within them (the <c>/S</c> value for the hint stream dict), and the byte
+    /// offset of the outline hint table (the <c>/O</c> value; equals the body length when no outlines).
     /// </summary>
     /// <param name="pages">Per-page hints, first page first.</param>
     /// <param name="firstPageOffset">
@@ -45,13 +53,15 @@ internal static class HintStreamBuilder
     /// when every shared object is on the first page).
     /// </param>
     /// <param name="firstSharedOffset">Hint-relative offset of that object (0 when meaningless).</param>
-    public static (byte[] Body, int SharedOffset) Build(
+    /// <param name="outline">Outline hint table data; null when the document has no outlines.</param>
+    public static (byte[] Body, int SharedOffset, int OutlineOffset) Build(
         IReadOnlyList<PageHint> pages,
         int firstPageOffset,
         IReadOnlyList<SharedHint> shared,
         int nsharedFirstPage,
         int firstSharedObj,
-        int firstSharedOffset)
+        int firstSharedOffset,
+        OutlineHint? outline = null)
     {
         ArgumentOutOfRangeException.ThrowIfZero(pages.Count, nameof(pages));
 
@@ -119,7 +129,19 @@ internal static class HintStreamBuilder
         // nobjects_minus_one: 0 bits each.
         w.SkipToNextByte();
 
-        return (w.ToArray(), sharedOffset);
+        var outlineOffset = w.ByteCount;
+
+        if (outline is not null)
+        {
+            // Outline hint table (§F.3.4): four 32-bit big-endian fields.
+            w.WriteBits((uint)outline.FirstObjNum, 32);
+            w.WriteBits((uint)outline.FirstObjOffset, 32);
+            w.WriteBits((uint)outline.ObjectCount, 32);
+            w.WriteBits((uint)outline.GroupLength, 32);
+            w.SkipToNextByte();
+        }
+
+        return (w.ToArray(), sharedOffset, outlineOffset);
     }
 
     /// <summary>The number of bits needed to represent <paramref name="value"/> (0 needs 0 bits).</summary>
