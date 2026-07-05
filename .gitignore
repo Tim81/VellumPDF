@@ -35,6 +35,9 @@ Thumbs.db
 *.pfx
 *.lic
 
+# Purchased/licensed standards documents (never commit — copyrighted)
+ISO_IEC18004-2015.pdf
+
 # DocFX outputs (generated — do not commit)
 _site/
 api/*.yml
