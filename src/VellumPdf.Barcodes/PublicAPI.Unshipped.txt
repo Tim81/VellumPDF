@@ -75,6 +75,20 @@ VellumPdf.Barcodes.MicroQrCode.GetMatrix() -> VellumPdf.Barcodes.BarcodeMatrix!
 VellumPdf.Barcodes.MicroQrCode.MicroQrCode(string! content) -> void
 VellumPdf.Barcodes.MicroQrCode.Version.get -> int?
 VellumPdf.Barcodes.MicroQrCode.Version.init -> void
+VellumPdf.Barcodes.Pdf417Barcode
+VellumPdf.Barcodes.Pdf417Barcode.Columns.get -> int?
+VellumPdf.Barcodes.Pdf417Barcode.Columns.init -> void
+VellumPdf.Barcodes.Pdf417Barcode.ErrorCorrectionLevel.get -> int
+VellumPdf.Barcodes.Pdf417Barcode.ErrorCorrectionLevel.init -> void
+VellumPdf.Barcodes.Pdf417Barcode.GetMatrix() -> VellumPdf.Barcodes.BarcodeMatrix!
+VellumPdf.Barcodes.Pdf417Barcode.Pdf417Barcode(byte[]! content) -> void
+VellumPdf.Barcodes.Pdf417Barcode.Pdf417Barcode(string! content) -> void
+VellumPdf.Barcodes.Pdf417Barcode.PreferredAspectRatio.get -> double
+VellumPdf.Barcodes.Pdf417Barcode.PreferredAspectRatio.init -> void
+VellumPdf.Barcodes.Pdf417Barcode.Rows.get -> int?
+VellumPdf.Barcodes.Pdf417Barcode.Rows.init -> void
+VellumPdf.Barcodes.Pdf417Barcode.RowHeight.get -> double
+VellumPdf.Barcodes.Pdf417Barcode.RowHeight.init -> void
 VellumPdf.Barcodes.QrCode
 VellumPdf.Barcodes.QrCode.ErrorCorrection.get -> VellumPdf.Barcodes.QrErrorCorrection
 VellumPdf.Barcodes.QrCode.ErrorCorrection.init -> void

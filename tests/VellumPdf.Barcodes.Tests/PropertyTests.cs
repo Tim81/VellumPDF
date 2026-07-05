@@ -6,6 +6,7 @@ using CsCheck;
 using VellumPdf.Barcodes.Code128;
 using VellumPdf.Barcodes.EanUpc;
 using VellumPdf.Barcodes.Itf;
+using VellumPdf.Barcodes.Pdf417;
 
 namespace VellumPdf.Barcodes.Tests;
 
@@ -200,6 +201,52 @@ public sealed class PropertyTests
 
             Assert.Equal(MatrixToBits(a), MatrixToBits(b));
         });
+    }
+
+    private static readonly Gen<byte[]> Pdf417ByteContent = Gen.Byte.Array[1, 60];
+
+    [Fact]
+    public void Pdf417Barcode_anyByteContentWithinCapacity_encodesDeterministicallyWithAValidWidth()
+    {
+        Pdf417ByteContent.Sample(content =>
+        {
+            BarcodeMatrix a, b;
+            try
+            {
+                a = new Pdf417Barcode(content).GetMatrix();
+                b = new Pdf417Barcode(content).GetMatrix();
+            }
+            catch (FormatException)
+            {
+                return; // beyond PDF417's maximum capacity; not a property violation
+            }
+
+            Assert.InRange(a.Height, Pdf417Dimensions.MinRows, Pdf417Dimensions.MaxRows);
+
+            var columns = (a.Width - (Pdf417Tables.PatternModules * 3) - Pdf417Tables.StopPatternModules) / Pdf417Tables.PatternModules;
+            Assert.Equal(a.Width, Pdf417Dimensions.WidthModules(columns));
+            Assert.InRange(columns, Pdf417Dimensions.MinColumns, Pdf417Dimensions.MaxColumns);
+
+            for (var row = 0; row < a.Height; row++)
+            {
+                Assert.True(RowStartsAndEndsWithStartStopPatterns(a, row));
+                Assert.True(RowStartsAndEndsWithStartStopPatterns(b, row));
+            }
+
+            Assert.Equal(MatrixToBits(a), MatrixToBits(b));
+        });
+    }
+
+    private static bool RowStartsAndEndsWithStartStopPatterns(BarcodeMatrix matrix, int row)
+    {
+        var start = 0u;
+        for (var m = 0; m < Pdf417Tables.PatternModules; m++) start = (start << 1) | (matrix.IsDark(m, row) ? 1u : 0u);
+
+        var stop = 0u;
+        var stopStart = matrix.Width - Pdf417Tables.StopPatternModules;
+        for (var m = 0; m < Pdf417Tables.StopPatternModules; m++) stop = (stop << 1) | (matrix.IsDark(stopStart + m, row) ? 1u : 0u);
+
+        return start == Pdf417Tables.StartPattern && stop == Pdf417Tables.StopPattern;
     }
 
     private static int DecodeQrMask(BarcodeMatrix matrix)
