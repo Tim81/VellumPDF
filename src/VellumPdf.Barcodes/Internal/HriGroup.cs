@@ -9,7 +9,7 @@ internal enum HriAnchor
     /// <summary>Centred beneath the span of modules it annotates.</summary>
     Below,
 
-    /// <summary>Set outside the symbol's guard bars, to the left of the left quiet zone.</summary>
+    /// <summary>Set inside the left quiet zone, right-aligned against the first guard bar.</summary>
     OutsideLeft,
 
     /// <summary>Set outside the symbol's guard bars, to the right of the right quiet zone.</summary>

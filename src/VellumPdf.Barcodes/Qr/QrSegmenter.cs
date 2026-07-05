@@ -49,6 +49,8 @@ internal static class QrSegmenter
         }
 
         var n = runes.Count;
+        // Array order must match the QrSegmentMode member order: the DP below indexes the
+        // second dimension with (int)mode.
         var modes = new[] { QrSegmentMode.Numeric, QrSegmentMode.Alphanumeric, QrSegmentMode.Byte };
 
         // Per-rune eligibility and (for byte mode) bit cost, since byte width varies with the

@@ -181,9 +181,10 @@ internal static class Code128Encoder
     /// </summary>
     private static int ComputeCheckCharacter(int startValue, List<int> symbols)
     {
-        var sum = startValue;
-        for (var i = 0; i < symbols.Count; i++) sum += symbols[i] * (i + 1);
-        return sum % 103;
+        // Reduced every step so the accumulator cannot overflow, whatever the content length.
+        var sum = startValue % 103;
+        for (var i = 0; i < symbols.Count; i++) sum = (sum + (symbols[i] * ((i % 103) + 1))) % 103;
+        return sum;
     }
 
     private static void AppendSymbolWidths(List<double> runs, int symbolValue)

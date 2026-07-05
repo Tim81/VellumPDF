@@ -89,7 +89,11 @@ public sealed class BarcodeRenderer : IRenderer
                 ctx.RegisterStructElem(new PdfStructElem("Figure")
                 {
                     Mcid = mcid,
-                    AltText = _barcode.AltText ?? DefaultAltText(_barcode),
+                    // Whitespace-only alt text falls back to the default: PDF/UA-1 clause 7.3-1
+                    // rejects a Figure whose /Alt is empty.
+                    AltText = string.IsNullOrWhiteSpace(_barcode.AltText)
+                        ? DefaultAltText(_barcode)
+                        : _barcode.AltText,
                 });
         }
     }

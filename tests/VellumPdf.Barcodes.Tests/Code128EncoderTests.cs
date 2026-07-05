@@ -83,4 +83,13 @@ public sealed class Code128EncoderTests
         Assert.Equal(a.StartValue, b.StartValue);
         Assert.Equal(a.Check, b.Check);
     }
+
+    [Fact]
+    public void CheckCharacter_survivesVeryLongContent()
+    {
+        // The weighted check sum is reduced modulo 103 every step; before that it accumulated in
+        // an int and overflowed to a negative symbol value at around forty thousand digits.
+        var (_, _, check) = Code128Encoder.EncodeSymbols(new Code128Barcode(new string('1', 40_000)));
+        Assert.InRange(check, 0, 102);
+    }
 }

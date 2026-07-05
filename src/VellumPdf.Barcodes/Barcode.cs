@@ -60,7 +60,11 @@ public abstract class Barcode
     /// </summary>
     public bool Decorative { get; init; }
 
-    /// <summary>Margins around the symbol, in points. Defaults to zero on all sides.</summary>
+    /// <summary>
+    /// Margins around the symbol, in points, honoured by the document-flow renderer and
+    /// included in <see cref="Measure"/>. The low-level canvas path ignores them: the caller
+    /// controls placement there. Defaults to zero on all sides.
+    /// </summary>
     public EdgeInsets Margins { get; init; } = EdgeInsets.Zero;
 
     /// <summary>Horizontal placement of the symbol within the content area. Defaults to left.</summary>

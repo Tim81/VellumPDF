@@ -44,7 +44,7 @@ but the .NET base class library.
   VellumPdf.Signing       incremental update + PKCS#7 / PAdES
   VellumPdf.Forms         AcroForm fields + appearance-stream generation
   VellumPdf.Conformance   PDF/A-2 (b/u/a) · PDF/UA-1 · preflight validator
-  VellumPdf.Barcodes      QR (+ Micro QR) · PDF417 · Code128/GS1-128 · EAN/UPC · ITF-14 (shipped v1.9)
+  VellumPdf.Barcodes      QR (+ Micro QR) · PDF417 · Code128/GS1-128 · EAN/UPC · ITF-14 (v1.9)
   VellumPdf.Fonts.Shaping optional HarfBuzz adapter (off by default; honours zero-dep core)
 ```
 
