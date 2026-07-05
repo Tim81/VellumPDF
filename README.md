@@ -40,7 +40,7 @@ clean-room from the open **ISO 32000** standard.
 | `VellumPdf.Reader` | Preview | Opens existing PDFs (classic cross-reference tables, cross-reference and object streams, hybrid-reference files; unencrypted) and exposes the catalog, signatures, and decoded stream data. The basis for the signing LTV path, the conformance validator, and a general reader. |
 | `VellumPdf.Conformance` | Preview | In-process PDF/A-2b/2u/2a and PDF/UA-1 preflight: runs clean-room conformance rules authored from the ISO specifications and returns machine-readable assertions (rule id, ISO clause, severity, object reference) — no external veraPDF Docker image needed. AOT- and trim-ready (rules registered explicitly, no reflection). Covers file structure, colour and output intents (including ICC profile validity and ICCBased-CMYK overprint), transparency, images and XObjects (including a JPEG2000 codestream parser), fonts (an in-process sfnt font-program parser for glyph presence and widths, embedded-CMap CID/WMode/usecmap checks), content streams (ISO 32000-1 operator, inline-image-filter, and graphics-state validation), digital signatures (a zero-dependency CMS/ASN.1 reader for §6.4.3), annotations, interactive forms, actions, and XMP metadata (via an in-process XMP parser), plus the 2u/2a deltas and a tagged-structure walker for the PDF/UA-1 (ISO 14289-1) accessibility checks. Build-verified veraPDF parity is about 99% for PDF/A-2b/2u/2a and PDF/UA-1; the only gaps are five checks tracked in follow-up issues — three with a predefined-CJK-CMap sub-condition that needs a conformant CJK font asset to cross-validate, and two that need a subsystem outside this release (a PDF/A-1 profile, reader decryption). Every rule's positive and negative paths are cross-validated against veraPDF in CI. |
 | `VellumPdf.Cli` | Stable | The `vellum-preflight` command-line validator: checks a PDF against PDF/A-2b/2u/2a and PDF/UA-1 with the in-process `VellumPdf.Conformance` engine — no JVM or Docker. Ships as a cross-platform .NET tool (`dotnet tool install -g VellumPdf.Cli`) and self-contained Native-AOT binaries. Text, JSON, and SARIF 2.1.0 output; file, glob, directory, and stdin inputs; exit codes `0` (conformant), `1` (non-conformant), `2` (usage or I/O error). |
-| _(roadmap)_ `VellumPdf.Barcodes` | Planned | QR, PDF417, Code128, EAN. |
+| `VellumPdf.Barcodes` | Stable | Six symbologies: QR (including Micro QR M1-M4), PDF417, Code 128 (plain and GS1-128), EAN-13/EAN-8/UPC-A with EAN-2/EAN-5 add-ons, and ITF-14, rendered as vector rectangles through a low-level `PdfCanvas` extension or the `Document.Add` flow API. Round-trip decoding is verified in CI against zxing-cpp. |
 
 ## Quick start
 
@@ -113,6 +113,26 @@ doc.Save(stream);
 For a full walkthrough of the canvas, graphics primitives, and font handling,
 see [docs/kernel-guide.md](docs/kernel-guide.md).
 
+### Barcodes
+
+```shell
+dotnet add package VellumPdf.Barcodes
+```
+
+```csharp
+using VellumPdf.Barcodes;
+
+// Flow API: adds a QR Code to the document like any other element.
+doc.Add(new QrCode("https://example.com") { TargetWidth = 120 });
+
+// Low-level API: draws directly onto a PdfCanvas, with human-readable text below the bars.
+canvas.DrawBarcode(new EanBarcode(EanSymbology.Ean13, "400638133393"), 72, 700, font);
+```
+
+QR (including Micro QR), PDF417, Code 128, EAN-13/EAN-8/UPC-A, and ITF-14 are all covered; see
+[docs/barcodes-guide.md](docs/barcodes-guide.md) for sizing, human-readable text, GS1/FNC1, and
+the QR charset policy. QR Code is a registered trademark of DENSO WAVE INCORPORATED.
+
 ## Conventions
 
 - **Units.** All coordinates and sizes are in PDF user-space **points** (1 pt = 1/72 inch).
@@ -132,6 +152,9 @@ oracles — a missing tool fails the build, so the gates can never silently skip
 - **veraPDF** (official `verapdf/cli` Docker image) — strict **PDF/A-2a/2b/2u and PDF/UA-1**
   conformance over embedded-font, table, image, and tagged documents. A
   non-compliant report fails CI with the full rule list attached.
+- **zxing-cpp** — decode round-trip for every barcode symbology: each generated PDF is
+  rasterized with `pdftoppm` and decoded back, so the CI oracle catches encoding regressions a
+  unit test's own vectors could miss.
 
 ## Command-line preflight
 
@@ -168,7 +191,6 @@ guarantee. Exit codes are `0` (conformant), `1` (non-conformant), and `2` (usage
 
 | Area | Notes |
 | --- | --- |
-| Barcodes (v1.9) | The `VellumPdf.Barcodes` package — QR, PDF417, Code128, EAN. |
 | PDF reader (v2.1) | `VellumPdf.Reader` — read any PDF. xref streams, object streams, and hybrid-reference files shipped in v1.7; v2.1 grows it into a full structural parser including encrypted-file reading (Epic #100). |
 | Content extraction (v2.2) | Text and image extraction on the reader (#98). |
 | Editing existing PDFs (v3.0) | Unified read-modify-write document model; supersedes the write-once `PdfDocument` (Epic #101). |

@@ -43,7 +43,14 @@ internal static class QrBitStreamBuilder
         {
             var (value, bits) = modeIndicator(segment.Mode);
             if (bits > 0) writer.WriteBits(value, bits);
-            writer.WriteBits(segment.RuneCount, countBits(segment.Mode));
+
+            // ISO/IEC 18004 §7.4.4: the byte-mode character count indicator holds the number of
+            // 8-bit code words, not the number of characters — these diverge for any multi-byte
+            // UTF-8 sequence, so RuneCount (correct for numeric/alphanumeric) cannot be reused here.
+            var count = segment.Mode == QrSegmentMode.Byte
+                ? byteEncoding.GetByteCount(content.AsSpan(segment.CharStart, segment.CharLength))
+                : segment.RuneCount;
+            writer.WriteBits(count, countBits(segment.Mode));
 
             switch (segment.Mode)
             {

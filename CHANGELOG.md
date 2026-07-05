@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **`VellumPdf.Barcodes` — QR, Micro QR, PDF417, Code 128/GS1-128, EAN-13/EAN-8/UPC-A with
+  EAN-2/EAN-5 add-ons, and ITF-14.** A new optional package renders six barcode symbologies as
+  vector rectangles, never a raster image, over two API tiers: a low-level `PdfCanvas.DrawBarcode`
+  extension for precise placement, and a `Document.Add(Barcode)` flow element that handles sizing,
+  pagination, alignment, and tagging automatically. QR Code chooses its version, data mask, and
+  error-correction level automatically (all overridable) and supports an Auto/Latin-1/UTF-8/UTF-8+ECI
+  charset policy for non-Latin-1 content; PDF417 compacts text, byte, and numeric content
+  automatically. Every symbology is implemented clean-room, sourced solely from open specifications
+  (ISO/IEC 18004, ISO/IEC 15438, ISO/IEC 15417, the GS1 General Specifications). Round-trip decoding
+  is verified in CI for every symbology against zxing-cpp, which decodes each generated PDF after
+  rasterising it with `pdftoppm`. See [docs/barcodes-guide.md](docs/barcodes-guide.md).
+- **`Document.Add(IRenderer)`.** A new public overload on `VellumPdf.Layout.Document` accepts any
+  `IRenderer`, opening the flow-layout pipeline to custom elements beyond the ones VellumPdf ships —
+  `VellumPdf.Barcodes`' `BarcodeRenderer` is the first to use it.
+
 ## [1.8.2] - 2026-07-05
 
 ### Fixed
