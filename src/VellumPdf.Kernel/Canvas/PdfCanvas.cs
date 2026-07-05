@@ -638,14 +638,14 @@ public sealed class PdfCanvas
     // ── Finalise ────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Registers used fonts inline into the page's resource dictionary and
-    /// stores the accumulated operator bytes as the page content.
-    /// Call exactly once when the page is complete.
+    /// Records the fonts used on this page (materialised as shared indirect objects by
+    /// <see cref="Document.PdfDocument.Save"/>) and stores the accumulated operator bytes
+    /// as the page content. Call exactly once when the page is complete.
     /// </summary>
     public void Finish()
     {
         foreach (var (name, font) in _usedFonts)
-            _page.RegisterFont(name, font.BuildDictionary());
+            _page.RegisterStandard14FontUsage(name, font);
         _page.ContentBytes = _ops.ToArray();
     }
 
