@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Standard-14 font dictionaries are now written as indirect objects.** Pages previously embedded
+  each Standard-14 font dictionary directly in their `/Resources /Font` entry. That is legal
+  under ISO 32000, but poppler-based tools (`pdffonts`, `pdftoppm`, Evince, Okular) track fonts by their
+  indirect object reference and logged `Internal Error: xref num … not found` before falling back
+  to cross-reference reconstruction on every such file. Font dictionaries are now allocated once
+  per face as document-level indirect objects and shared by every page that uses them, which also
+  removes the per-page duplication in multi-page documents.
+
+### Changed
+
+- Workflow actions updated to their current major versions: `actions/checkout` v7 and the GitHub
+  Pages pair `actions/upload-pages-artifact` v5 / `actions/deploy-pages` v5 (bumped together).
+
 ## [1.8.1] - 2026-07-03
 
 ### Added
