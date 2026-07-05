@@ -187,6 +187,19 @@ public sealed class Document : IDisposable
     public Document Add(string text, TextStyle? style = null)
         => Add(new Paragraph(text, style ?? _defaultStyle));
 
+    /// <summary>
+    /// Adds a custom renderer to the document content. Returns this document for chaining.
+    /// Accepts any <see cref="IRenderer"/> implementation, including ones defined outside this
+    /// library — the seam satellite packages (e.g. VellumPdf.Barcodes) use to plug their own
+    /// elements into the flow layout.
+    /// </summary>
+    public Document Add(IRenderer renderer)
+    {
+        ArgumentNullException.ThrowIfNull(renderer);
+        _content.Add(renderer);
+        return this;
+    }
+
     // ── OutputIntent configuration ───────────────────────────────────────────
 
     /// <summary>

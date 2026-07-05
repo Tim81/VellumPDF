@@ -46,6 +46,8 @@ public sealed class MicroQrCode : Barcode
 
     private protected override BarcodeSize MeasureCore() => BarcodeGeometry.Measure2D(this, GetEncoded());
 
+    internal override Encoded2D? GetEncoded2D() => GetEncoded();
+
     private Encoded2D GetEncoded()
     {
         if (_encoded is not null) return _encoded;

@@ -100,14 +100,39 @@ internal static class BarcodeGeometry
         return new BarcodeSize(width, height);
     }
 
-    private static double SumRuns(IReadOnlyList<double> runs)
+    /// <summary>
+    /// Resolves the effective module size for a 1D barcode, matching the module count
+    /// <see cref="Measure1D"/> spreads <see cref="Barcode.TargetWidth"/> over. Shared with
+    /// <see cref="BarcodePainter"/> so measurement and drawing always agree on scale.
+    /// </summary>
+    internal static double ResolveModuleSize1D(Barcode1D barcode, Encoded1D encoded)
+    {
+        var totalModules = barcode.IncludeQuietZone ? encoded.TotalModuleWidth : SumRuns(encoded.Runs);
+        return ResolveModuleSize(barcode.ModuleSize, barcode.TargetWidth, totalModules, Default1DModuleSize);
+    }
+
+    /// <summary>
+    /// Resolves the effective module size for a 2D (matrix) barcode, matching
+    /// <see cref="Measure2D"/>. Shared with <see cref="BarcodePainter"/> so measurement and
+    /// drawing always agree on scale.
+    /// </summary>
+    internal static double ResolveModuleSize2D(Barcode barcode, Encoded2D encoded)
+    {
+        var quietZone = barcode.IncludeQuietZone ? encoded.QuietZoneModules : 0;
+        var totalModulesX = encoded.Matrix.Width + (2 * quietZone);
+        return ResolveModuleSize(barcode.ModuleSize, barcode.TargetWidth, totalModulesX, Default2DModuleSize);
+    }
+
+    /// <summary>The sum of every run width, in modules. Also used by <see cref="BarcodePainter"/> to walk the module offset alongside each run.</summary>
+    internal static double SumRuns(IReadOnlyList<double> runs)
     {
         var total = 0.0;
         foreach (var run in runs) total += run;
         return total;
     }
 
-    private static bool HasAboveGroup(IReadOnlyList<HriGroup> groups)
+    /// <summary>Whether any HRI group is anchored above the symbol (the EAN/UPC add-on case), reserving an above-band in both measurement and drawing.</summary>
+    internal static bool HasAboveGroup(IReadOnlyList<HriGroup> groups)
     {
         foreach (var group in groups)
             if (group.Anchor == HriAnchor.Above)
@@ -115,5 +140,6 @@ internal static class BarcodeGeometry
         return false;
     }
 
-    private static double DefaultTextSize(double barHeight) => Math.Clamp(barHeight * 0.2, 6, 12);
+    /// <summary>The default HRI text size derived from <see cref="Barcode1D.BarHeight"/> when <see cref="Barcode1D.TextSize"/> is zero, clamped to a legible 6-12pt range.</summary>
+    internal static double DefaultTextSize(double barHeight) => Math.Clamp(barHeight * 0.2, 6, 12);
 }

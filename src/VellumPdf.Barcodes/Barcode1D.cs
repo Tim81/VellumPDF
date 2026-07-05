@@ -29,4 +29,6 @@ public abstract class Barcode1D : Barcode
 
     /// <summary>Encodes this barcode's content into module-run form, caching the result on first use.</summary>
     private protected abstract Encoded1D GetEncoded();
+
+    internal sealed override Encoded1D? GetEncoded1D() => GetEncoded();
 }

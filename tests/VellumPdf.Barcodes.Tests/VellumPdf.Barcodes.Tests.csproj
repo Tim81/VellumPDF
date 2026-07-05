@@ -9,6 +9,7 @@
   <ItemGroup>
     <PackageReference Include="coverlet.collector" />
     <PackageReference Include="CsCheck" />
+    <PackageReference Include="Verify.XunitV3" />
   </ItemGroup>
 
 </Project>

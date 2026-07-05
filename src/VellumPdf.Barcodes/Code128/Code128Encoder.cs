@@ -52,11 +52,20 @@ internal static class Code128Encoder
         AppendSymbolWidths(runs, check);
         foreach (var w in Code128Tables.StopWidths) runs.Add(w);
 
+        var dataModuleCount = 0.0;
+        foreach (var run in runs) dataModuleCount += run;
+
+        // Code 128 has no digit grouping to preserve (unlike EAN/UPC), so the whole content is a
+        // single HRI line centred beneath the bars. A GS1-128 FNC1 has no printable glyph, so it
+        // is dropped from the displayed text rather than shown as its raw control character.
+        var hriText = barcode.Gs1 ? barcode.Content.Replace("", string.Empty) : barcode.Content;
+
         return new Encoded1D
         {
             Runs = runs,
             QuietZoneLeft = 10,
             QuietZoneRight = 10,
+            HriGroups = hriText.Length == 0 ? [] : [new HriGroup(hriText, HriAnchor.Below, 0, dataModuleCount)],
         };
     }
 

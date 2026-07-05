@@ -5,9 +5,9 @@ namespace VellumPdf.Barcodes.Internal;
 
 /// <summary>
 /// The result of encoding a matrix (2D) barcode: the module grid plus the metadata the shared
-/// geometry calculator and painter need. Not yet produced by any encoder — QR, Micro QR and
-/// PDF417 are later milestones — but the shape is fixed now so <see cref="BarcodeGeometry"/>
-/// and the eventual painter share one model across both dimensionalities.
+/// geometry calculator and painter need. Produced by <c>QrEncoder</c>, <c>MicroQrEncoder</c> and
+/// <c>Pdf417Encoder</c>; <see cref="BarcodeGeometry"/> and <see cref="BarcodePainter"/> share this
+/// one model across all three, alongside <see cref="Encoded1D"/> for the linear symbologies.
 /// </summary>
 internal sealed class Encoded2D
 {

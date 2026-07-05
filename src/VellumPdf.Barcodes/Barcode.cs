@@ -1,6 +1,7 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
+using VellumPdf.Barcodes.Internal;
 using VellumPdf.Layout.Core;
 
 namespace VellumPdf.Barcodes;
@@ -76,4 +77,17 @@ public abstract class Barcode
     public BarcodeSize Measure() => MeasureCore();
 
     private protected abstract BarcodeSize MeasureCore();
+
+    /// <summary>
+    /// Returns this barcode's encoded linear (1D) run data, or <c>null</c> when it is a matrix
+    /// (2D) symbology. <see cref="BarcodePainter"/> uses this (together with
+    /// <see cref="GetEncoded2D"/>) to draw any concrete barcode type without depending on it.
+    /// </summary>
+    internal virtual Encoded1D? GetEncoded1D() => null;
+
+    /// <summary>
+    /// Returns this barcode's encoded matrix (2D) data, or <c>null</c> when it is a linear (1D)
+    /// symbology. See <see cref="GetEncoded1D"/>.
+    /// </summary>
+    internal virtual Encoded2D? GetEncoded2D() => null;
 }
