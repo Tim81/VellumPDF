@@ -635,6 +635,9 @@ public sealed class PdfDocument : IDisposable
         // ── Materialise ICC colour spaces ──────────────────────────────────
         MaterializeIccColorSpaces(registry);
 
+        // ── Register Standard-14 fonts as shared indirect objects ─────────
+        RegisterStandard14Fonts(registry);
+
         // ── Embed TrueType fonts (Type0/CIDFontType2) ─────────────────────
         // Build the full font object graph for each embedded font, then register
         // the Type0 reference on every page that used the font.
@@ -989,6 +992,9 @@ public sealed class PdfDocument : IDisposable
         // ── Materialise ICC colour spaces ──────────────────────────────────────
         MaterializeIccColorSpaces(registry);
 
+        // ── Register Standard-14 fonts as shared indirect objects ─────────────
+        RegisterStandard14Fonts(registry);
+
         // ── Embedded TrueType fonts ────────────────────────────────────────────
         foreach (var handle in _embeddedFonts)
         {
@@ -1295,6 +1301,36 @@ public sealed class PdfDocument : IDisposable
                     csRefs[icc] = iccRef;
                 }
                 page.RegisterColorSpace(name, new PdfArray([new PdfName("ICCBased"), iccRef]));
+            }
+        }
+    }
+
+    /// <summary>
+    /// Materialises every page's Standard-14 font usage as one shared indirect object per
+    /// unique <see cref="PdfFontResource"/> instance (deduplicated document-wide, matching
+    /// the one-instance-per-face cache in <see cref="UseFont"/>) and wires it into each
+    /// page's /Font resources via <see cref="PdfPage.RegisterFontRef"/>.
+    ///
+    /// A direct (non-indirect) font dictionary is legal under ISO 32000-2, but poppler-family
+    /// readers (pdftoppm, pdffonts, Evince) resolve page fonts strictly by indirect reference
+    /// and rebuild the xref table when they find a direct dictionary there instead.
+    /// Must run before the page dictionaries are serialised so the references land in each
+    /// page's /Font resources.
+    /// </summary>
+    private void RegisterStandard14Fonts(PdfObjectRegistry registry)
+    {
+        var fontRefs = new Dictionary<PdfFontResource, PdfIndirectReference>(ReferenceEqualityComparer.Instance);
+        foreach (var page in _pages)
+        {
+            foreach (var (name, font) in page.PendingStandard14Fonts)
+            {
+                if (!fontRefs.TryGetValue(font, out var fontRef))
+                {
+                    fontRef = registry.Reserve();
+                    registry.SetValue(fontRef, font.BuildDictionary());
+                    fontRefs[font] = fontRef;
+                }
+                page.RegisterFontRef(name, fontRef);
             }
         }
     }

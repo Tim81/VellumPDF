@@ -6,4 +6,4 @@ HasAESV3: True
 HasStmF: True
 HasStrF: True
 Permissions: /P -196
-IndirectObjectCount: 7
+IndirectObjectCount: 8

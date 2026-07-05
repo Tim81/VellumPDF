@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 using VellumPdf.Core;
+using VellumPdf.Fonts;
 
 namespace VellumPdf.Document;
 
@@ -12,6 +13,7 @@ namespace VellumPdf.Document;
 public sealed class PdfPage
 {
     private readonly PdfDictionary _fontResources = new();
+    private readonly List<(string ResourceName, PdfFontResource Font)> _pendingStandard14Fonts = [];
     private readonly PdfDictionary _xObjectResources = new();
     private readonly PdfDictionary _extGStateResources = new();
     private readonly PdfDictionary _shadingResources = new();
@@ -40,9 +42,16 @@ public sealed class PdfPage
     /// <summary>Raw PDF content stream bytes. Set by <see cref="Canvas.PdfCanvas.Finish"/>.</summary>
     public byte[]? ContentBytes { get; set; }
 
-    // Called by PdfCanvas.Finish() — font dicts are inline for Standard-14 (no embedding needed).
-    internal void RegisterFont(string resourceName, PdfDictionary fontDict) =>
-        _fontResources.Set(new PdfName(resourceName), fontDict);
+    // Called by PdfCanvas.Finish() — the font dict itself is materialised as a shared
+    // indirect object (once per face, document-wide) by PdfDocument.Save() before the
+    // page dictionary is built; see RegisterFontRef and PendingStandard14Fonts below.
+    internal void RegisterStandard14FontUsage(string resourceName, PdfFontResource font) =>
+        _pendingStandard14Fonts.Add((resourceName, font));
+
+    // Consumed by PdfDocument.Save() to allocate the shared font objects and wire them
+    // in via RegisterFontRef.
+    internal IReadOnlyList<(string ResourceName, PdfFontResource Font)> PendingStandard14Fonts =>
+        _pendingStandard14Fonts;
 
     // Called when embedding custom fonts — the font is its own indirect object.
     internal void RegisterFontRef(string resourceName, PdfIndirectReference fontRef) =>
