@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.8.2] - 2026-07-05
+
 ### Fixed
 
 - **Standard-14 font dictionaries are now written as indirect objects.** Pages previously embedded

@@ -248,6 +248,14 @@ All 14 members: `Helvetica`, `HelveticaBold`, `HelveticaOblique`,
 `TimesBoldItalic`, `Courier`, `CourierBold`, `CourierOblique`,
 `CourierBoldOblique`, `Symbol`, `ZapfDingbats`.
 
+Each face used anywhere in the document is written once, as a shared indirect
+font object referenced from every page that uses it (since 1.8.2). Earlier
+releases wrote the font dictionary inline in each page's resources — legal
+under ISO 32000, but poppler-based tools (`pdffonts`, `pdftoppm`, Evince,
+Okular) resolve page fonts by indirect reference and logged
+`Internal Error: xref num … not found` before reconstructing the
+cross-reference table on every such file.
+
 ### Drawing Standard-14 text
 
 ```csharp
