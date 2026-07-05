@@ -161,7 +161,7 @@ public sealed class BarcodeCanvasExtensionsTests
     }
 
     [Fact]
-    public void DrawBarcode_withTextFont_drawsHriText()
+    public void DrawBarcode_withTextFont_drawsHumanReadableText()
     {
         using var doc = new PdfDocument();
         var page = doc.AddPage(PageSize.A4);

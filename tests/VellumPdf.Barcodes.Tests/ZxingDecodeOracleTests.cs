@@ -48,7 +48,7 @@ public sealed class ZxingDecodeOracleTests : IDisposable
     // ── QR ────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void QrCode_AsciiText_RoundTrips()
+    public void QrCode_AsciiContent_RoundTrips()
     {
         const string content = "VellumPdf QR oracle test";
         var pdfPath = BuildSinglePdf((_, canvas) =>

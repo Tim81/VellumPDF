@@ -58,14 +58,14 @@ internal static class Code128Encoder
         // Code 128 has no digit grouping to preserve (unlike EAN/UPC), so the whole content is a
         // single HRI line centred beneath the bars. A GS1-128 FNC1 has no printable glyph, so it
         // is dropped from the displayed text rather than shown as its raw control character.
-        var hriText = barcode.Gs1 ? barcode.Content.Replace("", string.Empty) : barcode.Content;
+        var hriLabel = barcode.Gs1 ? barcode.Content.Replace("", string.Empty) : barcode.Content;
 
         return new Encoded1D
         {
             Runs = runs,
             QuietZoneLeft = 10,
             QuietZoneRight = 10,
-            HriGroups = hriText.Length == 0 ? [] : [new HriGroup(hriText, HriAnchor.Below, 0, dataModuleCount)],
+            HriGroups = hriLabel.Length == 0 ? [] : [new HriGroup(hriLabel, HriAnchor.Below, 0, dataModuleCount)],
         };
     }
 
