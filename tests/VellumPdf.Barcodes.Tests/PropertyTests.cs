@@ -103,4 +103,124 @@ public sealed class PropertyTests
             Assert.Equal(a.Runs, b.Runs);
         });
     }
+
+    private static readonly Gen<string> QrContent = Gen.Select(Gen.Char[(char)32, (char)126].Array[1, 60], chars => new string(chars));
+    private static readonly Gen<string> MicroContent = Gen.Select(Gen.Char[(char)32, (char)126].Array[1, 8], chars => new string(chars));
+    private static readonly Gen<QrErrorCorrection> AnyLevel = Gen.Select(Gen.Int[0, 3], i => (QrErrorCorrection)i);
+
+    [Fact]
+    public void QrCode_anyContentWithinCapacity_encodesWithAValidVersionSizeAndMask()
+    {
+        Gen.Select(QrContent, AnyLevel).Sample((content, level) =>
+        {
+            var qr = new QrCode(content) { ErrorCorrection = level };
+            BarcodeMatrix matrix;
+            try
+            {
+                matrix = qr.GetMatrix();
+            }
+            catch (FormatException)
+            {
+                return; // beyond version 40's capacity at this level; not a property violation
+            }
+
+            Assert.Equal(matrix.Width, matrix.Height);
+            Assert.True((matrix.Width - 17) % 4 == 0 && matrix.Width is >= 21 and <= 177);
+
+            // The top-left finder pattern's outer ring is always dark.
+            Assert.True(matrix.IsDark(0, 0));
+            Assert.True(matrix.IsDark(6, 0));
+            Assert.True(matrix.IsDark(0, 6));
+            Assert.True(matrix.IsDark(6, 6));
+
+            var mask = DecodeQrMask(matrix);
+            Assert.InRange(mask, 0, 7);
+        });
+    }
+
+    [Fact]
+    public void QrCode_encoding_isDeterministic()
+    {
+        Gen.Select(QrContent, AnyLevel).Sample((content, level) =>
+        {
+            BarcodeMatrix a, b;
+            try
+            {
+                a = new QrCode(content) { ErrorCorrection = level }.GetMatrix();
+                b = new QrCode(content) { ErrorCorrection = level }.GetMatrix();
+            }
+            catch (FormatException)
+            {
+                return;
+            }
+
+            Assert.Equal(MatrixToBits(a), MatrixToBits(b));
+        });
+    }
+
+    [Fact]
+    public void MicroQrCode_anyShortContent_encodesWithAValidVersionSize()
+    {
+        MicroContent.Sample(content =>
+        {
+            BarcodeMatrix matrix;
+            try
+            {
+                matrix = new MicroQrCode(content).GetMatrix();
+            }
+            catch (FormatException)
+            {
+                return; // beyond M4's capacity, or needs a mode M4 doesn't offer for this content
+            }
+
+            Assert.Equal(matrix.Width, matrix.Height);
+            Assert.True((matrix.Width - 9) % 2 == 0 && matrix.Width is >= 11 and <= 17);
+            Assert.True(matrix.IsDark(0, 0));
+            Assert.True(matrix.IsDark(6, 0));
+            Assert.True(matrix.IsDark(0, 6));
+            Assert.True(matrix.IsDark(6, 6));
+        });
+    }
+
+    [Fact]
+    public void MicroQrCode_encoding_isDeterministic()
+    {
+        MicroContent.Sample(content =>
+        {
+            BarcodeMatrix a, b;
+            try
+            {
+                a = new MicroQrCode(content).GetMatrix();
+                b = new MicroQrCode(content).GetMatrix();
+            }
+            catch (FormatException)
+            {
+                return;
+            }
+
+            Assert.Equal(MatrixToBits(a), MatrixToBits(b));
+        });
+    }
+
+    private static int DecodeQrMask(BarcodeMatrix matrix)
+    {
+        var bits = 0;
+        for (var i = 0; i <= 5; i++) bits |= (matrix.IsDark(8, i) ? 1 : 0) << i;
+        bits |= (matrix.IsDark(8, 7) ? 1 : 0) << 6;
+        bits |= (matrix.IsDark(8, 8) ? 1 : 0) << 7;
+        bits |= (matrix.IsDark(7, 8) ? 1 : 0) << 8;
+        for (var i = 9; i < 15; i++) bits |= (matrix.IsDark(14 - i, 8) ? 1 : 0) << i;
+
+        var unmasked = bits ^ Convert.ToInt32("101010000010010", 2);
+        return (unmasked >> 10) & 0b111;
+    }
+
+    private static bool[] MatrixToBits(BarcodeMatrix matrix)
+    {
+        var bits = new bool[matrix.Width * matrix.Height];
+        for (var y = 0; y < matrix.Height; y++)
+            for (var x = 0; x < matrix.Width; x++)
+                bits[(y * matrix.Width) + x] = matrix.IsDark(x, y);
+        return bits;
+    }
 }

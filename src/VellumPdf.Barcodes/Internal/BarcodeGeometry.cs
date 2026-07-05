@@ -13,6 +13,9 @@ internal static class BarcodeGeometry
     /// <summary>The default module size, in points, for 1D symbologies when neither <see cref="Barcode.ModuleSize"/> nor <see cref="Barcode.TargetWidth"/> is set.</summary>
     internal const double Default1DModuleSize = 1.0;
 
+    /// <summary>The default module size, in points, for 2D symbologies (QR, Micro QR) when neither <see cref="Barcode.ModuleSize"/> nor <see cref="Barcode.TargetWidth"/> is set.</summary>
+    internal const double Default2DModuleSize = 2.0;
+
     /// <summary>
     /// Resolves the effective module size from the mutually exclusive
     /// <paramref name="moduleSize"/>/<paramref name="targetWidth"/> options.
@@ -76,6 +79,24 @@ internal static class BarcodeGeometry
         var height = barcode.BarHeight + belowBandHeight + aboveBandHeight
                      + (bearerHeightModules * moduleSize) + barcode.Margins.Vertical;
 
+        return new BarcodeSize(width, height);
+    }
+
+    /// <summary>
+    /// Measures a 2D (matrix) barcode's footprint: the module grid scaled to the resolved module
+    /// size, plus quiet zones when included. <see cref="Barcode.TargetWidth"/> is spread over the
+    /// grid's width (including quiet zones when present), matching <see cref="Measure1D"/>.
+    /// </summary>
+    internal static BarcodeSize Measure2D(Barcode barcode, Encoded2D encoded)
+    {
+        var quietZone = barcode.IncludeQuietZone ? encoded.QuietZoneModules : 0;
+        var totalModulesX = encoded.Matrix.Width + (2 * quietZone);
+        var totalModulesY = (encoded.Matrix.Height * encoded.RowHeightModules) + (2 * quietZone);
+
+        var moduleSize = ResolveModuleSize(barcode.ModuleSize, barcode.TargetWidth, totalModulesX, Default2DModuleSize);
+
+        var width = (totalModulesX * moduleSize) + barcode.Margins.Horizontal;
+        var height = (totalModulesY * moduleSize) + barcode.Margins.Vertical;
         return new BarcodeSize(width, height);
     }
 

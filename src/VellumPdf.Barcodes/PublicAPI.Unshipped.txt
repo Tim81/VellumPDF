@@ -67,6 +67,36 @@ VellumPdf.Barcodes.ItfBearerBarStyle
 VellumPdf.Barcodes.ItfBearerBarStyle.Frame = 0 -> VellumPdf.Barcodes.ItfBearerBarStyle
 VellumPdf.Barcodes.ItfBearerBarStyle.Horizontal = 1 -> VellumPdf.Barcodes.ItfBearerBarStyle
 VellumPdf.Barcodes.ItfBearerBarStyle.None = 2 -> VellumPdf.Barcodes.ItfBearerBarStyle
+VellumPdf.Barcodes.MicroQrCode
+VellumPdf.Barcodes.MicroQrCode.Content.get -> string!
+VellumPdf.Barcodes.MicroQrCode.ErrorCorrection.get -> VellumPdf.Barcodes.QrErrorCorrection
+VellumPdf.Barcodes.MicroQrCode.ErrorCorrection.init -> void
+VellumPdf.Barcodes.MicroQrCode.GetMatrix() -> VellumPdf.Barcodes.BarcodeMatrix!
+VellumPdf.Barcodes.MicroQrCode.MicroQrCode(string! content) -> void
+VellumPdf.Barcodes.MicroQrCode.Version.get -> int?
+VellumPdf.Barcodes.MicroQrCode.Version.init -> void
+VellumPdf.Barcodes.QrCode
+VellumPdf.Barcodes.QrCode.ErrorCorrection.get -> VellumPdf.Barcodes.QrErrorCorrection
+VellumPdf.Barcodes.QrCode.ErrorCorrection.init -> void
+VellumPdf.Barcodes.QrCode.GetMatrix() -> VellumPdf.Barcodes.BarcodeMatrix!
+VellumPdf.Barcodes.QrCode.Mask.get -> int?
+VellumPdf.Barcodes.QrCode.Mask.init -> void
+VellumPdf.Barcodes.QrCode.QrCode(byte[]! content) -> void
+VellumPdf.Barcodes.QrCode.QrCode(string! content) -> void
+VellumPdf.Barcodes.QrCode.TextEncoding.get -> VellumPdf.Barcodes.QrTextEncoding
+VellumPdf.Barcodes.QrCode.TextEncoding.init -> void
+VellumPdf.Barcodes.QrCode.Version.get -> int?
+VellumPdf.Barcodes.QrCode.Version.init -> void
+VellumPdf.Barcodes.QrErrorCorrection
+VellumPdf.Barcodes.QrErrorCorrection.H = 3 -> VellumPdf.Barcodes.QrErrorCorrection
+VellumPdf.Barcodes.QrErrorCorrection.L = 0 -> VellumPdf.Barcodes.QrErrorCorrection
+VellumPdf.Barcodes.QrErrorCorrection.M = 1 -> VellumPdf.Barcodes.QrErrorCorrection
+VellumPdf.Barcodes.QrErrorCorrection.Q = 2 -> VellumPdf.Barcodes.QrErrorCorrection
+VellumPdf.Barcodes.QrTextEncoding
+VellumPdf.Barcodes.QrTextEncoding.Auto = 0 -> VellumPdf.Barcodes.QrTextEncoding
+VellumPdf.Barcodes.QrTextEncoding.Latin1 = 1 -> VellumPdf.Barcodes.QrTextEncoding
+VellumPdf.Barcodes.QrTextEncoding.Utf8 = 2 -> VellumPdf.Barcodes.QrTextEncoding
+VellumPdf.Barcodes.QrTextEncoding.Utf8Eci = 3 -> VellumPdf.Barcodes.QrTextEncoding
 override VellumPdf.Barcodes.BarcodeSize.GetHashCode() -> int
 static VellumPdf.Barcodes.BarcodeSize.operator !=(VellumPdf.Barcodes.BarcodeSize left, VellumPdf.Barcodes.BarcodeSize right) -> bool
 static VellumPdf.Barcodes.BarcodeSize.operator ==(VellumPdf.Barcodes.BarcodeSize left, VellumPdf.Barcodes.BarcodeSize right) -> bool
