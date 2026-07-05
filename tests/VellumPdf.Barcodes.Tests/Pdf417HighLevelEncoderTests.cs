@@ -72,6 +72,55 @@ public sealed class Pdf417HighLevelEncoderTests
     }
 
     [Fact]
+    public void EncodeText_singleUppercaseInsideLowerRun_usesAlphaShiftNotPunctuationShift()
+    {
+        // Regression for a decode failure found by an end-to-end zxing-cpp smoke test: a single
+        // uppercase character while in the Lower sub-mode must use the Alpha-Shift codeword, which
+        // is value 27 *in the Lower sub-mode's table* (not the Punctuation-Shift value 29 that 27
+        // means everywhere else it appears). The encoder previously emitted 29, so a decoder
+        // correctly following the sub-mode tables read the shifted value as a Punctuation-table
+        // lookup instead of an Alpha-table one: Punctuation value 15 is LF, Alpha value 15 is 'P',
+        // which is exactly the corruption a downstream decode test observed ('P' became '\n').
+        //
+        // Hand derivation for "aP" (ISO/IEC 15438 section 2.2.4.4, Table 3):
+        //   'a': not in Alpha -> target Lower. Alpha->Lower has no shift, only Latch(27).
+        //        emit 27 [ll], current=Lower; emit Lower value of 'a' = 0.
+        //   'P': not in Lower -> target Alpha. No following char, so this is a one-character
+        //        deviation: Lower->Alpha uses the Shift (not the two-latch route via Mixed).
+        //        In the Lower sub-mode, codeword 27 is Alpha-Shift (NOT 29, which is
+        //        Punctuation-Shift from Lower) -> emit 27 [as], current stays Lower (a shift is
+        //        temporary); emit Alpha value of 'P' = 15.
+        //   values = [27, 0, 27, 15] (even count, no padding needed).
+        //   pairs: (27,0) -> 27*30+0 = 810; (27,15) -> 27*30+15 = 825.
+        var codewords = Pdf417HighLevelEncoder.EncodeText("aP");
+        Assert.Equal([810, 825], codewords);
+    }
+
+    [Fact]
+    public void EncodeText_uppercaseWordInsideLowerRun_matchesHandComputedVector()
+    {
+        // Same bug as above, exercised with the actual golden-test payload prefix ("VellumPdf" is
+        // the start of "VellumPdf PDF417 golden test") so the fix is verified against realistic
+        // content, not just the minimal two-character reproduction.
+        //
+        // Hand derivation for "VellumPdf" (ISO/IEC 15438 section 2.2.4.4, Table 3):
+        //   'V': direct in Alpha (the starting sub-mode) -> value 21.
+        //   'e': not in Alpha, next char 'l' isn't either -> a Lower run is starting, so Latch(27)
+        //        [ll], current=Lower; Lower value of 'e' = 4.
+        //   'l','l','u','m': direct in Lower -> values 11, 11, 20, 12.
+        //   'P': not in Lower, but the following 'd' *is* representable in Lower -> a one-character
+        //        deviation, so Shift rather than Latch. In Lower, codeword 27 is Alpha-Shift (this
+        //        is the exact case the bug report describes) -> emit 27 [as], current stays Lower;
+        //        Alpha value of 'P' = 15.
+        //   'd','f': direct in Lower (current sub-mode was never latched away) -> values 3, 5.
+        //   values = [21,27,4,11,11,20,12,27,15,3,5] (11 values, odd) -> pad with 29.
+        //   values = [21,27,4,11,11,20,12,27,15,3,5,29].
+        //   pairs: (21,27)=657 (4,11)=131 (11,20)=350 (12,27)=387 (15,3)=453 (5,29)=179.
+        var codewords = Pdf417HighLevelEncoder.EncodeText("VellumPdf");
+        Assert.Equal([657, 131, 350, 387, 453, 179], codewords);
+    }
+
+    [Fact]
     public void EncodeText_emptyContent_producesNoCodewords() =>
         Assert.Empty(Pdf417HighLevelEncoder.EncodeText(string.Empty));
 

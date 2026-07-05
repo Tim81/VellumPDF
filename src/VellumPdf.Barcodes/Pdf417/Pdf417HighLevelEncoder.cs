@@ -146,6 +146,9 @@ internal static class Pdf417HighLevelEncoder
     private const int SwitchPl = 25;
     private const int SwitchAsOrPsOrAl = 29;
 
+    /// <summary>Alias for <see cref="SwitchLl"/> (value 27) used only when emitted from the Lower sub-mode, where it means Alpha-Shift rather than Lower-Latch — kept as a distinct name at call sites so the two meanings of the same codeword value are never confused again.</summary>
+    private const int SwitchAsFromLower = SwitchLl;
+
     private static readonly Dictionary<char, int> AlphaValues = BuildLetterMap('A', ' ');
     private static readonly Dictionary<char, int> LowerValues = BuildLetterMap('a', ' ');
 
@@ -310,7 +313,7 @@ internal static class Pdf417HighLevelEncoder
             case (TextSubmode.Lower, TextSubmode.Alpha):
                 if (isolated)
                 {
-                    values.Add(SwitchAsOrPsOrAl); // Alpha-Shift
+                    values.Add(SwitchAsFromLower); // Alpha-Shift (value 27 from Lower, not 29 — 29 from Lower is Punctuation-Shift)
                 }
                 else
                 {

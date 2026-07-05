@@ -55,11 +55,21 @@ internal static class QrMatrixBuilder
 
     /// <summary>
     /// Places <paramref name="codewords"/> into the encoding region via the two-column zig-zag
-    /// scan (§7.7.3): columns from right to left, alternating upward and downward, skipping every
-    /// function module. Used by both QR (which has a vertical timing column, at
-    /// <paramref name="skipColumn"/> = 6, to route around) and Micro QR (no such column, so
-    /// <paramref name="skipColumn"/> is <c>null</c> — its single timing column already sits at the
-    /// left edge, outside the scan's leftmost pair).
+    /// scan (§7.7.3): columns from right to left, alternating upward and downward starting upward
+    /// at the rightmost pair, skipping every function module. Used by both QR (which has a
+    /// vertical timing column, at <paramref name="skipColumn"/> = 6, to route around) and Micro QR
+    /// (no such column, so <paramref name="skipColumn"/> is <c>null</c> — its single timing column
+    /// already sits at the left edge, outside the scan's leftmost pair).
+    ///
+    /// <para>
+    /// The up/down alternation is tracked by a plain per-pair counter rather than derived from the
+    /// column index itself: a column-index-based shortcut (<c>((x + 1) &amp; 2) == 0</c>) only
+    /// alternates correctly starting from the rightmost pair when <c>size mod 4 == 1</c>, which
+    /// every full-size QR side length happens to satisfy (17 + 4 × version) but only half of Micro
+    /// QR's four side lengths do (13 and 17, not 11 or 15) — so that shortcut silently reversed the
+    /// scan direction for M1 and M3, corrupting every codeword from the second column-pair onwards
+    /// even though each individual module was still written to a validly-reserved cell.
+    /// </para>
     /// </summary>
     /// <param name="matrix">The symbol being built.</param>
     /// <param name="isFunction">The function-module map from <see cref="BuildFunctionPatterns"/> (or its Micro QR equivalent).</param>
@@ -67,8 +77,10 @@ internal static class QrMatrixBuilder
     /// <param name="codewords">The final interleaved codeword sequence.</param>
     /// <param name="skipColumn">The function-pattern column to route around (6 for QR; <c>null</c> for Micro QR).</param>
     /// <param name="halfWidthCodewordIndex">
-    /// The index, if any, of a codeword that contributes only its low 4 bits (Micro QR versions
-    /// M1 and M3's final data codeword) rather than the usual 8.
+    /// The index, if any, of a codeword that contributes only its high 4 bits (Micro QR versions
+    /// M1 and M3's final data codeword) rather than the usual 8. The 4 real bits live in the high
+    /// nibble because that is how <see cref="QrBitStreamBuilder.Finish"/> leaves them (byte-aligned,
+    /// matching how Reed-Solomon treated the codeword) rather than shifted down to a compact value.
     /// </param>
     internal static void PlaceData(BarcodeMatrix matrix, bool[,] isFunction, int size, ReadOnlySpan<byte> codewords, int? skipColumn = 6, int? halfWidthCodewordIndex = null)
     {
@@ -76,16 +88,17 @@ internal static class QrMatrixBuilder
         for (var i = 0; i < codewords.Length; i++)
         {
             var width = i == halfWidthCodewordIndex ? 4 : 8;
-            for (var b = width - 1; b >= 0; b--)
+            for (var b = 7; b >= 8 - width; b--)
                 bits.Add(((codewords[i] >> b) & 1) != 0);
         }
 
         var bitIndex = 0;
-        for (var x = size - 1; x >= 1; x -= 2)
+        var pairIndex = 0;
+        for (var x = size - 1; x >= 1; x -= 2, pairIndex++)
         {
             if (x == skipColumn) x--;
 
-            var upward = ((x + 1) & 2) == 0;
+            var upward = pairIndex % 2 == 0;
             for (var vert = 0; vert < size; vert++)
             {
                 var y = upward ? size - 1 - vert : vert;

@@ -116,7 +116,13 @@ internal static class QrBitStreamBuilder
     /// <param name="terminatorBits">The full (unshortened) terminator width.</param>
     /// <param name="lastCodewordIsHalfWidth">
     /// When <c>true</c> (Micro QR versions M1 and M3), the final codeword is 4 bits wide and padded
-    /// with <c>0000</c> rather than an alternating pad codeword.
+    /// with <c>0000</c> rather than an alternating pad codeword. The returned byte keeps those 4
+    /// bits in their natural, byte-aligned position (the high nibble, as <see cref="BitWriter.ToArray"/>
+    /// already leaves them) rather than shifting them down to a compact 0-15 value: Reed-Solomon
+    /// treats every codeword as a GF(256) element by its raw byte value, and a decoder reconstructs
+    /// this half codeword the same byte-aligned way (4 real bits, then 4 zero bits), so shifting it
+    /// here would feed error-correction generation a different number to the one a decoder checks
+    /// against, corrupting the codeword's syndrome even though every module is drawn "correctly".
     /// </param>
     /// <exception cref="FormatException">The content already exceeds the symbol's data capacity before the terminator is even added.</exception>
     internal static byte[] Finish(BitWriter writer, int dataCodewordCount, int terminatorBits, bool lastCodewordIsHalfWidth)
@@ -151,7 +157,7 @@ internal static class QrBitStreamBuilder
         var buffer = writer.ToArray();
         var result = new byte[dataCodewordCount];
         Array.Copy(buffer, result, fullByteCodewordCount);
-        if (lastCodewordIsHalfWidth) result[dataCodewordCount - 1] = (byte)(buffer[fullByteCodewordCount] >> 4);
+        if (lastCodewordIsHalfWidth) result[dataCodewordCount - 1] = buffer[fullByteCodewordCount];
         return result;
     }
 }
