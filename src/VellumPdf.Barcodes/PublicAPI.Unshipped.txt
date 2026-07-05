@@ -1,0 +1,74 @@
+#nullable enable
+VellumPdf.Barcodes.Barcode
+VellumPdf.Barcodes.Barcode.Alignment.get -> VellumPdf.Layout.Core.HorizontalAlignment
+VellumPdf.Barcodes.Barcode.Alignment.init -> void
+VellumPdf.Barcodes.Barcode.AltText.get -> string?
+VellumPdf.Barcodes.Barcode.AltText.init -> void
+VellumPdf.Barcodes.Barcode.Background.get -> VellumPdf.Layout.Core.ColorRgb?
+VellumPdf.Barcodes.Barcode.Background.init -> void
+VellumPdf.Barcodes.Barcode.Decorative.get -> bool
+VellumPdf.Barcodes.Barcode.Decorative.init -> void
+VellumPdf.Barcodes.Barcode.Foreground.get -> VellumPdf.Layout.Core.ColorRgb
+VellumPdf.Barcodes.Barcode.Foreground.init -> void
+VellumPdf.Barcodes.Barcode.IncludeQuietZone.get -> bool
+VellumPdf.Barcodes.Barcode.IncludeQuietZone.init -> void
+VellumPdf.Barcodes.Barcode.Margins.get -> VellumPdf.Layout.Core.EdgeInsets
+VellumPdf.Barcodes.Barcode.Margins.init -> void
+VellumPdf.Barcodes.Barcode.Measure() -> VellumPdf.Barcodes.BarcodeSize
+VellumPdf.Barcodes.Barcode.ModuleSize.get -> double?
+VellumPdf.Barcodes.Barcode.ModuleSize.init -> void
+VellumPdf.Barcodes.Barcode.TargetWidth.get -> double?
+VellumPdf.Barcodes.Barcode.TargetWidth.init -> void
+VellumPdf.Barcodes.Barcode1D
+VellumPdf.Barcodes.Barcode1D.BarHeight.get -> double
+VellumPdf.Barcodes.Barcode1D.BarHeight.init -> void
+VellumPdf.Barcodes.Barcode1D.ShowText.get -> bool
+VellumPdf.Barcodes.Barcode1D.ShowText.init -> void
+VellumPdf.Barcodes.Barcode1D.TextFont.get -> VellumPdf.Fonts.Standard14
+VellumPdf.Barcodes.Barcode1D.TextFont.init -> void
+VellumPdf.Barcodes.Barcode1D.TextSize.get -> double
+VellumPdf.Barcodes.Barcode1D.TextSize.init -> void
+VellumPdf.Barcodes.BarcodeMatrix
+VellumPdf.Barcodes.BarcodeMatrix.Height.get -> int
+VellumPdf.Barcodes.BarcodeMatrix.IsDark(int x, int y) -> bool
+VellumPdf.Barcodes.BarcodeMatrix.Width.get -> int
+VellumPdf.Barcodes.BarcodeSize
+VellumPdf.Barcodes.BarcodeSize.BarcodeSize() -> void
+VellumPdf.Barcodes.BarcodeSize.BarcodeSize(double Width, double Height) -> void
+VellumPdf.Barcodes.BarcodeSize.Deconstruct(out double Width, out double Height) -> void
+VellumPdf.Barcodes.BarcodeSize.Equals(VellumPdf.Barcodes.BarcodeSize other) -> bool
+VellumPdf.Barcodes.BarcodeSize.Height.get -> double
+VellumPdf.Barcodes.BarcodeSize.Height.init -> void
+VellumPdf.Barcodes.BarcodeSize.Width.get -> double
+VellumPdf.Barcodes.BarcodeSize.Width.init -> void
+VellumPdf.Barcodes.Code128Barcode
+VellumPdf.Barcodes.Code128Barcode.Code128Barcode(string! content) -> void
+VellumPdf.Barcodes.Code128Barcode.Content.get -> string!
+VellumPdf.Barcodes.Code128Barcode.Gs1.get -> bool
+VellumPdf.Barcodes.Code128Barcode.Gs1.init -> void
+VellumPdf.Barcodes.EanBarcode
+VellumPdf.Barcodes.EanBarcode.AddOn.get -> string?
+VellumPdf.Barcodes.EanBarcode.AddOn.init -> void
+VellumPdf.Barcodes.EanBarcode.Digits.get -> string!
+VellumPdf.Barcodes.EanBarcode.EanBarcode(VellumPdf.Barcodes.EanSymbology symbology, string! digits) -> void
+VellumPdf.Barcodes.EanBarcode.Symbology.get -> VellumPdf.Barcodes.EanSymbology
+VellumPdf.Barcodes.EanSymbology
+VellumPdf.Barcodes.EanSymbology.Ean13 = 0 -> VellumPdf.Barcodes.EanSymbology
+VellumPdf.Barcodes.EanSymbology.Ean8 = 1 -> VellumPdf.Barcodes.EanSymbology
+VellumPdf.Barcodes.EanSymbology.UpcA = 2 -> VellumPdf.Barcodes.EanSymbology
+VellumPdf.Barcodes.Itf14Barcode
+VellumPdf.Barcodes.Itf14Barcode.BearerBars.get -> VellumPdf.Barcodes.ItfBearerBarStyle
+VellumPdf.Barcodes.Itf14Barcode.BearerBars.init -> void
+VellumPdf.Barcodes.Itf14Barcode.Digits.get -> string!
+VellumPdf.Barcodes.Itf14Barcode.Itf14Barcode(string! digits) -> void
+VellumPdf.Barcodes.Itf14Barcode.WideNarrowRatio.get -> double
+VellumPdf.Barcodes.Itf14Barcode.WideNarrowRatio.init -> void
+VellumPdf.Barcodes.ItfBearerBarStyle
+VellumPdf.Barcodes.ItfBearerBarStyle.Frame = 0 -> VellumPdf.Barcodes.ItfBearerBarStyle
+VellumPdf.Barcodes.ItfBearerBarStyle.Horizontal = 1 -> VellumPdf.Barcodes.ItfBearerBarStyle
+VellumPdf.Barcodes.ItfBearerBarStyle.None = 2 -> VellumPdf.Barcodes.ItfBearerBarStyle
+override VellumPdf.Barcodes.BarcodeSize.GetHashCode() -> int
+static VellumPdf.Barcodes.BarcodeSize.operator !=(VellumPdf.Barcodes.BarcodeSize left, VellumPdf.Barcodes.BarcodeSize right) -> bool
+static VellumPdf.Barcodes.BarcodeSize.operator ==(VellumPdf.Barcodes.BarcodeSize left, VellumPdf.Barcodes.BarcodeSize right) -> bool
+~override VellumPdf.Barcodes.BarcodeSize.Equals(object obj) -> bool
+~override VellumPdf.Barcodes.BarcodeSize.ToString() -> string
