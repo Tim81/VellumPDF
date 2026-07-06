@@ -27,17 +27,21 @@ public sealed class DataMatrixBarcode : Barcode
 
     /// <summary>Creates a Data Matrix symbol from text, compacted automatically across ASCII, C40, Text and Base 256.</summary>
     /// <param name="content">The text to encode. Must be representable in ISO/IEC 8859-1 (Latin-1).</param>
+    /// <exception cref="ArgumentException"><paramref name="content"/> is empty.</exception>
     public DataMatrixBarcode(string content)
     {
-        ArgumentNullException.ThrowIfNull(content);
+        ArgumentException.ThrowIfNullOrEmpty(content);
         Text = content;
     }
 
     /// <summary>Creates a Data Matrix symbol carrying raw bytes verbatim in Base 256 mode.</summary>
     /// <param name="content">The bytes to encode.</param>
+    /// <exception cref="ArgumentException"><paramref name="content"/> is empty.</exception>
     public DataMatrixBarcode(byte[] content)
     {
         ArgumentNullException.ThrowIfNull(content);
+        if (content.Length == 0)
+            throw new ArgumentException("Data Matrix content must be non-empty.", nameof(content));
         Bytes = content;
     }
 

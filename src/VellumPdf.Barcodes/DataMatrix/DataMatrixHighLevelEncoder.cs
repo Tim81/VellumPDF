@@ -1,6 +1,8 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
+using System.Diagnostics;
+
 namespace VellumPdf.Barcodes.DataMatrix;
 
 /// <summary>
@@ -159,6 +161,12 @@ internal static class DataMatrixHighLevelEncoder
 
         var values = new List<int>((data.Length * 2 / 3) + 2);
         foreach (var b in data) DataMatrixTables.AppendValues(values, b, isC40);
+
+        // The remainder-1 branch below assumes one value per source byte, so the sole leftover
+        // value maps to data[^1]. Only the segmenter's current admission rule (digit/space/
+        // matching-case-letter) guarantees that; a future change admitting shifted characters
+        // would break it silently, so fail loudly here instead.
+        Debug.Assert(values.Count == data.Length, "C40/Text run must contain only single-value basic-set characters");
 
         var remainder = values.Count % 3;
         if (remainder == 2) values.Add(0); // one padding Shift1 completes the final triple

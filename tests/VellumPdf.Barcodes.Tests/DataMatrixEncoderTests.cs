@@ -99,6 +99,18 @@ public sealed class DataMatrixEncoderTests
     }
 
     [Fact]
+    public void EncodeText_c40ElevenUpper_remainder2_matchesHandDerivedCodewords()
+    {
+        // 11 letters: value count 11, remainder 2 (one value short of a triple). A single
+        // Shift1 pad (value 0) completes the final triple (J, K, Shift1); unlike the remainder-1
+        // case above, the padded triple packs cleanly and a plain unlatch follows with no
+        // leftover ASCII byte. Basic-set values: 14 + (letter - 'A'), so J = 23 and K = 24;
+        // (23, 24, 0) packs to 23*1600 + 24*40 + 0 + 1 = 37761 = 147*256 + 129.
+        var content = DataMatrixHighLevelEncoder.EncodeText("ABCDEFGHIJK", gs1: false);
+        Assert.Equal([230, 89, 233, 109, 36, 128, 95, 147, 129, 254], content);
+    }
+
+    [Fact]
     public void EncodeText_longLowercaseRun_selectsText()
     {
         var content = DataMatrixHighLevelEncoder.EncodeText("abcdefghi", gs1: false);
@@ -111,6 +123,37 @@ public sealed class DataMatrixEncoderTests
     {
         var content = DataMatrixHighLevelEncoder.EncodeText("abcdefghi", gs1: false);
         Assert.Equal([239, 89, 233, 109, 36, 128, 95, 254], content);
+    }
+
+    [Fact]
+    public void EncodeText_padCodeword_atRandomizerR125_equals254NotZero()
+    {
+        // ISO/IEC 16022:2024 §5.2.1's pad randomizer: at absolute data-codeword position P,
+        // R = ((149*P) mod 253) + 1, and the pad codeword is 129 + R (minus 254 if that exceeds
+        // 254). At P = 28, R = 125 and 129 + 125 = 254 exactly -- the one value in range where
+        // a naive "mod 254" would wrap this to 0 instead of keeping the literal 254. 24
+        // characters, alternating upper/lower case so C40/Text compaction never engages (every
+        // run is too short), land in the 22x22 symbol (30 data codewords): 0-based index 27 is
+        // data-codeword position 28.
+        var content = DataMatrixHighLevelEncoder.EncodeText("AaAaAaAaAaAaAaAaAaAaAaAa", gs1: false);
+        Assert.Equal(24, content.Count);
+
+        var size = DataMatrixSymbolSizes.Resolve(content.Count, DataMatrixShape.Automatic);
+        Assert.Equal(30, size.DataCodewords);
+
+        var dataCodewords = new int[size.DataCodewords];
+        content.CopyTo(dataCodewords);
+        dataCodewords[24] = 129; // first pad: literal, unrandomized
+        for (var i = 25; i < size.DataCodewords; i++)
+        {
+            var position = i + 1;
+            var r = ((149 * position) % 253) + 1;
+            var temp = 129 + r;
+            dataCodewords[i] = temp <= 254 ? temp : temp - 254;
+        }
+
+        Assert.Equal(254, dataCodewords[27]);
+        Assert.DoesNotContain(0, dataCodewords.Skip(24));
     }
 
     [Fact]
@@ -230,5 +273,20 @@ public sealed class DataMatrixEncoderTests
     public void Constructor_nullBytes_throws()
     {
         Assert.Throws<ArgumentNullException>(() => new DataMatrixBarcode((byte[])null!));
+    }
+
+    [Fact]
+    public void Constructor_emptyText_throws()
+    {
+        // A Base 256 length field of 0 is ISO/IEC 16022 §5.2.9.1's "run to end of symbol"
+        // sentinel, not "zero bytes" -- so empty content cannot be represented and must be
+        // rejected rather than silently producing a corrupt or undecodable symbol.
+        Assert.Throws<ArgumentException>(() => new DataMatrixBarcode(""));
+    }
+
+    [Fact]
+    public void Constructor_emptyBytes_throws()
+    {
+        Assert.Throws<ArgumentException>(() => new DataMatrixBarcode(Array.Empty<byte>()));
     }
 }
