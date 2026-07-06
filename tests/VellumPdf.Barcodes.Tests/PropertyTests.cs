@@ -4,6 +4,7 @@
 using System.Linq;
 using CsCheck;
 using VellumPdf.Barcodes.Code128;
+using VellumPdf.Barcodes.Code39;
 using VellumPdf.Barcodes.EanUpc;
 using VellumPdf.Barcodes.Internal;
 using VellumPdf.Barcodes.Itf;
@@ -249,6 +250,83 @@ public sealed class PropertyTests
             }
 
             Assert.Equal(MatrixToBits(a), MatrixToBits(b));
+        });
+    }
+
+    private static readonly Gen<char> Code39StandardChar = Gen.Select(Gen.Int[0, Code39Tables.Characters.Length - 1], i => Code39Tables.Characters[i]);
+    private static readonly Gen<string> Code39StandardContent = Gen.Select(Code39StandardChar.Array[0, 20], chars => new string(chars));
+    private static readonly Gen<string> Code39AsciiContent = Gen.Select(Gen.Char[(char)0, (char)127].Array[0, 20], chars => new string(chars));
+    private static readonly Gen<string> SixDigits = Gen.Select(Gen.Char['0', '9'].Array[6], chars => new string(chars));
+
+    [Fact]
+    public void Code39_standardContent_encoding_isDeterministic()
+    {
+        Code39StandardContent.Sample(content =>
+        {
+            var a = Code39Encoder.Encode(new Code39Barcode(content));
+            var b = Code39Encoder.Encode(new Code39Barcode(content));
+            Assert.Equal(a.Runs, b.Runs);
+        });
+    }
+
+    [Fact]
+    public void Code39_standardContent_totalModules_matchesNineTimesSymbolsPlusGapsFormula()
+    {
+        Code39StandardContent.Sample(content =>
+        {
+            var encoded = Code39Encoder.Encode(new Code39Barcode(content));
+            var symbolCount = content.Length + 2; // + start + stop
+            var expectedModules = (9 * symbolCount) + (symbolCount - 1); // one narrow gap between each pair
+            Assert.Equal(expectedModules, encoded.Runs.Count);
+
+            // Every run is either the narrow-module gap (1) or a data element (1 = narrow, ratio = wide).
+            Assert.All(encoded.Runs, r => Assert.True(r == 1 || r == 2.5));
+        });
+    }
+
+    [Fact]
+    public void Code39_fullAsciiContent_anyAsciiEncodesWithoutThrowing_andIsDeterministic()
+    {
+        Code39AsciiContent.Sample(content =>
+        {
+            var a = Code39Encoder.Encode(new Code39Barcode(content) { FullAscii = true });
+            var b = Code39Encoder.Encode(new Code39Barcode(content) { FullAscii = true });
+            Assert.Equal(a.Runs, b.Runs);
+
+            // Every run is a valid module width for the default WideNarrowRatio (2.5), and the
+            // HRI always shows the original, un-expanded content.
+            Assert.All(a.Runs, r => Assert.True(r == 1 || r == 2.5));
+            Assert.Equal(content, Assert.Single(a.HriGroups).Text);
+        });
+    }
+
+    [Fact]
+    public void UpcE_sixDigits_alwaysNormalizesToAnEightDigitCanonicalForm_stableUnderRevalidation()
+    {
+        SixDigits.Sample(six =>
+        {
+            var barcode = new EanBarcode(EanSymbology.UpcE, six);
+            Assert.Equal(8, barcode.Digits.Length);
+            Assert.True(barcode.Digits[0] is '0'); // six-digit input defaults to number system 0
+
+            // Re-validating the canonical 8-digit form (number system + six digits + check digit)
+            // must reproduce itself exactly -- the check digit is stable under revalidation.
+            var again = new EanBarcode(EanSymbology.UpcE, barcode.Digits);
+            Assert.Equal(barcode.Digits, again.Digits);
+        });
+    }
+
+    [Fact]
+    public void UpcE_encoding_isDeterministic_forAnySixDigits()
+    {
+        SixDigits.Sample(six =>
+        {
+            var a = EanEncoder.Encode(new EanBarcode(EanSymbology.UpcE, six));
+            var b = EanEncoder.Encode(new EanBarcode(EanSymbology.UpcE, six));
+            Assert.Equal(a.Runs, b.Runs);
+
+            // 51 modules total: 3 (start guard) + 6*7 (digits) + 6 (special end guard).
+            Assert.Equal(51, a.Runs.Sum());
         });
     }
 

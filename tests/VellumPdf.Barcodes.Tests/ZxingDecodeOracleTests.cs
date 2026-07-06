@@ -175,6 +175,149 @@ public sealed class ZxingDecodeOracleTests : IDisposable
         Assert.Equal("GS1", result.ContentType);
     }
 
+    // ── Code 39 ───────────────────────────────────────────────────────────
+
+    // Code 39's 9-elements-per-character overhead (versus Code 128's 11 modules per two
+    // characters) makes a long, generously-moduled symbol far wider than an A4 page; these
+    // three tests render onto an oversized custom page instead.
+    private static readonly PdfRectangle WideCode39Page = new(0, 0, 3200, 300);
+
+    [Fact]
+    public void Code39Barcode_StandardFortyThreeCharacterSet_RoundTrips()
+    {
+        // Every one of the 43 standard characters in one symbol, digit-value order.
+        const string content = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ-. $/+%";
+        var pdfPath = BuildSinglePdf(
+            (doc, canvas) => canvas.DrawBarcode(new Code39Barcode(content) { ModuleSize = 4 }, 20, 150, doc.UseFont(Standard14.Helvetica)),
+            WideCode39Page);
+
+        if (!TryDecodeSingle(pdfPath, out var result)) return;
+
+        Assert.Equal("Code39", result.Format);
+        Assert.Equal(content, result.Text);
+    }
+
+    [Fact]
+    public void Code39Barcode_CheckDigit_RoundTrips()
+    {
+        const string content = "VELLUM39";
+        var barcode = new Code39Barcode(content) { CheckDigit = true, ModuleSize = 4 };
+        var pdfPath = BuildSinglePdf(
+            (doc, canvas) => canvas.DrawBarcode(barcode, 20, 150, doc.UseFont(Standard14.Helvetica)),
+            WideCode39Page);
+
+        if (!TryDecodeSingle(pdfPath, out var result)) return;
+
+        Assert.Equal("Code39", result.Format);
+        // zxing-cpp does not validate/strip the mod-43 check character by default (that is a
+        // reader configuration choice per AIM USS-39) -- it decodes every symbol between the
+        // start/stop delimiters as literal text, so the trailing check character (here 'M': the
+        // values of V,E,L,L,U,M,3,9 sum to 151, and 151 mod 43 = 22 = 'M') is part of the result.
+        Assert.Equal(content + "M", result.Text);
+    }
+
+    [Fact]
+    public void Code39Barcode_FullAscii_DecodesTolerantly()
+    {
+        // zxing-cpp 3.0.0 does not reliably expand extended-mode Code 39 back to the original
+        // lowercase/punctuation content, so only the symbology (not the exact text) is asserted.
+        const string content = "Vellum-39 full ascii!";
+        var barcode = new Code39Barcode(content) { FullAscii = true, ModuleSize = 4 };
+        var pdfPath = BuildSinglePdf(
+            (doc, canvas) => canvas.DrawBarcode(barcode, 20, 150, doc.UseFont(Standard14.Helvetica)),
+            WideCode39Page);
+
+        if (!TryDecodeSingle(pdfPath, out var result)) return;
+
+        Assert.True(result.Format is "Code39" or "Code39Ext", $"Unexpected format '{result.Format}'.");
+    }
+
+    // ── UPC-E ─────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void EanBarcode_UpcE_RoundTrips()
+    {
+        // "654321" (number system 0) expands to UPC-A "065100004327".
+        var barcode = new EanBarcode(EanSymbology.UpcE, "654321");
+        var pdfPath = BuildSinglePdf((doc, canvas) =>
+            canvas.DrawBarcode(barcode, 50, 500, doc.UseFont(Standard14.Helvetica)));
+
+        if (!TryDecodeSingle(pdfPath, out var result)) return;
+
+        Assert.Equal("UPCE", result.Format);
+        Assert.Equal("0065100004327", result.Text);
+    }
+
+    [Fact]
+    public void EanBarcode_UpcE_LastDigitFiveToNine_RoundTrips()
+    {
+        // Regression coverage for a fixed bug: the last-digit 5-9 zero-suppression branch used
+        // to pass all 6 compressed digits as the manufacturer code, producing a wrong check
+        // digit and an unscannable symbol. "123455" (number system 0, last digit 5) expands to
+        // UPC-A "012345000058" (see EanEncoderTests for the hand-derived check-digit workup);
+        // zxing-cpp decoding it back to that exact value is the external proof the fix holds.
+        var barcode = new EanBarcode(EanSymbology.UpcE, "123455");
+        var pdfPath = BuildSinglePdf((doc, canvas) =>
+            canvas.DrawBarcode(barcode, 50, 500, doc.UseFont(Standard14.Helvetica)));
+
+        if (!TryDecodeSingle(pdfPath, out var result)) return;
+
+        Assert.Equal("UPCE", result.Format);
+        Assert.Equal("0012345000058", result.Text);
+    }
+
+    [Fact]
+    public void EanBarcode_UpcE_NumberSystemOne_RoundTrips()
+    {
+        // Number system 1 has no value-level coverage anywhere else in this suite. "1654321"
+        // (number system 1, six digits "654321") expands to UPC-A "165100004324" (the same six
+        // digits under number system 0 expand to "065100004327" -- both pairs are Wikipedia's
+        // Universal Product Code worked examples; see EanEncoderTests). zxing-cpp decoding the
+        // rendered symbol back to that exact value is the external proof number system 1 wires
+        // through correctly end-to-end.
+        var barcode = new EanBarcode(EanSymbology.UpcE, "1654321");
+        var pdfPath = BuildSinglePdf((doc, canvas) =>
+            canvas.DrawBarcode(barcode, 50, 500, doc.UseFont(Standard14.Helvetica)));
+
+        if (!TryDecodeSingle(pdfPath, out var result)) return;
+
+        Assert.Equal("UPCE", result.Format);
+        Assert.Equal("0165100004324", result.Text);
+    }
+
+    [Fact]
+    public void EanBarcode_UpcE_LastDigitThree_RoundTrips()
+    {
+        // "123433" (number system 0, last digit 3) expands to UPC-A "012300000437" (see
+        // EanEncoderTests for the hand-derived check-digit workup). Number-system-0 last digits
+        // 0-2 and 5-9 already have oracle round-trips elsewhere in this file; this closes the
+        // gap for the last-digit-3 zero-suppression branch specifically.
+        var barcode = new EanBarcode(EanSymbology.UpcE, "123433");
+        var pdfPath = BuildSinglePdf((doc, canvas) =>
+            canvas.DrawBarcode(barcode, 50, 500, doc.UseFont(Standard14.Helvetica)));
+
+        if (!TryDecodeSingle(pdfPath, out var result)) return;
+
+        Assert.Equal("UPCE", result.Format);
+        Assert.Equal("0012300000437", result.Text);
+    }
+
+    [Fact]
+    public void EanBarcode_UpcE_LastDigitFour_CheckDigitNine_RoundTrips()
+    {
+        // "567894" (number system 0, last digit 4) expands to UPC-A "056780000099", check digit
+        // 9 (see EanEncoderTests for the hand-derived check-digit workup). This doubles as
+        // coverage for a parity-table row beyond checkdigit 7/8: EanTables.UpcESystem0Parity[9].
+        var barcode = new EanBarcode(EanSymbology.UpcE, "567894");
+        var pdfPath = BuildSinglePdf((doc, canvas) =>
+            canvas.DrawBarcode(barcode, 50, 500, doc.UseFont(Standard14.Helvetica)));
+
+        if (!TryDecodeSingle(pdfPath, out var result)) return;
+
+        Assert.Equal("UPCE", result.Format);
+        Assert.Equal("0056780000099", result.Text);
+    }
+
     // ── EAN / UPC / ITF ───────────────────────────────────────────────────
 
     [Fact]
@@ -278,11 +421,11 @@ public sealed class ZxingDecodeOracleTests : IDisposable
 
     // ── Helpers ──────────────────────────────────────────────────────────
 
-    private string BuildSinglePdf(Action<PdfDocument, PdfCanvas> draw)
+    private string BuildSinglePdf(Action<PdfDocument, PdfCanvas> draw, PdfRectangle? pageSize = null)
     {
         var pdfPath = Path.Combine(_tempDir, $"{Guid.NewGuid():N}.pdf");
         using var doc = new PdfDocument();
-        var page = doc.AddPage(PageSize.A4);
+        var page = doc.AddPage(pageSize ?? PageSize.A4);
         var canvas = new PdfCanvas(page);
         draw(doc, canvas);
         canvas.Finish();

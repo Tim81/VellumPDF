@@ -51,6 +51,15 @@ VellumPdf.Barcodes.Code128Barcode.Code128Barcode(string! content) -> void
 VellumPdf.Barcodes.Code128Barcode.Content.get -> string!
 VellumPdf.Barcodes.Code128Barcode.Gs1.get -> bool
 VellumPdf.Barcodes.Code128Barcode.Gs1.init -> void
+VellumPdf.Barcodes.Code39Barcode
+VellumPdf.Barcodes.Code39Barcode.CheckDigit.get -> bool
+VellumPdf.Barcodes.Code39Barcode.CheckDigit.init -> void
+VellumPdf.Barcodes.Code39Barcode.Code39Barcode(string! content) -> void
+VellumPdf.Barcodes.Code39Barcode.Content.get -> string!
+VellumPdf.Barcodes.Code39Barcode.FullAscii.get -> bool
+VellumPdf.Barcodes.Code39Barcode.FullAscii.init -> void
+VellumPdf.Barcodes.Code39Barcode.WideNarrowRatio.get -> double
+VellumPdf.Barcodes.Code39Barcode.WideNarrowRatio.init -> void
 VellumPdf.Barcodes.DocumentBarcodeExtensions
 VellumPdf.Barcodes.EanBarcode
 VellumPdf.Barcodes.EanBarcode.AddOn.get -> string?
@@ -62,6 +71,7 @@ VellumPdf.Barcodes.EanSymbology
 VellumPdf.Barcodes.EanSymbology.Ean13 = 0 -> VellumPdf.Barcodes.EanSymbology
 VellumPdf.Barcodes.EanSymbology.Ean8 = 1 -> VellumPdf.Barcodes.EanSymbology
 VellumPdf.Barcodes.EanSymbology.UpcA = 2 -> VellumPdf.Barcodes.EanSymbology
+VellumPdf.Barcodes.EanSymbology.UpcE = 3 -> VellumPdf.Barcodes.EanSymbology
 VellumPdf.Barcodes.Itf14Barcode
 VellumPdf.Barcodes.Itf14Barcode.BearerBars.get -> VellumPdf.Barcodes.ItfBearerBarStyle
 VellumPdf.Barcodes.Itf14Barcode.BearerBars.init -> void

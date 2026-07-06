@@ -55,4 +55,23 @@ internal static class EanTables
 
     /// <summary>For each EAN-2 value-mod-4 result, the L/G parity pattern applied to the two add-on digits.</summary>
     internal static readonly string[] Ean2Parity = ["LL", "LG", "GL", "GG"];
+
+    /// <summary>
+    /// For each UPC-A check digit (index) expanded from a number-system-0 UPC-E symbol, the L/G
+    /// parity pattern applied to the symbol's 6 data digits (GS1 General Specifications, UPC-E
+    /// parity table). The number-system-1 pattern for the same check digit is this string with
+    /// every L and G swapped — see <see cref="UpcESystem1Parity"/>.
+    /// </summary>
+    internal static readonly string[] UpcESystem0Parity =
+    [
+        "GGGLLL", "GGLGLL", "GGLLGL", "GGLLLG", "GLGGLL",
+        "GLLGGL", "GLLLGG", "GLGLGL", "GLGLLG", "GLLGLG",
+    ];
+
+    /// <summary>The number-system-1 UPC-E parity table: the bitwise L/G complement of <see cref="UpcESystem0Parity"/> at every check digit.</summary>
+    internal static readonly string[] UpcESystem1Parity =
+    [
+        "LLLGGG", "LLGLGG", "LLGGLG", "LLGGGL", "LGLLGG",
+        "LGGLLG", "LGGGLL", "LGLGLG", "LGLGGL", "LGGLGL",
+    ];
 }

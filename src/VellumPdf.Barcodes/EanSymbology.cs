@@ -14,4 +14,10 @@ public enum EanSymbology
 
     /// <summary>UPC-A: 11 data digits plus a check digit; a 0-prefixed EAN-13, 95 modules.</summary>
     UpcA,
+
+    /// <summary>
+    /// UPC-E: the zero-suppressed 6-digit form of a UPC-A, valid only for number system 0 or 1.
+    /// 51 modules — the narrowest symbol in the family.
+    /// </summary>
+    UpcE,
 }
