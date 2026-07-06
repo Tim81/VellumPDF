@@ -79,6 +79,39 @@ internal static class Gs1ElementString
     private static readonly HashSet<string> WeightDimensionFamilyPrefixes =
         ["31", "32", "33", "34", "35", "36"];
 
+    // AIs that are exactly two digits long and stand alone (GS1 General Specifications, Section
+    // 3, "GS1 Application Identifiers (AI)" table; cross-checked against the GS1 Barcode Syntax
+    // Dictionary — the same table restated in machine-readable form, jointly maintained by GS1
+    // AISBL at github.com/gs1/gs1-syntax-engine, release 2026-01-27). No three- or four-digit AI
+    // shares any of these prefixes, so encountering one of these two leading digits always means
+    // a two-digit AI.
+    private static readonly HashSet<string> TwoDigitAis =
+    [
+        "00", "01", "02", "03", "10", "11", "12", "13", "15", "16", "17", "20", "21", "22", "30", "37", "90",
+        "91", "92", "93", "94", "95", "96", "97", "98", "99",
+    ];
+
+    // AIs that are exactly three digits long (same sources as TwoDigitAis above). 410-417 are
+    // also exposed via GlnThreeDigitAis for their shared fixed-length value.
+    private static readonly HashSet<string> ThreeDigitAis =
+    [
+        "235", "240", "241", "242", "243", "250", "251", "253", "254", "255",
+        "400", "401", "402", "403",
+        "410", "411", "412", "413", "414", "415", "416", "417",
+        "420", "421", "422", "423", "424", "425", "426", "427",
+        "710", "711", "712", "713", "714", "715", "716", "717",
+    ];
+
+    // Two-digit prefixes of every four-digit AI family (same sources as TwoDigitAis above): any
+    // AI beginning with one of these is four digits long, with the 3rd/4th digits selecting a
+    // family member (unit of measure, decimal-point position, sequence number, currency, ...)
+    // rather than changing the AI's length. 31-36 is the variable-measure family above (fixed
+    // 6-digit value); the rest cover monetary amounts (39), logistic/return-to addressing (43),
+    // regulated product data (70), certification and protocol (72), and the GRAI/GIAI/GSRN/
+    // Digital-Link-extension family (80, 81, 82).
+    private static readonly HashSet<string> FourDigitAiPrefixFamilies =
+        new(WeightDimensionFamilyPrefixes) { "39", "43", "70", "72", "80", "81", "82" };
+
     /// <summary>
     /// Parses a GS1 element string in either the raw-digit-stream or parenthesized-AI
     /// convention (detected from whether the first character is <c>(</c>) and normalizes it.
@@ -194,18 +227,27 @@ internal static class Gs1ElementString
     }
 
     /// <summary>
-    /// Determines how many leading digits of a raw payload form the application identifier: 4
-    /// when they match the variable-measure family, 3 when they match a GLN reference, 2
-    /// otherwise (every AI not in the predefined-length table that this package currently needs
-    /// to round-trip — batch/lot, serial, and similar — is 2 digits).
+    /// Determines how many leading digits of a raw payload form the application identifier, per
+    /// the GS1 General Specifications, Section 3 AI table (see <see cref="TwoDigitAis"/> for the
+    /// source citation). Every officially assigned AI is 2, 3, or 4 digits, and the table is
+    /// prefix-free by design — no assigned AI is a leading substring of another — so matching the
+    /// longest known prefix first resolves the boundary without ambiguity, for fixed- and
+    /// variable-length AIs alike.
     /// </summary>
+    /// <exception cref="FormatException">
+    /// The leading digits do not match any application identifier this parser recognizes.
+    /// </exception>
     private static int DetermineRawAiCodeLength(ReadOnlySpan<char> remaining)
     {
-        if (remaining.Length >= 4 && AllDigits(remaining[..4]) && TryGetFixedValueLength(new string(remaining[..4]), out _))
+        if (remaining.Length >= 4 && AllDigits(remaining[..4]) && FourDigitAiPrefixFamilies.Contains(new string(remaining[..2])))
             return 4;
-        if (remaining.Length >= 3 && AllDigits(remaining[..3]) && TryGetFixedValueLength(new string(remaining[..3]), out _))
+        if (remaining.Length >= 3 && AllDigits(remaining[..3]) && ThreeDigitAis.Contains(new string(remaining[..3])))
             return 3;
-        return 2;
+        if (remaining.Length >= 2 && AllDigits(remaining[..2]) && TwoDigitAis.Contains(new string(remaining[..2])))
+            return 2;
+
+        var previewLength = Math.Min(remaining.Length, 4);
+        throw new FormatException($"'{new string(remaining[..previewLength])}' does not match a known GS1 application identifier.");
     }
 
     private static bool TryGetFixedValueLength(string ai, out int valueLength)
@@ -230,5 +272,15 @@ internal static class Gs1ElementString
         foreach (var c in value)
             if (c is < ' ' or > '~')
                 throw new FormatException($"AI {ai} value contains a character outside the printable ASCII range: U+{(int)c:X4}.");
+
+        // Every predefined-fixed-length AI this parser recognizes has a purely numeric value in
+        // the GS1 General Specifications (SSCC, GTIN, the YYMMDD dates, the variant, the GLN
+        // references, and the weight/dimension family are all "N..." format components) — a
+        // letter smuggled into one is not merely unusual formatting, it is not GS1 data. Variable
+        // AIs (batch/lot, serial, ...) keep the printable-ASCII check above only; tightening them
+        // to GS1 CSET 82 specifically is left for a follow-up, since CSET 82 excludes a handful of
+        // printable-ASCII punctuation characters this check currently still allows.
+        if (TryGetFixedValueLength(ai, out _) && !AllDigits(value))
+            throw new FormatException($"AI {ai} requires a numeric value; found '{value}'.");
     }
 }

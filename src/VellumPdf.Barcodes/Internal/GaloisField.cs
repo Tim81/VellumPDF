@@ -58,13 +58,31 @@ internal sealed class GaloisField
         _exp = new int[order * 2];
         _log = new int[fieldSize];
 
+        // The generator is only a primitive element of GF(fieldSize) if repeated multiplication
+        // by it visits every one of the order = fieldSize - 1 non-zero elements exactly once
+        // before returning to 1. A non-primitive (or reducible) polynomial makes the cycle repeat
+        // early — an element recurs, or the walk lands on 0 — which would otherwise silently
+        // produce a broken field: some elements simply unreachable via Exp, with stale zeros left
+        // in _log for them.
+        var seen = new bool[fieldSize];
         var x = 1;
         for (var i = 0; i < order; i++)
         {
+            if (x == 0 || seen[x])
+                throw new ArgumentException(
+                    $"Polynomial 0x{primitivePolynomial:X} is not primitive over GF({fieldSize}): generator {generator}'s multiplicative cycle repeats after {i} step(s), short of the required {order}.",
+                    nameof(primitivePolynomial));
+
+            seen[x] = true;
             _exp[i] = x;
             _log[x] = i;
             x = MultiplyModPoly(x, generator, fieldSize, primitivePolynomial);
         }
+
+        if (x != 1)
+            throw new ArgumentException(
+                $"Polynomial 0x{primitivePolynomial:X} is not primitive over GF({fieldSize}): generator {generator}'s cycle does not close back to 1 after {order} steps.",
+                nameof(primitivePolynomial));
 
         for (var i = order; i < _exp.Length; i++) _exp[i] = _exp[i - order];
     }

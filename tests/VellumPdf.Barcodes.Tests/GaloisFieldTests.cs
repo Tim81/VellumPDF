@@ -177,4 +177,44 @@ public sealed class GaloisFieldTests
     {
         Assert.Throws<ArgumentOutOfRangeException>(() => new GaloisField(255, 0x11D));
     }
+
+    [Fact]
+    public void Constructor_rejectsFieldSizeBelowFour()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => new GaloisField(2, 0x7));
+    }
+
+    [Fact]
+    public void Constructor_rejectsNonPrimitivePolynomial()
+    {
+        // x^4 + x^3 + x^2 + x + 1 (0x1F) is irreducible over GF(2) but not primitive: its root's
+        // multiplicative order is 5, not 15, so the exponent cycle closes early. 0x13 (x^4 + x +
+        // 1, Gf16's actual polynomial) is primitive and must keep working.
+        Assert.Throws<ArgumentException>(() => new GaloisField(16, 0x1F));
+    }
+
+    [Theory]
+    [InlineData(4, 3)]   // Gf16
+    [InlineData(6, 3)]   // Gf64
+    [InlineData(10, 9)]  // Gf1024
+    [InlineData(12, 105)] // Gf4096
+    public void Exp_anchorValue_matchesIndependentlyComputedTable(int power, int expected)
+    {
+        var field = power switch
+        {
+            4 => GaloisField.Gf16,
+            6 => GaloisField.Gf64,
+            10 => GaloisField.Gf1024,
+            12 => GaloisField.Gf4096,
+            _ => throw new ArgumentOutOfRangeException(nameof(power)),
+        };
+
+        Assert.Equal(expected, field.Exp(power));
+    }
+
+    [Fact]
+    public void Exp_negativeExponent_wrapsToEquivalentPositiveExponent()
+    {
+        Assert.Equal(GaloisField.Gf256.Exp(254), GaloisField.Gf256.Exp(-1));
+    }
 }

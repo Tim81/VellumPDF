@@ -117,6 +117,72 @@ public sealed class ReedSolomonBinaryTests
         Assert.Throws<ArgumentNullException>(() => new ReedSolomonBinary(null!, 1));
     }
 
+    [Fact]
+    public void ComputeRemainder_gf64_matchesPinnedVector()
+    {
+        int[] data = [1, 2, 3];
+        int[] expected = [1, 62, 32, 6];
+
+        var remainder = new ReedSolomonBinary(GaloisField.Gf64, firstRoot: 1).ComputeRemainder(data, 4);
+
+        Assert.Equal(expected, remainder);
+        AssertVanishesAtGeneratorRoots(GaloisField.Gf64, firstRoot: 1, data, remainder);
+    }
+
+    [Fact]
+    public void ComputeRemainder_gf1024_matchesPinnedVector()
+    {
+        int[] data = [100, 200, 300];
+        int[] expected = [751, 1020, 1010, 296, 318];
+
+        var remainder = new ReedSolomonBinary(GaloisField.Gf1024, firstRoot: 1).ComputeRemainder(data, 5);
+
+        Assert.Equal(expected, remainder);
+        AssertVanishesAtGeneratorRoots(GaloisField.Gf1024, firstRoot: 1, data, remainder);
+    }
+
+    [Fact]
+    public void ComputeRemainder_gf4096_matchesPinnedVector()
+    {
+        int[] data = [1000, 2000, 3000];
+        int[] expected = [582, 752, 2954, 1514, 207, 3178];
+
+        var remainder = new ReedSolomonBinary(GaloisField.Gf4096, firstRoot: 1).ComputeRemainder(data, 6);
+
+        Assert.Equal(expected, remainder);
+        AssertVanishesAtGeneratorRoots(GaloisField.Gf4096, firstRoot: 1, data, remainder);
+    }
+
+    [Fact]
+    public void ComputeRemainder_gf256_singleCheckSymbol_matchesPinnedVector()
+    {
+        int[] data = [10, 20, 30];
+        int[] expected = [60];
+
+        var remainder = DataMatrix.ComputeRemainder(data, 1);
+
+        Assert.Equal(expected, remainder);
+        AssertVanishesAtGeneratorRoots(GaloisField.Gf256, firstRoot: 1, data, remainder);
+    }
+
+    [Fact]
+    public void ComputeRemainder_dataElementAtOrAboveFieldSize_throws()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => DataMatrix.ComputeRemainder([256], 4));
+    }
+
+    [Fact]
+    public void ComputeRemainder_negativeDataElement_throws()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => DataMatrix.ComputeRemainder([-1], 4));
+    }
+
+    [Fact]
+    public void ComputeRemainder_errorCorrectionCountAtOrAboveFieldSize_throws()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => DataMatrix.ComputeRemainder([1, 2, 3], 256));
+    }
+
     // A systematic Reed-Solomon codeword — data followed by the check symbols — is a multiple of
     // the generator polynomial, so it evaluates to zero at each of the generator's roots
     // alpha^(firstRoot + i). This holds regardless of how the remainder was produced.

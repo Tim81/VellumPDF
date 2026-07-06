@@ -87,4 +87,22 @@ public sealed class Gs1DigitalLinkTests
     {
         Assert.Throws<ArgumentNullException>(() => Gs1DigitalLink.Build((IReadOnlyList<Gs1Element>)null!));
     }
+
+    [Fact]
+    public void Build_fourDigitVariableAi_producesCanonicalUri()
+    {
+        // Exercises AI 8013 (GMN) end-to-end: before the AI-length fix this AI misparsed and
+        // never reached here with the right boundary.
+        var uri = Gs1DigitalLink.Build("(01)09520123456788(8013)ABC123");
+        Assert.Equal("https://id.gs1.org/01/09520123456788/8013/ABC123", uri);
+    }
+
+    [Fact]
+    public void Build_gtinPrecedesSsccInPrimaryKeyPreference()
+    {
+        // AI 01 (GTIN) appears before AI 00 (SSCC) in PrimaryKeyAisInPreferredOrder, so it leads
+        // the path even though 00 comes first in the element string.
+        var uri = Gs1DigitalLink.Build("(00)123456789012345675(01)09520123456788");
+        Assert.Equal("https://id.gs1.org/01/09520123456788/00/123456789012345675", uri);
+    }
 }

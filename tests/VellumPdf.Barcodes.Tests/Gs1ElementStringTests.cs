@@ -175,4 +175,65 @@ public sealed class Gs1ElementStringTests
     {
         Assert.Throws<FormatException>(() => Gs1ElementString.Parse("(10)ABC"));
     }
+
+    [Theory]
+    [InlineData("240ABC123", "240", "ABC123")] // ADDITIONAL ID, variable
+    [InlineData("400ORDER1", "400", "ORDER1")] // ORDER NUMBER, variable
+    [InlineData("420STOP99", "420", "STOP99")] // SHIP TO POST, variable
+    public void Parse_rawThreeDigitVariableAi_splitsAiAndValueCorrectly(string raw, string expectedAi, string expectedValue)
+    {
+        var result = Gs1ElementString.Parse(raw);
+
+        Assert.Single(result.Elements);
+        Assert.Equal(expectedAi, result.Elements[0].Ai);
+        Assert.Equal(expectedValue, result.Elements[0].Value);
+        Assert.Equal($"({expectedAi}){expectedValue}", result.Hri);
+    }
+
+    [Fact]
+    public void Parse_rawFourDigitVariableAi_splitsAiAndValueCorrectly()
+    {
+        // Before the AI-length fix, "8013ABC123" misparsed as AI "80" + value "13ABC123".
+        var result = Gs1ElementString.Parse("8013ABC123");
+
+        Assert.Single(result.Elements);
+        Assert.Equal("8013", result.Elements[0].Ai);
+        Assert.Equal("ABC123", result.Elements[0].Value);
+        Assert.Equal("(8013)ABC123", result.Hri);
+    }
+
+    [Theory]
+    [InlineData("240ABC123", "(240)ABC123")]
+    [InlineData("400ORDER1", "(400)ORDER1")]
+    [InlineData("420STOP99", "(420)STOP99")]
+    [InlineData("8013ABC123", "(8013)ABC123")]
+    public void Parse_rawAndParenthesizedForms_ofVariableThreeOrFourDigitAi_normalizeIdentically(string raw, string parenthesized)
+    {
+        var fromRaw = Gs1ElementString.Parse(raw);
+        var fromParenthesized = Gs1ElementString.Parse(parenthesized);
+
+        Assert.Equal(fromParenthesized.Hri, fromRaw.Hri);
+        Assert.Equal(fromParenthesized.Elements, fromRaw.Elements);
+    }
+
+    [Fact]
+    public void Parse_parenthesizedGtinWithLetter_throwsFormatException()
+    {
+        // AI 01 (GTIN) is a predefined-fixed-length, purely numeric value; the trailing 'A' is
+        // the 14th character, so the length check alone would not catch it.
+        Assert.Throws<FormatException>(() => Gs1ElementString.Parse("(01)1234567890123A"));
+    }
+
+    [Fact]
+    public void Parse_rawGtinWithLetter_throwsFormatException()
+    {
+        Assert.Throws<FormatException>(() => Gs1ElementString.Parse("011234567890123A"));
+    }
+
+    [Fact]
+    public void Parse_rawUnrecognizedApplicationIdentifier_throwsFormatException()
+    {
+        // "66" is not an assigned application identifier at any length.
+        Assert.Throws<FormatException>(() => Gs1ElementString.Parse("6612345"));
+    }
 }

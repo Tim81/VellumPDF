@@ -31,6 +31,11 @@ internal sealed class ReedSolomonBinary
         _firstRoot = firstRoot;
     }
 
+    // Bundles the per-instance state the generator-polynomial builder needs, so it can be a
+    // `static` lambda (no captured `this`) passed through ConcurrentDictionary's state-passing
+    // GetOrAdd overload instead of allocating a fresh capturing closure on every call.
+    private readonly record struct GeneratorState(GaloisField Field, int FirstRoot);
+
     /// <summary>
     /// Returns the monic generator polynomial of the given <paramref name="degree"/>, as field
     /// coefficients ordered from x^degree (always 1, included) down to x^0. Computed on first
@@ -41,19 +46,19 @@ internal sealed class ReedSolomonBinary
         if (degree < 1)
             throw new ArgumentOutOfRangeException(nameof(degree), degree, "Generator polynomial degree must be at least 1.");
 
-        return _generatorCache.GetOrAdd(degree, d =>
+        return _generatorCache.GetOrAdd(degree, static (d, state) =>
         {
             // Build low-to-high (coefficient of x^k at index k), starting from the constant
             // polynomial "1", multiplying in one root (x - alpha^(firstRoot + i)) at a time.
             var coefficients = new[] { 1 };
             for (var i = 0; i < d; i++)
             {
-                var root = _field.Exp(_firstRoot + i);
+                var root = state.Field.Exp(state.FirstRoot + i);
                 var next = new int[coefficients.Length + 1];
                 for (var k = 0; k < next.Length; k++)
                 {
                     var shifted = k >= 1 && k - 1 < coefficients.Length ? coefficients[k - 1] : 0;
-                    var scaled = k < coefficients.Length ? _field.Multiply(coefficients[k], root) : 0;
+                    var scaled = k < coefficients.Length ? state.Field.Multiply(coefficients[k], root) : 0;
                     next[k] = shifted ^ scaled;
                 }
 
@@ -63,7 +68,7 @@ internal sealed class ReedSolomonBinary
             // Reverse to high-to-low (index 0 = x^degree, always 1; index degree = x^0).
             Array.Reverse(coefficients);
             return coefficients;
-        });
+        }, new GeneratorState(_field, _firstRoot));
     }
 
     /// <summary>
@@ -73,10 +78,23 @@ internal sealed class ReedSolomonBinary
     /// linear-feedback shift register (one pass over the data, no explicit polynomial
     /// multiplication).
     /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="errorCorrectionCount"/> is less than 1 or at least the field size (the
+    /// generator polynomial's roots would wrap around and repeat), or an element of
+    /// <paramref name="data"/> is outside <c>[0, field.Size)</c> — unlike <c>byte</c>, <c>int</c>
+    /// data has no implicit range guard, so an out-of-field value must be rejected explicitly
+    /// rather than left to fail as an opaque array-index error deep in the field arithmetic.
+    /// </exception>
     internal int[] ComputeRemainder(ReadOnlySpan<int> data, int errorCorrectionCount)
     {
         if (errorCorrectionCount < 1)
             throw new ArgumentOutOfRangeException(nameof(errorCorrectionCount), errorCorrectionCount, "Error-correction count must be at least 1.");
+        if (errorCorrectionCount >= _field.Size)
+            throw new ArgumentOutOfRangeException(nameof(errorCorrectionCount), errorCorrectionCount, $"Error-correction count must be less than the field size ({_field.Size}); the generator polynomial's roots would wrap around and repeat otherwise.");
+
+        foreach (var value in data)
+            if (value < 0 || value >= _field.Size)
+                throw new ArgumentOutOfRangeException(nameof(data), value, $"Each data element must be in [0, {_field.Size}) for this field.");
 
         var generator = GetGeneratorPolynomial(errorCorrectionCount);
         var remainder = new int[errorCorrectionCount];

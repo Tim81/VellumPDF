@@ -5,6 +5,7 @@ using System.Linq;
 using CsCheck;
 using VellumPdf.Barcodes.Code128;
 using VellumPdf.Barcodes.EanUpc;
+using VellumPdf.Barcodes.Internal;
 using VellumPdf.Barcodes.Itf;
 using VellumPdf.Barcodes.Pdf417;
 
@@ -102,6 +103,54 @@ public sealed class PropertyTests
             var a = Itf14Encoder.Encode(new Itf14Barcode(data));
             var b = Itf14Encoder.Encode(new Itf14Barcode(data));
             Assert.Equal(a.Runs, b.Runs);
+        });
+    }
+
+    public static TheoryData<string> BinaryFieldNames => new() { "Gf16", "Gf64", "Gf256", "Gf1024", "Gf4096" };
+
+    private static GaloisField ResolveBinaryField(string name) => name switch
+    {
+        "Gf16" => GaloisField.Gf16,
+        "Gf64" => GaloisField.Gf64,
+        "Gf256" => GaloisField.Gf256,
+        "Gf1024" => GaloisField.Gf1024,
+        "Gf4096" => GaloisField.Gf4096,
+        _ => throw new ArgumentOutOfRangeException(nameof(name), name, "Unknown field."),
+    };
+
+    // A systematic Reed-Solomon codeword (data followed by its check symbols) is always a
+    // multiple of the generator polynomial, so it must evaluate to zero at every one of the
+    // generator's roots — regardless of field, first root, data, or error-correction count. This
+    // is the same defining property ReedSolomonBinaryTests' pinned vectors are cross-checked
+    // against, exercised here over random data and error-correction counts for each of the five
+    // field sizes this package uses.
+    [Theory]
+    [MemberData(nameof(BinaryFieldNames))]
+    public void ReedSolomonBinary_anyDataAndErrorCorrectionCount_codewordVanishesAtGeneratorRoots(string fieldName)
+    {
+        var field = ResolveBinaryField(fieldName);
+        const int firstRoot = 1;
+        var reedSolomon = new ReedSolomonBinary(field, firstRoot);
+
+        var dataGen = Gen.Int[0, field.Size - 1].Array[1, 20];
+        var errorCorrectionCountGen = Gen.Int[1, field.Size - 2]; // [1, Size - 1)
+
+        Gen.Select(dataGen, errorCorrectionCountGen).Sample((data, errorCorrectionCount) =>
+        {
+            var remainder = reedSolomon.ComputeRemainder(data, errorCorrectionCount);
+
+            var codeword = new int[data.Length + remainder.Length];
+            data.CopyTo(codeword, 0);
+            remainder.CopyTo(codeword, data.Length);
+
+            for (var i = 0; i < remainder.Length; i++)
+            {
+                var root = field.Exp(firstRoot + i);
+                var acc = 0;
+                foreach (var coefficient in codeword)
+                    acc = field.Multiply(acc, root) ^ coefficient;
+                Assert.Equal(0, acc);
+            }
         });
     }
 

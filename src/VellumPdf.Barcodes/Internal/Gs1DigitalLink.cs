@@ -35,10 +35,20 @@ internal static class Gs1DigitalLink
     }
 
     /// <summary>Builds the canonical Digital Link URI from already-parsed (AI, value) pairs.</summary>
-    /// <exception cref="FormatException">No element in <paramref name="elements"/> is a primary identification key.</exception>
+    /// <exception cref="FormatException">
+    /// No element in <paramref name="elements"/> is a primary identification key, or an
+    /// element's value contains a character outside the printable ASCII range.
+    /// </exception>
     internal static string Build(IReadOnlyList<Gs1Element> elements)
     {
         ArgumentNullException.ThrowIfNull(elements);
+
+        // Unlike the string overload above, callers can hand this one Gs1Element values that
+        // never passed through Gs1ElementString's own validation — a lone UTF-16 surrogate half,
+        // say, which Encoding.UTF8.GetBytes below would otherwise silently replace with a
+        // meaningless "%3F" rather than fail. Reject that up front instead of emitting garbage.
+        foreach (var element in elements)
+            ValidatePathSafeValue(element);
 
         var primaryIndex = FindPrimaryKeyIndex(elements);
         if (primaryIndex < 0)
@@ -58,6 +68,13 @@ internal static class Gs1DigitalLink
         return builder.ToString();
     }
 
+    private static void ValidatePathSafeValue(Gs1Element element)
+    {
+        foreach (var c in element.Value)
+            if (c is < ' ' or > '~')
+                throw new FormatException($"AI {element.Ai} value contains a character outside the printable ASCII range: U+{(int)c:X4}.");
+    }
+
     private static int FindPrimaryKeyIndex(IReadOnlyList<Gs1Element> elements)
     {
         foreach (var ai in PrimaryKeyAisInPreferredOrder)
@@ -73,9 +90,11 @@ internal static class Gs1DigitalLink
     }
 
     /// <summary>
-    /// Percent-encodes a value for use as a single URI path segment: the RFC 3986 unreserved set
-    /// (letters, digits, <c>- . _ ~</c>) passes through, as do the sub-delimiters the syntax
-    /// permits unescaped in a Digital Link path value; everything else becomes <c>%HH</c>.
+    /// Percent-encodes a value for use as a single URI path segment: only the RFC 3986 unreserved
+    /// set (letters, digits, <c>- . _ ~</c>) passes through unescaped. The Digital Link URI syntax
+    /// permits some sub-delimiters unescaped too, but this encoder takes the conservative route
+    /// and percent-encodes everything else, sub-delimiters included, as <c>%HH</c> — simpler, and
+    /// never wrong for a resolver expecting the unreserved-only form.
     /// </summary>
     private static string EncodePathSegment(string value)
     {
