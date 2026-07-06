@@ -68,6 +68,81 @@ public sealed class ShowTextWinAnsiTests
         Assert.Empty(canvas.TextEncodingWarnings);
     }
 
+    // ── ShowText: full byte-sequence pin (catches a neighbouring-byte mangle) ────
+
+    [Fact]
+    public void ShowText_winAnsiOnlyContent_pinsExactByteSequence()
+    {
+        // The apostrophe follows é and 'd' follows the em dash: a Contains-only check
+        // would miss an off-by-one that corrupted a neighbour without ever emitting '?'.
+        var literal = BuildAndExtractTjLiteral(canvas => canvas.ShowText("café's—done"));
+
+        byte[] expected =
+        [
+            (byte)'c', (byte)'a', (byte)'f', 0xE9, (byte)'\'', (byte)'s',
+            0x97, (byte)'d', (byte)'o', (byte)'n', (byte)'e',
+        ];
+        Assert.Equal(expected, literal);
+        Assert.DoesNotContain((byte)'?', literal);
+    }
+
+    // ── ShowText: astral character (surrogate pair) ──────────────────────────
+
+    [Fact]
+    public void ShowText_astralSurrogatePair_emitsTwoQuestionMarksAndTwoWarnings()
+    {
+        using var doc = new PdfDocument();
+        var page = doc.AddPage();
+        var canvas = new PdfCanvas(page);
+        var font = doc.UseFont(Standard14.Helvetica);
+
+        canvas.BeginText().SetFont(font, 12).SetTextMatrix(1, 0, 0, 1, 72, 720);
+        canvas.ShowText("😀"); // U+1F600: a UTF-16 surrogate pair, both halves outside WinAnsi
+        canvas.EndText();
+        canvas.Finish();
+
+        Assert.Equal(2, canvas.TextEncodingWarnings.Count);
+        foreach (var warning in canvas.TextEncodingWarnings)
+            Assert.InRange(warning.CodePoint, 0xD800, 0xDFFF);
+
+        var ms = new MemoryStream();
+        doc.Save(ms);
+        var literal = ExtractTjLiteral(DecompressContentStream(ms.ToArray()));
+
+        byte[] expected = [0x3F, 0x3F];
+        Assert.Equal(expected, literal);
+    }
+
+    // ── ShowText: a symbolic font is set, but ShowText still WinAnsi-encodes ─────
+
+    [Fact]
+    public void ShowText_symbolFontActive_stillWinAnsiEncodesAndDoesNotThrow()
+    {
+        // ShowText has no knowledge of the active font's encoding — it always
+        // WinAnsi-encodes its argument. So with Symbol or ZapfDingbats set, ASCII input
+        // round-trips as its own bytes (never '?'), but those bytes select the WRONG
+        // glyphs under the font's built-in symbolic encoding. TextEncodingWarnings is
+        // therefore only meaningful for the 12 non-symbolic Standard-14 faces.
+        using var doc = new PdfDocument();
+        var page = doc.AddPage();
+        var canvas = new PdfCanvas(page);
+        var font = doc.UseFont(Standard14.Symbol);
+
+        canvas.BeginText().SetFont(font, 12).SetTextMatrix(1, 0, 0, 1, 72, 720);
+        canvas.ShowText("abc");
+        canvas.EndText();
+        canvas.Finish();
+
+        Assert.Empty(canvas.TextEncodingWarnings);
+
+        var ms = new MemoryStream();
+        doc.Save(ms);
+        var literal = ExtractTjLiteral(DecompressContentStream(ms.ToArray()));
+
+        byte[] expected = [(byte)'a', (byte)'b', (byte)'c'];
+        Assert.Equal(expected, literal);
+    }
+
     // ── PdfFontResource.BuildDictionary: /Encoding on text fonts only ────────
 
     [Theory]

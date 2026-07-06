@@ -72,10 +72,14 @@ public sealed class Standard14MetricsTests
     }
 
     [Fact]
-    public void GetWidth_charOutsideWinAnsi_returnsZero()
+    public void GetWidth_charOutsideWinAnsi_measuresAsQuestionMarkGlyph()
     {
+        // ShowText substitutes '?' for a char outside WinAnsi, so GetWidth measures that
+        // same glyph instead of returning 0 — otherwise aligned/justified text would
+        // mis-measure lines containing such a char. Adobe Core-14 AFM (Helvetica.afm):
+        // "C 63 ; WX 556 ; N question ;".
         var w = Standard14Metrics.GetWidth(Standard14.Helvetica, '★'); // U+2605, not in WinAnsi
-        Assert.Equal(0, w);
+        Assert.Equal(556, w);
     }
 
     // ── WinAnsi-mapped widths (previously StandardEncoding widths, now corrected) ──
@@ -139,5 +143,40 @@ public sealed class Standard14MetricsTests
         // 224, so codes 0xFE (þ) and 0xFF (ÿ) read past the end and measured 0.
         Assert.True(Standard14Metrics.GetWidth(Standard14.TimesBold, 'þ') > 0);
         Assert.True(Standard14Metrics.GetWidth(Standard14.TimesBold, 'ÿ') > 0);
+    }
+
+    // ── Exact AFM widths for the three Times faces (previously only asserted > 0) ────
+
+    [Fact]
+    public void TimesBold_exactAfmWidths()
+    {
+        // Adobe Core-14 AFM (Times-Bold.afm):
+        // "N eacute ; WX 444", "N AE ; WX 1000", "N thorn ; WX 556", "N ydieresis ; WX 500".
+        Assert.Equal(444, Standard14Metrics.GetWidth(Standard14.TimesBold, 'é'));
+        Assert.Equal(1000, Standard14Metrics.GetWidth(Standard14.TimesBold, 'Æ'));
+        Assert.Equal(556, Standard14Metrics.GetWidth(Standard14.TimesBold, 'þ'));
+        Assert.Equal(500, Standard14Metrics.GetWidth(Standard14.TimesBold, 'ÿ'));
+    }
+
+    [Fact]
+    public void TimesItalic_exactAfmWidths()
+    {
+        // Adobe Core-14 AFM (Times-Italic.afm):
+        // "N eacute ; WX 444", "N AE ; WX 889", "N thorn ; WX 500", "N ydieresis ; WX 444".
+        Assert.Equal(444, Standard14Metrics.GetWidth(Standard14.TimesItalic, 'é'));
+        Assert.Equal(889, Standard14Metrics.GetWidth(Standard14.TimesItalic, 'Æ'));
+        Assert.Equal(500, Standard14Metrics.GetWidth(Standard14.TimesItalic, 'þ'));
+        Assert.Equal(444, Standard14Metrics.GetWidth(Standard14.TimesItalic, 'ÿ'));
+    }
+
+    [Fact]
+    public void TimesBoldItalic_exactAfmWidths()
+    {
+        // Adobe Core-14 AFM (Times-BoldItalic.afm):
+        // "N eacute ; WX 444", "N AE ; WX 944", "N thorn ; WX 500", "N ydieresis ; WX 444".
+        Assert.Equal(444, Standard14Metrics.GetWidth(Standard14.TimesBoldItalic, 'é'));
+        Assert.Equal(944, Standard14Metrics.GetWidth(Standard14.TimesBoldItalic, 'Æ'));
+        Assert.Equal(500, Standard14Metrics.GetWidth(Standard14.TimesBoldItalic, 'þ'));
+        Assert.Equal(444, Standard14Metrics.GetWidth(Standard14.TimesBoldItalic, 'ÿ'));
     }
 }

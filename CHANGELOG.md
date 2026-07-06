@@ -50,6 +50,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   accented Latin-1 characters, symbols, or `þ`/`ÿ` was positioned incorrectly as a result. The
   tables are now generated from the Adobe Core-14 AFM data mapped through WinAnsiEncoding, matching
   the `/Encoding /WinAnsiEncoding` fix above.
+- **AcroForm text-field and push-button appearances now render WinAnsi correctly.**
+  `AcroFormBuilder.EscapePdfString` threw for any field value or caption character above U+00FF,
+  so a `•`, en dash, em dash, ellipsis, or curly quote in a text field value or push-button
+  caption threw instead of rendering, even though the field's `/Helv` font dictionary already
+  declares `/Encoding /WinAnsiEncoding` (the fix above) and can render it. `EscapePdfString` now
+  maps that punctuation through `WinAnsiEncoding` instead of throwing, alongside the accented
+  Latin-1 characters (`é`) it already handled; a character genuinely outside WinAnsi still
+  throws, since rendering it needs an embedded font. ZapfDingbats checkbox (`(4)`) and
+  radio-button (`(l)`) appearances are unaffected — they never call `EscapePdfString`.
 
 ## [1.8.2] - 2026-07-05
 

@@ -4,12 +4,13 @@
 namespace VellumPdf.Fonts;
 
 /// <summary>
-/// WinAnsi/AFM advance widths for the 14 standard PDF fonts, codes 32–255. The Adobe Core-14
-/// Font Metrics (AFM) data (the same values published in the PDF specification, ISO 32000-2
-/// Annex D) mapped onto WinAnsiEncoding. Values are in 1/1000 of a point per unit size.
-/// Lookup is byte-keyed via <see cref="WinAnsiEncoding"/>, covering the 0x80–0x9F punctuation
-/// block (bullet, en/em dash, ellipsis, curly quotes, …) as well as 0xA0–0xFF; the five codes
-/// WinAnsi leaves undefined (0x81, 0x8D, 0x8F, 0x90, 0x9D) and glyphs outside WinAnsi map to 0.
+/// WinAnsi/AFM advance widths for the 14 standard PDF fonts, codes 32–255. The advance widths
+/// come from the Adobe Core-14 Font Metrics (AFM) files, mapped onto WinAnsiEncoding (ISO
+/// 32000-2 Annex D publishes the encoding's character set, not advance widths). Values are in
+/// 1/1000 of a point per unit size. Lookup is byte-keyed via <see cref="WinAnsiEncoding"/>,
+/// covering the 0x80–0x9F punctuation block (bullet, en/em dash, ellipsis, curly quotes, …) as
+/// well as 0xA0–0xFF; the five codes WinAnsi leaves undefined (0x81, 0x8D, 0x8F, 0x90, 0x9D)
+/// map to 0, and a glyph outside WinAnsi measures as '?' (see <see cref="GetWidth"/>).
 /// </summary>
 public static class Standard14Metrics
 {
@@ -151,14 +152,17 @@ public static class Standard14Metrics
     };
 
     /// <summary>
-    /// Returns the advance width of <paramref name="c"/> in 1/1000ths of a point,
-    /// or 0 if <paramref name="c"/> is outside WinAnsiEncoding, outside the supported range,
-    /// or <paramref name="font"/> is not a text font (Symbol, ZapfDingbats).
+    /// Returns the advance width of <paramref name="c"/> in 1/1000ths of a point. A character
+    /// outside WinAnsiEncoding measures as the '?' glyph, matching the substitution
+    /// <see cref="VellumPdf.Canvas.PdfCanvas.ShowText"/> makes when rendering it, so measured
+    /// and rendered widths agree. Returns 0 for a control character (below 0x20) or when
+    /// <paramref name="font"/> is not a text font (Symbol, ZapfDingbats).
     /// </summary>
     public static int GetWidth(Standard14 font, char c)
     {
         if (!_tables.TryGetValue(font, out var table)) return 0;
-        if (!WinAnsiEncoding.TryGetByte(c, out var b)) return 0;
+        if (!WinAnsiEncoding.TryGetByte(c, out var b))
+            b = (byte)'?'; // ShowText substitutes '?' for chars outside WinAnsi; measure that glyph
         var idx = b - 32;
         return idx >= 0 && idx < table.Length ? table[idx] : 0;
     }

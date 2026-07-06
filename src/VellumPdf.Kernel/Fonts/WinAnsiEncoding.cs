@@ -15,6 +15,13 @@ internal static class WinAnsiEncoding
     /// byte (WinAnsi agrees with Latin-1 across 0xA0–0xFF and ASCII); the WinAnsi 0x80–0x9F punctuation
     /// block (bullet, en/em dash, ellipsis, curly quotes, …), whose code points sit above U+00FF, maps
     /// to its 0x80–0x9F code. Returns false for any char WinAnsiEncoding does not cover.
+    ///
+    /// <para>
+    /// The identity branch also returns a byte for U+0080–U+009F (the C1 control range),
+    /// even though WinAnsiEncoding leaves several of those codes undefined — this keeps the
+    /// method byte-compatible with the Latin-1 encoder it replaced. It is a byte encoder, not
+    /// a strict CP1252 validator.
+    /// </para>
     /// </summary>
     public static bool TryGetByte(char c, out byte b)
     {
