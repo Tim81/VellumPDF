@@ -56,9 +56,11 @@ internal static class Code128Encoder
         foreach (var run in runs) dataModuleCount += run;
 
         // Code 128 has no digit grouping to preserve (unlike EAN/UPC), so the whole content is a
-        // single HRI line centred beneath the bars. A GS1-128 FNC1 has no printable glyph, so it
-        // is dropped from the displayed text rather than shown as its raw control character.
-        var hriLabel = barcode.Gs1 ? barcode.Content.Replace("", string.Empty) : barcode.Content;
+        // single HRI line centred beneath the bars. A plain Code 128 symbol shows its content
+        // verbatim; a GS1-128 symbol shows the parenthesized application-identifier form (GS1
+        // General Specifications, human-readable interpretation of an element string), e.g.
+        // "(01)09501101020917(17)261231".
+        var hriLabel = BuildHriLabel(barcode);
 
         return new Encoded1D
         {
@@ -67,6 +69,26 @@ internal static class Code128Encoder
             QuietZoneRight = 10,
             HriGroups = hriLabel.Length == 0 ? [] : [new HriGroup(hriLabel, HriAnchor.Below, 0, dataModuleCount)],
         };
+    }
+
+    /// <summary>
+    /// The human-readable text drawn beneath the bars. For GS1-128, that is the parenthesized
+    /// application-identifier interpretation of the content. Content the caller flagged GS1 but
+    /// that is not a well-formed element string still encodes into valid bars, so it falls back
+    /// to the raw content with its FNC1 (U+001D) separators removed rather than failing to render.
+    /// </summary>
+    private static string BuildHriLabel(Code128Barcode barcode)
+    {
+        if (!barcode.Gs1) return barcode.Content;
+
+        try
+        {
+            return Gs1ElementString.Parse(barcode.Content).Hri;
+        }
+        catch (Exception ex) when (ex is FormatException or ArgumentException)
+        {
+            return barcode.Content.Replace("", string.Empty);
+        }
     }
 
     /// <summary>
