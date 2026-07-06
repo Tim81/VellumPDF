@@ -3,6 +3,9 @@
 
 namespace VellumPdf.Barcodes.DataMatrix;
 
+// Placement and interleaving are authored from ISO/IEC 16022 Annex F and §5.3.2; zint and
+// zxing-cpp are used only as decode/cross-check oracles in this package's tests, never as source.
+
 /// <summary>
 /// The ECC 200 default symbol-character placement algorithm (ISO/IEC 16022:2024 Annex F): maps a
 /// sequence of codeword bits onto the combined data-region mapping matrix (every data region's
@@ -49,9 +52,10 @@ internal static class DataMatrixPlacement
     /// Places <paramref name="codewords"/>' bits (most significant bit first, in codeword order)
     /// onto a <paramref name="rows"/> x <paramref name="columns"/> mapping matrix, returning which
     /// cells are dark. <paramref name="rows"/> x <paramref name="columns"/> must be exactly 8
-    /// times <paramref name="codewords"/>'s length, or 8 times that length minus 2 for the four
-    /// symbol sizes with the documented 2-cell shortfall above (true of every
-    /// <see cref="DataMatrixSize"/> in this package's table).
+    /// times <paramref name="codewords"/>'s length, or 8 times that length plus 4 for the four
+    /// symbol sizes with the documented 2-cell shortfall above (two fixed-corner cells set plus
+    /// the two shortfall cells left unfilled; true of every <see cref="DataMatrixSize"/> in this
+    /// package's table).
     /// </summary>
     internal static bool[,] Place(int[] codewords, int rows, int columns)
     {

@@ -142,12 +142,16 @@ internal static class DataMatrixHighLevelEncoder
     /// back to ASCII.
     /// </summary>
     /// <remarks>
-    /// A run whose value count is not a multiple of 3 is padded with value 0 to complete the final
-    /// pair (§5.2.5.2/§5.2.6.2 permit this for the last 1-2 positions), and the run is always
-    /// followed by an explicit unlatch codeword (254). ISO/IEC 16022 allows omitting that unlatch
-    /// when the run ends up filling the symbol's data-region capacity exactly, saving one
-    /// codeword; this encoder always emits it for simplicity, which can only ever cost stepping up
-    /// to the next symbol size in that one exact-fit edge case, never an incorrect symbol.
+    /// A run's value count modulo 3 decides how it ends (ISO/IEC 16022:2024 §5.2.5.2/§5.2.6.2).
+    /// A multiple of 3: the triples pack cleanly, then the unlatch. Remainder 2 (one value short
+    /// of a triple): padded with a single Shift1 (value 0) to complete it; the decoder discards
+    /// that pad once it reaches the unlatch. Remainder 1 (two values short): a second pad would
+    /// decode as an actual character rather than filler, since Shift1 followed by a byte is the
+    /// control-code escape, not padding — so instead of padding, this packs only the complete
+    /// triples, unlatches, then ASCII-encodes the one leftover value directly. Every character in
+    /// a C40/Text run maps to exactly one basic-set value (see
+    /// <see cref="DataMatrixTables.AppendValues"/>), so that leftover value is always the run's
+    /// last source byte.
     /// </remarks>
     private static void EncodeC40OrTextRun(List<int> output, ReadOnlySpan<byte> data, bool isC40)
     {
@@ -155,9 +159,12 @@ internal static class DataMatrixHighLevelEncoder
 
         var values = new List<int>((data.Length * 2 / 3) + 2);
         foreach (var b in data) DataMatrixTables.AppendValues(values, b, isC40);
-        while (values.Count % 3 != 0) values.Add(0);
 
-        for (var i = 0; i < values.Count; i += 3)
+        var remainder = values.Count % 3;
+        if (remainder == 2) values.Add(0); // one padding Shift1 completes the final triple
+        var tripleValueCount = remainder == 1 ? values.Count - 1 : values.Count;
+
+        for (var i = 0; i < tripleValueCount; i += 3)
         {
             var packed = (values[i] * 1600) + (values[i + 1] * 40) + values[i + 2] + 1;
             output.Add(packed / 256);
@@ -165,6 +172,8 @@ internal static class DataMatrixHighLevelEncoder
         }
 
         output.Add(UnlatchCodeword);
+
+        if (remainder == 1) output.Add(data[^1] + 1); // leftover value, unlatched into plain ASCII
     }
 
     // ----- Base 256 (§5.2.9) -----

@@ -19,7 +19,7 @@ namespace VellumPdf.Barcodes.DataMatrix;
 /// <param name="ErrorCodewords">The symbol's total Reed-Solomon error-correction codewords.</param>
 /// <param name="Blocks">
 /// The number of interleaved Reed-Solomon blocks the data and error codewords split across.
-/// 1 for every size except the nine largest squares (52x52 and up) and none of the rectangles.
+/// 1 for every size except the ten largest squares (52x52 and up) and none of the rectangles.
 /// </param>
 internal readonly record struct DataMatrixSize(
     int SymbolRows,

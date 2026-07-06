@@ -248,6 +248,72 @@ public sealed class ZxingDecodeOracleTests : IDisposable
     }
 
     [Fact]
+    public void DataMatrixBarcode_Gs1TwoVariableLengthAis_DecodesAiBoundariesFromRealSeparator()
+    {
+        // AI(10) batch/lot is variable-length and not the last element, so the encoder must emit
+        // a raw 0x1D separator ahead of AI(21) serial number: the shape GS1 General
+        // Specifications requires for two variable-length AIs in sequence. DataMatrixBarcode.Gs1
+        // takes the raw digit/character stream with an embedded GS directly (mirroring
+        // Code128Barcode.Gs1; see DataMatrixBarcode's remarks), unlike QrCode's separate
+        // Gs1ElementString.Parse convenience path.
+        var content = "10ABC" + (char)0x1D + "21XYZ";
+        var pdfPath = BuildSinglePdf((_, canvas) =>
+            canvas.DrawBarcode(new DataMatrixBarcode(content) { Gs1 = true, ModuleSize = 6 }, 50, 500));
+
+        if (!TryDecodeSingle(pdfPath, out var result)) return;
+
+        Assert.Equal("DataMatrix", result.Format);
+        Assert.Equal("GS1", result.ContentType);
+        Assert.Equal(Gs1ElementString.Parse(content).Hri, result.Text);
+    }
+
+    [Fact]
+    public void DataMatrixBarcode_C40RunWithOneLeftoverValue_RoundTripsWithoutTrailingNul()
+    {
+        // Regression test for the Critical fix: a C40 run whose value count is one more than a
+        // multiple of 3 (10 upper-case letters) used to pad with two Shift1 zeros, which decoded
+        // as an extra character plus a spurious trailing NUL. zxing-cpp decoding back to exactly
+        // the 10-character content, with no trailing NUL, is the external proof the fix holds.
+        const string content = "ABCDEFGHIJ";
+        var pdfPath = BuildSinglePdf((_, canvas) =>
+            canvas.DrawBarcode(new DataMatrixBarcode(content) { ModuleSize = 6 }, 50, 500));
+
+        if (!TryDecodeSingle(pdfPath, out var result)) return;
+
+        Assert.Equal("DataMatrix", result.Format);
+        Assert.Equal(content, result.Text);
+    }
+
+    [Fact]
+    public void DataMatrixBarcode_TextRunWithOneLeftoverValue_RoundTripsWithoutTrailingNul()
+    {
+        // The Text-mode mirror of the C40 case above (10 lower-case letters).
+        const string content = "abcdefghij";
+        var pdfPath = BuildSinglePdf((_, canvas) =>
+            canvas.DrawBarcode(new DataMatrixBarcode(content) { ModuleSize = 6 }, 50, 500));
+
+        if (!TryDecodeSingle(pdfPath, out var result)) return;
+
+        Assert.Equal("DataMatrix", result.Format);
+        Assert.Equal(content, result.Text);
+    }
+
+    [Fact]
+    public void DataMatrixBarcode_AsciiWithOneHighByte_RoundTripsExactly()
+    {
+        // Too short for C40/Text compaction and mixed case besides, so this stays plain ASCII:
+        // 'é' (Latin-1 byte 233) exercises the Upper Shift escape between two ordinary bytes.
+        const string content = "aébc";
+        var pdfPath = BuildSinglePdf((_, canvas) =>
+            canvas.DrawBarcode(new DataMatrixBarcode(content) { ModuleSize = 6 }, 50, 500));
+
+        if (!TryDecodeSingle(pdfPath, out var result)) return;
+
+        Assert.Equal("DataMatrix", result.Format);
+        Assert.Equal(content, result.Text);
+    }
+
+    [Fact]
     public void DataMatrixBarcode_RectangularShape_RoundTrips()
     {
         const string content = "AB";

@@ -76,11 +76,41 @@ public sealed class DataMatrixEncoderTests
     }
 
     [Fact]
+    public void EncodeText_c40NineUpper_matchesHandDerivedCodewords()
+    {
+        // 9 letters, so the value count is an exact multiple of 3 (remainder 0): all three
+        // triples pack cleanly, then a plain unlatch. See
+        // EncodeText_c40TenUpper_oneLeftoverValueUnlatchesThenAsciiEncodesIt below for the
+        // remainder-1 case this contrasts with.
+        var content = DataMatrixHighLevelEncoder.EncodeText("ABCDEFGHI", gs1: false);
+        Assert.Equal([230, 89, 233, 109, 36, 128, 95, 254], content);
+    }
+
+    [Fact]
+    public void EncodeText_c40TenUpper_oneLeftoverValueUnlatchesThenAsciiEncodesIt()
+    {
+        // The FIX-1 case: 10 letters, so the value count is one more than a multiple of 3
+        // (remainder 1). Before the fix, this padded with two Shift1 zeros, which decoded as an
+        // extra character plus a spurious trailing NUL. The fix packs only the 3 complete
+        // triples, unlatches, then ASCII-encodes the run's last byte ('J' = 74, codeword 75)
+        // directly.
+        var content = DataMatrixHighLevelEncoder.EncodeText("ABCDEFGHIJ", gs1: false);
+        Assert.Equal([230, 89, 233, 109, 36, 128, 95, 254, 75], content);
+    }
+
+    [Fact]
     public void EncodeText_longLowercaseRun_selectsText()
     {
         var content = DataMatrixHighLevelEncoder.EncodeText("abcdefghi", gs1: false);
         Assert.Equal(239, content[0]); // Latch to Text
         Assert.Equal(254, content[^1]); // Unlatch
+    }
+
+    [Fact]
+    public void EncodeText_textNineLower_matchesHandDerivedCodewords()
+    {
+        var content = DataMatrixHighLevelEncoder.EncodeText("abcdefghi", gs1: false);
+        Assert.Equal([239, 89, 233, 109, 36, 128, 95, 254], content);
     }
 
     [Fact]
@@ -90,6 +120,32 @@ public sealed class DataMatrixEncoderTests
         var content = DataMatrixHighLevelEncoder.EncodeBytes(data, gs1: false);
         Assert.Equal(231, content[0]); // Latch to Base 256
         Assert.Equal(1 + 1 + data.Length, content.Count); // latch + length field + 3 data bytes
+    }
+
+    [Fact]
+    public void EncodeBytes_base256_matchesHandDerivedCodewords()
+    {
+        byte[] data = [0x01, 0x02, 0x03];
+        var content = DataMatrixHighLevelEncoder.EncodeBytes(data, gs1: false);
+        Assert.Equal([231, 47, 194, 89, 239], content);
+    }
+
+    [Fact]
+    public void EncodeText_upperShiftHighByte_matchesHandDerivedCodewords()
+    {
+        // U+00E9 ('é') is byte 233 in Latin-1: Upper Shift codeword 235, then 233 - 127 = 106.
+        var content = DataMatrixHighLevelEncoder.EncodeText("é", gs1: false);
+        Assert.Equal([235, 106], content);
+    }
+
+    [Fact]
+    public void EncodeText_gs1AsciiModeSeparator_matchesHandDerivedCodewords()
+    {
+        // A short run stays ASCII (well under the C40/Text compaction threshold): "99" compacts
+        // to one digit-pair codeword, 'A' is plain ASCII, the embedded GS becomes FNC1 (232)
+        // rather than its literal control-code value, and 'B' is plain ASCII.
+        var content = DataMatrixHighLevelEncoder.EncodeText("99A" + (char)0x1D + "B", gs1: true);
+        Assert.Equal([232, 229, 66, 232, 67], content);
     }
 
     [Fact]

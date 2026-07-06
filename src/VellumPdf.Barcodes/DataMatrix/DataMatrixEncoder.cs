@@ -5,6 +5,9 @@ using VellumPdf.Barcodes.Internal;
 
 namespace VellumPdf.Barcodes.DataMatrix;
 
+// Padding, interleaving and block assembly are authored from ISO/IEC 16022 §5.2.1/§5.3.2; zint
+// and zxing-cpp are used only as decode/cross-check oracles in this package's tests, never as source.
+
 /// <summary>
 /// Orchestrates full Data Matrix ECC 200 encoding: high-level compaction
 /// (<see cref="DataMatrixHighLevelEncoder"/>), symbol-size selection
@@ -48,7 +51,8 @@ internal static class DataMatrixEncoder
         {
             var position = i + 1; // 1-based absolute position in the data-codeword stream
             var randomizer = ((149 * position) % 253) + 1;
-            dataCodewords[i] = (DataMatrixHighLevelEncoder.PadCodeword + randomizer) % 254;
+            var temp = DataMatrixHighLevelEncoder.PadCodeword + randomizer;
+            dataCodewords[i] = temp <= 254 ? temp : temp - 254;
         }
     }
 
