@@ -55,6 +55,159 @@ internal static class EanEncoder
         return digits;
     }
 
+    /// <summary>
+    /// Normalizes and validates a UPC-E digit string, accepting it in any of four forms: 6
+    /// digits (the compressed data alone; number system 0 is assumed), 7 digits (a leading
+    /// number-system digit — 0 or 1 — plus the 6 compressed digits), 8 digits (as 7, plus a
+    /// trailing check digit that is validated), or an 11/12-digit UPC-A number that compresses
+    /// to a UPC-E symbol. Returns the canonical 8-digit form: number system, the 6 compressed
+    /// digits, and the check digit — all derived from the expanded UPC-A, since UPC-E carries no
+    /// check digit of its own.
+    /// </summary>
+    /// <exception cref="ArgumentException"><paramref name="digits"/> has an unsupported length or contains a non-digit character.</exception>
+    /// <exception cref="FormatException">
+    /// The number system is not 0 or 1, a supplied check digit does not match the computed one,
+    /// or an 11/12-digit input does not compress to a UPC-E symbol (no qualifying zero-suppression pattern).
+    /// </exception>
+    internal static string NormalizeAndValidateUpcE(string digits)
+    {
+        ArgumentNullException.ThrowIfNull(digits);
+
+        foreach (var c in digits)
+            if (!char.IsAsciiDigit(c))
+                throw new ArgumentException($"UPC-E digits must be 0-9 (found '{c}').", nameof(digits));
+
+        switch (digits.Length)
+        {
+            case 6:
+                return BuildUpcECanonical(0, digits);
+
+            case 7:
+                return BuildUpcECanonical(RequireUpcENumberSystem(digits[0]), digits[1..]);
+
+            case 8:
+                {
+                    var numberSystem = RequireUpcENumberSystem(digits[0]);
+                    var canonical = BuildUpcECanonical(numberSystem, digits[1..7]);
+                    var providedCheck = digits[7] - '0';
+                    var computedCheck = canonical[7] - '0';
+                    if (providedCheck != computedCheck)
+                        throw new FormatException(
+                            $"UPC-E check digit mismatch: '{digits}' carries check digit {providedCheck}, but {computedCheck} was expected.");
+                    return canonical;
+                }
+
+            case 11:
+            case 12:
+                {
+                    var upcA12 = NormalizeAndValidate(EanSymbology.UpcA, digits);
+                    var (numberSystem, six) = CompressUpcAToUpcE(upcA12);
+                    return BuildUpcECanonical(numberSystem, six);
+                }
+
+            default:
+                throw new ArgumentException(
+                    $"UPC-E requires 6, 7 or 8 digits (compressed form) or 11/12 digits (a compressible UPC-A number), but got {digits.Length}.",
+                    nameof(digits));
+        }
+    }
+
+    private static int RequireUpcENumberSystem(char c)
+    {
+        var ns = c - '0';
+        if (ns is not (0 or 1))
+            throw new FormatException($"UPC-E number system must be 0 or 1 (found {ns}).");
+        return ns;
+    }
+
+    /// <summary>Builds the canonical 8-digit UPC-E form (number system, 6 digits, check digit) by expanding to UPC-A to derive the check digit.</summary>
+    private static string BuildUpcECanonical(int numberSystem, string sixDigits)
+    {
+        var upcAData = ExpandUpcEToUpcA(numberSystem, sixDigits);
+        var check = ComputeCheckDigit(upcAData);
+        return string.Create(8, (numberSystem, sixDigits, check), static (span, state) =>
+        {
+            span[0] = (char)('0' + state.numberSystem);
+            state.sixDigits.AsSpan().CopyTo(span[1..7]);
+            span[7] = (char)('0' + state.check);
+        });
+    }
+
+    /// <summary>
+    /// Expands a UPC-E symbol's 6 compressed digits back to the 11-digit UPC-A data (number
+    /// system plus manufacturer and product codes, check digit excluded) it represents, per the
+    /// GS1 General Specifications UPC-E zero-suppression structure table: the last digit selects
+    /// which of manufacturer/product carries the suppressed zeros.
+    /// </summary>
+    private static string ExpandUpcEToUpcA(int numberSystem, string six)
+    {
+        var lastDigit = six[5] - '0';
+        string mfr, product;
+        if (lastDigit is 0 or 1 or 2)
+        {
+            mfr = $"{six[0]}{six[1]}{six[5]}00";
+            product = $"00{six[2]}{six[3]}{six[4]}";
+        }
+        else if (lastDigit == 3)
+        {
+            mfr = $"{six[..3]}00";
+            product = $"000{six[3]}{six[4]}";
+        }
+        else if (lastDigit == 4)
+        {
+            mfr = $"{six[..4]}0";
+            product = $"0000{six[4]}";
+        }
+        else
+        {
+            mfr = six[..5];
+            product = $"0000{six[5]}";
+        }
+
+        // Every branch above must produce a 5-digit manufacturer code and a 5-digit product
+        // code -- together with the single-digit number system, exactly the 11 data digits a
+        // UPC-A check digit is computed over. This guard exists because that invariant was once
+        // violated silently: the 5-9 branch passed all 6 compressed digits as the manufacturer
+        // code, producing a 12-character expansion and a wrong check digit.
+        if (mfr.Length != 5 || product.Length != 5)
+            throw new InvalidOperationException(
+                $"UPC-E expansion invariant violated: expected a 5-digit manufacturer code and " +
+                $"a 5-digit product code, got {mfr.Length} and {product.Length} digits (last digit {lastDigit}).");
+
+        return $"{numberSystem}{mfr}{product}";
+    }
+
+    /// <summary>
+    /// Compresses an 11-data-digit UPC-A number system into its UPC-E form, checking the
+    /// zero-suppression patterns from most to least specific (GS1 General Specifications UPC-E
+    /// structure table, ordered by the resulting UPC-E symbol's last digit: 0/1/2, then 3, then
+    /// 4, then 5-9).
+    /// </summary>
+    /// <exception cref="FormatException">The number system is not 0 or 1, or no zero-suppression pattern applies.</exception>
+    private static (int NumberSystem, string SixDigits) CompressUpcAToUpcE(string upcA12)
+    {
+        var numberSystem = upcA12[0] - '0';
+        if (numberSystem is not (0 or 1))
+            throw new FormatException($"UPC-E requires UPC-A number system 0 or 1 to compress (found {numberSystem}).");
+
+        var mfr = upcA12[1..6];
+        var product = upcA12[6..11];
+
+        string six;
+        if ((mfr[2..5] is "000" or "100" or "200") && product[..2] == "00")
+            six = $"{mfr[0]}{mfr[1]}{product[2]}{product[3]}{product[4]}{mfr[2]}";
+        else if (mfr[3..5] == "00" && product[..3] == "000")
+            six = $"{mfr[..3]}{product[3]}{product[4]}3";
+        else if (mfr[4] == '0' && product[..4] == "0000")
+            six = $"{mfr[..4]}{product[4]}4";
+        else if (product[..4] == "0000" && product[4] is >= '5' and <= '9')
+            six = $"{mfr}{product[4]}";
+        else
+            throw new FormatException($"'{upcA12}' does not compress to a UPC-E symbol (no qualifying zero-suppression pattern).");
+
+        return (numberSystem, six);
+    }
+
     /// <summary>Validates a 2- or 5-digit EAN add-on, returning it unchanged.</summary>
     /// <exception cref="ArgumentException">The add-on is not 2 or 5 ASCII digits.</exception>
     internal static string ValidateAddOn(string addOn)
@@ -135,6 +288,14 @@ internal static class EanEncoder
                 guardExtensions = GuardExtensionsFor95Modules();
                 quietLeft = 9;
                 quietRight = 9;
+                break;
+
+            case EanSymbology.UpcE:
+                bits = BuildUpcEBits(barcode.Digits);
+                hriGroups = BuildUpcEHriGroups(barcode.Digits);
+                guardExtensions = [new GuardExtension(0, 3), new GuardExtension(45, 6)];
+                quietLeft = 9;
+                quietRight = 7;
                 break;
 
             default:
@@ -224,6 +385,36 @@ internal static class EanEncoder
 
         return sb.ToString();
     }
+
+    /// <summary>
+    /// Builds a UPC-E symbol's 51-module bit string: the left guard (<c>101</c>), the 6 data
+    /// digits parity-coded by number system and check digit (GS1 General Specifications UPC-E
+    /// parity table), and the special 6-module right guard (<c>010101</c> — unlike every other
+    /// symbol in the family, UPC-E has no middle guard).
+    /// </summary>
+    private static string BuildUpcEBits(string digits8)
+    {
+        var numberSystem = digits8[0] - '0';
+        var six = digits8[1..7];
+        var check = digits8[7] - '0';
+        var parity = (numberSystem == 0 ? EanTables.UpcESystem0Parity : EanTables.UpcESystem1Parity)[check];
+
+        var sb = new StringBuilder(51).Append("101");
+        for (var i = 0; i < 6; i++)
+        {
+            var digit = six[i] - '0';
+            sb.Append(parity[i] == 'L' ? EanTables.L[digit] : EanTables.G[digit]);
+        }
+
+        return sb.Append("010101").ToString();
+    }
+
+    private static List<HriGroup> BuildUpcEHriGroups(string digits8) =>
+    [
+        new HriGroup(digits8[..1], HriAnchor.OutsideLeft, 0, 0),
+        new HriGroup(digits8[1..7], HriAnchor.Below, 3, 42),
+        new HriGroup(digits8[7..8], HriAnchor.OutsideRight, 50, 0),
+    ];
 
     private static List<HriGroup> BuildEan13HriGroups(string digits13) =>
     [
