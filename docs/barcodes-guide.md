@@ -194,7 +194,16 @@ doc.Add(new Code128Barcode("0100012345678905") { Gs1 = true });
 
 Content must be ASCII (code points 0-127); a non-ASCII character throws
 `ArgumentException`. Subset selection (A/B/C) and the mod-103 check character
-are computed automatically to minimise the encoded length.
+are computed automatically to minimise the encoded length. Extended Latin-1
+(code points 128-255, which Code 128 can carry only through FNC4) is not
+supported: FNC4 is handled inconsistently by scanners and is disallowed in
+GS1-128.
+
+For GS1-128, the human-readable line prints the encoded data as a single run.
+It does not yet wrap each Application Identifier in parentheses (the
+`(01)...(17)...` form GS1 specifies for human-readable text); this affects the
+printed caption only, not the scanned bars. Parenthesised HRI is tracked in the
+barcode completeness backlog.
 
 ---
 
@@ -243,8 +252,11 @@ doc.Add(new Itf14Barcode("1234567890123")
 Interleaved 2-of-5, typically used on cartons and pallets (GS1 General
 Specifications §5.3). `BearerBars` (`Frame` by default, or `Horizontal`/`None`)
 adds the thick border lines that protect the symbol from print-plate damage;
-they contribute to the barcode's measured footprint. `WideNarrowRatio`
-(default 2.5) must fall within GS1's 2.25-3.0 range.
+they contribute to the barcode's measured footprint. Their thickness is a
+proportional two modules; printing directly on corrugated board (plate or
+flexo), where GS1 calls for a fixed bearer thickness rather than a proportional
+one, is outside the scope of a general encoder. `WideNarrowRatio` (default 2.5)
+must fall within GS1's 2.25-3.0 range.
 
 ---
 
