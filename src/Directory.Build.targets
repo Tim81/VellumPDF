@@ -1,0 +1,22 @@
+<Project>
+
+  <!--
+    Per-package NuGet README.
+
+    Each shippable project may ship its own README.md next to the .csproj; a package
+    without one falls back to the shared repository-root README. The property that names
+    the README slot lives in Directory.Build.props (PackageReadmeFile); the packing lives
+    here in .targets rather than .props on purpose: the SDK's default-item glob already
+    includes a project-local README.md as a None item, and that glob is evaluated after
+    Directory.Build.props but before Directory.Build.targets. Updating the existing item
+    (rather than Include-ing a second one) avoids a duplicate-item error; the root fallback
+    lives outside the project directory, so it is not globbed and is added with Include.
+  -->
+  <ItemGroup Condition="Exists('$(MSBuildProjectDirectory)/README.md')">
+    <None Update="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+  <ItemGroup Condition="!Exists('$(MSBuildProjectDirectory)/README.md') And Exists('$(MSBuildThisFileDirectory)../README.md')">
+    <None Include="$(MSBuildThisFileDirectory)../README.md" Pack="true" PackagePath="\" Visible="false" />
+  </ItemGroup>
+
+</Project>
