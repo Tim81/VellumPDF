@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 using VellumPdf.Barcodes.Code128;
+using VellumPdf.Barcodes.Internal;
 
 namespace VellumPdf.Barcodes.Tests;
 
@@ -72,6 +73,47 @@ public sealed class Code128EncoderTests
     public void Validate_rejectsCharactersAboveAscii()
     {
         Assert.Throws<ArgumentException>(() => new Code128Barcode("café"));
+    }
+
+    [Fact]
+    public void Gs1_hriLabel_isTheParenthesizedApplicationIdentifierForm()
+    {
+        // #155: the GS1-128 caption is the parenthesized-AI human-readable form, not the raw
+        // concatenated digits. (01) is predefined-length, so its 14-digit GTIN follows directly.
+        var encoded = Code128Encoder.Encode(new Code128Barcode("0100012345678905") { Gs1 = true });
+
+        var group = Assert.Single(encoded.HriGroups);
+        Assert.Equal("(01)00012345678905", group.Text);
+    }
+
+    [Fact]
+    public void Gs1_hriLabel_showsSeparatorsBetweenVariableLengthElements()
+    {
+        // (01) GTIN then (10) batch/lot then (17) expiry: the parenthesized form makes the AI
+        // boundaries explicit even though the encoded content carries an FNC1 after the batch.
+        var content = "010001234567890510LOT99" + (char)0x1D + "17261231";
+        var encoded = Code128Encoder.Encode(new Code128Barcode(content) { Gs1 = true });
+
+        var group = Assert.Single(encoded.HriGroups);
+        Assert.Equal("(01)00012345678905(10)LOT99(17)261231", group.Text);
+    }
+
+    [Fact]
+    public void NonGs1_hriLabel_isTheContentVerbatim()
+    {
+        var encoded = Code128Encoder.Encode(new Code128Barcode("CODE128-GOLDEN"));
+        var group = Assert.Single(encoded.HriGroups);
+        Assert.Equal("CODE128-GOLDEN", group.Text);
+    }
+
+    [Fact]
+    public void Gs1_hriLabel_fallsBackToStrippedContent_whenNotAWellFormedElementString()
+    {
+        // Content flagged GS1 but not a valid element string still encodes into bars; the caption
+        // falls back to the content with FNC1 separators removed rather than throwing.
+        var encoded = Code128Encoder.Encode(new Code128Barcode("A" + (char)0x1D + "B") { Gs1 = true });
+        var group = Assert.Single(encoded.HriGroups);
+        Assert.Equal("AB", group.Text);
     }
 
     [Fact]
