@@ -112,6 +112,8 @@ public sealed class BarcodeRenderer : IRenderer
         MicroQrCode micro => $"Micro QR code: {micro.Content}",
         Pdf417Barcode { Text: { } text } => $"PDF417 barcode: {text}",
         Pdf417Barcode => "PDF417 barcode",
+        DataMatrixBarcode { Text: { } text } => $"Data Matrix barcode: {text}",
+        DataMatrixBarcode => "Data Matrix barcode",
         Code128Barcode code128 => $"Code 128 barcode: {code128.Content}",
         Code39Barcode code39 => $"Code 39 barcode: {code39.Content}",
         EanBarcode ean => $"{DescribeEanSymbology(ean.Symbology)}: {ean.Digits}",

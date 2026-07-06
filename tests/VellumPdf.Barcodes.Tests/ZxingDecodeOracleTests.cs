@@ -3,6 +3,7 @@
 
 using System.ComponentModel;
 using System.Diagnostics;
+using VellumPdf.Barcodes.DataMatrix;
 using VellumPdf.Barcodes.Internal;
 using VellumPdf.Canvas;
 using VellumPdf.Document;
@@ -188,6 +189,183 @@ public sealed class ZxingDecodeOracleTests : IDisposable
         Assert.Equal("MicroQRCode", result.Format);
         Assert.Equal(content, result.Text);
     }
+
+    // ── Data Matrix ───────────────────────────────────────────────────────
+
+    // NOTE ON COVERAGE: the placement algorithm's regular diagonal "utah" sweep is verified exact
+    // (DataMatrixPlacementTests reproduces ISO/IEC 16022's own published 8x8 bit-placement figure
+    // bit for bit), the finder/timing pattern is verified against zxing-cpp's own Data Matrix
+    // encoder, and the four Annex F *corner* patterns -- needed once a symbol grows past the
+    // smallest size -- are exercised by DataMatrixBarcode_EverySquareSize_RoundTrips,
+    // DataMatrixBarcode_MultiBlockSquareSizes_RoundTrips and
+    // DataMatrixBarcode_EveryRectangularSize_RoundTrips below, each forcing one exact symbol size
+    // and proving it decodes with zxing-cpp: all 30 sizes -- every square size from 10x10 to
+    // 144x144 and all 6 rectangular sizes -- round-trip through render, rasterize and decode.
+
+    [Fact]
+    public void DataMatrixBarcode_AsciiContent_RoundTrips()
+    {
+        const string content = "AB";
+        var pdfPath = BuildSinglePdf((_, canvas) =>
+            canvas.DrawBarcode(new DataMatrixBarcode(content) { ModuleSize = 6 }, 50, 500));
+
+        if (!TryDecodeSingle(pdfPath, out var result)) return;
+
+        Assert.Equal("DataMatrix", result.Format);
+        Assert.Equal(content, result.Text);
+    }
+
+    [Fact]
+    public void DataMatrixBarcode_BinaryBytes_RoundTrips()
+    {
+        // A single NUL byte -- Base 256's own latch and length-field codewords already use 2 of
+        // the 10x10 symbol's 3-codeword capacity, leaving room for only 1 payload byte here. NUL
+        // specifically (rather than a printable byte) is what gets zxing-cpp to report content
+        // type Binary instead of Text.
+        byte[] content = [0x00];
+        var pdfPath = BuildSinglePdf((_, canvas) =>
+            canvas.DrawBarcode(new DataMatrixBarcode(content) { ModuleSize = 6 }, 50, 500));
+
+        if (!TryDecodeSingle(pdfPath, out var result)) return;
+
+        Assert.Equal("DataMatrix", result.Format);
+        Assert.Equal("Binary", result.ContentType);
+        Assert.Equal(Convert.ToHexStringLower(content), result.Text);
+    }
+
+    [Fact]
+    public void DataMatrixBarcode_Gs1_DecodesAsGs1ContentType()
+    {
+        const string content = "01";
+        var pdfPath = BuildSinglePdf((_, canvas) =>
+            canvas.DrawBarcode(new DataMatrixBarcode(content) { Gs1 = true, ModuleSize = 6 }, 50, 500));
+
+        if (!TryDecodeSingle(pdfPath, out var result)) return;
+
+        Assert.Equal("DataMatrix", result.Format);
+        Assert.Equal("GS1", result.ContentType);
+        Assert.Equal(content, result.Text);
+    }
+
+    [Fact]
+    public void DataMatrixBarcode_RectangularShape_RoundTrips()
+    {
+        const string content = "AB";
+        var pdfPath = BuildSinglePdf((_, canvas) =>
+            canvas.DrawBarcode(new DataMatrixBarcode(content) { Shape = DataMatrixShape.Rectangular, ModuleSize = 6 }, 50, 500));
+
+        if (!TryDecodeSingle(pdfPath, out var result)) return;
+
+        Assert.Equal("DataMatrix", result.Format);
+        Assert.Equal(content, result.Text);
+    }
+
+    [Fact]
+    public void DataMatrixBarcode_WikipediaExample16x16_RoundTrips()
+    {
+        // The same "Wikipedia" worked example DataMatrixEncoderTests' known-answer test checks at
+        // the data-codeword level -- a 16x16 symbol, one of the sizes Annex F's corner patterns
+        // apply to (see DataMatrixPlacement's remarks) -- decoded end to end with a real reader.
+        const string content = "Wikipedia";
+        var pdfPath = BuildSinglePdf((_, canvas) =>
+            canvas.DrawBarcode(new DataMatrixBarcode(content) { ModuleSize = 8 }, 50, 500));
+
+        if (!TryDecodeSingle(pdfPath, out var result)) return;
+
+        Assert.Equal("DataMatrix", result.Format);
+        Assert.Equal(content, result.Text);
+    }
+
+    // Every rectangular size, and every square size up to 48x48, uses a single Reed-Solomon block
+    // (DataMatrixSize.Blocks == 1), so the interleaved codeword stream DataMatrixEncoder builds is
+    // just its data codewords followed by its error codewords, in order.
+    //
+    // 52x52 and the 9 larger squares split their codewords across 2-10 Reed-Solomon blocks.
+    // DataMatrixEncoder.InterleaveWithErrorCorrection assigns data codewords to those blocks
+    // round-robin (data codeword i belongs to block i % blocks) per ISO/IEC 16022:2024 §5.3.2/
+    // Annex A, computes each block's Reed-Solomon remainder independently, and places the data
+    // codewords back in their original sequence followed by the error codewords interleaved
+    // round-robin across blocks -- verified below, size by size, against a real decode.
+
+    /// <summary>Every single-Reed-Solomon-block square ECC 200 size's (symbol rows/columns, data-codeword capacity), ascending.</summary>
+    public static IEnumerable<object[]> SingleBlockSquareDataMatrixSizes() =>
+        DataMatrixSymbolSizes.Square.Where(size => size.Blocks == 1)
+            .Select(size => new object[] { size.SymbolRows, size.SymbolColumns, size.DataCodewords });
+
+    /// <summary>Every multi-Reed-Solomon-block square ECC 200 size (52x52 and larger) -- see the remarks above.</summary>
+    public static IEnumerable<object[]> MultiBlockSquareDataMatrixSizes() =>
+        DataMatrixSymbolSizes.Square.Where(size => size.Blocks > 1)
+            .Select(size => new object[] { size.SymbolRows, size.SymbolColumns, size.DataCodewords });
+
+    /// <summary>Every rectangular ECC 200 size's (symbol rows/columns, data-codeword capacity), ascending. All 6 use a single Reed-Solomon block.</summary>
+    public static IEnumerable<object[]> AllRectangularDataMatrixSizes() =>
+        DataMatrixSymbolSizes.Rectangular.Select(size => new object[] { size.SymbolRows, size.SymbolColumns, size.DataCodewords });
+
+    [Theory]
+    [MemberData(nameof(SingleBlockSquareDataMatrixSizes))]
+    public void DataMatrixBarcode_EverySquareSize_RoundTrips(int symbolRows, int symbolColumns, int dataCodewords)
+    {
+        AssertSizeRoundTrips(symbolRows, symbolColumns, dataCodewords, DataMatrixShape.Automatic);
+    }
+
+    [Theory]
+    [MemberData(nameof(MultiBlockSquareDataMatrixSizes))]
+    public void DataMatrixBarcode_MultiBlockSquareSizes_RoundTrips(int symbolRows, int symbolColumns, int dataCodewords)
+    {
+        AssertSizeRoundTrips(symbolRows, symbolColumns, dataCodewords, DataMatrixShape.Automatic);
+    }
+
+    [Theory]
+    [MemberData(nameof(AllRectangularDataMatrixSizes))]
+    public void DataMatrixBarcode_EveryRectangularSize_RoundTrips(int symbolRows, int symbolColumns, int dataCodewords)
+    {
+        AssertSizeRoundTrips(symbolRows, symbolColumns, dataCodewords, DataMatrixShape.Rectangular);
+    }
+
+    /// <summary>
+    /// Builds Base 256 (raw-byte) content sized to fill exactly <paramref name="dataCodewords"/>
+    /// data codewords (Base 256's own latch and 1- or 2-byte length-field overhead --
+    /// see <c>DataMatrixHighLevelEncoder.EncodeBase256Run</c> -- means the byte count itself is
+    /// <paramref name="dataCodewords"/> minus 2 or 3 codewords), forcing <see cref="DataMatrixSymbolSizes.Resolve"/>
+    /// onto the exact <paramref name="symbolRows"/> x <paramref name="symbolColumns"/> size being tested, then
+    /// renders, rasterizes and decodes it, asserting the recovered bytes match what was encoded.
+    /// </summary>
+    private void AssertSizeRoundTrips(int symbolRows, int symbolColumns, int dataCodewords, DataMatrixShape shape)
+    {
+        var content = ContentFillingCapacity(dataCodewords);
+        var barcode = new DataMatrixBarcode(content) { Shape = shape, ModuleSize = ModuleSizeFor(symbolColumns) };
+
+        // Self-check: the content really does force the exact size under test, independent of the
+        // decode oracle -- a mismatch here means the test itself is broken, not the placement code.
+        var matrix = barcode.GetMatrix();
+        Assert.Equal(symbolColumns, matrix.Width);
+        Assert.Equal(symbolRows, matrix.Height);
+
+        var pdfPath = BuildSinglePdf((_, canvas) => canvas.DrawBarcode(barcode, 30, 30));
+
+        if (!TryDecodeSingle(pdfPath, out var result)) return;
+
+        Assert.Equal("DataMatrix", result.Format);
+        Assert.Equal(Convert.ToHexStringLower(content), result.Text);
+    }
+
+    private static byte[] ContentFillingCapacity(int dataCodewords)
+    {
+        var length = dataCodewords - 2;
+        if (length >= 250) length = dataCodewords - 3; // 250+ payload bytes need Base 256's 2-codeword length field
+        var content = new byte[length];
+        for (var i = 0; i < length; i++) content[i] = (byte)i;
+        return content;
+    }
+
+    /// <summary>A module size small enough that the largest symbols (up to 144x144) still fit a normal page, large enough that 300 dpi rasterization stays reliably decodable.</summary>
+    private static int ModuleSizeFor(int symbolColumns) => symbolColumns switch
+    {
+        <= 26 => 6,
+        <= 52 => 4,
+        <= 104 => 3,
+        _ => 2,
+    };
 
     // ── PDF417 ────────────────────────────────────────────────────────────
 
