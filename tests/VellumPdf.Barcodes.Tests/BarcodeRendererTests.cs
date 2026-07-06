@@ -100,6 +100,36 @@ public sealed class BarcodeRendererTests
     }
 
     [Fact]
+    public void Tagged_gs1ElementStringQrCode_emitsParenthesizedAiAltText()
+    {
+        using var doc = new VellumPdf.Layout.Document { Tagged = true, Language = "en-US" };
+        doc.Add(new QrCode("(01)09501101020917(17)261231") { Gs1 = QrGs1Mode.ElementString });
+
+        var ms = new MemoryStream();
+        doc.Save(ms);
+        var bytes = ms.ToArray();
+
+        Assert.True(
+            ContainsUtf16BeLiteral(bytes, "QR code (GS1): (01)09501101020917(17)261231"),
+            "expected the parenthesized-AI human-readable form in the default alt text");
+    }
+
+    [Fact]
+    public void Tagged_gs1DigitalLinkQrCode_emitsUriAltText()
+    {
+        using var doc = new VellumPdf.Layout.Document { Tagged = true, Language = "en-US" };
+        doc.Add(new QrCode("(01)09501101020917(17)261231") { Gs1 = QrGs1Mode.DigitalLink });
+
+        var ms = new MemoryStream();
+        doc.Save(ms);
+        var bytes = ms.ToArray();
+
+        Assert.True(
+            ContainsUtf16BeLiteral(bytes, "QR code (GS1 Digital Link): https://id.gs1.org/01/09501101020917/17/261231"),
+            "expected the canonical Digital Link URI in the default alt text");
+    }
+
+    [Fact]
     public void Decorative_emitsArtifactNotFigure()
     {
         using var doc = new VellumPdf.Layout.Document { Tagged = true, Language = "en-US" };
@@ -162,15 +192,26 @@ public sealed class BarcodeRendererTests
     /// </summary>
     private static bool ContainsUtf16BeLiteral(byte[] pdf, string text)
     {
-        var needle = new byte[2 + (text.Length * 2)];
-        needle[0] = 0xFE;
-        needle[1] = 0xFF;
-        Encoding.BigEndianUnicode.GetBytes(text).CopyTo(needle, 2);
+        // Mirrors PdfLiteralString.WriteTo's balanced-parenthesis/backslash escaping (ISO
+        // 32000-2 §7.3.4.2): each raw '(', ')' or '\' byte -- including the low byte of a
+        // UTF-16BE code unit that happens to equal one of them, as GS1's parenthesized-AI
+        // human-readable text does -- is preceded by an extra '\' in the written stream.
+        var unescaped = new byte[2 + (text.Length * 2)];
+        unescaped[0] = 0xFE;
+        unescaped[1] = 0xFF;
+        Encoding.BigEndianUnicode.GetBytes(text).CopyTo(unescaped, 2);
 
-        for (var i = 0; i <= pdf.Length - needle.Length; i++)
+        var needle = new List<byte>(unescaped.Length);
+        foreach (var b in unescaped)
+        {
+            if (b is (byte)'(' or (byte)')' or (byte)'\\') needle.Add((byte)'\\');
+            needle.Add(b);
+        }
+
+        for (var i = 0; i <= pdf.Length - needle.Count; i++)
         {
             var match = true;
-            for (var j = 0; j < needle.Length; j++)
+            for (var j = 0; j < needle.Count; j++)
             {
                 if (pdf[i + j] != needle[j]) { match = false; break; }
             }

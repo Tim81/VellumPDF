@@ -269,6 +269,258 @@ public sealed class QrEncoderTests
         Assert.NotNull(qr.GetMatrix());
     }
 
+    // ── GS1 mode ─────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Gs1_none_matchesTheSymbolBuiltWithoutSettingGs1()
+    {
+        // Regression guard: Gs1 defaults to None, and setting it explicitly must not perturb the
+        // plain-text path at all.
+        var withDefault = new QrCode("HELLO WORLD");
+        var withExplicitNone = new QrCode("HELLO WORLD") { Gs1 = QrGs1Mode.None };
+        Assert.True(MatricesEqual(withDefault.GetMatrix(), withExplicitNone.GetMatrix()));
+    }
+
+    [Fact]
+    public void Gs1_elementString_knownPayload_encodesSuccessfully()
+    {
+        const string content = "(01)09501101020917(17)261231(10)ABC123";
+        var qr = new QrCode(content) { Gs1 = QrGs1Mode.ElementString };
+        Assert.NotNull(qr.GetMatrix());
+    }
+
+    [Fact]
+    public void Gs1_elementString_writesTheFnc1FirstPositionIndicatorBeforeTheData()
+    {
+        // AI 01 is fixed-length (14-digit GTIN), so the parsed payload needs no separator and is
+        // one pure-numeric run: FNC1(4) + mode(4) + count(10) + numeric data.
+        const string content = "(01)09501101020917";
+        var qr = new QrCode(content) { Gs1 = QrGs1Mode.ElementString, ErrorCorrection = QrErrorCorrection.M, Version = 1, Mask = 0 };
+        var matrix = qr.GetMatrix();
+
+        var (_, isFunction) = QrMatrixBuilder.BuildFunctionPatterns(1);
+        var ecInfo = QrTables.GetEcBlockInfo(1, QrErrorCorrection.M);
+        var bits = ReadDataBitsInPlacementOrder(matrix, isFunction, 21, mask: 0, totalBits: ecInfo.TotalDataCodewords * 8);
+
+        Assert.Equal(QrTables.Fnc1FirstPositionModeIndicator, ReadBitsAsInt(bits, 0, QrTables.ModeIndicatorBits));
+        Assert.Equal(QrTables.ModeIndicator(QrSegmentMode.Numeric), ReadBitsAsInt(bits, 4, QrTables.ModeIndicatorBits));
+
+        var countBits = QrTables.CharacterCountBits(1, QrSegmentMode.Numeric);
+        Assert.Equal(16, ReadBitsAsInt(bits, 8, countBits)); // "01" + the 14-digit GTIN value = 16 digits
+    }
+
+    [Fact]
+    public void Gs1_elementString_fnc1BitsCountTowardCapacity_soTheSameContentNeedsOneMoreVersionThanPlainText()
+    {
+        // AI 90 (company-internal, variable length, no fixed length) plus a 39-digit value is 41
+        // numeric characters: exactly 137 numeric data bits (13 full 3-digit groups = 130 bits,
+        // plus a trailing 2-digit group = 7 bits). Version 1-L holds 152 data bits: 14 (mode +
+        // count, no FNC1) + 137 = 151 fits; 18 (mode + count + the 4-bit FNC1 indicator) + 137 =
+        // 155 does not — so only the GS1-mode symbol needs to spill into version 2.
+        var digits = new string('1', 39);
+        var content = $"(90){digits}";
+
+        var plainPayload = Gs1ElementString.Parse(content).EncoderPayload;
+        var plain = new QrCode(plainPayload) { ErrorCorrection = QrErrorCorrection.L };
+        Assert.Equal(QrMatrixBuilder.SizeForVersion(1), plain.GetMatrix().Width);
+
+        var gs1 = new QrCode(content) { Gs1 = QrGs1Mode.ElementString, ErrorCorrection = QrErrorCorrection.L };
+        Assert.Equal(QrMatrixBuilder.SizeForVersion(2), gs1.GetMatrix().Width);
+    }
+
+    [Fact]
+    public void Gs1_digitalLink_encodesTheSameMatrixAsPlainTextOfTheCanonicalUri()
+    {
+        const string content = "(01)09501101020917(17)261231(10)ABC123";
+        var expectedUri = Gs1DigitalLink.Build(content);
+
+        var digitalLink = new QrCode(content) { Gs1 = QrGs1Mode.DigitalLink };
+        var plainUri = new QrCode(expectedUri);
+
+        // DigitalLink is "just a URL": no FNC1, no mode-indicator change, so it must produce
+        // exactly the matrix a plain-text QR of the same URI would.
+        Assert.True(MatricesEqual(digitalLink.GetMatrix(), plainUri.GetMatrix()));
+    }
+
+    [Fact]
+    public void Gs1_elementString_malformedContent_throwsFormatException() =>
+        Assert.Throws<FormatException>(() => new QrCode("not a GS1 element string") { Gs1 = QrGs1Mode.ElementString }.GetMatrix());
+
+    [Fact]
+    public void Gs1_digitalLink_malformedContent_throwsFormatException() =>
+        Assert.Throws<FormatException>(() => new QrCode("not a GS1 element string") { Gs1 = QrGs1Mode.DigitalLink }.GetMatrix());
+
+    [Fact]
+    public void Gs1_byteArrayConstructor_throwsArgumentException()
+    {
+        byte[] content = [0x30, 0x31];
+        Assert.Throws<ArgumentException>(() => new QrCode(content) { Gs1 = QrGs1Mode.ElementString }.GetMatrix());
+    }
+
+    [Fact]
+    public void Gs1_elementString_emptyContent_throwsFormatException() =>
+        // Gs1ElementString.Parse itself throws ArgumentException for empty input (a guard written
+        // against its own parameter contract), but QrCode.Gs1's documented contract -- and the
+        // barcodes guide -- promises FormatException for any malformed GS1 content. QrEncoder must
+        // intercept the empty case before it reaches Parse.
+        Assert.Throws<FormatException>(() => new QrCode("") { Gs1 = QrGs1Mode.ElementString }.GetMatrix());
+
+    [Fact]
+    public void Gs1_digitalLink_emptyContent_throwsFormatException() =>
+        Assert.Throws<FormatException>(() => new QrCode("") { Gs1 = QrGs1Mode.DigitalLink }.GetMatrix());
+
+    [Fact]
+    public void Gs1_elementString_separatorAlwaysWrittenAsByteModeCodeword_betweenNumericRuns()
+    {
+        // AI 90 (company-internal, variable length) is not the last element, so its value needs a
+        // separator before AI 91; both AI+value runs ("90111" and "91222") are five-digit strings
+        // cheap enough that Numeric mode wins over Byte for them (header 14 + data 17 bits = 31,
+        // versus Byte's header 12 + data 40 = 52), so the separator has no digit neighbour to hide
+        // inside and must appear as its own one-codeword Byte segment.
+        const string content = "(90)111(91)222";
+        var qr = new QrCode(content) { Gs1 = QrGs1Mode.ElementString, ErrorCorrection = QrErrorCorrection.M, Version = 1, Mask = 0 };
+        var matrix = qr.GetMatrix();
+
+        var (_, isFunction) = QrMatrixBuilder.BuildFunctionPatterns(1);
+        var ecInfo = QrTables.GetEcBlockInfo(1, QrErrorCorrection.M);
+        var bits = ReadDataBitsInPlacementOrder(matrix, isFunction, 21, mask: 0, totalBits: ecInfo.TotalDataCodewords * 8);
+
+        var numericCountBits = QrTables.CharacterCountBits(1, QrSegmentMode.Numeric);
+        var byteCountBits = QrTables.CharacterCountBits(1, QrSegmentMode.Byte);
+
+        // FNC1, then Numeric("90111"): a 3-digit group (10 bits) followed by a 2-digit group (7
+        // bits) = 17 data bits, regardless of the digits' values.
+        Assert.Equal(QrTables.Fnc1FirstPositionModeIndicator, ReadBitsAsInt(bits, 0, 4));
+        Assert.Equal(QrTables.ModeIndicator(QrSegmentMode.Numeric), ReadBitsAsInt(bits, 4, 4));
+        Assert.Equal(5, ReadBitsAsInt(bits, 8, numericCountBits));
+        var afterFirstNumeric = 8 + numericCountBits + 17;
+
+        // The separator: exactly one Byte-mode codeword, value 0x1D.
+        Assert.Equal(QrTables.ModeIndicator(QrSegmentMode.Byte), ReadBitsAsInt(bits, afterFirstNumeric, 4));
+        var byteCountPos = afterFirstNumeric + 4;
+        Assert.Equal(1, ReadBitsAsInt(bits, byteCountPos, byteCountBits));
+        var byteDataPos = byteCountPos + byteCountBits;
+        Assert.Equal(0x1D, ReadBitsAsInt(bits, byteDataPos, 8));
+
+        // Then the second Numeric run, "91222".
+        var afterSeparator = byteDataPos + 8;
+        Assert.Equal(QrTables.ModeIndicator(QrSegmentMode.Numeric), ReadBitsAsInt(bits, afterSeparator, 4));
+        Assert.Equal(5, ReadBitsAsInt(bits, afterSeparator + 4, numericCountBits));
+    }
+
+    [Fact]
+    public void Gs1_elementString_percentInValue_isCarriedAsByteModeCodeword_notAlphanumeric()
+    {
+        // AI 01's fixed 14-digit value, AI 10's own "10", and the leading "50" of its value form
+        // one contiguous 20-digit run (Numeric mode). "%" is deliberately excluded from GS1 QR's
+        // alphanumeric charset (see PrepareGs1ElementStringContent's remarks: alphanumeric mode's
+        // %-as-separator escape is unsafe once the segmenter picks modes automatically), so "%OFF"
+        // must fall to Byte mode, with the raw, undoubled 0x25 byte for "%".
+        const string content = "(01)09501101020917(10)50%OFF";
+        var qr = new QrCode(content) { Gs1 = QrGs1Mode.ElementString, ErrorCorrection = QrErrorCorrection.M, Version = 2, Mask = 0 };
+        var matrix = qr.GetMatrix();
+
+        var (_, isFunction) = QrMatrixBuilder.BuildFunctionPatterns(2);
+        var ecInfo = QrTables.GetEcBlockInfo(2, QrErrorCorrection.M);
+        var bits = ReadDataBitsInPlacementOrder(matrix, isFunction, QrMatrixBuilder.SizeForVersion(2), mask: 0, totalBits: ecInfo.TotalDataCodewords * 8);
+
+        var numericCountBits = QrTables.CharacterCountBits(2, QrSegmentMode.Numeric);
+        var byteCountBits = QrTables.CharacterCountBits(2, QrSegmentMode.Byte);
+
+        Assert.Equal(QrTables.Fnc1FirstPositionModeIndicator, ReadBitsAsInt(bits, 0, 4));
+        Assert.Equal(QrTables.ModeIndicator(QrSegmentMode.Numeric), ReadBitsAsInt(bits, 4, 4));
+        Assert.Equal(20, ReadBitsAsInt(bits, 8, numericCountBits));
+
+        // 20 digits = six 3-digit groups (10 bits each) + one 2-digit group (7 bits) = 67 data bits.
+        var byteModePos = 8 + numericCountBits + 67;
+        Assert.Equal(QrTables.ModeIndicator(QrSegmentMode.Byte), ReadBitsAsInt(bits, byteModePos, 4));
+
+        var byteCountPos = byteModePos + 4;
+        Assert.Equal(4, ReadBitsAsInt(bits, byteCountPos, byteCountBits)); // "%OFF"
+
+        var percentBitPos = byteCountPos + byteCountBits;
+        Assert.Equal(0x25, ReadBitsAsInt(bits, percentBitPos, 8)); // '%'
+    }
+
+    [Fact]
+    public void Gs1_elementString_multiSegment_writesFnc1IndicatorExactlyOnce()
+    {
+        // A numeric run, then a mixed byte-mode run (letters, the field separator, and short
+        // digit runs too cheap to be worth a new Numeric header) and a third AI: several
+        // segments, giving the "FNC1 written once per symbol, not once per segment" invariant
+        // something to regress against.
+        const string content = "(01)09501101020917(10)LOT99(21)SER456";
+        var qr = new QrCode(content) { Gs1 = QrGs1Mode.ElementString, ErrorCorrection = QrErrorCorrection.M, Version = 2, Mask = 0 };
+        var matrix = qr.GetMatrix();
+
+        var (_, isFunction) = QrMatrixBuilder.BuildFunctionPatterns(2);
+        var ecInfo = QrTables.GetEcBlockInfo(2, QrErrorCorrection.M);
+        var bits = ReadDataBitsInPlacementOrder(matrix, isFunction, QrMatrixBuilder.SizeForVersion(2), mask: 0, totalBits: ecInfo.TotalDataCodewords * 8);
+
+        Assert.Equal(QrTables.Fnc1FirstPositionModeIndicator, ReadBitsAsInt(bits, 0, 4));
+        // The first 18 characters (AI 01's fixed-length value plus AI 10's own digits) are one
+        // contiguous digit run: Numeric mode is far cheaper here than Byte, so this is the only
+        // segmentation the cost model would ever choose for that prefix.
+        Assert.Equal(QrTables.ModeIndicator(QrSegmentMode.Numeric), ReadBitsAsInt(bits, 4, 4));
+
+        // Walk every subsequent segment header generically (ISO/IEC 18004 Table 2/3's own
+        // mode-indicator/count/data-width rules -- not this encoder's internals) and confirm the
+        // FNC1 indicator never reappears after position 0.
+        var pos = 4;
+        var fnc1SightingsAfterPositionZero = 0;
+        while (pos + 4 <= bits.Length)
+        {
+            var indicator = ReadBitsAsInt(bits, pos, 4);
+            if (indicator == QrTables.Fnc1FirstPositionModeIndicator)
+            {
+                fnc1SightingsAfterPositionZero++;
+                break; // can't sensibly keep decoding past a misplaced FNC1; the assertion below fails the test
+            }
+
+            if (indicator is not (0b0001 or 0b0010 or 0b0100)) break; // terminator (0000) or padding: no more segments
+
+            var mode = indicator switch
+            {
+                0b0001 => QrSegmentMode.Numeric,
+                0b0010 => QrSegmentMode.Alphanumeric,
+                _ => QrSegmentMode.Byte,
+            };
+            pos += 4;
+
+            var countBits = QrTables.CharacterCountBits(2, mode);
+            var count = ReadBitsAsInt(bits, pos, countBits);
+            pos += countBits + SpecDataBits(mode, count);
+        }
+
+        Assert.Equal(0, fnc1SightingsAfterPositionZero);
+    }
+
+    [Fact]
+    public void Gs1_elementString_boundaryPayload_doesNotDoubleCountFnc1BitsAgainstCapacity()
+    {
+        // AI 90 (company-internal, variable length, the only element so no separator applies)
+        // with a 14-digit value: AI + value is one contiguous 16-digit numeric run (header 14
+        // bits + data 54 bits [five 3-digit groups = 50, plus a trailing 1-digit group = 4] = 68
+        // content bits). Version 1-H's capacity is exactly 72 bits (9 data codewords): 72-68 = 4
+        // bits of headroom, exactly the FNC1-in-first-position indicator's width. If QrEncoder
+        // ever double-counted gs1Bits (charging the 4-bit FNC1 cost twice against capacity while
+        // only ever writing it once), this payload would wrongly appear to need 76 bits and spill
+        // into version 2.
+        const string content = "(90)12345678901234";
+        var qr = new QrCode(content) { Gs1 = QrGs1Mode.ElementString, ErrorCorrection = QrErrorCorrection.H };
+        var matrix = qr.GetMatrix();
+        Assert.Equal(QrMatrixBuilder.SizeForVersion(1), matrix.Width);
+    }
+
+    /// <summary>ISO/IEC 18004 Table 2/3's mode/count-to-data-bit-width rule, reimplemented independently of <see cref="QrEncoder"/> for decode-side test assertions.</summary>
+    private static int SpecDataBits(QrSegmentMode mode, int count) => mode switch
+    {
+        QrSegmentMode.Numeric => (10 * (count / 3)) + (count % 3) switch { 0 => 0, 1 => 4, _ => 7 },
+        QrSegmentMode.Alphanumeric => (11 * (count / 2)) + (count % 2 == 1 ? 6 : 0),
+        QrSegmentMode.Byte => count * 8,
+        _ => throw new ArgumentOutOfRangeException(nameof(mode)),
+    };
+
     private static bool MatricesEqual(BarcodeMatrix a, BarcodeMatrix b)
     {
         if (a.Width != b.Width || a.Height != b.Height) return false;
@@ -298,6 +550,14 @@ public sealed class QrEncoderTests
     }
 
     private static int BitAt(BarcodeMatrix matrix, int x, int y) => matrix.IsDark(x, y) ? 1 : 0;
+
+    /// <summary>Reads <paramref name="length"/> bits from <paramref name="bits"/> starting at <paramref name="start"/> as a big-endian integer.</summary>
+    private static int ReadBitsAsInt(bool[] bits, int start, int length)
+    {
+        var value = 0;
+        for (var i = 0; i < length; i++) value = (value << 1) | (bits[start + i] ? 1 : 0);
+        return value;
+    }
 
     /// <summary>Reads the data/EC bits back off the encoding region in the same order <see cref="QrMatrixBuilder.PlaceData"/> writes them, undoing <paramref name="mask"/>.</summary>
     private static bool[] ReadDataBitsInPlacementOrder(BarcodeMatrix matrix, bool[,] isFunction, int size, int mask, int totalBits)

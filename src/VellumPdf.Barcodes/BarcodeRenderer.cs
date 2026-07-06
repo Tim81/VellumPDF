@@ -105,6 +105,8 @@ public sealed class BarcodeRenderer : IRenderer
     /// </summary>
     private static string DefaultAltText(Barcode barcode) => barcode switch
     {
+        QrCode { Gs1: QrGs1Mode.ElementString, Text: { } gs1Text } => $"QR code (GS1): {Gs1ElementString.Parse(gs1Text).Hri}",
+        QrCode { Gs1: QrGs1Mode.DigitalLink, Text: { } linkText } => $"QR code (GS1 Digital Link): {Gs1DigitalLink.Build(linkText)}",
         QrCode { Text: { } text } => $"QR code: {text}",
         QrCode => "QR code",
         MicroQrCode micro => $"Micro QR code: {micro.Content}",

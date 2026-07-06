@@ -121,6 +121,47 @@ ISO-8859-1 or UTF-8). Both halves of `Auto` round-trip correctly as a result.
 `QrCode(byte[])` bypasses this policy entirely: the bytes are carried
 verbatim in byte mode, one codeword per byte, ignoring `TextEncoding`.
 
+### GS1 mode
+
+```csharp
+using VellumPdf.Barcodes;
+
+// GS1 element string: FNC1 in first position marks this as a GS1 symbol.
+// Field separators between variable-length AI values are handled automatically.
+var gs1Qr = new QrCode("(01)09501101020917(17)261231(10)ABC123")
+{
+    Gs1 = QrGs1Mode.ElementString,
+};
+
+// GS1 Digital Link: the same data, rewritten as a resolvable URI and encoded
+// as a plain QR Code (no FNC1, no special mode indicator).
+var digitalLinkQr = new QrCode("(01)09501101020917(17)261231(10)ABC123")
+{
+    Gs1 = QrGs1Mode.DigitalLink,
+};
+```
+
+`Gs1` (default `QrGs1Mode.None`) accepts either the raw digit/character stream
+(field separators as U+001D) or the parenthesised-AI form shown above; both
+normalize to the same encoded content. Only the string constructor supports
+it — `QrCode(byte[])` with `Gs1` set throws `ArgumentException`.
+
+- **`ElementString`** parses the content as a GS1 element string and writes
+  the FNC1-in-first-position mode indicator (ISO/IEC 18004 §7.4.8.2) ahead of
+  the data, which is how a reading application recognizes GS1 content and
+  splits it back into Application Identifiers. Field separators required
+  between variable-length AI values are inserted automatically; a caller
+  never has to place them.
+- **`DigitalLink`** rewrites the content as its canonical
+  `https://id.gs1.org/...` GS1 Digital Link URI and encodes that URI as an
+  ordinary QR Code, with no FNC1 indicator — the symbol carries a URL that
+  can be resolved by any web-connected reader, not only a GS1-aware scanner.
+- Both modes throw `FormatException` for content that is not well-formed GS1
+  element-string data (unknown Application Identifier, wrong fixed-length
+  value, and so on).
+- 2D symbologies draw no visible text, so the human-readable (parenthesised
+  AI) form appears only in the `Figure`'s alternate text, not on the page.
+
 ---
 
 ## Micro QR
