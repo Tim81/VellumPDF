@@ -224,6 +224,7 @@ has shipped yet.
 | **2.1 — PDF reader (structural)** | `VellumPdf.Reader` grows classic and cross-reference-stream parsing, object streams, and encryption support, with a fixture corpus proving it against real-world files (Epic #100). |
 | **2.2 — PDF content extraction** | Text and image extraction on top of the reader. |
 | **3.0 — Read-modify-write** | A unified round-trip document model that supersedes the write-once `PdfDocument`, so existing PDFs can be opened, edited, and saved back (Epic #101). |
+| **Barcodes — GS1 & 2D expansion** | GS1 Data Matrix (#151), GS1-mode QR (#152), Aztec (#153), and Code 39 (#154), with smaller completeness items tracked in #155. |
 
 `VellumPdf.Reader`, `VellumPdf.Conformance`, and `VellumPdf.Barcodes` are marked Preview in the
 table above; expect their public surfaces to settle as these milestones land.
