@@ -108,6 +108,8 @@ VellumPdf.Barcodes.Pdf417Barcode.RowHeight.init -> void
 VellumPdf.Barcodes.QrCode
 VellumPdf.Barcodes.QrCode.ErrorCorrection.get -> VellumPdf.Barcodes.QrErrorCorrection
 VellumPdf.Barcodes.QrCode.ErrorCorrection.init -> void
+VellumPdf.Barcodes.QrCode.Gs1.get -> VellumPdf.Barcodes.QrGs1Mode
+VellumPdf.Barcodes.QrCode.Gs1.init -> void
 VellumPdf.Barcodes.QrCode.GetMatrix() -> VellumPdf.Barcodes.BarcodeMatrix!
 VellumPdf.Barcodes.QrCode.Mask.get -> int?
 VellumPdf.Barcodes.QrCode.Mask.init -> void
@@ -122,6 +124,10 @@ VellumPdf.Barcodes.QrErrorCorrection.H = 3 -> VellumPdf.Barcodes.QrErrorCorrecti
 VellumPdf.Barcodes.QrErrorCorrection.L = 0 -> VellumPdf.Barcodes.QrErrorCorrection
 VellumPdf.Barcodes.QrErrorCorrection.M = 1 -> VellumPdf.Barcodes.QrErrorCorrection
 VellumPdf.Barcodes.QrErrorCorrection.Q = 2 -> VellumPdf.Barcodes.QrErrorCorrection
+VellumPdf.Barcodes.QrGs1Mode
+VellumPdf.Barcodes.QrGs1Mode.DigitalLink = 2 -> VellumPdf.Barcodes.QrGs1Mode
+VellumPdf.Barcodes.QrGs1Mode.ElementString = 1 -> VellumPdf.Barcodes.QrGs1Mode
+VellumPdf.Barcodes.QrGs1Mode.None = 0 -> VellumPdf.Barcodes.QrGs1Mode
 VellumPdf.Barcodes.QrTextEncoding
 VellumPdf.Barcodes.QrTextEncoding.Auto = 0 -> VellumPdf.Barcodes.QrTextEncoding
 VellumPdf.Barcodes.QrTextEncoding.Latin1 = 1 -> VellumPdf.Barcodes.QrTextEncoding

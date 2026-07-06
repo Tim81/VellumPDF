@@ -12,14 +12,40 @@ internal static class QrEncoder
     private static readonly (int Min, int Max)[] VersionGroups = [(1, 9), (10, 26), (27, 40)];
 
     /// <summary>Encodes <paramref name="barcode"/>'s string or byte content into a QR Code symbol.</summary>
-    /// <exception cref="FormatException">The content does not fit any version (or the forced <see cref="QrCode.Version"/>) at the requested error correction level, or Latin-1 text encoding was requested for non-Latin-1 content.</exception>
+    /// <exception cref="ArgumentException"><see cref="QrCode.Gs1"/> is not <see cref="QrGs1Mode.None"/> on a symbol built from the byte-array constructor.</exception>
+    /// <exception cref="FormatException">
+    /// The content does not fit any version (or the forced <see cref="QrCode.Version"/>) at the
+    /// requested error correction level; Latin-1 text encoding was requested for non-Latin-1
+    /// content; or, under <see cref="QrCode.Gs1"/>, the content is not well-formed GS1 element-string data.
+    /// </exception>
     internal static BarcodeMatrix Encode(QrCode barcode)
     {
-        var (segmentFactory, content, byteEncoding, useEci, contentLength) = barcode.Bytes is { } bytes
-            ? PrepareByteContent(bytes)
-            : PrepareStringContent(barcode.Text!, barcode.TextEncoding);
+        if (barcode.Gs1 != QrGs1Mode.None && barcode.Bytes is not null)
+            throw new ArgumentException(
+                $"{nameof(QrCode.Gs1)} requires text content ({nameof(QrCode)}(string) constructor) and cannot be combined with the byte-array constructor.",
+                nameof(barcode));
 
-        var (version, dataCodewords) = SelectVersionAndBuild(barcode, content, segmentFactory, byteEncoding, useEci, contentLength);
+        // Gs1ElementString.Parse (and, transitively, Gs1DigitalLink.Build) reject null-or-empty
+        // input with ArgumentException, since that guard is written against a public-parameter
+        // contract. But QrCode.Gs1's own documented contract (and the barcodes guide) promises
+        // FormatException for any not-well-formed GS1 content, so empty content is intercepted
+        // here rather than leaking that internal ArgumentException (and its "input" parameter
+        // name, meaningless to a QrCode caller) out of GetMatrix().
+        if (barcode.Gs1 != QrGs1Mode.None && string.IsNullOrEmpty(barcode.Text))
+            throw new FormatException("GS1 content is empty; a GS1 QR symbol requires at least one application identifier.");
+
+        var gs1Fnc1FirstPosition = barcode.Gs1 == QrGs1Mode.ElementString;
+
+        var (segmentFactory, content, byteEncoding, useEci, contentLength) = barcode.Gs1 switch
+        {
+            QrGs1Mode.ElementString => PrepareGs1ElementStringContent(Gs1ElementString.Parse(barcode.Text!).EncoderPayload),
+            QrGs1Mode.DigitalLink => PrepareStringContent(Gs1DigitalLink.Build(barcode.Text!), barcode.TextEncoding),
+            _ => barcode.Bytes is { } bytes
+                ? PrepareByteContent(bytes)
+                : PrepareStringContent(barcode.Text!, barcode.TextEncoding),
+        };
+
+        var (version, dataCodewords) = SelectVersionAndBuild(barcode, content, segmentFactory, byteEncoding, useEci, contentLength, gs1Fnc1FirstPosition);
 
         var ecInfo = QrTables.GetEcBlockInfo(version, barcode.ErrorCorrection);
         var allCodewords = QrBlockInterleaver.Interleave(dataCodewords, ecInfo);
@@ -85,6 +111,32 @@ internal static class QrEncoder
         return (headerBits => QrSegmenter.Segment(text, headerBits, byteEncoding, allowAlphanumeric: true, allowByte: true), text, byteEncoding, useEci, text.Length);
     }
 
+    /// <summary>
+    /// Prepares a GS1 element-string payload (already normalized by <see cref="Gs1ElementString.Parse"/>,
+    /// U+001D standing in for each required field separator) for the FNC1-in-first-position path.
+    /// </summary>
+    /// <remarks>
+    /// Always Latin-1 with no ECI header: <see cref="Gs1ElementString"/> restricts every value
+    /// character to the printable-ASCII range, so the payload is Latin-1-representable by
+    /// construction, and an ECI-tagged charset would be non-standard for a GS1 symbol regardless
+    /// of <see cref="QrCode.TextEncoding"/>.
+    ///
+    /// <para>
+    /// Alphanumeric mode is deliberately not offered. ISO/IEC 18004 §7.4.8.2 lets a FNC1-mode
+    /// symbol represent the field separator as <c>%</c> in Alphanumeric mode (doubled to <c>%%</c>
+    /// for a literal <c>%</c> in the data), but that substitution is only safe to apply once a run's
+    /// mode is already decided, and this encoder picks each run's mode automatically — doubling
+    /// every <c>%</c> ahead of segmentation would corrupt any run the segmenter instead assigns to
+    /// Byte mode. Byte mode carries the same clause's other sanctioned form without that ambiguity:
+    /// every non-digit character, including the field separator itself, is written as a single raw
+    /// byte (0x1D for the separator), so Numeric mode still compacts digit runs and no character
+    /// needs escaping.
+    /// </para>
+    /// </remarks>
+    private static (SegmentFactory SegmentFactory, string Content, Encoding ByteEncoding, bool UseEci, int ContentLength) PrepareGs1ElementStringContent(string content) =>
+        (headerBits => QrSegmenter.Segment(content, headerBits, Encoding.Latin1, allowAlphanumeric: false, allowByte: true),
+            content, Encoding.Latin1, UseEci: false, ContentLength: content.Length);
+
     private static bool IsLatin1Representable(string text)
     {
         foreach (var rune in text.EnumerateRunes())
@@ -104,9 +156,11 @@ internal static class QrEncoder
     };
 
     private static (int Version, byte[] DataCodewords) SelectVersionAndBuild(
-        QrCode barcode, string content, SegmentFactory segmentFactory, Encoding byteEncoding, bool useEci, int contentLength)
+        QrCode barcode, string content, SegmentFactory segmentFactory, Encoding byteEncoding, bool useEci, int contentLength, bool gs1Fnc1FirstPosition)
     {
         var eciBits = useEci ? 12 : 0;
+        var gs1Bits = gs1Fnc1FirstPosition ? QrTables.ModeIndicatorBits : 0;
+        var headerBitsTotal = eciBits + gs1Bits;
 
         (int Group, int Version)[] candidates = barcode.Version is { } forced
             ? [(GroupFor(forced), forced)]
@@ -121,7 +175,7 @@ internal static class QrEncoder
             if (group != lastGroup)
             {
                 groupSegments = segmentFactory(mode => HeaderBits(VersionGroups[group].Min, mode));
-                groupContentBits = eciBits;
+                groupContentBits = headerBitsTotal;
                 foreach (var segment in groupSegments)
                     groupContentBits += HeaderBits(VersionGroups[group].Min, segment.Mode) + SegmentDataBits(content, segment, byteEncoding);
                 lastGroup = group;
@@ -133,6 +187,9 @@ internal static class QrEncoder
 
             var writer = new BitWriter();
             if (useEci) QrBitStreamBuilder.WriteUtf8EciHeader(writer);
+            // §7.4.8.2: FNC1 in first position is placed after any ECI header and immediately
+            // before the first data-encoding mode indicator.
+            if (gs1Fnc1FirstPosition) QrBitStreamBuilder.WriteFnc1FirstPosition(writer);
             QrBitStreamBuilder.WriteSegments(
                 writer,
                 content,
