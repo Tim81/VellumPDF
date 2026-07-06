@@ -28,6 +28,14 @@ public sealed class DocumentRenderer
     private RendererContext? _currentRendererCtx;
     private double _currentY;  // layout-space Y cursor (Y-down)
 
+    private readonly List<TextEncodingWarning> _textEncodingWarnings = [];
+
+    /// <summary>
+    /// Characters written via <see cref="PdfCanvas.ShowText"/> across every page rendered so far
+    /// that WinAnsiEncoding could not represent. Aggregated from each page's canvas as it finishes.
+    /// </summary>
+    internal IReadOnlyList<TextEncodingWarning> TextEncodingWarnings => _textEncodingWarnings;
+
     /// <summary>Header band drawn at the top of every page. Optional.</summary>
     public RunningBand? Header { get; set; }
 
@@ -122,6 +130,8 @@ public sealed class DocumentRenderer
                 var pageNumber = _pdf.Pages.Count; // pages already added
                 DrawRunningBands(_currentCanvas, _currentRendererCtx!, _currentPage!, pageNumber, totalPages);
             }
+
+            _textEncodingWarnings.AddRange(_currentCanvas.TextEncodingWarnings);
 
             _currentCanvas.Finish();
             _currentPage = null;

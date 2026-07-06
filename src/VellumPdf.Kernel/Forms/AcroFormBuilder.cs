@@ -620,9 +620,10 @@ internal static class AcroFormBuilder
 
     /// <summary>
     /// Escapes a string value for inclusion between ( ) in a PDF content stream
-    /// (appearance-stream caption). Only characters representable in Latin-1 (below 0x100)
-    /// are supported; anything outside that range indicates a mismatch between the field
-    /// caption and the Helvetica/Standard-14 appearance font, which cannot render it.
+    /// (appearance-stream caption). Supports every character WinAnsiEncoding covers
+    /// (ASCII, Latin-1, and the 0x80–0x9F punctuation block); anything outside that range
+    /// indicates a mismatch between the field caption and the Helvetica/Standard-14
+    /// appearance font, which cannot render it.
     /// </summary>
     private static string EscapePdfString(string value)
     {
@@ -642,13 +643,13 @@ internal static class AcroFormBuilder
                 default:
                     if (c < 0x80)
                         sb.Append(c);
-                    else if (c <= 0xFF)
-                        sb.Append(c);
+                    else if (WinAnsiEncoding.TryGetByte(c, out var b))
+                        sb.Append((char)b); // 0x80-0x9F punctuation maps to its WinAnsi byte
                     else
                         throw new ArgumentException(
-                            $"Character U+{(int)c:X4} ('{c}') cannot be represented in the " +
-                            "Standard-14 Helvetica appearance font. Use an embedded font that " +
-                            "supports the required characters for the field caption.",
+                            $"Character U+{(int)c:X4} ('{c}') is outside WinAnsiEncoding and " +
+                            "cannot be rendered by the Standard-14 Helvetica appearance font. " +
+                            "Use an embedded font for this field value.",
                             nameof(value));
                     break;
             }

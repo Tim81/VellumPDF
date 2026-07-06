@@ -37,6 +37,17 @@ public sealed class PdfCanvas
     private readonly Dictionary<string, string> _shadingIndex = new(StringComparer.Ordinal);
     private int _shadingCounter;
 
+    private readonly List<TextEncodingWarning> _textEncodingWarnings = [];
+
+    /// <summary>
+    /// Characters passed to <see cref="ShowText"/> that WinAnsiEncoding could not represent and
+    /// that were therefore substituted with '?' in the content stream. Empty when every character
+    /// shown so far is in WinAnsi. Reflects WinAnsi coverage for the 12 non-symbolic Standard-14
+    /// fonts; with a Symbol or ZapfDingbats font this list is not meaningful, since those fonts
+    /// use their own symbolic encoding rather than WinAnsi.
+    /// </summary>
+    public IReadOnlyList<TextEncodingWarning> TextEncodingWarnings => _textEncodingWarnings;
+
     /// <summary>Creates a content stream builder targeting the given page.</summary>
     public PdfCanvas(PdfPage page) => _page = page;
 
@@ -488,8 +499,9 @@ public sealed class PdfCanvas
     }
 
     /// <summary>
-    /// Renders a Latin-1 string at position (<paramref name="x"/>, <paramref name="y"/>),
-    /// offsetting horizontally so that <paramref name="x"/> is the alignment edge:
+    /// Renders a WinAnsiEncoding-encoded string (see <see cref="ShowText"/>) at position
+    /// (<paramref name="x"/>, <paramref name="y"/>), offsetting horizontally so that
+    /// <paramref name="x"/> is the alignment edge:
     /// left edge for <see cref="TextAlignment.Left"/>, midpoint for <see cref="TextAlignment.Center"/>,
     /// right edge for <see cref="TextAlignment.Right"/>.
     ///
@@ -592,10 +604,29 @@ public sealed class PdfCanvas
     /// <summary>Moves to the start of the next text line using the current leading. Emits <c>T*</c>.</summary>
     public PdfCanvas NextLine() { WriteOp("T*"u8); return this; }
 
-    /// <summary>Renders a Latin-1 string using the standard PDF string operator (Tj).</summary>
+    /// <summary>
+    /// Renders a string using the standard PDF string operator (Tj), encoded with WinAnsiEncoding,
+    /// the encoding <see cref="Fonts.PdfFontResource.BuildDictionary"/> declares for the 12
+    /// non-symbolic Standard-14 fonts. Characters outside WinAnsi (code points WinAnsi does not
+    /// cover) are written as '?' and reported via <see cref="TextEncodingWarnings"/>; use an
+    /// embedded font (<see cref="SetFontByName"/> + <see cref="ShowGlyphs"/>) to render those.
+    /// </summary>
     public PdfCanvas ShowText(string text)
     {
-        WritePdfString(Encoding.Latin1.GetBytes(text));
+        var bytes = new byte[text.Length];
+        for (var i = 0; i < text.Length; i++)
+        {
+            if (WinAnsiEncoding.TryGetByte(text[i], out var b))
+            {
+                bytes[i] = b;
+            }
+            else
+            {
+                bytes[i] = (byte)'?'; // defensible fallback for non-WinAnsi glyphs
+                _textEncodingWarnings.Add(new TextEncodingWarning(text[i]));
+            }
+        }
+        WritePdfString(bytes);
         _ops.Write(" Tj\n"u8);
         return this;
     }

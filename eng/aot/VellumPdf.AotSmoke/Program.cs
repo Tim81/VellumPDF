@@ -4,6 +4,7 @@
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
+using VellumPdf.Barcodes;
 using VellumPdf.Layout;
 using VellumPdf.Layout.Core;
 using VellumPdf.Layout.Elements;
@@ -102,5 +103,47 @@ using (var signedReader = PdfReader.Open(signedBytes))
     }
 }
 Console.WriteLine($"OK: Signing + Reader round-trip under AOT ({signedBytes.Length}-byte signed PDF).");
+
+// Exercise the VellumPdf.Barcodes package under Native AOT: the QR matrix encoder directly,
+// then the Document flow path (extension method, BarcodeRenderer, painter, and the EAN HRI
+// text draw, which goes through the embedded-font-free Standard-14 canvas path).
+var qr = new QrCode("VellumPdf AOT");
+var matrix = qr.GetMatrix();
+if (matrix.Width != matrix.Height || matrix.Width < 21)
+{
+    Console.Error.WriteLine($"FAIL: unexpected QR matrix size {matrix.Width}x{matrix.Height}");
+    return 1;
+}
+
+var last = matrix.Width - 1;
+if (!matrix.IsDark(0, 0) || !matrix.IsDark(last, 0) || !matrix.IsDark(0, last))
+{
+    Console.Error.WriteLine("FAIL: a QR finder pattern corner is not dark");
+    return 1;
+}
+
+Console.WriteLine($"OK: QrCode.GetMatrix() produced a {matrix.Width}x{matrix.Height} matrix under AOT.");
+
+using var barcodeDoc = new Document();
+barcodeDoc.Add(new QrCode("VellumPdf AOT") { TargetWidth = 80 });
+barcodeDoc.Add(new EanBarcode(EanSymbology.Ean13, "400638133393"));
+using var barcodeMs = new MemoryStream();
+barcodeDoc.Save(barcodeMs);
+var barcodeBytes = barcodeMs.ToArray();
+
+if (barcodeBytes.Length < 100)
+{
+    Console.Error.WriteLine($"FAIL: barcode document PDF too small ({barcodeBytes.Length} bytes)");
+    return 1;
+}
+
+var barcodeHeader = Encoding.ASCII.GetString(barcodeBytes, 0, 8);
+if (barcodeHeader != "%PDF-2.0")
+{
+    Console.Error.WriteLine($"FAIL: unexpected barcode document header '{barcodeHeader}'");
+    return 1;
+}
+
+Console.WriteLine($"OK: Barcodes Document flow (QR + EAN-13 with HRI) under AOT = {barcodeBytes.Length} bytes.");
 
 return 0;

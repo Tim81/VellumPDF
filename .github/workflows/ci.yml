@@ -57,11 +57,22 @@ jobs:
           SHIM
           sudo chmod +x /usr/local/bin/verapdf
 
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.x'
+
+      - name: Install barcode decode oracle (zxing-cpp)
+        # Pinned: the EAN add-on text format differs across zxing-cpp versions. setup-python's
+        # toolcache interpreter avoids the PEP 668 externally-managed block on the system python.
+        run: python -m pip install zxing-cpp==3.0.0 pillow
+
       - name: Test
         # REQUIRE_VERAPDF makes the conformance oracle fail (not silently skip) if the verapdf
         # shim is unavailable, so a broken image can't let the cross-validation gate pass vacuously.
+        # REQUIRE_BARCODE_ORACLE does the same for the zxing-cpp decode oracle.
         env:
           REQUIRE_VERAPDF: '1'
+          REQUIRE_BARCODE_ORACLE: '1'
         run: dotnet test VellumPdf.slnx -c Release --no-build --collect:"XPlat Code Coverage" --results-directory ${{ runner.temp }}/coverage
 
       - name: Enforce coverage threshold

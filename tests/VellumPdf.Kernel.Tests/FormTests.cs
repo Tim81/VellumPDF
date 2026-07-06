@@ -1,6 +1,7 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
+using System.IO.Compression;
 using System.Text;
 using VellumPdf.Document;
 using VellumPdf.Forms;
@@ -349,6 +350,65 @@ public sealed class FormTests
         Assert.Contains("/FT /Tx", content);
     }
 
+    // ── WinAnsi punctuation in Helv appearance text ──────────────────────────
+
+    /// <summary>
+    /// A text field value containing an accented Latin-1 char (é) and a WinAnsi 0x80-0x9F
+    /// punctuation char (•) must render as their WinAnsi bytes in the /Helv appearance stream.
+    /// The /Helv and /ZaDb font dicts must still declare encoding independently — the fix must
+    /// not leak into the ZapfDingbats checkbox/radio path.
+    /// </summary>
+    [Fact]
+    public void Save_textFieldWithWinAnsiPunctuation_appearanceContainsWinAnsiBytes()
+    {
+        using var doc = new PdfDocument();
+        var page = doc.AddPage();
+
+        var rect = new PdfRectangle(72, 700, 300, 720);
+        doc.AddTextField(page, "Note", rect, value: "café • rate"); // é (0xE9), bullet (0x95)
+
+        var ms = new MemoryStream();
+        doc.Save(ms);
+        var bytes = ms.ToArray();
+
+        var literal = ExtractFirstTjLiteral(bytes);
+        Assert.Contains((byte)0xE9, literal);
+        Assert.Contains((byte)0x95, literal);
+
+        var content = Encoding.Latin1.GetString(bytes);
+        var helvObject = ExtractObjectContaining(content, "/BaseFont /Helvetica");
+        Assert.Contains("/Encoding /WinAnsiEncoding", helvObject, StringComparison.Ordinal);
+
+        var zadbObject = ExtractObjectContaining(content, "/BaseFont /ZapfDingbats");
+        Assert.DoesNotContain("/Encoding", zadbObject, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A checkbox's /Yes appearance still draws ZapfDingbats char '4' (✔) untouched by the
+    /// Helv/WinAnsi fix. <see cref="AcroFormBuilder"/> builds it directly, never through
+    /// <c>EscapePdfString</c>, and its /ZaDb font dict still has no /Encoding entry.
+    /// </summary>
+    [Fact]
+    public void Save_checkBox_yesAppearanceStillDrawsZaDbGlyphWithNoEncoding()
+    {
+        using var doc = new PdfDocument();
+        var page = doc.AddPage();
+
+        doc.AddCheckBox(page, "Agree", new PdfRectangle(72, 680, 90, 698), checkedState: true);
+
+        var ms = new MemoryStream();
+        doc.Save(ms);
+        var bytes = ms.ToArray();
+
+        var literal = ExtractFirstTjLiteral(bytes);
+        byte[] expected = [(byte)'4'];
+        Assert.Equal(expected, literal);
+
+        var content = Encoding.Latin1.GetString(bytes);
+        var zadbObject = ExtractObjectContaining(content, "/BaseFont /ZapfDingbats");
+        Assert.DoesNotContain("/Encoding", zadbObject, StringComparison.Ordinal);
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     private static int CountOccurrences(string text, string pattern)
@@ -361,5 +421,74 @@ public sealed class FormTests
             idx += pattern.Length;
         }
         return count;
+    }
+
+    /// <summary>
+    /// Returns the object body (from " obj" up to but excluding "endobj") of the first
+    /// indirect object in <paramref name="content"/> whose dictionary contains <paramref name="marker"/>.
+    /// </summary>
+    private static string ExtractObjectContaining(string content, string marker)
+    {
+        var markerIdx = content.IndexOf(marker, StringComparison.Ordinal);
+        Assert.True(markerIdx >= 0, $"Marker '{marker}' not found in the saved PDF.");
+
+        var objStart = content.LastIndexOf(" obj\n", markerIdx, StringComparison.Ordinal);
+        Assert.True(objStart >= 0, $"No enclosing ' obj' found before '{marker}'.");
+
+        var objEnd = content.IndexOf("\nendobj", markerIdx, StringComparison.Ordinal);
+        Assert.True(objEnd >= 0, $"No enclosing 'endobj' found after '{marker}'.");
+
+        return content[objStart..objEnd];
+    }
+
+    /// <summary>
+    /// Scans every FlateDecode stream in <paramref name="pdfBytes"/> in order and returns the
+    /// bytes strictly between the first '(' and the following ") Tj" in the first stream that
+    /// contains one (an appearance stream's Tj literal). A page's own content stream — empty
+    /// for these form-only test documents — is skipped because it has no such literal.
+    /// </summary>
+    private static byte[] ExtractFirstTjLiteral(byte[] pdfBytes)
+    {
+        var searchFrom = 0;
+        while (true)
+        {
+            var streamStart = FindSequence(pdfBytes, "\nstream\n"u8, searchFrom);
+            Assert.True(streamStart >= 0, "No stream with a Tj literal found in the PDF.");
+
+            var dataStart = streamStart + 8; // length of "\nstream\n"
+            var streamEnd = FindSequence(pdfBytes, "\nendstream"u8, dataStart);
+            Assert.True(streamEnd >= 0, "No matching endstream found in the PDF.");
+
+            var decompressed = Decompress(pdfBytes[dataStart..streamEnd]);
+
+            var litStart = Array.IndexOf(decompressed, (byte)'(');
+            if (litStart >= 0)
+            {
+                var litEnd = FindSequence(decompressed, ") Tj"u8, litStart);
+                if (litEnd >= 0)
+                    return decompressed[(litStart + 1)..litEnd];
+            }
+
+            searchFrom = streamEnd;
+        }
+    }
+
+    private static byte[] Decompress(byte[] compressed)
+    {
+        using var zms = new MemoryStream(compressed);
+        using var z = new ZLibStream(zms, CompressionMode.Decompress);
+        using var result = new MemoryStream();
+        z.CopyTo(result);
+        return result.ToArray();
+    }
+
+    private static int FindSequence(byte[] haystack, ReadOnlySpan<byte> needle, int startAt = 0)
+    {
+        for (var i = startAt; i <= haystack.Length - needle.Length; i++)
+        {
+            if (haystack.AsSpan(i, needle.Length).SequenceEqual(needle))
+                return i;
+        }
+        return -1;
     }
 }

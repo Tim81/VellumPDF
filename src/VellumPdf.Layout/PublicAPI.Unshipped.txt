@@ -1,4 +1,6 @@
 #nullable enable
+VellumPdf.Layout.Document.Add(VellumPdf.Layout.Core.IRenderer! renderer) -> VellumPdf.Layout.Document!
+VellumPdf.Layout.Document.TextEncodingWarnings.get -> System.Collections.Generic.IReadOnlyList<VellumPdf.Canvas.TextEncodingWarning>!
 VellumPdf.Layout.Document.Add(VellumPdf.Layout.Elements.PieChart! chart) -> VellumPdf.Layout.Document!
 VellumPdf.Layout.Elements.PieChart
 VellumPdf.Layout.Elements.PieChart.Alignment.get -> VellumPdf.Layout.Core.HorizontalAlignment
