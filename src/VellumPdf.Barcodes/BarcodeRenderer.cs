@@ -111,6 +111,7 @@ public sealed class BarcodeRenderer : IRenderer
         Pdf417Barcode { Text: { } text } => $"PDF417 barcode: {text}",
         Pdf417Barcode => "PDF417 barcode",
         Code128Barcode code128 => $"Code 128 barcode: {code128.Content}",
+        Code39Barcode code39 => $"Code 39 barcode: {code39.Content}",
         EanBarcode ean => $"{DescribeEanSymbology(ean.Symbology)}: {ean.Digits}",
         Itf14Barcode itf => $"ITF-14 barcode: {itf.Digits}",
         _ => "Barcode",
@@ -121,6 +122,7 @@ public sealed class BarcodeRenderer : IRenderer
         EanSymbology.Ean13 => "EAN-13 barcode",
         EanSymbology.Ean8 => "EAN-8 barcode",
         EanSymbology.UpcA => "UPC-A barcode",
+        EanSymbology.UpcE => "UPC-E barcode",
         _ => "Barcode",
     };
 }

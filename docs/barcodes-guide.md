@@ -1,6 +1,6 @@
 # VellumPdf Barcodes guide
 
-This guide covers the optional `VellumPdf.Barcodes` package: six symbologies
+This guide covers the optional `VellumPdf.Barcodes` package: seven symbologies
 rendered as vector rectangles over `VellumPdf.Kernel.PdfCanvas` and
 `VellumPdf.Layout.Document`, described in [`docs/architecture.md`](architecture.md).
 Every symbol is drawn as filled rectangles (never a raster image), so it stays
@@ -59,7 +59,7 @@ Every barcode has two mutually exclusive sizing options:
 
 - **`ModuleSize`**: the width of one module (the narrowest bar/space or
   matrix cell), in points. Defaults to 2.0 for QR/Micro QR and PDF417, 1.0 for
-  Code 128, EAN/UPC, and ITF-14.
+  Code 128, Code 39, EAN/UPC, and ITF-14.
 - **`TargetWidth`**: the desired overall rendered width, in points; the
   module size is derived from it.
 
@@ -207,7 +207,43 @@ barcode completeness backlog.
 
 ---
 
-## EAN-13, EAN-8, UPC-A, and add-ons
+## Code 39
+
+```csharp
+using VellumPdf.Barcodes;
+
+var code39 = new Code39Barcode("VELLUM-1234")
+{
+    CheckDigit = true,
+    WideNarrowRatio = 3.0,
+};
+doc.Add(code39);
+```
+
+ISO/IEC 16388, the self-checking symbology long used in logistics, defense
+(LOGMARS) and healthcare (HIBC) item marking. By default, content must be
+drawn from the 43-character standard set: the digits, the uppercase letters,
+space, and `-.$/+%`; any other character throws `ArgumentException` when the
+barcode is measured or drawn.
+
+- **`CheckDigit`** (default `false`) appends a modulo-43 check character
+  before the stop character. It is computed, not validated — `Code39Barcode`
+  has no equivalent of `EanBarcode`'s "supply the check digit yourself" mode.
+- **`FullAscii`** (default `false`), Extended Code 39, accepts any ASCII
+  character (0-127); each is mapped to its one- or two-character
+  representation (AIM USS-39 precedence codes `$`, `/`, `%` and `+`). A
+  character above U+007F throws `ArgumentException`. The human-readable text
+  always shows the original content, not the expanded shift-pair form.
+- **`WideNarrowRatio`** (default 2.5) must fall within ISO/IEC 16388's
+  2.0-3.0 range.
+
+Not every Code 39 reader is configured to validate the check character or
+decode Extended mode — both are sender/receiver agreements layered on top of
+the base symbology, not something a scanner detects automatically.
+
+---
+
+## EAN-13, EAN-8, UPC-A, UPC-E, and add-ons
 
 ```csharp
 using VellumPdf.Barcodes;
@@ -224,8 +260,9 @@ var upcA = new EanBarcode(EanSymbology.UpcA, "03600029145");
 ```
 
 `EanBarcode.Digits` returns the canonical digit string including the check
-digit (13 for EAN-13, 8 for EAN-8, 12 for UPC-A). Read it back when you need
-the exact value that was encoded, e.g. for a caption elsewhere in the document.
+digit (13 for EAN-13, 8 for EAN-8, 12 for UPC-A, 8 for UPC-E). Read it back
+when you need the exact value that was encoded, e.g. for a caption elsewhere
+in the document.
 
 An `AddOn` (2 or 5 digits, per GS1 General Specifications §5.2) is drawn above
 the main symbol with its own 9-module gap and its own, shorter HRI text band.
@@ -233,6 +270,35 @@ the main symbol with its own 9-module gap and its own, shorter HRI text band.
 UPC-A is drawn as an EAN-13 symbol with an implicit leading `0`: that is the
 physical relationship between the two symbologies, and how UPC-A scanners
 have always interpreted the mark.
+
+### UPC-E
+
+```csharp
+// The 6 compressed digits; number system 0 is assumed.
+var upcE = new EanBarcode(EanSymbology.UpcE, "654321");
+doc.Add(upcE);
+
+// Number system 1, or an existing UPC-A number that compresses to UPC-E,
+// also work:
+var withSystem = new EanBarcode(EanSymbology.UpcE, "1654321");
+var fromUpcA = new EanBarcode(EanSymbology.UpcE, "065100004327");
+```
+
+UPC-E is the zero-suppressed 6-digit form of a UPC-A, valid only for number
+system 0 or 1 with a manufacturer/product code that has a qualifying pattern
+of trailing/leading zeros. `EanBarcode.Digits` accepts four input shapes:
+
+- **6 digits** — the compressed data alone; number system 0 is assumed.
+- **7 digits** — a leading number-system digit (0 or 1) plus the 6 compressed digits.
+- **8 digits** — as 7, plus a trailing check digit, which is validated.
+- **11 or 12 digits** — a UPC-A number, compressed to UPC-E if a qualifying
+  zero-suppression pattern exists.
+
+UPC-E carries no check digit of its own: whichever form is supplied, the
+check digit is always derived from the expanded 12-digit UPC-A. A value that
+cannot be represented as UPC-E — the wrong number system, or a
+manufacturer/product code with no suppressible zero pattern — throws
+`FormatException`.
 
 ---
 
@@ -262,8 +328,8 @@ must fall within GS1's 2.25-3.0 range.
 
 ## Human-readable text (1D symbologies)
 
-Every `Barcode1D` (Code 128, EAN/UPC, ITF-14) can print its encoded digits or
-text below the bars:
+Every `Barcode1D` (Code 128, Code 39, EAN/UPC, ITF-14) can print its encoded
+digits or text below the bars:
 
 | Property | Default | Notes |
 | --- | --- | --- |
