@@ -10,7 +10,8 @@ namespace VellumPdf.Barcodes;
 /// A QR Code symbol (ISO/IEC 18004, model 2, versions 1-40). The version, error correction level
 /// and data mask are chosen automatically unless overridden; text content is segmented across
 /// numeric, alphanumeric and byte mode for the smallest fitting symbol. See the barcodes guide's
-/// QR charset policy for how <see cref="TextEncoding"/> affects non-Latin-1 text.
+/// QR charset policy for how <see cref="TextEncoding"/> affects non-Latin-1 text, and its GS1 mode
+/// section for <see cref="Gs1"/>.
 /// </summary>
 public sealed class QrCode : Barcode
 {
@@ -44,13 +45,29 @@ public sealed class QrCode : Barcode
     /// <summary>How byte-mode text content is encoded and whether an ECI header names it. Defaults to <see cref="QrTextEncoding.Auto"/>. Ignored by the byte-array constructor.</summary>
     public QrTextEncoding TextEncoding { get; init; } = QrTextEncoding.Auto;
 
+    /// <summary>
+    /// Encodes <see cref="Text"/> as GS1 data instead of verbatim text. Defaults to <see cref="QrGs1Mode.None"/>.
+    /// Not supported by the byte-array constructor: GS1 element strings are character data, so a
+    /// <see cref="QrCode(byte[])"/> symbol with this set throws at encode time.
+    /// </summary>
+    public QrGs1Mode Gs1 { get; init; } = QrGs1Mode.None;
+
     internal string? Text { get; }
 
     internal byte[]? Bytes { get; }
 
     /// <summary>Encodes and returns the symbol's module grid, caching the result on first use.</summary>
-    /// <exception cref="ArgumentException"><see cref="Version"/> or <see cref="Mask"/> is outside its valid range, or both <see cref="Barcode.ModuleSize"/> and <see cref="Barcode.TargetWidth"/> are set.</exception>
-    /// <exception cref="FormatException">The content does not fit (the forced <see cref="Version"/>, or any version up to 40) at <see cref="ErrorCorrection"/>, or <see cref="QrTextEncoding.Latin1"/> was requested for non-Latin-1 text.</exception>
+    /// <exception cref="ArgumentException">
+    /// <see cref="Version"/> or <see cref="Mask"/> is outside its valid range, both <see cref="Barcode.ModuleSize"/>
+    /// and <see cref="Barcode.TargetWidth"/> are set, or <see cref="Gs1"/> is not <see cref="QrGs1Mode.None"/>
+    /// on a symbol built from the byte-array constructor.
+    /// </exception>
+    /// <exception cref="FormatException">
+    /// The content does not fit (the forced <see cref="Version"/>, or any version up to 40) at
+    /// <see cref="ErrorCorrection"/>; <see cref="QrTextEncoding.Latin1"/> was requested for
+    /// non-Latin-1 text; or, when <see cref="Gs1"/> is set, the content is not well-formed GS1
+    /// element-string data.
+    /// </exception>
     public BarcodeMatrix GetMatrix() => GetEncoded().Matrix;
 
     private protected override BarcodeSize MeasureCore() => BarcodeGeometry.Measure2D(this, GetEncoded());

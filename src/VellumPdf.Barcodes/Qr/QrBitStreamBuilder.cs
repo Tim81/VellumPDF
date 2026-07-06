@@ -24,6 +24,14 @@ internal static class QrBitStreamBuilder
         writer.WriteBits(Utf8EciDesignator, 8);
     }
 
+    /// <summary>
+    /// Writes the FNC1-in-first-position mode indicator (ISO/IEC 18004 §7.4.8.2), marking the
+    /// symbol as GS1-formatted. Callers write this after <see cref="WriteUtf8EciHeader"/> (when
+    /// both apply) and before the first data segment, per the clause's ordering rule.
+    /// </summary>
+    internal static void WriteFnc1FirstPosition(BitWriter writer) =>
+        writer.WriteBits(QrTables.Fnc1FirstPositionModeIndicator, QrTables.ModeIndicatorBits);
+
     /// <summary>Writes every segment's mode indicator, character count indicator and data.</summary>
     /// <param name="writer">The bit stream being assembled.</param>
     /// <param name="content">The original string the segments index into.</param>

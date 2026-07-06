@@ -75,6 +75,13 @@ internal static class QrTables
     /// <summary>The 4-bit QR Code ECI mode indicator (Table 2).</summary>
     internal const int EciModeIndicator = 0b0111;
 
+    /// <summary>
+    /// The 4-bit QR Code FNC1-in-first-position mode indicator (Table 2; §7.4.8.2), marking the
+    /// symbol as encoding GS1 Application Identifier data. Written once, after any ECI header and
+    /// immediately before the first data-encoding mode indicator.
+    /// </summary>
+    internal const int Fnc1FirstPositionModeIndicator = 0b0101;
+
     /// <summary>The bit width of every QR Code mode indicator, including ECI and the terminator.</summary>
     internal const int ModeIndicatorBits = 4;
 

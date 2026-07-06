@@ -3,6 +3,7 @@
 
 using System.ComponentModel;
 using System.Diagnostics;
+using VellumPdf.Barcodes.Internal;
 using VellumPdf.Canvas;
 using VellumPdf.Document;
 using VellumPdf.Fonts;
@@ -98,6 +99,39 @@ public sealed class ZxingDecodeOracleTests : IDisposable
 
         Assert.Equal("QRCode", result.Format);
         Assert.Equal(content, result.Text);
+    }
+
+    [Fact]
+    public void QrCode_Gs1ElementString_DecodesAsGs1ContentType()
+    {
+        // (01) GTIN + (17) expiration date (fixed-length, no separator needed) + (10) batch/lot
+        // (variable-length, last element, so no trailing separator either): mirrors the ISO/IEC
+        // 18004 §7.4.8.2 worked example's shape.
+        const string content = "(01)09501101020917(17)261231(10)ABC123";
+        var pdfPath = BuildSinglePdf((_, canvas) =>
+            canvas.DrawBarcode(new QrCode(content) { Gs1 = QrGs1Mode.ElementString, ModuleSize = 4 }, 50, 500));
+
+        if (!TryDecodeSingle(pdfPath, out var result)) return;
+
+        Assert.Equal("QRCode", result.Format);
+        Assert.Equal("GS1", result.ContentType);
+        // zxing-cpp reconstructs the parenthesized-AI form from the decoded FNC1/separator
+        // structure -- the same form Gs1ElementString.Hri renders for alt text.
+        Assert.Equal(Gs1ElementString.Parse(content).Hri, result.Text);
+    }
+
+    [Fact]
+    public void QrCode_Gs1DigitalLink_DecodesAsTheCanonicalUri()
+    {
+        const string content = "(01)09501101020917(17)261231(10)ABC123";
+        var expectedUri = Gs1DigitalLink.Build(content);
+        var pdfPath = BuildSinglePdf((_, canvas) =>
+            canvas.DrawBarcode(new QrCode(content) { Gs1 = QrGs1Mode.DigitalLink, ModuleSize = 4 }, 50, 500));
+
+        if (!TryDecodeSingle(pdfPath, out var result)) return;
+
+        Assert.Equal("QRCode", result.Format);
+        Assert.Equal(expectedUri, result.Text);
     }
 
     // ── Micro QR ──────────────────────────────────────────────────────────

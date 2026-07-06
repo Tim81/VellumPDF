@@ -269,6 +269,94 @@ public sealed class QrEncoderTests
         Assert.NotNull(qr.GetMatrix());
     }
 
+    // ── GS1 mode ─────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Gs1_none_matchesTheSymbolBuiltWithoutSettingGs1()
+    {
+        // Regression guard: Gs1 defaults to None, and setting it explicitly must not perturb the
+        // plain-text path at all.
+        var withDefault = new QrCode("HELLO WORLD");
+        var withExplicitNone = new QrCode("HELLO WORLD") { Gs1 = QrGs1Mode.None };
+        Assert.True(MatricesEqual(withDefault.GetMatrix(), withExplicitNone.GetMatrix()));
+    }
+
+    [Fact]
+    public void Gs1_elementString_knownPayload_encodesSuccessfully()
+    {
+        const string content = "(01)09501101020917(17)261231(10)ABC123";
+        var qr = new QrCode(content) { Gs1 = QrGs1Mode.ElementString };
+        Assert.NotNull(qr.GetMatrix());
+    }
+
+    [Fact]
+    public void Gs1_elementString_writesTheFnc1FirstPositionIndicatorBeforeTheData()
+    {
+        // AI 01 is fixed-length (14-digit GTIN), so the parsed payload needs no separator and is
+        // one pure-numeric run: FNC1(4) + mode(4) + count(10) + numeric data.
+        const string content = "(01)09501101020917";
+        var qr = new QrCode(content) { Gs1 = QrGs1Mode.ElementString, ErrorCorrection = QrErrorCorrection.M, Version = 1, Mask = 0 };
+        var matrix = qr.GetMatrix();
+
+        var (_, isFunction) = QrMatrixBuilder.BuildFunctionPatterns(1);
+        var ecInfo = QrTables.GetEcBlockInfo(1, QrErrorCorrection.M);
+        var bits = ReadDataBitsInPlacementOrder(matrix, isFunction, 21, mask: 0, totalBits: ecInfo.TotalDataCodewords * 8);
+
+        Assert.Equal(QrTables.Fnc1FirstPositionModeIndicator, ReadBitsAsInt(bits, 0, QrTables.ModeIndicatorBits));
+        Assert.Equal(QrTables.ModeIndicator(QrSegmentMode.Numeric), ReadBitsAsInt(bits, 4, QrTables.ModeIndicatorBits));
+
+        var countBits = QrTables.CharacterCountBits(1, QrSegmentMode.Numeric);
+        Assert.Equal(16, ReadBitsAsInt(bits, 8, countBits)); // "01" + the 14-digit GTIN value = 16 digits
+    }
+
+    [Fact]
+    public void Gs1_elementString_fnc1BitsCountTowardCapacity_soTheSameContentNeedsOneMoreVersionThanPlainText()
+    {
+        // AI 90 (company-internal, variable length, no fixed length) plus a 39-digit value is 41
+        // numeric characters: exactly 137 numeric data bits (13 full 3-digit groups = 130 bits,
+        // plus a trailing 2-digit group = 7 bits). Version 1-L holds 152 data bits: 14 (mode +
+        // count, no FNC1) + 137 = 151 fits; 18 (mode + count + the 4-bit FNC1 indicator) + 137 =
+        // 155 does not — so only the GS1-mode symbol needs to spill into version 2.
+        var digits = new string('1', 39);
+        var content = $"(90){digits}";
+
+        var plainPayload = Gs1ElementString.Parse(content).EncoderPayload;
+        var plain = new QrCode(plainPayload) { ErrorCorrection = QrErrorCorrection.L };
+        Assert.Equal(QrMatrixBuilder.SizeForVersion(1), plain.GetMatrix().Width);
+
+        var gs1 = new QrCode(content) { Gs1 = QrGs1Mode.ElementString, ErrorCorrection = QrErrorCorrection.L };
+        Assert.Equal(QrMatrixBuilder.SizeForVersion(2), gs1.GetMatrix().Width);
+    }
+
+    [Fact]
+    public void Gs1_digitalLink_encodesTheSameMatrixAsPlainTextOfTheCanonicalUri()
+    {
+        const string content = "(01)09501101020917(17)261231(10)ABC123";
+        var expectedUri = Gs1DigitalLink.Build(content);
+
+        var digitalLink = new QrCode(content) { Gs1 = QrGs1Mode.DigitalLink };
+        var plainUri = new QrCode(expectedUri);
+
+        // DigitalLink is "just a URL": no FNC1, no mode-indicator change, so it must produce
+        // exactly the matrix a plain-text QR of the same URI would.
+        Assert.True(MatricesEqual(digitalLink.GetMatrix(), plainUri.GetMatrix()));
+    }
+
+    [Fact]
+    public void Gs1_elementString_malformedContent_throwsFormatException() =>
+        Assert.Throws<FormatException>(() => new QrCode("not a GS1 element string") { Gs1 = QrGs1Mode.ElementString }.GetMatrix());
+
+    [Fact]
+    public void Gs1_digitalLink_malformedContent_throwsFormatException() =>
+        Assert.Throws<FormatException>(() => new QrCode("not a GS1 element string") { Gs1 = QrGs1Mode.DigitalLink }.GetMatrix());
+
+    [Fact]
+    public void Gs1_byteArrayConstructor_throwsArgumentException()
+    {
+        byte[] content = [0x30, 0x31];
+        Assert.Throws<ArgumentException>(() => new QrCode(content) { Gs1 = QrGs1Mode.ElementString }.GetMatrix());
+    }
+
     private static bool MatricesEqual(BarcodeMatrix a, BarcodeMatrix b)
     {
         if (a.Width != b.Width || a.Height != b.Height) return false;
@@ -298,6 +386,14 @@ public sealed class QrEncoderTests
     }
 
     private static int BitAt(BarcodeMatrix matrix, int x, int y) => matrix.IsDark(x, y) ? 1 : 0;
+
+    /// <summary>Reads <paramref name="length"/> bits from <paramref name="bits"/> starting at <paramref name="start"/> as a big-endian integer.</summary>
+    private static int ReadBitsAsInt(bool[] bits, int start, int length)
+    {
+        var value = 0;
+        for (var i = 0; i < length; i++) value = (value << 1) | (bits[start + i] ? 1 : 0);
+        return value;
+    }
 
     /// <summary>Reads the data/EC bits back off the encoding region in the same order <see cref="QrMatrixBuilder.PlaceData"/> writes them, undoing <paramref name="mask"/>.</summary>
     private static bool[] ReadDataBitsInPlacementOrder(BarcodeMatrix matrix, bool[,] isFunction, int size, int mask, int totalBits)
