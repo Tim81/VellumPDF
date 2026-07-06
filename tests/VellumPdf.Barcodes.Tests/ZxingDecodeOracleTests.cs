@@ -121,6 +121,46 @@ public sealed class ZxingDecodeOracleTests : IDisposable
     }
 
     [Fact]
+    public void QrCode_Gs1ElementString_SeparatorRoundTrips_DecodesAiBoundariesFromByteModeGs()
+    {
+        // (01) GTIN (fixed length, no separator) then (10) LOT99 -- variable length and NOT the
+        // last element, so the encoder must emit a raw 0x1D byte-mode separator ahead of (21)
+        // SER456. This is the shape ISO/IEC 18004 Section 7.4.8.2 requires for two variable-length
+        // AIs in sequence, and the whole point of the FNC1-in-first-position path: zxing-cpp has
+        // to reconstruct the AI boundary from that raw separator byte, since nothing else in the
+        // encoded data marks it (no parenthesis, no literal digit count visible to the reader
+        // ahead of time).
+        const string content = "(01)09501101020917(10)LOT99(21)SER456";
+        var pdfPath = BuildSinglePdf((_, canvas) =>
+            canvas.DrawBarcode(new QrCode(content) { Gs1 = QrGs1Mode.ElementString, ModuleSize = 4 }, 50, 500));
+
+        if (!TryDecodeSingle(pdfPath, out var result)) return;
+
+        Assert.Equal("QRCode", result.Format);
+        Assert.Equal("GS1", result.ContentType);
+        Assert.Equal("(01)09501101020917(10)LOT99(21)SER456", result.Text);
+    }
+
+    [Fact]
+    public void QrCode_Gs1ElementString_PercentInValue_SurvivesUndoubled()
+    {
+        // "%" (0x25) is written as a single raw Byte-mode codeword (see
+        // QrEncoder.PrepareGs1ElementStringContent's remarks), not as the alphanumeric-mode
+        // escape ISO/IEC 18004 also permits (which would require doubling a literal "%" to
+        // "%%"). zxing-cpp decoding the single, undoubled "%" back confirms the byte survives
+        // intact and is not misread as (half of) a separator escape.
+        const string content = "(01)09501101020917(10)50%OFF";
+        var pdfPath = BuildSinglePdf((_, canvas) =>
+            canvas.DrawBarcode(new QrCode(content) { Gs1 = QrGs1Mode.ElementString, ModuleSize = 4 }, 50, 500));
+
+        if (!TryDecodeSingle(pdfPath, out var result)) return;
+
+        Assert.Equal("QRCode", result.Format);
+        Assert.Equal("GS1", result.ContentType);
+        Assert.Equal("(01)09501101020917(10)50%OFF", result.Text);
+    }
+
+    [Fact]
     public void QrCode_Gs1DigitalLink_DecodesAsTheCanonicalUri()
     {
         const string content = "(01)09501101020917(17)261231(10)ABC123";

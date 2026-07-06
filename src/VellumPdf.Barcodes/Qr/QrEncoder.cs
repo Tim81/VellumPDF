@@ -25,6 +25,15 @@ internal static class QrEncoder
                 $"{nameof(QrCode.Gs1)} requires text content ({nameof(QrCode)}(string) constructor) and cannot be combined with the byte-array constructor.",
                 nameof(barcode));
 
+        // Gs1ElementString.Parse (and, transitively, Gs1DigitalLink.Build) reject null-or-empty
+        // input with ArgumentException, since that guard is written against a public-parameter
+        // contract. But QrCode.Gs1's own documented contract (and the barcodes guide) promises
+        // FormatException for any not-well-formed GS1 content, so empty content is intercepted
+        // here rather than leaking that internal ArgumentException (and its "input" parameter
+        // name, meaningless to a QrCode caller) out of GetMatrix().
+        if (barcode.Gs1 != QrGs1Mode.None && string.IsNullOrEmpty(barcode.Text))
+            throw new FormatException("GS1 content is empty; a GS1 QR symbol requires at least one application identifier.");
+
         var gs1Fnc1FirstPosition = barcode.Gs1 == QrGs1Mode.ElementString;
 
         var (segmentFactory, content, byteEncoding, useEci, contentLength) = barcode.Gs1 switch
