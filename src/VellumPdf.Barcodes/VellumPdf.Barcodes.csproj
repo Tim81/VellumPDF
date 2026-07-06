@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\VellumPdf.Kernel\VellumPdf.Kernel.csproj" />
+    <ProjectReference Include="..\VellumPdf.Layout\VellumPdf.Layout.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <RootNamespace>VellumPdf.Barcodes</RootNamespace>
+    <AssemblyName>VellumPdf.Barcodes</AssemblyName>
+    <PackageId>VellumPdf.Barcodes</PackageId>
+    <Description>Optional barcode add-on for VellumPdf: QR, Micro QR, PDF417, Code 128 (incl. GS1-128), EAN-13/EAN-8/UPC-A with EAN-2/EAN-5 add-ons, and ITF-14, rendered as vector rectangles over VellumPdf.Kernel.PdfCanvas and VellumPdf.Layout.Document.</Description>
+    <PackageTags>pdf;barcode;qrcode;pdf417;code128;gs1-128;ean;upc;itf-14;aot</PackageTags>
+  </PropertyGroup>
+
+</Project>

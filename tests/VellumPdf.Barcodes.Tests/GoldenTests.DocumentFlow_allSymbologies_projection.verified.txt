@@ -1,0 +1,8 @@
+﻿PageCount: 1
+IndirectObjectCount: 7
+HasHelvetica: True
+HasBT: True
+HasET: True
+HasCode128Text: True
+HasEanDigits: True
+HasItfDigits: True

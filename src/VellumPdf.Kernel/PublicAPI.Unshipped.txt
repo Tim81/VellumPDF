@@ -49,3 +49,17 @@ VellumPdf.Canvas.TextAlignment.Left = 0 -> VellumPdf.Canvas.TextAlignment
 VellumPdf.Canvas.TextAlignment.Right = 2 -> VellumPdf.Canvas.TextAlignment
 VellumPdf.Document.PdfDocument.Linearize.get -> bool
 VellumPdf.Document.PdfDocument.Linearize.set -> void
+VellumPdf.Canvas.TextEncodingWarning
+VellumPdf.Canvas.TextEncodingWarning.TextEncodingWarning() -> void
+VellumPdf.Canvas.TextEncodingWarning.TextEncodingWarning(char Character) -> void
+VellumPdf.Canvas.TextEncodingWarning.Character.get -> char
+VellumPdf.Canvas.TextEncodingWarning.Character.init -> void
+VellumPdf.Canvas.TextEncodingWarning.CodePoint.get -> int
+VellumPdf.Canvas.TextEncodingWarning.Deconstruct(out char Character) -> void
+VellumPdf.Canvas.TextEncodingWarning.Equals(VellumPdf.Canvas.TextEncodingWarning other) -> bool
+~override VellumPdf.Canvas.TextEncodingWarning.Equals(object obj) -> bool
+~override VellumPdf.Canvas.TextEncodingWarning.ToString() -> string
+override VellumPdf.Canvas.TextEncodingWarning.GetHashCode() -> int
+static VellumPdf.Canvas.TextEncodingWarning.operator ==(VellumPdf.Canvas.TextEncodingWarning left, VellumPdf.Canvas.TextEncodingWarning right) -> bool
+static VellumPdf.Canvas.TextEncodingWarning.operator !=(VellumPdf.Canvas.TextEncodingWarning left, VellumPdf.Canvas.TextEncodingWarning right) -> bool
+VellumPdf.Canvas.PdfCanvas.TextEncodingWarnings.get -> System.Collections.Generic.IReadOnlyList<VellumPdf.Canvas.TextEncodingWarning>!

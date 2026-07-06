@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/VellumPdf.Barcodes/VellumPdf.Barcodes.csproj" />
     <Project Path="src/VellumPdf.Cli/VellumPdf.Cli.csproj" />
     <Project Path="src/VellumPdf.Conformance/VellumPdf.Conformance.csproj" />
     <Project Path="src/VellumPdf.Fonts.Standard14/VellumPdf.Fonts.Standard14.csproj" />
@@ -9,6 +10,7 @@
     <Project Path="src/VellumPdf.Signing/VellumPdf.Signing.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/VellumPdf.Barcodes.Tests/VellumPdf.Barcodes.Tests.csproj" />
     <Project Path="tests/VellumPdf.Cli.Tests/VellumPdf.Cli.Tests.csproj" />
     <Project Path="tests/VellumPdf.Conformance.Tests/VellumPdf.Conformance.Tests.csproj" />
     <Project Path="tests/VellumPdf.Kernel.Tests/VellumPdf.Kernel.Tests.csproj" />

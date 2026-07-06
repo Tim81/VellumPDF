@@ -9,16 +9,22 @@ _layout: landing
 A modern, **dependency-free PDF generation library for .NET 10**, implemented
 clean-room from the open **ISO 32000** standard.
 
-> **Status: beta.** Core features are implemented and CI-validated. The public
-> API may still change before 1.0.
+> **Status: stable.** The public API is locked (analyzer-enforced) and the
+> library targets .NET 10. Core features are CI-validated, including
+> PDF/A-2a/2b/2u and PDF/UA-1 conformance proven on every push with veraPDF.
 
 ## Packages
 
-| Package | Description |
-|---|---|
-| `VellumPdf.Kernel` | Object model, canvas, fonts, images, encryption, AcroForm, tagged-PDF, and PDF/A-2 scaffolding. |
-| `VellumPdf.Layout` | High-level document builder: paragraphs, headings, lists, tables, images, header/footer, pagination. |
-| `VellumPdf.Signing` | PAdES / PKCS#7 detached digital signatures over an incremental-update revision. |
+| Package | Status | Description |
+|---|---|---|
+| `VellumPdf.Kernel` | Stable | Object model, canvas, Standard-14 fonts, TrueType/OpenType embedding, images, encryption, AcroForm, tagged-PDF, and PDF/A-2 colour and metadata. |
+| `VellumPdf.Fonts.Standard14` | Stable | Embeddable, metric-compatible substitutes for the standard-14 fonts, for PDF/A's font-embedding rule. |
+| `VellumPdf.Layout` | Stable | High-level document builder: paragraphs, headings, lists, tables, images, header/footer, pagination. |
+| `VellumPdf.Signing` | Stable | PAdES / PKCS#7 detached digital signatures with RFC-3161 timestamps and long-term validation. |
+| `VellumPdf.Reader` | Preview | Reads existing PDFs (cross-reference tables and streams, hybrid-reference files) and exposes the catalog and signatures. |
+| `VellumPdf.Conformance` | Preview | In-process PDF/A-2b/2u/2a and PDF/UA-1 preflight, cross-validated against veraPDF in CI. |
+| `VellumPdf.Cli` | Stable | The `vellum-preflight` command-line validator, with Native-AOT binaries. |
+| `VellumPdf.Barcodes` | Preview | QR (including Micro QR), PDF417, Code 128, EAN-13/EAN-8/UPC-A, and ITF-14, decode-verified against zxing-cpp. |
 
 ## Getting started
 

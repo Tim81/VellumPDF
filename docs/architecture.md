@@ -44,7 +44,7 @@ but the .NET base class library.
   VellumPdf.Signing       incremental update + PKCS#7 / PAdES
   VellumPdf.Forms         AcroForm fields + appearance-stream generation
   VellumPdf.Conformance   PDF/A-2 (b/u/a) · PDF/UA-1 · preflight validator
-  VellumPdf.Barcodes      QR · PDF417 · Code128 · EAN
+  VellumPdf.Barcodes      QR (+ Micro QR) · PDF417 · Code128/GS1-128 · EAN/UPC · ITF-14 (v1.9)
   VellumPdf.Fonts.Shaping optional HarfBuzz adapter (off by default; honours zero-dep core)
 ```
 
@@ -119,8 +119,9 @@ to retrofit:
 - **External validators as oracles in CI** (invoked as tools, never linked or
   shipped, so they do not affect the library's license-clean runtime):
   `qpdf --check` (structural), veraPDF (PDF/A + UA), PDFBox Preflight,
-  `pdftotext`/pdfcpu (text round-trip → proves `ToUnicode`), and a render-diff
-  via pdfium/Ghostscript.
+  `pdftotext`/pdfcpu (text round-trip → proves `ToUnicode`), zxing-cpp (decode
+  round-trip for every barcode symbology, via a rasterized `pdftoppm` page),
+  and a render-diff via pdfium/Ghostscript.
 - Cross-reader smoke tests against pdf.js.
 
 ## Milestones

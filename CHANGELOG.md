@@ -6,6 +6,62 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.9.0] - 2026-07-06
+
+### Added
+
+- **`VellumPdf.Barcodes` — QR, Micro QR, PDF417, Code 128/GS1-128, EAN-13/EAN-8/UPC-A with
+  EAN-2/EAN-5 add-ons, and ITF-14.** A new optional package renders six barcode symbologies as
+  vector rectangles, never a raster image, over two API tiers: a low-level `PdfCanvas.DrawBarcode`
+  extension for precise placement, and a `Document.Add(Barcode)` flow element that handles sizing,
+  pagination, alignment, and tagging automatically. QR Code chooses its version, data mask, and
+  error-correction level automatically (all overridable) and supports an Auto/Latin-1/UTF-8/UTF-8+ECI
+  charset policy for non-Latin-1 content; PDF417 compacts text, byte, and numeric content
+  automatically. Every symbology is implemented clean-room, sourced solely from open specifications
+  (ISO/IEC 18004, ISO/IEC 15438, ISO/IEC 15417, the GS1 General Specifications). Round-trip decoding
+  is verified in CI for every symbology against zxing-cpp, which decodes each generated PDF after
+  rasterising it with `pdftoppm`. See [docs/barcodes-guide.md](docs/barcodes-guide.md).
+- **`Document.Add(IRenderer)`.** A new public overload on `VellumPdf.Layout.Document` accepts any
+  `IRenderer`, opening the flow-layout pipeline to custom elements beyond the ones VellumPdf ships —
+  `VellumPdf.Barcodes`' `BarcodeRenderer` is the first to use it.
+- **`PdfCanvas.TextEncodingWarnings` and `Document.TextEncodingWarnings`.** `ShowText` now reports
+  any character it could not represent in WinAnsiEncoding as a `TextEncodingWarning` (the character
+  and its code point); `Document.TextEncodingWarnings` aggregates these across every page after
+  `Save`. The character itself is still written as `?` in the PDF, matching the prior fallback; this
+  just makes the substitution visible to callers instead of silent.
+
+### Fixed
+
+- **`ShowText` on Standard-14 fonts mangled `°`, `•`, `–`/`—`, and accented Latin-1 characters.**
+  `PdfCanvas.ShowText` encoded strings with Latin-1, and the Standard-14 font dictionary declared no
+  `/Encoding`, so viewers fell back to the font's built-in StandardEncoding. Under StandardEncoding,
+  `°` (0xB0) is undefined and disappears, and bytes 0x80–0xFF map to different glyphs than WinAnsi:
+  `é` rendered as `Ø`, for example. `•`, en dash, and em dash sit above U+00FF and collapsed to `?`
+  under Latin-1 regardless of the font's encoding. `PdfFontResource.BuildDictionary` now declares
+  `/Encoding /WinAnsiEncoding` for the 12 non-symbolic Standard-14 fonts (Symbol and ZapfDingbats
+  keep their built-in symbolic encoding), `ShowText` encodes against WinAnsi instead of Latin-1, and
+  `Standard14Metrics` fills in the advance widths for the 0x80–0x9F block so justified and aligned
+  text using these characters measures correctly.
+- **`Standard14Metrics` advance widths were built for the wrong encoding.** The six proportional
+  Standard-14 tables (Helvetica, Helvetica-Bold, Times-Roman, Times-Bold, Times-Italic,
+  Times-BoldItalic) carried Adobe StandardEncoding widths, not WinAnsiEncoding widths, so most of
+  0xA0–0xFF and the ASCII `'`/`` ` `` codes measured the wrong glyph — for example Times-Roman `é`
+  read as 278 (the width of `i`) instead of 444, and `Æ` read as 556 instead of 889. The
+  Times-Bold, Times-Italic, and Times-BoldItalic arrays were also two elements short, so `þ` and
+  `ÿ` fell off the end and measured 0 in those three faces. Justified and aligned text using
+  accented Latin-1 characters, symbols, or `þ`/`ÿ` was positioned incorrectly as a result. The
+  tables are now generated from the Adobe Core-14 AFM data mapped through WinAnsiEncoding, matching
+  the `/Encoding /WinAnsiEncoding` fix above.
+- **AcroForm text-field and push-button appearances now render WinAnsi correctly.**
+  `AcroFormBuilder.EscapePdfString` threw for any field value or caption character above U+00FF,
+  so a `•`, en dash, em dash, ellipsis, or curly quote in a text field value or push-button
+  caption threw instead of rendering, even though the field's `/Helv` font dictionary already
+  declares `/Encoding /WinAnsiEncoding` (the fix above) and can render it. `EscapePdfString` now
+  maps that punctuation through `WinAnsiEncoding` instead of throwing, alongside the accented
+  Latin-1 characters (`é`) it already handled; a character genuinely outside WinAnsi still
+  throws, since rendering it needs an embedded font. ZapfDingbats checkbox (`(4)`) and
+  radio-button (`(l)`) appearances are unaffected — they never call `EscapePdfString`.
+
 ## [1.8.2] - 2026-07-05
 
 ### Fixed
@@ -549,7 +605,8 @@ few small additions. No public API was removed.
   headers, and no unbounded allocations driven by attacker-controlled length
   fields.
 
-[Unreleased]: https://github.com/Tim81/VellumPDF/compare/v1.8.0...HEAD
+[Unreleased]: https://github.com/Tim81/VellumPDF/compare/v1.9.0...HEAD
+[1.9.0]: https://github.com/Tim81/VellumPDF/releases/tag/v1.9.0
 [1.8.0]: https://github.com/Tim81/VellumPDF/releases/tag/v1.8.0
 [1.7.2]: https://github.com/Tim81/VellumPDF/releases/tag/v1.7.2
 [1.7.1]: https://github.com/Tim81/VellumPDF/releases/tag/v1.7.1
