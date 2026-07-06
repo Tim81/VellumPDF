@@ -65,4 +65,31 @@ public sealed class DocumentTests
         doc.Save(ms); // just verifies no exception
         Assert.True(ms.Length > 0);
     }
+
+    // ── TextEncodingWarnings ────────────────────────────────────────────────
+
+    [Fact]
+    public void Save_charOutsideWinAnsi_surfacesTextEncodingWarning()
+    {
+        using var doc = new Document();
+        doc.Add(new Paragraph("Black star: ★")); // ★ is outside WinAnsiEncoding
+
+        var ms = new MemoryStream();
+        doc.Save(ms);
+
+        Assert.Single(doc.TextEncodingWarnings);
+        Assert.Equal('★', doc.TextEncodingWarnings[0].Character);
+    }
+
+    [Fact]
+    public void Save_winAnsiOnlyContent_hasNoTextEncodingWarnings()
+    {
+        using var doc = new Document();
+        doc.Add(new Paragraph("Café • 15° – all in WinAnsi"));
+
+        var ms = new MemoryStream();
+        doc.Save(ms);
+
+        Assert.Empty(doc.TextEncodingWarnings);
+    }
 }

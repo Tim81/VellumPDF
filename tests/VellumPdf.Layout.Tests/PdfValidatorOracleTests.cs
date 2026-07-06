@@ -165,6 +165,44 @@ public sealed class PdfValidatorOracleTests : IDisposable
             $"Embedded-font marker 'EMBEDORACLE456' not found in pdftotext output.\nstderr: {stderr}");
     }
 
+    // ── WinAnsi ShowText round-trip oracle ───────────────────────────────────
+    //
+    // Regression for the ShowText/StandardEncoding mismatch documented in
+    // docs/vellumpdf-showtext-winansi-quirk.md: without a declared /Encoding, viewers fell back
+    // to the font's built-in StandardEncoding, which drops ° (undefined at 0xB0) and maps
+    // 0x80-0x9F/0xA0-0xFF to the wrong glyphs. This confirms poppler round-trips the four
+    // WinAnsi-only characters correctly once /Encoding /WinAnsiEncoding is declared and
+    // ShowText encodes against WinAnsi instead of Latin-1.
+
+    [Fact]
+    public void WinAnsiPunctuation_PdftotextExtractsCorrectGlyphs()
+    {
+        var pdfPath = Path.Combine(_tempDir, "winansi_punctuation.pdf");
+        GenerateWinAnsiPunctuationDoc(pdfPath);
+
+        // -enc UTF-8 makes the check independent of the pdftotext build's default text
+        // encoding: some builds default to Latin-1, which cannot represent bullet or
+        // en/em dash and would otherwise fail this check for a reason unrelated to the fix.
+        if (!TryRunTool("pdftotext", $"-enc UTF-8 \"{pdfPath}\" -", out _, out var text, out var stderr))
+        {
+            GateOnCi("pdftotext");
+            return;
+        }
+
+        Assert.True(text.Contains('°'), $"'°' (degree) not found in pdftotext output.\nstderr: {stderr}");
+        Assert.True(text.Contains('•'), $"'•' (bullet) not found in pdftotext output.\nstderr: {stderr}");
+        Assert.True(text.Contains('–'), $"'–' (en dash) not found in pdftotext output.\nstderr: {stderr}");
+        Assert.True(text.Contains('—'), $"'—' (em dash) not found in pdftotext output.\nstderr: {stderr}");
+    }
+
+    private static void GenerateWinAnsiPunctuationDoc(string path)
+    {
+        using var doc = new Document();
+        var style = new TextStyle { Font = Standard14.Helvetica, FontSize = 12 };
+        doc.Add(new Paragraph("15°46' • en–dash em—dash", style));
+        doc.Save(path);
+    }
+
     // ── AES-256 encryption oracle tests ─────────────────────────────────────
 
     private const string EncryptionUserPassword = "openme";

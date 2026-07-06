@@ -22,6 +22,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **`Document.Add(IRenderer)`.** A new public overload on `VellumPdf.Layout.Document` accepts any
   `IRenderer`, opening the flow-layout pipeline to custom elements beyond the ones VellumPdf ships —
   `VellumPdf.Barcodes`' `BarcodeRenderer` is the first to use it.
+- **`PdfCanvas.TextEncodingWarnings` and `Document.TextEncodingWarnings`.** `ShowText` now reports
+  any character it could not represent in WinAnsiEncoding as a `TextEncodingWarning` (the character
+  and its code point); `Document.TextEncodingWarnings` aggregates these across every page after
+  `Save`. The character itself is still written as `?` in the PDF, matching the prior fallback; this
+  just makes the substitution visible to callers instead of silent.
+
+### Fixed
+
+- **`ShowText` on Standard-14 fonts mangled `°`, `•`, `–`/`—`, and accented Latin-1 characters.**
+  `PdfCanvas.ShowText` encoded strings with Latin-1, and the Standard-14 font dictionary declared no
+  `/Encoding`, so viewers fell back to the font's built-in StandardEncoding. Under StandardEncoding,
+  `°` (0xB0) is undefined and disappears, and bytes 0x80–0xFF map to different glyphs than WinAnsi:
+  `é` rendered as `Ø`, for example. `•`, en dash, and em dash sit above U+00FF and collapsed to `?`
+  under Latin-1 regardless of the font's encoding. `PdfFontResource.BuildDictionary` now declares
+  `/Encoding /WinAnsiEncoding` for the 12 non-symbolic Standard-14 fonts (Symbol and ZapfDingbats
+  keep their built-in symbolic encoding), `ShowText` encodes against WinAnsi instead of Latin-1, and
+  `Standard14Metrics` fills in the advance widths for the 0x80–0x9F block so justified and aligned
+  text using these characters measures correctly.
+- **`Standard14Metrics` advance widths were built for the wrong encoding.** The six proportional
+  Standard-14 tables (Helvetica, Helvetica-Bold, Times-Roman, Times-Bold, Times-Italic,
+  Times-BoldItalic) carried Adobe StandardEncoding widths, not WinAnsiEncoding widths, so most of
+  0xA0–0xFF and the ASCII `'`/`` ` `` codes measured the wrong glyph — for example Times-Roman `é`
+  read as 278 (the width of `i`) instead of 444, and `Æ` read as 556 instead of 889. The
+  Times-Bold, Times-Italic, and Times-BoldItalic arrays were also two elements short, so `þ` and
+  `ÿ` fell off the end and measured 0 in those three faces. Justified and aligned text using
+  accented Latin-1 characters, symbols, or `þ`/`ÿ` was positioned incorrectly as a result. The
+  tables are now generated from the Adobe Core-14 AFM data mapped through WinAnsiEncoding, matching
+  the `/Encoding /WinAnsiEncoding` fix above.
 
 ## [1.8.2] - 2026-07-05
 

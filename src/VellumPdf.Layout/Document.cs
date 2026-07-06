@@ -1,6 +1,7 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
+using VellumPdf.Canvas;
 using VellumPdf.Document;
 using VellumPdf.Encryption;
 using VellumPdf.Fonts;
@@ -27,6 +28,14 @@ public sealed class Document : IDisposable
     private readonly PdfDocument _pdf = new();
     private readonly List<IRenderer> _content = [];
     private TextStyle _defaultStyle = TextStyle.Default;
+    private readonly List<TextEncodingWarning> _textEncodingWarnings = [];
+
+    /// <summary>
+    /// Characters written through a Standard-14 text element that WinAnsiEncoding could not
+    /// represent (each was substituted with '?' in the saved PDF). Populated by <see cref="Save(Stream)"/>
+    /// and the signing-prep path; empty when every character rendered is in WinAnsi.
+    /// </summary>
+    public IReadOnlyList<TextEncodingWarning> TextEncodingWarnings => _textEncodingWarnings;
 
     /// <summary>Document metadata (title, author, subject, keywords, etc.).</summary>
     public PdfDocumentInfo Info => _pdf.Info;
@@ -259,6 +268,8 @@ public sealed class Document : IDisposable
         };
         foreach (var r in _content) renderer.Add(r);
         renderer.Render(destination);
+        _textEncodingWarnings.Clear();
+        _textEncodingWarnings.AddRange(renderer.TextEncodingWarnings);
     }
 
     /// <summary>Runs the layout pass and writes the resulting PDF to a file at the given path.</summary>
@@ -286,6 +297,8 @@ public sealed class Document : IDisposable
         };
         foreach (var r in _content) renderer.Add(r);
         renderer.RunLayout();
+        _textEncodingWarnings.Clear();
+        _textEncodingWarnings.AddRange(renderer.TextEncodingWarnings);
         return _pdf.PrepareForSigning(options);
     }
 
