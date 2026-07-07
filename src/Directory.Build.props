@@ -15,6 +15,7 @@
     <IsPackable>true</IsPackable>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageReleaseNotes>See https://github.com/Tim81/VellumPDF/blob/main/CHANGELOG.md for release notes.</PackageReleaseNotes>
     <PackageProjectUrl>https://github.com/Tim81/VellumPDF</PackageProjectUrl>
     <RepositoryUrl>https://github.com/Tim81/VellumPDF</RepositoryUrl>
     <RepositoryType>git</RepositoryType>

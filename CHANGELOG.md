@@ -6,6 +6,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.10.0] - 2026-07-07
+
+### Added
+
+- **`VellumPdf.Barcodes` graduates to Stable.** Its public API surface moves from
+  `PublicAPI.Unshipped.txt` to `PublicAPI.Shipped.txt` in full, and the package-family status
+  table now lists it as Stable rather than Preview. Five new symbologies land alongside the
+  graduation, each implemented clean-room from its governing ISO/IEC standard and, where the
+  standard is patented, the original patent; a reference decoder (zxing-cpp) cross-checks every
+  symbology's round-trip in CI, including the Aztec placement geometry (see
+  [docs/barcodes-roadmap.md](docs/barcodes-roadmap.md) for the provenance record):
+  - **Data Matrix and GS1 Data Matrix** (ISO/IEC 16022 ECC 200) — square and rectangular symbols
+    with automatic size selection across five content-compaction modes. (#151)
+  - **GS1-mode QR, including GS1 Digital Link** — `QrCode.Gs1` emits an FNC1-prefixed GS1 element
+    string or a Digital Link URI inside a standard QR symbol. (#152)
+  - **Aztec Code** (ISO/IEC 24778) — compact and full-range sizes with automatic size selection
+    and a configurable error-correction percentage. (#153)
+  - **Code 39, including Full ASCII** (ISO/IEC 16388) — the self-checking symbology long used in
+    logistics and defense, with an optional check digit. (#154)
+  - **UPC-E and GS1-128 parenthesized-AI human-readable text** — the zero-suppressed 6-digit form
+    of UPC-A, and application-identifier-bracketed HRI for GS1-128. These are the two #155
+    completeness-backlog items with the most real-world demand; QR Kanji mode, QR Structured
+    Append, Compact/Macro PDF417, and Code 128 FNC4 remain deferred. (#155)
+- All eight packages republish at **1.10.0** in lockstep, even though only `VellumPdf.Barcodes`
+  changed — the repository versions every package together rather than independently.
+
 ## [1.9.0] - 2026-07-06
 
 ### Added
@@ -605,7 +631,8 @@ few small additions. No public API was removed.
   headers, and no unbounded allocations driven by attacker-controlled length
   fields.
 
-[Unreleased]: https://github.com/Tim81/VellumPDF/compare/v1.9.0...HEAD
+[Unreleased]: https://github.com/Tim81/VellumPDF/compare/v1.10.0...HEAD
+[1.10.0]: https://github.com/Tim81/VellumPDF/releases/tag/v1.10.0
 [1.9.0]: https://github.com/Tim81/VellumPDF/releases/tag/v1.9.0
 [1.8.0]: https://github.com/Tim81/VellumPDF/releases/tag/v1.8.0
 [1.7.2]: https://github.com/Tim81/VellumPDF/releases/tag/v1.7.2

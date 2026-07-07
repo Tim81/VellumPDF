@@ -25,36 +25,52 @@ work):
 | Code 128 | ISO/IEC 15417 | 2007 |
 | EAN/UPC, GS1-128, ITF-14 | GS1 General Specifications | Release 25.0 (2025) |
 
-## Prioritized future symbologies
+## Prioritized future symbologies (delivered in 1.10.0)
 
-Ranked by real-world demand (evidence and citations live in each issue).
+Ranked by real-world demand (evidence and citations live in each issue). All four are shipped.
 
-1. **Data Matrix / GS1 Data Matrix** — [#151](https://github.com/Tim81/VellumPDF/issues/151). ISO/IEC 16022:2024. The single largest gap: the only 2D format missing from every comparable general-purpose .NET library, and mandated for pharma serialization (EU FMD, US DSCSA), FDA UDI, industrial part marking, and GS1 Sunrise 2027 retail POS.
-2. **GS1-mode QR** — [#152](https://github.com/Tim81/VellumPDF/issues/152). Best effort-to-value: it reuses the QR engine already in the package and is one of the two formats GS1 promotes for Sunrise 2027.
-3. **Aztec** — [#153](https://github.com/Tim81/VellumPDF/issues/153). ISO/IEC 24778:2024. The other universally-shipped 2D format; dominant in transport ticketing (IATA boarding passes, European rail).
-4. **Code 39** — [#154](https://github.com/Tim81/VellumPDF/issues/154). ISO/IEC 16388:2023. The most universal 1D symbology still missing (7 of 8 comparable libraries ship it); low effort.
+1. **Data Matrix / GS1 Data Matrix** — [#151](https://github.com/Tim81/VellumPDF/issues/151), delivered. ISO/IEC 16022:2024. Closed the single largest gap: the only 2D format missing from every comparable general-purpose .NET library, and mandated for pharma serialization (EU FMD, US DSCSA), FDA UDI, industrial part marking, and GS1 Sunrise 2027 retail POS.
+2. **GS1-mode QR** — [#152](https://github.com/Tim81/VellumPDF/issues/152), delivered. Reuses the QR engine already in the package; one of the two formats GS1 promotes for Sunrise 2027, including a GS1 Digital Link mode.
+3. **Aztec** — [#153](https://github.com/Tim81/VellumPDF/issues/153), delivered. ISO/IEC 24778:2024. The other universally-shipped 2D format; dominant in transport ticketing (IATA boarding passes, European rail).
+4. **Code 39** — [#154](https://github.com/Tim81/VellumPDF/issues/154), delivered. ISO/IEC 16388:2023. The most universal 1D symbology that was still missing (7 of 8 comparable libraries ship it), including Full ASCII mode.
 5. GS1 DataBar, then MaxiCode and Codabar — niche; not yet ticketed.
 
 ## Completeness backlog
 
 Optional features inside the shipped symbologies, tracked together in
-[#155](https://github.com/Tim81/VellumPDF/issues/155): QR Kanji mode and
-Structured Append, UPC-E, Compact and Macro PDF417, GS1-128 parenthesized-AI
-human-readable text, and Code 128 FNC4 / extended Latin-1.
+[#155](https://github.com/Tim81/VellumPDF/issues/155). Shipped in 1.10.0: UPC-E
+and GS1-128 parenthesized-AI human-readable text, the two items with the most
+real-world demand. Still deferred: QR Kanji mode, QR Structured Append,
+Compact and Macro PDF417, and Code 128 FNC4 / extended Latin-1.
 
 ## Decisions on record
 
 - **Generation only, no decoding:** the highest-volume .NET barcode packages are
   generation-only, and the package's purpose is producing PDFs, not scanning
   them. Decoding is a different problem and stays out of scope.
-- **`PublicAPI.Shipped.txt` stays unpromoted while Barcodes is Preview:** the
-  whole surface sits in `PublicAPI.Unshipped.txt` on purpose. Preview means the
-  surface is still allowed to move; promote it when the package graduates to
-  Stable, not before.
+- **`PublicAPI.Shipped.txt` is promoted as of 1.10.0:** the whole surface sat in
+  `PublicAPI.Unshipped.txt` while Barcodes was Preview, on the basis that Preview
+  means the surface can still move. With #151-155 landed and the package
+  graduated to Stable in 1.10.0, the full surface, including the five new
+  symbologies, moved to `PublicAPI.Shipped.txt`, and `Unshipped.txt` was reset
+  to its header. Any further change to the Barcodes public API is now a
+  breaking change subject to the same analyzer gate as every other Stable
+  package.
 - **The QR unmarked-Latin-1 default is standard-conformant:** the QR standard's
   default interpretation of unmarked byte data is ISO-8859-1, so emitting no ECI
   for Latin-1 text is both correct and the most interoperable choice. An explicit
   ECI-3 opt-in could be added later if a caller needs it; it is not required.
+- **Aztec placement geometry, provenance:** the data-layer placement (ISO/IEC
+  24778 clauses 7.1-7.3) was authored from the standard's structural rules plus
+  the original public Aztec patent (US 5,591,956), which describes the same
+  layout directly: the spiral of concentric layers, 2-module domino pairs,
+  most-significant-bit-first ordering, the reference grid at every 16th module,
+  and the data field's displacement around it. ISO/IEC 24778's own coordinate
+  figures (Figures 4 and 5) are raster diagrams absent from the standard's
+  freely available preview pages, so the exact coordinate convention was
+  verified against module matrices generated by zxing-cpp as an
+  interoperability cross-check, not as an implementation source. See
+  [docs/barcodes-guide.md](barcodes-guide.md#aztec-code) for the full citation.
 
 ## Maintenance note: README duplication
 

@@ -18,9 +18,16 @@ a breaking change, hence the major bump.
 
 ## Clean-room policy (non-negotiable)
 
-- The implementation is written **solely** from open published specifications
-  (ISO 32000, OpenType/TrueType, WOFF, XMP, PKCS, etc.).
-- **No** source code from any third-party PDF library is copied or referenced.
+- The implementation is written from open published specifications (ISO
+  32000, OpenType/TrueType, WOFF, XMP, PKCS, etc.) and, for barcode
+  symbologies whose governing standard is patented, the original patent (for
+  example US 5,591,956 for Aztec Code).
+- **No** source code from any third-party PDF or barcode library is copied or
+  referenced. A reference decoder, zxing-cpp, is used only as an
+  interoperability cross-check in the test suite, never as a source of
+  implementation; this includes verifying the exact Aztec placement
+  coordinates, since the relevant ISO/IEC 24778 figures are not freely
+  available.
 - The names of disallowed reference libraries must not appear anywhere in the
   repository. This is enforced in CI by `eng/clean-room-check.ps1`.
 
