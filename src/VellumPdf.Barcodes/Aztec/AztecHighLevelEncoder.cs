@@ -182,32 +182,52 @@ internal static class AztecHighLevelEncoder
     }
 
     /// <summary>
-    /// Emits a binary shift (ISO/IEC 24778 clause 7.3.2): a shift code (latching to
-    /// <see cref="AztecMode.Upper"/> first when <paramref name="mode"/> is <see cref="AztecMode.Punct"/>
-    /// or <see cref="AztecMode.Digit"/>, neither of which has a direct binary-shift code), then a
-    /// 5-bit length (1-31 bytes), or — for 32 or more bytes — a 5-bit zero followed by an 11-bit
-    /// length less 31, then the raw bytes themselves, 8 bits apiece with no further transformation.
-    /// Binary shift always reverts to the mode active when it was issued once the run ends, so the
-    /// returned mode is that same (possibly just-latched) mode.
+    /// The longest run a single binary-shift block can carry: its length field is either a 5-bit
+    /// count (1-31 bytes) or, for 32 or more bytes, a 5-bit zero followed by an 11-bit count less
+    /// 31 — and 11 bits can express at most 2047, so 31 + 2047 = 2078 is the largest byte count one
+    /// block's length field can hold without wrapping.
+    /// </summary>
+    private const int MaxBinaryShiftBlockLength = 2078;
+
+    /// <summary>
+    /// Emits one or more binary-shift blocks (ISO/IEC 24778 clause 7.3.2) to carry
+    /// <paramref name="run"/>: a shift code (latching to <see cref="AztecMode.Upper"/> first when
+    /// <paramref name="mode"/> is <see cref="AztecMode.Punct"/> or <see cref="AztecMode.Digit"/>,
+    /// neither of which has a direct binary-shift code), then a 5-bit length (1-31 bytes), or — for
+    /// 32 or more bytes — a 5-bit zero followed by an 11-bit length less 31, then the raw bytes
+    /// themselves, 8 bits apiece with no further transformation. A run longer than a single block's
+    /// <see cref="MaxBinaryShiftBlockLength"/> is split into consecutive blocks of at most that many
+    /// bytes each: binary shift always reverts to the mode active when it was issued once a block's
+    /// run ends, so the next block simply repeats the same shift code from that same (possibly
+    /// just-latched) mode, with no further latching needed between blocks. The returned mode is that
+    /// mode, unchanged by any number of blocks.
     /// </summary>
     private static AztecMode EmitBinaryShift(List<bool> bits, AztecMode mode, ReadOnlySpan<byte> run)
     {
         if (mode is AztecMode.Punct or AztecMode.Digit)
             mode = LatchTo(bits, mode, AztecMode.Upper);
 
-        AppendBits(bits, BinaryShiftCode(mode), AztecTables.CodeBits(mode));
-
-        if (run.Length <= 31)
+        var offset = 0;
+        while (offset < run.Length)
         {
-            AppendBits(bits, run.Length, 5);
-        }
-        else
-        {
-            AppendBits(bits, 0, 5);
-            AppendBits(bits, run.Length - 31, 11);
+            var chunk = run.Slice(offset, Math.Min(MaxBinaryShiftBlockLength, run.Length - offset));
+
+            AppendBits(bits, BinaryShiftCode(mode), AztecTables.CodeBits(mode));
+
+            if (chunk.Length <= 31)
+            {
+                AppendBits(bits, chunk.Length, 5);
+            }
+            else
+            {
+                AppendBits(bits, 0, 5);
+                AppendBits(bits, chunk.Length - 31, 11);
+            }
+
+            foreach (var b in chunk) AppendBits(bits, b, 8);
+            offset += chunk.Length;
         }
 
-        foreach (var b in run) AppendBits(bits, b, 8);
         return mode;
     }
 

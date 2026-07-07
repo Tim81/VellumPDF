@@ -204,6 +204,28 @@ public sealed class AztecEncoderTests
     }
 
     [Fact]
+    public void BuildModeMessage_compact_checkWordsMatchIndependentlyHandDerivedGf16Value()
+    {
+        // Unlike the self-consistent check above (which recomputes the expected check words with
+        // the same ReedSolomonBinary the production code calls, so it could not catch a bug shared
+        // by both call sites), this compares against a value worked out by hand. Data words [5, 2]
+        // are the mode-message value for 2 layers, 19 data codewords: (layersMinus1=1,
+        // codewordsMinus1=18) packed as (1 << 6) | 18 = 0x52, split into nibbles [0x5, 0x2]. Over
+        // GF(16) (x^4 + x + 1, primitive element alpha = 2, so alpha^1..alpha^5 = 2, 4, 8, 3, 6),
+        // multiplying out the degree-5, first-root-1 generator polynomial
+        // (x - alpha)(x - alpha^2)(x - alpha^3)(x - alpha^4)(x - alpha^5) by hand gives
+        // x^5 + 11x^4 + 4x^3 + 6x^2 + 2x + 1; dividing data*x^5 by that generator with the same
+        // LFSR steps ComputeRemainder uses gives check words [9, 1, 0, 3, 3].
+        var size = AztecSymbolInfo.Compact[1]; // 2 layers
+        var bits = AztecEncoder.BuildModeMessage(size, dataCodewordCount: 19);
+
+        var checkWords = new int[5];
+        for (var i = 0; i < 5; i++) checkWords[i] = ReadBits(bits, (2 + i) * 4, 4);
+
+        Assert.Equal([9, 1, 0, 3, 3], checkWords);
+    }
+
+    [Fact]
     public void BuildModeMessage_fullRange_encodesLayersAndDataCodewordCount_andPassesItsOwnRsCheck()
     {
         var size = AztecSymbolInfo.FullRange[8]; // layer 9 (first 10-bit-word size)
@@ -275,6 +297,21 @@ public sealed class AztecEncoderTests
     {
         var bits = AztecHighLevelEncoder.Encode(new byte[3000]);
         Assert.Throws<FormatException>(() => AztecEncoder.SelectSize(bits, AztecFormat.FullRange, ecPercent: 23));
+    }
+
+    [Fact]
+    public void AztecCode_payloadTooLargeForLargestFullRangeLayer_throwsFormatExceptionNotCorruption()
+    {
+        // Regression guard alongside the binary-shift chunking fix (EmitBinaryShift): a run this far
+        // past even the 32-layer symbol's data-codeword capacity must fail cleanly, not silently
+        // wrap a length field and produce a corrupt symbol. 0xEE is outside every character mode's
+        // table, so the whole run goes through binary shift, now split across multiple blocks.
+        var content = new byte[3200];
+        Array.Fill(content, (byte)0xEE);
+        var barcode = new AztecCode(content) { ErrorCorrectionPercent = 5, Format = AztecFormat.FullRange };
+
+        var ex = Assert.Throws<FormatException>(() => barcode.GetMatrix());
+        Assert.Contains("full-range", ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]
