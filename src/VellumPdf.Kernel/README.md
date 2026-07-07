@@ -58,18 +58,18 @@ Kernel walkthrough: <https://github.com/Tim81/VellumPDF/blob/main/docs/kernel-gu
 | [VellumPdf.Reader](https://www.nuget.org/packages/VellumPdf.Reader) | Preview | Opens existing PDFs; exposes catalog, signatures, and streams. |
 | [VellumPdf.Conformance](https://www.nuget.org/packages/VellumPdf.Conformance) | Preview | In-process PDF/A and PDF/UA preflight validation. |
 | [VellumPdf.Cli](https://www.nuget.org/packages/VellumPdf.Cli) | Stable | `vellum-preflight` command-line PDF/A and PDF/UA validator. |
-| [VellumPdf.Barcodes](https://www.nuget.org/packages/VellumPdf.Barcodes) | Preview | QR, PDF417, Code 128/GS1-128, EAN/UPC, and ITF-14 as vectors. |
+| [VellumPdf.Barcodes](https://www.nuget.org/packages/VellumPdf.Barcodes) | Stable | QR, Data Matrix, Aztec, PDF417, Code 128/GS1-128, Code 39, EAN/UPC, and ITF-14 as vectors. |
 
 ## Roadmap
 
 | Milestone | Scope |
 | --- | --- |
-| **1.9 — Barcodes** (this release) | `VellumPdf.Barcodes` (#51): QR, Micro QR, PDF417, Code 128/GS1-128, EAN/UPC, and ITF-14. |
+| **1.9 — Barcodes** | `VellumPdf.Barcodes` (#51): QR, Micro QR, PDF417, Code 128/GS1-128, EAN/UPC, and ITF-14. |
+| **1.10 — Barcodes Stable** (this release) | `VellumPdf.Barcodes` graduates from Preview to Stable. New symbologies: Data Matrix / GS1 Data Matrix (#151), GS1-mode QR incl. GS1 Digital Link (#152), Aztec (#153), and Code 39 incl. Full ASCII (#154). From the #155 completeness backlog, UPC-E and GS1-128 parenthesized-AI human-readable text shipped; QR Kanji mode, QR Structured Append, Compact/Macro PDF417, and Code 128 FNC4 are deferred. |
 | **2.0 — Breaking changes** | Strong-named assemblies (#53) and an async I/O surface for `Save`/`Sign`/loaders (#54); both change assembly identity or the public contract, so they wait for a major version. |
 | **2.1 — PDF reader (structural)** | `VellumPdf.Reader` grows classic and cross-reference-stream parsing, object streams, and encryption support, with a fixture corpus proving it against real-world files (Epic #100). |
 | **2.2 — PDF content extraction** | Text and image extraction on top of the reader. |
 | **3.0 — Read-modify-write** | A unified round-trip document model that supersedes the write-once `PdfDocument`, so existing PDFs can be opened, edited, and saved back (Epic #101). |
-| **Barcodes — GS1 & 2D expansion** | GS1 Data Matrix (#151), GS1-mode QR (#152), Aztec (#153), and Code 39 (#154), with smaller completeness items tracked in #155. |
 
 ## License
 

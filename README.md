@@ -40,7 +40,7 @@ clean-room from the open **ISO 32000** standard.
 | `VellumPdf.Reader` | [![NuGet](https://img.shields.io/nuget/v/VellumPdf.Reader.svg?label=%20)](https://www.nuget.org/packages/VellumPdf.Reader) | Preview | Opens existing PDFs (classic cross-reference tables, cross-reference and object streams, hybrid-reference files; unencrypted) and exposes the catalog, signatures, and decoded stream data. The basis for the signing LTV path, the conformance validator, and a general reader. |
 | `VellumPdf.Conformance` | [![NuGet](https://img.shields.io/nuget/v/VellumPdf.Conformance.svg?label=%20)](https://www.nuget.org/packages/VellumPdf.Conformance) | Preview | In-process PDF/A-2b/2u/2a and PDF/UA-1 preflight: runs clean-room conformance rules authored from the ISO specifications and returns machine-readable assertions (rule id, ISO clause, severity, object reference) — no external veraPDF Docker image needed. AOT- and trim-ready (rules registered explicitly, no reflection). Covers file structure, colour and output intents (including ICC profile validity and ICCBased-CMYK overprint), transparency, images and XObjects (including a JPEG2000 codestream parser), fonts (an in-process sfnt font-program parser for glyph presence and widths, embedded-CMap CID/WMode/usecmap checks), content streams (ISO 32000-1 operator, inline-image-filter, and graphics-state validation), digital signatures (a zero-dependency CMS/ASN.1 reader for §6.4.3), annotations, interactive forms, actions, and XMP metadata (via an in-process XMP parser), plus the 2u/2a deltas and a tagged-structure walker for the PDF/UA-1 (ISO 14289-1) accessibility checks. Build-verified veraPDF parity is about 99% for PDF/A-2b/2u/2a and PDF/UA-1; the only gaps are five checks tracked in follow-up issues — three with a predefined-CJK-CMap sub-condition that needs a conformant CJK font asset to cross-validate, and two that need a subsystem outside this release (a PDF/A-1 profile, reader decryption). Every rule's positive and negative paths are cross-validated against veraPDF in CI. |
 | `VellumPdf.Cli` | [![NuGet](https://img.shields.io/nuget/v/VellumPdf.Cli.svg?label=%20)](https://www.nuget.org/packages/VellumPdf.Cli) | Stable | The `vellum-preflight` command-line validator: checks a PDF against PDF/A-2b/2u/2a and PDF/UA-1 with the in-process `VellumPdf.Conformance` engine — no JVM or Docker. Ships as a cross-platform .NET tool (`dotnet tool install -g VellumPdf.Cli`) and self-contained Native-AOT binaries. Text, JSON, and SARIF 2.1.0 output; file, glob, directory, and stdin inputs; exit codes `0` (conformant), `1` (non-conformant), `2` (usage or I/O error). |
-| `VellumPdf.Barcodes` | [![NuGet](https://img.shields.io/nuget/v/VellumPdf.Barcodes.svg?label=%20)](https://www.nuget.org/packages/VellumPdf.Barcodes) | Preview | Six symbologies: QR (including Micro QR M1-M4), PDF417, Code 128 (plain and GS1-128), EAN-13/EAN-8/UPC-A with EAN-2/EAN-5 add-ons, and ITF-14, rendered as vector rectangles through a low-level `PdfCanvas` extension or the `Document.Add` flow API. Round-trip decoding is verified in CI against zxing-cpp. |
+| `VellumPdf.Barcodes` | [![NuGet](https://img.shields.io/nuget/v/VellumPdf.Barcodes.svg?label=%20)](https://www.nuget.org/packages/VellumPdf.Barcodes) | Stable | Eleven symbologies: QR (including Micro QR and GS1 mode with Digital Link), Data Matrix (including GS1 Data Matrix), Aztec, PDF417, Code 128 (plain and GS1-128), Code 39 (including Full ASCII), EAN-13/EAN-8/UPC-A/UPC-E with EAN-2/EAN-5 add-ons, and ITF-14, rendered as vector rectangles through a low-level `PdfCanvas` extension or the `Document.Add` flow API. Round-trip decoding is verified in CI against zxing-cpp. |
 
 ### Install
 
@@ -214,20 +214,20 @@ guarantee. Exit codes are `0` (conformant), `1` (non-conformant), and `2` (usage
 ## Roadmap
 
 Planned direction, tracked as [GitHub milestones](https://github.com/Tim81/VellumPDF/milestones).
-These are scopes, not commitments — the milestones carry no due dates, and nothing past 1.9.0
+These are scopes, not commitments — the milestones carry no due dates, and nothing past 1.10.0
 has shipped yet.
 
 | Milestone | Scope |
 | --- | --- |
-| **1.9 — Barcodes** (this release) | `VellumPdf.Barcodes` (#51): QR, Micro QR, PDF417, Code 128/GS1-128, EAN/UPC, and ITF-14. |
+| **1.9 — Barcodes** | `VellumPdf.Barcodes` (#51): QR, Micro QR, PDF417, Code 128/GS1-128, EAN/UPC, and ITF-14. |
+| **1.10 — Barcodes Stable** (this release) | `VellumPdf.Barcodes` graduates from Preview to Stable. New symbologies: Data Matrix / GS1 Data Matrix (#151), GS1-mode QR incl. GS1 Digital Link (#152), Aztec (#153), and Code 39 incl. Full ASCII (#154). From the #155 completeness backlog, UPC-E and GS1-128 parenthesized-AI human-readable text shipped; QR Kanji mode, QR Structured Append, Compact/Macro PDF417, and Code 128 FNC4 are deferred. |
 | **2.0 — Breaking changes** | Strong-named assemblies (#53) and an async I/O surface for `Save`/`Sign`/loaders (#54); both change assembly identity or the public contract, so they wait for a major version. |
 | **2.1 — PDF reader (structural)** | `VellumPdf.Reader` grows classic and cross-reference-stream parsing, object streams, and encryption support, with a fixture corpus proving it against real-world files (Epic #100). |
 | **2.2 — PDF content extraction** | Text and image extraction on top of the reader. |
 | **3.0 — Read-modify-write** | A unified round-trip document model that supersedes the write-once `PdfDocument`, so existing PDFs can be opened, edited, and saved back (Epic #101). |
-| **Barcodes — GS1 & 2D expansion** | GS1 Data Matrix (#151), GS1-mode QR (#152), Aztec (#153), and Code 39 (#154), with smaller completeness items tracked in #155. |
 
-`VellumPdf.Reader`, `VellumPdf.Conformance`, and `VellumPdf.Barcodes` are marked Preview in the
-table above; expect their public surfaces to settle as these milestones land.
+`VellumPdf.Reader` and `VellumPdf.Conformance` are marked Preview in the table above; expect
+their public surfaces to settle as these milestones land.
 
 ## Building
 
@@ -245,5 +245,7 @@ install [veraPDF](https://verapdf.org) (or use its Docker image) so the
 ## License & provenance
 
 Licensed under the [Apache License 2.0](LICENSE). VellumPdf is an original,
-independent implementation written solely from open published specifications;
-see [NOTICE](NOTICE) and [docs/architecture.md](docs/architecture.md).
+independent implementation written from open published specifications and,
+for patented barcode symbologies, the original patents; no third-party source
+is copied. See [NOTICE](NOTICE) and [docs/architecture.md](docs/architecture.md)
+for the full provenance statement.

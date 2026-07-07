@@ -1,6 +1,6 @@
 # VellumPdf Barcodes guide
 
-This guide covers the optional `VellumPdf.Barcodes` package: eight symbologies
+This guide covers the optional `VellumPdf.Barcodes` package: eleven symbologies
 rendered as vector rectangles over `VellumPdf.Kernel.PdfCanvas` and
 `VellumPdf.Layout.Document`, described in [`docs/architecture.md`](architecture.md).
 Every symbol is drawn as filled rectangles (never a raster image), so it stays
@@ -58,8 +58,8 @@ ignore it.
 Every barcode has two mutually exclusive sizing options:
 
 - **`ModuleSize`**: the width of one module (the narrowest bar/space or
-  matrix cell), in points. Defaults to 2.0 for QR/Micro QR and PDF417, 1.0 for
-  Code 128, Code 39, EAN/UPC, and ITF-14.
+  matrix cell), in points. Defaults to 2.0 for QR/Micro QR, PDF417, Data
+  Matrix, and Aztec; 1.0 for Code 128, Code 39, EAN/UPC, and ITF-14.
 - **`TargetWidth`**: the desired overall rendered width, in points; the
   module size is derived from it.
 
@@ -510,8 +510,8 @@ stays below the bars as usual.
 including quiet zones, HRI text, and bearer bars), validating content and
 sizing options. Call it directly if you need to lay out surrounding content
 yourself. `QrCode.GetMatrix()`, `MicroQrCode.GetMatrix()`,
-`Pdf417Barcode.GetMatrix()`, and `DataMatrixBarcode.GetMatrix()` expose the
-raw `BarcodeMatrix` (a bit-packed
+`Pdf417Barcode.GetMatrix()`, `DataMatrixBarcode.GetMatrix()`, and
+`AztecCode.GetMatrix()` expose the raw `BarcodeMatrix` (a bit-packed
 dark/light grid, `(0, 0)` at the top-left) for callers that want to inspect or
 render the modules independently of `BarcodePainter`.
 
