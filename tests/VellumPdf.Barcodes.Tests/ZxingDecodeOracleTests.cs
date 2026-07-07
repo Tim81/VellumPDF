@@ -3,6 +3,7 @@
 
 using System.ComponentModel;
 using System.Diagnostics;
+using VellumPdf.Barcodes.Aztec;
 using VellumPdf.Barcodes.DataMatrix;
 using VellumPdf.Barcodes.Internal;
 using VellumPdf.Canvas;
@@ -432,6 +433,102 @@ public sealed class ZxingDecodeOracleTests : IDisposable
         <= 104 => 3,
         _ => 2,
     };
+
+    // ── Aztec Code ────────────────────────────────────────────────────────
+
+    // The data-field spiral (AztecPlacement) was derived from, and verified bit-for-bit against,
+    // zxing-cpp reference matrices; these round-trips exercise the full render -> rasterize ->
+    // decode path across compact 1-4 layers and full-range layer counts, plus a byte[] payload and
+    // a high-error-correction case. See AztecPlacement's remarks for the placement provenance.
+
+    [Fact]
+    public void AztecCode_shortText_compactRoundTrips()
+    {
+        const string content = "VellumPdf Aztec";
+        var pdfPath = BuildSinglePdf((_, canvas) =>
+            canvas.DrawBarcode(new AztecCode(content) { Format = AztecFormat.Compact, ModuleSize = 6 }, 50, 500));
+
+        if (!TryDecodeSingle(pdfPath, out var result)) return;
+
+        Assert.Equal("Aztec", result.Format);
+        Assert.Equal(content, result.Text);
+    }
+
+    [Fact]
+    public void AztecCode_longerText_forcesFullRange_roundTrips()
+    {
+        var content = string.Concat(Enumerable.Repeat("VellumPdf Aztec full-range oracle round-trip content. ", 8));
+        var pdfPath = BuildSinglePdf((_, canvas) =>
+            canvas.DrawBarcode(new AztecCode(content) { Format = AztecFormat.FullRange, ModuleSize = 4 }, 30, 30));
+
+        if (!TryDecodeSingle(pdfPath, out var result)) return;
+
+        Assert.Equal("Aztec", result.Format);
+        Assert.Equal(content, result.Text);
+    }
+
+    [Fact]
+    public void AztecCode_byteContent_roundTripsAsBinary()
+    {
+        byte[] content = [0x00, 0x01, 0x02, 0xFF, 0xFE, 0x7F, 0x80, 0x10, 0x20, 0x30];
+        var pdfPath = BuildSinglePdf((_, canvas) =>
+            canvas.DrawBarcode(new AztecCode(content) { ModuleSize = 6 }, 50, 500));
+
+        if (!TryDecodeSingle(pdfPath, out var result)) return;
+
+        Assert.Equal("Aztec", result.Format);
+        Assert.Equal("Binary", result.ContentType);
+        Assert.Equal(Convert.ToHexStringLower(content), result.Text);
+    }
+
+    [Fact]
+    public void AztecCode_highErrorCorrectionPercent_roundTrips()
+    {
+        const string content = "VellumPdf Aztec high EC";
+        var pdfPath = BuildSinglePdf((_, canvas) =>
+            canvas.DrawBarcode(new AztecCode(content) { ErrorCorrectionPercent = 80, ModuleSize = 6 }, 50, 500));
+
+        if (!TryDecodeSingle(pdfPath, out var result)) return;
+
+        Assert.Equal("Aztec", result.Format);
+        Assert.Equal(content, result.Text);
+    }
+
+    /// <summary>A range of content lengths chosen to force several different compact layer counts (1-4).</summary>
+    public static IEnumerable<object[]> AztecCompactContentLengths() => new[] { 5, 15, 30, 50, 70 }
+        .Select(length => new object[] { length });
+
+    [Theory]
+    [MemberData(nameof(AztecCompactContentLengths))]
+    public void AztecCode_compactAcrossLayerCounts_roundTrips(int length)
+    {
+        var content = new string('A', length);
+        var barcode = new AztecCode(content) { Format = AztecFormat.Compact, ModuleSize = 6 };
+        var pdfPath = BuildSinglePdf((_, canvas) => canvas.DrawBarcode(barcode, 30, 30));
+
+        if (!TryDecodeSingle(pdfPath, out var result)) return;
+
+        Assert.Equal("Aztec", result.Format);
+        Assert.Equal(content, result.Text);
+    }
+
+    /// <summary>A range of content lengths chosen to force several different full-range layer counts.</summary>
+    public static IEnumerable<object[]> AztecFullRangeContentLengths() => new[] { 30, 80, 150, 300, 600 }
+        .Select(length => new object[] { length });
+
+    [Theory]
+    [MemberData(nameof(AztecFullRangeContentLengths))]
+    public void AztecCode_fullRangeAcrossLayerCounts_roundTrips(int length)
+    {
+        var content = new string('A', length);
+        var barcode = new AztecCode(content) { Format = AztecFormat.FullRange, ModuleSize = 4 };
+        var pdfPath = BuildSinglePdf((_, canvas) => canvas.DrawBarcode(barcode, 30, 30));
+
+        if (!TryDecodeSingle(pdfPath, out var result)) return;
+
+        Assert.Equal("Aztec", result.Format);
+        Assert.Equal(content, result.Text);
+    }
 
     // ── PDF417 ────────────────────────────────────────────────────────────
 

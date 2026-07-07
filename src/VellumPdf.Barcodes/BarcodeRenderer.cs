@@ -114,6 +114,8 @@ public sealed class BarcodeRenderer : IRenderer
         Pdf417Barcode => "PDF417 barcode",
         DataMatrixBarcode { Text: { } text } => $"Data Matrix barcode: {text}",
         DataMatrixBarcode => "Data Matrix barcode",
+        AztecCode { Text: { } text } => $"Aztec Code: {text}",
+        AztecCode => "Aztec Code",
         Code128Barcode code128 => $"Code 128 barcode: {code128.Content}",
         Code39Barcode code39 => $"Code 39 barcode: {code39.Content}",
         EanBarcode ean => $"{DescribeEanSymbology(ean.Symbology)}: {ean.Digits}",
