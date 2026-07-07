@@ -60,6 +60,18 @@ VellumPdf.Barcodes.Code39Barcode.FullAscii.get -> bool
 VellumPdf.Barcodes.Code39Barcode.FullAscii.init -> void
 VellumPdf.Barcodes.Code39Barcode.WideNarrowRatio.get -> double
 VellumPdf.Barcodes.Code39Barcode.WideNarrowRatio.init -> void
+VellumPdf.Barcodes.DataMatrixBarcode
+VellumPdf.Barcodes.DataMatrixBarcode.DataMatrixBarcode(byte[]! content) -> void
+VellumPdf.Barcodes.DataMatrixBarcode.DataMatrixBarcode(string! content) -> void
+VellumPdf.Barcodes.DataMatrixBarcode.GetMatrix() -> VellumPdf.Barcodes.BarcodeMatrix!
+VellumPdf.Barcodes.DataMatrixBarcode.Gs1.get -> bool
+VellumPdf.Barcodes.DataMatrixBarcode.Gs1.init -> void
+VellumPdf.Barcodes.DataMatrixBarcode.Shape.get -> VellumPdf.Barcodes.DataMatrixShape
+VellumPdf.Barcodes.DataMatrixBarcode.Shape.init -> void
+VellumPdf.Barcodes.DataMatrixShape
+VellumPdf.Barcodes.DataMatrixShape.Automatic = 0 -> VellumPdf.Barcodes.DataMatrixShape
+VellumPdf.Barcodes.DataMatrixShape.Rectangular = 2 -> VellumPdf.Barcodes.DataMatrixShape
+VellumPdf.Barcodes.DataMatrixShape.Square = 1 -> VellumPdf.Barcodes.DataMatrixShape
 VellumPdf.Barcodes.DocumentBarcodeExtensions
 VellumPdf.Barcodes.EanBarcode
 VellumPdf.Barcodes.EanBarcode.AddOn.get -> string?
