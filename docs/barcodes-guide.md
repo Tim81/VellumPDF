@@ -1,6 +1,6 @@
 # VellumPdf Barcodes guide
 
-This guide covers the optional `VellumPdf.Barcodes` package: seven symbologies
+This guide covers the optional `VellumPdf.Barcodes` package: eight symbologies
 rendered as vector rectangles over `VellumPdf.Kernel.PdfCanvas` and
 `VellumPdf.Layout.Document`, described in [`docs/architecture.md`](architecture.md).
 Every symbol is drawn as filled rectangles (never a raster image), so it stays
@@ -220,6 +220,57 @@ compacted automatically across text, byte, and numeric sub-modes.
 
 ---
 
+## Data Matrix
+
+```csharp
+using VellumPdf.Barcodes;
+
+doc.Add(new DataMatrixBarcode("VellumPdf Data Matrix example") { ModuleSize = 3 });
+
+// Raw bytes, carried verbatim in Base 256 mode:
+doc.Add(new DataMatrixBarcode([0x00, 0x01, 0x02, 0xFF]));
+```
+
+ISO/IEC 16022 ECC 200: a square or rectangular matrix symbology with 24 square
+sizes (10x10 to 144x144) and 6 rectangular sizes (8x18 to 16x48). Content is
+compacted automatically across ASCII, C40, Text and Base 256 encodation.
+
+- **`Shape`** (default `DataMatrixShape.Automatic`) resolves within the square
+  family only, matching most generators' default and well-known worked
+  examples. Set `DataMatrixShape.Rectangular` for a width/height-constrained
+  label. Forcing one exact size among the 24/6 is deferred to a future release.
+- **`Gs1`** (default `false`): FNC1 (codeword 232) in the first data-codeword
+  position marks this as a GS1 Data Matrix symbol. Mirrors
+  `Code128Barcode.Gs1`: any U+001D (group separator) elsewhere in the content
+  also becomes FNC1, and the content itself is the raw digit/character stream
+  (not the parenthesised-AI form) with separators already in place.
+- `DataMatrixBarcode(byte[])` carries raw bytes verbatim in Base 256 mode.
+  X12 and EDIFACT encodation are not supported: every ASCII-representable
+  byte remains reachable through ASCII, C40 or Text, so this costs a little
+  density on content those two modes would favour, never correctness.
+
+```csharp
+using VellumPdf.Barcodes;
+using VellumPdf.Barcodes.Internal; // Gs1ElementString, for the raw payload form
+
+// GS1 Data Matrix: FNC1 marks the symbol as GS1; embed real GS separators
+// (not parentheses) between variable-length AI values, same convention as
+// GS1-128.
+var gs1 = new DataMatrixBarcode("0100012345678905") { Gs1 = true };
+```
+
+Placement (the diagonal "utah" sweep, its Annex F wrap-around at a symbol's
+edges, and the four corner patterns some sizes substitute in) and
+Reed-Solomon interleaving (round-robin block assignment for the 10 largest
+square sizes, per ISO/IEC 16022 §5.3.2) are both verified exact against
+ISO/IEC 16022's own published bit-placement figure and, for every size that
+needs a corner substitution or multi-block interleaving, against a real
+decode with zxing-cpp: all 30 sizes — every square size from 10x10 to
+144x144 and all 6 rectangular sizes — round-trip through render, rasterize
+and decode.
+
+---
+
 ## Code 128 and GS1-128
 
 ```csharp
@@ -411,8 +462,9 @@ stays below the bars as usual.
 `Barcode.Measure()` returns the symbol's full footprint (`BarcodeSize`,
 including quiet zones, HRI text, and bearer bars), validating content and
 sizing options. Call it directly if you need to lay out surrounding content
-yourself. `QrCode.GetMatrix()`, `MicroQrCode.GetMatrix()`, and
-`Pdf417Barcode.GetMatrix()` expose the raw `BarcodeMatrix` (a bit-packed
+yourself. `QrCode.GetMatrix()`, `MicroQrCode.GetMatrix()`,
+`Pdf417Barcode.GetMatrix()`, and `DataMatrixBarcode.GetMatrix()` expose the
+raw `BarcodeMatrix` (a bit-packed
 dark/light grid, `(0, 0)` at the top-left) for callers that want to inspect or
 render the modules independently of `BarcodePainter`.
 

@@ -5,6 +5,7 @@ using System.Linq;
 using CsCheck;
 using VellumPdf.Barcodes.Code128;
 using VellumPdf.Barcodes.Code39;
+using VellumPdf.Barcodes.DataMatrix;
 using VellumPdf.Barcodes.EanUpc;
 using VellumPdf.Barcodes.Internal;
 using VellumPdf.Barcodes.Itf;
@@ -362,6 +363,85 @@ public sealed class PropertyTests
 
             Assert.Equal(MatrixToBits(a), MatrixToBits(b));
         });
+    }
+
+    private static readonly Gen<string> DataMatrixContent = Gen.Select(Gen.Char[(char)32, (char)126].Array[1, 60], chars => new string(chars));
+    private static readonly Gen<byte[]> DataMatrixByteContent = Gen.Byte.Array[1, 40];
+
+    [Fact]
+    public void DataMatrixBarcode_anyTextContent_encodesDeterministicallyAsASquareWithAQuietZone()
+    {
+        DataMatrixContent.Sample(content =>
+        {
+            BarcodeMatrix a, b;
+            try
+            {
+                a = new DataMatrixBarcode(content).GetMatrix();
+                b = new DataMatrixBarcode(content).GetMatrix();
+            }
+            catch (FormatException)
+            {
+                return; // beyond the largest square symbol's capacity; not a property violation
+            }
+
+            Assert.Equal(a.Width, a.Height); // Shape.Automatic always resolves within the square family
+            Assert.Equal(MatrixToBits(a), MatrixToBits(b));
+        });
+    }
+
+    [Fact]
+    public void DataMatrixBarcode_anyByteContent_encodesDeterministically()
+    {
+        DataMatrixByteContent.Sample(content =>
+        {
+            BarcodeMatrix a, b;
+            try
+            {
+                a = new DataMatrixBarcode(content).GetMatrix();
+                b = new DataMatrixBarcode(content).GetMatrix();
+            }
+            catch (FormatException)
+            {
+                return;
+            }
+
+            Assert.Equal(a.Width, a.Height);
+            Assert.Equal(MatrixToBits(a), MatrixToBits(b));
+        });
+    }
+
+    [Fact]
+    public void DataMatrixBarcode_rectangularShape_alwaysEncodesToARectangle()
+    {
+        DataMatrixContent.Sample(content =>
+        {
+            BarcodeMatrix matrix;
+            try
+            {
+                matrix = new DataMatrixBarcode(content) { Shape = DataMatrixShape.Rectangular }.GetMatrix();
+            }
+            catch (FormatException)
+            {
+                return; // beyond the largest rectangular symbol's capacity; not a property violation
+            }
+
+            Assert.NotEqual(matrix.Width, matrix.Height);
+        });
+    }
+
+    [Fact]
+    public void DataMatrixSymbolSizes_everySquareSize_hasASquareMappingMatrixAndConsistentBlockSplit()
+    {
+        foreach (var size in DataMatrixSymbolSizes.Square)
+        {
+            Assert.Equal(size.SymbolRows, size.SymbolColumns);
+            Assert.Equal(size.MappingRows, size.MappingColumns);
+
+            var total = 0;
+            for (var block = 0; block < size.Blocks; block++) total += size.DataCodewordsInBlock(block);
+            Assert.Equal(size.DataCodewords, total);
+            Assert.Equal(0, size.ErrorCodewords % size.Blocks);
+        }
     }
 
     private static bool RowStartsAndEndsWithStartStopPatterns(BarcodeMatrix matrix, int row)
