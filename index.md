@@ -24,7 +24,7 @@ clean-room from the open **ISO 32000** standard.
 | `VellumPdf.Reader` | Preview | Reads existing PDFs (cross-reference tables and streams, hybrid-reference files) and exposes the catalog and signatures. |
 | `VellumPdf.Conformance` | Preview | In-process PDF/A-2b/2u/2a and PDF/UA-1 preflight, cross-validated against veraPDF in CI. |
 | `VellumPdf.Cli` | Stable | The `vellum-preflight` command-line validator, with Native-AOT binaries. |
-| `VellumPdf.Barcodes` | Preview | QR (including Micro QR), PDF417, Code 128, EAN-13/EAN-8/UPC-A, and ITF-14, decode-verified against zxing-cpp. |
+| `VellumPdf.Barcodes` | Stable | QR (including Micro QR and GS1 Digital Link), Data Matrix, Aztec, PDF417, Code 128/GS1-128, Code 39, EAN/UPC (including UPC-E), and ITF-14, decode-verified against zxing-cpp. |
 
 ## Getting started
 

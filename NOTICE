@@ -2,11 +2,17 @@ VellumPdf
 Copyright © Timothy van der Ham (@Tim81)
 
 This product is an original, independent, clean-room implementation of the
-Portable Document Format (PDF). It is based solely on publicly available open
-specifications — principally the ISO 32000 family of standards — together with
+Portable Document Format (PDF). It is implemented from published open
+specifications, principally the ISO 32000 family of standards, together with
 other open specifications it interoperates with (for example the OpenType and
-TrueType font specifications). It is not derived from, and contains no source
-code copied from, any third-party PDF library.
+TrueType font specifications). For barcode symbologies whose governing
+standard is patented, it is also implemented from the original patent (for
+example US 5,591,956 for Aztec Code). A reference decoder, zxing-cpp, is used
+only as an interoperability cross-check in the test suite, never as a source
+of implementation; this includes verifying the exact Aztec module-placement
+coordinates, since the relevant ISO/IEC 24778 figures are not freely
+available. No source code is copied from, and this product is not derived
+from, any third-party PDF or barcode library.
 
 Licensed under the Apache License, Version 2.0 (the "License"); you may not use
 the files in this repository except in compliance with the License. A copy of

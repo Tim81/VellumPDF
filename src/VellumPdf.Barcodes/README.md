@@ -3,14 +3,12 @@
 [![NuGet](https://img.shields.io/nuget/v/VellumPdf.Barcodes.svg)](https://www.nuget.org/packages/VellumPdf.Barcodes)
 [![CI](https://github.com/Tim81/VellumPDF/actions/workflows/ci.yml/badge.svg)](https://github.com/Tim81/VellumPDF/actions/workflows/ci.yml)
 
-The barcode add-on for **[VellumPdf](https://github.com/Tim81/VellumPDF)**, a dependency-free PDF library for .NET 10. Six symbologies rendered as vector rectangles (never a raster image), so they stay crisp at any zoom and print resolution.
+The barcode add-on for **[VellumPdf](https://github.com/Tim81/VellumPDF)**, a dependency-free PDF library for .NET 10. Eleven symbologies rendered as vector rectangles (never a raster image), so they stay crisp at any zoom and print resolution.
 
-- QR (including Micro QR M1–M4), PDF417, Code 128 (plain and GS1-128), EAN-13/EAN-8/UPC-A with EAN-2/EAN-5 add-ons, and ITF-14.
+- QR (including Micro QR M1–M4 and GS1-mode QR with GS1 Digital Link), PDF417, Code 128 (plain and GS1-128), Code 39 (including Full ASCII), EAN-13/EAN-8/UPC-A/UPC-E with EAN-2/EAN-5 add-ons, ITF-14, Data Matrix (including GS1 Data Matrix), and Aztec Code.
 - QR chooses version, data mask, and error-correction level automatically, and supports an Auto / Latin-1 / UTF-8 / UTF-8+ECI charset policy; PDF417 compacts text, byte, and numeric content automatically.
 - Two API tiers: a low-level `PdfCanvas.DrawBarcode` for precise placement, and a `Document.Add(Barcode)` flow element that handles sizing, pagination, alignment, and tagging.
 - Round-trip decoding is verified in CI for every symbology against zxing-cpp.
-
-> **Preview.** The public surface will settle as GS1 and 2D symbologies are added; see the roadmap below.
 
 ## Install
 
@@ -52,18 +50,18 @@ QR Code is a registered trademark of DENSO WAVE INCORPORATED.
 | [VellumPdf.Reader](https://www.nuget.org/packages/VellumPdf.Reader) | Preview | Opens existing PDFs; exposes catalog, signatures, and streams. |
 | [VellumPdf.Conformance](https://www.nuget.org/packages/VellumPdf.Conformance) | Preview | In-process PDF/A and PDF/UA preflight validation. |
 | [VellumPdf.Cli](https://www.nuget.org/packages/VellumPdf.Cli) | Stable | `vellum-preflight` command-line PDF/A and PDF/UA validator. |
-| **VellumPdf.Barcodes** (this package) | Preview | QR, PDF417, Code 128/GS1-128, EAN/UPC, and ITF-14 as vectors. |
+| **VellumPdf.Barcodes** (this package) | Stable | QR, Data Matrix, Aztec, PDF417, Code 128/GS1-128, Code 39, EAN/UPC, and ITF-14 as vectors. |
 
 ## Roadmap
 
 | Milestone | Scope |
 | --- | --- |
-| **1.9 — Barcodes** (this release) | `VellumPdf.Barcodes` (#51): QR, Micro QR, PDF417, Code 128/GS1-128, EAN/UPC, and ITF-14. |
+| **1.9 — Barcodes** | `VellumPdf.Barcodes` (#51): QR, Micro QR, PDF417, Code 128/GS1-128, EAN/UPC, and ITF-14. |
+| **1.10 — Barcodes Stable** (this release) | `VellumPdf.Barcodes` graduates from Preview to Stable. New symbologies: Data Matrix / GS1 Data Matrix (#151), GS1-mode QR incl. GS1 Digital Link (#152), Aztec (#153), and Code 39 incl. Full ASCII (#154). From the #155 completeness backlog, UPC-E and GS1-128 parenthesized-AI human-readable text shipped; QR Kanji mode, QR Structured Append, Compact/Macro PDF417, and Code 128 FNC4 are deferred. |
 | **2.0 — Breaking changes** | Strong-named assemblies (#53) and an async I/O surface for `Save`/`Sign`/loaders (#54); both change assembly identity or the public contract, so they wait for a major version. |
 | **2.1 — PDF reader (structural)** | `VellumPdf.Reader` grows classic and cross-reference-stream parsing, object streams, and encryption support, with a fixture corpus proving it against real-world files (Epic #100). |
 | **2.2 — PDF content extraction** | Text and image extraction on top of the reader. |
 | **3.0 — Read-modify-write** | A unified round-trip document model that supersedes the write-once `PdfDocument`, so existing PDFs can be opened, edited, and saved back (Epic #101). |
-| **Barcodes — GS1 & 2D expansion** | GS1 Data Matrix (#151), GS1-mode QR (#152), Aztec (#153), and Code 39 (#154), with smaller completeness items tracked in #155. |
 
 ## License
 
