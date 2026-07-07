@@ -444,6 +444,93 @@ public sealed class PropertyTests
         }
     }
 
+    private static readonly Gen<string> AztecTextContent = Gen.Select(Gen.Char[(char)32, (char)126].Array[1, 80], chars => new string(chars));
+    private static readonly Gen<byte[]> AztecByteContent = Gen.Byte.Array[1, 60];
+    private static readonly Gen<int> AztecErrorCorrectionPercent = Gen.Int[5, 95];
+
+    [Fact]
+    public void AztecCode_anyTextContent_encodesDeterministicallyAsASquareWithADarkCentre()
+    {
+        Gen.Select(AztecTextContent, AztecErrorCorrectionPercent).Sample((content, ecPercent) =>
+        {
+            BarcodeMatrix a, b;
+            try
+            {
+                a = new AztecCode(content) { ErrorCorrectionPercent = ecPercent }.GetMatrix();
+                b = new AztecCode(content) { ErrorCorrectionPercent = ecPercent }.GetMatrix();
+            }
+            catch (FormatException)
+            {
+                return; // beyond the largest symbol's capacity at this content/EC%; not a property violation
+            }
+
+            Assert.Equal(a.Width, a.Height);
+            var half = (a.Width - 1) / 2;
+            Assert.True(a.IsDark(half, half)); // the bullseye centre is always dark
+
+            Assert.Equal(MatrixToBits(a), MatrixToBits(b));
+        });
+    }
+
+    [Fact]
+    public void AztecCode_anyByteContent_encodesDeterministically()
+    {
+        Gen.Select(AztecByteContent, AztecErrorCorrectionPercent).Sample((content, ecPercent) =>
+        {
+            BarcodeMatrix a, b;
+            try
+            {
+                a = new AztecCode(content) { ErrorCorrectionPercent = ecPercent }.GetMatrix();
+                b = new AztecCode(content) { ErrorCorrectionPercent = ecPercent }.GetMatrix();
+            }
+            catch (FormatException)
+            {
+                return;
+            }
+
+            Assert.Equal(a.Width, a.Height);
+            Assert.Equal(MatrixToBits(a), MatrixToBits(b));
+        });
+    }
+
+    [Fact]
+    public void AztecCode_forcedCompact_alwaysProducesOneOfTheFourCompactSizes()
+    {
+        AztecTextContent.Sample(content =>
+        {
+            BarcodeMatrix matrix;
+            try
+            {
+                matrix = new AztecCode(content) { Format = AztecFormat.Compact }.GetMatrix();
+            }
+            catch (FormatException)
+            {
+                return; // beyond the largest compact symbol's capacity; not a property violation
+            }
+
+            Assert.Contains(matrix.Width, new[] { 15, 19, 23, 27 });
+        });
+    }
+
+    [Fact]
+    public void AztecCode_forcedFullRange_alwaysProducesAnOddSizeAtLeast19()
+    {
+        AztecTextContent.Sample(content =>
+        {
+            BarcodeMatrix matrix;
+            try
+            {
+                matrix = new AztecCode(content) { Format = AztecFormat.FullRange }.GetMatrix();
+            }
+            catch (FormatException)
+            {
+                return;
+            }
+
+            Assert.True(matrix.Width >= 19 && matrix.Width % 2 != 0);
+        });
+    }
+
     private static bool RowStartsAndEndsWithStartStopPatterns(BarcodeMatrix matrix, int row)
     {
         var start = 0u;

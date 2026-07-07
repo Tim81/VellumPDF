@@ -127,6 +127,7 @@ Console.WriteLine($"OK: QrCode.GetMatrix() produced a {matrix.Width}x{matrix.Hei
 using var barcodeDoc = new Document();
 barcodeDoc.Add(new QrCode("VellumPdf AOT") { TargetWidth = 80 });
 barcodeDoc.Add(new EanBarcode(EanSymbology.Ean13, "400638133393"));
+barcodeDoc.Add(new AztecCode("AZTEC"));
 using var barcodeMs = new MemoryStream();
 barcodeDoc.Save(barcodeMs);
 var barcodeBytes = barcodeMs.ToArray();
