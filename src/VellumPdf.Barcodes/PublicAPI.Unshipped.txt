@@ -1,4 +1,16 @@
 #nullable enable
+VellumPdf.Barcodes.AztecCode
+VellumPdf.Barcodes.AztecCode.AztecCode(byte[]! content) -> void
+VellumPdf.Barcodes.AztecCode.AztecCode(string! content) -> void
+VellumPdf.Barcodes.AztecCode.ErrorCorrectionPercent.get -> int
+VellumPdf.Barcodes.AztecCode.ErrorCorrectionPercent.init -> void
+VellumPdf.Barcodes.AztecCode.Format.get -> VellumPdf.Barcodes.AztecFormat
+VellumPdf.Barcodes.AztecCode.Format.init -> void
+VellumPdf.Barcodes.AztecCode.GetMatrix() -> VellumPdf.Barcodes.BarcodeMatrix!
+VellumPdf.Barcodes.AztecFormat
+VellumPdf.Barcodes.AztecFormat.Automatic = 0 -> VellumPdf.Barcodes.AztecFormat
+VellumPdf.Barcodes.AztecFormat.Compact = 1 -> VellumPdf.Barcodes.AztecFormat
+VellumPdf.Barcodes.AztecFormat.FullRange = 2 -> VellumPdf.Barcodes.AztecFormat
 VellumPdf.Barcodes.Barcode
 VellumPdf.Barcodes.Barcode.Alignment.get -> VellumPdf.Layout.Core.HorizontalAlignment
 VellumPdf.Barcodes.Barcode.Alignment.init -> void

@@ -3,6 +3,7 @@
 
 using System.ComponentModel;
 using System.Diagnostics;
+using VellumPdf.Barcodes.Aztec;
 using VellumPdf.Barcodes.DataMatrix;
 using VellumPdf.Barcodes.Internal;
 using VellumPdf.Canvas;
@@ -432,6 +433,227 @@ public sealed class ZxingDecodeOracleTests : IDisposable
         <= 104 => 3,
         _ => 2,
     };
+
+    // ── Aztec Code ────────────────────────────────────────────────────────
+
+    // The data-field spiral (AztecPlacement) was derived from, and verified bit-for-bit against,
+    // zxing-cpp reference matrices; these round-trips exercise the full render -> rasterize ->
+    // decode path across compact 1-4 layers and full-range layer counts, plus a byte[] payload and
+    // a high-error-correction case. See AztecPlacement's remarks for the placement provenance.
+
+    [Fact]
+    public void AztecCode_shortText_compactRoundTrips()
+    {
+        const string content = "VellumPdf Aztec";
+        var pdfPath = BuildSinglePdf((_, canvas) =>
+            canvas.DrawBarcode(new AztecCode(content) { Format = AztecFormat.Compact, ModuleSize = 6 }, 50, 500));
+
+        if (!TryDecodeSingle(pdfPath, out var result)) return;
+
+        Assert.Equal("Aztec", result.Format);
+        Assert.Equal(content, result.Text);
+    }
+
+    [Fact]
+    public void AztecCode_longerText_forcesFullRange_roundTrips()
+    {
+        var content = string.Concat(Enumerable.Repeat("VellumPdf Aztec full-range oracle round-trip content. ", 8));
+        var pdfPath = BuildSinglePdf((_, canvas) =>
+            canvas.DrawBarcode(new AztecCode(content) { Format = AztecFormat.FullRange, ModuleSize = 4 }, 30, 30));
+
+        if (!TryDecodeSingle(pdfPath, out var result)) return;
+
+        Assert.Equal("Aztec", result.Format);
+        Assert.Equal(content, result.Text);
+    }
+
+    [Fact]
+    public void AztecCode_byteContent_roundTripsAsBinary()
+    {
+        byte[] content = [0x00, 0x01, 0x02, 0xFF, 0xFE, 0x7F, 0x80, 0x10, 0x20, 0x30];
+        var pdfPath = BuildSinglePdf((_, canvas) =>
+            canvas.DrawBarcode(new AztecCode(content) { ModuleSize = 6 }, 50, 500));
+
+        if (!TryDecodeSingle(pdfPath, out var result)) return;
+
+        Assert.Equal("Aztec", result.Format);
+        Assert.Equal("Binary", result.ContentType);
+        Assert.Equal(Convert.ToHexStringLower(content), result.Text);
+    }
+
+    [Fact]
+    public void AztecCode_highErrorCorrectionPercent_roundTrips()
+    {
+        const string content = "VellumPdf Aztec high EC";
+        var pdfPath = BuildSinglePdf((_, canvas) =>
+            canvas.DrawBarcode(new AztecCode(content) { ErrorCorrectionPercent = 80, ModuleSize = 6 }, 50, 500));
+
+        if (!TryDecodeSingle(pdfPath, out var result)) return;
+
+        Assert.Equal("Aztec", result.Format);
+        Assert.Equal(content, result.Text);
+    }
+
+    /// <summary>A range of content lengths chosen to force several different compact layer counts (1-4).</summary>
+    public static IEnumerable<object[]> AztecCompactContentLengths() => new[] { 5, 15, 30, 50, 70 }
+        .Select(length => new object[] { length });
+
+    [Theory]
+    [MemberData(nameof(AztecCompactContentLengths))]
+    public void AztecCode_compactAcrossLayerCounts_roundTrips(int length)
+    {
+        var content = new string('A', length);
+        var barcode = new AztecCode(content) { Format = AztecFormat.Compact, ModuleSize = 6 };
+        var pdfPath = BuildSinglePdf((_, canvas) => canvas.DrawBarcode(barcode, 30, 30));
+
+        if (!TryDecodeSingle(pdfPath, out var result)) return;
+
+        Assert.Equal("Aztec", result.Format);
+        Assert.Equal(content, result.Text);
+    }
+
+    /// <summary>A range of content lengths chosen to force several different full-range layer counts.</summary>
+    public static IEnumerable<object[]> AztecFullRangeContentLengths() => new[] { 30, 80, 150, 300, 600 }
+        .Select(length => new object[] { length });
+
+    [Theory]
+    [MemberData(nameof(AztecFullRangeContentLengths))]
+    public void AztecCode_fullRangeAcrossLayerCounts_roundTrips(int length)
+    {
+        var content = new string('A', length);
+        var barcode = new AztecCode(content) { Format = AztecFormat.FullRange, ModuleSize = 4 };
+        var pdfPath = BuildSinglePdf((_, canvas) => canvas.DrawBarcode(barcode, 30, 30));
+
+        if (!TryDecodeSingle(pdfPath, out var result)) return;
+
+        Assert.Equal("Aztec", result.Format);
+        Assert.Equal(content, result.Text);
+    }
+
+    /// <summary>
+    /// Wide enough for the largest full-range symbol (151x151 modules) at <c>ModuleSize = 2</c> --
+    /// deliberately smaller than most other Aztec tests in this file: at 300 dpi, <c>ModuleSize = 3</c>
+    /// rasterizes a 151-module symbol at a fractional 12.5 px/module, and the resulting rounding
+    /// drift accumulated across 151 modules occasionally puts zxing-cpp's grid sampling far enough
+    /// off to fail the symbol's own Reed-Solomon checksum -- confirmed by decoding the identical
+    /// module matrix at several module sizes: 2 and 4 decoded cleanly, only 3 was unreliable. This is
+    /// a rasterization-resolution artifact of the test harness, not a defect in the encoder under
+    /// test, so the largest layers below render at <c>ModuleSize = 2</c> instead.
+    /// </summary>
+    private static readonly PdfRectangle WideAztecPage = new(0, 0, 700, 700);
+
+    // Regression coverage for the Critical fix: EmitBinaryShift used to cap a single binary-shift
+    // block's length field at 31 + 2047 = 2078 bytes without splitting a longer run, so a run of
+    // 2079 bytes or more silently wrapped its 11-bit length field (the top bit dropped) and decoded
+    // as garbage. These three lengths straddle that boundary: exactly at the cap, one byte past it
+    // (forcing a second block), and a run spanning most of two blocks.
+    public static IEnumerable<object[]> AztecBinaryShiftBoundaryLengths() => new[] { 2078, 2079, 2332 }
+        .Select(length => new object[] { length });
+
+    [Theory]
+    [MemberData(nameof(AztecBinaryShiftBoundaryLengths))]
+    public void AztecCode_binaryShiftAcrossBlockBoundary_roundTripsExactly(int length)
+    {
+        // Bytes are drawn from 128-255 (never representable in any of the five character modes, so
+        // the whole run is carried as one or two binary-shift blocks, exactly what this test means to
+        // exercise), with a fixed seed per length so the run is reproducible but not a single
+        // repeated byte value -- a constant fill is periodic enough that zxing-cpp sometimes reads it
+        // back as printable Latin-1 text rather than tagging it Binary. The leading NUL guarantees a
+        // Binary content-type classification regardless.
+        var content = new byte[length];
+        var random = new Random(20260707 + length);
+        for (var i = 0; i < length; i++) content[i] = (byte)random.Next(128, 256);
+        content[0] = 0x00;
+
+        var barcode = new AztecCode(content) { ErrorCorrectionPercent = 5, Format = AztecFormat.FullRange, ModuleSize = 2 };
+        var pdfPath = BuildSinglePdf((_, canvas) => canvas.DrawBarcode(barcode, 30, 30), WideAztecPage);
+
+        if (!TryDecodeSingle(pdfPath, out var result)) return;
+
+        Assert.Equal("Aztec", result.Format);
+        Assert.Equal("Binary", result.ContentType);
+        Assert.Equal(Convert.ToHexStringLower(content), result.Text);
+    }
+
+    // Regression guard for the Warning finding: the round-trips above only ever forced 7 of the 32
+    // full-range layers (and never the GF(1024) or GF(4096) fields those layers' larger codewords
+    // run Reed-Solomon over). The sweep below forces every full-range layer 1-32, plus every compact
+    // layer 1-4, each confirmed against a real decode.
+
+    /// <summary>
+    /// For each size in <paramref name="sizes"/>, the smallest 'A'-fill content length that
+    /// <see cref="AztecEncoder.SelectSize"/> resolves to that exact layer, forced to
+    /// <paramref name="format"/> so there is no ambiguity with the other family's sizes. Found by an
+    /// ascending sweep: one 'A' costs a fixed 5 bits (Upper mode, no shift or latch needed), and
+    /// <see cref="AztecEncoder.StuffCodewords"/> never emits fewer codewords for more input bits, so
+    /// the resolved layer only grows as the length grows -- a single sweep visits every layer once,
+    /// in order, and stops as soon as all of <paramref name="sizes"/> have been seen.
+    /// </summary>
+    private static Dictionary<int, int> FindLayerContentLengths(AztecSymbolSize[] sizes, AztecFormat format)
+    {
+        var lengths = new Dictionary<int, int>();
+        for (var length = 1; lengths.Count < sizes.Length; length++)
+        {
+            var content = new byte[length];
+            Array.Fill(content, (byte)'A');
+            var bits = AztecHighLevelEncoder.Encode(content);
+            var (size, _) = AztecEncoder.SelectSize(bits, format, ecPercent: 23);
+            lengths.TryAdd(size.Layers, length);
+        }
+
+        return lengths;
+    }
+
+    /// <summary>Every full-range layer, 1 through 32, paired with a content length that forces it.</summary>
+    public static IEnumerable<object[]> AztecFullRangeEveryLayer() =>
+        FindLayerContentLengths(AztecSymbolInfo.FullRange, AztecFormat.FullRange)
+            .OrderBy(pair => pair.Key)
+            .Select(pair => new object[] { pair.Key, pair.Value });
+
+    /// <summary>Every compact layer, 1 through 4, paired with a content length that forces it.</summary>
+    public static IEnumerable<object[]> AztecCompactEveryLayer() =>
+        FindLayerContentLengths(AztecSymbolInfo.Compact, AztecFormat.Compact)
+            .OrderBy(pair => pair.Key)
+            .Select(pair => new object[] { pair.Key, pair.Value });
+
+    [Theory]
+    [MemberData(nameof(AztecFullRangeEveryLayer))]
+    public void AztecCode_everyFullRangeLayer_roundTrips(int layer, int length)
+    {
+        var content = new string('A', length);
+        var barcode = new AztecCode(content) { Format = AztecFormat.FullRange, ModuleSize = 2 };
+
+        // Self-check, independent of the external decoder: confirm this length really forces layer
+        // `layer` -- a mismatch here points at the length-finding sweep above, not the encoder or
+        // placement code under test.
+        var matrix = barcode.GetMatrix();
+        Assert.Equal(AztecSymbolInfo.FullRange[layer - 1].Size, matrix.Width);
+
+        var pdfPath = BuildSinglePdf((_, canvas) => canvas.DrawBarcode(barcode, 30, 30), WideAztecPage);
+
+        if (!TryDecodeSingle(pdfPath, out var result)) return;
+
+        Assert.Equal("Aztec", result.Format);
+        Assert.Equal(content, result.Text);
+    }
+
+    [Theory]
+    [MemberData(nameof(AztecCompactEveryLayer))]
+    public void AztecCode_everyCompactLayer_roundTrips(int layer, int length)
+    {
+        var content = new string('A', length);
+        var barcode = new AztecCode(content) { Format = AztecFormat.Compact, ModuleSize = 6 };
+
+        var matrix = barcode.GetMatrix();
+        Assert.Equal(AztecSymbolInfo.Compact[layer - 1].Size, matrix.Width);
+
+        var pdfPath = BuildSinglePdf((_, canvas) => canvas.DrawBarcode(barcode, 30, 30));
+
+        if (!TryDecodeSingle(pdfPath, out var result)) return;
+
+        Assert.Equal("Aztec", result.Format);
+        Assert.Equal(content, result.Text);
+    }
 
     // ── PDF417 ────────────────────────────────────────────────────────────
 
