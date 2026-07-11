@@ -686,6 +686,19 @@ public sealed class ZxingDecodeOracleTests : IDisposable
     }
 
     [Fact]
+    public void Pdf417Barcode_Compact_RoundTrips()
+    {
+        const string content = "VellumPdf compact PDF417 oracle round-trip test";
+        var pdfPath = BuildSinglePdf((_, canvas) =>
+            canvas.DrawBarcode(new Pdf417Barcode(content) { Compact = true, ModuleSize = 2 }, 50, 500));
+
+        if (!TryDecodeSingle(pdfPath, out var result)) return;
+
+        Assert.Equal("PDF417", result.Format);
+        Assert.Equal(content, result.Text);
+    }
+
+    [Fact]
     public void Pdf417Barcode_BinaryBytes_RoundTrips()
     {
         byte[] content = [0x00, 0x01, 0x02, 0xFF, 0xFE, 0x7F, 0x80, 0x10, 0x20, 0x30];

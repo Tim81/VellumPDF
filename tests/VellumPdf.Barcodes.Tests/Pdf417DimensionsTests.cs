@@ -94,4 +94,20 @@ public sealed class Pdf417DimensionsTests
     [InlineData(30, 579)]
     public void WidthModules_matchesStartLeftDataRightStopFormula(int columns, int expectedWidth) =>
         Assert.Equal(expectedWidth, Pdf417Dimensions.WidthModules(columns));
+
+    [Theory]
+    [InlineData(1, 52)]
+    [InlineData(2, 69)]
+    [InlineData(30, 545)]
+    public void WidthModules_compact_dropsRightIndicatorAndShrinksStopToOneModule(int columns, int expectedWidth) =>
+        Assert.Equal(expectedWidth, Pdf417Dimensions.WidthModules(columns, compact: true));
+
+    [Fact]
+    public void WidthModules_compact_isThirtyFourModulesNarrowerThanStandard()
+    {
+        // Compact drops the 17-module right row indicator and shrinks the 18-module stop pattern
+        // to a single module: 17 + (18 - 1) = 34 modules saved, regardless of column count.
+        for (var columns = Pdf417Dimensions.MinColumns; columns <= Pdf417Dimensions.MaxColumns; columns++)
+            Assert.Equal(34, Pdf417Dimensions.WidthModules(columns) - Pdf417Dimensions.WidthModules(columns, compact: true));
+    }
 }

@@ -10,8 +10,9 @@ namespace VellumPdf.Barcodes;
 /// A PDF417 symbol (ISO/IEC 15438): a stacked linear barcode with 3-90 rows of 1-30 data columns,
 /// chosen automatically to match <see cref="PreferredAspectRatio"/> unless <see cref="Columns"/>
 /// or <see cref="Rows"/> is set. Content is compacted automatically across text, byte and numeric
-/// modes following the specification's mode-switching heuristics. Macro PDF417 (splitting content
-/// across several symbols) is not supported.
+/// modes following the specification's mode-switching heuristics. Set <see cref="Compact"/> for
+/// the narrower Compact (Truncated) format. Macro PDF417 (splitting content across several
+/// symbols) is not supported.
 /// </summary>
 public sealed class Pdf417Barcode : Barcode
 {
@@ -51,6 +52,16 @@ public sealed class Pdf417Barcode : Barcode
 
     /// <summary>The height of each row, in modules. Defaults to 3.0, the specification's recommended minimum.</summary>
     public double RowHeight { get; init; } = 3.0;
+
+    /// <summary>
+    /// Renders the Compact (Truncated) format instead of the standard one (ISO/IEC 15438): the
+    /// right row-indicator column is left out and the 18-module stop pattern is replaced by a
+    /// single dark module, narrowing the symbol. The start pattern, left row indicator, data
+    /// codewords and Reed-Solomon error correction are unaffected, but the symbol loses the
+    /// error-correction redundancy the dropped right-side elements normally provide, so it is
+    /// less tolerant of damage near its right edge. Defaults to <c>false</c>.
+    /// </summary>
+    public bool Compact { get; init; }
 
     internal string? Text { get; }
 

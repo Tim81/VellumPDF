@@ -142,6 +142,32 @@ public sealed class Pdf417EncoderTests
         Assert.True(matrix.Height >= Pdf417Dimensions.MinRows);
     }
 
+    [Fact]
+    public void GetMatrix_compact_leftSideIdenticalToStandardAndRightSideReplacedByOneModuleStop()
+    {
+        // Same content, same forced dimensions and error-correction level: data codewords, the
+        // symbol length descriptor and the Reed-Solomon check codewords are identical (ISO/IEC
+        // 15438), so this proves compact rendering changes nothing but the right-hand columns.
+        const string content = "Compact PDF417 matrix KAT: identical left side, one-module stop.";
+        var standard = new Pdf417Barcode(content) { Columns = 8, Rows = 12, ErrorCorrectionLevel = 3 }.GetMatrix();
+        var compact = new Pdf417Barcode(content) { Columns = 8, Rows = 12, ErrorCorrectionLevel = 3, Compact = true }.GetMatrix();
+
+        Assert.Equal(Pdf417Dimensions.WidthModules(8, compact: true), compact.Width);
+        Assert.Equal(standard.Height, compact.Height);
+
+        // Left region: start pattern + left row indicator + all 8 data columns, unaffected by Compact.
+        var leftRegionWidth = (8 + 2) * Pdf417Tables.PatternModules;
+        for (var row = 0; row < standard.Height; row++)
+            for (var x = 0; x < leftRegionWidth; x++)
+                Assert.Equal(standard.IsDark(x, row), compact.IsDark(x, row));
+
+        // Right side: no right row-indicator column, just a single dark module in place of the
+        // 18-module stop pattern.
+        Assert.Equal(leftRegionWidth + 1, compact.Width);
+        for (var row = 0; row < compact.Height; row++)
+            Assert.True(compact.IsDark(leftRegionWidth, row));
+    }
+
     private static void AssertRowIndicators(BarcodeMatrix matrix, int row, int cluster, int expectedLeft, int expectedRight)
     {
         var leftPattern = ReadPattern(matrix, row, Pdf417Tables.PatternModules, Pdf417Tables.PatternModules);

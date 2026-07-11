@@ -1,1 +1,3 @@
 #nullable enable
+VellumPdf.Barcodes.Pdf417Barcode.Compact.get -> bool
+VellumPdf.Barcodes.Pdf417Barcode.Compact.init -> void

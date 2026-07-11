@@ -31,7 +31,7 @@ internal static class Pdf417Encoder
         var level = barcode.ErrorCorrectionLevel == -1 ? ResolveRecommendedLevel(dataCodewords) : barcode.ErrorCorrectionLevel;
         var ecCodewords = ReedSolomonGf929.DegreeForLevel(level);
 
-        var dims = Pdf417Dimensions.Resolve(dataCodewords, ecCodewords, barcode.Columns, barcode.Rows, barcode.PreferredAspectRatio, barcode.RowHeight);
+        var dims = Pdf417Dimensions.Resolve(dataCodewords, ecCodewords, barcode.Columns, barcode.Rows, barcode.PreferredAspectRatio, barcode.RowHeight, barcode.Compact);
 
         var dataRegionLength = dims.TotalCodewords - ecCodewords;
         var padCodewords = dataRegionLength - dataCodewords;
@@ -43,7 +43,7 @@ internal static class Pdf417Encoder
 
         var ec = ReedSolomonGf929.ComputeCheckCodewords(dataRegion, ecCodewords);
 
-        return BuildMatrix(dataRegion, ec, dims.Columns, dims.Rows, level);
+        return BuildMatrix(dataRegion, ec, dims.Columns, dims.Rows, level, barcode.Compact);
     }
 
     /// <summary>
@@ -70,9 +70,17 @@ internal static class Pdf417Encoder
         throw new FormatException($"{dataCodewords - 1} content codewords exceed PDF417's maximum capacity at any error-correction level.");
     }
 
-    private static BarcodeMatrix BuildMatrix(int[] dataRegion, int[] ec, int columns, int rows, int level)
+    /// <summary>
+    /// Assembles the module grid. When <paramref name="compact"/> is set, this builds the Compact
+    /// (Truncated) format (ISO/IEC 15438): the right row-indicator column is left out and the
+    /// 18-module <see cref="Pdf417Tables.StopPattern"/> is replaced by a single dark module. The
+    /// start pattern, left row indicator and data columns are unchanged, so a decoder can still
+    /// find the symbol's left edge and cluster; only the right-edge redundancy is given up in
+    /// exchange for a narrower symbol.
+    /// </summary>
+    private static BarcodeMatrix BuildMatrix(int[] dataRegion, int[] ec, int columns, int rows, int level, bool compact)
     {
-        var width = Pdf417Dimensions.WidthModules(columns);
+        var width = Pdf417Dimensions.WidthModules(columns, compact);
         var matrix = new BarcodeMatrix(width, rows);
 
         var y = (rows - 1) / 3;
@@ -102,8 +110,15 @@ internal static class Pdf417Encoder
                 x = PlacePattern(matrix, row, x, Pdf417Tables.GetPattern(cluster, codeword), Pdf417Tables.PatternModules);
             }
 
-            x = PlacePattern(matrix, row, x, Pdf417Tables.GetPattern(cluster, right), Pdf417Tables.PatternModules);
-            PlacePattern(matrix, row, x, Pdf417Tables.StopPattern, Pdf417Tables.StopPatternModules);
+            if (compact)
+            {
+                PlacePattern(matrix, row, x, Pdf417Tables.CompactStopPattern, Pdf417Tables.CompactStopPatternModules);
+            }
+            else
+            {
+                x = PlacePattern(matrix, row, x, Pdf417Tables.GetPattern(cluster, right), Pdf417Tables.PatternModules);
+                PlacePattern(matrix, row, x, Pdf417Tables.StopPattern, Pdf417Tables.StopPatternModules);
+            }
         }
 
         return matrix;
