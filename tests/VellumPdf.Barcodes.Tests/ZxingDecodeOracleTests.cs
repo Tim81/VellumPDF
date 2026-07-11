@@ -1054,6 +1054,27 @@ public sealed class ZxingDecodeOracleTests : IDisposable
         Assert.Equal(Convert.ToHexStringLower(Latin1Bytes(content)), result.BytesHex);
     }
 
+    [Fact]
+    public void Code128Barcode_Fnc4LatchLiveAcrossSwitch_RoundTripsExactly()
+    {
+        // Round-2 review coverage: a doubled FNC4 latch established in Code B ('ü', 'ü') has to
+        // stay live across a genuine switch into Code A for U+0081 (low equivalent 0x01, a Code
+        // Set A control character), the mirror image of
+        // Code128Barcode_ShiftAfterFnc4Latch_RoundTripsExactly above (a live latch surviving a
+        // Shift) and Code128EncoderTests.Fnc4_latchEstablishedInSwitchRun_carriesAcrossReturnToHome
+        // (a latch that starts inside the switch run instead of before it). The switch is the
+        // last thing in this content, so the still-active latch is the only reason the final
+        // symbol has to decode as 0x81 rather than plain 0x01.
+        var content = "üü" + (char)0x81;
+        var pdfPath = BuildSinglePdf((_, canvas) =>
+            canvas.DrawBarcode(new Code128Barcode(content) { ShowText = false, ModuleSize = 2 }, 50, 500));
+
+        if (!TryDecodeSingle(pdfPath, out var result)) return;
+
+        Assert.Equal("Code128", result.Format);
+        Assert.Equal(Convert.ToHexStringLower(Latin1Bytes(content)), result.BytesHex);
+    }
+
     /// <summary>Encodes a string as raw Latin-1 bytes (each char's code point as a single byte), for comparing against a decoded FNC4 symbol.</summary>
     private static byte[] Latin1Bytes(string s)
     {

@@ -260,6 +260,26 @@ public sealed class Code128EncoderTests
     }
 
     [Fact]
+    public void Fnc4_latchEstablishedInSwitchRun_carriesAcrossReturnToHome()
+    {
+        // 'a' forces home mode B. U+0081 then U+0082 are both Code Set A control characters
+        // (low equivalents 0x01 and 0x02), consecutive, so the switch into Code A establishes
+        // the FNC4 latch inside the switch run itself rather than before it. The sequence then
+        // switches back to Code B for the trailing 'z': the latch has to stay on through that
+        // switch back and only unlatch once 'z', an ordinary low character, forces it, using
+        // Code B's own FNC4 value (100) rather than the value the switch run latched with
+        // (Code A's 101).
+        var content = "a" + (char)0x81 + (char)0x82 + "z";
+        var (startValue, dataSymbols, check) = Code128Encoder.EncodeSymbols(new Code128Barcode(content));
+
+        Assert.Equal(104, startValue); // Start Code B: 'a' forces it
+        Assert.Equal(
+            [65, 101, 101, 101, 65, 66, 100, 100, 100, 90],
+            dataSymbols); // 'a' in B, switch to A, doubled FNC4 in A (latch on), 0x81, 0x82, switch to B, doubled FNC4 in B (unlatch), 'z'
+        Assert.Equal(52, check);
+    }
+
+    [Fact]
     public void CheckCharacter_survivesVeryLongContent()
     {
         // The weighted check sum is reduced modulo 103 every step; before that it accumulated in
