@@ -447,18 +447,38 @@ doc.Add(new Code128Barcode("VELLUM-1234"));
 doc.Add(new Code128Barcode("0100012345678905") { Gs1 = true });
 ```
 
-Content must be ASCII (code points 0-127); a non-ASCII character throws
+Content must be Latin-1 (code points 0-255); a character above that throws
 `ArgumentException`. Subset selection (A/B/C) and the mod-103 check character
-are computed automatically to minimise the encoded length. Extended Latin-1
-(code points 128-255, which Code 128 can carry only through FNC4) is not
-supported: FNC4 is handled inconsistently by scanners and is disallowed in
-GS1-128.
+are computed automatically to minimise the encoded length. GS1-128
+(`Gs1 = true`) is stricter: a character above 127 throws `ArgumentException`
+when the barcode is measured or drawn, since the GS1 General Specifications
+disallow FNC4 in a GS1-128 symbol.
 
 For GS1-128, the human-readable line prints the encoded data as a single run.
 It does not yet wrap each Application Identifier in parentheses (the
 `(01)...(17)...` form GS1 specifies for human-readable text); this affects the
 printed caption only, not the scanned bars. Parenthesised HRI is tracked in the
 barcode completeness backlog.
+
+### Extended Latin-1 (FNC4)
+
+```csharp
+using VellumPdf.Barcodes;
+
+doc.Add(new Code128Barcode("café"));
+```
+
+Characters 128-255 are carried with FNC4 (ISO/IEC 15417): a lone extended
+character is reached with a single FNC4, which shifts just the character
+right after it, and a run of two or more latches FNC4 with a doubled FNC4
+until a second doubled FNC4 switches it back off. Subset and shift/latch
+selection happen automatically: nothing about `Code128Barcode`'s API changes
+to use it.
+
+GS1-128 (`Gs1 = true`) rejects any character above 127; FNC4 is not permitted
+in a GS1-128 symbol. Not every scanner supports FNC4, so where broad
+compatibility matters more than round-tripping the full Latin-1 range, keep
+content within 0-127.
 
 ---
 

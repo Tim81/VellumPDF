@@ -40,14 +40,14 @@ Ranked by real-world demand (evidence and citations live in each issue). All fou
 Optional features inside the shipped symbologies, tracked together in
 [#155](https://github.com/Tim81/VellumPDF/issues/155). Shipped in 1.10.0: UPC-E
 and GS1-128 parenthesized-AI human-readable text, the two items with the most
-real-world demand. Also delivered, completing #155 except for the item below:
-QR Kanji mode (ISO/IEC 18004 §7.4.6, its Shift-JIS lookup table generated
-clean-room from the Unicode Consortium's SHIFTJIS.TXT mapping and filtered to
+real-world demand. Also delivered, completing #155 in full: QR Kanji mode
+(ISO/IEC 18004 §7.4.6, its Shift-JIS lookup table generated clean-room from
+the Unicode Consortium's SHIFTJIS.TXT mapping and filtered to
 CP932-round-trippable code points), QR Structured Append (ISO/IEC 18004 §8),
-Compact PDF417, and Macro PDF417 (ISO/IEC 15438 Annex H). Deferred: Code 128
-FNC4 / extended Latin-1 — scanner support for FNC4 is inconsistent and
-GS1-128 prohibits it outright, so it stays out of scope until there is
-concrete demand for it.
+Compact PDF417, Macro PDF417 (ISO/IEC 15438 Annex H), and Code 128 FNC4 /
+extended Latin-1 (ISO/IEC 15417): plain Code 128 now carries the full Latin-1
+range (128-255) via FNC4, while GS1-128 still rejects it, since the GS1
+General Specifications disallow FNC4 in a GS1-128 symbol.
 
 ## Decisions on record
 

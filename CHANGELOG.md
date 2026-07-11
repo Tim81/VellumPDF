@@ -26,6 +26,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   across linked PDF417 symbols, each carrying a Macro control block (file id and segment index,
   plus optional fields — file name, timestamp, sender, addressee, file size, checksum — via
   `MacroPdf417Options`) appended after its data codewords. (#155)
+- **Code 128 FNC4 / extended Latin-1** (ISO/IEC 15417) — plain `Code128Barcode` now accepts the
+  full Latin-1 range (code points 0-255) instead of throwing above 127. A lone extended character
+  is reached with a single FNC4, and a run of two or more latches FNC4 with a doubled FNC4 until a
+  second doubled FNC4 switches it back off. No API change: GS1-128 (`Gs1 = true`) still rejects
+  any character above 127, since the GS1 General Specifications disallow FNC4 in a GS1-128
+  symbol. (#155)
 
 ## [1.10.0] - 2026-07-07
 
