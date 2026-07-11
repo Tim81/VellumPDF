@@ -1,3 +1,7 @@
 #nullable enable
 VellumPdf.Barcodes.Pdf417Barcode.Compact.get -> bool
 VellumPdf.Barcodes.Pdf417Barcode.Compact.init -> void
+static VellumPdf.Barcodes.QrCode.StructuredAppend(System.Collections.Generic.IReadOnlyList<string!>! parts) -> System.Collections.Generic.IReadOnlyList<VellumPdf.Barcodes.QrCode!>!
+static VellumPdf.Barcodes.QrCode.StructuredAppend(System.Collections.Generic.IReadOnlyList<string!>! parts, VellumPdf.Barcodes.QrErrorCorrection errorCorrection, VellumPdf.Barcodes.QrTextEncoding textEncoding) -> System.Collections.Generic.IReadOnlyList<VellumPdf.Barcodes.QrCode!>!
+static VellumPdf.Barcodes.QrCode.StructuredAppend(string! content, int symbolCount) -> System.Collections.Generic.IReadOnlyList<VellumPdf.Barcodes.QrCode!>!
+static VellumPdf.Barcodes.QrCode.StructuredAppend(string! content, int symbolCount, VellumPdf.Barcodes.QrErrorCorrection errorCorrection, VellumPdf.Barcodes.QrTextEncoding textEncoding) -> System.Collections.Generic.IReadOnlyList<VellumPdf.Barcodes.QrCode!>!

@@ -96,8 +96,22 @@ internal static class QrEncoder
 
     private static (SegmentFactory SegmentFactory, string Content, Encoding ByteEncoding, bool UseEci, int ContentLength) PrepareStringContent(string text, QrTextEncoding textEncoding)
     {
+        var (byteEncoding, useEci) = ResolveTextEncoding(text, textEncoding);
+        return (headerBits => QrSegmenter.Segment(text, headerBits, byteEncoding, allowAlphanumeric: true, allowByte: true, allowKanji: true), text, byteEncoding, useEci, text.Length);
+    }
+
+    /// <summary>
+    /// Resolves <paramref name="textEncoding"/> to the byte encoding and ECI-header decision
+    /// <see cref="PrepareStringContent"/> would use for <paramref name="text"/>. Also used by
+    /// <see cref="QrCode.StructuredAppend(IReadOnlyList{string}, QrErrorCorrection, QrTextEncoding)"/>
+    /// to compute the Structured Append parity byte with the same byte representation the set's
+    /// symbols encode their content in.
+    /// </summary>
+    /// <exception cref="FormatException"><see cref="QrTextEncoding.Latin1"/> was requested for text outside ISO/IEC 8859-1.</exception>
+    internal static (Encoding ByteEncoding, bool UseEci) ResolveTextEncoding(string text, QrTextEncoding textEncoding)
+    {
         var latin1Representable = IsLatin1Representable(text);
-        var (byteEncoding, useEci) = textEncoding switch
+        return textEncoding switch
         {
             QrTextEncoding.Latin1 when !latin1Representable =>
                 throw new FormatException($"\"{text}\" contains characters outside ISO/IEC 8859-1 (Latin-1); use QrTextEncoding.Utf8, Utf8Eci or Auto instead."),
@@ -107,8 +121,6 @@ internal static class QrEncoder
             QrTextEncoding.Auto => latin1Representable ? (Encoding.Latin1, false) : (Encoding.UTF8, true),
             _ => throw new ArgumentOutOfRangeException(nameof(textEncoding), textEncoding, null),
         };
-
-        return (headerBits => QrSegmenter.Segment(text, headerBits, byteEncoding, allowAlphanumeric: true, allowByte: true, allowKanji: true), text, byteEncoding, useEci, text.Length);
     }
 
     /// <summary>
@@ -167,6 +179,9 @@ internal static class QrEncoder
         QrCode barcode, string content, SegmentFactory segmentFactory, Encoding byteEncoding, bool useEci, int contentLength, bool gs1Fnc1FirstPosition)
     {
         var gs1Bits = gs1Fnc1FirstPosition ? QrTables.ModeIndicatorBits : 0;
+        // §8.1: the Structured Append header is 4 (mode) + 8 (sequence indicator) + 8 (parity) = 20 bits.
+        var structuredAppend = barcode.StructuredAppendInfo;
+        var saBits = structuredAppend is not null ? 20 : 0;
 
         (int Group, int Version)[] candidates = barcode.Version is { } forced
             ? [(GroupFor(forced), forced)]
@@ -190,7 +205,7 @@ internal static class QrEncoder
                 // the Kanji segment with no Byte segment to apply it to, so this omission is
                 // required for interoperability, not just an optimization.
                 groupWritesEci = useEci && groupSegments.Any(s => s.Mode == QrSegmentMode.Byte);
-                groupContentBits = (groupWritesEci ? 12 : 0) + gs1Bits;
+                groupContentBits = (groupWritesEci ? 12 : 0) + gs1Bits + saBits;
                 foreach (var segment in groupSegments)
                     groupContentBits += HeaderBits(VersionGroups[group].Min, segment.Mode) + SegmentDataBits(content, segment, byteEncoding);
                 lastGroup = group;
@@ -201,6 +216,9 @@ internal static class QrEncoder
             if (groupContentBits > capacityBits) continue;
 
             var writer = new BitWriter();
+            // §8.1: the Structured Append header, when present, comes before everything else:
+            // the ECI header, the FNC1-in-first-position marker, and the first data segment alike.
+            if (structuredAppend is { } sa) QrBitStreamBuilder.WriteStructuredAppendHeader(writer, sa.Index, sa.Total, sa.Parity);
             if (groupWritesEci) QrBitStreamBuilder.WriteUtf8EciHeader(writer);
             // §7.4.8.2: FNC1 in first position is placed after any ECI header and immediately
             // before the first data-encoding mode indicator.

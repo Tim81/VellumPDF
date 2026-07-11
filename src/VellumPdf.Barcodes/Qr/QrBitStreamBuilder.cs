@@ -32,6 +32,24 @@ internal static class QrBitStreamBuilder
     internal static void WriteFnc1FirstPosition(BitWriter writer) =>
         writer.WriteBits(QrTables.Fnc1FirstPositionModeIndicator, QrTables.ModeIndicatorBits);
 
+    /// <summary>
+    /// Writes the Structured Append header (ISO/IEC 18004 §8.1): the mode indicator, an 8-bit
+    /// symbol sequence indicator (upper nibble the symbol's 0-based position, lower nibble the
+    /// set's total symbol count minus one), and the 8-bit parity byte shared by every symbol in
+    /// the set. This is always the first thing written, ahead of any ECI header and the
+    /// FNC1-in-first-position marker.
+    /// </summary>
+    /// <param name="writer">The bit stream being assembled.</param>
+    /// <param name="index">The symbol's 0-based position within the set (0-15).</param>
+    /// <param name="total">The set's total symbol count (1-16).</param>
+    /// <param name="parity">The XOR of every byte of the original, un-split message data.</param>
+    internal static void WriteStructuredAppendHeader(BitWriter writer, int index, int total, byte parity)
+    {
+        writer.WriteBits(QrTables.StructuredAppendModeIndicator, QrTables.ModeIndicatorBits);
+        writer.WriteBits((index << 4) | (total - 1), 8);
+        writer.WriteBits(parity, 8);
+    }
+
     /// <summary>Writes every segment's mode indicator, character count indicator and data.</summary>
     /// <param name="writer">The bit stream being assembled.</param>
     /// <param name="content">The original string the segments index into.</param>

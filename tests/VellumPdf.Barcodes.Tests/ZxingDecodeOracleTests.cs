@@ -3,6 +3,7 @@
 
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Linq;
 using VellumPdf.Barcodes.Aztec;
 using VellumPdf.Barcodes.DataMatrix;
 using VellumPdf.Barcodes.Internal;
@@ -189,6 +190,71 @@ public sealed class ZxingDecodeOracleTests : IDisposable
 
         Assert.Equal("QRCode", result.Format);
         Assert.Equal(expectedUri, result.Text);
+    }
+
+    // ── QR Structured Append ──────────────────────────────────────────────
+
+    // zxing-cpp 3.0.0's Python bindings expose no Structured Append sequence metadata: neither
+    // Barcode nor its extra dict carries a sequence_index/sequence_size/sequence_id anywhere.
+    // Confirmed by inspecting the installed wheel: Barcode's own readonly properties are just
+    // bytes/content_type/ec_level/error/extra/format/orientation/position/symbology/
+    // symbology_identifier/text/valid, and a decoded QR's extra dict only ever held DataMask/
+    // Version/ECLevel. So these round-trips verify Structured Append the way the plan's fallback
+    // describes: each symbol decodes as an ordinary QR Code, and every decoded text matches
+    // exactly one part of the original, un-split message.
+
+    [Fact]
+    public void QrCode_StructuredAppendTwoParts_EachSymbolDecodesToItsOwnPart()
+    {
+        string[] parts = ["VellumPdf Structured Append part one, ", "part two of the message."];
+        var symbols = QrCode.StructuredAppend(parts);
+
+        var pdfPath = BuildSinglePdf((_, canvas) =>
+        {
+            canvas.DrawBarcode(symbols[0], 50, 700);
+            canvas.DrawBarcode(symbols[1], 50, 500);
+        });
+
+        if (!TryDecodeAll(pdfPath, out var results)) return;
+
+        AssertStructuredAppendReassembles(parts, results);
+    }
+
+    [Fact]
+    public void QrCode_StructuredAppendThreeParts_EachSymbolDecodesToItsOwnPart()
+    {
+        string[] parts = ["Part one of three. ", "Part two of three. ", "Part three of three."];
+        var symbols = QrCode.StructuredAppend(parts);
+
+        var pdfPath = BuildSinglePdf((_, canvas) =>
+        {
+            canvas.DrawBarcode(symbols[0], 50, 750);
+            canvas.DrawBarcode(symbols[1], 50, 550);
+            canvas.DrawBarcode(symbols[2], 50, 350);
+        });
+
+        if (!TryDecodeAll(pdfPath, out var results)) return;
+
+        AssertStructuredAppendReassembles(parts, results);
+    }
+
+    /// <summary>
+    /// Asserts every decoded result is a QR Code matching exactly one of <paramref name="parts"/>
+    /// (a bijection, not merely a subset), then reassembles the parts in their known Structured
+    /// Append order and checks the result equals the original, un-split message. This is the
+    /// reassembly check this repo's decode tooling cannot do via sequence metadata (see the remarks above).
+    /// </summary>
+    private static void AssertStructuredAppendReassembles(IReadOnlyList<string> parts, List<DecodeResult> results)
+    {
+        Assert.Equal(parts.Count, results.Count);
+        Assert.All(results, r => Assert.Equal("QRCode", r.Format));
+
+        var indexByPart = parts.Select((part, index) => (part, index)).ToDictionary(x => x.part, x => x.index);
+        foreach (var result in results)
+            Assert.True(indexByPart.ContainsKey(result.Text), $"Decoded text '{result.Text}' does not match any original part.");
+
+        var reassembled = string.Concat(results.OrderBy(r => indexByPart[r.Text]).Select(r => r.Text));
+        Assert.Equal(string.Concat(parts), reassembled);
     }
 
     // ── Micro QR ──────────────────────────────────────────────────────────

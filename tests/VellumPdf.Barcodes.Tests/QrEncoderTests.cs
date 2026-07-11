@@ -1,6 +1,7 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
+using System.Linq;
 using System.Text;
 using VellumPdf.Barcodes.Internal;
 using VellumPdf.Barcodes.Qr;
@@ -590,6 +591,137 @@ public sealed class QrEncoderTests
         var matrix = qr.GetMatrix();
         Assert.Equal(QrMatrixBuilder.SizeForVersion(1), matrix.Width);
     }
+
+    // ── Structured Append ────────────────────────────────────────────────
+
+    [Fact]
+    public void StructuredAppendHeader_bitStream_matchesModeSequenceIndicatorAndParity()
+    {
+        // ISO/IEC 18004 §8.1: mode (0011) + sequence indicator (upper nibble = 0-based position,
+        // lower nibble = total - 1) + parity. "Symbol 2 of 3" is index 1 of total 3: upper 0001,
+        // lower 0010.
+        var writer = new BitWriter();
+        QrBitStreamBuilder.WriteStructuredAppendHeader(writer, index: 1, total: 3, parity: 0xA5);
+
+        const string expectedBits = "0011" + "0001" + "0010" + "10100101";
+        Assert.Equal(expectedBits.Length, writer.BitCount);
+
+        var bytes = writer.ToArray();
+        var actualBits = new StringBuilder();
+        for (var i = 0; i < expectedBits.Length; i++)
+            actualBits.Append((bytes[i / 8] >> (7 - (i % 8))) & 1);
+        Assert.Equal(expectedBits, actualBits.ToString());
+    }
+
+    [Fact]
+    public void StructuredAppend_twoPartMessage_parityIsXorOfConcatenatedBytes()
+    {
+        // "HI" + "!" = "HI!" -> 0x48 ^ 0x49 ^ 0x21 = 0x20, hand-derived.
+        var symbols = QrCode.StructuredAppend(["HI", "!"]);
+        Assert.Equal(2, symbols.Count);
+        Assert.All(symbols, s => Assert.Equal((byte)0x20, s.StructuredAppendInfo!.Value.Parity));
+    }
+
+    [Fact]
+    public void StructuredAppend_threePartMessage_parityIsXorOfConcatenatedBytes()
+    {
+        // "A" + "BC" + "D" = "ABCD" -> 0x41 ^ 0x42 ^ 0x43 ^ 0x44 = 0x04, hand-derived.
+        var symbols = QrCode.StructuredAppend(["A", "BC", "D"]);
+        Assert.Equal(3, symbols.Count);
+        Assert.All(symbols, s => Assert.Equal((byte)0x04, s.StructuredAppendInfo!.Value.Parity));
+    }
+
+    [Fact]
+    public void StructuredAppend_stampsEachSymbolWithItsIndexAndTheSharedTotal()
+    {
+        var symbols = QrCode.StructuredAppend(["A", "B", "C"]);
+        for (var i = 0; i < symbols.Count; i++)
+        {
+            var info = symbols[i].StructuredAppendInfo;
+            Assert.NotNull(info);
+            Assert.Equal(i, info!.Value.Index);
+            Assert.Equal(3, info.Value.Total);
+        }
+    }
+
+    [Fact]
+    public void StructuredAppend_sixteenParts_isAccepted()
+    {
+        var parts = Enumerable.Range(0, 16).Select(i => i.ToString()).ToArray();
+        var symbols = QrCode.StructuredAppend(parts);
+        Assert.Equal(16, symbols.Count);
+        Assert.Equal(0, symbols[0].StructuredAppendInfo!.Value.Index);
+        Assert.Equal(15, symbols[15].StructuredAppendInfo!.Value.Index);
+        Assert.All(symbols, s => Assert.Equal(16, s.StructuredAppendInfo!.Value.Total));
+    }
+
+    [Fact]
+    public void StructuredAppend_zeroParts_throwsArgumentException() =>
+        Assert.Throws<ArgumentException>(() => QrCode.StructuredAppend(Array.Empty<string>()));
+
+    [Fact]
+    public void StructuredAppend_seventeenParts_throwsArgumentException()
+    {
+        var parts = Enumerable.Range(0, 17).Select(i => i.ToString()).ToArray();
+        Assert.Throws<ArgumentException>(() => QrCode.StructuredAppend(parts));
+    }
+
+    [Fact]
+    public void StructuredAppend_headerIsWrittenBeforeTheFirstDataModeIndicator()
+    {
+        // Force a fixed version/mask on the first symbol of a 2-part set so the encoded bits can
+        // be read back positionally: the SA header (20 bits) must precede the data segment's own
+        // mode indicator, the same ordering the GS1 FNC1-first-position tests above check for
+        // their marker.
+        var symbols = QrCode.StructuredAppend(["HELLO", "WORLD"]);
+        var first = symbols[0];
+        var withForcedVersion = new QrCode(first.Text!)
+        {
+            ErrorCorrection = QrErrorCorrection.M,
+            Version = 1,
+            Mask = 0,
+            StructuredAppendInfo = first.StructuredAppendInfo,
+        };
+        var matrix = withForcedVersion.GetMatrix();
+
+        var (_, isFunction) = QrMatrixBuilder.BuildFunctionPatterns(1);
+        var ecInfo = QrTables.GetEcBlockInfo(1, QrErrorCorrection.M);
+        var bits = ReadDataBitsInPlacementOrder(matrix, isFunction, 21, mask: 0, totalBits: ecInfo.TotalDataCodewords * 8);
+
+        Assert.Equal(QrTables.StructuredAppendModeIndicator, ReadBitsAsInt(bits, 0, 4));
+        var info = first.StructuredAppendInfo!.Value;
+        Assert.Equal((info.Index << 4) | (info.Total - 1), ReadBitsAsInt(bits, 4, 8));
+        Assert.Equal(info.Parity, (byte)ReadBitsAsInt(bits, 12, 8));
+        Assert.Equal(QrTables.ModeIndicator(QrSegmentMode.Alphanumeric), ReadBitsAsInt(bits, 20, 4));
+    }
+
+    [Fact]
+    public void StructuredAppend_autoSplit_dividesContentIntoRoughlyEqualParts()
+    {
+        var symbols = QrCode.StructuredAppend("ABCDEFGHIJ", symbolCount: 3);
+        Assert.Equal(3, symbols.Count);
+        // 10 runes over 3 parts: base size 3, remainder 1 -> the first part gets the extra rune.
+        Assert.Equal("ABCD", symbols[0].Text);
+        Assert.Equal("EFG", symbols[1].Text);
+        Assert.Equal("HIJ", symbols[2].Text);
+    }
+
+    [Fact]
+    public void StructuredAppend_autoSplit_neverSplitsASurrogatePair()
+    {
+        // Two astral-plane emoji, each a UTF-16 surrogate pair: splitting on code units instead
+        // of runes would cut the first emoji in half.
+        const string content = "😀😃";
+        var symbols = QrCode.StructuredAppend(content, symbolCount: 2);
+        Assert.Equal(2, symbols.Count);
+        Assert.Equal("😀", symbols[0].Text);
+        Assert.Equal("😃", symbols[1].Text);
+        Assert.Equal(content, string.Concat(symbols.Select(s => s.Text)));
+    }
+
+    [Fact]
+    public void StructuredAppend_autoSplit_symbolCountOutOfRange_throwsArgumentException() =>
+        Assert.Throws<ArgumentException>(() => QrCode.StructuredAppend("hello", symbolCount: 0));
 
     /// <summary>ISO/IEC 18004 Table 2/3's mode/count-to-data-bit-width rule, reimplemented independently of <see cref="QrEncoder"/> for decode-side test assertions.</summary>
     private static int SpecDataBits(QrSegmentMode mode, int count) => mode switch
