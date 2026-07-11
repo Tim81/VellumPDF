@@ -58,7 +58,7 @@ internal static class MacroControlBlock
         {
             AddOptionalField(codewords, DesignatorFileName, options.FileName, Pdf417HighLevelEncoder.EncodeTextValue);
             AddOptionalField(codewords, DesignatorSegmentCount, options.SegmentCount, Pdf417HighLevelEncoder.EncodeNumericValue);
-            AddOptionalField(codewords, DesignatorTimestamp, options.Timestamp, Pdf417HighLevelEncoder.EncodeNumericValue);
+            AddOptionalField(codewords, DesignatorTimestamp, options.Timestamp?.ToUnixTimeSeconds(), Pdf417HighLevelEncoder.EncodeNumericValue);
             AddOptionalField(codewords, DesignatorSender, options.Sender, Pdf417HighLevelEncoder.EncodeTextValue);
             AddOptionalField(codewords, DesignatorAddressee, options.Addressee, Pdf417HighLevelEncoder.EncodeTextValue);
             AddOptionalField(codewords, DesignatorFileSize, options.FileSize, Pdf417HighLevelEncoder.EncodeNumericValue);

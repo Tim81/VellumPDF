@@ -13,7 +13,7 @@ VellumPdf.Barcodes.MacroPdf417Options.SegmentCount.get -> int?
 VellumPdf.Barcodes.MacroPdf417Options.SegmentCount.init -> void
 VellumPdf.Barcodes.MacroPdf417Options.Sender.get -> string?
 VellumPdf.Barcodes.MacroPdf417Options.Sender.init -> void
-VellumPdf.Barcodes.MacroPdf417Options.Timestamp.get -> long?
+VellumPdf.Barcodes.MacroPdf417Options.Timestamp.get -> System.DateTimeOffset?
 VellumPdf.Barcodes.MacroPdf417Options.Timestamp.init -> void
 VellumPdf.Barcodes.MacroPdf417Options.Equals(VellumPdf.Barcodes.MacroPdf417Options? other) -> bool
 override VellumPdf.Barcodes.MacroPdf417Options.Equals(object? obj) -> bool
@@ -26,6 +26,8 @@ VellumPdf.Barcodes.Pdf417Barcode.Compact.get -> bool
 VellumPdf.Barcodes.Pdf417Barcode.Compact.init -> void
 static VellumPdf.Barcodes.Pdf417Barcode.MacroSet(System.Collections.Generic.IReadOnlyList<string!>! parts, int fileId) -> System.Collections.Generic.IReadOnlyList<VellumPdf.Barcodes.Pdf417Barcode!>!
 static VellumPdf.Barcodes.Pdf417Barcode.MacroSet(System.Collections.Generic.IReadOnlyList<string!>! parts, int fileId, VellumPdf.Barcodes.MacroPdf417Options! options) -> System.Collections.Generic.IReadOnlyList<VellumPdf.Barcodes.Pdf417Barcode!>!
+static VellumPdf.Barcodes.Pdf417Barcode.MacroSet(string! content, int symbolCount, int fileId) -> System.Collections.Generic.IReadOnlyList<VellumPdf.Barcodes.Pdf417Barcode!>!
+static VellumPdf.Barcodes.Pdf417Barcode.MacroSet(string! content, int symbolCount, int fileId, VellumPdf.Barcodes.MacroPdf417Options! options) -> System.Collections.Generic.IReadOnlyList<VellumPdf.Barcodes.Pdf417Barcode!>!
 static VellumPdf.Barcodes.QrCode.StructuredAppend(System.Collections.Generic.IReadOnlyList<string!>! parts) -> System.Collections.Generic.IReadOnlyList<VellumPdf.Barcodes.QrCode!>!
 static VellumPdf.Barcodes.QrCode.StructuredAppend(System.Collections.Generic.IReadOnlyList<string!>! parts, VellumPdf.Barcodes.QrErrorCorrection errorCorrection, VellumPdf.Barcodes.QrTextEncoding textEncoding) -> System.Collections.Generic.IReadOnlyList<VellumPdf.Barcodes.QrCode!>!
 static VellumPdf.Barcodes.QrCode.StructuredAppend(string! content, int symbolCount) -> System.Collections.Generic.IReadOnlyList<VellumPdf.Barcodes.QrCode!>!

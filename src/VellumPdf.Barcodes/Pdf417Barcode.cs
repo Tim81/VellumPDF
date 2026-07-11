@@ -95,6 +95,10 @@ public sealed class Pdf417Barcode : Barcode
     /// </param>
     /// <returns>One <see cref="Pdf417Barcode"/> per part, in the same order, each carrying its Macro control block.</returns>
     /// <exception cref="ArgumentException"><paramref name="parts"/> has fewer than 1 or more than 99999 entries, or <paramref name="fileId"/> is outside 0-899.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <see cref="MacroPdf417Options.Timestamp"/> is before the Unix epoch, <see cref="MacroPdf417Options.FileSize"/>
+    /// is negative, or <see cref="MacroPdf417Options.Checksum"/> is outside 0-65535.
+    /// </exception>
     public static IReadOnlyList<Pdf417Barcode> MacroSet(IReadOnlyList<string> parts, int fileId, MacroPdf417Options options)
     {
         ArgumentNullException.ThrowIfNull(parts);
@@ -103,6 +107,12 @@ public sealed class Pdf417Barcode : Barcode
             throw new ArgumentException($"A Macro PDF417 set holds 1 to {MacroControlBlock.MaxSegmentIndex + 1} segments (was {parts.Count}).", nameof(parts));
         if (fileId is < 0 or > MacroControlBlock.MaxFileId)
             throw new ArgumentException($"fileId must be between 0 and {MacroControlBlock.MaxFileId} (was {fileId}).", nameof(fileId));
+        if (options.Timestamp is { } timestamp && timestamp.ToUnixTimeSeconds() < 0)
+            throw new ArgumentOutOfRangeException(nameof(options), timestamp, "Timestamp must not be before the Unix epoch (1970-01-01T00:00:00Z).");
+        if (options.FileSize is { } fileSize && fileSize < 0)
+            throw new ArgumentOutOfRangeException(nameof(options), fileSize, "FileSize must not be negative.");
+        if (options.Checksum is { } checksum && checksum is < 0 or > 65535)
+            throw new ArgumentOutOfRangeException(nameof(options), checksum, "Checksum must be between 0 and 65535 (a CCITT-16 CRC).");
 
         var lastSegmentOptions = options.SegmentCount is null ? options with { SegmentCount = parts.Count } : options;
 
@@ -117,6 +127,45 @@ public sealed class Pdf417Barcode : Barcode
         }
 
         return symbols;
+    }
+
+    /// <summary>
+    /// Splits <paramref name="content"/> into <paramref name="symbolCount"/> roughly-equal parts
+    /// (split on Unicode scalar boundaries, never through a surrogate pair) and delegates to
+    /// <see cref="MacroSet(IReadOnlyList{string}, int, MacroPdf417Options)"/> with no optional
+    /// fields beyond the segment count. See the four-parameter overload for the full description.
+    /// </summary>
+    public static IReadOnlyList<Pdf417Barcode> MacroSet(string content, int symbolCount, int fileId) =>
+        MacroSet(content, symbolCount, fileId, new MacroPdf417Options());
+
+    /// <summary>
+    /// Splits <paramref name="content"/> into <paramref name="symbolCount"/> roughly-equal parts
+    /// (split on Unicode scalar boundaries, never through a surrogate pair) and delegates to
+    /// <see cref="MacroSet(IReadOnlyList{string}, int, MacroPdf417Options)"/>. Prefer that
+    /// overload directly when the split points need to fall on specific boundaries rather than
+    /// roughly-equal rune counts.
+    /// </summary>
+    /// <param name="content">The message to split.</param>
+    /// <param name="symbolCount">The number of symbols to split <paramref name="content"/> across (1-99999).</param>
+    /// <param name="fileId">The identifier every symbol in the set shares (0-899, ISO/IEC 15438 Annex H).</param>
+    /// <param name="options">
+    /// Optional fields carried on the set's last symbol. <see cref="MacroPdf417Options.SegmentCount"/>,
+    /// when left unset, defaults to <paramref name="symbolCount"/>.
+    /// </param>
+    /// <returns>One <see cref="Pdf417Barcode"/> per part, in reading order.</returns>
+    /// <exception cref="ArgumentException"><paramref name="symbolCount"/> is less than 1 or more than 99999, or <paramref name="fileId"/> is outside 0-899.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <see cref="MacroPdf417Options.Timestamp"/> is before the Unix epoch, <see cref="MacroPdf417Options.FileSize"/>
+    /// is negative, or <see cref="MacroPdf417Options.Checksum"/> is outside 0-65535.
+    /// </exception>
+    /// <exception cref="FormatException"><paramref name="content"/> contains an unpaired UTF-16 surrogate.</exception>
+    public static IReadOnlyList<Pdf417Barcode> MacroSet(string content, int symbolCount, int fileId, MacroPdf417Options options)
+    {
+        ArgumentNullException.ThrowIfNull(content);
+        if (symbolCount is < 1 or > MacroControlBlock.MaxSegmentIndex + 1)
+            throw new ArgumentException($"A Macro PDF417 set holds 1 to {MacroControlBlock.MaxSegmentIndex + 1} segments (was {symbolCount}).", nameof(symbolCount));
+
+        return MacroSet(RuneSplitter.SplitByRune(content, symbolCount), fileId, options);
     }
 
     /// <summary>Encodes and returns the symbol's module grid, caching the result on first use. Each row of the grid is one PDF417 row; the painter stretches it to <see cref="RowHeight"/> modules tall.</summary>

@@ -1,6 +1,7 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
+using System.Globalization;
 using VellumPdf.Barcodes.Pdf417;
 
 namespace VellumPdf.Barcodes.Tests;
@@ -274,6 +275,75 @@ public sealed class Pdf417EncoderTests
         var macro = new Pdf417Barcode(content) { Columns = 1, Rows = exactRows, ErrorCorrectionLevel = 0, MacroSegmentInfo = macroInfo };
         Assert.Throws<FormatException>(() => macro.GetMatrix());
     }
+
+    [Fact]
+    public void MacroControlBlock_timestamp_convertsToUnixEpochSeconds()
+    {
+        // 2024-01-01T00:00:00Z -> 1704067200 Unix epoch seconds, encoded as Numeric Compaction
+        // (designator 2), the same conversion MacroPdf417Options.Timestamp documents.
+        var timestamp = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var info = new MacroSegmentInfo(SegmentIndex: 0, FileId: 0, IsLast: true, new MacroPdf417Options { Timestamp = timestamp });
+        var codewords = MacroControlBlock.Build(info);
+
+        var expectedValue = timestamp.ToUnixTimeSeconds().ToString(CultureInfo.InvariantCulture);
+        var expectedNumericCodewords = Pdf417HighLevelEncoder.EncodeNumericValue(expectedValue);
+
+        Assert.Equal(923, codewords[4]);
+        Assert.Equal(2, codewords[5]); // designator 2 = timestamp
+        Assert.Equal(expectedNumericCodewords, codewords.Skip(6).Take(expectedNumericCodewords.Count));
+        Assert.Equal(922, codewords[^1]);
+    }
+
+    [Fact]
+    public void MacroSet_timestampBeforeUnixEpoch_throwsArgumentOutOfRangeException()
+    {
+        var options = new MacroPdf417Options { Timestamp = DateTimeOffset.UnixEpoch.AddSeconds(-1) };
+        Assert.Throws<ArgumentOutOfRangeException>(() => Pdf417Barcode.MacroSet(["a"], fileId: 0, options));
+    }
+
+    [Fact]
+    public void MacroSet_negativeFileSize_throwsArgumentOutOfRangeException()
+    {
+        var options = new MacroPdf417Options { FileSize = -1 };
+        Assert.Throws<ArgumentOutOfRangeException>(() => Pdf417Barcode.MacroSet(["a"], fileId: 0, options));
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(65536)]
+    public void MacroSet_checksumOutsideRange_throwsArgumentOutOfRangeException(int checksum)
+    {
+        var options = new MacroPdf417Options { Checksum = checksum };
+        Assert.Throws<ArgumentOutOfRangeException>(() => Pdf417Barcode.MacroSet(["a"], fileId: 0, options));
+    }
+
+    [Fact]
+    public void MacroSet_autoSplit_dividesContentIntoRoughlyEqualParts()
+    {
+        var symbols = Pdf417Barcode.MacroSet("ABCDEFGHIJ", symbolCount: 3, fileId: 1);
+        Assert.Equal(3, symbols.Count);
+        // 10 runes over 3 parts: base size 3, remainder 1 -> the first part gets the extra rune.
+        Assert.Equal("ABCD", symbols[0].Text);
+        Assert.Equal("EFG", symbols[1].Text);
+        Assert.Equal("HIJ", symbols[2].Text);
+    }
+
+    [Fact]
+    public void MacroSet_autoSplit_stampsSegmentIndexAndSharedFileId()
+    {
+        var symbols = Pdf417Barcode.MacroSet("ABCDEF", symbolCount: 2, fileId: 9);
+        Assert.Equal(0, symbols[0].MacroSegmentInfo!.Value.SegmentIndex);
+        Assert.Equal(1, symbols[1].MacroSegmentInfo!.Value.SegmentIndex);
+        Assert.All(symbols, s => Assert.Equal(9, s.MacroSegmentInfo!.Value.FileId));
+    }
+
+    [Fact]
+    public void MacroSet_autoSplit_symbolCountOutOfRange_throwsArgumentException() =>
+        Assert.Throws<ArgumentException>(() => Pdf417Barcode.MacroSet("hello", symbolCount: 0, fileId: 0));
+
+    [Fact]
+    public void MacroSet_autoSplit_unpairedSurrogate_throwsFormatException() =>
+        Assert.Throws<FormatException>(() => Pdf417Barcode.MacroSet("\uD800", symbolCount: 2, fileId: 0));
 
     private static void AssertRowIndicators(BarcodeMatrix matrix, int row, int cluster, int expectedLeft, int expectedRight)
     {

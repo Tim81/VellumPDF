@@ -51,4 +51,32 @@ public sealed class ShiftJisTableTests
         Assert.True(ShiftJisTable.TryGetShiftJis(unicodeScalar, out var actual));
         Assert.Equal(shiftJis, actual);
     }
+
+    // ── CP932 round-trip ambiguity (SHIFTJIS.TXT dual-mapped code points) ────
+
+    [Theory]
+    [InlineData(0x005C)] // REVERSE SOLIDUS: SHIFTJIS.TXT maps 0x815F here, but CP932 decodes 0x815F to U+FF3C
+    [InlineData(0x00A2)] // CENT SIGN
+    [InlineData(0x00A3)] // POUND SIGN
+    [InlineData(0x00AC)] // NOT SIGN
+    [InlineData(0x2212)] // MINUS SIGN
+    [InlineData(0x301C)] // WAVE DASH
+    [InlineData(0x2016)] // DOUBLE VERTICAL LINE
+    public void TryGetShiftJis_cp932AmbiguousScalar_isNotEligible(int unicodeScalar) =>
+        // These scalars also have a single-byte or otherwise-mapped Shift-JIS form; the obsolete
+        // SHIFTJIS.TXT source assigns them a second, double-byte Kanji-block code that a CP932
+        // decoder (what zxing-cpp and every mainstream reader use) maps back to a different
+        // scalar. Encoding one of them in Kanji mode would decode to the wrong character, so the
+        // generator drops any entry that does not round-trip through CP932.
+        Assert.False(ShiftJisTable.TryGetShiftJis(unicodeScalar, out _));
+
+    [Fact]
+    public void TryGetShiftJis_ordinaryKanjiNearAmbiguousScalars_stillEligible()
+    {
+        // 点 (U+70B9 -> 0x935F) is an unrelated Kanji-block entry with no single-byte alias;
+        // confirms the CP932 round-trip filter only removed the ambiguous scalars above, not
+        // ordinary Kanji.
+        Assert.True(ShiftJisTable.TryGetShiftJis(0x70B9, out var shiftJis));
+        Assert.Equal(0x935F, shiftJis);
+    }
 }

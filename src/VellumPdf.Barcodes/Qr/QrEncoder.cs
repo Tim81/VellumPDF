@@ -97,7 +97,27 @@ internal static class QrEncoder
     private static (SegmentFactory SegmentFactory, string Content, Encoding ByteEncoding, bool UseEci, int ContentLength) PrepareStringContent(string text, QrTextEncoding textEncoding)
     {
         var (byteEncoding, useEci) = ResolveTextEncoding(text, textEncoding);
-        return (headerBits => QrSegmenter.Segment(text, headerBits, byteEncoding, allowAlphanumeric: true, allowByte: true, allowKanji: true), text, byteEncoding, useEci, text.Length);
+        return (headerBits => SegmentAvoidingEciKanjiMix(text, headerBits, byteEncoding, useEci), text, byteEncoding, useEci, text.Length);
+    }
+
+    /// <summary>
+    /// Segments <paramref name="text"/> normally, then falls back to a Kanji-free segmentation if
+    /// the result would combine a Kanji-mode segment with a Byte-mode segment in a symbol that
+    /// writes the UTF-8 ECI header. zxing-cpp was observed misdecoding every Kanji-mode codeword
+    /// whenever a symbol also carried an ECI-declared Byte segment, even though ISO/IEC 18004
+    /// §7.4.6 defines Kanji mode independently of ECI, which only governs Byte-mode data. This was
+    /// confirmed empirically by rendering and decoding both segmentations. A pure-Kanji symbol (no
+    /// Byte segment at all) is unaffected: <see cref="QrEncoder"/> never writes an ECI header for
+    /// it regardless of <paramref name="useEci"/> (see the header-omission remark where it is
+    /// decided), so Kanji mode stays available there.
+    /// </summary>
+    private static IReadOnlyList<QrSegment> SegmentAvoidingEciKanjiMix(string text, Func<QrSegmentMode, int> headerBits, Encoding byteEncoding, bool useEci)
+    {
+        var segments = QrSegmenter.Segment(text, headerBits, byteEncoding, allowAlphanumeric: true, allowByte: true, allowKanji: true);
+        if (!useEci || !segments.Any(s => s.Mode == QrSegmentMode.Kanji) || !segments.Any(s => s.Mode == QrSegmentMode.Byte))
+            return segments;
+
+        return QrSegmenter.Segment(text, headerBits, byteEncoding, allowAlphanumeric: true, allowByte: true, allowKanji: false);
     }
 
     /// <summary>
@@ -146,10 +166,11 @@ internal static class QrEncoder
     /// </para>
     /// <para>
     /// Kanji mode is deliberately not offered either. <see cref="Gs1ElementString"/> restricts
-    /// every value character to printable ASCII, which is not GS1 AI content even where some
-    /// byte also happens to double as a Shift-JIS Kanji codepoint (e.g. 0x815F, a double-byte
-    /// Kanji block entry, maps to U+005C REVERSE SOLIDUS). Mixing Kanji-mode runs into a GS1
-    /// element string would be non-standard for the profile.
+    /// every value character to printable ASCII, which is not GS1 AI content regardless of
+    /// whether a Shift-JIS Kanji-block code happens to exist for it (<see cref="ShiftJisTable"/>
+    /// excludes the handful of ASCII/Latin-1 punctuation scalars that would be ambiguous under a
+    /// CP932 decoder, so none of them are reachable through Kanji mode in the first place).
+    /// Mixing Kanji-mode runs into a GS1 element string would be non-standard for the profile.
     /// </para>
     /// </remarks>
     private static (SegmentFactory SegmentFactory, string Content, Encoding ByteEncoding, bool UseEci, int ContentLength) PrepareGs1ElementStringContent(string content) =>

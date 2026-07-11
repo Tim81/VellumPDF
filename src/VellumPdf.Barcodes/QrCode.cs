@@ -78,8 +78,10 @@ public sealed class QrCode : Barcode
     /// <param name="parts">The message, pre-split into 1 to 16 parts in reading order.</param>
     /// <param name="errorCorrection">The error-correction level applied to every symbol in the set.</param>
     /// <param name="textEncoding">
-    /// How each part's byte-mode content is encoded, and how the shared parity byte is computed
-    /// over the concatenated message.
+    /// How the concatenated message's byte-mode content is encoded. Resolved once from the whole
+    /// message (not per part), and every returned symbol is stamped with the resulting concrete
+    /// encoding so its own byte-mode data always agrees with the shared parity byte, even under
+    /// <see cref="QrTextEncoding.Auto"/>.
     /// </param>
     /// <returns>One <see cref="QrCode"/> per part, in the same order, each carrying its Structured Append header.</returns>
     /// <exception cref="ArgumentException"><paramref name="parts"/> has fewer than 1 or more than 16 entries.</exception>
@@ -91,7 +93,7 @@ public sealed class QrCode : Barcode
         if (parts.Count is < 1 or > 16)
             throw new ArgumentException($"A Structured Append set holds 1 to 16 symbols (was {parts.Count}).", nameof(parts));
 
-        var parity = ComputeStructuredAppendParity(string.Concat(parts), textEncoding);
+        var (resolvedEncoding, parity) = ResolveStructuredAppendEncodingAndParity(string.Concat(parts), textEncoding);
 
         var symbols = new QrCode[parts.Count];
         for (var i = 0; i < parts.Count; i++)
@@ -99,7 +101,7 @@ public sealed class QrCode : Barcode
             symbols[i] = new QrCode(parts[i])
             {
                 ErrorCorrection = errorCorrection,
-                TextEncoding = textEncoding,
+                TextEncoding = resolvedEncoding,
                 StructuredAppendInfo = new StructuredAppendInfo(i, parts.Count, parity),
             };
         }
@@ -120,15 +122,18 @@ public sealed class QrCode : Barcode
     /// Divides <paramref name="content"/> into <paramref name="symbolCount"/> roughly-equal parts
     /// (split on Unicode scalar boundaries, never through a surrogate pair) and delegates to
     /// <see cref="StructuredAppend(IReadOnlyList{string}, QrErrorCorrection, QrTextEncoding)"/>.
-    /// Prefer that overload directly when the split points matter (e.g. keeping GS1 element
-    /// boundaries intact); this one is a convenience for arbitrary text.
+    /// This factory never sets <see cref="Gs1"/>: every symbol encodes its part as plain text (or
+    /// numeric/kanji, wherever the segmenter finds it beneficial), not GS1 element-string data.
+    /// Prefer the list overload directly when the split points need to fall on specific
+    /// boundaries (e.g. a word boundary) rather than roughly-equal rune counts.
     /// </summary>
     /// <param name="content">The message to split.</param>
     /// <param name="symbolCount">The number of symbols to split <paramref name="content"/> across (1-16).</param>
     /// <param name="errorCorrection">The error-correction level applied to every symbol in the set.</param>
-    /// <param name="textEncoding">How each part's byte-mode content is encoded and how the shared parity byte is computed.</param>
+    /// <param name="textEncoding">How the concatenated message's byte-mode content is encoded; see the list overload for how it is resolved.</param>
     /// <returns>One <see cref="QrCode"/> per part, in reading order.</returns>
     /// <exception cref="ArgumentException"><paramref name="symbolCount"/> is less than 1 or more than 16.</exception>
+    /// <exception cref="FormatException"><paramref name="content"/> contains an unpaired UTF-16 surrogate.</exception>
     public static IReadOnlyList<QrCode> StructuredAppend(
         string content, int symbolCount, QrErrorCorrection errorCorrection, QrTextEncoding textEncoding)
     {
@@ -136,49 +141,27 @@ public sealed class QrCode : Barcode
         if (symbolCount is < 1 or > 16)
             throw new ArgumentException($"A Structured Append set holds 1 to 16 symbols (was {symbolCount}).", nameof(symbolCount));
 
-        return StructuredAppend(SplitByRune(content, symbolCount), errorCorrection, textEncoding);
+        return StructuredAppend(RuneSplitter.SplitByRune(content, symbolCount), errorCorrection, textEncoding);
     }
 
     /// <summary>
-    /// The parity byte shared by every symbol in a Structured Append set (ISO/IEC 18004 §8.1):
-    /// the XOR of every byte of the original, un-split message, using the same byte encoding
-    /// <see cref="QrEncoder.ResolveTextEncoding"/> resolves for byte-mode content. A decoder
-    /// recomputing parity from the symbols' own byte-mode data then agrees with what is stamped here.
+    /// Resolves the byte encoding for a Structured Append set's whole concatenated message once
+    /// (so every symbol's own byte-mode data agrees with a single shared basis, even under
+    /// <see cref="QrTextEncoding.Auto"/>), returning the concrete <see cref="QrTextEncoding"/> to
+    /// stamp on every symbol and the resulting parity byte (ISO/IEC 18004 §8.1: the XOR of every
+    /// byte of the un-split message under that encoding).
     /// </summary>
-    private static byte ComputeStructuredAppendParity(string message, QrTextEncoding textEncoding)
+    private static (QrTextEncoding TextEncoding, byte Parity) ResolveStructuredAppendEncodingAndParity(string message, QrTextEncoding textEncoding)
     {
-        var (byteEncoding, _) = QrEncoder.ResolveTextEncoding(message, textEncoding);
+        var (byteEncoding, useEci) = QrEncoder.ResolveTextEncoding(message, textEncoding);
+        var resolved = byteEncoding.CodePage == Encoding.Latin1.CodePage
+            ? QrTextEncoding.Latin1
+            : useEci ? QrTextEncoding.Utf8Eci : QrTextEncoding.Utf8;
+
         byte parity = 0;
         foreach (var b in byteEncoding.GetBytes(message)) parity ^= b;
-        return parity;
-    }
 
-    /// <summary>Splits <paramref name="content"/> into <paramref name="partCount"/> parts of nearly equal rune count, the first <c>content.Length % partCount</c> parts one rune longer.</summary>
-    private static IReadOnlyList<string> SplitByRune(string content, int partCount)
-    {
-        var runeStarts = new List<int>();
-        for (var i = 0; i < content.Length;)
-        {
-            runeStarts.Add(i);
-            i += Rune.GetRuneAt(content, i).Utf16SequenceLength;
-        }
-
-        runeStarts.Add(content.Length);
-        var runeCount = runeStarts.Count - 1;
-        var baseSize = runeCount / partCount;
-        var remainder = runeCount % partCount;
-
-        var parts = new string[partCount];
-        var runeIndex = 0;
-        for (var i = 0; i < partCount; i++)
-        {
-            var size = baseSize + (i < remainder ? 1 : 0);
-            var charStart = runeStarts[runeIndex];
-            runeIndex += size;
-            parts[i] = content[charStart..runeStarts[runeIndex]];
-        }
-
-        return parts;
+        return (resolved, parity);
     }
 
     /// <summary>Encodes and returns the symbol's module grid, caching the result on first use.</summary>

@@ -23,8 +23,11 @@ public sealed record MacroPdf417Options
     /// </summary>
     public int? SegmentCount { get; init; }
 
-    /// <summary>The file's timestamp, as Unix epoch seconds (designator 2, Numeric Compaction). Null omits the field.</summary>
-    public long? Timestamp { get; init; }
+    /// <summary>
+    /// The file's timestamp (designator 2, Numeric Compaction), converted to Unix epoch seconds
+    /// when the control block is built. Null omits the field. Must not be before the epoch.
+    /// </summary>
+    public DateTimeOffset? Timestamp { get; init; }
 
     /// <summary>The sender's name (designator 3, Text Compaction). Null omits the field.</summary>
     public string? Sender { get; init; }
@@ -32,9 +35,9 @@ public sealed record MacroPdf417Options
     /// <summary>The addressee's name (designator 4, Text Compaction). Null omits the field.</summary>
     public string? Addressee { get; init; }
 
-    /// <summary>The original file's size, in bytes (designator 5, Numeric Compaction). Null omits the field.</summary>
+    /// <summary>The original file's size, in bytes (designator 5, Numeric Compaction). Null omits the field. Must not be negative.</summary>
     public long? FileSize { get; init; }
 
-    /// <summary>The original file's CCITT-16 CRC checksum (designator 6, Numeric Compaction). Null omits the field.</summary>
+    /// <summary>The original file's CCITT-16 CRC checksum (designator 6, Numeric Compaction). Null omits the field. Must be between 0 and 65535.</summary>
     public int? Checksum { get; init; }
 }

@@ -179,7 +179,7 @@ public sealed class QrEncoderTests
         Assert.Equal(expected, ec.Select(b => (int)b));
     }
 
-    // Thonky's kanji-mode-encoding tutorial page worked example: "茗荷" (0x89D7 then 0xE4AA in
+    // Thonky's kanji-mode-encoding tutorial page worked example: "茗荷" (0xE4AA then 0x89D7 in
     // input order, matching the tutorial's own character ordering) as a version 1 Kanji segment.
     [Fact]
     public void BitStream_myogaKanjiExample_matchesThonkyModeCountAndData()
@@ -248,6 +248,8 @@ public sealed class QrEncoderTests
         // "点😀": 点 is Kanji-eligible, but the emoji is not representable in any mode but Byte,
         // so this content does produce a Byte-mode segment and needs the UTF-8 ECI header to
         // interpret it. The omission above must not become a blanket "never write ECI" rule.
+        // Also confirms the Kanji/ECI fallback below: with an ECI header in play, 点 is carried
+        // as Byte-mode data alongside the emoji rather than its own Kanji segment.
         var qr = new QrCode("点😀") { ErrorCorrection = QrErrorCorrection.M, Version = 1, Mask = 0 };
         var matrix = qr.GetMatrix();
 
@@ -256,6 +258,33 @@ public sealed class QrEncoderTests
         var bits = ReadDataBitsInPlacementOrder(matrix, isFunction, 21, mask: 0, totalBits: ecInfo.TotalDataCodewords * 8);
 
         Assert.Equal(QrTables.EciModeIndicator, ReadBitsAsInt(bits, 0, QrTables.ModeIndicatorBits));
+        Assert.Equal(QrTables.ModeIndicator(QrSegmentMode.Byte), ReadBitsAsInt(bits, 12, QrTables.ModeIndicatorBits));
+    }
+
+    [Fact]
+    public void TextEncoding_auto_kanjiRunWouldCoexistWithEciByteSegment_fallsBackToByteModeInstead()
+    {
+        // "点点😀": two adjacent Kanji-eligible characters are cheaper as a Kanji segment than as
+        // Byte in isolation, so naive segmentation would produce Kanji("点点") + Byte(emoji) here.
+        // That is the exact shape zxing-cpp was observed misdecoding whenever a Kanji segment
+        // coexists with an ECI-declared Byte segment in the same symbol
+        // (QrEncoder.SegmentAvoidingEciKanjiMix). The whole message must fall back to Byte mode
+        // instead: a single Byte-mode run under the ECI header, with no Kanji mode indicator
+        // anywhere in the symbol.
+        var qr = new QrCode("点点😀") { ErrorCorrection = QrErrorCorrection.M, Version = 1, Mask = 0 };
+        var matrix = qr.GetMatrix();
+
+        var (_, isFunction) = QrMatrixBuilder.BuildFunctionPatterns(1);
+        var ecInfo = QrTables.GetEcBlockInfo(1, QrErrorCorrection.M);
+        var bits = ReadDataBitsInPlacementOrder(matrix, isFunction, 21, mask: 0, totalBits: ecInfo.TotalDataCodewords * 8);
+
+        Assert.Equal(QrTables.EciModeIndicator, ReadBitsAsInt(bits, 0, QrTables.ModeIndicatorBits));
+        Assert.Equal(QrTables.ModeIndicator(QrSegmentMode.Byte), ReadBitsAsInt(bits, 12, QrTables.ModeIndicatorBits));
+
+        // No Kanji mode indicator anywhere: the byte count indicator covers every UTF-8 byte of
+        // the whole message in one run, not just the emoji's.
+        var byteCount = ReadBitsAsInt(bits, 16, QrTables.CharacterCountBits(1, QrSegmentMode.Byte));
+        Assert.Equal(Encoding.UTF8.GetByteCount("点点😀"), byteCount);
     }
 
     [Fact]
@@ -722,6 +751,54 @@ public sealed class QrEncoderTests
     [Fact]
     public void StructuredAppend_autoSplit_symbolCountOutOfRange_throwsArgumentException() =>
         Assert.Throws<ArgumentException>(() => QrCode.StructuredAppend("hello", symbolCount: 0));
+
+    [Fact]
+    public void StructuredAppend_autoSplit_unpairedSurrogate_throwsFormatException() =>
+        Assert.Throws<FormatException>(() => QrCode.StructuredAppend("\uD800", symbolCount: 2));
+
+    [Fact]
+    public void StructuredAppend_multibyteMessage_parityIsXorOfResolvedUtf8BytesAndEverySymbolSharesTheConcreteEncoding()
+    {
+        // "é" (Latin-1-representable alone) + "中" (not): the concatenated message "é中" is not
+        // Latin-1-representable as a whole, so Auto resolves UTF-8 with an ECI header for the
+        // whole set. UTF-8 bytes: C3 A9 (é) + E4 B8 AD (中) -> XOR = 0x9B, hand-derived.
+        var symbols = QrCode.StructuredAppend(["é", "中"]);
+        Assert.Equal(2, symbols.Count);
+        Assert.All(symbols, s => Assert.Equal((byte)0x9B, s.StructuredAppendInfo!.Value.Parity));
+
+        // Every symbol must be stamped with the same concrete encoding the parity was computed
+        // under, not Auto. Otherwise a symbol could independently resolve Latin-1 (since "é"
+        // alone fits) and desync from the shared parity basis.
+        Assert.All(symbols, s => Assert.Equal(QrTextEncoding.Utf8Eci, s.TextEncoding));
+    }
+
+    [Fact]
+    public void StructuredAppend_forcedVersionOverflowsWithSaHeader_throwsFormatException()
+    {
+        // Find the largest alphanumeric content that exactly fits version 1-L without Structured
+        // Append, then confirm the same forced version no longer fits once the SA header's 20
+        // bits (ISO/IEC 18004 §8.1) are added on top, mirroring
+        // Pdf417EncoderTests.MacroSet_getMatrix_needsMoreCapacityThanTheSameContentWithoutMacro.
+        var ecInfo = QrTables.GetEcBlockInfo(1, QrErrorCorrection.L);
+        var capacityBits = ecInfo.TotalDataCodewords * 8;
+        var headerBits = QrTables.ModeIndicatorBits + QrTables.CharacterCountBits(1, QrSegmentMode.Alphanumeric);
+
+        var length = 0;
+        while (headerBits + SpecDataBits(QrSegmentMode.Alphanumeric, length + 1) <= capacityBits) length++;
+        var content = new string('A', length);
+
+        var plain = new QrCode(content) { Version = 1, ErrorCorrection = QrErrorCorrection.L };
+        Assert.NotNull(plain.GetMatrix());
+
+        var symbols = QrCode.StructuredAppend([content], QrErrorCorrection.L, QrTextEncoding.Auto);
+        var withForcedVersion = new QrCode(content)
+        {
+            ErrorCorrection = QrErrorCorrection.L,
+            Version = 1,
+            StructuredAppendInfo = symbols[0].StructuredAppendInfo,
+        };
+        Assert.Throws<FormatException>(() => withForcedVersion.GetMatrix());
+    }
 
     /// <summary>ISO/IEC 18004 Table 2/3's mode/count-to-data-bit-width rule, reimplemented independently of <see cref="QrEncoder"/> for decode-side test assertions.</summary>
     private static int SpecDataBits(QrSegmentMode mode, int count) => mode switch

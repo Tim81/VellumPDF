@@ -98,6 +98,25 @@ public sealed class ZxingDecodeOracleTests : IDisposable
     }
 
     [Fact]
+    public void QrCode_KanjiWithAsciiBackslash_RoundTripsExactly()
+    {
+        // U+005C REVERSE SOLIDUS is one of the code points ShiftJisTable excludes (see
+        // ShiftJisTableTests): the obsolete SHIFTJIS.TXT source maps it to a second, double-byte
+        // Kanji-block Shift-JIS code (0x815F). A CP932 decoder, which is what zxing-cpp actually
+        // uses, reads that code back as the fullwidth U+FF3C instead. Flanking it with kana/kanji
+        // forces the encoder to consider Kanji mode for the surrounding runs; the backslash itself
+        // must still come back as plain ASCII, not the fullwidth look-alike.
+        const string content = "日本語\\ドキュメント";
+        var pdfPath = BuildSinglePdf((_, canvas) =>
+            canvas.DrawBarcode(new QrCode(content) { ModuleSize = 4 }, 50, 500));
+
+        if (!TryDecodeSingle(pdfPath, out var result)) return;
+
+        Assert.Equal("QRCode", result.Format);
+        Assert.Equal(content, result.Text);
+    }
+
+    [Fact]
     public void QrCode_ForcedVersion10ErrorCorrectionH_RoundTrips()
     {
         const string content = "VellumPdf forced version 10, EC level H";
@@ -236,6 +255,26 @@ public sealed class ZxingDecodeOracleTests : IDisposable
             canvas.DrawBarcode(symbols[0], 50, 750);
             canvas.DrawBarcode(symbols[1], 50, 550);
             canvas.DrawBarcode(symbols[2], 50, 350);
+        });
+
+        if (!TryDecodeAll(pdfPath, out var results)) return;
+
+        AssertStructuredAppendReassembles(parts, results);
+    }
+
+    [Fact]
+    public void QrCode_StructuredAppendMultibyteParts_EachSymbolDecodesToItsOwnPart()
+    {
+        // Non-Latin-1 content split across the set: confirms the byte encoding every symbol
+        // resolves under Auto (Finding B) stays consistent across the whole set, not just the
+        // shared parity byte.
+        string[] parts = ["Grüße ", "世界 😀"];
+        var symbols = QrCode.StructuredAppend(parts);
+
+        var pdfPath = BuildSinglePdf((_, canvas) =>
+        {
+            canvas.DrawBarcode(symbols[0], 50, 700);
+            canvas.DrawBarcode(symbols[1], 50, 500);
         });
 
         if (!TryDecodeAll(pdfPath, out var results)) return;
@@ -770,6 +809,21 @@ public sealed class ZxingDecodeOracleTests : IDisposable
     }
 
     [Fact]
+    public void Pdf417Barcode_CompactColumnsOne_RoundTrips()
+    {
+        // The narrowest practical Compact PDF417 shape: a single data column, forced explicitly
+        // rather than solved from PreferredAspectRatio, exercising the format's tightest case.
+        const string content = "narrow";
+        var pdfPath = BuildSinglePdf((_, canvas) =>
+            canvas.DrawBarcode(new Pdf417Barcode(content) { Compact = true, Columns = 1, ModuleSize = 3 }, 50, 500));
+
+        if (!TryDecodeSingle(pdfPath, out var result)) return;
+
+        Assert.Equal("PDF417", result.Format);
+        Assert.Equal(content, result.Text);
+    }
+
+    [Fact]
     public void Pdf417Barcode_BinaryBytes_RoundTrips()
     {
         byte[] content = [0x00, 0x01, 0x02, 0xFF, 0xFE, 0x7F, 0x80, 0x10, 0x20, 0x30];
@@ -833,6 +887,25 @@ public sealed class ZxingDecodeOracleTests : IDisposable
         if (!TryDecodeAll(pdfPath, out var results)) return;
 
         AssertMacroSetReassembles(parts, expectedFileId: "007", results);
+    }
+
+    [Fact]
+    public void Pdf417Barcode_MacroSetAutoSplitThreeSegments_EachSymbolDecodesToItsOwnPartAndSharesTheFileId()
+    {
+        const string content = "VellumPdf Macro PDF417 auto-split end-to-end oracle round-trip test message";
+        var symbols = Pdf417Barcode.MacroSet(content, symbolCount: 3, fileId: 13);
+        var parts = symbols.Select(s => s.Text!).ToArray();
+
+        var pdfPath = BuildSinglePdf((_, canvas) =>
+        {
+            canvas.DrawBarcode(symbols[0], 50, 750);
+            canvas.DrawBarcode(symbols[1], 50, 550);
+            canvas.DrawBarcode(symbols[2], 50, 350);
+        });
+
+        if (!TryDecodeAll(pdfPath, out var results)) return;
+
+        AssertMacroSetReassembles(parts, expectedFileId: "013", results);
     }
 
     /// <summary>
