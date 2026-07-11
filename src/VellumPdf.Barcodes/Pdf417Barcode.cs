@@ -97,7 +97,8 @@ public sealed class Pdf417Barcode : Barcode
     /// <exception cref="ArgumentException"><paramref name="parts"/> has fewer than 1 or more than 99999 entries, or <paramref name="fileId"/> is outside 0-899.</exception>
     /// <exception cref="ArgumentOutOfRangeException">
     /// <see cref="MacroPdf417Options.Timestamp"/> is before the Unix epoch, <see cref="MacroPdf417Options.FileSize"/>
-    /// is negative, or <see cref="MacroPdf417Options.Checksum"/> is outside 0-65535.
+    /// is negative, <see cref="MacroPdf417Options.Checksum"/> is outside 0-65535, or
+    /// <see cref="MacroPdf417Options.SegmentCount"/> is negative.
     /// </exception>
     public static IReadOnlyList<Pdf417Barcode> MacroSet(IReadOnlyList<string> parts, int fileId, MacroPdf417Options options)
     {
@@ -113,6 +114,8 @@ public sealed class Pdf417Barcode : Barcode
             throw new ArgumentOutOfRangeException(nameof(options), fileSize, "FileSize must not be negative.");
         if (options.Checksum is { } checksum && checksum is < 0 or > 65535)
             throw new ArgumentOutOfRangeException(nameof(options), checksum, "Checksum must be between 0 and 65535 (a CCITT-16 CRC).");
+        if (options.SegmentCount is { } segmentCount && segmentCount < 0)
+            throw new ArgumentOutOfRangeException(nameof(options), segmentCount, "SegmentCount must not be negative.");
 
         var lastSegmentOptions = options.SegmentCount is null ? options with { SegmentCount = parts.Count } : options;
 
@@ -156,7 +159,8 @@ public sealed class Pdf417Barcode : Barcode
     /// <exception cref="ArgumentException"><paramref name="symbolCount"/> is less than 1 or more than 99999, or <paramref name="fileId"/> is outside 0-899.</exception>
     /// <exception cref="ArgumentOutOfRangeException">
     /// <see cref="MacroPdf417Options.Timestamp"/> is before the Unix epoch, <see cref="MacroPdf417Options.FileSize"/>
-    /// is negative, or <see cref="MacroPdf417Options.Checksum"/> is outside 0-65535.
+    /// is negative, <see cref="MacroPdf417Options.Checksum"/> is outside 0-65535, or
+    /// <see cref="MacroPdf417Options.SegmentCount"/> is negative.
     /// </exception>
     /// <exception cref="FormatException"><paramref name="content"/> contains an unpaired UTF-16 surrogate.</exception>
     public static IReadOnlyList<Pdf417Barcode> MacroSet(string content, int symbolCount, int fileId, MacroPdf417Options options)

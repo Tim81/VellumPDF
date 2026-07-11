@@ -19,13 +19,14 @@ public sealed record MacroPdf417Options
     /// The set's total segment count (designator 1, Numeric Compaction). Null lets
     /// <see cref="Pdf417Barcode.MacroSet(System.Collections.Generic.IReadOnlyList{string}, int, MacroPdf417Options)"/>
     /// fill in <c>parts.Count</c>, which is already known and free to include; set this explicitly
-    /// only to declare a different logical total (e.g. more segments still to come).
+    /// only to declare a different logical total (e.g. more segments still to come). Must not be negative.
     /// </summary>
     public int? SegmentCount { get; init; }
 
     /// <summary>
-    /// The file's timestamp (designator 2, Numeric Compaction), converted to Unix epoch seconds
-    /// when the control block is built. Null omits the field. Must not be before the epoch.
+    /// The file's timestamp (designator 2, Numeric Compaction), converted to whole Unix epoch
+    /// seconds when the control block is built (any sub-second part is dropped). Null omits the
+    /// field. Must not be before the epoch.
     /// </summary>
     public DateTimeOffset? Timestamp { get; init; }
 

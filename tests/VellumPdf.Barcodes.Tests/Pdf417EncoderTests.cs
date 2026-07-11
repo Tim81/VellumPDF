@@ -318,6 +318,13 @@ public sealed class Pdf417EncoderTests
     }
 
     [Fact]
+    public void MacroSet_negativeSegmentCount_throwsArgumentOutOfRangeException()
+    {
+        var options = new MacroPdf417Options { SegmentCount = -1 };
+        Assert.Throws<ArgumentOutOfRangeException>(() => Pdf417Barcode.MacroSet(["a"], fileId: 0, options));
+    }
+
+    [Fact]
     public void MacroSet_autoSplit_dividesContentIntoRoughlyEqualParts()
     {
         var symbols = Pdf417Barcode.MacroSet("ABCDEFGHIJ", symbolCount: 3, fileId: 1);
