@@ -773,6 +773,49 @@ public sealed class QrEncoderTests
     }
 
     [Fact]
+    public void StructuredAppend_pureKanjiPart_sharesTheUtf8ParityAndStillEncodesThatPartInKanjiMode()
+    {
+        // "Grüße " (Latin-1-representable alone) + "世界" (Kanji-eligible, not Latin-1): the
+        // concatenated message is not Latin-1-representable as a whole, so Auto resolves UTF-8
+        // with an ECI header for the set, and the shared parity is the XOR of the whole message's
+        // UTF-8 bytes (ISO/IEC 18004 §8.1). UTF-8 bytes of "Grüße 世界": 47 72 C3 BC C3 9F 65 20
+        // E4 B8 96 E7 95 8C -> XOR = 0x67, hand-derived.
+        //
+        // The "世界" symbol itself has no Byte-mode run for an ECI header to apply to, so
+        // QrEncoder still carries it in Kanji mode (13-bit Shift-JIS codewords per character),
+        // the same omission TextEncoding_auto_pureKanjiContent_omitsTheEciHeader documents for a
+        // standalone symbol. That symbol's parity contribution was counted as UTF-8 bytes even
+        // though the part is transmitted in Kanji; see the remark on
+        // QrCode.StructuredAppend(IReadOnlyList{string}, QrErrorCorrection, QrTextEncoding) for
+        // why that shared basis is deliberate and self-consistent.
+        var symbols = QrCode.StructuredAppend(["Grüße ", "世界"]);
+        Assert.Equal(2, symbols.Count);
+        Assert.All(symbols, s => Assert.Equal((byte)0x67, s.StructuredAppendInfo!.Value.Parity));
+
+        // Force a fixed version/mask on the Kanji part so its encoded bits can be read back
+        // positionally, mirroring StructuredAppend_headerIsWrittenBeforeTheFirstDataModeIndicator.
+        var kanjiPart = symbols[1];
+        var withForcedVersion = new QrCode(kanjiPart.Text!)
+        {
+            ErrorCorrection = kanjiPart.ErrorCorrection,
+            TextEncoding = kanjiPart.TextEncoding,
+            StructuredAppendInfo = kanjiPart.StructuredAppendInfo,
+            Version = 1,
+            Mask = 0,
+        };
+        var matrix = withForcedVersion.GetMatrix();
+
+        var (_, isFunction) = QrMatrixBuilder.BuildFunctionPatterns(1);
+        var ecInfo = QrTables.GetEcBlockInfo(1, kanjiPart.ErrorCorrection);
+        var bits = ReadDataBitsInPlacementOrder(matrix, isFunction, 21, mask: 0, totalBits: ecInfo.TotalDataCodewords * 8);
+
+        // The 20-bit Structured Append header comes first; the mode indicator right after it must
+        // be Kanji's, not ECI's or Byte's, confirming this part actually went through Kanji mode
+        // rather than silently falling back to Byte mode under the set's shared UTF-8 encoding.
+        Assert.Equal(QrTables.ModeIndicator(QrSegmentMode.Kanji), ReadBitsAsInt(bits, 20, QrTables.ModeIndicatorBits));
+    }
+
+    [Fact]
     public void StructuredAppend_forcedVersionOverflowsWithSaHeader_throwsFormatException()
     {
         // Find the largest alphanumeric content that exactly fits version 1-L without Structured

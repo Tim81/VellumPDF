@@ -73,7 +73,10 @@ public sealed class QrCode : Barcode
     /// each stamped with the set's shared parity byte and its own 0-based position. Every returned
     /// symbol is an ordinary <see cref="QrCode"/> that draws through the normal
     /// <see cref="BarcodeCanvasExtensions.DrawBarcode"/> path; the caller positions and draws each
-    /// one (see the barcodes guide's Structured Append layout guidance).
+    /// one (see the barcodes guide's Structured Append layout guidance). The parity byte is the
+    /// XOR of the whole concatenated message's bytes in the set's shared resolved encoding (UTF-8
+    /// or Latin-1, per <paramref name="textEncoding"/>), regardless of which mode any individual
+    /// part is transmitted in. That is the basis a reader confirms set membership against.
     /// </summary>
     /// <param name="parts">The message, pre-split into 1 to 16 parts in reading order.</param>
     /// <param name="errorCorrection">The error-correction level applied to every symbol in the set.</param>

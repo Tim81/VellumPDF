@@ -295,6 +295,61 @@ public sealed class Pdf417EncoderTests
     }
 
     [Fact]
+    public void MacroControlBlock_fileName_matchesHandComputedTextCompactionCodewords()
+    {
+        // Segment index 0, file id 0 -> [928, 111, 100, 0] (same base-900 conversion as the
+        // segmentIndex theory above, index 0 -> 111, 100). "MEMO" is Text Compaction, entirely in
+        // the Alpha sub-mode (M=12, E=4, M=12, O=14, ISO/IEC 15438 A=0..Z=25): pairs (12,4) ->
+        // 12*30+4=364 and (12,14) -> 12*30+14=374 (ISO/IEC 15438 section 2.2.4.4's base-30
+        // pairing). This pins designator 0 and confirms it routes through Text, not Numeric,
+        // Compaction: a Sender/Addressee designator swap or a text-through-numeric bug would both
+        // change codewords[5] or the value codewords that follow it.
+        var info = new MacroSegmentInfo(SegmentIndex: 0, FileId: 0, IsLast: true, new MacroPdf417Options { FileName = "MEMO" });
+        var codewords = MacroControlBlock.Build(info);
+        Assert.Equal([928, 111, 100, 0, 923, 0, 364, 374, 922], codewords);
+    }
+
+    [Fact]
+    public void MacroControlBlock_sender_matchesHandComputedTextCompactionCodewords()
+    {
+        // "ACME", Alpha sub-mode throughout (A=0, C=2, M=12, E=4): pairs (0,2) -> 2 and
+        // (12,4) -> 364.
+        var info = new MacroSegmentInfo(SegmentIndex: 0, FileId: 0, IsLast: true, new MacroPdf417Options { Sender = "ACME" });
+        var codewords = MacroControlBlock.Build(info);
+        Assert.Equal([928, 111, 100, 0, 923, 3, 2, 364, 922], codewords);
+    }
+
+    [Fact]
+    public void MacroControlBlock_addressee_matchesHandComputedTextCompactionCodewords()
+    {
+        // "BOB", Alpha sub-mode (B=1, O=14, B=1), odd character count so a trailing 29 pads the
+        // last pair (the same padding rule the "PDF417" worked example above documents): values
+        // 1, 14, 1, 29 -> pairs (1,14) -> 44 and (1,29) -> 59.
+        var info = new MacroSegmentInfo(SegmentIndex: 0, FileId: 0, IsLast: true, new MacroPdf417Options { Addressee = "BOB" });
+        var codewords = MacroControlBlock.Build(info);
+        Assert.Equal([928, 111, 100, 0, 923, 4, 44, 59, 922], codewords);
+    }
+
+    [Fact]
+    public void MacroControlBlock_fileSize_matchesHandComputedNumericCompactionCodewords()
+    {
+        // 12345 -> prepend the synthetic leading 1 Numeric Compaction always uses -> decimal
+        // 112345 -> base 900: 112345 = 124*900 + 745, so (124, 745).
+        var info = new MacroSegmentInfo(SegmentIndex: 0, FileId: 0, IsLast: true, new MacroPdf417Options { FileSize = 12345L });
+        var codewords = MacroControlBlock.Build(info);
+        Assert.Equal([928, 111, 100, 0, 923, 5, 124, 745, 922], codewords);
+    }
+
+    [Fact]
+    public void MacroControlBlock_checksum_matchesHandComputedNumericCompactionCodewords()
+    {
+        // 500 -> prepend the leading 1 -> decimal 1500 -> base 900: 1500 = 1*900 + 600, so (1, 600).
+        var info = new MacroSegmentInfo(SegmentIndex: 0, FileId: 0, IsLast: true, new MacroPdf417Options { Checksum = 500 });
+        var codewords = MacroControlBlock.Build(info);
+        Assert.Equal([928, 111, 100, 0, 923, 6, 1, 600, 922], codewords);
+    }
+
+    [Fact]
     public void MacroSet_timestampBeforeUnixEpoch_throwsArgumentOutOfRangeException()
     {
         var options = new MacroPdf417Options { Timestamp = DateTimeOffset.UnixEpoch.AddSeconds(-1) };

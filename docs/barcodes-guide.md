@@ -220,9 +220,11 @@ placement is automatic.
 
 Two overloads are available: pass a pre-split `IReadOnlyList<string>` when
 the split points matter (e.g. a word boundary), or pass a single string plus
-a symbol count to split it automatically on Unicode scalar boundaries. Both
-have a four-argument form that also takes an `ErrorCorrection` level and a
-`TextEncoding` policy, applied to every symbol in the set.
+a symbol count to split it automatically on Unicode scalar boundaries. Each
+also has a form that adds an `ErrorCorrection` level and a `TextEncoding`
+policy, applied to every symbol in the set: three arguments for the
+pre-split overload, four for the auto-split overload (its extra
+`symbolCount` argument comes first).
 
 Micro QR has no Structured Append support.
 
@@ -454,11 +456,10 @@ are computed automatically to minimise the encoded length. GS1-128
 when the barcode is measured or drawn, since the GS1 General Specifications
 disallow FNC4 in a GS1-128 symbol.
 
-For GS1-128, the human-readable line prints the encoded data as a single run.
-It does not yet wrap each Application Identifier in parentheses (the
-`(01)...(17)...` form GS1 specifies for human-readable text); this affects the
-printed caption only, not the scanned bars. Parenthesised HRI is tracked in the
-barcode completeness backlog.
+For GS1-128, the human-readable line wraps each Application Identifier in
+parentheses, the `(01)...(17)...` form GS1 specifies for human-readable text.
+Content flagged GS1 that is not a well-formed element string still encodes
+into valid bars; its human-readable line falls back to the raw content instead.
 
 ### Extended Latin-1 (FNC4)
 
