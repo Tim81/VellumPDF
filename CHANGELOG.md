@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.11.0] - 2026-07-11
+
 ### Added
 
 - **QR Kanji mode** (ISO/IEC 18004 §7.4.6) — `QrCode` now packs Shift-JIS X 0208 characters at a
@@ -32,6 +34,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   second doubled FNC4 switches it back off. No API change: GS1-128 (`Gs1 = true`) still rejects
   any character above 127, since the GS1 General Specifications disallow FNC4 in a GS1-128
   symbol. (#155)
+- All eight packages republish at **1.11.0** in lockstep, even though only `VellumPdf.Barcodes`
+  changed — the repository versions every package together rather than independently.
 
 ## [1.10.0] - 2026-07-07
 
@@ -658,7 +662,8 @@ few small additions. No public API was removed.
   headers, and no unbounded allocations driven by attacker-controlled length
   fields.
 
-[Unreleased]: https://github.com/Tim81/VellumPDF/compare/v1.10.0...HEAD
+[Unreleased]: https://github.com/Tim81/VellumPDF/compare/v1.11.0...HEAD
+[1.11.0]: https://github.com/Tim81/VellumPDF/releases/tag/v1.11.0
 [1.10.0]: https://github.com/Tim81/VellumPDF/releases/tag/v1.10.0
 [1.9.0]: https://github.com/Tim81/VellumPDF/releases/tag/v1.9.0
 [1.8.0]: https://github.com/Tim81/VellumPDF/releases/tag/v1.8.0
