@@ -207,6 +207,11 @@ internal static class Code128Encoder
                     // rather than sharing a slot with Shift.
                     if (runEnd - i == 1 && item.CharValue <= 127)
                     {
+                        // Shift reads its target symbol through otherMode's table but leaves the
+                        // active register at currentMode, so an FNC4 latch left over from a
+                        // preceding Latin-1 run has to switch off first: a decoder still latched
+                        // would otherwise add 128 to the shifted low character.
+                        UnlatchFnc4(symbols, currentMode, ref fnc4Latched);
                         symbols.Add(98); // Shift: affects only the next symbol
                         symbols.Add(MapValue(lowChar, otherMode));
                         i++;

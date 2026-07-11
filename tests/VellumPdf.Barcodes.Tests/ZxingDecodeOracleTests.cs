@@ -1015,6 +1015,45 @@ public sealed class ZxingDecodeOracleTests : IDisposable
         Assert.Equal(Convert.ToHexStringLower(Latin1Bytes(content)), result.BytesHex);
     }
 
+    [Fact]
+    public void Code128Barcode_ShiftAfterFnc4Latch_RoundTripsExactly()
+    {
+        // Regression coverage for a HIGH-severity bug: 'à' and 'á' latch FNC4 (both Code B, so
+        // they run together), then U+0001 (a Code A-only control character) is a lone low
+        // character reached with Shift, followed by a plain 'b'. Left latched across the Shift, a
+        // zxing-cpp decoder still in FNC4 mode would add 128 to it and decode it as 0x81 instead
+        // of 0x01; see Code128EncoderTests.Fnc4_shiftAfterLatchedRun_unlatchesBeforeTheShift for
+        // the exact symbol-level fix. (A literal tab or newline cannot stand in here: either would
+        // land in zxing-cpp's decoded text and break this test harness's own tab/newline-delimited
+        // output parsing, unrelated to the encoder bug under test.)
+        var content = "àá" + (char)0x01 + "b";
+        var pdfPath = BuildSinglePdf((_, canvas) =>
+            canvas.DrawBarcode(new Code128Barcode(content) { ShowText = false, ModuleSize = 2 }, 50, 500));
+
+        if (!TryDecodeSingle(pdfPath, out var result)) return;
+
+        Assert.Equal("Code128", result.Format);
+        Assert.Equal(Convert.ToHexStringLower(Latin1Bytes(content)), result.BytesHex);
+    }
+
+    [Fact]
+    public void Code128Barcode_Fnc4LatchThenCodeCSwitch_RoundTripsExactly()
+    {
+        // A latched Latin-1 run ('ü', 'ß') followed directly by an eligible 4-digit run forces a
+        // switch to Code Set C, which has no FNC4 concept and so must unlatch first (the same
+        // unlatch-before-switch shape as the Shift fix above, exercised on the Code C branch
+        // instead). See Code128EncoderTests.Fnc4_latchedRun_unlatchesBeforeCodeCSwitch for the
+        // exact symbol-level KAT.
+        var content = "üß1234";
+        var pdfPath = BuildSinglePdf((_, canvas) =>
+            canvas.DrawBarcode(new Code128Barcode(content) { ShowText = false, ModuleSize = 2 }, 50, 500));
+
+        if (!TryDecodeSingle(pdfPath, out var result)) return;
+
+        Assert.Equal("Code128", result.Format);
+        Assert.Equal(Convert.ToHexStringLower(Latin1Bytes(content)), result.BytesHex);
+    }
+
     /// <summary>Encodes a string as raw Latin-1 bytes (each char's code point as a single byte), for comparing against a decoded FNC4 symbol.</summary>
     private static byte[] Latin1Bytes(string s)
     {
