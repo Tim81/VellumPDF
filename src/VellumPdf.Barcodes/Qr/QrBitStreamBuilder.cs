@@ -71,6 +71,9 @@ internal static class QrBitStreamBuilder
                 case QrSegmentMode.Byte:
                     WriteByte(writer, content, segment, byteEncoding);
                     break;
+                case QrSegmentMode.Kanji:
+                    WriteKanji(writer, content, segment);
+                    break;
                 default:
                     throw new ArgumentOutOfRangeException(nameof(segments));
             }
@@ -119,6 +122,27 @@ internal static class QrBitStreamBuilder
         Span<byte> bytes = stackalloc byte[byteEncoding.GetByteCount(text)];
         byteEncoding.GetBytes(text, bytes);
         foreach (var b in bytes) writer.WriteBits(b, 8);
+    }
+
+    /// <summary>
+    /// Writes a Kanji-mode segment (§7.4.6): each rune's Shift-JIS X 0208 code, less its block's
+    /// base value, has its two bytes repacked into a single 13-bit codeword (<c>msb * 0xC0 + lsb</c>)
+    /// rather than being written as the raw 16-bit Shift-JIS value.
+    /// </summary>
+    private static void WriteKanji(BitWriter writer, string content, QrSegment segment)
+    {
+        var text = content.AsSpan(segment.CharStart, segment.CharLength);
+        foreach (var rune in text.EnumerateRunes())
+        {
+            if (!ShiftJisTable.TryGetShiftJis(rune.Value, out var shiftJis))
+                throw new InvalidOperationException(
+                    $"Rune '{rune}' was placed in a Kanji segment but has no Shift-JIS mapping; this is a QrSegmenter eligibility bug.");
+
+            var blockOffset = shiftJis <= 0x9FFC ? 0x8140 : 0xC140;
+            var d = shiftJis - blockOffset;
+            var value13 = (((d >> 8) & 0xFF) * 0xC0) + (d & 0xFF);
+            writer.WriteBits(value13, 13);
+        }
     }
 
     /// <summary>

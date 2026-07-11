@@ -108,7 +108,7 @@ internal static class QrEncoder
             _ => throw new ArgumentOutOfRangeException(nameof(textEncoding), textEncoding, null),
         };
 
-        return (headerBits => QrSegmenter.Segment(text, headerBits, byteEncoding, allowAlphanumeric: true, allowByte: true), text, byteEncoding, useEci, text.Length);
+        return (headerBits => QrSegmenter.Segment(text, headerBits, byteEncoding, allowAlphanumeric: true, allowByte: true, allowKanji: true), text, byteEncoding, useEci, text.Length);
     }
 
     /// <summary>
@@ -132,9 +132,16 @@ internal static class QrEncoder
     /// byte (0x1D for the separator), so Numeric mode still compacts digit runs and no character
     /// needs escaping.
     /// </para>
+    /// <para>
+    /// Kanji mode is deliberately not offered either. <see cref="Gs1ElementString"/> restricts
+    /// every value character to printable ASCII, which is not GS1 AI content even where some
+    /// byte also happens to double as a Shift-JIS Kanji codepoint (e.g. 0x815F, a double-byte
+    /// Kanji block entry, maps to U+005C REVERSE SOLIDUS). Mixing Kanji-mode runs into a GS1
+    /// element string would be non-standard for the profile.
+    /// </para>
     /// </remarks>
     private static (SegmentFactory SegmentFactory, string Content, Encoding ByteEncoding, bool UseEci, int ContentLength) PrepareGs1ElementStringContent(string content) =>
-        (headerBits => QrSegmenter.Segment(content, headerBits, Encoding.Latin1, allowAlphanumeric: false, allowByte: true),
+        (headerBits => QrSegmenter.Segment(content, headerBits, Encoding.Latin1, allowAlphanumeric: false, allowByte: true, allowKanji: false),
             content, Encoding.Latin1, UseEci: false, ContentLength: content.Length);
 
     private static bool IsLatin1Representable(string text)
@@ -152,15 +159,14 @@ internal static class QrEncoder
         QrSegmentMode.Numeric => (10 * (segment.RuneCount / 3)) + (segment.RuneCount % 3) switch { 0 => 0, 1 => 4, _ => 7 },
         QrSegmentMode.Alphanumeric => (11 * (segment.RuneCount / 2)) + (segment.RuneCount % 2 == 1 ? 6 : 0),
         QrSegmentMode.Byte => 8 * byteEncoding.GetByteCount(content.AsSpan(segment.CharStart, segment.CharLength)),
+        QrSegmentMode.Kanji => 13 * segment.RuneCount,
         _ => throw new ArgumentOutOfRangeException(nameof(segment)),
     };
 
     private static (int Version, byte[] DataCodewords) SelectVersionAndBuild(
         QrCode barcode, string content, SegmentFactory segmentFactory, Encoding byteEncoding, bool useEci, int contentLength, bool gs1Fnc1FirstPosition)
     {
-        var eciBits = useEci ? 12 : 0;
         var gs1Bits = gs1Fnc1FirstPosition ? QrTables.ModeIndicatorBits : 0;
-        var headerBitsTotal = eciBits + gs1Bits;
 
         (int Group, int Version)[] candidates = barcode.Version is { } forced
             ? [(GroupFor(forced), forced)]
@@ -169,13 +175,22 @@ internal static class QrEncoder
         var lastGroup = -1;
         IReadOnlyList<QrSegment>? groupSegments = null;
         var groupContentBits = 0;
+        var groupWritesEci = false;
 
         foreach (var (group, version) in candidates)
         {
             if (group != lastGroup)
             {
                 groupSegments = segmentFactory(mode => HeaderBits(VersionGroups[group].Min, mode));
-                groupContentBits = headerBitsTotal;
+
+                // The ECI header only changes how a Byte-mode segment's bytes are interpreted, so
+                // it is wasted capacity when segmentation produces no Byte-mode run at all (an
+                // all-Kanji message, for instance). It is also not merely wasteful: zxing-cpp was
+                // observed decoding a Kanji-only symbol incorrectly when an ECI header preceded
+                // the Kanji segment with no Byte segment to apply it to, so this omission is
+                // required for interoperability, not just an optimization.
+                groupWritesEci = useEci && groupSegments.Any(s => s.Mode == QrSegmentMode.Byte);
+                groupContentBits = (groupWritesEci ? 12 : 0) + gs1Bits;
                 foreach (var segment in groupSegments)
                     groupContentBits += HeaderBits(VersionGroups[group].Min, segment.Mode) + SegmentDataBits(content, segment, byteEncoding);
                 lastGroup = group;
@@ -186,7 +201,7 @@ internal static class QrEncoder
             if (groupContentBits > capacityBits) continue;
 
             var writer = new BitWriter();
-            if (useEci) QrBitStreamBuilder.WriteUtf8EciHeader(writer);
+            if (groupWritesEci) QrBitStreamBuilder.WriteUtf8EciHeader(writer);
             // §7.4.8.2: FNC1 in first position is placed after any ECI header and immediately
             // before the first data-encoding mode indicator.
             if (gs1Fnc1FirstPosition) QrBitStreamBuilder.WriteFnc1FirstPosition(writer);

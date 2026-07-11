@@ -178,6 +178,85 @@ public sealed class QrEncoderTests
         Assert.Equal(expected, ec.Select(b => (int)b));
     }
 
+    // Thonky's kanji-mode-encoding tutorial page worked example: "茗荷" (0x89D7 then 0xE4AA in
+    // input order, matching the tutorial's own character ordering) as a version 1 Kanji segment.
+    [Fact]
+    public void BitStream_myogaKanjiExample_matchesThonkyModeCountAndData()
+    {
+        var writer = new BitWriter();
+        var segments = new[] { new QrSegment(QrSegmentMode.Kanji, 0, 2, 2) };
+        QrBitStreamBuilder.WriteSegments(
+            writer,
+            "茗荷",
+            segments,
+            mode => (QrTables.ModeIndicator(mode), QrTables.ModeIndicatorBits),
+            mode => QrTables.CharacterCountBits(1, mode),
+            Encoding.Latin1);
+
+        const string expectedBits = "1000" + "00000010" + "1101010101010" + "0011010010111";
+        Assert.Equal(expectedBits.Length, writer.BitCount);
+
+        var bytes = writer.ToArray();
+        var actualBits = new StringBuilder();
+        for (var i = 0; i < expectedBits.Length; i++)
+            actualBits.Append((bytes[i / 8] >> (7 - (i % 8))) & 1);
+        Assert.Equal(expectedBits, actualBits.ToString());
+    }
+
+    [Fact]
+    public void GetMatrix_kanjiContent_encodesSuccessfully()
+    {
+        var qr = new QrCode("点荷茗");
+        Assert.NotNull(qr.GetMatrix());
+    }
+
+    [Fact]
+    public void GetMatrix_kanjiContent_isDenserThanEquivalentByteMode()
+    {
+        // "点荷茗" (three Kanji-eligible characters) fits version 1-H (72 data bits) in Kanji
+        // mode: 12 header bits + 3*13 = 51 data bits. In Byte mode, each character is a 3-byte
+        // UTF-8 sequence, so the same content would need 12 header bits + 9*8 = 84 bits and spill
+        // into version 2. A version 1 result here is only possible if the encoder actually chose
+        // Kanji mode, not just round-tripped through Byte mode.
+        var qr = new QrCode("点荷茗") { ErrorCorrection = QrErrorCorrection.H };
+        var matrix = qr.GetMatrix();
+        Assert.Equal(QrMatrixBuilder.SizeForVersion(1), matrix.Width);
+    }
+
+    [Fact]
+    public void TextEncoding_auto_pureKanjiContent_omitsTheEciHeader()
+    {
+        // "こんにちは世界" is entirely Kanji-eligible, so segmentation produces no Byte-mode run.
+        // Auto still picks UTF-8 (the content isn't Latin-1-representable), but the ECI header
+        // that declares "the following Byte-mode bytes are UTF-8" would have nothing to apply to,
+        // and some decoders (zxing-cpp among them) mishandle an ECI header followed directly by a
+        // Kanji segment. The symbol's first mode indicator must be Kanji's, not ECI's.
+        var qr = new QrCode("こんにちは世界") { ErrorCorrection = QrErrorCorrection.M, Version = 1, Mask = 0 };
+        var matrix = qr.GetMatrix();
+
+        var (_, isFunction) = QrMatrixBuilder.BuildFunctionPatterns(1);
+        var ecInfo = QrTables.GetEcBlockInfo(1, QrErrorCorrection.M);
+        var bits = ReadDataBitsInPlacementOrder(matrix, isFunction, 21, mask: 0, totalBits: ecInfo.TotalDataCodewords * 8);
+
+        Assert.Equal(QrTables.ModeIndicator(QrSegmentMode.Kanji), ReadBitsAsInt(bits, 0, QrTables.ModeIndicatorBits));
+    }
+
+    [Fact]
+    public void TextEncoding_auto_kanjiPlusNonKanjiEligibleNonLatin1Content_stillWritesTheEciHeader()
+    {
+        // "点😀": 点 is Kanji-eligible, but the emoji is not representable in any mode but Byte,
+        // so this content does produce a Byte-mode segment and needs the UTF-8 ECI header to
+        // interpret it. The omission above must not become a blanket "never write ECI" rule.
+        var qr = new QrCode("点😀") { ErrorCorrection = QrErrorCorrection.M, Version = 1, Mask = 0 };
+        var matrix = qr.GetMatrix();
+
+        var (_, isFunction) = QrMatrixBuilder.BuildFunctionPatterns(1);
+        var ecInfo = QrTables.GetEcBlockInfo(1, QrErrorCorrection.M);
+        var bits = ReadDataBitsInPlacementOrder(matrix, isFunction, 21, mask: 0, totalBits: ecInfo.TotalDataCodewords * 8);
+
+        Assert.Equal(QrTables.EciModeIndicator, ReadBitsAsInt(bits, 0, QrTables.ModeIndicatorBits));
+    }
+
     [Fact]
     public void Version_forced_isHonoured()
     {

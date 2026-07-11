@@ -77,6 +77,21 @@ public sealed class ZxingDecodeOracleTests : IDisposable
     }
 
     [Fact]
+    public void QrCode_KanjiContent_RoundTripsExactly()
+    {
+        // Hiragana and Kanji, all within the two Shift-JIS blocks QR Kanji mode covers, so the
+        // encoder should route this entirely into Kanji-mode segments rather than Byte mode.
+        const string content = "こんにちは世界";
+        var pdfPath = BuildSinglePdf((_, canvas) =>
+            canvas.DrawBarcode(new QrCode(content) { ModuleSize = 4 }, 50, 500));
+
+        if (!TryDecodeSingle(pdfPath, out var result)) return;
+
+        Assert.Equal("QRCode", result.Format);
+        Assert.Equal(content, result.Text);
+    }
+
+    [Fact]
     public void QrCode_ForcedVersion10ErrorCorrectionH_RoundTrips()
     {
         const string content = "VellumPdf forced version 10, EC level H";
