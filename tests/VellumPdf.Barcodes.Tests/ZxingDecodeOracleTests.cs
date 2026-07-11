@@ -3,6 +3,7 @@
 
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Linq;
 using VellumPdf.Barcodes.Aztec;
 using VellumPdf.Barcodes.DataMatrix;
 using VellumPdf.Barcodes.Internal;
@@ -46,7 +47,15 @@ public sealed class ZxingDecodeOracleTests : IDisposable
         catch (UnauthorizedAccessException) { /* best-effort cleanup — locked file on Windows */ }
     }
 
-    private readonly record struct DecodeResult(string Format, string ContentType, string Text);
+    /// <summary>
+    /// One decoded barcode. <see cref="FileId"/> is <c>eng/barcode-decode.py</c>'s appended fourth
+    /// column: zxing-cpp's decoded Macro PDF417 file id (see the Macro PDF417 tests below), empty
+    /// for every other symbology. <see cref="BytesHex"/> is the fifth column, a hex digest of
+    /// zxing-cpp's raw decoded bytes for every symbology (unlike <see cref="Text"/>, which mangles
+    /// bytes above 127 into replacement characters outside a Binary result; see the Code 128
+    /// FNC4 tests below).
+    /// </summary>
+    private readonly record struct DecodeResult(string Format, string ContentType, string Text, string FileId, string BytesHex);
 
     // ── QR ────────────────────────────────────────────────────────────────
 
@@ -69,6 +78,40 @@ public sealed class ZxingDecodeOracleTests : IDisposable
         const string content = "Grüße 😀";
         var pdfPath = BuildSinglePdf((_, canvas) =>
             canvas.DrawBarcode(new QrCode(content) { ModuleSize = 4, TextEncoding = QrTextEncoding.Auto }, 50, 500));
+
+        if (!TryDecodeSingle(pdfPath, out var result)) return;
+
+        Assert.Equal("QRCode", result.Format);
+        Assert.Equal(content, result.Text);
+    }
+
+    [Fact]
+    public void QrCode_KanjiContent_RoundTripsExactly()
+    {
+        // Hiragana and Kanji, all within the two Shift-JIS blocks QR Kanji mode covers, so the
+        // encoder should route this entirely into Kanji-mode segments rather than Byte mode.
+        const string content = "こんにちは世界";
+        var pdfPath = BuildSinglePdf((_, canvas) =>
+            canvas.DrawBarcode(new QrCode(content) { ModuleSize = 4 }, 50, 500));
+
+        if (!TryDecodeSingle(pdfPath, out var result)) return;
+
+        Assert.Equal("QRCode", result.Format);
+        Assert.Equal(content, result.Text);
+    }
+
+    [Fact]
+    public void QrCode_KanjiWithAsciiBackslash_RoundTripsExactly()
+    {
+        // U+005C REVERSE SOLIDUS is one of the code points ShiftJisTable excludes (see
+        // ShiftJisTableTests): the obsolete SHIFTJIS.TXT source maps it to a second, double-byte
+        // Kanji-block Shift-JIS code (0x815F). A CP932 decoder, which is what zxing-cpp actually
+        // uses, reads that code back as the fullwidth U+FF3C instead. Flanking it with kana/kanji
+        // forces the encoder to consider Kanji mode for the surrounding runs; the backslash itself
+        // must still come back as plain ASCII, not the fullwidth look-alike.
+        const string content = "日本語\\ドキュメント";
+        var pdfPath = BuildSinglePdf((_, canvas) =>
+            canvas.DrawBarcode(new QrCode(content) { ModuleSize = 4 }, 50, 500));
 
         if (!TryDecodeSingle(pdfPath, out var result)) return;
 
@@ -174,6 +217,91 @@ public sealed class ZxingDecodeOracleTests : IDisposable
 
         Assert.Equal("QRCode", result.Format);
         Assert.Equal(expectedUri, result.Text);
+    }
+
+    // ── QR Structured Append ──────────────────────────────────────────────
+
+    // zxing-cpp 3.0.0's Python bindings expose no Structured Append sequence metadata: neither
+    // Barcode nor its extra dict carries a sequence_index/sequence_size/sequence_id anywhere.
+    // Confirmed by inspecting the installed wheel: Barcode's own readonly properties are just
+    // bytes/content_type/ec_level/error/extra/format/orientation/position/symbology/
+    // symbology_identifier/text/valid, and a decoded QR's extra dict only ever held DataMask/
+    // Version/ECLevel. So these round-trips verify Structured Append the way the plan's fallback
+    // describes: each symbol decodes as an ordinary QR Code, and every decoded text matches
+    // exactly one part of the original, un-split message.
+
+    [Fact]
+    public void QrCode_StructuredAppendTwoParts_EachSymbolDecodesToItsOwnPart()
+    {
+        string[] parts = ["VellumPdf Structured Append part one, ", "part two of the message."];
+        var symbols = QrCode.StructuredAppend(parts);
+
+        var pdfPath = BuildSinglePdf((_, canvas) =>
+        {
+            canvas.DrawBarcode(symbols[0], 50, 700);
+            canvas.DrawBarcode(symbols[1], 50, 500);
+        });
+
+        if (!TryDecodeAll(pdfPath, out var results)) return;
+
+        AssertStructuredAppendReassembles(parts, results);
+    }
+
+    [Fact]
+    public void QrCode_StructuredAppendThreeParts_EachSymbolDecodesToItsOwnPart()
+    {
+        string[] parts = ["Part one of three. ", "Part two of three. ", "Part three of three."];
+        var symbols = QrCode.StructuredAppend(parts);
+
+        var pdfPath = BuildSinglePdf((_, canvas) =>
+        {
+            canvas.DrawBarcode(symbols[0], 50, 750);
+            canvas.DrawBarcode(symbols[1], 50, 550);
+            canvas.DrawBarcode(symbols[2], 50, 350);
+        });
+
+        if (!TryDecodeAll(pdfPath, out var results)) return;
+
+        AssertStructuredAppendReassembles(parts, results);
+    }
+
+    [Fact]
+    public void QrCode_StructuredAppendMultibyteParts_EachSymbolDecodesToItsOwnPart()
+    {
+        // Non-Latin-1 content split across the set: confirms the byte encoding every symbol
+        // resolves under Auto (Finding B) stays consistent across the whole set, not just the
+        // shared parity byte.
+        string[] parts = ["Grüße ", "世界 😀"];
+        var symbols = QrCode.StructuredAppend(parts);
+
+        var pdfPath = BuildSinglePdf((_, canvas) =>
+        {
+            canvas.DrawBarcode(symbols[0], 50, 700);
+            canvas.DrawBarcode(symbols[1], 50, 500);
+        });
+
+        if (!TryDecodeAll(pdfPath, out var results)) return;
+
+        AssertStructuredAppendReassembles(parts, results);
+    }
+
+    /// <summary>
+    /// Asserts every decoded result is a QR Code matching exactly one of <paramref name="parts"/>
+    /// (a bijection, not merely a subset), then reassembles the parts in their known Structured
+    /// Append order and checks the result equals the original, un-split message. This is the
+    /// reassembly check this repo's decode tooling cannot do via sequence metadata (see the remarks above).
+    /// </summary>
+    private static void AssertStructuredAppendReassembles(IReadOnlyList<string> parts, List<DecodeResult> results)
+    {
+        Assert.Equal(parts.Count, results.Count);
+        Assert.All(results, r => Assert.Equal("QRCode", r.Format));
+
+        var indexByPart = parts.Select((part, index) => (part, index)).ToDictionary(x => x.part, x => x.index);
+        foreach (var result in results)
+            Assert.True(indexByPart.ContainsKey(result.Text), $"Decoded text '{result.Text}' does not match any original part.");
+
+        var reassembled = string.Concat(results.OrderBy(r => indexByPart[r.Text]).Select(r => r.Text));
+        Assert.Equal(string.Concat(parts), reassembled);
     }
 
     // ── Micro QR ──────────────────────────────────────────────────────────
@@ -671,6 +799,34 @@ public sealed class ZxingDecodeOracleTests : IDisposable
     }
 
     [Fact]
+    public void Pdf417Barcode_Compact_RoundTrips()
+    {
+        const string content = "VellumPdf compact PDF417 oracle round-trip test";
+        var pdfPath = BuildSinglePdf((_, canvas) =>
+            canvas.DrawBarcode(new Pdf417Barcode(content) { Compact = true, ModuleSize = 2 }, 50, 500));
+
+        if (!TryDecodeSingle(pdfPath, out var result)) return;
+
+        Assert.Equal("PDF417", result.Format);
+        Assert.Equal(content, result.Text);
+    }
+
+    [Fact]
+    public void Pdf417Barcode_CompactColumnsOne_RoundTrips()
+    {
+        // The narrowest practical Compact PDF417 shape: a single data column, forced explicitly
+        // rather than solved from PreferredAspectRatio, exercising the format's tightest case.
+        const string content = "narrow";
+        var pdfPath = BuildSinglePdf((_, canvas) =>
+            canvas.DrawBarcode(new Pdf417Barcode(content) { Compact = true, Columns = 1, ModuleSize = 3 }, 50, 500));
+
+        if (!TryDecodeSingle(pdfPath, out var result)) return;
+
+        Assert.Equal("PDF417", result.Format);
+        Assert.Equal(content, result.Text);
+    }
+
+    [Fact]
     public void Pdf417Barcode_BinaryBytes_RoundTrips()
     {
         byte[] content = [0x00, 0x01, 0x02, 0xFF, 0xFE, 0x7F, 0x80, 0x10, 0x20, 0x30];
@@ -682,6 +838,96 @@ public sealed class ZxingDecodeOracleTests : IDisposable
         Assert.Equal("PDF417", result.Format);
         Assert.Equal("Binary", result.ContentType);
         Assert.Equal(Convert.ToHexStringLower(content), result.Text);
+    }
+
+    // ── Macro PDF417 ──────────────────────────────────────────────────────
+
+    // Unlike QR Structured Append, zxing-cpp 3.0.0 does decode a Macro PDF417 file id: its Python
+    // Barcode.extra dict carries a "FileId" string, built by reading control-block codewords one
+    // at a time, formatting each as a zero-padded 3-digit decimal, and concatenating until it
+    // hits the next 923 (optional field) or 922 (terminator) codeword (confirmed against
+    // zxing-cpp's own PDFDecoder.cpp DecodeMacroBlock). MacroControlBlock encodes file id as a
+    // single codeword, so it decodes as one 3-digit group (e.g. 42 -> "042"). That same source
+    // read is why the control block's pad codewords must sit strictly before it, never after: a
+    // terminator followed by leftover pad throws inside DecodeMacroBlock's own bounds loop (see
+    // Pdf417Encoder's remark). Confirmed against the installed wheel and wired into
+    // eng/barcode-decode.py as an appended fourth column. Segment index and the "is this the last
+    // segment" flag are not exposed anywhere (neither Barcode's own properties nor extra carry
+    // them, and no SegmentIndex/LastSegment string even appears in the compiled module), so
+    // segment order can only be verified the same way Structured Append is: by reassembling each
+    // segment's decoded text.
+
+    [Fact]
+    public void Pdf417Barcode_MacroSetTwoSegments_EachSymbolDecodesToItsOwnPartAndSharesTheFileId()
+    {
+        string[] parts = ["VellumPdf Macro PDF417 segment one, ", "and segment two of the message."];
+        var symbols = Pdf417Barcode.MacroSet(parts, fileId: 42);
+
+        var pdfPath = BuildSinglePdf((_, canvas) =>
+        {
+            canvas.DrawBarcode(symbols[0], 50, 750);
+            canvas.DrawBarcode(symbols[1], 50, 450);
+        });
+
+        if (!TryDecodeAll(pdfPath, out var results)) return;
+
+        AssertMacroSetReassembles(parts, expectedFileId: "042", results);
+    }
+
+    [Fact]
+    public void Pdf417Barcode_MacroSetThreeSegments_EachSymbolDecodesToItsOwnPartAndSharesTheFileId()
+    {
+        string[] parts = ["Segment one of three. ", "Segment two of three. ", "Segment three of three."];
+        var symbols = Pdf417Barcode.MacroSet(parts, fileId: 7, new MacroPdf417Options { FileName = "report.txt" });
+
+        var pdfPath = BuildSinglePdf((_, canvas) =>
+        {
+            canvas.DrawBarcode(symbols[0], 50, 750);
+            canvas.DrawBarcode(symbols[1], 50, 550);
+            canvas.DrawBarcode(symbols[2], 50, 350);
+        });
+
+        if (!TryDecodeAll(pdfPath, out var results)) return;
+
+        AssertMacroSetReassembles(parts, expectedFileId: "007", results);
+    }
+
+    [Fact]
+    public void Pdf417Barcode_MacroSetAutoSplitThreeSegments_EachSymbolDecodesToItsOwnPartAndSharesTheFileId()
+    {
+        const string content = "VellumPdf Macro PDF417 auto-split end-to-end oracle round-trip test message";
+        var symbols = Pdf417Barcode.MacroSet(content, symbolCount: 3, fileId: 13);
+        var parts = symbols.Select(s => s.Text!).ToArray();
+
+        var pdfPath = BuildSinglePdf((_, canvas) =>
+        {
+            canvas.DrawBarcode(symbols[0], 50, 750);
+            canvas.DrawBarcode(symbols[1], 50, 550);
+            canvas.DrawBarcode(symbols[2], 50, 350);
+        });
+
+        if (!TryDecodeAll(pdfPath, out var results)) return;
+
+        AssertMacroSetReassembles(parts, expectedFileId: "013", results);
+    }
+
+    /// <summary>
+    /// Asserts every decoded result is a PDF417 symbol sharing <paramref name="expectedFileId"/>
+    /// and matching exactly one of <paramref name="parts"/> (a bijection), then reassembles the
+    /// parts in their known segment order and checks the result equals the original message.
+    /// </summary>
+    private static void AssertMacroSetReassembles(IReadOnlyList<string> parts, string expectedFileId, List<DecodeResult> results)
+    {
+        Assert.Equal(parts.Count, results.Count);
+        Assert.All(results, r => Assert.Equal("PDF417", r.Format));
+        Assert.All(results, r => Assert.Equal(expectedFileId, r.FileId));
+
+        var indexByPart = parts.Select((part, index) => (part, index)).ToDictionary(x => x.part, x => x.index);
+        foreach (var result in results)
+            Assert.True(indexByPart.ContainsKey(result.Text), $"Decoded text '{result.Text}' does not match any original part.");
+
+        var reassembled = string.Concat(results.OrderBy(r => indexByPart[r.Text]).Select(r => r.Text));
+        Assert.Equal(string.Concat(parts), reassembled);
     }
 
     // ── Code 128 ──────────────────────────────────────────────────────────
@@ -713,6 +959,128 @@ public sealed class ZxingDecodeOracleTests : IDisposable
 
         Assert.Equal("Code128", result.Format);
         Assert.Equal("GS1", result.ContentType);
+    }
+
+    [Fact]
+    public void Code128Barcode_ExtendedLatin1_RoundTrips()
+    {
+        // "café" mixes a lone FNC4 shift ('é', a run of one) with three plain characters;
+        // zxing-cpp's own .text mangles a byte above 127 into a replacement character outside a
+        // Binary result, so this asserts against .bytes (the decode oracle's fifth column, added
+        // for this feature) instead, the same way the Data Matrix/Aztec binary tests already do.
+        const string content = "café";
+        var pdfPath = BuildSinglePdf((_, canvas) =>
+            canvas.DrawBarcode(new Code128Barcode(content) { ShowText = false, ModuleSize = 2 }, 50, 500));
+
+        if (!TryDecodeSingle(pdfPath, out var result)) return;
+
+        Assert.Equal("Code128", result.Format);
+        Assert.Equal(Convert.ToHexStringLower(Latin1Bytes(content)), result.BytesHex);
+    }
+
+    [Fact]
+    public void Code128Barcode_ExtendedLatin1Run_LatchesFnc4()
+    {
+        // "Grüße": 'ü' and 'ß' are consecutive Latin-1 characters, so the encoder should latch
+        // FNC4 across both rather than shifting each one individually (see
+        // Code128EncoderTests for the exact symbol-level KAT this exercises).
+        const string content = "Grüße";
+        var pdfPath = BuildSinglePdf((_, canvas) =>
+            canvas.DrawBarcode(new Code128Barcode(content) { ShowText = false, ModuleSize = 2 }, 50, 500));
+
+        if (!TryDecodeSingle(pdfPath, out var result)) return;
+
+        Assert.Equal("Code128", result.Format);
+        Assert.Equal(Convert.ToHexStringLower(Latin1Bytes(content)), result.BytesHex);
+    }
+
+    [Fact]
+    public void Code128Barcode_ExtendedLatin1ControlRange_NeedsARealSwitchNotAShift()
+    {
+        // Regression coverage for a bug this feature's first draft shipped with: a lone
+        // Latin-1 character whose low equivalent is a Code Set A control character (here
+        // U+0081, low equivalent 0x01) cannot ride a cheap Shift the way a lone non-control
+        // Latin-1 character can (see Code128Barcode_ExtendedLatin1_RoundTrips above):
+        // Shift's single-symbol scope has no room left for FNC4's own code once the shifted
+        // value itself fills that slot. zxing-cpp decoded the earlier, Shift-based attempt at
+        // this with the Latin-1 bit silently dropped; see Code128EncoderTests's
+        // Fnc4_controlRangeHighChar_needsCodeASwitch_notAShift for the exact symbol-level fix.
+        var content = "a" + (char)0x81;
+        var pdfPath = BuildSinglePdf((_, canvas) =>
+            canvas.DrawBarcode(new Code128Barcode(content) { ShowText = false, ModuleSize = 2 }, 50, 500));
+
+        if (!TryDecodeSingle(pdfPath, out var result)) return;
+
+        Assert.Equal("Code128", result.Format);
+        Assert.Equal(Convert.ToHexStringLower(Latin1Bytes(content)), result.BytesHex);
+    }
+
+    [Fact]
+    public void Code128Barcode_ShiftAfterFnc4Latch_RoundTripsExactly()
+    {
+        // Regression coverage for a HIGH-severity bug: 'à' and 'á' latch FNC4 (both Code B, so
+        // they run together), then U+0001 (a Code A-only control character) is a lone low
+        // character reached with Shift, followed by a plain 'b'. Left latched across the Shift, a
+        // zxing-cpp decoder still in FNC4 mode would add 128 to it and decode it as 0x81 instead
+        // of 0x01; see Code128EncoderTests.Fnc4_shiftAfterLatchedRun_unlatchesBeforeTheShift for
+        // the exact symbol-level fix. (A literal tab or newline cannot stand in here: either would
+        // land in zxing-cpp's decoded text and break this test harness's own tab/newline-delimited
+        // output parsing, unrelated to the encoder bug under test.)
+        var content = "àá" + (char)0x01 + "b";
+        var pdfPath = BuildSinglePdf((_, canvas) =>
+            canvas.DrawBarcode(new Code128Barcode(content) { ShowText = false, ModuleSize = 2 }, 50, 500));
+
+        if (!TryDecodeSingle(pdfPath, out var result)) return;
+
+        Assert.Equal("Code128", result.Format);
+        Assert.Equal(Convert.ToHexStringLower(Latin1Bytes(content)), result.BytesHex);
+    }
+
+    [Fact]
+    public void Code128Barcode_Fnc4LatchThenCodeCSwitch_RoundTripsExactly()
+    {
+        // A latched Latin-1 run ('ü', 'ß') followed directly by an eligible 4-digit run forces a
+        // switch to Code Set C, which has no FNC4 concept and so must unlatch first (the same
+        // unlatch-before-switch shape as the Shift fix above, exercised on the Code C branch
+        // instead). See Code128EncoderTests.Fnc4_latchedRun_unlatchesBeforeCodeCSwitch for the
+        // exact symbol-level KAT.
+        var content = "üß1234";
+        var pdfPath = BuildSinglePdf((_, canvas) =>
+            canvas.DrawBarcode(new Code128Barcode(content) { ShowText = false, ModuleSize = 2 }, 50, 500));
+
+        if (!TryDecodeSingle(pdfPath, out var result)) return;
+
+        Assert.Equal("Code128", result.Format);
+        Assert.Equal(Convert.ToHexStringLower(Latin1Bytes(content)), result.BytesHex);
+    }
+
+    [Fact]
+    public void Code128Barcode_Fnc4LatchLiveAcrossSwitch_RoundTripsExactly()
+    {
+        // Round-2 review coverage: a doubled FNC4 latch established in Code B ('ü', 'ü') has to
+        // stay live across a genuine switch into Code A for U+0081 (low equivalent 0x01, a Code
+        // Set A control character), the mirror image of
+        // Code128Barcode_ShiftAfterFnc4Latch_RoundTripsExactly above (a live latch surviving a
+        // Shift) and Code128EncoderTests.Fnc4_latchEstablishedInSwitchRun_carriesAcrossReturnToHome
+        // (a latch that starts inside the switch run instead of before it). The switch is the
+        // last thing in this content, so the still-active latch is the only reason the final
+        // symbol has to decode as 0x81 rather than plain 0x01.
+        var content = "üü" + (char)0x81;
+        var pdfPath = BuildSinglePdf((_, canvas) =>
+            canvas.DrawBarcode(new Code128Barcode(content) { ShowText = false, ModuleSize = 2 }, 50, 500));
+
+        if (!TryDecodeSingle(pdfPath, out var result)) return;
+
+        Assert.Equal("Code128", result.Format);
+        Assert.Equal(Convert.ToHexStringLower(Latin1Bytes(content)), result.BytesHex);
+    }
+
+    /// <summary>Encodes a string as raw Latin-1 bytes (each char's code point as a single byte), for comparing against a decoded FNC4 symbol.</summary>
+    private static byte[] Latin1Bytes(string s)
+    {
+        var bytes = new byte[s.Length];
+        for (var i = 0; i < s.Length; i++) bytes[i] = (byte)s[i];
+        return bytes;
     }
 
     // ── Code 39 ───────────────────────────────────────────────────────────
@@ -1019,9 +1387,18 @@ public sealed class ZxingDecodeOracleTests : IDisposable
 
         foreach (var line in stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries))
         {
+            // eng/barcode-decode.py always emits 5 tab-separated columns now (format, content
+            // type, text, file id, bytes hex); file id is empty for every symbology but Macro
+            // PDF417. >= 3 keeps this tolerant of the script's own historical 3- and 4-column
+            // output.
             var parts = line.TrimEnd('\r').Split('\t');
-            Assert.True(parts.Length == 3, $"Unexpected decode-oracle output line: '{line}'");
-            results.Add(new DecodeResult(parts[0], parts[1], parts[2]));
+            Assert.True(parts.Length >= 3, $"Unexpected decode-oracle output line: '{line}'");
+            results.Add(new DecodeResult(
+                parts[0],
+                parts[1],
+                parts[2],
+                parts.Length > 3 ? parts[3] : string.Empty,
+                parts.Length > 4 ? parts[4] : string.Empty));
         }
 
         return true;

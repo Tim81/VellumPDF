@@ -162,6 +162,72 @@ it — `QrCode(byte[])` with `Gs1` set throws `ArgumentException`.
 - 2D symbologies draw no visible text, so the human-readable (parenthesised
   AI) form appears only in the `Figure`'s alternate text, not on the page.
 
+### Kanji mode
+
+```csharp
+using VellumPdf.Barcodes;
+
+var kanji = new QrCode("こんにちは世界") { ModuleSize = 4 };
+doc.Add(kanji);
+```
+
+QR Kanji mode (ISO/IEC 18004 §7.4.6) packs eligible Shift-JIS X 0208 characters
+at a fixed 13 bits each, denser than routing the same text through byte mode.
+No API is needed to turn it on: the segmenter picks Kanji mode automatically,
+alongside numeric, alphanumeric and byte mode, wherever it produces the
+smallest symbol. Japanese content benefits most, since kana and common kanji
+sit inside the two Shift-JIS blocks the mode covers.
+
+Content that mixes a Kanji-eligible character with something representable
+only in byte mode — an emoji, for example — falls back to encoding the whole
+message in byte mode instead of interleaving Kanji and byte segments. The
+reference decoder this package validates against misreads a Kanji segment
+sitting next to a UTF-8 ECI-tagged byte segment, so the encoder avoids that
+combination for decoder compatibility. A message that is entirely
+Kanji-eligible is unaffected.
+
+The Unicode-to-Shift-JIS lookup table is generated clean-room from the
+Unicode Consortium's published SHIFTJIS.TXT mapping, filtered to code points
+that round-trip through a CP932 decoder, so a scalar the table accepts always
+decodes back to the same character.
+
+### Structured Append
+
+```csharp
+using VellumPdf.Barcodes;
+
+// Pre-split into parts, in reading order:
+var parts = new[] { "Part one of the message.", "Part two of the message." };
+var symbols = QrCode.StructuredAppend(parts);
+
+// Or split a single string into a chosen number of roughly-equal parts:
+var autoSplit = QrCode.StructuredAppend("A longer message spread across three symbols.", symbolCount: 3);
+
+double y = 700;
+foreach (var symbol in symbols)
+{
+    canvas.DrawBarcode(symbol, 50, y);
+    y -= 150;
+}
+```
+
+`QrCode.StructuredAppend` (ISO/IEC 18004 §8) splits a message across up to 16
+linked QR Code symbols, each stamped with the set's shared sequence/parity
+header so a reading application can reassemble them in order. Every returned
+symbol is an ordinary `QrCode`; draw each one yourself through `DrawBarcode`
+(or `doc.Add`) at whatever positions the layout calls for — nothing about
+placement is automatic.
+
+Two overloads are available: pass a pre-split `IReadOnlyList<string>` when
+the split points matter (e.g. a word boundary), or pass a single string plus
+a symbol count to split it automatically on Unicode scalar boundaries. Each
+also has a form that adds an `ErrorCorrection` level and a `TextEncoding`
+policy, applied to every symbol in the set: three arguments for the
+pre-split overload, four for the auto-split overload (its extra
+`symbolCount` argument comes first).
+
+Micro QR has no Structured Append support.
+
 ---
 
 ## Micro QR
@@ -216,7 +282,59 @@ compacted automatically across text, byte, and numeric sub-modes.
   level for the content's size. Set it explicitly for a denser or more
   error-resistant symbol.
 - `Pdf417Barcode(byte[])` carries raw bytes verbatim in byte compaction mode.
-  Macro PDF417 (splitting content across several symbols) is not supported.
+
+### Compact (Truncated) format
+
+```csharp
+using VellumPdf.Barcodes;
+
+var compact = new Pdf417Barcode("VellumPdf PDF417 example") { Compact = true };
+doc.Add(compact);
+```
+
+Setting `Compact` (default `false`) renders the Compact (Truncated) format
+from ISO/IEC 15438: the right row-indicator column is dropped and the
+18-module stop pattern is replaced by a single dark module, narrowing the
+symbol. The data codewords and their Reed-Solomon error correction are
+unaffected, but the symbol loses the redundancy the dropped right-side
+elements normally provide, so it tolerates less damage near its right edge.
+
+### Macro PDF417
+
+```csharp
+using VellumPdf.Barcodes;
+
+var parts = new[] { "Segment one.", "Segment two.", "Segment three." };
+var segments = Pdf417Barcode.MacroSet(parts, fileId: 42);
+
+// Or split a single string automatically:
+var autoSplit = Pdf417Barcode.MacroSet("A file split across three PDF417 symbols.", symbolCount: 3, fileId: 42);
+
+// Optional control-block fields, carried on the set's last symbol:
+var withOptions = Pdf417Barcode.MacroSet(parts, fileId: 42, new MacroPdf417Options
+{
+    FileName = "report.txt",
+    Timestamp = DateTimeOffset.UtcNow,
+    FileSize = 4096,
+});
+
+double y = 700;
+foreach (var segment in segments)
+{
+    canvas.DrawBarcode(segment, 50, y);
+    y -= 150;
+}
+```
+
+`Pdf417Barcode.MacroSet` (ISO/IEC 15438 Annex H) splits a payload across up
+to 99999 linked PDF417 symbols sharing a `fileId` (0-899), each carrying a
+Macro control block appended after its data codewords, so the symbol's own
+error correction covers the control block too. `MacroPdf417Options` adds
+optional fields — file name, segment count, timestamp, sender, addressee,
+file size, checksum — carried on the set's last symbol only, matching the
+convention decoders expect them under; `SegmentCount` defaults to the number
+of parts when left unset. As with Structured Append, every returned symbol
+is an ordinary `Pdf417Barcode` that the caller draws individually.
 
 ---
 
@@ -331,18 +449,37 @@ doc.Add(new Code128Barcode("VELLUM-1234"));
 doc.Add(new Code128Barcode("0100012345678905") { Gs1 = true });
 ```
 
-Content must be ASCII (code points 0-127); a non-ASCII character throws
+Content must be Latin-1 (code points 0-255); a character above that throws
 `ArgumentException`. Subset selection (A/B/C) and the mod-103 check character
-are computed automatically to minimise the encoded length. Extended Latin-1
-(code points 128-255, which Code 128 can carry only through FNC4) is not
-supported: FNC4 is handled inconsistently by scanners and is disallowed in
-GS1-128.
+are computed automatically to minimise the encoded length. GS1-128
+(`Gs1 = true`) is stricter: a character above 127 throws `ArgumentException`
+when the barcode is measured or drawn, since the GS1 General Specifications
+disallow FNC4 in a GS1-128 symbol.
 
-For GS1-128, the human-readable line prints the encoded data as a single run.
-It does not yet wrap each Application Identifier in parentheses (the
-`(01)...(17)...` form GS1 specifies for human-readable text); this affects the
-printed caption only, not the scanned bars. Parenthesised HRI is tracked in the
-barcode completeness backlog.
+For GS1-128, the human-readable line wraps each Application Identifier in
+parentheses, the `(01)...(17)...` form GS1 specifies for human-readable text.
+Content flagged GS1 that is not a well-formed element string still encodes
+into valid bars; its human-readable line falls back to the raw content instead.
+
+### Extended Latin-1 (FNC4)
+
+```csharp
+using VellumPdf.Barcodes;
+
+doc.Add(new Code128Barcode("café"));
+```
+
+Characters 128-255 are carried with FNC4 (ISO/IEC 15417): a lone extended
+character is reached with a single FNC4, which shifts just the character
+right after it, and a run of two or more latches FNC4 with a doubled FNC4
+until a second doubled FNC4 switches it back off. Subset and shift/latch
+selection happen automatically: nothing about `Code128Barcode`'s API changes
+to use it.
+
+GS1-128 (`Gs1 = true`) rejects any character above 127; FNC4 is not permitted
+in a GS1-128 symbol. Not every scanner supports FNC4, so where broad
+compatibility matters more than round-tripping the full Latin-1 range, keep
+content within 0-127.
 
 ---
 

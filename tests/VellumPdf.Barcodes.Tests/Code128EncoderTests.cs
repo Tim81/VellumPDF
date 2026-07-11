@@ -65,14 +65,31 @@ public sealed class Code128EncoderTests
     [Fact]
     public void GroupSeparatorCharacter_becomesFnc1()
     {
-        var (_, dataSymbols, _) = Code128Encoder.EncodeSymbols(new Code128Barcode("A\u001DB"));
+        var (_, dataSymbols, _) = Code128Encoder.EncodeSymbols(new Code128Barcode("AB"));
         Assert.Contains(102, dataSymbols);
     }
 
     [Fact]
-    public void Validate_rejectsCharactersAboveAscii()
+    public void Validate_acceptsLatin1Content()
     {
-        Assert.Throws<ArgumentException>(() => new Code128Barcode("café"));
+        // #155: 128-255 is now valid, carried with FNC4; this used to throw.
+        var barcode = new Code128Barcode("café");
+        Assert.Equal("café", barcode.Content);
+    }
+
+    [Fact]
+    public void Validate_rejectsCharactersAboveLatin1()
+    {
+        Assert.Throws<ArgumentException>(() => new Code128Barcode("cafĀ")); // U+0100 is 256, one past Latin-1
+    }
+
+    [Fact]
+    public void Gs1_rejectsLatin1Content()
+    {
+        // The GS1 General Specifications reserve FNC4 for plain Code 128; a GS1-128 symbol
+        // cannot carry it, so extended Latin-1 content throws rather than silently dropping FNC4.
+        Assert.Throws<ArgumentException>(() =>
+            Code128Encoder.EncodeSymbols(new Code128Barcode("café") { Gs1 = true }));
     }
 
     [Fact]
@@ -124,6 +141,142 @@ public sealed class Code128EncoderTests
         Assert.Equal(a.DataSymbols, b.DataSymbols);
         Assert.Equal(a.StartValue, b.StartValue);
         Assert.Equal(a.Check, b.Check);
+    }
+
+    [Fact]
+    public void Fnc4_singleHighChar_isALoneShift()
+    {
+        // e-acute (U+00E9) has low equivalent 'i' (0x69), a Code Set B character, so home mode
+        // is B and Start B is chosen; a single Latin-1 character shifts rather than latching.
+        var (startValue, dataSymbols, check) = Code128Encoder.EncodeSymbols(new Code128Barcode("\u00E9"));
+
+        Assert.Equal(104, startValue); // Start Code B
+        Assert.Equal([100, 73], dataSymbols); // FNC4 in B (100), then 'i' mapped in B (0x69 - 32)
+        Assert.Equal(41, check);
+    }
+
+    [Fact]
+    public void Fnc4_runOfTwoHighChars_latches()
+    {
+        // u-umlaut (0xFC, low '|' 0x7C) then sharp s (0xDF, low '_' 0x5F): two consecutive
+        // Latin-1 characters latch FNC4 with a doubled code instead of shifting each one apart.
+        var (startValue, dataSymbols, check) = Code128Encoder.EncodeSymbols(new Code128Barcode("\u00FC\u00DF"));
+
+        Assert.Equal(104, startValue); // Start Code B
+        Assert.Equal([100, 100, 92, 63], dataSymbols); // doubled FNC4 (latch on), then '|', '_' mapped in B
+        Assert.Equal(5, check);
+    }
+
+    [Fact]
+    public void Fnc4_lowHighLowMix_shiftsOnlyTheMiddleCharacter()
+    {
+        // A (low), e-acute (high, low 'i' still fits Code B), B (low): no A/B switching at all,
+        // just a single FNC4 shift around the middle character.
+        var (startValue, dataSymbols, check) = Code128Encoder.EncodeSymbols(new Code128Barcode("A\u00E9B"));
+
+        Assert.Equal(104, startValue); // Start Code B: e-acute's low equivalent forces B
+        Assert.Equal([33, 100, 73, 34], dataSymbols); // 'A', FNC4, 'i', 'B', all mapped/emitted in B
+        Assert.Equal(74, check);
+    }
+
+    [Fact]
+    public void Fnc4_controlRangeHighChar_needsCodeASwitch_notAShift()
+    {
+        // 'a' forces home mode B; U+0081 (low equivalent 0x01, a control character) only exists
+        // in Code Set A, so unlike the AeB case above this needs an actual subset switch. A cheap
+        // Shift cannot carry FNC4 too, since FNC4 has no data-value slot of its own for Shift to
+        // read through Code A's table: it reuses the "switch to A"/"switch to B" function codes,
+        // which sit outside the data range Shift's single-symbol scope covers. Confirmed against
+        // zxing-cpp: emitting FNC4 as if it were Shift's target symbol decoded the control
+        // character with no Latin-1 bit set. A real switch to Code A sidesteps this.
+        var (startValue, dataSymbols, check) = Code128Encoder.EncodeSymbols(new Code128Barcode("a\u0081"));
+
+        Assert.Equal(104, startValue); // Start Code B: 'a' forces it
+        Assert.Equal([65, 101, 101, 65], dataSymbols); // 'a' in B, switch to A, FNC4 in A, control char in A
+        Assert.Equal(7, check);
+    }
+
+    [Fact]
+    public void Fnc4_shiftAfterLatchedRun_unlatchesBeforeTheShift()
+    {
+        // Regression test for a HIGH-severity bug: the Shift branch below was the only
+        // character-emitting branch that never cleared an active FNC4 latch. e-acute (U+00E9,
+        // low 'i') then u-umlaut (U+00FC, low '|') latch FNC4 (both Code B, so they run
+        // together), then U+0001 (a Code A-only control character) is a lone low character that
+        // needs Shift into Code A. Left latched, a zxing-cpp decoder still in FNC4 mode would add
+        // 128 to the shifted value and silently corrupt it, so the fix unlatches (doubled FNC4 in
+        // the still-active register, Code B here) immediately before the Shift.
+        var (startValue, dataSymbols, check) = Code128Encoder.EncodeSymbols(new Code128Barcode("éü"));
+
+        Assert.Equal(104, startValue); // Start Code B: e-acute's low equivalent forces B
+        Assert.Equal(
+            [100, 100, 73, 92, 100, 100, 98, 65],
+            dataSymbols); // doubled FNC4 (latch on), 'i', '|', doubled FNC4 (unlatch), Shift, control char in A
+        Assert.Equal(1, check);
+    }
+
+    [Fact]
+    public void Fnc4_latchedRun_unlatchesOnAnOrdinaryLowCharacter()
+    {
+        // Coverage for the normal unlatch path (already correct before the Shift fix above): a
+        // latched run of u-umlaut and sharp s, both Code B, followed by a plain low 'z' that is
+        // itself Code B compatible. The trailing 'z' still has to unlatch FNC4 first, since it is
+        // not itself a Latin-1 character.
+        var (startValue, dataSymbols, check) = Code128Encoder.EncodeSymbols(new Code128Barcode("üßz"));
+
+        Assert.Equal(104, startValue); // Start Code B
+        Assert.Equal(
+            [100, 100, 92, 63, 100, 100, 90],
+            dataSymbols); // doubled FNC4 (latch on), '|', '_', doubled FNC4 (unlatch), 'z'
+        Assert.Equal(87, check);
+    }
+
+    [Fact]
+    public void Fnc4_runOfTwoControlChars_latchesInCodeA()
+    {
+        // U+0081 and U+0082 have low equivalents 0x01 and 0x02, both Code A-only control
+        // characters, so the doubled FNC4 that latches them is keyed to Code A (101) rather than
+        // Code B (100).
+        var (startValue, dataSymbols, check) = Code128Encoder.EncodeSymbols(new Code128Barcode(""));
+
+        Assert.Equal(103, startValue); // Start Code A: the first character's low equivalent forces A
+        Assert.Equal([101, 101, 65, 66], dataSymbols); // doubled FNC4 in A (latch on), then the two control chars
+        Assert.Equal(41, check);
+    }
+
+    [Fact]
+    public void Fnc4_latchedRun_unlatchesBeforeCodeCSwitch()
+    {
+        // A latched Latin-1 run (u-umlaut, sharp s) followed directly by an eligible 4-digit run:
+        // Code Set C has no FNC4 concept, so the switch to Code C has to unlatch first, the same
+        // way the Shift fix above unlatches before Shift.
+        var (startValue, dataSymbols, check) = Code128Encoder.EncodeSymbols(new Code128Barcode("üß1234"));
+
+        Assert.Equal(104, startValue); // Start Code B
+        Assert.Equal(
+            [100, 100, 92, 63, 100, 100, 99, 12, 34],
+            dataSymbols); // doubled FNC4 (latch on), '|', '_', doubled FNC4 (unlatch), Code C, 12, 34
+        Assert.Equal(37, check);
+    }
+
+    [Fact]
+    public void Fnc4_latchEstablishedInSwitchRun_carriesAcrossReturnToHome()
+    {
+        // 'a' forces home mode B. U+0081 then U+0082 are both Code Set A control characters
+        // (low equivalents 0x01 and 0x02), consecutive, so the switch into Code A establishes
+        // the FNC4 latch inside the switch run itself rather than before it. The sequence then
+        // switches back to Code B for the trailing 'z': the latch has to stay on through that
+        // switch back and only unlatch once 'z', an ordinary low character, forces it, using
+        // Code B's own FNC4 value (100) rather than the value the switch run latched with
+        // (Code A's 101).
+        var content = "a" + (char)0x81 + (char)0x82 + "z";
+        var (startValue, dataSymbols, check) = Code128Encoder.EncodeSymbols(new Code128Barcode(content));
+
+        Assert.Equal(104, startValue); // Start Code B: 'a' forces it
+        Assert.Equal(
+            [65, 101, 101, 101, 65, 66, 100, 100, 100, 90],
+            dataSymbols); // 'a' in B, switch to A, doubled FNC4 in A (latch on), 0x81, 0x82, switch to B, doubled FNC4 in B (unlatch), 'z'
+        Assert.Equal(52, check);
     }
 
     [Fact]

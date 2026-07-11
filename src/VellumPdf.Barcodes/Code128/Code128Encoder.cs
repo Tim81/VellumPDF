@@ -11,6 +11,17 @@ namespace VellumPdf.Barcodes.Code128;
 /// runs of 4+ digits at the start/end of the data, 6+ in the middle, or the whole data when it
 /// is entirely 2 or 4+ digits; a single character needing the other basic subset is reached
 /// with a Shift rather than a full switch; U+001D (GS) always becomes FNC1.
+///
+/// <para>
+/// Latin-1 characters (128-255) are carried with FNC4: a lone one is reached with a single
+/// FNC4, which extends only the character right after it; a run of two or more latches FNC4
+/// with a doubled FNC4, extending every character until a doubled FNC4 switches it off again
+/// (ISO/IEC 15417). Code Set A and B reuse the same symbol values for "switch to A" (101) and
+/// "switch to B" (100) as their own FNC4 code, since telling a decoder already in Code A to
+/// switch to Code A would otherwise be a no-op. Which basic subset a Latin-1 character needs
+/// still comes from its low 128 equivalent (char - 128): 0x80-0x9F carries a control-range low
+/// value, so it needs Code Set A the same as its unshifted 0x00-0x1F counterpart would.
+/// </para>
 /// </summary>
 internal static class Code128Encoder
 {
@@ -30,14 +41,14 @@ internal static class Code128Encoder
         public static Item Fnc1() => new() { Kind = ItemKind.Fnc1 };
     }
 
-    /// <summary>Validates that <paramref name="content"/> is ASCII (0-127), returning it unchanged.</summary>
-    /// <exception cref="ArgumentException">A character falls outside 0-127.</exception>
+    /// <summary>Validates that <paramref name="content"/> is Latin-1 (0-255), returning it unchanged.</summary>
+    /// <exception cref="ArgumentException">A character falls outside 0-255.</exception>
     internal static string Validate(string content)
     {
         ArgumentNullException.ThrowIfNull(content);
         foreach (var c in content)
-            if (c > 127)
-                throw new ArgumentException($"Code 128 content must be ASCII (0-127); found U+{(int)c:X4}.", nameof(content));
+            if (c > 255)
+                throw new ArgumentException($"Code 128 content must be Latin-1 (0-255); found U+{(int)c:X4}.", nameof(content));
         return content;
     }
 
@@ -100,6 +111,14 @@ internal static class Code128Encoder
     /// </summary>
     internal static (int StartValue, IReadOnlyList<int> DataSymbols, int Check) EncodeSymbols(Code128Barcode barcode)
     {
+        if (barcode.Gs1)
+            foreach (var c in barcode.Content)
+                if (c > 127)
+                    throw new ArgumentException(
+                        $"GS1-128 content cannot use FNC4 / extended Latin-1; found U+{(int)c:X4}. " +
+                        "The GS1 General Specifications reserve FNC4 for plain Code 128 and do not " +
+                        "permit it in a GS1-128 symbol.", nameof(barcode));
+
         var items = Tokenize(barcode.Content);
         if (barcode.Gs1) items.Insert(0, Item.Fnc1());
 
@@ -123,6 +142,12 @@ internal static class Code128Encoder
         }
 
         var symbols = new List<int>();
+
+        // Whether FNC4 is currently latched (every character gets +128 until a doubled FNC4
+        // switches it off), tracked across the whole item stream regardless of which Char branch
+        // below is servicing the current item.
+        var fnc4Latched = false;
+
         var i = 0;
         while (i < items.Count)
         {
@@ -137,6 +162,9 @@ internal static class Code128Encoder
                 case ItemKind.CPair:
                     if (currentMode != Mode.C)
                     {
+                        // Code Set C has no FNC4 concept, so a latch left over from a preceding
+                        // Latin-1 run has to switch off before the plunge into Code C.
+                        UnlatchFnc4(symbols, currentMode, ref fnc4Latched);
                         symbols.Add(99); // Code C
                         currentMode = Mode.C;
                     }
@@ -152,30 +180,54 @@ internal static class Code128Encoder
                         currentMode = homeMode;
                     }
 
-                    if (IsCompatible(item.CharValue, currentMode))
+                    var lowChar = LowEquivalent(item.CharValue);
+
+                    if (IsCompatible(lowChar, currentMode))
                     {
-                        symbols.Add(MapValue(item.CharValue, currentMode));
+                        EmitFnc4(items, i, currentMode, symbols, ref fnc4Latched);
+                        symbols.Add(MapValue(lowChar, currentMode));
                         i++;
                         break;
                     }
 
                     var runEnd = i;
                     while (runEnd < items.Count && items[runEnd].Kind == ItemKind.Char
-                                                 && !IsCompatible(items[runEnd].CharValue, currentMode))
+                                                 && !IsCompatible(LowEquivalent(items[runEnd].CharValue), currentMode))
                         runEnd++;
 
                     var otherMode = currentMode == Mode.A ? Mode.B : Mode.A;
-                    if (runEnd - i == 1)
+
+                    // A lone Latin-1 character cannot take the cheap Shift below: Shift's target
+                    // is the single symbol right after it, and FNC4 has no symbol value of its
+                    // own to occupy that slot with (it reuses "switch to A"/"switch to B", both
+                    // already-reserved function codes, not a data value Shift could read through
+                    // otherMode's table). Confirmed against zxing-cpp: emitting FNC4 as if it were
+                    // Shift's target symbol decoded the character with no Latin-1 bit set at all.
+                    // A genuine switch sidesteps this, since FNC4 then keys off the new register
+                    // rather than sharing a slot with Shift.
+                    if (runEnd - i == 1 && item.CharValue <= 127)
                     {
+                        // Shift reads its target symbol through otherMode's table but leaves the
+                        // active register at currentMode, so an FNC4 latch left over from a
+                        // preceding Latin-1 run has to switch off first: a decoder still latched
+                        // would otherwise add 128 to the shifted low character.
+                        UnlatchFnc4(symbols, currentMode, ref fnc4Latched);
                         symbols.Add(98); // Shift: affects only the next symbol
-                        symbols.Add(MapValue(item.CharValue, otherMode));
+                        symbols.Add(MapValue(lowChar, otherMode));
                         i++;
                     }
                     else
                     {
                         symbols.Add(otherMode == Mode.B ? 100 : 101); // Code B / Code A
+
+                        // A genuine switch moves the register to otherMode for every character in
+                        // this run, so FNC4 inside the loop below is keyed to otherMode.
                         for (var k = i; k < runEnd; k++)
-                            symbols.Add(MapValue(items[k].CharValue, otherMode));
+                        {
+                            EmitFnc4(items, k, otherMode, symbols, ref fnc4Latched);
+                            symbols.Add(MapValue(LowEquivalent(items[k].CharValue), otherMode));
+                        }
+
                         i = runEnd;
 
                         if (i < items.Count)
@@ -214,6 +266,53 @@ internal static class Code128Encoder
         foreach (var w in Code128Tables.GetWidths(symbolValue)) runs.Add(w);
     }
 
+    /// <summary>A Latin-1 character's low 128 equivalent (char - 128), or the character itself if it is already 0-127.</summary>
+    private static char LowEquivalent(char c) => c > 127 ? (char)(c - 128) : c;
+
+    /// <summary>
+    /// Emits the FNC4 codes item <paramref name="index"/> needs before its own value symbol, if
+    /// any: nothing for a 0-127 character (beyond switching an active latch back off), a single
+    /// FNC4 for a Latin-1 character with a 0-127 neighbour on both sides, or a doubled FNC4 to
+    /// latch one that starts a run of two or more. <paramref name="registerMode"/> is the A/B
+    /// register in effect when this code is emitted: <c>currentMode</c> itself for a directly
+    /// compatible or Shifted character (a Shift does not move the register), or the target subset
+    /// for a character reached through a genuine Code A/Code B switch.
+    /// </summary>
+    private static void EmitFnc4(List<Item> items, int index, Mode registerMode, List<int> symbols, ref bool fnc4Latched)
+    {
+        var item = items[index];
+        if (item.CharValue <= 127)
+        {
+            UnlatchFnc4(symbols, registerMode, ref fnc4Latched);
+            return;
+        }
+
+        if (fnc4Latched) return; // already latched by an earlier character in this run
+
+        var nextIsHigh = index + 1 < items.Count
+            && items[index + 1].Kind == ItemKind.Char
+            && items[index + 1].CharValue > 127;
+
+        var fnc4Value = registerMode == Mode.A ? 101 : 100;
+        symbols.Add(fnc4Value);
+        if (nextIsHigh)
+        {
+            symbols.Add(fnc4Value); // doubled: latches until the next doubled FNC4
+            fnc4Latched = true;
+        }
+    }
+
+    /// <summary>Switches an active FNC4 latch back off with a doubled FNC4, if one is active.</summary>
+    private static void UnlatchFnc4(List<int> symbols, Mode registerMode, ref bool fnc4Latched)
+    {
+        if (!fnc4Latched) return;
+
+        var fnc4Value = registerMode == Mode.A ? 101 : 100;
+        symbols.Add(fnc4Value);
+        symbols.Add(fnc4Value);
+        fnc4Latched = false;
+    }
+
     private static bool IsCompatible(char c, Mode mode) => mode switch
     {
         Mode.A => c <= 95,   // control (0-31) + common (32-95)
@@ -227,15 +326,18 @@ internal static class Code128Encoder
     /// <summary>
     /// The first character exclusive to one basic subset (a control character for A, or a
     /// lowercase/96-127 character for B) picks the home subset; a data stream with neither
-    /// (only digits, uppercase and common punctuation) defaults to Code Set A.
+    /// (only digits, uppercase and common punctuation) defaults to Code Set A. A Latin-1
+    /// character is judged by its low 128 equivalent, the same value FNC4 will reconstruct it
+    /// from, so e.g. 0x80 (low equivalent 0x00) counts as a Code Set A control character here.
     /// </summary>
     private static bool DetermineUseSubsetB(List<Item> items)
     {
         foreach (var item in items)
         {
             if (item.Kind != ItemKind.Char) continue;
-            if (item.CharValue <= 31) return false;
-            if (item.CharValue >= 96) return true;
+            var low = LowEquivalent(item.CharValue);
+            if (low <= 31) return false;
+            if (low >= 96) return true;
         }
 
         return false;

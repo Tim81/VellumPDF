@@ -1,6 +1,7 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
+using System.Linq;
 using System.Text;
 using VellumPdf.Barcodes.Internal;
 using VellumPdf.Barcodes.Qr;
@@ -176,6 +177,114 @@ public sealed class QrEncoderTests
 
         int[] expected = [196, 35, 39, 119, 235, 215, 231, 226, 93, 23];
         Assert.Equal(expected, ec.Select(b => (int)b));
+    }
+
+    // Thonky's kanji-mode-encoding tutorial page worked example: "茗荷" (0xE4AA then 0x89D7 in
+    // input order, matching the tutorial's own character ordering) as a version 1 Kanji segment.
+    [Fact]
+    public void BitStream_myogaKanjiExample_matchesThonkyModeCountAndData()
+    {
+        var writer = new BitWriter();
+        var segments = new[] { new QrSegment(QrSegmentMode.Kanji, 0, 2, 2) };
+        QrBitStreamBuilder.WriteSegments(
+            writer,
+            "茗荷",
+            segments,
+            mode => (QrTables.ModeIndicator(mode), QrTables.ModeIndicatorBits),
+            mode => QrTables.CharacterCountBits(1, mode),
+            Encoding.Latin1);
+
+        const string expectedBits = "1000" + "00000010" + "1101010101010" + "0011010010111";
+        Assert.Equal(expectedBits.Length, writer.BitCount);
+
+        var bytes = writer.ToArray();
+        var actualBits = new StringBuilder();
+        for (var i = 0; i < expectedBits.Length; i++)
+            actualBits.Append((bytes[i / 8] >> (7 - (i % 8))) & 1);
+        Assert.Equal(expectedBits, actualBits.ToString());
+    }
+
+    [Fact]
+    public void GetMatrix_kanjiContent_encodesSuccessfully()
+    {
+        var qr = new QrCode("点荷茗");
+        Assert.NotNull(qr.GetMatrix());
+    }
+
+    [Fact]
+    public void GetMatrix_kanjiContent_isDenserThanEquivalentByteMode()
+    {
+        // "点荷茗" (three Kanji-eligible characters) fits version 1-H (72 data bits) in Kanji
+        // mode: 12 header bits + 3*13 = 51 data bits. In Byte mode, each character is a 3-byte
+        // UTF-8 sequence, so the same content would need 12 header bits + 9*8 = 84 bits and spill
+        // into version 2. A version 1 result here is only possible if the encoder actually chose
+        // Kanji mode, not just round-tripped through Byte mode.
+        var qr = new QrCode("点荷茗") { ErrorCorrection = QrErrorCorrection.H };
+        var matrix = qr.GetMatrix();
+        Assert.Equal(QrMatrixBuilder.SizeForVersion(1), matrix.Width);
+    }
+
+    [Fact]
+    public void TextEncoding_auto_pureKanjiContent_omitsTheEciHeader()
+    {
+        // "こんにちは世界" is entirely Kanji-eligible, so segmentation produces no Byte-mode run.
+        // Auto still picks UTF-8 (the content isn't Latin-1-representable), but the ECI header
+        // that declares "the following Byte-mode bytes are UTF-8" would have nothing to apply to,
+        // and some decoders (zxing-cpp among them) mishandle an ECI header followed directly by a
+        // Kanji segment. The symbol's first mode indicator must be Kanji's, not ECI's.
+        var qr = new QrCode("こんにちは世界") { ErrorCorrection = QrErrorCorrection.M, Version = 1, Mask = 0 };
+        var matrix = qr.GetMatrix();
+
+        var (_, isFunction) = QrMatrixBuilder.BuildFunctionPatterns(1);
+        var ecInfo = QrTables.GetEcBlockInfo(1, QrErrorCorrection.M);
+        var bits = ReadDataBitsInPlacementOrder(matrix, isFunction, 21, mask: 0, totalBits: ecInfo.TotalDataCodewords * 8);
+
+        Assert.Equal(QrTables.ModeIndicator(QrSegmentMode.Kanji), ReadBitsAsInt(bits, 0, QrTables.ModeIndicatorBits));
+    }
+
+    [Fact]
+    public void TextEncoding_auto_kanjiPlusNonKanjiEligibleNonLatin1Content_stillWritesTheEciHeader()
+    {
+        // "点😀": 点 is Kanji-eligible, but the emoji is not representable in any mode but Byte,
+        // so this content does produce a Byte-mode segment and needs the UTF-8 ECI header to
+        // interpret it. The omission above must not become a blanket "never write ECI" rule.
+        // Also confirms the Kanji/ECI fallback below: with an ECI header in play, 点 is carried
+        // as Byte-mode data alongside the emoji rather than its own Kanji segment.
+        var qr = new QrCode("点😀") { ErrorCorrection = QrErrorCorrection.M, Version = 1, Mask = 0 };
+        var matrix = qr.GetMatrix();
+
+        var (_, isFunction) = QrMatrixBuilder.BuildFunctionPatterns(1);
+        var ecInfo = QrTables.GetEcBlockInfo(1, QrErrorCorrection.M);
+        var bits = ReadDataBitsInPlacementOrder(matrix, isFunction, 21, mask: 0, totalBits: ecInfo.TotalDataCodewords * 8);
+
+        Assert.Equal(QrTables.EciModeIndicator, ReadBitsAsInt(bits, 0, QrTables.ModeIndicatorBits));
+        Assert.Equal(QrTables.ModeIndicator(QrSegmentMode.Byte), ReadBitsAsInt(bits, 12, QrTables.ModeIndicatorBits));
+    }
+
+    [Fact]
+    public void TextEncoding_auto_kanjiRunWouldCoexistWithEciByteSegment_fallsBackToByteModeInstead()
+    {
+        // "点点😀": two adjacent Kanji-eligible characters are cheaper as a Kanji segment than as
+        // Byte in isolation, so naive segmentation would produce Kanji("点点") + Byte(emoji) here.
+        // That is the exact shape zxing-cpp was observed misdecoding whenever a Kanji segment
+        // coexists with an ECI-declared Byte segment in the same symbol
+        // (QrEncoder.SegmentAvoidingEciKanjiMix). The whole message must fall back to Byte mode
+        // instead: a single Byte-mode run under the ECI header, with no Kanji mode indicator
+        // anywhere in the symbol.
+        var qr = new QrCode("点点😀") { ErrorCorrection = QrErrorCorrection.M, Version = 1, Mask = 0 };
+        var matrix = qr.GetMatrix();
+
+        var (_, isFunction) = QrMatrixBuilder.BuildFunctionPatterns(1);
+        var ecInfo = QrTables.GetEcBlockInfo(1, QrErrorCorrection.M);
+        var bits = ReadDataBitsInPlacementOrder(matrix, isFunction, 21, mask: 0, totalBits: ecInfo.TotalDataCodewords * 8);
+
+        Assert.Equal(QrTables.EciModeIndicator, ReadBitsAsInt(bits, 0, QrTables.ModeIndicatorBits));
+        Assert.Equal(QrTables.ModeIndicator(QrSegmentMode.Byte), ReadBitsAsInt(bits, 12, QrTables.ModeIndicatorBits));
+
+        // No Kanji mode indicator anywhere: the byte count indicator covers every UTF-8 byte of
+        // the whole message in one run, not just the emoji's.
+        var byteCount = ReadBitsAsInt(bits, 16, QrTables.CharacterCountBits(1, QrSegmentMode.Byte));
+        Assert.Equal(Encoding.UTF8.GetByteCount("点点😀"), byteCount);
     }
 
     [Fact]
@@ -510,6 +619,228 @@ public sealed class QrEncoderTests
         var qr = new QrCode(content) { Gs1 = QrGs1Mode.ElementString, ErrorCorrection = QrErrorCorrection.H };
         var matrix = qr.GetMatrix();
         Assert.Equal(QrMatrixBuilder.SizeForVersion(1), matrix.Width);
+    }
+
+    // ── Structured Append ────────────────────────────────────────────────
+
+    [Fact]
+    public void StructuredAppendHeader_bitStream_matchesModeSequenceIndicatorAndParity()
+    {
+        // ISO/IEC 18004 §8.1: mode (0011) + sequence indicator (upper nibble = 0-based position,
+        // lower nibble = total - 1) + parity. "Symbol 2 of 3" is index 1 of total 3: upper 0001,
+        // lower 0010.
+        var writer = new BitWriter();
+        QrBitStreamBuilder.WriteStructuredAppendHeader(writer, index: 1, total: 3, parity: 0xA5);
+
+        const string expectedBits = "0011" + "0001" + "0010" + "10100101";
+        Assert.Equal(expectedBits.Length, writer.BitCount);
+
+        var bytes = writer.ToArray();
+        var actualBits = new StringBuilder();
+        for (var i = 0; i < expectedBits.Length; i++)
+            actualBits.Append((bytes[i / 8] >> (7 - (i % 8))) & 1);
+        Assert.Equal(expectedBits, actualBits.ToString());
+    }
+
+    [Fact]
+    public void StructuredAppend_twoPartMessage_parityIsXorOfConcatenatedBytes()
+    {
+        // "HI" + "!" = "HI!" -> 0x48 ^ 0x49 ^ 0x21 = 0x20, hand-derived.
+        var symbols = QrCode.StructuredAppend(["HI", "!"]);
+        Assert.Equal(2, symbols.Count);
+        Assert.All(symbols, s => Assert.Equal((byte)0x20, s.StructuredAppendInfo!.Value.Parity));
+    }
+
+    [Fact]
+    public void StructuredAppend_threePartMessage_parityIsXorOfConcatenatedBytes()
+    {
+        // "A" + "BC" + "D" = "ABCD" -> 0x41 ^ 0x42 ^ 0x43 ^ 0x44 = 0x04, hand-derived.
+        var symbols = QrCode.StructuredAppend(["A", "BC", "D"]);
+        Assert.Equal(3, symbols.Count);
+        Assert.All(symbols, s => Assert.Equal((byte)0x04, s.StructuredAppendInfo!.Value.Parity));
+    }
+
+    [Fact]
+    public void StructuredAppend_stampsEachSymbolWithItsIndexAndTheSharedTotal()
+    {
+        var symbols = QrCode.StructuredAppend(["A", "B", "C"]);
+        for (var i = 0; i < symbols.Count; i++)
+        {
+            var info = symbols[i].StructuredAppendInfo;
+            Assert.NotNull(info);
+            Assert.Equal(i, info!.Value.Index);
+            Assert.Equal(3, info.Value.Total);
+        }
+    }
+
+    [Fact]
+    public void StructuredAppend_sixteenParts_isAccepted()
+    {
+        var parts = Enumerable.Range(0, 16).Select(i => i.ToString()).ToArray();
+        var symbols = QrCode.StructuredAppend(parts);
+        Assert.Equal(16, symbols.Count);
+        Assert.Equal(0, symbols[0].StructuredAppendInfo!.Value.Index);
+        Assert.Equal(15, symbols[15].StructuredAppendInfo!.Value.Index);
+        Assert.All(symbols, s => Assert.Equal(16, s.StructuredAppendInfo!.Value.Total));
+    }
+
+    [Fact]
+    public void StructuredAppend_zeroParts_throwsArgumentException() =>
+        Assert.Throws<ArgumentException>(() => QrCode.StructuredAppend(Array.Empty<string>()));
+
+    [Fact]
+    public void StructuredAppend_seventeenParts_throwsArgumentException()
+    {
+        var parts = Enumerable.Range(0, 17).Select(i => i.ToString()).ToArray();
+        Assert.Throws<ArgumentException>(() => QrCode.StructuredAppend(parts));
+    }
+
+    [Fact]
+    public void StructuredAppend_headerIsWrittenBeforeTheFirstDataModeIndicator()
+    {
+        // Force a fixed version/mask on the first symbol of a 2-part set so the encoded bits can
+        // be read back positionally: the SA header (20 bits) must precede the data segment's own
+        // mode indicator, the same ordering the GS1 FNC1-first-position tests above check for
+        // their marker.
+        var symbols = QrCode.StructuredAppend(["HELLO", "WORLD"]);
+        var first = symbols[0];
+        var withForcedVersion = new QrCode(first.Text!)
+        {
+            ErrorCorrection = QrErrorCorrection.M,
+            Version = 1,
+            Mask = 0,
+            StructuredAppendInfo = first.StructuredAppendInfo,
+        };
+        var matrix = withForcedVersion.GetMatrix();
+
+        var (_, isFunction) = QrMatrixBuilder.BuildFunctionPatterns(1);
+        var ecInfo = QrTables.GetEcBlockInfo(1, QrErrorCorrection.M);
+        var bits = ReadDataBitsInPlacementOrder(matrix, isFunction, 21, mask: 0, totalBits: ecInfo.TotalDataCodewords * 8);
+
+        Assert.Equal(QrTables.StructuredAppendModeIndicator, ReadBitsAsInt(bits, 0, 4));
+        var info = first.StructuredAppendInfo!.Value;
+        Assert.Equal((info.Index << 4) | (info.Total - 1), ReadBitsAsInt(bits, 4, 8));
+        Assert.Equal(info.Parity, (byte)ReadBitsAsInt(bits, 12, 8));
+        Assert.Equal(QrTables.ModeIndicator(QrSegmentMode.Alphanumeric), ReadBitsAsInt(bits, 20, 4));
+    }
+
+    [Fact]
+    public void StructuredAppend_autoSplit_dividesContentIntoRoughlyEqualParts()
+    {
+        var symbols = QrCode.StructuredAppend("ABCDEFGHIJ", symbolCount: 3);
+        Assert.Equal(3, symbols.Count);
+        // 10 runes over 3 parts: base size 3, remainder 1 -> the first part gets the extra rune.
+        Assert.Equal("ABCD", symbols[0].Text);
+        Assert.Equal("EFG", symbols[1].Text);
+        Assert.Equal("HIJ", symbols[2].Text);
+    }
+
+    [Fact]
+    public void StructuredAppend_autoSplit_neverSplitsASurrogatePair()
+    {
+        // Two astral-plane emoji, each a UTF-16 surrogate pair: splitting on code units instead
+        // of runes would cut the first emoji in half.
+        const string content = "😀😃";
+        var symbols = QrCode.StructuredAppend(content, symbolCount: 2);
+        Assert.Equal(2, symbols.Count);
+        Assert.Equal("😀", symbols[0].Text);
+        Assert.Equal("😃", symbols[1].Text);
+        Assert.Equal(content, string.Concat(symbols.Select(s => s.Text)));
+    }
+
+    [Fact]
+    public void StructuredAppend_autoSplit_symbolCountOutOfRange_throwsArgumentException() =>
+        Assert.Throws<ArgumentException>(() => QrCode.StructuredAppend("hello", symbolCount: 0));
+
+    [Fact]
+    public void StructuredAppend_autoSplit_unpairedSurrogate_throwsFormatException() =>
+        Assert.Throws<FormatException>(() => QrCode.StructuredAppend("\uD800", symbolCount: 2));
+
+    [Fact]
+    public void StructuredAppend_multibyteMessage_parityIsXorOfResolvedUtf8BytesAndEverySymbolSharesTheConcreteEncoding()
+    {
+        // "é" (Latin-1-representable alone) + "中" (not): the concatenated message "é中" is not
+        // Latin-1-representable as a whole, so Auto resolves UTF-8 with an ECI header for the
+        // whole set. UTF-8 bytes: C3 A9 (é) + E4 B8 AD (中) -> XOR = 0x9B, hand-derived.
+        var symbols = QrCode.StructuredAppend(["é", "中"]);
+        Assert.Equal(2, symbols.Count);
+        Assert.All(symbols, s => Assert.Equal((byte)0x9B, s.StructuredAppendInfo!.Value.Parity));
+
+        // Every symbol must be stamped with the same concrete encoding the parity was computed
+        // under, not Auto. Otherwise a symbol could independently resolve Latin-1 (since "é"
+        // alone fits) and desync from the shared parity basis.
+        Assert.All(symbols, s => Assert.Equal(QrTextEncoding.Utf8Eci, s.TextEncoding));
+    }
+
+    [Fact]
+    public void StructuredAppend_pureKanjiPart_sharesTheUtf8ParityAndStillEncodesThatPartInKanjiMode()
+    {
+        // "Grüße " (Latin-1-representable alone) + "世界" (Kanji-eligible, not Latin-1): the
+        // concatenated message is not Latin-1-representable as a whole, so Auto resolves UTF-8
+        // with an ECI header for the set, and the shared parity is the XOR of the whole message's
+        // UTF-8 bytes (ISO/IEC 18004 §8.1). UTF-8 bytes of "Grüße 世界": 47 72 C3 BC C3 9F 65 20
+        // E4 B8 96 E7 95 8C -> XOR = 0x67, hand-derived.
+        //
+        // The "世界" symbol itself has no Byte-mode run for an ECI header to apply to, so
+        // QrEncoder still carries it in Kanji mode (13-bit Shift-JIS codewords per character),
+        // the same omission TextEncoding_auto_pureKanjiContent_omitsTheEciHeader documents for a
+        // standalone symbol. That symbol's parity contribution was counted as UTF-8 bytes even
+        // though the part is transmitted in Kanji; see the remark on
+        // QrCode.StructuredAppend(IReadOnlyList{string}, QrErrorCorrection, QrTextEncoding) for
+        // why that shared basis is deliberate and self-consistent.
+        var symbols = QrCode.StructuredAppend(["Grüße ", "世界"]);
+        Assert.Equal(2, symbols.Count);
+        Assert.All(symbols, s => Assert.Equal((byte)0x67, s.StructuredAppendInfo!.Value.Parity));
+
+        // Force a fixed version/mask on the Kanji part so its encoded bits can be read back
+        // positionally, mirroring StructuredAppend_headerIsWrittenBeforeTheFirstDataModeIndicator.
+        var kanjiPart = symbols[1];
+        var withForcedVersion = new QrCode(kanjiPart.Text!)
+        {
+            ErrorCorrection = kanjiPart.ErrorCorrection,
+            TextEncoding = kanjiPart.TextEncoding,
+            StructuredAppendInfo = kanjiPart.StructuredAppendInfo,
+            Version = 1,
+            Mask = 0,
+        };
+        var matrix = withForcedVersion.GetMatrix();
+
+        var (_, isFunction) = QrMatrixBuilder.BuildFunctionPatterns(1);
+        var ecInfo = QrTables.GetEcBlockInfo(1, kanjiPart.ErrorCorrection);
+        var bits = ReadDataBitsInPlacementOrder(matrix, isFunction, 21, mask: 0, totalBits: ecInfo.TotalDataCodewords * 8);
+
+        // The 20-bit Structured Append header comes first; the mode indicator right after it must
+        // be Kanji's, not ECI's or Byte's, confirming this part actually went through Kanji mode
+        // rather than silently falling back to Byte mode under the set's shared UTF-8 encoding.
+        Assert.Equal(QrTables.ModeIndicator(QrSegmentMode.Kanji), ReadBitsAsInt(bits, 20, QrTables.ModeIndicatorBits));
+    }
+
+    [Fact]
+    public void StructuredAppend_forcedVersionOverflowsWithSaHeader_throwsFormatException()
+    {
+        // Find the largest alphanumeric content that exactly fits version 1-L without Structured
+        // Append, then confirm the same forced version no longer fits once the SA header's 20
+        // bits (ISO/IEC 18004 §8.1) are added on top, mirroring
+        // Pdf417EncoderTests.MacroSet_getMatrix_needsMoreCapacityThanTheSameContentWithoutMacro.
+        var ecInfo = QrTables.GetEcBlockInfo(1, QrErrorCorrection.L);
+        var capacityBits = ecInfo.TotalDataCodewords * 8;
+        var headerBits = QrTables.ModeIndicatorBits + QrTables.CharacterCountBits(1, QrSegmentMode.Alphanumeric);
+
+        var length = 0;
+        while (headerBits + SpecDataBits(QrSegmentMode.Alphanumeric, length + 1) <= capacityBits) length++;
+        var content = new string('A', length);
+
+        var plain = new QrCode(content) { Version = 1, ErrorCorrection = QrErrorCorrection.L };
+        Assert.NotNull(plain.GetMatrix());
+
+        var symbols = QrCode.StructuredAppend([content], QrErrorCorrection.L, QrTextEncoding.Auto);
+        var withForcedVersion = new QrCode(content)
+        {
+            ErrorCorrection = QrErrorCorrection.L,
+            Version = 1,
+            StructuredAppendInfo = symbols[0].StructuredAppendInfo,
+        };
+        Assert.Throws<FormatException>(() => withForcedVersion.GetMatrix());
     }
 
     /// <summary>ISO/IEC 18004 Table 2/3's mode/count-to-data-bit-width rule, reimplemented independently of <see cref="QrEncoder"/> for decode-side test assertions.</summary>

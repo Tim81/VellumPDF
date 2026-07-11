@@ -3,7 +3,7 @@
 
 namespace VellumPdf.Barcodes.Qr;
 
-/// <summary>The three data-encoding modes this encoder supports for QR and Micro QR (Kanji, ISO/IEC 18004 §7.4.6, is omitted).</summary>
+/// <summary>The data-encoding modes this encoder supports for QR and Micro QR.</summary>
 internal enum QrSegmentMode
 {
     /// <summary>Digits 0-9 only, packed three to ten bits (ISO/IEC 18004 §7.4.3).</summary>
@@ -14,6 +14,14 @@ internal enum QrSegmentMode
 
     /// <summary>Arbitrary bytes, one codeword per byte (§7.4.5).</summary>
     Byte,
+
+    /// <summary>
+    /// Shift-JIS X 0208 double-byte characters from the two blocks 0x8140-0x9FFC and
+    /// 0xE040-0xEBBF, packed thirteen bits each (§7.4.6). QR only; Micro QR does not offer this
+    /// mode, and it must stay last in this enum so the full-size segmenter's DP (which indexes its
+    /// mode dimension with <c>(int)mode</c>) can add it without disturbing Micro QR's indices.
+    /// </summary>
+    Kanji,
 }
 
 /// <summary>
@@ -69,11 +77,18 @@ internal static class QrTables
         QrSegmentMode.Numeric => 0b0001,
         QrSegmentMode.Alphanumeric => 0b0010,
         QrSegmentMode.Byte => 0b0100,
+        QrSegmentMode.Kanji => 0b1000,
         _ => throw new ArgumentOutOfRangeException(nameof(mode), mode, null),
     };
 
     /// <summary>The 4-bit QR Code ECI mode indicator (Table 2).</summary>
     internal const int EciModeIndicator = 0b0111;
+
+    /// <summary>
+    /// The 4-bit QR Code Structured Append mode indicator (Table 2; §8.1). Written first in the
+    /// bit stream, ahead of any ECI header and the FNC1-in-first-position marker.
+    /// </summary>
+    internal const int StructuredAppendModeIndicator = 0b0011;
 
     /// <summary>
     /// The 4-bit QR Code FNC1-in-first-position mode indicator (Table 2; §7.4.8.2), marking the
@@ -105,6 +120,9 @@ internal static class QrTables
             (QrSegmentMode.Alphanumeric, _) => 13,
             (QrSegmentMode.Byte, 0) => 8,
             (QrSegmentMode.Byte, _) => 16,
+            (QrSegmentMode.Kanji, 0) => 8,
+            (QrSegmentMode.Kanji, 1) => 10,
+            (QrSegmentMode.Kanji, _) => 12,
             _ => throw new ArgumentOutOfRangeException(nameof(mode), mode, null),
         };
     }

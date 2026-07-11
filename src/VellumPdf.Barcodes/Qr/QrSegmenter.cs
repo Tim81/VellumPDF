@@ -13,15 +13,17 @@ namespace VellumPdf.Barcodes.Qr;
 internal readonly record struct QrSegment(QrSegmentMode Mode, int CharStart, int CharLength, int RuneCount);
 
 /// <summary>
-/// Splits a string into minimal-cost numeric/alphanumeric/byte segments (Kanji mode, ISO/IEC
-/// 18004 §7.4.6, is not implemented — non-Latin-1 Kanji content is always carried in byte mode).
-/// A per-rune dynamic program picks, for every position, the cheapest way to either continue the
-/// current mode's run or start a new one, since splitting a maximal same-mode run can never help
-/// (it only adds another mode/count-indicator header) — so this per-character choice is already
-/// globally optimal for the header-and-data cost model used here.
+/// Splits a string into minimal-cost numeric/alphanumeric/byte/Kanji segments. A per-rune dynamic
+/// program picks, for every position, the cheapest way to either continue the current mode's run
+/// or start a new one, since splitting a maximal same-mode run can never help (it only adds
+/// another mode/count-indicator header) — so this per-character choice is already globally optimal
+/// for the header-and-data cost model used here.
 /// </summary>
 internal static class QrSegmenter
 {
+    /// <summary>The number of modes the DP considers; must match <see cref="QrSegmentMode"/>'s member count.</summary>
+    private const int ModeCount = 4;
+
     /// <summary>
     /// Segments <paramref name="content"/> for a specific symbol configuration.
     /// </summary>
@@ -30,13 +32,20 @@ internal static class QrSegmenter
     /// <param name="byteEncoding">The encoding used to size (and, later, encode) byte-mode segments.</param>
     /// <param name="allowAlphanumeric">Whether alphanumeric mode is available (false restricts eligible alphanumeric characters to byte/numeric mode).</param>
     /// <param name="allowByte">Whether byte mode is available.</param>
+    /// <param name="allowKanji">
+    /// Whether Kanji mode (ISO/IEC 18004 §7.4.6) is available. Only offered on the plain-text
+    /// path: GS1 element-string content restricts itself to numeric/byte (see
+    /// <c>QrEncoder.PrepareGs1ElementStringContent</c>), and byte-array content bypasses
+    /// segmentation entirely.
+    /// </param>
     /// <exception cref="FormatException">A character is not representable in any allowed mode.</exception>
     internal static IReadOnlyList<QrSegment> Segment(
         string content,
         Func<QrSegmentMode, int> headerBits,
         Encoding byteEncoding,
         bool allowAlphanumeric,
-        bool allowByte)
+        bool allowByte,
+        bool allowKanji)
     {
         if (content.Length == 0) return [];
 
@@ -51,11 +60,11 @@ internal static class QrSegmenter
         var n = runes.Count;
         // Array order must match the QrSegmentMode member order: the DP below indexes the
         // second dimension with (int)mode.
-        var modes = new[] { QrSegmentMode.Numeric, QrSegmentMode.Alphanumeric, QrSegmentMode.Byte };
+        var modes = new[] { QrSegmentMode.Numeric, QrSegmentMode.Alphanumeric, QrSegmentMode.Byte, QrSegmentMode.Kanji };
 
         // Per-rune eligibility and (for byte mode) bit cost, since byte width varies with the
         // encoding and the code point (e.g. UTF-8 multi-byte sequences).
-        var eligible = new bool[n, 3];
+        var eligible = new bool[n, ModeCount];
         var byteRuneBits = new int[n];
         Span<char> chars = stackalloc char[2];
         for (var i = 0; i < n; i++)
@@ -63,6 +72,7 @@ internal static class QrSegmenter
             var rune = runes[i];
             eligible[i, (int)QrSegmentMode.Numeric] = rune.Value is >= '0' and <= '9';
             eligible[i, (int)QrSegmentMode.Alphanumeric] = allowAlphanumeric && rune.IsBmp && QrTables.AlphanumericValue((char)rune.Value) >= 0;
+            eligible[i, (int)QrSegmentMode.Kanji] = allowKanji && ShiftJisTable.TryGetShiftJis(rune.Value, out _);
 
             if (allowByte)
             {
@@ -71,19 +81,19 @@ internal static class QrSegmenter
                 eligible[i, (int)QrSegmentMode.Byte] = true;
             }
 
-            if (!eligible[i, 0] && !eligible[i, 1] && !eligible[i, 2])
+            if (!eligible[i, 0] && !eligible[i, 1] && !eligible[i, 2] && !eligible[i, 3])
                 throw new FormatException($"Character '{rune}' at position {runeCharStart[i]} cannot be encoded in any mode available to this symbol.");
         }
 
         // dp[i, m] = minimum bits to encode runes[0..i] such that rune i is encoded in mode m;
         // isStart[i, m] = whether rune i begins a new segment in mode m (vs. continuing rune i-1's run).
-        var dp = new int[n, 3];
-        var runLength = new int[n, 3];
-        var isStart = new bool[n, 3];
+        var dp = new int[n, ModeCount];
+        var runLength = new int[n, ModeCount];
+        var isStart = new bool[n, ModeCount];
 
         for (var i = 0; i < n; i++)
         {
-            for (var mi = 0; mi < 3; mi++)
+            for (var mi = 0; mi < ModeCount; mi++)
             {
                 var mode = modes[mi];
                 if (!eligible[i, mi])
@@ -151,13 +161,14 @@ internal static class QrSegmenter
         QrSegmentMode.Numeric => positionInRun % 3 == 0 ? 4 : 3,
         QrSegmentMode.Alphanumeric => positionInRun % 2 == 0 ? 6 : 5,
         QrSegmentMode.Byte => byteBits,
+        QrSegmentMode.Kanji => 13, // §7.4.6: every Kanji character is a fixed 13-bit codeword.
         _ => throw new ArgumentOutOfRangeException(nameof(mode), mode, null),
     };
 
     private static int MinReachable(int[,] dp, int i)
     {
         var min = int.MaxValue;
-        for (var mi = 0; mi < 3; mi++)
+        for (var mi = 0; mi < ModeCount; mi++)
             if (dp[i, mi] < min) min = dp[i, mi];
         return min;
     }
@@ -165,7 +176,7 @@ internal static class QrSegmenter
     private static int ArgMin(int[,] dp, int i)
     {
         var best = 0;
-        for (var mi = 1; mi < 3; mi++)
+        for (var mi = 1; mi < ModeCount; mi++)
             if (dp[i, mi] < dp[i, best]) best = mi;
         return best;
     }

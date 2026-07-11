@@ -6,6 +6,37 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.11.0] - 2026-07-11
+
+### Added
+
+- **QR Kanji mode** (ISO/IEC 18004 §7.4.6) — `QrCode` now packs Shift-JIS X 0208 characters at a
+  fixed 13 bits each instead of falling back to byte mode, shrinking the symbol for Japanese
+  content. No API change: the segmenter chooses Kanji mode automatically wherever it beats the
+  alternatives. The Unicode-to-Shift-JIS table is generated clean-room from the Unicode
+  Consortium's SHIFTJIS.TXT mapping and filtered to code points that round-trip through a CP932
+  decoder, so the encoder always agrees with what a real decoder reads back. (#155)
+- **Compact (Truncated) PDF417** (ISO/IEC 15438) — a new `Pdf417Barcode.Compact` property drops
+  the right row-indicator column and replaces the stop pattern with a single dark module,
+  narrowing the symbol at the cost of the error-correction redundancy those dropped elements
+  normally provide near the right edge. (#155)
+- **QR Structured Append** (ISO/IEC 18004 §8) — `QrCode.StructuredAppend(...)` splits a message
+  across up to 16 linked QR Code symbols, each stamped with the shared sequence/parity header a
+  reading application needs to reassemble them. An explicit-parts overload takes a pre-split
+  `IReadOnlyList<string>`; an auto-split overload takes a single string plus a symbol count. (#155)
+- **Macro PDF417** (ISO/IEC 15438 Annex H) — `Pdf417Barcode.MacroSet(...)` splits a larger payload
+  across linked PDF417 symbols, each carrying a Macro control block (file id and segment index,
+  plus optional fields — file name, timestamp, sender, addressee, file size, checksum — via
+  `MacroPdf417Options`) appended after its data codewords. (#155)
+- **Code 128 FNC4 / extended Latin-1** (ISO/IEC 15417) — plain `Code128Barcode` now accepts the
+  full Latin-1 range (code points 0-255) instead of throwing above 127. A lone extended character
+  is reached with a single FNC4, and a run of two or more latches FNC4 with a doubled FNC4 until a
+  second doubled FNC4 switches it back off. No API change: GS1-128 (`Gs1 = true`) still rejects
+  any character above 127, since the GS1 General Specifications disallow FNC4 in a GS1-128
+  symbol. (#155)
+- All eight packages republish at **1.11.0** in lockstep, even though only `VellumPdf.Barcodes`
+  changed — the repository versions every package together rather than independently.
+
 ## [1.10.0] - 2026-07-07
 
 ### Added
@@ -631,7 +662,8 @@ few small additions. No public API was removed.
   headers, and no unbounded allocations driven by attacker-controlled length
   fields.
 
-[Unreleased]: https://github.com/Tim81/VellumPDF/compare/v1.10.0...HEAD
+[Unreleased]: https://github.com/Tim81/VellumPDF/compare/v1.11.0...HEAD
+[1.11.0]: https://github.com/Tim81/VellumPDF/releases/tag/v1.11.0
 [1.10.0]: https://github.com/Tim81/VellumPDF/releases/tag/v1.10.0
 [1.9.0]: https://github.com/Tim81/VellumPDF/releases/tag/v1.9.0
 [1.8.0]: https://github.com/Tim81/VellumPDF/releases/tag/v1.8.0

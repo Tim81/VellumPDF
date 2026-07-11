@@ -3,9 +3,15 @@
 #
 # Decode oracle for the VellumPdf.Barcodes test suite. Reads an image path from
 # argv[1], decodes every barcode found with zxing-cpp, and prints one line per
-# result: format<TAB>content_type<TAB>text. Binary content is not reliably
-# representable as text, so its "text" column is a hex digest of the raw bytes
-# instead.
+# result: format<TAB>content_type<TAB>text<TAB>file_id<TAB>bytes_hex. Binary
+# content is not reliably representable as text, so its "text" column is a hex
+# digest of the raw bytes instead. The fourth column is Macro PDF417's decoded
+# file id (zxing-cpp's "FileId" extra field) when the symbol carries one, empty
+# otherwise. The fifth column is always a hex digest of result.bytes: for a
+# Code 128 FNC4 (extended Latin-1) symbol, result.text mangles bytes above 127
+# into replacement characters, but result.bytes carries them intact, so that
+# column is what confirms a Latin-1 round-trip. Both are appended columns so
+# existing 3- and 4-column callers still work by reading only their own fields.
 #
 # Exit codes: 0 on success (including zero barcodes found, a valid outcome for
 # a page with no symbols), 3 when zxing-cpp or Pillow is not installed (the C#
@@ -38,7 +44,9 @@ def main() -> int:
     for result in results:
         content_type = result.content_type.name
         text = result.bytes.hex() if content_type == "Binary" else result.text
-        print(f"{result.format.name}\t{content_type}\t{text}")
+        file_id = (result.extra or {}).get("FileId", "")
+        bytes_hex = result.bytes.hex()
+        print(f"{result.format.name}\t{content_type}\t{text}\t{file_id}\t{bytes_hex}")
 
     return 0
 

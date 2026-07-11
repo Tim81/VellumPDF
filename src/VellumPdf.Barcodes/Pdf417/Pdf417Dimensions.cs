@@ -23,8 +23,15 @@ internal static class Pdf417Dimensions
     /// <param name="TotalCodewords">The total codewords in the symbol: <c>Columns * Rows</c>.</param>
     internal readonly record struct Result(int Columns, int Rows, int TotalCodewords);
 
-    /// <summary>The overall symbol width, in modules, for the given number of data columns (start + left row indicator + data + right row indicator + stop).</summary>
-    internal static int WidthModules(int columns) => ((columns + 3) * Pdf417Tables.PatternModules) + Pdf417Tables.StopPatternModules;
+    /// <summary>
+    /// The overall symbol width, in modules, for the given number of data columns. The standard
+    /// format is start + left row indicator + data + right row indicator + stop. The Compact
+    /// (Truncated) format (ISO/IEC 15438) drops the right row indicator and shrinks the stop
+    /// pattern to a single dark module: start + left row indicator + data + a 1-module stop.
+    /// </summary>
+    internal static int WidthModules(int columns, bool compact = false) => compact
+        ? ((columns + 2) * Pdf417Tables.PatternModules) + Pdf417Tables.CompactStopPatternModules
+        : ((columns + 3) * Pdf417Tables.PatternModules) + Pdf417Tables.StopPatternModules;
 
     /// <summary>
     /// Resolves the column and row counts for a symbol carrying <paramref name="dataCodewords"/>
@@ -37,9 +44,10 @@ internal static class Pdf417Dimensions
     /// <param name="rows">A forced row count (3-90), or <c>null</c> to solve it.</param>
     /// <param name="preferredAspectRatio">The width-to-height ratio to aim for when both <paramref name="columns"/> and <paramref name="rows"/> are unset.</param>
     /// <param name="rowHeightModules">The height of one row, in modules, used to evaluate the aspect ratio.</param>
+    /// <param name="compact">Whether the symbol will be rendered in the Compact (Truncated) format, which narrows every candidate width (see <see cref="WidthModules"/>) and so shifts which column count comes closest to <paramref name="preferredAspectRatio"/>.</param>
     /// <exception cref="ArgumentException"><paramref name="columns"/> or <paramref name="rows"/> is set but outside its valid range.</exception>
     /// <exception cref="FormatException">No column/row combination within range holds <paramref name="dataCodewords"/> plus <paramref name="ecCodewords"/> codewords within the 928-codeword limit.</exception>
-    internal static Result Resolve(int dataCodewords, int ecCodewords, int? columns, int? rows, double preferredAspectRatio, double rowHeightModules)
+    internal static Result Resolve(int dataCodewords, int ecCodewords, int? columns, int? rows, double preferredAspectRatio, double rowHeightModules, bool compact = false)
     {
         if (columns is { } explicitColumns && explicitColumns is < MinColumns or > MaxColumns)
             throw new ArgumentException($"Columns must be between {MinColumns} and {MaxColumns} (was {explicitColumns}).", nameof(columns));
@@ -88,7 +96,7 @@ internal static class Pdf417Dimensions
             var total = candidateColumns * neededRows;
             if (total > MaxTotalCodewords) continue;
 
-            var aspect = WidthModules(candidateColumns) / (neededRows * rowHeightModules);
+            var aspect = WidthModules(candidateColumns, compact) / (neededRows * rowHeightModules);
             var score = Math.Abs(aspect - preferredAspectRatio);
             if (score < bestScore)
             {
