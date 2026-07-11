@@ -6,6 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **QR Kanji mode** (ISO/IEC 18004 §7.4.6) — `QrCode` now packs Shift-JIS X 0208 characters at a
+  fixed 13 bits each instead of falling back to byte mode, shrinking the symbol for Japanese
+  content. No API change: the segmenter chooses Kanji mode automatically wherever it beats the
+  alternatives. The Unicode-to-Shift-JIS table is generated clean-room from the Unicode
+  Consortium's SHIFTJIS.TXT mapping and filtered to code points that round-trip through a CP932
+  decoder, so the encoder always agrees with what a real decoder reads back. (#155)
+- **Compact (Truncated) PDF417** (ISO/IEC 15438) — a new `Pdf417Barcode.Compact` property drops
+  the right row-indicator column and replaces the stop pattern with a single dark module,
+  narrowing the symbol at the cost of the error-correction redundancy those dropped elements
+  normally provide near the right edge. (#155)
+- **QR Structured Append** (ISO/IEC 18004 §8) — `QrCode.StructuredAppend(...)` splits a message
+  across up to 16 linked QR Code symbols, each stamped with the shared sequence/parity header a
+  reading application needs to reassemble them. An explicit-parts overload takes a pre-split
+  `IReadOnlyList<string>`; an auto-split overload takes a single string plus a symbol count. (#155)
+- **Macro PDF417** (ISO/IEC 15438 Annex H) — `Pdf417Barcode.MacroSet(...)` splits a larger payload
+  across linked PDF417 symbols, each carrying a Macro control block (file id and segment index,
+  plus optional fields — file name, timestamp, sender, addressee, file size, checksum — via
+  `MacroPdf417Options`) appended after its data codewords. (#155)
+
 ## [1.10.0] - 2026-07-07
 
 ### Added
