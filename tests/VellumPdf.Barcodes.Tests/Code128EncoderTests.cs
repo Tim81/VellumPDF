@@ -65,14 +65,31 @@ public sealed class Code128EncoderTests
     [Fact]
     public void GroupSeparatorCharacter_becomesFnc1()
     {
-        var (_, dataSymbols, _) = Code128Encoder.EncodeSymbols(new Code128Barcode("A\u001DB"));
+        var (_, dataSymbols, _) = Code128Encoder.EncodeSymbols(new Code128Barcode("AB"));
         Assert.Contains(102, dataSymbols);
     }
 
     [Fact]
-    public void Validate_rejectsCharactersAboveAscii()
+    public void Validate_acceptsLatin1Content()
     {
-        Assert.Throws<ArgumentException>(() => new Code128Barcode("café"));
+        // #155: 128-255 is now valid, carried with FNC4; this used to throw.
+        var barcode = new Code128Barcode("café");
+        Assert.Equal("café", barcode.Content);
+    }
+
+    [Fact]
+    public void Validate_rejectsCharactersAboveLatin1()
+    {
+        Assert.Throws<ArgumentException>(() => new Code128Barcode("cafĀ")); // U+0100 is 256, one past Latin-1
+    }
+
+    [Fact]
+    public void Gs1_rejectsLatin1Content()
+    {
+        // The GS1 General Specifications reserve FNC4 for plain Code 128; a GS1-128 symbol
+        // cannot carry it, so extended Latin-1 content throws rather than silently dropping FNC4.
+        Assert.Throws<ArgumentException>(() =>
+            Code128Encoder.EncodeSymbols(new Code128Barcode("café") { Gs1 = true }));
     }
 
     [Fact]
@@ -124,6 +141,59 @@ public sealed class Code128EncoderTests
         Assert.Equal(a.DataSymbols, b.DataSymbols);
         Assert.Equal(a.StartValue, b.StartValue);
         Assert.Equal(a.Check, b.Check);
+    }
+
+    [Fact]
+    public void Fnc4_singleHighChar_isALoneShift()
+    {
+        // e-acute (U+00E9) has low equivalent 'i' (0x69), a Code Set B character, so home mode
+        // is B and Start B is chosen; a single Latin-1 character shifts rather than latching.
+        var (startValue, dataSymbols, check) = Code128Encoder.EncodeSymbols(new Code128Barcode("\u00E9"));
+
+        Assert.Equal(104, startValue); // Start Code B
+        Assert.Equal([100, 73], dataSymbols); // FNC4 in B (100), then 'i' mapped in B (0x69 - 32)
+        Assert.Equal(41, check);
+    }
+
+    [Fact]
+    public void Fnc4_runOfTwoHighChars_latches()
+    {
+        // u-umlaut (0xFC, low '|' 0x7C) then sharp s (0xDF, low '_' 0x5F): two consecutive
+        // Latin-1 characters latch FNC4 with a doubled code instead of shifting each one apart.
+        var (startValue, dataSymbols, check) = Code128Encoder.EncodeSymbols(new Code128Barcode("\u00FC\u00DF"));
+
+        Assert.Equal(104, startValue); // Start Code B
+        Assert.Equal([100, 100, 92, 63], dataSymbols); // doubled FNC4 (latch on), then '|', '_' mapped in B
+        Assert.Equal(5, check);
+    }
+
+    [Fact]
+    public void Fnc4_lowHighLowMix_shiftsOnlyTheMiddleCharacter()
+    {
+        // A (low), e-acute (high, low 'i' still fits Code B), B (low): no A/B switching at all,
+        // just a single FNC4 shift around the middle character.
+        var (startValue, dataSymbols, check) = Code128Encoder.EncodeSymbols(new Code128Barcode("A\u00E9B"));
+
+        Assert.Equal(104, startValue); // Start Code B: e-acute's low equivalent forces B
+        Assert.Equal([33, 100, 73, 34], dataSymbols); // 'A', FNC4, 'i', 'B', all mapped/emitted in B
+        Assert.Equal(74, check);
+    }
+
+    [Fact]
+    public void Fnc4_controlRangeHighChar_needsCodeASwitch_notAShift()
+    {
+        // 'a' forces home mode B; U+0081 (low equivalent 0x01, a control character) only exists
+        // in Code Set A, so unlike the AeB case above this needs an actual subset switch. A cheap
+        // Shift cannot carry FNC4 too, since FNC4 has no data-value slot of its own for Shift to
+        // read through Code A's table: it reuses the "switch to A"/"switch to B" function codes,
+        // which sit outside the data range Shift's single-symbol scope covers. Confirmed against
+        // zxing-cpp: emitting FNC4 as if it were Shift's target symbol decoded the control
+        // character with no Latin-1 bit set. A real switch to Code A sidesteps this.
+        var (startValue, dataSymbols, check) = Code128Encoder.EncodeSymbols(new Code128Barcode("a\u0081"));
+
+        Assert.Equal(104, startValue); // Start Code B: 'a' forces it
+        Assert.Equal([65, 101, 101, 65], dataSymbols); // 'a' in B, switch to A, FNC4 in A, control char in A
+        Assert.Equal(7, check);
     }
 
     [Fact]

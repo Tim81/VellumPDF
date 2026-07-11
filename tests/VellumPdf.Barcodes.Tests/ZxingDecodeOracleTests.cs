@@ -50,9 +50,12 @@ public sealed class ZxingDecodeOracleTests : IDisposable
     /// <summary>
     /// One decoded barcode. <see cref="FileId"/> is <c>eng/barcode-decode.py</c>'s appended fourth
     /// column: zxing-cpp's decoded Macro PDF417 file id (see the Macro PDF417 tests below), empty
-    /// for every other symbology.
+    /// for every other symbology. <see cref="BytesHex"/> is the fifth column, a hex digest of
+    /// zxing-cpp's raw decoded bytes for every symbology (unlike <see cref="Text"/>, which mangles
+    /// bytes above 127 into replacement characters outside a Binary result; see the Code 128
+    /// FNC4 tests below).
     /// </summary>
-    private readonly record struct DecodeResult(string Format, string ContentType, string Text, string FileId);
+    private readonly record struct DecodeResult(string Format, string ContentType, string Text, string FileId, string BytesHex);
 
     // ── QR ────────────────────────────────────────────────────────────────
 
@@ -958,6 +961,68 @@ public sealed class ZxingDecodeOracleTests : IDisposable
         Assert.Equal("GS1", result.ContentType);
     }
 
+    [Fact]
+    public void Code128Barcode_ExtendedLatin1_RoundTrips()
+    {
+        // "café" mixes a lone FNC4 shift ('é', a run of one) with three plain characters;
+        // zxing-cpp's own .text mangles a byte above 127 into a replacement character outside a
+        // Binary result, so this asserts against .bytes (the decode oracle's fifth column, added
+        // for this feature) instead, the same way the Data Matrix/Aztec binary tests already do.
+        const string content = "café";
+        var pdfPath = BuildSinglePdf((_, canvas) =>
+            canvas.DrawBarcode(new Code128Barcode(content) { ShowText = false, ModuleSize = 2 }, 50, 500));
+
+        if (!TryDecodeSingle(pdfPath, out var result)) return;
+
+        Assert.Equal("Code128", result.Format);
+        Assert.Equal(Convert.ToHexStringLower(Latin1Bytes(content)), result.BytesHex);
+    }
+
+    [Fact]
+    public void Code128Barcode_ExtendedLatin1Run_LatchesFnc4()
+    {
+        // "Grüße": 'ü' and 'ß' are consecutive Latin-1 characters, so the encoder should latch
+        // FNC4 across both rather than shifting each one individually (see
+        // Code128EncoderTests for the exact symbol-level KAT this exercises).
+        const string content = "Grüße";
+        var pdfPath = BuildSinglePdf((_, canvas) =>
+            canvas.DrawBarcode(new Code128Barcode(content) { ShowText = false, ModuleSize = 2 }, 50, 500));
+
+        if (!TryDecodeSingle(pdfPath, out var result)) return;
+
+        Assert.Equal("Code128", result.Format);
+        Assert.Equal(Convert.ToHexStringLower(Latin1Bytes(content)), result.BytesHex);
+    }
+
+    [Fact]
+    public void Code128Barcode_ExtendedLatin1ControlRange_NeedsARealSwitchNotAShift()
+    {
+        // Regression coverage for a bug this feature's first draft shipped with: a lone
+        // Latin-1 character whose low equivalent is a Code Set A control character (here
+        // U+0081, low equivalent 0x01) cannot ride a cheap Shift the way a lone non-control
+        // Latin-1 character can (see Code128Barcode_ExtendedLatin1_RoundTrips above):
+        // Shift's single-symbol scope has no room left for FNC4's own code once the shifted
+        // value itself fills that slot. zxing-cpp decoded the earlier, Shift-based attempt at
+        // this with the Latin-1 bit silently dropped; see Code128EncoderTests's
+        // Fnc4_controlRangeHighChar_needsCodeASwitch_notAShift for the exact symbol-level fix.
+        var content = "a" + (char)0x81;
+        var pdfPath = BuildSinglePdf((_, canvas) =>
+            canvas.DrawBarcode(new Code128Barcode(content) { ShowText = false, ModuleSize = 2 }, 50, 500));
+
+        if (!TryDecodeSingle(pdfPath, out var result)) return;
+
+        Assert.Equal("Code128", result.Format);
+        Assert.Equal(Convert.ToHexStringLower(Latin1Bytes(content)), result.BytesHex);
+    }
+
+    /// <summary>Encodes a string as raw Latin-1 bytes (each char's code point as a single byte), for comparing against a decoded FNC4 symbol.</summary>
+    private static byte[] Latin1Bytes(string s)
+    {
+        var bytes = new byte[s.Length];
+        for (var i = 0; i < s.Length; i++) bytes[i] = (byte)s[i];
+        return bytes;
+    }
+
     // ── Code 39 ───────────────────────────────────────────────────────────
 
     // Code 39's 9-elements-per-character overhead (versus Code 128's 11 modules per two
@@ -1262,12 +1327,18 @@ public sealed class ZxingDecodeOracleTests : IDisposable
 
         foreach (var line in stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries))
         {
-            // eng/barcode-decode.py always emits 4 tab-separated columns now (format, content
-            // type, text, file id); the file id is simply empty for every symbology but Macro
-            // PDF417. >= 3 keeps this tolerant of the script's own historical 3-column output.
+            // eng/barcode-decode.py always emits 5 tab-separated columns now (format, content
+            // type, text, file id, bytes hex); file id is empty for every symbology but Macro
+            // PDF417. >= 3 keeps this tolerant of the script's own historical 3- and 4-column
+            // output.
             var parts = line.TrimEnd('\r').Split('\t');
             Assert.True(parts.Length >= 3, $"Unexpected decode-oracle output line: '{line}'");
-            results.Add(new DecodeResult(parts[0], parts[1], parts[2], parts.Length > 3 ? parts[3] : string.Empty));
+            results.Add(new DecodeResult(
+                parts[0],
+                parts[1],
+                parts[2],
+                parts.Length > 3 ? parts[3] : string.Empty,
+                parts.Length > 4 ? parts[4] : string.Empty));
         }
 
         return true;
