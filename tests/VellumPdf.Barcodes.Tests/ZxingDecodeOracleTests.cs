@@ -47,7 +47,12 @@ public sealed class ZxingDecodeOracleTests : IDisposable
         catch (UnauthorizedAccessException) { /* best-effort cleanup — locked file on Windows */ }
     }
 
-    private readonly record struct DecodeResult(string Format, string ContentType, string Text);
+    /// <summary>
+    /// One decoded barcode. <see cref="FileId"/> is <c>eng/barcode-decode.py</c>'s appended fourth
+    /// column: zxing-cpp's decoded Macro PDF417 file id (see the Macro PDF417 tests below), empty
+    /// for every other symbology.
+    /// </summary>
+    private readonly record struct DecodeResult(string Format, string ContentType, string Text, string FileId);
 
     // ── QR ────────────────────────────────────────────────────────────────
 
@@ -778,6 +783,77 @@ public sealed class ZxingDecodeOracleTests : IDisposable
         Assert.Equal(Convert.ToHexStringLower(content), result.Text);
     }
 
+    // ── Macro PDF417 ──────────────────────────────────────────────────────
+
+    // Unlike QR Structured Append, zxing-cpp 3.0.0 does decode a Macro PDF417 file id: its Python
+    // Barcode.extra dict carries a "FileId" string, built by reading control-block codewords one
+    // at a time, formatting each as a zero-padded 3-digit decimal, and concatenating until it
+    // hits the next 923 (optional field) or 922 (terminator) codeword (confirmed against
+    // zxing-cpp's own PDFDecoder.cpp DecodeMacroBlock). MacroControlBlock encodes file id as a
+    // single codeword, so it decodes as one 3-digit group (e.g. 42 -> "042"). That same source
+    // read is why the control block's pad codewords must sit strictly before it, never after: a
+    // terminator followed by leftover pad throws inside DecodeMacroBlock's own bounds loop (see
+    // Pdf417Encoder's remark). Confirmed against the installed wheel and wired into
+    // eng/barcode-decode.py as an appended fourth column. Segment index and the "is this the last
+    // segment" flag are not exposed anywhere (neither Barcode's own properties nor extra carry
+    // them, and no SegmentIndex/LastSegment string even appears in the compiled module), so
+    // segment order can only be verified the same way Structured Append is: by reassembling each
+    // segment's decoded text.
+
+    [Fact]
+    public void Pdf417Barcode_MacroSetTwoSegments_EachSymbolDecodesToItsOwnPartAndSharesTheFileId()
+    {
+        string[] parts = ["VellumPdf Macro PDF417 segment one, ", "and segment two of the message."];
+        var symbols = Pdf417Barcode.MacroSet(parts, fileId: 42);
+
+        var pdfPath = BuildSinglePdf((_, canvas) =>
+        {
+            canvas.DrawBarcode(symbols[0], 50, 750);
+            canvas.DrawBarcode(symbols[1], 50, 450);
+        });
+
+        if (!TryDecodeAll(pdfPath, out var results)) return;
+
+        AssertMacroSetReassembles(parts, expectedFileId: "042", results);
+    }
+
+    [Fact]
+    public void Pdf417Barcode_MacroSetThreeSegments_EachSymbolDecodesToItsOwnPartAndSharesTheFileId()
+    {
+        string[] parts = ["Segment one of three. ", "Segment two of three. ", "Segment three of three."];
+        var symbols = Pdf417Barcode.MacroSet(parts, fileId: 7, new MacroPdf417Options { FileName = "report.txt" });
+
+        var pdfPath = BuildSinglePdf((_, canvas) =>
+        {
+            canvas.DrawBarcode(symbols[0], 50, 750);
+            canvas.DrawBarcode(symbols[1], 50, 550);
+            canvas.DrawBarcode(symbols[2], 50, 350);
+        });
+
+        if (!TryDecodeAll(pdfPath, out var results)) return;
+
+        AssertMacroSetReassembles(parts, expectedFileId: "007", results);
+    }
+
+    /// <summary>
+    /// Asserts every decoded result is a PDF417 symbol sharing <paramref name="expectedFileId"/>
+    /// and matching exactly one of <paramref name="parts"/> (a bijection), then reassembles the
+    /// parts in their known segment order and checks the result equals the original message.
+    /// </summary>
+    private static void AssertMacroSetReassembles(IReadOnlyList<string> parts, string expectedFileId, List<DecodeResult> results)
+    {
+        Assert.Equal(parts.Count, results.Count);
+        Assert.All(results, r => Assert.Equal("PDF417", r.Format));
+        Assert.All(results, r => Assert.Equal(expectedFileId, r.FileId));
+
+        var indexByPart = parts.Select((part, index) => (part, index)).ToDictionary(x => x.part, x => x.index);
+        foreach (var result in results)
+            Assert.True(indexByPart.ContainsKey(result.Text), $"Decoded text '{result.Text}' does not match any original part.");
+
+        var reassembled = string.Concat(results.OrderBy(r => indexByPart[r.Text]).Select(r => r.Text));
+        Assert.Equal(string.Concat(parts), reassembled);
+    }
+
     // ── Code 128 ──────────────────────────────────────────────────────────
 
     [Fact]
@@ -1113,9 +1189,12 @@ public sealed class ZxingDecodeOracleTests : IDisposable
 
         foreach (var line in stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries))
         {
+            // eng/barcode-decode.py always emits 4 tab-separated columns now (format, content
+            // type, text, file id); the file id is simply empty for every symbology but Macro
+            // PDF417. >= 3 keeps this tolerant of the script's own historical 3-column output.
             var parts = line.TrimEnd('\r').Split('\t');
-            Assert.True(parts.Length == 3, $"Unexpected decode-oracle output line: '{line}'");
-            results.Add(new DecodeResult(parts[0], parts[1], parts[2]));
+            Assert.True(parts.Length >= 3, $"Unexpected decode-oracle output line: '{line}'");
+            results.Add(new DecodeResult(parts[0], parts[1], parts[2], parts.Length > 3 ? parts[3] : string.Empty));
         }
 
         return true;

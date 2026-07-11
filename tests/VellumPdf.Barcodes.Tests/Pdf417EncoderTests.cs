@@ -168,6 +168,113 @@ public sealed class Pdf417EncoderTests
             Assert.True(compact.IsDark(leftRegionWidth, row));
     }
 
+    // ── Macro PDF417 (ISO/IEC 15438 Annex H) ─────────────────────────────────
+
+    [Fact]
+    public void MacroControlBlock_lastSegmentWithSegmentCount_matchesHandComputedCodewordStream()
+    {
+        // Segment index 3 -> zero-pad to 5 digits "00003", prepend a synthetic leading 1 (the
+        // same convention Numeric Compaction uses), giving decimal 100003 -> base-900 (111, 103).
+        // File id 42 -> a single codeword (0-899, confirmed against zxing-cpp's actual decoder,
+        // see ZxingDecodeOracleTests, which reads file id codewords one at a time, formatting each
+        // as a zero-padded 3-digit decimal, until it hits 923 or 922). Last segment -> segment
+        // count defaults to the caller's part count (6 here) via MacroSet, so the control block
+        // carries designator 1 (Numeric Compaction): "6" -> prepend a leading 1 -> "16" decimal ->
+        // base-900 single digit 16 (same worked-example rule as
+        // Pdf417HighLevelEncoderTests.EncodeText_numericVector). Terminated with 922.
+        var info = new MacroSegmentInfo(SegmentIndex: 3, FileId: 42, IsLast: true, new MacroPdf417Options { SegmentCount = 6 });
+        var codewords = MacroControlBlock.Build(info);
+        Assert.Equal([928, 111, 103, 42, 923, 1, 16, 922], codewords);
+    }
+
+    [Fact]
+    public void MacroControlBlock_nonLastSegment_omitsOptionalFieldsAndTerminator()
+    {
+        var info = new MacroSegmentInfo(SegmentIndex: 3, FileId: 42, IsLast: false, Options: null);
+        var codewords = MacroControlBlock.Build(info);
+        Assert.Equal([928, 111, 103, 42], codewords);
+    }
+
+    [Theory]
+    [InlineData(0, 111, 100)]
+    [InlineData(899, 112, 99)]
+    [InlineData(900, 112, 100)]
+    [InlineData(901, 112, 101)]
+    [InlineData(99998, 222, 198)]
+    public void MacroControlBlock_segmentIndex_encodesAsTwoBase900CodewordsWithLeadingOnePrepended(int segmentIndex, int expectedHi, int expectedLo)
+    {
+        // The leading-1 prepend (Numeric Compaction's own convention, see
+        // Pdf417HighLevelEncoderTests.EncodeText_numericVector) is required, not cosmetic: a
+        // plain index/900, index%900 split (no leading 1) decodes to a value zxing-cpp's real
+        // decoder rejects with a format error whenever the reconstructed digit string doesn't
+        // start with '1'. Confirmed empirically by rendering and decoding both encodings.
+        var info = new MacroSegmentInfo(segmentIndex, FileId: 0, IsLast: false, Options: null);
+        var codewords = MacroControlBlock.Build(info);
+        Assert.Equal([928, expectedHi, expectedLo, 0], codewords);
+    }
+
+    [Fact]
+    public void MacroSet_stampsEachSymbolWithItsSegmentIndexAndOnlyTheLastIsMarkedLast()
+    {
+        string[] parts = ["one", "two", "three"];
+        var symbols = Pdf417Barcode.MacroSet(parts, fileId: 7);
+
+        for (var i = 0; i < symbols.Count; i++)
+        {
+            var info = symbols[i].MacroSegmentInfo!.Value;
+            Assert.Equal(i, info.SegmentIndex);
+            Assert.Equal(7, info.FileId);
+            Assert.Equal(i == parts.Length - 1, info.IsLast);
+        }
+    }
+
+    [Fact]
+    public void MacroSet_lastSegment_defaultsSegmentCountToPartCountWhenUnset()
+    {
+        string[] parts = ["a", "b", "c", "d"];
+        var symbols = Pdf417Barcode.MacroSet(parts, fileId: 1);
+
+        Assert.Equal(4, symbols[^1].MacroSegmentInfo!.Value.Options!.SegmentCount);
+    }
+
+    [Fact]
+    public void MacroSet_zeroParts_throwsArgumentException() =>
+        Assert.Throws<ArgumentException>(() => Pdf417Barcode.MacroSet(Array.Empty<string>(), fileId: 0));
+
+    [Fact]
+    public void MacroSet_tooManyParts_throwsArgumentException()
+    {
+        var parts = new string[100000];
+        Array.Fill(parts, "x");
+        Assert.Throws<ArgumentException>(() => Pdf417Barcode.MacroSet(parts, fileId: 0));
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(900)]
+    public void MacroSet_fileIdOutsideRange_throwsArgumentException(int fileId) =>
+        Assert.Throws<ArgumentException>(() => Pdf417Barcode.MacroSet(["a"], fileId));
+
+    [Fact]
+    public void MacroSet_getMatrix_needsMoreCapacityThanTheSameContentWithoutMacro()
+    {
+        // Force exactly the capacity the plain content needs at error-correction level 0 (the
+        // smallest possible EC overhead: 2 codewords), so it fits with zero padding to spare.
+        // The same forced dimensions can no longer hold the macro-stamped version, proving the
+        // control block genuinely added data-region codewords in Pdf417Encoder.Encode rather
+        // than being stamped on the barcode and ignored.
+        const string content = "Macro PDF417 end-to-end check";
+        var contentCodewords = Pdf417HighLevelEncoder.EncodeText(content).Count;
+        var exactRows = contentCodewords + 1 + 2; // + symbol length descriptor + level-0 EC codewords
+
+        var plain = new Pdf417Barcode(content) { Columns = 1, Rows = exactRows, ErrorCorrectionLevel = 0 }.GetMatrix();
+        Assert.Equal(exactRows, plain.Height);
+
+        var macroInfo = Pdf417Barcode.MacroSet([content], fileId: 5)[0].MacroSegmentInfo;
+        var macro = new Pdf417Barcode(content) { Columns = 1, Rows = exactRows, ErrorCorrectionLevel = 0, MacroSegmentInfo = macroInfo };
+        Assert.Throws<FormatException>(() => macro.GetMatrix());
+    }
+
     private static void AssertRowIndicators(BarcodeMatrix matrix, int row, int cluster, int expectedLeft, int expectedRight)
     {
         var leftPattern = ReadPattern(matrix, row, Pdf417Tables.PatternModules, Pdf417Tables.PatternModules);

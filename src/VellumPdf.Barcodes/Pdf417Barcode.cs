@@ -11,8 +11,9 @@ namespace VellumPdf.Barcodes;
 /// chosen automatically to match <see cref="PreferredAspectRatio"/> unless <see cref="Columns"/>
 /// or <see cref="Rows"/> is set. Content is compacted automatically across text, byte and numeric
 /// modes following the specification's mode-switching heuristics. Set <see cref="Compact"/> for
-/// the narrower Compact (Truncated) format. Macro PDF417 (splitting content across several
-/// symbols) is not supported.
+/// the narrower Compact (Truncated) format. Use
+/// <see cref="MacroSet(IReadOnlyList{string}, int, MacroPdf417Options)"/> to split a larger
+/// payload across several linked Macro PDF417 symbols (ISO/IEC 15438 Annex H).
 /// </summary>
 public sealed class Pdf417Barcode : Barcode
 {
@@ -66,6 +67,57 @@ public sealed class Pdf417Barcode : Barcode
     internal string? Text { get; }
 
     internal byte[]? Bytes { get; }
+
+    /// <summary>The Macro PDF417 segment this symbol was stamped with by one of the <c>MacroSet</c> factories, if any.</summary>
+    internal MacroSegmentInfo? MacroSegmentInfo { get; init; }
+
+    /// <summary>
+    /// Splits <paramref name="parts"/> across up to 99999 linked PDF417 symbols (ISO/IEC 15438
+    /// Annex H) sharing <paramref name="fileId"/>, with no optional fields beyond the segment
+    /// count. See the three-parameter overload for the full description and exceptions.
+    /// </summary>
+    public static IReadOnlyList<Pdf417Barcode> MacroSet(IReadOnlyList<string> parts, int fileId) =>
+        MacroSet(parts, fileId, new MacroPdf417Options());
+
+    /// <summary>
+    /// Splits <paramref name="parts"/> across up to 99999 linked PDF417 symbols (ISO/IEC 15438
+    /// Annex H), each carrying a Macro control block appended after its data codewords (so the
+    /// symbol's Reed-Solomon error correction covers the control block too). Every returned
+    /// symbol is an ordinary <see cref="Pdf417Barcode"/> that draws through the normal
+    /// <see cref="BarcodeCanvasExtensions.DrawBarcode"/> path; the caller positions and draws each
+    /// one (see the barcodes guide's Macro PDF417 layout guidance).
+    /// </summary>
+    /// <param name="parts">The message, pre-split into 1 to 99999 parts in reading order.</param>
+    /// <param name="fileId">The identifier every symbol in the set shares (0-899, ISO/IEC 15438 Annex H).</param>
+    /// <param name="options">
+    /// Optional fields carried on the set's last symbol. <see cref="MacroPdf417Options.SegmentCount"/>,
+    /// when left unset, defaults to <paramref name="parts"/>'s count.
+    /// </param>
+    /// <returns>One <see cref="Pdf417Barcode"/> per part, in the same order, each carrying its Macro control block.</returns>
+    /// <exception cref="ArgumentException"><paramref name="parts"/> has fewer than 1 or more than 99999 entries, or <paramref name="fileId"/> is outside 0-899.</exception>
+    public static IReadOnlyList<Pdf417Barcode> MacroSet(IReadOnlyList<string> parts, int fileId, MacroPdf417Options options)
+    {
+        ArgumentNullException.ThrowIfNull(parts);
+        ArgumentNullException.ThrowIfNull(options);
+        if (parts.Count is < 1 or > MacroControlBlock.MaxSegmentIndex + 1)
+            throw new ArgumentException($"A Macro PDF417 set holds 1 to {MacroControlBlock.MaxSegmentIndex + 1} segments (was {parts.Count}).", nameof(parts));
+        if (fileId is < 0 or > MacroControlBlock.MaxFileId)
+            throw new ArgumentException($"fileId must be between 0 and {MacroControlBlock.MaxFileId} (was {fileId}).", nameof(fileId));
+
+        var lastSegmentOptions = options.SegmentCount is null ? options with { SegmentCount = parts.Count } : options;
+
+        var symbols = new Pdf417Barcode[parts.Count];
+        for (var i = 0; i < parts.Count; i++)
+        {
+            var isLast = i == parts.Count - 1;
+            symbols[i] = new Pdf417Barcode(parts[i])
+            {
+                MacroSegmentInfo = new MacroSegmentInfo(i, fileId, isLast, isLast ? lastSegmentOptions : null),
+            };
+        }
+
+        return symbols;
+    }
 
     /// <summary>Encodes and returns the symbol's module grid, caching the result on first use. Each row of the grid is one PDF417 row; the painter stretches it to <see cref="RowHeight"/> modules tall.</summary>
     /// <exception cref="ArgumentException"><see cref="ErrorCorrectionLevel"/>, <see cref="Columns"/> or <see cref="Rows"/> is outside its valid range, <see cref="RowHeight"/> is less than 3, <see cref="PreferredAspectRatio"/> is not a positive finite number, or both <see cref="Barcode.ModuleSize"/> and <see cref="Barcode.TargetWidth"/> are set.</exception>

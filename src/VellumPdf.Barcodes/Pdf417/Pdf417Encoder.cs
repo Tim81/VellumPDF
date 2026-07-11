@@ -24,9 +24,16 @@ internal static class Pdf417Encoder
             ? Pdf417HighLevelEncoder.EncodeBytes(bytes)
             : Pdf417HighLevelEncoder.EncodeText(barcode.Text!);
 
-        var dataCodewords = content.Count + 1; // + symbol length descriptor
+        // Macro PDF417 (ISO/IEC 15438 Annex H): the control block lives inside the data region,
+        // so Reed-Solomon error correction covers it exactly like ordinary data. It is kept as a
+        // separate list from the ordinary content, rather than appended straight onto it, because
+        // any pad codewords must land between the two, not after the control block; see the
+        // remark below.
+        var macroBlock = barcode.MacroSegmentInfo is { } macro ? MacroControlBlock.Build(macro) : [];
+
+        var dataCodewords = content.Count + macroBlock.Count + 1; // + symbol length descriptor
         if (dataCodewords > AbsoluteMaxDataCodewords)
-            throw new FormatException($"Content needs {content.Count} data codewords, exceeding PDF417's maximum of {AbsoluteMaxDataCodewords - 1} regardless of error-correction level.");
+            throw new FormatException($"Content needs {content.Count + macroBlock.Count} data codewords, exceeding PDF417's maximum of {AbsoluteMaxDataCodewords - 1} regardless of error-correction level.");
 
         var level = barcode.ErrorCorrectionLevel == -1 ? ResolveRecommendedLevel(dataCodewords) : barcode.ErrorCorrectionLevel;
         var ecCodewords = ReedSolomonGf929.DegreeForLevel(level);
@@ -39,7 +46,17 @@ internal static class Pdf417Encoder
         var dataRegion = new int[dataRegionLength];
         dataRegion[0] = dataCodewords + padCodewords; // symbol length descriptor: total data-region codewords including itself and padding
         content.CopyTo(dataRegion, 1);
-        for (var i = 1 + content.Count; i < dataRegionLength; i++) dataRegion[i] = 900; // pad codeword
+
+        // Padding goes between the ordinary content and the Macro control block, not after it.
+        // zxing-cpp's decoder loops over a macro block's own codewords until it hits the region
+        // boundary, and treats anything there that is not the 923/922 markers it expects as a
+        // format error: a terminator (922) followed by trailing pad throws. Keeping the control
+        // block as the data region's final codewords, with any pad ahead of it, avoids that. Pad
+        // codewords are the ordinary Text Compaction mode-latch value, so they cleanly hand
+        // control back to the general decoder loop, which then reaches 928 next.
+        var padStart = 1 + content.Count;
+        for (var i = padStart; i < padStart + padCodewords; i++) dataRegion[i] = 900;
+        macroBlock.CopyTo(dataRegion, padStart + padCodewords);
 
         var ec = ReedSolomonGf929.ComputeCheckCodewords(dataRegion, ecCodewords);
 
