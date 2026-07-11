@@ -46,7 +46,9 @@ internal static class MicroQrEncoder
             IReadOnlyList<QrSegment> segments;
             try
             {
-                segments = QrSegmenter.Segment(content, mode => HeaderBits(microVersion, mode), Encoding.Latin1, allowAlphanumeric, allowByte);
+                // Micro QR has no Kanji mode indicator (Table 2 only defines mode bits up to Byte
+                // for M1-M4), so allowKanji is always false here.
+                segments = QrSegmenter.Segment(content, mode => HeaderBits(microVersion, mode), Encoding.Latin1, allowAlphanumeric, allowByte, allowKanji: false);
             }
             catch (FormatException ex)
             {

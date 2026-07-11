@@ -96,8 +96,42 @@ internal static class QrEncoder
 
     private static (SegmentFactory SegmentFactory, string Content, Encoding ByteEncoding, bool UseEci, int ContentLength) PrepareStringContent(string text, QrTextEncoding textEncoding)
     {
+        var (byteEncoding, useEci) = ResolveTextEncoding(text, textEncoding);
+        return (headerBits => SegmentAvoidingEciKanjiMix(text, headerBits, byteEncoding, useEci), text, byteEncoding, useEci, text.Length);
+    }
+
+    /// <summary>
+    /// Segments <paramref name="text"/> normally, then falls back to a Kanji-free segmentation if
+    /// the result would combine a Kanji-mode segment with a Byte-mode segment in a symbol that
+    /// writes the UTF-8 ECI header. zxing-cpp was observed misdecoding every Kanji-mode codeword
+    /// whenever a symbol also carried an ECI-declared Byte segment, even though ISO/IEC 18004
+    /// §7.4.6 defines Kanji mode independently of ECI, which only governs Byte-mode data. This was
+    /// confirmed empirically by rendering and decoding both segmentations. A pure-Kanji symbol (no
+    /// Byte segment at all) is unaffected: <see cref="QrEncoder"/> never writes an ECI header for
+    /// it regardless of <paramref name="useEci"/> (see the header-omission remark where it is
+    /// decided), so Kanji mode stays available there.
+    /// </summary>
+    private static IReadOnlyList<QrSegment> SegmentAvoidingEciKanjiMix(string text, Func<QrSegmentMode, int> headerBits, Encoding byteEncoding, bool useEci)
+    {
+        var segments = QrSegmenter.Segment(text, headerBits, byteEncoding, allowAlphanumeric: true, allowByte: true, allowKanji: true);
+        if (!useEci || !segments.Any(s => s.Mode == QrSegmentMode.Kanji) || !segments.Any(s => s.Mode == QrSegmentMode.Byte))
+            return segments;
+
+        return QrSegmenter.Segment(text, headerBits, byteEncoding, allowAlphanumeric: true, allowByte: true, allowKanji: false);
+    }
+
+    /// <summary>
+    /// Resolves <paramref name="textEncoding"/> to the byte encoding and ECI-header decision
+    /// <see cref="PrepareStringContent"/> would use for <paramref name="text"/>. Also used by
+    /// <see cref="QrCode.StructuredAppend(IReadOnlyList{string}, QrErrorCorrection, QrTextEncoding)"/>
+    /// to compute the Structured Append parity byte with the same byte representation the set's
+    /// symbols encode their content in.
+    /// </summary>
+    /// <exception cref="FormatException"><see cref="QrTextEncoding.Latin1"/> was requested for text outside ISO/IEC 8859-1.</exception>
+    internal static (Encoding ByteEncoding, bool UseEci) ResolveTextEncoding(string text, QrTextEncoding textEncoding)
+    {
         var latin1Representable = IsLatin1Representable(text);
-        var (byteEncoding, useEci) = textEncoding switch
+        return textEncoding switch
         {
             QrTextEncoding.Latin1 when !latin1Representable =>
                 throw new FormatException($"\"{text}\" contains characters outside ISO/IEC 8859-1 (Latin-1); use QrTextEncoding.Utf8, Utf8Eci or Auto instead."),
@@ -107,8 +141,6 @@ internal static class QrEncoder
             QrTextEncoding.Auto => latin1Representable ? (Encoding.Latin1, false) : (Encoding.UTF8, true),
             _ => throw new ArgumentOutOfRangeException(nameof(textEncoding), textEncoding, null),
         };
-
-        return (headerBits => QrSegmenter.Segment(text, headerBits, byteEncoding, allowAlphanumeric: true, allowByte: true), text, byteEncoding, useEci, text.Length);
     }
 
     /// <summary>
@@ -132,9 +164,17 @@ internal static class QrEncoder
     /// byte (0x1D for the separator), so Numeric mode still compacts digit runs and no character
     /// needs escaping.
     /// </para>
+    /// <para>
+    /// Kanji mode is deliberately not offered either. <see cref="Gs1ElementString"/> restricts
+    /// every value character to printable ASCII, which is not GS1 AI content regardless of
+    /// whether a Shift-JIS Kanji-block code happens to exist for it (<see cref="ShiftJisTable"/>
+    /// excludes the handful of ASCII/Latin-1 punctuation scalars that would be ambiguous under a
+    /// CP932 decoder, so none of them are reachable through Kanji mode in the first place).
+    /// Mixing Kanji-mode runs into a GS1 element string would be non-standard for the profile.
+    /// </para>
     /// </remarks>
     private static (SegmentFactory SegmentFactory, string Content, Encoding ByteEncoding, bool UseEci, int ContentLength) PrepareGs1ElementStringContent(string content) =>
-        (headerBits => QrSegmenter.Segment(content, headerBits, Encoding.Latin1, allowAlphanumeric: false, allowByte: true),
+        (headerBits => QrSegmenter.Segment(content, headerBits, Encoding.Latin1, allowAlphanumeric: false, allowByte: true, allowKanji: false),
             content, Encoding.Latin1, UseEci: false, ContentLength: content.Length);
 
     private static bool IsLatin1Representable(string text)
@@ -152,15 +192,17 @@ internal static class QrEncoder
         QrSegmentMode.Numeric => (10 * (segment.RuneCount / 3)) + (segment.RuneCount % 3) switch { 0 => 0, 1 => 4, _ => 7 },
         QrSegmentMode.Alphanumeric => (11 * (segment.RuneCount / 2)) + (segment.RuneCount % 2 == 1 ? 6 : 0),
         QrSegmentMode.Byte => 8 * byteEncoding.GetByteCount(content.AsSpan(segment.CharStart, segment.CharLength)),
+        QrSegmentMode.Kanji => 13 * segment.RuneCount,
         _ => throw new ArgumentOutOfRangeException(nameof(segment)),
     };
 
     private static (int Version, byte[] DataCodewords) SelectVersionAndBuild(
         QrCode barcode, string content, SegmentFactory segmentFactory, Encoding byteEncoding, bool useEci, int contentLength, bool gs1Fnc1FirstPosition)
     {
-        var eciBits = useEci ? 12 : 0;
         var gs1Bits = gs1Fnc1FirstPosition ? QrTables.ModeIndicatorBits : 0;
-        var headerBitsTotal = eciBits + gs1Bits;
+        // §8.1: the Structured Append header is 4 (mode) + 8 (sequence indicator) + 8 (parity) = 20 bits.
+        var structuredAppend = barcode.StructuredAppendInfo;
+        var saBits = structuredAppend is not null ? 20 : 0;
 
         (int Group, int Version)[] candidates = barcode.Version is { } forced
             ? [(GroupFor(forced), forced)]
@@ -169,13 +211,22 @@ internal static class QrEncoder
         var lastGroup = -1;
         IReadOnlyList<QrSegment>? groupSegments = null;
         var groupContentBits = 0;
+        var groupWritesEci = false;
 
         foreach (var (group, version) in candidates)
         {
             if (group != lastGroup)
             {
                 groupSegments = segmentFactory(mode => HeaderBits(VersionGroups[group].Min, mode));
-                groupContentBits = headerBitsTotal;
+
+                // The ECI header only changes how a Byte-mode segment's bytes are interpreted, so
+                // it is wasted capacity when segmentation produces no Byte-mode run at all (an
+                // all-Kanji message, for instance). It is also not merely wasteful: zxing-cpp was
+                // observed decoding a Kanji-only symbol incorrectly when an ECI header preceded
+                // the Kanji segment with no Byte segment to apply it to, so this omission is
+                // required for interoperability, not just an optimization.
+                groupWritesEci = useEci && groupSegments.Any(s => s.Mode == QrSegmentMode.Byte);
+                groupContentBits = (groupWritesEci ? 12 : 0) + gs1Bits + saBits;
                 foreach (var segment in groupSegments)
                     groupContentBits += HeaderBits(VersionGroups[group].Min, segment.Mode) + SegmentDataBits(content, segment, byteEncoding);
                 lastGroup = group;
@@ -186,7 +237,10 @@ internal static class QrEncoder
             if (groupContentBits > capacityBits) continue;
 
             var writer = new BitWriter();
-            if (useEci) QrBitStreamBuilder.WriteUtf8EciHeader(writer);
+            // §8.1: the Structured Append header, when present, comes before everything else:
+            // the ECI header, the FNC1-in-first-position marker, and the first data segment alike.
+            if (structuredAppend is { } sa) QrBitStreamBuilder.WriteStructuredAppendHeader(writer, sa.Index, sa.Total, sa.Parity);
+            if (groupWritesEci) QrBitStreamBuilder.WriteUtf8EciHeader(writer);
             // §7.4.8.2: FNC1 in first position is placed after any ECI header and immediately
             // before the first data-encoding mode indicator.
             if (gs1Fnc1FirstPosition) QrBitStreamBuilder.WriteFnc1FirstPosition(writer);

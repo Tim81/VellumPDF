@@ -28,11 +28,17 @@ internal static class Pdf417Tables
     /// <summary>The module width of the stop pattern, one wider than an ordinary symbol character.</summary>
     internal const int StopPatternModules = 18;
 
+    /// <summary>The module width of the Compact (Truncated) format's stop pattern: a single dark module in place of the full 18-module <see cref="StopPattern"/>.</summary>
+    internal const int CompactStopPatternModules = 1;
+
     /// <summary>The leading quiet-zone/start-of-row pattern, common to every row regardless of cluster.</summary>
     internal const uint StartPattern = 0b11111111010101000;
 
     /// <summary>The trailing end-of-row pattern, common to every row regardless of cluster.</summary>
     internal const uint StopPattern = 0b111111101000101001;
+
+    /// <summary>The Compact (Truncated) format's stop pattern: one dark module.</summary>
+    internal const uint CompactStopPattern = 0b1;
 
     /// <summary>The 929 cluster-0 patterns (used by rows 1, 4, 7, ... per ISO/IEC 15438), indexed by codeword value.</summary>
     private static readonly uint[] Cluster0 =

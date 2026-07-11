@@ -32,6 +32,24 @@ internal static class QrBitStreamBuilder
     internal static void WriteFnc1FirstPosition(BitWriter writer) =>
         writer.WriteBits(QrTables.Fnc1FirstPositionModeIndicator, QrTables.ModeIndicatorBits);
 
+    /// <summary>
+    /// Writes the Structured Append header (ISO/IEC 18004 §8.1): the mode indicator, an 8-bit
+    /// symbol sequence indicator (upper nibble the symbol's 0-based position, lower nibble the
+    /// set's total symbol count minus one), and the 8-bit parity byte shared by every symbol in
+    /// the set. This is always the first thing written, ahead of any ECI header and the
+    /// FNC1-in-first-position marker.
+    /// </summary>
+    /// <param name="writer">The bit stream being assembled.</param>
+    /// <param name="index">The symbol's 0-based position within the set (0-15).</param>
+    /// <param name="total">The set's total symbol count (1-16).</param>
+    /// <param name="parity">The XOR of every byte of the original, un-split message data.</param>
+    internal static void WriteStructuredAppendHeader(BitWriter writer, int index, int total, byte parity)
+    {
+        writer.WriteBits(QrTables.StructuredAppendModeIndicator, QrTables.ModeIndicatorBits);
+        writer.WriteBits((index << 4) | (total - 1), 8);
+        writer.WriteBits(parity, 8);
+    }
+
     /// <summary>Writes every segment's mode indicator, character count indicator and data.</summary>
     /// <param name="writer">The bit stream being assembled.</param>
     /// <param name="content">The original string the segments index into.</param>
@@ -70,6 +88,9 @@ internal static class QrBitStreamBuilder
                     break;
                 case QrSegmentMode.Byte:
                     WriteByte(writer, content, segment, byteEncoding);
+                    break;
+                case QrSegmentMode.Kanji:
+                    WriteKanji(writer, content, segment);
                     break;
                 default:
                     throw new ArgumentOutOfRangeException(nameof(segments));
@@ -119,6 +140,27 @@ internal static class QrBitStreamBuilder
         Span<byte> bytes = stackalloc byte[byteEncoding.GetByteCount(text)];
         byteEncoding.GetBytes(text, bytes);
         foreach (var b in bytes) writer.WriteBits(b, 8);
+    }
+
+    /// <summary>
+    /// Writes a Kanji-mode segment (§7.4.6): each rune's Shift-JIS X 0208 code, less its block's
+    /// base value, has its two bytes repacked into a single 13-bit codeword (<c>msb * 0xC0 + lsb</c>)
+    /// rather than being written as the raw 16-bit Shift-JIS value.
+    /// </summary>
+    private static void WriteKanji(BitWriter writer, string content, QrSegment segment)
+    {
+        var text = content.AsSpan(segment.CharStart, segment.CharLength);
+        foreach (var rune in text.EnumerateRunes())
+        {
+            if (!ShiftJisTable.TryGetShiftJis(rune.Value, out var shiftJis))
+                throw new InvalidOperationException(
+                    $"Rune '{rune}' was placed in a Kanji segment but has no Shift-JIS mapping; this is a QrSegmenter eligibility bug.");
+
+            var blockOffset = shiftJis <= 0x9FFC ? 0x8140 : 0xC140;
+            var d = shiftJis - blockOffset;
+            var value13 = (((d >> 8) & 0xFF) * 0xC0) + (d & 0xFF);
+            writer.WriteBits(value13, 13);
+        }
     }
 
     /// <summary>

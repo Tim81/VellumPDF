@@ -11,8 +11,10 @@ namespace VellumPdf.Barcodes.Pdf417;
 /// (0-899) using Text, Byte and Numeric Compaction, switching between them automatically for a
 /// string via the ISO/IEC 15438 Annex P heuristics (a long run of digits is cheaper in Numeric
 /// Compaction; a short run of otherwise-text characters between two byte runs is cheaper left as
-/// bytes than paying for a mode switch). None of this covers Macro PDF417 (multi-symbol
-/// splitting), which this package does not support.
+/// bytes than paying for a mode switch). <see cref="EncodeTextValue"/> and
+/// <see cref="EncodeNumericValue"/> expose the underlying Text/Numeric Compaction directly,
+/// without mode-switching or a leading latch codeword, for <see cref="MacroControlBlock"/>'s
+/// optional fields (ISO/IEC 15438 Annex H), which are already introduced by their own designator.
 /// </summary>
 internal static class Pdf417HighLevelEncoder
 {
@@ -64,6 +66,31 @@ internal static class Pdf417HighLevelEncoder
     {
         var output = new List<int> { content.Length % 6 == 0 ? LatchToByteMultipleOfSix : LatchToByte };
         EncodeByteBytes(output, content);
+        return output;
+    }
+
+    /// <summary>
+    /// Compacts <paramref name="digits"/> (must be all ASCII decimal digits) as Numeric
+    /// Compaction codewords (ISO/IEC 15438 section 2.2.4.6), with no leading latch codeword. Used
+    /// by <see cref="MacroControlBlock"/> for optional numeric fields, whose 923-designator pair
+    /// already tells the decoder the mode.
+    /// </summary>
+    internal static List<int> EncodeNumericValue(string digits)
+    {
+        var output = new List<int>();
+        EncodeNumericDigits(output, ToLatin1Bytes(digits));
+        return output;
+    }
+
+    /// <summary>
+    /// Compacts <paramref name="text"/> (must be representable in ISO/IEC 8859-1) as Text
+    /// Compaction codewords (ISO/IEC 15438 section 2.2.4.4), with no leading latch codeword. Used
+    /// by <see cref="MacroControlBlock"/> for optional text fields.
+    /// </summary>
+    internal static List<int> EncodeTextValue(string text)
+    {
+        var output = new List<int>();
+        EncodeTextChars(output, ToLatin1Bytes(text));
         return output;
     }
 

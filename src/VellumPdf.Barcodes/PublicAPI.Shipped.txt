@@ -107,6 +107,24 @@ VellumPdf.Barcodes.ItfBearerBarStyle
 VellumPdf.Barcodes.ItfBearerBarStyle.Frame = 0 -> VellumPdf.Barcodes.ItfBearerBarStyle
 VellumPdf.Barcodes.ItfBearerBarStyle.Horizontal = 1 -> VellumPdf.Barcodes.ItfBearerBarStyle
 VellumPdf.Barcodes.ItfBearerBarStyle.None = 2 -> VellumPdf.Barcodes.ItfBearerBarStyle
+VellumPdf.Barcodes.MacroPdf417Options
+VellumPdf.Barcodes.MacroPdf417Options.<Clone>$() -> VellumPdf.Barcodes.MacroPdf417Options!
+VellumPdf.Barcodes.MacroPdf417Options.Addressee.get -> string?
+VellumPdf.Barcodes.MacroPdf417Options.Addressee.init -> void
+VellumPdf.Barcodes.MacroPdf417Options.Checksum.get -> int?
+VellumPdf.Barcodes.MacroPdf417Options.Checksum.init -> void
+VellumPdf.Barcodes.MacroPdf417Options.Equals(VellumPdf.Barcodes.MacroPdf417Options? other) -> bool
+VellumPdf.Barcodes.MacroPdf417Options.FileName.get -> string?
+VellumPdf.Barcodes.MacroPdf417Options.FileName.init -> void
+VellumPdf.Barcodes.MacroPdf417Options.FileSize.get -> long?
+VellumPdf.Barcodes.MacroPdf417Options.FileSize.init -> void
+VellumPdf.Barcodes.MacroPdf417Options.MacroPdf417Options() -> void
+VellumPdf.Barcodes.MacroPdf417Options.SegmentCount.get -> int?
+VellumPdf.Barcodes.MacroPdf417Options.SegmentCount.init -> void
+VellumPdf.Barcodes.MacroPdf417Options.Sender.get -> string?
+VellumPdf.Barcodes.MacroPdf417Options.Sender.init -> void
+VellumPdf.Barcodes.MacroPdf417Options.Timestamp.get -> System.DateTimeOffset?
+VellumPdf.Barcodes.MacroPdf417Options.Timestamp.init -> void
 VellumPdf.Barcodes.MicroQrCode
 VellumPdf.Barcodes.MicroQrCode.Content.get -> string!
 VellumPdf.Barcodes.MicroQrCode.ErrorCorrection.get -> VellumPdf.Barcodes.QrErrorCorrection
@@ -118,6 +136,8 @@ VellumPdf.Barcodes.MicroQrCode.Version.init -> void
 VellumPdf.Barcodes.Pdf417Barcode
 VellumPdf.Barcodes.Pdf417Barcode.Columns.get -> int?
 VellumPdf.Barcodes.Pdf417Barcode.Columns.init -> void
+VellumPdf.Barcodes.Pdf417Barcode.Compact.get -> bool
+VellumPdf.Barcodes.Pdf417Barcode.Compact.init -> void
 VellumPdf.Barcodes.Pdf417Barcode.ErrorCorrectionLevel.get -> int
 VellumPdf.Barcodes.Pdf417Barcode.ErrorCorrectionLevel.init -> void
 VellumPdf.Barcodes.Pdf417Barcode.GetMatrix() -> VellumPdf.Barcodes.BarcodeMatrix!
@@ -125,16 +145,16 @@ VellumPdf.Barcodes.Pdf417Barcode.Pdf417Barcode(byte[]! content) -> void
 VellumPdf.Barcodes.Pdf417Barcode.Pdf417Barcode(string! content) -> void
 VellumPdf.Barcodes.Pdf417Barcode.PreferredAspectRatio.get -> double
 VellumPdf.Barcodes.Pdf417Barcode.PreferredAspectRatio.init -> void
-VellumPdf.Barcodes.Pdf417Barcode.Rows.get -> int?
-VellumPdf.Barcodes.Pdf417Barcode.Rows.init -> void
 VellumPdf.Barcodes.Pdf417Barcode.RowHeight.get -> double
 VellumPdf.Barcodes.Pdf417Barcode.RowHeight.init -> void
+VellumPdf.Barcodes.Pdf417Barcode.Rows.get -> int?
+VellumPdf.Barcodes.Pdf417Barcode.Rows.init -> void
 VellumPdf.Barcodes.QrCode
 VellumPdf.Barcodes.QrCode.ErrorCorrection.get -> VellumPdf.Barcodes.QrErrorCorrection
 VellumPdf.Barcodes.QrCode.ErrorCorrection.init -> void
+VellumPdf.Barcodes.QrCode.GetMatrix() -> VellumPdf.Barcodes.BarcodeMatrix!
 VellumPdf.Barcodes.QrCode.Gs1.get -> VellumPdf.Barcodes.QrGs1Mode
 VellumPdf.Barcodes.QrCode.Gs1.init -> void
-VellumPdf.Barcodes.QrCode.GetMatrix() -> VellumPdf.Barcodes.BarcodeMatrix!
 VellumPdf.Barcodes.QrCode.Mask.get -> int?
 VellumPdf.Barcodes.QrCode.Mask.init -> void
 VellumPdf.Barcodes.QrCode.QrCode(byte[]! content) -> void
@@ -158,9 +178,22 @@ VellumPdf.Barcodes.QrTextEncoding.Latin1 = 1 -> VellumPdf.Barcodes.QrTextEncodin
 VellumPdf.Barcodes.QrTextEncoding.Utf8 = 2 -> VellumPdf.Barcodes.QrTextEncoding
 VellumPdf.Barcodes.QrTextEncoding.Utf8Eci = 3 -> VellumPdf.Barcodes.QrTextEncoding
 override VellumPdf.Barcodes.BarcodeSize.GetHashCode() -> int
+override VellumPdf.Barcodes.MacroPdf417Options.Equals(object? obj) -> bool
+override VellumPdf.Barcodes.MacroPdf417Options.GetHashCode() -> int
+override VellumPdf.Barcodes.MacroPdf417Options.ToString() -> string!
 static VellumPdf.Barcodes.BarcodeCanvasExtensions.DrawBarcode(this VellumPdf.Canvas.PdfCanvas! canvas, VellumPdf.Barcodes.Barcode! barcode, double x, double y, VellumPdf.Fonts.PdfFontResource? textFont = null) -> VellumPdf.Canvas.PdfCanvas!
 static VellumPdf.Barcodes.BarcodeSize.operator !=(VellumPdf.Barcodes.BarcodeSize left, VellumPdf.Barcodes.BarcodeSize right) -> bool
 static VellumPdf.Barcodes.BarcodeSize.operator ==(VellumPdf.Barcodes.BarcodeSize left, VellumPdf.Barcodes.BarcodeSize right) -> bool
 static VellumPdf.Barcodes.DocumentBarcodeExtensions.Add(this VellumPdf.Layout.Document! document, VellumPdf.Barcodes.Barcode! barcode) -> VellumPdf.Layout.Document!
+static VellumPdf.Barcodes.MacroPdf417Options.operator !=(VellumPdf.Barcodes.MacroPdf417Options? left, VellumPdf.Barcodes.MacroPdf417Options? right) -> bool
+static VellumPdf.Barcodes.MacroPdf417Options.operator ==(VellumPdf.Barcodes.MacroPdf417Options? left, VellumPdf.Barcodes.MacroPdf417Options? right) -> bool
+static VellumPdf.Barcodes.Pdf417Barcode.MacroSet(System.Collections.Generic.IReadOnlyList<string!>! parts, int fileId) -> System.Collections.Generic.IReadOnlyList<VellumPdf.Barcodes.Pdf417Barcode!>!
+static VellumPdf.Barcodes.Pdf417Barcode.MacroSet(System.Collections.Generic.IReadOnlyList<string!>! parts, int fileId, VellumPdf.Barcodes.MacroPdf417Options! options) -> System.Collections.Generic.IReadOnlyList<VellumPdf.Barcodes.Pdf417Barcode!>!
+static VellumPdf.Barcodes.Pdf417Barcode.MacroSet(string! content, int symbolCount, int fileId) -> System.Collections.Generic.IReadOnlyList<VellumPdf.Barcodes.Pdf417Barcode!>!
+static VellumPdf.Barcodes.Pdf417Barcode.MacroSet(string! content, int symbolCount, int fileId, VellumPdf.Barcodes.MacroPdf417Options! options) -> System.Collections.Generic.IReadOnlyList<VellumPdf.Barcodes.Pdf417Barcode!>!
+static VellumPdf.Barcodes.QrCode.StructuredAppend(System.Collections.Generic.IReadOnlyList<string!>! parts) -> System.Collections.Generic.IReadOnlyList<VellumPdf.Barcodes.QrCode!>!
+static VellumPdf.Barcodes.QrCode.StructuredAppend(System.Collections.Generic.IReadOnlyList<string!>! parts, VellumPdf.Barcodes.QrErrorCorrection errorCorrection, VellumPdf.Barcodes.QrTextEncoding textEncoding) -> System.Collections.Generic.IReadOnlyList<VellumPdf.Barcodes.QrCode!>!
+static VellumPdf.Barcodes.QrCode.StructuredAppend(string! content, int symbolCount) -> System.Collections.Generic.IReadOnlyList<VellumPdf.Barcodes.QrCode!>!
+static VellumPdf.Barcodes.QrCode.StructuredAppend(string! content, int symbolCount, VellumPdf.Barcodes.QrErrorCorrection errorCorrection, VellumPdf.Barcodes.QrTextEncoding textEncoding) -> System.Collections.Generic.IReadOnlyList<VellumPdf.Barcodes.QrCode!>!
 ~override VellumPdf.Barcodes.BarcodeSize.Equals(object obj) -> bool
 ~override VellumPdf.Barcodes.BarcodeSize.ToString() -> string

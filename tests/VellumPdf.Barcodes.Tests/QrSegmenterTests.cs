@@ -14,11 +14,19 @@ public sealed class QrSegmenterTests
         QrSegmentMode.Numeric => 10,
         QrSegmentMode.Alphanumeric => 9,
         QrSegmentMode.Byte => 8,
+        QrSegmentMode.Kanji => 8,
         _ => throw new ArgumentOutOfRangeException(nameof(mode)),
     };
 
-    private static IReadOnlyList<QrSegment> Segment(string content, bool allowAlphanumeric = true, bool allowByte = true) =>
-        QrSegmenter.Segment(content, HeaderBitsV1, Encoding.Latin1, allowAlphanumeric, allowByte);
+    private static IReadOnlyList<QrSegment> Segment(string content, bool allowAlphanumeric = true, bool allowByte = true, bool allowKanji = true) =>
+        QrSegmenter.Segment(content, HeaderBitsV1, Encoding.Latin1, allowAlphanumeric, allowByte, allowKanji);
+
+    // Kanji-mode tests need a byte-mode cost that reflects reality: QrEncoder only ever offers
+    // Kanji mode on the plain-text path, which picks UTF-8 (not Latin-1) once any character falls
+    // outside Latin-1. Latin-1's lossy best-fit fallback for non-Latin-1 runes would otherwise
+    // under-price Byte mode here and mask the DP's actual mode choice.
+    private static IReadOnlyList<QrSegment> SegmentUtf8(string content, bool allowAlphanumeric = true, bool allowKanji = true) =>
+        QrSegmenter.Segment(content, HeaderBitsV1, Encoding.UTF8, allowAlphanumeric, allowByte: true, allowKanji);
 
     [Fact]
     public void Segment_pureDigits_isOneNumericSegment()
@@ -110,5 +118,65 @@ public sealed class QrSegmenterTests
         Assert.Equal(QrSegmentMode.Byte, segment.Mode);
         Assert.Equal(1, segment.RuneCount);
         Assert.Equal(2, segment.CharLength); // one rune, two UTF-16 code units
+    }
+
+    // ── Kanji mode ───────────────────────────────────────────────────────
+
+    [Fact]
+    public void Segment_pureKanji_isOneKanjiSegment()
+    {
+        var segments = SegmentUtf8("点荷茗");
+        var segment = Assert.Single(segments);
+        Assert.Equal(QrSegmentMode.Kanji, segment.Mode);
+        Assert.Equal(3, segment.RuneCount);
+    }
+
+    [Fact]
+    public void Segment_mixedLatinAndKanji_splitsIntoByteThenKanjiThenByte()
+    {
+        // "ABC" and "DEF" (not Shift-JIS Kanji code points, so Kanji is ineligible for them) are
+        // cheaper in Byte mode; "点荷茗" in the middle is representable in Kanji or Byte mode.
+        // One run of three characters is long enough for Kanji's per-character saving (24 UTF-8
+        // bits vs. 13) to outweigh the extra 12-bit header a second mode switch costs: splitting
+        // saves 3*(24-13) = 33 bits at a cost of one extra header (12 bits), a net win, so the
+        // optimum is Byte/Kanji/Byte. (A single Kanji character wouldn't clear that bar; see
+        // Segment_shortKanjiRun_isNotWorthASeparateSegment below.)
+        var segments = SegmentUtf8("ABC点荷茗DEF", allowAlphanumeric: false);
+
+        Assert.Equal(3, segments.Count);
+        Assert.Equal(QrSegmentMode.Byte, segments[0].Mode);
+        Assert.Equal(QrSegmentMode.Kanji, segments[1].Mode);
+        Assert.Equal(3, segments[1].RuneCount);
+        Assert.Equal(QrSegmentMode.Byte, segments[2].Mode);
+    }
+
+    [Fact]
+    public void Segment_shortKanjiRun_isNotWorthASeparateSegment()
+    {
+        // A single Kanji character surrounded by Latin text doesn't clear the mode-switch bar:
+        // splitting it into its own Kanji segment costs 24 header bits (one extra 12-bit header
+        // on each side) to save only 11 data bits (24 UTF-8 bits vs. 13 Kanji bits), so the DP
+        // keeps everything in one Byte-mode segment. This is a regression guard on the DP's cost
+        // math, not just its mode-eligibility wiring.
+        var segments = SegmentUtf8("ABC点DEF", allowAlphanumeric: false);
+        var segment = Assert.Single(segments);
+        Assert.Equal(QrSegmentMode.Byte, segment.Mode);
+    }
+
+    [Fact]
+    public void Segment_kanjiEligibleCharacter_disallowKanji_fallsBackToByteMode()
+    {
+        var segments = SegmentUtf8("点", allowKanji: false);
+        var segment = Assert.Single(segments);
+        Assert.Equal(QrSegmentMode.Byte, segment.Mode);
+    }
+
+    [Fact]
+    public void Segment_nonJapaneseContent_isUnaffectedByKanjiModeBeingAvailable()
+    {
+        // Regression guard for widening the DP from 3 to 4 modes: content with no Kanji-eligible
+        // characters must segment identically whether or not Kanji mode is offered.
+        const string content = "AB12345678901234567890CD";
+        Assert.Equal(Segment(content, allowKanji: true), Segment(content, allowKanji: false));
     }
 }

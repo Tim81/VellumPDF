@@ -75,6 +75,19 @@ public sealed class QrTablesTests
     [Fact]
     public void AlphanumericCharset_has45Characters() => Assert.Equal(45, QrTables.AlphanumericCharset.Length);
 
+    [Fact]
+    public void ModeIndicator_kanji_isTable2Value() => Assert.Equal(0b1000, QrTables.ModeIndicator(QrSegmentMode.Kanji));
+
+    [Theory]
+    [InlineData(1, 8)]
+    [InlineData(9, 8)]
+    [InlineData(10, 10)]
+    [InlineData(26, 10)]
+    [InlineData(27, 12)]
+    [InlineData(40, 12)]
+    public void CharacterCountBits_kanji_matchesTable3(int version, int expectedBits) =>
+        Assert.Equal(expectedBits, QrTables.CharacterCountBits(version, QrSegmentMode.Kanji));
+
     [Theory]
     [InlineData('0', 0)]
     [InlineData('9', 9)]

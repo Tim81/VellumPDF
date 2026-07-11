@@ -1,6 +1,7 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
+using System.Text;
 using VellumPdf.Barcodes.Internal;
 using VellumPdf.Barcodes.Qr;
 
@@ -55,6 +56,116 @@ public sealed class QrCode : Barcode
     internal string? Text { get; }
 
     internal byte[]? Bytes { get; }
+
+    /// <summary>The Structured Append position/parity this symbol was stamped with by one of the <c>StructuredAppend</c> factories, if any.</summary>
+    internal StructuredAppendInfo? StructuredAppendInfo { get; init; }
+
+    /// <summary>
+    /// Splits <paramref name="parts"/> across up to 16 linked QR Code symbols (ISO/IEC 18004 §8) at
+    /// error-correction level <see cref="QrErrorCorrection.M"/> and <see cref="QrTextEncoding.Auto"/>.
+    /// See the four-parameter overload for the full description and exceptions.
+    /// </summary>
+    public static IReadOnlyList<QrCode> StructuredAppend(IReadOnlyList<string> parts) =>
+        StructuredAppend(parts, QrErrorCorrection.M, QrTextEncoding.Auto);
+
+    /// <summary>
+    /// Splits <paramref name="parts"/> across up to 16 linked QR Code symbols (ISO/IEC 18004 §8),
+    /// each stamped with the set's shared parity byte and its own 0-based position. Every returned
+    /// symbol is an ordinary <see cref="QrCode"/> that draws through the normal
+    /// <see cref="BarcodeCanvasExtensions.DrawBarcode"/> path; the caller positions and draws each
+    /// one (see the barcodes guide's Structured Append layout guidance). The parity byte is the
+    /// XOR of the whole concatenated message's bytes in the set's shared resolved encoding (UTF-8
+    /// or Latin-1, per <paramref name="textEncoding"/>), regardless of which mode any individual
+    /// part is transmitted in. That is the basis a reader confirms set membership against.
+    /// </summary>
+    /// <param name="parts">The message, pre-split into 1 to 16 parts in reading order.</param>
+    /// <param name="errorCorrection">The error-correction level applied to every symbol in the set.</param>
+    /// <param name="textEncoding">
+    /// How the concatenated message's byte-mode content is encoded. Resolved once from the whole
+    /// message (not per part), and every returned symbol is stamped with the resulting concrete
+    /// encoding so its own byte-mode data always agrees with the shared parity byte, even under
+    /// <see cref="QrTextEncoding.Auto"/>.
+    /// </param>
+    /// <returns>One <see cref="QrCode"/> per part, in the same order, each carrying its Structured Append header.</returns>
+    /// <exception cref="ArgumentException"><paramref name="parts"/> has fewer than 1 or more than 16 entries.</exception>
+    /// <exception cref="FormatException"><see cref="QrTextEncoding.Latin1"/> was requested but the concatenated message is not representable in ISO/IEC 8859-1.</exception>
+    public static IReadOnlyList<QrCode> StructuredAppend(
+        IReadOnlyList<string> parts, QrErrorCorrection errorCorrection, QrTextEncoding textEncoding)
+    {
+        ArgumentNullException.ThrowIfNull(parts);
+        if (parts.Count is < 1 or > 16)
+            throw new ArgumentException($"A Structured Append set holds 1 to 16 symbols (was {parts.Count}).", nameof(parts));
+
+        var (resolvedEncoding, parity) = ResolveStructuredAppendEncodingAndParity(string.Concat(parts), textEncoding);
+
+        var symbols = new QrCode[parts.Count];
+        for (var i = 0; i < parts.Count; i++)
+        {
+            symbols[i] = new QrCode(parts[i])
+            {
+                ErrorCorrection = errorCorrection,
+                TextEncoding = resolvedEncoding,
+                StructuredAppendInfo = new StructuredAppendInfo(i, parts.Count, parity),
+            };
+        }
+
+        return symbols;
+    }
+
+    /// <summary>
+    /// Divides <paramref name="content"/> into <paramref name="symbolCount"/> roughly-equal parts
+    /// and delegates to <see cref="StructuredAppend(IReadOnlyList{string})"/> at error-correction
+    /// level <see cref="QrErrorCorrection.M"/> and <see cref="QrTextEncoding.Auto"/>. See the
+    /// four-parameter overload for the full description and exceptions.
+    /// </summary>
+    public static IReadOnlyList<QrCode> StructuredAppend(string content, int symbolCount) =>
+        StructuredAppend(content, symbolCount, QrErrorCorrection.M, QrTextEncoding.Auto);
+
+    /// <summary>
+    /// Divides <paramref name="content"/> into <paramref name="symbolCount"/> roughly-equal parts
+    /// (split on Unicode scalar boundaries, never through a surrogate pair) and delegates to
+    /// <see cref="StructuredAppend(IReadOnlyList{string}, QrErrorCorrection, QrTextEncoding)"/>.
+    /// This factory never sets <see cref="Gs1"/>: every symbol encodes its part as plain text (or
+    /// numeric/kanji, wherever the segmenter finds it beneficial), not GS1 element-string data.
+    /// Prefer the list overload directly when the split points need to fall on specific
+    /// boundaries (e.g. a word boundary) rather than roughly-equal rune counts.
+    /// </summary>
+    /// <param name="content">The message to split.</param>
+    /// <param name="symbolCount">The number of symbols to split <paramref name="content"/> across (1-16).</param>
+    /// <param name="errorCorrection">The error-correction level applied to every symbol in the set.</param>
+    /// <param name="textEncoding">How the concatenated message's byte-mode content is encoded; see the list overload for how it is resolved.</param>
+    /// <returns>One <see cref="QrCode"/> per part, in reading order.</returns>
+    /// <exception cref="ArgumentException"><paramref name="symbolCount"/> is less than 1 or more than 16.</exception>
+    /// <exception cref="FormatException"><paramref name="content"/> contains an unpaired UTF-16 surrogate.</exception>
+    public static IReadOnlyList<QrCode> StructuredAppend(
+        string content, int symbolCount, QrErrorCorrection errorCorrection, QrTextEncoding textEncoding)
+    {
+        ArgumentNullException.ThrowIfNull(content);
+        if (symbolCount is < 1 or > 16)
+            throw new ArgumentException($"A Structured Append set holds 1 to 16 symbols (was {symbolCount}).", nameof(symbolCount));
+
+        return StructuredAppend(RuneSplitter.SplitByRune(content, symbolCount), errorCorrection, textEncoding);
+    }
+
+    /// <summary>
+    /// Resolves the byte encoding for a Structured Append set's whole concatenated message once
+    /// (so every symbol's own byte-mode data agrees with a single shared basis, even under
+    /// <see cref="QrTextEncoding.Auto"/>), returning the concrete <see cref="QrTextEncoding"/> to
+    /// stamp on every symbol and the resulting parity byte (ISO/IEC 18004 §8.1: the XOR of every
+    /// byte of the un-split message under that encoding).
+    /// </summary>
+    private static (QrTextEncoding TextEncoding, byte Parity) ResolveStructuredAppendEncodingAndParity(string message, QrTextEncoding textEncoding)
+    {
+        var (byteEncoding, useEci) = QrEncoder.ResolveTextEncoding(message, textEncoding);
+        var resolved = byteEncoding.CodePage == Encoding.Latin1.CodePage
+            ? QrTextEncoding.Latin1
+            : useEci ? QrTextEncoding.Utf8Eci : QrTextEncoding.Utf8;
+
+        byte parity = 0;
+        foreach (var b in byteEncoding.GetBytes(message)) parity ^= b;
+
+        return (resolved, parity);
+    }
 
     /// <summary>Encodes and returns the symbol's module grid, caching the result on first use.</summary>
     /// <exception cref="ArgumentException">
