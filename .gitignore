@@ -32,6 +32,9 @@ Thumbs.db
 
 # Secrets / signing keys (never commit)
 *.snk
+# Exception: the repo's own strong-name identity key (#53) — not a security
+# boundary for OSS, so it's committed intentionally rather than delay-signed.
+!eng/VellumPdf.snk
 *.pfx
 *.lic
 

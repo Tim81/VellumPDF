@@ -24,9 +24,11 @@
     <IncludeSymbols>true</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
 
-    <!-- TODO: enable strong naming before the first public release (provide eng/VellumPdf.snk). -->
-    <!-- <SignAssembly>true</SignAssembly> -->
-    <!-- <AssemblyOriginatorKeyFile>$(MSBuildThisFileDirectory)../eng/VellumPdf.snk</AssemblyOriginatorKeyFile> -->
+    <!-- Strong-named for assembly identity (#53). The private key is committed
+         intentionally: it is an identity mechanism, not a security boundary
+         for OSS, and the project does not delay-sign. -->
+    <SignAssembly>true</SignAssembly>
+    <AssemblyOriginatorKeyFile>$(MSBuildThisFileDirectory)../eng/VellumPdf.snk</AssemblyOriginatorKeyFile>
   </PropertyGroup>
 
   <!-- SourceLink: embed commit + repo metadata so consumers can step into library source from symbols. -->

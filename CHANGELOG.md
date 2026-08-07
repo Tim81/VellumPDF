@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking: all eight packages are now strong-named** (`eng/VellumPdf.snk`). This
+  changes assembly identity — consumers binding to a specific public key or public
+  key token must rebind against the new key. (#53)
+
 ## [1.11.0] - 2026-07-11
 
 ### Added
