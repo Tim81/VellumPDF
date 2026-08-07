@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Async I/O surface for `Save`, `Sign`, and `LoadTrueTypeFont`** — `PdfDocument.SaveAsync`,
+  `Document.SaveAsync(Stream)` / `SaveAsync(string)`, `Document.LoadTrueTypeFontAsync`, and
+  `SigningExtensions.SignAsync` (both overloads), each taking a `CancellationToken`. Existing
+  sync methods are unchanged. `ITimestampClient` and `IRevocationClient` gain default-implemented
+  `GetTimestampTokenAsync`/`GetRevocationDataAsync` members, so custom implementations keep
+  compiling unchanged; `HttpTimestampClient` and `HttpRevocationClient` now perform non-blocking
+  HTTP requests for the async path instead of blocking on the underlying async API. (#54)
+- **`PdfSignatureSettings.ExternalPrivateKey`** — signs with a private key supplied separately
+  from `Certificate`, for HSM/PKCS#11/cloud-KMS-backed certificates whose key isn't attached to
+  the `X509Certificate2` (Azure Key Vault, AWS KMS, `Pkcs11Interop.X509Store`, and similar).
+  Windows CNG-integrated smart cards and hardware tokens already work through the existing
+  `Certificate`-only path and need no change. (#54)
+
 ### Changed
 
 - **Breaking: all eight packages are now strong-named** (`eng/VellumPdf.snk`). This

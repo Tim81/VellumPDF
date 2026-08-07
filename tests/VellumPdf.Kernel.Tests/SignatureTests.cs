@@ -209,14 +209,195 @@ public sealed class SignatureTests
         Assert.Throws<InvalidOperationException>(() => doc.Sign(ms, settings));
     }
 
+    // ── Async I/O surface (#54) ────────────────────────────────────────────────
+
+    [Fact]
+    public async Task SignAsync_producesSameBytesAsSign()
+    {
+        using var cert = CreateTestCertificate();
+        var timestamp = new DateTimeOffset(2026, 1, 15, 12, 0, 0, TimeSpan.Zero);
+        var settingsTemplate = new PdfSignatureSettings { Certificate = cert, SigningTime = timestamp };
+
+        var syncBytes = SignOnePageDoc(cert, "VELLUM_ASYNC_PARITY", settingsTemplate, timestamp);
+        var asyncBytes = await SignOnePageDocAsync(cert, "VELLUM_ASYNC_PARITY", settingsTemplate, timestamp);
+
+        Assert.Equal(syncBytes, asyncBytes);
+    }
+
+    [Fact]
+    public async Task SignAsync_passes_BCL_CheckSignature()
+    {
+        using var cert = CreateTestCertificate();
+        var signedBytes = await SignOnePageDocAsync(cert, "VELLUM_ASYNC_VERIFY");
+
+        VerifySignatureOrThrow(signedBytes);
+        // Reaching here means CheckSignature did not throw.
+    }
+
+    [Fact]
+    public async Task SignAsync_certificateWithoutPrivateKey_throwsArgumentException()
+    {
+        using var cert = CreateTestCertificate();
+        var certWithoutKey = X509CertificateLoader.LoadCertificate(cert.Export(X509ContentType.Cert));
+
+        using var doc = new PdfDocument();
+        doc.AddPage();
+
+        var settings = new PdfSignatureSettings { Certificate = certWithoutKey };
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => doc.SignAsync(new MemoryStream(), settings, TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task SignAsync_sizeExceeded_throwsInvalidOperationException()
+    {
+        using var cert = CreateTestCertificate();
+        var settings = new PdfSignatureSettings
+        {
+            Certificate = cert,
+            EstimatedSignatureSizeBytes = 1,
+        };
+
+        using var doc = new PdfDocument();
+        doc.AddPage();
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => doc.SignAsync(new MemoryStream(), settings, TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task SignAsync_preCancelledToken_throwsOperationCanceled()
+    {
+        using var cert = CreateTestCertificate();
+        using var doc = new PdfDocument();
+        doc.AddPage();
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        var settings = new PdfSignatureSettings { Certificate = cert };
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => doc.SignAsync(new MemoryStream(), settings, cts.Token));
+    }
+
+    // ── ExternalPrivateKey (HSM/PKCS#11/cloud-KMS certificates) ───────────────
+    //
+    // Real hardware/cloud key stores aren't reachable in a unit test, so these tests use two
+    // stand-ins for "the certificate has no usable attached private key":
+    //   1. A certificate re-loaded from its public-only DER bytes (X509CertificateLoader,
+    //      the same shape a cloud key vault's certificate endpoint returns).
+    //   2. SimulatedHsmKey below, a real in-memory RSA key wrapped so that only signing is
+    //      exposed — export/import throw, matching how an HSM-backed RSA object behaves.
+    // Neither test sets PdfSignatureSettings.SigningTime, so both also exercise the
+    // ResolveSigningTime code path that copies ExternalPrivateKey onto the resolved settings.
+
+    [Fact]
+    public void Sign_withExternalPrivateKey_certificateWithoutOwnKey_producesValidSignature()
+    {
+        using var cert = CreateTestCertificate();
+        using var rsa = cert.GetRSAPrivateKey()!;
+        using var publicOnlyCert = X509CertificateLoader.LoadCertificate(cert.Export(X509ContentType.Cert));
+
+        var settings = new PdfSignatureSettings
+        {
+            Certificate = publicOnlyCert,
+            ExternalPrivateKey = rsa,
+        };
+
+        var bytes = SignOnePageDoc(publicOnlyCert, "VELLUM_EXTERNAL_KEY_TEST", settings);
+        VerifySignatureOrThrow(bytes);
+    }
+
+    [Fact]
+    public void Sign_withSimulatedHsmKey_producesValidSignature()
+    {
+        using var cert = CreateTestCertificate();
+        using var hsmKey = new SimulatedHsmKey(cert.GetRSAPrivateKey()!);
+        using var publicOnlyCert = X509CertificateLoader.LoadCertificate(cert.Export(X509ContentType.Cert));
+
+        var settings = new PdfSignatureSettings
+        {
+            Certificate = publicOnlyCert,
+            ExternalPrivateKey = hsmKey,
+        };
+
+        var bytes = SignOnePageDoc(publicOnlyCert, "VELLUM_HSM_KEY_TEST", settings);
+        VerifySignatureOrThrow(bytes);
+
+        Assert.Throws<NotSupportedException>(() => hsmKey.ExportParameters(includePrivateParameters: false));
+    }
+
+    [Fact]
+    public async Task SignAsync_withExternalPrivateKey_producesValidSignature()
+    {
+        using var cert = CreateTestCertificate();
+        using var hsmKey = new SimulatedHsmKey(cert.GetRSAPrivateKey()!);
+        using var publicOnlyCert = X509CertificateLoader.LoadCertificate(cert.Export(X509ContentType.Cert));
+
+        var settings = new PdfSignatureSettings
+        {
+            Certificate = publicOnlyCert,
+            ExternalPrivateKey = hsmKey,
+        };
+
+        var bytes = await SignOnePageDocAsync(publicOnlyCert, "VELLUM_ASYNC_HSM_KEY_TEST", settings);
+        VerifySignatureOrThrow(bytes);
+    }
+
+    [Fact]
+    public void Sign_certificateWithoutPrivateKeyAndNoExternalPrivateKey_throwsArgumentException()
+    {
+        using var cert = CreateTestCertificate();
+        using var publicOnlyCert = X509CertificateLoader.LoadCertificate(cert.Export(X509ContentType.Cert));
+
+        using var doc = new PdfDocument();
+        doc.AddPage();
+
+        var settings = new PdfSignatureSettings { Certificate = publicOnlyCert };
+        var ex = Assert.Throws<ArgumentException>(() => doc.Sign(new MemoryStream(), settings));
+        Assert.Contains("ExternalPrivateKey", ex.Message);
+    }
+
+    /// <summary>
+    /// Wraps a real RSA key but exposes only signing, matching how an HSM/PKCS#11-backed
+    /// <see cref="RSA"/> object behaves: export and import always throw.
+    /// </summary>
+    private sealed class SimulatedHsmKey(RSA inner) : RSA
+    {
+        public override int KeySize
+        {
+            get => inner.KeySize;
+            set => throw new NotSupportedException("Simulated HSM key does not support resizing.");
+        }
+
+        public override byte[] SignHash(byte[] hash, HashAlgorithmName hashAlgorithm, RSASignaturePadding padding)
+            => inner.SignHash(hash, hashAlgorithm, padding);
+
+        public override bool VerifyHash(byte[] hash, byte[] signature, HashAlgorithmName hashAlgorithm, RSASignaturePadding padding)
+            => inner.VerifyHash(hash, signature, hashAlgorithm, padding);
+
+        public override RSAParameters ExportParameters(bool includePrivateParameters)
+            => throw new NotSupportedException("Simulated HSM key does not support export.");
+
+        public override void ImportParameters(RSAParameters parameters)
+            => throw new NotSupportedException("Simulated HSM key does not support import.");
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing) inner.Dispose();
+            base.Dispose(disposing);
+        }
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     private static byte[] SignOnePageDoc(
         X509Certificate2 cert,
         string markerText = "VELLUM_SIG_TEST",
-        PdfSignatureSettings? settings = null)
+        PdfSignatureSettings? settings = null,
+        DateTimeOffset? timestamp = null)
     {
         using var doc = new PdfDocument();
+        if (timestamp is { } ts) doc.Timestamp = ts;
         var page = doc.AddPage();
         var font = doc.UseFont(Standard14.Helvetica);
         var canvas = new PdfCanvas(page);
@@ -230,6 +411,31 @@ public sealed class SignatureTests
         var sigSettings = settings ?? new PdfSignatureSettings { Certificate = cert };
         var ms = new MemoryStream();
         doc.Sign(ms, sigSettings);
+        return ms.ToArray();
+    }
+
+    /// <summary>Asynchronous counterpart of <see cref="SignOnePageDoc"/>, using <see cref="SigningExtensions.SignAsync(PdfDocument, Stream, PdfSignatureSettings, CancellationToken)"/>.</summary>
+    private static async Task<byte[]> SignOnePageDocAsync(
+        X509Certificate2 cert,
+        string markerText = "VELLUM_SIG_TEST",
+        PdfSignatureSettings? settings = null,
+        DateTimeOffset? timestamp = null)
+    {
+        using var doc = new PdfDocument();
+        if (timestamp is { } ts) doc.Timestamp = ts;
+        var page = doc.AddPage();
+        var font = doc.UseFont(Standard14.Helvetica);
+        var canvas = new PdfCanvas(page);
+        canvas.BeginText()
+              .SetFont(font, 12)
+              .SetTextMatrix(1, 0, 0, 1, 72, 720)
+              .ShowText(markerText)
+              .EndText();
+        canvas.Finish();
+
+        var sigSettings = settings ?? new PdfSignatureSettings { Certificate = cert };
+        var ms = new MemoryStream();
+        await doc.SignAsync(ms, sigSettings);
         return ms.ToArray();
     }
 

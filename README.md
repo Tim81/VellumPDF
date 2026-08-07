@@ -162,8 +162,22 @@ the QR charset policy. QR Code is a registered trademark of DENSO WAVE INCORPORA
 - **Units.** All coordinates and sizes are in PDF user-space **points** (1 pt = 1/72 inch).
   `PageSize` provides the common ISO-A sizes plus a `PageSize.Mm(width, height)` helper for
   custom millimetre dimensions.
-- **Synchronous I/O.** Saving, signing, and the font/image loaders are synchronous by design
-  for 1.0 — there is no `async` surface. Offload to `Task.Run` if you need to keep a thread free.
+- **Synchronous and asynchronous I/O.** `Save`, `Sign`, and `LoadTrueTypeFont` each have an
+  `*Async` counterpart (`SaveAsync`, `SignAsync`, `LoadTrueTypeFontAsync`) that accepts a
+  `CancellationToken`. Document serialization is CPU-bound, so the async methods offload it to
+  a thread-pool thread; the token is honoured before that work starts and during the final
+  write, but does not interrupt serialization already in progress. `SignAsync` performs
+  non-blocking network calls for PAdES B-T/B-LT/B-LTA timestamp and revocation lookups. Image
+  loaders remain synchronous: they parse in-memory bytes and never touch disk or the network.
+- **Signing with HSM/PKCS#11/cloud-KMS certificates.** `PdfSignatureSettings.Certificate` must
+  normally include its own private key, but `PdfSignatureSettings.ExternalPrivateKey` accepts a
+  separate `RSA`/`ECDsa` object for certificates whose key isn't attached to the
+  `X509Certificate2` — for example a certificate fetched from Azure Key Vault, AWS KMS, or a
+  PKCS#11 device (via a library such as `Pkcs11Interop.X509Store`). `Certificate` is still
+  required in that case, for the public key, subject, and certificate chain. Windows-attached
+  smart cards and CNG-integrated hardware tokens already work without this: loading the
+  certificate from `X509Store` returns a CNG-backed private key that plugs into the normal
+  `Certificate`-only path.
 
 ## Validation & CI
 

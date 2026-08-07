@@ -1,21 +1,33 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
+using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 
 namespace VellumPdf.Signing;
 
 /// <summary>
 /// Settings for PAdES/PKCS#7 digital signature creation.
-/// The certificate MUST include a private key (i.e. <see cref="X509Certificate2.HasPrivateKey"/>
-/// must return true).
+/// Either the certificate must include a private key (i.e. <see cref="X509Certificate2.HasPrivateKey"/>
+/// must return true), or <see cref="ExternalPrivateKey"/> must be supplied.
 /// </summary>
 public sealed class PdfSignatureSettings
 {
     /// <summary>
-    /// The signing certificate with private key.
+    /// The signing certificate. When <see cref="ExternalPrivateKey"/> is not set, this
+    /// certificate must include a private key.
     /// </summary>
     public required X509Certificate2 Certificate { get; init; }
+
+    /// <summary>
+    /// An externally-held private key to sign with, for certificates whose key is not
+    /// attached to <see cref="Certificate"/> (for example, a certificate fetched from a
+    /// cloud key vault, or a key held on a PKCS#11 device without Windows CNG integration).
+    /// When <see langword="null"/> (the default), the key attached to <see cref="Certificate"/>
+    /// is used instead. <see cref="Certificate"/> is still required in either case, for the
+    /// public key, subject, and certificate chain.
+    /// </summary>
+    public AsymmetricAlgorithm? ExternalPrivateKey { get; init; }
 
     /// <summary>Optional signer name written to /Name in the signature dictionary.</summary>
     public string? SignerName { get; init; }

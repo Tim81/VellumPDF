@@ -286,6 +286,49 @@ public sealed class ArchiveTimestampBuilderTests
         Assert.Equal(3L, sigFlags.Value);
     }
 
+    // ── Async I/O surface (#54) ────────────────────────────────────────────────
+
+    [Fact]
+    public async Task AddArchiveTimestampAsync_throws_on_null_pdf()
+    {
+        var tsaClient = new TestTimestampClient(s_pinnedTime);
+        await Assert.ThrowsAsync<ArgumentNullException>(
+            () => ArchiveTimestampBuilder.AddArchiveTimestampAsync(null!, tsaClient, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task AddArchiveTimestampAsync_throws_on_null_client()
+    {
+        await Assert.ThrowsAsync<ArgumentNullException>(
+            () => ArchiveTimestampBuilder.AddArchiveTimestampAsync([], null!, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task AddArchiveTimestampAsync_producesSameBytesAsSync()
+    {
+        using var cert = CreateSelfSignedCertificate();
+        var ltvBytes = BuildBLtPdf(cert);
+        var tsaClient = new TestTimestampClient(s_pinnedTime);
+
+        var bltaSync = ArchiveTimestampBuilder.AddArchiveTimestamp(ltvBytes, tsaClient);
+        var bltaAsync = await ArchiveTimestampBuilder.AddArchiveTimestampAsync(ltvBytes, tsaClient, CancellationToken.None);
+
+        Assert.Equal(bltaSync, bltaAsync);
+    }
+
+    [Fact]
+    public async Task BLtaAsync_pdf_contains_two_signatures()
+    {
+        using var cert = CreateSelfSignedCertificate();
+        var ltvBytes = BuildBLtPdf(cert);
+        var tsaClient = new TestTimestampClient(s_pinnedTime);
+
+        var bltaBytes = await ArchiveTimestampBuilder.AddArchiveTimestampAsync(ltvBytes, tsaClient, CancellationToken.None);
+
+        using var reader = PdfReader.Open(bltaBytes);
+        Assert.Equal(2, reader.Signatures.Count);
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────────
 
     private sealed class CannedRevocationClient : IRevocationClient

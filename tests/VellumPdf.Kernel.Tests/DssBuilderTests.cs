@@ -368,6 +368,49 @@ public sealed class DssBuilderTests
         Assert.NotNull(dssRaw);
     }
 
+    // ── Async I/O surface (#54) ────────────────────────────────────────────────
+
+    [Fact]
+    public async Task AddLongTermValidationAsync_throws_when_no_signatures()
+    {
+        using var doc = new PdfDocument();
+        doc.AddPage();
+        var ms = new MemoryStream();
+        doc.Save(ms);
+        var unsignedBytes = ms.ToArray();
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => DssBuilder.AddLongTermValidationAsync(unsignedBytes, new CannedRevocationClient(), CancellationToken.None));
+        Assert.Contains("no signatures", ex.Message);
+    }
+
+    [Fact]
+    public async Task AddLongTermValidationAsync_producesSameBytesAsSync()
+    {
+        using var cert = CreateSelfSignedCertificate();
+        var tsaClient = new TestTimestampClient(s_pinnedTime);
+        var signedBytes = SignOnePage(cert, tsaClient);
+
+        var ltvSync = DssBuilder.AddLongTermValidation(signedBytes, new CannedRevocationClient());
+        var ltvAsync = await DssBuilder.AddLongTermValidationAsync(signedBytes, new CannedRevocationClient(), CancellationToken.None);
+
+        Assert.Equal(ltvSync, ltvAsync);
+    }
+
+    [Fact]
+    public async Task AddLongTermValidationAsync_dssCatalogEntry_present()
+    {
+        using var cert = CreateSelfSignedCertificate();
+        var tsaClient = new TestTimestampClient(s_pinnedTime);
+
+        var signedBytes = SignOnePage(cert, tsaClient);
+        var ltvBytes = await DssBuilder.AddLongTermValidationAsync(signedBytes, new CannedRevocationClient(), CancellationToken.None);
+
+        using var reader = PdfReader.Open(ltvBytes);
+        var dssRaw = reader.Catalog.Get(new PdfName("DSS"));
+        Assert.NotNull(dssRaw);
+    }
+
     // ── Helpers ──────────────────────────────────────────────────────────────────
 
     /// <summary>
