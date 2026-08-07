@@ -20,6 +20,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the `X509Certificate2` (Azure Key Vault, AWS KMS, `Pkcs11Interop.X509Store`, and similar).
   Windows CNG-integrated smart cards and hardware tokens already work through the existing
   `Certificate`-only path and need no change. (#54)
+- **`IExternalSigner`** — a two-phase async external-signer API for a cloud KMS or remote HSM
+  where the signing call itself is a network round-trip (Azure Key Vault, AWS KMS, GCP KMS). No
+  BCL API supports this today, since `CmsSigner` only accepts a synchronous, in-process private
+  key; VellumPdf computes the CMS signed-attributes digest itself, hands it to the caller's async
+  signer, and assembles the resulting `SignerInfo` by hand. Set `PdfSignatureSettings.ExternalSigner`
+  and sign with `SignAsync`; the synchronous `Sign` overloads throw, since there is no synchronous
+  way to bridge a network call. `EcdsaSignatureConverter` is included for KMS providers, such as
+  Azure Key Vault, that return a raw ECDSA signature rather than the DER encoding CMS requires. (#165)
 
 ### Changed
 

@@ -17,6 +17,12 @@ namespace VellumPdf.Kernel.Tests;
 /// Tests for <see cref="DssBuilder.AddLongTermValidation"/>: PAdES B-LT /DSS construction.
 /// All tests are fully offline and deterministic.
 /// </summary>
+/// <remarks>
+/// In the <see cref="CertificateAuthorityStoreCollection"/> collection: one test here installs
+/// a CA certificate into the physical <c>CurrentUser\CA</c> Windows store, which races against
+/// <see cref="ExternalSignerChainTests"/> doing the same if the two ran in parallel.
+/// </remarks>
+[Collection("CertificateAuthorityStore")]
 public sealed class DssBuilderTests
 {
     // Canned DER payloads — minimal well-formed SEQUENCE bytes; DssBuilder embeds verbatim.

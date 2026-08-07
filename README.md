@@ -178,6 +178,14 @@ the QR charset policy. QR Code is a registered trademark of DENSO WAVE INCORPORA
   smart cards and CNG-integrated hardware tokens already work without this: loading the
   certificate from `X509Store` returns a CNG-backed private key that plugs into the normal
   `Certificate`-only path.
+- **Signing with an async cloud KMS or remote HSM.** `ExternalPrivateKey` still needs a
+  synchronous `RSA`/`ECDsa` object, so a KMS whose signing call is a network round-trip (Azure
+  Key Vault, AWS KMS, GCP KMS) can only be bridged by blocking a thread. To avoid that, set
+  `PdfSignatureSettings.ExternalSigner` to an `IExternalSigner` and sign with `SignAsync`:
+  VellumPdf computes the CMS signed-attributes digest, hands it to the async signer, and
+  assembles the resulting signature itself. The synchronous `Sign` overloads throw when
+  `ExternalSigner` is set. `EcdsaSignatureConverter.RawToDer` converts the raw ECDSA signature
+  format Azure Key Vault returns into the DER encoding CMS requires.
 
 ## Validation & CI
 

@@ -59,3 +59,10 @@ VellumPdf.Signing.PdfSignatureSettings.RevocationClient.get -> VellumPdf.Signing
 VellumPdf.Signing.PdfSignatureSettings.RevocationClient.init -> void
 VellumPdf.Signing.PdfSignatureSettings.ExternalPrivateKey.get -> System.Security.Cryptography.AsymmetricAlgorithm?
 VellumPdf.Signing.PdfSignatureSettings.ExternalPrivateKey.init -> void
+VellumPdf.Signing.PdfSignatureSettings.ExternalSigner.get -> VellumPdf.Signing.IExternalSigner?
+VellumPdf.Signing.PdfSignatureSettings.ExternalSigner.init -> void
+VellumPdf.Signing.IExternalSigner
+VellumPdf.Signing.IExternalSigner.HashAlgorithm.get -> System.Security.Cryptography.HashAlgorithmName
+VellumPdf.Signing.IExternalSigner.SignAsync(System.ReadOnlyMemory<byte> signedAttributesDigest, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<byte[]!>!
+VellumPdf.Signing.EcdsaSignatureConverter
+static VellumPdf.Signing.EcdsaSignatureConverter.RawToDer(System.ReadOnlySpan<byte> rawSignature) -> byte[]!

@@ -41,11 +41,13 @@ public static class SigningExtensions
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Thrown when the certificate in <paramref name="settings"/> does not include a private key
-    /// and <see cref="PdfSignatureSettings.ExternalPrivateKey"/> is not set, or when the chosen
+    /// and neither <see cref="PdfSignatureSettings.ExternalPrivateKey"/> nor
+    /// <see cref="PdfSignatureSettings.ExternalSigner"/> is set, or when the chosen
     /// <see cref="PadesLevel"/> requires a client that is not set.
     /// </exception>
     /// <exception cref="NotSupportedException">
-    /// Thrown when encryption has already been configured on the document.
+    /// Thrown when encryption has already been configured on the document, or when
+    /// <see cref="PdfSignatureSettings.ExternalSigner"/> is set (it requires <c>SignAsync</c>).
     /// </exception>
     public static void Sign(this PdfDocument doc, Stream output, PdfSignatureSettings settings)
     {
@@ -54,6 +56,7 @@ public static class SigningExtensions
         ArgumentNullException.ThrowIfNull(settings);
 
         ValidateSigningKeyPresent(settings);
+        ValidateNoExternalSignerForSyncSign(settings);
         ValidateLevel(settings);
 
         // Resolve signing time once so /M (written by the Kernel) and the CMS
@@ -119,11 +122,13 @@ public static class SigningExtensions
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Thrown when the certificate in <paramref name="settings"/> does not include a private key
-    /// and <see cref="PdfSignatureSettings.ExternalPrivateKey"/> is not set, or when the chosen
+    /// and neither <see cref="PdfSignatureSettings.ExternalPrivateKey"/> nor
+    /// <see cref="PdfSignatureSettings.ExternalSigner"/> is set, or when the chosen
     /// <see cref="PadesLevel"/> requires a client that is not set.
     /// </exception>
     /// <exception cref="NotSupportedException">
-    /// Thrown when encryption has already been configured on the document.
+    /// Thrown when encryption has already been configured on the document, or when
+    /// <see cref="PdfSignatureSettings.ExternalSigner"/> is set (it requires <c>SignAsync</c>).
     /// </exception>
     public static void Sign(this VellumPdf.Layout.Document doc, Stream output, PdfSignatureSettings settings)
     {
@@ -132,6 +137,7 @@ public static class SigningExtensions
         ArgumentNullException.ThrowIfNull(settings);
 
         ValidateSigningKeyPresent(settings);
+        ValidateNoExternalSignerForSyncSign(settings);
         ValidateLevel(settings);
 
         // Resolve signing time once so /M (written by the Kernel) and the CMS
@@ -157,7 +163,8 @@ public static class SigningExtensions
     /// </exception>
     /// <exception cref="ArgumentException">
     /// Thrown when the certificate in <paramref name="settings"/> does not include a private key
-    /// and <see cref="PdfSignatureSettings.ExternalPrivateKey"/> is not set, or when the chosen
+    /// and none of <see cref="PdfSignatureSettings.ExternalPrivateKey"/> or
+    /// <see cref="PdfSignatureSettings.ExternalSigner"/> is set, or when the chosen
     /// <see cref="PadesLevel"/> requires a client that is not set.
     /// </exception>
     /// <exception cref="NotSupportedException">
@@ -184,17 +191,34 @@ public static class SigningExtensions
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Validates that a signing key is available, either attached to
-    /// <see cref="PdfSignatureSettings.Certificate"/> or supplied separately via
-    /// <see cref="PdfSignatureSettings.ExternalPrivateKey"/>. Throws
-    /// <see cref="ArgumentException"/> when neither is present.
+    /// Validates that a signing key is available: attached to
+    /// <see cref="PdfSignatureSettings.Certificate"/>, or supplied separately via
+    /// <see cref="PdfSignatureSettings.ExternalPrivateKey"/> or
+    /// <see cref="PdfSignatureSettings.ExternalSigner"/>. Throws
+    /// <see cref="ArgumentException"/> when none is present.
     /// </summary>
     private static void ValidateSigningKeyPresent(PdfSignatureSettings settings)
     {
-        if (!settings.Certificate.HasPrivateKey && settings.ExternalPrivateKey is null)
+        if (!settings.Certificate.HasPrivateKey
+            && settings.ExternalPrivateKey is null
+            && settings.ExternalSigner is null)
             throw new ArgumentException(
                 "The signing certificate must include a private key, or " +
-                "PdfSignatureSettings.ExternalPrivateKey must be set.", nameof(settings));
+                "PdfSignatureSettings.ExternalPrivateKey or PdfSignatureSettings.ExternalSigner " +
+                "must be set.", nameof(settings));
+    }
+
+    /// <summary>
+    /// Validates that <see cref="PdfSignatureSettings.ExternalSigner"/>, which requires an
+    /// async signing call, is not used with the synchronous <c>Sign</c> overloads. Throws
+    /// <see cref="NotSupportedException"/> when it is set.
+    /// </summary>
+    private static void ValidateNoExternalSignerForSyncSign(PdfSignatureSettings settings)
+    {
+        if (settings.ExternalSigner is not null)
+            throw new NotSupportedException(
+                "PdfSignatureSettings.ExternalSigner requires an async signing call and is " +
+                "not supported by the synchronous Sign overloads. Use SignAsync instead.");
     }
 
     /// <summary>
@@ -224,6 +248,7 @@ public static class SigningExtensions
             {
                 Certificate = settings.Certificate,
                 ExternalPrivateKey = settings.ExternalPrivateKey,
+                ExternalSigner = settings.ExternalSigner,
                 SignerName = settings.SignerName,
                 Reason = settings.Reason,
                 Location = settings.Location,

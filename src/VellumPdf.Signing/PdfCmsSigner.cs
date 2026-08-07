@@ -120,6 +120,11 @@ internal static class PdfCmsSigner
 
     private static byte[] ComputeCmsSignature(byte[] signedContent, PdfSignatureSettings settings)
     {
+        if (settings.ExternalSigner is not null)
+            throw new NotSupportedException(
+                "PdfSignatureSettings.ExternalSigner requires an async signing call and is " +
+                "not supported by the synchronous Sign overloads. Use SignAsync instead.");
+
         var signer = CreateSigner(settings);
 
         var signingTime = settings.SigningTime ?? DateTimeOffset.UtcNow;
@@ -155,37 +160,57 @@ internal static class PdfCmsSigner
 
     private static async Task<byte[]> ComputeCmsSignatureAsync(byte[] signedContent, PdfSignatureSettings settings, CancellationToken cancellationToken)
     {
-        var signer = CreateSigner(settings);
+        SignedCms cms;
 
-        var signingTime = settings.SigningTime ?? DateTimeOffset.UtcNow;
-        signer.SignedAttributes.Add(new Pkcs9SigningTime(signingTime.UtcDateTime));
-
-        var cms = new SignedCms(new ContentInfo(signedContent), detached: true);
-        cms.ComputeSignature(signer);
-
-        if (settings.TimestampClient is not null)
+        if (settings.ExternalSigner is not null)
         {
-            var si = cms.SignerInfos[0];
-            var signatureValue = si.GetSignature();
-            var digest = SHA256.HashData(signatureValue);
-            var tokenDer = await settings.TimestampClient.GetTimestampTokenAsync(digest, HashAlgorithmName.SHA256, cancellationToken).ConfigureAwait(false);
-            // Ensure the returned data decodes as a valid RFC 3161 token before embedding.
-            if (!Rfc3161TimestampToken.TryDecode(tokenDer, out var token, out _))
-                throw new InvalidOperationException("Timestamp client returned data that is not a valid RFC 3161 token.");
-            // Defense in depth: a custom ITimestampClient could return a structurally valid token
-            // that was computed over unrelated data. Confirm the token actually stamps THIS
-            // signature's digest with the algorithm we asked for, so we never embed a timestamp
-            // that does not cover the signature.
-            var tokenInfo = token!.TokenInfo;
-            if (tokenInfo.HashAlgorithmId.Value != "2.16.840.1.101.3.4.2.1" // SHA-256
-                || !tokenInfo.GetMessageHash().Span.SequenceEqual(digest))
-                throw new InvalidOperationException(
-                    "The RFC 3161 timestamp token does not cover the signature digest.");
-            // OID 1.2.840.113549.1.9.16.2.14 = id-aa-signatureTimeStampToken (RFC 3161 unsigned attribute)
-            si.AddUnsignedAttribute(new AsnEncodedData(new Oid("1.2.840.113549.1.9.16.2.14"), tokenDer));
+            cms = await ExternalSignerCms.BuildAsync(signedContent, settings, cancellationToken).ConfigureAwait(false);
         }
+        else
+        {
+            var signer = CreateSigner(settings);
+
+            var signingTime = settings.SigningTime ?? DateTimeOffset.UtcNow;
+            signer.SignedAttributes.Add(new Pkcs9SigningTime(signingTime.UtcDateTime));
+
+            cms = new SignedCms(new ContentInfo(signedContent), detached: true);
+            cms.ComputeSignature(signer);
+        }
+
+        await EmbedTimestampIfConfiguredAsync(cms, settings, cancellationToken).ConfigureAwait(false);
 
         return cms.Encode();
     }
 
+    /// <summary>
+    /// Obtains an RFC 3161 timestamp over <paramref name="cms"/>'s signature value and
+    /// embeds it as an unsigned attribute, when <see cref="PdfSignatureSettings.TimestampClient"/>
+    /// is set. Unsigned attributes don't affect the signature, so this applies identically
+    /// regardless of whether <paramref name="cms"/> was produced by <see cref="CmsSigner"/>
+    /// or by <see cref="ExternalSignerCms"/>.
+    /// </summary>
+    private static async Task EmbedTimestampIfConfiguredAsync(SignedCms cms, PdfSignatureSettings settings, CancellationToken cancellationToken)
+    {
+        if (settings.TimestampClient is null)
+            return;
+
+        var si = cms.SignerInfos[0];
+        var signatureValue = si.GetSignature();
+        var digest = SHA256.HashData(signatureValue);
+        var tokenDer = await settings.TimestampClient.GetTimestampTokenAsync(digest, HashAlgorithmName.SHA256, cancellationToken).ConfigureAwait(false);
+        // Ensure the returned data decodes as a valid RFC 3161 token before embedding.
+        if (!Rfc3161TimestampToken.TryDecode(tokenDer, out var token, out _))
+            throw new InvalidOperationException("Timestamp client returned data that is not a valid RFC 3161 token.");
+        // Defense in depth: a custom ITimestampClient could return a structurally valid token
+        // that was computed over unrelated data. Confirm the token actually stamps THIS
+        // signature's digest with the algorithm we asked for, so we never embed a timestamp
+        // that does not cover the signature.
+        var tokenInfo = token!.TokenInfo;
+        if (tokenInfo.HashAlgorithmId.Value != "2.16.840.1.101.3.4.2.1" // SHA-256
+            || !tokenInfo.GetMessageHash().Span.SequenceEqual(digest))
+            throw new InvalidOperationException(
+                "The RFC 3161 timestamp token does not cover the signature digest.");
+        // OID 1.2.840.113549.1.9.16.2.14 = id-aa-signatureTimeStampToken (RFC 3161 unsigned attribute)
+        si.AddUnsignedAttribute(new AsnEncodedData(new Oid("1.2.840.113549.1.9.16.2.14"), tokenDer));
+    }
 }
