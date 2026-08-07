@@ -4,6 +4,10 @@
   <Import Project="$(MSBuildThisFileDirectory)../../eng/StrongNameTestFriend.props" />
 
   <ItemGroup>
+    <Compile Include="$(MSBuildThisFileDirectory)../../eng/StrongNamePublicKeyAssertion.cs" Link="StrongNamePublicKeyAssertion.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\VellumPdf.Kernel\VellumPdf.Kernel.csproj" />
     <ProjectReference Include="..\..\src\VellumPdf.Layout\VellumPdf.Layout.csproj" />
     <ProjectReference Include="..\..\src\VellumPdf.Barcodes\VellumPdf.Barcodes.csproj" />
