@@ -37,10 +37,16 @@ public interface IExternalSigner
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>
     /// For an RSA certificate, the PKCS#1 v1.5 signature bytes — the format Azure Key
-    /// Vault's and AWS KMS's RSA sign operations already return. For an EC certificate,
-    /// the DER-encoded <c>ECDSA-Sig-Value</c> sequence, not a raw <c>r || s</c>
-    /// concatenation: Azure Key Vault's ECDSA sign operation returns raw <c>r || s</c> and
-    /// needs converting first with <see cref="EcdsaSignatureConverter.RawToDer"/>.
+    /// Vault's and AWS KMS's RSA sign operations already return. RSASSA-PSS is not
+    /// supported: the CMS <c>SignerInfo.signatureAlgorithm</c> this library writes for an
+    /// RSA certificate is always <c>rsaEncryption</c> (PKCS#1 v1.5), so a PSS signature
+    /// (Azure Key Vault <c>PS256</c>/<c>PS384</c>/<c>PS512</c>, AWS KMS
+    /// <c>RSASSA_PSS_SHA_256</c> and similar) fails verification even though the signer
+    /// itself succeeded — configure the KMS/HSM key for PKCS#1 v1.5 signing instead. For an
+    /// EC certificate, the DER-encoded <c>ECDSA-Sig-Value</c> sequence, not a raw
+    /// <c>r || s</c> concatenation: Azure Key Vault's ECDSA sign operation returns raw
+    /// <c>r || s</c> and needs converting first with
+    /// <see cref="EcdsaSignatureConverter.RawToDer"/>.
     /// </returns>
     Task<byte[]> SignAsync(ReadOnlyMemory<byte> signedAttributesDigest, CancellationToken cancellationToken = default);
 }

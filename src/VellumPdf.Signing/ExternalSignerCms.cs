@@ -29,7 +29,10 @@ internal static class ExternalSignerCms
     private const string IdMessageDigest = "1.2.840.113549.1.9.4";
     private const string IdSigningTime = "1.2.840.113549.1.9.5";
 
-    // RSA PKCS#1 v1.5 signature algorithm OIDs (RFC 8017 Appendix C).
+    // RSA PKCS#1 v1.5 signature algorithm OIDs (RFC 8017 Appendix C). RFC 5754 §3.2
+    // requires these hash-specific OIDs — not the hash-agnostic rsaEncryption — for
+    // SignerInfo.signatureAlgorithm when signing with SHA-256/384/512, with the
+    // AlgorithmIdentifier parameters field set to NULL.
     private const string Sha256WithRsaEncryption = "1.2.840.113549.1.1.11";
     private const string Sha384WithRsaEncryption = "1.2.840.113549.1.1.12";
     private const string Sha512WithRsaEncryption = "1.2.840.113549.1.1.13";
@@ -100,7 +103,7 @@ internal static class ExternalSignerCms
                 writer.WriteInteger(1); // version
                 using (writer.PushSetOf()) // digestAlgorithms
                 {
-                    WriteAlgorithmIdentifier(writer, digestOid, includeNullParams: true);
+                    WriteAlgorithmIdentifier(writer, digestOid, includeNullParams: false);
                 }
                 using (writer.PushSequence()) // encapContentInfo (no eContent — detached)
                 {
@@ -118,9 +121,9 @@ internal static class ExternalSignerCms
                     using (writer.PushSequence()) // IssuerAndSerialNumber
                     {
                         writer.WriteEncodedValue(certificate.IssuerName.RawData);
-                        WriteSerialNumber(writer, certificate.SerialNumberBytes.ToArray());
+                        Asn1SerialNumber.Write(writer, certificate.SerialNumberBytes.ToArray());
                     }
-                    WriteAlgorithmIdentifier(writer, digestOid, includeNullParams: true);
+                    WriteAlgorithmIdentifier(writer, digestOid, includeNullParams: false);
                     writer.WriteEncodedValue(signedAttrsForEmbed);
                     WriteAlgorithmIdentifier(writer, signatureAlgorithmOid, includeNullParams: !isEc);
                     writer.WriteOctetString(signature);
@@ -151,11 +154,15 @@ internal static class ExternalSignerCms
         catch (CryptographicException ex)
         {
             throw new InvalidOperationException(
-                "The external signer produced a signature that failed verification. Check " +
-                "that IExternalSigner.SignAsync returned the signature in the format " +
-                "SignerInfo.signature requires — see the IExternalSigner.SignAsync " +
-                "documentation (RSA: PKCS#1 v1.5 bytes; EC: the DER ECDSA-Sig-Value " +
-                "sequence, not raw r || s — see EcdsaSignatureConverter).",
+                "The external signer produced a signature that failed verification. Likely " +
+                "causes: (1) the signer used RSASSA-PSS padding — only PKCS#1 v1.5 is " +
+                "supported, see IExternalSigner's documentation; (2) the signature bytes are " +
+                "not in the format SignerInfo.signature requires — see the " +
+                "IExternalSigner.SignAsync documentation (RSA: PKCS#1 v1.5 bytes; EC: the DER " +
+                "ECDSA-Sig-Value sequence, not raw r || s — see EcdsaSignatureConverter); or " +
+                "(3) the signer used a different key than settings.Certificate's public key — " +
+                "check that the KMS key ID or HSM slot actually corresponds to that " +
+                "certificate.",
                 ex);
         }
 
@@ -205,20 +212,6 @@ internal static class ExternalSignerCms
             writer.WriteUtcTime(time);
         else
             writer.WriteGeneralizedTime(time);
-    }
-
-    // Mirrors HttpRevocationClient.WriteSerialNumber: the serial number is already a
-    // big-endian, signed two's-complement value as carried in the certificate, so it is
-    // written with WriteInteger (not WriteIntegerUnsigned).
-    private static void WriteSerialNumber(AsnWriter writer, byte[] serial)
-    {
-        if (serial.Length == 0)
-        {
-            writer.WriteInteger(0);
-            return;
-        }
-
-        writer.WriteInteger(serial);
     }
 
     private static List<byte[]> BuildCertificateChain(X509Certificate2 certificate)

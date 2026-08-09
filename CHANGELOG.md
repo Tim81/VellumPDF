@@ -34,6 +34,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Breaking: all eight packages are now strong-named** (`eng/VellumPdf.snk`). This
   changes assembly identity — consumers binding to a specific public key or public
   key token must rebind against the new key. (#53)
+- **External-signer CMS digest `AlgorithmIdentifier`s now match RFC 5754** — both
+  `SignedData.digestAlgorithms` and `SignerInfo.digestAlgorithm` now omit their parameters
+  field instead of carrying a redundant DER NULL, per RFC 5754 §2 ("implementations MUST
+  generate SHA2 AlgorithmIdentifiers with absent parameters"). `SignerInfo.signatureAlgorithm`
+  was already correct — `sha256WithRSAEncryption`/`sha384WithRSAEncryption`/`sha512WithRSAEncryption`
+  with NULL parameters, as RFC 5754 §3.2 requires — and is unchanged. Neither change touches
+  the signature value: AlgorithmIdentifiers sit outside the SignedAttrs digest. (#166)
+
+### Fixed
+
+- **`ExternalSignerCms` and `HttpRevocationClient` no longer throw on a certificate with a
+  non-minimally-encoded serial number** — a mis-issued certificate whose serial carries a
+  redundant leading pad byte (something `X509Certificate2` tolerates but DER forbids)
+  previously threw an unexplained `ArgumentException` from `AsnWriter.WriteInteger` when
+  embedding the serial in a CMS `SignerInfo` or an OCSP request; the serial is now
+  normalized to its minimal two's-complement form first. Genuinely negative serials still
+  round-trip unchanged. (#167)
+- **Clearer `ExternalSignerCms` failure messages** — a `CheckSignature` failure now names
+  RSASSA-PSS (unsupported — see `IExternalSigner`'s documentation) and a KMS key ID pointing
+  at the wrong key as likely causes alongside a malformed signature, rather than pointing only
+  at signature format. (#167)
 
 ## [1.11.0] - 2026-07-11
 

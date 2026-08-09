@@ -23,6 +23,16 @@ namespace VellumPdf.Kernel.Tests;
 /// </summary>
 public sealed class SignatureTests
 {
+    // rsaEncryption (RFC 8017 Appendix C) — the hash-agnostic OID the BCL's own CmsSigner
+    // emits for SignerInfo.signatureAlgorithm (verified empirically; CmsSigner itself
+    // decides this, this codebase does not).
+    private const string RsaEncryptionOid = "1.2.840.113549.1.1.1";
+
+    // sha256WithRSAEncryption (RFC 8017 Appendix C) — the hash-specific OID RFC 5754 §3.2
+    // requires ExternalSignerCms to emit for SignerInfo.signatureAlgorithm when signing
+    // with SHA-256.
+    private const string Sha256WithRsaEncryptionOid = "1.2.840.113549.1.1.11";
+
     // ── Test certificate ─────────────────────────────────────────────────────
 
     /// <summary>
@@ -411,6 +421,59 @@ public sealed class SignatureTests
         VerifySignatureOrThrow(bytes);
     }
 
+    [Theory]
+    [InlineData("SHA256", "2.16.840.1.101.3.4.2.1", "1.2.840.113549.1.1.11")]
+    [InlineData("SHA384", "2.16.840.1.101.3.4.2.2", "1.2.840.113549.1.1.12")]
+    [InlineData("SHA512", "2.16.840.1.101.3.4.2.3", "1.2.840.113549.1.1.13")]
+    public async Task SignAsync_withExternalSigner_hashAlgorithm_emitsExpectedAlgorithmIdentifiers(
+        string hashAlgorithmName, string expectedDigestOid, string expectedSignatureOid)
+    {
+        using var cert = CreateTestCertificate();
+        using var rsa = cert.GetRSAPrivateKey()!;
+        using var publicOnlyCert = X509CertificateLoader.LoadCertificate(cert.Export(X509ContentType.Cert));
+        var hashAlgorithm = new HashAlgorithmName(hashAlgorithmName);
+
+        var settings = new PdfSignatureSettings
+        {
+            Certificate = publicOnlyCert,
+            ExternalSigner = new SimulatedAsyncKmsSigner(rsa, hashAlgorithm: hashAlgorithm),
+        };
+
+        var bytes = await SignOnePageDocAsync(publicOnlyCert, $"VELLUM_EXTERNAL_SIGNER_{hashAlgorithmName}", settings);
+        VerifySignatureOrThrow(bytes);
+
+        // Pins the exact digest AND signature OID per hash algorithm: DigestAlgorithmOid
+        // and SignatureAlgorithmOid each have three near-identical OID constants that
+        // differ only in their last arc, and VerifySignatureOrThrow alone would still pass
+        // with any of them transposed — SignedCms doesn't check that the claimed algorithm
+        // is the one actually used, only that some algorithm's digest/signature matches.
+        var algIds = ExtractSignerInfoAlgorithmIdentifiers(bytes);
+        Assert.Equal(expectedDigestOid, algIds.DigestOid);
+        Assert.Equal(expectedSignatureOid, algIds.SignatureOid);
+    }
+
+    [Fact]
+    public async Task SignAsync_withExternalSigner_unsupportedHashAlgorithm_throwsNotSupportedException()
+    {
+        using var cert = CreateTestCertificate();
+        using var rsa = cert.GetRSAPrivateKey()!;
+        using var publicOnlyCert = X509CertificateLoader.LoadCertificate(cert.Export(X509ContentType.Cert));
+
+        var settings = new PdfSignatureSettings
+        {
+            Certificate = publicOnlyCert,
+            ExternalSigner = new SimulatedAsyncKmsSigner(rsa, hashAlgorithm: HashAlgorithmName.SHA1),
+        };
+
+        using var doc = new PdfDocument();
+        doc.AddPage();
+
+        var ex = await Assert.ThrowsAsync<NotSupportedException>(
+            () => doc.SignAsync(new MemoryStream(), settings, TestContext.Current.CancellationToken));
+        Assert.Contains("SHA1", ex.Message);
+        Assert.Contains("not supported", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
     [Fact]
     public async Task SignAsync_withExternalSigner_bLTA_addsArchiveTimestamp()
     {
@@ -528,6 +591,12 @@ public sealed class SignatureTests
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(
             () => doc.SignAsync(new MemoryStream(), settings, TestContext.Current.CancellationToken));
         Assert.Contains("external signer", ex.Message, StringComparison.OrdinalIgnoreCase);
+
+        // #167: a failed CheckSignature has three realistic causes in production — RSASSA-PSS
+        // (unsupported), a malformed signature, or a KMS key ID pointing at the wrong key — and
+        // the message should name all three rather than assert only one.
+        Assert.Contains("PSS", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("different key", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -621,6 +690,25 @@ public sealed class SignatureTests
         // key produces an identical signature. This is a sharp check that the hand-rolled
         // CMS assembly matches what CmsSigner itself builds.
         Assert.Equal(ExtractSignatureBytes(bytesA), ExtractSignatureBytes(bytesB));
+
+        // The two paths are not fully byte-identical, and diverge on signatureAlgorithm
+        // specifically: CmsSigner (path A) emits the hash-agnostic rsaEncryption OID with
+        // absent parameters, while ExternalSignerCms (path B) emits the hash-specific
+        // sha256WithRSAEncryption OID with an explicit NULL, per RFC 5754 §3.2 ("the
+        // parameters MUST be NULL" for these OIDs). Both digestAlgorithm fields correctly
+        // have absent parameters either way, per RFC 5754 §2.
+        var algIdsA = ExtractSignerInfoAlgorithmIdentifiers(bytesA);
+        var algIdsB = ExtractSignerInfoAlgorithmIdentifiers(bytesB);
+
+        Assert.Equal(algIdsA.DigestOid, algIdsB.DigestOid);
+        Assert.False(algIdsA.DigestHasParameters, "CmsSigner's digestAlgorithm parameters should be absent (RFC 5754 §2).");
+        Assert.False(algIdsB.DigestHasParameters, "ExternalSignerCms's digestAlgorithm parameters should be absent (RFC 5754 §2).");
+
+        Assert.Equal(RsaEncryptionOid, algIdsA.SignatureOid);
+        Assert.False(algIdsA.SignatureHasParameters, "CmsSigner is expected to emit rsaEncryption with absent signatureAlgorithm parameters.");
+
+        Assert.Equal(Sha256WithRsaEncryptionOid, algIdsB.SignatureOid);
+        Assert.True(algIdsB.SignatureHasParameters, "ExternalSignerCms must emit NULL signatureAlgorithm parameters for sha256WithRSAEncryption (RFC 5754 §3.2).");
     }
 
     private static byte[] ExtractSignatureBytes(byte[] signedBytes)

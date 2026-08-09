@@ -1,12 +1,25 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
+using System.Formats.Asn1;
 using System.Security.Cryptography.Pkcs;
 using System.Text;
 
 namespace VellumPdf.Kernel.Tests;
 
 internal sealed record ContentsInfo(long PosLt, int TokenLen, string HexContent);
+
+/// <summary>
+/// The two <c>AlgorithmIdentifier</c>s carried in a CMS <c>SignerInfo</c>, including
+/// whether each one's DER-optional parameters field is present — a distinction the BCL's
+/// <see cref="Oid"/>-based <c>SignerInfo.DigestAlgorithm</c>/<c>SignatureAlgorithm</c>
+/// properties don't expose, since they surface only the OID string.
+/// </summary>
+internal sealed record SignerInfoAlgorithmIdentifiers(
+    string DigestOid,
+    bool DigestHasParameters,
+    string SignatureOid,
+    bool SignatureHasParameters);
 
 /// <summary>
 /// Shared /ByteRange and /Contents parsing plus BCL <see cref="SignedCms.CheckSignature"/>
@@ -76,5 +89,50 @@ internal static class SignatureTestHelpers
         var tokenLen = 1 + hexContent.Length + 1; // '<' + hex + '>'
 
         return (byteRange, new ContentsInfo(posLt, tokenLen, hexContent));
+    }
+
+    /// <summary>
+    /// Decodes /Contents down to <c>SignerInfo</c>'s <c>digestAlgorithm</c> and
+    /// <c>signatureAlgorithm</c> fields by walking the DER structure positionally (the
+    /// field order RFC 5652 §5.3 fixes for <c>SignerInfo</c>), reporting each one's OID
+    /// and whether its parameters field is present. Both signed PDFs under test always
+    /// carry a <c>[0] certificates</c> field, so this doesn't handle its absence.
+    /// </summary>
+    internal static SignerInfoAlgorithmIdentifiers ExtractSignerInfoAlgorithmIdentifiers(byte[] signedBytes)
+    {
+        var (_, contents) = ParseSignatureFields(signedBytes);
+        var contentsBytes = Convert.FromHexString(contents.HexContent);
+
+        // /Contents is zero-padded past the actual DER length; trim to the single
+        // top-level TLV first so the padding isn't misread as more ASN.1 data.
+        var topLevel = new AsnReader(contentsBytes, AsnEncodingRules.DER).ReadEncodedValue();
+
+        var contentInfo = new AsnReader(topLevel, AsnEncodingRules.DER).ReadSequence();
+        contentInfo.ReadObjectIdentifier(); // contentType (id-signedData)
+        var explicitContent = contentInfo.ReadSequence(new Asn1Tag(TagClass.ContextSpecific, 0, isConstructed: true));
+
+        var signedData = explicitContent.ReadSequence();
+        signedData.ReadInteger(); // version
+        signedData.ReadEncodedValue(); // digestAlgorithms (redundant with SignerInfo's own)
+        signedData.ReadEncodedValue(); // encapContentInfo
+        if (signedData.PeekTag() == new Asn1Tag(TagClass.ContextSpecific, 0, isConstructed: true))
+            signedData.ReadEncodedValue(); // certificates [0]
+
+        var signerInfo = signedData.ReadSetOf().ReadSequence();
+        signerInfo.ReadInteger(); // version
+        signerInfo.ReadEncodedValue(); // sid (IssuerAndSerialNumber)
+
+        var (digestOid, digestHasParameters) = ReadAlgorithmIdentifier(signerInfo);
+        signerInfo.ReadEncodedValue(); // signedAttrs [0]
+        var (signatureOid, signatureHasParameters) = ReadAlgorithmIdentifier(signerInfo);
+
+        return new SignerInfoAlgorithmIdentifiers(digestOid, digestHasParameters, signatureOid, signatureHasParameters);
+    }
+
+    private static (string Oid, bool HasParameters) ReadAlgorithmIdentifier(AsnReader parent)
+    {
+        var algorithmIdentifier = parent.ReadSequence();
+        var oid = algorithmIdentifier.ReadObjectIdentifier();
+        return (oid, algorithmIdentifier.HasData);
     }
 }
