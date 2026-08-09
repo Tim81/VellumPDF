@@ -63,6 +63,63 @@ public sealed class HttpTimestampClient : ITimestampClient
     /// <inheritdoc/>
     public byte[] GetTimestampToken(ReadOnlySpan<byte> messageDigest, HashAlgorithmName hashAlgorithm)
     {
+        var (req, httpReq) = BuildRequest(messageDigest, hashAlgorithm);
+
+        using var cts = new CancellationTokenSource(_timeout);
+
+        HttpResponseMessage httpResp;
+        byte[] responseBytes;
+        try
+        {
+            httpResp = _httpClient.Send(httpReq, cts.Token);
+            using (httpResp)
+            {
+                EnsureSuccess(httpResp);
+                responseBytes = httpResp.Content.ReadAsByteArrayAsync(cts.Token).GetAwaiter().GetResult();
+            }
+        }
+        catch (OperationCanceledException ex)
+        {
+            throw new InvalidOperationException(
+                $"TSA request to {_tsaUrl} timed out after {_timeout.TotalSeconds:0.##}s.", ex);
+        }
+
+        return DecodeToken(req, responseBytes);
+    }
+
+    /// <inheritdoc/>
+    public async Task<byte[]> GetTimestampTokenAsync(ReadOnlyMemory<byte> messageDigest, HashAlgorithmName hashAlgorithm, CancellationToken cancellationToken = default)
+    {
+        var (req, httpReq) = BuildRequest(messageDigest.Span, hashAlgorithm);
+
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        cts.CancelAfter(_timeout);
+
+        HttpResponseMessage httpResp;
+        byte[] responseBytes;
+        try
+        {
+            httpResp = await _httpClient.SendAsync(httpReq, cts.Token).ConfigureAwait(false);
+            using (httpResp)
+            {
+                EnsureSuccess(httpResp);
+                responseBytes = await httpResp.Content.ReadAsByteArrayAsync(cts.Token).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new InvalidOperationException(
+                $"TSA request to {_tsaUrl} timed out after {_timeout.TotalSeconds:0.##}s.", ex);
+        }
+
+        return DecodeToken(req, responseBytes);
+    }
+
+    // ── Shared helpers ─────────────────────────────────────────────────────────
+
+    private (Rfc3161TimestampRequest Request, HttpRequestMessage HttpRequest) BuildRequest(
+        ReadOnlySpan<byte> messageDigest, HashAlgorithmName hashAlgorithm)
+    {
         var req = Rfc3161TimestampRequest.CreateFromHash(
             messageDigest.ToArray(),
             hashAlgorithm,
@@ -81,28 +138,18 @@ public sealed class HttpTimestampClient : ITimestampClient
             Content = content,
         };
 
-        using var cts = new CancellationTokenSource(_timeout);
+        return (req, httpReq);
+    }
 
-        HttpResponseMessage httpResp;
-        byte[] responseBytes;
-        try
-        {
-            httpResp = _httpClient.Send(httpReq, cts.Token);
-            using (httpResp)
-            {
-                if (!httpResp.IsSuccessStatusCode)
-                    throw new InvalidOperationException(
-                        $"TSA request to {_tsaUrl} failed with HTTP {(int)httpResp.StatusCode} {httpResp.ReasonPhrase}.");
-
-                responseBytes = httpResp.Content.ReadAsByteArrayAsync(cts.Token).GetAwaiter().GetResult();
-            }
-        }
-        catch (OperationCanceledException ex)
-        {
+    private void EnsureSuccess(HttpResponseMessage httpResp)
+    {
+        if (!httpResp.IsSuccessStatusCode)
             throw new InvalidOperationException(
-                $"TSA request to {_tsaUrl} timed out after {_timeout.TotalSeconds:0.##}s.", ex);
-        }
+                $"TSA request to {_tsaUrl} failed with HTTP {(int)httpResp.StatusCode} {httpResp.ReasonPhrase}.");
+    }
 
+    private static byte[] DecodeToken(Rfc3161TimestampRequest req, byte[] responseBytes)
+    {
         var token = req.ProcessResponse(responseBytes, out _);
         return token.AsSignedCms().Encode();
     }

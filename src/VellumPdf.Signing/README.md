@@ -7,6 +7,7 @@ The digital-signature add-on for **[VellumPdf](https://github.com/Tim81/VellumPD
 
 - PAdES levels B-B, B-T (RFC-3161 signature timestamp), B-LT (embedded OCSP/CRL in a `/DSS`), and B-LTA (archive document timestamp).
 - Pluggable timestamp (`ITimestampClient`) and revocation (`IRevocationClient`) clients, with HTTP implementations included.
+- Signs with HSM/PKCS#11/cloud-KMS certificates: `PdfSignatureSettings.ExternalPrivateKey` for a local synchronous key, or `ExternalSigner` (an `IExternalSigner`, via `SignAsync`) for a KMS whose signing call is a real network round-trip (Azure Key Vault, AWS KMS, GCP KMS).
 - Keeps the core zero-dependency: this package is the only one that references `System.Security.Cryptography.Pkcs`.
 
 ## Install

@@ -149,4 +149,78 @@ public sealed class DocumentTests
         Assert.Single(doc.TextEncodingWarnings);
         Assert.Equal('★', doc.TextEncodingWarnings[0].Character);
     }
+
+    // ── Async I/O surface (#54) ────────────────────────────────────────────────
+    //
+    // /CreationDate and /ID depend on Timestamp ?? DateTimeOffset.UtcNow, and
+    // VellumPdf.Layout.Document does not expose a way to pin PdfDocument.Timestamp, so a
+    // byte-identical comparison against the sync Save/Sign methods isn't meaningful here
+    // (see FontAndIoTests.SaveAsync_producesSameBytesAsSave in VellumPdf.Kernel.Tests for that
+    // proof, where Timestamp can be pinned directly). These tests verify validity instead.
+
+    [Fact]
+    public async Task SaveAsync_stream_producesValidPdf()
+    {
+        using var doc = new Document();
+        doc.Add(new Paragraph("Async save via stream"));
+
+        var ms = new MemoryStream();
+        await doc.SaveAsync(ms, TestContext.Current.CancellationToken);
+        var bytes = ms.ToArray();
+
+        Assert.True(bytes.Length > 100);
+        Assert.Equal("%PDF-2.0"u8.ToArray(), bytes[..8]);
+    }
+
+    [Fact]
+    public async Task SaveAsync_stringPath_writesReadableFile()
+    {
+        using var doc = new Document();
+        doc.Add(new Paragraph("Async save via file path"));
+
+        var path = Path.GetTempFileName();
+        try
+        {
+            await doc.SaveAsync(path, TestContext.Current.CancellationToken);
+            var bytes = await File.ReadAllBytesAsync(path, TestContext.Current.CancellationToken);
+
+            Assert.True(bytes.Length > 100);
+            Assert.Equal("%PDF-2.0"u8.ToArray(), bytes[..8]);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public async Task SignAsync_charOutsideWinAnsi_surfacesTextEncodingWarning()
+    {
+        using var rsa = RSA.Create(2048);
+        var req = new CertificateRequest(
+            "CN=VellumPdf Test",
+            rsa,
+            HashAlgorithmName.SHA256,
+            RSASignaturePadding.Pkcs1);
+        using var cert = req.CreateSelfSigned(
+            DateTimeOffset.UtcNow.AddDays(-1),
+            DateTimeOffset.UtcNow.AddYears(1));
+
+        using var doc = new Document();
+        doc.Add(new Paragraph("Black star: ★")); // ★ is outside WinAnsiEncoding
+
+        var settings = new PdfSignatureSettings
+        {
+            Certificate = cert,
+            SignerName = "Tester",
+            Reason = "Unit test",
+        };
+
+        var ms = new MemoryStream();
+        await doc.SignAsync(ms, settings, TestContext.Current.CancellationToken);
+
+        Assert.Single(doc.TextEncodingWarnings);
+        Assert.Equal('★', doc.TextEncodingWarnings[0].Character);
+        Assert.True(ms.Length > 100);
+    }
 }

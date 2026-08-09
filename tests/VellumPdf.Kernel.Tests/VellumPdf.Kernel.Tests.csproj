@@ -1,5 +1,12 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
+  <!-- InternalsVisibleTo friend of Kernel and Reader (#53) — must match their public key. -->
+  <Import Project="$(MSBuildThisFileDirectory)../../eng/StrongNameTestFriend.props" />
+
+  <ItemGroup>
+    <Compile Include="$(MSBuildThisFileDirectory)../../eng/StrongNamePublicKeyAssertion.cs" Link="StrongNamePublicKeyAssertion.cs" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\..\src\VellumPdf.Kernel\VellumPdf.Kernel.csproj" />
     <ProjectReference Include="..\..\src\VellumPdf.Layout\VellumPdf.Layout.csproj" />

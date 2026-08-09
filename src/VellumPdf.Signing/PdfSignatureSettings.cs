@@ -1,21 +1,46 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
+using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 
 namespace VellumPdf.Signing;
 
 /// <summary>
 /// Settings for PAdES/PKCS#7 digital signature creation.
-/// The certificate MUST include a private key (i.e. <see cref="X509Certificate2.HasPrivateKey"/>
-/// must return true).
+/// The certificate must include a private key (i.e. <see cref="X509Certificate2.HasPrivateKey"/>
+/// must return true), or <see cref="ExternalPrivateKey"/> or <see cref="ExternalSigner"/>
+/// must be supplied.
 /// </summary>
 public sealed class PdfSignatureSettings
 {
     /// <summary>
-    /// The signing certificate with private key.
+    /// The signing certificate. When neither <see cref="ExternalPrivateKey"/> nor
+    /// <see cref="ExternalSigner"/> is set, this certificate must include a private key.
     /// </summary>
     public required X509Certificate2 Certificate { get; init; }
+
+    /// <summary>
+    /// An externally-held private key to sign with, for certificates whose key is not
+    /// attached to <see cref="Certificate"/> (for example, a certificate fetched from a
+    /// cloud key vault, or a key held on a PKCS#11 device without Windows CNG integration).
+    /// When <see langword="null"/> (the default), the key attached to <see cref="Certificate"/>
+    /// is used instead, unless <see cref="ExternalSigner"/> is set. <see cref="Certificate"/>
+    /// is still required in either case, for the public key, subject, and certificate chain.
+    /// </summary>
+    public AsymmetricAlgorithm? ExternalPrivateKey { get; init; }
+
+    /// <summary>
+    /// An asynchronous external signer to sign with — for a cloud KMS or remote HSM where
+    /// the signing call itself is a network round-trip (Azure Key Vault, AWS KMS, GCP KMS,
+    /// some PKCS#11 setups), and blocking a thread on <see cref="ExternalPrivateKey"/> to
+    /// bridge that call is undesirable. Only supported via <c>SignAsync</c>; the synchronous
+    /// <c>Sign</c> overloads throw when this is set. When both <see cref="ExternalSigner"/>
+    /// and <see cref="ExternalPrivateKey"/> are set, <see cref="ExternalSigner"/> takes
+    /// precedence. <see cref="Certificate"/> is still required, for the public key, subject,
+    /// and certificate chain.
+    /// </summary>
+    public IExternalSigner? ExternalSigner { get; init; }
 
     /// <summary>Optional signer name written to /Name in the signature dictionary.</summary>
     public string? SignerName { get; init; }

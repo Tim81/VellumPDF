@@ -77,6 +77,18 @@ public sealed class HttpRevocationClient : IRevocationClient
         return new RevocationData { Ocsp = ocsp, Crl = crl };
     }
 
+    /// <inheritdoc/>
+    public async Task<RevocationData> GetRevocationDataAsync(X509Certificate2 certificate, X509Certificate2 issuer, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(certificate);
+        ArgumentNullException.ThrowIfNull(issuer);
+
+        var ocsp = await TryFetchOcspAsync(certificate, issuer, cancellationToken).ConfigureAwait(false);
+        var crl = await TryFetchCrlAsync(certificate, cancellationToken).ConfigureAwait(false);
+
+        return new RevocationData { Ocsp = ocsp, Crl = crl };
+    }
+
     // ── OCSP ────────────────────────────────────────────────────────────────────
 
     private ReadOnlyMemory<byte>? TryFetchOcsp(X509Certificate2 certificate, X509Certificate2 issuer)
@@ -105,6 +117,39 @@ public sealed class HttpRevocationClient : IRevocationClient
             return responseBytes;
         }
         catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException or InvalidOperationException)
+        {
+            return null;
+        }
+    }
+
+    private async Task<ReadOnlyMemory<byte>?> TryFetchOcspAsync(X509Certificate2 certificate, X509Certificate2 issuer, CancellationToken cancellationToken)
+    {
+        Uri? responder = GetOcspResponderUri(certificate);
+        if (responder is null)
+            return null;
+
+        try
+        {
+            var requestDer = BuildOcspRequest(certificate, issuer);
+
+            using var content = new ByteArrayContent(requestDer);
+            content.Headers.ContentType = new MediaTypeHeaderValue("application/ocsp-request");
+
+            using var httpReq = new HttpRequestMessage(HttpMethod.Post, responder) { Content = content };
+            httpReq.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/ocsp-response"));
+
+            byte[] responseBytes = await SendAsync(httpReq, cancellationToken).ConfigureAwait(false);
+            // Embed only a structurally valid, successful OCSPResponse — never an error
+            // envelope (tryLater/unauthorized/…) or an HTML error page that happens to
+            // start with a SEQUENCE tag.
+            if (responseBytes.Length == 0 || !IsSuccessfulOcspResponse(responseBytes))
+                return null;
+
+            return responseBytes;
+        }
+        catch (Exception ex) when (
+            ex is HttpRequestException or InvalidOperationException
+            || (ex is OperationCanceledException && !cancellationToken.IsCancellationRequested))
         {
             return null;
         }
@@ -217,6 +262,33 @@ public sealed class HttpRevocationClient : IRevocationClient
                     return body;
             }
             catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException or InvalidOperationException)
+            {
+                // Try the next distribution point.
+            }
+        }
+
+        return null;
+    }
+
+    private async Task<ReadOnlyMemory<byte>?> TryFetchCrlAsync(X509Certificate2 certificate, CancellationToken cancellationToken)
+    {
+        foreach (Uri cdp in GetCrlDistributionUris(certificate))
+        {
+            try
+            {
+                using var httpReq = new HttpRequestMessage(HttpMethod.Get, cdp);
+                byte[] body = await SendAsync(httpReq, cancellationToken).ConfigureAwait(false);
+
+                // Accept the CRL only when it is a DER CertificateList issued by this
+                // certificate's issuer and that does not list the certificate as revoked.
+                // This rejects a misrouted/wrong-issuer CRL and avoids embedding evidence
+                // that the signing certificate is revoked.
+                if (IsValidCrlForCertificate(body, certificate))
+                    return body;
+            }
+            catch (Exception ex) when (
+                ex is HttpRequestException or InvalidOperationException
+                || (ex is OperationCanceledException && !cancellationToken.IsCancellationRequested))
             {
                 // Try the next distribution point.
             }
@@ -404,5 +476,19 @@ public sealed class HttpRevocationClient : IRevocationClient
         }
 
         return resp.Content.ReadAsByteArrayAsync(cts.Token).GetAwaiter().GetResult();
+    }
+
+    private async Task<byte[]> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        cts.CancelAfter(_timeout);
+        using HttpResponseMessage resp = await _httpClient.SendAsync(request, cts.Token).ConfigureAwait(false);
+        if (!resp.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException(
+                $"Revocation request to {request.RequestUri} failed with HTTP {(int)resp.StatusCode} {resp.ReasonPhrase}.");
+        }
+
+        return await resp.Content.ReadAsByteArrayAsync(cts.Token).ConfigureAwait(false);
     }
 }

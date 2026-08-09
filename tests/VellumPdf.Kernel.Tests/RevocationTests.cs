@@ -358,6 +358,103 @@ public sealed class RevocationTests
         Assert.False(data.IsEmpty);
     }
 
+    // ── Async I/O surface (#54) ────────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetRevocationDataAsync_fetchesOcspAndCrl()
+    {
+        using var issuer = CreateCertificate("CN=VellumPdf Test Issuer");
+        using var leaf = CreateCertificate(configure: req =>
+        {
+            req.CertificateExtensions.Add(BuildAiaOcspExtension("http://ocsp.example.invalid/respond"));
+            req.CertificateExtensions.Add(BuildCdpExtension("http://crl.example.invalid/list.crl"));
+        });
+
+        var crl = BuildCrl(leaf);
+        var handler = new FakeHandler { OcspResponse = s_cannedOcsp, CrlResponse = crl };
+        using var http = new HttpClient(handler);
+        var client = new HttpRevocationClient(http, TimeSpan.FromSeconds(5));
+
+        var data = await client.GetRevocationDataAsync(leaf, issuer, TestContext.Current.CancellationToken);
+
+        Assert.NotNull(data.Ocsp);
+        Assert.Equal(s_cannedOcsp, data.Ocsp!.Value.ToArray());
+        Assert.NotNull(data.Crl);
+        Assert.Equal(crl, data.Crl!.Value.ToArray());
+    }
+
+    [Fact]
+    public async Task GetRevocationDataAsync_ocspFailure_doesNotBlockCrl()
+    {
+        using var issuer = CreateCertificate("CN=VellumPdf Test Issuer");
+        using var leaf = CreateCertificate(configure: req =>
+        {
+            req.CertificateExtensions.Add(BuildAiaOcspExtension("http://ocsp.example.invalid/respond"));
+            req.CertificateExtensions.Add(BuildCdpExtension("http://crl.example.invalid/list.crl"));
+        });
+
+        var crl = BuildCrl(leaf);
+        var handler = new FakeHandler
+        {
+            OcspStatus = HttpStatusCode.InternalServerError,
+            CrlResponse = crl,
+        };
+        using var http = new HttpClient(handler);
+        var client = new HttpRevocationClient(http, TimeSpan.FromSeconds(5));
+
+        var data = await client.GetRevocationDataAsync(leaf, issuer, TestContext.Current.CancellationToken);
+
+        Assert.Null(data.Ocsp);
+        Assert.NotNull(data.Crl);
+        Assert.Equal(crl, data.Crl!.Value.ToArray());
+    }
+
+    [Fact]
+    public async Task GetRevocationDataAsync_externalCancellation_propagatesDirectly()
+    {
+        using var issuer = CreateCertificate("CN=VellumPdf Test Issuer");
+        using var leaf = CreateCertWithAia("http://ocsp.example.invalid/respond");
+
+        var handler = new HangingHandler();
+        using var http = new HttpClient(handler);
+        var client = new HttpRevocationClient(http, TimeSpan.FromSeconds(30));
+
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => client.GetRevocationDataAsync(leaf, issuer, cts.Token));
+    }
+
+    [Fact]
+    public async Task IRevocationClient_asyncDefault_forwardsToSyncImplementation()
+    {
+        IRevocationClient fake = new FakeRevocationClient(s_cannedOcsp, s_cannedCrl);
+        using var cert = CreateCertificate();
+        using var issuer = CreateCertificate("CN=VellumPdf Test Issuer");
+
+        // FakeRevocationClient does not override GetRevocationDataAsync, so this exercises
+        // the interface's default implementation forwarding to the synchronous method.
+        var data = await fake.GetRevocationDataAsync(cert, issuer, TestContext.Current.CancellationToken);
+
+        Assert.Equal(s_cannedOcsp, data.Ocsp!.Value.ToArray());
+        Assert.Equal(s_cannedCrl, data.Crl!.Value.ToArray());
+    }
+
+    /// <summary>A handler that blocks until the request is cancelled, to exercise cancellation.</summary>
+    private sealed class HangingHandler : HttpMessageHandler
+    {
+        protected override HttpResponseMessage Send(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            cancellationToken.WaitHandle.WaitOne();
+            cancellationToken.ThrowIfCancellationRequested();
+            throw new InvalidOperationException("Unreachable: handler should be cancelled first.");
+        }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+            => Task.FromResult(Send(request, cancellationToken));
+    }
+
     /// <summary>
     /// A trivial in-process <see cref="IRevocationClient"/> returning canned evidence
     /// without any network calls. Phase 5 (DSS/VRI) reuses this pattern.

@@ -62,6 +62,40 @@ public sealed class FontAndIoTests
         Assert.Equal(0xD3, bytes[13]);
     }
 
+    // ── Async I/O surface (#54) ────────────────────────────────────────────────
+
+    [Fact]
+    public async Task SaveAsync_producesSameBytesAsSave()
+    {
+        // /CreationDate and /ID are derived from Timestamp ?? DateTimeOffset.UtcNow, so both
+        // documents must pin the same Timestamp for a valid byte-for-byte comparison.
+        var timestamp = DateTimeOffset.UtcNow;
+
+        using var docSync = new PdfDocument { Timestamp = timestamp };
+        docSync.AddPage();
+        var msSync = new MemoryStream();
+        docSync.Save(msSync);
+
+        using var docAsync = new PdfDocument { Timestamp = timestamp };
+        docAsync.AddPage();
+        var msAsync = new MemoryStream();
+        await docAsync.SaveAsync(msAsync, TestContext.Current.CancellationToken);
+
+        Assert.Equal(msSync.ToArray(), msAsync.ToArray());
+    }
+
+    [Fact]
+    public async Task SaveAsync_preCancelledToken_throwsOperationCanceled()
+    {
+        using var doc = new PdfDocument();
+        doc.AddPage();
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => doc.SaveAsync(new MemoryStream(), cts.Token));
+    }
+
     // ── Group B: Image XObject written to PDF ─────────────────────────────────
 
     [Fact]

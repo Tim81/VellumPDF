@@ -1,0 +1,12 @@
+<Project>
+
+  <!-- Imported by the test projects that are InternalsVisibleTo friends of a
+       strong-named library (#53) — the CLR requires a friend assembly's
+       compiled public key to match the one embedded in InternalsVisibleTo,
+       so these test projects sign with the same repo key. -->
+  <PropertyGroup>
+    <SignAssembly>true</SignAssembly>
+    <AssemblyOriginatorKeyFile>$(MSBuildThisFileDirectory)VellumPdf.snk</AssemblyOriginatorKeyFile>
+  </PropertyGroup>
+
+</Project>

@@ -240,6 +240,96 @@ public sealed class TimestampTests
                 timeout: TimeSpan.Zero));
     }
 
+    // ── Async I/O surface (#54) ────────────────────────────────────────────────
+
+    [Fact]
+    public async Task HttpTimestampClient_async_sends_correct_content_type_and_returns_token()
+    {
+        var tsaClient = new TestTimestampClient(s_pinnedTime);
+        var digest = SHA256.HashData(Encoding.UTF8.GetBytes("test payload"));
+
+        var handler = new StubTimestampHandler(tsaClient);
+        var httpClient = new HttpClient(handler);
+
+        var url = new Uri("http://tsa.example.invalid/ts");
+        var client = new HttpTimestampClient(url, httpClient);
+
+        var tokenDer = await client.GetTimestampTokenAsync(digest, HashAlgorithmName.SHA256, TestContext.Current.CancellationToken);
+
+        Assert.NotNull(tokenDer);
+        Assert.True(tokenDer.Length > 0);
+        Assert.True(Rfc3161TimestampToken.TryDecode(tokenDer, out _, out _));
+        Assert.Equal("application/timestamp-query", handler.ReceivedContentType);
+        Assert.Equal(url, handler.ReceivedUri);
+    }
+
+    [Fact]
+    public async Task HttpTimestampClient_async_throws_on_http_failure()
+    {
+        var handler = new FailingHttpHandler(HttpStatusCode.InternalServerError);
+        var httpClient = new HttpClient(handler);
+        var client = new HttpTimestampClient(new Uri("http://tsa.example.invalid/ts"), httpClient);
+
+        var digest = SHA256.HashData(Encoding.UTF8.GetBytes("test"));
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => client.GetTimestampTokenAsync(digest, HashAlgorithmName.SHA256, TestContext.Current.CancellationToken));
+        Assert.Contains("500", ex.Message);
+    }
+
+    [Fact]
+    public async Task HttpTimestampClient_async_throws_on_timeout()
+    {
+        var handler = new HangingHttpHandler();
+        var httpClient = new HttpClient(handler);
+        var client = new HttpTimestampClient(
+            new Uri("http://tsa.example.invalid/ts"),
+            httpClient,
+            timeout: TimeSpan.FromMilliseconds(50));
+
+        var digest = SHA256.HashData(Encoding.UTF8.GetBytes("test"));
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => client.GetTimestampTokenAsync(digest, HashAlgorithmName.SHA256, TestContext.Current.CancellationToken));
+        Assert.Contains("timed out", ex.Message);
+    }
+
+    [Fact]
+    public async Task HttpTimestampClient_async_externalCancellation_propagatesDirectly()
+    {
+        var handler = new HangingHttpHandler();
+        var httpClient = new HttpClient(handler);
+        // A long internal timeout so only the external token can fire first.
+        var client = new HttpTimestampClient(
+            new Uri("http://tsa.example.invalid/ts"),
+            httpClient,
+            timeout: TimeSpan.FromSeconds(30));
+
+        var digest = SHA256.HashData(Encoding.UTF8.GetBytes("test"));
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        // Caller-driven cancellation must surface as a genuine OperationCanceledException,
+        // not be wrapped into the "timed out" InvalidOperationException used for the
+        // internal per-request timeout.
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => client.GetTimestampTokenAsync(digest, HashAlgorithmName.SHA256, cts.Token));
+    }
+
+    [Fact]
+    public async Task ITimestampClient_asyncDefault_forwardsToSyncImplementation()
+    {
+        ITimestampClient client = new TestTimestampClient(s_pinnedTime);
+        var digest = SHA256.HashData(Encoding.UTF8.GetBytes("default interface method test"));
+
+        // TestTimestampClient does not override GetTimestampTokenAsync, so this exercises the
+        // interface's default implementation forwarding to the synchronous method.
+        var tokenDer = await client.GetTimestampTokenAsync(digest, HashAlgorithmName.SHA256, TestContext.Current.CancellationToken);
+
+        Assert.True(Rfc3161TimestampToken.TryDecode(tokenDer, out var token, out _));
+        Assert.Equal(digest, token!.TokenInfo.GetMessageHash().ToArray());
+    }
+
     // ── Helpers ────────────────────────────────────────────────────────────────
 
     private static byte[] SignOnePageDoc(

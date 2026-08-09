@@ -141,6 +141,16 @@ public sealed class Document : IDisposable
     public EmbeddedFontHandle LoadTrueTypeFont(string path) =>
         UseTrueTypeFont(File.ReadAllBytes(path));
 
+    /// <summary>
+    /// Asynchronously loads a TrueType font file from disk, registers it for embedding, and
+    /// returns a handle.
+    /// </summary>
+    public async Task<EmbeddedFontHandle> LoadTrueTypeFontAsync(string path, CancellationToken cancellationToken = default)
+    {
+        byte[] bytes = await File.ReadAllBytesAsync(path, cancellationToken).ConfigureAwait(false);
+        return UseTrueTypeFont(bytes);
+    }
+
     // ── Content methods ──────────────────────────────────────────────────────
 
     /// <summary>Adds a paragraph to the document content. Returns this document for chaining.</summary>
@@ -277,6 +287,47 @@ public sealed class Document : IDisposable
     {
         using var fs = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None);
         Save(fs);
+    }
+
+    /// <summary>
+    /// Asynchronously runs the layout pass and writes the resulting PDF to the given stream.
+    ///
+    /// <para>
+    /// The layout pass is CPU-bound, so it runs on a thread-pool thread via
+    /// <see cref="Task.Run(Action)"/>; the resulting document is then written to
+    /// <paramref name="destination"/> via <see cref="PdfDocument.SaveAsync"/>.
+    /// <paramref name="cancellationToken"/> is honoured before layout starts and during the
+    /// final write, but does not abort layout or serialisation already in progress.
+    /// </para>
+    /// </summary>
+    // RS0026 flags multiple overloads with optional parameters as a future-ambiguity risk;
+    // Stream and string share no implicit conversion, so overload resolution can never be
+    // ambiguous between these two.
+#pragma warning disable RS0026
+    public async Task SaveAsync(Stream destination, CancellationToken cancellationToken = default)
+#pragma warning restore RS0026
+    {
+        var renderer = new DocumentRenderer(_pdf, _pdf.DefaultPageSize, Margins)
+        {
+            Header = Header,
+            Footer = Footer,
+        };
+        foreach (var r in _content) renderer.Add(r);
+        await Task.Run(renderer.RunLayout, cancellationToken).ConfigureAwait(false);
+        _textEncodingWarnings.Clear();
+        _textEncodingWarnings.AddRange(renderer.TextEncodingWarnings);
+        await _pdf.SaveAsync(destination, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>Asynchronously runs the layout pass and writes the resulting PDF to a file at the given path.</summary>
+#pragma warning disable RS0026
+    public async Task SaveAsync(string path, CancellationToken cancellationToken = default)
+#pragma warning restore RS0026
+    {
+        await using var fs = new FileStream(
+            path, FileMode.Create, FileAccess.Write, FileShare.None,
+            bufferSize: 4096, FileOptions.Asynchronous | FileOptions.SequentialScan);
+        await SaveAsync(fs, cancellationToken).ConfigureAwait(false);
     }
 
     // ── Signing seam (VellumPdf.Signing only) ────────────────────────────────

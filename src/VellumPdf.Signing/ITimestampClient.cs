@@ -18,4 +18,20 @@ public interface ITimestampClient
     /// <param name="hashAlgorithm">The algorithm used to compute <paramref name="messageDigest"/>.</param>
     /// <returns>A DER-encoded RFC 3161 <c>TimeStampToken</c>.</returns>
     byte[] GetTimestampToken(ReadOnlySpan<byte> messageDigest, HashAlgorithmName hashAlgorithm);
+
+    /// <summary>
+    /// Asynchronously returns a DER-encoded RFC 3161 <c>TimeStampToken</c> (a CMS
+    /// <c>ContentInfo</c>) over the given message digest.
+    /// </summary>
+    /// <param name="messageDigest">The hash value to be timestamped.</param>
+    /// <param name="hashAlgorithm">The algorithm used to compute <paramref name="messageDigest"/>.</param>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <returns>A DER-encoded RFC 3161 <c>TimeStampToken</c>.</returns>
+    /// <remarks>
+    /// The default implementation forwards to <see cref="GetTimestampToken"/>, so existing
+    /// implementations of this interface keep compiling unchanged. Implementations that can
+    /// perform the underlying network call asynchronously should override this member.
+    /// </remarks>
+    Task<byte[]> GetTimestampTokenAsync(ReadOnlyMemory<byte> messageDigest, HashAlgorithmName hashAlgorithm, CancellationToken cancellationToken = default)
+        => Task.FromResult(GetTimestampToken(messageDigest.Span, hashAlgorithm));
 }

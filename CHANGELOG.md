@@ -6,6 +6,35 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Async I/O surface for `Save`, `Sign`, and `LoadTrueTypeFont`** — `PdfDocument.SaveAsync`,
+  `Document.SaveAsync(Stream)` / `SaveAsync(string)`, `Document.LoadTrueTypeFontAsync`, and
+  `SigningExtensions.SignAsync` (both overloads), each taking a `CancellationToken`. Existing
+  sync methods are unchanged. `ITimestampClient` and `IRevocationClient` gain default-implemented
+  `GetTimestampTokenAsync`/`GetRevocationDataAsync` members, so custom implementations keep
+  compiling unchanged; `HttpTimestampClient` and `HttpRevocationClient` now perform non-blocking
+  HTTP requests for the async path instead of blocking on the underlying async API. (#54)
+- **`PdfSignatureSettings.ExternalPrivateKey`** — signs with a private key supplied separately
+  from `Certificate`, for HSM/PKCS#11/cloud-KMS-backed certificates whose key isn't attached to
+  the `X509Certificate2` (Azure Key Vault, AWS KMS, `Pkcs11Interop.X509Store`, and similar).
+  Windows CNG-integrated smart cards and hardware tokens already work through the existing
+  `Certificate`-only path and need no change. (#54)
+- **`IExternalSigner`** — a two-phase async external-signer API for a cloud KMS or remote HSM
+  where the signing call itself is a network round-trip (Azure Key Vault, AWS KMS, GCP KMS). No
+  BCL API supports this today, since `CmsSigner` only accepts a synchronous, in-process private
+  key; VellumPdf computes the CMS signed-attributes digest itself, hands it to the caller's async
+  signer, and assembles the resulting `SignerInfo` by hand. Set `PdfSignatureSettings.ExternalSigner`
+  and sign with `SignAsync`; the synchronous `Sign` overloads throw, since there is no synchronous
+  way to bridge a network call. `EcdsaSignatureConverter` is included for KMS providers, such as
+  Azure Key Vault, that return a raw ECDSA signature rather than the DER encoding CMS requires. (#165)
+
+### Changed
+
+- **Breaking: all eight packages are now strong-named** (`eng/VellumPdf.snk`). This
+  changes assembly identity — consumers binding to a specific public key or public
+  key token must rebind against the new key. (#53)
+
 ## [1.11.0] - 2026-07-11
 
 ### Added

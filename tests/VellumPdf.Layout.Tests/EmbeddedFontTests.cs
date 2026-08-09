@@ -66,6 +66,30 @@ public sealed class EmbeddedFontTests
         Assert.Contains("/Type0", content);
     }
 
+    // ── Test 2b: Document.LoadTrueTypeFontAsync (path overload, #54) ──────────
+
+    [Fact]
+    public async Task Document_loadTrueTypeFontAsync_pathOverload_works()
+    {
+        var fontPath = PdfTestUtil.FindPlatformFont();
+        if (fontPath is null) return;
+
+        using var doc = new Document();
+        var handle = await doc.LoadTrueTypeFontAsync(fontPath, TestContext.Current.CancellationToken);
+
+        Assert.NotNull(handle);
+        Assert.NotEmpty(handle.ResourceName);
+
+        var style = new TextStyle { FontRef = handle, FontSize = 14 };
+        doc.Add(new Paragraph("Async path overload test", style));
+
+        var ms = new MemoryStream();
+        doc.Save(ms);
+        var content = Encoding.Latin1.GetString(ms.ToArray());
+
+        Assert.Contains("/Type0", content);
+    }
+
     // ── Test 3: Hex glyph run appears in content ───────────────────────────────
 
     [Fact]
