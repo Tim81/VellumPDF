@@ -40,11 +40,14 @@ public static class SigningExtensions
     /// <paramref name="settings"/> is null.
     /// </exception>
     /// <exception cref="ArgumentException">
-    /// Thrown when the certificate in <paramref name="settings"/> does not include a private key,
-    /// or when the chosen <see cref="PadesLevel"/> requires a client that is not set.
+    /// Thrown when the certificate in <paramref name="settings"/> does not include a private key
+    /// and neither <see cref="PdfSignatureSettings.ExternalPrivateKey"/> nor
+    /// <see cref="PdfSignatureSettings.ExternalSigner"/> is set, or when the chosen
+    /// <see cref="PadesLevel"/> requires a client that is not set.
     /// </exception>
     /// <exception cref="NotSupportedException">
-    /// Thrown when encryption has already been configured on the document.
+    /// Thrown when encryption has already been configured on the document, or when
+    /// <see cref="PdfSignatureSettings.ExternalSigner"/> is set (it requires <c>SignAsync</c>).
     /// </exception>
     public static void Sign(this PdfDocument doc, Stream output, PdfSignatureSettings settings)
     {
@@ -52,10 +55,8 @@ public static class SigningExtensions
         ArgumentNullException.ThrowIfNull(output);
         ArgumentNullException.ThrowIfNull(settings);
 
-        if (!settings.Certificate.HasPrivateKey)
-            throw new ArgumentException(
-                "The signing certificate must include a private key.", nameof(settings));
-
+        ValidateSigningKeyPresent(settings);
+        ValidateNoExternalSignerForSyncSign(settings);
         ValidateLevel(settings);
 
         // Resolve signing time once so /M (written by the Kernel) and the CMS
@@ -65,6 +66,46 @@ public static class SigningExtensions
         var options = ToPlaceholderOptions(effectiveSettings);
         var unsignedBytes = doc.PrepareForSigning(options);
         SignCore(unsignedBytes, effectiveSettings, output);
+    }
+
+    /// <summary>
+    /// Asynchronously signs this document and writes a PAdES/PKCS#7-signed PDF to
+    /// <paramref name="output"/>. Mirrors <see cref="Sign(PdfDocument, Stream, PdfSignatureSettings)"/>,
+    /// but the CPU-bound document build runs on a thread-pool thread via
+    /// <see cref="Task.Run(Action)"/>, and any PAdES B-T/B-LT/B-LTA network calls (TSA
+    /// timestamping, OCSP/CRL fetches) are awaited instead of blocking the calling thread.
+    /// </summary>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="doc"/>, <paramref name="output"/>, or
+    /// <paramref name="settings"/> is null.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Thrown when the certificate in <paramref name="settings"/> does not include a private key
+    /// and <see cref="PdfSignatureSettings.ExternalPrivateKey"/> is not set, or when the chosen
+    /// <see cref="PadesLevel"/> requires a client that is not set.
+    /// </exception>
+    /// <exception cref="NotSupportedException">
+    /// Thrown when encryption has already been configured on the document.
+    /// </exception>
+    // RS0026 flags multiple overloads with optional parameters as a future-ambiguity risk;
+    // PdfDocument and Layout.Document share no implicit conversion, so overload resolution
+    // can never be ambiguous between these two extension methods.
+#pragma warning disable RS0026
+    public static async Task SignAsync(this PdfDocument doc, Stream output, PdfSignatureSettings settings, CancellationToken cancellationToken = default)
+#pragma warning restore RS0026
+    {
+        ArgumentNullException.ThrowIfNull(doc);
+        ArgumentNullException.ThrowIfNull(output);
+        ArgumentNullException.ThrowIfNull(settings);
+
+        ValidateSigningKeyPresent(settings);
+        ValidateLevel(settings);
+
+        var effectiveSettings = ResolveSigningTime(settings);
+
+        var options = ToPlaceholderOptions(effectiveSettings);
+        var unsignedBytes = await Task.Run(() => doc.PrepareForSigning(options), cancellationToken).ConfigureAwait(false);
+        await SignCoreAsync(unsignedBytes, effectiveSettings, output, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -80,11 +121,14 @@ public static class SigningExtensions
     /// <paramref name="settings"/> is null.
     /// </exception>
     /// <exception cref="ArgumentException">
-    /// Thrown when the certificate in <paramref name="settings"/> does not include a private key,
-    /// or when the chosen <see cref="PadesLevel"/> requires a client that is not set.
+    /// Thrown when the certificate in <paramref name="settings"/> does not include a private key
+    /// and neither <see cref="PdfSignatureSettings.ExternalPrivateKey"/> nor
+    /// <see cref="PdfSignatureSettings.ExternalSigner"/> is set, or when the chosen
+    /// <see cref="PadesLevel"/> requires a client that is not set.
     /// </exception>
     /// <exception cref="NotSupportedException">
-    /// Thrown when encryption has already been configured on the document.
+    /// Thrown when encryption has already been configured on the document, or when
+    /// <see cref="PdfSignatureSettings.ExternalSigner"/> is set (it requires <c>SignAsync</c>).
     /// </exception>
     public static void Sign(this VellumPdf.Layout.Document doc, Stream output, PdfSignatureSettings settings)
     {
@@ -92,10 +136,8 @@ public static class SigningExtensions
         ArgumentNullException.ThrowIfNull(output);
         ArgumentNullException.ThrowIfNull(settings);
 
-        if (!settings.Certificate.HasPrivateKey)
-            throw new ArgumentException(
-                "The signing certificate must include a private key.", nameof(settings));
-
+        ValidateSigningKeyPresent(settings);
+        ValidateNoExternalSignerForSyncSign(settings);
         ValidateLevel(settings);
 
         // Resolve signing time once so /M (written by the Kernel) and the CMS
@@ -107,7 +149,77 @@ public static class SigningExtensions
         SignCore(unsignedBytes, effectiveSettings, output);
     }
 
+    /// <summary>
+    /// Asynchronously renders this layout document and writes a PAdES/PKCS#7-signed PDF to
+    /// <paramref name="output"/>. Mirrors
+    /// <see cref="Sign(VellumPdf.Layout.Document, Stream, PdfSignatureSettings)"/>, but the
+    /// CPU-bound layout and document build run on a thread-pool thread via
+    /// <see cref="Task.Run(Action)"/>, and any PAdES B-T/B-LT/B-LTA network calls (TSA
+    /// timestamping, OCSP/CRL fetches) are awaited instead of blocking the calling thread.
+    /// </summary>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="doc"/>, <paramref name="output"/>, or
+    /// <paramref name="settings"/> is null.
+    /// </exception>
+    /// <exception cref="ArgumentException">
+    /// Thrown when the certificate in <paramref name="settings"/> does not include a private key
+    /// and none of <see cref="PdfSignatureSettings.ExternalPrivateKey"/> or
+    /// <see cref="PdfSignatureSettings.ExternalSigner"/> is set, or when the chosen
+    /// <see cref="PadesLevel"/> requires a client that is not set.
+    /// </exception>
+    /// <exception cref="NotSupportedException">
+    /// Thrown when encryption has already been configured on the document.
+    /// </exception>
+#pragma warning disable RS0026
+    public static async Task SignAsync(this VellumPdf.Layout.Document doc, Stream output, PdfSignatureSettings settings, CancellationToken cancellationToken = default)
+#pragma warning restore RS0026
+    {
+        ArgumentNullException.ThrowIfNull(doc);
+        ArgumentNullException.ThrowIfNull(output);
+        ArgumentNullException.ThrowIfNull(settings);
+
+        ValidateSigningKeyPresent(settings);
+        ValidateLevel(settings);
+
+        var effectiveSettings = ResolveSigningTime(settings);
+
+        var options = ToPlaceholderOptions(effectiveSettings);
+        var unsignedBytes = await Task.Run(() => doc.PrepareForSigning(options), cancellationToken).ConfigureAwait(false);
+        await SignCoreAsync(unsignedBytes, effectiveSettings, output, cancellationToken).ConfigureAwait(false);
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Validates that a signing key is available: attached to
+    /// <see cref="PdfSignatureSettings.Certificate"/>, or supplied separately via
+    /// <see cref="PdfSignatureSettings.ExternalPrivateKey"/> or
+    /// <see cref="PdfSignatureSettings.ExternalSigner"/>. Throws
+    /// <see cref="ArgumentException"/> when none is present.
+    /// </summary>
+    private static void ValidateSigningKeyPresent(PdfSignatureSettings settings)
+    {
+        if (!settings.Certificate.HasPrivateKey
+            && settings.ExternalPrivateKey is null
+            && settings.ExternalSigner is null)
+            throw new ArgumentException(
+                "The signing certificate must include a private key, or " +
+                "PdfSignatureSettings.ExternalPrivateKey or PdfSignatureSettings.ExternalSigner " +
+                "must be set.", nameof(settings));
+    }
+
+    /// <summary>
+    /// Validates that <see cref="PdfSignatureSettings.ExternalSigner"/>, which requires an
+    /// async signing call, is not used with the synchronous <c>Sign</c> overloads. Throws
+    /// <see cref="NotSupportedException"/> when it is set.
+    /// </summary>
+    private static void ValidateNoExternalSignerForSyncSign(PdfSignatureSettings settings)
+    {
+        if (settings.ExternalSigner is not null)
+            throw new NotSupportedException(
+                "PdfSignatureSettings.ExternalSigner requires an async signing call and is " +
+                "not supported by the synchronous Sign overloads. Use SignAsync instead.");
+    }
 
     /// <summary>
     /// Validates that the chosen <see cref="PadesLevel"/> has all required clients configured.
@@ -135,6 +247,8 @@ public static class SigningExtensions
             ? new PdfSignatureSettings
             {
                 Certificate = settings.Certificate,
+                ExternalPrivateKey = settings.ExternalPrivateKey,
+                ExternalSigner = settings.ExternalSigner,
                 SignerName = settings.SignerName,
                 Reason = settings.Reason,
                 Location = settings.Location,
@@ -186,6 +300,39 @@ public static class SigningExtensions
         {
             // B-B and B-T: write directly to the caller's stream (no extra buffering).
             PdfCmsSigner.Sign(unsignedBytes, settings, output);
+        }
+    }
+
+    /// <summary>
+    /// Asynchronous counterpart of <see cref="SignCore"/>, awaiting the TSA/OCSP/CRL network
+    /// calls made by <see cref="PdfCmsSigner"/>, <see cref="DssBuilder"/>, and
+    /// <see cref="ArchiveTimestampBuilder"/> for PAdES B-T/B-LT/B-LTA levels.
+    /// </summary>
+    private static async Task SignCoreAsync(byte[] unsignedBytes, PdfSignatureSettings settings, Stream output, CancellationToken cancellationToken)
+    {
+        if (settings.Level >= PadesLevel.B_LT)
+        {
+            using var ms = new MemoryStream();
+            await PdfCmsSigner.SignAsync(unsignedBytes, settings, ms, cancellationToken).ConfigureAwait(false);
+            var signed = ms.ToArray();
+
+            signed = await DssBuilder.AddLongTermValidationAsync(signed, settings.RevocationClient!, cancellationToken).ConfigureAwait(false);
+
+            if (settings.Level == PadesLevel.B_LTA)
+            {
+                signed = await ArchiveTimestampBuilder.AddArchiveTimestampAsync(signed, settings.TimestampClient!, cancellationToken).ConfigureAwait(false);
+
+                // ETSI B-LTA: add a final cumulative DSS so the archive timestamp's own TSA
+                // chain + revocation (and a /VRI for the DocTimeStamp token) are embedded.
+                signed = await DssBuilder.AddLongTermValidationAsync(signed, settings.RevocationClient!, cancellationToken).ConfigureAwait(false);
+            }
+
+            await output.WriteAsync(signed, cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            // B-B and B-T: write directly to the caller's stream (no extra buffering).
+            await PdfCmsSigner.SignAsync(unsignedBytes, settings, output, cancellationToken).ConfigureAwait(false);
         }
     }
 

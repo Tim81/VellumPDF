@@ -864,6 +864,30 @@ public sealed class PdfDocument : IDisposable
     }
 
     /// <summary>
+    /// Asynchronously writes a complete PDF file to <paramref name="destination"/>.
+    ///
+    /// <para>
+    /// Document serialisation is CPU-bound (object-graph construction, not I/O), so it runs on
+    /// a thread-pool thread via <see cref="Task.Run(Action)"/> against an in-memory buffer; the
+    /// buffer is then copied to <paramref name="destination"/> with an asynchronous write.
+    /// <paramref name="cancellationToken"/> is honoured before serialisation starts and during
+    /// the final copy, but does not abort serialisation already in progress.
+    /// </para>
+    /// </summary>
+    /// <exception cref="ObjectDisposedException">The document has been disposed.</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="destination"/> is <see langword="null"/>.</exception>
+    /// <exception cref="NotSupportedException"><see cref="UseObjectStreams"/> is combined with <see cref="Encrypt"/>.</exception>
+    /// <exception cref="InvalidOperationException">A PDF/A <see cref="Conformance"/> is set together with <see cref="Encrypt"/>.</exception>
+    public async Task SaveAsync(Stream destination, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(destination);
+        using var buffer = new MemoryStream();
+        await Task.Run(() => Save(buffer), cancellationToken).ConfigureAwait(false);
+        buffer.Position = 0;
+        await buffer.CopyToAsync(destination, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
     /// Writes this document to an in-memory buffer with AcroForm signature-field placeholders
     /// and returns the raw bytes. The returned array contains a structurally valid PDF whose
     /// <c>/ByteRange</c> and <c>/Contents</c> values are fixed-width placeholders ready for

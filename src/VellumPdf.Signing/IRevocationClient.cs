@@ -29,4 +29,25 @@ public interface IRevocationClient
     /// kind of evidence should not prevent returning the other.
     /// </remarks>
     RevocationData GetRevocationData(X509Certificate2 certificate, X509Certificate2 issuer);
+
+    /// <summary>
+    /// Asynchronously returns DER-encoded revocation evidence for <paramref name="certificate"/>,
+    /// as issued by <paramref name="issuer"/>.
+    /// </summary>
+    /// <param name="certificate">The certificate whose revocation status is sought.</param>
+    /// <param name="issuer">The certificate that issued <paramref name="certificate"/>;
+    /// used to build the OCSP <c>CertID</c> (issuer name hash and key hash).</param>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <returns>
+    /// A <see cref="RevocationData"/> carrying any evidence that could be obtained.
+    /// A <see langword="null"/> field means that kind of evidence was not available
+    /// (none published, or the fetch failed); an empty result is valid and not an error.
+    /// </returns>
+    /// <remarks>
+    /// The default implementation forwards to <see cref="GetRevocationData"/>, so existing
+    /// implementations of this interface keep compiling unchanged. Implementations that can
+    /// perform the underlying network I/O asynchronously should override this member.
+    /// </remarks>
+    Task<RevocationData> GetRevocationDataAsync(X509Certificate2 certificate, X509Certificate2 issuer, CancellationToken cancellationToken = default)
+        => Task.FromResult(GetRevocationData(certificate, issuer));
 }

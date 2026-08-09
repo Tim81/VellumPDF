@@ -19,6 +19,135 @@ internal static class DssBuilder
     private const string SignatureTimestampOid = "1.2.840.113549.1.9.16.2.14";
 
     /// <summary>
+    /// Asynchronous counterpart of <see cref="AddLongTermValidation"/>, awaiting
+    /// <see cref="IRevocationClient.GetRevocationDataAsync"/> sequentially per certificate.
+    /// </summary>
+    /// <param name="signedPdf">The byte array of a fully signed PDF document.</param>
+    /// <param name="revocationClient">
+    /// Provides OCSP responses and/or CRLs for each non-self-issued certificate.
+    /// </param>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <returns>
+    /// A new byte array containing the original bytes plus the incremental DSS revision.
+    /// The existing signature(s) remain cryptographically intact.
+    /// </returns>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when <paramref name="signedPdf"/> contains no signatures.
+    /// </exception>
+    internal static async Task<byte[]> AddLongTermValidationAsync(byte[] signedPdf, IRevocationClient revocationClient, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(signedPdf);
+        ArgumentNullException.ThrowIfNull(revocationClient);
+
+        using var reader = PdfReader.Open(signedPdf);
+
+        if (reader.Signatures.Count == 0)
+            throw new InvalidOperationException("Document has no signatures to add LTV to.");
+
+        var allCerts = new Dictionary<string, byte[]>();
+        var allOcsps = new Dictionary<string, byte[]>();
+        var allCrls = new Dictionary<string, byte[]>();
+        var vriData = new Dictionary<string, VriEntry>();
+        var ownedCerts = new List<X509Certificate2>();
+
+        foreach (var sig in reader.Signatures)
+        {
+            if (sig.Contents.IsEmpty)
+                continue;
+
+            var contentsDer = sig.Contents.ToArray();
+            var sha1Hash = SHA1.HashData(contentsDer);
+            var vriKey = Convert.ToHexString(sha1Hash);
+
+            var outerCms = new SignedCms();
+            outerCms.Decode(contentsDer);
+
+            var sigCerts = new List<X509Certificate2>(outerCms.Certificates.Cast<X509Certificate2>());
+            ownedCerts.AddRange(sigCerts);
+
+            if (outerCms.SignerInfos.Count > 0)
+            {
+                var si = outerCms.SignerInfos[0];
+                foreach (CryptographicAttributeObject attr in si.UnsignedAttributes)
+                {
+                    if (attr.Oid.Value == SignatureTimestampOid && attr.Values.Count > 0)
+                    {
+                        var tokenDer = attr.Values[0].RawData;
+                        try
+                        {
+                            var tst = new SignedCms();
+                            tst.Decode(tokenDer);
+                            foreach (X509Certificate2 tsaCert in tst.Certificates)
+                            {
+                                sigCerts.Add(tsaCert);
+                                ownedCerts.Add(tsaCert);
+                            }
+                        }
+                        catch (CryptographicException)
+                        {
+                            // Malformed timestamp token — skip its certs
+                        }
+                        break; // only one timestamp attribute expected
+                    }
+                }
+            }
+
+            var dedupedSigCerts = DedupeCerts(sigCerts);
+
+            var vriCertKeys = new List<string>();
+            var vriOcspKeys = new List<string>();
+            var vriCrlKeys = new List<string>();
+
+            foreach (var cert in dedupedSigCerts)
+            {
+                var certKey = ToHexKey(cert.RawData);
+                allCerts.TryAdd(certKey, cert.RawData);
+                vriCertKeys.Add(certKey);
+
+                if (IsSelfIssued(cert))
+                    continue;
+
+                var issuer = FindIssuer(cert, dedupedSigCerts);
+                if (issuer is null)
+                    continue;
+
+                RevocationData revData;
+                try
+                {
+                    revData = await revocationClient.GetRevocationDataAsync(cert, issuer, cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception) when (!cancellationToken.IsCancellationRequested)
+                {
+                    continue;
+                }
+
+                if (revData.Ocsp is { } ocspBytes)
+                {
+                    var ocspArr = ocspBytes.ToArray();
+                    var ocspKey = ToHexKey(ocspArr);
+                    allOcsps.TryAdd(ocspKey, ocspArr);
+                    vriOcspKeys.Add(ocspKey);
+                }
+
+                if (revData.Crl is { } crlBytes)
+                {
+                    var crlArr = crlBytes.ToArray();
+                    var crlKey = ToHexKey(crlArr);
+                    allCrls.TryAdd(crlKey, crlArr);
+                    vriCrlKeys.Add(crlKey);
+                }
+            }
+
+            vriData[vriKey] = new VriEntry(vriCertKeys, vriOcspKeys, vriCrlKeys);
+        }
+
+        foreach (var c in ownedCerts)
+            c.Dispose();
+
+        return BuildDssRevision(reader, allCerts, allOcsps, allCrls, vriData);
+    }
+
+    /// <summary>
     /// Appends a /DSS (Document Security Store) incremental revision to an already-signed
     /// PDF, embedding certificate chains and revocation evidence (OCSP/CRL) for each signature.
     /// </summary>
@@ -163,6 +292,22 @@ internal static class DssBuilder
         foreach (var c in ownedCerts)
             c.Dispose();
 
+        return BuildDssRevision(reader, allCerts, allOcsps, allCrls, vriData);
+    }
+
+    /// <summary>
+    /// Shared tail of <see cref="AddLongTermValidation"/> and
+    /// <see cref="AddLongTermValidationAsync"/>: assigns object numbers, builds the /DSS and
+    /// /VRI dictionaries, clones the catalog to point at the new /DSS, and appends the result
+    /// as an incremental revision.
+    /// </summary>
+    private static byte[] BuildDssRevision(
+        PdfDocumentReader reader,
+        Dictionary<string, byte[]> allCerts,
+        Dictionary<string, byte[]> allOcsps,
+        Dictionary<string, byte[]> allCrls,
+        Dictionary<string, VriEntry> vriData)
+    {
         // ── Step 2: assign object numbers and build the indirect object list ─────
 
         var nextObjNum = reader.Size;

@@ -63,3 +63,4 @@ override VellumPdf.Canvas.TextEncodingWarning.GetHashCode() -> int
 static VellumPdf.Canvas.TextEncodingWarning.operator ==(VellumPdf.Canvas.TextEncodingWarning left, VellumPdf.Canvas.TextEncodingWarning right) -> bool
 static VellumPdf.Canvas.TextEncodingWarning.operator !=(VellumPdf.Canvas.TextEncodingWarning left, VellumPdf.Canvas.TextEncodingWarning right) -> bool
 VellumPdf.Canvas.PdfCanvas.TextEncodingWarnings.get -> System.Collections.Generic.IReadOnlyList<VellumPdf.Canvas.TextEncodingWarning>!
+VellumPdf.Document.PdfDocument.SaveAsync(System.IO.Stream! destination, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!

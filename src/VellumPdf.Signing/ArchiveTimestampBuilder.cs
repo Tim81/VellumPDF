@@ -55,7 +55,85 @@ internal static class ArchiveTimestampBuilder
         ArgumentNullException.ThrowIfNull(timestampClient);
 
         using var reader = PdfReader.Open(ltvPdf);
+        var withPlaceholders = BuildPlaceholderRevision(reader, estimatedTokenSizeBytes);
 
+        // ── Step 9: locate the /ByteRange placeholder in the NEW revision ─────
+        // The existing signature(s)' /ByteRange values are already patched (real digits);
+        // only the new DocTimeStamp has the placeholder, so LocateContentsToken finds it.
+        var posLt = SignaturePlaceholderPatcher.LocateContentsToken(withPlaceholders, estimatedTokenSizeBytes, out var hexLen);
+
+        // ── Step 10: compute and patch /ByteRange ─────────────────────────────
+        var (br0, br1, br2, br3) = SignaturePlaceholderPatcher.ComputeAndPatchByteRange(withPlaceholders, posLt, hexLen);
+
+        // ── Step 11: hash the signed content and get TSA token ────────────────
+        var signedContent = SignaturePlaceholderPatcher.BuildSignedContent(withPlaceholders, br0, br1, br2, br3);
+        var digest = SHA256.HashData(signedContent);
+
+        var tokenDer = timestampClient.GetTimestampToken(digest, HashAlgorithmName.SHA256);
+
+        // Validate the token before embedding it.
+        if (!Rfc3161TimestampToken.TryDecode(tokenDer, out var token, out _))
+            throw new InvalidOperationException(
+                "Timestamp client returned data that is not a valid RFC 3161 token.");
+
+        var tokenInfo = token!.TokenInfo;
+        if (tokenInfo.HashAlgorithmId.Value != Sha256Oid
+            || !tokenInfo.GetMessageHash().Span.SequenceEqual(digest))
+            throw new InvalidOperationException(
+                "The RFC 3161 timestamp token does not cover the expected digest.");
+
+        // ── Step 12: patch /Contents ──────────────────────────────────────────
+        SignaturePlaceholderPatcher.PatchContents(withPlaceholders, posLt, hexLen, tokenDer, "RFC 3161 timestamp token");
+
+        return withPlaceholders;
+    }
+
+    /// <summary>
+    /// Asynchronous counterpart of <see cref="AddArchiveTimestamp"/>, awaiting
+    /// <see cref="ITimestampClient.GetTimestampTokenAsync"/> for the archive timestamp token.
+    /// </summary>
+    internal static async Task<byte[]> AddArchiveTimestampAsync(
+        byte[] ltvPdf,
+        ITimestampClient timestampClient,
+        CancellationToken cancellationToken,
+        int estimatedTokenSizeBytes = 32768)
+    {
+        ArgumentNullException.ThrowIfNull(ltvPdf);
+        ArgumentNullException.ThrowIfNull(timestampClient);
+
+        using var reader = PdfReader.Open(ltvPdf);
+        var withPlaceholders = BuildPlaceholderRevision(reader, estimatedTokenSizeBytes);
+
+        var posLt = SignaturePlaceholderPatcher.LocateContentsToken(withPlaceholders, estimatedTokenSizeBytes, out var hexLen);
+        var (br0, br1, br2, br3) = SignaturePlaceholderPatcher.ComputeAndPatchByteRange(withPlaceholders, posLt, hexLen);
+
+        var signedContent = SignaturePlaceholderPatcher.BuildSignedContent(withPlaceholders, br0, br1, br2, br3);
+        var digest = SHA256.HashData(signedContent);
+
+        var tokenDer = await timestampClient.GetTimestampTokenAsync(digest, HashAlgorithmName.SHA256, cancellationToken).ConfigureAwait(false);
+
+        if (!Rfc3161TimestampToken.TryDecode(tokenDer, out var token, out _))
+            throw new InvalidOperationException(
+                "Timestamp client returned data that is not a valid RFC 3161 token.");
+
+        var tokenInfo = token!.TokenInfo;
+        if (tokenInfo.HashAlgorithmId.Value != Sha256Oid
+            || !tokenInfo.GetMessageHash().Span.SequenceEqual(digest))
+            throw new InvalidOperationException(
+                "The RFC 3161 timestamp token does not cover the expected digest.");
+
+        SignaturePlaceholderPatcher.PatchContents(withPlaceholders, posLt, hexLen, tokenDer, "RFC 3161 timestamp token");
+
+        return withPlaceholders;
+    }
+
+    /// <summary>
+    /// Shared steps 1-8 of <see cref="AddArchiveTimestamp"/> and
+    /// <see cref="AddArchiveTimestampAsync"/>: builds the DocTimeStamp field/widget, clones the
+    /// catalog and first page to reference it, and appends the placeholder incremental revision.
+    /// </summary>
+    private static byte[] BuildPlaceholderRevision(PdfDocumentReader reader, int estimatedTokenSizeBytes)
+    {
         // ── Step 1: resolve the first page object number and dict ─────────────
 
         var pagesRaw = reader.Catalog.Get(PdfName.Pages)
@@ -178,36 +256,6 @@ internal static class ArchiveTimestampBuilder
         };
         newObjects.Sort((a, b) => a.ObjectNumber.CompareTo(b.ObjectNumber));
 
-        var withPlaceholders = reader.AppendRevision(newObjects);
-
-        // ── Step 9: locate the /ByteRange placeholder in the NEW revision ─────
-        // The existing signature(s)' /ByteRange values are already patched (real digits);
-        // only the new DocTimeStamp has the placeholder, so LocateContentsToken finds it.
-        var posLt = SignaturePlaceholderPatcher.LocateContentsToken(withPlaceholders, estimatedTokenSizeBytes, out var hexLen);
-
-        // ── Step 10: compute and patch /ByteRange ─────────────────────────────
-        var (br0, br1, br2, br3) = SignaturePlaceholderPatcher.ComputeAndPatchByteRange(withPlaceholders, posLt, hexLen);
-
-        // ── Step 11: hash the signed content and get TSA token ────────────────
-        var signedContent = SignaturePlaceholderPatcher.BuildSignedContent(withPlaceholders, br0, br1, br2, br3);
-        var digest = SHA256.HashData(signedContent);
-
-        var tokenDer = timestampClient.GetTimestampToken(digest, HashAlgorithmName.SHA256);
-
-        // Validate the token before embedding it.
-        if (!Rfc3161TimestampToken.TryDecode(tokenDer, out var token, out _))
-            throw new InvalidOperationException(
-                "Timestamp client returned data that is not a valid RFC 3161 token.");
-
-        var tokenInfo = token!.TokenInfo;
-        if (tokenInfo.HashAlgorithmId.Value != Sha256Oid
-            || !tokenInfo.GetMessageHash().Span.SequenceEqual(digest))
-            throw new InvalidOperationException(
-                "The RFC 3161 timestamp token does not cover the expected digest.");
-
-        // ── Step 12: patch /Contents ──────────────────────────────────────────
-        SignaturePlaceholderPatcher.PatchContents(withPlaceholders, posLt, hexLen, tokenDer, "RFC 3161 timestamp token");
-
-        return withPlaceholders;
+        return reader.AppendRevision(newObjects);
     }
 }
