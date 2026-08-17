@@ -10,7 +10,9 @@ In-process PDF/A and PDF/UA preflight validation for **[VellumPdf](https://githu
 - BCL-only, AOT- and trim-ready — rules are registered explicitly, with no reflection.
 - Build-verified veraPDF parity is about 99%; every rule's positive and negative paths are cross-checked against veraPDF in CI.
 
-> **Preview.** Rule coverage is still growing toward complete PDF/A-2b/2u/2a and PDF/UA-1.
+> **Stable as of 2.0.** The public API is locked and analyzer-enforced. Rule coverage is
+> still growing: veraPDF parity is about 99%, and the remaining gaps are tracked as
+> issues rather than hidden behind a preview label.
 
 ## Install
 
@@ -45,7 +47,7 @@ Architecture and validator scope: <https://github.com/Tim81/VellumPDF/blob/main/
 | [VellumPdf.Layout](https://www.nuget.org/packages/VellumPdf.Layout) | Stable | High-level document builder: paragraphs, tables, images, pagination. |
 | [VellumPdf.Signing](https://www.nuget.org/packages/VellumPdf.Signing) | Stable | PAdES / PKCS#7 digital signatures with timestamps and LTV. |
 | [VellumPdf.Reader](https://www.nuget.org/packages/VellumPdf.Reader) | Preview | Opens existing PDFs; exposes catalog, signatures, and streams. |
-| **VellumPdf.Conformance** (this package) | Preview | In-process PDF/A and PDF/UA preflight validation. |
+| **VellumPdf.Conformance** (this package) | Stable | In-process PDF/A and PDF/UA preflight validation. |
 | [VellumPdf.Cli](https://www.nuget.org/packages/VellumPdf.Cli) | Stable | `vellum-preflight` command-line PDF/A and PDF/UA validator. |
 | [VellumPdf.Barcodes](https://www.nuget.org/packages/VellumPdf.Barcodes) | Stable | QR, Data Matrix, Aztec, PDF417, Code 128/GS1-128, Code 39, EAN/UPC, and ITF-14 as vectors. |
 
