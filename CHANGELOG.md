@@ -6,6 +6,77 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [2.0.0] - 2026-08-17
+
+The first major version since 1.0. Every package moves to 2.0.0 together, as usual.
+
+Two things made a major version necessary: assemblies are strong-named, which changes their
+identity, and the analyzer that was supposed to be locking the public API is now actually
+locking it, which meant fixing the defects in that surface while doing so was still free.
+Most of the rest is work that had to land before the surface froze.
+
+**Read [Upgrading to 2.0](https://github.com/Tim81/VellumPDF#upgrading-to-20) first if you bind to an assembly
+identity by hand** — a `PackageReference` needs no change, but a binding redirect, an
+`InternalsVisibleTo`, or an `Assembly.Load` string does.
+
+### Breaking changes
+
+#### Assembly identity
+
+- **All eight packages are strong-named** (`eng/VellumPdf.snk`), with public key token
+  `b2757187a6d18ae5`. `AssemblyVersion` is pinned to `2.0.0.0` for the whole 2.x line, so
+  servicing releases will not force another rebind. (#53)
+
+#### Public API
+
+| Change | Was | Now |
+| --- | --- | --- |
+| `PdfSignature.ByteRange` | `int[]` | `ReadOnlyMemory<long>` (#178) |
+| `PdfLinkAnnotation.Flags` | `int` | `PdfAnnotationFlags` (#176) |
+| `TextEncodingWarning` character | `char` | `System.Text.Rune` (#177) |
+| `CcittImageLoader.Load` | two overloads, four positional knobs | one overload taking `CcittOptions` (#177) |
+| `PdfPreflight.Validate(PdfDocumentReader, PdfConformance)` | public | internal (#176) |
+| `HttpRevocationClient(HttpClient, TimeSpan)` | both arguments required | both optional, matching `HttpTimestampClient` (#177) |
+| `PdfSignatureSettings.SubFilter` | any string accepted | only `ETSI.CAdES.detached` and `adbe.pkcs7.detached` (#176) |
+| `SignaturePlaceholderOptions.SubFilter` | any string accepted | the same two values |
+
+Each is explained under Added, Changed, or Fixed below.
+
+#### Behaviour
+
+- **A PAdES signature no longer carries a CMS `signing-time` signed attribute.** ETSI
+  EN 319 142-1 admits only the signed attributes its table 1 lists, and `signing-time` is not
+  among them — PAdES conveys the claimed time in the signature dictionary's `/M`, which this
+  library already wrote from the same value. Emitting it anyway held every signature at
+  PAdES-BES instead of PAdES-BASELINE-B. Code reading `signing-time` out of `SignerInfo` on a
+  signature written with the default `/SubFilter ETSI.CAdES.detached` will no longer find it;
+  `/M` still carries the value, and `adbe.pkcs7.detached` keeps the attribute, since it makes
+  no ETSI claim. (#170)
+- **A tagged document with no tagged content now emits `/StructTreeRoot`.** Setting
+  `Tagged = true` and drawing nothing previously produced no structure tree at all, which
+  failed PDF/A-2a and PDF/UA-1 validation. `Tagged` now means tagged. (#120)
+- **A certificate with a non-minimally-encoded serial is rejected up front** on the
+  in-process signing paths, with a message naming the offending bytes and the way forward,
+  instead of an opaque `ArgumentException` raised from inside the BCL's CMS encoder. The
+  exception type is unchanged, so a `catch (ArgumentException)` behaves as before. (#167)
+- **`vellum-preflight --format json` reports check accounting differently.** `summary.total`
+  used to be `failed + passed + notEvaluated`, adding a count of assertions to a count of
+  checks; it is now the profile's catalog size. `summary.failedChecks`, `summary.inconclusive`,
+  and the matching `failedChecks` and `inconclusive` arrays are new, and the text output gains
+  an `INCONCLUSIVE` line. Exit codes and the conformance verdict are unchanged.
+- **A `null` options argument now means "use the default"** rather than throwing, on
+  `CcittImageLoader.Load` and the `HttpRevocationClient` constructor. With `= null` defaults
+  there is no way to tell an omitted argument from an explicitly null one, so the old
+  `ArgumentNullException` fired on exactly the call the default exists to serve. (#177)
+- **External-signer CMS digest `AlgorithmIdentifier`s now match RFC 5754** — both
+  `SignedData.digestAlgorithms` and `SignerInfo.digestAlgorithm` omit their parameters field
+  instead of carrying a redundant DER NULL, per RFC 5754 §2 ("implementations MUST generate
+  SHA2 AlgorithmIdentifiers with absent parameters"). `SignerInfo.signatureAlgorithm` was
+  already correct and is unchanged. Neither change touches the signature value:
+  AlgorithmIdentifiers sit outside the SignedAttrs digest. (#166)
+
 ### Added
 
 - **Async I/O surface for `Save`, `Sign`, and `LoadTrueTypeFont`** — `PdfDocument.SaveAsync`,
@@ -13,13 +84,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `SigningExtensions.SignAsync` (both overloads), each taking a `CancellationToken`. Existing
   sync methods are unchanged. `ITimestampClient` and `IRevocationClient` gain default-implemented
   `GetTimestampTokenAsync`/`GetRevocationDataAsync` members, so custom implementations keep
-  compiling unchanged; `HttpTimestampClient` and `HttpRevocationClient` now perform non-blocking
-  HTTP requests for the async path instead of blocking on the underlying async API. (#54)
-- **`PdfSignatureSettings.ExternalPrivateKey`** — signs with a private key supplied separately
-  from `Certificate`, for HSM/PKCS#11/cloud-KMS-backed certificates whose key isn't attached to
-  the `X509Certificate2` (Azure Key Vault, AWS KMS, `Pkcs11Interop.X509Store`, and similar).
-  Windows CNG-integrated smart cards and hardware tokens already work through the existing
-  `Certificate`-only path and need no change. (#54)
+  compiling unchanged. (#54)
 - **`IExternalSigner`** — a two-phase async external-signer API for a cloud KMS or remote HSM
   where the signing call itself is a network round-trip (Azure Key Vault, AWS KMS, GCP KMS). No
   BCL API supports this today, since `CmsSigner` only accepts a synchronous, in-process private
@@ -28,48 +93,99 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   and sign with `SignAsync`; the synchronous `Sign` overloads throw, since there is no synchronous
   way to bridge a network call. `EcdsaSignatureConverter` is included for KMS providers, such as
   Azure Key Vault, that return a raw ECDSA signature rather than the DER encoding CMS requires. (#165)
+- **`PdfSignatureSettings.ExternalPrivateKey`** — signs with a private key supplied separately
+  from `Certificate`, for HSM/PKCS#11/cloud-KMS-backed certificates whose key isn't attached to
+  the `X509Certificate2` (Azure Key Vault, AWS KMS, `Pkcs11Interop.X509Store`, and similar).
+  Windows CNG-integrated smart cards and hardware tokens already work through the existing
+  `Certificate`-only path and need no change. (#54)
+- **The ESS `signing-certificate-v2` signed attribute** (RFC 5035) is now emitted on both
+  signing paths, so a signature written with the default `/SubFilter ETSI.CAdES.detached`
+  carries the attribute the ETSI profile expects rather than only claiming to. `hashAlgorithm`
+  is omitted for SHA-256 (the DER `DEFAULT` rule) and written with absent parameters for
+  SHA-384/512; `issuerSerial` is built from the same bytes as the `SignerInfo`, so the two
+  cannot disagree. (#168)
+
+  Together with the `signing-time` removal below, this is what makes the `/SubFilter` claim
+  true rather than merely asserted. Measured with the EU DSS reference validator, against
+  fixtures differing only in the code that signed them:
+
+  | Signature | 1.11.0 | 2.0.0 |
+  | --- | --- | --- |
+  | B-B, `ETSI.CAdES.detached` | `PDF-NOT-ETSI` | **`PAdES-BASELINE-B`** |
+  | B-T, with an RFC 3161 timestamp | `PAdES-BES` | **`PAdES-BASELINE-T`** |
+  | `adbe.pkcs7.detached` | `PKCS7-B` | `PKCS7-B` (unchanged) |
+
+  Either change alone reaches only `PAdES-BES`. (#168, #170)
+- **A PDF/A-2a check for page content that no structure element describes** — reported at
+  ISO 19005-2 clause 6.7.3.3, at Warning severity, since veraPDF's own PDF/A-2a profile
+  implements no equivalent rule and the verdict must keep matching it. (#120)
+- **`PdfAnnotationFlags`** — the ISO 32000-1 Table 165 annotation bitfield as an enum, so the
+  §6.3.2 PDF/A requirement can be written as `PdfAnnotationFlags.Print` rather than `4`.
+  Emitted bytes are unchanged, and a test pins that. (#176)
+- **`SubFilterEtsiCAdESDetached` and `SubFilterAdbePkcs7Detached` constants** on both
+  `PdfSignatureSettings` and `SignaturePlaceholderOptions`, so the two accepted values need not
+  be hardcoded. (#176)
 
 ### Changed
 
-- **Breaking: all eight packages are now strong-named** (`eng/VellumPdf.snk`). This
-  changes assembly identity — consumers binding to a specific public key or public
-  key token must rebind against the new key. (#53)
-- **External-signer CMS digest `AlgorithmIdentifier`s now match RFC 5754** — both
-  `SignedData.digestAlgorithms` and `SignerInfo.digestAlgorithm` now omit their parameters
-  field instead of carrying a redundant DER NULL, per RFC 5754 §2 ("implementations MUST
-  generate SHA2 AlgorithmIdentifiers with absent parameters"). `SignerInfo.signatureAlgorithm`
-  was already correct — one of the `sha256WithRSAEncryption`/`sha384WithRSAEncryption`/
-  `sha512WithRSAEncryption` OIDs RFC 5754 §3.2 permits, with NULL parameters as that section
-  requires whenever those OIDs are used — and is unchanged. Neither change touches the
-  signature value: AlgorithmIdentifiers sit outside the SignedAttrs digest. (#166)
-
-- **Breaking: `vellum-preflight --format json` reports check accounting differently.**
-  `summary.total` used to be `failed + passed + notEvaluated`, which added a count of
-  assertions to a count of checks; it is now the profile's catalog size. Two counts
-  (`summary.failedChecks`, `summary.inconclusive`) and two arrays (`failedChecks`,
-  `inconclusive`) are new. A failing rule whose id is a veraPDF-style test id now withdraws
-  only the check it names rather than every check in its clause; where the rule id names only
-  a clause, the checks in it are reported as `inconclusive` instead of being dropped from the
-  report. The text output gains an `INCONCLUSIVE` line. Exit codes and the conformance verdict
-  are unchanged.
-- **`SignaturePlaceholderOptions.SubFilter` is validated**, matching
-  `PdfSignatureSettings.SubFilter`. Only `ETSI.CAdES.detached` and `adbe.pkcs7.detached` are
-  accepted; anything else throws instead of being written verbatim into the signature
-  dictionary, where it would claim a format the CMS content does not match.
+- **`VellumPdf.Conformance` graduates from Preview to Stable.** `VellumPdf.Cli` was already
+  Stable while the engine it wraps was Preview. veraPDF parity is about 99% across
+  PDF/A-2b/2u/2a and PDF/UA-1, both paths of every rule are cross-validated against it in CI,
+  and the remaining gaps are tracked as issues — better stated as known issues on a stable
+  package than as a preview label on the whole engine. (#173)
+- **The public API surface is now under the analyzer gate the README describes.** That README
+  has claimed "the public API is locked (analyzer-enforced)" since 1.0, but
+  `VellumPdf.Signing`'s `PublicAPI.Shipped.txt` was a zero-byte file and Kernel's had not been
+  touched since 1.2.0, so 232 entries across five
+  packages sat where the analyzer permits silent removal. They are recorded now, and every
+  `PublicAPI.Unshipped.txt` is reset to its header, so a 2.x addition shows as a diff against
+  an accurate baseline. `VellumPdf.Reader` is deliberately left Unshipped: it stays Preview
+  through the v2.1 structural-reader work, and the convention is that a surface moves at
+  graduation, not before. (#173)
+- **The synchronous timestamp and revocation clients no longer block on an async call.**
+  `HttpTimestampClient` and `HttpRevocationClient` already issued the request through
+  `HttpClient.Send`; only the response body was read by blocking on `ReadAsByteArrayAsync`,
+  which deadlocks on a synchronization context and starves the thread pool under load. That is
+  `HttpContent.ReadAsStream` now, which is genuinely synchronous. No `GetAwaiter().GetResult()`
+  remains anywhere in `src/`. The synchronous interface members stay: they are the required
+  ones while the async counterparts are default-implemented, so removing them would break every
+  existing implementation. (#177)
+- **`System.Security.Cryptography.Pkcs` moves to 10.0.11**, matching the .NET 10 servicing band.
 
 ### Fixed
 
-- **`ExternalSignerCms` and `HttpRevocationClient` no longer throw on a certificate with a
-  non-minimally-encoded serial number** — a mis-issued certificate whose serial carries a
-  redundant leading pad byte (something `X509Certificate2` tolerates but DER forbids)
-  previously threw an unexplained `ArgumentException` from `AsnWriter.WriteInteger` when
-  embedding the serial in a CMS `SignerInfo` or an OCSP request; the serial is now
-  normalized to its minimal two's-complement form first. Genuinely negative serials still
-  round-trip unchanged. (#167)
+- **`/ByteRange` offsets are no longer truncated to `int`.** `PdfSignature.ByteRange` was
+  `int[]` filled from a `long` through an unchecked cast, so an author-controlled offset past
+  `int.MaxValue` wrapped silently — 4,294,967,296 became 0, which made `CheckByteRange` return
+  early and skip the ISO 19005-2 §6.4.3-1 coverage check entirely. The same truncating parse
+  existed in two independent places, and both are fixed. (#178)
+- **A CRL that revokes the signing certificate is no longer treated as valid** when that
+  certificate's serial is non-minimally encoded. The comparison held the certificate's raw
+  serial bytes against the CRL's, which are always minimal because a real CA's CRL is DER, so
+  it never matched and the revoking CRL was embedded in the `/DSS`. Both sides are normalized
+  now. (#167)
+- **A Warning no longer withdraws a passing claim** in the preflight report, and a failing rule
+  now blames the check it names rather than every catalogued check sharing its clause number.
+  Withdrawn checks used to appear in no section of the report at all.
+- **`vellum-preflight` prints its findings when there are findings**, rather than only when the
+  verdict is FAIL. `--fail-on warning` used to fail a run while listing nothing, and
+  `--severity warning` listed nothing on a conformant document whose own header said a warning
+  existed.
+- **`/StructParents` keys no longer wrap into each other's key space** — the key and the
+  `/Nums` entries are range-checked.
+- **Long-term validation no longer reuses a live object number** when a document's `/Size` is
+  smaller than the highest object number actually present.
+- **An astral character is reported once, as itself**, in `TextEncodingWarning`. It used to be
+  reported twice, as its two UTF-16 surrogate halves, with a code point in 0xD800–0xDFFF — a
+  value no Unicode character has. An unpaired surrogate is reported as U+FFFD. Emitted bytes are
+  deliberately unchanged: an astral character still writes two `?` bytes, because collapsing it
+  to one would shift text a caller had already measured. (#177)
+- **Decode-to-raster on a Group 3 1-D CCITT stream with byte-aligned rows is reachable** — the
+  `ImageLoadOptions` overload could not carry the CCITT knobs at all, so that combination had no
+  public expression. (#177)
 - **Clearer `ExternalSignerCms` failure messages** — a `CheckSignature` failure now names
-  RSASSA-PSS (unsupported — see `IExternalSigner`'s documentation) and a KMS key ID pointing
-  at the wrong key as likely causes alongside a malformed signature, rather than pointing only
-  at signature format. (#167)
+  RSASSA-PSS (unsupported — see `IExternalSigner`'s documentation) and a KMS key id pointing at
+  the wrong key as likely causes, rather than pointing only at signature format. (#167)
 
 ## [1.11.0] - 2026-07-11
 
@@ -727,7 +843,8 @@ few small additions. No public API was removed.
   headers, and no unbounded allocations driven by attacker-controlled length
   fields.
 
-[Unreleased]: https://github.com/Tim81/VellumPDF/compare/v1.11.0...HEAD
+[Unreleased]: https://github.com/Tim81/VellumPDF/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/Tim81/VellumPDF/releases/tag/v2.0.0
 [1.11.0]: https://github.com/Tim81/VellumPDF/releases/tag/v1.11.0
 [1.10.0]: https://github.com/Tim81/VellumPDF/releases/tag/v1.10.0
 [1.9.0]: https://github.com/Tim81/VellumPDF/releases/tag/v1.9.0

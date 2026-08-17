@@ -2,15 +2,26 @@
 
 ## Scope
 
-VellumPdf is a PDF **generation** library. It writes new PDF documents and embeds
-caller-supplied font and image bytes. It does **not** parse or render untrusted PDF
-documents.
+VellumPdf writes PDF documents, and since v1.6 it also reads them. Both halves take input
+the caller may not control, so both are in scope:
 
-The security-relevant attack surface is therefore the font and image parsers
-(TrueType/OpenType, PNG, JPEG, BMP, GIF, TIFF). These are written to fail cleanly on
-malformed or hostile input — throwing `InvalidDataException` (corrupt/truncated data) or
-`NotSupportedException` (unsupported variant) — rather than crash with an unexpected
-exception, hang, or exhaust memory.
+- **Font and image bytes** embedded during generation — TrueType/OpenType, PNG, JPEG, BMP,
+  GIF, TIFF.
+- **Whole PDF documents** parsed by `VellumPdf.Reader`, by the `VellumPdf.Conformance`
+  preflight validator, and by the `vellum-preflight` CLI, which exists to be pointed at
+  files you did not produce.
+
+None of these render, execute embedded JavaScript, or resolve external references, so the
+risk is confined to what a parser can be made to do: read out of bounds, recurse without
+end, loop forever, or allocate without limit. Every parser is written to fail cleanly
+instead — throwing `InvalidDataException` (corrupt or truncated data) or
+`NotSupportedException` (an unsupported variant, including encrypted documents) rather than
+crashing with an unexpected exception, hanging, or exhausting memory. The reader bounds
+indirect-reference nesting and AcroForm field-tree depth, rejects object-stream cycles, and
+range-checks every offset taken from a cross-reference table before using it.
+
+A crash, hang, or unbounded allocation on malformed or hostile input is a bug. Please report
+it, whichever of those entry points reaches it.
 
 ## Supported versions
 
