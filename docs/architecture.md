@@ -9,12 +9,13 @@ A full-featured PDF **generation** library for .NET 10, comparable in capability
 to a mature commercial PDF SDK, implemented **clean-room** from the open
 **ISO 32000** standard.
 
-Reading existing PDFs is being added incrementally: v1.6 introduces an MVP reader
-(`VellumPdf.Reader`) for the signing LTV path (classic xref, unencrypted; see #49).
-The full general reader is roadmapped as v2.1 (structural parser, Epic #100) and
-v2.2 (text/image extraction). Editing existing PDFs lands at v3.0 as a unified
-read-modify-write model that supersedes the write-once document API (Epic #101) —
-a breaking change, hence the major bump.
+Reading existing PDFs is being added incrementally. v1.6 introduced `VellumPdf.Reader`
+for the signing LTV path (#49); it now also backs the conformance validator and
+handles cross-reference streams, object streams, and hybrid-reference files, though
+not encryption. The full general reader is roadmapped as v2.1 (structural parser,
+Epic #100) and v2.2 (text/image extraction). Editing existing PDFs lands at v3.0 as a
+unified read-modify-write model that supersedes the write-once document API
+(Epic #101) — a breaking change, hence the major bump.
 
 ## Clean-room policy (non-negotiable)
 
@@ -48,12 +49,21 @@ but the .NET base class library.
                           two-phase measure/draw · automatic pagination · tagging integration
         ▲
 (optional feature packages — depend inward only)
-  VellumPdf.Signing       incremental update + PKCS#7 / PAdES
-  VellumPdf.Forms         AcroForm fields + appearance-stream generation
-  VellumPdf.Conformance   PDF/A-2 (b/u/a) · PDF/UA-1 · preflight validator
-  VellumPdf.Barcodes      QR (+ Micro QR) · PDF417 · Code128/GS1-128 · EAN/UPC · ITF-14 (v1.9)
-  VellumPdf.Fonts.Shaping optional HarfBuzz adapter (off by default; honours zero-dep core)
+  VellumPdf.Reader        lexer · object parser · xref tables, xref/object streams,
+                          hybrid-reference files · catalog and signature navigation
+  VellumPdf.Signing       incremental update + PKCS#7 / PAdES (+ LTV) · reads via Reader
+  VellumPdf.Conformance   PDF/A-2 (b/u/a) · PDF/UA-1 · preflight validator · reads via Reader
+  VellumPdf.Barcodes      QR (+ Micro QR, GS1, Structured Append) · PDF417 (+ Compact, Macro) ·
+                          Data Matrix · Aztec · Code 39 · Code 128/GS1-128 · EAN/UPC · ITF-14
+  VellumPdf.Fonts.Standard14  embeddable metric-compatible standard-14 substitutes (Liberation)
+
+(tool)
+  VellumPdf.Cli           `vellum-preflight`, native-AOT · text / JSON / SARIF reports
 ```
+
+`VellumPdf.Forms` and `VellumPdf.Fonts.Shaping` are not packages. AcroForm field support
+lives in the Kernel, and complex-script shaping is still an open design question — see the
+dependency note below.
 
 ## Dependency philosophy
 
@@ -125,18 +135,27 @@ to retrofit:
   (CsCheck) on escaping and cross-reference offsets.
 - **External validators as oracles in CI** (invoked as tools, never linked or
   shipped, so they do not affect the library's license-clean runtime):
-  `qpdf --check` (structural), veraPDF (PDF/A + UA), PDFBox Preflight,
-  `pdftotext`/pdfcpu (text round-trip → proves `ToUnicode`), zxing-cpp (decode
-  round-trip for every barcode symbology, via a rasterized `pdftoppm` page),
-  and a render-diff via pdfium/Ghostscript.
-- Cross-reader smoke tests against pdf.js.
+  veraPDF 1.30.2 (PDF/A-2b/2u/2a + PDF/UA-1, via the official Docker image),
+  `qpdf --check` and `--show-linearization` (structural and linearization),
+  `pdftotext` (text round-trip → proves `ToUnicode`), `pdfsig` (PAdES signature
+  validity), and zxing-cpp (decode round-trip for every barcode symbology, via a
+  rasterized `pdftoppm` page).
+- **A missing tool fails the build rather than skipping the test**, by two
+  mechanisms: the poppler and qpdf oracles call `GateOnCi`, which turns the
+  early-return into `Assert.Fail` when `CI` or `GITHUB_ACTIONS` is set, while
+  veraPDF and zxing-cpp use explicit `REQUIRE_VERAPDF` / `REQUIRE_BARCODE_ORACLE`
+  switches that CI sets. Locally the same tests skip, so a contributor without
+  Docker or poppler installed still gets a green run.
 
 ## Milestones
 
-- **M1 — Core + high-level layout** (current target): kernel, font engine,
-  images, layout engine with pagination and the tagging channel, tables.
-- **M2** — PDF/A-2b/2u + preflight, AES-256 encryption, barcodes, xref/object
-  stream optimization.
-- **M3** — Tagged PDF / PDF-UA-1 + PDF/A-2a, basic PAdES signing.
-- **M4** — Interactive AcroForms, PAdES-LTV, optional shaping, SVG→PDF,
-  HTML→PDF (separate Chromium-shelling package).
+The original M1–M4 plan is done through M3, and most of M4: kernel and font engine, layout
+with pagination and tagging, PDF/A-2b/2u/2a and PDF/UA-1 with an in-process preflight,
+AES-256 encryption, barcodes, xref and object streams, linearization, PAdES signing with
+LTV, and AcroForm fields. What is still open is complex-script shaping, SVG→PDF, HTML→PDF,
+and the reader work that leads to read-modify-write.
+
+Live scope lives in one place — the roadmap table in [README.md](../README.md#roadmap),
+tracked as [GitHub milestones](https://github.com/Tim81/VellumPDF/milestones). A second copy
+here would only drift, which is how the list above came to describe a target the library had
+long since passed.

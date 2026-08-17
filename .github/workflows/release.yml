@@ -65,11 +65,39 @@ jobs:
           if [[ "$version" == *-* ]]; then
             prerelease_flag="--prerelease"
           fi
-          gh release create "$GITHUB_REF_NAME" \
-            "${{ runner.temp }}"/packages/*.nupkg \
-            --title "$GITHUB_REF_NAME" \
-            --generate-notes \
-            $prerelease_flag
+
+          # Release notes come from this version's CHANGELOG section: everything between its
+          # own "## [x.y.z]" heading and the next "## [" heading. The generated-commit-title
+          # list this replaced said nothing about breaking changes, which is most of what a
+          # reader arriving from NuGet needs.
+          notes_file="${RUNNER_TEMP}/release-notes.md"
+          awk -v ver="$version" '
+            BEGIN { hdr = "## [" ver "]" }
+            substr($0, 1, length(hdr)) == hdr { inside = 1; next }
+            inside && substr($0, 1, 4) == "## [" { exit }
+            inside { print }
+          ' CHANGELOG.md \
+            | sed -e '/./,$!d' \
+            | tac | sed -e '/./,$!d' | tac \
+            > "$notes_file"
+
+          # Falling back rather than failing: packages are already pushed to NuGet by the step
+          # above, and that cannot be undone. A release with weaker notes beats a published
+          # version with no GitHub release at all, so an authoring slip degrades and warns.
+          if [[ -s "$notes_file" ]]; then
+            gh release create "$GITHUB_REF_NAME" \
+              "${{ runner.temp }}"/packages/*.nupkg \
+              --title "$GITHUB_REF_NAME" \
+              --notes-file "$notes_file" \
+              $prerelease_flag
+          else
+            echo "::warning::No '## [$version]' section found in CHANGELOG.md; using generated notes."
+            gh release create "$GITHUB_REF_NAME" \
+              "${{ runner.temp }}"/packages/*.nupkg \
+              --title "$GITHUB_REF_NAME" \
+              --generate-notes \
+              $prerelease_flag
+          fi
 
   # ── Native-AOT vellum-preflight binaries, one per RID (built on the target OS) ──
   # Native AOT cannot cross-compile across OS families, so this is a per-OS matrix.
