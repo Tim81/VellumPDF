@@ -535,3 +535,5 @@ VellumPdf.Annotations.PdfAnnotationFlags.Print = 4 -> VellumPdf.Annotations.PdfA
 VellumPdf.Annotations.PdfAnnotationFlags.ReadOnly = 64 -> VellumPdf.Annotations.PdfAnnotationFlags
 VellumPdf.Annotations.PdfAnnotationFlags.ToggleNoView = 256 -> VellumPdf.Annotations.PdfAnnotationFlags
 VellumPdf.Annotations.PdfLinkAnnotation.Flags.get -> VellumPdf.Annotations.PdfAnnotationFlags
+const VellumPdf.Document.SignaturePlaceholderOptions.SubFilterEtsiCAdESDetached = "ETSI.CAdES.detached" -> string!
+const VellumPdf.Document.SignaturePlaceholderOptions.SubFilterAdbePkcs7Detached = "adbe.pkcs7.detached" -> string!
