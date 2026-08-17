@@ -66,10 +66,48 @@ public sealed class PdfSignatureSettings
     public int EstimatedSignatureSizeBytes { get; init; } = 8192;
 
     /// <summary>
-    /// PDF signature sub-filter. Default is "ETSI.CAdES.detached" (PAdES B-B).
-    /// Use "adbe.pkcs7.detached" for legacy compatibility.
+    /// PDF signature sub-filter, written as the signature dictionary's <c>/SubFilter</c>. Default is
+    /// <c>"ETSI.CAdES.detached"</c> (PAdES). Use <c>"adbe.pkcs7.detached"</c> for legacy
+    /// compatibility.
     /// </summary>
-    public string SubFilter { get; init; } = "ETSI.CAdES.detached";
+    /// <remarks>
+    /// Only the two values this library actually produces a conforming signature for are accepted.
+    /// It stays a <see cref="string"/> rather than becoming an enum so that a future sub-filter can
+    /// be added without a breaking API change — but it is validated, because the value goes straight
+    /// into <c>/SubFilter</c>, and an unrecognised one yields a signature dictionary that names a
+    /// format the CMS blob does not match. That is worth failing on at assignment rather than
+    /// discovering in a verifier.
+    /// </remarks>
+    /// <exception cref="ArgumentException">
+    /// The value is not one of the supported sub-filters.
+    /// </exception>
+    public string SubFilter
+    {
+        get;
+        init
+        {
+            if (!SupportedSubFilters.Contains(value, StringComparer.Ordinal))
+            {
+                throw new ArgumentException(
+                    $"'{value}' is not a supported signature sub-filter. Use "
+                    + $"{string.Join(" or ", SupportedSubFilters.Select(s => $"\"{s}\""))}. The value is "
+                    + "written verbatim as the signature dictionary's /SubFilter, so an unrecognised "
+                    + "one produces a signature that claims a format its CMS content does not match.",
+                    nameof(SubFilter));
+            }
+
+            field = value;
+        }
+    } = SubFilterEtsiCAdESDetached;
+
+    /// <summary><c>ETSI.CAdES.detached</c> — the PAdES sub-filter, and the default.</summary>
+    public const string SubFilterEtsiCAdESDetached = "ETSI.CAdES.detached";
+
+    /// <summary><c>adbe.pkcs7.detached</c> — the legacy sub-filter, carrying no ETSI profile obligation.</summary>
+    public const string SubFilterAdbePkcs7Detached = "adbe.pkcs7.detached";
+
+    private static readonly string[] SupportedSubFilters =
+        [SubFilterEtsiCAdESDetached, SubFilterAdbePkcs7Detached];
 
     /// <summary>
     /// Optional RFC 3161 timestamp client. When set, an RFC 3161 <c>TimeStampToken</c> is
