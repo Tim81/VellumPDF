@@ -7,14 +7,36 @@ using VellumPdf.Conformance.Coverage;
 
 namespace VellumPdf.Cli;
 
+/// <summary>
+/// One file's preflight report. The four <see cref="ConformanceCheck"/> lists partition the
+/// profile's catalog: every catalogued check appears in exactly one of <see cref="Passed"/>,
+/// <see cref="FailedChecks"/>, <see cref="Inconclusive"/>, or <see cref="NotEvaluated"/>.
+/// <see cref="Failed"/> is a separate axis — it holds assertions, not checks, and is filtered by
+/// the <c>--severity</c> display threshold, so it is not part of that partition.
+/// </summary>
 internal sealed class RunReport
 {
     internal required string FilePath { get; init; }
     internal required string Profile { get; init; }
     internal required string ProfileSource { get; init; }
     internal required bool Conformant { get; init; }
+
+    /// <summary>Assertions the run produced, filtered by the display-severity threshold.</summary>
     internal required List<PreflightAssertion> Failed { get; init; }
+
+    /// <summary>Catalogued checks this file satisfies.</summary>
     internal required List<ConformanceCheck> Passed { get; init; }
+
+    /// <summary>Catalogued checks a failing assertion named directly, by test id.</summary>
+    internal required List<ConformanceCheck> FailedChecks { get; init; }
+
+    /// <summary>
+    /// Catalogued checks that neither passed nor failed: a rule failed somewhere in the same ISO
+    /// clause, but its id does not say which catalogued check it corresponds to.
+    /// </summary>
+    internal required List<ConformanceCheck> Inconclusive { get; init; }
+
+    /// <summary>Catalogued checks the library does not fully implement.</summary>
     internal required List<ConformanceCheck> NotEvaluated { get; init; }
 }
 
@@ -108,6 +130,14 @@ internal static class Formatter
                 }
             }
 
+            // Inconclusive footer. Worth a line of its own: these checks are not failures, but the
+            // run cannot vouch for them either, and reporting only passes would read as if it had.
+            if (r.Inconclusive.Count > 0)
+            {
+                w.WriteLine(C(Yellow, $"INCONCLUSIVE: {r.Inconclusive.Count} checks", color)
+                    + " (a rule failed in the same clause without naming a specific check)");
+            }
+
             // Not evaluated footer
             int partialCount = 0, deferredCount = 0, oosCount = 0;
             foreach (var n in r.NotEvaluated)
@@ -195,9 +225,11 @@ internal static class Formatter
                 Warning = warnCount,
                 Info = infoCount,
                 Passed = r.Passed.Count,
+                FailedChecks = r.FailedChecks.Count,
+                Inconclusive = r.Inconclusive.Count,
                 Partial = partialCount,
                 Deferred = deferredCount,
-                Total = r.Failed.Count + r.Passed.Count + r.NotEvaluated.Count,
+                Total = r.Passed.Count + r.FailedChecks.Count + r.Inconclusive.Count + r.NotEvaluated.Count,
             },
             Failed = r.Failed.Select(f => new FailedDto
             {
@@ -207,11 +239,9 @@ internal static class Formatter
                 Message = f.Message,
                 ObjectRef = f.ObjectRef,
             }).ToList(),
-            Passed = r.Passed.Select(p => new PassedDto
-            {
-                TestId = p.TestId,
-                Clause = p.Clause,
-            }).ToList(),
+            Passed = r.Passed.Select(ToCheckDto).ToList(),
+            FailedChecks = r.FailedChecks.Select(ToCheckDto).ToList(),
+            Inconclusive = r.Inconclusive.Select(ToCheckDto).ToList(),
             NotEvaluated = r.NotEvaluated.Select(n => new NotEvaluatedDto
             {
                 TestId = n.TestId,
@@ -221,6 +251,9 @@ internal static class Formatter
             }).ToList(),
         };
     }
+
+    private static CheckDto ToCheckDto(ConformanceCheck c) =>
+        new() { TestId = c.TestId, Clause = c.Clause };
 
     // ── SARIF 2.1.0 format ────────────────────────────────────────────────────
 
