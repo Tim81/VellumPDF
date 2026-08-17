@@ -196,7 +196,10 @@ internal sealed class SignatureRule : IConformanceRule
         if (cdSum == fileLength)
             return; // exact coverage — compliant
 
-        var gapStart = (int)cdSum;
+        // Stays long rather than narrowing. The cast that used to be here was safe only because the
+        // cdSum > fileLength branch above returns first, which bounds it by an int — a coupling
+        // that would break silently the moment either guard moved.
+        var gapStart = cdSum;
         foreach (var rev in context.Revisions)
         {
             if (rev.XrefOffset >= gapStart && rev.XrefOffset < fileLength)
