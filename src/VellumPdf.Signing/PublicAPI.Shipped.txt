@@ -45,7 +45,7 @@ VellumPdf.Signing.RevocationData.Crl.init -> void
 VellumPdf.Signing.RevocationData.IsEmpty.get -> bool
 VellumPdf.Signing.HttpRevocationClient
 VellumPdf.Signing.HttpRevocationClient.HttpRevocationClient() -> void
-VellumPdf.Signing.HttpRevocationClient.HttpRevocationClient(System.Net.Http.HttpClient! httpClient, System.TimeSpan timeout) -> void
+VellumPdf.Signing.HttpRevocationClient.HttpRevocationClient(System.Net.Http.HttpClient? httpClient = null, System.TimeSpan? timeout = null) -> void
 VellumPdf.Signing.HttpRevocationClient.GetRevocationData(System.Security.Cryptography.X509Certificates.X509Certificate2! certificate, System.Security.Cryptography.X509Certificates.X509Certificate2! issuer) -> VellumPdf.Signing.RevocationData!
 VellumPdf.Signing.HttpRevocationClient.GetRevocationDataAsync(System.Security.Cryptography.X509Certificates.X509Certificate2! certificate, System.Security.Cryptography.X509Certificates.X509Certificate2! issuer, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<VellumPdf.Signing.RevocationData!>!
 VellumPdf.Signing.PadesLevel

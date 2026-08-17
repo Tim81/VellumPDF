@@ -45,24 +45,34 @@ public sealed class HttpRevocationClient : IRevocationClient
     /// default per-request timeout.
     /// </summary>
     public HttpRevocationClient()
-        : this(s_sharedClient, s_defaultTimeout)
+        : this(httpClient: null, timeout: null)
     {
     }
 
     /// <summary>
-    /// Creates a client backed by the supplied <see cref="HttpClient"/> and timeout.
+    /// Creates a client backed by the supplied <see cref="HttpClient"/> and timeout, defaulting
+    /// either one that is omitted.
     /// </summary>
-    /// <param name="httpClient">The HTTP client to use for OCSP and CRL requests.</param>
-    /// <param name="timeout">The per-request timeout. Must be a positive duration.</param>
-    /// <exception cref="ArgumentNullException"><paramref name="httpClient"/> is <see langword="null"/>.</exception>
+    /// <param name="httpClient">
+    /// The HTTP client to use for OCSP and CRL requests, or <see langword="null"/> for a
+    /// process-wide shared one. A supplied client is never disposed by this type.
+    /// </param>
+    /// <param name="timeout">
+    /// The per-request timeout, or <see langword="null"/> for the default. Must be positive.
+    /// </param>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="timeout"/> is not positive.</exception>
-    public HttpRevocationClient(HttpClient httpClient, TimeSpan timeout)
+    /// <remarks>
+    /// Both parameters are optional so that each can be set without the other — the previous
+    /// two-argument form demanded an <see cref="HttpClient"/> even when only the timeout mattered,
+    /// and the shared instance is private, so setting just the timeout was impossible. This also
+    /// matches <see cref="HttpTimestampClient"/>'s shape, which already defaulted both.
+    /// </remarks>
+    public HttpRevocationClient(HttpClient? httpClient = null, TimeSpan? timeout = null)
     {
-        ArgumentNullException.ThrowIfNull(httpClient);
-        if (timeout <= TimeSpan.Zero)
+        if (timeout is { } t && t <= TimeSpan.Zero)
             throw new ArgumentOutOfRangeException(nameof(timeout), "Timeout must be a positive duration.");
-        _httpClient = httpClient;
-        _timeout = timeout;
+        _httpClient = httpClient ?? s_sharedClient;
+        _timeout = timeout ?? s_defaultTimeout;
     }
 
     /// <inheritdoc/>
@@ -485,7 +495,25 @@ public sealed class HttpRevocationClient : IRevocationClient
                 $"Revocation request to {request.RequestUri} failed with HTTP {(int)resp.StatusCode} {resp.ReasonPhrase}.");
         }
 
-        return resp.Content.ReadAsByteArrayAsync(cts.Token).GetAwaiter().GetResult();
+        return ReadAllSynchronously(resp.Content, cts.Token);
+    }
+
+    /// <summary>
+    /// Reads <paramref name="content"/> to a byte array without blocking on a <see cref="Task"/>.
+    /// </summary>
+    /// <remarks>
+    /// <c>ReadAsByteArrayAsync(...).GetAwaiter().GetResult()</c> is the shape that deadlocks on a
+    /// synchronization context and starves the thread pool under load. <c>ReadAsStream</c> is a
+    /// genuinely synchronous API (as is <see cref="HttpClient.Send(HttpRequestMessage, CancellationToken)"/>,
+    /// which the callers already use), so the whole synchronous path now blocks only on real
+    /// synchronous I/O. The synchronous surface itself is kept — see <see cref="IRevocationClient"/>.
+    /// </remarks>
+    internal static byte[] ReadAllSynchronously(HttpContent content, CancellationToken cancellationToken)
+    {
+        using var source = content.ReadAsStream(cancellationToken);
+        using var buffer = new MemoryStream();
+        source.CopyTo(buffer);
+        return buffer.ToArray();
     }
 
     private async Task<byte[]> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)

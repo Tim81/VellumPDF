@@ -9,6 +9,20 @@ namespace VellumPdf.Signing;
 /// Obtains revocation evidence (OCSP responses and/or CRLs) for a certificate,
 /// for embedding in a PAdES B-LT Document Security Store (DSS).
 /// </summary>
+/// <remarks>
+/// <para>
+/// <strong>On having both a synchronous and an asynchronous member.</strong> Reviewed for v2.0 and
+/// kept deliberately. <see cref="GetRevocationData"/> is the required member and
+/// <see cref="GetRevocationDataAsync"/> is default-implemented, so removing the synchronous one
+/// would break every existing implementation of this interface, and the synchronous
+/// <c>Sign</c> overloads depend on it. The reason to consider removing it was that the shipped
+/// implementation blocked on an asynchronous call, which risks deadlock on a synchronization
+/// context and thread-pool starvation under load; that has been fixed instead, by using genuinely
+/// synchronous HTTP APIs (<see cref="System.Net.Http.HttpClient.Send(System.Net.Http.HttpRequestMessage, System.Threading.CancellationToken)"/>
+/// and <c>HttpContent.ReadAsStream</c>) rather than by deleting the surface. Prefer
+/// <see cref="GetRevocationDataAsync"/> in new code; the synchronous path stays supported for 2.x.
+/// </para>
+/// </remarks>
 public interface IRevocationClient
 {
     /// <summary>
