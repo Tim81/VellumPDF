@@ -39,7 +39,23 @@ public sealed class NonMinimalSerialSigningTests
     [Fact]
     public void NonMinimalSerialCertificate_isAcceptedByTheX509Parser()
     {
-        NonMinimalSerialCertificate.SkipIfUnsupported();
+        // Deliberately NOT gated by SkipIfUnsupported: this is the test that detects the fixture
+        // going vacuous, so gating it on the same probe it exists to validate would disable the
+        // detector along with everything it protects. On Windows the encoding must load; elsewhere
+        // it must not, and either way that is asserted rather than skipped.
+        if (!OperatingSystem.IsWindows())
+        {
+            Assert.False(
+                NonMinimalSerialCertificate.IsSupportedByPlatform,
+                "Only Windows is known to accept a non-minimally-encoded serial; if another platform "
+                + "starts accepting it, the tests gated on this probe need revisiting.");
+            return;
+        }
+
+        Assert.True(
+            NonMinimalSerialCertificate.IsSupportedByPlatform,
+            "Windows accepts a non-minimally-encoded serial. If this fails the fixture is broken, "
+            + "and every test gated on the probe would otherwise skip silently.");
         // The premise of every test below: on this platform the encoding is one the X.509 parser
         // reads happily and every DER encoder refuses to write. Asserted explicitly, because if the
         // parser started normalizing the serial instead of preserving it these tests would become
@@ -91,7 +107,11 @@ public sealed class NonMinimalSerialSigningTests
         // The ExternalPrivateKey path is still a CmsSigner path, so it fails identically. Covered
         // separately because it constructs the CmsSigner through a different overload.
         using var certificate = NonMinimalSerialCertificate.Create();
-        using var rsa = RSA.Create(2048);
+        // The certificate's OWN key, not an unrelated one. With an unrelated key this test passed
+        // for the wrong reason: removing the guard produced "Could not determine signature algorithm
+        // for the signer certificate" rather than the serial error, so a regression in the guard
+        // would have surfaced here as a misleading key-mismatch diagnosis.
+        using var rsa = certificate.GetRSAPrivateKey()!;
         using var doc = new PdfDocument();
         doc.AddPage();
 
@@ -103,6 +123,63 @@ public sealed class NonMinimalSerialSigningTests
 
         var ex = Assert.Throws<ArgumentException>(() => doc.Sign(new MemoryStream(), settings));
         Assert.Contains("0x0001020304", ex.Message);
+    }
+
+    [Fact]
+    public async Task SignAsync_withExternalSigner_andNonMinimalSerial_isAlsoRejected()
+    {
+        NonMinimalSerialCertificate.SkipIfUnsupported();
+
+        // The external-signer path used to be allowed through, on the reasoning that
+        // ExternalSignerCms writes the SignerInfo itself and normalizes the serial, and the result
+        // does verify under SignedCms.CheckSignature. Submitting such a signature to the EU DSS
+        // validator returns noSignatureFound: the normalized SignerInfo.IssuerAndSerialNumber no
+        // longer matches the raw serial of the certificate in SignedData.certificates, so a
+        // verifier resolving the signer by those bytes cannot locate it. An identical document
+        // signed the same way with a minimal serial is found and reported as PAdES-BES.
+        using var certificate = NonMinimalSerialCertificate.Create();
+        using var rsa = certificate.GetRSAPrivateKey()!;
+        using var publicOnly = X509CertificateLoader.LoadCertificate(certificate.Export(X509ContentType.Cert));
+
+        using var doc = new PdfDocument();
+        doc.AddPage();
+
+        var settings = new PdfSignatureSettings
+        {
+            Certificate = publicOnly,
+            ExternalSigner = new SimulatedAsyncKmsSigner(rsa),
+        };
+
+        var ex = await Assert.ThrowsAsync<ArgumentException>(
+            () => doc.SignAsync(new MemoryStream(), settings, TestContext.Current.CancellationToken));
+        Assert.Contains("0x0001020304", ex.Message);
+        Assert.DoesNotContain("ExternalSigner does work", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Rejection_leavesTheDocumentReusable()
+    {
+        NonMinimalSerialCertificate.SkipIfUnsupported();
+
+        // PdfDocument.Save sets _written only after its preconditions pass, explicitly "so a
+        // recoverable precondition failure leaves the document usable for a retry". This check has
+        // to honour that: it is a settings precondition, so it belongs beside the other settings
+        // preconditions in SigningExtensions rather than deeper in the pipeline. Placed inside the
+        // CMS computation it fired only after the whole document had been built and consumed, so a
+        // caller who did exactly what the message told them — swap in a re-issued certificate and
+        // sign again — got "This document has already been written" instead of a signature.
+        using var badCertificate = NonMinimalSerialCertificate.Create();
+        using var goodCertificate = NonMinimalSerialCertificate.Create([0x01, 0x02, 0x03, 0x04]);
+
+        using var doc = new PdfDocument();
+        doc.AddPage();
+
+        Assert.Throws<ArgumentException>(
+            () => doc.Sign(new MemoryStream(), new PdfSignatureSettings { Certificate = badCertificate }));
+
+        var ms = new MemoryStream();
+        doc.Sign(ms, new PdfSignatureSettings { Certificate = goodCertificate });
+        VerifySignatureOrThrow(ms.ToArray());
     }
 
     [Theory]

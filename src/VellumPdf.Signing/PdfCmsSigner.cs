@@ -110,52 +110,6 @@ internal static class PdfCmsSigner
     private static readonly HashAlgorithmName SignatureDigest = HashAlgorithmName.SHA256;
 
     /// <summary>
-    /// Rejects a certificate whose serial number is not minimally DER-encoded, before
-    /// <see cref="SignedCms"/> is reached.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// .NET's X.509 parser accepts a serial carrying a redundant leading pad byte, but every DER
-    /// encoder rejects it — including the BCL's own <c>IssuerAndSerialNumberAsn.Encode</c>, which
-    /// <see cref="SignedCms.ComputeSignature(CmsSigner)"/> calls while building the
-    /// <c>SignerInfo</c>. Left alone, that surfaces as <c>ArgumentException: The first 9 bits of
-    /// the integer value all have the same value</c> from deep inside the BCL, which says nothing
-    /// about the certificate or what to do about it (issue #167).
-    /// </para>
-    /// <para>
-    /// The serial cannot be normalized on this path the way <see cref="ExternalSignerCms"/>
-    /// normalizes it: the encoding happens inside <see cref="SignedCms"/>, from the
-    /// <see cref="X509Certificate2"/> itself, so there is nothing for this library to rewrite.
-    /// Re-issuing the certificate is the only real fix, so the failure names that.
-    /// </para>
-    /// <para>
-    /// <strong>Reachable on Windows only.</strong> Whether a certificate with such a serial can be
-    /// loaded at all is platform-dependent: Windows accepts it, while Linux's OpenSSL-backed parser
-    /// rejects it as <c>ASN1 corrupted data</c> before an <see cref="X509Certificate2"/> exists. So
-    /// on non-Windows platforms this check cannot fire — the certificate never gets far enough to
-    /// be passed in. The guard is kept unconditional rather than platform-gated because the cost is
-    /// one span comparison and the alternative is a platform-specific code path guarding against a
-    /// platform-specific parser behaviour, which is harder to reason about than the check itself.
-    /// </para>
-    /// </remarks>
-    private static void ValidateCertificateSerial(PdfSignatureSettings settings)
-    {
-        if (Asn1SerialNumber.IsMinimal(settings.Certificate.SerialNumberBytes.Span))
-            return;
-
-        throw new ArgumentException(
-            "settings.Certificate has a serial number that is not minimally DER-encoded: its "
-            + $"content octets are 0x{Convert.ToHexString(settings.Certificate.SerialNumberBytes.Span)}, "
-            + "which carries a redundant leading pad byte. ITU-T X.690 §8.3.2 requires the shortest "
-            + "two's-complement encoding, so the CMS SignerInfo cannot be built from this "
-            + "certificate — .NET's X.509 parser tolerates the encoding when reading, but every DER "
-            + "encoder rejects it when writing. The certificate is mis-issued and needs re-issuing "
-            + "by its CA. Signing with PdfSignatureSettings.ExternalSigner does work, because that "
-            + "path encodes the SignerInfo itself and normalizes the serial on the way.",
-            nameof(settings));
-    }
-
-    /// <summary>
     /// Creates the <see cref="CmsSigner"/> to use for <paramref name="settings"/>. Uses the
     /// private key attached to <see cref="PdfSignatureSettings.Certificate"/> unless
     /// <see cref="PdfSignatureSettings.ExternalPrivateKey"/> is set, in which case that key is
@@ -163,8 +117,6 @@ internal static class PdfCmsSigner
     /// </summary>
     private static CmsSigner CreateSigner(PdfSignatureSettings settings)
     {
-        ValidateCertificateSerial(settings);
-
         var signer = settings.ExternalPrivateKey is null
             ? new CmsSigner(settings.Certificate)
             : new CmsSigner(SubjectIdentifierType.IssuerAndSerialNumber, settings.Certificate, settings.ExternalPrivateKey);

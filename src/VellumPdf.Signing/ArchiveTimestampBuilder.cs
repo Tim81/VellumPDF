@@ -174,7 +174,7 @@ internal static class ArchiveTimestampBuilder
 
         // ── Step 3: assign new object numbers ────────────────────────────────
 
-        var nextObjNum = reader.Size;
+        var nextObjNum = reader.NextFreeObjectNumber;
         var docTimeStampObjNum = nextObjNum++;
         var sigFieldObjNum = nextObjNum++;
 

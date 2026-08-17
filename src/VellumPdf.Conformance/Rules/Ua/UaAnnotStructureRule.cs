@@ -28,7 +28,7 @@ namespace VellumPdf.Conformance.Rules.Ua;
 ///
 /// <para>
 /// <b>structParentStandardType</b>: the role-mapped <see cref="StructureTreeNode.StandardType"/>
-/// of the node returned by <see cref="StructureTree.StructParentOf"/>; null when the annotation
+/// of the node returned by <see cref="StructureTree.StructParentOf(long)"/>; null when the annotation
 /// has no <c>/StructParent</c>, when the key is absent from the <c>/ParentTree</c>, or when the
 /// tree is malformed. Null is the FP-safe result for 7.18.1-1/4-1/5-1 (they require a positive
 /// "structParentStandardType == target" to pass); a parse failure is treated as "unknown" and
@@ -111,9 +111,9 @@ internal sealed class UaAnnotStructureRule : IConformanceRule
                 //       "unknown" (malformed or unresolvable) — treated as null for FP safety on
                 //       7.18.8-1 (don't fire "has binding" when we can't prove it)
                 //   (c) /StructParent is an integer and the node IS found → reliable result
-                int? structParentKey = null;
+                long? structParentKey = null;
                 if (context.Resolve(annot.Get(_structParent)) is PdfInteger spInt)
-                    structParentKey = (int)spInt.Value;
+                    structParentKey = spInt.Value;
 
                 StructureTreeNode? parentNode = null;
                 if (structParentKey.HasValue)
@@ -140,7 +140,7 @@ internal sealed class UaAnnotStructureRule : IConformanceRule
         PdfDictionary page,
         string? subtype,
         string? structParentStdType,
-        int? structParentKey,
+        long? structParentKey,
         string? structParentRawType)
     {
         switch (subtype)

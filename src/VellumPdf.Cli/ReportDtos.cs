@@ -18,7 +18,8 @@ internal sealed class FailedDto
     [JsonPropertyName("objectRef")] public string? ObjectRef { get; init; }
 }
 
-internal sealed class PassedDto
+/// <summary>A catalogued check, in whichever bucket the run put it.</summary>
+internal sealed class CheckDto
 {
     [JsonPropertyName("testId")] public string TestId { get; init; } = "";
     [JsonPropertyName("clause")] public string Clause { get; init; } = "";
@@ -38,8 +39,17 @@ internal sealed class SummaryDto
     [JsonPropertyName("warning")] public int Warning { get; init; }
     [JsonPropertyName("info")] public int Info { get; init; }
     [JsonPropertyName("passed")] public int Passed { get; init; }
+    [JsonPropertyName("failedChecks")] public int FailedChecks { get; init; }
+    [JsonPropertyName("inconclusive")] public int Inconclusive { get; init; }
     [JsonPropertyName("partial")] public int Partial { get; init; }
     [JsonPropertyName("deferred")] public int Deferred { get; init; }
+
+    /// <summary>
+    /// Every catalogued check for the profile. Equals passed + failedChecks + inconclusive +
+    /// notEvaluated — a count of checks only. It used to add the assertion count to the check
+    /// count, which double-counted an attributable failure and left an unattributable one showing
+    /// up nowhere.
+    /// </summary>
     [JsonPropertyName("total")] public int Total { get; init; }
 }
 
@@ -54,7 +64,9 @@ internal sealed class SingleReportDto
     [JsonPropertyName("conformant")] public bool Conformant { get; init; }
     [JsonPropertyName("summary")] public SummaryDto Summary { get; init; } = new();
     [JsonPropertyName("failed")] public List<FailedDto> Failed { get; init; } = new();
-    [JsonPropertyName("passed")] public List<PassedDto> Passed { get; init; } = new();
+    [JsonPropertyName("passed")] public List<CheckDto> Passed { get; init; } = new();
+    [JsonPropertyName("failedChecks")] public List<CheckDto> FailedChecks { get; init; } = new();
+    [JsonPropertyName("inconclusive")] public List<CheckDto> Inconclusive { get; init; } = new();
     [JsonPropertyName("notEvaluated")] public List<NotEvaluatedDto> NotEvaluated { get; init; } = new();
 }
 

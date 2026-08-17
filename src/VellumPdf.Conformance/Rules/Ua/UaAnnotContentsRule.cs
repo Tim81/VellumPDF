@@ -88,7 +88,7 @@ internal sealed class UaAnnotContentsRule : IConformanceRule
                 // to the violation report.
                 if (context.Resolve(annot.Get(_structParent)) is PdfInteger spInt)
                 {
-                    var parentNode = tree.StructParentOf((int)spInt.Value);
+                    var parentNode = tree.StructParentOf(spInt.Value);
                     if (parentNode is not null && HasNonEmptyString(context, parentNode.Dict, _alt))
                         continue; // struct element provides the /Alt — requirement satisfied
                 }
