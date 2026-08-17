@@ -490,6 +490,49 @@ public sealed class SignatureTests
     }
 
     /// <summary>
+    /// The external-signer path must make the same signing-time decision as the local-key one:
+    /// present off the PAdES profile, absent on it (issue #170).
+    /// </summary>
+    /// <remarks>
+    /// Asserted on both sub-filters and on both builders because these two assemble their signed
+    /// attributes by completely separate code — <c>CmsSigner.SignedAttributes</c> against a
+    /// hand-rolled DER <c>SET OF</c> — and the last signing rule that lived in two places
+    /// disagreed between them (issue #167). Both now read
+    /// <c>PdfSignatureSettings.IsPadesProfile</c>, and this is what would notice if one stopped.
+    /// </remarks>
+    [Theory]
+    [InlineData(PdfSignatureSettings.SubFilterEtsiCAdESDetached, false)]
+    [InlineData(PdfSignatureSettings.SubFilterAdbePkcs7Detached, true)]
+    public async Task SignAsync_withExternalSigner_emitsSigningTimeOnlyOffThePadesProfile(
+        string subFilter, bool expectSigningTime)
+    {
+        using var cert = CreateTestCertificate();
+        using var rsa = cert.GetRSAPrivateKey()!;
+        using var publicOnlyCert = X509CertificateLoader.LoadCertificate(cert.Export(X509ContentType.Cert));
+
+        var settings = new PdfSignatureSettings
+        {
+            Certificate = publicOnlyCert,
+            SubFilter = subFilter,
+            ExternalSigner = new SimulatedAsyncKmsSigner(rsa),
+        };
+
+        var bytes = await SignOnePageDocAsync(publicOnlyCert, "VELLUM_EXTERNAL_SIGNING_TIME", settings);
+        VerifySignatureOrThrow(bytes);
+
+        var cms = DecodeSignedCms(bytes);
+        var hasSigningTime = cms.SignerInfos[0].SignedAttributes
+            .Cast<CryptographicAttributeObject>()
+            .Any(a => a.Oid?.Value == "1.2.840.113549.1.9.5");
+
+        Assert.Equal(expectSigningTime, hasSigningTime);
+
+        // Present either way: this change drops signing-time, not the attribute the CAdES
+        // profile actually requires.
+        AssertSigningCertificateV2(bytes, publicOnlyCert, HashAlgorithmName.SHA256);
+    }
+
+    /// <summary>
     /// Asserts the signature carries an ESS <c>signing-certificate-v2</c> that actually
     /// identifies <paramref name="certificate"/>, field by field.
     /// </summary>
