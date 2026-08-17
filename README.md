@@ -254,9 +254,19 @@ vellum-preflight report.pdf -p 2b,2a,ua1
 vellum-preflight --coverage 2b
 ```
 
-Every report states three things: what failed (rule id, ISO clause, reason, offending object), what
-passed, and what was not fully evaluated — so a clean result is never mistaken for an absolute
-guarantee. Exit codes are `0` (conformant), `1` (non-conformant), and `2` (usage or I/O error).
+Every report accounts for each check in the profile's catalogue exactly once, so a clean result is
+never mistaken for an absolute guarantee:
+
+| Bucket | Meaning |
+| --- | --- |
+| `failed` | Rules that reported a problem: rule id, ISO clause, reason, offending object. |
+| `passed` | Catalogued checks this file satisfies. |
+| `failedChecks` | Catalogued checks a failing rule named directly, by test id. |
+| `inconclusive` | A rule failed in the same ISO clause but did not say which catalogued check it corresponds to, so the check can be neither claimed nor blamed. |
+| `notEvaluated` | Checks the library implements only partially, defers, or puts out of scope. |
+
+`failed` counts rule assertions; the other four count catalogue entries and sum to `summary.total`.
+Exit codes are `0` (conformant), `1` (non-conformant), and `2` (usage or I/O error).
 
 ## Roadmap
 

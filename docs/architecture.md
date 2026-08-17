@@ -137,13 +137,15 @@ to retrofit:
   shipped, so they do not affect the library's license-clean runtime):
   veraPDF 1.30.2 (PDF/A-2b/2u/2a + PDF/UA-1, via the official Docker image),
   `qpdf --check` and `--show-linearization` (structural and linearization),
-  `pdftotext` (text round-trip → proves `ToUnicode`), and zxing-cpp (decode
-  round-trip for every barcode symbology, via a rasterized `pdftoppm` page).
-  The two that gate conformance, veraPDF and zxing-cpp, each have an environment
-  switch (`REQUIRE_VERAPDF`, `REQUIRE_BARCODE_ORACLE`) that turns a missing tool
-  from a skip into a failure, so CI cannot pass by quietly skipping the oracle it
-  is there to run. The qpdf and `pdftotext` tests still skip when the tool is
-  absent, which is why CI installs them explicitly.
+  `pdftotext` (text round-trip → proves `ToUnicode`), `pdfsig` (PAdES signature
+  validity), and zxing-cpp (decode round-trip for every barcode symbology, via a
+  rasterized `pdftoppm` page).
+- **A missing tool fails the build rather than skipping the test**, by two
+  mechanisms: the poppler and qpdf oracles call `GateOnCi`, which turns the
+  early-return into `Assert.Fail` when `CI` or `GITHUB_ACTIONS` is set, while
+  veraPDF and zxing-cpp use explicit `REQUIRE_VERAPDF` / `REQUIRE_BARCODE_ORACLE`
+  switches that CI sets. Locally the same tests skip, so a contributor without
+  Docker or poppler installed still gets a green run.
 
 ## Milestones
 

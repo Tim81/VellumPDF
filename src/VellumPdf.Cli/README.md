@@ -33,6 +33,52 @@ vellum-preflight ./out --recurse --fail-on error -q
 vellum-preflight report.pdf -p 2b,2a,ua1
 ```
 
+## JSON report shape
+
+**The shape changed in 2.0.** `summary.total` used to be `failed + passed + notEvaluated`, which
+added a count of rule assertions to a count of catalogue checks. It is now the size of the
+profile's check catalogue, and `failedChecks` and `inconclusive` are new.
+
+```jsonc
+{
+  "tool": "vellum-preflight",
+  "toolVersion": "2.0.0",
+  "file": "invoice.pdf",
+  "profile": "PDF/A-2b",
+  "profileSource": "explicit",   // "explicit" or "auto" (from the PDF's own claim)
+  "conformant": false,
+  "summary": {
+    "error": 4, "warning": 0, "info": 0,   // rule assertions, by severity
+    "passed": 132,                          // catalogue checks satisfied
+    "failedChecks": 0,                      // catalogue checks a rule named by test id
+    "inconclusive": 9,                      // clause failed, specific check unidentified
+    "partial": 2, "deferred": 0,            // subsets of notEvaluated
+    "total": 144                            // passed + failedChecks + inconclusive + notEvaluated
+  },
+  "failed": [
+    { "ruleId": "ISO19005-2:6.3.4-font-embedding",
+      "clause": "ISO 19005-2:2011, 6.3.4",
+      "severity": "ERROR",
+      "message": "The font /Helvetica is not embedded; ..." }
+    // "objectRef" is present only when the rule identified an object
+  ],
+  "passed":       [ { "testId": "6.1.3-1", "clause": "6.1.3" } ],
+  "failedChecks": [],
+  "inconclusive": [ { "testId": "6.1.2-1", "clause": "6.1.2" } ],
+  "notEvaluated": [ { "testId": "6.1.13-10", "clause": "6.1.13",
+                      "status": "Partial", "note": "..." } ]
+}
+```
+
+`failed` lists rule assertions; the four check arrays partition the catalogue, so every catalogued
+check appears in exactly one of them. A check lands in `inconclusive` when a rule failed in its ISO
+clause without a test id identifying which check it corresponds to — that check can then be neither
+claimed as passing nor blamed for the failure. Before 2.0 those checks were dropped from the report
+entirely.
+
+Several input files, or several profiles for one file, produce `{ "results": [ ... ] }` with one
+object of the above shape per result.
+
 ## Documentation
 
 Command-line reference: <https://github.com/Tim81/VellumPDF#command-line-preflight>
