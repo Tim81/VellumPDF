@@ -8,6 +8,14 @@ namespace VellumPdf.Signing;
 /// <summary>
 /// Obtains an RFC 3161 timestamp token from a Time Stamping Authority (TSA).
 /// </summary>
+/// <remarks>
+/// The synchronous <see cref="GetTimestampToken"/> is kept alongside
+/// <see cref="GetTimestampTokenAsync"/> for the same reasons set out on
+/// <see cref="IRevocationClient"/>: it is the required member, the async one is
+/// default-implemented, and the blocking-on-async hazard that argued for removing it has been fixed
+/// in the shipped implementation rather than avoided by deleting the surface. Prefer the async
+/// member in new code.
+/// </remarks>
 public interface ITimestampClient
 {
     /// <summary>

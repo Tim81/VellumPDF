@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 using System.IO.Compression;
+using System.Text;
 using VellumPdf.Canvas;
 using VellumPdf.Core;
 using VellumPdf.Document;
@@ -46,7 +47,7 @@ public sealed class ShowTextWinAnsiTests
         canvas.Finish();
 
         Assert.Single(canvas.TextEncodingWarnings);
-        Assert.Equal('★', canvas.TextEncodingWarnings[0].Character);
+        Assert.Equal(new Rune('★'), canvas.TextEncodingWarnings[0].Character);
         Assert.Equal(0x2605, canvas.TextEncodingWarnings[0].CodePoint);
 
         var ms = new MemoryStream();
@@ -89,7 +90,7 @@ public sealed class ShowTextWinAnsiTests
     // ── ShowText: astral character (surrogate pair) ──────────────────────────
 
     [Fact]
-    public void ShowText_astralSurrogatePair_emitsTwoQuestionMarksAndTwoWarnings()
+    public void ShowText_astralSurrogatePair_emitsTwoQuestionMarksAndOneScalarWarning()
     {
         using var doc = new PdfDocument();
         var page = doc.AddPage();
@@ -101,16 +102,43 @@ public sealed class ShowTextWinAnsiTests
         canvas.EndText();
         canvas.Finish();
 
-        Assert.Equal(2, canvas.TextEncodingWarnings.Count);
-        foreach (var warning in canvas.TextEncodingWarnings)
-            Assert.InRange(warning.CodePoint, 0xD800, 0xDFFF);
+        // One warning for one character. This assertion is inverted from what it was: the warning
+        // used to be reported per UTF-16 code unit, so this produced two warnings whose CodePoint
+        // was a lone surrogate — a value no Unicode character has.
+        var warning = Assert.Single(canvas.TextEncodingWarnings);
+        Assert.Equal(0x1F600, warning.CodePoint);
+        Assert.Equal(Rune.GetRuneAt("😀", 0), warning.Character);
+        Assert.DoesNotContain(canvas.TextEncodingWarnings, w => w.CodePoint is >= 0xD800 and <= 0xDFFF);
 
         var ms = new MemoryStream();
         doc.Save(ms);
         var literal = ExtractTjLiteral(DecompressContentStream(ms.ToArray()));
 
+        // Still TWO '?' bytes, deliberately: collapsing an astral character to one byte would
+        // change the width a caller already measured for the string and shift laid-out text. Only
+        // the reporting changed, not the output.
         byte[] expected = [0x3F, 0x3F];
         Assert.Equal(expected, literal);
+    }
+
+    [Fact]
+    public void ShowText_unpairedSurrogate_reportsReplacementCharacter()
+    {
+        using var doc = new PdfDocument();
+        var page = doc.AddPage();
+        var canvas = new PdfCanvas(page);
+        var font = doc.UseFont(Standard14.Helvetica);
+
+        canvas.BeginText().SetFont(font, 12).SetTextMatrix(1, 0, 0, 1, 72, 720);
+        canvas.ShowText("\uD83D"); // a lone high surrogate: not a scalar value at all
+        canvas.EndText();
+        canvas.Finish();
+
+        // U+FFFD is what an unpaired surrogate is, so that is what gets reported rather than a
+        // number outside the Unicode scalar range.
+        var warning = Assert.Single(canvas.TextEncodingWarnings);
+        Assert.Equal(Rune.ReplacementChar, warning.Character);
+        Assert.Equal(0xFFFD, warning.CodePoint);
     }
 
     // ── ShowText: a symbolic font is set, but ShowText still WinAnsi-encodes ─────

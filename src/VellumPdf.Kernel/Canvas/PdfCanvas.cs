@@ -619,11 +619,32 @@ public sealed class PdfCanvas
             if (WinAnsiEncoding.TryGetByte(text[i], out var b))
             {
                 bytes[i] = b;
+                continue;
+            }
+
+            bytes[i] = (byte)'?'; // defensible fallback for non-WinAnsi glyphs
+
+            // One warning per Unicode scalar, not per UTF-16 code unit. Reporting a surrogate half
+            // as a CodePoint stated something that cannot be true — a surrogate is not a code point.
+            //
+            // The byte output is deliberately unchanged: still one '?' per code unit, so an astral
+            // character still occupies two bytes. Collapsing it to one would alter the width a
+            // caller already measured for the string and shift laid-out text.
+            if (Rune.TryCreate(text[i], out var scalar))
+            {
+                _textEncodingWarnings.Add(new TextEncodingWarning(scalar));
+            }
+            else if (i + 1 < text.Length && Rune.TryCreate(text[i], text[i + 1], out var astral))
+            {
+                _textEncodingWarnings.Add(new TextEncodingWarning(astral));
+                bytes[i + 1] = (byte)'?'; // the low surrogate's own byte, written here since it is skipped
+                i++;
             }
             else
             {
-                bytes[i] = (byte)'?'; // defensible fallback for non-WinAnsi glyphs
-                _textEncodingWarnings.Add(new TextEncodingWarning(text[i]));
+                // An unpaired surrogate: not a scalar at all, so it is reported as U+FFFD rather
+                // than as a number that no Unicode character has.
+                _textEncodingWarnings.Add(new TextEncodingWarning(Rune.ReplacementChar));
             }
         }
         WritePdfString(bytes);

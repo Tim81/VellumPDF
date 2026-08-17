@@ -75,7 +75,7 @@ public sealed class HttpTimestampClient : ITimestampClient
             using (httpResp)
             {
                 EnsureSuccess(httpResp);
-                responseBytes = httpResp.Content.ReadAsByteArrayAsync(cts.Token).GetAwaiter().GetResult();
+                responseBytes = HttpRevocationClient.ReadAllSynchronously(httpResp.Content, cts.Token);
             }
         }
         catch (OperationCanceledException ex)

@@ -37,61 +37,47 @@ namespace VellumPdf.Images;
 public static class CcittImageLoader
 {
     /// <summary>
-    /// Wraps raw CCITT compressed bytes as a <c>/CCITTFaxDecode</c> Image XObject
-    /// (passthrough — bytes are embedded verbatim).
+    /// Wraps raw CCITT compressed bytes as a <c>/CCITTFaxDecode</c> Image XObject.
     /// </summary>
+    /// <remarks>
+    /// Passthrough by default: the bytes are embedded verbatim. When
+    /// <paramref name="options"/>.<see cref="ImageLoadOptions.DecodeMode"/> is
+    /// <see cref="ImageDecodeMode.DecodeToRaster"/>, the stream is decoded to a 1-bpp raster and
+    /// re-encoded with <c>/FlateDecode</c> (lossless) instead. Raster decode supports 1-D rows
+    /// only: <see cref="CcittOptions.K"/> greater than zero (Group 3 mixed) and less than zero
+    /// (Group 4) both throw <see cref="NotSupportedException"/>.
+    /// </remarks>
     /// <param name="ccittData">The raw CCITT-compressed bytes. Must be non-empty.</param>
     /// <param name="columns">Image width in pixels. Must be positive.</param>
     /// <param name="rows">Image height in pixels. Must be positive.</param>
-    /// <param name="k">
-    /// The K value for /DecodeParms: negative = Group 4 (T.6 MMR), 0 = Group 3 1D, positive = Group 3 mixed.
-    /// Defaults to -1 (Group 4).
+    /// <param name="ccitt">
+    /// The <c>/DecodeParms</c> values, or <see langword="null"/> for
+    /// <see cref="CcittOptions.Default"/> (Group 4, 0-is-black, no byte alignment, no EOL codes).
     /// </param>
-    /// <param name="blackIs1">
-    /// When <see langword="true"/>, emits <c>/BlackIs1 true</c> in /DecodeParms (bit 1 = black).
-    /// Omitted when <see langword="false"/> (the PDF default, bit 0 = black).
+    /// <param name="options">
+    /// Load options (decode mode), or <see langword="null"/> for
+    /// <see cref="ImageLoadOptions.Default"/>.
     /// </param>
-    /// <param name="encodedByteAlign">
-    /// When <see langword="true"/>, emits <c>/EncodedByteAlign true</c> in /DecodeParms (each row
-    /// is padded to a byte boundary). Omitted when <see langword="false"/> (the PDF default).
-    /// </param>
-    /// <param name="endOfLine">
-    /// When <see langword="true"/>, emits <c>/EndOfLine true</c> in /DecodeParms, indicating that
-    /// explicit EOL codes are present in the T.4 stream before each row (Group 3). Omitted when
-    /// <see langword="false"/> (the PDF default, used for Group 4 and bare Group 3 without EOLs).
-    /// </param>
-    /// <returns>A <see cref="PdfImageXObject"/> with /Filter /CCITTFaxDecode and the correct /DecodeParms.</returns>
+    /// <returns>
+    /// A <see cref="PdfImageXObject"/> with the appropriate filter and /DecodeParms.
+    /// </returns>
     public static PdfImageXObject Load(
         byte[] ccittData,
         int columns,
         int rows,
-        int k = -1,
-        bool blackIs1 = false,
-        bool encodedByteAlign = false,
-        bool endOfLine = false)
+        CcittOptions? ccitt = null,
+        ImageLoadOptions? options = null)
     {
-        return LoadCore(ccittData, columns, rows, ImageLoadOptions.Default, k, blackIs1, encodedByteAlign, endOfLine);
-    }
-
-    /// <summary>
-    /// Wraps raw CCITT compressed bytes as an Image XObject with explicit load options.
-    /// When <paramref name="options"/>.<see cref="ImageLoadOptions.DecodeMode"/> is
-    /// <see cref="ImageDecodeMode.DecodeToRaster"/>, the stream is decoded to a 1-bpp raster
-    /// and re-encoded with <c>/FlateDecode</c> (lossless). Only 1D rows (K=0) are supported
-    /// for raster decode; 2D mixed-mode rows (K&gt;0) and Group 4 (K&lt;0) throw
-    /// <see cref="NotSupportedException"/>. Uses passthrough defaults: K=-1 (Group 4),
-    /// BlackIs1=false, EncodedByteAlign=false, EndOfLine=false.
-    /// </summary>
-    /// <param name="ccittData">The raw CCITT-compressed bytes. Must be non-empty.</param>
-    /// <param name="columns">Image width in pixels. Must be positive.</param>
-    /// <param name="rows">Image height in pixels. Must be positive.</param>
-    /// <param name="options">Load options (decode mode). Must not be null.</param>
-    /// <returns>
-    /// A <see cref="PdfImageXObject"/> with the appropriate filter and /DecodeParms.
-    /// </returns>
-    public static PdfImageXObject Load(byte[] ccittData, int columns, int rows, ImageLoadOptions options)
-    {
-        return LoadCore(ccittData, columns, rows, options, k: -1, blackIs1: false, encodedByteAlign: false, endOfLine: false);
+        ccitt ??= CcittOptions.Default;
+        return LoadCore(
+            ccittData,
+            columns,
+            rows,
+            options ?? ImageLoadOptions.Default,
+            ccitt.K,
+            ccitt.BlackIs1,
+            ccitt.EncodedByteAlign,
+            ccitt.EndOfLine);
     }
 
     private static PdfImageXObject LoadCore(
@@ -125,9 +111,8 @@ public static class CcittImageLoader
     }
 
     /// <summary>
-    /// Core builder shared by <see cref="Load(byte[], int, int, int, bool, bool, bool)"/>,
-    /// <see cref="Load(byte[], int, int, ImageLoadOptions)"/>, and
-    /// <see cref="TiffImageLoader"/>. Callers are responsible for validation before calling
+    /// Core builder shared by <see cref="Load(byte[], int, int, CcittOptions, ImageLoadOptions)"/>
+    /// and <see cref="TiffImageLoader"/>. Callers are responsible for validation before calling
     /// this method.
     /// </summary>
     internal static PdfImageXObject Build(

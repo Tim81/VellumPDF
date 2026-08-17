@@ -3,6 +3,7 @@
 
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
+using System.Text;
 using VellumPdf.Layout;
 using VellumPdf.Layout.Core;
 using VellumPdf.Layout.Elements;
@@ -81,7 +82,7 @@ public sealed class DocumentTests
         doc.Save(ms);
 
         Assert.Single(doc.TextEncodingWarnings);
-        Assert.Equal('★', doc.TextEncodingWarnings[0].Character);
+        Assert.Equal(new Rune('★'), doc.TextEncodingWarnings[0].Character);
     }
 
     [Fact]
@@ -114,8 +115,8 @@ public sealed class DocumentTests
         // Both characters must be reported — proves warnings accumulate across every page's
         // canvas rather than being overwritten by the last page finished.
         Assert.Equal(2, doc.TextEncodingWarnings.Count);
-        Assert.Contains(doc.TextEncodingWarnings, w => w.Character == '★');
-        Assert.Contains(doc.TextEncodingWarnings, w => w.Character == '♥');
+        Assert.Contains(doc.TextEncodingWarnings, w => w.Character == new Rune('★'));
+        Assert.Contains(doc.TextEncodingWarnings, w => w.Character == new Rune('♥'));
     }
 
     [Fact]
@@ -147,7 +148,7 @@ public sealed class DocumentTests
         // The signing path (Document.PrepareForSigning) must surface the same warning
         // the plain Save(Stream) path does.
         Assert.Single(doc.TextEncodingWarnings);
-        Assert.Equal('★', doc.TextEncodingWarnings[0].Character);
+        Assert.Equal(new Rune('★'), doc.TextEncodingWarnings[0].Character);
     }
 
     // ── Async I/O surface (#54) ────────────────────────────────────────────────
@@ -220,7 +221,7 @@ public sealed class DocumentTests
         await doc.SignAsync(ms, settings, TestContext.Current.CancellationToken);
 
         Assert.Single(doc.TextEncodingWarnings);
-        Assert.Equal('★', doc.TextEncodingWarnings[0].Character);
+        Assert.Equal(new Rune('★'), doc.TextEncodingWarnings[0].Character);
         Assert.True(ms.Length > 100);
     }
 }
