@@ -300,6 +300,29 @@ public sealed class RevocationTests
         Assert.NotNull(client.GetRevocationData(cert, cert).Crl);
     }
 
+    [Fact]
+    public void Ocsp_isSkipped_forA_nonMinimalSerial_certificate()
+    {
+        NonMinimalSerialCertificate.SkipIfUnsupported();
+
+        // A CertID can only carry a DER INTEGER, so a non-minimal serial would have to be sent
+        // normalized — asking the responder about a different serial, which that CA may well have
+        // issued to another certificate. A "good" answer about a sibling would then be embedded in
+        // the /DSS looking authoritative. DssBuilder reaches this for every certificate in the
+        // chain, including the TSA's, none of which the signing-time precondition inspects, so the
+        // safe outcome is no evidence rather than wrong evidence.
+        using var cert = NonMinimalSerialCertificate.Create(
+            configure: req => req.CertificateExtensions.Add(
+                BuildAiaOcspExtension("http://ocsp.example.invalid/")));
+
+        var handler = new FakeHandler { OcspResponse = [0x30, 0x03, 0x0A, 0x01, 0x00] };
+        using var http = new HttpClient(handler);
+        var client = new HttpRevocationClient(http, TimeSpan.FromSeconds(5));
+
+        Assert.Null(client.GetRevocationData(cert, cert).Ocsp);
+        Assert.Null(handler.OcspRequestUri); // no request was even attempted
+    }
+
     /// <summary>Points the certificate at a CRL distribution point so the client will fetch one.</summary>
     private static void WithCdp(CertificateRequest request)
         => request.CertificateExtensions.Add(BuildCdpExtension("http://crl.example.invalid/list.crl"));

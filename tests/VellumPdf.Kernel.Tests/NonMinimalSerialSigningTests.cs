@@ -39,7 +39,23 @@ public sealed class NonMinimalSerialSigningTests
     [Fact]
     public void NonMinimalSerialCertificate_isAcceptedByTheX509Parser()
     {
-        NonMinimalSerialCertificate.SkipIfUnsupported();
+        // Deliberately NOT gated by SkipIfUnsupported: this is the test that detects the fixture
+        // going vacuous, so gating it on the same probe it exists to validate would disable the
+        // detector along with everything it protects. On Windows the encoding must load; elsewhere
+        // it must not, and either way that is asserted rather than skipped.
+        if (!OperatingSystem.IsWindows())
+        {
+            Assert.False(
+                NonMinimalSerialCertificate.IsSupportedByPlatform,
+                "Only Windows is known to accept a non-minimally-encoded serial; if another platform "
+                + "starts accepting it, the tests gated on this probe need revisiting.");
+            return;
+        }
+
+        Assert.True(
+            NonMinimalSerialCertificate.IsSupportedByPlatform,
+            "Windows accepts a non-minimally-encoded serial. If this fails the fixture is broken, "
+            + "and every test gated on the probe would otherwise skip silently.");
         // The premise of every test below: on this platform the encoding is one the X.509 parser
         // reads happily and every DER encoder refuses to write. Asserted explicitly, because if the
         // parser started normalizing the serial instead of preserving it these tests would become
@@ -138,6 +154,32 @@ public sealed class NonMinimalSerialSigningTests
             () => doc.SignAsync(new MemoryStream(), settings, TestContext.Current.CancellationToken));
         Assert.Contains("0x0001020304", ex.Message);
         Assert.DoesNotContain("ExternalSigner does work", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Rejection_leavesTheDocumentReusable()
+    {
+        NonMinimalSerialCertificate.SkipIfUnsupported();
+
+        // PdfDocument.Save sets _written only after its preconditions pass, explicitly "so a
+        // recoverable precondition failure leaves the document usable for a retry". This check has
+        // to honour that: it is a settings precondition, so it belongs beside the other settings
+        // preconditions in SigningExtensions rather than deeper in the pipeline. Placed inside the
+        // CMS computation it fired only after the whole document had been built and consumed, so a
+        // caller who did exactly what the message told them — swap in a re-issued certificate and
+        // sign again — got "This document has already been written" instead of a signature.
+        using var badCertificate = NonMinimalSerialCertificate.Create();
+        using var goodCertificate = NonMinimalSerialCertificate.Create([0x01, 0x02, 0x03, 0x04]);
+
+        using var doc = new PdfDocument();
+        doc.AddPage();
+
+        Assert.Throws<ArgumentException>(
+            () => doc.Sign(new MemoryStream(), new PdfSignatureSettings { Certificate = badCertificate }));
+
+        var ms = new MemoryStream();
+        doc.Sign(ms, new PdfSignatureSettings { Certificate = goodCertificate });
+        VerifySignatureOrThrow(ms.ToArray());
     }
 
     [Theory]

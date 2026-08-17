@@ -100,6 +100,8 @@ public sealed class HttpRevocationClient : IRevocationClient
         try
         {
             var requestDer = BuildOcspRequest(certificate, issuer);
+            if (requestDer is null)
+                return null; // no CertID can name this certificate — see BuildOcspRequest
 
             using var content = new ByteArrayContent(requestDer);
             content.Headers.ContentType = new MediaTypeHeaderValue("application/ocsp-request");
@@ -131,6 +133,8 @@ public sealed class HttpRevocationClient : IRevocationClient
         try
         {
             var requestDer = BuildOcspRequest(certificate, issuer);
+            if (requestDer is null)
+                return null; // no CertID can name this certificate — see BuildOcspRequest
 
             using var content = new ByteArrayContent(requestDer);
             content.Headers.ContentType = new MediaTypeHeaderValue("application/ocsp-request");
@@ -187,11 +191,26 @@ public sealed class HttpRevocationClient : IRevocationClient
     /// over the issuer's distinguished name and public key. No signature, requestor name, or
     /// extensions are included.
     /// </summary>
-    private static byte[] BuildOcspRequest(X509Certificate2 certificate, X509Certificate2 issuer)
+    private static byte[]? BuildOcspRequest(X509Certificate2 certificate, X509Certificate2 issuer)
     {
         byte[] issuerNameHash = SHA1.HashData(issuer.SubjectName.RawData);
         byte[] issuerKeyHash = SHA1.HashData(issuer.PublicKey.EncodedKeyValue.RawData);
         var serial = certificate.SerialNumberBytes.Span;
+
+        // A CertID must ask about the certificate in hand, and a non-minimal serial cannot be
+        // asked about: DER forbids the encoding, so the request would necessarily carry the
+        // normalized value — a DIFFERENT serial, which the responder may well have issued to
+        // another certificate. It would then answer "good" for that sibling, and this library
+        // would embed that answer in the /DSS as evidence about the certificate being signed with.
+        // This is the same mismatch that makes a normalized SignerInfo unresolvable to a PAdES
+        // validator; here it is worse, because the wrong answer looks authoritative.
+        //
+        // Unlike the signing path, this is not fatal: revocation evidence is best-effort, and
+        // DssBuilder reaches this for every certificate in the chain — intermediates and the TSA's
+        // own chain included — none of which the signing-time precondition inspects. So it fails
+        // closed by skipping OCSP rather than throwing.
+        if (!Asn1SerialNumber.IsMinimal(serial))
+            return null;
 
         var writer = new AsnWriter(AsnEncodingRules.DER);
 

@@ -63,10 +63,16 @@ internal static class Formatter
             var fileLabel = C(Bold, r.FilePath, color);
             w.WriteLine($"{fileLabel} — {profileLabel}: {verdict} ({errorCount} errors, {warnCount} warnings)");
 
-            if (!r.Conformant && r.Failed.Count > 0)
+            // Gated on there being something to show, NOT on the verdict. Gating on
+            // !r.Conformant produced two silent reports once a warning-severity rule existed:
+            // `--fail-on warning` made the run fail with nothing listed (the warning is below the
+            // default --severity, so Failed is empty), and `--severity warning` listed nothing on a
+            // conformant document even though the header said a warning existed. In both the user
+            // is told a finding exists and never told what it is.
+            if (r.Failed.Count > 0)
             {
                 w.WriteLine();
-                w.WriteLine(C(Bold, "FAILED:", color));
+                w.WriteLine(C(Bold, r.Conformant ? "FINDINGS:" : "FAILED:", color));
                 foreach (var f in r.Failed)
                 {
                     var sevLabel = f.Severity switch

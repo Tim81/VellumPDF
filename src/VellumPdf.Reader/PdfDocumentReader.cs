@@ -333,7 +333,26 @@ public sealed class PdfDocumentReader : IDisposable
                 throw new InvalidDataException(
                     $"Object stream {containerObjNum} header entry {i} is not a pair of integers.");
 
-            offsetMap[(int)numInt.Value] = (int)offInt.Value;
+            // Range-checked before narrowing, and rejected on a duplicate. This offset map is the
+            // ONLY authority for where a compressed object begins — unlike the uncompressed path
+            // above, which re-reads the "N G obj" header and returns null when it does not match
+            // the object it was asked for. So an out-of-range number that wraps onto a real one, or
+            // a repeated number, silently substitutes an object's entire body: a header of
+            // "1 0 4294967297 40" makes object 1 parse from relative offset 40, and every verdict
+            // this library then reports describes content the document does not contain.
+            //
+            // Both checks are needed. Rejecting duplicates alone still lets "4294967297 40 1 0"
+            // through, because the wrapped key is written first and the honest one is then the
+            // duplicate.
+            if (numInt.Value is < 0 or > int.MaxValue || offInt.Value is < 0 or > int.MaxValue)
+                throw new InvalidDataException(
+                    $"Malformed PDF: object stream {containerObjNum} header entry {i} "
+                    + $"({numInt.Value} {offInt.Value}) is outside the representable range.");
+
+            if (!offsetMap.TryAdd((int)numInt.Value, (int)offInt.Value))
+                throw new InvalidDataException(
+                    $"Malformed PDF: object stream {containerObjNum} header declares object "
+                    + $"{numInt.Value} more than once.");
         }
 
         var entry = (body, first, n, offsetMap);

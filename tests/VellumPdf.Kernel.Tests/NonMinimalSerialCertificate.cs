@@ -49,15 +49,30 @@ internal static class NonMinimalSerialCertificate
 
     private static bool Probe()
     {
+        // Only the load step is probed. Wrapping the whole of Create() would make any
+        // CryptographicException from key generation or from CopyWithPrivateKey — a FIPS policy or
+        // key-storage restriction on a locked-down host — indistinguishable from "this platform
+        // rejects the encoding", and silently skip every test here with a green suite.
+        var der = PatchSerial(BaseCertificateDer(), [0x00, 0x01, 0x02, 0x03, 0x04]);
         try
         {
-            using var probe = Create();
+            using var probe = X509CertificateLoader.LoadCertificate(der);
             return true;
         }
         catch (CryptographicException)
         {
             return false;
         }
+    }
+
+    private static byte[] BaseCertificateDer()
+    {
+        using var rsa = RSA.Create(2048);
+        var request = new CertificateRequest(
+            "CN=VellumPdf Probe", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        using var certificate = request.CreateSelfSigned(
+            DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddYears(1));
+        return certificate.RawData;
     }
 
     /// <summary>
