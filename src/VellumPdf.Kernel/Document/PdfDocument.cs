@@ -700,8 +700,10 @@ public sealed class PdfDocument : IDisposable
         // ── Build structure tree (tagged PDF) ─────────────────────────────
         // MUST happen before the page-dict build so that page.StructParentsKey is set
         // before BuildDictionary is called (otherwise /StructParents is never written).
+        // Not gated on the tree being non-empty: a Tagged document with nothing tagged still
+        // needs its /StructTreeRoot, or it advertises a structure tree it does not have (#120).
         PdfIndirectReference? structTreeRootRef = null;
-        if (Tagged && !_structureTree.IsEmpty)
+        if (Tagged)
         {
             structTreeRootRef = _structureTree.Build(registry, pageRefMap, out var pageStructParents);
             // Stamp /StructParents on each page that has tagged content.
@@ -1063,8 +1065,11 @@ public sealed class PdfDocument : IDisposable
         }
 
         // ── Structure tree ─────────────────────────────────────────────────────
+        // Emitted whenever Tagged, empty tree included — see the note on the same build in
+        // Save (#120). Signed output needs this as much as unsigned: the placeholder path is
+        // how a tagged, signed PDF/A-2a or PDF/UA-1 document gets written.
         PdfIndirectReference? structTreeRootRef = null;
-        if (Tagged && !_structureTree.IsEmpty)
+        if (Tagged)
         {
             structTreeRootRef = _structureTree.Build(registry, pageRefMap, out var pageStructParents);
             foreach (var (page, key) in pageStructParents)
