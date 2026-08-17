@@ -218,6 +218,32 @@ internal static class SignatureTestHelpers
 
     /// <summary>id-aa-signingCertificateV2 (RFC 5035 §3).</summary>
     internal const string SigningCertificateV2Oid = "1.2.840.113549.1.9.16.2.47";
+
+    /// <summary>
+    /// Concatenates the two segments a signature's <c>/ByteRange</c> covers, which is the content
+    /// its CMS blob is computed over.
+    /// </summary>
+    /// <remarks>
+    /// One helper rather than the same four-line <see cref="Buffer.BlockCopy"/> pair repeated in
+    /// every LTV test. It also keeps the narrowing in a single place: <c>/ByteRange</c> values are
+    /// <see cref="long"/> because real file offsets can exceed <see cref="int.MaxValue"/>, while
+    /// <see cref="Buffer.BlockCopy"/> takes <see cref="int"/> — so the cast is checked, and on a
+    /// fixture larger than 2 GB it would throw rather than silently copy the wrong bytes.
+    /// </remarks>
+    internal static byte[] ReconstructSignedContent(byte[] file, ReadOnlySpan<long> byteRange)
+    {
+        Assert.Equal(4, byteRange.Length);
+
+        var seg0Start = checked((int)byteRange[0]);
+        var seg0Len = checked((int)byteRange[1]);
+        var seg1Start = checked((int)byteRange[2]);
+        var seg1Len = checked((int)byteRange[3]);
+
+        var signedContent = new byte[seg0Len + seg1Len];
+        Buffer.BlockCopy(file, seg0Start, signedContent, 0, seg0Len);
+        Buffer.BlockCopy(file, seg1Start, signedContent, seg0Len, seg1Len);
+        return signedContent;
+    }
 }
 
 /// <summary>
