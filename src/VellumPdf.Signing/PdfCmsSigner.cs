@@ -103,6 +103,13 @@ internal static class PdfCmsSigner
     // ── CMS signature computation ─────────────────────────────────────────────
 
     /// <summary>
+    /// The digest this path signs with. Named once because the
+    /// <c>signing-certificate-v2</c> attribute below has to hash the signing certificate with
+    /// the same algorithm the signature itself uses (RFC 5035 §4).
+    /// </summary>
+    private static readonly HashAlgorithmName SignatureDigest = HashAlgorithmName.SHA256;
+
+    /// <summary>
     /// Creates the <see cref="CmsSigner"/> to use for <paramref name="settings"/>. Uses the
     /// private key attached to <see cref="PdfSignatureSettings.Certificate"/> unless
     /// <see cref="PdfSignatureSettings.ExternalPrivateKey"/> is set, in which case that key is
@@ -113,8 +120,16 @@ internal static class PdfCmsSigner
         var signer = settings.ExternalPrivateKey is null
             ? new CmsSigner(settings.Certificate)
             : new CmsSigner(SubjectIdentifierType.IssuerAndSerialNumber, settings.Certificate, settings.ExternalPrivateKey);
-        signer.DigestAlgorithm = new Oid("2.16.840.1.101.3.4.2.1"); // SHA-256
+        signer.DigestAlgorithm = new Oid(Sha2DigestAlgorithm.Oid(SignatureDigest));
         signer.IncludeOption = X509IncludeOption.WholeChain;
+
+        // ESS signing-certificate-v2 (RFC 5035), required by the CAdES profile that
+        // PdfSignatureSettings.SubFilter claims by default. Added here rather than at each
+        // ComputeCmsSignature call site so the sync and async paths cannot drift apart.
+        signer.SignedAttributes.Add(new AsnEncodedData(
+            new Oid(SigningCertificateV2.AttributeOid),
+            SigningCertificateV2.Encode(settings.Certificate, SignatureDigest)));
+
         return signer;
     }
 

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 using System.Formats.Asn1;
+using System.Security.Cryptography;
 using System.Security.Cryptography.Pkcs;
 using System.Text;
 
@@ -39,6 +40,18 @@ internal static class SignatureTestHelpers
     /// </summary>
     internal static void VerifySignatureOrThrow(byte[] signedBytes)
     {
+        var verify = DecodeSignedCms(signedBytes);
+        // verifySignatureOnly=true skips certificate chain/trust validation —
+        // appropriate for self-signed test certs.
+        verify.CheckSignature(verifySignatureOnly: true);
+    }
+
+    /// <summary>
+    /// Decodes the signature in <paramref name="signedBytes"/> into a detached
+    /// <see cref="SignedCms"/> over the content its /ByteRange covers, without verifying it.
+    /// </summary>
+    internal static SignedCms DecodeSignedCms(byte[] signedBytes)
+    {
         var (byteRange, contentsInfo) = ParseSignatureFields(signedBytes);
 
         // Reconstruct the signed content from the two ByteRange segments.
@@ -55,12 +68,9 @@ internal static class SignatureTestHelpers
         // so passing the full padded buffer (including trailing zero bytes) is correct.
         var contentsBytes = Convert.FromHexString(contentsInfo.HexContent);
 
-        // BCL verification: detached CMS, verify-signature-only (no chain).
-        var verify = new SignedCms(new ContentInfo(signedContent), detached: true);
-        verify.Decode(contentsBytes);
-        // verifySignatureOnly=true skips certificate chain/trust validation —
-        // appropriate for self-signed test certs.
-        verify.CheckSignature(verifySignatureOnly: true);
+        var cms = new SignedCms(new ContentInfo(signedContent), detached: true);
+        cms.Decode(contentsBytes);
+        return cms;
     }
 
     /// <summary>
@@ -144,4 +154,71 @@ internal static class SignatureTestHelpers
         var oid = algorithmIdentifier.ReadObjectIdentifier();
         return (oid, algorithmIdentifier.HasData);
     }
+
+    /// <summary>
+    /// Decodes the single <c>ESSCertIDv2</c> from the signature's ESS
+    /// <c>signing-certificate-v2</c> signed attribute (RFC 5035), or returns null when the
+    /// attribute is absent.
+    /// </summary>
+    /// <remarks>
+    /// Reached through <see cref="SignedCms"/>'s own <c>SignedAttributes</c> rather than a
+    /// positional walk: that way the BCL has to have accepted the attribute as part of a
+    /// well-formed CMS before these assertions see it, so a structurally broken encoding fails
+    /// here rather than being re-parsed by an equally wrong test decoder.
+    /// </remarks>
+    internal static EssCertIdV2? ExtractSigningCertificateV2(byte[] signedBytes)
+    {
+        var cms = DecodeSignedCms(signedBytes);
+
+        var attribute = cms.SignerInfos[0].SignedAttributes
+            .Cast<CryptographicAttributeObject>()
+            .SingleOrDefault(a => a.Oid.Value == SigningCertificateV2Oid);
+        if (attribute is null)
+            return null;
+
+        Assert.Single(attribute.Values);
+        var signingCertificateV2 = new AsnReader(attribute.Values[0].RawData, AsnEncodingRules.DER).ReadSequence();
+        var certs = signingCertificateV2.ReadSequence();
+        var essCertIdV2 = certs.ReadSequence();
+
+        // hashAlgorithm is DEFAULT id-sha256, so it may be absent. Present means the next tag
+        // is the AlgorithmIdentifier SEQUENCE; absent means it is certHash's OCTET STRING.
+        string? hashAlgorithmOid = null;
+        var hashAlgorithmHasParameters = false;
+        if (essCertIdV2.PeekTag() == Asn1Tag.Sequence)
+            (hashAlgorithmOid, hashAlgorithmHasParameters) = ReadAlgorithmIdentifier(essCertIdV2);
+
+        var certHash = essCertIdV2.ReadOctetString();
+
+        byte[]? issuerNameDer = null;
+        byte[]? serialNumberDer = null;
+        if (essCertIdV2.HasData)
+        {
+            var issuerSerial = essCertIdV2.ReadSequence();
+            var generalNames = issuerSerial.ReadSequence();
+            // GeneralName's directoryName alternative — [4], explicit because Name is a CHOICE.
+            var directoryName = generalNames.ReadSequence(new Asn1Tag(TagClass.ContextSpecific, 4, isConstructed: true));
+            issuerNameDer = directoryName.ReadEncodedValue().ToArray();
+            serialNumberDer = issuerSerial.ReadEncodedValue().ToArray();
+        }
+
+        return new EssCertIdV2(hashAlgorithmOid, hashAlgorithmHasParameters, certHash, issuerNameDer, serialNumberDer);
+    }
+
+    /// <summary>id-aa-signingCertificateV2 (RFC 5035 §3).</summary>
+    internal const string SigningCertificateV2Oid = "1.2.840.113549.1.9.16.2.47";
 }
+
+/// <summary>
+/// A decoded <c>ESSCertIDv2</c> (RFC 5035 Appendix A). <see cref="HashAlgorithmOid"/> is null
+/// when the DER-optional <c>hashAlgorithm</c> field was omitted, which for a DEFAULT of
+/// id-sha256 is what a conformant encoder does for SHA-256. The issuer and serial are kept as
+/// raw DER so they can be compared byte-for-byte against the certificate they must identify,
+/// rather than through a string form that could normalize away a difference.
+/// </summary>
+internal sealed record EssCertIdV2(
+    string? HashAlgorithmOid,
+    bool HashAlgorithmHasParameters,
+    byte[] CertHash,
+    byte[]? IssuerNameDer,
+    byte[]? SerialNumberDer);

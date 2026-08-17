@@ -68,15 +68,22 @@ internal static class ExternalSignerCms
         var hashAlgorithm = signer.HashAlgorithm;
         var signingTime = settings.SigningTime ?? DateTimeOffset.UtcNow;
 
-        var digestOid = DigestAlgorithmOid(hashAlgorithm);
-        var messageDigest = HashData(hashAlgorithm, signedContent);
+        ValidateHashAlgorithm(hashAlgorithm);
+        var digestOid = Sha2DigestAlgorithm.Oid(hashAlgorithm);
+        var messageDigest = Sha2DigestAlgorithm.Hash(hashAlgorithm, signedContent);
 
-        // ── Signed attributes: contentType, messageDigest, signingTime ─────────
+        // ── Signed attributes ──────────────────────────────────────────────────
+        // contentType, messageDigest, signingTime, and the ESS signing-certificate-v2 the
+        // CAdES profile requires. Order is irrelevant: these go into a DER SET OF, which
+        // EncodeSetOf sorts by encoding as DER demands.
         var attributes = new[]
         {
             EncodeAttribute(IdContentType, w => w.WriteObjectIdentifier(IdData)),
             EncodeAttribute(IdMessageDigest, w => w.WriteOctetString(messageDigest)),
             EncodeAttribute(IdSigningTime, w => WriteTime(w, signingTime)),
+            EncodeAttribute(
+                SigningCertificateV2.AttributeOid,
+                w => w.WriteEncodedValue(SigningCertificateV2.Encode(certificate, hashAlgorithm))),
         };
 
         // RFC 5652 §5.4: the digest is computed over the attributes under a universal
@@ -84,7 +91,7 @@ internal static class ExternalSignerCms
         // explicitly NOT used for this — hashing the [0]-tagged bytes instead produces a
         // signature that no verifier will accept.
         var signedAttrsForDigest = EncodeSetOf(attributes, tag: null);
-        var digestToSign = HashData(hashAlgorithm, signedAttrsForDigest);
+        var digestToSign = Sha2DigestAlgorithm.Hash(hashAlgorithm, signedAttrsForDigest);
 
         var signature = await signer.SignAsync(digestToSign, cancellationToken).ConfigureAwait(false);
 
@@ -236,14 +243,18 @@ internal static class ExternalSignerCms
         return certificates;
     }
 
-    private static string DigestAlgorithmOid(HashAlgorithmName hashAlgorithm) => hashAlgorithm.Name switch
+    /// <summary>
+    /// Rejects an unsupported <see cref="IExternalSigner.HashAlgorithm"/> before any of it is
+    /// used. <see cref="Sha2DigestAlgorithm"/> rejects the same set, but with a message that
+    /// cannot name where the algorithm came from; on this path it came from a property the
+    /// caller set, so the failure names that property.
+    /// </summary>
+    private static void ValidateHashAlgorithm(HashAlgorithmName hashAlgorithm)
     {
-        "SHA256" => "2.16.840.1.101.3.4.2.1",
-        "SHA384" => "2.16.840.1.101.3.4.2.2",
-        "SHA512" => "2.16.840.1.101.3.4.2.3",
-        _ => throw new NotSupportedException(
-            $"IExternalSigner.HashAlgorithm '{hashAlgorithm.Name}' is not supported. Use SHA256, SHA384, or SHA512."),
-    };
+        if (hashAlgorithm.Name is not ("SHA256" or "SHA384" or "SHA512"))
+            throw new NotSupportedException(
+                $"IExternalSigner.HashAlgorithm '{hashAlgorithm.Name}' is not supported. Use SHA256, SHA384, or SHA512.");
+    }
 
     private static string SignatureAlgorithmOid(bool isEc, HashAlgorithmName hashAlgorithm) => (isEc, hashAlgorithm.Name) switch
     {
@@ -257,12 +268,4 @@ internal static class ExternalSignerCms
             $"IExternalSigner.HashAlgorithm '{hashAlgorithm.Name}' is not supported. Use SHA256, SHA384, or SHA512."),
     };
 
-    private static byte[] HashData(HashAlgorithmName hashAlgorithm, ReadOnlySpan<byte> data) => hashAlgorithm.Name switch
-    {
-        "SHA256" => SHA256.HashData(data),
-        "SHA384" => SHA384.HashData(data),
-        "SHA512" => SHA512.HashData(data),
-        _ => throw new NotSupportedException(
-            $"IExternalSigner.HashAlgorithm '{hashAlgorithm.Name}' is not supported. Use SHA256, SHA384, or SHA512."),
-    };
 }
