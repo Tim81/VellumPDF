@@ -1,9 +1,13 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
+using System.Text;
 using VellumPdf.Canvas;
 using VellumPdf.Document;
 using VellumPdf.Fonts;
+using VellumPdf.Signing;
 
 namespace VellumPdf.Kernel.Tests;
 
@@ -391,6 +395,60 @@ public sealed class StandardsFoundationTests
         Assert.Contains("/StructTreeRoot", content);
     }
 
+    [Theory]
+    [InlineData(PdfConformance.PdfA2a)]
+    [InlineData(PdfConformance.PdfUA1)]
+    public void TaggedConformance_withNoTaggedContent_stillEmitsStructTreeRoot(PdfConformance conformance)
+    {
+        // Both levels force /MarkInfo /Marked true, so omitting the structure tree produced a
+        // document advertising a conformance level it could not satisfy — it failed the
+        // in-process LogicalStructureRule and UaTaggingRule, and veraPDF, alike (#120).
+        using var doc = new PdfDocument { Conformance = conformance, Language = "en-US" };
+        doc.Info.Title = "Empty tagged document";
+        doc.AddPage();
+
+        var content = SaveToString(doc);
+
+        Assert.Contains("/StructTreeRoot", content);
+        Assert.Contains("/Marked true", content);
+        // The tree is minimal but well-formed: a /Document element with no children, and a
+        // ParentTree with no entries because no page carries tagged content. veraPDF accepts
+        // this for both profiles — see the pdfa2a-empty-tagged / pdfua1-empty-tagged fixtures
+        // in the oracle corpus, which cross-check exactly these bytes against it.
+        Assert.Contains("/S /Document", content);
+        Assert.Contains("/K []", content);
+        Assert.Contains("/ParentTreeNextKey 0", content);
+    }
+
+    [Fact]
+    public void Tagged_withNoTaggedContent_emitsStructTreeRoot_onTheSignedSavePath()
+    {
+        // The signature-placeholder Save is a second, separate build path, and it carried the
+        // same gate. Without this the fix would leave every tagged *signed* PDF/A-2a and
+        // PDF/UA-1 document still claiming a level it fails — the case a caller signing a
+        // conformant document hits, and one no conformance fixture covers.
+        using var cert = CreateSelfSignedCertificate();
+        using var doc = new PdfDocument { Conformance = PdfConformance.PdfA2a, Language = "en-US" };
+        doc.Info.Title = "Empty tagged signed document";
+        doc.AddPage();
+
+        var ms = new MemoryStream();
+        doc.Sign(ms, new PdfSignatureSettings { Certificate = cert });
+        var content = Encoding.Latin1.GetString(ms.ToArray());
+
+        Assert.Contains("/StructTreeRoot", content);
+        Assert.Contains("/S /Document", content);
+    }
+
+    private static X509Certificate2 CreateSelfSignedCertificate()
+    {
+        using var rsa = RSA.Create(2048);
+        var request = new CertificateRequest(
+            "CN=VellumPdf Tagging Test", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        return request.CreateSelfSigned(
+            DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddYears(1));
+    }
+
     [Fact]
     public void Tagged_true_withStructElem_emitsStructElem()
     {
@@ -412,16 +470,24 @@ public sealed class StandardsFoundationTests
     }
 
     [Fact]
-    public void Tagged_true_withNoElems_noStructTreeRoot()
+    public void Tagged_true_withNoElems_stillEmitsStructTreeRoot()
     {
-        // Tagged = true but no RegisterStructElem call → no /StructTreeRoot written
+        // Deliberately reversed in #120. This previously asserted that Tagged = true with no
+        // RegisterStructElem call wrote no /StructTreeRoot, which is what left a conformance-
+        // level document claiming a structure tree it did not have.
+        //
+        // The condition is now Tagged alone, not Tagged-and-non-empty, so this plain Tagged case
+        // changes too even though it names no conformance level. That is the intended reading:
+        // Tagged = true means the document is a tagged PDF, and a tagged PDF has a structure
+        // tree. Narrowing the fix to only the levels that mandate one would leave the same
+        // /MarkInfo-without-/StructTreeRoot inconsistency reachable through this property.
         using var doc = new PdfDocument();
         doc.Tagged = true;
         doc.AddPage();
 
         var content = SaveToString(doc);
 
-        Assert.DoesNotContain("/StructTreeRoot", content);
+        Assert.Contains("/StructTreeRoot", content);
     }
 
     [Fact]
