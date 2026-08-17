@@ -94,13 +94,25 @@ public sealed class HardeningV153Tests
     /// they could differ by up to a second under load. Now the time is resolved once
     /// in <see cref="SigningExtensions.Sign"/> before both downstream calls.
     /// </summary>
+    /// <remarks>
+    /// Pinned to <c>adbe.pkcs7.detached</c>, which is now the only sub-filter that emits the
+    /// attribute at all: the PAdES profile forbids it and carries the time in /M alone
+    /// (issue #170). The invariant this test was written for — one resolved value, not two
+    /// independent <c>UtcNow</c> calls — still needs guarding wherever both do appear, and this
+    /// is that place. <c>PadesSigning_omitsCmsSigningTime_butStillWritesM</c> covers the other
+    /// sub-filter.
+    /// </remarks>
     [Fact]
     public void Signing_without_explicit_time_M_and_CmsSigningTime_match_to_the_second()
     {
         using var cert = CreateTestCertificate();
 
         // Do not set SigningTime — the fix should resolve it once.
-        var settings = new PdfSignatureSettings { Certificate = cert };
+        var settings = new PdfSignatureSettings
+        {
+            Certificate = cert,
+            SubFilter = PdfSignatureSettings.SubFilterAdbePkcs7Detached,
+        };
 
         using var doc = new PdfDocument();
         var page = doc.AddPage();
@@ -153,6 +165,73 @@ public sealed class HardeningV153Tests
         // Both times must match to the second.
         // PDF date has second precision; CMS signing time also has second precision.
         Assert.Equal(mTime, cmsTime!.Value.TruncateToSecond());
+    }
+
+    // ── #170: the PAdES profile forbids the signing-time signed attribute ────
+
+    /// <summary>
+    /// Under the default <c>ETSI.CAdES.detached</c> sub-filter the CMS must carry no PKCS#9
+    /// signing-time attribute, while /M still records the signing time.
+    /// </summary>
+    /// <remarks>
+    /// ETSI EN 319 142-1 admits only the signed attributes its table 1 lists, and signing-time
+    /// is not among them; PAdES conveys the claimed time through /M. Emitting it anyway held
+    /// every signature at PAdES-BES instead of PAdES-BASELINE-B, which is what the EU DSS
+    /// reference validator reported before this change and what it stopped reporting after.
+    /// The assertion is on absence rather than on a validator verdict because DSS is a network
+    /// service, but absence is the whole of what changed the verdict.
+    /// </remarks>
+    [Fact]
+    public void PadesSigning_omitsCmsSigningTime_butStillWritesM()
+    {
+        using var cert = CreateTestCertificate();
+
+        // Default SubFilter is ETSI.CAdES.detached — stated explicitly so the test keeps
+        // testing PAdES even if the default ever moves.
+        var settings = new PdfSignatureSettings
+        {
+            Certificate = cert,
+            SubFilter = PdfSignatureSettings.SubFilterEtsiCAdESDetached,
+        };
+
+        using var doc = new PdfDocument();
+        var page = doc.AddPage();
+        var canvas = new PdfCanvas(page);
+        canvas.Finish();
+
+        var ms = new MemoryStream();
+        doc.Sign(ms, settings);
+        var signedBytes = ms.ToArray();
+
+        // /M is still written: dropping the attribute must not lose the signing time.
+        var text = Encoding.Latin1.GetString(signedBytes);
+        Assert.Contains("/M (D:", text, StringComparison.Ordinal);
+        Assert.Contains("/SubFilter /ETSI.CAdES.detached", text, StringComparison.Ordinal);
+
+        var (byteRange, contentsHex) = ParseContentsHex(signedBytes);
+        var seg0Len = (int)byteRange[1];
+        var seg1Start = (int)byteRange[2];
+        var seg1Len = (int)byteRange[3];
+        var signedContent = new byte[seg0Len + seg1Len];
+        Buffer.BlockCopy(signedBytes, 0, signedContent, 0, seg0Len);
+        Buffer.BlockCopy(signedBytes, seg1Start, signedContent, seg0Len, seg1Len);
+
+        var cms = new SignedCms(new ContentInfo(signedContent), detached: true);
+        cms.Decode(Convert.FromHexString(contentsHex));
+
+        // The signature must still verify — the attribute set is what gets digested, so
+        // removing a member without rebuilding the digest would fail here.
+        cms.CheckSignature(verifySignatureOnly: true);
+
+        Assert.DoesNotContain(
+            cms.SignerInfos[0].SignedAttributes.Cast<CryptographicAttributeObject>(),
+            a => a.Oid?.Value == "1.2.840.113549.1.9.5");
+
+        // The ESS attribute #168 added must still be there: this change removes one attribute,
+        // not the profile's required one.
+        Assert.Contains(
+            cms.SignerInfos[0].SignedAttributes.Cast<CryptographicAttributeObject>(),
+            a => a.Oid?.Value == "1.2.840.113549.1.9.16.2.47");
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────

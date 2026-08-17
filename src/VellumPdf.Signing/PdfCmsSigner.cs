@@ -130,6 +130,19 @@ internal static class PdfCmsSigner
             new Oid(SigningCertificateV2.AttributeOid),
             SigningCertificateV2.Encode(settings.Certificate, SignatureDigest)));
 
+        // PKCS#9 signing-time, but only off the PAdES profile. ETSI EN 319 142-1 admits only the
+        // signed attributes its table 1 lists, and signing-time is not among them: PAdES carries
+        // the claimed signing time in the signature dictionary's /M instead, which
+        // SigningExtensions writes from the same resolved value. Emitting it anyway is what held
+        // signatures at PAdES-BES rather than PAdES-BASELINE-B (issue #170) — the EU DSS
+        // validator reports the profile solely on the strength of this attribute's presence.
+        // adbe.pkcs7.detached carries no ETSI obligation, so it keeps the attribute.
+        if (!settings.IsPadesProfile)
+        {
+            var signingTime = settings.SigningTime ?? DateTimeOffset.UtcNow;
+            signer.SignedAttributes.Add(new Pkcs9SigningTime(signingTime.UtcDateTime));
+        }
+
         return signer;
     }
 
@@ -141,9 +154,6 @@ internal static class PdfCmsSigner
                 "not supported by the synchronous Sign overloads. Use SignAsync instead.");
 
         var signer = CreateSigner(settings);
-
-        var signingTime = settings.SigningTime ?? DateTimeOffset.UtcNow;
-        signer.SignedAttributes.Add(new Pkcs9SigningTime(signingTime.UtcDateTime));
 
         var cms = new SignedCms(new ContentInfo(signedContent), detached: true);
         cms.ComputeSignature(signer);
@@ -184,9 +194,6 @@ internal static class PdfCmsSigner
         else
         {
             var signer = CreateSigner(settings);
-
-            var signingTime = settings.SigningTime ?? DateTimeOffset.UtcNow;
-            signer.SignedAttributes.Add(new Pkcs9SigningTime(signingTime.UtcDateTime));
 
             cms = new SignedCms(new ContentInfo(signedContent), detached: true);
             cms.ComputeSignature(signer);

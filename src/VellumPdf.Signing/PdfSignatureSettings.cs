@@ -110,6 +110,15 @@ public sealed class PdfSignatureSettings
         [SubFilterEtsiCAdESDetached, SubFilterAdbePkcs7Detached];
 
     /// <summary>
+    /// Whether <see cref="SubFilter"/> commits this signature to the ETSI PAdES profile, which
+    /// constrains which signed attributes may appear. One predicate rather than a comparison at
+    /// each site, because the CMS is assembled by two independent builders and the last time a
+    /// signing rule lived in two places they disagreed (issue #167).
+    /// </summary>
+    internal bool IsPadesProfile
+        => string.Equals(SubFilter, SubFilterEtsiCAdESDetached, StringComparison.Ordinal);
+
+    /// <summary>
     /// Optional RFC 3161 timestamp client. When set, an RFC 3161 <c>TimeStampToken</c> is
     /// obtained over the CMS signature value and embedded as an unsigned attribute
     /// (OID 1.2.840.113549.1.9.16.2.14), producing a PAdES B-T signature.
