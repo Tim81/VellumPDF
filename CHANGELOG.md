@@ -46,6 +46,14 @@ Each is explained under Added, Changed, or Fixed below.
 
 #### Behaviour
 
+- **A PAdES signature no longer carries a CMS `signing-time` signed attribute.** ETSI
+  EN 319 142-1 admits only the signed attributes its table 1 lists, and `signing-time` is not
+  among them — PAdES conveys the claimed time in the signature dictionary's `/M`, which this
+  library already wrote from the same value. Emitting it anyway held every signature at
+  PAdES-BES instead of PAdES-BASELINE-B. Code reading `signing-time` out of `SignerInfo` on a
+  signature written with the default `/SubFilter ETSI.CAdES.detached` will no longer find it;
+  `/M` still carries the value, and `adbe.pkcs7.detached` keeps the attribute, since it makes
+  no ETSI claim. (#170)
 - **A tagged document with no tagged content now emits `/StructTreeRoot`.** Setting
   `Tagged = true` and drawing nothing previously produced no structure tree at all, which
   failed PDF/A-2a and PDF/UA-1 validation. `Tagged` now means tagged. (#120)
@@ -96,6 +104,11 @@ Each is explained under Added, Changed, or Fixed below.
   is omitted for SHA-256 (the DER `DEFAULT` rule) and written with absent parameters for
   SHA-384/512; `issuerSerial` is built from the same bytes as the `SignerInfo`, so the two
   cannot disagree. (#168)
+
+  Together with the `signing-time` removal below, this is what makes the `/SubFilter` claim
+  true rather than merely asserted: the EU DSS reference validator reports a signature from
+  this release as **PAdES-BASELINE-B**, where 1.11.0 produced `PDF-NOT-ETSI`. Each of the two
+  changes alone only got as far as `PAdES-BES`. (#168, #170)
 - **A PDF/A-2a check for page content that no structure element describes** — reported at
   ISO 19005-2 clause 6.7.3.3, at Warning severity, since veraPDF's own PDF/A-2a profile
   implements no equivalent rule and the verdict must keep matching it. (#120)
