@@ -45,7 +45,7 @@ Quick start and examples: <https://github.com/Tim81/VellumPDF#quick-start>
 | **VellumPdf.Layout** (this package) | Stable | High-level document builder: paragraphs, tables, images, pagination. |
 | [VellumPdf.Signing](https://www.nuget.org/packages/VellumPdf.Signing) | Stable | PAdES / PKCS#7 digital signatures with timestamps and LTV. |
 | [VellumPdf.Reader](https://www.nuget.org/packages/VellumPdf.Reader) | Preview | Opens existing PDFs; exposes catalog, signatures, and streams. |
-| [VellumPdf.Conformance](https://www.nuget.org/packages/VellumPdf.Conformance) | Preview | In-process PDF/A and PDF/UA preflight validation. |
+| [VellumPdf.Conformance](https://www.nuget.org/packages/VellumPdf.Conformance) | Stable | In-process PDF/A and PDF/UA preflight validation. |
 | [VellumPdf.Cli](https://www.nuget.org/packages/VellumPdf.Cli) | Stable | `vellum-preflight` command-line PDF/A and PDF/UA validator. |
 | [VellumPdf.Barcodes](https://www.nuget.org/packages/VellumPdf.Barcodes) | Stable | QR, Data Matrix, Aztec, PDF417, Code 128/GS1-128, Code 39, EAN/UPC, and ITF-14 as vectors. |
 
