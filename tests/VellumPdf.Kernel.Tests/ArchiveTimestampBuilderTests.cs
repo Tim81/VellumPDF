@@ -10,6 +10,7 @@ using VellumPdf.Document;
 using VellumPdf.Fonts;
 using VellumPdf.Reader;
 using VellumPdf.Signing;
+using static VellumPdf.Kernel.Tests.SignatureTestHelpers;
 
 namespace VellumPdf.Kernel.Tests;
 
@@ -153,7 +154,7 @@ public sealed class ArchiveTimestampBuilderTests
         var docTs = reader.Signatures.First(s => s.SubFilter?.Value == "ETSI.RFC3161");
 
         // Reconstruct signed content from the DocTimeStamp's ByteRange over the final file.
-        var br = docTs.ByteRange;
+        var br = docTs.ByteRange.Span;
         Assert.Equal(4, br.Length);
 
         var seg0Start = br[0];
@@ -164,9 +165,7 @@ public sealed class ArchiveTimestampBuilderTests
         Assert.True(seg0Start + seg0Len <= bltaBytes.Length);
         Assert.True(seg1Start + seg1Len <= bltaBytes.Length);
 
-        var signedContent = new byte[seg0Len + seg1Len];
-        Buffer.BlockCopy(bltaBytes, seg0Start, signedContent, 0, seg0Len);
-        Buffer.BlockCopy(bltaBytes, seg1Start, signedContent, seg0Len, seg1Len);
+        var signedContent = ReconstructSignedContent(bltaBytes, br);
 
         var expectedDigest = SHA256.HashData(signedContent);
 
@@ -190,9 +189,9 @@ public sealed class ArchiveTimestampBuilderTests
         using var reader = PdfReader.Open(bltaBytes);
         var docTs = reader.Signatures.First(s => s.SubFilter?.Value == "ETSI.RFC3161");
 
-        var br = docTs.ByteRange;
+        var br = docTs.ByteRange.Span;
         Assert.Equal(4, br.Length);
-        Assert.Equal(0, br[0]); // must start at 0
+        Assert.Equal(0L, br[0]); // must start at 0
         // Last segment reaches EOF: br[2] + br[3] == file length
         Assert.Equal(bltaBytes.Length, br[2] + br[3]);
         // br[1] = posLt, br[2] > br[1]
@@ -214,7 +213,7 @@ public sealed class ArchiveTimestampBuilderTests
         // The original CMS signature is the one WITHOUT /ETSI.RFC3161 SubFilter.
         var origSig = reader.Signatures.First(s => s.SubFilter?.Value != "ETSI.RFC3161");
 
-        var br = origSig.ByteRange;
+        var br = origSig.ByteRange.Span;
         Assert.Equal(4, br.Length);
 
         var seg0Start = br[0];
@@ -225,9 +224,7 @@ public sealed class ArchiveTimestampBuilderTests
         Assert.True(seg0Start + seg0Len <= bltaBytes.Length);
         Assert.True(seg1Start + seg1Len <= bltaBytes.Length);
 
-        var signedContent = new byte[seg0Len + seg1Len];
-        Buffer.BlockCopy(bltaBytes, seg0Start, signedContent, 0, seg0Len);
-        Buffer.BlockCopy(bltaBytes, seg1Start, signedContent, seg0Len, seg1Len);
+        var signedContent = ReconstructSignedContent(bltaBytes, br);
 
         var contentsBytes = origSig.Contents.ToArray();
         var verify = new SignedCms(new ContentInfo(signedContent), detached: true);

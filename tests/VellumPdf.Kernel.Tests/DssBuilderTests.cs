@@ -10,6 +10,7 @@ using VellumPdf.Document;
 using VellumPdf.Fonts;
 using VellumPdf.Reader;
 using VellumPdf.Signing;
+using static VellumPdf.Kernel.Tests.SignatureTestHelpers;
 
 namespace VellumPdf.Kernel.Tests;
 
@@ -314,7 +315,7 @@ public sealed class DssBuilderTests
         var sig = reader.Signatures[0];
         Assert.Equal(4, sig.ByteRange.Length);
 
-        var br = sig.ByteRange;
+        var br = sig.ByteRange.Span;
         var seg0Start = br[0];
         var seg0Len = br[1];
         var seg1Start = br[2];
@@ -324,9 +325,7 @@ public sealed class DssBuilderTests
         Assert.True(seg0Start + seg0Len <= ltvBytes.Length);
         Assert.True(seg1Start + seg1Len <= ltvBytes.Length);
 
-        var signedContent = new byte[seg0Len + seg1Len];
-        Buffer.BlockCopy(ltvBytes, seg0Start, signedContent, 0, seg0Len);
-        Buffer.BlockCopy(ltvBytes, seg1Start, signedContent, seg0Len, seg1Len);
+        var signedContent = ReconstructSignedContent(ltvBytes, br);
 
         var contentsBytes = sig.Contents.ToArray();
         var verify = new SignedCms(new ContentInfo(signedContent), detached: true);
