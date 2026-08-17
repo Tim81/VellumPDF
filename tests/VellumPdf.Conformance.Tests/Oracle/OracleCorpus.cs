@@ -36,6 +36,15 @@ public static class OracleCorpus
     /// <summary>Public accessor for the §7.1-3 untagged-real-content violation fixture (for unit tests).</summary>
     internal static byte[] Ua1UntaggedRealContentPublic() => Ua1UntaggedRealContent();
 
+    /// <summary>Public accessor for the PDF/A-2a untagged-real-content fixture (for unit tests).</summary>
+    internal static byte[] A2aUntaggedRealContentPublic() => A2aUntaggedRealContent();
+
+    /// <summary>Public accessor for the PDF/A-2a empty-tagged document (for unit tests).</summary>
+    internal static byte[] A2aEmptyTaggedPublic() => WriterPdfEmptyTagged(VellumPdf.Document.PdfConformance.PdfA2a);
+
+    /// <summary>Public accessor for the properly tagged PDF/A-2a baseline (for unit tests).</summary>
+    internal static byte[] Pdfa2aTaggedPublic() => WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfA2a);
+
     /// <summary>Public accessor for the §7.20-2 dual-page Form XObject violation fixture (for unit tests).</summary>
     internal static byte[] Ua1FormXObjectDualPagePublic() => Ua1FormXObjectDualPage();
 
@@ -402,6 +411,21 @@ public static class OracleCorpus
             // veraPDF accepts — 153 rules passed, 0 failed. Before #120 this document was emitted
             // without a structure tree at all, so it claimed a conformance level it failed.
             new OracleFixture("pdfa2a-empty-tagged", WriterPdfEmptyTagged(VellumPdf.Document.PdfConformance.PdfA2a),
+                Conformance.PdfConformance.PdfA2A, "2a", ExpectedCompliant: true),
+
+            // The 2a counterpart of pdfua1-untagged-real-content: the tagged 2a baseline plus an
+            // appended content stream that paints a path outside any BDC.
+            //
+            // ExpectedCompliant is TRUE, and that is the point of the fixture. veraPDF's PDFA-2A.xml
+            // implements no SESimpleContentItem rule — its only clause-6.7.3.3 rule is the
+            // /StructTreeRoot presence check — so it reports this file compliant. A2aContentItemTaggingRule
+            // does detect the untagged content, but reports it as a Warning precisely so that
+            // IsCompliant continues to agree with veraPDF here. This fixture is therefore the
+            // regression guard for that agreement: if the rule is ever promoted to Error, this
+            // fixture fails and forces the divergence to be dealt with deliberately.
+            // A2aContentItemTaggingRuleTests asserts the warning itself fires.
+            new OracleFixture("pdfa2a-untagged-real-content",
+                A2aUntaggedRealContent(),
                 Conformance.PdfConformance.PdfA2A, "2a", ExpectedCompliant: true),
 
             // §6.7.3.4-1 VIOLATION: a StructElem with /S /MyCustomTag and NO /RoleMap entry.
@@ -3677,12 +3701,38 @@ public static class OracleCorpus
         var bytes = WriterPdfEmptyTagged(conformance);
         var needle = "/StructTreeRoot "u8.ToArray();
         var at = IndexOf(bytes, needle, 0);
-        Assert.True(at >= 0, "The writer should emit a catalog /StructTreeRoot for a tagged document.");
+
+        // Throws rather than asserting: this runs from the eager static initialiser of
+        // OracleCorpus.All, where an xUnit assertion failure surfaces as a
+        // TypeInitializationException that fails every fixture-driven test in three assemblies at
+        // once instead of pointing at this helper. The trailing space in the needle matters — it is
+        // what distinguishes the catalog's "/StructTreeRoot 7 0 R" from the structure object's own
+        // "/Type /StructTreeRoot".
+        if (at < 0)
+            throw new InvalidOperationException(
+                "WriterPdfWithoutStructTreeRoot found no catalog /StructTreeRoot reference to blank. "
+                + "The writer should emit one for any tagged document since #120; if the catalog's "
+                + "formatting changed, this helper's needle needs updating.");
 
         // Span the entry and its "N 0 R" reference, up to the end of that line.
         var end = at + needle.Length;
         while (end < bytes.Length && bytes[end] is not ((byte)'\n' or (byte)'\r'))
             end++;
+
+        // Verify the span is exactly the entry before blanking it. The writer currently emits one
+        // catalog entry per line, so scanning to end-of-line takes precisely
+        // "/StructTreeRoot N 0 R" — but /OutputIntents and /Lang sit on the following lines, and if
+        // the catalog were ever written with two entries on one line this scan would blank those
+        // too. The fixture would still be non-compliant, so both oracle assertions would still
+        // pass, while silently testing a different violation than the one its comment claims. This
+        // check is what keeps that from happening quietly.
+        var blanked = Encoding.ASCII.GetString(bytes, at, end - at);
+        if (!System.Text.RegularExpressions.Regex.IsMatch(blanked, @"^/StructTreeRoot \d+ \d+ R$"))
+            throw new InvalidOperationException(
+                $"Expected to blank exactly a '/StructTreeRoot N G R' catalog entry, but the span was "
+                + $"'{blanked}'. The catalog's formatting changed; blanking more than the entry would "
+                + "make this fixture test a different violation than the one it documents.");
+
         bytes.AsSpan(at, end - at).Fill((byte)' ');
         return bytes;
     }
@@ -8593,9 +8643,25 @@ public static class OracleCorpus
     /// parentsTags.contains('Artifact')==false).
     /// In-process: <c>UaSimpleContentItemRule</c> fires <c>ISO14289-1:7.1-3</c>.
     /// </summary>
+    /// <summary>
+    /// The PDF/A-2a counterpart of <see cref="Ua1UntaggedRealContent"/>: a properly tagged 2a
+    /// baseline with a second content stream appended that paints a path outside any marked-content
+    /// sequence. veraPDF reports it compliant (its 2a profile has no content-item rule);
+    /// <c>A2aContentItemTaggingRule</c> reports a warning.
+    /// </summary>
+    private static byte[] A2aUntaggedRealContent()
+        => AppendUntaggedPathPaint(WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfA2a));
+
     private static byte[] Ua1UntaggedRealContent()
+        => AppendUntaggedPathPaint(WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1));
+
+    /// <summary>
+    /// Appends a content stream painting a bare path outside any BDC to <paramref name="baseline"/>'s
+    /// first page — untagged real content. A path-paint rather than text so no font resource is
+    /// needed and no parse error can be mistaken for the violation under test.
+    /// </summary>
+    private static byte[] AppendUntaggedPathPaint(byte[] baseline)
     {
-        var baseline = WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1);
         using var reader = PdfReader.Open(baseline);
 
         var (pageRef, page) = FirstPage(reader);

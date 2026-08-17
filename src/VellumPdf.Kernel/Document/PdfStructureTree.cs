@@ -94,7 +94,11 @@ internal sealed class PdfStructureTree
 
     public void AddStructElem(PdfStructElem elem) => _documentRoot.AddChild(elem);
 
-    public bool IsEmpty => _documentRoot.Children.Count == 0;
+    // IsEmpty was removed with #120: its only two callers were the Save-time gates that decided
+    // whether to emit a structure tree at all, and both now emit one whenever the document is
+    // Tagged. Detecting content that no structure element describes is the conformance engine's job
+    // (A2aContentItemTaggingRule), not the writer's — the tree being empty was never the right
+    // signal for it, since an empty tree is legal on a page with no content.
 
     /// <summary>
     /// Writes all structure objects into <paramref name="registry"/> and returns
