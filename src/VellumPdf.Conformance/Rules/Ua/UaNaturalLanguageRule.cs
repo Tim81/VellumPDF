@@ -199,7 +199,7 @@ internal sealed class UaNaturalLanguageRule : IConformanceRule
                 // If /StructParent is absent or ParentTree lookup fails → fire (FP-safe: no lang).
                 if (context.Resolve(annot.Get(_structParent)) is PdfInteger spInt)
                 {
-                    var structElem = tree.StructParentOf((int)spInt.Value);
+                    var structElem = tree.StructParentOf(spInt.Value);
                     if (structElem is not null && structElem.Dict.Get(_lang) is not null)
                         continue; // direct struct elem has /Lang — satisfied
                 }
@@ -260,7 +260,7 @@ internal sealed class UaNaturalLanguageRule : IConformanceRule
 
                 if (context.Resolve(field.Get(_structParent)) is PdfInteger spInt)
                 {
-                    var structElem = tree.StructParentOf((int)spInt.Value);
+                    var structElem = tree.StructParentOf(spInt.Value);
                     if (structElem is not null && structElem.Dict.Get(_lang) is not null)
                         hasDeterminableLang = true;
                 }

@@ -43,6 +43,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   requires whenever those OIDs are used — and is unchanged. Neither change touches the
   signature value: AlgorithmIdentifiers sit outside the SignedAttrs digest. (#166)
 
+- **Breaking: `vellum-preflight --format json` reports check accounting differently.**
+  `summary.total` used to be `failed + passed + notEvaluated`, which added a count of
+  assertions to a count of checks; it is now the profile's catalog size. Two counts
+  (`summary.failedChecks`, `summary.inconclusive`) and two arrays (`failedChecks`,
+  `inconclusive`) are new. A failing rule whose id is a veraPDF-style test id now withdraws
+  only the check it names rather than every check in its clause; where the rule id names only
+  a clause, the checks in it are reported as `inconclusive` instead of being dropped from the
+  report. The text output gains an `INCONCLUSIVE` line. Exit codes and the conformance verdict
+  are unchanged.
+- **`SignaturePlaceholderOptions.SubFilter` is validated**, matching
+  `PdfSignatureSettings.SubFilter`. Only `ETSI.CAdES.detached` and `adbe.pkcs7.detached` are
+  accepted; anything else throws instead of being written verbatim into the signature
+  dictionary, where it would claim a format the CMS content does not match.
+
 ### Fixed
 
 - **`ExternalSignerCms` and `HttpRevocationClient` no longer throw on a certificate with a

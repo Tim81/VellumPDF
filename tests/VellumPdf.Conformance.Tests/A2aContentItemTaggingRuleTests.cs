@@ -57,6 +57,19 @@ public sealed class A2aContentItemTaggingRuleTests
     }
 
     [Fact]
+    public void ArtifactContent_doesNotReport()
+    {
+        // Artifact content is deliberately outside the structure tree, so the rule must ignore it.
+        // Without this test the whole artifact branch could be deleted and the entire suite still
+        // passed: the oracle cannot see it either, because a warning does not change IsCompliant and
+        // the oracle only compares that. Deleting `if (item.IsInsideArtifact) continue;` fails here.
+        var result = PdfPreflight.Validate(OracleCorpus.A2aArtifactContentPublic(), PdfConformance.PdfA2A);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == RuleId);
+        Assert.True(result.IsCompliant);
+    }
+
+    [Fact]
     public void UntaggedRealContent_underPdfA2b_doesNotReport()
     {
         // Level B carries no logical-structure requirement, so the rule must not be registered for

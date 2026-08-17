@@ -11,10 +11,45 @@ namespace VellumPdf.Document;
 public sealed class SignaturePlaceholderOptions
 {
     /// <summary>
-    /// PDF signature sub-filter. Default is "ETSI.CAdES.detached" (PAdES B-B).
-    /// Use "adbe.pkcs7.detached" for legacy compatibility.
+    /// PDF signature sub-filter, written as the signature dictionary's <c>/SubFilter</c>. Default
+    /// is <see cref="SubFilterEtsiCAdESDetached"/> (PAdES). Use
+    /// <see cref="SubFilterAdbePkcs7Detached"/> for legacy compatibility.
     /// </summary>
-    public string SubFilter { get; init; } = "ETSI.CAdES.detached";
+    /// <remarks>
+    /// Validated for the same reason <c>PdfSignatureSettings.SubFilter</c> is: the value goes
+    /// straight into <c>/SubFilter</c>, so an unrecognised one produces a signature dictionary
+    /// naming a format its CMS content does not match. This is the second public path to that
+    /// dictionary — reachable through <see cref="PdfDocument.PrepareForSigning"/> — and leaving it
+    /// unvalidated would have held the rule on only one of the two.
+    /// </remarks>
+    /// <exception cref="ArgumentException">The value is not one of the supported sub-filters.</exception>
+    public string SubFilter
+    {
+        get;
+        init
+        {
+            if (!SupportedSubFilters.Contains(value, StringComparer.Ordinal))
+            {
+                throw new ArgumentException(
+                    $"'{value}' is not a supported signature sub-filter. Use "
+                    + $"{string.Join(" or ", SupportedSubFilters.Select(s => $"\"{s}\""))}. The value is "
+                    + "written verbatim as the signature dictionary's /SubFilter, so an unrecognised "
+                    + "one produces a signature that claims a format its CMS content does not match.",
+                    nameof(SubFilter));
+            }
+
+            field = value;
+        }
+    } = SubFilterEtsiCAdESDetached;
+
+    /// <summary><c>ETSI.CAdES.detached</c> — the PAdES sub-filter, and the default.</summary>
+    public const string SubFilterEtsiCAdESDetached = "ETSI.CAdES.detached";
+
+    /// <summary><c>adbe.pkcs7.detached</c> — the legacy sub-filter, carrying no ETSI profile obligation.</summary>
+    public const string SubFilterAdbePkcs7Detached = "adbe.pkcs7.detached";
+
+    private static readonly string[] SupportedSubFilters =
+        [SubFilterEtsiCAdESDetached, SubFilterAdbePkcs7Detached];
 
     /// <summary>
     /// Reserved space in bytes for the DER-encoded CMS signature blob in the /Contents

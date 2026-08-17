@@ -119,6 +119,39 @@ public sealed class PretagApiSurfaceTests
             new PdfSignatureSettings { Certificate = certificate, SubFilter = null! });
     }
 
+    [Theory]
+    [InlineData(SignaturePlaceholderOptions.SubFilterEtsiCAdESDetached)]
+    [InlineData(SignaturePlaceholderOptions.SubFilterAdbePkcs7Detached)]
+    public void PlaceholderSubFilter_acceptsTheSupportedValues(string subFilter)
+        => Assert.Equal(subFilter, new SignaturePlaceholderOptions { SubFilter = subFilter }.SubFilter);
+
+    [Theory]
+    [InlineData("adbe.x509.rsa_sha1")]
+    [InlineData("ETSI.RFC3161")]
+    [InlineData("")]
+    [InlineData("etsi.cades.detached")]
+    public void PlaceholderSubFilter_rejectsAnythingElse(string subFilter)
+    {
+        // The second public path to /SubFilter, reachable via PdfDocument.PrepareForSigning. It was
+        // left unvalidated when PdfSignatureSettings.SubFilter gained validation, so the stated
+        // rationale — an arbitrary string yields a signature claiming a format its CMS content does
+        // not match — held on only one of the two ways to reach the same dictionary entry.
+        var ex = Assert.Throws<ArgumentException>(
+            () => new SignaturePlaceholderOptions { SubFilter = subFilter });
+
+        Assert.Equal(nameof(SignaturePlaceholderOptions.SubFilter), ex.ParamName);
+    }
+
+    [Fact]
+    public void PlaceholderSubFilter_defaultMatchesTheSigningDefault()
+    {
+        // The two paths must agree on the default, or a placeholder prepared by one and signed
+        // through the other would disagree about the format it claims.
+        Assert.Equal(
+            PdfSignatureSettings.SubFilterEtsiCAdESDetached,
+            new SignaturePlaceholderOptions().SubFilter);
+    }
+
     private static X509Certificate2 CreateCertificate()
     {
         using var rsa = RSA.Create(2048);

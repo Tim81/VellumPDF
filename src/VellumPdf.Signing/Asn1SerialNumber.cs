@@ -29,12 +29,24 @@ namespace VellumPdf.Signing;
 /// rather than letting the BCL raise an opaque one from deep in its encoder (issue #167).
 /// </para>
 /// <para>
-/// Where this library writes or compares the serial itself, normalization is both possible and
-/// required: <see cref="ExternalSignerCms"/> (the CMS <c>SignerInfo.IssuerAndSerialNumber</c>),
-/// <see cref="SigningCertificateV2"/> (the ESS <c>ESSCertIDv2.issuerSerial</c>), and
-/// <see cref="HttpRevocationClient"/> (the OCSP <c>CertID.serialNumber</c> it writes, and the CRL
-/// <c>revokedCertificates</c> entries it compares against — a real CA's CRL is DER, so its serials
-/// are already minimal and a raw-versus-minimal comparison silently never matches).
+/// <strong>Normalizing is not a way to sign with such a certificate.</strong> An earlier design
+/// did exactly that in <see cref="ExternalSignerCms"/> and <see cref="SigningCertificateV2"/>, on
+/// the reasoning that this library writes those structures itself so it can choose the encoding.
+/// The result verifies under <see cref="System.Security.Cryptography.Pkcs.SignedCms"/> and is
+/// unusable in practice: the normalized <c>SignerInfo.IssuerAndSerialNumber</c> no longer matches
+/// the raw serial of the certificate carried beside it in <c>SignedData.certificates</c>, so a
+/// verifier that resolves the signer by comparing those bytes finds nothing — the EU DSS validator
+/// returns <c>noSignatureFound</c>. Signing now rejects such a certificate on every path
+/// (<see cref="SigningExtensions"/>), which makes the normalization on those two write paths a
+/// no-op for anything reachable, kept only so the writers cannot emit invalid DER.
+/// </para>
+/// <para>
+/// The live uses are in <see cref="HttpRevocationClient"/>, and they differ: the CRL
+/// <c>revokedCertificates</c> comparison genuinely needs it, because those entries come from a
+/// third party's DER and are therefore minimal while the certificate's own serial may not be, so
+/// comparing raw against minimal silently never matches. The OCSP <c>CertID</c> deliberately does
+/// not normalize — it skips instead, since asking a responder about a different serial invites an
+/// authoritative-looking answer about a different certificate.
 /// </para>
 /// </remarks>
 internal static class Asn1SerialNumber

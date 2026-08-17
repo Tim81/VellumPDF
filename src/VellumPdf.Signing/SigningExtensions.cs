@@ -1,6 +1,8 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
+using System.Security.Cryptography.Pkcs;
+using System.Security.Cryptography.X509Certificates;
 using VellumPdf.Document;
 
 namespace VellumPdf.Signing;
@@ -56,6 +58,7 @@ public static class SigningExtensions
         ArgumentNullException.ThrowIfNull(settings);
 
         ValidateSigningKeyPresent(settings);
+        ValidateCertificateSerial(settings);
         ValidateNoExternalSignerForSyncSign(settings);
         ValidateLevel(settings);
 
@@ -99,6 +102,7 @@ public static class SigningExtensions
         ArgumentNullException.ThrowIfNull(settings);
 
         ValidateSigningKeyPresent(settings);
+        ValidateCertificateSerial(settings);
         ValidateLevel(settings);
 
         var effectiveSettings = ResolveSigningTime(settings);
@@ -137,6 +141,7 @@ public static class SigningExtensions
         ArgumentNullException.ThrowIfNull(settings);
 
         ValidateSigningKeyPresent(settings);
+        ValidateCertificateSerial(settings);
         ValidateNoExternalSignerForSyncSign(settings);
         ValidateLevel(settings);
 
@@ -179,6 +184,7 @@ public static class SigningExtensions
         ArgumentNullException.ThrowIfNull(settings);
 
         ValidateSigningKeyPresent(settings);
+        ValidateCertificateSerial(settings);
         ValidateLevel(settings);
 
         var effectiveSettings = ResolveSigningTime(settings);
@@ -206,6 +212,67 @@ public static class SigningExtensions
                 "The signing certificate must include a private key, or " +
                 "PdfSignatureSettings.ExternalPrivateKey or PdfSignatureSettings.ExternalSigner " +
                 "must be set.", nameof(settings));
+    }
+
+    /// <summary>
+    /// Rejects a certificate whose serial number is not minimally DER-encoded, before
+    /// <see cref="SignedCms"/> is reached.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// .NET's X.509 parser accepts a serial carrying a redundant leading pad byte, but every DER
+    /// encoder rejects it — including the BCL's own <c>IssuerAndSerialNumberAsn.Encode</c>, which
+    /// <see cref="SignedCms.ComputeSignature(CmsSigner)"/> calls while building the
+    /// <c>SignerInfo</c>. Left alone, that surfaces as <c>ArgumentException: The first 9 bits of
+    /// the integer value all have the same value</c> from deep inside the BCL, which says nothing
+    /// about the certificate or what to do about it (issue #167).
+    /// </para>
+    /// <para>
+    /// The serial cannot be normalized on the in-process path: the encoding happens inside
+    /// <see cref="SignedCms"/>, from the <see cref="X509Certificate2"/> itself, so there is nothing
+    /// for this library to rewrite. Re-issuing the certificate is the only real fix, so the failure
+    /// names that.
+    /// </para>
+    /// <para>
+    /// <strong>Every signing path is rejected, including <see cref="IExternalSigner"/>.</strong> An
+    /// earlier version of this check ran only on the in-process path and its message recommended
+    /// the external-signer path as a way through, because <see cref="ExternalSignerCms"/> writes
+    /// the <c>SignerInfo</c> itself and normalizes the serial on the way, and the result verifies
+    /// under <see cref="SignedCms.CheckSignature(bool)"/>. That recommendation was wrong. The
+    /// normalized <c>SignerInfo.IssuerAndSerialNumber</c> then no longer matches the raw serial in
+    /// the certificate carried in <c>SignedData.certificates</c>, and a verifier that resolves the
+    /// signer by comparing those DER bytes cannot find it. Submitting such a signature to the EU
+    /// DSS validator returns <c>noSignatureFound</c> — no signature, no certificate — while an
+    /// otherwise identical document signed the same way with a minimally-encoded serial is found
+    /// and reported as PAdES-BES. Producing a signature that .NET accepts and a conformant PAdES
+    /// validator cannot even locate is worse than refusing to sign, so this path refuses too.
+    /// </para>
+    /// <para>
+    /// <strong>Reachable on Windows only.</strong> Whether a certificate with such a serial can be
+    /// loaded at all is platform-dependent: Windows accepts it, while Linux's OpenSSL-backed parser
+    /// rejects it as <c>ASN1 corrupted data</c> before an <see cref="X509Certificate2"/> exists. So
+    /// on non-Windows platforms this check cannot fire — the certificate never gets far enough to
+    /// be passed in. The guard is kept unconditional rather than platform-gated because the cost is
+    /// one span comparison and the alternative is a platform-specific code path guarding against a
+    /// platform-specific parser behaviour, which is harder to reason about than the check itself.
+    /// </para>
+    /// </remarks>
+    private static void ValidateCertificateSerial(PdfSignatureSettings settings)
+    {
+        if (Asn1SerialNumber.IsMinimal(settings.Certificate.SerialNumberBytes.Span))
+            return;
+
+        throw new ArgumentException(
+            "settings.Certificate has a serial number that is not minimally DER-encoded: its "
+            + $"content octets are 0x{Convert.ToHexString(settings.Certificate.SerialNumberBytes.Span)}, "
+            + "which carries a redundant leading pad byte. ITU-T X.690 §8.3.2 requires the shortest "
+            + "two's-complement encoding, so a CMS SignerInfo cannot identify this certificate — "
+            + ".NET's X.509 parser tolerates the encoding when reading, but every DER encoder "
+            + "rejects it when writing. The certificate is mis-issued and needs re-issuing by its "
+            + "CA. Normalizing the serial is not a workaround: the SignerInfo would then no longer "
+            + "match the certificate embedded alongside it, and a PAdES validator that resolves the "
+            + "signer by comparing those bytes finds no signature at all.",
+            nameof(settings));
     }
 
     /// <summary>

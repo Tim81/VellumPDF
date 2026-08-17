@@ -333,7 +333,26 @@ public sealed class PdfDocumentReader : IDisposable
                 throw new InvalidDataException(
                     $"Object stream {containerObjNum} header entry {i} is not a pair of integers.");
 
-            offsetMap[(int)numInt.Value] = (int)offInt.Value;
+            // Range-checked before narrowing, and rejected on a duplicate. This offset map is the
+            // ONLY authority for where a compressed object begins — unlike the uncompressed path
+            // above, which re-reads the "N G obj" header and returns null when it does not match
+            // the object it was asked for. So an out-of-range number that wraps onto a real one, or
+            // a repeated number, silently substitutes an object's entire body: a header of
+            // "1 0 4294967297 40" makes object 1 parse from relative offset 40, and every verdict
+            // this library then reports describes content the document does not contain.
+            //
+            // Both checks are needed. Rejecting duplicates alone still lets "4294967297 40 1 0"
+            // through, because the wrapped key is written first and the honest one is then the
+            // duplicate.
+            if (numInt.Value is < 0 or > int.MaxValue || offInt.Value is < 0 or > int.MaxValue)
+                throw new InvalidDataException(
+                    $"Malformed PDF: object stream {containerObjNum} header entry {i} "
+                    + $"({numInt.Value} {offInt.Value}) is outside the representable range.");
+
+            if (!offsetMap.TryAdd((int)numInt.Value, (int)offInt.Value))
+                throw new InvalidDataException(
+                    $"Malformed PDF: object stream {containerObjNum} header declares object "
+                    + $"{numInt.Value} more than once.");
         }
 
         var entry = (body, first, n, offsetMap);
@@ -350,9 +369,20 @@ public sealed class PdfDocumentReader : IDisposable
     {
         get
         {
-            if (Trailer.TryGet(PdfName.Size, out var sizeObj) && sizeObj is PdfInteger sizeInt)
-                return (int)sizeInt.Value;
-            return 0;
+            if (!Trailer.TryGet(PdfName.Size, out var sizeObj) || sizeObj is not PdfInteger sizeInt)
+                return 0;
+
+            // Range-checked rather than narrowed. DssBuilder and ArchiveTimestampBuilder both use
+            // this as the first object number for the objects they append, so a wrapped value hands
+            // them numbers that already exist: an LTV or archive-timestamp revision would overwrite
+            // base-revision objects and could alter or invalidate the very signature it augments.
+            // The xref-stream path already range-checks its own /Size (XrefParser); the classic
+            // trailer never did.
+            if (sizeInt.Value is < 0 or > int.MaxValue)
+                throw new InvalidDataException(
+                    $"Malformed PDF: trailer /Size {sizeInt.Value} is outside the representable range.");
+
+            return (int)sizeInt.Value;
         }
     }
 
@@ -362,6 +392,35 @@ public sealed class PdfDocumentReader : IDisposable
     /// inclusive of object numbers introduced by incremental updates.
     /// </summary>
     internal IReadOnlyCollection<int> ObjectNumbers => _xref.Keys;
+
+    /// <summary>
+    /// The first object number an incremental update may use without colliding with an object the
+    /// document already defines.
+    /// </summary>
+    /// <remarks>
+    /// The trailer's <c>/Size</c> alone is not safe to number from. It is author-controlled and
+    /// only advisory: it can be absent, indirect, a real, or simply understated, and every one of
+    /// those yields a starting number that lands on top of existing objects — an appended /DSS or
+    /// document-timestamp revision would then replace base-revision objects and could invalidate
+    /// the very signature it was added to augment. Range-checking <c>/Size</c> catches only the
+    /// case where it is too large to represent, which is the rarest of them. Taking the highest
+    /// object the cross-reference table actually defines closes the rest, and <c>/Size</c> is still
+    /// honoured when it is larger, since a conformant one exceeds every object number in the file.
+    /// </remarks>
+    internal int NextFreeObjectNumber
+    {
+        get
+        {
+            var highest = 0;
+            foreach (var objectNumber in _xref.Keys)
+            {
+                if (objectNumber > highest)
+                    highest = objectNumber;
+            }
+
+            return Math.Max(Size, highest + 1);
+        }
+    }
 
     /// <summary>
     /// The byte offset at which the indirect object <paramref name="objectNumber"/> is written

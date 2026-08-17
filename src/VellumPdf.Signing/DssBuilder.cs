@@ -310,7 +310,7 @@ internal static class DssBuilder
     {
         // ── Step 2: assign object numbers and build the indirect object list ─────
 
-        var nextObjNum = reader.Size;
+        var nextObjNum = reader.NextFreeObjectNumber;
         var newObjects = new List<(int ObjectNumber, PdfObject Value)>();
 
         // Assign object numbers to cert streams

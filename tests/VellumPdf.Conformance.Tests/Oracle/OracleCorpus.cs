@@ -45,6 +45,15 @@ public static class OracleCorpus
     /// <summary>Public accessor for the properly tagged PDF/A-2a baseline (for unit tests).</summary>
     internal static byte[] Pdfa2aTaggedPublic() => WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfA2a);
 
+    /// <summary>
+    /// Public accessor for a PDF/A-2a document with extra real content that sits inside an
+    /// <c>/Artifact</c> marked-content sequence (for unit tests).
+    /// </summary>
+    internal static byte[] A2aArtifactContentPublic()
+        => AppendContentStream(
+            WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfA2a),
+            "/Artifact BMC\n0 0 m 100 0 l S\nEMC\n");
+
     /// <summary>Public accessor for the §7.20-2 dual-page Form XObject violation fixture (for unit tests).</summary>
     internal static byte[] Ua1FormXObjectDualPagePublic() => Ua1FormXObjectDualPage();
 
@@ -8661,14 +8670,22 @@ public static class OracleCorpus
     /// needed and no parse error can be mistaken for the violation under test.
     /// </summary>
     private static byte[] AppendUntaggedPathPaint(byte[] baseline)
+        => AppendContentStream(baseline, "0 0 m 100 0 l S\n");
+
+    /// <summary>
+    /// Appends <paramref name="content"/> as an additional content stream on
+    /// <paramref name="baseline"/>'s first page.
+    /// </summary>
+    private static byte[] AppendContentStream(byte[] baseline, string content)
     {
         using var reader = PdfReader.Open(baseline);
 
         var (pageRef, page) = FirstPage(reader);
 
         var contentNum = reader.Size;
-        // Path-painting outside any BDC: bare S operator (no font required, so no parse errors).
-        var extraContent = Encoding.ASCII.GetBytes("0 0 m 100 0 l S\n");
+        // Callers use a bare path-paint (S) rather than text, so no font resource is needed and no
+        // parse error can be mistaken for the condition under test.
+        var extraContent = Encoding.ASCII.GetBytes(content);
         var contentStream = new PdfStream(extraContent);
 
         var newPage = CloneDict(page);

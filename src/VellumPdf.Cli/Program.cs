@@ -160,6 +160,9 @@ internal static class PreflightRunner
                         anyIoError = true;
                         continue;
                     }
+                    // Also catches UnsupportedPdfFeatureException, which derives from
+                    // NotSupportedException — so an encrypted PDF is reported as an error line
+                    // rather than crashing, despite Validate documenting it as propagating.
                     catch (NotSupportedException ex)
                     {
                         stderr.WriteLine($"error: {ex.Message}");
@@ -276,33 +279,60 @@ internal static class PreflightRunner
                 failed.Add(a);
         }
 
-        // Build a set of ISO clauses that have at least one failing assertion (any severity).
-        // Assertion.Clause is like "ISO 19005-2:2011, 6.2.8" — the clause number is the part
-        // after the last ", ". ConformanceCheck.Clause is already in that short form ("6.2.8").
+        var catalog = ConformanceCatalog.For(profile);
+
+        // Work out which catalogued checks the failing assertions withdraw.
+        //
+        // Error only, deliberately. A Warning does not mean the clause is violated — it means
+        // something was noticed that does not affect conformance, and PreflightResult.IsCompliant
+        // ignores it by definition. A2aContentItemTaggingRule surfaced this by reporting a Warning
+        // at clause 6.7.3.3, which unclaimed 6.7.3.3-1 — the /StructTreeRoot presence check that
+        // LogicalStructureRule had just passed on the same document.
+        //
+        // Two kinds of assertion, because the rule ids are not uniform. Some carry a veraPDF-style
+        // test id (ISO19005-2:6.1.13-10 → "6.1.13-10"), which names one catalogued check exactly.
+        // Most carry this library's own descriptive id (ISO19005-2:6.2.5-extgstate), which pins the
+        // clause but not the test number within it. Only the first kind can be attributed.
+        var catalogTestIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var check in catalog)
+            catalogTestIds.Add(check.TestId);
+
+        var failingTestIds = new HashSet<string>(StringComparer.Ordinal);
         var failingClauses = new HashSet<string>(StringComparer.Ordinal);
         foreach (var a in result.Assertions)
         {
-            var clauseNum = ParseClauseNumber(a.Clause);
-            failingClauses.Add(clauseNum);
+            if (a.Severity != PreflightSeverity.Error)
+                continue;
+
+            var testId = StripPrefix(a.RuleId);
+            if (catalogTestIds.Contains(testId))
+                failingTestIds.Add(testId);
+            else
+                // Assertion.Clause is like "ISO 19005-2:2011, 6.2.8" — the clause number is the
+                // part after the last ", ". ConformanceCheck.Clause is already in that short form.
+                failingClauses.Add(ParseClauseNumber(a.Clause));
         }
 
         var passed = new List<ConformanceCheck>();
+        var failedChecks = new List<ConformanceCheck>();
+        var inconclusive = new List<ConformanceCheck>();
         var notEvaluated = new List<ConformanceCheck>();
 
-        foreach (var check in ConformanceCatalog.For(profile))
+        foreach (var check in catalog)
         {
-            if (check.Status == CoverageStatus.Implemented)
-            {
-                // Conservative: any failure in the same clause means the check is not claimed passed.
-                if (!failingClauses.Contains(check.Clause))
-                    passed.Add(check);
-                // If a check's clause has a failing assertion it appears in 'failed', not 'passed'.
-            }
-            else
-            {
-                // Partial, Deferred, OutOfScope → not evaluated
+            // Attribution first, and regardless of status: a Partial check whose test id fired was
+            // evaluated and did fail, so calling it un-evaluated would understate the result.
+            if (failingTestIds.Contains(check.TestId))
+                failedChecks.Add(check);
+            else if (check.Status != CoverageStatus.Implemented)
                 notEvaluated.Add(check);
-            }
+            else if (failingClauses.Contains(check.Clause))
+                // Something in this clause failed but did not say what, so the check can be neither
+                // claimed nor blamed. It used to be dropped from the report entirely — counted as
+                // neither passed, failed, nor un-evaluated — which is what made the totals wrong.
+                inconclusive.Add(check);
+            else
+                passed.Add(check);
         }
 
         // Conformant = no failures at/above --fail-on threshold.
@@ -327,6 +357,8 @@ internal static class PreflightRunner
             Conformant = conformant,
             Failed = failed,
             Passed = passed,
+            FailedChecks = failedChecks,
+            Inconclusive = inconclusive,
             NotEvaluated = notEvaluated,
         };
     }

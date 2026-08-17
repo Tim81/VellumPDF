@@ -257,6 +257,108 @@ public sealed class RevocationTests
     }
 
     [Fact]
+    public void Crl_revoking_a_nonMinimalSerial_certificate_is_rejected()
+    {
+        NonMinimalSerialCertificate.SkipIfUnsupported();
+
+        // The certificate carries a redundant leading pad (0x00 01 02 03 04); a real CA's CRL is
+        // DER, so it lists the same serial minimally (01 02 03 04). Before the fix the comparison
+        // was raw-versus-minimal, so it never matched: IsValidCrlForCertificate reported the CRL as
+        // valid evidence and it was embedded in the /DSS — asserting that the signing certificate
+        // is good, using the very document that revokes it.
+        using var cert = NonMinimalSerialCertificate.Create(configure: WithCdp);
+        using var crlIssuer = MatchingCrlIssuerFor(cert);
+
+        Assert.Equal([0x00, 0x01, 0x02, 0x03, 0x04], cert.SerialNumberBytes.ToArray());
+
+        var crl = BuildCrlRevokingSerial(crlIssuer, [0x01, 0x02, 0x03, 0x04]);
+
+        var handler = new FakeHandler { CrlResponse = crl };
+        using var http = new HttpClient(handler);
+        var client = new HttpRevocationClient(http, TimeSpan.FromSeconds(5));
+
+        Assert.Null(client.GetRevocationData(cert, cert).Crl);
+    }
+
+    [Fact]
+    public void Crl_notRevoking_a_nonMinimalSerial_certificate_is_still_accepted()
+    {
+        NonMinimalSerialCertificate.SkipIfUnsupported();
+
+        // The other direction, so the fix is not just "reject everything": normalizing both sides
+        // must not make two DIFFERENT serials compare equal. This CRL revokes 01 02 03 05, one
+        // greater than the certificate's value, so the CRL is legitimate evidence.
+        using var cert = NonMinimalSerialCertificate.Create(configure: WithCdp);
+        using var crlIssuer = MatchingCrlIssuerFor(cert);
+
+        var crl = BuildCrlRevokingSerial(crlIssuer, [0x01, 0x02, 0x03, 0x05]);
+
+        var handler = new FakeHandler { CrlResponse = crl };
+        using var http = new HttpClient(handler);
+        var client = new HttpRevocationClient(http, TimeSpan.FromSeconds(5));
+
+        Assert.NotNull(client.GetRevocationData(cert, cert).Crl);
+    }
+
+    [Fact]
+    public void Ocsp_isSkipped_forA_nonMinimalSerial_certificate()
+    {
+        NonMinimalSerialCertificate.SkipIfUnsupported();
+
+        // A CertID can only carry a DER INTEGER, so a non-minimal serial would have to be sent
+        // normalized — asking the responder about a different serial, which that CA may well have
+        // issued to another certificate. A "good" answer about a sibling would then be embedded in
+        // the /DSS looking authoritative. DssBuilder reaches this for every certificate in the
+        // chain, including the TSA's, none of which the signing-time precondition inspects, so the
+        // safe outcome is no evidence rather than wrong evidence.
+        using var cert = NonMinimalSerialCertificate.Create(
+            configure: req => req.CertificateExtensions.Add(
+                BuildAiaOcspExtension("http://ocsp.example.invalid/")));
+
+        var handler = new FakeHandler { OcspResponse = [0x30, 0x03, 0x0A, 0x01, 0x00] };
+        using var http = new HttpClient(handler);
+        var client = new HttpRevocationClient(http, TimeSpan.FromSeconds(5));
+
+        Assert.Null(client.GetRevocationData(cert, cert).Ocsp);
+        Assert.Null(handler.OcspRequestUri); // no request was even attempted
+    }
+
+    /// <summary>Points the certificate at a CRL distribution point so the client will fetch one.</summary>
+    private static void WithCdp(CertificateRequest request)
+        => request.CertificateExtensions.Add(BuildCdpExtension("http://crl.example.invalid/list.crl"));
+
+    /// <summary>
+    /// A CA whose subject DN equals <paramref name="certificate"/>'s issuer DN, which is all
+    /// <c>IsValidCrlForCertificate</c> checks — it compares DNs and does not verify the CRL
+    /// signature.
+    /// </summary>
+    /// <remarks>
+    /// A separate certificate rather than reusing the non-minimal one as its own CA:
+    /// <c>CertificateRevocationListBuilder</c> derives the CRL's AuthorityKeyIdentifier from the
+    /// issuer's serial and refuses a non-minimal one outright — the same DER rule this whole issue
+    /// is about, enforced against the test setup.
+    /// </remarks>
+    private static X509Certificate2 MatchingCrlIssuerFor(X509Certificate2 certificate)
+        => CreateCertificate(certificate.IssuerName.Name!);
+
+    /// <summary>
+    /// Builds a DER CRL signed by <paramref name="issuerWithKey"/> that revokes
+    /// <paramref name="serial"/> verbatim, so the entry's encoding can be chosen independently of
+    /// the certificate's own (which is the whole point of the raw-versus-minimal case).
+    /// </summary>
+    private static byte[] BuildCrlRevokingSerial(X509Certificate2 issuerWithKey, byte[] serial)
+    {
+        var builder = new CertificateRevocationListBuilder();
+        builder.AddEntry(serial, DateTimeOffset.UtcNow.AddHours(-1));
+        return builder.Build(
+            issuerWithKey,
+            crlNumber: 1,
+            nextUpdate: DateTimeOffset.UtcNow.AddDays(7),
+            hashAlgorithm: HashAlgorithmName.SHA256,
+            rsaSignaturePadding: RSASignaturePadding.Pkcs1);
+    }
+
+    [Fact]
     public void Crl_from_a_different_issuer_is_rejected()
     {
         using var issuer = CreateCertificate("CN=VellumPdf Test Issuer");

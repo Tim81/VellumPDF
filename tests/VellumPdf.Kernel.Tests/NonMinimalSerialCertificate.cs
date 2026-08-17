@@ -49,15 +49,30 @@ internal static class NonMinimalSerialCertificate
 
     private static bool Probe()
     {
+        // Only the load step is probed. Wrapping the whole of Create() would make any
+        // CryptographicException from key generation or from CopyWithPrivateKey — a FIPS policy or
+        // key-storage restriction on a locked-down host — indistinguishable from "this platform
+        // rejects the encoding", and silently skip every test here with a green suite.
+        var der = PatchSerial(BaseCertificateDer(), [0x00, 0x01, 0x02, 0x03, 0x04]);
         try
         {
-            using var probe = Create();
+            using var probe = X509CertificateLoader.LoadCertificate(der);
             return true;
         }
         catch (CryptographicException)
         {
             return false;
         }
+    }
+
+    private static byte[] BaseCertificateDer()
+    {
+        using var rsa = RSA.Create(2048);
+        var request = new CertificateRequest(
+            "CN=VellumPdf Probe", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        using var certificate = request.CreateSelfSigned(
+            DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddYears(1));
+        return certificate.RawData;
     }
 
     /// <summary>
@@ -78,13 +93,16 @@ internal static class NonMinimalSerialCertificate
     /// Returns a certificate whose serial content octets are <paramref name="paddedSerial"/>
     /// verbatim, defaulting to a redundant <c>0x00</c> ahead of a byte with a clear high bit.
     /// </summary>
-    internal static X509Certificate2 Create(byte[]? paddedSerial = null)
+    internal static X509Certificate2 Create(
+        byte[]? paddedSerial = null,
+        Action<CertificateRequest>? configure = null)
     {
         paddedSerial ??= [0x00, 0x01, 0x02, 0x03, 0x04];
 
         using var rsa = RSA.Create(2048);
         var request = new CertificateRequest(
             "CN=VellumPdf Non-Minimal Serial", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        configure?.Invoke(request);
         using var original = request.CreateSelfSigned(
             DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddYears(1));
 
