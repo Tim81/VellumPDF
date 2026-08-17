@@ -421,6 +421,19 @@ public sealed class SignatureTests
 
         var bytes = await SignOnePageDocAsync(publicOnlyCert, "VELLUM_EXTERNAL_SIGNER_ECDSA", settings);
         VerifySignatureOrThrow(bytes);
+
+        // RFC 5758 §3.2 and RFC 5754 §3.3 both require the parameters field to be OMITTED for the
+        // ecdsa-with-SHA2 identifiers, where the RSA identifiers require NULL. That distinction is
+        // the whole reason ExternalSignerCms passes `includeNullParams: !isEc`, and nothing asserted
+        // it: SignedCms.CheckSignature does not police the parameters field, so flipping that flag
+        // left every test green.
+        var algIds = ExtractSignerInfoAlgorithmIdentifiers(bytes);
+        Assert.Equal("1.2.840.10045.4.3.2", algIds.SignatureOid); // ecdsa-with-SHA256
+        Assert.False(
+            algIds.SignatureHasParameters,
+            "ecdsa-with-SHA2 AlgorithmIdentifiers must omit the parameters field (RFC 5758 §3.2).");
+
+        AssertSigningCertificateV2(bytes, publicOnlyCert, HashAlgorithmName.SHA256);
     }
 
     [Theory]

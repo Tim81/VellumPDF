@@ -181,6 +181,17 @@ internal static class SignatureTestHelpers
         var certs = signingCertificateV2.ReadSequence();
         var essCertIdV2 = certs.ReadSequence();
 
+        // Over-emission has to be rejected explicitly, not just under-emission. Reading the first
+        // ESSCertIDv2 and stopping would accept an attribute carrying a second reference with an
+        // attacker-chosen certHash: RFC 5035 requires only that the FIRST entry identify the signing
+        // certificate, so a verifier that scans the list could match the wrong one, and ETSI
+        // EN 319 122-1 expects the signing certificate's reference alone. A mutation adding exactly
+        // that passed the whole suite before these two checks existed.
+        Assert.False(certs.HasData, "SigningCertificateV2.certs should carry exactly one ESSCertIDv2.");
+        Assert.False(
+            signingCertificateV2.HasData,
+            "SigningCertificateV2 should carry no policies field (this library does not model signature policies).");
+
         // hashAlgorithm is DEFAULT id-sha256, so it may be absent. Present means the next tag
         // is the AlgorithmIdentifier SEQUENCE; absent means it is certHash's OCTET STRING.
         string? hashAlgorithmOid = null;
