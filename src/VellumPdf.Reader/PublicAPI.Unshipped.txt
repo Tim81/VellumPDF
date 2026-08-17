@@ -7,7 +7,7 @@ VellumPdf.Reader.PdfReader
 static VellumPdf.Reader.PdfReader.Open(byte[]! bytes) -> VellumPdf.Reader.PdfDocumentReader!
 static VellumPdf.Reader.PdfReader.Open(System.IO.Stream! stream) -> VellumPdf.Reader.PdfDocumentReader!
 VellumPdf.Reader.PdfSignature
-VellumPdf.Reader.PdfSignature.ByteRange.get -> int[]!
+VellumPdf.Reader.PdfSignature.ByteRange.get -> System.ReadOnlyMemory<long>
 VellumPdf.Reader.PdfSignature.Contents.get -> System.ReadOnlyMemory<byte>
 VellumPdf.Reader.PdfSignature.SigningTime.get -> string?
 VellumPdf.Reader.PdfSignature.SubFilter.get -> VellumPdf.Core.PdfName?

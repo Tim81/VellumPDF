@@ -542,14 +542,17 @@ public sealed class PdfDocumentReader : IDisposable
             subFilter = sfName;
 
         var brObj = sigDict.Get(new PdfName("ByteRange"));
-        int[] byteRange = [];
+        long[] byteRange = [];
         if (brObj is PdfArray brArr)
         {
-            byteRange = new int[brArr.Count];
+            byteRange = new long[brArr.Count];
             for (var i = 0; i < brArr.Count; i++)
             {
+                // PdfInteger.Value is already a long, and these are file offsets: narrowing to int
+                // silently wrapped every offset past 2 GB, so a large signed file was checked
+                // against the wrong byte ranges without any error being reported.
                 if (brArr[i] is PdfInteger pi)
-                    byteRange[i] = (int)pi.Value;
+                    byteRange[i] = pi.Value;
             }
         }
 

@@ -13,6 +13,7 @@ using VellumPdf.Document;
 using VellumPdf.Fonts;
 using VellumPdf.Reader;
 using VellumPdf.Signing;
+using static VellumPdf.Kernel.Tests.SignatureTestHelpers;
 
 namespace VellumPdf.Kernel.Tests;
 
@@ -126,10 +127,8 @@ public sealed class PadesLevelTests : IDisposable
         var sig = reader.Signatures[0];
         var contentsDer = sig.Contents.ToArray();
 
-        var br = sig.ByteRange;
-        var signedContent = new byte[br[1] + br[3]];
-        Buffer.BlockCopy(signedBytes, br[0], signedContent, 0, br[1]);
-        Buffer.BlockCopy(signedBytes, br[2], signedContent, br[1], br[3]);
+        var br = sig.ByteRange.Span;
+        var signedContent = ReconstructSignedContent(signedBytes, br);
 
         var outerCms = new SignedCms(new ContentInfo(signedContent), detached: true);
         outerCms.Decode(contentsDer);
@@ -194,10 +193,8 @@ public sealed class PadesLevelTests : IDisposable
 
         // Original signature must still verify.
         var sig = reader.Signatures[0];
-        var br = sig.ByteRange;
-        var signedContent = new byte[br[1] + br[3]];
-        Buffer.BlockCopy(signedBytes, br[0], signedContent, 0, br[1]);
-        Buffer.BlockCopy(signedBytes, br[2], signedContent, br[1], br[3]);
+        var br = sig.ByteRange.Span;
+        var signedContent = ReconstructSignedContent(signedBytes, br);
 
         var verify = new SignedCms(new ContentInfo(signedContent), detached: true);
         verify.Decode(sig.Contents.ToArray());
@@ -238,10 +235,8 @@ public sealed class PadesLevelTests : IDisposable
 
         // Original CMS signature (not the DocTimeStamp) must still verify.
         var origSig = reader.Signatures.First(s => s.SubFilter?.Value != "ETSI.RFC3161");
-        var br = origSig.ByteRange;
-        var signedContent = new byte[br[1] + br[3]];
-        Buffer.BlockCopy(signedBytes, br[0], signedContent, 0, br[1]);
-        Buffer.BlockCopy(signedBytes, br[2], signedContent, br[1], br[3]);
+        var br = origSig.ByteRange.Span;
+        var signedContent = ReconstructSignedContent(signedBytes, br);
 
         var verify = new SignedCms(new ContentInfo(signedContent), detached: true);
         verify.Decode(origSig.Contents.ToArray());

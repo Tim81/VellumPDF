@@ -98,9 +98,12 @@ internal sealed class SignatureRule : IConformanceRule
     }
 
     private static string SigKey(PdfSignature sig)
-        => sig.ByteRange.Length == 4
-            ? $"{sig.ByteRange[0]}:{sig.ByteRange[1]}:{sig.ByteRange[2]}:{sig.ByteRange[3]}"
+    {
+        var br = sig.ByteRange.Span;
+        return br.Length == 4
+            ? $"{br[0]}:{br[1]}:{br[2]}:{br[3]}"
             : string.Empty;
+    }
 
     // Extracts a PdfSignature from a raw signature dictionary (without going through the reader's
     // AcroForm path). Returns null for a dictionary that cannot be parsed as a valid signature.
@@ -111,14 +114,14 @@ internal sealed class SignatureRule : IConformanceRule
             subFilter = sfName;
 
         var brObj = sigDict.Get(new PdfName("ByteRange"));
-        int[] byteRange = [];
+        long[] byteRange = [];
         if (brObj is PdfArray brArr)
         {
-            byteRange = new int[brArr.Count];
+            byteRange = new long[brArr.Count];
             for (var i = 0; i < brArr.Count; i++)
             {
                 if (brArr[i] is PdfInteger pi)
-                    byteRange[i] = (int)pi.Value;
+                    byteRange[i] = pi.Value;
             }
         }
 
@@ -154,7 +157,7 @@ internal sealed class SignatureRule : IConformanceRule
     /// </summary>
     private void CheckByteRange(PreflightContext context, PdfSignature sig, ReadOnlyMemory<byte> fileBytes)
     {
-        var br = sig.ByteRange;
+        var br = sig.ByteRange.Span;
 
         // Guard: must have exactly 4 elements (malformed → skip, no finding).
         if (br.Length != 4)
@@ -164,13 +167,15 @@ internal sealed class SignatureRule : IConformanceRule
         var b = br[1]; // segment 0 length / Contents token start offset
         var c = br[2]; // segment 1 start offset (= b + Contents token byte length)
         var d = br[3]; // segment 1 length
-        var fileLength = fileBytes.Length;
+        long fileLength = fileBytes.Length;
 
         // Basic sanity guards before arithmetic — negative or overflowing values → indeterminate.
         if (a < 0 || b <= 0 || c <= 0 || d <= 0)
             return;
 
-        var cdSum = (long)c + d;
+        // The values are long now, so this addition can only overflow on a value no real file has;
+        // the guard stays because /ByteRange comes from an untrusted document.
+        var cdSum = c + d;
         if (cdSum < 0) // overflow guard
             return;
 
@@ -191,7 +196,10 @@ internal sealed class SignatureRule : IConformanceRule
         if (cdSum == fileLength)
             return; // exact coverage — compliant
 
-        var gapStart = (int)cdSum;
+        // Stays long rather than narrowing. The cast that used to be here was safe only because the
+        // cdSum > fileLength branch above returns first, which bounds it by an int — a coupling
+        // that would break silently the moment either guard moved.
+        var gapStart = cdSum;
         foreach (var rev in context.Revisions)
         {
             if (rev.XrefOffset >= gapStart && rev.XrefOffset < fileLength)
