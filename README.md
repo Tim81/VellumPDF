@@ -53,10 +53,10 @@ dotnet add package VellumPdf.Kernel
 dotnet add package VellumPdf.Signing
 dotnet add package VellumPdf.Fonts.Standard14
 dotnet add package VellumPdf.Barcodes
+dotnet add package VellumPdf.Conformance
 
 # Preview
 dotnet add package VellumPdf.Reader
-dotnet add package VellumPdf.Conformance
 
 # Tooling (.NET global tool)
 dotnet tool install -g VellumPdf.Cli
@@ -65,6 +65,31 @@ dotnet tool install -g VellumPdf.Cli
 `VellumPdf.Layout` pulls in `VellumPdf.Kernel` as a dependency, so most apps only need the
 first line. [Quick start](#quick-start) below shows `VellumPdf.Layout`/`VellumPdf.Kernel` in
 use, and [Barcodes](#barcodes) shows `VellumPdf.Barcodes`.
+
+## Upgrading to 2.0
+
+Every package is strong-named from 2.0 onward, which changes assembly identity. The new
+identity is:
+
+```
+VellumPdf.Kernel, Version=2.0.0.0, Culture=neutral, PublicKeyToken=b2757187a6d18ae5
+```
+
+All eight packages share that public key token, and `AssemblyVersion` is pinned to `2.0.0.0`
+for the whole 2.x line, so servicing releases do not force a rebind.
+
+Ordinary `PackageReference` consumers need to do nothing — the SDK resolves the new identity
+on restore. Rebinding is only needed where an assembly identity is written down by hand:
+
+- an `<AssemblyIdentity>` binding redirect or `<dependentAssembly>` element naming
+  `PublicKeyToken="null"`;
+- `[assembly: InternalsVisibleTo("...")]` targeting a VellumPdf assembly, which must now carry
+  the full public key;
+- `Assembly.Load` with an explicit `PublicKeyToken=null` in the string;
+- a plugin host or serializer configured with fully-qualified type names.
+
+A 1.x and a 2.x assembly are different identities, so both can be loaded side by side if a
+transitive dependency still needs the old one.
 
 ## Quick start
 
@@ -236,13 +261,12 @@ guarantee. Exit codes are `0` (conformant), `1` (non-conformant), and `2` (usage
 ## Roadmap
 
 Planned direction, tracked as [GitHub milestones](https://github.com/Tim81/VellumPDF/milestones).
-These are scopes, not commitments — the milestones carry no due dates, and nothing past 1.11.0
+These are scopes, not commitments — the milestones carry no due dates, and nothing past 2.0.0
 has shipped yet.
 
 | Milestone | Scope |
 | --- | --- |
-| **1.11 — Barcodes completeness** (this release) | Closes the #155 completeness backlog: QR Kanji mode, QR Structured Append, Compact (Truncated) PDF417, Macro PDF417, and Code 128 FNC4 / extended Latin-1. |
-| **2.0 — Breaking changes** | Strong-named assemblies (#53) and an async I/O surface for `Save`/`Sign`/loaders (#54); both change assembly identity or the public contract, so they wait for a major version. |
+| **2.0 — Breaking changes** (this release) | Strong-named assemblies (#53), an async I/O surface for `Save`/`Sign`/loaders (#54), and an external-signer API for cloud KMS and remote HSM signing (#165). Each changes assembly identity or the public contract, so they waited for a major version. |
 | **2.1 — PDF reader (structural)** | `VellumPdf.Reader` grows classic and cross-reference-stream parsing, object streams, and encryption support, with a fixture corpus proving it against real-world files (Epic #100). |
 | **2.2 — PDF content extraction** | Text and image extraction on top of the reader. |
 | **3.0 — Read-modify-write** | A unified round-trip document model that supersedes the write-once `PdfDocument`, so existing PDFs can be opened, edited, and saved back (Epic #101). |
