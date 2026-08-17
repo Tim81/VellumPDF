@@ -385,14 +385,24 @@ public static class OracleCorpus
             new OracleFixture("pdfa2b-movie-annotation", WriterPdfWithMovieAnnotation(),
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: false),
 
-            // §6.7.3.3-1 VIOLATION: a PDF/A-2a document with /Lang and a title but NO tagged
-            // content, so the writer emits no /StructTreeRoot — the one violation.
+            // §6.7.3.3-1 VIOLATION: a PDF/A-2a document whose catalog /StructTreeRoot has been
+            // removed — the one violation.
             // veraPDF fires clause 6.7.3.3 testNumber 1 (containsStructTreeRoot == true) and that
             // is the ONLY failed check (failedRules=1), confirming clause-level isolation.
             // In-process: LogicalStructureRule fires "ISO19005-2:6.8-logical-structure" with the
             // /StructTreeRoot error. Cross-validates §6.7.3.3-1 and the logical-structure rule (§6.8).
-            new OracleFixture("pdfa2a-no-structure", WriterPdfMissingStructure(VellumPdf.Document.PdfConformance.PdfA2a),
+            // Built by patching writer output rather than by drawing no tagged content: since #120
+            // the writer emits a structure tree for any Tagged document, so it can no longer
+            // produce this violation on its own.
+            new OracleFixture("pdfa2a-no-structure", WriterPdfWithoutStructTreeRoot(VellumPdf.Document.PdfConformance.PdfA2a),
                 Conformance.PdfConformance.PdfA2A, "2a", ExpectedCompliant: false),
+
+            // §6.7.3.3-1 FP-safety and the #120 fix: /Lang and a title but NO tagged content. The
+            // writer still emits a /StructTreeRoot whose /Document element has an empty /K, which
+            // veraPDF accepts — 153 rules passed, 0 failed. Before #120 this document was emitted
+            // without a structure tree at all, so it claimed a conformance level it failed.
+            new OracleFixture("pdfa2a-empty-tagged", WriterPdfEmptyTagged(VellumPdf.Document.PdfConformance.PdfA2a),
+                Conformance.PdfConformance.PdfA2A, "2a", ExpectedCompliant: true),
 
             // §6.7.3.4-1 VIOLATION: a StructElem with /S /MyCustomTag and NO /RoleMap entry.
             // veraPDF fires 6.7.3.4-1 (isNotMappedToStandardType == true).
@@ -468,10 +478,16 @@ public static class OracleCorpus
             // veraPDF PASSES. In-process: A2aLangSyntaxRule must NOT fire.
             // (re-uses the pdfa2a-tagged fixture via WriterPdfTagged which sets Language = "en-US")
 
-            // The same for PDF/UA-1: lang + title present but no structure tree, isolating the
-            // tagging requirement (§7.1). Cross-validates the UA tagging rule's negative path.
-            new OracleFixture("pdfua1-no-structure", WriterPdfMissingStructure(VellumPdf.Document.PdfConformance.PdfUA1),
+            // The same for PDF/UA-1: lang + title present but the catalog /StructTreeRoot removed,
+            // isolating the tagging requirement (§7.1). Cross-validates the UA tagging rule's
+            // negative path.
+            new OracleFixture("pdfua1-no-structure", WriterPdfWithoutStructTreeRoot(VellumPdf.Document.PdfConformance.PdfUA1),
                 Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: false),
+
+            // §7.1 FP-safety and the #120 fix: the PDF/UA-1 counterpart of pdfa2a-empty-tagged.
+            // veraPDF accepts the empty structure tree — 106 rules passed, 0 failed.
+            new OracleFixture("pdfua1-empty-tagged", WriterPdfEmptyTagged(VellumPdf.Document.PdfConformance.PdfUA1),
+                Conformance.PdfConformance.PdfUA1, "ua1", ExpectedCompliant: true),
 
             // §7.1-4 (Suspects): the compliant tagged baseline has no /Suspects entry — both accept.
             new OracleFixture("pdfua1-suspects-absent", WriterPdfTagged(VellumPdf.Document.PdfConformance.PdfUA1),
@@ -3638,16 +3654,37 @@ public static class OracleCorpus
         return reader.AppendRevision([(pageRef.ObjectNumber, newPage)]);
     }
 
-    private static byte[] WriterPdfMissingStructure(VellumPdf.Document.PdfConformance conformance)
+    private static byte[] WriterPdfEmptyTagged(VellumPdf.Document.PdfConformance conformance)
     {
-        // A tagged-conformance document (2a/UA-1) with language and title set but no tagged content,
-        // so the writer emits no /StructTreeRoot — non-conformant for lack of a structure tree only.
+        // A tagged-conformance document (2a/UA-1) with language and title set but no tagged
+        // content. Since #120 the writer still emits a /StructTreeRoot for it — whose /Document
+        // element carries an empty /K — so this is a conformant document, not a violation.
         using var doc = new PdfDocument { Conformance = conformance, Language = "en-US" };
         doc.Info.Title = "VellumPdf Oracle Fixture";
         doc.AddPage(PageSize.A4);
         using var ms = new MemoryStream();
         doc.Save(ms);
         return ms.ToArray();
+    }
+
+    private static byte[] WriterPdfWithoutStructTreeRoot(VellumPdf.Document.PdfConformance conformance)
+    {
+        // Blank the catalog's /StructTreeRoot entry with spaces. Overwriting in place keeps every
+        // byte offset intact, so the xref stays valid — the same approach
+        // WriterPdfWithBadStreamLength uses. The structure-tree objects themselves remain in the
+        // file but are no longer reachable from the catalog, which is exactly the state both the
+        // §6.7.3.3-1 check and LogicalStructureRule test for.
+        var bytes = WriterPdfEmptyTagged(conformance);
+        var needle = "/StructTreeRoot "u8.ToArray();
+        var at = IndexOf(bytes, needle, 0);
+        Assert.True(at >= 0, "The writer should emit a catalog /StructTreeRoot for a tagged document.");
+
+        // Span the entry and its "N 0 R" reference, up to the end of that line.
+        var end = at + needle.Length;
+        while (end < bytes.Length && bytes[end] is not ((byte)'\n' or (byte)'\r'))
+            end++;
+        bytes.AsSpan(at, end - at).Fill((byte)' ');
+        return bytes;
     }
 
     // ── PDF/A-2a §6.7.3.4 / §6.7.4 oracle fixture helpers ───────────────────────────────────────
