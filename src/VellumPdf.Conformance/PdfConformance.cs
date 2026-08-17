@@ -9,7 +9,7 @@ namespace VellumPdf.Conformance;
 /// <remarks>
 /// Each level corresponds to a published ISO standard. Rule coverage is being filled in
 /// incrementally (issue #50); levels without a registered rule profile cause
-/// <see cref="PdfPreflight.Validate(VellumPdf.Reader.PdfDocumentReader, PdfConformance)"/>
+/// <see cref="PdfPreflight.Validate(byte[], PdfConformance)"/>
 /// to throw <see cref="System.NotSupportedException"/>.
 /// </remarks>
 public enum PdfConformance
