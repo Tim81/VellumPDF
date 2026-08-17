@@ -96,7 +96,7 @@ internal static class SigningCertificateV2
                 using (writer.PushSequence(new Asn1Tag(TagClass.ContextSpecific, 4, isConstructed: true)))
                     writer.WriteEncodedValue(certificate.IssuerName.RawData);
 
-                Asn1SerialNumber.Write(writer, certificate.SerialNumberBytes.ToArray());
+                Asn1SerialNumber.Write(writer, certificate.SerialNumberBytes.Span);
             }
         }
 

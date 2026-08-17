@@ -130,7 +130,7 @@ internal static class ExternalSignerCms
                     using (writer.PushSequence()) // IssuerAndSerialNumber
                     {
                         writer.WriteEncodedValue(certificate.IssuerName.RawData);
-                        Asn1SerialNumber.Write(writer, certificate.SerialNumberBytes.ToArray());
+                        Asn1SerialNumber.Write(writer, certificate.SerialNumberBytes.Span);
                     }
                     WriteAlgorithmIdentifier(writer, digestOid, includeNullParams: false);
                     writer.WriteEncodedValue(signedAttrsForEmbed);

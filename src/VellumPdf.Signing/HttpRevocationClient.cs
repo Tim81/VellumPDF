@@ -191,7 +191,7 @@ public sealed class HttpRevocationClient : IRevocationClient
     {
         byte[] issuerNameHash = SHA1.HashData(issuer.SubjectName.RawData);
         byte[] issuerKeyHash = SHA1.HashData(issuer.PublicKey.EncodedKeyValue.RawData);
-        byte[] serial = certificate.SerialNumberBytes.ToArray();
+        var serial = certificate.SerialNumberBytes.Span;
 
         var writer = new AsnWriter(AsnEncodingRules.DER);
 
@@ -431,11 +431,17 @@ public sealed class HttpRevocationClient : IRevocationClient
             if (tbs.HasData && tbs.PeekTag().HasSameClassAndValue(Asn1Tag.Sequence))
             {
                 var revoked = tbs.ReadSequence();
-                var serial = certificate.SerialNumberBytes.Span;
+                // Both sides must be minimally encoded before comparing. ReadIntegerBytes always
+                // yields minimal content octets — a real CA's CRL is DER — while
+                // SerialNumberBytes is the certificate's raw octets, which .NET's X.509 parser
+                // accepts with a redundant leading pad. Comparing raw against minimal silently
+                // never matches, so a CRL that *does* revoke this certificate would be treated as
+                // evidence that it is valid and embedded in the /DSS (issue #167).
+                var serial = Asn1SerialNumber.Normalize(certificate.SerialNumberBytes.Span);
                 while (revoked.HasData)
                 {
                     var entry = revoked.ReadSequence();
-                    if (entry.ReadIntegerBytes().Span.SequenceEqual(serial))
+                    if (Asn1SerialNumber.Normalize(entry.ReadIntegerBytes().Span).SequenceEqual(serial))
                         return false; // certificate is listed as revoked
                 }
             }

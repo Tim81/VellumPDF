@@ -18,9 +18,18 @@ namespace VellumPdf.Signing;
 internal static class Sha2DigestAlgorithm
 {
     /// <summary>
-    /// The NIST OID for <paramref name="hashAlgorithm"/> (RFC 5754 §2, which also requires
-    /// these to be written with an absent parameters field rather than a NULL one).
+    /// The NIST OID for <paramref name="hashAlgorithm"/>.
     /// </summary>
+    /// <remarks>
+    /// RFC 5754 §2 requires SHA2 <c>AlgorithmIdentifier</c>s to be generated with an absent
+    /// parameters field rather than a NULL one — but that rule is deliberately not stated as an
+    /// unconditional property of these OIDs here, because §2 carries a NOTE excluding one real use
+    /// of the very same OIDs: RSA <c>EMSA-PKCS1-v1_5</c> signature padding "MUST use SHA2
+    /// AlgorithmIdentifiers with NULL parameters", and the absent-parameters requirement "does not
+    /// apply to this padding". Callers therefore decide the parameters field per location; see
+    /// <see cref="ExternalSignerCms"/>, which omits it for the digest identifiers and writes NULL
+    /// for the <c>shaXXXWithRSAEncryption</c> signature identifier.
+    /// </remarks>
     internal static string Oid(HashAlgorithmName hashAlgorithm) => hashAlgorithm.Name switch
     {
         "SHA256" => "2.16.840.1.101.3.4.2.1",
