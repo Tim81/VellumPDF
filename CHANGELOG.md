@@ -17,7 +17,7 @@ identity, and the analyzer that was supposed to be locking the public API is now
 locking it, which meant fixing the defects in that surface while doing so was still free.
 Most of the rest is work that had to land before the surface froze.
 
-**Read [Upgrading to 2.0](README.md#upgrading-to-20) first if you bind to an assembly
+**Read [Upgrading to 2.0](https://github.com/Tim81/VellumPDF#upgrading-to-20) first if you bind to an assembly
 identity by hand** — a `PackageReference` needs no change, but a binding redirect, an
 `InternalsVisibleTo`, or an `Assembly.Load` string does.
 
