@@ -394,6 +394,35 @@ public sealed class PdfDocumentReader : IDisposable
     internal IReadOnlyCollection<int> ObjectNumbers => _xref.Keys;
 
     /// <summary>
+    /// The first object number an incremental update may use without colliding with an object the
+    /// document already defines.
+    /// </summary>
+    /// <remarks>
+    /// The trailer's <c>/Size</c> alone is not safe to number from. It is author-controlled and
+    /// only advisory: it can be absent, indirect, a real, or simply understated, and every one of
+    /// those yields a starting number that lands on top of existing objects — an appended /DSS or
+    /// document-timestamp revision would then replace base-revision objects and could invalidate
+    /// the very signature it was added to augment. Range-checking <c>/Size</c> catches only the
+    /// case where it is too large to represent, which is the rarest of them. Taking the highest
+    /// object the cross-reference table actually defines closes the rest, and <c>/Size</c> is still
+    /// honoured when it is larger, since a conformant one exceeds every object number in the file.
+    /// </remarks>
+    internal int NextFreeObjectNumber
+    {
+        get
+        {
+            var highest = 0;
+            foreach (var objectNumber in _xref.Keys)
+            {
+                if (objectNumber > highest)
+                    highest = objectNumber;
+            }
+
+            return Math.Max(Size, highest + 1);
+        }
+    }
+
+    /// <summary>
     /// The byte offset at which the indirect object <paramref name="objectNumber"/> is written
     /// (the start of its <c>N G obj</c> header), or <see langword="null"/> when the object is not in
     /// the cross-reference table or lives inside an object stream (and so has no file offset of its

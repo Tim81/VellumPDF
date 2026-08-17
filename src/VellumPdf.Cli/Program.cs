@@ -160,6 +160,9 @@ internal static class PreflightRunner
                         anyIoError = true;
                         continue;
                     }
+                    // Also catches UnsupportedPdfFeatureException, which derives from
+                    // NotSupportedException — so an encrypted PDF is reported as an error line
+                    // rather than crashing, despite Validate documenting it as propagating.
                     catch (NotSupportedException ex)
                     {
                         stderr.WriteLine($"error: {ex.Message}");

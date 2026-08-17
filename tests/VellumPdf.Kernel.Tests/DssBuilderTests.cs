@@ -4,6 +4,7 @@
 using System.Security.Cryptography;
 using System.Security.Cryptography.Pkcs;
 using System.Security.Cryptography.X509Certificates;
+using System.Text;
 using VellumPdf.Canvas;
 using VellumPdf.Core;
 using VellumPdf.Document;
@@ -473,6 +474,71 @@ public sealed class DssBuilderTests
     /// Returns canned OCSP and CRL DER for every (cert, issuer) pair.
     /// Phase 5 embeds these verbatim without validating them.
     /// </summary>
+    [Fact]
+    public void AddLongTermValidation_doesNotOverwrite_whenTheTrailerUnderstatesSize()
+    {
+        // The trailer's /Size is author-controlled and only advisory. Numbering appended objects
+        // from it meant an understated value made the /DSS revision reuse object numbers the
+        // document already defines — replacing base-revision objects in the very update meant to
+        // strengthen the signature over them. Range-checking /Size caught only the unrepresentable
+        // case; an understated one is trivial to produce and does the damage.
+        using var cert = CreateSelfSignedCertificate();
+        var signed = SignOnePage(cert);
+
+        var tampered = UnderstateTrailerSize(signed);
+        var before = ObjectTypesByNumber(tampered);
+        Assert.NotEmpty(before);
+
+        var ltv = DssBuilder.AddLongTermValidation(tampered, new CannedRevocationClient());
+        var after = ObjectTypesByNumber(ltv);
+
+        foreach (var (objectNumber, typeName) in before)
+        {
+            Assert.True(after.ContainsKey(objectNumber), $"object {objectNumber} vanished from the LTV revision.");
+            Assert.Equal(typeName, after[objectNumber]);
+        }
+    }
+
+    /// <summary>
+    /// Rewrites the trailer's <c>/Size</c> to 4 while preserving the byte width, so every offset in
+    /// the cross-reference table stays valid and only the declared size is dishonest.
+    /// </summary>
+    private static byte[] UnderstateTrailerSize(byte[] pdf)
+    {
+        var text = Encoding.Latin1.GetString(pdf);
+        var marker = text.LastIndexOf("/Size ", StringComparison.Ordinal);
+        Assert.True(marker >= 0, "/Size not found in the trailer.");
+
+        var start = marker + "/Size ".Length;
+        var end = start;
+        while (end < text.Length && char.IsAsciiDigit(text[end]))
+            end++;
+
+        var width = end - start;
+        Assert.True(width >= 1, "/Size has no digits.");
+
+        // Right-align "4" in the original width so the byte count is unchanged.
+        var replacement = "4".PadLeft(width);
+        var patched = (byte[])pdf.Clone();
+        Encoding.Latin1.GetBytes(replacement).CopyTo(patched, start);
+        return patched;
+    }
+
+    /// <summary>Maps every object number the document defines to its <c>/Type</c> name, or null.</summary>
+    private static Dictionary<int, string?> ObjectTypesByNumber(byte[] pdf)
+    {
+        using var reader = PdfReader.Open(pdf);
+        var types = new Dictionary<int, string?>();
+        foreach (var objectNumber in reader.ObjectNumbers)
+        {
+            if (objectNumber == 0)
+                continue;
+            var resolved = reader.Resolve(objectNumber);
+            types[objectNumber] = (resolved as PdfDictionary)?.Get(PdfName.Type) is PdfName t ? t.Value : null;
+        }
+        return types;
+    }
+
     private sealed class CannedRevocationClient : IRevocationClient
     {
         public RevocationData GetRevocationData(X509Certificate2 certificate, X509Certificate2 issuer)
