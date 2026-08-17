@@ -132,6 +132,10 @@ internal static class RuleRegistry
         new A2aStructureTypeRule(),
         // §6.7.4-1 — /Lang value syntax (catalog + structure elements):
         new A2aLangSyntaxRule(),
+        // §6.7.3.3 — real content that no structure element describes. Warning, not error:
+        // veraPDF's PDF/A-2a profile implements no equivalent, so an error here would contradict
+        // the reference implementation. See A2aContentItemTaggingRule's remarks.
+        new A2aContentItemTaggingRule(),
     ];
 
     // PDF/UA-1 (ISO 14289-1) is a distinct standard from PDF/A: it shares the baseline catalog

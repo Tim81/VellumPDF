@@ -5,6 +5,7 @@ using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using VellumPdf.Canvas;
+using VellumPdf.Core;
 using VellumPdf.Document;
 using VellumPdf.Fonts;
 using VellumPdf.Signing;
@@ -407,17 +408,44 @@ public sealed class StandardsFoundationTests
         doc.Info.Title = "Empty tagged document";
         doc.AddPage();
 
-        var content = SaveToString(doc);
+        var bytes = SaveToBytes(doc);
 
-        Assert.Contains("/StructTreeRoot", content);
-        Assert.Contains("/Marked true", content);
+        // Resolved through the catalog rather than searched for in the file text. #120 was about the
+        // catalog *entry*, and the structure objects themselves contain the string
+        // "/Type /StructTreeRoot" — so a text search passes even on a document whose catalog has no
+        // /StructTreeRoot at all, which is exactly what the oracle corpus's negative fixtures are.
+        var structTreeRoot = ResolveStructTreeRoot(bytes);
+        Assert.NotNull(structTreeRoot);
+
         // The tree is minimal but well-formed: a /Document element with no children, and a
-        // ParentTree with no entries because no page carries tagged content. veraPDF accepts
-        // this for both profiles — see the pdfa2a-empty-tagged / pdfua1-empty-tagged fixtures
-        // in the oracle corpus, which cross-check exactly these bytes against it.
+        // ParentTree with no entries because no page carries tagged content. veraPDF accepts this
+        // for both profiles — see the pdfa2a-empty-tagged / pdfua1-empty-tagged oracle fixtures,
+        // which cross-check exactly these bytes against it.
+        Assert.Equal(0L, ((PdfInteger)structTreeRoot.Get(new PdfName("ParentTreeNextKey"))!).Value);
+
+        var content = Encoding.Latin1.GetString(bytes);
+        Assert.Contains("/Marked true", content);
         Assert.Contains("/S /Document", content);
         Assert.Contains("/K []", content);
-        Assert.Contains("/ParentTreeNextKey 0", content);
+    }
+
+    /// <summary>
+    /// Resolves the document catalog's <c>/StructTreeRoot</c>, or returns null when the catalog has
+    /// no such entry. Reading the structure through the reader is what distinguishes "the catalog
+    /// references a structure tree" from "the file happens to contain structure objects".
+    /// </summary>
+    private static PdfDictionary? ResolveStructTreeRoot(byte[] pdf)
+    {
+        using var reader = VellumPdf.Reader.PdfReader.Open(pdf);
+        var entry = reader.Catalog.Get(new PdfName("StructTreeRoot"));
+        return entry is null ? null : reader.ResolveValue(entry) as PdfDictionary;
+    }
+
+    private static byte[] SaveToBytes(PdfDocument doc)
+    {
+        var ms = new MemoryStream();
+        doc.Save(ms);
+        return ms.ToArray();
     }
 
     [Fact]
@@ -434,10 +462,8 @@ public sealed class StandardsFoundationTests
 
         var ms = new MemoryStream();
         doc.Sign(ms, new PdfSignatureSettings { Certificate = cert });
-        var content = Encoding.Latin1.GetString(ms.ToArray());
 
-        Assert.Contains("/StructTreeRoot", content);
-        Assert.Contains("/S /Document", content);
+        Assert.NotNull(ResolveStructTreeRoot(ms.ToArray()));
     }
 
     private static X509Certificate2 CreateSelfSignedCertificate()
@@ -485,9 +511,7 @@ public sealed class StandardsFoundationTests
         doc.Tagged = true;
         doc.AddPage();
 
-        var content = SaveToString(doc);
-
-        Assert.Contains("/StructTreeRoot", content);
+        Assert.NotNull(ResolveStructTreeRoot(SaveToBytes(doc)));
     }
 
     [Fact]
