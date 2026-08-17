@@ -276,12 +276,23 @@ internal static class PreflightRunner
                 failed.Add(a);
         }
 
-        // Build a set of ISO clauses that have at least one failing assertion (any severity).
+        // Build a set of ISO clauses that have at least one assertion at Error severity.
         // Assertion.Clause is like "ISO 19005-2:2011, 6.2.8" — the clause number is the part
         // after the last ", ". ConformanceCheck.Clause is already in that short form ("6.2.8").
+        //
+        // Error only, deliberately. A Warning does not mean the clause is violated — it means
+        // something was noticed that does not affect conformance, and PreflightResult.IsCompliant
+        // ignores it by definition. Counting warnings here withdrew a *passing* claim from every
+        // catalogued check sharing that clause number: the check then appeared in no section at all,
+        // because it is not failed, not passed, and not un-evaluated, and the report's own totals
+        // stopped adding up. A2aContentItemTaggingRule surfaced this by reporting a Warning at
+        // clause 6.7.3.3, which silently unclaimed 6.7.3.3-1 (the /StructTreeRoot presence check
+        // that LogicalStructureRule had just passed).
         var failingClauses = new HashSet<string>(StringComparer.Ordinal);
         foreach (var a in result.Assertions)
         {
+            if (a.Severity != PreflightSeverity.Error)
+                continue;
             var clauseNum = ParseClauseNumber(a.Clause);
             failingClauses.Add(clauseNum);
         }

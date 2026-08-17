@@ -123,10 +123,24 @@ internal static class PdfCmsSigner
     /// about the certificate or what to do about it (issue #167).
     /// </para>
     /// <para>
-    /// The serial cannot be normalized on this path the way <see cref="ExternalSignerCms"/>
-    /// normalizes it: the encoding happens inside <see cref="SignedCms"/>, from the
-    /// <see cref="X509Certificate2"/> itself, so there is nothing for this library to rewrite.
-    /// Re-issuing the certificate is the only real fix, so the failure names that.
+    /// The serial cannot be normalized on the in-process path: the encoding happens inside
+    /// <see cref="SignedCms"/>, from the <see cref="X509Certificate2"/> itself, so there is nothing
+    /// for this library to rewrite. Re-issuing the certificate is the only real fix, so the failure
+    /// names that.
+    /// </para>
+    /// <para>
+    /// <strong>Every signing path is rejected, including <see cref="IExternalSigner"/>.</strong> An
+    /// earlier version of this check ran only on the in-process path and its message recommended
+    /// the external-signer path as a way through, because <see cref="ExternalSignerCms"/> writes
+    /// the <c>SignerInfo</c> itself and normalizes the serial on the way, and the result verifies
+    /// under <see cref="SignedCms.CheckSignature(bool)"/>. That recommendation was wrong. The
+    /// normalized <c>SignerInfo.IssuerAndSerialNumber</c> then no longer matches the raw serial in
+    /// the certificate carried in <c>SignedData.certificates</c>, and a verifier that resolves the
+    /// signer by comparing those DER bytes cannot find it. Submitting such a signature to the EU
+    /// DSS validator returns <c>noSignatureFound</c> — no signature, no certificate — while an
+    /// otherwise identical document signed the same way with a minimally-encoded serial is found
+    /// and reported as PAdES-BES. Producing a signature that .NET accepts and a conformant PAdES
+    /// validator cannot even locate is worse than refusing to sign, so this path refuses too.
     /// </para>
     /// <para>
     /// <strong>Reachable on Windows only.</strong> Whether a certificate with such a serial can be
@@ -147,11 +161,12 @@ internal static class PdfCmsSigner
             "settings.Certificate has a serial number that is not minimally DER-encoded: its "
             + $"content octets are 0x{Convert.ToHexString(settings.Certificate.SerialNumberBytes.Span)}, "
             + "which carries a redundant leading pad byte. ITU-T X.690 §8.3.2 requires the shortest "
-            + "two's-complement encoding, so the CMS SignerInfo cannot be built from this "
-            + "certificate — .NET's X.509 parser tolerates the encoding when reading, but every DER "
-            + "encoder rejects it when writing. The certificate is mis-issued and needs re-issuing "
-            + "by its CA. Signing with PdfSignatureSettings.ExternalSigner does work, because that "
-            + "path encodes the SignerInfo itself and normalizes the serial on the way.",
+            + "two's-complement encoding, so a CMS SignerInfo cannot identify this certificate — "
+            + ".NET's X.509 parser tolerates the encoding when reading, but every DER encoder "
+            + "rejects it when writing. The certificate is mis-issued and needs re-issuing by its "
+            + "CA. Normalizing the serial is not a workaround: the SignerInfo would then no longer "
+            + "match the certificate embedded alongside it, and a PAdES validator that resolves the "
+            + "signer by comparing those bytes finds no signature at all.",
             nameof(settings));
     }
 
@@ -163,8 +178,6 @@ internal static class PdfCmsSigner
     /// </summary>
     private static CmsSigner CreateSigner(PdfSignatureSettings settings)
     {
-        ValidateCertificateSerial(settings);
-
         var signer = settings.ExternalPrivateKey is null
             ? new CmsSigner(settings.Certificate)
             : new CmsSigner(SubjectIdentifierType.IssuerAndSerialNumber, settings.Certificate, settings.ExternalPrivateKey);
@@ -183,6 +196,8 @@ internal static class PdfCmsSigner
 
     private static byte[] ComputeCmsSignature(byte[] signedContent, PdfSignatureSettings settings)
     {
+        ValidateCertificateSerial(settings);
+
         if (settings.ExternalSigner is not null)
             throw new NotSupportedException(
                 "PdfSignatureSettings.ExternalSigner requires an async signing call and is " +
@@ -223,6 +238,8 @@ internal static class PdfCmsSigner
 
     private static async Task<byte[]> ComputeCmsSignatureAsync(byte[] signedContent, PdfSignatureSettings settings, CancellationToken cancellationToken)
     {
+        ValidateCertificateSerial(settings);
+
         SignedCms cms;
 
         if (settings.ExternalSigner is not null)

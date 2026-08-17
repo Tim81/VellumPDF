@@ -91,7 +91,11 @@ public sealed class NonMinimalSerialSigningTests
         // The ExternalPrivateKey path is still a CmsSigner path, so it fails identically. Covered
         // separately because it constructs the CmsSigner through a different overload.
         using var certificate = NonMinimalSerialCertificate.Create();
-        using var rsa = RSA.Create(2048);
+        // The certificate's OWN key, not an unrelated one. With an unrelated key this test passed
+        // for the wrong reason: removing the guard produced "Could not determine signature algorithm
+        // for the signer certificate" rather than the serial error, so a regression in the guard
+        // would have surfaced here as a misleading key-mismatch diagnosis.
+        using var rsa = certificate.GetRSAPrivateKey()!;
         using var doc = new PdfDocument();
         doc.AddPage();
 
@@ -103,6 +107,37 @@ public sealed class NonMinimalSerialSigningTests
 
         var ex = Assert.Throws<ArgumentException>(() => doc.Sign(new MemoryStream(), settings));
         Assert.Contains("0x0001020304", ex.Message);
+    }
+
+    [Fact]
+    public async Task SignAsync_withExternalSigner_andNonMinimalSerial_isAlsoRejected()
+    {
+        NonMinimalSerialCertificate.SkipIfUnsupported();
+
+        // The external-signer path used to be allowed through, on the reasoning that
+        // ExternalSignerCms writes the SignerInfo itself and normalizes the serial, and the result
+        // does verify under SignedCms.CheckSignature. Submitting such a signature to the EU DSS
+        // validator returns noSignatureFound: the normalized SignerInfo.IssuerAndSerialNumber no
+        // longer matches the raw serial of the certificate in SignedData.certificates, so a
+        // verifier resolving the signer by those bytes cannot locate it. An identical document
+        // signed the same way with a minimal serial is found and reported as PAdES-BES.
+        using var certificate = NonMinimalSerialCertificate.Create();
+        using var rsa = certificate.GetRSAPrivateKey()!;
+        using var publicOnly = X509CertificateLoader.LoadCertificate(certificate.Export(X509ContentType.Cert));
+
+        using var doc = new PdfDocument();
+        doc.AddPage();
+
+        var settings = new PdfSignatureSettings
+        {
+            Certificate = publicOnly,
+            ExternalSigner = new SimulatedAsyncKmsSigner(rsa),
+        };
+
+        var ex = await Assert.ThrowsAsync<ArgumentException>(
+            () => doc.SignAsync(new MemoryStream(), settings, TestContext.Current.CancellationToken));
+        Assert.Contains("0x0001020304", ex.Message);
+        Assert.DoesNotContain("ExternalSigner does work", ex.Message, StringComparison.Ordinal);
     }
 
     [Theory]

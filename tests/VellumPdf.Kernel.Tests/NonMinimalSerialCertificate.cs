@@ -78,13 +78,16 @@ internal static class NonMinimalSerialCertificate
     /// Returns a certificate whose serial content octets are <paramref name="paddedSerial"/>
     /// verbatim, defaulting to a redundant <c>0x00</c> ahead of a byte with a clear high bit.
     /// </summary>
-    internal static X509Certificate2 Create(byte[]? paddedSerial = null)
+    internal static X509Certificate2 Create(
+        byte[]? paddedSerial = null,
+        Action<CertificateRequest>? configure = null)
     {
         paddedSerial ??= [0x00, 0x01, 0x02, 0x03, 0x04];
 
         using var rsa = RSA.Create(2048);
         var request = new CertificateRequest(
             "CN=VellumPdf Non-Minimal Serial", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        configure?.Invoke(request);
         using var original = request.CreateSelfSigned(
             DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddYears(1));
 

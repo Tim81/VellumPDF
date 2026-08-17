@@ -350,9 +350,20 @@ public sealed class PdfDocumentReader : IDisposable
     {
         get
         {
-            if (Trailer.TryGet(PdfName.Size, out var sizeObj) && sizeObj is PdfInteger sizeInt)
-                return (int)sizeInt.Value;
-            return 0;
+            if (!Trailer.TryGet(PdfName.Size, out var sizeObj) || sizeObj is not PdfInteger sizeInt)
+                return 0;
+
+            // Range-checked rather than narrowed. DssBuilder and ArchiveTimestampBuilder both use
+            // this as the first object number for the objects they append, so a wrapped value hands
+            // them numbers that already exist: an LTV or archive-timestamp revision would overwrite
+            // base-revision objects and could alter or invalidate the very signature it augments.
+            // The xref-stream path already range-checks its own /Size (XrefParser); the classic
+            // trailer never did.
+            if (sizeInt.Value is < 0 or > int.MaxValue)
+                throw new InvalidDataException(
+                    $"Malformed PDF: trailer /Size {sizeInt.Value} is outside the representable range.");
+
+            return (int)sizeInt.Value;
         }
     }
 
