@@ -119,17 +119,34 @@ public static class PdfPreflight
 
     /// <summary>Validates an already-opened <paramref name="reader"/> against <paramref name="conformance"/>.</summary>
     /// <remarks>
+    /// <para>
+    /// <strong>Internal deliberately, not by oversight.</strong> This overload's signature names
+    /// <see cref="PdfDocumentReader"/>, a type belonging to <c>VellumPdf.Reader</c>, which is a
+    /// Preview package whose public API is intentionally left unlocked so it can change during the
+    /// v2.1 structural-reader work. Exposing it from <c>VellumPdf.Conformance</c> — Stable as of
+    /// 2.0, with every entry recorded in <c>PublicAPI.Shipped.txt</c> — would freeze a Stable
+    /// signature against a type that is expected to move, so the first rename or reshape in Reader
+    /// would be both an <c>RS0017</c> build break here and a hard break for anyone calling it. The
+    /// two commitments are incompatible, so this one is withheld until Reader graduates.
+    /// </para>
+    /// <para>
+    /// <see cref="Validate(byte[], PdfConformance)"/> and
+    /// <see cref="Validate(System.IO.Stream, PdfConformance)"/> are the public surface; both open a
+    /// fresh reader per call. The only capability lost is reusing an already-open reader across
+    /// validations, which is worth revisiting once Reader is Stable.
+    /// </para>
+    /// <para>
     /// The caller retains ownership of <paramref name="reader"/>; it is not disposed here.
-    /// <para><see cref="PdfDocumentReader"/> is not thread-safe (it populates an unsynchronized
-    /// object cache), so a single reader must not be validated from multiple threads concurrently.
-    /// The <see cref="Validate(byte[], PdfConformance)"/> and <see cref="Validate(System.IO.Stream, PdfConformance)"/>
-    /// overloads open a fresh reader per call and are safe to invoke concurrently.</para>
+    /// <see cref="PdfDocumentReader"/> is not thread-safe (it populates an unsynchronized object
+    /// cache), so a single reader must not be validated from multiple threads concurrently. The
+    /// public overloads open a fresh reader per call and are safe to invoke concurrently.
+    /// </para>
     /// </remarks>
     /// <exception cref="System.ArgumentNullException"><paramref name="reader"/> is null.</exception>
     /// <exception cref="System.NotSupportedException">No rule profile is registered for <paramref name="conformance"/> yet.</exception>
     /// <exception cref="UnsupportedPdfFeatureException">A rule encountered a reader feature that is not yet
     /// supported; unlike other rule failures this is not captured as a finding but propagates to the caller.</exception>
-    public static PreflightResult Validate(PdfDocumentReader reader, PdfConformance conformance)
+    internal static PreflightResult Validate(PdfDocumentReader reader, PdfConformance conformance)
     {
         ArgumentNullException.ThrowIfNull(reader);
 

@@ -66,3 +66,5 @@ VellumPdf.Signing.IExternalSigner.HashAlgorithm.get -> System.Security.Cryptogra
 VellumPdf.Signing.IExternalSigner.SignAsync(System.ReadOnlyMemory<byte> signedAttributesDigest, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<byte[]!>!
 VellumPdf.Signing.EcdsaSignatureConverter
 static VellumPdf.Signing.EcdsaSignatureConverter.RawToDer(System.ReadOnlySpan<byte> rawSignature) -> byte[]!
+const VellumPdf.Signing.PdfSignatureSettings.SubFilterEtsiCAdESDetached = "ETSI.CAdES.detached" -> string!
+const VellumPdf.Signing.PdfSignatureSettings.SubFilterAdbePkcs7Detached = "adbe.pkcs7.detached" -> string!

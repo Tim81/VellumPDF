@@ -487,7 +487,6 @@ static VellumPdf.Images.PngImageLoader.Load(byte[]! pngBytes, VellumPdf.Images.I
 static VellumPdf.Images.TiffImageLoader.Load(byte[]! tiff, VellumPdf.Images.ImageLoadOptions! options) -> VellumPdf.Images.PdfImageXObject!
 VellumPdf.Annotations.PdfOutlineEntry.IsExpanded.get -> bool
 VellumPdf.Annotations.PdfOutlineEntry.IsExpanded.init -> void
-VellumPdf.Annotations.PdfLinkAnnotation.Flags.get -> int
 VellumPdf.Annotations.PdfLinkAnnotation.Flags.init -> void
 VellumPdf.Images.CcittImageLoader
 static VellumPdf.Images.CcittImageLoader.Load(byte[]! ccittData, int columns, int rows, int k = -1, bool blackIs1 = false, bool encodedByteAlign = false, bool endOfLine = false) -> VellumPdf.Images.PdfImageXObject!
@@ -523,3 +522,16 @@ static VellumPdf.Canvas.TextEncodingWarning.operator ==(VellumPdf.Canvas.TextEnc
 static VellumPdf.Canvas.TextEncodingWarning.operator !=(VellumPdf.Canvas.TextEncodingWarning left, VellumPdf.Canvas.TextEncodingWarning right) -> bool
 VellumPdf.Canvas.PdfCanvas.TextEncodingWarnings.get -> System.Collections.Generic.IReadOnlyList<VellumPdf.Canvas.TextEncodingWarning>!
 VellumPdf.Document.PdfDocument.SaveAsync(System.IO.Stream! destination, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+VellumPdf.Annotations.PdfAnnotationFlags
+VellumPdf.Annotations.PdfAnnotationFlags.Hidden = 2 -> VellumPdf.Annotations.PdfAnnotationFlags
+VellumPdf.Annotations.PdfAnnotationFlags.Invisible = 1 -> VellumPdf.Annotations.PdfAnnotationFlags
+VellumPdf.Annotations.PdfAnnotationFlags.Locked = 128 -> VellumPdf.Annotations.PdfAnnotationFlags
+VellumPdf.Annotations.PdfAnnotationFlags.LockedContents = 512 -> VellumPdf.Annotations.PdfAnnotationFlags
+VellumPdf.Annotations.PdfAnnotationFlags.NoRotate = 16 -> VellumPdf.Annotations.PdfAnnotationFlags
+VellumPdf.Annotations.PdfAnnotationFlags.NoView = 32 -> VellumPdf.Annotations.PdfAnnotationFlags
+VellumPdf.Annotations.PdfAnnotationFlags.NoZoom = 8 -> VellumPdf.Annotations.PdfAnnotationFlags
+VellumPdf.Annotations.PdfAnnotationFlags.None = 0 -> VellumPdf.Annotations.PdfAnnotationFlags
+VellumPdf.Annotations.PdfAnnotationFlags.Print = 4 -> VellumPdf.Annotations.PdfAnnotationFlags
+VellumPdf.Annotations.PdfAnnotationFlags.ReadOnly = 64 -> VellumPdf.Annotations.PdfAnnotationFlags
+VellumPdf.Annotations.PdfAnnotationFlags.ToggleNoView = 256 -> VellumPdf.Annotations.PdfAnnotationFlags
+VellumPdf.Annotations.PdfLinkAnnotation.Flags.get -> VellumPdf.Annotations.PdfAnnotationFlags
