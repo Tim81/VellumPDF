@@ -73,18 +73,25 @@ internal static class ExternalSignerCms
         var messageDigest = Sha2DigestAlgorithm.Hash(hashAlgorithm, signedContent);
 
         // ── Signed attributes ──────────────────────────────────────────────────
-        // contentType, messageDigest, signingTime, and the ESS signing-certificate-v2 the
-        // CAdES profile requires. Order is irrelevant: these go into a DER SET OF, which
-        // EncodeSetOf sorts by encoding as DER demands.
-        var attributes = new[]
+        // contentType, messageDigest, and the ESS signing-certificate-v2 the CAdES profile
+        // requires. Order is irrelevant: these go into a DER SET OF, which EncodeSetOf sorts
+        // by encoding as DER demands.
+        //
+        // signing-time joins them only off the PAdES profile — see CreateSigner in PdfCmsSigner
+        // for the reasoning, which applies identically here (issue #170). The two builders share
+        // settings.IsPadesProfile rather than each testing SubFilter, so they cannot disagree
+        // about what profile they are emitting.
+        var attributes = new List<byte[]>(4)
         {
             EncodeAttribute(IdContentType, w => w.WriteObjectIdentifier(IdData)),
             EncodeAttribute(IdMessageDigest, w => w.WriteOctetString(messageDigest)),
-            EncodeAttribute(IdSigningTime, w => WriteTime(w, signingTime)),
             EncodeAttribute(
                 SigningCertificateV2.AttributeOid,
                 w => w.WriteEncodedValue(SigningCertificateV2.Encode(certificate, hashAlgorithm))),
         };
+
+        if (!settings.IsPadesProfile)
+            attributes.Add(EncodeAttribute(IdSigningTime, w => WriteTime(w, signingTime)));
 
         // RFC 5652 §5.4: the digest is computed over the attributes under a universal
         // SET OF tag. The [0] IMPLICIT tag used when embedding in SignerInfo below is
@@ -202,7 +209,7 @@ internal static class ExternalSignerCms
         return writer.Encode();
     }
 
-    private static byte[] EncodeSetOf(byte[][] elements, Asn1Tag? tag)
+    private static byte[] EncodeSetOf(IReadOnlyList<byte[]> elements, Asn1Tag? tag)
     {
         var writer = new AsnWriter(AsnEncodingRules.DER);
         using (writer.PushSetOf(tag))
