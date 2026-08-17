@@ -29,6 +29,52 @@ namespace VellumPdf.Kernel.Tests;
 internal static class NonMinimalSerialCertificate
 {
     /// <summary>
+    /// Whether this platform's X.509 parser will load a certificate whose serial number is not
+    /// minimally DER-encoded — and therefore whether the situation issue #167 describes can arise
+    /// here at all.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// It is <see langword="true"/> on Windows and <see langword="false"/> on Linux, where OpenSSL
+    /// rejects the encoding with <c>CryptographicException: ASN1 corrupted data</c> before the
+    /// certificate object exists. So a mis-issued certificate of this shape is a Windows-only
+    /// problem: elsewhere it cannot be loaded, let alone signed with.
+    /// </para>
+    /// <para>
+    /// Determined by probing rather than by checking the OS, so that a change in either platform's
+    /// parser turns into a test that starts running (or stops) rather than a stale assumption.
+    /// </para>
+    /// </remarks>
+    internal static bool IsSupportedByPlatform { get; } = Probe();
+
+    private static bool Probe()
+    {
+        try
+        {
+            using var probe = Create();
+            return true;
+        }
+        catch (CryptographicException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Skips the calling test when the platform's X.509 parser will not load such a certificate.
+    /// </summary>
+    internal static void SkipIfUnsupported()
+    {
+        if (!IsSupportedByPlatform)
+        {
+            Assert.Skip(
+                "This platform's X.509 parser rejects a non-minimally-encoded serial number at load "
+                + "time (OpenSSL: 'ASN1 corrupted data'), so the certificate under test cannot be "
+                + "constructed and the condition it exercises cannot occur here. Windows accepts it.");
+        }
+    }
+
+    /// <summary>
     /// Returns a certificate whose serial content octets are <paramref name="paddedSerial"/>
     /// verbatim, defaulting to a redundant <c>0x00</c> ahead of a byte with a clear high bit.
     /// </summary>

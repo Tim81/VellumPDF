@@ -12,8 +12,11 @@ namespace VellumPdf.Signing;
 /// <remarks>
 /// <para>
 /// <c>X509Certificate2.SerialNumberBytes</c> returns the certificate's raw serial content octets
-/// verbatim, and .NET's X.509 parser accepts a serial carrying a redundant leading pad byte even
-/// though DER requires the shortest possible two's-complement encoding (ITU-T X.690 §8.3.2).
+/// verbatim, and on Windows .NET's X.509 parser accepts a serial carrying a redundant leading pad
+/// byte even though DER requires the shortest possible two's-complement encoding (ITU-T X.690
+/// §8.3.2). That tolerance is platform-specific: Linux's OpenSSL-backed parser rejects the same
+/// certificate as <c>ASN1 corrupted data</c> at load time, so a mis-issued certificate of this
+/// shape only ever reaches this library on Windows.
 /// </para>
 /// <para>
 /// That laxity is not peculiar to this library's hand-rolled writer: <see cref="AsnWriter"/>

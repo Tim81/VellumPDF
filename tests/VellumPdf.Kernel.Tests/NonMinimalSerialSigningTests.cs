@@ -15,21 +15,35 @@ namespace VellumPdf.Kernel.Tests;
 /// DER-encoded.
 /// </summary>
 /// <remarks>
+/// <para>
 /// <see cref="Asn1SerialNumberTests"/> covers the normalization in isolation. These tests cover the
 /// part that was wrong for longer: the in-process path does not normalize the serial at all — it
 /// cannot, because <see cref="System.Security.Cryptography.Pkcs.SignedCms"/> encodes the
 /// <c>SignerInfo</c> from the certificate itself — so it has to reject the certificate up front
 /// with an actionable message instead. The first fix for #167 addressed only the external-signer
 /// path and left this one throwing an opaque exception from inside the BCL.
+/// </para>
+/// <para>
+/// <strong>Most of these only run on Windows</strong>, and not by choice: loading a certificate with
+/// a non-minimally-encoded serial succeeds on Windows and fails on Linux, where OpenSSL rejects it
+/// as <c>ASN1 corrupted data</c>. The condition under test therefore does not exist on Linux, and
+/// <see cref="NonMinimalSerialCertificate.SkipIfUnsupported"/> skips rather than pretends. CI runs
+/// on Linux, so the integration between the check and <c>CreateSigner</c> is covered by a developer
+/// or CI leg on Windows only; the predicate it depends on, <c>Asn1SerialNumber.IsMinimal</c>, is
+/// covered everywhere by <see cref="Asn1SerialNumberTests"/> against <c>AsnWriter</c>'s own
+/// acceptance as the oracle.
+/// </para>
 /// </remarks>
 public sealed class NonMinimalSerialSigningTests
 {
     [Fact]
     public void NonMinimalSerialCertificate_isAcceptedByTheX509Parser()
     {
-        // The premise of every test below: this encoding is one .NET reads happily and every DER
-        // encoder refuses to write. If X509CertificateLoader ever started rejecting it, these tests
-        // would be vacuous rather than failing, so the premise is asserted explicitly.
+        NonMinimalSerialCertificate.SkipIfUnsupported();
+        // The premise of every test below: on this platform the encoding is one the X.509 parser
+        // reads happily and every DER encoder refuses to write. Asserted explicitly, because if the
+        // parser started normalizing the serial instead of preserving it these tests would become
+        // vacuous rather than failing.
         using var certificate = NonMinimalSerialCertificate.Create();
 
         Assert.Equal([0x00, 0x01, 0x02, 0x03, 0x04], certificate.SerialNumberBytes.ToArray());
@@ -39,6 +53,7 @@ public sealed class NonMinimalSerialSigningTests
     [Fact]
     public void Sign_withNonMinimalSerial_throwsWithAnActionableMessage()
     {
+        NonMinimalSerialCertificate.SkipIfUnsupported();
         using var certificate = NonMinimalSerialCertificate.Create();
         using var doc = new PdfDocument();
         doc.AddPage();
@@ -57,6 +72,7 @@ public sealed class NonMinimalSerialSigningTests
     [Fact]
     public async Task SignAsync_withNonMinimalSerial_throwsWithAnActionableMessage()
     {
+        NonMinimalSerialCertificate.SkipIfUnsupported();
         using var certificate = NonMinimalSerialCertificate.Create();
         using var doc = new PdfDocument();
         doc.AddPage();
@@ -71,6 +87,7 @@ public sealed class NonMinimalSerialSigningTests
     [Fact]
     public void Sign_withExternalPrivateKey_andNonMinimalSerial_throwsTheSameWay()
     {
+        NonMinimalSerialCertificate.SkipIfUnsupported();
         // The ExternalPrivateKey path is still a CmsSigner path, so it fails identically. Covered
         // separately because it constructs the CmsSigner through a different overload.
         using var certificate = NonMinimalSerialCertificate.Create();

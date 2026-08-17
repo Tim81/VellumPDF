@@ -128,6 +128,15 @@ internal static class PdfCmsSigner
     /// <see cref="X509Certificate2"/> itself, so there is nothing for this library to rewrite.
     /// Re-issuing the certificate is the only real fix, so the failure names that.
     /// </para>
+    /// <para>
+    /// <strong>Reachable on Windows only.</strong> Whether a certificate with such a serial can be
+    /// loaded at all is platform-dependent: Windows accepts it, while Linux's OpenSSL-backed parser
+    /// rejects it as <c>ASN1 corrupted data</c> before an <see cref="X509Certificate2"/> exists. So
+    /// on non-Windows platforms this check cannot fire — the certificate never gets far enough to
+    /// be passed in. The guard is kept unconditional rather than platform-gated because the cost is
+    /// one span comparison and the alternative is a platform-specific code path guarding against a
+    /// platform-specific parser behaviour, which is harder to reason about than the check itself.
+    /// </para>
     /// </remarks>
     private static void ValidateCertificateSerial(PdfSignatureSettings settings)
     {
