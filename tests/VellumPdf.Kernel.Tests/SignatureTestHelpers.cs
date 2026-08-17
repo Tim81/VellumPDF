@@ -10,12 +10,17 @@ namespace VellumPdf.Kernel.Tests;
 internal sealed record ContentsInfo(long PosLt, int TokenLen, string HexContent);
 
 /// <summary>
-/// The two <c>AlgorithmIdentifier</c>s carried in a CMS <c>SignerInfo</c>, including
-/// whether each one's DER-optional parameters field is present — a distinction the BCL's
-/// <see cref="Oid"/>-based <c>SignerInfo.DigestAlgorithm</c>/<c>SignatureAlgorithm</c>
-/// properties don't expose, since they surface only the OID string.
+/// The three <c>AlgorithmIdentifier</c>s a CMS <c>SignedData</c> carries for a single-signer
+/// detached signature — <c>SignedData.digestAlgorithms</c>'s one entry plus
+/// <c>SignerInfo</c>'s own <c>digestAlgorithm</c> and <c>signatureAlgorithm</c> — including
+/// whether each one's DER-optional parameters field is present. That presence is a
+/// distinction the BCL's <see cref="Oid"/>-based <c>SignerInfo.DigestAlgorithm</c>/
+/// <c>SignatureAlgorithm</c> properties don't expose (they surface only the OID string),
+/// and <see cref="SignedCms"/> has no managed surface for <c>digestAlgorithms</c> at all.
 /// </summary>
 internal sealed record SignerInfoAlgorithmIdentifiers(
+    string SignedDataDigestOid,
+    bool SignedDataDigestHasParameters,
     string DigestOid,
     bool DigestHasParameters,
     string SignatureOid,
@@ -92,11 +97,12 @@ internal static class SignatureTestHelpers
     }
 
     /// <summary>
-    /// Decodes /Contents down to <c>SignerInfo</c>'s <c>digestAlgorithm</c> and
-    /// <c>signatureAlgorithm</c> fields by walking the DER structure positionally (the
-    /// field order RFC 5652 §5.3 fixes for <c>SignerInfo</c>), reporting each one's OID
-    /// and whether its parameters field is present. Both signed PDFs under test always
-    /// carry a <c>[0] certificates</c> field, so this doesn't handle its absence.
+    /// Decodes /Contents down to <c>SignedData.digestAlgorithms</c>'s one entry and
+    /// <c>SignerInfo</c>'s own <c>digestAlgorithm</c>/<c>signatureAlgorithm</c> fields by
+    /// walking the DER structure positionally (the field order RFC 5652 §5.1/§5.3 fixes
+    /// for <c>SignedData</c>/<c>SignerInfo</c>), reporting each one's OID and whether its
+    /// parameters field is present. Both signed PDFs under test always carry a
+    /// <c>[0] certificates</c> field, so this doesn't handle its absence.
     /// </summary>
     internal static SignerInfoAlgorithmIdentifiers ExtractSignerInfoAlgorithmIdentifiers(byte[] signedBytes)
     {
@@ -113,7 +119,7 @@ internal static class SignatureTestHelpers
 
         var signedData = explicitContent.ReadSequence();
         signedData.ReadInteger(); // version
-        signedData.ReadEncodedValue(); // digestAlgorithms (redundant with SignerInfo's own)
+        var (signedDataDigestOid, signedDataDigestHasParameters) = ReadAlgorithmIdentifier(signedData.ReadSetOf()); // digestAlgorithms
         signedData.ReadEncodedValue(); // encapContentInfo
         if (signedData.PeekTag() == new Asn1Tag(TagClass.ContextSpecific, 0, isConstructed: true))
             signedData.ReadEncodedValue(); // certificates [0]
@@ -126,7 +132,10 @@ internal static class SignatureTestHelpers
         signerInfo.ReadEncodedValue(); // signedAttrs [0]
         var (signatureOid, signatureHasParameters) = ReadAlgorithmIdentifier(signerInfo);
 
-        return new SignerInfoAlgorithmIdentifiers(digestOid, digestHasParameters, signatureOid, signatureHasParameters);
+        return new SignerInfoAlgorithmIdentifiers(
+            signedDataDigestOid, signedDataDigestHasParameters,
+            digestOid, digestHasParameters,
+            signatureOid, signatureHasParameters);
     }
 
     private static (string Oid, bool HasParameters) ReadAlgorithmIdentifier(AsnReader parent)

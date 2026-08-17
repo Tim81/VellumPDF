@@ -28,9 +28,10 @@ public sealed class SignatureTests
     // decides this, this codebase does not).
     private const string RsaEncryptionOid = "1.2.840.113549.1.1.1";
 
-    // sha256WithRSAEncryption (RFC 8017 Appendix C) — the hash-specific OID RFC 5754 §3.2
-    // requires ExternalSignerCms to emit for SignerInfo.signatureAlgorithm when signing
-    // with SHA-256.
+    // sha256WithRSAEncryption (RFC 8017 Appendix C) — one of the hash-specific OIDs
+    // RFC 5754 §3.2 permits for SignerInfo.signatureAlgorithm (RFC 3370 §3.2 makes the
+    // hash-agnostic rsaEncryption above the MUST-support form and this one a MAY — both
+    // are legal). ExternalSignerCms emits this form when signing with SHA-256.
     private const string Sha256WithRsaEncryptionOid = "1.2.840.113549.1.1.11";
 
     // ── Test certificate ─────────────────────────────────────────────────────
@@ -448,6 +449,8 @@ public sealed class SignatureTests
         // with any of them transposed — SignedCms doesn't check that the claimed algorithm
         // is the one actually used, only that some algorithm's digest/signature matches.
         var algIds = ExtractSignerInfoAlgorithmIdentifiers(bytes);
+        Assert.Equal(expectedDigestOid, algIds.SignedDataDigestOid);
+        Assert.False(algIds.SignedDataDigestHasParameters, "SignedData.digestAlgorithms parameters should be absent (RFC 5754 §2).");
         Assert.Equal(expectedDigestOid, algIds.DigestOid);
         Assert.Equal(expectedSignatureOid, algIds.SignatureOid);
     }

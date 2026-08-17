@@ -38,9 +38,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `SignedData.digestAlgorithms` and `SignerInfo.digestAlgorithm` now omit their parameters
   field instead of carrying a redundant DER NULL, per RFC 5754 §2 ("implementations MUST
   generate SHA2 AlgorithmIdentifiers with absent parameters"). `SignerInfo.signatureAlgorithm`
-  was already correct — `sha256WithRSAEncryption`/`sha384WithRSAEncryption`/`sha512WithRSAEncryption`
-  with NULL parameters, as RFC 5754 §3.2 requires — and is unchanged. Neither change touches
-  the signature value: AlgorithmIdentifiers sit outside the SignedAttrs digest. (#166)
+  was already correct — one of the `sha256WithRSAEncryption`/`sha384WithRSAEncryption`/
+  `sha512WithRSAEncryption` OIDs RFC 5754 §3.2 permits, with NULL parameters as that section
+  requires whenever those OIDs are used — and is unchanged. Neither change touches the
+  signature value: AlgorithmIdentifiers sit outside the SignedAttrs digest. (#166)
 
 ### Fixed
 

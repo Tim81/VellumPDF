@@ -30,9 +30,11 @@ internal static class ExternalSignerCms
     private const string IdSigningTime = "1.2.840.113549.1.9.5";
 
     // RSA PKCS#1 v1.5 signature algorithm OIDs (RFC 8017 Appendix C). RFC 5754 §3.2
-    // requires these hash-specific OIDs — not the hash-agnostic rsaEncryption — for
-    // SignerInfo.signatureAlgorithm when signing with SHA-256/384/512, with the
-    // AlgorithmIdentifier parameters field set to NULL.
+    // permits these hash-specific OIDs for SignerInfo.signatureAlgorithm and requires
+    // NULL parameters when they're used. RFC 3370 §3.2, which §3.2 incorporates by
+    // reference, makes the hash-agnostic rsaEncryption the form implementations MUST
+    // support and these hash-specific ones a MAY — both are legal, and this is the form
+    // this library chooses to emit.
     private const string Sha256WithRsaEncryption = "1.2.840.113549.1.1.11";
     private const string Sha384WithRsaEncryption = "1.2.840.113549.1.1.12";
     private const string Sha512WithRsaEncryption = "1.2.840.113549.1.1.13";

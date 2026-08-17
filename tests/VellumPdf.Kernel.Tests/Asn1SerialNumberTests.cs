@@ -8,13 +8,14 @@ namespace VellumPdf.Kernel.Tests;
 
 /// <summary>
 /// Tests <see cref="Asn1SerialNumber.Write"/>'s DER-minimal normalization (issue #167)
-/// directly against the ASN.1 encoding it produces. A full signing-pipeline test isn't
-/// possible here: <c>X509Certificate2.SerialNumberBytes</c> can carry a redundant pad byte
-/// from a mis-issued certificate, but .NET's own
+/// directly against the ASN.1 encoding it produces. This isn't tested through a real
+/// signing pipeline: .NET's own
 /// <see cref="System.Security.Cryptography.X509Certificates.CertificateRequest"/> already
-/// normalizes whatever serial bytes it's given, so there's no way to produce a real
-/// <c>X509Certificate2</c> exhibiting the bytes this method needs to handle. Covering
-/// <see cref="Asn1SerialNumber"/> here exercises both of its callers,
+/// normalizes whatever serial bytes it's given, so it can't build a certificate carrying
+/// the redundant pad a mis-issued CA certificate might — producing one is possible (patch
+/// the serial TLV in an existing certificate's <c>RawData</c> and re-emit the two enclosing
+/// SEQUENCE lengths), just not through that API, so it's left for a follow-up end-to-end
+/// test. Covering <see cref="Asn1SerialNumber"/> here exercises both of its callers,
 /// <c>ExternalSignerCms</c> and <c>HttpRevocationClient</c>.
 /// </summary>
 public sealed class Asn1SerialNumberTests
@@ -41,6 +42,17 @@ public sealed class Asn1SerialNumberTests
         // 0x80 as the lead byte makes the value negative rather than padding it, so
         // nothing here should be stripped.
         AssertEncodesInteger([0x80, 0x01], [0x80, 0x01]);
+    }
+
+    [Fact]
+    public void Write_legitimateZeroPadBeforeHighBit_roundTripsUnchanged()
+    {
+        // 0x00 followed by a byte whose high bit IS set: here the pad is load-bearing —
+        // without it, 0x80 alone would read as a negative number — so DER requires it and
+        // it must not be stripped. A naive "strip every leading 0x00" implementation would
+        // mangle this; since CA serials are typically 16-20 random octets, roughly half of
+        // all real-world serials carry exactly this pad.
+        AssertEncodesInteger([0x00, 0x80], [0x00, 0x80]);
     }
 
     [Fact]
