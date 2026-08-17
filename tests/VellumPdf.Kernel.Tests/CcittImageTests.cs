@@ -107,28 +107,28 @@ public sealed class CcittImageTests
     [Fact]
     public void CcittLoad_BlackIs1_True_Present()
     {
-        var img = CcittImageLoader.Load([0x01], columns: 8, rows: 1, blackIs1: true);
+        var img = CcittImageLoader.Load([0x01], columns: 8, rows: 1, new CcittOptions { BlackIs1 = true });
         Assert.Contains("/BlackIs1 true", StreamDictText(img));
     }
 
     [Fact]
     public void CcittLoad_EncodedByteAlign_True_Present()
     {
-        var img = CcittImageLoader.Load([0x01], columns: 8, rows: 1, encodedByteAlign: true);
+        var img = CcittImageLoader.Load([0x01], columns: 8, rows: 1, new CcittOptions { EncodedByteAlign = true });
         Assert.Contains("/EncodedByteAlign true", StreamDictText(img));
     }
 
     [Fact]
     public void CcittLoad_K_Zero_IsEmitted()
     {
-        var img = CcittImageLoader.Load([0x01], columns: 8, rows: 1, k: 0);
+        var img = CcittImageLoader.Load([0x01], columns: 8, rows: 1, new CcittOptions { K = 0 });
         Assert.Contains("/K 0", StreamDictText(img));
     }
 
     [Fact]
     public void CcittLoad_K_Positive_IsEmitted()
     {
-        var img = CcittImageLoader.Load([0x01], columns: 8, rows: 1, k: 2);
+        var img = CcittImageLoader.Load([0x01], columns: 8, rows: 1, new CcittOptions { K = 2 });
         Assert.Contains("/K 2", StreamDictText(img));
     }
 
@@ -273,14 +273,14 @@ public sealed class CcittImageTests
     [Fact]
     public void CcittLoad_EndOfLine_True_Present()
     {
-        var img = CcittImageLoader.Load([0x01], columns: 8, rows: 1, endOfLine: true);
+        var img = CcittImageLoader.Load([0x01], columns: 8, rows: 1, new CcittOptions { EndOfLine = true });
         Assert.Contains("/EndOfLine true", StreamDictText(img));
     }
 
     [Fact]
     public void CcittLoad_EndOfLine_False_Absent()
     {
-        var img = CcittImageLoader.Load([0x01], columns: 8, rows: 1, endOfLine: false);
+        var img = CcittImageLoader.Load([0x01], columns: 8, rows: 1, new CcittOptions { EndOfLine = false });
         Assert.DoesNotContain("/EndOfLine", StreamDictText(img));
     }
 
@@ -289,7 +289,7 @@ public sealed class CcittImageTests
     {
         // Group 3 1D: K=0, EndOfLine=true, EncodedByteAlign=true, BlackIs1=true
         var img = CcittImageLoader.Load([0x01], columns: 8, rows: 1,
-            k: 0, blackIs1: true, encodedByteAlign: true, endOfLine: true);
+            new CcittOptions { K = 0, BlackIs1 = true, EncodedByteAlign = true, EndOfLine = true });
         var dict = StreamDictText(img);
         Assert.Contains("/K 0", dict);
         Assert.Contains("/EndOfLine true", dict);
@@ -304,7 +304,7 @@ public sealed class CcittImageTests
     public void CcittLoad_DecodeMode_Passthrough_ReturnsCcittFilter()
     {
         var opts = new ImageLoadOptions { DecodeMode = ImageDecodeMode.Passthrough };
-        var img = CcittImageLoader.Load([0x01, 0x02], columns: 8, rows: 1, opts);
+        var img = CcittImageLoader.Load([0x01, 0x02], columns: 8, rows: 1, options: opts);
         Assert.Contains("/CCITTFaxDecode", StreamDictText(img));
         Assert.DoesNotContain("/FlateDecode", StreamDictText(img));
     }
@@ -312,9 +312,9 @@ public sealed class CcittImageTests
     [Fact]
     public void CcittLoad_DecodeMode_Passthrough_IsDefault_WithOptions()
     {
-        // Load(byte[], int, int, ImageLoadOptions) with default options → passthrough (K=-1, CCITTFaxDecode).
+        // Default CcittOptions plus default ImageLoadOptions → passthrough (K=-1, CCITTFaxDecode).
         var opts = ImageLoadOptions.Default;
-        var img = CcittImageLoader.Load([0x01, 0x02], columns: 8, rows: 1, opts);
+        var img = CcittImageLoader.Load([0x01, 0x02], columns: 8, rows: 1, options: opts);
         Assert.Contains("/CCITTFaxDecode", StreamDictText(img));
         Assert.DoesNotContain("/FlateDecode", StreamDictText(img));
     }
@@ -322,18 +322,44 @@ public sealed class CcittImageTests
     [Fact]
     public void CcittLoad_DecodeMode_DecodeToRaster_G4_ThrowsNotSupportedException()
     {
-        // Load(byte[], int, int, ImageLoadOptions) always uses K=-1 (G4).
+        // CcittOptions.Default is K=-1 (G4).
         // G4 (K<0) decode-to-raster is not supported.
         var opts = new ImageLoadOptions { DecodeMode = ImageDecodeMode.DecodeToRaster };
         Assert.Throws<NotSupportedException>(() =>
-            CcittImageLoader.Load([0x01], columns: 8, rows: 1, opts));
+            CcittImageLoader.Load([0x01], columns: 8, rows: 1, options: opts));
     }
 
     [Fact]
-    public void CcittLoad_DecodeToRaster_NullOptions_ThrowsArgumentNullException()
+    public void CcittLoad_NullOptions_MeanDefaults()
     {
-        Assert.Throws<ArgumentNullException>(() =>
-            CcittImageLoader.Load([0x01], columns: 8, rows: 1, null!));
+        // Contract change: both option arguments are now optional, so an explicit null means "use
+        // the default" rather than being an error. It has to — with `= null` defaults there is no
+        // way to tell an omitted argument from an explicitly null one, so the old
+        // ArgumentNullException would have fired on the very call the default exists to serve.
+        var explicitNulls = CcittImageLoader.Load([0x01, 0x02], columns: 8, rows: 1, ccitt: null, options: null);
+        var omitted = CcittImageLoader.Load([0x01, 0x02], columns: 8, rows: 1);
+
+        Assert.Equal(StreamDictText(omitted), StreamDictText(explicitNulls));
+        Assert.Contains("/K -1", StreamDictText(explicitNulls));
+    }
+
+    [Fact]
+    public void CcittLoad_optionsAndCcittParams_canBothBeSupplied()
+    {
+        // The defect this replaced: the old ImageLoadOptions overload could not carry the four
+        // CCITT knobs, so decode-to-raster on a Group 3 1-D stream with byte-aligned rows was
+        // unreachable through the public API.
+        var img = CcittImageLoader.Load(
+            BuildAllWhite1D_8wide_2rows(),
+            columns: 8,
+            rows: 2,
+            new CcittOptions { K = 0, EncodedByteAlign = true },
+            new ImageLoadOptions { DecodeMode = ImageDecodeMode.DecodeToRaster });
+
+        // Decoded to a raster and re-encoded losslessly, so the CCITT filter is gone.
+        var dict = StreamDictText(img);
+        Assert.Contains("/FlateDecode", dict);
+        Assert.DoesNotContain("/CCITTFaxDecode", dict);
     }
 
     // ── All-white 1D MH stream builder ────────────────────────────────────────
