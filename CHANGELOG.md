@@ -106,9 +106,16 @@ Each is explained under Added, Changed, or Fixed below.
   cannot disagree. (#168)
 
   Together with the `signing-time` removal below, this is what makes the `/SubFilter` claim
-  true rather than merely asserted: the EU DSS reference validator reports a signature from
-  this release as **PAdES-BASELINE-B**, where 1.11.0 produced `PDF-NOT-ETSI`. Each of the two
-  changes alone only got as far as `PAdES-BES`. (#168, #170)
+  true rather than merely asserted. Measured with the EU DSS reference validator, against
+  fixtures differing only in the code that signed them:
+
+  | Signature | 1.11.0 | 2.0.0 |
+  | --- | --- | --- |
+  | B-B, `ETSI.CAdES.detached` | `PDF-NOT-ETSI` | **`PAdES-BASELINE-B`** |
+  | B-T, with an RFC 3161 timestamp | `PAdES-BES` | **`PAdES-BASELINE-T`** |
+  | `adbe.pkcs7.detached` | `PKCS7-B` | `PKCS7-B` (unchanged) |
+
+  Either change alone reaches only `PAdES-BES`. (#168, #170)
 - **A PDF/A-2a check for page content that no structure element describes** — reported at
   ISO 19005-2 clause 6.7.3.3, at Warning severity, since veraPDF's own PDF/A-2a profile
   implements no equivalent rule and the verdict must keep matching it. (#120)
