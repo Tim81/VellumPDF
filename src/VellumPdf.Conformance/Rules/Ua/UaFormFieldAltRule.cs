@@ -253,7 +253,7 @@ internal sealed class UaFormFieldAltRule : IConformanceRule
     {
         if (context.Resolve(widget.Get(_structParent)) is not PdfInteger spInt)
             return false;
-        var node = tree.StructParentOf((int)spInt.Value);
+        var node = tree.StructParentOf(spInt.Value);
         if (node is null)
             return false;
         return node.Dict.Get(_alt) is not null;

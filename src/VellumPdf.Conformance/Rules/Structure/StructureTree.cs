@@ -201,6 +201,18 @@ internal sealed class StructureTree
     }
 
     /// <summary>
+    /// Resolves a <c>/StructParent</c> whose value has not been narrowed yet, returning null when
+    /// it cannot be an index into the ParentTree.
+    /// </summary>
+    /// <remarks>
+    /// The range check belongs here rather than at each call site: five annotation rules read
+    /// <c>/StructParent</c> and every one of them narrowed it, so an out-of-range value wrapped
+    /// onto a legitimate key and handed the annotation another object's structure element.
+    /// </remarks>
+    public StructureTreeNode? StructParentOf(long structParentKey)
+        => structParentKey is < 0 or > int.MaxValue ? null : StructParentOf((int)structParentKey);
+
+    /// <summary>
     /// Returns the <see cref="StructureTreeNode"/> that owns the marked-content sequence
     /// identified by <paramref name="mcid"/> on the given page, or <see langword="null"/>
     /// when the mapping cannot be resolved.
@@ -217,6 +229,15 @@ internal sealed class StructureTree
 
         var structParentsObj = context.Resolve(pageDict.Get(_structParents));
         if (structParentsObj is not PdfInteger structParentsInt)
+            return null;
+
+        // Out of range is treated as "no owning element" rather than narrowed. Narrowing wrapped a
+        // page's /StructParents into another page's key space — /StructParents 4294967296 becomes
+        // 0 — so the page was handed a different page's MCID-to-element map and inherited its
+        // /Lang, its element types and its alt text. A document that veraPDF fails on that basis
+        // was reported PDF/UA-1 clean. Skipping is the FP-safe direction this walker takes
+        // everywhere else, and matches what a conformant reader sees: no such key exists.
+        if (structParentsInt.Value is < 0 or > int.MaxValue)
             return null;
         var structParentsKey = (int)structParentsInt.Value;
 
@@ -361,6 +382,11 @@ internal sealed class StructureTree
             var keyObj = context.Resolve(nums[i]);
             if (keyObj is not PdfInteger keyInt)
                 continue; // malformed key — skip
+
+            // Same key space as /StructParents above: an out-of-range key would wrap onto a real
+            // one and, since TryAdd keeps the first writer, could claim a legitimate page's slot.
+            if (keyInt.Value is < 0 or > int.MaxValue)
+                continue;
             var key = (int)keyInt.Value;
 
             // The raw (unresolved) value is used for arrays — we want the array object itself,
