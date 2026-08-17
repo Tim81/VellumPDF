@@ -218,7 +218,7 @@ public sealed class HttpRevocationClient : IRevocationClient
                             }
                             writer.WriteOctetString(issuerNameHash);
                             writer.WriteOctetString(issuerKeyHash);
-                            WriteSerialNumber(writer, serial);
+                            Asn1SerialNumber.Write(writer, serial);
                         }
                     }
                 }
@@ -226,21 +226,6 @@ public sealed class HttpRevocationClient : IRevocationClient
         }
 
         return writer.Encode();
-    }
-
-    /// <summary>
-    /// Writes the certificate serial number (big-endian, signed two's-complement as carried
-    /// in the certificate) as an ASN.1 INTEGER.
-    /// </summary>
-    private static void WriteSerialNumber(AsnWriter writer, byte[] serial)
-    {
-        if (serial.Length == 0)
-        {
-            writer.WriteInteger(0);
-            return;
-        }
-
-        writer.WriteInteger(serial);
     }
 
     // ── CRL ─────────────────────────────────────────────────────────────────────
