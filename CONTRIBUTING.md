@@ -7,9 +7,13 @@ build, test, and submit changes to VellumPdf.
 
 - **.NET 10 SDK** (the only required runtime dependency).
 - **Docker** — needed to run the veraPDF conformance gate locally.
-- **qpdf** and **poppler-utils** — needed to run the structural-validator and
-  text-extraction oracle tests locally. On Debian/Ubuntu:
+- **qpdf** and **poppler-utils** — needed to run the structural-validator,
+  text-extraction, signature, and barcode-rasterization oracle tests locally
+  (`qpdf`, `pdftotext`, `pdfsig`, `pdftoppm`). On Debian/Ubuntu:
   `sudo apt-get install qpdf poppler-utils fonts-dejavu-core fonts-texgyre`
+- **Python with zxing-cpp** — the barcode decode oracle:
+  `python -m pip install zxing-cpp==3.0.0 pillow`. The version is pinned because
+  the EAN add-on text format differs between zxing-cpp releases.
 
 ## Building and testing
 
@@ -65,9 +69,16 @@ ensure every new package is free of known CVEs.
 
 ### 5. Tests (including veraPDF)
 
-The oracle tests shell out to `verapdf`, `qpdf`, and `pdftotext`. Make sure
-these tools are on your PATH (or use the Docker-backed `verapdf` shim described
-in [README.md](README.md)) before running the test suite.
+The oracle tests shell out to `verapdf`, `qpdf`, `pdftotext`, `pdfsig`,
+`pdftoppm`, and the zxing-cpp Python module. Make sure these are on your PATH
+(or use the Docker-backed `verapdf` shim described in [README.md](README.md))
+before running the test suite.
+
+A missing tool makes the test skip locally, so a green local run does not mean
+the oracles ran. On CI the same tests fail instead: the qpdf and poppler oracles
+detect `CI`/`GITHUB_ACTIONS`, and the veraPDF and barcode oracles are switched
+by `REQUIRE_VERAPDF` and `REQUIRE_BARCODE_ORACLE`. Set those two locally to
+reproduce the CI behaviour.
 
 ### 6. AOT smoke test
 

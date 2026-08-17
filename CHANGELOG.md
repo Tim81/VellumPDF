@@ -4,6 +4,10 @@ All notable changes to VellumPdf will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+Nothing yet.
+
 ## [2.0.0] - 2026-08-17
 
 The first major version since 1.0. Every package moves to 2.0.0 together, as usual.
