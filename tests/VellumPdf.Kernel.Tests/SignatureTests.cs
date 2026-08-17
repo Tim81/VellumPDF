@@ -1,6 +1,7 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
+using System.Formats.Asn1;
 using System.Security.Cryptography;
 using System.Security.Cryptography.Pkcs;
 using System.Security.Cryptography.X509Certificates;
@@ -453,7 +454,85 @@ public sealed class SignatureTests
         Assert.False(algIds.SignedDataDigestHasParameters, "SignedData.digestAlgorithms parameters should be absent (RFC 5754 §2).");
         Assert.Equal(expectedDigestOid, algIds.DigestOid);
         Assert.Equal(expectedSignatureOid, algIds.SignatureOid);
+
+        // The signing-certificate-v2 attribute must hash the certificate with the same
+        // algorithm the signature uses, so it varies per case and belongs in this theory
+        // rather than in a SHA-256-only test of its own (RFC 5035 §4, issue #168).
+        AssertSigningCertificateV2(bytes, publicOnlyCert, hashAlgorithm);
     }
+
+    [Fact]
+    public void Sign_emitsSigningCertificateV2Attribute()
+    {
+        using var cert = CreateTestCertificate();
+
+        var settings = new PdfSignatureSettings { Certificate = cert };
+        var bytes = SignOnePageDoc(cert, "VELLUM_SIGNING_CERT_V2", settings);
+
+        VerifySignatureOrThrow(bytes);
+
+        // The in-process CmsSigner path signs with SHA-256, so hashAlgorithm must be absent:
+        // DER forbids encoding a value equal to the field's DEFAULT of id-sha256.
+        AssertSigningCertificateV2(bytes, cert, HashAlgorithmName.SHA256);
+    }
+
+    /// <summary>
+    /// Asserts the signature carries an ESS <c>signing-certificate-v2</c> that actually
+    /// identifies <paramref name="certificate"/>, field by field.
+    /// </summary>
+    /// <remarks>
+    /// Every value here is checked against an independently computed expectation rather than
+    /// against whatever the encoder produced. A test that only asserted the attribute exists
+    /// would pass just as happily on a certHash over the wrong bytes — which is the failure
+    /// that matters, since the attribute's entire purpose is binding the signature to one
+    /// specific certificate.
+    /// </remarks>
+    private static void AssertSigningCertificateV2(
+        byte[] signedBytes, X509Certificate2 certificate, HashAlgorithmName hashAlgorithm)
+    {
+        var essCertId = ExtractSigningCertificateV2(signedBytes);
+        Assert.NotNull(essCertId);
+
+        if (hashAlgorithm == HashAlgorithmName.SHA256)
+        {
+            Assert.Null(essCertId.HashAlgorithmOid);
+        }
+        else
+        {
+            Assert.Equal(DigestOidFor(hashAlgorithm), essCertId.HashAlgorithmOid);
+            Assert.False(
+                essCertId.HashAlgorithmHasParameters,
+                "ESSCertIDv2.hashAlgorithm parameters should be absent (RFC 5754 §2).");
+        }
+
+        // certHash is over the whole DER-encoded certificate including its signature, not the
+        // TBS portion — a distinction no structural check would catch.
+        Assert.Equal(HashFor(hashAlgorithm, certificate.RawData), essCertId.CertHash);
+
+        // issuerSerial must name this certificate. Compared as raw DER against the
+        // certificate's own encoding, so a mismatch cannot hide behind string normalization.
+        Assert.Equal(certificate.IssuerName.RawData, essCertId.IssuerNameDer);
+
+        var expectedSerial = new AsnWriter(AsnEncodingRules.DER);
+        expectedSerial.WriteInteger(certificate.SerialNumberBytes.Span);
+        Assert.Equal(expectedSerial.Encode(), essCertId.SerialNumberDer);
+    }
+
+    private static string DigestOidFor(HashAlgorithmName hashAlgorithm) => hashAlgorithm.Name switch
+    {
+        "SHA256" => "2.16.840.1.101.3.4.2.1",
+        "SHA384" => "2.16.840.1.101.3.4.2.2",
+        "SHA512" => "2.16.840.1.101.3.4.2.3",
+        _ => throw new ArgumentOutOfRangeException(nameof(hashAlgorithm), hashAlgorithm, null),
+    };
+
+    private static byte[] HashFor(HashAlgorithmName hashAlgorithm, byte[] data) => hashAlgorithm.Name switch
+    {
+        "SHA256" => SHA256.HashData(data),
+        "SHA384" => SHA384.HashData(data),
+        "SHA512" => SHA512.HashData(data),
+        _ => throw new ArgumentOutOfRangeException(nameof(hashAlgorithm), hashAlgorithm, null),
+    };
 
     [Fact]
     public async Task SignAsync_withExternalSigner_unsupportedHashAlgorithm_throwsNotSupportedException()
