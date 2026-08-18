@@ -520,16 +520,19 @@ public sealed class PdfDocument : IDisposable
 
         // PDF/A prohibits encryption (ISO 19005-2 §6.3.1). Fail fast rather than emit
         // a document that claims conformance but can never validate. PDF/UA-1 is a
-        // separate conformance family (ISO 14289-1) with no such prohibition, so it must
-        // not be caught by this PDF/A-only rule — see the PDF/UA-1 check below instead.
-        if (Conformance is PdfConformance.PdfA2b or PdfConformance.PdfA2u or PdfConformance.PdfA2a
+        // separate conformance family (ISO 14289-1) with no such prohibition, so it gets
+        // its own check below instead. Written as "not (None or PdfUA1)" rather than an
+        // allow-list of the PDF/A members: the allow-list reads the same today, but it is
+        // fail-open against a future PdfConformance case (e.g. PdfA3b) that would fall
+        // through both this guard and the PDF/UA-1 one below undetected.
+        if (Conformance is not (PdfConformance.None or PdfConformance.PdfUA1)
             && _encryptionSettings is not null)
             throw new InvalidOperationException(
                 "PDF/A prohibits encryption (ISO 19005-2 §6.3.1). " +
                 "Remove Encrypt() or clear Conformance before calling Save().");
 
         // PDF/UA-1 does not prohibit encryption, but it requires that content remain
-        // extractable for assistive technology (ISO 14289-1 §7.16-1, carried by the
+        // extractable for assistive technology (ISO 14289-1 §7.16, carried by the
         // /P bit 10 = PdfPermissions.Extract per ISO 32000-2 Table 22). Reject rather
         // than silently force the bit on: PdfEncryptionSettings.Permissions defaults to
         // All (which already includes Extract), so this only fires when the caller made
@@ -540,7 +543,7 @@ public sealed class PdfDocument : IDisposable
             && _encryptionSettings is { } uaEncryptionSettings
             && (uaEncryptionSettings.Permissions & PdfPermissions.Extract) == 0)
             throw new InvalidOperationException(
-                "PDF/UA-1 requires content extraction for assistive technology (ISO 14289-1 §7.16-1). " +
+                "PDF/UA-1 requires content extraction for assistive technology (ISO 14289-1 §7.16). " +
                 "Add PdfPermissions.Extract to PdfEncryptionSettings.Permissions before calling Save().");
 
         if (Linearize && UseObjectStreams)
@@ -901,7 +904,11 @@ public sealed class PdfDocument : IDisposable
     /// <exception cref="ObjectDisposedException">The document has been disposed.</exception>
     /// <exception cref="ArgumentNullException"><paramref name="destination"/> is <see langword="null"/>.</exception>
     /// <exception cref="NotSupportedException"><see cref="UseObjectStreams"/> is combined with <see cref="Encrypt"/>.</exception>
-    /// <exception cref="InvalidOperationException">A PDF/A <see cref="Conformance"/> is set together with <see cref="Encrypt"/>.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// A PDF/A <see cref="Conformance"/> is set together with <see cref="Encrypt"/>, or
+    /// <see cref="Conformance"/> is <see cref="PdfConformance.PdfUA1"/> together with
+    /// <see cref="Encrypt"/> settings that omit <see cref="PdfPermissions.Extract"/>.
+    /// </exception>
     public async Task SaveAsync(Stream destination, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(destination);
