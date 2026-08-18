@@ -110,7 +110,7 @@ public sealed class PdfDocumentReader : IDisposable
             return null;
         try
         {
-            return Resolve(reference.ObjectNumber) is PdfInteger length ? length.Value : null;
+            return Resolve(reference) is PdfInteger length ? length.Value : null;
         }
         finally
         {
@@ -118,14 +118,32 @@ public sealed class PdfDocumentReader : IDisposable
         }
     }
 
-    /// <summary>Resolves an indirect reference by object number, returning its dictionary or value.</summary>
-    internal PdfObject? Resolve(int objectNumber)
-    {
-        if (_cache.TryGetValue(objectNumber, out var cached))
-            return cached;
+    /// <summary>
+    /// Resolves an indirect reference by object number, returning its dictionary or value, without
+    /// regard to generation. Used where no specific generation is being asked for (e.g. scanning
+    /// every object number the cross-reference table defines). Prefer <see cref="Resolve(PdfIndirectReference)"/>
+    /// when a real reference — and therefore its generation — is available.
+    /// </summary>
+    internal PdfObject? Resolve(int objectNumber) => Resolve(objectNumber, generation: null);
 
+    /// <summary>
+    /// Resolves an indirect reference by object number and generation. A non-null
+    /// <paramref name="generation"/> that does not match the cross-reference table's record for
+    /// this object resolves to <see langword="null"/> rather than the wrong revision (ISO 32000-2
+    /// §7.3.10) — e.g. <c>10 2 R</c> when the table holds object 10 at generation 0.
+    /// </summary>
+    private PdfObject? Resolve(int objectNumber, int? generation)
+    {
         if (!_xref.TryGetValue(objectNumber, out var entry))
             return null;
+
+        // Checked before the cache: a cache hit predates any generation the caller now asks for, so
+        // the check must not be skipped just because the object number was resolved once already.
+        if (generation is not null && generation != entry.Generation)
+            return null;
+
+        if (_cache.TryGetValue(objectNumber, out var cached))
+            return cached;
 
         if (_resolveDepth >= MaxResolveDepth)
             throw new InvalidDataException(
@@ -141,7 +159,7 @@ public sealed class PdfDocumentReader : IDisposable
                 var parser = new PdfObjectParser(Bytes, CheckedOffset(entry.Offset), ResolveLength);
                 var result = parser.ParseIndirectObject();
 
-                if (result.ObjectNumber != objectNumber)
+                if (result.ObjectNumber != objectNumber || (generation is not null && result.Generation != generation))
                     return null;
 
                 value = result.IsStream
@@ -168,15 +186,17 @@ public sealed class PdfDocumentReader : IDisposable
     }
 
     /// <summary>
-    /// Returns the <see cref="ParsedStream"/> for a stream object, or null if the
-    /// object is not a stream or does not exist.
+    /// Returns the <see cref="ParsedStream"/> for a stream object, without regard to generation, or
+    /// null if the object is not a stream or does not exist. Prefer
+    /// <see cref="ResolveStream(PdfIndirectReference)"/> when a real reference is available.
     /// </summary>
-    internal ParsedStream? ResolveStream(int objectNumber)
-    {
-        // If already in stream cache, return it.
-        if (_streamCache.TryGetValue(objectNumber, out var cached))
-            return cached;
+    internal ParsedStream? ResolveStream(int objectNumber) => ResolveStream(objectNumber, generation: null);
 
+    /// <summary>Resolves an indirect reference to a stream object, honoring its generation.</summary>
+    internal ParsedStream? ResolveStream(PdfIndirectReference r) => ResolveStream(r.ObjectNumber, r.Generation);
+
+    private ParsedStream? ResolveStream(int objectNumber, int? generation)
+    {
         if (!_xref.TryGetValue(objectNumber, out var entry))
             return null;
 
@@ -184,10 +204,19 @@ public sealed class PdfDocumentReader : IDisposable
         if (entry.Kind == XrefEntryKind.InObjectStream)
             return null;
 
+        // See the generation check in Resolve(int, int?): must happen before the cache, since a
+        // cache hit predates any generation the caller now asks for.
+        if (generation is not null && generation != entry.Generation)
+            return null;
+
+        // If already in stream cache, return it.
+        if (_streamCache.TryGetValue(objectNumber, out var cached))
+            return cached;
+
         var parser = new PdfObjectParser(Bytes, CheckedOffset(entry.Offset), ResolveLength);
         var result = parser.ParseIndirectObject();
 
-        if (result.ObjectNumber != objectNumber)
+        if (result.ObjectNumber != objectNumber || (generation is not null && result.Generation != generation))
             return null;
 
         if (!result.IsStream)
@@ -208,8 +237,8 @@ public sealed class PdfDocumentReader : IDisposable
     /// </summary>
     internal byte[]? GetDecodedStreamData(ParsedStream stream) => PdfFilters.Decode(stream, ResolveMaybe);
 
-    /// <summary>Resolves an indirect reference.</summary>
-    internal PdfObject? Resolve(PdfIndirectReference r) => Resolve(r.ObjectNumber);
+    /// <summary>Resolves an indirect reference, honoring its generation.</summary>
+    internal PdfObject? Resolve(PdfIndirectReference r) => Resolve(r.ObjectNumber, r.Generation);
 
     /// <summary>
     /// If <paramref name="obj"/> is a <see cref="PdfIndirectReference"/>, resolves and returns

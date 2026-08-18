@@ -90,6 +90,32 @@ public sealed class PdfObjectTests
     }
 
     [Fact]
+    public void IndirectRef_withGeneration_serializes()
+    {
+        var r = new PdfIndirectReference(5, 2);
+        Assert.Equal("5 2 R", Serialize(r));
+    }
+
+    [Fact]
+    public void IndirectRef_withGenerationZero_matchesSingleArgCtor() =>
+        Assert.Equal("5 0 R", Serialize(new PdfIndirectReference(5, 0)));
+
+    [Fact]
+    public void IndirectRef_equality_comparesGeneration()
+    {
+        var genZero = new PdfIndirectReference(10);
+        var genZeroExplicit = new PdfIndirectReference(10, 0);
+        var genTwo = new PdfIndirectReference(10, 2);
+
+        Assert.Equal(genZero, genZeroExplicit);
+        Assert.Equal(genZero.GetHashCode(), genZeroExplicit.GetHashCode());
+
+        Assert.NotEqual(genZero, genTwo);
+        Assert.False(genZero.Equals((object)genTwo));
+        Assert.NotEqual(genZero.GetHashCode(), genTwo.GetHashCode());
+    }
+
+    [Fact]
     public void IndirectObject_serializes()
     {
         var obj = new PdfIndirectObject(3, new PdfInteger(42));

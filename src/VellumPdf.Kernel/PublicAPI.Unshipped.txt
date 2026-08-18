@@ -1,1 +1,3 @@
 #nullable enable
+VellumPdf.Core.PdfIndirectReference.Generation.get -> int
+VellumPdf.Core.PdfIndirectReference.PdfIndirectReference(int objectNumber, int generation) -> void

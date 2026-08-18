@@ -45,7 +45,11 @@ internal sealed class XrefParser
     {
         var startxrefOffset = FindLastStartxref(data);
         var xref = new Dictionary<int, XrefEntry>();
-        var (trailer, revisions) = ParseRevisionChain(data, startxrefOffset, xref);
+        // Object numbers a newer revision recorded as free. Revisions are walked newest-first below,
+        // so an older revision's entry for the same object must not resurrect it via xref.TryAdd —
+        // a freed object is a deletion, not a fallback to whatever the object used to be.
+        var freed = new HashSet<int>();
+        var (trailer, revisions) = ParseRevisionChain(data, startxrefOffset, xref, freed);
         return (xref, trailer, startxrefOffset, revisions);
     }
 
@@ -98,7 +102,7 @@ internal sealed class XrefParser
     }
 
     private static (PdfDictionary Trailer, IReadOnlyList<XrefRevision> Revisions) ParseRevisionChain(
-        ReadOnlyMemory<byte> data, int xrefOffset, Dictionary<int, XrefEntry> xref)
+        ReadOnlyMemory<byte> data, int xrefOffset, Dictionary<int, XrefEntry> xref, HashSet<int> freed)
     {
         var seenOffsets = new HashSet<int>();
         PdfDictionary? newestTrailer = null;
@@ -119,7 +123,7 @@ internal sealed class XrefParser
 
             revisionsNewestFirst.Add(new XrefRevision(currentOffset, startxrefForCurrent));
 
-            var trailer = ParseOneRevision(data, currentOffset, xref, seenOffsets);
+            var trailer = ParseOneRevision(data, currentOffset, xref, freed, seenOffsets);
             newestTrailer ??= trailer;
 
             // Check for unsupported features.
@@ -149,7 +153,7 @@ internal sealed class XrefParser
     }
 
     private static PdfDictionary ParseOneRevision(
-        ReadOnlyMemory<byte> data, int xrefOffset, Dictionary<int, XrefEntry> xref,
+        ReadOnlyMemory<byte> data, int xrefOffset, Dictionary<int, XrefEntry> xref, HashSet<int> freed,
         HashSet<int> seenOffsets)
     {
         var span = data.Span;
@@ -163,7 +167,7 @@ internal sealed class XrefParser
         if (IsDigit(b))
         {
             // Cross-reference stream: "N G obj << ... >> stream ... endstream endobj"
-            return ParseXrefStream(data, xrefOffset, xref);
+            return ParseXrefStream(data, xrefOffset, xref, freed);
         }
 
         // Classic xref table
@@ -172,7 +176,7 @@ internal sealed class XrefParser
             throw new InvalidDataException(
                 $"Malformed PDF: expected 'xref' keyword at offset {xrefOffset}.");
 
-        var trailer = ParseClassicXrefTable(data, xrefOffset, xref);
+        var trailer = ParseClassicXrefTable(data, xrefOffset, xref, freed);
 
         // Hybrid: if the classic trailer has /XRefStm, also parse that xref stream.
         // Classic entries win, so we've already added them — the stream entries are added
@@ -189,7 +193,7 @@ internal sealed class XrefParser
             // Avoid cycling into an already-processed offset, and record this one so a later /Prev
             // revision pointing at the same stream does not re-parse it.
             if (seenOffsets.Add(stmOffset))
-                ParseXrefStream(data, stmOffset, xref);
+                ParseXrefStream(data, stmOffset, xref, freed);
         }
 
         return trailer;
@@ -198,7 +202,7 @@ internal sealed class XrefParser
     // ── Classic xref table ───────────────────────────────────────────────────
 
     private static PdfDictionary ParseClassicXrefTable(
-        ReadOnlyMemory<byte> data, int xrefOffset, Dictionary<int, XrefEntry> xref)
+        ReadOnlyMemory<byte> data, int xrefOffset, Dictionary<int, XrefEntry> xref, HashSet<int> freed)
     {
         var span = data.Span;
         var pos = xrefOffset + 4; // skip 'xref'
@@ -255,7 +259,22 @@ internal sealed class XrefParser
                         throw new InvalidDataException(
                             $"Malformed PDF: bad xref entry offset '{offsetStr}' for obj {objNum}.");
 
-                    xref.TryAdd(objNum, XrefEntry.Uncompressed(objOffset));
+                    var genStr = Encoding.ASCII.GetString(entry[11..16]);
+                    if (!int.TryParse(genStr, NumberStyles.None, CultureInfo.InvariantCulture,
+                            out var objGeneration))
+                        throw new InvalidDataException(
+                            $"Malformed PDF: bad xref entry generation '{genStr}' for obj {objNum}.");
+
+                    // Newest revision wins: skip an object a newer revision already freed.
+                    if (!freed.Contains(objNum))
+                        xref.TryAdd(objNum, XrefEntry.Uncompressed(objOffset, objGeneration));
+                }
+                else if (objType == 'f')
+                {
+                    // A free entry means the object does not exist at this revision. Record it so an
+                    // older revision's 'n' entry for the same number (processed later, since revisions
+                    // are walked newest-first) does not resurrect a deleted object.
+                    freed.Add(objNum);
                 }
 
                 pos += 20;
@@ -274,7 +293,7 @@ internal sealed class XrefParser
     // ── Cross-reference stream ───────────────────────────────────────────────
 
     private static PdfDictionary ParseXrefStream(
-        ReadOnlyMemory<byte> data, int xrefOffset, Dictionary<int, XrefEntry> xref)
+        ReadOnlyMemory<byte> data, int xrefOffset, Dictionary<int, XrefEntry> xref, HashSet<int> freed)
     {
         var parser = new PdfObjectParser(data, xrefOffset);
         var result = parser.ParseIndirectObject();
@@ -357,10 +376,15 @@ internal sealed class XrefParser
                 switch (type)
                 {
                     case 1:
-                        // field2 is a byte offset into the file; reject any value that cannot
-                        // resolve (negative, or beyond the file's last byte).
-                        if (field2 >= 0 && field2 < data.Length)
-                            xref.TryAdd(objNum, XrefEntry.Uncompressed(field2));
+                        // field2 is a byte offset into the file, field3 the generation; reject an
+                        // offset that cannot resolve (negative, or beyond the file's last byte), and
+                        // a generation that cannot fit the field (a /W width up to 8 bytes can exceed
+                        // int range).
+                        if (field3 is < 0 or > int.MaxValue)
+                            throw new InvalidDataException(
+                                "Malformed PDF: xref stream type-1 entry generation is out of range.");
+                        if (field2 >= 0 && field2 < data.Length && !freed.Contains(objNum))
+                            xref.TryAdd(objNum, XrefEntry.Uncompressed(field2, (int)field3));
                         break;
                     case 2:
                         // field2 = container object number, field3 = index within it; a /W width up
@@ -368,10 +392,13 @@ internal sealed class XrefParser
                         if (field2 is < 0 or > int.MaxValue || field3 is < 0 or > int.MaxValue)
                             throw new InvalidDataException(
                                 "Malformed PDF: xref stream type-2 entry field is out of range.");
-                        xref.TryAdd(objNum, XrefEntry.InObjStm((int)field2, (int)field3));
+                        if (!freed.Contains(objNum))
+                            xref.TryAdd(objNum, XrefEntry.InObjStm((int)field2, (int)field3));
                         break;
                     case 0:
-                        // free entry — skip
+                        // free entry: the object does not exist at this revision (see the classic-table
+                        // 'f' handling above for why this must be recorded, not merely skipped).
+                        freed.Add(objNum);
                         break;
                     default:
                         // unknown type — ignore per spec (future compatibility)

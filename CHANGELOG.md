@@ -6,7 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- **A reference's generation number is honored instead of discarded.** `PdfIndirectReference`
+  carried only an object number and always wrote ` 0 R`, and the xref table was keyed on object
+  number alone, so `10 2 R` resolved to whatever object 10 held at generation 0 rather than
+  nothing. `PdfIndirectReference` gains a `Generation` property and a two-argument constructor,
+  and the reader now checks a reference's generation against the cross-reference table before
+  resolving it — a mismatch, including one against an object a later revision freed, resolves to
+  nothing instead of the wrong object. Classic-table `f` (free) entries were also silently
+  skipped rather than recorded, which let an older revision's stale entry for the same object
+  number resurface through a freed object number; they are now tracked so the newest revision's
+  deletion wins. This is a prerequisite for decryption (#97), whose per-object key derivation
+  (R2–R4) consumes the generation. (#121)
 
 ## [2.0.0] - 2026-08-17
 
