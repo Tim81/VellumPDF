@@ -877,7 +877,7 @@ public sealed class PdfDocument : IDisposable
             // PdfDictionary, which never calls the encryptor directly — its children
             // (PdfHexString values) do. We disable the encryptor for those writes by
             // temporarily patching writer.Encryptor inside WriteAllWithEncryptExempt.
-            WriteAllWithEncryptExempt(writer, xref, registry, encryptRef);
+            WriteAllWithEncryptExempt(writer, xref, registry, encryptRef, metadataRef, _encryptionSettings);
 
             // ── Cross-reference table + trailer ───────────────────────────────
             // Trailer /ID must NOT be encrypted. Ensure encryptor is null during trailer write.
@@ -1423,16 +1423,22 @@ public sealed class PdfDocument : IDisposable
     /// <summary>
     /// Writes all registered indirect objects, temporarily disabling the encryptor
     /// for the /Encrypt object's slot (its data is already computed encrypted values —
-    /// they must NOT be double-encrypted).
+    /// they must NOT be double-encrypted) and, when requested, for the metadata stream.
     ///
     /// The /Encrypt dict contains PdfHexString values that would normally go through
     /// the encryptor if it is active. We disable the encryptor just for that one object.
+    ///
+    /// ISO 32000-2 §7.6.2: when /EncryptMetadata is false, the metadata stream itself
+    /// shall not be encrypted (some indexers and preview tools read /Metadata without
+    /// decrypting). The same per-object disable used for /Encrypt exempts /Metadata too.
     /// </summary>
     private static void WriteAllWithEncryptExempt(
         PdfWriter writer,
         CrossReferenceBuilder xref,
         PdfObjectRegistry registry,
-        PdfIndirectReference? encryptRef)
+        PdfIndirectReference? encryptRef,
+        PdfIndirectReference metadataRef,
+        PdfEncryptionSettings? encryptionSettings)
     {
         if (encryptRef is null)
         {
@@ -1441,10 +1447,14 @@ public sealed class PdfDocument : IDisposable
             return;
         }
 
+        var exemptMetadata = encryptionSettings is { EncryptMetadata: false };
+
         registry.WriteAll(writer, xref, objectNumber =>
         {
-            // Disable the encryptor while writing the /Encrypt dict itself.
-            if (objectNumber == encryptRef.ObjectNumber)
+            // Disable the encryptor while writing the /Encrypt dict itself, or — when
+            // /EncryptMetadata is false — while writing the metadata stream's body.
+            if (objectNumber == encryptRef.ObjectNumber
+                || (exemptMetadata && objectNumber == metadataRef.ObjectNumber))
             {
                 var saved = writer.Encryptor;
                 writer.Encryptor = null;

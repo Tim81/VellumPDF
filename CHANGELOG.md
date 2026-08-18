@@ -84,6 +84,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   omit content extraction (`PdfPermissions.Extract`) is rejected, because ISO 14289-1 §7.16-1
   requires that assistive technology be able to extract content, and `Save()` would otherwise
   emit a document that fails its own declared conformance by construction. (#188)
+- **`/EncryptMetadata false` now actually exempts the metadata stream.** The flag was written
+  into the `/Encrypt` dictionary and the `/Perms` block, but nothing stopped the metadata
+  stream's own body from being encrypted anyway, contradicting ISO 32000-2 §7.6.2 and the flag
+  sitting right next to it. **If you already set this false, upgrading changes what your output
+  exposes**: the XMP packet's `dc:title`, author and subject are now genuinely cleartext, where
+  the bug previously encrypted them despite the flag. Leave it at the default `true` unless that
+  exposure is a requirement you've weighed. (#182)
 
 ## [2.0.0] - 2026-08-17
 

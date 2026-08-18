@@ -243,6 +243,51 @@ public sealed class EncryptionTests
         Assert.Contains("/DisplayDocTitle true", raw, StringComparison.Ordinal);
     }
 
+    // ── #182: /EncryptMetadata false must exempt the metadata stream body ────
+
+    [Fact]
+    public void EncryptMetadata_false_leaves_metadata_stream_body_readable_in_raw_bytes()
+    {
+        // Regression for #182: /EncryptMetadata false was only ever written into the
+        // /Encrypt dict and the /Perms block — nothing exempted the /Metadata object
+        // itself, so its XML body was encrypted anyway, contradicting the flag it
+        // shipped right next to (ISO 32000-2 §7.6.2). Assert on the actual XML bytes,
+        // not just the presence of the /EncryptMetadata key in the dict: the dict key
+        // was already present and correct while this bug shipped.
+        using var doc = new PdfDocument();
+        doc.Info.Title = "Metadata exemption test";
+        doc.AddPage();
+        doc.Encrypt(new PdfEncryptionSettings { UserPassword = "openme", EncryptMetadata = false });
+
+        var ms = new MemoryStream();
+        doc.Save(ms);
+        var raw = Encoding.Latin1.GetString(ms.ToArray());
+
+        Assert.Contains("/EncryptMetadata false", raw, StringComparison.Ordinal);
+        Assert.Contains("<?xpacket begin", raw, StringComparison.Ordinal);
+        Assert.Contains("<x:xmpmeta", raw, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void EncryptMetadata_true_encrypts_the_metadata_stream_body()
+    {
+        // Inverse of the above: with the default (true), the metadata stream body
+        // must NOT be readable in the raw output — otherwise the exemption logic
+        // could be exempting every object rather than just /Metadata.
+        using var doc = new PdfDocument();
+        doc.Info.Title = "Metadata encryption default test";
+        doc.AddPage();
+        doc.Encrypt(new PdfEncryptionSettings { UserPassword = "openme" });
+
+        var ms = new MemoryStream();
+        doc.Save(ms);
+        var raw = Encoding.Latin1.GetString(ms.ToArray());
+
+        Assert.Contains("/EncryptMetadata true", raw, StringComparison.Ordinal);
+        Assert.DoesNotContain("<?xpacket begin", raw, StringComparison.Ordinal);
+        Assert.DoesNotContain("<x:xmpmeta", raw, StringComparison.Ordinal);
+    }
+
     // ── PdfEncryptionSettings API ────────────────────────────────────────────
 
     [Fact]
