@@ -42,16 +42,56 @@ public sealed class GuardTests
     // ── PDF/A + Encrypt mutual-exclusion guard ───────────────────────────────
     // (UseObjectStreams + Encrypt is already covered by ObjectStreamTests)
 
-    [Fact]
-    public void Save_withPdfAConformanceAndEncrypt_throwsInvalidOperationException()
+    [Theory]
+    [InlineData(PdfConformance.PdfA2b)]
+    [InlineData(PdfConformance.PdfA2u)]
+    [InlineData(PdfConformance.PdfA2a)]
+    public void Save_withPdfAConformanceAndEncrypt_throwsInvalidOperationException(PdfConformance conformance)
     {
         using var doc = new PdfDocument();
         doc.AddPage();
-        doc.Conformance = PdfConformance.PdfA2b;
+        doc.Conformance = conformance;
         doc.Encrypt(new PdfEncryptionSettings { UserPassword = "pw" });
 
         var ms = new MemoryStream();
-        Assert.Throws<InvalidOperationException>(() => doc.Save(ms));
+        var ex = Assert.Throws<InvalidOperationException>(() => doc.Save(ms));
+        Assert.Contains("PDF/A", ex.Message, StringComparison.Ordinal);
+    }
+
+    // ── PDF/UA-1 + Encrypt: distinct from the PDF/A rule (#188) ──────────────
+    // PDF/UA-1 (ISO 14289-1) does not prohibit encryption; it requires that content
+    // remain extractable for assistive technology, so the guard is permission-shaped
+    // rather than a flat "no encryption" rule.
+
+    [Fact]
+    public void Save_withPdfUA1ConformanceAndEncrypt_savesSuccessfully()
+    {
+        // PdfEncryptionSettings.Permissions defaults to All, which includes Extract,
+        // so the default case must not be rejected.
+        using var doc = new PdfDocument { Conformance = PdfConformance.PdfUA1, Tagged = true, Language = "en-US" };
+        doc.AddPage();
+        doc.Encrypt(new PdfEncryptionSettings { UserPassword = "pw" });
+
+        var ms = new MemoryStream();
+        var ex = Record.Exception(() => doc.Save(ms));
+        Assert.Null(ex);
+    }
+
+    [Fact]
+    public void Save_withPdfUA1ConformanceAndEncryptMissingExtractPermission_throwsInvalidOperationException()
+    {
+        using var doc = new PdfDocument { Conformance = PdfConformance.PdfUA1, Tagged = true, Language = "en-US" };
+        doc.AddPage();
+        doc.Encrypt(new PdfEncryptionSettings
+        {
+            UserPassword = "pw",
+            Permissions = PdfPermissions.All & ~PdfPermissions.Extract,
+        });
+
+        var ms = new MemoryStream();
+        var ex = Assert.Throws<InvalidOperationException>(() => doc.Save(ms));
+        Assert.Contains("PDF/UA-1", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("Extract", ex.Message, StringComparison.Ordinal);
     }
 
     // ── ArgumentNullException guards on Save and Encrypt ─────────────────────

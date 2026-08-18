@@ -103,6 +103,27 @@ public sealed class EncryptionTests
     }
 
     [Fact]
+    public void Permissions_reserved_bits_7_and_8_are_always_set()
+    {
+        // ISO 32000-2 Table 22: bits 7-8 (positions 6-7 from LSB) must be 1 for R >= 3,
+        // regardless of the caller's requested permissions. PdfPermissions has no flag
+        // at 1<<6/1<<7, so nothing the caller passes can turn these off.
+        var allOff = new StandardSecurityHandler(new PdfEncryptionSettings
+        {
+            UserPassword = "pw",
+            Permissions = PdfPermissions.None,
+        });
+        var allOn = new StandardSecurityHandler(new PdfEncryptionSettings
+        {
+            UserPassword = "pw",
+            Permissions = PdfPermissions.All,
+        });
+
+        Assert.Equal(0xC0, allOff.PValue & 0xC0);
+        Assert.Equal(0xC0, allOn.PValue & 0xC0);
+    }
+
+    [Fact]
     public void Permissions_None_clears_user_bits()
     {
         var handler = new StandardSecurityHandler(new PdfEncryptionSettings
@@ -111,8 +132,10 @@ public sealed class EncryptionTests
             Permissions = PdfPermissions.None,
         });
 
-        // Bits 2..11 should all be 0.
-        Assert.Equal(0, handler.PValue & 0xFFC);
+        // Bits 2..5 and 8..11 should be 0; bits 6..7 (0xC0) are forced to 1
+        // regardless of the requested permissions (ISO 32000-2 Table 22).
+        Assert.Equal(0, handler.PValue & 0xF3C);
+        Assert.Equal(0xC0, handler.PValue & 0xC0);
     }
 
     // ── Two-pass determinism: different keys each time ─────────────────────
@@ -193,6 +216,139 @@ public sealed class EncryptionTests
 
         Assert.Contains("/Filter", raw);
         Assert.Contains("/Standard", raw);
+    }
+
+    // ── #188: PDF/UA-1 + encryption ──────────────────────────────────────────
+
+    [Fact]
+    public void PdfUA1_encrypted_doc_still_carries_StructTreeRoot_and_MarkInfo()
+    {
+        // Regression for #188: the PDF/A-only encryption guard used to catch PdfUA1
+        // (Conformance != None), which meant an accessible + encrypted document could
+        // never be saved at all. Once allowed, the accessibility structure the writer
+        // already builds for Tagged/PdfUA1 documents must still show up unencrypted —
+        // /StructTreeRoot, /MarkInfo and their catalog entries are dictionary structure,
+        // not string/stream content, so they are never passed through the encryptor.
+        using var doc = new PdfDocument { Conformance = PdfConformance.PdfUA1, Tagged = true, Language = "en-US" };
+        doc.AddPage();
+        doc.Encrypt(new PdfEncryptionSettings { UserPassword = "openme" });
+
+        var ms = new MemoryStream();
+        doc.Save(ms);
+        var raw = Encoding.Latin1.GetString(ms.ToArray());
+
+        Assert.Contains("/StructTreeRoot", raw, StringComparison.Ordinal);
+        Assert.Contains("/MarkInfo", raw, StringComparison.Ordinal);
+        Assert.Contains("/Lang", raw, StringComparison.Ordinal);
+        Assert.Contains("/DisplayDocTitle true", raw, StringComparison.Ordinal);
+    }
+
+    // ── #182: /EncryptMetadata false must exempt the metadata stream body ────
+
+    [Fact]
+    public void EncryptMetadata_false_leaves_metadata_stream_body_readable_in_raw_bytes()
+    {
+        // Regression for #182: /EncryptMetadata false was only ever written into the
+        // /Encrypt dict and the /Perms block — nothing exempted the /Metadata object
+        // itself, so its XML body was encrypted anyway, contradicting the flag it
+        // shipped right next to (ISO 32000-2 §7.6.2). Assert on the actual XML bytes,
+        // not just the presence of the /EncryptMetadata key in the dict: the dict key
+        // was already present and correct while this bug shipped.
+        const string title = "Metadata exemption test";
+        const string keywords = "InfoStaysEncryptedWitness";
+        using var doc = new PdfDocument();
+        doc.Info.Title = title;
+        doc.Info.Keywords = keywords;
+        doc.AddPage();
+        doc.Encrypt(new PdfEncryptionSettings { UserPassword = "openme", EncryptMetadata = false });
+
+        var ms = new MemoryStream();
+        doc.Save(ms);
+        var raw = Encoding.Latin1.GetString(ms.ToArray());
+
+        Assert.Contains("/EncryptMetadata false", raw, StringComparison.Ordinal);
+        Assert.Contains("<?xpacket begin", raw, StringComparison.Ordinal);
+        Assert.Contains("<x:xmpmeta", raw, StringComparison.Ordinal);
+
+        // Value level, not just structural markers. The CHANGELOG tells users this flag exposes
+        // the title, so pin the title text itself and pin it inside the packet: /Info carries the
+        // same string and stays encrypted, so a cleartext hit after <?xpacket can only be the XMP.
+        var packet = raw[raw.IndexOf("<?xpacket begin", StringComparison.Ordinal)..];
+        Assert.Contains("dc:title", packet, StringComparison.Ordinal);
+        Assert.Contains(title, packet, StringComparison.Ordinal);
+
+        // And the exemption has to stay narrow. Widening the predicate to every object leaves the
+        // whole document cleartext, which every other assertion here tolerates. Keywords is the
+        // witness because XmpMetadataWriter has no pdf:Keywords branch (#199), so it reaches /Info
+        // and nowhere else. Search the bytes as written: PdfLiteralString.FromUnicode emits UTF-16BE
+        // with a BOM even for ASCII, so searching the plain text passes vacuously and reads as
+        // coverage it is not.
+        Assert.DoesNotContain(AsWritten(keywords), raw, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A metadata string exactly as it lands in the file, mirroring both steps the writer applies:
+    /// <see cref="PdfLiteralString.FromUnicode"/> encodes /Info values as UTF-16BE even for pure
+    /// ASCII, and <c>WriteTo</c> then escapes <c>(</c>, <c>)</c>, <c>\</c>, LF and CR.
+    /// <para>
+    /// Mirroring the escaping is what keeps this honest. A needle built from the unescaped bytes
+    /// stops being a substring the moment a value contains a character with one of those bytes in
+    /// either half — which for a DoesNotContain assertion is a silent pass, indistinguishable
+    /// from the property actually holding. Encoding by hand rather than through
+    /// <c>Encoding.BigEndianUnicode</c> for the same reason: that would fold a lone surrogate to
+    /// U+FFFD, where the writer emits the raw code unit.
+    /// </para>
+    /// </summary>
+    private static string AsWritten(string value)
+    {
+        var sb = new StringBuilder();
+        foreach (var unit in value)
+        {
+            Append(sb, (char)(unit >> 8));
+            Append(sb, (char)(unit & 0xFF));
+        }
+
+        return sb.ToString();
+
+        static void Append(StringBuilder sb, char b)
+        {
+            switch (b)
+            {
+                case '(' or ')' or '\\': sb.Append('\\').Append(b); break;
+                case '\n': sb.Append("\\n"); break;
+                case '\r': sb.Append("\\r"); break;
+                default: sb.Append(b); break;
+            }
+        }
+    }
+
+    [Fact]
+    public void EncryptMetadata_true_encrypts_the_metadata_stream_body()
+    {
+        // Inverse of the above: with the default (true), the metadata stream body
+        // must NOT be readable in the raw output — otherwise the exemption logic
+        // could be exempting every object rather than just /Metadata.
+        const string title = "Metadata encryption default test";
+        using var doc = new PdfDocument();
+        doc.Info.Title = title;
+        doc.AddPage();
+        doc.Encrypt(new PdfEncryptionSettings { UserPassword = "openme" });
+
+        var ms = new MemoryStream();
+        doc.Save(ms);
+        var raw = Encoding.Latin1.GetString(ms.ToArray());
+
+        Assert.Contains("/EncryptMetadata true", raw, StringComparison.Ordinal);
+        Assert.DoesNotContain("<?xpacket begin", raw, StringComparison.Ordinal);
+        Assert.DoesNotContain("<x:xmpmeta", raw, StringComparison.Ordinal);
+
+        // The title reaches both /Info and the XMP packet, and both must be ciphertext here. They
+        // need separate searches: the packet holds it as ASCII, while /Info goes through
+        // PdfLiteralString.FromUnicode and is UTF-16BE with a BOM even for pure ASCII. Searching
+        // only the plain text would never see a cleartext /Info, so it would report a coverage of
+        // /Info that it does not have.
+        Assert.DoesNotContain(title, raw, StringComparison.Ordinal);
+        Assert.DoesNotContain(AsWritten(title), raw, StringComparison.Ordinal);
     }
 
     // ── PdfEncryptionSettings API ────────────────────────────────────────────

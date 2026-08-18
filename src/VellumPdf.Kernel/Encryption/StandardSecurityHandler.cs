@@ -46,11 +46,13 @@ public sealed class StandardSecurityHandler : IPdfEncryptor
 
         // Derive /P integer (ISO 32000-2 Table 22).
         // Bits 1–2 (positions 0–1 from LSB) are reserved = 0.
-        // Bits 7–8 (positions 6–7 from LSB) must be 1 for R >= 3.
+        // Bits 7–8 (positions 6–7 from LSB) must be 1 for R >= 3 — PdfPermissions has no
+        // flag at 1<<6/1<<7 (the enum jumps Annotate=1<<5 straight to FillForms=1<<8), so
+        // those two bits are forced on here rather than sourced from the caller's flags.
         // Bits 13–32 (positions 12–31) are reserved = 1.
-        // Pattern: 0xFFFFF000 | enabledLowBits, then clear bits 0 and 1.
+        // Pattern: 0xFFFFF0C0 | enabledLowBits, then clear bits 0 and 1.
         var enabledBits = (int)settings.Permissions;
-        PValue = (int)(0xFFFFF000u | (uint)(enabledBits & 0xFFF)) & ~0x3;
+        PValue = (int)((0xFFFFF0C0u | (uint)(enabledBits & 0xFFF)) & ~0x3u);
 
         var userPw = PasswordBytes(settings.UserPassword);
         var ownerPw = PasswordBytes(settings.OwnerPassword ?? settings.UserPassword);
