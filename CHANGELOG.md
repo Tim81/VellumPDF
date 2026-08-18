@@ -18,6 +18,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **`Microsoft.SourceLink.GitHub` moves to 10.0.400**, from a version two majors behind the target
+  framework. This is the only dependency in the sweep that reaches a published artifact: SourceLink
+  writes the commit and repository metadata that lets consumers step into library source from the
+  symbol packages. Test and tooling packages moved too — PublicApiAnalyzers 5.6.0,
+  Microsoft.NET.Test.Sdk 18.9.0, Verify.XunitV3 31.28.0, CsCheck 4.8.0, coverlet.collector 10.0.1 —
+  none of which ship. `System.Security.Cryptography.Pkcs`, the one third-party runtime dependency,
+  was already current at 10.0.11. xunit stays on 3.x: 4.0.0 moves to Microsoft.Testing.Platform,
+  which the .NET 10 SDK will not run through the VSTest target, so it needs its own migration (#200).
+
 - **`PdfIndirectReference` and `PdfIndirectObject` honour generation, which changes four members
   on surfaces Stable/Shipped since 2.0.0.** `PdfIndirectReference.WriteTo` now emits the real
   generation instead of a hardcoded `0`; `Equals` narrowed, so `new PdfIndirectReference(5)` no
