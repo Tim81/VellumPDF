@@ -74,12 +74,20 @@ internal sealed class XrefParser
         var searchStart = Math.Max(0, span.Length - TailWindow);
         var searchSpan = span[searchStart..];
 
-        // Find the last occurrence of "startxref" in the tail of the file.
+        // Find the last occurrence of "startxref" in the tail of the file. Scan backward from the
+        // end of the window and stop at the first hit: both directions want the same answer (the
+        // occurrence nearest EOF), but scanning forward and keeping the last match — the previous
+        // version of this loop — pays the full window every time regardless of how close that
+        // occurrence actually is. A real file's last 'startxref' is typically tens of bytes from
+        // EOF, so scanning backward turns a fixed 1 MiB cost into O(distance to the match).
         var lastFound = -1;
-        for (var i = 0; i <= searchSpan.Length - StartxrefBytes.Length; i++)
+        for (var i = searchSpan.Length - StartxrefBytes.Length; i >= 0; i--)
         {
             if (searchSpan[i..].StartsWith(StartxrefBytes))
+            {
                 lastFound = i;
+                break;
+            }
         }
 
         if (lastFound < 0)

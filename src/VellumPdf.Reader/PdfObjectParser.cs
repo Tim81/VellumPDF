@@ -378,18 +378,40 @@ internal sealed class PdfObjectParser
         return ScanToEndstream(dict, bodyStart);
     }
 
+    // Caps how far past bodyStart a single ScanToEndstream call will look. Without this, a file
+    // packed with many streams whose own real terminator needs the fallback tiers below turns
+    // recovery into O(streams x file size): each call would otherwise be free to walk arbitrarily
+    // far past its own stream into everything that follows. A stream terminator is not tens of
+    // megabytes away in any real file.
+    private const int MaxEndstreamScanBytes = 64 * 1024 * 1024;
+
     private ParsedStream ScanToEndstream(PdfDictionary dict, int bodyStart)
     {
         // ISO 32000-2 §7.3.8.1: the stream data is followed by an EOL, then 'endstream'. Taking the
         // first literal occurrence of those nine bytes (as this used to) is wrong whenever the
         // binary body itself contains them — plausible in an embedded font subset or a compressed
-        // image — which silently truncated the body instead of reading it in full (#105). Only
-        // accept a candidate at a genuine boundary, and among those prefer the one whose following
-        // bytes actually look like the rest of the file: 'endobj', or the next object's header.
-        var span = _lexer.Slice(bodyStart, _lexer.Length - bodyStart).Span;
+        // image — which silently truncated the body instead of reading it in full (#105).
+        //
+        // Three preference tiers, checked in scan order:
+        //   1. What FOLLOWS the marker looks like the rest of the file ('endobj', or the next
+        //      object's "N G obj" header) — checked independently of what precedes it. This is
+        //      the strongest signal, so a candidate that satisfies it wins immediately even when
+        //      the required EOL before 'stream'/'endstream' was omitted by the producer. Requiring
+        //      the EOL here was itself a bug: it sent the scan past a real-but-nonconformant
+        //      terminator looking for a "better" match, and a well-formed LATER object's own
+        //      'endstream' would satisfy the old check and get picked instead — silently absorbing
+        //      the endobj, the next object's header, and its dictionary into this stream's body.
+        //   2. Preceded by an EOL, whatever follows — a weaker signal, used only when nothing in
+        //      the (bounded) scan satisfies tier 1.
+        //   3. The first literal occurrence, unconditionally — exactly what a naive scan finds.
+        //      This is the floor: the hardening in tiers 1 and 2 must never leave the scan unable
+        //      to find a marker that a naive first-match scan would have found.
+        var scanLen = Math.Min(_lexer.Length - bodyStart, MaxEndstreamScanBytes);
+        var span = _lexer.Slice(bodyStart, scanLen).Span;
         ReadOnlySpan<byte> marker = "endstream"u8;
 
-        var fallback = -1;
+        var literalFirst = -1;
+        var eolPrecededFallback = -1;
         var chosen = -1;
 
         for (var i = 0; i <= span.Length - marker.Length; i++)
@@ -397,26 +419,30 @@ internal sealed class PdfObjectParser
             if (!span[i..].StartsWith(marker))
                 continue;
 
-            var precededByEol = i == 0 || span[i - 1] is (byte)'\n' or (byte)'\r';
-            if (!precededByEol)
-                continue;
-
+            // Word boundary: 'endstream' must not be part of a longer token (e.g. "endstreamx").
+            // This applies at every tier, including the unconditional tier-3 fallback.
             var afterIndex = i + marker.Length;
             if (afterIndex < span.Length && !IsWhitespaceOrDelimiter(span[afterIndex]))
                 continue;
 
-            if (fallback < 0)
-                fallback = i;
+            if (literalFirst < 0)
+                literalFirst = i;
 
             if (FollowedByPlausibleObjectBoundary(span, afterIndex))
             {
                 chosen = i;
                 break;
             }
+
+            var precededByEol = i == 0 || span[i - 1] is (byte)'\n' or (byte)'\r';
+            if (precededByEol && eolPrecededFallback < 0)
+                eolPrecededFallback = i;
         }
 
         if (chosen < 0)
-            chosen = fallback;
+            chosen = eolPrecededFallback;
+        if (chosen < 0)
+            chosen = literalFirst;
         if (chosen < 0)
             throw new InvalidDataException(
                 $"Could not find 'endstream' marker after stream starting at offset {bodyStart}.");
