@@ -17,6 +17,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   Generation)` rather than `new(ObjectNumber)`, unobservable unless the object was built through
   the new three-argument constructor. See Fixed, below, for why. (#121)
 
+- **Encrypted documents now emit different `/P` and `/Perms` bytes.** Two reserved bits that
+  ISO 32000-2 Table 22 requires set for R >= 3 were always emitted as 0; they are forced on now,
+  so a byte-for-byte diff against a document encrypted with an earlier version will show this on
+  every encrypted output. Permissions actually granted are unaffected. See Fixed, below, for why.
+  (#189)
+
+- **`EncryptMetadata = false` now genuinely leaves the metadata stream unencrypted.** If you
+  already set this false, upgrading changes what your output exposes: the XMP packet's
+  `dc:title`, author and subject become readable without the password. See Fixed,
+  below, for why. (#182)
+
 ### Fixed
 
 - **A reference's generation number is honoured instead of discarded.** `PdfIndirectReference`
