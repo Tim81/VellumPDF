@@ -56,7 +56,7 @@ public static class PdfPreflight
         if (metaRef is not PdfIndirectReference r)
             return [];
 
-        var parsedStream = reader.ResolveStream(r.ObjectNumber);
+        var parsedStream = reader.ResolveStream(r);
         if (parsedStream is null)
             return [];
 

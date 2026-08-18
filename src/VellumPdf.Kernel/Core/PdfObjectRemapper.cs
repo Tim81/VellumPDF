@@ -21,10 +21,11 @@ internal static class PdfObjectRemapper
         return obj switch
         {
             // The one-arg ctor drops r.Generation, silently rewriting a remapped reference to
-            // generation 0. Harmless today: this pass only ever runs on freshly-registered objects
-            // this library wrote itself, which are always generation 0. It stops being harmless the
-            // day a read → remap → write path exists (v3.0 read-modify-write, #101) and a reference
-            // parsed from the source document — carrying a real generation — reaches this switch.
+            // generation 0. Harmless here specifically: LinearizedLayoutPlanner, this method's only
+            // caller, only ever remaps freshly-registered objects from PdfObjectRegistry, which are
+            // always generation 0 — a read → remap → write path already exists (AppendRevision,
+            // fixed for exactly this in #121), but linearization is not it, and never has been handed
+            // a reference parsed from a source document. It stops being harmless the day that changes.
             PdfIndirectReference r => oldToNew.TryGetValue(r.ObjectNumber, out var n)
                 ? new PdfIndirectReference(n)
                 : r,

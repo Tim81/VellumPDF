@@ -354,7 +354,10 @@ public sealed class GenerationNumberTests
     /// <summary>
     /// A single-revision classic-table PDF where the xref records object 10 at generation 2, but
     /// object 10's own "N G obj" header actually says generation 0 — a malformed but openable
-    /// (not rejected at parse time) inconsistency between the two.
+    /// (not rejected at parse time) inconsistency between the two. The xref is authoritative
+    /// whenever it parses cleanly (ISO 32000-2 treats it as the source of truth for an object's
+    /// generation), so a request for generation 2 succeeds here and one for generation 0 does not
+    /// — the opposite of what the header alone would say.
     /// </summary>
     private static byte[] BuildXrefGenerationDisagreesWithHeaderPdf()
     {
@@ -374,6 +377,37 @@ public sealed class GenerationNumberTests
         Write($"{obj1Offset:D10} 00000 n \n");
         Write("10 1\n");
         Write($"{obj10Offset:D10} 00002 n \n"); // xref says generation 2
+        Write("trailer\n<< /Size 11 /Root 1 0 R >>\n");
+        Write($"startxref\n{xrefOffset}\n%%EOF\n");
+
+        return ms.ToArray();
+    }
+
+    /// <summary>
+    /// A single-revision classic-table PDF where object 10's generation field is genuinely
+    /// unparseable ("abcde") rather than merely sloppy (contrast the space-padded case above,
+    /// which <see cref="System.Globalization.NumberStyles.Integer"/> parses to 0 legitimately). The xref cannot be
+    /// authoritative for an entry it has no opinion on, so the object's own header — generation 1
+    /// here — becomes the sole authority instead of the field being guessed as 0.
+    /// </summary>
+    private static byte[] BuildClassicXrefWithUnparseableGenerationPdf()
+    {
+        var ms = new MemoryStream();
+        void Write(string s) => ms.Write(Encoding.ASCII.GetBytes(s));
+
+        Write("%PDF-1.4\n");
+        var obj1Offset = (int)ms.Position;
+        Write("1 0 obj\n<< /Type /Catalog >>\nendobj\n");
+        var obj10Offset = (int)ms.Position;
+        Write("10 1 obj\n<< /Marker /Hit >>\nendobj\n"); // header says generation 1
+
+        var xrefOffset = (int)ms.Position;
+        Write("xref\n");
+        Write("0 2\n");
+        Write($"{0:D10} 65535 f \n");
+        Write($"{obj1Offset:D10} 00000 n \n");
+        Write("10 1\n");
+        Write($"{obj10Offset:D10} abcde n \n"); // unparseable generation field
         Write("trailer\n<< /Size 11 /Root 1 0 R >>\n");
         Write($"startxref\n{xrefOffset}\n%%EOF\n");
 
@@ -501,22 +535,47 @@ public sealed class GenerationNumberTests
     }
 
     [Fact]
-    public void Resolve_orderIndependent_whenXrefGenerationDisagreesWithHeader()
+    public void Resolve_xrefGenerationIsAuthoritative_regardlessOfCallOrder()
     {
-        // A cache entry populated by a generation-agnostic Resolve(int) call carries no record of
-        // the generation it was actually parsed at, unless that generation is stored alongside it.
-        // Without that, a later generation-bearing call for the same object number would trust the
-        // xref's recorded generation, hit the warm cache, and return a value that was never actually
-        // verified against the requested generation.
+        // The xref is authoritative for an object's generation whenever it parses cleanly — the
+        // header disagreeing (or simply never having been separately verified) does not matter.
+        // A cache entry populated by a generation-agnostic Resolve(int) call must record the SAME
+        // authoritative generation a cold generation-bearing call would use, or the answer would
+        // depend on whether the cache happened to be warm yet.
         var bytes = BuildXrefGenerationDisagreesWithHeaderPdf();
+
+        // Cold: generation-bearing call first.
+        using (var reader = PdfReader.Open(bytes))
+        {
+            Assert.Null(reader.Resolve(new PdfIndirectReference(10, 0))); // header's generation: no match
+            var resolved = reader.Resolve(new PdfIndirectReference(10, 2)); // xref's generation: matches
+            var dict = Assert.IsType<PdfDictionary>(resolved);
+            Assert.Equal("Hit", ((PdfName)dict.Get(new PdfName("Marker"))!).Value);
+        }
+
+        // Warm: generation-agnostic call first, to populate the cache, then the same two checks.
+        using (var reader = PdfReader.Open(bytes))
+        {
+            Assert.NotNull(reader.Resolve(10));
+            Assert.Null(reader.Resolve(new PdfIndirectReference(10, 0)));
+            Assert.NotNull(reader.Resolve(new PdfIndirectReference(10, 2)));
+        }
+    }
+
+    [Fact]
+    public void Resolve_unparseableXrefGeneration_fallsBackToHeaderAuthority()
+    {
+        // Object 10's xref generation field is "abcde" (genuinely unparseable, not merely
+        // sloppy) — the xref has no opinion on this object's generation, so its own header
+        // (generation 1) becomes the sole authority instead of a guessed 0.
+        var bytes = BuildClassicXrefWithUnparseableGenerationPdf();
         using var reader = PdfReader.Open(bytes);
 
-        // Warm the cache via the generation-agnostic path first.
-        Assert.NotNull(reader.Resolve(10));
+        Assert.Null(reader.Resolve(new PdfIndirectReference(10, 0)));
 
-        // The generation-bearing call must still see the header/xref disagreement and return null —
-        // not the value the agnostic call already cached.
-        Assert.Null(reader.Resolve(new PdfIndirectReference(10, 2)));
+        var resolved = reader.Resolve(new PdfIndirectReference(10, 1));
+        var dict = Assert.IsType<PdfDictionary>(resolved);
+        Assert.Equal("Hit", ((PdfName)dict.Get(new PdfName("Marker"))!).Value);
     }
 
     // ── Cross-reference stream ───────────────────────────────────────────────

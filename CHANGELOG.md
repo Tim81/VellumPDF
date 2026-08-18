@@ -8,26 +8,39 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
-- **A reference's generation number is honoured instead of discarded.** `PdfIndirectReference`
-  carried only an object number and always wrote ` 0 R`; the parser dropped the middle field of
-  a parsed `N G R` as well, so every reference read from a document looked like generation 0
-  regardless of what the file said. Combined with an xref table keyed on object number alone,
-  `10 2 R` resolved to whatever object 10 held at generation 0 instead of nothing, and a document
-  with a legitimately nonzero generation anywhere — including its own `/Root` — either resolved
-  the wrong object or, if the catalog itself was affected, failed to open at all.
-  `PdfIndirectReference` gains a `Generation` property and a two-argument constructor so a parsed
-  reference can carry the value it actually read; the reader checks that value against the
-  cross-reference table before resolving, and caches the generation a value was parsed at
-  alongside the value itself, so a generation-bearing lookup can't be answered from a cache entry
-  a generation-agnostic call warmed first. Classic-table `f` (free) entries and xref-stream
-  type-0 rows were previously discarded rather than recorded, which let an older revision's stale
-  entry for the same object number resurface through a freed number; both are now tracked,
-  scoped per revision so a hybrid file's own `/XRefStm` entry for an object its classic table
-  marks free still resolves. A malformed-but-decodable generation field — space-padded, or one
-  that overflows `int` in an 8-byte xref-stream row — is treated as generation 0 rather than
-  aborting the document. `PdfIndirectReference.Generation` exists so a reference can carry its
-  generation to `Resolve` at all; the internal `XrefEntry.Generation` this PR also adds is what
-  decryption's R2–R4 per-object key derivation (#97) will actually consume. (#121)
+- **A reference's generation number is honoured instead of discarded, on both the read and the
+  write side.** `PdfIndirectReference` carried only an object number and always wrote ` 0 R`; the
+  parser dropped the middle field of a parsed `N G R` as well, so every reference read from a
+  document looked like generation 0 regardless of what the file said. Combined with an xref table
+  keyed on object number alone, `10 2 R` resolved to whatever object 10 held at generation 0
+  instead of nothing, and a document with a legitimately nonzero generation anywhere — including
+  its own `/Root` — either resolved the wrong object or, if the catalog itself was affected,
+  failed to open at all. Three behaviours change on `PdfIndirectReference`, a Stable type since
+  2.0.0: `WriteTo` now emits the real generation instead of a hardcoded 0; `Equals` narrowed, so
+  `new PdfIndirectReference(5)` no longer equals a parsed `5 1 R`; and `GetHashCode` returns
+  different (now deterministic, unlike `HashCode.Combine`'s per-process salt) values than in
+  2.0.0. `PdfIndirectObject` gains a matching `Generation` and a three-argument constructor, since
+  re-emitting an object during an incremental update needs to write the same generation the
+  reference to it carries — `AppendRevision` (used by long-term-validation and archive-timestamp
+  signing) previously hardcoded every re-emitted object, including the catalog, to generation 0,
+  which produced a trailer whose `/Root` disagreed with the object header and xref entry sitting
+  next to it whenever the base document's catalog was itself at a nonzero generation; the result
+  failed to reopen, or — for a rewritten object other than the catalog — resolved to nothing with
+  no exception at all.
+  The reader checks a reference's generation against the cross-reference table before resolving,
+  and caches that generation alongside the resolved value so a generation-bearing lookup can't be
+  answered from a cache entry a generation-agnostic call warmed first with a different one in
+  mind. Classic-table `f` (free) entries and xref-stream type-0 rows were previously discarded
+  rather than recorded, which let an older revision's stale entry for the same object number
+  resurface through a freed number; both are now tracked, scoped per revision so a hybrid file's
+  own `/XRefStm` entry for an object its classic table marks free still resolves. A generation
+  field that is merely sloppy (space-padded rather than zero-padded) still parses; one that is
+  genuinely unparseable, or overflows `int` in an 8-byte xref-stream row, is treated as unknown
+  rather than guessed at 0 — the xref stops being authoritative for that one entry and the
+  object's own header takes over instead, since a wrong guess would make a legitimately reachable
+  object silently unresolvable at every generation. A reference whose own generation token
+  overflows `int` no longer aborts parsing the whole document; it becomes a reference that cannot
+  match any real xref entry, the same outcome an ordinary mismatch already produces. (#121)
 
 ## [2.0.0] - 2026-08-17
 

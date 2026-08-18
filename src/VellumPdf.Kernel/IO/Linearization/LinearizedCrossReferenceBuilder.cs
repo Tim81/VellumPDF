@@ -260,11 +260,12 @@ internal sealed class LinearizedCrossReferenceBuilder
 
     private static void WriteRef(PdfWriter w, PdfIndirectReference r)
     {
-        // Hardcodes generation 0 rather than r.Generation. Harmless today: linearization only ever
-        // writes references this library minted itself (always generation 0), never one parsed from
-        // a source document. That stops being true the day a read → remap → write path exists (v3.0
-        // read-modify-write, #101) — at that point this must become r.WriteTo(w) or carry the real
-        // generation through.
+        // Hardcodes generation 0 rather than r.Generation. Harmless here specifically: both callers
+        // (catalogRef, infoRef below) come from a freshly-built PdfDocument, which mints everything
+        // at generation 0 — a read → remap → write path already exists (AppendRevision, fixed for
+        // exactly this in #121), but linearization is a distinct one-shot save path that has never
+        // been given a reference parsed from a source document. If that changes, this must become
+        // r.WriteTo(w) or otherwise carry the real generation through.
         WriteInt(w, r.ObjectNumber);
         w.WriteAscii(" 0 R"u8);
     }

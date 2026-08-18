@@ -24,14 +24,24 @@ internal static class IncrementalCrossReferenceBuilder
     /// </summary>
     /// <param name="writer">PDF writer positioned immediately after the last appended object.</param>
     /// <param name="writtenObjects">
-    /// Pairs of (objectNumber, absoluteByteOffset) for every object written in this revision.
-    /// May be supplied in any order (sorted internally for the xref). Must not be empty.
+    /// Triples of (objectNumber, generation, absoluteByteOffset) for every object written in
+    /// this revision. Rewriting an existing object number keeps that object's existing
+    /// generation — generation only advances when a freed number is reused for a different
+    /// object (ISO 32000-2 §7.5.4); this builder trusts the caller to have gotten that right
+    /// and just records whatever it is given. May be supplied in any order (sorted internally
+    /// for the xref). Must not be empty.
     /// </param>
     /// <param name="baseSize">
     /// The /Size value from the base document's trailer. The new /Size is
     /// max(<paramref name="baseSize"/>, maxObjectNumber + 1).
     /// </param>
-    /// <param name="catalogRef">Carried /Root reference from the base trailer.</param>
+    /// <param name="catalogRef">
+    /// Carried /Root reference from the base trailer. Its generation must match whatever
+    /// <paramref name="writtenObjects"/> records for that same object number — or, if /Root
+    /// was not itself rewritten in this revision, the generation the base document already has
+    /// on file for it — or the appended trailer disagrees with the xref entry and object
+    /// header it sits next to.
+    /// </param>
     /// <param name="prevXrefOffset">The base document's startxref value, written as /Prev.</param>
     /// <param name="documentId">
     /// The base document's /ID array entries (first and second). Written verbatim — never
@@ -39,7 +49,7 @@ internal static class IncrementalCrossReferenceBuilder
     /// </param>
     internal static long WriteIncrementalXrefAndTrailer(
         PdfWriter writer,
-        IReadOnlyList<(int ObjectNumber, long ByteOffset)> writtenObjects,
+        IReadOnlyList<(int ObjectNumber, int Generation, long ByteOffset)> writtenObjects,
         int baseSize,
         PdfIndirectReference catalogRef,
         long prevXrefOffset,
@@ -75,10 +85,12 @@ internal static class IncrementalCrossReferenceBuilder
             WriteInt(writer, entries.Count);
             writer.WriteByte((byte)'\n');
 
-            foreach (var (_, offset) in entries)
+            foreach (var (_, generation, offset) in entries)
             {
                 Write10Digits(writer, offset);
-                writer.WriteAscii(" 00000 n\r\n"u8);
+                writer.WriteByte((byte)' ');
+                Write5Digits(writer, generation);
+                writer.WriteAscii(" n\r\n"u8);
             }
         }
 
@@ -104,21 +116,21 @@ internal static class IncrementalCrossReferenceBuilder
         return xrefOffset;
     }
 
-    private static List<(int FirstObjNum, List<(int ObjectNumber, long ByteOffset)> Entries)> GroupIntoRuns(
-        IReadOnlyList<(int ObjectNumber, long ByteOffset)> items)
+    private static List<(int FirstObjNum, List<(int ObjectNumber, int Generation, long ByteOffset)> Entries)> GroupIntoRuns(
+        IReadOnlyList<(int ObjectNumber, int Generation, long ByteOffset)> items)
     {
-        var runs = new List<(int, List<(int, long)>)>();
-        List<(int, long)>? current = null;
+        var runs = new List<(int, List<(int, int, long)>)>();
+        List<(int, int, long)>? current = null;
         int prevNum = -2;
 
-        foreach (var (objNum, offset) in items)
+        foreach (var (objNum, generation, offset) in items)
         {
             if (objNum != prevNum + 1 || current is null)
             {
                 current = [];
                 runs.Add((objNum, current));
             }
-            current.Add((objNum, offset));
+            current.Add((objNum, generation, offset));
             prevNum = objNum;
         }
 
@@ -142,6 +154,27 @@ internal static class IncrementalCrossReferenceBuilder
         buf.Fill((byte)'0');
         var tmp = n;
         for (var i = 9; i >= 0 && tmp > 0; i--)
+        {
+            buf[i] = (byte)('0' + tmp % 10);
+            tmp /= 10;
+        }
+        w.WriteAscii(buf);
+    }
+
+    private static void Write5Digits(PdfWriter w, int n)
+    {
+        // A generation this builder is asked to write always comes from a reference or xref
+        // entry this reader already accepted (ArgumentOutOfRangeException.ThrowIfNegative in
+        // PdfIndirectReference's constructor rules out negative; a legitimate xref-recorded
+        // generation is bounded by the 5-digit field it was read from). 99999 is the field's
+        // own ceiling — the same ceiling the value being re-emitted here was already read within.
+        if (n is < 0 or > 99_999)
+            throw new NotSupportedException(
+                $"Generation {n} does not fit the 5-digit xref field (0–99999).");
+        Span<byte> buf = stackalloc byte[5];
+        buf.Fill((byte)'0');
+        var tmp = n;
+        for (var i = 4; i >= 0 && tmp > 0; i--)
         {
             buf[i] = (byte)('0' + tmp % 10);
             tmp /= 10;

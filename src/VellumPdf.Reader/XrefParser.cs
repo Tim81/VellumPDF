@@ -278,12 +278,16 @@ internal sealed class XrefParser
                     // Lenient, unlike the offset field above: the generation field was never read
                     // before this PR, so a file that is sloppy here (space-padded rather than
                     // zero-padded, e.g.) used to open cleanly and must keep opening cleanly. Allow
-                    // surrounding whitespace and a sign, and fall back to generation 0 — rather than
-                    // aborting the whole document — for anything still unparseable or negative.
+                    // surrounding whitespace and a sign. But a value that is still unparseable or
+                    // negative is not the same thing as a legitimate generation 0 — guessing 0 would
+                    // make an object at, say, generation 3 silently unresolvable at every generation
+                    // instead of merely failing the (correct) mismatch it would otherwise hit. Record
+                    // it as unknown instead and let PdfDocumentReader fall back to the object's own
+                    // header, which the xref field cannot corrupt.
                     var genStr = Encoding.ASCII.GetString(entry[11..16]);
                     if (!int.TryParse(genStr, NumberStyles.Integer, CultureInfo.InvariantCulture,
                             out var objGeneration) || objGeneration < 0)
-                        objGeneration = 0;
+                        objGeneration = XrefEntry.UnknownGeneration;
 
                     // Newest revision wins: skip an object a newer revision already freed.
                     if (!freed.Contains(objNum))
@@ -404,8 +408,12 @@ internal sealed class XrefParser
                         // up to 8 bytes can produce a generation that overflows int; lenient here,
                         // unlike the offset check just below — this field was never read before this
                         // PR, so a row that is merely odd here must not newly turn a previously
-                        // openable document into a hard failure. Clamp to generation 0 instead.
-                        var objGeneration = field3 is >= 0 and <= int.MaxValue ? (int)field3 : 0;
+                        // openable document into a hard failure. An overflowing value is recorded as
+                        // unknown, not clamped to 0 (see the classic-table generation field above for
+                        // why guessing is worse than admitting the xref doesn't know).
+                        var objGeneration = field3 is >= 0 and <= int.MaxValue
+                            ? (int)field3
+                            : XrefEntry.UnknownGeneration;
                         if (field2 >= 0 && field2 < data.Length && !freed.Contains(objNum))
                             xref.TryAdd(objNum, XrefEntry.Uncompressed(field2, objGeneration));
                         break;

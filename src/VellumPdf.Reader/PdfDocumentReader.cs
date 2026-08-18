@@ -18,11 +18,17 @@ namespace VellumPdf.Reader;
 public sealed class PdfDocumentReader : IDisposable
 {
     private readonly Dictionary<int, XrefEntry> _xref;
-    // Cached alongside the generation the value was actually parsed at (0 for an /ObjStm member,
-    // which ISO 32000-2 §7.5.7 fixes at generation 0; the parsed header's generation otherwise).
-    // A value populated by a generation-agnostic Resolve(int) call still records this, so a later
-    // generation-bearing call can tell whether the cached value is actually the generation it is
-    // asking for -- the xref table's recorded generation alone is not enough once the cache is warm.
+    // Cached alongside this object's AUTHORITATIVE generation, which is a single fact about the
+    // object number, not about how this cache entry was populated: the xref table's recorded
+    // generation when it parsed cleanly (ISO 32000-2 treats the xref as authoritative, and most
+    // readers do not additionally require the "N G obj" header to agree — see the Resolve(int,
+    // int?) comment on XrefEntry.UnknownGeneration for what happens when it doesn't parse), or the
+    // parsed header's generation for the rare entry whose xref generation field itself could not
+    // be read (XrefEntry.UnknownGeneration; 0 for an /ObjStm member, fixed by §7.5.7). Storing this
+    // once means a warm hit — whether the caller cares about generation or not — costs exactly one
+    // dictionary lookup: no separate _xref lookup is needed to answer a generation-bearing call,
+    // which matters because ResolveValue is the entry point for nearly every dictionary-value
+    // dereference the Conformance package makes.
     private readonly Dictionary<int, (PdfObject Value, int Generation)> _cache = new();
     private readonly Dictionary<int, (ParsedStream Stream, int Generation)> _streamCache = new();
     // ObjStm cache: container obj number → (decoded body, First offset, N count, header offset map)
@@ -139,25 +145,23 @@ public sealed class PdfDocumentReader : IDisposable
     /// </summary>
     private PdfObject? Resolve(int objectNumber, int? generation)
     {
-        // Generation-agnostic callers (the common case) keep the original cache-first fast path —
-        // one dictionary lookup on a hit. A generation check needs the xref entry first: a cache hit
-        // predates any generation the caller now asks for, so it must not be trusted without one.
-        if (generation is null && _cache.TryGetValue(objectNumber, out var cachedAny))
-            return cachedAny.Value;
+        // One lookup regardless of whether the caller specifies a generation: the cache tuple
+        // already carries this object's authoritative generation (see the field comment above), so
+        // a warm hit never needs a second trip to _xref to check it.
+        if (_cache.TryGetValue(objectNumber, out var cached))
+            return generation is null || cached.Generation == generation ? cached.Value : null;
 
         if (!_xref.TryGetValue(objectNumber, out var entry))
             return null;
 
-        if (generation is not null)
-        {
-            if (generation != entry.Generation)
-                return null;
-            // A cache entry may have been populated by an earlier generation-agnostic call, which
-            // never checked the object's actual (parsed) generation — only the xref's, just above.
-            // Re-validate against the generation the cached value was actually parsed at.
-            if (_cache.TryGetValue(objectNumber, out var cached))
-                return cached.Generation == generation ? cached.Value : null;
-        }
+        // XrefEntry.UnknownGeneration means the xref's generation field itself could not be parsed
+        // (garbled text, or an xref-stream row whose value overflows int). The xref cannot be the
+        // authority for an entry it doesn't actually have an opinion on, so this falls through to
+        // the object's own header below instead of rejecting (or silently guessing 0 for) every
+        // generation up front.
+        var xrefIsAuthoritative = entry.Generation != XrefEntry.UnknownGeneration;
+        if (generation is not null && xrefIsAuthoritative && generation != entry.Generation)
+            return null;
 
         if (_resolveDepth >= MaxResolveDepth)
             throw new InvalidDataException(
@@ -174,13 +178,24 @@ public sealed class PdfDocumentReader : IDisposable
                 var parser = new PdfObjectParser(Bytes, CheckedOffset(entry.Offset), ResolveLength);
                 var result = parser.ParseIndirectObject();
 
-                if (result.ObjectNumber != objectNumber || (generation is not null && result.Generation != generation))
+                if (result.ObjectNumber != objectNumber)
                     return null;
+
+                if (xrefIsAuthoritative)
+                {
+                    actualGeneration = entry.Generation; // already matched against `generation` above
+                }
+                else
+                {
+                    // The xref didn't have a usable generation; the header is the only authority left.
+                    if (generation is not null && result.Generation != generation)
+                        return null;
+                    actualGeneration = result.Generation;
+                }
 
                 value = result.IsStream
                     ? result.Stream!.Dictionary
                     : result.Value ?? PdfNull.Instance;
-                actualGeneration = result.Generation;
 
                 if (result.IsStream)
                     _streamCache.TryAdd(objectNumber, (result.Stream!, actualGeneration));
@@ -214,10 +229,9 @@ public sealed class PdfDocumentReader : IDisposable
 
     private ParsedStream? ResolveStream(int objectNumber, int? generation)
     {
-        // See Resolve(int, int?) for why the generation-agnostic fast path checks the cache before
-        // the xref entry, and a generation check must go the other way around.
-        if (generation is null && _streamCache.TryGetValue(objectNumber, out var cachedAny))
-            return cachedAny.Stream;
+        // See Resolve(int, int?) for the single-lookup reasoning and what "authoritative" means.
+        if (_streamCache.TryGetValue(objectNumber, out var cached))
+            return generation is null || cached.Generation == generation ? cached.Stream : null;
 
         if (!_xref.TryGetValue(objectNumber, out var entry))
             return null;
@@ -226,30 +240,36 @@ public sealed class PdfDocumentReader : IDisposable
         if (entry.Kind == XrefEntryKind.InObjectStream)
             return null;
 
-        if (generation is not null)
-        {
-            if (generation != entry.Generation)
-                return null;
-            // See the matching re-validation in Resolve(int, int?): a cache hit here may predate
-            // this call's generation.
-            if (_streamCache.TryGetValue(objectNumber, out var cached))
-                return cached.Generation == generation ? cached.Stream : null;
-        }
+        var xrefIsAuthoritative = entry.Generation != XrefEntry.UnknownGeneration;
+        if (generation is not null && xrefIsAuthoritative && generation != entry.Generation)
+            return null;
 
         var parser = new PdfObjectParser(Bytes, CheckedOffset(entry.Offset), ResolveLength);
         var result = parser.ParseIndirectObject();
 
-        if (result.ObjectNumber != objectNumber || (generation is not null && result.Generation != generation))
+        if (result.ObjectNumber != objectNumber)
             return null;
+
+        int actualGeneration;
+        if (xrefIsAuthoritative)
+        {
+            actualGeneration = entry.Generation;
+        }
+        else
+        {
+            if (generation is not null && result.Generation != generation)
+                return null;
+            actualGeneration = result.Generation;
+        }
 
         if (!result.IsStream)
             return null;
 
         var stream = result.Stream!;
-        _streamCache.TryAdd(objectNumber, (stream, result.Generation));
+        _streamCache.TryAdd(objectNumber, (stream, actualGeneration));
 
         // Also populate dict cache
-        _cache.TryAdd(objectNumber, (stream.Dictionary, result.Generation));
+        _cache.TryAdd(objectNumber, (stream.Dictionary, actualGeneration));
 
         return stream;
     }
@@ -536,7 +556,18 @@ public sealed class PdfDocumentReader : IDisposable
     /// <summary>
     /// Appends a new revision to this document and returns the full updated byte array.
     /// </summary>
-    internal byte[] AppendRevision(IReadOnlyList<(int ObjectNumber, PdfObject Value)> objects)
+    /// <param name="objects">
+    /// Every object to write in this revision, as (objectNumber, generation, value). Rewriting an
+    /// object that already exists in the base document — the /Root catalog, a page, anything a
+    /// caller resolved out of it — must pass that object's EXISTING generation, not 0: generation
+    /// only advances when a freed number is reused for an unrelated object (ISO 32000-2 §7.5.4).
+    /// Getting this wrong is silent at write time and fails differently depending on what was
+    /// rewritten — a wrong /Root generation makes the whole appended revision fail to reopen
+    /// (<see cref="PdfDocumentReader"/>'s constructor requires /Root to resolve); a wrong generation
+    /// on anything else just makes that one object silently unresolvable, so a page or font
+    /// vanishes with no exception anywhere (#121 C1).
+    /// </param>
+    internal byte[] AppendRevision(IReadOnlyList<(int ObjectNumber, int Generation, PdfObject Value)> objects)
     {
         if (objects.Count == 0)
             throw new ArgumentException("At least one object is required.", nameof(objects));
@@ -546,13 +577,13 @@ public sealed class PdfDocumentReader : IDisposable
 
         var writer = new PdfWriter(ms, Bytes.Length);
 
-        var written = new List<(int ObjectNumber, long ByteOffset)>(objects.Count);
-        foreach (var (objNum, value) in objects)
+        var written = new List<(int ObjectNumber, int Generation, long ByteOffset)>(objects.Count);
+        foreach (var (objNum, generation, value) in objects)
         {
             var offset = writer.Position;
-            new PdfIndirectObject(objNum, value).WriteTo(writer);
+            new PdfIndirectObject(objNum, generation, value).WriteTo(writer);
             writer.WriteByte((byte)'\n');
-            written.Add((objNum, offset));
+            written.Add((objNum, generation, offset));
         }
 
         PdfIndirectReference catalogRef;
@@ -560,6 +591,21 @@ public sealed class PdfDocumentReader : IDisposable
             catalogRef = rootRef;
         else
             throw new InvalidDataException("Base trailer does not contain a valid /Root indirect reference.");
+
+        // If this revision rewrites /Root's own object number, the header and xref entry just
+        // written for it must agree with the generation the trailer is about to claim — otherwise
+        // the appended trailer's /Root disagrees with what sits right next to it in the same
+        // revision, and the whole result fails to reopen (#121 C1: this is exactly how that broke).
+        foreach (var w in written)
+        {
+            if (w.ObjectNumber == catalogRef.ObjectNumber && w.Generation != catalogRef.Generation)
+                throw new ArgumentException(
+                    $"Object {w.ObjectNumber} (the /Root catalog) is being rewritten at generation " +
+                    $"{w.Generation}, but the base trailer's /Root reference is generation " +
+                    $"{catalogRef.Generation}. An incremental update that rewrites an existing " +
+                    "object must keep that object's existing generation.",
+                    nameof(objects));
+        }
 
         PdfArray? documentId = null;
         if (Trailer.TryGet(PdfName.ID, out var idRaw) && idRaw is PdfArray idArr)

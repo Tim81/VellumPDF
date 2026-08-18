@@ -173,7 +173,7 @@ internal sealed class UaFormXObjectSemanticParentRule : IConformanceRule
                 return; // direct objects cannot be shared — always unique, skip
 
             // Resolve to the stream dictionary. ResolveStream returns null for non-streams.
-            var stream = context.Reader.ResolveStream(iref.ObjectNumber);
+            var stream = context.Reader.ResolveStream(iref);
             if (stream is null)
                 return;
 

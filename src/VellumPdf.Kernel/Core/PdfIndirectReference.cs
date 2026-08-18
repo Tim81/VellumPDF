@@ -17,9 +17,15 @@ public sealed class PdfIndirectReference : PdfObject, IEquatable<PdfIndirectRefe
     /// <summary>Creates an indirect reference to the object with the given number, at generation 0.</summary>
     public PdfIndirectReference(int objectNumber) => ObjectNumber = objectNumber;
 
-    /// <summary>Creates an indirect reference to the object with the given number and generation.</summary>
+    /// <summary>
+    /// Creates an indirect reference to the object with the given number and generation.
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="generation"/> is negative —
+    /// ISO 32000-2 §7.3.10 does not permit one, and <see cref="WriteTo"/> would otherwise emit
+    /// text (e.g. <c>5 -1 R</c>) that this library's own reader rejects as malformed.</exception>
     public PdfIndirectReference(int objectNumber, int generation)
     {
+        ArgumentOutOfRangeException.ThrowIfNegative(generation);
         ObjectNumber = objectNumber;
         Generation = generation;
     }
