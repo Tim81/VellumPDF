@@ -62,9 +62,15 @@ public sealed class VeraPdfOracleTests
 
         var fixture = OracleCorpus.ByName(name);
 
-        // veraPDF's CLI shim mounts /tmp into the container, so the fixture must live there.
+        // veraPDF's CLI shim mounts /tmp into the container, so on CI the fixture must live there.
+        // Windows is excluded deliberately: Directory.Exists("/tmp") is true whenever a
+        // C:\tmp directory happens to exist, and Path.Combine then yields the drive-relative
+        // "/tmp\name.pdf", scattering fixtures through a shared root instead of the per-user
+        // temp directory. veraPDF reads that path without trouble; this is hygiene, not a fix.
         // A GUID keeps concurrent runs from colliding on the same path.
-        var baseDir = Directory.Exists("/tmp") ? "/tmp" : Path.GetTempPath();
+        var baseDir = !OperatingSystem.IsWindows() && Directory.Exists("/tmp")
+            ? "/tmp"
+            : Path.GetTempPath();
         var path = Path.Combine(baseDir, $"vellum-oracle-{fixture.Name}-{Guid.NewGuid():N}.pdf");
         File.WriteAllBytes(path, fixture.Bytes);
         try
@@ -116,7 +122,9 @@ public sealed class VeraPdfEncryptedFileRefusalTests
         using var ms = new MemoryStream();
         doc.Save(ms);
 
-        var baseDir = Directory.Exists("/tmp") ? "/tmp" : Path.GetTempPath();
+        var baseDir = !OperatingSystem.IsWindows() && Directory.Exists("/tmp")
+            ? "/tmp"
+            : Path.GetTempPath();
         var path = Path.Combine(baseDir, $"vellum-oracle-encrypted-{Guid.NewGuid():N}.pdf");
         File.WriteAllBytes(path, ms.ToArray());
         try
