@@ -77,6 +77,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   claiming otherwise. **This changes the `/P` and `/Perms` bytes emitted for every encrypted
   document** (`/Perms` wraps `/P`, so it moves too); a diff against a document encrypted with an
   earlier version will show this. Permissions actually granted are unaffected. (#189)
+- **Encrypting a PDF/UA-1 document no longer fails with a PDF/A error.** The `Save()` guard
+  tested `Conformance != PdfConformance.None`, so PDF/UA-1 (ISO 14289-1, which has no rule
+  against encryption) was rejected under a message that named ISO 19005-2 §6.3.1, a clause it
+  isn't subject to. PDF/UA-1 now has its own check instead: encrypting with permissions that
+  omit content extraction (`PdfPermissions.Extract`) is rejected, because ISO 14289-1 §7.16-1
+  requires that assistive technology be able to extract content, and `Save()` would otherwise
+  emit a document that fails its own declared conformance by construction. (#188)
 
 ## [2.0.0] - 2026-08-17
 

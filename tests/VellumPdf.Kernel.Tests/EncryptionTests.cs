@@ -218,6 +218,31 @@ public sealed class EncryptionTests
         Assert.Contains("/Standard", raw);
     }
 
+    // ── #188: PDF/UA-1 + encryption ──────────────────────────────────────────
+
+    [Fact]
+    public void PdfUA1_encrypted_doc_still_carries_StructTreeRoot_and_MarkInfo()
+    {
+        // Regression for #188: the PDF/A-only encryption guard used to catch PdfUA1
+        // (Conformance != None), which meant an accessible + encrypted document could
+        // never be saved at all. Once allowed, the accessibility structure the writer
+        // already builds for Tagged/PdfUA1 documents must still show up unencrypted —
+        // /StructTreeRoot, /MarkInfo and their catalog entries are dictionary structure,
+        // not string/stream content, so they are never passed through the encryptor.
+        using var doc = new PdfDocument { Conformance = PdfConformance.PdfUA1, Tagged = true, Language = "en-US" };
+        doc.AddPage();
+        doc.Encrypt(new PdfEncryptionSettings { UserPassword = "openme" });
+
+        var ms = new MemoryStream();
+        doc.Save(ms);
+        var raw = Encoding.Latin1.GetString(ms.ToArray());
+
+        Assert.Contains("/StructTreeRoot", raw, StringComparison.Ordinal);
+        Assert.Contains("/MarkInfo", raw, StringComparison.Ordinal);
+        Assert.Contains("/Lang", raw, StringComparison.Ordinal);
+        Assert.Contains("/DisplayDocTitle true", raw, StringComparison.Ordinal);
+    }
+
     // ── PdfEncryptionSettings API ────────────────────────────────────────────
 
     [Fact]

@@ -496,7 +496,11 @@ public sealed class PdfDocument : IDisposable
     /// <exception cref="ObjectDisposedException">The document has been disposed.</exception>
     /// <exception cref="ArgumentNullException"><paramref name="destination"/> is <see langword="null"/>.</exception>
     /// <exception cref="NotSupportedException"><see cref="UseObjectStreams"/> is combined with <see cref="Encrypt"/>.</exception>
-    /// <exception cref="InvalidOperationException">A PDF/A <see cref="Conformance"/> is set together with <see cref="Encrypt"/>.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// A PDF/A <see cref="Conformance"/> is set together with <see cref="Encrypt"/>, or
+    /// <see cref="Conformance"/> is <see cref="PdfConformance.PdfUA1"/> together with
+    /// <see cref="Encrypt"/> settings that omit <see cref="PdfPermissions.Extract"/>.
+    /// </exception>
     public void Save(Stream destination)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -515,11 +519,29 @@ public sealed class PdfDocument : IDisposable
                 "Object-stream encryption is not supported. Remove one of these options.");
 
         // PDF/A prohibits encryption (ISO 19005-2 §6.3.1). Fail fast rather than emit
-        // a document that claims conformance but can never validate.
-        if (Conformance != PdfConformance.None && _encryptionSettings is not null)
+        // a document that claims conformance but can never validate. PDF/UA-1 is a
+        // separate conformance family (ISO 14289-1) with no such prohibition, so it must
+        // not be caught by this PDF/A-only rule — see the PDF/UA-1 check below instead.
+        if (Conformance is PdfConformance.PdfA2b or PdfConformance.PdfA2u or PdfConformance.PdfA2a
+            && _encryptionSettings is not null)
             throw new InvalidOperationException(
                 "PDF/A prohibits encryption (ISO 19005-2 §6.3.1). " +
                 "Remove Encrypt() or clear Conformance before calling Save().");
+
+        // PDF/UA-1 does not prohibit encryption, but it requires that content remain
+        // extractable for assistive technology (ISO 14289-1 §7.16-1, carried by the
+        // /P bit 10 = PdfPermissions.Extract per ISO 32000-2 Table 22). Reject rather
+        // than silently force the bit on: PdfEncryptionSettings.Permissions defaults to
+        // All (which already includes Extract), so this only fires when the caller made
+        // an explicit, narrower permission choice — overriding that choice for them would
+        // trade one silent defect (unreadable by assistive tech) for another (a permission
+        // set that doesn't match what was requested).
+        if (Conformance == PdfConformance.PdfUA1
+            && _encryptionSettings is { } uaEncryptionSettings
+            && (uaEncryptionSettings.Permissions & PdfPermissions.Extract) == 0)
+            throw new InvalidOperationException(
+                "PDF/UA-1 requires content extraction for assistive technology (ISO 14289-1 §7.16-1). " +
+                "Add PdfPermissions.Extract to PdfEncryptionSettings.Permissions before calling Save().");
 
         if (Linearize && UseObjectStreams)
             throw new NotSupportedException(
