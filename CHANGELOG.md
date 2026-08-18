@@ -17,6 +17,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   Generation)` rather than `new(ObjectNumber)`, unobservable unless the object was built through
   the new three-argument constructor. See Fixed, below, for why. (#121)
 
+### Added
+
+- **`PdfReaderOptions.AllowReconstruction`**, defaulting to `false`. When set, `PdfReader.Open`
+  recovers a document whose `startxref` is broken or missing by scanning the file for object
+  headers, instead of throwing `InvalidDataException`. Off by default: reconstruction is a
+  best-effort recovery over structure the file's own cross-reference table has already failed to
+  describe correctly, so a caller opts into that trade-off rather than having it happen
+  implicitly. Check the new `PdfDocumentReader.WasReconstructed` before trusting the result for
+  anything security- or provenance-sensitive — `AppendRevision` already refuses to build a PAdES
+  revision on top of one. (#184)
+
 ### Fixed
 
 - **A reference's generation number is honoured instead of discarded.** `PdfIndirectReference`
@@ -70,6 +81,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   signature added later); it's now 1 MiB. The search itself now scans backward from EOF too, so
   its cost tracks how far back the marker actually is instead of paying for the full window on
   every open. (#105)
+- **Reconstructing a broken xref (`PdfReaderOptions.AllowReconstruction`) no longer opens an
+  encrypted document as if it were plain, misidentifies a compressed catalog, or lets an embedded
+  PDF hijack the recovered object graph.** Three defects a review round found before this ever
+  shipped: the two trailer-synthesis fallbacks built a `/Root`-only dictionary, discarding
+  `/Encrypt` (and `/Info`) whenever no real `trailer<<...>>` section was found — both now recover
+  those keys the same way they recover `/Root`. A modern PDF's catalog is usually packed into an
+  object stream, invisible to the raw header scan; the `/Type /Catalog` fallback used to map that
+  scan's hits back to the nearest top-level object, misidentifying the object stream's own
+  container as the catalog — the header scan now decodes a discovered object stream and can
+  identify a catalog packed inside it directly. And the header scan now skips a stream's declared
+  body rather than continuing through it, so a whole PDF stored as an `/EmbeddedFile` can no
+  longer contribute its own `1 0 obj` to the reconstructed table and win under last-definition-
+  wins for being later in the file. Also: a synthesized `/Root` (or `/Encrypt`, or `/Info`)
+  reference now carries the generation the header scan actually recovered instead of a hardcoded
+  0, so an object at a nonzero generation resolves instead of failing with "/Root does not
+  resolve to a dictionary". (#184)
 
 ## [2.0.0] - 2026-08-17
 
