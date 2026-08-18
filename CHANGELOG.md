@@ -71,6 +71,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   its cost tracks how far back the marker actually is instead of paying for the full window on
   every open. (#105)
 
+- **`/P` bits 7-8 are now set, as ISO 32000-2 Table 22 requires for R >= 3.** `PdfPermissions`
+  has no flag at `1 << 6` / `1 << 7` — the enum goes straight from `Annotate` to `FillForms` —
+  so those two reserved bits were always emitted as 0 regardless of the comment above the code
+  claiming otherwise. **This changes the `/P` and `/Perms` bytes emitted for every encrypted
+  document** (`/Perms` wraps `/P`, so it moves too); a diff against a document encrypted with an
+  earlier version will show this. Permissions actually granted are unaffected. (#189)
+
 ## [2.0.0] - 2026-08-17
 
 The first major version since 1.0. Every package moves to 2.0.0 together, as usual.

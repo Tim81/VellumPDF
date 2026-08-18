@@ -103,6 +103,27 @@ public sealed class EncryptionTests
     }
 
     [Fact]
+    public void Permissions_reserved_bits_7_and_8_are_always_set()
+    {
+        // ISO 32000-2 Table 22: bits 7-8 (positions 6-7 from LSB) must be 1 for R >= 3,
+        // regardless of the caller's requested permissions. PdfPermissions has no flag
+        // at 1<<6/1<<7, so nothing the caller passes can turn these off.
+        var allOff = new StandardSecurityHandler(new PdfEncryptionSettings
+        {
+            UserPassword = "pw",
+            Permissions = PdfPermissions.None,
+        });
+        var allOn = new StandardSecurityHandler(new PdfEncryptionSettings
+        {
+            UserPassword = "pw",
+            Permissions = PdfPermissions.All,
+        });
+
+        Assert.Equal(0xC0, allOff.PValue & 0xC0);
+        Assert.Equal(0xC0, allOn.PValue & 0xC0);
+    }
+
+    [Fact]
     public void Permissions_None_clears_user_bits()
     {
         var handler = new StandardSecurityHandler(new PdfEncryptionSettings
@@ -111,8 +132,10 @@ public sealed class EncryptionTests
             Permissions = PdfPermissions.None,
         });
 
-        // Bits 2..11 should all be 0.
-        Assert.Equal(0, handler.PValue & 0xFFC);
+        // Bits 2..5 and 8..11 should be 0; bits 6..7 (0xC0) are forced to 1
+        // regardless of the requested permissions (ISO 32000-2 Table 22).
+        Assert.Equal(0, handler.PValue & 0xF3C);
+        Assert.Equal(0xC0, handler.PValue & 0xC0);
     }
 
     // ── Two-pass determinism: different keys each time ─────────────────────

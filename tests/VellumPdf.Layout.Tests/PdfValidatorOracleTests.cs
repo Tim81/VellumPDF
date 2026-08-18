@@ -5,6 +5,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
+using System.Text.RegularExpressions;
 using VellumPdf.Canvas;
 using VellumPdf.Document;
 using VellumPdf.Encryption;
@@ -246,6 +247,57 @@ public sealed class PdfValidatorOracleTests : IDisposable
             stdout.Contains("AES", StringComparison.OrdinalIgnoreCase) ||
             stderr.Contains("AES", StringComparison.OrdinalIgnoreCase),
             $"Expected 'AES' in qpdf --show-encryption output.\nstdout: {stdout}\nstderr: {stderr}");
+    }
+
+    [Fact]
+    public void AesEncrypted_QpdfShowEncryption_ReportsReservedPermissionBitsSet()
+    {
+        // #189: bits 7-8 (positions 6-7 from LSB) of /P must be 1 for R >= 3
+        // (ISO 32000-2 Table 22), independent of which permissions were requested.
+        // Read the value qpdf parsed from our raw /P bytes rather than decrypting
+        // our own /Perms block — a decrypt-and-compare against /Perms is derived
+        // from the same PValue field and is structurally blind to this bug class.
+        var pdfPath = Path.Combine(_tempDir, "encrypted_permbits.pdf");
+        GenerateRestrictedPermissionsDoc(pdfPath);
+
+        if (!TryRunTool("qpdf", $"--password={EncryptionUserPassword} --show-encryption \"{pdfPath}\"",
+            out var exit, out var stdout, out var stderr))
+        {
+            GateOnCi("qpdf");
+            return;
+        }
+
+        Assert.True(exit == 0, $"qpdf --show-encryption failed (exit {exit}).\nstdout: {stdout}\nstderr: {stderr}");
+
+        var match = Regex.Match(stdout, @"^P = (-?\d+)", RegexOptions.Multiline);
+        Assert.True(
+            match.Success,
+            $"Could not find 'P = <n>' in qpdf --show-encryption output.\nstdout: {stdout}\nstderr: {stderr}");
+        var p = int.Parse(match.Groups[1].Value);
+
+        Assert.True(
+            (p & 0xC0) == 0xC0,
+            $"Expected reserved bits 7-8 (0xC0) set in /P; qpdf reported P={p} (0x{(uint)p:X8}).\nstdout: {stdout}");
+
+        // Cross-check that qpdf's plain-language report matches the permissions the
+        // document was actually built with (Copy granted; Modify/Assemble withheld).
+        Assert.Contains("extract for any purpose: allowed", stdout, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("modify document assembly: not allowed", stdout, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("modify anything: not allowed", stdout, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static void GenerateRestrictedPermissionsDoc(string path)
+    {
+        using var doc = new Document();
+        var style = new TextStyle { Font = Standard14.Helvetica, FontSize = 12 };
+        doc.Add(new Paragraph(EncryptionMarker, style));
+        doc.Encrypt(new PdfEncryptionSettings
+        {
+            UserPassword = EncryptionUserPassword,
+            OwnerPassword = "ownerpassword",
+            Permissions = PdfPermissions.Copy,
+        });
+        doc.Save(path);
     }
 
     [Fact]
