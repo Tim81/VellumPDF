@@ -11,22 +11,45 @@ public static class PdfReader
     /// <summary>Opens a PDF document from a byte array.</summary>
     /// <exception cref="InvalidDataException">Thrown on malformed PDF structure.</exception>
     /// <exception cref="UnsupportedPdfFeatureException">Thrown when the document is encrypted (/Encrypt); this is currently the only unsupported feature (see #97).</exception>
-    public static PdfDocumentReader Open(byte[] bytes)
+    public static PdfDocumentReader Open(byte[] bytes) => Open(bytes, options: null);
+
+    /// <summary>Opens a PDF document from a byte array, with parsing options.</summary>
+    /// <param name="bytes">The document's raw bytes.</param>
+    /// <param name="options">
+    /// Parsing options. When <see langword="null"/>, a document whose <c>startxref</c> is broken
+    /// or absent throws <see cref="InvalidDataException"/> rather than being recovered — see
+    /// <see cref="PdfReaderOptions.AllowReconstruction"/>.
+    /// </param>
+    /// <exception cref="InvalidDataException">Thrown on malformed PDF structure.</exception>
+    /// <exception cref="UnsupportedPdfFeatureException">Thrown when the document is encrypted (/Encrypt); this is currently the only unsupported feature (see #97).</exception>
+    public static PdfDocumentReader Open(byte[] bytes, PdfReaderOptions? options)
     {
         ArgumentNullException.ThrowIfNull(bytes);
         var data = new ReadOnlyMemory<byte>(bytes);
-        var (xref, trailer, startXrefOffset, revisions) = XrefParser.Parse(data);
-        return new PdfDocumentReader(data, xref, trailer, startXrefOffset, revisions);
+        var (xref, trailer, startXrefOffset, revisions, wasReconstructed) =
+            XrefParser.Parse(data, options?.AllowReconstruction ?? false);
+        return new PdfDocumentReader(data, xref, trailer, startXrefOffset, revisions, wasReconstructed);
     }
 
     /// <summary>Opens a PDF document by reading all bytes from <paramref name="stream"/>.</summary>
     /// <exception cref="InvalidDataException">Thrown on malformed PDF structure.</exception>
     /// <exception cref="UnsupportedPdfFeatureException">Thrown when the document is encrypted (/Encrypt); this is currently the only unsupported feature (see #97).</exception>
-    public static PdfDocumentReader Open(Stream stream)
+    public static PdfDocumentReader Open(Stream stream) => Open(stream, options: null);
+
+    /// <summary>Opens a PDF document by reading all bytes from <paramref name="stream"/>, with parsing options.</summary>
+    /// <param name="stream">The stream to read the document from.</param>
+    /// <param name="options">
+    /// Parsing options. When <see langword="null"/>, a document whose <c>startxref</c> is broken
+    /// or absent throws <see cref="InvalidDataException"/> rather than being recovered — see
+    /// <see cref="PdfReaderOptions.AllowReconstruction"/>.
+    /// </param>
+    /// <exception cref="InvalidDataException">Thrown on malformed PDF structure.</exception>
+    /// <exception cref="UnsupportedPdfFeatureException">Thrown when the document is encrypted (/Encrypt); this is currently the only unsupported feature (see #97).</exception>
+    public static PdfDocumentReader Open(Stream stream, PdfReaderOptions? options)
     {
         ArgumentNullException.ThrowIfNull(stream);
         using var ms = new MemoryStream();
         stream.CopyTo(ms);
-        return Open(ms.ToArray());
+        return Open(ms.ToArray(), options);
     }
 }

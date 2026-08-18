@@ -67,6 +67,16 @@ public sealed class PdfDocumentReader : IDisposable
     /// <summary>The document catalog dictionary (/Root).</summary>
     public PdfDictionary Catalog { get; }
 
+    /// <summary>
+    /// <see langword="true"/> when this document's cross-reference table was rebuilt by scanning
+    /// the file for object headers, because <c>startxref</c> was missing or unusable (#184).
+    /// Reconstruction is best-effort recovery over structure the document's own xref table already
+    /// failed to describe correctly, so treat any content read from a reconstructed document with
+    /// that in mind — <see cref="AppendRevision"/> refuses to build on one at all, and PDF/A
+    /// conformance checks that depend on revision history see none for a reconstructed document.
+    /// </summary>
+    public bool WasReconstructed { get; }
+
     /// <summary>All digital signatures found in the document's AcroForm, in field-tree order.</summary>
     public IReadOnlyList<PdfSignature> Signatures => _signatures ??= CollectSignatures();
 
@@ -75,13 +85,15 @@ public sealed class PdfDocumentReader : IDisposable
         Dictionary<int, XrefEntry> xref,
         PdfDictionary trailer,
         int startXrefOffset,
-        IReadOnlyList<XrefRevision> revisions)
+        IReadOnlyList<XrefRevision> revisions,
+        bool wasReconstructed = false)
     {
         Bytes = bytes;
         _xref = xref;
         Trailer = trailer;
         StartXrefOffset = startXrefOffset;
         Revisions = revisions;
+        WasReconstructed = wasReconstructed;
 
         if (!trailer.TryGet(PdfName.Root, out var rootObj) || rootObj is null)
             throw new InvalidDataException("Malformed PDF: trailer is missing /Root.");
@@ -571,6 +583,17 @@ public sealed class PdfDocumentReader : IDisposable
     {
         if (objects.Count == 0)
             throw new ArgumentException("At least one object is required.", nameof(objects));
+
+        // A reconstructed document's object graph is a best-effort guess, not a fact recorded in
+        // the file: the /Root it resolved to, or any object /Length it fell back to a scan for,
+        // could be wrong for a layout reconstruction doesn't yet understand. Building a PAdES
+        // revision (LTV /DSS, an archive timestamp) on top of that produces an artifact this
+        // library itself cannot reliably reopen, while reporting success (#184).
+        if (WasReconstructed)
+            throw new InvalidOperationException(
+                "Cannot append a revision to a document whose cross-reference table was "
+                + "reconstructed (PdfDocumentReader.WasReconstructed is true). The object graph is "
+                + "a best-effort recovery, not a fact the file itself records.");
 
         var ms = new MemoryStream(Bytes.Length + 4096);
         ms.Write(Bytes.Span);
