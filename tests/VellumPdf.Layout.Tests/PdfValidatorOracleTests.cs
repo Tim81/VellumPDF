@@ -275,6 +275,11 @@ public sealed class PdfValidatorOracleTests : IDisposable
             $"Could not find 'P = <n>' in qpdf --show-encryption output.\nstdout: {stdout}\nstderr: {stderr}");
         var p = int.Parse(match.Groups[1].Value);
 
+        // Pin the exact value, not just the reserved-bit mask: for Permissions = Copy this is
+        // -3888 (0xFFFFF0D0 as a signed int32 — 0xFFFFF000 reserved-high | 0xC0 reserved-bits-7-8
+        // | 0x10 Copy). A mask-only assertion would pass even if some unrelated bit in /P were
+        // wrong; pinning the value is the known-answer test CLAUDE.md asks for.
+        Assert.Equal(-3888, p);
         Assert.True(
             (p & 0xC0) == 0xC0,
             $"Expected reserved bits 7-8 (0xC0) set in /P; qpdf reported P={p} (0x{(uint)p:X8}).\nstdout: {stdout}");
