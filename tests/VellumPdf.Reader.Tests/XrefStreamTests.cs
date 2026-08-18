@@ -381,6 +381,70 @@ public sealed class XrefStreamTests
     }
 
     [Fact]
+    public void Encrypt_reachable_only_via_XRefStm_throws_UnsupportedPdfFeatureException()
+    {
+        // /Encrypt sits on the XRefStm dictionary, not the classic trailer — the only place a
+        // hybrid-reference file can legally put it (ISO 32000-2 §7.5.8.4). The classic-trailer
+        // /Encrypt check alone would miss it entirely and parse the file as if unencrypted (#183).
+        var bytes = BuildHybridXrefStmWithEncryptPdf();
+
+        Assert.Throws<UnsupportedPdfFeatureException>(() => PdfReader.Open(bytes));
+    }
+
+    private static byte[] BuildHybridXrefStmWithEncryptPdf()
+    {
+        // Same layout as BuildHybridXrefStmPdf, but the xref-stream object's own dictionary
+        // carries /Encrypt — the classic trailer below it does not mention encryption at all.
+        var ms = new MemoryStream();
+        void WriteStr(string s) => ms.Write(Encoding.ASCII.GetBytes(s));
+        void WriteBytes(byte[] b) => ms.Write(b);
+
+        WriteStr("%PDF-1.5\n");
+
+        var o1 = (int)ms.Position;
+        WriteStr("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+        var o2 = (int)ms.Position;
+        WriteStr("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
+        var o3 = (int)ms.Position;
+        WriteStr("3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>\nendobj\n");
+        var o4 = (int)ms.Position;
+        WriteStr("4 0 obj\n<< /HybridTest 1 >>\nendobj\n");
+
+        var xrefStreamBody = new byte[7];
+        xrefStreamBody[0] = 1;
+        xrefStreamBody[1] = (byte)((o4 >> 24) & 0xFF);
+        xrefStreamBody[2] = (byte)((o4 >> 16) & 0xFF);
+        xrefStreamBody[3] = (byte)((o4 >> 8) & 0xFF);
+        xrefStreamBody[4] = (byte)(o4 & 0xFF);
+        xrefStreamBody[5] = 0;
+        xrefStreamBody[6] = 0;
+
+        var compressedXrefBody = Compress(xrefStreamBody);
+        var xrefStmOffset = (int)ms.Position;
+
+        // /Encrypt 99 0 R: an unresolvable reference is fine — presence alone must be enough to
+        // reject the file, since VellumPdf does not (yet) support decrypting anything.
+        var xrefStmDictStr =
+            $"5 0 obj\n<< /Type /XRef /Size 5 /W [1 4 2] /Index [4 1] /Filter /FlateDecode "
+            + $"/Encrypt 99 0 R /Length {compressedXrefBody.Length} >>\nstream\n";
+        WriteStr(xrefStmDictStr);
+        WriteBytes(compressedXrefBody);
+        WriteStr("\nendstream\nendobj\n");
+
+        var classicXrefOffset = (int)ms.Position;
+        WriteStr("xref\n");
+        WriteStr("0 4\n");
+        WriteStr($"{0:D10} 65535 f \n");
+        WriteStr($"{o1:D10} 00000 n \n");
+        WriteStr($"{o2:D10} 00000 n \n");
+        WriteStr($"{o3:D10} 00000 n \n");
+        WriteStr($"trailer\n<< /Size 5 /Root 1 0 R /XRefStm {xrefStmOffset} >>\n");
+        WriteStr($"startxref\n{classicXrefOffset}\n%%EOF\n");
+
+        return ms.ToArray();
+    }
+
+    [Fact]
     public void Cyclic_Prev_still_throws()
     {
         // A /Prev chain that cycles back to an already-seen offset should throw.
@@ -692,6 +756,141 @@ public sealed class XrefStreamTests
         W($"startxref\n{xref}\n%%EOF\n");
 
         return ms.ToArray();
+    }
+
+    [Fact]
+    public void Stream_with_direct_length_containing_endstream_bytes_reads_full_body()
+    {
+        // The body contains the literal bytes "endstream" partway through, but /Length is correct
+        // and direct — the primary length-based path must trust it and read the full body verbatim,
+        // never falling into the endstream scan at all. Pinned byte-exact regression for #105.
+        var bytes = BuildDirectLengthStreamWithEmbeddedMarkerPdf();
+
+        using var reader = PdfReader.Open(bytes);
+        var stream = reader.ResolveStream(3);
+
+        Assert.NotNull(stream);
+        Assert.Equal("AA\nendstream BB", Encoding.ASCII.GetString(stream!.RawBody.Span));
+    }
+
+    private static byte[] BuildDirectLengthStreamWithEmbeddedMarkerPdf()
+    {
+        var ms = new MemoryStream();
+        void W(string s) => ms.Write(Encoding.ASCII.GetBytes(s));
+
+        const string body = "AA\nendstream BB"; // 15 bytes; the real body, containing a fake marker
+
+        W("%PDF-1.7\n");
+        var o1 = (int)ms.Position;
+        W("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+        var o2 = (int)ms.Position;
+        W("2 0 obj\n<< /Type /Pages /Kids [] /Count 0 >>\nendobj\n");
+        var o3 = (int)ms.Position;
+        W($"3 0 obj\n<< /Length {body.Length} >>\nstream\n{body}\nendstream\nendobj\n");
+
+        var xref = (int)ms.Position;
+        W("xref\n0 4\n");
+        W($"{0:D10} 65535 f \n");
+        W($"{o1:D10} 00000 n \n");
+        W($"{o2:D10} 00000 n \n");
+        W($"{o3:D10} 00000 n \n");
+        W("trailer\n<< /Size 4 /Root 1 0 R >>\n");
+        W($"startxref\n{xref}\n%%EOF\n");
+
+        return ms.ToArray();
+    }
+
+    [Fact]
+    public void Stream_with_unresolvable_indirect_length_and_embedded_endstream_bytes_scans_to_real_marker()
+    {
+        // /Length is indirect and points at a name (not an integer), so it cannot be resolved and
+        // the parser falls back to the endstream scan. The body contains a boundary-valid fake
+        // "endstream" partway through (preceded by an EOL, followed by whitespace) that is NOT
+        // followed by 'endobj' or a plausible object header — the hardened scanner must skip it and
+        // find the real terminator instead of truncating there (#105).
+        var bytes = BuildUnresolvableIndirectLengthStreamPdf();
+
+        using var reader = PdfReader.Open(bytes);
+        var stream = reader.ResolveStream(3);
+
+        Assert.NotNull(stream);
+        Assert.Equal("AA\nendstream BB", Encoding.ASCII.GetString(stream!.RawBody.Span));
+    }
+
+    private static byte[] BuildUnresolvableIndirectLengthStreamPdf()
+    {
+        var ms = new MemoryStream();
+        void W(string s) => ms.Write(Encoding.ASCII.GetBytes(s));
+
+        const string body = "AA\nendstream BB"; // real body; the mid-body "endstream" is a false marker
+
+        W("%PDF-1.7\n");
+        var o1 = (int)ms.Position;
+        W("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+        var o2 = (int)ms.Position;
+        W("2 0 obj\n<< /Type /Pages /Kids [] /Count 0 >>\nendobj\n");
+        var o3 = (int)ms.Position;
+        W($"3 0 obj\n<< /Length 4 0 R >>\nstream\n{body}\nendstream\nendobj\n");
+        var o4 = (int)ms.Position;
+        W("4 0 obj\n/NotAnInteger\nendobj\n");
+
+        var xref = (int)ms.Position;
+        W("xref\n0 5\n");
+        W($"{0:D10} 65535 f \n");
+        W($"{o1:D10} 00000 n \n");
+        W($"{o2:D10} 00000 n \n");
+        W($"{o3:D10} 00000 n \n");
+        W($"{o4:D10} 00000 n \n");
+        W("trailer\n<< /Size 5 /Root 1 0 R >>\n");
+        W($"startxref\n{xref}\n%%EOF\n");
+
+        return ms.ToArray();
+    }
+
+    [Fact]
+    public void Startxref_padded_beyond_2048_bytes_from_eof_still_opens()
+    {
+        // The old 2 KiB tail window would miss this; the widened window (#105) must still find it.
+        var (baseBytes, startxrefKeywordOffset) = BuildClassicXrefPdfWithStartxrefOffset();
+
+        var ms = new MemoryStream();
+        ms.Write(baseBytes, 0, startxrefKeywordOffset);
+        // A comment line long enough to push 'startxref' well past 2048 bytes from EOF.
+        ms.Write(Encoding.ASCII.GetBytes("%" + new string('X', 3000) + "\n"));
+        ms.Write(baseBytes, startxrefKeywordOffset, baseBytes.Length - startxrefKeywordOffset);
+        var bytes = ms.ToArray();
+
+        Assert.True(bytes.Length - startxrefKeywordOffset > 2048);
+
+        using var reader = PdfReader.Open(bytes);
+
+        Assert.NotNull(reader.Catalog);
+        var typeName = Assert.IsType<PdfName>(reader.Catalog.Get(PdfName.Type));
+        Assert.Equal("Catalog", typeName.Value);
+    }
+
+    /// <summary>
+    /// A well-formed single-revision classic-xref PDF with one catalog object, plus the byte offset
+    /// of the "startxref" keyword so a test can splice in padding right before it.
+    /// </summary>
+    private static (byte[] Bytes, int StartxrefKeywordOffset) BuildClassicXrefPdfWithStartxrefOffset()
+    {
+        var ms = new MemoryStream();
+        void W(string s) => ms.Write(Encoding.ASCII.GetBytes(s));
+
+        W("%PDF-1.4\n");
+        var o1 = (int)ms.Position;
+        W("1 0 obj\n<< /Type /Catalog >>\nendobj\n");
+
+        var xref = (int)ms.Position;
+        W("xref\n0 2\n");
+        W($"{0:D10} 65535 f \n");
+        W($"{o1:D10} 00000 n \n");
+        W("trailer\n<< /Size 2 /Root 1 0 R >>\n");
+        var startxrefKeywordOffset = (int)ms.Position;
+        W($"startxref\n{xref}\n%%EOF\n");
+
+        return (ms.ToArray(), startxrefKeywordOffset);
     }
 
     private static byte[] BuildHybridXrefStmPdf()
