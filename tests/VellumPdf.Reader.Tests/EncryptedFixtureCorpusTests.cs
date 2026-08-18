@@ -52,8 +52,7 @@ public sealed class EncryptedFixtureCorpusTests
         Assert.Equal(sha256, Convert.ToHexStringLower(SHA256.HashData(bytes)));
 
         var text = Encoding.Latin1.GetString(bytes);
-        // Anchored on the space so /EncryptMetadata cannot satisfy the /Encrypt check.
-        Assert.Contains("/Encrypt ", text, StringComparison.Ordinal);
+        Assert.True(ContainsKey(text, "/Encrypt"), "no /Encrypt key found");
         Assert.Contains($"/V {v}", text, StringComparison.Ordinal);
         Assert.Contains($"/R {r}", text, StringComparison.Ordinal);
         if (cfm is not null)
@@ -71,7 +70,7 @@ public sealed class EncryptedFixtureCorpusTests
         var bytes = Load(BaselineName);
         Assert.Equal("886057c285e1f65d0ef39f43bae4367b1122f56295dbb5436c05108b1d3035ad",
             Convert.ToHexStringLower(SHA256.HashData(bytes)));
-        Assert.DoesNotContain("/Encrypt ", Encoding.Latin1.GetString(bytes), StringComparison.Ordinal);
+        Assert.False(ContainsKey(Encoding.Latin1.GetString(bytes), "/Encrypt"), "baseline must not be encrypted");
     }
 
     /// <summary>
@@ -83,7 +82,7 @@ public sealed class EncryptedFixtureCorpusTests
     public void EveryEmbeddedFixture_isCoveredByTheTheory()
     {
         var embedded = Assembly.GetExecutingAssembly().GetManifestResourceNames()
-            .Where(n => n.EndsWith(".pdf", StringComparison.Ordinal))
+            .Where(n => n.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
             .ToHashSet(StringComparer.Ordinal);
         var covered = Corpus.Select(f => f.Name)
             .Append(BaselineName)
@@ -102,6 +101,30 @@ public sealed class EncryptedFixtureCorpusTests
     {
         Assert.Contains("xpacket", Encoding.Latin1.GetString(Load("enc-256-cleartextmd.pdf")), StringComparison.Ordinal);
         Assert.DoesNotContain("xpacket", Encoding.Latin1.GetString(Load("enc-aes-256-r6.pdf")), StringComparison.Ordinal);
+    }
+
+
+    /// <summary>
+    /// True when <paramref name="key"/> appears as a whole PDF name — followed by whitespace or a
+    /// delimiter rather than by a name character. Matching on a literal trailing space instead would
+    /// let an encrypted file read as plaintext: ISO 32000-2 §7.2.3 allows any of six whitespace bytes
+    /// after the key, and a dictionary or name value needs none at all.
+    /// </summary>
+    private static bool ContainsKey(string text, string key)
+    {
+        for (var i = text.IndexOf(key, StringComparison.Ordinal); i >= 0;
+             i = text.IndexOf(key, i + 1, StringComparison.Ordinal))
+        {
+            var after = i + key.Length;
+            if (after >= text.Length) return true;
+            var c = text[after];
+            // Whitespace (ISO 32000-2 Table 1) or a delimiter (Table 2) ends the name. Numeric
+            // codes rather than escapes: NUL, TAB, LF, FF, CR, SPACE.
+            if (c is (char)0 or (char)9 or (char)10 or (char)12 or (char)13 or (char)32
+                or '(' or ')' or '<' or '>' or '[' or ']' or '{' or '}' or '/' or '%')
+                return true;
+        }
+        return false;
     }
 
     private static byte[] Load(string name)

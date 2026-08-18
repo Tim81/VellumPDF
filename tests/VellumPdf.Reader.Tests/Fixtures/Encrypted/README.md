@@ -56,8 +56,7 @@ Two assertions, in this order:
 
    Normalize that whole element — all 32 hex digits, at bytes 1684-1715 of the 1743-byte baseline. Do
    **not** write a known-answer test that tolerates a fixed *number* of differing bytes: two random
-   16-byte IDs collide in a byte or two by chance, so the count varies per run (29 to 32 observed) even
-   though the region never does.
+   16-byte IDs collide in a byte or two by chance, so the count varies from run to run while the region never does.
 
 `enc-256-cleartextmd.pdf` is externally checkable too: `xpacket` appears in its raw bytes and does not
 appear in `enc-aes-256-r6.pdf`.
@@ -82,3 +81,28 @@ Both `--cleartext-metadata` rows are present on purpose. At R5/R6 the flag never
 the file key is random and unwrapped from `/UE`/`/OE` — so only the **R4** row exercises ISO 32000-1
 Algorithm 2 step (f), where an unencrypted-metadata file appends `0xFFFFFFFF` to the MD5 and getting it
 wrong yields a completely wrong key.
+
+## Regenerating a fixture
+
+**The commands above do not reproduce the committed bytes, and cannot.** qpdf regenerates the trailer's
+second `/ID` on every invocation, and the AES rows additionally use a fresh random IV per string and
+stream — so re-running a command yields a file that is cryptographically equivalent and byte-different.
+The three RC4 rows differ only in the `/ID`; the AES rows differ from roughly byte 100 to EOF.
+
+That means **the digest table in `EncryptedFixtureCorpusTests` is the source of truth, not the commands.**
+Re-running a command to "check" a fixture will fail the guard, and that is working as intended.
+
+To legitimately replace a fixture:
+
+1. Regenerate it with the command from the table above.
+2. Confirm it carries what its row claims — `qpdf --password=u --show-object=trailer` for `/V`, and
+   `--show-encryption` for `/R` and the cipher.
+3. Confirm it still decrypts to the baseline: `qpdf --password=u --decrypt <file> out.pdf`, then diff
+   against `plaintext-baseline.pdf` and check every difference falls inside the second `/ID` element.
+4. Recompute all eight digests with `sha256sum *.pdf` and update the table.
+
+Step 3 is the one that matters. A regenerated file with a **wrong password or narrowed permissions**
+satisfies every other assertion in the guard — `/Encrypt`, `/V`, `/R`, `/CFM`, `/P` — and the digest is
+exactly what the person regenerating it updates. Only decrypting back to the baseline proves the
+replacement is the fixture it claims to be. Once #97 lands, its decrypt-to-baseline test becomes that
+check automatically.
