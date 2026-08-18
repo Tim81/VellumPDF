@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **A committed corpus of encrypted PDFs, one per standard-security-handler `/V`+`/R` combination.**
+  Generated once with qpdf and committed rather than shelled out for at test time, so the corpus is
+  byte-identical on CI and locally and leaves no silently-skipped gate. A guard test pins each fixture
+  by SHA-256 as well as `/V`, `/R` and `/CFM`: qpdf refuses to write RC4 without `--allow-weak-crypto`
+  and still leaves a zero-byte file behind, and two fixtures are both `/V 4 /R 4`, differing only in
+  the cipher — neither an existence check nor a `/V`+`/R` check would notice either. Groundwork for
+  the decrypt side. (#99)
+
 ### Changed
 
 - **`PdfIndirectReference` and `PdfIndirectObject` honour generation, which changes four members
@@ -70,16 +80,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   signature added later); it's now 1 MiB. The search itself now scans backward from EOF too, so
   its cost tracks how far back the marker actually is instead of paying for the full window on
   every open. (#105)
-
-### Added
-
-- **A committed corpus of encrypted PDFs, one per standard-security-handler `/V`+`/R` combination.**
-  Generated once with qpdf and committed rather than shelled out for at test time, so the corpus is
-  byte-identical on CI and locally and leaves no silently-skipped gate. A guard test pins each fixture
-  by SHA-256 as well as `/V`, `/R` and `/CFM`: qpdf refuses to write RC4 without `--allow-weak-crypto`
-  and still leaves a zero-byte file behind, and two fixtures are both `/V 4 /R 4`, differing only in
-  the cipher — neither an existence check nor a `/V`+`/R` check would notice either. Groundwork for
-  the decrypt side. (#99)
 
 ## [2.0.0] - 2026-08-17
 
@@ -837,13 +837,7 @@ few small additions. No public API was removed.
 - **JBIG2 images.** `Jbig2ImageLoader` reads JBIG2 bilevel images and embeds them as 1-bit `/JBIG2Decode`. A standalone JBIG2 file is parsed and split into its page segments and a `/JBIG2Globals` side-stream (symbol and pattern dictionaries and tables), as the PDF embedded organisation requires; a file with no global segments stays self-contained.
 - **JPEG 2000 images.** `JpxImageLoader` reads JP2 box files and raw codestreams (`.j2k`/`.j2c`), takes width, height, component count, and bit depth from the `ihdr`/`SIZ` header and colour space from the `colr` box, and embeds the codestream as `/JPXDecode`.
 - **CCITT Group 3 TIFF.** The TIFF loader now reads Compression 2 (Modified Huffman) and 3 (Group 3 / T.4) in addition to Group 4, mapping the `T4Options` tag to the `/CCITTFaxDecode` `/DecodeParms` (`K`, `EncodedByteAlign`, `EndOfLine`). `CcittImageLoader.Load` gained an `endOfLine` parameter for the Group 3 end-of-line convention.
-- **A committed corpus of encrypted PDFs, one per standard-security-handler `/V`+`/R` combination.**
-  Generated once with qpdf and checked in rather than shelled out for at test time, so the corpus is
-  byte-identical on CI and locally and leaves no silently-skipped gate. A guard test pins each fixture
-  by SHA-256 as well as `/V`, `/R` and `/CFM`: qpdf refuses to write RC4 without `--allow-weak-crypto`
-  and still leaves a zero-byte file behind, and two of the fixtures are both `/V 4 /R 4`, differing
-  only in the cipher — neither an existence check nor a `/V`+`/R` check would notice. Groundwork for
-  the decrypt side. (#99)
+- **Opt-in raster decode.** A new `ImageLoadOptions.DecodeMode` (`Passthrough` by default, or `DecodeToRaster`) decodes a codestream to pixels and re-encodes it losslessly with FlateDecode for viewers without the native codec. Raster decode covers CCITT Group 3 one-dimensional data and JBIG2 MMR generic regions; the other variants (CCITT two-dimensional and Group 4, JBIG2 arithmetic, symbol, text, and halftone segments, and all JPEG 2000) report `NotSupportedException` when raster decode is requested and continue to pass through unchanged. Passthrough stays the default and is always lossless.
 
 ### Security
 

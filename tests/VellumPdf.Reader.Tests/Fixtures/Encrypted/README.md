@@ -29,6 +29,7 @@ security handler support matrix in #97.
 | `enc-aes-128.pdf` | `--encrypt u o 128 --use-aes=y --` | 4 | 4 | AESv2 |
 | `enc-aes-256-r5.pdf` | `--encrypt u o 256 --force-R5 --` | 5 | 5 | AESv3 (deprecated R5) |
 | `enc-aes-256-r6.pdf` | `--encrypt u o 256 --` | 5 | 6 | AESv3 |
+| `enc-aes-128-cleartextmd.pdf` | `--encrypt u o 128 --use-aes=y --cleartext-metadata --` | 4 | 4 | AESv2, metadata in clear |
 | `enc-256-cleartextmd.pdf` | `--encrypt u o 256 --cleartext-metadata --` | 5 | 6 | AESv3, metadata in clear |
 
 `--allow-weak-crypto` is **required** for the three RC4 rows. Without it qpdf refuses:
@@ -60,3 +61,24 @@ Two assertions, in this order:
 
 `enc-256-cleartextmd.pdf` is externally checkable too: `xpacket` appears in its raw bytes and does not
 appear in `enc-aes-256-r6.pdf`.
+
+## Known gaps
+
+The matrix above is complete along the `/V`+`/R`+`/CFM` axis. It is deliberately **not** complete along the
+structural axis, and #97 will need more than this:
+
+- **Every object is generation 0, and every file is single-revision.** So the corpus cannot exercise the
+  coupling that makes #97 depend on #121 — a decryptor that hardcodes generation 0 in the per-object key
+  passes all of it. qpdf normalises generations when it rewrites, so these need hand-building.
+- **No owner-password-only file**, no empty user password. Worth adding: veraPDF can open those (it tries
+  the empty user password) where it refuses a user-password file outright, which is what makes them the
+  right shape for #138.
+- **No object stream, no cross-reference stream, no incremental update.** The xref-stream case matters
+  particularly: cross-reference streams must *not* be decrypted, which is a classic trap.
+- **No `/EFF`, no `/StrF` differing from `/StmF`, no `/Crypt` filter entry**, and no non-ASCII password
+  exercising R6's SASLprep handling.
+
+Both `--cleartext-metadata` rows are present on purpose. At R5/R6 the flag never enters key derivation —
+the file key is random and unwrapped from `/UE`/`/OE` — so only the **R4** row exercises ISO 32000-1
+Algorithm 2 step (f), where an unencrypted-metadata file appends `0xFFFFFFFF` to the MD5 and getting it
+wrong yields a completely wrong key.

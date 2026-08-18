@@ -28,6 +28,7 @@ public sealed class EncryptedFixtureCorpusTests
         ("enc-aes-128.pdf", 4, 4, "/AESV2", "c525e277fdbfb1d332eda71df6f9894c80d1a11b34512967a44df1d81fd14f9a"),
         ("enc-aes-256-r5.pdf", 5, 5, "/AESV3", "ce74060cbc4056fd125a2a40efcdade2f684f38284e1aa6b5d694299d6c56df8"),
         ("enc-aes-256-r6.pdf", 5, 6, "/AESV3", "af3ed586e3246d51523f6b546d9c9fb3e896d5968e283c4305b1dba2b7f361d6"),
+        ("enc-aes-128-cleartextmd.pdf", 4, 4, "/AESV2", "df43e52507998c60fde7631a1694b4731ac0adcaede69715a63da526a9ab5750"),
         ("enc-256-cleartextmd.pdf", 5, 6, "/AESV3", "4ed43c7731177823ce3dd6a6dc072f9a1029cbfd1126b0f2c474cfc7988f326f"),
     ];
 
@@ -57,6 +58,11 @@ public sealed class EncryptedFixtureCorpusTests
         Assert.Contains($"/R {r}", text, StringComparison.Ordinal);
         if (cfm is not null)
             Assert.Contains($"/CFM {cfm}", text, StringComparison.Ordinal);
+
+        // Every fixture grants all permissions. Pinned because the permission bits feed
+        // Algorithm 2's key derivation, so a regenerated fixture that quietly narrowed them
+        // would change what the decrypt tests exercise while satisfying everything above.
+        Assert.Contains("/P -4", text, StringComparison.Ordinal);
     }
 
     [Fact]
