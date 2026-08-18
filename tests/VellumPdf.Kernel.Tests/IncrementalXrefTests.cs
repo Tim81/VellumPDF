@@ -46,7 +46,7 @@ public sealed class IncrementalXrefTests
     {
         var ms = new MemoryStream();
         var writer = new PdfWriter(ms, 0L);
-        var written = new List<(int, long)> { (3, 100L), (3, 200L) };
+        var written = new List<(int, int, long)> { (3, 0, 100L), (3, 0, 200L) };
         Assert.Throws<ArgumentException>(() =>
             IncrementalCrossReferenceBuilder.WriteIncrementalXrefAndTrailer(
                 writer, written, baseSize: 4, new PdfIndirectReference(1), prevXrefOffset: 50, documentId: null));
@@ -59,7 +59,7 @@ public sealed class IncrementalXrefTests
         var writer = new PdfWriter(ms, 0L);
         var catalogRef = new PdfIndirectReference(1);
 
-        var written = new List<(int, long)> { (3, 100L) };
+        var written = new List<(int, int, long)> { (3, 0, 100L) };
         IncrementalCrossReferenceBuilder.WriteIncrementalXrefAndTrailer(
             writer,
             written,
@@ -94,7 +94,7 @@ public sealed class IncrementalXrefTests
         var catalogRef = new PdfIndirectReference(1);
 
         // Objects 3 and 4 are contiguous — must produce a single "3 2" subsection.
-        var written = new List<(int, long)> { (3, 200L), (4, 350L) };
+        var written = new List<(int, int, long)> { (3, 0, 200L), (4, 0, 350L) };
         IncrementalCrossReferenceBuilder.WriteIncrementalXrefAndTrailer(
             writer,
             written,
@@ -122,9 +122,9 @@ public sealed class IncrementalXrefTests
         var catalogRef = new PdfIndirectReference(1);
 
         // Objects 3, 4 (contiguous run) and 7, 8 (separate contiguous run)
-        var written = new List<(int, long)>
+        var written = new List<(int, int, long)>
         {
-            (3, 100L), (4, 200L), (7, 500L), (8, 600L)
+            (3, 0, 100L), (4, 0, 200L), (7, 0, 500L), (8, 0, 600L)
         };
         IncrementalCrossReferenceBuilder.WriteIncrementalXrefAndTrailer(
             writer,
@@ -153,7 +153,7 @@ public sealed class IncrementalXrefTests
         var catalogRef = new PdfIndirectReference(1);
 
         // maxObjNum = 10 → newSize = max(5, 11) = 11
-        var written = new List<(int, long)> { (10, 999L) };
+        var written = new List<(int, int, long)> { (10, 0, 999L) };
         IncrementalCrossReferenceBuilder.WriteIncrementalXrefAndTrailer(
             writer,
             written,
@@ -174,7 +174,7 @@ public sealed class IncrementalXrefTests
         var catalogRef = new PdfIndirectReference(1);
 
         // baseSize = 50, maxObjNum = 3 → newSize = max(50, 4) = 50
-        var written = new List<(int, long)> { (3, 100L) };
+        var written = new List<(int, int, long)> { (3, 0, 100L) };
         IncrementalCrossReferenceBuilder.WriteIncrementalXrefAndTrailer(
             writer,
             written,
@@ -197,7 +197,7 @@ public sealed class IncrementalXrefTests
         for (var i = 0; i < 16; i++) idBytes[i] = (byte)(i + 1);
         var idArr = new PdfArray([new PdfHexString(idBytes), new PdfHexString(idBytes)]);
 
-        var written = new List<(int, long)> { (2, 100L) };
+        var written = new List<(int, int, long)> { (2, 0, 100L) };
         IncrementalCrossReferenceBuilder.WriteIncrementalXrefAndTrailer(
             writer,
             written,
@@ -239,7 +239,7 @@ public sealed class IncrementalXrefTests
         var writer = new PdfWriter(ms, baseOffset);
         var catalogRef = new PdfIndirectReference(1);
 
-        var written = new List<(int, long)> { (2, 100L) };
+        var written = new List<(int, int, long)> { (2, 0, 100L) };
 
         // Write a small "object" manually to advance position.
         writer.WriteAscii("dummy"u8); // position = 505

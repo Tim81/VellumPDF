@@ -89,12 +89,15 @@ public sealed class DeterminismTests
     {
         // The signing-placeholder document (before the signature is patched in) must be
         // reproducible with pins — this covers the DocumentId wiring on the signing path.
+        // SigningTime must be pinned too: PdfDocument falls back to DateTimeOffset.UtcNow when
+        // it is null, so leaving it unset made this test read the live clock and fail whenever
+        // the two Build() calls straddled a wall-clock second.
         static byte[] Build()
         {
             using var doc = new PdfDocument { Timestamp = PinnedTime, DocumentId = PinnedId };
             doc.Info.Title = "Signable";
             doc.AddPage(PageSize.A4);
-            return doc.PrepareForSigning(new SignaturePlaceholderOptions());
+            return doc.PrepareForSigning(new SignaturePlaceholderOptions { SigningTime = PinnedTime });
         }
 
         Assert.Equal(Build(), Build());

@@ -267,7 +267,7 @@ internal sealed class EmbeddedFilePdfaRule : IConformanceRule
 
         if (metadataObj is not PdfIndirectReference metaRef)
             return (EmbeddedPdfAKind.NoPdfAId, null);
-        var stream = reader.ResolveStream(metaRef.ObjectNumber);
+        var stream = reader.ResolveStream(metaRef);
         if (stream is null)
             return (EmbeddedPdfAKind.NoPdfAId, null);
 

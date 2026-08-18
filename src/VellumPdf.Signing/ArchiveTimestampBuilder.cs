@@ -140,7 +140,7 @@ internal static class ArchiveTimestampBuilder
             ?? throw new InvalidDataException("Malformed PDF: catalog is missing /Pages.");
         var pagesRef = pagesRaw as PdfIndirectReference
             ?? throw new InvalidDataException("Malformed PDF: /Pages is not an indirect reference.");
-        var pagesDict = reader.Resolve(pagesRef.ObjectNumber) as PdfDictionary
+        var pagesDict = reader.Resolve(pagesRef) as PdfDictionary
             ?? throw new InvalidDataException("Malformed PDF: /Pages does not resolve to a dictionary.");
 
         var kidsRaw = pagesDict.Get(PdfName.Kids)
@@ -153,7 +153,7 @@ internal static class ArchiveTimestampBuilder
         var firstKidRaw = kidsArr[0];
         var firstPageRef = firstKidRaw as PdfIndirectReference
             ?? throw new InvalidDataException("Malformed PDF: first /Kids entry is not an indirect reference.");
-        var firstPageDict = reader.Resolve(firstPageRef.ObjectNumber) as PdfDictionary
+        var firstPageDict = reader.Resolve(firstPageRef) as PdfDictionary
             ?? throw new InvalidDataException("Malformed PDF: first page does not resolve to a dictionary.");
 
         // ── Step 2: resolve the existing AcroForm /Fields ────────────────────
@@ -161,14 +161,14 @@ internal static class ArchiveTimestampBuilder
         var acroFormRaw = reader.Catalog.Get(new PdfName("AcroForm"))
             ?? throw new InvalidOperationException("PDF has no /AcroForm — cannot append DocTimeStamp field.");
         var acroFormDict = (acroFormRaw is PdfIndirectReference acroRef
-            ? reader.Resolve(acroRef.ObjectNumber) as PdfDictionary
+            ? reader.Resolve(acroRef) as PdfDictionary
             : acroFormRaw as PdfDictionary)
             ?? throw new InvalidDataException("Malformed PDF: /AcroForm does not resolve to a dictionary.");
 
         var fieldsRaw = acroFormDict.Get(new PdfName("Fields"))
             ?? throw new InvalidDataException("Malformed PDF: /AcroForm has no /Fields.");
         var fieldsArr = (fieldsRaw is PdfIndirectReference fieldsRef
-            ? reader.Resolve(fieldsRef.ObjectNumber) as PdfArray
+            ? reader.Resolve(fieldsRef) as PdfArray
             : fieldsRaw as PdfArray)
             ?? throw new InvalidDataException("Malformed PDF: /AcroForm /Fields does not resolve to an array.");
 
@@ -234,7 +234,7 @@ internal static class ArchiveTimestampBuilder
         else
         {
             var existingAnnots = (existingAnnotsRaw is PdfIndirectReference annRef
-                ? reader.Resolve(annRef.ObjectNumber) as PdfArray
+                ? reader.Resolve(annRef) as PdfArray
                 : existingAnnotsRaw as PdfArray)
                 ?? new PdfArray();
 
@@ -247,12 +247,15 @@ internal static class ArchiveTimestampBuilder
 
         // ── Step 8: build the incremental revision with placeholders ──────────
 
-        var newObjects = new List<(int ObjectNumber, PdfObject Value)>
+        // The DocTimeStamp value and the widget annotation are brand-new objects (generation
+        // 0); the first page and the catalog are EXISTING objects being rewritten, so each must
+        // keep its own real generation (ISO 32000-2 §7.5.4) — see the AppendRevision doc comment.
+        var newObjects = new List<(int ObjectNumber, int Generation, PdfObject Value)>
         {
-            (docTimeStampObjNum, docTsDict),
-            (sigFieldObjNum, sigFieldDict),
-            (firstPageObjNum, newFirstPage),
-            (catalogObjNum, newCatalog),
+            (docTimeStampObjNum, 0, docTsDict),
+            (sigFieldObjNum, 0, sigFieldDict),
+            (firstPageObjNum, firstPageRef.Generation, newFirstPage),
+            (catalogObjNum, catalogRef.Generation, newCatalog),
         };
         newObjects.Sort((a, b) => a.ObjectNumber.CompareTo(b.ObjectNumber));
 

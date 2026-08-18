@@ -231,7 +231,7 @@ public sealed class RevisionAndEndOffsetTests
         // Append a new object in a second revision.
         int newObjNum = reader1.Size;
         var newObj = new PdfDictionary().Set(new PdfName("Rev"), new PdfName("Two"));
-        var updatedBytes = reader1.AppendRevision([(newObjNum, newObj)]);
+        var updatedBytes = reader1.AppendRevision([(newObjNum, 0, newObj)]);
 
         using var reader2 = PdfReader.Open(updatedBytes);
 

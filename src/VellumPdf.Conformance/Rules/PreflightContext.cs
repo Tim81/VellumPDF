@@ -415,10 +415,12 @@ internal sealed class PreflightContext
 
     /// <summary>
     /// Resolves <paramref name="obj"/> to a stream object, or <see langword="null"/> when it is
-    /// not an indirect reference to a stream.
+    /// not an indirect reference to a stream. Honours the reference's generation the same way
+    /// <see cref="Resolve"/> does — a stream reference at the wrong generation resolves to
+    /// nothing, matching <c>Resolve</c> rather than the object number alone (ISO 32000-2 §7.3.10).
     /// </summary>
     public ParsedStream? ResolveStream(PdfObject? obj)
-        => obj is PdfIndirectReference r ? Reader.ResolveStream(r.ObjectNumber) : null;
+        => obj is PdfIndirectReference r ? Reader.ResolveStream(r) : null;
 
     /// <summary>The number of indirect objects in the cross-reference table.</summary>
     public int IndirectObjectCount => Reader.ObjectNumbers.Count;

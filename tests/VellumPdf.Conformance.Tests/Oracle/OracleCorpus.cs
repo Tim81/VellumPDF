@@ -2136,8 +2136,8 @@ public static class OracleCorpus
         newStr.Set(new PdfName("K"), new PdfArray([docRef, new PdfIndirectReference(badElemNum)]));
 
         return reader.AppendRevision([
-            (strRef.ObjectNumber, newStr),
-            (badElemNum, badElem),
+            (strRef.ObjectNumber, 0, newStr),
+            (badElemNum, 0, badElem),
         ]);
     }
 
@@ -2174,8 +2174,8 @@ public static class OracleCorpus
         newDoc.Set(new PdfName("K"), new PdfArray(existingKids));
 
         return reader.AppendRevision([
-            (docRef.ObjectNumber, newDoc),
-            (goodElemNum, goodElem),
+            (docRef.ObjectNumber, 0, newDoc),
+            (goodElemNum, 0, goodElem),
         ]);
     }
 
@@ -2224,9 +2224,9 @@ public static class OracleCorpus
             new PdfDictionary().Set(new PdfName("CS0"), new PdfIndirectReference(csNum)));
         newPage.Set(new PdfName("Resources"), newResources);
 
-        var revision = new List<(int, PdfObject)>
+        var revision = new List<(int, int, PdfObject)>
         {
-            (pageRef.ObjectNumber, newPage), (tintFuncNum, tintFunc), (csNum, csArray),
+            (pageRef.ObjectNumber, 0, newPage), (tintFuncNum, 0, tintFunc), (csNum, 0, csArray),
         };
 
         if (paint)
@@ -2235,7 +2235,7 @@ public static class OracleCorpus
             var zeros = string.Join(" ", Enumerable.Repeat("0", n));
             var contentNum = csNum + 1;
             newPage.Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
-            revision.Add((contentNum, new PdfStream(Encoding.ASCII.GetBytes($"/CS0 cs {zeros} scn 10 10 50 50 re f"))));
+            revision.Add((contentNum, 0, new PdfStream(Encoding.ASCII.GetBytes($"/CS0 cs {zeros} scn 10 10 50 50 re f"))));
         }
 
         return reader.AppendRevision(revision);
@@ -2315,11 +2315,11 @@ public static class OracleCorpus
         var content = new PdfStream(Encoding.ASCII.GetBytes("/CS0 cs 0 0 scn 10 10 50 50 re f"));
 
         return reader.AppendRevision([
-            (pageRef.ObjectNumber, newPage),
-            (tintFuncNum, tintFunc),
-            (spot1TintNum, spot1Tint),
-            (csNum, csArray),
-            (contentNum, content),
+            (pageRef.ObjectNumber, 0, newPage),
+            (tintFuncNum, 0, tintFunc),
+            (spot1TintNum, 0, spot1Tint),
+            (csNum, 0, csArray),
+            (contentNum, 0, content),
         ]);
     }
 
@@ -2403,12 +2403,12 @@ public static class OracleCorpus
         var content = new PdfStream(Encoding.ASCII.GetBytes("/CS0 cs 0 0 scn 10 10 50 50 re f"));
 
         return reader.AppendRevision([
-            (pageRef.ObjectNumber, newPage),
-            (tintFuncNum, tintFunc),
-            (spot1TintNum, spot1Tint),
-            (spot2TintNum, spot2Tint),
-            (csNum, csArray),
-            (contentNum, content),
+            (pageRef.ObjectNumber, 0, newPage),
+            (tintFuncNum, 0, tintFunc),
+            (spot1TintNum, 0, spot1Tint),
+            (spot2TintNum, 0, spot2Tint),
+            (csNum, 0, csArray),
+            (contentNum, 0, content),
         ]);
     }
 
@@ -2450,7 +2450,7 @@ public static class OracleCorpus
         newPage.Set(new PdfName("Resources"), newResources);
 
         // No /Contents update — the page has no content selecting /F99.
-        return reader.AppendRevision([(pageRef.ObjectNumber, newPage), (fontNum, font)]);
+        return reader.AppendRevision([(pageRef.ObjectNumber, 0, newPage), (fontNum, 0, font)]);
     }
 
     private static byte[] WriterPdfWithDrawnPostScriptXObject()
@@ -2519,7 +2519,7 @@ public static class OracleCorpus
 
         var content = new PdfStream(Encoding.ASCII.GetBytes("q /X0 Do Q"));
         return reader.AppendRevision(
-            [(pageRef.ObjectNumber, newPage), (xobjNum, xobject), (contentNum, content)]);
+            [(pageRef.ObjectNumber, 0, newPage), (xobjNum, 0, xobject), (contentNum, 0, content)]);
     }
 
     private static byte[] WriterPdfWithTransferFunction()
@@ -2567,7 +2567,7 @@ public static class OracleCorpus
                 new PdfDictionary().Set(new PdfName("GS0"), new PdfIndirectReference(gsNum))));
         newPage.Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
         var content = new PdfStream(Encoding.ASCII.GetBytes("q /GS0 gs Q"));
-        return reader.AppendRevision([(pageRef.ObjectNumber, newPage), (gsNum, gs), (contentNum, content)]);
+        return reader.AppendRevision([(pageRef.ObjectNumber, 0, newPage), (gsNum, 0, gs), (contentNum, 0, content)]);
     }
 
     private static byte[] WriterPdfWithBadRenderingIntent()
@@ -2579,7 +2579,7 @@ public static class OracleCorpus
         var contentNum = reader.Size;
         newPage.Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
         var content = new PdfStream(Encoding.ASCII.GetBytes("/FooIntent ri"));
-        return reader.AppendRevision([(pageRef.ObjectNumber, newPage), (contentNum, content)]);
+        return reader.AppendRevision([(pageRef.ObjectNumber, 0, newPage), (contentNum, 0, content)]);
     }
 
     private static byte[] WriterPdfWithDeepQNesting()
@@ -2595,7 +2595,7 @@ public static class OracleCorpus
         newPage.Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
         var streamText = string.Concat(Enumerable.Repeat("q ", 29)) + string.Concat(Enumerable.Repeat("Q ", 29));
         var content = new PdfStream(Encoding.ASCII.GetBytes(streamText));
-        return reader.AppendRevision([(pageRef.ObjectNumber, newPage), (contentNum, content)]);
+        return reader.AppendRevision([(pageRef.ObjectNumber, 0, newPage), (contentNum, 0, content)]);
     }
 
     private static byte[] WriterPdfWithXmpHeader(string headerExtra)
@@ -3030,7 +3030,7 @@ public static class OracleCorpus
 
         var stream = new PdfStream(icc);
         stream.Dictionary.Set(new PdfName("N"), new PdfInteger(3));
-        return reader.AppendRevision([(destRef.ObjectNumber, stream)]);
+        return reader.AppendRevision([(destRef.ObjectNumber, 0, stream)]);
     }
 
     private static string RdfPacket(string extra) =>
@@ -3058,7 +3058,7 @@ public static class OracleCorpus
         var metaRef = (PdfIndirectReference)reader.Catalog.Get(new PdfName("Metadata"))!;
         var stream = new PdfStream(xmp);
         stream.Dictionary.Set(PdfName.Type, new PdfName("Metadata")).Set(PdfName.Subtype, new PdfName("XML"));
-        return reader.AppendRevision([(metaRef.ObjectNumber, stream)]);
+        return reader.AppendRevision([(metaRef.ObjectNumber, 0, stream)]);
     }
 
     private static byte[] WriterPdfWithExternalStream()
@@ -3068,7 +3068,7 @@ public static class OracleCorpus
         var streamNum = reader.Size;
         var stream = new PdfStream([]);
         stream.Dictionary.Set(new PdfName("F"), new PdfLiteralString(Encoding.ASCII.GetBytes("external.dat")));
-        return reader.AppendRevision([(streamNum, stream)]);
+        return reader.AppendRevision([(streamNum, 0, stream)]);
     }
 
     private static byte[] WriterPdfWithCatalogAdditionalActions()
@@ -3078,7 +3078,7 @@ public static class OracleCorpus
         var rootRef = (PdfIndirectReference)reader.Trailer.Get(PdfName.Root)!;
         var catalog = CloneDict(reader.Catalog);
         catalog.Set(new PdfName("AA"), new PdfDictionary().Set(new PdfName("WC"), NamedAction("NextPage")));
-        return reader.AppendRevision([(rootRef.ObjectNumber, catalog)]);
+        return reader.AppendRevision([(rootRef.ObjectNumber, 0, catalog)]);
     }
 
     private static byte[] WriterPdfWithOpenAction(PdfDictionary action)
@@ -3087,7 +3087,7 @@ public static class OracleCorpus
         using var reader = PdfReader.Open(baseline);
         var rootRef = (PdfIndirectReference)reader.Trailer.Get(PdfName.Root)!;
         var catalog = CloneDict(reader.Catalog).Set(new PdfName("OpenAction"), action);
-        return reader.AppendRevision([(rootRef.ObjectNumber, catalog)]);
+        return reader.AppendRevision([(rootRef.ObjectNumber, 0, catalog)]);
     }
 
     private static byte[] WriterPdfWithDisallowedNamedAction()
@@ -3097,7 +3097,7 @@ public static class OracleCorpus
         var rootRef = (PdfIndirectReference)reader.Trailer.Get(PdfName.Root)!;
         var catalog = CloneDict(reader.Catalog);
         catalog.Set(new PdfName("OpenAction"), NamedAction("GoForward"));
-        return reader.AppendRevision([(rootRef.ObjectNumber, catalog)]);
+        return reader.AppendRevision([(rootRef.ObjectNumber, 0, catalog)]);
     }
 
     private static PdfDictionary NamedAction(string name) => new PdfDictionary()
@@ -3111,7 +3111,7 @@ public static class OracleCorpus
         var rootRef = (PdfIndirectReference)reader.Trailer.Get(PdfName.Root)!;
         var catalog = CloneDict(reader.Catalog);
         catalog.Set(new PdfName("NeedsRendering"), PdfBoolean.True);
-        return reader.AppendRevision([(rootRef.ObjectNumber, catalog)]);
+        return reader.AppendRevision([(rootRef.ObjectNumber, 0, catalog)]);
     }
 
     private static byte[] WriterPdfWithNeedAppearances()
@@ -3124,7 +3124,7 @@ public static class OracleCorpus
             .Set(new PdfName("Fields"), new PdfArray([]))
             .Set(new PdfName("NeedAppearances"), PdfBoolean.True);
         catalog.Set(new PdfName("AcroForm"), acroForm);
-        return reader.AppendRevision([(rootRef.ObjectNumber, catalog)]);
+        return reader.AppendRevision([(rootRef.ObjectNumber, 0, catalog)]);
     }
 
     private static byte[] WriterPdfWithTinyMediaBox()
@@ -3135,7 +3135,7 @@ public static class OracleCorpus
         var newPage = CloneDict(page);
         newPage.Set(new PdfName("MediaBox"),
             new PdfArray([new PdfInteger(0), new PdfInteger(0), new PdfInteger(1), new PdfInteger(1)]));
-        return reader.AppendRevision([(pageRef.ObjectNumber, newPage)]);
+        return reader.AppendRevision([(pageRef.ObjectNumber, 0, newPage)]);
     }
 
     private static byte[] WriterPdfWithBadStreamLength()
@@ -3188,7 +3188,7 @@ public static class OracleCorpus
         var rootRef = (PdfIndirectReference)reader.Trailer.Get(PdfName.Root)!;
         var catalog = CloneDict(reader.Catalog);
         catalog.Set(new PdfName(key), value);
-        return reader.AppendRevision([(rootRef.ObjectNumber, catalog)]);
+        return reader.AppendRevision([(rootRef.ObjectNumber, 0, catalog)]);
     }
 
     // A compliant PDF/A-2b document wrapped as an /EmbeddedFile stream, so an embedding fixture keeps
@@ -3229,7 +3229,7 @@ public static class OracleCorpus
                     new PdfIndirectReference(filespecNum)]))));
 
         return reader.AppendRevision([
-            (rootRef.ObjectNumber, catalog), (efStreamNum, EmbeddedFileStream()), (filespecNum, filespec)]);
+            (rootRef.ObjectNumber, 0, catalog), (efStreamNum, 0, EmbeddedFileStream()), (filespecNum, 0, filespec)]);
     }
 
     // Attaches a plain (non-PDF/A) PDF as an embedded file via the /Names /EmbeddedFiles name tree.
@@ -3267,7 +3267,7 @@ public static class OracleCorpus
                     new PdfIndirectReference(filespecNum)]))));
 
         return reader.AppendRevision([
-            (rootRef.ObjectNumber, catalog), (efStreamNum, efStream), (filespecNum, filespec)]);
+            (rootRef.ObjectNumber, 0, catalog), (efStreamNum, 0, efStream), (filespecNum, 0, filespec)]);
     }
 
     // Places an /EF key on the first page dictionary — a dictionary that is NOT a file specification.
@@ -3280,7 +3280,7 @@ public static class OracleCorpus
         var efStreamNum = reader.Size;
         var newPage = CloneDict(page).Set(new PdfName("EF"),
             new PdfDictionary().Set(new PdfName("F"), new PdfIndirectReference(efStreamNum)));
-        return reader.AppendRevision([(pageRef.ObjectNumber, newPage), (efStreamNum, EmbeddedFileStream())]);
+        return reader.AppendRevision([(pageRef.ObjectNumber, 0, newPage), (efStreamNum, 0, EmbeddedFileStream())]);
     }
 
     // Attaches a Link annotation with the given annotation flags to the first page. (Link is exempt
@@ -3296,7 +3296,7 @@ public static class OracleCorpus
             .Set(new PdfName("Rect"), new PdfArray([new PdfInteger(10), new PdfInteger(10), new PdfInteger(50), new PdfInteger(50)]))
             .Set(new PdfName("F"), new PdfInteger(flags));
         var newPage = CloneDict(page).Set(new PdfName("Annots"), new PdfArray([new PdfIndirectReference(annotNum)]));
-        return reader.AppendRevision([(pageRef.ObjectNumber, newPage), (annotNum, annot)]);
+        return reader.AppendRevision([(pageRef.ObjectNumber, 0, newPage), (annotNum, 0, annot)]);
     }
 
     // Attaches a Widget (or other-subtype) annotation whose /AP /N is built from the appearance-stream
@@ -3334,7 +3334,7 @@ public static class OracleCorpus
                 .Set(new PdfName("Fields"), new PdfArray([new PdfIndirectReference(annotNum)])));
 
         return reader.AppendRevision([
-            (rootRef.ObjectNumber, catalog), (pageRef.ObjectNumber, newPage), (apNum, ap), (annotNum, annot)]);
+            (rootRef.ObjectNumber, 0, catalog), (pageRef.ObjectNumber, 0, newPage), (apNum, 0, ap), (annotNum, 0, annot)]);
     }
 
     // Attaches a Text annotation whose /AP appearance dictionary carries a /D entry in addition to /N.
@@ -3357,7 +3357,7 @@ public static class OracleCorpus
                 .Set(new PdfName("N"), new PdfIndirectReference(apNum))
                 .Set(new PdfName("D"), new PdfIndirectReference(apNum)));
         var newPage = CloneDict(page).Set(new PdfName("Annots"), new PdfArray([new PdfIndirectReference(annotNum)]));
-        return reader.AppendRevision([(pageRef.ObjectNumber, newPage), (apNum, ap), (annotNum, annot)]);
+        return reader.AppendRevision([(pageRef.ObjectNumber, 0, newPage), (apNum, 0, ap), (annotNum, 0, annot)]);
     }
 
     // Injects an /OCProperties dictionary with two OCGs, a caller-built /D config and optional
@@ -3380,7 +3380,7 @@ public static class OracleCorpus
         if (buildConfigs?.Invoke(ocg1, ocg2) is { } configs)
             ocp.Set(new PdfName("Configs"), configs);
         catalog.Set(new PdfName("OCProperties"), ocp);
-        return reader.AppendRevision([(rootRef.ObjectNumber, catalog), (ocg1, Ocg("Layer 1")), (ocg2, Ocg("Layer 2"))]);
+        return reader.AppendRevision([(rootRef.ObjectNumber, 0, catalog), (ocg1, 0, Ocg("Layer 1")), (ocg2, 0, Ocg("Layer 2"))]);
     }
 
     private static byte[] WriterPdfWithPresSteps()
@@ -3390,7 +3390,7 @@ public static class OracleCorpus
         var (pageRef, page) = FirstPage(reader);
         var newPage = CloneDict(page);
         newPage.Set(new PdfName("PresSteps"), new PdfDictionary().Set(PdfName.Type, new PdfName("NavNode")));
-        return reader.AppendRevision([(pageRef.ObjectNumber, newPage)]);
+        return reader.AppendRevision([(pageRef.ObjectNumber, 0, newPage)]);
     }
 
     private static PdfDictionary NamedConfig()
@@ -3411,7 +3411,7 @@ public static class OracleCorpus
         catalog.Set(new PdfName("OCProperties"), new PdfDictionary()
             .Set(new PdfName("OCGs"), new PdfArray([new PdfIndirectReference(ocgNum)]))
             .Set(new PdfName("D"), defaultConfig));
-        return reader.AppendRevision([(rootRef.ObjectNumber, catalog), (ocgNum, ocg)]);
+        return reader.AppendRevision([(rootRef.ObjectNumber, 0, catalog), (ocgNum, 0, ocg)]);
     }
 
     private static byte[] WriterPdfWithXfa()
@@ -3424,7 +3424,7 @@ public static class OracleCorpus
             .Set(new PdfName("Fields"), new PdfArray([]))
             .Set(new PdfName("XFA"), new PdfLiteralString(Encoding.ASCII.GetBytes("<xdp/>")));
         catalog.Set(new PdfName("AcroForm"), acroForm);
-        return reader.AppendRevision([(rootRef.ObjectNumber, catalog)]);
+        return reader.AppendRevision([(rootRef.ObjectNumber, 0, catalog)]);
     }
 
     private static byte[] WriterPdfDeviceColourNoOutputIntent()
@@ -3445,7 +3445,7 @@ public static class OracleCorpus
         foreach (var kv in reader.Catalog.Entries)
             if (kv.Key.Value != "OutputIntents")
                 catalog.Set(kv.Key, kv.Value);
-        return reader.AppendRevision([(rootRef.ObjectNumber, catalog)]);
+        return reader.AppendRevision([(rootRef.ObjectNumber, 0, catalog)]);
     }
 
     private static byte[] WriterPdfMalformedOutputIntent(bool deviceColour)
@@ -3469,7 +3469,7 @@ public static class OracleCorpus
             .Set(PdfName.Type, new PdfName("OutputIntent"))
             .Set(new PdfName("S"), new PdfName("GTS_PDFA1"));
         catalog.Set(new PdfName("OutputIntents"), new PdfArray([brokenOi]));
-        return reader.AppendRevision([(rootRef.ObjectNumber, catalog)]);
+        return reader.AppendRevision([(rootRef.ObjectNumber, 0, catalog)]);
     }
 
     // ── §6.2.4.3 Default* colour space fixture helpers (2026-06-23) ────────────────────────────────
@@ -3684,7 +3684,7 @@ public static class OracleCorpus
             .Set(new PdfName("BM"), new PdfName("BogusMode"));
         newResources.Set(new PdfName("ExtGState"), new PdfDictionary().Set(new PdfName("GS0"), gs));
         newPage.Set(new PdfName("Resources"), newResources);
-        return reader.AppendRevision([(pageRef.ObjectNumber, newPage)]);
+        return reader.AppendRevision([(pageRef.ObjectNumber, 0, newPage)]);
     }
 
     private static byte[] WriterPdfEmptyTagged(VellumPdf.Document.PdfConformance conformance)
@@ -3777,8 +3777,8 @@ public static class OracleCorpus
         ]));
 
         return reader.AppendRevision([
-            (docRef.ObjectNumber, newDoc),
-            (customElemNum, customElem),
+            (docRef.ObjectNumber, 0, newDoc),
+            (customElemNum, 0, customElem),
         ]);
     }
 
@@ -3815,9 +3815,9 @@ public static class OracleCorpus
             .Set(new PdfName("MyCustomTag"), new PdfName("Div")));
 
         return reader.AppendRevision([
-            (strRef.ObjectNumber, newStr),
-            (docRef.ObjectNumber, newDoc),
-            (customElemNum, customElem),
+            (strRef.ObjectNumber, 0, newStr),
+            (docRef.ObjectNumber, 0, newDoc),
+            (customElemNum, 0, customElem),
         ]);
     }
 
@@ -3855,9 +3855,9 @@ public static class OracleCorpus
             .Set(new PdfName("Bar"), new PdfName("Foo")));
 
         return reader.AppendRevision([
-            (strRef.ObjectNumber, newStr),
-            (docRef.ObjectNumber, newDoc),
-            (fooElemNum, fooElem),
+            (strRef.ObjectNumber, 0, newStr),
+            (docRef.ObjectNumber, 0, newDoc),
+            (fooElemNum, 0, fooElem),
         ]);
     }
 
@@ -3880,7 +3880,7 @@ public static class OracleCorpus
             .Set(new PdfName("P"), new PdfName("MyNonStd")));
 
         return reader.AppendRevision([
-            (strRef.ObjectNumber, newStr),
+            (strRef.ObjectNumber, 0, newStr),
         ]);
     }
 
@@ -3901,7 +3901,7 @@ public static class OracleCorpus
             .Set(new PdfName("P"), new PdfName("Div")));
 
         return reader.AppendRevision([
-            (strRef.ObjectNumber, newStr),
+            (strRef.ObjectNumber, 0, newStr),
         ]);
     }
 
@@ -3925,7 +3925,7 @@ public static class OracleCorpus
             .Set(new PdfName("Foo"), new PdfName("Span")));
 
         return reader.AppendRevision([
-            (strRef.ObjectNumber, newStr),
+            (strRef.ObjectNumber, 0, newStr),
         ]);
     }
 
@@ -3962,8 +3962,8 @@ public static class OracleCorpus
         ]));
 
         return reader.AppendRevision([
-            (docRef.ObjectNumber, newDoc),
-            (customElemNum, customElem),
+            (docRef.ObjectNumber, 0, newDoc),
+            (customElemNum, 0, customElem),
         ]);
     }
 
@@ -4002,9 +4002,9 @@ public static class OracleCorpus
             .Set(new PdfName("MyMappedTag"), new PdfName("Div")));
 
         return reader.AppendRevision([
-            (strRef.ObjectNumber, newStr),
-            (docRef.ObjectNumber, newDoc),
-            (customElemNum, customElem),
+            (strRef.ObjectNumber, 0, newStr),
+            (docRef.ObjectNumber, 0, newDoc),
+            (customElemNum, 0, customElem),
         ]);
     }
 
@@ -4019,7 +4019,7 @@ public static class OracleCorpus
         var rootRef = (PdfIndirectReference)reader.Trailer.Get(PdfName.Root)!;
         var catalog = CloneDict(reader.Catalog);
         catalog.Set(new PdfName("Lang"), new PdfLiteralString(Encoding.ASCII.GetBytes("invalid!!bad")));
-        return reader.AppendRevision([(rootRef.ObjectNumber, (PdfObject)catalog)]);
+        return reader.AppendRevision([(rootRef.ObjectNumber, 0, (PdfObject)catalog)]);
     }
 
     /// <summary>
@@ -4053,8 +4053,8 @@ public static class OracleCorpus
         ]));
 
         return reader.AppendRevision([
-            (docRef.ObjectNumber, newDoc),
-            (badLangElemNum, badLangElem),
+            (docRef.ObjectNumber, 0, newDoc),
+            (badLangElemNum, 0, badLangElem),
         ]);
     }
 
@@ -4068,7 +4068,7 @@ public static class OracleCorpus
             .Set(new PdfName("S"), new PdfName("JavaScript"))
             .Set(new PdfName("JS"), new PdfLiteralString(Encoding.ASCII.GetBytes("app.alert(1);")));
         catalog.Set(new PdfName("OpenAction"), jsAction);
-        return reader.AppendRevision([(rootRef.ObjectNumber, catalog)]);
+        return reader.AppendRevision([(rootRef.ObjectNumber, 0, catalog)]);
     }
 
     private static byte[] WriterPdfWithMovieAnnotation()
@@ -4089,7 +4089,7 @@ public static class OracleCorpus
             .Set(new PdfName("Rect"), new PdfArray([new PdfInteger(0), new PdfInteger(0), new PdfInteger(1), new PdfInteger(1)]))
             .Set(new PdfName("F"), new PdfInteger(4));
         page.Set(new PdfName("Annots"), new PdfArray([new PdfIndirectReference(annotObjNum)]));
-        return reader.AppendRevision([(pageRef.ObjectNumber, page), (annotObjNum, movie)]);
+        return reader.AppendRevision([(pageRef.ObjectNumber, 0, page), (annotObjNum, 0, movie)]);
     }
 
     // ── UA batch fixture helpers ──────────────────────────────────────────────────────────────────
@@ -4131,7 +4131,7 @@ public static class OracleCorpus
 
         var metaNum = reader.Size;
         catalog.Set(new PdfName("Metadata"), new PdfIndirectReference(metaNum));
-        return reader.AppendRevision([(rootRef.ObjectNumber, catalog), (metaNum, metaStream)]);
+        return reader.AppendRevision([(rootRef.ObjectNumber, 0, catalog), (metaNum, 0, metaStream)]);
     }
 
     /// <summary>
@@ -4181,11 +4181,11 @@ public static class OracleCorpus
 
         newPage.Set(new PdfName("Annots"), new PdfArray([new PdfIndirectReference(annotNum)]));
         return reader.AppendRevision([
-            (pageRef.ObjectNumber, newPage),
-            (mcdNum, mcd),
-            (renditionNum, rendition),
-            (actionNum, action),
-            (annotNum, annot),
+            (pageRef.ObjectNumber, 0, newPage),
+            (mcdNum, 0, mcd),
+            (renditionNum, 0, rendition),
+            (actionNum, 0, action),
+            (annotNum, 0, annot),
         ]);
     }
 
@@ -4221,9 +4221,9 @@ public static class OracleCorpus
         catalog.Set(new PdfName("AcroForm"), acroForm);
 
         return reader.AppendRevision([
-            (pageRef.ObjectNumber, newPage),
-            (rootRef.ObjectNumber, catalog),
-            (widgetNum, widget),
+            (pageRef.ObjectNumber, 0, newPage),
+            (rootRef.ObjectNumber, 0, catalog),
+            (widgetNum, 0, widget),
         ]);
     }
 
@@ -4308,16 +4308,16 @@ public static class OracleCorpus
 
         newPage.Set(new PdfName("Annots"), new PdfArray([new PdfIndirectReference(widgetNum)]));
 
-        var updates = new List<(int, PdfObject)>
+        var updates = new List<(int, int, PdfObject)>
         {
-            (strRef.ObjectNumber, newStr),
-            (pageRef.ObjectNumber, newPage),
-            (widgetNum, widget),
-            (objrNum, objr),
-            (formElemNum, formElem),
+            (strRef.ObjectNumber, 0, newStr),
+            (pageRef.ObjectNumber, 0, newPage),
+            (widgetNum, 0, widget),
+            (objrNum, 0, objr),
+            (formElemNum, 0, formElem),
         };
         if (addExtraChild)
-            updates.Add((extraChildNum, extraChild));
+            updates.Add((extraChildNum, 0, extraChild));
 
         return reader.AppendRevision(updates);
     }
@@ -4414,7 +4414,7 @@ public static class OracleCorpus
         markInfo.Set(new PdfName("Marked"), PdfBoolean.True);
         markInfo.Set(new PdfName("Suspects"), PdfBoolean.True);
         catalog.Set(new PdfName("MarkInfo"), markInfo);
-        return reader.AppendRevision([(rootRef.ObjectNumber, catalog)]);
+        return reader.AppendRevision([(rootRef.ObjectNumber, 0, catalog)]);
     }
 
     // The same injection but with /Suspects = false — explicitly permitted (no violation).
@@ -4428,7 +4428,7 @@ public static class OracleCorpus
         markInfo.Set(new PdfName("Marked"), PdfBoolean.True);
         markInfo.Set(new PdfName("Suspects"), PdfBoolean.False);
         catalog.Set(new PdfName("MarkInfo"), markInfo);
-        return reader.AppendRevision([(rootRef.ObjectNumber, catalog)]);
+        return reader.AppendRevision([(rootRef.ObjectNumber, 0, catalog)]);
     }
 
     // Replaces the PDF version digit '7' with '8' (in-place, same-length) so the header reads
@@ -4469,7 +4469,7 @@ public static class OracleCorpus
         var rootRef = (PdfIndirectReference)reader.Trailer.Get(PdfName.Root)!;
         var catalog = CloneDict(reader.Catalog);
         catalog.Set(new PdfName("Lang"), new PdfLiteralString(Encoding.ASCII.GetBytes(lang)));
-        return reader.AppendRevision([(rootRef.ObjectNumber, catalog)]);
+        return reader.AppendRevision([(rootRef.ObjectNumber, 0, catalog)]);
     }
 
     // Same as WriterUa1WithLang but sets the catalog /Lang to the empty string, exercising the
@@ -4481,7 +4481,7 @@ public static class OracleCorpus
         var rootRef = (PdfIndirectReference)reader.Trailer.Get(PdfName.Root)!;
         var catalog = CloneDict(reader.Catalog);
         catalog.Set(new PdfName("Lang"), new PdfLiteralString(Array.Empty<byte>()));
-        return reader.AppendRevision([(rootRef.ObjectNumber, catalog)]);
+        return reader.AppendRevision([(rootRef.ObjectNumber, 0, catalog)]);
     }
 
     // ── PDF/UA-1 Batch A2 fixture helpers ────────────────────────────────────────────────────────
@@ -4513,7 +4513,7 @@ public static class OracleCorpus
         if (hidden)
             annot.Set(new PdfName("F"), new PdfInteger(2)); // Hidden flag
         newPage.Set(new PdfName("Annots"), new PdfArray([new PdfIndirectReference(annotNum)]));
-        return reader.AppendRevision([(pageRef.ObjectNumber, newPage), (apNum, apStream), (annotNum, annot)]);
+        return reader.AppendRevision([(pageRef.ObjectNumber, 0, newPage), (apNum, 0, apStream), (annotNum, 0, annot)]);
     }
 
     /// <summary>
@@ -4534,7 +4534,7 @@ public static class OracleCorpus
         if (includeContents)
             annot.Set(new PdfName("Contents"), new PdfLiteralString(Encoding.ASCII.GetBytes("Click here")));
         newPage.Set(new PdfName("Annots"), new PdfArray([new PdfIndirectReference(annotNum)]));
-        return reader.AppendRevision([(pageRef.ObjectNumber, newPage), (annotNum, annot)]);
+        return reader.AppendRevision([(pageRef.ObjectNumber, 0, newPage), (annotNum, 0, annot)]);
     }
 
     /// <summary>
@@ -4562,7 +4562,7 @@ public static class OracleCorpus
         if (includeContents)
             annot.Set(new PdfName("Contents"), new PdfLiteralString(Encoding.ASCII.GetBytes("A note")));
         newPage.Set(new PdfName("Annots"), new PdfArray([new PdfIndirectReference(annotNum)]));
-        return reader.AppendRevision([(pageRef.ObjectNumber, newPage), (apNum, apStream), (annotNum, annot)]);
+        return reader.AppendRevision([(pageRef.ObjectNumber, 0, newPage), (apNum, 0, apStream), (annotNum, 0, annot)]);
     }
 
     /// <summary>
@@ -4583,7 +4583,7 @@ public static class OracleCorpus
             .Set(PdfName.Subtype, new PdfName("Link"))
             .Set(new PdfName("Rect"), new PdfArray([new PdfInteger(600), new PdfInteger(10), new PdfInteger(650), new PdfInteger(50)]));
         newPage.Set(new PdfName("Annots"), new PdfArray([new PdfIndirectReference(annotNum)]));
-        return reader.AppendRevision([(pageRef.ObjectNumber, newPage), (annotNum, annot)]);
+        return reader.AppendRevision([(pageRef.ObjectNumber, 0, newPage), (annotNum, 0, annot)]);
     }
 
     /// <summary>
@@ -4610,7 +4610,7 @@ public static class OracleCorpus
             .Set(new PdfName("XObject"), new PdfDictionary().Set(new PdfName("Fm0"), new PdfIndirectReference(xobjNum)));
         newPage.Set(new PdfName("Resources"), resources);
         newPage.Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
-        return reader.AppendRevision([(pageRef.ObjectNumber, newPage), (xobjNum, xobj), (contentNum, content)]);
+        return reader.AppendRevision([(pageRef.ObjectNumber, 0, newPage), (xobjNum, 0, xobj), (contentNum, 0, content)]);
     }
 
     /// <summary>
@@ -4638,7 +4638,7 @@ public static class OracleCorpus
                 .Set(new PdfName("Names"), new PdfArray([
                     new PdfLiteralString(Encoding.ASCII.GetBytes("attach.txt")),
                     new PdfIndirectReference(filespecNum)]))));
-        return reader.AppendRevision([(rootRef.ObjectNumber, catalog), (efStreamNum, efStream), (filespecNum, filespec)]);
+        return reader.AppendRevision([(rootRef.ObjectNumber, 0, catalog), (efStreamNum, 0, efStream), (filespecNum, 0, filespec)]);
     }
 
     /// <summary>
@@ -4666,7 +4666,7 @@ public static class OracleCorpus
         catalog.Set(new PdfName("OCProperties"), new PdfDictionary()
             .Set(new PdfName("OCGs"), new PdfArray([new PdfIndirectReference(ocgNum)]))
             .Set(new PdfName("D"), ocConfig));
-        return reader.AppendRevision([(rootRef.ObjectNumber, catalog), (ocgNum, ocg)]);
+        return reader.AppendRevision([(rootRef.ObjectNumber, 0, catalog), (ocgNum, 0, ocg)]);
     }
 
     /// <summary>
@@ -4693,7 +4693,7 @@ public static class OracleCorpus
         var acroForm = new PdfDictionary()
             .Set(new PdfName("XFA"), new PdfIndirectReference(xfaStreamNum));
         catalog.Set(new PdfName("AcroForm"), acroForm);
-        return reader.AppendRevision([(rootRef.ObjectNumber, catalog), (xfaStreamNum, xfaStream)]);
+        return reader.AppendRevision([(rootRef.ObjectNumber, 0, catalog), (xfaStreamNum, 0, xfaStream)]);
     }
 
     private static void DrawGlyphs(PdfCanvas canvas, EmbeddedFontHandle handle, string text)
@@ -4808,7 +4808,7 @@ public static class OracleCorpus
         var content = new PdfStream(Encoding.ASCII.GetBytes("BT /F1 12 Tf 100 500 Td (A) Tj ET"));
 
         return reader.AppendRevision(
-            [(pageRef.ObjectNumber, newPage), (fontNum, simple), (descNum, descriptor), (ffNum, fontFile), (contentNum, content)]);
+            [(pageRef.ObjectNumber, 0, newPage), (fontNum, 0, simple), (descNum, 0, descriptor), (ffNum, 0, fontFile), (contentNum, 0, content)]);
     }
 
     // Fix 1 regression fixture: same as the conformant pdfa2b-simple-font fixture but the content
@@ -4860,7 +4860,7 @@ public static class OracleCorpus
         var content = new PdfStream(Encoding.ASCII.GetBytes("BT /F1 12 Tf 100 500 Td (\\101) Tj ET"));
 
         return reader.AppendRevision(
-            [(pageRef.ObjectNumber, newPage), (fontNum, simple), (descNum, descriptor), (ffNum, fontFile), (contentNum, content)]);
+            [(pageRef.ObjectNumber, 0, newPage), (fontNum, 0, simple), (descNum, 0, descriptor), (ffNum, 0, fontFile), (contentNum, 0, content)]);
     }
 
     // Fix 2 regression fixture: a simple TrueType font with /Differences mapping code 65 to the
@@ -4945,12 +4945,12 @@ public static class OracleCorpus
 
         return reader.AppendRevision(
         [
-            (pageRef.ObjectNumber, newPage),
-            (fontNum, simple),
-            (descNum, descriptor),
-            (ffNum, fontFile),
-            (toUnicodeNum, toUnicodeStream),
-            (contentNum, content),
+            (pageRef.ObjectNumber, 0, newPage),
+            (fontNum, 0, simple),
+            (descNum, 0, descriptor),
+            (ffNum, 0, fontFile),
+            (toUnicodeNum, 0, toUnicodeStream),
+            (contentNum, 0, content),
         ]);
     }
 
@@ -4973,7 +4973,7 @@ public static class OracleCorpus
         newPage.Set(new PdfName("Contents"),
             new PdfArray([page.Get(new PdfName("Contents"))!, new PdfIndirectReference(contentNum)]));
         var content = new PdfStream(Encoding.ASCII.GetBytes($"BT /{fontName} 12 Tf 72 600 Td <{hexGid}> Tj ET"));
-        return reader.AppendRevision([(pageRef.ObjectNumber, newPage), (contentNum, content)]);
+        return reader.AppendRevision([(pageRef.ObjectNumber, 0, newPage), (contentNum, 0, content)]);
     }
 
     private static byte[] WriterPdfWithBadFontSubtype()
@@ -5001,7 +5001,7 @@ public static class OracleCorpus
         var type0Ref = (PdfIndirectReference)fonts.Entries.First().Value;
         var type0 = (PdfDictionary)reader.Resolve(type0Ref.ObjectNumber)!;
         var newType0 = CloneDict(type0).Set(new PdfName("Encoding"), new PdfName("FooBarCMap"));
-        return reader.AppendRevision([(type0Ref.ObjectNumber, newType0)]);
+        return reader.AppendRevision([(type0Ref.ObjectNumber, 0, newType0)]);
     }
 
     private static byte[] WriterPdfWithoutBaseFont()
@@ -5041,7 +5041,7 @@ public static class OracleCorpus
         var newDesc = CloneDict(cidFont);
         newDesc.Set(new PdfName("CIDToGIDMap"), new PdfIndirectReference(mapNum));
 
-        return reader.AppendRevision([(descRef.ObjectNumber, newDesc), (mapNum, mapStream)]);
+        return reader.AppendRevision([(descRef.ObjectNumber, 0, newDesc), (mapNum, 0, mapStream)]);
     }
 
     // Wave 2a (4b): replace the embedded font's /Encoding from /Identity-H to an embedded CMap stream.
@@ -5114,7 +5114,7 @@ public static class OracleCorpus
             // Reuse the original content stream — the 2-byte GIDs it contains map identity through the
             // new CMap to the same CIDs, which are declared in /W, so no width mismatch.
             return reader.AppendRevision(
-                [(type0Ref.ObjectNumber, newType0), (cmapNum, cmapStream)]);
+                [(type0Ref.ObjectNumber, 0, newType0), (cmapNum, 0, cmapStream)]);
         }
 
         // Corrupt: append a content stream that shows <EA60> (CID 60000, beyond glyph count).
@@ -5125,8 +5125,8 @@ public static class OracleCorpus
         var content = new PdfStream(Encoding.ASCII.GetBytes($"BT /{fontName} 12 Tf 72 600 Td <EA60> Tj ET"));
 
         return reader.AppendRevision(
-            [(pageRef.ObjectNumber, newPage), (type0Ref.ObjectNumber, newType0),
-             (cmapNum, cmapStream), (contentNum, content)]);
+            [(pageRef.ObjectNumber, 0, newPage), (type0Ref.ObjectNumber, 0, newType0),
+             (cmapNum, 0, cmapStream), (contentNum, 0, content)]);
     }
 
     private static byte[] WriterPdfWithBadGlyphWidth()
@@ -5154,7 +5154,7 @@ public static class OracleCorpus
         var descendants = (PdfArray)reader.ResolveValue(type0.Get(new PdfName("DescendantFonts"))!)!;
         var descRef = (PdfIndirectReference)descendants[0];
         var descendant = (PdfDictionary)reader.Resolve(descRef.ObjectNumber)!;
-        return reader.AppendRevision([(descRef.ObjectNumber, rebuild(descendant))]);
+        return reader.AppendRevision([(descRef.ObjectNumber, 0, rebuild(descendant))]);
     }
 
     // Adds a /CIDSet to the embedded subset CIDFontType2's FontDescriptor. When complete, the bitmap
@@ -5189,7 +5189,7 @@ public static class OracleCorpus
 
         var cidSetNum = reader.Size;
         var newFd = CloneDict(fd).Set(new PdfName("CIDSet"), new PdfIndirectReference(cidSetNum));
-        return reader.AppendRevision([(fdRef.ObjectNumber, newFd), (cidSetNum, new PdfStream(cidSet))]);
+        return reader.AppendRevision([(fdRef.ObjectNumber, 0, newFd), (cidSetNum, 0, new PdfStream(cidSet))]);
     }
 
     // Rewrites the embedded OpenType-CFF font's /FontFile3 /Subtype from /OpenType to an invalid
@@ -5211,7 +5211,7 @@ public static class OracleCorpus
 
         var newFf3 = new PdfStream(program);
         newFf3.Dictionary.Set(PdfName.Subtype, new PdfName("Type2"));
-        return reader.AppendRevision([(ff3Ref.ObjectNumber, newFf3)]);
+        return reader.AppendRevision([(ff3Ref.ObjectNumber, 0, newFf3)]);
     }
 
     // ── Wave 2b — CIDFontType0C + Type1 glyph presence / width fixtures ──────────────────────────
@@ -5237,7 +5237,7 @@ public static class OracleCorpus
         // Format: [c [w1 w2 ...]] or [c1 c2 w]. Use the widest safe range [0 255 1].
         var newW = new PdfArray([new PdfInteger(0), new PdfInteger(255), new PdfInteger(1)]);
         var newCidFont = CloneDict(cidFont).Set(new PdfName("W"), newW);
-        return reader.AppendRevision([(cidFontRef.ObjectNumber, newCidFont)]);
+        return reader.AppendRevision([(cidFontRef.ObjectNumber, 0, newCidFont)]);
     }
 
     // A simple Type1 font (Noto Sans Shavian /FontFile) with an explicit /Encoding /Differences
@@ -5315,8 +5315,8 @@ public static class OracleCorpus
         var content = new PdfStream(Encoding.ASCII.GetBytes("BT /F1 12 Tf 72 700 Td (\x20) Tj ET"));
 
         return reader.AppendRevision(
-            [(pageRef.ObjectNumber, newPage), (fontNum, font), (descNum, descriptor), (ffNum, program),
-                (contentNum, content)]);
+            [(pageRef.ObjectNumber, 0, newPage), (fontNum, 0, font), (descNum, 0, descriptor), (ffNum, 0, program),
+                (contentNum, 0, content)]);
     }
 
     // Embeds the Noto Sans Shavian Type 1 program as a subset-tagged simple Type1 font on a
@@ -5375,8 +5375,8 @@ public static class OracleCorpus
         var content = new PdfStream(Encoding.ASCII.GetBytes("BT 3 Tr /F1 12 Tf 72 700 Td (\x20) Tj ET"));
 
         return reader.AppendRevision(
-            [(pageRef.ObjectNumber, newPage), (fontNum, font), (descNum, descriptor), (ffNum, program),
-                (contentNum, content)]);
+            [(pageRef.ObjectNumber, 0, newPage), (fontNum, 0, font), (descNum, 0, descriptor), (ffNum, 0, program),
+                (contentNum, 0, content)]);
     }
 
     private static int NumGlyphsOf(byte[] program)
@@ -5974,9 +5974,9 @@ public static class OracleCorpus
             .Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
 
         return reader.AppendRevision([
-            (pageRef.ObjectNumber, newPage),
-            (formNum, formStream),
-            (contentNum, contentStream),
+            (pageRef.ObjectNumber, 0, newPage),
+            (formNum, 0, formStream),
+            (contentNum, 0, contentStream),
         ]);
     }
 
@@ -6029,10 +6029,10 @@ public static class OracleCorpus
             .Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
 
         return reader.AppendRevision([
-            (pageRef.ObjectNumber, newPage),
-            (formBNum, formBStream),
-            (formANum, formAStream),
-            (contentNum, contentStream),
+            (pageRef.ObjectNumber, 0, newPage),
+            (formBNum, 0, formBStream),
+            (formANum, 0, formAStream),
+            (contentNum, 0, contentStream),
         ]);
     }
 
@@ -6079,9 +6079,9 @@ public static class OracleCorpus
         newPage.Set(new PdfName("Annots"), new PdfArray([.. annotsList]));
 
         return reader.AppendRevision([
-            (pageRef.ObjectNumber, newPage),
-            (apStreamNum, apStream),
-            (annotNum, annotDict),
+            (pageRef.ObjectNumber, 0, newPage),
+            (apStreamNum, 0, apStream),
+            (annotNum, 0, annotDict),
         ]);
     }
 
@@ -6175,10 +6175,10 @@ public static class OracleCorpus
                .Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
 
         return reader.AppendRevision([
-            (pageRef.ObjectNumber, newPage),
-            (iccNum, iccStream),
-            (formNum, formStream),
-            (contentNum, pageContent),
+            (pageRef.ObjectNumber, 0, newPage),
+            (iccNum, 0, iccStream),
+            (formNum, 0, formStream),
+            (contentNum, 0, pageContent),
         ]);
     }
 
@@ -6233,10 +6233,10 @@ public static class OracleCorpus
                .Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
 
         return reader.AppendRevision([
-            (pageRef.ObjectNumber, newPage),
-            (iccNum, iccStream),
-            (formNum, formStream),
-            (contentNum, pageContent),
+            (pageRef.ObjectNumber, 0, newPage),
+            (iccNum, 0, iccStream),
+            (formNum, 0, formStream),
+            (contentNum, 0, pageContent),
         ]);
     }
 
@@ -6279,9 +6279,9 @@ public static class OracleCorpus
                .Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
 
         return reader.AppendRevision([
-            (pageRef.ObjectNumber, newPage),
-            (formNum, formStream),
-            (contentNum, pageContent),
+            (pageRef.ObjectNumber, 0, newPage),
+            (formNum, 0, formStream),
+            (contentNum, 0, pageContent),
         ]);
     }
 
@@ -6333,10 +6333,10 @@ public static class OracleCorpus
                .Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
 
         return reader.AppendRevision([
-            (pageRef.ObjectNumber, newPage),
-            (iccNum, iccStream),
-            (formNum, formStream),
-            (contentNum, pageContent),
+            (pageRef.ObjectNumber, 0, newPage),
+            (iccNum, 0, iccStream),
+            (formNum, 0, formStream),
+            (contentNum, 0, pageContent),
         ]);
     }
 
@@ -6387,10 +6387,10 @@ public static class OracleCorpus
                .Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
 
         return reader.AppendRevision([
-            (pageRef.ObjectNumber, newPage),
-            (iccNum, iccStream),
-            (formNum, formStream),
-            (contentNum, pageContent),
+            (pageRef.ObjectNumber, 0, newPage),
+            (iccNum, 0, iccStream),
+            (formNum, 0, formStream),
+            (contentNum, 0, pageContent),
         ]);
     }
 
@@ -6438,9 +6438,9 @@ public static class OracleCorpus
                .Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
 
         return reader.AppendRevision([
-            (pageRef.ObjectNumber, newPage),
-            (formNum, formStream),
-            (contentNum, pageContent),
+            (pageRef.ObjectNumber, 0, newPage),
+            (formNum, 0, formStream),
+            (contentNum, 0, pageContent),
         ]);
     }
 
@@ -6498,10 +6498,10 @@ public static class OracleCorpus
                .Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
 
         return reader.AppendRevision([
-            (pageRef.ObjectNumber, newPage),
-            (iccNum, iccStream),
-            (formNum, formStream),
-            (contentNum, pageContent),
+            (pageRef.ObjectNumber, 0, newPage),
+            (iccNum, 0, iccStream),
+            (formNum, 0, formStream),
+            (contentNum, 0, pageContent),
         ]);
     }
 
@@ -6567,10 +6567,10 @@ public static class OracleCorpus
                .Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
 
         return reader.AppendRevision([
-            (pageRef.ObjectNumber, newPage),
-            (iccNum, iccStream),
-            (formNum, formStream),
-            (contentNum, pageContent),
+            (pageRef.ObjectNumber, 0, newPage),
+            (iccNum, 0, iccStream),
+            (formNum, 0, formStream),
+            (contentNum, 0, pageContent),
         ]);
     }
 
@@ -6634,10 +6634,10 @@ public static class OracleCorpus
                .Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
 
         return reader.AppendRevision([
-            (pageRef.ObjectNumber, newPage),
-            (iccNum, iccStream),
-            (formNum, formStream),
-            (contentNum, pageContent),
+            (pageRef.ObjectNumber, 0, newPage),
+            (iccNum, 0, iccStream),
+            (formNum, 0, formStream),
+            (contentNum, 0, pageContent),
         ]);
     }
 
@@ -6735,13 +6735,13 @@ public static class OracleCorpus
                .Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
 
         return reader.AppendRevision([
-            (pageRef.ObjectNumber, newPage),
-            (pageTintNum, pageTint),
-            (formTintNum, formTint),
-            (pageCsNum, pageCs),
-            (formCsNum, formCs),
-            (formNum, formStream),
-            (contentNum, pageContent),
+            (pageRef.ObjectNumber, 0, newPage),
+            (pageTintNum, 0, pageTint),
+            (formTintNum, 0, formTint),
+            (pageCsNum, 0, pageCs),
+            (formCsNum, 0, formCs),
+            (formNum, 0, formStream),
+            (contentNum, 0, pageContent),
         ]);
     }
 
@@ -6824,13 +6824,13 @@ public static class OracleCorpus
                .Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
 
         return reader.AppendRevision([
-            (pageRef.ObjectNumber, newPage),
-            (pageTintNum, pageTint),
-            (formTintNum, formTint),
-            (pageCsNum, pageCs),
-            (formCsNum, formCs),
-            (formNum, formStream),
-            (contentNum, pageContent),
+            (pageRef.ObjectNumber, 0, newPage),
+            (pageTintNum, 0, pageTint),
+            (formTintNum, 0, formTint),
+            (pageCsNum, 0, pageCs),
+            (formCsNum, 0, formCs),
+            (formNum, 0, formStream),
+            (contentNum, 0, pageContent),
         ]);
     }
 
@@ -6889,11 +6889,11 @@ public static class OracleCorpus
                .Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
 
         return reader.AppendRevision([
-            (pageRef.ObjectNumber, newPage),
-            (pageTintNum, pageTint),
-            (pageCsNum, pageCs),
-            (formNum, formStream),
-            (contentNum, pageContent),
+            (pageRef.ObjectNumber, 0, newPage),
+            (pageTintNum, 0, pageTint),
+            (pageCsNum, 0, pageCs),
+            (formNum, 0, formStream),
+            (contentNum, 0, pageContent),
         ]);
     }
 
@@ -6980,16 +6980,16 @@ public static class OracleCorpus
                .Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
 
         return reader.AppendRevision([
-            (pageRef.ObjectNumber, newPage),
-            (tint1Num, MakeTintRgb()),
-            (tint2Num, MakeTintRgb()),
-            (tint3Num, MakeTintRgb()),
-            (pageCsNum, pageCs),
-            (form1CsNum, form1Cs),
-            (form2CsNum, form2Cs),
-            (form1Num, form1),
-            (form2Num, form2),
-            (contentNum, pageContent),
+            (pageRef.ObjectNumber, 0, newPage),
+            (tint1Num, 0, MakeTintRgb()),
+            (tint2Num, 0, MakeTintRgb()),
+            (tint3Num, 0, MakeTintRgb()),
+            (pageCsNum, 0, pageCs),
+            (form1CsNum, 0, form1Cs),
+            (form2CsNum, 0, form2Cs),
+            (form1Num, 0, form1),
+            (form2Num, 0, form2),
+            (contentNum, 0, pageContent),
         ]);
     }
 
@@ -7057,13 +7057,13 @@ public static class OracleCorpus
                .Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
 
         return reader.AppendRevision([
-            (pageRef.ObjectNumber, newPage),
-            (pageTintNum, pageTint),
-            (formTintNum, formTint),
-            (pageCsNum, pageCs),
-            (formCsNum, formCs),
-            (formNum, formStream),
-            (contentNum, pageContent),
+            (pageRef.ObjectNumber, 0, newPage),
+            (pageTintNum, 0, pageTint),
+            (formTintNum, 0, formTint),
+            (pageCsNum, 0, pageCs),
+            (formCsNum, 0, formCs),
+            (formNum, 0, formStream),
+            (contentNum, 0, pageContent),
         ]);
     }
 
@@ -7237,7 +7237,7 @@ public static class OracleCorpus
         var descendants = (PdfArray)reader.ResolveValue(type0.Get(new PdfName("DescendantFonts"))!)!;
         var descRef = (PdfIndirectReference)descendants[0];
         var desc = (PdfDictionary)reader.Resolve(descRef.ObjectNumber)!;
-        return reader.AppendRevision([(descRef.ObjectNumber, CloneWithout(desc, "CIDToGIDMap"))]);
+        return reader.AppendRevision([(descRef.ObjectNumber, 0, CloneWithout(desc, "CIDToGIDMap"))]);
     }
 
     /// <summary>
@@ -7406,7 +7406,7 @@ public static class OracleCorpus
         var content = new PdfStream(Encoding.ASCII.GetBytes("BT /F1 12 Tf 100 500 Td (A) Tj ET"));
 
         return reader.AppendRevision(
-            [(pageRef.ObjectNumber, newPage), (fontNum, simple), (descNum, descriptor), (ffNum, fontFile), (contentNum, content)]);
+            [(pageRef.ObjectNumber, 0, newPage), (fontNum, 0, simple), (descNum, 0, descriptor), (ffNum, 0, fontFile), (contentNum, 0, content)]);
     }
 
     // Like Ua1AddSimpleTrueType but adds the font to /Resources without any content stream Tf call.
@@ -7457,7 +7457,7 @@ public static class OracleCorpus
         var newPage = CloneDict(page).Set(new PdfName("Resources"), newResources);
 
         return reader.AppendRevision(
-            [(pageRef.ObjectNumber, newPage), (fontNum, simple), (descNum, descriptor), (ffNum, fontFile)]);
+            [(pageRef.ObjectNumber, 0, newPage), (fontNum, 0, simple), (descNum, 0, descriptor), (ffNum, 0, fontFile)]);
     }
 
     private static PdfDictionary Ua1MakeEncodingWithDiffs(string baseEnc, int atCode, string glyphName)
@@ -7494,7 +7494,7 @@ public static class OracleCorpus
         var type0Ref = (PdfIndirectReference)fontDict.Entries.First().Value;
         var type0 = (PdfDictionary)reader.Resolve(type0Ref.ObjectNumber)!;
         var newType0 = CloneDict(type0).Set(new PdfName("Encoding"), new PdfName("FooBarCMap"));
-        return reader.AppendRevision([(type0Ref.ObjectNumber, newType0)]);
+        return reader.AppendRevision([(type0Ref.ObjectNumber, 0, newType0)]);
     }
 
     /// <summary>
@@ -7558,8 +7558,8 @@ public static class OracleCorpus
         var content = new PdfStream(Encoding.ASCII.GetBytes("BT 3 Tr /F1 12 Tf 72 700 Td (\x20) Tj ET"));
 
         return reader.AppendRevision(
-            [(pageRef.ObjectNumber, newPage), (fontNum, font), (descNum, descriptor), (ffNum, program),
-                (contentNum, content)]);
+            [(pageRef.ObjectNumber, 0, newPage), (fontNum, 0, font), (descNum, 0, descriptor), (ffNum, 0, program),
+                (contentNum, 0, content)]);
     }
 
     /// <summary>
@@ -7596,7 +7596,7 @@ public static class OracleCorpus
 
         var cidSetNum = reader.Size;
         var newFd = CloneDict(fd).Set(new PdfName("CIDSet"), new PdfIndirectReference(cidSetNum));
-        return reader.AppendRevision([(fdRef.ObjectNumber, newFd), (cidSetNum, new PdfStream(cidSet))]);
+        return reader.AppendRevision([(fdRef.ObjectNumber, 0, newFd), (cidSetNum, 0, new PdfStream(cidSet))]);
     }
 
     // ── Batch A5a — §7.21.4.1-1 rendering-mode-scoped font embedding fixtures ──────────────────────
@@ -7651,7 +7651,7 @@ public static class OracleCorpus
             new PdfArray([page.Get(new PdfName("Contents"))!, new PdfIndirectReference(contentNum)]));
 
         return reader.AppendRevision(
-            [(pageRef.ObjectNumber, newPage), (fontNum, simple), (descNum, descriptor), (contentNum, content)]);
+            [(pageRef.ObjectNumber, 0, newPage), (fontNum, 0, simple), (descNum, 0, descriptor), (contentNum, 0, content)]);
     }
 
     /// <summary>
@@ -7704,7 +7704,7 @@ public static class OracleCorpus
             new PdfArray([page.Get(new PdfName("Contents"))!, new PdfIndirectReference(contentNum)]));
 
         return reader.AppendRevision(
-            [(pageRef.ObjectNumber, newPage), (fontNum, simple), (descNum, descriptor), (contentNum, content)]);
+            [(pageRef.ObjectNumber, 0, newPage), (fontNum, 0, simple), (descNum, 0, descriptor), (contentNum, 0, content)]);
     }
 
     /// <summary>
@@ -7738,7 +7738,7 @@ public static class OracleCorpus
             new PdfArray([page.Get(new PdfName("Contents"))!, new PdfIndirectReference(contentNum)]));
         // Show glyph index 0 (0x0000 = .notdef) using the Identity-H font.
         var content = new PdfStream(Encoding.ASCII.GetBytes($"BT /{fontName} 12 Tf 72 600 Td <0000> Tj ET"));
-        return reader.AppendRevision([(pageRef.ObjectNumber, newPage), (contentNum, content)]);
+        return reader.AppendRevision([(pageRef.ObjectNumber, 0, newPage), (contentNum, 0, content)]);
     }
 
     /// <summary>
@@ -7793,10 +7793,10 @@ public static class OracleCorpus
             Encoding.ASCII.GetBytes($"BT /{fontName} 12 Tf 72 580 Td <{shownCode:X4}> Tj ET"));
 
         return reader.AppendRevision(
-            [(type0Ref.ObjectNumber, newType0),
-             (toUnicodeNum, toUnicodeStream),
-             (pageRef.ObjectNumber, newPage),
-             (contentNum, content)]);
+            [(type0Ref.ObjectNumber, 0, newType0),
+             (toUnicodeNum, 0, toUnicodeStream),
+             (pageRef.ObjectNumber, 0, newPage),
+             (contentNum, 0, content)]);
     }
 
     // Builds a minimal ToUnicode CMap text with a beginbfchar section.
@@ -7866,7 +7866,7 @@ public static class OracleCorpus
         var descRef = (PdfIndirectReference)descArr[0];
         var descendant = (PdfDictionary)reader.Resolve(descRef.ObjectNumber)!;
         // Remove /W: shown glyphs fall to /DW=1000, but their actual hmtx widths differ > 1.
-        return reader.AppendRevision([(descRef.ObjectNumber, CloneWithout(descendant, "W"))]);
+        return reader.AppendRevision([(descRef.ObjectNumber, 0, CloneWithout(descendant, "W"))]);
     }
 
     /// <summary>
@@ -7904,9 +7904,9 @@ public static class OracleCorpus
         var newPage = CloneDict(page).Set(new PdfName("Resources"), newResources);
 
         return reader.AppendRevision([
-            (badDescNum, badDesc),
-            (badType0Num, badType0),
-            (pageRef.ObjectNumber, newPage),
+            (badDescNum, 0, badDesc),
+            (badType0Num, 0, badType0),
+            (pageRef.ObjectNumber, 0, newPage),
         ]);
     }
 
@@ -7956,9 +7956,9 @@ public static class OracleCorpus
         var badDesc = CloneWithout(descendant, "W");
 
         return reader.AppendRevision([
-            (pageRef.ObjectNumber, newPage),
-            (newContentNum, new PdfStream(newBytes)),
-            (descRef.ObjectNumber, badDesc),
+            (pageRef.ObjectNumber, 0, newPage),
+            (newContentNum, 0, new PdfStream(newBytes)),
+            (descRef.ObjectNumber, 0, badDesc),
         ]);
     }
 
@@ -7984,7 +7984,7 @@ public static class OracleCorpus
         var content = new PdfStream(
             Encoding.ASCII.GetBytes($"BT {trOp}/{fontName} 12 Tf 72 600 Td <EA60> Tj ET"));
 
-        return reader.AppendRevision([(pageRef.ObjectNumber, newPage), (contentNum, content)]);
+        return reader.AppendRevision([(pageRef.ObjectNumber, 0, newPage), (contentNum, 0, content)]);
     }
 
     // ── Batch B1 — §7.1 structure-tree walker foundation ─────────────────────────────────────────
@@ -8021,7 +8021,7 @@ public static class OracleCorpus
         // Remove /P
         var newPElem = CloneWithout(pElem, "P");
 
-        return reader.AppendRevision([(pElemRef.ObjectNumber, newPElem)]);
+        return reader.AppendRevision([(pElemRef.ObjectNumber, 0, newPElem)]);
     }
 
     /// <summary>
@@ -8072,9 +8072,9 @@ public static class OracleCorpus
             .Set(new PdfName("Bar"), new PdfName("Foo")));
 
         return reader.AppendRevision([
-            (strRef.ObjectNumber, newStr),
-            (docRef.ObjectNumber, newDoc),
-            (fooElemNum, fooElem),
+            (strRef.ObjectNumber, 0, newStr),
+            (docRef.ObjectNumber, 0, newDoc),
+            (fooElemNum, 0, fooElem),
         ]);
     }
 
@@ -8114,9 +8114,9 @@ public static class OracleCorpus
             .Set(new PdfName("Table"), new PdfName("Div")));
 
         return reader.AppendRevision([
-            (strRef.ObjectNumber, newStr),
-            (docRef.ObjectNumber, newDoc),
-            (tableElemNum, tableElem),
+            (strRef.ObjectNumber, 0, newStr),
+            (docRef.ObjectNumber, 0, newDoc),
+            (tableElemNum, 0, tableElem),
         ]);
     }
 
@@ -8153,8 +8153,8 @@ public static class OracleCorpus
         ]));
 
         return reader.AppendRevision([
-            (docRef.ObjectNumber, newDoc),
-            (customElemNum, customElem),
+            (docRef.ObjectNumber, 0, newDoc),
+            (customElemNum, 0, customElem),
         ]);
     }
 
@@ -8194,9 +8194,9 @@ public static class OracleCorpus
             .Set(new PdfName("MyCustomTag"), new PdfName("Div")));
 
         return reader.AppendRevision([
-            (strRef.ObjectNumber, newStr),
-            (docRef.ObjectNumber, newDoc),
-            (customElemNum, customElem),
+            (strRef.ObjectNumber, 0, newStr),
+            (docRef.ObjectNumber, 0, newDoc),
+            (customElemNum, 0, customElem),
         ]);
     }
 
@@ -8239,7 +8239,7 @@ public static class OracleCorpus
         var doc = (PdfDictionary)reader.Resolve(docRef.ObjectNumber)!;
         var existingK = doc.Get(new PdfName("K"));
 
-        var revision = new List<(int, PdfObject)>();
+        var revision = new List<(int, int, PdfObject)>();
         int nextNum = reader.Size;
         var headingRefs = new List<PdfIndirectReference>();
 
@@ -8250,7 +8250,7 @@ public static class OracleCorpus
                 .Set(PdfName.Type, new PdfName("StructElem"))
                 .Set(new PdfName("S"), new PdfName(hType))
                 .Set(new PdfName("P"), docRef);
-            revision.Add((hNum, hElem));
+            revision.Add((hNum, 0, hElem));
             headingRefs.Add(new PdfIndirectReference(hNum));
         }
 
@@ -8262,7 +8262,7 @@ public static class OracleCorpus
 
         var newDoc = CloneDict(doc);
         newDoc.Set(new PdfName("K"), new PdfArray(kItems.ToArray()));
-        revision.Add((docRef.ObjectNumber, newDoc));
+        revision.Add((docRef.ObjectNumber, 0, newDoc));
 
         return reader.AppendRevision(revision);
     }
@@ -8318,7 +8318,7 @@ public static class OracleCorpus
         var existingK = doc.Get(new PdfName("K"));
 
         int nextNum = reader.Size;
-        var revision = new List<(int, PdfObject)>();
+        var revision = new List<(int, int, PdfObject)>();
 
         var tableNum = nextNum++;
         var trNum = nextNum++;
@@ -8352,10 +8352,10 @@ public static class OracleCorpus
                     new PdfLiteralString(Encoding.ASCII.GetBytes(tdHeadersId))
                 ])));
 
-        revision.Add((thNum, thDict));
-        revision.Add((tdNum, tdDict));
+        revision.Add((thNum, 0, thDict));
+        revision.Add((tdNum, 0, tdDict));
 
-        revision.Add((trNum, new PdfDictionary()
+        revision.Add((trNum, 0, new PdfDictionary()
             .Set(PdfName.Type, new PdfName("StructElem"))
             .Set(new PdfName("S"), new PdfName("TR"))
             .Set(new PdfName("P"), tableRef)
@@ -8364,7 +8364,7 @@ public static class OracleCorpus
                 new PdfIndirectReference(tdNum),
             ]))));
 
-        revision.Add((tableNum, new PdfDictionary()
+        revision.Add((tableNum, 0, new PdfDictionary()
             .Set(PdfName.Type, new PdfName("StructElem"))
             .Set(new PdfName("S"), new PdfName("Table"))
             .Set(new PdfName("P"), docRef)
@@ -8379,7 +8379,7 @@ public static class OracleCorpus
 
         var newDoc = CloneDict(doc);
         newDoc.Set(new PdfName("K"), new PdfArray(kItems.ToArray()));
-        revision.Add((docRef.ObjectNumber, newDoc));
+        revision.Add((docRef.ObjectNumber, 0, newDoc));
 
         return reader.AppendRevision(revision);
     }
@@ -8435,7 +8435,7 @@ public static class OracleCorpus
         var newElem = CloneDict(elemDict);
         newElem.Set(new PdfName("Lang"), new PdfLiteralString(Encoding.ASCII.GetBytes("en-US")));
 
-        return reader.AppendRevision([(elemRef.ObjectNumber, newElem)]);
+        return reader.AppendRevision([(elemRef.ObjectNumber, 0, newElem)]);
     }
 
     /// <summary>
@@ -8481,9 +8481,9 @@ public static class OracleCorpus
         newPage.Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
 
         return reader.AppendRevision([
-            (pageRef.ObjectNumber, newPage),
-            (propsNum, propsDict),
-            (contentNum, newContent),
+            (pageRef.ObjectNumber, 0, newPage),
+            (propsNum, 0, propsDict),
+            (contentNum, 0, newContent),
         ]);
     }
 
@@ -8518,7 +8518,7 @@ public static class OracleCorpus
         var newPage = CloneDict(page);
         newPage.Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
 
-        return reader.AppendRevision([(pageRef.ObjectNumber, newPage), (contentNum, newContentStream)]);
+        return reader.AppendRevision([(pageRef.ObjectNumber, 0, newPage), (contentNum, 0, newContentStream)]);
     }
 
     /// <summary>
@@ -8551,7 +8551,7 @@ public static class OracleCorpus
         var newPage = CloneDict(page);
         newPage.Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
 
-        return reader.AppendRevision([(pageRef.ObjectNumber, newPage), (contentNum, newContentStream)]);
+        return reader.AppendRevision([(pageRef.ObjectNumber, 0, newPage), (contentNum, 0, newContentStream)]);
     }
 
     // Walks a number-tree node and returns the PdfArray at the given integer key, or null.
@@ -8597,7 +8597,7 @@ public static class OracleCorpus
         using var reader = PdfReader.Open(baseline);
         var rootRef = (PdfIndirectReference)reader.Trailer.Get(PdfName.Root)!;
         var catalog = CloneWithout(reader.Catalog, "Lang");
-        return reader.AppendRevision([(rootRef.ObjectNumber, catalog)]);
+        return reader.AppendRevision([(rootRef.ObjectNumber, 0, catalog)]);
     }
 
     /// <summary>
@@ -8642,7 +8642,7 @@ public static class OracleCorpus
         }
         newPage.Set(new PdfName("Contents"), contentsArray);
 
-        return reader.AppendRevision([(pageRef.ObjectNumber, newPage), (contentNum, contentStream)]);
+        return reader.AppendRevision([(pageRef.ObjectNumber, 0, newPage), (contentNum, 0, contentStream)]);
     }
 
     /// <summary>
@@ -8704,7 +8704,7 @@ public static class OracleCorpus
         }
         newPage.Set(new PdfName("Contents"), contentsArray);
 
-        return reader.AppendRevision([(pageRef.ObjectNumber, newPage), (contentNum, contentStream)]);
+        return reader.AppendRevision([(pageRef.ObjectNumber, 0, newPage), (contentNum, 0, contentStream)]);
     }
 
     // ── Batch N5 helpers — §6.2.2-2 non-page stream fixtures ───────────────────────────────────────
@@ -8760,9 +8760,9 @@ public static class OracleCorpus
             .Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
 
         return reader.AppendRevision([
-            (pageRef.ObjectNumber, newPage),
-            (formNum, formStream),
-            (contentNum, pageContent),
+            (pageRef.ObjectNumber, 0, newPage),
+            (formNum, 0, formStream),
+            (contentNum, 0, pageContent),
         ]);
     }
 
@@ -8813,9 +8813,9 @@ public static class OracleCorpus
             .Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
 
         return reader.AppendRevision([
-            (pageRef.ObjectNumber, newPage),
-            (formNum, formStream),
-            (contentNum, pageContent),
+            (pageRef.ObjectNumber, 0, newPage),
+            (formNum, 0, formStream),
+            (contentNum, 0, pageContent),
         ]);
     }
 
@@ -8859,9 +8859,9 @@ public static class OracleCorpus
             .Set(new PdfName("Contents"), new PdfIndirectReference(contentNum));
 
         return reader.AppendRevision([
-            (pageRef.ObjectNumber, newPage),
-            (formNum, formStream),
-            (contentNum, pageContent),
+            (pageRef.ObjectNumber, 0, newPage),
+            (formNum, 0, formStream),
+            (contentNum, 0, pageContent),
         ]);
     }
 
@@ -9411,13 +9411,13 @@ public static class OracleCorpus
         newPage.Set(new PdfName("Contents"), new PdfIndirectReference(newContentNum));
 
         return reader.AppendRevision([
-            (pageRef.ObjectNumber, newPage),
-            (pageTintNum, pageTint),
-            (imgTintNum, imgTint),
-            (pageCsNum, pageCs),
-            (imgCsNum, imgCs),
-            (imgNum, imgStream),
-            (newContentNum, newContentStream),
+            (pageRef.ObjectNumber, 0, newPage),
+            (pageTintNum, 0, pageTint),
+            (imgTintNum, 0, imgTint),
+            (pageCsNum, 0, pageCs),
+            (imgCsNum, 0, imgCs),
+            (imgNum, 0, imgStream),
+            (newContentNum, 0, newContentStream),
         ]);
     }
 
@@ -9498,13 +9498,13 @@ public static class OracleCorpus
         newPage.Set(new PdfName("Contents"), new PdfIndirectReference(newContentNum));
 
         return reader.AppendRevision([
-            (pageRef.ObjectNumber, newPage),
-            (pageTintNum, pageTint),
-            (imgTintNum, imgTint),
-            (pageCsNum, pageCs),
-            (imgCsNum, imgCs),
-            (imgNum, imgStream),
-            (newContentNum, newContentStream),
+            (pageRef.ObjectNumber, 0, newPage),
+            (pageTintNum, 0, pageTint),
+            (imgTintNum, 0, imgTint),
+            (pageCsNum, 0, pageCs),
+            (imgCsNum, 0, imgCs),
+            (imgNum, 0, imgStream),
+            (newContentNum, 0, newContentStream),
         ]);
     }
 
