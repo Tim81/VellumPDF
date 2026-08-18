@@ -71,6 +71,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   its cost tracks how far back the marker actually is instead of paying for the full window on
   every open. (#105)
 
+### Added
+
+- **A committed corpus of encrypted PDFs, one per standard-security-handler `/V`+`/R` combination.** Generated once with qpdf and checked in rather than shelled out for at test time, so the corpus is byte-identical on CI (qpdf 11.9.0) and locally (12.3.2) and leaves no silently-skipped gate. A guard test asserts each fixture is non-empty and declares the `/V` and `/R` its name claims — qpdf refuses to write RC4 without `--allow-weak-crypto` and still leaves a zero-byte file behind, which a mere existence check would not catch. Groundwork for the decrypt side. (#99)
+
 ## [2.0.0] - 2026-08-17
 
 The first major version since 1.0. Every package moves to 2.0.0 together, as usual.
