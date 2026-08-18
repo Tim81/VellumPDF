@@ -66,8 +66,11 @@ internal sealed class XrefParser
     {
         var span = data.Span;
         // ISO 32000 does not bound the distance from EOF to the last 'startxref'; files with large
-        // trailers or trailing content after %%EOF place it further back, so scan a generous tail.
-        const int TailWindow = 2048;
+        // trailers, big /ID arrays, or padding after %%EOF (some producers pad the tail to reserve
+        // a byte-range window for a signature added later) place it further back than a small tail
+        // would reach. 2 KiB proved too tight in practice (#105); this is still a bounded backward
+        // scan, not a full-file one, so widen it generously.
+        const int TailWindow = 1 << 20; // 1 MiB
         var searchStart = Math.Max(0, span.Length - TailWindow);
         var searchSpan = span[searchStart..];
 

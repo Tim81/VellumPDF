@@ -55,6 +55,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   hybrid-reference producer to put `/Encrypt` on the XRefStm dictionary instead, so such a file
   parsed as if it were plain — producing garbage rather than `UnsupportedPdfFeatureException`.
   (#183)
+- **A stream body that happens to contain the literal bytes `endstream` no longer truncates
+  there.** The endstream scan took the first occurrence with no word-boundary check, so a binary
+  stream (an embedded font subset, a compressed image) that contained those nine bytes lost
+  everything past them, silently. It now requires an EOL/delimiter boundary and, among boundary
+  matches, prefers one followed by `endobj` or the next object's header. (#105)
+- **A `startxref` more than 2048 bytes from EOF is found again.** The backward search window was
+  too tight for a file padded after `%%EOF` (some producers reserve a byte-range window for a
+  signature added later); it's now 1 MiB. (#105)
 
 ## [2.0.0] - 2026-08-17
 

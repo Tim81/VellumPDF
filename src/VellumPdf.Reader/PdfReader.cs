@@ -10,7 +10,7 @@ public static class PdfReader
 {
     /// <summary>Opens a PDF document from a byte array.</summary>
     /// <exception cref="InvalidDataException">Thrown on malformed PDF structure.</exception>
-    /// <exception cref="UnsupportedPdfFeatureException">Thrown when an unsupported feature (xref streams, encryption) is encountered.</exception>
+    /// <exception cref="UnsupportedPdfFeatureException">Thrown when the document is encrypted (/Encrypt); this is currently the only unsupported feature (see #97).</exception>
     public static PdfDocumentReader Open(byte[] bytes)
     {
         ArgumentNullException.ThrowIfNull(bytes);
@@ -21,7 +21,7 @@ public static class PdfReader
 
     /// <summary>Opens a PDF document by reading all bytes from <paramref name="stream"/>.</summary>
     /// <exception cref="InvalidDataException">Thrown on malformed PDF structure.</exception>
-    /// <exception cref="UnsupportedPdfFeatureException">Thrown when an unsupported feature (xref streams, encryption) is encountered.</exception>
+    /// <exception cref="UnsupportedPdfFeatureException">Thrown when the document is encrypted (/Encrypt); this is currently the only unsupported feature (see #97).</exception>
     public static PdfDocumentReader Open(Stream stream)
     {
         ArgumentNullException.ThrowIfNull(stream);

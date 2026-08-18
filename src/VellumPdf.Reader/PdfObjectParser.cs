@@ -380,29 +380,130 @@ internal sealed class PdfObjectParser
 
     private ParsedStream ScanToEndstream(PdfDictionary dict, int bodyStart)
     {
-        // We search for the byte sequence "\nendstream" or "\r\nendstream"
-        // and take everything before the newline as the body.
+        // ISO 32000-2 §7.3.8.1: the stream data is followed by an EOL, then 'endstream'. Taking the
+        // first literal occurrence of those nine bytes (as this used to) is wrong whenever the
+        // binary body itself contains them — plausible in an embedded font subset or a compressed
+        // image — which silently truncated the body instead of reading it in full (#105). Only
+        // accept a candidate at a genuine boundary, and among those prefer the one whose following
+        // bytes actually look like the rest of the file: 'endobj', or the next object's header.
         var span = _lexer.Slice(bodyStart, _lexer.Length - bodyStart).Span;
         ReadOnlySpan<byte> marker = "endstream"u8;
 
+        var fallback = -1;
+        var chosen = -1;
+
         for (var i = 0; i <= span.Length - marker.Length; i++)
         {
-            if (span[i..].StartsWith(marker))
-            {
-                // Check it's at a line boundary: preceded by LF or CRLF
-                var bodyEnd = i;
-                if (bodyEnd > 0 && span[bodyEnd - 1] == (byte)'\n')
-                    bodyEnd--;
-                if (bodyEnd > 0 && span[bodyEnd - 1] == (byte)'\r')
-                    bodyEnd--;
+            if (!span[i..].StartsWith(marker))
+                continue;
 
-                var body = _lexer.Slice(bodyStart, bodyEnd);
-                _lexer.Seek(bodyStart + i + marker.Length);
-                return new ParsedStream(dict, body, bodyStart);
+            var precededByEol = i == 0 || span[i - 1] is (byte)'\n' or (byte)'\r';
+            if (!precededByEol)
+                continue;
+
+            var afterIndex = i + marker.Length;
+            if (afterIndex < span.Length && !IsWhitespaceOrDelimiter(span[afterIndex]))
+                continue;
+
+            if (fallback < 0)
+                fallback = i;
+
+            if (FollowedByPlausibleObjectBoundary(span, afterIndex))
+            {
+                chosen = i;
+                break;
             }
         }
-        throw new InvalidDataException(
-            $"Could not find 'endstream' marker after stream starting at offset {bodyStart}.");
+
+        if (chosen < 0)
+            chosen = fallback;
+        if (chosen < 0)
+            throw new InvalidDataException(
+                $"Could not find 'endstream' marker after stream starting at offset {bodyStart}.");
+
+        var bodyEnd = chosen;
+        if (bodyEnd > 0 && span[bodyEnd - 1] == (byte)'\n')
+            bodyEnd--;
+        if (bodyEnd > 0 && span[bodyEnd - 1] == (byte)'\r')
+            bodyEnd--;
+
+        var body = _lexer.Slice(bodyStart, bodyEnd);
+        _lexer.Seek(bodyStart + chosen + marker.Length);
+        return new ParsedStream(dict, body, bodyStart);
+    }
+
+    /// <summary>
+    /// True when, after skipping whitespace/comments at <paramref name="pos"/> (immediately past a
+    /// candidate 'endstream'), the next bytes are 'endobj' or the next indirect object's
+    /// "N G obj" header. Either is strong evidence this 'endstream' is the real terminator and not
+    /// a coincidental byte run inside the stream's own binary data.
+    /// </summary>
+    private static bool FollowedByPlausibleObjectBoundary(ReadOnlySpan<byte> span, int pos)
+    {
+        var p = SkipWhitespaceAndComments(span, pos);
+        if (p >= span.Length)
+            return false;
+
+        if (span[p..].StartsWith("endobj"u8))
+        {
+            var after = p + 6;
+            return after >= span.Length || IsWhitespaceOrDelimiter(span[after]);
+        }
+
+        return LooksLikeObjectHeader(span, p);
+    }
+
+    private static bool LooksLikeObjectHeader(ReadOnlySpan<byte> span, int pos)
+    {
+        var p = pos;
+        if (!TryReadDigitRun(span, ref p)) return false;
+        if (!TrySkipRequiredWhitespace(span, ref p)) return false;
+        if (!TryReadDigitRun(span, ref p)) return false;
+        if (!TrySkipRequiredWhitespace(span, ref p)) return false;
+
+        if (p + 3 > span.Length || span[p] != (byte)'o' || span[p + 1] != (byte)'b' || span[p + 2] != (byte)'j')
+            return false;
+        var after = p + 3;
+        return after >= span.Length || IsWhitespaceOrDelimiter(span[after]);
+    }
+
+    private static bool TryReadDigitRun(ReadOnlySpan<byte> span, ref int pos)
+    {
+        var start = pos;
+        while (pos < span.Length && span[pos] is >= (byte)'0' and <= (byte)'9')
+            pos++;
+        return pos > start;
+    }
+
+    private static bool TrySkipRequiredWhitespace(ReadOnlySpan<byte> span, ref int pos)
+    {
+        var start = pos;
+        while (pos < span.Length && span[pos] is 0 or 9 or 10 or 12 or 13 or 32)
+            pos++;
+        return pos > start;
+    }
+
+    private static int SkipWhitespaceAndComments(ReadOnlySpan<byte> span, int pos)
+    {
+        while (pos < span.Length)
+        {
+            var b = span[pos];
+            if (b == (byte)'%')
+            {
+                pos++;
+                while (pos < span.Length && span[pos] is not (byte)'\n' and not (byte)'\r')
+                    pos++;
+            }
+            else if (b is 0 or 9 or 10 or 12 or 13 or 32)
+            {
+                pos++;
+            }
+            else
+            {
+                break;
+            }
+        }
+        return pos;
     }
 
     private void SkipStreamNewline()
