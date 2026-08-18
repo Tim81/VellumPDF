@@ -1,7 +1,8 @@
 # Encrypted reader fixtures
 
-Generated once with qpdf and checked in, rather than generated at test time. CI installs qpdf from apt on `ubuntu-latest` (11.9.0 at the time of writing, but nothing pins it)
-while local development uses 12.3.2; checking the files in makes the corpus
+Generated once with qpdf and checked in, rather than generated at test time. CI installs qpdf
+from apt on `ubuntu-latest` (11.9.0 at the time of writing, but nothing pins it) while local
+development uses 12.3.2; checking the files in makes the corpus
 byte-identical everywhere and keeps qpdf out of the test-execution path, so there is no
 `GateOnCi` skip hole on the core corpus.
 
@@ -15,6 +16,23 @@ normalized through qpdf so that **encryption is the only delta** between it and 
 ```sh
 qpdf GoldenTests.StandardFont_rawBytes.verified.pdf plaintext-baseline.pdf
 ```
+
+**That command does not reproduce the committed file, and re-running it will break the suite.**
+qpdf regenerates the second `/ID` array element on every invocation, so two consecutive runs differ
+from each other and from what is checked in — measured here as 30 differing bytes inside the same
+1684-1715 region the encrypted fixtures vary in. The command records *provenance*; the digest in
+`EncryptedFixtureCorpusTests` is what identifies the file.
+
+Regenerating the baseline is therefore not a local change. Every encrypted fixture is built by
+encrypting *this* file, so a new baseline invalidates all eight of them:
+
+1. Regenerate the baseline with the command above.
+2. Regenerate all eight encrypted fixtures from it, using the matrix commands below.
+3. Recompute all nine digests with `sha256sum *.pdf` and update the table.
+4. Re-run `dotnet test` on `VellumPdf.Reader.Tests`.
+
+Skipping step 2 leaves fixtures that decrypt to the *old* baseline, which fails the decrypt-to-baseline
+check in step 3 of the fixture procedure below — the intended outcome, but an expensive way to find out.
 
 ## The matrix
 
@@ -57,7 +75,8 @@ Two assertions, in this order:
 
    Normalize that whole element — all 32 hex digits, at bytes 1684-1715 of the 1743-byte baseline. Do
    **not** write a known-answer test that tolerates a fixed *number* of differing bytes: two random
-   16-byte IDs collide in a byte or two by chance, so the count varies from run to run while the region never does.
+   16-byte IDs collide in a byte or two by chance, so the count varies from run to run while the
+   region never does.
 
 `enc-256-cleartextmd.pdf` is externally checkable too: `xpacket` appears in its raw bytes and does not
 appear in `enc-aes-256-r6.pdf`.

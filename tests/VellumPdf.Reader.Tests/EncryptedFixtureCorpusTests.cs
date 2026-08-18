@@ -110,7 +110,7 @@ public sealed class EncryptedFixtureCorpusTests
     {
         // The R4 pair is the one that exercises Algorithm 2 step (f): with /EncryptMetadata false
         // the padding gains a trailing 0xFFFFFFFF, which is why these two fixtures share an /O and
-        // differ in /U. The R6 pair above cannot show that -- R6 derives its key differently.
+        // differ in /U. The R6 pair above cannot show that — R6 derives its key differently.
         var cleartext = Encoding.Latin1.GetString(Load("enc-aes-128-cleartextmd.pdf"));
         Assert.True(ContainsToken(cleartext, "/EncryptMetadata false"), "expected /EncryptMetadata false");
         Assert.Contains("xpacket", cleartext, StringComparison.Ordinal);
