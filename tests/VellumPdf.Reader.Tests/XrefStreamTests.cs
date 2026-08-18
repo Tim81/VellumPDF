@@ -363,6 +363,24 @@ public sealed class XrefStreamTests
     }
 
     [Fact]
+    public void Hybrid_objectFreeInClassicTable_butLiveInXRefStm_resolves()
+    {
+        // A hybrid-reference file commonly marks an object 'f' in the classic table precisely
+        // because its real definition lives in this same revision's /XRefStm (ISO 32000-2
+        // §7.5.8.4) — the object is free only to a reader that cannot see the stream. Object 4 is
+        // 'f' in the classic table below and a live type-1 entry in the accompanying xref stream;
+        // it must still resolve.
+        var bytes = BuildHybridXrefStmWithClassicFreeEntryPdf();
+        using var reader = PdfReader.Open(bytes);
+
+        var obj4 = reader.Resolve(4);
+        var dict4 = Assert.IsType<PdfDictionary>(obj4);
+        var flag = dict4.Get(new PdfName("HybridTest"));
+        var flagInt = Assert.IsType<PdfInteger>(flag);
+        Assert.Equal(1, flagInt.Value);
+    }
+
+    [Fact]
     public void Cyclic_Prev_still_throws()
     {
         // A /Prev chain that cycles back to an already-seen offset should throw.
@@ -735,6 +753,64 @@ public sealed class XrefStreamTests
         WriteStr($"{o1:D10} 00000 n \n");
         WriteStr($"{o2:D10} 00000 n \n");
         WriteStr($"{o3:D10} 00000 n \n");
+        WriteStr($"trailer\n<< /Size 5 /Root 1 0 R /XRefStm {xrefStmOffset} >>\n");
+        WriteStr($"startxref\n{classicXrefOffset}\n%%EOF\n");
+
+        return ms.ToArray();
+    }
+
+    /// <summary>
+    /// Same layout as <see cref="BuildHybridXrefStmPdf"/>, except the classic table's subsection
+    /// covers object 4 too and marks it 'f' — the convention a hybrid file uses to hide an object
+    /// from a reader that only understands classic tables, while the accompanying /XRefStm still
+    /// carries it live.
+    /// </summary>
+    private static byte[] BuildHybridXrefStmWithClassicFreeEntryPdf()
+    {
+        var ms = new MemoryStream();
+        void WriteStr(string s) => ms.Write(Encoding.ASCII.GetBytes(s));
+        void WriteBytes(byte[] b) => ms.Write(b);
+
+        WriteStr("%PDF-1.5\n");
+
+        var o1 = (int)ms.Position;
+        WriteStr("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+
+        var o2 = (int)ms.Position;
+        WriteStr("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
+
+        var o3 = (int)ms.Position;
+        WriteStr("3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>\nendobj\n");
+
+        var o4 = (int)ms.Position;
+        WriteStr("4 0 obj\n<< /HybridTest 1 >>\nendobj\n");
+
+        // xref stream for object 4 only: type=1, offset=o4, gen=0 (see BuildHybridXrefStmPdf).
+        var xrefStreamBody = new byte[7];
+        xrefStreamBody[0] = 1;
+        xrefStreamBody[1] = (byte)((o4 >> 24) & 0xFF);
+        xrefStreamBody[2] = (byte)((o4 >> 16) & 0xFF);
+        xrefStreamBody[3] = (byte)((o4 >> 8) & 0xFF);
+        xrefStreamBody[4] = (byte)(o4 & 0xFF);
+        xrefStreamBody[5] = 0;
+        xrefStreamBody[6] = 0;
+
+        var compressedXrefBody = Compress(xrefStreamBody);
+        var xrefStmOffset = (int)ms.Position;
+        WriteStr($"5 0 obj\n<< /Type /XRef /Size 5 /W [1 4 2] /Index [4 1] /Filter /FlateDecode /Length {compressedXrefBody.Length} >>\nstream\n");
+        WriteBytes(compressedXrefBody);
+        WriteStr("\nendstream\nendobj\n");
+
+        // Classic table for objects 0-4, with object 4 marked free — its live definition is only
+        // in the /XRefStm above.
+        var classicXrefOffset = (int)ms.Position;
+        WriteStr("xref\n");
+        WriteStr("0 5\n");
+        WriteStr($"{0:D10} 65535 f \n");
+        WriteStr($"{o1:D10} 00000 n \n");
+        WriteStr($"{o2:D10} 00000 n \n");
+        WriteStr($"{o3:D10} 00000 n \n");
+        WriteStr($"{0:D10} 00000 f \n");
         WriteStr($"trailer\n<< /Size 5 /Root 1 0 R /XRefStm {xrefStmOffset} >>\n");
         WriteStr($"startxref\n{classicXrefOffset}\n%%EOF\n");
 

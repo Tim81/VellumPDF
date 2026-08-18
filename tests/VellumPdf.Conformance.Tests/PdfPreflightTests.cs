@@ -7840,7 +7840,7 @@ public sealed class PdfPreflightTests
         // `/foo Tr` — a name operand for Tr, which ContentStreamUsage resolves to RenderingMode -1 (unknown).
         var content = new VellumPdf.Core.PdfStream(
             System.Text.Encoding.ASCII.GetBytes($"BT /foo Tr /{fontName} 12 Tf 72 600 Td <EA60> Tj ET"));
-        return reader.AppendRevision([(pageRef.ObjectNumber, newPage), (contentNum, content)]);
+        return reader.AppendRevision([(pageRef.ObjectNumber, pageRef.Generation, newPage), (contentNum, 0, content)]);
     }
 
     private static VellumPdf.Core.PdfDictionary ClonePageDict(VellumPdf.Core.PdfDictionary d)

@@ -522,7 +522,7 @@ internal sealed class SeparationConsistencyRule : IConformanceRule
             // from plain objects in the reader).
             try
             {
-                stream = context.Reader.ResolveStream(r.ObjectNumber);
+                stream = context.Reader.ResolveStream(r);
                 if (stream is not null)
                     return true; // resolved stays null; stream is set.
             }

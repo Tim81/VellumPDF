@@ -192,14 +192,25 @@ internal sealed class PdfObjectParser
                 var peekTok2 = _lexer.NextToken();
                 if (peekTok2.Kind == TokenKind.Keyword && IsKeyword(peekTok2.Raw, "R"u8))
                 {
-                    // It's an indirect reference. Validated through the same helper the
-                    // "N G obj" header uses: an unchecked narrowing here silently aliased an
-                    // out-of-range object number onto a real object — "4294967297 0 R" resolved
-                    // to object 1 — so a crafted document could make this library resolve a
-                    // different object graph than any other reader, and a conformance verdict
-                    // would then describe content the document does not actually reference.
+                    // The object number is validated through the same helper the "N G obj" header
+                    // uses: an unchecked narrowing here silently aliased an out-of-range object
+                    // number onto a real object — "4294967297 0 R" resolved to object 1 — so a
+                    // crafted document could make this library resolve a different object graph
+                    // than any other reader, and a conformance verdict would then describe content
+                    // the document does not actually reference. Throwing is the right response there
+                    // because the wrapped value ALIASES a real, different object.
+                    //
+                    // The generation gets the opposite treatment. It must carry through at all (ISO
+                    // 32000-2 §7.3.10) — dropping it made every reference read from a document look
+                    // like generation 0, rejecting any object legitimately at a nonzero generation as
+                    // though it did not exist — but an out-of-range generation cannot alias onto
+                    // anything: it simply cannot equal any legitimate xref-recorded generation, which
+                    // is already the correct "no match" outcome. Aborting the whole document over a
+                    // reference that will never resolve anyway is strictly worse, so this is parsed
+                    // leniently instead of through ParseObjectNumber.
                     var objNum = ParseObjectNumber(firstIntToken.Raw, "indirect reference object number");
-                    return new PdfIndirectReference(objNum);
+                    var gen = ParseGenerationLenient(peekTok.Raw);
+                    return new PdfIndirectReference(objNum, gen);
                 }
                 // Back up — not an R keyword
                 _lexer.Seek(savedPos2);
@@ -562,6 +573,34 @@ internal sealed class PdfObjectParser
         var v = ParseLong(raw);
         if (v is < 0 or > int.MaxValue)
             throw new InvalidDataException($"Malformed PDF: {what} {v} is out of range.");
+        return (int)v;
+    }
+
+    /// <summary>
+    /// Parses a reference's generation without throwing: unlike <see cref="ParseObjectNumber"/>,
+    /// a value that doesn't fit an <see cref="int"/> here has nothing to alias onto, so falling
+    /// back to <see cref="int.MaxValue"/> is enough to guarantee the reference cannot match a real
+    /// xref entry, including a value too large even for <see cref="long"/>, which
+    /// <see cref="long.TryParse(string, NumberStyles, IFormatProvider, out long)"/> simply reports
+    /// as unparseable rather than throwing.
+    ///
+    /// Also saturates anything above 65535 (ISO 32000-2 §7.5.4's ceiling on a generation number),
+    /// not merely a true overflow: an xref entry can never legitimately hold more than that either
+    /// (XrefParser routes such a field to <see cref="XrefEntry.UnknownGeneration"/>), so without
+    /// this a reference whose own token names an in-range-for-int but out-of-spec generation could
+    /// still round-trip through the object's header once the xref stopped being authoritative for
+    /// it — reachable end to end through <c>AppendRevision</c>, which only widens as far as the
+    /// 5-digit xref field it writes (<see cref="VellumPdf.IO.IncrementalCrossReferenceBuilder"/>).
+    ///
+    /// Saturating at <c>int.MaxValue</c> rather than a negative sentinel keeps this a value
+    /// <see cref="PdfIndirectReference"/>'s constructor will actually accept.
+    /// </summary>
+    private static int ParseGenerationLenient(ReadOnlyMemory<byte> raw)
+    {
+        var s = Encoding.Latin1.GetString(raw.Span);
+        if (!long.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out var v)
+            || v is < 0 or > 65535)
+            return int.MaxValue;
         return (int)v;
     }
 }

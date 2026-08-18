@@ -6,7 +6,49 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+
+- **`PdfIndirectReference` and `PdfIndirectObject` honour generation, which changes four members
+  on surfaces Stable/Shipped since 2.0.0.** `PdfIndirectReference.WriteTo` now emits the real
+  generation instead of a hardcoded `0`; `Equals` narrowed, so `new PdfIndirectReference(5)` no
+  longer equals a parsed `5 1 R` — a genuine break for anything keying a collection on this type;
+  `GetHashCode` returns different (now deterministic, unlike `HashCode.Combine`'s per-process
+  salt) values than in 2.0.0; and `PdfIndirectObject.Reference` returns `new(ObjectNumber,
+  Generation)` rather than `new(ObjectNumber)`, unobservable unless the object was built through
+  the new three-argument constructor. See Fixed, below, for why. (#121)
+
+### Fixed
+
+- **A reference's generation number is honoured instead of discarded.** `PdfIndirectReference`
+  carried only an object number, and the parser dropped a parsed `N G R`'s middle field too, so
+  every reference read from a document looked like generation 0. With an xref table keyed on
+  object number alone, `10 2 R` resolved to whatever object 10 held at generation 0 instead of
+  nothing, and a document with a legitimately nonzero generation anywhere — including its own
+  `/Root` — either resolved the wrong object or failed to open. (#121)
+
+- **A rewritten object at a nonzero generation now round-trips through `AppendRevision`.** The
+  incremental-update writer hardcoded every re-emitted object, including the catalog, to
+  generation 0. Long-term-validation and archive-timestamp signing both rewrite the catalog, so
+  a base document whose catalog sat at a nonzero generation got a trailer `/Root` that disagreed
+  with the object header and xref entry next to it and failed to reopen; rewriting any other
+  object at the wrong generation failed the same way but silently, resolving to nothing with no
+  exception. `PdfIndirectObject` gains a matching `Generation` and a three-argument constructor
+  to carry the real value through. (#121)
+
+- **A freed object number no longer resurfaces from an older revision.** Classic-table `f`
+  entries and xref-stream type-0 rows were discarded instead of recorded, so an object deleted
+  in the newest revision could still resolve from a stale entry in an older one. Both are now
+  tracked, scoped per revision so a hybrid file's own `/XRefStm` still resolves an object its
+  classic table marks free — the convention such a file uses to hide that object from a
+  classic-table-only reader. (#121)
+
+- **A malformed generation field no longer takes down the document, or aliases onto the wrong
+  object.** A sloppy but unambiguous field (space-padded rather than zero-padded) still parses.
+  One that is genuinely unparseable, or exceeds the ISO 32000-2 §7.5.4 ceiling of 65535, is
+  recorded as unknown rather than guessed at 0, so the object's header takes over instead of the
+  object going unresolvable at every generation. A reference whose own token is unparseable,
+  negative, or exceeds 65535 no longer aborts the document either; it simply matches no real
+  xref entry, the same outcome an ordinary mismatch already produces. (#121)
 
 ## [2.0.0] - 2026-08-17
 

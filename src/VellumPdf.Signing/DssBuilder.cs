@@ -311,14 +311,18 @@ internal static class DssBuilder
         // ── Step 2: assign object numbers and build the indirect object list ─────
 
         var nextObjNum = reader.NextFreeObjectNumber;
-        var newObjects = new List<(int ObjectNumber, PdfObject Value)>();
+        // Every object here is freshly minted (nextObjNum, never previously in the file) except
+        // the catalog appended in Step 4, which reuses an EXISTING object number and so must
+        // keep that object's existing generation rather than 0 (ISO 32000-2 §7.5.4; see the
+        // AppendRevision doc comment — getting this wrong there fails to reopen the whole file).
+        var newObjects = new List<(int ObjectNumber, int Generation, PdfObject Value)>();
 
         // Assign object numbers to cert streams
         var certObjNums = new Dictionary<string, int>();
         foreach (var (key, der) in allCerts)
         {
             certObjNums[key] = nextObjNum++;
-            newObjects.Add((certObjNums[key], new UncompressedPdfStream(der)));
+            newObjects.Add((certObjNums[key], 0, new UncompressedPdfStream(der)));
         }
 
         // Assign object numbers to OCSP streams
@@ -326,7 +330,7 @@ internal static class DssBuilder
         foreach (var (key, der) in allOcsps)
         {
             ocspObjNums[key] = nextObjNum++;
-            newObjects.Add((ocspObjNums[key], new UncompressedPdfStream(der)));
+            newObjects.Add((ocspObjNums[key], 0, new UncompressedPdfStream(der)));
         }
 
         // Assign object numbers to CRL streams
@@ -334,7 +338,7 @@ internal static class DssBuilder
         foreach (var (key, der) in allCrls)
         {
             crlObjNums[key] = nextObjNum++;
-            newObjects.Add((crlObjNums[key], new UncompressedPdfStream(der)));
+            newObjects.Add((crlObjNums[key], 0, new UncompressedPdfStream(der)));
         }
 
         // ── Step 3: build /DSS dictionary ─────────────────────────────────────────
@@ -411,7 +415,7 @@ internal static class DssBuilder
         dssDict.Set(new PdfName("VRI"), vriDict);
 
         var dssObjNum = nextObjNum++;
-        newObjects.Add((dssObjNum, dssDict));
+        newObjects.Add((dssObjNum, 0, dssDict));
 
         // ── Step 4: clone the catalog and point /DSS at the new DSS object ────────
 
@@ -420,7 +424,7 @@ internal static class DssBuilder
         var catalogObjNum = catalogRef.ObjectNumber;
         var newCatalog = reader.Catalog.ShallowCopy();
         newCatalog.Set(new PdfName("DSS"), new PdfIndirectReference(dssObjNum));
-        newObjects.Add((catalogObjNum, newCatalog));
+        newObjects.Add((catalogObjNum, catalogRef.Generation, newCatalog));
 
         // ── Step 5: sort by object number and append as an incremental revision ───
 
