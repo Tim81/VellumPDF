@@ -133,6 +133,52 @@ public sealed class GenerationNumberTests
     }
 
     /// <summary>
+    /// A single-revision xref-stream PDF with an 8-byte generation field (<c>/W [1 4 8]</c>) whose
+    /// value for object 10 overflows <see cref="int"/> — a row this parser never inspected before
+    /// this PR, so an odd-but-decodable value here must not newly abort the whole document.
+    /// </summary>
+    private static byte[] BuildXrefStreamWithOverflowingGenerationPdf()
+    {
+        var ms = new MemoryStream();
+        void Write(string s) => ms.Write(Encoding.ASCII.GetBytes(s));
+        void WriteBytes(byte[] b) => ms.Write(b);
+
+        static byte[] Row148(byte type, long offset, ulong generation)
+        {
+            var row = new byte[13]; // 1 (type) + 4 (offset) + 8 (generation)
+            row[0] = type;
+            row[1] = (byte)((offset >> 24) & 0xFF);
+            row[2] = (byte)((offset >> 16) & 0xFF);
+            row[3] = (byte)((offset >> 8) & 0xFF);
+            row[4] = (byte)(offset & 0xFF);
+            for (var i = 0; i < 8; i++)
+                row[5 + i] = (byte)((generation >> (8 * (7 - i))) & 0xFF);
+            return row;
+        }
+
+        Write("%PDF-1.7\n");
+        var o1 = (int)ms.Position;
+        Write("1 0 obj\n<< /Type /Catalog >>\nendobj\n");
+        var o10 = (int)ms.Position;
+        Write("10 0 obj\n<< /Marker /Hit >>\nendobj\n");
+
+        var body = new MemoryStream();
+        body.Write(Row148(0, 0, 0));                              // obj 0: free
+        body.Write(Row148(1, o1, 0));                              // obj 1: catalog
+        body.Write(Row148(1, o10, 0x1_0000_0005));                 // obj 10: generation overflows int
+        var o11 = (int)ms.Position;
+        body.Write(Row148(1, o11, 0));                             // obj 11: this xref stream itself
+        var bodyArr = body.ToArray();
+
+        Write($"11 0 obj\n<< /Type /XRef /Size 12 /W [1 4 8] /Index [0 2 10 2] /Root 1 0 R /Length {bodyArr.Length} >>\nstream\n");
+        WriteBytes(bodyArr);
+        Write("\nendstream\nendobj\n");
+        Write($"startxref\n{o11}\n%%EOF\n");
+
+        return ms.ToArray();
+    }
+
+    /// <summary>
     /// A two-revision xref-stream PDF. Revision 1 defines object 5 as a type-1 entry
     /// (<c>&lt;&lt; /Marker /Alive &gt;&gt;</c>). Revision 2 frees it via a type-0 row and adds no
     /// replacement, chained back to revision 1 via /Prev.
@@ -174,6 +220,162 @@ public sealed class GenerationNumberTests
         WriteBytes(body2Arr);
         Write("\nendstream\nendobj\n");
         Write($"startxref\n{o7}\n%%EOF\n");
+
+        return ms.ToArray();
+    }
+
+    /// <summary>
+    /// A catalog at generation 1, referenced from the trailer as <c>1 1 R</c> and recorded in the
+    /// xref table at generation 1.
+    /// </summary>
+    private static byte[] BuildCatalogAtNonZeroGenerationPdf()
+    {
+        var ms = new MemoryStream();
+        void Write(string s) => ms.Write(Encoding.ASCII.GetBytes(s));
+
+        Write("%PDF-1.4\n");
+        var obj1Offset = (int)ms.Position;
+        Write("1 1 obj\n<< /Type /Catalog >>\nendobj\n");
+
+        var xrefOffset = (int)ms.Position;
+        Write("xref\n");
+        Write("0 2\n");
+        Write($"{0:D10} 65535 f \n");
+        Write($"{obj1Offset:D10} 00001 n \n");
+        Write("trailer\n<< /Size 2 /Root 1 1 R >>\n");
+        Write($"startxref\n{xrefOffset}\n%%EOF\n");
+
+        return ms.ToArray();
+    }
+
+    /// <summary>
+    /// A reference embedded inside a dictionary VALUE (not a top-level "N G obj" header) at a
+    /// nonzero generation — object 1's <c>/Extra</c> entry is <c>10 1 R</c>, and object 10 is
+    /// genuinely written and recorded at generation 1.
+    /// </summary>
+    private static byte[] BuildDictValueReferenceAtNonZeroGenerationPdf()
+    {
+        var ms = new MemoryStream();
+        void Write(string s) => ms.Write(Encoding.ASCII.GetBytes(s));
+
+        Write("%PDF-1.4\n");
+        var obj1Offset = (int)ms.Position;
+        Write("1 0 obj\n<< /Type /Catalog /Extra 10 1 R >>\nendobj\n");
+        var obj10Offset = (int)ms.Position;
+        Write("10 1 obj\n<< /Marker /Hit >>\nendobj\n");
+
+        var xrefOffset = (int)ms.Position;
+        Write("xref\n");
+        Write("0 2\n");
+        Write($"{0:D10} 65535 f \n");
+        Write($"{obj1Offset:D10} 00000 n \n");
+        Write("10 1\n");
+        Write($"{obj10Offset:D10} 00001 n \n");
+        Write("trailer\n<< /Size 11 /Root 1 0 R >>\n");
+        Write($"startxref\n{xrefOffset}\n%%EOF\n");
+
+        return ms.ToArray();
+    }
+
+    /// <summary>
+    /// A two-revision PDF where object 5's second definition is written at generation 1 (the
+    /// canonical shape a real editor produces when it reuses a freed object number). Revision 1's
+    /// catalog references <c>5 0 R</c> and object 5 is <c>&lt;&lt; /Marker /Old &gt;&gt;</c>.
+    /// Revision 2 rewrites both the catalog (now referencing <c>5 1 R</c>) and object 5 itself
+    /// (now <c>5 1 obj</c>, <c>&lt;&lt; /Marker /New &gt;&gt;</c>).
+    /// </summary>
+    private static byte[] BuildIncrementalUpdateReusesObjectAtNonZeroGenerationPdf()
+    {
+        var ms = new MemoryStream();
+        void Write(string s) => ms.Write(Encoding.ASCII.GetBytes(s));
+
+        Write("%PDF-1.4\n");
+        var obj1V1Offset = (int)ms.Position;
+        Write("1 0 obj\n<< /Type /Catalog /Extra 5 0 R >>\nendobj\n");
+        var obj5V1Offset = (int)ms.Position;
+        Write("5 0 obj\n<< /Marker /Old >>\nendobj\n");
+
+        var xref1Offset = (int)ms.Position;
+        Write("xref\n");
+        Write("0 2\n");
+        Write($"{0:D10} 65535 f \n");
+        Write($"{obj1V1Offset:D10} 00000 n \n");
+        Write("5 1\n");
+        Write($"{obj5V1Offset:D10} 00000 n \n");
+        Write("trailer\n<< /Size 6 /Root 1 0 R >>\n");
+        Write($"startxref\n{xref1Offset}\n%%EOF\n");
+
+        var obj1V2Offset = (int)ms.Position;
+        Write("1 0 obj\n<< /Type /Catalog /Extra 5 1 R >>\nendobj\n");
+        var obj5V2Offset = (int)ms.Position;
+        Write("5 1 obj\n<< /Marker /New >>\nendobj\n");
+
+        var xref2Offset = (int)ms.Position;
+        Write("xref\n");
+        Write("1 1\n");
+        Write($"{obj1V2Offset:D10} 00000 n \n");
+        Write("5 1\n");
+        Write($"{obj5V2Offset:D10} 00001 n \n");
+        Write($"trailer\n<< /Size 6 /Root 1 0 R /Prev {xref1Offset} >>\n");
+        Write($"startxref\n{xref2Offset}\n%%EOF\n");
+
+        return ms.ToArray();
+    }
+
+    /// <summary>
+    /// A classic table where object 10's generation field is space-padded ("    0") rather than
+    /// zero-padded ("00000") — sloppy but unambiguous, and a field this parser never read before
+    /// this PR.
+    /// </summary>
+    private static byte[] BuildClassicXrefWithSpacePaddedGenerationPdf()
+    {
+        var ms = new MemoryStream();
+        void Write(string s) => ms.Write(Encoding.ASCII.GetBytes(s));
+
+        Write("%PDF-1.4\n");
+        var obj1Offset = (int)ms.Position;
+        Write("1 0 obj\n<< /Type /Catalog >>\nendobj\n");
+        var obj10Offset = (int)ms.Position;
+        Write("10 0 obj\n<< /Marker /Hit >>\nendobj\n");
+
+        var xrefOffset = (int)ms.Position;
+        Write("xref\n");
+        Write("0 2\n");
+        Write($"{0:D10} 65535 f \n");
+        Write($"{obj1Offset:D10} 00000 n \n");
+        Write("10 1\n");
+        Write($"{obj10Offset:D10}     0 n \n"); // generation field is "    0", not "00000"
+        Write("trailer\n<< /Size 11 /Root 1 0 R >>\n");
+        Write($"startxref\n{xrefOffset}\n%%EOF\n");
+
+        return ms.ToArray();
+    }
+
+    /// <summary>
+    /// A single-revision classic-table PDF where the xref records object 10 at generation 2, but
+    /// object 10's own "N G obj" header actually says generation 0 — a malformed but openable
+    /// (not rejected at parse time) inconsistency between the two.
+    /// </summary>
+    private static byte[] BuildXrefGenerationDisagreesWithHeaderPdf()
+    {
+        var ms = new MemoryStream();
+        void Write(string s) => ms.Write(Encoding.ASCII.GetBytes(s));
+
+        Write("%PDF-1.4\n");
+        var obj1Offset = (int)ms.Position;
+        Write("1 0 obj\n<< /Type /Catalog >>\nendobj\n");
+        var obj10Offset = (int)ms.Position;
+        Write("10 0 obj\n<< /Marker /Hit >>\nendobj\n"); // header says generation 0
+
+        var xrefOffset = (int)ms.Position;
+        Write("xref\n");
+        Write("0 2\n");
+        Write($"{0:D10} 65535 f \n");
+        Write($"{obj1Offset:D10} 00000 n \n");
+        Write("10 1\n");
+        Write($"{obj10Offset:D10} 00002 n \n"); // xref says generation 2
+        Write("trailer\n<< /Size 11 /Root 1 0 R >>\n");
+        Write($"startxref\n{xrefOffset}\n%%EOF\n");
 
         return ms.ToArray();
     }
@@ -234,6 +436,89 @@ public sealed class GenerationNumberTests
         Assert.DoesNotContain(5, reader.ObjectNumbers);
     }
 
+    [Fact]
+    public void ClassicXref_catalogAtNonZeroGeneration_documentOpensSuccessfully()
+    {
+        // PdfDocumentReader's constructor resolves /Root through Resolve(PdfIndirectReference) — a
+        // reference at the wrong generation resolves to null, and a null /Root threw "does not
+        // resolve to a dictionary" out of PdfReader.Open. With the parser correctly carrying the
+        // "1 1 R" trailer reference's generation through, and the xref recording object 1 at
+        // generation 1 to match, the document must open normally.
+        var bytes = BuildCatalogAtNonZeroGenerationPdf();
+        using var reader = PdfReader.Open(bytes);
+
+        Assert.NotNull(reader.Catalog);
+        var typeObj = reader.Catalog.Get(PdfName.Type);
+        var typeName = Assert.IsType<PdfName>(typeObj);
+        Assert.Equal("Catalog", typeName.Value);
+    }
+
+    [Fact]
+    public void ClassicXref_dictValueReferenceAtNonZeroGeneration_resolvesFromParsedReference()
+    {
+        // The actual #121 acceptance criterion: a reference PARSED FROM A DOCUMENT — not
+        // hand-constructed with `new PdfIndirectReference(n, g)` — must carry its real generation
+        // through to Resolve. ParseIntegerOrReference previously discarded the middle "G" token of
+        // "N G R", so every reference read from a file looked like generation 0 regardless of what
+        // the file actually said, and this reference at generation 1 would have failed to resolve.
+        var bytes = BuildDictValueReferenceAtNonZeroGenerationPdf();
+        using var reader = PdfReader.Open(bytes);
+
+        var extraRef = Assert.IsType<PdfIndirectReference>(reader.Catalog.Get(new PdfName("Extra")));
+        Assert.Equal(1, extraRef.Generation);
+
+        var resolved = reader.ResolveValue(extraRef);
+        var dict = Assert.IsType<PdfDictionary>(resolved);
+        var marker = Assert.IsType<PdfName>(dict.Get(new PdfName("Marker")));
+        Assert.Equal("Hit", marker.Value);
+    }
+
+    [Fact]
+    public void ClassicXref_incrementalUpdateReusesObjectAtNonZeroGeneration_resolvesNewestRevision()
+    {
+        var bytes = BuildIncrementalUpdateReusesObjectAtNonZeroGenerationPdf();
+        using var reader = PdfReader.Open(bytes);
+
+        var extraRef = Assert.IsType<PdfIndirectReference>(reader.Catalog.Get(new PdfName("Extra")));
+        Assert.Equal(1, extraRef.Generation);
+
+        var resolved = reader.ResolveValue(extraRef);
+        var dict = Assert.IsType<PdfDictionary>(resolved);
+        var marker = Assert.IsType<PdfName>(dict.Get(new PdfName("Marker")));
+        Assert.Equal("New", marker.Value);
+    }
+
+    [Fact]
+    public void ClassicXref_spacePaddedGenerationField_opensSuccessfully()
+    {
+        var bytes = BuildClassicXrefWithSpacePaddedGenerationPdf();
+        using var reader = PdfReader.Open(bytes);
+
+        var resolved = reader.Resolve(10);
+        var dict = Assert.IsType<PdfDictionary>(resolved);
+        var marker = Assert.IsType<PdfName>(dict.Get(new PdfName("Marker")));
+        Assert.Equal("Hit", marker.Value);
+    }
+
+    [Fact]
+    public void Resolve_orderIndependent_whenXrefGenerationDisagreesWithHeader()
+    {
+        // A cache entry populated by a generation-agnostic Resolve(int) call carries no record of
+        // the generation it was actually parsed at, unless that generation is stored alongside it.
+        // Without that, a later generation-bearing call for the same object number would trust the
+        // xref's recorded generation, hit the warm cache, and return a value that was never actually
+        // verified against the requested generation.
+        var bytes = BuildXrefGenerationDisagreesWithHeaderPdf();
+        using var reader = PdfReader.Open(bytes);
+
+        // Warm the cache via the generation-agnostic path first.
+        Assert.NotNull(reader.Resolve(10));
+
+        // The generation-bearing call must still see the header/xref disagreement and return null —
+        // not the value the agnostic call already cached.
+        Assert.Null(reader.Resolve(new PdfIndirectReference(10, 2)));
+    }
+
     // ── Cross-reference stream ───────────────────────────────────────────────
 
     [Fact]
@@ -283,5 +568,17 @@ public sealed class GenerationNumberTests
 
         Assert.Null(reader.Resolve(5));
         Assert.DoesNotContain(5, reader.ObjectNumbers);
+    }
+
+    [Fact]
+    public void XrefStream_type1_generationFieldOverflow_opensInsteadOfThrowing()
+    {
+        var bytes = BuildXrefStreamWithOverflowingGenerationPdf();
+        using var reader = PdfReader.Open(bytes);
+
+        var resolved = reader.Resolve(10);
+        var dict = Assert.IsType<PdfDictionary>(resolved);
+        var marker = Assert.IsType<PdfName>(dict.Get(new PdfName("Marker")));
+        Assert.Equal("Hit", marker.Value);
     }
 }

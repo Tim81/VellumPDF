@@ -192,14 +192,19 @@ internal sealed class PdfObjectParser
                 var peekTok2 = _lexer.NextToken();
                 if (peekTok2.Kind == TokenKind.Keyword && IsKeyword(peekTok2.Raw, "R"u8))
                 {
-                    // It's an indirect reference. Validated through the same helper the
-                    // "N G obj" header uses: an unchecked narrowing here silently aliased an
+                    // It's an indirect reference. Both fields are validated through the same helper
+                    // the "N G obj" header uses: an unchecked narrowing here silently aliased an
                     // out-of-range object number onto a real object — "4294967297 0 R" resolved
                     // to object 1 — so a crafted document could make this library resolve a
                     // different object graph than any other reader, and a conformance verdict
-                    // would then describe content the document does not actually reference.
+                    // would then describe content the document does not actually reference. The
+                    // generation must carry through too (ISO 32000-2 §7.3.10) — dropping it here
+                    // made every reference read from a document look like generation 0, so
+                    // Resolve(PdfIndirectReference) rejected any object legitimately at a nonzero
+                    // generation as though it did not exist.
                     var objNum = ParseObjectNumber(firstIntToken.Raw, "indirect reference object number");
-                    return new PdfIndirectReference(objNum);
+                    var gen = ParseObjectNumber(peekTok.Raw, "indirect reference generation number");
+                    return new PdfIndirectReference(objNum, gen);
                 }
                 // Back up — not an R keyword
                 _lexer.Seek(savedPos2);

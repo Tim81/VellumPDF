@@ -18,8 +18,13 @@ namespace VellumPdf.Reader;
 public sealed class PdfDocumentReader : IDisposable
 {
     private readonly Dictionary<int, XrefEntry> _xref;
-    private readonly Dictionary<int, PdfObject> _cache = new();
-    private readonly Dictionary<int, ParsedStream> _streamCache = new();
+    // Cached alongside the generation the value was actually parsed at (0 for an /ObjStm member,
+    // which ISO 32000-2 §7.5.7 fixes at generation 0; the parsed header's generation otherwise).
+    // A value populated by a generation-agnostic Resolve(int) call still records this, so a later
+    // generation-bearing call can tell whether the cached value is actually the generation it is
+    // asking for -- the xref table's recorded generation alone is not enough once the cache is warm.
+    private readonly Dictionary<int, (PdfObject Value, int Generation)> _cache = new();
+    private readonly Dictionary<int, (ParsedStream Stream, int Generation)> _streamCache = new();
     // ObjStm cache: container obj number → (decoded body, First offset, N count, header offset map)
     private readonly Dictionary<int, (byte[] Body, int First, int N, Dictionary<int, int> OffsetMap)> _objStmCache = new();
     // Containers currently being loaded — guards against a container whose /Filter (or /Length)
@@ -138,7 +143,7 @@ public sealed class PdfDocumentReader : IDisposable
         // one dictionary lookup on a hit. A generation check needs the xref entry first: a cache hit
         // predates any generation the caller now asks for, so it must not be trusted without one.
         if (generation is null && _cache.TryGetValue(objectNumber, out var cachedAny))
-            return cachedAny;
+            return cachedAny.Value;
 
         if (!_xref.TryGetValue(objectNumber, out var entry))
             return null;
@@ -147,8 +152,11 @@ public sealed class PdfDocumentReader : IDisposable
         {
             if (generation != entry.Generation)
                 return null;
+            // A cache entry may have been populated by an earlier generation-agnostic call, which
+            // never checked the object's actual (parsed) generation — only the xref's, just above.
+            // Re-validate against the generation the cached value was actually parsed at.
             if (_cache.TryGetValue(objectNumber, out var cached))
-                return cached;
+                return cached.Generation == generation ? cached.Value : null;
         }
 
         if (_resolveDepth >= MaxResolveDepth)
@@ -160,6 +168,7 @@ public sealed class PdfDocumentReader : IDisposable
         try
         {
             PdfObject value;
+            int actualGeneration;
             if (entry.Kind == XrefEntryKind.Uncompressed)
             {
                 var parser = new PdfObjectParser(Bytes, CheckedOffset(entry.Offset), ResolveLength);
@@ -171,18 +180,20 @@ public sealed class PdfDocumentReader : IDisposable
                 value = result.IsStream
                     ? result.Stream!.Dictionary
                     : result.Value ?? PdfNull.Instance;
+                actualGeneration = result.Generation;
 
                 if (result.IsStream)
-                    _streamCache.TryAdd(objectNumber, result.Stream!);
+                    _streamCache.TryAdd(objectNumber, (result.Stream!, actualGeneration));
             }
             else
             {
                 var obj = ResolveFromObjectStream(objectNumber, entry);
                 if (obj is null) return null;
                 value = obj;
+                actualGeneration = 0; // ISO 32000-2 §7.5.7: an /ObjStm member is always generation 0.
             }
 
-            _cache[objectNumber] = value;
+            _cache[objectNumber] = (value, actualGeneration);
             return value;
         }
         finally
@@ -198,7 +209,7 @@ public sealed class PdfDocumentReader : IDisposable
     /// </summary>
     internal ParsedStream? ResolveStream(int objectNumber) => ResolveStream(objectNumber, generation: null);
 
-    /// <summary>Resolves an indirect reference to a stream object, honoring its generation.</summary>
+    /// <summary>Resolves an indirect reference to a stream object, honouring its generation.</summary>
     internal ParsedStream? ResolveStream(PdfIndirectReference r) => ResolveStream(r.ObjectNumber, r.Generation);
 
     private ParsedStream? ResolveStream(int objectNumber, int? generation)
@@ -206,7 +217,7 @@ public sealed class PdfDocumentReader : IDisposable
         // See Resolve(int, int?) for why the generation-agnostic fast path checks the cache before
         // the xref entry, and a generation check must go the other way around.
         if (generation is null && _streamCache.TryGetValue(objectNumber, out var cachedAny))
-            return cachedAny;
+            return cachedAny.Stream;
 
         if (!_xref.TryGetValue(objectNumber, out var entry))
             return null;
@@ -219,8 +230,10 @@ public sealed class PdfDocumentReader : IDisposable
         {
             if (generation != entry.Generation)
                 return null;
+            // See the matching re-validation in Resolve(int, int?): a cache hit here may predate
+            // this call's generation.
             if (_streamCache.TryGetValue(objectNumber, out var cached))
-                return cached;
+                return cached.Generation == generation ? cached.Stream : null;
         }
 
         var parser = new PdfObjectParser(Bytes, CheckedOffset(entry.Offset), ResolveLength);
@@ -233,10 +246,10 @@ public sealed class PdfDocumentReader : IDisposable
             return null;
 
         var stream = result.Stream!;
-        _streamCache.TryAdd(objectNumber, stream);
+        _streamCache.TryAdd(objectNumber, (stream, result.Generation));
 
         // Also populate dict cache
-        _cache.TryAdd(objectNumber, stream.Dictionary);
+        _cache.TryAdd(objectNumber, (stream.Dictionary, result.Generation));
 
         return stream;
     }
@@ -247,7 +260,7 @@ public sealed class PdfDocumentReader : IDisposable
     /// </summary>
     internal byte[]? GetDecodedStreamData(ParsedStream stream) => PdfFilters.Decode(stream, ResolveMaybe);
 
-    /// <summary>Resolves an indirect reference, honoring its generation.</summary>
+    /// <summary>Resolves an indirect reference, honouring its generation.</summary>
     internal PdfObject? Resolve(PdfIndirectReference r) => Resolve(r.ObjectNumber, r.Generation);
 
     /// <summary>

@@ -41,6 +41,11 @@ public sealed class PdfIndirectReference : PdfObject, IEquatable<PdfIndirectRefe
         other is not null && ObjectNumber == other.ObjectNumber && Generation == other.Generation;
     /// <summary>Determines whether <paramref name="obj"/> is a reference to the same object number and generation.</summary>
     public override bool Equals(object? obj) => obj is PdfIndirectReference r && Equals(r);
-    /// <summary>Returns a hash code derived from the object number and generation.</summary>
-    public override int GetHashCode() => HashCode.Combine(ObjectNumber, Generation);
+    /// <summary>
+    /// Returns a hash code derived from the object number and generation. Deterministic across runs
+    /// — unlike <see cref="HashCode.Combine{T1, T2}(T1, T2)"/>, which salts with a per-process random
+    /// seed — because this type shipped Stable in 2.0.0 and a process-randomized hash is a footgun
+    /// for any consumer outside this repository that persists or compares one across runs.
+    /// </summary>
+    public override int GetHashCode() => unchecked((ObjectNumber * 397) ^ Generation);
 }

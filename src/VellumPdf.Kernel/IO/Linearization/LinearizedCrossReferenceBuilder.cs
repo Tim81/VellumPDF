@@ -260,6 +260,11 @@ internal sealed class LinearizedCrossReferenceBuilder
 
     private static void WriteRef(PdfWriter w, PdfIndirectReference r)
     {
+        // Hardcodes generation 0 rather than r.Generation. Harmless today: linearization only ever
+        // writes references this library minted itself (always generation 0), never one parsed from
+        // a source document. That stops being true the day a read → remap → write path exists (v3.0
+        // read-modify-write, #101) — at that point this must become r.WriteTo(w) or carry the real
+        // generation through.
         WriteInt(w, r.ObjectNumber);
         w.WriteAscii(" 0 R"u8);
     }

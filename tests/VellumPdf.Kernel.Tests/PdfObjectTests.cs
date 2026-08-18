@@ -108,11 +108,12 @@ public sealed class PdfObjectTests
         var genTwo = new PdfIndirectReference(10, 2);
 
         Assert.Equal(genZero, genZeroExplicit);
+        // Equal objects must have equal hash codes; the converse isn't a contract (unequal objects
+        // may still collide), so inequality is asserted through Equals, not GetHashCode.
         Assert.Equal(genZero.GetHashCode(), genZeroExplicit.GetHashCode());
 
         Assert.NotEqual(genZero, genTwo);
         Assert.False(genZero.Equals((object)genTwo));
-        Assert.NotEqual(genZero.GetHashCode(), genTwo.GetHashCode());
     }
 
     [Fact]

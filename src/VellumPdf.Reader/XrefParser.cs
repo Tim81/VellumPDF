@@ -275,11 +275,15 @@ internal sealed class XrefParser
                         throw new InvalidDataException(
                             $"Malformed PDF: bad xref entry offset '{offsetStr}' for obj {objNum}.");
 
+                    // Lenient, unlike the offset field above: the generation field was never read
+                    // before this PR, so a file that is sloppy here (space-padded rather than
+                    // zero-padded, e.g.) used to open cleanly and must keep opening cleanly. Allow
+                    // surrounding whitespace and a sign, and fall back to generation 0 — rather than
+                    // aborting the whole document — for anything still unparseable or negative.
                     var genStr = Encoding.ASCII.GetString(entry[11..16]);
-                    if (!int.TryParse(genStr, NumberStyles.None, CultureInfo.InvariantCulture,
-                            out var objGeneration))
-                        throw new InvalidDataException(
-                            $"Malformed PDF: bad xref entry generation '{genStr}' for obj {objNum}.");
+                    if (!int.TryParse(genStr, NumberStyles.Integer, CultureInfo.InvariantCulture,
+                            out var objGeneration) || objGeneration < 0)
+                        objGeneration = 0;
 
                     // Newest revision wins: skip an object a newer revision already freed.
                     if (!freed.Contains(objNum))
@@ -396,15 +400,14 @@ internal sealed class XrefParser
                 switch (type)
                 {
                     case 1:
-                        // field2 is a byte offset into the file, field3 the generation; reject an
-                        // offset that cannot resolve (negative, or beyond the file's last byte), and
-                        // a generation that cannot fit the field (a /W width up to 8 bytes can exceed
-                        // int range).
-                        if (field3 is < 0 or > int.MaxValue)
-                            throw new InvalidDataException(
-                                "Malformed PDF: xref stream type-1 entry generation is out of range.");
+                        // field2 is a byte offset into the file, field3 the generation. A /W width
+                        // up to 8 bytes can produce a generation that overflows int; lenient here,
+                        // unlike the offset check just below — this field was never read before this
+                        // PR, so a row that is merely odd here must not newly turn a previously
+                        // openable document into a hard failure. Clamp to generation 0 instead.
+                        var objGeneration = field3 is >= 0 and <= int.MaxValue ? (int)field3 : 0;
                         if (field2 >= 0 && field2 < data.Length && !freed.Contains(objNum))
-                            xref.TryAdd(objNum, XrefEntry.Uncompressed(field2, (int)field3));
+                            xref.TryAdd(objNum, XrefEntry.Uncompressed(field2, objGeneration));
                         break;
                     case 2:
                         // field2 = container object number, field3 = index within it; a /W width up
