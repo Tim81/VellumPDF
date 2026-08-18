@@ -45,12 +45,13 @@ on 256-bit encryption.
 Two assertions, in this order:
 
 1. **Prove the fixture carries the feature** before trusting any decrypt result. `--show-encryption`
-   reports `R`, `P` and the per-stream/string method, but **not** `/V` — for that use
-   `qpdf --password=u --show-object=trailer` or `--json`, or read the `/Encrypt` dictionary directly.
+   reports `R`, `P` and the per-stream/string method, but **not** `/V`. Nor does
+   `--show-object=trailer`: it prints `/Encrypt 8 0 R`, an indirect reference. Use
+   `qpdf --password=u --show-object=8` or `--json --json-key=encrypt` to see the dictionary itself.
    `EncryptedFixtureCorpusTests` pins each fixture by SHA-256 as well as `/V`, `/R` and `/CFM`, because
    `enc-aes-128` and `enc-rc4-128-v4` are both `/V 4 /R 4` and differ only in `/CFM` — swapping them
    is otherwise invisible.
-2. **Compare decrypted output to `plaintext-baseline.pdf`.** `qpdf --password=u --decrypt` on all seven
+2. **Compare decrypted output to `plaintext-baseline.pdf`.** `qpdf --password=u --decrypt` on all eight
    fixtures reproduces the baseline byte-for-byte **except the second `/ID` array element**, which qpdf
    regenerates on every invocation; the first element is preserved.
 
@@ -95,14 +96,21 @@ Re-running a command to "check" a fixture will fail the guard, and that is worki
 To legitimately replace a fixture:
 
 1. Regenerate it with the command from the table above.
-2. Confirm it carries what its row claims — `qpdf --password=u --show-object=trailer` for `/V`, and
-   `--show-encryption` for `/R` and the cipher.
+2. Confirm it carries what its row claims — `qpdf --password=u --show-object=8` for `/V` and `/CFM`
+   (the trailer only holds an indirect reference), and `--show-encryption` for `/R`, the cipher and
+   **the permission list**, which is what catches a fixture regenerated with narrowed permissions.
 3. Confirm it still decrypts to the baseline: `qpdf --password=u --decrypt <file> out.pdf`, then diff
    against `plaintext-baseline.pdf` and check every difference falls inside the second `/ID` element.
 4. Recompute all eight digests with `sha256sum *.pdf` and update the table.
 
-Step 3 is the one that matters. A regenerated file with a **wrong password or narrowed permissions**
-satisfies every other assertion in the guard — `/Encrypt`, `/V`, `/R`, `/CFM`, `/P` — and the digest is
-exactly what the person regenerating it updates. Only decrypting back to the baseline proves the
-replacement is the fixture it claims to be. Once #97 lands, its decrypt-to-baseline test becomes that
-check automatically.
+Steps 2 and 3 catch different things, and neither covers the other.
+
+Step 3 proves the content is right. It does **not** prove the permissions are: a file regenerated with
+`--modify=form` carries `/P -44`, and still decrypts to the baseline with only the `/ID` region
+differing. Step 2's `--show-encryption` is what surfaces that, which is why it is listed there.
+
+Step 2 alone is not enough either — a wrong password reproduces every declared field. qpdf refuses to
+open such a file outright, so step 3 is where that surfaces.
+
+The digest cannot arbitrate any of this: it is exactly what the person regenerating the fixture
+updates. Once #97 lands, its decrypt-to-baseline test becomes step 3 automatically.

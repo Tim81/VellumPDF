@@ -10,7 +10,7 @@ namespace VellumPdf.Reader.Tests;
 /// <summary>
 /// Guards the committed encrypted corpus (#99) itself, before anything tries to decrypt it.
 /// qpdf refuses to write RC4 without <c>--allow-weak-crypto</c> and still leaves a zero-byte file
-/// behind, so a corpus can look complete on disk while three of its seven entries are empty.
+/// behind, so a corpus can look complete on disk while three of its eight entries are empty.
 ///
 /// The digest is what actually pins each fixture: it subsumes non-emptiness, truncation, and — the
 /// case a <c>/V</c>+<c>/R</c> check cannot see — two fixtures being swapped for each other.
@@ -52,7 +52,7 @@ public sealed class EncryptedFixtureCorpusTests
         Assert.Equal(sha256, Convert.ToHexStringLower(SHA256.HashData(bytes)));
 
         var text = Encoding.Latin1.GetString(bytes);
-        Assert.True(ContainsKey(text, "/Encrypt"), "no /Encrypt key found");
+        Assert.True(ContainsToken(text, "/Encrypt"), "no /Encrypt key found");
         Assert.Contains($"/V {v}", text, StringComparison.Ordinal);
         Assert.Contains($"/R {r}", text, StringComparison.Ordinal);
         if (cfm is not null)
@@ -61,7 +61,9 @@ public sealed class EncryptedFixtureCorpusTests
         // Every fixture grants all permissions. Pinned because the permission bits feed
         // Algorithm 2's key derivation, so a regenerated fixture that quietly narrowed them
         // would change what the decrypt tests exercise while satisfying everything above.
-        Assert.Contains("/P -4", text, StringComparison.Ordinal);
+        // Anchored for the same reason /Encrypt is: unanchored, "/P -4" is a prefix of the
+        // "/P -44" that qpdf --modify=form emits, so the narrowing would pass unnoticed.
+        Assert.True(ContainsToken(text, "/P -4"), "expected /P -4 (all permissions granted)");
     }
 
     [Fact]
@@ -70,7 +72,7 @@ public sealed class EncryptedFixtureCorpusTests
         var bytes = Load(BaselineName);
         Assert.Equal("886057c285e1f65d0ef39f43bae4367b1122f56295dbb5436c05108b1d3035ad",
             Convert.ToHexStringLower(SHA256.HashData(bytes)));
-        Assert.False(ContainsKey(Encoding.Latin1.GetString(bytes), "/Encrypt"), "baseline must not be encrypted");
+        Assert.False(ContainsToken(Encoding.Latin1.GetString(bytes), "/Encrypt"), "baseline must not be encrypted");
     }
 
     /// <summary>
@@ -103,19 +105,31 @@ public sealed class EncryptedFixtureCorpusTests
         Assert.DoesNotContain("xpacket", Encoding.Latin1.GetString(Load("enc-aes-256-r6.pdf")), StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void CleartextMetadataFixture_atR4_declaresTheFlag_andExposesXmp()
+    {
+        // The R4 pair is the one that exercises Algorithm 2 step (f): with /EncryptMetadata false
+        // the padding gains a trailing 0xFFFFFFFF, which is why these two fixtures share an /O and
+        // differ in /U. The R6 pair above cannot show that -- R6 derives its key differently.
+        var cleartext = Encoding.Latin1.GetString(Load("enc-aes-128-cleartextmd.pdf"));
+        Assert.True(ContainsToken(cleartext, "/EncryptMetadata false"), "expected /EncryptMetadata false");
+        Assert.Contains("xpacket", cleartext, StringComparison.Ordinal);
+        Assert.DoesNotContain("xpacket", Encoding.Latin1.GetString(Load("enc-aes-128.pdf")), StringComparison.Ordinal);
+    }
 
     /// <summary>
-    /// True when <paramref name="key"/> appears as a whole PDF name — followed by whitespace or a
-    /// delimiter rather than by a name character. Matching on a literal trailing space instead would
-    /// let an encrypted file read as plaintext: ISO 32000-2 §7.2.3 allows any of six whitespace bytes
-    /// after the key, and a dictionary or name value needs none at all.
+    /// True when <paramref name="token"/> is followed by whitespace or a delimiter rather than by a
+    /// regular character, so it matches a whole PDF name or a name together with its complete value.
+    /// Matching on a literal trailing space instead would let an encrypted file read as plaintext:
+    /// ISO 32000-2 §7.2.3 allows any of six whitespace bytes after the key, and a dictionary or name
+    /// value needs none at all. Leaving it unanchored would let "/P -44" satisfy "/P -4".
     /// </summary>
-    private static bool ContainsKey(string text, string key)
+    private static bool ContainsToken(string text, string token)
     {
-        for (var i = text.IndexOf(key, StringComparison.Ordinal); i >= 0;
-             i = text.IndexOf(key, i + 1, StringComparison.Ordinal))
+        for (var i = text.IndexOf(token, StringComparison.Ordinal); i >= 0;
+             i = text.IndexOf(token, i + 1, StringComparison.Ordinal))
         {
-            var after = i + key.Length;
+            var after = i + token.Length;
             if (after >= text.Length) return true;
             var c = text[after];
             // Whitespace (ISO 32000-2 Table 1) or a delimiter (Table 2) ends the name. Numeric
