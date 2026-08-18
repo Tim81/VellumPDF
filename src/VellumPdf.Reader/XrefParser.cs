@@ -216,7 +216,20 @@ internal sealed class XrefParser
             // Avoid cycling into an already-processed offset, and record this one so a later /Prev
             // revision pointing at the same stream does not re-parse it.
             if (seenOffsets.Add(stmOffset))
-                ParseXrefStream(data, stmOffset, xref, freed, localFreed);
+            {
+                // #192 threads the per-revision free sets through; #183 needs the dictionary the
+                // stream returns.
+                var xrefStmDict = ParseXrefStream(data, stmOffset, xref, freed, localFreed);
+
+                // #183: in a hybrid-reference file the classic trailer above is the one callers see,
+                // but /Encrypt is only required to be *reachable* — ISO 32000-2 §7.5.8.4 permits a
+                // producer to put it on the XRefStm dictionary instead. Missing this let an encrypted
+                // hybrid file fall through as if it were plain, producing garbage rather than the
+                // clean UnsupportedPdfFeatureException every other /Encrypt path throws.
+                if (xrefStmDict.Get(new PdfName("Encrypt")) is not null)
+                    throw new UnsupportedPdfFeatureException(
+                        "Encryption is not supported yet (see VellumPdf issue #97).");
+            }
         }
 
         freed.UnionWith(localFreed);

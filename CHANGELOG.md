@@ -50,6 +50,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   negative, or exceeds 65535 no longer aborts the document either; it simply matches no real
   xref entry, the same outcome an ordinary mismatch already produces. (#121)
 
+- **An `/Encrypt` entry present only in a hybrid file's `XRefStm` dictionary is no longer
+  missed.** The classic-trailer check alone can't see it. ISO 32000-2 §7.5.8.4 permits a
+  hybrid-reference producer to put `/Encrypt` on the XRefStm dictionary instead, so such a file
+  parsed as if it were plain — producing garbage rather than `UnsupportedPdfFeatureException`.
+  (#183)
+
 ## [2.0.0] - 2026-08-17
 
 The first major version since 1.0. Every package moves to 2.0.0 together, as usual.
