@@ -254,8 +254,9 @@ public sealed class EncryptionTests
         // shipped right next to (ISO 32000-2 §7.6.2). Assert on the actual XML bytes,
         // not just the presence of the /EncryptMetadata key in the dict: the dict key
         // was already present and correct while this bug shipped.
+        const string title = "Metadata exemption test";
         using var doc = new PdfDocument();
-        doc.Info.Title = "Metadata exemption test";
+        doc.Info.Title = title;
         doc.AddPage();
         doc.Encrypt(new PdfEncryptionSettings { UserPassword = "openme", EncryptMetadata = false });
 
@@ -266,6 +267,13 @@ public sealed class EncryptionTests
         Assert.Contains("/EncryptMetadata false", raw, StringComparison.Ordinal);
         Assert.Contains("<?xpacket begin", raw, StringComparison.Ordinal);
         Assert.Contains("<x:xmpmeta", raw, StringComparison.Ordinal);
+
+        // Value level, not just structural markers. The CHANGELOG tells users this flag exposes
+        // the title, so pin the title text itself and pin it inside the packet: /Info carries the
+        // same string and stays encrypted, so a cleartext hit after <?xpacket can only be the XMP.
+        var packet = raw[raw.IndexOf("<?xpacket begin", StringComparison.Ordinal)..];
+        Assert.Contains("dc:title", packet, StringComparison.Ordinal);
+        Assert.Contains(title, packet, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -274,8 +282,9 @@ public sealed class EncryptionTests
         // Inverse of the above: with the default (true), the metadata stream body
         // must NOT be readable in the raw output — otherwise the exemption logic
         // could be exempting every object rather than just /Metadata.
+        const string title = "Metadata encryption default test";
         using var doc = new PdfDocument();
-        doc.Info.Title = "Metadata encryption default test";
+        doc.Info.Title = title;
         doc.AddPage();
         doc.Encrypt(new PdfEncryptionSettings { UserPassword = "openme" });
 
@@ -286,6 +295,11 @@ public sealed class EncryptionTests
         Assert.Contains("/EncryptMetadata true", raw, StringComparison.Ordinal);
         Assert.DoesNotContain("<?xpacket begin", raw, StringComparison.Ordinal);
         Assert.DoesNotContain("<x:xmpmeta", raw, StringComparison.Ordinal);
+
+        // The title reaches both /Info and the XMP packet, and both are encrypted here. Pinning
+        // its absence is what makes the cleartext assertion in the false case mean something —
+        // without this pair, that assertion could be passing on an unencrypted /Info instead.
+        Assert.DoesNotContain(title, raw, StringComparison.Ordinal);
     }
 
     // ── PdfEncryptionSettings API ────────────────────────────────────────────
