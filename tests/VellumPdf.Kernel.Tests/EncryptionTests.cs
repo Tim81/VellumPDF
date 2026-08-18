@@ -255,8 +255,10 @@ public sealed class EncryptionTests
         // not just the presence of the /EncryptMetadata key in the dict: the dict key
         // was already present and correct while this bug shipped.
         const string title = "Metadata exemption test";
+        const string keywords = "InfoStaysEncryptedWitness";
         using var doc = new PdfDocument();
         doc.Info.Title = title;
+        doc.Info.Keywords = keywords;
         doc.AddPage();
         doc.Encrypt(new PdfEncryptionSettings { UserPassword = "openme", EncryptMetadata = false });
 
@@ -274,7 +276,22 @@ public sealed class EncryptionTests
         var packet = raw[raw.IndexOf("<?xpacket begin", StringComparison.Ordinal)..];
         Assert.Contains("dc:title", packet, StringComparison.Ordinal);
         Assert.Contains(title, packet, StringComparison.Ordinal);
+
+        // And the exemption has to stay narrow. Widening the predicate to every object leaves the
+        // whole document cleartext, which every other assertion here tolerates. Keywords is the
+        // witness because XmpMetadataWriter has no pdf:Keywords branch (#199), so it reaches /Info
+        // and nowhere else. Search the bytes as written: PdfLiteralString.FromUnicode emits UTF-16BE
+        // with a BOM even for ASCII, so searching the plain text passes vacuously and reads as
+        // coverage it is not.
+        Assert.DoesNotContain(AsWritten(keywords), raw, StringComparison.Ordinal);
     }
+
+    /// <summary>
+    /// A metadata string as it appears in the file: /Info values go through
+    /// <see cref="PdfLiteralString.FromUnicode"/>, which is always UTF-16BE, never ASCII.
+    /// </summary>
+    private static string AsWritten(string value) =>
+        Encoding.Latin1.GetString(Encoding.BigEndianUnicode.GetBytes(value));
 
     [Fact]
     public void EncryptMetadata_true_encrypts_the_metadata_stream_body()
@@ -296,10 +313,13 @@ public sealed class EncryptionTests
         Assert.DoesNotContain("<?xpacket begin", raw, StringComparison.Ordinal);
         Assert.DoesNotContain("<x:xmpmeta", raw, StringComparison.Ordinal);
 
-        // The title reaches both /Info and the XMP packet, and both are encrypted here. Pinning
-        // its absence is what makes the cleartext assertion in the false case mean something —
-        // without this pair, that assertion could be passing on an unencrypted /Info instead.
+        // The title reaches both /Info and the XMP packet, and both must be ciphertext here. They
+        // need separate searches: the packet holds it as ASCII, while /Info goes through
+        // PdfLiteralString.FromUnicode and is UTF-16BE with a BOM even for pure ASCII. Searching
+        // only the plain text would never see a cleartext /Info, so it would report a coverage of
+        // /Info that it does not have.
         Assert.DoesNotContain(title, raw, StringComparison.Ordinal);
+        Assert.DoesNotContain(AsWritten(title), raw, StringComparison.Ordinal);
     }
 
     // ── PdfEncryptionSettings API ────────────────────────────────────────────

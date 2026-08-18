@@ -528,7 +528,7 @@ doc.Save(stream);
 | `UserPassword` | `string?` | Password required to open the file |
 | `OwnerPassword` | `string?` | Defaults to `UserPassword` when null |
 | `Permissions` | `PdfPermissions` | Flags: `Print`, `Modify`, `Copy`, `Annotate`, `FillForms`, `Extract`, `Assemble`, `PrintHighRes`, `All`, `None` |
-| `EncryptMetadata` | `bool` | `false` leaves the XMP metadata stream (title, author, subject) as cleartext even though the rest of the document is encrypted (default `true`) |
+| `EncryptMetadata` | `bool` | `false` leaves the whole XMP metadata stream as cleartext even though the rest of the document is encrypted: title, author, subject, language, creator tool, producer, and the creation and modification dates (default `true`) |
 
 **Guard:** encryption is incompatible with PDF/A.  Setting both
 `doc.Conformance = PdfConformance.PdfA2b` (or any PDF/A level) and calling

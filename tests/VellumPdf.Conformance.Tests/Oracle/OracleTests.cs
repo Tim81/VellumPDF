@@ -122,6 +122,8 @@ public sealed class VeraPdfEncryptedFileRefusalTests
         using var ms = new MemoryStream();
         doc.Save(ms);
 
+        // Same reasoning as the site above: /tmp is what the CI shim mounts, and Windows is
+        // excluded so a stray C:\tmp does not collect fixtures.
         var baseDir = !OperatingSystem.IsWindows() && Directory.Exists("/tmp")
             ? "/tmp"
             : Path.GetTempPath();
