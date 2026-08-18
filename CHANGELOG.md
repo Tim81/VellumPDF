@@ -50,6 +50,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   negative, or exceeds 65535 no longer aborts the document either; it simply matches no real
   xref entry, the same outcome an ordinary mismatch already produces. (#121)
 
+- **An `/Encrypt` entry present only in a hybrid file's `XRefStm` dictionary is no longer
+  missed.** The classic-trailer check alone can't see it. ISO 32000-2 §7.5.8.4 permits a
+  hybrid-reference producer to put `/Encrypt` on the XRefStm dictionary instead, so such a file
+  parsed as if it were plain — producing garbage rather than `UnsupportedPdfFeatureException`.
+  (#183)
+- **A stream body that happens to contain the literal bytes `endstream` no longer truncates
+  there.** The endstream scan took the first occurrence with no check at all, so a binary stream
+  (an embedded font subset, a compressed image) that contained those nine bytes lost everything
+  past them, silently. It now prefers a candidate whose following bytes look like `endobj` or the
+  next object's header, checked independently of whether an EOL precedes the marker — requiring
+  the EOL first sent an earlier version of this fix past a real but non-conformant terminator into
+  a later object's, silently absorbing everything in between. Falls back to an EOL-preceded match,
+  then to the first literal occurrence, so it can never do worse than the naive scan it replaces.
+  Bounded per stream so a file with many such streams can't turn recovery into quadratic work.
+  (#105)
+- **A `startxref` more than 2048 bytes from EOF is found again.** The backward search window was
+  too tight for a file padded after `%%EOF` (some producers reserve a byte-range window for a
+  signature added later); it's now 1 MiB. The search itself now scans backward from EOF too, so
+  its cost tracks how far back the marker actually is instead of paying for the full window on
+  every open. (#105)
+
 ## [2.0.0] - 2026-08-17
 
 The first major version since 1.0. Every package moves to 2.0.0 together, as usual.

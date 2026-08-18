@@ -599,6 +599,75 @@ public sealed class PdfObjectParserTests
     }
 
     [Fact]
+    public void ParsesStreamWithNoEolBeforeEndstream_FallsBackToScan()
+    {
+        // The producer omitted the EOL ISO 32000-2 §7.3.8.1 calls for between the stream data and
+        // 'endstream' — a real-world producer bug, not hostile input. The scan must still find it
+        // (matching the pre-#105 behaviour) rather than requiring the EOL and throwing. Regression
+        // guard: an earlier version of the hardened scan made the EOL mandatory with no fallback.
+        const string pdf = "1 0 obj\n<< /Length 999 >>\nstream\nBT (Hi) Tj ETendstream\nendobj";
+        var parser = Parser(pdf);
+        var result = parser.ParseIndirectObject();
+        Assert.True(result.IsStream);
+        Assert.Equal("BT (Hi) Tj ET", System.Text.Encoding.Latin1.GetString(result.Stream!.RawBody.Span));
+    }
+
+    [Fact]
+    public void ParsesStreamWithNoEolBeforeEndstream_DoesNotSwallowTheNextObject()
+    {
+        // Same missing-EOL body as above, but a second, well-formed stream object follows. An
+        // earlier version of the hardened scan rejected the first (real) 'endstream' outright for
+        // lacking a preceding EOL, then kept scanning and matched the SECOND object's 'endstream'
+        // instead — silently absorbing the first object's 'endobj', the second object's header, its
+        // dictionary, and its 'stream' keyword into the first object's body. What follows the
+        // marker ('endobj' here) must be checked regardless of what precedes it, so the first,
+        // correct 'endstream' wins.
+        const string pdf =
+            "1 0 obj\n<< /Length 999 >>\nstream\nBT (Hi) Tj ETendstream\nendobj\n" +
+            "5 0 obj\n<< /Length 5 >>\nstream\nAAAAA\nendstream\nendobj";
+        var parser = Parser(pdf);
+        var result = parser.ParseIndirectObject();
+        Assert.True(result.IsStream);
+        Assert.Equal("BT (Hi) Tj ET", System.Text.Encoding.Latin1.GetString(result.Stream!.RawBody.Span));
+
+        // The cursor must land right after the FIRST object's 'endstream', not somewhere inside
+        // (or past) the second object.
+        var expectedPos = pdf.IndexOf("endstream", StringComparison.Ordinal) + "endstream".Length;
+        Assert.Equal(expectedPos, parser.Position);
+    }
+
+    [Fact(Timeout = 10_000)]
+    public void ManyStreamsWithNoEolBeforeTheirOwnEndstream_DoesNotBecomeQuadratic()
+    {
+        // Every one of many streams lacks the EOL before its own 'endstream'. A scan that rejects
+        // an EOL-less candidate outright (see the two tests above) does not just pick the wrong
+        // terminator for one stream — for EVERY stream it walks forward into all the streams that
+        // follow before finding one whose own terminator happens to qualify, turning the whole
+        // parse into O(streamCount x fileSize). This must stay fast: each stream's own terminator
+        // should be found immediately since 'endobj' follows it directly. Each object is parsed
+        // from a fresh parser at its known offset — the point under test is ScanToEndstream's own
+        // cost, not whether ParseIndirectObject chains across an 'endobj' it doesn't consume.
+        const int streamCount = 2000;
+        var offsets = new int[streamCount];
+        var sb = new System.Text.StringBuilder();
+        for (var i = 0; i < streamCount; i++)
+        {
+            offsets[i] = sb.Length;
+            sb.Append(i).Append(" 0 obj\n<< /Length 999999 >>\nstream\n");
+            sb.Append("SOME BODY DATA HERE").Append(i); // no trailing EOL before 'endstream'
+            sb.Append("endstream\nendobj\n");
+        }
+        var bytes = System.Text.Encoding.ASCII.GetBytes(sb.ToString());
+
+        for (var i = 0; i < streamCount; i++)
+        {
+            var result = new PdfObjectParser(bytes, offsets[i]).ParseIndirectObject();
+            Assert.True(result.IsStream);
+            Assert.Equal($"SOME BODY DATA HERE{i}", System.Text.Encoding.ASCII.GetString(result.Stream!.RawBody.Span));
+        }
+    }
+
+    [Fact]
     public void StreamBodyCapturedVerbatim()
     {
         // Binary body with all-bytes-range (simulated with a known pattern)

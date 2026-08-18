@@ -66,17 +66,28 @@ internal sealed class XrefParser
     {
         var span = data.Span;
         // ISO 32000 does not bound the distance from EOF to the last 'startxref'; files with large
-        // trailers or trailing content after %%EOF place it further back, so scan a generous tail.
-        const int TailWindow = 2048;
+        // trailers, big /ID arrays, or padding after %%EOF (some producers pad the tail to reserve
+        // a byte-range window for a signature added later) place it further back than a small tail
+        // would reach. 2 KiB proved too tight in practice (#105); this is still a bounded backward
+        // scan, not a full-file one, so widen it generously.
+        const int TailWindow = 1 << 20; // 1 MiB
         var searchStart = Math.Max(0, span.Length - TailWindow);
         var searchSpan = span[searchStart..];
 
-        // Find the last occurrence of "startxref" in the tail of the file.
+        // Find the last occurrence of "startxref" in the tail of the file. Scan backward from the
+        // end of the window and stop at the first hit: both directions want the same answer (the
+        // occurrence nearest EOF), but scanning forward and keeping the last match — the previous
+        // version of this loop — pays the full window every time regardless of how close that
+        // occurrence actually is. A real file's last 'startxref' is typically tens of bytes from
+        // EOF, so scanning backward turns a fixed 1 MiB cost into O(distance to the match).
         var lastFound = -1;
-        for (var i = 0; i <= searchSpan.Length - StartxrefBytes.Length; i++)
+        for (var i = searchSpan.Length - StartxrefBytes.Length; i >= 0; i--)
         {
             if (searchSpan[i..].StartsWith(StartxrefBytes))
+            {
                 lastFound = i;
+                break;
+            }
         }
 
         if (lastFound < 0)
@@ -216,7 +227,20 @@ internal sealed class XrefParser
             // Avoid cycling into an already-processed offset, and record this one so a later /Prev
             // revision pointing at the same stream does not re-parse it.
             if (seenOffsets.Add(stmOffset))
-                ParseXrefStream(data, stmOffset, xref, freed, localFreed);
+            {
+                // #192 threads the per-revision free sets through; #183 needs the dictionary the
+                // stream returns.
+                var xrefStmDict = ParseXrefStream(data, stmOffset, xref, freed, localFreed);
+
+                // #183: in a hybrid-reference file the classic trailer above is the one callers see,
+                // but /Encrypt is only required to be *reachable* — ISO 32000-2 §7.5.8.4 permits a
+                // producer to put it on the XRefStm dictionary instead. Missing this let an encrypted
+                // hybrid file fall through as if it were plain, producing garbage rather than the
+                // clean UnsupportedPdfFeatureException every other /Encrypt path throws.
+                if (xrefStmDict.Get(new PdfName("Encrypt")) is not null)
+                    throw new UnsupportedPdfFeatureException(
+                        "Encryption is not supported yet (see VellumPdf issue #97).");
+            }
         }
 
         freed.UnionWith(localFreed);
