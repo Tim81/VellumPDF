@@ -53,10 +53,10 @@ public sealed class EncryptedFixtureCorpusTests
 
         var text = Encoding.Latin1.GetString(bytes);
         Assert.True(ContainsToken(text, "/Encrypt"), "no /Encrypt key found");
-        Assert.Contains($"/V {v}", text, StringComparison.Ordinal);
-        Assert.Contains($"/R {r}", text, StringComparison.Ordinal);
+        Assert.True(ContainsToken(text, $"/V {v}"), $"expected /V {v}");
+        Assert.True(ContainsToken(text, $"/R {r}"), $"expected /R {r}");
         if (cfm is not null)
-            Assert.Contains($"/CFM {cfm}", text, StringComparison.Ordinal);
+            Assert.True(ContainsToken(text, $"/CFM {cfm}"), $"expected /CFM {cfm}");
 
         // Every fixture grants all permissions. Pinned because the permission bits feed
         // Algorithm 2's key derivation, so a regenerated fixture that quietly narrowed them
@@ -108,18 +108,50 @@ public sealed class EncryptedFixtureCorpusTests
     [Fact]
     public void CleartextMetadataFixture_atR4_declaresTheFlag_andExposesXmp()
     {
-        // The R4 pair is the one that exercises Algorithm 2 step (f): with /EncryptMetadata false
-        // the padding gains a trailing 0xFFFFFFFF, which is why these two fixtures share an /O and
-        // differ in /U. The R6 pair above cannot show that — R6 derives its key differently.
+        // The R4 pair is the one that exercises ISO 32000-1 Algorithm 2 step (f): with
+        // /EncryptMetadata false, four bytes of 0xFFFFFFFF are passed to the MD5 hash on top of the
+        // step (a) padding, which is unchanged. That shifts the file encryption key, so /U differs.
+        // /O is identical for a separate reason: Algorithm 3 derives it from the passwords, /R and
+        // the key length alone and never sees the file encryption key. The R6 pair cannot show any
+        // of this — R6 derives its key differently, and both its /O and /U differ.
         var cleartext = Encoding.Latin1.GetString(Load("enc-aes-128-cleartextmd.pdf"));
+        var plainR4 = Encoding.Latin1.GetString(Load("enc-aes-128.pdf"));
         Assert.True(ContainsToken(cleartext, "/EncryptMetadata false"), "expected /EncryptMetadata false");
+        // Pin the shared /O, so the property the comment rests on is guarded rather than asserted in prose.
+        Assert.Equal(OwnerKey(plainR4), OwnerKey(cleartext));
+        Assert.NotEqual(UserKey(plainR4), UserKey(cleartext));
         Assert.Contains("xpacket", cleartext, StringComparison.Ordinal);
         Assert.DoesNotContain("xpacket", Encoding.Latin1.GetString(Load("enc-aes-128.pdf")), StringComparison.Ordinal);
     }
 
     /// <summary>
+    /// The hex string of <c>/O</c> or <c>/U</c>, read from the standard security handler's own
+    /// dictionary rather than from anywhere in the file: the surrounding bytes are ciphertext, and
+    /// a bare scan for "/O &lt;" could land in one. Anchoring on /Filter /Standard keeps it in the
+    /// dictionary. Not a parser — both entries are fixed-width hex in every committed fixture.
+    /// </summary>
+    private static string HexEntry(string text, string key)
+    {
+        var dict = text.IndexOf("/Filter /Standard", StringComparison.Ordinal);
+        Assert.True(dict >= 0, "no /Filter /Standard encryption dictionary found");
+        var i = text.IndexOf(key + " <", dict, StringComparison.Ordinal);
+        Assert.True(i >= 0, $"no {key} entry in the encryption dictionary");
+        var start = i + key.Length + 2;
+        var end = text.IndexOf('>', start);
+        Assert.True(end > start, $"unterminated {key} entry");
+        return text[start..end];
+    }
+
+    private static string OwnerKey(string text) => HexEntry(text, "/O");
+
+    private static string UserKey(string text) => HexEntry(text, "/U");
+
+    /// <summary>
     /// True when <paramref name="token"/> is followed by whitespace or a delimiter rather than by a
-    /// regular character, so it matches a whole PDF name or a name together with its complete value.
+    /// regular character. That anchors the token's tail only: the caller supplies any interior
+    /// separator literally, so "/P -4" matches just the single space qpdf writes, not the arbitrary
+    /// whitespace or comment ISO 32000-2 §7.2.3 also permits there. Every committed fixture uses the
+    /// single-space form, and the failure direction is a loud assertion, never a silent pass.
     /// Matching on a literal trailing space instead would let an encrypted file read as plaintext:
     /// ISO 32000-2 §7.2.3 allows any of six whitespace bytes after the key, and a dictionary or name
     /// value needs none at all. Leaving it unanchored would let "/P -44" satisfy "/P -4".

@@ -17,22 +17,26 @@ normalized through qpdf so that **encryption is the only delta** between it and 
 qpdf GoldenTests.StandardFont_rawBytes.verified.pdf plaintext-baseline.pdf
 ```
 
-**That command does not reproduce the committed file, and re-running it will break the suite.**
-qpdf regenerates the second `/ID` array element on every invocation, so two consecutive runs differ
-from each other and from what is checked in — measured here as 30 differing bytes inside the same
-1684-1715 region the encrypted fixtures vary in. The command records *provenance*; the digest in
+**That command does not reproduce the committed file.** qpdf regenerates the second `/ID` array
+element on every invocation, so two consecutive runs differ from each other and from what is checked
+in, across that whole 32-byte element. The command records *provenance*; the digest in
 `EncryptedFixtureCorpusTests` is what identifies the file.
 
-Regenerating the baseline is therefore not a local change. Every encrypted fixture is built by
-encrypting *this* file, so a new baseline invalidates all eight of them:
+Regenerating it costs less than it looks like it should. The second `/ID` is the only thing that
+changes, and that is exactly what the fixture procedure below already tolerates — so the eight
+encrypted fixtures still decrypt to a regenerated baseline, and do **not** need rebuilding. Measured:
+each of the eight decrypts to within that one element of a freshly generated baseline.
+
+So the whole procedure is:
 
 1. Regenerate the baseline with the command above.
-2. Regenerate all eight encrypted fixtures from it, using the matrix commands below.
-3. Recompute all nine digests with `sha256sum *.pdf` and update the table.
-4. Re-run `dotnet test` on `VellumPdf.Reader.Tests`.
+2. Recompute its digest with `sha256sum plaintext-baseline.pdf` and update the literal in
+   `PlaintextBaseline_isPresent_andNotEncrypted`.
+3. Re-run `dotnet test` on `VellumPdf.Reader.Tests`.
 
-Skipping step 2 leaves fixtures that decrypt to the *old* baseline, which fails the decrypt-to-baseline
-check in step 3 of the fixture procedure below — the intended outcome, but an expensive way to find out.
+Rebuilding the eight fixtures from the new baseline is optional tidiness, and nothing enforces it
+either way. Note that nothing checks the decrypt-to-baseline property automatically yet; that arrives
+with #97.
 
 ## The matrix
 
@@ -120,7 +124,9 @@ To legitimately replace a fixture:
    **the permission list**, which is what catches a fixture regenerated with narrowed permissions.
 3. Confirm it still decrypts to the baseline: `qpdf --password=u --decrypt <file> out.pdf`, then diff
    against `plaintext-baseline.pdf` and check every difference falls inside the second `/ID` element.
-4. Recompute all eight digests with `sha256sum *.pdf` and update the table.
+4. Recompute the digests with `sha256sum *.pdf` — it prints nine, the eight fixtures plus the
+   baseline. The eight belong in the `Fixture_isExactlyTheFileItClaimsToBe` inline data; the
+   baseline's is a separate literal in its own test, not in the matrix table above.
 
 Steps 2 and 3 catch different things, and neither covers the other.
 
