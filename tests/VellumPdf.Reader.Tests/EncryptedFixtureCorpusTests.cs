@@ -127,15 +127,20 @@ public sealed class EncryptedFixtureCorpusTests
     /// <summary>
     /// The hex string of <c>/O</c> or <c>/U</c>, read from the standard security handler's own
     /// dictionary rather than from anywhere in the file: the surrounding bytes are ciphertext, and
-    /// a bare scan for "/O &lt;" could land in one. Anchoring on /Filter /Standard keeps it in the
-    /// dictionary. Not a parser — both entries are fixed-width hex in every committed fixture.
+    /// a bare scan for "/O &lt;" could land in one. /Filter /Standard bounds the search below and the
+    /// dictionary's own &gt;&gt; bounds it above, so a fixture that omitted the entry fails loudly here
+    /// rather than matching something later in the file. The upper bound relies on qpdf writing keys
+    /// sorted, which puts /CF and its nested &gt;&gt; ahead of /Filter; verified for all eight fixtures. Not a parser — both entries are
+    /// fixed-width hex in every committed fixture.
     /// </summary>
     private static string HexEntry(string text, string key)
     {
         var dict = text.IndexOf("/Filter /Standard", StringComparison.Ordinal);
         Assert.True(dict >= 0, "no /Filter /Standard encryption dictionary found");
+        var dictEnd = text.IndexOf(">>", dict, StringComparison.Ordinal);
+        Assert.True(dictEnd > dict, "unterminated encryption dictionary");
         var i = text.IndexOf(key + " <", dict, StringComparison.Ordinal);
-        Assert.True(i >= 0, $"no {key} entry in the encryption dictionary");
+        Assert.True(i >= 0 && i < dictEnd, $"no {key} entry in the encryption dictionary");
         var start = i + key.Length + 2;
         var end = text.IndexOf('>', start);
         Assert.True(end > start, $"unterminated {key} entry");

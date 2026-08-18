@@ -125,8 +125,9 @@ To legitimately replace a fixture:
 3. Confirm it still decrypts to the baseline: `qpdf --password=u --decrypt <file> out.pdf`, then diff
    against `plaintext-baseline.pdf` and check every difference falls inside the second `/ID` element.
 4. Recompute the digests with `sha256sum *.pdf` — it prints nine, the eight fixtures plus the
-   baseline. The eight belong in the `Fixture_isExactlyTheFileItClaimsToBe` inline data; the
-   baseline's is a separate literal in its own test, not in the matrix table above.
+   baseline. The eight belong in the `Corpus` table that drives
+   `Fixture_isExactlyTheFileItClaimsToBe`; the baseline's is a separate literal in its own test.
+   Neither lives in the matrix table above.
 
 Steps 2 and 3 catch different things, and neither covers the other.
 
