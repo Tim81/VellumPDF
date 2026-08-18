@@ -48,6 +48,15 @@ internal sealed class XrefParser
         // Object numbers a newer revision recorded as free. Revisions are walked newest-first below,
         // so an older revision's entry for the same object must not resurrect it via xref.TryAdd —
         // a freed object is a deletion, not a fallback to whatever the object used to be.
+        //
+        // This removes a recovery behaviour some producers relied on: a tool that writes a full
+        // "0 N" subsection on every incremental update, marking every untouched object 'f' instead
+        // of only the ones it actually freed, used to have those spurious frees silently overridden
+        // by xref.TryAdd resurrecting the real (older-revision) entry. Under this stricter tracking
+        // they are treated as genuine deletions and disappear instead. No real-world fixture
+        // exhibiting this has been found; if one turns up, PR #193's xref-rebuild fallback (for
+        // structurally broken xref tables) is the natural place to also recover a spuriously-freed
+        // object, since both cases end with "the xref lied about this object, fall back to scanning".
         var freed = new HashSet<int>();
         var (trailer, revisions) = ParseRevisionChain(data, startxrefOffset, xref, freed);
         return (xref, trailer, startxrefOffset, revisions);
