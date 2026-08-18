@@ -163,11 +163,16 @@ internal static class IncrementalCrossReferenceBuilder
 
     private static void Write5Digits(PdfWriter w, int n)
     {
-        // A generation this builder is asked to write always comes from a reference or xref
-        // entry this reader already accepted (ArgumentOutOfRangeException.ThrowIfNegative in
-        // PdfIndirectReference's constructor rules out negative; a legitimate xref-recorded
-        // generation is bounded by the 5-digit field it was read from). 99999 is the field's
-        // own ceiling — the same ceiling the value being re-emitted here was already read within.
+        // Unreachable through DssBuilder/ArchiveTimestampBuilder as things stand: both thread only
+        // a PdfIndirectReference.Generation parsed off the source document, and the parser caps
+        // that at the ISO 32000-2 §7.5.4 ceiling of 65535 (PdfObjectParser.ParseGenerationLenient) —
+        // well inside the 5-digit field's own 99999 ceiling checked below. A document whose /Root
+        // reference names a larger generation fails to open at all (PdfDocumentReader's constructor
+        // requires /Root to resolve), so no caller ever reaches AppendRevision with one. Kept as a
+        // guard rather than an assertion: AppendRevision's parameter is a public-facing (int, int,
+        // PdfObject) triple, so a caller that builds one by hand — not through a parsed reference —
+        // can still ask for a generation this field cannot hold, and a clear exception naming the
+        // field's own limit beats a truncated or wrapped write.
         if (n is < 0 or > 99_999)
             throw new NotSupportedException(
                 $"Generation {n} does not fit the 5-digit xref field (0–99999).");

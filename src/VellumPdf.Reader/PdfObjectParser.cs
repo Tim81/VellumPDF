@@ -579,18 +579,27 @@ internal sealed class PdfObjectParser
     /// <summary>
     /// Parses a reference's generation without throwing: unlike <see cref="ParseObjectNumber"/>,
     /// a value that doesn't fit an <see cref="int"/> here has nothing to alias onto, so falling
-    /// back to <see cref="int.MaxValue"/> — a generation no real xref entry will ever actually
-    /// record — is enough to guarantee the reference cannot match one, including a value too large
-    /// even for <see cref="long"/>, which <see cref="long.TryParse(string, NumberStyles, IFormatProvider, out long)"/>
-    /// simply reports as unparseable rather than throwing. Saturating at <c>int.MaxValue</c> instead
-    /// of a negative sentinel keeps this a value <see cref="PdfIndirectReference"/>'s constructor
-    /// will actually accept.
+    /// back to <see cref="int.MaxValue"/> is enough to guarantee the reference cannot match a real
+    /// xref entry, including a value too large even for <see cref="long"/>, which
+    /// <see cref="long.TryParse(string, NumberStyles, IFormatProvider, out long)"/> simply reports
+    /// as unparseable rather than throwing.
+    ///
+    /// Also saturates anything above 65535 (ISO 32000-2 §7.5.4's ceiling on a generation number),
+    /// not merely a true overflow: an xref entry can never legitimately hold more than that either
+    /// (XrefParser routes such a field to <see cref="XrefEntry.UnknownGeneration"/>), so without
+    /// this a reference whose own token names an in-range-for-int but out-of-spec generation could
+    /// still round-trip through the object's header once the xref stopped being authoritative for
+    /// it — reachable end to end through <c>AppendRevision</c>, which only widens as far as the
+    /// 5-digit xref field it writes (<see cref="VellumPdf.IO.IncrementalCrossReferenceBuilder"/>).
+    ///
+    /// Saturating at <c>int.MaxValue</c> rather than a negative sentinel keeps this a value
+    /// <see cref="PdfIndirectReference"/>'s constructor will actually accept.
     /// </summary>
     private static int ParseGenerationLenient(ReadOnlyMemory<byte> raw)
     {
         var s = Encoding.Latin1.GetString(raw.Span);
         if (!long.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out var v)
-            || v is < 0 or > int.MaxValue)
+            || v is < 0 or > 65535)
             return int.MaxValue;
         return (int)v;
     }

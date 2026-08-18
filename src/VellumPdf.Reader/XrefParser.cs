@@ -287,15 +287,20 @@ internal sealed class XrefParser
                     // Lenient, unlike the offset field above: the generation field was never read
                     // before this PR, so a file that is sloppy here (space-padded rather than
                     // zero-padded, e.g.) used to open cleanly and must keep opening cleanly. Allow
-                    // surrounding whitespace and a sign. But a value that is still unparseable or
-                    // negative is not the same thing as a legitimate generation 0 — guessing 0 would
-                    // make an object at, say, generation 3 silently unresolvable at every generation
-                    // instead of merely failing the (correct) mismatch it would otherwise hit. Record
-                    // it as unknown instead and let PdfDocumentReader fall back to the object's own
-                    // header, which the xref field cannot corrupt.
+                    // surrounding whitespace and a sign. But a value that is still unparseable,
+                    // negative, or exceeds the ISO 32000-2 §7.5.4 ceiling of 65535 is not the same
+                    // thing as a legitimate generation 0 — guessing 0 would make an object at, say,
+                    // generation 3 silently unresolvable at every generation instead of merely
+                    // failing the (correct) mismatch it would otherwise hit, and letting a value
+                    // above 65535 through would mean this field can hold a generation no reference
+                    // token can ever legitimately carry (PdfObjectParser.ParseGenerationLenient
+                    // saturates at the same ceiling), reopening the aliasing risk the object-number
+                    // half of this parser is careful to avoid. Record it as unknown instead and let
+                    // PdfDocumentReader fall back to the object's own header, which this field
+                    // cannot corrupt.
                     var genStr = Encoding.ASCII.GetString(entry[11..16]);
                     if (!int.TryParse(genStr, NumberStyles.Integer, CultureInfo.InvariantCulture,
-                            out var objGeneration) || objGeneration < 0)
+                            out var objGeneration) || objGeneration is < 0 or > 65535)
                         objGeneration = XrefEntry.UnknownGeneration;
 
                     // Newest revision wins: skip an object a newer revision already freed.
@@ -414,13 +419,21 @@ internal sealed class XrefParser
                 {
                     case 1:
                         // field2 is a byte offset into the file, field3 the generation. A /W width
-                        // up to 8 bytes can produce a generation that overflows int; lenient here,
-                        // unlike the offset check just below — this field was never read before this
-                        // PR, so a row that is merely odd here must not newly turn a previously
-                        // openable document into a hard failure. An overflowing value is recorded as
-                        // unknown, not clamped to 0 (see the classic-table generation field above for
-                        // why guessing is worse than admitting the xref doesn't know).
-                        var objGeneration = field3 is >= 0 and <= int.MaxValue
+                        // up to 8 bytes can hold a generation far past both int range and the ISO
+                        // 32000-2 §7.5.4 ceiling of 65535 — lenient here, unlike the offset check just
+                        // below, since this field was never read before this PR and a row that is
+                        // merely odd here must not newly turn a previously openable document into a
+                        // hard failure. Capped at 65535, not merely at int range: letting a larger
+                        // but in-range value through would mean this field could hold a generation no
+                        // reference token can ever legitimately carry (PdfObjectParser.
+                        // ParseGenerationLenient saturates at the same ceiling), reopening the exact
+                        // aliasing risk the object-number half of that parser is careful to avoid —
+                        // and, in the other direction, a generation this large can never be written
+                        // back out through the 5-digit xref field IncrementalCrossReferenceBuilder
+                        // uses for an incremental update. Recorded as unknown, not clamped to 0 (see
+                        // the classic-table generation field above for why guessing is worse than
+                        // admitting the xref doesn't know).
+                        var objGeneration = field3 is >= 0 and <= 65535
                             ? (int)field3
                             : XrefEntry.UnknownGeneration;
                         if (field2 >= 0 && field2 < data.Length && !freed.Contains(objNum))

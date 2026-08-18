@@ -133,6 +133,59 @@ public sealed class GenerationNumberTests
     }
 
     /// <summary>
+    /// A single-revision xref-stream PDF (<c>/W [1 4 4]</c>) recording object 10 at generation
+    /// <see cref="int.MaxValue"/> (2147483647) — a value that fits a 4-byte field, so this is
+    /// exactly what a well-formed-looking xref stream could legitimately claim before the
+    /// ISO 32000-2 §7.5.4 ceiling of 65535 was enforced. Object 1's catalog carries
+    /// <c>/Extra 10 99999999999999999999 R</c> — a reference whose own generation token overflows
+    /// even <see cref="long"/> and so saturates to <see cref="int.MaxValue"/>
+    /// (<c>PdfObjectParser.ParseGenerationLenient</c>). Object 10's header says generation 0, so a
+    /// header-authority fallback cannot coincidentally rescue the match either.
+    /// </summary>
+    private static byte[] BuildXrefStreamWithGenerationAtIntMaxValuePdf()
+    {
+        var ms = new MemoryStream();
+        void Write(string s) => ms.Write(Encoding.ASCII.GetBytes(s));
+        void WriteBytes(byte[] b) => ms.Write(b);
+
+        static byte[] Row144(byte type, long offset, long generation)
+        {
+            var row = new byte[9]; // 1 (type) + 4 (offset) + 4 (generation)
+            row[0] = type;
+            row[1] = (byte)((offset >> 24) & 0xFF);
+            row[2] = (byte)((offset >> 16) & 0xFF);
+            row[3] = (byte)((offset >> 8) & 0xFF);
+            row[4] = (byte)(offset & 0xFF);
+            row[5] = (byte)((generation >> 24) & 0xFF);
+            row[6] = (byte)((generation >> 16) & 0xFF);
+            row[7] = (byte)((generation >> 8) & 0xFF);
+            row[8] = (byte)(generation & 0xFF);
+            return row;
+        }
+
+        Write("%PDF-1.7\n");
+        var o1 = (int)ms.Position;
+        Write("1 0 obj\n<< /Type /Catalog /Extra 10 99999999999999999999 R >>\nendobj\n");
+        var o10 = (int)ms.Position;
+        Write("10 0 obj\n<< /Marker /Hit >>\nendobj\n");
+
+        var body = new MemoryStream();
+        body.Write(Row144(0, 0, 0));            // obj 0: free
+        body.Write(Row144(1, o1, 0));            // obj 1: catalog
+        body.Write(Row144(1, o10, int.MaxValue)); // obj 10: generation == int.MaxValue
+        var o11 = (int)ms.Position;
+        body.Write(Row144(1, o11, 0));            // obj 11: this xref stream itself
+        var bodyArr = body.ToArray();
+
+        Write($"11 0 obj\n<< /Type /XRef /Size 12 /W [1 4 4] /Index [0 2 10 2] /Root 1 0 R /Length {bodyArr.Length} >>\nstream\n");
+        WriteBytes(bodyArr);
+        Write("\nendstream\nendobj\n");
+        Write($"startxref\n{o11}\n%%EOF\n");
+
+        return ms.ToArray();
+    }
+
+    /// <summary>
     /// A single-revision xref-stream PDF with an 8-byte generation field (<c>/W [1 4 8]</c>) whose
     /// value for object 10 overflows <see cref="int"/> — a row this parser never inspected before
     /// this PR, so an odd-but-decodable value here must not newly abort the whole document.
@@ -639,5 +692,31 @@ public sealed class GenerationNumberTests
         var dict = Assert.IsType<PdfDictionary>(resolved);
         var marker = Assert.IsType<PdfName>(dict.Get(new PdfName("Marker")));
         Assert.Equal("Hit", marker.Value);
+    }
+
+    [Fact]
+    public void XrefStream_type1_generationAtIntMaxValue_outOfRangeReferenceDoesNotResolve()
+    {
+        // Regression: saturating a reference's out-of-range generation at int.MaxValue
+        // (ParseGenerationLenient) reintroduces aliasing unless no real xref entry can ever
+        // legitimately hold int.MaxValue either. Before capping the xref-recorded generation at
+        // the ISO 32000-2 §7.5.4 ceiling of 65535, an xref stream could record an entry at
+        // literally int.MaxValue (fits a 4-byte /W field), and a reference whose own token
+        // overflowed even long collapsed onto that same saturated value — resolving to an object
+        // no other reader would ever reach through that reference.
+        var bytes = BuildXrefStreamWithGenerationAtIntMaxValuePdf();
+        using var reader = PdfReader.Open(bytes);
+
+        var extraRef = Assert.IsType<PdfIndirectReference>(reader.Catalog.Get(new PdfName("Extra")));
+        Assert.Equal(int.MaxValue, extraRef.Generation); // saturated by ParseGenerationLenient
+
+        // The bug: this used to resolve, because the xref recorded object 10 at literally
+        // int.MaxValue and the saturated reference collapsed onto the same value.
+        Assert.Null(reader.ResolveValue(extraRef));
+
+        // Control: the same out-of-range reference against an ordinary object must also fail to
+        // resolve — included so this test cannot pass vacuously because nothing resolves at all.
+        Assert.Null(reader.Resolve(new PdfIndirectReference(1, int.MaxValue)));
+        Assert.NotNull(reader.Resolve(1)); // the catalog itself still resolves, generation-agnostic
     }
 }
