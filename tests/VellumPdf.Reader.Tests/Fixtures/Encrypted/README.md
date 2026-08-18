@@ -1,7 +1,7 @@
 # Encrypted reader fixtures
 
-Generated once with qpdf and checked in, rather than generated at test time. CI runs qpdf 11.9.0
-(ubuntu-24.04 apt) while local development uses 12.3.2; checking the files in makes the corpus
+Generated once with qpdf and checked in, rather than generated at test time. CI installs qpdf from apt on `ubuntu-latest` (11.9.0 at the time of writing, but nothing pins it)
+while local development uses 12.3.2; checking the files in makes the corpus
 byte-identical everywhere and keeps qpdf out of the test-execution path, so there is no
 `GateOnCi` skip hole on the core corpus.
 
@@ -43,14 +43,20 @@ on 256-bit encryption.
 
 Two assertions, in this order:
 
-1. **Prove the fixture carries the feature** before trusting any decrypt result — confirm `/V` and `/R`
-   via `qpdf --password=u --show-encryption`, rather than assuming the filename is accurate.
+1. **Prove the fixture carries the feature** before trusting any decrypt result. `--show-encryption`
+   reports `R`, `P` and the per-stream/string method, but **not** `/V` — for that use
+   `qpdf --password=u --show-object=trailer` or `--json`, or read the `/Encrypt` dictionary directly.
+   `EncryptedFixtureCorpusTests` pins each fixture by SHA-256 as well as `/V`, `/R` and `/CFM`, because
+   `enc-aes-128` and `enc-rc4-128-v4` are both `/V 4 /R 4` and differ only in `/CFM` — swapping them
+   is otherwise invisible.
 2. **Compare decrypted output to `plaintext-baseline.pdf`.** `qpdf --password=u --decrypt` on all seven
-   fixtures reproduces the baseline byte-for-byte **except 27 bytes in the second `/ID` array element**,
-   which qpdf regenerates; the first element is preserved. So the known-answer test can pin whole-file
-   bytes with that one element normalized, which is a far tighter net than comparing decoded streams
-   alone — and it is version-skew-immune, because it compares our output against a checked-in baseline
-   rather than against whatever qpdf emits at test time.
+   fixtures reproduces the baseline byte-for-byte **except the second `/ID` array element**, which qpdf
+   regenerates on every invocation; the first element is preserved.
+
+   Normalize that whole element — all 32 hex digits, at bytes 1684-1715 of the 1743-byte baseline. Do
+   **not** write a known-answer test that tolerates a fixed *number* of differing bytes: two random
+   16-byte IDs collide in a byte or two by chance, so the count varies per run (29 to 32 observed) even
+   though the region never does.
 
 `enc-256-cleartextmd.pdf` is externally checkable too: `xpacket` appears in its raw bytes and does not
 appear in `enc-aes-256-r6.pdf`.

@@ -2,66 +2,100 @@
 // SPDX-License-Identifier: Apache-2.0
 
 using System.Reflection;
+using System.Security.Cryptography;
 using System.Text;
 
 namespace VellumPdf.Reader.Tests;
 
 /// <summary>
-/// Guards the checked-in encrypted corpus (#99) itself, before anything tries to decrypt it.
+/// Guards the committed encrypted corpus (#99) itself, before anything tries to decrypt it.
 /// qpdf refuses to write RC4 without <c>--allow-weak-crypto</c> and still leaves a zero-byte file
-/// behind, so a corpus can look complete on disk while three of its seven entries are empty. These
-/// assertions fail loudly in that case rather than letting a decrypt test "pass" against nothing.
+/// behind, so a corpus can look complete on disk while three of its seven entries are empty.
+///
+/// The digest is what actually pins each fixture: it subsumes non-emptiness, truncation, and — the
+/// case a <c>/V</c>+<c>/R</c> check cannot see — two fixtures being swapped for each other.
+/// <c>enc-aes-128</c> and <c>enc-rc4-128-v4</c> are both <c>/V 4 /R 4</c> and differ only in
+/// <c>/CFM</c>, which is exactly the AES-versus-RC4 confusion the decrypt work most needs pinned.
 /// </summary>
 public sealed class EncryptedFixtureCorpusTests
 {
-    public static TheoryData<string, int, int> Fixtures => new()
+    // file, /V, /R, /CFM (null where V < 4 predates crypt filters), SHA-256
+    private static readonly (string Name, int V, int R, string? Cfm, string Sha256)[] Corpus =
+    [
+        ("enc-rc4-40.pdf", 1, 2, null, "c913f7ee3ee41200bc2b166f3f6e472c61825085b85ff081d5a00b2670669705"),
+        ("enc-rc4-128.pdf", 2, 3, null, "e303cd643459fff8455a8812104c3f55ce71d922c0ab8e109f9eb703daba0386"),
+        ("enc-rc4-128-v4.pdf", 4, 4, "/V2", "9be805936ef595bafb8396272a546acc5d183579449cef640adbde8932e5d413"),
+        ("enc-aes-128.pdf", 4, 4, "/AESV2", "c525e277fdbfb1d332eda71df6f9894c80d1a11b34512967a44df1d81fd14f9a"),
+        ("enc-aes-256-r5.pdf", 5, 5, "/AESV3", "ce74060cbc4056fd125a2a40efcdade2f684f38284e1aa6b5d694299d6c56df8"),
+        ("enc-aes-256-r6.pdf", 5, 6, "/AESV3", "af3ed586e3246d51523f6b546d9c9fb3e896d5968e283c4305b1dba2b7f361d6"),
+        ("enc-256-cleartextmd.pdf", 5, 6, "/AESV3", "4ed43c7731177823ce3dd6a6dc072f9a1029cbfd1126b0f2c474cfc7988f326f"),
+    ];
+
+    private const string BaselineName = "plaintext-baseline.pdf";
+
+    public static TheoryData<string, int, int, string?, string> Fixtures
     {
-        // file, expected /V, expected /R
-        { "enc-rc4-40.pdf", 1, 2 },
-        { "enc-rc4-128.pdf", 2, 3 },
-        { "enc-rc4-128-v4.pdf", 4, 4 },
-        { "enc-aes-128.pdf", 4, 4 },
-        { "enc-aes-256-r5.pdf", 5, 5 },
-        { "enc-aes-256-r6.pdf", 5, 6 },
-        { "enc-256-cleartextmd.pdf", 5, 6 },
-    };
+        get
+        {
+            var data = new TheoryData<string, int, int, string?, string>();
+            foreach (var (name, v, r, cfm, sha) in Corpus) data.Add(name, v, r, cfm, sha);
+            return data;
+        }
+    }
 
     [Theory]
     [MemberData(nameof(Fixtures))]
-    public void Fixture_isPresent_nonEmpty_andDeclaresTheExpectedVandR(string name, int expectedV, int expectedR)
+    public void Fixture_isExactlyTheFileItClaimsToBe(string name, int v, int r, string? cfm, string sha256)
     {
         var bytes = Load(name);
-
-        // The zero-byte trap: a qpdf refusal leaves the file created but empty.
-        Assert.True(bytes.Length > 1000, $"{name} is {bytes.Length} bytes — qpdf likely refused to write it.");
+        Assert.Equal(sha256, Convert.ToHexStringLower(SHA256.HashData(bytes)));
 
         var text = Encoding.Latin1.GetString(bytes);
-        Assert.Contains("/Encrypt", text, StringComparison.Ordinal);
-        Assert.Contains($"/V {expectedV}", text, StringComparison.Ordinal);
-        Assert.Contains($"/R {expectedR}", text, StringComparison.Ordinal);
+        // Anchored on the space so /EncryptMetadata cannot satisfy the /Encrypt check.
+        Assert.Contains("/Encrypt ", text, StringComparison.Ordinal);
+        Assert.Contains($"/V {v}", text, StringComparison.Ordinal);
+        Assert.Contains($"/R {r}", text, StringComparison.Ordinal);
+        if (cfm is not null)
+            Assert.Contains($"/CFM {cfm}", text, StringComparison.Ordinal);
     }
 
     [Fact]
     public void PlaintextBaseline_isPresent_andNotEncrypted()
     {
-        var bytes = Load("plaintext-baseline.pdf");
-        Assert.True(bytes.Length > 1000);
-        var text = Encoding.Latin1.GetString(bytes);
-        Assert.DoesNotContain("/Encrypt", text, StringComparison.Ordinal);
+        var bytes = Load(BaselineName);
+        Assert.Equal("886057c285e1f65d0ef39f43bae4367b1122f56295dbb5436c05108b1d3035ad",
+            Convert.ToHexStringLower(SHA256.HashData(bytes)));
+        Assert.DoesNotContain("/Encrypt ", Encoding.Latin1.GetString(bytes), StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The csproj embeds <c>Fixtures/Encrypted/*.pdf</c> by glob, so a fixture added to the folder
+    /// would otherwise ship untested — the theory above is driven by a hand-written list. Fail loudly
+    /// instead, naming what to add.
+    /// </summary>
+    [Fact]
+    public void EveryEmbeddedFixture_isCoveredByTheTheory()
+    {
+        var embedded = Assembly.GetExecutingAssembly().GetManifestResourceNames()
+            .Where(n => n.EndsWith(".pdf", StringComparison.Ordinal))
+            .ToHashSet(StringComparer.Ordinal);
+        var covered = Corpus.Select(f => f.Name)
+            .Append(BaselineName)
+            .ToHashSet(StringComparer.Ordinal);
+
+        Assert.Equal(covered.OrderBy(n => n, StringComparer.Ordinal),
+            embedded.OrderBy(n => n, StringComparer.Ordinal));
     }
 
     /// <summary>
     /// <c>--cleartext-metadata</c> must leave the XMP packet readable in the raw bytes; the R6 fixture
-    /// built without it must not. This is the read-side mirror of the writer defect in #182.
+    /// built without it must not. The read-side mirror of the writer defect in #182.
     /// </summary>
     [Fact]
     public void CleartextMetadataFixture_exposesXmp_whereTheR6FixtureDoesNot()
     {
-        var clear = Encoding.Latin1.GetString(Load("enc-256-cleartextmd.pdf"));
-        var opaque = Encoding.Latin1.GetString(Load("enc-aes-256-r6.pdf"));
-
-        Assert.Contains("xpacket", clear, StringComparison.Ordinal);
-        Assert.DoesNotContain("xpacket", opaque, StringComparison.Ordinal);
+        Assert.Contains("xpacket", Encoding.Latin1.GetString(Load("enc-256-cleartextmd.pdf")), StringComparison.Ordinal);
+        Assert.DoesNotContain("xpacket", Encoding.Latin1.GetString(Load("enc-aes-256-r6.pdf")), StringComparison.Ordinal);
     }
 
     private static byte[] Load(string name)
