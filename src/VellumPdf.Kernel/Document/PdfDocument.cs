@@ -496,7 +496,11 @@ public sealed class PdfDocument : IDisposable
     /// <exception cref="ObjectDisposedException">The document has been disposed.</exception>
     /// <exception cref="ArgumentNullException"><paramref name="destination"/> is <see langword="null"/>.</exception>
     /// <exception cref="NotSupportedException"><see cref="UseObjectStreams"/> is combined with <see cref="Encrypt"/>.</exception>
-    /// <exception cref="InvalidOperationException">A PDF/A <see cref="Conformance"/> is set together with <see cref="Encrypt"/>.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// A PDF/A <see cref="Conformance"/> is set together with <see cref="Encrypt"/>, or
+    /// <see cref="Conformance"/> is <see cref="PdfConformance.PdfUA1"/> together with
+    /// <see cref="Encrypt"/> settings that omit <see cref="PdfPermissions.Extract"/>.
+    /// </exception>
     public void Save(Stream destination)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -515,11 +519,32 @@ public sealed class PdfDocument : IDisposable
                 "Object-stream encryption is not supported. Remove one of these options.");
 
         // PDF/A prohibits encryption (ISO 19005-2 §6.3.1). Fail fast rather than emit
-        // a document that claims conformance but can never validate.
-        if (Conformance != PdfConformance.None && _encryptionSettings is not null)
+        // a document that claims conformance but can never validate. PDF/UA-1 is a
+        // separate conformance family (ISO 14289-1) with no such prohibition, so it gets
+        // its own check below instead. Written as "not (None or PdfUA1)" rather than an
+        // allow-list of the PDF/A members: the allow-list reads the same today, but it is
+        // fail-open against a future PdfConformance case (e.g. PdfA3b) that would fall
+        // through both this guard and the PDF/UA-1 one below undetected.
+        if (Conformance is not (PdfConformance.None or PdfConformance.PdfUA1)
+            && _encryptionSettings is not null)
             throw new InvalidOperationException(
                 "PDF/A prohibits encryption (ISO 19005-2 §6.3.1). " +
                 "Remove Encrypt() or clear Conformance before calling Save().");
+
+        // PDF/UA-1 does not prohibit encryption, but it requires that content remain
+        // extractable for assistive technology (ISO 14289-1 §7.16, carried by the
+        // /P bit 10 = PdfPermissions.Extract per ISO 32000-2 Table 22). Reject rather
+        // than silently force the bit on: PdfEncryptionSettings.Permissions defaults to
+        // All (which already includes Extract), so this only fires when the caller made
+        // an explicit, narrower permission choice — overriding that choice for them would
+        // trade one silent defect (unreadable by assistive tech) for another (a permission
+        // set that doesn't match what was requested).
+        if (Conformance == PdfConformance.PdfUA1
+            && _encryptionSettings is { } uaEncryptionSettings
+            && (uaEncryptionSettings.Permissions & PdfPermissions.Extract) == 0)
+            throw new InvalidOperationException(
+                "PDF/UA-1 requires content extraction for assistive technology (ISO 14289-1 §7.16). " +
+                "Add PdfPermissions.Extract to PdfEncryptionSettings.Permissions before calling Save().");
 
         if (Linearize && UseObjectStreams)
             throw new NotSupportedException(
@@ -855,7 +880,7 @@ public sealed class PdfDocument : IDisposable
             // PdfDictionary, which never calls the encryptor directly — its children
             // (PdfHexString values) do. We disable the encryptor for those writes by
             // temporarily patching writer.Encryptor inside WriteAllWithEncryptExempt.
-            WriteAllWithEncryptExempt(writer, xref, registry, encryptRef);
+            WriteAllWithEncryptExempt(writer, xref, registry, encryptRef, metadataRef, _encryptionSettings);
 
             // ── Cross-reference table + trailer ───────────────────────────────
             // Trailer /ID must NOT be encrypted. Ensure encryptor is null during trailer write.
@@ -879,7 +904,11 @@ public sealed class PdfDocument : IDisposable
     /// <exception cref="ObjectDisposedException">The document has been disposed.</exception>
     /// <exception cref="ArgumentNullException"><paramref name="destination"/> is <see langword="null"/>.</exception>
     /// <exception cref="NotSupportedException"><see cref="UseObjectStreams"/> is combined with <see cref="Encrypt"/>.</exception>
-    /// <exception cref="InvalidOperationException">A PDF/A <see cref="Conformance"/> is set together with <see cref="Encrypt"/>.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// A PDF/A <see cref="Conformance"/> is set together with <see cref="Encrypt"/>, or
+    /// <see cref="Conformance"/> is <see cref="PdfConformance.PdfUA1"/> together with
+    /// <see cref="Encrypt"/> settings that omit <see cref="PdfPermissions.Extract"/>.
+    /// </exception>
     public async Task SaveAsync(Stream destination, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(destination);
@@ -1401,16 +1430,22 @@ public sealed class PdfDocument : IDisposable
     /// <summary>
     /// Writes all registered indirect objects, temporarily disabling the encryptor
     /// for the /Encrypt object's slot (its data is already computed encrypted values —
-    /// they must NOT be double-encrypted).
+    /// they must NOT be double-encrypted) and, when requested, for the metadata stream.
     ///
     /// The /Encrypt dict contains PdfHexString values that would normally go through
     /// the encryptor if it is active. We disable the encryptor just for that one object.
+    ///
+    /// ISO 32000-2 §7.6.2: when /EncryptMetadata is false, the metadata stream itself
+    /// shall not be encrypted (some indexers and preview tools read /Metadata without
+    /// decrypting). The same per-object disable used for /Encrypt exempts /Metadata too.
     /// </summary>
     private static void WriteAllWithEncryptExempt(
         PdfWriter writer,
         CrossReferenceBuilder xref,
         PdfObjectRegistry registry,
-        PdfIndirectReference? encryptRef)
+        PdfIndirectReference? encryptRef,
+        PdfIndirectReference metadataRef,
+        PdfEncryptionSettings? encryptionSettings)
     {
         if (encryptRef is null)
         {
@@ -1419,10 +1454,14 @@ public sealed class PdfDocument : IDisposable
             return;
         }
 
+        var exemptMetadata = encryptionSettings is { EncryptMetadata: false };
+
         registry.WriteAll(writer, xref, objectNumber =>
         {
-            // Disable the encryptor while writing the /Encrypt dict itself.
-            if (objectNumber == encryptRef.ObjectNumber)
+            // Disable the encryptor while writing the /Encrypt dict itself, or — when
+            // /EncryptMetadata is false — while writing the metadata stream's body.
+            if (objectNumber == encryptRef.ObjectNumber
+                || (exemptMetadata && objectNumber == metadataRef.ObjectNumber))
             {
                 var saved = writer.Encryptor;
                 writer.Encryptor = null;

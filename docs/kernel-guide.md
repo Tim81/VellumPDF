@@ -528,11 +528,18 @@ doc.Save(stream);
 | `UserPassword` | `string?` | Password required to open the file |
 | `OwnerPassword` | `string?` | Defaults to `UserPassword` when null |
 | `Permissions` | `PdfPermissions` | Flags: `Print`, `Modify`, `Copy`, `Annotate`, `FillForms`, `Extract`, `Assemble`, `PrintHighRes`, `All`, `None` |
-| `EncryptMetadata` | `bool` | Whether to encrypt the XMP metadata stream (default `true`) |
+| `EncryptMetadata` | `bool` | `false` leaves the whole XMP metadata stream as cleartext even though the rest of the document is encrypted: title, author, subject, language, creator tool, producer, and the creation and modification dates (default `true`) |
 
 **Guard:** encryption is incompatible with PDF/A.  Setting both
 `doc.Conformance = PdfConformance.PdfA2b` (or any PDF/A level) and calling
 `doc.Encrypt(...)` will be caught at save time.
+
+**PDF/UA-1 is different:** ISO 14289-1 does not prohibit encryption, so
+`Conformance = PdfConformance.PdfUA1` combined with `Encrypt(...)` is allowed.
+It has its own, narrower guard instead — `PdfPermissions.Extract` must be
+included in `Permissions` (the default, `All`, already includes it), because
+ISO 14289-1 §7.16 requires that assistive technology can still extract
+content from an encrypted, accessible document.
 
 ---
 
@@ -606,7 +613,9 @@ their `/Resources` dictionary.
 `ArgumentException`.  Validate computed values before converting to PDF.
 
 **PDF/A and encryption are mutually exclusive.**  Attempting both triggers a
-guard at save time.
+guard at save time. **PDF/UA-1 and encryption are not** — but the
+`Permissions` set on `Encrypt(...)` must include `PdfPermissions.Extract`, or
+the save is rejected instead of silently emitting a non-conformant file.
 
 **Standard-14 fonts are not embedded.**  For PDF/A or environments where
 viewers may not have the built-in fonts installed, use

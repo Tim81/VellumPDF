@@ -17,6 +17,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   Generation)` rather than `new(ObjectNumber)`, unobservable unless the object was built through
   the new three-argument constructor. See Fixed, below, for why. (#121)
 
+- **Encrypted documents now emit different `/P` and `/Perms` bytes.** Two reserved bits that
+  ISO 32000-2 Table 22 requires set for R >= 3 were always emitted as 0; they are forced on now,
+  so a byte-for-byte diff against a document encrypted with an earlier version will show this on
+  every encrypted output. Permissions actually granted are unaffected. See Fixed, below, for why.
+  (#189)
+
+- **`EncryptMetadata = false` now genuinely leaves the metadata stream unencrypted.** If you
+  already set this to false, upgrading changes what your output exposes: the whole XMP packet
+  becomes readable without the password — `dc:title`, `dc:creator`, `dc:description`,
+  `dc:language`, `xmp:CreatorTool`, `pdf:Producer`, and the creation and modification dates.
+  See Fixed, below, for why. (#182)
+
 ### Fixed
 
 - **A reference's generation number is honoured instead of discarded.** `PdfIndirectReference`
@@ -70,6 +82,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   signature added later); it's now 1 MiB. The search itself now scans backward from EOF too, so
   its cost tracks how far back the marker actually is instead of paying for the full window on
   every open. (#105)
+
+- **`/P` bits 7-8 are now set, as ISO 32000-2 Table 22 requires for R >= 3.** `PdfPermissions`
+  has no flag at `1 << 6` / `1 << 7` — the enum goes straight from `Annotate` to `FillForms` —
+  so those two reserved bits were always emitted as 0 regardless of the comment above the code
+  claiming otherwise. **This changes the `/P` and `/Perms` bytes emitted for every encrypted
+  document** (`/Perms` wraps `/P`, so it moves too); a diff against a document encrypted with an
+  earlier version will show this. Permissions actually granted are unaffected. (#189)
+- **Encrypting a PDF/UA-1 document no longer fails with a PDF/A error.** The `Save()` guard
+  tested `Conformance != PdfConformance.None`, so PDF/UA-1 (ISO 14289-1, which has no rule
+  against encryption) was rejected under a message that named ISO 19005-2 §6.3.1, a clause it
+  isn't subject to. PDF/UA-1 now has its own check instead: encrypting with permissions that
+  omit content extraction (`PdfPermissions.Extract`) is rejected, because ISO 14289-1 §7.16
+  requires that assistive technology be able to extract content, and `Save()` would otherwise
+  emit a document that fails its own declared conformance by construction. (#188)
+- **`/EncryptMetadata false` now actually exempts the metadata stream.** The flag was written
+  into the `/Encrypt` dictionary and the `/Perms` block, but nothing stopped the metadata
+  stream's own body from being encrypted anyway, contradicting ISO 32000-2 §7.6.2 and the flag
+  sitting right next to it. **If you already set this to false, upgrading changes what your
+  output exposes**: the whole XMP packet is now genuinely cleartext — `dc:title`, `dc:creator`,
+  `dc:description`, `dc:language`, `xmp:CreatorTool`, `pdf:Producer`, and the creation and
+  modification dates — where the bug previously encrypted it despite the flag. Leave it at the
+  default `true` unless that exposure is a requirement you've weighed. (#182)
 
 ## [2.0.0] - 2026-08-17
 
