@@ -134,16 +134,22 @@ public sealed class PdfDocumentReader : IDisposable
     /// </summary>
     private PdfObject? Resolve(int objectNumber, int? generation)
     {
+        // Generation-agnostic callers (the common case) keep the original cache-first fast path —
+        // one dictionary lookup on a hit. A generation check needs the xref entry first: a cache hit
+        // predates any generation the caller now asks for, so it must not be trusted without one.
+        if (generation is null && _cache.TryGetValue(objectNumber, out var cachedAny))
+            return cachedAny;
+
         if (!_xref.TryGetValue(objectNumber, out var entry))
             return null;
 
-        // Checked before the cache: a cache hit predates any generation the caller now asks for, so
-        // the check must not be skipped just because the object number was resolved once already.
-        if (generation is not null && generation != entry.Generation)
-            return null;
-
-        if (_cache.TryGetValue(objectNumber, out var cached))
-            return cached;
+        if (generation is not null)
+        {
+            if (generation != entry.Generation)
+                return null;
+            if (_cache.TryGetValue(objectNumber, out var cached))
+                return cached;
+        }
 
         if (_resolveDepth >= MaxResolveDepth)
             throw new InvalidDataException(
@@ -197,6 +203,11 @@ public sealed class PdfDocumentReader : IDisposable
 
     private ParsedStream? ResolveStream(int objectNumber, int? generation)
     {
+        // See Resolve(int, int?) for why the generation-agnostic fast path checks the cache before
+        // the xref entry, and a generation check must go the other way around.
+        if (generation is null && _streamCache.TryGetValue(objectNumber, out var cachedAny))
+            return cachedAny;
+
         if (!_xref.TryGetValue(objectNumber, out var entry))
             return null;
 
@@ -204,14 +215,13 @@ public sealed class PdfDocumentReader : IDisposable
         if (entry.Kind == XrefEntryKind.InObjectStream)
             return null;
 
-        // See the generation check in Resolve(int, int?): must happen before the cache, since a
-        // cache hit predates any generation the caller now asks for.
-        if (generation is not null && generation != entry.Generation)
-            return null;
-
-        // If already in stream cache, return it.
-        if (_streamCache.TryGetValue(objectNumber, out var cached))
-            return cached;
+        if (generation is not null)
+        {
+            if (generation != entry.Generation)
+                return null;
+            if (_streamCache.TryGetValue(objectNumber, out var cached))
+                return cached;
+        }
 
         var parser = new PdfObjectParser(Bytes, CheckedOffset(entry.Offset), ResolveLength);
         var result = parser.ParseIndirectObject();

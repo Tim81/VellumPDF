@@ -164,10 +164,21 @@ internal sealed class XrefParser
 
         var b = span[xrefOffset];
 
+        // Object numbers THIS revision frees. Kept apart from `freed` (deletions carried in from a
+        // newer revision) until both halves of a hybrid file have been parsed: a classic-table 'f'
+        // entry commonly exists precisely because the real definition lives in this same revision's
+        // /XRefStm (ISO 32000-2 §7.5.8.4) — the object is free to a reader that only understands
+        // classic tables, not free in this revision as a whole. A *later* /Prev revision must still
+        // see the deletion, so `localFreed` is folded into `freed` only once both halves have had
+        // their chance to add the object back to `xref`.
+        var localFreed = new HashSet<int>();
+
         if (IsDigit(b))
         {
             // Cross-reference stream: "N G obj << ... >> stream ... endstream endobj"
-            return ParseXrefStream(data, xrefOffset, xref, freed);
+            var streamTrailer = ParseXrefStream(data, xrefOffset, xref, freed, localFreed);
+            freed.UnionWith(localFreed);
+            return streamTrailer;
         }
 
         // Classic xref table
@@ -176,11 +187,14 @@ internal sealed class XrefParser
             throw new InvalidDataException(
                 $"Malformed PDF: expected 'xref' keyword at offset {xrefOffset}.");
 
-        var trailer = ParseClassicXrefTable(data, xrefOffset, xref, freed);
+        var trailer = ParseClassicXrefTable(data, xrefOffset, xref, freed, localFreed);
 
         // Hybrid: if the classic trailer has /XRefStm, also parse that xref stream.
         // Classic entries win, so we've already added them — the stream entries are added
-        // with TryAdd and will be skipped if already present.
+        // with TryAdd and will be skipped if already present. Suppressed only by `freed` (a newer
+        // revision's deletion), never by `localFreed`: the classic table's own 'f' entries above
+        // must not block this same revision's stream from resolving the object (see the comment
+        // on `localFreed` above).
         if (trailer.TryGet(new PdfName("XRefStm"), out var xrefStmObj) && xrefStmObj is PdfInteger xrefStmInt)
         {
             // Validate as a 64-bit value before narrowing (see /Prev above): casting first would let
@@ -193,16 +207,18 @@ internal sealed class XrefParser
             // Avoid cycling into an already-processed offset, and record this one so a later /Prev
             // revision pointing at the same stream does not re-parse it.
             if (seenOffsets.Add(stmOffset))
-                ParseXrefStream(data, stmOffset, xref, freed);
+                ParseXrefStream(data, stmOffset, xref, freed, localFreed);
         }
 
+        freed.UnionWith(localFreed);
         return trailer;
     }
 
     // ── Classic xref table ───────────────────────────────────────────────────
 
     private static PdfDictionary ParseClassicXrefTable(
-        ReadOnlyMemory<byte> data, int xrefOffset, Dictionary<int, XrefEntry> xref, HashSet<int> freed)
+        ReadOnlyMemory<byte> data, int xrefOffset, Dictionary<int, XrefEntry> xref, HashSet<int> freed,
+        HashSet<int> localFreed)
     {
         var span = data.Span;
         var pos = xrefOffset + 4; // skip 'xref'
@@ -271,10 +287,13 @@ internal sealed class XrefParser
                 }
                 else if (objType == 'f')
                 {
-                    // A free entry means the object does not exist at this revision. Record it so an
-                    // older revision's 'n' entry for the same number (processed later, since revisions
-                    // are walked newest-first) does not resurrect a deleted object.
-                    freed.Add(objNum);
+                    // A free entry means the object does not exist per this table. Record it in
+                    // `localFreed`, not `freed`: a hybrid file's own /XRefStm (parsed next, same
+                    // revision) may still define the object, and that must not be suppressed by this
+                    // table's 'f' entry. An older revision's 'n' entry for the same number is
+                    // suppressed once ParseOneRevision folds `localFreed` into `freed` after both
+                    // halves of this revision have run.
+                    localFreed.Add(objNum);
                 }
 
                 pos += 20;
@@ -293,7 +312,8 @@ internal sealed class XrefParser
     // ── Cross-reference stream ───────────────────────────────────────────────
 
     private static PdfDictionary ParseXrefStream(
-        ReadOnlyMemory<byte> data, int xrefOffset, Dictionary<int, XrefEntry> xref, HashSet<int> freed)
+        ReadOnlyMemory<byte> data, int xrefOffset, Dictionary<int, XrefEntry> xref, HashSet<int> freed,
+        HashSet<int> localFreed)
     {
         var parser = new PdfObjectParser(data, xrefOffset);
         var result = parser.ParseIndirectObject();
@@ -396,9 +416,11 @@ internal sealed class XrefParser
                             xref.TryAdd(objNum, XrefEntry.InObjStm((int)field2, (int)field3));
                         break;
                     case 0:
-                        // free entry: the object does not exist at this revision (see the classic-table
-                        // 'f' handling above for why this must be recorded, not merely skipped).
-                        freed.Add(objNum);
+                        // free entry: the object does not exist per this stream. Recorded in
+                        // `localFreed`, matching the classic-table 'f' handling above (see its
+                        // comment) — a hybrid file's classic table, parsed first for this revision,
+                        // already got the chance to add this object if it defines it live.
+                        localFreed.Add(objNum);
                         break;
                     default:
                         // unknown type — ignore per spec (future compatibility)
