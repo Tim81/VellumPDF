@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **A committed corpus of encrypted PDFs, one per standard-security-handler `/V`+`/R` combination.**
+  Generated once with qpdf and committed rather than shelled out for at test time, so the corpus is
+  byte-identical on CI and locally and leaves no silently-skipped gate. A guard test pins each fixture
+  by SHA-256 as well as `/V`, `/R` and `/CFM`: qpdf refuses to write RC4 without `--allow-weak-crypto`
+  and still leaves a zero-byte file behind, and two fixtures are both `/V 4 /R 4`, differing only in
+  the cipher — neither an existence check nor a `/V`+`/R` check would notice either. Groundwork for
+  the decrypt side. (#99)
+
 ### Changed
 
 - **`PdfIndirectReference` and `PdfIndirectObject` honour generation, which changes four members
