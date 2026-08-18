@@ -38,10 +38,10 @@ public sealed class PdfEncryptionSettings
 
     /// <summary>
     /// When true (default) the XMP metadata stream is encrypted along with the rest of the
-    /// document. Setting this false leaves that stream's body — including <c>dc:title</c>,
-    /// author and subject — as cleartext XML in the saved file, readable without the
-    /// password, even though the <c>/Info</c> dictionary's strings and the page content remain
-    /// encrypted. Only set this false when metadata-driven cataloguing or indexing over an
+    /// document. Setting this false leaves that stream's body as cleartext XML in the saved file,
+    /// readable without the password: the title, author, subject, language, creator tool, producer,
+    /// and the creation and modification dates. The <c>/Info</c> dictionary's strings and the page
+    /// content remain encrypted. Only set this false when metadata-driven cataloguing or indexing over an
     /// encrypted file is a requirement that outweighs that exposure.
     /// </summary>
     public bool EncryptMetadata { get; init; } = true;

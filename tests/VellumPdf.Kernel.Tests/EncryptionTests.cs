@@ -287,11 +287,40 @@ public sealed class EncryptionTests
     }
 
     /// <summary>
-    /// A metadata string as it appears in the file: /Info values go through
-    /// <see cref="PdfLiteralString.FromUnicode"/>, which is always UTF-16BE, never ASCII.
+    /// A metadata string exactly as it lands in the file, mirroring both steps the writer applies:
+    /// <see cref="PdfLiteralString.FromUnicode"/> encodes /Info values as UTF-16BE even for pure
+    /// ASCII, and <c>WriteTo</c> then escapes <c>(</c>, <c>)</c>, <c>\</c>, LF and CR.
+    /// <para>
+    /// Mirroring the escaping is what keeps this honest. A needle built from the unescaped bytes
+    /// stops being a substring the moment a value contains a character with one of those bytes in
+    /// either half — which for a DoesNotContain assertion is a silent pass, indistinguishable
+    /// from the property actually holding. Encoding by hand rather than through
+    /// <c>Encoding.BigEndianUnicode</c> for the same reason: that would fold a lone surrogate to
+    /// U+FFFD, where the writer emits the raw code unit.
+    /// </para>
     /// </summary>
-    private static string AsWritten(string value) =>
-        Encoding.Latin1.GetString(Encoding.BigEndianUnicode.GetBytes(value));
+    private static string AsWritten(string value)
+    {
+        var sb = new StringBuilder();
+        foreach (var unit in value)
+        {
+            Append(sb, (char)(unit >> 8));
+            Append(sb, (char)(unit & 0xFF));
+        }
+
+        return sb.ToString();
+
+        static void Append(StringBuilder sb, char b)
+        {
+            switch (b)
+            {
+                case '(' or ')' or '\\': sb.Append('\\').Append(b); break;
+                case '\n': sb.Append("\\n"); break;
+                case '\r': sb.Append("\\r"); break;
+                default: sb.Append(b); break;
+            }
+        }
+    }
 
     [Fact]
     public void EncryptMetadata_true_encrypts_the_metadata_stream_body()
