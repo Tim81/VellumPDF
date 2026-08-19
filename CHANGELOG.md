@@ -18,6 +18,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **Dependency versions across the board, none of which change what ships.** PublicApiAnalyzers
+  moves to 5.6.0, Microsoft.NET.Test.Sdk to 18.9.0, Verify.XunitV3 to 31.28.0, CsCheck to 4.8.0,
+  coverlet.collector to 10.0.1, and Microsoft.SourceLink.GitHub to 10.0.400. Every one is build- or
+  test-time only. `System.Security.Cryptography.Pkcs`, the single third-party runtime dependency this
+  repository ships, was already current at 10.0.11.
+
+  SourceLink looks like the exception and is not. The SDK has imported it implicitly since .NET 8 and
+  steps aside only when `GeneratePathProperty` is set, which this repository does not set — so
+  packing at 10.0.400, at 8.0.0, and with the reference deleted yields byte-identical symbols and
+  package metadata. Source stepping works, but not because of this version (#202).
+
+  xunit stays on 3.x. 4.0.0 moves to Microsoft.Testing.Platform, which the .NET 10 SDK will not run
+  through the VSTest target, so it needs its own migration (#200).
+
 - **`PdfIndirectReference` and `PdfIndirectObject` honour generation, which changes four members
   on surfaces Stable/Shipped since 2.0.0.** `PdfIndirectReference.WriteTo` now emits the real
   generation instead of a hardcoded `0`; `Equals` narrowed, so `new PdfIndirectReference(5)` no
