@@ -1,6 +1,7 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
+using System.Buffers.Binary;
 using System.Text;
 using VellumPdf.Encryption;
 
@@ -52,18 +53,22 @@ public sealed class Rc4Md5PrimitiveTests
 
     [Theory]
     [MemberData(nameof(LengthsCrossingBlockAndPaddingBoundaries))]
-    public void Md5_incremental_one_byte_at_a_time_matches_single_shot(int length)
+    public void Md5_incremental_one_byte_at_a_time_matches_BCL_oracle(int length)
     {
         var data = MakeDeterministicBytes(length);
 
-        var singleShot = Md5.HashData(data);
+        // Against the BCL, not Md5.HashData: comparing the incremental accumulator to this
+        // type's own single-shot method proves nothing about either being correct, only that
+        // they agree — and they can agree while both are wrong. This survived two injected
+        // mutations that killed 141 other tests, which is what a self-comparison buys you.
+        var expected = System.Security.Cryptography.MD5.HashData(data);
 
         var incremental = new Md5.Incremental();
         foreach (var b in data)
             incremental.Append([b]);
         var built = incremental.Finish();
 
-        Assert.Equal(singleShot, built);
+        Assert.Equal(expected, built);
     }
 
     [Fact]
@@ -84,6 +89,107 @@ public sealed class Rc4Md5PrimitiveTests
         var built = incremental.Finish();
 
         Assert.Equal(singleShot, built);
+    }
+
+    // ── MD5: Incremental is a reference type, so two variables holding it hold the same
+    //    accumulator — an alias must observe appends made through the other variable. ──────
+
+    [Fact]
+    public void Md5_incremental_reference_is_shared_between_variables()
+    {
+        // A struct copy here would fork the scalar state (a, b, c, d, length) while still
+        // sharing the underlying block buffer, so a second Append through either variable
+        // would corrupt what the other already wrote — silently, no exception. As a class,
+        // "copy" is an alias: both variables drive one accumulator, and the digest below must
+        // include every byte appended through either name, in Append order.
+        var accumulator = new Md5.Incremental();
+        accumulator.Append("hello"u8);
+
+        var alias = accumulator;
+        var filler = MakeDeterministicBytes(100);
+        alias.Append(filler);
+
+        accumulator.Append(" world"u8);
+        var digest = accumulator.Finish();
+
+        byte[] expectedInput = [.. "hello"u8, .. filler, .. " world"u8];
+        var expected = System.Security.Cryptography.MD5.HashData(expectedInput);
+
+        Assert.Equal(expected, digest);
+    }
+
+    // ── MD5: Append after Finish, and a second Finish, must fail loudly rather than return a
+    //    silently wrong digest. ──────
+
+    [Fact]
+    public void Md5_incremental_finish_called_twice_throws()
+    {
+        var accumulator = new Md5.Incremental();
+        accumulator.Append("abc"u8);
+        accumulator.Finish();
+
+        Assert.Throws<InvalidOperationException>(() => accumulator.Finish());
+    }
+
+    [Fact]
+    public void Md5_incremental_append_after_finish_throws()
+    {
+        var accumulator = new Md5.Incremental();
+        accumulator.Append("abc"u8);
+        accumulator.Finish();
+
+        Assert.Throws<InvalidOperationException>(() => accumulator.Append("d"u8));
+    }
+
+    // ── MD5: the multi-Append shape Algorithm 2 (ISO 32000-1 §7.6.3.3) will drive — several
+    //    distinct pieces fed through Append rather than one joined buffer, plus the R>=3 tail
+    //    that re-hashes a truncated digest fifty times. This does not implement Algorithm 2; it
+    //    only pins that the accumulator's output over that shape matches a single BCL hash over
+    //    the same bytes concatenated, using arbitrary but fixed test data. ──────
+
+    [Fact]
+    public void Md5_incremental_matches_BCL_over_algorithm2_shaped_pieces()
+    {
+        var paddedPassword = MakeDeterministicBytes(32);
+        var oEntry = MakeDeterministicBytes(32).Select(b => (byte)(b ^ 0xA5)).ToArray();
+        Span<byte> pBytes = stackalloc byte[4];
+        BinaryPrimitives.WriteInt32LittleEndian(pBytes, -3892);
+        var idFirstElement = MakeDeterministicBytes(16).Select(b => (byte)(b + 5)).ToArray();
+        byte[] allOnes = [0xFF, 0xFF, 0xFF, 0xFF];
+
+        byte[] concatenated = [.. paddedPassword, .. oEntry, .. pBytes, .. idFirstElement, .. allOnes];
+        var expected = System.Security.Cryptography.MD5.HashData(concatenated);
+
+        var incremental = new Md5.Incremental();
+        incremental.Append(paddedPassword);
+        incremental.Append(oEntry);
+        incremental.Append(pBytes);
+        incremental.Append(idFirstElement);
+        incremental.Append(allOnes);
+        var actual = incremental.Finish();
+
+        Assert.Equal(expected, actual);
+    }
+
+    [Fact]
+    public void Md5_incremental_matches_BCL_over_revision3_fifty_iteration_tail()
+    {
+        const int n = 5; // stand-in for the derived key length (5–16 bytes, ISO 32000-1 Table 20)
+        var seed = MakeDeterministicBytes(16); // stand-in for the digest produced before the tail
+
+        var expected = seed;
+        for (var round = 0; round < 50; round++)
+            expected = System.Security.Cryptography.MD5.HashData(expected.AsSpan(0, n));
+
+        var actual = seed;
+        for (var round = 0; round < 50; round++)
+        {
+            var incremental = new Md5.Incremental();
+            incremental.Append(actual.AsSpan(0, n));
+            actual = incremental.Finish();
+        }
+
+        Assert.Equal(expected, actual);
     }
 
     public static TheoryData<int> LengthsCrossingBlockAndPaddingBoundaries()
@@ -110,11 +216,12 @@ public sealed class Rc4Md5PrimitiveTests
     // the Department of Commerce), and "Test Vector 3" (credited to SSH ARCFOUR, a 309-byte
     // Finnish-language plaintext in Latin-1). All three are used below, verbatim.
     //
-    // The task brief's originally supplied vectors did not match the draft and are NOT used:
-    //   - it gave key 01 23 45 67 89 AB CD EF with plaintext 01 23 45 67 89 AB CD EF; the
-    //     draft's Test Vector 1 uses the same key but an all-zero 8-byte plaintext.
-    //   - it gave key 61 8A 63 D2 FB with plaintext "dcba" (64 62 63 61); the draft's Test
-    //     Vector 2 uses the same key but plaintext DC EE 4C F9 2C.
+    // These are the draft's own vectors, not the widely-mirrored variants that circulate under
+    // the same "Test Vector 1" / "Test Vector 2" labels elsewhere:
+    //   - some mirrors pair key 01 23 45 67 89 AB CD EF with plaintext 01 23 45 67 89 AB CD EF;
+    //     the draft's Test Vector 1 uses the same key but an all-zero 8-byte plaintext.
+    //   - some mirrors pair key 61 8A 63 D2 FB with plaintext "dcba" (64 62 63 61); the draft's
+    //     Test Vector 2 uses the same key but plaintext DC EE 4C F9 2C.
     // Vector 3's plaintext and ciphertext bytes were transcribed from the draft, not computed
     // by running the implementation under test — a KAT generated from the code it verifies
     // proves nothing.
@@ -240,5 +347,15 @@ public sealed class Rc4Md5PrimitiveTests
         var roundTripped = Rc4.Transform(key, ciphertext);
 
         Assert.Equal(plaintext, roundTripped);
+    }
+
+    // ── RC4: an empty key is a programming error, not a malformed-file condition ──────
+
+    [Fact]
+    public void Rc4_transform_with_empty_key_throws_ArgumentException()
+    {
+        var ex = Assert.Throws<ArgumentException>(() => Rc4.Transform([], [0x00]));
+
+        Assert.Equal("key", ex.ParamName);
     }
 }
