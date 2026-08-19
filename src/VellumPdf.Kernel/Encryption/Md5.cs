@@ -65,8 +65,14 @@ internal static class Md5
     /// concatenated with /O, /P as four little-endian bytes, the first /ID element, and
     /// (conditionally) four 0xFF bytes. Feeding those through <see cref="Append"/> avoids
     /// building one joined buffer at every call site.
+    ///
+    /// A reference type, not a struct: the running block buffer is a <c>byte[]</c>, so a struct
+    /// copy would fork the scalar state (a, b, c, d, length) but alias that buffer between the
+    /// original and the copy, corrupting both the moment either one appends past what the other
+    /// already flushed. A caller that seeds one accumulator and reuses it — Algorithm 2's R>=3
+    /// tail re-hashes the first n bytes fifty times — must not have that hazard available.
     /// </summary>
-    internal struct Incremental
+    internal sealed class Incremental
     {
         private uint _a;
         private uint _b;
@@ -76,22 +82,40 @@ internal static class Md5
         private byte[]? _block;
         private int _blockLength;
         private bool _started;
+        private bool _finished;
 
-        /// <summary>Feeds more bytes into the running digest.</summary>
+        /// <summary>
+        /// Feeds more bytes into the running digest.
+        /// </summary>
+        /// <exception cref="InvalidOperationException">
+        /// <see cref="Finish"/> was already called on this accumulator.
+        /// </exception>
         public void Append(ReadOnlySpan<byte> data)
         {
+            if (_finished)
+                throw new InvalidOperationException($"Cannot call {nameof(Append)} after {nameof(Finish)}.");
+
             EnsureStarted();
             _messageLengthBits += (ulong)data.Length * 8;
             AppendRaw(data);
         }
 
         /// <summary>
-        /// Applies RFC 1321 §3.1 padding (a single 0x80 bit, zeros, then the 64-bit little-endian
-        /// message length) and returns the final 16-byte digest.
+        /// Applies RFC 1321 §3.1 padding (a single 0x80 bit followed by zeros) and the §3.2
+        /// 64-bit little-endian message length, then returns the final 16-byte digest.
         /// </summary>
+        /// <exception cref="InvalidOperationException">
+        /// <see cref="Finish"/> was already called on this accumulator — the padding bytes it
+        /// wrote would re-enter the digest as data, producing a value that is not the digest of
+        /// anything.
+        /// </exception>
         public byte[] Finish()
         {
+            if (_finished)
+                throw new InvalidOperationException($"Cannot call {nameof(Finish)} twice on the same accumulator.");
+
             EnsureStarted();
+            _finished = true;
             var messageLengthBits = _messageLengthBits;
 
             AppendRaw([0x80]);

@@ -17,11 +17,20 @@ internal static class Rc4
     /// <summary>
     /// Applies RC4 keystream XOR to <paramref name="data"/> with the given <paramref name="key"/>.
     /// RC4 is symmetric — the same operation encrypts and decrypts — so this method serves both
-    /// directions. PDF uses key lengths from 5 bytes (40-bit) to 16 bytes (128-bit); any length
-    /// from 1 to 256 bytes is accepted, per §3.1 of the draft.
+    /// directions. PDF uses key lengths from 5 bytes (40-bit) to 16 bytes (128-bit). A key longer
+    /// than 256 bytes is accepted (the KSA cycles through it; the tail past 256 bytes never
+    /// affects the schedule), but it must be non-empty — this is a programming-error contract,
+    /// not a file-format one. A caller deriving a key from parsed PDF data (a malformed /Length,
+    /// a truncated /O) must validate that data itself and raise <see cref="InvalidDataException"/>
+    /// before calling in; letting an empty key reach here would otherwise surface as an
+    /// <see cref="ArgumentException"/> that the reader's malformed-file handling does not expect.
     /// </summary>
+    /// <exception cref="ArgumentException"><paramref name="key"/> is empty.</exception>
     public static byte[] Transform(ReadOnlySpan<byte> key, ReadOnlySpan<byte> data)
     {
+        if (key.IsEmpty)
+            throw new ArgumentException("RC4 key must be at least 1 byte.", nameof(key));
+
         Span<byte> s = stackalloc byte[256];
         KeySchedule(key, s);
 
