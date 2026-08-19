@@ -69,8 +69,11 @@ internal static class Md5
     /// A reference type, not a struct: the running block buffer is a <c>byte[]</c>, so a struct
     /// copy would fork the scalar state (a, b, c, d, length) but alias that buffer between the
     /// original and the copy, corrupting both the moment either one appends past what the other
-    /// already flushed. A caller that seeds one accumulator and reuses it — Algorithm 2's R>=3
-    /// tail re-hashes the first n bytes fifty times — must not have that hazard available.
+    /// already flushed. Passing an accumulator to a helper, or holding one in a field, is an
+    /// ordinary thing to do, and neither should be able to silently produce a wrong digest.
+    ///
+    /// One instance is not safe for concurrent use. <see cref="HashData"/> is, because it
+    /// allocates an instance per call and the shared tables are read-only.
     /// </summary>
     internal sealed class Incremental
     {

@@ -3,6 +3,7 @@
 
 using System.Buffers.Binary;
 using System.Text;
+using VellumPdf.Document;
 using VellumPdf.Encryption;
 
 namespace VellumPdf.Kernel.Tests;
@@ -79,7 +80,9 @@ public sealed class Rc4Md5PrimitiveTests
         // multi-Append shape directly, split at offsets that don't line up with the 64-byte
         // block size.
         var data = MakeDeterministicBytes(130);
-        var singleShot = Md5.HashData(data);
+        // Against the BCL, not Md5.HashData: both of those run the same implementation, so the
+        // comparison would hold however wrong that implementation was.
+        var singleShot = System.Security.Cryptography.MD5.HashData(data);
 
         var incremental = new Md5.Incremental();
         incremental.Append(data.AsSpan(0, 1));
@@ -174,7 +177,7 @@ public sealed class Rc4Md5PrimitiveTests
     [Fact]
     public void Md5_incremental_matches_BCL_over_revision3_fifty_iteration_tail()
     {
-        const int n = 5; // stand-in for the derived key length (5–16 bytes, ISO 32000-1 Table 20)
+        const int n = 5; // derived key length: /Length is 40–128 bits (ISO 32000-1 Table 20), so 5–16 bytes
         var seed = MakeDeterministicBytes(16); // stand-in for the digest produced before the tail
 
         var expected = seed;
@@ -364,5 +367,41 @@ public sealed class Rc4Md5PrimitiveTests
         var ex = Assert.Throws<ArgumentException>(() => Rc4.Transform([], [0x00]));
 
         Assert.Equal("key", ex.ParamName);
+    }
+
+    [Fact]
+    public void DocumentId_isTheMd5OfTheDocumentsIdentifyingAttributes()
+    {
+        // ComputeDocumentId is the only production caller of this MD5, and until this test nothing
+        // pinned it. Corrupting the MD5 core fails the primitive tests here and nothing else: every
+        // golden document sets DocumentId explicitly, and /ID folds in a millisecond timestamp, so
+        // no snapshot could pin it even in principle. That makes a wrong /ID something the suite
+        // would ship silently.
+        //
+        // Timestamp is the seam that makes it deterministic. The expected digest was computed with
+        // an independent MD5 over the exact string ComputeDocumentId builds
+        // ("Title|Producer|pageCount|unixMillis") — not by running this implementation and
+        // recording what came out, which would pin the bug along with the behaviour.
+        const string expected = "3CC7F8919FA57E450D530E38FA67142B";
+
+        using var doc = new PdfDocument
+        {
+            Timestamp = DateTimeOffset.FromUnixTimeMilliseconds(1767323045678),
+        };
+        doc.Info.Title = "VellumPdf ID KAT";
+        doc.Info.Producer = "VellumPdf KAT Producer";
+        doc.AddPage();
+
+        var ms = new MemoryStream();
+        doc.Save(ms);
+        var raw = Encoding.Latin1.GetString(ms.ToArray());
+
+        var start = raw.IndexOf("/ID [<", StringComparison.Ordinal);
+        Assert.True(start >= 0, "no /ID array in the saved document");
+        start += "/ID [<".Length;
+        var end = raw.IndexOf('>', start);
+        Assert.True(end > start, "unterminated /ID hex string");
+
+        Assert.Equal(expected, raw[start..end], ignoreCase: true);
     }
 }

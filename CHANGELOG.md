@@ -27,8 +27,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   verified against all three vectors in draft-kaukonen-cipher-arcfour-03 Appendix A, including the
   309-byte vector that runs the keystream past its first 256-byte cycle; MD5 against the full RFC
   1321 §A.5 suite plus a length sweep across the padding and block boundaries, and a differential
-  sweep against the BCL confirming the `/ID` switch changes no output. Groundwork for the decrypt
-  side. (#97)
+  sweep against the BCL. `/ID` itself is pinned by a known-answer test, because nothing else
+  pinned it: every golden document sets its own id, and the computed one folds in a millisecond
+  timestamp, so no snapshot could cover it. Groundwork for the decrypt side. (#97)
 
 ### Changed
 
