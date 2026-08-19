@@ -1,7 +1,6 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
-using System.Security.Cryptography;
 using System.Text;
 using VellumPdf.Annotations;
 using VellumPdf.Core;
@@ -1715,7 +1714,7 @@ public sealed class PdfDocument : IDisposable
         sb.Append('|');
         sb.Append(ts.ToUnixTimeMilliseconds());
         var input = Encoding.UTF8.GetBytes(sb.ToString());
-        return MD5.HashData(input);
+        return Md5.HashData(input);
     }
 
     /// <summary>
