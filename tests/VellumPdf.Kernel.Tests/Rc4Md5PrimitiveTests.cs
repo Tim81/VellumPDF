@@ -194,8 +194,15 @@ public sealed class Rc4Md5PrimitiveTests
 
     public static TheoryData<int> LengthsCrossingBlockAndPaddingBoundaries()
     {
+        // 0..130 covers every structural boundary: the 56-byte padding threshold and the 64- and
+        // 128-byte block edges, which is where a padding or length-encoding bug lives. The tail up
+        // to 1024 is not about structure — /ID is now hashed with this implementation
+        // (PdfDocument.ComputeDocumentId) over a string built from Title and Producer, so the input
+        // length on a shipped write path is whatever a caller sets it to.
         var data = new TheoryData<int>();
         for (var length = 0; length <= 130; length++)
+            data.Add(length);
+        for (var length = 191; length <= 1024; length += 97)
             data.Add(length);
         return data;
     }
