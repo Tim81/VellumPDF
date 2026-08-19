@@ -16,6 +16,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the cipher — neither an existence check nor a `/V`+`/R` check would notice either. Groundwork for
   the decrypt side. (#99)
 
+- **Hand-written RC4 and MD5 primitives for the legacy (`/V` 1–2) decryption path.** Internal only —
+  no public surface yet, no reader wiring, no security handler; that is a separate change. The BCL
+  has never shipped RC4, and its `MD5` type defers to the OS crypto library everywhere except Browser
+  WASM, where MD5 is unsupported outright, so decrypting an old PDF under Blazor WASM would otherwise
+  be a dead end. A managed MD5 also keeps this codebase clear of CA5351 (flags MD5 as weak) should
+  that analyzer rule ever be turned on, and out from under Windows FIPS policy. RC4 is verified
+  against all three vectors in draft-kaukonen-cipher-arcfour-03 Appendix A, including the 309-byte
+  vector that runs the keystream past its first 256-byte cycle; MD5 against the full RFC 1321 §A.5
+  suite plus a length sweep across the padding and block boundaries. Groundwork for the decrypt side.
+  (#97)
+
 ### Changed
 
 - **Dependency versions across the board, none of which change what ships.** PublicApiAnalyzers
