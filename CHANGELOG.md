@@ -16,6 +16,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the cipher — neither an existence check nor a `/V`+`/R` check would notice either. Groundwork for
   the decrypt side. (#99)
 
+- **Hand-written RC4 and MD5 primitives for the legacy (`/V` 1–2) decryption path.** Internal only —
+  no public surface yet, no reader wiring, no security handler; that is a separate change. The BCL
+  has never shipped RC4, and its `MD5` type defers to the OS crypto library everywhere except Browser
+  WASM, where MD5 is unsupported outright, so decrypting an old PDF under Blazor WASM would otherwise
+  be a dead end. `PdfDocument`'s `/ID` generation (ISO 32000-2 §14.4) now goes through this MD5 too,
+  in place of the BCL call it used before, so the codebase is actually clear of CA5351 (flags MD5 as
+  weak) rather than clear of it only on the new, not-yet-wired decryption path — and Browser WASM
+  document writing, not just decryption, no longer depends on a platform MD5 that isn't there. RC4 is
+  verified against all three vectors in draft-kaukonen-cipher-arcfour-03 Appendix A, including the
+  309-byte vector that runs the keystream past its first 256-byte cycle; MD5 against the full RFC
+  1321 §A.5 suite plus a length sweep across the padding and block boundaries, and a differential
+  sweep against the BCL. `/ID` itself is pinned by a known-answer test, because nothing else
+  pinned it: every golden document sets its own id, and the computed one folds in a millisecond
+  timestamp, so no snapshot could cover it. Groundwork for the decrypt side. (#97)
+
 ### Changed
 
 - **Dependency versions across the board, none of which change what ships.** PublicApiAnalyzers
