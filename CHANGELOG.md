@@ -89,9 +89,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **A freed object number no longer resurfaces from an older revision.** Classic-table `f`
   entries and xref-stream type-0 rows were discarded instead of recorded, so an object deleted
   in the newest revision could still resolve from a stale entry in an older one. Both are now
-  tracked, scoped per revision so a hybrid file's own `/XRefStm` still resolves an object its
-  classic table marks free — the convention such a file uses to hide that object from a
-  classic-table-only reader. (#121)
+  tracked, scoped per revision so a hybrid file's `/XRefStm` still resolves an object that an
+  earlier section marks free. That pairing is how such a file hides an object from a
+  classic-table-only reader: the older section's free entry is what a PDF 1.4 consumer finds,
+  while a PDF 1.5 consumer takes the cross-reference stream's entry and ignores it. (#121)
 
 - **A malformed generation field no longer takes down the document, or aliases onto the wrong
   object.** A sloppy but unambiguous field (space-padded rather than zero-padded) still parses.
