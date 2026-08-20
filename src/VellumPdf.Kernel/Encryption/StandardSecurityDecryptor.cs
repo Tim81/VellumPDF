@@ -49,8 +49,8 @@ internal sealed class StandardSecurityDecryptor
     ];
 
     // ISO 32000-1 §7.6.2, Algorithm 1 step (b): appended to the per-object key input when the
-    // crypt filter is AESV2. Not a string literal — spelling it out keeps a byte-for-byte
-    // "sAlT" from ever reading as English prose to the clean-room check.
+    // crypt filter is AESV2. Written as raw hex, matching PaddingString above, rather than a
+    // string literal plus an encoding call for four fixed bytes.
     private static readonly byte[] AesSalt = [0x73, 0x41, 0x6C, 0x54];
 
     private readonly int _v;
