@@ -226,6 +226,46 @@ public sealed class StandardSecurityDecryptorTests
     // Algorithm 2/4/5 (R2–R4) and Algorithm 2.A (R5/R6) accept an empty password and derive exactly
     // the key/hash the specification says they should.
 
+    // R>=3's fifty-round MD5 tail (Algorithm 2, and Algorithm 7's owner-key derivation) truncates
+    // each round's input to _keyLengthBytes. Every other R3/R4 vector in this file — corpus and
+    // synthetic alike — uses a 16-byte key, so a regression that hardcoded that truncation to 16
+    // would pass every one of them: the only 5-byte fixture is enc-rc4-40.pdf, which is R=2 and
+    // never enters the round loop at all. /R 3 /Length 40 is a real Adobe Reader-compatible
+    // combination, so this covers it. Independently computed (Python, hashlib.md5 + a from-scratch
+    // RC4 keystream, not by running the code under test), exercising both loops: the user path
+    // through Algorithm 2 alone, and the owner path through Algorithm 7's key derivation followed
+    // by the same Algorithm 2 call on the recovered password.
+    [Fact]
+    public void KeyLengthFiveBytes_R3_userAndOwnerPasswords_deriveTheSameFileKey()
+    {
+        byte[] o =
+        [
+            0x99, 0x24, 0xE2, 0xC7, 0xB4, 0x9E, 0xEF, 0xEC, 0x68, 0x3C, 0x66, 0x51, 0x00, 0xFE, 0x6B, 0xDD,
+            0xFE, 0x1F, 0x70, 0x7C, 0xEA, 0x3E, 0xE6, 0x50, 0x87, 0x78, 0xC8, 0xF1, 0x02, 0x73, 0x8A, 0x01,
+        ];
+        byte[] id0 =
+        [
+            0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x6A, 0x6B, 0x6C, 0x6D, 0x6E, 0x6F, 0x70, 0x71, 0x72, 0x73,
+        ];
+        byte[] u32 =
+        [
+            0xDF, 0xD8, 0xC1, 0x29, 0x90, 0x8E, 0x5E, 0xD8, 0xC4, 0x19, 0x8C, 0x64, 0x29, 0x4A, 0xA0, 0x83,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        ];
+        byte[] expectedFileKey = [0x0E, 0x99, 0x5B, 0xAB, 0x23];
+
+        var decryptor = new StandardSecurityDecryptor(
+            v: 2, r: 3, keyLengthBytes: 5, o: o, u: u32, oe: null, ue: null,
+            p: -3904, id0: id0, encryptMetadata: true,
+            streamFilter: CryptFilterMethod.Rc4, stringFilter: CryptFilterMethod.Rc4);
+
+        Assert.True(decryptor.TryComputeFileKeyFromUserPassword("usr", out var userFileKey));
+        Assert.Equal(expectedFileKey, userFileKey);
+
+        Assert.True(decryptor.TryComputeFileKeyFromOwnerPassword("own", out var ownerFileKey));
+        Assert.Equal(expectedFileKey, ownerFileKey);
+    }
+
     [Fact]
     public void EmptyUserPassword_R3_derivesExpectedFileKey_andMatchesU()
     {
