@@ -16,10 +16,14 @@ development do not run the same tool versions, so committing keeps the corpus by
 everywhere.
 
 Two constructs here, the hybrid-reference files and the `/Length` mismatch, cannot come from either
-tool at all. qpdf normalizes generations to 0 and recomputes `/Length` on every write; poppler has
-no option to introduce either deliberately. Five fixtures are hand-built:
-`hybrid-spec-convention.pdf`, `hybrid-samesection-undefined.pdf`, `freed-object-reuse.pdf`,
-`nonzero-gen-base.pdf`, and `length-mismatch.pdf`.
+tool at all. qpdf's own documentation says plainly: "We do not support creation of hybrid files."
+Neither does poppler have an option to introduce one deliberately. The `/Length` mismatch is
+separately out of reach: qpdf recomputes `/Length` on every write, and poppler has no lever for it
+either. The other two hand-built fixtures need generations neither tool will leave alone — qpdf
+normalizes every generation to 0 on write, so `freed-object-reuse.pdf`'s reused-at-generation-1
+object and `nonzero-gen-base.pdf`'s nonzero-generation catalog both have to be built by hand. Five
+fixtures are hand-built in total: `hybrid-spec-convention.pdf`, `hybrid-samesection-undefined.pdf`,
+`freed-object-reuse.pdf`, `nonzero-gen-base.pdf`, and `length-mismatch.pdf`.
 
 ## Baseline
 
@@ -47,7 +51,7 @@ would immediately undo.
 | --- | --- | --- |
 | `hybrid-spec-convention.pdf` | Hand-built | The "hidden object" convention ISO 32000-2 §7.5.8.4 documents: object 3 free in revision 1's classic table, defined live in revision 2's /XRefStm |
 | `hybrid-samesection-undefined.pdf` | Hand-built | The same free-then-redefine shape within a single revision, a case §7.5.8.4's normative sentence does not cover |
-| `freed-object-reuse.pdf` | Hand-built | Object 5 live at generation 0, freed with next-generation 1 recorded, then reused as `5 1 obj` in a third revision — an xref entry whose generation must match the object header, an axis no other fixture here reaches |
+| `freed-object-reuse.pdf` | Hand-built | Object 5 live at generation 0, freed with next-generation 1 recorded, then reused as `5 1 obj`; object 7 freed the same way and never redefined — a reference's generation has to match the xref entry's recorded generation, an axis no other fixture here reaches |
 | `baseline.pdf` | `qpdf` (see above) | Shared base; single revision, classic xref, no axis below applies yet |
 | `objstm-xrefstream.pdf` | `qpdf --object-streams=generate baseline.pdf objstm-xrefstream.pdf` | Object streams plus a cross-reference stream; qpdf drops the classic xref table entirely, so this one fixture covers both axes |
 | `linearized.pdf` | `qpdf --linearize baseline.pdf linearized.pdf` | `/Linearized` |
@@ -59,7 +63,16 @@ would immediately undo.
 | `length-mismatch.pdf` | Hand-built | `/Length 64` on a stream whose real body (ending where `endstream` actually starts) is 46 bytes |
 
 `attach-payload.txt` is the attachment poppler embeds in both `pdfattach` fixtures; it is committed
-alongside them so the commands above are reproducible verbatim.
+alongside them so the commands above are reproducible verbatim. It is not itself embedded as a test
+resource — the csproj glob for this folder only picks up `*.pdf` — so it plays no part in either
+coverage guard below.
+
+`ThirdPartyFixtureCorpusTests.EveryEmbeddedFixture_isCoveredByTheTheory` fails loudly if a `.pdf`
+lands in this folder without a matching row above, mirroring the same guard in
+`EncryptedFixtureCorpusTests`. Both guards filter on the `.pdf` extension first, so a non-`.pdf`
+embedded resource dropped into either folder would be covered by neither guard if the csproj glob
+were ever widened to embed it. Pre-existing, and low risk today: `attach-payload.txt` is the only
+other file here, and it isn't embedded.
 
 ## Two hybrid fixtures, and only one has a third-party oracle
 
@@ -98,30 +111,55 @@ case sits outside what that sentence covers, and the three readers no longer agr
 Neither qpdf nor poppler implements the precedence VellumPdf applies here, and neither result is a
 conformance verdict. `HybridSameSection_object4_resolvesFromXRefStm_notTheClassicTableFreeEntry` in
 `ThirdPartyReaderBehaviorTests` pins VellumPdf's current behavior so a regression is visible; it is
-not a claim that this behavior is the only correct one. Which entry should win is an open question,
+not a claim that this behavior is the only correct one. Which entry should win is an open erratum,
 tracked in [pdf-association/pdf-issues#237](https://github.com/pdf-association/pdf-issues/issues/237)
-("Conflicts between xref table and xref stream in hybrid-reference files"), unresolved at the time
-of writing. Read VellumPdf's choice as a deliberate superset on a construct the spec leaves
-contested — nobody has settled this in either direction, expert opinion included.
+("Conflicts between xref table and xref stream in hybrid-reference files"), unresolved at the time of
+writing — but the discussion there so far favours the free entry winning, not VellumPdf's reading:
+MatthiasValvekens argues the classic table's `f` entry wins and the object should be considered
+`null`, and mkl-public agrees ("believes correctly"), quoting §7.5.8.4's rule that a cross-reference
+stream is consulted only when an entry is *not found* in the classic table first — a free entry is
+found. petervwyatt raises separate wording defects in the same clause but dissents from neither.
+VellumPdf deliberately differs from that reading and pins its own behavior anyway, as a superset on
+a contested construct rather than a settled one; tracked as
+[#206](https://github.com/Tim81/VellumPDF/issues/206).
 
 ## Freed object number, reused at a bumped generation
 
-`freed-object-reuse.pdf` is hand-built, three revisions: object 5 is live at generation 0 in
-revision 1, revision 2 frees it with a classic-table entry recording 1 as the next generation, and
-revision 3 reuses the number as `5 1 obj`. No other fixture in this corpus reaches that axis — the
-two nonzero-generation files below carry a generation that was never recycled, so nothing else
-exercises an xref entry whose generation has to match an object header for the reference to
-resolve. qpdf agrees on both halves: `qpdf --show-object=5,1` yields the reused object, and
-`qpdf --show-object=5` (generation 0 by default) yields `null`, because that generation really was
-deleted.
+`freed-object-reuse.pdf` is hand-built, three revisions, with two objects deleted along the way.
+Object 5 is live at generation 0 in revision 1; revision 2 frees it with a classic-table entry
+recording 1 as the next generation; revision 3 reuses the number as `5 1 obj`. Object 7 is live at
+generation 0 in revision 1, freed the same way in revision 2, and never redefined — revision 3's own
+xref table says nothing about it at all, so resolving it correctly depends entirely on revision 2's
+deletion surviving the merge across revisions. Revision 2's free list is linked per ISO 32000-2
+§7.5.4: the head entry (object 0) points at object 5, object 5's free entry points at object 7, and
+object 7's free entry closes the chain back to 0.
+
+No other fixture in this corpus reaches the axis this pins — a reference's generation has to match
+the *xref entry's recorded generation*, not the "N G obj" header (ISO 32000-2 treats the xref as
+authoritative, and `PdfDocumentReader` does not additionally require the header to agree when the
+xref parsed cleanly; see its cache field comment). The two nonzero-generation fixtures elsewhere in
+this corpus carry a generation that was never recycled, so neither exercises a generation actually
+being reused after a deletion.
+
+qpdf agrees on both deleted objects: `qpdf --show-object=5,1` yields the reused object,
+`qpdf --show-object=5` (generation 0 by default) yields `null`, and so does
+`qpdf --show-object=7`. That agreement on object 5 is not, by itself, evidence that the free entry
+was honoured — a control file with no free entry anywhere (revision 1 defines `5 0 obj`, revision 2
+defines `5 1 obj` directly, no deletion in between) gives qpdf and VellumPdf the same byte-identical
+answer for object 5: the null comes from the merged xref simply mapping object 5 to generation 1,
+the newest revision's entry, regardless of whether anything was ever freed. qpdf *is* discriminating
+on object 7, though — it resolves object 7 in that same no-free-entry control, and returns `null`
+for it here, where the free entry is real.
 
 Mutation testing against the reader's deletion tracking (`freed.UnionWith(localFreed)` in
-`XrefParser.ParseOneRevision`) found the fixture's own test doesn't discriminate beyond
-`GenerationNumberTests`' existing coverage: removing the tracking still kills two pre-existing tests
-there, but not `FreedObjectReuse_resolvesTheReusedObject_andNotTheDeletedGeneration`, because
-revision 3's definition wins regardless of whether the free entry was ever recorded. What the
-fixture actually adds is confidence that the mechanism holds end-to-end on a real,
-third-party-shaped, three-revision document — not a failure mode the unit tests were missing.
+`XrefParser.ParseOneRevision`) confirms the same split. Removing it still kills the same two
+pre-existing `GenerationNumberTests` as before, but now it also fails
+`FreedObjectReuse_resolvesTheReusedObject_andNotTheDeletedGeneration`: object 7 resolves non-null
+once the deletion stops being tracked (verified directly — removing the tracking changes the test
+run's outcome). Object 5 alone still isn't load-bearing: revision 3's definition wins regardless of
+whether its own deletion was ever recorded. Object 7 is what makes this fixture's own test
+discriminate, on a real, third-party-shaped, three-revision document, rather than merely restating
+what `GenerationNumberTests` already covers.
 
 ## Damaged files, and what each one should do
 
@@ -131,16 +169,21 @@ third-party-shaped, three-revision document — not a failure mode the unit test
 
 `length-mismatch.pdf` is not fatal. A wrong `/Length` is a common real-world producer bug —
 `PdfObjectParser.ParseStreamBody` carries its own comment calling out "off by a few bytes, or stale
-after an edit" — and the parser already recovers from it: `/Length` is honored only when it lands
-exactly on `endstream`; otherwise the parser falls back to scanning for the marker. This fixture's
-declared length (64) is in range for the file but does not land on the real `endstream`, whose true
-body is 46 bytes — qpdf's own recovery agrees: `qpdf --check` reports "recovered stream length:
-46". The fixture has only one `endstream` after the body start, so what it actually pins is the
-`/Length`-preferred branch's "verify `endstream` follows, else fall back" rule, not
-`ScanToEndstream` (#105)'s own preference tiers — a file exercising those would need more than one
-candidate marker to choose between. The corresponding test asserts the *full* recovered body,
-because a scan that stopped at the wrong marker would still open the file successfully while
-silently truncating or extending the content — opening alone would not catch that.
+after an edit" — and the parser already recovers from it: `/Length` is honored only when the next
+token after it, past any intervening whitespace or comments, is `endstream`; otherwise the parser
+falls back to scanning for the marker. This fixture's declared length (64) is in range for the file
+but fails that check. Three numbers describe it, and each is correct for what it measures: the
+content the test asserts against, `BT /F1 24 Tf 40 100 Td (LENGTHMISMATCH) Tj ET`, is 45 bytes; the
+gap from where the body starts to where `endstream` actually begins is 46 bytes, one more to cover
+the trailing end-of-line before the keyword; qpdf's own recovery reports
+that same 46 — `qpdf --check` prints "recovered stream length: 46"; and ISO 32000-2 §7.3.8.2 is
+clear that `/Length` itself should carry the 45-byte reading, excluding the EOL. The fixture has
+only one `endstream` after the body start, so what it actually pins is the `/Length`-preferred
+branch's "verify `endstream` follows, else fall back" rule, not `ScanToEndstream` (#105)'s own
+preference tiers — a file exercising those would need more than one candidate marker to choose
+between. The corresponding test asserts the *full* recovered body, because a scan that stopped at
+the wrong marker would still open the file successfully while silently truncating or extending the
+content — opening alone would not catch that.
 
 ## Regenerating a fixture
 

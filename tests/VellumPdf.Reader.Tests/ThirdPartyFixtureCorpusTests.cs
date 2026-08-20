@@ -18,7 +18,7 @@ namespace VellumPdf.Reader.Tests;
 /// fixture today; it alone rules out a swapped or truncated file. The token checks earn their keep
 /// on regeneration instead: if a fixture is ever rebuilt and its digest updated to match, a token
 /// still catches a rebuild that lazily dropped the structural property the fixture exists to pin
-/// -- a rebuilt "linearized.pdf" that no longer carries "/Linearized", for instance.
+/// — a rebuilt "linearized.pdf" that no longer carries "/Linearized", for instance.
 /// </summary>
 public sealed class ThirdPartyFixtureCorpusTests
 {
@@ -30,10 +30,11 @@ public sealed class ThirdPartyFixtureCorpusTests
         Corpus =
     [
         // Hand-built: two revisions, object 3 free in the FIRST revision's classic table and
-        // defined live in the SECOND revision's /XRefStm -- exactly the "hidden object" convention
-        // ISO 32000-2 §7.5.8.4 describes, and the one the #121 review found mishandled. qpdf and
-        // poppler both resolve object 3 the same way VellumPdf does; see README for the three-way
-        // comparison this fixture's assertions rest on.
+        // defined live in the SECOND revision's /XRefStm — exactly the "hidden object" convention
+        // ISO 32000-2 §7.5.8.4 describes, and the one the #121 review found mishandled. qpdf resolves
+        // object 3 the same way VellumPdf does; poppler's output only shows the surrounding page
+        // survives, since it reads xref streams too and is no stand-in for a pre-1.5 consumer — see
+        // README for the two-way comparison this fixture's assertions rest on.
         ("hybrid-spec-convention.pdf",
             "6fe78b1957e53120953ae315cac31686b6a825c20cc478a8c1ea7f4ce7beb84d",
             ["/Prev 402", "/XRefStm 822", "/Type /ObjStm"],
@@ -42,24 +43,33 @@ public sealed class ThirdPartyFixtureCorpusTests
         // Hand-built variant of the fixture above: the free entry and the /XRefStm definition sit
         // in the SAME revision instead of a /Prev-linked previous one. ISO 32000-2 §7.5.8.4's
         // normative sentence covers a free entry in a PREVIOUS section; this same-section shape
-        // isn't covered by it, and which entry should win is the open question in
-        // pdf-association/pdf-issues#237. qpdf resolves object 4 to null here; poppler discards the
-        // xref and reconstructs. Neither is a conformance verdict, so this pins VellumPdf's own
-        // current behaviour only -- see README before trusting it as a spec statement.
+        // isn't covered by it. The open erratum pdf-association/pdf-issues#237 leans toward the
+        // free entry winning, not VellumPdf's reading; qpdf resolves object 4 to null here and
+        // poppler discards the xref and reconstructs. Neither is a conformance verdict, so this pins
+        // VellumPdf's own current, deliberately different behaviour — tracked as #206 — see README
+        // before trusting it as a spec statement.
         ("hybrid-samesection-undefined.pdf",
             "28d80b1f9e1fa8a9e473368eb9017639a5569eea044e9b6fa94922fc10b01939",
             ["/XRefStm 411", "0000000000 00001 f"],
             []),
 
-        // Hand-built, three revisions: object 5 lives at generation 0, revision 2 deletes it with a
-        // free entry recording 1 as the next generation, and revision 3 reuses the number as
-        // "5 1 obj". #196 names this axis and no other fixture reaches it: the two nonzero-generation
-        // files carry a generation that was never recycled, so nothing else exercises an xref entry
-        // whose generation must match an object header to resolve. qpdf agrees on both halves --
-        // --show-object=5,1 yields the reused object and --show-object=5 (generation 0 by default)
-        // yields null, because that generation really was deleted.
+        // Hand-built, three revisions, two deleted objects. Object 5 lives at generation 0, revision 2
+        // deletes it with a free entry recording 1 as the next generation, and revision 3 reuses the
+        // number as "5 1 obj". Object 7 lives at generation 0, is deleted the same way in revision 2,
+        // and is never redefined — revision 3 says nothing about it, so resolving it null depends on
+        // that deletion surviving the merge. Revision 2's free list is linked per ISO 32000-2 §7.5.4:
+        // head → 5 → 7 → 0. #196 names this axis and no other fixture reaches it: a reference's
+        // generation has to match the xref entry's recorded generation, not the object header — the
+        // two nonzero-generation files carry a generation that was never recycled, so neither
+        // exercises a generation actually being reused. qpdf agrees on both deleted objects:
+        // --show-object=5,1 yields the reused object, and --show-object=5 (generation 0 by default)
+        // and --show-object=7 both yield null. The null on object 5 is not proof the free entry was
+        // honoured, though — a control with no free entry anywhere (revision 1 defines "5 0 obj",
+        // revision 2 defines "5 1 obj" directly) gives qpdf and VellumPdf the same answer, because the
+        // merged xref just maps object 5 to generation 1 regardless. qpdf does discriminate on object
+        // 7: it resolves object 7 in that same no-free-entry control and returns null here.
         ("freed-object-reuse.pdf",
-            "1e8168174bb923b2bc9f47cc5bb86bc0f7f07648e4b25b7ed10d23a02a0b74cc",
+            "5de56a22432b4f9f9cbb925384ce1d5a2575f9b308061bac94cdaa7291ce649f",
             ["5 1 obj", "0000000000 00001 f", "/Prev "],
             []),
 
@@ -98,7 +108,7 @@ public sealed class ThirdPartyFixtureCorpusTests
             ["/Prev"],
             []),
 
-        // Hand-built: the catalog is "1 1 obj", not "1 0 obj" -- a reference at a nonzero
+        // Hand-built: the catalog is "1 1 obj", not "1 0 obj" — a reference at a nonzero
         // generation read from a document, rather than one constructed in C#
         // (GenerationNumberTests already covers the latter). This is the base
         // nonzero-generation.pdf below is built from.
@@ -108,7 +118,7 @@ public sealed class ThirdPartyFixtureCorpusTests
             []),
 
         // poppler pdfattach applied to nonzero-gen-base.pdf: an appended revision on a document
-        // whose catalog sits at a nonzero generation -- the shape the #121 review found the reader
+        // whose catalog sits at a nonzero generation — the shape the #121 review found the reader
         // untested against, since every prior appended-revision fixture came from AppendRevision
         // itself on a self-produced generation-0 document. This fixture exercises the READER
         // against a poppler-appended revision; nothing in this PR calls AppendRevision. Poppler
@@ -134,12 +144,13 @@ public sealed class ThirdPartyFixtureCorpusTests
             []),
 
         // Hand-built (qpdf recomputes /Length on every write, so it cannot produce this):
-        // /Length 64 while the true body -- ending where 'endstream' actually starts -- is 46
-        // bytes (qpdf --check confirms: "recovered stream length: 46"). In range, so
-        // PdfObjectParser takes the /Length-preferred branch, finds it doesn't land on 'endstream',
-        // and falls back to scanning for the marker. The file has only one 'endstream' after the
-        // body start, so this pins that fallback rule, not ScanToEndstream's own preference
-        // tiers (#105).
+        // /Length 64, in range for the file, but landing short of 'endstream'. The asserted body
+        // content is 45 bytes; the gap from body start to where 'endstream' actually begins is 46,
+        // one more to cover the trailing EOL (qpdf --check agrees: "recovered stream length: 46");
+        // ISO 32000-2 §7.3.8.2 says /Length itself should carry the 45-byte reading. PdfObjectParser
+        // takes the /Length-preferred branch, finds it doesn't land on 'endstream', and falls back to
+        // scanning for the marker. The file has only one 'endstream' after the body start, so this
+        // pins that fallback rule, not ScanToEndstream's own preference tiers (#105).
         ("length-mismatch.pdf",
             "1885ccc6dfd85c1ef2f3f941e55ce60a973fbdce9ebdde01e4f11f1cae7cc4eb",
             ["/Length 64", "LENGTHMISMATCH"],
@@ -193,7 +204,7 @@ public sealed class ThirdPartyFixtureCorpusTests
     }
 
     /// <summary>
-    /// poppler's incremental update begins with the base document's bytes verbatim -- that is what
+    /// poppler's incremental update begins with the base document's bytes verbatim — that is what
     /// makes it an appended revision rather than a rewrite. Checked byte-for-byte rather than
     /// inferred from /Prev, since a rewritten file could carry a /Prev key without the prefix
     /// property actually holding.
@@ -218,7 +229,7 @@ public sealed class ThirdPartyFixtureCorpusTests
     }
 
     /// <summary>
-    /// broken-startxref.pdf is baseline.pdf with exactly its startxref offset corrupted -- same
+    /// broken-startxref.pdf is baseline.pdf with exactly its startxref offset corrupted — same
     /// length, and identical apart from the four digits the corruption changed.
     /// </summary>
     [Fact]

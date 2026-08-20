@@ -56,12 +56,13 @@ public sealed class ThirdPartyReaderBehaviorTests
     /// a /Prev chain. ISO 32000-2 §7.5.8.4's normative sentence covers a free entry in a PREVIOUS
     /// revision, tested above; it does not cover this same-section shape, which is the subject of
     /// the open <see href="https://github.com/pdf-association/pdf-issues/issues/237">pdf-issues
-    /// #237</see> — which entry should win is explicitly unresolved there. VellumPdf.Reader's own
-    /// precedence code (see the <c>localFreed</c> comment in <c>XrefParser.ParseOneRevision</c>)
-    /// applies the same rule to it deliberately, as a superset on a contested construct rather than
-    /// a settled reading. qpdf resolves this object to null and poppler discards the xref and
-    /// reconstructs — neither agrees with VellumPdf, so this fixture pins current behaviour, not a
-    /// conformance claim. See README.md.
+    /// #237</see>. The erratum is unresolved, but the discussion so far favours the free entry
+    /// winning — qpdf resolves this object to null and poppler discards the xref and reconstructs,
+    /// so neither agrees with VellumPdf either. VellumPdf.Reader's own precedence code (see the
+    /// <c>localFreed</c> comment in <c>XrefParser.ParseOneRevision</c>) applies the same rule to it
+    /// deliberately, as a superset on a contested construct rather than a settled reading; tracked
+    /// as <see href="https://github.com/Tim81/VellumPDF/issues/206">#206</see>. This fixture pins
+    /// current behaviour, not a conformance claim. See README.md.
     /// </summary>
     [Fact]
     public void HybridSameSection_object4_resolvesFromXRefStm_notTheClassicTableFreeEntry()
@@ -215,26 +216,40 @@ public sealed class ThirdPartyReaderBehaviorTests
     }
 
     /// <summary>
-    /// Object 5 was live at generation 0, deleted, then the number was reused at generation 1. An
-    /// xref entry's generation has to match the object header for the reference to resolve, so a
-    /// reader that ignores generations entirely would return the same object for both. Mutation
-    /// testing found the deletion tracking itself carries no weight here: removing it still kills
-    /// two pre-existing <see cref="GenerationNumberTests"/>, yet this test keeps passing, because
-    /// revision 3's definition wins regardless of whether the free entry was ever recorded. What
-    /// this pins is correct end-to-end behaviour on a real three-revision, third-party-shaped
-    /// document — confidence in the mechanism, not new discrimination beyond that existing
-    /// coverage. qpdf agrees on both halves.
+    /// Object 5 was live at generation 0, deleted with a free entry recording 1 as the next
+    /// generation, then the number was reused at generation 1. Object 7 was live at generation 0,
+    /// deleted the same way, and never redefined. It is the reference's generation that has to
+    /// match the xref entry's recorded generation for a resolve to succeed — ISO 32000-2 never
+    /// requires the "N G obj" header to agree, and <see cref="PdfDocumentReader"/> does not check
+    /// it when the xref parsed cleanly. Mutation testing on object 5 alone found the deletion
+    /// tracking carries no weight there: removing it still kills two pre-existing
+    /// <see cref="GenerationNumberTests"/>, yet this test kept passing, because revision 3's
+    /// definition wins regardless of whether the free entry was ever recorded. Object 7 is what
+    /// closes that gap — nothing redefines it, so returning null for it requires the deletion to
+    /// have actually been honoured. qpdf agrees on both.
     /// </summary>
     [Fact]
     public void FreedObjectReuse_resolvesTheReusedObject_andNotTheDeletedGeneration()
     {
         using var reader = PdfReader.Open(Load("freed-object-reuse.pdf"));
 
+        // Ask for the stale generation while the cache is cold: resolving 5 1 first caches object 5 at
+        // generation 1, and the 5 0 lookup then exits on the cached generation without reaching the
+        // resolution path at all. Cold, it goes through that path — though it still does not isolate
+        // one mechanism, because the xref entry and the object header both say generation 1, so either
+        // check alone returns null. The assertion below on object 7 is the load-bearing one.
+        Assert.Null(reader.Resolve(new PdfIndirectReference(5, 0)));
+
+        // Object 7 is the half that depends on the deletion having been recorded: revision 2 frees it
+        // and nothing redefines it, so returning null requires having honoured the free entry. Object 5
+        // cannot show that — revision 3's definition wins whether or not the deletion was tracked.
+        // qpdf agrees: --show-object=7 is null here, and resolves the object in a control built without
+        // that free entry.
+        Assert.Null(reader.Resolve(new PdfIndirectReference(7, 0)));
+
         var reused = Assert.IsType<PdfDictionary>(reader.Resolve(new PdfIndirectReference(5, 1)));
         var note = Assert.IsType<PdfLiteralString>(reused.Get(new PdfName("Note")));
         Assert.Equal("REUSEDATGEN1", Encoding.Latin1.GetString(note.Bytes.Span));
-
-        Assert.Null(reader.Resolve(new PdfIndirectReference(5, 0)));
     }
 
     /// <summary>The three revisions must not disturb the page, which never changed.</summary>
@@ -260,10 +275,12 @@ public sealed class ThirdPartyReaderBehaviorTests
     }
 
     /// <summary>
-    /// The startxref offset points past end-of-file. Same requirement as above. Once #184's
-    /// xref-rebuild fallback lands, a broken startxref is a candidate for recovery by full-file
-    /// scan rather than a hard failure — this test failing at that point is the success signal
-    /// that the fallback reached this fixture, not a regression to chase.
+    /// The startxref offset points past end-of-file. Same requirement as above. #184's xref-rebuild
+    /// fallback (tracked separately in #197) is opt-in and defaults off — the option that would turn
+    /// it on starts <see langword="false"/>, and a damaged file still throws exactly as it does
+    /// today unless a caller asks for reconstruction explicitly. This test opens with the default
+    /// options, so it pins that default-options behaviour and should keep passing once #184 lands;
+    /// if it ever fails, that is a regression, not a success signal.
     /// </summary>
     [Fact]
     public void BrokenStartxref_throwsInvalidDataException()
