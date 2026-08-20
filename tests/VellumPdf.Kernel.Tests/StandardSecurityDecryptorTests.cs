@@ -420,11 +420,39 @@ public sealed class StandardSecurityDecryptorTests
         var decryptor = BuildDecryptor(info);
         Assert.True(decryptor.TryComputeFileKeyFromUserPassword(UserPassword, out var fileKey));
 
-        Assert.True(StandardSecurityDecryptor.VerifyPermissions(fileKey, info.Perms));
+        Assert.True(decryptor.VerifyPermissions(fileKey, info.Perms));
 
         var wrongKey = (byte[])fileKey.Clone();
         wrongKey[0] ^= 0xFF;
-        Assert.False(StandardSecurityDecryptor.VerifyPermissions(wrongKey, info.Perms));
+        Assert.False(decryptor.VerifyPermissions(wrongKey, info.Perms));
+    }
+
+    [Fact]
+    public void VerifyPermissions_detectsATamperedPValue()
+    {
+        // /Perms is decrypted with the file key alone, so a tampered /P doesn't change what
+        // /Perms decrypts to — it changes what this decryptor now expects that plaintext to
+        // contain. Same fileKey (R6's key derivation never touches /P), same /Perms bytes, a
+        // second decryptor built with /P edited after the fact.
+        var info = LoadEncryptInfo("enc-aes-256-r6.pdf");
+        var decryptor = BuildDecryptor(info);
+        Assert.True(decryptor.TryComputeFileKeyFromUserPassword(UserPassword, out var fileKey));
+        Assert.True(decryptor.VerifyPermissions(fileKey, info.Perms!));
+
+        var tampered = BuildDecryptor(info with { P = unchecked(info.P ^ -1) });
+        Assert.False(tampered.VerifyPermissions(fileKey, info.Perms!));
+    }
+
+    [Fact]
+    public void VerifyPermissions_detectsATamperedEncryptMetadataFlag()
+    {
+        var info = LoadEncryptInfo("enc-aes-256-r6.pdf");
+        var decryptor = BuildDecryptor(info);
+        Assert.True(decryptor.TryComputeFileKeyFromUserPassword(UserPassword, out var fileKey));
+        Assert.True(decryptor.VerifyPermissions(fileKey, info.Perms!));
+
+        var tampered = BuildDecryptor(info with { EncryptMetadata = !info.EncryptMetadata });
+        Assert.False(tampered.VerifyPermissions(fileKey, info.Perms!));
     }
 
     [Fact]

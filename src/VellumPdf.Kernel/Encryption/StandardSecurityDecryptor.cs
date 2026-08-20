@@ -300,16 +300,18 @@ internal sealed class StandardSecurityDecryptor
             : SHA256.HashData(StandardSecurityHandler.Concat(password, salt, udata));
 
     /// <summary>
-    /// ISO 32000-2 §7.6.4.4.2: decrypts /Perms with the file key (AES-256-ECB, no padding) and
-    /// checks the fixed "adb" marker Algorithm 10 writes at bytes 9–11. A mismatch means /P or
-    /// /EncryptMetadata were altered after /Perms was written without the password changing —
-    /// <see cref="StandardSecurityHandler"/>'s own Algorithm 10 is the only place /Perms is
-    /// produced. This does not gate <see cref="TryComputeFileKeyFromUserPassword(byte[], out byte[])"/>:
+    /// ISO 32000-2 §7.6.4.4.12, Algorithm 13 (validating the permissions): decrypts /Perms with the
+    /// file key (AES-256-ECB, no padding), checks the fixed "adb" marker at bytes 9–11, and
+    /// compares bytes 0–3 and byte 8 against this dictionary's own /P and /EncryptMetadata. What
+    /// writes /Perms in the first place is a different algorithm, §7.6.4.4.9 Algorithm 10 —
+    /// <see cref="StandardSecurityHandler.ComputePerms"/>. A mismatch on any of the three means /P
+    /// or /EncryptMetadata were altered after /Perms was written, without the password changing.
+    /// This does not gate <see cref="TryComputeFileKeyFromUserPassword(byte[], out byte[])"/>:
     /// /U or /O already established the password is correct, and R6 readers are expected to
     /// tolerate this check failing on a file whose permissions were edited by a tool that updates
     /// /P but not /Perms.
     /// </summary>
-    public static bool VerifyPermissions(byte[] fileKey, byte[] perms)
+    public bool VerifyPermissions(byte[] fileKey, byte[] perms)
     {
         if (perms.Length != 16)
             return false;
@@ -321,7 +323,15 @@ internal sealed class StandardSecurityDecryptor
         using var decryptor = aes.CreateDecryptor(aes.Key, null);
         var block = decryptor.TransformFinalBlock(perms, 0, perms.Length);
 
-        return block[9] == (byte)'a' && block[10] == (byte)'d' && block[11] == (byte)'b';
+        if (block[9] != (byte)'a' || block[10] != (byte)'d' || block[11] != (byte)'b')
+            return false;
+
+        Span<byte> expectedP = stackalloc byte[4];
+        BinaryPrimitives.WriteInt32LittleEndian(expectedP, _p);
+        if (!block.AsSpan(0, 4).SequenceEqual(expectedP))
+            return false;
+
+        return block[8] == (byte)(_encryptMetadata ? 'T' : 'F');
     }
 
     // ── R<=4: ISO 32000-1 Algorithm 2 (file key), 4/5 (/U), 7 (/O) ───────────
