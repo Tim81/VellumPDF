@@ -512,6 +512,26 @@ public sealed class StandardSecurityDecryptorTests
     // ── Constructor validation ────────────────────────────────────────────────
 
     [Fact]
+    public void Constructor_rejectsEmptyId0_atRLessThan5()
+    {
+        Assert.Throws<InvalidDataException>(() => new StandardSecurityDecryptor(
+            v: 1, r: 2, keyLengthBytes: 5, o: new byte[32], u: new byte[32], oe: null, ue: null,
+            p: -4, id0: [], encryptMetadata: true,
+            streamFilter: CryptFilterMethod.Rc4, stringFilter: CryptFilterMethod.Rc4));
+    }
+
+    [Fact]
+    public void Constructor_allowsEmptyId0_atRevision6()
+    {
+        // R>=5's Algorithm 2.A never reads /ID[0] — only R<=4's Algorithm 2/5 do — so an empty
+        // /ID here is not this constructor's business to reject.
+        _ = new StandardSecurityDecryptor(
+            v: 5, r: 6, keyLengthBytes: 32, o: new byte[48], u: new byte[48], oe: new byte[32], ue: new byte[32],
+            p: -4, id0: [], encryptMetadata: true,
+            streamFilter: CryptFilterMethod.Aes256, stringFilter: CryptFilterMethod.Aes256);
+    }
+
+    [Fact]
     public void Constructor_rejectsWrongLengthO()
     {
         Assert.Throws<InvalidDataException>(() => new StandardSecurityDecryptor(

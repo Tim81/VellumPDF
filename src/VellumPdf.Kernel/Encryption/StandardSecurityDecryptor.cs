@@ -110,8 +110,6 @@ internal sealed class StandardSecurityDecryptor
             throw new InvalidDataException($"/Encrypt /V {v} is not a value this handler supports (1, 2, 4 or 5).");
         if (r is < 2 or > 6)
             throw new InvalidDataException($"/Encrypt /R {r} is not a value this handler supports (2 through 6).");
-        if (id0.Length == 0)
-            throw new InvalidDataException("The trailer's /ID first element is required to derive the file key.");
 
         if (r >= 5)
         {
@@ -131,6 +129,10 @@ internal sealed class StandardSecurityDecryptor
         }
         else
         {
+            // /ID[0] only feeds Algorithm 2/5's key and /U derivation (R<=4); R>=5's Algorithm 2.A
+            // never touches it, so a V5/R6 file with an empty /ID has nothing wrong with it here.
+            if (id0.Length == 0)
+                throw new InvalidDataException("The trailer's /ID first element is required to derive the file key.");
             if (o.Length != 32)
                 throw new InvalidDataException($"/O must be 32 bytes at R<5; got {o.Length}.");
             if (u.Length != 32)
