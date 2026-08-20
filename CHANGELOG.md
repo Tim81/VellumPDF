@@ -31,6 +31,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   pinned it: every golden document sets its own id, and the computed one folds in a millisecond
   timestamp, so no snapshot could cover it. Groundwork for the decrypt side. (#97)
 
+- **A committed corpus of PDFs not produced by VellumPdf's own writer.** Test-only; nothing ships.
+  Every reader fixture before this one came from VellumPdf's writer, which only ever emits
+  generation 0 and never a hybrid-reference file or another producer's object-stream layout — the
+  #121 review found three defects that shared exactly that root cause. Sourced from qpdf and
+  poppler where a tool can produce the shape, hand-built where none can: qpdf recomputes `/Length`
+  on every write, so it cannot produce a `/Length`-mismatched file, and separately its own
+  documentation states "We do not support creation of hybrid files." Covers object streams,
+  cross-reference streams, linearization, a poppler-produced incremental update, a
+  nonzero-generation catalog surviving both a read and a poppler-appended revision, a freed object
+  number reused at a bumped generation, and three damaged-file shapes (a truncated tail, an
+  out-of-range `startxref`, and a `/Length` that disagrees with the real stream body). One fixture
+  pins ISO 32000-2 §7.5.8.4's "hidden object" convention; qpdf is the independent oracle for the
+  hidden object itself. A second, related fixture puts the same free-then-redefine shape in a
+  single revision, a shape §7.5.8.4's normative sentence doesn't cover — tracked as an open erratum
+  in pdf-association/pdf-issues#237, whose discussion so far favours a reading VellumPdf
+  deliberately differs from (#206) — documented as pinning VellumPdf's current behavior on a
+  contested construct, not a conformance claim. Mutation testing found every mutation the corpus
+  could catch also broke a pre-existing synthetic test: it closes a dialect-confidence gap in the
+  reader's coverage, not a gap in its logic. (#196)
+
 ### Changed
 
 - **Dependency versions across the board, none of which change what ships.** PublicApiAnalyzers

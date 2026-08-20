@@ -83,8 +83,16 @@ public sealed class EncryptedFixtureCorpusTests
     [Fact]
     public void EveryEmbeddedFixture_isCoveredByTheTheory()
     {
+        // Excludes only the "ThirdParty/" names (#196), covered by ThirdPartyFixtureCorpusTests's
+        // own theory instead. A general slash test would exclude that corpus too, but it would just
+        // as happily exclude a future one: a third corpus folder with its own folder-qualified
+        // LogicalName -- say "Fixtures/Extra/*.pdf" with <LogicalName>Extra/%(Filename)%(Extension)
+        // -- would satisfy "contains a slash" and slip past this guard fully uncovered. Naming the
+        // one known prefix means a new prefix isn't recognized, fails this check loudly, and has to
+        // earn its own guard rather than being swallowed by resembling a pattern already excluded.
         var embedded = Assembly.GetExecutingAssembly().GetManifestResourceNames()
             .Where(n => n.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
+            .Where(n => !n.StartsWith("ThirdParty/", StringComparison.Ordinal))
             .ToHashSet(StringComparer.Ordinal);
         var covered = Corpus.Select(f => f.Name)
             .Append(BaselineName)
