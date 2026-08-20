@@ -397,9 +397,13 @@ internal sealed class StandardSecurityDecryptor
 
     // Algorithm 7: derive the same key Algorithm 2 would from the padded *owner* password
     // (/O, /P and /ID play no part in that derivation — only the password and, for R>=3, the
-    // fifty-round tail), then run Algorithm 5's 20 RC4 passes over /O in reverse (round numbers
-    // 19 down to 0, one more pass than Algorithm 5's forward direction takes to reach /U) to
-    // recover the padded user password /O was originally built from.
+    // fifty-round tail), then run Algorithm 5's 20 RC4 passes over /O in reverse (round numbers 19
+    // down to 0 — both directions are 20 passes) to recover the padded user password /O was
+    // originally built from. The reverse order is for readability only, not correctness: RC4 XORs
+    // data against a keystream generated purely from the key and the (here, fixed 32-byte) data
+    // length, so composing 20 such keystreams by XOR is order-independent — running these passes
+    // forward would recover the identical plaintext. No test can pin the iteration direction for
+    // that reason; a mutation that reverses it is an equivalent mutant, not a bug.
     private byte[] RecoverUserPasswordFromOwner(byte[] paddedOwnerPassword32)
     {
         var key = Md5.HashData(paddedOwnerPassword32);
