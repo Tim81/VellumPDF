@@ -181,7 +181,7 @@ public sealed class StandardSecurityHandler : IPdfEncryptor
 
     private byte[] ComputePerms(bool encryptMetadata)
     {
-        // 16-byte plaintext block per ISO 32000-2 §7.6.4.4.2
+        // 16-byte plaintext block per ISO 32000-2 §7.6.4.4.9, Algorithm 10
         Span<byte> block = stackalloc byte[16];
         // [0..4] = P as little-endian int32
         block[0] = (byte)(PValue & 0xFF);
