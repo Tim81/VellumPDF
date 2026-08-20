@@ -31,6 +31,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   pinned it: every golden document sets its own id, and the computed one folds in a millisecond
   timestamp, so no snapshot could cover it. Groundwork for the decrypt side. (#97)
 
+- **A committed corpus of PDFs not produced by VellumPdf's own writer.** Test-only; nothing ships.
+  Every reader fixture before this one came from VellumPdf's writer, which only ever emits
+  generation 0 and never a hybrid-reference file or another producer's object-stream layout — the
+  #121 review found three defects that shared exactly that root cause. Sourced from qpdf and
+  poppler where a tool can produce the shape, hand-built where none can (qpdf normalizes
+  generations to 0 and recomputes `/Length` on every write, so it cannot create a hybrid-reference
+  or `/Length`-mismatched file). Covers object streams, cross-reference streams, linearization, a
+  poppler-produced incremental update, a nonzero-generation catalog surviving both a read and an
+  appended revision, and three damaged-file shapes (a truncated tail, an out-of-range `startxref`, and a
+  `/Length` that disagrees with the real stream body). One fixture pins ISO 32000-2 §7.5.8.4's
+  "hidden object" convention, confirmed against qpdf and poppler as independent oracles; a second,
+  related fixture puts the same free-then-redefine shape in a single revision, a case the
+  specification does not describe, and is documented as pinning VellumPdf's current behavior on an
+  undefined construct rather than a conformance claim. (#196)
+
 ### Changed
 
 - **Dependency versions across the board, none of which change what ships.** PublicApiAnalyzers

@@ -83,8 +83,11 @@ public sealed class EncryptedFixtureCorpusTests
     [Fact]
     public void EveryEmbeddedFixture_isCoveredByTheTheory()
     {
+        // Excludes the folder-qualified "ThirdParty/*.pdf" names (#196): those live in the same
+        // assembly manifest but are covered by ThirdPartyFixtureCorpusTests's own theory instead.
         var embedded = Assembly.GetExecutingAssembly().GetManifestResourceNames()
             .Where(n => n.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
+            .Where(n => !n.Contains('/', StringComparison.Ordinal))
             .ToHashSet(StringComparer.Ordinal);
         var covered = Corpus.Select(f => f.Name)
             .Append(BaselineName)
