@@ -216,6 +216,30 @@ public sealed class StandardSecurityDecryptorTests
         Assert.Equal("fileKey", ex.ParamName);
     }
 
+    // ── AES key-length guard (a hostile /CFM + /Length pairing) ──────────────
+    //
+    // /V 4 /Length 40 /CF <</StdCF <</CFM /AESV2>>>> is a legal-looking dictionary that a crafted
+    // file can present. It yields a 5-byte file key, and ComputeObjectKey's own
+    // min(fileKey.Length + 5, 16) then produces a 10-byte per-object key — not a legal AES key
+    // size (16/24/32). AES-CBC decryption has to turn that into the same InvalidDataException a
+    // malformed ciphertext would, not let CryptographicException escape from deep inside the BCL.
+
+    [Fact]
+    public void DecryptStream_aesFilter_withAKeyLengthThatCannotFormALegalAesKey_throwsInvalidDataException()
+    {
+        var decryptor = new StandardSecurityDecryptor(
+            v: 4, r: 4, keyLengthBytes: 5, o: new byte[32], u: new byte[32], oe: null, ue: null,
+            p: -4, id0: [0x00], encryptMetadata: true,
+            streamFilter: CryptFilterMethod.Aes128, stringFilter: CryptFilterMethod.Aes128);
+
+        byte[] fileKey = [0x01, 0x02, 0x03, 0x04, 0x05]; // 5 bytes -> a 10-byte object key
+        byte[] data = new byte[32]; // 16-byte IV + one whole ciphertext block; content is irrelevant
+
+        var ex = Assert.Throws<InvalidDataException>(
+            () => decryptor.DecryptStream(fileKey, objectNumber: 1, generation: 0, data));
+        Assert.IsType<CryptographicException>(ex.InnerException);
+    }
+
     // ── Assertion 5 (empty user password) + Algorithm 2/4/5/2.A synthetic vectors ──
     //
     // None of the eight committed fixtures uses an empty user password (the corpus README lists

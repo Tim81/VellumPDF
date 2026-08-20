@@ -519,18 +519,26 @@ internal sealed class StandardSecurityDecryptor
         var iv = data[..16].ToArray();
         var cipherText = data[16..].ToArray();
 
-        using var aes = Aes.Create();
-        aes.Key = key;
-        aes.Mode = CipherMode.CBC;
-        aes.Padding = PaddingMode.PKCS7;
-        using var decryptor = aes.CreateDecryptor(aes.Key, iv);
+        // aes.Key's setter is in scope here too: a crafted /CF pairing (e.g. /Length 40 with
+        // /CFM /AESV2) reaches this with an object key too short or too long for AES, and that
+        // setter throws CryptographicException just like a padding failure below would. Both are
+        // a malformed-file condition, not a caller bug, so both fold into the same
+        // InvalidDataException rather than the key-length one escaping as a bare framework
+        // exception.
         try
         {
+            using var aes = Aes.Create();
+            aes.Key = key;
+            aes.Mode = CipherMode.CBC;
+            aes.Padding = PaddingMode.PKCS7;
+            using var decryptor = aes.CreateDecryptor(aes.Key, iv);
             return decryptor.TransformFinalBlock(cipherText, 0, cipherText.Length);
         }
         catch (CryptographicException ex)
         {
-            throw new InvalidDataException("AES-CBC ciphertext has invalid PKCS#7 padding.", ex);
+            throw new InvalidDataException(
+                "AES-CBC decryption failed: the key length is not a legal AES key size, or the " +
+                "ciphertext has invalid PKCS#7 padding.", ex);
         }
     }
 
