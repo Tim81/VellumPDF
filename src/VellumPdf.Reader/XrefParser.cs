@@ -185,12 +185,19 @@ internal sealed class XrefParser
         var b = span[xrefOffset];
 
         // Object numbers THIS revision frees. Kept apart from `freed` (deletions carried in from a
-        // newer revision) until both halves of a hybrid file have been parsed: a classic-table 'f'
-        // entry commonly exists precisely because the real definition lives in this same revision's
-        // /XRefStm (ISO 32000-2 §7.5.8.4) — the object is free to a reader that only understands
-        // classic tables, not free in this revision as a whole. A *later* /Prev revision must still
-        // see the deletion, so `localFreed` is folded into `freed` only once both halves have had
-        // their chance to add the object back to `xref`.
+        // newer revision) until both halves of a hybrid file have been parsed, so a 'f' entry does
+        // not suppress a definition the same revision's /XRefStm supplies.
+        //
+        // ISO 32000-2 §7.5.8.4 describes the hiding arrangement across sections rather than within
+        // one: the object is defined in the cross-reference stream and freed in an *earlier*
+        // section, usually the one /Prev points at, so a PDF 1.4 consumer finds the free entry and
+        // a PDF 1.5 consumer takes the stream's. Holding the free entry locally serves that case,
+        // because the deletion must not reach back and suppress the stream. It also accepts the
+        // same-section pairing, which the specification does not describe and which qpdf 12.3.2
+        // declines to resolve; the corpus in #196 pins both so the difference stays visible.
+        //
+        // A *later* /Prev revision must still see the deletion, so `localFreed` is folded into
+        // `freed` only once both halves have had their chance to add the object back to `xref`.
         var localFreed = new HashSet<int>();
 
         if (IsDigit(b))
