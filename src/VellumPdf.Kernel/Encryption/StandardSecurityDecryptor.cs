@@ -170,6 +170,15 @@ internal sealed class StandardSecurityDecryptor
     /// <summary>
     /// Tries <paramref name="password"/> as the user password, encoded the same way
     /// <see cref="StandardSecurityHandler"/> encodes one for writing.
+    ///
+    /// Open question: <see cref="StandardSecurityHandler.PasswordBytes"/> is UTF-8, which ISO
+    /// 32000-2's R&gt;=5 Algorithm 8/9 calls for (subject to the SASLprep simplification documented
+    /// there). Whether R&lt;=4's Algorithm 2 step (a) wants the same encoding, or instead the
+    /// Latin-1/PDFDocEncoding byte-string convention that predates PDF 2.0, is not settled here —
+    /// attempts to confirm it against the ISO 32000-1 text directly did not succeed, and secondary
+    /// sources disagree on the point enough that this is recorded rather than acted on. A
+    /// non-ASCII R&lt;=4 password may therefore authenticate under different bytes than another
+    /// reader would compute for the same characters.
     /// </summary>
     public bool TryComputeFileKeyFromUserPassword(string? password, [NotNullWhen(true)] out byte[]? fileKey)
         => TryComputeFileKeyFromUserPassword(StandardSecurityHandler.PasswordBytes(password), out fileKey);
