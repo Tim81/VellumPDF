@@ -106,7 +106,7 @@ internal sealed class StandardSecurityDecryptor
         CryptFilterMethod streamFilter,
         CryptFilterMethod stringFilter)
     {
-        if (v is < 1 or > 5)
+        if (v is < 1 or > 5 or 3)
             throw new InvalidDataException($"/Encrypt /V {v} is not a value this handler supports (1, 2, 4 or 5).");
         if (r is < 2 or > 6)
             throw new InvalidDataException($"/Encrypt /R {r} is not a value this handler supports (2 through 6).");

@@ -521,6 +521,17 @@ public sealed class StandardSecurityDecryptorTests
     }
 
     [Fact]
+    public void Constructor_rejectsV3()
+    {
+        // /V 3 is Adobe's undocumented algorithm, never specified by ISO 32000-1 or -2. Letting it
+        // through would silently treat the file as V=2 RC4 and produce garbage rather than failing.
+        Assert.Throws<InvalidDataException>(() => new StandardSecurityDecryptor(
+            v: 3, r: 3, keyLengthBytes: 16, o: new byte[32], u: new byte[32], oe: null, ue: null,
+            p: -4, id0: [0x00], encryptMetadata: true,
+            streamFilter: CryptFilterMethod.Rc4, stringFilter: CryptFilterMethod.Rc4));
+    }
+
+    [Fact]
     public void Constructor_atRevision5_requiresOe()
     {
         // /O and /U must both already be 48 bytes here so the wrong guard (the length check a few
