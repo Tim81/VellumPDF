@@ -1,0 +1,64 @@
+%PDF-2.0
+%äüöß
+1 1 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 200] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>
+endobj
+4 0 obj
+<< /Length 41 >>
+stream
+BT /F1 24 Tf 40 100 Td (NONZEROGEN) Tj ET
+endstream
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+xref
+0 1
+0000000000 65535 f 
+1 1
+0000000019 00001 n 
+2 4
+0000000068 00000 n 
+0000000125 00000 n 
+0000000251 00000 n 
+0000000342 00000 n 
+trailer
+<< /Size 6 /Root 1 1 R >>
+startxref
+412
+%%EOF
+1 1 obj
+<</Type /Catalog /Pages 2 0 R /Names <</EmbeddedFiles 8 0 R >> >> 
+endobj
+6 0 obj
+<</Length 40 /Params <</Size 40 >> >> stream
+third-party fixture attachment for #196
+
+endstream
+
+endobj
+7 0 obj
+<</Type /Filespec /UF <feff006100740074006100630068002d007000610079006c006f00610064002e007400780074> /EF <</F 6 0 R >> >> 
+endobj
+8 0 obj
+<</Names [<feff006100740074006100630068002d007000610079006c006f00610064002e007400780074> 7 0 R ] >> 
+endobj
+xref
+0 2
+0000000002 65535 f
+0000000603 00001 n
+6 3
+0000000688 00000 n
+0000000806 00000 n
+0000000947 00000 n
+trailer
+<</Size 9 /Root 1 1 R /Prev 412 >> 
+startxref
+1066
+%%EOF

@@ -54,7 +54,7 @@ internal sealed class XrefParser
         // of only the ones it actually freed, used to have those spurious frees silently overridden
         // by xref.TryAdd resurrecting the real (older-revision) entry. Under this stricter tracking
         // they are treated as genuine deletions and disappear instead. No real-world fixture
-        // exhibiting this has been found; if one turns up, PR #193's xref-rebuild fallback (for
+        // exhibiting this has been found; if one turns up, the xref-rebuild fallback #184 tracks (for
         // structurally broken xref tables) is the natural place to also recover a spuriously-freed
         // object, since both cases end with "the xref lied about this object, fall back to scanning".
         var freed = new HashSet<int>();

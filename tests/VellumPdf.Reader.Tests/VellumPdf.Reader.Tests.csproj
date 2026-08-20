@@ -30,4 +30,18 @@
     </EmbeddedResource>
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Third-party reader fixtures (#196): PDFs not produced by VellumPdf's own writer, so the
+         reader gets exercised against another producer's dialect instead of only its own. Sourced
+         from qpdf and poppler where a tool can produce the shape, hand-built where none can (qpdf
+         normalizes generations to 0 on write and cannot create a hybrid-reference or
+         /Length-mismatched file). Committed rather than generated at test time, for the same reason
+         as Fixtures/Encrypted (#99); see Fixtures/ThirdParty/README.md for provenance and exact
+         commands. The logical name is folder-qualified so its resources stay distinguishable, in
+         the shared assembly manifest, from the flat-named Fixtures/Encrypted set. -->
+    <EmbeddedResource Include="Fixtures\ThirdParty\*.pdf">
+      <LogicalName>ThirdParty/%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
 </Project>
