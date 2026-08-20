@@ -24,9 +24,11 @@ public sealed class ThirdPartyReaderBehaviorTests
     /// table, then defined live in the SECOND revision's /XRefStm (a /Prev-linked cross-reference
     /// stream). A pre-1.5 reader follows /Prev, finds the free entry, and sees nothing; a reader
     /// that understands cross-reference streams finds the live definition first and never looks
-    /// past it. qpdf's <c>--show-object=3</c> and poppler's rendered output agree with VellumPdf
-    /// here (see README.md), so this fixture has a real third-party oracle, unlike the same-section
-    /// variant below.
+    /// past it. qpdf's <c>--show-object=3</c> agrees with VellumPdf here (see README.md); poppler's
+    /// rendered output only shows the surrounding page survives, since it reads cross-reference
+    /// streams too and so is not a stand-in for a pre-1.5 consumer. This fixture still has a real
+    /// third-party oracle on the object itself, unlike the same-section variant below — qpdf just
+    /// carries that role alone.
     /// </summary>
     [Fact]
     public void Hybrid_hiddenObject_resolvesFromTheNewerRevisionsXRefStm()
@@ -51,11 +53,14 @@ public sealed class ThirdPartyReaderBehaviorTests
 
     /// <summary>
     /// The same free-then-redefine shape as above, but within a SINGLE revision rather than across
-    /// a /Prev chain: ISO 32000-2 §7.5.8.4 documents the two-revision case tested above and does not
-    /// describe this one. VellumPdf.Reader's own precedence code (see the <c>localFreed</c> comment
-    /// in <c>XrefParser.ParseOneRevision</c>) applies the same rule to it deliberately, but qpdf
-    /// resolves this object to null and poppler discards the xref and reconstructs — neither agrees
-    /// with VellumPdf, so this fixture pins current behaviour on an undefined construct, not a
+    /// a /Prev chain. ISO 32000-2 §7.5.8.4's normative sentence covers a free entry in a PREVIOUS
+    /// revision, tested above; it does not cover this same-section shape, which is the subject of
+    /// the open <see href="https://github.com/pdf-association/pdf-issues/issues/237">pdf-issues
+    /// #237</see> — which entry should win is explicitly unresolved there. VellumPdf.Reader's own
+    /// precedence code (see the <c>localFreed</c> comment in <c>XrefParser.ParseOneRevision</c>)
+    /// applies the same rule to it deliberately, as a superset on a contested construct rather than
+    /// a settled reading. qpdf resolves this object to null and poppler discards the xref and
+    /// reconstructs — neither agrees with VellumPdf, so this fixture pins current behaviour, not a
     /// conformance claim. See README.md.
     /// </summary>
     [Fact]
@@ -75,6 +80,16 @@ public sealed class ThirdPartyReaderBehaviorTests
     {
         using var reader = PdfReader.Open(Load("hybrid-samesection-undefined.pdf"));
         Assert.Contains("HYBRIDXREFSTM", ResolveFirstPageText(reader), StringComparison.Ordinal);
+    }
+
+    // ── Baseline ──────────────────────────────────────────────────────────
+
+    /// <summary>The plain qpdf-normalized base every other qpdf/poppler-derived fixture descends from.</summary>
+    [Fact]
+    public void Baseline_pageContents_decodesToTheGoldenMarker()
+    {
+        using var reader = PdfReader.Open(Load("baseline.pdf"));
+        Assert.Contains(GoldenMarker, ResolveFirstPageText(reader), StringComparison.Ordinal);
     }
 
     // ── Object streams + cross-reference stream ─────────────────────────────
@@ -153,10 +168,12 @@ public sealed class ThirdPartyReaderBehaviorTests
     }
 
     /// <summary>
-    /// An appended revision on a document whose catalog is at a nonzero generation — the #121 gap
-    /// in <c>AppendRevision</c> coverage, which until now only ran on self-produced generation-0
-    /// documents. Here poppler produced the appended revision, not VellumPdf, and it rewrote the
-    /// catalog again at the same generation 1.
+    /// An appended revision on a document whose catalog sits at a nonzero generation — the shape
+    /// the #121 review found the reader untested against, since every prior appended-revision
+    /// fixture came from <c>AppendRevision</c> itself on a self-produced generation-0 document.
+    /// This exercises the reader against a poppler-appended revision; it does not call
+    /// <c>AppendRevision</c>. Poppler rewrote the catalog again in the new revision, still at
+    /// generation 1.
     /// </summary>
     [Fact]
     public void NonzeroGenerationIncremental_isRecognizedAsTwoRevisions()
@@ -188,6 +205,46 @@ public sealed class ThirdPartyReaderBehaviorTests
             ResolveEmbeddedFileText(reader), StringComparison.Ordinal);
     }
 
+    // ── Freed object number, reused at a bumped generation ──────────────────
+
+    [Fact]
+    public void FreedObjectReuse_isRecognizedAsThreeRevisions()
+    {
+        using var reader = PdfReader.Open(Load("freed-object-reuse.pdf"));
+        Assert.Equal(3, reader.Revisions.Count);
+    }
+
+    /// <summary>
+    /// Object 5 was live at generation 0, deleted, then the number was reused at generation 1. An
+    /// xref entry's generation has to match the object header for the reference to resolve, so a
+    /// reader that ignores generations entirely would return the same object for both. Mutation
+    /// testing found the deletion tracking itself carries no weight here: removing it still kills
+    /// two pre-existing <see cref="GenerationNumberTests"/>, yet this test keeps passing, because
+    /// revision 3's definition wins regardless of whether the free entry was ever recorded. What
+    /// this pins is correct end-to-end behaviour on a real three-revision, third-party-shaped
+    /// document — confidence in the mechanism, not new discrimination beyond that existing
+    /// coverage. qpdf agrees on both halves.
+    /// </summary>
+    [Fact]
+    public void FreedObjectReuse_resolvesTheReusedObject_andNotTheDeletedGeneration()
+    {
+        using var reader = PdfReader.Open(Load("freed-object-reuse.pdf"));
+
+        var reused = Assert.IsType<PdfDictionary>(reader.Resolve(new PdfIndirectReference(5, 1)));
+        var note = Assert.IsType<PdfLiteralString>(reused.Get(new PdfName("Note")));
+        Assert.Equal("REUSEDATGEN1", Encoding.Latin1.GetString(note.Bytes.Span));
+
+        Assert.Null(reader.Resolve(new PdfIndirectReference(5, 0)));
+    }
+
+    /// <summary>The three revisions must not disturb the page, which never changed.</summary>
+    [Fact]
+    public void FreedObjectReuse_pageContents_stillResolves()
+    {
+        using var reader = PdfReader.Open(Load("freed-object-reuse.pdf"));
+        Assert.Contains("FREEDREUSE", ResolveFirstPageText(reader), StringComparison.Ordinal);
+    }
+
     // ── Damaged files ─────────────────────────────────────────────────────
 
     /// <summary>
@@ -202,7 +259,12 @@ public sealed class ThirdPartyReaderBehaviorTests
         Assert.Throws<InvalidDataException>(() => PdfReader.Open(bytes));
     }
 
-    /// <summary>The startxref offset points past end-of-file. Same requirement as above.</summary>
+    /// <summary>
+    /// The startxref offset points past end-of-file. Same requirement as above. Once #184's
+    /// xref-rebuild fallback lands, a broken startxref is a candidate for recovery by full-file
+    /// scan rather than a hard failure — this test failing at that point is the success signal
+    /// that the fallback reached this fixture, not a regression to chase.
+    /// </summary>
     [Fact]
     public void BrokenStartxref_throwsInvalidDataException()
     {
@@ -211,10 +273,12 @@ public sealed class ThirdPartyReaderBehaviorTests
     }
 
     /// <summary>
-    /// Unlike the two fixtures above, a bad /Length is not fatal: ScanToEndstream (#105) recovers
-    /// the real body once the declared length fails to land on 'endstream'. This fixture pins the
-    /// recovery, not a failure — the file must open and its content must decode in full, not be
-    /// truncated at the wrong declared length.
+    /// Unlike the two fixtures above, a bad /Length is not fatal: the parser falls back to
+    /// scanning for 'endstream' once the declared length fails to land on it. The fixture has only
+    /// one 'endstream' after the body start, so it pins the /Length-preferred branch's "verify
+    /// endstream follows, else fall back" rule specifically, rather than ScanToEndstream (#105)'s
+    /// own preference tiers. The assertion checks the full recovered body, so a scan that stopped
+    /// at the wrong marker and silently truncated or extended the content would still be caught.
     /// </summary>
     [Fact]
     public void LengthMismatch_recoversTheFullStreamBody()

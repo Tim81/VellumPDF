@@ -15,8 +15,10 @@ namespace VellumPdf.Reader.Tests;
 /// cause explained; this corpus is the fixtures that would have caught them.
 ///
 /// As with <see cref="EncryptedFixtureCorpusTests"/>, the SHA-256 is what actually identifies a
-/// fixture. A byte-content check alone cannot distinguish, say, a file that merely mentions
-/// "/Linearized" in a comment from one a linearizer actually produced.
+/// fixture today; it alone rules out a swapped or truncated file. The token checks earn their keep
+/// on regeneration instead: if a fixture is ever rebuilt and its digest updated to match, a token
+/// still catches a rebuild that lazily dropped the structural property the fixture exists to pin
+/// -- a rebuilt "linearized.pdf" that no longer carries "/Linearized", for instance.
 /// </summary>
 public sealed class ThirdPartyFixtureCorpusTests
 {
@@ -38,14 +40,27 @@ public sealed class ThirdPartyFixtureCorpusTests
             []),
 
         // Hand-built variant of the fixture above: the free entry and the /XRefStm definition sit
-        // in the SAME revision instead of a /Prev-linked previous one. ISO 32000-2 §7.5.8.4 does not
-        // describe this shape -- ambiguous per pdf-association/pdf-issues#146, unlike the two-
-        // revision case above. qpdf resolves object 4 to null here; poppler discards the xref and
-        // reconstructs. Neither is a conformance verdict, so this pins VellumPdf's own current
-        // behaviour only -- see README before trusting it as a spec statement.
+        // in the SAME revision instead of a /Prev-linked previous one. ISO 32000-2 §7.5.8.4's
+        // normative sentence covers a free entry in a PREVIOUS section; this same-section shape
+        // isn't covered by it, and which entry should win is the open question in
+        // pdf-association/pdf-issues#237. qpdf resolves object 4 to null here; poppler discards the
+        // xref and reconstructs. Neither is a conformance verdict, so this pins VellumPdf's own
+        // current behaviour only -- see README before trusting it as a spec statement.
         ("hybrid-samesection-undefined.pdf",
             "28d80b1f9e1fa8a9e473368eb9017639a5569eea044e9b6fa94922fc10b01939",
             ["/XRefStm 411", "0000000000 00001 f"],
+            []),
+
+        // Hand-built, three revisions: object 5 lives at generation 0, revision 2 deletes it with a
+        // free entry recording 1 as the next generation, and revision 3 reuses the number as
+        // "5 1 obj". #196 names this axis and no other fixture reaches it: the two nonzero-generation
+        // files carry a generation that was never recycled, so nothing else exercises an xref entry
+        // whose generation must match an object header to resolve. qpdf agrees on both halves --
+        // --show-object=5,1 yields the reused object and --show-object=5 (generation 0 by default)
+        // yields null, because that generation really was deleted.
+        ("freed-object-reuse.pdf",
+            "1e8168174bb923b2bc9f47cc5bb86bc0f7f07648e4b25b7ed10d23a02a0b74cc",
+            ["5 1 obj", "0000000000 00001 f", "/Prev "],
             []),
 
         // The shared qpdf-normalized base every qpdf/poppler-derived fixture below descends from,
@@ -59,7 +74,10 @@ public sealed class ThirdPartyFixtureCorpusTests
 
         // qpdf --object-streams=generate: compressed objects plus a cross-reference stream, and
         // qpdf drops the classic xref table entirely when it does this, so this single fixture
-        // covers both the object-stream axis and the cross-reference-stream axis.
+        // covers both the object-stream axis and the cross-reference-stream axis. "\nxref\n" is
+        // LF-only and would miss a CRLF-written "xref" keyword; the SHA-256 above is what actually
+        // pins this file today, so a regenerated fixture written with CRLF endings would need this
+        // token widened to catch the classic table's absence on its own.
         ("objstm-xrefstream.pdf",
             "8cd6029fe121352ac402dda14423a6f5244f709a568b9fca29a23d87421b4ef2",
             ["/Type /ObjStm"],
@@ -90,10 +108,12 @@ public sealed class ThirdPartyFixtureCorpusTests
             []),
 
         // poppler pdfattach applied to nonzero-gen-base.pdf: an appended revision on a document
-        // whose catalog sits at a nonzero generation, the exact shape the #121 review found
-        // untested because "the only AppendRevision coverage runs on self-produced generation-0
-        // documents". Poppler rewrote the catalog again in the new revision, still at generation 1,
-        // so "1 1 obj" and "/Root 1 1 R" each appear twice.
+        // whose catalog sits at a nonzero generation -- the shape the #121 review found the reader
+        // untested against, since every prior appended-revision fixture came from AppendRevision
+        // itself on a self-produced generation-0 document. This fixture exercises the READER
+        // against a poppler-appended revision; nothing in this PR calls AppendRevision. Poppler
+        // rewrote the catalog again in the new revision, still at generation 1, so "1 1 obj" and
+        // "/Root 1 1 R" each appear twice.
         ("nonzero-generation.pdf",
             "c1baaa3075278948cb5adfa418903c26031c9ba46c472e6a57b0562fca61be03",
             ["/Root 1 1 R", "/Prev 412"],
@@ -114,9 +134,12 @@ public sealed class ThirdPartyFixtureCorpusTests
             []),
 
         // Hand-built (qpdf recomputes /Length on every write, so it cannot produce this):
-        // /Length 64 while the true body -- ending where 'endstream' actually starts -- is 41
-        // bytes. In range, so PdfObjectParser takes the /Length-preferred branch, finds it doesn't
-        // land on 'endstream', and falls back to ScanToEndstream (#105).
+        // /Length 64 while the true body -- ending where 'endstream' actually starts -- is 46
+        // bytes (qpdf --check confirms: "recovered stream length: 46"). In range, so
+        // PdfObjectParser takes the /Length-preferred branch, finds it doesn't land on 'endstream',
+        // and falls back to scanning for the marker. The file has only one 'endstream' after the
+        // body start, so this pins that fallback rule, not ScanToEndstream's own preference
+        // tiers (#105).
         ("length-mismatch.pdf",
             "1885ccc6dfd85c1ef2f3f941e55ce60a973fbdce9ebdde01e4f11f1cae7cc4eb",
             ["/Length 64", "LENGTHMISMATCH"],
