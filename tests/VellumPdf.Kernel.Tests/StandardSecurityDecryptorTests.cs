@@ -368,7 +368,7 @@ public sealed class StandardSecurityDecryptorTests
         Assert.False(decryptor.TryComputeFileKeyFromOwnerPassword(WrongPassword, out _));
     }
 
-    // ── R6 /Perms consistency check (ISO 32000-2 §7.6.4.4.2) ─────────────────
+    // ── R6 /Perms consistency check (ISO 32000-2 §7.6.4.4.12, Algorithm 13) ──
 
     [Theory]
     [InlineData("enc-aes-256-r6.pdf")]

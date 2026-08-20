@@ -9,7 +9,7 @@ namespace VellumPdf.Encryption;
 
 /// <summary>
 /// The method a crypt filter applies to a stream or string, per ISO 32000-1 §7.6.5 (the implicit
-/// method under V=1/V=2, no /CF) and ISO 32000-2 §7.6.4.2 Table 25 (/CFM, for V&gt;=4).
+/// method under V=1/V=2, no /CF) and ISO 32000-2 §7.6.6 (/CFM, crypt filters, for V&gt;=4).
 /// </summary>
 internal enum CryptFilterMethod
 {
@@ -115,8 +115,9 @@ internal sealed class StandardSecurityDecryptor
 
         if (r >= 5)
         {
-            // R>=5: both /O and /U are hash(32) || validationSalt(8) || keySalt(8) — ISO 32000-2
-            // §7.6.4.3.5/§7.6.4.3.6, not the plain 32-byte values R<=4 uses.
+            // R>=5: both /O and /U are hash(32) || validationSalt(8) || keySalt(8) — Algorithms 8
+            // and 9 under ISO 32000-2 §7.6.4.4, with the dictionary layout itself in §7.6.4.2 —
+            // not the plain 32-byte values R<=4 uses.
             if (o.Length != 48)
                 throw new InvalidDataException($"/O must be 48 bytes at R>={r}; got {o.Length}.");
             if (u.Length != 48)
@@ -285,12 +286,14 @@ internal sealed class StandardSecurityDecryptor
         return true;
     }
 
-    // ISO 32000-2 §7.6.4.3.3 (R5, deprecated): the validation and key-salt hashes are one
-    // unsalted-iteration SHA-256 over password || salt || udata. §7.6.4.3.4 (R6, current)
-    // replaces that with the fifty-round-minimum Hash2B this dispatches to for R=6 — the two
-    // revisions are not the same algorithm at different round counts, they diverge structurally
-    // (R5 never branches into SHA-384/512), so R must gate which one runs rather than R6's
-    // algorithm degenerating into R5's at some parameter.
+    // R5 (deprecated): the validation and key-salt hashes are one unsalted-iteration SHA-256 over
+    // password || salt || udata. R5 predates ISO 32000-2 and is not itself given a numbered
+    // algorithm there — §7.6.4.3.3 (Algorithm 2.A) and §7.6.4.3.4 (Algorithm 2.B, Hash2B below)
+    // are both scoped "revision 6 and later", so this branch has no ISO clause of its own to cite;
+    // it exists only for backward compatibility with files Acrobat X wrote before R6 was
+    // standardised. The two revisions are not the same algorithm at different round counts — they
+    // diverge structurally (R5 never branches into SHA-384/512) — so R must gate which one runs
+    // rather than R6's algorithm degenerating into R5's at some parameter.
     private byte[] ComputeRevision5PlusHash(byte[] password, ReadOnlySpan<byte> salt, ReadOnlySpan<byte> udata)
         => _r == 6
             ? StandardSecurityHandler.Hash2B(password, salt, udata)
@@ -481,8 +484,9 @@ internal sealed class StandardSecurityDecryptor
                 }
 
             case CryptFilterMethod.Aes256:
-                // R>=5: ISO 32000-1 §7.6.2 note c) — the file encryption key is used directly,
-                // with no per-object derivation.
+                // R>=5: ISO 32000-2 §7.6.3.3, Algorithm 1.A — the file encryption key is used
+                // directly, with no per-object derivation. ISO 32000-1:2008 has no V=5/AESV3 to
+                // cite here at all.
                 return DecryptAesCbcWithIvPrefix(fileKey, data);
 
             default:
