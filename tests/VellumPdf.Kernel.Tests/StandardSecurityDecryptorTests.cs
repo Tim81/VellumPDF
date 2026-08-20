@@ -429,10 +429,21 @@ public sealed class StandardSecurityDecryptorTests
     }
 
     [Fact]
-    public void Constructor_atRevision5_requiresOeAndUe()
+    public void Constructor_atRevision5_requiresOe()
+    {
+        // /O and /U must both already be 48 bytes here so the wrong guard (the length check a few
+        // lines above this one) can't be what throws instead of the /OE check being pinned.
+        Assert.Throws<InvalidDataException>(() => new StandardSecurityDecryptor(
+            v: 5, r: 6, keyLengthBytes: 32, o: new byte[48], u: new byte[48], oe: null, ue: new byte[32],
+            p: -4, id0: [0x00], encryptMetadata: true,
+            streamFilter: CryptFilterMethod.Aes256, stringFilter: CryptFilterMethod.Aes256));
+    }
+
+    [Fact]
+    public void Constructor_atRevision5_requiresUe()
     {
         Assert.Throws<InvalidDataException>(() => new StandardSecurityDecryptor(
-            v: 5, r: 6, keyLengthBytes: 32, o: new byte[32], u: new byte[48], oe: null, ue: new byte[32],
+            v: 5, r: 6, keyLengthBytes: 32, o: new byte[48], u: new byte[48], oe: new byte[32], ue: null,
             p: -4, id0: [0x00], encryptMetadata: true,
             streamFilter: CryptFilterMethod.Aes256, stringFilter: CryptFilterMethod.Aes256));
     }
