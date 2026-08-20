@@ -31,6 +31,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   pinned it: every golden document sets its own id, and the computed one folds in a millisecond
   timestamp, so no snapshot could cover it. Groundwork for the decrypt side. (#97)
 
+- **The decrypt side of the Standard security handler, covering every `/V`+`/R` combination the
+  committed corpus (#99) exercises: `/V` 1/`/R` 2 (RC4-40) through `/V` 5/`/R` 6 (AES-256).**
+  Internal only: no public surface, no `PdfReader` wiring, no `/Encrypt` gate; a decrypting reader
+  is separate work. Covers Algorithm 2 (file key from a password), Algorithms 4/5 and 7 (verifying
+  a user or owner password), Algorithm 2.A and the R6 permission check for `/V` 5, and the
+  per-object key that folds in the object's generation number, which is why this had to wait for
+  #121. Verified against all eight corpus fixtures: deriving the file key from both the correct and
+  a wrong password for each one, and decrypting a real content stream to the exact bytes qpdf's own
+  encryption produced, not merely to something self-consistent. The two `/EncryptMetadata false`
+  fixtures pin that Algorithm 2 step (f) shifts the derived key, not just `/U`. Most encrypted PDFs
+  actually use an empty user password, a case absent from the committed corpus; that case is
+  covered instead by independently computed vectors. (#97)
+
 - **A committed corpus of PDFs not produced by VellumPdf's own writer.** Test-only; nothing ships.
   Every reader fixture before this one came from VellumPdf's writer, which only ever emits
   generation 0 and never a hybrid-reference file or another producer's object-stream layout — the
