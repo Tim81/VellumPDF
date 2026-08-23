@@ -126,8 +126,12 @@ public sealed class StandardSecurityHandler : IPdfEncryptor
     /// Used to derive the validation hash stored in /U and /O, and the intermediate
     /// key used to wrap the file encryption key into /UE and /OE.
     /// Returns 32 bytes (first 32 bytes of the final K value).
+    ///
+    /// Internal rather than private: <see cref="StandardSecurityDecryptor"/> (the decrypt-side
+    /// counterpart, R6 only — R5 uses a single unsalted SHA-256 round, not this) calls the same
+    /// hash to verify a candidate password and to unwrap /UE or /OE, rather than duplicating it.
     /// </summary>
-    private static byte[] Hash2B(byte[] password, ReadOnlySpan<byte> salt, ReadOnlySpan<byte> udata)
+    internal static byte[] Hash2B(byte[] password, ReadOnlySpan<byte> salt, ReadOnlySpan<byte> udata)
     {
         // Initial K = SHA-256(password || salt || udata)
         var initialInput = Concat(password, salt, udata);
@@ -177,7 +181,7 @@ public sealed class StandardSecurityHandler : IPdfEncryptor
 
     private byte[] ComputePerms(bool encryptMetadata)
     {
-        // 16-byte plaintext block per ISO 32000-2 §7.6.4.4.2
+        // 16-byte plaintext block per ISO 32000-2 §7.6.4.4.9, Algorithm 10
         Span<byte> block = stackalloc byte[16];
         // [0..4] = P as little-endian int32
         block[0] = (byte)(PValue & 0xFF);
@@ -248,8 +252,12 @@ public sealed class StandardSecurityHandler : IPdfEncryptor
     /// Per the documented SASLprep simplification: passwords that are entirely
     /// ASCII or contain only codepoints SASLprep leaves unchanged will match
     /// correctly. Full SASLprep (NFC + prohibited characters) is not implemented.
+    ///
+    /// Internal rather than private: <see cref="StandardSecurityDecryptor"/> encodes a candidate
+    /// password the same way, so a password this class wrote decrypts under the identical byte
+    /// sequence it was verified against here.
     /// </summary>
-    private static byte[] PasswordBytes(string? password)
+    internal static byte[] PasswordBytes(string? password)
     {
         if (string.IsNullOrEmpty(password)) return [];
         var bytes = Encoding.UTF8.GetBytes(password);
@@ -264,7 +272,14 @@ public sealed class StandardSecurityHandler : IPdfEncryptor
 
     // ── Utility ──────────────────────────────────────────────────────────────
 
-    private static byte[] Concat(ReadOnlySpan<byte> a, ReadOnlySpan<byte> b, ReadOnlySpan<byte> c)
+    /// <summary>
+    /// Concatenates three byte spans into one array.
+    ///
+    /// Internal rather than private: reused by <see cref="StandardSecurityDecryptor"/> for the
+    /// same three-piece shape Hash2B and the R5 validation hash both take (password, salt,
+    /// optional udata) — passing an empty span for a piece that doesn't apply.
+    /// </summary>
+    internal static byte[] Concat(ReadOnlySpan<byte> a, ReadOnlySpan<byte> b, ReadOnlySpan<byte> c)
     {
         var result = new byte[a.Length + b.Length + c.Length];
         a.CopyTo(result);
