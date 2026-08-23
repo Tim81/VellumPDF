@@ -1,6 +1,7 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
+using System.Buffers.Binary;
 using System.Security.Cryptography;
 using System.Text;
 using VellumPdf.Encryption;
@@ -694,6 +695,47 @@ public sealed class StandardSecurityDecryptorTests
         aes.Padding = PaddingMode.None;
         using var decryptor = aes.CreateDecryptor(aes.Key, null);
         return decryptor.TransformFinalBlock(perms, 0, perms.Length);
+    }
+
+    [Fact]
+    public void VerifyPermissions_detectsACorruptedAdbMarker_withACorrectPAndEncryptMetadata()
+    {
+        // Deleting the "adb" marker check survives every other test here, because the
+        // wrong-fileKey tests already fail on an unrelated comparison (the decrypted block is
+        // garbage, so /P mismatches too) and the tamper tests above only ever corrupt /P or
+        // /EncryptMetadata, never the marker. Build a /Perms block by hand with a correct /P and
+        // /EncryptMetadata but a corrupted marker, so the marker check is the only thing that can
+        // make this fail.
+        byte[] fileKey = new byte[32];
+        RandomNumberGenerator.Fill(fileKey);
+        const int p = -44;
+
+        var block = new byte[16];
+        BinaryPrimitives.WriteInt32LittleEndian(block, p);
+        block[4] = block[5] = block[6] = block[7] = 0xFF;
+        block[8] = (byte)'T';
+        block[9] = (byte)'x';
+        block[10] = (byte)'y';
+        block[11] = (byte)'z'; // corrupted: should be "adb"
+        RandomNumberGenerator.Fill(block.AsSpan(12));
+        var perms = EncryptPermsBlockForTest(fileKey, block);
+
+        var decryptor = new StandardSecurityDecryptor(
+            v: 5, r: 6, keyLengthBytes: 32, o: new byte[48], u: new byte[48], oe: new byte[32], ue: new byte[32],
+            p: p, id0: [0x00], encryptMetadata: true,
+            streamFilter: CryptFilterMethod.Aes256, stringFilter: CryptFilterMethod.Aes256);
+
+        Assert.False(decryptor.VerifyPermissions(fileKey, perms));
+    }
+
+    private static byte[] EncryptPermsBlockForTest(byte[] fileKey, byte[] block)
+    {
+        using var aes = Aes.Create();
+        aes.Key = fileKey;
+        aes.Mode = CipherMode.ECB;
+        aes.Padding = PaddingMode.None;
+        using var encryptor = aes.CreateEncryptor(aes.Key, null);
+        return encryptor.TransformFinalBlock(block, 0, block.Length);
     }
 
     // ── Constructor validation ────────────────────────────────────────────────
