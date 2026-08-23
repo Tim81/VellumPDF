@@ -67,10 +67,16 @@ internal static class PdfDocEncoding
         return false;
     }
 
-    // The 0x18-0x1F and 0x80-0x9F PDFDocEncoding code points, per ISO 32000-2 Annex D.2 — a
-    // different assignment from the CP1252-derived WinAnsiEncoding block at the same byte range
-    // (compare VellumPdf.Fonts.WinAnsiEncoding, which is the write-side encoding for Standard-14
-    // text and must not be confused with this one).
+    // The 0x18-0x1F and 0x80-0x9F PDFDocEncoding code points. Checked entry by entry against the
+    // PDF column of ISO 32000-1 Annex D's Latin character set table, whose codes are octal: breve
+    // is 030, dagger 201, scaron 235. 36 of the 39 below were read straight out of that table and
+    // matched; bullet, Zcaron and zcaron resisted extraction from the two-column layout, and they
+    // fill exactly the three gaps (0x80, 0x99, 0x9E) in the otherwise contiguous run that did
+    // extract.
+    //
+    // This is a different assignment from the CP1252-derived WinAnsiEncoding block at the same byte
+    // range (compare VellumPdf.Fonts.WinAnsiEncoding, which is the write-side encoding for
+    // Standard-14 text and must not be confused with this one).
     private static readonly Dictionary<char, byte> _exceptions = new()
     {
         ['˘'] = 0x18, // breve
