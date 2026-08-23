@@ -321,6 +321,57 @@ public sealed class StandardSecurityDecryptorTests
         Assert.IsType<CryptographicException>(ex.InnerException);
     }
 
+    // ── AES-CBC length guard: at least 16 bytes (the IV), then whole 16-byte blocks ──
+
+    [Theory]
+    [InlineData(15)] // shorter than the IV alone
+    [InlineData(31)] // has the IV, but leaves 15 bytes of ciphertext — not a whole block
+    public void DecryptStream_aesFilter_withDataThatIsNotIvPlusWholeBlocks_throwsInvalidDataException(int length)
+    {
+        var decryptor = new StandardSecurityDecryptor(
+            v: 5, r: 6, keyLengthBytes: 32, o: new byte[48], u: new byte[48], oe: new byte[32], ue: new byte[32],
+            p: -4, id0: [0x00], encryptMetadata: true,
+            streamFilter: CryptFilterMethod.Aes256, stringFilter: CryptFilterMethod.Aes256);
+
+        Assert.Throws<InvalidDataException>(
+            () => decryptor.DecryptStream(new byte[32], objectNumber: 1, generation: 0, new byte[length]));
+    }
+
+    // ── AES-CBC padding-failure path ──────────────────────────────────────────
+    //
+    // The only existing test aimed at DecryptAesCbcWithIvPrefix's catch block
+    // (DecryptStream_aesFilter_withAKeyLengthThatCannotFormALegalAesKey_throwsInvalidDataException,
+    // above) trips aes.Key's setter on a too-short key — CryptographicException from key length,
+    // not from TransformFinalBlock rejecting bad padding. Moving TransformFinalBlock outside the
+    // try would still pass that test. A legal-size (32-byte) key that is simply the wrong one
+    // reaches TransformFinalBlock, and 16 bytes of essentially arbitrary "plaintext" has only a
+    // 1-in-256-ish chance of ending in valid PKCS#7 padding, so this reaches the padding failure
+    // instead.
+
+    [Fact]
+    public void DecryptStream_aesFilter_wrongKey_throwsInvalidDataException_fromPaddingFailure()
+    {
+        var decryptor = new StandardSecurityDecryptor(
+            v: 5, r: 6, keyLengthBytes: 32, o: new byte[48], u: new byte[48], oe: new byte[32], ue: new byte[32],
+            p: -4, id0: [0x00], encryptMetadata: true,
+            streamFilter: CryptFilterMethod.Aes256, stringFilter: CryptFilterMethod.Aes256);
+
+        byte[] wrongKey =
+        [
+            0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F,
+            0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E, 0x1F,
+        ];
+        byte[] ivAndCiphertext =
+        [
+            0xA5, 0x5A, 0x3C, 0xC3, 0x91, 0x19, 0x77, 0x7A, 0xE8, 0x2D, 0x4B, 0x66, 0xFA, 0xB2, 0x0D, 0x50,
+            0x6F, 0x94, 0x1D, 0xC8, 0x2E, 0x71, 0x08, 0xB9, 0x3A, 0xE4, 0x5C, 0x27, 0x99, 0x60, 0x8D, 0xF1,
+        ];
+
+        var ex = Assert.Throws<InvalidDataException>(
+            () => decryptor.DecryptStream(wrongKey, objectNumber: 1, generation: 0, ivAndCiphertext));
+        Assert.IsType<CryptographicException>(ex.InnerException);
+    }
+
     // ── Assertion 5 (empty user password) + Algorithm 2/4/5/2.A synthetic vectors ──
     //
     // None of the eight committed fixtures uses an empty user password (the corpus README lists
