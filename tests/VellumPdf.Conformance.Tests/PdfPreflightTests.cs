@@ -4287,17 +4287,20 @@ public sealed class PdfPreflightTests
     }
 
     [Fact]
-    public void Validate_EncryptedPdf_PropagatesUnsupported()
+    public void Validate_PublicKeyEncryptedPdf_PropagatesUnsupported()
     {
-        // An unsupported reader feature (encryption) must surface as UnsupportedPdfFeatureException,
-        // not be swallowed into a conformance finding.
-        var bytes = BuildEncryptedTrailerPdf();
+        // An unsupported reader feature must surface as UnsupportedPdfFeatureException, not be
+        // swallowed into a conformance finding. Since #97 the Standard security handler IS
+        // supported (see the encrypted-fixture corpus tests in VellumPdf.Reader.Tests for that
+        // path), so this now exercises the one security handler that still is not: a public-key
+        // (/Adobe.PubSec) /Encrypt dictionary.
+        var bytes = BuildPublicKeyEncryptedTrailerPdf();
 
         Assert.Throws<UnsupportedPdfFeatureException>(
             () => PdfPreflight.Validate(bytes, PdfConformance.PdfA2B));
     }
 
-    private static byte[] BuildEncryptedTrailerPdf()
+    private static byte[] BuildPublicKeyEncryptedTrailerPdf()
     {
         var ms = new MemoryStream();
         void Write(string s) => ms.Write(Encoding.ASCII.GetBytes(s));
@@ -4313,7 +4316,7 @@ public sealed class PdfPreflightTests
         Write($"{0:D10} 65535 f \n");
         Write($"{o1:D10} 00000 n \n");
         Write($"{o2:D10} 00000 n \n");
-        Write("trailer\n<< /Size 3 /Root 1 0 R /Encrypt << /Filter /Standard /V 1 /R 2 >> >>\n");
+        Write("trailer\n<< /Size 3 /Root 1 0 R /Encrypt << /Filter /Adobe.PubSec /V 1 /R 2 >> >>\n");
         Write($"startxref\n{xref}\n%%EOF\n");
 
         return ms.ToArray();

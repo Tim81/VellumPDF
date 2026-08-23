@@ -1,0 +1,191 @@
+// Copyright © Timothy van der Ham (@Tim81)
+// SPDX-License-Identifier: Apache-2.0
+
+using VellumPdf.Core;
+using VellumPdf.Encryption;
+
+namespace VellumPdf.Reader.Tests;
+
+/// <summary>
+/// Unit-level tests of <see cref="CryptFilterResolver"/> against synthetic dictionaries — no PDF
+/// file, no <see cref="StandardSecurityDecryptor"/> — so the crypt-filter-method resolution logic
+/// (which stream gets Identity, which gets Unsupported, which named /CF entry applies) is pinned
+/// independently of a full document round-trip.
+/// </summary>
+public sealed class CryptFilterResolverTests
+{
+    private static readonly PdfName _cfKey = new("CF");
+    private static readonly PdfName _cfmKey = new("CFM");
+    private static readonly PdfName _stdCf = new("StdCF");
+    private static readonly PdfName _filterKey = PdfName.Filter;
+    private static readonly PdfName _decodeParmsKey = new("DecodeParms");
+    private static readonly PdfName _nameKey = new("Name");
+    private static readonly PdfName _cryptFilterName = new("Crypt");
+
+    [Fact]
+    public void BuildCfTable_mapsEachCfmToItsMethod()
+    {
+        var encryptDict = new PdfDictionary().Set(_cfKey, new PdfDictionary()
+            .Set(new PdfName("Rc4Filter"), new PdfDictionary().Set(_cfmKey, new PdfName("V2")))
+            .Set(new PdfName("Aes128Filter"), new PdfDictionary().Set(_cfmKey, new PdfName("AESV2")))
+            .Set(new PdfName("Aes256Filter"), new PdfDictionary().Set(_cfmKey, new PdfName("AESV3")))
+            .Set(new PdfName("IdentityFilter"), new PdfDictionary().Set(_cfmKey, new PdfName("Identity"))));
+
+        var table = CryptFilterResolver.BuildCfTable(encryptDict, resolve: null);
+
+        Assert.Equal(CryptFilterMethod.Rc4, table["Rc4Filter"]);
+        Assert.Equal(CryptFilterMethod.Aes128, table["Aes128Filter"]);
+        Assert.Equal(CryptFilterMethod.Aes256, table["Aes256Filter"]);
+        Assert.Equal(CryptFilterMethod.Identity, table["IdentityFilter"]);
+    }
+
+    [Fact]
+    public void BuildCfTable_unrecognisedCfm_mapsToUnsupported()
+    {
+        var encryptDict = new PdfDictionary().Set(_cfKey, new PdfDictionary()
+            .Set(new PdfName("Weird"), new PdfDictionary().Set(_cfmKey, new PdfName("SomeFutureAlgorithm"))));
+
+        var table = CryptFilterResolver.BuildCfTable(encryptDict, resolve: null);
+
+        Assert.Equal(CryptFilterMethod.Unsupported, table["Weird"]);
+    }
+
+    [Fact]
+    public void ResolveNamedMethod_identityName_needsNoCfEntry()
+    {
+        var empty = new Dictionary<string, CryptFilterMethod>();
+        Assert.Equal(CryptFilterMethod.Identity, CryptFilterResolver.ResolveNamedMethod("Identity", empty));
+    }
+
+    [Fact]
+    public void ResolveNamedMethod_missingName_defaultsToIdentity()
+    {
+        // The documented default for /StmF and /StrF (ISO 32000-2 Table 20) when absent, and for a
+        // /Crypt filter's own /DecodeParms /Name when that key is absent.
+        var empty = new Dictionary<string, CryptFilterMethod>();
+        Assert.Equal(CryptFilterMethod.Identity, CryptFilterResolver.ResolveNamedMethod(null, empty));
+    }
+
+    /// <summary>
+    /// A /StmF (or /StrF, or /Crypt /Name) that names a /CF entry the document does NOT define maps
+    /// to Unsupported — never silently to Identity, which would hand ciphertext back as plaintext
+    /// with no error. This is the "loud failure" case #97's brief calls out by name.
+    /// </summary>
+    [Fact]
+    public void ResolveNamedMethod_nameAbsentFromCfTable_mapsToUnsupported_notIdentity()
+    {
+        var table = new Dictionary<string, CryptFilterMethod> { ["StdCF"] = CryptFilterMethod.Aes128 };
+
+        var method = CryptFilterResolver.ResolveNamedMethod("NotInTable", table);
+
+        Assert.Equal(CryptFilterMethod.Unsupported, method);
+        Assert.NotEqual(CryptFilterMethod.Identity, method);
+    }
+
+    [Fact]
+    public void ResolveStreamMethod_noExplicitCryptFilter_usesDocumentWideDefault()
+    {
+        var streamDict = new PdfDictionary().Set(_filterKey, new PdfName("FlateDecode"));
+        var table = new Dictionary<string, CryptFilterMethod>();
+
+        var method = CryptFilterResolver.ResolveStreamMethod(
+            streamDict, CryptFilterMethod.Aes256, table, encryptMetadata: true, resolve: null);
+
+        Assert.Equal(CryptFilterMethod.Aes256, method);
+    }
+
+    /// <summary>
+    /// An explicit /Crypt filter with /DecodeParms /Name /Identity overrides the document-wide
+    /// default and means this ONE stream is not encrypted at all (ISO 32000-2 §7.4.10) — even
+    /// though the document-wide default here is AES-256, which would corrupt this stream's already
+    /// non-ciphertext bytes if applied.
+    /// </summary>
+    [Fact]
+    public void ResolveStreamMethod_explicitCryptIdentity_overridesDocumentWideDefault()
+    {
+        var streamDict = new PdfDictionary()
+            .Set(_filterKey, _cryptFilterName)
+            .Set(_decodeParmsKey, new PdfDictionary().Set(_nameKey, new PdfName("Identity")));
+        var table = new Dictionary<string, CryptFilterMethod>();
+
+        var method = CryptFilterResolver.ResolveStreamMethod(
+            streamDict, CryptFilterMethod.Aes256, table, encryptMetadata: true, resolve: null);
+
+        Assert.Equal(CryptFilterMethod.Identity, method);
+    }
+
+    [Fact]
+    public void ResolveStreamMethod_explicitCryptNamingRealCfEntry_usesThatEntry()
+    {
+        var streamDict = new PdfDictionary()
+            .Set(_filterKey, new PdfArray([_cryptFilterName, new PdfName("FlateDecode")]))
+            .Set(_decodeParmsKey, new PdfArray(
+                [new PdfDictionary().Set(_nameKey, _stdCf), PdfNull.Instance]));
+        var table = new Dictionary<string, CryptFilterMethod> { ["StdCF"] = CryptFilterMethod.Aes128 };
+
+        var method = CryptFilterResolver.ResolveStreamMethod(
+            streamDict, CryptFilterMethod.Rc4, table, encryptMetadata: true, resolve: null);
+
+        Assert.Equal(CryptFilterMethod.Aes128, method);
+    }
+
+    [Fact]
+    public void ResolveStreamMethod_explicitCryptNamingUndefinedCfEntry_isUnsupported()
+    {
+        var streamDict = new PdfDictionary()
+            .Set(_filterKey, _cryptFilterName)
+            .Set(_decodeParmsKey, new PdfDictionary().Set(_nameKey, new PdfName("Ghost")));
+        var table = new Dictionary<string, CryptFilterMethod> { ["StdCF"] = CryptFilterMethod.Aes128 };
+
+        var method = CryptFilterResolver.ResolveStreamMethod(
+            streamDict, CryptFilterMethod.Aes128, table, encryptMetadata: true, resolve: null);
+
+        Assert.Equal(CryptFilterMethod.Unsupported, method);
+    }
+
+    /// <summary>
+    /// /EncryptMetadata false exempts the /Type /Metadata stream structurally, independent of
+    /// /Filter — it is never expressed as a /Crypt filter entry (see the method's own doc comment).
+    /// </summary>
+    [Fact]
+    public void ResolveStreamMethod_metadataStreamWithEncryptMetadataFalse_isIdentity()
+    {
+        var streamDict = new PdfDictionary()
+            .Set(new PdfName("Type"), new PdfName("Metadata"))
+            .Set(_filterKey, new PdfName("FlateDecode"));
+        var table = new Dictionary<string, CryptFilterMethod>();
+
+        var method = CryptFilterResolver.ResolveStreamMethod(
+            streamDict, CryptFilterMethod.Aes256, table, encryptMetadata: false, resolve: null);
+
+        Assert.Equal(CryptFilterMethod.Identity, method);
+    }
+
+    [Fact]
+    public void ResolveStreamMethod_metadataStreamWithEncryptMetadataTrue_usesDocumentWideDefault()
+    {
+        var streamDict = new PdfDictionary()
+            .Set(new PdfName("Type"), new PdfName("Metadata"))
+            .Set(_filterKey, new PdfName("FlateDecode"));
+        var table = new Dictionary<string, CryptFilterMethod>();
+
+        var method = CryptFilterResolver.ResolveStreamMethod(
+            streamDict, CryptFilterMethod.Aes256, table, encryptMetadata: true, resolve: null);
+
+        Assert.Equal(CryptFilterMethod.Aes256, method);
+    }
+
+    [Fact]
+    public void ResolveStreamMethod_nonMetadataStream_ignoresEncryptMetadataFalse()
+    {
+        var streamDict = new PdfDictionary()
+            .Set(new PdfName("Type"), new PdfName("XObject"))
+            .Set(_filterKey, new PdfName("FlateDecode"));
+        var table = new Dictionary<string, CryptFilterMethod>();
+
+        var method = CryptFilterResolver.ResolveStreamMethod(
+            streamDict, CryptFilterMethod.Aes256, table, encryptMetadata: false, resolve: null);
+
+        Assert.Equal(CryptFilterMethod.Aes256, method);
+    }
+}

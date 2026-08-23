@@ -106,6 +106,17 @@ internal static class PdfFilters
         if (filter.Value is "RunLengthDecode" or "RL")
             return DecodeRunLength(input);
 
+        // /Crypt (ISO 32000-2 §7.4.10) is a no-op at this layer: PdfDocumentReader.GetDecodedStreamData
+        // resolves which crypt filter method a stream's own /Crypt entry (or the document-wide /StmF)
+        // names, via CryptFilterResolver, and performs the actual decryption BEFORE handing the body
+        // to this filter chain — that is what design decision #1 in #97 requires, since decryption
+        // changes a stream's length and StreamRule/HexStringRule need RawBody to stay the verbatim
+        // file bytes. By the time /Crypt is encountered here, whatever it named has already happened
+        // (or, for /Identity, correctly not happened); passing the bytes through unchanged is correct
+        // either way — it is never this method's job to decrypt.
+        if (filter.Value == "Crypt")
+            return input;
+
         throw new InvalidDataException($"Unknown PDF filter: /{filter.Value}");
     }
 

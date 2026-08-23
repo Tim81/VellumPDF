@@ -34,6 +34,7 @@ internal readonly struct XrefRevision
 internal sealed class XrefParser
 {
     private static readonly byte[] StartxrefBytes = "startxref"u8.ToArray();
+    private static readonly PdfName _encryptKey = new("Encrypt");
 
     /// <summary>
     /// Parses the xref table/stream chain from <paramref name="data"/>.
@@ -146,11 +147,6 @@ internal sealed class XrefParser
             var trailer = ParseOneRevision(data, currentOffset, xref, freed, seenOffsets);
             newestTrailer ??= trailer;
 
-            // Check for unsupported features.
-            if (trailer.Get(new PdfName("Encrypt")) is not null)
-                throw new UnsupportedPdfFeatureException(
-                    "Encryption is not supported yet (see VellumPdf issue #97).");
-
             if (trailer.TryGet(PdfName.Prev, out var prevObj) && prevObj is PdfInteger prevInt)
             {
                 // Validate the full 64-bit value before narrowing: a value such as 0x1_0000_0005
@@ -236,17 +232,19 @@ internal sealed class XrefParser
             if (seenOffsets.Add(stmOffset))
             {
                 // #192 threads the per-revision free sets through; #183 needs the dictionary the
-                // stream returns.
+                // stream returns. ISO 32000-2 §7.5.8.4 permits a producer to put /Encrypt on the
+                // XRefStm dictionary instead of the classic trailer — the only place a hybrid file
+                // can legally put it, since a pre-1.5 reader falling back to the classic table would
+                // otherwise never see it at all. PdfDocumentReader only ever reads /Encrypt off the
+                // dictionary XrefParser.Parse returns as `Trailer` (the classic one, for a hybrid
+                // file — see ParseOneRevision below), so it has to be merged onto that dictionary
+                // here for a hybrid+encrypted file to decrypt at all. The classic trailer's own
+                // /Encrypt wins if both happen to declare one — that would be a malformed producer
+                // either way, and the classic trailer is what every pre-1.5 (and this) reader treats
+                // as authoritative for every other trailer key.
                 var xrefStmDict = ParseXrefStream(data, stmOffset, xref, freed, localFreed);
-
-                // #183: in a hybrid-reference file the classic trailer above is the one callers see,
-                // but /Encrypt is only required to be *reachable* — ISO 32000-2 §7.5.8.4 permits a
-                // producer to put it on the XRefStm dictionary instead. Missing this let an encrypted
-                // hybrid file fall through as if it were plain, producing garbage rather than the
-                // clean UnsupportedPdfFeatureException every other /Encrypt path throws.
-                if (xrefStmDict.Get(new PdfName("Encrypt")) is not null)
-                    throw new UnsupportedPdfFeatureException(
-                        "Encryption is not supported yet (see VellumPdf issue #97).");
+                if (!trailer.TryGet(_encryptKey, out _) && xrefStmDict.TryGet(_encryptKey, out var stmEncrypt) && stmEncrypt is not null)
+                    trailer.Set(_encryptKey, stmEncrypt);
             }
         }
 

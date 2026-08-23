@@ -53,8 +53,33 @@ security handler support matrix in #97.
 | `enc-aes-256-r6.pdf` | `--encrypt u o 256 --` | 5 | 6 | AESv3 |
 | `enc-aes-128-cleartextmd.pdf` | `--encrypt u o 128 --use-aes=y --cleartext-metadata --` | 4 | 4 | AESv2, metadata in clear |
 | `enc-256-cleartextmd.pdf` | `--encrypt u o 256 --cleartext-metadata --` | 5 | 6 | AESv3, metadata in clear |
+| `enc-rc4-objstm.pdf` | `--allow-weak-crypto --encrypt u o 128 --force-V4 --use-aes=n -- --object-streams=generate` | 4 | 4 | RC4 via `/CF` `/V2`, object stream + xref stream |
+| `enc-aes-128-emptyuser.pdf` | `--encrypt "" o 128 --use-aes=y --` | 4 | 4 | AESv2, EMPTY user password |
+| `enc-aes-128-nestedstrings.pdf` | see below | 4 | 4 | AESv2, extra object with a nested array-of-strings |
 
-`--allow-weak-crypto` is **required** for the three RC4 rows. Without it qpdf refuses:
+`enc-rc4-objstm.pdf` covers three gaps at once: an object stream (compressed objects), a
+cross-reference stream, and — because its `/Info` dictionary (with `/Title`) is itself a compressed
+member — the one fixture that can catch a decryptor that wrongly re-decrypts an object-stream
+member individually (ISO 32000-2 §7.5.7). It has to be this row and not an AES one: RC4
+double-decryption is silent (XORing an already-plaintext string against a second, wrong keystream
+just produces different-looking garbage, no exception), where AES throws on the second pass
+regardless of whether the first one was wrong. An AES fixture would pass this particular test for
+the wrong reason.
+
+`enc-aes-128-nestedstrings.pdf` is not `plaintext-baseline.pdf` unmodified: it adds one extra
+top-level object, `<< /Outer << /Strs [ (DirectArrayString) (SecondArrayString) ] >> >>`,
+referenced from the catalog as `/CustomTestData`, before encrypting. Built by decompressing
+`plaintext-baseline.pdf` with `qpdf --qdf --object-streams=disable`, inserting that object and the
+catalog reference as plain text, recompacting with a bare `qpdf in out` pass (which also
+renumbers objects — the custom object ends up as object 3), then encrypting the result the same
+way as `enc-aes-128.pdf`. Exists to pin ISO 32000-1 §7.6.2 Algorithm 1 step (a): a string nested
+two levels deep (array, inside a dictionary, inside the containing indirect object's own
+dictionary) must decrypt under THAT indirect object's identity, not the array's position or a
+hardcoded generation — `/Info /Title` alone can't catch this, since it's only one level deep.
+Because it isn't `plaintext-baseline.pdf`'s own object graph, only its page content stream (not the
+whole decrypted file) is comparable to the baseline.
+
+`--allow-weak-crypto` is **required** for the RC4 rows. Without it qpdf refuses:
 
 > qpdf: refusing to write a file with RC4, a weak cryptographic algorithm
 
@@ -88,18 +113,23 @@ appear in `enc-aes-256-r6.pdf`.
 ## Known gaps
 
 The matrix above is complete along the `/V`+`/R`+`/CFM` axis. It is deliberately **not** complete along the
-structural axis, and #97 will need more than this:
+structural axis. #97 closed some of the structural gaps (see the three extra fixtures above); what
+remains:
 
-- **Every object is generation 0, and every file is single-revision.** So the corpus cannot exercise the
-  coupling that makes #97 depend on #121 — a decryptor that hardcodes generation 0 in the per-object key
-  passes all of it. qpdf normalises generations when it rewrites, so these need hand-building.
-- **No owner-password-only file**, no empty user password. Worth adding: veraPDF can open those (it tries
-  the empty user password) where it refuses a user-password file outright, which is what makes them the
-  right shape for #138.
-- **No object stream, no cross-reference stream, no incremental update.** The xref-stream case matters
-  particularly: cross-reference streams must *not* be decrypted, which is a classic trap.
-- **No `/EFF`, no `/StrF` differing from `/StmF`, no `/Crypt` filter entry**, and no non-ASCII password
-  exercising R6's SASLprep handling.
+- **Every object is generation 0, and every file is single-revision.** So the corpus still cannot
+  exercise the coupling that makes #97 depend on #121 — a decryptor that hardcodes generation 0 in
+  the per-object key passes all of it. qpdf normalises generations when it rewrites, so this needs
+  hand-building.
+- **No owner-password-only file.** `enc-aes-128-emptyuser.pdf` covers the empty-user-password case;
+  a file whose owner password differs and whose user password is a NON-empty, deliberately-wrong
+  value (so only the owner path can open it at all) is still missing.
+- **No incremental update.** `enc-rc4-objstm.pdf` covers the object-stream and cross-reference-stream
+  gaps; a multi-revision encrypted file (each revision's own `/Encrypt`, or a later revision that
+  changes permissions) is still missing.
+- **No `/EFF`, no `/StrF` differing from `/StmF`, no `/Crypt` filter entry naturally present in a
+  real qpdf-produced file**, and no non-ASCII password exercising R6's SASLprep handling.
+  `EncryptedReaderTests` covers the `/Crypt`-filter and absent-`/CF`-entry cases with a same-length
+  byte patch on `enc-aes-128.pdf` instead, since qpdf itself never emits either shape.
 
 Both `--cleartext-metadata` rows are present on purpose. At R5/R6 the flag never enters key derivation —
 the file key is random and unwrapped from `/UE`/`/OE` — so only the **R4** row exercises ISO 32000-1

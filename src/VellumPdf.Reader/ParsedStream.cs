@@ -31,11 +31,27 @@ internal sealed class ParsedStream
     /// </summary>
     public int BodyOffset { get; }
 
+    /// <summary>
+    /// The object number from this stream's own <c>N G obj</c> header — a stream is always a
+    /// top-level indirect object (ISO 32000-2 §7.3.8: a compressed object in an object stream cannot
+    /// itself be a stream), so this is always available. Needed at the decode layer
+    /// (<see cref="PdfDocumentReader.GetDecodedStreamData"/>) to derive the per-object decryption key
+    /// (ISO 32000-1 §7.6.2, Algorithm 1) without threading identity through every call site
+    /// separately — see the design note on <see cref="RawBody"/> for why decryption happens there
+    /// and not by mutating this stream's body in place.
+    /// </summary>
+    public int ObjectNumber { get; }
+
+    /// <summary>The generation number from this stream's own <c>N G obj</c> header.</summary>
+    public int Generation { get; }
+
     /// <summary>Creates a parsed stream from a dictionary, its raw body bytes, and the body's file offset.</summary>
-    public ParsedStream(PdfDictionary dictionary, ReadOnlyMemory<byte> rawBody, int bodyOffset = 0)
+    public ParsedStream(PdfDictionary dictionary, ReadOnlyMemory<byte> rawBody, int bodyOffset = 0, int objectNumber = 0, int generation = 0)
     {
         Dictionary = dictionary;
         RawBody = rawBody;
         BodyOffset = bodyOffset;
+        ObjectNumber = objectNumber;
+        Generation = generation;
     }
 }

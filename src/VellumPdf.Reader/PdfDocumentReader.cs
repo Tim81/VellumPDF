@@ -3,6 +3,7 @@
 
 using System.Text;
 using VellumPdf.Core;
+using VellumPdf.Encryption;
 using VellumPdf.IO;
 
 namespace VellumPdf.Reader;
@@ -49,6 +50,16 @@ public sealed class PdfDocumentReader : IDisposable
     // Caps AcroForm field-tree recursion.
     private const int MaxFieldTreeDepth = 512;
 
+    // Non-null only for an encrypted document, and only once the supplied password has
+    // authenticated (the constructor throws PdfPasswordException otherwise, so a live
+    // PdfDocumentReader instance never observes _decryptor set without _fileKey also set).
+    // Resolve() and GetDecodedStreamData() gate all decryption on this being non-null, so an
+    // unencrypted document never pays for (or risks a bug in) any of this machinery.
+    private readonly StandardSecurityDecryptor? _decryptor;
+    private readonly byte[]? _fileKey;
+    private readonly Dictionary<string, CryptFilterMethod> _cryptFilterTable = new(StringComparer.Ordinal);
+    private readonly bool _encryptMetadata = true;
+
     internal ReadOnlyMemory<byte> Bytes { get; }
     internal PdfDictionary Trailer { get; }
 
@@ -67,6 +78,15 @@ public sealed class PdfDocumentReader : IDisposable
     /// <summary>The document catalog dictionary (/Root).</summary>
     public PdfDictionary Catalog { get; }
 
+    /// <summary>
+    /// The document's Standard security handler settings, or <see langword="null"/> when the
+    /// document is not encrypted (no <c>/Encrypt</c> in the trailer). Never null for a document that
+    /// opened successfully via a password-protected path — <see cref="PdfReader.Open(byte[], string?)"/>
+    /// throws <see cref="PdfPasswordException"/> before a <see cref="PdfDocumentReader"/> exists at
+    /// all when the supplied password does not authenticate.
+    /// </summary>
+    public PdfEncryptionInfo? Encryption { get; }
+
     /// <summary>All digital signatures found in the document's AcroForm, in field-tree order.</summary>
     public IReadOnlyList<PdfSignature> Signatures => _signatures ??= CollectSignatures();
 
@@ -75,13 +95,37 @@ public sealed class PdfDocumentReader : IDisposable
         Dictionary<int, XrefEntry> xref,
         PdfDictionary trailer,
         int startXrefOffset,
-        IReadOnlyList<XrefRevision> revisions)
+        IReadOnlyList<XrefRevision> revisions,
+        string? password = null)
     {
         Bytes = bytes;
         _xref = xref;
         Trailer = trailer;
         StartXrefOffset = startXrefOffset;
         Revisions = revisions;
+
+        // /Encrypt must be resolved and authenticated BEFORE anything else: Resolve() and
+        // GetDecodedStreamData() key their decryption on _decryptor being set, and /Root (resolved
+        // just below) is itself an encrypted object in an encrypted document. Resolving /Encrypt
+        // here, with _decryptor still null, is also what keeps its own strings (/O, /U, /OE, /UE)
+        // from ever being run through string decryption — see the constructor's caching of this
+        // object, and DecryptObjectGraph's doc comment, for why no separate guard is needed beyond
+        // this ordering.
+        if (trailer.TryGet(new PdfName("Encrypt"), out var encryptRaw) && encryptRaw is not null)
+        {
+            var encryptDict = ResolveValue(encryptRaw) as PdfDictionary
+                ?? throw new InvalidDataException("Malformed PDF: /Encrypt does not resolve to a dictionary.");
+
+            var setup = EncryptionSetup.Authenticate(encryptDict, trailer, password);
+            _decryptor = setup.Decryptor;
+            _fileKey = setup.FileKey;
+            _cryptFilterTable = setup.CryptFilterTable;
+            _encryptMetadata = setup.EncryptMetadata;
+
+            Encryption = new PdfEncryptionInfo(
+                setup.Decryptor.V, setup.Decryptor.R, setup.Cipher, setup.KeyLengthBits,
+                setup.Permissions, setup.EncryptMetadata, setup.IsOwnerAccess);
+        }
 
         if (!trailer.TryGet(PdfName.Root, out var rootObj) || rootObj is null)
             throw new InvalidDataException("Malformed PDF: trailer is missing /Root.");
@@ -197,6 +241,17 @@ public sealed class PdfDocumentReader : IDisposable
                     ? result.Stream!.Dictionary
                     : result.Value ?? PdfNull.Instance;
 
+                // ISO 32000-1 §7.6.2, Algorithm 1 step (a): every string reachable from this
+                // object's own structure is decrypted using ITS identity — the containing indirect
+                // object's number and generation, not the string's own position. A stream's
+                // dictionary is decrypted here too (it is `value` in that branch); the stream BODY
+                // is a separate concern, decrypted lazily in GetDecodedStreamData off
+                // ParsedStream.ObjectNumber/Generation, not here. _decryptor is still null while
+                // /Encrypt's own dictionary is being resolved (see the constructor), so this never
+                // touches /O, /U, /OE, or /UE.
+                if (_decryptor is not null)
+                    value = DecryptObjectGraph(value, objectNumber, actualGeneration);
+
                 if (result.IsStream)
                     _streamCache.TryAdd(objectNumber, (result.Stream!, actualGeneration));
             }
@@ -278,7 +333,118 @@ public sealed class PdfDocumentReader : IDisposable
     /// Decodes the filter chain for <paramref name="stream"/> and returns the decoded bytes.
     /// Returns null when an image filter (DCTDecode, JPXDecode, etc.) prevents full decode.
     /// </summary>
-    internal byte[]? GetDecodedStreamData(ParsedStream stream) => PdfFilters.Decode(stream, ResolveMaybe);
+    /// <remarks>
+    /// Decryption (when the document is encrypted) happens HERE, before the ordinary filter chain
+    /// runs — not by mutating <see cref="ParsedStream.RawBody"/>, which stays the verbatim file
+    /// bytes for §6.1.7.1 byte-level conformance checks (see the type's own doc comment). A stream
+    /// whose effective crypt filter method is Identity is handed to
+    /// <see cref="PdfFilters.Decode(ParsedStream, Func{PdfObject?, PdfObject?}?)"/> unchanged; one
+    /// that needs decrypting is wrapped in a throwaway <see cref="ParsedStream"/> carrying the
+    /// decrypted bytes, never exposed outside this method.
+    /// </remarks>
+    internal byte[]? GetDecodedStreamData(ParsedStream stream) => PdfFilters.Decode(DecryptedStreamView(stream), ResolveMaybe);
+
+    /// <summary>
+    /// Returns a <see cref="ParsedStream"/> view of <paramref name="stream"/> whose body is
+    /// decrypted (or, for an unencrypted document or an Identity crypt filter, unchanged) but has
+    /// NOT been run through <see cref="PdfFilters"/> — i.e. the same thing <c>stream.RawBody</c>
+    /// used to give every caller before #97, except correct on an encrypted document.
+    ///
+    /// <para>
+    /// Exists because <see cref="PdfFilters.Decode(ParsedStream, Func{PdfObject?, PdfObject?}?)"/>
+    /// returns <see langword="null"/> whenever an image filter (DCTDecode, JPXDecode, …) is present
+    /// — by design, it never attempts to decode image data — which makes it unusable for a caller
+    /// like <c>Jpeg2000Rule</c> that wants the raw-but-decrypted JP2/codestream bytes precisely
+    /// BECAUSE it parses that image data itself. Reading <c>stream.RawBody</c> directly there would
+    /// hand back ciphertext on an encrypted document (see the design note on
+    /// <see cref="ParsedStream.RawBody"/>), which is what this method is for.
+    /// </para>
+    /// </summary>
+    internal ParsedStream DecryptedStreamView(ParsedStream stream)
+    {
+        if (_decryptor is null)
+            return stream;
+
+        var method = CryptFilterResolver.ResolveStreamMethod(
+            stream.Dictionary, _decryptor.StreamFilter, _cryptFilterTable, _encryptMetadata, ResolveMaybe);
+
+        if (method == CryptFilterMethod.Identity)
+            return stream;
+
+        var decryptedBody = _decryptor.DecryptWithMethod(
+            _fileKey!, stream.ObjectNumber, stream.Generation, stream.RawBody.Span, method);
+        return new ParsedStream(stream.Dictionary, decryptedBody, stream.BodyOffset, stream.ObjectNumber, stream.Generation);
+    }
+
+    // Well-known keys used only by the decrypt walk below.
+    private static readonly PdfName _sigType = new("Sig");
+    private static readonly PdfName _typeKey = new("Type");
+
+    /// <summary>
+    /// Walks <paramref name="obj"/>'s own structure — recursing into nested dictionaries and
+    /// arrays, but NOT following indirect references, which name separate objects that get their
+    /// own decrypt pass under their own identity when resolved — decrypting every string found,
+    /// using (<paramref name="objectNumber"/>, <paramref name="generation"/>) as the containing
+    /// indirect object's identity per ISO 32000-1 §7.6.2, Algorithm 1 step (a): "If the string is a
+    /// direct object, use the identifier of the indirect object containing it."
+    ///
+    /// <para>
+    /// Dictionaries and arrays are mutated in place rather than rebuilt (matching
+    /// <c>PdfObjectRemapper.RemapStreamInPlace</c>'s reasoning): this method only ever runs, from
+    /// <see cref="Resolve(int, int?)"/>, on an object graph that was JUST parsed for this one
+    /// resolution and is not yet cached or shared anywhere else, so mutating it is safe and avoids
+    /// allocating a full parallel copy of every dictionary and array in the document.
+    /// </para>
+    /// <para>
+    /// <strong>Signature <c>/Contents</c> exemption.</strong> ISO 32000-1 and ISO 32000-2 are both
+    /// silent on whether a signature dictionary's <c>/Contents</c> is exempt from string encryption.
+    /// It matters: a conformant signer patches <c>/Contents</c>' hex digits directly into the
+    /// already-serialized file bytes after computing the signature over the file's own bytes
+    /// (<c>PdfSignatureHelper</c> in this codebase does exactly this — see its placeholder/patch
+    /// mechanism), which means those bytes were never run through the object-level string-encryption
+    /// pipeline at write time in the first place, encrypted document or not. Decrypting them on read
+    /// would corrupt the actual signature bytes and break <c>/ByteRange</c> verification. Since the
+    /// spec does not say, this method takes the safe reading for signature verification and never
+    /// decrypts <c>/Contents</c> when the containing dictionary declares <c>/Type /Sig</c> — every
+    /// OTHER string in that same dictionary (<c>/Name</c>, <c>/Reason</c>, <c>/Location</c>,
+    /// <c>/ContactInfo</c>, <c>/M</c>) is still decrypted normally.
+    /// </para>
+    /// </summary>
+    private PdfObject DecryptObjectGraph(PdfObject obj, int objectNumber, int generation)
+    {
+        switch (obj)
+        {
+            case PdfLiteralString s:
+                return new PdfLiteralString(_decryptor!.DecryptString(_fileKey!, objectNumber, generation, s.Bytes.Span));
+
+            case PdfHexString h:
+                return new PdfHexString(_decryptor!.DecryptString(_fileKey!, objectNumber, generation, h.Bytes.Span));
+
+            case PdfDictionary d:
+                var isSignatureDict = (d.Get(_typeKey) as PdfName)?.Equals(_sigType) == true;
+                foreach (var kv in d.Entries.ToList())
+                {
+                    if (isSignatureDict && kv.Key.Equals(PdfName.Contents))
+                        continue;
+                    var newVal = DecryptObjectGraph(kv.Value, objectNumber, generation);
+                    if (!ReferenceEquals(newVal, kv.Value))
+                        d.Set(kv.Key, newVal);
+                }
+                return d;
+
+            case PdfArray a:
+                for (var i = 0; i < a.Count; i++)
+                {
+                    var newVal = DecryptObjectGraph(a[i], objectNumber, generation);
+                    if (!ReferenceEquals(newVal, a[i]))
+                        a.SetAt(i, newVal);
+                }
+                return a;
+
+            default:
+                return obj;
+        }
+    }
 
     /// <summary>Resolves an indirect reference, honouring its generation.</summary>
     internal PdfObject? Resolve(PdfIndirectReference r) => Resolve(r.ObjectNumber, r.Generation);
@@ -379,8 +545,13 @@ public sealed class PdfDocumentReader : IDisposable
             throw new InvalidDataException($"Object stream {containerObjNum} missing /First.");
         var first = (int)firstObj.Value;
 
-        // Decode the stream body
-        var body = PdfFilters.Decode(streamObj, ResolveMaybe)
+        // Decode the stream body. Routed through GetDecodedStreamData, not PdfFilters.Decode
+        // directly, so an encrypted document's object stream gets decrypted here, ONCE, using the
+        // container's own identity — ISO 32000-2 §7.5.7: "In an encrypted file ... strings occurring
+        // anywhere in an object stream shall not be separately encrypted." ResolveFromObjectStream
+        // parses each member straight out of this already-plaintext body and never calls
+        // DecryptObjectGraph on it, which is what keeps that half of the rule true.
+        var body = GetDecodedStreamData(streamObj)
             ?? throw new InvalidDataException(
                 $"Object stream {containerObjNum} uses an image filter that cannot be decoded.");
 

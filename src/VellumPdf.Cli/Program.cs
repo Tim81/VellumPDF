@@ -161,11 +161,25 @@ internal static class PreflightRunner
                         continue;
                     }
                     // Also catches UnsupportedPdfFeatureException, which derives from
-                    // NotSupportedException — so an encrypted PDF is reported as an error line
-                    // rather than crashing, despite Validate documenting it as propagating.
+                    // NotSupportedException — so an unsupported security handler or crypt filter is
+                    // reported as an error line rather than crashing, despite Validate documenting it
+                    // as propagating.
                     catch (NotSupportedException ex)
                     {
                         stderr.WriteLine($"error: {ex.Message}");
+                        anyIoError = true;
+                        continue;
+                    }
+                    // A separate catch, not folded into the one above: PdfPasswordException does NOT
+                    // derive from NotSupportedException on purpose (see its own doc comment) — a
+                    // password-protected file is not an unsupported feature, and conflating the two
+                    // here would mislabel it as one, undoing that distinction at the one place it
+                    // would otherwise show up.
+                    catch (VellumPdf.Reader.PdfPasswordException)
+                    {
+                        stderr.WriteLine(
+                            $"error: '{filePath}' is password-protected; vellum-preflight has no way " +
+                            "to supply a password yet.");
                         anyIoError = true;
                         continue;
                     }

@@ -30,6 +30,26 @@ public sealed class EncryptedFixtureCorpusTests
         ("enc-aes-256-r6.pdf", 5, 6, "/AESV3", "af3ed586e3246d51523f6b546d9c9fb3e896d5968e283c4305b1dba2b7f361d6"),
         ("enc-aes-128-cleartextmd.pdf", 4, 4, "/AESV2", "df43e52507998c60fde7631a1694b4731ac0adcaede69715a63da526a9ab5750"),
         ("enc-256-cleartextmd.pdf", 5, 6, "/AESV3", "4ed43c7731177823ce3dd6a6dc072f9a1029cbfd1126b0f2c474cfc7988f326f"),
+        // The one fixture in this corpus with object streams AND a cross-reference stream — every
+        // other row uses a classic xref table over uncompressed objects (see the fixture README's
+        // "Known gaps"). Needed so #97's decrypt-side tests can pin two things nothing else here
+        // can: that a cross-reference stream is never decrypted, and that an object stream's
+        // container is decrypted exactly ONCE and its compressed members are not separately
+        // re-decrypted (ISO 32000-2 §7.5.7) — RC4, not AES, because RC4 double-decryption is
+        // SILENT (returns the original ciphertext, no exception), so only RC4 actually exercises
+        // that guard; an AES fixture would throw either way and prove nothing about it.
+        ("enc-rc4-objstm.pdf", 4, 4, "/V2", "c349678e875f0aeba5593c034a5ff8e4e2db4e1d464ee6ca0537cfb9cb30c9c9"),
+        // Empty user password ("" not "u") — the shape most real-world encrypted PDFs actually use
+        // (permissions restricted via the owner password only). PdfReader.Open(bytes) with no
+        // password argument has to authenticate against this one; #97's whole point depends on it.
+        ("enc-aes-128-emptyuser.pdf", 4, 4, "/AESV2", "43e958654cad7611373c241db3e257932e82979950ba0e09f38c2ef26f6a6b98"),
+        // Not built from plaintext-baseline.pdf's own object graph — /P -4 still holds (see the
+        // theory's own assertion below), but the byte-identity assertions the other rows get from
+        // PlaintextBaseline_isPresent_andNotEncrypted's docs don't apply to this one; see
+        // EncryptedReaderTests for what it actually pins (Algorithm 1 step (a): a string nested two
+        // levels inside a dictionary decrypts under its CONTAINING indirect object's identity, not
+        // the string's own position or a hardcoded generation).
+        ("enc-aes-128-nestedstrings.pdf", 4, 4, "/AESV2", "5a90b0b7e06324dd80218426bfe3b766fae3372b291529d77f56ac19c386de5c"),
     ];
 
     private const string BaselineName = "plaintext-baseline.pdf";

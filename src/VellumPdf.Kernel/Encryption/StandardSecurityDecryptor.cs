@@ -533,6 +533,15 @@ internal sealed class StandardSecurityDecryptor
     public byte[] DecryptString(byte[] fileKey, int objectNumber, int generation, ReadOnlySpan<byte> data)
         => Decrypt(fileKey, objectNumber, generation, data, StringFilter);
 
+    /// <summary>
+    /// Decrypts using an explicit <paramref name="method"/> rather than <see cref="StreamFilter"/> or
+    /// <see cref="StringFilter"/> — the wiring a stream's own <c>/Filter</c> needs when it names
+    /// <c>/Crypt</c> with a <c>/CF</c> entry other than the document-wide <c>/StmF</c>, or
+    /// <c>/Identity</c> to opt that one stream out of encryption entirely (ISO 32000-2 §7.4.10).
+    /// </summary>
+    public byte[] DecryptWithMethod(byte[] fileKey, int objectNumber, int generation, ReadOnlySpan<byte> data, CryptFilterMethod method)
+        => Decrypt(fileKey, objectNumber, generation, data, method);
+
     private static byte[] Decrypt(
         byte[] fileKey, int objectNumber, int generation, ReadOnlySpan<byte> data, CryptFilterMethod method)
     {

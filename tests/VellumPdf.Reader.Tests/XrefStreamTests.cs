@@ -381,14 +381,22 @@ public sealed class XrefStreamTests
     }
 
     [Fact]
-    public void Encrypt_reachable_only_via_XRefStm_throws_UnsupportedPdfFeatureException()
+    public void Encrypt_reachable_only_via_XRefStm_isPickedUp()
     {
         // /Encrypt sits on the XRefStm dictionary, not the classic trailer — the only place a
         // hybrid-reference file can legally put it (ISO 32000-2 §7.5.8.4). The classic-trailer
         // /Encrypt check alone would miss it entirely and parse the file as if unencrypted (#183).
+        //
+        // BuildHybridXrefStmWithEncryptPdf's /Encrypt value is `99 0 R`, an unresolvable
+        // reference, deliberately: it is not this test's job to exercise a full decrypt (the
+        // encrypted-fixture corpus tests do that), only to prove XrefParser actually merges
+        // /Encrypt off the XRefStm dictionary onto the trailer PdfDocumentReader reads. If that
+        // merge regressed, this file would have NO /Encrypt anywhere PdfDocumentReader looks, so
+        // it would open successfully with Encryption null instead of throwing at all — that is
+        // the failure this pins against, not the specific exception type.
         var bytes = BuildHybridXrefStmWithEncryptPdf();
 
-        Assert.Throws<UnsupportedPdfFeatureException>(() => PdfReader.Open(bytes));
+        Assert.Throws<InvalidDataException>(() => PdfReader.Open(bytes));
     }
 
     private static byte[] BuildHybridXrefStmWithEncryptPdf()

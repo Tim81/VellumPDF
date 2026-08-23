@@ -111,7 +111,7 @@ internal sealed class PdfObjectParser
             _lexer.SkipWhitespaceAndComments();
             if (!_lexer.AtEnd && TryPeekKeyword("stream"u8))
             {
-                var stream = ParseStreamBody(dict);
+                var stream = ParseStreamBody(dict, objectNumber, generation);
                 return new IndirectObjectResult(objectNumber, generation, null, stream);
             }
 
@@ -332,7 +332,7 @@ internal sealed class PdfObjectParser
 
     // ── Stream parsing ─────────────────────────────────────────────────────
 
-    private ParsedStream ParseStreamBody(PdfDictionary dict)
+    private ParsedStream ParseStreamBody(PdfDictionary dict, int objectNumber, int generation)
     {
         // consume the 'stream' keyword token
         _lexer.NextToken();
@@ -371,11 +371,11 @@ internal sealed class PdfObjectParser
             _lexer.SkipWhitespaceAndComments();
             var endTok = _lexer.NextToken();
             if (endTok.Kind == TokenKind.Keyword && IsKeyword(endTok.Raw, "endstream"u8))
-                return new ParsedStream(dict, body, bodyStart);
+                return new ParsedStream(dict, body, bodyStart, objectNumber, generation);
         }
 
         // No usable /Length, or /Length did not land on 'endstream' — locate the marker by scanning.
-        return ScanToEndstream(dict, bodyStart);
+        return ScanToEndstream(dict, bodyStart, objectNumber, generation);
     }
 
     // Caps how far past bodyStart a single ScanToEndstream call will look. Without this, a file
@@ -385,7 +385,7 @@ internal sealed class PdfObjectParser
     // megabytes away in any real file.
     private const int MaxEndstreamScanBytes = 64 * 1024 * 1024;
 
-    private ParsedStream ScanToEndstream(PdfDictionary dict, int bodyStart)
+    private ParsedStream ScanToEndstream(PdfDictionary dict, int bodyStart, int objectNumber, int generation)
     {
         // ISO 32000-2 §7.3.8.1: the stream data is followed by an EOL, then 'endstream'. Taking the
         // first literal occurrence of those nine bytes (as this used to) is wrong whenever the
@@ -455,7 +455,7 @@ internal sealed class PdfObjectParser
 
         var body = _lexer.Slice(bodyStart, bodyEnd);
         _lexer.Seek(bodyStart + chosen + marker.Length);
-        return new ParsedStream(dict, body, bodyStart);
+        return new ParsedStream(dict, body, bodyStart, objectNumber, generation);
     }
 
     /// <summary>

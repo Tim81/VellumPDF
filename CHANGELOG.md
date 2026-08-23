@@ -45,6 +45,51 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   actually use an empty user password, a case absent from the committed corpus; that case is
   covered instead by independently computed vectors. (#97)
 
+- **Decryption wired into `VellumPdf.Reader`: `PdfReader.Open` now accepts a password and reads
+  encrypted PDFs.** `PdfReader.Open(byte[]!, string?)` and the `Stream` overload try the supplied
+  password as owner first, then user (ISO 32000-1 names no order; an owner password is the
+  higher-privilege access, and at R&lt;=4 it also grants user access via Algorithm 7, so reporting
+  "owner" is strictly more informative than "user" for it). A wrong password throws the new
+  `PdfPasswordException`, deliberately not `UnsupportedPdfFeatureException` or
+  `System.NotSupportedException`: `vellum-preflight` catches `NotSupportedException` to report an
+  unsupported feature as a plain error line, and a wrong password is a different failure. The
+  `/Encrypt`-presence gate that made every prior version reject an encrypted file outright is gone;
+  `/Filter /Adobe.PubSec` (public-key handlers) and any crypt filter method this handler does not
+  implement still throw `UnsupportedPdfFeatureException`.
+
+  `PdfDocumentReader.Encryption` exposes the new `VellumPdf.Encryption.PdfEncryptionInfo`: `/V`,
+  `/R`, the resolved cipher, key length, `/P` as `PdfPermissions`, `/EncryptMetadata`, and which
+  password authenticated. No key material — not the file key, not `/O`/`/U`/`/OE`/`/UE`.
+
+  Decryption happens where object identity is available: `Resolve` for strings (ISO 32000-1 §7.6.2
+  Algorithm 1 step (a) — a direct string uses the identity of the indirect object containing it,
+  threaded through nested dictionaries and arrays), and the decode path for streams.
+  `ParsedStream.RawBody` still holds the verbatim file bytes for `StreamRule` and `HexStringRule`,
+  which need physical byte positions and lengths; decrypting in place would have made both fire on
+  every encrypted stream. An object stream's container is decrypted once; its members are not
+  decrypted again individually (ISO 32000-2 §7.5.7). The trailer `/ID`, the `/Encrypt` dictionary's
+  own strings, and cross-reference streams are never decrypted, matching the spec. ISO 32000-1 and
+  ISO 32000-2 are silent on whether a signature dictionary's `/Contents` is exempt; this
+  implementation treats it as exempt when the containing dictionary declares `/Type /Sig`, since a
+  conformant signer patches those hex digits into already-serialized file bytes after computing the
+  signature, so they were never encrypted at the object level regardless of document encryption —
+  decrypting them would corrupt `/ByteRange` verification.
+
+  `PdfFilters` gained a `/Crypt` filter (ISO 32000-2 §7.4.10): it names a `/CF` entry via
+  `/DecodeParms` `/Name`, or `/Identity` for none. A `/StmF`, `/StrF`, or `/Crypt` `/Name` that
+  names a filter absent from `/CF` is an error per ISO 32000-2 Table 20, and throws rather than
+  silently falling back to plaintext-as-ciphertext. Passwords try UTF-8 first, then
+  PDFDocEncoding (R&lt;=4 only) on failure, matching qpdf's own retry order.
+
+  Verified against the committed corpus (#99): every fixture's page content stream decodes to the
+  same bytes as the corresponding stream in the unencrypted baseline, `/Info /Title` decrypts to
+  the exact expected text, and both the owner and user passwords open their fixture. Two more
+  fixtures were added for this change: one with an empty user password (the shape most real
+  encrypted PDFs actually use) and one with an object stream plus a cross-reference stream, RC4
+  rather than AES — RC4 double-decryption is silent (it returns the original ciphertext with no
+  error), so only RC4 actually exercises the guard against re-decrypting an object stream's
+  members. (#97)
+
 - **A committed corpus of PDFs not produced by VellumPdf's own writer.** Test-only; nothing ships.
   Every reader fixture before this one came from VellumPdf's writer, which only ever emits
   generation 0 and never a hybrid-reference file or another producer's object-stream layout — the

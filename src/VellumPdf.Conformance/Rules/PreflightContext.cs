@@ -497,6 +497,15 @@ internal sealed class PreflightContext
     /// </summary>
     public byte[]? DecodeStream(ParsedStream stream) => Reader.GetDecodedStreamData(stream);
 
+    /// <summary>
+    /// Returns <paramref name="stream"/>'s body decrypted (unchanged on an unencrypted document,
+    /// or under an Identity crypt filter), but NOT run through the ordinary filter chain — for a
+    /// rule that parses an image codec's own raw bytes directly (e.g. <c>Jpeg2000Rule</c> on a
+    /// JPXDecode stream) and must not read <c>stream.RawBody</c> itself, which is ciphertext on an
+    /// encrypted document. See <see cref="PdfDocumentReader.DecryptedStreamView"/>.
+    /// </summary>
+    public ReadOnlyMemory<byte> DecryptedRawBody(ParsedStream stream) => Reader.DecryptedStreamView(stream).RawBody;
+
     /// <summary>Records a finding for the current validation pass.</summary>
     /// <param name="ruleId">Stable rule identifier (typically the rule's <see cref="IConformanceRule.RuleId"/>).</param>
     /// <param name="clause">Specification clause citation.</param>

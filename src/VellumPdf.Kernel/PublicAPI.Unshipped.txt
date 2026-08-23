@@ -3,3 +3,18 @@ VellumPdf.Core.PdfIndirectReference.Generation.get -> int
 VellumPdf.Core.PdfIndirectReference.PdfIndirectReference(int objectNumber, int generation) -> void
 VellumPdf.Core.PdfIndirectObject.Generation.get -> int
 VellumPdf.Core.PdfIndirectObject.PdfIndirectObject(int objectNumber, int generation, VellumPdf.Core.PdfObject! value) -> void
+VellumPdf.Encryption.PdfCipherAlgorithm
+VellumPdf.Encryption.PdfCipherAlgorithm.Aes128 = 2 -> VellumPdf.Encryption.PdfCipherAlgorithm
+VellumPdf.Encryption.PdfCipherAlgorithm.Aes256 = 3 -> VellumPdf.Encryption.PdfCipherAlgorithm
+VellumPdf.Encryption.PdfCipherAlgorithm.Identity = 0 -> VellumPdf.Encryption.PdfCipherAlgorithm
+VellumPdf.Encryption.PdfCipherAlgorithm.Rc4 = 1 -> VellumPdf.Encryption.PdfCipherAlgorithm
+VellumPdf.Encryption.PdfCipherAlgorithm.Unsupported = 4 -> VellumPdf.Encryption.PdfCipherAlgorithm
+VellumPdf.Encryption.PdfEncryptionInfo
+VellumPdf.Encryption.PdfEncryptionInfo.Cipher.get -> VellumPdf.Encryption.PdfCipherAlgorithm
+VellumPdf.Encryption.PdfEncryptionInfo.EncryptMetadata.get -> bool
+VellumPdf.Encryption.PdfEncryptionInfo.IsOwnerAccess.get -> bool
+VellumPdf.Encryption.PdfEncryptionInfo.KeyLengthBits.get -> int
+VellumPdf.Encryption.PdfEncryptionInfo.PdfEncryptionInfo(int v, int r, VellumPdf.Encryption.PdfCipherAlgorithm cipher, int keyLengthBits, VellumPdf.Encryption.PdfPermissions permissions, bool encryptMetadata, bool isOwnerAccess) -> void
+VellumPdf.Encryption.PdfEncryptionInfo.Permissions.get -> VellumPdf.Encryption.PdfPermissions
+VellumPdf.Encryption.PdfEncryptionInfo.R.get -> int
+VellumPdf.Encryption.PdfEncryptionInfo.V.get -> int

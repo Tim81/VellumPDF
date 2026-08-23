@@ -276,11 +276,16 @@ public sealed class PdfReaderTests
     }
 
     [Fact]
-    public void Open_encrypted_doc_throws_UnsupportedPdfFeatureException()
+    public void Open_encrypted_doc_withUnresolvableEncryptRef_throwsInvalidDataException()
     {
+        // /Encrypt 2 0 R names an object number the xref table never defines. Since #97 wired
+        // decryption in, VellumPdf.Reader actually resolves and validates /Encrypt's shape instead
+        // of just gating on its presence — an unresolvable reference is a malformed-PDF condition,
+        // not "encryption is unsupported" (that gate is gone; see the encrypted-fixture corpus
+        // tests for the actually-supported path).
         var bytes = BuildEncryptedTrailerPdf();
 
-        Assert.Throws<UnsupportedPdfFeatureException>(() => PdfReader.Open(bytes));
+        Assert.Throws<InvalidDataException>(() => PdfReader.Open(bytes));
     }
 
     [Fact]
