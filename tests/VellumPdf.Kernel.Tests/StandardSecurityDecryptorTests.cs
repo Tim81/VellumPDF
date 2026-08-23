@@ -259,8 +259,8 @@ public sealed class StandardSecurityDecryptorTests
             streamFilter: CryptFilterMethod.Aes256, stringFilter: CryptFilterMethod.Aes256);
         Assert.True(correctFlag.VerifyPermissions(fileKey, handler.Perms));
 
-        // And the flag has to be checked, not merely accepted regardless: a decryptor built as
-        // though /EncryptMetadata were true must reject these same /Perms bytes.
+        // And the check actually has to fail on a mismatch: a decryptor built as though
+        // /EncryptMetadata were true must reject these same /Perms bytes.
         var wrongFlag = new StandardSecurityDecryptor(
             v: 5, r: 6, keyLengthBytes: 32, o: handler.O, u: handler.U, oe: handler.OE, ue: handler.UE,
             p: handler.PValue, id0: [0x00], encryptMetadata: true,
