@@ -27,6 +27,14 @@ internal enum CryptFilterMethod
     /// <summary>AES-256-CBC using the file encryption key directly — R&gt;=5 does not derive a
     /// per-object key (/CFM /AESV3, V=5).</summary>
     Aes256,
+
+    /// <summary>A /CFM value this handler does not implement, or a /StmF or /StrF naming a /CF
+    /// entry that does not exist. <see cref="StandardSecurityDecryptor.DecryptStream"/> and
+    /// <see cref="StandardSecurityDecryptor.DecryptString"/> throw on this rather than falling
+    /// back to <see cref="Identity"/>: Identity returns ciphertext as plaintext with no error, and
+    /// it is the mapping a wiring author would naturally reach for on an unrecognised filter name,
+    /// which would corrupt an entire document silently instead of failing loudly.</summary>
+    Unsupported,
 }
 
 /// <summary>
@@ -493,10 +501,15 @@ internal sealed class StandardSecurityDecryptor
     {
         if (fileKey.Length == 0)
             throw new ArgumentException("File key must not be empty.", nameof(fileKey));
+        // Unlike the empty-key check above, a negative object number or generation can only come
+        // from the file itself (ISO 32000-2 §7.3.10's cross-reference entries are unsigned), so
+        // these are a malformed-file condition, not a caller bug — InvalidDataException rather
+        // than ArgumentOutOfRangeException, matching the reasoning in this method's own doc
+        // comment and the constructor's <see cref="InvalidDataException"/> remarks.
         if (objectNumber < 0)
-            throw new ArgumentOutOfRangeException(nameof(objectNumber));
+            throw new InvalidDataException($"Object number must not be negative; got {objectNumber}.");
         if (generation < 0)
-            throw new ArgumentOutOfRangeException(nameof(generation));
+            throw new InvalidDataException($"Generation must not be negative; got {generation}.");
 
         var accumulator = new Md5.Incremental();
         accumulator.Append(fileKey);
@@ -546,14 +559,21 @@ internal sealed class StandardSecurityDecryptor
                 // cite here at all.
                 return DecryptAesCbcWithIvPrefix(fileKey, data);
 
+            case CryptFilterMethod.Unsupported:
+                throw new InvalidDataException(
+                    "This /StmF or /StrF names a /CFM this handler does not implement, or a /CF " +
+                    "entry that does not exist. Falling back to Identity would return ciphertext " +
+                    "as plaintext with no error, so this is a malformed-file condition instead.");
+
             default:
-                throw new ArgumentOutOfRangeException(nameof(method), method, null);
+                throw new InvalidDataException($"Unrecognised crypt filter method {method}.");
         }
     }
 
-    // The first 16 bytes of the ciphertext are the CBC IV (ISO 32000-1 §7.6.2 note c); the rest
-    // is PKCS#7-padded ciphertext. A CryptographicException here means the key was wrong or the
-    // stream is corrupt, either way a malformed-file condition rather than a caller bug.
+    // The first 16 bytes of the ciphertext are the CBC IV (ISO 32000-1 §7.6.2, Algorithm 1 step
+    // (d)); the rest is PKCS#7-padded ciphertext. A CryptographicException here means the key was
+    // wrong or the stream is corrupt, either way a malformed-file condition rather than a caller
+    // bug.
     private static byte[] DecryptAesCbcWithIvPrefix(byte[] key, ReadOnlySpan<byte> data)
     {
         if (data.Length < 16 || (data.Length - 16) % 16 != 0)
