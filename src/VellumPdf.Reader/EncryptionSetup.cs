@@ -37,6 +37,8 @@ internal static class EncryptionSetup
         public required bool EncryptMetadata { get; init; }
         public required bool IsOwnerAccess { get; init; }
         public required PdfCipherAlgorithm Cipher { get; init; }
+
+        public required PdfCipherAlgorithm StringCipher { get; init; }
         public required int KeyLengthBits { get; init; }
         public required PdfPermissions Permissions { get; init; }
     }
@@ -134,6 +136,19 @@ internal static class EncryptionSetup
         // every permission bit, and this library would report the attacker's values as the
         // document's. /Perms absent is not treated as a failure: it cannot be verified either way,
         // and R5 predates the entry being universal.
+        // An unresolvable /StrF is fatal here, while an unresolvable /StmF is left to fail at decode
+        // (see StmFNamingUndefinedCfEntry_opensButThrowsOnDecode). The asymmetry is deliberate: a
+        // document whose streams cannot be decrypted still has readable strings — /Info, the
+        // structure tree, every name and date — but one whose STRINGS cannot be decrypted has
+        // nothing to offer, and every one of them would otherwise come back as ciphertext with no
+        // error anywhere. ISO 32000-2 Table 20 makes a /StrF naming an absent /CF entry an error.
+        if (stringFilter == CryptFilterMethod.Unsupported)
+        {
+            throw new InvalidDataException(
+                "Malformed PDF: /Encrypt /StrF names a /CF entry the document does not define, or a "
+                + "/CFM this handler does not implement, so no string in the document can be decrypted.");
+        }
+
         var perms = TryGetBytes(encryptDict, _permsKey);
         if (r >= 5 && perms is not null && !decryptor.VerifyPermissions(fileKey, perms))
         {
@@ -151,6 +166,7 @@ internal static class EncryptionSetup
             EncryptMetadata = encryptMetadata,
             IsOwnerAccess = isOwnerAccess,
             Cipher = ToCipher(streamFilter),
+            StringCipher = ToCipher(stringFilter),
             KeyLengthBits = keyLengthBytes * 8,
             Permissions = (PdfPermissions)p & PdfPermissions.All,
         };

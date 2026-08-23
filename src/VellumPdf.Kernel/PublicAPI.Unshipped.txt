@@ -15,5 +15,6 @@ VellumPdf.Encryption.PdfEncryptionInfo.EncryptMetadata.get -> bool
 VellumPdf.Encryption.PdfEncryptionInfo.IsOwnerAccess.get -> bool
 VellumPdf.Encryption.PdfEncryptionInfo.KeyLengthBits.get -> int
 VellumPdf.Encryption.PdfEncryptionInfo.Permissions.get -> VellumPdf.Encryption.PdfPermissions
+VellumPdf.Encryption.PdfEncryptionInfo.StringCipher.get -> VellumPdf.Encryption.PdfCipherAlgorithm
 VellumPdf.Encryption.PdfEncryptionInfo.R.get -> int
 VellumPdf.Encryption.PdfEncryptionInfo.V.get -> int

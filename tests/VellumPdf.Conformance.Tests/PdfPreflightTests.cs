@@ -6160,6 +6160,30 @@ public sealed class PdfPreflightTests
         Assert.Contains("/Encrypt", finding.Message, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// A document whose /StmF names a crypt filter this handler cannot apply has no decodable stream
+    /// in it at all. Every rule that touched one used to report that as a finding against whatever
+    /// clause it happened to cover, so the result was a FAIL stamped with output-intent and
+    /// transparency clauses the file never violated. "Cannot evaluate" is the honest answer, and it
+    /// is what /Adobe.PubSec already gets.
+    /// </summary>
+    [Fact]
+    public void Validate_UndecodableCryptFilter_cannotBeEvaluated_ratherThanReportedNonConformant()
+    {
+        using var s = typeof(PdfPreflightTests).Assembly.GetManifestResourceStream("jpx-encrypted-emptyuser.pdf")
+            ?? throw new InvalidOperationException("jpx-encrypted-emptyuser.pdf embedded resource not found.");
+        using var ms = new MemoryStream();
+        s.CopyTo(ms);
+
+        // Same byte count, so every cross-reference offset stays valid: the document is unchanged
+        // except that /StmF now names a /CF entry it does not define.
+        var text = System.Text.Encoding.Latin1.GetString(ms.ToArray());
+        var patched = System.Text.Encoding.Latin1.GetBytes(
+            text.Replace("/StmF /StdCF", "/StmF /Ghost", StringComparison.Ordinal));
+
+        Assert.Throws<UnsupportedPdfFeatureException>(() => PdfPreflight.Validate(patched, PdfConformance.PdfA2B));
+    }
+
     /// <summary>The control: an unencrypted document draws no /Encrypt finding.</summary>
     [Fact]
     public void Validate_UnencryptedDocument_NoFinding_613_noEncrypt()

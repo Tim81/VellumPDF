@@ -60,6 +60,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   are not consulted until something is decoded, so it surfaces as an `InvalidDataException` from
   the decode call, not from `Open`.
 
+  A `/StrF` that resolves to no usable crypt filter fails at `Open` rather than silently leaving
+  every string in the document as ciphertext; an unresolvable `/StmF` still fails lazily, at the
+  first decode, because a document whose streams cannot be decrypted still has readable strings
+  while the converse has nothing to offer. `PdfPreflight.Validate` reports such a document as
+  unevaluable (`UnsupportedPdfFeatureException`, the same answer `/Adobe.PubSec` gets) instead of
+  failing it against whichever clauses its rules happened to be checking.
+
   `PdfDocumentReader.Encryption` exposes the new `VellumPdf.Encryption.PdfEncryptionInfo`: `/V`,
   `/R`, the resolved cipher, key length, `/P` as `PdfPermissions`, `/EncryptMetadata`, and which
   password authenticated. No key material — not the file key, not `/O`/`/U`/`/OE`/`/UE`.

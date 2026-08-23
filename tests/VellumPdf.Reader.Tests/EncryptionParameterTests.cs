@@ -181,6 +181,47 @@ public sealed class EncryptionParameterTests
         Assert.Contains("/Encrypt", ex.Message, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// A /StrF that resolves to nothing means every string in the document is undecryptable, and
+    /// before this it was entirely silent: the document opened, each string came back as ciphertext,
+    /// and no API reported the condition at all. An unresolvable /StmF is deliberately NOT treated
+    /// this way (see StmFNamingUndefinedCfEntry_opensButThrowsOnDecode) — a document whose streams
+    /// cannot be decrypted still has readable strings, while the converse has nothing to offer.
+    /// </summary>
+    [Fact]
+    public void StrF_namingAnUndefinedCryptFilter_failsAtOpen()
+    {
+        var doc = BuildWithEncryptDict(
+            "<< /Filter /Standard /V 4 /R 4 /Length 128 /CF << /StdCF << /CFM /AESV2 /Length 16 >> >> "
+            + "/StmF /StdCF /StrF /Ghost "
+            + "/O <2a2f0a1990192c60114730bdcd39f37828a53c89a340dd473c85299dc5258e1c> "
+            + "/U <6c8913ac9fc602eb1aad2a1ec614bee90021446990b9e4114071a4d9104984c1> /P -4 >>");
+
+        var ex = Assert.Throws<InvalidDataException>(() => PdfReader.Open(doc, "u"));
+
+        Assert.Contains("/StrF", ex.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// ISO 32000-2 Table 20 lets a document use different crypt filters for strings and streams, so
+    /// one reported cipher cannot describe both.
+    /// </summary>
+    [Fact]
+    public void StreamAndStringCiphers_areReportedSeparately()
+    {
+        var doc = BuildWithEncryptDict(
+            "<< /Filter /Standard /V 4 /R 4 /Length 128 "
+            + "/CF << /StdCF << /CFM /AESV2 /Length 16 >> /Legacy << /CFM /V2 /Length 16 >> >> "
+            + "/StmF /StdCF /StrF /Legacy "
+            + "/O <2a2f0a1990192c60114730bdcd39f37828a53c89a340dd473c85299dc5258e1c> "
+            + "/U <6c8913ac9fc602eb1aad2a1ec614bee90021446990b9e4114071a4d9104984c1> /P -4 >>");
+
+        using var reader = PdfReader.Open(doc, "u");
+
+        Assert.Equal(PdfCipherAlgorithm.Aes128, reader.Encryption!.Cipher);
+        Assert.Equal(PdfCipherAlgorithm.Rc4, reader.Encryption.StringCipher);
+    }
+
     // ── Helpers ─────────────────────────────────────────────────────────────────────────────────
 
     private static readonly byte[] Id0 = [.. Enumerable.Range(0, 16).Select(i => (byte)i)];

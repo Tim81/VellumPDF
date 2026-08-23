@@ -125,8 +125,8 @@ public sealed class PdfDocumentReader : IDisposable
             _encryptMetadata = setup.EncryptMetadata;
 
             Encryption = new PdfEncryptionInfo(
-                setup.Decryptor.V, setup.Decryptor.R, setup.Cipher, setup.KeyLengthBits,
-                setup.Permissions, setup.EncryptMetadata, setup.IsOwnerAccess);
+                setup.Decryptor.V, setup.Decryptor.R, setup.Cipher, setup.StringCipher,
+                setup.KeyLengthBits, setup.Permissions, setup.EncryptMetadata, setup.IsOwnerAccess);
         }
 
         if (!trailer.TryGet(PdfName.Root, out var rootObj) || rootObj is null)

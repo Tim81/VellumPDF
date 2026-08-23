@@ -50,6 +50,13 @@ public sealed class PdfEncryptionInfo
     public PdfCipherAlgorithm Cipher { get; }
 
     /// <summary>
+    /// The cipher the resolved <c>/StrF</c> crypt filter applies to strings. Usually the same as
+    /// <see cref="Cipher"/> — producers name one crypt filter for both — but ISO 32000-2 Table 20
+    /// lets a document give strings and streams different ones, and this reports what it did.
+    /// </summary>
+    public PdfCipherAlgorithm StringCipher { get; }
+
+    /// <summary>
     /// The file encryption key length, in bits. 40, 128 and 256 are what producers write in
     /// practice, but ISO 32000-1 Table 20 allows any multiple of 8 from 40 to 128 at <c>/V</c> 2,
     /// and this reports what the document actually specifies rather than rounding to the common
@@ -88,6 +95,7 @@ public sealed class PdfEncryptionInfo
         int v,
         int r,
         PdfCipherAlgorithm cipher,
+        PdfCipherAlgorithm stringCipher,
         int keyLengthBits,
         PdfPermissions permissions,
         bool encryptMetadata,
@@ -96,6 +104,7 @@ public sealed class PdfEncryptionInfo
         V = v;
         R = r;
         Cipher = cipher;
+        StringCipher = stringCipher;
         KeyLengthBits = keyLengthBits;
         Permissions = permissions;
         EncryptMetadata = encryptMetadata;

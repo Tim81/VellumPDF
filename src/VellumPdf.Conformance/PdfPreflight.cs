@@ -4,6 +4,7 @@
 using VellumPdf.Conformance.Rules;
 using VellumPdf.Conformance.Rules.Metadata;
 using VellumPdf.Core;
+using VellumPdf.Encryption;
 using VellumPdf.Reader;
 
 namespace VellumPdf.Conformance;
@@ -171,6 +172,19 @@ public static class PdfPreflight
             throw new NotSupportedException(
                 $"In-process preflight for {conformance} is not implemented yet. " +
                 "Tracking: https://github.com/Tim81/VellumPDF/issues/50.");
+        }
+
+        // A document whose /StmF resolves to a crypt filter method this handler does not implement
+        // has no decodable stream in it: not the content, not the metadata, not the object streams
+        // that hold most of its objects. Rules would each hit that separately and report it as a
+        // finding against whatever clause they happen to cover, so a crypt-filter problem came out
+        // as a FAIL stamped with output-intent and transparency clauses the file never violated.
+        // "Cannot evaluate" is the honest answer, and it is the answer /Adobe.PubSec already gets.
+        if (reader.Encryption?.Cipher == PdfCipherAlgorithm.Unsupported)
+        {
+            throw new UnsupportedPdfFeatureException(
+                "The document's /StmF crypt filter names a /CF entry it does not define, or a method "
+                + "this library does not implement, so none of its streams can be decoded.");
         }
 
         var assertions = new List<PreflightAssertion>();
