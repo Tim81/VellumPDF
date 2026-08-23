@@ -70,10 +70,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   decrypted again individually (ISO 32000-2 §7.5.7). The trailer `/ID`, the `/Encrypt` dictionary's
   own strings, and cross-reference streams are never decrypted, matching the spec. ISO 32000-1 and
   ISO 32000-2 are silent on whether a signature dictionary's `/Contents` is exempt; this
-  implementation treats it as exempt when the containing dictionary declares `/Type /Sig`, since a
-  conformant signer patches those hex digits into already-serialized file bytes after computing the
-  signature, so they were never encrypted at the object level regardless of document encryption —
-  decrypting them would corrupt `/ByteRange` verification.
+  implementation treats it as exempt, since a conformant signer patches those hex digits into
+  already-serialized file bytes after computing the signature, so they were never encrypted at the
+  object level regardless of document encryption — decrypting them would corrupt `/ByteRange`
+  verification. A signature dictionary is recognised by `/Type /Sig`, by `/Type /DocTimeStamp`
+  (a document timestamp, the type this library writes for a PAdES B-LTA archive timestamp), or,
+  where `/Type` is absent — ISO 32000-1 Table 252 lists it as optional, so a signer may leave it
+  out — by carrying both a `/ByteRange` array and a string `/Contents`.
 
   `PdfFilters` gained a `/Crypt` filter (ISO 32000-2 §7.4.10): it names a `/CF` entry via
   `/DecodeParms` `/Name`, or `/Identity` for none. A `/StmF`, `/StrF`, or `/Crypt` `/Name` that

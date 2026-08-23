@@ -378,7 +378,9 @@ public sealed class PdfDocumentReader : IDisposable
 
     // Well-known keys used only by the decrypt walk below.
     private static readonly PdfName _sigType = new("Sig");
+    private static readonly PdfName _docTimeStampType = new("DocTimeStamp");
     private static readonly PdfName _typeKey = new("Type");
+    private static readonly PdfName _byteRangeKey = new("ByteRange");
 
     /// <summary>
     /// Walks <paramref name="obj"/>'s own structure — recursing into nested dictionaries and
@@ -405,9 +407,10 @@ public sealed class PdfDocumentReader : IDisposable
     /// pipeline at write time in the first place, encrypted document or not. Decrypting them on read
     /// would corrupt the actual signature bytes and break <c>/ByteRange</c> verification. Since the
     /// spec does not say, this method takes the safe reading for signature verification and never
-    /// decrypts <c>/Contents</c> when the containing dictionary declares <c>/Type /Sig</c> — every
-    /// OTHER string in that same dictionary (<c>/Name</c>, <c>/Reason</c>, <c>/Location</c>,
-    /// <c>/ContactInfo</c>, <c>/M</c>) is still decrypted normally.
+    /// decrypts <c>/Contents</c> when the containing dictionary is a signature dictionary by
+    /// <see cref="IsSignatureDictionary"/>'s reading — every OTHER string in that same dictionary
+    /// (<c>/Name</c>, <c>/Reason</c>, <c>/Location</c>, <c>/ContactInfo</c>, <c>/M</c>) is still
+    /// decrypted normally.
     /// </para>
     /// </summary>
     private PdfObject DecryptObjectGraph(PdfObject obj, int objectNumber, int generation)
@@ -421,7 +424,7 @@ public sealed class PdfDocumentReader : IDisposable
                 return new PdfHexString(_decryptor!.DecryptString(_fileKey!, objectNumber, generation, h.Bytes.Span));
 
             case PdfDictionary d:
-                var isSignatureDict = (d.Get(_typeKey) as PdfName)?.Equals(_sigType) == true;
+                var isSignatureDict = IsSignatureDictionary(d);
                 foreach (var kv in d.Entries.ToList())
                 {
                     if (isSignatureDict && kv.Key.Equals(PdfName.Contents))
@@ -444,6 +447,29 @@ public sealed class PdfDocumentReader : IDisposable
             default:
                 return obj;
         }
+    }
+
+    /// <summary>
+    /// Whether <paramref name="d"/> is a signature dictionary, for the <c>/Contents</c> exemption
+    /// <see cref="DecryptObjectGraph"/> documents. <c>/Type</c> alone is not enough to decide:
+    /// ISO 32000-1 Table 252 makes it OPTIONAL in a signature dictionary ("if present, shall be
+    /// Sig"), and a document timestamp carries <c>/DocTimeStamp</c> instead — the type this
+    /// library's own <c>ArchiveTimestampBuilder</c> writes for a PAdES B-LTA archive timestamp, so a
+    /// file this library produced and then encrypted is squarely in scope. A <c>/Type</c>-less
+    /// dictionary is therefore recognised structurally, by the pair <c>/ByteRange</c> + a string
+    /// <c>/Contents</c>: <c>/ByteRange</c> is what the byte-range digest is computed over, and ISO
+    /// 32000-1 §12.8.1 requires it of approval and certification signatures alike, so a signer
+    /// that drops the optional <c>/Type</c> still cannot drop it.
+    /// </summary>
+    private static bool IsSignatureDictionary(PdfDictionary d)
+    {
+        if (d.Get(_typeKey) is PdfName type)
+            return type.Equals(_sigType) || type.Equals(_docTimeStampType);
+
+        // No /Type at all (or a /Type that is not even a name): fall back to the structural tell.
+        // Both halves are required — /ByteRange alone would exempt a dictionary with no signature
+        // value to protect, and a string /Contents alone is far too common a key to exempt blindly.
+        return d.Get(_byteRangeKey) is PdfArray && d.Get(PdfName.Contents) is PdfLiteralString or PdfHexString;
     }
 
     /// <summary>Resolves an indirect reference, honouring its generation.</summary>

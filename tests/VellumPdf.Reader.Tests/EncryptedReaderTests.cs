@@ -216,7 +216,7 @@ public sealed class EncryptedReaderTests
         var bytes = Load("enc-aes-128.pdf");
 
         // Assert.Throws<T> in xUnit is an exact-type check, not "is-a" — this pins that the thrown
-        // type is literally PdfPasswordException, not merely something that derives from Exception.
+        // type is literally PdfPasswordException, and not some subclass or base of it.
         Assert.Throws<PdfPasswordException>(() => PdfReader.Open(bytes, "definitely-wrong"));
     }
 
@@ -314,15 +314,17 @@ public sealed class EncryptedReaderTests
     /// <summary>
     /// ISO 32000-1 and ISO 32000-2 are silent on whether a signature dictionary's /Contents is
     /// exempt from string encryption. PdfDocumentReader.DecryptObjectGraph documents the choice made
-    /// here: never decrypt /Contents when the containing dictionary declares /Type /Sig, because a
+    /// here: never decrypt a signature dictionary's /Contents, because a
     /// conformant signer patches those hex digits directly into already-serialized file bytes after
     /// computing the signature over the file's own bytes, so they were never run through the
     /// object-level string-encryption pipeline at write time regardless of document encryption.
     ///
     /// No signed+encrypted fixture exists in this corpus (or is practical to build without a real
     /// signing tool that also supports encryption), so this is a structural test of the exemption
-    /// rule itself: a /Type /Sig dictionary's /Contents survives a decrypt pass unchanged, while its
-    /// other strings (here /Reason) still decrypt normally. It is NOT an end-to-end proof against a
+    /// rule itself: a signature dictionary's /Contents survives a decrypt pass unchanged, while its
+    /// other strings (here /Reason) still decrypt normally. Which dictionaries count as signature
+    /// dictionaries is pinned separately, by
+    /// <see cref="SignatureDictionary_contents_isExempt_forEveryShapeASignerMayWrite"/>. It is NOT an end-to-end proof against a
     /// real PDF signer's output.
     /// </summary>
     [Fact]
@@ -368,6 +370,69 @@ public sealed class EncryptedReaderTests
         // skip this entry the way it skipped /Contents.
         var reasonAfter = Assert.IsType<PdfLiteralString>(walkedDict.Get(new PdfName("Reason")));
         Assert.NotEqual(reasonBytes, reasonAfter.Bytes.ToArray());
+    }
+
+    /// <summary>
+    /// The exemption cannot be keyed on <c>/Type /Sig</c> alone. ISO 32000-1 Table 252 lists
+    /// <c>/Type</c> as OPTIONAL in a signature dictionary, so a signer may legitimately omit it, and
+    /// a document timestamp — the kind this library's own PAdES B-T support writes — declares
+    /// <c>/Type /DocTimeStamp</c> instead. Both shapes had their <c>/Contents</c> decrypted before
+    /// this test existed, which silently destroys the signature bytes and breaks <c>/ByteRange</c>
+    /// verification: exactly the failure the exemption is there to prevent, on exactly the documents
+    /// (encrypted + signed) #97 exists to make readable.
+    /// </summary>
+    [Theory]
+    [InlineData("Sig")]
+    [InlineData("DocTimeStamp")]
+    [InlineData(null)]
+    public void SignatureDictionary_contents_isExempt_forEveryShapeASignerMayWrite(string? type)
+    {
+        var contentsBytes = new byte[16];
+        Array.Fill(contentsBytes, (byte)0xAB);
+
+        // /ByteRange is what identifies the /Type-less shape as a signature dictionary; it is present
+        // on all three so the only variable across the rows is /Type itself.
+        var sigDict = new PdfDictionary()
+            .Set(PdfName.Contents, new PdfHexString(contentsBytes))
+            .Set(new PdfName("ByteRange"), new PdfArray(
+                [new PdfInteger(0), new PdfInteger(840), new PdfInteger(1240), new PdfInteger(320)]));
+        if (type is not null)
+            sigDict.Set(new PdfName("Type"), new PdfName(type));
+
+        var walked = Assert.IsType<PdfDictionary>(WalkWithArmedDecryptor(sigDict));
+        var contentsAfter = Assert.IsType<PdfHexString>(walked.Get(PdfName.Contents));
+        Assert.Equal(contentsBytes, contentsAfter.Bytes.ToArray());
+    }
+
+    /// <summary>
+    /// The other half of the rule: <c>/Contents</c> is a common enough key that exempting every
+    /// dictionary carrying one would leave real encrypted strings undecrypted. Without <c>/Type</c>
+    /// AND without <c>/ByteRange</c> there is nothing to mark this as a signature dictionary, so the
+    /// walk must treat <c>/Contents</c> like any other string.
+    /// </summary>
+    [Fact]
+    public void ContentsString_withNoTypeAndNoByteRange_isNotExempt()
+    {
+        var contentsBytes = new byte[16];
+        Array.Fill(contentsBytes, (byte)0xAB);
+
+        var notASigDict = new PdfDictionary()
+            .Set(PdfName.Contents, new PdfHexString(contentsBytes));
+
+        var walked = Assert.IsType<PdfDictionary>(WalkWithArmedDecryptor(notASigDict));
+        var contentsAfter = Assert.IsType<PdfHexString>(walked.Get(PdfName.Contents));
+        Assert.NotEqual(contentsBytes, contentsAfter.Bytes.ToArray());
+    }
+
+    // Runs DecryptObjectGraph — private, for the reasons the test above gives — on a real armed
+    // reader, under the identity of object 5 0.
+    private static PdfObject WalkWithArmedDecryptor(PdfDictionary dict)
+    {
+        using var reader = PdfReader.Open(Load("enc-rc4-128.pdf"), "u");
+        var method = typeof(PdfDocumentReader).GetMethod(
+            "DecryptObjectGraph", BindingFlags.NonPublic | BindingFlags.Instance)
+            ?? throw new InvalidOperationException("DecryptObjectGraph not found by reflection.");
+        return (PdfObject)method.Invoke(reader, [dict, 5, 0])!;
     }
 
     // ── /Crypt filter with /Identity (end-to-end, not just resolver-level) ──────────────────────

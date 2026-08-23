@@ -68,7 +68,7 @@ public sealed class PdfEncryptionInfo
     /// At R&lt;=4 an owner password always also authenticates as the user password (ISO 32000-1
     /// Algorithm 7 recovers the user password from the owner one and re-derives the same file key),
     /// so this is <see langword="true"/> whenever the supplied password is the higher-privilege one,
-    /// including the case where the same password serves as both.
+    /// including the case where one password is both.
     /// </summary>
     public bool IsOwnerAccess { get; }
 
