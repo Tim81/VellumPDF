@@ -6114,6 +6114,30 @@ public sealed class PdfPreflightTests
         Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.8.3-1");
     }
 
+    /// <summary>
+    /// Same defect (NC=2, not in {1,3,4}) as <see cref="Validate_Jpeg2000_NcEquals2_IsFlagged_6283_1"/>,
+    /// but on an ENCRYPTED document. Since #97, <see cref="VellumPdf.Conformance.Rules.Graphics.Jpeg2000Rule"/> reads the image XObject's
+    /// bytes via <c>PreflightContext.DecryptedRawBody</c>, not <c>stream.RawBody</c> directly — the
+    /// latter is ciphertext on an encrypted document, which this test exists to catch a regression
+    /// back to. <c>jpx-encrypted-emptyuser.pdf</c> is
+    /// <see cref="Validate_Jpeg2000_NcEquals2_IsFlagged_6283_1"/>'s own PDF bytes
+    /// (<c>BuildJpxImagePdf(BuildJp2(nc: 2, bpc: 8).File)</c>), encrypted once with qpdf (empty user
+    /// password, owner "o", AES-128) and committed — <c>PdfPreflight.Validate(byte[], PdfConformance)</c>
+    /// has no password parameter, so only an empty-user-password fixture is reachable through it.
+    /// </summary>
+    [Fact]
+    public void Validate_Jpeg2000_NcEquals2_IsFlagged_6283_1_onEncryptedDocument()
+    {
+        using var s = typeof(PdfPreflightTests).Assembly.GetManifestResourceStream("jpx-encrypted-emptyuser.pdf")
+            ?? throw new InvalidOperationException("jpx-encrypted-emptyuser.pdf embedded resource not found.");
+        using var ms = new MemoryStream();
+        s.CopyTo(ms);
+
+        var result = PdfPreflight.Validate(ms.ToArray(), PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.8.3-1");
+    }
+
     [Fact]
     public void Validate_Jpeg2000_NcEquals5_IsFlagged_6283_1()
     {

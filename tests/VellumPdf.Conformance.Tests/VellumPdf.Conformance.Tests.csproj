@@ -36,6 +36,13 @@
     <EmbeddedResource Include="Assets\NotoSansShavian-Regular.pfb">
       <LogicalName>NotoSansShavian-Regular.pfb</LogicalName>
     </EmbeddedResource>
+    <!-- Generated once with qpdf (empty user password, owner "o", AES-128) from the exact bytes
+         PdfPreflightTests.BuildJpxImagePdf(BuildJp2(nc: 2, bpc: 8).File) produces, then committed —
+         see Jpeg2000Rule's #97 encrypted-document test for why: the JPXDecode image XObject rule
+         reads DecryptedRawBody, not stream.RawBody, and needs a real encrypted fixture to pin that. -->
+    <EmbeddedResource Include="Assets\jpx-encrypted-emptyuser.pdf">
+      <LogicalName>jpx-encrypted-emptyuser.pdf</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
 
 </Project>

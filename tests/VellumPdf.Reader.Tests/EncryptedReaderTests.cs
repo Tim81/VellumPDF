@@ -237,7 +237,14 @@ public sealed class EncryptedReaderTests
     {
         var bytes = BuildTrailerWithEncryptDict("<< /Filter /Adobe.PubSec /V 1 /R 2 >>");
 
-        Assert.Throws<UnsupportedPdfFeatureException>(() => PdfReader.Open(bytes));
+        // Asserted on the message, not just the exception TYPE: EncryptionSetup.Authenticate has a
+        // second, more general guard ("/Filter is not /Standard") that also throws
+        // UnsupportedPdfFeatureException for /Adobe.PubSec — a bare Assert.Throws<UnsupportedPdfFeatureException>
+        // would still pass if the /Adobe.PubSec-specific branch (with its own, more precise message)
+        // were removed entirely, since the general branch catches it anyway. Checking the message
+        // pins that the SPECIFIC public-key-handler branch is what actually fired.
+        var ex = Assert.Throws<UnsupportedPdfFeatureException>(() => PdfReader.Open(bytes));
+        Assert.Contains("public-key", ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -375,14 +382,17 @@ public sealed class EncryptedReaderTests
     [Fact]
     public void CryptIdentityFilter_onAStream_bypassesDecryption_endToEnd()
     {
-        // enc-aes-128.pdf's page content stream is normally AES-128 encrypted; patch its /Filter to
-        // "/Crypt /FlateDecode" with /DecodeParms naming /Identity for the first entry, so this one
-        // stream's body is (per the patched declaration) NOT encrypted — but its RAW bytes in the
-        // file are UNCHANGED (still real ciphertext from before the patch). If GetDecodedStreamData
-        // correctly honours /Crypt /Identity, it will try to FlateDecode raw ciphertext directly,
-        // which is not valid zlib/deflate data, and DecodeStream must fail or return garbage — NOT
-        // successfully produce the real (would-be-AES-decrypted) content. This proves the override
-        // fires rather than merely not throwing.
+        // enc-aes-128.pdf's page content stream is normally AES-128 encrypted, then FlateDecode'd.
+        // Patch its /Filter to [/Crypt /FlateDecode] (/DecodeParms /Name left absent, which defaults
+        // to /Identity — same default /StmF/StrF use) so this one stream is, per the patched
+        // declaration, NOT encrypted at all — but its RAW file bytes are UNCHANGED (still real
+        // AES-128 ciphertext from before the patch). If GetDecodedStreamData correctly honours the
+        // /Crypt /Identity override, it hands that ciphertext straight to FlateDecode, which is not
+        // valid zlib/deflate data and must fail. Keeping /FlateDecode in the chain (not just
+        // /Crypt alone) matters: an earlier version of this test dropped it to fit a same-length
+        // byte patch, which made the assertion pass regardless of whether decryption was actually
+        // bypassed — the missing decompression step alone was enough to make the output not match
+        // baseline either way, so the test proved nothing about /Crypt /Identity specifically.
         var original = Load("enc-aes-128.pdf");
 
         // enc-aes-128.pdf's /Metadata stream is ALSO /Filter /FlateDecode, so a bare
@@ -391,16 +401,14 @@ public sealed class EncryptedReaderTests
         //
         // The replacement MUST be the same byte length as what it replaces: every object's file
         // position after this point is recorded as an absolute byte offset in the classic xref
-        // table below, which this patch does not (and must not need to) touch. /Filter /Crypt alone,
-        // with no /DecodeParms at all, already resolves to Identity — CryptFilterResolver.
-        // ResolveNamedMethod defaults a missing /Name to Identity, matching /StmF/StrF's own
-        // documented default — so there is no need to fit an explicit /DecodeParms /Name /Identity
-        // in the same space. The dropped /Length key is not a problem either: PdfObjectParser trusts
-        // /Length only when it lands exactly on 'endstream', and falls back to scanning for the
-        // marker otherwise (ParseStreamBody), which still finds it correctly since the stream BODY
-        // bytes are untouched.
+        // table below, which this patch does not (and must not need to) touch. The dropped /Length
+        // key is not a problem: PdfObjectParser trusts /Length only when it lands exactly on
+        // 'endstream', and falls back to scanning for the marker otherwise (ParseStreamBody), which
+        // still finds it correctly since the stream BODY bytes are untouched.
         var contentStreamDictBytes = "/Filter /FlateDecode /Length 96 >>"u8.ToArray();
-        var replacementCore = "/Filter /Crypt>>"u8.ToArray();
+        var replacementCore = "/Filter[/Crypt/FlateDecode]>>"u8.ToArray();
+        Assert.True(replacementCore.Length <= contentStreamDictBytes.Length,
+            "replacement must fit in the same byte span it replaces");
         var replacement = new byte[contentStreamDictBytes.Length];
         replacementCore.CopyTo(replacement, 0);
         Array.Fill(replacement, (byte)' ', replacementCore.Length, replacement.Length - replacementCore.Length);
@@ -411,17 +419,24 @@ public sealed class EncryptedReaderTests
         replacement.CopyTo(patched.AsSpan(idx));
 
         using var reader = PdfReader.Open(patched, "u");
-        var content = GetPageContentBytes(reader);
-
         using var baseline = PdfReader.Open(Load("plaintext-baseline.pdf"));
         var baselineContent = GetPageContentBytes(baseline);
 
         // The Identity override means the raw (still-AES-ciphertext) bytes are handed to
-        // FlateDecode directly. That is either a decode failure (content is null) or, if it happens
-        // to inflate into something, content that does NOT match the real plaintext — either
-        // outcome proves decryption was bypassed for this stream. Both are asserted so the test
-        // fails loudly if some future FlateDecode change makes the malformed input silently succeed
-        // with different-but-still-wrong bytes.
+        // FlateDecode directly, which is expected to reject them outright (an InvalidDataException
+        // — InflateFlate normalises every BCL decode failure to that type). If it somehow produced
+        // SOME output instead, that output must still not match the real plaintext — either outcome
+        // proves decryption was bypassed for this stream, rather than merely "didn't throw".
+        byte[]? content;
+        try
+        {
+            content = GetPageContentBytes(reader);
+        }
+        catch (InvalidDataException)
+        {
+            content = null;
+        }
+
         Assert.True(content is null || !content.AsSpan().SequenceEqual(baselineContent));
     }
 
@@ -451,11 +466,18 @@ public sealed class EncryptedReaderTests
 
         using var reader = PdfReader.Open(patched, "u");
 
-        Assert.Throws<InvalidDataException>(() =>
+        // Asserted on the message, not just the exception TYPE: the page content stream is still
+        // real AES-128 ciphertext underneath, so a mutation that wrongly maps an undefined /CF name
+        // to Identity instead of Unsupported ALSO throws InvalidDataException here — just from
+        // FlateDecode rejecting raw ciphertext as invalid zlib, not from the loud "/CFM this handler
+        // does not implement" check this test means to pin. A bare Assert.Throws<InvalidDataException>
+        // would pass under that mutation for the wrong reason.
+        var ex = Assert.Throws<InvalidDataException>(() =>
         {
             var stream = GetFirstContentStream(reader);
             reader.GetDecodedStreamData(stream);
         });
+        Assert.Contains("does not exist", ex.Message, StringComparison.Ordinal);
     }
 
     // ── Nested string: Algorithm 1 step (a) containing-object identity ──────────────────────────
