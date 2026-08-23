@@ -806,6 +806,91 @@ public sealed class StandardSecurityDecryptorTests
             streamFilter: CryptFilterMethod.Aes256, stringFilter: CryptFilterMethod.Aes256));
     }
 
+    // ── /V and /R range guards ─────────────────────────────────────────────────
+    //
+    // `v is < 1 or > 5 or 3` narrowed to `v is 3` still rejects the one value these tests already
+    // covered (Constructor_rejectsV3) while letting every out-of-range value through; V=0 and V=6
+    // are the two ends of the actual range this guards. Deleting the /R guard entirely leaves
+    // every other test green, since R<5's own field-shape checks (below) never fire for an R this
+    // far out of range with otherwise-valid field shapes.
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(6)]
+    public void Constructor_rejectsVOutsideSupportedRange(int v)
+    {
+        Assert.Throws<InvalidDataException>(() => new StandardSecurityDecryptor(
+            v: v, r: 3, keyLengthBytes: 16, o: new byte[32], u: new byte[32], oe: null, ue: null,
+            p: -4, id0: [0x00], encryptMetadata: true,
+            streamFilter: CryptFilterMethod.Rc4, stringFilter: CryptFilterMethod.Rc4));
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(7)]
+    public void Constructor_rejectsROutsideSupportedRange(int r)
+    {
+        Assert.Throws<InvalidDataException>(() => new StandardSecurityDecryptor(
+            v: 2, r: r, keyLengthBytes: 16, o: new byte[32], u: new byte[32], oe: null, ue: null,
+            p: -4, id0: [0x00], encryptMetadata: true,
+            streamFilter: CryptFilterMethod.Rc4, stringFilter: CryptFilterMethod.Rc4));
+    }
+
+    // ── Field-length guards, one per branch ───────────────────────────────────
+    //
+    // Constructor_rejectsWrongLengthO (above) already pins /O at R<5; these five fill in the rest
+    // of the shape checks, none of which had a test of their own before. The R>=5 /U guard is the
+    // sharpest: without it, TryComputeFileKeyFromUserPassword's `_u.AsSpan(32, 8)` on a 32-byte
+    // /U throws ArgumentOutOfRangeException from deep inside the password path instead of failing
+    // cleanly at construction.
+
+    [Fact]
+    public void Constructor_rejectsWrongLengthU_atRLessThan5()
+    {
+        Assert.Throws<InvalidDataException>(() => new StandardSecurityDecryptor(
+            v: 1, r: 2, keyLengthBytes: 5, o: new byte[32], u: new byte[16], oe: null, ue: null,
+            p: -4, id0: [0x00], encryptMetadata: true,
+            streamFilter: CryptFilterMethod.Rc4, stringFilter: CryptFilterMethod.Rc4));
+    }
+
+    [Theory]
+    [InlineData(4)] // one below the 5-byte (40-bit) floor
+    [InlineData(17)] // one above the 16-byte (128-bit) ceiling
+    public void Constructor_rejectsKeyLengthBytesOutOfRange_atRLessThan5(int keyLengthBytes)
+    {
+        Assert.Throws<InvalidDataException>(() => new StandardSecurityDecryptor(
+            v: 2, r: 3, keyLengthBytes: keyLengthBytes, o: new byte[32], u: new byte[32], oe: null, ue: null,
+            p: -4, id0: [0x00], encryptMetadata: true,
+            streamFilter: CryptFilterMethod.Rc4, stringFilter: CryptFilterMethod.Rc4));
+    }
+
+    [Fact]
+    public void Constructor_rejectsWrongLengthO_atRevision5Plus()
+    {
+        Assert.Throws<InvalidDataException>(() => new StandardSecurityDecryptor(
+            v: 5, r: 6, keyLengthBytes: 32, o: new byte[32], u: new byte[48], oe: new byte[32], ue: new byte[32],
+            p: -4, id0: [0x00], encryptMetadata: true,
+            streamFilter: CryptFilterMethod.Aes256, stringFilter: CryptFilterMethod.Aes256));
+    }
+
+    [Fact]
+    public void Constructor_rejectsWrongLengthU_atRevision5Plus()
+    {
+        Assert.Throws<InvalidDataException>(() => new StandardSecurityDecryptor(
+            v: 5, r: 6, keyLengthBytes: 32, o: new byte[48], u: new byte[32], oe: new byte[32], ue: new byte[32],
+            p: -4, id0: [0x00], encryptMetadata: true,
+            streamFilter: CryptFilterMethod.Aes256, stringFilter: CryptFilterMethod.Aes256));
+    }
+
+    [Fact]
+    public void Constructor_rejectsKeyLengthBytesNot32_atRevision5Plus()
+    {
+        Assert.Throws<InvalidDataException>(() => new StandardSecurityDecryptor(
+            v: 5, r: 6, keyLengthBytes: 16, o: new byte[48], u: new byte[48], oe: new byte[32], ue: new byte[32],
+            p: -4, id0: [0x00], encryptMetadata: true,
+            streamFilter: CryptFilterMethod.Aes256, stringFilter: CryptFilterMethod.Aes256));
+    }
+
     // ── Fixture access: read tests/VellumPdf.Reader.Tests/Fixtures/Encrypted from disk ──────
 
     private static byte[] LoadFixture(string name) => File.ReadAllBytes(FixturePath(name));
