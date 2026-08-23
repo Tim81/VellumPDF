@@ -601,12 +601,17 @@ public sealed class StandardSecurityDecryptorTests
         // /Perms decrypts to — it changes what this decryptor now expects that plaintext to
         // contain. Same fileKey (R6's key derivation never touches /P), same /Perms bytes, a
         // second decryptor built with /P edited after the fact.
+        //
+        // Flips a single permission bit rather than every bit: XORing with -1 (as this test used
+        // to) moves every byte of the 4-byte block[0..4] comparison at once, so narrowing that
+        // comparison to a single byte would still pass. A single-bit flip only shows up if the
+        // byte it lands in is actually part of the comparison.
         var info = LoadEncryptInfo("enc-aes-256-r6.pdf");
         var decryptor = BuildDecryptor(info);
         Assert.True(decryptor.TryComputeFileKeyFromUserPassword(UserPassword, out var fileKey));
         Assert.True(decryptor.VerifyPermissions(fileKey, info.Perms!));
 
-        var tampered = BuildDecryptor(info with { P = unchecked(info.P ^ -1) });
+        var tampered = BuildDecryptor(info with { P = info.P ^ 0x0800 });
         Assert.False(tampered.VerifyPermissions(fileKey, info.Perms!));
     }
 
