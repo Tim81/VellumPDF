@@ -6138,6 +6138,40 @@ public sealed class PdfPreflightTests
         Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.8.3-1");
     }
 
+    /// <summary>
+    /// ISO 19005-2 6.1.3 forbids the /Encrypt key outright. That used to be enforced by the reader
+    /// refusing to open any encrypted document at all - an error line, never a verdict - so when #97
+    /// taught the reader to read them, an encrypted file started reaching rule evaluation and being
+    /// reported as conformant. This fixture serves because it is encrypted; everything else about it
+    /// is beside the point here.
+    /// </summary>
+    [Fact]
+    public void Validate_EncryptedDocument_IsFlagged_613()
+    {
+        using var s = typeof(PdfPreflightTests).Assembly.GetManifestResourceStream("jpx-encrypted-emptyuser.pdf")
+            ?? throw new InvalidOperationException("jpx-encrypted-emptyuser.pdf embedded resource not found.");
+        using var ms = new MemoryStream();
+        s.CopyTo(ms);
+
+        var result = PdfPreflight.Validate(ms.ToArray(), PdfConformance.PdfA2B);
+
+        var finding = Assert.Single(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.3-no-encrypt");
+        Assert.Equal(PreflightSeverity.Error, finding.Severity);
+        Assert.Contains("/Encrypt", finding.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>The control: an unencrypted document draws no /Encrypt finding.</summary>
+    [Fact]
+    public void Validate_UnencryptedDocument_NoFinding_613_noEncrypt()
+    {
+        var jp2 = BuildJp2(nc: 2, bpc: 8);
+        var pdf = BuildJpxImagePdf(jp2.File);
+
+        var result = PdfPreflight.Validate(pdf, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.3-no-encrypt");
+    }
+
     [Fact]
     public void Validate_Jpeg2000_NcEquals5_IsFlagged_6283_1()
     {

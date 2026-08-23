@@ -140,6 +140,17 @@ internal static class PreflightRunner
                     stderr.WriteLine($"error: {ex.Message}");
                     return ExitCodes.UsageError;
                 }
+                // Profile auto-detection opens the document — with no password, because there is no
+                // way to supply one yet — so an encrypted file reaches THIS call before it ever
+                // reaches Validate below, and the password catch down there never sees it. Without
+                // this, `vellum-preflight some-encrypted.pdf` (no -p, the default invocation) exits
+                // with an unhandled exception and a stack trace.
+                catch (VellumPdf.Reader.PdfPasswordException)
+                {
+                    stderr.WriteLine(PasswordProtectedMessage(filePath));
+                    anyIoError = true;
+                    continue;
+                }
 
                 if (profiles.Count == 0)
                 {
@@ -177,9 +188,7 @@ internal static class PreflightRunner
                     // would otherwise show up.
                     catch (VellumPdf.Reader.PdfPasswordException)
                     {
-                        stderr.WriteLine(
-                            $"error: '{filePath}' is password-protected; vellum-preflight has no way " +
-                            "to supply a password yet.");
+                        stderr.WriteLine(PasswordProtectedMessage(filePath));
                         anyIoError = true;
                         continue;
                     }
@@ -229,6 +238,12 @@ internal static class PreflightRunner
     }
 
     private sealed class AutoNoClaim(string message) : Exception(message);
+
+    // One wording for both places a password-protected file can surface: profile auto-detection and
+    // validation itself. They are different call sites, not different failures, and a user who sees
+    // two phrasings for the same condition reasonably assumes they are two different problems.
+    private static string PasswordProtectedMessage(string filePath) =>
+        $"error: '{filePath}' is password-protected; vellum-preflight has no way to supply a password yet.";
 
     private static (IReadOnlyList<PdfConformance> Profiles, string Source) ResolveProfiles(
         ParsedArgs parsed,

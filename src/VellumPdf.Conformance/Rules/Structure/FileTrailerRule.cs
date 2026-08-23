@@ -14,19 +14,33 @@ namespace VellumPdf.Conformance.Rules.Structure;
 /// Authored from ISO 19005-2:2011, 6.1.3 and ISO 32000-1:2008, 7.5.5 / 14.4. Clean-room: derived
 /// from the specification text, not from any third-party validation profile.
 /// <para>
-/// §6.1.3 also forbids the <c>/Encrypt</c> key. That case is enforced earlier, at the reader
-/// layer (<see cref="Reader.PdfDocumentReader"/> rejects encrypted documents), so an encrypted
-/// file never reaches rule evaluation; it is therefore not duplicated here.
+/// §6.1.3 also forbids the <c>/Encrypt</c> key, and that is checked here. It used to be enforced
+/// by the reader refusing to open any encrypted document at all; since #97 the reader reads them,
+/// so an encrypted file now reaches rule evaluation and would otherwise be reported as conformant.
 /// </para>
 /// </remarks>
 internal sealed class FileTrailerRule : IConformanceRule
 {
     public string RuleId => "ISO19005-2:6.1.3-id-present";
 
+    private const string NoEncryptRuleId = "ISO19005-2:6.1.3-no-encrypt";
+
     public string Clause => "ISO 19005-2:2011, 6.1.3";
 
     public void Evaluate(PreflightContext context)
     {
+        // Read straight off the trailer rather than through Resolve: §7.6.1 requires /Encrypt to be
+        // a direct object or an indirect reference the reader has already dealt with, and either way
+        // its mere PRESENCE is the violation — the value never needs to be looked at.
+        if (context.Trailer.Get(_encryptKey) is not null)
+        {
+            context.Report(
+                NoEncryptRuleId,
+                Clause,
+                PreflightSeverity.Error,
+                "The file trailer dictionary shall not contain the /Encrypt key: a PDF/A file shall not be encrypted.");
+        }
+
         var id = context.Resolve(context.Trailer.Get(PdfName.ID));
 
         if (id is not PdfArray array
@@ -43,6 +57,8 @@ internal sealed class FileTrailerRule : IConformanceRule
 
         CheckTrailingData(context);
     }
+
+    private static readonly PdfName _encryptKey = new("Encrypt");
 
     private static readonly byte[] _eofMarker = "%%EOF"u8.ToArray();
 

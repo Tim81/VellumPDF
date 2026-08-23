@@ -25,6 +25,9 @@ public static class PdfPreflight
     /// <exception cref="System.ArgumentNullException"><paramref name="bytes"/> is null.</exception>
     /// <exception cref="System.IO.InvalidDataException">The input is not a well-formed PDF.</exception>
     /// <exception cref="UnsupportedPdfFeatureException">The PDF uses a reader feature that is not yet supported.</exception>
+    /// <exception cref="Reader.PdfPasswordException">The PDF is encrypted and its empty user password
+    /// does not authenticate. This overload opens the document with no password, so a
+    /// password-protected file cannot be inspected through it (see VellumPdf issue #97).</exception>
     public static IReadOnlyList<PdfConformance> DetectClaimedProfiles(byte[] bytes)
     {
         ArgumentNullException.ThrowIfNull(bytes);
@@ -43,6 +46,9 @@ public static class PdfPreflight
     /// <exception cref="System.IO.IOException">Reading <paramref name="stream"/> failed.</exception>
     /// <exception cref="System.ObjectDisposedException"><paramref name="stream"/> has been disposed.</exception>
     /// <exception cref="UnsupportedPdfFeatureException">The PDF uses a reader feature that is not yet supported.</exception>
+    /// <exception cref="Reader.PdfPasswordException">The PDF is encrypted and its empty user password
+    /// does not authenticate. This overload opens the document with no password, so a
+    /// password-protected file cannot be inspected through it (see VellumPdf issue #97).</exception>
     public static IReadOnlyList<PdfConformance> DetectClaimedProfiles(Stream stream)
     {
         ArgumentNullException.ThrowIfNull(stream);

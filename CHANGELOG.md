@@ -54,8 +54,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `System.NotSupportedException`: `vellum-preflight` catches `NotSupportedException` to report an
   unsupported feature as a plain error line, and a wrong password is a different failure. The
   `/Encrypt`-presence gate that made every prior version reject an encrypted file outright is gone;
-  `/Filter /Adobe.PubSec` (public-key handlers) and any crypt filter method this handler does not
-  implement still throw `UnsupportedPdfFeatureException`.
+  `/Filter /Adobe.PubSec` (public-key handlers) and `/V 3`, whose algorithm ISO 32000-1 Table 20
+  leaves unpublished, throw `UnsupportedPdfFeatureException` at `Open`. A crypt filter naming a
+  method the handler does not implement is a different case and throws later: `/StmF` and `/StrF`
+  are not consulted until something is decoded, so it surfaces as an `InvalidDataException` from
+  the decode call, not from `Open`.
 
   `PdfDocumentReader.Encryption` exposes the new `VellumPdf.Encryption.PdfEncryptionInfo`: `/V`,
   `/R`, the resolved cipher, key length, `/P` as `PdfPermissions`, `/EncryptMetadata`, and which
@@ -89,7 +92,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `/DecodeParms` `/Name`, or `/Identity` for none. A `/StmF`, `/StrF`, or `/Crypt` `/Name` that
   names a filter absent from `/CF` is an error per ISO 32000-2 Table 20, and throws rather than
   silently falling back to plaintext-as-ciphertext. Passwords try UTF-8 first, then
-  PDFDocEncoding (R&lt;=4 only) on failure, matching qpdf's own retry order.
+  PDFDocEncoding (R&lt;=4 only) on failure.
 
   Verified against the committed corpus (#99): every fixture's page content stream decodes to the
   same bytes as the corresponding stream in the unencrypted baseline, `/Info /Title` decrypts to
