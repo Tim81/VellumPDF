@@ -97,7 +97,7 @@ public sealed class StandardSecurityDecryptorTests
 
     [Theory]
     [MemberData(nameof(FixtureNames))]
-    public void TryComputeFileKey_triesUserPassword_thenFallsBackToOwnerPassword(string fixtureName)
+    public void TryComputeFileKey_acceptsEitherPassword_andDerivesTheSameKeyAsTheDirectCall(string fixtureName)
     {
         // The owner password ("o") is not a valid user password for any fixture, so this only
         // succeeds by falling through to TryComputeFileKeyFromOwnerPassword — the combinator
@@ -303,6 +303,74 @@ public sealed class StandardSecurityDecryptorTests
     {
         Assert.Throws<InvalidDataException>(
             () => StandardSecurityDecryptor.ComputeObjectKey(new byte[16], objectNumber, generation, useAesSalt: false));
+    }
+
+    /// <summary>
+    /// The revision clause of <c>RecoverAuthenticatedPermissions</c>' guard, on its own. Passing a
+    /// short key at R≤4 — which the sibling tests do — is turned away by the LENGTH clause instead,
+    /// so those pass with the revision check deleted. A 32-byte key at R4 satisfies every other
+    /// clause, leaving only <c>_r &lt; 5</c> between the caller and an AES-ECB pass over sixteen bytes
+    /// that were never a <c>/Perms</c> block.
+    /// </summary>
+    [Fact]
+    public void RecoverAuthenticatedPermissions_atRevision4_withAValidSizedKey_isRefusedByTheRevisionCheck()
+    {
+        // A /Perms block that WOULD decrypt: /P little-endian, the 'adb' marker at bytes 9-11, and a
+        // 32-byte key to encrypt it under. Zeros would not do — they fail the marker check, so the
+        // method returns null with or without the revision guard and the test would prove nothing.
+        var fileKey = new byte[32];
+        for (var i = 0; i < fileKey.Length; i++)
+            fileKey[i] = (byte)(i + 1);
+
+        var block = new byte[16];
+        BinaryPrimitives.WriteInt32LittleEndian(block, -4);
+        block[4] = block[5] = block[6] = block[7] = 0xFF;
+        block[8] = (byte)'T';
+        block[9] = (byte)'a';
+        block[10] = (byte)'d';
+        block[11] = (byte)'b';
+
+        using var aes = Aes.Create();
+        aes.Key = fileKey;
+        aes.Mode = CipherMode.ECB;
+        aes.Padding = PaddingMode.None;
+        var perms = aes.CreateEncryptor().TransformFinalBlock(block, 0, block.Length);
+
+        var decryptor = new StandardSecurityDecryptor(
+            v: 4, r: 4, keyLengthBytes: 16, o: new byte[32], u: new byte[32], oe: null, ue: null,
+            p: -4, id0: [0x00], encryptMetadata: true,
+            streamFilter: CryptFilterMethod.Aes128, stringFilter: CryptFilterMethod.Aes128);
+
+        // /Perms does not exist below R5, so this has to be refused however well-formed it looks.
+        Assert.Null(decryptor.RecoverAuthenticatedPermissions(fileKey, perms));
+    }
+
+    /// <summary>
+    /// ISO 32000-2 §7.6.4.2 gives <c>/O</c> and <c>/U</c> as 48 bytes at R≥5, and Acrobat 9-era
+    /// producers pad them to 127 — the R≤4 field width. The constructor tolerates the padding; this
+    /// is the accepting direction, which nothing else exercises: every fixture is exactly 48, so
+    /// hashing the padding along with the value would go unnoticed.
+    /// </summary>
+    [Fact]
+    public void OverlongOAndU_atRevision6_stillAuthenticate()
+    {
+        var info = LoadEncryptInfo("enc-aes-256-r6.pdf");
+
+        static byte[] PadTo127(byte[] value)
+        {
+            var padded = new byte[127];
+            value.CopyTo(padded, 0);
+            return padded;
+        }
+
+        var padded = BuildDecryptor(info with { O = PadTo127(info.O), U = PadTo127(info.U) });
+
+        Assert.True(padded.TryComputeFileKeyFromUserPassword(UserPassword, out var userKey));
+        Assert.True(padded.TryComputeFileKeyFromOwnerPassword(OwnerPassword, out var ownerKey));
+
+        // The owner path hashes /U as udata, so a padded /U that reached it whole would derive a
+        // different key from the user path's.
+        Assert.Equal(userKey, ownerKey);
     }
 
     private static byte[] AesEcbDecryptForTest(byte[] key, byte[] data)
@@ -764,7 +832,10 @@ public sealed class StandardSecurityDecryptorTests
         var info = LoadEncryptInfo("enc-aes-256-r6.pdf");
         var decryptor = BuildDecryptor(info);
 
-        Assert.Null(decryptor.RecoverAuthenticatedPermissions(new byte[16], info.Perms!));
+        // 20 bytes: a length no AES key size allows, so if the guard were not here the key setter
+        // itself would throw a raw CryptographicException instead of this method reporting "not
+        // applicable". A 16-byte key would prove nothing — AES-128 accepts it.
+        Assert.Null(decryptor.RecoverAuthenticatedPermissions(new byte[20], info.Perms!));
     }
 
     [Fact]

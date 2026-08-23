@@ -64,10 +64,16 @@ public sealed class EncryptedExemptionTests
     /// without decrypting the file, so the copy of it in the cross-reference stream dictionary has
     /// to stay plaintext too.
     /// </summary>
-    [Fact]
-    public void CrossReferenceStreamDictionary_idString_isNotDecrypted()
+    [Theory]
+    [InlineData(false)]  // Resolve first
+    [InlineData(true)]   // ResolveStream first — the order the Conformance package actually uses,
+                         // and the one the exemption's own comment calls the dangerous one
+    public void CrossReferenceStreamDictionary_idString_isNotDecrypted(bool streamFirst)
     {
         using var reader = PdfReader.Open(Load("enc-rc4-objstm.pdf"), "u");
+
+        if (streamFirst)
+            _ = reader.ResolveStream(10);
 
         var dict = Assert.IsType<PdfDictionary>(reader.Resolve(new PdfIndirectReference(10, 0)));
         var id = Assert.IsType<PdfArray>(dict.Get(PdfName.ID));
@@ -258,6 +264,29 @@ public sealed class EncryptedExemptionTests
             "STRING-VIA-RC4",
             Encoding.ASCII.GetString(((PdfHexString)stream.Dictionary.Get(new PdfName("Probe"))!).Bytes.Span));
         Assert.Equal("STREAM-VIA-AES", Encoding.ASCII.GetString(reader.GetDecodedStreamData(stream)!));
+    }
+
+    /// <summary>
+    /// The signature exemption applies to signature dictionaries, and <c>/Contents</c> is a common
+    /// key elsewhere: ISO 32000-1 Table 168 makes an annotation's <c>/Contents</c> a text string, and
+    /// a commented or form-filled document is full of them. Exempting on the strength of any
+    /// <c>/Type</c> at all would hand every note's text back as ciphertext.
+    /// </summary>
+    [Fact]
+    public void AnnotationContents_isNotMistakenForASignature()
+    {
+        var note = Encrypt(3, 0, "reviewer comment"u8.ToArray());
+        var doc = BuildWith(Rc4EncryptDict,
+            "<< /Type /Catalog /Pages 2 0 R >>",
+            "<< /Type /Pages /Kids [] /Count 0 >>",
+            $"<< /Type /Annot /Subtype /Text /Rect [0 0 1 1] /Contents <{Convert.ToHexStringLower(note)}> >>");
+
+        using var reader = PdfReader.Open(doc, "u");
+        var annot = Assert.IsType<PdfDictionary>(reader.Resolve(new PdfIndirectReference(3, 0)));
+
+        Assert.Equal(
+            "reviewer comment",
+            Encoding.ASCII.GetString(((PdfHexString)annot.Get(PdfName.Contents)!).Bytes.Span));
     }
 
     // ── One decrypt walk, whichever accessor gets there first ───────────────────────────────────
@@ -598,6 +627,72 @@ public sealed class EncryptedExemptionTests
             Encoding.ASCII.GetString(reader.GetDecodedStreamData(reader.ResolveStream(4)!)!));
     }
 
+    /// <summary>
+    /// The two halves of round three's fix, in the one configuration where they interact: a catalog
+    /// inside an object stream AND <c>/EncryptMetadata false</c>. Reaching the catalog decodes the
+    /// object stream, which asks whether that stream is the document's metadata — with no catalog yet
+    /// to answer from. Answering "yes" there exempts the object stream from decryption and the file
+    /// does not open at all; the sibling test cannot show it, because with
+    /// <c>/EncryptMetadata</c> true the exemption's first operand is false and the second never runs.
+    /// </summary>
+    [Fact]
+    public void CatalogInsideAnObjectStream_withEncryptMetadataFalse_opens()
+    {
+        var fixture = Load("enc-aes-128-cleartextmd.pdf");
+        var fileKey = FileKeyOf("enc-aes-128-cleartextmd.pdf");
+
+        // Object 10 is an object stream holding a replacement catalog (object 1), still naming the
+        // fixture's own cleartext metadata stream; object 11 is the cross-reference stream that puts
+        // object 1 inside it.
+        var members = "<< /Type /Catalog /Pages 4 0 R /Metadata 3 0 R >>";
+        var header = "1 0 ";
+        var objStmBody = EncryptAesWith(fileKey, 10, 0, Encoding.Latin1.GetBytes(header + members));
+
+        var ms = new MemoryStream();
+        ms.Write(fixture);
+        void W(string t) => ms.Write(Encoding.Latin1.GetBytes(t));
+
+        var o10 = (int)ms.Position;
+        W($"10 0 obj\n<< /Type /ObjStm /N 1 /First {header.Length} /Length {objStmBody.Length} >>\nstream\n");
+        ms.Write(objStmBody);
+        W("\nendstream\nendobj\n");
+
+        var previousStartxref = int.Parse(
+            Encoding.Latin1.GetString(fixture).Split("startxref")[^1].Trim().Split('%')[0].Trim(),
+            System.Globalization.CultureInfo.InvariantCulture);
+
+        var rows = new List<byte>();
+        void Row(byte type, int field2, int field3) => rows.AddRange(
+        [
+            type,
+            (byte)(field2 >> 24), (byte)(field2 >> 16), (byte)(field2 >> 8), (byte)field2,
+            (byte)(field3 >> 8), (byte)field3,
+        ]);
+
+        var xref = (int)ms.Position;
+        Row(2, 10, 0);          // object 1: member 0 of object stream 10
+        Row(1, o10, 0);         // object 10: the object stream
+        Row(1, xref, 0);        // object 11: this cross-reference stream
+
+        var rowBytes = rows.ToArray();
+        W($"11 0 obj\n<< /Type /XRef /Size 12 /W [1 4 2] /Index [1 1 10 2] /Root 1 0 R /Encrypt 8 0 R "
+          + $"/Prev {previousStartxref} "
+          + $"/ID [<{Convert.ToHexStringLower(Id0)}><{Convert.ToHexStringLower(Id0)}>] /Length {rowBytes.Length} >>\n"
+          + "stream\n");
+        ms.Write(rowBytes);
+        W("\nendstream\nendobj\n");
+        W($"startxref\n{xref}\n%%EOF\n");
+
+        using var reader = PdfReader.Open(ms.ToArray(), "u");
+
+        Assert.Equal("Catalog", ((PdfName)reader.Catalog.Get(new PdfName("Type"))!).Value);
+
+        // And the exemption still works once the catalog exists: the metadata stream is cleartext.
+        var metadata = Assert.IsType<PdfIndirectReference>(reader.Catalog.Get(new PdfName("Metadata")));
+        var xmp = Encoding.UTF8.GetString(reader.GetDecodedStreamData(reader.ResolveStream(metadata)!)!);
+        Assert.StartsWith("<?xpacket", xmp, StringComparison.Ordinal);
+    }
+
     // ── One identity per object (ISO 32000-1 §7.6.2, Algorithm 1) ───────────────────────────────
 
     /// <summary>
@@ -697,6 +792,31 @@ public sealed class EncryptedExemptionTests
             "STR-GEN0",
             Encoding.ASCII.GetString(((PdfHexString)dict.Get(new PdfName("Probe"))!).Bytes.Span));
         Assert.Equal("BODY-GEN0", Encoding.ASCII.GetString(reader.GetDecodedStreamData(stream)!));
+    }
+
+    /// <summary>
+    /// A stream's <c>/Filter</c> and <c>/DecodeParms</c> may be indirect references, and the crypt
+    /// filter resolution has to dereference them: reading them raw sees a reference where it expects
+    /// a name and falls through to <c>/StmF</c>, which decrypts a stream the document asked to be
+    /// left alone. The resolver takes a callback for exactly this and nothing exercised it.
+    /// </summary>
+    [Fact]
+    public void StreamWithAnIndirectFilterAndDecodeParms_stillResolvesItsCryptFilter()
+    {
+        var plaintext = "INDIRECTLY-EXEMPT"u8.ToArray();
+
+        var doc = BuildWith(Rc4EncryptDict,
+            "<< /Type /Catalog /Pages 2 0 R >>",
+            "<< /Type /Pages /Kids [] /Count 0 >>",
+            $"<< /Length {plaintext.Length} /Filter 4 0 R /DecodeParms 5 0 R >>\n"
+            + $"stream\n{Encoding.Latin1.GetString(plaintext)}\nendstream",
+            "[/Crypt]",
+            "<< /Type /CryptFilterDecodeParms /Name /Identity >>");
+
+        using var reader = PdfReader.Open(doc, "u");
+        var stream = reader.ResolveStream(3)!;
+
+        Assert.Equal("INDIRECTLY-EXEMPT", Encoding.ASCII.GetString(reader.GetDecodedStreamData(stream)!));
     }
 
     // ── Recovering from a stale /Length ─────────────────────────────────────────────────────────

@@ -172,6 +172,28 @@ public sealed class CryptFilterResolverTests
     /// /EncryptMetadata false exempts the /Type /Metadata stream structurally, independent of
     /// /Filter — it is never expressed as a /Crypt filter entry (see the method's own doc comment).
     /// </summary>
+    /// <summary>
+    /// <c>/DP</c> is the abbreviated form of <c>/DecodeParms</c> (ISO 32000-1 Table 5). The resolver
+    /// accepts it, so something has to say so — otherwise the alias is code nothing depends on and
+    /// nothing would notice going away.
+    /// </summary>
+    [Fact]
+    public void ResolveStreamMethod_cryptFilterWithTheAbbreviatedDpKey_isRead()
+    {
+        var streamDict = new PdfDictionary()
+            .Set(_filterKey, new PdfName("Crypt"))
+            .Set(new PdfName("DP"), new PdfDictionary().Set(new PdfName("Name"), new PdfName("StdCF")));
+        var table = new Dictionary<string, CryptFilterMethod>(StringComparer.Ordinal)
+        {
+            ["StdCF"] = CryptFilterMethod.Aes128,
+        };
+
+        var method = CryptFilterResolver.ResolveStreamMethod(
+            streamDict, CryptFilterMethod.Rc4, table, encryptMetadata: true, resolve: null);
+
+        Assert.Equal(CryptFilterMethod.Aes128, method);
+    }
+
     [Fact]
     public void ResolveStreamMethod_documentMetadataStreamWithEncryptMetadataFalse_isIdentity()
     {

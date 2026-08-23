@@ -127,8 +127,19 @@ public sealed class EncryptionStructureTests
     // A crypt filter /Length the cipher cannot use is the document contradicting itself. The cipher
     // wins, because it is what will actually be applied — 32 bytes is not an AES-128 key.
     [InlineData(4, 4, 128, 32, 16)]
+    // RC4 under a crypt filter is the one cipher with a RANGE to declare (Table 20: 40 to 128 bits),
+    // so it is the only /CFM that can show the bytes-or-bits reading and the clamp doing anything.
+    // 40 reads as bits — a legal byte count stops at 32 — and 5 reads as bytes.
+    [InlineData(4, 4, 128, 40, 5, "V2")]
+    [InlineData(4, 4, 128, 5, 5, "V2")]
+    // Out of range either way: neither 3 bytes nor 3 bits is a key, so the cipher's own answer wins.
+    [InlineData(4, 4, 128, 3, 16, "V2")]
+    // Readable as a byte count, but 20 bytes is 160-bit RC4 and Table 20 stops at 128 — so the value
+    // passes the range test and is then turned away by the cipher's own limit, which is a different
+    // guard and the one a plausible-looking declaration reaches.
+    [InlineData(4, 4, 128, 20, 16, "V2")]
     public void KeyLengthBytes_followsTheRuleThatOverridesLength(
-        int v, int r, int lengthBits, int? cryptFilterLength, int expectedBytes)
+        int v, int r, int lengthBits, int? cryptFilterLength, int expectedBytes, string cfm = "AESV2")
     {
         var encryptDict = new PdfDictionary()
             .Set(new PdfName("Length"), new PdfInteger(lengthBits));
@@ -139,7 +150,7 @@ public sealed class EncryptionStructureTests
                 .Set(new PdfName("StmF"), new PdfName("StdCF"))
                 .Set(new PdfName("CF"), new PdfDictionary()
                     .Set(new PdfName("StdCF"), new PdfDictionary()
-                        .Set(new PdfName("CFM"), new PdfName("AESV2"))
+                        .Set(new PdfName("CFM"), new PdfName(cfm))
                         .Set(new PdfName("Length"), new PdfInteger(cfLength))));
         }
 

@@ -101,13 +101,18 @@ public sealed class EncryptionParameterTests
             + "/Filter /Standard /Length 128 /V 4 /R 4 "
             + "/O <2a2f0a1990192c60114730bdcd39f37828a53c89a340dd473c85299dc5258e1c> "
             + "/U <6c8913ac9fc602eb1aad2a1ec614bee90021446990b9e4114071a4d9104984c1> /P -4 >>",
-            "<< /Empty <> /AlsoEmpty () >>");
+            $"<< /Empty <> /AlsoEmpty () /IvOnly <{new string('0', 32)}> >>");
 
         using var reader = PdfReader.Open(doc, "u");
         var dict = Assert.IsType<PdfDictionary>(reader.Resolve(new PdfIndirectReference(3, 0)));
 
         Assert.Empty(((PdfHexString)dict.Get(new PdfName("Empty"))!).Bytes.ToArray());
         Assert.Empty(((PdfLiteralString)dict.Get(new PdfName("AlsoEmpty"))!).Bytes.ToArray());
+
+        // Sixteen bytes is an IV and nothing after it — what a producer writes when it emits the IV
+        // unconditionally and has nothing to encrypt. There is no ciphertext block to decrypt, so
+        // the plaintext is empty; demanding a block after the IV rejects the document.
+        Assert.Empty(((PdfHexString)dict.Get(new PdfName("IvOnly"))!).Bytes.ToArray());
     }
 
     /// <summary>
@@ -502,7 +507,9 @@ public sealed class EncryptionParameterTests
 
         var ex = Assert.Throws<InvalidDataException>(() => PdfReader.Open(doc, "u"));
 
-        Assert.Contains("/V 0", ex.Message, StringComparison.Ordinal);
+        // The distinguishing phrase, not just "/V 0": the decryptor's own constructor rejects 0 too,
+        // with a message that also names it, so a looser assertion passes with this guard deleted.
+        Assert.Contains("shall not be used", ex.Message, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -580,10 +587,27 @@ public sealed class EncryptionParameterTests
         // Sound before disposal, so the assertion below is about disposal and not about the fixture.
         Assert.NotNull(reader.Resolve(infoRef));
 
+        // A stream resolved before disposal, so the decode path below is reached with a live
+        // ParsedStream rather than turned away by the resolver's own guard.
+        var contentRef = (PdfIndirectReference)((PdfDictionary)reader.Resolve(
+            (PdfIndirectReference)((PdfArray)((PdfDictionary)reader.Resolve(
+                (PdfIndirectReference)reader.Catalog.Get(new PdfName("Pages"))!)!)
+                    .Get(new PdfName("Kids"))!)[0])!).Get(PdfName.Contents)!;
+        var cached = reader.ResolveStream(contentRef)!;
+
         reader.Dispose();
 
         Assert.Throws<ObjectDisposedException>(() => reader.Resolve(infoRef));
         Assert.Throws<ObjectDisposedException>(() => reader.ResolveStream(infoRef));
+
+        // The decode path too: it holds the key just as the resolvers do, and a ParsedStream the
+        // caller already has in hand reaches it without passing either of them.
+        Assert.Throws<ObjectDisposedException>(() => reader.GetDecodedStreamData(cached));
+
+        // And the key itself is gone, which is the point of disposing at all.
+        var fileKey = (byte[])typeof(PdfDocumentReader)
+            .GetField("_fileKey", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(reader)!;
+        Assert.All(fileKey, b => Assert.Equal(0, b));
 
         // Disposing twice is not an error.
         reader.Dispose();
