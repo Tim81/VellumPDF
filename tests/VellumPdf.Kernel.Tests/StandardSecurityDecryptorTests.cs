@@ -234,6 +234,50 @@ public sealed class StandardSecurityDecryptorTests
         Assert.NotEqual(plainKey, cleartextKey);
     }
 
+    [Fact]
+    public void EncryptMetadataFalse_writtenPerms_verifiesFalse_throughTheWriteAndReadSides()
+    {
+        // The first place the write side (StandardSecurityHandler.ComputePerms) and the read
+        // side (VerifyPermissions) meet on /Perms with /EncryptMetadata false. Every other R6
+        // /Perms test — corpus-driven and EncryptionTests's own white-box round trip alike — only
+        // ever runs with EncryptMetadata true, so ComputePerms hardcoding block[8] = 'T' instead
+        // of branching on the setting would survive both suites.
+        var handler = new StandardSecurityHandler(new PdfEncryptionSettings
+        {
+            UserPassword = "metaoff",
+            Permissions = PdfPermissions.Print,
+            EncryptMetadata = false,
+        });
+
+        var userPwBytes = StandardSecurityHandler.PasswordBytes("metaoff");
+        var intermediateKey = StandardSecurityHandler.Hash2B(userPwBytes, handler.U.AsSpan(40, 8), []);
+        var fileKey = AesCbcDecryptNoPaddingForTest(intermediateKey, new byte[16], handler.UE);
+
+        var correctFlag = new StandardSecurityDecryptor(
+            v: 5, r: 6, keyLengthBytes: 32, o: handler.O, u: handler.U, oe: handler.OE, ue: handler.UE,
+            p: handler.PValue, id0: [0x00], encryptMetadata: false,
+            streamFilter: CryptFilterMethod.Aes256, stringFilter: CryptFilterMethod.Aes256);
+        Assert.True(correctFlag.VerifyPermissions(fileKey, handler.Perms));
+
+        // And the flag has to be checked, not merely accepted regardless: a decryptor built as
+        // though /EncryptMetadata were true must reject these same /Perms bytes.
+        var wrongFlag = new StandardSecurityDecryptor(
+            v: 5, r: 6, keyLengthBytes: 32, o: handler.O, u: handler.U, oe: handler.OE, ue: handler.UE,
+            p: handler.PValue, id0: [0x00], encryptMetadata: true,
+            streamFilter: CryptFilterMethod.Aes256, stringFilter: CryptFilterMethod.Aes256);
+        Assert.False(wrongFlag.VerifyPermissions(fileKey, handler.Perms));
+    }
+
+    private static byte[] AesCbcDecryptNoPaddingForTest(byte[] key, byte[] iv, byte[] data)
+    {
+        using var aes = Aes.Create();
+        aes.Key = key;
+        aes.Mode = CipherMode.CBC;
+        aes.Padding = PaddingMode.None;
+        using var decryptor = aes.CreateDecryptor(aes.Key, iv);
+        return decryptor.TransformFinalBlock(data, 0, data.Length);
+    }
+
     // ── Assertion 4: per-object key, exact bytes, arbitrary but fixed fileKey/objNum/gen ──
     //
     // Independently computed (not by running StandardSecurityDecryptor and recording the output —
