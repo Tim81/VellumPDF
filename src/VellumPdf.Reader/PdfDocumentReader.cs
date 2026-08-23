@@ -253,7 +253,7 @@ public sealed class PdfDocumentReader : IDisposable
                     value = DecryptObjectGraph(value, objectNumber, actualGeneration);
 
                 if (result.IsStream)
-                    _streamCache.TryAdd(objectNumber, (result.Stream!, actualGeneration));
+                    _streamCache.TryAdd(objectNumber, (Restamped(result.Stream!, actualGeneration), actualGeneration));
             }
             else
             {
@@ -320,7 +320,7 @@ public sealed class PdfDocumentReader : IDisposable
         if (!result.IsStream)
             return null;
 
-        var stream = result.Stream!;
+        var stream = Restamped(result.Stream!, actualGeneration);
         _streamCache.TryAdd(objectNumber, (stream, actualGeneration));
 
         // Also populate dict cache
@@ -376,8 +376,23 @@ public sealed class PdfDocumentReader : IDisposable
         return new ParsedStream(stream.Dictionary, decryptedBody, stream.BodyOffset, stream.ObjectNumber, stream.Generation);
     }
 
+    /// <summary>
+    /// The parser stamps a <see cref="ParsedStream"/> with the generation from the object's own
+    /// header. Where the cross-reference table disagrees and is authoritative, the table wins (#192,
+    /// ISO 32000-2 §7.3.10) — and it must win for the stream too, not just the dictionary: the
+    /// dictionary is decrypted in <see cref="Resolve(int, int?)"/> under the table's generation
+    /// while the body is decrypted in <see cref="DecryptedStreamView"/> under whatever the stream
+    /// carries, so leaving the header's value here would key the two halves of one object
+    /// differently. ISO 32000-1 §7.6.2 Algorithm 1 has one identity per object, not one per half.
+    /// </summary>
+    private static ParsedStream Restamped(ParsedStream stream, int generation) =>
+        stream.Generation == generation
+            ? stream
+            : new ParsedStream(stream.Dictionary, stream.RawBody, stream.BodyOffset, stream.ObjectNumber, generation);
+
     // Well-known keys used only by the decrypt walk below.
     private static readonly PdfName _sigType = new("Sig");
+    private static readonly PdfName _xrefType = new("XRef");
     private static readonly PdfName _docTimeStampType = new("DocTimeStamp");
     private static readonly PdfName _typeKey = new("Type");
     private static readonly PdfName _byteRangeKey = new("ByteRange");
@@ -424,6 +439,14 @@ public sealed class PdfDocumentReader : IDisposable
                 return new PdfHexString(_decryptor!.DecryptString(_fileKey!, objectNumber, generation, h.Bytes.Span));
 
             case PdfDictionary d:
+                // ISO 32000-1 §7.5.8.2: "strings appearing in the cross-reference stream dictionary
+                // shall not be encrypted" — the /ID being the string that matters, since checking it
+                // without decrypting the file is the whole point of leaving it in the clear (§7.5.5).
+                // XrefParser never comes through here (it reads the stream before a decryptor
+                // exists), but resolving object 10 as an ordinary object does.
+                if ((d.Get(_typeKey) as PdfName)?.Equals(_xrefType) == true)
+                    return d;
+
                 var isSignatureDict = IsSignatureDictionary(d);
                 foreach (var kv in d.Entries.ToList())
                 {

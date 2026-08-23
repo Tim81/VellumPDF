@@ -67,8 +67,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `ParsedStream.RawBody` still holds the verbatim file bytes for `StreamRule` and `HexStringRule`,
   which need physical byte positions and lengths; decrypting in place would have made both fire on
   every encrypted stream. An object stream's container is decrypted once; its members are not
-  decrypted again individually (ISO 32000-2 §7.5.7). The trailer `/ID`, the `/Encrypt` dictionary's
-  own strings, and cross-reference streams are never decrypted, matching the spec. ISO 32000-1 and
+  decrypted again individually (ISO 32000-2 §7.5.7). The trailer `/ID` and the `/Encrypt` dictionary's own
+  strings are never decrypted, matching the spec. Neither is a cross-reference stream, its body or
+  the strings in its dictionary (ISO 32000-1 §7.5.8.2) — which matters on the path where a caller
+  resolves that object like any other, since `XrefParser` reads it before a decryptor exists and so
+  never had the chance to get it wrong. Nor is a stream whose data lives in an external file
+  (§7.6.1); under AES that one is the difference between reading a legal document and refusing it,
+  because AES-CBC rejects a body that is not an IV followed by whole blocks. An object whose header
+  generation disagrees with the cross-reference table's is decrypted under the table's generation
+  throughout, dictionary and body alike, rather than one each. ISO 32000-1 and
   ISO 32000-2 are silent on whether a signature dictionary's `/Contents` is exempt; this
   implementation treats it as exempt, since a conformant signer patches those hex digits into
   already-serialized file bytes after computing the signature, so they were never encrypted at the
