@@ -60,6 +60,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   are not consulted until something is decoded, so it surfaces as an `InvalidDataException` from
   the decode call, not from `Open`.
 
+  A document that encrypts only its embedded files (`/EFF` naming a crypt filter `/StmF` does not,
+  ISO 32000-1 §7.6.1) is refused rather than read: this handler has no per-stream `/EFF` selection
+  and would return each attachment's ciphertext as the attachment. PDFDocEncoding gained the Euro
+  sign at 0xA0, where Latin-1 has NO-BREAK SPACE — the one byte at which the two encodings
+  disagree outside the 0x18-0x1F and 0x80-0x9F blocks, so a password containing `€` could not be
+  encoded at all and one containing U+00A0 was encoded as a Euro sign.
+
   A `/StrF` that resolves to no usable crypt filter fails at `Open` rather than silently leaving
   every string in the document as ciphertext; an unresolvable `/StmF` still fails lazily, at the
   first decode, because a document whose streams cannot be decrypted still has readable strings

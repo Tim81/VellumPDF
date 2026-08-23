@@ -26,6 +26,7 @@ internal static class EncryptionSetup
     private static readonly PdfName _encryptMetadataKey = new("EncryptMetadata");
     private static readonly PdfName _cfKey = new("CF");
     private static readonly PdfName _permsKey = new("Perms");
+    private static readonly PdfName _effKey = new("EFF");
     private static readonly PdfName _stmFKey = new("StmF");
     private static readonly PdfName _strFKey = new("StrF");
 
@@ -136,6 +137,20 @@ internal static class EncryptionSetup
         // every permission bit, and this library would report the attacker's values as the
         // document's. /Perms absent is not treated as a failure: it cannot be verified either way,
         // and R5 predates the entry being universal.
+        // /EFF names the crypt filter for EMBEDDED FILE streams, which ISO 32000-1 §7.6.1 allows a
+        // document to encrypt on their own — /StmF and /StrF Identity, /EFF naming a real filter, so
+        // that only attachments are protected. This handler does not implement that: it would decode
+        // every embedded file stream with /StmF's method and return ciphertext as the file.
+        // Refusing is the only honest answer until per-stream /EFF selection exists.
+        var effName = (encryptDict.Get(_effKey) as PdfName)?.Value;
+        if (effName is not null and not "Identity"
+            && effName != (encryptDict.Get(_stmFKey) as PdfName)?.Value)
+        {
+            throw new UnsupportedPdfFeatureException(
+                $"/Encrypt /EFF names the crypt filter '{effName}' for embedded file streams, which "
+                + "differs from /StmF. Encrypting embedded files separately is not implemented.");
+        }
+
         // An unresolvable /StrF is fatal here, while an unresolvable /StmF is left to fail at decode
         // (see StmFNamingUndefinedCfEntry_opensButThrowsOnDecode). The asymmetry is deliberate: a
         // document whose streams cannot be decrypted still has readable strings — /Info, the

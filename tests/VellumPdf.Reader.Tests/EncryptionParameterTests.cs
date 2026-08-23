@@ -222,6 +222,67 @@ public sealed class EncryptionParameterTests
         Assert.Equal(PdfCipherAlgorithm.Rc4, reader.Encryption.StringCipher);
     }
 
+    /// <summary>
+    /// ISO 32000-1 §7.6.1 lets a document encrypt only its attachments: <c>/StmF</c> and
+    /// <c>/StrF</c> Identity, with <c>/EFF</c> naming a real crypt filter for embedded file streams.
+    /// This handler has no per-stream <c>/EFF</c> selection, so it would decode those streams under
+    /// <c>/StmF</c> and hand back ciphertext as though it were the attachment.
+    /// </summary>
+    [Fact]
+    public void AttachmentOnlyEncryption_isRefused_ratherThanSilentlyMishandled()
+    {
+        var doc = BuildWithEncryptDict(
+            "<< /Filter /Standard /V 4 /R 4 /Length 128 "
+            + "/CF << /StdCF << /CFM /AESV2 /Length 16 >> >> /StmF /Identity /StrF /Identity /EFF /StdCF "
+            + "/O <2a2f0a1990192c60114730bdcd39f37828a53c89a340dd473c85299dc5258e1c> "
+            + "/U <6c8913ac9fc602eb1aad2a1ec614bee90021446990b9e4114071a4d9104984c1> /P -4 >>");
+
+        var ex = Assert.Throws<UnsupportedPdfFeatureException>(() => PdfReader.Open(doc, "u"));
+
+        Assert.Contains("/EFF", ex.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A malformed top-level <c>/Length</c> is a malformed-file condition, not something to round
+    /// off: ISO 32000-1 Table 20 requires a multiple of 8 between 40 and 128.
+    /// </summary>
+    [Theory]
+    [InlineData(60)]
+    [InlineData(0)]
+    [InlineData(2147483647)]
+    public void TopLevelLength_outsideTheLegalRange_isRejected(int bits)
+    {
+        var doc = BuildWithEncryptDict(
+            $"<< /Filter /Standard /V 2 /R 3 /Length {bits} "
+            + "/O <2a2f0a1990192c60114730bdcd39f37828a53c89a340dd473c85299dc5258e1c> "
+            + "/U <6c8913ac9fc602eb1aad2a1ec614bee90021446990b9e4114071a4d9104984c1> /P -4 >>");
+
+        var ex = Assert.Throws<InvalidDataException>(() => PdfReader.Open(doc, "u"));
+
+        Assert.Contains("/Length", ex.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// <c>/V</c> and <c>/R</c> are required (ISO 32000-1 Table 20). Defaulting a missing one would
+    /// pick an algorithm the document never asked for and then fail authentication for a reason
+    /// that has nothing to do with the password.
+    /// </summary>
+    [Theory]
+    [InlineData("/V 2")]
+    [InlineData("/R 3")]
+    public void MissingRequiredEncryptEntry_isRejected(string omitted)
+    {
+        var full = "<< /Filter /Standard /V 2 /R 3 /Length 128 "
+            + "/O <2a2f0a1990192c60114730bdcd39f37828a53c89a340dd473c85299dc5258e1c> "
+            + "/U <6c8913ac9fc602eb1aad2a1ec614bee90021446990b9e4114071a4d9104984c1> /P -4 >>";
+
+        var doc = BuildWithEncryptDict(full.Replace(omitted + " ", "", StringComparison.Ordinal));
+
+        var ex = Assert.Throws<InvalidDataException>(() => PdfReader.Open(doc, "u"));
+
+        Assert.Contains(omitted.Split(' ')[0], ex.Message, StringComparison.Ordinal);
+    }
+
     // ── Helpers ─────────────────────────────────────────────────────────────────────────────────
 
     private static readonly byte[] Id0 = [.. Enumerable.Range(0, 16).Select(i => (byte)i)];

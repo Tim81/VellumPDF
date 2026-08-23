@@ -51,7 +51,14 @@ internal static class PdfDocEncoding
 
     private static bool TryGetByte(char c, out byte b)
     {
-        if (c <= 0xFF && (c is < (char)0x18 or > (char)0x1F) && (c is < (char)0x80 or > (char)0x9F))
+        // 0xA0 is excluded from the identity range along with the two blocks: PDFDocEncoding puts
+        // EURO SIGN there (Annex D, Latin character set table, PDF column 240 octal), where Latin-1
+        // has NO-BREAK SPACE. So U+00A0 has no PDFDocEncoding representation at all, and U+20AC is
+        // in the exception table below rather than unencodable.
+        if (c <= 0xFF
+            && (c is < (char)0x18 or > (char)0x1F)
+            && (c is < (char)0x80 or > (char)0x9F)
+            && c != (char)0xA0)
         {
             b = (byte)c;
             return true;
@@ -67,7 +74,7 @@ internal static class PdfDocEncoding
         return false;
     }
 
-    // The 0x18-0x1F and 0x80-0x9F PDFDocEncoding code points. Checked entry by entry against the
+    // The 0x18-0x1F and 0x80-0x9F PDFDocEncoding code points, plus Euro at 0xA0. Checked entry by entry against the
     // PDF column of ISO 32000-1 Annex D's Latin character set table, whose codes are octal: breve
     // is 030, dagger 201, scaron 235. 36 of the 39 below were read straight out of that table and
     // matched; bullet, Zcaron and zcaron resisted extraction from the two-column layout, and they
@@ -118,5 +125,6 @@ internal static class PdfDocEncoding
         ['œ'] = 0x9C, // oe
         ['š'] = 0x9D, // scaron
         ['ž'] = 0x9E, // zcaron
+        ['€'] = 0xA0, // Euro — 240 octal in the table's PDF column, where WinAnsiEncoding has 0x80
     };
 }

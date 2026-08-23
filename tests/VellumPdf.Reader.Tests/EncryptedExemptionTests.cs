@@ -1,6 +1,7 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
+using System.IO.Compression;
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
@@ -239,7 +240,118 @@ public sealed class EncryptedExemptionTests
         Assert.Equal("REAL-CONTENT", Encoding.ASCII.GetString(reader.GetDecodedStreamData(stream)!));
     }
 
+    /// <summary>
+    /// <c>/Crypt</c> is a no-op in the ordinary filter chain — the decryption it names happens
+    /// before the chain runs — so a chain of <c>[/Crypt /FlateDecode]</c> has to decode to exactly
+    /// what <c>[/FlateDecode]</c> would. On an UNENCRYPTED document that is observable by value,
+    /// which is the point: <c>EncryptedReaderTests.CryptIdentityFilter_onAStream_bypassesDecryption_endToEnd</c>
+    /// tolerates an exception as a pass, so it cannot tell "/Crypt handled, Flate rejected
+    /// ciphertext" from "/Crypt not handled at all" — with the passthrough removed, it still passes.
+    /// </summary>
+    [Fact]
+    public void CryptFilter_inAChain_isANoOp_andTheRestOfTheChainStillDecodes()
+    {
+        var plaintext = "Hello from behind a /Crypt filter."u8.ToArray();
+
+        var compressed = new MemoryStream();
+        using (var deflate = new ZLibStream(compressed, CompressionLevel.Optimal, leaveOpen: true))
+            deflate.Write(plaintext);
+        var body = compressed.ToArray();
+
+        var ms = new MemoryStream();
+        void W(string t) => ms.Write(Encoding.Latin1.GetBytes(t));
+        W("%PDF-1.7\n");
+        var o1 = (int)ms.Position;
+        W("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+        var o2 = (int)ms.Position;
+        W("2 0 obj\n<< /Type /Pages /Kids [] /Count 0 >>\nendobj\n");
+        var o3 = (int)ms.Position;
+        W($"3 0 obj\n<< /Length {body.Length} /Filter [/Crypt /FlateDecode] >>\nstream\n");
+        ms.Write(body);
+        W("\nendstream\nendobj\n");
+        var xref = (int)ms.Position;
+        W($"xref\n0 4\n{0:D10} 65535 f \n{o1:D10} 00000 n \n{o2:D10} 00000 n \n{o3:D10} 00000 n \n");
+        W("trailer\n<< /Size 4 /Root 1 0 R >>\n");
+        W($"startxref\n{xref}\n%%EOF\n");
+
+        using var reader = PdfReader.Open(ms.ToArray());
+        var stream = reader.ResolveStream(3)!;
+
+        Assert.Equal(
+            "Hello from behind a /Crypt filter.",
+            Encoding.ASCII.GetString(reader.GetDecodedStreamData(stream)!));
+    }
+
+    // ── /EncryptMetadata false (ISO 32000-1 §7.6.5) ─────────────────────────────────────────────
+
+    /// <summary>
+    /// Both cleartext-metadata fixtures existed, and both were verified byte-for-byte — but nothing
+    /// ever read that stream back THROUGH the reader, so the flag was decoration: hardcoding
+    /// <c>_encryptMetadata = true</c> passed the whole suite while making this document unreadable
+    /// (a 665-byte plaintext body is not an IV plus whole AES blocks, so decoding it throws).
+    /// The pair below is the point: the same XMP comes out of the fixture that leaves the metadata
+    /// in the clear and the one that encrypts it, which fails in both directions if the flag is
+    /// ignored either way.
+    /// </summary>
+    [Theory]
+    [InlineData("enc-aes-128-cleartextmd.pdf")]
+    [InlineData("enc-aes-128.pdf")]
+    public void MetadataStream_decodesToTheSameXmp_whetherOrNotItIsEncrypted(string fixture)
+    {
+        using var reader = PdfReader.Open(Load(fixture), "u");
+
+        var metadataRef = Assert.IsType<PdfIndirectReference>(reader.Catalog.Get(new PdfName("Metadata")));
+        var metadata = reader.ResolveStream(metadataRef)!;
+        var xmp = Encoding.UTF8.GetString(reader.GetDecodedStreamData(metadata)!);
+
+        Assert.StartsWith("<?xpacket", xmp, StringComparison.Ordinal);
+        Assert.Contains("<x:xmpmeta", xmp, StringComparison.Ordinal);
+    }
+
     // ── One identity per object (ISO 32000-1 §7.6.2, Algorithm 1) ───────────────────────────────
+
+    /// <summary>
+    /// The generation is half of the identity Algorithm 1 keys on, and nothing in the corpus proved
+    /// the reader used it: every fixture object is generation 0, so a decryptor that hardcoded 0 in
+    /// the per-object key passed the entire suite. The test below pins that the dictionary and the
+    /// body AGREE on a generation; this one pins that the value is the document's. Object 3 is at
+    /// generation 5 in its header and in the cross-reference table alike, and its string and body
+    /// were encrypted under (3, 5).
+    /// </summary>
+    [Fact]
+    public void ObjectAtANonZeroGeneration_decryptsUnderThatGeneration()
+    {
+        var probe = EncryptIndependently(3, 5, "STRING-AT-GEN-5"u8.ToArray());
+        var body = EncryptIndependently(3, 5, "BODY-AT-GEN-5"u8.ToArray());
+
+        var ms = new MemoryStream();
+        void W(string t) => ms.Write(Encoding.Latin1.GetBytes(t));
+        W("%PDF-1.7\n");
+        var o1 = (int)ms.Position;
+        W("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+        var o2 = (int)ms.Position;
+        W("2 0 obj\n<< /Type /Pages /Kids [] /Count 0 >>\nendobj\n");
+        var o3 = (int)ms.Position;
+        W($"3 5 obj\n<< /Length {body.Length} /Probe <{Convert.ToHexStringLower(probe)}> >>\n"
+          + $"stream\n{Encoding.Latin1.GetString(body)}\nendstream\nendobj\n");
+        var o4 = (int)ms.Position;
+        W($"4 0 obj\n{Rc4EncryptDict}\nendobj\n");
+        var xref = (int)ms.Position;
+        W($"xref\n0 5\n{0:D10} 65535 f \n{o1:D10} 00000 n \n{o2:D10} 00000 n \n"
+          + $"{o3:D10} 00005 n \n{o4:D10} 00000 n \n");
+        W($"trailer\n<< /Size 5 /Root 1 0 R /Encrypt 4 0 R "
+          + $"/ID [<{Convert.ToHexStringLower(Id0)}><{Convert.ToHexStringLower(Id0)}>] >>\n");
+        W($"startxref\n{xref}\n%%EOF\n");
+
+        using var reader = PdfReader.Open(ms.ToArray(), "u");
+        var dict = Assert.IsType<PdfDictionary>(reader.Resolve(new PdfIndirectReference(3, 5)));
+        var stream = reader.ResolveStream(new PdfIndirectReference(3, 5))!;
+
+        Assert.Equal(
+            "STRING-AT-GEN-5",
+            Encoding.ASCII.GetString(((PdfHexString)dict.Get(new PdfName("Probe"))!).Bytes.Span));
+        Assert.Equal("BODY-AT-GEN-5", Encoding.ASCII.GetString(reader.GetDecodedStreamData(stream)!));
+    }
 
     /// <summary>
     /// An object whose header generation disagrees with the cross-reference table's. The table is
@@ -314,6 +426,56 @@ public sealed class EncryptedExemptionTests
 
         using var encryptor = aes.CreateEncryptor();
         return [.. aes.IV, .. encryptor.TransformFinalBlock(plaintext, 0, plaintext.Length)];
+    }
+
+    // Deliberately NOT the library's own key derivation, unlike Encrypt above. Every other document
+    // here only needs ciphertext the reader will accept, and running the reader's decryptor backwards
+    // is the honest way to get it. The generation test needs something else: it has to fail if the
+    // reader mixes the WRONG generation into the object key, and a helper built on the same
+    // derivation cancels that error out on both sides — the mutant survives and the test proves
+    // nothing. So the object key here is computed from ISO 32000-1 §7.6.2 Algorithm 1 against the
+    // platform's MD5, with a five-line RC4 (RFC-less, but the algorithm is four lines of state
+    // permutation and is pinned by its own known-answer tests in the Kernel suite).
+    private static byte[] EncryptIndependently(int objectNumber, int generation, byte[] plaintext)
+    {
+        var fileKey = FileKeyOf("enc-rc4-128.pdf");
+
+        // Algorithm 1 step (b): file key || the low three bytes of the object number || the low two
+        // of the generation, MD5'd, truncated to min(fileKey.Length + 5, 16).
+        var input = new byte[fileKey.Length + 5];
+        fileKey.CopyTo(input, 0);
+        input[fileKey.Length] = (byte)objectNumber;
+        input[fileKey.Length + 1] = (byte)(objectNumber >> 8);
+        input[fileKey.Length + 2] = (byte)(objectNumber >> 16);
+        input[fileKey.Length + 3] = (byte)generation;
+        input[fileKey.Length + 4] = (byte)(generation >> 8);
+
+        var objectKey = MD5.HashData(input)[..Math.Min(fileKey.Length + 5, 16)];
+        return Rc4(objectKey, plaintext);
+    }
+
+    private static byte[] Rc4(byte[] key, byte[] data)
+    {
+        var s = new byte[256];
+        for (var i = 0; i < 256; i++)
+            s[i] = (byte)i;
+
+        for (int i = 0, j = 0; i < 256; i++)
+        {
+            j = (j + s[i] + key[i % key.Length]) & 0xFF;
+            (s[i], s[j]) = (s[j], s[i]);
+        }
+
+        var output = new byte[data.Length];
+        for (int n = 0, x = 0, y = 0; n < data.Length; n++)
+        {
+            x = (x + 1) & 0xFF;
+            y = (y + s[x]) & 0xFF;
+            (s[x], s[y]) = (s[y], s[x]);
+            output[n] = (byte)(data[n] ^ s[(s[x] + s[y]) & 0xFF]);
+        }
+
+        return output;
     }
 
     private static byte[] FileKeyOf(string fixture)

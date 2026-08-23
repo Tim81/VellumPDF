@@ -76,8 +76,10 @@ way as `enc-aes-128.pdf`. Exists to pin ISO 32000-1 §7.6.2 Algorithm 1 step (a)
 two levels deep (array, inside a dictionary, inside the containing indirect object's own
 dictionary) must decrypt under THAT indirect object's identity, not the array's position or a
 hardcoded generation — `/Info /Title` alone can't catch this, since it's only one level deep.
-Because it isn't `plaintext-baseline.pdf`'s own object graph, only its page content stream (not the
-whole decrypted file) is comparable to the baseline.
+Nothing in it is comparable to the baseline, not even the page content stream: the `qpdf --qdf`
+round-trip that inserted the extra object also rewrote the line endings, so that stream decrypts to
+74 bytes with CRLF against the baseline's 69 with LF. That is why the fixture is excluded from
+`StandardMatrixFixtures` and has its own test, which reads the nested strings by value instead.
 
 `--allow-weak-crypto` is **required** for the RC4 rows. Without it qpdf refuses:
 

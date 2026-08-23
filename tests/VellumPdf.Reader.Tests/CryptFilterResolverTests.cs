@@ -29,7 +29,10 @@ public sealed class CryptFilterResolverTests
             .Set(new PdfName("Rc4Filter"), new PdfDictionary().Set(_cfmKey, new PdfName("V2")))
             .Set(new PdfName("Aes128Filter"), new PdfDictionary().Set(_cfmKey, new PdfName("AESV2")))
             .Set(new PdfName("Aes256Filter"), new PdfDictionary().Set(_cfmKey, new PdfName("AESV3")))
-            .Set(new PdfName("IdentityFilter"), new PdfDictionary().Set(_cfmKey, new PdfName("Identity"))));
+            .Set(new PdfName("IdentityFilter"), new PdfDictionary().Set(_cfmKey, new PdfName("Identity")))
+            // ISO 32000-2 Table 25 lists /None alongside /Identity as "the application shall not
+            // decrypt data". Dropping it makes every stream of such a document throw.
+            .Set(new PdfName("NoneFilter"), new PdfDictionary().Set(_cfmKey, new PdfName("None"))));
 
         var table = CryptFilterResolver.BuildCfTable(encryptDict, resolve: null);
 
@@ -37,6 +40,28 @@ public sealed class CryptFilterResolverTests
         Assert.Equal(CryptFilterMethod.Aes128, table["Aes128Filter"]);
         Assert.Equal(CryptFilterMethod.Aes256, table["Aes256Filter"]);
         Assert.Equal(CryptFilterMethod.Identity, table["IdentityFilter"]);
+        Assert.Equal(CryptFilterMethod.Identity, table["NoneFilter"]);
+    }
+
+    /// <summary>
+    /// A /CF entry that is present but not a dictionary, or a dictionary with no /CFM, has to fail
+    /// the same way an absent one does. BuildCfTable's own doc comment says so; nothing checked it,
+    /// and mapping either to Identity hands the caller ciphertext to read as content.
+    /// </summary>
+    [Theory]
+    [InlineData("notADictionary")]
+    [InlineData("noCfm")]
+    public void BuildCfTable_presentButBrokenEntry_mapsToUnsupported(string shape)
+    {
+        var cf = new PdfDictionary();
+        if (shape == "notADictionary")
+            cf.Set(new PdfName("Broken"), new PdfInteger(5));
+        else
+            cf.Set(new PdfName("Broken"), new PdfDictionary());
+
+        var table = CryptFilterResolver.BuildCfTable(new PdfDictionary().Set(_cfKey, cf), resolve: null);
+
+        Assert.Equal(CryptFilterMethod.Unsupported, table["Broken"]);
     }
 
     [Fact]

@@ -178,8 +178,8 @@ internal sealed class XrefParser
         // the trailer of each update "shall contain" the entries the document needs), so a chain
         // where an older revision declares it and the newest does not is malformed either way, and
         // there is no reading of it that recovers the content. Opening it as plaintext is the one
-        // outcome that must not happen: every stream would decode to ciphertext with no error at
-        // all, and a caller would take the noise for the document.
+        // outcome that must not happen: every stream would decode to ciphertext, nothing would
+        // report it, and a caller would take the noise for the document.
         if (anyRevisionDeclaredEncrypt
             && !(newestTrailer!.TryGet(_encryptKey, out var newestEncrypt) && newestEncrypt is not null))
         {

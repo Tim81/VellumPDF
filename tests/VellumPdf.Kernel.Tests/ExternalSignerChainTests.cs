@@ -53,6 +53,14 @@ public sealed class ExternalSignerChainTests
             Assert.Skip($"CurrentUser CA store is not writable in this environment: {ex.Message}");
         }
 
+        // A certificate just added to CurrentUser\CA is not immediately visible to an in-process
+        // chain build: the CryptoAPI default chain engine serves a cached view of the store, and
+        // this assembly keeps that cache hot because every signing test builds a chain. Left to
+        // chance the signer intermittently saw a one-element chain and embedded only the leaf,
+        // failing the assertion below roughly one run in four under xunit's default parallelism.
+        // Building a throwaway chain here forces the resync before the signer's own build.
+        WaitForChainVisibility(publicOnlyLeaf);
+
         try
         {
             var settings = new PdfSignatureSettings
@@ -116,6 +124,27 @@ public sealed class ExternalSignerChainTests
             DateTimeOffset.UtcNow.AddYears(1),
             serial);
         return leafNoKey.CopyWithPrivateKey(leafKey);
+    }
+
+    // Polls until a chain built from `leaf` reaches the CA that was just installed, or until the
+    // budget runs out — a bounded wait, never an unconditional sleep. The chain is discarded; the
+    // point is the side effect on the chain engine's cached view of CurrentUser\CA. Returns
+    // regardless: if the certificate never becomes visible, the test's own assertion is the right
+    // place for that to surface, not a helper.
+    private static void WaitForChainVisibility(X509Certificate2 leaf)
+    {
+        for (var attempt = 0; attempt < 20; attempt++)
+        {
+            using var chain = new X509Chain();
+            chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
+            chain.ChainPolicy.VerificationFlags = X509VerificationFlags.AllFlags;
+            chain.Build(leaf);
+
+            if (chain.ChainElements.Count >= 2)
+                return;
+
+            Thread.Sleep(25);
+        }
     }
 
     private static async Task<byte[]> SignOnePageDocAsync(X509Certificate2 cert, PdfSignatureSettings settings)
