@@ -63,12 +63,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   strings, cross-reference streams (§7.5.8.2, body and dictionary alike), streams whose data lives
   in an external file (§7.6.1), the document's metadata stream under `/EncryptMetadata false`
   (Table 20 — a page's or an XObject's metadata is not exempt), and a signature dictionary's
-  `/Contents`, which both specs leave unstated: a signer patches those hex digits into
+  `/Contents`, which ISO 32000-1 leaves unstated: a signer patches those hex digits into
   already-serialized bytes, so decrypting them would corrupt `/ByteRange` verification. That last
   exemption covers `/Type /Sig`, `/Type /DocTimeStamp`, and a `/Type`-less dictionary carrying a
-  `/ByteRange` array with a string `/Contents`, since Table 252 makes `/Type` optional. Verified
-  against qpdf, which leaves `/Contents` byte-identical while encrypting the signature dictionary's
-  other strings.
+  `/ByteRange` array with a string `/Contents`, since Table 252 makes `/Type` optional. qpdf agrees on
+  the shape that matters most, a `/Type /Sig` dictionary referenced from a signature field: it leaves
+  that `/Contents` byte-identical while encrypting the same dictionary's `/Reason`, `/Location` and
+  `/M`. It encrypts `/Contents` on the other three shapes, so a document qpdf encrypted after signing
+  can still hand back an archive timestamp's ciphertext — this exemption is the reading that cannot
+  corrupt a signature, not a claim about what every producer does.
 
   At `/R` 5 and 6 the permissions come from `/Perms` (ISO 32000-2 Algorithm 13) — the copy sealed
   under the file key — rather than the dictionary's `/P`, which nothing protects at those revisions.

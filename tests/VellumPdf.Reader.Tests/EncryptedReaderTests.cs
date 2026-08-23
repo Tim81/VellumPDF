@@ -312,8 +312,8 @@ public sealed class EncryptedReaderTests
     // ── Signature /Contents exemption (spec-silent; documented choice) ───────────────────────────
 
     /// <summary>
-    /// ISO 32000-1 and ISO 32000-2 are silent on whether a signature dictionary's /Contents is
-    /// exempt from string encryption. PdfDocumentReader.DecryptObjectGraph documents the choice made
+    /// ISO 32000-1 says nothing about whether a signature dictionary's /Contents is exempt from
+    /// string encryption. PdfDocumentReader.DecryptObjectGraph documents the choice made
     /// here: never decrypt a signature dictionary's /Contents, because a
     /// conformant signer patches those hex digits directly into already-serialized file bytes after
     /// computing the signature over the file's own bytes, so they were never run through the

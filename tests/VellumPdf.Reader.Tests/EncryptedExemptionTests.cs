@@ -523,32 +523,78 @@ public sealed class EncryptedExemptionTests
     /// with the same <c>/Type</c>, and those stay encrypted: qpdf's <c>--cleartext-metadata</c>
     /// leaves the catalog's in the clear and encrypts the rest. Exempting by <c>/Type</c> hands a
     /// page's metadata back as ciphertext under RC4, and throws under AES.
+    ///
+    /// <para>
+    /// Built by appending a revision to the real fixture rather than synthesising a document:
+    /// <c>/EncryptMetadata false</c> feeds Algorithm 2 at R4, so a hand-built dictionary reusing
+    /// another fixture's <c>/O</c> and <c>/U</c> could not authenticate at all.
+    /// </para>
     /// </summary>
     [Fact]
     public void ComponentMetadataStream_isDecrypted_evenWhenEncryptMetadataIsFalse()
     {
-        var componentBody = Encrypt(3, 0, "<?xpacket page-level ?>"u8.ToArray());
-        var documentBody = "<?xpacket document-level ?>"u8.ToArray();
+        const string ComponentXmp = "<?xpacket page-level ?>";
+
+        var fixture = Load("enc-aes-128-cleartextmd.pdf");
+        var componentBody = EncryptAesWith(FileKeyOf("enc-aes-128-cleartextmd.pdf"), 9, 0,
+            Encoding.ASCII.GetBytes(ComponentXmp));
+
+        var ms = new MemoryStream();
+        ms.Write(fixture);
+        void W(string t) => ms.Write(Encoding.Latin1.GetBytes(t));
+
+        var o9 = (int)ms.Position;
+        W($"9 0 obj\n<< /Type /Metadata /Subtype /XML /Length {componentBody.Length} >>\nstream\n");
+        ms.Write(componentBody);
+        W($"\nendstream\nendobj\n");
+
+        var previousStartxref = int.Parse(
+            Encoding.Latin1.GetString(fixture).Split("startxref")[^1].Trim().Split('%')[0].Trim(),
+            System.Globalization.CultureInfo.InvariantCulture);
+
+        var xref = (int)ms.Position;
+        W($"xref\n9 1\n{o9:D10} 00000 n \n");
+        W($"trailer\n<< /Size 10 /Root 1 0 R /Encrypt 8 0 R /Prev {previousStartxref} "
+          + $"/ID [<{Convert.ToHexStringLower(Id0)}><{Convert.ToHexStringLower(Id0)}>] >>\n");
+        W($"startxref\n{xref}\n%%EOF\n");
+
+        using var reader = PdfReader.Open(ms.ToArray(), "u");
+
+        // The component's metadata: encrypted like anything else.
+        Assert.Equal(
+            ComponentXmp,
+            Encoding.ASCII.GetString(reader.GetDecodedStreamData(reader.ResolveStream(9)!)!));
+
+        // The catalog's: left in the clear at write time, so it must not be decrypted.
+        var documentMetadata = Assert.IsType<PdfIndirectReference>(reader.Catalog.Get(new PdfName("Metadata")));
+        var xmp = Encoding.UTF8.GetString(reader.GetDecodedStreamData(reader.ResolveStream(documentMetadata)!)!);
+        Assert.StartsWith("<?xpacket", xmp, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// <c>/EncryptMetadata</c> is "meaningful only when the value of V is 4" (ISO 32000-1 Table 20's
+    /// standard handler row), and <c>StandardSecurityDecryptor</c> already gates the key-derivation
+    /// half of it on the revision. A stray copy on a <c>/V 2</c> document — a producer downgrading
+    /// and carrying the key across — says nothing, and honouring it would hand the metadata stream
+    /// back as ciphertext.
+    /// </summary>
+    [Fact]
+    public void EncryptMetadataFalse_onAV2Document_saysNothing_andTheMetadataStreamDecrypts()
+    {
+        var body = Encrypt(4, 0, "<?xpacket meaningless-below-v4 ?>"u8.ToArray());
 
         var doc = BuildWith(
             Rc4EncryptDict.Replace(" /V 2 >>", " /V 2 /EncryptMetadata false >>", StringComparison.Ordinal),
             "<< /Type /Catalog /Pages 2 0 R /Metadata 4 0 R >>",
             "<< /Type /Pages /Kids [] /Count 0 >>",
-            $"<< /Type /Metadata /Subtype /XML /Length {componentBody.Length} >>\n"
-            + $"stream\n{Encoding.Latin1.GetString(componentBody)}\nendstream",
-            $"<< /Type /Metadata /Subtype /XML /Length {documentBody.Length} >>\n"
-            + $"stream\n{Encoding.Latin1.GetString(documentBody)}\nendstream");
+            "<< /Probe 1 >>",
+            $"<< /Type /Metadata /Subtype /XML /Length {body.Length} >>\n"
+            + $"stream\n{Encoding.Latin1.GetString(body)}\nendstream");
 
         using var reader = PdfReader.Open(doc, "u");
 
-        // Object 3 is a component's metadata: encrypted like anything else.
         Assert.Equal(
-            "<?xpacket page-level ?>",
-            Encoding.ASCII.GetString(reader.GetDecodedStreamData(reader.ResolveStream(3)!)!));
-
-        // Object 4 is the catalog's: left in the clear at write time, so it must not be decrypted.
-        Assert.Equal(
-            "<?xpacket document-level ?>",
+            "<?xpacket meaningless-below-v4 ?>",
             Encoding.ASCII.GetString(reader.GetDecodedStreamData(reader.ResolveStream(4)!)!));
     }
 
@@ -703,9 +749,12 @@ public sealed class EncryptedExemptionTests
     // are. The object key still comes from the library — ComputeObjectKey, the derivation under test
     // — and only the CBC encryption itself is the platform's, which is what a producer would use.
     private static byte[] EncryptAes(int objectNumber, int generation, byte[] plaintext)
+        => EncryptAesWith(FileKeyOf("enc-rc4-128.pdf"), objectNumber, generation, plaintext);
+
+    private static byte[] EncryptAesWith(byte[] fileKey, int objectNumber, int generation, byte[] plaintext)
     {
         var objectKey = StandardSecurityDecryptor.ComputeObjectKey(
-            FileKeyOf("enc-rc4-128.pdf"), objectNumber, generation, useAesSalt: true);
+            fileKey, objectNumber, generation, useAesSalt: true);
 
         using var aes = Aes.Create();
         aes.Key = objectKey;

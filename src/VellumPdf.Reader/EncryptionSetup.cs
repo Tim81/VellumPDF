@@ -40,7 +40,7 @@ internal static class EncryptionSetup
         public required bool IsOwnerAccess { get; init; }
         public required PdfCipherAlgorithm Cipher { get; init; }
 
-        public required CryptFilterMethod EmbeddedFileFilter { get; init; }
+        public required CryptFilterMethod? EmbeddedFileFilter { get; init; }
 
         public required PdfCipherAlgorithm StringCipher { get; init; }
         public required int KeyLengthBits { get; init; }
@@ -113,7 +113,14 @@ internal static class EncryptionSetup
         var oe = TryGetBytes(encryptDict, _oeKey);
         var ue = TryGetBytes(encryptDict, _ueKey);
         var p = unchecked((int)RequireInt(encryptDict, _pKey, "/P"));
-        var encryptMetadata = encryptDict.Get(_encryptMetadataKey) is not PdfBoolean emBool || emBool.Value;
+        // "Optional; meaningful only when the value of V is 4" (ISO 32000-1 Table 20's standard
+        // handler row). Below that the entry says nothing, and honouring a stray copy of it — a
+        // producer downgrading a document and carrying the key across — would hand the metadata
+        // stream back as ciphertext. StandardSecurityDecryptor already gates the key-derivation half
+        // on the revision, so reading it here without a gate is the two halves disagreeing.
+        var encryptMetadata = v < 4
+            || encryptDict.Get(_encryptMetadataKey) is not PdfBoolean emBool
+            || emBool.Value;
         var id0 = GetId0(trailer);
         var keyLengthBytes = r >= 5 ? 32 : LegacyKeyLengthBytes(encryptDict, v, r);
 
@@ -123,14 +130,18 @@ internal static class EncryptionSetup
 
         CryptFilterMethod streamFilter;
         CryptFilterMethod stringFilter;
-        CryptFilterMethod embeddedFileFilter;
+        CryptFilterMethod? embeddedFileFilter;
         if (v < 4)
         {
             // Algorithm 1: V=1/V=2 predate /CF entirely; the implicit method is always RC4, for
             // both streams and strings, never AES.
             streamFilter = CryptFilterMethod.Rc4;
             stringFilter = CryptFilterMethod.Rc4;
-            embeddedFileFilter = CryptFilterMethod.Rc4;
+
+            // Table 20 makes /EFF meaningful only at /V 4 and above. Null, not Rc4: a non-null value
+            // here would send every embedded file stream down the /EFF path on a document that never
+            // mentioned /EFF at all.
+            embeddedFileFilter = null;
         }
         else
         {
@@ -141,11 +152,11 @@ internal static class EncryptionSetup
 
             // /EFF names the crypt filter for embedded file streams, and is what makes "encrypt only
             // the attachments" expressible: /StmF and /StrF Identity with /EFF naming a real filter
-            // (ISO 32000-1 §7.6.1). Meaningful only at /V 4 and above (Table 20); absent, an embedded
-            // file stream is an ordinary stream and takes /StmF like the rest.
+            // (ISO 32000-1 §7.6.1). Null where the document declares none, so an embedded file stream
+            // takes /StmF like every other stream — which is what the same clause says.
             embeddedFileFilter = encryptDict.Get(_effKey) is PdfName eff
                 ? CryptFilterResolver.ResolveNamedMethod(eff.Value, cfTable)
-                : streamFilter;
+                : null;
         }
 
         var decryptor = new StandardSecurityDecryptor(

@@ -421,7 +421,7 @@ public sealed class PdfDocumentReader : IDisposable
     private readonly IReadOnlySet<long> _crossReferenceStreamOffsets;
 
     // The crypt filter /EFF names for embedded file streams, or /StmF's where it names none.
-    private CryptFilterMethod _embeddedFileFilter;
+    private CryptFilterMethod? _embeddedFileFilter;
 
     /// <summary>
     /// Whether <paramref name="objectNumber"/> is the document's own metadata stream — the object
@@ -486,14 +486,16 @@ public sealed class PdfDocumentReader : IDisposable
     ///
     /// <para>
     /// Dictionaries and arrays are mutated in place rather than rebuilt (matching
-    /// <c>PdfObjectRemapper.RemapStreamInPlace</c>'s reasoning): this method only ever runs, from
-    /// <see cref="Resolve(int, int?)"/>, on an object graph that was JUST parsed for this one
-    /// resolution and is not yet cached or shared anywhere else, so mutating it is safe and avoids
-    /// allocating a full parallel copy of every dictionary and array in the document.
+    /// <c>PdfObjectRemapper.RemapStreamInPlace</c>'s reasoning): both of its callers —
+    /// <see cref="Resolve(int, int?)"/> and <see cref="ResolveStream(int, int?)"/> — run it on an
+    /// object graph that was JUST parsed for that one resolution and is not yet cached or shared
+    /// anywhere else, so mutating it is safe and avoids allocating a full parallel copy of every
+    /// dictionary and array in the document.
     /// </para>
     /// <para>
-    /// <strong>Signature <c>/Contents</c> exemption.</strong> ISO 32000-1 and ISO 32000-2 are both
-    /// silent on whether a signature dictionary's <c>/Contents</c> is exempt from string encryption.
+    /// <strong>Signature <c>/Contents</c> exemption.</strong> ISO 32000-1 says nothing about whether
+    /// a signature dictionary's <c>/Contents</c> is exempt from string encryption — §7.6 does not
+    /// mention it and §12.8 requires only that the values be direct objects.
     /// It matters: a conformant signer patches <c>/Contents</c>' hex digits directly into the
     /// already-serialized file bytes after computing the signature over the file's own bytes
     /// (<c>PdfSignatureHelper</c> in this codebase does exactly this — see its placeholder/patch
@@ -582,8 +584,9 @@ public sealed class PdfDocumentReader : IDisposable
 
     /// <inheritdoc />
     /// <summary>
-    /// Clears the file encryption key. The reader holds no unmanaged resources, so this is the only
-    /// thing there is to release — but it is worth releasing: <see cref="PdfEncryptionInfo"/> goes
+    /// Clears the file encryption key. The reader holds no unmanaged resources, and the object and
+    /// stream caches are ordinary managed memory the collector reclaims, so the key is the only thing
+    /// worth releasing explicitly — but it is worth releasing: <see cref="PdfEncryptionInfo"/> goes
     /// out of its way to expose nothing an attacker could use to skip authentication, and a key left
     /// in the managed heap for the life of the process undoes some of that.
     ///

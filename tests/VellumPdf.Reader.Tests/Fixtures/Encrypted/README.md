@@ -175,6 +175,17 @@ what remains:
 - **No owner-password-only file.** `enc-aes-128-emptyuser.pdf` covers the empty-user-password case;
   a file whose owner password differs and whose user password is a NON-empty, deliberately-wrong
   value (so only the owner path can open it at all) is still missing.
+- **No attachment that omits `/Type /EmbeddedFile`.** `/EFF` names the crypt filter for embedded
+  file streams, and the reader recognises one by that key — which Table 45 makes optional, and which
+  poppler's `pdfattach` omits. An attachment without it is read under `/StmF` instead, so in a
+  document that encrypts only its attachments (`/StmF /Identity` with `/EFF` naming a real filter)
+  its ciphertext comes back as the file. Identifying it positionally, from the `/EF` entries that
+  reference it, needs the catalog and a name-tree walk before the first stream can be decoded, which
+  is the same ordering that produced a null-dereference once already.
+
+- **No `/AuthEvent /EFOpen` crypt filter.** The entry is read past entirely; neither value changes
+  key derivation for the Standard handler, so nothing depends on it today.
+
 - **No revision carrying its own distinct `/Encrypt` object.** `enc-aes-128-tworevisions.pdf` is a
   genuine incremental update, but both of its trailers point at the same object 8, so "the newest
   trailer's `/Encrypt` is the one authenticated" is still untested in the direction that matters —

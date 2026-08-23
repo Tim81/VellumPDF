@@ -298,6 +298,70 @@ public sealed class EncryptionParameterTests
     }
 
     /// <summary>
+    /// Table 20 gives <c>/EFF</c> as the filter for embedded file streams "that do not have their
+    /// own crypt filter specifier", and tells a writer to respect it "except for embedded file
+    /// streams that have their own". Leaving one attachment in the clear inside an encrypted
+    /// document is written exactly that way, so the stream's own <c>/Crypt</c> has to win: taking
+    /// <c>/EFF</c> over it decrypts plaintext into noise under RC4, and throws under AES.
+    /// </summary>
+    [Fact]
+    public void EmbeddedFileWithItsOwnCryptSpecifier_beatsEff()
+    {
+        var clear = "LEFT-IN-THE-CLEAR"u8.ToArray();
+
+        var doc = BuildWithEncryptDict(
+            "<< /Filter /Standard /V 4 /R 4 /Length 128 "
+            + "/CF << /StdCF << /CFM /V2 /Length 16 >> >> /StmF /StdCF /StrF /StdCF /EFF /StdCF "
+            + "/O <2a2f0a1990192c60114730bdcd39f37828a53c89a340dd473c85299dc5258e1c> "
+            + "/U <6c8913ac9fc602eb1aad2a1ec614bee90021446990b9e4114071a4d9104984c1> /P -4 >>",
+            "<< /Probe 1 >>",
+            extraObjects:
+            [
+                $"<< /Type /EmbeddedFile /Length {clear.Length} /Filter [/Crypt] "
+                + $"/DecodeParms [<< /Name /Identity >>] >>\n"
+                + $"stream\n{Encoding.Latin1.GetString(clear)}\nendstream",
+            ]);
+
+        using var reader = PdfReader.Open(doc, "u");
+        var embedded = reader.ResolveStream(5)!;
+
+        Assert.Equal("LEFT-IN-THE-CLEAR", Encoding.ASCII.GetString(reader.GetDecodedStreamData(embedded)!));
+    }
+
+    /// <summary>
+    /// <c>/EFF</c> is meaningful only at <c>/V</c> 4 and above (Table 20). A <c>/V</c> 2 document has
+    /// no crypt filters at all, so an embedded file stream there is an ordinary RC4 stream.
+    ///
+    /// <para>
+    /// This pins that outcome, not the gate that produces it: at <c>/V</c> 2 the embedded-file filter
+    /// and the stream filter are both RC4, so the two paths cannot be told apart by any document.
+    /// The gate is worth keeping for what it says rather than what it changes — a non-null filter on
+    /// a document that never mentioned <c>/EFF</c> is a claim the encryption dictionary did not make.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void EmbeddedFileStream_inAV2Document_takesTheOrdinaryStreamFilter()
+    {
+        var attachment = EncryptRc4(5, 0, "V2-ATTACHMENT"u8.ToArray());
+
+        var doc = BuildWithEncryptDict(
+            "<< /Filter /Standard /V 2 /R 3 /Length 128 "
+            + "/O <2a2f0a1990192c60114730bdcd39f37828a53c89a340dd473c85299dc5258e1c> "
+            + "/U <6c8913ac9fc602eb1aad2a1ec614bee90021446990b9e4114071a4d9104984c1> /P -4 >>",
+            "<< /Probe 1 >>",
+            extraObjects:
+            [
+                $"<< /Type /EmbeddedFile /Length {attachment.Length} >>\n"
+                + $"stream\n{Encoding.Latin1.GetString(attachment)}\nendstream",
+            ]);
+
+        using var reader = PdfReader.Open(doc, "u");
+        var embedded = reader.ResolveStream(5)!;
+
+        Assert.Equal("V2-ATTACHMENT", Encoding.ASCII.GetString(reader.GetDecodedStreamData(embedded)!));
+    }
+
+    /// <summary>
     /// The other direction: with no <c>/EFF</c>, an embedded file stream is an ordinary stream and
     /// takes <c>/StmF</c> like everything else. Reaching for a filter that was never named would
     /// decrypt it twice.

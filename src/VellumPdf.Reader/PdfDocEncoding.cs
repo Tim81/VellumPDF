@@ -13,10 +13,9 @@ namespace VellumPdf.Reader;
 ///
 /// <para>
 /// PDFDocEncoding agrees with Latin-1 (ISO 8859-1) outside the 0x18–0x1F and 0x80–0x9F blocks, with
-/// four exceptions Annex D's table spells out: 0xA0 is EURO SIGN where Latin-1 has NO-BREAK SPACE,
-/// and 0x7F, 0x9F and 0xAD are Undefined — a character mapping to any of the three has no
-/// PDFDocEncoding representation at all. Everything else is the identity, which is what lets this be
-/// a table of exceptions rather than 256 entries (compare <c>VellumPdf.Fonts.WinAnsiEncoding</c>,
+/// one exception: 0xA0 is EURO SIGN where Latin-1 has NO-BREAK SPACE, so U+00A0 has no
+/// representation and U+20AC has that byte. Everything else is the identity, which is what lets this
+/// be a table of exceptions rather than 256 entries (compare <c>VellumPdf.Fonts.WinAnsiEncoding</c>,
 /// which takes the same shape for the unrelated WinAnsiEncoding table).
 /// </para>
 /// </summary>
@@ -51,15 +50,20 @@ internal static class PdfDocEncoding
 
     private static bool TryGetByte(char c, out byte b)
     {
-        // Excluded from the identity range along with the two blocks: 0xA0, which PDFDocEncoding
-        // gives to EURO SIGN (Annex D, Latin character set table, PDF column 240 octal) where Latin-1
-        // has NO-BREAK SPACE — so U+00A0 has no representation and U+20AC is in the table below —
-        // plus 0x7F and 0xAD, which that table marks Undefined. (0x9F is Undefined too and already
-        // falls inside the second block.)
+        // 0xA0 is excluded from the identity range along with the two blocks: PDFDocEncoding gives
+        // it to EURO SIGN (Annex D, Latin character set table, PDF column 240 octal) where Latin-1
+        // has NO-BREAK SPACE, so U+00A0 has no representation here and U+20AC is in the table below.
+        //
+        // The code points Annex D marks Undefined — 0x00-0x08, 0x0B, 0x0C, 0x0E-0x17, 0x7F, 0x9F,
+        // 0xAD — are deliberately NOT excluded beyond what the two blocks already cover. This
+        // encoding exists to reproduce the BYTES a producer hashed, and refusing a character drops
+        // the whole candidate rather than substituting for it: a document whose /U was derived from
+        // the byte 0xAD would stop opening under its correct password. Byte-identity is the useful
+        // answer for every one of them.
         if (c <= 0xFF
             && (c is < (char)0x18 or > (char)0x1F)
             && (c is < (char)0x80 or > (char)0x9F)
-            && c is not ((char)0x7F or (char)0xA0 or (char)0xAD))
+            && c != (char)0xA0)
         {
             b = (byte)c;
             return true;

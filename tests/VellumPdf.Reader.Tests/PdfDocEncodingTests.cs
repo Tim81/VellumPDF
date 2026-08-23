@@ -108,13 +108,27 @@ public sealed class PdfDocEncodingTests
     [InlineData("\u001F")]
     [InlineData("\u0080")]
     [InlineData("\u009F")]
-    // Annex D marks these Undefined, and they sit inside neither block.
-    [InlineData("\u007F")]
-    [InlineData("\u00AD")]
     public void UnrepresentableCharacters_areRefused(string password)
     {
         Assert.False(PdfDocEncoding.TryEncode(password, out var bytes));
         Assert.Empty(bytes);
+    }
+
+    /// <summary>
+    /// Annex D marks 0x7F and 0xAD Undefined, and this encoding encodes them anyway. Refusing a
+    /// character drops the whole candidate rather than substituting for it, so a document whose
+    /// <c>/U</c> was derived from one of those bytes would stop opening under its correct password —
+    /// and the same table marks two dozen more code points Undefined, so refusing a chosen few would
+    /// be arbitrary as well as harmful.
+    /// </summary>
+    [Theory]
+    [InlineData("\u007F", (byte)0x7F)]
+    [InlineData("\u00AD", (byte)0xAD)]
+    public void UndefinedCodePointsInsideTheIdentityRange_encodeAsTheirByte(string password, byte expected)
+    {
+        Assert.True(PdfDocEncoding.TryEncode(password, out var bytes));
+
+        Assert.Equal(new[] { expected }, bytes);
     }
 
     /// <summary>

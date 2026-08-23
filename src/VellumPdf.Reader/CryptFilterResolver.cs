@@ -141,19 +141,34 @@ internal static class CryptFilterResolver
         if (isCrossReferenceStream || IsExternalFileStream(streamDict, resolve))
             return CryptFilterMethod.Identity;
 
-        // /EFF names the crypt filter for embedded file streams (ISO 32000-1 §7.6.1, Table 20),
-        // which is what makes "encrypt only the attachments" expressible: /StmF and /StrF Identity
-        // with /EFF naming a real filter. Only an embedded file stream takes it, and Table 45
-        // identifies one by /Type /EmbeddedFile.
+        // The stream's own crypt filter specifier comes FIRST, ahead of /EFF: Table 20 gives /EFF as
+        // the filter for embedded file streams "that do not have their own crypt filter specifier",
+        // and says a writer shall respect it "except for embedded file streams that have their own".
+        // Leaving one attachment in the clear inside an encrypted document is written exactly that
+        // way — /Filter [/Crypt] with /Name /Identity on the attachment — so taking /EFF over it
+        // hands back the attachment's plaintext re-decrypted into noise.
+        if (FirstFilterName(streamDict, resolve) == "Crypt")
+        {
+            var parms = DecodeParmsForFirstFilter(streamDict, resolve);
+            var name = (Deref(resolve, parms?.Get(_name)) as PdfName)?.Value;
+            return ResolveNamedMethod(name, cfTable);
+        }
+
+        // /EFF is the fallback for an embedded file stream that named no filter of its own (ISO
+        // 32000-1 §7.6.1, Table 20), and is what makes "encrypt only the attachments" expressible:
+        // /StmF and /StrF Identity with /EFF naming a real filter. Null where the document declares
+        // no /EFF, or below /V 4 where the entry is meaningless — in both cases an embedded file
+        // stream is an ordinary stream and takes /StmF, as the same clause says.
+        //
+        // An embedded file stream is recognised by /Type /EmbeddedFile (Table 45). That key is
+        // optional there, so an attachment omitting it is read under /StmF instead; identifying it
+        // positionally, from the /EF entries that reference it, would need the catalog and a name
+        // tree walk before the first stream can be decoded. Recorded as a gap in the fixture README
+        // rather than half-built here.
         if (embeddedFileFilter is { } effMethod && IsEmbeddedFileStream(streamDict, resolve))
             return effMethod;
 
-        if (FirstFilterName(streamDict, resolve) != "Crypt")
-            return defaultStreamFilter;
-
-        var parms = DecodeParmsForFirstFilter(streamDict, resolve);
-        var name = (Deref(resolve, parms?.Get(_name)) as PdfName)?.Value;
-        return ResolveNamedMethod(name, cfTable);
+        return defaultStreamFilter;
     }
 
     private static bool IsEmbeddedFileStream(PdfDictionary streamDict, Func<PdfObject?, PdfObject?>? resolve)
