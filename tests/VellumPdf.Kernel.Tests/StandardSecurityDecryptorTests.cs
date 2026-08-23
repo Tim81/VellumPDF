@@ -20,8 +20,8 @@ namespace VellumPdf.Kernel.Tests;
 ///
 /// Every assertion here is pinned to exact bytes: which fileKey a password derives, whether it
 /// matches the stored validation hash, and whether a decrypted stream reproduces the byte-for-byte
-/// plaintext another tool (qpdf) encrypted — not "some output was produced". See CLAUDE.md on
-/// oracles that pass while dodging the feature.
+/// plaintext another tool (qpdf) encrypted. A test that only checked "did something come out" would
+/// pass on garbage. See CLAUDE.md on oracles that pass while dodging the feature.
 /// </summary>
 public sealed class StandardSecurityDecryptorTests
 {
@@ -593,8 +593,11 @@ public sealed class StandardSecurityDecryptorTests
     [Fact]
     public void Constructor_rejectsV3()
     {
-        // /V 3 is Adobe's undocumented algorithm, never specified by ISO 32000-1 or -2. Letting it
-        // through would silently treat the file as V=2 RC4 and produce garbage rather than failing.
+        // /V 3 is Adobe's undocumented algorithm, never specified by ISO 32000-1 or -2. It has no
+        // key-derivation or crypt-filter behaviour of its own here — StreamFilter/StringFilter are
+        // constructor parameters this class never derives from /V — so letting it through would
+        // silently run the caller's chosen filter under a key length /V 3 was never validated
+        // against, rather than failing on a value this handler doesn't support at all.
         Assert.Throws<InvalidDataException>(() => new StandardSecurityDecryptor(
             v: 3, r: 3, keyLengthBytes: 16, o: new byte[32], u: new byte[32], oe: null, ue: null,
             p: -4, id0: [0x00], encryptMetadata: true,
@@ -605,9 +608,12 @@ public sealed class StandardSecurityDecryptorTests
     public void Constructor_atRevision5_requiresOe()
     {
         // /O and /U must both already be 48 bytes here so the wrong guard (the length check a few
-        // lines above this one) can't be what throws instead of the /OE check being pinned.
+        // lines above this one) can't be what throws instead of the /OE check being pinned. r: 5,
+        // not 6, so the test name matches what the constructor actually sees — the guard is on
+        // R>=5 generally, not R6 specifically, and Constructor_allowsEmptyId0_atRevision6 already
+        // covers R6.
         Assert.Throws<InvalidDataException>(() => new StandardSecurityDecryptor(
-            v: 5, r: 6, keyLengthBytes: 32, o: new byte[48], u: new byte[48], oe: null, ue: new byte[32],
+            v: 5, r: 5, keyLengthBytes: 32, o: new byte[48], u: new byte[48], oe: null, ue: new byte[32],
             p: -4, id0: [0x00], encryptMetadata: true,
             streamFilter: CryptFilterMethod.Aes256, stringFilter: CryptFilterMethod.Aes256));
     }
@@ -616,7 +622,7 @@ public sealed class StandardSecurityDecryptorTests
     public void Constructor_atRevision5_requiresUe()
     {
         Assert.Throws<InvalidDataException>(() => new StandardSecurityDecryptor(
-            v: 5, r: 6, keyLengthBytes: 32, o: new byte[48], u: new byte[48], oe: new byte[32], ue: null,
+            v: 5, r: 5, keyLengthBytes: 32, o: new byte[48], u: new byte[48], oe: new byte[32], ue: null,
             p: -4, id0: [0x00], encryptMetadata: true,
             streamFilter: CryptFilterMethod.Aes256, stringFilter: CryptFilterMethod.Aes256));
     }

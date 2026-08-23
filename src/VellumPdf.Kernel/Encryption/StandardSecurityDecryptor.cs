@@ -424,8 +424,8 @@ internal sealed class StandardSecurityDecryptor
     // (/O, /P and /ID play no part in that derivation — only the password and, for R>=3, the
     // fifty-round tail), then run Algorithm 3 steps (f)+(g)'s 20 RC4 passes over /O in reverse
     // (round numbers 19 down to 0 — both directions are 20 passes) to recover the padded user
-    // password /O was
-    // originally built from. The reverse order is for readability only, not correctness: RC4 XORs
+    // password /O was originally built from. The reverse order is for readability only, not
+    // correctness: RC4 XORs
     // data against a keystream generated purely from the key and the (here, fixed 32-byte) data
     // length, so composing 20 such keystreams by XOR is order-independent — running these passes
     // forward would recover the identical plaintext. No test can pin the iteration direction for
@@ -587,8 +587,9 @@ internal sealed class StandardSecurityDecryptor
         var cipherText = data[16..].ToArray();
 
         // aes.Key's setter is in scope here too: a crafted /CF pairing (e.g. /Length 40 with
-        // /CFM /AESV2) reaches this with an object key too short or too long for AES, and that
-        // setter throws CryptographicException just like a padding failure below would. Both are
+        // /CFM /AESV2) reaches this with an object key too short for AES — ComputeObjectKey never
+        // returns more than 16 bytes, so "too long" isn't reachable here — and that setter throws
+        // CryptographicException just like a padding failure below would. Both are
         // a malformed-file condition, not a caller bug, so both fold into the same
         // InvalidDataException rather than the key-length one escaping as a bare framework
         // exception.

@@ -39,8 +39,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   per-object key that folds in the object's generation number, which is why this had to wait for
   #121. Verified against all eight corpus fixtures: deriving the file key from both the correct and
   a wrong password for each one, and decrypting a real content stream to the exact bytes qpdf's own
-  encryption produced, not merely to something self-consistent. The two `/EncryptMetadata false`
-  fixtures pin that Algorithm 2 step (f) shifts the derived key, not just `/U`. Most encrypted PDFs
+  encryption produced, matching an external tool rather than only being internally consistent. The
+  two `/EncryptMetadata false` fixtures pin that Algorithm 2 step (f) shifts the derived key, not
+  just `/U`. Most encrypted PDFs
   actually use an empty user password, a case absent from the committed corpus; that case is
   covered instead by independently computed vectors. (#97)
 
