@@ -41,7 +41,7 @@ internal sealed class XrefParser
     /// Returns the merged xref table (newer revisions win), the newest trailer dictionary,
     /// the byte offset of the xref from the last startxref, and the revision list oldest-first.
     /// </summary>
-    public static (Dictionary<int, XrefEntry> Xref, PdfDictionary Trailer, int StartXrefOffset, IReadOnlyList<XrefRevision> Revisions) Parse(
+    public static (Dictionary<int, XrefEntry> Xref, PdfDictionary Trailer, int StartXrefOffset, IReadOnlyList<XrefRevision> Revisions, IReadOnlySet<int> CrossReferenceStreamObjects) Parse(
         ReadOnlyMemory<byte> data)
     {
         var startxrefOffset = FindLastStartxref(data);
@@ -59,8 +59,13 @@ internal sealed class XrefParser
         // structurally broken xref tables) is the natural place to also recover a spuriously-freed
         // object, since both cases end with "the xref lied about this object, fall back to scanning".
         var freed = new HashSet<int>();
-        var (trailer, revisions) = ParseRevisionChain(data, startxrefOffset, xref, freed);
-        return (xref, trailer, startxrefOffset, revisions);
+        // The object numbers that were actually read AS cross-reference streams. ISO 32000-1
+        // §7.5.8.2 exempts those objects from encryption, and this is the only trustworthy way to
+        // know which they are: /Type /XRef is a key the file's author controls, so sniffing it would
+        // let a document opt an ordinary stream out of decryption just by mislabelling it.
+        var crossReferenceStreamObjects = new HashSet<int>();
+        var (trailer, revisions) = ParseRevisionChain(data, startxrefOffset, xref, freed, crossReferenceStreamObjects);
+        return (xref, trailer, startxrefOffset, revisions, crossReferenceStreamObjects);
     }
 
     private static int FindLastStartxref(ReadOnlyMemory<byte> data)
@@ -123,11 +128,13 @@ internal sealed class XrefParser
     }
 
     private static (PdfDictionary Trailer, IReadOnlyList<XrefRevision> Revisions) ParseRevisionChain(
-        ReadOnlyMemory<byte> data, int xrefOffset, Dictionary<int, XrefEntry> xref, HashSet<int> freed)
+        ReadOnlyMemory<byte> data, int xrefOffset, Dictionary<int, XrefEntry> xref, HashSet<int> freed,
+        HashSet<int> crossReferenceStreamObjects)
     {
         var seenOffsets = new HashSet<int>();
         PdfDictionary? newestTrailer = null;
         var revisionsNewestFirst = new List<XrefRevision>();
+        var anyRevisionDeclaredEncrypt = false;
 
         var currentOffset = xrefOffset;
         var startxrefForCurrent = xrefOffset;
@@ -144,8 +151,9 @@ internal sealed class XrefParser
 
             revisionsNewestFirst.Add(new XrefRevision(currentOffset, startxrefForCurrent));
 
-            var trailer = ParseOneRevision(data, currentOffset, xref, freed, seenOffsets);
+            var trailer = ParseOneRevision(data, currentOffset, xref, freed, seenOffsets, crossReferenceStreamObjects);
             newestTrailer ??= trailer;
+            anyRevisionDeclaredEncrypt |= trailer.TryGet(_encryptKey, out var revisionEncrypt) && revisionEncrypt is not null;
 
             if (trailer.TryGet(PdfName.Prev, out var prevObj) && prevObj is PdfInteger prevInt)
             {
@@ -164,13 +172,29 @@ internal sealed class XrefParser
             }
         }
 
+        // Only the newest trailer's /Encrypt is honoured — an older revision's is stale, and
+        // resurrecting it would decrypt objects the newest revision wrote in the clear. But an
+        // incremental update over an encrypted document has to repeat /Encrypt (ISO 32000-1 §7.5.6:
+        // the trailer of each update "shall contain" the entries the document needs), so a chain
+        // where an older revision declares it and the newest does not is malformed either way, and
+        // there is no reading of it that recovers the content. Opening it as plaintext is the one
+        // outcome that must not happen: every stream would decode to ciphertext with no error at
+        // all, and a caller would take the noise for the document.
+        if (anyRevisionDeclaredEncrypt
+            && !(newestTrailer!.TryGet(_encryptKey, out var newestEncrypt) && newestEncrypt is not null))
+        {
+            throw new InvalidDataException(
+                "Malformed PDF: an earlier revision declares /Encrypt but the newest trailer does not, "
+                + "so whether the document's objects are encrypted cannot be determined.");
+        }
+
         revisionsNewestFirst.Reverse();
         return (newestTrailer!, revisionsNewestFirst);
     }
 
     private static PdfDictionary ParseOneRevision(
         ReadOnlyMemory<byte> data, int xrefOffset, Dictionary<int, XrefEntry> xref, HashSet<int> freed,
-        HashSet<int> seenOffsets)
+        HashSet<int> seenOffsets, HashSet<int> crossReferenceStreamObjects)
     {
         var span = data.Span;
 
@@ -199,7 +223,7 @@ internal sealed class XrefParser
         if (IsDigit(b))
         {
             // Cross-reference stream: "N G obj << ... >> stream ... endstream endobj"
-            var streamTrailer = ParseXrefStream(data, xrefOffset, xref, freed, localFreed);
+            var streamTrailer = ParseXrefStream(data, xrefOffset, xref, freed, localFreed, crossReferenceStreamObjects);
             freed.UnionWith(localFreed);
             return streamTrailer;
         }
@@ -242,7 +266,7 @@ internal sealed class XrefParser
                 // /Encrypt wins if both happen to declare one — that would be a malformed producer
                 // either way, and the classic trailer is what every pre-1.5 (and this) reader treats
                 // as authoritative for every other trailer key.
-                var xrefStmDict = ParseXrefStream(data, stmOffset, xref, freed, localFreed);
+                var xrefStmDict = ParseXrefStream(data, stmOffset, xref, freed, localFreed, crossReferenceStreamObjects);
                 if (!trailer.TryGet(_encryptKey, out _) && xrefStmDict.TryGet(_encryptKey, out var stmEncrypt) && stmEncrypt is not null)
                     trailer.Set(_encryptKey, stmEncrypt);
             }
@@ -364,7 +388,7 @@ internal sealed class XrefParser
 
     private static PdfDictionary ParseXrefStream(
         ReadOnlyMemory<byte> data, int xrefOffset, Dictionary<int, XrefEntry> xref, HashSet<int> freed,
-        HashSet<int> localFreed)
+        HashSet<int> localFreed, HashSet<int> crossReferenceStreamObjects)
     {
         var parser = new PdfObjectParser(data, xrefOffset);
         var result = parser.ParseIndirectObject();
@@ -375,6 +399,7 @@ internal sealed class XrefParser
 
         var streamObj = result.Stream;
         var dict = streamObj.Dictionary;
+        crossReferenceStreamObjects.Add(result.ObjectNumber);
 
         // Decode the stream body (typically FlateDecode, but use full chain for robustness)
         var decodeResult = PdfFilters.Decode(streamObj);

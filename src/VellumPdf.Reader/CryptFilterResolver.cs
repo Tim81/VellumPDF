@@ -97,7 +97,8 @@ internal static class CryptFilterResolver
         CryptFilterMethod defaultStreamFilter,
         IReadOnlyDictionary<string, CryptFilterMethod> cfTable,
         bool encryptMetadata,
-        Func<PdfObject?, PdfObject?>? resolve)
+        Func<PdfObject?, PdfObject?>? resolve,
+        bool isCrossReferenceStream = false)
     {
         if (!encryptMetadata && IsMetadataStream(streamDict, resolve))
             return CryptFilterMethod.Identity;
@@ -105,16 +106,18 @@ internal static class CryptFilterResolver
         // Two exemptions the spec states as "shall not be encrypted", both checked before /Filter
         // for the same reason /EncryptMetadata is: neither is routed through a /Crypt filter entry.
         //
-        // ISO 32000-1 7.5.8.2: "The cross-reference stream shall not be encrypted"; the clause goes
-        // on to forbid it a /Crypt filter outright. This path is reached when a caller resolves the
-        // cross-reference stream as an ordinary object (a preflight rule walking every object does
-        // exactly that) — XrefParser reads it before any decryptor exists and so never came here.
+        // ISO 32000-1 §7.5.8.2: "The cross-reference stream shall not be encrypted"; the clause goes
+        // on to forbid it a /Crypt filter outright. The caller decides this one, from the object
+        // numbers XrefParser actually consumed as cross-reference streams — deliberately not from a
+        // /Type /XRef entry, which the document's author controls and could put on a page's content
+        // stream to have its ciphertext handed to a preflight rule as if it were the operators.
+        // XrefParser itself never comes through here; it reads the stream before a decryptor exists.
         //
-        // ISO 32000-1 7.6.1: a stream whose data lives in an external file (/F) "shall not be
+        // ISO 32000-1 §7.6.1: a stream whose data lives in an external file (/F) "shall not be
         // encrypted, since they are not part of the PDF file itself". The bytes between `stream` and
-        // `endstream` are ignored for such a stream anyway (7.3.8.2), but decrypting them turns a
+        // `endstream` are ignored for such a stream anyway (§7.3.8.2), but decrypting them turns a
         // legal document into a hard failure under AES, which rejects data that is not whole blocks.
-        if (IsCrossReferenceStream(streamDict, resolve) || IsExternalFileStream(streamDict, resolve))
+        if (isCrossReferenceStream || IsExternalFileStream(streamDict, resolve))
             return CryptFilterMethod.Identity;
 
         if (FirstFilterName(streamDict, resolve) != "Crypt")
@@ -127,9 +130,6 @@ internal static class CryptFilterResolver
 
     private static bool IsMetadataStream(PdfDictionary streamDict, Func<PdfObject?, PdfObject?>? resolve)
         => (Deref(resolve, streamDict.Get(_type)) as PdfName)?.Value == "Metadata";
-
-    private static bool IsCrossReferenceStream(PdfDictionary streamDict, Func<PdfObject?, PdfObject?>? resolve)
-        => (Deref(resolve, streamDict.Get(_type)) as PdfName)?.Value == "XRef";
 
     // /F is only an external-file specification when it is a file specification — a string or a
     // dictionary (ISO 32000-1 Table 5, 7.11.2). A stream dictionary is free to use /F for something

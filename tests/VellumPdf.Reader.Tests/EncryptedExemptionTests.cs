@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 using System.Reflection;
+using System.Security.Cryptography;
 using System.Text;
 using VellumPdf.Core;
 using VellumPdf.Encryption;
@@ -74,6 +75,93 @@ public sealed class EncryptedExemptionTests
         Assert.Equal("000102030405060708090a0b0c0d0e0f", Convert.ToHexStringLower(first.Bytes.Span));
     }
 
+    /// <summary>
+    /// The exemption belongs to the objects <c>XrefParser</c> actually read as cross-reference
+    /// streams, not to anything carrying <c>/Type /XRef</c> — that key is the document author's to
+    /// write. A page's content stream mislabelled this way would otherwise be handed to every
+    /// content rule as ciphertext while a conforming viewer decrypted and rendered it: a way to hide
+    /// what is really drawn from preflight.
+    /// </summary>
+    [Fact]
+    public void OrdinaryStreamMislabelledAsCrossReferenceStream_isStillDecrypted()
+    {
+        var body = Encrypt(3, 0, "BT (secret) Tj ET"u8.ToArray());
+        var doc = BuildWith(Rc4EncryptDict,
+            "<< /Type /Catalog /Pages 2 0 R >>",
+            "<< /Type /Pages /Kids [] /Count 0 >>",
+            $"<< /Type /XRef /Length {body.Length} >>\n"
+            + $"stream\n{Encoding.Latin1.GetString(body)}\nendstream");
+
+        using var reader = PdfReader.Open(doc, "u");
+        var stream = reader.ResolveStream(3)!;
+
+        Assert.Equal("BT (secret) Tj ET", Encoding.ASCII.GetString(reader.GetDecodedStreamData(stream)!));
+    }
+
+    /// <summary>
+    /// The same, for the string half of the exemption: §7.5.8.2 exempts the cross-reference stream's
+    /// own dictionary, not every dictionary that happens to be nested inside an object and claims
+    /// <c>/Type /XRef</c>. Skipping the subtree would let a document keep arbitrarily much of itself
+    /// out of the decrypt walk.
+    /// </summary>
+    [Fact]
+    public void NestedDictionaryClaimingTypeXRef_stringsAreStillDecrypted()
+    {
+        var hidden = Encrypt(3, 0, "HIDDEN-TEXT"u8.ToArray());
+        var doc = BuildWith(Rc4EncryptDict,
+            "<< /Type /Catalog /Pages 2 0 R >>",
+            "<< /Type /Pages /Kids [] /Count 0 >>",
+            $"<< /Type /Page /Sneaky << /Type /XRef /S <{Convert.ToHexStringLower(hidden)}> >> >>");
+
+        using var reader = PdfReader.Open(doc, "u");
+        var dict = Assert.IsType<PdfDictionary>(reader.Resolve(new PdfIndirectReference(3, 0)));
+        var nested = Assert.IsType<PdfDictionary>(dict.Get(new PdfName("Sneaky")));
+
+        Assert.Equal(
+            "HIDDEN-TEXT",
+            Encoding.ASCII.GetString(((PdfHexString)nested.Get(new PdfName("S"))!).Bytes.Span));
+    }
+
+    // ── One decrypt walk, whichever accessor gets there first ───────────────────────────────────
+
+    /// <summary>
+    /// <c>Resolve</c> and <c>ResolveStream</c> are two ways into the same object, and both populate
+    /// the object cache. If only one of them decrypts, whichever the caller happens to use first
+    /// decides for the life of the reader whether that stream dictionary's strings are plaintext or
+    /// ciphertext — and the Conformance package resolves streams before objects, so the ciphertext
+    /// ordering was the usual one. Both orders are asserted here; neither may return ciphertext, and
+    /// neither may decrypt twice (RC4 double-decryption is silent — it returns the input).
+    /// </summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void StreamDictionaryStrings_decryptOnce_regardlessOfAccessorOrder(bool streamFirst)
+    {
+        var probe = Encrypt(3, 0, "PROBE-STRING"u8.ToArray());
+        var body = Encrypt(3, 0, "BODY"u8.ToArray());
+        var doc = BuildWith(Rc4EncryptDict,
+            "<< /Type /Catalog /Pages 2 0 R >>",
+            "<< /Type /Pages /Kids [] /Count 0 >>",
+            $"<< /Length {body.Length} /Probe <{Convert.ToHexStringLower(probe)}> >>\n"
+            + $"stream\n{Encoding.Latin1.GetString(body)}\nendstream");
+
+        using var reader = PdfReader.Open(doc, "u");
+
+        string FromStream() =>
+            Encoding.ASCII.GetString(
+                ((PdfHexString)reader.ResolveStream(3)!.Dictionary.Get(new PdfName("Probe"))!).Bytes.Span);
+        string FromResolve() =>
+            Encoding.ASCII.GetString(
+                ((PdfHexString)((PdfDictionary)reader.Resolve(new PdfIndirectReference(3, 0))!)
+                    .Get(new PdfName("Probe"))!).Bytes.Span);
+
+        var first = streamFirst ? FromStream() : FromResolve();
+        var second = streamFirst ? FromResolve() : FromStream();
+
+        Assert.Equal("PROBE-STRING", first);
+        Assert.Equal("PROBE-STRING", second);
+    }
+
     // ── External-file streams (ISO 32000-1 §7.6.1) ──────────────────────────────────────────────
 
     /// <summary>
@@ -86,10 +174,12 @@ public sealed class EncryptedExemptionTests
     public void ExternalFileStream_body_isNotDecrypted()
     {
         var body = "PLAINTEXT!"u8.ToArray();
+        var fileName = Encrypt(3, 0, "ext.dat"u8.ToArray());
         var doc = BuildWith(Rc4EncryptDict,
             "<< /Type /Catalog /Pages 2 0 R >>",
             "<< /Type /Pages /Kids [] /Count 0 >>",
-            $"<< /Length {body.Length} /F (ext.dat) >>\nstream\n{Encoding.Latin1.GetString(body)}\nendstream");
+            $"<< /Length {body.Length} /F <{Convert.ToHexStringLower(fileName)}> >>\n"
+            + $"stream\n{Encoding.Latin1.GetString(body)}\nendstream");
 
         using var reader = PdfReader.Open(doc, "u");
         var stream = reader.ResolveStream(3)!;
@@ -105,16 +195,28 @@ public sealed class EncryptedExemptionTests
     [Fact]
     public void ExternalFileStream_underAes_doesNotThrow()
     {
+        // /F names the external file and is itself an ordinary string, so on an encrypted document
+        // it is encrypted like any other — only the stream's CONTENTS are exempt. Left in the clear
+        // this document would be malformed, and the test would fail on the file name rather than on
+        // the body it means to exercise.
+        var fileName = EncryptAes(3, 0, "ext.dat"u8.ToArray());
         var body = "abc"u8.ToArray();
         var doc = BuildWith(AesEncryptDict,
             "<< /Type /Catalog /Pages 2 0 R >>",
             "<< /Type /Pages /Kids [] /Count 0 >>",
-            $"<< /Length {body.Length} /F (ext.dat) >>\nstream\n{Encoding.Latin1.GetString(body)}\nendstream");
+            $"<< /Length {body.Length} /F <{Convert.ToHexStringLower(fileName)}> >>\n"
+            + $"stream\n{Encoding.Latin1.GetString(body)}\nendstream");
 
         using var reader = PdfReader.Open(doc, "u");
         var stream = reader.ResolveStream(3)!;
 
         Assert.Equal("abc", Encoding.ASCII.GetString(reader.GetDecodedStreamData(stream)!));
+
+        // And the dictionary around it still decrypts, which is what makes the exemption specific to
+        // the body rather than to the whole object.
+        Assert.Equal(
+            "ext.dat",
+            Encoding.ASCII.GetString(((PdfHexString)stream.Dictionary.Get(new PdfName("F"))!).Bytes.Span));
     }
 
     /// <summary>
@@ -196,6 +298,31 @@ public sealed class EncryptedExemptionTests
     // need: open the fixture whose /Encrypt dictionary they copy, take its armed decryptor and file
     // key, and run the plaintext through it. Producing the ciphertext any other way would mean a
     // second, hand-rolled RC4 in the test project — a copy of the thing under test.
+    // AES is not symmetric, so the AES document's strings cannot be produced the way the RC4 ones
+    // are. The object key still comes from the library — ComputeObjectKey, the derivation under test
+    // — and only the CBC encryption itself is the platform's, which is what a producer would use.
+    private static byte[] EncryptAes(int objectNumber, int generation, byte[] plaintext)
+    {
+        var objectKey = StandardSecurityDecryptor.ComputeObjectKey(
+            FileKeyOf("enc-rc4-128.pdf"), objectNumber, generation, useAesSalt: true);
+
+        using var aes = Aes.Create();
+        aes.Key = objectKey;
+        aes.Mode = CipherMode.CBC;
+        aes.Padding = PaddingMode.PKCS7;
+        aes.GenerateIV();
+
+        using var encryptor = aes.CreateEncryptor();
+        return [.. aes.IV, .. encryptor.TransformFinalBlock(plaintext, 0, plaintext.Length)];
+    }
+
+    private static byte[] FileKeyOf(string fixture)
+    {
+        using var reader = PdfReader.Open(Load(fixture), "u");
+        return (byte[])typeof(PdfDocumentReader)
+            .GetField("_fileKey", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(reader)!;
+    }
+
     private static byte[] Encrypt(int objectNumber, int generation, byte[] plaintext)
     {
         using var reader = PdfReader.Open(Load("enc-rc4-128.pdf"), "u");

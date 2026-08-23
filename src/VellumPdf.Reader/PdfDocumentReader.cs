@@ -96,13 +96,15 @@ public sealed class PdfDocumentReader : IDisposable
         PdfDictionary trailer,
         int startXrefOffset,
         IReadOnlyList<XrefRevision> revisions,
-        string? password = null)
+        string? password = null,
+        IReadOnlySet<int>? crossReferenceStreamObjects = null)
     {
         Bytes = bytes;
         _xref = xref;
         Trailer = trailer;
         StartXrefOffset = startXrefOffset;
         Revisions = revisions;
+        _crossReferenceStreamObjects = crossReferenceStreamObjects ?? new HashSet<int>();
 
         // /Encrypt must be resolved and authenticated BEFORE anything else: Resolve() and
         // GetDecodedStreamData() key their decryption on _decryptor being set, and /Root (resolved
@@ -116,7 +118,7 @@ public sealed class PdfDocumentReader : IDisposable
             var encryptDict = ResolveValue(encryptRaw) as PdfDictionary
                 ?? throw new InvalidDataException("Malformed PDF: /Encrypt does not resolve to a dictionary.");
 
-            var setup = EncryptionSetup.Authenticate(encryptDict, trailer, password);
+            var setup = EncryptionSetup.Authenticate(encryptDict, trailer, password, ResolveMaybe);
             _decryptor = setup.Decryptor;
             _fileKey = setup.FileKey;
             _cryptFilterTable = setup.CryptFilterTable;
@@ -249,7 +251,7 @@ public sealed class PdfDocumentReader : IDisposable
                 // ParsedStream.ObjectNumber/Generation, not here. _decryptor is still null while
                 // /Encrypt's own dictionary is being resolved (see the constructor), so this never
                 // touches /O, /U, /OE, or /UE.
-                if (_decryptor is not null)
+                if (_decryptor is not null && !_crossReferenceStreamObjects.Contains(objectNumber))
                     value = DecryptObjectGraph(value, objectNumber, actualGeneration);
 
                 if (result.IsStream)
@@ -321,6 +323,17 @@ public sealed class PdfDocumentReader : IDisposable
             return null;
 
         var stream = Restamped(result.Stream!, actualGeneration);
+
+        // The same decrypt walk Resolve(int, int?) runs, for the same reason and under the same
+        // identity. Without it this method would be a second way into the same object that skips
+        // decryption — and since it also populates _cache below, whichever of the two ran first
+        // would decide for the rest of the reader's life whether that dictionary's strings are
+        // plaintext or ciphertext. The Conformance package resolves streams before objects, so the
+        // ciphertext ordering was the usual one. A stream reached through Resolve first is already
+        // in _streamCache and returns above, so nothing is walked twice.
+        if (_decryptor is not null && !_crossReferenceStreamObjects.Contains(objectNumber))
+            DecryptObjectGraph(stream.Dictionary, objectNumber, actualGeneration);
+
         _streamCache.TryAdd(objectNumber, (stream, actualGeneration));
 
         // Also populate dict cache
@@ -366,7 +379,8 @@ public sealed class PdfDocumentReader : IDisposable
             return stream;
 
         var method = CryptFilterResolver.ResolveStreamMethod(
-            stream.Dictionary, _decryptor.StreamFilter, _cryptFilterTable, _encryptMetadata, ResolveMaybe);
+            stream.Dictionary, _decryptor.StreamFilter, _cryptFilterTable, _encryptMetadata, ResolveMaybe,
+            _crossReferenceStreamObjects.Contains(stream.ObjectNumber));
 
         if (method == CryptFilterMethod.Identity)
             return stream;
@@ -389,6 +403,12 @@ public sealed class PdfDocumentReader : IDisposable
         stream.Generation == generation
             ? stream
             : new ParsedStream(stream.Dictionary, stream.RawBody, stream.BodyOffset, stream.ObjectNumber, generation);
+
+    // The objects XrefParser actually read as cross-reference streams. ISO 32000-1 §7.5.8.2 exempts
+    // them from encryption, body and dictionary strings alike, and this is the set that decides it —
+    // not a /Type /XRef entry, which the document's author controls and could put on an ordinary
+    // content stream to have its ciphertext handed back to a preflight rule unexamined.
+    private readonly IReadOnlySet<int> _crossReferenceStreamObjects;
 
     // Well-known keys used only by the decrypt walk below.
     private static readonly PdfName _sigType = new("Sig");
@@ -439,14 +459,6 @@ public sealed class PdfDocumentReader : IDisposable
                 return new PdfHexString(_decryptor!.DecryptString(_fileKey!, objectNumber, generation, h.Bytes.Span));
 
             case PdfDictionary d:
-                // ISO 32000-1 §7.5.8.2: "strings appearing in the cross-reference stream dictionary
-                // shall not be encrypted" — the /ID being the string that matters, since checking it
-                // without decrypting the file is the whole point of leaving it in the clear (§7.5.5).
-                // XrefParser never comes through here (it reads the stream before a decryptor
-                // exists), but resolving object 10 as an ordinary object does.
-                if ((d.Get(_typeKey) as PdfName)?.Equals(_xrefType) == true)
-                    return d;
-
                 var isSignatureDict = IsSignatureDictionary(d);
                 foreach (var kv in d.Entries.ToList())
                 {
@@ -477,8 +489,9 @@ public sealed class PdfDocumentReader : IDisposable
     /// <see cref="DecryptObjectGraph"/> documents. <c>/Type</c> alone is not enough to decide:
     /// ISO 32000-1 Table 252 makes it OPTIONAL in a signature dictionary ("if present, shall be
     /// Sig"), and a document timestamp carries <c>/DocTimeStamp</c> instead — the type this
-    /// library's own <c>ArchiveTimestampBuilder</c> writes for a PAdES B-LTA archive timestamp, so a
-    /// file this library produced and then encrypted is squarely in scope. A <c>/Type</c>-less
+    /// library's own <c>ArchiveTimestampBuilder</c> writes for a PAdES B-LTA archive timestamp (this
+    /// library refuses to sign and encrypt the same document, but nothing stops another tool from
+    /// encrypting one it signed). A <c>/Type</c>-less
     /// dictionary is therefore recognised structurally, by the pair <c>/ByteRange</c> + a string
     /// <c>/Contents</c>: <c>/ByteRange</c> is what the byte-range digest is computed over, and ISO
     /// 32000-1 §12.8.1 requires it of approval and certification signatures alike, so a signer
@@ -579,7 +592,15 @@ public sealed class PdfDocumentReader : IDisposable
             throw new InvalidDataException(
                 $"Object stream {containerObjNum} at offset {containerEntry.Offset} is not a stream object.");
 
-        var streamObj = result.Stream!;
+        // Restamped for the same reason ResolveStream is: the container's body is decrypted under
+        // the identity the ParsedStream carries, and where the object's header disagrees with the
+        // cross-reference table, the table is the authority (#192). Without this the container
+        // decodes correctly through ResolveStream and incorrectly here, on one document.
+        var streamObj = Restamped(
+            result.Stream!,
+            containerEntry.Generation == XrefEntry.UnknownGeneration
+                ? result.Stream!.Generation
+                : containerEntry.Generation);
         var dict = streamObj.Dictionary;
 
         if (dict.Get(new PdfName("N")) is not PdfInteger nObj)
