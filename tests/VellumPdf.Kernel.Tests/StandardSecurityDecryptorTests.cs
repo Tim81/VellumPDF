@@ -290,6 +290,22 @@ public sealed class StandardSecurityDecryptorTests
     }
 
     [Fact]
+    public void ComputeObjectKey_sevenByteFileKey_withAesSalt_truncatesToTwelveBytes()
+    {
+        // min(fileKey.Length + 5, 16) and min(fileKey.Length * 2, 16) agree at every key length
+        // this file's other vectors use (5 -> 10, 16 -> 16), so a regression to the latter formula
+        // would pass both. 7 is the smallest length where they diverge: +5 gives 12, *2 gives 14.
+        // Independently computed (Python hashlib.md5, not by running the code under test).
+        byte[] fileKey = [0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10];
+        byte[] expected = [0x0D, 0xD2, 0x48, 0xED, 0x3C, 0x1E, 0xC6, 0x5E, 0xB6, 0xB0, 0x06, 0x15];
+
+        var actual = StandardSecurityDecryptor.ComputeObjectKey(fileKey, objectNumber: 12345, generation: 3, useAesSalt: true);
+
+        Assert.Equal(12, actual.Length);
+        Assert.Equal(expected, actual);
+    }
+
+    [Fact]
     public void ComputeObjectKey_emptyFileKey_throwsArgumentException()
     {
         var ex = Assert.Throws<ArgumentException>(
