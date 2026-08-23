@@ -14,7 +14,6 @@ VellumPdf.Encryption.PdfEncryptionInfo.Cipher.get -> VellumPdf.Encryption.PdfCip
 VellumPdf.Encryption.PdfEncryptionInfo.EncryptMetadata.get -> bool
 VellumPdf.Encryption.PdfEncryptionInfo.IsOwnerAccess.get -> bool
 VellumPdf.Encryption.PdfEncryptionInfo.KeyLengthBits.get -> int
-VellumPdf.Encryption.PdfEncryptionInfo.PdfEncryptionInfo(int v, int r, VellumPdf.Encryption.PdfCipherAlgorithm cipher, int keyLengthBits, VellumPdf.Encryption.PdfPermissions permissions, bool encryptMetadata, bool isOwnerAccess) -> void
 VellumPdf.Encryption.PdfEncryptionInfo.Permissions.get -> VellumPdf.Encryption.PdfPermissions
 VellumPdf.Encryption.PdfEncryptionInfo.R.get -> int
 VellumPdf.Encryption.PdfEncryptionInfo.V.get -> int

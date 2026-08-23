@@ -24,6 +24,8 @@ internal static class EncryptionSetup
     private static readonly PdfName _pKey = new("P");
     private static readonly PdfName _lengthKey = new("Length");
     private static readonly PdfName _encryptMetadataKey = new("EncryptMetadata");
+    private static readonly PdfName _cfKey = new("CF");
+    private static readonly PdfName _permsKey = new("Perms");
     private static readonly PdfName _stmFKey = new("StmF");
     private static readonly PdfName _strFKey = new("StrF");
 
@@ -46,7 +48,11 @@ internal static class EncryptionSetup
     /// <exception cref="PdfPasswordException">
     /// <paramref name="password"/> authenticates as neither the owner nor the user password.
     /// </exception>
-    internal static Result Authenticate(PdfDictionary encryptDict, PdfDictionary trailer, string? password)
+    internal static Result Authenticate(
+        PdfDictionary encryptDict,
+        PdfDictionary trailer,
+        string? password,
+        Func<PdfObject?, PdfObject?>? resolve = null)
     {
         var filterName = (encryptDict.Get(_filterKey) as PdfName)?.Value;
         if (filterName == "Adobe.PubSec")
@@ -60,8 +66,28 @@ internal static class EncryptionSetup
                 "supports; only /Standard is.");
         }
 
+        // §7.6.1 requires only the STRINGS in the encryption dictionary to be direct objects, so
+        // /V, /R, /P, /Length, /CF, /StmF and /StrF may all legally be indirect references. Reading
+        // them raw made a conformant file fail — /P as a reference threw "missing or not an
+        // integer" at Open, and an indirect /CF produced an empty filter table, which opened fine
+        // and then threw on the first stream. Working on a dereferenced copy keeps every read below
+        // (and BuildCfTable's, which takes no resolver) simple.
+        encryptDict = DereferenceValues(encryptDict, resolve);
+
         var v = (int)RequireInt(encryptDict, _vKey, "/V");
         var r = (int)RequireInt(encryptDict, _rKey, "/R");
+
+        // /V 3 is a well-defined value — ISO 32000-1 Table 20 reserves it for "an unpublished
+        // algorithm that permits encryption key lengths ranging from 40 to 128 bits" — so a file
+        // using it is valid, merely beyond what a clean-room implementation can support. Reporting
+        // it as malformed would tell the user their good file is corrupt; the same distinction the
+        // handler already draws for /Filter /Adobe.PubSec.
+        if (v == 3)
+        {
+            throw new UnsupportedPdfFeatureException(
+                "/Encrypt /V 3 uses the unpublished algorithm ISO 32000-1 Table 20 reserves for it, "
+                + "which this library does not implement.");
+        }
         var o = RequireBytes(encryptDict, _oKey, "/O");
         var u = RequireBytes(encryptDict, _uKey, "/U");
         var oe = TryGetBytes(encryptDict, _oeKey);
@@ -69,7 +95,7 @@ internal static class EncryptionSetup
         var p = unchecked((int)RequireInt(encryptDict, _pKey, "/P"));
         var encryptMetadata = encryptDict.Get(_encryptMetadataKey) is not PdfBoolean emBool || emBool.Value;
         var id0 = GetId0(trailer);
-        var keyLengthBytes = r >= 5 ? 32 : LegacyKeyLengthBytes(encryptDict, v);
+        var keyLengthBytes = r >= 5 ? 32 : LegacyKeyLengthBytes(encryptDict, v, r);
 
         var cfTable = v >= 4
             ? CryptFilterResolver.BuildCfTable(encryptDict, null)
@@ -99,6 +125,22 @@ internal static class EncryptionSetup
         {
             throw new PdfPasswordException(
                 "The supplied password does not authenticate as either the owner or the user password.");
+        }
+
+        // ISO 32000-2 §7.6.4.4.12, Algorithm 13. At R<=4 /P is an input to Algorithm 2, so editing it
+        // breaks authentication on its own; at R>=5 the file key is random and /P is protected ONLY
+        // by /Perms, which encrypts a copy of it under that key. Without this check a byte-level edit
+        // to /P — a 12-byte patch that leaves the cross-reference table intact — silently escalates
+        // every permission bit, and this library would report the attacker's values as the
+        // document's. /Perms absent is not treated as a failure: it cannot be verified either way,
+        // and R5 predates the entry being universal.
+        var perms = TryGetBytes(encryptDict, _permsKey);
+        if (r >= 5 && perms is not null && !decryptor.VerifyPermissions(fileKey, perms))
+        {
+            throw new InvalidDataException(
+                "Malformed PDF: /Encrypt /Perms does not decrypt to the document's /P value. The "
+                + "permission bits have been altered since the file was encrypted (ISO 32000-2 "
+                + "§7.6.4.4.12, Algorithm 13).");
         }
 
         return new Result
@@ -196,14 +238,59 @@ internal static class EncryptionSetup
         };
     }
 
-    // /Length is in BITS at the top level (unlike a /CF sub-dictionary's own /Length, which ISO
-    // 32000-2 Table 21 measures in bytes — this implementation does not read a per-filter override,
-    // since every committed fixture's /CF entry either omits /Length or agrees with the top-level
-    // one, so that override path is unpinned).
-    private static int LegacyKeyLengthBytes(PdfDictionary encryptDict, int v)
+    // The file key length, in bytes, for V<5. Three separate rules, and reading only the top-level
+    // /Length gets two of them wrong:
+    //
+    //   V=1  — always 40-bit RC4, whatever /Length says (ISO 32000-1 Table 20).
+    //   R=2  — Algorithm 2 step (i): "n shall always be 5 for security handlers of revision 2".
+    //          The revision overrides the length, so /V 2 /R 2 /Length 128 is still a 5-byte key.
+    //   V=4  — Table 20 scopes the top-level /Length to "only if V is 2 or 3"; the length that
+    //          applies is the crypt filter's own (Table 25), which the standard security handler
+    //          writes in BYTES. A conformant V=4 file may carry no top-level /Length at all, and
+    //          defaulting it to 40 bits there rejects the correct password on a file every other
+    //          reader opens.
+    // A shallow copy with every indirect value replaced by what it resolves to, plus one level down
+    // into /CF's per-filter dictionaries — the only nested dictionaries the handler reads. The
+    // STRINGS (/O, /U, /OE, /UE, /Perms) are required to be direct and are copied across untouched,
+    // so this never resolves anything that could need decrypting.
+    private static PdfDictionary DereferenceValues(PdfDictionary encryptDict, Func<PdfObject?, PdfObject?>? resolve)
+    {
+        if (resolve is null)
+            return encryptDict;
+
+        var copy = new PdfDictionary();
+        foreach (var (key, value) in encryptDict.Entries)
+        {
+            var resolved = value is PdfIndirectReference ? resolve(value) : value;
+            if (key.Equals(_cfKey) && resolved is PdfDictionary cf)
+            {
+                var cfCopy = new PdfDictionary();
+                foreach (var (filterName, filterValue) in cf.Entries)
+                {
+                    cfCopy.Set(
+                        filterName,
+                        (filterValue is PdfIndirectReference ? resolve(filterValue) : filterValue) ?? PdfNull.Instance);
+                }
+
+                resolved = cfCopy;
+            }
+
+            copy.Set(key, resolved ?? PdfNull.Instance);
+        }
+
+        return copy;
+    }
+
+    private static int LegacyKeyLengthBytes(PdfDictionary encryptDict, int v, int r)
     {
         if (v == 1)
-            return 5; // Algorithm 1: V=1 is always 40-bit RC4 regardless of /Length.
+            return 5;
+
+        if (r == 2)
+            return 5;
+
+        if (v >= 4 && CryptFilterKeyLengthBytes(encryptDict) is { } fromFilter)
+            return fromFilter;
 
         var bits = encryptDict.Get(_lengthKey) is PdfInteger li ? (int)li.Value : 40;
         if (bits % 8 != 0 || bits is < 40 or > 128)
@@ -213,6 +300,36 @@ internal static class EncryptionSetup
         }
 
         return bits / 8;
+    }
+
+    // The /Length of the crypt filter /StmF names (falling back to /StrF, then to the sole entry if
+    // there is exactly one). Table 25 measures it in bytes, but producers that copy the top-level
+    // entry's units write bits, and the two ranges do not overlap: a legal byte count is 5..32 and a
+    // legal bit count is 40..256, so a value above 32 can only be bits.
+    private static int? CryptFilterKeyLengthBytes(PdfDictionary encryptDict)
+    {
+        if (encryptDict.Get(_cfKey) is not PdfDictionary cf)
+            return null;
+
+        var name = (encryptDict.Get(_stmFKey) as PdfName)?.Value
+            ?? (encryptDict.Get(_strFKey) as PdfName)?.Value;
+
+        PdfDictionary? filter = null;
+        if (name is not null and not "Identity")
+            filter = cf.Get(new PdfName(name)) as PdfDictionary;
+        else if (name is null && cf.Entries.Count == 1)
+            filter = cf.Entries.Single().Value as PdfDictionary;
+
+        if (filter?.Get(_lengthKey) is not PdfInteger length)
+            return null;
+
+        var value = (int)length.Value;
+        return value switch
+        {
+            >= 5 and <= 32 => value,
+            >= 40 and <= 256 when value % 8 == 0 => value / 8,
+            _ => null,
+        };
     }
 
     private static PdfCipherAlgorithm ToCipher(CryptFilterMethod method) => method switch

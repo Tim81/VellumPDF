@@ -125,10 +125,14 @@ internal sealed class StandardSecurityDecryptor
             // R>=5: both /O and /U are hash(32) || validationSalt(8) || keySalt(8) — Algorithms 8
             // and 9 under ISO 32000-2 §7.6.4.4, with the dictionary layout itself in §7.6.4.2 —
             // not the plain 32-byte values R<=4 uses.
-            if (o.Length != 48)
-                throw new InvalidDataException($"/O must be 48 bytes at R>={r}; got {o.Length}.");
-            if (u.Length != 48)
-                throw new InvalidDataException($"/U must be 48 bytes at R>={r}; got {u.Length}.");
+            // Longer than 48 is tolerated, and only the first 48 bytes are used. Acrobat 9-era R5
+            // producers pad /O and /U out to 127 bytes — the R<=4 field width — and every reader
+            // that opens those files does so by reading the prefix. Shorter than 48 is a real
+            // malformation: the hash, validation salt and key salt would not all be there.
+            if (o.Length < 48)
+                throw new InvalidDataException($"/O must be at least 48 bytes at R>={r}; got {o.Length}.");
+            if (u.Length < 48)
+                throw new InvalidDataException($"/U must be at least 48 bytes at R>={r}; got {u.Length}.");
             if (oe is not { Length: 32 })
                 throw new InvalidDataException("/OE must be present and 32 bytes at R>=5.");
             if (ue is not { Length: 32 })
@@ -274,8 +278,10 @@ internal sealed class StandardSecurityDecryptor
         }
 
         return TryUnwrapFileKeyAtRevision5Plus(
+            // udata is the 48-byte /U value (Algorithm 9), so it is sliced rather than passed whole:
+            // a producer that padded /U out beyond 48 would otherwise hash the padding too.
             passwordBytes, validationSalt: _o.AsSpan(32, 8), keySalt: _o.AsSpan(40, 8),
-            udata: _u, expectedHash: _o.AsSpan(0, 32), wrapped: _oe!, out fileKey);
+            udata: _u.AsSpan(0, 48), expectedHash: _o.AsSpan(0, 32), wrapped: _oe!, out fileKey);
     }
 
     /// <summary>
@@ -585,6 +591,13 @@ internal sealed class StandardSecurityDecryptor
     // bug.
     private static byte[] DecryptAesCbcWithIvPrefix(byte[] key, ReadOnlySpan<byte> data)
     {
+        // An empty string or a zero-length stream is legal PDF, and a producer has nothing to
+        // encrypt for one — there is no IV to write either, so the encrypted form is also empty.
+        // Demanding an IV here rejects a document other readers open, and rejects it hard: the
+        // exception propagates out of every object that contains such a string.
+        if (data.Length == 0)
+            return [];
+
         if (data.Length < 16 || (data.Length - 16) % 16 != 0)
         {
             throw new InvalidDataException(

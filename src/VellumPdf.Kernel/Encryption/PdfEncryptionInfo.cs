@@ -49,7 +49,12 @@ public sealed class PdfEncryptionInfo
     /// <summary>The cipher the resolved <c>/StmF</c> crypt filter applies to streams.</summary>
     public PdfCipherAlgorithm Cipher { get; }
 
-    /// <summary>The file encryption key length, in bits (40, 128, or 256).</summary>
+    /// <summary>
+    /// The file encryption key length, in bits. 40, 128 and 256 are what producers write in
+    /// practice, but ISO 32000-1 Table 20 allows any multiple of 8 from 40 to 128 at <c>/V</c> 2,
+    /// and this reports what the document actually specifies rather than rounding to the common
+    /// three.
+    /// </summary>
     public int KeyLengthBits { get; }
 
     /// <summary><c>/P</c>, decoded into the individual permission flags it grants.</summary>
@@ -72,8 +77,14 @@ public sealed class PdfEncryptionInfo
     /// </summary>
     public bool IsOwnerAccess { get; }
 
-    /// <summary>Builds an encryption summary from values already extracted from a parsed <c>/Encrypt</c> dictionary.</summary>
-    public PdfEncryptionInfo(
+    /// <summary>
+    /// Builds an encryption summary from values already extracted from a parsed <c>/Encrypt</c>
+    /// dictionary. Internal, not public: <c>VellumPdf.Reader</c> is the only producer of this type
+    /// (via <c>PdfDocumentReader.Encryption</c>) and already has the friend grant, while this
+    /// package is Stable — a public seven-parameter constructor would freeze that parameter list at
+    /// the next release, so a later addition here would cost an overload rather than a property.
+    /// </summary>
+    internal PdfEncryptionInfo(
         int v,
         int r,
         PdfCipherAlgorithm cipher,
