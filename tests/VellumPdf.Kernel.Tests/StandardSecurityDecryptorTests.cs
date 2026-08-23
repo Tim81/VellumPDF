@@ -250,15 +250,26 @@ public sealed class StandardSecurityDecryptorTests
     // Algorithm 2/4/5 (R2–R4) and Algorithm 2.A (R5/R6) accept an empty password and derive exactly
     // the key/hash the specification says they should.
 
-    // R>=3's fifty-round MD5 tail (Algorithm 2, and Algorithm 7's owner-key derivation) truncates
-    // each round's input to _keyLengthBytes. Every other R3/R4 vector in this file — corpus and
-    // synthetic alike — uses a 16-byte key, so a regression that hardcoded that truncation to 16
-    // would pass every one of them: the only 5-byte fixture is enc-rc4-40.pdf, which is R=2 and
-    // never enters the round loop at all. /R 3 /Length 40 is a real Adobe Reader-compatible
-    // combination, so this covers it. Independently computed (Python, hashlib.md5 + a from-scratch
-    // RC4 keystream, not by running the code under test), exercising both loops: the user path
-    // through Algorithm 2 alone, and the owner path through Algorithm 7's key derivation followed
-    // by the same Algorithm 2 call on the recovered password.
+    // R>=3's fifty-round MD5 tail (Algorithm 2's user-password path, and Algorithm 7's owner-key
+    // derivation via Algorithm 3 steps (a)-(d)) truncates each round's input to _keyLengthBytes.
+    // ISO 32000-1 Algorithm 3 step (c) does not say to truncate — only Algorithm 2 step (h) does,
+    // in near-identical wording that happens to add "the first n bytes". Real files settle it:
+    // built both ways as actual R3 /Length 40 files, the literal (non-truncating) Algorithm 3
+    // reading makes qpdf 12.3.2 report "invalid password" and poppler 25.07 "Incorrect password"
+    // for a correct owner password, while truncating — what this code does — makes both accept
+    // it. So this pins the truncating behaviour as correct for interoperability, not because the
+    // ISO text says so for the owner branch; see the comment above RecoverUserPasswordFromOwner.
+    //
+    // Every other R3/R4 vector in this file — corpus and synthetic alike — uses a 16-byte key, so
+    // a regression that hardcoded that truncation to 16 would pass every one of them: the only
+    // 5-byte fixture is enc-rc4-40.pdf, which is R=2 and never enters the round loop at all. /R 3
+    // /Length 40 is a real Adobe Reader-compatible combination, so this covers it. This test is the
+    // sole guard on BOTH fifty-round truncations at a key length other than 16 — weakening or
+    // deleting it removes the only regression coverage for a bug that would silently break every
+    // 40-120 bit R3 file. Independently computed (Python, hashlib.md5 + a from-scratch RC4
+    // keystream, not by running the code under test), exercising both loops: the user path through
+    // Algorithm 2 alone, and the owner path through Algorithm 7's key derivation followed by the
+    // same Algorithm 2 call on the recovered password.
     [Fact]
     public void KeyLengthFiveBytes_R3_userAndOwnerPasswords_deriveTheSameFileKey()
     {

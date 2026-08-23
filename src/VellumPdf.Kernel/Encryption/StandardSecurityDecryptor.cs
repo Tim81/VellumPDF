@@ -8,8 +8,9 @@ using System.Security.Cryptography;
 namespace VellumPdf.Encryption;
 
 /// <summary>
-/// The method a crypt filter applies to a stream or string, per ISO 32000-1 §7.6.5 (the implicit
-/// method under V=1/V=2, no /CF) and ISO 32000-2 §7.6.6 (/CFM, crypt filters, for V&gt;=4).
+/// The method a crypt filter applies to a stream or string, per ISO 32000-1 §7.6.2, Algorithm 1
+/// (the implicit method under V=1/V=2, no /CF) and ISO 32000-2 §7.6.6 (/CFM, crypt filters, for
+/// V&gt;=4).
 /// </summary>
 internal enum CryptFilterMethod
 {
@@ -173,14 +174,18 @@ internal sealed class StandardSecurityDecryptor
     /// Tries <paramref name="password"/> as the user password, encoded the same way
     /// <see cref="StandardSecurityHandler"/> encodes one for writing.
     ///
-    /// Open question: <see cref="StandardSecurityHandler.PasswordBytes"/> is UTF-8, which ISO
-    /// 32000-2's R&gt;=5 Algorithm 8/9 calls for (subject to the SASLprep simplification documented
-    /// there). Whether R&lt;=4's Algorithm 2 step (a) wants the same encoding, or instead the
-    /// Latin-1/PDFDocEncoding byte-string convention that predates PDF 2.0, is not settled here —
-    /// attempts to confirm it against the ISO 32000-1 text directly did not succeed, and secondary
-    /// sources disagree on the point enough that this is recorded rather than acted on. A
-    /// non-ASCII R&lt;=4 password may therefore authenticate under different bytes than another
-    /// reader would compute for the same characters.
+    /// Answered, but not yet acted on: <see cref="StandardSecurityHandler.PasswordBytes"/> is
+    /// UTF-8, which ISO 32000-2's R&gt;=5 Algorithm 8/9 calls for (subject to the SASLprep
+    /// simplification documented there). ISO 32000-1 §7.6 says nothing at all about R&lt;=4
+    /// password character encoding, so the primary source for it is the Adobe Supplement to the
+    /// ISO 32000, BaseVersion 1.7, ExtensionLevel 3 (June 2008), §3.5.2, Algorithm 3.2 step 1:
+    /// "The password string is generated from OS codepage characters by first converting the
+    /// string to PDFDocEncoding" — not Latin-1, though the two agree everywhere except
+    /// 0x18-0x1F and 0x80-0x9F. This method still encodes an R&lt;=4 password the same UTF-8 way as
+    /// R&gt;=5, so a non-ASCII password may authenticate under different bytes than PDFDocEncoding
+    /// would produce for the same characters; switching R&lt;=4 to try PDFDocEncoding (after UTF-8,
+    /// the way qpdf's password recovery does) is left to the wiring PR that adds retry logic for a
+    /// failed password generally.
     /// </summary>
     public bool TryComputeFileKeyFromUserPassword(string? password, [NotNullWhen(true)] out byte[]? fileKey)
         => TryComputeFileKeyFromUserPassword(StandardSecurityHandler.PasswordBytes(password), out fileKey);
@@ -191,8 +196,9 @@ internal sealed class StandardSecurityDecryptor
     ///
     /// R&lt;=4: ISO 32000-1 Algorithm 2 derives a candidate key from the padded password; Algorithm 4
     /// (R=2) or Algorithm 5 (R&gt;=3) derives the /U value that key would produce, compared against
-    /// the stored one (first 16 bytes only for R&gt;=3 — the remaining 16 are Algorithm 5's own
-    /// output, not padding, but nothing reads them).
+    /// the stored one (first 16 bytes only for R&gt;=3 — Algorithm 5's RC4 chain only ever produces
+    /// 16 bytes, the size of the MD5 digest it starts from; the remaining 16 stored bytes are step
+    /// (f)'s literal "16 bytes of arbitrary padding", not algorithm output, so nothing reads them).
     ///
     /// R&gt;=5: ISO 32000-2 Algorithm 2.A hashes the password against /U's validation salt (bytes
     /// 32–40) and compares the result to /U's first 32 bytes; on a match, a second hash against the
@@ -300,11 +306,14 @@ internal sealed class StandardSecurityDecryptor
     // R5 (deprecated): the validation and key-salt hashes are one unsalted-iteration SHA-256 over
     // password || salt || udata. R5 predates ISO 32000-2 and is not itself given a numbered
     // algorithm there — §7.6.4.3.3 (Algorithm 2.A) and §7.6.4.3.4 (Algorithm 2.B, Hash2B below)
-    // are both scoped "revision 6 and later", so this branch has no ISO clause of its own to cite;
-    // it exists only for backward compatibility with files Acrobat X wrote before R6 was
-    // standardised. The two revisions are not the same algorithm at different round counts — they
-    // diverge structurally (R5 never branches into SHA-384/512) — so R must gate which one runs
-    // rather than R6's algorithm degenerating into R5's at some parameter.
+    // are both scoped "revision 6 and later" — but it does have a published primary source:
+    // Adobe Supplement to the ISO 32000, BaseVersion 1.7, ExtensionLevel 3 (June 2008), §3.5.2,
+    // Algorithm 3.2a, steps 3-4, which specify exactly this single SHA-256 round over the UTF-8
+    // password, the validation salt, then the key salt (with the owner branch appending the
+    // 48-byte /U). It exists only for backward compatibility with files Acrobat X wrote before R6
+    // was standardised. The two revisions are not the same algorithm at different round counts —
+    // they diverge structurally (R5 never branches into SHA-384/512) — so R must gate which one
+    // runs rather than R6's algorithm degenerating into R5's at some parameter.
     private byte[] ComputeRevision5PlusHash(byte[] password, ReadOnlySpan<byte> salt, ReadOnlySpan<byte> udata)
         => _r == 6
             ? StandardSecurityHandler.Hash2B(password, salt, udata)
@@ -384,8 +393,9 @@ internal sealed class StandardSecurityDecryptor
     // Algorithm 4 (R=2): /U is RC4(fileKey, paddingString) directly.
     // Algorithm 5 (R>=3): /U's first 16 bytes are the last of 20 RC4 passes over
     // MD5(paddingString || /ID[0]), each pass keyed by fileKey with every byte XORed by the
-    // (ascending, 1-19) pass number — the remaining 16 stored bytes are Algorithm 5's own output
-    // too, not padding, but ISO 32000-1 says only the first 16 need match.
+    // (ascending, 1-19) pass number — the remaining 16 stored bytes are step (f)'s arbitrary
+    // padding, not something the RC4 chain ever computed, and ISO 32000-1 says only the first
+    // 16 need match.
     private bool MatchesStoredUserHash(byte[] fileKey)
     {
         if (_r == 2)
@@ -404,13 +414,28 @@ internal sealed class StandardSecurityDecryptor
 
     // Algorithm 7: derive the same key Algorithm 2 would from the padded *owner* password
     // (/O, /P and /ID play no part in that derivation — only the password and, for R>=3, the
-    // fifty-round tail), then run Algorithm 5's 20 RC4 passes over /O in reverse (round numbers 19
-    // down to 0 — both directions are 20 passes) to recover the padded user password /O was
+    // fifty-round tail), then run Algorithm 3 steps (f)+(g)'s 20 RC4 passes over /O in reverse
+    // (round numbers 19 down to 0 — both directions are 20 passes) to recover the padded user
+    // password /O was
     // originally built from. The reverse order is for readability only, not correctness: RC4 XORs
     // data against a keystream generated purely from the key and the (here, fixed 32-byte) data
     // length, so composing 20 such keystreams by XOR is order-independent — running these passes
     // forward would recover the identical plaintext. No test can pin the iteration direction for
     // that reason; a mutation that reverses it is an equivalent mutant, not a bug.
+    //
+    // The fifty-round tail below truncates each round's input to _keyLengthBytes, same as
+    // ComputeFileKeyFromPaddedPassword. Algorithm 7 step (a) delegates this to Algorithm 3 steps
+    // (a)-(d), and Algorithm 3 step (c) reads "take the output from the previous MD5 hash and
+    // pass it as input into a new MD5 hash" — no truncation, unlike Algorithm 2 step (h) ("pass
+    // the first n bytes ... into a new MD5 hash"), which this same fifty-round shape also
+    // implements on the user-password path a few lines down. The two steps describe what ought to
+    // be the same operation in different words, and agree only when n=16. Tested against real R3
+    // /Length 40 files built both ways: the literal Algorithm 3 reading (no truncation) makes
+    // qpdf 12.3.2 report "invalid password" and poppler 25.07 "Incorrect password" for a file
+    // whose owner password is in fact correct; truncating, as this code does, makes qpdf report
+    // "Supplied password is owner password" and poppler decode it. Every implementation in
+    // practice truncates, so this does too — ISO 32000-1's Algorithm 3 step (c) is the text to
+    // treat as imprecise here, not this code.
     private byte[] RecoverUserPasswordFromOwner(byte[] paddedOwnerPassword32)
     {
         var key = Md5.HashData(paddedOwnerPassword32);
