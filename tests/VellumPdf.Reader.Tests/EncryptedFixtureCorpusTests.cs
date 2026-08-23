@@ -50,6 +50,23 @@ public sealed class EncryptedFixtureCorpusTests
         // levels inside a dictionary decrypts under its CONTAINING indirect object's identity, not
         // the string's own position or a hardcoded generation).
         ("enc-aes-128-nestedstrings.pdf", 4, 4, "/AESV2", "5a90b0b7e06324dd80218426bfe3b766fae3372b291529d77f56ac19c386de5c"),
+        // A 40-character user password. Algorithm 2 step (a) truncates to 32 bytes, and no other
+        // fixture's password is long enough to notice: this one opens under its first 32 characters
+        // and refuses the first 31, which is what fixes the truncation point.
+        ("enc-aes-128-longpassword.pdf", 4, 4, "/AESV2", "42b78b95f492295d2eb4df64c5429890571933a9d5f1ef0c56c825d873db4ae0"),
+        // One password serving as BOTH owner and user. Every other row has distinct ones, so
+        // nothing else can pin the documented owner-first trial order — the whole argument for it
+        // is what to report when a single password satisfies both checks.
+        ("enc-aes-128-samepassword.pdf", 4, 4, "/AESV2", "d290ad661f592fff6f213377b92c518deefea28b027f6cae8867cf62f8e98e75"),
+        // User password "pässwörd", whose /U qpdf derived from PDFDocEncoding bytes rather than
+        // UTF-8. The only fixture whose password is not pure ASCII, and therefore the only one that
+        // can tell the two encodings apart: it does not open on the UTF-8 attempt alone.
+        ("enc-aes-128-pdfdocpassword.pdf", 4, 4, "/AESV2", "ca8277c5c924bc27c3973957bff1e354fdb5f5261aef84d1c9e580826f57463f"),
+        // Two revisions: an empty-user-password document with an incremental update appended over
+        // it. Every other row is single-revision, so this is the only one where /Prev chaining and
+        // decryption meet — the shape any encrypted document acquires the moment it is annotated,
+        // form-filled or signed.
+        ("enc-aes-128-tworevisions.pdf", 4, 4, "/AESV2", "c3161391a66b4cd987e16325db368d8379ab2ba29e85f4888b9ed0c4df488c20"),
     ];
 
     private const string BaselineName = "plaintext-baseline.pdf";

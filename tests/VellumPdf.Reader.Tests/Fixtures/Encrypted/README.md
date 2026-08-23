@@ -56,6 +56,10 @@ security handler support matrix in #97.
 | `enc-rc4-objstm.pdf` | `--allow-weak-crypto --encrypt u o 128 --force-V4 --use-aes=n -- --object-streams=generate` | 4 | 4 | RC4 via `/CF` `/V2`, object stream + xref stream |
 | `enc-aes-128-emptyuser.pdf` | `--encrypt "" o 128 --use-aes=y --` | 4 | 4 | AESv2, EMPTY user password |
 | `enc-aes-128-nestedstrings.pdf` | see below | 4 | 4 | AESv2, extra object with a nested array-of-strings |
+| `enc-aes-128-longpassword.pdf` | `--encrypt 0123456789abcdefghijklmnopqrstuvwxyzABCD o 128 --use-aes=y --` | 4 | 4 | AESv2, 40-character user password |
+| `enc-aes-128-samepassword.pdf` | `--encrypt same same 128 --use-aes=y --` | 4 | 4 | AESv2, one password for both roles |
+| `enc-aes-128-pdfdocpassword.pdf` | `--encrypt "pässwörd" o 128 --use-aes=y --` | 4 | 4 | AESv2, non-ASCII password |
+| `enc-aes-128-tworevisions.pdf` | see below | 4 | 4 | AESv2, empty user password, two revisions |
 
 `enc-rc4-objstm.pdf` covers three gaps at once: an object stream (compressed objects), a
 cross-reference stream, and — because its `/Info` dictionary (with `/Title`) is itself a compressed
@@ -80,6 +84,39 @@ Nothing in it is comparable to the baseline, not even the page content stream: t
 round-trip that inserted the extra object also rewrote the line endings, so that stream decrypts to
 74 bytes with CRLF against the baseline's 69 with LF. That is why the fixture is excluded from
 `StandardMatrixFixtures` and has its own test, which reads the nested strings by value instead.
+
+The last four rows exist because the eight above them cannot distinguish certain behaviours from
+their opposites, whatever they assert.
+
+`enc-aes-128-longpassword.pdf`'s password is 40 characters. Algorithm 2 step (a) pads or truncates
+to exactly 32 bytes, and with every other password one character long, moving that truncation point
+changes nothing anywhere. This one opens under its first 32 characters and refuses the first 31.
+
+`enc-aes-128-samepassword.pdf` uses `same` for both roles. `EncryptionSetup.TryAuthenticate`
+deliberately tries the owner password first, and the reason given is what to report when one
+password satisfies both checks — a case no other fixture contains, so the order was unenforced.
+
+`enc-aes-128-pdfdocpassword.pdf` has the user password `pässwörd`. qpdf derives `/U` for an R≤4
+document from **PDFDocEncoding** bytes, not UTF-8, so this fixture does not open on the UTF-8
+attempt: it is the only one that exercises the PDFDocEncoding retry in
+`EncryptionSetup.CandidatePasswordEncodings`. Its R6 counterpart would not — at R≥5 the password is
+UTF-8 either way, which is also why the retry is gated on `r <= 4`. Non-ASCII arguments have to
+reach qpdf as UTF-8 for this to reproduce; a shell that hands it the local code page instead
+produces a different (and differently-passworded) file.
+
+`enc-aes-128-tworevisions.pdf` is an incremental update over an encrypted document, which qpdf
+cannot produce — it rewrites whole files. poppler's `pdfattach` appends instead, and takes no
+password argument, which is why this row's user password is empty:
+
+```sh
+qpdf --encrypt "" o 128 --use-aes=y -- plaintext-baseline.pdf tworev-base.pdf
+printf 'attachment payload
+' > attach.txt
+pdfattach tworev-base.pdf attach.txt enc-aes-128-tworevisions.pdf
+```
+
+The result has two `%%EOF` markers, a `/Prev` chain, and `/Encrypt` repeated in the newer trailer,
+which is what makes it the only row where revision chaining and decryption meet.
 
 `--allow-weak-crypto` is **required** for the RC4 rows. Without it qpdf refuses:
 
