@@ -238,7 +238,7 @@ public sealed class StandardSecurityDecryptorTests
     public void EncryptMetadataFalse_writtenPerms_verifiesFalse_throughTheWriteAndReadSides()
     {
         // The first place the write side (StandardSecurityHandler.ComputePerms) and the read
-        // side (VerifyPermissions) meet on /Perms with /EncryptMetadata false. Every other R6
+        // side (RecoverAuthenticatedPermissions) meet on /Perms with /EncryptMetadata false. Every other R6
         // /Perms test — corpus-driven and EncryptionTests's own white-box round trip alike — only
         // ever runs with EncryptMetadata true, so ComputePerms hardcoding block[8] = 'T' instead
         // of branching on the setting would survive both suites.
@@ -257,15 +257,27 @@ public sealed class StandardSecurityDecryptorTests
             v: 5, r: 6, keyLengthBytes: 32, o: handler.O, u: handler.U, oe: handler.OE, ue: handler.UE,
             p: handler.PValue, id0: [0x00], encryptMetadata: false,
             streamFilter: CryptFilterMethod.Aes256, stringFilter: CryptFilterMethod.Aes256);
-        Assert.True(correctFlag.VerifyPermissions(fileKey, handler.Perms));
+        Assert.Equal(handler.PValue, correctFlag.RecoverAuthenticatedPermissions(fileKey, handler.Perms));
 
-        // And the check actually has to fail on a mismatch: a decryptor built as though
-        // /EncryptMetadata were true must reject these same /Perms bytes.
-        var wrongFlag = new StandardSecurityDecryptor(
-            v: 5, r: 6, keyLengthBytes: 32, o: handler.O, u: handler.U, oe: handler.OE, ue: handler.UE,
-            p: handler.PValue, id0: [0x00], encryptMetadata: true,
-            streamFilter: CryptFilterMethod.Aes256, stringFilter: CryptFilterMethod.Aes256);
-        Assert.False(wrongFlag.VerifyPermissions(fileKey, handler.Perms));
+        // Byte 8 of the block is the /EncryptMetadata flag, and the read side deliberately does not
+        // compare it (see RecoverAuthenticatedPermissions): a producer that writes it inconsistently
+        // has a bookkeeping bug, not tampered permissions. The WRITE side must still get it right,
+        // so this asserts the byte directly rather than through a verdict that no longer covers it.
+        var block = AesEcbDecryptForTest(fileKey, handler.Perms);
+        Assert.Equal((byte)'F', block[8]);
+    }
+
+    // /Perms is a single AES-256-ECB block with no padding. The test decrypts it itself rather than
+    // going through the reader, because the byte it is about (8, the /EncryptMetadata flag) is one
+    // the read side deliberately does not look at.
+    private static byte[] AesEcbDecryptForTest(byte[] key, byte[] data)
+    {
+        using var aes = Aes.Create();
+        aes.Key = key;
+        aes.Mode = CipherMode.ECB;
+        aes.Padding = PaddingMode.None;
+        using var decryptor = aes.CreateDecryptor();
+        return decryptor.TransformFinalBlock(data, 0, data.Length);
     }
 
     private static byte[] AesCbcDecryptNoPaddingForTest(byte[] key, byte[] iv, byte[] data)
@@ -641,22 +653,23 @@ public sealed class StandardSecurityDecryptorTests
     [Theory]
     [InlineData("enc-aes-256-r6.pdf")]
     [InlineData("enc-256-cleartextmd.pdf")]
-    public void VerifyPermissions_R6Fixture_succeedsWithTheRightFileKey_failsWithAnother(string fixtureName)
+    public void RecoverAuthenticatedPermissions_R6Fixture_recoversPWithTheRightFileKey_nothingWithAnother(string fixtureName)
     {
         var info = LoadEncryptInfo(fixtureName);
         Assert.NotNull(info.Perms);
         var decryptor = BuildDecryptor(info);
         Assert.True(decryptor.TryComputeFileKeyFromUserPassword(UserPassword, out var fileKey));
 
-        Assert.True(decryptor.VerifyPermissions(fileKey, info.Perms));
+        Assert.Equal(info.P, decryptor.RecoverAuthenticatedPermissions(fileKey, info.Perms));
 
+        // A wrong key turns the block into noise, and the "adb" marker is what says so.
         var wrongKey = (byte[])fileKey.Clone();
         wrongKey[0] ^= 0xFF;
-        Assert.False(decryptor.VerifyPermissions(wrongKey, info.Perms));
+        Assert.Null(decryptor.RecoverAuthenticatedPermissions(wrongKey, info.Perms));
     }
 
     [Fact]
-    public void VerifyPermissions_detectsATamperedPValue()
+    public void RecoverAuthenticatedPermissions_survivesATamperedPValue()
     {
         // /Perms is decrypted with the file key alone, so a tampered /P doesn't change what
         // /Perms decrypts to — it changes what this decryptor now expects that plaintext to
@@ -670,26 +683,18 @@ public sealed class StandardSecurityDecryptorTests
         var info = LoadEncryptInfo("enc-aes-256-r6.pdf");
         var decryptor = BuildDecryptor(info);
         Assert.True(decryptor.TryComputeFileKeyFromUserPassword(UserPassword, out var fileKey));
-        Assert.True(decryptor.VerifyPermissions(fileKey, info.Perms!));
+        Assert.Equal(info.P, decryptor.RecoverAuthenticatedPermissions(fileKey, info.Perms!));
 
+        // The dictionary's /P edited after the fact: /Perms is unchanged, decrypts with the file key
+        // alone, and still yields what the producer sealed in. Recovering the ORIGINAL value from a
+        // document whose /P now says otherwise is exactly what makes the edit detectable.
         var tampered = BuildDecryptor(info with { P = info.P ^ 0x0800 });
-        Assert.False(tampered.VerifyPermissions(fileKey, info.Perms!));
+        Assert.Equal(info.P, tampered.RecoverAuthenticatedPermissions(fileKey, info.Perms!));
+        Assert.NotEqual(info.P ^ 0x0800, tampered.RecoverAuthenticatedPermissions(fileKey, info.Perms!));
     }
 
     [Fact]
-    public void VerifyPermissions_detectsATamperedEncryptMetadataFlag()
-    {
-        var info = LoadEncryptInfo("enc-aes-256-r6.pdf");
-        var decryptor = BuildDecryptor(info);
-        Assert.True(decryptor.TryComputeFileKeyFromUserPassword(UserPassword, out var fileKey));
-        Assert.True(decryptor.VerifyPermissions(fileKey, info.Perms!));
-
-        var tampered = BuildDecryptor(info with { EncryptMetadata = !info.EncryptMetadata });
-        Assert.False(tampered.VerifyPermissions(fileKey, info.Perms!));
-    }
-
-    [Fact]
-    public void VerifyPermissions_atRLessThan5_returnsFalse_ratherThanThrowing()
+    public void RecoverAuthenticatedPermissions_atRLessThan5_returnsNull_ratherThanThrowing()
     {
         // /Perms doesn't exist below R5, and a 5-16 byte R<=4 file key isn't a legal AES-256 key.
         // Before the R<5 guard, aes.Key's setter threw CryptographicException here instead of
@@ -699,11 +704,11 @@ public sealed class StandardSecurityDecryptorTests
             p: -4, id0: [0x00], encryptMetadata: true,
             streamFilter: CryptFilterMethod.Rc4, stringFilter: CryptFilterMethod.Rc4);
 
-        Assert.False(decryptor.VerifyPermissions(new byte[5], new byte[16]));
+        Assert.Null(decryptor.RecoverAuthenticatedPermissions(new byte[5], new byte[16]));
     }
 
     [Fact]
-    public void VerifyPermissions_atRevision4_withASixteenByteKey_returnsFalse_ratherThanRunningAesEcb()
+    public void RecoverAuthenticatedPermissions_atRevision4_withASixteenByteKey_returnsNull_ratherThanRunningAesEcb()
     {
         // A 16-byte key is a legal AES-128 key size, so without the R<5 guard this would run ECB
         // decryption on bytes that were never a /Perms block and return a meaningless boolean
@@ -713,25 +718,25 @@ public sealed class StandardSecurityDecryptorTests
             p: -4, id0: [0x00], encryptMetadata: true,
             streamFilter: CryptFilterMethod.Aes128, stringFilter: CryptFilterMethod.Aes128);
 
-        Assert.False(decryptor.VerifyPermissions(new byte[16], new byte[16]));
+        Assert.Null(decryptor.RecoverAuthenticatedPermissions(new byte[16], new byte[16]));
     }
 
     [Fact]
-    public void VerifyPermissions_atRevision6_withAWrongSizedKey_returnsFalse()
+    public void RecoverAuthenticatedPermissions_atRevision6_withAWrongSizedKey_returnsNull()
     {
         // R>=5 always carries a 32-byte AES-256 file key; anything else at R>=5 is malformed
         // input, not just a wrong password, so this is rejected before the AES key setter runs.
         var info = LoadEncryptInfo("enc-aes-256-r6.pdf");
         var decryptor = BuildDecryptor(info);
 
-        Assert.False(decryptor.VerifyPermissions(new byte[16], info.Perms!));
+        Assert.Null(decryptor.RecoverAuthenticatedPermissions(new byte[16], info.Perms!));
     }
 
     [Fact]
-    public void VerifyPermissions_r6Fixture_decryptsToTheDocumentedPBytes()
+    public void RecoverAuthenticatedPermissions_r6Fixture_decryptsToTheDocumentedPBytes()
     {
         // Pins the exact decrypted /Perms block for enc-aes-256-r6.pdf, not just the boolean
-        // VerifyPermissions returns: bytes 0-3 are /P little-endian (-4), bytes 4-7 are 0xFF
+        // RecoverAuthenticatedPermissions reads: bytes 0-3 are /P little-endian (-4), bytes 4-7 are 0xFF
         // padding, byte 8 is 'T' for /EncryptMetadata, bytes 9-11 are the "adb" marker Algorithm
         // 10 (StandardSecurityHandler.ComputePerms) writes, and bytes 12-15 are qpdf's own random
         // fill — not reproducible, so excluded from the pin.
@@ -758,7 +763,7 @@ public sealed class StandardSecurityDecryptorTests
     }
 
     [Fact]
-    public void VerifyPermissions_detectsACorruptedAdbMarker_withACorrectPAndEncryptMetadata()
+    public void RecoverAuthenticatedPermissions_rejectsACorruptedAdbMarker_withACorrectP()
     {
         // Deleting the "adb" marker check survives every other test here, because the
         // wrong-fileKey tests already fail on an unrelated comparison (the decrypted block is
@@ -785,7 +790,7 @@ public sealed class StandardSecurityDecryptorTests
             p: p, id0: [0x00], encryptMetadata: true,
             streamFilter: CryptFilterMethod.Aes256, stringFilter: CryptFilterMethod.Aes256);
 
-        Assert.False(decryptor.VerifyPermissions(fileKey, perms));
+        Assert.Null(decryptor.RecoverAuthenticatedPermissions(fileKey, perms));
     }
 
     private static byte[] EncryptPermsBlockForTest(byte[] fileKey, byte[] block)

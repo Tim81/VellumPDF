@@ -290,6 +290,12 @@ internal sealed class StandardSecurityDecryptor
     /// restrict permissions, so opening one with no password supplied has to succeed here — an
     /// empty <paramref name="passwordBytes"/> is a legitimate user password, not a missing one.
     /// </summary>
+    /// <remarks>
+    /// User first, then owner — the opposite of the order <c>EncryptionSetup.TryAuthenticate</c>
+    /// uses, and immaterial here: this answers "does this password open the document at all?" and
+    /// reports nothing about which of the two matched. Where that distinction is reported, the order
+    /// decides what a password satisfying both is called, which is why the reader picks its own.
+    /// </remarks>
     public bool TryComputeFileKey(byte[] passwordBytes, [NotNullWhen(true)] out byte[]? fileKey)
         => TryComputeFileKeyFromUserPassword(passwordBytes, out fileKey)
             || TryComputeFileKeyFromOwnerPassword(passwordBytes, out fileKey);
@@ -334,28 +340,35 @@ internal sealed class StandardSecurityDecryptor
             : SHA256.HashData(StandardSecurityHandler.Concat(password, salt, udata));
 
     /// <summary>
-    /// ISO 32000-2 §7.6.4.4.12, Algorithm 13 (validating the permissions): decrypts /Perms with the
-    /// file key (AES-256-ECB, no padding), checks the fixed "adb" marker at bytes 9–11, and
-    /// compares bytes 0–3 and byte 8 against this dictionary's own /P and /EncryptMetadata. What
-    /// writes /Perms in the first place is a different algorithm, §7.6.4.4.9 Algorithm 10 —
-    /// <see cref="StandardSecurityHandler.ComputePerms"/>. A mismatch on any of the three means /P
-    /// or /EncryptMetadata were altered after /Perms was written, without the password changing.
-    /// This does not gate <see cref="TryComputeFileKeyFromUserPassword(byte[], out byte[])"/>:
-    /// /U or /O already established the password is correct, and R6 readers are expected to
-    /// tolerate this check failing on a file whose permissions were edited by a tool that updates
-    /// /P but not /Perms.
+    /// ISO 32000-2 §7.6.4.4.12, Algorithm 13: recovers the copy of <c>/P</c> that was encrypted under
+    /// the file key when the document was written, or <see langword="null"/> when <c>/Perms</c>
+    /// cannot be read as one.
+    ///
+    /// <para>
+    /// This is the authenticated permission set. At R≤4 <c>/P</c> feeds Algorithm 2, so editing it
+    /// breaks authentication by itself; at R≥5 the file key is random and the dictionary's own
+    /// <c>/P</c> is unprotected, so an edit there is invisible unless this copy is consulted. The
+    /// caller prefers what this returns over the dictionary's value, and does not reject the
+    /// document when they disagree: qpdf, poppler and pdfium all read such a file, and refusing it
+    /// would make this library the only one that cannot — while quietly reporting the dictionary's
+    /// value would hand the caller permissions an attacker chose.
+    /// </para>
+    ///
+    /// <para>
+    /// Byte 8 of the block carries the <c>/EncryptMetadata</c> flag and is deliberately not
+    /// compared: a producer that writes it inconsistently with the dictionary's own entry has a
+    /// bookkeeping bug, not tampered permissions, and it says nothing about the four bytes that do
+    /// matter here.
+    /// </para>
     /// </summary>
-    public bool VerifyPermissions(byte[] fileKey, byte[] perms)
+    public int? RecoverAuthenticatedPermissions(byte[] fileKey, byte[] perms)
     {
         // /Perms only exists at R>=5 (ISO 32000-2 §7.6.4.4.12), and only an R>=5 file key is
         // AES-256-sized. Below R5, aes.Key's setter throws CryptographicException on anything but
         // a 5-16 byte key (raw, not a false return), and a 16-byte key that happens to be legal
         // for AES-128 would silently run ECB decryption on bytes that were never a /Perms block.
-        if (_r < 5 || fileKey.Length != 32)
-            return false;
-
-        if (perms.Length != 16)
-            return false;
+        if (_r < 5 || fileKey.Length != 32 || perms.Length != 16)
+            return null;
 
         using var aes = Aes.Create();
         aes.Key = fileKey;
@@ -364,15 +377,12 @@ internal sealed class StandardSecurityDecryptor
         using var decryptor = aes.CreateDecryptor(aes.Key, null);
         var block = decryptor.TransformFinalBlock(perms, 0, perms.Length);
 
+        // Bytes 9-11 are the literal "adb", which is what distinguishes a /Perms block that decrypted
+        // under the right key from 16 bytes of noise.
         if (block[9] != (byte)'a' || block[10] != (byte)'d' || block[11] != (byte)'b')
-            return false;
+            return null;
 
-        Span<byte> expectedP = stackalloc byte[4];
-        BinaryPrimitives.WriteInt32LittleEndian(expectedP, _p);
-        if (!block.AsSpan(0, 4).SequenceEqual(expectedP))
-            return false;
-
-        return block[8] == (byte)(_encryptMetadata ? 'T' : 'F');
+        return BinaryPrimitives.ReadInt32LittleEndian(block);
     }
 
     // ── R<=4: ISO 32000-1 Algorithm 2 (file key), 4/5 (/U), 7 (/O) ───────────
@@ -595,7 +605,9 @@ internal sealed class StandardSecurityDecryptor
         // encrypt for one — there is no IV to write either, so the encrypted form is also empty.
         // Demanding an IV here rejects a document other readers open, and rejects it hard: the
         // exception propagates out of every object that contains such a string.
-        if (data.Length == 0)
+        // An IV with no ciphertext after it is the same "nothing to encrypt" case as an empty
+        // payload, written by a producer that emits the IV unconditionally. Both decrypt to nothing.
+        if (data.Length is 0 or 16)
             return [];
 
         if (data.Length < 16 || (data.Length - 16) % 16 != 0)

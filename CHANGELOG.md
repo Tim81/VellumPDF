@@ -45,77 +45,40 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   actually use an empty user password, a case absent from the committed corpus; that case is
   covered instead by independently computed vectors. (#97)
 
-- **Decryption wired into `VellumPdf.Reader`: `PdfReader.Open` now accepts a password and reads
-  encrypted PDFs.** `PdfReader.Open(byte[]!, string?)` and the `Stream` overload try the supplied
-  password as owner first, then user (ISO 32000-1 names no order; an owner password is the
-  higher-privilege access, and at R&lt;=4 it also grants user access via Algorithm 7, so reporting
-  "owner" is strictly more informative than "user" for it). A wrong password throws the new
-  `PdfPasswordException`, deliberately not `UnsupportedPdfFeatureException` or
-  `System.NotSupportedException`: `vellum-preflight` catches `NotSupportedException` to report an
-  unsupported feature as a plain error line, and a wrong password is a different failure. The
-  `/Encrypt`-presence gate that made every prior version reject an encrypted file outright is gone;
-  `/Filter /Adobe.PubSec` (public-key handlers) and `/V 3`, whose algorithm ISO 32000-1 Table 20
-  leaves unpublished, throw `UnsupportedPdfFeatureException` at `Open`. A crypt filter naming a
-  method the handler does not implement is a different case and throws later: `/StmF` and `/StrF`
-  are not consulted until something is decoded, so it surfaces as an `InvalidDataException` from
-  the decode call, not from `Open`.
+- **Decryption on read: `PdfReader.Open` takes a password and reads encrypted PDFs.** The Standard
+  security handler at `/V` 1, 2, 4 and 5 and `/R` 2 through 6 — RC4-40 through RC4-128, AES-128
+  (`/AESV2`) and AES-256 (`/AESV3`) — plus the `/Crypt` filter (ISO 32000-2 §7.4.10) and crypt
+  filters naming different methods for strings and streams. Strings are decrypted in `Resolve` under
+  the identity of the indirect object containing them (ISO 32000-1 §7.6.2, Algorithm 1) and stream
+  bodies on the decode path; `ParsedStream.RawBody` still holds the verbatim file bytes, which
+  `StreamRule` and `HexStringRule` need for byte offsets and lengths.
 
-  A document that encrypts only its embedded files (`/EFF` naming a crypt filter `/StmF` does not,
-  ISO 32000-1 §7.6.1) is refused rather than read: this handler has no per-stream `/EFF` selection
-  and would return each attachment's ciphertext as the attachment. PDFDocEncoding gained the Euro
-  sign at 0xA0, where Latin-1 has NO-BREAK SPACE — the one byte at which the two encodings
-  disagree outside the 0x18-0x1F and 0x80-0x9F blocks, so a password containing `€` could not be
-  encoded at all and one containing U+00A0 was encoded as a Euro sign.
+  The supplied password is tried as the owner password first and the user password second, so one
+  that satisfies both reports the higher-privilege access. A wrong one throws the new
+  `PdfPasswordException`. `PdfDocumentReader.Encryption` reports `/V`, `/R`, the stream and string
+  ciphers, key length, permissions, `/EncryptMetadata` and which password authenticated — no key
+  material, and no `/O`, `/U`, `/OE` or `/UE`.
 
-  A `/StrF` that resolves to no usable crypt filter fails at `Open` rather than silently leaving
-  every string in the document as ciphertext; an unresolvable `/StmF` still fails lazily, at the
-  first decode, because a document whose streams cannot be decrypted still has readable strings
-  while the converse has nothing to offer. `PdfPreflight.Validate` reports such a document as
-  unevaluable (`UnsupportedPdfFeatureException`, the same answer `/Adobe.PubSec` gets) instead of
-  failing it against whichever clauses its rules happened to be checking.
+  What is left in the clear, per the spec: the trailer `/ID`, the `/Encrypt` dictionary's own
+  strings, cross-reference streams (§7.5.8.2, body and dictionary alike), streams whose data lives
+  in an external file (§7.6.1), the document's metadata stream under `/EncryptMetadata false`
+  (Table 20 — a page's or an XObject's metadata is not exempt), and a signature dictionary's
+  `/Contents`, which both specs leave unstated: a signer patches those hex digits into
+  already-serialized bytes, so decrypting them would corrupt `/ByteRange` verification. That last
+  exemption covers `/Type /Sig`, `/Type /DocTimeStamp`, and a `/Type`-less dictionary carrying a
+  `/ByteRange` array with a string `/Contents`, since Table 252 makes `/Type` optional. Verified
+  against qpdf, which leaves `/Contents` byte-identical while encrypting the signature dictionary's
+  other strings.
 
-  `PdfDocumentReader.Encryption` exposes the new `VellumPdf.Encryption.PdfEncryptionInfo`: `/V`,
-  `/R`, the resolved cipher, key length, `/P` as `PdfPermissions`, `/EncryptMetadata`, and which
-  password authenticated. No key material — not the file key, not `/O`/`/U`/`/OE`/`/UE`.
+  At `/R` 5 and 6 the permissions come from `/Perms` (ISO 32000-2 Algorithm 13) — the copy sealed
+  under the file key — rather than the dictionary's `/P`, which nothing protects at those revisions.
 
-  Decryption happens where object identity is available: `Resolve` for strings (ISO 32000-1 §7.6.2
-  Algorithm 1 step (a) — a direct string uses the identity of the indirect object containing it,
-  threaded through nested dictionaries and arrays), and the decode path for streams.
-  `ParsedStream.RawBody` still holds the verbatim file bytes for `StreamRule` and `HexStringRule`,
-  which need physical byte positions and lengths; decrypting in place would have made both fire on
-  every encrypted stream. An object stream's container is decrypted once; its members are not
-  decrypted again individually (ISO 32000-2 §7.5.7). The trailer `/ID` and the `/Encrypt` dictionary's own
-  strings are never decrypted, matching the spec. Neither is a cross-reference stream, its body or
-  the strings in its dictionary (ISO 32000-1 §7.5.8.2) — which matters on the path where a caller
-  resolves that object like any other, since `XrefParser` reads it before a decryptor exists and so
-  never had the chance to get it wrong. Nor is a stream whose data lives in an external file
-  (§7.6.1); under AES that one is the difference between reading a legal document and refusing it,
-  because AES-CBC rejects a body that is not an IV followed by whole blocks. An object whose header
-  generation disagrees with the cross-reference table's is decrypted under the table's generation
-  throughout, dictionary and body alike, rather than one each. ISO 32000-1 and
-  ISO 32000-2 are silent on whether a signature dictionary's `/Contents` is exempt; this
-  implementation treats it as exempt, since a conformant signer patches those hex digits into
-  already-serialized file bytes after computing the signature, so they were never encrypted at the
-  object level regardless of document encryption — decrypting them would corrupt `/ByteRange`
-  verification. A signature dictionary is recognised by `/Type /Sig`, by `/Type /DocTimeStamp`
-  (a document timestamp, the type this library writes for a PAdES B-LTA archive timestamp), or,
-  where `/Type` is absent — ISO 32000-1 Table 252 lists it as optional, so a signer may leave it
-  out — by carrying both a `/ByteRange` array and a string `/Contents`.
-
-  `PdfFilters` gained a `/Crypt` filter (ISO 32000-2 §7.4.10): it names a `/CF` entry via
-  `/DecodeParms` `/Name`, or `/Identity` for none. A `/StmF`, `/StrF`, or `/Crypt` `/Name` that
-  names a filter absent from `/CF` is an error per ISO 32000-2 Table 20, and throws rather than
-  silently falling back to plaintext-as-ciphertext. Passwords try UTF-8 first, then
-  PDFDocEncoding (R&lt;=4 only) on failure.
-
-  Verified against the committed corpus (#99): every fixture's page content stream decodes to the
-  same bytes as the corresponding stream in the unencrypted baseline, `/Info /Title` decrypts to
-  the exact expected text, and both the owner and user passwords open their fixture. Two more
-  fixtures were added for this change: one with an empty user password (the shape most real
-  encrypted PDFs actually use) and one with an object stream plus a cross-reference stream, RC4
-  rather than AES — RC4 double-decryption is silent (it returns the original ciphertext with no
-  error), so only RC4 actually exercises the guard against re-decrypting an object stream's
-  members. (#97)
+  Verified against the committed corpus (#99): each fixture's page content decrypts to the
+  unencrypted baseline's bytes, `/Info /Title` to its exact expected text, and both passwords open
+  their fixture. Seven fixtures were added for this work, covering an empty user password, an object
+  stream with a cross-reference stream, nested strings, a 40-character password, one password
+  serving as both roles, a non-ASCII password whose `/U` is PDFDocEncoding-derived, and an
+  incremental update over an encrypted document. (#97)
 
 - **A committed corpus of PDFs not produced by VellumPdf's own writer.** Test-only; nothing ships.
   Every reader fixture before this one came from VellumPdf's writer, which only ever emits
@@ -138,6 +101,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   reader's coverage, not a gap in its logic. (#196)
 
 ### Changed
+
+- **`PdfReader.Open` no longer rejects an encrypted document out of hand.** Every prior version threw
+  `UnsupportedPdfFeatureException` on `/Encrypt`; it now reads the document, and the cases that
+  remain unsupported are narrower: `/Filter /Adobe.PubSec`, `/V 3` (whose algorithm ISO 32000-1
+  Table 20 leaves unpublished), and a `/StrF` naming a crypt filter method this library does not
+  implement, all at `Open`. An unresolvable `/StmF` fails later, at the first decode, because a
+  document whose streams cannot be decrypted still has readable strings.
+
+  Callers that caught `NotSupportedException` to detect an encrypted file need to catch
+  `PdfPasswordException` instead — it deliberately does not derive from `NotSupportedException`,
+  since a password-protected file is not an unsupported feature.
+
+  `vellum-preflight` reports a password-protected file as an error line rather than crashing, and
+  `PdfPreflight.Validate` reports a document whose streams cannot be decoded as unevaluable instead
+  of failing it against whichever clauses its rules happened to be checking. ISO 19005-2 §6.1.3
+  forbids `/Encrypt`, which the reader used to enforce by refusing to open such files at all;
+  `FileTrailerRule` checks it now. (#97)
 
 - **Dependency versions across the board, none of which change what ships.** PublicApiAnalyzers
   moves to 5.6.0, Microsoft.NET.Test.Sdk to 18.9.0, Verify.XunitV3 to 31.28.0, CsCheck to 4.8.0,
@@ -175,6 +155,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   See Fixed, below, for why. (#182)
 
 ### Fixed
+
+- **PDFDocEncoding put NO-BREAK SPACE at 0xA0, where the encoding has EURO SIGN.** The one byte at
+  which it and Latin-1 disagree outside the 0x18-0x1F and 0x80-0x9F blocks, so a password containing
+  `€` could not be encoded at all and one containing U+00A0 was encoded as a Euro sign. (#97)
+
+- **A stream whose declared `/Length` landed on `)`, `{`, `}` or a lone `>` failed the parse.** The
+  parser recovers from a wrong `/Length` by scanning for `endstream`, but the token read that
+  detects the mismatch threw on those bytes instead of falling through to the scan. Encryption makes
+  it ordinary rather than exotic: ciphertext is high-entropy, so a stale length lands on one of them
+  a few percent of the time. (#97)
 
 - **A reference's generation number is honoured instead of discarded.** `PdfIndirectReference`
   carried only an object number, and the parser dropped a parsed `N G R`'s middle field too, so

@@ -25,8 +25,8 @@ internal static class EncryptionSetup
     private static readonly PdfName _lengthKey = new("Length");
     private static readonly PdfName _encryptMetadataKey = new("EncryptMetadata");
     private static readonly PdfName _cfKey = new("CF");
+    private static readonly PdfName _cfmKey = new("CFM");
     private static readonly PdfName _permsKey = new("Perms");
-    private static readonly PdfName _effKey = new("EFF");
     private static readonly PdfName _stmFKey = new("StmF");
     private static readonly PdfName _strFKey = new("StrF");
 
@@ -130,48 +130,40 @@ internal static class EncryptionSetup
                 "The supplied password does not authenticate as either the owner or the user password.");
         }
 
-        // ISO 32000-2 §7.6.4.4.12, Algorithm 13. At R<=4 /P is an input to Algorithm 2, so editing it
-        // breaks authentication on its own; at R>=5 the file key is random and /P is protected ONLY
-        // by /Perms, which encrypts a copy of it under that key. Without this check a byte-level edit
-        // to /P — a 12-byte patch that leaves the cross-reference table intact — silently escalates
-        // every permission bit, and this library would report the attacker's values as the
-        // document's. /Perms absent is not treated as a failure: it cannot be verified either way,
-        // and R5 predates the entry being universal.
-        // /EFF names the crypt filter for EMBEDDED FILE streams, which ISO 32000-1 §7.6.1 allows a
-        // document to encrypt on their own — /StmF and /StrF Identity, /EFF naming a real filter, so
-        // that only attachments are protected. This handler does not implement that: it would decode
-        // every embedded file stream with /StmF's method and return ciphertext as the file.
-        // Refusing is the only honest answer until per-stream /EFF selection exists.
-        var effName = (encryptDict.Get(_effKey) as PdfName)?.Value;
-        if (effName is not null and not "Identity"
-            && effName != (encryptDict.Get(_stmFKey) as PdfName)?.Value)
-        {
-            throw new UnsupportedPdfFeatureException(
-                $"/Encrypt /EFF names the crypt filter '{effName}' for embedded file streams, which "
-                + "differs from /StmF. Encrypting embedded files separately is not implemented.");
-        }
-
         // An unresolvable /StrF is fatal here, while an unresolvable /StmF is left to fail at decode
         // (see StmFNamingUndefinedCfEntry_opensButThrowsOnDecode). The asymmetry is deliberate: a
         // document whose streams cannot be decrypted still has readable strings — /Info, the
         // structure tree, every name and date — but one whose STRINGS cannot be decrypted has
-        // nothing to offer, and every one of them would otherwise come back as ciphertext with no
-        // error anywhere. ISO 32000-2 Table 20 makes a /StrF naming an absent /CF entry an error.
+        // nothing to offer, and every one of them would come back as ciphertext with nothing to
+        // report it. ISO 32000-2 Table 20 makes a /StrF naming an absent /CF entry an error.
         if (stringFilter == CryptFilterMethod.Unsupported)
         {
-            throw new InvalidDataException(
-                "Malformed PDF: /Encrypt /StrF names a /CF entry the document does not define, or a "
-                + "/CFM this handler does not implement, so no string in the document can be decrypted.");
+            var strFName = (encryptDict.Get(_strFKey) as PdfName)?.Value;
+
+            // Two failures wear the same CryptFilterMethod, and they are not the same kind of file:
+            // a /StrF naming a /CF entry the document never defines is malformed, while one naming a
+            // /CFM this library does not implement is a valid document beyond our reach — the
+            // distinction /V 3 already draws.
+            throw strFName is not null && cfTable.ContainsKey(strFName)
+                ? new UnsupportedPdfFeatureException(
+                    $"/Encrypt /StrF names the crypt filter '{strFName}', whose /CFM this library does "
+                    + "not implement, so no string in the document can be decrypted.")
+                : new InvalidDataException(
+                    "Malformed PDF: /Encrypt /StrF names a /CF entry the document does not define, so "
+                    + "no string in the document can be decrypted.");
         }
 
+        // ISO 32000-2 §7.6.4.4.12, Algorithm 13. At R<=4 /P is an input to Algorithm 2, so editing it
+        // breaks authentication on its own; at R>=5 the file key is random and the dictionary's /P is
+        // unprotected, and /Perms carries the copy that was sealed under that key when the document
+        // was written. Where the two disagree, the sealed one is the document's real permission set
+        // and the dictionary's is whatever the last editor put there.
+        //
+        // Reported, not refused. qpdf, poppler and pdfium all read a document whose /Perms disagrees,
+        // so rejecting it would make this the only library that cannot open the file at all — while
+        // taking the dictionary's word would hand the caller permissions someone else chose.
         var perms = TryGetBytes(encryptDict, _permsKey);
-        if (r >= 5 && perms is not null && !decryptor.VerifyPermissions(fileKey, perms))
-        {
-            throw new InvalidDataException(
-                "Malformed PDF: /Encrypt /Perms does not decrypt to the document's /P value. The "
-                + "permission bits have been altered since the file was encrypted (ISO 32000-2 "
-                + "§7.6.4.4.12, Algorithm 13).");
-        }
+        var authenticatedP = perms is not null ? decryptor.RecoverAuthenticatedPermissions(fileKey, perms) : null;
 
         return new Result
         {
@@ -183,7 +175,7 @@ internal static class EncryptionSetup
             Cipher = ToCipher(streamFilter),
             StringCipher = ToCipher(stringFilter),
             KeyLengthBits = keyLengthBytes * 8,
-            Permissions = (PdfPermissions)p & PdfPermissions.All,
+            Permissions = (PdfPermissions)(authenticatedP ?? p) & PdfPermissions.All,
         };
     }
 
@@ -323,7 +315,11 @@ internal static class EncryptionSetup
         if (v >= 4 && CryptFilterKeyLengthBytes(encryptDict) is { } fromFilter)
             return fromFilter;
 
-        var bits = encryptDict.Get(_lengthKey) is PdfInteger li ? (int)li.Value : 40;
+        // 40 bits is Table 20's default for the top-level entry, and it is the right default only
+        // where that entry is the one in force. At /V 4 the crypt filter is, so a document with no
+        // usable /Length anywhere is 128-bit — the shortest key any V4 cipher uses.
+        var defaultBits = v >= 4 ? 128 : 40;
+        var bits = encryptDict.Get(_lengthKey) is PdfInteger li ? (int)li.Value : defaultBits;
         if (bits % 8 != 0 || bits is < 40 or > 128)
         {
             throw new InvalidDataException(
@@ -333,35 +329,69 @@ internal static class EncryptionSetup
         return bits / 8;
     }
 
-    // The /Length of the crypt filter /StmF names (falling back to /StrF, then to the sole entry if
-    // there is exactly one). Table 25 measures it in bytes, but producers that copy the top-level
-    // entry's units write bits, and the two ranges do not overlap: a legal byte count is 5..32 and a
-    // legal bit count is 40..256, so a value above 32 can only be bits.
+    // The key length the crypt filter in force implies, in bytes, or null when the document says
+    // nothing usable and the caller should fall back.
+    //
+    // Both /Length entries are OPTIONAL — Table 20's and Table 25's alike — so a conformant /V 4
+    // document may carry neither, and a reader that treats that as "40 bits" rejects the correct
+    // password on a file every other reader opens. The cipher itself settles it in that case:
+    // AESV3 is 256-bit by definition, AESV2 128-bit, and V2 (RC4 under a crypt filter) is 128-bit
+    // in every V4 producer's output.
     private static int? CryptFilterKeyLengthBytes(PdfDictionary encryptDict)
     {
         if (encryptDict.Get(_cfKey) is not PdfDictionary cf)
             return null;
 
-        var name = (encryptDict.Get(_stmFKey) as PdfName)?.Value
-            ?? (encryptDict.Get(_strFKey) as PdfName)?.Value;
+        // /StmF first, then /StrF — and Identity on either is "no crypt filter", not a name to look
+        // up, so a document that encrypts only its strings still finds its /StrF entry here.
+        var name = FilterName(encryptDict, _stmFKey) ?? FilterName(encryptDict, _strFKey);
 
         PdfDictionary? filter = null;
-        if (name is not null and not "Identity")
+        if (name is not null)
             filter = cf.Get(new PdfName(name)) as PdfDictionary;
-        else if (name is null && cf.Entries.Count == 1)
+        else if (cf.Entries.Count == 1)
             filter = cf.Entries.Single().Value as PdfDictionary;
 
-        if (filter?.Get(_lengthKey) is not PdfInteger length)
+        if (filter is null)
             return null;
 
-        var value = (int)length.Value;
-        return value switch
+        var impliedByCipher = (filter.Get(_cfmKey) as PdfName)?.Value switch
         {
-            >= 5 and <= 32 => value,
-            >= 40 and <= 256 when value % 8 == 0 => value / 8,
-            _ => null,
+            "AESV3" => 32,
+            "AESV2" => 16,
+            "V2" => 16,
+            _ => (int?)null,
+        };
+
+        if (filter.Get(_lengthKey) is not PdfInteger length)
+            return impliedByCipher;
+
+        // Table 25 measures this in bytes, but producers that copy the top-level entry's units write
+        // bits, and the two ranges cannot overlap: a legal byte count is 5..32, a legal bit count is
+        // 40..256. A value that is neither, or that the cipher cannot use, is the document
+        // contradicting itself — the cipher wins, since it is what will actually be applied.
+        var declared = (int)length.Value switch
+        {
+            >= 5 and <= 32 and var bytes => bytes,
+            >= 40 and <= 256 and var bits when bits % 8 == 0 => bits / 8,
+            _ => (int?)null,
+        };
+
+        if (declared is null)
+            return impliedByCipher;
+
+        return impliedByCipher switch
+        {
+            32 => declared == 32 ? declared : impliedByCipher,
+            16 => declared is >= 5 and <= 16 ? declared : impliedByCipher,
+            _ => declared,
         };
     }
+
+    // The /StmF or /StrF name, or null when it is absent or Identity — neither of which names a /CF
+    // entry to look up (ISO 32000-2 Table 20: Identity is reserved and needs no entry).
+    private static string? FilterName(PdfDictionary encryptDict, PdfName key)
+        => (encryptDict.Get(key) as PdfName)?.Value is { } name and not "Identity" ? name : null;
 
     private static PdfCipherAlgorithm ToCipher(CryptFilterMethod method) => method switch
     {

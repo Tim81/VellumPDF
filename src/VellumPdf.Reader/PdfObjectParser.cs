@@ -369,8 +369,26 @@ internal sealed class PdfObjectParser
             _lexer.Seek(bodyStart + bodyLen);
 
             _lexer.SkipWhitespaceAndComments();
-            var endTok = _lexer.NextToken();
-            if (endTok.Kind == TokenKind.Keyword && IsKeyword(endTok.Raw, "endstream"u8))
+
+            // A token failure here is the same condition as "the marker is not where /Length said":
+            // the byte at that offset does not begin 'endstream'. It has to be caught rather than
+            // propagated, because the lexer refuses some bytes outright — ')', '{', '}', a lone '>' —
+            // and letting that escape would fail the parse on a file the scan below recovers. An
+            // encrypted body makes this ordinary rather than exotic: ciphertext is high-entropy, so a
+            // stale /Length lands on one of those bytes a few percent of the time (seen for real on
+            // poppler pdfattach output over an AES-256 document).
+            var landedOnEndstream = false;
+            try
+            {
+                var endTok = _lexer.NextToken();
+                landedOnEndstream = endTok.Kind == TokenKind.Keyword && IsKeyword(endTok.Raw, "endstream"u8);
+            }
+            catch (InvalidDataException)
+            {
+                // Fall through to the scan.
+            }
+
+            if (landedOnEndstream)
                 return new ParsedStream(dict, body, bodyStart, objectNumber, generation);
         }
 

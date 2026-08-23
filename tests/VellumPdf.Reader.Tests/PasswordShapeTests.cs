@@ -105,11 +105,37 @@ public sealed class PasswordShapeTests
         // From the base revision: the page content decrypts to the baseline's bytes.
         Assert.Equal(BaselinePageContent(), GetPageContent(reader));
 
-        // From the update: the embedded file poppler appended, whose stream is encrypted under the
-        // same file key as everything in the revision below it.
+        // From the update: the embedded file poppler appended, whose name string and stream body are
+        // both encrypted under the same file key as everything in the revision below it. Asserted by
+        // value — that the /Names key EXISTS holds whether or not anything was decrypted, since the
+        // key is structure and only its contents are ciphertext.
         var names = Assert.IsType<PdfDictionary>(reader.ResolveValue(reader.Catalog.Get(new PdfName("Names"))!));
         var embeddedFiles = Assert.IsType<PdfDictionary>(reader.ResolveValue(names.Get(new PdfName("EmbeddedFiles"))!));
-        Assert.NotNull(embeddedFiles.Get(new PdfName("Names")));
+        var nameTree = Assert.IsType<PdfArray>(reader.ResolveValue(embeddedFiles.Get(new PdfName("Names"))!));
+
+        Assert.Equal("attach.txt", DecodeTextString(nameTree[0]));
+
+        var fileSpec = Assert.IsType<PdfDictionary>(reader.ResolveValue(nameTree[1]));
+        var ef = Assert.IsType<PdfDictionary>(reader.ResolveValue(fileSpec.Get(new PdfName("EF"))!));
+        var embedded = reader.ResolveStream(Assert.IsType<PdfIndirectReference>(ef.Get(new PdfName("F"))))!;
+
+        Assert.Equal("attachment payload\n", Encoding.ASCII.GetString(reader.GetDecodedStreamData(embedded)!));
+    }
+
+    // A PDF text string: UTF-16BE when it carries the byte-order mark, PDFDocEncoding otherwise
+    // (ISO 32000-1 §7.9.2.2). poppler writes the BOM form for an attachment's name.
+    private static string DecodeTextString(PdfObject obj)
+    {
+        var bytes = obj switch
+        {
+            PdfLiteralString l => l.Bytes.ToArray(),
+            PdfHexString h => h.Bytes.ToArray(),
+            _ => throw new InvalidOperationException($"not a string: {obj.GetType().Name}"),
+        };
+
+        return bytes.Length >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF
+            ? Encoding.BigEndianUnicode.GetString(bytes, 2, bytes.Length - 2)
+            : Encoding.Latin1.GetString(bytes);
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────────────────────────────

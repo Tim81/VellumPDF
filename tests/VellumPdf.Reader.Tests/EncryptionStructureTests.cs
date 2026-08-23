@@ -124,6 +124,9 @@ public sealed class EncryptionStructureTests
     [InlineData(4, 4, 40, 16, 16)]
     // ...but tolerates a producer that wrote bits there, since the two ranges cannot overlap.
     [InlineData(4, 4, 40, 128, 16)]
+    // A crypt filter /Length the cipher cannot use is the document contradicting itself. The cipher
+    // wins, because it is what will actually be applied — 32 bytes is not an AES-128 key.
+    [InlineData(4, 4, 128, 32, 16)]
     public void KeyLengthBytes_followsTheRuleThatOverridesLength(
         int v, int r, int lengthBits, int? cryptFilterLength, int expectedBytes)
     {

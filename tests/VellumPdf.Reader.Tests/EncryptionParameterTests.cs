@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 using System.Reflection;
+using System.Security.Cryptography;
 using System.Text;
 using VellumPdf.Core;
 using VellumPdf.Encryption;
@@ -57,20 +58,25 @@ public sealed class EncryptionParameterTests
     }
 
     /// <summary>
-    /// ISO 32000-2 §7.6.4.4.12, Algorithm 13. At R≤4 <c>/P</c> is an input to Algorithm 2, so
-    /// editing it breaks authentication by itself. At R≥5 the file key is random and <c>/P</c> is
-    /// protected only by <c>/Perms</c>, which holds a copy of it encrypted under that key — so
-    /// without the Algorithm 13 check a two-byte edit to <c>/P</c> silently grants every permission,
-    /// and the library reports the attacker's bits as the document's.
+    /// ISO 32000-2 §7.6.4.4.12, Algorithm 13. At R≤4 <c>/P</c> is an input to Algorithm 2, so editing
+    /// it breaks authentication by itself. At R≥5 the file key is random and the dictionary's
+    /// <c>/P</c> is unprotected — <c>/Perms</c> carries the copy sealed under the file key when the
+    /// document was written, and where the two disagree that copy is the document's real permission
+    /// set. Reported rather than refused: qpdf, poppler and pdfium all read such a file, so throwing
+    /// would make this the only library that cannot open it, while taking the dictionary's word
+    /// would hand the caller permissions someone else chose.
     /// </summary>
     [Fact]
-    public void R6_permissionBitsEditedAfterEncryption_areRejected()
+    public void R6_permissionBitsEditedAfterEncryption_reportTheSealedValue()
     {
-        var tampered = PatchOnce(Load("enc-aes-256-r6.pdf"), "/P -4 ", "/P -8 ");
+        // /P -4 grants everything; /P -8 clears the print bit. Same length, so every cross-reference
+        // offset survives, and /Perms is untouched either way.
+        var edited = PatchOnce(Load("enc-aes-256-r6.pdf"), "/P -4 ", "/P -8 ");
 
-        var ex = Assert.Throws<InvalidDataException>(() => PdfReader.Open(tampered, "u"));
+        using var reader = PdfReader.Open(edited, "u");
 
-        Assert.Contains("/Perms", ex.Message, StringComparison.Ordinal);
+        Assert.Equal(-4 & (int)PdfPermissions.All, (int)reader.Encryption!.Permissions);
+        Assert.True(reader.Encryption.Permissions.HasFlag(PdfPermissions.Print));
     }
 
     /// <summary>The control for the test above: untouched, the same fixture verifies and opens.</summary>
@@ -128,18 +134,48 @@ public sealed class EncryptionParameterTests
     /// so an unresolved <c>/CF</c> lets the document open normally and then throws on the first
     /// stream — "names a /CFM this handler does not implement" — on a file that is perfectly valid.
     /// </summary>
-    [Fact]
-    public void IndirectCryptFilterDictionary_isResolved()
+    [Theory]
+    // The whole /CF dictionary indirect.
+    [InlineData("/CF 5 0 R", "<< /StdCF << /CFM /AESV2 /Length 16 >> >>")]
+    // One entry inside /CF indirect, which needs a second level of dereferencing: BuildCfTable is
+    // called with no resolver, so nothing else in the chain would resolve this one.
+    [InlineData("/CF << /StdCF 5 0 R >>", "<< /CFM /AESV2 /Length 16 >>")]
+    public void IndirectCryptFilterDictionary_isResolved(string cfEntry, string referencedObject)
     {
         var doc = BuildWithEncryptDict(
-            "<< /Filter /Standard /V 4 /R 4 /Length 128 /CF 5 0 R /StmF /StdCF /StrF /StdCF "
+            $"<< /Filter /Standard /V 4 /R 4 /Length 128 {cfEntry} /StmF /StdCF /StrF /StdCF "
             + "/O <2a2f0a1990192c60114730bdcd39f37828a53c89a340dd473c85299dc5258e1c> "
             + "/U <6c8913ac9fc602eb1aad2a1ec614bee90021446990b9e4114071a4d9104984c1> /P -4 >>",
-            extraObjects: ["<< /StdCF << /CFM /AESV2 /Length 16 >> >>"]);
+            extraObjects: [referencedObject]);
 
         using var reader = PdfReader.Open(doc, "u");
 
         Assert.Equal(PdfCipherAlgorithm.Aes128, reader.Encryption!.Cipher);
+    }
+
+    /// <summary>
+    /// The PDFDocEncoding retry is gated on R≤4, because at R≥5 the password is UTF-8 either way
+    /// (ISO 32000-2 §7.6.4.3.3). No fixture can pin the gate being CLOSED — qpdf writes UTF-8 at R6
+    /// whatever the password, so a document cannot tell the two apart — which leaves the private
+    /// candidate list itself as the only honest subject, the way the key-length rules are tested.
+    /// </summary>
+    [Theory]
+    [InlineData(2, 2)]
+    [InlineData(3, 2)]
+    [InlineData(4, 2)]
+    [InlineData(5, 1)]
+    [InlineData(6, 1)]
+    public void PasswordEncodingCandidates_offerThePdfDocEncodingRetryOnlyBelowRevision5(int r, int expectedCandidates)
+    {
+        var method = typeof(EncryptionSetup).GetMethod(
+            "CandidatePasswordEncodings", BindingFlags.NonPublic | BindingFlags.Static)
+            ?? throw new InvalidOperationException("CandidatePasswordEncodings not found by reflection.");
+
+        // Non-ASCII, so the two encodings genuinely differ — for an ASCII password they agree and
+        // the count would say nothing about which encodings were offered.
+        var candidates = ((IEnumerable<byte[]>)method.Invoke(null, ["pässwörd", r])!).ToList();
+
+        Assert.Equal(expectedCandidates, candidates.Count);
     }
 
     /// <summary>
@@ -225,21 +261,28 @@ public sealed class EncryptionParameterTests
     /// <summary>
     /// ISO 32000-1 §7.6.1 lets a document encrypt only its attachments: <c>/StmF</c> and
     /// <c>/StrF</c> Identity, with <c>/EFF</c> naming a real crypt filter for embedded file streams.
-    /// This handler has no per-stream <c>/EFF</c> selection, so it would decode those streams under
-    /// <c>/StmF</c> and hand back ciphertext as though it were the attachment.
+    /// Acrobat writes exactly this for "encrypt only file attachments". Everything outside the
+    /// attachments is in the clear and has to read normally — refusing the document would throw away
+    /// a page of readable content to avoid mishandling a part no API in this library exposes.
     /// </summary>
     [Fact]
-    public void AttachmentOnlyEncryption_isRefused_ratherThanSilentlyMishandled()
+    public void AttachmentOnlyEncryption_opens_andItsUnencryptedContentReads()
     {
+        var probe = "NOT-ENCRYPTED-AT-ALL"u8.ToArray();
         var doc = BuildWithEncryptDict(
             "<< /Filter /Standard /V 4 /R 4 /Length 128 "
             + "/CF << /StdCF << /CFM /AESV2 /Length 16 >> >> /StmF /Identity /StrF /Identity /EFF /StdCF "
             + "/O <2a2f0a1990192c60114730bdcd39f37828a53c89a340dd473c85299dc5258e1c> "
-            + "/U <6c8913ac9fc602eb1aad2a1ec614bee90021446990b9e4114071a4d9104984c1> /P -4 >>");
+            + "/U <6c8913ac9fc602eb1aad2a1ec614bee90021446990b9e4114071a4d9104984c1> /P -4 >>",
+            $"<< /Probe <{Convert.ToHexStringLower(probe)}> >>");
 
-        var ex = Assert.Throws<UnsupportedPdfFeatureException>(() => PdfReader.Open(doc, "u"));
+        using var reader = PdfReader.Open(doc, "u");
+        var dict = Assert.IsType<PdfDictionary>(reader.Resolve(new PdfIndirectReference(3, 0)));
 
-        Assert.Contains("/EFF", ex.Message, StringComparison.Ordinal);
+        Assert.Equal(PdfCipherAlgorithm.Identity, reader.Encryption!.Cipher);
+        Assert.Equal(
+            "NOT-ENCRYPTED-AT-ALL",
+            Encoding.ASCII.GetString(((PdfHexString)dict.Get(new PdfName("Probe"))!).Bytes.Span));
     }
 
     /// <summary>
@@ -283,7 +326,116 @@ public sealed class EncryptionParameterTests
         Assert.Contains(omitted.Split(' ')[0], ex.Message, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// Both <c>/Length</c> entries are optional — Table 20's and Table 25's alike — so a conformant
+    /// <c>/V 4</c> document may carry neither, and its key length is whatever the cipher implies.
+    /// Falling back to Table 20's 40-bit default rejects the correct password on a file every other
+    /// reader opens, which is what reading only the top-level entry did.
+    /// </summary>
+    [Fact]
+    public void V4_withNoLengthAnywhere_takesTheLengthTheCipherImplies()
+    {
+        var doc = BuildWithEncryptDict(
+            "<< /Filter /Standard /V 4 /R 4 /CF << /StdCF << /CFM /V2 >> >> /StmF /StdCF /StrF /StdCF "
+            + "/O <2a2f0a1990192c60114730bdcd39f37828a53c89a340dd473c85299dc5258e1c> "
+            + "/U <6c8913ac9fc602eb1aad2a1ec614bee90021446990b9e4114071a4d9104984c1> /P -4 >>");
+
+        using var reader = PdfReader.Open(doc, "u");
+
+        Assert.Equal(128, reader.Encryption!.KeyLengthBits);
+    }
+
+    /// <summary>
+    /// A document that encrypts its strings but not its streams names <c>/Identity</c> for
+    /// <c>/StmF</c> — which is not a <c>/CF</c> entry to look up, so the length has to come from
+    /// <c>/StrF</c>'s. Treating Identity as a name and stopping there falls back to the top-level
+    /// entry, and to 40 bits when there is none.
+    /// </summary>
+    [Fact]
+    public void StmFIdentity_takesTheKeyLengthFromStrF()
+    {
+        var doc = BuildWithEncryptDict(
+            "<< /Filter /Standard /V 4 /R 4 /CF << /StdCF << /CFM /V2 /Length 16 >> >> "
+            + "/StmF /Identity /StrF /StdCF "
+            + "/O <2a2f0a1990192c60114730bdcd39f37828a53c89a340dd473c85299dc5258e1c> "
+            + "/U <6c8913ac9fc602eb1aad2a1ec614bee90021446990b9e4114071a4d9104984c1> /P -4 >>");
+
+        using var reader = PdfReader.Open(doc, "u");
+
+        Assert.Equal(128, reader.Encryption!.KeyLengthBits);
+        Assert.Equal(PdfCipherAlgorithm.Identity, reader.Encryption.Cipher);
+        Assert.Equal(PdfCipherAlgorithm.Rc4, reader.Encryption.StringCipher);
+    }
+
+    /// <summary>
+    /// <c>/StrF</c> naming a crypt filter the document DOES define, whose <c>/CFM</c> this library
+    /// does not implement, is a valid document beyond our reach rather than a malformed one — the
+    /// distinction <c>/V 3</c> already draws. A <c>/StrF</c> naming an entry that does not exist at
+    /// all stays an <see cref="InvalidDataException"/>; its own test above covers that.
+    /// </summary>
+    [Fact]
+    public void StrF_namingADefinedFilterWithAnUnimplementedMethod_isUnsupportedRatherThanMalformed()
+    {
+        var doc = BuildWithEncryptDict(
+            "<< /Filter /Standard /V 4 /R 4 /Length 128 "
+            + "/CF << /StdCF << /CFM /SomeFutureAlgorithm /Length 16 >> >> /StmF /StdCF /StrF /StdCF "
+            + "/O <2a2f0a1990192c60114730bdcd39f37828a53c89a340dd473c85299dc5258e1c> "
+            + "/U <6c8913ac9fc602eb1aad2a1ec614bee90021446990b9e4114071a4d9104984c1> /P -4 >>");
+
+        var ex = Assert.Throws<UnsupportedPdfFeatureException>(() => PdfReader.Open(doc, "u"));
+
+        Assert.Contains("StdCF", ex.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Algorithm 13 verifies the permission bits. Byte 8 of the decrypted <c>/Perms</c> block carries
+    /// the <c>/EncryptMetadata</c> flag instead, and a producer that writes it inconsistently with the
+    /// dictionary's own entry has a bookkeeping bug rather than tampered permissions — denying the
+    /// whole document over it is a refusal qpdf does not make either, and this fixture is otherwise
+    /// intact.
+    /// </summary>
+    [Fact]
+    public void PermsWithAnInconsistentMetadataFlag_stillOpens()
+    {
+        var patched = WithPermsMetadataFlagFlipped(Load("enc-aes-256-r6.pdf"));
+
+        using var reader = PdfReader.Open(patched, "u");
+
+        Assert.Equal(-4 & (int)PdfPermissions.All, (int)reader.Encryption!.Permissions);
+    }
+
     // ── Helpers ─────────────────────────────────────────────────────────────────────────────────
+
+    // Decrypts /Perms with the document's own file key, flips byte 8 (the /EncryptMetadata flag),
+    // re-encrypts and patches it back — same length, so every cross-reference offset survives.
+    private static byte[] WithPermsMetadataFlagFlipped(byte[] bytes)
+    {
+        byte[] fileKey;
+        using (var reader = PdfReader.Open(bytes, "u"))
+        {
+            // Copied, not aliased: Dispose zeroes the key on the way out of this block.
+            fileKey = [.. (byte[])typeof(PdfDocumentReader)
+                .GetField("_fileKey", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(reader)!];
+        }
+
+        var text = Encoding.Latin1.GetString(bytes);
+        var at = text.IndexOf("/Perms <", StringComparison.Ordinal) + "/Perms <".Length;
+        var end = text.IndexOf('>', at);
+        var perms = Convert.FromHexString(text[at..end]);
+
+        using var aes = Aes.Create();
+        aes.Key = fileKey;
+        aes.Mode = CipherMode.ECB;
+        aes.Padding = PaddingMode.None;
+
+        var block = aes.CreateDecryptor().TransformFinalBlock(perms, 0, perms.Length);
+        block[8] = block[8] == (byte)'T' ? (byte)'F' : (byte)'T';
+        var reencrypted = aes.CreateEncryptor().TransformFinalBlock(block, 0, block.Length);
+
+        var result = text[..at] + Convert.ToHexString(reencrypted).ToLowerInvariant() + text[end..];
+        Assert.Equal(bytes.Length, result.Length);
+        return Encoding.Latin1.GetBytes(result);
+    }
 
     private static readonly byte[] Id0 = [.. Enumerable.Range(0, 16).Select(i => (byte)i)];
 

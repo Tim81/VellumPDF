@@ -214,11 +214,10 @@ public sealed class DssBuilderTests
                 Assert.Skip($"CurrentUser CA store is not writable in this environment: {ex.Message}");
             }
 
-            // See ExternalSignerChainTests.WaitForChainVisibility: a certificate just added to
-            // CurrentUser\CA is not immediately visible to an in-process chain build, and this
-            // assembly keeps the chain engine's cache hot. Without the forced resync the signer here
-            // intermittently embeds a one-element chain.
-            WaitForChainVisibility(leafCert);
+            // See CertificateStoreVisibility.WaitFor: the chain engine caches its view of the
+            // store, so without the forced resync the signer here intermittently embeds a
+            // one-element chain.
+            CertificateStoreVisibility.WaitFor(leafCert);
 
             try
             {
@@ -554,19 +553,4 @@ public sealed class DssBuilderTests
             };
     }
 
-    private static void WaitForChainVisibility(X509Certificate2 leaf)
-    {
-        for (var attempt = 0; attempt < 20; attempt++)
-        {
-            using var chain = new X509Chain();
-            chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
-            chain.ChainPolicy.VerificationFlags = X509VerificationFlags.AllFlags;
-            chain.Build(leaf);
-
-            if (chain.ChainElements.Count >= 2)
-                return;
-
-            Thread.Sleep(25);
-        }
-    }
 }

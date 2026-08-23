@@ -173,7 +173,7 @@ public sealed class CryptFilterResolverTests
     /// /Filter — it is never expressed as a /Crypt filter entry (see the method's own doc comment).
     /// </summary>
     [Fact]
-    public void ResolveStreamMethod_metadataStreamWithEncryptMetadataFalse_isIdentity()
+    public void ResolveStreamMethod_documentMetadataStreamWithEncryptMetadataFalse_isIdentity()
     {
         var streamDict = new PdfDictionary()
             .Set(new PdfName("Type"), new PdfName("Metadata"))
@@ -181,9 +181,31 @@ public sealed class CryptFilterResolverTests
         var table = new Dictionary<string, CryptFilterMethod>();
 
         var method = CryptFilterResolver.ResolveStreamMethod(
-            streamDict, CryptFilterMethod.Aes256, table, encryptMetadata: false, resolve: null);
+            streamDict, CryptFilterMethod.Aes256, table, encryptMetadata: false, resolve: null,
+            isDocumentMetadataStream: true);
 
         Assert.Equal(CryptFilterMethod.Identity, method);
+    }
+
+    /// <summary>
+    /// ISO 32000-2 Table 20 scopes <c>/EncryptMetadata</c> to the DOCUMENT-level metadata stream —
+    /// the object the catalog's <c>/Metadata</c> names. A page's or an XObject's metadata carries the
+    /// same <c>/Type</c> and stays encrypted, which is what qpdf's <c>--cleartext-metadata</c>
+    /// produces; exempting it hands its ciphertext back as content.
+    /// </summary>
+    [Fact]
+    public void ResolveStreamMethod_componentMetadataStreamWithEncryptMetadataFalse_isStillDecrypted()
+    {
+        var streamDict = new PdfDictionary()
+            .Set(new PdfName("Type"), new PdfName("Metadata"))
+            .Set(_filterKey, new PdfName("FlateDecode"));
+        var table = new Dictionary<string, CryptFilterMethod>();
+
+        var method = CryptFilterResolver.ResolveStreamMethod(
+            streamDict, CryptFilterMethod.Aes256, table, encryptMetadata: false, resolve: null,
+            isDocumentMetadataStream: false);
+
+        Assert.Equal(CryptFilterMethod.Aes256, method);
     }
 
     [Fact]

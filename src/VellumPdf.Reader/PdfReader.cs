@@ -11,10 +11,11 @@ public static class PdfReader
     /// <summary>Opens a PDF document from a byte array.</summary>
     /// <exception cref="InvalidDataException">Thrown on malformed PDF structure.</exception>
     /// <exception cref="UnsupportedPdfFeatureException">Thrown when the document's security handler
-    /// is not the Standard one (e.g. a public-key handler), or when <c>/V</c> names an algorithm
-    /// this library does not implement. A crypt filter naming a method the handler does not support
-    /// does NOT throw here: <c>/StmF</c> and <c>/StrF</c> are not consulted until something is
-    /// decoded, and the failure is an <see cref="System.IO.InvalidDataException"/> at that point.</exception>
+    /// is not the Standard one (e.g. a public-key handler), when <c>/V</c> names an algorithm this
+    /// library does not implement, or when <c>/StrF</c> names a crypt filter whose <c>/CFM</c> it
+    /// does not implement. An unresolvable <c>/StmF</c> does NOT throw here: streams are not decoded
+    /// until something asks for them, and that failure is an
+    /// <see cref="System.IO.InvalidDataException"/> at the decode call.</exception>
     /// <exception cref="PdfPasswordException">Thrown when the document is encrypted and no supplied
     /// password authenticates as either the owner or the user password.</exception>
     public static PdfDocumentReader Open(byte[] bytes) => Open(bytes, password: null);
@@ -27,27 +28,29 @@ public static class PdfReader
     /// </summary>
     /// <exception cref="InvalidDataException">Thrown on malformed PDF structure.</exception>
     /// <exception cref="UnsupportedPdfFeatureException">Thrown when the document's security handler
-    /// is not the Standard one (e.g. a public-key handler), or when <c>/V</c> names an algorithm
-    /// this library does not implement. A crypt filter naming a method the handler does not support
-    /// does NOT throw here: <c>/StmF</c> and <c>/StrF</c> are not consulted until something is
-    /// decoded, and the failure is an <see cref="System.IO.InvalidDataException"/> at that point.</exception>
+    /// is not the Standard one (e.g. a public-key handler), when <c>/V</c> names an algorithm this
+    /// library does not implement, or when <c>/StrF</c> names a crypt filter whose <c>/CFM</c> it
+    /// does not implement. An unresolvable <c>/StmF</c> does NOT throw here: streams are not decoded
+    /// until something asks for them, and that failure is an
+    /// <see cref="System.IO.InvalidDataException"/> at the decode call.</exception>
     /// <exception cref="PdfPasswordException">Thrown when the document is encrypted and
     /// <paramref name="password"/> authenticates as neither the owner nor the user password.</exception>
     public static PdfDocumentReader Open(byte[] bytes, string? password)
     {
         ArgumentNullException.ThrowIfNull(bytes);
         var data = new ReadOnlyMemory<byte>(bytes);
-        var (xref, trailer, startXrefOffset, revisions, xrefStreamObjects) = XrefParser.Parse(data);
-        return new PdfDocumentReader(data, xref, trailer, startXrefOffset, revisions, password, xrefStreamObjects);
+        var (xref, trailer, startXrefOffset, revisions, xrefStreamOffsets) = XrefParser.Parse(data);
+        return new PdfDocumentReader(data, xref, trailer, startXrefOffset, revisions, password, xrefStreamOffsets);
     }
 
     /// <summary>Opens a PDF document by reading all bytes from <paramref name="stream"/>.</summary>
     /// <exception cref="InvalidDataException">Thrown on malformed PDF structure.</exception>
     /// <exception cref="UnsupportedPdfFeatureException">Thrown when the document's security handler
-    /// is not the Standard one (e.g. a public-key handler), or when <c>/V</c> names an algorithm
-    /// this library does not implement. A crypt filter naming a method the handler does not support
-    /// does NOT throw here: <c>/StmF</c> and <c>/StrF</c> are not consulted until something is
-    /// decoded, and the failure is an <see cref="System.IO.InvalidDataException"/> at that point.</exception>
+    /// is not the Standard one (e.g. a public-key handler), when <c>/V</c> names an algorithm this
+    /// library does not implement, or when <c>/StrF</c> names a crypt filter whose <c>/CFM</c> it
+    /// does not implement. An unresolvable <c>/StmF</c> does NOT throw here: streams are not decoded
+    /// until something asks for them, and that failure is an
+    /// <see cref="System.IO.InvalidDataException"/> at the decode call.</exception>
     /// <exception cref="PdfPasswordException">Thrown when the document is encrypted and no supplied
     /// password authenticates as either the owner or the user password.</exception>
     public static PdfDocumentReader Open(Stream stream) => Open(stream, password: null);
@@ -59,10 +62,11 @@ public static class PdfReader
     /// </summary>
     /// <exception cref="InvalidDataException">Thrown on malformed PDF structure.</exception>
     /// <exception cref="UnsupportedPdfFeatureException">Thrown when the document's security handler
-    /// is not the Standard one (e.g. a public-key handler), or when <c>/V</c> names an algorithm
-    /// this library does not implement. A crypt filter naming a method the handler does not support
-    /// does NOT throw here: <c>/StmF</c> and <c>/StrF</c> are not consulted until something is
-    /// decoded, and the failure is an <see cref="System.IO.InvalidDataException"/> at that point.</exception>
+    /// is not the Standard one (e.g. a public-key handler), when <c>/V</c> names an algorithm this
+    /// library does not implement, or when <c>/StrF</c> names a crypt filter whose <c>/CFM</c> it
+    /// does not implement. An unresolvable <c>/StmF</c> does NOT throw here: streams are not decoded
+    /// until something asks for them, and that failure is an
+    /// <see cref="System.IO.InvalidDataException"/> at the decode call.</exception>
     /// <exception cref="PdfPasswordException">Thrown when the document is encrypted and
     /// <paramref name="password"/> authenticates as neither the owner nor the user password.</exception>
     public static PdfDocumentReader Open(Stream stream, string? password)

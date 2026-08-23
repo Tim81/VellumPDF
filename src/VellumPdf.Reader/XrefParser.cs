@@ -41,7 +41,7 @@ internal sealed class XrefParser
     /// Returns the merged xref table (newer revisions win), the newest trailer dictionary,
     /// the byte offset of the xref from the last startxref, and the revision list oldest-first.
     /// </summary>
-    public static (Dictionary<int, XrefEntry> Xref, PdfDictionary Trailer, int StartXrefOffset, IReadOnlyList<XrefRevision> Revisions, IReadOnlySet<int> CrossReferenceStreamObjects) Parse(
+    public static (Dictionary<int, XrefEntry> Xref, PdfDictionary Trailer, int StartXrefOffset, IReadOnlyList<XrefRevision> Revisions, IReadOnlySet<long> CrossReferenceStreamOffsets) Parse(
         ReadOnlyMemory<byte> data)
     {
         var startxrefOffset = FindLastStartxref(data);
@@ -59,13 +59,18 @@ internal sealed class XrefParser
         // structurally broken xref tables) is the natural place to also recover a spuriously-freed
         // object, since both cases end with "the xref lied about this object, fall back to scanning".
         var freed = new HashSet<int>();
-        // The object numbers that were actually read AS cross-reference streams. ISO 32000-1
-        // §7.5.8.2 exempts those objects from encryption, and this is the only trustworthy way to
-        // know which they are: /Type /XRef is a key the file's author controls, so sniffing it would
-        // let a document opt an ordinary stream out of decryption just by mislabelling it.
-        var crossReferenceStreamObjects = new HashSet<int>();
-        var (trailer, revisions) = ParseRevisionChain(data, startxrefOffset, xref, freed, crossReferenceStreamObjects);
-        return (xref, trailer, startxrefOffset, revisions, crossReferenceStreamObjects);
+        // The byte OFFSETS at which cross-reference streams were actually read. ISO 32000-1
+        // §7.5.8.2 exempts them from encryption, and this is the only trustworthy way to know which
+        // objects those are: /Type /XRef is a key the file's author controls, so sniffing it would
+        // let a document opt an ordinary stream out of decryption by mislabelling it.
+        //
+        // Offsets rather than object numbers, because a revision walk visits superseded revisions
+        // too. An incremental update is free to reuse the object number an older revision gave its
+        // cross-reference stream — for ordinary encrypted content — and a number harvested from that
+        // older revision would exempt the new object for the life of the reader.
+        var crossReferenceStreamOffsets = new HashSet<long>();
+        var (trailer, revisions) = ParseRevisionChain(data, startxrefOffset, xref, freed, crossReferenceStreamOffsets);
+        return (xref, trailer, startxrefOffset, revisions, crossReferenceStreamOffsets);
     }
 
     private static int FindLastStartxref(ReadOnlyMemory<byte> data)
@@ -129,7 +134,7 @@ internal sealed class XrefParser
 
     private static (PdfDictionary Trailer, IReadOnlyList<XrefRevision> Revisions) ParseRevisionChain(
         ReadOnlyMemory<byte> data, int xrefOffset, Dictionary<int, XrefEntry> xref, HashSet<int> freed,
-        HashSet<int> crossReferenceStreamObjects)
+        HashSet<long> crossReferenceStreamOffsets)
     {
         var seenOffsets = new HashSet<int>();
         PdfDictionary? newestTrailer = null;
@@ -151,7 +156,7 @@ internal sealed class XrefParser
 
             revisionsNewestFirst.Add(new XrefRevision(currentOffset, startxrefForCurrent));
 
-            var trailer = ParseOneRevision(data, currentOffset, xref, freed, seenOffsets, crossReferenceStreamObjects);
+            var trailer = ParseOneRevision(data, currentOffset, xref, freed, seenOffsets, crossReferenceStreamOffsets);
             newestTrailer ??= trailer;
             anyRevisionDeclaredEncrypt |= trailer.TryGet(_encryptKey, out var revisionEncrypt) && revisionEncrypt is not null;
 
@@ -194,7 +199,7 @@ internal sealed class XrefParser
 
     private static PdfDictionary ParseOneRevision(
         ReadOnlyMemory<byte> data, int xrefOffset, Dictionary<int, XrefEntry> xref, HashSet<int> freed,
-        HashSet<int> seenOffsets, HashSet<int> crossReferenceStreamObjects)
+        HashSet<int> seenOffsets, HashSet<long> crossReferenceStreamOffsets)
     {
         var span = data.Span;
 
@@ -223,7 +228,7 @@ internal sealed class XrefParser
         if (IsDigit(b))
         {
             // Cross-reference stream: "N G obj << ... >> stream ... endstream endobj"
-            var streamTrailer = ParseXrefStream(data, xrefOffset, xref, freed, localFreed, crossReferenceStreamObjects);
+            var streamTrailer = ParseXrefStream(data, xrefOffset, xref, freed, localFreed, crossReferenceStreamOffsets);
             freed.UnionWith(localFreed);
             return streamTrailer;
         }
@@ -266,7 +271,7 @@ internal sealed class XrefParser
                 // /Encrypt wins if both happen to declare one — that would be a malformed producer
                 // either way, and the classic trailer is what every pre-1.5 (and this) reader treats
                 // as authoritative for every other trailer key.
-                var xrefStmDict = ParseXrefStream(data, stmOffset, xref, freed, localFreed, crossReferenceStreamObjects);
+                var xrefStmDict = ParseXrefStream(data, stmOffset, xref, freed, localFreed, crossReferenceStreamOffsets);
                 if (!trailer.TryGet(_encryptKey, out _) && xrefStmDict.TryGet(_encryptKey, out var stmEncrypt) && stmEncrypt is not null)
                     trailer.Set(_encryptKey, stmEncrypt);
             }
@@ -388,7 +393,7 @@ internal sealed class XrefParser
 
     private static PdfDictionary ParseXrefStream(
         ReadOnlyMemory<byte> data, int xrefOffset, Dictionary<int, XrefEntry> xref, HashSet<int> freed,
-        HashSet<int> localFreed, HashSet<int> crossReferenceStreamObjects)
+        HashSet<int> localFreed, HashSet<long> crossReferenceStreamOffsets)
     {
         var parser = new PdfObjectParser(data, xrefOffset);
         var result = parser.ParseIndirectObject();
@@ -399,7 +404,7 @@ internal sealed class XrefParser
 
         var streamObj = result.Stream;
         var dict = streamObj.Dictionary;
-        crossReferenceStreamObjects.Add(result.ObjectNumber);
+        crossReferenceStreamOffsets.Add(xrefOffset);
 
         // Decode the stream body (typically FlateDecode, but use full chain for robustness)
         var decodeResult = PdfFilters.Decode(streamObj);

@@ -87,9 +87,17 @@ internal static class CryptFilterResolver
     /// 32000-2 §7.6.2 says the metadata stream is not encrypted in that case, but does not route the
     /// exemption through a <c>/Crypt</c> filter entry, and no producer this corpus was built against
     /// (qpdf; VellumPdf's own writer, see <c>PdfDocument.WriteAllWithEncryptExempt</c>) writes one —
-    /// both instead simply never encrypt that one stream's body at write time. So the exemption is
-    /// recognised structurally, by <c>/Type /Metadata</c> (ISO 32000-2 §14.3.2), the same way this
-    /// stream is identified as the metadata stream at all.
+    /// both instead simply never encrypt that one stream's body at write time.
+    /// </para>
+    ///
+    /// <para>
+    /// Which stream that is comes from the caller, as <paramref name="isDocumentMetadataStream"/>,
+    /// and means the object the catalog's <c>/Metadata</c> points at. Table 20 scopes the flag to the
+    /// DOCUMENT-level metadata stream, and a page, an XObject or a form field may carry metadata of
+    /// its own that stays encrypted — qpdf's <c>--cleartext-metadata</c> encrypts those and exempts
+    /// only the catalog's. Recognising the exemption by <c>/Type /Metadata</c> instead would both
+    /// hand back a page's metadata as ciphertext and let any stream opt out of decryption by
+    /// claiming that type, which is the trust model the cross-reference exemption below rejects.
     /// </para>
     /// </summary>
     internal static CryptFilterMethod ResolveStreamMethod(
@@ -98,9 +106,10 @@ internal static class CryptFilterResolver
         IReadOnlyDictionary<string, CryptFilterMethod> cfTable,
         bool encryptMetadata,
         Func<PdfObject?, PdfObject?>? resolve,
-        bool isCrossReferenceStream = false)
+        bool isCrossReferenceStream = false,
+        bool isDocumentMetadataStream = false)
     {
-        if (!encryptMetadata && IsMetadataStream(streamDict, resolve))
+        if (!encryptMetadata && isDocumentMetadataStream)
             return CryptFilterMethod.Identity;
 
         // Two exemptions the spec states as "shall not be encrypted", both checked before /Filter
@@ -127,9 +136,6 @@ internal static class CryptFilterResolver
         var name = (Deref(resolve, parms?.Get(_name)) as PdfName)?.Value;
         return ResolveNamedMethod(name, cfTable);
     }
-
-    private static bool IsMetadataStream(PdfDictionary streamDict, Func<PdfObject?, PdfObject?>? resolve)
-        => (Deref(resolve, streamDict.Get(_type)) as PdfName)?.Value == "Metadata";
 
     // /F is only an external-file specification when it is a file specification — a string or a
     // dictionary (ISO 32000-1 Table 5, 7.11.2). A stream dictionary is free to use /F for something

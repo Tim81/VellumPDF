@@ -1,6 +1,7 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
+using System.Security.Cryptography;
 using System.Text;
 using VellumPdf.Core;
 using VellumPdf.Encryption;
@@ -97,14 +98,14 @@ public sealed class PdfDocumentReader : IDisposable
         int startXrefOffset,
         IReadOnlyList<XrefRevision> revisions,
         string? password = null,
-        IReadOnlySet<int>? crossReferenceStreamObjects = null)
+        IReadOnlySet<long>? crossReferenceStreamOffsets = null)
     {
         Bytes = bytes;
         _xref = xref;
         Trailer = trailer;
         StartXrefOffset = startXrefOffset;
         Revisions = revisions;
-        _crossReferenceStreamObjects = crossReferenceStreamObjects ?? new HashSet<int>();
+        _crossReferenceStreamOffsets = crossReferenceStreamOffsets ?? new HashSet<long>();
 
         // /Encrypt must be resolved and authenticated BEFORE anything else: Resolve() and
         // GetDecodedStreamData() key their decryption on _decryptor being set, and /Root (resolved
@@ -251,7 +252,7 @@ public sealed class PdfDocumentReader : IDisposable
                 // ParsedStream.ObjectNumber/Generation, not here. _decryptor is still null while
                 // /Encrypt's own dictionary is being resolved (see the constructor), so this never
                 // touches /O, /U, /OE, or /UE.
-                if (_decryptor is not null && !_crossReferenceStreamObjects.Contains(objectNumber))
+                if (_decryptor is not null && !IsCrossReferenceStream(objectNumber))
                     value = DecryptObjectGraph(value, objectNumber, actualGeneration);
 
                 if (result.IsStream)
@@ -331,7 +332,7 @@ public sealed class PdfDocumentReader : IDisposable
         // plaintext or ciphertext. The Conformance package resolves streams before objects, so the
         // ciphertext ordering was the usual one. A stream reached through Resolve first is already
         // in _streamCache and returns above, so nothing is walked twice.
-        if (_decryptor is not null && !_crossReferenceStreamObjects.Contains(objectNumber))
+        if (_decryptor is not null && !IsCrossReferenceStream(objectNumber))
             DecryptObjectGraph(stream.Dictionary, objectNumber, actualGeneration);
 
         _streamCache.TryAdd(objectNumber, (stream, actualGeneration));
@@ -380,7 +381,8 @@ public sealed class PdfDocumentReader : IDisposable
 
         var method = CryptFilterResolver.ResolveStreamMethod(
             stream.Dictionary, _decryptor.StreamFilter, _cryptFilterTable, _encryptMetadata, ResolveMaybe,
-            _crossReferenceStreamObjects.Contains(stream.ObjectNumber));
+            IsCrossReferenceStream(stream.ObjectNumber),
+            IsDocumentMetadataStream(stream.ObjectNumber));
 
         if (method == CryptFilterMethod.Identity)
             return stream;
@@ -404,11 +406,45 @@ public sealed class PdfDocumentReader : IDisposable
             ? stream
             : new ParsedStream(stream.Dictionary, stream.RawBody, stream.BodyOffset, stream.ObjectNumber, generation);
 
-    // The objects XrefParser actually read as cross-reference streams. ISO 32000-1 §7.5.8.2 exempts
-    // them from encryption, body and dictionary strings alike, and this is the set that decides it —
-    // not a /Type /XRef entry, which the document's author controls and could put on an ordinary
-    // content stream to have its ciphertext handed back to a preflight rule unexamined.
-    private readonly IReadOnlySet<int> _crossReferenceStreamObjects;
+    // The offsets XrefParser actually read cross-reference streams at. ISO 32000-1 §7.5.8.2 exempts
+    // them from encryption, body and dictionary strings alike, and this is what decides it — not a
+    // /Type /XRef entry, which the document's author controls and could put on an ordinary content
+    // stream to have its ciphertext handed to a preflight rule unexamined.
+    private readonly IReadOnlySet<long> _crossReferenceStreamOffsets;
+
+    /// <summary>
+    /// Whether <paramref name="objectNumber"/> is the document's own metadata stream — the object
+    /// the catalog's <c>/Metadata</c> names. ISO 32000-2 Table 20 scopes <c>/EncryptMetadata</c> to
+    /// that one stream, so a page's or an XObject's metadata stays encrypted even when it is false;
+    /// qpdf's <c>--cleartext-metadata</c> writes exactly that arrangement.
+    /// </summary>
+    private bool IsDocumentMetadataStream(int objectNumber)
+    {
+        if (!_documentMetadataResolved)
+        {
+            _documentMetadataResolved = true;
+            _documentMetadataObjectNumber = (Catalog.Get(_metadataKey) as PdfIndirectReference)?.ObjectNumber;
+        }
+
+        return _documentMetadataObjectNumber == objectNumber;
+    }
+
+    private static readonly PdfName _metadataKey = new("Metadata");
+    private bool _documentMetadataResolved;
+    private int? _documentMetadataObjectNumber;
+
+    /// <summary>
+    /// Whether <paramref name="objectNumber"/> resolves, in the MERGED cross-reference table, to an
+    /// offset a cross-reference stream was actually parsed at. Keyed on the offset and not the
+    /// object number because the revision walk sees superseded revisions too: an incremental update
+    /// may reuse the number an older revision gave its cross-reference stream, and that object is
+    /// ordinary encrypted content that has to be decrypted like any other.
+    /// </summary>
+    private bool IsCrossReferenceStream(int objectNumber) =>
+        _crossReferenceStreamOffsets.Count > 0
+        && _xref.TryGetValue(objectNumber, out var entry)
+        && entry.Kind == XrefEntryKind.Uncompressed
+        && _crossReferenceStreamOffsets.Contains(entry.Offset);
 
     // Well-known keys used only by the decrypt walk below.
     private static readonly PdfName _sigType = new("Sig");
@@ -522,7 +558,17 @@ public sealed class PdfDocumentReader : IDisposable
     private PdfObject? ResolveMaybe(PdfObject? obj) => obj is null ? null : ResolveValue(obj);
 
     /// <inheritdoc />
-    public void Dispose() { }
+    /// <summary>
+    /// Clears the file encryption key. The reader holds no unmanaged resources, so this is the
+    /// only thing there is to release — but it is worth releasing: <see cref="PdfEncryptionInfo"/>
+    /// goes out of its way to expose nothing an attacker could use to skip authentication, and a
+    /// key left in the managed heap for the life of the process undoes some of that.
+    /// </summary>
+    public void Dispose()
+    {
+        if (_fileKey is not null)
+            CryptographicOperations.ZeroMemory(_fileKey);
+    }
 
     // ── Object stream resolution ─────────────────────────────────────────────
 

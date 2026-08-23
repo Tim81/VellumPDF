@@ -123,6 +123,143 @@ public sealed class EncryptedExemptionTests
             Encoding.ASCII.GetString(((PdfHexString)nested.Get(new PdfName("S"))!).Bytes.Span));
     }
 
+    /// <summary>
+    /// The exemption belongs to the objects the MERGED cross-reference table resolves to a
+    /// cross-reference stream — not to every object number that ever was one. A revision walk sees
+    /// superseded revisions too, and an incremental update is free to reuse the number an older
+    /// revision gave its cross-reference stream for ordinary encrypted content. Keyed on the number
+    /// alone, that object stays exempt for the life of the reader and its content comes back as
+    /// ciphertext with nothing to report.
+    /// </summary>
+    [Theory]
+    [InlineData(4)]  // the update reuses the superseded cross-reference stream's number
+    [InlineData(5)]  // the control: object 4 was never a cross-reference stream
+    public void ObjectNumberReusedFromASupersededCrossReferenceStream_isStillDecrypted(int xrefStreamObjectNumber)
+    {
+        var body = Encrypt(4, 0, "REUSED-CONTENT"u8.ToArray());
+        var doc = BuildSupersededXrefStreamThenReuse(xrefStreamObjectNumber, body);
+
+        using var reader = PdfReader.Open(doc, "u");
+        var stream = reader.ResolveStream(4)!;
+
+        Assert.Equal("REUSED-CONTENT", Encoding.ASCII.GetString(reader.GetDecodedStreamData(stream)!));
+    }
+
+    // Revision 1 ends in a cross-reference stream numbered `xrefStreamObjectNumber`; revision 2 is a
+    // classic incremental update defining object 4 as an ordinary encrypted stream, chained back
+    // with /Prev. Where the two numbers coincide, object 4's entry in the merged table points at
+    // revision 2's offset rather than at the cross-reference stream's.
+    private static byte[] BuildSupersededXrefStreamThenReuse(int xrefStreamObjectNumber, byte[] body)
+    {
+        var ms = new MemoryStream();
+        void W(string t) => ms.Write(Encoding.Latin1.GetBytes(t));
+        W("%PDF-1.5\n");
+
+        var o1 = (int)ms.Position;
+        W("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+        var o2 = (int)ms.Position;
+        W("2 0 obj\n<< /Type /Pages /Kids [] /Count 0 >>\nendobj\n");
+        var o3 = (int)ms.Position;
+        W($"3 0 obj\n{Rc4EncryptDict}\nendobj\n");
+
+        var rows = new List<byte>();
+        void Row(byte type, int field2, int field3) => rows.AddRange(
+        [
+            type,
+            (byte)(field2 >> 24), (byte)(field2 >> 16), (byte)(field2 >> 8), (byte)field2,
+            (byte)(field3 >> 8), (byte)field3,
+        ]);
+
+        var xrefStreamOffset = (int)ms.Position;
+        var size = Math.Max(xrefStreamObjectNumber, 4) + 1;
+        Row(0, 0, 65535);
+        Row(1, o1, 0);
+        Row(1, o2, 0);
+        Row(1, o3, 0);
+        for (var n = 4; n < size; n++)
+            Row(1, n == xrefStreamObjectNumber ? xrefStreamOffset : 0, 0);
+
+        var rowBytes = rows.ToArray();
+        W($"{xrefStreamObjectNumber} 0 obj\n<< /Type /XRef /Size {size} /W [1 4 2] /Root 1 0 R /Encrypt 3 0 R "
+          + $"/ID [<{Convert.ToHexStringLower(Id0)}><{Convert.ToHexStringLower(Id0)}>] /Length {rowBytes.Length} >>\n"
+          + "stream\n");
+        ms.Write(rowBytes);
+        W("\nendstream\nendobj\n");
+        W($"startxref\n{xrefStreamOffset}\n%%EOF\n");
+
+        var o4 = (int)ms.Position;
+        W($"4 0 obj\n<< /Length {body.Length} >>\nstream\n{Encoding.Latin1.GetString(body)}\nendstream\nendobj\n");
+        var updateXref = (int)ms.Position;
+        W($"xref\n4 1\n{o4:D10} 00000 n \n");
+        W($"trailer\n<< /Size {Math.Max(size, 5)} /Root 1 0 R /Encrypt 3 0 R /Prev {xrefStreamOffset} "
+          + $"/ID [<{Convert.ToHexStringLower(Id0)}><{Convert.ToHexStringLower(Id0)}>] >>\n");
+        W($"startxref\n{updateXref}\n%%EOF\n");
+        return ms.ToArray();
+    }
+
+    /// <summary>
+    /// A dictionary claiming <c>/Type /XRef</c> at the TOP level of an object — the shape the
+    /// exemption's own design note argues against, since that key is the document author's to write.
+    /// The sibling tests cover the stream body and a nested dictionary; this is the third shape, the
+    /// object's own strings coming back through <c>Resolve</c>.
+    /// </summary>
+    [Fact]
+    public void TopLevelDictionaryClaimingTypeXRef_stringsAreStillDecrypted()
+    {
+        var hidden = Encrypt(3, 0, "HIDDEN-AT-TOP-LEVEL"u8.ToArray());
+        var doc = BuildWith(Rc4EncryptDict,
+            "<< /Type /Catalog /Pages 2 0 R >>",
+            "<< /Type /Pages /Kids [] /Count 0 >>",
+            $"<< /Type /XRef /S <{Convert.ToHexStringLower(hidden)}> >>");
+
+        using var reader = PdfReader.Open(doc, "u");
+        var dict = Assert.IsType<PdfDictionary>(reader.Resolve(new PdfIndirectReference(3, 0)));
+
+        Assert.Equal(
+            "HIDDEN-AT-TOP-LEVEL",
+            Encoding.ASCII.GetString(((PdfHexString)dict.Get(new PdfName("S"))!).Bytes.Span));
+    }
+
+    // ── /StrF and /StmF naming different crypt filters (ISO 32000-2 Table 20) ───────────────────
+
+    /// <summary>
+    /// A document may use one cipher for strings and another for streams, and the two have to be
+    /// applied to the right halves. Reporting them separately is not enough — <c>Encryption.Cipher</c>
+    /// and <c>StringCipher</c> can both be right while <c>DecryptString</c> reaches for the stream
+    /// filter — so this asserts the plaintext of a real string and a real stream in one document.
+    ///
+    /// <para>
+    /// The string's ciphertext comes from this test's own RC4 and its own Algorithm 1 key
+    /// derivation, not from the reader's decryptor: built the convenient way, a decryptor that picks
+    /// the wrong filter would pick it for the test's encryptor too, and the error would cancel.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void StringsAndStreamsUnderDifferentCryptFilters_eachUseTheirOwn()
+    {
+        var probe = EncryptIndependently(3, 0, "STRING-VIA-RC4"u8.ToArray());
+        var body = EncryptAes(3, 0, "STREAM-VIA-AES"u8.ToArray());
+
+        var doc = BuildWith(
+            "<< /Filter /Standard /V 4 /R 4 /Length 128 "
+            + "/CF << /StmCF << /CFM /AESV2 /Length 16 >> /StrCF << /CFM /V2 /Length 16 >> >> "
+            + "/StmF /StmCF /StrF /StrCF "
+            + "/O <2a2f0a1990192c60114730bdcd39f37828a53c89a340dd473c85299dc5258e1c> "
+            + "/U <6c8913ac9fc602eb1aad2a1ec614bee90021446990b9e4114071a4d9104984c1> /P -4 >>",
+            "<< /Type /Catalog /Pages 2 0 R >>",
+            "<< /Type /Pages /Kids [] /Count 0 >>",
+            $"<< /Length {body.Length} /Probe <{Convert.ToHexStringLower(probe)}> >>\n"
+            + $"stream\n{Encoding.Latin1.GetString(body)}\nendstream");
+
+        using var reader = PdfReader.Open(doc, "u");
+        var stream = reader.ResolveStream(3)!;
+
+        Assert.Equal(
+            "STRING-VIA-RC4",
+            Encoding.ASCII.GetString(((PdfHexString)stream.Dictionary.Get(new PdfName("Probe"))!).Bytes.Span));
+        Assert.Equal("STREAM-VIA-AES", Encoding.ASCII.GetString(reader.GetDecodedStreamData(stream)!));
+    }
+
     // ── One decrypt walk, whichever accessor gets there first ───────────────────────────────────
 
     /// <summary>
@@ -308,6 +445,41 @@ public sealed class EncryptedExemptionTests
         Assert.Contains("<x:xmpmeta", xmp, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// <c>/EncryptMetadata</c> false exempts the DOCUMENT's metadata stream — the object the catalog
+    /// names — and nothing else. A page, an XObject or a form field may carry metadata of its own,
+    /// with the same <c>/Type</c>, and those stay encrypted: qpdf's <c>--cleartext-metadata</c>
+    /// leaves the catalog's in the clear and encrypts the rest. Exempting by <c>/Type</c> hands a
+    /// page's metadata back as ciphertext under RC4, and throws under AES.
+    /// </summary>
+    [Fact]
+    public void ComponentMetadataStream_isDecrypted_evenWhenEncryptMetadataIsFalse()
+    {
+        var componentBody = Encrypt(3, 0, "<?xpacket page-level ?>"u8.ToArray());
+        var documentBody = "<?xpacket document-level ?>"u8.ToArray();
+
+        var doc = BuildWith(
+            Rc4EncryptDict.Replace(" /V 2 >>", " /V 2 /EncryptMetadata false >>", StringComparison.Ordinal),
+            "<< /Type /Catalog /Pages 2 0 R /Metadata 4 0 R >>",
+            "<< /Type /Pages /Kids [] /Count 0 >>",
+            $"<< /Type /Metadata /Subtype /XML /Length {componentBody.Length} >>\n"
+            + $"stream\n{Encoding.Latin1.GetString(componentBody)}\nendstream",
+            $"<< /Type /Metadata /Subtype /XML /Length {documentBody.Length} >>\n"
+            + $"stream\n{Encoding.Latin1.GetString(documentBody)}\nendstream");
+
+        using var reader = PdfReader.Open(doc, "u");
+
+        // Object 3 is a component's metadata: encrypted like anything else.
+        Assert.Equal(
+            "<?xpacket page-level ?>",
+            Encoding.ASCII.GetString(reader.GetDecodedStreamData(reader.ResolveStream(3)!)!));
+
+        // Object 4 is the catalog's: left in the clear at write time, so it must not be decrypted.
+        Assert.Equal(
+            "<?xpacket document-level ?>",
+            Encoding.ASCII.GetString(reader.GetDecodedStreamData(reader.ResolveStream(4)!)!));
+    }
+
     // ── One identity per object (ISO 32000-1 §7.6.2, Algorithm 1) ───────────────────────────────
 
     /// <summary>
@@ -395,6 +567,37 @@ public sealed class EncryptedExemptionTests
         Assert.Equal("BODY-GEN0", Encoding.ASCII.GetString(reader.GetDecodedStreamData(stream)!));
     }
 
+    // ── Recovering from a stale /Length ─────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// A wrong <c>/Length</c> is an ordinary producer bug, and the parser is built to recover: if the
+    /// declared length does not land on <c>endstream</c>, it scans for the marker instead. The
+    /// recovery has to survive the byte it lands on being one the lexer refuses outright — <c>)</c>,
+    /// <c>{</c>, <c>}</c>, a lone <c>&gt;</c> — which encryption turns from exotic into ordinary:
+    /// ciphertext is high-entropy, so a stale length hits one of them a few percent of the time.
+    /// Seen for real on poppler <c>pdfattach</c> output over an AES-256 document.
+    /// </summary>
+    [Theory]
+    [InlineData(")")]
+    [InlineData("{")]
+    [InlineData("}")]
+    [InlineData(">")]
+    public void StreamWhoseDeclaredLengthLandsOnAByteTheLexerRefuses_isStillRecovered(string byteAtLength)
+    {
+        var body = $"AB{byteAtLength}CDEFGH";
+        var doc = BuildWith(Rc4EncryptDict,
+            "<< /Type /Catalog /Pages 2 0 R >>",
+            "<< /Type /Pages /Kids [] /Count 0 >>",
+            // /Length 2 is wrong on purpose: it puts the parser exactly on the awkward byte.
+            $"<< /Length 2 /Filter /Crypt /DecodeParms << /Name /Identity >> >>\n"
+            + $"stream\n{body}\nendstream");
+
+        using var reader = PdfReader.Open(doc, "u");
+        var stream = reader.ResolveStream(3)!;
+
+        Assert.Equal(body, Encoding.ASCII.GetString(reader.GetDecodedStreamData(stream)!));
+    }
+
     // ── Helpers ─────────────────────────────────────────────────────────────────────────────────
 
     private static byte[] Load(string name)
@@ -478,11 +681,14 @@ public sealed class EncryptedExemptionTests
         return output;
     }
 
+    // Copied out before the reader is disposed: Dispose zeroes the file key, so handing back the
+    // array itself would hand back sixteen zero bytes.
     private static byte[] FileKeyOf(string fixture)
     {
         using var reader = PdfReader.Open(Load(fixture), "u");
-        return (byte[])typeof(PdfDocumentReader)
+        var key = (byte[])typeof(PdfDocumentReader)
             .GetField("_fileKey", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(reader)!;
+        return [.. key];
     }
 
     private static byte[] Encrypt(int objectNumber, int generation, byte[] plaintext)

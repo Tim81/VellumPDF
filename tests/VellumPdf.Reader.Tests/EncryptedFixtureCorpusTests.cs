@@ -10,7 +10,7 @@ namespace VellumPdf.Reader.Tests;
 /// <summary>
 /// Guards the committed encrypted corpus (#99) itself, before anything tries to decrypt it.
 /// qpdf refuses to write RC4 without <c>--allow-weak-crypto</c> and still leaves a zero-byte file
-/// behind, so a corpus can look complete on disk while three of its eight entries are empty.
+/// behind, so a corpus can look complete on disk while several of its entries are empty.
 ///
 /// The digest is what actually pins each fixture: it subsumes non-emptiness, truncation, and — the
 /// case a <c>/V</c>+<c>/R</c> check cannot see — two fixtures being swapped for each other.
@@ -175,7 +175,7 @@ public sealed class EncryptedFixtureCorpusTests
     /// a bare scan for "/O &lt;" could land in one. /Filter /Standard bounds the search below and the
     /// dictionary's own &gt;&gt; bounds it above, so a fixture that omitted the entry fails loudly here
     /// rather than matching something later in the file. The upper bound relies on qpdf writing keys
-    /// sorted, which puts /CF and its nested &gt;&gt; ahead of /Filter; verified for all eight fixtures. Not a parser — both entries are
+    /// sorted, which puts /CF and its nested &gt;&gt; ahead of /Filter; verified for every fixture. Not a parser — both entries are
     /// fixed-width hex in every committed fixture.
     /// </summary>
     private static string HexEntry(string text, string key)

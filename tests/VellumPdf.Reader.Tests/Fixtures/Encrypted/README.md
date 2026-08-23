@@ -23,9 +23,9 @@ in, across that whole 32-byte element. The command records *provenance*; the dig
 `EncryptedFixtureCorpusTests` is what identifies the file.
 
 Regenerating it costs less than it looks like it should. The second `/ID` is the only thing that
-changes, and that is exactly what the fixture procedure below already tolerates — so the eight
-encrypted fixtures still decrypt to a regenerated baseline, and do **not** need rebuilding. Measured:
-each of the eight decrypts to within that one element of a freshly generated baseline.
+changes, and that is exactly what the fixture procedure below already tolerates — so the fixtures
+built with the `u`/`o` password pair still decrypt to a regenerated baseline, and do **not** need
+rebuilding. Measured: each decrypts to within that one element of a freshly generated baseline.
 
 So the whole procedure is:
 
@@ -34,7 +34,7 @@ So the whole procedure is:
    `PlaintextBaseline_isPresent_andNotEncrypted`.
 3. Re-run `dotnet test` on `VellumPdf.Reader.Tests`.
 
-Rebuilding the eight fixtures from the new baseline is optional tidiness, and nothing enforces it
+Rebuilding the fixtures from the new baseline is optional tidiness, and nothing enforces it
 either way. Note that nothing checks the decrypt-to-baseline property automatically yet; that arrives
 with #97.
 
@@ -85,7 +85,7 @@ round-trip that inserted the extra object also rewrote the line endings, so that
 74 bytes with CRLF against the baseline's 69 with LF. That is why the fixture is excluded from
 `StandardMatrixFixtures` and has its own test, which reads the nested strings by value instead.
 
-The last four rows exist because the eight above them cannot distinguish certain behaviours from
+The last four rows exist because the eleven above them cannot distinguish certain behaviours from
 their opposites, whatever they assert.
 
 `enc-aes-128-longpassword.pdf`'s password is 40 characters. Algorithm 2 step (a) pads or truncates
@@ -137,9 +137,17 @@ Two assertions, in this order:
    `EncryptedFixtureCorpusTests` pins each fixture by SHA-256 as well as `/V`, `/R` and `/CFM`, because
    `enc-aes-128` and `enc-rc4-128-v4` are both `/V 4 /R 4` and differ only in `/CFM` — swapping them
    is otherwise invisible.
-2. **Compare decrypted output to `plaintext-baseline.pdf`.** `qpdf --password=u --decrypt` on all eight
-   fixtures reproduces the baseline byte-for-byte **except the second `/ID` array element**, which qpdf
-   regenerates on every invocation; the first element is preserved.
+2. **Compare decrypted output to `plaintext-baseline.pdf`.** `qpdf --password=u --decrypt` reproduces
+   the baseline byte-for-byte **except the second `/ID` array element**, which qpdf regenerates on
+   every invocation; the first element is preserved.
+
+   This works for the nine rows built from the baseline with the `u`/`o` pair. It does **not** apply
+   to the other six, and each for its own reason: `enc-aes-128-emptyuser.pdf` and
+   `enc-aes-128-tworevisions.pdf` take an empty user password, `enc-aes-128-longpassword.pdf`,
+   `enc-aes-128-samepassword.pdf` and `enc-aes-128-pdfdocpassword.pdf` take their own, and
+   `enc-aes-128-nestedstrings.pdf` is not the baseline's object graph at all. The two-revision row
+   additionally has a whole extra revision appended, so its decrypted form is 2172 bytes against the
+   baseline's 1743.
 
    Normalize that whole element — all 32 hex digits, at bytes 1684-1715 of the 1743-byte baseline. Do
    **not** write a known-answer test that tolerates a fixed *number* of differing bytes: two random
@@ -152,19 +160,21 @@ appear in `enc-aes-256-r6.pdf`.
 ## Known gaps
 
 The matrix above is complete along the `/V`+`/R`+`/CFM` axis. It is deliberately **not** complete along the
-structural axis. #97 closed some of the structural gaps (see the three extra fixtures above); what
-remains:
+structural axis. #97 closed most of the structural gaps (the seven rows below the original eight);
+what remains:
 
-- **Every object is generation 0, and every file is single-revision.** So the corpus still cannot
-  exercise the coupling that makes #97 depend on #121 — a decryptor that hardcodes generation 0 in
-  the per-object key passes all of it. qpdf normalises generations when it rewrites, so this needs
-  hand-building.
+- **Every object is generation 0.** qpdf normalises generations when it rewrites, so a fixture
+  cannot carry a non-zero one; the coupling that makes #97 depend on #121 is pinned instead by a
+  hand-built document in `EncryptedExemptionTests`, whose ciphertext is produced independently of
+  this library's own key derivation so that a hardcoded generation 0 cannot cancel out on both
+  sides.
 - **No owner-password-only file.** `enc-aes-128-emptyuser.pdf` covers the empty-user-password case;
   a file whose owner password differs and whose user password is a NON-empty, deliberately-wrong
   value (so only the owner path can open it at all) is still missing.
-- **No incremental update.** `enc-rc4-objstm.pdf` covers the object-stream and cross-reference-stream
-  gaps; a multi-revision encrypted file (each revision's own `/Encrypt`, or a later revision that
-  changes permissions) is still missing.
+- **No revision carrying its own distinct `/Encrypt` object.** `enc-aes-128-tworevisions.pdf` is a
+  genuine incremental update, but both of its trailers point at the same object 8, so "the newest
+  trailer's `/Encrypt` is the one authenticated" is still untested in the direction that matters —
+  as is a later revision that changes permissions.
 - **No `/EFF`, no `/StrF` differing from `/StmF`, no `/Crypt` filter entry naturally present in a
   real qpdf-produced file**, and no non-ASCII password exercising R6's SASLprep handling.
   `EncryptedReaderTests` covers the `/Crypt`-filter and absent-`/CF`-entry cases with a same-length
@@ -193,8 +203,8 @@ To legitimately replace a fixture:
    **the permission list**, which is what catches a fixture regenerated with narrowed permissions.
 3. Confirm it still decrypts to the baseline: `qpdf --password=u --decrypt <file> out.pdf`, then diff
    against `plaintext-baseline.pdf` and check every difference falls inside the second `/ID` element.
-4. Recompute the digests with `sha256sum *.pdf` — it prints nine, the eight fixtures plus the
-   baseline. The eight belong in the `Corpus` table that drives
+4. Recompute the digests with `sha256sum *.pdf` — it prints one line per fixture plus the
+   baseline. The fixtures belong in the `Corpus` table that drives
    `Fixture_isExactlyTheFileItClaimsToBe`; the baseline's is a separate literal in its own test.
    Neither lives in the matrix table above.
 
