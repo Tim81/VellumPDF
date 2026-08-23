@@ -129,6 +129,87 @@ public sealed class StandardSecurityDecryptorTests
         Assert.Equal(expected, plainText);
     }
 
+    // ── Assertion 2b: DecryptStream and DecryptString each use their own filter ──
+    //
+    // Every fixture in the corpus has /StmF and /StrF naming the same /CFM, and every test above
+    // passes the same fileKey/data through both methods, so nothing so far distinguishes
+    // DecryptStream from DecryptString: swapping the two constructor assignments (StreamFilter
+    // and StringFilter) survives, and gutting DecryptString to `return data.ToArray()` survives
+    // too. RC4's own correctness is pinned elsewhere (against the RFC 8, 40, 256 and 309-byte
+    // vectors, per CHANGELOG #97); these two tests exist only to pin the dispatch — DecryptStream
+    // reaches StreamFilter and DecryptString reaches StringFilter, not the other way round — using
+    // deliberately mismatched filters in both directions so a swap cannot pass by accident.
+
+    [Fact]
+    public void DecryptStream_usesStreamFilter_decryptString_usesStringFilter_identityThenRc4()
+    {
+        byte[] fileKey = [0x01, 0x02, 0x03, 0x04, 0x05];
+        var decryptor = new StandardSecurityDecryptor(
+            v: 2, r: 3, keyLengthBytes: 5, o: new byte[32], u: new byte[32], oe: null, ue: null,
+            p: -4, id0: [0x00], encryptMetadata: true,
+            streamFilter: CryptFilterMethod.Identity, stringFilter: CryptFilterMethod.Rc4);
+
+        // Identity: the "ciphertext" IS the plaintext, unchanged. If StreamFilter/StringFilter
+        // were swapped, this would be RC4-"decrypted" into garbage instead.
+        byte[] streamPlaintext = "STREAM BYTES, NEVER RC4-TRANSFORMED"u8.ToArray();
+        var streamOut = decryptor.DecryptStream(fileKey, objectNumber: 7, generation: 0, streamPlaintext);
+        Assert.Equal(streamPlaintext, streamOut);
+
+        // RC4: ciphertext built from the exact per-object key DecryptString itself derives, so
+        // this pins DecryptString's dispatch and key selection, not RC4 (that's covered
+        // elsewhere) — RC4 is its own inverse, so encrypting and decrypting are the same call.
+        byte[] stringPlaintext = "string bytes, deliberately different from the stream ones"u8.ToArray();
+        var objectKey = StandardSecurityDecryptor.ComputeObjectKey(fileKey, objectNumber: 7, generation: 0, useAesSalt: false);
+        var stringCiphertext = Rc4.Transform(objectKey, stringPlaintext);
+        Assert.NotEqual(stringPlaintext, stringCiphertext); // otherwise a swap couldn't be caught below
+
+        var stringOut = decryptor.DecryptString(fileKey, objectNumber: 7, generation: 0, stringCiphertext);
+        Assert.Equal(stringPlaintext, stringOut);
+    }
+
+    [Fact]
+    public void DecryptStream_usesStreamFilter_decryptString_usesStringFilter_rc4ThenIdentity()
+    {
+        // The reverse pairing of the test above: StreamFilter is RC4 and StringFilter is Identity
+        // this time, so a swap in either direction still gets caught by one of the two tests.
+        byte[] fileKey = [0x0A, 0x0B, 0x0C, 0x0D, 0x0E];
+        var decryptor = new StandardSecurityDecryptor(
+            v: 2, r: 3, keyLengthBytes: 5, o: new byte[32], u: new byte[32], oe: null, ue: null,
+            p: -4, id0: [0x00], encryptMetadata: true,
+            streamFilter: CryptFilterMethod.Rc4, stringFilter: CryptFilterMethod.Identity);
+
+        byte[] streamPlaintext = "stream bytes, this time under rc4"u8.ToArray();
+        var objectKey = StandardSecurityDecryptor.ComputeObjectKey(fileKey, objectNumber: 9, generation: 0, useAesSalt: false);
+        var streamCiphertext = Rc4.Transform(objectKey, streamPlaintext);
+        Assert.NotEqual(streamPlaintext, streamCiphertext);
+
+        var streamOut = decryptor.DecryptStream(fileKey, objectNumber: 9, generation: 0, streamCiphertext);
+        Assert.Equal(streamPlaintext, streamOut);
+
+        byte[] stringPlaintext = "STRING BYTES, THIS TIME UNDER IDENTITY"u8.ToArray();
+        var stringOut = decryptor.DecryptString(fileKey, objectNumber: 9, generation: 0, stringPlaintext);
+        Assert.Equal(stringPlaintext, stringOut);
+    }
+
+    [Fact]
+    public void DecryptStream_identityFilter_returnsInputUnchanged_forNonEmptyData()
+    {
+        // `case Identity: return data.ToArray()` could regress to always returning `[]` and every
+        // test that only checks a stream/string round trip through a non-Identity filter would
+        // stay green, because none of them exercise Identity with data present.
+        var decryptor = new StandardSecurityDecryptor(
+            v: 1, r: 2, keyLengthBytes: 5, o: new byte[32], u: new byte[32], oe: null, ue: null,
+            p: -4, id0: [0x00], encryptMetadata: true,
+            streamFilter: CryptFilterMethod.Identity, stringFilter: CryptFilterMethod.Identity);
+
+        byte[] data = [0x00, 0x01, 0x02, 0xFF, 0xFE, 0x7F];
+        var streamOut = decryptor.DecryptStream(new byte[5], objectNumber: 1, generation: 0, data);
+        var stringOut = decryptor.DecryptString(new byte[5], objectNumber: 1, generation: 0, data);
+
+        Assert.Equal(data, streamOut);
+        Assert.Equal(data, stringOut);
+    }
+
     // ── Assertion 3: /EncryptMetadata false shifts the derived key (Algorithm 2 step (f)) ──
 
     [Fact]
