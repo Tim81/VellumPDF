@@ -270,6 +270,41 @@ public sealed class StandardSecurityDecryptorTests
     // /Perms is a single AES-256-ECB block with no padding. The test decrypts it itself rather than
     // going through the reader, because the byte it is about (8, the /EncryptMetadata flag) is one
     // the read side deliberately does not look at.
+    /// <summary>
+    /// <c>/R</c> outside 2..6 is a revision this handler has no algorithm for. Every other malformed
+    /// value in the constructor is pinned; this row was not, so widening the range would have gone
+    /// unnoticed — and an out-of-range revision reaching the algorithm split decides between the
+    /// R&lt;=4 and R&gt;=5 paths on a value that means neither.
+    /// </summary>
+    [Theory]
+    [InlineData(1)]
+    [InlineData(7)]
+    [InlineData(0)]
+    public void Constructor_rejectsARevisionOutsideTwoThroughSix(int r)
+    {
+        var ex = Assert.Throws<InvalidDataException>(() => new StandardSecurityDecryptor(
+            v: 4, r: r, keyLengthBytes: 16, o: new byte[32], u: new byte[32], oe: null, ue: null,
+            p: -4, id0: [0x00], encryptMetadata: true,
+            streamFilter: CryptFilterMethod.Aes128, stringFilter: CryptFilterMethod.Aes128));
+
+        Assert.Contains("/R", ex.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Algorithm 1 keys on the object number and generation, and neither can be negative in a
+    /// well-formed file. The guards exist because a cross-reference table that could not be parsed
+    /// hands back <c>XrefEntry.UnknownGeneration</c>, which is -1: without them that reaches the key
+    /// derivation and shifts every byte of the object key.
+    /// </summary>
+    [Theory]
+    [InlineData(-1, 0)]
+    [InlineData(3, -1)]
+    public void ComputeObjectKey_rejectsNegativeIdentity(int objectNumber, int generation)
+    {
+        Assert.Throws<InvalidDataException>(
+            () => StandardSecurityDecryptor.ComputeObjectKey(new byte[16], objectNumber, generation, useAesSalt: false));
+    }
+
     private static byte[] AesEcbDecryptForTest(byte[] key, byte[] data)
     {
         using var aes = Aes.Create();

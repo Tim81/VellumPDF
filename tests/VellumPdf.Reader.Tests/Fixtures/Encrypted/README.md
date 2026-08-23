@@ -141,6 +141,10 @@ Two assertions, in this order:
    the baseline byte-for-byte **except the second `/ID` array element**, which qpdf regenerates on
    every invocation; the first element is preserved.
 
+   `enc-rc4-objstm.pdf` needs `--object-streams=disable` on that command: `--decrypt` alone preserves
+   the object streams, so the output differs from the baseline from byte 36 onward and looks broken
+   when it is not.
+
    This works for the nine rows built from the baseline with the `u`/`o` pair. It does **not** apply
    to the other six, and each for its own reason: `enc-aes-128-emptyuser.pdf` and
    `enc-aes-128-tworevisions.pdf` take an empty user password, `enc-aes-128-longpassword.pdf`,

@@ -123,6 +123,7 @@ public sealed class PdfDocumentReader : IDisposable
             _decryptor = setup.Decryptor;
             _fileKey = setup.FileKey;
             _cryptFilterTable = setup.CryptFilterTable;
+            _embeddedFileFilter = setup.EmbeddedFileFilter;
             _encryptMetadata = setup.EncryptMetadata;
 
             Encryption = new PdfEncryptionInfo(
@@ -192,6 +193,8 @@ public sealed class PdfDocumentReader : IDisposable
     /// </summary>
     private PdfObject? Resolve(int objectNumber, int? generation)
     {
+        ThrowIfDisposed();
+
         // One lookup regardless of whether the caller specifies a generation: the cache tuple
         // already carries this object's authoritative generation (see the field comment above), so
         // a warm hit never needs a second trip to _xref to check it.
@@ -287,6 +290,8 @@ public sealed class PdfDocumentReader : IDisposable
 
     private ParsedStream? ResolveStream(int objectNumber, int? generation)
     {
+        ThrowIfDisposed();
+
         // See Resolve(int, int?) for the single-lookup reasoning and what "authoritative" means.
         if (_streamCache.TryGetValue(objectNumber, out var cached))
             return generation is null || cached.Generation == generation ? cached.Stream : null;
@@ -376,13 +381,16 @@ public sealed class PdfDocumentReader : IDisposable
     /// </summary>
     internal ParsedStream DecryptedStreamView(ParsedStream stream)
     {
+        ThrowIfDisposed();
+
         if (_decryptor is null)
             return stream;
 
         var method = CryptFilterResolver.ResolveStreamMethod(
             stream.Dictionary, _decryptor.StreamFilter, _cryptFilterTable, _encryptMetadata, ResolveMaybe,
             IsCrossReferenceStream(stream.ObjectNumber),
-            IsDocumentMetadataStream(stream.ObjectNumber));
+            IsDocumentMetadataStream(stream.ObjectNumber),
+            _embeddedFileFilter);
 
         if (method == CryptFilterMethod.Identity)
             return stream;
@@ -412,6 +420,9 @@ public sealed class PdfDocumentReader : IDisposable
     // stream to have its ciphertext handed to a preflight rule unexamined.
     private readonly IReadOnlySet<long> _crossReferenceStreamOffsets;
 
+    // The crypt filter /EFF names for embedded file streams, or /StmF's where it names none.
+    private CryptFilterMethod _embeddedFileFilter;
+
     /// <summary>
     /// Whether <paramref name="objectNumber"/> is the document's own metadata stream — the object
     /// the catalog's <c>/Metadata</c> names. ISO 32000-2 Table 20 scopes <c>/EncryptMetadata</c> to
@@ -420,10 +431,22 @@ public sealed class PdfDocumentReader : IDisposable
     /// </summary>
     private bool IsDocumentMetadataStream(int objectNumber)
     {
+        // Catalog is assigned at the END of the constructor, and getting there can decode a stream:
+        // /Root inside an object stream — the layout every modern producer emits — routes
+        // Resolve -> LoadObjectStreamCore -> GetDecodedStreamData -> DecryptedStreamView back here
+        // with Catalog still null. Answering "no" until it exists is not a compromise: the only
+        // streams decoded before that point are object streams and the cross-reference stream, and
+        // the metadata stream can be neither, since a stream cannot live inside an object stream
+        // (ISO 32000-2 §7.5.7).
+        if (Catalog is null)
+            return false;
+
         if (!_documentMetadataResolved)
         {
-            _documentMetadataResolved = true;
+            // Assigned only once the lookup has actually happened. Set first, a caller that swallowed
+            // an exception from it would leave the exemption permanently and silently switched off.
             _documentMetadataObjectNumber = (Catalog.Get(_metadataKey) as PdfIndirectReference)?.ObjectNumber;
+            _documentMetadataResolved = true;
         }
 
         return _documentMetadataObjectNumber == objectNumber;
@@ -559,16 +582,37 @@ public sealed class PdfDocumentReader : IDisposable
 
     /// <inheritdoc />
     /// <summary>
-    /// Clears the file encryption key. The reader holds no unmanaged resources, so this is the
-    /// only thing there is to release — but it is worth releasing: <see cref="PdfEncryptionInfo"/>
-    /// goes out of its way to expose nothing an attacker could use to skip authentication, and a
-    /// key left in the managed heap for the life of the process undoes some of that.
+    /// Clears the file encryption key. The reader holds no unmanaged resources, so this is the only
+    /// thing there is to release — but it is worth releasing: <see cref="PdfEncryptionInfo"/> goes
+    /// out of its way to expose nothing an attacker could use to skip authentication, and a key left
+    /// in the managed heap for the life of the process undoes some of that.
+    ///
+    /// <para>
+    /// The reader is unusable afterwards, and says so: resolving an object on a disposed reader
+    /// throws <see cref="ObjectDisposedException"/> rather than decrypting against the zeroed key,
+    /// which under RC4 would return plausible-looking garbage and report nothing. Disposing twice is
+    /// not an error.
+    /// </para>
     /// </summary>
     public void Dispose()
     {
+        _disposed = true;
+
         if (_fileKey is not null)
             CryptographicOperations.ZeroMemory(_fileKey);
     }
+
+    // Zeroing the key makes a disposed reader dangerous rather than merely useless: under RC4 a
+    // resolve against an all-zero key returns garbage with no error at all, and under Flate it
+    // surfaces as an inflate failure blamed on the file. Every entry point that needs the key
+    // checks this first, so the caller gets the disposal error the situation actually is.
+    private void ThrowIfDisposed()
+    {
+        if (_disposed)
+            throw new ObjectDisposedException(nameof(PdfDocumentReader));
+    }
+
+    private bool _disposed;
 
     // ── Object stream resolution ─────────────────────────────────────────────
 

@@ -101,6 +101,16 @@ public sealed class PdfDocEncodingTests
     [InlineData("你好")]      // CJK
     [InlineData("passאword")]    // Hebrew alef
     [InlineData("Ж")]            // Cyrillic Zhe
+    // The C0 and C1 controls the two block guards exist to reject. Every character above is
+    // beyond U+00FF and would be refused by the <= 0xFF test alone, so without these rows the
+    // guards themselves are unpinned.
+    [InlineData("\u0018")]
+    [InlineData("\u001F")]
+    [InlineData("\u0080")]
+    [InlineData("\u009F")]
+    // Annex D marks these Undefined, and they sit inside neither block.
+    [InlineData("\u007F")]
+    [InlineData("\u00AD")]
     public void UnrepresentableCharacters_areRefused(string password)
     {
         Assert.False(PdfDocEncoding.TryEncode(password, out var bytes));

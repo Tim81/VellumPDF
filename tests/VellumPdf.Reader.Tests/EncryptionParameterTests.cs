@@ -150,7 +150,7 @@ public sealed class EncryptionParameterTests
 
         using var reader = PdfReader.Open(doc, "u");
 
-        Assert.Equal(PdfCipherAlgorithm.Aes128, reader.Encryption!.Cipher);
+        Assert.Equal(PdfCipherAlgorithm.Aes128, reader.Encryption!.StreamCipher);
     }
 
     /// <summary>
@@ -254,35 +254,75 @@ public sealed class EncryptionParameterTests
 
         using var reader = PdfReader.Open(doc, "u");
 
-        Assert.Equal(PdfCipherAlgorithm.Aes128, reader.Encryption!.Cipher);
+        Assert.Equal(PdfCipherAlgorithm.Aes128, reader.Encryption!.StreamCipher);
         Assert.Equal(PdfCipherAlgorithm.Rc4, reader.Encryption.StringCipher);
     }
 
     /// <summary>
     /// ISO 32000-1 §7.6.1 lets a document encrypt only its attachments: <c>/StmF</c> and
-    /// <c>/StrF</c> Identity, with <c>/EFF</c> naming a real crypt filter for embedded file streams.
+    /// <c>/StrF</c> Identity, with <c>/EFF</c> naming the crypt filter for embedded file streams.
     /// Acrobat writes exactly this for "encrypt only file attachments". Everything outside the
-    /// attachments is in the clear and has to read normally — refusing the document would throw away
-    /// a page of readable content to avoid mishandling a part no API in this library exposes.
+    /// attachments is in the clear, and the attachment itself is encrypted under <c>/EFF</c>'s
+    /// filter — read with <c>/StmF</c>'s instead, its ciphertext comes back as the file.
     /// </summary>
     [Fact]
-    public void AttachmentOnlyEncryption_opens_andItsUnencryptedContentReads()
+    public void AttachmentOnlyEncryption_readsThePlaintextOutsideAndDecryptsTheAttachment()
     {
         var probe = "NOT-ENCRYPTED-AT-ALL"u8.ToArray();
+        var attachment = EncryptRc4(5, 0, "attachment payload"u8.ToArray());
+
         var doc = BuildWithEncryptDict(
             "<< /Filter /Standard /V 4 /R 4 /Length 128 "
-            + "/CF << /StdCF << /CFM /AESV2 /Length 16 >> >> /StmF /Identity /StrF /Identity /EFF /StdCF "
+            + "/CF << /StdCF << /CFM /V2 /Length 16 >> >> /StmF /Identity /StrF /Identity /EFF /StdCF "
             + "/O <2a2f0a1990192c60114730bdcd39f37828a53c89a340dd473c85299dc5258e1c> "
             + "/U <6c8913ac9fc602eb1aad2a1ec614bee90021446990b9e4114071a4d9104984c1> /P -4 >>",
-            $"<< /Probe <{Convert.ToHexStringLower(probe)}> >>");
+            $"<< /Probe <{Convert.ToHexStringLower(probe)}> >>",
+            extraObjects:
+            [
+                $"<< /Type /EmbeddedFile /Length {attachment.Length} >>\n"
+                + $"stream\n{Encoding.Latin1.GetString(attachment)}\nendstream",
+            ]);
 
         using var reader = PdfReader.Open(doc, "u");
-        var dict = Assert.IsType<PdfDictionary>(reader.Resolve(new PdfIndirectReference(3, 0)));
 
-        Assert.Equal(PdfCipherAlgorithm.Identity, reader.Encryption!.Cipher);
+        // Outside the attachment: Identity, so the bytes are already plaintext in the file.
+        var dict = Assert.IsType<PdfDictionary>(reader.Resolve(new PdfIndirectReference(3, 0)));
+        Assert.Equal(PdfCipherAlgorithm.Identity, reader.Encryption!.StreamCipher);
         Assert.Equal(
             "NOT-ENCRYPTED-AT-ALL",
             Encoding.ASCII.GetString(((PdfHexString)dict.Get(new PdfName("Probe"))!).Bytes.Span));
+
+        // The attachment: RC4 under /EFF's filter.
+        var embedded = reader.ResolveStream(5)!;
+        Assert.Equal("attachment payload", Encoding.ASCII.GetString(reader.GetDecodedStreamData(embedded)!));
+    }
+
+    /// <summary>
+    /// The other direction: with no <c>/EFF</c>, an embedded file stream is an ordinary stream and
+    /// takes <c>/StmF</c> like everything else. Reaching for a filter that was never named would
+    /// decrypt it twice.
+    /// </summary>
+    [Fact]
+    public void EmbeddedFileStream_withNoEff_takesTheDocumentWideStreamFilter()
+    {
+        var attachment = EncryptRc4(5, 0, "ordinary stream rules"u8.ToArray());
+
+        var doc = BuildWithEncryptDict(
+            "<< /Filter /Standard /V 4 /R 4 /Length 128 "
+            + "/CF << /StdCF << /CFM /V2 /Length 16 >> >> /StmF /StdCF /StrF /StdCF "
+            + "/O <2a2f0a1990192c60114730bdcd39f37828a53c89a340dd473c85299dc5258e1c> "
+            + "/U <6c8913ac9fc602eb1aad2a1ec614bee90021446990b9e4114071a4d9104984c1> /P -4 >>",
+            "<< /Probe 1 >>",
+            extraObjects:
+            [
+                $"<< /Type /EmbeddedFile /Length {attachment.Length} >>\n"
+                + $"stream\n{Encoding.Latin1.GetString(attachment)}\nendstream",
+            ]);
+
+        using var reader = PdfReader.Open(doc, "u");
+        var embedded = reader.ResolveStream(5)!;
+
+        Assert.Equal("ordinary stream rules", Encoding.ASCII.GetString(reader.GetDecodedStreamData(embedded)!));
     }
 
     /// <summary>
@@ -348,23 +388,57 @@ public sealed class EncryptionParameterTests
     /// <summary>
     /// A document that encrypts its strings but not its streams names <c>/Identity</c> for
     /// <c>/StmF</c> — which is not a <c>/CF</c> entry to look up, so the length has to come from
-    /// <c>/StrF</c>'s. Treating Identity as a name and stopping there falls back to the top-level
-    /// entry, and to 40 bits when there is none.
+    /// <c>/StrF</c>'s. Two entries with different lengths, because with one the same answer arrives
+    /// through the single-entry fallback and through <c>/V</c> 4's own default, and the test would
+    /// pass with the <c>/StrF</c> fallback removed.
     /// </summary>
     [Fact]
     public void StmFIdentity_takesTheKeyLengthFromStrF()
     {
         var doc = BuildWithEncryptDict(
-            "<< /Filter /Standard /V 4 /R 4 /CF << /StdCF << /CFM /V2 /Length 16 >> >> "
-            + "/StmF /Identity /StrF /StdCF "
+            "<< /Filter /Standard /V 4 /R 4 "
+            + "/CF << /Unused << /CFM /V2 /Length 5 >> /StrCF << /CFM /V2 /Length 16 >> >> "
+            + "/StmF /Identity /StrF /StrCF "
             + "/O <2a2f0a1990192c60114730bdcd39f37828a53c89a340dd473c85299dc5258e1c> "
             + "/U <6c8913ac9fc602eb1aad2a1ec614bee90021446990b9e4114071a4d9104984c1> /P -4 >>");
 
         using var reader = PdfReader.Open(doc, "u");
 
         Assert.Equal(128, reader.Encryption!.KeyLengthBits);
-        Assert.Equal(PdfCipherAlgorithm.Identity, reader.Encryption.Cipher);
+        Assert.Equal(PdfCipherAlgorithm.Identity, reader.Encryption.StreamCipher);
         Assert.Equal(PdfCipherAlgorithm.Rc4, reader.Encryption.StringCipher);
+    }
+
+    /// <summary>
+    /// ISO 32000-1 Table 20 forbids <c>/V</c> 0 and 3 alike, and they are not the same failure:
+    /// 3 names an unpublished algorithm a clean-room implementation can never provide, while 0 names
+    /// no algorithm at all. A caller holding the first has a file some other tool can read.
+    /// </summary>
+    [Fact]
+    public void V3_isUnsupportedRatherThanMalformed()
+    {
+        var doc = BuildWithEncryptDict(
+            "<< /Filter /Standard /V 3 /R 3 /Length 128 "
+            + "/O <2a2f0a1990192c60114730bdcd39f37828a53c89a340dd473c85299dc5258e1c> "
+            + "/U <6c8913ac9fc602eb1aad2a1ec614bee90021446990b9e4114071a4d9104984c1> /P -4 >>");
+
+        var ex = Assert.Throws<UnsupportedPdfFeatureException>(() => PdfReader.Open(doc, "u"));
+
+        Assert.Contains("/V 3", ex.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>The other half: <c>/V</c> 0 has no algorithm to apply, so the file is malformed.</summary>
+    [Fact]
+    public void V0_isMalformed()
+    {
+        var doc = BuildWithEncryptDict(
+            "<< /Filter /Standard /V 0 /R 3 /Length 128 "
+            + "/O <2a2f0a1990192c60114730bdcd39f37828a53c89a340dd473c85299dc5258e1c> "
+            + "/U <6c8913ac9fc602eb1aad2a1ec614bee90021446990b9e4114071a4d9104984c1> /P -4 >>");
+
+        var ex = Assert.Throws<InvalidDataException>(() => PdfReader.Open(doc, "u"));
+
+        Assert.Contains("/V 0", ex.Message, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -404,7 +478,69 @@ public sealed class EncryptionParameterTests
         Assert.Equal(-4 & (int)PdfPermissions.All, (int)reader.Encryption!.Permissions);
     }
 
+    /// <summary>
+    /// AES-128 has exactly one legal key size, so a crypt filter declaring anything else is the
+    /// document contradicting itself — and the cipher wins, because it is what will actually be
+    /// applied. Rejecting the correct password over a stray <c>/Length</c> would refuse a file every
+    /// other reader opens. Only RC4 has a range to declare (Table 20: 40 to 128 bits).
+    /// </summary>
+    [Theory]
+    [InlineData("/AESV2", 5)]
+    [InlineData("/AESV2", 10)]
+    [InlineData("/AESV2", 32)]
+    public void CryptFilterLengthTheCipherCannotUse_isIgnoredInFavourOfTheCipher(string cfm, int declaredLength)
+    {
+        var doc = BuildWithEncryptDict(
+            $"<< /Filter /Standard /V 4 /R 4 /CF << /StdCF << /CFM {cfm} /Length {declaredLength} >> >> "
+            + "/StmF /StdCF /StrF /StdCF "
+            + "/O <2a2f0a1990192c60114730bdcd39f37828a53c89a340dd473c85299dc5258e1c> "
+            + "/U <6c8913ac9fc602eb1aad2a1ec614bee90021446990b9e4114071a4d9104984c1> /P -4 >>");
+
+        using var reader = PdfReader.Open(doc, "u");
+
+        Assert.Equal(128, reader.Encryption!.KeyLengthBits);
+    }
+
+    /// <summary>
+    /// Zeroing the file encryption key on <c>Dispose</c> makes a disposed reader dangerous rather
+    /// than merely useless: RC4 against an all-zero key returns garbage and reports nothing, and a
+    /// Flate stream surfaces as an inflate failure blamed on the file. The caller gets the disposal
+    /// error the situation actually is.
+    /// </summary>
+    [Fact]
+    public void ReaderUsedAfterDispose_throwsObjectDisposed_ratherThanReturningGarbage()
+    {
+        var reader = PdfReader.Open(Load("enc-rc4-128.pdf"), "u");
+        var infoRef = (PdfIndirectReference)reader.Trailer.Get(new PdfName("Info"))!;
+
+        // Sound before disposal, so the assertion below is about disposal and not about the fixture.
+        Assert.NotNull(reader.Resolve(infoRef));
+
+        reader.Dispose();
+
+        Assert.Throws<ObjectDisposedException>(() => reader.Resolve(infoRef));
+        Assert.Throws<ObjectDisposedException>(() => reader.ResolveStream(infoRef));
+
+        // Disposing twice is not an error.
+        reader.Dispose();
+    }
+
     // ── Helpers ─────────────────────────────────────────────────────────────────────────────────
+
+    // RC4 is symmetric, so the reader's own decrypt path doubles as the encryptor these documents
+    // need. Safe here because these tests are about which FILTER is chosen, not about the key
+    // derivation: a derivation error would cancel on both sides, but a filter error cannot, since
+    // the encryptor always uses RC4 while the reader picks its filter from the dictionary.
+    private static byte[] EncryptRc4(int objectNumber, int generation, byte[] plaintext)
+    {
+        using var reader = PdfReader.Open(Load("enc-rc4-128.pdf"), "u");
+        var type = typeof(PdfDocumentReader);
+        var decryptor = (StandardSecurityDecryptor)type
+            .GetField("_decryptor", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(reader)!;
+        var fileKey = (byte[])type
+            .GetField("_fileKey", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(reader)!;
+        return decryptor.DecryptString(fileKey, objectNumber, generation, plaintext);
+    }
 
     // Decrypts /Perms with the document's own file key, flips byte 8 (the /EncryptMetadata flag),
     // re-encrypts and patches it back — same length, so every cross-reference offset survives.

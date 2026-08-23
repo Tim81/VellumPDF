@@ -149,7 +149,7 @@ public sealed class EncryptedReaderTests
         Assert.NotNull(reader.Encryption);
         Assert.Equal(5, reader.Encryption.V);
         Assert.Equal(6, reader.Encryption.R);
-        Assert.Equal(PdfCipherAlgorithm.Aes256, reader.Encryption.Cipher);
+        Assert.Equal(PdfCipherAlgorithm.Aes256, reader.Encryption.StreamCipher);
         Assert.Equal(256, reader.Encryption.KeyLengthBits);
         Assert.True(reader.Encryption.EncryptMetadata);
         Assert.Equal(PdfPermissions.All, reader.Encryption.Permissions);
@@ -163,7 +163,7 @@ public sealed class EncryptedReaderTests
         Assert.NotNull(reader.Encryption);
         Assert.Equal(1, reader.Encryption.V);
         Assert.Equal(2, reader.Encryption.R);
-        Assert.Equal(PdfCipherAlgorithm.Rc4, reader.Encryption.Cipher);
+        Assert.Equal(PdfCipherAlgorithm.Rc4, reader.Encryption.StreamCipher);
         Assert.Equal(40, reader.Encryption.KeyLengthBits);
     }
 

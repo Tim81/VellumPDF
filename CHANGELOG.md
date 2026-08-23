@@ -73,9 +73,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   At `/R` 5 and 6 the permissions come from `/Perms` (ISO 32000-2 Algorithm 13) — the copy sealed
   under the file key — rather than the dictionary's `/P`, which nothing protects at those revisions.
 
-  Verified against the committed corpus (#99): each fixture's page content decrypts to the
-  unencrypted baseline's bytes, `/Info /Title` to its exact expected text, and both passwords open
-  their fixture. Seven fixtures were added for this work, covering an empty user password, an object
+  Verified against the committed corpus (#99): for the eight rows built from the baseline with the
+  `u`/`o` password pair, the page content decrypts to the baseline's bytes, `/Info /Title` to its
+  exact expected text, and each opens under both passwords. The other rows take their own passwords
+  or are not the baseline's object graph, and their own tests say what each pins. Seven fixtures were added for this work, covering an empty user password, an object
   stream with a cross-reference stream, nested strings, a 40-character password, one password
   serving as both roles, a non-ASCII password whose `/U` is PDFDocEncoding-derived, and an
   incremental update over an encrypted document. (#97)
@@ -112,6 +113,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   Callers that caught `NotSupportedException` to detect an encrypted file need to catch
   `PdfPasswordException` instead — it deliberately does not derive from `NotSupportedException`,
   since a password-protected file is not an unsupported feature.
+
+  `PdfDocumentReader.Dispose` clears the file encryption key, where it used to do nothing, so a
+  disposed reader is now unusable: resolving an object on one throws `ObjectDisposedException`
+  rather than decrypting against a zeroed key.
 
   `vellum-preflight` reports a password-protected file as an error line rather than crashing, and
   `PdfPreflight.Validate` reports a document whose streams cannot be decoded as unevaluable instead
@@ -156,9 +161,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
-- **PDFDocEncoding put NO-BREAK SPACE at 0xA0, where the encoding has EURO SIGN.** The one byte at
-  which it and Latin-1 disagree outside the 0x18-0x1F and 0x80-0x9F blocks, so a password containing
-  `€` could not be encoded at all and one containing U+00A0 was encoded as a Euro sign. (#97)
+- **PDFDocEncoding treated four bytes as Latin-1 that Annex D does not.** 0xA0 is EURO SIGN there,
+  not NO-BREAK SPACE, so a password containing `€` could not be encoded at all while one containing
+  U+00A0 was encoded as a Euro sign; 0x7F, 0x9F and 0xAD are Undefined, and a password using any of
+  them now has no PDFDocEncoding candidate rather than a wrong one. (#97)
 
 - **A stream whose declared `/Length` landed on `)`, `{`, `}` or a lone `>` failed the parse.** The
   parser recovers from a wrong `/Length` by scanning for `endstream`, but the token read that

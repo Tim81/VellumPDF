@@ -43,7 +43,7 @@ public sealed class EncryptionStructureTests
 
         using var reader = PdfReader.Open(bytes, "u");
 
-        Assert.Equal(PdfCipherAlgorithm.Rc4, reader.Encryption!.Cipher);
+        Assert.Equal(PdfCipherAlgorithm.Rc4, reader.Encryption!.StreamCipher);
     }
 
     /// <summary>
@@ -57,7 +57,7 @@ public sealed class EncryptionStructureTests
 
         using var reader = PdfReader.Open(bytes, "u");
 
-        Assert.Equal(PdfCipherAlgorithm.Rc4, reader.Encryption!.Cipher);
+        Assert.Equal(PdfCipherAlgorithm.Rc4, reader.Encryption!.StreamCipher);
     }
 
     // ── The /Crypt filter as ISO 32000-1 §7.6.5's example writes it ─────────────────────────────
@@ -148,6 +148,85 @@ public sealed class EncryptionStructureTests
             ?? throw new InvalidOperationException("LegacyKeyLengthBytes not found by reflection.");
 
         Assert.Equal(expectedBytes, (int)method.Invoke(null, [encryptDict, v, r])!);
+    }
+
+    /// <summary>
+    /// Which crypt filter is in force when neither <c>/StmF</c> nor <c>/StrF</c> names one: a single
+    /// <c>/CF</c> entry is the document's only filter and its length applies, while two leave nothing
+    /// to choose between and the length falls to what <c>/V</c> 4 implies. Neither case can be
+    /// reached through <c>PdfReader.Open</c> — the corpus's <c>/O</c> and <c>/U</c> authenticate only
+    /// at 16 bytes, so a document exercising the 5-byte answer cannot also be opened.
+    /// </summary>
+    [Theory]
+    [InlineData(1, 5)]    // the sole entry's /Length, in bytes
+    [InlineData(2, 16)]   // ambiguous: /V 4's own default, 128 bits
+    public void KeyLengthBytes_withNoStmFOrStrF_usesTheSoleCryptFilterOrTheVersionDefault(
+        int cryptFilterCount, int expectedBytes)
+    {
+        var cf = new PdfDictionary();
+        for (var i = 0; i < cryptFilterCount; i++)
+        {
+            cf.Set(new PdfName($"Filter{i}"), new PdfDictionary()
+                .Set(new PdfName("CFM"), new PdfName("V2"))
+                .Set(new PdfName("Length"), new PdfInteger(5)));
+        }
+
+        var encryptDict = new PdfDictionary().Set(new PdfName("CF"), cf);
+
+        var method = typeof(EncryptionSetup).GetMethod(
+            "LegacyKeyLengthBytes", BindingFlags.NonPublic | BindingFlags.Static)!;
+
+        Assert.Equal(expectedBytes, (int)method.Invoke(null, [encryptDict, 4, 4])!);
+    }
+
+    /// <summary>
+    /// <c>/StmF /Identity</c> names no crypt filter to look up, so the length has to come from
+    /// <c>/StrF</c>'s. Driven directly, and with a length that is NOT 128 bits, because every other
+    /// route to an answer here — the single-entry fallback, <c>/V</c> 4's own default — produces 128:
+    /// a test expecting that number passes with the fallback removed. A document could not make this
+    /// assertion either, since a 5-byte key authenticates against no <c>/O</c> and <c>/U</c> the
+    /// corpus has.
+    /// </summary>
+    [Fact]
+    public void KeyLengthBytes_withStmFIdentity_takesTheLengthFromStrF()
+    {
+        var encryptDict = new PdfDictionary()
+            .Set(new PdfName("StmF"), new PdfName("Identity"))
+            .Set(new PdfName("StrF"), new PdfName("StrCF"))
+            .Set(new PdfName("CF"), new PdfDictionary()
+                .Set(new PdfName("Unused"), new PdfDictionary()
+                    .Set(new PdfName("CFM"), new PdfName("V2"))
+                    .Set(new PdfName("Length"), new PdfInteger(16)))
+                .Set(new PdfName("StrCF"), new PdfDictionary()
+                    .Set(new PdfName("CFM"), new PdfName("V2"))
+                    .Set(new PdfName("Length"), new PdfInteger(5))));
+
+        var method = typeof(EncryptionSetup).GetMethod(
+            "LegacyKeyLengthBytes", BindingFlags.NonPublic | BindingFlags.Static)!;
+
+        Assert.Equal(5, (int)method.Invoke(null, [encryptDict, 4, 4])!);
+    }
+
+    /// <summary>
+    /// AES-256 has one legal key size too, so a crypt filter declaring anything else loses to the
+    /// cipher — the AESV2 half of this rule has its own test; this is the <c>/AESV3</c> half.
+    /// </summary>
+    [Theory]
+    [InlineData(16)]
+    [InlineData(5)]
+    public void AesV3CryptFilterLengthTheCipherCannotUse_isIgnored(int declaredLength)
+    {
+        var encryptDict = new PdfDictionary()
+            .Set(new PdfName("StmF"), new PdfName("StdCF"))
+            .Set(new PdfName("CF"), new PdfDictionary()
+                .Set(new PdfName("StdCF"), new PdfDictionary()
+                    .Set(new PdfName("CFM"), new PdfName("AESV3"))
+                    .Set(new PdfName("Length"), new PdfInteger(declaredLength))));
+
+        var method = typeof(EncryptionSetup).GetMethod(
+            "LegacyKeyLengthBytes", BindingFlags.NonPublic | BindingFlags.Static)!;
+
+        Assert.Equal(32, (int)method.Invoke(null, [encryptDict, 4, 4])!);
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────────────────────────────

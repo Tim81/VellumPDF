@@ -97,7 +97,18 @@ internal static class CryptFilterResolver
     /// its own that stays encrypted — qpdf's <c>--cleartext-metadata</c> encrypts those and exempts
     /// only the catalog's. Recognising the exemption by <c>/Type /Metadata</c> instead would both
     /// hand back a page's metadata as ciphertext and let any stream opt out of decryption by
-    /// claiming that type, which is the trust model the cross-reference exemption below rejects.
+    /// claiming that type.
+    /// </para>
+    ///
+    /// <para>
+    /// Which is not a blanket rule that a key in the dictionary may never decide an exemption — two
+    /// of the four here work exactly that way, because the spec defines them that way: <c>/F</c> is
+    /// what makes a stream an external-file stream (§7.6.1), and <c>/Type /Sig</c> is what makes a
+    /// dictionary a signature. There the key IS the definition, and a document writing it has
+    /// misdescribed its own content rather than escaped anything. The cross-reference stream and the
+    /// document metadata stream are identified by POSITION instead — the object the startxref chain
+    /// arrived at, the object the catalog points at — so for those the key is a claim the file can
+    /// check against what it actually found, and does.
     /// </para>
     /// </summary>
     internal static CryptFilterMethod ResolveStreamMethod(
@@ -107,7 +118,8 @@ internal static class CryptFilterResolver
         bool encryptMetadata,
         Func<PdfObject?, PdfObject?>? resolve,
         bool isCrossReferenceStream = false,
-        bool isDocumentMetadataStream = false)
+        bool isDocumentMetadataStream = false,
+        CryptFilterMethod? embeddedFileFilter = null)
     {
         if (!encryptMetadata && isDocumentMetadataStream)
             return CryptFilterMethod.Identity;
@@ -129,6 +141,13 @@ internal static class CryptFilterResolver
         if (isCrossReferenceStream || IsExternalFileStream(streamDict, resolve))
             return CryptFilterMethod.Identity;
 
+        // /EFF names the crypt filter for embedded file streams (ISO 32000-1 §7.6.1, Table 20),
+        // which is what makes "encrypt only the attachments" expressible: /StmF and /StrF Identity
+        // with /EFF naming a real filter. Only an embedded file stream takes it, and Table 45
+        // identifies one by /Type /EmbeddedFile.
+        if (embeddedFileFilter is { } effMethod && IsEmbeddedFileStream(streamDict, resolve))
+            return effMethod;
+
         if (FirstFilterName(streamDict, resolve) != "Crypt")
             return defaultStreamFilter;
 
@@ -136,6 +155,9 @@ internal static class CryptFilterResolver
         var name = (Deref(resolve, parms?.Get(_name)) as PdfName)?.Value;
         return ResolveNamedMethod(name, cfTable);
     }
+
+    private static bool IsEmbeddedFileStream(PdfDictionary streamDict, Func<PdfObject?, PdfObject?>? resolve)
+        => (Deref(resolve, streamDict.Get(_type)) as PdfName)?.Value == "EmbeddedFile";
 
     // /F is only an external-file specification when it is a file specification — a string or a
     // dictionary (ISO 32000-1 Table 5, 7.11.2). A stream dictionary is free to use /F for something

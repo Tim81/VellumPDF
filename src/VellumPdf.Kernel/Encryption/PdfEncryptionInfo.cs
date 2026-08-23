@@ -5,7 +5,7 @@ namespace VellumPdf.Encryption;
 
 /// <summary>
 /// The cipher a Standard security handler crypt filter applies, as reported by
-/// <see cref="PdfEncryptionInfo.Cipher"/>. Mirrors <c>CryptFilterMethod</c> (the internal Kernel
+/// <see cref="PdfEncryptionInfo.StreamCipher"/>. Mirrors <c>CryptFilterMethod</c> (the internal Kernel
 /// enum the decrypt side is keyed on) without exposing that type or any key material.
 /// </summary>
 public enum PdfCipherAlgorithm
@@ -47,11 +47,11 @@ public sealed class PdfEncryptionInfo
     public int R { get; }
 
     /// <summary>The cipher the resolved <c>/StmF</c> crypt filter applies to streams.</summary>
-    public PdfCipherAlgorithm Cipher { get; }
+    public PdfCipherAlgorithm StreamCipher { get; }
 
     /// <summary>
     /// The cipher the resolved <c>/StrF</c> crypt filter applies to strings. Usually the same as
-    /// <see cref="Cipher"/> — producers name one crypt filter for both — but ISO 32000-2 Table 20
+    /// <see cref="StreamCipher"/> — producers name one crypt filter for both — but ISO 32000-2 Table 20
     /// lets a document give strings and streams different ones, and this reports what it did.
     /// </summary>
     public PdfCipherAlgorithm StringCipher { get; }
@@ -103,7 +103,7 @@ public sealed class PdfEncryptionInfo
     {
         V = v;
         R = r;
-        Cipher = cipher;
+        StreamCipher = cipher;
         StringCipher = stringCipher;
         KeyLengthBits = keyLengthBits;
         Permissions = permissions;

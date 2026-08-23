@@ -12,12 +12,12 @@ namespace VellumPdf.Reader;
 /// same order qpdf's password recovery tries them in.
 ///
 /// <para>
-/// PDFDocEncoding agrees with Latin-1 (ISO 8859-1) everywhere except the 0x18–0x1F and 0x80–0x9F
-/// blocks, which <see cref="VellumPdf.Encryption.StandardSecurityDecryptor"/>'s own doc comment
-/// already identifies as the exception set; this table implements exactly that simplification
-/// rather than the full Annex D.2 table's every code point, matching what the rest of this codebase
-/// already treats as the documented scope (compare <c>VellumPdf.Fonts.WinAnsiEncoding</c>, which
-/// takes the same identity-outside-two-blocks shape for the unrelated WinAnsiEncoding table).
+/// PDFDocEncoding agrees with Latin-1 (ISO 8859-1) outside the 0x18–0x1F and 0x80–0x9F blocks, with
+/// four exceptions Annex D's table spells out: 0xA0 is EURO SIGN where Latin-1 has NO-BREAK SPACE,
+/// and 0x7F, 0x9F and 0xAD are Undefined — a character mapping to any of the three has no
+/// PDFDocEncoding representation at all. Everything else is the identity, which is what lets this be
+/// a table of exceptions rather than 256 entries (compare <c>VellumPdf.Fonts.WinAnsiEncoding</c>,
+/// which takes the same shape for the unrelated WinAnsiEncoding table).
 /// </para>
 /// </summary>
 internal static class PdfDocEncoding
@@ -51,14 +51,15 @@ internal static class PdfDocEncoding
 
     private static bool TryGetByte(char c, out byte b)
     {
-        // 0xA0 is excluded from the identity range along with the two blocks: PDFDocEncoding puts
-        // EURO SIGN there (Annex D, Latin character set table, PDF column 240 octal), where Latin-1
-        // has NO-BREAK SPACE. So U+00A0 has no PDFDocEncoding representation at all, and U+20AC is
-        // in the exception table below rather than unencodable.
+        // Excluded from the identity range along with the two blocks: 0xA0, which PDFDocEncoding
+        // gives to EURO SIGN (Annex D, Latin character set table, PDF column 240 octal) where Latin-1
+        // has NO-BREAK SPACE — so U+00A0 has no representation and U+20AC is in the table below —
+        // plus 0x7F and 0xAD, which that table marks Undefined. (0x9F is Undefined too and already
+        // falls inside the second block.)
         if (c <= 0xFF
             && (c is < (char)0x18 or > (char)0x1F)
             && (c is < (char)0x80 or > (char)0x9F)
-            && c != (char)0xA0)
+            && c is not ((char)0x7F or (char)0xA0 or (char)0xAD))
         {
             b = (byte)c;
             return true;

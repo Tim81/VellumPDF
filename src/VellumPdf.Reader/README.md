@@ -5,11 +5,13 @@
 
 The PDF reader of **[VellumPdf](https://github.com/Tim81/VellumPDF)**, a dependency-free PDF library for .NET 10 implemented clean-room from ISO 32000. It opens an existing PDF on a bounds-checked lexer and object parser and exposes its structure. BCL-only, with zero runtime dependencies.
 
-- Classic cross-reference tables, cross-reference and object streams, and hybrid-reference files (unencrypted).
+- Classic cross-reference tables, cross-reference and object streams, and hybrid-reference files.
+- Encrypted documents: the Standard security handler at `/V` 1, 2, 4 and 5 and `/R` 2 through 6 —
+  RC4-40 through RC4-128, AES-128 and AES-256 — opened with `PdfReader.Open(bytes, password)`.
 - Exposes the document catalog, digital signatures, and decoded stream data.
 - The foundation for the signing long-term-validation path, the `VellumPdf.Conformance` validator, and a growing general reader.
 
-> **Preview.** The public surface is still settling; encryption and content extraction are on the roadmap (Epic #100). See the roadmap below.
+> **Preview.** The public surface is still settling; content extraction is on the roadmap (Epic #100). See the roadmap below.
 
 ## Install
 

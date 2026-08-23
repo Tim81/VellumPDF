@@ -11,8 +11,8 @@ to a mature commercial PDF SDK, implemented **clean-room** from the open
 
 Reading existing PDFs is being added incrementally. v1.6 introduced `VellumPdf.Reader`
 for the signing LTV path (#49); it now also backs the conformance validator and
-handles cross-reference streams, object streams, and hybrid-reference files, though
-not encryption. The full general reader is roadmapped as v2.1 (structural parser,
+handles cross-reference streams, object streams, hybrid-reference files, and encrypted
+documents (the Standard security handler, given the password). The full general reader is roadmapped as v2.1 (structural parser,
 Epic #100) and v2.2 (text/image extraction). Editing existing PDFs lands at v3.0 as a
 unified read-modify-write model that supersedes the write-once document API
 (Epic #101) — a breaking change, hence the major bump.

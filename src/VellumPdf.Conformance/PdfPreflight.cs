@@ -180,7 +180,7 @@ public static class PdfPreflight
         // finding against whatever clause they happen to cover, so a crypt-filter problem came out
         // as a FAIL stamped with output-intent and transparency clauses the file never violated.
         // "Cannot evaluate" is the honest answer, and it is the answer /Adobe.PubSec already gets.
-        if (reader.Encryption?.Cipher == PdfCipherAlgorithm.Unsupported)
+        if (reader.Encryption?.StreamCipher == PdfCipherAlgorithm.Unsupported)
         {
             throw new UnsupportedPdfFeatureException(
                 "The document's /StmF crypt filter names a /CF entry it does not define, or a method "

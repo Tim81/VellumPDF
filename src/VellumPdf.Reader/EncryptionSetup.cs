@@ -25,6 +25,7 @@ internal static class EncryptionSetup
     private static readonly PdfName _lengthKey = new("Length");
     private static readonly PdfName _encryptMetadataKey = new("EncryptMetadata");
     private static readonly PdfName _cfKey = new("CF");
+    private static readonly PdfName _effKey = new("EFF");
     private static readonly PdfName _cfmKey = new("CFM");
     private static readonly PdfName _permsKey = new("Perms");
     private static readonly PdfName _stmFKey = new("StmF");
@@ -38,6 +39,8 @@ internal static class EncryptionSetup
         public required bool EncryptMetadata { get; init; }
         public required bool IsOwnerAccess { get; init; }
         public required PdfCipherAlgorithm Cipher { get; init; }
+
+        public required CryptFilterMethod EmbeddedFileFilter { get; init; }
 
         public required PdfCipherAlgorithm StringCipher { get; init; }
         public required int KeyLengthBits { get; init; }
@@ -80,16 +83,30 @@ internal static class EncryptionSetup
         var v = (int)RequireInt(encryptDict, _vKey, "/V");
         var r = (int)RequireInt(encryptDict, _rKey, "/R");
 
-        // /V 3 is a well-defined value — ISO 32000-1 Table 20 reserves it for "an unpublished
-        // algorithm that permits encryption key lengths ranging from 40 to 128 bits" — so a file
-        // using it is valid, merely beyond what a clean-room implementation can support. Reporting
-        // it as malformed would tell the user their good file is corrupt; the same distinction the
-        // handler already draws for /Filter /Adobe.PubSec.
+        // ISO 32000-1 Table 20 forbids both of these values, and they are not the same failure.
+        //
+        // /V 3 names "an unpublished algorithm that permits encryption key lengths ranging from 40 to
+        // 128 bits", and the row ends "This value shall not appear in a conforming PDF file" — so the
+        // document is non-conforming either way. Reported as unsupported rather than malformed
+        // because the distinction that helps a caller holding one is "this library cannot read it",
+        // not "your file is broken": the bytes may be perfectly good to a tool that has the
+        // algorithm, and no clean-room implementation can ever acquire it.
+        //
+        // /V 0 is "an algorithm that is undocumented. This value shall not be used", and Table 20
+        // also makes it the default when /V is absent. There is no algorithm to name, so this is a
+        // malformed encryption dictionary rather than a feature to implement.
         if (v == 3)
         {
             throw new UnsupportedPdfFeatureException(
-                "/Encrypt /V 3 uses the unpublished algorithm ISO 32000-1 Table 20 reserves for it, "
-                + "which this library does not implement.");
+                "/Encrypt /V 3 names the unpublished algorithm ISO 32000-1 Table 20 reserves for it, "
+                + "which no clean-room implementation can provide.");
+        }
+
+        if (v == 0)
+        {
+            throw new InvalidDataException(
+                "Malformed PDF: /Encrypt /V 0 is the undocumented algorithm ISO 32000-1 Table 20 says "
+                + "shall not be used, so there is no algorithm to apply.");
         }
         var o = RequireBytes(encryptDict, _oKey, "/O");
         var u = RequireBytes(encryptDict, _uKey, "/U");
@@ -106,12 +123,14 @@ internal static class EncryptionSetup
 
         CryptFilterMethod streamFilter;
         CryptFilterMethod stringFilter;
+        CryptFilterMethod embeddedFileFilter;
         if (v < 4)
         {
             // Algorithm 1: V=1/V=2 predate /CF entirely; the implicit method is always RC4, for
             // both streams and strings, never AES.
             streamFilter = CryptFilterMethod.Rc4;
             stringFilter = CryptFilterMethod.Rc4;
+            embeddedFileFilter = CryptFilterMethod.Rc4;
         }
         else
         {
@@ -119,6 +138,14 @@ internal static class EncryptionSetup
             var strFName = (encryptDict.Get(_strFKey) as PdfName)?.Value;
             streamFilter = CryptFilterResolver.ResolveNamedMethod(stmFName, cfTable);
             stringFilter = CryptFilterResolver.ResolveNamedMethod(strFName, cfTable);
+
+            // /EFF names the crypt filter for embedded file streams, and is what makes "encrypt only
+            // the attachments" expressible: /StmF and /StrF Identity with /EFF naming a real filter
+            // (ISO 32000-1 §7.6.1). Meaningful only at /V 4 and above (Table 20); absent, an embedded
+            // file stream is an ordinary stream and takes /StmF like the rest.
+            embeddedFileFilter = encryptDict.Get(_effKey) is PdfName eff
+                ? CryptFilterResolver.ResolveNamedMethod(eff.Value, cfTable)
+                : streamFilter;
         }
 
         var decryptor = new StandardSecurityDecryptor(
@@ -173,6 +200,7 @@ internal static class EncryptionSetup
             EncryptMetadata = encryptMetadata,
             IsOwnerAccess = isOwnerAccess,
             Cipher = ToCipher(streamFilter),
+            EmbeddedFileFilter = embeddedFileFilter,
             StringCipher = ToCipher(stringFilter),
             KeyLengthBits = keyLengthBytes * 8,
             Permissions = (PdfPermissions)(authenticatedP ?? p) & PdfPermissions.All,
@@ -380,10 +408,16 @@ internal static class EncryptionSetup
         if (declared is null)
             return impliedByCipher;
 
-        return impliedByCipher switch
+        // A declared length the cipher cannot use is the document contradicting itself, and the
+        // cipher wins because it is what will actually be applied. Only RC4 has a range to declare:
+        // ISO 32000-1 Table 20 allows it 40 to 128 bits, while AES-128 and AES-256 each have exactly
+        // one legal key size.
+        var cfm = (filter.Get(_cfmKey) as PdfName)?.Value;
+        return cfm switch
         {
-            32 => declared == 32 ? declared : impliedByCipher,
-            16 => declared is >= 5 and <= 16 ? declared : impliedByCipher,
+            "AESV3" => declared == 32 ? declared : 32,
+            "AESV2" => declared == 16 ? declared : 16,
+            "V2" => declared is >= 5 and <= 16 ? declared : impliedByCipher,
             _ => declared,
         };
     }

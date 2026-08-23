@@ -224,7 +224,7 @@ public sealed class EncryptedExemptionTests
 
     /// <summary>
     /// A document may use one cipher for strings and another for streams, and the two have to be
-    /// applied to the right halves. Reporting them separately is not enough — <c>Encryption.Cipher</c>
+    /// applied to the right halves. Reporting them separately is not enough — <c>Encryption.StreamCipher</c>
     /// and <c>StringCipher</c> can both be right while <c>DecryptString</c> reaches for the stream
     /// filter — so this asserts the plaintext of a real string and a real stream in one document.
     ///
@@ -419,6 +419,78 @@ public sealed class EncryptedExemptionTests
             Encoding.ASCII.GetString(reader.GetDecodedStreamData(stream)!));
     }
 
+    /// <summary>
+    /// The catalog inside an object stream — the layout every modern producer emits, and one no
+    /// fixture here can carry because qpdf writes the catalog uncompressed whenever it encrypts.
+    /// Getting to <c>/Root</c> decodes a stream, so anything the decode path consults about the
+    /// document as a whole has to cope with being asked before the catalog exists.
+    /// </summary>
+    [Fact]
+    public void EncryptedDocumentWithItsCatalogInsideAnObjectStream_opens()
+    {
+        var doc = BuildCatalogInObjectStream();
+
+        using var reader = PdfReader.Open(doc, "u");
+
+        Assert.Equal("Catalog", ((PdfName)reader.Catalog.Get(new PdfName("Type"))!).Value);
+        var probe = Assert.IsType<PdfDictionary>(reader.Resolve(new PdfIndirectReference(5, 0)));
+        Assert.Equal(
+            "OBJSTM-CATALOG",
+            Encoding.ASCII.GetString(((PdfHexString)probe.Get(new PdfName("Probe"))!).Bytes.Span));
+    }
+
+    // Object 1 is an /ObjStm holding the catalog (object 2) and the page tree (object 3); object 4 is
+    // the cross-reference stream; object 5 is an ordinary encrypted object outside the container.
+    private static byte[] BuildCatalogInObjectStream()
+    {
+        var members = "<< /Type /Catalog /Pages 3 0 R >> << /Type /Pages /Kids [] /Count 0 >>";
+        var header = "2 0 3 34 ";
+        var objStmBody = Encrypt(1, 0, Encoding.Latin1.GetBytes(header + members));
+
+        var probe = Encrypt(5, 0, "OBJSTM-CATALOG"u8.ToArray());
+
+        var ms = new MemoryStream();
+        void W(string t) => ms.Write(Encoding.Latin1.GetBytes(t));
+        W("%PDF-1.5\n");
+
+        var o1 = (int)ms.Position;
+        W($"1 0 obj\n<< /Type /ObjStm /N 2 /First {header.Length} /Length {objStmBody.Length} >>\nstream\n");
+        ms.Write(objStmBody);
+        W("\nendstream\nendobj\n");
+
+        var o6 = (int)ms.Position;
+        W($"6 0 obj\n{Rc4EncryptDict}\nendobj\n");
+
+        var o5 = (int)ms.Position;
+        W($"5 0 obj\n<< /Probe <{Convert.ToHexStringLower(probe)}> >>\nendobj\n");
+
+        var rows = new List<byte>();
+        void Row(byte type, int field2, int field3) => rows.AddRange(
+        [
+            type,
+            (byte)(field2 >> 24), (byte)(field2 >> 16), (byte)(field2 >> 8), (byte)field2,
+            (byte)(field3 >> 8), (byte)field3,
+        ]);
+
+        var xrefOffset = (int)ms.Position;
+        Row(0, 0, 65535);          // 0: free
+        Row(1, o1, 0);             // 1: the object stream
+        Row(2, 1, 0);              // 2: catalog, member 0 of object 1
+        Row(2, 1, 1);              // 3: page tree, member 1 of object 1
+        Row(1, xrefOffset, 0);     // 4: this cross-reference stream
+        Row(1, o5, 0);             // 5: the probe object
+        Row(1, o6, 0);             // 6: the /Encrypt dictionary
+
+        var rowBytes = rows.ToArray();
+        W($"4 0 obj\n<< /Type /XRef /Size 7 /W [1 4 2] /Root 2 0 R /Encrypt 6 0 R "
+          + $"/ID [<{Convert.ToHexStringLower(Id0)}><{Convert.ToHexStringLower(Id0)}>] /Length {rowBytes.Length} >>\n"
+          + "stream\n");
+        ms.Write(rowBytes);
+        W("\nendstream\nendobj\n");
+        W($"startxref\n{xrefOffset}\n%%EOF\n");
+        return ms.ToArray();
+    }
+
     // ── /EncryptMetadata false (ISO 32000-1 §7.6.5) ─────────────────────────────────────────────
 
     /// <summary>
@@ -532,8 +604,11 @@ public sealed class EncryptedExemptionTests
     /// one object number and one generation, not one per half. Keyed differently, one of the two
     /// comes out as noise.
     /// </summary>
-    [Fact]
-    public void XrefGenerationDiffersFromObjectHeader_dictionaryAndBodyShareOneIdentity()
+    [Theory]
+    [InlineData(false)]  // Resolve first, then the stream
+    [InlineData(true)]   // ResolveStream first — the order PreflightContext actually uses, and the
+                         // one that skips Resolve's restamping entirely
+    public void XrefGenerationDiffersFromObjectHeader_dictionaryAndBodyShareOneIdentity(bool streamFirst)
     {
         var body = Encrypt(3, 0, "BODY-GEN0"u8.ToArray());
         var probe = Encrypt(3, 0, "STR-GEN0"u8.ToArray());
@@ -558,8 +633,19 @@ public sealed class EncryptedExemptionTests
         W($"startxref\n{xref}\n%%EOF\n");
 
         using var reader = PdfReader.Open(ms.ToArray(), "u");
-        var dict = Assert.IsType<PdfDictionary>(reader.Resolve(new PdfIndirectReference(3, 0)));
-        var stream = reader.ResolveStream(3)!;
+
+        ParsedStream stream;
+        PdfDictionary dict;
+        if (streamFirst)
+        {
+            stream = reader.ResolveStream(3)!;
+            dict = Assert.IsType<PdfDictionary>(reader.Resolve(new PdfIndirectReference(3, 0)));
+        }
+        else
+        {
+            dict = Assert.IsType<PdfDictionary>(reader.Resolve(new PdfIndirectReference(3, 0)));
+            stream = reader.ResolveStream(3)!;
+        }
 
         Assert.Equal(
             "STR-GEN0",
