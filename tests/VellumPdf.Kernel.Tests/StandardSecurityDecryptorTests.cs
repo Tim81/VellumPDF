@@ -480,6 +480,45 @@ public sealed class StandardSecurityDecryptorTests
     }
 
     [Fact]
+    public void VerifyPermissions_atRLessThan5_returnsFalse_ratherThanThrowing()
+    {
+        // /Perms doesn't exist below R5, and a 5-16 byte R<=4 file key isn't a legal AES-256 key.
+        // Before the R<5 guard, aes.Key's setter threw CryptographicException here instead of
+        // this method reporting "not applicable" the way every other invalid input does.
+        var decryptor = new StandardSecurityDecryptor(
+            v: 1, r: 2, keyLengthBytes: 5, o: new byte[32], u: new byte[32], oe: null, ue: null,
+            p: -4, id0: [0x00], encryptMetadata: true,
+            streamFilter: CryptFilterMethod.Rc4, stringFilter: CryptFilterMethod.Rc4);
+
+        Assert.False(decryptor.VerifyPermissions(new byte[5], new byte[16]));
+    }
+
+    [Fact]
+    public void VerifyPermissions_atRevision4_withASixteenByteKey_returnsFalse_ratherThanRunningAesEcb()
+    {
+        // A 16-byte key is a legal AES-128 key size, so without the R<5 guard this would run ECB
+        // decryption on bytes that were never a /Perms block and return a meaningless boolean
+        // instead of "not applicable at this revision".
+        var decryptor = new StandardSecurityDecryptor(
+            v: 4, r: 4, keyLengthBytes: 16, o: new byte[32], u: new byte[32], oe: null, ue: null,
+            p: -4, id0: [0x00], encryptMetadata: true,
+            streamFilter: CryptFilterMethod.Aes128, stringFilter: CryptFilterMethod.Aes128);
+
+        Assert.False(decryptor.VerifyPermissions(new byte[16], new byte[16]));
+    }
+
+    [Fact]
+    public void VerifyPermissions_atRevision6_withAWrongSizedKey_returnsFalse()
+    {
+        // R>=5 always carries a 32-byte AES-256 file key; anything else at R>=5 is malformed
+        // input, not just a wrong password, so this is rejected before the AES key setter runs.
+        var info = LoadEncryptInfo("enc-aes-256-r6.pdf");
+        var decryptor = BuildDecryptor(info);
+
+        Assert.False(decryptor.VerifyPermissions(new byte[16], info.Perms!));
+    }
+
+    [Fact]
     public void VerifyPermissions_r6Fixture_decryptsToTheDocumentedPBytes()
     {
         // Pins the exact decrypted /Perms block for enc-aes-256-r6.pdf, not just the boolean

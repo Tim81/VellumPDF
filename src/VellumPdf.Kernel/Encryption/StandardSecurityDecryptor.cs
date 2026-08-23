@@ -324,6 +324,13 @@ internal sealed class StandardSecurityDecryptor
     /// </summary>
     public bool VerifyPermissions(byte[] fileKey, byte[] perms)
     {
+        // /Perms only exists at R>=5 (ISO 32000-2 §7.6.4.4.12), and only an R>=5 file key is
+        // AES-256-sized. Below R5, aes.Key's setter throws CryptographicException on anything but
+        // a 5-16 byte key (raw, not a false return), and a 16-byte key that happens to be legal
+        // for AES-128 would silently run ECB decryption on bytes that were never a /Perms block.
+        if (_r < 5 || fileKey.Length != 32)
+            return false;
+
         if (perms.Length != 16)
             return false;
 
