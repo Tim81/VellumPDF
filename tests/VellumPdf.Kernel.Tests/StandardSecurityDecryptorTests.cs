@@ -911,20 +911,28 @@ public sealed class StandardSecurityDecryptorTests
 
     // ── Constructor validation ────────────────────────────────────────────────
 
-    [Fact]
-    public void Constructor_rejectsEmptyId0_atRLessThan5()
+    /// <summary>
+    /// An empty <c>/ID[0]</c> is accepted at every revision. R&gt;=5's Algorithm 2.A never reads it.
+    /// R&lt;=4's Algorithm 2 step (e) does, appending it to the MD5 input — and appending nothing is
+    /// well defined, so a producer that wrote no <c>/ID</c> hashed exactly what is hashed here.
+    /// Table 15 does require the entry once <c>/Encrypt</c> is present, but refusing the file over it
+    /// would reject a document qpdf and poppler both open, for a malformation that costs nothing to
+    /// tolerate. <c>EncryptedExemptionTests</c> pins the end-to-end open on both shapes.
+    /// </summary>
+    [Theory]
+    [InlineData(1, 2, 5)]
+    [InlineData(2, 3, 16)]
+    public void Constructor_allowsEmptyId0_atRLessThan5(int v, int r, int keyLengthBytes)
     {
-        Assert.Throws<InvalidDataException>(() => new StandardSecurityDecryptor(
-            v: 1, r: 2, keyLengthBytes: 5, o: new byte[32], u: new byte[32], oe: null, ue: null,
+        _ = new StandardSecurityDecryptor(
+            v: v, r: r, keyLengthBytes: keyLengthBytes, o: new byte[32], u: new byte[32], oe: null, ue: null,
             p: -4, id0: [], encryptMetadata: true,
-            streamFilter: CryptFilterMethod.Rc4, stringFilter: CryptFilterMethod.Rc4));
+            streamFilter: CryptFilterMethod.Rc4, stringFilter: CryptFilterMethod.Rc4);
     }
 
     [Fact]
     public void Constructor_allowsEmptyId0_atRevision6()
     {
-        // R>=5's Algorithm 2.A never reads /ID[0] — only R<=4's Algorithm 2/5 do — so an empty
-        // /ID here is not this constructor's business to reject.
         _ = new StandardSecurityDecryptor(
             v: 5, r: 6, keyLengthBytes: 32, o: new byte[48], u: new byte[48], oe: new byte[32], ue: new byte[32],
             p: -4, id0: [], encryptMetadata: true,

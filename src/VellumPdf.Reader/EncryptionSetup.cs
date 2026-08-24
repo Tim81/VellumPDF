@@ -300,17 +300,6 @@ internal static class EncryptionSetup
         };
     }
 
-    // The file key length, in bytes, for V<5. Three separate rules, and reading only the top-level
-    // /Length gets two of them wrong:
-    //
-    //   V=1  — always 40-bit RC4, whatever /Length says (ISO 32000-1 Table 20).
-    //   R=2  — Algorithm 2 step (i): "n shall always be 5 for security handlers of revision 2".
-    //          The revision overrides the length, so /V 2 /R 2 /Length 128 is still a 5-byte key.
-    //   V=4  — Table 20 scopes the top-level /Length to "only if V is 2 or 3"; the length that
-    //          applies is the crypt filter's own (Table 25), which the standard security handler
-    //          writes in BYTES. A conformant V=4 file may carry no top-level /Length at all, and
-    //          defaulting it to 40 bits there rejects the correct password on a file every other
-    //          reader opens.
     // A shallow copy with every indirect value replaced by what it resolves to, plus one level down
     // into /CF's per-filter dictionaries — the only nested dictionaries the handler reads. The
     // STRINGS (/O, /U, /OE, /UE, /Perms) are required to be direct and are copied across untouched,
@@ -343,6 +332,17 @@ internal static class EncryptionSetup
         return copy;
     }
 
+    // The file key length, in bytes, for V<5. Three separate rules, and reading only the top-level
+    // /Length gets two of them wrong:
+    //
+    //   V=1  — always 40-bit RC4, whatever /Length says (ISO 32000-1 Table 20).
+    //   R=2  — Algorithm 2 step (i): "n shall always be 5 for security handlers of revision 2".
+    //          The revision overrides the length, so /V 2 /R 2 /Length 128 is still a 5-byte key.
+    //   V=4  — Table 20 scopes the top-level /Length to "only if V is 2 or 3"; the length that
+    //          applies is the crypt filter's own (Table 25), which the standard security handler
+    //          writes in BYTES. A conformant V=4 file may carry no top-level /Length at all, and
+    //          defaulting it to 40 bits there rejects the correct password on a file every other
+    //          reader opens.
     private static int LegacyKeyLengthBytes(PdfDictionary encryptDict, int v, int r)
     {
         if (v == 1)

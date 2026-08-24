@@ -88,7 +88,7 @@ public sealed class PdfEncryptionInfo
     /// Builds an encryption summary from values already extracted from a parsed <c>/Encrypt</c>
     /// dictionary. Internal, not public: <c>VellumPdf.Reader</c> is the only producer of this type
     /// (via <c>PdfDocumentReader.Encryption</c>) and already has the friend grant, while this
-    /// package is Stable — a public seven-parameter constructor would freeze that parameter list at
+    /// package is Stable — a public eight-parameter constructor would freeze that parameter list at
     /// the next release, so a later addition here would cost an overload rather than a property.
     /// </summary>
     internal PdfEncryptionInfo(

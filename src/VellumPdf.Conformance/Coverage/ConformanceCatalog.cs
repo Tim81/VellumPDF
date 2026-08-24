@@ -448,7 +448,7 @@ public static class ConformanceCatalog
     // from the feasible-coverage denominator).
     private static readonly Dictionary<string, string> PdfUaOutOfScope = new(StringComparer.Ordinal)
     {
-        ["7.16-1"] = "Out of scope (tracked in #138, v2.1 reader/encryption epic #97/#100): needs the reader to decrypt encrypted files to cross-validate against veraPDF; exposing /Encrypt /P alone cannot match veraPDF's whole-file verdict.",
+        ["7.16-1"] = "Not implemented (tracked in #138). The reader now decrypts, so PdfPreflight can reach an authenticated document's permissions; what remains is deciding how a preflight run supplies the password, since a file that cannot be opened has no permissions to check.",
         // 7.21.3.1-1 is Partial (see PdfUaPartial): common Identity/embedded-CMap path verified;
         //   only the predefined-CJK-CMap residual is infeasible.
         // 7.20-2 moved to PdfUaImplemented (UaFormXObjectSemanticParentRule: a Form XObject with

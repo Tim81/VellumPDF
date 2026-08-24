@@ -177,12 +177,24 @@ what remains:
   value (so only the owner path can open it at all) is still missing.
 - **No attachment that omits `/Type /EmbeddedFile`.** `/EFF` names the crypt filter for embedded
   file streams, and the reader recognises one by that key — which Table 45 makes optional, and which
-  poppler's `pdfattach` omits. An attachment without it is read under `/StmF` instead, so in a
-  document that encrypts only its attachments (`/StmF /Identity` with `/EFF` naming a real filter)
-  its ciphertext comes back as the file. Identifying it positionally, from the `/EF` entries that
-  reference it, needs the catalog and a name-tree walk before the first stream can be decoded, which
-  is the same ordering that produced a null-dereference once already.
+  poppler's `pdfattach` omits. An attachment without it is read under `/StmF` instead, and that is
+  wrong in both directions: with `/StmF /Identity` and `/EFF` naming a real filter — the "encrypt
+  only the attachments" arrangement — the raw ciphertext comes back as the file, and with `/StmF`
+  naming the filter and `/EFF /Identity` a cleartext attachment is decrypted into noise. Both are
+  silent under RC4; AES throws on the second.
 
+  Identifying such a stream positionally, from the `/EF` entries that reference it, is a name-tree
+  walk plus the `/AF` and annotation `/FS` file specifications — considerably more than the single
+  `/Metadata` lookup `IsDocumentMetadataStream` does, which is why it is deferred rather than
+  written alongside it. In practice the two halves of the hazard have not been seen together: the
+  producer that omits `/Type` (`pdfattach`) keys its own writing on `/StmF` and never emits `/EFF`,
+  so the fallback agrees with it, while a producer that applies `/EFF` has already classified the
+  stream as an attachment and writes the `/Type`.
+
+- **No file whose trailer `/ID` is absent or empty.** Every qpdf-written fixture carries one, and
+  qpdf cannot be made to omit it. A hand-built document in `EncryptedExemptionTests` covers both
+  shapes: Algorithm 2 step (e) appends nothing for them, and the reader tolerates that rather than
+  refusing a file qpdf and poppler open.
 - **No `/AuthEvent /EFOpen` crypt filter.** The entry is read past entirely; neither value changes
   key derivation for the Standard handler, so nothing depends on it today.
 
@@ -191,9 +203,17 @@ what remains:
   trailer's `/Encrypt` is the one authenticated" is still untested in the direction that matters —
   as is a later revision that changes permissions.
 - **No `/EFF`, no `/StrF` differing from `/StmF`, no `/Crypt` filter entry naturally present in a
-  real qpdf-produced file**, and no non-ASCII password exercising R6's SASLprep handling.
-  `EncryptedReaderTests` covers the `/Crypt`-filter and absent-`/CF`-entry cases with a same-length
-  byte patch on `enc-aes-128.pdf` instead, since qpdf itself never emits either shape.
+  real qpdf-produced file.** `EncryptedReaderTests` covers the `/Crypt`-filter and absent-`/CF`-entry
+  cases with a same-length byte patch on `enc-aes-128.pdf` instead, since qpdf itself never emits
+  either shape.
+- **No password that SASLprep would change**, and none is coming: the missing fixture would only
+  document a limit of the implementation rather than test it. R6 hashes the password after SASLprep
+  normalisation (RFC 4013), which this library applies on neither the read nor the write path, so a
+  password whose NFC form differs from what the caller typed fails to authenticate against a
+  conformant producer's `/U`. `PdfPasswordException`'s documentation says so and names the
+  workaround. Passwords that are entirely ASCII — every one in this corpus, plus
+  `enc-aes-128-pdfdocpassword.pdf`'s Latin-1 characters, which SASLprep leaves alone — are
+  unaffected.
 
 Both `--cleartext-metadata` rows are present on purpose. At R5/R6 the flag never enters key derivation —
 the file key is random and unwrapped from `/UE`/`/OE` — so only the **R4** row exercises ISO 32000-1

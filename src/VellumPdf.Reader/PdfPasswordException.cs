@@ -17,6 +17,14 @@ namespace VellumPdf.Reader;
 /// <see cref="System.IO.InvalidDataException"/>: that means the bytes do not form a well-formed PDF,
 /// which is a different failure from a well-formed, fully-understood <c>/Encrypt</c> dictionary that
 /// the supplied password just does not satisfy.
+///
+/// <para>One case reaches this exception with the RIGHT password: <c>/R</c> 6 hashes the password
+/// after SASLprep normalisation (RFC 4013, ISO 32000-2 §7.6.4.3.3), which this library does not
+/// apply on either the read or the write path. A password that is entirely ASCII, or whose
+/// characters SASLprep leaves alone, is unaffected; one that normalises to different bytes — a
+/// decomposed accent, a non-ASCII space — was hashed by its producer as those other bytes, and no
+/// encoding tried here reproduces them. Normalising the string to NFC before passing it in is the
+/// workaround.</para>
 /// </summary>
 public sealed class PdfPasswordException : Exception
 {

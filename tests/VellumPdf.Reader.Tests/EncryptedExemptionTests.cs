@@ -42,6 +42,48 @@ public sealed class EncryptedExemptionTests
         + "/P -4 /R 4 /U <6c8913ac9fc602eb1aad2a1ec614bee90021446990b9e4114071a4d9104984c1> /V 4 "
         + "/CF << /StdCF << /CFM /AESV2 /Length 16 >> >> /StmF /StdCF /StrF /StdCF >>";
 
+    // The same /P, /R and /V as Rc4EncryptDict, with /O and /U derived for an EMPTY /ID[0]. /O does
+    // not take the ID as input and is byte-identical; /U and the file key do, so both differ.
+    private const string EmptyIdEncryptDict =
+        "<< /Filter /Standard /Length 128 /O <2a2f0a1990192c60114730bdcd39f37828a53c89a340dd473c85299dc5258e1c> "
+        + "/P -4 /R 3 /U <06fe1801286e1d3d5e48258101f589cf00000000000000000000000000000000> /V 2 >>";
+
+    // ── The trailer /ID (ISO 32000-1 §7.6.3.3, Algorithm 2 step (e)) ────────────────────────────
+
+    /// <summary>
+    /// Table 15 requires <c>/ID</c> once <c>/Encrypt</c> is present, and Algorithm 2 step (e) appends
+    /// its first element to the MD5 input. A producer that wrote no <c>/ID</c>, or an empty one,
+    /// appended nothing — so the same derivation run here reaches the same file key and the document
+    /// is readable. Refusing it on the missing entry alone would leave a file qpdf and poppler both
+    /// open (qpdf silently for <c>[&lt;&gt;&lt;&gt;]</c>, with a warning for the absent array) failing
+    /// here and nowhere else, which is the wrong trade for a malformation that costs nothing to
+    /// tolerate.
+    /// </summary>
+    /// <remarks>
+    /// The <c>/O</c> and <c>/U</c> in <see cref="EmptyIdEncryptDict"/> were derived outside this
+    /// library, from Algorithms 2, 3 and 5 written against the spec text, so this pins the
+    /// derivation rather than the reader agreeing with itself.
+    /// </remarks>
+    [Theory]
+    [InlineData("")]                    // no /ID entry at all
+    [InlineData("/ID [<><>] ")]         // present, both elements empty
+    public void EncryptedDocumentWithNoUsableTrailerId_stillOpens(string idEntry)
+    {
+        var doc = BuildWithTrailerId(
+            EmptyIdEncryptDict,
+            idEntry,
+            "<< /Type /Catalog /Pages 2 0 R /Probe 3 0 R >>",
+            "<< /Type /Pages /Kids [] /Count 0 >>",
+            "<< /Probe <cf0ef39eac6f37> >>");
+
+        using var reader = PdfReader.Open(doc, "u");
+
+        var probe = Assert.IsType<PdfDictionary>(reader.Resolve(new PdfIndirectReference(3, 0)));
+        Assert.Equal(
+            "ID-LESS",
+            Encoding.ASCII.GetString(((PdfHexString)probe.Get(new PdfName("Probe"))!).Bytes.Span));
+    }
+
     // ── Cross-reference streams (ISO 32000-1 §7.5.8.2) ──────────────────────────────────────────
 
     /// <summary>
@@ -968,7 +1010,13 @@ public sealed class EncryptedExemptionTests
         return decryptor.DecryptString(fileKey, objectNumber, generation, plaintext);
     }
 
-    private static byte[] BuildWith(string encryptDict, params string[] objBodies)
+    private static byte[] BuildWith(string encryptDict, params string[] objBodies) =>
+        BuildWithTrailerId(
+            encryptDict,
+            $"/ID [<{Convert.ToHexStringLower(Id0)}><{Convert.ToHexStringLower(Id0)}>] ",
+            objBodies);
+
+    private static byte[] BuildWithTrailerId(string encryptDict, string idEntry, params string[] objBodies)
     {
         var ms = new MemoryStream();
         void W(string t) => ms.Write(Encoding.Latin1.GetBytes(t));
@@ -989,7 +1037,7 @@ public sealed class EncryptedExemptionTests
         foreach (var o in offsets)
             W($"{o:D10} 00000 n \n");
         W($"trailer\n<< /Size {encryptObjectNumber + 1} /Root 1 0 R /Encrypt {encryptObjectNumber} 0 R "
-          + $"/ID [<{Convert.ToHexStringLower(Id0)}><{Convert.ToHexStringLower(Id0)}>] >>\n");
+          + $"{idEntry}>>\n");
         W($"startxref\n{xref}\n%%EOF\n");
         return ms.ToArray();
     }

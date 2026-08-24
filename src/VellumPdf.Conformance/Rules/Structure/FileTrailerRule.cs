@@ -29,9 +29,9 @@ internal sealed class FileTrailerRule : IConformanceRule
 
     public void Evaluate(PreflightContext context)
     {
-        // Read straight off the trailer rather than through Resolve: §7.6.1 requires /Encrypt to be
-        // a direct object or an indirect reference the reader has already dealt with, and either way
-        // its mere PRESENCE is the violation — the value never needs to be looked at.
+        // Read straight off the trailer rather than through Resolve: the mere PRESENCE of /Encrypt
+        // is the violation, so the value never needs to be looked at — which also means this rule
+        // reports rather than throws on a document whose /Encrypt is an unresolvable reference.
         if (context.Trailer.Get(_encryptKey) is not null)
         {
             context.Report(

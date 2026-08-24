@@ -421,7 +421,10 @@ public sealed class PdfDocumentReader : IDisposable
     // stream to have its ciphertext handed to a preflight rule unexamined.
     private readonly IReadOnlySet<long> _crossReferenceStreamOffsets;
 
-    // The crypt filter /EFF names for embedded file streams, or /StmF's where it names none.
+    // The crypt filter /EFF names for embedded file streams. Null where the document declares no
+    // /EFF, or below /V 4 where Table 20 makes the entry meaningless — CryptFilterResolver reads
+    // that null as "an embedded file stream is an ordinary stream here" and falls through to
+    // /StmF, so filling it in with /StmF's method would defeat the /V gate.
     private CryptFilterMethod? _embeddedFileFilter;
 
     /// <summary>

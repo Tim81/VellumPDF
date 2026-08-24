@@ -142,10 +142,15 @@ internal sealed class StandardSecurityDecryptor
         }
         else
         {
-            // /ID[0] only feeds Algorithm 2/5's key and /U derivation (R<=4); R>=5's Algorithm 2.A
-            // never touches it, so a V5/R6 file with an empty /ID has nothing wrong with it here.
-            if (id0.Length == 0)
-                throw new InvalidDataException("The trailer's /ID first element is required to derive the file key.");
+            // A zero-length /ID[0] is NOT refused, though Table 15 makes /ID required once /Encrypt
+            // is present. Algorithm 2 step (e) appends that element to the MD5 input and appending
+            // nothing is well defined; the producer that omitted it hashed the same bytes we do, so
+            // the derivation still lands on its key. qpdf and poppler both open such a file — qpdf
+            // silently where /ID is [<><>], with a warning where the whole array is missing — and
+            // refusing it would mean the document opens everywhere except here.
+            //
+            // (R>=5's Algorithm 2.A never touches /ID[0] at all, which is why this sits in the R<5
+            // branch and no equivalent is needed above.)
             if (o.Length != 32)
                 throw new InvalidDataException($"/O must be 32 bytes at R<5; got {o.Length}.");
             if (u.Length != 32)

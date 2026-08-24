@@ -126,7 +126,6 @@ public sealed class ExternalSignerChainTests
         return leafNoKey.CopyWithPrivateKey(leafKey);
     }
 
-
     private static async Task<byte[]> SignOnePageDocAsync(X509Certificate2 cert, PdfSignatureSettings settings)
     {
         using var doc = new PdfDocument();

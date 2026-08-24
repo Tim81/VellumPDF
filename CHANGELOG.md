@@ -66,23 +66,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `/Contents`, which ISO 32000-1 leaves unstated: a signer patches those hex digits into
   already-serialized bytes, so decrypting them would corrupt `/ByteRange` verification. That last
   exemption covers `/Type /Sig`, `/Type /DocTimeStamp`, and a `/Type`-less dictionary carrying a
-  `/ByteRange` array with a string `/Contents`, since Table 252 makes `/Type` optional. qpdf agrees on
-  the shape that matters most, a `/Type /Sig` dictionary referenced from a signature field: it leaves
-  that `/Contents` byte-identical while encrypting the same dictionary's `/Reason`, `/Location` and
-  `/M`. It encrypts `/Contents` on the other three shapes, so a document qpdf encrypted after signing
-  can still hand back an archive timestamp's ciphertext — this exemption is the reading that cannot
-  corrupt a signature, not a claim about what every producer does.
+  `/ByteRange` array with a string `/Contents`, since Table 252 makes `/Type` optional. qpdf agrees
+  on the shape that matters most: it leaves a `/Type /Sig` dictionary's `/Contents` byte-identical
+  while encrypting that same dictionary's `/Reason`, `/Location` and `/M`, and does so whether or not
+  the dictionary is reachable from a signature field. Its rule keys on `/Type /Sig` alone, so it does
+  encrypt `/Contents` on the other two shapes exempted here — meaning a document qpdf encrypted after
+  signing can still hand back an archive timestamp's ciphertext. This exemption is the reading that
+  cannot corrupt a signature, not a claim about what every producer does.
 
   At `/R` 5 and 6 the permissions come from `/Perms` (ISO 32000-2 Algorithm 13) — the copy sealed
   under the file key — rather than the dictionary's `/P`, which nothing protects at those revisions.
 
-  Verified against the committed corpus (#99): for the eight rows built from the baseline with the
+  Verified against the committed corpus (#99): for the nine rows built from the baseline with the
   `u`/`o` password pair, the page content decrypts to the baseline's bytes, `/Info /Title` to its
   exact expected text, and each opens under both passwords. The other rows take their own passwords
-  or are not the baseline's object graph, and their own tests say what each pins. Seven fixtures were added for this work, covering an empty user password, an object
-  stream with a cross-reference stream, nested strings, a 40-character password, one password
-  serving as both roles, a non-ASCII password whose `/U` is PDFDocEncoding-derived, and an
-  incremental update over an encrypted document. (#97)
+  or are not the baseline's object graph, and their own tests say what each pins. Seven fixtures were
+  added for this work, covering an empty user password, an object stream with a cross-reference
+  stream, nested strings, a 40-character password, one password serving as both roles, a non-ASCII
+  password whose `/U` is PDFDocEncoding-derived, and an incremental update over an encrypted
+  document. (#97)
 
 - **A committed corpus of PDFs not produced by VellumPdf's own writer.** Test-only; nothing ships.
   Every reader fixture before this one came from VellumPdf's writer, which only ever emits
@@ -164,10 +166,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
-- **PDFDocEncoding treated four bytes as Latin-1 that Annex D does not.** 0xA0 is EURO SIGN there,
-  not NO-BREAK SPACE, so a password containing `€` could not be encoded at all while one containing
-  U+00A0 was encoded as a Euro sign; 0x7F, 0x9F and 0xAD are Undefined, and a password using any of
-  them now has no PDFDocEncoding candidate rather than a wrong one. (#97)
+- **PDFDocEncoding treated 0xA0 as Latin-1 does.** That byte is EURO SIGN in Annex D, not NO-BREAK
+  SPACE, so a password containing `€` could not be encoded at all while one containing U+00A0 was
+  encoded as a Euro sign. Both are now right: `€` reaches 0xA0, and U+00A0 has no representation, so
+  a candidate containing it is dropped rather than silently altered. The code points Annex D marks
+  Undefined — 0x7F, 0x9F, 0xAD and two dozen more — keep encoding as themselves: this encoding
+  exists to reproduce the bytes a producer hashed, and dropping a candidate over one of them would
+  stop a correct password from opening its document. (#97)
+
+- **An encrypted document whose trailer `/ID` was absent or empty would not open.** Algorithm 2
+  step (e) appends `/ID[0]` to the MD5 input, and appending nothing is well defined — the producer
+  that omitted the entry hashed the same bytes the reader now does, so the derivation lands on its
+  key. Table 15 does require `/ID` alongside `/Encrypt`, but qpdf and poppler both open such a file,
+  and refusing it made a document readable everywhere except here. (#97)
 
 - **A stream whose declared `/Length` landed on `)`, `{`, `}` or a lone `>` failed the parse.** The
   parser recovers from a wrong `/Length` by scanning for `endstream`, but the token read that
