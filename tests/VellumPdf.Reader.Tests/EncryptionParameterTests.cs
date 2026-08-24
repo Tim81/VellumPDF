@@ -84,15 +84,16 @@ public sealed class EncryptionParameterTests
     /// The <c>/V</c> 1 rule, end to end. <c>enc-rc4-40.pdf</c> cannot show it: that fixture declares
     /// <c>/Length 40</c>, which is what the rule produces anyway, so a reader with no <c>/V</c> 1 rule
     /// at all opens it. Table 20 makes the entry optional and scopes it to "V is 2 or 3" regardless,
-    /// so a <c>/V</c> 1 file may legitimately carry none — and the fallback's own default is 40 bits
-    /// there, which agrees again. Declaring 128 is the one shape that disagrees, and no tool in reach
-    /// writes it. Renaming the key to <c>/Zength</c> keeps every cross-reference offset valid; the
-    /// document is then <c>/V</c> 1 with nothing said about its length at all.
+    /// so a <c>/V</c> 1 file may legitimately carry none — and below <c>/V</c> 4 the fallback's own
+    /// default is 40 bits, which agrees again. Renaming the key away therefore proves nothing; only a
+    /// declaration that DISAGREES can show the rule. 96 bits is that: the rule still gives five bytes
+    /// and opens the file, the fallback gives twelve and fails the <c>/U</c> check. Two digits for
+    /// two, so every cross-reference offset stays valid.
     /// </summary>
     [Fact]
-    public void V1_withNoLengthAtAll_isStillFortyBit()
+    public void V1_withALengthThatContradictsTheVersion_isStillFortyBit()
     {
-        var bytes = PatchOnce(Load("enc-rc4-40.pdf"), "/Standard /Length 40", "/Standard /Zength 40");
+        var bytes = PatchOnce(Load("enc-rc4-40.pdf"), "/Standard /Length 40", "/Standard /Length 96");
 
         using var reader = PdfReader.Open(bytes, "u");
 
@@ -703,15 +704,42 @@ public sealed class EncryptionParameterTests
     /// dictionary's own entry has a bookkeeping bug rather than tampered permissions — denying the
     /// whole document over it is a refusal qpdf does not make either, and this fixture is otherwise
     /// intact.
+    ///
+    /// <para>The dictionary's <c>/P</c> is edited to -8 as well, so the sealed answer and the fallback
+    /// answer differ. Without that, refusing over byte 8 and accepting it produce the same -4 — the
+    /// recovery returns null, the dictionary's own value stands, and the assertion cannot tell which
+    /// happened.</para>
     /// </summary>
     [Fact]
     public void PermsWithAnInconsistentMetadataFlag_stillOpens()
     {
-        var patched = WithPermsMetadataFlagFlipped(Load("enc-aes-256-r6.pdf"));
+        var patched = WithPermsMetadataFlagFlipped(PatchOnce(Load("enc-aes-256-r6.pdf"), "/P -4 ", "/P -8 "));
 
         using var reader = PdfReader.Open(patched, "u");
 
         Assert.Equal(-4 & (int)PdfPermissions.All, (int)reader.Encryption!.Permissions);
+    }
+
+    /// <summary>
+    /// ISO 32000-2 makes <c>/R</c> 5 and 6 AES-256 only, so the file key is 32 bytes whatever the
+    /// crypt filter says — the crypt filter's length is a <c>/V</c> 4 rule and does not reach here.
+    /// These documents are self-contradictory on purpose: an AES-256 file whose <c>/CF</c> entry
+    /// names AES-128. Their streams will not decrypt under that filter, which is not what the test is
+    /// about; what matters is that the key stays 32 bytes and authentication still succeeds.
+    ///
+    /// <para>Both revisions, because the rule is written as one comparison and R6 alone cannot show
+    /// where it sits: raise the bound by one and only the R5 file changes.</para>
+    /// </summary>
+    [Theory]
+    [InlineData("enc-aes-256-r5.pdf")]
+    [InlineData("enc-aes-256-r6.pdf")]
+    public void AtR5AndAbove_aCryptFilterNamingASmallerCipher_stillDerivesA32ByteKey(string name)
+    {
+        var patched = PatchOnce(Load(name), "/CFM /AESV3", "/CFM /AESV2");
+
+        using var reader = PdfReader.Open(patched, "u");
+
+        Assert.Equal(256, reader.Encryption!.KeyLengthBits);
     }
 
     /// <summary>

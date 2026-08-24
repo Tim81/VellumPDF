@@ -200,8 +200,8 @@ public sealed class CryptFilterResolverTests
 
     /// <summary>
     /// A stream's own <c>/Crypt</c> specifier outranks the <c>/EncryptMetadata</c> flag: Table 20's
-    /// <c>/StmF</c> row excepts streams carrying one from the document-wide routing, Table 21 only
-    /// says a reader SHOULD respect the flag, and §7.6.5's own example writes both — the specifier
+    /// <c>/StmF</c> row excepts streams carrying one from the document-wide routing, while Table 21,
+    /// where the flag lives, only says a reader SHOULD respect it, and §7.6.5's own example writes both — the specifier
     /// being the operative half. A document that says "leave the metadata encrypted" that specifically
     /// means it.
     /// </summary>
@@ -288,7 +288,7 @@ public sealed class CryptFilterResolverTests
     }
 
     /// <summary>
-    /// ISO 32000-2 Table 20 scopes <c>/EncryptMetadata</c> to the DOCUMENT-level metadata stream —
+    /// ISO 32000-2 Table 21 scopes <c>/EncryptMetadata</c> to the DOCUMENT-level metadata stream —
     /// the object the catalog's <c>/Metadata</c> names. A page's or an XObject's metadata carries the
     /// same <c>/Type</c> and stays encrypted, which is what qpdf's <c>--cleartext-metadata</c>
     /// produces; exempting it hands its ciphertext back as content.

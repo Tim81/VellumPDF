@@ -518,6 +518,37 @@ public sealed class EncryptionTests
         return ms.ToArray();
     }
 
+    /// <summary>
+    /// Known answers for ISO 32000-2 §7.6.4.3.4 Hash algorithm 2.B, computed outside this repository
+    /// from the clause text. Everything else that exercises 2.B round-trips through
+    /// <see cref="Hash2B_Test"/>, which is a re-implementation of the same clause and terminates on
+    /// the same comparison — so a wrong termination boundary cancels on both sides and every one of
+    /// those tests passes. Only a hardcoded answer can see it.
+    ///
+    /// <para>The first row is the one that matters. §7.6.4.3.4 ends the loop when the round number is
+    /// at least 64 AND the last byte of E is at most the round number minus 32; with the loop counted
+    /// from zero that is <c>round &gt;= 63 &amp;&amp; e[^1] &lt;= round - 31</c>. This password's last
+    /// byte lands EXACTLY on that bound at round 66, so a boundary written one lower runs on to round
+    /// 79 and returns a completely different key. Roughly one password in 256 lands there, and none
+    /// of the committed fixtures does. The other two rows clear the bound comfortably and pin the
+    /// rest of the algorithm — the mod-3 hash selection, the 64 repetitions, the AES key and IV
+    /// split — with the <c>/O</c> path's non-empty <c>udata</c> covered by the last.</para>
+    /// </summary>
+    [Theory]
+    [InlineData("kat16", "", "b0be27752762d37b19a8271d69f4bd373a944f6353eb4000cc8f3e62fd8df8b2")]
+    [InlineData("kat0", "", "32bb20546044ef0cb9f9d8670c608b85d6d376fa1aefdf290b1b59f99180e204")]
+    [InlineData("owner", "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+        + "202122232425262728292a2b2c2d2e2f", "f77bbaa82ba46eca0e3997ad8c91b9fa4a3f83750e13a950f901abef1f69b683")]
+    public void Hash2B_matchesKnownAnswersDerivedFromTheClause(string password, string udataHex, string expected)
+    {
+        byte[] salt = [0, 1, 2, 3, 4, 5, 6, 7];
+
+        var actual = StandardSecurityHandler.Hash2B(
+            Encoding.ASCII.GetBytes(password), salt, Convert.FromHexString(udataHex));
+
+        Assert.Equal(expected, Convert.ToHexStringLower(actual));
+    }
+
     // ── Round-trip crypto helpers (BCL only, mirrors the library's internals) ──
 
     /// <summary>

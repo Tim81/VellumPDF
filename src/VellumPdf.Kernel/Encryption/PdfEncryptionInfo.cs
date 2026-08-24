@@ -59,8 +59,10 @@ public sealed class PdfEncryptionInfo
     /// <summary>
     /// The file encryption key length, in bits. 40, 128 and 256 are what producers write in
     /// practice, but ISO 32000-1 Table 20 allows any multiple of 8 from 40 to 128 at <c>/V</c> 2,
-    /// and this reports what the document actually specifies rather than rounding to the common
-    /// three.
+    /// and this reports the length actually IN FORCE rather than rounding to the common three.
+    /// That is not always the length the document declares: <c>/V</c> 1 and <c>/R</c> 2 are 40-bit
+    /// whatever <c>/Length</c> says, <c>/R</c> 5 and 6 are 256-bit, and at <c>/V</c> 4 the crypt
+    /// filter's own length is the one that applies.
     /// </summary>
     public int KeyLengthBits { get; }
 

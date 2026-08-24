@@ -92,7 +92,7 @@ internal static class CryptFilterResolver
     ///
     /// <para>
     /// Which stream that is comes from the caller, as <paramref name="isDocumentMetadataStream"/>,
-    /// and means the object the catalog's <c>/Metadata</c> points at. Table 20 scopes the flag to the
+    /// and means the object the catalog's <c>/Metadata</c> points at. Table 21 scopes the flag to the
     /// DOCUMENT-level metadata stream, and a page, an XObject or a form field may carry metadata of
     /// its own that stays encrypted — qpdf's <c>--cleartext-metadata</c> encrypts those and exempts
     /// only the catalog's. Recognising the exemption by <c>/Type /Metadata</c> instead would both

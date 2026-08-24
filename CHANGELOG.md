@@ -37,13 +37,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   is separate work. Covers Algorithm 2 (file key from a password), Algorithms 4/5 and 7 (verifying
   a user or owner password), Algorithm 2.A and the R6 permission check for `/V` 5, and the
   per-object key that folds in the object's generation number, which is why this had to wait for
-  #121. Verified against all eight corpus fixtures: deriving the file key from both the correct and
-  a wrong password for each one, and decrypting a real content stream to the exact bytes qpdf's own
+  #121. Verified against every corpus fixture: deriving the file key from both the correct and a
+  wrong password for each one, and decrypting a real content stream to the exact bytes qpdf's own
   encryption produced — checked against an external tool's output, not only internal consistency.
-  The two `/EncryptMetadata false` fixtures pin that Algorithm 2 step (f) shifts the derived key,
-  not just `/U`. Most encrypted PDFs
-  actually use an empty user password, a case absent from the committed corpus; that case is
-  covered instead by independently computed vectors. (#97)
+  The `/EncryptMetadata false` fixtures pin that Algorithm 2 step (f) shifts the derived key, not
+  just `/U`. The empty user password most encrypted PDFs actually use had no fixture when this
+  landed and was covered by independently computed vectors; `enc-aes-128-emptyuser.pdf`, added with
+  the reader wiring below, covers it end to end. (#97)
 
 - **Decryption on read: `PdfReader.Open` takes a password and reads encrypted PDFs.** The Standard
   security handler at `/V` 1, 2, 4 and 5 and `/R` 2 through 6 — RC4-40 through RC4-128, AES-128
@@ -62,7 +62,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   What is left in the clear, per the spec: the trailer `/ID`, the `/Encrypt` dictionary's own
   strings, cross-reference streams (§7.5.8.2, body and dictionary alike), streams whose data lives
   in an external file (§7.6.1), the document's metadata stream under `/EncryptMetadata false`
-  (Table 20 — a page's or an XObject's metadata is not exempt), and a signature dictionary's
+  (Table 21 — a page's or an XObject's metadata is not exempt), and a signature dictionary's
   `/Contents`, which ISO 32000-1 leaves unstated: a signer patches those hex digits into
   already-serialized bytes, so decrypting them would corrupt `/ByteRange` verification. That last
   exemption covers `/Type /Sig`, `/Type /DocTimeStamp`, and a `/Type`-less dictionary carrying a
@@ -171,7 +171,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   SPACE, so a password containing `€` could not be encoded at all while one containing U+00A0 was
   encoded as a Euro sign. Both are now right: `€` reaches 0xA0, and U+00A0 has no representation, so
   a candidate containing it is dropped rather than silently altered. The code points Annex D marks
-  Undefined — 0x7F, 0x9F, 0xAD and two dozen more — keep encoding as themselves: this encoding
+  Undefined — 0x7F, 0x9F, 0xAD and twenty-one more — keep encoding as themselves: this encoding
   exists to reproduce the bytes a producer hashed, and dropping a candidate over one of them would
   stop a correct password from opening its document. (#97)
 

@@ -11,8 +11,9 @@ public static class PdfReader
     /// <summary>Opens a PDF document from a byte array.</summary>
     /// <exception cref="InvalidDataException">Thrown on malformed PDF structure.</exception>
     /// <exception cref="UnsupportedPdfFeatureException">Thrown when the document's security handler
-    /// is not the Standard one (e.g. a public-key handler), when <c>/V</c> names an algorithm this
-    /// library does not implement, or when <c>/StrF</c> names a crypt filter whose <c>/CFM</c> it
+    /// is not the Standard one (e.g. a public-key handler), when <c>/V</c> is 3 — the one value that
+    /// names a real but unpublished algorithm, where the other illegal values are malformed rather
+    /// than unimplementable — or when <c>/StrF</c> names a crypt filter whose <c>/CFM</c> it
     /// does not implement. An unresolvable <c>/StmF</c> does NOT throw here: streams are not decoded
     /// until something asks for them, and that failure is an
     /// <see cref="System.IO.InvalidDataException"/> at the decode call.</exception>
@@ -28,8 +29,9 @@ public static class PdfReader
     /// </summary>
     /// <exception cref="InvalidDataException">Thrown on malformed PDF structure.</exception>
     /// <exception cref="UnsupportedPdfFeatureException">Thrown when the document's security handler
-    /// is not the Standard one (e.g. a public-key handler), when <c>/V</c> names an algorithm this
-    /// library does not implement, or when <c>/StrF</c> names a crypt filter whose <c>/CFM</c> it
+    /// is not the Standard one (e.g. a public-key handler), when <c>/V</c> is 3 — the one value that
+    /// names a real but unpublished algorithm, where the other illegal values are malformed rather
+    /// than unimplementable — or when <c>/StrF</c> names a crypt filter whose <c>/CFM</c> it
     /// does not implement. An unresolvable <c>/StmF</c> does NOT throw here: streams are not decoded
     /// until something asks for them, and that failure is an
     /// <see cref="System.IO.InvalidDataException"/> at the decode call.</exception>
@@ -46,8 +48,9 @@ public static class PdfReader
     /// <summary>Opens a PDF document by reading all bytes from <paramref name="stream"/>.</summary>
     /// <exception cref="InvalidDataException">Thrown on malformed PDF structure.</exception>
     /// <exception cref="UnsupportedPdfFeatureException">Thrown when the document's security handler
-    /// is not the Standard one (e.g. a public-key handler), when <c>/V</c> names an algorithm this
-    /// library does not implement, or when <c>/StrF</c> names a crypt filter whose <c>/CFM</c> it
+    /// is not the Standard one (e.g. a public-key handler), when <c>/V</c> is 3 — the one value that
+    /// names a real but unpublished algorithm, where the other illegal values are malformed rather
+    /// than unimplementable — or when <c>/StrF</c> names a crypt filter whose <c>/CFM</c> it
     /// does not implement. An unresolvable <c>/StmF</c> does NOT throw here: streams are not decoded
     /// until something asks for them, and that failure is an
     /// <see cref="System.IO.InvalidDataException"/> at the decode call.</exception>
@@ -62,8 +65,9 @@ public static class PdfReader
     /// </summary>
     /// <exception cref="InvalidDataException">Thrown on malformed PDF structure.</exception>
     /// <exception cref="UnsupportedPdfFeatureException">Thrown when the document's security handler
-    /// is not the Standard one (e.g. a public-key handler), when <c>/V</c> names an algorithm this
-    /// library does not implement, or when <c>/StrF</c> names a crypt filter whose <c>/CFM</c> it
+    /// is not the Standard one (e.g. a public-key handler), when <c>/V</c> is 3 — the one value that
+    /// names a real but unpublished algorithm, where the other illegal values are malformed rather
+    /// than unimplementable — or when <c>/StrF</c> names a crypt filter whose <c>/CFM</c> it
     /// does not implement. An unresolvable <c>/StmF</c> does NOT throw here: streams are not decoded
     /// until something asks for them, and that failure is an
     /// <see cref="System.IO.InvalidDataException"/> at the decode call.</exception>

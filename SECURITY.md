@@ -18,7 +18,10 @@ instead — throwing `InvalidDataException` (corrupt or truncated data), `NotSup
 (an unsupported variant), or `PdfPasswordException` (an encrypted document whose password was
 wrong or absent) rather than crashing with an unexpected exception, hanging, or exhausting
 memory. An encrypted document is parsed with the same limits as any other once its password
-authenticates; nothing in the encryption dictionary is trusted before it does. The reader bounds
+authenticates. The encryption dictionary is necessarily read before that — `/O`, `/P` and the
+trailer `/ID` are inputs to the key derivation, and `/Filter`, `/V` and `/R` decide which algorithm
+runs — but every one of those is range-checked first, and no length, offset or filter name taken
+from it is acted on unvalidated. The reader bounds
 indirect-reference nesting and AcroForm field-tree depth, rejects object-stream cycles, and
 range-checks every offset taken from a cross-reference table before using it.
 

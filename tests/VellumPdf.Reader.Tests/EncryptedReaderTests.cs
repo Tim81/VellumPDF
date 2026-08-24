@@ -424,6 +424,57 @@ public sealed class EncryptedReaderTests
     }
 
     /// <summary>
+    /// The <see cref="Stream"/> overload is the only public entry point carrying a password that
+    /// nothing in the library or the suite calls — <c>PdfPreflight</c> uses the no-password
+    /// <c>Open(Stream)</c> — so dropping the argument on the way to the byte[] overload changed
+    /// nothing observable. The wrong-password row is what makes it observable in both directions:
+    /// without it, a test that only opens successfully would still pass against an overload that
+    /// ignored the password entirely on a file with an empty user password.
+    /// </summary>
+    [Theory]
+    [InlineData("u", true)]
+    [InlineData("wrong", false)]
+    public void OpenFromStream_honoursThePassword(string password, bool expectSuccess)
+    {
+        using var stream = new MemoryStream(Load("enc-rc4-128.pdf"));
+
+        if (!expectSuccess)
+        {
+            Assert.Throws<PdfPasswordException>(() => PdfReader.Open(stream, password));
+            return;
+        }
+
+        using var reader = PdfReader.Open(stream, password);
+
+        Assert.Equal(PdfCipherAlgorithm.Rc4, reader.Encryption!.StreamCipher);
+    }
+
+    /// <summary>
+    /// A <c>/Type</c> that is present and is not a signature type SETTLES it — the structural tell is
+    /// the fallback for a dictionary that named no type at all, not a second chance for one that
+    /// named the wrong one. An annotation is free to carry a <c>/ByteRange</c>-shaped array beside a
+    /// string <c>/Contents</c>, and letting it fall through would exempt the annotation's text from
+    /// decryption. <c>AnnotationContents_isNotMistakenForASignature</c> cannot show this: its
+    /// annotation has no <c>/ByteRange</c>, so the fallback would refuse it anyway.
+    /// </summary>
+    [Fact]
+    public void AnnotationWithAByteRangeAndAStringContents_isStillDecrypted()
+    {
+        var contentsBytes = new byte[16];
+        Array.Fill(contentsBytes, (byte)0xAB);
+
+        var annotation = new PdfDictionary()
+            .Set(new PdfName("Type"), new PdfName("Annot"))
+            .Set(PdfName.Contents, new PdfHexString(contentsBytes))
+            .Set(new PdfName("ByteRange"), new PdfArray(
+                [new PdfInteger(0), new PdfInteger(840), new PdfInteger(1240), new PdfInteger(320)]));
+
+        var walked = Assert.IsType<PdfDictionary>(WalkWithArmedDecryptor(annotation));
+        var contentsAfter = Assert.IsType<PdfHexString>(walked.Get(PdfName.Contents));
+        Assert.NotEqual(contentsBytes, contentsAfter.Bytes.ToArray());
+    }
+
+    /// <summary>
     /// The <c>/ByteRange</c> half of the structural tell is not sufficient on its own. An annotation
     /// dictionary carrying a <c>/ByteRange</c>-shaped array and a <c>/Contents</c> that is anything
     /// but a string — an array of them here — is not a signature: Table 252 makes <c>/Contents</c> a

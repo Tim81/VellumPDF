@@ -30,10 +30,10 @@ public sealed class EncryptedFixtureCorpusTests
         ("enc-aes-256-r6.pdf", 5, 6, "/AESV3", "af3ed586e3246d51523f6b546d9c9fb3e896d5968e283c4305b1dba2b7f361d6"),
         ("enc-aes-128-cleartextmd.pdf", 4, 4, "/AESV2", "df43e52507998c60fde7631a1694b4731ac0adcaede69715a63da526a9ab5750"),
         ("enc-256-cleartextmd.pdf", 5, 6, "/AESV3", "4ed43c7731177823ce3dd6a6dc072f9a1029cbfd1126b0f2c474cfc7988f326f"),
-        // The one fixture in this corpus with object streams AND a cross-reference stream — every
-        // other row uses a classic xref table over uncompressed objects (see the fixture README's
-        // "Known gaps"). Needed so #97's decrypt-side tests can pin two things nothing else here
-        // can: that a cross-reference stream is never decrypted, and that an object stream's
+        // The first fixture in this corpus with object streams AND a cross-reference stream (the
+        // combined AES-256 row at the bottom is the other; every remaining row uses a classic xref
+        // table over uncompressed objects). Needed so #97's decrypt-side tests can pin two things
+        // nothing else here can: that a cross-reference stream is never decrypted, and that an object stream's
         // container is decrypted exactly ONCE and its compressed members are not separately
         // re-decrypted (ISO 32000-2 §7.5.7) — RC4, not AES, because RC4 double-decryption is
         // SILENT (returns the original ciphertext, no exception), so only RC4 actually exercises
@@ -161,13 +161,16 @@ public sealed class EncryptedFixtureCorpusTests
     }
 
     /// <summary>
-    /// The linearized rows, on the properties that make them worth carrying. Every other fixture is
-    /// a single ordinary cross-reference section; a linearized file puts a first-page one ahead of
-    /// the body, so the reader must follow <c>/Prev</c> from the last section to the first — with
-    /// <c>/Encrypt</c> declared on a trailer it may reach in either order — before it can resolve
-    /// anything. The corpus theory above already pins that both open and decrypt to the baseline;
-    /// this pins that they are the layout they claim to be, so a regenerated fixture that qpdf
-    /// silently declined to linearize does not quietly stop testing anything.
+    /// The linearized rows, on the property that makes them worth carrying. A linearized file puts
+    /// its first-page cross-reference section AHEAD of the body and <c>startxref</c> points at that
+    /// one, so the reader enters at the first section and follows <c>/Prev</c> forwards to the last —
+    /// the opposite direction from every other row — with <c>/Encrypt</c> declared on a trailer it may
+    /// reach in either order.
+    ///
+    /// <para><see cref="EncryptedReaderTests"/> pins that both open and decrypt to the baseline; this
+    /// pins that they are the layout they claim to be, so a regenerated fixture qpdf silently declined
+    /// to linearize does not quietly stop testing anything. The theory above it only hashes the file
+    /// and greps for tokens — it never opens one.</para>
     /// </summary>
     [Theory]
     [InlineData("enc-aes-128-linearized.pdf")]

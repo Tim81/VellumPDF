@@ -48,6 +48,35 @@ public sealed class EncryptedExemptionTests
         "<< /Filter /Standard /Length 128 /O <2a2f0a1990192c60114730bdcd39f37828a53c89a340dd473c85299dc5258e1c> "
         + "/P -4 /R 3 /U <06fe1801286e1d3d5e48258101f589cf00000000000000000000000000000000> /V 2 >>";
 
+    // ── The stream's own /Crypt specifier, below /V 4 ───────────────────────────────
+
+    /// <summary>
+    /// The resolver takes "are crypt filters in force" as a parameter, and <c>CryptFilterResolverTests</c>
+    /// pins what it does with each value — but not what the READER passes. This is the same document
+    /// from the other side: a <c>/V</c> 2 file whose stream carries <c>/Filter /Crypt</c> with
+    /// <c>/Name /Identity</c>. Table 20 scopes the whole crypt filter mechanism to <c>/V</c> 4, so
+    /// the specifier says nothing here and the body is RC4 like every other stream. Hand the resolver
+    /// a constant instead of the document's <c>/V</c> and this comes back as ciphertext.
+    /// </summary>
+    [Fact]
+    public void CryptSpecifierBelowV4_isIgnoredByTheReader_notJustByTheResolver()
+    {
+        var body = Encrypt(3, 0, "BELOW-V4-STILL-RC4"u8.ToArray());
+
+        var doc = BuildWith(
+            Rc4EncryptDict,
+            "<< /Type /Catalog /Pages 2 0 R >>",
+            "<< /Type /Pages /Kids [] /Count 0 >>",
+            $"<< /Length {body.Length} /Filter [/Crypt] /DecodeParms << /Name /Identity >> >>\n"
+            + $"stream\n{Encoding.Latin1.GetString(body)}\nendstream");
+
+        using var reader = PdfReader.Open(doc, "u");
+
+        Assert.Equal(
+            "BELOW-V4-STILL-RC4",
+            Encoding.ASCII.GetString(reader.GetDecodedStreamData(reader.ResolveStream(3)!)!));
+    }
+
     // ── /EncryptMetadata in the key derivation (Algorithm 2 step (f)) ────────────────────────
 
     /// <summary>
@@ -57,7 +86,7 @@ public sealed class EncryptedExemptionTests
     /// the correct password.
     ///
     /// <para>The <c>/O</c> and <c>/U</c> here are the corpus's, derived at <c>/R</c> 3 without those
-    /// four bytes. <c>/V</c> is 4 so that <c>/EncryptMetadata</c> is read at all — Table 20 scopes the
+    /// four bytes. <c>/V</c> is 4 so that <c>/EncryptMetadata</c> is read at all — Table 21 scopes the
     /// entry there — which makes this the one shape that separates the revision test from the flag:
     /// gate on <c>/V</c> instead of <c>/R</c>, or drop the test entirely, and this document stops
     /// opening.</para>
@@ -101,6 +130,7 @@ public sealed class EncryptedExemptionTests
     [Theory]
     [InlineData("")]                    // no /ID entry at all
     [InlineData("/ID [<><>] ")]         // present, both elements empty
+    [InlineData("/ID [<>] ")]           // one element, empty — Count > 0, so the first is still read
     public void EncryptedDocumentWithNoUsableTrailerId_stillOpens(string idEntry)
     {
         var doc = BuildWithTrailerId(
@@ -115,6 +145,34 @@ public sealed class EncryptedExemptionTests
         var probe = Assert.IsType<PdfDictionary>(reader.Resolve(new PdfIndirectReference(3, 0)));
         Assert.Equal(
             "ID-LESS",
+            Encoding.ASCII.GetString(((PdfHexString)probe.Get(new PdfName("Probe"))!).Bytes.Span));
+    }
+
+    /// <summary>
+    /// A one-element <c>/ID</c>. Table 15 calls for two, and every producer writes two, but Algorithm
+    /// 2 step (e) reads only the first — so a truncated array is still perfectly usable and this
+    /// document's key comes out identical to the corpus's. Requiring two elements would fall back to
+    /// an empty <c>/ID[0]</c>, derive a different key, and report the correct password as wrong.
+    /// </summary>
+    /// <remarks>
+    /// The rows above cannot show this: their <c>/ID[0]</c> is empty either way, so demanding a
+    /// second element changes nothing about what gets hashed. This one carries real bytes.
+    /// </remarks>
+    [Fact]
+    public void TrailerIdWithASingleElement_isStillReadAsTheFirstElement()
+    {
+        var doc = BuildWithTrailerId(
+            Rc4EncryptDict,
+            $"/ID [<{Convert.ToHexStringLower(Id0)}>] ",
+            "<< /Type /Catalog /Pages 2 0 R /Probe 3 0 R >>",
+            "<< /Type /Pages /Kids [] /Count 0 >>",
+            $"<< /Probe <{Convert.ToHexStringLower(Encrypt(3, 0, "ONE-ELEMENT-ID"u8.ToArray()))}> >>");
+
+        using var reader = PdfReader.Open(doc, "u");
+
+        var probe = Assert.IsType<PdfDictionary>(reader.Resolve(new PdfIndirectReference(3, 0)));
+        Assert.Equal(
+            "ONE-ELEMENT-ID",
             Encoding.ASCII.GetString(((PdfHexString)probe.Get(new PdfName("Probe"))!).Bytes.Span));
     }
 
@@ -685,8 +743,8 @@ public sealed class EncryptedExemptionTests
     }
 
     /// <summary>
-    /// <c>/EncryptMetadata</c> is "meaningful only when the value of V is 4" (ISO 32000-1 Table 20's
-    /// standard handler row), and <c>StandardSecurityDecryptor</c> already gates the key-derivation
+    /// <c>/EncryptMetadata</c> is "meaningful only when the value of V is 4" (ISO 32000-1 Table 21,
+    /// the standard security handler's own entries), and <c>StandardSecurityDecryptor</c> already gates the key-derivation
     /// half of it on the revision. A stray copy on a <c>/V 2</c> document — a producer downgrading
     /// and carrying the key across — says nothing, and honouring it would hand the metadata stream
     /// back as ciphertext.

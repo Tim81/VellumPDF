@@ -226,7 +226,7 @@ internal static class EncryptionSetup
     /// first and the user password second.
     ///
     /// <para>
-    /// ISO 32000-1 prescribes no order — its exact framing (§7.6.3.3) is that the handler "uses the
+    /// ISO 32000-1 prescribes no order — its exact framing (§7.6.3.4) is that the handler "uses the
     /// algorithms 6 and 7 that follow, to determine whether a supplied password string is the
     /// correct user or owner password", not that either is tried first. Owner-first is this
     /// implementation's choice, for two reasons that hold regardless of what order the spec might
@@ -265,8 +265,9 @@ internal static class EncryptionSetup
 
     // UTF-8 first, then PDFDocEncoding on failure. Only meaningfully different for R<=4 with a
     // non-ASCII password: R>=5 always uses UTF-8 (ISO 32000-2 §7.6.4.3), and PDFDocEncoding agrees
-    // with UTF-8-of-Latin1 for every ASCII password — which is everything the committed corpus
-    // exercises, so the PDFDocEncoding branch itself has no fixture pinning it.
+    // with UTF-8-of-Latin1 for every ASCII password. enc-aes-128-pdfdocpassword.pdf is the fixture
+    // that separates them — its /U was derived from PDFDocEncoding bytes, so the UTF-8 attempt fails
+    // and only this retry opens it.
     private static IEnumerable<byte[]> CandidatePasswordEncodings(string? password, int r)
     {
         yield return StandardSecurityHandler.PasswordBytes(password);

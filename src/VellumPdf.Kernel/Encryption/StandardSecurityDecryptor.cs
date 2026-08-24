@@ -28,12 +28,18 @@ internal enum CryptFilterMethod
     /// per-object key (/CFM /AESV3, V=5).</summary>
     Aes256,
 
-    /// <summary>A /CFM value this handler does not implement, or a /StmF or /StrF naming a /CF
-    /// entry that does not exist. <see cref="StandardSecurityDecryptor.DecryptStream"/> and
-    /// <see cref="StandardSecurityDecryptor.DecryptString"/> throw on this rather than falling
+    /// <summary>A /CFM value this handler does not implement, or a /StmF, /StrF, /EFF or /Crypt
+    /// specifier naming a /CF entry that does not exist. <see cref="StandardSecurityDecryptor.DecryptStream"/>
+    /// and <see cref="StandardSecurityDecryptor.DecryptString"/> throw on this rather than falling
     /// back to <see cref="Identity"/>: Identity returns ciphertext as plaintext with no error, and
     /// it is the mapping a wiring author would naturally reach for on an unrecognised filter name,
-    /// which would corrupt an entire document silently instead of failing loudly.</summary>
+    /// which would corrupt an entire document silently instead of failing loudly.
+    /// <para>Refusing is not the only defensible answer. Table 14 requires a /Crypt specifier's
+    /// /Name to match a /CF entry or be /Identity, so a document that satisfies neither is
+    /// malformed — but qpdf recovers from that particular case by falling back to /StmF, which
+    /// returns the content rather than an error. The divergence is a loss of content on a file qpdf
+    /// reads, not a difference in wording, and it is deliberate: /StmF is a guess, and guessing
+    /// wrong here is silent.</para></summary>
     Unsupported,
 }
 

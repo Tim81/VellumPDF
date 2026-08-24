@@ -187,6 +187,9 @@ public sealed class EncryptionStructureTests
     // A /CFM this handler has no key size for — /None, /Identity, or one from a future edition —
     // leaves the declared length as the only thing said about the key, so it stands.
     [InlineData(4, 4, 40, 16, 16, "None")]
+    // ...up to 32 bytes, the top of Table 25's byte range and the largest key any cipher in the spec
+    // uses. One less and the value reads as a bit count instead, which 32 is not a legal one of.
+    [InlineData(4, 4, 40, 32, 32, "None")]
     public void KeyLengthBytes_followsTheRuleThatOverridesLength(
         int v, int r, int lengthBits, int? cryptFilterLength, int expectedBytes, string cfm = "AESV2")
     {

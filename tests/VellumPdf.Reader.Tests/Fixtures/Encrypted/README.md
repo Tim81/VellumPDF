@@ -72,12 +72,14 @@ just produces different-looking garbage, no exception), where AES throws on the 
 regardless of whether the first one was wrong. An AES fixture would pass this particular test for
 the wrong reason.
 
-The two linearized rows are the only ones whose cross-reference structure is not a single ordinary
-section. A linearized file carries a first-page cross-reference section ahead of the body and a
-second at the end, plus a hint stream that is ordinary encrypted content — so the reader follows
-`/Prev` from the last section to the first before it can resolve anything, with `/Encrypt` declared
-on a trailer it may reach in either order. It is also the layout Acrobat writes by default, which
-makes it the shape most likely to arrive from a real producer. The AES-256 one adds object streams
+The two linearized rows carry a cross-reference layout nothing else here does. A linearized file
+puts its first-page section AHEAD of the body and a second at the end, and `startxref` points at the
+front one — so the reader enters at the first section and follows `/Prev` forwards to the last,
+the opposite direction from every other row, with `/Encrypt` declared on a trailer it may reach in
+either order. There is a hint stream too, which is ordinary encrypted content. Acrobat writes this
+layout by default. (`enc-aes-128-tworevisions.pdf` also has two sections, but as an ordinary
+incremental update; `enc-rc4-objstm.pdf` has none at all, only cross-reference streams.) The
+AES-256 one adds object streams
 and `--cleartext-metadata` on top: reaching the catalog decodes an object stream, which asks whether
 that stream is the document's metadata before there is a catalog to answer from. No other fixture
 puts those three in one file.
@@ -97,8 +99,9 @@ round-trip that inserted the extra object also rewrote the line endings, so that
 74 bytes with CRLF against the baseline's 69 with LF. That is why the fixture is excluded from
 `StandardMatrixFixtures` and has its own test, which reads the nested strings by value instead.
 
-The last four rows exist because the eleven above them cannot distinguish certain behaviours from
-their opposites, whatever they assert.
+The rows below `enc-aes-128-nestedstrings.pdf` exist because the ones above cannot distinguish
+certain behaviours from their opposites: each names a password shape, a revision structure or a
+cross-reference layout that no earlier row has.
 
 `enc-aes-128-longpassword.pdf`'s password is 40 characters. Algorithm 2 step (a) pads or truncates
 to exactly 32 bytes, and with every other password one character long, moving that truncation point
@@ -157,7 +160,7 @@ Two assertions, in this order:
    the object streams, so the output differs from the baseline from byte 36 onward and looks broken
    when it is not.
 
-   This works for the nine rows built from the baseline with the `u`/`o` pair. It does **not** apply
+   This works for the eleven rows built from the baseline with the `u`/`o` pair. It does **not** apply
    to the other six, and each for its own reason: `enc-aes-128-emptyuser.pdf` and
    `enc-aes-128-tworevisions.pdf` take an empty user password, `enc-aes-128-longpassword.pdf`,
    `enc-aes-128-samepassword.pdf` and `enc-aes-128-pdfdocpassword.pdf` take their own, and
@@ -204,8 +207,16 @@ what remains:
   naming the filter and `/EFF /Identity` a cleartext attachment is decrypted into noise. Both are
   silent under RC4; AES throws on the second.
 
-  Identifying such a stream positionally, from the `/EF` entries that reference it, is a name-tree
-  walk plus the `/AF` and annotation `/FS` file specifications — considerably more than the single
+  A second, separate disagreement sits underneath this one and applies to attachments that DO carry
+  `/Type /EmbeddedFile`: whether a READER should honour `/EFF` at all. Table 20's `/StmF` row says
+  every stream but a cross-reference stream and one carrying its own `/Crypt` entry takes `/StmF`,
+  while the `/EFF` row addresses conforming WRITERS. qpdf takes the literal reading and routes
+  attachments through `/StmF`; this reader honours `/EFF`, which is the reading that lets "encrypt
+  only the attachments" mean anything. On a document that sets the two differently the two readers
+  disagree in both directions, and no fixture here can settle which is right.
+
+  Identifying an attachment that omits `/Type` positionally, from the `/EF` entries that reference
+  it, is a name-tree walk plus the `/AF` and annotation `/FS` file specifications — considerably more than the single
   `/Metadata` lookup `IsDocumentMetadataStream` does, which is why it is deferred rather than
   written alongside it. In practice the two halves of the hazard have not been seen together: the
   producer that omits `/Type` (`pdfattach`) keys its own writing on `/StmF` and never emits `/EFF`,

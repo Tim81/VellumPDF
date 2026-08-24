@@ -591,7 +591,9 @@ public sealed class PdfDocumentReader : IDisposable
     /// Sig"), and a document timestamp carries <c>/DocTimeStamp</c> instead — the type this
     /// library's own <c>ArchiveTimestampBuilder</c> writes for a PAdES B-LTA archive timestamp (this
     /// library refuses to sign and encrypt the same document, but nothing stops another tool from
-    /// encrypting one it signed). A <c>/Type</c>-less
+    /// encrypting one it signed — qpdf does it by default, and does NOT exempt /Contents on either
+    /// of the two shapes below, so those come back as ciphertext here; the CHANGELOG entry for this
+    /// work states that trade-off in full). A <c>/Type</c>-less
     /// dictionary is therefore recognised structurally, by the pair <c>/ByteRange</c> + a string
     /// <c>/Contents</c>: <c>/ByteRange</c> is what the byte-range digest is computed over, and ISO
     /// 32000-1 §12.8.1 requires it of approval and certification signatures alike, so a signer

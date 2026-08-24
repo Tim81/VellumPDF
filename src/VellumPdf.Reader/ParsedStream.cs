@@ -33,8 +33,9 @@ internal sealed class ParsedStream
 
     /// <summary>
     /// The object number from this stream's own <c>N G obj</c> header — a stream is always a
-    /// top-level indirect object (ISO 32000-2 §7.3.8: a compressed object in an object stream cannot
-    /// itself be a stream), so this is always available. Needed at the decode layer
+    /// top-level indirect object (ISO 32000-2 §7.3.8 requires a stream to be an indirect object, and
+    /// §7.5.7 forbids a stream from being a compressed object inside an object stream), so this is
+    /// always available. Needed at the decode layer
     /// (<see cref="PdfDocumentReader.GetDecodedStreamData"/>) to derive the per-object decryption key
     /// (ISO 32000-1 §7.6.2, Algorithm 1) without threading identity through every call site
     /// separately — see the design note on <see cref="RawBody"/> for why decryption happens there

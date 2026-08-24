@@ -31,8 +31,9 @@ public sealed class StandardSecurityDecryptorTests
     private const string WrongPassword = "not-the-password";
 
     // Every fixture's content stream (object 6) is unaffected by /EncryptMetadata and identical in
-    // object number and plaintext across all eight fixtures and the baseline (verified against the
-    // baseline dump: same object graph, only /Encrypt and the ciphertext differ) — see
+    // object number and plaintext across all eight rows of FixtureNames below and the baseline
+    // (verified against the baseline dump: same object graph, only /Encrypt and the ciphertext
+    // differ) — see
     // Decrypted_contentStream_matches_plaintextBaseline. Object 3 (Metadata) is not used for the
     // baseline comparison: the baseline's copy is stored uncompressed while the fixtures'
     // /EncryptMetadata-true copies are Flate-compressed, so object 3's raw bytes legitimately
@@ -40,6 +41,10 @@ public sealed class StandardSecurityDecryptorTests
     private const int ContentStreamObjectNumber = 6;
     private const int Generation = 0;
 
+    // The eight /V+/R+/CFM matrix rows, which is what this class is about — it exercises the
+    // algorithms directly, not the reader, so the corpus's later structural rows (object streams,
+    // linearization, two revisions, unusual passwords) add nothing here and are covered where they
+    // do: VellumPdf.Reader.Tests.
     public static TheoryData<string> FixtureNames =>
     [
         "enc-rc4-40.pdf",
@@ -499,9 +504,17 @@ public sealed class StandardSecurityDecryptorTests
 
     // ── AES-CBC length guard: at least 16 bytes (the IV), then whole 16-byte blocks ──
 
+    /// <summary>
+    /// The guard has to be what rejects these, not the cipher. Without the whole-blocks half, 31
+    /// bytes still throws — <c>TransformFinalBlock</c> raises <c>CryptographicException</c> and the
+    /// catch below folds it into the same <c>InvalidDataException</c> — so asserting the exception
+    /// TYPE alone passes either way. The absent inner exception is what separates them, exactly as
+    /// the padding-failure test above uses its presence.
+    /// </summary>
     [Theory]
     [InlineData(15)] // shorter than the IV alone
     [InlineData(31)] // has the IV, but leaves 15 bytes of ciphertext — not a whole block
+    [InlineData(17)] // one byte past the IV
     public void DecryptStream_aesFilter_withDataThatIsNotIvPlusWholeBlocks_throwsInvalidDataException(int length)
     {
         var decryptor = new StandardSecurityDecryptor(
@@ -509,8 +522,10 @@ public sealed class StandardSecurityDecryptorTests
             p: -4, id0: [0x00], encryptMetadata: true,
             streamFilter: CryptFilterMethod.Aes256, stringFilter: CryptFilterMethod.Aes256);
 
-        Assert.Throws<InvalidDataException>(
+        var ex = Assert.Throws<InvalidDataException>(
             () => decryptor.DecryptStream(new byte[32], objectNumber: 1, generation: 0, new byte[length]));
+
+        Assert.Null(ex.InnerException);
     }
 
     // ── AES-CBC padding-failure path ──────────────────────────────────────────
@@ -550,8 +565,9 @@ public sealed class StandardSecurityDecryptorTests
 
     // ── Assertion 5 (empty user password) + Algorithm 2/4/5/2.A synthetic vectors ──
     //
-    // None of the eight committed fixtures uses an empty user password (the corpus README lists
-    // that as a known gap — all eight use "u"/"o"), so this is not measured against the corpus.
+    // None of the eight matrix rows above uses an empty user password — all eight use "u"/"o" — so
+    // this is not measured against them. (enc-aes-128-emptyuser.pdf, added with the reader wiring,
+    // covers the case end to end; what is wanted here is the algorithm in isolation.)
     // Independently computed with arbitrary but fixed O/P/ID0, the same way
     // Rc4Md5PrimitiveTests.Md5_incremental_matches_BCL_over_algorithm2_shaped_pieces pins Algorithm
     // 2's input shape: not a claim that any real-world encrypted file looks like this, only that
@@ -946,6 +962,31 @@ public sealed class StandardSecurityDecryptorTests
     /// wrong size and a failure blamed on the password. The presence half is pinned by
     /// <c>Constructor_atRevision5_requiresOe</c>; this is the size half.
     /// </summary>
+    /// <summary>
+    /// A <c>/Perms</c> string that is not one AES block reaches <c>TransformFinalBlock</c> with
+    /// <c>PaddingMode.None</c>, which raises a bare <c>CryptographicException</c> — the one malformed
+    /// input on this path that would escape <c>PdfReader.Open</c> as something other than the
+    /// documented failure types. Recovery returns null instead, and the dictionary's <c>/P</c>
+    /// stands.
+    /// </summary>
+    [Theory]
+    [InlineData(0)]
+    [InlineData(15)]
+    [InlineData(17)]
+    [InlineData(32)]
+    public void RecoverAuthenticatedPermissions_withAPermsThatIsNotOneBlock_returnsNull(int permsLength)
+    {
+        byte[] fileKey = new byte[32];
+        RandomNumberGenerator.Fill(fileKey);
+
+        var decryptor = new StandardSecurityDecryptor(
+            v: 5, r: 6, keyLengthBytes: 32, o: new byte[48], u: new byte[48], oe: new byte[32], ue: new byte[32],
+            p: -4, id0: [0x00], encryptMetadata: true,
+            streamFilter: CryptFilterMethod.Aes256, stringFilter: CryptFilterMethod.Aes256);
+
+        Assert.Null(decryptor.RecoverAuthenticatedPermissions(fileKey, new byte[permsLength]));
+    }
+
     [Theory]
     [InlineData(16, 32)]
     [InlineData(48, 32)]
