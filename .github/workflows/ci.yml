@@ -10,7 +10,13 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+      # Full history: the clean-room check scans the branch's commit MESSAGES as well as its files,
+      # and a merged message cannot be corrected afterwards. The default depth-1 checkout gives it
+      # nothing to scan, and it skips silently rather than failing, so the gate would pass while the
+      # violation merged.
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-dotnet@v5
         with:

@@ -175,6 +175,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   exists to reproduce the bytes a producer hashed, and dropping a candidate over one of them would
   stop a correct password from opening its document. (#97)
 
+- **The clean-room check now scans commit messages, not only files.** CLAUDE.md forbids a
+  disallowed reference library's name anywhere in the tree, commit messages included, but the gate
+  only ever read working-tree files — so a message naming one passed CI and merged into public
+  history, where it cannot be corrected without rewriting it. CI checks out full history for this;
+  the check skips silently where no base ref resolves, since it is a second line of defence over the
+  file scan and a shallow checkout is not a finding. (#97)
+
 - **An object referenced from inside `/Encrypt` came back as ciphertext, silently.** Authentication
   runs before a decryptor exists — which is what keeps `/O`, `/U`, `/OE` and `/UE` out of string
   decryption — and §7.6.1 lets every non-string entry of that dictionary be an indirect reference.
