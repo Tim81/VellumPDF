@@ -176,6 +176,39 @@ public sealed class EncryptionParameterTests
     }
 
     /// <summary>
+    /// Following an indirect <c>/Encrypt</c> value must not leave its target in the object cache.
+    /// Authentication runs with no decryptor — that is what keeps <c>/O</c>, <c>/U</c>, <c>/OE</c>
+    /// and <c>/UE</c> out of string decryption — and <c>Resolve</c> caches what it returns, so the
+    /// object an entry points at is cached as CIPHERTEXT. Everything that later reads that object
+    /// number gets the undecrypted copy, with no exception and nothing to tell it apart from a
+    /// decrypted one.
+    /// </summary>
+    /// <remarks>
+    /// Object 3 is both the target of <c>/Length</c> and a document object with an encrypted string
+    /// in it, which is the collision that makes this observable: a reference from inside
+    /// <c>/Encrypt</c> to an object the document also uses. <c>/Length</c> resolving to a dictionary
+    /// rather than an integer is harmless — <c>/V</c> 4 takes its key length from the crypt filter,
+    /// and the malformed entry is simply not an integer, which the fallback already tolerates.
+    /// </remarks>
+    [Fact]
+    public void ObjectReferencedFromInsideEncrypt_isNotLeftInTheCacheAsCiphertext()
+    {
+        var doc = BuildWithEncryptDict(
+            "<< /Filter /Standard /V 4 /R 4 /Length 3 0 R "
+            + "/CF << /StdCF << /CFM /V2 /Length 16 >> >> /StmF /StdCF /StrF /StdCF "
+            + "/O <2a2f0a1990192c60114730bdcd39f37828a53c89a340dd473c85299dc5258e1c> "
+            + "/U <6c8913ac9fc602eb1aad2a1ec614bee90021446990b9e4114071a4d9104984c1> /P -4 >>",
+            $"<< /Probe <{Convert.ToHexStringLower(EncryptRc4(3, 0, "CACHE-PROBE"u8.ToArray()))}> >>");
+
+        using var reader = PdfReader.Open(doc, "u");
+
+        var probe = Assert.IsType<PdfDictionary>(reader.Resolve(new PdfIndirectReference(3, 0)));
+        Assert.Equal(
+            "CACHE-PROBE",
+            Encoding.ASCII.GetString(((PdfHexString)probe.Get(new PdfName("Probe"))!).Bytes.Span));
+    }
+
+    /// <summary>
     /// ISO 32000-1 §7.6.1 requires only the STRINGS in the encryption dictionary to be direct
     /// objects. Everything else — <c>/P</c> here, <c>/CF</c> in the next test — may legally be an
     /// indirect reference, and a file that uses one is not malformed.
@@ -195,6 +228,66 @@ public sealed class EncryptionParameterTests
     }
 
     /// <summary>
+    /// <c>/Filter</c> obeys the same rule as every other non-string entry, and it was the one read
+    /// above the dereference rather than below it — so an indirect one reported the document as using
+    /// a handler named <c>/(missing)</c> and refused it, where qpdf opens it.
+    /// </summary>
+    [Fact]
+    public void IndirectFilterName_isResolved_ratherThanReadAsMissing()
+    {
+        var doc = BuildWithEncryptDict(
+            "<< /Filter 5 0 R /V 2 /R 3 /Length 128 "
+            + "/O <2a2f0a1990192c60114730bdcd39f37828a53c89a340dd473c85299dc5258e1c> "
+            + "/U <6c8913ac9fc602eb1aad2a1ec614bee90021446990b9e4114071a4d9104984c1> /P -4 >>",
+            extraObjects: ["/Standard"]);
+
+        using var reader = PdfReader.Open(doc, "u");
+
+        Assert.Equal(PdfCipherAlgorithm.Rc4, reader.Encryption!.StreamCipher);
+    }
+
+    /// <summary>
+    /// The <c>/CFM</c> and <c>/Length</c> INSIDE a <c>/CF</c> entry feed two separate readers: one
+    /// picks the cipher, the other the key length. Resolving one says nothing about the other, and
+    /// for a long time only the first was resolved.
+    ///
+    /// <para>Both rows are shaped so the two answers cannot coincide. An indirect <c>/CFM</c> with no
+    /// crypt-filter <c>/Length</c> leaves the cipher as the only source of a key size, so an
+    /// unresolved one falls back to the top-level 40 bits and derives a five-byte key. An indirect
+    /// crypt-filter <c>/Length</c> of 5 under RC4 is a legal declaration the cipher does not
+    /// override, so an unresolved one answers 16 instead — and this document's <c>/O</c> and
+    /// <c>/U</c> were derived at n=5, outside this library, so only the five-byte answer opens
+    /// it.</para>
+    /// </summary>
+    [Theory]
+    // /O and /U for a 16-byte key; the cipher must supply the length.
+    [InlineData("/CF << /StdCF << /CFM 5 0 R >> >>", "/AESV2", 128,
+        "2a2f0a1990192c60114730bdcd39f37828a53c89a340dd473c85299dc5258e1c",
+        "6c8913ac9fc602eb1aad2a1ec614bee90021446990b9e4114071a4d9104984c1")]
+    // /O and /U for a 16-byte key again, with a declared length only the CLAMP can override: 20
+    // bytes passes the range test and is then turned away by RC4's own 128-bit limit. That arm reads
+    // /CFM a second time, separately from the one above it.
+    [InlineData("/CF << /StdCF << /CFM 5 0 R /Length 20 >> >>", "/V2", 128,
+        "2a2f0a1990192c60114730bdcd39f37828a53c89a340dd473c85299dc5258e1c",
+        "6c8913ac9fc602eb1aad2a1ec614bee90021446990b9e4114071a4d9104984c1")]
+    // /O and /U for a 5-byte key; the crypt filter's own /Length must supply it.
+    [InlineData("/CF << /StdCF << /CFM /V2 /Length 5 0 R >> >>", "5", 40,
+        "7bb66fb4a0d381ac10efcecd7217fa84ae92b22c3662ca79a2e102a49ba7f7cc",
+        "c9f1cf2fb9fb1e03e113cbb603b8e2c800000000000000000000000000000000")]
+    public void IndirectValuesInsideACryptFilter_reachTheKeyLength(
+        string cfEntry, string referencedObject, int expectedBits, string o, string u)
+    {
+        var doc = BuildWithEncryptDict(
+            $"<< /Filter /Standard /V 4 /R 4 /Length 40 {cfEntry} /StmF /StdCF /StrF /StdCF "
+            + $"/O <{o}> /U <{u}> /P -4 >>",
+            extraObjects: [referencedObject]);
+
+        using var reader = PdfReader.Open(doc, "u");
+
+        Assert.Equal(expectedBits, reader.Encryption!.KeyLengthBits);
+    }
+
+    /// <summary>
     /// The <c>/CF</c> case is the nastier one: authentication never touches the crypt filter table,
     /// so an unresolved <c>/CF</c> lets the document open normally and then throws on the first
     /// stream — "names a /CFM this handler does not implement" — on a file that is perfectly valid.
@@ -204,6 +297,9 @@ public sealed class EncryptionParameterTests
     [InlineData("/CF 5 0 R", "<< /StdCF << /CFM /AESV2 /Length 16 >> >>")]
     // One entry inside /CF indirect, which needs a second level of dereferencing.
     [InlineData("/CF << /StdCF 5 0 R >>", "<< /CFM /AESV2 /Length 16 >>")]
+    // The /Length inside a /CF entry indirect. Same level as /CFM below, and the key-length path
+    // reads it separately from the cipher path, so one being resolved says nothing about the other.
+    [InlineData("/CF << /StdCF << /CFM /AESV2 /Length 5 0 R >> >>", "16")]
     // A third level: the /CFM VALUE indirect. DereferenceValues copies /CF and its per-filter
     // dictionaries and stops there, so this one is resolved by BuildCfTable's own callback and
     // nothing else in the chain would catch it. Without it the filter reads as having no /CFM at
@@ -211,8 +307,11 @@ public sealed class EncryptionParameterTests
     [InlineData("/CF << /StdCF << /CFM 5 0 R /Length 16 >> >>", "/AESV2")]
     public void IndirectCryptFilterDictionary_isResolved(string cfEntry, string referencedObject)
     {
+        // /Length 40 at the top level so the crypt filter is the only thing that can produce this
+        // document's 16-byte key: with no top-level entry the /V 4 fallback answers 128 bits too, and
+        // the file would open whether or not any of this resolved.
         var doc = BuildWithEncryptDict(
-            $"<< /Filter /Standard /V 4 /R 4 /Length 128 {cfEntry} /StmF /StdCF /StrF /StdCF "
+            $"<< /Filter /Standard /V 4 /R 4 /Length 40 {cfEntry} /StmF /StdCF /StrF /StdCF "
             + "/O <2a2f0a1990192c60114730bdcd39f37828a53c89a340dd473c85299dc5258e1c> "
             + "/U <6c8913ac9fc602eb1aad2a1ec614bee90021446990b9e4114071a4d9104984c1> /P -4 >>",
             extraObjects: [referencedObject]);

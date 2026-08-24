@@ -208,7 +208,7 @@ public sealed class EncryptionStructureTests
             "LegacyKeyLengthBytes", BindingFlags.NonPublic | BindingFlags.Static)
             ?? throw new InvalidOperationException("LegacyKeyLengthBytes not found by reflection.");
 
-        Assert.Equal(expectedBytes, (int)method.Invoke(null, [encryptDict, v, r])!);
+        Assert.Equal(expectedBytes, (int)method.Invoke(null, [encryptDict, v, r, null])!);
     }
 
     /// <summary>
@@ -237,7 +237,7 @@ public sealed class EncryptionStructureTests
         var method = typeof(EncryptionSetup).GetMethod(
             "LegacyKeyLengthBytes", BindingFlags.NonPublic | BindingFlags.Static)!;
 
-        Assert.Equal(expectedBytes, (int)method.Invoke(null, [encryptDict, 4, 4])!);
+        Assert.Equal(expectedBytes, (int)method.Invoke(null, [encryptDict, 4, 4, null])!);
     }
 
     /// <summary>
@@ -265,7 +265,7 @@ public sealed class EncryptionStructureTests
         var method = typeof(EncryptionSetup).GetMethod(
             "LegacyKeyLengthBytes", BindingFlags.NonPublic | BindingFlags.Static)!;
 
-        Assert.Equal(5, (int)method.Invoke(null, [encryptDict, 4, 4])!);
+        Assert.Equal(5, (int)method.Invoke(null, [encryptDict, 4, 4, null])!);
     }
 
     /// <summary>
@@ -287,7 +287,7 @@ public sealed class EncryptionStructureTests
         var method = typeof(EncryptionSetup).GetMethod(
             "LegacyKeyLengthBytes", BindingFlags.NonPublic | BindingFlags.Static)!;
 
-        Assert.Equal(32, (int)method.Invoke(null, [encryptDict, 4, 4])!);
+        Assert.Equal(32, (int)method.Invoke(null, [encryptDict, 4, 4, null])!);
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────────────────────────────

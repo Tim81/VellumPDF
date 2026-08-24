@@ -60,6 +60,17 @@ internal static class EncryptionSetup
         string? password,
         Func<PdfObject?, PdfObject?>? resolve = null)
     {
+        // §7.6.1 requires only the STRINGS in the encryption dictionary to be direct objects, so
+        // /V, /R, /P, /Length, /CF, /StmF and /StrF may all legally be indirect references. Reading
+        // them raw made a conformant file fail — /P as a reference threw "missing or not an
+        // integer" at Open, and an indirect /CF produced an empty filter table, which opened fine
+        // and then threw on the first stream. Working on a dereferenced copy keeps every read below
+        // simple — including /Filter's, which is why the handler check sits under this line rather
+        // than above it. BuildCfTable and CryptFilterKeyLengthBytes take the resolver as well, for
+        // the one level this copy does not reach: the values INSIDE a /CF entry, where an indirect
+        // /CFM reads as a missing one and turns every stream in the document into Unsupported.
+        encryptDict = DereferenceValues(encryptDict, resolve);
+
         var filterName = (encryptDict.Get(_filterKey) as PdfName)?.Value;
         if (filterName == "Adobe.PubSec")
             throw new UnsupportedPdfFeatureException(
@@ -71,16 +82,6 @@ internal static class EncryptionSetup
                 $"/Encrypt /Filter /{filterName ?? "(missing)"} is not a security handler VellumPdf.Reader " +
                 "supports; only /Standard is.");
         }
-
-        // §7.6.1 requires only the STRINGS in the encryption dictionary to be direct objects, so
-        // /V, /R, /P, /Length, /CF, /StmF and /StrF may all legally be indirect references. Reading
-        // them raw made a conformant file fail — /P as a reference threw "missing or not an
-        // integer" at Open, and an indirect /CF produced an empty filter table, which opened fine
-        // and then threw on the first stream. Working on a dereferenced copy keeps every read below
-        // simple. BuildCfTable takes the resolver as well, for the one level this copy does not
-        // reach: the values INSIDE a /CF entry, where an indirect /CFM would otherwise read as a
-        // missing one and turn every stream in the document into Unsupported.
-        encryptDict = DereferenceValues(encryptDict, resolve);
 
         var v = (int)RequireInt(encryptDict, _vKey, "/V");
         var r = (int)RequireInt(encryptDict, _rKey, "/R");
@@ -124,7 +125,7 @@ internal static class EncryptionSetup
             || encryptDict.Get(_encryptMetadataKey) is not PdfBoolean emBool
             || emBool.Value;
         var id0 = GetId0(trailer);
-        var keyLengthBytes = r >= 5 ? 32 : LegacyKeyLengthBytes(encryptDict, v, r);
+        var keyLengthBytes = r >= 5 ? 32 : LegacyKeyLengthBytes(encryptDict, v, r, resolve);
 
         var cfTable = v >= 4
             ? CryptFilterResolver.BuildCfTable(encryptDict, resolve)
@@ -306,6 +307,13 @@ internal static class EncryptionSetup
     // into /CF's per-filter dictionaries — the only nested dictionaries the handler reads. The
     // STRINGS (/O, /U, /OE, /UE, /Perms) are required to be direct and are copied across untouched,
     // so this never resolves anything that could need decrypting.
+    // DereferenceValues copies /CF and its per-filter dictionaries but stops at their VALUES, so
+    // every read inside one needs this. An indirect /CFM that reads as missing is indistinguishable
+    // from a cipher this handler does not implement, and an indirect /Length disables both the
+    // cipher-implied size and the clamps — either way a conformant file stops opening.
+    private static PdfObject? Deref(Func<PdfObject?, PdfObject?>? resolve, PdfObject? obj) =>
+        obj is PdfIndirectReference && resolve is not null ? resolve(obj) : obj;
+
     private static PdfDictionary DereferenceValues(PdfDictionary encryptDict, Func<PdfObject?, PdfObject?>? resolve)
     {
         if (resolve is null)
@@ -345,7 +353,8 @@ internal static class EncryptionSetup
     //          writes in BYTES. A conformant V=4 file may carry no top-level /Length at all, and
     //          defaulting it to 40 bits there rejects the correct password on a file every other
     //          reader opens.
-    private static int LegacyKeyLengthBytes(PdfDictionary encryptDict, int v, int r)
+    private static int LegacyKeyLengthBytes(
+        PdfDictionary encryptDict, int v, int r, Func<PdfObject?, PdfObject?>? resolve)
     {
         if (v == 1)
             return 5;
@@ -353,7 +362,7 @@ internal static class EncryptionSetup
         if (r == 2)
             return 5;
 
-        if (v >= 4 && CryptFilterKeyLengthBytes(encryptDict) is { } fromFilter)
+        if (v >= 4 && CryptFilterKeyLengthBytes(encryptDict, resolve) is { } fromFilter)
             return fromFilter;
 
         // 40 bits is Table 20's default for the top-level entry, and it is the right default only
@@ -378,7 +387,8 @@ internal static class EncryptionSetup
     // password on a file every other reader opens. The cipher itself settles it in that case:
     // AESV3 is 256-bit by definition, AESV2 128-bit, and V2 (RC4 under a crypt filter) is 128-bit
     // in every V4 producer's output.
-    private static int? CryptFilterKeyLengthBytes(PdfDictionary encryptDict)
+    private static int? CryptFilterKeyLengthBytes(
+        PdfDictionary encryptDict, Func<PdfObject?, PdfObject?>? resolve)
     {
         if (encryptDict.Get(_cfKey) is not PdfDictionary cf)
             return null;
@@ -396,7 +406,7 @@ internal static class EncryptionSetup
         if (filter is null)
             return null;
 
-        var impliedByCipher = (filter.Get(_cfmKey) as PdfName)?.Value switch
+        var impliedByCipher = (Deref(resolve, filter.Get(_cfmKey)) as PdfName)?.Value switch
         {
             "AESV3" => 32,
             "AESV2" => 16,
@@ -404,7 +414,7 @@ internal static class EncryptionSetup
             _ => (int?)null,
         };
 
-        if (filter.Get(_lengthKey) is not PdfInteger length)
+        if (Deref(resolve, filter.Get(_lengthKey)) is not PdfInteger length)
             return impliedByCipher;
 
         // Table 25 measures this in bytes, but producers that copy the top-level entry's units write
@@ -425,7 +435,7 @@ internal static class EncryptionSetup
         // cipher wins because it is what will actually be applied. Only RC4 has a range to declare:
         // ISO 32000-1 Table 20 allows it 40 to 128 bits, while AES-128 and AES-256 each have exactly
         // one legal key size.
-        var cfm = (filter.Get(_cfmKey) as PdfName)?.Value;
+        var cfm = (Deref(resolve, filter.Get(_cfmKey)) as PdfName)?.Value;
         return cfm switch
         {
             "AESV3" => declared == 32 ? declared : 32,

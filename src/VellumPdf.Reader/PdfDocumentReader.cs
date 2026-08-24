@@ -116,6 +116,7 @@ public sealed class PdfDocumentReader : IDisposable
         // this ordering.
         if (trailer.TryGet(new PdfName("Encrypt"), out var encryptRaw) && encryptRaw is not null)
         {
+            var encryptObjectNumber = (encryptRaw as PdfIndirectReference)?.ObjectNumber;
             var encryptDict = ResolveValue(encryptRaw) as PdfDictionary
                 ?? throw new InvalidDataException("Malformed PDF: /Encrypt does not resolve to a dictionary.");
 
@@ -125,6 +126,7 @@ public sealed class PdfDocumentReader : IDisposable
             _cryptFilterTable = setup.CryptFilterTable;
             _embeddedFileFilter = setup.EmbeddedFileFilter;
             _encryptMetadata = setup.EncryptMetadata;
+            PurgeObjectsCachedDuringAuthentication(encryptObjectNumber);
 
             Encryption = new PdfEncryptionInfo(
                 setup.Decryptor.V, setup.Decryptor.R, setup.Cipher, setup.StringCipher,
@@ -139,6 +141,39 @@ public sealed class PdfDocumentReader : IDisposable
             throw new InvalidDataException("Malformed PDF: /Root does not resolve to a dictionary.");
 
         Catalog = catalog;
+    }
+
+    /// <summary>
+    /// Drops everything <c>Resolve</c> cached while the decryptor was still null.
+    /// </summary>
+    /// <remarks>
+    /// ISO 32000-1 §7.6.1 lets every non-string entry of the encryption dictionary be an indirect
+    /// reference, and <c>EncryptionSetup</c> follows them — deliberately with no decryptor, so that
+    /// <c>/O</c>, <c>/U</c>, <c>/OE</c> and <c>/UE</c> are never run through string decryption.
+    /// <c>Resolve</c> caches what it hands back, so an entry pointing at an ordinary object
+    /// (<c>/Length 2 0 R</c>, say) leaves THAT object in the cache as ciphertext, and every later
+    /// reader of object 2 gets the undecrypted copy — silently, since nothing downstream can tell a
+    /// cached value from a freshly decrypted one. Dropping the entries makes the next resolve
+    /// re-read and decrypt normally.
+    /// <para>
+    /// The encryption dictionary itself is the one object that must STAY cached: its own strings are
+    /// exempt (§7.6.1), and the cached copy is what stops a later resolve of that object number from
+    /// decrypting them.
+    /// </para>
+    /// </remarks>
+    private void PurgeObjectsCachedDuringAuthentication(int? encryptObjectNumber)
+    {
+        foreach (var objectNumber in _cache.Keys.ToArray())
+        {
+            if (objectNumber != encryptObjectNumber)
+                _cache.Remove(objectNumber);
+        }
+
+        foreach (var objectNumber in _streamCache.Keys.ToArray())
+        {
+            if (objectNumber != encryptObjectNumber)
+                _streamCache.Remove(objectNumber);
+        }
     }
 
     /// <summary>

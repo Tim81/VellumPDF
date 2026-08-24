@@ -63,6 +63,33 @@ public sealed class EncryptedInputTests
         }
     }
 
+    /// <summary>
+    /// The sibling condition on the same path. A public-key-encrypted document, or one naming a
+    /// <c>/V</c> this library cannot implement, throws <c>UnsupportedPdfFeatureException</c> from the
+    /// same auto-detection call — and that one reached <c>Main</c> as a stack trace and exit 127
+    /// after the password case had already been fixed beside it.
+    /// </summary>
+    [Theory]
+    [InlineData("<< /Filter /Adobe.PubSec /V 1 /R 2 >>", "public-key")]
+    [InlineData("<< /Filter /Standard /V 3 /R 3 /Length 128 >>", "/V 3")]
+    public void UnsupportedSecurityHandler_withNoProfileFlag_reportsAnError_ratherThanCrashing(
+        string encryptDict, string expectedInMessage)
+    {
+        var path = WriteTempPdf(PasswordProtectedPdf(encryptDict));
+        try
+        {
+            var (code, _, err) = Run(path);
+
+            Assert.Equal(2, code);
+            Assert.Contains(expectedInMessage, err, StringComparison.Ordinal);
+            Assert.DoesNotContain("Unhandled exception", err, StringComparison.Ordinal);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
     private static string WriteTempPdf(byte[] bytes)
     {
         var path = Path.Combine(Path.GetTempPath(), $"vellum-cli-{Guid.NewGuid():N}.pdf");
@@ -73,11 +100,11 @@ public sealed class EncryptedInputTests
     // An RC4 document whose user password is "u" — /O, /U, /P and the trailer /ID are the values
     // from the reader's own enc-rc4-128.pdf fixture, which is what makes them authenticate. Nothing
     // here needs to decrypt; the CLI never gets past opening it.
-    private static byte[] PasswordProtectedPdf()
+    private static byte[] PasswordProtectedPdf(string? encryptDict = null)
     {
         var id = Convert.ToHexStringLower([.. Enumerable.Range(0, 16).Select(i => (byte)i)]);
-        var encrypt =
-            "<< /Filter /Standard /V 2 /R 3 /Length 128 "
+        var encrypt = encryptDict
+            ?? "<< /Filter /Standard /V 2 /R 3 /Length 128 "
             + "/O <2a2f0a1990192c60114730bdcd39f37828a53c89a340dd473c85299dc5258e1c> "
             + "/U <6c8913ac9fc602eb1aad2a1ec614bee90021446990b9e4114071a4d9104984c1> /P -4 >>";
 

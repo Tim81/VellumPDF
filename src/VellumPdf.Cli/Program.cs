@@ -142,12 +142,22 @@ internal static class PreflightRunner
                 }
                 // Profile auto-detection opens the document — with no password, because there is no
                 // way to supply one yet — so an encrypted file reaches THIS call before it ever
-                // reaches Validate below, and the password catch down there never sees it. Without
-                // this, `vellum-preflight some-encrypted.pdf` (no -p, the default invocation) exits
+                // reaches Validate below, and the catches down there never see it. Without these
+                // two, `vellum-preflight some-encrypted.pdf` (no -p, the default invocation) exits
                 // with an unhandled exception and a stack trace.
                 catch (VellumPdf.Reader.PdfPasswordException)
                 {
                     stderr.WriteLine(PasswordProtectedMessage(filePath));
+                    anyIoError = true;
+                    continue;
+                }
+                // The sibling case, and the same reasoning: a public-key handler or a /V this
+                // library cannot implement throws from the same call, on a file the user pointed at
+                // with no arguments at all. UnsupportedPdfFeatureException derives from
+                // NotSupportedException, so this covers both.
+                catch (NotSupportedException ex)
+                {
+                    stderr.WriteLine($"error: {ex.Message}");
                     anyIoError = true;
                     continue;
                 }

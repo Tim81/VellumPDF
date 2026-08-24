@@ -175,12 +175,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   exists to reproduce the bytes a producer hashed, and dropping a candidate over one of them would
   stop a correct password from opening its document. (#97)
 
-- **An indirect `/CFM` turned every stream in a valid document into "unsupported crypt filter".**
-  §7.6.1 requires only the encryption dictionary's STRINGS to be direct objects, so a `/CF` entry's
-  `/CFM` may be an indirect reference. The dereferenced copy the handler works on covered `/CF` and
-  its per-filter dictionaries but stopped one level short of their values, and a filter whose `/CFM`
-  read as missing is indistinguishable from one naming a cipher this handler does not implement —
-  which is a hard failure on the first stream, after the document has already opened. (#97)
+- **An object referenced from inside `/Encrypt` came back as ciphertext, silently.** Authentication
+  runs before a decryptor exists — which is what keeps `/O`, `/U`, `/OE` and `/UE` out of string
+  decryption — and §7.6.1 lets every non-string entry of that dictionary be an indirect reference.
+  Following one cached its target undecrypted, so a document whose `/Encrypt` pointed at an object
+  it also used handed that object's strings back as ciphertext to everything that read it
+  afterwards, with no exception and nothing to distinguish it from a decrypted value. The cache is
+  now dropped once the decryptor exists, keeping only the encryption dictionary itself. (#97)
+
+- **`vellum-preflight` crashed on a public-key-encrypted file given with no arguments.** Profile
+  auto-detection opens the document before the validation loop's own handler is reached, so an
+  unsupported security handler escaped as an unhandled exception where the password case beside it
+  had already been fixed. (#97)
+
+- **`/Encrypt /Filter` was the one entry read before indirect values were resolved.** An indirect
+  one was reported as a handler named `/(missing)` and the document refused, though §7.6.1 requires
+  only the encryption dictionary's strings to be direct. (#97)
+
+- **An indirect `/CFM` or crypt-filter `/Length` was not resolved.** §7.6.1 requires only the
+  encryption dictionary's STRINGS to be direct objects, so either may be an indirect reference. The
+  dereferenced copy the handler works on covers `/CF` and its per-filter dictionaries but stops one
+  level short of their values. A `/CFM` that reads as missing is indistinguishable from one naming a
+  cipher this handler does not implement, which fails hard on the first stream after the document has
+  already opened; an unresolved crypt-filter `/Length` silently disables both the cipher-implied key
+  size and the per-cipher clamps, which derives the wrong key and reports the correct password as
+  wrong. (#97)
 
 - **An encrypted document whose trailer `/ID` was absent or empty would not open.** Algorithm 2
   step (e) appends `/ID[0]` to the MD5 input, and appending nothing is well defined — the producer
