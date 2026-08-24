@@ -12,7 +12,7 @@ namespace VellumPdf.Reader;
 /// same order qpdf's password recovery tries them in.
 ///
 /// <para>
-/// PDFDocEncoding agrees with Latin-1 (ISO 8859-1) outside the 0x18–0x1F and 0x80–0x9F blocks, with
+/// PDFDocEncoding agrees with Latin-1 (ISO 8859-1) outside the 0x18–0x1F and 0x80–0x9E blocks, with
 /// one exception: 0xA0 is EURO SIGN where Latin-1 has NO-BREAK SPACE, so U+00A0 has no
 /// representation and U+20AC has that byte. Everything else is the identity, which is what lets this
 /// be a table of exceptions rather than 256 entries (compare <c>VellumPdf.Fonts.WinAnsiEncoding</c>,
@@ -54,15 +54,21 @@ internal static class PdfDocEncoding
         // it to EURO SIGN (Annex D, Latin character set table, PDF column 240 octal) where Latin-1
         // has NO-BREAK SPACE, so U+00A0 has no representation here and U+20AC is in the table below.
         //
+        // The two excluded blocks are exactly the bytes Annex D gives to a glyph that Latin-1 puts
+        // elsewhere: 0x18-0x1F are breve through tilde, 0x80-0x9E are bullet through zcaron. Those
+        // Unicode code points are C0 and C1 controls with no PDFDocEncoding byte of their own, and
+        // taking the identity there would silently encode one as an accent or a quotation mark.
+        //
         // The code points Annex D marks Undefined — 0x00-0x08, 0x0B, 0x0C, 0x0E-0x17, 0x7F, 0x9F,
-        // 0xAD — are deliberately NOT excluded beyond what the two blocks already cover. This
-        // encoding exists to reproduce the BYTES a producer hashed, and refusing a character drops
-        // the whole candidate rather than substituting for it: a document whose /U was derived from
-        // the byte 0xAD would stop opening under its correct password. Byte-identity is the useful
-        // answer for every one of them.
+        // 0xAD — are NOT excluded: nothing else claims those bytes. This encoding exists to
+        // reproduce the BYTES a producer hashed, and refusing a character drops the whole candidate
+        // rather than substituting for it, so a document whose /U was derived from the byte 0xAD
+        // would stop opening under its correct password. Byte-identity is the useful answer for
+        // every one of them, 0x9F — just past the C1 block, and the one an off-by-one would take —
+        // included.
         if (c <= 0xFF
             && (c is < (char)0x18 or > (char)0x1F)
-            && (c is < (char)0x80 or > (char)0x9F)
+            && (c is < (char)0x80 or > (char)0x9E)
             && c != (char)0xA0)
         {
             b = (byte)c;

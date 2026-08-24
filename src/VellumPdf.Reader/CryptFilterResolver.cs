@@ -119,20 +119,19 @@ internal static class CryptFilterResolver
         Func<PdfObject?, PdfObject?>? resolve,
         bool isCrossReferenceStream = false,
         bool isDocumentMetadataStream = false,
-        CryptFilterMethod? embeddedFileFilter = null)
+        CryptFilterMethod? embeddedFileFilter = null,
+        bool cryptFiltersInForce = true)
     {
-        if (!encryptMetadata && isDocumentMetadataStream)
-            return CryptFilterMethod.Identity;
-
-        // Two exemptions the spec states as "shall not be encrypted", both checked before /Filter
-        // for the same reason /EncryptMetadata is: neither is routed through a /Crypt filter entry.
+        // Two exemptions the spec states as "shall not be encrypted", both checked before anything
+        // else because neither is routed through a /Crypt filter entry — §7.5.8.2 forbids a
+        // cross-reference stream one outright.
         //
-        // ISO 32000-1 §7.5.8.2: "The cross-reference stream shall not be encrypted"; the clause goes
-        // on to forbid it a /Crypt filter outright. The caller decides this one, from the object
-        // numbers XrefParser actually consumed as cross-reference streams — deliberately not from a
-        // /Type /XRef entry, which the document's author controls and could put on a page's content
-        // stream to have its ciphertext handed to a preflight rule as if it were the operators.
-        // XrefParser itself never comes through here; it reads the stream before a decryptor exists.
+        // ISO 32000-1 §7.5.8.2: "The cross-reference stream shall not be encrypted". The caller
+        // decides this one, from the offsets XrefParser actually read cross-reference streams at —
+        // deliberately not from a /Type /XRef entry, which the document's author controls and could
+        // put on a page's content stream to have its ciphertext handed to a preflight rule as if it
+        // were the operators. XrefParser itself never comes through here; it reads the stream before
+        // a decryptor exists.
         //
         // ISO 32000-1 §7.6.1: a stream whose data lives in an external file (/F) "shall not be
         // encrypted, since they are not part of the PDF file itself". The bytes between `stream` and
@@ -141,18 +140,26 @@ internal static class CryptFilterResolver
         if (isCrossReferenceStream || IsExternalFileStream(streamDict, resolve))
             return CryptFilterMethod.Identity;
 
-        // The stream's own crypt filter specifier comes FIRST, ahead of /EFF: Table 20 gives /EFF as
-        // the filter for embedded file streams "that do not have their own crypt filter specifier",
-        // and says a writer shall respect it "except for embedded file streams that have their own".
-        // Leaving one attachment in the clear inside an encrypted document is written exactly that
-        // way — /Filter [/Crypt] with /Name /Identity on the attachment — so taking /EFF over it
-        // hands back the attachment's plaintext re-decrypted into noise.
-        if (FirstFilterName(streamDict, resolve) == "Crypt")
+        // The stream's own crypt filter specifier, which is the most specific thing the document says
+        // about this stream: Table 20's /StmF row excepts "streams that have a Crypt entry in their
+        // Filter array" from the document-wide routing, and Table 20's /EFF row excepts them from
+        // that too. So it outranks both the /EncryptMetadata flag below — Table 21 only says a reader
+        // SHOULD respect that, and §7.6.5's own example writes both, the specifier being the
+        // operative half — and /EFF.
+        //
+        // Gated on /V 4, where Table 20 puts the entire crypt filter mechanism: /CF, /StmF, /StrF and
+        // /EFF are all "meaningful only when the value of V is 4", so below it there is no /CF for a
+        // /Name to resolve against and the specifier says nothing. qpdf ignores it there too, and a
+        // document carrying one is relying on behaviour no reader agrees on.
+        if (cryptFiltersInForce && FirstFilterName(streamDict, resolve) == "Crypt")
         {
             var parms = DecodeParmsForFirstFilter(streamDict, resolve);
             var name = (Deref(resolve, parms?.Get(_name)) as PdfName)?.Value;
             return ResolveNamedMethod(name, cfTable);
         }
+
+        if (!encryptMetadata && isDocumentMetadataStream)
+            return CryptFilterMethod.Identity;
 
         // /EFF is the fallback for an embedded file stream that named no filter of its own (ISO
         // 32000-1 §7.6.1, Table 20), and is what makes "encrypt only the attachments" expressible:

@@ -107,7 +107,7 @@ public sealed class PdfDocEncodingTests
     [InlineData("\u0018")]
     [InlineData("\u001F")]
     [InlineData("\u0080")]
-    [InlineData("\u009F")]
+    [InlineData("\u009E")]
     public void UnrepresentableCharacters_areRefused(string password)
     {
         Assert.False(PdfDocEncoding.TryEncode(password, out var bytes));
@@ -115,14 +115,16 @@ public sealed class PdfDocEncodingTests
     }
 
     /// <summary>
-    /// Annex D marks 0x7F and 0xAD Undefined, and this encoding encodes them anyway. Refusing a
-    /// character drops the whole candidate rather than substituting for it, so a document whose
+    /// Annex D marks 0x7F, 0x9F and 0xAD Undefined, and this encoding encodes them anyway. Refusing
+    /// a character drops the whole candidate rather than substituting for it, so a document whose
     /// <c>/U</c> was derived from one of those bytes would stop opening under its correct password —
     /// and the same table marks two dozen more code points Undefined, so refusing a chosen few would
-    /// be arbitrary as well as harmful.
+    /// be arbitrary as well as harmful. 0x9F is the one to watch: it sits one past the end of the
+    /// C1 block the guard excludes, so an off-by-one there refuses it and nothing else changes.
     /// </summary>
     [Theory]
     [InlineData("\u007F", (byte)0x7F)]
+    [InlineData("\u009F", (byte)0x9F)]
     [InlineData("\u00AD", (byte)0xAD)]
     public void UndefinedCodePointsInsideTheIdentityRange_encodeAsTheirByte(string password, byte expected)
     {

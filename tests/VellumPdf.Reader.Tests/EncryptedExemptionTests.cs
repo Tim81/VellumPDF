@@ -27,6 +27,14 @@ public sealed class EncryptedExemptionTests
         "<< /Filter /Standard /Length 128 /O <2a2f0a1990192c60114730bdcd39f37828a53c89a340dd473c85299dc5258e1c> "
         + "/P -4 /R 3 /U <6c8913ac9fc602eb1aad2a1ec614bee90021446990b9e4114071a4d9104984c1> /V 2 >>";
 
+    // The same /O and /U again, at /R 4 with an RC4 crypt filter — the shape a /Crypt specifier needs,
+    // since Table 20 makes the whole crypt filter mechanism meaningful only at /V 4, while keeping
+    // the cipher RC4 so this file's own encryptor still produces what the reader expects.
+    private const string Rc4V4EncryptDict =
+        "<< /Filter /Standard /Length 128 /O <2a2f0a1990192c60114730bdcd39f37828a53c89a340dd473c85299dc5258e1c> "
+        + "/P -4 /R 4 /U <6c8913ac9fc602eb1aad2a1ec614bee90021446990b9e4114071a4d9104984c1> /V 4 "
+        + "/CF << /StdCF << /CFM /V2 /Length 16 >> >> /StmF /StdCF /StrF /StdCF >>";
+
     // The same /O and /U at /R 4 with an AESV2 crypt filter. Algorithm 2 takes neither /R nor /V as
     // input, so the file key — and with it the /U check — is unchanged; only the cipher differs.
     private const string AesEncryptDict =
@@ -629,11 +637,14 @@ public sealed class EncryptedExemptionTests
 
     /// <summary>
     /// The two halves of round three's fix, in the one configuration where they interact: a catalog
-    /// inside an object stream AND <c>/EncryptMetadata false</c>. Reaching the catalog decodes the
-    /// object stream, which asks whether that stream is the document's metadata — with no catalog yet
-    /// to answer from. Answering "yes" there exempts the object stream from decryption and the file
-    /// does not open at all; the sibling test cannot show it, because with
-    /// <c>/EncryptMetadata</c> true the exemption's first operand is false and the second never runs.
+    /// inside an object stream AND a live <c>/EncryptMetadata false</c> exemption. Reaching the
+    /// catalog decodes the object stream, which asks whether that stream is the document's metadata
+    /// — with no catalog yet to answer from. The bare null-guard is pinned by the sibling test above,
+    /// which also decodes an object-stream catalog; what only this document can show is that the "no"
+    /// forced by that guard is not the memoised answer. The lookup is cached on first use, so a fix
+    /// that set <c>_documentMetadataResolved</c> before the catalog existed would leave the exemption
+    /// switched off for the rest of the document's life, and the metadata stream below would come
+    /// back as noise rather than XMP.
     /// </summary>
     [Fact]
     public void CatalogInsideAnObjectStream_withEncryptMetadataFalse_opens()
@@ -805,7 +816,7 @@ public sealed class EncryptedExemptionTests
     {
         var plaintext = "INDIRECTLY-EXEMPT"u8.ToArray();
 
-        var doc = BuildWith(Rc4EncryptDict,
+        var doc = BuildWith(Rc4V4EncryptDict,
             "<< /Type /Catalog /Pages 2 0 R >>",
             "<< /Type /Pages /Kids [] /Count 0 >>",
             $"<< /Length {plaintext.Length} /Filter 4 0 R /DecodeParms 5 0 R >>\n"
@@ -837,7 +848,7 @@ public sealed class EncryptedExemptionTests
     public void StreamWhoseDeclaredLengthLandsOnAByteTheLexerRefuses_isStillRecovered(string byteAtLength)
     {
         var body = $"AB{byteAtLength}CDEFGH";
-        var doc = BuildWith(Rc4EncryptDict,
+        var doc = BuildWith(Rc4V4EncryptDict,
             "<< /Type /Catalog /Pages 2 0 R >>",
             "<< /Type /Pages /Kids [] /Count 0 >>",
             // /Length 2 is wrong on purpose: it puts the parser exactly on the awkward byte.

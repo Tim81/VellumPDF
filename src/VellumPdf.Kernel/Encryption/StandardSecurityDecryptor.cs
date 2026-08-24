@@ -586,9 +586,11 @@ internal sealed class StandardSecurityDecryptor
 
             case CryptFilterMethod.Unsupported:
                 throw new InvalidDataException(
-                    "This /StmF or /StrF names a /CFM this handler does not implement, or a /CF " +
-                    "entry that does not exist. Falling back to Identity would return ciphertext " +
-                    "as plaintext with no error, so this is a malformed-file condition instead.");
+                    "A crypt filter names a /CFM this handler does not implement, or a /CF entry " +
+                    "that does not exist. The filter may have been selected by /StmF, /StrF, /EFF, " +
+                    "or by a stream's own /Crypt specifier. Falling back to Identity would return " +
+                    "ciphertext as plaintext with no error, so this is a malformed-file condition " +
+                    "instead.");
 
             default:
                 throw new InvalidDataException($"Unrecognised crypt filter method {method}.");

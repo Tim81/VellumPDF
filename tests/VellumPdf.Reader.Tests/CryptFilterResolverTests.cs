@@ -173,6 +173,84 @@ public sealed class CryptFilterResolverTests
     /// /Filter — it is never expressed as a /Crypt filter entry (see the method's own doc comment).
     /// </summary>
     /// <summary>
+    /// The whole crypt filter mechanism is a <c>/V</c> 4 feature — Table 20 marks <c>/CF</c>,
+    /// <c>/StmF</c>, <c>/StrF</c> and <c>/EFF</c> "meaningful only when the value of V is 4" — so
+    /// below that there is no <c>/CF</c> for a <c>/Crypt</c> specifier's <c>/Name</c> to resolve
+    /// against and the specifier says nothing. Honouring it there leaves an RC4-encrypted stream
+    /// undecrypted, on a document qpdf reads correctly.
+    /// </summary>
+    [Theory]
+    [InlineData(true, "Identity")]   // /V 4: the specifier is read and wins
+    [InlineData(false, "Rc4")]       // below it: ignored, and /StmF applies
+    public void ResolveStreamMethod_cryptSpecifier_isReadOnlyWhereCryptFiltersAreMeaningful(
+        bool cryptFiltersInForce, string expectedName)
+    {
+        var expected = Enum.Parse<CryptFilterMethod>(expectedName);
+
+        var streamDict = new PdfDictionary()
+            .Set(_filterKey, new PdfArray([new PdfName("Crypt")]))
+            .Set(new PdfName("DecodeParms"), new PdfDictionary().Set(new PdfName("Name"), new PdfName("Identity")));
+
+        var method = CryptFilterResolver.ResolveStreamMethod(
+            streamDict, CryptFilterMethod.Rc4, new Dictionary<string, CryptFilterMethod>(StringComparer.Ordinal),
+            encryptMetadata: true, resolve: null, cryptFiltersInForce: cryptFiltersInForce);
+
+        Assert.Equal(expected, method);
+    }
+
+    /// <summary>
+    /// A stream's own <c>/Crypt</c> specifier outranks the <c>/EncryptMetadata</c> flag: Table 20's
+    /// <c>/StmF</c> row excepts streams carrying one from the document-wide routing, Table 21 only
+    /// says a reader SHOULD respect the flag, and §7.6.5's own example writes both — the specifier
+    /// being the operative half. A document that says "leave the metadata encrypted" that specifically
+    /// means it.
+    /// </summary>
+    [Fact]
+    public void ResolveStreamMethod_cryptSpecifier_outranksTheEncryptMetadataFlag()
+    {
+        var streamDict = new PdfDictionary()
+            .Set(new PdfName("Type"), new PdfName("Metadata"))
+            .Set(_filterKey, new PdfArray([new PdfName("Crypt")]))
+            .Set(new PdfName("DecodeParms"), new PdfDictionary().Set(new PdfName("Name"), new PdfName("StdCF")));
+        var table = new Dictionary<string, CryptFilterMethod>(StringComparer.Ordinal)
+        {
+            ["StdCF"] = CryptFilterMethod.Aes128,
+        };
+
+        var method = CryptFilterResolver.ResolveStreamMethod(
+            streamDict, CryptFilterMethod.Aes128, table, encryptMetadata: false, resolve: null,
+            isDocumentMetadataStream: true);
+
+        Assert.Equal(CryptFilterMethod.Aes128, method);
+    }
+
+    /// <summary>
+    /// <c>/EFF</c> applies to embedded file streams and nothing else. Dropping the check makes it the
+    /// document-wide filter — which in the arrangement it exists for (<c>/StmF /Identity</c> with
+    /// <c>/EFF</c> naming a real filter) would "decrypt" every page's content into noise — and
+    /// loosening it to "has a <c>/Type</c>" catches object streams and XObjects.
+    /// </summary>
+    [Theory]
+    [InlineData("EmbeddedFile", "Aes128")]
+    [InlineData("ObjStm", "Identity")]
+    [InlineData("XObject", "Identity")]
+    [InlineData(null, "Identity")]
+    public void ResolveStreamMethod_effAppliesToEmbeddedFileStreamsAlone(string? type, string expectedName)
+    {
+        var expected = Enum.Parse<CryptFilterMethod>(expectedName);
+
+        var streamDict = new PdfDictionary();
+        if (type is not null)
+            streamDict.Set(new PdfName("Type"), new PdfName(type));
+
+        var method = CryptFilterResolver.ResolveStreamMethod(
+            streamDict, CryptFilterMethod.Identity, new Dictionary<string, CryptFilterMethod>(StringComparer.Ordinal),
+            encryptMetadata: true, resolve: null, embeddedFileFilter: CryptFilterMethod.Aes128);
+
+        Assert.Equal(expected, method);
+    }
+
+    /// <summary>
     /// <c>/DP</c> is the abbreviated form of <c>/DecodeParms</c> (ISO 32000-1 Table 5). The resolver
     /// accepts it, so something has to say so — otherwise the alias is code nothing depends on and
     /// nothing would notice going away.

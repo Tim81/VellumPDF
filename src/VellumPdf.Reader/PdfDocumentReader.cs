@@ -390,7 +390,8 @@ public sealed class PdfDocumentReader : IDisposable
             stream.Dictionary, _decryptor.StreamFilter, _cryptFilterTable, _encryptMetadata, ResolveMaybe,
             IsCrossReferenceStream(stream.ObjectNumber),
             IsDocumentMetadataStream(stream.ObjectNumber),
-            _embeddedFileFilter);
+            _embeddedFileFilter,
+            _decryptor.V >= 4);
 
         if (method == CryptFilterMethod.Identity)
             return stream;
