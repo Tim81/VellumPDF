@@ -60,6 +60,8 @@ security handler support matrix in #97.
 | `enc-aes-128-samepassword.pdf` | `--encrypt same same 128 --use-aes=y --` | 4 | 4 | AESv2, one password for both roles |
 | `enc-aes-128-pdfdocpassword.pdf` | `--encrypt "pässwörd" o 128 --use-aes=y --` | 4 | 4 | AESv2, non-ASCII password |
 | `enc-aes-128-tworevisions.pdf` | see below | 4 | 4 | AESv2, empty user password, two revisions |
+| `enc-aes-128-linearized.pdf` | `--encrypt u o 128 --use-aes=y -- --linearize` | 4 | 4 | AESv2, linearized |
+| `enc-256-linearized-objstm-cleartextmd.pdf` | `--encrypt u o 256 --cleartext-metadata -- --linearize --object-streams=generate` | 5 | 6 | AESv3, linearized + object streams + metadata in clear |
 
 `enc-rc4-objstm.pdf` covers three gaps at once: an object stream (compressed objects), a
 cross-reference stream, and — because its `/Info` dictionary (with `/Title`) is itself a compressed
@@ -69,6 +71,16 @@ double-decryption is silent (XORing an already-plaintext string against a second
 just produces different-looking garbage, no exception), where AES throws on the second pass
 regardless of whether the first one was wrong. An AES fixture would pass this particular test for
 the wrong reason.
+
+The two linearized rows are the only ones whose cross-reference structure is not a single ordinary
+section. A linearized file carries a first-page cross-reference section ahead of the body and a
+second at the end, plus a hint stream that is ordinary encrypted content — so the reader follows
+`/Prev` from the last section to the first before it can resolve anything, with `/Encrypt` declared
+on a trailer it may reach in either order. It is also the layout Acrobat writes by default, which
+makes it the shape most likely to arrive from a real producer. The AES-256 one adds object streams
+and `--cleartext-metadata` on top: reaching the catalog decodes an object stream, which asks whether
+that stream is the document's metadata before there is a catalog to answer from. No other fixture
+puts those three in one file.
 
 `enc-aes-128-nestedstrings.pdf` is not `plaintext-baseline.pdf` unmodified: it adds one extra
 top-level object, `<< /Outer << /Strs [ (DirectArrayString) (SecondArrayString) ] >> >>`,
@@ -164,8 +176,17 @@ appear in `enc-aes-256-r6.pdf`.
 ## Known gaps
 
 The matrix above is complete along the `/V`+`/R`+`/CFM` axis. It is deliberately **not** complete along the
-structural axis. #97 closed most of the structural gaps (the seven rows below the original eight);
+structural axis. #97 closed most of the structural gaps (the nine rows below the original eight);
 what remains:
+
+- **Every fixture is qpdf's output.** This is the largest gap in the corpus and the hardest to
+  close: producers differ in exactly the places this code has to decide. A crypt filter `/Length` in
+  bytes rather than bits, no `/Length` at all, `/EFF`, a `/StrF` differing from `/StmF`, a non-zero
+  generation, the shape of `/Perms` — every one of those is a producer choice, and one producer's
+  choices are what the whole corpus tests. Acrobat, Word, LibreOffice and the other .NET PDF
+  libraries all encrypt differently, and none is available here. The structural rules they would
+  exercise are pinned by hand-built documents in `EncryptionStructureTests` and
+  `EncryptionParameterTests` instead, which is not the same as having read one of their files.
 
 - **Every object is generation 0.** qpdf normalises generations when it rewrites, so a fixture
   cannot carry a non-zero one; the coupling that makes #97 depend on #121 is pinned instead by a

@@ -67,6 +67,16 @@ public sealed class EncryptedFixtureCorpusTests
         // decryption meet — the shape any encrypted document acquires the moment it is annotated,
         // form-filled or signed.
         ("enc-aes-128-tworevisions.pdf", 4, 4, "/AESV2", "c3161391a66b4cd987e16325db368d8379ab2ba29e85f4888b9ed0c4df488c20"),
+        // Linearized. Every other row is a single ordinary xref section written back to front;
+        // a linearized file has two, a first-page xref ahead of the body and a hint stream that is
+        // ordinary encrypted content. That is the layout Acrobat writes by default, and the one the
+        // cross-reference-stream exemption's offset set has the most sections to get right in.
+        ("enc-aes-128-linearized.pdf", 4, 4, "/AESV2", "798f9251660e5ab7da595d6b2ff351d3647c312cf96bb291279d738b0f1a2426"),
+        // The combination, at AES-256: linearized, object streams, and metadata in the clear. The
+        // three features meet in the reader at exactly one place — reaching the catalog decodes an
+        // object stream, which asks whether that stream is the document's metadata before a catalog
+        // exists to answer from — and no other fixture puts them in the same file.
+        ("enc-256-linearized-objstm-cleartextmd.pdf", 5, 6, "/AESV3", "35d69a9de63db10f513d3d32a17259a457f6dcedc51b9d5321fef5efd16df33f"),
     ];
 
     private const string BaselineName = "plaintext-baseline.pdf";
@@ -148,6 +158,40 @@ public sealed class EncryptedFixtureCorpusTests
     {
         Assert.Contains("xpacket", Encoding.Latin1.GetString(Load("enc-256-cleartextmd.pdf")), StringComparison.Ordinal);
         Assert.DoesNotContain("xpacket", Encoding.Latin1.GetString(Load("enc-aes-256-r6.pdf")), StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The linearized rows, on the properties that make them worth carrying. Every other fixture is
+    /// a single ordinary cross-reference section; a linearized file puts a first-page one ahead of
+    /// the body, so the reader must follow <c>/Prev</c> from the last section to the first — with
+    /// <c>/Encrypt</c> declared on a trailer it may reach in either order — before it can resolve
+    /// anything. The corpus theory above already pins that both open and decrypt to the baseline;
+    /// this pins that they are the layout they claim to be, so a regenerated fixture that qpdf
+    /// silently declined to linearize does not quietly stop testing anything.
+    /// </summary>
+    [Theory]
+    [InlineData("enc-aes-128-linearized.pdf")]
+    [InlineData("enc-256-linearized-objstm-cleartextmd.pdf")]
+    public void LinearizedFixtures_carryALinearizationDictionary(string name)
+    {
+        // /Linearized is in the first object of a linearized file, and it is not encrypted: it lives
+        // in a dictionary, not a string or a stream. A search of the raw bytes is therefore sound.
+        Assert.Contains("/Linearized", Encoding.Latin1.GetString(Load(name)), StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The combined fixture, on the interaction it exists for: an object stream is reached before the
+    /// catalog is, and the document also says its metadata is in the clear. Answering "is this the
+    /// metadata stream?" for that object stream needs a catalog that does not exist yet.
+    /// </summary>
+    [Fact]
+    public void CombinedFixture_hasObjectStreamsAndCleartextMetadata()
+    {
+        var text = Encoding.Latin1.GetString(Load("enc-256-linearized-objstm-cleartextmd.pdf"));
+
+        Assert.True(ContainsToken(text, "/EncryptMetadata false"), "expected /EncryptMetadata false");
+        Assert.Contains("/ObjStm", text, StringComparison.Ordinal);
+        Assert.Contains("xpacket", text, StringComparison.Ordinal);
     }
 
     [Fact]

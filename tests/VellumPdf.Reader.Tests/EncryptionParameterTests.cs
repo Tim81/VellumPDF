@@ -81,6 +81,26 @@ public sealed class EncryptionParameterTests
     }
 
     /// <summary>
+    /// The <c>/V</c> 1 rule, end to end. <c>enc-rc4-40.pdf</c> cannot show it: that fixture declares
+    /// <c>/Length 40</c>, which is what the rule produces anyway, so a reader with no <c>/V</c> 1 rule
+    /// at all opens it. Table 20 makes the entry optional and scopes it to "V is 2 or 3" regardless,
+    /// so a <c>/V</c> 1 file may legitimately carry none — and the fallback's own default is 40 bits
+    /// there, which agrees again. Declaring 128 is the one shape that disagrees, and no tool in reach
+    /// writes it. Renaming the key to <c>/Zength</c> keeps every cross-reference offset valid; the
+    /// document is then <c>/V</c> 1 with nothing said about its length at all.
+    /// </summary>
+    [Fact]
+    public void V1_withNoLengthAtAll_isStillFortyBit()
+    {
+        var bytes = PatchOnce(Load("enc-rc4-40.pdf"), "/Standard /Length 40", "/Standard /Zength 40");
+
+        using var reader = PdfReader.Open(bytes, "u");
+
+        Assert.Equal(40, reader.Encryption!.KeyLengthBits);
+        Assert.Equal("GoldenStandardFont", GetInfoTitle(reader));
+    }
+
+    /// <summary>
     /// ISO 32000-2 §7.6.4.4.12, Algorithm 13. At R≤4 <c>/P</c> is an input to Algorithm 2, so editing
     /// it breaks authentication by itself. At R≥5 the file key is random and the dictionary's
     /// <c>/P</c> is unprotected — <c>/Perms</c> carries the copy sealed under the file key when the

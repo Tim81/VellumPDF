@@ -77,14 +77,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   At `/R` 5 and 6 the permissions come from `/Perms` (ISO 32000-2 Algorithm 13) — the copy sealed
   under the file key — rather than the dictionary's `/P`, which nothing protects at those revisions.
 
-  Verified against the committed corpus (#99): for the nine rows built from the baseline with the
+  Verified against the committed corpus (#99): for the eleven rows built from the baseline with the
   `u`/`o` password pair, the page content decrypts to the baseline's bytes, `/Info /Title` to its
   exact expected text, and each opens under both passwords. The other rows take their own passwords
-  or are not the baseline's object graph, and their own tests say what each pins. Seven fixtures were
+  or are not the baseline's object graph, and their own tests say what each pins. Nine fixtures were
   added for this work, covering an empty user password, an object stream with a cross-reference
   stream, nested strings, a 40-character password, one password serving as both roles, a non-ASCII
-  password whose `/U` is PDFDocEncoding-derived, and an incremental update over an encrypted
-  document. (#97)
+  password whose `/U` is PDFDocEncoding-derived, an incremental update over an encrypted document,
+  a linearized document, and one combining linearization, object streams and cleartext metadata.
+  (#97)
 
 - **A committed corpus of PDFs not produced by VellumPdf's own writer.** Test-only; nothing ships.
   Every reader fixture before this one came from VellumPdf's writer, which only ever emits

@@ -30,6 +30,8 @@ public sealed class EncryptedReaderTests
         "enc-aes-256-r6.pdf",
         "enc-aes-128-cleartextmd.pdf",
         "enc-256-cleartextmd.pdf",
+        "enc-aes-128-linearized.pdf",
+        "enc-256-linearized-objstm-cleartextmd.pdf",
     ];
 
     // ── Load-bearing: decrypted content matches the plaintext baseline ──────────────────────────
