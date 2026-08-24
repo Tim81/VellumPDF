@@ -255,6 +255,23 @@ public sealed class EncryptedReaderTests
         Assert.Throws<UnsupportedPdfFeatureException>(() => PdfReader.Open(bytes));
     }
 
+    /// <summary>
+    /// Table 20 makes <c>/Filter</c> required, and an <c>/Encrypt</c> dictionary without one names no
+    /// handler at all. Assuming <c>/Standard</c> there would apply this handler's algorithms to a
+    /// document that never claimed them — silently producing noise if some other handler's key
+    /// derivation happened to be what the producer used. The error message says "(missing)", which
+    /// is also how this test tells the absent-name branch from the wrong-name branch above.
+    /// </summary>
+    [Fact]
+    public void EncryptDictWithNoFilter_throwsUnsupportedPdfFeatureException()
+    {
+        var bytes = BuildTrailerWithEncryptDict("<< /V 1 /R 2 >>");
+
+        var ex = Assert.Throws<UnsupportedPdfFeatureException>(() => PdfReader.Open(bytes));
+
+        Assert.Contains("(missing)", ex.Message, StringComparison.Ordinal);
+    }
+
     // ── The never-decrypt list, asserted positively ───────────────────────────────────────────────
 
     /// <summary>
@@ -402,6 +419,30 @@ public sealed class EncryptedReaderTests
         var walked = Assert.IsType<PdfDictionary>(WalkWithArmedDecryptor(sigDict));
         var contentsAfter = Assert.IsType<PdfHexString>(walked.Get(PdfName.Contents));
         Assert.Equal(contentsBytes, contentsAfter.Bytes.ToArray());
+    }
+
+    /// <summary>
+    /// The <c>/ByteRange</c> half of the structural tell is not sufficient on its own. An annotation
+    /// dictionary carrying a <c>/ByteRange</c>-shaped array and a <c>/Contents</c> that is anything
+    /// but a string — an array of them here — is not a signature: Table 252 makes <c>/Contents</c> a
+    /// string, and §12.5.2 gives <c>/Contents</c> its ordinary meaning of the annotation's text.
+    /// Exempting it leaves genuinely encrypted strings as ciphertext in the caller's hands, which
+    /// fails in whatever way the caller's own use of them fails, far from here.
+    /// </summary>
+    [Fact]
+    public void ByteRangeWithANonStringContents_isNotExempt()
+    {
+        var textBytes = new byte[16];
+        Array.Fill(textBytes, (byte)0xAB);
+
+        var notASigDict = new PdfDictionary()
+            .Set(PdfName.Contents, new PdfArray([new PdfHexString(textBytes)]))
+            .Set(new PdfName("ByteRange"), new PdfArray(
+                [new PdfInteger(0), new PdfInteger(840), new PdfInteger(1240), new PdfInteger(320)]));
+
+        var walked = Assert.IsType<PdfDictionary>(WalkWithArmedDecryptor(notASigDict));
+        var contentsAfter = Assert.IsType<PdfArray>(walked.Get(PdfName.Contents));
+        Assert.NotEqual(textBytes, Assert.IsType<PdfHexString>(contentsAfter[0]).Bytes.ToArray());
     }
 
     /// <summary>

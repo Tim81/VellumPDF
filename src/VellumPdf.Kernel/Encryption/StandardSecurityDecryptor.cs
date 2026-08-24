@@ -611,10 +611,13 @@ internal sealed class StandardSecurityDecryptor
         // An empty string or a zero-length stream is legal PDF, and a producer has nothing to
         // encrypt for one — there is no IV to write either, so the encrypted form is also empty.
         // Demanding an IV here rejects a document other readers open, and rejects it hard: the
-        // exception propagates out of every object that contains such a string.
-        // An IV with no ciphertext after it is the same "nothing to encrypt" case as an empty
-        // payload, written by a producer that emits the IV unconditionally. Both decrypt to nothing.
-        if (data.Length is 0 or 16)
+        // exception propagates out of every object that contains such a string. Slicing an IV off
+        // zero bytes is also what would throw, so this guard is what makes that case work at all.
+        //
+        // Sixteen bytes — an IV a producer emitted unconditionally with nothing to encrypt after it
+        // — needs no guard: the slice leaves an empty ciphertext, and decrypting zero blocks returns
+        // zero bytes rather than throwing. The test for it goes through this path, not around it.
+        if (data.Length is 0)
             return [];
 
         if (data.Length < 16 || (data.Length - 16) % 16 != 0)

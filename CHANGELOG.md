@@ -174,6 +174,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   exists to reproduce the bytes a producer hashed, and dropping a candidate over one of them would
   stop a correct password from opening its document. (#97)
 
+- **An indirect `/CFM` turned every stream in a valid document into "unsupported crypt filter".**
+  §7.6.1 requires only the encryption dictionary's STRINGS to be direct objects, so a `/CF` entry's
+  `/CFM` may be an indirect reference. The dereferenced copy the handler works on covered `/CF` and
+  its per-filter dictionaries but stopped one level short of their values, and a filter whose `/CFM`
+  read as missing is indistinguishable from one naming a cipher this handler does not implement —
+  which is a hard failure on the first stream, after the document has already opened. (#97)
+
 - **An encrypted document whose trailer `/ID` was absent or empty would not open.** Algorithm 2
   step (e) appends `/ID[0]` to the MD5 input, and appending nothing is well defined — the producer
   that omitted the entry hashed the same bytes the reader now does, so the derivation lands on its

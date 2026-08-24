@@ -60,6 +60,34 @@ public sealed class EncryptionStructureTests
         Assert.Equal(PdfCipherAlgorithm.Rc4, reader.Encryption!.StreamCipher);
     }
 
+    /// <summary>
+    /// §7.5.8.2's exemption reaches a hybrid file's <c>/XRefStm</c> object too. The test above only
+    /// shows the document opening, which it would do even if that stream were exempted for the wrong
+    /// reason: <c>XrefParser</c> reads it before a decryptor exists, so nothing in the open path can
+    /// tell. A caller that resolves the same object afterwards — a preflight rule walking every
+    /// object does exactly that — goes through the decrypt path, and the exemption there is keyed on
+    /// the OFFSETS the parser recorded. Miss the hybrid one and the rows come back as RC4 noise.
+    /// </summary>
+    [Fact]
+    public void HybridXRefStmObject_resolvedAfterOpening_isNotDecrypted()
+    {
+        var bytes = BuildHybrid(
+            classicTrailerExtra: "",
+            xrefStreamExtra: $"/Encrypt {Rc4EncryptDict}",
+            listXrefStreamObject: true);
+
+        using var reader = PdfReader.Open(bytes, "u");
+        var rows = reader.GetDecodedStreamData(reader.ResolveStream(5)!)!;
+
+        // One /W [1 4 2] row: an in-use entry whose 4-byte offset must still point at "4 0 obj".
+        Assert.Equal(7, rows.Length);
+        Assert.Equal(1, rows[0]);
+        var offset = (rows[1] << 24) | (rows[2] << 16) | (rows[3] << 8) | rows[4];
+        Assert.Equal(
+            "4 0 obj",
+            Encoding.Latin1.GetString(bytes.AsSpan(offset, 7)));
+    }
+
     // ── The /Crypt filter as ISO 32000-1 §7.6.5's example writes it ─────────────────────────────
 
     /// <summary>
@@ -112,9 +140,17 @@ public sealed class EncryptionStructureTests
     /// bits, which makes the rule and the declaration agree and the rule therefore invisible.
     /// </summary>
     [Theory]
+    // Every /V 4 row below declares a top-level /Length of 40 on purpose. That is the value the
+    // fallback would use if the crypt filter path returned nothing, and 40 bits is 5 bytes — so a row
+    // expecting anything else fails the moment the clause under test stops answering. With the 128
+    // these rows used to carry, the fallback produced 16 bytes too and most of them could not fail.
+    //
+    // A cryptFilterLength of 0 means "a /CF entry with a /CFM and NO /Length", the shape Table 25
+    // explicitly permits and the one where only the cipher can settle the key size.
+    //
     // V=1 is always 40-bit RC4 whatever /Length claims (ISO 32000-1 Table 20).
     [InlineData(1, 3, 128, null, 5)]
-    [InlineData(1, 2, 40, null, 5)]
+    [InlineData(1, 2, 128, null, 5)]
     // R=2 is always n=5, whatever /Length claims (Algorithm 2 step (i)).
     [InlineData(2, 2, 128, null, 5)]
     // V=2 honours /Length, in bits.
@@ -126,18 +162,31 @@ public sealed class EncryptionStructureTests
     [InlineData(4, 4, 40, 128, 16)]
     // A crypt filter /Length the cipher cannot use is the document contradicting itself. The cipher
     // wins, because it is what will actually be applied — 32 bytes is not an AES-128 key.
-    [InlineData(4, 4, 128, 32, 16)]
+    [InlineData(4, 4, 40, 32, 16)]
+    // No /Length under the crypt filter at all: each cipher has exactly one answer, and AESV3's is
+    // the one a reader that assumed 128-bit AES would get wrong.
+    [InlineData(4, 4, 40, 0, 16, "AESV2")]
+    [InlineData(4, 4, 40, 0, 32, "AESV3")]
+    [InlineData(4, 4, 40, 0, 16, "V2")]
+    // A declared length no cipher could use falls back to the cipher, not to the top-level entry.
+    [InlineData(4, 4, 40, 3, 32, "AESV3")]
     // RC4 under a crypt filter is the one cipher with a RANGE to declare (Table 20: 40 to 128 bits),
     // so it is the only /CFM that can show the bytes-or-bits reading and the clamp doing anything.
     // 40 reads as bits — a legal byte count stops at 32 — and 5 reads as bytes.
     [InlineData(4, 4, 128, 40, 5, "V2")]
     [InlineData(4, 4, 128, 5, 5, "V2")]
     // Out of range either way: neither 3 bytes nor 3 bits is a key, so the cipher's own answer wins.
-    [InlineData(4, 4, 128, 3, 16, "V2")]
+    [InlineData(4, 4, 40, 3, 16, "V2")]
+    // 100 is out of the byte range and inside the bit range, but 100 bits is not a whole number of
+    // bytes — the divisibility test is the only thing standing between it and a 12-byte key.
+    [InlineData(4, 4, 40, 100, 16, "V2")]
     // Readable as a byte count, but 20 bytes is 160-bit RC4 and Table 20 stops at 128 — so the value
     // passes the range test and is then turned away by the cipher's own limit, which is a different
     // guard and the one a plausible-looking declaration reaches.
-    [InlineData(4, 4, 128, 20, 16, "V2")]
+    [InlineData(4, 4, 40, 20, 16, "V2")]
+    // A /CFM this handler has no key size for — /None, /Identity, or one from a future edition —
+    // leaves the declared length as the only thing said about the key, so it stands.
+    [InlineData(4, 4, 40, 16, 16, "None")]
     public void KeyLengthBytes_followsTheRuleThatOverridesLength(
         int v, int r, int lengthBits, int? cryptFilterLength, int expectedBytes, string cfm = "AESV2")
     {
@@ -146,12 +195,13 @@ public sealed class EncryptionStructureTests
 
         if (cryptFilterLength is { } cfLength)
         {
+            var filter = new PdfDictionary().Set(new PdfName("CFM"), new PdfName(cfm));
+            if (cfLength != 0)
+                filter.Set(new PdfName("Length"), new PdfInteger(cfLength));
+
             encryptDict
                 .Set(new PdfName("StmF"), new PdfName("StdCF"))
-                .Set(new PdfName("CF"), new PdfDictionary()
-                    .Set(new PdfName("StdCF"), new PdfDictionary()
-                        .Set(new PdfName("CFM"), new PdfName(cfm))
-                        .Set(new PdfName("Length"), new PdfInteger(cfLength))));
+                .Set(new PdfName("CF"), new PdfDictionary().Set(new PdfName("StdCF"), filter));
         }
 
         var method = typeof(EncryptionSetup).GetMethod(
@@ -294,7 +344,12 @@ public sealed class EncryptionStructureTests
     /// <c>/XRefStm</c>, plus a cross-reference stream that defines object 4. Both trailers can be
     /// given extra entries, which is how the two <c>/Encrypt</c> arrangements above are built.
     /// </summary>
-    private static byte[] BuildHybrid(string classicTrailerExtra, string xrefStreamExtra)
+    // listXrefStreamObject adds a second classic subsection covering object 5, the cross-reference
+    // stream itself. A hybrid file need not list it — nothing resolves it during an ordinary open —
+    // but a caller walking every object in the table does, and that is the only way to reach it
+    // through the decrypt path.
+    private static byte[] BuildHybrid(
+        string classicTrailerExtra, string xrefStreamExtra, bool listXrefStreamObject = false)
     {
         var ms = new MemoryStream();
         void W(string t) => ms.Write(Encoding.Latin1.GetBytes(t));
@@ -319,6 +374,9 @@ public sealed class EncryptionStructureTests
         var classicXrefOffset = (int)ms.Position;
         W("xref\n0 4\n");
         W($"{0:D10} 65535 f \n{o1:D10} 00000 n \n{o2:D10} 00000 n \n{o3:D10} 00000 n \n");
+        if (listXrefStreamObject)
+            W($"5 1\n{xrefStreamOffset:D10} 00000 n \n");
+
         W($"trailer\n<< /Size 6 /Root 1 0 R /XRefStm {xrefStreamOffset} {classicTrailerExtra} "
           + $"/ID [<{Convert.ToHexStringLower(Id0)}><{Convert.ToHexStringLower(Id0)}>] >>\n");
         W($"startxref\n{classicXrefOffset}\n%%EOF\n");

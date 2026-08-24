@@ -77,6 +77,9 @@ public sealed class PdfDocEncodingTests
     [InlineData("password")]
     [InlineData("Sesam öffne dich")]
     [InlineData("~!@#$%^&*()_+`-=[]{};':\",./<>?")]
+    // U+00FF is the top of the identity range and nothing else in this file reaches it, so an
+    // off-by-one in the `c <= 0xFF` bound would drop the last representable character unnoticed.
+    [InlineData("ÿ")]
     public void CharactersOutsideTheExceptionBlocks_encodeAsLatin1(string password)
     {
         Assert.True(PdfDocEncoding.TryEncode(password, out var bytes));

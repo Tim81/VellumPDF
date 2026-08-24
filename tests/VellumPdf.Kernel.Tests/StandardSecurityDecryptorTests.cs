@@ -868,8 +868,16 @@ public sealed class StandardSecurityDecryptorTests
         return decryptor.TransformFinalBlock(perms, 0, perms.Length);
     }
 
-    [Fact]
-    public void RecoverAuthenticatedPermissions_rejectsACorruptedAdbMarker_withACorrectP()
+    /// <summary>
+    /// One byte of the marker at a time. Corrupting all three together pins only the first
+    /// comparison — the other two are unreachable once it has already returned — and a marker check
+    /// that reads just <c>block[9]</c> accepts two thirds of the blocks it should reject.
+    /// </summary>
+    [Theory]
+    [InlineData(9)]
+    [InlineData(10)]
+    [InlineData(11)]
+    public void RecoverAuthenticatedPermissions_rejectsACorruptedAdbMarker_withACorrectP(int corruptedByte)
     {
         // Deleting the "adb" marker check survives every other test here, because the
         // wrong-fileKey tests already fail on an unrelated comparison (the decrypted block is
@@ -885,9 +893,10 @@ public sealed class StandardSecurityDecryptorTests
         BinaryPrimitives.WriteInt32LittleEndian(block, p);
         block[4] = block[5] = block[6] = block[7] = 0xFF;
         block[8] = (byte)'T';
-        block[9] = (byte)'x';
-        block[10] = (byte)'y';
-        block[11] = (byte)'z'; // corrupted: should be "adb"
+        block[9] = (byte)'a';
+        block[10] = (byte)'d';
+        block[11] = (byte)'b';
+        block[corruptedByte] = (byte)'z';
         RandomNumberGenerator.Fill(block.AsSpan(12));
         var perms = EncryptPermsBlockForTest(fileKey, block);
 
@@ -928,6 +937,29 @@ public sealed class StandardSecurityDecryptorTests
             v: v, r: r, keyLengthBytes: keyLengthBytes, o: new byte[32], u: new byte[32], oe: null, ue: null,
             p: -4, id0: [], encryptMetadata: true,
             streamFilter: CryptFilterMethod.Rc4, stringFilter: CryptFilterMethod.Rc4);
+    }
+
+    /// <summary>
+    /// <c>/OE</c> and <c>/UE</c> are the AES-256 wrapped file key, and Algorithm 2.A decrypts each as
+    /// exactly two AES blocks with no padding. A length check that only tests for <see langword="null"/>
+    /// lets a 16- or 48-byte value through to that decryption, where it yields a file key of the
+    /// wrong size and a failure blamed on the password. The presence half is pinned by
+    /// <c>Constructor_atRevision5_requiresOe</c>; this is the size half.
+    /// </summary>
+    [Theory]
+    [InlineData(16, 32)]
+    [InlineData(48, 32)]
+    [InlineData(0, 32)]
+    [InlineData(32, 16)]
+    [InlineData(32, 48)]
+    [InlineData(32, 0)]
+    public void Constructor_atRevision5_rejectsWrongLengthOeOrUe(int oeLength, int ueLength)
+    {
+        Assert.Throws<InvalidDataException>(() => new StandardSecurityDecryptor(
+            v: 5, r: 5, keyLengthBytes: 32, o: new byte[48], u: new byte[48],
+            oe: new byte[oeLength], ue: new byte[ueLength],
+            p: -4, id0: [], encryptMetadata: true,
+            streamFilter: CryptFilterMethod.Aes256, stringFilter: CryptFilterMethod.Aes256));
     }
 
     [Fact]

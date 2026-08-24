@@ -77,7 +77,9 @@ internal static class EncryptionSetup
         // them raw made a conformant file fail — /P as a reference threw "missing or not an
         // integer" at Open, and an indirect /CF produced an empty filter table, which opened fine
         // and then threw on the first stream. Working on a dereferenced copy keeps every read below
-        // (and BuildCfTable's, which takes no resolver) simple.
+        // simple. BuildCfTable takes the resolver as well, for the one level this copy does not
+        // reach: the values INSIDE a /CF entry, where an indirect /CFM would otherwise read as a
+        // missing one and turn every stream in the document into Unsupported.
         encryptDict = DereferenceValues(encryptDict, resolve);
 
         var v = (int)RequireInt(encryptDict, _vKey, "/V");
@@ -125,7 +127,7 @@ internal static class EncryptionSetup
         var keyLengthBytes = r >= 5 ? 32 : LegacyKeyLengthBytes(encryptDict, v, r);
 
         var cfTable = v >= 4
-            ? CryptFilterResolver.BuildCfTable(encryptDict, null)
+            ? CryptFilterResolver.BuildCfTable(encryptDict, resolve)
             : new Dictionary<string, CryptFilterMethod>(StringComparer.Ordinal);
 
         CryptFilterMethod streamFilter;

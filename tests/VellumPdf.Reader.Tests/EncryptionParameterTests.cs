@@ -24,11 +24,34 @@ public sealed class EncryptionParameterTests
     /// fails the <c>/U</c> check, and rejects the CORRECT password on a file every other reader
     /// opens. The patch renames the top-level key rather than deleting it, so every byte offset in
     /// the cross-reference table stays valid.
+    ///
+    /// <para>The sibling below patches that entry to 40 bits rather than hiding it. Removing it
+    /// alone does not prove much: with no top-level <c>/Length</c> the fallback answers 128 bits at
+    /// <c>/V</c> 4 anyway, which is the same answer the crypt filter gives, so the document opens
+    /// either way. 40 bits derives a five-byte key that fails the <c>/U</c> check.</para>
     /// </summary>
     [Fact]
     public void V4_withNoTopLevelLength_takesTheKeyLengthFromTheCryptFilter()
     {
         var bytes = PatchOnce(Load("enc-aes-128.pdf"), "/Standard /Length 128", "/Standard /Zength 128");
+
+        using var reader = PdfReader.Open(bytes, "u");
+
+        Assert.Equal(128, reader.Encryption!.KeyLengthBits);
+        Assert.Equal("GoldenStandardFont", GetInfoTitle(reader));
+    }
+
+    /// <summary>
+    /// The same rule with the top-level entry present and wrong — the shape a producer leaves behind
+    /// when it upgrades a document to <c>/V</c> 4 and does not clear the entry Table 20 has stopped
+    /// scoping to it. Only the crypt filter's length opens this file; the top-level 40 bits derives a
+    /// five-byte key. Written as <c>040</c> so the patch is byte-for-byte the same length as the
+    /// <c>128</c> it replaces and every cross-reference offset stays valid.
+    /// </summary>
+    [Fact]
+    public void V4_topLevelLengthContradictingTheCryptFilter_isIgnored()
+    {
+        var bytes = PatchOnce(Load("enc-aes-128.pdf"), "/Standard /Length 128", "/Standard /Length 040");
 
         using var reader = PdfReader.Open(bytes, "u");
 
@@ -89,6 +112,22 @@ public sealed class EncryptionParameterTests
     }
 
     /// <summary>
+    /// The same rule at R5. Algorithm 13 and the <c>/Perms</c> entry arrived with R5, not R6 — ISO
+    /// 32000-2 Table 21 lists <c>/Perms</c> for "R is 5 or 6" alike — and the recovery is gated on a
+    /// revision comparison, which a whole suite written at R6 cannot tell from one revision higher.
+    /// </summary>
+    [Fact]
+    public void R5_permissionBitsEditedAfterEncryption_reportTheSealedValue()
+    {
+        var edited = PatchOnce(Load("enc-aes-256-r5.pdf"), "/P -4 ", "/P -8 ");
+
+        using var reader = PdfReader.Open(edited, "u");
+
+        Assert.Equal(-4 & (int)PdfPermissions.All, (int)reader.Encryption!.Permissions);
+        Assert.True(reader.Encryption.Permissions.HasFlag(PdfPermissions.Print));
+    }
+
+    /// <summary>
     /// An empty string is legal PDF, and a producer has nothing to encrypt for one — not even an
     /// IV, so its encrypted form is empty too. Demanding an IV rejects the document, and rejects it
     /// hard: the exception comes out of every object that contains such a string.
@@ -110,8 +149,9 @@ public sealed class EncryptionParameterTests
         Assert.Empty(((PdfLiteralString)dict.Get(new PdfName("AlsoEmpty"))!).Bytes.ToArray());
 
         // Sixteen bytes is an IV and nothing after it — what a producer writes when it emits the IV
-        // unconditionally and has nothing to encrypt. There is no ciphertext block to decrypt, so
-        // the plaintext is empty; demanding a block after the IV rejects the document.
+        // unconditionally and has nothing to encrypt. It reaches the real CBC decryption with an
+        // empty ciphertext, which returns empty; the length guard below it, which demands whole
+        // blocks after the IV, is what this row shows does not reject 16.
         Assert.Empty(((PdfHexString)dict.Get(new PdfName("IvOnly"))!).Bytes.ToArray());
     }
 
@@ -142,9 +182,13 @@ public sealed class EncryptionParameterTests
     [Theory]
     // The whole /CF dictionary indirect.
     [InlineData("/CF 5 0 R", "<< /StdCF << /CFM /AESV2 /Length 16 >> >>")]
-    // One entry inside /CF indirect, which needs a second level of dereferencing: BuildCfTable is
-    // called with no resolver, so nothing else in the chain would resolve this one.
+    // One entry inside /CF indirect, which needs a second level of dereferencing.
     [InlineData("/CF << /StdCF 5 0 R >>", "<< /CFM /AESV2 /Length 16 >>")]
+    // A third level: the /CFM VALUE indirect. DereferenceValues copies /CF and its per-filter
+    // dictionaries and stops there, so this one is resolved by BuildCfTable's own callback and
+    // nothing else in the chain would catch it. Without it the filter reads as having no /CFM at
+    // all, which is Unsupported, which throws on the first stream of a valid file.
+    [InlineData("/CF << /StdCF << /CFM 5 0 R /Length 16 >> >>", "/AESV2")]
     public void IndirectCryptFilterDictionary_isResolved(string cfEntry, string referencedObject)
     {
         var doc = BuildWithEncryptDict(
@@ -459,13 +503,15 @@ public sealed class EncryptionParameterTests
     /// <c>/StmF</c> — which is not a <c>/CF</c> entry to look up, so the length has to come from
     /// <c>/StrF</c>'s. Two entries with different lengths, because with one the same answer arrives
     /// through the single-entry fallback and through <c>/V</c> 4's own default, and the test would
-    /// pass with the <c>/StrF</c> fallback removed.
+    /// pass with the <c>/StrF</c> fallback removed. The top-level <c>/Length 40</c> is there for the
+    /// same reason: without it the 128-bit answer also arrives through <c>/V</c> 4's default, and
+    /// nothing here would depend on <c>/StrF</c> being consulted at all.
     /// </summary>
     [Fact]
     public void StmFIdentity_takesTheKeyLengthFromStrF()
     {
         var doc = BuildWithEncryptDict(
-            "<< /Filter /Standard /V 4 /R 4 "
+            "<< /Filter /Standard /V 4 /R 4 /Length 40 "
             + "/CF << /Unused << /CFM /V2 /Length 5 >> /StrCF << /CFM /V2 /Length 16 >> >> "
             + "/StmF /Identity /StrF /StrCF "
             + "/O <2a2f0a1990192c60114730bdcd39f37828a53c89a340dd473c85299dc5258e1c> "
@@ -561,8 +607,11 @@ public sealed class EncryptionParameterTests
     [InlineData("/AESV2", 32)]
     public void CryptFilterLengthTheCipherCannotUse_isIgnoredInFavourOfTheCipher(string cfm, int declaredLength)
     {
+        // /Length 40 at the top level so the clamp is the only thing that can produce a 16-byte key:
+        // with no top-level entry the /V 4 fallback answers 128 bits too, and the document opens
+        // whether or not the cipher ever overrode the declaration.
         var doc = BuildWithEncryptDict(
-            $"<< /Filter /Standard /V 4 /R 4 /CF << /StdCF << /CFM {cfm} /Length {declaredLength} >> >> "
+            $"<< /Filter /Standard /V 4 /R 4 /Length 40 /CF << /StdCF << /CFM {cfm} /Length {declaredLength} >> >> "
             + "/StmF /StdCF /StrF /StdCF "
             + "/O <2a2f0a1990192c60114730bdcd39f37828a53c89a340dd473c85299dc5258e1c> "
             + "/U <6c8913ac9fc602eb1aad2a1ec614bee90021446990b9e4114071a4d9104984c1> /P -4 >>");

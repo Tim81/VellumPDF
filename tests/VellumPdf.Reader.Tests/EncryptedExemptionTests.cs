@@ -48,6 +48,40 @@ public sealed class EncryptedExemptionTests
         "<< /Filter /Standard /Length 128 /O <2a2f0a1990192c60114730bdcd39f37828a53c89a340dd473c85299dc5258e1c> "
         + "/P -4 /R 3 /U <06fe1801286e1d3d5e48258101f589cf00000000000000000000000000000000> /V 2 >>";
 
+    // ── /EncryptMetadata in the key derivation (Algorithm 2 step (f)) ────────────────────────
+
+    /// <summary>
+    /// Algorithm 2 step (f) is scoped to "security handlers of revision 4 or greater": only there
+    /// does an unencrypted-metadata document append 0xFFFFFFFF to the key input. A reader that
+    /// applies it at <c>/R</c> 3 derives a different key from the one the producer used and rejects
+    /// the correct password.
+    ///
+    /// <para>The <c>/O</c> and <c>/U</c> here are the corpus's, derived at <c>/R</c> 3 without those
+    /// four bytes. <c>/V</c> is 4 so that <c>/EncryptMetadata</c> is read at all — Table 20 scopes the
+    /// entry there — which makes this the one shape that separates the revision test from the flag:
+    /// gate on <c>/V</c> instead of <c>/R</c>, or drop the test entirely, and this document stops
+    /// opening.</para>
+    /// </summary>
+    [Fact]
+    public void V4R3_withEncryptMetadataFalse_doesNotExtendTheKeyInput()
+    {
+        var doc = BuildWith(
+            "<< /Filter /Standard /Length 128 /V 4 /R 3 /EncryptMetadata false "
+            + "/CF << /StdCF << /CFM /V2 /Length 16 >> >> /StmF /StdCF /StrF /StdCF "
+            + "/O <2a2f0a1990192c60114730bdcd39f37828a53c89a340dd473c85299dc5258e1c> "
+            + "/P -4 /U <6c8913ac9fc602eb1aad2a1ec614bee90021446990b9e4114071a4d9104984c1> >>",
+            "<< /Type /Catalog /Pages 2 0 R /Probe 3 0 R >>",
+            "<< /Type /Pages /Kids [] /Count 0 >>",
+            $"<< /Probe <{Convert.ToHexStringLower(Encrypt(3, 0, "R3-NO-FFFFFFFF"u8.ToArray()))}> >>");
+
+        using var reader = PdfReader.Open(doc, "u");
+
+        var probe = Assert.IsType<PdfDictionary>(reader.Resolve(new PdfIndirectReference(3, 0)));
+        Assert.Equal(
+            "R3-NO-FFFFFFFF",
+            Encoding.ASCII.GetString(((PdfHexString)probe.Get(new PdfName("Probe"))!).Bytes.Span));
+    }
+
     // ── The trailer /ID (ISO 32000-1 §7.6.3.3, Algorithm 2 step (e)) ────────────────────────────
 
     /// <summary>
