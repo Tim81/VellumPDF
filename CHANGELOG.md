@@ -8,6 +8,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Breaking changes
 
+- **A password-protected document now reaches `PdfPreflight` as `PdfPasswordException`, which no
+  existing `catch` covers.** Every prior version threw `UnsupportedPdfFeatureException`, and so
+  `NotSupportedException`, for any `/Encrypt` at all, so that is what a caller of
+  `PdfPreflight.Validate` or `PdfPreflight.DetectClaimedProfiles` wrote to detect an encrypted file.
+  Both are Stable API in a Stable package, and both now open an encrypted document whose empty user
+  password suffices, and throw `PdfPasswordException` for one that needs a non-empty password. That
+  exception derives from `Exception` directly, and deliberately so: a document the reader
+  understands but was not given the credentials for is not an unsupported feature. An existing
+  `catch (NotSupportedException)` around either method therefore lets it through. Catch
+  `PdfPasswordException` beside it. (#97)
+
 - **`PdfDocument.DocumentId` now throws `ArgumentException` for a value that is not 16 bytes.**
   Previously any other length was accepted and then written as no `/ID` at all — silently. ISO
   32000-2 Table 15 requires `/ID` once `/Encrypt` is present, so on an encrypted document that
@@ -127,9 +138,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   implement, all at `Open`. An unresolvable `/StmF` fails later, at the first decode, because a
   document whose streams cannot be decrypted still has readable strings.
 
-  Callers that caught `NotSupportedException` to detect an encrypted file need to catch
-  `PdfPasswordException` instead — it deliberately does not derive from `NotSupportedException`,
-  since a password-protected file is not an unsupported feature.
+  A file that needs a non-empty password throws `PdfPasswordException`, which no `catch` written
+  against the old behaviour covers. See Breaking changes above.
 
   `PdfDocumentReader.Dispose` clears the file encryption key, where it used to do nothing, so a
   disposed reader is now unusable: resolving an object on one throws `ObjectDisposedException`

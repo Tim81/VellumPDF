@@ -591,6 +591,11 @@ doc.Save(stream);
 With the same `Timestamp` and `DocumentId`, identical content produces
 byte-identical output across any number of invocations.
 
+`DocumentId` must be exactly 16 bytes; any other length throws
+`ArgumentException`.  The writer emits no `/ID` for a length it cannot use, and
+ISO 32000-2 Table 15 requires the entry once `/Encrypt` is present, so on an
+encrypted document a wrong length would leave the file invalid.
+
 When only `Timestamp` is pinned (and `DocumentId` is left null) the ID is
 derived from content and the pinned timestamp, so it is still stable across
 repeated calls with the same input.
