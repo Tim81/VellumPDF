@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Breaking changes
+
+- **`PdfDocument.DocumentId` now throws `ArgumentException` for a value that is not 16 bytes.**
+  Previously any other length was accepted and then written as no `/ID` at all — silently. ISO
+  32000-2 Table 15 requires `/ID` once `/Encrypt` is present, so on an encrypted document that
+  produced a file qpdf rejects outright ("invalid /ID in trailer dictionary"), with nothing to tell
+  the caller which value caused it. On an unencrypted document the old behaviour merely omitted an
+  optional entry, so code that set a wrong-length id and relied on that omission now sees an
+  exception. `DocumentId` is Stable API, which is why this is recorded here rather than under
+  Fixed. (#97)
+
 ### Added
 
 - **A committed corpus of encrypted PDFs, one per standard-security-handler `/V`+`/R` combination.**
@@ -189,12 +200,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   document names one or two; more than 64 is now refused. `SECURITY.md` says what remains true
   rather than claiming more: parsing a dictionary with very many keys is quadratic whether or not
   the file is encrypted, and bounding input size is the caller's job. (#97)
-
-- **`PdfDocument.DocumentId` now refuses a value that is not 16 bytes.** The writer emits no `/ID`
-  at all for any other length, and ISO 32000-2 Table 15 requires `/ID` once `/Encrypt` is present —
-  so a wrong length silently produced an encrypted document qpdf rejects with "invalid /ID in
-  trailer dictionary". The setter throws `ArgumentException` instead, where the caller can still see
-  which value was wrong. (#97)
 
 - **A document written without an owner password would have opened to anyone.** The handler falls
   back to the user password when no owner password is given, as `PdfEncryptionSettings.OwnerPassword`
