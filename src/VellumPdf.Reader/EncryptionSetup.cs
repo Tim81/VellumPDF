@@ -148,9 +148,12 @@ internal static class EncryptionSetup
             streamFilter = CryptFilterMethod.Rc4;
             stringFilter = CryptFilterMethod.Rc4;
 
-            // Table 20 makes /EFF meaningful only at /V 4 and above. Null, not Rc4: a non-null value
-            // here would send every embedded file stream down the /EFF path on a document that never
-            // mentioned /EFF at all.
+            // Table 20 makes /EFF meaningful only at /V 4 and above, so there is no filter to name
+            // here. Null rather than the stream cipher because that is what "the document said
+            // nothing" means — not because the two differ in what they decrypt to: below /V 4 the
+            // default stream filter IS this cipher, so both spellings resolve identically and no test
+            // can tell them apart. The distinction is for the reader of the code, and for the day a
+            // /V 4 path reuses this variable.
             embeddedFileFilter = null;
         }
         else
@@ -322,6 +325,19 @@ internal static class EncryptionSetup
     private static PdfObject? Deref(Func<PdfObject?, PdfObject?>? resolve, PdfObject? obj) =>
         obj is PdfIndirectReference && resolve is not null ? resolve(obj) : obj;
 
+    // ISO 32000-1 Table 20 describes /CF as the crypt filters "used in the document"; a real one names
+    // one or two (/StdCF, sometimes an /EFF filter beside it), and /StmF, /StrF and /EFF can select
+    // at most three between them. This cap is far above anything a producer writes and far below the
+    // point where the work starts to matter.
+    //
+    // It exists because everything in this method runs BEFORE the password is checked, on a file
+    // anyone can send. PdfDictionary is a linear-scan list, so copying an n-entry /CF is O(n²) — 16
+    // thousand entries in a 500 KB file cost about half a second here, and the cost grows with the
+    // square. That is not the whole story (parsing the same dictionary is quadratic too, and happens
+    // before this code sees it), but it is the part this handler adds, and it is the part it can
+    // refuse.
+    private const int MaxCryptFilters = 64;
+
     private static PdfDictionary DereferenceValues(PdfDictionary encryptDict, Func<PdfObject?, PdfObject?>? resolve)
     {
         if (resolve is null)
@@ -333,6 +349,13 @@ internal static class EncryptionSetup
             var resolved = value is PdfIndirectReference ? resolve(value) : value;
             if (key.Equals(_cfKey) && resolved is PdfDictionary cf)
             {
+                if (cf.Entries.Count > MaxCryptFilters)
+                {
+                    throw new InvalidDataException(
+                        $"Malformed PDF: /Encrypt /CF declares {cf.Entries.Count} crypt filters; " +
+                        $"at most {MaxCryptFilters} are read. A conforming document names one or two.");
+                }
+
                 var cfCopy = new PdfDictionary();
                 foreach (var (filterName, filterValue) in cf.Entries)
                 {

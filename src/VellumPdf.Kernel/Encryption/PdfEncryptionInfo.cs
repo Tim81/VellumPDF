@@ -53,6 +53,11 @@ public sealed class PdfEncryptionInfo
     /// The cipher the resolved <c>/StrF</c> crypt filter applies to strings. Usually the same as
     /// <see cref="StreamCipher"/> — producers name one crypt filter for both — but ISO 32000-2 Table 20
     /// lets a document give strings and streams different ones, and this reports what it did.
+    /// <para>Never <see cref="PdfCipherAlgorithm.Unsupported"/>: a <c>/StrF</c> naming a filter the
+    /// reader cannot apply is refused when the document is opened, because a string that cannot be
+    /// decrypted is one the caller would otherwise receive as ciphertext. Only
+    /// <see cref="StreamCipher"/> carries that value, where the document still opens and the failure
+    /// arrives at the first stream.</para>
     /// </summary>
     public PdfCipherAlgorithm StringCipher { get; }
 
@@ -67,6 +72,16 @@ public sealed class PdfEncryptionInfo
     public int KeyLengthBits { get; }
 
     /// <summary><c>/P</c>, decoded into the individual permission flags it grants.</summary>
+    /// <remarks>
+    /// At <c>/R</c> 5 and 6 this is the copy sealed inside <c>/Perms</c> under the file key, not the
+    /// dictionary's <c>/P</c> — the two are inputs to nothing at those revisions, so an editor can
+    /// change <c>/P</c> without invalidating anything, and the sealed copy is the one the document's
+    /// author chose. Where they disagree, other tools report the dictionary's value: a file whose
+    /// <c>/P</c> was edited to forbid printing shows as print-forbidden elsewhere and as
+    /// print-allowed here. That is the more defensible answer, and it is deliberately the permissive
+    /// one, so a caller enforcing restrictions on a document from an untrusted source should treat
+    /// this as what the author granted rather than as what any given viewer will show.
+    /// </remarks>
     public PdfPermissions Permissions { get; }
 
     /// <summary>

@@ -20,8 +20,14 @@ wrong or absent) rather than crashing with an unexpected exception, hanging, or 
 memory. An encrypted document is parsed with the same limits as any other once its password
 authenticates. The encryption dictionary is necessarily read before that — `/O`, `/P` and the
 trailer `/ID` are inputs to the key derivation, and `/Filter`, `/V` and `/R` decide which algorithm
-runs — but every one of those is range-checked first, and no length, offset or filter name taken
-from it is acted on unvalidated. The reader bounds
+runs — but every one of those is range-checked first, no length, offset or filter name taken from
+it is acted on unvalidated, and the number of crypt filters it may declare is capped.
+
+One limit is worth stating exactly, because "fails cleanly" is not the same as "fails quickly":
+dictionary lookup is a linear scan, so building a dictionary with very many keys costs time
+quadratic in the key count. A hostile file can spend a reader's time that way — roughly half a
+second for sixteen thousand keys — without allocating unusually or failing. Bounding input size
+remains the caller's responsibility. The reader bounds
 indirect-reference nesting and AcroForm field-tree depth, rejects object-stream cycles, and
 range-checks every offset taken from a cross-reference table before using it.
 

@@ -182,6 +182,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the check skips silently where no base ref resolves, since it is a second line of defence over the
   file scan and a shallow checkout is not a finding. (#97)
 
+- **An `/Encrypt` dictionary could declare unboundedly many crypt filters.** Everything the handler
+  reads out of that dictionary runs before the password is checked, and dictionary lookup is a
+  linear scan — so copying an `/CF` with sixteen thousand entries cost about half a second on a
+  500 KB file, growing with the square. A conforming document names one or two; more than 64 is now
+  refused. `SECURITY.md` says what remains true rather than claiming more: parsing a dictionary with
+  very many keys is quadratic whether or not the file is encrypted, and bounding input size is the
+  caller's job. (#97)
+
 - **`vellum-preflight` reported nothing at all for two kinds of file.** An encrypted document whose
   `/StmF` names a crypt filter its own `/CF` does not define, and a file that is not a PDF, both
   exited 2 with an empty stderr on the default invocation, while the same files named their problem

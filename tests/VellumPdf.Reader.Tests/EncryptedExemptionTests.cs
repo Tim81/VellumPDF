@@ -195,10 +195,42 @@ public sealed class EncryptedExemptionTests
         Assert.NotNull(xrefStream);
         Assert.Equal("XRef", ((PdfName)xrefStream!.Dictionary.Get(new PdfName("Type"))!).Value);
 
-        // The load-bearing part: the body inflates. Decrypted first, it does not.
+        // The load-bearing part: the body inflates, AND its rows are the ones the reader navigated
+        // by. "It inflated" alone only proves the bytes were not RC4'd — it would accept any
+        // inflatable wrong answer — so a row is read back and checked against the file.
         var decoded = reader.GetDecodedStreamData(xrefStream);
         Assert.NotNull(decoded);
-        Assert.NotEmpty(decoded!);
+
+        var w = (PdfArray)xrefStream.Dictionary.Get(new PdfName("W"))!;
+        int Width(int i) => (int)((PdfInteger)w[i]!).Value;
+        var rowLength = Width(0) + Width(1) + Width(2);
+        Assert.Equal(0, decoded!.Length % rowLength);
+
+        // Every type-1 row's field 2 is a byte offset, and "N 0 obj" must start there. On noise those
+        // offsets land anywhere, so this is what separates real cross-reference bytes from bytes that
+        // merely inflated.
+        var file = Load("enc-rc4-objstm.pdf");
+        var checkedRows = 0;
+        for (var i = 0; i < decoded.Length; i += rowLength)
+        {
+            if (ReadField(decoded, i, Width(0)) != 1)
+                continue;
+
+            var offset = (int)ReadField(decoded, i + Width(0), Width(1));
+            Assert.InRange(offset, 0, file.Length - 8);
+            Assert.Matches(@"^\d+ \d+ obj", Encoding.Latin1.GetString(file, offset, 8));
+            checkedRows++;
+        }
+
+        Assert.True(checkedRows > 0, "the decoded cross-reference stream held no in-use rows to check");
+    }
+
+    private static long ReadField(byte[] rows, int offset, int width)
+    {
+        long value = 0;
+        for (var i = 0; i < width; i++)
+            value = (value << 8) | rows[offset + i];
+        return value;
     }
 
     /// <summary>

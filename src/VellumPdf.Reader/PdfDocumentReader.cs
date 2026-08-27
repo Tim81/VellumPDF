@@ -174,6 +174,13 @@ public sealed class PdfDocumentReader : IDisposable
             if (objectNumber != encryptObjectNumber)
                 _streamCache.Remove(objectNumber);
         }
+
+        // Object streams too. §7.5.7 forbids the encryption dictionary itself from living in one, but
+        // §7.6.1 lets its non-string VALUES be references, and one of those may point into an object
+        // stream — which is then decoded with no decryptor and cached undecoded. No such document is
+        // readable by anything (decoding the container needs the file key that entry is part of
+        // deriving), so this closes the asymmetry rather than a reachable defect.
+        _objStmCache.Clear();
     }
 
     /// <summary>

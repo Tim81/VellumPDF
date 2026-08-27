@@ -248,6 +248,42 @@ public sealed class EncryptionParameterTests
     }
 
     /// <summary>
+    /// Everything the handler reads out of <c>/Encrypt</c> happens before the password is checked, so
+    /// the cost of reading it is a cost anyone can impose. <c>/CF</c> is the one entry whose size the
+    /// document controls, and copying it is quadratic in the entry count — Table 20 describes it as
+    /// the filters "used in the document", of which <c>/StmF</c>, <c>/StrF</c> and <c>/EFF</c> can
+    /// select three at the very most.
+    /// </summary>
+    [Fact]
+    public void CryptFilterTableFarLargerThanAnyDocumentNeeds_isRefused()
+    {
+        var many = string.Concat(Enumerable.Range(0, 65).Select(i => $"/F{i} << /CFM /V2 /Length 16 >> "));
+        var doc = BuildWithEncryptDict(
+            $"<< /Filter /Standard /V 4 /R 4 /Length 128 /CF << {many}>> /StmF /F0 /StrF /F0 "
+            + "/O <2a2f0a1990192c60114730bdcd39f37828a53c89a340dd473c85299dc5258e1c> "
+            + "/U <6c8913ac9fc602eb1aad2a1ec614bee90021446990b9e4114071a4d9104984c1> /P -4 >>");
+
+        var ex = Assert.Throws<InvalidDataException>(() => PdfReader.Open(doc, "u"));
+
+        Assert.Contains("crypt filters", ex.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>The cap is well clear of what a document legitimately declares.</summary>
+    [Fact]
+    public void CryptFilterTableOfAPlausibleSize_isAccepted()
+    {
+        var several = string.Concat(Enumerable.Range(0, 8).Select(i => $"/F{i} << /CFM /V2 /Length 16 >> "));
+        var doc = BuildWithEncryptDict(
+            $"<< /Filter /Standard /V 4 /R 4 /Length 128 /CF << {several}>> /StmF /F0 /StrF /F0 "
+            + "/O <2a2f0a1990192c60114730bdcd39f37828a53c89a340dd473c85299dc5258e1c> "
+            + "/U <6c8913ac9fc602eb1aad2a1ec614bee90021446990b9e4114071a4d9104984c1> /P -4 >>");
+
+        using var reader = PdfReader.Open(doc, "u");
+
+        Assert.Equal(PdfCipherAlgorithm.Rc4, reader.Encryption!.StreamCipher);
+    }
+
+    /// <summary>
     /// Which handler a document uses is decided before the rest of <c>/Encrypt</c> is touched. This
     /// one names a public-key handler AND has an indirect entry that cannot resolve — object 5's
     /// offset is past the end of the file — so whichever check runs first decides what the caller is
