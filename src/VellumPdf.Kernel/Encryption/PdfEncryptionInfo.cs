@@ -79,8 +79,19 @@ public sealed class PdfEncryptionInfo
     /// author chose. Where they disagree, other tools report the dictionary's value: a file whose
     /// <c>/P</c> was edited to forbid printing shows as print-forbidden elsewhere and as
     /// print-allowed here. That is the more defensible answer, and it is deliberately the permissive
-    /// one, so a caller enforcing restrictions on a document from an untrusted source should treat
-    /// this as what the author granted rather than as what any given viewer will show.
+    /// one.
+    /// <para>
+    /// It is not, however, a value an untrusted document cannot choose. <c>/Perms</c> settles a
+    /// disagreement only where there is a <c>/Perms</c> to settle it: ISO 32000-2 Table 21 does not
+    /// require the entry, and an editor with no key at all can delete it, or corrupt one byte of its
+    /// ciphertext so that Algorithm 13's <c>adb</c> marker no longer checks out. Either way this
+    /// falls back to the dictionary's <c>/P</c> and reports whatever that editor wrote — as qpdf,
+    /// poppler and pdfium also do, since refusing the file outright over an optional entry would
+    /// make this the only library that cannot open it. So this is what the author granted on a
+    /// document that carries a recoverable <c>/Perms</c>, and what the file claims on one that does
+    /// not; a caller enforcing restrictions from an untrusted source cannot tell the two apart from
+    /// this property alone.
+    /// </para>
     /// </remarks>
     public PdfPermissions Permissions { get; }
 
@@ -88,6 +99,14 @@ public sealed class PdfEncryptionInfo
     /// <c>/EncryptMetadata</c> (default <see langword="true"/> when the key is absent from
     /// <c>/Encrypt</c>): whether the XMP metadata stream is encrypted along with the rest of the
     /// document, or left as cleartext XML.
+    /// <para>
+    /// Reported as the dictionary states it, and at <c>/R</c> 5 and 6 nothing authenticates that:
+    /// the flag stops feeding key derivation above <c>/R</c> 4, so an editor can flip it with no key
+    /// and change whether this reader decrypts the metadata stream. Byte 8 of the <c>/Perms</c> block
+    /// seals the writer's answer and could detect the edit; it is deliberately not compared, for the
+    /// same reason <see cref="Permissions"/> falls back rather than refusing the file. The result is
+    /// a corrupted metadata stream, not access to anything.
+    /// </para>
     /// </summary>
     public bool EncryptMetadata { get; }
 

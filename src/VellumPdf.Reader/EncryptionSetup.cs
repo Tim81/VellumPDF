@@ -211,8 +211,15 @@ internal static class EncryptionSetup
         // and the dictionary's is whatever the last editor put there.
         //
         // Reported, not refused. qpdf, poppler and pdfium all read a document whose /Perms disagrees,
-        // so rejecting it would make this the only library that cannot open the file at all — while
-        // taking the dictionary's word would hand the caller permissions someone else chose.
+        // so rejecting it would make this the only library that cannot open the file at all.
+        //
+        // The ?? is the limit of the protection, and it is reached without a key: /Perms is optional
+        // (Table 21), so deleting it — or corrupting one byte of its ciphertext, which fails the adb
+        // marker check inside RecoverAuthenticatedPermissions — leaves the dictionary's /P as the
+        // only answer there is. Falling back is still right, for the same reason as above, but it
+        // means Permissions reports the sealed copy where there is one and the file's claim where
+        // there is not. PdfEncryptionInfo.Permissions says so; R6_permissionsAreTheEditedP_whenPerms-
+        // CannotBeRecovered pins both shapes.
         var perms = TryGetBytes(encryptDict, _permsKey);
         var authenticatedP = perms is not null ? decryptor.RecoverAuthenticatedPermissions(fileKey, perms) : null;
 

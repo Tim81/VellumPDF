@@ -96,8 +96,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   signing can still hand back an archive timestamp's ciphertext. This exemption is the reading that
   cannot corrupt a signature, not a claim about what every producer does.
 
-  At `/R` 5 and 6 the permissions come from `/Perms` (ISO 32000-2 Algorithm 13) — the copy sealed
-  under the file key — rather than the dictionary's `/P`, which nothing protects at those revisions.
+  At `/R` 5 and 6 the permissions come from `/Perms` (ISO 32000-2 Algorithm 13), the copy sealed
+  under the file key, rather than the dictionary's `/P`, which nothing protects at those revisions.
+  Only where the document carries a `/Perms` that recovers, though: Table 21 does not require the
+  entry, so deleting it — or corrupting one byte of it, which fails Algorithm 13's marker check —
+  falls back to `/P` and reports whatever an editor wrote there. qpdf, poppler and pdfium all behave
+  the same way, and refusing the file over an optional entry would make this the only reader that
+  cannot open it. `PdfEncryptionInfo.Permissions` documents the distinction.
 
   Verified against the committed corpus (#99): for the eleven rows built from the baseline with the
   `u`/`o` password pair, the page content decrypts to the baseline's bytes, `/Info /Title` to its
