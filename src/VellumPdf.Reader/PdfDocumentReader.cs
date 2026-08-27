@@ -517,7 +517,6 @@ public sealed class PdfDocumentReader : IDisposable
 
     // Well-known keys used only by the decrypt walk below.
     private static readonly PdfName _sigType = new("Sig");
-    private static readonly PdfName _xrefType = new("XRef");
     private static readonly PdfName _docTimeStampType = new("DocTimeStamp");
     private static readonly PdfName _typeKey = new("Type");
     private static readonly PdfName _byteRangeKey = new("ByteRange");
