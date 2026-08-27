@@ -76,6 +76,24 @@ public sealed class EncryptedReaderTests
         Assert.Equal(GetPageContentBytes(baseline), GetPageContentBytes(reader));
     }
 
+    /// <summary>
+    /// The owner password against the same fixture. It is excluded from
+    /// <see cref="StandardMatrixFixtures"/> because its object graph differs, and that exclusion took
+    /// the owner-password assertion with it — leaving the one document in the corpus with object
+    /// streams and a cross-reference stream opened only ever under the user password. Algorithm 7
+    /// recovers the user password from <c>/O</c> and then runs Algorithm 2, so the container's own
+    /// decryption is reached by a different route here than in every other owner-password row.
+    /// </summary>
+    [Fact]
+    public void ObjectStreamAndXrefStreamFixture_opensWithOwnerPassword_andPageContentMatchesBaseline()
+    {
+        using var reader = PdfReader.Open(Load("enc-rc4-objstm.pdf"), "o");
+        using var baseline = PdfReader.Open(Load("plaintext-baseline.pdf"));
+
+        Assert.True(reader.Encryption!.IsOwnerAccess);
+        Assert.Equal(GetPageContentBytes(baseline), GetPageContentBytes(reader));
+    }
+
     // ── /Info /Title decrypts to the exact expected text ─────────────────────────────────────────
 
     [Theory]

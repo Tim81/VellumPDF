@@ -147,8 +147,12 @@ Two assertions, in this order:
 
 1. **Prove the fixture carries the feature** before trusting any decrypt result. `--show-encryption`
    reports `R`, `P` and the per-stream/string method, but **not** `/V`. Nor does
-   `--show-object=trailer`: it prints `/Encrypt 8 0 R`, an indirect reference. Use
-   `qpdf --password=u --show-object=8` or `--json --json-key=encrypt` to see the dictionary itself.
+   `--show-object=trailer`: it prints an indirect reference. Use
+   `qpdf --password=u --json --json-key=encrypt` to see the dictionary itself. **Not
+   `--show-object=8`**: the encryption dictionary is object 8 in the original eight fixtures and
+   object 6 or 9 in four of the later ones, and asking for the wrong object number prints some other
+   dictionary and exits 0 — a check that reports success while looking at the wrong thing, which is
+   the failure this step exists to prevent.
    `EncryptedFixtureCorpusTests` pins each fixture by SHA-256 as well as `/V`, `/R` and `/CFM`, because
    `enc-aes-128` and `enc-rc4-128-v4` are both `/V 4 /R 4` and differ only in `/CFM` — swapping them
    is otherwise invisible.
@@ -265,8 +269,9 @@ Re-running a command to "check" a fixture will fail the guard, and that is worki
 To legitimately replace a fixture:
 
 1. Regenerate it with the command from the table above.
-2. Confirm it carries what its row claims — `qpdf --password=u --show-object=8` for `/V` and `/CFM`
-   (the trailer only holds an indirect reference), and `--show-encryption` for `/R`, the cipher and
+2. Confirm it carries what its row claims — `qpdf --password=u --json --json-key=encrypt` for `/V`
+   and `/CFM` (the trailer only holds an indirect reference, and the object number it points at is
+   not the same in every fixture), and `--show-encryption` for `/R`, the cipher and
    **the permission list**, which is what catches a fixture regenerated with narrowed permissions.
 3. Confirm it still decrypts to the baseline: `qpdf --password=u --decrypt <file> out.pdf`, then diff
    against `plaintext-baseline.pdf` and check every difference falls inside the second `/ID` element.
