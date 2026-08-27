@@ -329,6 +329,14 @@ public sealed class EncryptionParameterTests
         var lastRow = text.LastIndexOf(" 00000 n \n", StringComparison.Ordinal);
         Assert.True(lastRow > xrefAt, "no in-use row found in the cross-reference table");
 
+        // The row this corrupts has to be OBJECT 5's — the one /Length points at. It is the last row
+        // only because BuildWithEncryptDict writes exactly five bodies here, and nothing else ties the
+        // two together: grow the document and the corruption lands on an object nobody dereferences,
+        // both orderings reach the handler check, and this test starts passing for the wrong reason.
+        var header = text[(xrefAt + "xref\n0 ".Length)..];
+        var declaredSize = header[..header.IndexOf('\n')].Trim();
+        Assert.Equal("6", declaredSize);   // objects 0-5, so the last in-use row is object 5's
+
         // Each row is "nnnnnnnnnn ggggg n \n"; overwrite the ten-digit offset in place so every
         // other offset in the table stays valid.
         var offsetStart = lastRow - 10;

@@ -185,10 +185,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **An `/Encrypt` dictionary could declare unboundedly many crypt filters.** Everything the handler
   reads out of that dictionary runs before the password is checked, and dictionary lookup is a
   linear scan — so copying an `/CF` with sixteen thousand entries cost about 1.4 s on a 520 KB
-  file, and eight thousand about 0.45 s: four times the work for twice the entries. A conforming document names one or two; more than 64 is now
-  refused. `SECURITY.md` says what remains true rather than claiming more: parsing a dictionary with
-  very many keys is quadratic whether or not the file is encrypted, and bounding input size is the
-  caller's job. (#97)
+  file where eight thousand cost about 0.45 s, and the gap widens with the square. A conforming
+  document names one or two; more than 64 is now refused. `SECURITY.md` says what remains true
+  rather than claiming more: parsing a dictionary with very many keys is quadratic whether or not
+  the file is encrypted, and bounding input size is the caller's job. (#97)
 
 - **A document written without an owner password would have opened to anyone.** The handler falls
   back to the user password when no owner password is given, as `PdfEncryptionSettings.OwnerPassword`

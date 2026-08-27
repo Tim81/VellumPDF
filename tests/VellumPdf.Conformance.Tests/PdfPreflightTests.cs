@@ -10,6 +10,7 @@ using VellumPdf.Conformance;
 using VellumPdf.Conformance.Rules.Fonts;
 using VellumPdf.Conformance.Tests.Oracle;
 using VellumPdf.Document;
+using VellumPdf.Encryption;
 using VellumPdf.Reader;
 using VellumPdf.Signing;
 
@@ -6208,26 +6209,42 @@ public sealed class PdfPreflightTests
     /// <summary>
     /// The other side of that guard, and the reason it cannot simply test <c>/StmF</c>: with
     /// <c>/EncryptMetadata false</c> the document metadata stream is exempt from decryption entirely
-    /// (ISO 32000-1 Table 21), so it stays readable however <c>/StmF</c> resolved. Refusing to detect
-    /// a claim on such a file takes away the one job still doable on it. This is the
-    /// <c>--cleartext-metadata</c> arrangement two fixtures in the reader's corpus carry.
+    /// (ISO 32000-2 Table 21), so it stays readable however <c>/StmF</c> resolved. Refusing to detect
+    /// a claim on such a file takes away the one job still doable on it.
     /// </summary>
+    /// <remarks>
+    /// The document is written here rather than loaded, because no embedded fixture in this assembly
+    /// has the arrangement — an earlier version of this test looked for it in one that does not, hit
+    /// an early <c>return</c>, and reported Passed while asserting nothing. Writing it removes the
+    /// guard and with it the failure mode. At <c>/R</c> 6 neither <c>/StmF</c> nor
+    /// <c>/EncryptMetadata</c> feeds key derivation, so patching <c>/StmF</c> to name an undefined
+    /// filter leaves the file openable — which is exactly the shape under test.
+    /// </remarks>
     [Fact]
     public void DetectClaimedProfiles_UndecodableCryptFilter_butCleartextMetadata_stillReadsTheClaim()
     {
-        using var s = typeof(PdfPreflightTests).Assembly.GetManifestResourceStream("jpx-encrypted-emptyuser.pdf")
-            ?? throw new InvalidOperationException("jpx-encrypted-emptyuser.pdf embedded resource not found.");
-        using var ms = new MemoryStream();
-        s.CopyTo(ms);
+        using var doc = new PdfDocument();
+        doc.AddPage();
+        doc.Encrypt(new PdfEncryptionSettings
+        {
+            UserPassword = "",
+            OwnerPassword = "o",
+            EncryptMetadata = false,
+        });
 
-        var text = System.Text.Encoding.Latin1.GetString(ms.ToArray());
-        if (!text.Contains("/EncryptMetadata false", StringComparison.Ordinal))
-            return; // the fixture encrypts its metadata; the arrangement under test is not present
+        using var written = new MemoryStream();
+        doc.Save(written);
 
+        var text = System.Text.Encoding.Latin1.GetString(written.ToArray());
+        Assert.Contains("/EncryptMetadata false", text, StringComparison.Ordinal);
+        Assert.Contains("/StmF /StdCF", text, StringComparison.Ordinal);
+
+        // Same byte count, so every cross-reference offset stays valid.
         var patched = System.Text.Encoding.Latin1.GetBytes(
             text.Replace("/StmF /StdCF", "/StmF /Ghost", StringComparison.Ordinal));
 
-        // No exception: the metadata decodes, so a claim can be read (or honestly reported as absent).
+        // No exception: the metadata is in the clear, so a claim can be read — or honestly reported
+        // as absent — even though no other stream in the document can be decoded.
         _ = PdfPreflight.DetectClaimedProfiles(patched);
     }
 

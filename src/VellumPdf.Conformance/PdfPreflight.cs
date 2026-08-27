@@ -99,8 +99,14 @@ public static class PdfPreflight
         // belongs to THAT stream, not to the document-wide /StmF. A document with /EncryptMetadata
         // false leaves its metadata in the clear whatever /StmF resolved to (the arrangement
         // --cleartext-metadata produces, which two fixtures carry), and gating on /StmF refused such a
-        // file a claim it could perfectly well have read. Letting the decode decide is exact: it
-        // succeeds where the metadata is readable and throws where it is not.
+        // file a claim it could perfectly well have read. Letting the decode decide is exact about the
+        // OUTCOME: it succeeds where the metadata is readable and throws where it is not.
+        //
+        // The `when` below only decides which exception NAME the caller sees, and it is not exhaustive:
+        // a metadata stream carrying its own /Crypt specifier that names an unimplemented /CFM throws
+        // while the document-wide /StmF is perfectly supported, and that one still surfaces as
+        // InvalidDataException. Refusing to evaluate is right either way; the label is imprecise in a
+        // case no producer emits.
         byte[]? bytes;
         try
         {

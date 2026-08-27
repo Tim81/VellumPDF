@@ -3,6 +3,7 @@
 
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.RegularExpressions;
 using VellumPdf.Canvas;
 using VellumPdf.Core;
 using VellumPdf.Document;
@@ -587,16 +588,50 @@ public sealed class EncryptionTests
         var stdCf = (PdfDictionary)((PdfDictionary)encrypt.Get(new PdfName("CF"))!).Get(new PdfName("StdCF"))!;
         Assert.Equal("AESV3", ((PdfName)stdCf.Get(new PdfName("CFM"))!).Value);
 
-        // /Perms is required at R5 and R6 (Table 21), and it must be the sealed copy of this /P.
-        var perms = (PdfHexString)encrypt.Get(new PdfName("Perms"))!;
-        Assert.Equal(16, perms.Bytes.Length);
+        Assert.Equal(16, ((PdfHexString)encrypt.Get(new PdfName("Perms"))!).Bytes.Length);
         Assert.Equal(48, ((PdfHexString)encrypt.Get(new PdfName("O"))!).Bytes.Length);
         Assert.Equal(48, ((PdfHexString)encrypt.Get(new PdfName("U"))!).Bytes.Length);
         Assert.Equal(32, ((PdfHexString)encrypt.Get(new PdfName("OE"))!).Bytes.Length);
         Assert.Equal(32, ((PdfHexString)encrypt.Get(new PdfName("UE"))!).Bytes.Length);
-        // The sealed /Perms and the declared /P agree on an untampered file, which is what makes the
-        // reader's preference for /Perms invisible here and detectable when someone edits /P.
         Assert.Equal((int)Int("P") & (int)PdfPermissions.All, (int)reader.Encryption!.Permissions);
+    }
+
+    /// <summary>
+    /// <c>/Perms</c> has to be the SEALED copy of <c>/P</c>, not merely sixteen bytes of the right
+    /// shape. Nothing here could tell the difference: the reader falls back to the dictionary's
+    /// <c>/P</c> when the seal fails its marker check, deliberately and by documented design, so a
+    /// <c>/Perms</c> of sixteen zeroes reaches the same answer and passes. qpdf does not agree —
+    /// it warns that "/Perms field in encryption dictionary doesn't match expected value" — which
+    /// makes this the class of defect only another implementation sees.
+    ///
+    /// <para>Editing <c>/P</c> in the written bytes is what separates the two sources. The document
+    /// is written granting print only; the edit declares full permissions over a seal that says
+    /// otherwise, and a reader that reads the seal still reports print alone. Same byte count, so
+    /// every cross-reference offset stays valid.</para>
+    /// </summary>
+    [Fact]
+    public void EncryptedDocument_permsIsTheSealedCopyOfP_notJustSixteenBytes()
+    {
+        var bytes = SaveEncrypted("u", "o", permissions: PdfPermissions.Print);
+
+        var text = Encoding.Latin1.GetString(bytes);
+        var declared = Regex.Match(text, @"/P (-?\d+)");
+        Assert.True(declared.Success, "no /P found in the written document");
+
+        // -1 grants everything; pad it to the width of what it replaces so no offset moves.
+        var replacement = "-1".PadLeft(declared.Groups[1].Value.Length, '0');
+        if (declared.Groups[1].Value.StartsWith('-'))
+            replacement = "-" + "1".PadLeft(declared.Groups[1].Value.Length - 1, '0');
+
+        var patched = Encoding.Latin1.GetBytes(
+            text[..declared.Groups[1].Index] + replacement
+            + text[(declared.Groups[1].Index + declared.Groups[1].Value.Length)..]);
+        Assert.Equal(bytes.Length, patched.Length);
+
+        using var reader = PdfReader.Open(patched, "u");
+
+        // The seal wins: print only, not the everything the edited /P now claims.
+        Assert.Equal(PdfPermissions.Print, reader.Encryption!.Permissions);
     }
 
     /// <summary>
@@ -649,7 +684,11 @@ public sealed class EncryptionTests
             ? Encoding.BigEndianUnicode.GetString(bytes[2..])
             : Encoding.Latin1.GetString(bytes);
 
-    private static byte[] SaveEncrypted(string userPassword, string? ownerPassword, string? title = null)
+    private static byte[] SaveEncrypted(
+        string userPassword,
+        string? ownerPassword,
+        string? title = null,
+        PdfPermissions permissions = PdfPermissions.All)
     {
         using var doc = new PdfDocument();
         var page = doc.AddPage();
@@ -666,6 +705,7 @@ public sealed class EncryptionTests
         {
             UserPassword = userPassword,
             OwnerPassword = ownerPassword,
+            Permissions = permissions,
         });
 
         var ms = new MemoryStream();
