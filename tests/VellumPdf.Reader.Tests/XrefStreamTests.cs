@@ -28,8 +28,12 @@ public sealed class XrefStreamTests
         return ms.ToArray();
     }
 
+    // These streams are decoded directly, never through a reader's decrypt path, so the identity is
+    // arbitrary — but it is spelled out rather than defaulted, because the constructor no longer
+    // defaults it: a stream that reaches an encrypted document's decrypt path at (0, 0) is decrypted
+    // under the wrong per-object key, silently.
     private static ParsedStream MakeParsedStream(PdfDictionary dict, byte[] rawBody) =>
-        new(dict, new ReadOnlyMemory<byte>(rawBody));
+        new(dict, new ReadOnlyMemory<byte>(rawBody), bodyOffset: 0, objectNumber: 1, generation: 0);
 
     // ── Object stream / xref stream integration ──────────────────────────────
 

@@ -487,6 +487,11 @@ public sealed class EncryptionTests
         Assert.Equal(handler.PValue, pFromPerms);
 
         // bytes[9] = 'a', bytes[10] = 'd', bytes[11] = 'b'
+        // Bytes 4-7 are 0xFF, which Algorithm 10 states outright. Nothing in this library reads them
+        // back — the reader takes /P from bytes 0-3 and the marker from 9-11 — so only a validator
+        // elsewhere would notice them being wrong, which is exactly why they need asserting here.
+        Assert.Equal(new byte[] { 0xFF, 0xFF, 0xFF, 0xFF }, permsPlain[4..8]);
+
         Assert.Equal((byte)'a', permsPlain[9]);
         Assert.Equal((byte)'d', permsPlain[10]);
         Assert.Equal((byte)'b', permsPlain[11]);
@@ -516,6 +521,138 @@ public sealed class EncryptionTests
         var ms = new MemoryStream();
         doc.Save(ms);
         return ms.ToArray();
+    }
+
+    /// <summary>
+    /// ISO 32000-2 §7.6.4.3.3 truncates the password to 127 bytes before hashing. Both sides of this
+    /// library call the same helper, so a round trip cancels any error in it, and at <c>/R</c> 4 and
+    /// below the 32-byte padding truncates first — which leaves this rule observable only against a
+    /// UTF-8 password longer than 127 bytes at <c>/R</c> 6, and no fixture has one. Known answers
+    /// instead: the boundary itself, one byte either side, and a multi-byte character straddling it,
+    /// since truncating mid-character is what a naive character-count implementation gets wrong.
+    /// </summary>
+    [Theory]
+    [InlineData(126, 126)]
+    [InlineData(127, 127)]
+    [InlineData(128, 127)]
+    [InlineData(300, 127)]
+    public void PasswordBytes_truncatesAt127Bytes(int asciiLength, int expectedLength)
+    {
+        var bytes = StandardSecurityHandler.PasswordBytes(new string('p', asciiLength));
+
+        Assert.Equal(expectedLength, bytes.Length);
+    }
+
+    /// <summary>
+    /// The cut is by BYTES, not characters, and it lands mid-character here: 63 two-byte characters
+    /// reach 126 bytes, so the 64th contributes only its lead byte. A character-count truncation
+    /// would keep all 64 and hash 128 bytes.
+    /// </summary>
+    [Fact]
+    public void PasswordBytes_truncatingMidCharacter_cutsAt127Bytes()
+    {
+        var bytes = StandardSecurityHandler.PasswordBytes(new string('ä', 64));
+
+        Assert.Equal(127, bytes.Length);
+        Assert.Equal(0xC3, bytes[126]);   // the lead byte of the character the cut splits
+    }
+
+    /// <summary>
+    /// ISO 32000-2 Table 22 reserves bits 1 and 2 of <c>/P</c> and requires them to be 0.
+    /// <c>PdfEncryptionSettings.Permissions</c> is an unvalidated public property, so a caller can
+    /// hand in a value with them set; the mask is what stops that reaching the file.
+    /// </summary>
+    [Fact]
+    public void PValue_clearsTheReservedLowBits()
+    {
+        var handler = new StandardSecurityHandler(new PdfEncryptionSettings
+        {
+            UserPassword = "u",
+            OwnerPassword = "o",
+            Permissions = (PdfPermissions)3 | PdfPermissions.Print,
+        });
+
+        Assert.Equal(0, handler.PValue & 0x3);
+    }
+
+    /// <summary>
+    /// The write side derives <c>/O</c> and <c>/OE</c>; the read side authenticates an owner password
+    /// against them. Nothing joined the two, and it shows: three separate mutations of Algorithm 9 —
+    /// dropping <c>U</c> as the <c>udata</c> argument to either <c>Hash2B</c> call, and swapping the
+    /// validation and key salts inside <c>/O</c> — each survived the entire solution's tests. The
+    /// mirror mutations on Algorithm 8 are all caught, because <c>/U</c> and <c>/UE</c> do have a
+    /// round trip. This is that round trip for the owner half.
+    ///
+    /// <para>Algorithm 9 differs from Algorithm 8 in exactly one way — it passes the 48-byte
+    /// <c>/U</c> as <c>udata</c> to both hashes (ISO 32000-2 §7.6.4.3.3) — and a writer that omits it
+    /// produces a file whose owner password opens nowhere, including here. The corpus cannot catch
+    /// that: its fixtures come from another producer, so they exercise the read side against someone
+    /// else's <c>/O</c>, never against this library's own.</para>
+    ///
+    /// <para>Both halves are asserted to reach the SAME file key, which is what makes the test about
+    /// Algorithm 9 rather than about the owner path merely returning something.</para>
+    /// </summary>
+    [Fact]
+    public void R6_ownerPassword_authenticatesAgainstTheKeyTheWriterDerived()
+    {
+        const string userPassword = "user-side-secret";
+        const string ownerPassword = "owner-side-secret";
+
+        var handler = new StandardSecurityHandler(new PdfEncryptionSettings
+        {
+            UserPassword = userPassword,
+            OwnerPassword = ownerPassword,
+            Permissions = PdfPermissions.Print | PdfPermissions.Copy,
+        });
+
+        var decryptor = new StandardSecurityDecryptor(
+            v: 5, r: 6, keyLengthBytes: 32,
+            o: handler.O, u: handler.U, oe: handler.OE, ue: handler.UE,
+            p: handler.PValue, id0: [], encryptMetadata: true,
+            streamFilter: CryptFilterMethod.Aes256, stringFilter: CryptFilterMethod.Aes256);
+
+        Assert.True(
+            decryptor.TryComputeFileKeyFromOwnerPassword(ownerPassword, out var ownerKey),
+            "the owner password did not authenticate against the /O this library wrote");
+        Assert.True(
+            decryptor.TryComputeFileKeyFromUserPassword(userPassword, out var userKey),
+            "the user password did not authenticate against the /U this library wrote");
+
+        // /OE and /UE wrap the same file key, so recovering it by either route must agree. A writer
+        // that derived /OE from the wrong intermediate key would still "authenticate" and then unwrap
+        // to a different key, which is a document that opens and decrypts to noise.
+        Assert.Equal(userKey, ownerKey);
+
+        // And the key is the one the document was actually encrypted under.
+        var plaintext = "OWNER-ROUND-TRIP-CANARY"u8.ToArray();
+        Assert.Equal(
+            plaintext,
+            decryptor.DecryptStream(ownerKey!, objectNumber: 1, generation: 0, handler.Encrypt(plaintext)));
+    }
+
+    /// <summary>
+    /// The owner password must not be accepted where it is wrong, and the user password must not
+    /// authenticate through the owner path. Without these the test above passes against an
+    /// implementation that returns the file key for anything.
+    /// </summary>
+    [Fact]
+    public void R6_ownerPasswordCheck_rejectsTheWrongPassword()
+    {
+        var handler = new StandardSecurityHandler(new PdfEncryptionSettings
+        {
+            UserPassword = "user-side-secret",
+            OwnerPassword = "owner-side-secret",
+        });
+
+        var decryptor = new StandardSecurityDecryptor(
+            v: 5, r: 6, keyLengthBytes: 32,
+            o: handler.O, u: handler.U, oe: handler.OE, ue: handler.UE,
+            p: handler.PValue, id0: [], encryptMetadata: true,
+            streamFilter: CryptFilterMethod.Aes256, stringFilter: CryptFilterMethod.Aes256);
+
+        Assert.False(decryptor.TryComputeFileKeyFromOwnerPassword("not-the-owner", out _));
+        Assert.False(decryptor.TryComputeFileKeyFromOwnerPassword("user-side-secret", out _));
+        Assert.False(decryptor.TryComputeFileKeyFromUserPassword("owner-side-secret", out _));
     }
 
     /// <summary>

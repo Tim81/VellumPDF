@@ -182,6 +182,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the check skips silently where no base ref resolves, since it is a second line of defence over the
   file scan and a shallow checkout is not a finding. (#97)
 
+- **`vellum-preflight` reported nothing at all for two kinds of file.** An encrypted document whose
+  `/StmF` names a crypt filter its own `/CF` does not define, and a file that is not a PDF, both
+  exited 2 with an empty stderr on the default invocation, while the same files named their problem
+  precisely when a profile was given with `-p`. Profile auto-detection opens the document before the
+  validation loop does, and only the loop had the diagnosis. (#97)
+
 - **An object referenced from inside `/Encrypt` came back as ciphertext, silently.** Authentication
   runs before a decryptor exists — which is what keeps `/O`, `/U`, `/OE` and `/UE` out of string
   decryption — and §7.6.1 lets every non-string entry of that dictionary be an indirect reference.

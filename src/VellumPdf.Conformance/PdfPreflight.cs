@@ -57,8 +57,32 @@ public static class PdfPreflight
         return DetectClaimedProfiles(reader);
     }
 
+    // A document whose /StmF resolves to a crypt filter method this handler does not implement has no
+    // decodable stream in it: not the content, not the metadata, not the object streams that hold
+    // most of its objects. Rules would each hit that separately and report it as a finding against
+    // whatever clause they happen to cover, so a crypt-filter problem came out as a FAIL stamped with
+    // output-intent and transparency clauses the file never violated. "Cannot evaluate" is the honest
+    // answer, and it is the answer /Adobe.PubSec already gets.
+    //
+    // Both entry points need it. Validate is the obvious one; auto-detection is the one a caller
+    // reaches first, and for a long time only Validate had it.
+    private static void ThrowIfNoStreamCanBeDecoded(PdfDocumentReader reader)
+    {
+        if (reader.Encryption?.StreamCipher == PdfCipherAlgorithm.Unsupported)
+        {
+            throw new UnsupportedPdfFeatureException(
+                "The document's /StmF crypt filter names a /CF entry it does not define, or a method "
+                + "this library does not implement, so none of its streams can be decoded.");
+        }
+    }
+
     private static IReadOnlyList<PdfConformance> DetectClaimedProfiles(PdfDocumentReader reader)
     {
+        // Auto-detection reaches the document before Validate does, and it decodes a stream (the XMP
+        // packet) to do its job — so the same crypt-filter problem lands here first, and without this
+        // it surfaces as the decryptor's own InvalidDataException instead of the honest answer.
+        ThrowIfNoStreamCanBeDecoded(reader);
+
         var metaRef = reader.Catalog.Get(_metadataName);
         if (metaRef is not PdfIndirectReference r)
             return [];
@@ -174,18 +198,7 @@ public static class PdfPreflight
                 "Tracking: https://github.com/Tim81/VellumPDF/issues/50.");
         }
 
-        // A document whose /StmF resolves to a crypt filter method this handler does not implement
-        // has no decodable stream in it: not the content, not the metadata, not the object streams
-        // that hold most of its objects. Rules would each hit that separately and report it as a
-        // finding against whatever clause they happen to cover, so a crypt-filter problem came out
-        // as a FAIL stamped with output-intent and transparency clauses the file never violated.
-        // "Cannot evaluate" is the honest answer, and it is the answer /Adobe.PubSec already gets.
-        if (reader.Encryption?.StreamCipher == PdfCipherAlgorithm.Unsupported)
-        {
-            throw new UnsupportedPdfFeatureException(
-                "The document's /StmF crypt filter names a /CF entry it does not define, or a method "
-                + "this library does not implement, so none of its streams can be decoded.");
-        }
+        ThrowIfNoStreamCanBeDecoded(reader);
 
         var assertions = new List<PreflightAssertion>();
         var context = new PreflightContext(reader, conformance, assertions);

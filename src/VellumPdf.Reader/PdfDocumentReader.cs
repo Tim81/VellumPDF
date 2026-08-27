@@ -464,7 +464,7 @@ public sealed class PdfDocumentReader : IDisposable
 
     /// <summary>
     /// Whether <paramref name="objectNumber"/> is the document's own metadata stream — the object
-    /// the catalog's <c>/Metadata</c> names. ISO 32000-2 Table 20 scopes <c>/EncryptMetadata</c> to
+    /// the catalog's <c>/Metadata</c> names. ISO 32000-2 Table 21 scopes <c>/EncryptMetadata</c> to
     /// that one stream, so a page's or an XObject's metadata stays encrypted even when it is false;
     /// qpdf's <c>--cleartext-metadata</c> writes exactly that arrangement.
     /// </summary>

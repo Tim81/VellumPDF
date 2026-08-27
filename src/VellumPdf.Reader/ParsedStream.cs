@@ -46,8 +46,24 @@ internal sealed class ParsedStream
     /// <summary>The generation number from this stream's own <c>N G obj</c> header.</summary>
     public int Generation { get; }
 
-    /// <summary>Creates a parsed stream from a dictionary, its raw body bytes, and the body's file offset.</summary>
-    public ParsedStream(PdfDictionary dictionary, ReadOnlyMemory<byte> rawBody, int bodyOffset = 0, int objectNumber = 0, int generation = 0)
+    /// <summary>
+    /// Creates a parsed stream from a dictionary, its raw body bytes, the body's file offset, and the
+    /// identity of the indirect object it came from.
+    /// </summary>
+    /// <remarks>
+    /// The identity is required, not defaulted. It carried defaults of 0 while decryption was being
+    /// wired in, so that the pre-existing three-argument call sites kept compiling — but on an
+    /// encrypted document a stream constructed at (0, 0) is decrypted under the wrong per-object key
+    /// (ISO 32000-1 §7.6.2, Algorithm 1), and under RC4 that returns plausible bytes with no error at
+    /// all. Every call site passes real values today; making them required is what keeps the next one
+    /// from not.
+    /// </remarks>
+    public ParsedStream(
+        PdfDictionary dictionary,
+        ReadOnlyMemory<byte> rawBody,
+        int bodyOffset,
+        int objectNumber,
+        int generation)
     {
         Dictionary = dictionary;
         RawBody = rawBody;

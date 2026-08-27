@@ -280,9 +280,13 @@ internal static class PreflightRunner
         {
             claimed = PdfPreflight.DetectClaimedProfiles(bytes);
         }
-        catch (System.IO.InvalidDataException)
+        catch (System.IO.InvalidDataException ex)
         {
-            // Not a valid PDF — report as an IO error upstream.
+            // Not a valid PDF. Returning an empty list makes the caller set anyIoError and move on,
+            // which used to happen in silence — `vellum-preflight broken.pdf` exited 2 having printed
+            // nothing at all, while the same file with -p printed a precise message. Say which file
+            // and why, here, where the exception still has both.
+            stderr.WriteLine($"error: '{filePath}' is not a valid PDF: {ex.Message}");
             return (Array.Empty<PdfConformance>(), "auto");
         }
 

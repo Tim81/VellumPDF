@@ -956,13 +956,6 @@ public sealed class StandardSecurityDecryptorTests
     }
 
     /// <summary>
-    /// <c>/OE</c> and <c>/UE</c> are the AES-256 wrapped file key, and Algorithm 2.A decrypts each as
-    /// exactly two AES blocks with no padding. A length check that only tests for <see langword="null"/>
-    /// lets a 16- or 48-byte value through to that decryption, where it yields a file key of the
-    /// wrong size and a failure blamed on the password. The presence half is pinned by
-    /// <c>Constructor_atRevision5_requiresOe</c>; this is the size half.
-    /// </summary>
-    /// <summary>
     /// A <c>/Perms</c> string that is not one AES block reaches <c>TransformFinalBlock</c> with
     /// <c>PaddingMode.None</c>, which raises a bare <c>CryptographicException</c> — the one malformed
     /// input on this path that would escape <c>PdfReader.Open</c> as something other than the
@@ -987,6 +980,13 @@ public sealed class StandardSecurityDecryptorTests
         Assert.Null(decryptor.RecoverAuthenticatedPermissions(fileKey, new byte[permsLength]));
     }
 
+    /// <summary>
+    /// <c>/OE</c> and <c>/UE</c> are the AES-256 wrapped file key, and Algorithm 2.A decrypts each as
+    /// exactly two AES blocks with no padding. A length check that only tests for <see langword="null"/>
+    /// lets a 16- or 48-byte value through to that decryption, where it yields a file key of the
+    /// wrong size and a failure blamed on the password. The presence half is pinned by
+    /// <c>Constructor_atRevision5_requiresOe</c>; this is the size half.
+    /// </summary>
     [Theory]
     [InlineData(16, 32)]
     [InlineData(48, 32)]

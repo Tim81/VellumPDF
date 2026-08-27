@@ -90,6 +90,62 @@ public sealed class EncryptedInputTests
         }
     }
 
+    /// <summary>
+    /// An encrypted document whose <c>/StmF</c> names a crypt filter its own <c>/CF</c> does not
+    /// define. None of its streams can be decoded, so there is nothing to preflight — and the honest
+    /// answer has to come from auto-detection, which opens the document before the validation loop
+    /// that already knew how to say it. Until it did, this exited 2 having printed nothing at all.
+    /// </summary>
+    [Fact]
+    public void UndefinedCryptFilter_withNoProfileFlag_reportsAnError_ratherThanNothing()
+    {
+        // An EMPTY user password, so the CLI — which has no way to supply one — gets past
+        // authentication and actually reaches the crypt filter. With a password the password error
+        // fires first and this says nothing about the guard. That is also the shape most encrypted
+        // PDFs in the wild take. /O and /U were derived outside this library for the empty user
+        // password, owner "o", /P -4 and the trailer /ID below.
+        var path = WriteTempPdf(PasswordProtectedPdf(
+            "<< /Filter /Standard /V 4 /R 4 /Length 128 "
+            + "/CF << /StdCF << /CFM /V2 /Length 16 >> >> /StmF /Nosuch /StrF /StdCF "
+            + "/O <77b8fb098022d3ab34237ea5643c08710ea5123fc5f88bf993a68cca5f12b40f> "
+            + "/U <1fd84f8c2906341c00abb1ed422f668f00000000000000000000000000000000> /P -4 >>"));
+        try
+        {
+            var (code, _, err) = Run(path);
+
+            Assert.Equal(2, code);
+            Assert.NotEqual(string.Empty, err.Trim());
+            Assert.Contains("crypt filter", err, StringComparison.Ordinal);
+            Assert.DoesNotContain("Unhandled exception", err, StringComparison.Ordinal);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    /// <summary>
+    /// The same silence, one layer out: a file that is not a PDF at all. The explicit-profile path
+    /// has always named the file and the reason; the default invocation returned an empty profile
+    /// list and exited 2 without a word.
+    /// </summary>
+    [Fact]
+    public void MalformedFile_withNoProfileFlag_reportsAnError_ratherThanNothing()
+    {
+        var path = WriteTempPdf("this is not a PDF at all"u8.ToArray());
+        try
+        {
+            var (code, _, err) = Run(path);
+
+            Assert.Equal(2, code);
+            Assert.Contains("is not a valid PDF", err, StringComparison.Ordinal);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
     private static string WriteTempPdf(byte[] bytes)
     {
         var path = Path.Combine(Path.GetTempPath(), $"vellum-cli-{Guid.NewGuid():N}.pdf");

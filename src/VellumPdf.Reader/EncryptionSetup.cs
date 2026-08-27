@@ -60,18 +60,14 @@ internal static class EncryptionSetup
         string? password,
         Func<PdfObject?, PdfObject?>? resolve = null)
     {
-        // §7.6.1 requires only the STRINGS in the encryption dictionary to be direct objects, so
-        // /V, /R, /P, /Length, /CF, /StmF and /StrF may all legally be indirect references. Reading
-        // them raw made a conformant file fail — /P as a reference threw "missing or not an
-        // integer" at Open, and an indirect /CF produced an empty filter table, which opened fine
-        // and then threw on the first stream. Working on a dereferenced copy keeps every read below
-        // simple — including /Filter's, which is why the handler check sits under this line rather
-        // than above it. BuildCfTable and CryptFilterKeyLengthBytes take the resolver as well, for
-        // the one level this copy does not reach: the values INSIDE a /CF entry, where an indirect
-        // /CFM reads as a missing one and turns every stream in the document into Unsupported.
-        encryptDict = DereferenceValues(encryptDict, resolve);
-
-        var filterName = (encryptDict.Get(_filterKey) as PdfName)?.Value;
+        // Which handler this is, before anything else touches the dictionary. /Filter obeys the same
+        // rule as every other non-string entry — §7.6.1 constrains only the STRINGS — so it needs
+        // dereferencing too, but with the single-value helper rather than by moving the check below
+        // the whole-dictionary copy: that copy resolves EVERY entry, and one that throws (a bad xref
+        // offset, a target inside an object stream) then reports a public-key document as a
+        // malformed one. Which handler a file uses is the more useful answer, and it is the one a
+        // caller can act on.
+        var filterName = (Deref(resolve, encryptDict.Get(_filterKey)) as PdfName)?.Value;
         if (filterName == "Adobe.PubSec")
             throw new UnsupportedPdfFeatureException(
                 "This document uses a public-key (/Adobe.PubSec) security handler, which VellumPdf.Reader " +
@@ -82,6 +78,16 @@ internal static class EncryptionSetup
                 $"/Encrypt /Filter /{filterName ?? "(missing)"} is not a security handler VellumPdf.Reader " +
                 "supports; only /Standard is.");
         }
+
+        // The same rule for the rest of them: /V, /R, /P, /Length, /CF, /StmF and /StrF may all
+        // legally be indirect references. Reading them raw made a conformant file fail — /P as a
+        // reference threw "missing or not an integer" at Open, and an indirect /CF produced an empty
+        // filter table, which opened fine and then threw on the first stream. Working on a
+        // dereferenced copy keeps every read below simple. BuildCfTable and CryptFilterKeyLengthBytes
+        // take the resolver as well, for the one level this copy does not reach: the values INSIDE a
+        // /CF entry, where an indirect /CFM reads as a missing one and turns every stream in the
+        // document into Unsupported.
+        encryptDict = DereferenceValues(encryptDict, resolve);
 
         var v = (int)RequireInt(encryptDict, _vKey, "/V");
         var r = (int)RequireInt(encryptDict, _rKey, "/R");
@@ -116,8 +122,9 @@ internal static class EncryptionSetup
         var oe = TryGetBytes(encryptDict, _oeKey);
         var ue = TryGetBytes(encryptDict, _ueKey);
         var p = unchecked((int)RequireInt(encryptDict, _pKey, "/P"));
-        // "Optional; meaningful only when the value of V is 4" (ISO 32000-1 Table 20's standard
-        // handler row). Below that the entry says nothing, and honouring a stray copy of it — a
+        // "Optional; meaningful only when the value of V is 4" (ISO 32000-1 Table 21, the standard
+        // security handler's own entries — Table 20 is the ones common to every handler). Below
+        // that the entry says nothing, and honouring a stray copy of it — a
         // producer downgrading a document and carrying the key across — would hand the metadata
         // stream back as ciphertext. StandardSecurityDecryptor already gates the key-derivation half
         // on the revision, so reading it here without a gate is the two halves disagreeing.
@@ -439,8 +446,8 @@ internal static class EncryptionSetup
         var cfm = (Deref(resolve, filter.Get(_cfmKey)) as PdfName)?.Value;
         return cfm switch
         {
-            "AESV3" => declared == 32 ? declared : 32,
-            "AESV2" => declared == 16 ? declared : 16,
+            "AESV3" => 32,
+            "AESV2" => 16,
             "V2" => declared is >= 5 and <= 16 ? declared : impliedByCipher,
             _ => declared,
         };

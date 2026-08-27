@@ -248,6 +248,28 @@ public sealed class EncryptionParameterTests
     }
 
     /// <summary>
+    /// Which handler a document uses is decided before the rest of <c>/Encrypt</c> is touched. This
+    /// one names a public-key handler AND has an indirect entry that cannot resolve — object 5's
+    /// offset is past the end of the file — so whichever check runs first decides what the caller is
+    /// told. Resolving the whole dictionary first reports a perfectly identifiable public-key
+    /// document as malformed, and the two failures are not interchangeable: the CLI prints one and
+    /// swallows the other, and only one tells the caller what to reach for instead.
+    /// </summary>
+    [Theory]
+    [InlineData("/Adobe.PubSec", "public-key")]
+    [InlineData("/SomeVendorHandler", "/SomeVendorHandler")]
+    public void UnsupportedHandler_withAnUnresolvableEntryBesideIt_isReportedAsTheHandler(
+        string filterName, string expectedInMessage)
+    {
+        var doc = BuildWithEncryptDict($"<< /Filter {filterName} /V 4 /R 4 /Length 5 0 R >>");
+
+        // Object 5 does not exist: BuildWithEncryptDict wrote four objects, so the reference dangles.
+        var ex = Assert.Throws<UnsupportedPdfFeatureException>(() => PdfReader.Open(doc, "u"));
+
+        Assert.Contains(expectedInMessage, ex.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// The <c>/CFM</c> and <c>/Length</c> INSIDE a <c>/CF</c> entry feed two separate readers: one
     /// picks the cipher, the other the key length. Resolving one says nothing about the other, and
     /// for a long time only the first was resolved.
