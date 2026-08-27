@@ -169,10 +169,6 @@ public sealed class CryptFilterResolverTests
     }
 
     /// <summary>
-    /// /EncryptMetadata false exempts the /Type /Metadata stream structurally, independent of
-    /// /Filter — it is never expressed as a /Crypt filter entry (see the method's own doc comment).
-    /// </summary>
-    /// <summary>
     /// The whole crypt filter mechanism is a <c>/V</c> 4 feature — Table 20 marks <c>/CF</c>,
     /// <c>/StmF</c>, <c>/StrF</c> and <c>/EFF</c> "meaningful only when the value of V is 4" — so
     /// below that there is no <c>/CF</c> for a <c>/Crypt</c> specifier's <c>/Name</c> to resolve

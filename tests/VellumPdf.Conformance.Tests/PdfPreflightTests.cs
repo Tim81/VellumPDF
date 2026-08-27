@@ -6207,6 +6207,77 @@ public sealed class PdfPreflightTests
     }
 
     /// <summary>
+    /// The same "cannot evaluate" answer on the two paths out of <c>DetectClaimedProfiles</c> that
+    /// never reach the XMP decode at all: a catalog naming no <c>/Metadata</c>, and a
+    /// <c>/Metadata</c> that does not resolve to a stream. Both returned "no conformance claim
+    /// found" for a document in which nothing can be decoded, which is the misdirection the guard
+    /// exists to stop — it sends the caller to <c>-p</c>, and that path then fails for the real
+    /// reason.
+    /// </summary>
+    /// <remarks>
+    /// The two tests above cannot reach either branch: <c>jpx-encrypted-emptyuser.pdf</c> always has
+    /// a <c>/Metadata</c> that resolves to a stream, so both land in the decode path every time and
+    /// only the third call site was joined to anything. Deleting either of the other two left the
+    /// whole solution green, veraPDF rows included.
+    ///
+    /// <para>The document is written and then patched in place, every patch preserving the byte
+    /// count so that all cross-reference offsets stay valid. At <c>/R</c> 6 neither <c>/StmF</c> nor
+    /// the catalog's contents feed key derivation, so the file still opens — which is the shape under
+    /// test. Each patch is asserted to have applied, because one that silently did not would leave
+    /// this passing for the ordinary reason instead of the one it means to check.</para>
+    /// </remarks>
+    [Theory]
+    [InlineData(true)]   // the catalog names no /Metadata at all
+    [InlineData(false)]  // /Metadata names an object that is not a stream
+    public void DetectClaimedProfiles_UndecodableCryptFilter_withNoReadableMetadata_cannotBeEvaluated(
+        bool dropTheKey)
+    {
+        using var doc = new PdfDocument();
+        doc.AddPage();
+        doc.Encrypt(new PdfEncryptionSettings { UserPassword = "", OwnerPassword = "o" });
+
+        using var written = new MemoryStream();
+        doc.Save(written);
+        var text = System.Text.Encoding.Latin1.GetString(written.ToArray());
+
+        var meta = System.Text.RegularExpressions.Regex.Match(text, @"/Metadata (\d+) 0 R");
+        Assert.True(meta.Success, "the written document names no /Metadata to patch");
+
+        string patchedText;
+        if (dropTheKey)
+        {
+            // /Metadaxx is the same nine characters, so the catalog simply carries a key nothing
+            // reads. A document with no XMP packet at all is ordinary; this writer just always emits
+            // one, which is why the shape has to be made rather than found.
+            patchedText = text.Replace(
+                meta.Value, $"/Metadaxx {meta.Groups[1].Value} 0 R", StringComparison.Ordinal);
+            Assert.DoesNotContain("/Metadata ", patchedText, StringComparison.Ordinal);
+        }
+        else
+        {
+            // Repointed at the page tree: a dictionary, not a stream, so ResolveStream returns null.
+            var pages = System.Text.RegularExpressions.Regex.Match(text, @"(\d+) 0 obj\s*<<[^>]*?/Type /Pages");
+            Assert.True(pages.Success, "the written document has no page tree to point /Metadata at");
+            Assert.True(
+                pages.Groups[1].Value.Length <= meta.Groups[1].Value.Length,
+                "the page tree's object number is wider than /Metadata's, so the patch would move every offset");
+
+            var target = pages.Groups[1].Value.PadLeft(meta.Groups[1].Value.Length);
+            patchedText = text.Replace(
+                meta.Value, $"/Metadata {target} 0 R", StringComparison.Ordinal);
+            Assert.DoesNotContain(meta.Value, patchedText, StringComparison.Ordinal);
+        }
+
+        Assert.Contains("/StmF /StdCF", patchedText, StringComparison.Ordinal);
+        patchedText = patchedText.Replace("/StmF /StdCF", "/StmF /Ghost", StringComparison.Ordinal);
+
+        var patched = System.Text.Encoding.Latin1.GetBytes(patchedText);
+        Assert.Equal(written.Length, patched.Length);
+
+        Assert.Throws<UnsupportedPdfFeatureException>(() => PdfPreflight.DetectClaimedProfiles(patched));
+    }
+
+    /// <summary>
     /// The other side of that guard, and the reason it cannot simply test <c>/StmF</c>: with
     /// <c>/EncryptMetadata false</c> the document metadata stream is exempt from decryption entirely
     /// (ISO 32000-2 Table 21), so it stays readable however <c>/StmF</c> resolved. Refusing to detect

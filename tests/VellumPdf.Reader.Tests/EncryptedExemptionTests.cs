@@ -613,6 +613,45 @@ public sealed class EncryptedExemptionTests
     }
 
     /// <summary>
+    /// The other half of "a string or a dictionary", which nothing covered: both external-file tests
+    /// above use a string, and the only dictionary row in the suite is the REJECTING direction
+    /// (<see cref="StreamWithNonFileSpecF_isStillDecrypted"/>, whose /F is a number). Dropping
+    /// <c>or PdfDictionary</c> from the clause therefore left the whole solution green, while turning
+    /// every attachment whose /F is a full file specification into a stream the reader decrypts.
+    /// </summary>
+    /// <remarks>
+    /// A file specification is a dictionary whenever it carries anything beyond the path — /FS, /EF,
+    /// /Desc (ISO 32000-1 §7.11.3) — so this is not an exotic shape. Under AES the mistake is loud,
+    /// which is why this mirrors the AES test rather than the RC4 one: a three-byte body is not an IV
+    /// followed by whole blocks, so the mutant throws on a legal document instead of quietly handing
+    /// back noise.
+    /// </remarks>
+    [Fact]
+    public void ExternalFileStreamNamedByAFileSpecificationDictionary_underAes_doesNotThrow()
+    {
+        // The file name is a string inside the stream's own dictionary, so it is encrypted like any
+        // other string in that object — only the stream's CONTENTS are exempt.
+        var fileName = EncryptAes(3, 0, "ext.dat"u8.ToArray());
+        var body = "abc"u8.ToArray();
+        var doc = BuildWith(AesEncryptDict,
+            "<< /Type /Catalog /Pages 2 0 R >>",
+            "<< /Type /Pages /Kids [] /Count 0 >>",
+            $"<< /Length {body.Length} /F << /Type /Filespec /F <{Convert.ToHexStringLower(fileName)}> >> >>\n"
+            + $"stream\n{Encoding.Latin1.GetString(body)}\nendstream");
+
+        using var reader = PdfReader.Open(doc, "u");
+        var stream = reader.ResolveStream(3)!;
+
+        Assert.Equal("abc", Encoding.ASCII.GetString(reader.GetDecodedStreamData(stream)!));
+
+        // And the specification's own string still decrypts, so the exemption is the body's alone.
+        var spec = (PdfDictionary)stream.Dictionary.Get(new PdfName("F"))!;
+        Assert.Equal(
+            "ext.dat",
+            Encoding.ASCII.GetString(((PdfHexString)spec.Get(new PdfName("F"))!).Bytes.Span));
+    }
+
+    /// <summary>
     /// /F names an external file only when it is a file specification — a string or a dictionary
     /// (ISO 32000-1 Table 5). Anything else must not exempt the stream, or a producer using the key
     /// for something of its own would be handed ciphertext as if it were content.
@@ -694,13 +733,63 @@ public sealed class EncryptedExemptionTests
             Encoding.ASCII.GetString(((PdfHexString)probe.Get(new PdfName("Probe"))!).Bytes.Span));
     }
 
+    /// <summary>
+    /// The object-stream container obeys the same identity rule as every other stream when its own
+    /// header generation disagrees with the cross-reference table's: ISO 32000-1 §7.6.2 Algorithm 1
+    /// has one identity per object, and the container's body is decrypted under whatever the
+    /// <c>ParsedStream</c> carries. Both directions of the rule are here, and each was crossed by
+    /// nothing.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="XrefGenerationDiffersFromObjectHeader_dictionaryAndBodyShareOneIdentity"/> builds
+    /// the same disagreement on an ordinary stream, which never reaches the object-stream loader's
+    /// own copy of the rule; <see cref="EncryptedDocumentWithItsCatalogInsideAnObjectStream_opens"/>
+    /// reaches that copy but is generation 0 throughout, so the header value and the table value are
+    /// the same answer and neither row can fail. Between them the joint went untested: gutting the
+    /// restamp left the whole solution green, on the very clause whose comment claims a document
+    /// "decodes correctly through ResolveStream and incorrectly here". So did forcing the parser to
+    /// stamp every stream generation 0, which only the second row below can see.
+    /// </remarks>
+    [Theory]
+    // The table can express a generation, so the table wins (#192) and the header's 5 is ignored.
+    [InlineData(5, 0L)]
+    // The table's field cannot hold 65536, so XrefParser records it as unknown and the object's own
+    // header is all that is left to go on. This is the only row in the suite where the generation
+    // the parser stamped on the stream is the one actually used.
+    [InlineData(2, 65536L)]
+    public void ObjectStreamContainerWithADisagreeingHeaderGeneration_usesOneIdentityForItsBody(
+        int headerGeneration, long xrefGeneration)
+    {
+        var doc = BuildCatalogInObjectStream(headerGeneration, xrefGeneration);
+
+        using var reader = PdfReader.Open(doc, "u");
+
+        // Reaching the catalog at all means the container decrypted and its members parsed; keyed on
+        // the other generation the body is noise and /Type is not there to read.
+        Assert.Equal("Catalog", ((PdfName)reader.Catalog.Get(new PdfName("Type"))!).Value);
+    }
+
     // Object 1 is an /ObjStm holding the catalog (object 2) and the page tree (object 3); object 4 is
     // the cross-reference stream; object 5 is an ordinary encrypted object outside the container.
-    private static byte[] BuildCatalogInObjectStream()
+    //
+    // The two generation parameters exist to build a container whose own `N G obj` header disagrees
+    // with what the cross-reference stream says about it, in both directions. The body is always
+    // encrypted under the identity the reader is supposed to ARRIVE at, so a reader that picks the
+    // other one decrypts to noise and cannot parse the members at all.
+    private static byte[] BuildCatalogInObjectStream(
+        int containerHeaderGeneration = 0,
+        long containerXrefGeneration = 0)
     {
+        // The row's generation where the row can express one, the object header's where it cannot:
+        // field 3 is three bytes wide below, so anything above 65535 does not fit and XrefParser
+        // records it as unknown rather than guessing.
+        var effectiveGeneration = containerXrefGeneration is >= 0 and <= 65535
+            ? (int)containerXrefGeneration
+            : containerHeaderGeneration;
+
         var members = "<< /Type /Catalog /Pages 3 0 R >> << /Type /Pages /Kids [] /Count 0 >>";
         var header = "2 0 3 34 ";
-        var objStmBody = Encrypt(1, 0, Encoding.Latin1.GetBytes(header + members));
+        var objStmBody = Encrypt(1, effectiveGeneration, Encoding.Latin1.GetBytes(header + members));
 
         var probe = Encrypt(5, 0, "OBJSTM-CATALOG"u8.ToArray());
 
@@ -709,7 +798,8 @@ public sealed class EncryptedExemptionTests
         W("%PDF-1.5\n");
 
         var o1 = (int)ms.Position;
-        W($"1 0 obj\n<< /Type /ObjStm /N 2 /First {header.Length} /Length {objStmBody.Length} >>\nstream\n");
+        W($"1 {containerHeaderGeneration} obj\n<< /Type /ObjStm /N 2 /First {header.Length} "
+          + $"/Length {objStmBody.Length} >>\nstream\n");
         ms.Write(objStmBody);
         W("\nendstream\nendobj\n");
 
@@ -720,16 +810,18 @@ public sealed class EncryptedExemptionTests
         W($"5 0 obj\n<< /Probe <{Convert.ToHexStringLower(probe)}> >>\nendobj\n");
 
         var rows = new List<byte>();
-        void Row(byte type, int field2, int field3) => rows.AddRange(
+        // /W [1 4 3]: field 3 is three bytes, which is what lets a row carry a generation ABOVE the
+        // 65535 the format can represent — the shape XrefParser records as unknown.
+        void Row(byte type, int field2, long field3) => rows.AddRange(
         [
             type,
             (byte)(field2 >> 24), (byte)(field2 >> 16), (byte)(field2 >> 8), (byte)field2,
-            (byte)(field3 >> 8), (byte)field3,
+            (byte)(field3 >> 16), (byte)(field3 >> 8), (byte)field3,
         ]);
 
         var xrefOffset = (int)ms.Position;
         Row(0, 0, 65535);          // 0: free
-        Row(1, o1, 0);             // 1: the object stream
+        Row(1, o1, containerXrefGeneration);   // 1: the object stream
         Row(2, 1, 0);              // 2: catalog, member 0 of object 1
         Row(2, 1, 1);              // 3: page tree, member 1 of object 1
         Row(1, xrefOffset, 0);     // 4: this cross-reference stream
@@ -737,7 +829,7 @@ public sealed class EncryptedExemptionTests
         Row(1, o6, 0);             // 6: the /Encrypt dictionary
 
         var rowBytes = rows.ToArray();
-        W($"4 0 obj\n<< /Type /XRef /Size 7 /W [1 4 2] /Root 2 0 R /Encrypt 6 0 R "
+        W($"4 0 obj\n<< /Type /XRef /Size 7 /W [1 4 3] /Root 2 0 R /Encrypt 6 0 R "
           + $"/ID [<{Convert.ToHexStringLower(Id0)}><{Convert.ToHexStringLower(Id0)}>] /Length {rowBytes.Length} >>\n"
           + "stream\n");
         ms.Write(rowBytes);

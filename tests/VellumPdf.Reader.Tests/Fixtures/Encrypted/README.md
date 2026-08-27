@@ -242,6 +242,21 @@ what remains:
   real qpdf-produced file.** `EncryptedReaderTests` covers the `/Crypt`-filter and absent-`/CF`-entry
   cases with a same-length byte patch on `enc-aes-128.pdf` instead, since qpdf itself never emits
   either shape.
+- **No `/V 4` `/CFM /V2` file whose crypt filter `/Length` disagrees with the key it was actually
+  encrypted under**, and the two readers here part company on exactly that shape. Table 25 gives the
+  crypt filter its own `/Length` and this reader honours it; qpdf 12.3.2 ignores both `/Length`
+  entries at `/V 4` with `/CFM /V2` and always uses 16 bytes. Measured over the full matrix
+  (top-level `/Length` absent, 40 or 128 × crypt filter `/Length` absent, 5, 16, 40 or 128 × a key of
+  5 or 16 bytes) the two open disjoint sets: a file declaring 40 bits but keyed at 128 opens in qpdf
+  and is refused here, and one declaring and using 5 bytes opens here and is refused by qpdf. Neither
+  reading is obviously right — this one is the more literal — and no producer known to emit the shape
+  is available to settle it, which is why the behaviour is left alone and recorded instead. Its
+  failure mode is a rejected password, not wrong bytes.
+
+- **No file whose `/StmF` and `/StrF` name `/CF` entries of different lengths.** The key-length path
+  reads `/StmF` first and falls back to `/StrF`, and that precedence is observable only on such a
+  document. Failure is a rejected password, not wrong bytes.
+
 - **No password that SASLprep would change**, and none is coming: the missing fixture would only
   document a limit of the implementation rather than test it. R6 hashes the password after SASLprep
   normalisation (RFC 4013), which this library applies on neither the read nor the write path, so a

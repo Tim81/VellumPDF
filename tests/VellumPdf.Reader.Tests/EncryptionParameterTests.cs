@@ -108,8 +108,13 @@ public sealed class EncryptionParameterTests
     /// <c>/P</c> is unprotected — <c>/Perms</c> carries the copy sealed under the file key when the
     /// document was written, and where the two disagree that copy is the document's real permission
     /// set. Reported rather than refused: qpdf, poppler and pdfium all read such a file, so throwing
-    /// would make this the only library that cannot open it, while taking the dictionary's word
-    /// would hand the caller permissions someone else chose.
+    /// would make this the only library that cannot open it.
+    /// <para>
+    /// This is the disagreement case, where <c>/Perms</c> is present and recovers. The case where it
+    /// does not is <see cref="R6_permissionsAreTheEditedP_whenPermsCannotBeRecovered"/>, and the two
+    /// belong together: without it this test reads as a guarantee about R6 that the format does not
+    /// give.
+    /// </para>
     /// </summary>
     [Fact]
     public void R6_permissionBitsEditedAfterEncryption_reportTheSealedValue()
@@ -122,6 +127,45 @@ public sealed class EncryptionParameterTests
 
         Assert.Equal(-4 & (int)PdfPermissions.All, (int)reader.Encryption!.Permissions);
         Assert.True(reader.Encryption.Permissions.HasFlag(PdfPermissions.Print));
+    }
+
+    /// <summary>
+    /// The limit of that protection, which is worth stating because the sentence above it invites the
+    /// opposite reading: <c>/Perms</c> only settles a disagreement it is present to settle. Remove
+    /// the entry, or corrupt a single byte of its ciphertext so the <c>adb</c> marker no longer
+    /// checks out, and Algorithm 13 has nothing to recover — the dictionary's <c>/P</c> is all that
+    /// is left, and an editor needs no key to arrange either.
+    /// </summary>
+    /// <remarks>
+    /// Falling back is still the right behaviour, and the same behaviour qpdf, poppler and pdfium
+    /// have: refusing the document would make this the only library that cannot open a file every
+    /// other reader opens, over an entry ISO 32000-2 Table 21 does not require. What was wrong was
+    /// the claim, in three places, that <c>Permissions</c> reports the sealed copy at R5 and R6 —
+    /// it reports the sealed copy where there is one. Pinned here so the fallback is a decision
+    /// rather than an accident.
+    /// </remarks>
+    [Theory]
+    // The entry renamed: /Xerms is the same six characters, so no offset moves and Algorithm 13 is
+    // simply never reached.
+    [InlineData("/Perms", "/Xerms")]
+    // The entry kept and its first ciphertext byte changed: recovery runs, decrypts to noise, and
+    // the marker check refuses it.
+    [InlineData(null, null)]
+    public void R6_permissionsAreTheEditedP_whenPermsCannotBeRecovered(string? find, string? replace)
+    {
+        var fixture = Load("enc-aes-256-r6.pdf");
+        var bytes = find is not null && replace is not null
+            ? PatchOnce(fixture, find, replace)
+            : CorruptFirstPermsByte(fixture);
+
+        var edited = PatchOnce(bytes, "/P -4 ", "/P -8 ");
+
+        using var reader = PdfReader.Open(edited, "u");
+
+        // -8 is the value the editor wrote, not the -4 the author sealed. Asserted as the value, so a
+        // reader that started refusing the file or reporting All would both fail here.
+        Assert.Equal(-8 & (int)PdfPermissions.All, (int)reader.Encryption!.Permissions);
+        Assert.False(reader.Encryption.Permissions.HasFlag(PdfPermissions.Print));
     }
 
     /// <summary>The control for the test above: untouched, the same fixture verifies and opens.</summary>
@@ -666,9 +710,18 @@ public sealed class EncryptionParameterTests
 
     /// <summary>
     /// The other direction: with no <c>/EFF</c>, an embedded file stream is an ordinary stream and
-    /// takes <c>/StmF</c> like everything else. Reaching for a filter that was never named would
-    /// decrypt it twice.
+    /// takes <c>/StmF</c> like everything else.
     /// </summary>
+    /// <remarks>
+    /// This row cannot fail on its own, and the comment it used to carry claimed otherwise ("reaching
+    /// for a filter that was never named would decrypt it twice"). It would not: with no <c>/EFF</c>,
+    /// <c>embeddedFileFilter</c> null and <c>embeddedFileFilter</c> set to the stream filter both
+    /// resolve to <c>defaultStreamFilter</c> and decrypt exactly once, which is the same
+    /// two-answers-coincide pair <c>EncryptionSetup</c> documents for its <c>/V &lt; 4</c> sibling.
+    /// Kept as the negative control for the row above it. The narrowness that IS load-bearing —
+    /// <c>/EFF</c> applies only to a <c>/Type /EmbeddedFile</c> stream — is pinned by
+    /// <c>CryptFilterResolverTests.ResolveStreamMethod_effAppliesToEmbeddedFileStreamsAlone</c>.
+    /// </remarks>
     [Fact]
     public void EmbeddedFileStream_withNoEff_takesTheDocumentWideStreamFilter()
     {
@@ -696,9 +749,19 @@ public sealed class EncryptionParameterTests
     /// A malformed top-level <c>/Length</c> is a malformed-file condition, not something to round
     /// off: ISO 32000-1 Table 20 requires a multiple of 8 between 40 and 128.
     /// </summary>
+    /// <remarks>
+    /// Two of these rows exist to reach the RANGE rather than the multiple-of-8 test beside it. With
+    /// only 60, 0 and int.MaxValue, both bounds were dead weight: 60 and int.MaxValue are refused by
+    /// <c>% 8</c> alone, and 0 by the lower bound, so widening the upper one to 100000 left the whole
+    /// solution green while a <c>/V 2 /Length 256</c> document derived a 32-byte RC4 key. 32 and 136
+    /// are the tight boundaries — the nearest legal multiples of 8 on the wrong side of each end — so
+    /// an off-by-one in either direction fails here too.
+    /// </remarks>
     [Theory]
     [InlineData(60)]
     [InlineData(0)]
+    [InlineData(32)]
+    [InlineData(136)]
     [InlineData(2147483647)]
     public void TopLevelLength_outsideTheLegalRange_isRejected(int bits)
     {
@@ -995,6 +1058,23 @@ public sealed class EncryptionParameterTests
 
     // Same byte count in and out, so every offset in the cross-reference table stays correct and the
     // document under test differs from the fixture in exactly the one way the test is about.
+    // Flips one bit in the first byte of /Perms' ciphertext. AES-ECB over a single block, so the
+    // change stays inside the entry and the length is unchanged; what it destroys is the plaintext
+    // the marker check reads.
+    private static byte[] CorruptFirstPermsByte(byte[] bytes)
+    {
+        var text = Encoding.Latin1.GetString(bytes);
+        var at = text.IndexOf("/Perms <", StringComparison.Ordinal);
+        Assert.True(at >= 0, "the fixture writes /Perms in some other form than a hex string.");
+
+        var firstDigit = at + "/Perms <".Length;
+        var copy = (byte[])bytes.Clone();
+        // Hex digits, so move the digit to another legal one rather than flipping a raw byte.
+        copy[firstDigit] = copy[firstDigit] == (byte)'0' ? (byte)'1' : (byte)'0';
+        Assert.NotEqual(bytes[firstDigit], copy[firstDigit]);
+        return copy;
+    }
+
     private static byte[] PatchOnce(byte[] bytes, string find, string replace)
     {
         Assert.Equal(find.Length, replace.Length);

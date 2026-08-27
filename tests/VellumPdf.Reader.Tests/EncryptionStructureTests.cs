@@ -313,8 +313,6 @@ public sealed class EncryptionStructureTests
         return decryptor.DecryptString(fileKey, objectNumber, generation, plaintext);
     }
 
-    private static byte[] Build(params string[] objBodies) => BuildWith(Rc4EncryptDict, objBodies);
-
     private static byte[] BuildWith(string encryptDict, params string[] objBodies)
     {
         var ms = new MemoryStream();
