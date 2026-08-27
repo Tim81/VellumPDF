@@ -76,11 +76,16 @@ using (var reader = PdfReader.Open(bytes))
 }
 
 // Encryption, both directions, under AOT. The write side runs AES-256 and SHA-2 through Algorithms
-// 8-10; the read side runs Algorithm 2.A back over what it wrote and then decrypts a real stream.
-// Neither uses reflection, so the risk was never high — but this is the branch's headline feature
-// and it sat outside the gate that is supposed to prove the library AOT-safe.
+// 8-10; the read side runs Algorithm 2.A back over what it wrote, decrypts /Perms under the file
+// key, and refuses a wrong password. Neither uses reflection, so the risk was never high — but this
+// is the branch's headline feature and it sat outside the gate meant to prove the library AOT-safe.
+//
+// What this CANNOT check is a decrypted stream or string: GetDecodedStreamData and ResolveStream are
+// internal, so nothing outside the assembly can reach the bytes. That is a real limit of the gate,
+// and it is why the unit tests — which can reach them — carry the end-to-end assertions instead.
 using (var edoc = new Document())
 {
+
     edoc.Add(new Paragraph("VellumPdf AOT smoke — encrypted."));
     edoc.Encrypt(new PdfEncryptionSettings
     {
@@ -109,6 +114,14 @@ using (var edoc = new Document())
     if (ereader.Catalog is null)
     {
         Console.Error.WriteLine("FAIL: the encrypted document decrypted to a null catalog");
+        return 1;
+    }
+
+    // /Perms is AES-decrypted under the file key and its "adb" marker checked, so this exercises the
+    // block cipher itself rather than only the SHA-2 key derivation above.
+    if (ereader.Encryption.Permissions != PdfPermissions.Print)
+    {
+        Console.Error.WriteLine($"FAIL: expected Print only, got {ereader.Encryption.Permissions}");
         return 1;
     }
 

@@ -190,6 +190,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   very many keys is quadratic whether or not the file is encrypted, and bounding input size is the
   caller's job. (#97)
 
+- **A document written without an owner password would have opened to anyone.** The handler falls
+  back to the user password when no owner password is given, as `PdfEncryptionSettings.OwnerPassword`
+  documents — but nothing depended on that fallback, so a one-token edit removing it passed every
+  test in the solution while deriving `/O` from the empty string. Every such file would then have
+  opened at owner privilege for a caller supplying nothing. The clause is now pinned. (#97)
+
 - **`vellum-preflight` reported nothing at all for two kinds of file.** An encrypted document whose
   `/StmF` names a crypt filter its own `/CF` does not define, and a file that is not a PDF, both
   exited 2 with an empty stderr on the default invocation, while the same files named their problem

@@ -6184,6 +6184,53 @@ public sealed class PdfPreflightTests
         Assert.Throws<UnsupportedPdfFeatureException>(() => PdfPreflight.Validate(patched, PdfConformance.PdfA2B));
     }
 
+    /// <summary>
+    /// Auto-detection needs one stream, the XMP packet, and the same undecodable <c>/StmF</c> stops
+    /// it reaching that — so it must say so rather than report "no conformance claim found", which
+    /// sends the caller to <c>-p</c> and a path that then fails for the real reason. The default CLI
+    /// invocation goes through here, not through <c>Validate</c>.
+    /// </summary>
+    [Fact]
+    public void DetectClaimedProfiles_UndecodableCryptFilter_cannotBeEvaluated()
+    {
+        using var s = typeof(PdfPreflightTests).Assembly.GetManifestResourceStream("jpx-encrypted-emptyuser.pdf")
+            ?? throw new InvalidOperationException("jpx-encrypted-emptyuser.pdf embedded resource not found.");
+        using var ms = new MemoryStream();
+        s.CopyTo(ms);
+
+        var text = System.Text.Encoding.Latin1.GetString(ms.ToArray());
+        var patched = System.Text.Encoding.Latin1.GetBytes(
+            text.Replace("/StmF /StdCF", "/StmF /Ghost", StringComparison.Ordinal));
+
+        Assert.Throws<UnsupportedPdfFeatureException>(() => PdfPreflight.DetectClaimedProfiles(patched));
+    }
+
+    /// <summary>
+    /// The other side of that guard, and the reason it cannot simply test <c>/StmF</c>: with
+    /// <c>/EncryptMetadata false</c> the document metadata stream is exempt from decryption entirely
+    /// (ISO 32000-1 Table 21), so it stays readable however <c>/StmF</c> resolved. Refusing to detect
+    /// a claim on such a file takes away the one job still doable on it. This is the
+    /// <c>--cleartext-metadata</c> arrangement two fixtures in the reader's corpus carry.
+    /// </summary>
+    [Fact]
+    public void DetectClaimedProfiles_UndecodableCryptFilter_butCleartextMetadata_stillReadsTheClaim()
+    {
+        using var s = typeof(PdfPreflightTests).Assembly.GetManifestResourceStream("jpx-encrypted-emptyuser.pdf")
+            ?? throw new InvalidOperationException("jpx-encrypted-emptyuser.pdf embedded resource not found.");
+        using var ms = new MemoryStream();
+        s.CopyTo(ms);
+
+        var text = System.Text.Encoding.Latin1.GetString(ms.ToArray());
+        if (!text.Contains("/EncryptMetadata false", StringComparison.Ordinal))
+            return; // the fixture encrypts its metadata; the arrangement under test is not present
+
+        var patched = System.Text.Encoding.Latin1.GetBytes(
+            text.Replace("/StmF /StdCF", "/StmF /Ghost", StringComparison.Ordinal));
+
+        // No exception: the metadata decodes, so a claim can be read (or honestly reported as absent).
+        _ = PdfPreflight.DetectClaimedProfiles(patched);
+    }
+
     /// <summary>The control: an unencrypted document draws no /Encrypt finding.</summary>
     [Fact]
     public void Validate_UnencryptedDocument_NoFinding_613_noEncrypt()

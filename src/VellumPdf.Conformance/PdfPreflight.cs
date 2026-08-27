@@ -78,20 +78,41 @@ public static class PdfPreflight
 
     private static IReadOnlyList<PdfConformance> DetectClaimedProfiles(PdfDocumentReader reader)
     {
-        // Auto-detection reaches the document before Validate does, and it decodes a stream (the XMP
-        // packet) to do its job — so the same crypt-filter problem lands here first, and without this
-        // it surfaces as the decryptor's own InvalidDataException instead of the honest answer.
-        ThrowIfNoStreamCanBeDecoded(reader);
-
         var metaRef = reader.Catalog.Get(_metadataName);
         if (metaRef is not PdfIndirectReference r)
+        {
+            // No XMP to read. On an ordinary document that is simply "no claim"; on one whose streams
+            // cannot be decoded at all it is the wrong answer, because it sends the caller to -p and
+            // that path then fails for the real reason. Say the real reason here.
+            ThrowIfNoStreamCanBeDecoded(reader);
             return [];
+        }
 
         var parsedStream = reader.ResolveStream(r);
         if (parsedStream is null)
+        {
+            ThrowIfNoStreamCanBeDecoded(reader);
             return [];
+        }
 
-        var bytes = reader.GetDecodedStreamData(parsedStream);
+        // Auto-detection needs exactly one stream — the XMP packet — so the "cannot evaluate" answer
+        // belongs to THAT stream, not to the document-wide /StmF. A document with /EncryptMetadata
+        // false leaves its metadata in the clear whatever /StmF resolved to (the arrangement
+        // --cleartext-metadata produces, which two fixtures carry), and gating on /StmF refused such a
+        // file a claim it could perfectly well have read. Letting the decode decide is exact: it
+        // succeeds where the metadata is readable and throws where it is not.
+        byte[]? bytes;
+        try
+        {
+            bytes = reader.GetDecodedStreamData(parsedStream);
+        }
+        catch (InvalidDataException) when (reader.Encryption?.StreamCipher == PdfCipherAlgorithm.Unsupported)
+        {
+            throw new UnsupportedPdfFeatureException(
+                "The document's /StmF crypt filter names a /CF entry it does not define, or a method "
+                + "this library does not implement, so its metadata stream cannot be decoded.");
+        }
+
         if (bytes is null)
             return [];
 

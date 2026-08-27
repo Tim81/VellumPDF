@@ -331,11 +331,15 @@ internal static class EncryptionSetup
     // point where the work starts to matter.
     //
     // It exists because everything in this method runs BEFORE the password is checked, on a file
-    // anyone can send. PdfDictionary is a linear-scan list, so copying an n-entry /CF is O(n²) — 16
-    // thousand entries in a 500 KB file cost about half a second here, and the cost grows with the
-    // square. That is not the whole story (parsing the same dictionary is quadratic too, and happens
-    // before this code sees it), but it is the part this handler adds, and it is the part it can
-    // refuse.
+    // anyone can send, and PdfDictionary is a linear-scan list — so anything that builds one is
+    // quadratic in its entry count.
+    //
+    // Be clear about what this does NOT bound. Three quadratic terms are in play: the parser building
+    // the /Encrypt dictionary, DereferenceValues rebuilding it, and the /CF copy below. Only the last
+    // is capped. A document with 128 thousand entries directly in /Encrypt — no /CF at all — still
+    // costs about fifty seconds, and no cap here changes that, because both other terms run over the
+    // whole dictionary. The cap keeps a /CF-shaped attack from being the cheapest way to reach that
+    // cost; SECURITY.md states the residual outright rather than implying it is closed.
     private const int MaxCryptFilters = 64;
 
     private static PdfDictionary DereferenceValues(PdfDictionary encryptDict, Func<PdfObject?, PdfObject?>? resolve)

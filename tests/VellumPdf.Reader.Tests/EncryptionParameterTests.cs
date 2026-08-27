@@ -1,6 +1,7 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
+using System.Globalization;
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
@@ -268,11 +269,16 @@ public sealed class EncryptionParameterTests
         Assert.Contains("crypt filters", ex.Message, StringComparison.Ordinal);
     }
 
-    /// <summary>The cap is well clear of what a document legitimately declares.</summary>
+    /// <summary>
+    /// The cap is well clear of what a document legitimately declares, and it is a cap on MORE than
+    /// 64 — exactly 64 is accepted. Written as the boundary rather than a comfortable eight, because
+    /// a cap tested only well below its limit cannot tell <c>&gt;</c> from <c>&gt;=</c>, and the
+    /// stricter one would refuse a legal document.
+    /// </summary>
     [Fact]
     public void CryptFilterTableOfAPlausibleSize_isAccepted()
     {
-        var several = string.Concat(Enumerable.Range(0, 8).Select(i => $"/F{i} << /CFM /V2 /Length 16 >> "));
+        var several = string.Concat(Enumerable.Range(0, 64).Select(i => $"/F{i} << /CFM /V2 /Length 16 >> "));
         var doc = BuildWithEncryptDict(
             $"<< /Filter /Standard /V 4 /R 4 /Length 128 /CF << {several}>> /StmF /F0 /StrF /F0 "
             + "/O <2a2f0a1990192c60114730bdcd39f37828a53c89a340dd473c85299dc5258e1c> "
@@ -297,12 +303,39 @@ public sealed class EncryptionParameterTests
     public void UnsupportedHandler_withAnUnresolvableEntryBesideIt_isReportedAsTheHandler(
         string filterName, string expectedInMessage)
     {
-        var doc = BuildWithEncryptDict($"<< /Filter {filterName} /V 4 /R 4 /Length 5 0 R >>");
+        // A DANGLING reference is not enough: it resolves to null quietly, so both orderings reach
+        // the handler check and the test cannot see which ran first. The entry has to be one whose
+        // resolution THROWS, which is what an out-of-range cross-reference offset does — so object 5
+        // is written into the table at an offset past the end of the file.
+        // Object 5 exists and is listed, so the LAST cross-reference row is its own — then that row
+        // is pointed past the end of the file, which is what makes resolving it throw.
+        var doc = BuildWithEncryptDict($"<< /Filter {filterName} /V 4 /R 4 /Length 5 0 R >>", extraObjects: ["128"]);
+        doc = WithLastXrefEntryPointingPastTheEnd(doc);
 
-        // Object 5 does not exist: BuildWithEncryptDict wrote four objects, so the reference dangles.
         var ex = Assert.Throws<UnsupportedPdfFeatureException>(() => PdfReader.Open(doc, "u"));
 
         Assert.Contains(expectedInMessage, ex.Message, StringComparison.Ordinal);
+    }
+
+    // Rewrites the final in-use cross-reference row to an offset outside the file. Resolving that
+    // object then throws rather than returning null, which is what separates "check the handler
+    // first" from "dereference the whole dictionary first".
+    private static byte[] WithLastXrefEntryPointingPastTheEnd(byte[] doc)
+    {
+        var text = Encoding.Latin1.GetString(doc);
+        var xrefAt = text.LastIndexOf("xref\n0 ", StringComparison.Ordinal);
+        Assert.True(xrefAt >= 0, "no classic cross-reference table found");
+
+        var lastRow = text.LastIndexOf(" 00000 n \n", StringComparison.Ordinal);
+        Assert.True(lastRow > xrefAt, "no in-use row found in the cross-reference table");
+
+        // Each row is "nnnnnnnnnn ggggg n \n"; overwrite the ten-digit offset in place so every
+        // other offset in the table stays valid.
+        var offsetStart = lastRow - 10;
+        var patched = text[..offsetStart] + (doc.Length + 9999).ToString("D10", CultureInfo.InvariantCulture)
+            + text[lastRow..];
+        Assert.Equal(text.Length, patched.Length);
+        return Encoding.Latin1.GetBytes(patched);
     }
 
     /// <summary>
