@@ -190,6 +190,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   rather than claiming more: parsing a dictionary with very many keys is quadratic whether or not
   the file is encrypted, and bounding input size is the caller's job. (#97)
 
+- **`PdfDocument.DocumentId` now refuses a value that is not 16 bytes.** The writer emits no `/ID`
+  at all for any other length, and ISO 32000-2 Table 15 requires `/ID` once `/Encrypt` is present —
+  so a wrong length silently produced an encrypted document qpdf rejects with "invalid /ID in
+  trailer dictionary". The setter throws `ArgumentException` instead, where the caller can still see
+  which value was wrong. (#97)
+
 - **A document written without an owner password would have opened to anyone.** The handler falls
   back to the user password when no owner password is given, as `PdfEncryptionSettings.OwnerPassword`
   documents — but nothing depended on that fallback, so a one-token edit removing it passed every

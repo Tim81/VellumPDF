@@ -1,14 +1,17 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
+using VellumPdf.Annotations;
 using VellumPdf.Canvas;
 using VellumPdf.Core;
 using VellumPdf.Document;
 using VellumPdf.Encryption;
 using VellumPdf.Fonts;
+using VellumPdf.Images;
 using VellumPdf.Reader;
 
 namespace VellumPdf.Kernel.Tests;
@@ -495,6 +498,16 @@ public sealed class EncryptionTests
         // elsewhere would notice them being wrong, which is exactly why they need asserting here.
         Assert.Equal(new byte[] { 0xFF, 0xFF, 0xFF, 0xFF }, permsPlain[4..8]);
 
+        // Bytes 12-15 are random padding (Algorithm 10 step (f)). Two blocks from two handlers must
+        // therefore differ there; a constant would make every /Perms block for a given /P identical.
+        var other = new StandardSecurityHandler(new PdfEncryptionSettings
+        {
+            UserPassword = "TestPass@2026",
+            OwnerPassword = "OwnerSecret",
+            Permissions = PdfPermissions.Print | PdfPermissions.Copy,
+        });
+        Assert.NotEqual(permsPlain[12..16], DecryptPermsBlockForTest(other)[12..16]);
+
         Assert.Equal((byte)'a', permsPlain[9]);
         Assert.Equal((byte)'d', permsPlain[10]);
         Assert.Equal((byte)'b', permsPlain[11]);
@@ -594,6 +607,252 @@ public sealed class EncryptionTests
         Assert.Equal(32, ((PdfHexString)encrypt.Get(new PdfName("OE"))!).Bytes.Length);
         Assert.Equal(32, ((PdfHexString)encrypt.Get(new PdfName("UE"))!).Bytes.Length);
         Assert.Equal((int)Int("P") & (int)PdfPermissions.All, (int)reader.Encryption!.Permissions);
+    }
+
+    /// <summary>
+    /// The <c>/Encrypt</c> dictionary is exempt from encryption and everything else is not, and the
+    /// exemption is implemented by clearing the writer's encryptor for one object and restoring it
+    /// afterwards. Neither the restore nor the exemption's narrowness was pinned: restoring
+    /// <see langword="null"/> instead of the saved encryptor, or widening the test to "this object
+    /// number or later", both passed the whole solution — because the objects written after that slot
+    /// are the outline entries, and no test encrypted a document that has any.
+    /// </summary>
+    /// <remarks>
+    /// A bookmark title is a text string, so it is the one piece of user content in an outline that
+    /// encryption is supposed to cover. Under either mutation it appears in the file verbatim.
+    /// </remarks>
+    [Fact]
+    public void EncryptedDocument_withAnOutline_encryptsTheBookmarkTitle()
+    {
+        const string title = "OUTLINE-CANARY";
+
+        using var doc = new PdfDocument();
+        var page = doc.AddPage();
+        doc.AddOutlineEntry(new PdfOutlineEntry
+        {
+            Title = title,
+            DestPage = page,
+            DestLeft = 0,
+            DestTop = 800,
+            Level = 0,
+        });
+
+        doc.Encrypt(new PdfEncryptionSettings { UserPassword = "u", OwnerPassword = "o" });
+
+        using var ms = new MemoryStream();
+        doc.Save(ms);
+        var bytes = ms.ToArray();
+
+        // The writer emits text strings as UTF-16BE behind a byte-order mark, so that is the form the
+        // title would leak in.
+        var leaked = Encoding.BigEndianUnicode.GetBytes(title);
+        Assert.DoesNotContain(
+            Encoding.Latin1.GetString(leaked),
+            Encoding.Latin1.GetString(bytes),
+            StringComparison.Ordinal);
+
+        // And it must come back intact, so this is not passing because the title was mangled.
+        using var reader = PdfReader.Open(bytes, "u");
+        var outlines = (PdfDictionary)reader.ResolveValue(reader.Catalog.Get(new PdfName("Outlines"))!)!;
+        var first = (PdfDictionary)reader.ResolveValue(outlines.Get(new PdfName("First"))!)!;
+        var titleValue = first.Get(new PdfName("Title"))!;
+        var titleBytes = titleValue switch
+        {
+            PdfHexString hex => hex.Bytes,
+            PdfLiteralString lit => lit.Bytes,
+            _ => throw new InvalidOperationException($"/Title is a {titleValue.GetType().Name}, not a string."),
+        };
+
+        Assert.Equal(title, DecodeTextString(titleBytes.Span));
+    }
+
+    /// <summary>
+    /// A passthrough image stream is encrypted like any other, and its <c>/Length</c> counts the
+    /// CIPHERTEXT. <c>RawPdfStream</c> carries every image whose bytes are handed through verbatim —
+    /// JPEG, JPEG 2000, CCITT, JBIG2 — and no test encrypted a document containing one, so both
+    /// clauses could be removed with the whole solution green. Its two sibling stream classes are
+    /// pinned; this one was reachable only through a fixture nobody had.
+    ///
+    /// <para>Skipping the encryption writes the image into the file verbatim, which is a plaintext
+    /// leak visible by grepping for the JPEG start-of-image marker. Writing the plaintext length over
+    /// ciphertext is the stale-<c>/Length</c> shape: qpdf reports "expected endstream" and recovers a
+    /// different length, and this library's own reader papers over it by scanning.</para>
+    /// </summary>
+    [Fact]
+    public void EncryptedDocument_withAPassthroughImage_encryptsItAndStatesTheCiphertextLength()
+    {
+        // Any filter that is not the implicit-FlateDecode sentinel makes the bytes passthrough, which
+        // is the branch under test. The content is a recognisable run rather than a real JPEG: what
+        // matters is that these exact bytes must not appear in the output.
+        var raw = "PASSTHROUGH-IMAGE-CANARY-0123456789"u8.ToArray();
+        var image = new PdfImageXObject(
+            width: 8, height: 6, streamData: raw, filter: PdfName.DCTDecode,
+            colorSpace: ImageColorSpace.DeviceRgb, bitsPerComponent: 8);
+
+        using var doc = new PdfDocument();
+        var page = doc.AddPage();
+        doc.RegisterImageXObject(page, image, "Im0");
+
+        doc.Encrypt(new PdfEncryptionSettings { UserPassword = "u", OwnerPassword = "o" });
+
+        using var ms = new MemoryStream();
+        doc.Save(ms);
+        var bytes = ms.ToArray();
+
+        Assert.DoesNotContain(
+            Encoding.Latin1.GetString(raw),
+            Encoding.Latin1.GetString(bytes),
+            StringComparison.Ordinal);
+
+        // And /Length must count the CIPHERTEXT. AES adds a 16-byte IV and pads to a block boundary,
+        // so the encrypted body is necessarily longer than the plaintext; stating the plaintext
+        // length over ciphertext is the stale-/Length shape qpdf reports as "expected endstream".
+        var text = Encoding.Latin1.GetString(bytes);
+        var imageAt = text.IndexOf("/Subtype /Image", StringComparison.Ordinal);
+        Assert.True(imageAt >= 0, "no image XObject found in the written document");
+
+        var streamAt = text.IndexOf("stream", imageAt, StringComparison.Ordinal);
+        var lengthAt = text.LastIndexOf("/Length ", streamAt, StringComparison.Ordinal);
+        Assert.True(lengthAt > imageAt, "the image XObject declared no /Length");
+
+        var digits = lengthAt + "/Length ".Length;
+        var end = digits;
+        while (end < text.Length && char.IsAsciiDigit(text[end]))
+            end++;
+        var declared = int.Parse(text[digits..end], CultureInfo.InvariantCulture);
+
+        // Exactly the AES shape: a 16-byte IV plus the plaintext padded up to the next block. Stating
+        // the plaintext length would give raw.Length, which this rejects.
+        Assert.Equal(16 + (((raw.Length / 16) + 1) * 16), declared);
+    }
+
+    /// <summary>
+    /// The file encryption key is the document's whole secret, and nothing required it to be random.
+    /// Replacing the call that fills it with a constant passed every test in the solution: every
+    /// round trip recovers the key from <c>/UE</c> rather than checking it is fresh, and the
+    /// different-ciphertext test still passes because the per-string IV varies. A document written
+    /// under a fixed key decrypts to its plaintext for anyone who knows that constant, and qpdf and
+    /// poppler report nothing, because the file is structurally perfect.
+    /// </summary>
+    [Fact]
+    public void TwoDocumentsWithTheSamePassword_useDifferentFileKeys()
+    {
+        static byte[] KeyOf(StandardSecurityHandler handler)
+        {
+            var decryptor = new StandardSecurityDecryptor(
+                v: 5, r: 6, keyLengthBytes: 32,
+                o: handler.O, u: handler.U, oe: handler.OE, ue: handler.UE,
+                p: handler.PValue, id0: [], encryptMetadata: true,
+                streamFilter: CryptFilterMethod.Aes256, stringFilter: CryptFilterMethod.Aes256);
+
+            Assert.True(decryptor.TryComputeFileKeyFromUserPassword("same-password", out var key));
+            return key!;
+        }
+
+        var settings = () => new PdfEncryptionSettings { UserPassword = "same-password", OwnerPassword = "o" };
+
+        Assert.NotEqual(KeyOf(new StandardSecurityHandler(settings())), KeyOf(new StandardSecurityHandler(settings())));
+    }
+
+    /// <summary>
+    /// The validation salt and the key salt must not be the same eight bytes. If they are, the hash
+    /// that unwraps <c>/UE</c> is byte-identical to the validation hash — which the file publishes in
+    /// the clear in <c>/U</c>'s first 32 bytes — and anyone can compute the file encryption key from
+    /// the document alone, with no password. Total break, not a weakening, and structurally invisible:
+    /// qpdf and poppler read such a file without a word.
+    ///
+    /// <para>Both halves are checked in the form that matters: not "the salts differ" but "the
+    /// published validation hash does not unwrap the wrapped key". A future change that made the two
+    /// salts merely correlated rather than equal would still fail this.</para>
+    /// </summary>
+    [Theory]
+    [InlineData(false)]   // /U and /UE
+    [InlineData(true)]    // /O and /OE
+    public void ThePublishedValidationHash_doesNotUnwrapTheFileKey(bool ownerSide)
+    {
+        var handler = new StandardSecurityHandler(new PdfEncryptionSettings
+        {
+            UserPassword = "u",
+            OwnerPassword = "o",
+        });
+
+        var (entry, wrapped) = ownerSide ? (handler.O, handler.OE) : (handler.U, handler.UE);
+
+        // Distinct salts are the mechanism...
+        Assert.NotEqual(entry[32..40], entry[40..48]);
+
+        // ...and this is the property they exist to provide. Unwrapping /UE or /OE with the hash the
+        // file hands out must not produce the key the document is actually encrypted under.
+        using var aes = Aes.Create();
+        aes.Key = entry[..32];
+        aes.Mode = CipherMode.CBC;
+        aes.Padding = PaddingMode.None;
+        var wouldBeKey = aes.CreateDecryptor(aes.Key, new byte[16]).TransformFinalBlock(wrapped, 0, wrapped.Length);
+
+        var plaintext = "SALT-COLLISION-CANARY"u8.ToArray();
+        var ciphertext = handler.Encrypt(plaintext);
+
+        var decryptor = new StandardSecurityDecryptor(
+            v: 5, r: 6, keyLengthBytes: 32,
+            o: handler.O, u: handler.U, oe: handler.OE, ue: handler.UE,
+            p: handler.PValue, id0: [], encryptMetadata: true,
+            streamFilter: CryptFilterMethod.Aes256, stringFilter: CryptFilterMethod.Aes256);
+
+        byte[] recovered;
+        try
+        {
+            recovered = decryptor.DecryptStream(wouldBeKey, 1, 0, ciphertext);
+        }
+        catch (InvalidDataException)
+        {
+            return; // the wrong key did not even produce well-formed padding, which is the point
+        }
+
+        Assert.NotEqual(plaintext, recovered);
+    }
+
+    /// <summary>
+    /// A <c>/ID</c> that is not 16 bytes was written as no <c>/ID</c> at all — silently, with no
+    /// exception and no warning. ISO 32000-2 Table 15 requires the entry once <c>/Encrypt</c> is
+    /// present, so that produced an encrypted document qpdf rejects outright ("invalid /ID in trailer
+    /// dictionary"). Neither the writer's length guard nor what a caller got when they tripped it was
+    /// pinned by anything.
+    /// </summary>
+    [Theory]
+    [InlineData(0)]
+    [InlineData(8)]
+    [InlineData(15)]
+    [InlineData(17)]
+    [InlineData(32)]
+    public void DocumentIdOfTheWrongLength_isRefusedAtTheSetter(int length)
+    {
+        using var doc = new PdfDocument();
+
+        var ex = Assert.Throws<ArgumentException>(() => doc.DocumentId = new byte[length]);
+
+        Assert.Contains("16 bytes", ex.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>Sixteen bytes is accepted, and reaches the trailer of an encrypted document.</summary>
+    [Fact]
+    public void DocumentIdOfSixteenBytes_isWrittenToAnEncryptedDocument()
+    {
+        var id = new byte[16];
+        for (var i = 0; i < id.Length; i++)
+            id[i] = (byte)(0xA0 + i);
+
+        using var doc = new PdfDocument();
+        doc.AddPage();
+        doc.DocumentId = id;
+        doc.Encrypt(new PdfEncryptionSettings { UserPassword = "u", OwnerPassword = "o" });
+
+        using var ms = new MemoryStream();
+        doc.Save(ms);
+
+        Assert.Contains(
+            Convert.ToHexStringLower(id),
+            Encoding.Latin1.GetString(ms.ToArray()),
+            StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
@@ -906,6 +1165,24 @@ public sealed class EncryptionTests
             Encoding.ASCII.GetBytes(password), salt, Convert.FromHexString(udataHex));
 
         Assert.Equal(expected, Convert.ToHexStringLower(actual));
+    }
+
+    // The decrypted /Perms block of a handler, using only the BCL — the read side's own recovery
+    // refuses a block whose marker is wrong, and this needs the bytes whatever they say.
+    private static byte[] DecryptPermsBlockForTest(StandardSecurityHandler handler)
+    {
+        var decryptor = new StandardSecurityDecryptor(
+            v: 5, r: 6, keyLengthBytes: 32,
+            o: handler.O, u: handler.U, oe: handler.OE, ue: handler.UE,
+            p: handler.PValue, id0: [], encryptMetadata: true,
+            streamFilter: CryptFilterMethod.Aes256, stringFilter: CryptFilterMethod.Aes256);
+        Assert.True(decryptor.TryComputeFileKeyFromUserPassword("TestPass@2026", out var fileKey));
+
+        using var aes = Aes.Create();
+        aes.Key = fileKey!;
+        aes.Mode = CipherMode.ECB;
+        aes.Padding = PaddingMode.None;
+        return aes.CreateDecryptor().TransformFinalBlock(handler.Perms, 0, handler.Perms.Length);
     }
 
     // ── Round-trip crypto helpers (BCL only, mirrors the library's internals) ──

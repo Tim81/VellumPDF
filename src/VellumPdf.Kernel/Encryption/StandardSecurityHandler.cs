@@ -19,7 +19,6 @@ namespace VellumPdf.Encryption;
 public sealed class StandardSecurityHandler : IPdfEncryptor
 {
     private readonly byte[] _fileKey; // 32-byte AES-256 file encryption key
-    private readonly PdfEncryptionSettings _settings;
 
     // Computed /U, /O, /UE, /OE, /Perms and /P values used to build the document's
     // /Encrypt dictionary. Internal, not public: /UE and /OE wrap the file encryption
@@ -38,8 +37,6 @@ public sealed class StandardSecurityHandler : IPdfEncryptor
     /// </summary>
     public StandardSecurityHandler(PdfEncryptionSettings settings)
     {
-        _settings = settings;
-
         // Generate a random 32-byte file encryption key (the master secret).
         _fileKey = new byte[32];
         RandomNumberGenerator.Fill(_fileKey);
