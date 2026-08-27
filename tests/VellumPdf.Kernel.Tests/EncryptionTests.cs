@@ -597,6 +597,38 @@ public sealed class EncryptionTests
     }
 
     /// <summary>
+    /// ISO 32000-1 §7.6.5: the trailer's <c>/ID</c> strings are never encrypted. The writer enforces
+    /// that by clearing its encryptor before writing the trailer, and nothing joined that line to an
+    /// assertion — deleting it passed every test in the solution, because at <c>/V</c> 5 the
+    /// <c>/ID</c> is not an input to key derivation, so this library reads its own output back
+    /// perfectly either way. Only another implementation would see the damage.
+    ///
+    /// <para>Both elements are checked. Encrypting them turns each into a 16-byte IV followed by AES
+    /// ciphertext — three times the length, and no longer equal to each other, since a fresh IV is
+    /// drawn per string.</para>
+    /// </summary>
+    [Fact]
+    public void EncryptedDocument_trailerId_isNotEncrypted()
+    {
+        var bytes = SaveEncrypted("u", "o");
+        var text = Encoding.Latin1.GetString(bytes);
+
+        var idAt = text.LastIndexOf("/ID [", StringComparison.Ordinal);
+        Assert.True(idAt >= 0, "no trailer /ID found in the written document");
+
+        var ids = Regex.Matches(text[idAt..(text.IndexOf(']', idAt) + 1)], "<([0-9a-fA-F]*)>");
+        Assert.Equal(2, ids.Count);
+
+        // A PDF file identifier is a 16-byte MD5 digest, so 32 hex digits. Encrypted it would be 96.
+        Assert.Equal(32, ids[0].Groups[1].Value.Length);
+        Assert.Equal(32, ids[1].Groups[1].Value.Length);
+
+        // The writer emits the same value twice for an original document (§14.4): a pair that no
+        // longer matches is the tell that something transformed them independently.
+        Assert.Equal(ids[0].Groups[1].Value, ids[1].Groups[1].Value);
+    }
+
+    /// <summary>
     /// <c>/Perms</c> has to be the SEALED copy of <c>/P</c>, not merely sixteen bytes of the right
     /// shape. Nothing here could tell the difference: the reader falls back to the dictionary's
     /// <c>/P</c> when the seal fails its marker check, deliberately and by documented design, so a

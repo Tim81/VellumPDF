@@ -211,6 +211,41 @@ public sealed class EncryptionParameterTests
     }
 
     /// <summary>
+    /// The other half of the authentication purge. An <c>/Encrypt</c> entry may point at a STREAM
+    /// object — §7.6.1 constrains only the strings — and resolving one during authentication caches
+    /// it in the stream cache with no decryptor, exactly as it caches ordinary objects in the object
+    /// cache. Dropping only the object cache leaves <c>ResolveStream</c> handing back the stale
+    /// <see cref="ParsedStream"/> whose dictionary strings are still ciphertext.
+    /// </summary>
+    /// <remarks>
+    /// <c>/Perms</c> is the entry used because a dictionary is not a string there: the reader's
+    /// <c>TryGetBytes</c> reads it as absent and moves on, so the document opens normally and the
+    /// question is only what object 3 looks like afterwards.
+    /// </remarks>
+    [Fact]
+    public void StreamReferencedFromInsideEncrypt_isNotLeftInTheStreamCacheAsCiphertext()
+    {
+        var probe = EncryptRc4(3, 0, "STREAM-CACHE-PROBE"u8.ToArray());
+        var body = EncryptRc4(3, 0, "STREAM-CACHE-BODY"u8.ToArray());
+
+        var doc = BuildWithEncryptDict(
+            "<< /Filter /Standard /V 2 /R 3 /Length 128 /Perms 3 0 R "
+            + "/O <2a2f0a1990192c60114730bdcd39f37828a53c89a340dd473c85299dc5258e1c> "
+            + "/U <6c8913ac9fc602eb1aad2a1ec614bee90021446990b9e4114071a4d9104984c1> /P -4 >>",
+            $"<< /Length {body.Length} /Probe <{Convert.ToHexStringLower(probe)}> >>\n"
+            + $"stream\n{Encoding.Latin1.GetString(body)}\nendstream");
+
+        using var reader = PdfReader.Open(doc, "u");
+
+        var stream = reader.ResolveStream(new PdfIndirectReference(3, 0))!;
+
+        Assert.Equal(
+            "STREAM-CACHE-PROBE",
+            Encoding.ASCII.GetString(((PdfHexString)stream.Dictionary.Get(new PdfName("Probe"))!).Bytes.Span));
+        Assert.Equal("STREAM-CACHE-BODY", Encoding.ASCII.GetString(reader.GetDecodedStreamData(stream)!));
+    }
+
+    /// <summary>
     /// ISO 32000-1 §7.6.1 requires only the STRINGS in the encryption dictionary to be direct
     /// objects. Everything else — <c>/P</c> here, <c>/CF</c> in the next test — may legally be an
     /// indirect reference, and a file that uses one is not malformed.

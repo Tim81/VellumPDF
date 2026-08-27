@@ -176,6 +176,58 @@ public sealed class EncryptedExemptionTests
             Encoding.ASCII.GetString(((PdfHexString)probe.Get(new PdfName("Probe"))!).Bytes.Span));
     }
 
+    /// <summary>
+    /// A revision that declared <c>/Encrypt</c> with a newer one that does not is unreadable either
+    /// way — as plaintext every stream decodes to ciphertext, and as ciphertext the newest revision's
+    /// own objects do — so the reader refuses it rather than guessing. The guard accumulates across
+    /// every revision it walks, and this document is what makes the accumulation matter: the
+    /// declaration is in the MIDDLE revision, so a guard that keeps only the last value it saw (the
+    /// chain is walked newest to oldest, so that is the OLDEST revision) sees nothing and opens the
+    /// file as plaintext.
+    /// </summary>
+    /// <remarks>
+    /// Two revisions cannot show it — with the declaration in the older of two, "accumulated" and
+    /// "last seen" are the same value.
+    /// </remarks>
+    [Fact]
+    public void MiddleRevisionDeclaredEncrypt_andTheNewestDoesNot_isRefused()
+    {
+        var ms = new MemoryStream();
+        void W(string t) => ms.Write(Encoding.Latin1.GetBytes(t));
+        var id = Convert.ToHexStringLower(Id0);
+
+        W("%PDF-1.7\n");
+        var o1 = (int)ms.Position;
+        W("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+        var o2 = (int)ms.Position;
+        W("2 0 obj\n<< /Type /Pages /Kids [] /Count 0 >>\nendobj\n");
+
+        // Revision 1: no /Encrypt.
+        var xref1 = (int)ms.Position;
+        W($"xref\n0 3\n{0:D10} 65535 f \n{o1:D10} 00000 n \n{o2:D10} 00000 n \n");
+        W($"trailer\n<< /Size 5 /Root 1 0 R /ID [<{id}><{id}>] >>\nstartxref\n{xref1}\n%%EOF\n");
+
+        // Revision 2: appends the encryption dictionary AND declares it.
+        var o4 = (int)ms.Position;
+        W($"4 0 obj\n{Rc4EncryptDict}\nendobj\n");
+        var xref2 = (int)ms.Position;
+        W($"xref\n4 1\n{o4:D10} 00000 n \n");
+        W($"trailer\n<< /Size 5 /Root 1 0 R /Encrypt 4 0 R /Prev {xref1} /ID [<{id}><{id}>] >>\n"
+          + $"startxref\n{xref2}\n%%EOF\n");
+
+        // Revision 3: appends an ordinary object and drops /Encrypt.
+        var o3 = (int)ms.Position;
+        W("3 0 obj\n<< /Probe 1 >>\nendobj\n");
+        var xref3 = (int)ms.Position;
+        W($"xref\n3 1\n{o3:D10} 00000 n \n");
+        W($"trailer\n<< /Size 5 /Root 1 0 R /Prev {xref2} /ID [<{id}><{id}>] >>\n"
+          + $"startxref\n{xref3}\n%%EOF\n");
+
+        var ex = Assert.Throws<InvalidDataException>(() => PdfReader.Open(ms.ToArray(), "u"));
+
+        Assert.Contains("earlier revision declares /Encrypt", ex.Message, StringComparison.Ordinal);
+    }
+
     // ── Cross-reference streams (ISO 32000-1 §7.5.8.2) ──────────────────────────────────────────
 
     /// <summary>
@@ -913,6 +965,55 @@ public sealed class EncryptedExemptionTests
             "STRING-AT-GEN-5",
             Encoding.ASCII.GetString(((PdfHexString)dict.Get(new PdfName("Probe"))!).Bytes.Span));
         Assert.Equal("BODY-AT-GEN-5", Encoding.ASCII.GetString(reader.GetDecodedStreamData(stream)!));
+    }
+
+    /// <summary>
+    /// The generation a STREAM's dictionary is decrypted under, when <c>ResolveStream</c> runs first.
+    /// There are two copies of the decrypt walk — one in <c>Resolve</c>, one in the object-stream
+    /// load path — and the suite crossed each on a different axis: the non-zero-generation test below
+    /// calls <c>Resolve</c> first, so the other copy never runs, and the theory that does take this
+    /// path uses an authoritative generation of 0, where the real value and a hardcoded 0 are the
+    /// same thing. Hardcoding 0 in the second copy therefore passed everything.
+    ///
+    /// <para>That combination — stream first, non-zero generation — is the ordering
+    /// <c>PreflightContext</c> actually uses, and getting it wrong keys the dictionary on generation
+    /// 0 while the body uses 5, which is exactly what <c>Restamped</c> exists to prevent. Under RC4
+    /// it returns plausible bytes and reports nothing.</para>
+    /// </summary>
+    [Fact]
+    public void StreamAtANonZeroGeneration_resolvedAsAStreamFirst_decryptsUnderThatGeneration()
+    {
+        var body = EncryptIndependently(3, 5, "BODY-GEN5"u8.ToArray());
+        var probe = EncryptIndependently(3, 5, "STR-GEN5"u8.ToArray());
+
+        var ms = new MemoryStream();
+        void W(string t) => ms.Write(Encoding.Latin1.GetBytes(t));
+        W("%PDF-1.7\n");
+        var o1 = (int)ms.Position;
+        W("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+        var o2 = (int)ms.Position;
+        W("2 0 obj\n<< /Type /Pages /Kids [] /Count 0 >>\nendobj\n");
+        var o3 = (int)ms.Position;
+        W($"3 5 obj\n<< /Length {body.Length} /Probe <{Convert.ToHexStringLower(probe)}> >>\n"
+          + $"stream\n{Encoding.Latin1.GetString(body)}\nendstream\nendobj\n");
+        var o4 = (int)ms.Position;
+        W($"4 0 obj\n{Rc4EncryptDict}\nendobj\n");
+        var xref = (int)ms.Position;
+        W($"xref\n0 5\n{0:D10} 65535 f \n{o1:D10} 00000 n \n{o2:D10} 00000 n \n{o3:D10} 00005 n \n{o4:D10} 00000 n \n");
+        W($"trailer\n<< /Size 5 /Root 1 0 R /Encrypt 4 0 R "
+          + $"/ID [<{Convert.ToHexStringLower(Id0)}><{Convert.ToHexStringLower(Id0)}>] >>\n");
+        W($"startxref\n{xref}\n%%EOF\n");
+
+        using var reader = PdfReader.Open(ms.ToArray(), "u");
+
+        // Stream FIRST: this is what routes the dictionary through the second copy of the walk.
+        var stream = reader.ResolveStream(new PdfIndirectReference(3, 5))!;
+        var dict = Assert.IsType<PdfDictionary>(reader.Resolve(new PdfIndirectReference(3, 5)));
+
+        Assert.Equal(
+            "STR-GEN5",
+            Encoding.ASCII.GetString(((PdfHexString)dict.Get(new PdfName("Probe"))!).Bytes.Span));
+        Assert.Equal("BODY-GEN5", Encoding.ASCII.GetString(reader.GetDecodedStreamData(stream)!));
     }
 
     /// <summary>
