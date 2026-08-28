@@ -71,6 +71,12 @@ public sealed class StandardSecurityDecryptorTests
 
         Assert.False(decryptor.TryComputeFileKeyFromUserPassword(WrongPassword, out var none));
         Assert.Null(none);
+
+        // The owner password is a wrong USER password and must be rejected as one. The two
+        // derivations reach the same file key (see OwnerPassword_andUserPassword_deriveTheSameFileKey)
+        // but are not interchangeable at the authentication step, so a user-side check that quietly
+        // fell through to the owner algorithm would pass every other test here.
+        Assert.False(decryptor.TryComputeFileKeyFromUserPassword(OwnerPassword, out _));
     }
 
     [Theory]
