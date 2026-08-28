@@ -187,7 +187,7 @@ internal sealed class EmbeddedFilePdfaRule : IConformanceRule
                 // Embedded PDF/A-1 (part == 1): the in-process validator has no PDF/A-1 profile.
                 // Flagging without being able to validate risks false positives, so we defer.
                 // A genuine non-conformant PDF/A-1 attachment is not caught here.
-                // (Documented limitation; ConformanceCatalog marks §6.8-5 as Partial.)
+                // (Documented limitation; ConformanceCatalog marks §6.8-5 as OutOfScope, tracked in #140.)
                 return;
 
             case EmbeddedPdfAKind.Part2:
