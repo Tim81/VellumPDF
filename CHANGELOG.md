@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Security
+
+- **`PdfDictionary` lookup is no longer quadratic in the key count.** `Set` and `TryGet` now build a
+  hash index once a dictionary passes 16 entries, rather than scanning the whole entry list on every
+  call. The `/Encrypt` dictionary is parsed, and copied again by `EncryptionSetup.DereferenceValues`,
+  before any password is checked, on a file anyone can send, so a hostile document naming tens of
+  thousands of keys there previously cost time quadratic in that count with nothing to show for it:
+  opening a fixture with an 80,000-key `/Encrypt` dictionary took about 27 seconds before this fix and
+  well under a second after. `EncryptionSetup`'s `/CF` cap (`MaxCryptFilters`, still 64) stays for the
+  same reason it always had one (a real document names one or two crypt filters, not sixty-four), but
+  no longer carries the whole burden of bounding this cost. (#208)
+
 ## [2.1.0] - 2026-08-28
 
 ### Breaking changes

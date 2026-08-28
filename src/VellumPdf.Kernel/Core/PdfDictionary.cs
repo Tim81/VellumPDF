@@ -6,11 +6,34 @@ namespace VellumPdf.Core;
 /// <summary>PDF dictionary object (ISO 32000-2 §7.3.7).</summary>
 public sealed class PdfDictionary : PdfObject
 {
+    // A real PDF dictionary carries a handful of keys — EncryptionSetup.cs measures the /CF case at
+    // one or two — and below roughly this count a linear scan over a contiguous list outperforms a
+    // hash lookup: no second allocation, no hashing, good cache behaviour. Past it, Set/TryGet switch
+    // to _index instead. The threshold is a tuning choice, not a correctness one: an /Encrypt
+    // dictionary is parsed and copied before any password is checked (#208), so a hostile file that
+    // declares thousands of keys must not cost time quadratic in the key count either way.
+    private const int IndexThreshold = 16;
+
     private readonly List<KeyValuePair<PdfName, PdfObject>> _entries = [];
+    private Dictionary<PdfName, int>? _index;
 
     /// <summary>Sets <paramref name="key"/> to <paramref name="value"/>, replacing any existing entry, and returns this dictionary.</summary>
     public PdfDictionary Set(PdfName key, PdfObject value)
     {
+        if (_index is not null)
+        {
+            if (_index.TryGetValue(key, out var i))
+            {
+                _entries[i] = new(key, value);
+            }
+            else
+            {
+                _index[key] = _entries.Count;
+                _entries.Add(new(key, value));
+            }
+            return this;
+        }
+
         for (var i = 0; i < _entries.Count; i++)
         {
             if (_entries[i].Key.Equals(key))
@@ -20,7 +43,17 @@ public sealed class PdfDictionary : PdfObject
             }
         }
         _entries.Add(new(key, value));
+        if (_entries.Count > IndexThreshold)
+            BuildIndex();
         return this;
+    }
+
+    private void BuildIndex()
+    {
+        var index = new Dictionary<PdfName, int>(_entries.Count);
+        for (var i = 0; i < _entries.Count; i++)
+            index[_entries[i].Key] = i;
+        _index = index;
     }
 
     /// <summary>Sets <paramref name="key"/> to an integer <paramref name="value"/> and returns this dictionary.</summary>
@@ -31,6 +64,17 @@ public sealed class PdfDictionary : PdfObject
     /// <summary>Gets the value for <paramref name="key"/>; returns <see langword="true"/> when present.</summary>
     public bool TryGet(PdfName key, out PdfObject? value)
     {
+        if (_index is not null)
+        {
+            if (_index.TryGetValue(key, out var i))
+            {
+                value = _entries[i].Value;
+                return true;
+            }
+            value = null;
+            return false;
+        }
+
         foreach (var kv in _entries)
         {
             if (kv.Key.Equals(key)) { value = kv.Value; return true; }
@@ -59,6 +103,11 @@ public sealed class PdfDictionary : PdfObject
         var copy = new PdfDictionary();
         foreach (var kv in _entries)
             copy._entries.Add(kv);
+        // Positions carry over unchanged (same entries, same order), so the index just needs its own
+        // copy of the map — sharing the source's Dictionary instance would let a later Set on either
+        // dictionary corrupt the other's lookup.
+        if (_index is not null)
+            copy._index = new Dictionary<PdfName, int>(_index);
         return copy;
     }
 
