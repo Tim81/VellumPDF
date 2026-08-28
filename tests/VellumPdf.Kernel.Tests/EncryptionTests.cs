@@ -359,16 +359,6 @@ public sealed class EncryptionTests
 
     // ── PdfEncryptionSettings API ────────────────────────────────────────────
 
-    [Fact]
-    public void Owner_password_defaults_to_user_password_when_null()
-    {
-        var settings = new PdfEncryptionSettings { UserPassword = "abc" };
-        // Owner password is null — handler should use user password for owner.
-        // Just verify construction doesn't throw.
-        var handler = new StandardSecurityHandler(settings);
-        Assert.Equal(48, handler.O.Length);
-    }
-
     /// <summary>
     /// Both passwords empty is a document with no protection at all, which ISO 32000-2 permits and
     /// the #211 guard must leave alone: it rejects an empty <c>OwnerPassword</c> only when a real
@@ -393,11 +383,48 @@ public sealed class EncryptionTests
     }
 
     /// <summary>
+    /// The guard's condition is <c>string.IsNullOrEmpty(UserPassword)</c> beside an empty
+    /// <c>OwnerPassword</c>; <see cref="Empty_password_is_accepted"/> only exercises the
+    /// empty-string half of that. A null <c>UserPassword</c> beside an empty <c>OwnerPassword</c>
+    /// is the same "no real user password to protect against" shape and must pass just as freely.
+    /// </summary>
+    [Fact]
+    public void Encrypt_withNullUserPassword_andEmptyOwnerPassword_isAccepted()
+    {
+        var settings = new PdfEncryptionSettings
+        {
+            UserPassword = null,
+            OwnerPassword = string.Empty,
+        };
+
+        var handler = new StandardSecurityHandler(settings);
+        Assert.Equal(48, handler.U.Length);
+        Assert.Equal(48, handler.O.Length);
+
+        using var doc = new PdfDocument();
+        var exception = Record.Exception(() => doc.Encrypt(settings));
+        Assert.Null(exception);
+    }
+
+    /// <summary>
     /// An empty <c>OwnerPassword</c> beside a real <c>UserPassword</c> would derive /O from the
     /// empty string (see <see cref="DocumentWithNoOwnerPassword_doesNotOpenUnderTheEmptyPassword"/>
     /// for what that does at read time), so both shipped entry points that can produce it —
     /// <see cref="StandardSecurityHandler"/>'s public constructor and <see cref="PdfDocument.Encrypt"/>
     /// — refuse it rather than the file silently opening at owner privilege to anyone.
+    ///
+    /// <para>What this guard blocks at write time is no longer reachable to pin at read time: the
+    /// hostile shape is /O and /OE sealed under the empty password, and the guard is what stops
+    /// this constructor from ever producing that shape again. A fixture with it can't be built by
+    /// calling the API — it would have to be hand-crafted, and at /R 6 both /O and /OE are bound to
+    /// the same file key, so splicing one in means reimplementing Algorithm 9 (ISO 32000-2
+    /// §7.6.4.4.6) in the test file, which is its own oracle hazard rather than a test. The
+    /// components are pinned separately instead: <see cref="Hash2B_matchesKnownAnswersDerivedFromTheClause"/>
+    /// pins the Algorithm 2.B hash Algorithm 9 is built from, and
+    /// <see cref="DocumentWithNoOwnerPassword_doesNotOpenUnderTheEmptyPassword"/> pins the
+    /// mechanism this guard exists to prevent — a document opening at owner access under a password
+    /// that was never meant to grant it — for the one shape that's still reachable, the documented
+    /// null-owner fallback.</para>
     /// </summary>
     [Fact]
     public void Encrypt_withEmptyOwnerPassword_besideARealUserPassword_throws()
@@ -416,8 +443,16 @@ public sealed class EncryptionTests
         Assert.Equal("settings", fromDocument.ParamName);
     }
 
+    /// <summary>
+    /// A null <c>OwnerPassword</c> is the one case the guard above must let through: it is the
+    /// documented same-password fallback, not the empty-string defect. This only pins that the
+    /// guard doesn't misfire on it — construction succeeds and <c>/O</c> is still 48 bytes.
+    /// <see cref="DocumentWithNoOwnerPassword_doesNotOpenUnderTheEmptyPassword"/> is where the
+    /// fallback's actual behaviour (opening at owner access under the user password alone) is
+    /// pinned; a mutation that deleted the fallback entirely would still pass here.
+    /// </summary>
     [Fact]
-    public void Encrypt_withNullOwnerPassword_stillUsesTheUserPassword()
+    public void Encrypt_withNullOwnerPassword_isNotRejectedByTheGuard()
     {
         var settings = new PdfEncryptionSettings { UserPassword = "hunter2", OwnerPassword = null };
 

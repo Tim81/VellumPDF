@@ -526,9 +526,15 @@ doc.Save(stream);
 | Property | Type | Notes |
 |---|---|---|
 | `UserPassword` | `string?` | Password required to open the file |
-| `OwnerPassword` | `string?` | Defaults to `UserPassword` when null |
+| `OwnerPassword` | `string?` | Null makes `UserPassword` serve as both, so anyone who can open the document holds owner access and `Permissions` restricts nobody — pass a distinct password when the permissions need to bind on someone who knows the user password |
 | `Permissions` | `PdfPermissions` | Flags: `Print`, `Modify`, `Copy`, `Annotate`, `FillForms`, `Extract`, `Assemble`, `PrintHighRes`, `All`, `None` |
 | `EncryptMetadata` | `bool` | `false` leaves the whole XMP metadata stream as cleartext even though the rest of the document is encrypted: title, author, subject, language, creator tool, producer, and the creation and modification dates (default `true`) |
+
+**Guard:** an empty `OwnerPassword` beside a non-empty `UserPassword` throws. That combination
+would seal `/O` under the empty string, so the file would open at owner privilege to anyone
+supplying no password at all — a document-confidentiality failure, not just an unenforced
+`Permissions`. Pass `null` for the documented same-password fallback above, or a distinct
+`OwnerPassword`; both passwords empty is unaffected and stays legitimate.
 
 **Guard:** encryption is incompatible with PDF/A.  Setting both
 `doc.Conformance = PdfConformance.PdfA2b` (or any PDF/A level) and calling

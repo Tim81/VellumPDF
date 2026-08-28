@@ -8,18 +8,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Security
 
-- **An empty `OwnerPassword` beside a real `UserPassword` now throws instead of producing a file.**
-  `??` treats an empty string as a value, not as "unset" — so `OwnerPassword = ""` with a non-empty
-  `UserPassword` sealed `/O` and `/OE` (ISO 32000-2 §7.6.4.4.6, Algorithm 9) under the empty
-  password rather than falling back to the user password. `EncryptionSetup.TryAuthenticate` tries
-  the owner password before the user password, so any reader opening such a file with no password
-  at all authenticated as owner and could ignore every permission the caller set. Both passwords
-  empty is unchanged — an unprotected document is legitimate, and ISO 32000-2 permits an empty
-  owner password — and `OwnerPassword = null` is unchanged too, since that is the documented
-  fallback to the user password. The guard sits in `StandardSecurityHandler`'s constructor, which is
-  Stable API and callable directly, and in `PdfDocument.Encrypt`, so the failure surfaces at the
-  call site rather than at `Save()`; `VellumPdf.Layout.Document.Encrypt` inherits it by delegation.
-  (#211)
+- **`OwnerPassword = ""` beside a real `UserPassword` produced a file with no real password
+  protection at all, in every release from v1.0.0 through v2.1.0.** `??` treats an empty string as
+  a value, not as "unset", so that combination sealed `/O` and `/OE` (ISO 32000-2 §7.6.4.4.6,
+  Algorithm 9) under the empty password instead of falling back to the user password. At `/R` 6 an
+  empty password fails the `/U` check and satisfies the `/O` check, so *any* conforming reader lands
+  on owner access when no password is supplied. That is a property of the file itself, not of the
+  order a particular reader tries `/U` and `/O` in. Verified concretely: a file written by v2.1.0
+  with `UserPassword = "hunter2", OwnerPassword = ""` opens with **no password supplied at all**,
+  and the catalog, hence the whole object graph, decrypts. The document's confidentiality is gone,
+  not merely its permission flags: nothing enforced `Permissions`, but nothing enforced
+  `UserPassword` either. `OwnerPassword = ""` beside a non-empty `UserPassword` now throws instead
+  of producing a file. Both passwords empty is unchanged, since an unprotected document is
+  legitimate and ISO 32000-2 permits an empty owner password. `OwnerPassword = null` is unchanged
+  too: that is the documented fallback to the user password as owner, and it does not reproduce
+  this defect (`/O` is sealed under the real user password, not the empty string) — though anyone
+  who can open the document still holds owner access under it, so `Permissions` still binds nobody.
+  The guard sits in `StandardSecurityHandler`'s constructor, which is Stable API and callable
+  directly, and in `PdfDocument.Encrypt`, so the failure surfaces at the call site rather than at
+  `Save()`; `VellumPdf.Layout.Document.Encrypt` inherits it by delegation. (`EncryptionSetup.TryAuthenticate`,
+  this library's own authentication order, is why our reader reports such a file's access level as
+  owner rather than user — that explains what we report, not why the exposure exists.)
+
+  A document already written with this shape cannot be fixed in place: correcting it means
+  re-deriving `/O` and `/OE`, which needs a real owner password behind them from the start. Affected
+  documents must be re-encrypted from the original plaintext, with a distinct `OwnerPassword` this
+  time. (#211)
 
 ## [2.1.0] - 2026-08-28
 

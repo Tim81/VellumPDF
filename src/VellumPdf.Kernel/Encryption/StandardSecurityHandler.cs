@@ -276,8 +276,10 @@ public sealed class StandardSecurityHandler : IPdfEncryptor
             throw new ArgumentException(
                 "OwnerPassword is empty while UserPassword is set. That derives /O from the empty "
                 + "string, so the document would open at owner privilege to anyone supplying no "
-                + "password at all. Pass null to fall back to the user password as owner, or supply "
-                + "a distinct owner password.",
+                + "password at all. Supply a distinct OwnerPassword so Permissions binds on someone "
+                + "who doesn't already know the user password — passing null instead makes the user "
+                + "password serve as owner too, which still leaves Permissions unenforced against "
+                + "anyone who can open the document.",
                 nameof(settings));
         }
     }
