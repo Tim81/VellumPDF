@@ -13,6 +13,7 @@
     <ProjectReference Include="..\..\src\VellumPdf.Conformance\VellumPdf.Conformance.csproj" />
     <ProjectReference Include="..\..\src\VellumPdf.Fonts.Standard14\VellumPdf.Fonts.Standard14.csproj" />
     <ProjectReference Include="..\..\src\VellumPdf.Signing\VellumPdf.Signing.csproj" />
+    <ProjectReference Include="..\VellumPdf.TestSupport\VellumPdf.TestSupport.csproj" />
   </ItemGroup>
 
   <ItemGroup>

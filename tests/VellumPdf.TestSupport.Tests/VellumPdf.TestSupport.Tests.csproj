@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Coverage for OracleGate and ExternalTool themselves (#198 review): without this project,
+    a regression to the exact pre-#198 no-op — GateOnCi's bare `return` instead of Assert.Skip —
+    would show up only as every oracle test across the three projects that used to duplicate it
+    (Barcodes, Kernel, Layout) reporting a phantom pass, the same failure mode #198 exists to fix.
+    Nothing exercised the gate or the runner directly.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\VellumPdf.TestSupport\VellumPdf.TestSupport.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" />
+  </ItemGroup>
+
+</Project>

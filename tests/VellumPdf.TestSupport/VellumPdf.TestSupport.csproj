@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Shared helpers for the external-oracle tests (#198): this is a library the four oracle test
+    projects reference, not a test project of its own, so it overrides the runner bits that
+    tests/Directory.Build.props sets for everything under this directory.
+  -->
+  <PropertyGroup>
+    <IsTestProject>false</IsTestProject>
+    <OutputType>Library</OutputType>
+  </PropertyGroup>
+
+  <!--
+    tests/Directory.Build.props adds "xunit.v3" (the full runner meta-package) plus the test-host
+    packages — all three assume an executable test project, which this library is not ("xunit.v3"
+    pulls in xunit.v3.core.mtp-v1, whose own buildTransitive targets enforce OutputType=Exe via a
+    build-time check). OracleGate only needs Assert.Skip/Assert.Fail, so swap the meta-package for
+    the assertion library alone.
+  -->
+  <ItemGroup>
+    <PackageReference Remove="Microsoft.NET.Test.Sdk" />
+    <PackageReference Remove="xunit.v3" />
+    <PackageReference Remove="xunit.runner.visualstudio" />
+    <PackageReference Include="xunit.v3.assert" />
+  </ItemGroup>
+
+</Project>
