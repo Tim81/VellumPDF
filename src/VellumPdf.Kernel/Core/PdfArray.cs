@@ -21,6 +21,14 @@ public sealed class PdfArray : PdfObject
     /// <summary>Appends <paramref name="obj"/> to the array and returns this array.</summary>
     public PdfArray Add(PdfObject obj) { _items.Add(obj); return this; }
 
+    /// <summary>
+    /// Replaces the item at <paramref name="index"/> in place. Internal: existing callers rebuild a
+    /// new array (see <c>PdfObjectRemapper</c>) rather than mutate a shared one, but the reader's
+    /// decrypt walk owns a just-parsed, not-yet-cached object graph and mutates it in place for the
+    /// same reason <c>PdfObjectRemapper.RemapStreamInPlace</c> does for a stream's dictionary.
+    /// </summary>
+    internal void SetAt(int index, PdfObject obj) => _items[index] = obj;
+
     /// <summary>Writes the serialised PDF representation to <paramref name="writer"/>.</summary>
     public override void WriteTo(PdfWriter writer)
     {

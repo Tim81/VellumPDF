@@ -10,7 +10,7 @@ namespace VellumPdf.Reader.Tests;
 /// <summary>
 /// Guards the committed encrypted corpus (#99) itself, before anything tries to decrypt it.
 /// qpdf refuses to write RC4 without <c>--allow-weak-crypto</c> and still leaves a zero-byte file
-/// behind, so a corpus can look complete on disk while three of its eight entries are empty.
+/// behind, so a corpus can look complete on disk while several of its entries are empty.
 ///
 /// The digest is what actually pins each fixture: it subsumes non-emptiness, truncation, and — the
 /// case a <c>/V</c>+<c>/R</c> check cannot see — two fixtures being swapped for each other.
@@ -30,6 +30,53 @@ public sealed class EncryptedFixtureCorpusTests
         ("enc-aes-256-r6.pdf", 5, 6, "/AESV3", "af3ed586e3246d51523f6b546d9c9fb3e896d5968e283c4305b1dba2b7f361d6"),
         ("enc-aes-128-cleartextmd.pdf", 4, 4, "/AESV2", "df43e52507998c60fde7631a1694b4731ac0adcaede69715a63da526a9ab5750"),
         ("enc-256-cleartextmd.pdf", 5, 6, "/AESV3", "4ed43c7731177823ce3dd6a6dc072f9a1029cbfd1126b0f2c474cfc7988f326f"),
+        // The first fixture in this corpus with object streams AND a cross-reference stream (the
+        // combined AES-256 row at the bottom is the other; every remaining row uses a classic xref
+        // table over uncompressed objects). Needed so #97's decrypt-side tests can pin two things
+        // nothing else here can: that a cross-reference stream is never decrypted, and that an object stream's
+        // container is decrypted exactly ONCE and its compressed members are not separately
+        // re-decrypted (ISO 32000-2 §7.5.7) — RC4, not AES, because RC4 double-decryption is
+        // SILENT (returns the original ciphertext, no exception), so only RC4 actually exercises
+        // that guard; an AES fixture would throw either way and prove nothing about it.
+        ("enc-rc4-objstm.pdf", 4, 4, "/V2", "c349678e875f0aeba5593c034a5ff8e4e2db4e1d464ee6ca0537cfb9cb30c9c9"),
+        // Empty user password ("" not "u") — the shape most real-world encrypted PDFs actually use
+        // (permissions restricted via the owner password only). PdfReader.Open(bytes) with no
+        // password argument has to authenticate against this one; #97's whole point depends on it.
+        ("enc-aes-128-emptyuser.pdf", 4, 4, "/AESV2", "43e958654cad7611373c241db3e257932e82979950ba0e09f38c2ef26f6a6b98"),
+        // Not built from plaintext-baseline.pdf's own object graph — /P -4 still holds (see the
+        // theory's own assertion below), but the byte-identity assertions the other rows get from
+        // PlaintextBaseline_isPresent_andNotEncrypted's docs don't apply to this one; see
+        // EncryptedReaderTests for what it actually pins (Algorithm 1 step (a): a string nested two
+        // levels inside a dictionary decrypts under its CONTAINING indirect object's identity, not
+        // the string's own position or a hardcoded generation).
+        ("enc-aes-128-nestedstrings.pdf", 4, 4, "/AESV2", "5a90b0b7e06324dd80218426bfe3b766fae3372b291529d77f56ac19c386de5c"),
+        // A 40-character user password. Algorithm 2 step (a) truncates to 32 bytes, and no other
+        // fixture's password is long enough to notice: this one opens under its first 32 characters
+        // and refuses the first 31, which is what fixes the truncation point.
+        ("enc-aes-128-longpassword.pdf", 4, 4, "/AESV2", "42b78b95f492295d2eb4df64c5429890571933a9d5f1ef0c56c825d873db4ae0"),
+        // One password serving as BOTH owner and user. Every other row has distinct ones, so
+        // nothing else can pin the documented owner-first trial order — the whole argument for it
+        // is what to report when a single password satisfies both checks.
+        ("enc-aes-128-samepassword.pdf", 4, 4, "/AESV2", "d290ad661f592fff6f213377b92c518deefea28b027f6cae8867cf62f8e98e75"),
+        // User password "pässwörd", whose /U qpdf derived from PDFDocEncoding bytes rather than
+        // UTF-8. The only fixture whose password is not pure ASCII, and therefore the only one that
+        // can tell the two encodings apart: it does not open on the UTF-8 attempt alone.
+        ("enc-aes-128-pdfdocpassword.pdf", 4, 4, "/AESV2", "ca8277c5c924bc27c3973957bff1e354fdb5f5261aef84d1c9e580826f57463f"),
+        // Two revisions: an empty-user-password document with an incremental update appended over
+        // it. Every other row is single-revision, so this is the only one where /Prev chaining and
+        // decryption meet — the shape any encrypted document acquires the moment it is annotated,
+        // form-filled or signed.
+        ("enc-aes-128-tworevisions.pdf", 4, 4, "/AESV2", "c3161391a66b4cd987e16325db368d8379ab2ba29e85f4888b9ed0c4df488c20"),
+        // Linearized. Every other row is a single ordinary xref section written back to front;
+        // a linearized file has two, a first-page xref ahead of the body and a hint stream that is
+        // ordinary encrypted content. That is the layout Acrobat writes by default, and the one the
+        // cross-reference-stream exemption's offset set has the most sections to get right in.
+        ("enc-aes-128-linearized.pdf", 4, 4, "/AESV2", "798f9251660e5ab7da595d6b2ff351d3647c312cf96bb291279d738b0f1a2426"),
+        // The combination, at AES-256: linearized, object streams, and metadata in the clear. The
+        // three features meet in the reader at exactly one place — reaching the catalog decodes an
+        // object stream, which asks whether that stream is the document's metadata before a catalog
+        // exists to answer from — and no other fixture puts them in the same file.
+        ("enc-256-linearized-objstm-cleartextmd.pdf", 5, 6, "/AESV3", "35d69a9de63db10f513d3d32a17259a457f6dcedc51b9d5321fef5efd16df33f"),
     ];
 
     private const string BaselineName = "plaintext-baseline.pdf";
@@ -113,6 +160,43 @@ public sealed class EncryptedFixtureCorpusTests
         Assert.DoesNotContain("xpacket", Encoding.Latin1.GetString(Load("enc-aes-256-r6.pdf")), StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// The linearized rows, on the property that makes them worth carrying. A linearized file puts
+    /// its first-page cross-reference section AHEAD of the body and <c>startxref</c> points at that
+    /// one, so the reader enters at the first section and follows <c>/Prev</c> forwards to the last —
+    /// the opposite direction from every other row — with <c>/Encrypt</c> declared on a trailer it may
+    /// reach in either order.
+    ///
+    /// <para><see cref="EncryptedReaderTests"/> pins that both open and decrypt to the baseline; this
+    /// pins that they are the layout they claim to be, so a regenerated fixture qpdf silently declined
+    /// to linearize does not quietly stop testing anything. The theory above it only hashes the file
+    /// and greps for tokens — it never opens one.</para>
+    /// </summary>
+    [Theory]
+    [InlineData("enc-aes-128-linearized.pdf")]
+    [InlineData("enc-256-linearized-objstm-cleartextmd.pdf")]
+    public void LinearizedFixtures_carryALinearizationDictionary(string name)
+    {
+        // /Linearized is in the first object of a linearized file, and it is not encrypted: it lives
+        // in a dictionary, not a string or a stream. A search of the raw bytes is therefore sound.
+        Assert.Contains("/Linearized", Encoding.Latin1.GetString(Load(name)), StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The combined fixture, on the interaction it exists for: an object stream is reached before the
+    /// catalog is, and the document also says its metadata is in the clear. Answering "is this the
+    /// metadata stream?" for that object stream needs a catalog that does not exist yet.
+    /// </summary>
+    [Fact]
+    public void CombinedFixture_hasObjectStreamsAndCleartextMetadata()
+    {
+        var text = Encoding.Latin1.GetString(Load("enc-256-linearized-objstm-cleartextmd.pdf"));
+
+        Assert.True(ContainsToken(text, "/EncryptMetadata false"), "expected /EncryptMetadata false");
+        Assert.Contains("/ObjStm", text, StringComparison.Ordinal);
+        Assert.Contains("xpacket", text, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void CleartextMetadataFixture_atR4_declaresTheFlag_andExposesXmp()
     {
@@ -138,7 +222,7 @@ public sealed class EncryptedFixtureCorpusTests
     /// a bare scan for "/O &lt;" could land in one. /Filter /Standard bounds the search below and the
     /// dictionary's own &gt;&gt; bounds it above, so a fixture that omitted the entry fails loudly here
     /// rather than matching something later in the file. The upper bound relies on qpdf writing keys
-    /// sorted, which puts /CF and its nested &gt;&gt; ahead of /Filter; verified for all eight fixtures. Not a parser — both entries are
+    /// sorted, which puts /CF and its nested &gt;&gt; ahead of /Filter; verified for every fixture. Not a parser — both entries are
     /// fixed-width hex in every committed fixture.
     /// </summary>
     private static string HexEntry(string text, string key)

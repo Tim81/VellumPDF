@@ -214,6 +214,11 @@ public sealed class DssBuilderTests
                 Assert.Skip($"CurrentUser CA store is not writable in this environment: {ex.Message}");
             }
 
+            // See CertificateStoreVisibility.WaitFor: the chain engine caches its view of the
+            // store, so without the forced resync the signer here intermittently embeds a
+            // one-element chain.
+            CertificateStoreVisibility.WaitFor(leafCert);
+
             try
             {
                 var tsaClient = new TestTimestampClient(s_pinnedTime);

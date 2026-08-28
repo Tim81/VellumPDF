@@ -4,6 +4,7 @@
 using VellumPdf.Conformance.Rules;
 using VellumPdf.Conformance.Rules.Metadata;
 using VellumPdf.Core;
+using VellumPdf.Encryption;
 using VellumPdf.Reader;
 
 namespace VellumPdf.Conformance;
@@ -25,6 +26,9 @@ public static class PdfPreflight
     /// <exception cref="System.ArgumentNullException"><paramref name="bytes"/> is null.</exception>
     /// <exception cref="System.IO.InvalidDataException">The input is not a well-formed PDF.</exception>
     /// <exception cref="UnsupportedPdfFeatureException">The PDF uses a reader feature that is not yet supported.</exception>
+    /// <exception cref="Reader.PdfPasswordException">The PDF is encrypted and its empty user password
+    /// does not authenticate. This overload opens the document with no password, so a
+    /// password-protected file cannot be inspected through it (see VellumPdf issue #97).</exception>
     public static IReadOnlyList<PdfConformance> DetectClaimedProfiles(byte[] bytes)
     {
         ArgumentNullException.ThrowIfNull(bytes);
@@ -43,6 +47,9 @@ public static class PdfPreflight
     /// <exception cref="System.IO.IOException">Reading <paramref name="stream"/> failed.</exception>
     /// <exception cref="System.ObjectDisposedException"><paramref name="stream"/> has been disposed.</exception>
     /// <exception cref="UnsupportedPdfFeatureException">The PDF uses a reader feature that is not yet supported.</exception>
+    /// <exception cref="Reader.PdfPasswordException">The PDF is encrypted and its empty user password
+    /// does not authenticate. This overload opens the document with no password, so a
+    /// password-protected file cannot be inspected through it (see VellumPdf issue #97).</exception>
     public static IReadOnlyList<PdfConformance> DetectClaimedProfiles(Stream stream)
     {
         ArgumentNullException.ThrowIfNull(stream);
@@ -50,17 +57,68 @@ public static class PdfPreflight
         return DetectClaimedProfiles(reader);
     }
 
+    // A document whose /StmF resolves to a crypt filter method this handler does not implement has no
+    // decodable stream in it: not the content, not the metadata, not the object streams that hold
+    // most of its objects. Rules would each hit that separately and report it as a finding against
+    // whatever clause they happen to cover, so a crypt-filter problem came out as a FAIL stamped with
+    // output-intent and transparency clauses the file never violated. "Cannot evaluate" is the honest
+    // answer, and it is the answer /Adobe.PubSec already gets.
+    //
+    // Both entry points need it. Validate is the obvious one; auto-detection is the one a caller
+    // reaches first, and for a long time only Validate had it.
+    private static void ThrowIfNoStreamCanBeDecoded(PdfDocumentReader reader)
+    {
+        if (reader.Encryption?.StreamCipher == PdfCipherAlgorithm.Unsupported)
+        {
+            throw new UnsupportedPdfFeatureException(
+                "The document's /StmF crypt filter names a /CF entry it does not define, or a method "
+                + "this library does not implement, so none of its streams can be decoded.");
+        }
+    }
+
     private static IReadOnlyList<PdfConformance> DetectClaimedProfiles(PdfDocumentReader reader)
     {
         var metaRef = reader.Catalog.Get(_metadataName);
         if (metaRef is not PdfIndirectReference r)
+        {
+            // No XMP to read. On an ordinary document that is simply "no claim"; on one whose streams
+            // cannot be decoded at all it is the wrong answer, because it sends the caller to -p and
+            // that path then fails for the real reason. Say the real reason here.
+            ThrowIfNoStreamCanBeDecoded(reader);
             return [];
+        }
 
         var parsedStream = reader.ResolveStream(r);
         if (parsedStream is null)
+        {
+            ThrowIfNoStreamCanBeDecoded(reader);
             return [];
+        }
 
-        var bytes = reader.GetDecodedStreamData(parsedStream);
+        // Auto-detection needs exactly one stream — the XMP packet — so the "cannot evaluate" answer
+        // belongs to THAT stream, not to the document-wide /StmF. A document with /EncryptMetadata
+        // false leaves its metadata in the clear whatever /StmF resolved to (the arrangement
+        // --cleartext-metadata produces, which two fixtures carry), and gating on /StmF refused such a
+        // file a claim it could perfectly well have read. Letting the decode decide is exact about the
+        // OUTCOME: it succeeds where the metadata is readable and throws where it is not.
+        //
+        // The `when` below only decides which exception NAME the caller sees, and it is not exhaustive:
+        // a metadata stream carrying its own /Crypt specifier that names an unimplemented /CFM throws
+        // while the document-wide /StmF is perfectly supported, and that one still surfaces as
+        // InvalidDataException. Refusing to evaluate is right either way; the label is imprecise in a
+        // case no producer emits.
+        byte[]? bytes;
+        try
+        {
+            bytes = reader.GetDecodedStreamData(parsedStream);
+        }
+        catch (InvalidDataException) when (reader.Encryption?.StreamCipher == PdfCipherAlgorithm.Unsupported)
+        {
+            throw new UnsupportedPdfFeatureException(
+                "The document's /StmF crypt filter names a /CF entry it does not define, or a method "
+                + "this library does not implement, so its metadata stream cannot be decoded.");
+        }
+
         if (bytes is null)
             return [];
 
@@ -92,10 +150,18 @@ public static class PdfPreflight
     }
 
     /// <summary>Validates the PDF contained in <paramref name="bytes"/> against <paramref name="conformance"/>.</summary>
+    /// <remarks>
+    /// An encrypted document is opened with no password — equivalent to
+    /// <see cref="PdfReader.Open(byte[])"/> — so this succeeds only for one that needs none, or
+    /// whose empty user password is sufficient. A document requiring a real password cannot be
+    /// validated through this overload; there is currently no <c>PdfPreflight.Validate</c> overload
+    /// that accepts one (see VellumPdf issue #97).
+    /// </remarks>
     /// <exception cref="System.ArgumentNullException"><paramref name="bytes"/> is null.</exception>
     /// <exception cref="System.NotSupportedException">No rule profile is registered for <paramref name="conformance"/> yet.</exception>
     /// <exception cref="System.IO.InvalidDataException">The input is not a well-formed PDF.</exception>
     /// <exception cref="UnsupportedPdfFeatureException">The PDF uses a reader feature that is not yet supported.</exception>
+    /// <exception cref="PdfPasswordException">The PDF is encrypted and its empty user password does not authenticate.</exception>
     public static PreflightResult Validate(byte[] bytes, PdfConformance conformance)
     {
         ArgumentNullException.ThrowIfNull(bytes);
@@ -104,12 +170,14 @@ public static class PdfPreflight
     }
 
     /// <summary>Validates the PDF read from <paramref name="stream"/> against <paramref name="conformance"/>.</summary>
+    /// <remarks>See <see cref="Validate(byte[], PdfConformance)"/>'s remarks: an encrypted document is opened with no password.</remarks>
     /// <exception cref="System.ArgumentNullException"><paramref name="stream"/> is null.</exception>
     /// <exception cref="System.NotSupportedException">No rule profile is registered for <paramref name="conformance"/> yet.</exception>
     /// <exception cref="System.IO.InvalidDataException">The input is not a well-formed PDF.</exception>
     /// <exception cref="System.IO.IOException">Reading <paramref name="stream"/> failed.</exception>
     /// <exception cref="System.ObjectDisposedException"><paramref name="stream"/> has been disposed.</exception>
     /// <exception cref="UnsupportedPdfFeatureException">The PDF uses a reader feature that is not yet supported.</exception>
+    /// <exception cref="PdfPasswordException">The PDF is encrypted and its empty user password does not authenticate.</exception>
     public static PreflightResult Validate(Stream stream, PdfConformance conformance)
     {
         ArgumentNullException.ThrowIfNull(stream);
@@ -157,6 +225,8 @@ public static class PdfPreflight
                 "Tracking: https://github.com/Tim81/VellumPDF/issues/50.");
         }
 
+        ThrowIfNoStreamCanBeDecoded(reader);
+
         var assertions = new List<PreflightAssertion>();
         var context = new PreflightContext(reader, conformance, assertions);
 
@@ -167,13 +237,26 @@ public static class PdfPreflight
                 rule.Evaluate(context);
             }
             catch (Exception ex)
-                when (ex is not OutOfMemoryException and not UnsupportedPdfFeatureException)
+                when (ex is not OutOfMemoryException and not UnsupportedPdfFeatureException and not PdfPasswordException)
             {
                 // A single rule throwing on a malformed-but-parseable document must not abort the
                 // whole report. Record it as an error finding and continue with the other rules.
-                // UnsupportedPdfFeatureException is excluded defensively: today it is only raised at
-                // Open (before any rule runs), but should a future lazily-decoded reader feature let
-                // a rule raise it, it means "cannot evaluate" — a distinct signal that should
+                //
+                // Since #97, this now also catches InvalidDataException raised mid-rule by a stream
+                // whose crypt filter is unsupported (a /StmF, /StrF, or /Crypt /Name that names a
+                // /CF entry the document does not define — see CryptFilterResolver and
+                // StandardSecurityDecryptor.Decrypt's CryptFilterMethod.Unsupported case). That is
+                // deliberate, not an oversight: it is a malformed-/Encrypt-dictionary condition,
+                // structurally the same as any other malformed stream a rule might hit (a bad
+                // predictor, a truncated body), and this catch already treats those as an error
+                // finding rather than a hard failure. It still "fails loudly" in the sense that
+                // matters — the caller sees an explicit error finding naming the failure, not
+                // silently-wrong (decrypted-as-ciphertext) content — just not by propagating.
+                //
+                // UnsupportedPdfFeatureException and PdfPasswordException are excluded defensively:
+                // today both are only raised at Open (before any rule runs, so before this loop even
+                // starts), but should a future lazily-decoded reader feature let a rule raise either,
+                // "cannot evaluate" and "wrong password" are both a distinct signal that should
                 // propagate to the caller rather than be reported as a conformance violation.
                 context.Report(rule.RuleId, rule.Clause, PreflightSeverity.Error,
                     $"Rule evaluation failed: {ex.Message}");

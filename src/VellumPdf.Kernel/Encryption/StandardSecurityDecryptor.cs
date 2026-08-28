@@ -28,12 +28,18 @@ internal enum CryptFilterMethod
     /// per-object key (/CFM /AESV3, V=5).</summary>
     Aes256,
 
-    /// <summary>A /CFM value this handler does not implement, or a /StmF or /StrF naming a /CF
-    /// entry that does not exist. <see cref="StandardSecurityDecryptor.DecryptStream"/> and
-    /// <see cref="StandardSecurityDecryptor.DecryptString"/> throw on this rather than falling
+    /// <summary>A /CFM value this handler does not implement, or a /StmF, /StrF, /EFF or /Crypt
+    /// specifier naming a /CF entry that does not exist. <see cref="StandardSecurityDecryptor.DecryptStream"/>
+    /// and <see cref="StandardSecurityDecryptor.DecryptString"/> throw on this rather than falling
     /// back to <see cref="Identity"/>: Identity returns ciphertext as plaintext with no error, and
     /// it is the mapping a wiring author would naturally reach for on an unrecognised filter name,
-    /// which would corrupt an entire document silently instead of failing loudly.</summary>
+    /// which would corrupt an entire document silently instead of failing loudly.
+    /// <para>Refusing is not the only defensible answer. Table 14 requires a /Crypt specifier's
+    /// /Name to match a /CF entry or be /Identity, so a document that satisfies neither is
+    /// malformed — but qpdf recovers from that particular case by falling back to /StmF, which
+    /// returns the content rather than an error. The divergence is a loss of content on a file qpdf
+    /// reads, not a difference in wording, and it is deliberate: /StmF is a guess, and guessing
+    /// wrong here is silent.</para></summary>
     Unsupported,
 }
 
@@ -125,10 +131,14 @@ internal sealed class StandardSecurityDecryptor
             // R>=5: both /O and /U are hash(32) || validationSalt(8) || keySalt(8) — Algorithms 8
             // and 9 under ISO 32000-2 §7.6.4.4, with the dictionary layout itself in §7.6.4.2 —
             // not the plain 32-byte values R<=4 uses.
-            if (o.Length != 48)
-                throw new InvalidDataException($"/O must be 48 bytes at R>={r}; got {o.Length}.");
-            if (u.Length != 48)
-                throw new InvalidDataException($"/U must be 48 bytes at R>={r}; got {u.Length}.");
+            // Longer than 48 is tolerated, and only the first 48 bytes are used. Acrobat 9-era R5
+            // producers pad /O and /U out to 127 bytes — the R<=4 field width — and every reader
+            // that opens those files does so by reading the prefix. Shorter than 48 is a real
+            // malformation: the hash, validation salt and key salt would not all be there.
+            if (o.Length < 48)
+                throw new InvalidDataException($"/O must be at least 48 bytes at R>={r}; got {o.Length}.");
+            if (u.Length < 48)
+                throw new InvalidDataException($"/U must be at least 48 bytes at R>={r}; got {u.Length}.");
             if (oe is not { Length: 32 })
                 throw new InvalidDataException("/OE must be present and 32 bytes at R>=5.");
             if (ue is not { Length: 32 })
@@ -138,10 +148,15 @@ internal sealed class StandardSecurityDecryptor
         }
         else
         {
-            // /ID[0] only feeds Algorithm 2/5's key and /U derivation (R<=4); R>=5's Algorithm 2.A
-            // never touches it, so a V5/R6 file with an empty /ID has nothing wrong with it here.
-            if (id0.Length == 0)
-                throw new InvalidDataException("The trailer's /ID first element is required to derive the file key.");
+            // A zero-length /ID[0] is NOT refused, though Table 15 makes /ID required once /Encrypt
+            // is present. Algorithm 2 step (e) appends that element to the MD5 input and appending
+            // nothing is well defined; the producer that omitted it hashed the same bytes we do, so
+            // the derivation still lands on its key. qpdf and poppler both open such a file — qpdf
+            // silently where /ID is [<><>], with a warning where the whole array is missing — and
+            // refusing it would mean the document opens everywhere except here.
+            //
+            // (R>=5's Algorithm 2.A never touches /ID[0] at all, which is why this sits in the R<5
+            // branch and no equivalent is needed above.)
             if (o.Length != 32)
                 throw new InvalidDataException($"/O must be 32 bytes at R<5; got {o.Length}.");
             if (u.Length != 32)
@@ -274,8 +289,10 @@ internal sealed class StandardSecurityDecryptor
         }
 
         return TryUnwrapFileKeyAtRevision5Plus(
+            // udata is the 48-byte /U value (Algorithm 9), so it is sliced rather than passed whole:
+            // a producer that padded /U out beyond 48 would otherwise hash the padding too.
             passwordBytes, validationSalt: _o.AsSpan(32, 8), keySalt: _o.AsSpan(40, 8),
-            udata: _u, expectedHash: _o.AsSpan(0, 32), wrapped: _oe!, out fileKey);
+            udata: _u.AsSpan(0, 48), expectedHash: _o.AsSpan(0, 32), wrapped: _oe!, out fileKey);
     }
 
     /// <summary>
@@ -284,6 +301,12 @@ internal sealed class StandardSecurityDecryptor
     /// restrict permissions, so opening one with no password supplied has to succeed here — an
     /// empty <paramref name="passwordBytes"/> is a legitimate user password, not a missing one.
     /// </summary>
+    /// <remarks>
+    /// User first, then owner — the opposite of the order <c>EncryptionSetup.TryAuthenticate</c>
+    /// uses, and immaterial here: this answers "does this password open the document at all?" and
+    /// reports nothing about which of the two matched. Where that distinction is reported, the order
+    /// decides what a password satisfying both is called, which is why the reader picks its own.
+    /// </remarks>
     public bool TryComputeFileKey(byte[] passwordBytes, [NotNullWhen(true)] out byte[]? fileKey)
         => TryComputeFileKeyFromUserPassword(passwordBytes, out fileKey)
             || TryComputeFileKeyFromOwnerPassword(passwordBytes, out fileKey);
@@ -328,28 +351,35 @@ internal sealed class StandardSecurityDecryptor
             : SHA256.HashData(StandardSecurityHandler.Concat(password, salt, udata));
 
     /// <summary>
-    /// ISO 32000-2 §7.6.4.4.12, Algorithm 13 (validating the permissions): decrypts /Perms with the
-    /// file key (AES-256-ECB, no padding), checks the fixed "adb" marker at bytes 9–11, and
-    /// compares bytes 0–3 and byte 8 against this dictionary's own /P and /EncryptMetadata. What
-    /// writes /Perms in the first place is a different algorithm, §7.6.4.4.9 Algorithm 10 —
-    /// <see cref="StandardSecurityHandler.ComputePerms"/>. A mismatch on any of the three means /P
-    /// or /EncryptMetadata were altered after /Perms was written, without the password changing.
-    /// This does not gate <see cref="TryComputeFileKeyFromUserPassword(byte[], out byte[])"/>:
-    /// /U or /O already established the password is correct, and R6 readers are expected to
-    /// tolerate this check failing on a file whose permissions were edited by a tool that updates
-    /// /P but not /Perms.
+    /// ISO 32000-2 §7.6.4.4.12, Algorithm 13: recovers the copy of <c>/P</c> that was encrypted under
+    /// the file key when the document was written, or <see langword="null"/> when <c>/Perms</c>
+    /// cannot be read as one.
+    ///
+    /// <para>
+    /// This is the authenticated permission set. At R≤4 <c>/P</c> feeds Algorithm 2, so editing it
+    /// breaks authentication by itself; at R≥5 the file key is random and the dictionary's own
+    /// <c>/P</c> is unprotected, so an edit there is invisible unless this copy is consulted. The
+    /// caller prefers what this returns over the dictionary's value, and does not reject the
+    /// document when they disagree: qpdf, poppler and pdfium all read such a file, and refusing it
+    /// would make this library the only one that cannot — while quietly reporting the dictionary's
+    /// value would hand the caller permissions an attacker chose.
+    /// </para>
+    ///
+    /// <para>
+    /// Byte 8 of the block carries the <c>/EncryptMetadata</c> flag and is deliberately not
+    /// compared: a producer that writes it inconsistently with the dictionary's own entry has a
+    /// bookkeeping bug, not tampered permissions, and it says nothing about the four bytes that do
+    /// matter here.
+    /// </para>
     /// </summary>
-    public bool VerifyPermissions(byte[] fileKey, byte[] perms)
+    public int? RecoverAuthenticatedPermissions(byte[] fileKey, byte[] perms)
     {
         // /Perms only exists at R>=5 (ISO 32000-2 §7.6.4.4.12), and only an R>=5 file key is
         // AES-256-sized. Below R5, aes.Key's setter throws CryptographicException on anything but
         // a 5-16 byte key (raw, not a false return), and a 16-byte key that happens to be legal
         // for AES-128 would silently run ECB decryption on bytes that were never a /Perms block.
-        if (_r < 5 || fileKey.Length != 32)
-            return false;
-
-        if (perms.Length != 16)
-            return false;
+        if (_r < 5 || fileKey.Length != 32 || perms.Length != 16)
+            return null;
 
         using var aes = Aes.Create();
         aes.Key = fileKey;
@@ -358,15 +388,12 @@ internal sealed class StandardSecurityDecryptor
         using var decryptor = aes.CreateDecryptor(aes.Key, null);
         var block = decryptor.TransformFinalBlock(perms, 0, perms.Length);
 
+        // Bytes 9-11 are the literal "adb", which is what distinguishes a /Perms block that decrypted
+        // under the right key from 16 bytes of noise.
         if (block[9] != (byte)'a' || block[10] != (byte)'d' || block[11] != (byte)'b')
-            return false;
+            return null;
 
-        Span<byte> expectedP = stackalloc byte[4];
-        BinaryPrimitives.WriteInt32LittleEndian(expectedP, _p);
-        if (!block.AsSpan(0, 4).SequenceEqual(expectedP))
-            return false;
-
-        return block[8] == (byte)(_encryptMetadata ? 'T' : 'F');
+        return BinaryPrimitives.ReadInt32LittleEndian(block);
     }
 
     // ── R<=4: ISO 32000-1 Algorithm 2 (file key), 4/5 (/U), 7 (/O) ───────────
@@ -533,6 +560,15 @@ internal sealed class StandardSecurityDecryptor
     public byte[] DecryptString(byte[] fileKey, int objectNumber, int generation, ReadOnlySpan<byte> data)
         => Decrypt(fileKey, objectNumber, generation, data, StringFilter);
 
+    /// <summary>
+    /// Decrypts using an explicit <paramref name="method"/> rather than <see cref="StreamFilter"/> or
+    /// <see cref="StringFilter"/> — the wiring a stream's own <c>/Filter</c> needs when it names
+    /// <c>/Crypt</c> with a <c>/CF</c> entry other than the document-wide <c>/StmF</c>, or
+    /// <c>/Identity</c> to opt that one stream out of encryption entirely (ISO 32000-2 §7.4.10).
+    /// </summary>
+    public byte[] DecryptWithMethod(byte[] fileKey, int objectNumber, int generation, ReadOnlySpan<byte> data, CryptFilterMethod method)
+        => Decrypt(fileKey, objectNumber, generation, data, method);
+
     private static byte[] Decrypt(
         byte[] fileKey, int objectNumber, int generation, ReadOnlySpan<byte> data, CryptFilterMethod method)
     {
@@ -561,9 +597,11 @@ internal sealed class StandardSecurityDecryptor
 
             case CryptFilterMethod.Unsupported:
                 throw new InvalidDataException(
-                    "This /StmF or /StrF names a /CFM this handler does not implement, or a /CF " +
-                    "entry that does not exist. Falling back to Identity would return ciphertext " +
-                    "as plaintext with no error, so this is a malformed-file condition instead.");
+                    "A crypt filter names a /CFM this handler does not implement, or a /CF entry " +
+                    "that does not exist. The filter may have been selected by /StmF, /StrF, /EFF, " +
+                    "or by a stream's own /Crypt specifier. Falling back to Identity would return " +
+                    "ciphertext as plaintext with no error, so this is a malformed-file condition " +
+                    "instead.");
 
             default:
                 throw new InvalidDataException($"Unrecognised crypt filter method {method}.");
@@ -576,6 +614,18 @@ internal sealed class StandardSecurityDecryptor
     // bug.
     private static byte[] DecryptAesCbcWithIvPrefix(byte[] key, ReadOnlySpan<byte> data)
     {
+        // An empty string or a zero-length stream is legal PDF, and a producer has nothing to
+        // encrypt for one — there is no IV to write either, so the encrypted form is also empty.
+        // Demanding an IV here rejects a document other readers open, and rejects it hard: the
+        // exception propagates out of every object that contains such a string. Slicing an IV off
+        // zero bytes is also what would throw, so this guard is what makes that case work at all.
+        //
+        // Sixteen bytes — an IV a producer emitted unconditionally with nothing to encrypt after it
+        // — needs no guard: the slice leaves an empty ciphertext, and decrypting zero blocks returns
+        // zero bytes rather than throwing. The test for it goes through this path, not around it.
+        if (data.Length is 0)
+            return [];
+
         if (data.Length < 16 || (data.Length - 16) % 16 != 0)
         {
             throw new InvalidDataException(

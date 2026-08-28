@@ -53,6 +53,14 @@ public sealed class ExternalSignerChainTests
             Assert.Skip($"CurrentUser CA store is not writable in this environment: {ex.Message}");
         }
 
+        // A certificate just added to CurrentUser\CA is not immediately visible to an in-process
+        // chain build: the CryptoAPI default chain engine serves a cached view of the store, and
+        // this assembly keeps that cache hot because every signing test builds a chain. Left to
+        // chance the signer intermittently saw a one-element chain and embedded only the leaf,
+        // failing the assertion below roughly one run in four under xunit's default parallelism.
+        // Building a throwaway chain here forces the resync before the signer's own build.
+        CertificateStoreVisibility.WaitFor(publicOnlyLeaf);
+
         try
         {
             var settings = new PdfSignatureSettings

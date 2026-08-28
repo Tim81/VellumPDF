@@ -10,6 +10,7 @@ using VellumPdf.Conformance;
 using VellumPdf.Conformance.Rules.Fonts;
 using VellumPdf.Conformance.Tests.Oracle;
 using VellumPdf.Document;
+using VellumPdf.Encryption;
 using VellumPdf.Reader;
 using VellumPdf.Signing;
 
@@ -4287,17 +4288,20 @@ public sealed class PdfPreflightTests
     }
 
     [Fact]
-    public void Validate_EncryptedPdf_PropagatesUnsupported()
+    public void Validate_PublicKeyEncryptedPdf_PropagatesUnsupported()
     {
-        // An unsupported reader feature (encryption) must surface as UnsupportedPdfFeatureException,
-        // not be swallowed into a conformance finding.
-        var bytes = BuildEncryptedTrailerPdf();
+        // An unsupported reader feature must surface as UnsupportedPdfFeatureException, not be
+        // swallowed into a conformance finding. Since #97 the Standard security handler IS
+        // supported (see the encrypted-fixture corpus tests in VellumPdf.Reader.Tests for that
+        // path), so this now exercises the one security handler that still is not: a public-key
+        // (/Adobe.PubSec) /Encrypt dictionary.
+        var bytes = BuildPublicKeyEncryptedTrailerPdf();
 
         Assert.Throws<UnsupportedPdfFeatureException>(
             () => PdfPreflight.Validate(bytes, PdfConformance.PdfA2B));
     }
 
-    private static byte[] BuildEncryptedTrailerPdf()
+    private static byte[] BuildPublicKeyEncryptedTrailerPdf()
     {
         var ms = new MemoryStream();
         void Write(string s) => ms.Write(Encoding.ASCII.GetBytes(s));
@@ -4313,7 +4317,7 @@ public sealed class PdfPreflightTests
         Write($"{0:D10} 65535 f \n");
         Write($"{o1:D10} 00000 n \n");
         Write($"{o2:D10} 00000 n \n");
-        Write("trailer\n<< /Size 3 /Root 1 0 R /Encrypt << /Filter /Standard /V 1 /R 2 >> >>\n");
+        Write("trailer\n<< /Size 3 /Root 1 0 R /Encrypt << /Filter /Adobe.PubSec /V 1 /R 2 >> >>\n");
         Write($"startxref\n{xref}\n%%EOF\n");
 
         return ms.ToArray();
@@ -6109,6 +6113,222 @@ public sealed class PdfPreflightTests
         var pdf = BuildJpxImagePdf(jp2.File);
         var result = PdfPreflight.Validate(pdf, PdfConformance.PdfA2B);
         Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.8.3-1");
+    }
+
+    /// <summary>
+    /// Same defect (NC=2, not in {1,3,4}) as <see cref="Validate_Jpeg2000_NcEquals2_IsFlagged_6283_1"/>,
+    /// but on an ENCRYPTED document. Since #97, <see cref="VellumPdf.Conformance.Rules.Graphics.Jpeg2000Rule"/> reads the image XObject's
+    /// bytes via <c>PreflightContext.DecryptedRawBody</c>, not <c>stream.RawBody</c> directly — the
+    /// latter is ciphertext on an encrypted document, which this test exists to catch a regression
+    /// back to. <c>jpx-encrypted-emptyuser.pdf</c> is
+    /// <see cref="Validate_Jpeg2000_NcEquals2_IsFlagged_6283_1"/>'s own PDF bytes
+    /// (<c>BuildJpxImagePdf(BuildJp2(nc: 2, bpc: 8).File)</c>), encrypted once with qpdf (empty user
+    /// password, owner "o", AES-128) and committed — <c>PdfPreflight.Validate(byte[], PdfConformance)</c>
+    /// has no password parameter, so only an empty-user-password fixture is reachable through it.
+    /// </summary>
+    [Fact]
+    public void Validate_Jpeg2000_NcEquals2_IsFlagged_6283_1_onEncryptedDocument()
+    {
+        using var s = typeof(PdfPreflightTests).Assembly.GetManifestResourceStream("jpx-encrypted-emptyuser.pdf")
+            ?? throw new InvalidOperationException("jpx-encrypted-emptyuser.pdf embedded resource not found.");
+        using var ms = new MemoryStream();
+        s.CopyTo(ms);
+
+        var result = PdfPreflight.Validate(ms.ToArray(), PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.8.3-1");
+    }
+
+    /// <summary>
+    /// ISO 19005-2 6.1.3 forbids the /Encrypt key outright. That used to be enforced by the reader
+    /// refusing to open any encrypted document at all - an error line, never a verdict - so when #97
+    /// taught the reader to read them, an encrypted file started reaching rule evaluation and being
+    /// reported as conformant. This fixture serves because it is encrypted; everything else about it
+    /// is beside the point here.
+    /// </summary>
+    [Fact]
+    public void Validate_EncryptedDocument_IsFlagged_613()
+    {
+        using var s = typeof(PdfPreflightTests).Assembly.GetManifestResourceStream("jpx-encrypted-emptyuser.pdf")
+            ?? throw new InvalidOperationException("jpx-encrypted-emptyuser.pdf embedded resource not found.");
+        using var ms = new MemoryStream();
+        s.CopyTo(ms);
+
+        var result = PdfPreflight.Validate(ms.ToArray(), PdfConformance.PdfA2B);
+
+        var finding = Assert.Single(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.3-no-encrypt");
+        Assert.Equal(PreflightSeverity.Error, finding.Severity);
+        Assert.Contains("/Encrypt", finding.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// A document whose /StmF names a crypt filter this handler cannot apply has no decodable stream
+    /// in it at all. Every rule that touched one used to report that as a finding against whatever
+    /// clause it happened to cover, so the result was a FAIL stamped with output-intent and
+    /// transparency clauses the file never violated. "Cannot evaluate" is the honest answer, and it
+    /// is what /Adobe.PubSec already gets.
+    /// </summary>
+    [Fact]
+    public void Validate_UndecodableCryptFilter_cannotBeEvaluated_ratherThanReportedNonConformant()
+    {
+        using var s = typeof(PdfPreflightTests).Assembly.GetManifestResourceStream("jpx-encrypted-emptyuser.pdf")
+            ?? throw new InvalidOperationException("jpx-encrypted-emptyuser.pdf embedded resource not found.");
+        using var ms = new MemoryStream();
+        s.CopyTo(ms);
+
+        // Same byte count, so every cross-reference offset stays valid: the document is unchanged
+        // except that /StmF now names a /CF entry it does not define.
+        var text = System.Text.Encoding.Latin1.GetString(ms.ToArray());
+        var patched = System.Text.Encoding.Latin1.GetBytes(
+            text.Replace("/StmF /StdCF", "/StmF /Ghost", StringComparison.Ordinal));
+
+        Assert.Throws<UnsupportedPdfFeatureException>(() => PdfPreflight.Validate(patched, PdfConformance.PdfA2B));
+    }
+
+    /// <summary>
+    /// Auto-detection needs one stream, the XMP packet, and the same undecodable <c>/StmF</c> stops
+    /// it reaching that — so it must say so rather than report "no conformance claim found", which
+    /// sends the caller to <c>-p</c> and a path that then fails for the real reason. The default CLI
+    /// invocation goes through here, not through <c>Validate</c>.
+    /// </summary>
+    [Fact]
+    public void DetectClaimedProfiles_UndecodableCryptFilter_cannotBeEvaluated()
+    {
+        using var s = typeof(PdfPreflightTests).Assembly.GetManifestResourceStream("jpx-encrypted-emptyuser.pdf")
+            ?? throw new InvalidOperationException("jpx-encrypted-emptyuser.pdf embedded resource not found.");
+        using var ms = new MemoryStream();
+        s.CopyTo(ms);
+
+        var text = System.Text.Encoding.Latin1.GetString(ms.ToArray());
+        var patched = System.Text.Encoding.Latin1.GetBytes(
+            text.Replace("/StmF /StdCF", "/StmF /Ghost", StringComparison.Ordinal));
+
+        Assert.Throws<UnsupportedPdfFeatureException>(() => PdfPreflight.DetectClaimedProfiles(patched));
+    }
+
+    /// <summary>
+    /// The same "cannot evaluate" answer on the two paths out of <c>DetectClaimedProfiles</c> that
+    /// never reach the XMP decode at all: a catalog naming no <c>/Metadata</c>, and a
+    /// <c>/Metadata</c> that does not resolve to a stream. Both returned "no conformance claim
+    /// found" for a document in which nothing can be decoded, which is the misdirection the guard
+    /// exists to stop — it sends the caller to <c>-p</c>, and that path then fails for the real
+    /// reason.
+    /// </summary>
+    /// <remarks>
+    /// The two tests above cannot reach either branch: <c>jpx-encrypted-emptyuser.pdf</c> always has
+    /// a <c>/Metadata</c> that resolves to a stream, so both land in the decode path every time and
+    /// only the third call site was joined to anything. Deleting either of the other two left the
+    /// whole solution green, veraPDF rows included.
+    ///
+    /// <para>The document is written and then patched in place, every patch preserving the byte
+    /// count so that all cross-reference offsets stay valid. At <c>/R</c> 6 neither <c>/StmF</c> nor
+    /// the catalog's contents feed key derivation, so the file still opens — which is the shape under
+    /// test. Each patch is asserted to have applied, because one that silently did not would leave
+    /// this passing for the ordinary reason instead of the one it means to check.</para>
+    /// </remarks>
+    [Theory]
+    [InlineData(true)]   // the catalog names no /Metadata at all
+    [InlineData(false)]  // /Metadata names an object that is not a stream
+    public void DetectClaimedProfiles_UndecodableCryptFilter_withNoReadableMetadata_cannotBeEvaluated(
+        bool dropTheKey)
+    {
+        using var doc = new PdfDocument();
+        doc.AddPage();
+        doc.Encrypt(new PdfEncryptionSettings { UserPassword = "", OwnerPassword = "o" });
+
+        using var written = new MemoryStream();
+        doc.Save(written);
+        var text = System.Text.Encoding.Latin1.GetString(written.ToArray());
+
+        var meta = System.Text.RegularExpressions.Regex.Match(text, @"/Metadata (\d+) 0 R");
+        Assert.True(meta.Success, "the written document names no /Metadata to patch");
+
+        string patchedText;
+        if (dropTheKey)
+        {
+            // /Metadaxx is the same nine characters, so the catalog simply carries a key nothing
+            // reads. A document with no XMP packet at all is ordinary; this writer just always emits
+            // one, which is why the shape has to be made rather than found.
+            patchedText = text.Replace(
+                meta.Value, $"/Metadaxx {meta.Groups[1].Value} 0 R", StringComparison.Ordinal);
+            Assert.DoesNotContain("/Metadata ", patchedText, StringComparison.Ordinal);
+        }
+        else
+        {
+            // Repointed at the page tree: a dictionary, not a stream, so ResolveStream returns null.
+            var pages = System.Text.RegularExpressions.Regex.Match(text, @"(\d+) 0 obj\s*<<[^>]*?/Type /Pages");
+            Assert.True(pages.Success, "the written document has no page tree to point /Metadata at");
+            Assert.True(
+                pages.Groups[1].Value.Length <= meta.Groups[1].Value.Length,
+                "the page tree's object number is wider than /Metadata's, so the patch would move every offset");
+
+            var target = pages.Groups[1].Value.PadLeft(meta.Groups[1].Value.Length);
+            patchedText = text.Replace(
+                meta.Value, $"/Metadata {target} 0 R", StringComparison.Ordinal);
+            Assert.DoesNotContain(meta.Value, patchedText, StringComparison.Ordinal);
+        }
+
+        Assert.Contains("/StmF /StdCF", patchedText, StringComparison.Ordinal);
+        patchedText = patchedText.Replace("/StmF /StdCF", "/StmF /Ghost", StringComparison.Ordinal);
+
+        var patched = System.Text.Encoding.Latin1.GetBytes(patchedText);
+        Assert.Equal(written.Length, patched.Length);
+
+        Assert.Throws<UnsupportedPdfFeatureException>(() => PdfPreflight.DetectClaimedProfiles(patched));
+    }
+
+    /// <summary>
+    /// The other side of that guard, and the reason it cannot simply test <c>/StmF</c>: with
+    /// <c>/EncryptMetadata false</c> the document metadata stream is exempt from decryption entirely
+    /// (ISO 32000-2 Table 21), so it stays readable however <c>/StmF</c> resolved. Refusing to detect
+    /// a claim on such a file takes away the one job still doable on it.
+    /// </summary>
+    /// <remarks>
+    /// The document is written here rather than loaded, because no embedded fixture in this assembly
+    /// has the arrangement — an earlier version of this test looked for it in one that does not, hit
+    /// an early <c>return</c>, and reported Passed while asserting nothing. Writing it removes the
+    /// guard and with it the failure mode. At <c>/R</c> 6 neither <c>/StmF</c> nor
+    /// <c>/EncryptMetadata</c> feeds key derivation, so patching <c>/StmF</c> to name an undefined
+    /// filter leaves the file openable — which is exactly the shape under test.
+    /// </remarks>
+    [Fact]
+    public void DetectClaimedProfiles_UndecodableCryptFilter_butCleartextMetadata_stillReadsTheClaim()
+    {
+        using var doc = new PdfDocument();
+        doc.AddPage();
+        doc.Encrypt(new PdfEncryptionSettings
+        {
+            UserPassword = "",
+            OwnerPassword = "o",
+            EncryptMetadata = false,
+        });
+
+        using var written = new MemoryStream();
+        doc.Save(written);
+
+        var text = System.Text.Encoding.Latin1.GetString(written.ToArray());
+        Assert.Contains("/EncryptMetadata false", text, StringComparison.Ordinal);
+        Assert.Contains("/StmF /StdCF", text, StringComparison.Ordinal);
+
+        // Same byte count, so every cross-reference offset stays valid.
+        var patched = System.Text.Encoding.Latin1.GetBytes(
+            text.Replace("/StmF /StdCF", "/StmF /Ghost", StringComparison.Ordinal));
+
+        // No exception: the metadata is in the clear, so a claim can be read — or honestly reported
+        // as absent — even though no other stream in the document can be decoded.
+        _ = PdfPreflight.DetectClaimedProfiles(patched);
+    }
+
+    /// <summary>The control: an unencrypted document draws no /Encrypt finding.</summary>
+    [Fact]
+    public void Validate_UnencryptedDocument_NoFinding_613_noEncrypt()
+    {
+        var jp2 = BuildJp2(nc: 2, bpc: 8);
+        var pdf = BuildJpxImagePdf(jp2.File);
+
+        var result = PdfPreflight.Validate(pdf, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.1.3-no-encrypt");
     }
 
     [Fact]

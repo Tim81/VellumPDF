@@ -95,12 +95,32 @@ public sealed class PdfDocument : IDisposable
     /// each save draws fresh random salts/IVs for encryption, and a signature is time- and
     /// key-dependent.</para>
     /// </summary>
-    /// <remarks>The array is defensively copied on get and set, so mutating it afterwards has
-    /// no effect on the output.</remarks>
+    /// <remarks>
+    /// The array is defensively copied on get and set, so mutating it afterwards has no effect on the
+    /// output. It must be exactly 16 bytes: the writer emits no <c>/ID</c> at all for any other
+    /// length, and ISO 32000-2 Table 15 REQUIRES <c>/ID</c> once <c>/Encrypt</c> is present — so a
+    /// wrong length silently produced an encrypted document qpdf rejects with "invalid /ID in trailer
+    /// dictionary". Rejected at the setter instead, where the caller can still see which value was
+    /// wrong.
+    /// </remarks>
+    /// <exception cref="ArgumentException">
+    /// Thrown when <paramref name="value"/> is neither null nor exactly 16 bytes long.
+    /// </exception>
     public byte[]? DocumentId
     {
         get => _documentId is null ? null : (byte[])_documentId.Clone();
-        set => _documentId = value is null ? null : (byte[])value.Clone();
+        set
+        {
+            if (value is not null && value.Length != 16)
+            {
+                throw new ArgumentException(
+                    $"A document /ID must be exactly 16 bytes; got {value.Length}. Any other length is "
+                    + "written as no /ID at all, which is invalid for an encrypted document.",
+                    nameof(value));
+            }
+
+            _documentId = value is null ? null : (byte[])value.Clone();
+        }
     }
 
     /// <summary>

@@ -31,8 +31,9 @@ public sealed class StandardSecurityDecryptorTests
     private const string WrongPassword = "not-the-password";
 
     // Every fixture's content stream (object 6) is unaffected by /EncryptMetadata and identical in
-    // object number and plaintext across all eight fixtures and the baseline (verified against the
-    // baseline dump: same object graph, only /Encrypt and the ciphertext differ) — see
+    // object number and plaintext across all eight rows of FixtureNames below and the baseline
+    // (verified against the baseline dump: same object graph, only /Encrypt and the ciphertext
+    // differ) — see
     // Decrypted_contentStream_matches_plaintextBaseline. Object 3 (Metadata) is not used for the
     // baseline comparison: the baseline's copy is stored uncompressed while the fixtures'
     // /EncryptMetadata-true copies are Flate-compressed, so object 3's raw bytes legitimately
@@ -40,6 +41,10 @@ public sealed class StandardSecurityDecryptorTests
     private const int ContentStreamObjectNumber = 6;
     private const int Generation = 0;
 
+    // The eight /V+/R+/CFM matrix rows, which is what this class is about — it exercises the
+    // algorithms directly, not the reader, so the corpus's later structural rows (object streams,
+    // linearization, two revisions, unusual passwords) add nothing here and are covered where they
+    // do: VellumPdf.Reader.Tests.
     public static TheoryData<string> FixtureNames =>
     [
         "enc-rc4-40.pdf",
@@ -97,7 +102,7 @@ public sealed class StandardSecurityDecryptorTests
 
     [Theory]
     [MemberData(nameof(FixtureNames))]
-    public void TryComputeFileKey_triesUserPassword_thenFallsBackToOwnerPassword(string fixtureName)
+    public void TryComputeFileKey_acceptsEitherPassword_andDerivesTheSameKeyAsTheDirectCall(string fixtureName)
     {
         // The owner password ("o") is not a valid user password for any fixture, so this only
         // succeeds by falling through to TryComputeFileKeyFromOwnerPassword — the combinator
@@ -238,7 +243,7 @@ public sealed class StandardSecurityDecryptorTests
     public void EncryptMetadataFalse_writtenPerms_verifiesFalse_throughTheWriteAndReadSides()
     {
         // The first place the write side (StandardSecurityHandler.ComputePerms) and the read
-        // side (VerifyPermissions) meet on /Perms with /EncryptMetadata false. Every other R6
+        // side (RecoverAuthenticatedPermissions) meet on /Perms with /EncryptMetadata false. Every other R6
         // /Perms test — corpus-driven and EncryptionTests's own white-box round trip alike — only
         // ever runs with EncryptMetadata true, so ComputePerms hardcoding block[8] = 'T' instead
         // of branching on the setting would survive both suites.
@@ -257,15 +262,130 @@ public sealed class StandardSecurityDecryptorTests
             v: 5, r: 6, keyLengthBytes: 32, o: handler.O, u: handler.U, oe: handler.OE, ue: handler.UE,
             p: handler.PValue, id0: [0x00], encryptMetadata: false,
             streamFilter: CryptFilterMethod.Aes256, stringFilter: CryptFilterMethod.Aes256);
-        Assert.True(correctFlag.VerifyPermissions(fileKey, handler.Perms));
+        Assert.Equal(handler.PValue, correctFlag.RecoverAuthenticatedPermissions(fileKey, handler.Perms));
 
-        // And the check actually has to fail on a mismatch: a decryptor built as though
-        // /EncryptMetadata were true must reject these same /Perms bytes.
-        var wrongFlag = new StandardSecurityDecryptor(
-            v: 5, r: 6, keyLengthBytes: 32, o: handler.O, u: handler.U, oe: handler.OE, ue: handler.UE,
-            p: handler.PValue, id0: [0x00], encryptMetadata: true,
-            streamFilter: CryptFilterMethod.Aes256, stringFilter: CryptFilterMethod.Aes256);
-        Assert.False(wrongFlag.VerifyPermissions(fileKey, handler.Perms));
+        // Byte 8 of the block is the /EncryptMetadata flag, and the read side deliberately does not
+        // compare it (see RecoverAuthenticatedPermissions): a producer that writes it inconsistently
+        // has a bookkeeping bug, not tampered permissions. The WRITE side must still get it right,
+        // so this asserts the byte directly rather than through a verdict that no longer covers it.
+        var block = AesEcbDecryptForTest(fileKey, handler.Perms);
+        Assert.Equal((byte)'F', block[8]);
+    }
+
+    // /Perms is a single AES-256-ECB block with no padding. The test decrypts it itself rather than
+    // going through the reader, because the byte it is about (8, the /EncryptMetadata flag) is one
+    // the read side deliberately does not look at.
+    /// <summary>
+    /// <c>/R</c> outside 2..6 is a revision this handler has no algorithm for. Every other malformed
+    /// value in the constructor is pinned; this row was not, so widening the range would have gone
+    /// unnoticed — and an out-of-range revision reaching the algorithm split decides between the
+    /// R&lt;=4 and R&gt;=5 paths on a value that means neither.
+    /// </summary>
+    [Theory]
+    [InlineData(1)]
+    [InlineData(7)]
+    [InlineData(0)]
+    public void Constructor_rejectsARevisionOutsideTwoThroughSix(int r)
+    {
+        var ex = Assert.Throws<InvalidDataException>(() => new StandardSecurityDecryptor(
+            v: 4, r: r, keyLengthBytes: 16, o: new byte[32], u: new byte[32], oe: null, ue: null,
+            p: -4, id0: [0x00], encryptMetadata: true,
+            streamFilter: CryptFilterMethod.Aes128, stringFilter: CryptFilterMethod.Aes128));
+
+        Assert.Contains("/R", ex.Message, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Algorithm 1 keys on the object number and generation, and neither can be negative in a
+    /// well-formed file. The guards exist because a cross-reference table that could not be parsed
+    /// hands back <c>XrefEntry.UnknownGeneration</c>, which is -1: without them that reaches the key
+    /// derivation and shifts every byte of the object key.
+    /// </summary>
+    [Theory]
+    [InlineData(-1, 0)]
+    [InlineData(3, -1)]
+    public void ComputeObjectKey_rejectsNegativeIdentity(int objectNumber, int generation)
+    {
+        Assert.Throws<InvalidDataException>(
+            () => StandardSecurityDecryptor.ComputeObjectKey(new byte[16], objectNumber, generation, useAesSalt: false));
+    }
+
+    /// <summary>
+    /// The revision clause of <c>RecoverAuthenticatedPermissions</c>' guard, on its own. Passing a
+    /// short key at R≤4 — which the sibling tests do — is turned away by the LENGTH clause instead,
+    /// so those pass with the revision check deleted. A 32-byte key at R4 satisfies every other
+    /// clause, leaving only <c>_r &lt; 5</c> between the caller and an AES-ECB pass over sixteen bytes
+    /// that were never a <c>/Perms</c> block.
+    /// </summary>
+    [Fact]
+    public void RecoverAuthenticatedPermissions_atRevision4_withAValidSizedKey_isRefusedByTheRevisionCheck()
+    {
+        // A /Perms block that WOULD decrypt: /P little-endian, the 'adb' marker at bytes 9-11, and a
+        // 32-byte key to encrypt it under. Zeros would not do — they fail the marker check, so the
+        // method returns null with or without the revision guard and the test would prove nothing.
+        var fileKey = new byte[32];
+        for (var i = 0; i < fileKey.Length; i++)
+            fileKey[i] = (byte)(i + 1);
+
+        var block = new byte[16];
+        BinaryPrimitives.WriteInt32LittleEndian(block, -4);
+        block[4] = block[5] = block[6] = block[7] = 0xFF;
+        block[8] = (byte)'T';
+        block[9] = (byte)'a';
+        block[10] = (byte)'d';
+        block[11] = (byte)'b';
+
+        using var aes = Aes.Create();
+        aes.Key = fileKey;
+        aes.Mode = CipherMode.ECB;
+        aes.Padding = PaddingMode.None;
+        var perms = aes.CreateEncryptor().TransformFinalBlock(block, 0, block.Length);
+
+        var decryptor = new StandardSecurityDecryptor(
+            v: 4, r: 4, keyLengthBytes: 16, o: new byte[32], u: new byte[32], oe: null, ue: null,
+            p: -4, id0: [0x00], encryptMetadata: true,
+            streamFilter: CryptFilterMethod.Aes128, stringFilter: CryptFilterMethod.Aes128);
+
+        // /Perms does not exist below R5, so this has to be refused however well-formed it looks.
+        Assert.Null(decryptor.RecoverAuthenticatedPermissions(fileKey, perms));
+    }
+
+    /// <summary>
+    /// ISO 32000-2 §7.6.4.2 gives <c>/O</c> and <c>/U</c> as 48 bytes at R≥5, and Acrobat 9-era
+    /// producers pad them to 127 — the R≤4 field width. The constructor tolerates the padding; this
+    /// is the accepting direction, which nothing else exercises: every fixture is exactly 48, so
+    /// hashing the padding along with the value would go unnoticed.
+    /// </summary>
+    [Fact]
+    public void OverlongOAndU_atRevision6_stillAuthenticate()
+    {
+        var info = LoadEncryptInfo("enc-aes-256-r6.pdf");
+
+        static byte[] PadTo127(byte[] value)
+        {
+            var padded = new byte[127];
+            value.CopyTo(padded, 0);
+            return padded;
+        }
+
+        var padded = BuildDecryptor(info with { O = PadTo127(info.O), U = PadTo127(info.U) });
+
+        Assert.True(padded.TryComputeFileKeyFromUserPassword(UserPassword, out var userKey));
+        Assert.True(padded.TryComputeFileKeyFromOwnerPassword(OwnerPassword, out var ownerKey));
+
+        // The owner path hashes /U as udata, so a padded /U that reached it whole would derive a
+        // different key from the user path's.
+        Assert.Equal(userKey, ownerKey);
+    }
+
+    private static byte[] AesEcbDecryptForTest(byte[] key, byte[] data)
+    {
+        using var aes = Aes.Create();
+        aes.Key = key;
+        aes.Mode = CipherMode.ECB;
+        aes.Padding = PaddingMode.None;
+        using var decryptor = aes.CreateDecryptor();
+        return decryptor.TransformFinalBlock(data, 0, data.Length);
     }
 
     private static byte[] AesCbcDecryptNoPaddingForTest(byte[] key, byte[] iv, byte[] data)
@@ -384,9 +504,17 @@ public sealed class StandardSecurityDecryptorTests
 
     // ── AES-CBC length guard: at least 16 bytes (the IV), then whole 16-byte blocks ──
 
+    /// <summary>
+    /// The guard has to be what rejects these, not the cipher. Without the whole-blocks half, 31
+    /// bytes still throws — <c>TransformFinalBlock</c> raises <c>CryptographicException</c> and the
+    /// catch below folds it into the same <c>InvalidDataException</c> — so asserting the exception
+    /// TYPE alone passes either way. The absent inner exception is what separates them, exactly as
+    /// the padding-failure test above uses its presence.
+    /// </summary>
     [Theory]
     [InlineData(15)] // shorter than the IV alone
     [InlineData(31)] // has the IV, but leaves 15 bytes of ciphertext — not a whole block
+    [InlineData(17)] // one byte past the IV
     public void DecryptStream_aesFilter_withDataThatIsNotIvPlusWholeBlocks_throwsInvalidDataException(int length)
     {
         var decryptor = new StandardSecurityDecryptor(
@@ -394,8 +522,10 @@ public sealed class StandardSecurityDecryptorTests
             p: -4, id0: [0x00], encryptMetadata: true,
             streamFilter: CryptFilterMethod.Aes256, stringFilter: CryptFilterMethod.Aes256);
 
-        Assert.Throws<InvalidDataException>(
+        var ex = Assert.Throws<InvalidDataException>(
             () => decryptor.DecryptStream(new byte[32], objectNumber: 1, generation: 0, new byte[length]));
+
+        Assert.Null(ex.InnerException);
     }
 
     // ── AES-CBC padding-failure path ──────────────────────────────────────────
@@ -435,8 +565,9 @@ public sealed class StandardSecurityDecryptorTests
 
     // ── Assertion 5 (empty user password) + Algorithm 2/4/5/2.A synthetic vectors ──
     //
-    // None of the eight committed fixtures uses an empty user password (the corpus README lists
-    // that as a known gap — all eight use "u"/"o"), so this is not measured against the corpus.
+    // None of the eight matrix rows above uses an empty user password — all eight use "u"/"o" — so
+    // this is not measured against them. (enc-aes-128-emptyuser.pdf, added with the reader wiring,
+    // covers the case end to end; what is wanted here is the algorithm in isolation.)
     // Independently computed with arbitrary but fixed O/P/ID0, the same way
     // Rc4Md5PrimitiveTests.Md5_incremental_matches_BCL_over_algorithm2_shaped_pieces pins Algorithm
     // 2's input shape: not a claim that any real-world encrypted file looks like this, only that
@@ -641,22 +772,23 @@ public sealed class StandardSecurityDecryptorTests
     [Theory]
     [InlineData("enc-aes-256-r6.pdf")]
     [InlineData("enc-256-cleartextmd.pdf")]
-    public void VerifyPermissions_R6Fixture_succeedsWithTheRightFileKey_failsWithAnother(string fixtureName)
+    public void RecoverAuthenticatedPermissions_R6Fixture_recoversPWithTheRightFileKey_nothingWithAnother(string fixtureName)
     {
         var info = LoadEncryptInfo(fixtureName);
         Assert.NotNull(info.Perms);
         var decryptor = BuildDecryptor(info);
         Assert.True(decryptor.TryComputeFileKeyFromUserPassword(UserPassword, out var fileKey));
 
-        Assert.True(decryptor.VerifyPermissions(fileKey, info.Perms));
+        Assert.Equal(info.P, decryptor.RecoverAuthenticatedPermissions(fileKey, info.Perms));
 
+        // A wrong key turns the block into noise, and the "adb" marker is what says so.
         var wrongKey = (byte[])fileKey.Clone();
         wrongKey[0] ^= 0xFF;
-        Assert.False(decryptor.VerifyPermissions(wrongKey, info.Perms));
+        Assert.Null(decryptor.RecoverAuthenticatedPermissions(wrongKey, info.Perms));
     }
 
     [Fact]
-    public void VerifyPermissions_detectsATamperedPValue()
+    public void RecoverAuthenticatedPermissions_survivesATamperedPValue()
     {
         // /Perms is decrypted with the file key alone, so a tampered /P doesn't change what
         // /Perms decrypts to — it changes what this decryptor now expects that plaintext to
@@ -670,26 +802,18 @@ public sealed class StandardSecurityDecryptorTests
         var info = LoadEncryptInfo("enc-aes-256-r6.pdf");
         var decryptor = BuildDecryptor(info);
         Assert.True(decryptor.TryComputeFileKeyFromUserPassword(UserPassword, out var fileKey));
-        Assert.True(decryptor.VerifyPermissions(fileKey, info.Perms!));
+        Assert.Equal(info.P, decryptor.RecoverAuthenticatedPermissions(fileKey, info.Perms!));
 
+        // The dictionary's /P edited after the fact: /Perms is unchanged, decrypts with the file key
+        // alone, and still yields what the producer sealed in. Recovering the ORIGINAL value from a
+        // document whose /P now says otherwise is exactly what makes the edit detectable.
         var tampered = BuildDecryptor(info with { P = info.P ^ 0x0800 });
-        Assert.False(tampered.VerifyPermissions(fileKey, info.Perms!));
+        Assert.Equal(info.P, tampered.RecoverAuthenticatedPermissions(fileKey, info.Perms!));
+        Assert.NotEqual(info.P ^ 0x0800, tampered.RecoverAuthenticatedPermissions(fileKey, info.Perms!));
     }
 
     [Fact]
-    public void VerifyPermissions_detectsATamperedEncryptMetadataFlag()
-    {
-        var info = LoadEncryptInfo("enc-aes-256-r6.pdf");
-        var decryptor = BuildDecryptor(info);
-        Assert.True(decryptor.TryComputeFileKeyFromUserPassword(UserPassword, out var fileKey));
-        Assert.True(decryptor.VerifyPermissions(fileKey, info.Perms!));
-
-        var tampered = BuildDecryptor(info with { EncryptMetadata = !info.EncryptMetadata });
-        Assert.False(tampered.VerifyPermissions(fileKey, info.Perms!));
-    }
-
-    [Fact]
-    public void VerifyPermissions_atRLessThan5_returnsFalse_ratherThanThrowing()
+    public void RecoverAuthenticatedPermissions_atRLessThan5_returnsNull_ratherThanThrowing()
     {
         // /Perms doesn't exist below R5, and a 5-16 byte R<=4 file key isn't a legal AES-256 key.
         // Before the R<5 guard, aes.Key's setter threw CryptographicException here instead of
@@ -699,11 +823,11 @@ public sealed class StandardSecurityDecryptorTests
             p: -4, id0: [0x00], encryptMetadata: true,
             streamFilter: CryptFilterMethod.Rc4, stringFilter: CryptFilterMethod.Rc4);
 
-        Assert.False(decryptor.VerifyPermissions(new byte[5], new byte[16]));
+        Assert.Null(decryptor.RecoverAuthenticatedPermissions(new byte[5], new byte[16]));
     }
 
     [Fact]
-    public void VerifyPermissions_atRevision4_withASixteenByteKey_returnsFalse_ratherThanRunningAesEcb()
+    public void RecoverAuthenticatedPermissions_atRevision4_withASixteenByteKey_returnsNull_ratherThanRunningAesEcb()
     {
         // A 16-byte key is a legal AES-128 key size, so without the R<5 guard this would run ECB
         // decryption on bytes that were never a /Perms block and return a meaningless boolean
@@ -713,25 +837,28 @@ public sealed class StandardSecurityDecryptorTests
             p: -4, id0: [0x00], encryptMetadata: true,
             streamFilter: CryptFilterMethod.Aes128, stringFilter: CryptFilterMethod.Aes128);
 
-        Assert.False(decryptor.VerifyPermissions(new byte[16], new byte[16]));
+        Assert.Null(decryptor.RecoverAuthenticatedPermissions(new byte[16], new byte[16]));
     }
 
     [Fact]
-    public void VerifyPermissions_atRevision6_withAWrongSizedKey_returnsFalse()
+    public void RecoverAuthenticatedPermissions_atRevision6_withAWrongSizedKey_returnsNull()
     {
         // R>=5 always carries a 32-byte AES-256 file key; anything else at R>=5 is malformed
         // input, not just a wrong password, so this is rejected before the AES key setter runs.
         var info = LoadEncryptInfo("enc-aes-256-r6.pdf");
         var decryptor = BuildDecryptor(info);
 
-        Assert.False(decryptor.VerifyPermissions(new byte[16], info.Perms!));
+        // 20 bytes: a length no AES key size allows, so if the guard were not here the key setter
+        // itself would throw a raw CryptographicException instead of this method reporting "not
+        // applicable". A 16-byte key would prove nothing — AES-128 accepts it.
+        Assert.Null(decryptor.RecoverAuthenticatedPermissions(new byte[20], info.Perms!));
     }
 
     [Fact]
-    public void VerifyPermissions_r6Fixture_decryptsToTheDocumentedPBytes()
+    public void RecoverAuthenticatedPermissions_r6Fixture_decryptsToTheDocumentedPBytes()
     {
         // Pins the exact decrypted /Perms block for enc-aes-256-r6.pdf, not just the boolean
-        // VerifyPermissions returns: bytes 0-3 are /P little-endian (-4), bytes 4-7 are 0xFF
+        // RecoverAuthenticatedPermissions reads: bytes 0-3 are /P little-endian (-4), bytes 4-7 are 0xFF
         // padding, byte 8 is 'T' for /EncryptMetadata, bytes 9-11 are the "adb" marker Algorithm
         // 10 (StandardSecurityHandler.ComputePerms) writes, and bytes 12-15 are qpdf's own random
         // fill — not reproducible, so excluded from the pin.
@@ -757,8 +884,16 @@ public sealed class StandardSecurityDecryptorTests
         return decryptor.TransformFinalBlock(perms, 0, perms.Length);
     }
 
-    [Fact]
-    public void VerifyPermissions_detectsACorruptedAdbMarker_withACorrectPAndEncryptMetadata()
+    /// <summary>
+    /// One byte of the marker at a time. Corrupting all three together pins only the first
+    /// comparison — the other two are unreachable once it has already returned — and a marker check
+    /// that reads just <c>block[9]</c> accepts two thirds of the blocks it should reject.
+    /// </summary>
+    [Theory]
+    [InlineData(9)]
+    [InlineData(10)]
+    [InlineData(11)]
+    public void RecoverAuthenticatedPermissions_rejectsACorruptedAdbMarker_withACorrectP(int corruptedByte)
     {
         // Deleting the "adb" marker check survives every other test here, because the
         // wrong-fileKey tests already fail on an unrelated comparison (the decrypted block is
@@ -774,9 +909,10 @@ public sealed class StandardSecurityDecryptorTests
         BinaryPrimitives.WriteInt32LittleEndian(block, p);
         block[4] = block[5] = block[6] = block[7] = 0xFF;
         block[8] = (byte)'T';
-        block[9] = (byte)'x';
-        block[10] = (byte)'y';
-        block[11] = (byte)'z'; // corrupted: should be "adb"
+        block[9] = (byte)'a';
+        block[10] = (byte)'d';
+        block[11] = (byte)'b';
+        block[corruptedByte] = (byte)'z';
         RandomNumberGenerator.Fill(block.AsSpan(12));
         var perms = EncryptPermsBlockForTest(fileKey, block);
 
@@ -785,7 +921,7 @@ public sealed class StandardSecurityDecryptorTests
             p: p, id0: [0x00], encryptMetadata: true,
             streamFilter: CryptFilterMethod.Aes256, stringFilter: CryptFilterMethod.Aes256);
 
-        Assert.False(decryptor.VerifyPermissions(fileKey, perms));
+        Assert.Null(decryptor.RecoverAuthenticatedPermissions(fileKey, perms));
     }
 
     private static byte[] EncryptPermsBlockForTest(byte[] fileKey, byte[] block)
@@ -800,20 +936,76 @@ public sealed class StandardSecurityDecryptorTests
 
     // ── Constructor validation ────────────────────────────────────────────────
 
-    [Fact]
-    public void Constructor_rejectsEmptyId0_atRLessThan5()
+    /// <summary>
+    /// An empty <c>/ID[0]</c> is accepted at every revision. R&gt;=5's Algorithm 2.A never reads it.
+    /// R&lt;=4's Algorithm 2 step (e) does, appending it to the MD5 input — and appending nothing is
+    /// well defined, so a producer that wrote no <c>/ID</c> hashed exactly what is hashed here.
+    /// Table 15 does require the entry once <c>/Encrypt</c> is present, but refusing the file over it
+    /// would reject a document qpdf and poppler both open, for a malformation that costs nothing to
+    /// tolerate. <c>EncryptedExemptionTests</c> pins the end-to-end open on both shapes.
+    /// </summary>
+    [Theory]
+    [InlineData(1, 2, 5)]
+    [InlineData(2, 3, 16)]
+    public void Constructor_allowsEmptyId0_atRLessThan5(int v, int r, int keyLengthBytes)
+    {
+        _ = new StandardSecurityDecryptor(
+            v: v, r: r, keyLengthBytes: keyLengthBytes, o: new byte[32], u: new byte[32], oe: null, ue: null,
+            p: -4, id0: [], encryptMetadata: true,
+            streamFilter: CryptFilterMethod.Rc4, stringFilter: CryptFilterMethod.Rc4);
+    }
+
+    /// <summary>
+    /// A <c>/Perms</c> string that is not one AES block reaches <c>TransformFinalBlock</c> with
+    /// <c>PaddingMode.None</c>, which raises a bare <c>CryptographicException</c> — the one malformed
+    /// input on this path that would escape <c>PdfReader.Open</c> as something other than the
+    /// documented failure types. Recovery returns null instead, and the dictionary's <c>/P</c>
+    /// stands.
+    /// </summary>
+    [Theory]
+    [InlineData(0)]
+    [InlineData(15)]
+    [InlineData(17)]
+    [InlineData(32)]
+    public void RecoverAuthenticatedPermissions_withAPermsThatIsNotOneBlock_returnsNull(int permsLength)
+    {
+        byte[] fileKey = new byte[32];
+        RandomNumberGenerator.Fill(fileKey);
+
+        var decryptor = new StandardSecurityDecryptor(
+            v: 5, r: 6, keyLengthBytes: 32, o: new byte[48], u: new byte[48], oe: new byte[32], ue: new byte[32],
+            p: -4, id0: [0x00], encryptMetadata: true,
+            streamFilter: CryptFilterMethod.Aes256, stringFilter: CryptFilterMethod.Aes256);
+
+        Assert.Null(decryptor.RecoverAuthenticatedPermissions(fileKey, new byte[permsLength]));
+    }
+
+    /// <summary>
+    /// <c>/OE</c> and <c>/UE</c> are the AES-256 wrapped file key, and Algorithm 2.A decrypts each as
+    /// exactly two AES blocks with no padding. A length check that only tests for <see langword="null"/>
+    /// lets a 16- or 48-byte value through to that decryption, where it yields a file key of the
+    /// wrong size and a failure blamed on the password. The presence half is pinned by
+    /// <c>Constructor_atRevision5_requiresOe</c>; this is the size half.
+    /// </summary>
+    [Theory]
+    [InlineData(16, 32)]
+    [InlineData(48, 32)]
+    [InlineData(0, 32)]
+    [InlineData(32, 16)]
+    [InlineData(32, 48)]
+    [InlineData(32, 0)]
+    public void Constructor_atRevision5_rejectsWrongLengthOeOrUe(int oeLength, int ueLength)
     {
         Assert.Throws<InvalidDataException>(() => new StandardSecurityDecryptor(
-            v: 1, r: 2, keyLengthBytes: 5, o: new byte[32], u: new byte[32], oe: null, ue: null,
+            v: 5, r: 5, keyLengthBytes: 32, o: new byte[48], u: new byte[48],
+            oe: new byte[oeLength], ue: new byte[ueLength],
             p: -4, id0: [], encryptMetadata: true,
-            streamFilter: CryptFilterMethod.Rc4, stringFilter: CryptFilterMethod.Rc4));
+            streamFilter: CryptFilterMethod.Aes256, stringFilter: CryptFilterMethod.Aes256));
     }
 
     [Fact]
     public void Constructor_allowsEmptyId0_atRevision6()
     {
-        // R>=5's Algorithm 2.A never reads /ID[0] — only R<=4's Algorithm 2/5 do — so an empty
-        // /ID here is not this constructor's business to reject.
         _ = new StandardSecurityDecryptor(
             v: 5, r: 6, keyLengthBytes: 32, o: new byte[48], u: new byte[48], oe: new byte[32], ue: new byte[32],
             p: -4, id0: [], encryptMetadata: true,

@@ -140,6 +140,27 @@ internal static class PreflightRunner
                     stderr.WriteLine($"error: {ex.Message}");
                     return ExitCodes.UsageError;
                 }
+                // Profile auto-detection opens the document — with no password, because there is no
+                // way to supply one yet — so an encrypted file reaches THIS call before it ever
+                // reaches Validate below, and the catches down there never see it. Without these
+                // two, `vellum-preflight some-encrypted.pdf` (no -p, the default invocation) exits
+                // with an unhandled exception and a stack trace.
+                catch (VellumPdf.Reader.PdfPasswordException)
+                {
+                    stderr.WriteLine(PasswordProtectedMessage(filePath));
+                    anyIoError = true;
+                    continue;
+                }
+                // The sibling case, and the same reasoning: a public-key handler or a /V this
+                // library cannot implement throws from the same call, on a file the user pointed at
+                // with no arguments at all. UnsupportedPdfFeatureException derives from
+                // NotSupportedException, so this covers both.
+                catch (NotSupportedException ex)
+                {
+                    stderr.WriteLine($"error: {ex.Message}");
+                    anyIoError = true;
+                    continue;
+                }
 
                 if (profiles.Count == 0)
                 {
@@ -161,11 +182,23 @@ internal static class PreflightRunner
                         continue;
                     }
                     // Also catches UnsupportedPdfFeatureException, which derives from
-                    // NotSupportedException — so an encrypted PDF is reported as an error line
-                    // rather than crashing, despite Validate documenting it as propagating.
+                    // NotSupportedException — so an unsupported security handler or crypt filter is
+                    // reported as an error line rather than crashing, despite Validate documenting it
+                    // as propagating.
                     catch (NotSupportedException ex)
                     {
                         stderr.WriteLine($"error: {ex.Message}");
+                        anyIoError = true;
+                        continue;
+                    }
+                    // A separate catch, not folded into the one above: PdfPasswordException does NOT
+                    // derive from NotSupportedException on purpose (see its own doc comment) — a
+                    // password-protected file is not an unsupported feature, and conflating the two
+                    // here would mislabel it as one, undoing that distinction at the one place it
+                    // would otherwise show up.
+                    catch (VellumPdf.Reader.PdfPasswordException)
+                    {
+                        stderr.WriteLine(PasswordProtectedMessage(filePath));
                         anyIoError = true;
                         continue;
                     }
@@ -216,6 +249,12 @@ internal static class PreflightRunner
 
     private sealed class AutoNoClaim(string message) : Exception(message);
 
+    // One wording for both places a password-protected file can surface: profile auto-detection and
+    // validation itself. They are different call sites, not different failures, and a user who sees
+    // two phrasings for the same condition reasonably assumes they are two different problems.
+    private static string PasswordProtectedMessage(string filePath) =>
+        $"error: '{filePath}' is password-protected; vellum-preflight has no way to supply a password yet.";
+
     private static (IReadOnlyList<PdfConformance> Profiles, string Source) ResolveProfiles(
         ParsedArgs parsed,
         byte[] bytes,
@@ -241,9 +280,13 @@ internal static class PreflightRunner
         {
             claimed = PdfPreflight.DetectClaimedProfiles(bytes);
         }
-        catch (System.IO.InvalidDataException)
+        catch (System.IO.InvalidDataException ex)
         {
-            // Not a valid PDF — report as an IO error upstream.
+            // Not a valid PDF. Returning an empty list makes the caller set anyIoError and move on,
+            // which used to happen in silence — `vellum-preflight broken.pdf` exited 2 having printed
+            // nothing at all, while the same file with -p printed a precise message. Say which file
+            // and why, here, where the exception still has both.
+            stderr.WriteLine($"error: '{filePath}' is not a valid PDF: {ex.Message}");
             return (Array.Empty<PdfConformance>(), "auto");
         }
 
