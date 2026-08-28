@@ -260,6 +260,11 @@ public sealed class Document : IDisposable
     /// Delegates to <see cref="PdfDocument.Encrypt"/>.
     /// Must be called before <see cref="Save(Stream)"/>.
     /// </summary>
+    /// <exception cref="ArgumentNullException"><paramref name="settings"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="settings"/> has an empty <see cref="PdfEncryptionSettings.OwnerPassword"/>
+    /// beside a non-empty <see cref="PdfEncryptionSettings.UserPassword"/>.
+    /// </exception>
     public Document Encrypt(PdfEncryptionSettings settings)
     {
         _pdf.Encrypt(settings);
