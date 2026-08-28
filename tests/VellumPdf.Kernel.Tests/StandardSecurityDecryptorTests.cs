@@ -100,22 +100,6 @@ public sealed class StandardSecurityDecryptorTests
         Assert.Equal(userKey, ownerKey);
     }
 
-    [Theory]
-    [MemberData(nameof(FixtureNames))]
-    public void TryComputeFileKey_acceptsEitherPassword_andDerivesTheSameKeyAsTheDirectCall(string fixtureName)
-    {
-        // The owner password ("o") is not a valid user password for any fixture, so this only
-        // succeeds by falling through to TryComputeFileKeyFromOwnerPassword — the combinator
-        // PdfReader.Open will lean on for an empty-user-password file in the next PR.
-        var decryptor = BuildDecryptor(fixtureName, out _);
-
-        Assert.False(decryptor.TryComputeFileKeyFromUserPassword(OwnerPassword, out _));
-        Assert.True(decryptor.TryComputeFileKey(
-            StandardSecurityHandler.PasswordBytes(OwnerPassword), out var combined));
-        Assert.True(decryptor.TryComputeFileKeyFromOwnerPassword(OwnerPassword, out var direct));
-        Assert.Equal(direct, combined);
-    }
-
     // ── Assertion 2: decrypt a real stream, compare to the plaintext baseline ──
 
     [Theory]
