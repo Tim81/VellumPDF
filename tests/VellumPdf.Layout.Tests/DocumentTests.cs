@@ -4,6 +4,7 @@
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
+using VellumPdf.Encryption;
 using VellumPdf.Layout;
 using VellumPdf.Layout.Core;
 using VellumPdf.Layout.Elements;
@@ -223,5 +224,29 @@ public sealed class DocumentTests
         Assert.Single(doc.TextEncodingWarnings);
         Assert.Equal(new Rune('★'), doc.TextEncodingWarnings[0].Character);
         Assert.True(ms.Length > 100);
+    }
+
+    /// <summary>
+    /// <see cref="Document.Encrypt"/> delegates to <c>PdfDocument.Encrypt</c>, which carries the
+    /// #211 guard against an empty <c>OwnerPassword</c> beside a real <c>UserPassword</c> — the
+    /// shape that would seal <c>/O</c> under nothing and open the document to anyone at owner
+    /// privilege. The guard itself is pinned at the two lower-level entry points in
+    /// <c>VellumPdf.Kernel.Tests.EncryptionTests</c>; this only confirms the Stable, most-used
+    /// entry point actually reaches it rather than swallowing or bypassing it on the way through.
+    /// </summary>
+    [Fact]
+    public void Encrypt_withEmptyOwnerPassword_besideARealUserPassword_throws()
+    {
+        using var doc = new Document();
+        doc.Add(new Paragraph("Hello"));
+
+        var settings = new PdfEncryptionSettings
+        {
+            UserPassword = "hunter2",
+            OwnerPassword = string.Empty,
+        };
+
+        var exception = Assert.Throws<ArgumentException>(() => doc.Encrypt(settings));
+        Assert.Equal("settings", exception.ParamName);
     }
 }

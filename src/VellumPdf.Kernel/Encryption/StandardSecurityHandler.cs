@@ -35,8 +35,15 @@ public sealed class StandardSecurityHandler : IPdfEncryptor
     /// Generates a random file key and derives the /U, /O, /UE, /OE, /Perms and /P
     /// values for the given encryption settings.
     /// </summary>
+    /// <exception cref="ArgumentNullException"><paramref name="settings"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="settings"/> has an empty <see cref="PdfEncryptionSettings.OwnerPassword"/>
+    /// beside a non-empty <see cref="PdfEncryptionSettings.UserPassword"/>.
+    /// </exception>
     public StandardSecurityHandler(PdfEncryptionSettings settings)
     {
+        ThrowIfOwnerPasswordWouldBeIgnored(settings);
+
         // Generate a random 32-byte file encryption key (the master secret).
         _fileKey = new byte[32];
         RandomNumberGenerator.Fill(_fileKey);
@@ -52,6 +59,9 @@ public sealed class StandardSecurityHandler : IPdfEncryptor
         PValue = (int)((0xFFFFF0C0u | (uint)(enabledBits & 0xFFF)) & ~0x3u);
 
         var userPw = PasswordBytes(settings.UserPassword);
+        // Null falls back to the user password (the documented behaviour); ThrowIfOwnerPasswordWouldBeIgnored
+        // above has already ruled out the empty-beside-a-real-user-password case this would otherwise
+        // let through silently.
         var ownerPw = PasswordBytes(settings.OwnerPassword ?? settings.UserPassword);
 
         // Algorithm 8: Compute /U and /UE
@@ -240,6 +250,38 @@ public sealed class StandardSecurityHandler : IPdfEncryptor
         using var enc = aes.CreateEncryptor(aes.Key, null);
         var data = block.ToArray();
         return enc.TransformFinalBlock(data, 0, data.Length);
+    }
+
+    // ── Password validation ──────────────────────────────────────────────────
+
+    /// <summary>
+    /// Rejects an owner password that would seal /O and /OE (Algorithm 9, ISO 32000-2 §7.6.4.4.6)
+    /// under nothing at all: an empty <see cref="PdfEncryptionSettings.OwnerPassword"/> next to a
+    /// non-empty <see cref="PdfEncryptionSettings.UserPassword"/> derives the owner values from the
+    /// empty string, so anyone who opens the document with no password authenticates as owner and
+    /// every permission the caller restricted is theirs to ignore. Both passwords empty is left
+    /// alone — an unprotected document is legitimate — and so is a null <c>OwnerPassword</c>, which
+    /// is the documented fallback to the user password.
+    ///
+    /// Shared by the two shipped entry points that can produce this /O: this constructor, and
+    /// <see cref="VellumPdf.Document.PdfDocument.Encrypt"/>, which calls it so the failure surfaces
+    /// at the call site rather than at <c>Save()</c>.
+    /// </summary>
+    internal static void ThrowIfOwnerPasswordWouldBeIgnored(PdfEncryptionSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+
+        if (settings.OwnerPassword is { Length: 0 } && !string.IsNullOrEmpty(settings.UserPassword))
+        {
+            throw new ArgumentException(
+                "OwnerPassword is empty while UserPassword is set. That derives /O from the empty "
+                + "string, so the document would open at owner privilege to anyone supplying no "
+                + "password at all. Supply a distinct OwnerPassword so Permissions binds on someone "
+                + "who doesn't already know the user password — passing null instead makes the user "
+                + "password serve as owner too, which still leaves Permissions unenforced against "
+                + "anyone who can open the document.",
+                nameof(settings));
+        }
     }
 
     // ── Password encoding ────────────────────────────────────────────────────
