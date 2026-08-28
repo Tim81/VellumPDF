@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-08-28
+
 ### Breaking changes
 
 - **`PdfDictionary.Set`, `TryGet` and `Get` now throw `ArgumentNullException` for a `null` key.**
@@ -1230,6 +1232,7 @@ few small additions. No public API was removed.
   fields.
 
 [Unreleased]: https://github.com/Tim81/VellumPDF/compare/v2.1.0...HEAD
+[2.2.0]: https://github.com/Tim81/VellumPDF/releases/tag/v2.2.0
 [2.1.0]: https://github.com/Tim81/VellumPDF/releases/tag/v2.1.0
 [2.0.0]: https://github.com/Tim81/VellumPDF/releases/tag/v2.0.0
 [1.11.0]: https://github.com/Tim81/VellumPDF/releases/tag/v1.11.0
