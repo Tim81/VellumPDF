@@ -13,8 +13,9 @@ namespace VellumPdf.Kernel.Tests;
 /// is checked, on a file anyone can send, but the fix lives entirely in <see cref="PdfDictionary"/>,
 /// so it is tested here rather than only through the reader.
 ///
-/// Before this fix, building a 140,000-key dictionary directly took ~40.6s on the development
-/// machine (Release build); <see cref="VellumPdf.Reader.Tests.EncryptDictionaryDenialOfServiceTests"/>
+/// Before this fix, building a 140,000-key dictionary directly took two to three times this test's
+/// 10s budget, measured on the development machine (Release build);
+/// <see cref="VellumPdf.Reader.Tests.EncryptDictionaryDenialOfServiceTests"/>
 /// pins the same defect reached the way #208 actually cares about — through a hostile
 /// <c>/Encrypt</c> dictionary, before <c>PdfReader.Open</c> checks any password.
 /// </summary>
@@ -28,9 +29,9 @@ public sealed class PdfDictionaryIndexTests
     }
 
     /// <summary>
-    /// 140,000 keys, well past the point where a linear scan would still finish in time: measured at
-    /// ~40.6s before this fix, against this test's 10s budget. Every key is read back afterwards to
-    /// confirm the index (not just the build) is correct, not merely fast.
+    /// 140,000 keys, well past the point where a linear scan would still finish in time: two to three
+    /// times this test's 10s budget before this fix, measured on the development machine. Every key
+    /// is read back afterwards to confirm the index (not just the build) is correct, not merely fast.
     /// </summary>
     [Fact(Timeout = 10_000)]
     public void LargeDictionary_buildsAndLooksUp_underTimeout()
@@ -110,10 +111,11 @@ public sealed class PdfDictionaryIndexTests
     }
 
     /// <summary>
-    /// <see cref="PdfDictionary.ShallowCopy"/> must carry the index across, or the copy silently falls
-    /// back to a linear scan — a performance regression, not a correctness one, but still worth
-    /// pinning since ShallowCopy runs on every stream write. Checked by confirming the copy is
-    /// independent: mutating the copy after the copy must not affect the source's lookups.
+    /// A copy taken past the threshold is independent of its source: mutating the copy must not
+    /// affect the source's lookups. <see cref="ShallowCopy_pastTheThreshold_carriesTheIndex"/> is the
+    /// sibling that pins the index itself carrying across, which this test does not — every
+    /// assertion here still passes with that line deleted, since a copy that fell back to a linear
+    /// scan would still answer independently, just slower.
     /// </summary>
     [Fact]
     public void ShallowCopy_pastTheThreshold_isIndependentlyCorrect()
@@ -136,6 +138,31 @@ public sealed class PdfDictionaryIndexTests
         Assert.Equal(12345, Assert.IsType<PdfInteger>(copyValue).Value);
         Assert.True(copy.TryGet(new PdfName("NewKey"), out var newValue));
         Assert.Equal(-1, Assert.IsType<PdfInteger>(newValue).Value);
+    }
+
+    /// <summary>
+    /// <see cref="PdfDictionary.ShallowCopy"/> must carry the index across, or the copy silently
+    /// falls back to a linear scan on every lookup. A sparse sample cannot show that: a stride wide
+    /// enough to keep even a linear scan fast would not separate "index carried over" from "index
+    /// dropped" within the time budget either way, so this reads back all 140,000 keys. Without the
+    /// carry-over that is on the order of 140,000² comparisons — tens of seconds; with it, well under
+    /// a second.
+    /// </summary>
+    [Fact(Timeout = 10_000)]
+    public void ShallowCopy_pastTheThreshold_carriesTheIndex()
+    {
+        const int count = 140_000;
+        var source = new PdfDictionary();
+        for (var i = 0; i < count; i++)
+            source.Set(new PdfName("K" + i), new PdfInteger(i));
+
+        var copy = source.ShallowCopy();
+
+        for (var i = 0; i < count; i++)
+        {
+            Assert.True(copy.TryGet(new PdfName("K" + i), out var value));
+            Assert.Equal(i, Assert.IsType<PdfInteger>(value).Value);
+        }
     }
 
     /// <summary>
@@ -225,5 +252,31 @@ public sealed class PdfDictionaryIndexTests
         Assert.True(copy.TryGet(new PdfName("K5"), out var copyValue));
         Assert.Equal(5, Assert.IsType<PdfInteger>(copyValue).Value);
         Assert.False(copy.TryGet(new PdfName("NewKey"), out _));
+    }
+
+    /// <summary>
+    /// <c>Set</c>, <c>TryGet</c> and <c>Get</c> reject a <see langword="null"/> key rather than
+    /// answering differently depending on which side of the index threshold the dictionary sits — see
+    /// the comment on <c>Set</c> for why. Checked both below and above the threshold, since the guard
+    /// existing at all is what makes the two sides agree; a regression that moved it into only one of
+    /// the two branches would still pass a test that checked a single dictionary size.
+    /// </summary>
+    [Theory]
+    [InlineData(4)] // below IndexThreshold: the linear-scan path
+    [InlineData(20)] // above IndexThreshold: the _index path
+    public void NullKey_throwsArgumentNullException_fromSetTryGetAndGet(int entryCount)
+    {
+        var dict = new PdfDictionary();
+        for (var i = 0; i < entryCount; i++)
+            dict.Set(new PdfName("K" + i), new PdfInteger(i));
+
+        var setEx = Assert.Throws<ArgumentNullException>(() => dict.Set(null!, new PdfInteger(0)));
+        Assert.Equal("key", setEx.ParamName);
+
+        var tryGetEx = Assert.Throws<ArgumentNullException>(() => dict.TryGet(null!, out _));
+        Assert.Equal("key", tryGetEx.ParamName);
+
+        var getEx = Assert.Throws<ArgumentNullException>(() => dict.Get(null!));
+        Assert.Equal("key", getEx.ParamName);
     }
 }

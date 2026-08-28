@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Breaking changes
+
+- **`PdfDictionary.Set`, `TryGet` and `Get` now throw `ArgumentNullException` for a `null` key.**
+  Previously `TryGet(null, out _)` returned `false`, `Get(null)` returned `null`, and
+  `Set(null, value)` appended an entry that only failed later — with a `NullReferenceException` out
+  of `WriteTo`, once the dictionary was serialised. All three are Stable API, which is why this is
+  recorded here rather than under Security, where the rest of this fix lives: without the guard, a
+  `null` key would behave differently depending on which side of the internal indexing threshold a
+  dictionary sits — returning `false` below it, throwing above it — exactly the property that
+  threshold is supposed to be free to move without changing what callers observe. (#208)
+
 ### Security
 
 - **`PdfDictionary` lookup is no longer quadratic in the key count.** `Set` and `TryGet` now build a
