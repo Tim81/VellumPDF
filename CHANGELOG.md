@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Security
+
+- **An empty `OwnerPassword` beside a real `UserPassword` now throws instead of producing a file.**
+  `??` treats an empty string as a value, not as "unset" — so `OwnerPassword = ""` with a non-empty
+  `UserPassword` sealed `/O` and `/OE` (ISO 32000-2 §7.6.4.4.6, Algorithm 9) under the empty
+  password rather than falling back to the user password. `EncryptionSetup.TryAuthenticate` tries
+  the owner password before the user password, so any reader opening such a file with no password
+  at all authenticated as owner and could ignore every permission the caller set. Both passwords
+  empty is unchanged — an unprotected document is legitimate, and ISO 32000-2 permits an empty
+  owner password — and `OwnerPassword = null` is unchanged too, since that is the documented
+  fallback to the user password. The guard sits in `StandardSecurityHandler`'s constructor, which is
+  Stable API and callable directly, and in `PdfDocument.Encrypt`, so the failure surfaces at the
+  call site rather than at `Save()`; `VellumPdf.Layout.Document.Encrypt` inherits it by delegation.
+  (#211)
+
 ## [2.1.0] - 2026-08-28
 
 ### Breaking changes

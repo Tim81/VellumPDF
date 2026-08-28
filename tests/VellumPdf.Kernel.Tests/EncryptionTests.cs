@@ -369,6 +369,11 @@ public sealed class EncryptionTests
         Assert.Equal(48, handler.O.Length);
     }
 
+    /// <summary>
+    /// Both passwords empty is a document with no protection at all, which ISO 32000-2 permits and
+    /// the #211 guard must leave alone: it rejects an empty <c>OwnerPassword</c> only when a real
+    /// <c>UserPassword</c> sits beside it. Covers both entry points, since both carry the guard.
+    /// </summary>
     [Fact]
     public void Empty_password_is_accepted()
     {
@@ -377,8 +382,69 @@ public sealed class EncryptionTests
             UserPassword = string.Empty,
             OwnerPassword = string.Empty,
         };
+
         var handler = new StandardSecurityHandler(settings);
         Assert.Equal(48, handler.U.Length);
+        Assert.Equal(48, handler.O.Length);
+
+        using var doc = new PdfDocument();
+        var exception = Record.Exception(() => doc.Encrypt(settings));
+        Assert.Null(exception);
+    }
+
+    /// <summary>
+    /// An empty <c>OwnerPassword</c> beside a real <c>UserPassword</c> would derive /O from the
+    /// empty string (see <see cref="DocumentWithNoOwnerPassword_doesNotOpenUnderTheEmptyPassword"/>
+    /// for what that does at read time), so both shipped entry points that can produce it —
+    /// <see cref="StandardSecurityHandler"/>'s public constructor and <see cref="PdfDocument.Encrypt"/>
+    /// — refuse it rather than the file silently opening at owner privilege to anyone.
+    /// </summary>
+    [Fact]
+    public void Encrypt_withEmptyOwnerPassword_besideARealUserPassword_throws()
+    {
+        var settings = new PdfEncryptionSettings
+        {
+            UserPassword = "hunter2",
+            OwnerPassword = string.Empty,
+        };
+
+        var fromHandler = Assert.Throws<ArgumentException>(() => new StandardSecurityHandler(settings));
+        Assert.Equal("settings", fromHandler.ParamName);
+
+        using var doc = new PdfDocument();
+        var fromDocument = Assert.Throws<ArgumentException>(() => doc.Encrypt(settings));
+        Assert.Equal("settings", fromDocument.ParamName);
+    }
+
+    [Fact]
+    public void Encrypt_withNullOwnerPassword_stillUsesTheUserPassword()
+    {
+        var settings = new PdfEncryptionSettings { UserPassword = "hunter2", OwnerPassword = null };
+
+        var handler = new StandardSecurityHandler(settings);
+        Assert.Equal(48, handler.O.Length);
+
+        using var doc = new PdfDocument();
+        var exception = Record.Exception(() => doc.Encrypt(settings));
+        Assert.Null(exception);
+    }
+
+    /// <summary>
+    /// A permissions-only document — empty user password, a real owner password — must still tell
+    /// the two apart: opening it with no password at all has to land as user access, never owner.
+    /// This is the mirror image of the case <see cref="Encrypt_withEmptyOwnerPassword_besideARealUserPassword_throws"/>
+    /// guards against, not an instance of it: the empty password here is the user password, so /O
+    /// is sealed under the real owner password and this reads correctly with the guard absent. It
+    /// pins the legitimate case the guard must not disturb.
+    /// </summary>
+    [Fact]
+    public void PermissionsOnlyDocument_opensWithNoPasswordAtUserAccess_notOwner()
+    {
+        var bytes = SaveEncrypted(userPassword: string.Empty, ownerPassword: "the-owner-password");
+
+        using var reader = PdfReader.Open(bytes);
+
+        Assert.False(reader.Encryption!.IsOwnerAccess);
     }
 
     [Fact]

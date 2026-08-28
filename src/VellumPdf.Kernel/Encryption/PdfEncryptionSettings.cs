@@ -22,7 +22,12 @@ public sealed class PdfEncryptionSettings
     public string? UserPassword { get; init; }
 
     /// <summary>
-    /// Owner password. When null the user password is used as the owner password.
+    /// Owner password, meaning full access — permission restrictions in <see cref="Permissions"/>
+    /// bind everyone else. Null falls back to <see cref="UserPassword"/> as the owner password too,
+    /// so a document with only a user password still restricts a viewer who supplies it. Empty is
+    /// accepted only when <see cref="UserPassword"/> is also empty or null, matching that fallback;
+    /// an empty owner password beside a non-empty user password is rejected, because it would derive
+    /// <c>/O</c> from nothing and let anyone open the document with no password at owner privilege.
     ///
     /// <para><b>Character-set note:</b> passwords are encoded as UTF-8 and truncated to
     /// 127 bytes before use. This implementation does not apply SASLprep normalisation
