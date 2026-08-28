@@ -504,10 +504,15 @@ public sealed class PdfDocument : IDisposable
     /// </summary>
     /// <exception cref="ObjectDisposedException">The document has been disposed.</exception>
     /// <exception cref="ArgumentNullException"><paramref name="settings"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="settings"/> has an empty <see cref="PdfEncryptionSettings.OwnerPassword"/>
+    /// beside a non-empty <see cref="PdfEncryptionSettings.UserPassword"/>.
+    /// </exception>
     public void Encrypt(PdfEncryptionSettings settings)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(settings);
+        StandardSecurityHandler.ThrowIfOwnerPasswordWouldBeIgnored(settings);
         _encryptionSettings = settings;
     }
 
