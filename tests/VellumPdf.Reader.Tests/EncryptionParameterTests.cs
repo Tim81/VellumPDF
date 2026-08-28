@@ -1054,7 +1054,17 @@ public sealed class EncryptionParameterTests
         return Encoding.Latin1.GetBytes(result);
     }
 
-    private static readonly byte[] Id0 = [.. Enumerable.Range(0, 16).Select(i => (byte)i)];
+    // Shared with EncryptDictionaryDenialOfServiceTests, which builds a document the same way and
+    // needs the same trailer /ID to reuse enc-rc4-128.pdf's /O and /U below.
+    internal static readonly byte[] Id0 = [.. Enumerable.Range(0, 16).Select(i => (byte)i)];
+
+    // enc-rc4-128.pdf's /O and /U (V2, R3), sealed under user password "u" and owner password "o"
+    // against Id0 — Algorithm 2 mixes owner password, user password, /O (as an input to /U) and
+    // /ID[0] together, so these values only authenticate as that exact combination, not on their
+    // own. Shared with EncryptDictionaryDenialOfServiceTests so the DoS fixture's provenance stays
+    // traceable to a real fixture rather than a second, independently-asserted pair.
+    internal const string Rc4128_O = "2a2f0a1990192c60114730bdcd39f37828a53c89a340dd473c85299dc5258e1c";
+    internal const string Rc4128_U = "6c8913ac9fc602eb1aad2a1ec614bee90021446990b9e4114071a4d9104984c1";
 
     // Same byte count in and out, so every offset in the cross-reference table stays correct and the
     // document under test differs from the fixture in exactly the one way the test is about.
@@ -1088,7 +1098,9 @@ public sealed class EncryptionParameterTests
         return Encoding.Latin1.GetBytes(patched);
     }
 
-    private static byte[] BuildWithEncryptDict(
+    // Internal rather than private: EncryptDictionaryDenialOfServiceTests builds its huge /Encrypt
+    // fixture the same way and would otherwise carry a second copy of this method.
+    internal static byte[] BuildWithEncryptDict(
         string encryptDict,
         string thirdObject = "<< /Probe 1 >>",
         params string[] extraObjects)

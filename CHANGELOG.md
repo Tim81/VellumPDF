@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Breaking changes
+
+- **`PdfDictionary.Set`, `TryGet` and `Get` now throw `ArgumentNullException` for a `null` key.**
+  Previously `TryGet(null, out _)` returned `false`, `Get(null)` returned `null`, and
+  `Set(null, value)` appended an entry that only failed later — with a `NullReferenceException` out
+  of `WriteTo`, once the dictionary was serialised. All three are Stable API, which is why this is
+  recorded here rather than under Security, where the rest of this fix lives: without the guard, a
+  `null` key would behave differently depending on which side of the internal indexing threshold a
+  dictionary sits — returning `false` below it, throwing above it — exactly the property that
+  threshold is supposed to be free to move without changing what callers observe. (#208)
+
 ### Security
 
 - **`OwnerPassword = ""` beside a real `UserPassword` produced a file with no real password
@@ -34,6 +45,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   re-deriving `/O` and `/OE`, which needs a real owner password behind them from the start. Affected
   documents must be re-encrypted from the original plaintext, with a distinct `OwnerPassword` this
   time. (#211)
+
+- **`PdfDictionary` lookup is no longer quadratic in the key count.** `Set` and `TryGet` now build a
+  hash index once a dictionary passes 16 entries, rather than scanning the whole entry list on every
+  call. The `/Encrypt` dictionary is parsed, and copied again by `EncryptionSetup.DereferenceValues`,
+  before any password is checked, on a file anyone can send, so a hostile document naming tens of
+  thousands of keys there previously cost time quadratic in that count with nothing to show for it:
+  opening a fixture with an 80,000-key `/Encrypt` dictionary took about 27 seconds before this fix and
+  well under a second after. `EncryptionSetup`'s `/CF` cap (`MaxCryptFilters`, still 64) keeps its
+  comment but loses the reason it used to give: every term that touches `/Encrypt` is linear now, so
+  the cap no longer bears any of the weight of bounding this cost. It stays because a real document
+  names one or two crypt filters, not sixty-four. (#208)
 
 ## [2.1.0] - 2026-08-28
 
