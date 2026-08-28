@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-08-28
+
 ### Breaking changes
 
 - **A password-protected document now reaches `PdfPreflight` as `PdfPasswordException`, which no
@@ -1176,7 +1178,8 @@ few small additions. No public API was removed.
   headers, and no unbounded allocations driven by attacker-controlled length
   fields.
 
-[Unreleased]: https://github.com/Tim81/VellumPDF/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/Tim81/VellumPDF/compare/v2.1.0...HEAD
+[2.1.0]: https://github.com/Tim81/VellumPDF/releases/tag/v2.1.0
 [2.0.0]: https://github.com/Tim81/VellumPDF/releases/tag/v2.0.0
 [1.11.0]: https://github.com/Tim81/VellumPDF/releases/tag/v1.11.0
 [1.10.0]: https://github.com/Tim81/VellumPDF/releases/tag/v1.10.0

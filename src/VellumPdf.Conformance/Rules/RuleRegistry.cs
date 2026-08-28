@@ -211,7 +211,7 @@ internal static class RuleRegistry
         // Batch B10 — §7.4.2 heading nesting, §7.5 connected headers:
         new UaHeadingNestingRule(),
         new UaTableHeaderRule(),
-        // Batch UA batch (this PR) — §5-3/5-4/5-5, §7.18.1-3, §7.18.4-2, §7.18.6.2-1/-2:
+        // §5-3/5-4/5-5, §7.18.1-3, §7.18.4-2, §7.18.6.2-1/-2:
         new UaMediaClipRule(),
         new UaFormFieldAltRule(),
         new UaFormStructElemRule(),
