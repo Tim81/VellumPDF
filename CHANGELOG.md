@@ -14,9 +14,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   before any password is checked, on a file anyone can send, so a hostile document naming tens of
   thousands of keys there previously cost time quadratic in that count with nothing to show for it:
   opening a fixture with an 80,000-key `/Encrypt` dictionary took about 27 seconds before this fix and
-  well under a second after. `EncryptionSetup`'s `/CF` cap (`MaxCryptFilters`, still 64) stays for the
-  same reason it always had one (a real document names one or two crypt filters, not sixty-four), but
-  no longer carries the whole burden of bounding this cost. (#208)
+  well under a second after. `EncryptionSetup`'s `/CF` cap (`MaxCryptFilters`, still 64) keeps its
+  comment but loses the reason it used to give: every term that touches `/Encrypt` is linear now, so
+  the cap no longer bears any of the weight of bounding this cost. It stays because a real document
+  names one or two crypt filters, not sixty-four. (#208)
 
 ## [2.1.0] - 2026-08-28
 

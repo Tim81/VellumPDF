@@ -137,4 +137,93 @@ public sealed class PdfDictionaryIndexTests
         Assert.True(copy.TryGet(new PdfName("NewKey"), out var newValue));
         Assert.Equal(-1, Assert.IsType<PdfInteger>(newValue).Value);
     }
+
+    /// <summary>
+    /// A dictionary holding exactly <c>IndexThreshold</c> entries still answers correctly. At this
+    /// count <c>BuildIndex</c> has not run — it fires only once a <c>Set</c> pushes past the
+    /// threshold — so the linear scan is what adds the 16th entry and looks it back up.
+    ///
+    /// This pins behaviour at the boundary, not the fencepost itself: moving the check from
+    /// <c>&gt;</c> to <c>&gt;=</c> would build the index one entry sooner and every assertion here
+    /// would still pass, because both paths return the same answers. That is the point — the
+    /// threshold is a tuning choice, and no observable behaviour may depend on which side of it a
+    /// dictionary sits.
+    /// </summary>
+    [Fact]
+    public void DictionaryAtExactlyTheThreshold_isStillCorrect()
+    {
+        const int count = 16; // PdfDictionary.IndexThreshold itself
+        var dict = new PdfDictionary();
+        for (var i = 0; i < count; i++)
+            dict.Set(new PdfName("K" + i), new PdfInteger(i));
+
+        for (var i = 0; i < count; i++)
+        {
+            Assert.True(dict.TryGet(new PdfName("K" + i), out var value));
+            Assert.Equal(i, Assert.IsType<PdfInteger>(value).Value);
+        }
+        Assert.False(dict.TryGet(new PdfName("NotPresent"), out _));
+
+        dict.Set(new PdfName("K5"), new PdfInteger(999));
+        Assert.True(dict.TryGet(new PdfName("K5"), out var replaced));
+        Assert.Equal(999, Assert.IsType<PdfInteger>(replaced).Value);
+        Assert.Equal(count, dict.Entries.Count); // replace, not append
+    }
+
+    /// <summary>
+    /// A dictionary copied while still below the threshold, then grown past it in the copy alone,
+    /// must build its own index correctly and leave the source's (still below-threshold, still
+    /// linear-scanning) state untouched — the transition has to work whether the index already
+    /// existed at copy time (covered above) or is built later from a copy that started without one.
+    /// </summary>
+    [Fact]
+    public void ShallowCopy_belowThreshold_thenGrownPastItInTheCopy_isCorrect()
+    {
+        const int initialCount = 10; // below the 16-entry threshold
+        var source = new PdfDictionary();
+        for (var i = 0; i < initialCount; i++)
+            source.Set(new PdfName("K" + i), new PdfInteger(i));
+
+        var copy = source.ShallowCopy();
+        for (var i = initialCount; i < 30; i++) // grows the copy past the threshold
+            copy.Set(new PdfName("K" + i), new PdfInteger(i));
+
+        for (var i = 0; i < 30; i++)
+        {
+            Assert.True(copy.TryGet(new PdfName("K" + i), out var value));
+            Assert.Equal(i, Assert.IsType<PdfInteger>(value).Value);
+        }
+
+        Assert.Equal(initialCount, source.Entries.Count);
+        for (var i = 0; i < initialCount; i++)
+            Assert.True(source.TryGet(new PdfName("K" + i), out _));
+        Assert.False(source.TryGet(new PdfName("K" + initialCount), out _));
+    }
+
+    /// <summary>
+    /// <see cref="ShallowCopy_pastTheThreshold_isIndependentlyCorrect"/> mutates the copy and re-reads
+    /// the source; this checks the other direction, mutating the source after the copy is taken and
+    /// re-reading the copy, so a shared <c>_entries</c> list or a shared <c>_index</c> instance would
+    /// be caught either way the aliasing could happen.
+    /// </summary>
+    [Fact]
+    public void ShallowCopy_pastTheThreshold_sourceMutationDoesNotReachTheCopy()
+    {
+        const int count = 20;
+        var source = new PdfDictionary();
+        for (var i = 0; i < count; i++)
+            source.Set(new PdfName("K" + i), new PdfInteger(i));
+
+        var copy = source.ShallowCopy();
+
+        source.Set(new PdfName("K5"), new PdfInteger(54321));
+        source.Set(new PdfName("NewKey"), new PdfInteger(-1));
+
+        Assert.True(source.TryGet(new PdfName("K5"), out var sourceValue));
+        Assert.Equal(54321, Assert.IsType<PdfInteger>(sourceValue).Value);
+
+        Assert.True(copy.TryGet(new PdfName("K5"), out var copyValue));
+        Assert.Equal(5, Assert.IsType<PdfInteger>(copyValue).Value);
+        Assert.False(copy.TryGet(new PdfName("NewKey"), out _));
+    }
 }

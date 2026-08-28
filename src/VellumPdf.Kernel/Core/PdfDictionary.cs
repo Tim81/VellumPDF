@@ -6,12 +6,19 @@ namespace VellumPdf.Core;
 /// <summary>PDF dictionary object (ISO 32000-2 §7.3.7).</summary>
 public sealed class PdfDictionary : PdfObject
 {
-    // A real PDF dictionary carries a handful of keys — EncryptionSetup.cs measures the /CF case at
-    // one or two — and below roughly this count a linear scan over a contiguous list outperforms a
-    // hash lookup: no second allocation, no hashing, good cache behaviour. Past it, Set/TryGet switch
-    // to _index instead. The threshold is a tuning choice, not a correctness one: an /Encrypt
-    // dictionary is parsed and copied before any password is checked (#208), so a hostile file that
-    // declares thousands of keys must not cost time quadratic in the key count either way.
+    // Invariant: while _index is non-null, it maps every key to that key's exact position in
+    // _entries. Nothing may append to, remove from, or reorder _entries without updating _index in
+    // the same step. Break that and the failure is silent and asymmetric: WriteTo iterates _entries
+    // and emits whatever is there, while TryGet consults _index and trusts it, so the two disagree
+    // with no exception to catch it.
+    //
+    // A real PDF dictionary carries a handful of keys — a /CF sub-dictionary names one or two crypt
+    // filters, for instance — and below roughly this count a linear scan over a contiguous list
+    // outperforms a hash lookup: no second allocation, no hashing, good cache behaviour. Past it,
+    // Set/TryGet switch to _index instead. The threshold is a tuning choice, not a correctness one:
+    // an /Encrypt dictionary is parsed and copied before any password is checked (#208), so a
+    // hostile file that declares thousands of keys must not cost time quadratic in the key count
+    // either way.
     private const int IndexThreshold = 16;
 
     private readonly List<KeyValuePair<PdfName, PdfObject>> _entries = [];
@@ -20,6 +27,8 @@ public sealed class PdfDictionary : PdfObject
     /// <summary>Sets <paramref name="key"/> to <paramref name="value"/>, replacing any existing entry, and returns this dictionary.</summary>
     public PdfDictionary Set(PdfName key, PdfObject value)
     {
+        ArgumentNullException.ThrowIfNull(key);
+
         if (_index is not null)
         {
             if (_index.TryGetValue(key, out var i))
@@ -64,6 +73,8 @@ public sealed class PdfDictionary : PdfObject
     /// <summary>Gets the value for <paramref name="key"/>; returns <see langword="true"/> when present.</summary>
     public bool TryGet(PdfName key, out PdfObject? value)
     {
+        ArgumentNullException.ThrowIfNull(key);
+
         if (_index is not null)
         {
             if (_index.TryGetValue(key, out var i))
