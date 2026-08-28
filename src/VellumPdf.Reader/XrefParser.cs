@@ -8,7 +8,7 @@ using VellumPdf.Core;
 namespace VellumPdf.Reader;
 
 /// <summary>
-/// The byte boundaries of a single PDF revision as recorded in the xref chain.
+/// Where a single PDF revision's cross-reference section begins, as recorded in the xref chain.
 /// Oldest revision is index 0 in the <see cref="XrefParser.Parse"/> result list.
 /// </summary>
 internal readonly struct XrefRevision
@@ -16,13 +16,9 @@ internal readonly struct XrefRevision
     /// <summary>Byte offset of this revision's xref table or xref stream.</summary>
     public int XrefOffset { get; }
 
-    /// <summary>The startxref value that pointed to this revision's xref table or stream.</summary>
-    public int StartXrefOffset { get; }
-
-    internal XrefRevision(int xrefOffset, int startXrefOffset)
+    internal XrefRevision(int xrefOffset)
     {
         XrefOffset = xrefOffset;
-        StartXrefOffset = startXrefOffset;
     }
 }
 
@@ -142,7 +138,6 @@ internal sealed class XrefParser
         var anyRevisionDeclaredEncrypt = false;
 
         var currentOffset = xrefOffset;
-        var startxrefForCurrent = xrefOffset;
         var revisionCount = 0;
 
         while (true)
@@ -154,7 +149,7 @@ internal sealed class XrefParser
                 throw new InvalidDataException(
                     "Malformed PDF: xref chain exceeds 100 revisions; aborting to prevent infinite loop.");
 
-            revisionsNewestFirst.Add(new XrefRevision(currentOffset, startxrefForCurrent));
+            revisionsNewestFirst.Add(new XrefRevision(currentOffset));
 
             var trailer = ParseOneRevision(data, currentOffset, xref, freed, seenOffsets, crossReferenceStreamOffsets);
             newestTrailer ??= trailer;
@@ -168,7 +163,6 @@ internal sealed class XrefParser
                 if (prevValue < 0 || prevValue >= data.Length)
                     throw new InvalidDataException(
                         $"Malformed PDF: /Prev offset {prevValue} is out of range.");
-                startxrefForCurrent = (int)prevValue;
                 currentOffset = (int)prevValue;
             }
             else

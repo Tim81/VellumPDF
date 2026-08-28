@@ -295,22 +295,6 @@ internal sealed class StandardSecurityDecryptor
             udata: _u.AsSpan(0, 48), expectedHash: _o.AsSpan(0, 32), wrapped: _oe!, out fileKey);
     }
 
-    /// <summary>
-    /// Tries <paramref name="passwordBytes"/> as the user password, then as the owner password.
-    /// Most encrypted PDFs set an empty user password and rely on the owner password (or none) to
-    /// restrict permissions, so opening one with no password supplied has to succeed here — an
-    /// empty <paramref name="passwordBytes"/> is a legitimate user password, not a missing one.
-    /// </summary>
-    /// <remarks>
-    /// User first, then owner — the opposite of the order <c>EncryptionSetup.TryAuthenticate</c>
-    /// uses, and immaterial here: this answers "does this password open the document at all?" and
-    /// reports nothing about which of the two matched. Where that distinction is reported, the order
-    /// decides what a password satisfying both is called, which is why the reader picks its own.
-    /// </remarks>
-    public bool TryComputeFileKey(byte[] passwordBytes, [NotNullWhen(true)] out byte[]? fileKey)
-        => TryComputeFileKeyFromUserPassword(passwordBytes, out fileKey)
-            || TryComputeFileKeyFromOwnerPassword(passwordBytes, out fileKey);
-
     // ── R>=5: ISO 32000-2 Algorithm 2.A ──────────────────────────────────────
 
     private bool TryUnwrapFileKeyAtRevision5Plus(
