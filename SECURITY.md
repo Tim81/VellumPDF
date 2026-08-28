@@ -23,13 +23,14 @@ trailer `/ID` are inputs to the key derivation, and `/Filter`, `/V` and `/R` dec
 runs — but every one of those is range-checked first, no length, offset or filter name taken from
 it is acted on unvalidated, and the number of crypt filters it may declare is capped.
 
-One limit is worth stating exactly, because "fails cleanly" is not the same as "fails quickly":
-dictionary lookup is a linear scan, so building a dictionary with very many keys costs time
-quadratic in the key count. A hostile file can spend a reader's time that way — measured here at
-about 0.45 s for eight thousand keys and 1.4 s for sixteen thousand — without allocating unusually
-or failing. Bounding input size remains the caller's responsibility. The reader bounds
-indirect-reference nesting and AcroForm field-tree depth, rejects object-stream cycles, and
-range-checks every offset taken from a cross-reference table before using it.
+Dictionary lookup was a linear scan through v2.1, so a `/Encrypt` dictionary carrying very many keys
+cost time quadratic in the key count before its password was ever checked — worth stating exactly,
+because "fails cleanly" is not the same as "fails quickly". `PdfDictionary` now builds a hash index
+once a dictionary passes 16 entries, so lookup stays constant and construction stays linear past that
+point: building one directly with a million keys takes about 0.5 s, measured here (#208). Bounding
+input size remains the caller's responsibility more generally. The reader bounds indirect-reference
+nesting and AcroForm field-tree depth, rejects object-stream cycles, and range-checks every offset
+taken from a cross-reference table before using it.
 
 A crash, hang, or unbounded allocation on malformed or hostile input is a bug. Please report
 it, whichever of those entry points reaches it.

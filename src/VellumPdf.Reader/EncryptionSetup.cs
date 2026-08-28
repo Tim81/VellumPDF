@@ -334,19 +334,15 @@ internal static class EncryptionSetup
 
     // ISO 32000-1 Table 20 describes /CF as the crypt filters "used in the document"; a real one names
     // one or two (/StdCF, sometimes an /EFF filter beside it), and /StmF, /StrF and /EFF can select
-    // at most three between them. This cap is far above anything a producer writes and far below the
-    // point where the work starts to matter.
+    // at most three between them. This cap is far above anything a producer writes.
     //
-    // It exists because everything in this method runs BEFORE the password is checked, on a file
-    // anyone can send, and PdfDictionary is a linear-scan list — so anything that builds one is
-    // quadratic in its entry count.
-    //
-    // Be clear about what this does NOT bound. Three quadratic terms are in play: the parser building
-    // the /Encrypt dictionary, DereferenceValues rebuilding it, and the /CF copy below. Only the last
-    // is capped. A document with 128 thousand entries directly in /Encrypt — no /CF at all — still
-    // costs about fifty seconds, and no cap here changes that, because both other terms run over the
-    // whole dictionary. The cap keeps a /CF-shaped attack from being the cheapest way to reach that
-    // cost; SECURITY.md states the residual outright rather than implying it is closed.
+    // It used to also be load-bearing against a denial of service: everything in this method runs
+    // BEFORE the password is checked, on a file anyone can send, and PdfDictionary was a linear-scan
+    // list, so building one was quadratic in its entry count — a /CF with no cap would have been the
+    // cheapest way to reach that cost. PdfDictionary now indexes past 16 entries (#208), so the parser
+    // building /Encrypt, DereferenceValues rebuilding it, and the /CF copy below are all linear in
+    // their entry count regardless of this cap. What is left for the cap to catch is a document that
+    // is simply malformed by Table 20's own reading of /CF, not one built to cost more than it should.
     private const int MaxCryptFilters = 64;
 
     private static PdfDictionary DereferenceValues(PdfDictionary encryptDict, Func<PdfObject?, PdfObject?>? resolve)

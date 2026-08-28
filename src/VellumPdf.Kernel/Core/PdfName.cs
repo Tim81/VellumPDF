@@ -153,6 +153,15 @@ public sealed class PdfName : PdfObject, IEquatable<PdfName>
     public bool Equals(PdfName? other) => other is not null && Value == other.Value;
     /// <inheritdoc />
     public override bool Equals(object? obj) => obj is PdfName n && Equals(n);
+    // string.GetHashCode is Marvin, seeded per process — the seed differs between two runs of the
+    // same executable. PdfDictionary's #208 fix relies on that: past its indexing threshold it keys
+    // a Dictionary<PdfName, int> on this hash, and Dictionary's own defence against an adversarial
+    // key set — falling back to a randomizing comparer after enough collisions — only exists for
+    // TKey == string, not for a wrapper type like this one. A hostile file cannot precompute names
+    // that collide under this hash without also knowing the seed, so it cannot drive the index back
+    // to a linear scan. Replacing this with a stable hash (e.g. for deterministic serialisation or
+    // interning) would remove that protection silently — every existing test uses sequential,
+    // non-colliding keys, so none of them would notice.
     /// <inheritdoc />
     public override int GetHashCode() => Value.GetHashCode(StringComparison.Ordinal);
     /// <summary>Returns the name in PDF syntax (<c>/Value</c>).</summary>
