@@ -124,10 +124,17 @@ internal sealed class Jpeg2000Rule : IConformanceRule
                 if (!IsJpxDecodeImage(context, stream.Dictionary))
                     continue;
 
-                // The raw (undecoded) stream body is the JP2 / JPEG2000 data.
-                var jp2Bytes = stream.RawBody.Span;
-                if (jp2Bytes.IsEmpty)
+                // JPXDecode is an image filter this library never decodes further, so what this
+                // rule wants is the RAW JP2 / JPEG2000 codestream bytes it parses itself — but,
+                // on an encrypted document, DECRYPTED first. stream.RawBody is the verbatim file
+                // bytes (ciphertext there) and must not be read directly; DecryptedRawBody is the
+                // accessor for exactly this "raw but decrypted" case (unlike DecodeStream, which
+                // returns null whenever an image filter is present). See the design notes on
+                // ParsedStream.RawBody and PdfDocumentReader.DecryptedStreamView.
+                var jp2Decoded = context.DecryptedRawBody(stream);
+                if (jp2Decoded.IsEmpty)
                     continue;
+                var jp2Bytes = jp2Decoded.Span;
 
                 try
                 {

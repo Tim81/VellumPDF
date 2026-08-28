@@ -49,7 +49,7 @@ public sealed class ConformanceCatalogTests
         //   - Partial (common path implemented + veraPDF-verified, residual infeasible clean-room):
         //     6.1.13-10, 6.2.11.3.1-1, 7.21.3.1-1 — predefined-CJK-CMap sub-conditions (#139).
         //   - OutOfScope (not implemented at all): 6.8-5 (needs a PDF/A-1 profile, #140),
-        //     7.16-1 (needs reader decryption, #138).
+        //     7.16-1 (needs a way to hand a preflight run an encrypted document's password, #138).
         var expectedPartial = new HashSet<string>(StringComparer.Ordinal)
             { "6.1.13-10", "6.2.11.3.1-1", "7.21.3.1-1" };
         var expectedOutOfScope = new HashSet<string>(StringComparer.Ordinal)

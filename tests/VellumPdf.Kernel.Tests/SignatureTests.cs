@@ -668,6 +668,14 @@ public sealed class SignatureTests
         VerifySignatureOrThrow(bytes);
     }
 
+    /// <summary>
+    /// A signer that has not returned holds the whole signing operation open: no document comes back
+    /// while it is outstanding, and the one that eventually does contains that signer's signature.
+    /// This is what "awaits the signer" means, and it is checked by controlling when the signer
+    /// returns rather than by timing it — a stopwatch around a <c>Task.Delay(200)</c> reads 199 often
+    /// enough on Windows to fail a few runs in a hundred, and a suite with a row that fails at random
+    /// reports whatever it likes about the change under test.
+    /// </summary>
     [Fact]
     public async Task SignAsync_withExternalSigner_awaitsSignerWithoutBlocking()
     {
@@ -675,21 +683,27 @@ public sealed class SignatureTests
         using var rsa = cert.GetRSAPrivateKey()!;
         using var publicOnlyCert = X509CertificateLoader.LoadCertificate(cert.Export(X509ContentType.Cert));
 
-        var delay = TimeSpan.FromMilliseconds(200);
+        var signerEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseSigner = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var settings = new PdfSignatureSettings
         {
             Certificate = publicOnlyCert,
-            ExternalSigner = new SimulatedAsyncKmsSigner(rsa, delay: delay),
+            ExternalSigner = new SimulatedAsyncKmsSigner(rsa, gate: async ct =>
+            {
+                signerEntered.SetResult();
+                await releaseSigner.Task.WaitAsync(ct);
+            }),
         };
 
-        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-        var bytes = await SignOnePageDocAsync(publicOnlyCert, "VELLUM_EXTERNAL_SIGNER_DELAY", settings);
-        stopwatch.Stop();
+        var signing = SignOnePageDocAsync(publicOnlyCert, "VELLUM_EXTERNAL_SIGNER_DELAY", settings);
+
+        await signerEntered.Task.WaitAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
+        Assert.False(signing.IsCompleted, "SignAsync produced a document while the external signer was still outstanding.");
+
+        releaseSigner.SetResult();
+        var bytes = await signing.WaitAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
 
         VerifySignatureOrThrow(bytes);
-        Assert.True(
-            stopwatch.Elapsed >= delay,
-            $"Expected SignAsync to genuinely await the external signer's {delay} delay, took {stopwatch.Elapsed}.");
     }
 
     [Fact]

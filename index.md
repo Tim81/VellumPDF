@@ -21,7 +21,7 @@ clean-room from the open **ISO 32000** standard.
 | `VellumPdf.Fonts.Standard14` | Stable | Embeddable, metric-compatible substitutes for the standard-14 fonts, for PDF/A's font-embedding rule. |
 | `VellumPdf.Layout` | Stable | High-level document builder: paragraphs, headings, lists, tables, images, header/footer, pagination. |
 | `VellumPdf.Signing` | Stable | PAdES / PKCS#7 detached digital signatures with RFC-3161 timestamps and long-term validation. |
-| `VellumPdf.Reader` | Preview | Reads existing PDFs (cross-reference tables and streams, hybrid-reference files) and exposes the catalog and signatures. |
+| `VellumPdf.Reader` | Preview | Reads existing PDFs (cross-reference tables and streams, hybrid-reference files, encrypted documents given the password) and exposes the catalog and signatures. |
 | `VellumPdf.Conformance` | Stable | In-process PDF/A-2b/2u/2a and PDF/UA-1 preflight, cross-validated against veraPDF in CI. |
 | `VellumPdf.Cli` | Stable | The `vellum-preflight` command-line validator, with Native-AOT binaries. |
 | `VellumPdf.Barcodes` | Stable | QR (including Micro QR and GS1 Digital Link), Data Matrix, Aztec, PDF417, Code 128/GS1-128, Code 39, EAN/UPC (including UPC-E), and ITF-14, decode-verified against zxing-cpp. |

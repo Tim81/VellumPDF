@@ -39,6 +39,12 @@ internal static class DssBuilder
         ArgumentNullException.ThrowIfNull(signedPdf);
         ArgumentNullException.ThrowIfNull(revocationClient);
 
+        // No password, and no check of reader.Encryption: safe only because this type is internal and
+        // its callers pass bytes this library just signed, and SigningExtensions refuses to sign an
+        // encrypted document. Before decryption landed, /Encrypt threw here and the question could
+        // not arise. It can now — a public "add LTV to an existing signed PDF" entry point would
+        // reach this with someone else's file, and one with an empty user password would open and get
+        // cleartext DSS objects appended to it. Check Encryption before widening the door.
         using var reader = PdfReader.Open(signedPdf);
 
         if (reader.Signatures.Count == 0)

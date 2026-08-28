@@ -259,3 +259,31 @@ internal sealed record EssCertIdV2(
     byte[] CertHash,
     byte[]? IssuerNameDer,
     byte[]? SerialNumberDer);
+
+/// <summary>
+/// Waits for a certificate just added to <c>CurrentUser\CA</c> to become visible to an in-process
+/// chain build, up to a bounded budget. The CryptoAPI default chain engine serves a cached view of
+/// that store, and this assembly keeps the cache hot because every signing test builds a chain — so
+/// without the forced resync a signer intermittently sees a one-element chain and embeds only the
+/// leaf. Roughly one full-suite run in four before this existed.
+/// </summary>
+internal static class CertificateStoreVisibility
+{
+    internal static void WaitFor(System.Security.Cryptography.X509Certificates.X509Certificate2 leaf)
+    {
+        for (var attempt = 0; attempt < 20; attempt++)
+        {
+            using var chain = new System.Security.Cryptography.X509Certificates.X509Chain();
+            chain.ChainPolicy.RevocationMode = System.Security.Cryptography.X509Certificates.X509RevocationMode.NoCheck;
+            chain.ChainPolicy.VerificationFlags = System.Security.Cryptography.X509Certificates.X509VerificationFlags.AllFlags;
+            chain.Build(leaf);
+
+            if (chain.ChainElements.Count >= 2)
+                return;
+
+            Thread.Sleep(25);
+        }
+
+        // Fell through: the test's own assertion is the right place for that to surface.
+    }
+}

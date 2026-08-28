@@ -14,9 +14,20 @@ the caller may not control, so both are in scope:
 None of these render, execute embedded JavaScript, or resolve external references, so the
 risk is confined to what a parser can be made to do: read out of bounds, recurse without
 end, loop forever, or allocate without limit. Every parser is written to fail cleanly
-instead — throwing `InvalidDataException` (corrupt or truncated data) or
-`NotSupportedException` (an unsupported variant, including encrypted documents) rather than
-crashing with an unexpected exception, hanging, or exhausting memory. The reader bounds
+instead — throwing `InvalidDataException` (corrupt or truncated data), `NotSupportedException`
+(an unsupported variant), or `PdfPasswordException` (an encrypted document whose password was
+wrong or absent) rather than crashing with an unexpected exception, hanging, or exhausting
+memory. An encrypted document is parsed with the same limits as any other once its password
+authenticates. The encryption dictionary is necessarily read before that — `/O`, `/P` and the
+trailer `/ID` are inputs to the key derivation, and `/Filter`, `/V` and `/R` decide which algorithm
+runs — but every one of those is range-checked first, no length, offset or filter name taken from
+it is acted on unvalidated, and the number of crypt filters it may declare is capped.
+
+One limit is worth stating exactly, because "fails cleanly" is not the same as "fails quickly":
+dictionary lookup is a linear scan, so building a dictionary with very many keys costs time
+quadratic in the key count. A hostile file can spend a reader's time that way — measured here at
+about 0.45 s for eight thousand keys and 1.4 s for sixteen thousand — without allocating unusually
+or failing. Bounding input size remains the caller's responsibility. The reader bounds
 indirect-reference nesting and AcroForm field-tree depth, rejects object-stream cycles, and
 range-checks every offset taken from a cross-reference table before using it.
 

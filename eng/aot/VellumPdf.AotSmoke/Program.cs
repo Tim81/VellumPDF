@@ -5,6 +5,7 @@ using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using VellumPdf.Barcodes;
+using VellumPdf.Encryption;
 using VellumPdf.Layout;
 using VellumPdf.Layout.Core;
 using VellumPdf.Layout.Elements;
@@ -72,6 +73,99 @@ using (var reader = PdfReader.Open(bytes))
         return 1;
     }
     Console.WriteLine($"OK: Reader parsed the PDF under AOT ({reader.Signatures.Count} signatures).");
+}
+
+// Encryption, both directions, under AOT. The write side runs AES-256 and SHA-2 through Algorithms
+// 8-10; the read side runs Algorithm 2.A back over what it wrote, decrypts /Perms under the file
+// key, and refuses a wrong password. Neither uses reflection, so the risk was never high — but this
+// is the branch's headline feature and it sat outside the gate meant to prove the library AOT-safe.
+//
+// What this CANNOT check is a decrypted stream or string: GetDecodedStreamData and ResolveStream are
+// internal, so nothing outside the assembly can reach the bytes. That is a real limit of the gate,
+// and it is why the unit tests — which can reach them — carry the end-to-end assertions instead.
+using (var edoc = new Document())
+{
+    edoc.Add(new Paragraph("VellumPdf AOT smoke — encrypted."));
+    edoc.Encrypt(new PdfEncryptionSettings
+    {
+        UserPassword = "aot-user",
+        OwnerPassword = "aot-owner",
+        Permissions = PdfPermissions.Print,
+    });
+
+    using var ems = new MemoryStream();
+    edoc.Save(ems);
+    var encrypted = ems.ToArray();
+
+    if (Encoding.Latin1.GetString(encrypted).Contains("/Encrypt", StringComparison.Ordinal) is false)
+    {
+        Console.Error.WriteLine("FAIL: the encrypted document carries no /Encrypt");
+        return 1;
+    }
+
+    using var ereader = PdfReader.Open(encrypted, "aot-user");
+    if (ereader.Encryption is null || ereader.Encryption.KeyLengthBits != 256)
+    {
+        Console.Error.WriteLine($"FAIL: expected a 256-bit key, got {ereader.Encryption?.KeyLengthBits}");
+        return 1;
+    }
+
+    if (ereader.Catalog is null)
+    {
+        Console.Error.WriteLine("FAIL: the encrypted document decrypted to a null catalog");
+        return 1;
+    }
+
+    // /Perms, decrypted. Reading Permissions off the untouched document proves nothing — the reader
+    // falls back to the dictionary's /P when the seal fails, and /P says Print too, so the check
+    // passed even with the /Perms decryption stubbed to return zeroes. Editing /P in the written
+    // bytes is what separates the two sources: the edit claims everything, and a reader that reads
+    // the seal still reports print alone.
+    var text = Encoding.Latin1.GetString(encrypted);
+    var pAt = text.IndexOf("/P -", StringComparison.Ordinal);
+    if (pAt < 0)
+    {
+        Console.Error.WriteLine("FAIL: no /P found in the encrypted document");
+        return 1;
+    }
+
+    var pEnd = pAt + 3;
+    while (pEnd < text.Length && (text[pEnd] == '-' || char.IsAsciiDigit(text[pEnd])))
+        pEnd++;
+
+    var digits = pEnd - (pAt + 3);                               // the "-NNNN" this replaces
+    var widened = "-" + "1".PadLeft(digits - 1, '0');            // -1, padded to that same width
+    var tampered = Encoding.Latin1.GetBytes(text[..(pAt + 3)] + widened + text[pEnd..]);
+    if (tampered.Length != encrypted.Length)
+    {
+        Console.Error.WriteLine("FAIL: the /P edit changed the file length");
+        return 1;
+    }
+
+    using (var sealedReader = PdfReader.Open(tampered, "aot-user"))
+    {
+        if (sealedReader.Encryption!.Permissions != PdfPermissions.Print)
+        {
+            Console.Error.WriteLine(
+                $"FAIL: /Perms did not override an edited /P — got {sealedReader.Encryption.Permissions}");
+            return 1;
+        }
+    }
+
+    // And the wrong password is refused rather than returning noise.
+    try
+    {
+        using var wrong = PdfReader.Open(encrypted, "not-the-password");
+        Console.Error.WriteLine("FAIL: a wrong password opened the document");
+        return 1;
+    }
+    catch (PdfPasswordException)
+    {
+    }
+
+    Console.WriteLine(
+        $"OK: Reader decrypted an AES-{ereader.Encryption.KeyLengthBits} document under AOT "
+        + $"(owner access: {ereader.Encryption.IsOwnerAccess}).");
 }
 
 // Exercise the in-process conformance validator under Native AOT. The rule registry is

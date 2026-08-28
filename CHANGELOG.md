@@ -6,6 +6,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Breaking changes
+
+- **A password-protected document now reaches `PdfPreflight` as `PdfPasswordException`, which no
+  existing `catch` covers.** Every prior version threw `UnsupportedPdfFeatureException`, and so
+  `NotSupportedException`, for any `/Encrypt` at all, so that is what a caller of
+  `PdfPreflight.Validate` or `PdfPreflight.DetectClaimedProfiles` wrote to detect an encrypted file.
+  Both are Stable API in a Stable package, and both now open an encrypted document whose empty user
+  password suffices, and throw `PdfPasswordException` for one that needs a non-empty password. That
+  exception derives from `Exception` directly, and deliberately so: a document the reader
+  understands but was not given the credentials for is not an unsupported feature. An existing
+  `catch (NotSupportedException)` around either method therefore lets it through. Catch
+  `PdfPasswordException` beside it. (#97)
+
+- **`PdfDocument.DocumentId` now throws `ArgumentException` for a value that is not 16 bytes.**
+  Previously any other length was accepted and then written as no `/ID` at all — silently. ISO
+  32000-2 Table 15 requires `/ID` once `/Encrypt` is present, so on an encrypted document that
+  produced a file qpdf rejects outright ("invalid /ID in trailer dictionary"), with nothing to tell
+  the caller which value caused it. On an unencrypted document the old behaviour merely omitted an
+  optional entry, so code that set a wrong-length id and relied on that omission now sees an
+  exception. `DocumentId` is Stable API, which is why this is recorded here rather than under
+  Fixed. (#97)
+
 ### Added
 
 - **A committed corpus of encrypted PDFs, one per standard-security-handler `/V`+`/R` combination.**
@@ -37,13 +59,60 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   is separate work. Covers Algorithm 2 (file key from a password), Algorithms 4/5 and 7 (verifying
   a user or owner password), Algorithm 2.A and the R6 permission check for `/V` 5, and the
   per-object key that folds in the object's generation number, which is why this had to wait for
-  #121. Verified against all eight corpus fixtures: deriving the file key from both the correct and
-  a wrong password for each one, and decrypting a real content stream to the exact bytes qpdf's own
+  #121. Verified against every corpus fixture: deriving the file key from both the correct and a
+  wrong password for each one, and decrypting a real content stream to the exact bytes qpdf's own
   encryption produced — checked against an external tool's output, not only internal consistency.
-  The two `/EncryptMetadata false` fixtures pin that Algorithm 2 step (f) shifts the derived key,
-  not just `/U`. Most encrypted PDFs
-  actually use an empty user password, a case absent from the committed corpus; that case is
-  covered instead by independently computed vectors. (#97)
+  The `/EncryptMetadata false` fixtures pin that Algorithm 2 step (f) shifts the derived key, not
+  just `/U`. The empty user password most encrypted PDFs actually use had no fixture when this
+  landed and was covered by independently computed vectors; `enc-aes-128-emptyuser.pdf`, added with
+  the reader wiring below, covers it end to end. (#97)
+
+- **Decryption on read: `PdfReader.Open` takes a password and reads encrypted PDFs.** The Standard
+  security handler at `/V` 1, 2, 4 and 5 and `/R` 2 through 6 — RC4-40 through RC4-128, AES-128
+  (`/AESV2`) and AES-256 (`/AESV3`) — plus the `/Crypt` filter (ISO 32000-2 §7.4.10) and crypt
+  filters naming different methods for strings and streams. Strings are decrypted in `Resolve` under
+  the identity of the indirect object containing them (ISO 32000-1 §7.6.2, Algorithm 1) and stream
+  bodies on the decode path; `ParsedStream.RawBody` still holds the verbatim file bytes, which
+  `StreamRule` and `HexStringRule` need for byte offsets and lengths.
+
+  The supplied password is tried as the owner password first and the user password second, so one
+  that satisfies both reports the higher-privilege access. A wrong one throws the new
+  `PdfPasswordException`. `PdfDocumentReader.Encryption` reports `/V`, `/R`, the stream and string
+  ciphers, key length, permissions, `/EncryptMetadata` and which password authenticated — no key
+  material, and no `/O`, `/U`, `/OE` or `/UE`.
+
+  What is left in the clear, per the spec: the trailer `/ID`, the `/Encrypt` dictionary's own
+  strings, cross-reference streams (§7.5.8.2, body and dictionary alike), streams whose data lives
+  in an external file (§7.6.1), the document's metadata stream under `/EncryptMetadata false`
+  (Table 21 — a page's or an XObject's metadata is not exempt), and a signature dictionary's
+  `/Contents`, which ISO 32000-1 leaves unstated: a signer patches those hex digits into
+  already-serialized bytes, so decrypting them would corrupt `/ByteRange` verification. That last
+  exemption covers `/Type /Sig`, `/Type /DocTimeStamp`, and a `/Type`-less dictionary carrying a
+  `/ByteRange` array with a string `/Contents`, since Table 252 makes `/Type` optional. qpdf agrees
+  on the shape that matters most: it leaves a `/Type /Sig` dictionary's `/Contents` byte-identical
+  while encrypting that same dictionary's `/Reason`, `/Location` and `/M`, and does so whether or not
+  the dictionary is reachable from a signature field. Its rule keys on `/Type /Sig` alone, so it does
+  encrypt `/Contents` on the other two shapes exempted here — meaning a document qpdf encrypted after
+  signing can still hand back an archive timestamp's ciphertext. This exemption is the reading that
+  cannot corrupt a signature, not a claim about what every producer does.
+
+  At `/R` 5 and 6 the permissions come from `/Perms` (ISO 32000-2 Algorithm 13), the copy sealed
+  under the file key, rather than the dictionary's `/P`, which nothing protects at those revisions.
+  Only where the document carries a `/Perms` that recovers, though: Table 21 does not require the
+  entry, so deleting it — or corrupting one byte of it, which fails Algorithm 13's marker check —
+  falls back to `/P` and reports whatever an editor wrote there. qpdf, poppler and pdfium all behave
+  the same way, and refusing the file over an optional entry would make this the only reader that
+  cannot open it. `PdfEncryptionInfo.Permissions` documents the distinction.
+
+  Verified against the committed corpus (#99): for the eleven rows built from the baseline with the
+  `u`/`o` password pair, the page content decrypts to the baseline's bytes, `/Info /Title` to its
+  exact expected text, and each opens under both passwords. The other rows take their own passwords
+  or are not the baseline's object graph, and their own tests say what each pins. Nine fixtures were
+  added for this work, covering an empty user password, an object stream with a cross-reference
+  stream, nested strings, a 40-character password, one password serving as both roles, a non-ASCII
+  password whose `/U` is PDFDocEncoding-derived, an incremental update over an encrypted document,
+  a linearized document, and one combining linearization, object streams and cleartext metadata.
+  (#97)
 
 - **A committed corpus of PDFs not produced by VellumPdf's own writer.** Test-only; nothing ships.
   Every reader fixture before this one came from VellumPdf's writer, which only ever emits
@@ -66,6 +135,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   reader's coverage, not a gap in its logic. (#196)
 
 ### Changed
+
+- **`PdfReader.Open` no longer rejects an encrypted document out of hand.** Every prior version threw
+  `UnsupportedPdfFeatureException` on `/Encrypt`; it now reads the document, and the cases that
+  remain unsupported are narrower: `/Filter /Adobe.PubSec`, `/V 3` (whose algorithm ISO 32000-1
+  Table 20 leaves unpublished), and a `/StrF` naming a crypt filter method this library does not
+  implement, all at `Open`. An unresolvable `/StmF` fails later, at the first decode, because a
+  document whose streams cannot be decrypted still has readable strings.
+
+  A file that needs a non-empty password throws `PdfPasswordException`, which no `catch` written
+  against the old behaviour covers. See Breaking changes above.
+
+  `PdfDocumentReader.Dispose` clears the file encryption key, where it used to do nothing, so a
+  disposed reader is now unusable: resolving an object on one throws `ObjectDisposedException`
+  rather than decrypting against a zeroed key.
+
+  `vellum-preflight` reports a password-protected file as an error line rather than crashing, and
+  `PdfPreflight.Validate` reports a document whose streams cannot be decoded as unevaluable instead
+  of failing it against whichever clauses its rules happened to be checking. ISO 19005-2 §6.1.3
+  forbids `/Encrypt`, which the reader used to enforce by refusing to open such files at all;
+  `FileTrailerRule` checks it now. (#97)
 
 - **Dependency versions across the board, none of which change what ships.** PublicApiAnalyzers
   moves to 5.6.0, Microsoft.NET.Test.Sdk to 18.9.0, Verify.XunitV3 to 31.28.0, CsCheck to 4.8.0,
@@ -103,6 +192,79 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   See Fixed, below, for why. (#182)
 
 ### Fixed
+
+- **PDFDocEncoding treated 0xA0 as Latin-1 does.** That byte is EURO SIGN in Annex D, not NO-BREAK
+  SPACE, so a password containing `€` could not be encoded at all while one containing U+00A0 was
+  encoded as a Euro sign. Both are now right: `€` reaches 0xA0, and U+00A0 has no representation, so
+  a candidate containing it is dropped rather than silently altered. The code points Annex D marks
+  Undefined — 0x7F, 0x9F, 0xAD and twenty-one more — keep encoding as themselves: this encoding
+  exists to reproduce the bytes a producer hashed, and dropping a candidate over one of them would
+  stop a correct password from opening its document. (#97)
+
+- **The clean-room check now scans commit messages, not only files.** CLAUDE.md forbids a
+  disallowed reference library's name anywhere in the tree, commit messages included, but the gate
+  only ever read working-tree files — so a message naming one passed CI and merged into public
+  history, where it cannot be corrected without rewriting it. CI checks out full history for this;
+  the check skips silently where no base ref resolves, since it is a second line of defence over the
+  file scan and a shallow checkout is not a finding. (#97)
+
+- **An `/Encrypt` dictionary could declare unboundedly many crypt filters.** Everything the handler
+  reads out of that dictionary runs before the password is checked, and dictionary lookup is a
+  linear scan — so copying an `/CF` with sixteen thousand entries cost about 1.4 s on a 520 KB
+  file where eight thousand cost about 0.45 s, and the gap widens with the square. A conforming
+  document names one or two; more than 64 is now refused. `SECURITY.md` says what remains true
+  rather than claiming more: parsing a dictionary with very many keys is quadratic whether or not
+  the file is encrypted, and bounding input size is the caller's job. (#97)
+
+- **A document written without an owner password would have opened to anyone.** The handler falls
+  back to the user password when no owner password is given, as `PdfEncryptionSettings.OwnerPassword`
+  documents — but nothing depended on that fallback, so a one-token edit removing it passed every
+  test in the solution while deriving `/O` from the empty string. Every such file would then have
+  opened at owner privilege for a caller supplying nothing. The clause is now pinned. (#97)
+
+- **`vellum-preflight` reported nothing at all for two kinds of file.** An encrypted document whose
+  `/StmF` names a crypt filter its own `/CF` does not define, and a file that is not a PDF, both
+  exited 2 with an empty stderr on the default invocation, while the same files named their problem
+  precisely when a profile was given with `-p`. Profile auto-detection opens the document before the
+  validation loop does, and only the loop had the diagnosis. (#97)
+
+- **An object referenced from inside `/Encrypt` came back as ciphertext, silently.** Authentication
+  runs before a decryptor exists — which is what keeps `/O`, `/U`, `/OE` and `/UE` out of string
+  decryption — and §7.6.1 lets every non-string entry of that dictionary be an indirect reference.
+  Following one cached its target undecrypted, so a document whose `/Encrypt` pointed at an object
+  it also used handed that object's strings back as ciphertext to everything that read it
+  afterwards, with no exception and nothing to distinguish it from a decrypted value. The cache is
+  now dropped once the decryptor exists, keeping only the encryption dictionary itself. (#97)
+
+- **`vellum-preflight` crashed on a public-key-encrypted file given with no arguments.** Profile
+  auto-detection opens the document before the validation loop's own handler is reached, so an
+  unsupported security handler escaped as an unhandled exception where the password case beside it
+  had already been fixed. (#97)
+
+- **`/Encrypt /Filter` was the one entry read before indirect values were resolved.** An indirect
+  one was reported as a handler named `/(missing)` and the document refused, though §7.6.1 requires
+  only the encryption dictionary's strings to be direct. (#97)
+
+- **An indirect `/CFM` or crypt-filter `/Length` was not resolved.** §7.6.1 requires only the
+  encryption dictionary's STRINGS to be direct objects, so either may be an indirect reference. The
+  dereferenced copy the handler works on covers `/CF` and its per-filter dictionaries but stops one
+  level short of their values. A `/CFM` that reads as missing is indistinguishable from one naming a
+  cipher this handler does not implement, which fails hard on the first stream after the document has
+  already opened; an unresolved crypt-filter `/Length` silently disables both the cipher-implied key
+  size and the per-cipher clamps, which derives the wrong key and reports the correct password as
+  wrong. (#97)
+
+- **An encrypted document whose trailer `/ID` was absent or empty would not open.** Algorithm 2
+  step (e) appends `/ID[0]` to the MD5 input, and appending nothing is well defined — the producer
+  that omitted the entry hashed the same bytes the reader now does, so the derivation lands on its
+  key. Table 15 does require `/ID` alongside `/Encrypt`, but qpdf and poppler both open such a file,
+  and refusing it made a document readable everywhere except here. (#97)
+
+- **A stream whose declared `/Length` landed on `)`, `{`, `}` or a lone `>` failed the parse.** The
+  parser recovers from a wrong `/Length` by scanning for `endstream`, but the token read that
+  detects the mismatch threw on those bytes instead of falling through to the scan. Encryption makes
+  it ordinary rather than exotic: ciphertext is high-entropy, so a stale length lands on one of them
+  a few percent of the time. (#97)
 
 - **A reference's generation number is honoured instead of discarded.** `PdfIndirectReference`
   carried only an object number, and the parser dropped a parsed `N G R`'s middle field too, so

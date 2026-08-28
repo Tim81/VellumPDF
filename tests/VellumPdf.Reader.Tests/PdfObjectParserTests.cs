@@ -598,6 +598,33 @@ public sealed class PdfObjectParserTests
         Assert.Equal("ABC", System.Text.Encoding.Latin1.GetString(result.Stream!.RawBody.Span));
     }
 
+    /// <summary>
+    /// A <c>/Length</c> past <see cref="int.MaxValue"/>. The sibling above uses 99999, which the range
+    /// test accepts and the buffer-bounds test below it then rejects, so it reaches the scan either
+    /// way and cannot show the upper bound doing anything.
+    ///
+    /// <para>This one can. 4294967299 narrows to 3, and the body carries a literal <c>endstream</c>
+    /// exactly three bytes in — the case the scan's preference tiers exist for (#105), since the real
+    /// terminator is the later one, the one followed by <c>endobj</c>. A wrapped cast therefore lands
+    /// on a marker that IS present, passes the does-endstream-follow check, and truncates the body to
+    /// two bytes without a word. The bound is the only thing standing between the parse and
+    /// that.</para>
+    /// </summary>
+    [Fact]
+    public void ParsesStreamWithLengthBeyondIntMaxValue_FallsBackToScan()
+    {
+        const string pdf =
+            "1 0 obj\n<< /Length 4294967299 >>\nstream\nAB\nendstream\nXY\nendstream\nendobj";
+        var parser = Parser(pdf);
+
+        var result = parser.ParseIndirectObject();
+
+        Assert.True(result.IsStream);
+        Assert.Equal(
+            "AB\nendstream\nXY",
+            System.Text.Encoding.Latin1.GetString(result.Stream!.RawBody.Span));
+    }
+
     [Fact]
     public void ParsesStreamWithNoEolBeforeEndstream_FallsBackToScan()
     {
