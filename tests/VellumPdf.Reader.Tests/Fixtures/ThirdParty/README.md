@@ -23,7 +23,11 @@ either. The other two hand-built fixtures need generations neither tool will lea
 normalizes every generation to 0 on write, so `freed-object-reuse.pdf`'s reused-at-generation-1
 object and `nonzero-gen-base.pdf`'s nonzero-generation catalog both have to be built by hand. Five
 fixtures are hand-built in total: `hybrid-spec-convention.pdf`, `hybrid-samesection-undefined.pdf`,
-`freed-object-reuse.pdf`, `nonzero-gen-base.pdf`, and `length-mismatch.pdf`.
+`freed-object-reuse.pdf`, `nonzero-gen-base.pdf`, and `length-mismatch.pdf`. Four of the five are
+hand-edited bytes with no generator; `hybrid-samesection-undefined.pdf` is the exception, built by
+`eng/generate-hybrid-samesection-fixture.py` (#206) instead of edited by hand — every offset,
+`/Length`, and `startxref` value it needs is derived from the object bytes the script just wrote,
+rather than typed in and kept consistent by hand across an edit — see below.
 
 ## Baseline
 
@@ -50,7 +54,7 @@ would immediately undo.
 | File | Producer / command | What it pins |
 | --- | --- | --- |
 | `hybrid-spec-convention.pdf` | Hand-built | The "hidden object" convention ISO 32000-2 §7.5.8.4 documents: object 3 free in revision 1's classic table, defined live in revision 2's /XRefStm |
-| `hybrid-samesection-undefined.pdf` | Hand-built | The same free-then-redefine shape within a single revision, a case §7.5.8.4's normative sentence does not cover |
+| `hybrid-samesection-undefined.pdf` | `python eng/generate-hybrid-samesection-fixture.py` | The same free-then-redefine shape within a single revision, plus object 7, defined only by the /XRefStm, to keep the assertion non-vacuous |
 | `freed-object-reuse.pdf` | Hand-built | Object 5 live at generation 0, freed with next-generation 1 recorded, then reused as `5 1 obj`; object 7 freed the same way and never redefined — a reference's generation has to match the xref entry's recorded generation, an axis no other fixture here reaches |
 | `baseline.pdf` | `qpdf` (see above) | Shared base; single revision, classic xref, no axis below applies yet |
 | `objstm-xrefstream.pdf` | `qpdf --object-streams=generate baseline.pdf objstm-xrefstream.pdf` | Object streams plus a cross-reference stream; qpdf drops the classic xref table entirely, so this one fixture covers both axes |
@@ -74,7 +78,7 @@ embedded resource dropped into either folder would be covered by neither guard i
 were ever widened to embed it. Pre-existing, and low risk today: `attach-payload.txt` is the only
 other file here, and it isn't embedded.
 
-## Two hybrid fixtures, and only one has a third-party oracle
+## Two hybrid fixtures, both agreeing with qpdf
 
 ISO 32000-2 §7.5.8.4 documents a "hidden object" convention: an object gets a free entry in some
 earlier revision's classic xref table and a live definition in a later revision's cross-reference
@@ -85,7 +89,6 @@ classic table and defined, via revision 2's `/XRefStm`, inside an object stream.
 
 - **VellumPdf** resolves object 3 to `<< /Note (HIDDENVIAXREFSTM) /Type /ExData >>`.
 - **qpdf** agrees: `qpdf --show-object=3 hybrid-spec-convention.pdf` prints the same dictionary.
-  This is the real third-party oracle for the hidden object itself.
 - **poppler** looks like it agrees, but it isn't a real oracle here. `pdftotext` on the file
   prints `BASE`, the unrelated page content that stays reachable throughout. Poppler reads
   cross-reference streams too, though, so it can't stand in for the pre-1.5 reader the convention
@@ -95,33 +98,79 @@ classic table and defined, via revision 2's `/XRefStm`, inside an object stream.
 `qpdf --check` reporting "No syntax or stream encoding errors found" is not, by itself, evidence
 either — it only means the file parses, and a free object legitimately resolves to null just as
 readily as a live one. The assertion that matters is `--show-object=3`, or `--json` content: the
-same distinction that separates the two fixtures below.
+same distinction that separates the fixture below.
 
 `hybrid-samesection-undefined.pdf` puts the free entry and the `/XRefStm` definition in the *same*
-revision instead of a `/Prev`-linked earlier one — the shape the original version of this fixture
-used. §7.5.8.4's normative sentence covers a free entry in a *previous* section; the same-section
-case sits outside what that sentence covers, and the three readers no longer agree:
+revision instead of a `/Prev`-linked earlier one. §7.5.8.4's normative sentence names a free entry in
+a *previous* section — the cross-section case above — and does not itself say whether a free entry
+counts as "found" for the same-section case at all. (The clause's one EXAMPLE glosses a free object
+as "considered missing", but on the natural reading that sentence is about the dictionary entry
+pointing at the object, not the cross-reference entry itself, so it does not settle this either.)
+That gap is the actual hinge of this change: the clause's own next sentence, unindented and
+therefore normative rather than part of the NOTE before it, requires a reader to consult the
+`/XRefStm` *first*, find the object there, and ignore a free entry "in the previous section" — read
+on its own, that points the other way. mkl-public flags exactly that isolated reading in #237, then
+rejects it in the same comment: "If it is read as an isolated sentence, one may think that the
+XRefStm of a table section has to be consulted first, even before the section itself. Actually,
+though, the sentence is still in the situation of the sentence before the note ... even if it is
+separated by a paragraph break and a note. This may be clarified." His "may be clarified" is about
+the clause's prose, not about which reading is correct — he has already said which one is.
 
-- **VellumPdf** resolves object 4 from the `/XRefStm`, on the reasoning that a cross-reference
-  stream's definition should still take precedence within its own revision.
-- **qpdf** returns `null` for object 4 and reports the page's `/Contents` as empty.
-- **poppler** prints `Internal Error: xref num 4 not found but needed, try to reconstruct` and only
-  recovers the content by discarding the xref entirely and reconstructing from a full-file scan.
+VellumPdf.Reader used to resolve object 4 from the `/XRefStm` regardless of the classic table's free
+entry. As of [#206](https://github.com/Tim81/VellumPDF/issues/206) it instead treats the classic
+table's search order — check the table, then its `/XRefStm`, then `/Prev` — as applying to the
+same-section pairing too, so a free entry there already satisfies the search before the stream is
+reached. That reading is defensible, not compelled by the clause text:
+[pdf-association/pdf-issues#237](https://github.com/pdf-association/pdf-issues/issues/237) (open),
+a four-participant thread, asks precisely this question. bdoubrov opens it and poses the question
+without taking a position either way. Of the other three, two converge on the table's `f` entry
+winning — one of them qualifiedly. MatthiasValvekens opens with "I haven't double-checked this, but
+I believe" the table's `f` entry wins, and hedges again in his comment's penultimate sentence, not
+its last: "I'm not aware of any processors that do either of this, so maybe my intuition is
+completely wrong" (the comment's actual final sentence is an aside about MS Word's own hybrid
+files). mkl-public agrees without that hedge, citing the clause's "not found ... shall proceed to"
+sentence as the basis. petervwyatt's two comments raise wording defects in the clause's own section
+title and phrasing and, separately, point at errata #523 — he takes no position on
+free-versus-stream either way. qpdf 12.3.2 resolves object 4 to `null` the same way VellumPdf now
+does. If #237 resolves the other way, this reading is revisited.
 
-Neither qpdf nor poppler implements the precedence VellumPdf applies here, and neither result is a
-conformance verdict. `HybridSameSection_object4_resolvesFromXRefStm_notTheClassicTableFreeEntry` in
-`ThirdPartyReaderBehaviorTests` pins VellumPdf's current behavior so a regression is visible; it is
-not a claim that this behavior is the only correct one. Which entry should win is an open erratum,
-tracked in [pdf-association/pdf-issues#237](https://github.com/pdf-association/pdf-issues/issues/237)
-("Conflicts between xref table and xref stream in hybrid-reference files"), unresolved at the time of
-writing — but the discussion there so far favours the free entry winning, not VellumPdf's reading:
-MatthiasValvekens argues the classic table's `f` entry wins and the object should be considered
-`null`, and mkl-public agrees ("believes correctly"), quoting §7.5.8.4's rule that a cross-reference
-stream is consulted only when an entry is *not found* in the classic table first — a free entry is
-found. petervwyatt raises separate wording defects in the same clause but dissents from neither.
-VellumPdf deliberately differs from that reading and pins its own behavior anyway, as a superset on
-a contested construct rather than a settled one; tracked as
-[#206](https://github.com/Tim81/VellumPDF/issues/206).
+Errata [#523](https://github.com/pdf-association/pdf-issues/issues/523) (also open) is adjacent, not
+additional support for this same ordering. Its one relevant comment, from petervwyatt and prefixed
+"Somewhat related:", argues that an incrementally-updated hybrid file's blindly-copied `/XRefStm`
+entry can hand a PDF 1.5 reader an older definition than a PDF 1.4 reader sees — the
+`/XRefStm`-before-`/Prev` half of the search order, not the table-before-`/XRefStm` half this change
+needs. His next comment on that thread opens "Back on topic", moving to an unrelated wording concern.
+
+VellumPdf and qpdf agree on the object; poppler never reaches the question:
+
+- **VellumPdf** resolves object 4 to `null` and reports the page's `/Contents` as unresolvable.
+- **qpdf** agrees: `qpdf --show-object=4 hybrid-samesection-undefined.pdf` prints `null`, and
+  `qpdf --show-object=7` — object 7 is defined only by the `/XRefStm`, never mentioned by the
+  classic table — prints its own dictionary, confirming the stream itself was still read rather
+  than skipped outright.
+- **poppler** still prints `Internal Error: xref num 4 not found but needed, try to reconstruct`
+  and only recovers the content by discarding the xref entirely and reconstructing from a
+  full-file scan — it never reaches the free-vs-stream question at all.
+
+`HybridSameSection_object4IsNull_object7ResolvesFromXRefStm` in `ThirdPartyReaderBehaviorTests`
+pins both halves together: object 4 null (the free entry won) and object 7 resolving to its known
+value (the `/XRefStm` really was parsed and applied). A reader that skipped the `/XRefStm` outright,
+rejected it on an offset guard, or swallowed a parse failure would also fail the object-7 half, not
+just correctly null object 4.
+
+Neither hybrid fixture's `/XRefStm` contains a type-0 (free) row: decoding both against their own
+`/W` arrays gives `hybrid-spec-convention.pdf` a type 2 row (the object-stream member) and a type 1
+row, and gives `hybrid-samesection-undefined.pdf` two type 1 rows. `XRefStreamTests` relies on that
+absence to justify building its own fixture in code for the cross-revision type-0-row case, rather
+than reusing a corpus file.
+
+Two different "which entry wins" rules coexist in this reader, and qpdf's agreement or disagreement
+tracks which one is in play: across the classic-table/`/XRefStm` boundary, a free entry counts as an
+entry and stops the search there — the whole thesis of #206, and where qpdf agrees. Within a single
+table or stream, a duplicate object number instead resolves to whichever entry is *live* and comes
+first — where qpdf instead takes the first entry of either kind, free or live, and so disagrees (see
+`XrefStreamTests`' `LocalFreedIsolation_*` tests). qpdf applies one rule uniformly across both
+cases; this reader applies two, one per axis.
 
 ## Freed object number, reused at a bumped generation
 
@@ -187,10 +236,13 @@ content — opening alone would not catch that.
 
 ## Regenerating a fixture
 
-**One command above reproduces the committed bytes exactly; the rest come close but drift by a few
-bytes on regeneration.** `pdfattach nonzero-gen-base.pdf attach-payload.txt` is the exception —
+**Two commands above reproduce their committed bytes exactly; the rest come close but drift by a
+few bytes on regeneration.** `pdfattach nonzero-gen-base.pdf attach-payload.txt` is one exception —
 `nonzero-generation.pdf` comes out byte for byte identical, run after run, because its base carries
-no `/ID` for poppler to touch.
+no `/ID` for poppler to touch. `python eng/generate-hybrid-samesection-fixture.py` is the other:
+every offset and length in `hybrid-samesection-undefined.pdf` is derived from the object bytes the
+script just wrote, so two runs produce identical output (confirmed: same SHA-256 across consecutive
+runs).
 
 Every `qpdf`-derived fixture regenerates the trailer's second `/ID` array element on each run,
 identically to `Fixtures/Encrypted` — confirmed here too: two consecutive `qpdf
