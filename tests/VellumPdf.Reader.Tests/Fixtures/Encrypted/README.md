@@ -4,7 +4,7 @@ Generated once with qpdf and checked in, rather than generated at test time. CI 
 from apt on `ubuntu-latest` (11.9.0 at the time of writing, but nothing pins it) while local
 development uses 12.3.2; checking the files in makes the corpus
 byte-identical everywhere and keeps qpdf out of the test-execution path, so there is no
-`GateOnCi` skip hole on the core corpus.
+`OracleGate` skip hole on the core corpus.
 
 Tracked in #99. Used by the decryption work in #97.
 

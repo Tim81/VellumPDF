@@ -1,12 +1,12 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
-using System.Diagnostics;
 using VellumPdf.Canvas;
 using VellumPdf.Conformance.Tests.Oracle;
 using VellumPdf.Document;
 using VellumPdf.Encryption;
 using VellumPdf.Fonts;
+using VellumPdf.TestSupport;
 
 namespace VellumPdf.Conformance.Tests;
 
@@ -41,8 +41,13 @@ public sealed class VeraPdfCollection;
 /// <summary>
 /// The cross-validation half of the oracle gate: for each corpus fixture, the in-process verdict
 /// must equal the verdict produced by veraPDF. When veraPDF is not on the PATH (the typical local
-/// setup) the test is skipped — unless <c>REQUIRE_VERAPDF=1</c>, which turns the absence into a
-/// failure so a misconfigured CI image cannot silently skip the entire gate.
+/// setup) the test is skipped — unless <c>CI</c>, <c>GITHUB_ACTIONS</c>, <c>REQUIRE_ORACLES</c> or
+/// <c>REQUIRE_VERAPDF</c> demands the oracle run (<see cref="OracleGate"/>), which turns a
+/// confirmed-absent or confirmed-wrong veraPDF into a failure so a misconfigured CI image cannot
+/// silently skip the entire gate, the largest one in the tree, at 273 cases. A probe that merely
+/// times out is gentler: it skips regardless of what the environment demands, unless it times out
+/// three consecutive times, at which point <see cref="ExternalTool.CheckIdentity"/> itself treats
+/// it the same as a confirmed-absent tool (#198 review, round 5).
 /// </summary>
 [Collection("veraPDF")]
 public sealed class VeraPdfOracleTests
@@ -53,12 +58,7 @@ public sealed class VeraPdfOracleTests
     [MemberData(nameof(Fixtures))]
     public void InProcessVerdict_EqualsVeraPdf(string name)
     {
-        if (!VeraPdf.IsAvailable)
-        {
-            if (Environment.GetEnvironmentVariable("REQUIRE_VERAPDF") == "1")
-                Assert.Fail("REQUIRE_VERAPDF=1 but the veraPDF CLI is not available on PATH.");
-            Assert.Skip("veraPDF is not available on PATH (set up by CI; skipped locally).");
-        }
+        VeraPdf.EnsureAvailable();
 
         var fixture = OracleCorpus.ByName(name);
 
@@ -103,12 +103,7 @@ public sealed class VeraPdfEncryptedFileRefusalTests
     [Fact]
     public void Validate_onEncryptedFile_reportsRefusalNotAGenericErrorCode()
     {
-        if (!VeraPdf.IsAvailable)
-        {
-            if (Environment.GetEnvironmentVariable("REQUIRE_VERAPDF") == "1")
-                Assert.Fail("REQUIRE_VERAPDF=1 but the veraPDF CLI is not available on PATH.");
-            Assert.Skip("veraPDF is not available on PATH (set up by CI; skipped locally).");
-        }
+        VeraPdf.EnsureAvailable();
 
         using var doc = new PdfDocument { Conformance = VellumPdf.Document.PdfConformance.PdfUA1, Tagged = true, Language = "en-US" };
         var page = doc.AddPage();
@@ -148,25 +143,36 @@ public sealed class VeraPdfEncryptedFileRefusalTests
 /// <summary>Thin wrapper around the veraPDF command-line validator.</summary>
 internal static class VeraPdf
 {
-    public static bool IsAvailable { get; } = Probe();
-
-    private static bool Probe()
-    {
-        try
-        {
-            // Short timeout so a hung `verapdf --version` cannot stall the test class's static init.
-            return Run(10_000, "--version").Exit == 0;
-        }
-        catch
-        {
-            return false;
-        }
-    }
+    /// <summary>
+    /// Gates the caller on veraPDF's availability through <see
+    /// cref="ExternalTool.EnsureUsable(string)"/>, the same single routing point <see
+    /// cref="ExternalTool.TryRun"/> itself uses for its own five known tools, so this wrapper
+    /// shares that probe's budget, its cache, its consecutive-timeout retry-then-escalate policy,
+    /// and its policy of skipping (not failing the build) on a single timeout. Before #198 round 4
+    /// this ran its own independent probe (a hardcoded 10-second
+    /// <c>verapdf --version</c>, its result cached forever in a <c>static readonly</c> field
+    /// initializer) that read a slow-but-fine JVM cold start the same way the pre-round-3 shared
+    /// 10-second budget did, except here the false verdict was permanent for the process and, once
+    /// the caller below started routing it through <see cref="OracleGate.Unavailable(string,
+    /// string)"/>, escalated under CI and failed every one of the 273
+    /// <c>InProcessVerdict_EqualsVeraPdf</c> cases off a single unlucky sample. Before round 5 this
+    /// method still re-derived the IsTimeout branch itself, alongside two other call sites doing
+    /// the same thing, exactly the duplication that let one of the three get it wrong.
+    /// </summary>
+    public static void EnsureAvailable() => ExternalTool.EnsureUsable("verapdf");
 
     /// <summary>Returns true when veraPDF reports <paramref name="path"/> compliant with <paramref name="flavour"/>.</summary>
     public static bool Validate(string path, string flavour)
     {
-        var (exit, stdout, stderr) = Run(120_000, "--flavour", flavour, "--format", "text", path);
+        ExternalTool.TryRun(
+            "verapdf", ["--flavour", flavour, "--format", "text", path],
+            out var exit, out var stdout, out var stderr, out var timedOut, timeoutMs: 120_000);
+
+        if (timedOut)
+        {
+            throw new InvalidOperationException(
+                $"veraPDF timed out validating {path} ({flavour}).\nstdout:\n{stdout}\nstderr:\n{stderr}");
+        }
 
         // veraPDF 1.30.2 refuses to open an encrypted PDF outright rather than validating it —
         // measured directly (--flavour ua1 --format text, matching the invocation below) as
@@ -197,63 +203,4 @@ internal static class VeraPdf
                 + $"stdout:\n{stdout}\nstderr:\n{stderr}"),
         };
     }
-
-    private static (int Exit, string Stdout, string Stderr) Run(int timeoutMs, params string[] args)
-    {
-        var (file, prefix) = ResolveLauncher();
-        var psi = new ProcessStartInfo(file)
-        {
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-        };
-        foreach (var a in prefix)
-            psi.ArgumentList.Add(a);
-        foreach (var a in args)
-            psi.ArgumentList.Add(a);
-
-        using var process = Process.Start(psi)
-            ?? throw new InvalidOperationException("Failed to start veraPDF.");
-
-        // Drain both pipes concurrently BEFORE waiting, or a report larger than the OS pipe
-        // buffer would block the child on write while we block in WaitForExit (deadlock).
-        var stdoutTask = process.StandardOutput.ReadToEndAsync();
-        var stderrTask = process.StandardError.ReadToEndAsync();
-
-        if (!process.WaitForExit(timeoutMs))
-        {
-            try { process.Kill(entireProcessTree: true); }
-            catch { /* best effort */ }
-            // Observe the drain tasks so a later fault doesn't surface as an unobserved exception.
-            ObserveAndForget(stdoutTask);
-            ObserveAndForget(stderrTask);
-            throw new InvalidOperationException(
-                $"veraPDF timed out after {timeoutMs}ms (args: {string.Join(' ', args)}).");
-        }
-
-        // The process has exited; bound the stream drain too, so a grandchild that inherited the
-        // pipes and outlives the parent cannot make these reads hang indefinitely.
-        var stdout = stdoutTask.Wait(5_000) ? stdoutTask.Result : string.Empty;
-        var stderr = stderrTask.Wait(5_000) ? stderrTask.Result : string.Empty;
-        return (process.ExitCode, stdout, stderr);
-    }
-
-    // Resolves the veraPDF launcher. CI puts an extensionless `verapdf` shim on PATH (Linux), which
-    // CreateProcess runs directly. The Windows installer instead ships `verapdf.bat`, and
-    // ProcessStartInfo with UseShellExecute=false only auto-resolves `.exe` — so when VERAPDF_HOME
-    // points at an install carrying that launcher, invoke it through `cmd.exe /c`.
-    private static (string File, string[] Prefix) ResolveLauncher()
-    {
-        if (OperatingSystem.IsWindows()
-            && Environment.GetEnvironmentVariable("VERAPDF_HOME") is { Length: > 0 } home)
-        {
-            var bat = Path.Combine(home, "verapdf.bat");
-            if (File.Exists(bat))
-                return ("cmd.exe", ["/c", bat]);
-        }
-        return ("verapdf", []);
-    }
-
-    private static void ObserveAndForget(Task task)
-        => _ = task.ContinueWith(t => _ = t.Exception, TaskScheduler.Default);
 }

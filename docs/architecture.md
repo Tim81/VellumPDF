@@ -153,12 +153,19 @@ to retrofit:
   `pdftotext` (text round-trip → proves `ToUnicode`), `pdfsig` (PAdES signature
   validity), and zxing-cpp (decode round-trip for every barcode symbology, via a
   rasterized `pdftoppm` page).
-- **A missing tool fails the build rather than skipping the test**, by two
-  mechanisms: the poppler and qpdf oracles call `GateOnCi`, which turns the
-  early-return into `Assert.Fail` when `CI` or `GITHUB_ACTIONS` is set, while
-  veraPDF and zxing-cpp use explicit `REQUIRE_VERAPDF` / `REQUIRE_BARCODE_ORACLE`
-  switches that CI sets. Locally the same tests skip, so a contributor without
-  Docker or poppler installed still gets a green run.
+- **A missing tool fails the build rather than skipping the test**: almost every oracle
+  test routes through a shared `OracleGate`, which calls `Assert.Fail` instead of
+  `Assert.Skip` when `CI`, `GITHUB_ACTIONS`, or `REQUIRE_ORACLES` is set — the one exception
+  is `ConformanceCatalogTests.Catalog_MatchesVeraPdfProfile`, which calls `Assert.Skip`
+  directly and does not consult the gate. `REQUIRE_VERAPDF` and `REQUIRE_BARCODE_ORACLE` do
+  the same as the three global switches, scoped to the veraPDF and barcode-decode oracles
+  respectively. Locally the same tests skip, so a contributor without Docker or poppler
+  installed still gets a green run. A tool that resolves to something other than what it
+  claims — a bare `pdftotext` answering as Xpdf instead of poppler, say — is gated the same
+  way, through `ExternalTool`'s own identity check. A single slow identity probe skips rather
+  than fails, since a lone timeout says nothing about the tool's identity; a tool whose probe
+  times out three times in a row is treated as confirmed-absent instead, so a persistently
+  stuck oracle still fails the build under CI rather than skipping forever.
 
 ## Milestones
 

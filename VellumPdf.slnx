@@ -16,5 +16,7 @@
     <Project Path="tests/VellumPdf.Kernel.Tests/VellumPdf.Kernel.Tests.csproj" />
     <Project Path="tests/VellumPdf.Layout.Tests/VellumPdf.Layout.Tests.csproj" />
     <Project Path="tests/VellumPdf.Reader.Tests/VellumPdf.Reader.Tests.csproj" />
+    <Project Path="tests/VellumPdf.TestSupport/VellumPdf.TestSupport.csproj" />
+    <Project Path="tests/VellumPdf.TestSupport.Tests/VellumPdf.TestSupport.Tests.csproj" />
   </Folder>
 </Solution>

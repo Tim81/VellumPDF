@@ -1,15 +1,15 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
-using System.ComponentModel;
-using System.Diagnostics;
 using System.Linq;
+using System.Text;
 using VellumPdf.Barcodes.Aztec;
 using VellumPdf.Barcodes.DataMatrix;
 using VellumPdf.Barcodes.Internal;
 using VellumPdf.Canvas;
 using VellumPdf.Document;
 using VellumPdf.Fonts;
+using VellumPdf.TestSupport;
 
 namespace VellumPdf.Barcodes.Tests;
 
@@ -19,13 +19,13 @@ namespace VellumPdf.Barcodes.Tests;
 /// (<c>eng/barcode-decode.py</c>), asserting the round-tripped format and content.
 ///
 /// <para>
-/// Mirrors the <c>TryRunTool</c>/<c>GateOnCi</c> pattern in
-/// <c>VellumPdf.Layout.Tests.PdfValidatorOracleTests</c>: a missing tool skips silently on a
-/// local dev machine, but fails the build on CI (<c>CI</c>/<c>GITHUB_ACTIONS</c>) or when
-/// <c>REQUIRE_BARCODE_ORACLE=1</c> is set, so the decode oracle can never silently pass
-/// vacuously. <c>python</c> is tried first, then <c>python3</c> (Windows has no
-/// <c>python3</c> alias); a distinct exit code (3) from the script means zxing-cpp/Pillow is
-/// not installed, which gates the same way as a missing executable.
+/// Uses the shared <see cref="ExternalTool"/>/<see cref="OracleGate"/> pair (#198): a missing
+/// tool skips visibly on a local dev machine, but fails the build on CI
+/// (<c>CI</c>/<c>GITHUB_ACTIONS</c>) or when <c>REQUIRE_BARCODE_ORACLE=1</c> is set, so the
+/// decode oracle can never silently pass vacuously. <c>python</c> is tried first, then
+/// <c>python3</c> (Windows has no <c>python3</c> alias); a distinct exit code (3) from the
+/// script means zxing-cpp/Pillow is not installed, which gates the same way as a missing
+/// executable.
 /// </para>
 /// </summary>
 public sealed class ZxingDecodeOracleTests : IDisposable
@@ -66,7 +66,7 @@ public sealed class ZxingDecodeOracleTests : IDisposable
         var pdfPath = BuildSinglePdf((_, canvas) =>
             canvas.DrawBarcode(new QrCode(content) { ModuleSize = 4 }, 50, 500));
 
-        if (!TryDecodeSingle(pdfPath, out var result)) return;
+        var result = DecodeSingle(pdfPath);
 
         Assert.Equal("QRCode", result.Format);
         Assert.Equal(content, result.Text);
@@ -79,7 +79,7 @@ public sealed class ZxingDecodeOracleTests : IDisposable
         var pdfPath = BuildSinglePdf((_, canvas) =>
             canvas.DrawBarcode(new QrCode(content) { ModuleSize = 4, TextEncoding = QrTextEncoding.Auto }, 50, 500));
 
-        if (!TryDecodeSingle(pdfPath, out var result)) return;
+        var result = DecodeSingle(pdfPath);
 
         Assert.Equal("QRCode", result.Format);
         Assert.Equal(content, result.Text);
@@ -94,7 +94,7 @@ public sealed class ZxingDecodeOracleTests : IDisposable
         var pdfPath = BuildSinglePdf((_, canvas) =>
             canvas.DrawBarcode(new QrCode(content) { ModuleSize = 4 }, 50, 500));
 
-        if (!TryDecodeSingle(pdfPath, out var result)) return;
+        var result = DecodeSingle(pdfPath);
 
         Assert.Equal("QRCode", result.Format);
         Assert.Equal(content, result.Text);
@@ -113,7 +113,7 @@ public sealed class ZxingDecodeOracleTests : IDisposable
         var pdfPath = BuildSinglePdf((_, canvas) =>
             canvas.DrawBarcode(new QrCode(content) { ModuleSize = 4 }, 50, 500));
 
-        if (!TryDecodeSingle(pdfPath, out var result)) return;
+        var result = DecodeSingle(pdfPath);
 
         Assert.Equal("QRCode", result.Format);
         Assert.Equal(content, result.Text);
@@ -127,7 +127,7 @@ public sealed class ZxingDecodeOracleTests : IDisposable
             canvas.DrawBarcode(
                 new QrCode(content) { Version = 10, ErrorCorrection = QrErrorCorrection.H, ModuleSize = 3 }, 50, 400));
 
-        if (!TryDecodeSingle(pdfPath, out var result)) return;
+        var result = DecodeSingle(pdfPath);
 
         Assert.Equal("QRCode", result.Format);
         Assert.Equal(content, result.Text);
@@ -140,7 +140,7 @@ public sealed class ZxingDecodeOracleTests : IDisposable
         var pdfPath = BuildSinglePdf((_, canvas) =>
             canvas.DrawBarcode(new QrCode(content) { TargetWidth = 120 }, 50, 500));
 
-        if (!TryDecodeSingle(pdfPath, out var result)) return;
+        var result = DecodeSingle(pdfPath);
 
         Assert.Equal("QRCode", result.Format);
         Assert.Equal(content, result.Text);
@@ -156,7 +156,7 @@ public sealed class ZxingDecodeOracleTests : IDisposable
         var pdfPath = BuildSinglePdf((_, canvas) =>
             canvas.DrawBarcode(new QrCode(content) { Gs1 = QrGs1Mode.ElementString, ModuleSize = 4 }, 50, 500));
 
-        if (!TryDecodeSingle(pdfPath, out var result)) return;
+        var result = DecodeSingle(pdfPath);
 
         Assert.Equal("QRCode", result.Format);
         Assert.Equal("GS1", result.ContentType);
@@ -179,7 +179,7 @@ public sealed class ZxingDecodeOracleTests : IDisposable
         var pdfPath = BuildSinglePdf((_, canvas) =>
             canvas.DrawBarcode(new QrCode(content) { Gs1 = QrGs1Mode.ElementString, ModuleSize = 4 }, 50, 500));
 
-        if (!TryDecodeSingle(pdfPath, out var result)) return;
+        var result = DecodeSingle(pdfPath);
 
         Assert.Equal("QRCode", result.Format);
         Assert.Equal("GS1", result.ContentType);
@@ -198,7 +198,7 @@ public sealed class ZxingDecodeOracleTests : IDisposable
         var pdfPath = BuildSinglePdf((_, canvas) =>
             canvas.DrawBarcode(new QrCode(content) { Gs1 = QrGs1Mode.ElementString, ModuleSize = 4 }, 50, 500));
 
-        if (!TryDecodeSingle(pdfPath, out var result)) return;
+        var result = DecodeSingle(pdfPath);
 
         Assert.Equal("QRCode", result.Format);
         Assert.Equal("GS1", result.ContentType);
@@ -213,7 +213,7 @@ public sealed class ZxingDecodeOracleTests : IDisposable
         var pdfPath = BuildSinglePdf((_, canvas) =>
             canvas.DrawBarcode(new QrCode(content) { Gs1 = QrGs1Mode.DigitalLink, ModuleSize = 4 }, 50, 500));
 
-        if (!TryDecodeSingle(pdfPath, out var result)) return;
+        var result = DecodeSingle(pdfPath);
 
         Assert.Equal("QRCode", result.Format);
         Assert.Equal(expectedUri, result.Text);
@@ -242,7 +242,7 @@ public sealed class ZxingDecodeOracleTests : IDisposable
             canvas.DrawBarcode(symbols[1], 50, 500);
         });
 
-        if (!TryDecodeAll(pdfPath, out var results)) return;
+        var results = DecodeAll(pdfPath);
 
         AssertStructuredAppendReassembles(parts, results);
     }
@@ -260,7 +260,7 @@ public sealed class ZxingDecodeOracleTests : IDisposable
             canvas.DrawBarcode(symbols[2], 50, 350);
         });
 
-        if (!TryDecodeAll(pdfPath, out var results)) return;
+        var results = DecodeAll(pdfPath);
 
         AssertStructuredAppendReassembles(parts, results);
     }
@@ -280,7 +280,7 @@ public sealed class ZxingDecodeOracleTests : IDisposable
             canvas.DrawBarcode(symbols[1], 50, 500);
         });
 
-        if (!TryDecodeAll(pdfPath, out var results)) return;
+        var results = DecodeAll(pdfPath);
 
         AssertStructuredAppendReassembles(parts, results);
     }
@@ -313,7 +313,7 @@ public sealed class ZxingDecodeOracleTests : IDisposable
         var pdfPath = BuildSinglePdf((_, canvas) =>
             canvas.DrawBarcode(new MicroQrCode(content) { Version = 4, ModuleSize = 6 }, 50, 500));
 
-        if (!TryDecodeSingle(pdfPath, out var result)) return;
+        var result = DecodeSingle(pdfPath);
 
         Assert.Equal("MicroQRCode", result.Format);
         Assert.Equal(content, result.Text);
@@ -338,7 +338,7 @@ public sealed class ZxingDecodeOracleTests : IDisposable
         var pdfPath = BuildSinglePdf((_, canvas) =>
             canvas.DrawBarcode(new DataMatrixBarcode(content) { ModuleSize = 6 }, 50, 500));
 
-        if (!TryDecodeSingle(pdfPath, out var result)) return;
+        var result = DecodeSingle(pdfPath);
 
         Assert.Equal("DataMatrix", result.Format);
         Assert.Equal(content, result.Text);
@@ -355,7 +355,7 @@ public sealed class ZxingDecodeOracleTests : IDisposable
         var pdfPath = BuildSinglePdf((_, canvas) =>
             canvas.DrawBarcode(new DataMatrixBarcode(content) { ModuleSize = 6 }, 50, 500));
 
-        if (!TryDecodeSingle(pdfPath, out var result)) return;
+        var result = DecodeSingle(pdfPath);
 
         Assert.Equal("DataMatrix", result.Format);
         Assert.Equal("Binary", result.ContentType);
@@ -369,7 +369,7 @@ public sealed class ZxingDecodeOracleTests : IDisposable
         var pdfPath = BuildSinglePdf((_, canvas) =>
             canvas.DrawBarcode(new DataMatrixBarcode(content) { Gs1 = true, ModuleSize = 6 }, 50, 500));
 
-        if (!TryDecodeSingle(pdfPath, out var result)) return;
+        var result = DecodeSingle(pdfPath);
 
         Assert.Equal("DataMatrix", result.Format);
         Assert.Equal("GS1", result.ContentType);
@@ -389,7 +389,7 @@ public sealed class ZxingDecodeOracleTests : IDisposable
         var pdfPath = BuildSinglePdf((_, canvas) =>
             canvas.DrawBarcode(new DataMatrixBarcode(content) { Gs1 = true, ModuleSize = 6 }, 50, 500));
 
-        if (!TryDecodeSingle(pdfPath, out var result)) return;
+        var result = DecodeSingle(pdfPath);
 
         Assert.Equal("DataMatrix", result.Format);
         Assert.Equal("GS1", result.ContentType);
@@ -407,7 +407,7 @@ public sealed class ZxingDecodeOracleTests : IDisposable
         var pdfPath = BuildSinglePdf((_, canvas) =>
             canvas.DrawBarcode(new DataMatrixBarcode(content) { ModuleSize = 6 }, 50, 500));
 
-        if (!TryDecodeSingle(pdfPath, out var result)) return;
+        var result = DecodeSingle(pdfPath);
 
         Assert.Equal("DataMatrix", result.Format);
         Assert.Equal(content, result.Text);
@@ -421,7 +421,7 @@ public sealed class ZxingDecodeOracleTests : IDisposable
         var pdfPath = BuildSinglePdf((_, canvas) =>
             canvas.DrawBarcode(new DataMatrixBarcode(content) { ModuleSize = 6 }, 50, 500));
 
-        if (!TryDecodeSingle(pdfPath, out var result)) return;
+        var result = DecodeSingle(pdfPath);
 
         Assert.Equal("DataMatrix", result.Format);
         Assert.Equal(content, result.Text);
@@ -436,7 +436,7 @@ public sealed class ZxingDecodeOracleTests : IDisposable
         var pdfPath = BuildSinglePdf((_, canvas) =>
             canvas.DrawBarcode(new DataMatrixBarcode(content) { ModuleSize = 6 }, 50, 500));
 
-        if (!TryDecodeSingle(pdfPath, out var result)) return;
+        var result = DecodeSingle(pdfPath);
 
         Assert.Equal("DataMatrix", result.Format);
         Assert.Equal(content, result.Text);
@@ -449,7 +449,7 @@ public sealed class ZxingDecodeOracleTests : IDisposable
         var pdfPath = BuildSinglePdf((_, canvas) =>
             canvas.DrawBarcode(new DataMatrixBarcode(content) { Shape = DataMatrixShape.Rectangular, ModuleSize = 6 }, 50, 500));
 
-        if (!TryDecodeSingle(pdfPath, out var result)) return;
+        var result = DecodeSingle(pdfPath);
 
         Assert.Equal("DataMatrix", result.Format);
         Assert.Equal(content, result.Text);
@@ -465,7 +465,7 @@ public sealed class ZxingDecodeOracleTests : IDisposable
         var pdfPath = BuildSinglePdf((_, canvas) =>
             canvas.DrawBarcode(new DataMatrixBarcode(content) { ModuleSize = 8 }, 50, 500));
 
-        if (!TryDecodeSingle(pdfPath, out var result)) return;
+        var result = DecodeSingle(pdfPath);
 
         Assert.Equal("DataMatrix", result.Format);
         Assert.Equal(content, result.Text);
@@ -538,7 +538,7 @@ public sealed class ZxingDecodeOracleTests : IDisposable
 
         var pdfPath = BuildSinglePdf((_, canvas) => canvas.DrawBarcode(barcode, 30, 30));
 
-        if (!TryDecodeSingle(pdfPath, out var result)) return;
+        var result = DecodeSingle(pdfPath);
 
         Assert.Equal("DataMatrix", result.Format);
         Assert.Equal(Convert.ToHexStringLower(content), result.Text);
@@ -576,7 +576,7 @@ public sealed class ZxingDecodeOracleTests : IDisposable
         var pdfPath = BuildSinglePdf((_, canvas) =>
             canvas.DrawBarcode(new AztecCode(content) { Format = AztecFormat.Compact, ModuleSize = 6 }, 50, 500));
 
-        if (!TryDecodeSingle(pdfPath, out var result)) return;
+        var result = DecodeSingle(pdfPath);
 
         Assert.Equal("Aztec", result.Format);
         Assert.Equal(content, result.Text);
@@ -589,7 +589,7 @@ public sealed class ZxingDecodeOracleTests : IDisposable
         var pdfPath = BuildSinglePdf((_, canvas) =>
             canvas.DrawBarcode(new AztecCode(content) { Format = AztecFormat.FullRange, ModuleSize = 4 }, 30, 30));
 
-        if (!TryDecodeSingle(pdfPath, out var result)) return;
+        var result = DecodeSingle(pdfPath);
 
         Assert.Equal("Aztec", result.Format);
         Assert.Equal(content, result.Text);
@@ -602,7 +602,7 @@ public sealed class ZxingDecodeOracleTests : IDisposable
         var pdfPath = BuildSinglePdf((_, canvas) =>
             canvas.DrawBarcode(new AztecCode(content) { ModuleSize = 6 }, 50, 500));
 
-        if (!TryDecodeSingle(pdfPath, out var result)) return;
+        var result = DecodeSingle(pdfPath);
 
         Assert.Equal("Aztec", result.Format);
         Assert.Equal("Binary", result.ContentType);
@@ -616,7 +616,7 @@ public sealed class ZxingDecodeOracleTests : IDisposable
         var pdfPath = BuildSinglePdf((_, canvas) =>
             canvas.DrawBarcode(new AztecCode(content) { ErrorCorrectionPercent = 80, ModuleSize = 6 }, 50, 500));
 
-        if (!TryDecodeSingle(pdfPath, out var result)) return;
+        var result = DecodeSingle(pdfPath);
 
         Assert.Equal("Aztec", result.Format);
         Assert.Equal(content, result.Text);
@@ -634,7 +634,7 @@ public sealed class ZxingDecodeOracleTests : IDisposable
         var barcode = new AztecCode(content) { Format = AztecFormat.Compact, ModuleSize = 6 };
         var pdfPath = BuildSinglePdf((_, canvas) => canvas.DrawBarcode(barcode, 30, 30));
 
-        if (!TryDecodeSingle(pdfPath, out var result)) return;
+        var result = DecodeSingle(pdfPath);
 
         Assert.Equal("Aztec", result.Format);
         Assert.Equal(content, result.Text);
@@ -652,7 +652,7 @@ public sealed class ZxingDecodeOracleTests : IDisposable
         var barcode = new AztecCode(content) { Format = AztecFormat.FullRange, ModuleSize = 4 };
         var pdfPath = BuildSinglePdf((_, canvas) => canvas.DrawBarcode(barcode, 30, 30));
 
-        if (!TryDecodeSingle(pdfPath, out var result)) return;
+        var result = DecodeSingle(pdfPath);
 
         Assert.Equal("Aztec", result.Format);
         Assert.Equal(content, result.Text);
@@ -696,7 +696,7 @@ public sealed class ZxingDecodeOracleTests : IDisposable
         var barcode = new AztecCode(content) { ErrorCorrectionPercent = 5, Format = AztecFormat.FullRange, ModuleSize = 2 };
         var pdfPath = BuildSinglePdf((_, canvas) => canvas.DrawBarcode(barcode, 30, 30), WideAztecPage);
 
-        if (!TryDecodeSingle(pdfPath, out var result)) return;
+        var result = DecodeSingle(pdfPath);
 
         Assert.Equal("Aztec", result.Format);
         Assert.Equal("Binary", result.ContentType);
@@ -759,7 +759,7 @@ public sealed class ZxingDecodeOracleTests : IDisposable
 
         var pdfPath = BuildSinglePdf((_, canvas) => canvas.DrawBarcode(barcode, 30, 30), WideAztecPage);
 
-        if (!TryDecodeSingle(pdfPath, out var result)) return;
+        var result = DecodeSingle(pdfPath);
 
         Assert.Equal("Aztec", result.Format);
         Assert.Equal(content, result.Text);
@@ -777,7 +777,7 @@ public sealed class ZxingDecodeOracleTests : IDisposable
 
         var pdfPath = BuildSinglePdf((_, canvas) => canvas.DrawBarcode(barcode, 30, 30));
 
-        if (!TryDecodeSingle(pdfPath, out var result)) return;
+        var result = DecodeSingle(pdfPath);
 
         Assert.Equal("Aztec", result.Format);
         Assert.Equal(content, result.Text);
@@ -792,7 +792,7 @@ public sealed class ZxingDecodeOracleTests : IDisposable
         var pdfPath = BuildSinglePdf((_, canvas) =>
             canvas.DrawBarcode(new Pdf417Barcode(content) { ModuleSize = 2 }, 50, 500));
 
-        if (!TryDecodeSingle(pdfPath, out var result)) return;
+        var result = DecodeSingle(pdfPath);
 
         Assert.Equal("PDF417", result.Format);
         Assert.Equal(content, result.Text);
@@ -805,7 +805,7 @@ public sealed class ZxingDecodeOracleTests : IDisposable
         var pdfPath = BuildSinglePdf((_, canvas) =>
             canvas.DrawBarcode(new Pdf417Barcode(content) { Compact = true, ModuleSize = 2 }, 50, 500));
 
-        if (!TryDecodeSingle(pdfPath, out var result)) return;
+        var result = DecodeSingle(pdfPath);
 
         Assert.Equal("PDF417", result.Format);
         Assert.Equal(content, result.Text);
@@ -820,7 +820,7 @@ public sealed class ZxingDecodeOracleTests : IDisposable
         var pdfPath = BuildSinglePdf((_, canvas) =>
             canvas.DrawBarcode(new Pdf417Barcode(content) { Compact = true, Columns = 1, ModuleSize = 3 }, 50, 500));
 
-        if (!TryDecodeSingle(pdfPath, out var result)) return;
+        var result = DecodeSingle(pdfPath);
 
         Assert.Equal("PDF417", result.Format);
         Assert.Equal(content, result.Text);
@@ -833,7 +833,7 @@ public sealed class ZxingDecodeOracleTests : IDisposable
         var pdfPath = BuildSinglePdf((_, canvas) =>
             canvas.DrawBarcode(new Pdf417Barcode(content) { ModuleSize = 2 }, 50, 500));
 
-        if (!TryDecodeSingle(pdfPath, out var result)) return;
+        var result = DecodeSingle(pdfPath);
 
         Assert.Equal("PDF417", result.Format);
         Assert.Equal("Binary", result.ContentType);
@@ -869,7 +869,7 @@ public sealed class ZxingDecodeOracleTests : IDisposable
             canvas.DrawBarcode(symbols[1], 50, 450);
         });
 
-        if (!TryDecodeAll(pdfPath, out var results)) return;
+        var results = DecodeAll(pdfPath);
 
         AssertMacroSetReassembles(parts, expectedFileId: "042", results);
     }
@@ -887,7 +887,7 @@ public sealed class ZxingDecodeOracleTests : IDisposable
             canvas.DrawBarcode(symbols[2], 50, 350);
         });
 
-        if (!TryDecodeAll(pdfPath, out var results)) return;
+        var results = DecodeAll(pdfPath);
 
         AssertMacroSetReassembles(parts, expectedFileId: "007", results);
     }
@@ -906,7 +906,7 @@ public sealed class ZxingDecodeOracleTests : IDisposable
             canvas.DrawBarcode(symbols[2], 50, 350);
         });
 
-        if (!TryDecodeAll(pdfPath, out var results)) return;
+        var results = DecodeAll(pdfPath);
 
         AssertMacroSetReassembles(parts, expectedFileId: "013", results);
     }
@@ -939,7 +939,7 @@ public sealed class ZxingDecodeOracleTests : IDisposable
         var pdfPath = BuildSinglePdf((_, canvas) =>
             canvas.DrawBarcode(new Code128Barcode(content) { ShowText = false, ModuleSize = 2 }, 50, 500));
 
-        if (!TryDecodeSingle(pdfPath, out var result)) return;
+        var result = DecodeSingle(pdfPath);
 
         Assert.Equal("Code128", result.Format);
         Assert.Equal(content, result.Text);
@@ -955,7 +955,7 @@ public sealed class ZxingDecodeOracleTests : IDisposable
         var pdfPath = BuildSinglePdf((_, canvas) =>
             canvas.DrawBarcode(new Code128Barcode(content) { Gs1 = true, ShowText = false, ModuleSize = 2 }, 50, 500));
 
-        if (!TryDecodeSingle(pdfPath, out var result)) return;
+        var result = DecodeSingle(pdfPath);
 
         Assert.Equal("Code128", result.Format);
         Assert.Equal("GS1", result.ContentType);
@@ -972,7 +972,7 @@ public sealed class ZxingDecodeOracleTests : IDisposable
         var pdfPath = BuildSinglePdf((_, canvas) =>
             canvas.DrawBarcode(new Code128Barcode(content) { ShowText = false, ModuleSize = 2 }, 50, 500));
 
-        if (!TryDecodeSingle(pdfPath, out var result)) return;
+        var result = DecodeSingle(pdfPath);
 
         Assert.Equal("Code128", result.Format);
         Assert.Equal(Convert.ToHexStringLower(Latin1Bytes(content)), result.BytesHex);
@@ -988,7 +988,7 @@ public sealed class ZxingDecodeOracleTests : IDisposable
         var pdfPath = BuildSinglePdf((_, canvas) =>
             canvas.DrawBarcode(new Code128Barcode(content) { ShowText = false, ModuleSize = 2 }, 50, 500));
 
-        if (!TryDecodeSingle(pdfPath, out var result)) return;
+        var result = DecodeSingle(pdfPath);
 
         Assert.Equal("Code128", result.Format);
         Assert.Equal(Convert.ToHexStringLower(Latin1Bytes(content)), result.BytesHex);
@@ -1009,7 +1009,7 @@ public sealed class ZxingDecodeOracleTests : IDisposable
         var pdfPath = BuildSinglePdf((_, canvas) =>
             canvas.DrawBarcode(new Code128Barcode(content) { ShowText = false, ModuleSize = 2 }, 50, 500));
 
-        if (!TryDecodeSingle(pdfPath, out var result)) return;
+        var result = DecodeSingle(pdfPath);
 
         Assert.Equal("Code128", result.Format);
         Assert.Equal(Convert.ToHexStringLower(Latin1Bytes(content)), result.BytesHex);
@@ -1030,7 +1030,7 @@ public sealed class ZxingDecodeOracleTests : IDisposable
         var pdfPath = BuildSinglePdf((_, canvas) =>
             canvas.DrawBarcode(new Code128Barcode(content) { ShowText = false, ModuleSize = 2 }, 50, 500));
 
-        if (!TryDecodeSingle(pdfPath, out var result)) return;
+        var result = DecodeSingle(pdfPath);
 
         Assert.Equal("Code128", result.Format);
         Assert.Equal(Convert.ToHexStringLower(Latin1Bytes(content)), result.BytesHex);
@@ -1048,7 +1048,7 @@ public sealed class ZxingDecodeOracleTests : IDisposable
         var pdfPath = BuildSinglePdf((_, canvas) =>
             canvas.DrawBarcode(new Code128Barcode(content) { ShowText = false, ModuleSize = 2 }, 50, 500));
 
-        if (!TryDecodeSingle(pdfPath, out var result)) return;
+        var result = DecodeSingle(pdfPath);
 
         Assert.Equal("Code128", result.Format);
         Assert.Equal(Convert.ToHexStringLower(Latin1Bytes(content)), result.BytesHex);
@@ -1069,7 +1069,7 @@ public sealed class ZxingDecodeOracleTests : IDisposable
         var pdfPath = BuildSinglePdf((_, canvas) =>
             canvas.DrawBarcode(new Code128Barcode(content) { ShowText = false, ModuleSize = 2 }, 50, 500));
 
-        if (!TryDecodeSingle(pdfPath, out var result)) return;
+        var result = DecodeSingle(pdfPath);
 
         Assert.Equal("Code128", result.Format);
         Assert.Equal(Convert.ToHexStringLower(Latin1Bytes(content)), result.BytesHex);
@@ -1099,7 +1099,7 @@ public sealed class ZxingDecodeOracleTests : IDisposable
             (doc, canvas) => canvas.DrawBarcode(new Code39Barcode(content) { ModuleSize = 4 }, 20, 150, doc.UseFont(Standard14.Helvetica)),
             WideCode39Page);
 
-        if (!TryDecodeSingle(pdfPath, out var result)) return;
+        var result = DecodeSingle(pdfPath);
 
         Assert.Equal("Code39", result.Format);
         Assert.Equal(content, result.Text);
@@ -1114,7 +1114,7 @@ public sealed class ZxingDecodeOracleTests : IDisposable
             (doc, canvas) => canvas.DrawBarcode(barcode, 20, 150, doc.UseFont(Standard14.Helvetica)),
             WideCode39Page);
 
-        if (!TryDecodeSingle(pdfPath, out var result)) return;
+        var result = DecodeSingle(pdfPath);
 
         Assert.Equal("Code39", result.Format);
         // zxing-cpp does not validate/strip the mod-43 check character by default (that is a
@@ -1135,7 +1135,7 @@ public sealed class ZxingDecodeOracleTests : IDisposable
             (doc, canvas) => canvas.DrawBarcode(barcode, 20, 150, doc.UseFont(Standard14.Helvetica)),
             WideCode39Page);
 
-        if (!TryDecodeSingle(pdfPath, out var result)) return;
+        var result = DecodeSingle(pdfPath);
 
         Assert.True(result.Format is "Code39" or "Code39Ext", $"Unexpected format '{result.Format}'.");
     }
@@ -1150,7 +1150,7 @@ public sealed class ZxingDecodeOracleTests : IDisposable
         var pdfPath = BuildSinglePdf((doc, canvas) =>
             canvas.DrawBarcode(barcode, 50, 500, doc.UseFont(Standard14.Helvetica)));
 
-        if (!TryDecodeSingle(pdfPath, out var result)) return;
+        var result = DecodeSingle(pdfPath);
 
         Assert.Equal("UPCE", result.Format);
         Assert.Equal("0065100004327", result.Text);
@@ -1168,7 +1168,7 @@ public sealed class ZxingDecodeOracleTests : IDisposable
         var pdfPath = BuildSinglePdf((doc, canvas) =>
             canvas.DrawBarcode(barcode, 50, 500, doc.UseFont(Standard14.Helvetica)));
 
-        if (!TryDecodeSingle(pdfPath, out var result)) return;
+        var result = DecodeSingle(pdfPath);
 
         Assert.Equal("UPCE", result.Format);
         Assert.Equal("0012345000058", result.Text);
@@ -1187,7 +1187,7 @@ public sealed class ZxingDecodeOracleTests : IDisposable
         var pdfPath = BuildSinglePdf((doc, canvas) =>
             canvas.DrawBarcode(barcode, 50, 500, doc.UseFont(Standard14.Helvetica)));
 
-        if (!TryDecodeSingle(pdfPath, out var result)) return;
+        var result = DecodeSingle(pdfPath);
 
         Assert.Equal("UPCE", result.Format);
         Assert.Equal("0165100004324", result.Text);
@@ -1204,7 +1204,7 @@ public sealed class ZxingDecodeOracleTests : IDisposable
         var pdfPath = BuildSinglePdf((doc, canvas) =>
             canvas.DrawBarcode(barcode, 50, 500, doc.UseFont(Standard14.Helvetica)));
 
-        if (!TryDecodeSingle(pdfPath, out var result)) return;
+        var result = DecodeSingle(pdfPath);
 
         Assert.Equal("UPCE", result.Format);
         Assert.Equal("0012300000437", result.Text);
@@ -1220,7 +1220,7 @@ public sealed class ZxingDecodeOracleTests : IDisposable
         var pdfPath = BuildSinglePdf((doc, canvas) =>
             canvas.DrawBarcode(barcode, 50, 500, doc.UseFont(Standard14.Helvetica)));
 
-        if (!TryDecodeSingle(pdfPath, out var result)) return;
+        var result = DecodeSingle(pdfPath);
 
         Assert.Equal("UPCE", result.Format);
         Assert.Equal("0056780000099", result.Text);
@@ -1235,7 +1235,7 @@ public sealed class ZxingDecodeOracleTests : IDisposable
         var pdfPath = BuildSinglePdf((doc, canvas) =>
             canvas.DrawBarcode(barcode, 50, 500, doc.UseFont(Standard14.Helvetica)));
 
-        if (!TryDecodeSingle(pdfPath, out var result)) return;
+        var result = DecodeSingle(pdfPath);
 
         Assert.Equal("EAN13", result.Format);
         Assert.Equal(barcode.Digits, result.Text);
@@ -1248,7 +1248,7 @@ public sealed class ZxingDecodeOracleTests : IDisposable
         var pdfPath = BuildSinglePdf((doc, canvas) =>
             canvas.DrawBarcode(barcode, 50, 500, doc.UseFont(Standard14.Helvetica)));
 
-        if (!TryDecodeSingle(pdfPath, out var result)) return;
+        var result = DecodeSingle(pdfPath);
 
         Assert.Equal("EAN8", result.Format);
         Assert.Equal(barcode.Digits, result.Text);
@@ -1261,7 +1261,7 @@ public sealed class ZxingDecodeOracleTests : IDisposable
         var pdfPath = BuildSinglePdf((doc, canvas) =>
             canvas.DrawBarcode(barcode, 50, 500, doc.UseFont(Standard14.Helvetica)));
 
-        if (!TryDecodeSingle(pdfPath, out var result)) return;
+        var result = DecodeSingle(pdfPath);
 
         // A UPC-A symbol is physically an EAN-13 symbol with an implicit leading '0' (that is how
         // this encoder draws it), and zxing-cpp's default (unrestricted) format list reports it as
@@ -1278,7 +1278,7 @@ public sealed class ZxingDecodeOracleTests : IDisposable
         var pdfPath = BuildSinglePdf((doc, canvas) =>
             canvas.DrawBarcode(barcode, 50, 500, doc.UseFont(Standard14.Helvetica)));
 
-        if (!TryDecodeAll(pdfPath, out var results)) return;
+        var results = DecodeAll(pdfPath);
 
         var main = results.Find(r => r.Format is "EAN13" or "EANUPC");
         Assert.True(main.Format is not null,
@@ -1298,7 +1298,7 @@ public sealed class ZxingDecodeOracleTests : IDisposable
         var pdfPath = BuildSinglePdf((doc, canvas) =>
             canvas.DrawBarcode(barcode, 50, 500, doc.UseFont(Standard14.Helvetica)));
 
-        if (!TryDecodeSingle(pdfPath, out var result)) return;
+        var result = DecodeSingle(pdfPath);
 
         Assert.True(result.Format is "ITF14" or "ITF", $"Unexpected format '{result.Format}'.");
         Assert.Equal(barcode.Digits, result.Text);
@@ -1318,7 +1318,7 @@ public sealed class ZxingDecodeOracleTests : IDisposable
             canvas.DrawBarcode(new Itf14Barcode("1234567890123") { ShowText = false }, 320, 550);
         });
 
-        if (!TryDecodeAll(pdfPath, out var results)) return;
+        var results = DecodeAll(pdfPath);
 
         Assert.Equal(4, results.Count);
         Assert.Contains(results, r => r.Format == "QRCode" && r.Text == "MULTI-QR");
@@ -1344,46 +1344,47 @@ public sealed class ZxingDecodeOracleTests : IDisposable
     }
 
     /// <summary>Runs the full pipeline for a PDF expected to contain exactly one barcode.</summary>
-    private bool TryDecodeSingle(string pdfPath, out DecodeResult result)
+    private DecodeResult DecodeSingle(string pdfPath)
     {
-        if (!TryDecodeAll(pdfPath, out var results))
-        {
-            result = default;
-            return false;
-        }
-
+        var results = DecodeAll(pdfPath);
         Assert.Single(results);
-        result = results[0];
-        return true;
+        return results[0];
     }
 
     /// <summary>
     /// Rasterizes <paramref name="pdfPath"/> with pdftoppm, then decodes it with the zxing-cpp
-    /// oracle script. Returns <c>false</c> (after gating on CI) when either tool is unavailable.
+    /// oracle script. Gates through <see cref="OracleGate"/> (skip locally, fail on CI) when
+    /// pdftoppm or the python/zxing-cpp toolchain is missing outright; a pdftoppm or
+    /// barcode-decode.py run that fails on a tool that IS present is a defect in VellumPdf's own
+    /// output, not an environment problem, and fails the test directly instead.
     /// </summary>
-    private bool TryDecodeAll(string pdfPath, out List<DecodeResult> results)
+    private List<DecodeResult> DecodeAll(string pdfPath)
     {
-        results = [];
+        List<DecodeResult> results = [];
 
         var pngBase = Path.Combine(_tempDir, Path.GetFileNameWithoutExtension(pdfPath));
-        if (!TryRunTool("pdftoppm", $"-r 300 -png -singlefile \"{pdfPath}\" \"{pngBase}\"",
-                out var ppmExit, out _, out var ppmStderr)
-            || ppmExit != 0)
-        {
-            GateOnCi("pdftoppm");
-            return false;
-        }
+        ExternalTool.TryRun("pdftoppm", ["-r", "300", "-png", "-singlefile", pdfPath, pngBase],
+                out var ppmExit, out _, out var ppmStderr, out var ppmTimedOut);
+
+        // A drain that hits ExternalTool's post-exit bound also sets timedOut with exitCode still
+        // genuine and stderr substituted with an empty string (see ExternalTool.RunProcess) — call
+        // that out by name instead of printing an empty stderr, which reads as "no error output"
+        // rather than "the output was never captured".
+        Assert.True(ppmExit == 0 && !ppmTimedOut,
+            ppmTimedOut
+                ? $"pdftoppm timed out rasterizing {pdfPath} (exit {ppmExit})."
+                : $"pdftoppm failed to rasterize {pdfPath} (exit {ppmExit}): {ppmStderr}");
 
         var pngPath = pngBase + ".png";
         Assert.True(File.Exists(pngPath), $"pdftoppm did not produce '{pngPath}'.\nstderr: {ppmStderr}");
 
-        if (!TryRunPythonScript(pngPath, out var exit, out var stdout, out var stderr, out var missingTool))
-        {
-            GateOnCi(missingTool);
-            return false;
-        }
+        if (!TryRunPythonScript(pngPath, out var exit, out var stdout, out var stderr, out var pyTimedOut, out var missingTool))
+            OracleGate.Unavailable(missingTool);
 
-        Assert.True(exit == 0, $"barcode-decode.py failed (exit {exit}).\nstdout: {stdout}\nstderr: {stderr}");
+        Assert.True(exit == 0 && !pyTimedOut,
+            pyTimedOut
+                ? $"barcode-decode.py timed out decoding {pngPath}."
+                : $"barcode-decode.py failed (exit {exit}).\nstdout: {stdout}\nstderr: {stderr}");
 
         foreach (var line in stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries))
         {
@@ -1401,20 +1402,26 @@ public sealed class ZxingDecodeOracleTests : IDisposable
                 parts.Length > 4 ? parts[4] : string.Empty));
         }
 
-        return true;
+        return results;
     }
 
     /// <summary>
     /// Runs <c>eng/barcode-decode.py</c> against <paramref name="imagePath"/>, trying
     /// <c>python</c> then <c>python3</c>. An exit code of 3 (or neither interpreter being
     /// launchable) counts as the "zxing-cpp"/"python" tool being missing respectively.
+    /// <paramref name="timedOut"/> is passed straight through from <see cref="ExternalTool.TryRun"/>
+    /// rather than discarded — a python leg that hangs past its budget still exits the loop with
+    /// <c>exitCode == 0</c> and empty <paramref name="stdout"/> (the caller's line-splitting loop
+    /// then sees zero results), so a caller that ignored this would report "no barcodes decoded"
+    /// instead of naming the timeout.
     /// </summary>
     private bool TryRunPythonScript(
-        string imagePath, out int exitCode, out string stdout, out string stderr, out string missingTool)
+        string imagePath, out int exitCode, out string stdout, out string stderr, out bool timedOut, out string missingTool)
     {
         foreach (var python in new[] { "python", "python3" })
         {
-            if (TryRunTool(python, $"\"{_scriptPath}\" \"{imagePath}\"", out exitCode, out stdout, out stderr))
+            if (ExternalTool.TryRun(python, [_scriptPath, imagePath], out exitCode, out stdout, out stderr, out timedOut,
+                    outputEncoding: Encoding.UTF8))
             {
                 if (exitCode == 3)
                 {
@@ -1430,6 +1437,7 @@ public sealed class ZxingDecodeOracleTests : IDisposable
         exitCode = -1;
         stdout = string.Empty;
         stderr = string.Empty;
+        timedOut = false;
         missingTool = "python";
         return false;
     }
@@ -1447,86 +1455,4 @@ public sealed class ZxingDecodeOracleTests : IDisposable
             "Could not locate VellumPdf.slnx by walking up from AppContext.BaseDirectory.");
     }
 
-    /// <summary>
-    /// Attempts to run an external CLI tool and captures its output. Returns <c>false</c> if
-    /// the process cannot be started (tool not installed). Mirrors
-    /// <c>PdfValidatorOracleTests.TryRunTool</c>, except output is decoded as UTF-8: decoded
-    /// barcode text can carry arbitrary Unicode, and the decode script writes UTF-8 explicitly
-    /// (see <c>eng/barcode-decode.py</c>), which does not match the console's default codepage
-    /// on Windows.
-    /// </summary>
-    private static bool TryRunTool(string exe, string args, out int exitCode, out string stdout, out string stderr)
-    {
-        exitCode = -1;
-        stdout = string.Empty;
-        stderr = string.Empty;
-
-        var psi = new ProcessStartInfo(exe, args)
-        {
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            StandardOutputEncoding = System.Text.Encoding.UTF8,
-            StandardErrorEncoding = System.Text.Encoding.UTF8,
-            UseShellExecute = false,
-            CreateNoWindow = true,
-        };
-
-        Process? process = null;
-        try
-        {
-            process = Process.Start(psi);
-        }
-        catch (Win32Exception)
-        {
-            // Tool not installed on this machine.
-            return false;
-        }
-
-        if (process is null) return false;
-
-        using (process)
-        {
-            // Read both streams concurrently to avoid deadlock on large output.
-            var stdoutTask = process.StandardOutput.ReadToEndAsync();
-            var stderrTask = process.StandardError.ReadToEndAsync();
-
-            var completed = process.WaitForExit(milliseconds: 30_000);
-            stdout = stdoutTask.GetAwaiter().GetResult();
-            stderr = stderrTask.GetAwaiter().GetResult();
-
-            if (!completed)
-            {
-                try { process.Kill(entireProcessTree: true); }
-                catch (InvalidOperationException) { /* process already exited — best-effort */ }
-                exitCode = -1;
-                return true; // tool exists but timed out — let the assertion handle it
-            }
-
-            exitCode = process.ExitCode;
-        }
-
-        return true;
-    }
-
-    /// <summary>
-    /// Asserts failure when a required external tool is absent and either CI is detected
-    /// (<c>CI</c>/<c>GITHUB_ACTIONS</c>) or <c>REQUIRE_BARCODE_ORACLE=1</c> is set. On a local
-    /// dev machine without that override, this method does nothing (skip silently).
-    /// </summary>
-    private static void GateOnCi(string toolName)
-    {
-        var isCI = string.Equals(Environment.GetEnvironmentVariable("CI"), "true", StringComparison.OrdinalIgnoreCase);
-        var isGitHubActions = string.Equals(
-            Environment.GetEnvironmentVariable("GITHUB_ACTIONS"), "true", StringComparison.OrdinalIgnoreCase);
-        var requireOracle = Environment.GetEnvironmentVariable("REQUIRE_BARCODE_ORACLE") == "1";
-
-        if (isCI || isGitHubActions || requireOracle)
-        {
-            Assert.Fail(
-                $"Required external tool '{toolName}' is not available. Ensure it is installed " +
-                "(pdftoppm from poppler-utils; zxing-cpp via `pip install zxing-cpp==3.0.0 pillow`).");
-        }
-
-        // Local dev without the override: tool not installed, silently skip.
-    }
 }

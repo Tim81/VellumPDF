@@ -1,8 +1,6 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
-using System.ComponentModel;
-using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Security.Cryptography.Pkcs;
 using System.Security.Cryptography.X509Certificates;
@@ -13,6 +11,7 @@ using VellumPdf.Document;
 using VellumPdf.Fonts;
 using VellumPdf.Reader;
 using VellumPdf.Signing;
+using VellumPdf.TestSupport;
 using static VellumPdf.Kernel.Tests.SignatureTestHelpers;
 
 namespace VellumPdf.Kernel.Tests;
@@ -395,11 +394,7 @@ public sealed class PadesLevelTests : IDisposable
         var pdfPath = Path.Combine(_tempDir, "blta_pdfsig_oracle.pdf");
         File.WriteAllBytes(pdfPath, signedBytes);
 
-        if (!TryRunTool("pdfsig", $"\"{pdfPath}\"", out _, out var stdout, out var stderr))
-        {
-            GateOnCi("pdfsig");
-            return;
-        }
+        ExternalTool.TryRun("pdfsig", [pdfPath], out _, out var stdout, out var stderr, out _);
 
         // pdfsig (poppler-utils) outputs "Signature is Valid" for a valid digest.
         // An untrusted self-signed cert still produces a valid digest, so this confirms
@@ -426,84 +421,4 @@ public sealed class PadesLevelTests : IDisposable
             };
     }
 
-    /// <summary>
-    /// Attempts to run an external CLI tool and captures its output.
-    /// Returns false if the process cannot be started (tool not installed).
-    /// </summary>
-    private static bool TryRunTool(
-        string exe,
-        string args,
-        out int exitCode,
-        out string stdout,
-        out string stderr)
-    {
-        exitCode = -1;
-        stdout = string.Empty;
-        stderr = string.Empty;
-
-        var psi = new ProcessStartInfo(exe, args)
-        {
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true,
-        };
-
-        Process? process = null;
-        try
-        {
-            process = Process.Start(psi);
-        }
-        catch (Win32Exception)
-        {
-            return false;
-        }
-
-        if (process is null) return false;
-
-        using (process)
-        {
-            var stdoutTask = process.StandardOutput.ReadToEndAsync();
-            var stderrTask = process.StandardError.ReadToEndAsync();
-
-            var completed = process.WaitForExit(milliseconds: 30_000);
-            stdout = stdoutTask.GetAwaiter().GetResult();
-            stderr = stderrTask.GetAwaiter().GetResult();
-
-            if (!completed)
-            {
-                try { process.Kill(entireProcessTree: true); }
-                catch (InvalidOperationException) { }
-                exitCode = -1;
-                return true;
-            }
-
-            exitCode = process.ExitCode;
-        }
-
-        return true;
-    }
-
-    /// <summary>
-    /// Asserts failure when running on CI and the required tool is absent.
-    /// On a local dev machine (non-CI), returns silently (test is skipped).
-    /// </summary>
-    private static void GateOnCi(string toolName)
-    {
-        var isCI = string.Equals(
-            Environment.GetEnvironmentVariable("CI"), "true",
-            StringComparison.OrdinalIgnoreCase);
-        var isGitHubActions = string.Equals(
-            Environment.GetEnvironmentVariable("GITHUB_ACTIONS"), "true",
-            StringComparison.OrdinalIgnoreCase);
-
-        if (isCI || isGitHubActions)
-        {
-            Assert.Fail(
-                $"Required external tool '{toolName}' is not available on CI. " +
-                "Ensure the CI workflow installs it (e.g. sudo apt-get install -y poppler-utils).");
-        }
-
-        // Local dev: tool not installed — silently skip.
-    }
 }

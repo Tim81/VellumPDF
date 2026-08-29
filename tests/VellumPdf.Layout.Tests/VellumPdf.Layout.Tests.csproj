@@ -3,6 +3,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\VellumPdf.Layout\VellumPdf.Layout.csproj" />
     <ProjectReference Include="..\..\src\VellumPdf.Signing\VellumPdf.Signing.csproj" />
+    <ProjectReference Include="..\VellumPdf.TestSupport\VellumPdf.TestSupport.csproj" />
   </ItemGroup>
 
   <ItemGroup>

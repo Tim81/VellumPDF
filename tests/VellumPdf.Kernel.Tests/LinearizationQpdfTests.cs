@@ -1,28 +1,24 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
-using System.ComponentModel;
-using System.Diagnostics;
 using VellumPdf.Annotations;
 using VellumPdf.Canvas;
 using VellumPdf.Document;
 using VellumPdf.Fonts;
 using VellumPdf.Forms;
+using VellumPdf.TestSupport;
 
 namespace VellumPdf.Kernel.Tests;
 
 /// <summary>
-/// qpdf structural check for linearized output.
-/// Tries the qpdf binary at the well-known local path and on PATH.
-/// Self-skips when qpdf is unavailable on local dev machines; fails on CI.
+/// qpdf structural check for linearized output. Resolves qpdf via QPDF_HOME, falling back to
+/// PATH (see <see cref="ExternalTool"/>). Self-skips when qpdf is unavailable on local dev
+/// machines; fails on CI.
 /// </summary>
 public sealed class LinearizationQpdfTests : IDisposable
 {
     private static readonly DateTimeOffset PinnedTime = DateTimeOffset.FromUnixTimeSeconds(1_700_000_000);
     private static readonly byte[] PinnedId = Convert.FromHexString("000102030405060708090A0B0C0D0E0F");
-
-    // Full path to local dev qpdf install (not on PATH).
-    private const string LocalQpdfPath = @"C:\Users\Timothy\tools\qpdf\qpdf-12.3.2-msvc64\bin\qpdf.exe";
 
     private readonly string _tempDir;
 
@@ -66,11 +62,7 @@ public sealed class LinearizationQpdfTests : IDisposable
         using (var fs = File.OpenWrite(path))
             doc.Save(fs);
 
-        if (!TryRunQpdf($"--check \"{path}\"", out var exit, out var stdout, out var stderr))
-        {
-            GateOnCi("qpdf");
-            return;
-        }
+        ExternalTool.TryRun("qpdf", ["--check", path], out var exit, out var stdout, out var stderr, out _);
 
         Assert.True(
             exit == 0,
@@ -104,11 +96,11 @@ public sealed class LinearizationQpdfTests : IDisposable
         using (var fs = File.OpenWrite(path))
             doc.Save(fs);
 
-        if (!TryRunQpdf($"--show-linearization \"{path}\"", out var exit, out var stdout, out var stderr))
-        {
-            GateOnCi("qpdf");
-            return;
-        }
+        ExternalTool.TryRun("qpdf", ["--show-linearization", path], out var exit, out var stdout, out var stderr, out var timedOut);
+
+        // A drain that hit its bound would report a real exit code alongside empty stdout/stderr,
+        // which the DoesNotContain checks below would then pass on vacuously (#198 review).
+        Assert.False(timedOut, "qpdf --show-linearization timed out, or its output could not be fully captured.");
 
         // qpdf recognizes the file as linearized, reports the right page count, and emits no
         // WARNING lines (which is where hint-table inconsistencies surface).
@@ -135,11 +127,8 @@ public sealed class LinearizationQpdfTests : IDisposable
         }
         using (var fs = File.OpenWrite(path)) doc.Save(fs);
 
-        if (!TryRunQpdf($"--show-linearization \"{path}\"", out var exit, out var stdout, out var stderr))
-        {
-            GateOnCi("qpdf");
-            return;
-        }
+        ExternalTool.TryRun("qpdf", ["--show-linearization", path], out var exit, out var stdout, out var stderr, out var timedOut);
+        Assert.False(timedOut, "qpdf --show-linearization timed out, or its output could not be fully captured.");
         Assert.True(exit == 0, $"exit {exit}.\n{stdout}\n{stderr}");
         Assert.DoesNotContain("WARNING", stdout);
     }
@@ -150,7 +139,7 @@ public sealed class LinearizationQpdfTests : IDisposable
         // Exercises the deepest remap chain (FontFile2 → FontDescriptor → CIDFont → Type0 → ToUnicode)
         // and a genuinely shared object (one embedded font used on every page).
         var fontPath = FindPlatformFont();
-        if (fontPath is null) { GateOnCi("platform TrueType font"); return; }
+        if (fontPath is null) { OracleGate.Unavailable("platform TrueType font"); }
 
         var path = Path.Combine(_tempDir, "linearized_embfont.pdf");
         using var doc = new PdfDocument { Timestamp = PinnedTime, DocumentId = PinnedId, Linearize = true };
@@ -170,11 +159,8 @@ public sealed class LinearizationQpdfTests : IDisposable
         }
         using (var fs = File.OpenWrite(path)) doc.Save(fs);
 
-        if (!TryRunQpdf($"--show-linearization \"{path}\"", out var exit, out var stdout, out var stderr))
-        {
-            GateOnCi("qpdf");
-            return;
-        }
+        ExternalTool.TryRun("qpdf", ["--show-linearization", path], out var exit, out var stdout, out var stderr, out var timedOut);
+        Assert.False(timedOut, "qpdf --show-linearization timed out, or its output could not be fully captured.");
         Assert.True(exit == 0, $"exit {exit}.\n{stdout}\n{stderr}");
         Assert.DoesNotContain("WARNING", stdout);
     }
@@ -186,7 +172,7 @@ public sealed class LinearizationQpdfTests : IDisposable
         // so nshared_total > nshared_first_page and the shared-object table's first_shared_obj must
         // be the real object number, not 0. Regression for a hint-table mismatch qpdf flagged.
         var fontPath = FindPlatformFont();
-        if (fontPath is null) { GateOnCi("platform TrueType font"); return; }
+        if (fontPath is null) { OracleGate.Unavailable("platform TrueType font"); }
 
         var path = Path.Combine(_tempDir, "linearized_part8.pdf");
         using var doc = new PdfDocument { Timestamp = PinnedTime, DocumentId = PinnedId, Linearize = true };
@@ -213,11 +199,8 @@ public sealed class LinearizationQpdfTests : IDisposable
         }
         using (var fs = File.OpenWrite(path)) doc.Save(fs);
 
-        if (!TryRunQpdf($"--show-linearization \"{path}\"", out var exit, out var stdout, out var stderr))
-        {
-            GateOnCi("qpdf");
-            return;
-        }
+        ExternalTool.TryRun("qpdf", ["--show-linearization", path], out var exit, out var stdout, out var stderr, out var timedOut);
+        Assert.False(timedOut, "qpdf --show-linearization timed out, or its output could not be fully captured.");
         Assert.True(exit == 0, $"exit {exit}.\n{stdout}\n{stderr}");
         Assert.DoesNotContain("WARNING", stdout);
     }
@@ -250,21 +233,15 @@ public sealed class LinearizationQpdfTests : IDisposable
 
         using (var fs = File.OpenWrite(path)) doc.Save(fs);
 
-        if (!TryRunQpdf($"--show-linearization \"{path}\"", out var exit, out var stdout, out var stderr))
-        {
-            GateOnCi("qpdf");
-            return;
-        }
+        ExternalTool.TryRun("qpdf", ["--show-linearization", path], out var exit, out var stdout, out var stderr, out var timedOut);
 
+        Assert.False(timedOut, "qpdf --show-linearization timed out, or its output could not be fully captured.");
         Assert.True(exit == 0, $"exit {exit}.\n{stdout}\n{stderr}");
         Assert.DoesNotContain("WARNING", stdout);
         Assert.DoesNotContain("WARNING", stderr);
 
-        if (!TryRunQpdf($"--check \"{path}\"", out var checkExit, out var checkOut, out var checkErr))
-        {
-            GateOnCi("qpdf");
-            return;
-        }
+        ExternalTool.TryRun("qpdf", ["--check", path], out var checkExit, out var checkOut, out var checkErr, out var checkTimedOut);
+        Assert.False(checkTimedOut, "qpdf --check timed out, or its output could not be fully captured.");
         Assert.True(checkExit == 0,
             $"qpdf --check failed (exit {checkExit}).\nstdout: {checkOut}\nstderr: {checkErr}");
         Assert.DoesNotContain("WARNING", checkOut);
@@ -293,21 +270,15 @@ public sealed class LinearizationQpdfTests : IDisposable
 
         using (var fs = File.OpenWrite(path)) doc.Save(fs);
 
-        if (!TryRunQpdf($"--show-linearization \"{path}\"", out var exit, out var stdout, out var stderr))
-        {
-            GateOnCi("qpdf");
-            return;
-        }
+        ExternalTool.TryRun("qpdf", ["--show-linearization", path], out var exit, out var stdout, out var stderr, out var timedOut);
 
+        Assert.False(timedOut, "qpdf --show-linearization timed out, or its output could not be fully captured.");
         Assert.True(exit == 0, $"exit {exit}.\n{stdout}\n{stderr}");
         Assert.DoesNotContain("WARNING", stdout);
         Assert.DoesNotContain("WARNING", stderr);
 
-        if (!TryRunQpdf($"--check \"{path}\"", out var checkExit, out var checkOut, out var checkErr))
-        {
-            GateOnCi("qpdf");
-            return;
-        }
+        ExternalTool.TryRun("qpdf", ["--check", path], out var checkExit, out var checkOut, out var checkErr, out var checkTimedOut);
+        Assert.False(checkTimedOut, "qpdf --check timed out, or its output could not be fully captured.");
         Assert.True(checkExit == 0,
             $"qpdf --check failed (exit {checkExit}).\nstdout: {checkOut}\nstderr: {checkErr}");
         Assert.DoesNotContain("WARNING", checkOut);
@@ -339,21 +310,15 @@ public sealed class LinearizationQpdfTests : IDisposable
 
         using (var fs = File.OpenWrite(path)) doc.Save(fs);
 
-        if (!TryRunQpdf($"--show-linearization \"{path}\"", out var exit, out var stdout, out var stderr))
-        {
-            GateOnCi("qpdf");
-            return;
-        }
+        ExternalTool.TryRun("qpdf", ["--show-linearization", path], out var exit, out var stdout, out var stderr, out var timedOut);
 
+        Assert.False(timedOut, "qpdf --show-linearization timed out, or its output could not be fully captured.");
         Assert.True(exit == 0, $"exit {exit}.\n{stdout}\n{stderr}");
         Assert.DoesNotContain("WARNING", stdout);
         Assert.DoesNotContain("WARNING", stderr);
 
-        if (!TryRunQpdf($"--check \"{path}\"", out var checkExit, out var checkOut, out var checkErr))
-        {
-            GateOnCi("qpdf");
-            return;
-        }
+        ExternalTool.TryRun("qpdf", ["--check", path], out var checkExit, out var checkOut, out var checkErr, out var checkTimedOut);
+        Assert.False(checkTimedOut, "qpdf --check timed out, or its output could not be fully captured.");
         Assert.True(checkExit == 0,
             $"qpdf --check failed (exit {checkExit}).\nstdout: {checkOut}\nstderr: {checkErr}");
         Assert.DoesNotContain("WARNING", checkOut);
@@ -383,21 +348,15 @@ public sealed class LinearizationQpdfTests : IDisposable
 
         using (var fs = File.OpenWrite(path)) doc.Save(fs);
 
-        if (!TryRunQpdf($"--show-linearization \"{path}\"", out var exit, out var stdout, out var stderr))
-        {
-            GateOnCi("qpdf");
-            return;
-        }
+        ExternalTool.TryRun("qpdf", ["--show-linearization", path], out var exit, out var stdout, out var stderr, out var timedOut);
 
+        Assert.False(timedOut, "qpdf --show-linearization timed out, or its output could not be fully captured.");
         Assert.True(exit == 0, $"exit {exit}.\n{stdout}\n{stderr}");
         Assert.DoesNotContain("WARNING", stdout);
         Assert.DoesNotContain("WARNING", stderr);
 
-        if (!TryRunQpdf($"--check \"{path}\"", out var checkExit, out var checkOut, out var checkErr))
-        {
-            GateOnCi("qpdf");
-            return;
-        }
+        ExternalTool.TryRun("qpdf", ["--check", path], out var checkExit, out var checkOut, out var checkErr, out var checkTimedOut);
+        Assert.False(checkTimedOut, "qpdf --check timed out, or its output could not be fully captured.");
         Assert.True(checkExit == 0,
             $"qpdf --check failed (exit {checkExit}).\nstdout: {checkOut}\nstderr: {checkErr}");
         Assert.DoesNotContain("WARNING", checkOut);
@@ -426,20 +385,14 @@ public sealed class LinearizationQpdfTests : IDisposable
 
         using (var fs = File.OpenWrite(path)) doc.Save(fs);
 
-        if (!TryRunQpdf($"--show-linearization \"{path}\"", out var exit, out var stdout, out var stderr))
-        {
-            GateOnCi("qpdf");
-            return;
-        }
+        ExternalTool.TryRun("qpdf", ["--show-linearization", path], out var exit, out var stdout, out var stderr, out var timedOut);
+        Assert.False(timedOut, "qpdf --show-linearization timed out, or its output could not be fully captured.");
         Assert.True(exit == 0, $"exit {exit}.\n{stdout}\n{stderr}");
         Assert.DoesNotContain("WARNING", stdout);
         Assert.DoesNotContain("WARNING", stderr);
 
-        if (!TryRunQpdf($"--check \"{path}\"", out var checkExit, out var checkOut, out var checkErr))
-        {
-            GateOnCi("qpdf");
-            return;
-        }
+        ExternalTool.TryRun("qpdf", ["--check", path], out var checkExit, out var checkOut, out var checkErr, out var checkTimedOut);
+        Assert.False(checkTimedOut, "qpdf --check timed out, or its output could not be fully captured.");
         Assert.True(checkExit == 0,
             $"qpdf --check failed (exit {checkExit}).\nstdout: {checkOut}\nstderr: {checkErr}");
         Assert.DoesNotContain("WARNING", checkOut);
@@ -459,58 +412,4 @@ public sealed class LinearizationQpdfTests : IDisposable
         return null;
     }
 
-    // Tries the local qpdf path, then falls back to finding "qpdf" on PATH.
-    private static bool TryRunQpdf(string args, out int exitCode, out string stdout, out string stderr)
-    {
-        exitCode = -1;
-        stdout = string.Empty;
-        stderr = string.Empty;
-
-        // Try the local dev install first; fall back to PATH.
-        string? exe = File.Exists(LocalQpdfPath) ? LocalQpdfPath : "qpdf";
-
-        var psi = new ProcessStartInfo(exe, args)
-        {
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true,
-        };
-
-        Process? process = null;
-        try { process = Process.Start(psi); }
-        catch (Win32Exception) { return false; }
-
-        if (process is null) return false;
-
-        using (process)
-        {
-            var stdoutTask = process.StandardOutput.ReadToEndAsync();
-            var stderrTask = process.StandardError.ReadToEndAsync();
-            var completed = process.WaitForExit(milliseconds: 30_000);
-            stdout = stdoutTask.GetAwaiter().GetResult();
-            stderr = stderrTask.GetAwaiter().GetResult();
-            if (!completed)
-            {
-                try { process.Kill(entireProcessTree: true); }
-                catch (InvalidOperationException) { }
-                exitCode = -1;
-                return true;
-            }
-            exitCode = process.ExitCode;
-        }
-        return true;
-    }
-
-    private static void GateOnCi(string toolName)
-    {
-        var isCI = string.Equals(
-            Environment.GetEnvironmentVariable("CI"), "true",
-            StringComparison.OrdinalIgnoreCase);
-        var isGitHubActions = string.Equals(
-            Environment.GetEnvironmentVariable("GITHUB_ACTIONS"), "true",
-            StringComparison.OrdinalIgnoreCase);
-        if (isCI || isGitHubActions)
-            Assert.Fail($"Required external tool '{toolName}' is unavailable on CI.");
-    }
 }
