@@ -32,20 +32,6 @@
   </PropertyGroup>
 
   <!--
-    SourceLink: embed commit + repo metadata so consumers can step into library source from
-    symbols. This reference is redundant — the SDK imports SourceLink implicitly and only steps
-    aside when GeneratePathProperty is set, which this does not. Packing with it, without it, and
-    at an older version all produce byte-identical symbols. Removal is #202; do not spend effort
-    servicing the version in the meantime.
-  -->
-  <ItemGroup>
-    <PackageReference Include="Microsoft.SourceLink.GitHub">
-      <PrivateAssets>all</PrivateAssets>
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-    </PackageReference>
-  </ItemGroup>
-
-  <!--
     Public-API surface lock. The PublicApiAnalyzers compare the live public surface
     against the committed PublicAPI.{Shipped,Unshipped}.txt baselines so that any
     accidental addition/removal/rename of public API is a build error. This is the
