@@ -47,14 +47,59 @@ Package family and project home: <https://github.com/Tim81/VellumPDF>
 
 ## Roadmap
 
+Planned direction, tracked as [GitHub milestones](https://github.com/Tim81/VellumPDF/milestones).
+These are scopes, not commitments — the milestones carry no due dates, and nothing past 2.2.0
+has shipped yet.
+
+Scope past 2.5 runs as **two parallel tracks**, because auditing the layout engine turned up more
+work than the PDF 2.0 conformance gap did. Both ship from the same version numbers.
+
+**Kernel and conformance**
+
 | Milestone | Scope |
 | --- | --- |
-| **2.0 — Breaking changes** | Strong-named assemblies (#53), an async I/O surface for `Save`/`Sign`/loaders (#54), and an external-signer API for cloud KMS and remote HSM signing (#165). Each changes assembly identity or the public contract, so they waited for a major version. |
-| **2.1 — PDF reader (structural)** | `VellumPdf.Reader` reads classic tables, cross-reference and object streams, and hybrid-reference files, and opens encrypted documents given their password (#97) — the Standard security handler at `/V` 1, 2, 4 and 5, proven against a committed fixture corpus and third-party files (Epic #100). |
-| **2.2 — Encryption and parser hardening** (this release) | An empty owner password no longer produces a document anyone opens at owner privilege (#211), and building a very large dictionary is no longer quadratic on the path that runs before a password is checked (#208). Carries a documented breaking change, so it is a minor rather than a patch release. |
-| **2.3 — PDF content extraction** | Text and image extraction on top of the reader. Writing a decrypted copy (#186), reader fuzzing (#99), and graduating `VellumPdf.Reader` from Preview (#187) ride along. |
-| **2.4 — PDF/A-1 profile** | A full PDF/A-1 (ISO 19005-1) rule set, which unblocks recursive validation of embedded PDF/A-1 files (#140). |
-| **3.0 — Read-modify-write** | A unified round-trip document model that supersedes the write-once `PdfDocument`, so existing PDFs can be opened, edited, and saved back (Epic #101). |
+| **2.3 — Reader robustness** | Cross-reference reconstruction for damaged files (#184), a decrypted-copy writer (#186), the `/XRefStm` precedence decision (#206), reader fuzzing (#99), and the CI and oracle debt that makes all of it verifiable. |
+| **2.4 — PDF content extraction** | Text and image extraction on top of the reader (#98), and graduating `VellumPdf.Reader` from Preview (#187). |
+| **2.5 — PDF/A-4 and PDF/A-1 profiles** | PDF/A-4 (#222) so conformance output stops downgrading to `%PDF-1.7`, PDF/A-1 (#218), and dropping the keys ISO 32000-2 deprecates (#325). |
+| **2.6 — ISO/TS extensions to PDF 2.0** | The four Technical Specifications that amend PDF 2.0: AES-GCM (#236), PDF MAC integrity (#237), SHA-3 (#238) and EdDSA (#239). The reader currently rejects every AES-GCM file, so this closes an interoperability bug as well as adding features. |
+| **2.7 — Embedded files and associated files** | Attachments, the `/Names` tree, the missing annotation subtypes, and ISO 32000-2 §14.13 associated files. Unblocks PDF/A-4F. |
+| **2.8 — Colour and paint** | PDF functions, the full shading model, tiling and shading patterns, and the colour spaces beyond the device ones and ICCBased. |
+| **2.9 — Rendering and resources** | Transparency and blend modes, the complete ExtGState, form XObjects, inline images, optional content, and the page boundary boxes. |
+| **2.10 — Font completeness** | Type 1, bare CFF, simple TrueType and Type 3 fonts; predefined CMaps and vertical writing; kerning; and enforcing the `fsType` embedding permission the library currently parses and ignores. |
+| **2.11 — Tagged PDF 2.0 writer** | Structure namespaces, structure destinations, and the ISO/TS 32005 containment matrix. |
+| **2.12 — PDF/UA-2 and WTPDF** | The `ua2`, `wt1a` and `wt1r` rule sets. |
+| **2.13 — Signature verification** | Verifying signatures, not only producing them: integrity, coverage, chains, revocation and achieved PAdES level. |
+
+**Layout**
+
+| Milestone | Scope |
+| --- | --- |
+| **Layout A — Foundations** | Sections, a containment model, inline runs in every element, a unit type, named styles, renderer extensibility, and fixing a defect where an element spanning a page break emits two structure elements instead of one. |
+| **Layout B — Accessibility structure** | The PDF/UA-2 element set, generated contents and indexes, captions, table header semantics, footnotes and endnotes, automatic numbering, tab stops with leaders, and internal links. |
+| **Layout C — Forms and semantics** | Form elements that carry their own labels, ListNumbering fidelity, artifact property lists, and build-time accessibility diagnostics. |
+| **Layout D — Typography** | Text decoration, optimal line breaking, widow and orphan control, hyphenation and floats, cell borders, and inline content such as images in a line of text. |
+| **Layout E — Composition** | Composite elements and templates, page breaks, anchoring and rotation, page backgrounds, running bands that hold more than a single string, and prepress bleed and printer marks. |
+| **Layout F — Advanced layout** | Multi-column flow, nested tables, a chart family, streaming generation, and the SVG import epic. |
+| **Layout G — International text** | Unicode bidi and right-to-left, vertical and CJK writing, and the complex-script shaping epic. |
+
+**Editing existing documents.** The only breaking milestone is 3.0.
+
+| Milestone | Scope |
+| --- | --- |
+| **3.0 — Round-trip document model** | A new round-trip type alongside the write-once `PdfDocument`, a memory-mapped backing store, and the new `VellumPdf.Editing` package (Epic #101). |
+| **3.1 — Sign and fill existing documents** | Signing a PDF this library did not write, and filling its form fields. Neither is possible today. |
+| **3.2 — Append-only content edits** | Annotations, metadata, watermarks, attachments, and appending flowed content. |
+| **3.3 — Full-rewrite operations** | Revision-history discard, re-encryption, and signature removal. |
+| **3.4 — Structural editing** | Page operations, merge and split, optimise and sanitise. |
+| **3.5 — Redaction** | Marking regions and applying them. Deliberately isolated: marking alone is not redaction. |
+| **3.6 — Content editing** | Reflowing text edits, and structure-tree round-trip editing of tagged documents. |
+
+What this library implements of ISO 32000-2 today is inventoried, reference by reference, in
+[PDF 2.0 conformance](../../docs/pdf20-conformance.md). It emits a `%PDF-2.0` header, which is not the
+same as conformance, and the table says which is which.
+
+`VellumPdf.Reader` is marked Preview in the table above; expect its public surface to settle
+as these milestones land. `VellumPdf.Conformance` graduated to Stable in 2.0.
 
 ## License
 

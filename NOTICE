@@ -63,3 +63,40 @@ Adobe Glyph List
   CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
   ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
   POSSIBILITY OF SUCH DAMAGE.
+
+────────────────────────────────────────────────────────────────────────────────
+Third-party data used to build documentation (not bundled)
+────────────────────────────────────────────────────────────────────────────────
+
+PDF Association specification datasets
+  Copyright  : Copyright 2020 PDF Association, Inc. https://www.pdfa.org
+  Sources    : https://github.com/pdf-association/PDF2NormRefs
+               (data/referencesGraph.json, branch master)
+               https://github.com/pdf-association/arlington-pdf-model
+               (tsv/2.0/)
+  Use        : docs/pdf20-conformance.md is generated from these by
+               eng/generate-pdf20-inventory.py, in modified form: rows filtered,
+               merged across the two datasets, and annotated with implementation
+               status that is this project's assessment, not the PDF
+               Association's.
+  Not shipped: The datasets are downloaded at generation time and are not in
+               this tree. Neither they nor the generated document are included
+               in any VellumPdf NuGet package, which ship only their README.
+  Licence    : Both upstream NOTICE files dual-license their contents: Apache
+               License 2.0 for software, and the Creative Commons Attribution
+               4.0 International License for other documentation. These are
+               data files rather than software, so CC-BY-4.0 is the licence
+               followed here. https://creativecommons.org/licenses/by/4.0/
+
+  Both upstream NOTICE files carry this acknowledgement, reproduced as supplied:
+
+    This material is based upon work supported by the Defense Advanced
+    Research Projects Agency (DARPA) under Contract No. HR001119C0079.
+    Any opinions, findings and conclusions or recommendations expressed
+    in this material are those of the author(s) and do not necessarily
+    reflect the views of the Defense Advanced Research Projects Agency
+    (DARPA). Approved for public release.
+
+  The material is provided as-is, without warranties or conditions of any kind.
+  Full attribution accompanies the generated document itself, in
+  docs/pdf20-conformance.md.
