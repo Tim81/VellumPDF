@@ -32,6 +32,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   statement, not a conformance claim — see the inventory for what is actually implemented.
 - `docs/toc.yml` registers the barcodes roadmap and the new inventory, taking the published site from
   three of six files to five of seven. (#220)
+- **Dropped the `Microsoft.SourceLink.GitHub` package reference.** The .NET SDK has imported
+  SourceLink implicitly since .NET 8, and steps aside when `SuppressImplicitGitSourceLink` is set —
+  which NuGet does automatically for this reference, by emitting `PkgMicrosoft_SourceLink_Common`.
+  So the reference was not layered on top of the SDK's import; it *replaced* it, and removing it
+  hands the job back. Packing all eight packages both ways under `ContinuousIntegrationBuild=true`
+  produces archives that differ only in the random GUID NuGet stamps into every pack — every nuspec,
+  every assembly, and all eleven symbol PDBs with their SourceLink document maps are byte-identical,
+  so nothing that ships changes. The package's own MSBuild logic is byte-identical to the SDK's copy;
+  only the compiled task assembly now floats with the SDK band instead of being pinned. (#202)
 
 ## [2.2.0] - 2026-08-28
 
@@ -1258,7 +1267,7 @@ few small additions. No public API was removed.
   headers, and no unbounded allocations driven by attacker-controlled length
   fields.
 
-[Unreleased]: https://github.com/Tim81/VellumPDF/compare/v2.1.0...HEAD
+[Unreleased]: https://github.com/Tim81/VellumPDF/compare/v2.2.0...HEAD
 [2.2.0]: https://github.com/Tim81/VellumPDF/releases/tag/v2.2.0
 [2.1.0]: https://github.com/Tim81/VellumPDF/releases/tag/v2.1.0
 [2.0.0]: https://github.com/Tim81/VellumPDF/releases/tag/v2.0.0
