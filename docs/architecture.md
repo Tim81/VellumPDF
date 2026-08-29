@@ -33,6 +33,18 @@ unified read-modify-write model that supersedes the write-once document API
 - The names of disallowed reference libraries must not appear anywhere in the
   repository. This is enforced in CI by `eng/clean-room-check.ps1`.
 
+**Provenance.** The specifications themselves are held locally and read directly:
+ISO 32000-2:2020 with Errata Collection 3, the ISO/TS 32001–32005 extension series,
+ISO 14289-2 (PDF/UA-2), WTPDF 1.0 and the PDF 2.0 Application Notes. So clause citations
+in this codebase point at text that was actually consulted rather than at a clause number
+carried over from a secondary source, and a reviewer can check any of them. The copies are
+licensed to one person and are excluded from the repository via `.git/info/exclude`; see
+`CLAUDE.md` for how to query them.
+
+Holding a standard is not implementing one, so this licenses no conformance claim. See
+[PDF 2.0 conformance](pdf20-conformance.md) for what the library actually does, and note it
+still emits three keys ISO 32000-2 deprecates (#325).
+
 ## Architecture style
 
 A **layered, modular class library** — "library-flavoured Clean Architecture":
@@ -153,8 +165,21 @@ to retrofit:
 The original M1–M4 plan is done through M3, and most of M4: kernel and font engine, layout
 with pagination and tagging, PDF/A-2b/2u/2a and PDF/UA-1 with an in-process preflight,
 AES-256 encryption, barcodes, xref and object streams, linearization, PAdES signing with
-LTV, and AcroForm fields. What is still open is complex-script shaping, SVG→PDF, HTML→PDF,
-and the reader work that leads to read-modify-write.
+LTV, and AcroForm fields.
+
+Everything the paragraph above used to list as open is now tracked. Complex-script shaping
+and SVG→PDF are epics in the Layout track; HTML→PDF is a Backlog epic with its dependencies
+named; the reader work leads into the v3.x editing line.
+
+Scope past 2.5 runs as **two parallel tracks**: Kernel and conformance (v2.6 to v2.13), and
+Layout (A to I). Auditing the layout engine turned up more work than the PDF 2.0 conformance
+gap did, and splitting them keeps either from blocking the other. Both ship from the same
+version numbers, since the packages version in lockstep.
+
+v3.0 adds a ninth package, `VellumPdf.Editing`, depending on Kernel, Reader and Layout. It
+holds the round-trip document model and supplies high-level editing as extension methods over
+Layout types, the pattern `VellumPdf.Signing` already uses, so Layout itself gains no
+dependency and generate-only consumers pay nothing for it.
 
 Live scope lives in one place — the roadmap table in [README.md](../README.md#roadmap),
 tracked as [GitHub milestones](https://github.com/Tim81/VellumPDF/milestones). A second copy
