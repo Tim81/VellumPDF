@@ -83,10 +83,7 @@ public sealed class ConformanceCatalogTests
         // version-drift check wherever the jar is directly readable (local dev).
         var jar = FindCliJar();
         if (jar is null)
-        {
             Assert.Skip("veraPDF CLI jar not directly accessible (e.g. Docker-backed CI); catalog diff skipped.");
-            return;
-        }
 
         var profileIds = ReadProfileIds(jar, profileFile);
         var catalogIds = ConformanceCatalog.For(profile).Select(c => c.TestId).ToHashSet();

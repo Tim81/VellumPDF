@@ -334,8 +334,11 @@ dotnet test  VellumPdf.slnx
 ```
 
 The veraPDF conformance gate runs automatically in CI; to reproduce it locally,
-install [veraPDF](https://verapdf.org) (or use its Docker image) so the
-`verapdf` CLI is on your `PATH`, then run the oracle tests.
+install [veraPDF](https://verapdf.org) (or use its Docker image) and either put
+the `verapdf` CLI on your `PATH` or point `VERAPDF_HOME` at the install
+directory (required on Windows, where the installer's launcher is
+`verapdf.bat`, which a bare `verapdf` on `PATH` cannot resolve directly), then
+run the oracle tests with `REQUIRE_VERAPDF=1` set.
 
 ## License & provenance
 

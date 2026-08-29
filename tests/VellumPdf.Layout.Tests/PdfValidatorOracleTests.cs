@@ -1,8 +1,6 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
-using System.ComponentModel;
-using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text.RegularExpressions;
@@ -16,6 +14,7 @@ using VellumPdf.Layout.Core;
 using VellumPdf.Layout.Elements;
 using VellumPdf.Layout.Elements.Table;
 using VellumPdf.Signing;
+using VellumPdf.TestSupport;
 
 namespace VellumPdf.Layout.Tests;
 
@@ -23,10 +22,11 @@ namespace VellumPdf.Layout.Tests;
 /// External-validator oracle: generates representative PDFs to temp files and
 /// validates them with qpdf (structural check) and pdftotext (content extraction).
 ///
-/// Tool gating:
-///   - If a required tool is unavailable AND we are on CI (CI=true or GITHUB_ACTIONS=true),
-///     the test fails with a clear message so CI never silently skips the oracle.
-///   - If the tool is unavailable on a local dev machine, the test returns early (skip).
+/// Tool gating, via the shared <see cref="ExternalTool"/>/<see cref="OracleGate"/> pair (#198):
+///   - If a required tool is unavailable AND the environment demands the oracle run (CI=true,
+///     GITHUB_ACTIONS=true, or REQUIRE_ORACLES=true/1), the test fails with a clear message so
+///     CI never silently skips the oracle.
+///   - If the tool is unavailable on a local dev machine, the test skips visibly.
 /// </summary>
 public sealed class PdfValidatorOracleTests : IDisposable
 {
@@ -53,11 +53,7 @@ public sealed class PdfValidatorOracleTests : IDisposable
         var pdfPath = Path.Combine(_tempDir, "multipage.pdf");
         GenerateMultiPageDoc(pdfPath);
 
-        if (!TryRunTool("qpdf", $"--check \"{pdfPath}\"", out var exit, out var stdout, out var stderr))
-        {
-            GateOnCi("qpdf");
-            return;
-        }
+        ExternalTool.TryRun("qpdf", ["--check", pdfPath], out var exit, out var stdout, out var stderr, out _);
 
         Assert.True(
             exit == 0,
@@ -70,11 +66,7 @@ public sealed class PdfValidatorOracleTests : IDisposable
         var pdfPath = Path.Combine(_tempDir, "heading_table_list.pdf");
         GenerateHeadingTableListDoc(pdfPath);
 
-        if (!TryRunTool("qpdf", $"--check \"{pdfPath}\"", out var exit, out var stdout, out var stderr))
-        {
-            GateOnCi("qpdf");
-            return;
-        }
+        ExternalTool.TryRun("qpdf", ["--check", pdfPath], out var exit, out var stdout, out var stderr, out _);
 
         Assert.True(
             exit == 0,
@@ -85,16 +77,12 @@ public sealed class PdfValidatorOracleTests : IDisposable
     public void EmbeddedFont_QpdfCheck_Passes()
     {
         var fontPath = FindPlatformFont();
-        if (fontPath is null) return; // no platform font — skip embedded-font case only
+        if (fontPath is null) { OracleGate.Unavailable("platform font for embedded-font qpdf oracle"); }
 
         var pdfPath = Path.Combine(_tempDir, "embedded_font.pdf");
         GenerateEmbeddedFontDoc(pdfPath, fontPath);
 
-        if (!TryRunTool("qpdf", $"--check \"{pdfPath}\"", out var exit, out var stdout, out var stderr))
-        {
-            GateOnCi("qpdf");
-            return;
-        }
+        ExternalTool.TryRun("qpdf", ["--check", pdfPath], out var exit, out var stdout, out var stderr, out _);
 
         Assert.True(
             exit == 0,
@@ -109,11 +97,7 @@ public sealed class PdfValidatorOracleTests : IDisposable
         var pdfPath = Path.Combine(_tempDir, "multipage_text.pdf");
         GenerateMultiPageDoc(pdfPath);
 
-        if (!TryRunTool("pdftotext", $"\"{pdfPath}\" -", out _, out var text, out var stderr))
-        {
-            GateOnCi("pdftotext");
-            return;
-        }
+        ExternalTool.TryRun("pdftotext", [pdfPath, "-"], out _, out var text, out var stderr, out _);
 
         Assert.True(
             text.Contains("VELLUMORACLE123", StringComparison.Ordinal),
@@ -129,11 +113,7 @@ public sealed class PdfValidatorOracleTests : IDisposable
         var pdfPath = Path.Combine(_tempDir, "heading_table_list_text.pdf");
         GenerateHeadingTableListDoc(pdfPath);
 
-        if (!TryRunTool("pdftotext", $"\"{pdfPath}\" -", out _, out var text, out var stderr))
-        {
-            GateOnCi("pdftotext");
-            return;
-        }
+        ExternalTool.TryRun("pdftotext", [pdfPath, "-"], out _, out var text, out var stderr, out _);
 
         Assert.True(
             text.Contains("CellMarkerA", StringComparison.Ordinal),
@@ -150,16 +130,12 @@ public sealed class PdfValidatorOracleTests : IDisposable
     public void EmbeddedFont_PdftotextFindsMarker()
     {
         var fontPath = FindPlatformFont();
-        if (fontPath is null) return; // no platform font — skip embedded-font case only
+        if (fontPath is null) { OracleGate.Unavailable("platform font for embedded-font pdftotext oracle"); }
 
         var pdfPath = Path.Combine(_tempDir, "embedded_font_text.pdf");
         GenerateEmbeddedFontDoc(pdfPath, fontPath);
 
-        if (!TryRunTool("pdftotext", $"\"{pdfPath}\" -", out _, out var text, out var stderr))
-        {
-            GateOnCi("pdftotext");
-            return;
-        }
+        ExternalTool.TryRun("pdftotext", [pdfPath, "-"], out _, out var text, out var stderr, out _);
 
         Assert.True(
             text.Contains("EMBEDORACLE456", StringComparison.Ordinal),
@@ -184,11 +160,7 @@ public sealed class PdfValidatorOracleTests : IDisposable
         // -enc UTF-8 makes the check independent of the pdftotext build's default text
         // encoding: some builds default to Latin-1, which cannot represent bullet or
         // en/em dash and would otherwise fail this check for a reason unrelated to the fix.
-        if (!TryRunTool("pdftotext", $"-enc UTF-8 \"{pdfPath}\" -", out _, out var text, out var stderr))
-        {
-            GateOnCi("pdftotext");
-            return;
-        }
+        ExternalTool.TryRun("pdftotext", ["-enc", "UTF-8", pdfPath, "-"], out _, out var text, out var stderr, out _);
 
         Assert.True(text.Contains('°'), $"'°' (degree) not found in pdftotext output.\nstderr: {stderr}");
         Assert.True(text.Contains('•'), $"'•' (bullet) not found in pdftotext output.\nstderr: {stderr}");
@@ -215,12 +187,8 @@ public sealed class PdfValidatorOracleTests : IDisposable
         var pdfPath = Path.Combine(_tempDir, "encrypted_aes256.pdf");
         GenerateEncryptedDoc(pdfPath);
 
-        if (!TryRunTool("qpdf", $"--password={EncryptionUserPassword} --check \"{pdfPath}\"",
-            out var exit, out var stdout, out var stderr))
-        {
-            GateOnCi("qpdf");
-            return;
-        }
+        ExternalTool.TryRun("qpdf", [$"--password={EncryptionUserPassword}", "--check", pdfPath],
+            out var exit, out var stdout, out var stderr, out _);
 
         Assert.True(
             exit == 0,
@@ -234,12 +202,8 @@ public sealed class PdfValidatorOracleTests : IDisposable
         var pdfPath = Path.Combine(_tempDir, "encrypted_showenc.pdf");
         GenerateEncryptedDoc(pdfPath);
 
-        if (!TryRunTool("qpdf", $"--password={EncryptionUserPassword} --show-encryption \"{pdfPath}\"",
-            out var exit, out var stdout, out var stderr))
-        {
-            GateOnCi("qpdf");
-            return;
-        }
+        ExternalTool.TryRun("qpdf", [$"--password={EncryptionUserPassword}", "--show-encryption", pdfPath],
+            out var exit, out var stdout, out var stderr, out _);
 
         // qpdf --show-encryption reports the algorithm as "AESv3" for V5/R6
         // (it does not print the literal key length "256").
@@ -260,12 +224,8 @@ public sealed class PdfValidatorOracleTests : IDisposable
         var pdfPath = Path.Combine(_tempDir, "encrypted_permbits.pdf");
         GenerateRestrictedPermissionsDoc(pdfPath);
 
-        if (!TryRunTool("qpdf", $"--password={EncryptionUserPassword} --show-encryption \"{pdfPath}\"",
-            out var exit, out var stdout, out var stderr))
-        {
-            GateOnCi("qpdf");
-            return;
-        }
+        ExternalTool.TryRun("qpdf", [$"--password={EncryptionUserPassword}", "--show-encryption", pdfPath],
+            out var exit, out var stdout, out var stderr, out _);
 
         Assert.True(exit == 0, $"qpdf --show-encryption failed (exit {exit}).\nstdout: {stdout}\nstderr: {stderr}");
 
@@ -311,12 +271,8 @@ public sealed class PdfValidatorOracleTests : IDisposable
         var pdfPath = Path.Combine(_tempDir, "encrypted_pdftotext.pdf");
         GenerateEncryptedDoc(pdfPath);
 
-        if (!TryRunTool("pdftotext", $"-upw {EncryptionUserPassword} \"{pdfPath}\" -",
-            out _, out var text, out var stderr))
-        {
-            GateOnCi("pdftotext");
-            return;
-        }
+        ExternalTool.TryRun("pdftotext", ["-upw", EncryptionUserPassword, pdfPath, "-"],
+            out _, out var text, out var stderr, out _);
 
         Assert.True(
             text.Contains(EncryptionMarker, StringComparison.Ordinal),
@@ -331,11 +287,7 @@ public sealed class PdfValidatorOracleTests : IDisposable
         var pdfPath = Path.Combine(_tempDir, "signed.pdf");
         GenerateSignedDoc(pdfPath);
 
-        if (!TryRunTool("pdfsig", $"\"{pdfPath}\"", out _, out var stdout, out var stderr))
-        {
-            GateOnCi("pdfsig");
-            return;
-        }
+        ExternalTool.TryRun("pdfsig", [pdfPath], out _, out var stdout, out var stderr, out _);
 
         // pdfsig (poppler-utils) outputs "Signature is Valid" for a valid digest.
         // An untrusted self-signed certificate still produces a valid digest, so
@@ -446,11 +398,7 @@ public sealed class PdfValidatorOracleTests : IDisposable
         var pdfPath = Path.Combine(_tempDir, "acroform.pdf");
         GenerateAcroFormDoc(pdfPath);
 
-        if (!TryRunTool("qpdf", $"--check \"{pdfPath}\"", out var exit, out var stdout, out var stderr))
-        {
-            GateOnCi("qpdf");
-            return;
-        }
+        ExternalTool.TryRun("qpdf", ["--check", pdfPath], out var exit, out var stdout, out var stderr, out _);
 
         Assert.True(
             exit == 0,
@@ -463,11 +411,15 @@ public sealed class PdfValidatorOracleTests : IDisposable
         var pdfPath = Path.Combine(_tempDir, "acroform_text.pdf");
         GenerateAcroFormDoc(pdfPath);
 
-        if (!TryRunTool("pdftotext", $"\"{pdfPath}\" -", out _, out var text, out var stderr))
-        {
-            GateOnCi("pdftotext");
-            return;
-        }
+        ExternalTool.TryRun("pdftotext", [pdfPath, "-"], out var exit, out var text, out var stderr, out var timedOut);
+
+        // The run must actually have completed before the fallback branch below can treat an
+        // empty stderr as "pdftotext reported no errors": a killed or drain-timed-out process can
+        // report an empty stderr too, which that check would otherwise accept as a clean run
+        // (#198 review).
+        Assert.True(exit == 0 && !timedOut,
+            $"pdftotext did not run to completion on the AcroForm doc (exit {exit}, timedOut {timedOut}).\n" +
+            $"stderr: {stderr}");
 
         // pdftotext may or may not render field appearance streams depending on the
         // version — we accept either the text appearing or pdftotext succeeding without error.
@@ -537,91 +489,6 @@ public sealed class PdfValidatorOracleTests : IDisposable
     /// </summary>
     private static string? FindOtfFont() => PdfTestUtil.FindOtfFont();
 
-    /// <summary>
-    /// Attempts to run an external CLI tool and captures its output.
-    /// Returns false if the process cannot be started (tool not installed).
-    /// Gives the process a 30-second timeout and disposes properly.
-    /// stdout and stderr are captured; stdout is returned via the out parameter.
-    /// </summary>
-    private static bool TryRunTool(
-        string exe,
-        string args,
-        out int exitCode,
-        out string stdout,
-        out string stderr)
-    {
-        exitCode = -1;
-        stdout = string.Empty;
-        stderr = string.Empty;
-
-        var psi = new ProcessStartInfo(exe, args)
-        {
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true,
-        };
-
-        Process? process = null;
-        try
-        {
-            process = Process.Start(psi);
-        }
-        catch (Win32Exception)
-        {
-            // Tool not installed on this machine.
-            return false;
-        }
-
-        if (process is null) return false;
-
-        using (process)
-        {
-            // Read both streams concurrently to avoid deadlock on large output.
-            var stdoutTask = process.StandardOutput.ReadToEndAsync();
-            var stderrTask = process.StandardError.ReadToEndAsync();
-
-            var completed = process.WaitForExit(milliseconds: 30_000);
-            stdout = stdoutTask.GetAwaiter().GetResult();
-            stderr = stderrTask.GetAwaiter().GetResult();
-
-            if (!completed)
-            {
-                try { process.Kill(entireProcessTree: true); }
-                catch (InvalidOperationException) { /* process already exited — best-effort */ }
-                exitCode = -1;
-                return true; // tool exists but timed out — let the assertion handle it
-            }
-
-            exitCode = process.ExitCode;
-        }
-
-        return true;
-    }
-
-    /// <summary>
-    /// Asserts failure when running on CI and the required tool is absent.
-    /// On a local dev machine (non-CI), this method does nothing (skip silently).
-    /// </summary>
-    private static void GateOnCi(string toolName)
-    {
-        var isCI = string.Equals(
-            Environment.GetEnvironmentVariable("CI"), "true",
-            StringComparison.OrdinalIgnoreCase);
-        var isGitHubActions = string.Equals(
-            Environment.GetEnvironmentVariable("GITHUB_ACTIONS"), "true",
-            StringComparison.OrdinalIgnoreCase);
-
-        if (isCI || isGitHubActions)
-        {
-            Assert.Fail(
-                $"Required external tool '{toolName}' is not available on CI. " +
-                "Ensure the CI workflow installs it (e.g. sudo apt-get install -y qpdf poppler-utils).");
-        }
-
-        // Local dev: tool not installed — silently skip.
-    }
-
     // ── Radio button group + push button oracle tests ────────────────────────
 
     [Fact]
@@ -630,11 +497,7 @@ public sealed class PdfValidatorOracleTests : IDisposable
         var pdfPath = Path.Combine(_tempDir, "radio_pushbutton.pdf");
         GenerateRadioAndPushButtonDoc(pdfPath);
 
-        if (!TryRunTool("qpdf", $"--check \"{pdfPath}\"", out var exit, out var stdout, out var stderr))
-        {
-            GateOnCi("qpdf");
-            return;
-        }
+        ExternalTool.TryRun("qpdf", ["--check", pdfPath], out var exit, out var stdout, out var stderr, out _);
 
         Assert.True(
             exit == 0,
@@ -681,11 +544,7 @@ public sealed class PdfValidatorOracleTests : IDisposable
         var pdfPath = Path.Combine(_tempDir, "objstm_multipage.pdf");
         GenerateObjStmMultiPageDoc(pdfPath);
 
-        if (!TryRunTool("qpdf", $"--check \"{pdfPath}\"", out var exit, out var stdout, out var stderr))
-        {
-            GateOnCi("qpdf");
-            return;
-        }
+        ExternalTool.TryRun("qpdf", ["--check", pdfPath], out var exit, out var stdout, out var stderr, out _);
 
         Assert.True(
             exit == 0,
@@ -698,11 +557,7 @@ public sealed class PdfValidatorOracleTests : IDisposable
         var pdfPath = Path.Combine(_tempDir, "objstm_multipage_text.pdf");
         GenerateObjStmMultiPageDoc(pdfPath);
 
-        if (!TryRunTool("pdftotext", $"\"{pdfPath}\" -", out _, out var text, out var stderr))
-        {
-            GateOnCi("pdftotext");
-            return;
-        }
+        ExternalTool.TryRun("pdftotext", [pdfPath, "-"], out _, out var text, out var stderr, out _);
 
         Assert.True(
             text.Contains(ObjStmOracleMarker, StringComparison.Ordinal),
@@ -730,7 +585,7 @@ public sealed class PdfValidatorOracleTests : IDisposable
 
     // The veraPDF CLI is provided on PATH in CI via a Docker shim (see
     // .github/workflows/ci.yml "Install veraPDF shim"). These tests therefore gate
-    // on CI through GateOnCi("verapdf"): if veraPDF is missing on CI the build fails,
+    // on CI through OracleGate.Unavailable("verapdf"): if veraPDF is missing on CI the build fails,
     // while a local machine without veraPDF simply skips. The compliance assertion is
     // strict — a non-compliant report fails the test and the full report is surfaced;
     // it is never weakened to hide a failing rule.
@@ -744,7 +599,7 @@ public sealed class PdfValidatorOracleTests : IDisposable
     public void PdfA2b_veraPdf_reportsCompliant()
     {
         var fontPath = FindPlatformFont();
-        if (fontPath is null) { GateOnCi("platform font for PDF/A oracle"); return; }
+        if (fontPath is null) { OracleGate.Unavailable("platform font for PDF/A oracle"); }
 
         var pdfPath = Path.Combine(_tempDir, "pdfa2b_verapdf.pdf");
         GeneratePdfATextDoc(pdfPath, fontPath, PdfConformance.PdfA2b);
@@ -755,7 +610,7 @@ public sealed class PdfValidatorOracleTests : IDisposable
     public void PdfA2u_veraPdf_reportsCompliant()
     {
         var fontPath = FindPlatformFont();
-        if (fontPath is null) { GateOnCi("platform font for PDF/A oracle"); return; }
+        if (fontPath is null) { OracleGate.Unavailable("platform font for PDF/A oracle"); }
 
         var pdfPath = Path.Combine(_tempDir, "pdfa2u_verapdf.pdf");
         GeneratePdfATextDoc(pdfPath, fontPath, PdfConformance.PdfA2u);
@@ -766,7 +621,7 @@ public sealed class PdfValidatorOracleTests : IDisposable
     public void PdfA2b_Table_veraPdf_reportsCompliant()
     {
         var fontPath = FindPlatformFont();
-        if (fontPath is null) { GateOnCi("platform font for PDF/A oracle"); return; }
+        if (fontPath is null) { OracleGate.Unavailable("platform font for PDF/A oracle"); }
 
         var pdfPath = Path.Combine(_tempDir, "pdfa2b_table_verapdf.pdf");
         GeneratePdfATableDoc(pdfPath, fontPath);
@@ -777,7 +632,7 @@ public sealed class PdfValidatorOracleTests : IDisposable
     public void PdfA2b_Image_veraPdf_reportsCompliant()
     {
         var fontPath = FindPlatformFont();
-        if (fontPath is null) { GateOnCi("platform font for PDF/A oracle"); return; }
+        if (fontPath is null) { OracleGate.Unavailable("platform font for PDF/A oracle"); }
 
         var pdfPath = Path.Combine(_tempDir, "pdfa2b_image_verapdf.pdf");
         GeneratePdfAImageDoc(pdfPath, fontPath);
@@ -793,7 +648,7 @@ public sealed class PdfValidatorOracleTests : IDisposable
     public void PdfA2b_Jpx_veraPdf_reportsCompliant()
     {
         var fontPath = FindPlatformFont();
-        if (fontPath is null) { GateOnCi("platform font for JPEG 2000 PDF/A oracle"); return; }
+        if (fontPath is null) { OracleGate.Unavailable("platform font for JPEG 2000 PDF/A oracle"); }
 
         var pdfPath = Path.Combine(_tempDir, "pdfa2b_jpx_verapdf.pdf");
         GeneratePdfAJpxDoc(pdfPath, fontPath);
@@ -809,7 +664,7 @@ public sealed class PdfValidatorOracleTests : IDisposable
     public void PdfA2b_Jbig2_veraPdf_reportsCompliant()
     {
         var fontPath = FindPlatformFont();
-        if (fontPath is null) { GateOnCi("platform font for JBIG2 PDF/A oracle"); return; }
+        if (fontPath is null) { OracleGate.Unavailable("platform font for JBIG2 PDF/A oracle"); }
 
         var pdfPath = Path.Combine(_tempDir, "pdfa2b_jbig2_verapdf.pdf");
         GeneratePdfAJbig2Doc(pdfPath, fontPath);
@@ -820,7 +675,7 @@ public sealed class PdfValidatorOracleTests : IDisposable
     public void PdfA2b_Tagged_veraPdf_reportsCompliant()
     {
         var fontPath = FindPlatformFont();
-        if (fontPath is null) { GateOnCi("platform font for PDF/A oracle"); return; }
+        if (fontPath is null) { OracleGate.Unavailable("platform font for PDF/A oracle"); }
 
         var pdfPath = Path.Combine(_tempDir, "pdfa2b_tagged_verapdf.pdf");
         GeneratePdfATaggedDoc(pdfPath, fontPath);
@@ -838,7 +693,7 @@ public sealed class PdfValidatorOracleTests : IDisposable
     public void Signed_PdfA2b_veraPdf_reportsCompliant()
     {
         var fontPath = FindPlatformFont();
-        if (fontPath is null) { GateOnCi("platform font for signed PDF/A oracle"); return; }
+        if (fontPath is null) { OracleGate.Unavailable("platform font for signed PDF/A oracle"); }
 
         var pdfPath = Path.Combine(_tempDir, "signed_pdfa2b_verapdf.pdf");
         GenerateSignedPdfA2bDoc(pdfPath, fontPath);
@@ -901,7 +756,7 @@ public sealed class PdfValidatorOracleTests : IDisposable
     public void Signed_PdfA2b_BLT_veraPdf_reportsCompliant()
     {
         var fontPath = FindPlatformFont();
-        if (fontPath is null) { GateOnCi("platform font for signed PDF/A LTV oracle"); return; }
+        if (fontPath is null) { OracleGate.Unavailable("platform font for signed PDF/A LTV oracle"); }
 
         var pdfPath = Path.Combine(_tempDir, "signed_pdfa2b_blt_verapdf.pdf");
         GenerateSignedConformanceDoc(pdfPath, fontPath, PdfConformance.PdfA2b, tagged: false, PadesLevel.B_LT);
@@ -912,7 +767,7 @@ public sealed class PdfValidatorOracleTests : IDisposable
     public void Signed_PdfA2b_BLTA_veraPdf_reportsCompliant()
     {
         var fontPath = FindPlatformFont();
-        if (fontPath is null) { GateOnCi("platform font for signed PDF/A LTV oracle"); return; }
+        if (fontPath is null) { OracleGate.Unavailable("platform font for signed PDF/A LTV oracle"); }
 
         var pdfPath = Path.Combine(_tempDir, "signed_pdfa2b_blta_verapdf.pdf");
         GenerateSignedConformanceDoc(pdfPath, fontPath, PdfConformance.PdfA2b, tagged: false, PadesLevel.B_LTA);
@@ -923,7 +778,7 @@ public sealed class PdfValidatorOracleTests : IDisposable
     public void Signed_PdfA2u_BLTA_veraPdf_reportsCompliant()
     {
         var fontPath = FindPlatformFont();
-        if (fontPath is null) { GateOnCi("platform font for signed PDF/A LTV oracle"); return; }
+        if (fontPath is null) { OracleGate.Unavailable("platform font for signed PDF/A LTV oracle"); }
 
         var pdfPath = Path.Combine(_tempDir, "signed_pdfa2u_blta_verapdf.pdf");
         GenerateSignedConformanceDoc(pdfPath, fontPath, PdfConformance.PdfA2u, tagged: false, PadesLevel.B_LTA);
@@ -934,7 +789,7 @@ public sealed class PdfValidatorOracleTests : IDisposable
     public void Signed_PdfA2a_BLTA_veraPdf_reportsCompliant()
     {
         var fontPath = FindPlatformFont();
-        if (fontPath is null) { GateOnCi("platform font for signed PDF/A LTV oracle"); return; }
+        if (fontPath is null) { OracleGate.Unavailable("platform font for signed PDF/A LTV oracle"); }
 
         var pdfPath = Path.Combine(_tempDir, "signed_pdfa2a_blta_verapdf.pdf");
         GenerateSignedConformanceDoc(pdfPath, fontPath, PdfConformance.PdfA2a, tagged: true, PadesLevel.B_LTA);
@@ -945,7 +800,7 @@ public sealed class PdfValidatorOracleTests : IDisposable
     public void Signed_PdfUA1_BLTA_veraPdf_reportsCompliant()
     {
         var fontPath = FindPlatformFont();
-        if (fontPath is null) { GateOnCi("platform font for signed PDF/UA LTV oracle"); return; }
+        if (fontPath is null) { OracleGate.Unavailable("platform font for signed PDF/UA LTV oracle"); }
 
         var pdfPath = Path.Combine(_tempDir, "signed_pdfua1_blta_verapdf.pdf");
         GenerateSignedConformanceDoc(pdfPath, fontPath, PdfConformance.PdfUA1, tagged: true, PadesLevel.B_LTA);
@@ -994,7 +849,7 @@ public sealed class PdfValidatorOracleTests : IDisposable
     public void PdfA2a_veraPdf_reportsCompliant()
     {
         var fontPath = FindPlatformFont();
-        if (fontPath is null) { GateOnCi("platform font for PDF/A oracle"); return; }
+        if (fontPath is null) { OracleGate.Unavailable("platform font for PDF/A oracle"); }
 
         var pdfPath = Path.Combine(_tempDir, "pdfa2a_verapdf.pdf");
         GeneratePdfATaggedDoc(pdfPath, fontPath, PdfConformance.PdfA2a);
@@ -1007,7 +862,7 @@ public sealed class PdfValidatorOracleTests : IDisposable
         // Minimal tagged text (heading + paragraph) isolates basic level-A tagging
         // from the table/list/figure content of the comprehensive 2a document above.
         var fontPath = FindPlatformFont();
-        if (fontPath is null) { GateOnCi("platform font for PDF/A oracle"); return; }
+        if (fontPath is null) { OracleGate.Unavailable("platform font for PDF/A oracle"); }
 
         var pdfPath = Path.Combine(_tempDir, "pdfa2a_text_verapdf.pdf");
         GeneratePdfATaggedTextDoc(pdfPath, fontPath);
@@ -1018,7 +873,7 @@ public sealed class PdfValidatorOracleTests : IDisposable
     public void PdfUA1_veraPdf_reportsCompliant()
     {
         var fontPath = FindPlatformFont();
-        if (fontPath is null) { GateOnCi("platform font for PDF/UA oracle"); return; }
+        if (fontPath is null) { OracleGate.Unavailable("platform font for PDF/UA oracle"); }
 
         var pdfPath = Path.Combine(_tempDir, "pdfua1_verapdf.pdf");
         GeneratePdfATaggedDoc(pdfPath, fontPath, PdfConformance.PdfUA1);
@@ -1029,7 +884,7 @@ public sealed class PdfValidatorOracleTests : IDisposable
     public void PdfUA1_Text_veraPdf_reportsCompliant()
     {
         var fontPath = FindPlatformFont();
-        if (fontPath is null) { GateOnCi("platform font for PDF/UA oracle"); return; }
+        if (fontPath is null) { OracleGate.Unavailable("platform font for PDF/UA oracle"); }
 
         var pdfPath = Path.Combine(_tempDir, "pdfua1_text_verapdf.pdf");
         GeneratePdfATaggedTextDoc(pdfPath, fontPath, PdfConformance.PdfUA1);
@@ -1046,7 +901,7 @@ public sealed class PdfValidatorOracleTests : IDisposable
     public void PdfA2b_OtfCff_veraPdf_reportsCompliant()
     {
         var otfPath = FindOtfFont();
-        if (otfPath is null) { GateOnCi("OTF font for PDF/A OTF/CFF oracle"); return; }
+        if (otfPath is null) { OracleGate.Unavailable("OTF font for PDF/A OTF/CFF oracle"); }
 
         var pdfPath = Path.Combine(_tempDir, "pdfa2b_otf_cff_verapdf.pdf");
         GeneratePdfA2bOtfCffDoc(pdfPath, otfPath);
@@ -1077,12 +932,38 @@ public sealed class PdfValidatorOracleTests : IDisposable
     /// </summary>
     private static void AssertVeraPdfCompliant(string pdfPath, string flavour)
     {
-        if (!TryRunTool("verapdf", $"--flavour {flavour} \"{pdfPath}\"",
-            out var exit, out var reportXml, out var stderr))
-        {
-            GateOnCi("verapdf");
-            return;
-        }
+        // veraPDF validation gets the same 120-second budget OracleTests.cs's own call does, not
+        // TryRun's 30-second default: the default is sized for a version-flag probe, not a full
+        // validation run against CI's Docker-shimmed `docker run verapdf/cli`, which this call
+        // used to share and could overrun, killing the process and reporting exit -1 with a
+        // message that never said it timed out (#198 review, round 5).
+        // "verapdf" is one of the five tools ExternalTool.CheckIdentity knows, so TryRun never
+        // returns false here (see its own doc) — an unusable resolution is routed through
+        // OracleGate before this line, and this is the caller's own timeout, not a start failure.
+        ExternalTool.TryRun("verapdf", ["--flavour", flavour, pdfPath],
+            out var exit, out var reportXml, out var stderr, out var timedOut, timeoutMs: 120_000);
+
+        Assert.False(timedOut,
+            $"veraPDF timed out validating {pdfPath} ({flavour}) within 120000 ms.\n" +
+            $"veraPDF report:\n{reportXml}\nstderr:\n{stderr}");
+
+        // veraPDF exit codes: 0 = compliant, 1 = ran and found the file non-compliant. The other
+        // codes this guard admits are not uniformly an "environment" problem: exit 7 means veraPDF
+        // could not parse the file at all and exit 8 means it refused an encrypted file outright
+        // (both measured directly against veraPDF 1.30.2: a garbage-bytes fixture, and the
+        // encrypted fixture VeraPdfEncryptedFileRefusalTests in OracleTests.cs uses), and either is
+        // the library's own PDF wearing an environment label, not proof CI's veraPDF install is
+        // broken. Exit 4 (no file found) and exit 2 (bad --flavour), also measured directly, are
+        // the genuine environment/harness mistakes this guard is meant to catch (#198 review,
+        // round 5). The failure message below names only the code that actually fired, not a fixed
+        // legend that would describe codes this run never produced (#198 review, round 6).
+        // VeraPdfExitCode.Describe is shared with ImageCodecOracleTests, which carried a
+        // byte-identical copy of this switch before it moved to VellumPdf.TestSupport (#198
+        // review, round 7, finding 8).
+        var exitCodeMeaning = VeraPdfExitCode.Describe(exit);
+        Assert.True(exit is 0 or 1,
+            $"veraPDF exited {exit} (expected 0 or 1) for {pdfPath} ({flavour}); {exitCodeMeaning}\n" +
+            $"veraPDF report:\n{reportXml}\nstderr:\n{stderr}");
 
         // veraPDF MRR reports overall conformance as isCompliant="true" on the validationReport
         // element. (The bare compliant="N" attributes elsewhere are counts, not booleans.)
@@ -1367,16 +1248,12 @@ public sealed class PdfValidatorOracleTests : IDisposable
     public void OtfCff_QpdfCheck_Passes()
     {
         var otfPath = FindOtfFont();
-        if (otfPath is null) { GateOnCi("OTF/CFF font for oracle"); return; }
+        if (otfPath is null) { OracleGate.Unavailable("OTF/CFF font for oracle"); }
 
         var pdfPath = Path.Combine(_tempDir, "otf_cff.pdf");
         GenerateOtfCffDoc(pdfPath, otfPath);
 
-        if (!TryRunTool("qpdf", $"--check \"{pdfPath}\"", out var exit, out var stdout, out var stderr))
-        {
-            GateOnCi("qpdf");
-            return;
-        }
+        ExternalTool.TryRun("qpdf", ["--check", pdfPath], out var exit, out var stdout, out var stderr, out _);
 
         Assert.True(
             exit == 0,
@@ -1387,16 +1264,12 @@ public sealed class PdfValidatorOracleTests : IDisposable
     public void OtfCff_PdftotextFindsMarker()
     {
         var otfPath = FindOtfFont();
-        if (otfPath is null) { GateOnCi("OTF/CFF font for oracle"); return; }
+        if (otfPath is null) { OracleGate.Unavailable("OTF/CFF font for oracle"); }
 
         var pdfPath = Path.Combine(_tempDir, "otf_cff_text.pdf");
         GenerateOtfCffDoc(pdfPath, otfPath);
 
-        if (!TryRunTool("pdftotext", $"\"{pdfPath}\" -", out _, out var text, out var stderr))
-        {
-            GateOnCi("pdftotext");
-            return;
-        }
+        ExternalTool.TryRun("pdftotext", [pdfPath, "-"], out _, out var text, out var stderr, out _);
 
         Assert.True(
             text.Contains(OtfOracleMarker, StringComparison.Ordinal),

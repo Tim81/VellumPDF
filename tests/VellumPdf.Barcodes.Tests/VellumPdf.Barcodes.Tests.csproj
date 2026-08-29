@@ -11,6 +11,7 @@
     <ProjectReference Include="..\..\src\VellumPdf.Kernel\VellumPdf.Kernel.csproj" />
     <ProjectReference Include="..\..\src\VellumPdf.Layout\VellumPdf.Layout.csproj" />
     <ProjectReference Include="..\..\src\VellumPdf.Barcodes\VellumPdf.Barcodes.csproj" />
+    <ProjectReference Include="..\VellumPdf.TestSupport\VellumPdf.TestSupport.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -22,7 +22,7 @@
     <!-- Encrypted reader fixtures (#99), one per standard-security-handler V/R combination, plus the
          plaintext baseline they all decrypt back to. Generated once with qpdf and committed rather than
          shelled out for at test time: CI runs qpdf 11.9.0 and local development 12.3.2, so committing
-         them keeps the corpus byte-identical everywhere and leaves no GateOnCi skip hole. Embedded so
+         them keeps the corpus byte-identical everywhere and leaves no OracleGate skip hole. Embedded so
          the corpus is hermetic, matching how VellumPdf.Conformance.Tests carries its font assets.
          See Fixtures/Encrypted/README.md for the exact generating commands. -->
     <EmbeddedResource Include="Fixtures\Encrypted\*.pdf">

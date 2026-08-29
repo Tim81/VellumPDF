@@ -42,6 +42,267 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   so nothing that ships changes. The package's own MSBuild logic is byte-identical to the SDK's copy;
   only the compiled task assembly now floats with the SDK band instead of being pinned. (#202)
 
+### Fixed
+
+- **Oracle tests across three test projects reported a pass, not a skip, when their external tool
+  was missing.** Test-only; nothing ships. `GateOnCi` — duplicated five times, next to five
+  near-identical process runners, across the Barcodes, Kernel and Layout test projects (one file in
+  Barcodes; two in Kernel, `LinearizationQpdfTests` and `PadesLevelTests`; two in Layout,
+  `ImageCodecOracleTests` and `PdfValidatorOracleTests`) — was a no-op off CI, except in the
+  Barcodes copy, which already honored `REQUIRE_BARCODE_ORACLE == "1"` there too. All 73 of
+  its call sites on `main` (counted directly: 2 in Barcodes, 18 in Kernel, 53 in Layout) let the
+  calling method return normally instead of running its assertion, so xUnit recorded a pass; all
+  but the 2 inside `ZxingDecodeOracleTests`' `bool`-returning helper did that via a bare
+  `{ GateOnCi(tool); return; }`, the other two via `return false;`. 43 of the 73 gated on a missing
+  CLI tool or interpreter (qpdf, poppler-utils, veraPDF, or python/zxing-cpp); the other 30 gated on
+  a missing platform font or OTF font instead, an unrelated local-machine condition. A new
+  `VellumPdf.TestSupport` project — with its own `VellumPdf.TestSupport.Tests`, so the gate and
+  the runner have direct coverage rather than only the oracle tests built on top of them —
+  consolidates all six oracle process runners in the tree — five near-identical copies, plus the
+  conformance suite's own veraPDF runner, a different shape that never shared the defect below —
+  into one `ExternalTool`, and the five `GateOnCi` copies into one `OracleGate`, which calls
+  `Assert.Skip` instead of falling through a bare `return`. All five
+  copies already drained both pipes concurrently before `WaitForExit`; their real defect was
+  reading that drain with an unbounded `GetAwaiter().GetResult()`, unconditionally and ahead of the
+  branch that kills a timed-out process, so a child that hung without closing its pipes hung the
+  test host indefinitely. `ExternalTool` bounds that drain at 5 seconds — shared between both
+  streams, not applied to each in turn — and reports a timeout as its own outcome rather than
+  folding it into an empty string, which a caller checking for the *absence* of something — an
+  error, a warning — could otherwise accept as if the tool had produced none. (#198)
+
+- **`ExternalTool` could resolve to the wrong tool and hand its output to the caller anyway.**
+  Test-only; nothing ships. `qpdf`, `pdftotext`, `pdftoppm` and `pdfsig` now resolve through an
+  explicit `QPDF_HOME`/`POPPLER_HOME` environment variable before falling back to PATH, and a
+  variable that is set but does not resolve is reported rather than silently falling back, because
+  a bare name is not deterministic even on one machine: resolving `pdftotext` from a PowerShell
+  session finds poppler, but from a Git Bash session finds Xpdf, a different codebase with no
+  `-tsv` flag; the version banner alone does not tell the two apart, so `pdftoppm` needs the same
+  check via `-png`. veraPDF gets that same `VERAPDF_HOME`-first treatment only on Windows, where it
+  needs the variable to find its `.bat` launcher at all; on every other platform, including CI's
+  ubuntu-latest runner, `VERAPDF_HOME` is not read here and veraPDF resolves by bare name, same as
+  before this fix. The barcode decode oracle's `python` leg is unchanged too: it has no `*_HOME`
+  and no identity check of its own, resolving by bare name everywhere, the ambiguity this fix
+  removes for the other four. A hand-check in the "wrong" shell would never catch the swap, and the
+  first version of this fix didn't either: a gated theory resolved and checked each tool's
+  identity, but nothing stopped `ExternalTool.TryRun` itself from resolving the same wrong tool on
+  every other call and handing its output to whichever test asked for it. Reproduced directly: with
+  Xpdf shadowing poppler and no environment override, the identity theory correctly skipped, while
+  eight `PdfValidatorOracleTests` text-extraction tests validated VellumPdf's own output against
+  Xpdf and reported green. The identity check now lives on `ExternalTool` itself, gating every
+  caller through the same skip-locally/fail-on-CI outcome a missing tool gets, rather than only the
+  one test that used to check it. (#198)
+
+- **`VeraPdfOracleTests`, the largest oracle gate in the tree at 273 cases, read `REQUIRE_VERAPDF`
+  directly and never consulted the shared gate at all.** Test-only; nothing ships. Its two call
+  sites (the 273-case cross-validation theory and a dedicated encrypted-file regression) compared
+  the variable to the literal `"1"` and fell through to a bare `Assert.Skip` otherwise, so neither
+  `CI`, `GITHUB_ACTIONS`, nor `REQUIRE_ORACLES` could turn a missing veraPDF into a build failure
+  there. This repository's own CI was not exposed by that specific gap — `ci.yml` sets
+  `REQUIRE_VERAPDF` to the same literal `"1"` the old check compared against — but a CI environment
+  that instead relies on `CI`/`GITHUB_ACTIONS`/`REQUIRE_ORACLES`, or that sets `REQUIRE_VERAPDF` to
+  `true` rather than `1`, would have silently skipped the one gate meant to catch a missing
+  veraPDF. Both call sites now route through `OracleGate.Unavailable`, the same shared gate almost
+  every other oracle test in the tree uses. (#198)
+
+- **The conformance suite's own veraPDF wrapper carried a second, uncoordinated probe that the
+  widened `ExternalTool` budget above never reached.** Test-only; nothing ships. `VeraPdf.IsAvailable`
+  ran its own hardcoded 10-second `verapdf --version` check, independent of `ExternalTool`'s, and
+  cached the result forever in a `static readonly` field initializer, so a single slow JVM or
+  container cold start decided every later call in the same test run. Once its two call sites
+  started routing that verdict through `OracleGate.Unavailable`, a merely slow probe escalated
+  under CI and could fail all 273 `InProcessVerdict_EqualsVeraPdf` cases off that one sample — the
+  exact flake the widened budget exists to remove, reopened through a second code path. `VeraPdf`
+  now gates through `ExternalTool.CheckIdentity` directly, so it shares the same 30-second veraPDF
+  budget and the same cache. That cache itself no longer keeps a timed-out or unstartable probe's
+  verdict for the rest of the process — only a definitive one (a wrong banner, a non-zero version
+  exit, an unresolvable `*_HOME`, or a missing poppler-only flag) is kept; a merely slow probe is
+  retried on the next call, and routes through a new `OracleGate.Transient`, which skips rather
+  than ever failing the build on a single timeout (see below for what a probe that keeps timing
+  out now does instead). (#198)
+
+- **40 tool-availability checks were dead code, and one oracle's `timedOut` outcome went nowhere.**
+  Test-only; nothing ships. Once `ExternalTool.TryRun` started routing an unusable resolution
+  through `OracleGate` itself (see above), the `if (!ExternalTool.TryRun(...)) OracleGate.Unavailable(...)`
+  guard at each of its call sites for one of the five known tools could never see `TryRun` return
+  `false` — the negated `if` was unreachable — so those 40 sites across `PdfValidatorOracleTests`
+  (20), `LinearizationQpdfTests` (15) and `ImageCodecOracleTests` (5) are now a plain call. The same
+  guard was dead at 2 more sites for a known tool elsewhere in the tree: `PadesLevelTests`' single
+  `pdfsig` call and `ZxingDecodeOracleTests`' `pdftoppm` call, for 42 tree-wide. Two more `TryRun`
+  call sites in the tree are not part of that count: `ZxingDecodeOracleTests`' own python leg,
+  since python has no identity probe (see the entry above), so its call could, and still can,
+  genuinely return `false`; and `VeraPdf.Validate`'s call in `OracleTests.cs`, never built on the
+  dead-guard pattern at all — 44 `TryRun` call sites tree-wide in total. Separately, the barcode
+  decode oracle's python leg discarded `ExternalTool.TryRun`'s `timedOut` output entirely (`out
+  _`); a hung `eng/barcode-decode.py` run still reported exit code 0 with empty output, so the
+  test failed on an empty decode-result collection instead of naming the timeout, the same
+  contract pdftoppm's own leg already honored. (#198)
+
+- **A few smaller oracle-tooling robustness fixes.** Test-only; nothing ships. `verapdf.bat`
+  (veraPDF's Windows launcher, invoked through `cmd.exe`) is now run through the standard
+  `cmd /c ""bat" "arg1" "arg2""` quoting form instead of .NET's own argument escaping, which cmd
+  does not parse the same way — an argument containing `&` started a second command, and a
+  `VERAPDF_HOME` containing a space broke the line entirely; both reproduced. `cmd.exe` is also
+  resolved from `Environment.SystemDirectory` rather than by bare name, so a PATH without System32
+  on it can no longer make a present veraPDF report as unavailable. `OracleGate`'s five environment
+  variables (`CI`, `GITHUB_ACTIONS`, the new `REQUIRE_ORACLES`, `REQUIRE_VERAPDF`,
+  `REQUIRE_BARCODE_ORACLE`) all accept `1` or `true` case-insensitively; on `main`, `CI` and
+  `GITHUB_ACTIONS` were compared only against `"true"` and the two `REQUIRE_*` switches only
+  against literal `"1"`, which would have left a CI system exporting `CI=1` (common outside GitHub
+  Actions) with every oracle reporting a phantom pass rather than even a skip — the same defect the
+  first entry above describes, reached through a different variable. And the veraPDF compliance
+  checks in `PdfValidatorOracleTests` and `ImageCodecOracleTests` now assert veraPDF's
+  own exit code is 0 or 1 before reading its report, so a broken JRE or a stale `VERAPDF_HOME` is
+  reported as the environment problem it is, not as a conformance defect in the library. (#198)
+
+- **The PDF/A-2b oracle in `ImageCodecOracleTests` matched a `compliant="true"` disjunct that
+  veraPDF never emits.** Test-only; nothing ships. `compliant`/`nonCompliant` in its
+  machine-readable report are counts (`compliant="N"`), not the `isCompliant="true"`/`"false"`
+  boolean the overall verdict actually uses, so the disjunct was dead code, not a live defect. Both
+  oracles' predicates now check only `isCompliant="true"`, matching what `PdfValidatorOracleTests`
+  already did. (#198)
+
+- **`LinearizationQpdfTests` had a hardcoded `C:\Users\Timothy\tools\qpdf\...` fallback path that
+  let its ten tests run on this machine without `QPDF_HOME` set.** Test-only; nothing ships.
+  Dropping that fallback in favor of `QPDF_HOME` alone means those ten tests now skip locally
+  unless `QPDF_HOME` is set, the same as every other oracle test. (#198)
+
+- **Two embedded-font checks in `PdfValidatorOracleTests` had no gate at all, so they phantom-passed
+  even on CI.** Test-only; nothing ships. Both tests read `if (fontPath is null) return;` with no
+  `GateOnCi` call, unlike the seventeen other platform-font sites in the same file, which all had
+  one; a CI image without a platform font produced a silent green for both, and no environment
+  variable could catch it. Every other case this change fixes was already visible to a CI that
+  checked the right thing; these two were invisible to CI outright. Both now read
+  `OracleGate.Unavailable("platform font for embedded-font qpdf oracle")` and
+  `OracleGate.Unavailable("platform font for embedded-font pdftotext oracle")`, which fail the
+  build the same way every other missing-dependency gate does. (#198 review, round 5)
+
+- **A timed-out identity probe could still escalate to a build failure, from the one call site
+  round 4's fix didn't reach.** Test-only; nothing ships. `ExternalTool.TryRun`,
+  `VeraPdf.EnsureAvailable` and `ExternalToolResolutionTests.Resolves_ToTheClaimedTool` each
+  re-derived the same branch over `IdentityStatus` and `IsTimeout`; the third read only `Status`,
+  so a probe that had merely run out of time was sent to the escalating `OracleGate.Unavailable`
+  instead of the always-skipping `OracleGate.Transient`, failing the build on one slow sample. That
+  is exactly the defect round 4's own fix to `TryRun` exists to prevent, surviving in the one
+  consumer that fix never touched. All three now route through a single new
+  `ExternalTool.EnsureUsable`. Verified directly with
+  `ExternalToolTests.TryRun_ForATimedOutProbe_SkipsRatherThanFailing_UnderAnEscalationSwitch`: a
+  fixture that is the correct tool but answers past its probe budget (a `verapdf.bat` behind
+  `VERAPDF_HOME` on Windows, a `PATH`-shadowing `sh` script elsewhere) skips under `CI=true` rather
+  than failing; `OracleGate.Unavailable`'s own escalation logic is untouched, so a genuinely missing
+  qpdf or pdfsig still fails the build exactly as before. (#198 review, round 5)
+
+- **A tool whose identity probe keeps timing out skipped forever instead of ever escalating.**
+  Test-only; nothing ships. Round 4 made a single timeout always skip and never cache, correct for
+  one slow sample. But `VeraPdf.EnsureAvailable` is called once per test case, in a non-parallel
+  collection, across the 273 `VeraPdfOracleTests` cases (confirmed by test discovery), so a
+  persistently slow veraPDF would re-probe, and skip, all 273 times at the full 30-second budget
+  each: about two and a quarter hours spent to skip the largest gate in the tree and report the
+  run green. `ExternalTool.ProbeIdentity` now counts consecutive timeouts per tool and converts the
+  third into a definitive, cached verdict that `EnsureUsable` routes to the escalating
+  `OracleGate.Unavailable` instead; any non-timeout answer resets the count to zero. Verified
+  directly with `ExternalToolTests.CheckIdentity_ForVerapdf_EscalatesAfterThreeConsecutiveTimeouts`.
+  (#198 review, round 5)
+
+- **veraPDF *validation* shared `TryRun`'s 30-second default budget, sized for a version-flag
+  probe, not a full validation run.** Test-only; nothing ships. The two Layout call sites
+  (`PdfValidatorOracleTests` and `ImageCodecOracleTests`) now pass the same 120-second budget
+  `VeraPdf.Validate` in the conformance suite already used, and their `timedOut` outcome is
+  asserted rather than discarded, so a validation run against CI's Docker-shimmed veraPDF that
+  overruns is reported as a timeout instead of an unexplained exit code. Their exit-code guard
+  (0 or 1 expected) also stopped calling exit 7 or 8 an "environment problem": veraPDF returns 7
+  for a file it cannot parse and 8 for one it refuses as encrypted, and both name a defect in the
+  PDF VellumPdf itself emitted, not the harness. The guard's condition (`exit is 0 or 1`) is
+  unchanged. (#198 review, round 5)
+
+- **33 dead `return;` statements after a gate that never returns have been removed.** Test-only;
+  nothing ships. `[DoesNotReturn]` feeds nullable flow analysis, not reachability, so the compiler
+  never flagged the unreachable `return;` left behind by the mechanical migration off `GateOnCi`'s
+  `{ GateOnCi(tool); return; }` idiom: 32 single-line `{ OracleGate.Unavailable(...); return; }`
+  blocks, plus one `Assert.Skip(...); return;` in `ConformanceCatalogTests`. None of the 33 was
+  itself a phantom-pass defect; the gate before each already skipped or failed correctly. But it
+  was the same bare-`return`-after-a-gate idiom this whole change exists to remove. (#198 review,
+  round 5)
+
+- **`ExternalToolResolutionTests` could itself report a passed test that ran no assertion, the
+  exact #198 failure mode, inside the test built to catch it.** Test-only; nothing ships.
+  `Resolves_ToTheClaimedTool` called `CheckIdentity` once to read a verdict, then, on the branch
+  where that verdict was not `Ok`, called the single-argument `EnsureUsable(tool)`, which probed
+  the same tool a second time. Against veraPDF's slow JVM cold start the two probes could disagree:
+  a first attempt that timed out against a second, immediate one landing on an already-warm JVM and
+  answering `Ok`. When they did, that branch's own `return;` ran before the assertion below it ever
+  did, so xUnit recorded a passed test that had executed no assertion. `EnsureUsable` now has a
+  second overload that takes the verdict already in hand instead of re-probing, and the test uses
+  that one, so a single probe decides both the gate and the assertion (reproduced directly: a
+  `verapdf.bat` that times out on its first call and answers instantly afterward now reports the
+  test `Skipped`, and the fixture is invoked exactly once). The same double probe also meant a
+  timed-out `Resolves_ToTheClaimedTool` case could advance `ConsecutiveTimeouts` by two rather than
+  one. (#198 review, round 6)
+
+- **Four `OracleGateTests` cases asserting `Assert.Throws<FailException>` would report the test
+  `Skipped` rather than `Failed` if the escalation switch they exist to guard ever stopped
+  escalating.** Test-only; nothing ships. xUnit v3 rethrows a caught `SkipException` out of
+  `Assert.Throws` by design (this file's own class doc already covers why), so a regressed
+  `OracleGate.IsRequired` that made `OracleGate.Unavailable` call `Assert.Skip` instead of
+  `Assert.Fail` would report the whole test as a skip rather than failing it on the resulting type
+  mismatch. All four now use the same raw `try`/`catch` the round-5 join test already used for
+  `SkipException`, asserting both the caught exception's type and that its message names the
+  dependency. Reproduced directly against the fix: neutering the `CI` disjunct in `IsRequired` and
+  rerunning `Unavailable_WithCiTrue_FailsNamingTheDependency` reports it `Failed`, on
+  `Assert.IsType<FailException>` catching the resulting `SkipException` instead, rather than
+  letting the regression pass as a skip. (#198 review, round 6)
+
+- **A few smaller round-6 fixes to the round-5 tests themselves.** Test-only; nothing ships. The
+  30-second timeout canary now asserts `VeraPdfProbeTimeoutMsOverrideForTests` is at its default
+  before relying on the literal budget it pins, so a run against a leaked override fails on that
+  assertion, naming the actual cause, rather than on the literal-30000ms one further down silently
+  checking the wrong number. The two tests that shrink that
+  override for a faster fixture now set it only after their own temp directory is safely created,
+  not before, so a throw from `Directory.CreateTempSubdirectory` can no longer leave the shortened
+  budget in effect process-wide without reaching the `finally` block that resets it. The join
+  test's `SkipException` assertion now also checks that the message names "verapdf", so it can no
+  longer accept a `Transient` skip for the wrong dependency. Three comments described guarantees
+  the code did not have: `ConsecutiveTimeouts`' thread-safety comment credited per-key atomicity of
+  `AddOrUpdate` and `TryRemove` individually, which does not make the two calls an atomic pair
+  together; the actual guarantee is `CheckIdentity`'s `Lazy<IdentityResult>`, which serialises
+  every probe for one tool so those two calls can never race for the same key. The `TryRemove`
+  after an escalated verdict claimed it let "a later recovery start counting from zero," but the
+  escalated verdict is cacheable, so `CheckIdentity` never calls `ProbeIdentity` for that tool
+  again; there is no later recovery for the streak to resume from.
+  `ConsecutiveTimeoutEscalationBound`'s own comment read as though it bounded test cases; it bounds
+  probes, and the same `Lazy` collapses many concurrent callers racing for one tool into a single
+  probe. Finally, the veraPDF exit-code guard in `PdfValidatorOracleTests` and
+  `ImageCodecOracleTests` fires for any exit outside 0 or 1, but its message named only exit 7 and
+  8; it now names only whichever code actually fired. (#198 review, round 6)
+
+- **Round-7 review: a design gap in `EnsureUsable`'s two-argument overload, plus prose the round-6
+  pass got wrong.** Test-only; nothing ships. `EnsureUsable` took a tool name and an
+  already-probed verdict as separate parameters, with nothing tying the two together: a caller
+  could gate on a verdict probed for one tool under a different tool's name, misrouting
+  `REQUIRE_VERAPDF`/`REQUIRE_BARCODE_ORACLE`'s per-dependency scoping along with it (reproduced).
+  `IdentityResult` now carries its own `Tool`, stamped by `CheckIdentity`, and the overload reads
+  the name from there instead of taking one, making the mismatch unrepresentable rather than
+  merely undocumented. The 30-second timeout canary's own comment overstated what it caught: given
+  this class's actual test order, it runs before either of the two tests that touch
+  `VeraPdfProbeTimeoutMsOverrideForTests`, so it could not have been catching a leak from an
+  earlier one. `ExternalToolTests` now asserts the same default from `IDisposable.Dispose`, run
+  after every test regardless of order, and the canary's own comment says only what it actually
+  pins. Five `Assert.Contains` calls — the round-5/6 join test and the four cases converted from
+  `Assert.Throws<FailException>` — checked only for a bare dependency name that the gate's own
+  detail text can independently contain, so each would still pass against a message naming the
+  wrong dependency; all five now check for `"oracle '<name>'"` instead. The veraPDF exit-code
+  `switch`, byte-identical between `PdfValidatorOracleTests` and `ImageCodecOracleTests`, moved to
+  a new `VellumPdf.TestSupport.VeraPdfExitCode` — the shared home this PR's own thesis argues for.
+  On the prose side: a CHANGELOG sentence above asserted `ZxingDecodeOracleTests`' python leg was
+  both counted among the 42 dead-guard sites and excluded from them in the same clause; it now
+  names both call sites the 44 tree-wide `TryRun` calls exclude — that python leg, and
+  `VeraPdf.Validate`'s own call in `OracleTests.cs` — instead of one. A doc comment on
+  `EnsureUsable(string)` dated its "three call sites re-derived the same branch" milestone to the
+  two-argument overload, which came a full round later; restored to the one it actually describes,
+  round 5. And three comments a round-6 em-dash sweep turned into misparsed lists or run-on
+  sentences — on `IdentityResult`, `ProbeIdentity`, and the `Kill(entireProcessTree: true)` branch
+  — are recast with a colon, a full stop or a parenthesis instead of the dashes or the added
+  commas that broke them. (#198 review, round 7)
+
 ## [2.2.0] - 2026-08-28
 
 ### Breaking changes
