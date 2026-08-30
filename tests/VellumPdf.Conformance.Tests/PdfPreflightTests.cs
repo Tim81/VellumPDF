@@ -7,6 +7,7 @@ using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using VellumPdf.Conformance;
+using VellumPdf.Conformance.Rules;
 using VellumPdf.Conformance.Rules.Fonts;
 using VellumPdf.Conformance.Tests.Oracle;
 using VellumPdf.Document;
@@ -657,6 +658,389 @@ public sealed class PdfPreflightTests
         Assert.False(result.IsCompliant);
         var assertion = Assert.Single(result.Assertions);
         Assert.Equal("ISO19005-2:6.1.7.1-external-stream", assertion.RuleId);
+    }
+
+    /// <summary>
+    /// The most serious finding of the #372 review round: this reading of #206 can flip a PDF/A
+    /// conformance verdict, not merely drop rendered content. <see cref="EnumerateStreams"/>' own
+    /// doc comment says why -- §6.1.7.1's external-stream rule walks <c>Reader.ObjectNumbers</c>
+    /// (<c>_xref.Keys</c>) rather than the rendered page tree, specifically so an object the file
+    /// never draws still gets checked. That is exactly what makes it vulnerable here: an object
+    /// this sweep (or a same-revision free entry generally) removes from <c>_xref</c> drops out of
+    /// that enumeration too, and a rule keyed on enumeration never sees an object it never receives.
+    ///
+    /// The violating object (4) is the same single-key external-stream shape
+    /// <see cref="Validate_ExternalStream_ReportsError"/> pins, and it is the file's only
+    /// non-conformance. Both variants below share byte-identical object bytes for every object,
+    /// including object 4 itself, at the same offsets -- the LIVE variant defines it directly in
+    /// the classic table; the FREED variant frees it there and defines it only through this
+    /// revision's own /XRefStm, #206's own same-revision shape. Only the xref/trailer mechanics
+    /// after object 5 differ between the two files.
+    /// </summary>
+    [Fact]
+    public void Validate_ExternalStreamFreedBySameRevisionXRefStm_verdictFlipsToCompliant()
+    {
+        var liveBytes = BuildExternalStreamHybridPdf(freeTheViolatingObject: false);
+        var liveResult = PdfPreflight.Validate(liveBytes, PdfConformance.PdfA2B);
+        Assert.False(liveResult.IsCompliant);
+        var liveAssertion = Assert.Single(liveResult.Assertions);
+        Assert.Equal("ISO19005-2:6.1.7.1-external-stream", liveAssertion.RuleId);
+
+        var freedBytes = BuildExternalStreamHybridPdf(freeTheViolatingObject: true);
+        var freedResult = PdfPreflight.Validate(freedBytes, PdfConformance.PdfA2B);
+        Assert.True(freedResult.IsCompliant);
+        Assert.Empty(freedResult.Assertions);
+    }
+
+    private static IEnumerable<VellumPdf.Core.PdfDictionary> EnumeratePagesOf(PdfDocumentReader reader)
+        => new PreflightContext(reader, PdfConformance.PdfA2B, []).EnumeratePages();
+
+    /// <summary>
+    /// A document loses pages when this reading strips the page-tree root, not just a page's
+    /// content stream: <c>PreflightContext.EnumeratePages()</c> starts from
+    /// <c>Catalog.Get(PdfName.Pages)</c>, and <c>WalkPages</c>' own first check
+    /// (<c>if (Resolve(node) is not PdfDictionary dict) yield break;</c>) yields nothing at all once
+    /// that resolves to null. Live and freed variants share byte-identical object bytes for objects
+    /// 1-3; only whether object 2 (the page tree root) is classic-table-live or same-revision-freed-
+    /// and-/XRefStm-defined differs.
+    /// </summary>
+    [Fact]
+    public void FreedPageTreeRoot_pageCountDropsToZero()
+    {
+        var liveBytes = BuildPageTreeRootHybridPdf(freeTheRoot: false);
+        using (var liveReader = PdfReader.Open(liveBytes))
+            Assert.Single(EnumeratePagesOf(liveReader));
+
+        var freedBytes = BuildPageTreeRootHybridPdf(freeTheRoot: true);
+        using var freedReader = PdfReader.Open(freedBytes);
+        Assert.Empty(EnumeratePagesOf(freedReader));
+    }
+
+    /// <summary>
+    /// The intermediate-node half of the same consequence: object 6 is a /Pages node with two leaf
+    /// children (4, 5); the root (2) also has a third leaf child (3) reached through a different
+    /// branch. Freeing object 6 removes only its own subtree -- <c>WalkPages</c> recurses per Kid
+    /// inside a <c>foreach</c>, so one Kid resolving to null yields nothing for THAT branch and the
+    /// loop continues to the next -- so page count drops from 3 to 1, not to 0. The surviving root
+    /// still declares <c>/Count 3</c> in both variants (untouched, unparsed by <c>EnumeratePages</c>
+    /// at all), so a caller trusting <c>/Count</c> and one walking <c>/Kids</c> now disagree.
+    /// </summary>
+    [Fact]
+    public void FreedIntermediatePagesNode_pageCountDropsFromThreeToOne()
+    {
+        var liveBytes = BuildPageTreeIntermediateHybridPdf(freeTheIntermediateNode: false);
+        using (var liveReader = PdfReader.Open(liveBytes))
+            Assert.Equal(3, EnumeratePagesOf(liveReader).Count());
+
+        var freedBytes = BuildPageTreeIntermediateHybridPdf(freeTheIntermediateNode: true);
+        using var freedReader = PdfReader.Open(freedBytes);
+        Assert.Single(EnumeratePagesOf(freedReader));
+        var pagesDict = Assert.IsType<VellumPdf.Core.PdfDictionary>(freedReader.ResolveValue(freedReader.Catalog.Get(new VellumPdf.Core.PdfName("Pages"))!));
+        var declaredCount = Assert.IsType<VellumPdf.Core.PdfInteger>(pagesDict.Get(new VellumPdf.Core.PdfName("Count")));
+        Assert.Equal(3, declaredCount.Value);
+    }
+
+    /// <summary>
+    /// The sweep's own removals (<c>XrefParser.DropMembersOfFreedContainers</c>) reach the
+    /// preflight universe too, and not through the "a freed object drops out" shape the CHANGELOG's
+    /// shrink sentence names -- members 11 and 12 here are never named by any free entry anywhere
+    /// in this file; only their container (10) is. <c>NumericLimitsRule</c> walks
+    /// <c>context.EnumerateIndirectObjects()</c>, which is <c>Reader.ObjectNumbers</c>
+    /// (<c>_xref.Keys</c>) resolved one by one, same as <see cref="EnumeratePagesOf"/> and
+    /// <c>EnumerateStreams</c>. Member 11 carries a 150-byte name, over the 127-byte §6.1.13 limit.
+    /// In the live variant the container stays classic-table-live and the Error is reported; in the
+    /// freed variant the container is freed by the classic table and defined only by this revision's
+    /// /XRefStm (#206's own shape), and the container-cascade sweep drops members 11 and 12 from
+    /// the merged table before <c>EnumerateIndirectObjects</c> ever sees them -- so the Error
+    /// disappears even though nothing ever freed the over-long name directly.
+    /// </summary>
+    [Fact]
+    public void FreedObjStmContainer_suppressesNameLimitViolationInSweptMember()
+    {
+        var liveBytes = BuildObjStmContainerHybridPdf(freeTheContainer: false);
+        var liveResult = PdfPreflight.Validate(liveBytes, PdfConformance.PdfA2B);
+        Assert.Contains(liveResult.Assertions, a => a.RuleId == "ISO19005-2:6.1.13-name");
+
+        var freedBytes = BuildObjStmContainerHybridPdf(freeTheContainer: true);
+        var freedResult = PdfPreflight.Validate(freedBytes, PdfConformance.PdfA2B);
+        Assert.DoesNotContain(freedResult.Assertions, a => a.RuleId == "ISO19005-2:6.1.13-name");
+
+        // Pin the mechanism, not only the missing Error. That absence has two possible causes and
+        // the assertion above cannot tell them apart: the sweep dropping the members before
+        // EnumerateIndirectObjects sees them, or the members surviving while Resolve throws, which
+        // that method swallows with `catch { continue; }` so the over-long name goes unchecked
+        // either way. Without the four assertions below this whole test passes with the sweep
+        // deleted outright -- measured in the review round that added them (#206 review).
+        using var liveReader = PdfReader.Open(liveBytes);
+        Assert.Contains(11, liveReader.ObjectNumbers);
+        Assert.False(liveReader.DroppedOrphanedObjectStreamMembers);
+
+        using var freedReader = PdfReader.Open(freedBytes);
+        Assert.DoesNotContain(11, freedReader.ObjectNumbers);
+        Assert.True(freedReader.DroppedOrphanedObjectStreamMembers);
+    }
+
+    private static byte[] BuildObjStmContainerHybridPdf(bool freeTheContainer)
+    {
+        var ms = new MemoryStream();
+        void W(string s) => ms.Write(Encoding.ASCII.GetBytes(s));
+        void WB(byte[] b) => ms.Write(b);
+
+        W("%PDF-1.7\n");
+        var o1 = (int)ms.Position;
+        W("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+        var o2 = (int)ms.Position;
+        W("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
+        var o3 = (int)ms.Position;
+        W("3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>\nendobj\n");
+
+        // Object stream 10, two members: 11 carries a 150-byte name (over the 127-byte §6.1.13
+        // limit), 12 is an unrelated live sibling. Neither member's own object number is ever
+        // freed by anything in this file -- only the container's is.
+        var longName = new string('X', 150);
+        var member11Body = Encoding.ASCII.GetBytes($"<< /Foo /{longName} >>");
+        var member12Body = Encoding.ASCII.GetBytes("<< /Note (SIBLINGMEMBER) >>");
+        var objStmHeader = Encoding.ASCII.GetBytes($"11 0 12 {member11Body.Length}\n");
+        var objStmBody = objStmHeader.Concat(member11Body).Concat(member12Body).ToArray();
+        var o10 = (int)ms.Position;
+        W($"10 0 obj\n<< /Type /ObjStm /N 2 /First {objStmHeader.Length} /Length {objStmBody.Length} >>\nstream\n");
+        WB(objStmBody);
+        W("\nendstream\nendobj\n");
+
+        // Members 11 and 12 exist only as compressed rows in the /XRefStm below, in BOTH variants
+        // -- that is the only place a type-2 entry can come from. The two variants differ only in
+        // whether the classic table also frees the container in this same revision.
+        byte[] Row(byte type, long f2, long f3) =>
+        [
+            type,
+            (byte)((f2 >> 24) & 0xFF), (byte)((f2 >> 16) & 0xFF), (byte)((f2 >> 8) & 0xFF), (byte)(f2 & 0xFF),
+            (byte)((f3 >> 8) & 0xFF), (byte)(f3 & 0xFF),
+        ];
+        var streamBody = new MemoryStream();
+        streamBody.Write(Row(1, o10, 0)); // obj 10 (container): live per the /XRefStm alone
+        streamBody.Write(Row(2, 10, 0)); // obj 11 (member): container 10, index 0
+        streamBody.Write(Row(2, 10, 1)); // obj 12 (member): container 10, index 1
+        var streamBodyArr = streamBody.ToArray();
+        var xrefStmOffset = (int)ms.Position;
+        W($"13 0 obj\n<< /Type /XRef /Size 14 /W [1 4 2] /Index [10 3] /Length {streamBodyArr.Length} >>\nstream\n");
+        WB(streamBodyArr);
+        W("\nendstream\nendobj\n");
+
+        var classicXrefOffset = (int)ms.Position;
+        W("xref\n");
+        W("0 4\n");
+        W($"{0:D10} 65535 f \n");
+        W($"{o1:D10} 00000 n \n");
+        W($"{o2:D10} 00000 n \n");
+        W($"{o3:D10} 00000 n \n");
+        W("10 1\n");
+        if (freeTheContainer)
+            W($"{0:D10} 00001 f \n"); // freed here, in the same revision the /XRefStm above defines it
+        else
+            W($"{o10:D10} 00000 n \n"); // classic entries win, so this is what the container resolves to
+        W($"trailer\n<< /Size 14 /Root 1 0 R /XRefStm {xrefStmOffset} >>\n");
+        W($"startxref\n{classicXrefOffset}\n%%EOF\n");
+
+        return ms.ToArray();
+    }
+
+    private static byte[] BuildPageTreeRootHybridPdf(bool freeTheRoot)
+    {
+        var ms = new MemoryStream();
+        void W(string s) => ms.Write(Encoding.ASCII.GetBytes(s));
+        void WB(byte[] b) => ms.Write(b);
+
+        W("%PDF-1.7\n");
+        var o1 = (int)ms.Position;
+        W("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+        var o2 = (int)ms.Position;
+        W("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
+        var o3 = (int)ms.Position;
+        W("3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>\nendobj\n");
+
+        if (!freeTheRoot)
+        {
+            var xrefOffset = (int)ms.Position;
+            W("xref\n0 4\n");
+            W($"{0:D10} 65535 f \n");
+            W($"{o1:D10} 00000 n \n");
+            W($"{o2:D10} 00000 n \n");
+            W($"{o3:D10} 00000 n \n");
+            W("trailer\n<< /Size 4 /Root 1 0 R >>\n");
+            W($"startxref\n{xrefOffset}\n%%EOF\n");
+            return ms.ToArray();
+        }
+
+        byte[] Row(byte type, long f2, long f3) =>
+        [
+            type,
+            (byte)((f2 >> 24) & 0xFF), (byte)((f2 >> 16) & 0xFF), (byte)((f2 >> 8) & 0xFF), (byte)(f2 & 0xFF),
+            (byte)((f3 >> 8) & 0xFF), (byte)(f3 & 0xFF),
+        ];
+        var streamBody = new MemoryStream();
+        streamBody.Write(Row(1, o2, 0)); // obj 2 (page tree root): live per the /XRefStm alone
+        var streamBodyArr = streamBody.ToArray();
+        var xrefStmOffset = (int)ms.Position;
+        W($"4 0 obj\n<< /Type /XRef /Size 5 /W [1 4 2] /Index [2 1] /Length {streamBodyArr.Length} >>\nstream\n");
+        WB(streamBodyArr);
+        W("\nendstream\nendobj\n");
+
+        var classicXrefOffset = (int)ms.Position;
+        W("xref\n");
+        W("0 2\n");
+        W($"{0:D10} 65535 f \n");
+        W($"{o1:D10} 00000 n \n");
+        W("2 1\n");
+        W($"{0:D10} 00001 f \n");
+        W("3 1\n");
+        W($"{o3:D10} 00000 n \n");
+        W($"trailer\n<< /Size 5 /Root 1 0 R /XRefStm {xrefStmOffset} >>\n");
+        W($"startxref\n{classicXrefOffset}\n%%EOF\n");
+
+        return ms.ToArray();
+    }
+
+    private static byte[] BuildPageTreeIntermediateHybridPdf(bool freeTheIntermediateNode)
+    {
+        var ms = new MemoryStream();
+        void W(string s) => ms.Write(Encoding.ASCII.GetBytes(s));
+        void WB(byte[] b) => ms.Write(b);
+
+        W("%PDF-1.7\n");
+        var o1 = (int)ms.Position;
+        W("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+        var o2 = (int)ms.Position;
+        W("2 0 obj\n<< /Type /Pages /Kids [6 0 R 3 0 R] /Count 3 >>\nendobj\n");
+        var o3 = (int)ms.Position;
+        W("3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>\nendobj\n");
+        var o4 = (int)ms.Position;
+        W("4 0 obj\n<< /Type /Page /Parent 6 0 R /MediaBox [0 0 612 792] >>\nendobj\n");
+        var o5 = (int)ms.Position;
+        W("5 0 obj\n<< /Type /Page /Parent 6 0 R /MediaBox [0 0 612 792] >>\nendobj\n");
+        var o6 = (int)ms.Position;
+        W("6 0 obj\n<< /Type /Pages /Parent 2 0 R /Kids [4 0 R 5 0 R] /Count 2 >>\nendobj\n");
+
+        if (!freeTheIntermediateNode)
+        {
+            var xrefOffset = (int)ms.Position;
+            W("xref\n0 7\n");
+            W($"{0:D10} 65535 f \n");
+            W($"{o1:D10} 00000 n \n");
+            W($"{o2:D10} 00000 n \n");
+            W($"{o3:D10} 00000 n \n");
+            W($"{o4:D10} 00000 n \n");
+            W($"{o5:D10} 00000 n \n");
+            W($"{o6:D10} 00000 n \n");
+            W("trailer\n<< /Size 7 /Root 1 0 R >>\n");
+            W($"startxref\n{xrefOffset}\n%%EOF\n");
+            return ms.ToArray();
+        }
+
+        byte[] Row(byte type, long f2, long f3) =>
+        [
+            type,
+            (byte)((f2 >> 24) & 0xFF), (byte)((f2 >> 16) & 0xFF), (byte)((f2 >> 8) & 0xFF), (byte)(f2 & 0xFF),
+            (byte)((f3 >> 8) & 0xFF), (byte)(f3 & 0xFF),
+        ];
+        var streamBody = new MemoryStream();
+        streamBody.Write(Row(1, o6, 0)); // obj 6 (intermediate node): live per the /XRefStm alone
+        var streamBodyArr = streamBody.ToArray();
+        var xrefStmOffset = (int)ms.Position;
+        W($"7 0 obj\n<< /Type /XRef /Size 8 /W [1 4 2] /Index [6 1] /Length {streamBodyArr.Length} >>\nstream\n");
+        WB(streamBodyArr);
+        W("\nendstream\nendobj\n");
+
+        var classicXrefOffset = (int)ms.Position;
+        W("xref\n");
+        W("0 6\n");
+        W($"{0:D10} 65535 f \n");
+        W($"{o1:D10} 00000 n \n");
+        W($"{o2:D10} 00000 n \n");
+        W($"{o3:D10} 00000 n \n");
+        W($"{o4:D10} 00000 n \n");
+        W($"{o5:D10} 00000 n \n");
+        W("6 1\n");
+        W($"{0:D10} 00001 f \n");
+        W($"trailer\n<< /Size 8 /Root 1 0 R /XRefStm {xrefStmOffset} >>\n");
+        W($"startxref\n{classicXrefOffset}\n%%EOF\n");
+
+        return ms.ToArray();
+    }
+
+    private static byte[] BuildExternalStreamHybridPdf(bool freeTheViolatingObject)
+    {
+        var ms = new MemoryStream();
+        void W(string s) => ms.Write(Encoding.ASCII.GetBytes(s));
+        void WB(byte[] b) => ms.Write(b);
+
+        W("%PDF-1.7\n");
+        ms.Write([(byte)'%', 0xE2, 0xE3, 0xCF, 0xD3, (byte)'\n']);
+
+        var o1 = (int)ms.Position;
+        W("1 0 obj\n<< /Type /Catalog /Pages 2 0 R /Metadata 5 0 R >>\nendobj\n");
+        var o2 = (int)ms.Position;
+        W("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
+        var o3 = (int)ms.Position;
+        W("3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>\nendobj\n");
+        var o4 = (int)ms.Position;
+        // Object 4: the file's only non-conformance (§6.1.7.1-external-stream), byte-identical and
+        // at the same offset in both variants below.
+        W("4 0 obj\n<< /F (ext.dat) /Length 0 >>\nstream\n\nendstream\nendobj\n");
+        var metadata = XmpBytes("2", "B");
+        var o5 = (int)ms.Position;
+        W($"5 0 obj\n<< /Type /Metadata /Subtype /XML /Length {metadata.Length} >>\nstream\n");
+        WB(metadata);
+        W("\nendstream\nendobj\n");
+
+        const string id = " /ID [<00112233445566778899AABBCCDDEEFF> <00112233445566778899AABBCCDDEEFF>]";
+
+        if (!freeTheViolatingObject)
+        {
+            var xrefOffset = (int)ms.Position;
+            W("xref\n0 6\n");
+            W($"{0:D10} 65535 f \n");
+            W($"{o1:D10} 00000 n \n");
+            W($"{o2:D10} 00000 n \n");
+            W($"{o3:D10} 00000 n \n");
+            W($"{o4:D10} 00000 n \n");
+            W($"{o5:D10} 00000 n \n");
+            W($"trailer\n<< /Size 6 /Root 1 0 R{id} >>\n");
+            W($"startxref\n{xrefOffset}\n%%EOF\n");
+            return ms.ToArray();
+        }
+
+        // Freed variant: object 4 defined ONLY by this revision's /XRefStm (object 6), and freed by
+        // the classic table in the same revision -- the same-revision-free-beats-/XRefStm shape #206
+        // makes VellumPdf.Reader resolve to null.
+        byte[] Row(byte type, long f2, long f3) =>
+        [
+            type,
+            (byte)((f2 >> 24) & 0xFF), (byte)((f2 >> 16) & 0xFF), (byte)((f2 >> 8) & 0xFF), (byte)(f2 & 0xFF),
+            (byte)((f3 >> 8) & 0xFF), (byte)(f3 & 0xFF),
+        ];
+        var streamBody = new MemoryStream();
+        streamBody.Write(Row(1, o4, 0)); // obj 4: live per the /XRefStm alone
+        var streamBodyArr = streamBody.ToArray();
+        var xrefStmOffset = (int)ms.Position;
+        W($"6 0 obj\n<< /Type /XRef /Size 7 /W [1 4 2] /Index [4 1] /Length {streamBodyArr.Length} >>\nstream\n");
+        WB(streamBodyArr);
+        W("\nendstream\nendobj\n");
+
+        var classicXrefOffset = (int)ms.Position;
+        W("xref\n");
+        W("0 4\n");
+        W($"{0:D10} 65535 f \n");
+        W($"{o1:D10} 00000 n \n");
+        W($"{o2:D10} 00000 n \n");
+        W($"{o3:D10} 00000 n \n");
+        W("4 1\n");
+        W($"{0:D10} 00001 f \n");
+        W("5 1\n");
+        W($"{o5:D10} 00000 n \n");
+        W($"trailer\n<< /Size 7 /Root 1 0 R{id} /XRefStm {xrefStmOffset} >>\n");
+        W($"startxref\n{classicXrefOffset}\n%%EOF\n");
+
+        return ms.ToArray();
     }
 
     [Fact]
