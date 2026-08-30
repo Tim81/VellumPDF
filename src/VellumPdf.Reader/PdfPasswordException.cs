@@ -4,7 +4,7 @@
 namespace VellumPdf.Reader;
 
 /// <summary>
-/// Thrown by <see cref="PdfReader.Open(byte[], string?)"/> (and its <see cref="System.IO.Stream"/>
+/// Thrown by <see cref="PdfReader.Open(byte[], PdfReaderOptions)"/> (and its <see cref="System.IO.Stream"/>
 /// overload) when a document's <c>/Encrypt</c> dictionary cannot be authenticated against either the
 /// owner or the user password: none of the tried password encodings matched <c>/O</c> or <c>/U</c>
 /// (ISO 32000-1 §7.6.3.4 Algorithms 4–7; ISO 32000-2 §7.6.4.3.3 Algorithm 2.A).
