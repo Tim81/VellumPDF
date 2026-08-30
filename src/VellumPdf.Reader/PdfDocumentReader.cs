@@ -146,48 +146,64 @@ public sealed class PdfDocumentReader : IDisposable
         WasReconstructed = parseResult.WasReconstructed;
         ReconstructionBytesConsumed = parseResult.ReconstructionBytesConsumed;
 
-        // /Encrypt must be resolved and authenticated BEFORE anything else: Resolve() and
-        // GetDecodedStreamData() key their decryption on _decryptor being set, and /Root (resolved
-        // just below) is itself an encrypted object in an encrypted document. Resolving /Encrypt
-        // here, with _decryptor still null, is also what keeps its own strings (/O, /U, /OE, /UE)
-        // from ever being run through string decryption — see the constructor's caching of this
-        // object, and DecryptObjectGraph's doc comment, for why no separate guard is needed beyond
-        // this ordering.
-        if (trailer.TryGet(new PdfName("Encrypt"), out var encryptRaw) && encryptRaw is not null)
+        // Everything from here on can throw partway through an encrypted document — a bad /Encrypt
+        // shape, a failed Phase B recovery, a /Root that never resolves, a catalog that isn't a
+        // dictionary — and unlike Dispose (below), a throw from inside a constructor never hands a
+        // caller a live instance to dispose: nothing downstream ever gets the chance to zero
+        // _fileKey once it exists. Key-parity with Dispose's own ZeroMemory call is the target
+        // here, not a stronger guarantee — _cache, _objStmCache and _streamCache are left alone for
+        // the same reason Dispose leaves them (see its own comment): only the key itself is secret.
+        try
         {
-            var encryptObjectNumber = (encryptRaw as PdfIndirectReference)?.ObjectNumber;
-            var encryptDict = ResolveValue(encryptRaw) as PdfDictionary
-                ?? throw new InvalidDataException("Malformed PDF: /Encrypt does not resolve to a dictionary.");
+            // /Encrypt must be resolved and authenticated BEFORE anything else: Resolve() and
+            // GetDecodedStreamData() key their decryption on _decryptor being set, and /Root
+            // (resolved just below) is itself an encrypted object in an encrypted document.
+            // Resolving /Encrypt here, with _decryptor still null, is also what keeps its own
+            // strings (/O, /U, /OE, /UE) from ever being run through string decryption — see the
+            // constructor's caching of this object, and DecryptObjectGraph's doc comment, for why
+            // no separate guard is needed beyond this ordering.
+            if (trailer.TryGet(new PdfName("Encrypt"), out var encryptRaw) && encryptRaw is not null)
+            {
+                var encryptObjectNumber = (encryptRaw as PdfIndirectReference)?.ObjectNumber;
+                var encryptDict = ResolveValue(encryptRaw) as PdfDictionary
+                    ?? throw new InvalidDataException("Malformed PDF: /Encrypt does not resolve to a dictionary.");
 
-            var setup = EncryptionSetup.Authenticate(encryptDict, trailer, password, ResolveMaybe);
-            _decryptor = setup.Decryptor;
-            _fileKey = setup.FileKey;
-            _cryptFilterTable = setup.CryptFilterTable;
-            _embeddedFileFilter = setup.EmbeddedFileFilter;
-            _encryptMetadata = setup.EncryptMetadata;
-            PurgeObjectsCachedDuringAuthentication(encryptObjectNumber);
+                var setup = EncryptionSetup.Authenticate(encryptDict, trailer, password, ResolveMaybe);
+                _decryptor = setup.Decryptor;
+                _fileKey = setup.FileKey;
+                _cryptFilterTable = setup.CryptFilterTable;
+                _embeddedFileFilter = setup.EmbeddedFileFilter;
+                _encryptMetadata = setup.EncryptMetadata;
+                PurgeObjectsCachedDuringAuthentication(encryptObjectNumber);
 
-            Encryption = new PdfEncryptionInfo(
-                setup.Decryptor.V, setup.Decryptor.R, setup.Cipher, setup.StringCipher,
-                setup.KeyLengthBits, setup.Permissions, setup.EncryptMetadata, setup.IsOwnerAccess);
+                Encryption = new PdfEncryptionInfo(
+                    setup.Decryptor.V, setup.Decryptor.R, setup.Cipher, setup.StringCipher,
+                    setup.KeyLengthBits, setup.Permissions, setup.EncryptMetadata, setup.IsOwnerAccess);
+            }
+
+            // Phase B of reconstruction (#184): runs after authentication and before /Root is
+            // resolved, since its job is to make sure Trailer actually HAS a /Root that resolves to
+            // a catalog before the normal checks just below ever see it. Reachable on an encrypted
+            // document since PR3 (#184): Phase A can now carry a recovered or synthesized /Encrypt
+            // through to here instead of refusing outright.
+            if (WasReconstructed)
+                ReconstructionPhaseB(parseResult.ObjectStreamContainers, parseResult.CandidateRoots);
+
+            if (!trailer.TryGet(PdfName.Root, out var rootObj) || rootObj is null)
+                throw new InvalidDataException("Malformed PDF: trailer is missing /Root.");
+
+            var rootResolved = ResolveValue(rootObj);
+            if (rootResolved is not PdfDictionary catalog)
+                throw new InvalidDataException("Malformed PDF: /Root does not resolve to a dictionary.");
+
+            Catalog = catalog;
         }
-
-        // Phase B of reconstruction (#184): runs after authentication (a no-op today, since Phase A
-        // already refuses any document carrying evidence of /Encrypt — see
-        // XrefReconstructor.RecoverTrailer — but the ordering matters once a later PR lifts that)
-        // and before /Root is resolved, since its job is to make sure Trailer actually HAS a /Root
-        // that resolves to a catalog before the normal checks just below ever see it.
-        if (WasReconstructed)
-            ReconstructionPhaseB(parseResult.ObjectStreamContainers, parseResult.CandidateRoots);
-
-        if (!trailer.TryGet(PdfName.Root, out var rootObj) || rootObj is null)
-            throw new InvalidDataException("Malformed PDF: trailer is missing /Root.");
-
-        var rootResolved = ResolveValue(rootObj);
-        if (rootResolved is not PdfDictionary catalog)
-            throw new InvalidDataException("Malformed PDF: /Root does not resolve to a dictionary.");
-
-        Catalog = catalog;
+        catch
+        {
+            if (_fileKey is not null)
+                CryptographicOperations.ZeroMemory(_fileKey);
+            throw;
+        }
     }
 
     /// <summary>
@@ -698,6 +714,11 @@ public sealed class PdfDocumentReader : IDisposable
         // streams decoded before that point are object streams and the cross-reference stream, and
         // the metadata stream can be neither, since a stream cannot live inside an object stream
         // (ISO 32000-2 §7.5.7).
+        // Still correct once #184/PR3 can reach this on a reconstructed, encrypted document: the
+        // guard above returns false for everything Phase B itself decodes (object streams only —
+        // ReconstructionPhaseB's own B1/B3), and Catalog is not assigned until after Phase B and
+        // /Root resolution both finish, so nothing decoded before that point can be mistaken for
+        // the metadata stream.
         if (Catalog is null)
             return false;
 

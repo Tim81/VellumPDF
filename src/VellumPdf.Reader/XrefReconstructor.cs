@@ -36,11 +36,21 @@ internal enum EncryptionDictionaryClass
 /// <para>
 /// Everything read here is a name, an indirect reference, or an integer — the object kinds ISO
 /// 32000-2 §7.6.2's exemption list carries — so this can run before any password has been supplied
-/// or checked. This PR refuses outright the instant any evidence suggests the document is
-/// encrypted: a whole-file sweep independent of what the walk actually tokenized
-/// (<see cref="ScanWholeFileForEncryptionEvidence"/>), the walk's own declared/structural checks in
-/// <see cref="RecoverTrailer"/> (<see cref="HasPr2EncryptionEvidenceShape"/>), and the exhaustion
-/// path below. A later PR lifts that once reconstruction can also authenticate.
+/// or checked. Only ONE case is carried into the recovered trailer instead of refusing: a declared
+/// <c>/Encrypt</c> in some candidate trailer, or a confirmed object whose structure disambiguates
+/// SPECIFICALLY as the Standard handler (<see cref="ClassifyEncryptionDictionary"/>) — see
+/// <see cref="RecoverTrailer"/> and its exhaustion-path twin, which make the same decision. Every
+/// other encryption-shaped case refuses: a public-key handler (unsupported at authentication
+/// regardless), and an encryption-shaped object this pass cannot classify at all — Table 20 makes
+/// <c>/Filter</c> and <c>/V</c> the only two Required entries of ANY encryption dictionary, and
+/// §7.6.2 leaves everything past those two to the handler, so a bare pair with no further
+/// disambiguator is still a legitimate, spec-minimal encryption dictionary this library has never
+/// heard of, not proof of an ordinary one — and evidence a whole-file sweep finds in a region the
+/// walk never tokenized at all (<see cref="ScanWholeFileForEncryptionEvidence"/> — the
+/// <c>/Encrypt</c> name, the Standard handler's <c>/O</c>+<c>/U</c>+<c>/R</c> triad, or a
+/// public-key handler's <c>adbe.pkcs7.s3</c>/<c>s4</c>/<c>s5</c> <c>/SubFilter</c>, ISO 32000-2
+/// §7.6.5.2), which has nothing to reference either way. Opening as plaintext over ciphertext is
+/// never an option, whether or not this pass knows which object to blame or which handler it is.
 /// </para>
 /// </summary>
 internal static class XrefReconstructor
@@ -60,6 +70,8 @@ internal static class XrefReconstructor
     private static readonly PdfName _strFKey = new("StrF");
     private static readonly PdfName _recipientsKey = new("Recipients");
     private static readonly PdfName _encryptMetadataKey = new("EncryptMetadata");
+    private static readonly PdfName _wKey = new("W");
+    private static readonly PdfName _indexKey = new("Index");
 
     // The trailer keys reconstruction knows how to recover (A5). Building the recovered trailer by
     // setting exactly these keys — never by cloning a whole candidate dictionary — is what A5b
@@ -105,12 +117,19 @@ internal static class XrefReconstructor
     /// </summary>
     /// <exception cref="InvalidDataException">
     /// Thrown when no object headers were found at all, or when the walk could not complete within
-    /// its cost budget and no encryption evidence was found either (see the exhaustion path below).
+    /// its cost budget with no encryption evidence at all — declared, structural, or raw — anywhere
+    /// in the file (see the exhaustion path below).
     /// </exception>
     /// <exception cref="UnsupportedPdfFeatureException">
-    /// Thrown when the walk — or, on exhaustion, an uncharged raw sweep of whatever remains unwalked
-    /// — finds any evidence the document is encrypted. This PR is plaintext-only; a later PR lifts
-    /// this refusal without needing to restructure anything here.
+    /// Thrown when encryption evidence exists but this pass either cannot point a trailer
+    /// <c>/Encrypt</c> reference at anything it actually confirmed — a whole-file sweep found the
+    /// bytes only in a region the walk never tokenized, or the sole evidence sits in a quarantined
+    /// secondary extent — or CAN point at something, but that something does not disambiguate
+    /// specifically as the Standard handler (a public-key handler, or a shape this pass cannot
+    /// classify at all — see <see cref="RecoverTrailer"/>). Only a declared <c>/Encrypt</c>, or a
+    /// confirmed object classifying as Standard, is carried into the recovered trailer instead of
+    /// refusing; opening the result still requires authenticating against it
+    /// (<see cref="EncryptionSetup.Authenticate"/>).
     /// </exception>
     internal static XrefParseResult Reconstruct(ReadOnlyMemory<byte> data)
     {
@@ -163,93 +182,104 @@ internal static class XrefReconstructor
 
         var span = data.Span;
         var pos = 0;
-        while (pos < length)
+        try
         {
-            cursorPos = pos;
-            var b = span[pos];
-
-            // Whitespace and comments: the single-visit cursor advancing through ordinary file
-            // structure — never charged (see the budget-semantics note on Charge above).
-            if (PdfLexer.IsWhitespaceByte(b))
+            while (pos < length)
             {
-                pos++;
-                continue;
-            }
+                cursorPos = pos;
+                var b = span[pos];
 
-            if (b == (byte)'%')
-            {
-                pos++;
-                while (pos < length && span[pos] is not 10 and not 13)
-                    pos++;
-                continue;
-            }
-
-            // Balanced literal string: consumed as a single token so nothing inside it — including
-            // a byte sequence that would otherwise look like "N G obj" or 'trailer' — is ever
-            // re-examined as a candidate (rows 6/7). Unterminated fails closed: nothing after an
-            // unterminated string has a trustworthy start, so the walk simply ends.
-            if (b == (byte)'(')
-            {
-                pos = SkipBalancedLiteralString(span, pos);
-                continue;
-            }
-
-            if (b == (byte)'<')
-            {
-                if (pos + 1 < length && span[pos + 1] == (byte)'<')
+                // Whitespace and comments: the single-visit cursor advancing through ordinary file
+                // structure — never charged (see the budget-semantics note on Charge above).
+                if (PdfLexer.IsWhitespaceByte(b))
                 {
-                    // A dictionary or array reached outside an "N G obj" header — e.g. nested
-                    // inside another value already being walked past, or genuinely stray. Parsed
-                    // and charged like any other real construct; it carries no object number of
-                    // its own, so nothing further is recorded for it beyond consuming its bytes.
+                    pos++;
+                    continue;
+                }
+
+                if (b == (byte)'%')
+                {
+                    pos++;
+                    while (pos < length && span[pos] is not 10 and not 13)
+                        pos++;
+                    continue;
+                }
+
+                // Balanced literal string: consumed as a single token so nothing inside it — including
+                // a byte sequence that would otherwise look like "N G obj" or 'trailer' — is ever
+                // re-examined as a candidate (rows 6/7). Unterminated fails closed: nothing after an
+                // unterminated string has a trustworthy start, so the walk simply ends.
+                if (b == (byte)'(')
+                {
+                    pos = SkipBalancedLiteralString(span, pos);
+                    continue;
+                }
+
+                if (b == (byte)'<')
+                {
+                    if (pos + 1 < length && span[pos + 1] == (byte)'<')
+                    {
+                        // A dictionary or array reached outside an "N G obj" header — e.g. nested
+                        // inside another value already being walked past, or genuinely stray. Parsed
+                        // and charged like any other real construct; it carries no object number of
+                        // its own, so nothing further is recorded for it beyond consuming its bytes.
+                        pos = ParseObjectCharged(data, pos, Charge).NewPos;
+                        continue;
+                    }
+
+                    pos = SkipHexString(span, pos);
+                    continue;
+                }
+
+                if (b == (byte)'[')
+                {
                     pos = ParseObjectCharged(data, pos, Charge).NewPos;
                     continue;
                 }
 
-                pos = SkipHexString(span, pos);
-                continue;
-            }
-
-            if (b == (byte)'[')
-            {
-                pos = ParseObjectCharged(data, pos, Charge).NewPos;
-                continue;
-            }
-
-            if (IsDigitByte(b))
-            {
-                if (TryMatchObjectHeaderShape(span, pos, out var objNum, out var generation, out var afterObj))
+                if (IsDigitByte(b))
                 {
-                    pos = ConfirmCandidate(
-                        data, pos, objNum, generation, afterObj, xref, primaryByObjNum, confirmedIntegers,
-                        objectStreamContainers, secondaryExtents, endstreamAll, endstreamLineInitial, Charge);
+                    if (TryMatchObjectHeaderShape(span, pos, out var objNum, out var generation, out var afterObj))
+                    {
+                        pos = ConfirmCandidate(
+                            data, pos, objNum, generation, afterObj, xref, primaryByObjNum, confirmedIntegers,
+                            objectStreamContainers, secondaryExtents, endstreamAll, endstreamLineInitial, Charge);
+                        continue;
+                    }
+
+                    // Not an "N G obj" shape at this position — ordinary text; resync minimally rather
+                    // than skipping the rest of the digit run, so an offset one byte further in still
+                    // gets its own chance (e.g. a decoy separator that starts the run one byte early).
+                    pos++;
                     continue;
                 }
 
-                // Not an "N G obj" shape at this position — ordinary text; resync minimally rather
-                // than skipping the rest of the digit run, so an offset one byte further in still
-                // gets its own chance (e.g. a decoy separator that starts the run one byte early).
+                // 'trailer' is the one keyword the walk recognises: no attempt cap (row 3) — every
+                // occurrence outside a confirmed stream body (which the cursor never revisits, having
+                // jumped straight to its BodyEnd when the stream was confirmed) is a genuine candidate.
+                if (b == (byte)'t' && TryMatchKeyword(span, pos, "trailer"u8, out var afterTrailer))
+                {
+                    var (newPos, value) = ParseObjectCharged(data, afterTrailer, Charge);
+                    if (value is PdfDictionary trailerDict)
+                        trailerCandidates.Add((pos, trailerDict));
+                    pos = newPos;
+                    continue;
+                }
+
+                // 'xref' tables, 'obj'/'endobj'/'stream'/'endstream' keywords reached outside a
+                // confirmed header, and everything else: walked through harmlessly, one byte at a
+                // time. A classic xref subsection's 20-byte rows end in 'n'/'f', not 'obj', so they
+                // never match the header shape above and cost nothing beyond this resync.
                 pos++;
-                continue;
             }
-
-            // 'trailer' is the one keyword the walk recognises: no attempt cap (row 3) — every
-            // occurrence outside a confirmed stream body (which the cursor never revisits, having
-            // jumped straight to its BodyEnd when the stream was confirmed) is a genuine candidate.
-            if (b == (byte)'t' && TryMatchKeyword(span, pos, "trailer"u8, out var afterTrailer))
-            {
-                var (newPos, value) = ParseObjectCharged(data, afterTrailer, Charge);
-                if (value is PdfDictionary trailerDict)
-                    trailerCandidates.Add((pos, trailerDict));
-                pos = newPos;
-                continue;
-            }
-
-            // 'xref' tables, 'obj'/'endobj'/'stream'/'endstream' keywords reached outside a
-            // confirmed header, and everything else: walked through harmlessly, one byte at a
-            // time. A classic xref subsection's 20-byte rows end in 'n'/'f', not 'obj', so they
-            // never match the header shape above and cost nothing beyond this resync.
-            pos++;
+        }
+        catch (ReconstructionEvidenceFoundEarlySignal)
+        {
+            // The walk's budget ran out, but ThrowOnExhaustion found a declared or structurally
+            // classifying /Encrypt candidate among what was already confirmed — evidence this pass
+            // CAN safely carry (see RecoverTrailer). Stopping the walk here and falling through to
+            // the same pipeline a completed walk uses is exactly the "carry" decision RecoverTrailer
+            // itself would make; there is nothing left for this catch to decide.
         }
 
         // Secondary (quarantined) results merge in only after the primary walk completes, and only
@@ -262,7 +292,9 @@ internal static class XrefReconstructor
                 "Malformed PDF: startxref is missing or unusable, and no 'N G obj' object headers "
                 + "were found to reconstruct the cross-reference table from.");
 
-        // A5: recover a trailer, refusing outright on any evidence the document is encrypted.
+        // A5: recover a trailer. Declared or structurally referenceable encryption evidence is
+        // carried into it (ClassifyEncryptionDictionary); evidence this pass cannot point a
+        // reference at still refuses — see the method's own doc comment for the three-way split.
         var trailer = RecoverTrailer(
             xref, primaryByObjNum, secondaryExtents, trailerCandidates, wholeFileEncryptionEvidence);
 
@@ -273,18 +305,25 @@ internal static class XrefReconstructor
         if (candidateRoots.Count > 0)
             trailer.Set(PdfName.Root, candidateRoots[0]);
 
-        // A4 is PR3's: cross-reference-stream offset evidence is deliberately NOT populated here.
-        // It must never be keyed on a reconstructed object's /Type /XRef — that key is
-        // author-controlled, which is exactly why PdfDocumentReader.IsCrossReferenceStream and
-        // CryptFilterResolver key the real exemption on where a stream was actually READ as an
-        // xref stream, never on what it claims to be.
-        //
+        // A4: only meaningful once /Encrypt actually made it into the recovered trailer above —
+        // an unencrypted reconstruction has no cross-reference-stream exemption to compute, since
+        // PdfDocumentReader.IsCrossReferenceStream is never consulted when there is no decryptor.
+        // Never keyed on a candidate's own /Type /XRef — that key is author-controlled, which is
+        // exactly why the real exemption keys on where a stream was actually READ as an xref
+        // stream, never on what it claims to be.
+        var crossReferenceStreamOffsets = new HashSet<long>();
+        if (trailer.Get(_encryptKey) is not null)
+        {
+            consumed = CollectCrossReferenceStreamOffsets(
+                data, primaryByObjNum, secondaryExtents, budget, consumed, crossReferenceStreamOffsets);
+        }
+
         // A reconstructed document has no trustworthy revision history either — the /Prev chain
         // that would normally describe one is exactly what's missing or broken here. An empty
         // list, not a (0, 0) sentinel, is what ObjectLayoutRule already reads as "no revision
         // info, check every object" (Revisions.Count == 0).
         return new XrefParseResult(
-            xref, trailer, StartXrefOffset: 0, Revisions: [], CrossReferenceStreamOffsets: new HashSet<long>(),
+            xref, trailer, StartXrefOffset: 0, Revisions: [], CrossReferenceStreamOffsets: crossReferenceStreamOffsets,
             DroppedOrphanedObjectStreamMembers: false,
             WasReconstructed: true,
             ObjectStreamContainers: objectStreamContainers,
@@ -695,6 +734,28 @@ internal static class XrefReconstructor
     /// 32000-2 §F.3.5 puts a linearized file's /Encrypt and /Root in the front first-page trailer
     /// while a tail cross-reference stream may carry only /ID, so the newest whole dictionary is
     /// the wrong unit to prefer.
+    /// <para>
+    /// PR3's three-way encryption split lives here. (1) A candidate trailer that DECLARES
+    /// <c>/Encrypt</c> needs nothing special: it is one of <see cref="_recoverableTrailerKeys"/>
+    /// already, so the per-key merge below carries it like any other key once this method simply
+    /// does not throw. (2) With nothing declared, a confirmed (primary, non-quarantined) extent
+    /// that is encryption-SHAPED (<see cref="HasPr2EncryptionEvidenceShape"/>) AND disambiguates as
+    /// the Standard handler (<see cref="ClassifyEncryptionDictionary"/>) gets a synthesized
+    /// <c>/Encrypt N G R</c> pointed at it — the trailer-destroyed last resort. (3) Everything else
+    /// that is encryption-shaped refuses rather than opens: a public-key dictionary (unsupported at
+    /// authentication anyway), and an encryption-shaped dictionary this pass cannot classify at
+    /// all. Table 20 makes <c>/Filter</c> and <c>/V</c> the only two Required entries of ANY
+    /// encryption dictionary — the spec-minimal shape — and §7.6.2 leaves the rest to the handler
+    /// ("the remaining contents of the encryption dictionary shall be determined by the security
+    /// handler and may vary"; a processor "can optionally provide additional security handlers of
+    /// its own"), so an unclassifiable pair is still a legitimate encryption dictionary this
+    /// library has never heard of, not proof the document is safe to open. And the whole-file sweep
+    /// (<see cref="ScanWholeFileForEncryptionEvidence"/> — <c>/Encrypt</c>, the Standard triad, or
+    /// a public-key <c>/SubFilter</c>) finding one of those fingerprints in a region the walk never
+    /// tokenized, or the sole sign sitting in a quarantined secondary extent, refuse the same way:
+    /// opening as plaintext over ciphertext is never on the table, whether or not this pass knows
+    /// which object to blame, and whether or not it recognises the handler.
+    /// </para>
     /// </summary>
     private static PdfDictionary RecoverTrailer(
         Dictionary<int, XrefEntry> xref, Dictionary<int, ObjectExtent> primaryByObjNum,
@@ -708,41 +769,107 @@ internal static class XrefReconstructor
                 allTrailerCandidates.Add((e.DictStart, e.Dictionary));
         }
 
-        // Sticky /Encrypt, mirroring XrefParser.ParseRevisionChain's anyRevisionDeclaredEncrypt:
-        // ANY candidate declaring it is enough, even one that loses every per-key vote below.
-        // Opening the document as plaintext is the one outcome that must not happen. Secondary
-        // (quarantined) extents are checked here too, on the same asymmetry reasoning as the
-        // structural check just below.
-        var anyDeclaredEncrypt = allTrailerCandidates.Exists(c => c.Dict.Get(_encryptKey) is not null)
-            || secondaryExtents.Exists(e => e.Dictionary is not null && e.Dictionary.Get(_encryptKey) is not null);
+        // Declared, from a candidate the per-key merge below actually reads (a real
+        // "trailer<<...>>" section, or a cross-reference-stream dictionary playing the trailer
+        // role). This is the "safe to carry" case: /Encrypt is already in _recoverableTrailerKeys,
+        // so nothing further is needed beyond not throwing.
+        var primaryDeclaredEncrypt = allTrailerCandidates.Exists(c => c.Dict.Get(_encryptKey) is not null);
 
-        // Structural last resort — see HasPr2EncryptionEvidenceShape for the rule and the /ByteRange
-        // exclusion it carries. Secondary-quarantined extents are included on purpose: excluded
-        // everywhere else, but not here — the asymmetry a false negative would create (silent
-        // ciphertext) is worse than the false positive a coincidental match produces (refuses a
-        // plaintext file).
-        var structuralEncrypt =
-            primaryByObjNum.Values.Any(e => e.Dictionary is not null && HasPr2EncryptionEvidenceShape(e.Dictionary))
-            || secondaryExtents.Exists(e => e.Dictionary is not null && HasPr2EncryptionEvidenceShape(e.Dictionary));
-
-        // This PR is plaintext-only. A false positive here refuses a file; a false negative would
-        // hand back ciphertext as if it were content, which is the one outcome that must not happen
-        // — so evidence either way throws rather than guessing. A later PR removes this throw
-        // without needing to restructure anything above it: the per-key /Encrypt value is already
-        // resolved below, exactly as every other recoverable key is.
+        // Structural fallback (§7.6.5.2, Table 27), searched only when nothing above declared
+        // /Encrypt, over confirmed (primary) extents only: a secondary extent's own identity came
+        // from a region the primary walk had already judged untrustworthy enough to need a second
+        // look (see WalkSecondary's doc comment), so this pass does not point a synthesized
+        // reference at one.
         //
-        // wholeFileEncryptionEvidence (C1) is the backstop for the other two checks: both only see
-        // dictionaries the walk actually tokenized, and the walk can jump straight over a region —
-        // an unresolved stream's body runs to EOF, an unterminated string consumes to EOF — without
-        // ever tokenizing what's inside it. Without this third check, a file whose /Encrypt
-        // declaration or Standard-handler dictionary sits in exactly such a swallowed region reaches
-        // this line with both of the other two flags false and opens as plaintext over ciphertext.
-        if (anyDeclaredEncrypt || structuralEncrypt || wholeFileEncryptionEvidence)
+        // A two-step gate, not one: HasPr2EncryptionEvidenceShape decides whether a dictionary is
+        // encryption-shaped AT ALL (the bare /Filter name + /V integer pair, minus the
+        // signature-dictionary shape — PR2's own broad threshold), and only a shaped dictionary is
+        // even a candidate for the narrower ClassifyEncryptionDictionary disambiguation. A
+        // dictionary that fails the shape check in the first place (an ordinary stream's own
+        // /Filter, say — which never carries /V, so it never satisfies this shape at all) is simply
+        // not evidence, and reconstruction moves on without it (T9's genuine false-positive case).
+        // But once a dictionary IS shaped, "cannot disambiguate which handler" is no longer grounds
+        // to treat it as absent: only a Standard-handler match is safe to carry — a public-key one
+        // is refused at authentication regardless, and an UNCLASSIFIABLE shaped dictionary is not
+        // thereby proven ordinary. Table 20 makes /Filter and /V the only two Required entries of
+        // ANY encryption dictionary, and §7.6.2 leaves everything past those two to the handler —
+        // "the remaining contents ... shall be determined by the security handler and may vary",
+        // and a processor "can optionally provide additional security handlers of its own" — so a
+        // bare /Filter+/V pair with no further disambiguator is still a legitimate, spec-minimal
+        // encryption dictionary this library has never heard of, and its streams may be ciphertext
+        // regardless of whether this pass can name the handler. Opening the rest of the document as
+        // plaintext on that gamble is exactly the outcome the whole design forbids, so an
+        // encryption-shaped, non-Standard candidate REFUSES instead of being ignored — a real cost
+        // (a plaintext file that happens to carry a standalone, non-signature
+        // /Filter+/V dictionary is refused too), accepted because the alternative risks handing
+        // back ciphertext as content. Latest-in-file Standard match wins when more than one
+        // classifies, matching A3/A5's own "later definition wins" convention.
+        PdfIndirectReference? structuralReference = null;
+        var primaryEncryptionShapedNotStandard = false;
+        // The offending dictionary's own /Filter, captured for the refusal message below — a
+        // genuinely better diagnostic than a generic refusal, and available for free at the exact
+        // point this pass already decided the dictionary is encryption-shaped but not Standard.
+        // Left null for the secondary/whole-file-sweep cases, which have no single parsed /Filter
+        // to name.
+        string? refusedHandlerFilter = null;
+        if (!primaryDeclaredEncrypt)
+        {
+            var bestDictStart = -1;
+            foreach (var extent in primaryByObjNum.Values)
+            {
+                if (extent.Dictionary is not { } dict || !HasPr2EncryptionEvidenceShape(dict))
+                    continue;
+
+                if (ClassifyEncryptionDictionary(dict) != EncryptionDictionaryClass.StandardHandler)
+                {
+                    primaryEncryptionShapedNotStandard = true;
+                    refusedHandlerFilter = (dict.Get(_filterKey) as PdfName)?.Value ?? refusedHandlerFilter;
+                    continue;
+                }
+
+                if (extent.DictStart < bestDictStart)
+                    continue;
+                bestDictStart = extent.DictStart;
+                structuralReference = MakeReference(xref, extent.ObjNum);
+            }
+        }
+
+        // Evidence this pass either cannot safely point a trailer reference at, or can point at
+        // but does not trust to be the Standard handler: a primary extent that is encryption-shaped
+        // but not Standard-classified (above), /Encrypt or a classifying structural shape sitting
+        // only inside a quarantined secondary extent, or the whole-file raw sweep (C1) finding
+        // /Encrypt-shaped tokens in a region the walk never tokenized at all. A primary non-Standard
+        // match refuses unconditionally — even alongside a genuine Standard match elsewhere in the
+        // same file, since a second, unclassifiable encryption-shaped object is exactly the kind of
+        // thing this pass cannot afford to wave through. HasPr2EncryptionEvidenceShape — not
+        // ClassifyEncryptionDictionary — governs the secondary check deliberately: a false positive
+        // there only costs a refusal (the same asymmetry PR2 always took), so the broader,
+        // undisambiguated shape is still the right net for evidence nobody is about to reference by
+        // number.
+        var unreferenceableEvidence = !primaryDeclaredEncrypt && (
+            primaryEncryptionShapedNotStandard
+            || (structuralReference is null && (
+                secondaryExtents.Exists(e => e.Dictionary is not null && e.Dictionary.Get(_encryptKey) is not null)
+                || secondaryExtents.Exists(e => e.Dictionary is not null && HasPr2EncryptionEvidenceShape(e.Dictionary))
+                || wholeFileEncryptionEvidence)));
+
+        if (unreferenceableEvidence)
+        {
+            // Named when a single parsed /Filter actually triggered the refusal (the common,
+            // diagnosable case); generic otherwise — the secondary-quarantined and whole-file-sweep
+            // paths have no one dictionary to point at.
+            var handlerClause = refusedHandlerFilter is { } filterName
+                ? $"found an encryption dictionary naming the security handler /{filterName}, which "
+                  + "is a public-key or unrecognised handler this pass cannot open"
+                : "found evidence that this document is encrypted, but either not in a place this "
+                  + "pass can point a trailer reference at, or not disambiguated as the Standard "
+                  + "handler";
             throw new UnsupportedPdfFeatureException(
-                "Malformed PDF: reconstruction found evidence that this document is encrypted "
-                + "(a candidate trailer declares /Encrypt, or an object's structure matches a "
-                + "security handler's encryption dictionary). Rebuilding the cross-reference table "
-                + "of an encrypted document is not supported yet.");
+                $"Malformed PDF: reconstruction {handlerClause} (ISO 32000-2 §7.6.5.2, Table 20) — "
+                + "opening the file as plaintext over ciphertext is not an option, and this pass "
+                + "only decrypts the Standard handler. Rebuilding the cross-reference table of a "
+                + "document damaged this badly is not supported.");
+        }
 
         var trailer = new PdfDictionary();
         foreach (var key in _recoverableTrailerKeys)
@@ -752,15 +879,29 @@ internal static class XrefReconstructor
             foreach (var (offset, dict) in allTrailerCandidates)
             {
                 var value = dict.Get(key);
-                if (value is not null && offset >= winnerOffset)
-                {
-                    winner = value;
-                    winnerOffset = offset;
-                }
+                if (value is null || offset < winnerOffset)
+                    continue;
+
+                // Table 15: /ID is required to be direct, and unencrypted, whenever /Encrypt is
+                // present — an indirect reference, or one with an indirect element, is a shape
+                // this pass never resolves pre-auth (EncryptionSetup.GetId0 refuses the same way,
+                // as its own backstop). Treating an invalid shape as "no candidate here" lets an
+                // EARLIER, valid /ID win instead of a later, malformed one silently shadowing it.
+                if (key.Equals(PdfName.ID) && !IsDirectIdArray(value))
+                    continue;
+
+                winner = value;
+                winnerOffset = offset;
             }
             if (winner is not null)
                 trailer.Set(key, winner);
         }
+
+        // The structural fallback only ever fills a gap left by the merge above: a declared
+        // /Encrypt already flowed through it (the key is in _recoverableTrailerKeys), so this only
+        // fires when nothing declared one at all.
+        if (structuralReference is not null && trailer.Get(_encryptKey) is null)
+            trailer.Set(_encryptKey, structuralReference);
 
         // A5b is implicit above: the trailer is built key by key from a fixed allow-list, never by
         // cloning a candidate dictionary wholesale, so a real "trailer<<...>>" section's own /Prev
@@ -781,15 +922,36 @@ internal static class XrefReconstructor
     }
 
     /// <summary>
+    /// Table 15: whenever /Encrypt is present, /ID must be a direct array whose elements are
+    /// themselves direct strings — never an indirect reference at either level. This pass has no
+    /// password yet, so it can only ever trust a value it can read without resolving anything.
+    /// </summary>
+    private static bool IsDirectIdArray(PdfObject value)
+    {
+        if (value is not PdfArray { Count: > 0 } arr)
+            return false;
+        for (var i = 0; i < arr.Count; i++)
+        {
+            if (arr[i] is not (PdfHexString or PdfLiteralString))
+                return false;
+        }
+        return true;
+    }
+
+    /// <summary>
     /// Structural classification of a candidate encryption dictionary (ISO 32000-2 §7.6.5.2,
     /// Table 20/Table 27). <c>/Filter</c> (a name) + <c>/V</c> (an integer) are the only two keys
     /// guaranteed present in both the Standard and a public-key handler's dictionary; neither
-    /// disambiguator present classifies as <see cref="EncryptionDictionaryClass.None"/> — a
-    /// false-positive guard PR3 relies on for its own T9, where a false positive means refusing to
-    /// OPEN a document that would otherwise decrypt cleanly. PR2 has no such document to protect
-    /// (it never decrypts anything), so PR2's own evidence gate does not call this method; see
-    /// <see cref="HasPr2EncryptionEvidenceShape"/> instead. Kept here, unused by PR2's production
-    /// path, so PR3 reuses this exact disambiguation rather than re-deriving it.
+    /// disambiguator present classifies as <see cref="EncryptionDictionaryClass.None"/>. Only a
+    /// <see cref="EncryptionDictionaryClass.StandardHandler"/> result is safe to point a
+    /// synthesized <c>/Encrypt</c> reference at (<see cref="RecoverTrailer"/>) — a
+    /// <see cref="EncryptionDictionaryClass.None"/> result does NOT mean "not encrypted, open as
+    /// plaintext": Table 20 makes <c>/Filter</c> and <c>/V</c> the only two Required entries of ANY
+    /// encryption dictionary, and §7.6.2 leaves everything past those two to the handler — a
+    /// processor "can optionally provide additional security handlers of [its] own" — so an already
+    /// encryption-shaped dictionary (<see cref="HasPr2EncryptionEvidenceShape"/>) that fails to
+    /// classify here is a legitimate handler this method just does not recognise, not proof of a
+    /// coincidence, and the caller refuses rather than guesses.
     /// </summary>
     internal static EncryptionDictionaryClass ClassifyEncryptionDictionary(PdfDictionary dict)
     {
@@ -807,17 +969,29 @@ internal static class XrefReconstructor
     }
 
     /// <summary>
-    /// PR2's own encryption-evidence threshold — deliberately broader than
-    /// <see cref="ClassifyEncryptionDictionary"/>'s disambiguation. A false positive here only
-    /// costs a refusal (this PR never opens an encrypted document either way), so the bare
-    /// <c>/Filter</c> (a name) + <c>/V</c> (an integer) pair from ISO 32000-2 §7.6.5.2 is evidence
-    /// on its own, with no disambiguator required: Table 20 makes <c>/SubFilter</c> optional and
-    /// Table 21 makes <c>/O</c>/<c>/U</c>/<c>/R</c> Standard-handler-only, so a minimal public-key
+    /// A deliberately broader encryption-evidence threshold than
+    /// <see cref="ClassifyEncryptionDictionary"/>'s disambiguation, and now the FIRST gate
+    /// <see cref="RecoverTrailer"/> (and its exhaustion-path twin) apply to any candidate — primary
+    /// or quarantined secondary alike — before that narrower classification is even consulted. A
+    /// dictionary that fails this shape check is not encryption evidence at all and reconstruction
+    /// simply moves on (an ordinary stream's own <c>/Filter</c> never carries a sibling <c>/V</c>,
+    /// so it never reaches here); one that passes is evidence regardless of whether it goes on to
+    /// classify. A false positive here only costs a refusal, so the bare <c>/Filter</c> (a name) +
+    /// <c>/V</c> (an integer) pair is evidence on its own, with no disambiguator required: Table 20
+    /// makes <c>/Filter</c> and <c>/V</c> the only two Required entries of ANY encryption
+    /// dictionary — that pair alone is already the spec-minimal shape — and §7.6.2 leaves
+    /// everything else to the handler, so <c>/SubFilter</c> being optional and <c>/O</c>/<c>/U</c>/
+    /// <c>/R</c> being Standard-handler-only (Table 21) both follow: a minimal public-key
     /// dictionary can legally carry neither and still be a real one (row 2 — a top-level
-    /// <c>&lt;&lt; /Filter /Adobe.PubSec /V 1 &gt;&gt;</c> with no other key at all). The asymmetry
-    /// this whole method exists to honour: a false positive refuses a plaintext file; a false
-    /// negative would open ciphertext as if it were content, so reconstruction takes the former
-    /// every time.
+    /// <c>&lt;&lt; /Filter /Adobe.PubSec /V 1 &gt;&gt;</c> with no other key at all), and the same
+    /// is true of any other handler's own private, undocumented shape — §7.6.2 lets a security
+    /// handler "encrypt any objects that are private to itself", and a processor "can optionally
+    /// provide additional security handlers of [its] own". The asymmetry this whole method exists
+    /// to honour: a false positive refuses a plaintext file; a false negative would open ciphertext
+    /// as if it were content, so
+    /// reconstruction takes the former every time — for a PRIMARY candidate, only a
+    /// <see cref="EncryptionDictionaryClass.StandardHandler"/> result from
+    /// <see cref="ClassifyEncryptionDictionary"/> earns the exception of actually being carried.
     /// <para>
     /// NARROW exclusion: a dictionary carrying <c>/ByteRange</c> is excluded only when it carries
     /// NONE of the keys an encryption dictionary might have (<c>/R</c>, <c>/O</c>, <c>/U</c>,
@@ -967,43 +1141,271 @@ internal static class XrefReconstructor
         return new PdfIndirectReference(objNum, generation);
     }
 
+    // ── A4: cross-reference-stream offsets (PR3) ────────────────────────────────
+
+    /// <summary>
+    /// A4: identifies which confirmed stream extents are genuine cross-reference streams, so
+    /// <see cref="PdfDocumentReader"/>'s encryption exemption (ISO 32000-2 §7.5.8.2 — a
+    /// cross-reference stream is never itself encrypted) still applies to a reconstructed,
+    /// encrypted document. Called from <see cref="Reconstruct"/> only once the recovered trailer
+    /// actually carries <c>/Encrypt</c> — an unencrypted reconstruction has no exemption to
+    /// compute, since nothing downstream ever asks.
+    /// <para>
+    /// Mirrors <see cref="XrefParser.ParseXrefStream"/>'s own <c>/W</c>, <c>/Size</c>, <c>/Index</c>
+    /// validation exactly — the same field-width bounds (0..8, validated as a 64-bit value before
+    /// narrowing), the same <c>/Index</c> pair bounds, the same default <c>[0 Size]</c> — and
+    /// decodes the body through the identical <see cref="PdfFilters.Decode"/> path. Deliberately
+    /// NEVER keyed on a candidate's own <c>/Type /XRef</c>: that key is author-controlled, exactly
+    /// why <see cref="PdfDocumentReader.IsCrossReferenceStream"/> and <see cref="CryptFilterResolver"/>
+    /// key the real exemption on where a stream was actually read as an xref stream, never on what
+    /// it claims to be. A candidate that fails the shape checks, fails to decode, or decodes too
+    /// short for its own declared row layout (<c>decoded.Length &gt;= rowSize × totalRows</c>) is
+    /// skipped rather than trusted — ciphertext does not usually inflate to a self-consistent
+    /// table, but a document large enough to make that a real possibility is exactly why this
+    /// checks the decoded length rather than accepting any successful decode outright.
+    /// </para>
+    /// <para>
+    /// Both primary and quarantined secondary extents are examined: unlike synthesizing an
+    /// <c>/Encrypt</c> reference (<see cref="RecoverTrailer"/>), where quarantine matters because
+    /// the SOURCE object's identity is what is being trusted, this method only ever decides whether
+    /// an extent's own body decodes into a self-consistent table — a check the same strict gate
+    /// applies to regardless of which walk confirmed it, so including secondary extents finds more
+    /// genuine exemptions without weakening it for any of them.
+    /// </para>
+    /// <para>
+    /// Charges against the SAME aggregate budget the walk itself charged against — reusing
+    /// <paramref name="consumed"/>/<paramref name="budget"/> — and throws
+    /// <see cref="InvalidDataException"/> outright on exhaustion, rather than degrading to a
+    /// partial answer, mirroring Phase B's own B1 discipline
+    /// (<c>PdfDocumentReader.ReconstructionPhaseB</c>'s comment on
+    /// <c>MaxAggregateReconstructionObjStmDecodeBytes</c>): charge BEFORE the expensive step, and
+    /// let the charge stand even when that step then fails, so a file built from many bogus
+    /// candidates cannot dodge the aggregate cap by having each one fail cheaply.
+    /// </para>
+    /// <para>
+    /// Unlike B1, though, the charge here has to be sized on the OUTPUT a decode could produce,
+    /// not the raw input it reads — Phase B's raw-body pre-charge is charging against
+    /// <c>MaxAggregateReconstructionObjStmDecodeBytes</c>, a bound on compressed-on-disk bytes, but
+    /// this method's cost is <see cref="PdfFilters.Decode"/>'s decompression work, and a Flate or
+    /// LZW body's compression ratio is attacker-controlled: a ~500 KB raw body can inflate to the
+    /// full <see cref="PdfFilters.MaxDecodedBytes"/> (512 MiB) before <c>Decode</c> notices and
+    /// throws. Charging only on a SUCCESSFUL decode's length — this method's own first cut — let a
+    /// run of such bombs each burn up to 512 MiB of decompression work uncharged before failing,
+    /// since every one of them ends in the SAME <see cref="InvalidDataException"/> a genuinely
+    /// malformed candidate does; the aggregate budget's fail-closed throw was never starved, but it
+    /// was also never actually reached in time to matter. So every attempt is pre-charged for the
+    /// worst case <see cref="PdfFilters.Decode"/> could produce — <c>min(MaxDecodedBytes,
+    /// remaining budget)</c> — before it runs, and only refunded down to the real decoded length
+    /// once decoding actually succeeds; a throw (bomb or otherwise malformed) leaves the worst-case
+    /// charge standing. A legitimate, small, unencrypted §7.5.8.2 cross-reference stream still
+    /// records its offset — decoding succeeds and the charge shrinks back to its real size before
+    /// the loop moves on — while a file packed with decompression bombs exhausts the budget within
+    /// the first one or two attempts instead of running every one of them to completion first.
+    /// </para>
+    /// </summary>
+    private static long CollectCrossReferenceStreamOffsets(
+        ReadOnlyMemory<byte> data, Dictionary<int, ObjectExtent> primaryByObjNum,
+        List<ObjectExtent> secondaryExtents, long budget, long consumed, HashSet<long> offsets)
+    {
+        // Checked AFTER an amount has already landed in `consumed` — never combined with the add
+        // itself, unlike the main walk's own Charge — because the pre-charge below has to be
+        // allowed to land, and possibly be refunded, before this decides whether the budget
+        // actually ran out. Throwing at the moment of the (pessimistic) pre-charge, before a
+        // legitimate small stream gets the chance to refund it back down, would fail every genuine
+        // cross-reference stream in a small reconstruction the instant this method ran at all.
+        void ThrowIfExhausted()
+        {
+            if (consumed >= budget)
+                throw new InvalidDataException(
+                    $"Malformed PDF: reconstruction could not verify this document's cross-reference "
+                    + $"streams within its cost budget ({budget} bytes) after already determining it "
+                    + "is encrypted. A skipped verification here would leave a real cross-reference "
+                    + "stream treated as ordinary encrypted content and decrypted into garbage, so "
+                    + "this fails closed instead of guessing.");
+        }
+
+        foreach (var extent in primaryByObjNum.Values.Concat(secondaryExtents))
+        {
+            if (!extent.HasBody || extent.Dictionary is not { } dict)
+                continue;
+
+            if (dict.Get(_wKey) is not PdfArray wArr || wArr.Count != 3)
+                continue;
+            if (!TryGetXrefStreamInt(wArr[0], out var w1L) || !TryGetXrefStreamInt(wArr[1], out var w2L)
+                || !TryGetXrefStreamInt(wArr[2], out var w3L))
+                continue;
+            if (w1L is < 0 or > 8 || w2L is < 0 or > 8 || w3L is < 0 or > 8)
+                continue;
+            var rowSize = (int)(w1L + w2L + w3L);
+            if (rowSize <= 0)
+                continue;
+
+            if (dict.Get(PdfName.Size) is not PdfInteger sizeObj || sizeObj.Value is < 0 or > int.MaxValue)
+                continue;
+            var streamSize = sizeObj.Value;
+
+            long totalRows;
+            if (dict.Get(_indexKey) is PdfArray indexArr)
+            {
+                if (indexArr.Count % 2 != 0)
+                    continue;
+                totalRows = 0;
+                var indexValid = true;
+                for (var i = 0; i < indexArr.Count; i += 2)
+                {
+                    if (!TryGetXrefStreamInt(indexArr[i], out var first)
+                        || !TryGetXrefStreamInt(indexArr[i + 1], out var count)
+                        || first is < 0 or > int.MaxValue || count is < 0 or > int.MaxValue
+                        || first + count > int.MaxValue)
+                    {
+                        indexValid = false;
+                        break;
+                    }
+                    totalRows += count;
+                }
+                if (!indexValid)
+                    continue;
+            }
+            else
+            {
+                totalRows = streamSize;
+            }
+
+            // The extent's own BodyEnd sits right AFTER 'endstream' (ResolveStreamExtent's own
+            // convention); the raw body PdfFilters.Decode needs ends right BEFORE it. A candidate
+            // whose stream ran to EOF unresolved (no terminator found at all — ResolveStreamExtent's
+            // last-resort fallback) has no marker to subtract, so the whole remaining extent is
+            // used as-is; decoding it will fail closed the same way a truncated real stream would.
+            var rawBodyEnd = extent.BodyEnd;
+            if (rawBodyEnd >= EndstreamMarker.Length + extent.BodyStart
+                && data.Span.Slice(rawBodyEnd - EndstreamMarker.Length, EndstreamMarker.Length).SequenceEqual(EndstreamMarker))
+            {
+                rawBodyEnd -= EndstreamMarker.Length;
+            }
+            var rawBody = data[extent.BodyStart..Math.Max(extent.BodyStart, rawBodyEnd)];
+            var streamObj = new ParsedStream(dict, rawBody, extent.BodyStart, extent.ObjNum, extent.Generation);
+
+            // Pre-charge the worst case Decode could produce (see the doc comment above for why
+            // charging only the raw body, or only a successful decode's length, both leave a
+            // Flate/LZW bomb's decompression work uncharged): landed BEFORE the decode attempt so
+            // a failed candidate — bomb or otherwise malformed — cannot dodge the aggregate cap by
+            // failing cheaply, but not itself checked against the budget yet (see ThrowIfExhausted
+            // above): a legitimate small stream needs the chance to refund this back down first.
+            var worstCase = Math.Min(PdfFilters.MaxDecodedBytes, Math.Max(0, budget - consumed));
+            consumed += worstCase;
+
+            byte[]? decoded;
+            try
+            {
+                decoded = PdfFilters.Decode(streamObj);
+            }
+            catch (InvalidDataException)
+            {
+                // Not a genuine, decodable cross-reference stream — ciphertext, most likely, or a
+                // decompression bomb; either way the pre-charge stands, and NOW the budget check
+                // runs: one bomb's worth of pre-charge is enough to exhaust an ordinary
+                // reconstruction's budget outright, so the very next candidate — bomb or not —
+                // fails closed here instead of ever reaching another decode attempt.
+                ThrowIfExhausted();
+                continue;
+            }
+
+            if (decoded is null)
+            {
+                // An image filter in the chain — never a real xref stream's own shape; the
+                // pre-charge stands here too, same reasoning as the throw case above.
+                ThrowIfExhausted();
+                continue;
+            }
+
+            // Real cost now known: refund the worst-case charge and charge the actual size, so a
+            // genuine, small cross-reference stream is not left over-counted for the rest of this
+            // pass's budget, then check whether even that real cost ran the budget out.
+            consumed -= worstCase;
+            consumed += decoded.Length;
+            ThrowIfExhausted();
+
+            if ((long)decoded.Length >= rowSize * totalRows)
+                offsets.Add(extent.DictStart);
+        }
+
+        return consumed;
+    }
+
+    private static bool TryGetXrefStreamInt(PdfObject? obj, out long value)
+    {
+        if (obj is PdfInteger pi)
+        {
+            value = pi.Value;
+            return true;
+        }
+        value = 0;
+        return false;
+    }
+
     // ── Exhaustion (un-starvable encryption evidence) ───────────────────────────
 
     /// <summary>
+    /// Internal-only control-flow signal: the walk's budget ran out, but <see cref="ThrowOnExhaustion"/>
+    /// found a declared or structurally referenceable <c>/Encrypt</c> candidate among what the walk
+    /// had ALREADY confirmed — evidence <see cref="RecoverTrailer"/> can carry rather than refuse.
+    /// Caught immediately around the walk loop in <see cref="Reconstruct"/>, never visible outside
+    /// this type, so the walk simply stops where it was and falls through to the same post-loop
+    /// pipeline (secondary merge, A5, A6, A4, final result) an ordinary completed walk uses —
+    /// <see cref="RecoverTrailer"/>'s own carry-vs-refuse logic makes the actual decision from
+    /// there, over whatever was gathered before the budget ran out.
+    /// </summary>
+    private sealed class ReconstructionEvidenceFoundEarlySignal : Exception;
+
+    /// <summary>
     /// The walk's cost budget ran out. Encryption-evidence detection must complete regardless of
-    /// any cap: (1) stop; (2) evaluate evidence over everything parsed so far (the same sticky
-    /// /Encrypt and structural checks <see cref="RecoverTrailer"/> runs, over whatever candidates
-    /// exist at this point), PLUS the whole-file sweep (<see cref="ScanWholeFileForEncryptionEvidence"/>)
-    /// computed once up front in <see cref="Reconstruct"/> — L2: that sweep is what closes the gap
-    /// the un-walked-SUFFIX-only checks below leave open, since a region the walk jumped over in
-    /// the MIDDLE of the file (an unresolved stream body, say) is neither "parsed so far" nor part
-    /// of the suffix past <paramref name="cursorPos"/>; (3) sweep the un-walked tail with
-    /// <see cref="ScanRemainderForEncryptionEvidenceRaw"/> — deliberately over-broad, uncharged, and
-    /// therefore impossible to starve by spending the budget before reaching it; (4) evidence
-    /// throws <see cref="UnsupportedPdfFeatureException"/>, otherwise <see cref="InvalidDataException"/>
-    /// naming the cost budget. A false positive here refuses a plaintext file; a false negative
-    /// would hand back ciphertext unexamined — the asymmetry this whole path exists to avoid.
+    /// any cap, and must reach the same carry-vs-refuse decision <see cref="RecoverTrailer"/> makes
+    /// on a completed walk: (1) stop; (2) a declared /Encrypt among confirmed (primary) candidates,
+    /// or one of them being encryption-SHAPED at all (<see cref="HasPr2EncryptionEvidenceShape"/>),
+    /// is evidence <see cref="RecoverTrailer"/> still needs to see — whether that turns out to be a
+    /// Standard-handler match it can carry, or a public-key/unclassifiable one it must refuse, is
+    /// exactly the decision that method makes, so this throws
+    /// <see cref="ReconstructionEvidenceFoundEarlySignal"/> rather than deciding here itself: the
+    /// walk stops, and the shared pipeline below re-derives the same answer over whatever was
+    /// confirmed; (3) otherwise, evaluate the same un-starvable backstop PR2 always used: a
+    /// quarantined secondary extent's own declared or broadly-shaped evidence, the whole-file sweep
+    /// (<see cref="ScanWholeFileForEncryptionEvidence"/>) computed once up front in
+    /// <see cref="Reconstruct"/> — L2: that sweep is what closes the gap an un-walked-SUFFIX-only
+    /// check leaves open, since a region the walk jumped over in the MIDDLE of the file (an
+    /// unresolved stream body, say) is neither "confirmed" nor part of the suffix past
+    /// <paramref name="cursorPos"/> — plus a final, deliberately over-broad, uncharged sweep of the
+    /// un-walked tail (<see cref="ScanRemainderForEncryptionEvidenceRaw"/>), impossible to starve by
+    /// spending the budget before reaching it; (4) any of that throws
+    /// <see cref="UnsupportedPdfFeatureException"/>, otherwise <see cref="InvalidDataException"/>
+    /// naming the cost budget — an ordinary, unencrypted decoy-padded file still hard-fails here
+    /// exactly as before; nothing about PR3 lets budget exhaustion silently degrade a plaintext
+    /// reconstruction into a partial one.
     /// </summary>
     private static void ThrowOnExhaustion(
         ReadOnlyMemory<byte> data, int cursorPos, long budget, Dictionary<int, XrefEntry> xref,
         Dictionary<int, ObjectExtent> primaryByObjNum, List<ObjectExtent> secondaryExtents,
         List<(int Offset, PdfDictionary Dict)> trailerCandidates, bool wholeFileEncryptionEvidence)
     {
-        var declaredEvidence = trailerCandidates.Exists(c => c.Dict.Get(_encryptKey) is not null)
-            || primaryByObjNum.Values.Any(e => e.HasBody && e.Dictionary is not null && e.Dictionary.Get(_encryptKey) is not null)
-            || secondaryExtents.Exists(e => e.Dictionary is not null && e.Dictionary.Get(_encryptKey) is not null);
+        var primaryDeclaredEncrypt = trailerCandidates.Exists(c => c.Dict.Get(_encryptKey) is not null)
+            || primaryByObjNum.Values.Any(e => e.HasBody && e.Dictionary is not null && e.Dictionary.Get(_encryptKey) is not null);
+        var primaryEncryptionShapePresent = primaryByObjNum.Values.Any(
+            e => e.Dictionary is not null && HasPr2EncryptionEvidenceShape(e.Dictionary));
 
-        var structuralEvidence =
-            primaryByObjNum.Values.Any(e => e.Dictionary is not null && HasPr2EncryptionEvidenceShape(e.Dictionary))
-            || secondaryExtents.Exists(e => e.Dictionary is not null && HasPr2EncryptionEvidenceShape(e.Dictionary));
+        if (primaryDeclaredEncrypt || primaryEncryptionShapePresent)
+            throw new ReconstructionEvidenceFoundEarlySignal();
 
-        var rawTailEvidence = ScanRemainderForEncryptionEvidenceRaw(data.Span[Math.Clamp(cursorPos, 0, data.Length)..]);
+        var unreferenceableEvidence =
+            secondaryExtents.Exists(e => e.Dictionary is not null && e.Dictionary.Get(_encryptKey) is not null)
+            || secondaryExtents.Exists(e => e.Dictionary is not null && HasPr2EncryptionEvidenceShape(e.Dictionary))
+            || wholeFileEncryptionEvidence
+            || ScanRemainderForEncryptionEvidenceRaw(data.Span[Math.Clamp(cursorPos, 0, data.Length)..]);
 
-        if (declaredEvidence || structuralEvidence || rawTailEvidence || wholeFileEncryptionEvidence)
+        if (unreferenceableEvidence)
             throw new UnsupportedPdfFeatureException(
                 "Malformed PDF: reconstruction's cost budget ran out, but the file also carries "
-                + "evidence that it is encrypted. Rebuilding the cross-reference table of an "
-                + "encrypted document is not supported yet.");
+                + "evidence that it is encrypted, in a region this pass could not safely point a "
+                + "trailer reference at. Rebuilding the cross-reference table of a document damaged "
+                + "this badly is not supported.");
 
         throw new InvalidDataException(
             $"Malformed PDF: reconstruction could not scan the file within its cost budget "
@@ -1028,12 +1430,18 @@ internal static class XrefReconstructor
     /// (it depends only on <paramref name="span"/>, not on walk state), on EVERY completion path —
     /// not only when the cost budget is exhausted.
     /// <para>
-    /// Two signals, each an escape-decoded, word-bounded PDF name token
+    /// Three signals, each an escape-decoded, word-bounded PDF name token
     /// (<see cref="ContainsWordBoundedEscapedNameToken"/> — ISO 32000-2 §7.3.5's <c>#XX</c> hex
     /// escape decoded before comparison, not a bare substring match): the name <c>Encrypt</c>
-    /// anywhere in the file, or the co-occurrence of <c>O</c>, <c>U</c> and <c>R</c> — the Standard
-    /// handler's Table 21 fingerprint (§7.6.5.2) — which catches an encryption dictionary sitting
-    /// in a swallowed region even when nothing anywhere declares it as <c>/Encrypt</c>. Escape
+    /// anywhere in the file; the co-occurrence of <c>O</c>, <c>U</c> and <c>R</c> — the Standard
+    /// handler's Table 21 fingerprint (§7.6.5.2); or a <c>/SubFilter</c> value of
+    /// <c>adbe.pkcs7.s3</c>, <c>adbe.pkcs7.s4</c> or <c>adbe.pkcs7.s5</c> — the public-key
+    /// handler's Table 23 values (§7.6.5.2), unique enough on their own that no co-occurrence
+    /// check is needed the way the Standard triad needs one: a signature's own <c>/SubFilter</c>
+    /// values (<c>adbe.pkcs7.detached</c>, <c>adbe.pkcs7.sha1</c>, <c>ETSI.CAdES.detached</c>, and
+    /// so on) never collide with the encryption-only <c>.s3</c>/<c>.s4</c>/<c>.s5</c> suffixes.
+    /// Together the three catch an encryption dictionary sitting in a swallowed region even when
+    /// nothing anywhere declares it as <c>/Encrypt</c>, under either handler family. Escape
     /// decoding matters here specifically: the real parser (<c>PdfObjectParser.ParseName</c>)
     /// decodes <c>/Encryp#74</c> to the name <c>Encrypt</c>, so a byte-literal search for the
     /// literal ASCII bytes <c>/Encrypt</c> misses a file whose trailer spells it with an escape —
@@ -1059,11 +1467,14 @@ internal static class XrefReconstructor
     /// while three single-letter names co-occurring outside an encryption dictionary do not.
     /// </para>
     /// <para>
-    /// This is a PR2 REFUSAL signal only. PR3, which lifts the refusal once reconstruction can also
-    /// authenticate, must NOT turn this into an authentication trigger: a plaintext file that
+    /// This is a REFUSAL signal only, never an authentication trigger: <see cref="RecoverTrailer"/>
+    /// only ever reads this flag inside its <c>unreferenceableEvidence</c> check, which fires
+    /// exclusively when nothing safely referenceable was ALSO found (a declared or structurally
+    /// classifying candidate among what the walk actually confirmed). A plaintext file that
     /// happens to contain the literal (or escaped) bytes <c>/Encrypt</c> — in a comment, a string,
-    /// or dead content the walk never resolves to anything — has to stay openable once the refusal
-    /// is gone, not be misread as encrypted because this sweep once found the bytes.
+    /// or dead content the walk never resolves to anything, but ALSO carries a real, confirmed
+    /// candidate elsewhere — is never misread as encrypted just because this sweep found the bytes
+    /// too; a hit here only ever adds a reason to refuse, never a reason to open one way or another.
     /// </para>
     /// </summary>
     private static bool ScanWholeFileForEncryptionEvidence(ReadOnlySpan<byte> span)
@@ -1071,17 +1482,39 @@ internal static class XrefReconstructor
         if (ContainsWordBoundedEscapedNameToken(span, "Encrypt"u8))
             return true;
 
-        return ContainsWordBoundedEscapedNameToken(span, "O"u8)
+        if (ContainsWordBoundedEscapedNameToken(span, "O"u8)
             && ContainsWordBoundedEscapedNameToken(span, "U"u8)
-            && ContainsWordBoundedEscapedNameToken(span, "R"u8);
+            && ContainsWordBoundedEscapedNameToken(span, "R"u8))
+            return true;
+
+        return ContainsWordBoundedEscapedNameToken(span, "adbe.pkcs7.s3"u8)
+            || ContainsWordBoundedEscapedNameToken(span, "adbe.pkcs7.s4"u8)
+            || ContainsWordBoundedEscapedNameToken(span, "adbe.pkcs7.s5"u8);
     }
 
-    // A raw sweep only ever needs to decode-match short targets ("Encrypt" is the longest, at 7
-    // bytes); decoding a #XX escape can only shrink a name's byte count (3 raw bytes -> 1 decoded
-    // byte), never grow it, so no raw token longer than this could ever decode down to one of
-    // those targets. Skipping a longer token outright, rather than decoding it anyway, keeps a
-    // single pathologically long name from costing more than a bounds check.
-    private const int MaxRawNameTokenBytesForEvidenceMatch = 32;
+    // The longest evidence-target byte length across every name token this sweep and its
+    // exhaustion-tail sibling (ScanRemainderForEncryptionEvidenceRaw) ever look for — currently
+    // "adbe.pkcs7.s3"/"s4"/"s5" at 13 bytes each, ahead of "Encrypt" (7) and "Filter" (6). Kept as
+    // its own constant, rather than folded into the one below, so that constant stays a derived
+    // value instead of a bare number a future evidence target could silently outgrow again.
+    private const int LongestEvidenceTargetBytes = 13;
+
+    // A #XX hex escape (ISO 32000-2 §7.3.5) is exactly 3 raw bytes per decoded byte, so a raw
+    // token longer than 3 × the longest target could never decode down to it — MUST stay
+    // >= 3 * LongestEvidenceTargetBytes, or a token this sweep should have matched gets skipped
+    // outright instead of decoded. That is exactly what happened here: this used to be a bare 32,
+    // sized for "Encrypt" alone (7 bytes needs only 21) and never raised when
+    // adbe.pkcs7.s3/s4/s5 (13 bytes, needing 39) joined the target set — a real
+    // /adbe.pkcs7.s5 written with ten or more of its thirteen characters #XX-escaped parses fine
+    // for PdfObjectParser.ParseName (raw length has no cap there) but has a raw length over 32, so
+    // this sweep silently skipped it, letting a public-key encrypted file in a region the walk
+    // never tokenized open as plaintext. Deriving the cap from the target set closes that gap by
+    // construction rather than by remembering to bump a number by hand every time a new, longer
+    // target is added. Skipping a token whose raw length exceeds this cap outright, rather than
+    // decoding it anyway, keeps a single pathologically long name from costing more than a bounds
+    // check; the stackalloc buffer below is sized from this same constant, so raising it raises
+    // the buffer too.
+    private const int MaxRawNameTokenBytesForEvidenceMatch = 3 * LongestEvidenceTargetBytes;
 
     /// <summary>
     /// True when the decoded form of <paramref name="decodedTarget"/> (a name's bytes WITHOUT the

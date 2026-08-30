@@ -148,15 +148,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `startxref` is missing, unusable, or doesn't point at a recognisable xref table or stream,
   `PdfReader.Open` used to always throw. Setting `AllowReconstruction` instead rebuilds the table by
   walking the file once for `N G obj` headers (the recovery ISO 32000-2 Annex C.4, informative,
-  describes), budgeted at `max(1 MiB, 8 × file length)`, and refuses outright
-  (`UnsupportedPdfFeatureException`) the instant it finds any evidence, declared or structural, that
-  the document is encrypted, rather than guessing. A document opened this way is plaintext only (this
-  does not add encrypted-document recovery), and reports the fact through the new
-  `PdfDocumentReader.WasReconstructed`. Appending a further incremental revision to a document
-  opened this way, or to one repaired by dropping orphaned object-stream members, now refuses:
-  neither's object graph is what the file's own cross-reference table actually declared, so
+  describes), budgeted at `max(1 MiB, 8 × file length)`. A document opened this way reports the fact
+  through the new `PdfDocumentReader.WasReconstructed`. Appending a further incremental revision to a
+  document opened this way, or to one repaired by dropping orphaned object-stream members, now
+  refuses: neither's object graph is what the file's own cross-reference table actually declared, so
   building a signature revision on top of either would hand back an artifact this library cannot
   reliably reopen.
+  - Reconstruction now covers encrypted documents too, without ever handing back ciphertext as
+    plaintext. A recovered trailer candidate that declares `/Encrypt` is carried through rather than
+    refused. When nothing declares it (a trailer damaged past recovery), a confirmed object gets a
+    synthesised `/Encrypt N G R` pointed at it — the trailer-destroyed last resort — but only when
+    its structure disambiguates SPECIFICALLY as the Standard handler (ISO 32000-2 §7.6.5.2); a
+    public-key dictionary, one this pass cannot classify at all, or evidence a whole-file sweep
+    finds only in bytes the walk never tokenized, all still refuse with
+    `UnsupportedPdfFeatureException`. `/Filter` and `/V` are the only two entries Table 20 requires
+    of any encryption dictionary, so a dictionary this pass cannot further classify is still a
+    legitimate one it does not recognise, not proof the document is safe to open — refusing it is
+    the same asymmetry the pre-PR3 refusal always took, now scoped to the cases that actually need
+    it. Opening what IS carried still authenticates through the existing password path, which is
+    where a public-key handler is refused (this library only implements the Standard handler). A
+    recovered cross-reference stream keeps its §7.5.8.2 encryption exemption, computed the same way
+    the ordinary path computes it — by where a stream was actually read as one, never by its
+    `/Type`. At R≤4, a trailer that lost its `/ID` along with everything else now fails to
+    authenticate with a `PdfPasswordException` naming the missing `/ID`, since Algorithm 2 step (e)
+    needs it to derive the key at that revision; R6 still recovers, since Algorithm 2.A never reads
+    `/ID`. A failed `Open` on an encrypted document now zeroes the file key before returning,
+    closing a gap where a constructor throw used to leave it in memory with no live reader instance
+    for a caller to dispose.
 
 - **`docs/pdf20-conformance.md` — a reference-by-reference inventory of what this library implements
   of ISO 32000-2.** "Supports PDF 2.0" is a claim nobody can check; this is one anybody can. It covers
