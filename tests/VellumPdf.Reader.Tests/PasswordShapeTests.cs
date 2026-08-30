@@ -35,12 +35,12 @@ public sealed class PasswordShapeTests
 
         if (expectedToOpen)
         {
-            using var reader = PdfReader.Open(bytes, password);
+            using var reader = PdfReader.Open(bytes, new PdfReaderOptions { Password = password });
             Assert.Equal("GoldenStandardFont", GetInfoTitle(reader));
         }
         else
         {
-            Assert.Throws<PdfPasswordException>(() => PdfReader.Open(bytes, password));
+            Assert.Throws<PdfPasswordException>(() => PdfReader.Open(bytes, new PdfReaderOptions { Password = password }));
         }
     }
 
@@ -55,7 +55,7 @@ public sealed class PasswordShapeTests
     [Fact]
     public void PasswordThatIsBothOwnerAndUser_isReportedAsOwnerAccess()
     {
-        using var reader = PdfReader.Open(Load("enc-aes-128-samepassword.pdf"), "same");
+        using var reader = PdfReader.Open(Load("enc-aes-128-samepassword.pdf"), new PdfReaderOptions { Password = "same" });
 
         Assert.True(reader.Encryption!.IsOwnerAccess);
         Assert.Equal("GoldenStandardFont", GetInfoTitle(reader));
@@ -80,7 +80,7 @@ public sealed class PasswordShapeTests
         Assert.True(PdfDocEncoding.TryEncode(Password, out var docEncoded));
         Assert.NotEqual(Encoding.UTF8.GetBytes(Password), docEncoded);
 
-        using var reader = PdfReader.Open(Load("enc-aes-128-pdfdocpassword.pdf"), Password);
+        using var reader = PdfReader.Open(Load("enc-aes-128-pdfdocpassword.pdf"), new PdfReaderOptions { Password = Password });
 
         Assert.Equal(4, reader.Encryption!.R);
         Assert.Equal("GoldenStandardFont", GetInfoTitle(reader));
@@ -97,7 +97,7 @@ public sealed class PasswordShapeTests
     [Fact]
     public void EncryptedDocumentWithAnIncrementalUpdate_decryptsBothRevisions()
     {
-        using var reader = PdfReader.Open(Load("enc-aes-128-tworevisions.pdf"), "");
+        using var reader = PdfReader.Open(Load("enc-aes-128-tworevisions.pdf"), new PdfReaderOptions { Password = "" });
 
         Assert.Equal(2, reader.Revisions.Count);
         Assert.NotNull(reader.Encryption);

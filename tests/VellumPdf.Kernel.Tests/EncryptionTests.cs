@@ -644,7 +644,7 @@ public sealed class EncryptionTests
 
         foreach (var password in new[] { userPassword, ownerPassword })
         {
-            using var reader = PdfReader.Open(bytes, password);
+            using var reader = PdfReader.Open(bytes, new PdfReaderOptions { Password = password });
 
             Assert.Equal(256, reader.Encryption!.KeyLengthBits);
             Assert.Equal(PdfCipherAlgorithm.Aes256, reader.Encryption.StreamCipher);
@@ -686,7 +686,7 @@ public sealed class EncryptionTests
     {
         var bytes = SaveEncrypted("u", "o");
 
-        using var reader = PdfReader.Open(bytes, "u");
+        using var reader = PdfReader.Open(bytes, new PdfReaderOptions { Password = "u" });
         var encrypt = (PdfDictionary)reader.ResolveValue(reader.Trailer.Get(new PdfName("Encrypt"))!)!;
 
         long Int(string key) => ((PdfInteger)encrypt.Get(new PdfName(key))!).Value;
@@ -753,7 +753,7 @@ public sealed class EncryptionTests
             StringComparison.Ordinal);
 
         // And it must come back intact, so this is not passing because the title was mangled.
-        using var reader = PdfReader.Open(bytes, "u");
+        using var reader = PdfReader.Open(bytes, new PdfReaderOptions { Password = "u" });
         var outlines = (PdfDictionary)reader.ResolveValue(reader.Catalog.Get(new PdfName("Outlines"))!)!;
         var first = (PdfDictionary)reader.ResolveValue(outlines.Get(new PdfName("First"))!)!;
         var titleValue = first.Get(new PdfName("Title"))!;
@@ -1020,7 +1020,7 @@ public sealed class EncryptionTests
             + text[(declared.Groups[1].Index + declared.Groups[1].Value.Length)..]);
         Assert.Equal(bytes.Length, patched.Length);
 
-        using var reader = PdfReader.Open(patched, "u");
+        using var reader = PdfReader.Open(patched, new PdfReaderOptions { Password = "u" });
 
         // The seal wins: print only, not the everything the edited /P now claims.
         Assert.Equal(PdfPermissions.Print, reader.Encryption!.Permissions);
@@ -1038,10 +1038,10 @@ public sealed class EncryptionTests
     {
         var bytes = SaveEncrypted("the-user-password", ownerPassword: null);
 
-        Assert.Throws<PdfPasswordException>(() => PdfReader.Open(bytes, ""));
+        Assert.Throws<PdfPasswordException>(() => PdfReader.Open(bytes, new PdfReaderOptions { Password = "" }));
         Assert.Throws<PdfPasswordException>(() => PdfReader.Open(bytes));
 
-        using var reader = PdfReader.Open(bytes, "the-user-password");
+        using var reader = PdfReader.Open(bytes, new PdfReaderOptions { Password = "the-user-password" });
         Assert.True(reader.Encryption!.IsOwnerAccess, "the user password also serves as the owner password");
     }
 

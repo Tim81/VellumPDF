@@ -103,7 +103,7 @@ using (var edoc = new Document())
         return 1;
     }
 
-    using var ereader = PdfReader.Open(encrypted, "aot-user");
+    using var ereader = PdfReader.Open(encrypted, new PdfReaderOptions { Password = "aot-user" });
     if (ereader.Encryption is null || ereader.Encryption.KeyLengthBits != 256)
     {
         Console.Error.WriteLine($"FAIL: expected a 256-bit key, got {ereader.Encryption?.KeyLengthBits}");
@@ -142,7 +142,7 @@ using (var edoc = new Document())
         return 1;
     }
 
-    using (var sealedReader = PdfReader.Open(tampered, "aot-user"))
+    using (var sealedReader = PdfReader.Open(tampered, new PdfReaderOptions { Password = "aot-user" }))
     {
         if (sealedReader.Encryption!.Permissions != PdfPermissions.Print)
         {
@@ -155,7 +155,7 @@ using (var edoc = new Document())
     // And the wrong password is refused rather than returning noise.
     try
     {
-        using var wrong = PdfReader.Open(encrypted, "not-the-password");
+        using var wrong = PdfReader.Open(encrypted, new PdfReaderOptions { Password = "not-the-password" });
         Console.Error.WriteLine("FAIL: a wrong password opened the document");
         return 1;
     }

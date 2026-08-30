@@ -40,7 +40,7 @@ public sealed class EncryptedReaderTests
     [MemberData(nameof(StandardMatrixFixtures))]
     public void Fixture_opensWithUserPassword_andPageContentMatchesBaseline(string name)
     {
-        using var reader = PdfReader.Open(Load(name), "u");
+        using var reader = PdfReader.Open(Load(name), new PdfReaderOptions { Password = "u" });
         using var baseline = PdfReader.Open(Load("plaintext-baseline.pdf"));
 
         var content = GetPageContentBytes(reader);
@@ -53,7 +53,7 @@ public sealed class EncryptedReaderTests
     [MemberData(nameof(StandardMatrixFixtures))]
     public void Fixture_opensWithOwnerPassword_andPageContentMatchesBaseline(string name)
     {
-        using var reader = PdfReader.Open(Load(name), "o");
+        using var reader = PdfReader.Open(Load(name), new PdfReaderOptions { Password = "o" });
         using var baseline = PdfReader.Open(Load("plaintext-baseline.pdf"));
 
         Assert.Equal(GetPageContentBytes(baseline), GetPageContentBytes(reader));
@@ -70,7 +70,7 @@ public sealed class EncryptedReaderTests
     [Fact]
     public void ObjectStreamAndXrefStreamFixture_opensWithUserPassword_andPageContentMatchesBaseline()
     {
-        using var reader = PdfReader.Open(Load("enc-rc4-objstm.pdf"), "u");
+        using var reader = PdfReader.Open(Load("enc-rc4-objstm.pdf"), new PdfReaderOptions { Password = "u" });
         using var baseline = PdfReader.Open(Load("plaintext-baseline.pdf"));
 
         Assert.Equal(GetPageContentBytes(baseline), GetPageContentBytes(reader));
@@ -87,7 +87,7 @@ public sealed class EncryptedReaderTests
     [Fact]
     public void ObjectStreamAndXrefStreamFixture_opensWithOwnerPassword_andPageContentMatchesBaseline()
     {
-        using var reader = PdfReader.Open(Load("enc-rc4-objstm.pdf"), "o");
+        using var reader = PdfReader.Open(Load("enc-rc4-objstm.pdf"), new PdfReaderOptions { Password = "o" });
         using var baseline = PdfReader.Open(Load("plaintext-baseline.pdf"));
 
         Assert.True(reader.Encryption!.IsOwnerAccess);
@@ -100,7 +100,7 @@ public sealed class EncryptedReaderTests
     [MemberData(nameof(StandardMatrixFixtures))]
     public void Fixture_infoTitle_decryptsToExactExpectedText(string name)
     {
-        using var reader = PdfReader.Open(Load(name), "u");
+        using var reader = PdfReader.Open(Load(name), new PdfReaderOptions { Password = "u" });
 
         Assert.Equal("GoldenStandardFont", GetInfoTitle(reader));
     }
@@ -122,7 +122,7 @@ public sealed class EncryptedReaderTests
     [Fact]
     public void ObjectStreamFixture_infoTitle_decryptsToExactExpectedText_notDoubleDecrypted()
     {
-        using var reader = PdfReader.Open(Load("enc-rc4-objstm.pdf"), "u");
+        using var reader = PdfReader.Open(Load("enc-rc4-objstm.pdf"), new PdfReaderOptions { Password = "u" });
 
         Assert.Equal("GoldenStandardFont", GetInfoTitle(reader));
     }
@@ -132,7 +132,7 @@ public sealed class EncryptedReaderTests
     [Fact]
     public void UserPassword_reports_isOwnerAccess_false()
     {
-        using var reader = PdfReader.Open(Load("enc-aes-128.pdf"), "u");
+        using var reader = PdfReader.Open(Load("enc-aes-128.pdf"), new PdfReaderOptions { Password = "u" });
 
         Assert.NotNull(reader.Encryption);
         Assert.False(reader.Encryption.IsOwnerAccess);
@@ -141,7 +141,7 @@ public sealed class EncryptedReaderTests
     [Fact]
     public void OwnerPassword_reports_isOwnerAccess_true()
     {
-        using var reader = PdfReader.Open(Load("enc-aes-128.pdf"), "o");
+        using var reader = PdfReader.Open(Load("enc-aes-128.pdf"), new PdfReaderOptions { Password = "o" });
 
         Assert.NotNull(reader.Encryption);
         Assert.True(reader.Encryption.IsOwnerAccess);
@@ -152,8 +152,8 @@ public sealed class EncryptedReaderTests
     [InlineData("enc-aes-256-r6.pdf")]
     public void OwnerAndUserPasswords_reportDifferentAccess_onDifferentFixtures(string name)
     {
-        using var userReader = PdfReader.Open(Load(name), "u");
-        using var ownerReader = PdfReader.Open(Load(name), "o");
+        using var userReader = PdfReader.Open(Load(name), new PdfReaderOptions { Password = "u" });
+        using var ownerReader = PdfReader.Open(Load(name), new PdfReaderOptions { Password = "o" });
 
         Assert.False(userReader.Encryption!.IsOwnerAccess);
         Assert.True(ownerReader.Encryption!.IsOwnerAccess);
@@ -164,7 +164,7 @@ public sealed class EncryptedReaderTests
     [Fact]
     public void Encryption_reportsExpectedShape_forAes256R6Fixture()
     {
-        using var reader = PdfReader.Open(Load("enc-aes-256-r6.pdf"), "u");
+        using var reader = PdfReader.Open(Load("enc-aes-256-r6.pdf"), new PdfReaderOptions { Password = "u" });
 
         Assert.NotNull(reader.Encryption);
         Assert.Equal(5, reader.Encryption.V);
@@ -178,7 +178,7 @@ public sealed class EncryptedReaderTests
     [Fact]
     public void Encryption_reportsExpectedShape_forRc4_40_fixture()
     {
-        using var reader = PdfReader.Open(Load("enc-rc4-40.pdf"), "u");
+        using var reader = PdfReader.Open(Load("enc-rc4-40.pdf"), new PdfReaderOptions { Password = "u" });
 
         Assert.NotNull(reader.Encryption);
         Assert.Equal(1, reader.Encryption.V);
@@ -190,7 +190,7 @@ public sealed class EncryptedReaderTests
     [Fact]
     public void Encryption_encryptMetadataFalse_isReported()
     {
-        using var reader = PdfReader.Open(Load("enc-256-cleartextmd.pdf"), "u");
+        using var reader = PdfReader.Open(Load("enc-256-cleartextmd.pdf"), new PdfReaderOptions { Password = "u" });
 
         Assert.NotNull(reader.Encryption);
         Assert.False(reader.Encryption.EncryptMetadata);
@@ -214,7 +214,7 @@ public sealed class EncryptedReaderTests
     [Fact]
     public void EmptyUserPasswordFixture_opens_withExplicitEmptyStringPassword()
     {
-        using var reader = PdfReader.Open(Load("enc-aes-128-emptyuser.pdf"), string.Empty);
+        using var reader = PdfReader.Open(Load("enc-aes-128-emptyuser.pdf"), new PdfReaderOptions { Password = string.Empty });
 
         Assert.NotNull(reader.Encryption);
         Assert.False(reader.Encryption.IsOwnerAccess);
@@ -223,7 +223,7 @@ public sealed class EncryptedReaderTests
     [Fact]
     public void EmptyUserPasswordFixture_opens_withNullPassword()
     {
-        using var reader = PdfReader.Open(Load("enc-aes-128-emptyuser.pdf"), password: null);
+        using var reader = PdfReader.Open(Load("enc-aes-128-emptyuser.pdf"), new PdfReaderOptions { Password = null });
 
         Assert.NotNull(reader.Encryption);
     }
@@ -237,7 +237,7 @@ public sealed class EncryptedReaderTests
 
         // Assert.Throws<T> in xUnit is an exact-type check, not "is-a" — this pins that the thrown
         // type is literally PdfPasswordException, and not some subclass or base of it.
-        Assert.Throws<PdfPasswordException>(() => PdfReader.Open(bytes, "definitely-wrong"));
+        Assert.Throws<PdfPasswordException>(() => PdfReader.Open(bytes, new PdfReaderOptions { Password = "definitely-wrong" }));
     }
 
     [Fact]
@@ -305,7 +305,7 @@ public sealed class EncryptedReaderTests
     public void TrailerId_firstElement_isNotDecrypted()
     {
         var bytes = Load("enc-aes-128.pdf");
-        using var reader = PdfReader.Open(bytes, "u");
+        using var reader = PdfReader.Open(bytes, new PdfReaderOptions { Password = "u" });
 
         var idArr = Assert.IsType<PdfArray>(reader.Trailer.Get(PdfName.ID));
         var id0 = Assert.IsType<PdfHexString>(idArr[0]);
@@ -332,7 +332,7 @@ public sealed class EncryptedReaderTests
     public void EncryptDictionary_ownStrings_areNotDecrypted()
     {
         var bytes = Load("enc-aes-128.pdf");
-        using var reader = PdfReader.Open(bytes, "u");
+        using var reader = PdfReader.Open(bytes, new PdfReaderOptions { Password = "u" });
 
         var encryptRef = Assert.IsType<PdfIndirectReference>(reader.Trailer.Get(new PdfName("Encrypt")));
         var encryptDict = Assert.IsType<PdfDictionary>(reader.Resolve(encryptRef));
@@ -379,7 +379,7 @@ public sealed class EncryptedReaderTests
         // validate once "decrypted" under an unrelated key). RC4 is an unpadded stream cipher with
         // no block-size constraint, so any byte length round-trips through Decrypt without error,
         // which is all this test needs: proof the bytes changed, not that they mean anything.
-        using var reader = PdfReader.Open(Load("enc-rc4-128.pdf"), "u");
+        using var reader = PdfReader.Open(Load("enc-rc4-128.pdf"), new PdfReaderOptions { Password = "u" });
         var method = typeof(PdfDocumentReader).GetMethod(
             "DecryptObjectGraph", BindingFlags.NonPublic | BindingFlags.Instance)
             ?? throw new InvalidOperationException("DecryptObjectGraph not found by reflection.");
@@ -458,11 +458,11 @@ public sealed class EncryptedReaderTests
 
         if (!expectSuccess)
         {
-            Assert.Throws<PdfPasswordException>(() => PdfReader.Open(stream, password));
+            Assert.Throws<PdfPasswordException>(() => PdfReader.Open(stream, new PdfReaderOptions { Password = password }));
             return;
         }
 
-        using var reader = PdfReader.Open(stream, password);
+        using var reader = PdfReader.Open(stream, new PdfReaderOptions { Password = password });
 
         Assert.Equal(PdfCipherAlgorithm.Rc4, reader.Encryption!.StreamCipher);
     }
@@ -540,7 +540,7 @@ public sealed class EncryptedReaderTests
     // reader, under the identity of object 5 0.
     private static PdfObject WalkWithArmedDecryptor(PdfDictionary dict)
     {
-        using var reader = PdfReader.Open(Load("enc-rc4-128.pdf"), "u");
+        using var reader = PdfReader.Open(Load("enc-rc4-128.pdf"), new PdfReaderOptions { Password = "u" });
         var method = typeof(PdfDocumentReader).GetMethod(
             "DecryptObjectGraph", BindingFlags.NonPublic | BindingFlags.Instance)
             ?? throw new InvalidOperationException("DecryptObjectGraph not found by reflection.");
@@ -595,7 +595,7 @@ public sealed class EncryptedReaderTests
         var patched = (byte[])original.Clone();
         replacement.CopyTo(patched.AsSpan(idx));
 
-        using var reader = PdfReader.Open(patched, "u");
+        using var reader = PdfReader.Open(patched, new PdfReaderOptions { Password = "u" });
         using var baseline = PdfReader.Open(Load("plaintext-baseline.pdf"));
         var baselineContent = GetPageContentBytes(baseline);
 
@@ -641,7 +641,7 @@ public sealed class EncryptedReaderTests
         // offset shifts and the rest of the (still-valid) encrypted content is untouched.
         "/StmF /Ghost"u8.CopyTo(patched.AsSpan(idx));
 
-        using var reader = PdfReader.Open(patched, "u");
+        using var reader = PdfReader.Open(patched, new PdfReaderOptions { Password = "u" });
 
         // Asserted on the message, not just the exception TYPE: the page content stream is still
         // real AES-128 ciphertext underneath, so a mutation that wrongly maps an undefined /CF name
@@ -670,7 +670,7 @@ public sealed class EncryptedReaderTests
     [Fact]
     public void NestedStringsInsideArrayInsideDictionary_decryptUnderContainingObjectIdentity()
     {
-        using var reader = PdfReader.Open(Load("enc-aes-128-nestedstrings.pdf"), "u");
+        using var reader = PdfReader.Open(Load("enc-aes-128-nestedstrings.pdf"), new PdfReaderOptions { Password = "u" });
 
         var custom = Assert.IsType<PdfDictionary>(reader.Catalog.Get(new PdfName("CustomTestData")) switch
         {
@@ -710,7 +710,7 @@ public sealed class EncryptedReaderTests
     {
         var bytes = Load("plaintext-baseline.pdf");
         using var a = PdfReader.Open(bytes);
-        using var b = PdfReader.Open(bytes, password: "irrelevant-for-an-unencrypted-file");
+        using var b = PdfReader.Open(bytes, new PdfReaderOptions { Password = "irrelevant-for-an-unencrypted-file" });
 
         Assert.Equal(GetPageContentBytes(a), GetPageContentBytes(b));
         Assert.Null(b.Encryption);

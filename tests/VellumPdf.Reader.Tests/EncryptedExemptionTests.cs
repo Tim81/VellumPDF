@@ -70,7 +70,7 @@ public sealed class EncryptedExemptionTests
             $"<< /Length {body.Length} /Filter [/Crypt] /DecodeParms << /Name /Identity >> >>\n"
             + $"stream\n{Encoding.Latin1.GetString(body)}\nendstream");
 
-        using var reader = PdfReader.Open(doc, "u");
+        using var reader = PdfReader.Open(doc, new PdfReaderOptions { Password = "u" });
 
         Assert.Equal(
             "BELOW-V4-STILL-RC4",
@@ -103,7 +103,7 @@ public sealed class EncryptedExemptionTests
             "<< /Type /Pages /Kids [] /Count 0 >>",
             $"<< /Probe <{Convert.ToHexStringLower(Encrypt(3, 0, "R3-NO-FFFFFFFF"u8.ToArray()))}> >>");
 
-        using var reader = PdfReader.Open(doc, "u");
+        using var reader = PdfReader.Open(doc, new PdfReaderOptions { Password = "u" });
 
         var probe = Assert.IsType<PdfDictionary>(reader.Resolve(new PdfIndirectReference(3, 0)));
         Assert.Equal(
@@ -140,7 +140,7 @@ public sealed class EncryptedExemptionTests
             "<< /Type /Pages /Kids [] /Count 0 >>",
             "<< /Probe <cf0ef39eac6f37> >>");
 
-        using var reader = PdfReader.Open(doc, "u");
+        using var reader = PdfReader.Open(doc, new PdfReaderOptions { Password = "u" });
 
         var probe = Assert.IsType<PdfDictionary>(reader.Resolve(new PdfIndirectReference(3, 0)));
         Assert.Equal(
@@ -168,7 +168,7 @@ public sealed class EncryptedExemptionTests
             "<< /Type /Pages /Kids [] /Count 0 >>",
             $"<< /Probe <{Convert.ToHexStringLower(Encrypt(3, 0, "ONE-ELEMENT-ID"u8.ToArray()))}> >>");
 
-        using var reader = PdfReader.Open(doc, "u");
+        using var reader = PdfReader.Open(doc, new PdfReaderOptions { Password = "u" });
 
         var probe = Assert.IsType<PdfDictionary>(reader.Resolve(new PdfIndirectReference(3, 0)));
         Assert.Equal(
@@ -223,7 +223,7 @@ public sealed class EncryptedExemptionTests
         W($"trailer\n<< /Size 5 /Root 1 0 R /Prev {xref2} /ID [<{id}><{id}>] >>\n"
           + $"startxref\n{xref3}\n%%EOF\n");
 
-        var ex = Assert.Throws<InvalidDataException>(() => PdfReader.Open(ms.ToArray(), "u"));
+        var ex = Assert.Throws<InvalidDataException>(() => PdfReader.Open(ms.ToArray(), new PdfReaderOptions { Password = "u" }));
 
         Assert.Contains("earlier revision declares /Encrypt", ex.Message, StringComparison.Ordinal);
     }
@@ -241,7 +241,7 @@ public sealed class EncryptedExemptionTests
     [Fact]
     public void CrossReferenceStream_resolvedAsAnOrdinaryObject_isNotDecrypted()
     {
-        using var reader = PdfReader.Open(Load("enc-rc4-objstm.pdf"), "u");
+        using var reader = PdfReader.Open(Load("enc-rc4-objstm.pdf"), new PdfReaderOptions { Password = "u" });
 
         var xrefStream = reader.ResolveStream(10);
         Assert.NotNull(xrefStream);
@@ -296,7 +296,7 @@ public sealed class EncryptedExemptionTests
                          // and the one the exemption's own comment calls the dangerous one
     public void CrossReferenceStreamDictionary_idString_isNotDecrypted(bool streamFirst)
     {
-        using var reader = PdfReader.Open(Load("enc-rc4-objstm.pdf"), "u");
+        using var reader = PdfReader.Open(Load("enc-rc4-objstm.pdf"), new PdfReaderOptions { Password = "u" });
 
         if (streamFirst)
             _ = reader.ResolveStream(10);
@@ -325,7 +325,7 @@ public sealed class EncryptedExemptionTests
             $"<< /Type /XRef /Length {body.Length} >>\n"
             + $"stream\n{Encoding.Latin1.GetString(body)}\nendstream");
 
-        using var reader = PdfReader.Open(doc, "u");
+        using var reader = PdfReader.Open(doc, new PdfReaderOptions { Password = "u" });
         var stream = reader.ResolveStream(3)!;
 
         Assert.Equal("BT (secret) Tj ET", Encoding.ASCII.GetString(reader.GetDecodedStreamData(stream)!));
@@ -346,7 +346,7 @@ public sealed class EncryptedExemptionTests
             "<< /Type /Pages /Kids [] /Count 0 >>",
             $"<< /Type /Page /Sneaky << /Type /XRef /S <{Convert.ToHexStringLower(hidden)}> >> >>");
 
-        using var reader = PdfReader.Open(doc, "u");
+        using var reader = PdfReader.Open(doc, new PdfReaderOptions { Password = "u" });
         var dict = Assert.IsType<PdfDictionary>(reader.Resolve(new PdfIndirectReference(3, 0)));
         var nested = Assert.IsType<PdfDictionary>(dict.Get(new PdfName("Sneaky")));
 
@@ -371,7 +371,7 @@ public sealed class EncryptedExemptionTests
         var body = Encrypt(4, 0, "REUSED-CONTENT"u8.ToArray());
         var doc = BuildSupersededXrefStreamThenReuse(xrefStreamObjectNumber, body);
 
-        using var reader = PdfReader.Open(doc, "u");
+        using var reader = PdfReader.Open(doc, new PdfReaderOptions { Password = "u" });
         var stream = reader.ResolveStream(4)!;
 
         Assert.Equal("REUSED-CONTENT", Encoding.ASCII.GetString(reader.GetDecodedStreamData(stream)!));
@@ -444,7 +444,7 @@ public sealed class EncryptedExemptionTests
             "<< /Type /Pages /Kids [] /Count 0 >>",
             $"<< /Type /XRef /S <{Convert.ToHexStringLower(hidden)}> >>");
 
-        using var reader = PdfReader.Open(doc, "u");
+        using var reader = PdfReader.Open(doc, new PdfReaderOptions { Password = "u" });
         var dict = Assert.IsType<PdfDictionary>(reader.Resolve(new PdfIndirectReference(3, 0)));
 
         Assert.Equal(
@@ -483,7 +483,7 @@ public sealed class EncryptedExemptionTests
             $"<< /Length {body.Length} /Probe <{Convert.ToHexStringLower(probe)}> >>\n"
             + $"stream\n{Encoding.Latin1.GetString(body)}\nendstream");
 
-        using var reader = PdfReader.Open(doc, "u");
+        using var reader = PdfReader.Open(doc, new PdfReaderOptions { Password = "u" });
         var stream = reader.ResolveStream(3)!;
 
         Assert.Equal(
@@ -507,7 +507,7 @@ public sealed class EncryptedExemptionTests
             "<< /Type /Pages /Kids [] /Count 0 >>",
             $"<< /Type /Annot /Subtype /Text /Rect [0 0 1 1] /Contents <{Convert.ToHexStringLower(note)}> >>");
 
-        using var reader = PdfReader.Open(doc, "u");
+        using var reader = PdfReader.Open(doc, new PdfReaderOptions { Password = "u" });
         var annot = Assert.IsType<PdfDictionary>(reader.Resolve(new PdfIndirectReference(3, 0)));
 
         Assert.Equal(
@@ -538,7 +538,7 @@ public sealed class EncryptedExemptionTests
             $"<< /Length {body.Length} /Probe <{Convert.ToHexStringLower(probe)}> >>\n"
             + $"stream\n{Encoding.Latin1.GetString(body)}\nendstream");
 
-        using var reader = PdfReader.Open(doc, "u");
+        using var reader = PdfReader.Open(doc, new PdfReaderOptions { Password = "u" });
 
         string FromStream() =>
             Encoding.ASCII.GetString(
@@ -574,7 +574,7 @@ public sealed class EncryptedExemptionTests
             $"<< /Length {body.Length} /F <{Convert.ToHexStringLower(fileName)}> >>\n"
             + $"stream\n{Encoding.Latin1.GetString(body)}\nendstream");
 
-        using var reader = PdfReader.Open(doc, "u");
+        using var reader = PdfReader.Open(doc, new PdfReaderOptions { Password = "u" });
         var stream = reader.ResolveStream(3)!;
 
         Assert.Equal("PLAINTEXT!", Encoding.ASCII.GetString(reader.GetDecodedStreamData(stream)!));
@@ -600,7 +600,7 @@ public sealed class EncryptedExemptionTests
             $"<< /Length {body.Length} /F <{Convert.ToHexStringLower(fileName)}> >>\n"
             + $"stream\n{Encoding.Latin1.GetString(body)}\nendstream");
 
-        using var reader = PdfReader.Open(doc, "u");
+        using var reader = PdfReader.Open(doc, new PdfReaderOptions { Password = "u" });
         var stream = reader.ResolveStream(3)!;
 
         Assert.Equal("abc", Encoding.ASCII.GetString(reader.GetDecodedStreamData(stream)!));
@@ -639,7 +639,7 @@ public sealed class EncryptedExemptionTests
             $"<< /Length {body.Length} /F << /Type /Filespec /F <{Convert.ToHexStringLower(fileName)}> >> >>\n"
             + $"stream\n{Encoding.Latin1.GetString(body)}\nendstream");
 
-        using var reader = PdfReader.Open(doc, "u");
+        using var reader = PdfReader.Open(doc, new PdfReaderOptions { Password = "u" });
         var stream = reader.ResolveStream(3)!;
 
         Assert.Equal("abc", Encoding.ASCII.GetString(reader.GetDecodedStreamData(stream)!));
@@ -665,7 +665,7 @@ public sealed class EncryptedExemptionTests
             "<< /Type /Pages /Kids [] /Count 0 >>",
             $"<< /Length {body.Length} /F 42 >>\nstream\n{Encoding.Latin1.GetString(body)}\nendstream");
 
-        using var reader = PdfReader.Open(doc, "u");
+        using var reader = PdfReader.Open(doc, new PdfReaderOptions { Password = "u" });
         var stream = reader.ResolveStream(3)!;
 
         Assert.Equal("REAL-CONTENT", Encoding.ASCII.GetString(reader.GetDecodedStreamData(stream)!));
@@ -724,7 +724,7 @@ public sealed class EncryptedExemptionTests
     {
         var doc = BuildCatalogInObjectStream();
 
-        using var reader = PdfReader.Open(doc, "u");
+        using var reader = PdfReader.Open(doc, new PdfReaderOptions { Password = "u" });
 
         Assert.Equal("Catalog", ((PdfName)reader.Catalog.Get(new PdfName("Type"))!).Value);
         var probe = Assert.IsType<PdfDictionary>(reader.Resolve(new PdfIndirectReference(5, 0)));
@@ -762,7 +762,7 @@ public sealed class EncryptedExemptionTests
     {
         var doc = BuildCatalogInObjectStream(headerGeneration, xrefGeneration);
 
-        using var reader = PdfReader.Open(doc, "u");
+        using var reader = PdfReader.Open(doc, new PdfReaderOptions { Password = "u" });
 
         // Reaching the catalog at all means the container decrypted and its members parsed; keyed on
         // the other generation the body is noise and /Type is not there to read.
@@ -854,7 +854,7 @@ public sealed class EncryptedExemptionTests
     [InlineData("enc-aes-128.pdf")]
     public void MetadataStream_decodesToTheSameXmp_whetherOrNotItIsEncrypted(string fixture)
     {
-        using var reader = PdfReader.Open(Load(fixture), "u");
+        using var reader = PdfReader.Open(Load(fixture), new PdfReaderOptions { Password = "u" });
 
         var metadataRef = Assert.IsType<PdfIndirectReference>(reader.Catalog.Get(new PdfName("Metadata")));
         var metadata = reader.ResolveStream(metadataRef)!;
@@ -905,7 +905,7 @@ public sealed class EncryptedExemptionTests
           + $"/ID [<{Convert.ToHexStringLower(Id0)}><{Convert.ToHexStringLower(Id0)}>] >>\n");
         W($"startxref\n{xref}\n%%EOF\n");
 
-        using var reader = PdfReader.Open(ms.ToArray(), "u");
+        using var reader = PdfReader.Open(ms.ToArray(), new PdfReaderOptions { Password = "u" });
 
         // The component's metadata: encrypted like anything else.
         Assert.Equal(
@@ -938,7 +938,7 @@ public sealed class EncryptedExemptionTests
             $"<< /Type /Metadata /Subtype /XML /Length {body.Length} >>\n"
             + $"stream\n{Encoding.Latin1.GetString(body)}\nendstream");
 
-        using var reader = PdfReader.Open(doc, "u");
+        using var reader = PdfReader.Open(doc, new PdfReaderOptions { Password = "u" });
 
         Assert.Equal(
             "<?xpacket meaningless-below-v4 ?>",
@@ -1004,7 +1004,7 @@ public sealed class EncryptedExemptionTests
         W("\nendstream\nendobj\n");
         W($"startxref\n{xref}\n%%EOF\n");
 
-        using var reader = PdfReader.Open(ms.ToArray(), "u");
+        using var reader = PdfReader.Open(ms.ToArray(), new PdfReaderOptions { Password = "u" });
 
         Assert.Equal("Catalog", ((PdfName)reader.Catalog.Get(new PdfName("Type"))!).Value);
 
@@ -1049,7 +1049,7 @@ public sealed class EncryptedExemptionTests
           + $"/ID [<{Convert.ToHexStringLower(Id0)}><{Convert.ToHexStringLower(Id0)}>] >>\n");
         W($"startxref\n{xref}\n%%EOF\n");
 
-        using var reader = PdfReader.Open(ms.ToArray(), "u");
+        using var reader = PdfReader.Open(ms.ToArray(), new PdfReaderOptions { Password = "u" });
         var dict = Assert.IsType<PdfDictionary>(reader.Resolve(new PdfIndirectReference(3, 5)));
         var stream = reader.ResolveStream(new PdfIndirectReference(3, 5))!;
 
@@ -1096,7 +1096,7 @@ public sealed class EncryptedExemptionTests
           + $"/ID [<{Convert.ToHexStringLower(Id0)}><{Convert.ToHexStringLower(Id0)}>] >>\n");
         W($"startxref\n{xref}\n%%EOF\n");
 
-        using var reader = PdfReader.Open(ms.ToArray(), "u");
+        using var reader = PdfReader.Open(ms.ToArray(), new PdfReaderOptions { Password = "u" });
 
         // Stream FIRST: this is what routes the dictionary through the second copy of the walk.
         var stream = reader.ResolveStream(new PdfIndirectReference(3, 5))!;
@@ -1143,7 +1143,7 @@ public sealed class EncryptedExemptionTests
           + $"/ID [<{Convert.ToHexStringLower(Id0)}><{Convert.ToHexStringLower(Id0)}>] >>\n");
         W($"startxref\n{xref}\n%%EOF\n");
 
-        using var reader = PdfReader.Open(ms.ToArray(), "u");
+        using var reader = PdfReader.Open(ms.ToArray(), new PdfReaderOptions { Password = "u" });
 
         ParsedStream stream;
         PdfDictionary dict;
@@ -1183,7 +1183,7 @@ public sealed class EncryptedExemptionTests
             "[/Crypt]",
             "<< /Type /CryptFilterDecodeParms /Name /Identity >>");
 
-        using var reader = PdfReader.Open(doc, "u");
+        using var reader = PdfReader.Open(doc, new PdfReaderOptions { Password = "u" });
         var stream = reader.ResolveStream(3)!;
 
         Assert.Equal("INDIRECTLY-EXEMPT", Encoding.ASCII.GetString(reader.GetDecodedStreamData(stream)!));
@@ -1214,7 +1214,7 @@ public sealed class EncryptedExemptionTests
             $"<< /Length 2 /Filter /Crypt /DecodeParms << /Name /Identity >> >>\n"
             + $"stream\n{body}\nendstream");
 
-        using var reader = PdfReader.Open(doc, "u");
+        using var reader = PdfReader.Open(doc, new PdfReaderOptions { Password = "u" });
         var stream = reader.ResolveStream(3)!;
 
         Assert.Equal(body, Encoding.ASCII.GetString(reader.GetDecodedStreamData(stream)!));
@@ -1310,7 +1310,7 @@ public sealed class EncryptedExemptionTests
     // array itself would hand back sixteen zero bytes.
     private static byte[] FileKeyOf(string fixture)
     {
-        using var reader = PdfReader.Open(Load(fixture), "u");
+        using var reader = PdfReader.Open(Load(fixture), new PdfReaderOptions { Password = "u" });
         var key = (byte[])typeof(PdfDocumentReader)
             .GetField("_fileKey", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(reader)!;
         return [.. key];
@@ -1318,7 +1318,7 @@ public sealed class EncryptedExemptionTests
 
     private static byte[] Encrypt(int objectNumber, int generation, byte[] plaintext)
     {
-        using var reader = PdfReader.Open(Load("enc-rc4-128.pdf"), "u");
+        using var reader = PdfReader.Open(Load("enc-rc4-128.pdf"), new PdfReaderOptions { Password = "u" });
         var type = typeof(PdfDocumentReader);
         var decryptor = (StandardSecurityDecryptor)type
             .GetField("_decryptor", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(reader)!;
