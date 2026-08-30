@@ -26,9 +26,9 @@ public sealed class ThirdPartyReaderBehaviorTests
     /// that understands cross-reference streams finds the live definition first and never looks
     /// past it. qpdf's <c>--show-object=3</c> agrees with VellumPdf here (see README.md); poppler's
     /// rendered output only shows the surrounding page survives, since it reads cross-reference
-    /// streams too and so is not a stand-in for a pre-1.5 consumer. This fixture still has a real
-    /// third-party oracle on the object itself, unlike the same-section variant below — qpdf just
-    /// carries that role alone.
+    /// streams too and so is not a stand-in for a pre-1.5 consumer. This fixture has a real
+    /// third-party oracle on the object itself, and so does the same-section variant below —
+    /// qpdf gives a full verdict on both.
     /// </summary>
     [Fact]
     public void Hybrid_hiddenObject_resolvesFromTheNewerRevisionsXRefStm()
@@ -53,34 +53,61 @@ public sealed class ThirdPartyReaderBehaviorTests
 
     /// <summary>
     /// The same free-then-redefine shape as above, but within a SINGLE revision rather than across
-    /// a /Prev chain. ISO 32000-2 §7.5.8.4's normative sentence covers a free entry in a PREVIOUS
-    /// revision, tested above; it does not cover this same-section shape, which is the subject of
-    /// the open <see href="https://github.com/pdf-association/pdf-issues/issues/237">pdf-issues
-    /// #237</see>. The erratum is unresolved, but the discussion so far favours the free entry
-    /// winning — qpdf resolves this object to null and poppler discards the xref and reconstructs,
-    /// so neither agrees with VellumPdf either. VellumPdf.Reader's own precedence code (see the
-    /// <c>localFreed</c> comment in <c>XrefParser.ParseOneRevision</c>) applies the same rule to it
-    /// deliberately, as a superset on a contested construct rather than a settled reading; tracked
-    /// as <see href="https://github.com/Tim81/VellumPDF/issues/206">#206</see>. This fixture pins
-    /// current behaviour, not a conformance claim. See README.md.
+    /// a /Prev chain. ISO 32000-2 §7.5.8.4's normative sentence names a free entry in a PREVIOUS
+    /// section, tested above; VellumPdf.Reader reads its search order as governing this same-section
+    /// pairing too, so the classic table's free entry already satisfies the search before the
+    /// /XRefStm is reached. That reading is defensible, not compelled by the clause text — see the
+    /// fixtures README's "Two hybrid fixtures" section for the full argument, its sourcing against
+    /// <see href="https://github.com/pdf-association/pdf-issues/issues/237">pdf-issues #237</see>
+    /// (open), and why it is not settled either way by the clause alone. qpdf agrees, resolving
+    /// object 4 to null; poppler discards the xref and reconstructs rather than picking either
+    /// entry. VellumPdf.Reader now applies this rule (see the <c>localFreed</c> comment in
+    /// <c>XrefParser.ParseOneRevision</c>); tracked as
+    /// <see href="https://github.com/Tim81/VellumPDF/issues/206">#206</see>, and revisited if #237
+    /// resolves otherwise. Object 7, defined only by this revision's /XRefStm and never mentioned by
+    /// the classic table, is asserted alongside object 4 so this test cannot pass by having skipped
+    /// the /XRefStm outright — see README.md.
     /// </summary>
     [Fact]
-    public void HybridSameSection_object4_resolvesFromXRefStm_notTheClassicTableFreeEntry()
+    public void HybridSameSection_object4IsNull_object7ResolvesFromXRefStm()
     {
         using var reader = PdfReader.Open(Load("hybrid-samesection-undefined.pdf"));
 
-        var obj4 = reader.Resolve(4);
-        Assert.NotNull(obj4);
-        var dict = Assert.IsType<PdfDictionary>(obj4);
-        Assert.True(dict.TryGet(PdfName.Length, out _));
+        Assert.Null(reader.Resolve(4));
+
+        var obj7 = reader.Resolve(7);
+        var dict = Assert.IsType<PdfDictionary>(obj7);
+        var note = Assert.IsType<PdfLiteralString>(dict.Get(new PdfName("Note")));
+        Assert.Equal("SAMESECTIONSTREAM", Encoding.Latin1.GetString(note.Bytes.Span));
     }
 
-    /// <summary>The page's /Contents is object 4; it must resolve to the real content stream.</summary>
+    /// <summary>
+    /// Object 4 is the page's /Contents. Under the reading above the classic table's free entry
+    /// wins, so object 4 never resolves and the page has no content stream at all — not a fallback
+    /// to some other definition, an absence. This is the concrete reader-visible cost of aligning
+    /// with #237: a hybrid file shaped like this one used to render its page content from the
+    /// /XRefStm and now renders nothing for that page. Every hop down to /Contents is an
+    /// <see cref="Assert.IsType"/> call, so a broken page-tree walk cannot pass this test either —
+    /// but nothing here proves the /XRefStm was actually read, only that object 4 stayed
+    /// unresolved. The trailing check on object 7 supplies that: it resolves only if the stream was
+    /// parsed, so this test cannot pass with the hybrid path disabled.
+    /// </summary>
     [Fact]
-    public void HybridSameSection_pageContents_resolvesThroughXRefStm()
+    public void HybridSameSection_pageContents_isUnresolvable()
     {
         using var reader = PdfReader.Open(Load("hybrid-samesection-undefined.pdf"));
-        Assert.Contains("HYBRIDXREFSTM", ResolveFirstPageText(reader), StringComparison.Ordinal);
+
+        var pagesObj = reader.ResolveValue(reader.Catalog.Get(PdfName.Pages)!);
+        var pages = Assert.IsType<PdfDictionary>(pagesObj);
+        var kidsObj = reader.ResolveValue(pages.Get(PdfName.Kids)!);
+        var kids = Assert.IsType<PdfArray>(kidsObj);
+        var pageObj = reader.ResolveValue(kids[0]);
+        var page = Assert.IsType<PdfDictionary>(pageObj);
+
+        var contentsRef = Assert.IsType<PdfIndirectReference>(page.Get(PdfName.Contents));
+        Assert.Null(reader.ResolveStream(contentsRef));
+
+        Assert.NotNull(reader.Resolve(7));
     }
 
     // ── Baseline ──────────────────────────────────────────────────────────

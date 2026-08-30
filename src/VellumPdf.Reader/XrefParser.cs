@@ -37,7 +37,14 @@ internal sealed class XrefParser
     /// Returns the merged xref table (newer revisions win), the newest trailer dictionary,
     /// the byte offset of the xref from the last startxref, and the revision list oldest-first.
     /// </summary>
-    public static (Dictionary<int, XrefEntry> Xref, PdfDictionary Trailer, int StartXrefOffset, IReadOnlyList<XrefRevision> Revisions, IReadOnlySet<long> CrossReferenceStreamOffsets) Parse(
+    /// <remarks>
+    /// Six elements is already one past comfortable for a tuple; #184 adds a seventh
+    /// (<c>WasReconstructed</c>), and its approved plan already calls for this to become a named
+    /// result type once that lands. Kept as a tuple here rather than converted early: the sole
+    /// caller (<see cref="PdfReader.Open(byte[], string?)"/>) makes either choice the same
+    /// one-call-site change, so there is no cost saved by doing it now.
+    /// </remarks>
+    public static (Dictionary<int, XrefEntry> Xref, PdfDictionary Trailer, int StartXrefOffset, IReadOnlyList<XrefRevision> Revisions, IReadOnlySet<long> CrossReferenceStreamOffsets, bool DroppedOrphanedObjectStreamMembers) Parse(
         ReadOnlyMemory<byte> data)
     {
         var startxrefOffset = FindLastStartxref(data);
@@ -66,7 +73,108 @@ internal sealed class XrefParser
         // older revision would exempt the new object for the life of the reader.
         var crossReferenceStreamOffsets = new HashSet<long>();
         var (trailer, revisions) = ParseRevisionChain(data, startxrefOffset, xref, freed, crossReferenceStreamOffsets);
-        return (xref, trailer, startxrefOffset, revisions, crossReferenceStreamOffsets);
+        var droppedOrphanedObjectStreamMembers = DropMembersOfFreedContainers(xref);
+        return (xref, trailer, startxrefOffset, revisions, crossReferenceStreamOffsets, droppedOrphanedObjectStreamMembers);
+    }
+
+    /// <summary>
+    /// A container with no live entry anywhere in the merged table takes its compressed members
+    /// with it. Case 2 below only guards on the MEMBER's own object number
+    /// (<c>!freed.Contains(objNum)</c>), not the container's, so such a container leaves its
+    /// type-2 rows sitting in the merged table, pointing at a container
+    /// <see cref="XrefEntryKind.Uncompressed"/> no longer resolves. Left alone,
+    /// <c>PdfDocumentReader.ResolveFromObjectStream</c> throws <c>InvalidDataException</c> for a
+    /// member nobody asked to free — harsher than qpdf, which resolves such a member to null (with
+    /// a warning) and keeps the document open.
+    ///
+    /// A single check made while a type-2 row is being added cannot fully close this: whether the
+    /// row that frees a container has been seen yet depends on parse order, and that order isn't
+    /// fixed. A pure xref-stream revision may place a container's own type-0 row in a later /Index
+    /// subsection than its members' type-2 rows — a /Index array only has to sort its subsections
+    /// in ascending order by object number (Table 17, ISO 32000-2 §7.5.8.2), which a
+    /// higher-numbered container satisfies while still landing after its lower-numbered members —
+    /// so the free is still sitting in this revision's own local free set, not yet folded into
+    /// `freed`, when the member rows are read. So this runs once, after the whole revision chain
+    /// (every revision, both classic tables and every /XRefStm) has been parsed, and sweeps the
+    /// fully merged table instead of trying to catch every order a single stream could put its rows
+    /// in.
+    ///
+    /// The test is `!xref.ContainsKey(container)` alone, not paired with
+    /// `freed.Contains(container)` the way an earlier version of this method read. That pairing
+    /// looked like it distinguished two things — a container this revision chain genuinely freed,
+    /// versus one no revision ever mentions — but it does not: object 0 is the free-list head every
+    /// document's ORIGINAL cross-reference table designates free (ISO 32000-2 §7.5.4, "the first
+    /// entry in the table ... shall always be free"), and `freed` unions across the whole revision
+    /// chain, so `freed.Contains(0)` is already true from the base revision on regardless of
+    /// whether any later incremental update repeats that entry. The same is true of any object an
+    /// ordinary incremental update deletes along the way. So `freed.Contains(container)` is true
+    /// for most of the container numbers a real file ever names, and tells the two cases apart from
+    /// neither. What actually
+    /// reaches this sweep is narrower than either case: a CLEAN deletion frees a container and its
+    /// members together (the shape ISO 32000-2 §7.5.8.4's own EXAMPLE writes), and case 2's
+    /// member-level guard already drops those members one layer earlier, before this method ever
+    /// sees them. So a type-2 row that does reach here with its container absent from `xref` is
+    /// always a self-contradictory file — a member kept live while its container was freed, or
+    /// never defined at all — and qpdf answers `null` for both, not just one. There was nothing for
+    /// the two-part test to distinguish; keeping `freed.Contains(container)` only meant this file
+    /// shape resolved to `null` when the container happened to be object 0 or something an
+    /// incremental update also deleted, and threw `InvalidDataException` from
+    /// `ResolveFromObjectStream`'s own "container N not found" check otherwise, for what is the
+    /// same contradiction either way.
+    ///
+    /// This drops the member-nobody-freed case further than #206 otherwise reaches: a dangling
+    /// type-2 reference to a container no revision ever mentions, in a file with no free entry
+    /// anywhere near it, now also resolves to null rather than throwing
+    /// `InvalidDataException`, because there is no longer a `freed`-based way to tell it apart from
+    /// a genuinely freed container, and qpdf treats both alike.
+    ///
+    /// This sweep is a single pass over the merged table, not a fixed point: if the member it
+    /// removes was itself, in some other row, a container — i.e. some other type-2 entry names
+    /// this member's object number as ITS container — that other entry does not get re-examined
+    /// and is left pointing at a container `xref` no longer holds. No fixture has been built where
+    /// this matters: `ResolveFromObjectStream` already rejects a container whose own xref entry is
+    /// type-2 (an object stream cannot itself be a member of another object stream — ISO 32000-2
+    /// §7.5.7), so a member this sweep removes was never a legal container for anything else to
+    /// begin with.
+    ///
+    /// Dropping the member from `xref` loses nothing a conformant reader could have recovered
+    /// anyway: ISO 32000-2 §7.3.10 requires that "an indirect reference to an undefined object
+    /// shall not be considered an error by a PDF processor; it shall be treated as a reference to
+    /// the null object." The member's bytes lived only inside the now-absent container, so once
+    /// this method runs, any surviving reference to it is exactly such a reference — and means the
+    /// same null it would have meant reading the source file directly, not a new kind of failure
+    /// introduced by this sweep.
+    ///
+    /// That is also why the removal stays sound through a rewrite rather than merely being a
+    /// resolve-time convenience: <c>PdfDocumentReader.ObjectNumbers</c> is <c>_xref.Keys</c>, the
+    /// same table this method edits, so a member dropped here is absent from that enumeration too
+    /// — the one a future full re-serialisation (#186) would walk to decide what to emit. A file
+    /// written from the post-sweep table omits the member and keeps every reference to it, which
+    /// §7.3.10 makes legal and still null, so the written copy agrees with what reading the source
+    /// returned instead of becoming a different kind of broken; nothing has to go scrub the kept
+    /// objects for dangling references first. <c>AppendRevision</c> is unaffected by any of this
+    /// today: it is purely incremental, copying the base document's bytes forward by construction,
+    /// so it never re-emits an existing object, orphaned or not.
+    /// </summary>
+    /// <returns><see langword="true"/> if at least one type-2 entry was removed.</returns>
+    private static bool DropMembersOfFreedContainers(Dictionary<int, XrefEntry> xref)
+    {
+        List<int>? toRemove = null;
+        foreach (var (objNum, entry) in xref)
+        {
+            if (entry.Kind != XrefEntryKind.InObjectStream)
+                continue;
+            var container = entry.ObjStmObjectNumber;
+            if (xref.ContainsKey(container))
+                continue;
+            (toRemove ??= []).Add(objNum);
+        }
+
+        if (toRemove is null)
+            return false;
+        foreach (var objNum in toRemove)
+            xref.Remove(objNum);
+        return true;
     }
 
     private static int FindLastStartxref(ReadOnlyMemory<byte> data)
@@ -203,20 +311,35 @@ internal sealed class XrefParser
 
         var b = span[xrefOffset];
 
-        // Object numbers THIS revision frees. Kept apart from `freed` (deletions carried in from a
-        // newer revision) until both halves of a hybrid file have been parsed, so a 'f' entry does
-        // not suppress a definition the same revision's /XRefStm supplies.
+        // Object numbers THIS revision frees, isolated from `freed` for the duration of a single
+        // classic-table or xref-stream parse so that set can't watch itself grow mid-parse. The
+        // digit branch below folds its own `localFreed` back into `freed` only after
+        // `ParseXrefStream` returns, not while it runs, for the same reason.
         //
-        // ISO 32000-2 §7.5.8.4 describes the hiding arrangement across sections rather than within
-        // one: the object is defined in the cross-reference stream and freed in an *earlier*
-        // section, usually the one /Prev points at, so a PDF 1.4 consumer finds the free entry and
-        // a PDF 1.5 consumer takes the stream's. Holding the free entry locally serves that case,
-        // because the deletion must not reach back and suppress the stream. It also accepts the
-        // same-section pairing, which the specification does not describe and which qpdf 12.3.2
-        // declines to resolve; the corpus in #196 pins both so the difference stays visible.
+        // Within one revision, though, `localFreed` IS folded into `freed` between the two halves:
+        // right after the classic table, below, and again once this revision's own /XRefStm
+        // returns. That fold is what makes a same-revision 'f' entry suppress a same-revision
+        // /XRefStm definition of the same object. ISO 32000-2 §7.5.8.4 has the search check the
+        // classic table before the stream when an entry is "not found" there, but the clause's
+        // normative text never says whether a free entry counts as found. Its one EXAMPLE glosses a
+        // free object as "considered missing", but on the natural reading that sentence is about
+        // the dictionary entry pointing at the object (/StructTreeRoot), not the cross-reference
+        // entry itself, so it does not settle the question either. That gap is the whole hinge of
+        // this reading, and it is ours, not the clause's. Treating a free entry as satisfying the
+        // search is the reading pdf-association/pdf-issues#237 (open) leans toward and qpdf 12.3.2
+        // matches; see the fixtures README for the sourcing behind that, kept out of here so the
+        // argument has one home instead of drifting out of sync across six copies.
         //
-        // A *later* /Prev revision must still see the deletion, so `localFreed` is folded into
-        // `freed` only once both halves have had their chance to add the object back to `xref`.
+        // The clause's instruction to disregard a free entry and keep looking is scoped to one
+        // found in the *previous* section: the cross-section arrangement the mechanism was actually
+        // designed around, where THIS revision's stream defines the object and an *earlier* one,
+        // usually the one /Prev points at, frees it — so a PDF 1.4 reader stops at the free entry
+        // and a PDF 1.5 reader reaches the stream. The outcome there does not depend on
+        // `localFreed`, even though that older revision's 'f' entry goes through `localFreed.Add`
+        // like any other free entry: revisions are walked newest-first with `xref.TryAdd`, so by
+        // the time that entry lands in `freed`, the newer revision's stream has already added its
+        // own definition, and `freed` only gates a future `TryAdd` — it can't withdraw one already
+        // made.
         var localFreed = new HashSet<int>();
 
         if (IsDigit(b))
@@ -235,12 +358,18 @@ internal sealed class XrefParser
 
         var trailer = ParseClassicXrefTable(data, xrefOffset, xref, freed, localFreed);
 
+        // Fold this revision's classic-table frees into `freed` now, before the /XRefStm block
+        // below runs — not after it, which was this method's behaviour before
+        // pdf-association/pdf-issues#237 (see the comment on `localFreed` above). A same-revision
+        // 'f' entry must be visible to the stream's own `freed.Contains` guard so it suppresses a
+        // same-revision /XRefStm definition of the same object.
+        freed.UnionWith(localFreed);
+
         // Hybrid: if the classic trailer has /XRefStm, also parse that xref stream.
-        // Classic entries win, so we've already added them — the stream entries are added
-        // with TryAdd and will be skipped if already present. Suppressed only by `freed` (a newer
-        // revision's deletion), never by `localFreed`: the classic table's own 'f' entries above
-        // must not block this same revision's stream from resolving the object (see the comment
-        // on `localFreed` above).
+        // Classic entries win, so we've already added them — the stream entries are added with
+        // TryAdd and skipped if already present, or if `freed` already names the object (which, as
+        // of the fold above, includes this revision's own classic-table frees, not just a newer
+        // revision's deletions).
         if (trailer.TryGet(new PdfName("XRefStm"), out var xrefStmObj) && xrefStmObj is PdfInteger xrefStmInt)
         {
             // Validate as a 64-bit value before narrowing (see /Prev above): casting first would let
@@ -271,6 +400,9 @@ internal sealed class XrefParser
             }
         }
 
+        // Not a no-op even after the fold above: this revision's own /XRefStm, if present, may
+        // have added its own type-0 (free) entries to `localFreed` (see ParseXrefStream), and an
+        // older /Prev revision still needs those in `freed` to keep it from resurrecting them.
         freed.UnionWith(localFreed);
         return trailer;
     }
@@ -362,11 +494,14 @@ internal sealed class XrefParser
                 else if (objType == 'f')
                 {
                     // A free entry means the object does not exist per this table. Record it in
-                    // `localFreed`, not `freed`: a hybrid file's own /XRefStm (parsed next, same
-                    // revision) may still define the object, and that must not be suppressed by this
-                    // table's 'f' entry. An older revision's 'n' entry for the same number is
-                    // suppressed once ParseOneRevision folds `localFreed` into `freed` after both
-                    // halves of this revision have run.
+                    // `localFreed`, not `freed`, so an earlier 'f' entry in this same table cannot
+                    // prospectively suppress a later 'n' entry for the same object number: `freed`
+                    // only gates a `TryAdd` that has not run yet, and both entries are read before
+                    // ParseOneRevision folds `localFreed` into `freed` (see its comment). That fold
+                    // happens as soon as this table finishes, before this revision's own /XRefStm is
+                    // parsed, so this free entry does suppress a same-revision stream definition of
+                    // the object, and an older /Prev revision's 'n' entry for the same number is
+                    // suppressed too.
                     localFreed.Add(objNum);
                 }
 

@@ -6,6 +6,122 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Breaking changes
+
+- **A same-revision `/XRefStm` no longer overrides a classic cross-reference table's free entry
+  for the same object.** Given one revision whose classic table marks object N free *and* whose
+  `/XRefStm` defines it, `PdfReader` now resolves N to `null`, matching qpdf; it previously
+  resolved N from the stream. The construct is describable beyond a hand-freed `/Contents`: an
+  incremental update from a writer that copies `/XRefStm` forward without understanding it, and
+  also carries the previous revision's free entries along unchanged, produces exactly this shape —
+  the case MatthiasValvekens describes in
+  [pdf-association/pdf-issues#237](https://github.com/pdf-association/pdf-issues/issues/237), by
+  his own account without having checked it against a real processor ("I'm not aware of any
+  processors that do either of this, so maybe my intuition is completely wrong"). The
+  cross-*section* arrangement ISO 32000-2 §7.5.8.4 actually describes, where the free entry sits in
+  an earlier `/Prev` revision, is unaffected only in the two-revision case; a hybrid revision
+  sitting between two others in a `/Prev` chain is not exempt, and loses its own copy the same way
+  a same-revision one does while also suppressing whatever a still-older revision defined. What
+  survives a chain like that is the definition in whichever revision is newest among the ones that
+  mention the object at all, not simply whichever one sits outside a same-revision pairing. This
+  aligns with the reading in issue #237, open at the time of writing; if it or errata
+  [#523](https://github.com/pdf-association/pdf-issues/issues/523) resolves the other way, this is
+  revisited. `VellumPdf.Reader` is still Preview, where a behaviour change would ordinarily stay
+  under Changed, but silently dropping rendered content is closer to what this section otherwise
+  covers than a changed exception type is, so it's recorded here instead. (#206)
+
+  Consequences, measured rather than assumed except where a bullet says otherwise — the `/Encrypt`
+  shape has no test, and the `/DecodeParms` half rests on a code reading rather than a fixture:
+  - A page's content stream can disappear: if N is a page's `/Contents`, the page now has no
+    content stream where it had one.
+  - A page can disappear outright, not just its content. If N is the page-tree root, the page
+    count drops from 1 to 0; if N is an intermediate `/Pages` node, freeing it drops only its own
+    subtree — a three-page document with a two-page branch under that node loses those two pages
+    and keeps the third, 3 becoming 1. The surviving root still declares its old `/Count`, so a
+    caller trusting `/Count` and one walking `/Kids` now disagree. `PreflightContext.WalkPages`
+    walks `/Kids` the same way, so page-scoped PDF/A rules silently stop covering the lost subtree
+    too.
+  - A rarer variant costs more: if N is the object an `/Encrypt` reference points at, the document
+    now fails to open with `InvalidDataException` instead of decrypting, because `/Encrypt` can no
+    longer resolve to a dictionary at all. This shape has no test yet.
+  - Worse still, if N is the catalog itself, the document does not open at all: `PdfReader.Open`
+    throws `InvalidDataException: Malformed PDF: /Root does not resolve to a dictionary.` where it
+    previously opened.
+  - A `/Filter` or `/DecodeParms` object resolving to `null` does not degrade to `null` output —
+    it produces wrong bytes. `PdfFilters.GetFilterList` treats an unresolvable `/Filter` as no
+    filter at all, so `GetDecodedStreamData` returns the raw, still-encoded body. Measured: a
+    24-byte plaintext body, FlateDecode-compressed to 32 bytes (zlib header `78 9C`), comes back as
+    those 32 raw bytes instead of the 24-byte plaintext once its `/Filter` reference is freed this
+    way; a byte-identical control with the filter object live decodes correctly. `/DecodeParms`
+    degrades the same way — a PNG predictor's rows are never undone. qpdf degrades identically
+    here, so this is not a divergence from the oracle, only from what this entry previously implied
+    the general case is.
+  - When N is an `/ObjStm` container rather than an ordinary object, its compressed members have
+    to drop out of the merged table along with it, or a member nobody asked to free resolves
+    through a container that no longer exists and `PdfDocumentReader` throws
+    `InvalidDataException: Object stream container N not found in xref.` — a more surprising
+    failure than most other consequences here, and harsher than qpdf, which resolves such a member
+    to `null` (with a warning) and keeps the document open. Fixed: such a member now resolves to
+    `null`, where it previously resolved to its live compressed value. §7.5.8.4's own EXAMPLE frees
+    a hidden object's `/ObjStm` container alongside its members in the same table, and the reader's
+    existing member-level free tracking already handled that case before this change; what the fix
+    actually needed is narrower — a writer that frees the container without also freeing its
+    members, leaving their compressed rows pointing at nothing.
+  - That container-cascade removal reaches further than "a freed object drops out": members never
+    themselves named by any free entry, only orphaned when their container was, also drop out of
+    the merged table, and therefore out of anything built from it —
+    `PreflightContext.EnumerateIndirectObjects` and `EnumerateStreams` included. Measured: an
+    `ISO19005-2:6.1.13-name` Error for an over-long name inside such a member disappears from a
+    PDF/A validation, even though nothing in the file ever freed that member's own object number.
+  - Freeing the `/AcroForm` this way makes `reader.Signatures.Count` go from 1 to 0 with no
+    exception and no warning, so code that reads an empty signature list as "unsigned" now
+    misreads a signed document.
+  - A freed object drops out of the merged table entirely, so `ObjectNumbers` shrinks, and — when
+    `/Size` also understates the count — `NextFreeObjectNumber` can shrink with it, both feeding
+    code outside this package (`PreflightContext` and `ObjectLayoutRule`; `DssBuilder` and
+    `ArchiveTimestampBuilder`). The fixture measuring this shrink has its own `/Size` already
+    understating the file's real object count, independent of anything freed — ISO 32000-2 Table 15
+    already calls that non-conforming ("any object in a cross-reference section whose number is
+    greater than this value shall be ignored and defined to be missing by a PDF reader") — so the
+    shrink measured there is not attributable to this change alone. The `NextFreeObjectNumber`
+    shrink has no constructed consequence beyond itself; the `ObjectNumbers` shrink has two, both
+    below — a disappearing name-limit Error and a flipped PDF/A verdict, each reached through
+    `PreflightContext`, the consumer this bullet names.
+  - This reading can flip a PDF/A conformance verdict, not only drop content — and the verdict it
+    flips to is the one veraPDF gives. A PDF/A-2B file whose only violation is an external-stream
+    object (`/F`/`/FFilter`/`/FDecodeParms`) is `IsCompliant=False` with rule
+    `ISO19005-2:6.1.7.1-external-stream` when that object is live, and `IsCompliant=True` with zero
+    assertions once it is freed this way. veraPDF 1.30.2 — the validator this repository gates on,
+    and the closest thing PDF/A has to a reference implementation — reaches those same two verdicts
+    on those same two files: `FAIL … 2b` against ISO 19005-2:2011 clause 6.1.7.1 test 3 for the live
+    one, `PASS … 2b` for the freed one. Two controls rule out the deflationary readings: a variant
+    where the object is defined only by the `/XRefStm` and *not* freed still fails, so veraPDF is
+    not simply ignoring `/XRefStm`; and a variant violating a different rule flips the same way on
+    clause 6.1.7.2, so the agreement is about the cross-reference reading rather than one clause.
+    So the flip lands on veraPDF's side of a question the specification leaves open — which makes it
+    a correction under this reading rather than a straightforward cost, with the same caveat as
+    everything else here: if #237 or #523 resolves the other way, so does this. The mechanism:
+    `PdfPreflight`'s file-structure rules walk the cross-reference keyspace directly
+    (`PreflightContext.EnumerateStreams`), specifically so an object the file never draws still gets
+    checked, so an object this reading removes from the merged table drops out of that enumeration
+    the same way a freed page does. The control differs from the freed file only in that object's
+    xref row, and is non-compliant on both builds.
+
+- **A type-2 (compressed) cross-reference entry whose container has no live entry anywhere in the
+  merged table now resolves to `null` instead of sometimes throwing.** The container-cascade sweep
+  above used to also require the container to have actually been freed by some revision
+  (`freed.Contains(container)`) before dropping its orphaned members. That pairing looked like it
+  distinguished "genuinely freed" from "never mentioned by anything", but it does not: object 0
+  and any object an ordinary incremental update deletes are already in `freed` regardless, so the
+  pairing told the two cases apart from neither in practice. Dropped: the sweep now runs whenever
+  the container is absent from the merged table, freed or not. The one behaviour change this
+  reaches beyond the rest of this entry: a dangling type-2 reference to a container no revision
+  ever mentions, in a file with no free entry anywhere near it, now resolves to `null` rather than
+  throwing `InvalidDataException: Object stream container N not found in xref.`, matching qpdf. A
+  member the sweep drops this way is absent from `_xref` itself — the table a future full
+  re-serialisation (tracked in #186) would walk to decide what to emit — so it is not carried into
+  a rewritten copy either. (#206)
+
 ### Added
 
 - **`docs/pdf20-conformance.md` — a reference-by-reference inventory of what this library implements

@@ -73,6 +73,21 @@ public sealed class PdfDocumentReader : IDisposable
     /// </summary>
     internal IReadOnlyList<XrefRevision> Revisions { get; }
 
+    /// <summary>
+    /// <see langword="true"/> if <c>XrefParser.DropMembersOfFreedContainers</c> removed at least
+    /// one compressed-object-stream member from the merged xref table because its container had no
+    /// live entry — a self-contradictory file (see that method's doc comment). Recorded here, not
+    /// acted on: nothing reads it yet. <c>AppendRevision</c> currently guards only an empty object
+    /// list and the <c>/Root</c> generation, so it will happily append a revision to a document
+    /// repaired this way. The intent is that #184 adds one refusal covering both this flag and its
+    /// own <c>WasReconstructed</c>, on the reasoning its branch already writes down for the
+    /// reconstructed case: a repaired object graph is a best-effort guess, so building a PAdES
+    /// revision on top of it hands back an artifact this library cannot reliably reopen. That
+    /// refusal is on #184's branch, not on <c>main</c> and not in the issue body — so this sentence
+    /// describes an intent, not existing behaviour.
+    /// </summary>
+    internal bool DroppedOrphanedObjectStreamMembers { get; }
+
     /// <summary>Total length of the PDF byte buffer.</summary>
     internal int TotalLength => Bytes.Length;
 
@@ -98,7 +113,8 @@ public sealed class PdfDocumentReader : IDisposable
         int startXrefOffset,
         IReadOnlyList<XrefRevision> revisions,
         string? password = null,
-        IReadOnlySet<long>? crossReferenceStreamOffsets = null)
+        IReadOnlySet<long>? crossReferenceStreamOffsets = null,
+        bool droppedOrphanedObjectStreamMembers = false)
     {
         Bytes = bytes;
         _xref = xref;
@@ -106,6 +122,7 @@ public sealed class PdfDocumentReader : IDisposable
         StartXrefOffset = startXrefOffset;
         Revisions = revisions;
         _crossReferenceStreamOffsets = crossReferenceStreamOffsets ?? new HashSet<long>();
+        DroppedOrphanedObjectStreamMembers = droppedOrphanedObjectStreamMembers;
 
         // /Encrypt must be resolved and authenticated BEFORE anything else: Resolve() and
         // GetDecodedStreamData() key their decryption on _decryptor being set, and /Root (resolved

@@ -367,21 +367,954 @@ public sealed class XrefStreamTests
     }
 
     [Fact]
-    public void Hybrid_objectFreeInClassicTable_butLiveInXRefStm_resolves()
+    public void Hybrid_objectFreeInClassicTable_andInXRefStm_resolvesNull()
     {
-        // A hybrid-reference file commonly marks an object 'f' in the classic table precisely
-        // because its real definition lives in this same revision's /XRefStm (ISO 32000-2
-        // §7.5.8.4) — the object is free only to a reader that cannot see the stream. Object 4 is
-        // 'f' in the classic table below and a live type-1 entry in the accompanying xref stream;
-        // it must still resolve.
+        // Object 4 is 'f' in the classic table below AND a live type-1 entry in the accompanying
+        // xref stream, both in the same revision. VellumPdf.Reader treats the classic table's free
+        // entry as already satisfying the search, so it wins and object 4 resolves to null —
+        // VellumPdf.Reader.XrefParser's `localFreed` comment, and the fixtures README, have the
+        // full argument for that reading. #206.
+        //
+        // An object the classic table does NOT free still resolves from the /XRefStm regardless —
+        // that's what Hybrid_XRefStm_resolves above pins, using the same builder shape but without
+        // object 4's free entry. Object 6 here plays the same role within this test: it is live
+        // only in the /XRefStm, never mentioned by the classic table, so it must resolve alongside
+        // object 4's null — a reader that skipped the /XRefStm outright, or that this fixture
+        // shape happened to fail open for some unrelated reason, would fail that half too.
         var bytes = BuildHybridXrefStmWithClassicFreeEntryPdf();
         using var reader = PdfReader.Open(bytes);
 
-        var obj4 = reader.Resolve(4);
-        var dict4 = Assert.IsType<PdfDictionary>(obj4);
-        var flag = dict4.Get(new PdfName("HybridTest"));
+        Assert.Null(reader.Resolve(4));
+
+        var obj6 = reader.Resolve(6);
+        var dict6 = Assert.IsType<PdfDictionary>(obj6);
+        var flag = dict6.Get(new PdfName("HybridTest2"));
         var flagInt = Assert.IsType<PdfInteger>(flag);
         Assert.Equal(1, flagInt.Value);
+    }
+
+    /// <summary>
+    /// The trailing <c>freed.UnionWith(localFreed)</c> at the end of
+    /// <c>XrefParser.ParseOneRevision</c> carries a NEWER revision's own /XRefStm type-0 rows out to
+    /// an OLDER /Prev revision, not just its classic-table frees. Revision 1 (oldest) defines object
+    /// 4 live in a classic table; revision 2 (newest, hybrid) never mentions object 4 in its own
+    /// classic table at all, and its /XRefStm carries a type-0 row freeing it instead. Without that
+    /// fold, revision 2's free entry never reaches `freed` before revision 1 is parsed, so revision
+    /// 1's live entry for object 4 goes through untouched. No fixture in the #196 corpus has an
+    /// /XRefStm containing a type-0 row (see the fixtures README), so nothing else pins this. Object
+    /// 6, live only in revision 2's /XRefStm, is asserted alongside object 4's null so this test
+    /// cannot pass with the hybrid path itself disabled or skipped.
+    /// </summary>
+    [Fact]
+    public void XRefStmFreeRow_inNewerRevision_suppressesOlderRevisionsLiveEntry()
+    {
+        var bytes = BuildCrossRevisionXRefStmFreeRowPdf();
+        using var reader = PdfReader.Open(bytes);
+
+        Assert.Equal(2, reader.Revisions.Count);
+        Assert.Null(reader.Resolve(4));
+
+        var obj6 = reader.Resolve(6);
+        var dict6 = Assert.IsType<PdfDictionary>(obj6);
+        var note = Assert.IsType<PdfLiteralString>(dict6.Get(new PdfName("Note")));
+        Assert.Equal("REV2LIVE", Encoding.Latin1.GetString(note.Bytes.Span));
+    }
+
+    /// <summary>
+    /// <c>ParseClassicXrefTable</c> records a free entry in `localFreed`, not `freed`, so an
+    /// earlier 'f' entry cannot prospectively suppress a later 'n' entry for the same object number
+    /// within the SAME table's own scan (see the comment on `localFreed` in
+    /// <c>XrefParser.ParseOneRevision</c>). Object 4 is free in the first subsection (0 6) and live
+    /// in a second, later subsection (4 1) of the very same classic table — a duplicate object
+    /// number. ISO 32000-2 §7.5.4 forbids this outright: a subsection's object range must be
+    /// disjoint from every other subsection in the same section. It never says which entry a reader
+    /// should honour when one shows up anyway, so VellumPdf.Reader's first-live-entry rule is a
+    /// deliberate choice on that undefined-behaviour input, not a gap the spec left open. qpdf takes
+    /// the first entry of any kind it sees and would resolve this to null; VellumPdf.Reader takes
+    /// the first 'n' regardless of where an 'f' for the same number falls in the table, an
+    /// intentional, undocumented-until-now divergence from the oracle this change otherwise aligns
+    /// to. That verdict was checked on a page-tree-bearing variant of this same xref shape, not on
+    /// the exact bytes below: this builder's catalog has no /Pages, so `qpdf --show-object` on it
+    /// fails with "unable to find page tree" (exit 2) before ever reaching the duplicate-entry
+    /// question — running qpdf against this fixture directly would not confirm anything about it.
+    /// Collapsing `localFreed` into `freed` at the point of discovery (folding the classic-table
+    /// 'f' handler's own <c>localFreed.Add</c> into <c>freed.Add</c> directly) makes this resolve
+    /// to null instead.
+    /// </summary>
+    [Fact]
+    public void LocalFreedIsolation_classicTable_laterSubsectionEntry_winsOverEarlierFreeInSameTable()
+    {
+        var bytes = BuildClassicTableDuplicateObjectNumberPdf();
+        using var reader = PdfReader.Open(bytes);
+
+        var obj4 = reader.Resolve(4);
+        var dict = Assert.IsType<PdfDictionary>(obj4);
+        var note = Assert.IsType<PdfLiteralString>(dict.Get(new PdfName("Note")));
+        Assert.Equal("LATERSUBSECTIONLIVE", Encoding.Latin1.GetString(note.Bytes.Span));
+    }
+
+    /// <summary>
+    /// The cross-reference-stream counterpart of
+    /// <see cref="LocalFreedIsolation_classicTable_laterSubsectionEntry_winsOverEarlierFreeInSameTable"/>:
+    /// <c>ParseXrefStream</c>'s own type-0 handler records into `localFreed` for the same reason.
+    /// Object 4 is free in the stream's first /Index block (<c>[0 6</c>) and live again in a second,
+    /// later block of the SAME stream (<c>4 1]</c>). As above, qpdf would take the first entry
+    /// (null) where this reader takes the first live one — a deliberate divergence on a malformed,
+    /// duplicate-object-number shape (ISO 32000-2 §7.5.8.2's Index entry forbids it just as
+    /// directly: subsections cannot overlap, so an object number gets no more than one entry in a
+    /// section), not a claim that either reading is the compliant one. Same caveat as the
+    /// classic-table test above: this builder's catalog also has no /Pages, so qpdf refuses this
+    /// exact file on that unrelated ground rather than on the duplicate-index shape under test.
+    /// </summary>
+    [Fact]
+    public void LocalFreedIsolation_xrefStream_laterIndexBlockEntry_winsOverEarlierFreeInSameStream()
+    {
+        var bytes = BuildXrefStreamDuplicateIndexPdf();
+        using var reader = PdfReader.Open(bytes);
+
+        var obj4 = reader.Resolve(4);
+        var dict = Assert.IsType<PdfDictionary>(obj4);
+        var note = Assert.IsType<PdfLiteralString>(dict.Get(new PdfName("Note")));
+        Assert.Equal("LATERINDEXBLOCKLIVE", Encoding.Latin1.GetString(note.Bytes.Span));
+    }
+
+    // ── A freed /ObjStm container takes its compressed members with it ──────
+
+    /// <summary>
+    /// Case 2 in <c>ParseXrefStream</c> guards on the MEMBER's own object number
+    /// (<c>!freed.Contains(objNum)</c>), not the CONTAINER's. Object 5 here is an /ObjStm
+    /// container, freed by the classic table in the same revision whose /XRefStm defines both it
+    /// (type 1) and its one member, object 6 (type 2). Before the container-cascade fix, object 6
+    /// stayed in the merged xref pointing at a container that had correctly dropped out (the
+    /// container's own type-1 row IS caught by the pre-existing objNum check), so
+    /// <c>ResolveFromObjectStream</c> threw <c>InvalidDataException</c> for an object nobody asked
+    /// to free. Object 6 must now resolve to <see langword="null"/> instead, matching qpdf. Object 4,
+    /// live and untouched by any of this, is asserted alongside it so a fix that accidentally
+    /// dropped unrelated live objects would also fail this test.
+    /// </summary>
+    [Fact]
+    public void FreedObjStmContainer_compressedMemberResolvesNull_notThrows()
+    {
+        var bytes = BuildFreedObjStmContainerPdf();
+        using var reader = PdfReader.Open(bytes);
+
+        Assert.Null(reader.Resolve(6));
+
+        var obj4 = reader.Resolve(4);
+        var dict = Assert.IsType<PdfDictionary>(obj4);
+        var note = Assert.IsType<PdfLiteralString>(dict.Get(new PdfName("Note")));
+        Assert.Equal("STILLLIVE", Encoding.Latin1.GetString(note.Bytes.Span));
+    }
+
+    /// <summary>
+    /// Same shape as <see cref="FreedObjStmContainer_compressedMemberResolvesNull_notThrows"/>, but
+    /// the freed container's one member IS the catalog: object 1 exists only as a compressed
+    /// member of object 2, which the classic table frees in the same revision its own /XRefStm
+    /// defines it and its member. The constructor resolves /Root before anything else, so this
+    /// degrades exactly the way every other same-revision-free case in this file does — the
+    /// document does not open at all, with the same message a freed, uncompressed catalog produces
+    /// (see the CHANGELOG entry for #206) — rather than surfacing the container-not-found throw
+    /// <see cref="FreedObjStmContainer_compressedMemberResolvesNull_notThrows"/> pins the absence
+    /// of.
+    /// </summary>
+    [Fact]
+    public void FreedObjStmContainer_asCatalog_failsToOpen_withRootMessage()
+    {
+        var bytes = BuildFreedObjStmContainerAsCatalogPdf();
+        var ex = Assert.Throws<InvalidDataException>(() => PdfReader.Open(bytes));
+        Assert.Equal("Malformed PDF: /Root does not resolve to a dictionary.", ex.Message);
+    }
+
+    /// <summary>
+    /// The plain type-2 counterpart the container-cascade fix does NOT touch: object 6 here is a
+    /// compressed member whose CONTAINER (object 5) stays live throughout, but object 6's own
+    /// number is freed by the classic table, in the same revision the /XRefStm defines it as a
+    /// type-2 row. <c>!freed.Contains(objNum)</c> in case 2 already covers this — the fold #206
+    /// introduced applies to a type-2 row's own object number exactly as it does to a type-1 row's
+    /// — so this was already correct before the container-cascade fix and needed no code change,
+    /// only this test. Object 5's own resolution is asserted alongside it, both to prove the
+    /// container itself is untouched and as a sanity check that the fixture's container is
+    /// well-formed.
+    /// </summary>
+    [Fact]
+    public void FreedObjStmMember_ownNumberFreedByClassicTable_resolvesNull()
+    {
+        var bytes = BuildFreedObjStmMemberOwnNumberPdf();
+        using var reader = PdfReader.Open(bytes);
+
+        Assert.Null(reader.Resolve(6));
+        Assert.NotNull(reader.ResolveStream(5));
+    }
+
+    /// <summary>
+    /// Multi-revision correctness, half one: a container freed in an OLDER revision must not
+    /// disturb a NEWER revision's live members. Revision 1 (oldest) is a plain classic table that
+    /// frees object 5 and mentions object 6 nowhere. Revision 2 (newest, hybrid) never repeats that
+    /// free entry; its own /XRefStm defines object 5 (the container) live and object 6 (its
+    /// member). Revisions are walked newest-first, so by the time revision 1's free entry folds
+    /// into `freed`, object 5 already has a live entry in the merged xref from revision 2 — the
+    /// post-parse sweep's `!xref.ContainsKey(container)` half of its test is what keeps that live
+    /// entry, and therefore object 6, intact. A sweep keyed on `freed.Contains(container)` alone
+    /// would remove object 6 here, incorrectly: `freed` only ever grows, so revision 1's now-stale
+    /// free entry would still be sitting in it.
+    /// </summary>
+    [Fact]
+    public void FreedObjStmContainer_freedInOlderRevision_doesNotDisturbNewerLiveMembers()
+    {
+        var bytes = BuildObjStmContainerFreedInOlderRevisionPdf();
+        using var reader = PdfReader.Open(bytes);
+
+        Assert.Equal(2, reader.Revisions.Count);
+
+        var obj6 = reader.Resolve(6);
+        var dict = Assert.IsType<PdfDictionary>(obj6);
+        var note = Assert.IsType<PdfLiteralString>(dict.Get(new PdfName("Note")));
+        Assert.Equal("NEWERREVISIONLIVE", Encoding.Latin1.GetString(note.Bytes.Span));
+    }
+
+    /// <summary>
+    /// Multi-revision correctness, half two: a container freed in a NEWER revision must still
+    /// suppress an OLDER revision's members. Revision 1 (oldest) is a pure cross-reference-stream
+    /// revision (no classic table of its own) that defines container object 5 and its member
+    /// object 6, both live. Revision 2 (newest) is a plain classic table that frees object 5 and
+    /// says nothing else. Processed newest-first, `freed` already contains object 5 by the time
+    /// revision 1's type-1 and type-2 rows are read, so the container's own row is skipped exactly
+    /// as the pre-existing objNum check already handled (this half needs no new mechanism); the
+    /// member's row is NOT skipped at parse time, since its own object number was never freed — the
+    /// post-parse sweep is what removes it, on the same file this reader used to throw on before
+    /// the container-cascade fix, just with the free entry one revision further back.
+    /// </summary>
+    [Fact]
+    public void FreedObjStmContainer_freedInNewerRevision_suppressesOlderRevisionsMembers()
+    {
+        var bytes = BuildObjStmContainerFreedInNewerRevisionPdf();
+        using var reader = PdfReader.Open(bytes);
+
+        Assert.Equal(2, reader.Revisions.Count);
+        Assert.Null(reader.Resolve(6));
+
+        var typeName = Assert.IsType<PdfName>(reader.Catalog.Get(PdfName.Type));
+        Assert.Equal("Catalog", typeName.Value);
+    }
+
+    /// <summary>
+    /// Item 1 of the #372 review round: <c>DropMembersOfFreedContainers</c>'s predicate dropped its
+    /// <c>freed.Contains(container)</c> half (see that method's doc comment for why the pairing
+    /// distinguished nothing real). One side effect reaches further than #206 itself: a type-2 row
+    /// whose container object number no revision ever mentions -- not freed, just never named by
+    /// anything -- used to throw <c>InvalidDataException</c> ("container N not found in xref") from
+    /// <c>ResolveFromObjectStream</c>. It now resolves to <see langword="null"/> instead, because
+    /// the sweep can no longer tell "genuinely freed" apart from "never mentioned", and qpdf
+    /// resolves both the same way. Object 6, a live compressed member of a different, live
+    /// container, is asserted alongside the dangling row so a fix that swept every type-2 entry
+    /// rather than only the dangling one would also fail this test.
+    /// </summary>
+    [Fact]
+    public void DanglingObjStmMember_containerNeverMentioned_resolvesNull_notThrows()
+    {
+        var bytes = BuildDanglingObjStmMemberPdf();
+        using var reader = PdfReader.Open(bytes);
+
+        Assert.Null(reader.Resolve(7)); // type-2, container 99, which no revision names anywhere
+        Assert.True(reader.DroppedOrphanedObjectStreamMembers);
+
+        var obj6 = reader.Resolve(6);
+        var dict = Assert.IsType<PdfDictionary>(obj6);
+        var note = Assert.IsType<PdfLiteralString>(dict.Get(new PdfName("Note")));
+        Assert.Equal("STILLLIVE", Encoding.Latin1.GetString(note.Bytes.Span));
+    }
+
+    /// <summary>
+    /// <see cref="PdfDocumentReader.DroppedOrphanedObjectStreamMembers"/>'s negative case: no free
+    /// entry anywhere in the file and no dangling type-2 row either, so the sweep has nothing to
+    /// remove and the flag stays <see langword="false"/>. Paired with
+    /// <see cref="DanglingObjStmMember_containerNeverMentioned_resolvesNull_notThrows"/>, which pins
+    /// the positive case on an otherwise structurally identical file.
+    /// </summary>
+    [Fact]
+    public void CleanDocument_droppedOrphanedObjectStreamMembersFlag_isFalse()
+    {
+        var bytes = BuildCleanObjStmPdf();
+        using var reader = PdfReader.Open(bytes);
+
+        Assert.False(reader.DroppedOrphanedObjectStreamMembers);
+
+        var obj6 = reader.Resolve(6);
+        var dict = Assert.IsType<PdfDictionary>(obj6);
+        var note = Assert.IsType<PdfLiteralString>(dict.Get(new PdfName("Note")));
+        Assert.Equal("CLEANMEMBER", Encoding.Latin1.GetString(note.Bytes.Span));
+    }
+
+    private static byte[] BuildDanglingObjStmMemberPdf()
+    {
+        var ms = new MemoryStream();
+        void WriteStr(string s) => ms.Write(Encoding.ASCII.GetBytes(s));
+        void WriteBytes(byte[] b) => ms.Write(b);
+
+        WriteStr("%PDF-1.5\n");
+        var o1 = (int)ms.Position;
+        WriteStr("1 0 obj\n<< /Type /Catalog >>\nendobj\n");
+
+        // Object stream 5 (live, never freed): header "6 0" then the member's own body.
+        var memberBody = Encoding.ASCII.GetBytes("<< /Note (STILLLIVE) >>");
+        var objStmHeader = Encoding.ASCII.GetBytes("6 0\n");
+        var objStmBody = objStmHeader.Concat(memberBody).ToArray();
+        var o5 = (int)ms.Position;
+        WriteStr($"5 0 obj\n<< /Type /ObjStm /N 1 /First {objStmHeader.Length} /Length {objStmBody.Length} >>\nstream\n");
+        WriteBytes(objStmBody);
+        WriteStr("\nendstream\nendobj\n");
+
+        byte[] Row(byte type, long f2, long f3) =>
+        [
+            type,
+            (byte)((f2 >> 24) & 0xFF), (byte)((f2 >> 16) & 0xFF), (byte)((f2 >> 8) & 0xFF), (byte)(f2 & 0xFF),
+            (byte)((f3 >> 8) & 0xFF), (byte)(f3 & 0xFF),
+        ];
+        var streamBody = new MemoryStream();
+        streamBody.Write(Row(1, o5, 0)); // obj 5 (container): live
+        streamBody.Write(Row(2, 5, 0)); // obj 6 (member): container 5, index 0 -- live
+        streamBody.Write(Row(2, 99, 0)); // obj 7 (member): container 99 -- no revision mentions 99
+        var streamBodyArr = streamBody.ToArray();
+        var xrefStmOffset = (int)ms.Position;
+        WriteStr($"8 0 obj\n<< /Type /XRef /Size 9 /W [1 4 2] /Index [5 3] /Length {streamBodyArr.Length} >>\nstream\n");
+        WriteBytes(streamBodyArr);
+        WriteStr("\nendstream\nendobj\n");
+
+        // Classic table: object 0 free head (standard), object 1 live. No other free entries --
+        // object 99 is never mentioned anywhere in this file, by any table or stream.
+        var classicXrefOffset = (int)ms.Position;
+        WriteStr("xref\n");
+        WriteStr("0 2\n");
+        WriteStr($"{0:D10} 65535 f \n");
+        WriteStr($"{o1:D10} 00000 n \n");
+        WriteStr($"trailer\n<< /Size 9 /Root 1 0 R /XRefStm {xrefStmOffset} >>\n");
+        WriteStr($"startxref\n{classicXrefOffset}\n%%EOF\n");
+
+        return ms.ToArray();
+    }
+
+    private static byte[] BuildCleanObjStmPdf()
+    {
+        var ms = new MemoryStream();
+        void WriteStr(string s) => ms.Write(Encoding.ASCII.GetBytes(s));
+        void WriteBytes(byte[] b) => ms.Write(b);
+
+        WriteStr("%PDF-1.5\n");
+        var o1 = (int)ms.Position;
+        WriteStr("1 0 obj\n<< /Type /Catalog >>\nendobj\n");
+
+        // Object stream 5 (live), one member (object 6, live). No free entry anywhere in this file.
+        var memberBody = Encoding.ASCII.GetBytes("<< /Note (CLEANMEMBER) >>");
+        var objStmHeader = Encoding.ASCII.GetBytes("6 0\n");
+        var objStmBody = objStmHeader.Concat(memberBody).ToArray();
+        var o5 = (int)ms.Position;
+        WriteStr($"5 0 obj\n<< /Type /ObjStm /N 1 /First {objStmHeader.Length} /Length {objStmBody.Length} >>\nstream\n");
+        WriteBytes(objStmBody);
+        WriteStr("\nendstream\nendobj\n");
+
+        byte[] Row(byte type, long f2, long f3) =>
+        [
+            type,
+            (byte)((f2 >> 24) & 0xFF), (byte)((f2 >> 16) & 0xFF), (byte)((f2 >> 8) & 0xFF), (byte)(f2 & 0xFF),
+            (byte)((f3 >> 8) & 0xFF), (byte)(f3 & 0xFF),
+        ];
+        var streamBody = new MemoryStream();
+        streamBody.Write(Row(1, o5, 0)); // obj 5 (container): live
+        streamBody.Write(Row(2, 5, 0)); // obj 6 (member): container 5, index 0 -- live
+        var streamBodyArr = streamBody.ToArray();
+        var xrefStmOffset = (int)ms.Position;
+        WriteStr($"7 0 obj\n<< /Type /XRef /Size 8 /W [1 4 2] /Index [5 2] /Length {streamBodyArr.Length} >>\nstream\n");
+        WriteBytes(streamBodyArr);
+        WriteStr("\nendstream\nendobj\n");
+
+        var classicXrefOffset = (int)ms.Position;
+        WriteStr("xref\n");
+        WriteStr("0 2\n");
+        WriteStr($"{0:D10} 65535 f \n");
+        WriteStr($"{o1:D10} 00000 n \n");
+        WriteStr($"trailer\n<< /Size 8 /Root 1 0 R /XRefStm {xrefStmOffset} >>\n");
+        WriteStr($"startxref\n{classicXrefOffset}\n%%EOF\n");
+
+        return ms.ToArray();
+    }
+
+    private static byte[] BuildFreedObjStmContainerPdf()
+    {
+        var ms = new MemoryStream();
+        void WriteStr(string s) => ms.Write(Encoding.ASCII.GetBytes(s));
+        void WriteBytes(byte[] b) => ms.Write(b);
+
+        WriteStr("%PDF-1.5\n");
+        var o1 = (int)ms.Position;
+        WriteStr("1 0 obj\n<< /Type /Catalog >>\nendobj\n");
+        var o4 = (int)ms.Position;
+        WriteStr("4 0 obj\n<< /Note (STILLLIVE) >>\nendobj\n");
+
+        // Object stream 5 (N=1, First=4): header "6 0" then the compressed member's own body.
+        var memberBody = Encoding.ASCII.GetBytes("<< /Note (COMPRESSEDMEMBER) >>");
+        var objStmHeader = Encoding.ASCII.GetBytes("6 0\n");
+        var objStmBody = objStmHeader.Concat(memberBody).ToArray();
+        var o5 = (int)ms.Position;
+        WriteStr($"5 0 obj\n<< /Type /ObjStm /N 1 /First {objStmHeader.Length} /Length {objStmBody.Length} >>\nstream\n");
+        WriteBytes(objStmBody);
+        WriteStr("\nendstream\nendobj\n");
+
+        // /XRefStm (object 7): object 5 (container) type 1, live; object 6 (its member) type 2,
+        // container 5, index 0. The classic table below frees object 5 in this SAME revision.
+        byte[] Row(byte type, long f2, long f3) =>
+        [
+            type,
+            (byte)((f2 >> 24) & 0xFF), (byte)((f2 >> 16) & 0xFF), (byte)((f2 >> 8) & 0xFF), (byte)(f2 & 0xFF),
+            (byte)((f3 >> 8) & 0xFF), (byte)(f3 & 0xFF),
+        ];
+        var streamBody = new MemoryStream();
+        streamBody.Write(Row(1, o5, 0));
+        streamBody.Write(Row(2, 5, 0));
+        var streamBodyArr = streamBody.ToArray();
+        var xrefStmOffset = (int)ms.Position;
+        WriteStr($"7 0 obj\n<< /Type /XRef /Size 8 /W [1 4 2] /Index [5 2] /Length {streamBodyArr.Length} >>\nstream\n");
+        WriteBytes(streamBodyArr);
+        WriteStr("\nendstream\nendobj\n");
+
+        // Classic table: objects 0-1 and 4 live; object 5, the ObjStm container, freed.
+        var classicXrefOffset = (int)ms.Position;
+        WriteStr("xref\n");
+        WriteStr("0 2\n");
+        WriteStr($"{0:D10} 65535 f \n");
+        WriteStr($"{o1:D10} 00000 n \n");
+        WriteStr("4 1\n");
+        WriteStr($"{o4:D10} 00000 n \n");
+        WriteStr("5 1\n");
+        WriteStr($"{0:D10} 00001 f \n");
+        WriteStr($"trailer\n<< /Size 8 /Root 1 0 R /XRefStm {xrefStmOffset} >>\n");
+        WriteStr($"startxref\n{classicXrefOffset}\n%%EOF\n");
+
+        return ms.ToArray();
+    }
+
+    private static byte[] BuildFreedObjStmContainerAsCatalogPdf()
+    {
+        var ms = new MemoryStream();
+        void WriteStr(string s) => ms.Write(Encoding.ASCII.GetBytes(s));
+        void WriteBytes(byte[] b) => ms.Write(b);
+
+        WriteStr("%PDF-1.5\n");
+
+        // Object stream 2 (N=1, First=4): header "1 0" then the catalog's own body. Object 1
+        // exists ONLY as this compressed member -- no classic-table entry for it anywhere.
+        var memberBody = Encoding.ASCII.GetBytes("<< /Type /Catalog >>");
+        var objStmHeader = Encoding.ASCII.GetBytes("1 0\n");
+        var objStmBody = objStmHeader.Concat(memberBody).ToArray();
+        var o2 = (int)ms.Position;
+        WriteStr($"2 0 obj\n<< /Type /ObjStm /N 1 /First {objStmHeader.Length} /Length {objStmBody.Length} >>\nstream\n");
+        WriteBytes(objStmBody);
+        WriteStr("\nendstream\nendobj\n");
+
+        byte[] Row(byte type, long f2, long f3) =>
+        [
+            type,
+            (byte)((f2 >> 24) & 0xFF), (byte)((f2 >> 16) & 0xFF), (byte)((f2 >> 8) & 0xFF), (byte)(f2 & 0xFF),
+            (byte)((f3 >> 8) & 0xFF), (byte)(f3 & 0xFF),
+        ];
+        var streamBody = new MemoryStream();
+        streamBody.Write(Row(2, 2, 0)); // obj 1 (catalog): type 2, container 2, index 0
+        streamBody.Write(Row(1, o2, 0)); // obj 2 (container): type 1, live
+        var streamBodyArr = streamBody.ToArray();
+        var xrefStmOffset = (int)ms.Position;
+        WriteStr($"3 0 obj\n<< /Type /XRef /Size 4 /W [1 4 2] /Index [1 1 2 1] /Length {streamBodyArr.Length} >>\nstream\n");
+        WriteBytes(streamBodyArr);
+        WriteStr("\nendstream\nendobj\n");
+
+        // Classic table: object 0 free head only; object 2, the container, freed in this same
+        // revision. Object 1, the catalog, is never mentioned by the classic table at all.
+        var classicXrefOffset = (int)ms.Position;
+        WriteStr("xref\n");
+        WriteStr("0 1\n");
+        WriteStr($"{0:D10} 65535 f \n");
+        WriteStr("2 1\n");
+        WriteStr($"{0:D10} 00001 f \n");
+        WriteStr($"trailer\n<< /Size 4 /Root 1 0 R /XRefStm {xrefStmOffset} >>\n");
+        WriteStr($"startxref\n{classicXrefOffset}\n%%EOF\n");
+
+        return ms.ToArray();
+    }
+
+    private static byte[] BuildFreedObjStmMemberOwnNumberPdf()
+    {
+        var ms = new MemoryStream();
+        void WriteStr(string s) => ms.Write(Encoding.ASCII.GetBytes(s));
+        void WriteBytes(byte[] b) => ms.Write(b);
+
+        WriteStr("%PDF-1.5\n");
+        var o1 = (int)ms.Position;
+        WriteStr("1 0 obj\n<< /Type /Catalog >>\nendobj\n");
+
+        // Object stream 5 (live, never freed): header "6 0" then the member's own body.
+        var memberBody = Encoding.ASCII.GetBytes("<< /Note (SHOULDSTAYCOMPRESSED) >>");
+        var objStmHeader = Encoding.ASCII.GetBytes("6 0\n");
+        var objStmBody = objStmHeader.Concat(memberBody).ToArray();
+        var o5 = (int)ms.Position;
+        WriteStr($"5 0 obj\n<< /Type /ObjStm /N 1 /First {objStmHeader.Length} /Length {objStmBody.Length} >>\nstream\n");
+        WriteBytes(objStmBody);
+        WriteStr("\nendstream\nendobj\n");
+
+        byte[] Row(byte type, long f2, long f3) =>
+        [
+            type,
+            (byte)((f2 >> 24) & 0xFF), (byte)((f2 >> 16) & 0xFF), (byte)((f2 >> 8) & 0xFF), (byte)(f2 & 0xFF),
+            (byte)((f3 >> 8) & 0xFF), (byte)(f3 & 0xFF),
+        ];
+        var streamBody = new MemoryStream();
+        streamBody.Write(Row(1, o5, 0)); // obj 5 (container): live
+        streamBody.Write(Row(2, 5, 0)); // obj 6 (member): container 5, index 0
+        var streamBodyArr = streamBody.ToArray();
+        var xrefStmOffset = (int)ms.Position;
+        WriteStr($"7 0 obj\n<< /Type /XRef /Size 8 /W [1 4 2] /Index [5 2] /Length {streamBodyArr.Length} >>\nstream\n");
+        WriteBytes(streamBodyArr);
+        WriteStr("\nendstream\nendobj\n");
+
+        // Classic table: object 0 free head, object 1 live. Object 6 -- the MEMBER, not the
+        // container -- is freed here, in the same revision the /XRefStm above defines it.
+        var classicXrefOffset = (int)ms.Position;
+        WriteStr("xref\n");
+        WriteStr("0 2\n");
+        WriteStr($"{0:D10} 65535 f \n");
+        WriteStr($"{o1:D10} 00000 n \n");
+        WriteStr("6 1\n");
+        WriteStr($"{0:D10} 00001 f \n");
+        WriteStr($"trailer\n<< /Size 8 /Root 1 0 R /XRefStm {xrefStmOffset} >>\n");
+        WriteStr($"startxref\n{classicXrefOffset}\n%%EOF\n");
+
+        return ms.ToArray();
+    }
+
+    private static byte[] BuildObjStmContainerFreedInOlderRevisionPdf()
+    {
+        var ms = new MemoryStream();
+        void WriteStr(string s) => ms.Write(Encoding.ASCII.GetBytes(s));
+        void WriteBytes(byte[] b) => ms.Write(b);
+
+        WriteStr("%PDF-1.5\n");
+
+        // ── Revision 1 (oldest): a plain classic table that frees object 5, and mentions object
+        // 6 nowhere. ──
+        var rev1XrefOffset = (int)ms.Position;
+        WriteStr("xref\n");
+        WriteStr("0 1\n");
+        WriteStr($"{0:D10} 65535 f \n");
+        WriteStr("5 1\n");
+        WriteStr($"{0:D10} 00001 f \n");
+        WriteStr("trailer\n<< /Size 6 >>\n");
+        WriteStr($"startxref\n{rev1XrefOffset}\n%%EOF\n");
+
+        // ── Revision 2 (newest, hybrid): its own classic table defines only the catalog; its
+        // /XRefStm defines container object 5 (type 1, live) and member object 6 (type 2). ──
+        var o1 = (int)ms.Position;
+        WriteStr("1 0 obj\n<< /Type /Catalog >>\nendobj\n");
+
+        var memberBody = Encoding.ASCII.GetBytes("<< /Note (NEWERREVISIONLIVE) >>");
+        var objStmHeader = Encoding.ASCII.GetBytes("6 0\n");
+        var objStmBody = objStmHeader.Concat(memberBody).ToArray();
+        var o5 = (int)ms.Position;
+        WriteStr($"5 0 obj\n<< /Type /ObjStm /N 1 /First {objStmHeader.Length} /Length {objStmBody.Length} >>\nstream\n");
+        WriteBytes(objStmBody);
+        WriteStr("\nendstream\nendobj\n");
+
+        byte[] Row(byte type, long f2, long f3) =>
+        [
+            type,
+            (byte)((f2 >> 24) & 0xFF), (byte)((f2 >> 16) & 0xFF), (byte)((f2 >> 8) & 0xFF), (byte)(f2 & 0xFF),
+            (byte)((f3 >> 8) & 0xFF), (byte)(f3 & 0xFF),
+        ];
+        var streamBody = new MemoryStream();
+        streamBody.Write(Row(1, o5, 0));
+        streamBody.Write(Row(2, 5, 0));
+        var streamBodyArr = streamBody.ToArray();
+        var xrefStmOffset = (int)ms.Position;
+        WriteStr($"7 0 obj\n<< /Type /XRef /Size 8 /W [1 4 2] /Index [5 2] /Length {streamBodyArr.Length} >>\nstream\n");
+        WriteBytes(streamBodyArr);
+        WriteStr("\nendstream\nendobj\n");
+
+        var rev2XrefOffset = (int)ms.Position;
+        WriteStr("xref\n");
+        WriteStr("0 2\n");
+        WriteStr($"{0:D10} 65535 f \n");
+        WriteStr($"{o1:D10} 00000 n \n");
+        WriteStr($"trailer\n<< /Size 8 /Root 1 0 R /XRefStm {xrefStmOffset} /Prev {rev1XrefOffset} >>\n");
+        WriteStr($"startxref\n{rev2XrefOffset}\n%%EOF\n");
+
+        return ms.ToArray();
+    }
+
+    private static byte[] BuildObjStmContainerFreedInNewerRevisionPdf()
+    {
+        var ms = new MemoryStream();
+        void WriteStr(string s) => ms.Write(Encoding.ASCII.GetBytes(s));
+        void WriteBytes(byte[] b) => ms.Write(b);
+
+        WriteStr("%PDF-1.5\n");
+
+        // ── Revision 1 (oldest): a pure cross-reference-stream revision (no classic table at
+        // all) that defines container object 5 and its member object 6, both live. ──
+        var o1 = (int)ms.Position;
+        WriteStr("1 0 obj\n<< /Type /Catalog >>\nendobj\n");
+
+        var memberBody = Encoding.ASCII.GetBytes("<< /Note (OLDERREVISIONMEMBER) >>");
+        var objStmHeader = Encoding.ASCII.GetBytes("6 0\n");
+        var objStmBody = objStmHeader.Concat(memberBody).ToArray();
+        var o5 = (int)ms.Position;
+        WriteStr($"5 0 obj\n<< /Type /ObjStm /N 1 /First {objStmHeader.Length} /Length {objStmBody.Length} >>\nstream\n");
+        WriteBytes(objStmBody);
+        WriteStr("\nendstream\nendobj\n");
+
+        byte[] Row(byte type, long f2, long f3) =>
+        [
+            type,
+            (byte)((f2 >> 24) & 0xFF), (byte)((f2 >> 16) & 0xFF), (byte)((f2 >> 8) & 0xFF), (byte)(f2 & 0xFF),
+            (byte)((f3 >> 8) & 0xFF), (byte)(f3 & 0xFF),
+        ];
+        var streamBody = new MemoryStream();
+        streamBody.Write(Row(0, 0, 0)); // obj 0: free head
+        streamBody.Write(Row(1, o1, 0)); // obj 1: catalog
+        streamBody.Write(Row(1, o5, 0)); // obj 5: container
+        streamBody.Write(Row(2, 5, 0)); // obj 6: member of 5
+        var streamBodyArr = streamBody.ToArray();
+        var rev1XrefOffset = (int)ms.Position;
+        WriteStr($"6 0 obj\n<< /Type /XRef /Size 7 /W [1 4 2] /Index [0 2 5 2] /Root 1 0 R /Length {streamBodyArr.Length} >>\nstream\n");
+        WriteBytes(streamBodyArr);
+        WriteStr("\nendstream\nendobj\n");
+        WriteStr($"startxref\n{rev1XrefOffset}\n%%EOF\n");
+
+        // ── Revision 2 (newest): a plain classic table that frees object 5, the container the
+        // older revision defined live. ──
+        var rev2XrefOffset = (int)ms.Position;
+        WriteStr("xref\n");
+        WriteStr("5 1\n");
+        WriteStr($"{0:D10} 00001 f \n");
+        WriteStr($"trailer\n<< /Size 7 /Root 1 0 R /Prev {rev1XrefOffset} >>\n");
+        WriteStr($"startxref\n{rev2XrefOffset}\n%%EOF\n");
+
+        return ms.ToArray();
+    }
+
+    // ── Three more same-revision-free consequences, documented in the CHANGELOG ─
+
+    /// <summary>
+    /// Object 2 is the /AcroForm, freed by the classic table in the same revision its /XRefStm
+    /// defines it. <c>CollectSignatures</c> resolves /AcroForm through the ordinary
+    /// <c>Resolve</c> path, so it sees exactly what every other reader of the same-revision-free
+    /// rule sees: null. There is no exception and no warning — an empty <see cref="PdfSignature"/>
+    /// list is indistinguishable from a document that was never signed. Object 2's bytes are
+    /// written into the file at the offset its /XRefStm row names, even though the free entry means
+    /// that offset is never dereferenced, so this fixture would resolve one signature if the
+    /// same-revision fold were removed (the mechanism itself is pinned generally by
+    /// <see cref="Hybrid_objectFreeInClassicTable_andInXRefStm_resolvesNull"/>; this test pins the
+    /// specific, silent consequence for /AcroForm).
+    /// </summary>
+    [Fact]
+    public void FreedAcroForm_signaturesCountIsZero_withNoException()
+    {
+        var bytes = BuildFreedAcroFormPdf();
+        using var reader = PdfReader.Open(bytes);
+
+        Assert.Empty(reader.Signatures);
+    }
+
+    /// <summary>
+    /// Objects 4 and 5 are freed by the classic table in the same revision the /XRefStm defines
+    /// them; object 5 is the /XRefStm's own object number, carrying a type-1 row for itself (legal,
+    /// if unusual — a hybrid file's own convention is normally to put that entry in the classic
+    /// table instead, but nothing requires it). Both drop out of <c>ObjectNumbers</c>, which is
+    /// just <c>_xref.Keys</c>, alongside object 1. With the trailer's own <c>/Size</c> (2) already
+    /// smaller than either freed number, <c>NextFreeObjectNumber</c> — <c>Math.Max(Size, highest key
+    /// + 1)</c> — shrinks along with them, from what it would be with all three objects present (6)
+    /// to 2. Neither collection is wrong: both are defined directly off the merged xref, and a freed
+    /// object correctly has no entry there. This is simply where that definition's consequences
+    /// reach outside this package (<c>PreflightContext</c>, <c>ObjectLayoutRule</c>,
+    /// <c>DssBuilder</c>, <c>ArchiveTimestampBuilder</c>) — no corruption from it has been
+    /// constructed here, only the shrink itself.
+    /// </summary>
+    [Fact]
+    public void FreedObjects_shrinkObjectNumbersAndNextFreeObjectNumber()
+    {
+        var bytes = BuildFreedObjectsShrinkObjectNumbersPdf();
+        using var reader = PdfReader.Open(bytes);
+
+        Assert.Equal([1], reader.ObjectNumbers.OrderBy(n => n));
+        Assert.Equal(2, reader.NextFreeObjectNumber);
+    }
+
+    private static byte[] BuildFreedAcroFormPdf()
+    {
+        var ms = new MemoryStream();
+        void WriteStr(string s) => ms.Write(Encoding.ASCII.GetBytes(s));
+        void WriteBytes(byte[] b) => ms.Write(b);
+
+        WriteStr("%PDF-1.5\n");
+        var o1 = (int)ms.Position;
+        WriteStr("1 0 obj\n<< /Type /Catalog /AcroForm 2 0 R >>\nendobj\n");
+        var o3 = (int)ms.Position;
+        WriteStr("3 0 obj\n<< /FT /Sig /V 4 0 R >>\nendobj\n");
+        var o4 = (int)ms.Position;
+        WriteStr("4 0 obj\n<< /ByteRange [0 1 2 3] >>\nendobj\n");
+        var o2 = (int)ms.Position;
+        WriteStr("2 0 obj\n<< /Type /AcroForm /Fields [3 0 R] >>\nendobj\n");
+
+        byte[] Row(byte type, long f2, long f3) =>
+        [
+            type,
+            (byte)((f2 >> 24) & 0xFF), (byte)((f2 >> 16) & 0xFF), (byte)((f2 >> 8) & 0xFF), (byte)(f2 & 0xFF),
+            (byte)((f3 >> 8) & 0xFF), (byte)(f3 & 0xFF),
+        ];
+        var streamBody = new MemoryStream();
+        streamBody.Write(Row(1, o2, 0)); // obj 2 (/AcroForm)
+        var streamBodyArr = streamBody.ToArray();
+        var xrefStmOffset = (int)ms.Position;
+        WriteStr($"5 0 obj\n<< /Type /XRef /Size 6 /W [1 4 2] /Index [2 1] /Length {streamBodyArr.Length} >>\nstream\n");
+        WriteBytes(streamBodyArr);
+        WriteStr("\nendstream\nendobj\n");
+
+        // Classic table: objects 0-1, 3-4 live; object 2, the /AcroForm, freed in this same
+        // revision the /XRefStm above defines it.
+        var classicXrefOffset = (int)ms.Position;
+        WriteStr("xref\n");
+        WriteStr("0 2\n");
+        WriteStr($"{0:D10} 65535 f \n");
+        WriteStr($"{o1:D10} 00000 n \n");
+        WriteStr("2 1\n");
+        WriteStr($"{0:D10} 00001 f \n");
+        WriteStr("3 2\n");
+        WriteStr($"{o3:D10} 00000 n \n");
+        WriteStr($"{o4:D10} 00000 n \n");
+        WriteStr($"trailer\n<< /Size 6 /Root 1 0 R /XRefStm {xrefStmOffset} >>\n");
+        WriteStr($"startxref\n{classicXrefOffset}\n%%EOF\n");
+
+        return ms.ToArray();
+    }
+
+    private static byte[] BuildFreedObjectsShrinkObjectNumbersPdf()
+    {
+        var ms = new MemoryStream();
+        void WriteStr(string s) => ms.Write(Encoding.ASCII.GetBytes(s));
+        void WriteBytes(byte[] b) => ms.Write(b);
+
+        WriteStr("%PDF-1.5\n");
+        var o1 = (int)ms.Position;
+        WriteStr("1 0 obj\n<< /Type /Catalog >>\nendobj\n");
+
+        byte[] Row(byte type, long f2, long f3) =>
+        [
+            type,
+            (byte)((f2 >> 24) & 0xFF), (byte)((f2 >> 16) & 0xFF), (byte)((f2 >> 8) & 0xFF), (byte)(f2 & 0xFF),
+            (byte)((f3 >> 8) & 0xFF), (byte)(f3 & 0xFF),
+        ];
+
+        var xrefStmOffset = (int)ms.Position;
+        // Object 5 is the /XRefStm's own object number: its row is self-referential (offset =
+        // this stream's own position). Object 4's row offset is never dereferenced (its own entry
+        // is suppressed by the classic table's free entry below) and is set to 0 for that reason.
+        var streamBody = new MemoryStream();
+        streamBody.Write(Row(1, 0, 0));
+        streamBody.Write(Row(1, xrefStmOffset, 0));
+        var streamBodyArr = streamBody.ToArray();
+        WriteStr($"5 0 obj\n<< /Type /XRef /Size 2 /W [1 4 2] /Index [4 2] /Length {streamBodyArr.Length} >>\nstream\n");
+        WriteBytes(streamBodyArr);
+        WriteStr("\nendstream\nendobj\n");
+
+        // Classic table: object 0 free head, object 1 live; objects 4 and 5 freed in this SAME
+        // revision -- object 5 is the /XRefStm above, freeing its own self-row. /Size (2) is
+        // deliberately understated relative to the file's actual object count.
+        var classicXrefOffset = (int)ms.Position;
+        WriteStr("xref\n");
+        WriteStr("0 2\n");
+        WriteStr($"{0:D10} 65535 f \n");
+        WriteStr($"{o1:D10} 00000 n \n");
+        WriteStr("4 2\n");
+        WriteStr($"{0:D10} 00001 f \n");
+        WriteStr($"{0:D10} 00001 f \n");
+        WriteStr($"trailer\n<< /Size 2 /Root 1 0 R /XRefStm {xrefStmOffset} >>\n");
+        WriteStr($"startxref\n{classicXrefOffset}\n%%EOF\n");
+
+        return ms.ToArray();
+    }
+
+    /// <summary>
+    /// Item 2 of the #372 review round: the CHANGELOG's claim that the null every other same-
+    /// revision-free consequence in this file degrades to is what freeing a /Filter or
+    /// /DecodeParms object produces is false. Object 4 here is the name /FlateDecode, defined only
+    /// by this revision's /XRefStm and freed by the classic table in the same revision -- #206's
+    /// own shape, not some new construct -- and object 3's stream dictionary points at it via
+    /// /Filter 4 0 R. Once object 4 resolves to null, <c>PdfFilters.GetFilterList</c> treats the
+    /// stream as having no filter at all (<c>if (filterObj is null) return [];</c>), so
+    /// <c>GetDecodedStreamData</c> returns the raw, still-compressed body -- wrong bytes, not a
+    /// null. Object 6 is a control: the same compressed plaintext, the same /FlateDecode filter,
+    /// spelled out directly rather than through an indirect reference, decoding correctly on the
+    /// same file -- proof the divergence tracks the freed indirect /Filter specifically, not some
+    /// general breakage in this fixture.
+    ///
+    /// This test CHARACTERISES current behaviour rather than endorsing it. Handing back compressed
+    /// bytes and reporting success is the worst degradation in this whole change -- every other
+    /// unresolvable object here becomes a visible null, and this one becomes wrong content that
+    /// looks right. Tracked as #373; when that is fixed this test is expected to go red, and the
+    /// right response is to retarget it, not to restore the old behaviour.
+    /// </summary>
+    [Fact]
+    public void FreedFilterObject_streamDecodesToRawCompressedBytes_notNull()
+    {
+        var plaintext = "FILTERFREEDPLAINTEXTBODY"u8.ToArray();
+        var compressed = Compress(plaintext);
+        var bytes = BuildFreedFilterObjectPdf(compressed);
+        using var reader = PdfReader.Open(bytes);
+
+        var freedFilterStream = reader.ResolveStream(3);
+        Assert.NotNull(freedFilterStream);
+        var decoded = reader.GetDecodedStreamData(freedFilterStream!);
+        Assert.Equal(compressed, decoded);
+        Assert.NotEqual(plaintext, decoded);
+
+        var liveFilterStream = reader.ResolveStream(6);
+        Assert.NotNull(liveFilterStream);
+        var liveDecoded = reader.GetDecodedStreamData(liveFilterStream!);
+        Assert.Equal(plaintext, liveDecoded);
+    }
+
+    private static byte[] BuildFreedFilterObjectPdf(byte[] compressedBody)
+    {
+        var ms = new MemoryStream();
+        void WriteStr(string s) => ms.Write(Encoding.ASCII.GetBytes(s));
+        void WriteBytes(byte[] b) => ms.Write(b);
+
+        WriteStr("%PDF-1.5\n");
+        var o1 = (int)ms.Position;
+        WriteStr("1 0 obj\n<< /Type /Catalog >>\nendobj\n");
+        var o3 = (int)ms.Position;
+        WriteStr($"3 0 obj\n<< /Filter 4 0 R /Length {compressedBody.Length} >>\nstream\n");
+        WriteBytes(compressedBody);
+        WriteStr("\nendstream\nendobj\n");
+        var o6 = (int)ms.Position;
+        WriteStr($"6 0 obj\n<< /Filter /FlateDecode /Length {compressedBody.Length} >>\nstream\n");
+        WriteBytes(compressedBody);
+        WriteStr("\nendstream\nendobj\n");
+
+        byte[] Row(byte type, long f2, long f3) =>
+        [
+            type,
+            (byte)((f2 >> 24) & 0xFF), (byte)((f2 >> 16) & 0xFF), (byte)((f2 >> 8) & 0xFF), (byte)(f2 & 0xFF),
+            (byte)((f3 >> 8) & 0xFF), (byte)(f3 & 0xFF),
+        ];
+        var streamBody = new MemoryStream();
+        streamBody.Write(Row(1, 0, 0)); // obj 4 (/FlateDecode name) -- offset never dereferenced, freed
+        var streamBodyArr = streamBody.ToArray();
+        var xrefStmOffset = (int)ms.Position;
+        WriteStr($"7 0 obj\n<< /Type /XRef /Size 8 /W [1 4 2] /Index [4 1] /Length {streamBodyArr.Length} >>\nstream\n");
+        WriteBytes(streamBodyArr);
+        WriteStr("\nendstream\nendobj\n");
+
+        // Classic table: objects 0-1, 3, 6 live; object 4 -- the /Filter name -- freed in this same
+        // revision the /XRefStm above defines it.
+        var classicXrefOffset = (int)ms.Position;
+        WriteStr("xref\n");
+        WriteStr("0 2\n");
+        WriteStr($"{0:D10} 65535 f \n");
+        WriteStr($"{o1:D10} 00000 n \n");
+        WriteStr("3 1\n");
+        WriteStr($"{o3:D10} 00000 n \n");
+        WriteStr("4 1\n");
+        WriteStr($"{0:D10} 00001 f \n");
+        WriteStr("6 1\n");
+        WriteStr($"{o6:D10} 00000 n \n");
+        WriteStr($"trailer\n<< /Size 8 /Root 1 0 R /XRefStm {xrefStmOffset} >>\n");
+        WriteStr($"startxref\n{classicXrefOffset}\n%%EOF\n");
+
+        return ms.ToArray();
+    }
+
+    /// <summary>
+    /// The CHANGELOG's line about the cross-*section* arrangement being "unaffected" describes the
+    /// two-revision case ISO 32000-2 §7.5.8.4 itself documents: an earlier revision frees the
+    /// object, a later one's /XRefStm defines it, and the live definition wins. A THIRD revision
+    /// changes that. Revision 2 here sits in the MIDDLE of a three-revision /Prev chain: its own
+    /// classic table frees object 4, and its own /XRefStm also defines object 4 live — the ordinary
+    /// same-revision shape #206 covers, so revision 2's own copy loses the tie. Revision 1 (oldest)
+    /// ALSO defined object 4 live, and revision 3 (newest) says nothing about it at all. If the
+    /// cross-section arrangement were unaffected in general, revision 1's copy would survive once
+    /// revision 2's own copy lost. It does not: revision 2's free entry folds into `freed` before
+    /// revision 1 is parsed, so revision 1's later 'n' entry for the same number is suppressed too.
+    /// Object 4 resolves to null across the whole chain — not because it hides behind a live
+    /// definition somewhere else, but because nothing in the chain is left standing.
+    /// </summary>
+    [Fact]
+    public void HybridRevision_inMiddleOfPrevChain_losesItsOwnCopy_andSuppressesOlderOne()
+    {
+        var bytes = BuildHybridMiddleOfPrevChainSuppressesOlderPdf();
+        using var reader = PdfReader.Open(bytes);
+
+        Assert.Equal(3, reader.Revisions.Count);
+        Assert.Null(reader.Resolve(4));
+    }
+
+    private static byte[] BuildHybridMiddleOfPrevChainSuppressesOlderPdf()
+    {
+        var ms = new MemoryStream();
+        void WriteStr(string s) => ms.Write(Encoding.ASCII.GetBytes(s));
+        void WriteBytes(byte[] b) => ms.Write(b);
+
+        WriteStr("%PDF-1.5\n");
+
+        // ── Revision 1 (oldest): plain classic table. Catalog (object 1) and object 4, both
+        // live. ──
+        var r1o1 = (int)ms.Position;
+        WriteStr("1 0 obj\n<< /Type /Catalog >>\nendobj\n");
+        var r1o4 = (int)ms.Position;
+        WriteStr("4 0 obj\n<< /Note (REV1LIVE) >>\nendobj\n");
+
+        var rev1XrefOffset = (int)ms.Position;
+        WriteStr("xref\n");
+        WriteStr("0 5\n");
+        WriteStr($"{0:D10} 65535 f \n");
+        WriteStr($"{r1o1:D10} 00000 n \n");
+        WriteStr($"{0:D10} 00000 f \n");
+        WriteStr($"{0:D10} 00000 f \n");
+        WriteStr($"{r1o4:D10} 00000 n \n");
+        WriteStr("trailer\n<< /Size 5 /Root 1 0 R >>\n");
+        WriteStr($"startxref\n{rev1XrefOffset}\n%%EOF\n");
+
+        // ── Revision 2 (middle, hybrid): frees object 4 in its own classic table AND its own
+        // /XRefStm defines object 4 live -- the core #206 shape. The free entry wins, so this
+        // revision's own copy is lost too, not just revision 1's. ──
+        var r2o4 = (int)ms.Position;
+        WriteStr("4 0 obj\n<< /Note (REV2XREFSTM) >>\nendobj\n");
+
+        byte[] Row(byte type, long f2, long f3) =>
+        [
+            type,
+            (byte)((f2 >> 24) & 0xFF), (byte)((f2 >> 16) & 0xFF), (byte)((f2 >> 8) & 0xFF), (byte)(f2 & 0xFF),
+            (byte)((f3 >> 8) & 0xFF), (byte)(f3 & 0xFF),
+        ];
+        var streamBody = new MemoryStream();
+        streamBody.Write(Row(1, r2o4, 0));
+        var streamBodyArr = streamBody.ToArray();
+        var xrefStmOffset = (int)ms.Position;
+        WriteStr($"6 0 obj\n<< /Type /XRef /Size 7 /W [1 4 2] /Index [4 1] /Length {streamBodyArr.Length} >>\nstream\n");
+        WriteBytes(streamBodyArr);
+        WriteStr("\nendstream\nendobj\n");
+
+        var rev2XrefOffset = (int)ms.Position;
+        WriteStr("xref\n");
+        WriteStr("4 1\n");
+        WriteStr($"{0:D10} 00001 f \n");
+        WriteStr($"trailer\n<< /Size 7 /Root 1 0 R /XRefStm {xrefStmOffset} /Prev {rev1XrefOffset} >>\n");
+        WriteStr($"startxref\n{rev2XrefOffset}\n%%EOF\n");
+
+        // ── Revision 3 (newest): a plain classic table that says nothing about object 4 at all --
+        // it only chains further back via /Prev. ──
+        var rev3XrefOffset = (int)ms.Position;
+        WriteStr("xref\n");
+        WriteStr("0 0\n");
+        WriteStr($"trailer\n<< /Size 7 /Root 1 0 R /Prev {rev2XrefOffset} >>\n");
+        WriteStr($"startxref\n{rev3XrefOffset}\n%%EOF\n");
+
+        return ms.ToArray();
     }
 
     [Fact]
@@ -972,9 +1905,11 @@ public sealed class XrefStreamTests
 
     /// <summary>
     /// Same layout as <see cref="BuildHybridXrefStmPdf"/>, except the classic table's subsection
-    /// covers object 4 too and marks it 'f' — the convention a hybrid file uses to hide an object
-    /// from a reader that only understands classic tables, while the accompanying /XRefStm still
-    /// carries it live.
+    /// covers object 4 too and marks it 'f', while the accompanying /XRefStm still carries a live
+    /// type-1 entry for that same object number. Object 6 is live only in the /XRefStm, never
+    /// mentioned by the classic table at all, so the test built on this can assert it alongside
+    /// object 4's null — otherwise the assertion would pass just as well with the /XRefStm never
+    /// read at all.
     /// </summary>
     private static byte[] BuildHybridXrefStmWithClassicFreeEntryPdf()
     {
@@ -996,8 +1931,12 @@ public sealed class XrefStreamTests
         var o4 = (int)ms.Position;
         WriteStr("4 0 obj\n<< /HybridTest 1 >>\nendobj\n");
 
-        // xref stream for object 4 only: type=1, offset=o4, gen=0 (see BuildHybridXrefStmPdf).
-        var xrefStreamBody = new byte[7];
+        var o6 = (int)ms.Position;
+        WriteStr("6 0 obj\n<< /HybridTest2 1 >>\nendobj\n");
+
+        // xref stream rows for object 4 (type=1, offset=o4, gen=0) and object 6 (type=1, offset=o6,
+        // gen=0); see BuildHybridXrefStmPdf for the row layout.
+        var xrefStreamBody = new byte[14];
         xrefStreamBody[0] = 1;
         xrefStreamBody[1] = (byte)((o4 >> 24) & 0xFF);
         xrefStreamBody[2] = (byte)((o4 >> 16) & 0xFF);
@@ -1005,10 +1944,17 @@ public sealed class XrefStreamTests
         xrefStreamBody[4] = (byte)(o4 & 0xFF);
         xrefStreamBody[5] = 0;
         xrefStreamBody[6] = 0;
+        xrefStreamBody[7] = 1;
+        xrefStreamBody[8] = (byte)((o6 >> 24) & 0xFF);
+        xrefStreamBody[9] = (byte)((o6 >> 16) & 0xFF);
+        xrefStreamBody[10] = (byte)((o6 >> 8) & 0xFF);
+        xrefStreamBody[11] = (byte)(o6 & 0xFF);
+        xrefStreamBody[12] = 0;
+        xrefStreamBody[13] = 0;
 
         var compressedXrefBody = Compress(xrefStreamBody);
         var xrefStmOffset = (int)ms.Position;
-        WriteStr($"5 0 obj\n<< /Type /XRef /Size 5 /W [1 4 2] /Index [4 1] /Filter /FlateDecode /Length {compressedXrefBody.Length} >>\nstream\n");
+        WriteStr($"5 0 obj\n<< /Type /XRef /Size 7 /W [1 4 2] /Index [4 1 6 1] /Filter /FlateDecode /Length {compressedXrefBody.Length} >>\nstream\n");
         WriteBytes(compressedXrefBody);
         WriteStr("\nendstream\nendobj\n");
 
@@ -1022,8 +1968,138 @@ public sealed class XrefStreamTests
         WriteStr($"{o2:D10} 00000 n \n");
         WriteStr($"{o3:D10} 00000 n \n");
         WriteStr($"{0:D10} 00000 f \n");
-        WriteStr($"trailer\n<< /Size 5 /Root 1 0 R /XRefStm {xrefStmOffset} >>\n");
+        WriteStr($"trailer\n<< /Size 7 /Root 1 0 R /XRefStm {xrefStmOffset} >>\n");
         WriteStr($"startxref\n{classicXrefOffset}\n%%EOF\n");
+
+        return ms.ToArray();
+    }
+
+    /// <summary>
+    /// Two revisions. Revision 1 (oldest) is a plain classic table defining object 4 live. Revision
+    /// 2 (newest) is hybrid: its own classic table covers only object 1 (the catalog) and never
+    /// mentions object 4, and its /XRefStm frees object 4 (type-0) while also defining object 6
+    /// live (type-1) — the object this test checks alongside object 4 to prove the /XRefStm was
+    /// actually read.
+    /// </summary>
+    private static byte[] BuildCrossRevisionXRefStmFreeRowPdf()
+    {
+        var ms = new MemoryStream();
+        void WriteStr(string s) => ms.Write(Encoding.ASCII.GetBytes(s));
+        void WriteBytes(byte[] b) => ms.Write(b);
+
+        WriteStr("%PDF-1.5\n");
+
+        // ── Revision 1 (oldest): classic table only, defines object 4 live. ──
+        var r1o4 = (int)ms.Position;
+        WriteStr("4 0 obj\n<< /Note (REV1OBJ4) >>\nendobj\n");
+
+        var rev1XrefOffset = (int)ms.Position;
+        WriteStr("xref\n");
+        WriteStr("4 1\n");
+        WriteStr($"{r1o4:D10} 00000 n \n");
+        WriteStr("trailer\n<< /Size 8 >>\n");
+        WriteStr($"startxref\n{rev1XrefOffset}\n%%EOF\n");
+
+        // ── Revision 2 (newest): hybrid. Classic table defines only the catalog; the /XRefStm
+        // frees object 4 and separately defines object 6. ──
+        var o1 = (int)ms.Position;
+        WriteStr("1 0 obj\n<< /Type /Catalog >>\nendobj\n");
+
+        var o6 = (int)ms.Position;
+        WriteStr("6 0 obj\n<< /Note (REV2LIVE) >>\nendobj\n");
+
+        // Row 1: object 4, type 0 (free). Row 2: object 6, type 1, offset o6, gen 0.
+        var xrefStreamBody = new byte[14];
+        xrefStreamBody[7] = 1;
+        xrefStreamBody[8] = (byte)((o6 >> 24) & 0xFF);
+        xrefStreamBody[9] = (byte)((o6 >> 16) & 0xFF);
+        xrefStreamBody[10] = (byte)((o6 >> 8) & 0xFF);
+        xrefStreamBody[11] = (byte)(o6 & 0xFF);
+
+        var compressedXrefBody = Compress(xrefStreamBody);
+        var xrefStmOffset = (int)ms.Position;
+        WriteStr($"7 0 obj\n<< /Type /XRef /Size 8 /W [1 4 2] /Index [4 1 6 1] /Filter /FlateDecode /Length {compressedXrefBody.Length} >>\nstream\n");
+        WriteBytes(compressedXrefBody);
+        WriteStr("\nendstream\nendobj\n");
+
+        var rev2XrefOffset = (int)ms.Position;
+        WriteStr("xref\n");
+        WriteStr("0 2\n");
+        WriteStr($"{0:D10} 65535 f \n");
+        WriteStr($"{o1:D10} 00000 n \n");
+        WriteStr($"trailer\n<< /Size 8 /Root 1 0 R /XRefStm {xrefStmOffset} /Prev {rev1XrefOffset} >>\n");
+        WriteStr($"startxref\n{rev2XrefOffset}\n%%EOF\n");
+
+        return ms.ToArray();
+    }
+
+    /// <summary>
+    /// A single classic xref table with object 4 listed twice: free in the first subsection
+    /// (<c>0 6</c>), live in a second, later subsection (<c>4 1</c>) of the same table.
+    /// </summary>
+    private static byte[] BuildClassicTableDuplicateObjectNumberPdf()
+    {
+        var ms = new MemoryStream();
+        void WriteStr(string s) => ms.Write(Encoding.ASCII.GetBytes(s));
+
+        WriteStr("%PDF-1.4\n");
+        var o1 = (int)ms.Position;
+        WriteStr("1 0 obj\n<< /Type /Catalog >>\nendobj\n");
+        var o4 = (int)ms.Position;
+        WriteStr("4 0 obj\n<< /Note (LATERSUBSECTIONLIVE) >>\nendobj\n");
+
+        var xrefOffset = (int)ms.Position;
+        WriteStr("xref\n");
+        WriteStr("0 6\n");
+        WriteStr($"{0:D10} 65535 f \n");
+        WriteStr($"{o1:D10} 00000 n \n");
+        WriteStr($"{0:D10} 00000 f \n");
+        WriteStr($"{0:D10} 00000 f \n");
+        WriteStr($"{0:D10} 00000 f \n"); // object 4: freed in this (earlier) subsection
+        WriteStr($"{0:D10} 00000 f \n");
+        WriteStr("4 1\n");
+        WriteStr($"{o4:D10} 00000 n \n"); // object 4 again: live in this (later) subsection
+        WriteStr("trailer\n<< /Size 6 /Root 1 0 R >>\n");
+        WriteStr($"startxref\n{xrefOffset}\n%%EOF\n");
+
+        return ms.ToArray();
+    }
+
+    /// <summary>
+    /// A single cross-reference stream with object 4 listed twice across two /Index blocks: free
+    /// in the first (<c>[0 6</c>), live in a second, later one (<c>4 1]</c>) of the same stream.
+    /// </summary>
+    private static byte[] BuildXrefStreamDuplicateIndexPdf()
+    {
+        var ms = new MemoryStream();
+        void WriteStr(string s) => ms.Write(Encoding.ASCII.GetBytes(s));
+        void WriteBytes(byte[] b) => ms.Write(b);
+
+        WriteStr("%PDF-1.5\n");
+        var o1 = (int)ms.Position;
+        WriteStr("1 0 obj\n<< /Type /Catalog >>\nendobj\n");
+        var o4 = (int)ms.Position;
+        WriteStr("4 0 obj\n<< /Note (LATERINDEXBLOCKLIVE) >>\nendobj\n");
+
+        // First block [0 6]: obj0 free head, obj1 live, obj2/3/4/5 free (obj4's FIRST entry).
+        // Second block [4 1]: obj4 again, live (its SECOND, later entry in this same stream).
+        var body = new byte[7 * 7];
+        body[7] = 1; // obj1: type 1
+        body[8] = (byte)((o1 >> 24) & 0xFF);
+        body[9] = (byte)((o1 >> 16) & 0xFF);
+        body[10] = (byte)((o1 >> 8) & 0xFF);
+        body[11] = (byte)(o1 & 0xFF);
+        body[42] = 1; // obj4 (second block): type 1
+        body[43] = (byte)((o4 >> 24) & 0xFF);
+        body[44] = (byte)((o4 >> 16) & 0xFF);
+        body[45] = (byte)((o4 >> 8) & 0xFF);
+        body[46] = (byte)(o4 & 0xFF);
+
+        var xrefStmOffset = (int)ms.Position;
+        WriteStr($"6 0 obj\n<< /Type /XRef /Size 7 /W [1 4 2] /Index [0 6 4 1] /Root 1 0 R /Length {body.Length} >>\nstream\n");
+        WriteBytes(body);
+        WriteStr("\nendstream\nendobj\n");
+        WriteStr($"startxref\n{xrefStmOffset}\n%%EOF\n");
 
         return ms.ToArray();
     }
