@@ -97,7 +97,7 @@ public sealed class PdfDocumentReader : IDisposable
     /// <summary>
     /// The document's Standard security handler settings, or <see langword="null"/> when the
     /// document is not encrypted (no <c>/Encrypt</c> in the trailer). Never null for a document that
-    /// opened successfully via a password-protected path — <see cref="PdfReader.Open(byte[], string?)"/>
+    /// opened successfully via a password-protected path — <see cref="PdfReader.Open(byte[], PdfReaderOptions)"/>
     /// throws <see cref="PdfPasswordException"/> before a <see cref="PdfDocumentReader"/> exists at
     /// all when the supplied password does not authenticate.
     /// </summary>

@@ -7,7 +7,8 @@ The PDF reader of **[VellumPdf](https://github.com/Tim81/VellumPDF)**, a depende
 
 - Classic cross-reference tables, cross-reference and object streams, and hybrid-reference files.
 - Encrypted documents: the Standard security handler at `/V` 1, 2, 4 and 5 and `/R` 2 through 6 —
-  RC4-40 through RC4-128, AES-128 and AES-256 — opened with `PdfReader.Open(bytes, password)`.
+  RC4-40 through RC4-128, AES-128 and AES-256 — opened by passing a `PdfReaderOptions` whose
+  `Password` is set.
 - Exposes the document catalog and digital signatures. Stream decoding is internal for now: the
   public surface reads structure and signatures, not page content — see the roadmap below.
 - The foundation for the signing long-term-validation path, the `VellumPdf.Conformance` validator, and a growing general reader.

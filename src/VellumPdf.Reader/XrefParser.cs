@@ -41,7 +41,7 @@ internal sealed class XrefParser
     /// Six elements is already one past comfortable for a tuple; #184 adds a seventh
     /// (<c>WasReconstructed</c>), and its approved plan already calls for this to become a named
     /// result type once that lands. Kept as a tuple here rather than converted early: the sole
-    /// caller (<see cref="PdfReader.Open(byte[], string?)"/>) makes either choice the same
+    /// caller (<see cref="PdfReader.Open(byte[], PdfReaderOptions)"/>) makes either choice the same
     /// one-call-site change, so there is no cost saved by doing it now.
     /// </remarks>
     public static (Dictionary<int, XrefEntry> Xref, PdfDictionary Trailer, int StartXrefOffset, IReadOnlyList<XrefRevision> Revisions, IReadOnlySet<long> CrossReferenceStreamOffsets, bool DroppedOrphanedObjectStreamMembers) Parse(

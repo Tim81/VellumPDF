@@ -41,7 +41,7 @@ public sealed class EncryptionStructureTests
             classicTrailerExtra: $"/Encrypt {Rc4EncryptDict}",
             xrefStreamExtra: "/Encrypt << /Filter /Adobe.PubSec /V 1 /R 2 >>");
 
-        using var reader = PdfReader.Open(bytes, "u");
+        using var reader = PdfReader.Open(bytes, new PdfReaderOptions { Password = "u" });
 
         Assert.Equal(PdfCipherAlgorithm.Rc4, reader.Encryption!.StreamCipher);
     }
@@ -55,7 +55,7 @@ public sealed class EncryptionStructureTests
     {
         var bytes = BuildHybrid(classicTrailerExtra: "", xrefStreamExtra: $"/Encrypt {Rc4EncryptDict}");
 
-        using var reader = PdfReader.Open(bytes, "u");
+        using var reader = PdfReader.Open(bytes, new PdfReaderOptions { Password = "u" });
 
         Assert.Equal(PdfCipherAlgorithm.Rc4, reader.Encryption!.StreamCipher);
     }
@@ -76,7 +76,7 @@ public sealed class EncryptionStructureTests
             xrefStreamExtra: $"/Encrypt {Rc4EncryptDict}",
             listXrefStreamObject: true);
 
-        using var reader = PdfReader.Open(bytes, "u");
+        using var reader = PdfReader.Open(bytes, new PdfReaderOptions { Password = "u" });
         var rows = reader.GetDecodedStreamData(reader.ResolveStream(5)!)!;
 
         // One /W [1 4 2] row: an in-use entry whose 4-byte offset must still point at "4 0 obj".
@@ -124,7 +124,7 @@ public sealed class EncryptionStructureTests
             + $"/DecodeParms << /Type /CryptFilterDecodeParms /Name /{filterName} >> >>\n"
             + $"stream\n{Encoding.Latin1.GetString(body)}\nendstream");
 
-        using var reader = PdfReader.Open(doc, "u");
+        using var reader = PdfReader.Open(doc, new PdfReaderOptions { Password = "u" });
         var stream = reader.ResolveStream(3)!;
 
         Assert.Equal("CANONICAL-CRYPT-FILTER", Encoding.ASCII.GetString(reader.GetDecodedStreamData(stream)!));
@@ -304,7 +304,7 @@ public sealed class EncryptionStructureTests
         using var ms = new MemoryStream();
         s.CopyTo(ms);
 
-        using var reader = PdfReader.Open(ms.ToArray(), "u");
+        using var reader = PdfReader.Open(ms.ToArray(), new PdfReaderOptions { Password = "u" });
         var type = typeof(PdfDocumentReader);
         var decryptor = (StandardSecurityDecryptor)type
             .GetField("_decryptor", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(reader)!;

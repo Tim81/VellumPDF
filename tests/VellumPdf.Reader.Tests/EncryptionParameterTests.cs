@@ -36,7 +36,7 @@ public sealed class EncryptionParameterTests
     {
         var bytes = PatchOnce(Load("enc-aes-128.pdf"), "/Standard /Length 128", "/Standard /Zength 128");
 
-        using var reader = PdfReader.Open(bytes, "u");
+        using var reader = PdfReader.Open(bytes, new PdfReaderOptions { Password = "u" });
 
         Assert.Equal(128, reader.Encryption!.KeyLengthBits);
         Assert.Equal("GoldenStandardFont", GetInfoTitle(reader));
@@ -54,7 +54,7 @@ public sealed class EncryptionParameterTests
     {
         var bytes = PatchOnce(Load("enc-aes-128.pdf"), "/Standard /Length 128", "/Standard /Length 040");
 
-        using var reader = PdfReader.Open(bytes, "u");
+        using var reader = PdfReader.Open(bytes, new PdfReaderOptions { Password = "u" });
 
         Assert.Equal(128, reader.Encryption!.KeyLengthBits);
         Assert.Equal("GoldenStandardFont", GetInfoTitle(reader));
@@ -76,7 +76,7 @@ public sealed class EncryptionParameterTests
             + "/O <853fee3f6550fc3bc212797eaed99cc9be53347583a738e25fdfb1242bf93366> "
             + "/U <72ed1b62959818a597a7a72491caf6084542a05eaf1d681d65b617e608e3ef4d> /P -4 >>");
 
-        using var reader = PdfReader.Open(doc, "u");
+        using var reader = PdfReader.Open(doc, new PdfReaderOptions { Password = "u" });
 
         Assert.Equal(40, reader.Encryption!.KeyLengthBits);
     }
@@ -96,7 +96,7 @@ public sealed class EncryptionParameterTests
     {
         var bytes = PatchOnce(Load("enc-rc4-40.pdf"), "/Standard /Length 40", "/Standard /Length 96");
 
-        using var reader = PdfReader.Open(bytes, "u");
+        using var reader = PdfReader.Open(bytes, new PdfReaderOptions { Password = "u" });
 
         Assert.Equal(40, reader.Encryption!.KeyLengthBits);
         Assert.Equal("GoldenStandardFont", GetInfoTitle(reader));
@@ -123,7 +123,7 @@ public sealed class EncryptionParameterTests
         // offset survives, and /Perms is untouched either way.
         var edited = PatchOnce(Load("enc-aes-256-r6.pdf"), "/P -4 ", "/P -8 ");
 
-        using var reader = PdfReader.Open(edited, "u");
+        using var reader = PdfReader.Open(edited, new PdfReaderOptions { Password = "u" });
 
         Assert.Equal(-4 & (int)PdfPermissions.All, (int)reader.Encryption!.Permissions);
         Assert.True(reader.Encryption.Permissions.HasFlag(PdfPermissions.Print));
@@ -160,7 +160,7 @@ public sealed class EncryptionParameterTests
 
         var edited = PatchOnce(bytes, "/P -4 ", "/P -8 ");
 
-        using var reader = PdfReader.Open(edited, "u");
+        using var reader = PdfReader.Open(edited, new PdfReaderOptions { Password = "u" });
 
         // -8 is the value the editor wrote, not the -4 the author sealed. Asserted as the value, so a
         // reader that started refusing the file or reporting All would both fail here.
@@ -172,7 +172,7 @@ public sealed class EncryptionParameterTests
     [Fact]
     public void R6_untamperedPermissions_verify()
     {
-        using var reader = PdfReader.Open(Load("enc-aes-256-r6.pdf"), "u");
+        using var reader = PdfReader.Open(Load("enc-aes-256-r6.pdf"), new PdfReaderOptions { Password = "u" });
 
         Assert.Equal(-4 & (int)PdfPermissions.All, (int)reader.Encryption!.Permissions);
     }
@@ -187,7 +187,7 @@ public sealed class EncryptionParameterTests
     {
         var edited = PatchOnce(Load("enc-aes-256-r5.pdf"), "/P -4 ", "/P -8 ");
 
-        using var reader = PdfReader.Open(edited, "u");
+        using var reader = PdfReader.Open(edited, new PdfReaderOptions { Password = "u" });
 
         Assert.Equal(-4 & (int)PdfPermissions.All, (int)reader.Encryption!.Permissions);
         Assert.True(reader.Encryption.Permissions.HasFlag(PdfPermissions.Print));
@@ -208,7 +208,7 @@ public sealed class EncryptionParameterTests
             + "/U <6c8913ac9fc602eb1aad2a1ec614bee90021446990b9e4114071a4d9104984c1> /P -4 >>",
             $"<< /Empty <> /AlsoEmpty () /IvOnly <{new string('0', 32)}> >>");
 
-        using var reader = PdfReader.Open(doc, "u");
+        using var reader = PdfReader.Open(doc, new PdfReaderOptions { Password = "u" });
         var dict = Assert.IsType<PdfDictionary>(reader.Resolve(new PdfIndirectReference(3, 0)));
 
         Assert.Empty(((PdfHexString)dict.Get(new PdfName("Empty"))!).Bytes.ToArray());
@@ -246,7 +246,7 @@ public sealed class EncryptionParameterTests
             + "/U <6c8913ac9fc602eb1aad2a1ec614bee90021446990b9e4114071a4d9104984c1> /P -4 >>",
             $"<< /Probe <{Convert.ToHexStringLower(EncryptRc4(3, 0, "CACHE-PROBE"u8.ToArray()))}> >>");
 
-        using var reader = PdfReader.Open(doc, "u");
+        using var reader = PdfReader.Open(doc, new PdfReaderOptions { Password = "u" });
 
         var probe = Assert.IsType<PdfDictionary>(reader.Resolve(new PdfIndirectReference(3, 0)));
         Assert.Equal(
@@ -279,7 +279,7 @@ public sealed class EncryptionParameterTests
             $"<< /Length {body.Length} /Probe <{Convert.ToHexStringLower(probe)}> >>\n"
             + $"stream\n{Encoding.Latin1.GetString(body)}\nendstream");
 
-        using var reader = PdfReader.Open(doc, "u");
+        using var reader = PdfReader.Open(doc, new PdfReaderOptions { Password = "u" });
 
         var stream = reader.ResolveStream(new PdfIndirectReference(3, 0))!;
 
@@ -303,7 +303,7 @@ public sealed class EncryptionParameterTests
             + "/U <6c8913ac9fc602eb1aad2a1ec614bee90021446990b9e4114071a4d9104984c1> /P 5 0 R >>",
             extraObjects: ["-4"]);
 
-        using var reader = PdfReader.Open(doc, "u");
+        using var reader = PdfReader.Open(doc, new PdfReaderOptions { Password = "u" });
 
         Assert.Equal(-4 & (int)PdfPermissions.All, (int)reader.Encryption!.Permissions);
     }
@@ -322,7 +322,7 @@ public sealed class EncryptionParameterTests
             + "/U <6c8913ac9fc602eb1aad2a1ec614bee90021446990b9e4114071a4d9104984c1> /P -4 >>",
             extraObjects: ["/Standard"]);
 
-        using var reader = PdfReader.Open(doc, "u");
+        using var reader = PdfReader.Open(doc, new PdfReaderOptions { Password = "u" });
 
         Assert.Equal(PdfCipherAlgorithm.Rc4, reader.Encryption!.StreamCipher);
     }
@@ -343,7 +343,7 @@ public sealed class EncryptionParameterTests
             + "/O <2a2f0a1990192c60114730bdcd39f37828a53c89a340dd473c85299dc5258e1c> "
             + "/U <6c8913ac9fc602eb1aad2a1ec614bee90021446990b9e4114071a4d9104984c1> /P -4 >>");
 
-        var ex = Assert.Throws<InvalidDataException>(() => PdfReader.Open(doc, "u"));
+        var ex = Assert.Throws<InvalidDataException>(() => PdfReader.Open(doc, new PdfReaderOptions { Password = "u" }));
 
         Assert.Contains("crypt filters", ex.Message, StringComparison.Ordinal);
     }
@@ -363,7 +363,7 @@ public sealed class EncryptionParameterTests
             + "/O <2a2f0a1990192c60114730bdcd39f37828a53c89a340dd473c85299dc5258e1c> "
             + "/U <6c8913ac9fc602eb1aad2a1ec614bee90021446990b9e4114071a4d9104984c1> /P -4 >>");
 
-        using var reader = PdfReader.Open(doc, "u");
+        using var reader = PdfReader.Open(doc, new PdfReaderOptions { Password = "u" });
 
         Assert.Equal(PdfCipherAlgorithm.Rc4, reader.Encryption!.StreamCipher);
     }
@@ -391,7 +391,7 @@ public sealed class EncryptionParameterTests
         var doc = BuildWithEncryptDict($"<< /Filter {filterName} /V 4 /R 4 /Length 5 0 R >>", extraObjects: ["128"]);
         doc = WithLastXrefEntryPointingPastTheEnd(doc);
 
-        var ex = Assert.Throws<UnsupportedPdfFeatureException>(() => PdfReader.Open(doc, "u"));
+        var ex = Assert.Throws<UnsupportedPdfFeatureException>(() => PdfReader.Open(doc, new PdfReaderOptions { Password = "u" }));
 
         Assert.Contains(expectedInMessage, ex.Message, StringComparison.Ordinal);
     }
@@ -461,7 +461,7 @@ public sealed class EncryptionParameterTests
             + $"/O <{o}> /U <{u}> /P -4 >>",
             extraObjects: [referencedObject]);
 
-        using var reader = PdfReader.Open(doc, "u");
+        using var reader = PdfReader.Open(doc, new PdfReaderOptions { Password = "u" });
 
         Assert.Equal(expectedBits, reader.Encryption!.KeyLengthBits);
     }
@@ -495,7 +495,7 @@ public sealed class EncryptionParameterTests
             + "/U <6c8913ac9fc602eb1aad2a1ec614bee90021446990b9e4114071a4d9104984c1> /P -4 >>",
             extraObjects: [referencedObject]);
 
-        using var reader = PdfReader.Open(doc, "u");
+        using var reader = PdfReader.Open(doc, new PdfReaderOptions { Password = "u" });
 
         Assert.Equal(PdfCipherAlgorithm.Aes128, reader.Encryption!.StreamCipher);
     }
@@ -540,7 +540,7 @@ public sealed class EncryptionParameterTests
             + "/U <6c8913ac9fc602eb1aad2a1ec614bee90021446990b9e4114071a4d9104984c1> /P -4 >>");
 
         // Sanity: the base revision on its own is a document this reader opens.
-        using (var ok = PdfReader.Open(baseRevision, "u"))
+        using (var ok = PdfReader.Open(baseRevision, new PdfReaderOptions { Password = "u" }))
             Assert.NotNull(ok.Encryption);
 
         var baseStartxref = int.Parse(
@@ -559,7 +559,7 @@ public sealed class EncryptionParameterTests
           + $"/ID [<{Convert.ToHexStringLower(Id0)}><{Convert.ToHexStringLower(Id0)}>] >>\n");
         W($"startxref\n{updateXref}\n%%EOF\n");
 
-        var ex = Assert.Throws<InvalidDataException>(() => PdfReader.Open(ms.ToArray(), "u"));
+        var ex = Assert.Throws<InvalidDataException>(() => PdfReader.Open(ms.ToArray(), new PdfReaderOptions { Password = "u" }));
 
         Assert.Contains("/Encrypt", ex.Message, StringComparison.Ordinal);
     }
@@ -580,7 +580,7 @@ public sealed class EncryptionParameterTests
             + "/O <2a2f0a1990192c60114730bdcd39f37828a53c89a340dd473c85299dc5258e1c> "
             + "/U <6c8913ac9fc602eb1aad2a1ec614bee90021446990b9e4114071a4d9104984c1> /P -4 >>");
 
-        var ex = Assert.Throws<InvalidDataException>(() => PdfReader.Open(doc, "u"));
+        var ex = Assert.Throws<InvalidDataException>(() => PdfReader.Open(doc, new PdfReaderOptions { Password = "u" }));
 
         Assert.Contains("/StrF", ex.Message, StringComparison.Ordinal);
     }
@@ -599,7 +599,7 @@ public sealed class EncryptionParameterTests
             + "/O <2a2f0a1990192c60114730bdcd39f37828a53c89a340dd473c85299dc5258e1c> "
             + "/U <6c8913ac9fc602eb1aad2a1ec614bee90021446990b9e4114071a4d9104984c1> /P -4 >>");
 
-        using var reader = PdfReader.Open(doc, "u");
+        using var reader = PdfReader.Open(doc, new PdfReaderOptions { Password = "u" });
 
         Assert.Equal(PdfCipherAlgorithm.Aes128, reader.Encryption!.StreamCipher);
         Assert.Equal(PdfCipherAlgorithm.Rc4, reader.Encryption.StringCipher);
@@ -630,7 +630,7 @@ public sealed class EncryptionParameterTests
                 + $"stream\n{Encoding.Latin1.GetString(attachment)}\nendstream",
             ]);
 
-        using var reader = PdfReader.Open(doc, "u");
+        using var reader = PdfReader.Open(doc, new PdfReaderOptions { Password = "u" });
 
         // Outside the attachment: Identity, so the bytes are already plaintext in the file.
         var dict = Assert.IsType<PdfDictionary>(reader.Resolve(new PdfIndirectReference(3, 0)));
@@ -669,7 +669,7 @@ public sealed class EncryptionParameterTests
                 + $"stream\n{Encoding.Latin1.GetString(clear)}\nendstream",
             ]);
 
-        using var reader = PdfReader.Open(doc, "u");
+        using var reader = PdfReader.Open(doc, new PdfReaderOptions { Password = "u" });
         var embedded = reader.ResolveStream(5)!;
 
         Assert.Equal("LEFT-IN-THE-CLEAR", Encoding.ASCII.GetString(reader.GetDecodedStreamData(embedded)!));
@@ -702,7 +702,7 @@ public sealed class EncryptionParameterTests
                 + $"stream\n{Encoding.Latin1.GetString(attachment)}\nendstream",
             ]);
 
-        using var reader = PdfReader.Open(doc, "u");
+        using var reader = PdfReader.Open(doc, new PdfReaderOptions { Password = "u" });
         var embedded = reader.ResolveStream(5)!;
 
         Assert.Equal("V2-ATTACHMENT", Encoding.ASCII.GetString(reader.GetDecodedStreamData(embedded)!));
@@ -739,7 +739,7 @@ public sealed class EncryptionParameterTests
                 + $"stream\n{Encoding.Latin1.GetString(attachment)}\nendstream",
             ]);
 
-        using var reader = PdfReader.Open(doc, "u");
+        using var reader = PdfReader.Open(doc, new PdfReaderOptions { Password = "u" });
         var embedded = reader.ResolveStream(5)!;
 
         Assert.Equal("ordinary stream rules", Encoding.ASCII.GetString(reader.GetDecodedStreamData(embedded)!));
@@ -770,7 +770,7 @@ public sealed class EncryptionParameterTests
             + "/O <2a2f0a1990192c60114730bdcd39f37828a53c89a340dd473c85299dc5258e1c> "
             + "/U <6c8913ac9fc602eb1aad2a1ec614bee90021446990b9e4114071a4d9104984c1> /P -4 >>");
 
-        var ex = Assert.Throws<InvalidDataException>(() => PdfReader.Open(doc, "u"));
+        var ex = Assert.Throws<InvalidDataException>(() => PdfReader.Open(doc, new PdfReaderOptions { Password = "u" }));
 
         Assert.Contains("/Length", ex.Message, StringComparison.Ordinal);
     }
@@ -791,7 +791,7 @@ public sealed class EncryptionParameterTests
 
         var doc = BuildWithEncryptDict(full.Replace(omitted + " ", "", StringComparison.Ordinal));
 
-        var ex = Assert.Throws<InvalidDataException>(() => PdfReader.Open(doc, "u"));
+        var ex = Assert.Throws<InvalidDataException>(() => PdfReader.Open(doc, new PdfReaderOptions { Password = "u" }));
 
         Assert.Contains(omitted.Split(' ')[0], ex.Message, StringComparison.Ordinal);
     }
@@ -810,7 +810,7 @@ public sealed class EncryptionParameterTests
             + "/O <2a2f0a1990192c60114730bdcd39f37828a53c89a340dd473c85299dc5258e1c> "
             + "/U <6c8913ac9fc602eb1aad2a1ec614bee90021446990b9e4114071a4d9104984c1> /P -4 >>");
 
-        using var reader = PdfReader.Open(doc, "u");
+        using var reader = PdfReader.Open(doc, new PdfReaderOptions { Password = "u" });
 
         Assert.Equal(128, reader.Encryption!.KeyLengthBits);
     }
@@ -834,7 +834,7 @@ public sealed class EncryptionParameterTests
             + "/O <2a2f0a1990192c60114730bdcd39f37828a53c89a340dd473c85299dc5258e1c> "
             + "/U <6c8913ac9fc602eb1aad2a1ec614bee90021446990b9e4114071a4d9104984c1> /P -4 >>");
 
-        using var reader = PdfReader.Open(doc, "u");
+        using var reader = PdfReader.Open(doc, new PdfReaderOptions { Password = "u" });
 
         Assert.Equal(128, reader.Encryption!.KeyLengthBits);
         Assert.Equal(PdfCipherAlgorithm.Identity, reader.Encryption.StreamCipher);
@@ -854,7 +854,7 @@ public sealed class EncryptionParameterTests
             + "/O <2a2f0a1990192c60114730bdcd39f37828a53c89a340dd473c85299dc5258e1c> "
             + "/U <6c8913ac9fc602eb1aad2a1ec614bee90021446990b9e4114071a4d9104984c1> /P -4 >>");
 
-        var ex = Assert.Throws<UnsupportedPdfFeatureException>(() => PdfReader.Open(doc, "u"));
+        var ex = Assert.Throws<UnsupportedPdfFeatureException>(() => PdfReader.Open(doc, new PdfReaderOptions { Password = "u" }));
 
         Assert.Contains("/V 3", ex.Message, StringComparison.Ordinal);
     }
@@ -868,7 +868,7 @@ public sealed class EncryptionParameterTests
             + "/O <2a2f0a1990192c60114730bdcd39f37828a53c89a340dd473c85299dc5258e1c> "
             + "/U <6c8913ac9fc602eb1aad2a1ec614bee90021446990b9e4114071a4d9104984c1> /P -4 >>");
 
-        var ex = Assert.Throws<InvalidDataException>(() => PdfReader.Open(doc, "u"));
+        var ex = Assert.Throws<InvalidDataException>(() => PdfReader.Open(doc, new PdfReaderOptions { Password = "u" }));
 
         // The distinguishing phrase, not just "/V 0": the decryptor's own constructor rejects 0 too,
         // with a message that also names it, so a looser assertion passes with this guard deleted.
@@ -890,7 +890,7 @@ public sealed class EncryptionParameterTests
             + "/O <2a2f0a1990192c60114730bdcd39f37828a53c89a340dd473c85299dc5258e1c> "
             + "/U <6c8913ac9fc602eb1aad2a1ec614bee90021446990b9e4114071a4d9104984c1> /P -4 >>");
 
-        var ex = Assert.Throws<UnsupportedPdfFeatureException>(() => PdfReader.Open(doc, "u"));
+        var ex = Assert.Throws<UnsupportedPdfFeatureException>(() => PdfReader.Open(doc, new PdfReaderOptions { Password = "u" }));
 
         Assert.Contains("StdCF", ex.Message, StringComparison.Ordinal);
     }
@@ -912,7 +912,7 @@ public sealed class EncryptionParameterTests
     {
         var patched = WithPermsMetadataFlagFlipped(PatchOnce(Load("enc-aes-256-r6.pdf"), "/P -4 ", "/P -8 "));
 
-        using var reader = PdfReader.Open(patched, "u");
+        using var reader = PdfReader.Open(patched, new PdfReaderOptions { Password = "u" });
 
         Assert.Equal(-4 & (int)PdfPermissions.All, (int)reader.Encryption!.Permissions);
     }
@@ -934,7 +934,7 @@ public sealed class EncryptionParameterTests
     {
         var patched = PatchOnce(Load(name), "/CFM /AESV3", "/CFM /AESV2");
 
-        using var reader = PdfReader.Open(patched, "u");
+        using var reader = PdfReader.Open(patched, new PdfReaderOptions { Password = "u" });
 
         Assert.Equal(256, reader.Encryption!.KeyLengthBits);
     }
@@ -960,7 +960,7 @@ public sealed class EncryptionParameterTests
             + "/O <2a2f0a1990192c60114730bdcd39f37828a53c89a340dd473c85299dc5258e1c> "
             + "/U <6c8913ac9fc602eb1aad2a1ec614bee90021446990b9e4114071a4d9104984c1> /P -4 >>");
 
-        using var reader = PdfReader.Open(doc, "u");
+        using var reader = PdfReader.Open(doc, new PdfReaderOptions { Password = "u" });
 
         Assert.Equal(128, reader.Encryption!.KeyLengthBits);
     }
@@ -974,7 +974,7 @@ public sealed class EncryptionParameterTests
     [Fact]
     public void ReaderUsedAfterDispose_throwsObjectDisposed_ratherThanReturningGarbage()
     {
-        var reader = PdfReader.Open(Load("enc-rc4-128.pdf"), "u");
+        var reader = PdfReader.Open(Load("enc-rc4-128.pdf"), new PdfReaderOptions { Password = "u" });
         var infoRef = (PdfIndirectReference)reader.Trailer.Get(new PdfName("Info"))!;
 
         // Sound before disposal, so the assertion below is about disposal and not about the fixture.
@@ -1014,7 +1014,7 @@ public sealed class EncryptionParameterTests
     // the encryptor always uses RC4 while the reader picks its filter from the dictionary.
     private static byte[] EncryptRc4(int objectNumber, int generation, byte[] plaintext)
     {
-        using var reader = PdfReader.Open(Load("enc-rc4-128.pdf"), "u");
+        using var reader = PdfReader.Open(Load("enc-rc4-128.pdf"), new PdfReaderOptions { Password = "u" });
         var type = typeof(PdfDocumentReader);
         var decryptor = (StandardSecurityDecryptor)type
             .GetField("_decryptor", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(reader)!;
@@ -1028,7 +1028,7 @@ public sealed class EncryptionParameterTests
     private static byte[] WithPermsMetadataFlagFlipped(byte[] bytes)
     {
         byte[] fileKey;
-        using (var reader = PdfReader.Open(bytes, "u"))
+        using (var reader = PdfReader.Open(bytes, new PdfReaderOptions { Password = "u" }))
         {
             // Copied, not aliased: Dispose zeroes the key on the way out of this block.
             fileKey = [.. (byte[])typeof(PdfDocumentReader)

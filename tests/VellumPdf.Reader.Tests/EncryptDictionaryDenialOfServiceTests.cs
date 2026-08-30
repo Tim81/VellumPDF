@@ -45,7 +45,7 @@ public sealed class EncryptDictionaryDenialOfServiceTests
     {
         var bytes = BuildDocumentWithHugeEncryptDict(fillerKeyCount: 100_000);
 
-        using var reader = PdfReader.Open(bytes, "u");
+        using var reader = PdfReader.Open(bytes, new PdfReaderOptions { Password = "u" });
 
         Assert.NotNull(reader.Encryption);
         Assert.False(reader.Encryption.IsOwnerAccess);

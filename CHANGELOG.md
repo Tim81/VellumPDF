@@ -121,6 +121,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   member the sweep drops this way is absent from `_xref` itself — the table a future full
   re-serialisation (tracked in #186) would walk to decide what to emit — so it is not carried into
   a rewritten copy either. (#206)
+- **`PdfReader.Open` takes a `PdfReaderOptions` instead of a `string?` password.** The two
+  `Open(x, string?)` overloads are gone and the password moves to `PdfReaderOptions.Password`. The
+  two shapes could not coexist: adding an options overload beside the `string?` one makes
+  `Open(bytes, null)` a CS0121 ambiguity, because nullable annotations do not participate in overload
+  resolution and nothing else separates the candidates. The reader also needs one place for later
+  settings to go — the cross-reference reconstruction switch in #184 is the next one. Migration is
+  mechanical: `PdfReader.Open(bytes, "secret")` becomes
+  `PdfReader.Open(bytes, new PdfReaderOptions { Password = "secret" })`; `PdfReader.Open(bytes)` is
+  unchanged. Recorded here even though `VellumPdf.Reader` is still Preview and its surface is
+  expected to move, because the removed overloads shipped in 2.1.0 and 2.2.0. (#184)
 
 ### Added
 
