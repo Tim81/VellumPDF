@@ -13,16 +13,9 @@ static VellumPdf.Reader.PdfReader.Open(byte[]! bytes, VellumPdf.Reader.PdfReader
 static VellumPdf.Reader.PdfReader.Open(System.IO.Stream! stream) -> VellumPdf.Reader.PdfDocumentReader!
 static VellumPdf.Reader.PdfReader.Open(System.IO.Stream! stream, VellumPdf.Reader.PdfReaderOptions! options) -> VellumPdf.Reader.PdfDocumentReader!
 VellumPdf.Reader.PdfReaderOptions
-VellumPdf.Reader.PdfReaderOptions.<Clone>$() -> VellumPdf.Reader.PdfReaderOptions!
-VellumPdf.Reader.PdfReaderOptions.Equals(VellumPdf.Reader.PdfReaderOptions? other) -> bool
 VellumPdf.Reader.PdfReaderOptions.Password.get -> string?
 VellumPdf.Reader.PdfReaderOptions.Password.init -> void
 VellumPdf.Reader.PdfReaderOptions.PdfReaderOptions() -> void
-override VellumPdf.Reader.PdfReaderOptions.Equals(object? obj) -> bool
-override VellumPdf.Reader.PdfReaderOptions.GetHashCode() -> int
-override VellumPdf.Reader.PdfReaderOptions.ToString() -> string!
-static VellumPdf.Reader.PdfReaderOptions.operator !=(VellumPdf.Reader.PdfReaderOptions? left, VellumPdf.Reader.PdfReaderOptions? right) -> bool
-static VellumPdf.Reader.PdfReaderOptions.operator ==(VellumPdf.Reader.PdfReaderOptions? left, VellumPdf.Reader.PdfReaderOptions? right) -> bool
 VellumPdf.Reader.PdfSignature
 VellumPdf.Reader.PdfSignature.ByteRange.get -> System.ReadOnlyMemory<long>
 VellumPdf.Reader.PdfSignature.Contents.get -> System.ReadOnlyMemory<byte>

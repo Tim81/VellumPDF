@@ -129,8 +129,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   settings to go — the cross-reference reconstruction switch in #184 is the next one. Migration is
   mechanical: `PdfReader.Open(bytes, "secret")` becomes
   `PdfReader.Open(bytes, new PdfReaderOptions { Password = "secret" })`; `PdfReader.Open(bytes)` is
-  unchanged. Recorded here even though `VellumPdf.Reader` is still Preview and its surface is
-  expected to move, because the removed overloads shipped in 2.1.0 and 2.2.0. (#184)
+  unchanged. One recompiled call is not mechanical, though: `PdfReader.Open(bytes, null)` used to
+  mean no password, and now binds to the options overload and throws `ArgumentNullException` instead
+  of opening the document. Recompile that call as `PdfReader.Open(bytes)`. Recorded here even though
+  `VellumPdf.Reader` is still Preview and its surface is expected to move, because the removed
+  overloads shipped in 2.1.0 and 2.2.0. (#184)
 
 ### Added
 

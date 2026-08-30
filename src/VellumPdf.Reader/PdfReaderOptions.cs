@@ -18,8 +18,17 @@ namespace VellumPdf.Reader;
 /// <c>CcittOptions</c> for the reasoning. An instance a caller has handed to <c>Open</c> describes
 /// one read; letting it change afterwards would describe nothing.
 /// </para>
+/// <para>
+/// A class, not a record, because this options type carries <see cref="Password"/>: a synthesised
+/// <c>ToString</c> would print the password in the clear into any log, exception message, or
+/// debugger display that formats the instance, and synthesised <c>Equals</c>/<c>GetHashCode</c>
+/// would compare and hash over it, making the options usable as a cache key that carries a
+/// credential. <see cref="VellumPdf.Encryption.PdfEncryptionSettings"/> is the library's existing
+/// precedent for a password-carrying options type and is a class for the same reason. Nothing
+/// clones or equality-compares reader options, so nothing is lost by not synthesising those members.
+/// </para>
 /// </remarks>
-public sealed record PdfReaderOptions
+public sealed class PdfReaderOptions
 {
     /// <summary>
     /// The password to decrypt the document with, or <see langword="null"/> for a document that uses
