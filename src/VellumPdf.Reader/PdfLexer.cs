@@ -105,6 +105,13 @@ internal sealed class PdfLexer
 
     private static bool IsRegular(byte b) => !IsWhitespace(b) && !IsDelimiter(b);
 
+    // Exposed so other code walking this same syntax — the cross-reference reconstruction walker
+    // (XrefReconstructor, #184) in particular — classifies whitespace and delimiter bytes
+    // identically to this lexer instead of keeping its own copy of Table 1/Table 2 that could
+    // silently drift from this one.
+    internal static bool IsWhitespaceByte(byte b) => IsWhitespace(b);
+    internal static bool IsDelimiterByte(byte b) => IsDelimiter(b);
+
     private ReadOnlySpan<byte> Span => _data.Span;
 
     // ── Skip whitespace and comments ───────────────────────────────────────

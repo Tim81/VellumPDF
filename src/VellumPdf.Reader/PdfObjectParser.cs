@@ -126,6 +126,56 @@ internal sealed class PdfObjectParser
         return new IndirectObjectResult(objectNumber, generation, value, null);
     }
 
+    /// <summary>
+    /// Parses the <c>N G obj</c> header and the object's value like <see cref="ParseIndirectObject"/>
+    /// does, but stops the instant a <c>stream</c> keyword is confirmed — it does not attempt to
+    /// resolve <c>/Length</c> or locate <c>endstream</c>. Exists for a caller willing to determine
+    /// the body's own extent itself, more cheaply than a blind scan, when it already has independent
+    /// evidence about where a stream's declared length should land: cross-reference reconstruction
+    /// (<c>XrefReconstructor</c>, #184) verifies a resolved <c>/Length</c> with a bounded byte check
+    /// at the position it names, reserving a wider scan for when that check fails. Splitting the two
+    /// lets a caller bound the cost of the header probe itself (a dictionary alone is cheap to reach)
+    /// independently of how far away the real body terminator might be.
+    /// </summary>
+    /// <exception cref="InvalidDataException">On malformed PDF.</exception>
+    public HeaderProbeResult ProbeIndirectObjectHeader()
+    {
+        var objNumTok = ExpectToken(TokenKind.Integer, "object number");
+        var genTok = ExpectToken(TokenKind.Integer, "generation number");
+        var objKw = ExpectToken(TokenKind.Keyword, "'obj' keyword");
+
+        if (!IsKeyword(objKw.Raw, "obj"u8))
+            throw new InvalidDataException(
+                $"Expected 'obj' keyword, got '{Encoding.Latin1.GetString(objKw.Raw.Span)}' at offset {_lexer.Position}.");
+
+        var objectNumber = ParseObjectNumber(objNumTok.Raw, "object number");
+        var generation = ParseObjectNumber(genTok.Raw, "generation number");
+
+        _lexer.SkipWhitespaceAndComments();
+
+        if (_lexer.TryPeek() == (byte)'<' && PeekIsDict())
+        {
+            _lexer.NextToken(); // consumes <<, returns DictBegin
+            var dict = ParseDictionary();
+
+            _lexer.SkipWhitespaceAndComments();
+            if (!_lexer.AtEnd && TryPeekKeyword("stream"u8))
+            {
+                _lexer.NextToken(); // consume the 'stream' keyword token
+                SkipStreamNewline();
+                var bodyStart = _lexer.Position;
+                return new HeaderProbeResult(objectNumber, generation, dict, true, bodyStart);
+            }
+
+            ExpectEndobj();
+            return new HeaderProbeResult(objectNumber, generation, dict, false, 0);
+        }
+
+        var value = ParseObject();
+        ExpectEndobj();
+        return new HeaderProbeResult(objectNumber, generation, value, false, 0);
+    }
+
     // ── Private helpers ────────────────────────────────────────────────────
 
     private bool PeekIsDict()
@@ -152,11 +202,10 @@ internal sealed class PdfObjectParser
         return true;
     }
 
+    // Delegates to PdfLexer's own Table 1/Table 2 classification rather than repeating it, so this
+    // and the cross-reference reconstruction walker (XrefReconstructor, #184) cannot drift apart.
     private static bool IsWhitespaceOrDelimiter(byte b) =>
-        b is 0 or 9 or 10 or 12 or 13 or 32
-          or (byte)'(' or (byte)')' or (byte)'<' or (byte)'>'
-          or (byte)'[' or (byte)']' or (byte)'{' or (byte)'}'
-          or (byte)'/' or (byte)'%';
+        PdfLexer.IsWhitespaceByte(b) || PdfLexer.IsDelimiterByte(b);
 
     private PdfObject ParseKeywordObject(Token token)
     {
@@ -778,5 +827,48 @@ internal sealed class IndirectObjectResult
         Generation = generation;
         Value = value;
         Stream = stream;
+    }
+}
+
+/// <summary>
+/// The result of <see cref="PdfObjectParser.ProbeIndirectObjectHeader"/>: the object's identity and
+/// value, and — when the value is a dictionary immediately followed by <c>stream</c> — where that
+/// stream's body begins. <see cref="Value"/> is the parsed dictionary even when
+/// <see cref="HasStreamBody"/> is true; unlike <see cref="IndirectObjectResult"/>, this type never
+/// captures a <see cref="ParsedStream"/>, because finding the body's END is exactly the work this
+/// method stops short of.
+/// </summary>
+internal readonly struct HeaderProbeResult
+{
+    /// <summary>The object number.</summary>
+    public int ObjectNumber { get; }
+
+    /// <summary>The generation number.</summary>
+    public int Generation { get; }
+
+    /// <summary>The parsed value — a dictionary when <see cref="HasStreamBody"/> is true.</summary>
+    public PdfObject? Value { get; }
+
+    /// <summary>Whether a <c>stream</c> keyword was found immediately after the dictionary.</summary>
+    public bool HasStreamBody { get; }
+
+    /// <summary>
+    /// The byte offset at which the stream body begins (immediately after the EOL following
+    /// <c>stream</c>), meaningful only when <see cref="HasStreamBody"/> is true. This is an offset
+    /// into the buffer the parser was constructed over via <c>PdfObjectParser(ReadOnlyMemory&lt;byte&gt;,
+    /// int, ...)</c> — i.e. an ABSOLUTE offset when that buffer is the whole file (the caller passed
+    /// its own start position as the constructor's <c>offset</c> argument, as
+    /// <c>XrefReconstructor</c> does), not an offset relative to wherever the header happened to
+    /// start. Adding the header's own start position on top of this value double-counts it.
+    /// </summary>
+    public int StreamBodyStart { get; }
+
+    internal HeaderProbeResult(int objectNumber, int generation, PdfObject? value, bool hasStreamBody, int streamBodyStart)
+    {
+        ObjectNumber = objectNumber;
+        Generation = generation;
+        Value = value;
+        HasStreamBody = hasStreamBody;
+        StreamBodyStart = streamBodyStart;
     }
 }
