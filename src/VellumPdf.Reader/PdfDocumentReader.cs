@@ -76,17 +76,41 @@ public sealed class PdfDocumentReader : IDisposable
     /// <summary>
     /// <see langword="true"/> if <c>XrefParser.DropMembersOfFreedContainers</c> removed at least
     /// one compressed-object-stream member from the merged xref table because its container had no
-    /// live entry — a self-contradictory file (see that method's doc comment). Recorded here, not
-    /// acted on: nothing reads it yet. <c>AppendRevision</c> currently guards only an empty object
-    /// list and the <c>/Root</c> generation, so it will happily append a revision to a document
-    /// repaired this way. The intent is that #184 adds one refusal covering both this flag and its
-    /// own <c>WasReconstructed</c>, on the reasoning its branch already writes down for the
-    /// reconstructed case: a repaired object graph is a best-effort guess, so building a PAdES
-    /// revision on top of it hands back an artifact this library cannot reliably reopen. That
-    /// refusal is on #184's branch, not on <c>main</c> and not in the issue body — so this sentence
-    /// describes an intent, not existing behaviour.
+    /// live entry — a self-contradictory file (see that method's doc comment). A repaired object
+    /// graph like this is a best-effort guess in the same sense a reconstructed one is, so
+    /// <see cref="AppendRevision"/> refuses on this flag exactly as it refuses on
+    /// <see cref="WasReconstructed"/> — building a PAdES revision on top of either would hand back an
+    /// artifact this library cannot reliably reopen.
     /// </summary>
     internal bool DroppedOrphanedObjectStreamMembers { get; }
+
+    /// <summary>
+    /// Whether this document's cross-reference table was rebuilt by scanning the file (ISO 32000-2
+    /// Annex C.4) rather than read from the file's own <c>startxref</c> chain — see
+    /// <see cref="PdfReaderOptions.AllowReconstruction"/>. Reconstruction is best-effort: it can
+    /// infer the wrong catalog for a layout it doesn't fully understand, and it deliberately loses
+    /// the revision history a well-formed xref would carry (<see cref="Revisions"/> is empty). A
+    /// caller that needs to know whether it should trust byte-level layout claims about this
+    /// document (linearization, PAdES revision boundaries) should check this first.
+    /// </summary>
+    public bool WasReconstructed { get; }
+
+    /// <summary>
+    /// Bytes actually charged during reconstruction's walk (<see cref="XrefReconstructor.Reconstruct"/>),
+    /// or 0 when <see cref="WasReconstructed"/> is false. Diagnostic only, so a test can pin that a
+    /// hostile file cannot blow reconstruction past a linear multiple of its own length.
+    /// </summary>
+    internal long ReconstructionBytesConsumed { get; }
+
+    /// <summary>
+    /// Raw object-stream body bytes charged against <see cref="MaxAggregateReconstructionObjStmDecodeBytes"/>
+    /// during Phase B's container expansion (B1), or 0 when <see cref="WasReconstructed"/> is false.
+    /// Charged BEFORE a container is decoded, and the charge stands even when decoding then throws
+    /// (a container that turns out not to be a genuine, decodable object stream) — otherwise a file
+    /// built from many such containers could retry the same aggregate budget once per container
+    /// instead of spending it once, defeating the point of an aggregate cap.
+    /// </summary>
+    internal long ReconstructionObjStmBytesCharged { get; private set; }
 
     /// <summary>Total length of the PDF byte buffer.</summary>
     internal int TotalLength => Bytes.Length;
@@ -108,21 +132,19 @@ public sealed class PdfDocumentReader : IDisposable
 
     internal PdfDocumentReader(
         ReadOnlyMemory<byte> bytes,
-        Dictionary<int, XrefEntry> xref,
-        PdfDictionary trailer,
-        int startXrefOffset,
-        IReadOnlyList<XrefRevision> revisions,
-        string? password = null,
-        IReadOnlySet<long>? crossReferenceStreamOffsets = null,
-        bool droppedOrphanedObjectStreamMembers = false)
+        XrefParseResult parseResult,
+        string? password = null)
     {
         Bytes = bytes;
-        _xref = xref;
+        _xref = parseResult.Xref;
+        var trailer = parseResult.Trailer;
         Trailer = trailer;
-        StartXrefOffset = startXrefOffset;
-        Revisions = revisions;
-        _crossReferenceStreamOffsets = crossReferenceStreamOffsets ?? new HashSet<long>();
-        DroppedOrphanedObjectStreamMembers = droppedOrphanedObjectStreamMembers;
+        StartXrefOffset = parseResult.StartXrefOffset;
+        Revisions = parseResult.Revisions;
+        _crossReferenceStreamOffsets = parseResult.CrossReferenceStreamOffsets;
+        DroppedOrphanedObjectStreamMembers = parseResult.DroppedOrphanedObjectStreamMembers;
+        WasReconstructed = parseResult.WasReconstructed;
+        ReconstructionBytesConsumed = parseResult.ReconstructionBytesConsumed;
 
         // /Encrypt must be resolved and authenticated BEFORE anything else: Resolve() and
         // GetDecodedStreamData() key their decryption on _decryptor being set, and /Root (resolved
@@ -149,6 +171,14 @@ public sealed class PdfDocumentReader : IDisposable
                 setup.Decryptor.V, setup.Decryptor.R, setup.Cipher, setup.StringCipher,
                 setup.KeyLengthBits, setup.Permissions, setup.EncryptMetadata, setup.IsOwnerAccess);
         }
+
+        // Phase B of reconstruction (#184): runs after authentication (a no-op today, since Phase A
+        // already refuses any document carrying evidence of /Encrypt — see
+        // XrefReconstructor.RecoverTrailer — but the ordering matters once a later PR lifts that)
+        // and before /Root is resolved, since its job is to make sure Trailer actually HAS a /Root
+        // that resolves to a catalog before the normal checks just below ever see it.
+        if (WasReconstructed)
+            ReconstructionPhaseB(parseResult.ObjectStreamContainers, parseResult.CandidateRoots);
 
         if (!trailer.TryGet(PdfName.Root, out var rootObj) || rootObj is null)
             throw new InvalidDataException("Malformed PDF: trailer is missing /Root.");
@@ -198,6 +228,173 @@ public sealed class PdfDocumentReader : IDisposable
         // readable by anything (decoding the container needs the file key that entry is part of
         // deriving), so this closes the asymmetry rather than a reachable defect.
         _objStmCache.Clear();
+    }
+
+    // Aggregate budget for Phase B's B1, across every container reconstruction found. This bounds
+    // RAW INPUT volume, not decoded output: the charge below is RawBodyLength (each container's
+    // pre-decode extent, as Phase A measured it), not the size LoadObjectStream's decode later
+    // produces — so 512 MiB caps roughly that much compressed-on-disk body spread across every
+    // container, and the actual decoded volume can exceed it by whatever the containers' own
+    // compression ratio is (a highly compressible ObjStm body could still decode to several times
+    // this many bytes in aggregate). A single container's OWN decode is separately bounded by
+    // Filters.MaxDecodedBytes (512 MiB); without this aggregate raw-input cap, N reconstructed
+    // containers would let that per-container ceiling apply N times over — unbounded in total,
+    // since reconstruction has no xref-declared /Size to bound N by ahead of time. The raw-input
+    // charge, not a decoded-bytes one, is deliberate (row 15): it has to be knowable BEFORE the
+    // decode attempt, so a container that turns out not to be genuine still gets charged for the
+    // bytes it occupies rather than refunding itself by failing to decode.
+    private const long MaxAggregateReconstructionObjStmDecodeBytes = 512L * 1024 * 1024;
+
+    /// <summary>
+    /// Phase B of cross-reference reconstruction (#184), run once — after authentication, before
+    /// <c>/Root</c> is resolved — for a document whose table was rebuilt by scanning the file rather
+    /// than read from its own <c>startxref</c> chain. Phase A (<see cref="XrefReconstructor"/>)
+    /// cannot check its own guess at <c>/Root</c>: doing so means resolving objects, and object
+    /// resolution needs authentication and object-stream expansion to have already happened.
+    /// </summary>
+    private void ReconstructionPhaseB(
+        IReadOnlyList<(int ObjNum, int RawBodyLength)> objectStreamContainers,
+        IReadOnlyList<PdfIndirectReference> candidateRoots)
+    {
+        // B1: expand every object stream Phase A found so the objects packed inside become
+        // resolvable. Best-effort — reconstruction is already scanning for structure the file's own
+        // xref failed to describe, so a container that fails to load is skipped rather than
+        // aborting the whole recovery. Each container's RAW body length is pre-charged against the
+        // aggregate budget BEFORE the decode attempt, and the charge stands even when decoding then
+        // throws (row 15): otherwise a file built from many bogus "ObjStm" candidates could dodge
+        // the aggregate cap entirely, since each one would fail to decode and refund its own charge.
+        var reconstructionObjStmBytesCharged = 0L;
+        foreach (var (container, rawBodyLength) in objectStreamContainers)
+        {
+            if (reconstructionObjStmBytesCharged >= MaxAggregateReconstructionObjStmDecodeBytes)
+                break; // Budget spent — stop expanding. Security was already decided in Phase A;
+                       // this cap only bounds how much further decode work Phase B does.
+
+            reconstructionObjStmBytesCharged += Math.Max(0, rawBodyLength);
+
+            if (!_xref.TryGetValue(container, out var containerEntry) || containerEntry.Kind != XrefEntryKind.Uncompressed)
+                continue;
+
+            try
+            {
+                var (_, _, _, offsetMap) = LoadObjectStream(container, containerEntry);
+                foreach (var objNum in offsetMap.Keys)
+                {
+                    // A real top-level header (added by the walk) is stronger evidence than a
+                    // number merely packed inside a container — never overwrite one.
+                    if (!_xref.ContainsKey(objNum))
+                        _xref[objNum] = XrefEntry.InObjStm(container, 0); // index is bookkeeping only.
+                }
+            }
+            catch (InvalidDataException)
+            {
+                // Not a genuine, decodable object stream — reconstruction is best-effort; move on.
+                // The charge above stands regardless.
+            }
+        }
+        ReconstructionObjStmBytesCharged = reconstructionObjStmBytesCharged;
+
+        // B2: validate, then fall back — two passes over candidateRoots (A6's evidence ranking, the
+        // trailer's own recovered /Root first). Pass 1 additionally requires /Pages to resolve to a
+        // /Type /Pages dictionary — stronger corroboration than the plain /Type /Catalog check pass
+        // 2 falls back to when nothing clears that bar. Reconstruction is deliberately stricter here
+        // than the normal path just below, which requires only that /Root resolve to a dictionary:
+        // when the answer is inferred, /Type /Catalog is the cheapest corroboration available.
+        foreach (var candidate in candidateRoots)
+        {
+            if (Resolve(candidate) is PdfDictionary d && IsCatalogType(d) && CatalogPagesResolve(d))
+            {
+                Trailer.Set(PdfName.Root, candidate);
+                return;
+            }
+        }
+        foreach (var candidate in candidateRoots)
+        {
+            if (Resolve(candidate) is PdfDictionary d && IsCatalogType(d))
+            {
+                Trailer.Set(PdfName.Root, candidate);
+                return;
+            }
+        }
+
+        // B3: last resort — a catalog packed into an object stream, whether or not something else
+        // shadows its object number at the top level. Iterating every loaded container's own
+        // OffsetMap (not merely the InObjectStream entries B1 added) is what lets this find a
+        // catalog whose number ALSO carries a top-level definition that failed B2 above — a bare
+        // number collision is otherwise indistinguishable from "the real catalog lives here", and
+        // reconstruction has no revision history to say which one is newer. The first /Type
+        // /Catalog member found wins and REBINDS that number's xref entry into the object stream,
+        // deliberately overwriting whatever the top level had (#184; this rebind is what changes
+        // resolution for a shadowed number document-wide, not just for this one lookup).
+        //
+        // "First" has to mean something deterministic, not "whatever order Dictionary enumeration
+        // happens to produce" — insertion order for _objStmCache and for OffsetMap is an
+        // implementation detail .NET makes no guarantee about, so relying on it would make which
+        // catalog wins depend on incidental hashing behaviour rather than the file's own content.
+        // Containers are walked by object number ascending, and each container's members by their
+        // OffsetMap value ascending — the position each member actually occupies within the
+        // container's decoded body, i.e. definition order inside that ObjStm, mirroring how a
+        // top-level scan orders candidates by file offset rather than by object number.
+        foreach (var containerObjNum in _objStmCache.Keys.Order())
+        {
+            var cached = _objStmCache[containerObjNum];
+            var orderedMembers = cached.OffsetMap
+                .OrderBy(kv => kv.Value)
+                .ThenBy(kv => kv.Key)
+                .Select(kv => kv.Key);
+
+            foreach (var objNum in orderedMembers)
+            {
+                if (TryParseObjectStreamMemberDirect(cached, objNum) is not PdfDictionary d || !IsCatalogType(d))
+                    continue;
+
+                _xref[objNum] = XrefEntry.InObjStm(containerObjNum, 0);
+                _cache.Remove(objNum); // drop any wrong resolution B2 may have cached for this number.
+                Trailer.Set(PdfName.Root, new PdfIndirectReference(objNum, 0));
+                return;
+            }
+        }
+
+        throw new InvalidDataException(
+            "Malformed PDF: reconstruction could not find a usable document catalog. The file's "
+            + "cross-reference table is missing or broken, and no /Root, /Type /Catalog object, or "
+            + "object-stream member of that shape could be recovered by scanning.");
+    }
+
+    private static bool IsCatalogType(PdfDictionary d) => d.Get(PdfName.Type) is PdfName t && t.Equals(PdfName.Catalog);
+
+    private bool CatalogPagesResolve(PdfDictionary catalog) =>
+        catalog.Get(PdfName.Pages) is PdfIndirectReference pagesRef
+        && Resolve(pagesRef) is PdfDictionary pages
+        && pages.Get(PdfName.Type) is PdfName t && t.Equals(PdfName.Pages);
+
+    /// <summary>
+    /// Parses one member directly out of an already-loaded object stream's cached body, bypassing
+    /// the top-level cross-reference table entirely — B3's own re-entry point, deliberately separate
+    /// from <see cref="ResolveFromObjectStream"/>: that method resolves THROUGH the xref, so a
+    /// member whose object number is currently shadowed by a (failed-B2) top-level entry is exactly
+    /// what it cannot reach.
+    /// </summary>
+    private static PdfObject? TryParseObjectStreamMemberDirect(
+        (byte[] Body, int First, int N, Dictionary<int, int> OffsetMap) cached, int objNum)
+    {
+        var (body, first, _, offsetMap) = cached;
+        if (!offsetMap.TryGetValue(objNum, out var relOffset))
+            return null;
+        if (relOffset < 0 || (long)first + relOffset >= body.Length)
+            return null;
+
+        var absoluteOffset = first + relOffset;
+        var mem = new ReadOnlyMemory<byte>(body, absoluteOffset, body.Length - absoluteOffset);
+        var parser = new PdfObjectParser(mem);
+        try
+        {
+            return parser.ParseObject();
+        }
+        catch (InvalidDataException)
+        {
+            return null;
+        }
     }
 
     /// <summary>
@@ -965,8 +1162,33 @@ public sealed class PdfDocumentReader : IDisposable
     /// on anything else just makes that one object silently unresolvable, so a page or font
     /// vanishes with no exception anywhere (#121 C1).
     /// </param>
+    /// <exception cref="InvalidOperationException">
+    /// This document's cross-reference table was reconstructed (<see cref="WasReconstructed"/>) or
+    /// repaired by dropping orphaned object-stream members
+    /// (<see cref="DroppedOrphanedObjectStreamMembers"/>). Either way the object graph is a
+    /// best-effort guess rather than what the file's own xref actually says, and an incremental
+    /// update needs two things a guess cannot supply: <see cref="StartXrefOffset"/> feeds straight
+    /// into the new revision's <c>/Prev</c>, and a reconstructed one is 0 — landing on
+    /// <c>%PDF-</c>, not a real xref — while the recovered trailer's <c>/ID</c> has no reliable
+    /// value to carry forward either. Building a PAdES/DSS revision on top of either would produce
+    /// a file this library reports success writing and then cannot reliably reopen.
+    /// </exception>
     internal byte[] AppendRevision(IReadOnlyList<(int ObjectNumber, int Generation, PdfObject Value)> objects)
     {
+        if (WasReconstructed)
+            throw new InvalidOperationException(
+                "Cannot append a revision to a document whose cross-reference table was "
+                + "reconstructed by scanning the file: StartXrefOffset is 0 (there is no real xref "
+                + "for /Prev to point at) and the recovered trailer's /ID is not reliable enough to "
+                + "carry into a new revision.");
+        if (DroppedOrphanedObjectStreamMembers)
+            throw new InvalidOperationException(
+                "Cannot append a revision to a document whose cross-reference table was repaired by "
+                + "dropping orphaned object-stream members: the object graph this library is about "
+                + "to build on is a best-effort recovery of a self-contradictory file, not what the "
+                + "original xref actually declared, so writing a new revision on top of it would "
+                + "produce an artifact this library cannot reliably vouch for.");
+
         if (objects.Count == 0)
             throw new ArgumentException("At least one object is required.", nameof(objects));
 

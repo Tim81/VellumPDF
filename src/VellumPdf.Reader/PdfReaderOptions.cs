@@ -50,4 +50,18 @@ public sealed class PdfReaderOptions
     [DebuggerBrowsable(DebuggerBrowsableState.Never)]
     [JsonIgnore]
     public string? Password { get; init; }
+
+    /// <summary>
+    /// Whether <see cref="PdfReader"/> may rebuild a document's cross-reference table by scanning
+    /// the file for object headers (ISO 32000-2 Annex C.4, informative) when <c>startxref</c> is
+    /// missing or unusable. Off by default: reconstruction is best-effort recovery over structure
+    /// the file's own xref has already failed to describe correctly, and can infer the wrong
+    /// document catalog for a layout it doesn't fully understand — a caller has to opt into that
+    /// trade-off rather than receive it silently on every malformed file. A document opened this way
+    /// reports it through <see cref="PdfDocumentReader.WasReconstructed"/> and refuses a later
+    /// incremental update (<c>AppendRevision</c>): there is no real <c>startxref</c> chain left for
+    /// <c>/Prev</c> to point at, and the recovered trailer's <c>/ID</c> is not reliable enough to
+    /// carry into a new revision.
+    /// </summary>
+    public bool AllowReconstruction { get; init; }
 }
