@@ -1,6 +1,7 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
+using System.Security.Cryptography;
 using VellumPdf.Core;
 using VellumPdf.Encryption;
 
@@ -177,8 +178,19 @@ internal static class EncryptionSetup
 
         if (!TryAuthenticate(decryptor, password, out var fileKey, out var isOwnerAccess))
         {
+            // R<=4's Algorithm 2 step (e) folds /ID[0] into the key it derives (ISO 32000-1
+            // §7.6.3.3); GetId0 already reads a missing or malformed /ID as "nothing to fold in"
+            // rather than failing loudly, so a document that reaches here with none is otherwise
+            // indistinguishable from one where the password itself is simply wrong. Naming it is
+            // most useful exactly where it is most likely: a reconstructed or otherwise damaged
+            // trailer that lost its /ID along with everything else.
+            var missingId = r <= 4 && id0.Length == 0
+                ? " The trailer carries no /ID, which Algorithm 2 step (e) uses to derive the key "
+                  + "at this revision — without it, even the correct password will not authenticate."
+                : "";
             throw new PdfPasswordException(
-                "The supplied password does not authenticate as either the owner or the user password.");
+                "The supplied password does not authenticate as either the owner or the user password."
+                + missingId);
         }
 
         // An unresolvable /StrF is fatal here, while an unresolvable /StmF is left to fail at decode
@@ -190,6 +202,13 @@ internal static class EncryptionSetup
         if (stringFilter == CryptFilterMethod.Unsupported)
         {
             var strFName = (encryptDict.Get(_strFKey) as PdfName)?.Value;
+
+            // fileKey is already computed by this point (TryAuthenticate above), and this throw is
+            // the last chance this method gets to zero it — a pre-existing leak on this specific
+            // path, same defect class as the constructor-level gap #184/PR3 closes in
+            // PdfDocumentReader, fixed alongside it rather than left for a caller who never gets a
+            // live instance to Dispose.
+            CryptographicOperations.ZeroMemory(fileKey);
 
             // Two failures wear the same CryptFilterMethod, and they are not the same kind of file:
             // a /StrF naming a /CF entry the document never defines is malformed, while one naming a

@@ -38,14 +38,14 @@ public sealed class XrefReconstructionTests
     /// successfully via the ordinary path and never checked <see cref="PdfDocumentReader.WasReconstructed"/>,
     /// so a no-op <see cref="PdfReaderOptions.AllowReconstruction"/> would have passed them all.
     /// </summary>
-    private static PdfDocumentReader OpenReconstructed(byte[] damaged, string? password = null)
+    internal static PdfDocumentReader OpenReconstructed(byte[] damaged, string? password = null)
     {
         var reader = PdfReader.Open(damaged, new PdfReaderOptions { AllowReconstruction = true, Password = password });
         Assert.True(reader.WasReconstructed, "Expected the cross-reference table to have been rebuilt by scanning.");
         return reader;
     }
 
-    private static byte[] WriteToBytes(PdfObject obj)
+    internal static byte[] WriteToBytes(PdfObject obj)
     {
         using var ms = new MemoryStream();
         var writer = new PdfWriter(ms);
@@ -60,7 +60,7 @@ public sealed class XrefReconstructionTests
     /// number. Used for M1–M3 and M5, where no object bytes are actually destroyed — only the
     /// pointer to them.
     /// </summary>
-    private static void AssertFullAgreement(PdfDocumentReader undamaged, PdfDocumentReader reconstructed)
+    internal static void AssertFullAgreement(PdfDocumentReader undamaged, PdfDocumentReader reconstructed)
     {
         AssertSameRootObjectNumber(undamaged, reconstructed);
 
@@ -90,7 +90,7 @@ public sealed class XrefReconstructionTests
     /// wrong thing, exactly as <see cref="TruncatedTail_reconstructs_andEveryResolvedObjectMatchesBaseline"/>
     /// treats it — so only <c>Resolve</c> itself is guarded here, not the comparison that follows.
     /// </summary>
-    private static void AssertAgreementOverResolvableObjects(PdfDocumentReader undamaged, PdfDocumentReader reconstructed)
+    internal static void AssertAgreementOverResolvableObjects(PdfDocumentReader undamaged, PdfDocumentReader reconstructed)
     {
         AssertSameRootObjectNumber(undamaged, reconstructed);
 
@@ -168,7 +168,7 @@ public sealed class XrefReconstructionTests
     /// parse trusts to find the current revision's cross-reference table. A zero-length result means
     /// the fixture carries no <c>startxref</c> at all, so M1–M3 have nothing to corrupt on it.
     /// </summary>
-    private static (int Start, int Length) FindLastStartxrefDigits(byte[] bytes)
+    internal static (int Start, int Length) FindLastStartxrefDigits(byte[] bytes)
     {
         var idx = LastIndexOfAscii(bytes, StartxrefKeyword);
         if (idx < 0)
@@ -181,7 +181,7 @@ public sealed class XrefReconstructionTests
         return (start, pos - start);
     }
 
-    private static long MaxValueForDigits(int digits)
+    internal static long MaxValueForDigits(int digits)
     {
         long v = 1;
         for (var i = 0; i < digits; i++) v *= 10;
@@ -194,10 +194,10 @@ public sealed class XrefReconstructionTests
     /// file (an offset near the file's own front, as a linearized file's outermost startxref
     /// legitimately is — Annex F.3.4) can make this impossible while preserving digit count.
     /// </summary>
-    private static bool CanApplyM1(byte[] bytes, int digitLength) => MaxValueForDigits(digitLength) >= bytes.Length;
+    internal static bool CanApplyM1(byte[] bytes, int digitLength) => MaxValueForDigits(digitLength) >= bytes.Length;
 
     /// <summary>M1: rewrites the last startxref's digits to a same-length, out-of-range value.</summary>
-    private static byte[] ApplyM1_OutOfRangeStartxref(byte[] original, int start, int length)
+    internal static byte[] ApplyM1_OutOfRangeStartxref(byte[] original, int start, int length)
     {
         var damaged = (byte[])original.Clone();
         for (var i = 0; i < length; i++)
@@ -206,7 +206,7 @@ public sealed class XrefReconstructionTests
     }
 
     /// <summary>M2: rewrites the digits to a same-length, in-range value that is not an xref.</summary>
-    private static byte[] ApplyM2_InRangeNonXrefStartxref(byte[] original, int start, int length)
+    internal static byte[] ApplyM2_InRangeNonXrefStartxref(byte[] original, int start, int length)
     {
         var candidate = Math.Min(original.Length / 2, MaxValueForDigits(length));
         var digits = candidate.ToString(CultureInfo.InvariantCulture).PadLeft(length, '0');
@@ -226,7 +226,7 @@ public sealed class XrefReconstructionTests
     }
 
     /// <summary>M3: corrupts the keyword itself in place, same length, no longer a valid keyword.</summary>
-    private static byte[] ApplyM3_CorruptStartxrefKeyword(byte[] original)
+    internal static byte[] ApplyM3_CorruptStartxrefKeyword(byte[] original)
     {
         var idx = LastIndexOfAscii(original, StartxrefKeyword);
         Assert.True(idx >= 0, "expected a 'startxref' keyword to corrupt");
@@ -236,7 +236,7 @@ public sealed class XrefReconstructionTests
     }
 
     /// <summary>M5 (negative control): junk appended after the real %%EOF.</summary>
-    private static byte[] ApplyM5_TrailingJunk(byte[] original)
+    internal static byte[] ApplyM5_TrailingJunk(byte[] original)
     {
         var junk = "\n% not part of the document at all\n"u8.ToArray();
         var damaged = new byte[original.Length + junk.Length];
@@ -450,94 +450,17 @@ public sealed class XrefReconstructionTests
         AssertFullAgreement(undamaged, reconstructed);
     }
 
-    // ── Encrypted documents are refused in this PR ──────────────────────────────────────────────
-
-    // Every fixture in Fixtures/Encrypted except plaintext-baseline.pdf (which is not encrypted,
-    // and is exercised through the ordinary damage matrix above instead). Passwords per the
-    // fixture corpus's own documented facts (PasswordShapeTests, EncryptedReaderTests).
-    private static readonly IReadOnlyDictionary<string, string> EncryptedFixturePasswords =
-        new Dictionary<string, string>(StringComparer.Ordinal)
-        {
-            ["enc-256-cleartextmd.pdf"] = "u",
-            ["enc-256-linearized-objstm-cleartextmd.pdf"] = "u",
-            ["enc-aes-128-cleartextmd.pdf"] = "u",
-            ["enc-aes-128-emptyuser.pdf"] = "",
-            ["enc-aes-128-linearized.pdf"] = "u",
-            ["enc-aes-128-longpassword.pdf"] = "0123456789abcdefghijklmnopqrstuvwxyzABCD",
-            ["enc-aes-128-nestedstrings.pdf"] = "u",
-            ["enc-aes-128-pdfdocpassword.pdf"] = "pässwörd",
-            ["enc-aes-128-samepassword.pdf"] = "same",
-            ["enc-aes-128-tworevisions.pdf"] = "",
-            ["enc-aes-128.pdf"] = "u",
-            ["enc-aes-256-r5.pdf"] = "u",
-            ["enc-aes-256-r6.pdf"] = "u",
-            ["enc-rc4-128-v4.pdf"] = "u",
-            ["enc-rc4-128.pdf"] = "u",
-            ["enc-rc4-40.pdf"] = "u",
-            ["enc-rc4-objstm.pdf"] = "u",
-        };
-
-    public static TheoryData<string> EncryptedFixtureNames
-    {
-        get
-        {
-            var data = new TheoryData<string>();
-            foreach (var name in EncryptedFixturePasswords.Keys)
-                data.Add(name);
-            return data;
-        }
-    }
-
-    [Theory]
-    [MemberData(nameof(EncryptedFixtureNames))]
-    public void EncryptedFixture_underM1Damage_refusesReconstruction_exactType(string fixtureName)
-    {
-        var original = LoadEncrypted(fixtureName);
-        var password = EncryptedFixturePasswords[fixtureName];
-
-        var (start, length) = FindLastStartxrefDigits(original);
-        Assert.True(length > 0, $"{fixtureName}: expected a 'startxref' to corrupt");
-        if (!CanApplyM1(original, length))
-        {
-            // Same structural constraint as the plaintext matrix: a linearized fixture's last
-            // startxref names its (early, short) front hint section (Annex F.3.4), so its digit
-            // count is too small to represent any out-of-range, same-digit-count offset.
-            Assert.Skip($"{fixtureName}: the recorded startxref has only {length} digit(s), and the " +
-                $"largest {length}-digit value ({MaxValueForDigits(length)}) is still inside this " +
-                $"{original.Length}-byte file — no same-digit-count value can be out of range.");
-            return;
-        }
-        var damaged = ApplyM1_OutOfRangeStartxref(original, start, length);
-
-        PdfDocumentReader? reader = null;
-        Assert.Throws<UnsupportedPdfFeatureException>(() =>
-            reader = PdfReader.Open(damaged, new PdfReaderOptions { AllowReconstruction = true, Password = password }));
-        Assert.Null(reader);
-    }
-
-    /// <summary>
-    /// The harder case the brief calls out: M4 destroys the classic trailer entirely, so nothing in
-    /// the damaged file declares <c>/Encrypt</c> at all any more. A reconstruction that fell back to
-    /// "no evidence of encryption, so treat as plaintext" would hand ciphertext back as if it were
-    /// the real content — the exact failure mode this exists to guard against.
-    /// </summary>
-    [Theory]
-    [InlineData("enc-aes-128.pdf")]
-    [InlineData("enc-rc4-128.pdf")]
-    public void EncryptedFixture_underM4Truncation_stillRefusesReconstruction_exactType(string fixtureName)
-    {
-        var original = LoadEncrypted(fixtureName);
-        var password = EncryptedFixturePasswords[fixtureName];
-
-        using var undamaged = PdfReader.Open(original, new PdfReaderOptions { Password = password });
-        var cut = undamaged.StartXrefOffset;
-        var damaged = original.AsSpan(0, cut).ToArray();
-
-        PdfDocumentReader? reader = null;
-        Assert.Throws<UnsupportedPdfFeatureException>(() =>
-            reader = PdfReader.Open(damaged, new PdfReaderOptions { AllowReconstruction = true, Password = password }));
-        Assert.Null(reader);
-    }
+    // ── Encrypted documents ──────────────────────────────────────────────────────────────────────
+    //
+    // #184 PR3 lifts the blanket refusal this file used to pin here (every encrypted fixture threw
+    // UnsupportedPdfFeatureException under M1/M4 damage, regardless of whether a valid password was
+    // supplied). A structural parser cannot tell "password not tried yet" from "cannot recover" —
+    // once reconstruction can carry a recovered /Encrypt into the trailer and hand off to the
+    // ordinary authentication path, a correct password against a genuinely encrypted fixture opens
+    // the document instead of refusing it. See EncryptedReconstructionTests.cs (T1/T2) for the
+    // fixture-corpus and differential coverage this section used to hold, including the M4 divergence
+    // by revision (R≤4 destroys /ID and fails closed with PdfPasswordException; R6's Algorithm 2.A
+    // does not use /ID at all and recovers).
 
     // ── Negatives ────────────────────────────────────────────────────────────────────────────────
 
@@ -1175,6 +1098,12 @@ public sealed class XrefReconstructionTests
     // no trailer at all declaring /Encrypt — reachable only through A5's structural last-resort scan
     // of every top-level dictionary. A capped probe used to truncate before ever reaching /R, /O or
     // /U; the rework charges the whole parse against the byte budget instead of capping it.
+    //
+    // #184 PR3 changes the outcome, not the detection: this dictionary carries genuine /R+/O+/U, so
+    // it classifies as the Standard handler and gets carried into the recovered trailer instead of
+    // refusing outright. With no password supplied, authentication itself then fails —
+    // PdfPasswordException, not UnsupportedPdfFeatureException — but it is never treated as
+    // ordinary plaintext either way.
     private static byte[] BuildPaddedEncryptionDictionary_NoTrailer()
     {
         var ms = new MemoryStream();
@@ -1195,12 +1124,12 @@ public sealed class XrefReconstructionTests
     }
 
     [Fact]
-    public void Row1_PaddedEncryptionDictionary_stillDetected_refusesReconstruction()
+    public void Row1_PaddedEncryptionDictionary_isCarried_andFailsAuthentication()
     {
         var bytes = BuildPaddedEncryptionDictionary_NoTrailer();
 
         PdfDocumentReader? reader = null;
-        Assert.Throws<UnsupportedPdfFeatureException>(() =>
+        Assert.Throws<PdfPasswordException>(() =>
             reader = PdfReader.Open(bytes, new PdfReaderOptions { AllowReconstruction = true }));
         Assert.Null(reader);
     }
@@ -1208,7 +1137,17 @@ public sealed class XrefReconstructionTests
     // Row 2: a public-key handler's encryption dictionary — /Filter names the handler (any name;
     // ISO 32000-2 §7.6.5.2 never keys detection on the literal "Adobe.PubSec") and /V is present,
     // but /O, /U and /R never appear at all, since those belong to the Standard handler (Table 20)
-    // only. A rule keyed on /O+/U+/R+/V together is blind to this shape by construction.
+    // only.
+    //
+    // #184 PR3 (security-conservative revision): this no longer refuses because a rule keyed on
+    // /O+/U+/R+/V together is blind to the shape — PR3 drops that rule entirely. It refuses because
+    // the dictionary IS encryption-shaped (/Filter name + /V integer, not a signature dict) but
+    // classifies as neither the Standard handler (no /R+/O+/U) nor a recognised public-key
+    // /SubFilter: an unclassifiable encryption-shaped dictionary is refused rather than risked as
+    // plaintext, since it could just as well be a custom or proprietary handler over real
+    // ciphertext this library has no way to recognise. Only a dictionary that is NOT
+    // encryption-shaped at all is safe to open as plaintext — see T9 in
+    // EncryptedReconstructionTests.cs.
     private static byte[] BuildPublicKeyEncryptionDictionary_NoDisambiguators()
     {
         var ms = new MemoryStream();
@@ -2016,49 +1955,11 @@ public sealed class XrefReconstructionTests
 
     // ── C1: encryption evidence survives a corrupted terminator or an unterminated string ───────
 
-    /// <summary>
-    /// Flips one byte inside the LAST <c>endstream</c> keyword in the given bytes, keeping length
-    /// identical. For an xref-stream-based encrypted fixture that keyword usually belongs to the
-    /// cross-reference stream itself — corrupting it forces extent resolution to work for its
-    /// answer rather than trust a clean terminator, while the dictionary region carrying
-    /// <c>/Encrypt</c> must stay readable regardless of how the body region resolves.
-    /// </summary>
-    private static byte[] FlipByteInsideLastEndstreamKeyword(byte[] original)
-    {
-        var idx = LastIndexOfAscii(original, "endstream");
-        Assert.True(idx >= 0, "expected an 'endstream' keyword to corrupt");
-        var damaged = (byte[])original.Clone();
-        damaged[idx + 5] ^= 0x20; // 'r' <-> 'R': same length, no longer a valid keyword
-        return damaged;
-    }
-
-    public static TheoryData<string> C1EncryptedFixtureNames =>
-        ["enc-rc4-128.pdf", "enc-aes-128.pdf", "enc-aes-256-r6.pdf"];
-
-    [Theory]
-    [MemberData(nameof(C1EncryptedFixtureNames))]
-    public void C1_EncryptedFixture_underM1DamagePlusCorruptedLastEndstream_stillRefuses(string fixtureName)
-    {
-        var original = LoadEncrypted(fixtureName);
-        var password = EncryptedFixturePasswords[fixtureName];
-
-        var (start, length) = FindLastStartxrefDigits(original);
-        Assert.True(length > 0);
-        if (!CanApplyM1(original, length))
-        {
-            Assert.Skip($"{fixtureName}: the recorded startxref has only {length} digit(s), too few " +
-                $"to represent a same-digit-count value outside this {original.Length}-byte file.");
-            return;
-        }
-
-        var m1Damaged = ApplyM1_OutOfRangeStartxref(original, start, length);
-        var damaged = FlipByteInsideLastEndstreamKeyword(m1Damaged);
-
-        PdfDocumentReader? reader = null;
-        Assert.Throws<UnsupportedPdfFeatureException>(() =>
-            reader = PdfReader.Open(damaged, new PdfReaderOptions { AllowReconstruction = true, Password = password }));
-        Assert.Null(reader);
-    }
+    // A corrupted-terminator-plus-M1 variant against real, passworded encrypted fixtures used to
+    // live here (enc-rc4-128.pdf, enc-aes-128.pdf, enc-aes-256-r6.pdf), asserting
+    // UnsupportedPdfFeatureException regardless of password. #184 PR3 lifts that refusal for a
+    // fixture whose /Encrypt genuinely recovers and whose password is correct, so the same shape
+    // now belongs to EncryptedReconstructionTests.cs's M1/M2 coverage instead of here.
 
     /// <summary>
     /// A trailer declaring <c>/Encrypt</c> sitting AFTER an unterminated top-level literal string.
@@ -2244,6 +2145,13 @@ public sealed class XrefReconstructionTests
     /// real signature dictionary from being mistaken for an encryption dictionary (see the negative
     /// case below) must stay narrow enough that adding this one extra key to a genuine encryption
     /// dictionary does not make detection miss it. No trailer at all: structural last-resort only.
+    ///
+    /// <para>
+    /// #184 PR3: still classified and carried despite the stray /ByteRange — /R+/O+/U wins
+    /// detection. The /O and /U here are 32 zero bytes, not a real derivation, so carrying it does
+    /// not risk silently accepting it: authentication against them fails for any password,
+    /// including none at all.
+    /// </para>
     /// </summary>
     private static byte[] BuildEncryptionDictionaryPaddedWithByteRange()
     {
@@ -2262,12 +2170,12 @@ public sealed class XrefReconstructionTests
     }
 
     [Fact]
-    public void C2_EncryptionDictionaryPaddedWithByteRange_stillRefuses()
+    public void C2_EncryptionDictionaryPaddedWithByteRange_isCarried_andFailsAuthentication()
     {
         var bytes = BuildEncryptionDictionaryPaddedWithByteRange();
 
         PdfDocumentReader? reader = null;
-        Assert.Throws<UnsupportedPdfFeatureException>(() =>
+        Assert.Throws<PdfPasswordException>(() =>
             reader = PdfReader.Open(bytes, new PdfReaderOptions { AllowReconstruction = true }));
         Assert.Null(reader);
     }
