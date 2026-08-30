@@ -4,6 +4,7 @@ VellumPdf.Reader.PdfDocumentReader.Catalog.get -> VellumPdf.Core.PdfDictionary!
 VellumPdf.Reader.PdfDocumentReader.Dispose() -> void
 VellumPdf.Reader.PdfDocumentReader.Encryption.get -> VellumPdf.Encryption.PdfEncryptionInfo?
 VellumPdf.Reader.PdfDocumentReader.Signatures.get -> System.Collections.Generic.IReadOnlyList<VellumPdf.Reader.PdfSignature!>!
+VellumPdf.Reader.PdfDocumentReader.WasReconstructed.get -> bool
 VellumPdf.Reader.PdfPasswordException
 VellumPdf.Reader.PdfPasswordException.PdfPasswordException(string! message) -> void
 VellumPdf.Reader.PdfPasswordException.PdfPasswordException(string! message, System.Exception! inner) -> void
@@ -13,6 +14,8 @@ static VellumPdf.Reader.PdfReader.Open(byte[]! bytes, VellumPdf.Reader.PdfReader
 static VellumPdf.Reader.PdfReader.Open(System.IO.Stream! stream) -> VellumPdf.Reader.PdfDocumentReader!
 static VellumPdf.Reader.PdfReader.Open(System.IO.Stream! stream, VellumPdf.Reader.PdfReaderOptions! options) -> VellumPdf.Reader.PdfDocumentReader!
 VellumPdf.Reader.PdfReaderOptions
+VellumPdf.Reader.PdfReaderOptions.AllowReconstruction.get -> bool
+VellumPdf.Reader.PdfReaderOptions.AllowReconstruction.init -> void
 VellumPdf.Reader.PdfReaderOptions.Password.get -> string?
 VellumPdf.Reader.PdfReaderOptions.Password.init -> void
 VellumPdf.Reader.PdfReaderOptions.PdfReaderOptions() -> void

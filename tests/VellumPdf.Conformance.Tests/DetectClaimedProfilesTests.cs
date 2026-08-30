@@ -149,4 +149,63 @@ public sealed class DetectClaimedProfilesTests
 
         Assert.Equal(fromBytes, fromStream);
     }
+
+    // ── Damaged input: no reconstruction opt-in exists here ─────────────────────
+
+    /// <summary>
+    /// <c>DetectClaimedProfiles</c> takes only <c>byte[]</c>/<c>Stream</c> — see its own signature
+    /// — so there is no <see cref="VellumPdf.Reader.PdfReaderOptions"/> overload to opt into
+    /// <c>VellumPdf.Reader</c>'s cross-reference reconstruction (#184) through. This pins that a
+    /// file whose only defect is a broken <c>startxref</c> still fails exactly as it did before
+    /// #184, even though the reader underneath it now knows how to recover such a file when asked.
+    /// The damage is built in-memory rather than loaded from
+    /// <c>Fixtures/ThirdParty/broken-startxref.pdf</c>: that fixture lives in
+    /// <c>VellumPdf.Reader.Tests</c>, which this project does not reference.
+    /// </summary>
+    [Fact]
+    public void DetectClaimedProfiles_onABrokenStartxref_stillThrows_withNoReconstructionOptIn()
+    {
+        var bytes = AssemblePdf(_baseObjects, metadataBytes: null);
+        var damaged = CorruptStartxrefOutOfRange(bytes);
+
+        Assert.Throws<InvalidDataException>(() => PdfPreflight.DetectClaimedProfiles(damaged));
+    }
+
+    /// <summary>
+    /// Rewrites the digits after the last <c>startxref</c> keyword to a same-length, out-of-range
+    /// value — VellumPdf.Reader.Tests's own M1 damage mode for #184, reproduced here since it is
+    /// not otherwise reachable from this project.
+    /// </summary>
+    private static byte[] CorruptStartxrefOutOfRange(byte[] original)
+    {
+        var keyword = "startxref"u8;
+        var idx = -1;
+        for (var i = original.Length - keyword.Length; i >= 0; i--)
+        {
+            if (original.AsSpan(i, keyword.Length).SequenceEqual(keyword))
+            {
+                idx = i;
+                break;
+            }
+        }
+        Assert.True(idx >= 0, "expected a 'startxref' keyword to corrupt");
+
+        var pos = idx + keyword.Length;
+        while (pos < original.Length && original[pos] is 0 or 9 or 10 or 12 or 13 or 32) pos++;
+        var start = pos;
+        while (pos < original.Length && original[pos] is >= (byte)'0' and <= (byte)'9') pos++;
+        var length = pos - start;
+        Assert.True(length > 0, "expected startxref to be followed by an offset");
+
+        long maxForDigits = 1;
+        for (var i = 0; i < length; i++) maxForDigits *= 10;
+        maxForDigits -= 1;
+        Assert.True(maxForDigits >= original.Length,
+            $"a {length}-digit offset cannot be pushed out of range for a {original.Length}-byte file");
+
+        var damaged = (byte[])original.Clone();
+        for (var i = 0; i < length; i++)
+            damaged[start + i] = (byte)'9';
+        return damaged;
+    }
 }

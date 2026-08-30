@@ -144,6 +144,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **`PdfReaderOptions.AllowReconstruction` — opt-in cross-reference reconstruction (#184).** When
+  `startxref` is missing, unusable, or doesn't point at a recognisable xref table or stream,
+  `PdfReader.Open` used to always throw. Setting `AllowReconstruction` instead rebuilds the table by
+  walking the file once for `N G obj` headers (the recovery ISO 32000-2 Annex C.4, informative,
+  describes), budgeted at `max(1 MiB, 8 × file length)`, and refuses outright
+  (`UnsupportedPdfFeatureException`) the instant it finds any evidence, declared or structural, that
+  the document is encrypted, rather than guessing. A document opened this way is plaintext only (this
+  does not add encrypted-document recovery), and reports the fact through the new
+  `PdfDocumentReader.WasReconstructed`. Appending a further incremental revision to a document
+  opened this way, or to one repaired by dropping orphaned object-stream members, now refuses:
+  neither's object graph is what the file's own cross-reference table actually declared, so
+  building a signature revision on top of either would hand back an artifact this library cannot
+  reliably reopen.
+
 - **`docs/pdf20-conformance.md` — a reference-by-reference inventory of what this library implements
   of ISO 32000-2.** "Supports PDF 2.0" is a claim nobody can check; this is one anybody can. It covers
   all 79 documents the standard cites normatively, every feature and deprecation listed in the

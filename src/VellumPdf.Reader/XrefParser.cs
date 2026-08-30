@@ -23,9 +23,45 @@ internal readonly struct XrefRevision
 }
 
 /// <summary>
+/// The result of <see cref="XrefParser.Parse"/>: the merged xref table (newer revisions win), the
+/// trailer dictionary in force, the byte offset of the xref from the last <c>startxref</c>, the
+/// revision list oldest-first, and the offsets cross-reference streams were actually read at.
+/// </summary>
+/// <remarks>
+/// A named record rather than the tuple this used to be: reconstruction (#184) needs to carry more
+/// out of <c>Parse</c> — whether it ran at all, and the object-stream containers it found — without
+/// the call site turning into an unreadable wall of positional tuple elements.
+/// <para>
+/// <see cref="CandidateRoots"/> exists because <c>PdfDocumentReader</c>'s Phase B (validating a
+/// reconstructed <c>/Root</c>, then falling back — see its constructor) needs the same ranked
+/// catalog candidates Phase A found while it still had the raw bytes in hand, and there is no other
+/// channel to carry them without threading extra parameters through every method in between. Empty
+/// whenever <see cref="WasReconstructed"/> is <see langword="false"/>.
+/// </para>
+/// <para>
+/// <see cref="ReconstructionBytesConsumed"/> is a diagnostic from the reconstruction walk's cost
+/// ceiling — carried per-parse rather than through mutable static state on <c>XrefParser</c>, so two
+/// documents reconstructed concurrently (xUnit v3 runs test collections in parallel; nothing stops
+/// two callers on a thread pool either) don't corrupt each other's readings. Zero whenever
+/// <see cref="WasReconstructed"/> is <see langword="false"/> — the budget only exists on the
+/// reconstruction path.
+/// </para>
+/// </remarks>
+internal sealed record XrefParseResult(
+    Dictionary<int, XrefEntry> Xref, PdfDictionary Trailer, int StartXrefOffset,
+    IReadOnlyList<XrefRevision> Revisions, IReadOnlySet<long> CrossReferenceStreamOffsets,
+    bool DroppedOrphanedObjectStreamMembers,
+    bool WasReconstructed,
+    IReadOnlyList<(int ObjNum, int RawBodyLength)> ObjectStreamContainers,
+    IReadOnlyList<PdfIndirectReference> CandidateRoots,
+    long ReconstructionBytesConsumed);
+
+/// <summary>
 /// Parses cross-reference tables and streams from a PDF byte buffer
 /// (ISO 32000-2 §7.5.4, §7.5.5, and §7.5.8). Supports classic xref tables,
-/// cross-reference streams, and hybrid (XRefStm) files.
+/// cross-reference streams, and hybrid (XRefStm) files, and — opt-in, see
+/// <see cref="PdfReaderOptions.AllowReconstruction"/> — reconstruction of a broken one
+/// (<see cref="XrefReconstructor"/>).
 /// </summary>
 internal sealed class XrefParser
 {
@@ -33,48 +69,113 @@ internal sealed class XrefParser
     private static readonly PdfName _encryptKey = new("Encrypt");
 
     /// <summary>
-    /// Parses the xref table/stream chain from <paramref name="data"/>.
-    /// Returns the merged xref table (newer revisions win), the newest trailer dictionary,
-    /// the byte offset of the xref from the last startxref, and the revision list oldest-first.
+    /// Parses the xref table/stream chain from <paramref name="data"/>. When the chain starting at
+    /// the last <c>startxref</c> is missing or unusable, either throws (the default) or — when
+    /// <paramref name="allowReconstruction"/> is set — rebuilds the table by scanning the file for
+    /// object headers (ISO 32000-2 Annex C.4, informative; see <see cref="XrefReconstructor"/>). A
+    /// failure partway through an otherwise-usable chain (a bad /Prev, a malformed subsection) still
+    /// throws unconditionally — reconstruction only ever engages when the chain could not be
+    /// started at all, never as a fallback mid-chain.
     /// </summary>
-    /// <remarks>
-    /// Six elements is already one past comfortable for a tuple; #184 adds a seventh
-    /// (<c>WasReconstructed</c>), and its approved plan already calls for this to become a named
-    /// result type once that lands. Kept as a tuple here rather than converted early: the sole
-    /// caller (<see cref="PdfReader.Open(byte[], PdfReaderOptions)"/>) makes either choice the same
-    /// one-call-site change, so there is no cost saved by doing it now.
-    /// </remarks>
-    public static (Dictionary<int, XrefEntry> Xref, PdfDictionary Trailer, int StartXrefOffset, IReadOnlyList<XrefRevision> Revisions, IReadOnlySet<long> CrossReferenceStreamOffsets, bool DroppedOrphanedObjectStreamMembers) Parse(
-        ReadOnlyMemory<byte> data)
+    public static XrefParseResult Parse(ReadOnlyMemory<byte> data, bool allowReconstruction)
     {
-        var startxrefOffset = FindLastStartxref(data);
-        var xref = new Dictionary<int, XrefEntry>();
-        // Object numbers a newer revision recorded as free. Revisions are walked newest-first below,
-        // so an older revision's entry for the same object must not resurrect it via xref.TryAdd —
-        // a freed object is a deletion, not a fallback to whatever the object used to be.
-        //
-        // This removes a recovery behaviour some producers relied on: a tool that writes a full
-        // "0 N" subsection on every incremental update, marking every untouched object 'f' instead
-        // of only the ones it actually freed, used to have those spurious frees silently overridden
-        // by xref.TryAdd resurrecting the real (older-revision) entry. Under this stricter tracking
-        // they are treated as genuine deletions and disappear instead. No real-world fixture
-        // exhibiting this has been found; if one turns up, the xref-rebuild fallback #184 tracks (for
-        // structurally broken xref tables) is the natural place to also recover a spuriously-freed
-        // object, since both cases end with "the xref lied about this object, fall back to scanning".
-        var freed = new HashSet<int>();
-        // The byte OFFSETS at which cross-reference streams were actually read. ISO 32000-1
-        // §7.5.8.2 exempts them from encryption, and this is the only trustworthy way to know which
-        // objects those are: /Type /XRef is a key the file's author controls, so sniffing it would
-        // let a document opt an ordinary stream out of decryption by mislabelling it.
-        //
-        // Offsets rather than object numbers, because a revision walk visits superseded revisions
-        // too. An incremental update is free to reuse the object number an older revision gave its
-        // cross-reference stream — for ordinary encrypted content — and a number harvested from that
-        // older revision would exempt the new object for the life of the reader.
-        var crossReferenceStreamOffsets = new HashSet<long>();
-        var (trailer, revisions) = ParseRevisionChain(data, startxrefOffset, xref, freed, crossReferenceStreamOffsets);
-        var droppedOrphanedObjectStreamMembers = DropMembersOfFreedContainers(xref);
-        return (xref, trailer, startxrefOffset, revisions, crossReferenceStreamOffsets, droppedOrphanedObjectStreamMembers);
+        int startxrefOffset;
+        var startxrefUsable = false;
+        try
+        {
+            startxrefOffset = FindLastStartxref(data);
+            startxrefUsable = LooksLikeXrefAt(data, startxrefOffset);
+        }
+        catch (InvalidDataException)
+        {
+            startxrefOffset = 0;
+        }
+
+        if (startxrefUsable)
+        {
+            var xref = new Dictionary<int, XrefEntry>();
+            // Object numbers a newer revision recorded as free. Revisions are walked newest-first below,
+            // so an older revision's entry for the same object must not resurrect it via xref.TryAdd —
+            // a freed object is a deletion, not a fallback to whatever the object used to be.
+            //
+            // This removes a recovery behaviour some producers relied on: a tool that writes a full
+            // "0 N" subsection on every incremental update, marking every untouched object 'f' instead
+            // of only the ones it actually freed, used to have those spurious frees silently overridden
+            // by xref.TryAdd resurrecting the real (older-revision) entry. Under this stricter tracking
+            // they are treated as genuine deletions and disappear instead. No real-world fixture
+            // exhibiting this has been found; if one turns up, XrefReconstructor (for structurally
+            // broken xref tables) is the natural place to also recover a spuriously-freed object, since
+            // both cases end with "the xref lied about this object, fall back to scanning".
+            var freed = new HashSet<int>();
+            // The byte OFFSETS at which cross-reference streams were actually read. ISO 32000-1
+            // §7.5.8.2 exempts them from encryption, and this is the only trustworthy way to know which
+            // objects those are: /Type /XRef is a key the file's author controls, so sniffing it would
+            // let a document opt an ordinary stream out of decryption by mislabelling it.
+            //
+            // Offsets rather than object numbers, because a revision walk visits superseded revisions
+            // too. An incremental update is free to reuse the object number an older revision gave its
+            // cross-reference stream — for ordinary encrypted content — and a number harvested from that
+            // older revision would exempt the new object for the life of the reader.
+            var crossReferenceStreamOffsets = new HashSet<long>();
+            var (trailer, revisions) = ParseRevisionChain(data, startxrefOffset, xref, freed, crossReferenceStreamOffsets);
+            var droppedOrphanedObjectStreamMembers = DropMembersOfFreedContainers(xref);
+            return new XrefParseResult(
+                xref, trailer, startxrefOffset, revisions, crossReferenceStreamOffsets,
+                droppedOrphanedObjectStreamMembers,
+                WasReconstructed: false, ObjectStreamContainers: [], CandidateRoots: [],
+                ReconstructionBytesConsumed: 0);
+        }
+
+        // startxref is missing, its offset can't be used, or the xref it points at isn't
+        // recognisable as a classic table or a cross-reference stream. Reconstruction is opt-in
+        // rather than automatic: it is best-effort recovery over structure the file's own xref has
+        // already failed to describe correctly, and can infer the wrong catalog for a layout it
+        // doesn't fully understand. A caller that hasn't asked for that trade-off gets the same hard
+        // failure as before.
+        if (!allowReconstruction)
+            throw new InvalidDataException(
+                "Malformed PDF: startxref is missing, unusable, or does not point at a recognisable "
+                + "xref table or stream (ISO 32000-2 Annex C.4). Pass "
+                + "PdfReaderOptions.AllowReconstruction = true to PdfReader.Open to recover a document "
+                + "like this by scanning the file for object headers.");
+
+        return XrefReconstructor.Reconstruct(data);
+    }
+
+    /// <summary>
+    /// Confirms an offset actually leads somewhere recognisable — a classic <c>xref</c> keyword, or
+    /// an <c>N G obj</c> header a cross-reference stream could start with — WITHOUT running any of
+    /// the deep validation that follows (field widths, /Index ranges, offset bounds, and so on).
+    /// Those are legitimate hostile-input guards with their own regression coverage; catching their
+    /// <see cref="InvalidDataException"/> here would silently mask a rejected crafted file behind
+    /// reconstruction instead of surfacing the guard's own error. Only the shape of the header — not
+    /// whether what follows it is well-formed — decides whether this offset is "usable".
+    /// </summary>
+    private static bool LooksLikeXrefAt(ReadOnlyMemory<byte> data, int offset)
+    {
+        var span = data.Span;
+        if (offset < 0 || offset >= span.Length)
+            return false;
+
+        if (offset + 4 <= span.Length && span[offset..].StartsWith("xref"u8))
+            return true;
+
+        if (!IsDigit(span[offset]))
+            return false;
+
+        // A cross-reference stream begins "N G obj"; confirm that shape only.
+        var p = offset;
+        while (p < span.Length && IsDigit(span[p])) p++;
+        var wsMark = p;
+        while (p < span.Length && IsWhitespace(span[p])) p++;
+        if (p == wsMark) return false;
+        var genStart = p;
+        while (p < span.Length && IsDigit(span[p])) p++;
+        if (p == genStart) return false;
+        wsMark = p;
+        while (p < span.Length && IsWhitespace(span[p])) p++;
+        if (p == wsMark) return false;
+        return p + 3 <= span.Length && span[p] == (byte)'o' && span[p + 1] == (byte)'b' && span[p + 2] == (byte)'j';
     }
 
     /// <summary>
