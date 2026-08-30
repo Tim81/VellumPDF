@@ -44,6 +44,15 @@ public sealed class PdfReaderOptionsTests
     }
 
     [Fact]
+    public void Open_withNullStream_throwsArgumentNullException()
+    {
+        var ex = Assert.Throws<ArgumentNullException>(
+            () => PdfReader.Open((Stream)null!, new PdfReaderOptions()));
+
+        Assert.Equal("stream", ex.ParamName);
+    }
+
+    [Fact]
     public void DefaultOptions_carryNoPassword()
     {
         Assert.Null(new PdfReaderOptions().Password);
@@ -77,6 +86,21 @@ public sealed class PdfReaderOptionsTests
         Assert.NotNull(opened.Encryption);
 
         Assert.Throws<PdfPasswordException>(() => PdfReader.Open(bytes, new PdfReaderOptions()));
+    }
+
+    /// <summary>
+    /// The regression this file exists to guard: <c>PdfReaderOptions</c> is a class rather than a
+    /// record so <c>ToString</c> is not synthesised over <see cref="PdfReaderOptions.Password"/>.
+    /// Reverting to a record trips the PublicAPI analyzer (RS0016) today because the surface is still
+    /// in <c>PublicAPI.Unshipped.txt</c>, but that backstop weakens once #187 moves it to
+    /// <c>Shipped.txt</c>: a record's synthesised members are not themselves new public symbols.
+    /// </summary>
+    [Fact]
+    public void ToString_doesNotContainThePassword()
+    {
+        var options = new PdfReaderOptions { Password = "correct horse battery staple" };
+
+        Assert.DoesNotContain("correct horse battery staple", options.ToString());
     }
 
     private static byte[] Load(string name)

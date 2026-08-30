@@ -133,7 +133,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   mean no password, and now binds to the options overload and throws `ArgumentNullException` instead
   of opening the document. Recompile that call as `PdfReader.Open(bytes)`. Recorded here even though
   `VellumPdf.Reader` is still Preview and its surface is expected to move, because the removed
-  overloads shipped in 2.1.0 and 2.2.0. (#184)
+  overloads shipped in 2.1.0 and 2.2.0. A consumer compiled against 2.1.0 or 2.2.0 that is not
+  recompiled does not fail to load: `AssemblyVersion` stays pinned at `2.0.0.0` across the 2.x line
+  (`Directory.Build.props`), so the assembly identity is unchanged and the runtime binds it. It
+  fails at the call instead, with `MissingMethodException: Method not found:
+  'VellumPdf.Reader.PdfDocumentReader VellumPdf.Reader.PdfReader.Open(Byte[], System.String)'`.
+  Method resolution happens when the calling method is JITted, before any surrounding `try` is
+  entered, so this cannot be caught at the call site; the only fix is to recompile against
+  `PdfReaderOptions`. (#184)
 
 ### Added
 

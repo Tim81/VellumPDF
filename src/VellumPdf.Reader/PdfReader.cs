@@ -9,15 +9,20 @@ namespace VellumPdf.Reader;
 public static class PdfReader
 {
     /// <summary>Opens a PDF document from a byte array, with no password.</summary>
-    /// <inheritdoc cref="Open(byte[], PdfReaderOptions)" path="/exception"/>
+    /// <exception cref="ArgumentNullException"><paramref name="bytes"/> is null.</exception>
+    /// <exception cref="InvalidDataException">Thrown on malformed PDF structure.</exception>
+    /// <exception cref="UnsupportedPdfFeatureException">Thrown for the same unsupported features as
+    /// <see cref="Open(byte[], PdfReaderOptions)"/>.</exception>
+    /// <exception cref="PdfPasswordException">Thrown when the document is encrypted and no supplied
+    /// password authenticates as either the owner or the user password.</exception>
     public static PdfDocumentReader Open(byte[] bytes) => Open(bytes, new PdfReaderOptions());
 
     /// <summary>Opens a PDF document from a byte array.</summary>
     /// <param name="bytes">The document's raw bytes.</param>
     /// <param name="options">
     /// Settings for this read. Pass <see cref="PdfReaderOptions.Password"/> for an encrypted
-    /// document; leave it null for one that uses no password, or whose empty user password is
-    /// enough.
+    /// document; leave <see cref="PdfReaderOptions.Password"/> null for one that uses no password,
+    /// or whose empty user password is enough.
     /// </param>
     /// <exception cref="ArgumentNullException"><paramref name="bytes"/> or
     /// <paramref name="options"/> is null.</exception>
@@ -46,7 +51,12 @@ public static class PdfReader
     /// <summary>
     /// Opens a PDF document by reading all bytes from <paramref name="stream"/>, with no password.
     /// </summary>
-    /// <inheritdoc cref="Open(Stream, PdfReaderOptions)" path="/exception"/>
+    /// <exception cref="ArgumentNullException"><paramref name="stream"/> is null.</exception>
+    /// <exception cref="InvalidDataException">Thrown on malformed PDF structure.</exception>
+    /// <exception cref="UnsupportedPdfFeatureException">Thrown for the same unsupported features as
+    /// <see cref="Open(byte[], PdfReaderOptions)"/>.</exception>
+    /// <exception cref="PdfPasswordException">Thrown when the document is encrypted and no supplied
+    /// password authenticates as either the owner or the user password.</exception>
     public static PdfDocumentReader Open(Stream stream) => Open(stream, new PdfReaderOptions());
 
     /// <summary>Opens a PDF document by reading all bytes from <paramref name="stream"/>.</summary>
