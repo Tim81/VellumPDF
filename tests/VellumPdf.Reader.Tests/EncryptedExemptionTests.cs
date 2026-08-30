@@ -722,7 +722,7 @@ public sealed class EncryptedExemptionTests
     [Fact]
     public void EncryptedDocumentWithItsCatalogInsideAnObjectStream_opens()
     {
-        var doc = BuildCatalogInObjectStream();
+        var doc = HandBuiltEncryptedDocuments.BuildCatalogInObjectStream();
 
         using var reader = PdfReader.Open(doc, new PdfReaderOptions { Password = "u" });
 
@@ -760,7 +760,7 @@ public sealed class EncryptedExemptionTests
     public void ObjectStreamContainerWithADisagreeingHeaderGeneration_usesOneIdentityForItsBody(
         int headerGeneration, long xrefGeneration)
     {
-        var doc = BuildCatalogInObjectStream(headerGeneration, xrefGeneration);
+        var doc = HandBuiltEncryptedDocuments.BuildCatalogInObjectStream(headerGeneration, xrefGeneration);
 
         using var reader = PdfReader.Open(doc, new PdfReaderOptions { Password = "u" });
 
@@ -769,74 +769,9 @@ public sealed class EncryptedExemptionTests
         Assert.Equal("Catalog", ((PdfName)reader.Catalog.Get(new PdfName("Type"))!).Value);
     }
 
-    // Object 1 is an /ObjStm holding the catalog (object 2) and the page tree (object 3); object 4 is
-    // the cross-reference stream; object 5 is an ordinary encrypted object outside the container.
-    //
-    // The two generation parameters exist to build a container whose own `N G obj` header disagrees
-    // with what the cross-reference stream says about it, in both directions. The body is always
-    // encrypted under the identity the reader is supposed to ARRIVE at, so a reader that picks the
-    // other one decrypts to noise and cannot parse the members at all.
-    private static byte[] BuildCatalogInObjectStream(
-        int containerHeaderGeneration = 0,
-        long containerXrefGeneration = 0)
-    {
-        // The row's generation where the row can express one, the object header's where it cannot:
-        // field 3 is three bytes wide below, so anything above 65535 does not fit and XrefParser
-        // records it as unknown rather than guessing.
-        var effectiveGeneration = containerXrefGeneration is >= 0 and <= 65535
-            ? (int)containerXrefGeneration
-            : containerHeaderGeneration;
-
-        var members = "<< /Type /Catalog /Pages 3 0 R >> << /Type /Pages /Kids [] /Count 0 >>";
-        var header = "2 0 3 34 ";
-        var objStmBody = Encrypt(1, effectiveGeneration, Encoding.Latin1.GetBytes(header + members));
-
-        var probe = Encrypt(5, 0, "OBJSTM-CATALOG"u8.ToArray());
-
-        var ms = new MemoryStream();
-        void W(string t) => ms.Write(Encoding.Latin1.GetBytes(t));
-        W("%PDF-1.5\n");
-
-        var o1 = (int)ms.Position;
-        W($"1 {containerHeaderGeneration} obj\n<< /Type /ObjStm /N 2 /First {header.Length} "
-          + $"/Length {objStmBody.Length} >>\nstream\n");
-        ms.Write(objStmBody);
-        W("\nendstream\nendobj\n");
-
-        var o6 = (int)ms.Position;
-        W($"6 0 obj\n{Rc4EncryptDict}\nendobj\n");
-
-        var o5 = (int)ms.Position;
-        W($"5 0 obj\n<< /Probe <{Convert.ToHexStringLower(probe)}> >>\nendobj\n");
-
-        var rows = new List<byte>();
-        // /W [1 4 3]: field 3 is three bytes, which is what lets a row carry a generation ABOVE the
-        // 65535 the format can represent — the shape XrefParser records as unknown.
-        void Row(byte type, int field2, long field3) => rows.AddRange(
-        [
-            type,
-            (byte)(field2 >> 24), (byte)(field2 >> 16), (byte)(field2 >> 8), (byte)field2,
-            (byte)(field3 >> 16), (byte)(field3 >> 8), (byte)field3,
-        ]);
-
-        var xrefOffset = (int)ms.Position;
-        Row(0, 0, 65535);          // 0: free
-        Row(1, o1, containerXrefGeneration);   // 1: the object stream
-        Row(2, 1, 0);              // 2: catalog, member 0 of object 1
-        Row(2, 1, 1);              // 3: page tree, member 1 of object 1
-        Row(1, xrefOffset, 0);     // 4: this cross-reference stream
-        Row(1, o5, 0);             // 5: the probe object
-        Row(1, o6, 0);             // 6: the /Encrypt dictionary
-
-        var rowBytes = rows.ToArray();
-        W($"4 0 obj\n<< /Type /XRef /Size 7 /W [1 4 3] /Root 2 0 R /Encrypt 6 0 R "
-          + $"/ID [<{Convert.ToHexStringLower(Id0)}><{Convert.ToHexStringLower(Id0)}>] /Length {rowBytes.Length} >>\n"
-          + "stream\n");
-        ms.Write(rowBytes);
-        W("\nendstream\nendobj\n");
-        W($"startxref\n{xrefOffset}\n%%EOF\n");
-        return ms.ToArray();
-    }
+    // BuildCatalogInObjectStream moved to HandBuiltEncryptedDocuments — #184 PR3's reconstruction
+    // tests need the same document, and this is the one shape no committed fixture can carry (see
+    // that class's own doc comment for why).
 
     // ── /EncryptMetadata false (ISO 32000-1 §7.6.5) ─────────────────────────────────────────────
 
