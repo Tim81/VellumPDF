@@ -7,6 +7,13 @@
     <IsTestProject>true</IsTestProject>
     <!-- xUnit v3 test projects produce a self-hosting executable. -->
     <OutputType>Exe</OutputType>
+    <!-- DiffEngine 20.0.0 bundles its own native viewer as a last-resort tool by default. This
+         only drops that bundled binary and the DiffEngine.ViewerDirectory path its build targets
+         otherwise stamp into runtimeconfig.json (a stamp that also carries a username-bearing
+         absolute path, so this keeps build artifacts free of it) — a developer with VS, Rider,
+         VS Code, or WinMerge installed still gets a GUI on a snapshot failure. DiffEngine_Disabled
+         is the setting that suppresses that too. -->
+    <DiffEngineBundledViewer>false</DiffEngineBundledViewer>
   </PropertyGroup>
 
   <ItemGroup>
