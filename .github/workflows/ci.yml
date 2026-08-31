@@ -224,16 +224,26 @@ jobs:
           # 19.x could launch a GUI here instead. Setting this explicitly closes that gap.
           DiffEngine_Disabled: 'true'
           ORACLE_INVOCATION_LOG: ${{ runner.temp }}/oracle-invocations
-        # --settings alone would activate the coverage collector, but --collect stays too: it is
-        # the documented, discoverable switch for "this run collects coverage", while --settings'
-        # job here is narrower — supplying the exclude filters in coverlet.runsettings (#229).
+        # coverlet.MTP (#200) takes its options on the command line rather than through a
+        # `--settings` runsettings file — MTP-mode `dotnet test` passes anything after `--`
+        # straight to each test host. `--coverlet` is the activation switch; the include/exclude
+        # pair reproduces coverlet.runsettings' old scope (the eight shipping assemblies, not
+        # *.Tests or VellumPdf.TestSupport) as an allow-list rather than an exclude list, because
+        # coverlet.MTP instruments every in-process assembly by default, which under MTP now
+        # reaches third-party packages VSTest's collector never saw (the Verify snapshot stack
+        # pulled in by Verify.XunitV3 — Argon, DiffEngine, EmptyFiles, Verify.XunitV3 itself) —
+        # an exclude list would have to keep naming every one of those as it grows, where the
+        # allow-list just names the eight shipping assemblies once. `[vellum*]*` stands in for
+        # `[vellum-preflight]*` (VellumPdf.Cli's assembly name): coverlet.MTP's filter parser does
+        # not match a literal `-` in an assembly-filter segment, so the trailing wildcard sidesteps
+        # it. See CONTRIBUTING.md for the equivalent local reproduction command.
         run: |
           # A stale per-process log from an earlier run on the same runner would otherwise be
           # counted alongside this run's own files, letting a genuinely disengaged oracle hide
           # behind leftovers — silent on a self-hosted or reused runner, though GitHub-hosted
           # runners are ephemeral and would not carry one over on their own (#228 review).
           rm -f "${{ runner.temp }}/oracle-invocations".*
-          dotnet test VellumPdf.slnx -c Release --no-build --collect:"XPlat Code Coverage" --settings coverlet.runsettings --results-directory ${{ runner.temp }}/coverage
+          dotnet test VellumPdf.slnx -c Release --no-build --results-directory ${{ runner.temp }}/coverage -- --coverlet --coverlet-output-format cobertura --coverlet-include "[VellumPdf.*]*" --coverlet-include "[vellum*]*" --coverlet-exclude "[*.Tests]*" --coverlet-exclude "[VellumPdf.TestSupport]*"
 
       - name: Assert oracle invocation floors
         # #227 made a missing oracle tool fail loudly instead of passing vacuously; it says nothing
@@ -309,19 +319,24 @@ jobs:
           import xml.etree.ElementTree as ET, glob, os, sys
 
           cov_dir = os.path.join(os.environ["RUNNER_TEMP"], "coverage")
-          files = glob.glob(os.path.join(cov_dir, "**", "coverage.cobertura.xml"), recursive=True)
+          # coverlet.MTP (#200) names its own report coverage.cobertura.<timestamp>.xml — the
+          # timestamp is coverlet's, stamped at the moment it writes the file, not something this
+          # workflow controls — rather than VSTest's fixed coverage.cobertura.xml under a per-run
+          # guid folder, so the glob matches the timestamp segment instead of a guid directory.
+          files = glob.glob(os.path.join(cov_dir, "**", "coverage.cobertura.*.xml"), recursive=True)
           if not files:
-              print("::error::No coverage.cobertura.xml files found under", cov_dir)
+              print("::error::No coverage.cobertura.*.xml files found under", cov_dir)
               sys.exit(1)
 
-          THRESHOLD = 84
+          THRESHOLD = 86
           PER_ASSEMBLY_FLOOR = 40
-          MIN_TOTAL_LINES = 29000
+          MIN_TOTAL_LINES = 27000
 
-          # coverlet.runsettings excludes [*.Tests]* and [VellumPdf.TestSupport]*, so these eight are
-          # every assembly the run is supposed to instrument (#229). Cobertura's <package name> is the
-          # compiled assembly name, not the project name — VellumPdf.Cli builds as vellum-preflight.
-          # When a ninth package ships under src/, add its assembly name here.
+          # The include/exclude pair on the Test step's --coverlet-* options scopes instrumentation
+          # to these eight (#200; #229 under the old coverlet.collector runsettings). Cobertura's
+          # <package name> is the compiled assembly name, not the project name — VellumPdf.Cli
+          # builds as vellum-preflight. When a ninth package ships under src/, add its assembly
+          # name here.
           EXPECTED_ASSEMBLIES = frozenset({
               "VellumPdf.Barcodes",
               "VellumPdf.Conformance",
@@ -452,17 +467,21 @@ jobs:
           # collapses to a single covered line reports 100% and clears it, while its real multi-thousand-
           # line denominator vanishes from the merge — the same shape as a missing report, just contained
           # to one assembly instead of all of them. MIN_VALID_LINES pins each assembly's valid-line count
-          # to roughly 75% of what it measured when this gate was re-baselined (#229), so a collapsed
-          # denominator fails even though its (tiny) numerator still divides out to 100%.
+          # to roughly 75% of what it measured when this gate was re-baselined (#229; re-measured
+          # for the coverlet.MTP migration, #200 — vellum-preflight's own valid-line count roughly
+          # quartered under coverlet.MTP even with an equivalent scope, one of the ways the two
+          # engines disagree about what counts as a coverable line; the others moved by single
+          # digits), so a collapsed denominator fails even though its (tiny) numerator still
+          # divides out to 100%.
           MIN_VALID_LINES = {
-              "VellumPdf.Barcodes": 3800,        # measured 5064
-              "VellumPdf.Conformance": 7750,     # measured 10346
+              "VellumPdf.Barcodes": 3650,        # measured 4894
+              "VellumPdf.Conformance": 7650,     # measured 10252
               "VellumPdf.Fonts.Standard14": 20,  # measured 29 — a 29-line assembly needs more slack
-              "VellumPdf.Kernel": 5800,          # measured 7769
-              "VellumPdf.Layout": 1000,          # measured 1393
-              "VellumPdf.Reader": 1900,          # measured 2581
-              "VellumPdf.Signing": 800,          # measured 1109
-              "vellum-preflight": 2300,          # measured 3077
+              "VellumPdf.Kernel": 5650,          # measured 7561
+              "VellumPdf.Layout": 950,           # measured 1301
+              "VellumPdf.Reader": 1850,          # measured 2493
+              "VellumPdf.Signing": 800,          # measured 1092
+              "vellum-preflight": 500,           # measured 667
           }
 
           per_asm = {}
@@ -501,7 +520,7 @@ jobs:
           print(f"Combined (merged) line coverage: {pct:.1f}% over {total_valid} unique lines (threshold: {THRESHOLD}%)")
           if total_valid < MIN_TOTAL_LINES:
               print(f"::error::Merged coverage covers only {total_valid} lines, below the "
-                    f"{MIN_TOTAL_LINES}-line minimum expected across all reports (measured 31,368).")
+                    f"{MIN_TOTAL_LINES}-line minimum expected across all reports (measured 28,289).")
               sys.exit(1)
           if pct < THRESHOLD:
               print(f"::error::Line coverage {pct:.1f}% is below the required threshold of {THRESHOLD}%.")

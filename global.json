@@ -4,5 +4,11 @@
     // Required for CI to pick up 10.0.4xx patch releases; removing it pins CI to
     // exactly 10.0.400 and drops patch servicing.
     "rollForward": "latestPatch"
+  },
+  // xunit.v3 4.0.0 pulls in Microsoft.Testing.Platform, which the .NET 10 SDK no longer lets
+  // `dotnet test` reach through the VSTest target (#200). This is the documented opt-in; the
+  // TestingPlatformDotnetTestSupport MSBuild property is the .NET 8/9-era alternative.
+  "test": {
+    "runner": "Microsoft.Testing.Platform"
   }
 }

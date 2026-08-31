@@ -178,18 +178,28 @@ linearized` directly, so a test that reads that line already discriminates;
 the exit code is the part of `--check` that doesn't (a warning just adds
 `WARNING` lines and exit 3, on top of whichever of those two lines fired).
 
-The `Enforce coverage threshold` step that follows the `Test` step in `ci.yml` reads whatever the
-`--collect:"XPlat Code Coverage"` run wrote, so reproducing its percentage locally needs the same
-invocation, `--settings` included:
+The `Enforce coverage threshold` step that follows the `Test` step in `ci.yml` reads whatever that
+run wrote, so reproducing its percentage locally needs the same invocation. `coverlet.MTP` (#200)
+takes its options on the command line rather than through a `--settings` file — MTP-mode `dotnet
+test` passes anything after `--` straight to each test host:
 
 ```bash
-dotnet test VellumPdf.slnx -c Release --collect:"XPlat Code Coverage" --settings coverlet.runsettings --results-directory <dir>
+dotnet test VellumPdf.slnx -c Release --results-directory <dir> -- --coverlet --coverlet-output-format cobertura --coverlet-include "[VellumPdf.*]*" --coverlet-include "[vellum*]*" --coverlet-exclude "[*.Tests]*" --coverlet-exclude "[VellumPdf.TestSupport]*"
 ```
 
-`coverlet.runsettings` excludes `*.Tests` assemblies and `VellumPdf.TestSupport` from
-instrumentation (#229). Drop `--settings` and the run still produces a number, just a different
-one: the unexcluded figure, measuring the eight shipping assemblies together with the test
-scaffolding built on top of them, not what the gate script in `ci.yml` actually thresholds.
+The include/exclude pair excludes `*.Tests` assemblies and `VellumPdf.TestSupport` from
+instrumentation, the same scope `coverlet.runsettings` held under the old VSTest collector (#229).
+The two `--coverlet-include` filters together are the allow-list side of that scope: coverlet.MTP
+instruments every assembly a test host loads unless told otherwise, which under MTP now reaches
+third-party packages VSTest's collector never saw (the Verify snapshot stack — Argon, DiffEngine,
+EmptyFiles, Verify.XunitV3 — pulled in by `Verify.XunitV3`), so an include allow-list scoped to the
+eight shipping assemblies is what keeps the denominator to shipping code rather than an exclude
+list that would have to keep naming every third-party package as it's added. `[vellum*]*` stands in
+for `[vellum-preflight]*` — `VellumPdf.Cli`'s assembly name — because coverlet.MTP's filter parser
+does not match a literal `-` in an assembly-filter segment; the trailing wildcard sidesteps it.
+Drop the `--coverlet-include`/`--coverlet-exclude` pair and the run still produces a number, just a
+different one: everything reachable in-process, including that third-party stack, not what the
+gate script in `ci.yml` actually thresholds.
 
 ### 6. AOT smoke test
 

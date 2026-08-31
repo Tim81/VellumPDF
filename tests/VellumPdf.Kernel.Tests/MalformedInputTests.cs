@@ -52,7 +52,7 @@ public sealed class MalformedInputTests
 
     // ── Fonts: cmap format-4 denial-of-service ───────────────────────────────
 
-    [Fact(Timeout = 10_000)]
+    [Fact]
     public void CmapFormat4_overlappingWideSegments_throwsAndDoesNotHang()
     {
         // Three segments each covering the whole BMP (0x0000-0xFFFE) sum to ~196k iterations,
@@ -116,7 +116,7 @@ public sealed class MalformedInputTests
         Assert.Throws<InvalidDataException>(() => PngImageLoader.Load(png));
     }
 
-    [Fact(Timeout = 10_000)]
+    [Fact]
     public void Png_zlibBomb_throwsAndDoesNotExhaustMemory()
     {
         // A 1×1 image whose IDAT decompresses to ~4 MB — far beyond the dimensions' expected size.
@@ -226,7 +226,7 @@ public sealed class MalformedInputTests
     /// with a minimal LZW strip. ImageLimits.ValidateDimensions must reject it immediately —
     /// before any large allocation — with InvalidDataException.
     /// </summary>
-    [Fact(Timeout = 10_000)]
+    [Fact]
     public void TiffLzw_hugeDimensions_throwsWithoutAllocating()
     {
         // Build the smallest possible LZW stream (just ClearCode + EOI), then embed it
@@ -305,7 +305,7 @@ public sealed class MalformedInputTests
     /// An Adam7-interlaced PNG whose IDAT decompresses to far more bytes than the 7-pass
     /// expected total. The zlib-bomb cap (Inflate's cap guard) must throw InvalidDataException.
     /// </summary>
-    [Fact(Timeout = 10_000)]
+    [Fact]
     public void Png_interlaced_zlibBomb_throwsAndDoesNotExhaustMemory()
     {
         // 1×1 interlaced PNG: Adam7 pass 1 produces exactly 1 pixel, so expectedRaw is tiny.
@@ -930,7 +930,7 @@ public sealed class MalformedInputTests
     /// Fix #8: StripOffsets with a huge count field in the IFD entry causes ReadTagArray
     /// to be called with count > data.Length. Must throw InvalidDataException with no OOM.
     /// </summary>
-    [Fact(Timeout = 10_000)]
+    [Fact]
     public void Tiff_hugeStripOffsetsCount_throwsInvalidDataException()
     {
         // Build a minimal valid grey TIFF, then corrupt the StripOffsets count field

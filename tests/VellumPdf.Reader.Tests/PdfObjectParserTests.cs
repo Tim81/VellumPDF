@@ -663,6 +663,12 @@ public sealed class PdfObjectParserTests
         Assert.Equal(expectedPos, parser.Position);
     }
 
+    // xUnit1069 wants TestContext.Current.CancellationToken threaded through so the Timeout can end
+    // the test promptly; ParseIndirectObject takes no CancellationToken, and there is nothing to
+    // thread it into. The Timeout itself is the regression pin the test name describes — the whole
+    // point is that a quadratic ScanToEndstream blows this budget — so it stays rather than being
+    // dropped.
+#pragma warning disable xUnit1069
     [Fact(Timeout = 10_000)]
     public void ManyStreamsWithNoEolBeforeTheirOwnEndstream_DoesNotBecomeQuadratic()
     {
@@ -693,6 +699,7 @@ public sealed class PdfObjectParserTests
             Assert.Equal($"SOME BODY DATA HERE{i}", System.Text.Encoding.ASCII.GetString(result.Stream!.RawBody.Span));
         }
     }
+#pragma warning restore xUnit1069
 
     [Fact]
     public void StreamBodyCapturedVerbatim()

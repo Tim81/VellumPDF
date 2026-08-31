@@ -18,17 +18,23 @@
     -->
     <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="10.0.11" />
     <PackageVersion Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" Version="5.6.0" />
-    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.9.0" />
-    <PackageVersion Include="xunit.v3" Version="3.2.2" />
+    <!-- xunit.v3 4.0.0 ships xunit.v3.core.mtp-v2 / xunit.v3.mtp-v2, which pull in
+         Microsoft.Testing.Platform; the .NET 10 SDK refuses the VSTest target these tests used to
+         run under, so Microsoft.NET.Test.Sdk and xunit.runner.visualstudio (both VSTest-only) are
+         gone rather than bumped (#200). -->
+    <PackageVersion Include="xunit.v3" Version="4.0.0" />
     <!-- VellumPdf.TestSupport needs only Assert (Assert.Skip/Assert.Fail), not the full v3
          runner the "xunit.v3" meta-package pulls in — that package requires an executable
          test host (OutputType=Exe), which a shared helper library is not. -->
-    <PackageVersion Include="xunit.v3.assert" Version="3.2.2" />
-    <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
+    <PackageVersion Include="xunit.v3.assert" Version="4.0.0" />
     <PackageVersion Include="Verify.XunitV3" Version="32.0.0" />
     <PackageVersion Include="CsCheck" Version="4.8.0" />
     <PackageVersion Include="BenchmarkDotNet" Version="0.15.8" />
-    <PackageVersion Include="coverlet.collector" Version="10.0.1" />
+    <!-- coverlet's native Microsoft.Testing.Platform extension, replacing the VSTest-only
+         coverlet.collector (#200). Chosen over Microsoft.Testing.Extensions.CodeCoverage on
+         licence grounds: MIT with no acceptance requirement, where the Microsoft package declares
+         no SPDX expression and sets requireLicenseAcceptance. -->
+    <PackageVersion Include="coverlet.MTP" Version="10.0.1" />
   </ItemGroup>
 
 </Project>

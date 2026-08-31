@@ -315,6 +315,55 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   unwritable path) now fails once, at type-init, with a message naming the variable, rather than
   as a bare `DirectoryNotFoundException` out of whichever unrelated oracle test happened to run
   first. (#228)
+- **Tests now run on Microsoft.Testing.Platform instead of VSTest.** `xunit.v3` and
+  `xunit.v3.assert` move 3.2.2 → 4.0.0, which ship `xunit.v3.core.mtp-v2`; on the .NET 10 SDK,
+  Microsoft.Testing.Platform refuses the VSTest target that 4.0.0's predecessors ran under, so
+  this isn't an ordinary bump. `Microsoft.NET.Test.Sdk` and `xunit.runner.visualstudio` — both
+  VSTest-only, and unneeded once xUnit self-hosts under MTP — are removed rather than bumped;
+  `global.json` gains `"test": { "runner": "Microsoft.Testing.Platform" }`, the documented .NET 10
+  opt-in (not the `TestingPlatformDotnetTestSupport` MSBuild property, which is the .NET 8/9-era
+  mechanism). `coverlet.collector` is replaced by `coverlet.MTP` 10.0.1, chosen on licence grounds
+  over `Microsoft.Testing.Extensions.CodeCoverage` (MIT with no acceptance requirement, versus a
+  package that sets `requireLicenseAcceptance` and ships no SPDX expression). Test counts are
+  unchanged (5,558 total, 5,206 passed, 352 skipped, matched exactly against the same commit under
+  VSTest) — this is a runner and coverage-tooling swap, not a test change.
+
+  `coverlet.MTP` takes its options on the command line rather than through a `--settings`
+  runsettings file, so `coverlet.runsettings` is gone; `ci.yml`'s Test step and CONTRIBUTING.md's
+  local-reproduction command pass `--coverlet` plus include/exclude filters after `--` instead.
+  The filters had to become an allow-list rather than the old exclude-list: coverlet.MTP
+  instruments every assembly a test host loads in-process by default, which now reaches third-party
+  packages VSTest's collector never touched — the Verify snapshot stack (Argon, DiffEngine,
+  EmptyFiles, Verify.XunitV3) pulled in alongside it — so scoping to the eight shipping assemblies
+  by name keeps that stack out of the coverage denominator without an exclude list that would have
+  to keep naming every third-party package as one is added. `VellumPdf.Cli`'s assembly name,
+  `vellum-preflight`, needs a trailing-wildcard filter (`[vellum*]*`) rather than the literal name:
+  coverlet.MTP's filter parser doesn't match a literal `-` in an assembly-filter segment. The
+  coverage gate's glob moves from a fixed `coverage.cobertura.xml` to `coverage.cobertura.*.xml`,
+  since coverlet.MTP stamps a timestamp into every report's filename instead of writing one fixed
+  name into a per-run guid folder.
+
+  The coverage threshold, floors, and per-assembly minimums are re-baselined against a fresh
+  measurement rather than carried over unexamined: threshold 84% → 86%, measured at 89.1% combined
+  over 28,289 unique lines; `MIN_TOTAL_LINES` 29,000 → 27,000. Seven of the eight shipping assemblies'
+  valid-line counts moved by single digits of percent; `vellum-preflight`'s alone dropped by
+  roughly three-quarters (3,077 → 667 measured valid lines) under otherwise-identical scoping —
+  one more way the two coverage engines disagree about what counts as a coverable line, alongside
+  the difference already on record from when this gate was built (#229). Its floor is re-baselined
+  to the new measurement rather than papered over.
+
+  Nine `[Fact(Timeout = 10_000)]` tests raise `xUnit1069` under 4.0.0's analyzers, and
+  `TreatWarningsAsErrors` turns that into a build break — the decision is made per #200's own
+  analysis, treating two groups differently. The five in
+  `tests/VellumPdf.Kernel.Tests/MalformedInputTests.cs` are redundant guards whose functional
+  assertions already prove the point without a wall-clock budget, so their `Timeout` is dropped.
+  The four landed as #208/#211 regression pins — `PdfDictionaryIndexTests.cs` (×2),
+  `EncryptDictionaryDenialOfServiceTests.cs`, `PdfObjectParserTests.cs:666` — where the timeout
+  *is* the assertion (their functional checks pass equally against the quadratic code they exist
+  to catch), so they keep `Timeout` under a `#pragma warning disable xUnit1069` with a comment
+  naming why. Verified against a scratch `[Fact(Timeout = 500)]` sleeping 3 seconds: it failed at
+  504ms under MTP with this repository's parallelization settings, confirming the pin still works
+  before either group's disposition was decided. (#200)
 
 ### Fixed
 

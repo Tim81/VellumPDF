@@ -17,9 +17,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <!-- xunit.v3 4.0.0 self-hosts on Microsoft.Testing.Platform; there is no separate VSTest
+         adapter to reference (#200). VellumPdf.TestSupport overrides this — see its own csproj. -->
     <PackageReference Include="xunit.v3" />
-    <PackageReference Include="xunit.runner.visualstudio" />
   </ItemGroup>
 
   <ItemGroup>

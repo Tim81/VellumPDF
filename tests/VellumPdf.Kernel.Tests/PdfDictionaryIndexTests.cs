@@ -33,6 +33,11 @@ public sealed class PdfDictionaryIndexTests
     /// times this test's 10s budget before this fix, measured on the development machine. Every key
     /// is read back afterwards to confirm the index (not just the build) is correct, not merely fast.
     /// </summary>
+    // xUnit1069 wants TestContext.Current.CancellationToken threaded through so the Timeout can end
+    // the test promptly; PdfDictionary.Set/TryGet take no CancellationToken, and there is nothing to
+    // thread it into. The Timeout itself is the #208 regression pin — see the class doc — so it
+    // stays rather than being dropped.
+#pragma warning disable xUnit1069
     [Fact(Timeout = 10_000)]
     public void LargeDictionary_buildsAndLooksUp_underTimeout()
     {
@@ -50,6 +55,7 @@ public sealed class PdfDictionaryIndexTests
 
         Assert.False(dict.TryGet(new PdfName("NotPresent"), out _));
     }
+#pragma warning restore xUnit1069
 
     /// <summary>
     /// Insertion order survives crossing the index threshold, both in <c>Entries</c> and in the bytes
@@ -148,6 +154,9 @@ public sealed class PdfDictionaryIndexTests
     /// carry-over that is on the order of 140,000² comparisons — tens of seconds; with it, well under
     /// a second.
     /// </summary>
+    // See LargeDictionary_buildsAndLooksUp_underTimeout above: same #208 pin, same reason the
+    // CancellationToken xUnit1069 wants has nowhere to go.
+#pragma warning disable xUnit1069
     [Fact(Timeout = 10_000)]
     public void ShallowCopy_pastTheThreshold_carriesTheIndex()
     {
@@ -164,6 +173,7 @@ public sealed class PdfDictionaryIndexTests
             Assert.Equal(i, Assert.IsType<PdfInteger>(value).Value);
         }
     }
+#pragma warning restore xUnit1069
 
     /// <summary>
     /// A dictionary holding exactly <c>IndexThreshold</c> entries still answers correctly. At this
