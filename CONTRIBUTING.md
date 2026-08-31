@@ -13,8 +13,38 @@ build, test, and submit changes to VellumPdf.
 - **Docker** — needed to run the veraPDF conformance gate locally.
 - **qpdf** and **poppler-utils** — needed to run the structural-validator,
   text-extraction, signature, and barcode-rasterization oracle tests locally
-  (`qpdf`, `pdftotext`, `pdfsig`, `pdftoppm`). On Debian/Ubuntu:
-  `sudo apt-get install qpdf poppler-utils fonts-dejavu-core fonts-texgyre`.
+  (`qpdf`, `pdftotext`, `pdfsig`, `pdftoppm`). CI pins these (#230) rather than taking whatever
+  the runner image ships, so matching CI locally means matching its versions: qpdf 12.4.1
+  (installed in CI from the [official release
+  artifact](https://github.com/qpdf/qpdf/releases/tag/v12.4.1), since apt's qpdf on
+  `ubuntu-24.04` is 11.9.0 and `--check`'s output has changed across qpdf majors), poppler-utils
+  24.02.0-1ubuntu9.9, fonts-dejavu-core 2.37-8, and fonts-texgyre 20180621-6. On Debian/Ubuntu,
+  install qpdf from the same release artifact and pin the rest with
+  `sudo apt-get install poppler-utils=24.02.0-1ubuntu9.9 fonts-dejavu-core=2.37-8 fonts-texgyre=20180621-6`.
+
+  **CI's poppler/font pins have a known maintenance cost.** noble's `-updates`/`-security`
+  pockets keep only the newest revision of each package, so the exact revisions above eventually
+  vanish from the live apt archive on their own, with no code change involved. When that happens,
+  `ci.yml`'s "Install poppler and fonts" step still resolves them, because that step passes `-o
+  APT::Snapshot=$APT_SNAPSHOT` on both `apt-get update` and `apt-get install`, which adds the
+  dated [Ubuntu snapshot service](https://snapshot.ubuntu.com/) alongside whatever sources the
+  runner already has — additive, not a replacement, and `ubuntu-24.04`'s own sources resolve
+  through `mirror+file:/etc/apt/apt-mirrors.txt` rather than a literal `archive.ubuntu.com` host,
+  so do not assume which host actually serves a given fetch. A snapshot never evicts what it once
+  published, even after the live archive moves on, but `apt-get update` reports success (exit 0)
+  even when the snapshot fetch itself fails, so the step also greps `/var/lib/apt/lists/` for the
+  snapshot's own index files right after — that is what makes the snapshot actually having been
+  used something you can check rather than assume. The failure mode to watch for instead is a
+  genuine version bump: if poppler or a font package needs a newer release on purpose, run
+  `apt-cache policy poppler-utils fonts-dejavu-core fonts-texgyre` against a fresh `ubuntu:24.04`
+  container to get the new versions, pick an `APT_SNAPSHOT` stamp that is a UTC day at or after
+  the new revision's publication (stamps are midnight UTC, so a same-day publication needs the
+  next day's stamp), and confirm the stamp actually resolves with `curl -sI
+  https://snapshot.ubuntu.com/ubuntu/<stamp>/dists/noble/InRelease` before using it — a
+  future-dated or mistyped stamp does not error, it silently serves whatever is latest. Then
+  update `POPPLER_VERSION` / `FONTS_DEJAVU_VERSION` / `FONTS_TEXGYRE_VERSION` and `APT_SNAPSHOT`
+  together in `ci.yml`'s job-level `env:`, and this paragraph to match.
+
   On Windows, PATH order between shells is not reliable — the same bare
   `pdftotext` can resolve to a completely different program depending on which
   shell launched the test host, so point `QPDF_HOME` and `POPPLER_HOME` at
@@ -22,8 +52,8 @@ build, test, and submit changes to VellumPdf.
   the directory holding the executable directly, its parent with a `bin`
   subdirectory under it, or its grandparent with a `Library\bin` subdirectory
   under it (the shape a Windows poppler build installed via winget uses) — so
-  `QPDF_HOME` can name either `...\qpdf-12.3.2-msvc64` or
-  `...\qpdf-12.3.2-msvc64\bin`, and `POPPLER_HOME` can name either the
+  `QPDF_HOME` can name either `...\qpdf-12.4.1-msvc64` or
+  `...\qpdf-12.4.1-msvc64\bin`, and `POPPLER_HOME` can name either the
   poppler install root or its `Library\bin` folder directly. A `*_HOME` that
   is set but does not resolve through any of these is reported as a
   misconfiguration (the same skip-locally/fail-on-CI outcome a wrong-tool
@@ -40,8 +70,10 @@ build, test, and submit changes to VellumPdf.
   (`ExternalToolResolutionTests`) checks that each tool resolves to itself
   on every run.
 - **Python with zxing-cpp** — the barcode decode oracle:
-  `python -m pip install zxing-cpp==3.0.0 pillow`. The version is pinned because
-  the EAN add-on text format differs between zxing-cpp releases.
+  `python -m pip install zxing-cpp==3.1.1 pillow==12.3.0`. zxing-cpp is pinned because the EAN
+  add-on text format differs between releases; the barcode oracle test asserts only the main
+  digits for that reason (`EanBarcode_Ean13WithAddOn_MainDigitsExact_AddOnTolerant`), so the pin
+  exists to keep CI reproducible rather than to work around a currently-failing assertion.
 
 ## Building and testing
 

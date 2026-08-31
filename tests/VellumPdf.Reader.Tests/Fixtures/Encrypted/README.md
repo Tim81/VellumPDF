@@ -1,8 +1,8 @@
 # Encrypted reader fixtures
 
-Generated once with qpdf and checked in, rather than generated at test time. CI installs qpdf
-from apt on `ubuntu-latest` (11.9.0 at the time of writing, but nothing pins it) while local
-development uses 12.3.2; checking the files in makes the corpus
+Generated once with qpdf and checked in, rather than generated at test time. CI and local
+development both use qpdf 12.4.1 (#230 pins CI to the official release artifact instead of apt,
+whose `ubuntu-24.04` version was 11.9.0); checking the files in makes the corpus
 byte-identical everywhere and keeps qpdf out of the test-execution path, so there is no
 `OracleGate` skip hole on the core corpus.
 
@@ -188,13 +188,19 @@ what remains:
 
 - **No committed fixture has its catalog packed inside an object stream.** Measured against qpdf
   12.3.2 (#184 PR3): it pulls the catalog out of every object stream it writes the moment the same
-  run also encrypts — RC4-128 with `--object-streams=generate`, AES-256 the same way, and re-packing
-  an already-encrypted file all emit a top-level catalog regardless. `VellumPdf.Reader`'s own writer
-  refuses `UseObjectStreams` together with `Encrypt`, so it cannot produce the shape either. The
-  layout is pinned instead by a hand-built document,
-  `HandBuiltEncryptedDocuments.BuildCatalogInObjectStream`, shared between `EncryptedExemptionTests`
-  and `EncryptedReconstructionTests` — not a fixture here, and carrying no `Corpus` row, since the
-  guard in `EncryptedFixtureCorpusTests` only fires for files actually embedded from this directory.
+  run also encrypts — RC4-128 with `--allow-weak-crypto --object-streams=generate`, AES-256 the
+  same way, and re-packing an already-encrypted file all emit a top-level catalog regardless.
+  `VellumPdf.Reader`'s own writer refuses `UseObjectStreams` together with `Encrypt`, so it cannot
+  produce the shape either. The layout is pinned instead by a hand-built document,
+  `HandBuiltEncryptedDocuments.BuildCatalogInObjectStream`, shared between
+  `EncryptedExemptionTests` and `EncryptedReconstructionTests` — not a fixture here, and carrying
+  no `Corpus` row, since the guard in `EncryptedFixtureCorpusTests` only fires for files actually
+  embedded from this directory.
+  Reconfirmed unchanged under qpdf 12.4.1 (#230): RC4-128 and AES-256 with
+  `--object-streams=generate` both still write the catalog as a plain top-level object, never
+  inside the `/Type /ObjStm` they emit alongside it. 12.4.1 also refuses to write RC4 at all
+  without `--allow-weak-crypto` (exit 2, "refusing to write a file with weak crypto"), unrelated
+  to this behaviour but needed to reproduce the RC4-128 half of it.
 
 - **Every fixture is qpdf's output.** This is the largest gap in the corpus and the hardest to
   close: producers differ in exactly the places this code has to decide. A crypt filter `/Length` in
@@ -262,6 +268,12 @@ what remains:
   reading is obviously right — this one is the more literal — and no producer known to emit the shape
   is available to settle it, which is why the behaviour is left alone and recorded instead. Its
   failure mode is a rejected password, not wrong bytes.
+
+  Reconfirmed unchanged under qpdf 12.4.1 (#230): a genuinely 128-bit-keyed `/V 4` `/CFM /V2` file
+  with both `/Length` entries hex-patched down to declare 40 bits / 5 bytes still opens under its
+  original password and decrypts correctly, so qpdf 12.4.1 derives the same 16-byte key regardless
+  of what the patched entries claim. The full matrix above was not re-run digit-for-digit; this one
+  case is the mechanism the whole matrix follows from.
 
 - **No file whose `/StmF` and `/StrF` name `/CF` entries of different lengths.** The key-length path
   reads `/StmF` first and falls back to `/StrF`, and that precedence is observable only on such a
