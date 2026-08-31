@@ -5,6 +5,7 @@ using System.Collections.Concurrent;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Text;
+using System.Threading;
 
 namespace VellumPdf.TestSupport;
 
@@ -131,7 +132,8 @@ public static class ExternalTool
         out string stderr,
         out bool timedOut,
         int timeoutMs,
-        Encoding? outputEncoding)
+        Encoding? outputEncoding,
+        bool logInvocation = true)
     {
         exitCode = -1;
         stdout = string.Empty;
@@ -197,6 +199,13 @@ public static class ExternalTool
 
         if (process is null)
             return false;
+
+        // Logged only once a process has actually launched: a probe (see ProbeIdentityCore,
+        // ProbePopplerOnlyFlag) passes logInvocation: false, and a launch that never started —
+        // Process.Start returning null or throwing Win32Exception above — is not an oracle having
+        // run, so it must not count as one either (#228 review).
+        if (logInvocation)
+            LogInvocation(tool, arguments);
 
         using (process)
         {
@@ -591,7 +600,7 @@ public static class ExternalTool
         // says nothing about what would happen on a retry (a transient lock, a momentarily
         // exhausted process table) — so this is not cached (see CheckIdentity). Not a timeout, so
         // it does not count toward ConsecutiveTimeouts either (see ProbeIdentity).
-        if (!RunProcess(tool, probe.VersionArgs, out var exit, out var stdout, out var stderr, out var timedOut, probeTimeoutMs, null))
+        if (!RunProcess(tool, probe.VersionArgs, out var exit, out var stdout, out var stderr, out var timedOut, probeTimeoutMs, null, logInvocation: false))
             return IdentityResult.NotCacheable("not installed, or not resolvable on this machine");
 
         // A timed-out probe is not evidence of anything about the tool's identity — exitCode above
@@ -647,7 +656,7 @@ public static class ExternalTool
     // code are otherwise indistinguishable between the two codebases.
     private static IdentityResult ProbePopplerOnlyFlag(string tool, string popplerOnlyFlag, string homeVariable, string banner)
     {
-        if (!RunProcess(tool, ["-h"], out _, out var helpOut, out var helpErr, out var timedOut, DefaultProbeTimeoutMs, null))
+        if (!RunProcess(tool, ["-h"], out _, out var helpOut, out var helpErr, out var timedOut, DefaultProbeTimeoutMs, null, logInvocation: false))
             return IdentityResult.NotCacheable($"resolved for its version flag but not for '-h' — inconsistent {tool} install; check {homeVariable}");
 
         if (timedOut)
@@ -770,4 +779,86 @@ public static class ExternalTool
 
     private static void ObserveAndForget(Task task)
         => _ = task.ContinueWith(t => _ = t.Exception, TaskScheduler.Default);
+
+    // ── Invocation logging (#228) ────────────────────────────────────────────────────────────
+
+    // #227 made a missing oracle tool fail loudly instead of passing vacuously, but it did
+    // nothing for a tool that is present and installed yet never actually gets called — a
+    // disabled filter, a gate condition that stopped matching, a refactor that quietly drops the
+    // call. That case is invisible from the test report: pass/skip counts are identical whether
+    // veraPDF validated 273 documents or zero, and only wall-clock time gives it away (#228).
+    // Counting invocations closes that gap, but the count has to be assembled workflow-side, not
+    // in-process: CI runs each test assembly as its own process, and there is no ordering
+    // guarantee that would let an in-process "assert the count on the last test" work. So this
+    // just appends one line per call and leaves the counting and the floor to ci.yml.
+    //
+    // Only a call that actually launched a process is logged (see the logInvocation: false
+    // arguments from ProbeIdentityCore and ProbePopplerOnlyFlag, and the log call's position
+    // after RunProcess's own "did the process start" checks). Identity probes run once per tool
+    // per process and a failed launch never touched the oracle at all, so counting either would
+    // let a tool that stopped running mask the loss behind probe traffic that has nothing to do
+    // with whether the oracle validated anything (#228 review).
+    //
+    // ORACLE_INVOCATION_LOG is unset on every local run, and reading it once into a static field
+    // that is null in that case keeps this a strict no-op off CI: nothing below the null check
+    // ever touches the filesystem.
+    private static readonly string? InvocationLogPath = ResolveInvocationLogPath();
+
+    // RunProcess can run concurrently on multiple threads within one process — xunit
+    // parallelizes test collections by default, the same reason CheckIdentity's own
+    // IdentityCache exists — so appends need serializing even though the log path is already
+    // unique per OS process.
+    private static readonly Lock InvocationLogLock = new();
+
+    private static string? ResolveInvocationLogPath()
+    {
+        var basePath = Environment.GetEnvironmentVariable("ORACLE_INVOCATION_LOG");
+        if (string.IsNullOrEmpty(basePath))
+            return null;
+
+        // Suffixed with the process id, not shared, because CI runs each test assembly as its
+        // own process (Barcodes.Tests, Kernel.Tests, Layout.Tests, ...): File.AppendAllText's
+        // internal lock only serializes writers within one process, so several processes
+        // appending to one shared path would still interleave or truncate each other's writes.
+        var path = $"{basePath}.{Environment.ProcessId}";
+
+        // Create the parent directory and prove the path is actually writable once, here, at
+        // type-init — not on the first real LogInvocation call, which is reached from deep
+        // inside RunProcess on whatever oracle test happens to run first. A misconfigured
+        // ORACLE_INVOCATION_LOG (a parent directory that doesn't exist, say) previously surfaced
+        // as a bare DirectoryNotFoundException out of that unrelated test, and every other test
+        // sharing this process failed the same way once InvocationLogPath's initializer had
+        // already thrown (#228 review). Failing loudly here instead, with a message that names
+        // the variable, turns that into one diagnosable error instead of a wall of unrelated
+        // failures.
+        try
+        {
+            var directory = Path.GetDirectoryName(path);
+            if (!string.IsNullOrEmpty(directory))
+                Directory.CreateDirectory(directory);
+
+            File.AppendAllText(path, string.Empty);
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException(
+                $"ORACLE_INVOCATION_LOG is set to '{basePath}', but the invocation log at "
+                + $"'{path}' could not be created or written: {ex.Message}", ex);
+        }
+
+        return path;
+    }
+
+    private static void LogInvocation(string tool, IReadOnlyList<string> arguments)
+    {
+        if (InvocationLogPath is null)
+            return;
+
+        var firstArgument = arguments.Count > 0 ? arguments[0] : string.Empty;
+        var line = $"{tool}\t{firstArgument}{Environment.NewLine}";
+        lock (InvocationLogLock)
+        {
+            File.AppendAllText(InvocationLogPath, line);
+        }
+    }
 }

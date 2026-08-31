@@ -149,6 +149,20 @@ respectively. Set `REQUIRE_ORACLES=1` locally to reproduce the CI behaviour
 across the board, or one of the two scoped variables to reproduce just that
 oracle's CI behaviour.
 
+A present, correctly-identified tool still is not proof it ran: a disabled
+filter, a stale gate condition, or a refactor that quietly drops the call all
+leave the same pass/skip counts an engaged oracle would (#228). CI closes
+that gap from the workflow side rather than in-process, since the suite runs
+each test assembly as its own process and nothing guarantees which one runs
+last. `ci.yml`'s Test step sets `ORACLE_INVOCATION_LOG`, which makes
+`ExternalTool.RunProcess` append one `tool<TAB>first-argument` line per
+successful, non-probe call to a per-process file — an identity probe and a
+launch that never started are both excluded, so neither can pad a tool's
+count without the tool having actually validated anything; a step after
+Test concatenates those files, sums a count per tool, and fails the build if
+any tool falls below a floor pinned next to that count. The env var is
+unset locally, so this is a no-op outside CI.
+
 A tool that runs and answers is not the same as a tool that discriminated.
 `qpdf --show-linearization` exits 0 and prints no `WARNING` for both a
 linearized and a non-linearized file (the negative case just prints
