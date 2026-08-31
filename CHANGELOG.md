@@ -324,46 +324,57 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   opt-in (not the `TestingPlatformDotnetTestSupport` MSBuild property, which is the .NET 8/9-era
   mechanism). `coverlet.collector` is replaced by `coverlet.MTP` 10.0.1, chosen on licence grounds
   over `Microsoft.Testing.Extensions.CodeCoverage` (MIT with no acceptance requirement, versus a
-  package that sets `requireLicenseAcceptance` and ships no SPDX expression). Test counts are
-  unchanged (5,558 total, 5,206 passed, 352 skipped, matched exactly against the same commit under
-  VSTest) — this is a runner and coverage-tooling swap, not a test change.
+  package that sets `requireLicenseAcceptance` and ships no SPDX expression). Test counts came back
+  unchanged against the same commit, measured in Git Bash with neither `QPDF_HOME` nor
+  `POPPLER_HOME` set: 5,574 total, 5,222 passed, 352 skipped, 0 failed, identical under VSTest and
+  under MTP (both figures are specific to the commit and the oracle tools available on the
+  measuring machine, not numbers this migration pins going forward). This is a runner and
+  coverage-tooling swap, not a test change.
 
-  `coverlet.MTP` takes its options on the command line rather than through a `--settings`
-  runsettings file, so `coverlet.runsettings` is gone; `ci.yml`'s Test step and CONTRIBUTING.md's
-  local-reproduction command pass `--coverlet` plus include/exclude filters after `--` instead.
-  The filters had to become an allow-list rather than the old exclude-list: coverlet.MTP
-  instruments every assembly a test host loads in-process by default, which now reaches third-party
-  packages VSTest's collector never touched — the Verify snapshot stack (Argon, DiffEngine,
-  EmptyFiles, Verify.XunitV3) pulled in alongside it — so scoping to the eight shipping assemblies
-  by name keeps that stack out of the coverage denominator without an exclude list that would have
-  to keep naming every third-party package as one is added. `VellumPdf.Cli`'s assembly name,
-  `vellum-preflight`, needs a trailing-wildcard filter (`[vellum*]*`) rather than the literal name:
-  coverlet.MTP's filter parser doesn't match a literal `-` in an assembly-filter segment. The
-  coverage gate's glob moves from a fixed `coverage.cobertura.xml` to `coverage.cobertura.*.xml`,
-  since coverlet.MTP stamps a timestamp into every report's filename instead of writing one fixed
-  name into a per-run guid folder.
+  `coverlet.MTP` reads its instrumentation scope from `coverlet.testconfig.json` (copied to
+  every test host's own output directory by `tests/Directory.Build.props`) rather than a
+  `--settings` runsettings file, so `coverlet.runsettings` is gone. That has to be a config file,
+  not command-line `--coverlet-include`/`--coverlet-exclude` options: with no config file present,
+  coverlet.MTP's command-line mode merges in its own default exclude-by-attribute list
+  (`GeneratedCodeAttribute`, `CompilerGeneratedAttribute`), which silently drops every compiler-
+  and source-generator-emitted member from instrumentation. That was tried first and measured as
+  a real regression before landing on the config file: it cost `VellumPdf.Cli` its entire
+  System.Text.Json source-generated `CliJsonContext` partial, and every other assembly some of
+  their auto-property backing fields. A config file is authoritative and does not get that default
+  list injected, so scoping through `testconfig.json` is what keeps generated code counted the way
+  `coverlet.collector` counted it under VSTest, confirmed by measurement: every one of the eight
+  shipping assemblies' valid-line counts, and the combined total (31,401 unique lines), matched
+  what this gate already carried before the migration, so the threshold and every per-assembly
+  floor carry over unchanged rather than being re-baselined lower. Parity here is about the
+  migration dropping nothing it used to instrument, not about the two figures staying pinned
+  together forever: both move independently as unrelated PRs add code. The coverage gate's glob still moves from a fixed
+  `coverage.cobertura.xml` to `coverage.cobertura.*.xml`, since coverlet.MTP stamps a timestamp
+  into every report's own filename rather than writing one fixed name into a per-run guid folder;
+  measured across a full solution run, that timestamp resolution kept all 7 reports distinct with
+  none landing within even a second of another.
 
-  The coverage threshold, floors, and per-assembly minimums are re-baselined against a fresh
-  measurement rather than carried over unexamined: threshold 84% → 86%, measured at 89.1% combined
-  over 28,289 unique lines; `MIN_TOTAL_LINES` 29,000 → 27,000. Seven of the eight shipping assemblies'
-  valid-line counts moved by single digits of percent; `vellum-preflight`'s alone dropped by
-  roughly three-quarters (3,077 → 667 measured valid lines) under otherwise-identical scoping —
-  one more way the two coverage engines disagree about what counts as a coverable line, alongside
-  the difference already on record from when this gate was built (#229). Its floor is re-baselined
-  to the new measurement rather than papered over.
-
-  Nine `[Fact(Timeout = 10_000)]` tests raise `xUnit1069` under 4.0.0's analyzers, and
+  Eleven `[Fact(Timeout = 10_000)]` tests raise `xUnit1069` under 4.0.0's analyzers, and
   `TreatWarningsAsErrors` turns that into a build break — the decision is made per #200's own
-  analysis, treating two groups differently. The five in
-  `tests/VellumPdf.Kernel.Tests/MalformedInputTests.cs` are redundant guards whose functional
+  analysis, treating groups separately by what their assertions actually prove. Two in
+  `tests/VellumPdf.Kernel.Tests/MalformedInputTests.cs`
+  (`TiffLzw_hugeDimensions_throwsWithoutAllocating`,
+  `Tiff_hugeStripOffsetsCount_throwsInvalidDataException`) are redundant guards whose functional
   assertions already prove the point without a wall-clock budget, so their `Timeout` is dropped.
-  The four landed as #208/#211 regression pins — `PdfDictionaryIndexTests.cs` (×2),
-  `EncryptDictionaryDenialOfServiceTests.cs`, `PdfObjectParserTests.cs:666` — where the timeout
-  *is* the assertion (their functional checks pass equally against the quadratic code they exist
-  to catch), so they keep `Timeout` under a `#pragma warning disable xUnit1069` with a comment
-  naming why. Verified against a scratch `[Fact(Timeout = 500)]` sleeping 3 seconds: it failed at
-  504ms under MTP with this repository's parallelization settings, confirming the pin still works
-  before either group's disposition was decided. (#200)
+  The other nine keep `Timeout` under a targeted `#pragma warning disable xUnit1069`, each with a
+  comment naming why: four are `#208`/`#193` regression pins where the timeout *is* the assertion
+  (`PdfDictionaryIndexTests.cs` ×2 and `EncryptDictionaryDenialOfServiceTests.cs` for #208,
+  `PdfObjectParserTests.cs:672` for #193's endstream-scan hardening), where the functional checks
+  pass equally against the quadratic code they exist to catch. The remaining three, also in
+  `MalformedInputTests.cs` (`CmapFormat4_overlappingWideSegments_throwsAndDoesNotHang`,
+  `Png_zlibBomb_throwsAndDoesNotExhaustMemory`,
+  `Png_interlaced_zlibBomb_throwsAndDoesNotExhaustMemory`), have names that promise a bound their
+  `Assert.Throws` alone doesn't provide: the assertion proves the guard rejects the hostile input,
+  not that it does so before running the unbounded path it exists to cut off, so they get the same
+  pragma-kept treatment rather than joining the two that drop `Timeout`. Verified against a
+  scratch `[Fact(Timeout = 500)]` sleeping 3 seconds: it failed at 504ms under MTP with this
+  repository's parallelization settings, confirming the pin still works before any of this was
+  decided. The build job also gains `timeout-minutes: 30`, so a test that really does hang fails
+  the job within the hour instead of running to GitHub's 360-minute default. (#200)
 
 ### Fixed
 

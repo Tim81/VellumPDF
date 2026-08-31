@@ -52,7 +52,16 @@ public sealed class MalformedInputTests
 
     // ── Fonts: cmap format-4 denial-of-service ───────────────────────────────
 
-    [Fact]
+    // Assert.Throws alone proves the budget check rejects this input; it does not prove the
+    // budget check runs before the multi-billion-iteration path the class doc describes, since a
+    // reordering that let the loop run to exhaustion first and only threw afterward would also
+    // pass. Its own name promises the bound Timeout provides, so it stays under the same
+    // pragma-kept pattern as the #208/#193 pins rather than joining the guards this migration
+    // dropped Timeout from. xUnit1069 wants TestContext.Current.CancellationToken threaded
+    // through so the Timeout can end the test promptly; CmapTable.Parse takes no
+    // CancellationToken, and there is nothing to thread it into.
+#pragma warning disable xUnit1069
+    [Fact(Timeout = 10_000)]
     public void CmapFormat4_overlappingWideSegments_throwsAndDoesNotHang()
     {
         // Three segments each covering the whole BMP (0x0000-0xFFFE) sum to ~196k iterations,
@@ -68,6 +77,7 @@ public sealed class MalformedInputTests
         var font = SfntFont.Parse(BuildFont(("cmap", cmap)));
         Assert.Throws<InvalidDataException>(() => CmapTable.Parse(font));
     }
+#pragma warning restore xUnit1069
 
     // ── Fonts: glyf/loca ─────────────────────────────────────────────────────
 
@@ -116,7 +126,11 @@ public sealed class MalformedInputTests
         Assert.Throws<InvalidDataException>(() => PngImageLoader.Load(png));
     }
 
-    [Fact]
+    // Same reasoning as CmapFormat4_overlappingWideSegments_throwsAndDoesNotHang above:
+    // Assert.Throws proves the cap rejects the bomb, not that the cap fires before the ~4 MB
+    // decompression it exists to cut off. Kept under Timeout accordingly.
+#pragma warning disable xUnit1069
+    [Fact(Timeout = 10_000)]
     public void Png_zlibBomb_throwsAndDoesNotExhaustMemory()
     {
         // A 1×1 image whose IDAT decompresses to ~4 MB — far beyond the dimensions' expected size.
@@ -124,6 +138,7 @@ public sealed class MalformedInputTests
         var png = BuildPng(1, 1, bitDepth: 8, colorType: 2, idat: bomb);
         Assert.Throws<InvalidDataException>(() => PngImageLoader.Load(png));
     }
+#pragma warning restore xUnit1069
 
     [Fact]
     public void Png_truncatedImageData_throwsInvalidDataException()
@@ -305,7 +320,10 @@ public sealed class MalformedInputTests
     /// An Adam7-interlaced PNG whose IDAT decompresses to far more bytes than the 7-pass
     /// expected total. The zlib-bomb cap (Inflate's cap guard) must throw InvalidDataException.
     /// </summary>
-    [Fact]
+    // Same reasoning as the other two DoesNot* guards above: Assert.Throws proves the cap fires,
+    // not that it fires before the decompression it exists to cut off. Kept under Timeout.
+#pragma warning disable xUnit1069
+    [Fact(Timeout = 10_000)]
     public void Png_interlaced_zlibBomb_throwsAndDoesNotExhaustMemory()
     {
         // 1×1 interlaced PNG: Adam7 pass 1 produces exactly 1 pixel, so expectedRaw is tiny.
@@ -314,6 +332,7 @@ public sealed class MalformedInputTests
         var png = BuildInterlacedPng(1, 1, bitDepth: 8, colorType: 2, idat: bomb);
         Assert.Throws<InvalidDataException>(() => PngImageLoader.Load(png));
     }
+#pragma warning restore xUnit1069
 
     // ── Interlaced PNG builder helpers ────────────────────────────────────────
 
