@@ -162,6 +162,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   resolved ceiling too, rather than falling back to the 512 MiB / 8× defaults for attacker-supplied
   bytes found inside an already-open document.
 
+- **`PdfDocumentReader.SaveDecrypted` — write a decrypted copy of an encrypted document (#186).**
+  `SaveDecrypted(Stream)` and its `PdfSaveDecryptedOptions`/async twins re-serialise the whole
+  object graph into a fresh single-revision PDF: `/Encrypt` and its object are removed entirely
+  (not just the trailer entry — the object still carries `/O`, `/U`, `/OE`, `/UE`, offline-cracking
+  material against the original passwords), every string and stream comes out plaintext, and object
+  numbers and generations are preserved. Object streams, cross-reference streams, and the
+  linearization parameter dictionary are all dissolved into the one classic table the output writes.
+  Unencrypted input is accepted (the output degenerates to a normalised rewrite), and so is a
+  reconstructed document (`PdfDocumentReader.WasReconstructed`) — unlike `AppendRevision`, a full
+  rewrite does not depend on the base file's own byte layout. Throws `InvalidOperationException` on
+  a signed document unless `PdfSaveDecryptedOptions.AllowInvalidatingSignatures` is set — detected
+  by unioning two sources, neither complete alone: the `Signatures` property's `/AcroForm`
+  field-tree walk (fixed to thread an inherited `/FT` through the walk, ISO 32000-2 §12.7.4.1), and
+  a direct recursive scan of the emitted object graph for a signature dictionary's own shape, since
+  Table 226 lets a field's `/V` be an inline dictionary rather than requiring the indirect reference
+  `/Lock` and `/SV` require, so a signature can sit nested where neither the field-tree walk alone
+  nor a scan of top-level objects alone would find it. Rewriting the
+  object graph moves every byte a signature's `/ByteRange` names, so re-serialising invalidates every
+  signature by construction. A stream's own filter chain and body pass through untouched — a
+  passthrough image (DCTDecode, JPXDecode, and so on) is never re-encoded — except a leading
+  `/Crypt` filter entry (ISO 32000-2 §7.4.10), which is stripped along with its paired
+  `/DecodeParms`, since the crypt filter no longer applies to plaintext output. A linearized input's
+  hint stream is left behind as unreferenced dead weight once the linearization parameter dictionary
+  pointing at it is dropped; serialisation failures leave the destination stream untouched, but a
+  failure or cancellation during the final copy from the internal buffer can leave a plaintext,
+  truncated prefix already written.
 - **`PdfReaderOptions.AllowReconstruction` — opt-in cross-reference reconstruction (#184).** When
   `startxref` is missing, unusable, or doesn't point at a recognisable xref table or stream,
   `PdfReader.Open` used to always throw. Setting `AllowReconstruction` instead rebuilds the table

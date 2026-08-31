@@ -3,6 +3,10 @@ VellumPdf.Reader.PdfDocumentReader
 VellumPdf.Reader.PdfDocumentReader.Catalog.get -> VellumPdf.Core.PdfDictionary!
 VellumPdf.Reader.PdfDocumentReader.Dispose() -> void
 VellumPdf.Reader.PdfDocumentReader.Encryption.get -> VellumPdf.Encryption.PdfEncryptionInfo?
+VellumPdf.Reader.PdfDocumentReader.SaveDecrypted(System.IO.Stream! destination) -> void
+VellumPdf.Reader.PdfDocumentReader.SaveDecrypted(System.IO.Stream! destination, VellumPdf.Reader.PdfSaveDecryptedOptions! options) -> void
+VellumPdf.Reader.PdfDocumentReader.SaveDecryptedAsync(System.IO.Stream! destination) -> System.Threading.Tasks.Task!
+VellumPdf.Reader.PdfDocumentReader.SaveDecryptedAsync(System.IO.Stream! destination, VellumPdf.Reader.PdfSaveDecryptedOptions! options, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 VellumPdf.Reader.PdfDocumentReader.Signatures.get -> System.Collections.Generic.IReadOnlyList<VellumPdf.Reader.PdfSignature!>!
 VellumPdf.Reader.PdfDocumentReader.WasReconstructed.get -> bool
 VellumPdf.Reader.PdfPasswordException
@@ -23,6 +27,10 @@ VellumPdf.Reader.PdfReaderOptions.Password.init -> void
 VellumPdf.Reader.PdfReaderOptions.PdfReaderOptions() -> void
 VellumPdf.Reader.PdfReaderOptions.ReconstructionBudgetMultiplier.get -> int
 VellumPdf.Reader.PdfReaderOptions.ReconstructionBudgetMultiplier.init -> void
+VellumPdf.Reader.PdfSaveDecryptedOptions
+VellumPdf.Reader.PdfSaveDecryptedOptions.AllowInvalidatingSignatures.get -> bool
+VellumPdf.Reader.PdfSaveDecryptedOptions.AllowInvalidatingSignatures.init -> void
+VellumPdf.Reader.PdfSaveDecryptedOptions.PdfSaveDecryptedOptions() -> void
 VellumPdf.Reader.PdfSignature
 VellumPdf.Reader.PdfSignature.ByteRange.get -> System.ReadOnlyMemory<long>
 VellumPdf.Reader.PdfSignature.Contents.get -> System.ReadOnlyMemory<byte>
