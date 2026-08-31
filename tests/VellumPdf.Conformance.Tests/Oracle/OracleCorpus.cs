@@ -3431,6 +3431,7 @@ public static class OracleCorpus
     {
         using var doc = new PdfDocument { Conformance = VellumPdf.Document.PdfConformance.PdfA2b };
         doc.Info.Title = "VellumPdf Oracle Fixture";
+        doc.Info.Keywords = "oracle, pdfa2b, device-colour"; // exercises pdf:Keywords against veraPDF (#199)
         var page = doc.AddPage(PageSize.A4);
         var canvas = new PdfCanvas(page);
         canvas.SetFillColorRgb(1, 0, 0).Rectangle(100, 100, 50, 50).Fill();

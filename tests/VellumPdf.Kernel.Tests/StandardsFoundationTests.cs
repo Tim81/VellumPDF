@@ -145,6 +145,78 @@ public sealed class StandardsFoundationTests
         Assert.Contains("pdf:Producer", content);
     }
 
+    // ── #199: Info.Keywords mirrored into pdf:Keywords ──────────────────────────
+
+    [Fact]
+    public void Save_withKeywords_xmpPacketContainsPdfKeywords()
+    {
+        using var doc = new PdfDocument();
+        doc.Info.Keywords = "pdf, library, testing";
+        doc.AddPage();
+
+        var content = SaveToString(doc);
+
+        // Ordinal, and pin the whole wrapped element: the default (culture-sensitive)
+        // Contains collation-ignores the NULs in /Info's UTF-16BE copy of the same value,
+        // so a bare Contains("pdf, library, testing") or Contains("pdf:Keywords") stays
+        // green even if the writer never emits pdf:Keywords at all — /Info alone satisfies
+        // it. See Save_withKeywordsNeedingEscaping_xmpPacketEscapesThem for the mechanism.
+        Assert.Contains(
+            "<pdf:Keywords>pdf, library, testing</pdf:Keywords>", content, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Save_noKeywords_omitsPdfKeywords()
+    {
+        using var doc = new PdfDocument();
+        doc.Info.Title = "Has a title but no keywords";
+        doc.AddPage();
+
+        var content = SaveToString(doc);
+
+        Assert.DoesNotContain("pdf:Keywords", content, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Save_withKeywordsNeedingEscaping_xmpPacketEscapesThem()
+    {
+        using var doc = new PdfDocument();
+        doc.Info.Keywords = "PDF & \"tags\" <2.0>";
+        doc.AddPage();
+
+        var content = SaveToString(doc);
+
+        // Ordinal: the default (culture-sensitive) comparison treats the NUL bytes that
+        // separate every code unit in /Info's UTF-16BE encoding as collation-ignorable,
+        // which makes DoesNotContain("<2.0>", content) a false negative — it "finds" the
+        // unescaped needle spread across those NULs even though no such contiguous byte
+        // run exists.
+        Assert.Contains(
+            "PDF &amp; &quot;tags&quot; &lt;2.0&gt;", content, StringComparison.Ordinal);
+        Assert.DoesNotContain("<2.0>", content, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void PrepareForSigning_withKeywords_xmpPacketContainsPdfKeywords()
+    {
+        // BuildPacket is shared by the normal Save() path and the signature-placeholder
+        // path (PrepareForSigning); this pins the mirror on the second path too.
+        using var doc = new PdfDocument();
+        doc.Info.Keywords = "signed, placeholder";
+        doc.AddPage();
+
+        var bytes = doc.PrepareForSigning(new SignaturePlaceholderOptions
+        {
+            SigningTime = DateTimeOffset.UtcNow,
+            SignerName = "Test Signer",
+        });
+        var content = Encoding.Latin1.GetString(bytes);
+
+        // Ordinal + whole element, same reason as Save_withKeywords_xmpPacketContainsPdfKeywords.
+        Assert.Contains(
+            "<pdf:Keywords>signed, placeholder</pdf:Keywords>", content, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void Save_metadataStream_hasNoFilterEntry()
     {
