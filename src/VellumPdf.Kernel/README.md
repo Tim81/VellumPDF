@@ -55,7 +55,7 @@ Kernel walkthrough: <https://github.com/Tim81/VellumPDF/blob/main/docs/kernel-gu
 | [VellumPdf.Fonts.Standard14](https://www.nuget.org/packages/VellumPdf.Fonts.Standard14) | Stable | Embeddable standard-14 font substitutes for PDF/A text. |
 | [VellumPdf.Layout](https://www.nuget.org/packages/VellumPdf.Layout) | Stable | High-level document builder: paragraphs, tables, images, pagination. |
 | [VellumPdf.Signing](https://www.nuget.org/packages/VellumPdf.Signing) | Stable | PAdES / PKCS#7 digital signatures with timestamps and LTV. |
-| [VellumPdf.Reader](https://www.nuget.org/packages/VellumPdf.Reader) | Preview | Opens existing PDFs, encrypted ones given their password; exposes catalog and signatures. |
+| [VellumPdf.Reader](https://www.nuget.org/packages/VellumPdf.Reader) | Preview | Opens existing PDFs, encrypted ones given their password; exposes catalog and signatures; writes a decrypted copy with configurable resource limits. |
 | [VellumPdf.Conformance](https://www.nuget.org/packages/VellumPdf.Conformance) | Stable | In-process PDF/A and PDF/UA preflight validation. |
 | [VellumPdf.Cli](https://www.nuget.org/packages/VellumPdf.Cli) | Stable | `vellum-preflight` command-line PDF/A and PDF/UA validator. |
 | [VellumPdf.Barcodes](https://www.nuget.org/packages/VellumPdf.Barcodes) | Stable | QR, Data Matrix, Aztec, PDF417, Code 128/GS1-128, Code 39, EAN/UPC, and ITF-14 as vectors. |
@@ -63,8 +63,8 @@ Kernel walkthrough: <https://github.com/Tim81/VellumPDF/blob/main/docs/kernel-gu
 ## Roadmap
 
 Planned direction, tracked as [GitHub milestones](https://github.com/Tim81/VellumPDF/milestones).
-These are scopes, not commitments — the milestones carry no due dates, and nothing past 2.2.0
-has shipped yet.
+These are scopes, not commitments — the milestones carry no due dates. 2.2.0 is the latest
+published release; 2.3 is merged to main and pending release.
 
 Scope past 2.5 runs as **two parallel tracks**, because auditing the layout engine turned up more
 work than the PDF 2.0 conformance gap did. Both ship from the same version numbers.
@@ -73,7 +73,7 @@ work than the PDF 2.0 conformance gap did. Both ship from the same version numbe
 
 | Milestone | Scope |
 | --- | --- |
-| **2.3 — Reader robustness** | Cross-reference reconstruction for damaged files (#184), a decrypted-copy writer (#186), the `/XRefStm` precedence decision (#206), reader fuzzing (#99), and the CI and oracle debt that makes all of it verifiable. |
+| **2.3 — Reader robustness** *(merged to main, pending release)* | Cross-reference reconstruction for damaged files (#184), a decrypted-copy writer (#186), the `/XRefStm` precedence decision (#206), reader fuzzing (#99), and the CI and oracle debt that makes all of it verifiable. |
 | **2.4 — PDF content extraction** | Text and image extraction on top of the reader (#98), and graduating `VellumPdf.Reader` from Preview (#187). |
 | **2.5 — PDF/A-4 and PDF/A-1 profiles** | PDF/A-4 (#222) so conformance output stops downgrading to `%PDF-1.7`, PDF/A-1 (#218), and dropping the keys ISO 32000-2 deprecates (#325). |
 | **2.6 — ISO/TS extensions to PDF 2.0** | The four Technical Specifications that amend PDF 2.0: AES-GCM (#236), PDF MAC integrity (#237), SHA-3 (#238) and EdDSA (#239). The reader currently rejects every AES-GCM file, so this closes an interoperability bug as well as adding features. |
@@ -111,7 +111,9 @@ work than the PDF 2.0 conformance gap did. Both ship from the same version numbe
 
 What this library implements of ISO 32000-2 today is inventoried, reference by reference, in
 [PDF 2.0 conformance](../../docs/pdf20-conformance.md). It emits a `%PDF-2.0` header, which is not the
-same as conformance, and the table says which is which.
+same as conformance, and the table says which is which. The [Reader guide](../../docs/reader-guide.md)
+and [Layout guide](../../docs/layout-guide.md) each carry a capability table doing the same job for
+their own package, checked against the code and test suite rather than against this roadmap.
 
 `VellumPdf.Reader` is marked Preview in the table above; expect its public surface to settle
 as these milestones land. `VellumPdf.Conformance` graduated to Stable in 2.0.

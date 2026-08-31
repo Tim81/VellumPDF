@@ -249,7 +249,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `SaveDecrypted` accepts a reconstructed document — closing the half of #99 that was blocked on
   #186 not existing yet.
 
+- **`docs/reader-guide.md` and `docs/layout-guide.md`.** v2.3 added `SaveDecrypted`,
+  `AllowReconstruction`, and the tighten-only limit options to `VellumPdf.Reader`, and none of it
+  had a narrative guide — only XML docs and CHANGELOG entries. Each guide ends in a capability
+  table (Supported / Planned / Not yet, each row citing its milestone or ISO reference) built
+  from the actual public API and test suite rather than from memory, so a row is only marked
+  Supported where a test proves it; two Layout rows are marked for reviewer verification instead
+  of guessed. Registered in `docs/toc.yml` and linked from the root README and each package
+  README's roadmap section.
+
 ### Changed
+
+- **`docs/architecture.md` and the family of package READMEs now describe the reader as it exists
+  after v2.3, not before it.** The architecture doc still framed serialization as Kernel-only,
+  which stopped being true once `PdfDocumentReader.SaveDecrypted` shipped its own full-rewrite
+  serializer inside the Reader package; it also still roadmapped the general reader's structural
+  parser and content extraction at v2.1/v2.2, which have long since shipped and moved (content
+  extraction is now v2.4, #98). The root README and all eight package READMEs get the same
+  correction to their shared roadmap section, plus a note that v2.3 is merged to main and pending
+  release rather than either "not shipped" or "released" — 2.2.0 remains the latest published
+  version until the maintainer tags 2.3.0.
 
 - **CI's external oracles are now pinned instead of floating on whatever the runner image ships.**
   The build job itself moves off the floating `ubuntu-latest` label onto `ubuntu-24.04`, since
