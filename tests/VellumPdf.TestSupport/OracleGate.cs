@@ -101,11 +101,11 @@ public static class OracleGate
     private static bool IsBarcodeDecodeDependency(string dependency)
         => dependency is "pdftoppm" or "python" or "zxing-cpp";
 
-    // All five switches accept "1" or "true" (case-insensitively). ci.yml sets REQUIRE_VERAPDF and
-    // REQUIRE_BARCODE_ORACLE to the literal "1" (ci.yml:80-81); CI and GITHUB_ACTIONS are set to
-    // "true" by the GitHub Actions runner itself, not by this repository's workflow file. A CI
-    // system that instead exports CI=1 (common outside GitHub Actions) needs the same acceptance,
-    // and a developer who reaches for "true" on REQUIRE_ORACLES, REQUIRE_VERAPDF or
+    // All five switches accept "1" or "true" (case-insensitively). The Test step's env block in
+    // ci.yml sets REQUIRE_VERAPDF and REQUIRE_BARCODE_ORACLE to the literal "1"; CI and
+    // GITHUB_ACTIONS are set to "true" by the GitHub Actions runner itself, not by this repository's
+    // workflow file. A CI system that instead exports CI=1 (common outside GitHub Actions) needs the
+    // same acceptance, and a developer who reaches for "true" on REQUIRE_ORACLES, REQUIRE_VERAPDF or
     // REQUIRE_BARCODE_ORACLE should get the same behaviour CI and GITHUB_ACTIONS already give — a
     // "1"-only check on those three would be a silent footgun for exactly that developer.
     private static bool IsTrueOrOne(string variable)
