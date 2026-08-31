@@ -20,7 +20,9 @@ jobs:
 
       - uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: '10.0.x'
+          global-json-file: global.json
+
+      - run: dotnet --version
 
       - name: Clean-room check
         shell: pwsh
@@ -164,7 +166,9 @@ jobs:
 
       - uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: '10.0.x'
+          global-json-file: global.json
+
+      - run: dotnet --version
 
       - name: Install Native AOT prerequisites
         if: runner.os == 'Linux'

@@ -1,6 +1,8 @@
 {
   "sdk": {
-    "version": "10.0.204",
-    "rollForward": "latestFeature"
+    "version": "10.0.400",
+    // Required for CI to pick up 10.0.4xx patch releases; removing it pins CI to
+    // exactly 10.0.400 and drops patch servicing.
+    "rollForward": "latestPatch"
   }
 }

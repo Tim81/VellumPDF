@@ -209,6 +209,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   every assembly, and all eleven symbol PDBs with their SourceLink document maps are byte-identical,
   so nothing that ships changes. The package's own MSBuild logic is byte-identical to the SDK's copy;
   only the compiled task assembly now floats with the SDK band instead of being pinned. (#202)
+- **`global.json` now pins the SDK feature band the workflows resolve, instead of trailing it.**
+  It named `10.0.204` with `latestFeature`, while every `actions/setup-dotnet` step asked for
+  `10.0.x` and landed on whatever band was newest at the time — `10.0.400` as of this change. With
+  `TreatWarningsAsErrors` and `AnalysisLevel latest`, a diagnostic new to that band is a CI failure
+  a developer on the older SDK cannot reproduce. `global.json` now reads `10.0.400` with
+  `latestPatch`, and all five `setup-dotnet` steps (`ci.yml` build and AOT smoke jobs, `release.yml`
+  library and tool jobs, `docs.yml`) point at `global-json-file: global.json` rather than repeating
+  the version inline, so the two can no longer drift apart. (#231)
 
 ### Fixed
 

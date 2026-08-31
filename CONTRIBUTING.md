@@ -5,7 +5,11 @@ build, test, and submit changes to VellumPdf.
 
 ## Prerequisites
 
-- **.NET 10 SDK** (the only required runtime dependency).
+- **.NET 10 SDK**, feature band 10.0.4xx — the exact pin is in `global.json`;
+  earlier feature bands are rejected.
+- Before tagging a release: merge and CI-validate any `global.json`
+  feature-band bump first. `release.yml` reads `global.json` from the tag's
+  tree, so a stale pin ships a release built on a superseded SDK band.
 - **Docker** — needed to run the veraPDF conformance gate locally.
 - **qpdf** and **poppler-utils** — needed to run the structural-validator,
   text-extraction, signature, and barcode-rasterization oracle tests locally
