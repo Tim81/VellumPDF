@@ -579,6 +579,10 @@ internal static class PdfFilters
         // not a filter abbreviation, so it must not be consulted here.
         // /Filter (and each array element) may be an indirect reference — resolve when able.
         var filterObj = Deref(resolve, dict.Get(PdfName.Filter));
+        // An indirect /Filter that fails to resolve dereferences to the null object (ISO 32000-2
+        // §7.3.10), and a null-valued dictionary entry is equivalent to the entry being absent
+        // (§7.3.9). So a null here means "this stream declares no filter", not "an error
+        // occurred" — the stream is handed back unfiltered, per spec, not flagged. See #373.
         if (filterObj is null) return [];
         if (filterObj is PdfName n) return [n];
         if (filterObj is PdfArray arr)

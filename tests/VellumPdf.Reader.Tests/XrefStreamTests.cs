@@ -1139,27 +1139,27 @@ public sealed class XrefStreamTests
     }
 
     /// <summary>
-    /// Item 2 of the #372 review round: the CHANGELOG's claim that the null every other same-
-    /// revision-free consequence in this file degrades to is what freeing a /Filter or
-    /// /DecodeParms object produces is false. Object 4 here is the name /FlateDecode, defined only
-    /// by this revision's /XRefStm and freed by the classic table in the same revision -- #206's
-    /// own shape, not some new construct -- and object 3's stream dictionary points at it via
-    /// /Filter 4 0 R. Once object 4 resolves to null, <c>PdfFilters.GetFilterList</c> treats the
-    /// stream as having no filter at all (<c>if (filterObj is null) return [];</c>), so
-    /// <c>GetDecodedStreamData</c> returns the raw, still-compressed body -- wrong bytes, not a
-    /// null. Object 6 is a control: the same compressed plaintext, the same /FlateDecode filter,
-    /// spelled out directly rather than through an indirect reference, decoding correctly on the
-    /// same file -- proof the divergence tracks the freed indirect /Filter specifically, not some
-    /// general breakage in this fixture.
+    /// Object 4 here is the name /FlateDecode, defined only by this revision's /XRefStm and freed
+    /// by the classic table in the same revision -- #206's own shape, not some new construct --
+    /// and object 3's stream dictionary points at it via /Filter 4 0 R. Once object 4 fails to
+    /// resolve, ISO 32000-2 §7.3.10 governs: "An indirect reference to an undefined object shall
+    /// not be considered an error by a PDF processor; it shall be treated as a reference to the
+    /// null object." §7.3.9 then governs the null: "Specifying the null object as the value of a
+    /// dictionary entry ... shall be equivalent to omitting the entry entirely." Chained, a
+    /// stream whose /Filter cannot be resolved is a stream with no /Filter entry at all -- not an
+    /// error -- so <c>GetDecodedStreamData</c> correctly returns the raw body unfiltered. Object 6
+    /// is a control: the same compressed plaintext, the same /FlateDecode filter, spelled out
+    /// directly rather than through an indirect reference, decoding correctly on the same file --
+    /// proof the divergence tracks the freed indirect /Filter specifically, not some general
+    /// breakage in this fixture.
     ///
-    /// This test CHARACTERISES current behaviour rather than endorsing it. Handing back compressed
-    /// bytes and reporting success is the worst degradation in this whole change -- every other
-    /// unresolvable object here becomes a visible null, and this one becomes wrong content that
-    /// looks right. Tracked as #373; when that is fixed this test is expected to go red, and the
-    /// right response is to retarget it, not to restore the old behaviour.
+    /// This test pins spec-mandated behaviour. #373 considered returning null or throwing instead,
+    /// found both would deviate from the clause chain above, and closed on this reading. A reader
+    /// diagnostics channel for this and similar notify-and-continue cases (Annex I.2) is tracked
+    /// separately in #385.
     /// </summary>
     [Fact]
-    public void FreedFilterObject_streamDecodesToRawCompressedBytes_notNull()
+    public void FreedFilterObject_streamTreatedAsUnfiltered_perIso7310()
     {
         var plaintext = "FILTERFREEDPLAINTEXTBODY"u8.ToArray();
         var compressed = Compress(plaintext);
