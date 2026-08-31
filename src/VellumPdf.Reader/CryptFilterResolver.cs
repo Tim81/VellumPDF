@@ -188,7 +188,15 @@ internal static class CryptFilterResolver
     private static bool IsExternalFileStream(PdfDictionary streamDict, Func<PdfObject?, PdfObject?>? resolve)
         => Deref(resolve, streamDict.Get(_f)) is PdfLiteralString or PdfHexString or PdfDictionary;
 
-    private static string? FirstFilterName(PdfDictionary dict, Func<PdfObject?, PdfObject?>? resolve)
+    /// <summary>
+    /// The name of the FIRST filter in <paramref name="dict"/>'s <c>/Filter</c> entry — a bare name,
+    /// or the first element of a filter array — or <see langword="null"/> when <c>/Filter</c> is
+    /// absent or empty. Internal rather than private: <c>PdfDocumentReader.SaveDecrypted</c> (#186)
+    /// reuses this to find and strip a leading <c>/Crypt</c> filter when rewriting a stream's
+    /// dictionary for plaintext output, the same lookup this type already does to resolve which
+    /// crypt filter method applies on read.
+    /// </summary>
+    internal static string? FirstFilterName(PdfDictionary dict, Func<PdfObject?, PdfObject?>? resolve)
     {
         var filterObj = Deref(resolve, dict.Get(PdfName.Filter));
         return filterObj switch
@@ -199,7 +207,14 @@ internal static class CryptFilterResolver
         };
     }
 
-    private static PdfDictionary? DecodeParmsForFirstFilter(PdfDictionary dict, Func<PdfObject?, PdfObject?>? resolve)
+    /// <summary>
+    /// The <c>/DecodeParms</c> (or legacy <c>/DP</c>) dictionary that pairs with the FIRST filter —
+    /// a bare dictionary, or the first element of a parms array. Internal for the same reason as
+    /// <see cref="FirstFilterName"/>: <c>SaveDecrypted</c> needs the <c>/Crypt</c> filter's own parms
+    /// to find its <c>/Name</c>, and needs to know whether to drop a bare dictionary or an array
+    /// element when stripping that filter from the rewritten output.
+    /// </summary>
+    internal static PdfDictionary? DecodeParmsForFirstFilter(PdfDictionary dict, Func<PdfObject?, PdfObject?>? resolve)
     {
         var parmsObj = Deref(resolve, dict.Get(_decodeParms) ?? dict.Get(_dp));
         return parmsObj switch

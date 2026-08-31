@@ -55,44 +55,7 @@ internal static class IncrementalCrossReferenceBuilder
         long prevXrefOffset,
         PdfArray? documentId)
     {
-        if (writtenObjects.Count == 0)
-            throw new ArgumentException("At least one written object is required.", nameof(writtenObjects));
-
-        var xrefOffset = writer.Position;
-
-        writer.WriteAscii("xref\n"u8);
-
-        // ── Free-list head subsection: "0 1\n0000000000 65535 f\r\n" ─────────
-        writer.WriteAscii("0 1\n"u8);
-        writer.WriteAscii("0000000000 65535 f\r\n"u8);
-
-        // ── Group written objects into contiguous runs ────────────────────────
-        // The file write-order of objects is irrelevant (each entry carries its own
-        // recorded offset), but xref subsections must list object numbers in ascending
-        // order. Sort defensively so callers may pass objects in any order.
-        var sorted = writtenObjects.OrderBy(o => o.ObjectNumber).ToList();
-        for (var i = 1; i < sorted.Count; i++)
-            if (sorted[i].ObjectNumber == sorted[i - 1].ObjectNumber)
-                throw new ArgumentException(
-                    $"Duplicate object number {sorted[i].ObjectNumber} in the incremental revision.",
-                    nameof(writtenObjects));
-        var runs = GroupIntoRuns(sorted);
-
-        foreach (var (firstObjNum, entries) in runs)
-        {
-            WriteInt(writer, firstObjNum);
-            writer.WriteByte((byte)' ');
-            WriteInt(writer, entries.Count);
-            writer.WriteByte((byte)'\n');
-
-            foreach (var (_, generation, offset) in entries)
-            {
-                Write10Digits(writer, offset);
-                writer.WriteByte((byte)' ');
-                Write5Digits(writer, generation);
-                writer.WriteAscii(" n\r\n"u8);
-            }
-        }
+        var sorted = WriteXrefSections(writer, writtenObjects, out var xrefOffset);
 
         // ── Trailer ──────────────────────────────────────────────────────────
         int maxObjNum = sorted[sorted.Count - 1].ObjectNumber;
@@ -114,6 +77,96 @@ internal static class IncrementalCrossReferenceBuilder
         writer.WriteAscii("\n%%EOF\n"u8);
 
         return xrefOffset;
+    }
+
+    /// <summary>
+    /// Writes a complete, single-revision classic cross-reference table and trailer — the shape a
+    /// full rewrite needs rather than an incremental update: no <c>/Prev</c>, and the caller supplies
+    /// the entire trailer dictionary (already carrying <c>/Size</c>, <c>/Root</c>, and whatever else
+    /// it wants) instead of this method assembling one from a base document's own trailer.
+    /// </summary>
+    /// <param name="writer">PDF writer positioned where the xref table should begin.</param>
+    /// <param name="writtenObjects">
+    /// Triples of (objectNumber, generation, absoluteByteOffset) for every object in the document.
+    /// Must not be empty; duplicate object numbers are rejected — see
+    /// <see cref="WriteIncrementalXrefAndTrailer"/>'s parameter of the same name for the full
+    /// contract, which this method shares.
+    /// </param>
+    /// <param name="trailer">
+    /// The complete trailer dictionary to write verbatim. The caller decides its contents (no
+    /// <c>/Prev</c> or <c>/XRefStm</c> belongs in a full single-revision rewrite); this method does
+    /// not add, remove, or validate any of its entries.
+    /// </param>
+    internal static long WriteFullDocumentXrefAndTrailer(
+        PdfWriter writer,
+        IReadOnlyList<(int ObjectNumber, int Generation, long ByteOffset)> writtenObjects,
+        PdfDictionary trailer)
+    {
+        WriteXrefSections(writer, writtenObjects, out var xrefOffset);
+
+        writer.WriteAscii("trailer\n"u8);
+        trailer.WriteTo(writer);
+
+        writer.WriteAscii("\nstartxref\n"u8);
+        WriteInt(writer, xrefOffset);
+        writer.WriteAscii("\n%%EOF\n"u8);
+
+        return xrefOffset;
+    }
+
+    /// <summary>
+    /// Writes the <c>xref</c> keyword, the mandatory free-list head subsection, and one subsection
+    /// per contiguous run of <paramref name="writtenObjects"/> — the part <see
+    /// cref="WriteIncrementalXrefAndTrailer"/> and <see cref="WriteFullDocumentXrefAndTrailer"/> both
+    /// need verbatim, since a full rewrite's xref table has the identical subsection shape as an
+    /// incremental one; only the trailer that follows differs (<c>/Prev</c> present or not, and
+    /// where the rest of the trailer's contents come from).
+    /// </summary>
+    private static List<(int ObjectNumber, int Generation, long ByteOffset)> WriteXrefSections(
+        PdfWriter writer,
+        IReadOnlyList<(int ObjectNumber, int Generation, long ByteOffset)> writtenObjects,
+        out long xrefOffset)
+    {
+        if (writtenObjects.Count == 0)
+            throw new ArgumentException("At least one written object is required.", nameof(writtenObjects));
+
+        xrefOffset = writer.Position;
+
+        writer.WriteAscii("xref\n"u8);
+
+        // ── Free-list head subsection: "0 1\n0000000000 65535 f\r\n" ─────────
+        writer.WriteAscii("0 1\n"u8);
+        writer.WriteAscii("0000000000 65535 f\r\n"u8);
+
+        // ── Group written objects into contiguous runs ────────────────────────
+        // The file write-order of objects is irrelevant (each entry carries its own
+        // recorded offset), but xref subsections must list object numbers in ascending
+        // order. Sort defensively so callers may pass objects in any order.
+        var sorted = writtenObjects.OrderBy(o => o.ObjectNumber).ToList();
+        for (var i = 1; i < sorted.Count; i++)
+            if (sorted[i].ObjectNumber == sorted[i - 1].ObjectNumber)
+                throw new ArgumentException(
+                    $"Duplicate object number {sorted[i].ObjectNumber} in the revision.",
+                    nameof(writtenObjects));
+        var runs = GroupIntoRuns(sorted);
+
+        foreach (var (firstObjNum, entries) in runs)
+        {
+            WriteInt(writer, firstObjNum);
+            writer.WriteByte((byte)' ');
+            WriteInt(writer, entries.Count);
+            writer.WriteByte((byte)'\n');
+
+            foreach (var (_, generation, offset) in entries)
+            {
+                Write10Digits(writer, offset);
+                writer.WriteByte((byte)' ');
+                Write5Digits(writer, generation);
+                writer.WriteAscii(" n\r\n"u8);
+            }
+        }
+
+        return sorted;
     }
 
     private static List<(int FirstObjNum, List<(int ObjectNumber, int Generation, long ByteOffset)> Entries)> GroupIntoRuns(

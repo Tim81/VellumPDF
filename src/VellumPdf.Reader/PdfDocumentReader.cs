@@ -17,7 +17,7 @@ namespace VellumPdf.Reader;
 /// Instances are not thread-safe: object resolution and signature collection populate an
 /// internal cache without synchronization. Use one reader per thread.
 /// </remarks>
-public sealed class PdfDocumentReader : IDisposable
+public sealed partial class PdfDocumentReader : IDisposable
 {
     private readonly Dictionary<int, XrefEntry> _xref;
     // Cached alongside this object's AUTHORITATIVE generation, which is a single fact about the
@@ -58,6 +58,20 @@ public sealed class PdfDocumentReader : IDisposable
     // unencrypted document never pays for (or risks a bug in) any of this machinery.
     private readonly StandardSecurityDecryptor? _decryptor;
     private readonly byte[]? _fileKey;
+
+    /// <summary>
+    /// The object number of the trailer's <c>/Encrypt</c> dictionary, or <see langword="null"/> for
+    /// an unencrypted document. <see cref="SaveDecrypted(Stream)"/> excludes this object explicitly
+    /// (#186's blocking security requirement) — removing <c>/Encrypt</c> from the trailer is not the
+    /// same as removing the object itself, and the object still carries <c>/O</c>, <c>/U</c>,
+    /// <c>/OE</c>, <c>/UE</c> and <c>/Perms</c>, all of it offline-cracking material against the
+    /// original document's passwords. Captured here, not recomputed from the trailer at save time,
+    /// because <see cref="PurgeObjectsCachedDuringAuthentication"/> already needed the same value —
+    /// this just keeps the one fact around instead of re-deriving it from a trailer that may no
+    /// longer carry <c>/Encrypt</c> by the time a caller asks (see <see cref="ReconstructionPhaseB"/>,
+    /// which never touches <c>/Encrypt</c>, so this stays correct there too).
+    /// </summary>
+    private readonly int? _encryptObjectNumber;
     private readonly Dictionary<string, CryptFilterMethod> _cryptFilterTable = new(StringComparer.Ordinal);
     private readonly bool _encryptMetadata = true;
 
@@ -185,6 +199,7 @@ public sealed class PdfDocumentReader : IDisposable
             if (trailer.TryGet(new PdfName("Encrypt"), out var encryptRaw) && encryptRaw is not null)
             {
                 var encryptObjectNumber = (encryptRaw as PdfIndirectReference)?.ObjectNumber;
+                _encryptObjectNumber = encryptObjectNumber;
                 var encryptDict = ResolveValue(encryptRaw) as PdfDictionary
                     ?? throw new InvalidDataException("Malformed PDF: /Encrypt does not resolve to a dictionary.");
 
