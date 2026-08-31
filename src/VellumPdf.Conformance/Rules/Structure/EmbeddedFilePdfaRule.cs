@@ -150,7 +150,7 @@ internal sealed class EmbeddedFilePdfaRule : IConformanceRule
         PdfConformance? embeddedLevel;
         try
         {
-            (kind, embeddedLevel) = ReadEmbeddedPdfAInfo(embeddedBytes);
+            (kind, embeddedLevel) = ReadEmbeddedPdfAInfo(embeddedBytes, context.Limits);
         }
         catch
         {
@@ -203,13 +203,18 @@ internal sealed class EmbeddedFilePdfaRule : IConformanceRule
             return;
 
         // Recursively validate the embedded PDF/A-2 document using the in-process validator.
-        // Re-entrancy is safe because PdfPreflight.Validate(byte[], …) opens a new, independent
-        // PdfDocumentReader and has no shared mutable state with the outer validation pass.
+        // Re-entrancy is safe because this opens a new, independent PdfDocumentReader and has no
+        // shared mutable state with the outer validation pass. Opened through the internal
+        // ReaderLimits overload — not PdfPreflight.Validate(byte[], …), which would fall back to
+        // the untightened 512 MiB / 8× defaults — so a caller who tightened either resource knob
+        // on the OUTER read (context.Limits) has it enforced on this attacker-supplied nested
+        // document too; see PdfDocumentReader.Limits' own doc comment.
         PreflightResult innerResult;
         _recursionDepth++;
         try
         {
-            innerResult = PdfPreflight.Validate(embeddedBytes, embeddedLevel!.Value);
+            using var embeddedReader = VellumPdf.Reader.PdfReader.Open(embeddedBytes, context.Limits);
+            innerResult = PdfPreflight.Validate(embeddedReader, embeddedLevel!.Value);
         }
         catch
         {
@@ -257,10 +262,17 @@ internal sealed class EmbeddedFilePdfaRule : IConformanceRule
     /// property from the document <c>/Metadata</c> XMP stream. Also returns the
     /// <see cref="PdfConformance"/> level to use for recursive validation when part is 2.
     /// </summary>
+    /// <param name="pdfBytes">The embedded file's raw, attacker-supplied bytes.</param>
+    /// <param name="limits">
+    /// The outer document's resolved resource ceilings (<c>PreflightContext.Limits</c>), passed
+    /// through so a caller who tightened them is not handed the untightened defaults back for
+    /// this nested open.
+    /// </param>
     /// <remarks>The caller must catch all exceptions and handle them as non-PDF/A.</remarks>
-    private static (EmbeddedPdfAKind Kind, PdfConformance? Level) ReadEmbeddedPdfAInfo(byte[] pdfBytes)
+    private static (EmbeddedPdfAKind Kind, PdfConformance? Level) ReadEmbeddedPdfAInfo(
+        byte[] pdfBytes, VellumPdf.Reader.ReaderLimits limits)
     {
-        using var reader = VellumPdf.Reader.PdfReader.Open(pdfBytes);
+        using var reader = VellumPdf.Reader.PdfReader.Open(pdfBytes, limits);
         var metadataObj = reader.Catalog.Get(new PdfName("Metadata"));
         if (metadataObj is null)
             return (EmbeddedPdfAKind.NoPdfAId, null);
