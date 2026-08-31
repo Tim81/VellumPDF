@@ -1,19 +1,24 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
+using System.Buffers.Binary;
+using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using VellumPdf.Barcodes;
 using VellumPdf.Encryption;
+using VellumPdf.Fonts;
 using VellumPdf.Layout;
 using VellumPdf.Layout.Core;
 using VellumPdf.Layout.Elements;
 using VellumPdf.Reader;
 using VellumPdf.Signing;
 
-// Exercises the public generation path under Native AOT: layout engine,
-// pagination, Standard-14 fonts, FlateDecode, and the PDF writer.
+// Exercises the public generation path under Native AOT: layout engine, pagination, the
+// Kernel's built-in Standard-14 AFM metrics (Standard14Metrics, reached through Layout — not
+// the VellumPdf.Fonts.Standard14 package, covered separately below), FlateDecode, and the
+// PDF writer.
 using var doc = new Document();
 doc.Info.Title = "VellumPdf AOT Smoke";
 doc.Add(new Paragraph("VellumPdf AOT smoke test — Hello, world!"));
@@ -62,6 +67,60 @@ if (File.Exists(fontPath))
 else
 {
     Console.WriteLine("(embedded-font path AOT-compiled; runtime-skipped — no system font present)");
+}
+
+// Exercise VellumPdf.Fonts.Standard14 under Native AOT (#219). The package embeds its 12
+// Liberation TTFs as EmbeddedResource and loads them via Assembly.GetManifestResourceStream(
+// logicalName) — a lookup by string, which is exactly what trimming breaks silently. Layout's
+// Document has no public escape hatch to the Kernel PdfDocument it wraps, so EmbedStandard14Font
+// (an extension on PdfDocument) is exercised the same way Standard14SubstituteTests does: via the
+// Kernel Document/Canvas API directly.
+using (var std14Doc = new VellumPdf.Document.PdfDocument())
+{
+    var std14Page = std14Doc.AddPage();
+    var std14Handle = std14Doc.EmbedStandard14Font(Standard14.Helvetica);
+    std14Doc.RegisterEmbeddedFontUsage(std14Page, std14Handle);
+
+    var std14Canvas = new VellumPdf.Canvas.PdfCanvas(std14Page);
+    std14Canvas.BeginText().SetFontByName(std14Handle.ResourceName, 12).SetTextMatrix(1, 0, 0, 1, 72, 720);
+    var std14Gids = new ushort[3];
+    var std14GidCount = std14Handle.GetGlyphIds("Abc", std14Gids);
+    if (std14GidCount != 3 || Array.IndexOf(std14Gids, (ushort)0, 0, std14GidCount) >= 0)
+    {
+        Console.Error.WriteLine("FAIL: Standard14 substitute returned a .notdef glyph for 'Abc'");
+        return 1;
+    }
+    std14Canvas.ShowGlyphs(std14Gids.AsSpan(0, std14GidCount));
+    std14Canvas.EndText();
+    std14Canvas.Finish();
+
+    using var std14Ms = new MemoryStream();
+    std14Doc.Save(std14Ms);
+    var std14Bytes = std14Ms.ToArray();
+    var std14Text = Encoding.Latin1.GetString(std14Bytes);
+
+    if (!std14Text.Contains("/FontFile2", StringComparison.Ordinal)
+        || !std14Text.Contains("/Type0", StringComparison.Ordinal)
+        || !std14Text.Contains("/Identity-H", StringComparison.Ordinal))
+    {
+        Console.Error.WriteLine("FAIL: Standard14 substitute did not embed a Type0/FontFile2 font");
+        return 1;
+    }
+
+    // Inflate the FontFile2 stream itself (FlateDecode is RFC 1950 zlib, so ZLibStream reads it
+    // directly) and check the sfnt version. This is the real proof the manifest-resource lookup
+    // returned the actual Liberation TTF under AOT — a truncated or missing resource would still
+    // satisfy a bare "/FontFile2" substring match.
+    var fontProgram = ExtractFontFile2(std14Bytes, std14Text);
+    if (fontProgram is null || fontProgram.Length < 4
+        || BinaryPrimitives.ReadUInt32BigEndian(fontProgram) != 0x00010000)
+    {
+        Console.Error.WriteLine("FAIL: the embedded FontFile2 stream is not a valid sfnt (TrueType) font program");
+        return 1;
+    }
+
+    Console.WriteLine(
+        $"OK: Standard14 substitute embedded a {fontProgram.Length}-byte TrueType font program under AOT.");
 }
 
 // Exercise the new VellumPdf.Reader parser under Native AOT.
@@ -242,3 +301,68 @@ if (barcodeHeader != "%PDF-2.0")
 Console.WriteLine($"OK: Barcodes Document flow (QR + EAN-13 with HRI) under AOT = {barcodeBytes.Length} bytes.");
 
 return 0;
+
+// Finds the object referenced by "/FontFile2 N 0 R", reads its /Length, and inflates the stream
+// body that follows. PdfStream (VellumPdf.Kernel) always serialises a stream object as
+// "N 0 obj\n<dict with /Length>\nstream\n<flate body>\nendstream\nendobj", so the dictionary
+// portion (everything up to "stream") is plain ASCII and can be scanned without decoding anything.
+static byte[]? ExtractFontFile2(byte[] pdfBytes, string pdfText)
+{
+    const string refKey = "/FontFile2 ";
+    var refAt = pdfText.IndexOf(refKey, StringComparison.Ordinal);
+    if (refAt < 0)
+        return null;
+
+    var numStart = refAt + refKey.Length;
+    var numEnd = numStart;
+    while (numEnd < pdfText.Length && char.IsAsciiDigit(pdfText[numEnd]))
+        numEnd++;
+    if (numEnd == numStart)
+        return null;
+
+    var objAt = IndexOfObjectHeader(pdfText, pdfText[numStart..numEnd]);
+    if (objAt < 0)
+        return null;
+
+    const string lengthKey = "/Length ";
+    var lengthAt = pdfText.IndexOf(lengthKey, objAt, StringComparison.Ordinal);
+    if (lengthAt < 0)
+        return null;
+
+    var lenStart = lengthAt + lengthKey.Length;
+    var lenEnd = lenStart;
+    while (lenEnd < pdfText.Length && char.IsAsciiDigit(pdfText[lenEnd]))
+        lenEnd++;
+    if (lenEnd == lenStart || !int.TryParse(pdfText[lenStart..lenEnd], out var length))
+        return null;
+
+    const string streamMarker = "\nstream\n";
+    var streamAt = pdfText.IndexOf(streamMarker, lenEnd, StringComparison.Ordinal);
+    if (streamAt < 0)
+        return null;
+
+    var bodyStart = streamAt + streamMarker.Length;
+    if (bodyStart + length > pdfBytes.Length)
+        return null;
+
+    using var compressed = new MemoryStream(pdfBytes, bodyStart, length);
+    using var zlib = new ZLibStream(compressed, CompressionMode.Decompress);
+    using var output = new MemoryStream();
+    zlib.CopyTo(output);
+    return output.ToArray();
+}
+
+// "{objNum} 0 obj" as a bare substring risks matching inside a longer number (e.g. "1 0 obj"
+// inside "21 0 obj"), so this rejects a hit unless the preceding character is not a digit.
+static int IndexOfObjectHeader(string text, string objNum)
+{
+    var marker = objNum + " 0 obj";
+    var from = 0;
+    while (true)
+    {
+        var at = text.IndexOf(marker, from, StringComparison.Ordinal);
+        if (at < 0 || at == 0 || !char.IsAsciiDigit(text[at - 1]))
+            return at;
+        from = at + 1;
+    }
+}
