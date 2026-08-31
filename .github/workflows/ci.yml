@@ -94,10 +94,11 @@ jobs:
           sudo apt-get update -o APT::Snapshot="${APT_SNAPSHOT}"
           # The step comment above explains why this can't be skipped: a failed snapshot fetch
           # does not fail this command on its own.
-          ls /var/lib/apt/lists/ | grep -q "^snapshot\.ubuntu\.com_ubuntu_${APT_SNAPSHOT}_" || {
+          apt_lists=$(ls /var/lib/apt/lists/)
+          if ! grep -q "^snapshot\.ubuntu\.com_ubuntu_${APT_SNAPSHOT}_" <<< "$apt_lists"; then
             echo "::error::apt fell back to the live archive; snapshot ${APT_SNAPSHOT} was not used"
             exit 1
-          }
+          fi
           sudo apt-get install -y -o APT::Snapshot="${APT_SNAPSHOT}" \
             "poppler-utils=${POPPLER_VERSION}" \
             "fonts-dejavu-core=${FONTS_DEJAVU_VERSION}" \
@@ -158,7 +159,8 @@ jobs:
         run: |
           set -euo pipefail
 
-          qpdf_line=$(qpdf --version | head -n1)
+          qpdf_out=$(qpdf --version)
+          qpdf_line=${qpdf_out%%$'\n'*}
           echo "$qpdf_line"
           [ "$qpdf_line" = "qpdf version ${QPDF_VERSION}" ]
 
@@ -169,7 +171,8 @@ jobs:
           # but it proves the package record, not the binary the tests actually invoke. CLAUDE.md
           # documents pdftotext resolving to two different programs on a developer machine
           # depending on which shell launched the test host, so keep the identity check too.
-          poppler_line=$(pdftotext -v 2>&1 | head -n1)
+          poppler_out=$(pdftotext -v 2>&1)
+          poppler_line=${poppler_out%%$'\n'*}
           echo "$poppler_line"
           [ "$poppler_line" = "pdftotext version ${POPPLER_VERSION%%-*}" ]
 
@@ -187,7 +190,8 @@ jobs:
           assert_pkg_version fonts-dejavu-core "$FONTS_DEJAVU_VERSION"
           assert_pkg_version fonts-texgyre "$FONTS_TEXGYRE_VERSION"
 
-          verapdf_line=$(verapdf --version 2>&1 | head -n1)
+          verapdf_out=$(verapdf --version 2>&1)
+          verapdf_line=${verapdf_out%%$'\n'*}
           echo "$verapdf_line"
           [ "$verapdf_line" = "veraPDF ${VERAPDF_TAG#v}" ]
 
