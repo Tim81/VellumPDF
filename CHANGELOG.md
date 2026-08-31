@@ -200,17 +200,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   shift fixture rendering out from under every downstream oracle. Since noble's apt pockets keep
   only the newest revision of a package, the install step also pins apt to the Ubuntu snapshot
   service for the date those versions were measured, so the exact revisions keep resolving after
-  the live archive rotates past them instead of 404ing with no code change involved. The veraPDF
+  the live archive rotates past them instead of 404ing with no code change involved — verified
+  against an already-rotated-off revision, not merely today's current one. Since apt reports
+  success even when that snapshot fetch itself silently fails, the step also asserts the
+  snapshot's own index files actually landed, so a silent fallback to the live archive fails the
+  build instead of quietly un-pinning the install. The veraPDF
   Docker tag, already pinned, was duplicated across the image pull and the shim that backs it;
   both now read one job-level `VERAPDF_TAG`. zxing-cpp moves from 3.0.0 to 3.1.1 (with `pillow`
   newly pinned to 12.3.0) — the barcode oracle suite passes unchanged, including the EAN add-on
   case the 3.0.0 pin was recorded against, since that test only asserts the main 13 digits and
   treats the add-on's presentation as version-dependent; `setup-python`'s interpreter is pinned
-  to 3.14 rather than floating, since zxing-cpp 3.1.1 ships prebuilt wheels only through 3.14. A
-  new version-assert step checks each pinned tool's own version report after install — including
-  the apt packages' full Ubuntu revision via `dpkg-query`, since `pdftotext -v` cannot see that
-  and fonts cannot self-report a version at all — so drift between the workflow and what actually
-  landed fails the build instead of changing what CI validates against with no commit to blame.
+  to 3.14 rather than floating too, for the same reproducibility reason as the pip versions
+  alongside it. A new version-assert step checks each pinned tool's own version report after
+  install — the apt packages' full Ubuntu revision via `dpkg-query`, since `pdftotext -v` reports
+  only poppler's upstream version and fonts cannot self-report a version at all, alongside a
+  `pdftotext -v` identity check proving which binary the tests actually invoke — so drift between
+  the workflow and what actually landed fails the build instead of changing what CI validates
+  against with no commit to blame.
   `actions/setup-dotnet` and `actions/setup-python` also move to their current majors (v6 and v7)
   across all four workflow files. (#230)
 - The roadmap now describes the scope past 2.5 as two parallel tracks, Kernel and conformance
@@ -280,7 +286,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `-tsv` flag; the version banner alone does not tell the two apart, so `pdftoppm` needs the same
   check via `-png`. veraPDF gets that same `VERAPDF_HOME`-first treatment only on Windows, where it
   needs the variable to find its `.bat` launcher at all; on every other platform, including CI's
-  ubuntu-latest runner, `VERAPDF_HOME` is not read here and veraPDF resolves by bare name, same as
+  ubuntu-24.04 runner, `VERAPDF_HOME` is not read here and veraPDF resolves by bare name, same as
   before this fix. The barcode decode oracle's `python` leg is unchanged too: it has no `*_HOME`
   and no identity check of its own, resolving by bare name everywhere, the ambiguity this fix
   removes for the other four. A hand-check in the "wrong" shell would never catch the swap, and the

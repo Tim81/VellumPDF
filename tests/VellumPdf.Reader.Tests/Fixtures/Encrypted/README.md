@@ -188,16 +188,19 @@ what remains:
 
 - **No committed fixture has its catalog packed inside an object stream.** Measured against qpdf
   12.3.2 (#184 PR3): it pulls the catalog out of every object stream it writes the moment the same
-  run also encrypts — RC4-128 with `--object-streams=generate`, AES-256 the same way, and re-packing
-  an already-encrypted file all emit a top-level catalog regardless. `VellumPdf.Reader`'s own writer
-  refuses `UseObjectStreams` together with `Encrypt`, so it cannot produce the shape either. The
-  layout is pinned instead by a hand-built document,
-  `HandBuiltEncryptedDocuments.BuildCatalogInObjectStream`, shared between `EncryptedExemptionTests`
-  and `EncryptedReconstructionTests` — not a fixture here, and carrying no `Corpus` row, since the
-  guard in `EncryptedFixtureCorpusTests` only fires for files actually embedded from this directory.
-  Reconfirmed unchanged under qpdf 12.4.1 (#230): RC4-128 and AES-256 with `--object-streams=generate`
-  both still write the catalog as a plain top-level object, never inside the `/Type /ObjStm` they
-  emit alongside it.
+  run also encrypts — RC4-128 with `--allow-weak-crypto --object-streams=generate`, AES-256 the
+  same way, and re-packing an already-encrypted file all emit a top-level catalog regardless.
+  `VellumPdf.Reader`'s own writer refuses `UseObjectStreams` together with `Encrypt`, so it cannot
+  produce the shape either. The layout is pinned instead by a hand-built document,
+  `HandBuiltEncryptedDocuments.BuildCatalogInObjectStream`, shared between
+  `EncryptedExemptionTests` and `EncryptedReconstructionTests` — not a fixture here, and carrying
+  no `Corpus` row, since the guard in `EncryptedFixtureCorpusTests` only fires for files actually
+  embedded from this directory.
+  Reconfirmed unchanged under qpdf 12.4.1 (#230): RC4-128 and AES-256 with
+  `--object-streams=generate` both still write the catalog as a plain top-level object, never
+  inside the `/Type /ObjStm` they emit alongside it. 12.4.1 also refuses to write RC4 at all
+  without `--allow-weak-crypto` (exit 2, "refusing to write a file with weak crypto"), unrelated
+  to this behaviour but needed to reproduce the RC4-128 half of it.
 
 - **Every fixture is qpdf's output.** This is the largest gap in the corpus and the hardest to
   close: producers differ in exactly the places this code has to decide. A crypt filter `/Length` in

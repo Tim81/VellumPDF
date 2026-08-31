@@ -25,16 +25,25 @@ build, test, and submit changes to VellumPdf.
   **CI's poppler/font pins have a known maintenance cost.** noble's `-updates`/`-security`
   pockets keep only the newest revision of each package, so the exact revisions above eventually
   vanish from the live apt archive on their own, with no code change involved. When that happens,
-  `ci.yml`'s "Install poppler and fonts" step still resolves them, because that step passes
-  `-o APT::Snapshot=$APT_SNAPSHOT` on both `apt-get update` and `apt-get install`, which rewrites
-  the runner's existing archive.ubuntu.com sources to the [Ubuntu snapshot
-  service](https://snapshot.ubuntu.com/) as it stood on that date — a snapshot never evicts what
-  it once published, even after the live archive moves on. The failure mode to watch for instead
-  is a genuine version bump: if poppler or a font package needs a newer release on purpose, run
-  `apt-cache policy poppler-utils fonts-dejavu-core fonts-texgyre` against a fresh
-  `ubuntu:24.04` container to get the new versions and a matching `APT_SNAPSHOT` date, then
-  update `POPPLER_VERSION` / `FONTS_DEJAVU_VERSION` / `FONTS_TEXGYRE_VERSION` and
-  `APT_SNAPSHOT` together in `ci.yml`'s job-level `env:`, and this paragraph to match.
+  `ci.yml`'s "Install poppler and fonts" step still resolves them, because that step passes `-o
+  APT::Snapshot=$APT_SNAPSHOT` on both `apt-get update` and `apt-get install`, which adds the
+  dated [Ubuntu snapshot service](https://snapshot.ubuntu.com/) alongside whatever sources the
+  runner already has — additive, not a replacement, and `ubuntu-24.04`'s own sources resolve
+  through `mirror+file:/etc/apt/apt-mirrors.txt` rather than a literal `archive.ubuntu.com` host,
+  so do not assume which host actually serves a given fetch. A snapshot never evicts what it once
+  published, even after the live archive moves on, but `apt-get update` reports success (exit 0)
+  even when the snapshot fetch itself fails, so the step also greps `/var/lib/apt/lists/` for the
+  snapshot's own index files right after — that is what makes the snapshot actually having been
+  used something you can check rather than assume. The failure mode to watch for instead is a
+  genuine version bump: if poppler or a font package needs a newer release on purpose, run
+  `apt-cache policy poppler-utils fonts-dejavu-core fonts-texgyre` against a fresh `ubuntu:24.04`
+  container to get the new versions, pick an `APT_SNAPSHOT` stamp that is a UTC day at or after
+  the new revision's publication (stamps are midnight UTC, so a same-day publication needs the
+  next day's stamp), and confirm the stamp actually resolves with `curl -sI
+  https://snapshot.ubuntu.com/ubuntu/<stamp>/dists/noble/InRelease` before using it — a
+  future-dated or mistyped stamp does not error, it silently serves whatever is latest. Then
+  update `POPPLER_VERSION` / `FONTS_DEJAVU_VERSION` / `FONTS_TEXGYRE_VERSION` and `APT_SNAPSHOT`
+  together in `ci.yml`'s job-level `env:`, and this paragraph to match.
 
   On Windows, PATH order between shells is not reliable — the same bare
   `pdftotext` can resolve to a completely different program depending on which

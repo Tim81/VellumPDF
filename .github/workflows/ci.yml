@@ -73,16 +73,31 @@ jobs:
         # pins alone are not enough: noble's -updates/-security pockets keep only the newest
         # revision, so the moment Ubuntu ships another one, these exact revisions 404 out of the
         # live archive and every PR goes red with no code change involved. `-o APT::Snapshot`
-        # rewrites the runner's existing archive.ubuntu.com sources to the dated Ubuntu snapshot
-        # instead, which never evicts what it once published — verified against a fresh
-        # ubuntu:24.04 container with the live archive already past this exact revision, and it
-        # still resolved. If a real bump is ever needed instead of just chasing a rotated
-        # revision — a new poppler feature, a font correction — update POPPLER_VERSION /
-        # FONTS_*_VERSION and APT_SNAPSHOT together (`apt-cache policy` against a fresh
-        # `ubuntu:24.04` container gives both) and mention it in CONTRIBUTING.md.
+        # adds the dated Ubuntu snapshot alongside whatever apt sources the runner already has
+        # configured (additive, not a replacement — ubuntu-24.04's own sources resolve through
+        # `mirror+file:/etc/apt/apt-mirrors.txt`, not a literal archive.ubuntu.com host, so this
+        # comment does not assume which host actually serves a given fetch). The assertion below
+        # is what makes the outcome observable instead of assumed: `apt-get update` exits 0 even
+        # when the snapshot fetch fails outright, so without it a silently-unpinned install would
+        # pass unnoticed. Verified in a fresh ubuntu:24.04 container against an already-rotated-
+        # off revision — poppler-utils 24.02.0-1ubuntu9.1, absent from today's live archive — a
+        # snapshot dated to when 9.1 was current resolved and installed it correctly. If a real
+        # bump is ever needed instead of just chasing a rotated revision — a new poppler feature,
+        # a font correction — update POPPLER_VERSION / FONTS_*_VERSION together with a new
+        # APT_SNAPSHOT: a UTC day at or after the new revision's publication (stamps are midnight
+        # UTC, so a same-day publication needs the next day's stamp), confirmed with
+        # `curl -sI https://snapshot.ubuntu.com/ubuntu/<stamp>/dists/noble/InRelease` — a future-
+        # dated or mistyped stamp silently serves latest instead of erroring. Mention the change
+        # in CONTRIBUTING.md too.
         run: |
           set -euo pipefail
           sudo apt-get update -o APT::Snapshot="${APT_SNAPSHOT}"
+          # The step comment above explains why this can't be skipped: a failed snapshot fetch
+          # does not fail this command on its own.
+          ls /var/lib/apt/lists/ | grep -q "^snapshot\.ubuntu\.com_ubuntu_${APT_SNAPSHOT}_" || {
+            echo "::error::apt fell back to the live archive; snapshot ${APT_SNAPSHOT} was not used"
+            exit 1
+          }
           sudo apt-get install -y -o APT::Snapshot="${APT_SNAPSHOT}" \
             "poppler-utils=${POPPLER_VERSION}" \
             "fonts-dejavu-core=${FONTS_DEJAVU_VERSION}" \
@@ -120,8 +135,8 @@ jobs:
 
       - uses: actions/setup-python@v7
         with:
-          # zxing-cpp 3.1.1 ships prebuilt wheels for cp310–cp314; a floating '3.x' would
-          # eventually resolve to 3.15 and fall back to a source build with no commit to blame.
+          # Pinned for the same reason as the pip versions below: a deterministic interpreter
+          # for the barcode oracle rather than whatever '3.x' resolves to on a given run.
           python-version: '3.14'
 
       - name: Install barcode decode oracle (zxing-cpp)
@@ -150,7 +165,14 @@ jobs:
           # pdftotext -v reports only poppler's upstream version (e.g. "24.02.0"), never the
           # Ubuntu package revision after the dash — apt can ship a new revision of the same
           # upstream release, and fonts have no version-reporting flag at all. dpkg-query reads
-          # the installed package record directly, which is the only way to see the full pin.
+          # the installed package record directly, which is the only way to see the full pin —
+          # but it proves the package record, not the binary the tests actually invoke. CLAUDE.md
+          # documents pdftotext resolving to two different programs on a developer machine
+          # depending on which shell launched the test host, so keep the identity check too.
+          poppler_line=$(pdftotext -v 2>&1 | head -n1)
+          echo "$poppler_line"
+          [ "$poppler_line" = "pdftotext version ${POPPLER_VERSION%%-*}" ]
+
           echo "--- installed package versions ---"
           dpkg-query -W -f='${Package} ${Version}\n' poppler-utils fonts-dejavu-core fonts-texgyre
           assert_pkg_version() {
@@ -171,8 +193,9 @@ jobs:
 
           python -c "
           import importlib.metadata as m
-          zxing_expected = '${ZXING_VERSION}'
-          pillow_expected = '${PILLOW_VERSION}'
+          import os
+          zxing_expected = os.environ['ZXING_VERSION']
+          pillow_expected = os.environ['PILLOW_VERSION']
           zxing_actual = m.version('zxing-cpp')
           pillow_actual = m.version('pillow')
           print('zxing-cpp', zxing_actual)
@@ -263,6 +286,9 @@ jobs:
         run: dotnet pack VellumPdf.slnx -c Release --no-build -o ${{ runner.temp }}/packages
 
   aot-smoke:
+    # Deliberately left on the floating ubuntu-latest label: this job carries no apt version
+    # pins, so it has nothing for a label move to break the way the build job's oracle installs
+    # would (#230).
     strategy:
       fail-fast: false
       matrix:
