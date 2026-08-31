@@ -137,8 +137,9 @@ public sealed class LinearizationQpdfTests : IDisposable
         // #234: exit 0 and no "WARNING" pass identically whether qpdf recognized the file as
         // linearized or not — measured against qpdf 12.4.1, a non-linearized file also exits 0
         // with no WARNING, just "... is not linearized". "linearization data:" is the header qpdf
-        // prints only once it has parsed a hint table it accepts as linearization; stable from
-        // qpdf 10.6.3 through 12.4.1, including CI's 11.9.0.
+        // prints only once it has parsed a hint table it accepts as linearization; executed
+        // directly against 12.3.2 and 12.4.1, and byte-identical in qpdf's source from 10.6.3
+        // through 12.4.1 (including CI's 11.9.0) per review.
         Assert.True(
             stdout.Contains("linearization data:", StringComparison.Ordinal),
             $"qpdf did not report \"linearization data:\"; exit 0 and no WARNING pass identically " +
@@ -146,7 +147,9 @@ public sealed class LinearizationQpdfTests : IDisposable
 
         // #234 (optional): ties the oracle to the fixture shape, like
         // Linearized_ShowLinearization_RecognizedAndClean already does.
-        Assert.Contains("npages: 3", stdout);
+        Assert.True(
+            stdout.Contains("npages: 3", StringComparison.Ordinal),
+            $"qpdf did not report the expected page count.\nstdout: {stdout}\nstderr: {stderr}");
     }
 
     [Fact]
@@ -238,7 +241,9 @@ public sealed class LinearizationQpdfTests : IDisposable
 
         // #234 (optional): ties the oracle to the fixture shape (1 Helvetica page + 2 shared
         // embedded-font pages), like Linearized_ShowLinearization_RecognizedAndClean already does.
-        Assert.Contains("npages: 3", stdout);
+        Assert.True(
+            stdout.Contains("npages: 3", StringComparison.Ordinal),
+            $"qpdf did not report the expected page count.\nstdout: {stdout}\nstderr: {stderr}");
     }
 
     [Fact]
