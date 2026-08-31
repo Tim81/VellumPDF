@@ -19,6 +19,8 @@ jobs:
         with:
           global-json-file: global.json
 
+      - run: dotnet --version
+
       - name: Derive version from tag
         id: version
         shell: bash
@@ -122,6 +124,8 @@ jobs:
       - uses: actions/setup-dotnet@v5
         with:
           global-json-file: global.json
+
+      - run: dotnet --version
 
       - name: Derive version from tag
         id: version
