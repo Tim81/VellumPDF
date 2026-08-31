@@ -168,11 +168,21 @@ public sealed class ImageCodecOracleTests : IDisposable
         var pdfPath = Path.Combine(_tempDir, "ccitt_qpdf.pdf");
         GeneratePdfACcittImageDoc(pdfPath, fontPath);
 
-        ExternalTool.TryRun("qpdf", ["--check", pdfPath], out var exit, out var stdout, out var stderr, out _);
+        ExternalTool.TryRun("qpdf", ["--check", pdfPath], out var exit, out var stdout, out var stderr, out var timedOut);
 
+        Assert.False(timedOut, "qpdf --check timed out, or its output could not be fully captured.");
         Assert.True(
             exit == 0,
             $"qpdf --check failed (exit {exit}) on CCITT G4 image doc.\nstdout: {stdout}\nstderr: {stderr}");
+
+        // #234: qpdf prints this line iff exit == 0 (a warning forces exit 3), so this is a
+        // redundancy guard for that exit-code contract rather than an independent discriminator
+        // from the exit check above — kept in case the contract changes. Measured against qpdf
+        // 12.4.1: present on a clean file, replaced by WARNING lines (and exit 3) on a truncated
+        // copy of the same fixture.
+        Assert.True(
+            stdout.Contains("No syntax or stream encoding errors found", StringComparison.Ordinal),
+            $"qpdf --check did not report a clean verdict (exit {exit}) on CCITT G4 image doc.\nstdout: {stdout}\nstderr: {stderr}");
     }
 
     [Fact]
@@ -184,11 +194,17 @@ public sealed class ImageCodecOracleTests : IDisposable
         var pdfPath = Path.Combine(_tempDir, "tifflzw_qpdf.pdf");
         GeneratePdfATiffLzwImageDoc(pdfPath, fontPath);
 
-        ExternalTool.TryRun("qpdf", ["--check", pdfPath], out var exit, out var stdout, out var stderr, out _);
+        ExternalTool.TryRun("qpdf", ["--check", pdfPath], out var exit, out var stdout, out var stderr, out var timedOut);
 
+        Assert.False(timedOut, "qpdf --check timed out, or its output could not be fully captured.");
         Assert.True(
             exit == 0,
             $"qpdf --check failed (exit {exit}) on TIFF-LZW image doc.\nstdout: {stdout}\nstderr: {stderr}");
+
+        // #234: redundancy guard for qpdf's exit-code contract — see CcittImage_QpdfCheck_Passes.
+        Assert.True(
+            stdout.Contains("No syntax or stream encoding errors found", StringComparison.Ordinal),
+            $"qpdf --check did not report a clean verdict (exit {exit}) on TIFF-LZW image doc.\nstdout: {stdout}\nstderr: {stderr}");
     }
 
     [Fact]
@@ -200,11 +216,17 @@ public sealed class ImageCodecOracleTests : IDisposable
         var pdfPath = Path.Combine(_tempDir, "interlacedpng_qpdf.pdf");
         GeneratePdfAInterlacedPngImageDoc(pdfPath, fontPath);
 
-        ExternalTool.TryRun("qpdf", ["--check", pdfPath], out var exit, out var stdout, out var stderr, out _);
+        ExternalTool.TryRun("qpdf", ["--check", pdfPath], out var exit, out var stdout, out var stderr, out var timedOut);
 
+        Assert.False(timedOut, "qpdf --check timed out, or its output could not be fully captured.");
         Assert.True(
             exit == 0,
             $"qpdf --check failed (exit {exit}) on interlaced PNG image doc.\nstdout: {stdout}\nstderr: {stderr}");
+
+        // #234: redundancy guard for qpdf's exit-code contract — see CcittImage_QpdfCheck_Passes.
+        Assert.True(
+            stdout.Contains("No syntax or stream encoding errors found", StringComparison.Ordinal),
+            $"qpdf --check did not report a clean verdict (exit {exit}) on interlaced PNG image doc.\nstdout: {stdout}\nstderr: {stderr}");
     }
 
     [Fact]
@@ -216,11 +238,17 @@ public sealed class ImageCodecOracleTests : IDisposable
         var pdfPath = Path.Combine(_tempDir, "png16bit_qpdf.pdf");
         GeneratePdfA16BitPngImageDoc(pdfPath, fontPath);
 
-        ExternalTool.TryRun("qpdf", ["--check", pdfPath], out var exit, out var stdout, out var stderr, out _);
+        ExternalTool.TryRun("qpdf", ["--check", pdfPath], out var exit, out var stdout, out var stderr, out var timedOut);
 
+        Assert.False(timedOut, "qpdf --check timed out, or its output could not be fully captured.");
         Assert.True(
             exit == 0,
             $"qpdf --check failed (exit {exit}) on 16-bit PNG image doc.\nstdout: {stdout}\nstderr: {stderr}");
+
+        // #234: redundancy guard for qpdf's exit-code contract — see CcittImage_QpdfCheck_Passes.
+        Assert.True(
+            stdout.Contains("No syntax or stream encoding errors found", StringComparison.Ordinal),
+            $"qpdf --check did not report a clean verdict (exit {exit}) on 16-bit PNG image doc.\nstdout: {stdout}\nstderr: {stderr}");
     }
 
     // ── Document generators ──────────────────────────────────────────────────

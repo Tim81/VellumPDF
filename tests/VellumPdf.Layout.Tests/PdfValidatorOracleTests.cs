@@ -53,11 +53,21 @@ public sealed class PdfValidatorOracleTests : IDisposable
         var pdfPath = Path.Combine(_tempDir, "multipage.pdf");
         GenerateMultiPageDoc(pdfPath);
 
-        ExternalTool.TryRun("qpdf", ["--check", pdfPath], out var exit, out var stdout, out var stderr, out _);
+        ExternalTool.TryRun("qpdf", ["--check", pdfPath], out var exit, out var stdout, out var stderr, out var timedOut);
 
+        Assert.False(timedOut, "qpdf --check timed out, or its output could not be fully captured.");
         Assert.True(
             exit == 0,
             $"qpdf --check failed (exit {exit}) on multi-page doc.\nstdout: {stdout}\nstderr: {stderr}");
+
+        // #234: qpdf prints this line iff exit == 0 (a warning forces exit 3), so this is a
+        // redundancy guard for that exit-code contract rather than an independent discriminator
+        // from the exit check above — kept in case the contract changes. Measured against qpdf
+        // 12.4.1: present on a clean file, replaced by WARNING lines (and exit 3) on a truncated
+        // copy of the same fixture.
+        Assert.True(
+            stdout.Contains("No syntax or stream encoding errors found", StringComparison.Ordinal),
+            $"qpdf --check did not report a clean verdict (exit {exit}) on multi-page doc.\nstdout: {stdout}\nstderr: {stderr}");
     }
 
     [Fact]
@@ -66,11 +76,18 @@ public sealed class PdfValidatorOracleTests : IDisposable
         var pdfPath = Path.Combine(_tempDir, "heading_table_list.pdf");
         GenerateHeadingTableListDoc(pdfPath);
 
-        ExternalTool.TryRun("qpdf", ["--check", pdfPath], out var exit, out var stdout, out var stderr, out _);
+        ExternalTool.TryRun("qpdf", ["--check", pdfPath], out var exit, out var stdout, out var stderr, out var timedOut);
 
+        Assert.False(timedOut, "qpdf --check timed out, or its output could not be fully captured.");
         Assert.True(
             exit == 0,
             $"qpdf --check failed (exit {exit}) on heading/table/list doc.\nstdout: {stdout}\nstderr: {stderr}");
+
+        // #234: redundancy guard for qpdf's exit-code contract — see
+        // MultiPage_StandardFont_QpdfCheck_Passes.
+        Assert.True(
+            stdout.Contains("No syntax or stream encoding errors found", StringComparison.Ordinal),
+            $"qpdf --check did not report a clean verdict (exit {exit}) on heading/table/list doc.\nstdout: {stdout}\nstderr: {stderr}");
     }
 
     [Fact]
@@ -82,11 +99,18 @@ public sealed class PdfValidatorOracleTests : IDisposable
         var pdfPath = Path.Combine(_tempDir, "embedded_font.pdf");
         GenerateEmbeddedFontDoc(pdfPath, fontPath);
 
-        ExternalTool.TryRun("qpdf", ["--check", pdfPath], out var exit, out var stdout, out var stderr, out _);
+        ExternalTool.TryRun("qpdf", ["--check", pdfPath], out var exit, out var stdout, out var stderr, out var timedOut);
 
+        Assert.False(timedOut, "qpdf --check timed out, or its output could not be fully captured.");
         Assert.True(
             exit == 0,
             $"qpdf --check failed (exit {exit}) on embedded-font doc.\nstdout: {stdout}\nstderr: {stderr}");
+
+        // #234: redundancy guard for qpdf's exit-code contract — see
+        // MultiPage_StandardFont_QpdfCheck_Passes.
+        Assert.True(
+            stdout.Contains("No syntax or stream encoding errors found", StringComparison.Ordinal),
+            $"qpdf --check did not report a clean verdict (exit {exit}) on embedded-font doc.\nstdout: {stdout}\nstderr: {stderr}");
     }
 
     // ── pdftotext content extraction ─────────────────────────────────────────
@@ -398,11 +422,18 @@ public sealed class PdfValidatorOracleTests : IDisposable
         var pdfPath = Path.Combine(_tempDir, "acroform.pdf");
         GenerateAcroFormDoc(pdfPath);
 
-        ExternalTool.TryRun("qpdf", ["--check", pdfPath], out var exit, out var stdout, out var stderr, out _);
+        ExternalTool.TryRun("qpdf", ["--check", pdfPath], out var exit, out var stdout, out var stderr, out var timedOut);
 
+        Assert.False(timedOut, "qpdf --check timed out, or its output could not be fully captured.");
         Assert.True(
             exit == 0,
             $"qpdf --check failed (exit {exit}) on AcroForm doc.\nstdout: {stdout}\nstderr: {stderr}");
+
+        // #234: redundancy guard for qpdf's exit-code contract — see
+        // MultiPage_StandardFont_QpdfCheck_Passes.
+        Assert.True(
+            stdout.Contains("No syntax or stream encoding errors found", StringComparison.Ordinal),
+            $"qpdf --check did not report a clean verdict (exit {exit}) on AcroForm doc.\nstdout: {stdout}\nstderr: {stderr}");
     }
 
     [Fact]
@@ -497,11 +528,18 @@ public sealed class PdfValidatorOracleTests : IDisposable
         var pdfPath = Path.Combine(_tempDir, "radio_pushbutton.pdf");
         GenerateRadioAndPushButtonDoc(pdfPath);
 
-        ExternalTool.TryRun("qpdf", ["--check", pdfPath], out var exit, out var stdout, out var stderr, out _);
+        ExternalTool.TryRun("qpdf", ["--check", pdfPath], out var exit, out var stdout, out var stderr, out var timedOut);
 
+        Assert.False(timedOut, "qpdf --check timed out, or its output could not be fully captured.");
         Assert.True(
             exit == 0,
             $"qpdf --check failed (exit {exit}) on radio+push-button doc.\nstdout: {stdout}\nstderr: {stderr}");
+
+        // #234: redundancy guard for qpdf's exit-code contract — see
+        // MultiPage_StandardFont_QpdfCheck_Passes.
+        Assert.True(
+            stdout.Contains("No syntax or stream encoding errors found", StringComparison.Ordinal),
+            $"qpdf --check did not report a clean verdict (exit {exit}) on radio+push-button doc.\nstdout: {stdout}\nstderr: {stderr}");
     }
 
     /// <summary>
@@ -544,11 +582,18 @@ public sealed class PdfValidatorOracleTests : IDisposable
         var pdfPath = Path.Combine(_tempDir, "objstm_multipage.pdf");
         GenerateObjStmMultiPageDoc(pdfPath);
 
-        ExternalTool.TryRun("qpdf", ["--check", pdfPath], out var exit, out var stdout, out var stderr, out _);
+        ExternalTool.TryRun("qpdf", ["--check", pdfPath], out var exit, out var stdout, out var stderr, out var timedOut);
 
+        Assert.False(timedOut, "qpdf --check timed out, or its output could not be fully captured.");
         Assert.True(
             exit == 0,
             $"qpdf --check failed (exit {exit}) on object-stream doc.\nstdout: {stdout}\nstderr: {stderr}");
+
+        // #234: redundancy guard for qpdf's exit-code contract — see
+        // MultiPage_StandardFont_QpdfCheck_Passes.
+        Assert.True(
+            stdout.Contains("No syntax or stream encoding errors found", StringComparison.Ordinal),
+            $"qpdf --check did not report a clean verdict (exit {exit}) on object-stream doc.\nstdout: {stdout}\nstderr: {stderr}");
     }
 
     [Fact]
@@ -1253,11 +1298,18 @@ public sealed class PdfValidatorOracleTests : IDisposable
         var pdfPath = Path.Combine(_tempDir, "otf_cff.pdf");
         GenerateOtfCffDoc(pdfPath, otfPath);
 
-        ExternalTool.TryRun("qpdf", ["--check", pdfPath], out var exit, out var stdout, out var stderr, out _);
+        ExternalTool.TryRun("qpdf", ["--check", pdfPath], out var exit, out var stdout, out var stderr, out var timedOut);
 
+        Assert.False(timedOut, "qpdf --check timed out, or its output could not be fully captured.");
         Assert.True(
             exit == 0,
             $"qpdf --check failed (exit {exit}) on OTF/CFF embedded font doc.\nstdout: {stdout}\nstderr: {stderr}");
+
+        // #234: redundancy guard for qpdf's exit-code contract — see
+        // MultiPage_StandardFont_QpdfCheck_Passes.
+        Assert.True(
+            stdout.Contains("No syntax or stream encoding errors found", StringComparison.Ordinal),
+            $"qpdf --check did not report a clean verdict (exit {exit}) on OTF/CFF embedded font doc.\nstdout: {stdout}\nstderr: {stderr}");
     }
 
     [Fact]
