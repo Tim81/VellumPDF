@@ -1321,8 +1321,9 @@ public sealed partial class PdfDocumentReader : IDisposable
             return sigs;
 
         var visited = new HashSet<int>();
+        var visitedSignatureValues = new HashSet<int>();
         for (var i = 0; i < fieldsArray.Count; i++)
-            CollectFieldSignatures(fieldsArray[i], sigs, visited, 0, inheritedFt: null);
+            CollectFieldSignatures(fieldsArray[i], sigs, visited, visitedSignatureValues, 0, inheritedFt: null);
 
         return sigs;
     }
@@ -1337,9 +1338,19 @@ public sealed partial class PdfDocumentReader : IDisposable
     /// kid was never reached: <see cref="Signatures"/> reported none, and
     /// <see cref="SaveDecrypted(Stream)"/>'s opt-in guard, which used to trust that count, missed a
     /// real signature entirely.
+    /// <para>
+    /// <paramref name="visitedSignatureValues"/> is a SEPARATE dedupe set from
+    /// <paramref name="visited"/>, keyed on the <c>/V</c> TARGET's object number rather than the
+    /// field node's own — dropping the early return above (to fix the inheritance gap this
+    /// comment's first paragraph describes) means a node with its own <c>/V</c> that also has
+    /// <c>/Kids</c> now falls through to descend them too, and a kid whose own <c>/V</c> names the
+    /// SAME signature object (a widget-merged field repeating <c>/V</c> on both itself and its
+    /// parent, say) would otherwise be recorded twice.
+    /// </para>
     /// </summary>
     private void CollectFieldSignatures(
-        PdfObject fieldObj, List<PdfSignature> sigs, HashSet<int> visited, int depth, PdfName? inheritedFt)
+        PdfObject fieldObj, List<PdfSignature> sigs, HashSet<int> visited, HashSet<int> visitedSignatureValues,
+        int depth, PdfName? inheritedFt)
     {
         if (depth > MaxFieldTreeDepth)
             return;
@@ -1358,7 +1369,11 @@ public sealed partial class PdfDocumentReader : IDisposable
         if (effectiveFt is not null && effectiveFt.Value == "Sig")
         {
             var vObj = field.Get(new PdfName("V"));
-            if (vObj is not null)
+            // An indirect /V is deduped by its target's object number; a direct (inline) /V has no
+            // stable identity to dedupe by and is always recorded — a distinct dictionary object
+            // literally embedded in this one field can't also be reached from anywhere else.
+            var alreadyRecorded = vObj is PdfIndirectReference vRef && !visitedSignatureValues.Add(vRef.ObjectNumber);
+            if (vObj is not null && !alreadyRecorded)
             {
                 var sigDict = ResolveValue(vObj) as PdfDictionary;
                 if (sigDict is not null)
@@ -1377,7 +1392,7 @@ public sealed partial class PdfDocumentReader : IDisposable
             if (kids is PdfArray kidsArray)
             {
                 for (var i = 0; i < kidsArray.Count; i++)
-                    CollectFieldSignatures(kidsArray[i], sigs, visited, depth + 1, effectiveFt);
+                    CollectFieldSignatures(kidsArray[i], sigs, visited, visitedSignatureValues, depth + 1, effectiveFt);
             }
         }
     }

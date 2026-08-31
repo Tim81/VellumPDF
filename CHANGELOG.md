@@ -173,9 +173,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   reconstructed document (`PdfDocumentReader.WasReconstructed`) — unlike `AppendRevision`, a full
   rewrite does not depend on the base file's own byte layout. Throws `InvalidOperationException` on
   a signed document unless `PdfSaveDecryptedOptions.AllowInvalidatingSignatures` is set — detected
-  by scanning the emitted object graph directly for a signature dictionary's own shape, not by
-  trusting the `Signatures` property's `/AcroForm` field-tree walk, which can miss one reachable only
-  through an inherited `/FT` (ISO 32000-2 §12.7.4.1; that walk is now fixed too). Rewriting the
+  by unioning two sources, neither complete alone: the `Signatures` property's `/AcroForm`
+  field-tree walk (fixed to thread an inherited `/FT` through the walk, ISO 32000-2 §12.7.4.1), and
+  a direct recursive scan of the emitted object graph for a signature dictionary's own shape, since
+  Table 226 lets a field's `/V` be an inline dictionary rather than requiring the indirect reference
+  `/Lock` and `/SV` require, so a signature can sit nested where neither the field-tree walk alone
+  nor a scan of top-level objects alone would find it. Rewriting the
   object graph moves every byte a signature's `/ByteRange` names, so re-serialising invalidates every
   signature by construction. A stream's own filter chain and body pass through untouched — a
   passthrough image (DCTDecode, JPXDecode, and so on) is never re-encoded — except a leading

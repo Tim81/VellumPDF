@@ -157,6 +157,183 @@ public sealed class SaveDecryptedTests
         return ms.ToArray();
     }
 
+    // ── Inline (non-indirect) signature value — the round-2 guard regression ───
+
+    /// <summary>
+    /// ISO 32000-2 Table 226 does not require a field's <c>/V</c> to be an indirect reference the
+    /// way it requires <c>/Lock</c> and <c>/SV</c> in that same table to be, so a signature
+    /// dictionary may legally sit INLINE inside its field. The field-tree walk
+    /// (<see cref="PdfDocumentReader.Signatures"/>) already handles this fine —
+    /// <c>ResolveValue</c> on a direct object just returns it — so <c>Signatures.Count</c> here is
+    /// 1 either way; the round-2 guard rewrite's actual bug was dropping that check entirely
+    /// rather than unioning it with the new object-graph scan (review round 3, high #1).
+    /// </summary>
+    [Fact]
+    public void SaveDecrypted_inlineSignatureValue_plaintext_throwsWithoutOptIn()
+    {
+        var bytes = BuildDocumentWithInlineSignatureValue("<DEADBEEF>");
+        using var reader = PdfReader.Open(bytes);
+        Assert.Single(reader.Signatures);
+
+        using var ms = new MemoryStream();
+        var ex = Assert.Throws<InvalidOperationException>(() => reader.SaveDecrypted(ms));
+        Assert.Contains("signature", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(0, ms.Length);
+    }
+
+    /// <summary>
+    /// The encrypted twin: a real <c>/V 4 /R 4</c> RC4 document whose signature dictionary's own
+    /// <c>/Contents</c> is genuine ciphertext. <see cref="PdfDocumentReader"/>'s decrypt walk never
+    /// decrypts a signature dictionary's <c>/Contents</c> on read (the exemption
+    /// <c>IsSignatureDictionary</c> exists for) — inline or not, since the recursive walk checks the
+    /// SAME structural shape at every nesting level — so if the guard failed to fire here,
+    /// <c>SaveDecrypted</c> would copy this ciphertext verbatim into output that claims to be
+    /// plaintext: the exact failure #186's signature guard exists to prevent.
+    /// </summary>
+    [Fact]
+    public void SaveDecrypted_inlineSignatureValue_encrypted_throwsWithoutOptIn()
+    {
+        var plaintextMarker = "INLINE-SIG-DER-STANDIN-0123456789"u8.ToArray();
+        var cipherContents = Rc4EncryptUnderV4Fixture(objectNumber: 4, generation: 0, plaintextMarker);
+        var bytes = BuildEncryptedDocumentWithInlineSignatureValue(cipherContents);
+
+        using var reader = PdfReader.Open(bytes, new PdfReaderOptions { Password = "u" });
+        Assert.Single(reader.Signatures);
+
+        // Confirms the premise that makes this security-relevant: /Contents on this inline
+        // signature dictionary is still ciphertext after the normal decrypt walk.
+        var acroForm = Assert.IsType<PdfDictionary>(reader.ResolveValue(reader.Catalog.Get(new PdfName("AcroForm"))!));
+        var fieldsArr = Assert.IsType<PdfArray>(reader.ResolveValue(acroForm.Get(new PdfName("Fields"))!));
+        var field = Assert.IsType<PdfDictionary>(reader.ResolveValue(fieldsArr[0]));
+        var vDict = Assert.IsType<PdfDictionary>(field.Get(new PdfName("V")));
+        var contents = Assert.IsType<PdfHexString>(vDict.Get(PdfName.Contents));
+        Assert.True(
+            contents.Bytes.Span.SequenceEqual(cipherContents),
+            "expected the signature-dictionary /Contents exemption to leave this as ciphertext on read");
+
+        using var ms = new MemoryStream();
+        var ex = Assert.Throws<InvalidOperationException>(() => reader.SaveDecrypted(ms));
+        Assert.Contains("signature", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(0, ms.Length);
+    }
+
+    // Object 4's /V is a DIRECT (inline) dictionary literal, not "5 0 R" — the shape Table 226
+    // permits and the old top-level-only AnyEmittedSignatureDictionary check could not see.
+    private static byte[] BuildDocumentWithInlineSignatureValue(string contentsLiteral)
+    {
+        var ms = new MemoryStream();
+        void W(string s) => ms.Write(Encoding.Latin1.GetBytes(s));
+
+        W("%PDF-1.7\n");
+        var o1 = (int)ms.Position;
+        W("1 0 obj\n<< /Type /Catalog /Pages 2 0 R /AcroForm 3 0 R >>\nendobj\n");
+        var o2 = (int)ms.Position;
+        W("2 0 obj\n<< /Type /Pages /Kids [] /Count 0 >>\nendobj\n");
+        var o3 = (int)ms.Position;
+        W("3 0 obj\n<< /Fields [4 0 R] >>\nendobj\n");
+        var o4 = (int)ms.Position;
+        W("4 0 obj\n<< /Type /Annot /Subtype /Widget /FT /Sig /V << /Type /Sig "
+          + $"/ByteRange [0 10 20 30] /Contents {contentsLiteral} >> >>\nendobj\n");
+
+        var xrefOffset = (int)ms.Position;
+        W("xref\n0 5\n");
+        W("0000000000 65535 f \n");
+        foreach (var o in new[] { o1, o2, o3, o4 })
+            W($"{o:D10} 00000 n \n");
+        W("trailer\n<< /Size 5 /Root 1 0 R >>\n");
+        W($"startxref\n{xrefOffset}\n%%EOF\n");
+
+        return ms.ToArray();
+    }
+
+    // Same shape as BuildDocumentWithInlineSignatureValue, plus a real /V 4 /R 4 RC4 /Encrypt
+    // object (copied from enc-rc4-128-v4.pdf, same technique as the Crypt-strip KAT below).
+    private static byte[] BuildEncryptedDocumentWithInlineSignatureValue(byte[] cipherContents)
+    {
+        var ms = new MemoryStream();
+        void W(string s) => ms.Write(Encoding.Latin1.GetBytes(s));
+
+        W("%PDF-1.7\n");
+        var o1 = (int)ms.Position;
+        W("1 0 obj\n<< /Type /Catalog /Pages 2 0 R /AcroForm 3 0 R >>\nendobj\n");
+        var o2 = (int)ms.Position;
+        W("2 0 obj\n<< /Type /Pages /Kids [] /Count 0 >>\nendobj\n");
+        var o3 = (int)ms.Position;
+        W("3 0 obj\n<< /Fields [4 0 R] >>\nendobj\n");
+        var o4 = (int)ms.Position;
+        W("4 0 obj\n<< /Type /Annot /Subtype /Widget /FT /Sig /V << /Type /Sig "
+          + $"/ByteRange [0 10 20 30] /Contents <{Convert.ToHexString(cipherContents)}> >> >>\nendobj\n");
+        var o5 = (int)ms.Position;
+        W($"5 0 obj\n{Rc4V4EncryptDict}\nendobj\n");
+
+        var xrefOffset = (int)ms.Position;
+        W("xref\n0 6\n");
+        W("0000000000 65535 f \n");
+        foreach (var o in new[] { o1, o2, o3, o4, o5 })
+            W($"{o:D10} 00000 n \n");
+        // The first /ID element must match enc-rc4-128-v4.pdf's own — see the Crypt-strip KAT's
+        // BuildHandBuiltRc4V4Document for why.
+        W("trailer\n<< /Size 6 /Root 1 0 R /Encrypt 5 0 R "
+          + "/ID [<000102030405060708090a0b0c0d0e0f><000102030405060708090a0b0c0d0e0f>] >>\n");
+        W($"startxref\n{xrefOffset}\n%%EOF\n");
+
+        return ms.ToArray();
+    }
+
+    // ── Signature guard is independent of /AcroForm reachability ────────────────
+
+    /// <summary>
+    /// A signature-shaped dictionary that <see cref="PdfDocumentReader.Signatures"/> cannot reach
+    /// at all — no <c>/AcroForm</c> in this document — nested one level below the only object that
+    /// reaches it, so only a RECURSIVE object-graph scan (not a top-level-only one) can still catch
+    /// it. Isolates <c>AnyEmittedSignatureDictionary</c> as the sole line of defence: every guard
+    /// test elsewhere in this file uses a document where <c>Signatures</c> ALSO finds the
+    /// signature, so this is the one case that would have passed if the guard were reverted to
+    /// <c>Signatures.Count &gt; 0</c> alone (review round 3, medium #3).
+    /// </summary>
+    [Fact]
+    public void SaveDecrypted_signatureUnreachableFromAcroForm_stillThrowsWithoutOptIn()
+    {
+        var bytes = BuildDocumentWithOrphanedNestedSignature();
+        using var reader = PdfReader.Open(bytes);
+        Assert.Empty(reader.Signatures);
+
+        using var ms = new MemoryStream();
+        var ex = Assert.Throws<InvalidOperationException>(() => reader.SaveDecrypted(ms));
+        Assert.Contains("signature", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(0, ms.Length);
+
+        using var ms2 = new MemoryStream();
+        reader.SaveDecrypted(ms2, new PdfSaveDecryptedOptions { AllowInvalidatingSignatures = true });
+        Assert.True(ms2.Length > 0);
+    }
+
+    // No /AcroForm anywhere. Object 2's OWN dictionary is not itself signature-shaped (no /Type
+    // /Sig, no /ByteRange of its own); the signature dictionary lives one level down, under an
+    // arbitrary key an /AcroForm walk would never think to look at.
+    private static byte[] BuildDocumentWithOrphanedNestedSignature()
+    {
+        var ms = new MemoryStream();
+        void W(string s) => ms.Write(Encoding.Latin1.GetBytes(s));
+
+        W("%PDF-1.7\n");
+        var o1 = (int)ms.Position;
+        W("1 0 obj\n<< /Type /Catalog /Wrapper 2 0 R >>\nendobj\n");
+        var o2 = (int)ms.Position;
+        W("2 0 obj\n<< /NotItselfASignature /Foo /Nested << /Type /Sig "
+          + "/ByteRange [0 10 20 30] /Contents <DEADBEEF> >> >>\nendobj\n");
+
+        var xrefOffset = (int)ms.Position;
+        W("xref\n0 3\n");
+        W("0000000000 65535 f \n");
+        foreach (var o in new[] { o1, o2 })
+            W($"{o:D10} 00000 n \n");
+        W("trailer\n<< /Size 3 /Root 1 0 R >>\n");
+        W($"startxref\n{xrefOffset}\n%%EOF\n");
+
+        return ms.ToArray();
+    }
+
     // ── Fail-loud on an unresolvable object ──────────────────────────────────
 
     [Fact]
@@ -196,6 +373,62 @@ public sealed class SaveDecryptedTests
         W($"{o2:D10} 00000 n \n");
         W("0000100000 00000 n \n"); // in range for the field, out of range for this tiny file
         W("trailer\n<< /Size 4 /Root 1 0 R >>\n");
+        W($"startxref\n{xrefOffset}\n%%EOF\n");
+
+        return ms.ToArray();
+    }
+
+    // ── Stream at a non-zero generation ─────────────────────────────────────
+
+    /// <summary>
+    /// The 17 encrypted fixtures are all generation 0 (qpdf normalises on write), and
+    /// <c>Fixtures/ThirdParty/nonzero-generation.pdf</c>'s own non-zero object is a plain
+    /// DICTIONARY (the catalog) — no committed fixture has a STREAM at a non-zero generation. That
+    /// gap meant hard-coding generation 0 in <c>EmitStream</c> specifically (as opposed to
+    /// <c>EmitObject</c>, which the catalog case already covers) passed every test in this suite: a
+    /// generation-N&gt;0 stream would be written as <c>N 0 obj</c> while every reference to it stays
+    /// <c>N G R</c>, producing a dangling reference nothing here would have caught (review round 3,
+    /// medium #2). Hand-built rather than found, the same way the reconstructed-document and
+    /// signature-policy cases above are.
+    /// </summary>
+    [Fact]
+    public void SaveDecrypted_streamAtNonZeroGeneration_preservesTheGenerationInTheOutputXref()
+    {
+        var bytes = BuildDocumentWithStreamAtGeneration1();
+        using var reader = PdfReader.Open(bytes);
+        Assert.Equal(1, reader.GenerationOf(2)); // sanity-checks the fixture, not the method under test
+
+        using var ms = new MemoryStream();
+        reader.SaveDecrypted(ms);
+        ms.Position = 0;
+
+        using var reopened = PdfReader.Open(ms.ToArray());
+        Assert.Equal(1, reopened.GenerationOf(2));
+    }
+
+    // Object 2 is a STREAM recorded at generation 1 directly (no free-chain entry needed at
+    // generation 0 first — this reader, like GenerationNumberTests's own hand-built fixtures,
+    // accepts a live non-zero-generation row with no preceding free entry).
+    private static byte[] BuildDocumentWithStreamAtGeneration1()
+    {
+        var ms = new MemoryStream();
+        void W(string s) => ms.Write(Encoding.Latin1.GetBytes(s));
+        var body = "STREAM-AT-GENERATION-ONE"u8.ToArray();
+
+        W("%PDF-1.7\n");
+        var o1 = (int)ms.Position;
+        W("1 0 obj\n<< /Type /Catalog /Content 2 1 R >>\nendobj\n");
+        var o2 = (int)ms.Position;
+        W($"2 1 obj\n<< /Length {body.Length} >>\nstream\n");
+        ms.Write(body);
+        W("\nendstream\nendobj\n");
+
+        var xrefOffset = (int)ms.Position;
+        W("xref\n0 3\n");
+        W("0000000000 65535 f \n");
+        W($"{o1:D10} 00000 n \n");
+        W($"{o2:D10} 00001 n \n");
+        W("trailer\n<< /Size 3 /Root 1 0 R >>\n");
         W($"startxref\n{xrefOffset}\n%%EOF\n");
 
         return ms.ToArray();
@@ -355,6 +588,19 @@ public sealed class SaveDecryptedTests
         Assert.Throws<ObjectDisposedException>(() => reader.SaveDecrypted(ms));
     }
 
+    [Fact]
+    public async Task SaveDecryptedAsync_onADisposedReader_throwsObjectDisposed()
+    {
+        var reader = OpenFixture("enc-aes-128.pdf", "u");
+        reader.Dispose();
+
+        using var ms = new MemoryStream();
+        // ThrowsAsync, not Throws: an async method never throws synchronously to its caller, even
+        // for a guard checked before the first await — the exception surfaces only when the
+        // returned Task is observed.
+        await Assert.ThrowsAsync<ObjectDisposedException>(() => reader.SaveDecryptedAsync(ms));
+    }
+
     // ── Async twin ───────────────────────────────────────────────────────────
 
     /// <summary>
@@ -413,6 +659,63 @@ public sealed class SaveDecryptedTests
         Assert.Equal(0, ms.Length);
     }
 
+    /// <summary>
+    /// The opposite of the pre-cancelled case above: cancellation that fires DURING the final
+    /// buffer-to-destination copy, after serialisation has already succeeded. The doc comment on
+    /// <see cref="PdfDocumentReader.SaveDecrypted(Stream)"/>'s "Cost" remarks says this can leave a
+    /// genuinely-plaintext, truncated prefix already written — this pins that claim rather than
+    /// leaving it undemonstrated (review round 3, low #6).
+    /// </summary>
+    [Fact]
+    public async Task SaveDecryptedAsync_cancellationDuringFinalCopy_leavesAPlaintextPrefixWritten()
+    {
+        using var reader = OpenFixture("enc-aes-128.pdf", "u");
+        using var cts = new CancellationTokenSource();
+        using var underlying = new MemoryStream();
+        var destination = new CancelAfterFirstWriteStream(underlying, cts);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            reader.SaveDecryptedAsync(destination, new PdfSaveDecryptedOptions(), cts.Token));
+
+        Assert.True(underlying.Length > 0, "expected at least a partial prefix to have reached the real destination");
+    }
+
+    /// <summary>
+    /// Writes each chunk through to the real destination genuinely, THEN cancels — so the write
+    /// itself always lands before the cancellation it triggers is observed. <c>Stream.CopyToAsync</c>
+    /// checks the token again on its next <c>ReadAsync</c> call (even the one that only discovers
+    /// end-of-stream), which is where the throw actually surfaces for a source small enough to copy
+    /// in a single chunk.
+    /// </summary>
+    private sealed class CancelAfterFirstWriteStream(Stream inner, CancellationTokenSource cancelAfterWrite) : Stream
+    {
+        public override bool CanRead => false;
+        public override bool CanSeek => false;
+        public override bool CanWrite => true;
+        public override long Length => inner.Length;
+        public override long Position { get => inner.Position; set => throw new NotSupportedException(); }
+
+        public override async ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            await inner.WriteAsync(buffer, CancellationToken.None).ConfigureAwait(false);
+            cancelAfterWrite.Cancel();
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+
+        // Stream.CopyToAsync's actual call chain reaches THIS byte[]-based overload, not the
+        // ReadOnlyMemory<byte> one above — Stream's own base-class WriteAsync(byte[], ...) does
+        // not delegate to it, so both need overriding for the cancellation to land where intended
+        // instead of falling through to the synchronous Write(byte[], ...) below (which throws).
+        public override Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
+            WriteAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
+
+        public override void Flush() => inner.Flush();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+    }
+
     [Fact]
     public async Task SaveDecryptedAsync_nullDestination_throwsArgumentNull()
     {
@@ -443,16 +746,17 @@ public sealed class SaveDecryptedTests
     public void SaveDecrypted_passthroughDctImage_preservesFilterAndBodyVerbatim()
     {
         var jpegBytes = "NOT-A-REAL-JPEG-BUT-A-RECOGNISABLE-PASSTHROUGH-BODY-0123456789"u8.ToArray();
-
-        var encryptedBytes = BuildDocumentWithDctImage(jpegBytes, encrypt: true);
-        var plainBytes = BuildDocumentWithDctImage(jpegBytes, encrypt: false);
+        var encryptedBytes = BuildDocumentWithDctImage(jpegBytes);
 
         using var encryptedReader = PdfReader.Open(encryptedBytes, new PdfReaderOptions { Password = "u" });
-        using var plainReader = PdfReader.Open(plainBytes);
 
         // This document is built outside the SHA-pinned fixture corpus, so nothing else confirms
-        // doc.Encrypt(...) actually took effect before trusting what SaveDecrypted did to it.
+        // doc.Encrypt(...) actually took effect, or that the fixture carries the filter under test,
+        // before trusting what SaveDecrypted did to it (review round 3, low #7).
         Assert.NotNull(encryptedReader.Encryption);
+        var sourceImageStream = GetFirstImageStream(encryptedReader);
+        var sourceFilter = Assert.IsType<PdfName>(sourceImageStream.Dictionary.Get(PdfName.Filter));
+        Assert.True(sourceFilter.Equals(PdfName.DCTDecode), "expected the source fixture's own image to declare /Filter /DCTDecode");
 
         using var ms = new MemoryStream();
         encryptedReader.SaveDecrypted(ms);
@@ -462,16 +766,19 @@ public sealed class SaveDecryptedTests
         Assert.Null(decryptedReader.Encryption);
 
         var decryptedImageStream = GetFirstImageStream(decryptedReader);
-        var plainImageStream = GetFirstImageStream(plainReader);
-
         var decryptedFilter = Assert.IsType<PdfName>(decryptedImageStream.Dictionary.Get(PdfName.Filter));
         Assert.True(decryptedFilter.Equals(PdfName.DCTDecode), "expected /Filter /DCTDecode to survive verbatim");
+
+        // Against the literal known-answer bytes directly, not a second, separately-produced
+        // never-encrypted artifact: comparing two PRODUCED documents to each other proves only that
+        // they agree, which a shared bug in how both were built (e.g. RegisterImageXObject
+        // corrupting the body the same way twice) would not disturb.
         Assert.True(
-            decryptedImageStream.RawBody.Span.SequenceEqual(plainImageStream.RawBody.Span),
-            "the decrypted image body must match the never-encrypted document's body byte-for-byte");
+            decryptedImageStream.RawBody.Span.SequenceEqual(jpegBytes),
+            "the decrypted image body must match the literal JPEG bytes byte-for-byte");
     }
 
-    private static byte[] BuildDocumentWithDctImage(byte[] jpegBytes, bool encrypt)
+    private static byte[] BuildDocumentWithDctImage(byte[] jpegBytes)
     {
         using var doc = new PdfDocument();
         var page = doc.AddPage(PageSize.A4);
@@ -479,9 +786,7 @@ public sealed class SaveDecryptedTests
             width: 8, height: 6, streamData: jpegBytes, filter: PdfName.DCTDecode,
             colorSpace: ImageColorSpace.DeviceRgb, bitsPerComponent: 8);
         doc.RegisterImageXObject(page, image, "Im0");
-
-        if (encrypt)
-            doc.Encrypt(new PdfEncryptionSettings { UserPassword = "u", OwnerPassword = "o" });
+        doc.Encrypt(new PdfEncryptionSettings { UserPassword = "u", OwnerPassword = "o" });
 
         using var ms = new MemoryStream();
         doc.Save(ms);
@@ -569,7 +874,10 @@ public sealed class SaveDecryptedTests
         using var reader = PdfReader.Open(bytes, new PdfReaderOptions { Password = "u" });
         using var ms = new MemoryStream();
         var ex = Assert.Throws<UnsupportedPdfFeatureException>(() => reader.SaveDecrypted(ms));
-        Assert.Contains("Object 2", ex.Message, StringComparison.Ordinal);
+        // "Object 2" alone is the prefix BOTH throw sites share — swapping which one fired would
+        // still pass that check (review round 3, low #9), so assert the distinguishing remainder
+        // that names /Filter specifically.
+        Assert.Contains("Object 2: /Filter is an indirect reference", ex.Message, StringComparison.Ordinal);
         Assert.Equal(0, ms.Length);
     }
 
@@ -587,7 +895,9 @@ public sealed class SaveDecryptedTests
         using var reader = PdfReader.Open(bytes, new PdfReaderOptions { Password = "u" });
         using var ms = new MemoryStream();
         var ex = Assert.Throws<UnsupportedPdfFeatureException>(() => reader.SaveDecrypted(ms));
-        Assert.Contains("Object 2", ex.Message, StringComparison.Ordinal);
+        // Same reasoning as the /Filter twin above: assert the distinguishing remainder, not just
+        // the shared "Object 2" prefix.
+        Assert.Contains("Object 2: /DecodeParms is an indirect reference", ex.Message, StringComparison.Ordinal);
         Assert.Equal(0, ms.Length);
     }
 
@@ -701,10 +1011,14 @@ public sealed class SaveDecryptedTests
         reader.SaveDecrypted(ms);
         var output = Encoding.ASCII.GetString(ms.ToArray());
 
+        // OrdinalIgnoreCase, not Ordinal: PdfHexString.WriteTo emits UPPERCASE hex (its Nibble
+        // helper), so an Ordinal comparison against this LOWERCASE literal (copied verbatim from
+        // the fixture's /Encrypt dictionary text) would never match regardless of whether /O and
+        // /U actually survived — a vacuous control (review round 3, security lens).
         Assert.DoesNotContain(
-            "2a2f0a1990192c60114730bdcd39f37828a53c89a340dd473c85299dc5258e1c", output, StringComparison.Ordinal);
+            "2a2f0a1990192c60114730bdcd39f37828a53c89a340dd473c85299dc5258e1c", output, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain(
-            "6c8913ac9fc602eb1aad2a1ec614bee90021446990b9e4114071a4d9104984c1", output, StringComparison.Ordinal);
+            "6c8913ac9fc602eb1aad2a1ec614bee90021446990b9e4114071a4d9104984c1", output, StringComparison.OrdinalIgnoreCase);
     }
 
     // RC4 is symmetric: the same operation that decrypts enc-rc4-128-v4.pdf's own content encrypts

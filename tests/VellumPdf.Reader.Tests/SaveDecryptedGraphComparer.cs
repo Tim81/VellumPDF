@@ -15,12 +15,14 @@ namespace VellumPdf.Reader.Tests;
 /// </summary>
 internal static class SaveDecryptedGraphComparer
 {
-    // Below this many leaf-value comparisons, AssertCatalogsEqual refuses to report success — a
-    // comparison of two (near-)empty graphs, or one that was accidentally handed the same reader
-    // twice, or a comparer bug that stops descending early, all "pass" with zero actual content
-    // checked otherwise (review round 2, defect 4). Set well under the smallest real fixture's
-    // count (in the dozens), not tuned to any specific one.
-    private const int MinimumComparedLeafCount = 5;
+    // Below this many leaf-value comparisons, AssertCatalogsEqual refuses to report success.
+    // Measured across the real fixture corpus, a genuine comparison walks 21-29 leaves; a floor of
+    // 5 (review round 2) only catches a comparison of two (near-)empty graphs or the same reader
+    // handed twice — a comparer sabotaged to stop descending after a handful of leaves still passed
+    // every fixture at that floor (review round 3, defect 4). 20 sits just under the measured
+    // range, so a genuine comparison still clears it with room for a smaller-but-real fixture, while
+    // a comparer that gives up early no longer can.
+    private const int MinimumComparedLeafCount = 20;
 
     private sealed class ComparisonState
     {

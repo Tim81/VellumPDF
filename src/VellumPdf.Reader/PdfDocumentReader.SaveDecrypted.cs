@@ -55,14 +55,22 @@ public sealed partial class PdfDocumentReader
     /// signature it carries by construction — a fresh <c>/ByteRange</c> no longer names the region
     /// the original signature was computed over. This method throws
     /// <see cref="InvalidOperationException"/> when the source document has one or more signatures
-    /// unless <see cref="PdfSaveDecryptedOptions.AllowInvalidatingSignatures"/> is set. Detection does
-    /// NOT go through the public <see cref="Signatures"/> property (which walks <c>/AcroForm</c>'s
-    /// <c>/Fields</c> tree and can miss one an unusual field-tree shape hides — see that property's
-    /// own history): every object this method is about to emit is checked directly for the same
-    /// structural shape <see cref="DecryptObjectGraph"/> already uses to exempt a signature's
-    /// <c>/Contents</c> from decryption on read, so a signature this guard could miss is a signature
-    /// that would ALSO have had its <c>/Contents</c> decrypted on read — a strictly worse failure.
-    /// Even with the opt-in set, a signature's own <c>/Contents</c> is copied verbatim: if the source
+    /// unless <see cref="PdfSaveDecryptedOptions.AllowInvalidatingSignatures"/> is set. Detection
+    /// UNIONS two independent sources, neither of which is complete on its own: the public
+    /// <see cref="Signatures"/> property's <c>/AcroForm</c>/<c>/Fields</c> walk (which needs an
+    /// <c>/AcroForm</c> entry and a field-tree path to the signature at all), and a direct recursive
+    /// scan of every object this method is about to emit for the same structural shape
+    /// <see cref="DecryptObjectGraph"/> already uses to exempt a signature's <c>/Contents</c> from
+    /// decryption on read — recursing into nested dictionaries and arrays exactly as that method
+    /// does, since ISO 32000-2 Table 226 does not require a field's <c>/V</c> to be an indirect
+    /// reference the way it requires <c>/Lock</c> and <c>/SV</c> to be, so a signature dictionary can
+    /// legally sit INLINE inside its field, reachable only by recursing rather than as its own
+    /// top-level emit-set entry. Neither source is redundant with the other: the field-tree walk
+    /// finds a signature the object scan cannot reach without an <c>/AcroForm</c> path to it, and the
+    /// object scan finds one the field-tree walk cannot reach without a well-formed field tree naming
+    /// it — a signature-shaped dictionary present in the document but not linked from
+    /// <c>/AcroForm</c> at all is exactly such a case. Even with the opt-in set, a signature's own
+    /// <c>/Contents</c> is copied verbatim: if the source
     /// encrypted that field —
     /// qpdf does this by default even for a document this library refuses to both sign and encrypt
     /// itself — the ciphertext lands where the DER signature bytes belong, permanently. This is not a
@@ -259,22 +267,26 @@ public sealed partial class PdfDocumentReader
     }
 
     /// <summary>
-    /// Whether any object in <paramref name="emitSet"/> resolves to something
-    /// <see cref="IsSignatureDictionary"/> recognises as a signature dictionary — the actual basis
-    /// for <see cref="SaveDecrypted(Stream)"/>'s signature-policy guard.
+    /// Whether any object in <paramref name="emitSet"/> — or anything reachable from one by direct
+    /// nesting, not just the object itself — is something <see cref="IsSignatureDictionary"/>
+    /// recognises as a signature dictionary. One of the two independent sources the signature-policy
+    /// guard unions; see the "Signatures" remarks on <see cref="SaveDecrypted(Stream)"/> for why
+    /// neither source alone is complete.
     /// </summary>
     /// <remarks>
-    /// Deliberately independent of the public <see cref="Signatures"/> property, which walks
-    /// <c>/AcroForm</c>'s <c>/Fields</c> tree and can miss a real signature the guard still has to
-    /// catch — a field whose <c>/V</c> lives on a kid that inherits <c>/FT /Sig</c> from a
-    /// non-terminal ancestor (ISO 32000-2 §12.7.4.1) was exactly such a case before
-    /// <c>CollectFieldSignatures</c> was fixed to thread inheritance through the walk, and nothing
-    /// rules out some other field-tree shape this method has not been taught either. Scanning every
-    /// candidate object directly, the same way <see cref="DecryptObjectGraph"/> already decides the
-    /// <c>/Contents</c> exemption on read, costs nothing extra: every one of these objects is
-    /// force-resolved by <see cref="SerializeDecrypted"/>'s own emission loop regardless, so a
-    /// signature-shaped dictionary found here is a cache hit when the loop reaches it, not a second
-    /// parse.
+    /// Recurses into nested dictionaries and arrays exactly the way <see cref="DecryptObjectGraph"/>
+    /// does when it decides the <c>/Contents</c> exemption on read — deliberately not just checking
+    /// each top-level object, since ISO 32000-2 Table 226 lets a field's <c>/V</c> be a direct
+    /// (inline) dictionary rather than requiring an indirect reference the way <c>/Lock</c> and
+    /// <c>/SV</c> in that same table do. An earlier version of this method checked only the top-level
+    /// resolved value of each emit-set entry, which missed exactly that inline shape: a signature
+    /// dictionary sitting directly inside its field's <c>/V</c>, never itself an <c>/AcroForm</c>
+    /// entry's own object number. Indirect references are NOT followed here — an indirect target is
+    /// its own emit-set entry and gets checked on its own turn by the caller's loop, so following it
+    /// again here would only repeat work, not find anything new. Every candidate object is
+    /// force-resolved by <see cref="SerializeDecrypted"/>'s own emission loop regardless, so this
+    /// scan costs nothing beyond the recursion itself: a signature-shaped dictionary found here is a
+    /// cache hit when the loop reaches its containing object, not a second parse.
     /// </remarks>
     private bool AnyEmittedSignatureDictionary(IEnumerable<int> emitSet)
     {
@@ -282,13 +294,19 @@ public sealed partial class PdfDocumentReader
         {
             try
             {
-                // A signature VALUE dictionary (what IsSignatureDictionary recognises) is never
-                // itself a stream — its /Contents is a string, not stream data — so a stream object
-                // can never match and is skipped without paying for the dictionary-shape check.
-                if (ResolveStream(objectNumber) is not null)
+                var stream = ResolveStream(objectNumber);
+                if (stream is not null)
+                {
+                    // A signature VALUE dictionary is never itself a stream — its /Contents is a
+                    // string, not stream data — but nothing stops a stream's OWN dictionary from
+                    // nesting one inline the same way a field's /V can, so this still recurses
+                    // rather than skipping the stream outright.
+                    if (ContainsSignatureDictionary(stream.Dictionary))
+                        return true;
                     continue;
+                }
 
-                if (Resolve(objectNumber) is PdfDictionary dict && IsSignatureDictionary(dict))
+                if (ContainsSignatureDictionary(Resolve(objectNumber)))
                     return true;
             }
             catch (InvalidDataException ex)
@@ -302,6 +320,35 @@ public sealed partial class PdfDocumentReader
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Whether <paramref name="obj"/> is a signature dictionary by
+    /// <see cref="IsSignatureDictionary"/>'s reading, or contains one nested directly inside a
+    /// dictionary value or array element. Does not follow indirect references — see
+    /// <see cref="AnyEmittedSignatureDictionary"/> for why not.
+    /// </summary>
+    private bool ContainsSignatureDictionary(PdfObject? obj)
+    {
+        switch (obj)
+        {
+            case PdfDictionary d:
+                if (IsSignatureDictionary(d))
+                    return true;
+                foreach (var kv in d.Entries)
+                    if (ContainsSignatureDictionary(kv.Value))
+                        return true;
+                return false;
+
+            case PdfArray a:
+                for (var i = 0; i < a.Count; i++)
+                    if (ContainsSignatureDictionary(a[i]))
+                        return true;
+                return false;
+
+            default:
+                return false;
+        }
     }
 
     /// <summary>
@@ -327,7 +374,12 @@ public sealed partial class PdfDocumentReader
     {
         var emitSet = ComputeEmitSet();
 
-        if (!options.AllowInvalidatingSignatures && AnyEmittedSignatureDictionary(emitSet))
+        // Unions two independent sources — see the "Signatures" remarks above for why neither
+        // alone is complete. Signatures.Count is checked first since it is normally cheap (a
+        // handful of AcroForm field-tree nodes) and short-circuits the full object scan on the
+        // common case where a signature IS reachable that way.
+        if (!options.AllowInvalidatingSignatures
+            && (Signatures.Count > 0 || AnyEmittedSignatureDictionary(emitSet)))
             throw new InvalidOperationException(
                 "This document has one or more digital signatures. Re-serialising it invalidates "
                 + "every signature's /ByteRange, so each one would verify as \"document modified "

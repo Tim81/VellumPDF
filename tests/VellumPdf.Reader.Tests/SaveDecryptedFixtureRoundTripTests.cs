@@ -159,11 +159,14 @@ public sealed class SaveDecryptedFixtureRoundTripTests
         var bytes = LoadThirdParty("nonzero-generation.pdf");
         using var reader = PdfReader.Open(bytes);
 
-        var catalogGeneration = reader.GenerationOf(1);
-        Assert.True(
-            catalogGeneration > 0,
-            "expected nonzero-generation.pdf's catalog (object 1) to carry a nonzero generation — "
-            + "if this fails, the fixture itself has been flattened and no longer proves anything.");
+        // The literal 1 here is NOT derived from GenerationOf (the method under test) — it is the
+        // independently-known fact about this fixture that ThirdPartyReaderBehaviorTests's own
+        // NonzeroGenerationIncremental_catalog_stillResolvesAtGeneration1 pins by hand-resolving
+        // "1 1 R" directly. A prior version of this test read the "expected" value from
+        // reader.GenerationOf(1) instead, which would have silently agreed with a broken GenerationOf
+        // that always returned 0 (review round 3, low #8: self-referential expectation).
+        const int expectedGeneration = 1;
+        Assert.Equal(expectedGeneration, reader.GenerationOf(1));
 
         using var ms = new MemoryStream();
         reader.SaveDecrypted(ms);
@@ -171,7 +174,7 @@ public sealed class SaveDecryptedFixtureRoundTripTests
 
         var actualGenerations = ParseClassicXrefGenerations(outputBytes);
         Assert.True(actualGenerations.TryGetValue(1, out var actualGeneration), "object 1 missing from output xref");
-        Assert.Equal(catalogGeneration, actualGeneration);
+        Assert.Equal(expectedGeneration, actualGeneration);
     }
 
     /// <summary>
@@ -334,6 +337,7 @@ public sealed class SaveDecryptedFixtureRoundTripTests
         var namesRoot = Assert.IsType<PdfDictionary>(reader.ResolveValue(reader.Catalog.Get(new PdfName("Names"))!));
         var embeddedFiles = Assert.IsType<PdfDictionary>(reader.ResolveValue(namesRoot.Get(new PdfName("EmbeddedFiles"))!));
         var namesArr = Assert.IsType<PdfArray>(reader.ResolveValue(embeddedFiles.Get(new PdfName("Names"))!));
+        Assert.True(namesArr.Count >= 2, $"expected at least one [name, filespec] pair, got {namesArr.Count} element(s)");
         var filespec = Assert.IsType<PdfDictionary>(reader.ResolveValue(namesArr[1]));
         var ef = Assert.IsType<PdfDictionary>(reader.ResolveValue(filespec.Get(new PdfName("EF"))!));
         var streamRef = Assert.IsType<PdfIndirectReference>(ef.Get(new PdfName("F")));
@@ -443,9 +447,7 @@ public sealed class SaveDecryptedFixtureRoundTripTests
     /// pulling in the full parser (which resolves through THIS reader's own machinery and would make
     /// the test partly self-referential).
     /// </summary>
-    // Internal rather than private: SaveDecryptedTests reuses this exact parser for its own
-    // nonzero-generation assertion (#186 review round 2, defect 3) rather than keeping a second copy.
-    internal static Dictionary<int, int> ParseClassicXrefGenerations(byte[] bytes)
+    private static Dictionary<int, int> ParseClassicXrefGenerations(byte[] bytes)
     {
         var text = Encoding.Latin1.GetString(bytes);
         var xrefKeyword = text.LastIndexOf("\nxref\n", StringComparison.Ordinal);
