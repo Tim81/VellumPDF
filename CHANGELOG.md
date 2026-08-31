@@ -299,6 +299,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **A reader test called correct behaviour a defect awaiting a fix.**
+  Test-only; nothing ships. `FreedFilterObject_streamDecodesToRawCompressedBytes_notNull`, added in
+  #372 to characterise an unresolvable `/Filter` decoding as raw compressed bytes, called that
+  outcome "wrong content that looks right" and expected itself to go red once #373 fixed it.
+  ISO 32000-2 §7.3.10 treats an indirect reference to an undefined object as the null object, not
+  an error, and §7.3.9 treats a null-valued dictionary entry as equivalent to the entry being
+  absent — chained, a stream whose `/Filter` cannot be resolved has no `/Filter` at all, and
+  returning it unfiltered is what the spec requires, not a bug. Renamed to
+  `FreedFilterObject_streamTreatedAsUnfiltered_perIso7310` with the doc comment rewritten to cite
+  the clause chain; assertions unchanged. `GetFilterList` in `Filters.cs` gets a matching
+  why-comment. This closure covers only the scalar `/Filter` entry; an unresolvable element inside
+  a `/Filter` *array* is a separate, unlabelled path, tracked in #385 since Table 5 sanctions a
+  null there for `/DecodeParms` but not for `/Filter`. The residual concern from #373's review, a
+  reader diagnostics channel for this and other notify-and-continue conditions, is split out to
+  #385. (#373)
+
 - **The CI coverage gate could pass with less real coverage than the run before it, and couldn't
   say which report went missing.** Merging per `(assembly, file, line)` across cobertura reports
   and counting a line once, covered if any report covered it, meant a report's exclusive lines left
