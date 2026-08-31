@@ -285,18 +285,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   and counting a line once, covered if any report covered it, meant a report's exclusive lines left
   both the numerator and the denominator when that report disappeared — dropping one whose
   exclusive lines ran below the average made the merged percentage rise, not fall. The only guard
-  was a zero-file check, so six reports going to five passed silently. The gate now checks the
-  assembly *names* surviving the merge against an explicit set of the eight shipping assemblies
-  (`vellum-preflight` for `VellumPdf.Cli`), so a report that never got written, or one written empty
-  by a crashed run, fails by naming the missing assembly instead of moving an average. A
-  per-assembly floor (40%) stops a new subsystem landing at ~0% coverage from hiding behind the
-  other seven's average — a whole new module moves the combined figure by well under a point. A new
+  was a zero-file check, so six reports going to five passed silently. The gate now checks four
+  things. The assembly *names* surviving the merge must match an explicit set of the eight shipping
+  assemblies (`vellum-preflight` for `VellumPdf.Cli`), so a report that never got written, or one
+  written empty by a crashed run, usually fails by naming the missing assembly rather than by
+  moving an average — "usually" because three of the seven test projects (`Kernel.Tests`,
+  `Layout.Tests`, `Reader.Tests`) instrument an identical assembly set, so losing one of them costs
+  no assembly its name; the report *count* must be exactly seven to catch that case instead. At
+  most one report may be empty, since `VellumPdf.TestSupport.Tests` legitimately produces zero
+  packages once its own target, `VellumPdf.TestSupport`, is excluded from instrumentation — a
+  second empty report means a crash, not that. And each assembly's *valid*-line count must clear a
+  floor seeded at roughly 75% of what it measured here, so an assembly whose instrumentation
+  collapses to a single covered line can no longer report 100% and pass: the #229 defect one level
+  down, where the denominator vanishes from a single assembly instead of the whole run. A separate
+  per-assembly coverage floor (40%) stops a new subsystem landing at ~0% from hiding behind the
+  other seven's average. The merge key also now strips a leading `src/`/`tests/`/`eng/` path
+  segment before the existing package-relative normalization, closing a case where two spellings of
+  one physical file's path doubled four assemblies' denominators in a local run. A new
   `coverlet.runsettings`, wired into the `dotnet test` step via `--settings`, excludes `[*.Tests]*`
   and `[VellumPdf.TestSupport]*` from instrumentation, so the denominator means shipping code rather
-  than padding itself with near-100%-covered test helpers — measured on this branch, excluding them
-  raised the merged figure from 76.4% (44,702 unique lines, test assemblies instrumented) to 88.9%
-  (31,368 lines), because `VellumPdf.Conformance.Tests` had itself been running at only 46.5%. The
-  global threshold moves from 68% to 84% to match. (#229)
+  than padding itself with near-100%-covered test helpers — CI-measured, excluding them raised the
+  merged figure from 76.4% (44,702 unique lines, test assemblies instrumented) to 88.8% (31,368
+  lines), because `VellumPdf.Conformance.Tests` had itself been running at only 46.5%. The global
+  threshold moves from 68% to 84% to match. (#229)
 
 - **The AOT smoke never covered `VellumPdf.Fonts.Standard14`, and never ran on Windows.**
   CI-only; nothing ships. This closes two holes in what the gate proves. The package embeds its 12

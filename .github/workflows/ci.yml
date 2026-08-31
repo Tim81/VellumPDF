@@ -220,6 +220,9 @@ jobs:
           # always-available last-resort tool, so a detection miss that was a harmless no-op in
           # 19.x could launch a GUI here instead. Setting this explicitly closes that gap.
           DiffEngine_Disabled: 'true'
+        # --settings alone would activate the coverage collector, but --collect stays too: it is
+        # the documented, discoverable switch for "this run collects coverage", while --settings'
+        # job here is narrower — supplying the exclude filters in coverlet.runsettings (#229).
         run: dotnet test VellumPdf.slnx -c Release --no-build --collect:"XPlat Code Coverage" --settings coverlet.runsettings --results-directory ${{ runner.temp }}/coverage
 
       - name: Enforce coverage threshold
@@ -237,11 +240,12 @@ jobs:
 
           THRESHOLD = 84
           PER_ASSEMBLY_FLOOR = 40
+          MIN_TOTAL_LINES = 29000
 
-          # coverlet.runsettings excludes [*.Tests]* and [VellumPdf.TestSupport]*, so these eight
-          # are every assembly the run is supposed to instrument (#229). Cobertura's <package name>
-          # is the compiled assembly name, not the project name — VellumPdf.Cli builds as
-          # vellum-preflight. Add a ninth entry here when a ninth package ships under src/.
+          # coverlet.runsettings excludes [*.Tests]* and [VellumPdf.TestSupport]*, so these eight are
+          # every assembly the run is supposed to instrument (#229). Cobertura's <package name> is the
+          # compiled assembly name, not the project name — VellumPdf.Cli builds as vellum-preflight.
+          # When a ninth package ships under src/, add its assembly name here.
           EXPECTED_ASSEMBLIES = frozenset({
               "VellumPdf.Barcodes",
               "VellumPdf.Conformance",
@@ -253,11 +257,20 @@ jobs:
               "vellum-preflight",
           })
 
+          # One report per test project — Barcodes, Cli, Conformance, Kernel, Layout, Reader and
+          # TestSupport.Tests. Checked further down, after the assembly-name check: three of the seven
+          # (Kernel.Tests, Layout.Tests, Reader.Tests) happen to instrument an identical assembly set
+          # (Kernel, Layout, Reader, Signing), so losing one of them costs no assembly its name and the
+          # name check alone would miss it silently. Update alongside EXPECTED_ASSEMBLIES when a test
+          # project is added or removed.
+          EXPECTED_REPORT_COUNT = 7
+
           # Each test project emits one cobertura report instrumenting the same shared
           # assemblies, so a source line appears in several reports. Merge per (file, line):
           # count each line once, covered if any report covered it. Summing the per-report
           # totals would multiply the shared surface by the number of test projects.
           merged = {}
+          empty_report_count = 0
           for f in sorted(files):
               root = ET.parse(f).getroot()
               file_lines = {}
@@ -267,6 +280,16 @@ jobs:
                   pkgname = pkg.get("name", "")
                   for cls in pkg.iter("class"):
                       fn = cls.get("filename", "").replace("\\", "/")
+                      # A deterministic build can embed a source path either rooted at its own project
+                      # folder or still carrying a leading src/tests/eng segment, depending on how that
+                      # project computed its relative source root. Strip a leading one unconditionally so
+                      # the same physical file normalizes to the same key regardless of which shape a
+                      # given report used — two spellings of one file were observed doubling four
+                      # assemblies' denominators in a local run before this line was added.
+                      for _lead in ("src/", "tests/", "eng/"):
+                          if fn.startswith(_lead):
+                              fn = fn[len(_lead):]
+                              break
                       # Coverlet reports the same source file with different prefixes across
                       # test-project reports (an absolute runner path in one, an assembly-relative
                       # path in another). Keying on the raw filename counts each line once per
@@ -290,19 +313,20 @@ jobs:
               fc = sum(1 for v in file_lines.values() if v)
               fv = len(file_lines)
               print(f"  {os.path.relpath(f, cov_dir)}: covered={fc}, valid={fv}, line-rate={fc/fv if fv else 0:.4f}")
+              if fv == 0:
+                  empty_report_count += 1
               for key, v in file_lines.items():
                   merged[key] = merged.get(key, False) or v
 
           # A crashed or partial run still writes a coverage.cobertura.xml (#229): the file-count
-          # check above can't tell that apart from a healthy one, and a report's exclusive lines
+          # check further down can't tell that apart from a healthy one, and a report's exclusive lines
           # leaving the denominator along with the numerator can make the percentage RISE while
           # actual coverage falls. Checking which assembly NAMES survived the merge catches both
           # a report that never got written and one that got written empty — either way the
           # assembly has no keys in `merged` — and fails by name instead of by an arithmetic side
-          # effect. VellumPdf.TestSupport.Tests is expected to contribute no packages at all here:
-          # it only exercises VellumPdf.TestSupport, which the exclude filter above removes from
-          # instrumentation, so its own report is legitimately empty and this checks assembly
-          # identity rather than report count.
+          # effect. This runs before the count/empty checks below so a report with an assembly
+          # exclusive to it still fails by naming that assembly, which is the more actionable message
+          # when it applies.
           found_assemblies = frozenset(asm for asm, _, _ in merged)
           missing = EXPECTED_ASSEMBLIES - found_assemblies
           if missing:
@@ -311,15 +335,60 @@ jobs:
               sys.exit(1)
           unexpected = found_assemblies - EXPECTED_ASSEMBLIES
           if unexpected:
-              print(f"::error::Unexpected assemblies in coverage data: {', '.join(sorted(unexpected))}. "
+              # An empty <package name=""> would otherwise join this list as a literal empty string,
+              # printing a bare "." with nothing readable in front of it.
+              display = sorted(asm if asm else "(unnamed package)" for asm in unexpected)
+              print(f"::error::Unexpected assemblies in coverage data: {', '.join(display)}. "
                     "Add them to EXPECTED_ASSEMBLIES if this is a new shipping package, or fix "
                     "coverlet.runsettings if a test assembly is leaking through the exclude filter.")
+              sys.exit(1)
+
+          # The name check above can't see a report whose whole assembly set is shared with other
+          # surviving reports (Kernel.Tests, Layout.Tests, Reader.Tests all instrument
+          # Kernel+Layout+Reader+Signing identically) — losing one of those costs no assembly its name.
+          # Catch that by counting reports instead.
+          if len(files) != EXPECTED_REPORT_COUNT:
+              print(f"::error::Found {len(files)} coverage.cobertura.xml files under {cov_dir}, "
+                    f"expected {EXPECTED_REPORT_COUNT}.")
+              sys.exit(1)
+
+          # VellumPdf.TestSupport.Tests only exercises VellumPdf.TestSupport, which the exclude filter
+          # above removes from instrumentation, so its own report is expected to carry zero packages and
+          # zero valid lines — the one report this tolerates. dotnet test's shared --results-directory
+          # writes every project's report under an anonymous <guid>/ folder with nothing in the file name
+          # or content saying which test project produced it, so this counts empty reports rather than
+          # matching one by name: a second empty report means something besides
+          # VellumPdf.TestSupport.Tests was written empty by a crashed or partial run — the same
+          # identical-assembly-set gap the count check above closes, but for a report emptied in place
+          # rather than deleted.
+          ALLOWED_EMPTY_REPORTS = 1
+          if empty_report_count > ALLOWED_EMPTY_REPORTS:
+              print(f"::error::{empty_report_count} coverage reports were empty (covered=0, valid=0); "
+                    f"expected at most {ALLOWED_EMPTY_REPORTS} (VellumPdf.TestSupport.Tests's own report).")
               sys.exit(1)
 
           # A per-assembly floor so a new subsystem landing at ~0% coverage can't hide behind the
           # other seven assemblies' average (#229) — a whole new module moves the combined figure
           # by well under a point. This is a floor, not a target: set comfortably below every
           # assembly's measured rate so it only fires on a real regression.
+          #
+          # The floor alone doesn't stop the #229 defect one level down: an assembly whose instrumentation
+          # collapses to a single covered line reports 100% and clears it, while its real multi-thousand-
+          # line denominator vanishes from the merge — the same shape as a missing report, just contained
+          # to one assembly instead of all of them. MIN_VALID_LINES pins each assembly's valid-line count
+          # to roughly 75% of what it measured when this gate was re-baselined (#229), so a collapsed
+          # denominator fails even though its (tiny) numerator still divides out to 100%.
+          MIN_VALID_LINES = {
+              "VellumPdf.Barcodes": 3800,        # measured 5064
+              "VellumPdf.Conformance": 7750,     # measured 10346
+              "VellumPdf.Fonts.Standard14": 20,  # measured 29 — a 29-line assembly needs more slack
+              "VellumPdf.Kernel": 5800,          # measured 7769
+              "VellumPdf.Layout": 1000,          # measured 1393
+              "VellumPdf.Reader": 1900,          # measured 2581
+              "VellumPdf.Signing": 800,          # measured 1109
+              "vellum-preflight": 2300,          # measured 3077
+          }
+
           per_asm = {}
           for (asm, fn, ln), v in merged.items():
               c, t = per_asm.get(asm, (0, 0))
@@ -327,16 +396,26 @@ jobs:
 
           print("Per-assembly line coverage:")
           below_floor = []
+          collapsed = []
           for asm in sorted(per_asm):
               c, t = per_asm[asm]
               rate = c / t * 100 if t else 0
               print(f"  {asm}: covered={c}, valid={t}, line-rate={rate:.2f}%")
               if rate < PER_ASSEMBLY_FLOOR:
                   below_floor.append((asm, c, t, rate))
+              min_valid = MIN_VALID_LINES.get(asm, 0)
+              if t < min_valid:
+                  collapsed.append((asm, t, min_valid))
           if below_floor:
               for asm, c, t, rate in below_floor:
                   print(f"::error::{asm} line coverage {rate:.2f}% (covered={c}, valid={t}) "
                         f"is below the {PER_ASSEMBLY_FLOOR}% per-assembly floor.")
+              sys.exit(1)
+          if collapsed:
+              for asm, t, min_valid in collapsed:
+                  print(f"::error::{asm} instrumented only {t} valid lines, below the {min_valid}-line "
+                        "minimum — its coverage denominator likely collapsed (fewer sequence points "
+                        "recorded, not necessarily lower coverage).")
               sys.exit(1)
 
           total_valid = len(merged)
@@ -344,6 +423,10 @@ jobs:
           combined = total_covered / total_valid if total_valid else 0
           pct = combined * 100
           print(f"Combined (merged) line coverage: {pct:.1f}% over {total_valid} unique lines (threshold: {THRESHOLD}%)")
+          if total_valid < MIN_TOTAL_LINES:
+              print(f"::error::Merged coverage covers only {total_valid} lines, below the "
+                    f"{MIN_TOTAL_LINES}-line minimum expected across all reports (measured 31,368).")
+              sys.exit(1)
           if pct < THRESHOLD:
               print(f"::error::Line coverage {pct:.1f}% is below the required threshold of {THRESHOLD}%.")
               sys.exit(1)

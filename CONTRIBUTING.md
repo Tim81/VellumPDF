@@ -164,6 +164,19 @@ linearized` directly, so a test that reads that line already discriminates;
 the exit code is the part of `--check` that doesn't (a warning just adds
 `WARNING` lines and exit 3, on top of whichever of those two lines fired).
 
+The `Enforce coverage threshold` step that follows the `Test` step in `ci.yml` reads whatever the
+`--collect:"XPlat Code Coverage"` run wrote, so reproducing its percentage locally needs the same
+invocation, `--settings` included:
+
+```bash
+dotnet test VellumPdf.slnx -c Release --collect:"XPlat Code Coverage" --settings coverlet.runsettings --results-directory <dir>
+```
+
+`coverlet.runsettings` excludes `*.Tests` assemblies and `VellumPdf.TestSupport` from
+instrumentation (#229). Drop `--settings` and the run still produces a number, just a different
+one: the unexcluded figure, measuring the eight shipping assemblies together with the test
+scaffolding built on top of them, not what the gate script in `ci.yml` actually thresholds.
+
 ### 6. AOT smoke test
 
 ```pwsh
