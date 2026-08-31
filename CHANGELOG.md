@@ -280,6 +280,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **The AOT smoke never covered `VellumPdf.Fonts.Standard14`, and never ran on Windows.**
+  CI-only; nothing ships. This closes two holes in what the gate proves. The package embeds its 12
+  Liberation TTFs as `EmbeddedResource` looked up by manifest string — exactly what trimming breaks
+  silently — and nothing in the smoke or `VellumPdf.Cli` referenced it; the smoke's own comment
+  claimed "Standard-14 fonts" coverage that was actually Kernel's built-in AFM metrics path, reached
+  through Layout, not this package. The smoke now embeds a Liberation substitute via
+  `EmbedStandard14Font`, inflates the resulting `/FontFile2` stream, and checks its sfnt version —
+  proof the manifest lookup returned the real font under AOT, not just that a PDF was produced.
+  Separately, the `aot-smoke` CI matrix ran only `ubuntu-latest` and `macos-26`, so a Windows-only
+  Native AOT regression was discoverable only at release time, by which point the NuGet push had
+  already happened. `windows-latest` is now in the matrix. (#219)
+
 - **Eight `qpdf` oracle tests passed whether or not `qpdf` actually recognized their fixture as
   linearized.** Test-only; nothing ships. `qpdf --show-linearization` exits 0 and prints no
   `WARNING` for a linearized *and* a non-linearized file alike (executed directly against qpdf

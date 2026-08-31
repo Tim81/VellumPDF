@@ -22,6 +22,7 @@
     <ProjectReference Include="..\..\..\src\VellumPdf.Reader\VellumPdf.Reader.csproj" />
     <ProjectReference Include="..\..\..\src\VellumPdf.Conformance\VellumPdf.Conformance.csproj" />
     <ProjectReference Include="..\..\..\src\VellumPdf.Barcodes\VellumPdf.Barcodes.csproj" />
+    <ProjectReference Include="..\..\..\src\VellumPdf.Fonts.Standard14\VellumPdf.Fonts.Standard14.csproj" />
   </ItemGroup>
 
 </Project>
