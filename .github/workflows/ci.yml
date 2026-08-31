@@ -8,11 +8,27 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    # Pinned to the specific label, not the floating `ubuntu-latest`: every apt pin below is
+    # noble-only, and GitHub moves `ubuntu-latest` to a new release on its own schedule, which
+    # would break all of them at once with no commit to blame (#230).
+    runs-on: ubuntu-24.04
     env:
-      # Single source for the veraPDF Docker tag, referenced by both the image pull and the
-      # shim it backs (#230) — previously duplicated so bumping veraPDF meant editing two lines.
+      # Every pinned oracle version in one place, referenced by both the install steps and the
+      # version-assert step below, so bumping one means editing one line rather than two.
       VERAPDF_TAG: v1.30.2
+      QPDF_VERSION: '12.4.1'
+      QPDF_SHA256: 'db9122e88ec00c76ac6a14e09ffb92406db1773d47b968911ff6e69f28c09bf9'
+      POPPLER_VERSION: '24.02.0-1ubuntu9.9'
+      FONTS_DEJAVU_VERSION: '2.37-8'
+      FONTS_TEXGYRE_VERSION: '20180621-6'
+      # noble's apt pockets keep only the newest revision of each package, so a bare `=version`
+      # pin eventually 404s the moment Ubuntu ships another revision (poppler-utils alone has
+      # already rolled 9.1 through 9.8 off the archive). Point apt at the Ubuntu snapshot service
+      # for the date the versions above were measured, so the exact revision keeps resolving
+      # after the live archive rotates past it — see the "Install poppler and fonts" step.
+      APT_SNAPSHOT: '20260830T000000Z'
+      ZXING_VERSION: '3.1.1'
+      PILLOW_VERSION: '12.3.0'
     steps:
       # Full history: the clean-room check scans the branch's commit MESSAGES as well as its files,
       # and a merged message cannot be corrected afterwards. The default depth-1 checkout gives it
@@ -50,31 +66,38 @@ jobs:
         run: dotnet build VellumPdf.slnx -c Release --no-restore
 
       - name: Install poppler and fonts (pinned)
-        # Versions are whatever ubuntu-latest's noble apt archive currently serves; a font or
-        # poppler update changes fixture rendering and oracle output with no commit to blame
-        # (#230), so pin them the same way qpdf is pinned below instead of taking apt's default.
+        # A font or poppler update changes fixture rendering and oracle output with no commit to
+        # blame (#230), so pin exact versions rather than taking apt's default. The `=version`
+        # pins alone are not enough: noble's -updates/-security pockets keep only the newest
+        # revision, so the moment Ubuntu ships another one, these exact revisions 404 out of the
+        # live archive and every PR goes red with no code change involved. `-o APT::Snapshot`
+        # rewrites the runner's existing archive.ubuntu.com sources to the dated Ubuntu snapshot
+        # instead, which never evicts what it once published — verified against a fresh
+        # ubuntu:24.04 container with the live archive already past this exact revision, and it
+        # still resolved. If a real bump is ever needed instead of just chasing a rotated
+        # revision — a new poppler feature, a font correction — update POPPLER_VERSION /
+        # FONTS_*_VERSION and APT_SNAPSHOT together (`apt-cache policy` against a fresh
+        # `ubuntu:24.04` container gives both) and mention it in CONTRIBUTING.md.
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            poppler-utils=24.02.0-1ubuntu9.9 \
-            fonts-dejavu-core=2.37-8 \
-            fonts-texgyre=20180621-6
+          set -euo pipefail
+          sudo apt-get update -o APT::Snapshot="${APT_SNAPSHOT}"
+          sudo apt-get install -y -o APT::Snapshot="${APT_SNAPSHOT}" \
+            "poppler-utils=${POPPLER_VERSION}" \
+            "fonts-dejavu-core=${FONTS_DEJAVU_VERSION}" \
+            "fonts-texgyre=${FONTS_TEXGYRE_VERSION}"
 
       - name: Install qpdf (pinned)
-        # apt's qpdf on ubuntu-latest is 11.9.0, two majors behind upstream; `--check`'s output
+        # apt's qpdf on ubuntu-24.04 is 11.9.0, two majors behind upstream; `--check`'s output
         # has changed across qpdf majors and #186's acceptance criterion is exactly that output
         # (#230). Installed from the official release artifact instead, matched by checksum.
-        env:
-          QPDF_VERSION: '12.4.1'
-          QPDF_SHA256: 'db9122e88ec00c76ac6a14e09ffb92406db1773d47b968911ff6e69f28c09bf9'
         run: |
           set -euo pipefail
           asset="qpdf-${QPDF_VERSION}-bin-linux-x86_64.zip"
-          curl -fsSL -o /tmp/qpdf.zip \
+          curl -fsSL --retry 3 --retry-delay 2 --retry-all-errors -o /tmp/qpdf.zip \
             "https://github.com/qpdf/qpdf/releases/download/v${QPDF_VERSION}/${asset}"
           echo "${QPDF_SHA256}  /tmp/qpdf.zip" | sha256sum -c -
           sudo mkdir -p "/opt/qpdf-${QPDF_VERSION}"
-          sudo unzip -q /tmp/qpdf.zip -d "/opt/qpdf-${QPDF_VERSION}"
+          sudo unzip -o -q /tmp/qpdf.zip -d "/opt/qpdf-${QPDF_VERSION}"
           echo "/opt/qpdf-${QPDF_VERSION}/bin" >> "$GITHUB_PATH"
           echo "QPDF_HOME=/opt/qpdf-${QPDF_VERSION}" >> "$GITHUB_ENV"
 
@@ -95,38 +118,65 @@ jobs:
 
       - uses: actions/setup-python@v7
         with:
-          python-version: '3.x'
+          # zxing-cpp 3.1.1 ships prebuilt wheels for cp310–cp314; a floating '3.x' would
+          # eventually resolve to 3.15 and fall back to a source build with no commit to blame.
+          python-version: '3.14'
 
       - name: Install barcode decode oracle (zxing-cpp)
-        # setup-python's toolcache interpreter avoids the PEP 668 externally-managed block on
-        # the system python. pillow is pinned alongside it so a Pillow release can't shift
-        # fixture rendering the same way an unpinned apt font package could (#230).
-        run: python -m pip install zxing-cpp==3.1.1 pillow==12.3.0
+        # Pinned for CI reproducibility (#230), not because 3.1.1 fails the EAN add-on assertion
+        # it was originally held against — that test only asserts the main digits and tolerates
+        # the add-on's presentation varying by version (see CONTRIBUTING.md), and it landed in
+        # the same commit as this pin, passing under 3.1.1. pillow is pinned alongside it so a
+        # Pillow release can't shift fixture rendering the same way an unpinned apt font package
+        # could.
+        run: python -m pip install "zxing-cpp==${ZXING_VERSION}" "pillow==${PILLOW_VERSION}"
 
       - name: Assert pinned oracle versions
-        # Prints and checks each pinned tool's own version report, so drift between this file
-        # and what actually got installed fails loudly instead of silently changing what every
-        # downstream oracle test validates against (#230).
+        # Prints and checks each pinned tool's own version report against the job-level env vars
+        # above, so drift between this file and what actually got installed fails loudly instead
+        # of silently changing what every downstream oracle test validates against (#230).
+        # Comparisons are exact-line or exact-value, not substring greps: "12.4.1" is a substring
+        # of "12.4.10", so a careless `grep -qF` would pass against a future revision it was
+        # never meant to accept.
         run: |
           set -euo pipefail
 
-          qpdf_version=$(qpdf --version)
-          echo "$qpdf_version"
-          echo "$qpdf_version" | grep -qF "12.4.1"
+          qpdf_line=$(qpdf --version | head -n1)
+          echo "$qpdf_line"
+          [ "$qpdf_line" = "qpdf version ${QPDF_VERSION}" ]
 
-          poppler_version=$(pdftotext -v 2>&1)
-          echo "$poppler_version"
-          echo "$poppler_version" | grep -qF "24.02.0"
+          # pdftotext -v reports only poppler's upstream version (e.g. "24.02.0"), never the
+          # Ubuntu package revision after the dash — apt can ship a new revision of the same
+          # upstream release, and fonts have no version-reporting flag at all. dpkg-query reads
+          # the installed package record directly, which is the only way to see the full pin.
+          echo "--- installed package versions ---"
+          dpkg-query -W -f='${Package} ${Version}\n' poppler-utils fonts-dejavu-core fonts-texgyre
+          assert_pkg_version() {
+            local pkg="$1" expected="$2" actual
+            actual=$(dpkg-query -W -f='${Version}' "$pkg")
+            if [ "$actual" != "$expected" ]; then
+              echo "::error::$pkg is $actual, expected $expected"
+              exit 1
+            fi
+          }
+          assert_pkg_version poppler-utils "$POPPLER_VERSION"
+          assert_pkg_version fonts-dejavu-core "$FONTS_DEJAVU_VERSION"
+          assert_pkg_version fonts-texgyre "$FONTS_TEXGYRE_VERSION"
 
-          verapdf_version=$(verapdf --version 2>&1)
-          echo "$verapdf_version"
-          echo "$verapdf_version" | grep -qF "1.30.2"
+          verapdf_line=$(verapdf --version 2>&1 | head -n1)
+          echo "$verapdf_line"
+          [ "$verapdf_line" = "veraPDF ${VERAPDF_TAG#v}" ]
 
           python -c "
           import importlib.metadata as m
-          v = m.version('zxing-cpp')
-          print('zxing-cpp', v)
-          assert v == '3.1.1', v
+          zxing_expected = '${ZXING_VERSION}'
+          pillow_expected = '${PILLOW_VERSION}'
+          zxing_actual = m.version('zxing-cpp')
+          pillow_actual = m.version('pillow')
+          print('zxing-cpp', zxing_actual)
+          print('pillow', pillow_actual)
+          assert zxing_actual == zxing_expected, zxing_actual
+          assert pillow_actual == pillow_expected, pillow_actual
           "
 
       - name: Test

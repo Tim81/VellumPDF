@@ -13,10 +13,25 @@ build, test, and submit changes to VellumPdf.
   the runner image ships, so matching CI locally means matching its versions: qpdf 12.4.1
   (installed in CI from the [official release
   artifact](https://github.com/qpdf/qpdf/releases/tag/v12.4.1), since apt's qpdf on
-  `ubuntu-latest` is 11.9.0 and `--check`'s output has changed across qpdf majors), poppler-utils
+  `ubuntu-24.04` is 11.9.0 and `--check`'s output has changed across qpdf majors), poppler-utils
   24.02.0-1ubuntu9.9, fonts-dejavu-core 2.37-8, and fonts-texgyre 20180621-6. On Debian/Ubuntu,
   install qpdf from the same release artifact and pin the rest with
   `sudo apt-get install poppler-utils=24.02.0-1ubuntu9.9 fonts-dejavu-core=2.37-8 fonts-texgyre=20180621-6`.
+
+  **CI's poppler/font pins have a known maintenance cost.** noble's `-updates`/`-security`
+  pockets keep only the newest revision of each package, so the exact revisions above eventually
+  vanish from the live apt archive on their own, with no code change involved. When that happens,
+  `ci.yml`'s "Install poppler and fonts" step still resolves them, because that step passes
+  `-o APT::Snapshot=$APT_SNAPSHOT` on both `apt-get update` and `apt-get install`, which rewrites
+  the runner's existing archive.ubuntu.com sources to the [Ubuntu snapshot
+  service](https://snapshot.ubuntu.com/) as it stood on that date — a snapshot never evicts what
+  it once published, even after the live archive moves on. The failure mode to watch for instead
+  is a genuine version bump: if poppler or a font package needs a newer release on purpose, run
+  `apt-cache policy poppler-utils fonts-dejavu-core fonts-texgyre` against a fresh
+  `ubuntu:24.04` container to get the new versions and a matching `APT_SNAPSHOT` date, then
+  update `POPPLER_VERSION` / `FONTS_DEJAVU_VERSION` / `FONTS_TEXGYRE_VERSION` and
+  `APT_SNAPSHOT` together in `ci.yml`'s job-level `env:`, and this paragraph to match.
+
   On Windows, PATH order between shells is not reliable — the same bare
   `pdftotext` can resolve to a completely different program depending on which
   shell launched the test host, so point `QPDF_HOME` and `POPPLER_HOME` at

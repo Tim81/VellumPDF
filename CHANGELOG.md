@@ -188,23 +188,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
-- **CI's external oracles are now pinned instead of floating on whatever `ubuntu-latest` ships.**
-  qpdf was the worst offender: apt's `qpdf` on the runner is 11.9.0, two majors behind upstream
-  12.4.1, and `--check`'s output has changed across qpdf majors while #186's acceptance criterion
-  is exactly that output. CI now installs qpdf 12.4.1 from the official release artifact
-  (checksum-verified) instead of apt; `poppler-utils`, `fonts-dejavu-core` and `fonts-texgyre` stay
-  on apt but pin to the exact versions `ubuntu-latest`'s noble archive serves today
+- **CI's external oracles are now pinned instead of floating on whatever the runner image ships.**
+  The build job itself moves off the floating `ubuntu-latest` label onto `ubuntu-24.04`, since
+  every apt pin below is noble-only and would all break at once the day GitHub retargets the
+  label. qpdf was the worst offender: apt's `qpdf` on the runner is 11.9.0, two majors behind
+  upstream 12.4.1, and `--check`'s output has changed across qpdf majors while #186's acceptance
+  criterion is exactly that output. CI now installs qpdf 12.4.1 from the official release artifact
+  (checksum-verified) instead of apt; `poppler-utils`, `fonts-dejavu-core` and `fonts-texgyre`
+  stay on apt, pinned to the exact versions `ubuntu-24.04`'s noble archive serves today
   (24.02.0-1ubuntu9.9, 2.37-8, 20180621-6 respectively), so a font update can no longer silently
-  shift fixture rendering out from under every downstream oracle. The veraPDF Docker tag, already
-  pinned, was duplicated across the image pull and the shim that backs it; both now read one
-  job-level `VERAPDF_TAG`. zxing-cpp moves from 3.0.0 to 3.1.1 (with `pillow` newly pinned to
-  12.3.0) — the barcode oracle suite passes unchanged, including the EAN add-on case the 3.0.0 pin
-  was recorded against, since that test only asserts the main 13 digits and treats the add-on's
-  presentation as version-dependent. A new version-assert step prints and checks each pinned
-  tool's own version report after install, so drift between the workflow and what actually landed
-  fails the build instead of changing what CI validates against with no commit to blame.
+  shift fixture rendering out from under every downstream oracle. Since noble's apt pockets keep
+  only the newest revision of a package, the install step also pins apt to the Ubuntu snapshot
+  service for the date those versions were measured, so the exact revisions keep resolving after
+  the live archive rotates past them instead of 404ing with no code change involved. The veraPDF
+  Docker tag, already pinned, was duplicated across the image pull and the shim that backs it;
+  both now read one job-level `VERAPDF_TAG`. zxing-cpp moves from 3.0.0 to 3.1.1 (with `pillow`
+  newly pinned to 12.3.0) — the barcode oracle suite passes unchanged, including the EAN add-on
+  case the 3.0.0 pin was recorded against, since that test only asserts the main 13 digits and
+  treats the add-on's presentation as version-dependent; `setup-python`'s interpreter is pinned
+  to 3.14 rather than floating, since zxing-cpp 3.1.1 ships prebuilt wheels only through 3.14. A
+  new version-assert step checks each pinned tool's own version report after install — including
+  the apt packages' full Ubuntu revision via `dpkg-query`, since `pdftotext -v` cannot see that
+  and fonts cannot self-report a version at all — so drift between the workflow and what actually
+  landed fails the build instead of changing what CI validates against with no commit to blame.
   `actions/setup-dotnet` and `actions/setup-python` also move to their current majors (v6 and v7)
-  across all three workflow files. (#230)
+  across all four workflow files. (#230)
 - The roadmap now describes the scope past 2.5 as two parallel tracks, Kernel and conformance
   alongside Layout, and adds the milestones covering the ISO/TS extension series, embedded files,
   graphics, fonts, tagged PDF, PDF/UA-2 and signature verification. The previous table had drifted:
