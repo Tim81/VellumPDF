@@ -17,14 +17,6 @@ updates:
           - "patch"
         exclude-patterns:
           - "System.Security.Cryptography.Pkcs"
-    ignore:
-      # #200 holds the xunit.v3 family and xunit.runner.visualstudio on 3.x deliberately until
-      # the Microsoft.Testing.Platform migration lands; a weekly major bump proposal here would
-      # target a known-red build. "xunit.v3*" matches both xunit.v3 and xunit.v3.assert.
-      - dependency-name: "xunit.v3*"
-        update-types: ["version-update:semver-major"]
-      - dependency-name: "xunit.runner.visualstudio"
-        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "github-actions"
     directory: "/"

@@ -17,9 +17,23 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <!-- xunit.v3 4.0.0 self-hosts on Microsoft.Testing.Platform; there is no separate VSTest
+         adapter to reference (#200). VellumPdf.TestSupport overrides this — see its own csproj. -->
     <PackageReference Include="xunit.v3" />
-    <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- coverlet.MTP reads its scope from testconfig.json in the test host's own output directory
+         (#200). This has to be a config file, not the coverlet-include/coverlet-exclude command
+         line options tried first: with no config file present, coverlet.MTP's command-line mode
+         merges in its own default exclude-by-attribute list (GeneratedCodeAttribute,
+         CompilerGeneratedAttribute), which silently drops every compiler- and source-generator-
+         emitted member from instrumentation, including VellumPdf.Cli's whole System.Text.Json
+         source-generated CliJsonContext partial, and every auto-property backing field elsewhere.
+         A config file is authoritative: coverlet.MTP does not inject that default list once one
+         exists, so scoping through testconfig.json (rather than the CLI) is what keeps generated
+         code counted the way coverlet.collector counted it under VSTest. -->
+    <None Include="$(MSBuildThisFileDirectory)../coverlet.testconfig.json" Link="testconfig.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

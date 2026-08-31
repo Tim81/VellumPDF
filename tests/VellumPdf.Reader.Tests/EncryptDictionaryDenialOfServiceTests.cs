@@ -40,6 +40,11 @@ public sealed class EncryptDictionaryDenialOfServiceTests
     /// development one pass the pre-fix code by accident. Filler count feeds a quadratic cost, so
     /// this modest increase over 80,000 restores comfortable headroom above that budget.
     /// </summary>
+    // xUnit1069 wants TestContext.Current.CancellationToken threaded through so the Timeout can end
+    // the test promptly; PdfReader.Open takes no CancellationToken, and there is nothing to thread
+    // it into. The Timeout itself is the #208 regression pin — see the class doc — so it stays
+    // rather than being dropped.
+#pragma warning disable xUnit1069
     [Fact(Timeout = 10_000)]
     public void HugeEncryptDictionary_opensUnderTimeout()
     {
@@ -50,6 +55,7 @@ public sealed class EncryptDictionaryDenialOfServiceTests
         Assert.NotNull(reader.Encryption);
         Assert.False(reader.Encryption.IsOwnerAccess);
     }
+#pragma warning restore xUnit1069
 
     private static byte[] BuildDocumentWithHugeEncryptDict(int fillerKeyCount)
     {
