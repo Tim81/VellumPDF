@@ -284,16 +284,16 @@ public sealed class XrefStreamTests
     [Fact]
     public void Decompression_bomb_exceeds_cap_throws()
     {
-        // Build a ZLib stream that would inflate to more than MaxDecodedBytes.
+        // Build a ZLib stream that would inflate to more than the default decode cap.
         // We can't actually create 512MB+ in a test, but we can set a fake cap.
         // Instead, create a stream of zeros (highly compressible) and verify the
         // existing cap behaviour by patching — actually, let's just test with a large
         // FlateDecode stream that expands to just over the constant.
-        // Since MaxDecodedBytes = 512MB, we can't allocate that in a test.
+        // Since the default cap is 512MB, we can't allocate that in a test.
         // Instead verify the guard fires with a mocked approach: use a specially
         // constructed test that compresses ~100KB of zeros and checks it decodes OK,
         // then separately verify the guard constant is as documented.
-        Assert.Equal(512L * 1024 * 1024, PdfFilters.MaxDecodedBytes);
+        Assert.Equal(512L * 1024 * 1024, ReaderLimits.DefaultMaxDecodedBytes);
 
         // And verify the guard fires: compress 2KB of data, but the limit is enforced.
         // We'll test indirectly: create valid 1KB compressed data and confirm it decodes.

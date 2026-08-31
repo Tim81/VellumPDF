@@ -144,6 +144,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **`PdfReaderOptions.MaxDecodedStreamBytes` and `ReconstructionBudgetMultiplier` — configurable
+  resource ceilings (#376).** Reconstruction's cost budget and the per-decode ceiling on decompressed
+  stream output were fixed constants sized for a desktop: a 512 MiB decode cap and a reconstruction
+  work budget of `max(1 MiB, 8 × file length)`. ISO 32000-2 Annex C.1 states that the format itself
+  "does not restrict the size or quantity of things described", and Annex C.3 notes that available
+  memory "vary[ies] from one PDF processor to another" — the ceiling was always this library's own
+  choice, not a spec requirement, so a caller on a constrained device, or one hardening against a
+  decompression bomb or a reconstruction budget attack, can now lower either value through
+  `PdfReaderOptions`. Both remain tighten-only: a value above the existing default, or below a floor
+  an ordinary document needs to open at all (1 MiB for the decode cap, a multiplier of 1 for the
+  budget), makes `PdfReader.Open` throw `ArgumentOutOfRangeException` naming the property and its
+  allowed range. The defaults are unchanged, so this adds no behaviour for a caller who does not set
+  either property.
+
 - **`PdfReaderOptions.AllowReconstruction` — opt-in cross-reference reconstruction (#184).** When
   `startxref` is missing, unusable, or doesn't point at a recognisable xref table or stream,
   `PdfReader.Open` used to always throw. Setting `AllowReconstruction` instead rebuilds the table by

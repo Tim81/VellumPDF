@@ -77,7 +77,14 @@ internal sealed class XrefParser
     /// throws unconditionally — reconstruction only ever engages when the chain could not be
     /// started at all, never as a fallback mid-chain.
     /// </summary>
-    public static XrefParseResult Parse(ReadOnlyMemory<byte> data, bool allowReconstruction)
+    /// <param name="data">The document's raw bytes.</param>
+    /// <param name="allowReconstruction">See <see cref="PdfReaderOptions.AllowReconstruction"/>.</param>
+    /// <param name="limits">
+    /// The resource ceilings resolved from <see cref="PdfReaderOptions"/> (<see cref="ReaderLimits.Resolve"/>) —
+    /// bounds every stream decode this parse performs, and the reconstruction budget when
+    /// <paramref name="allowReconstruction"/> engages.
+    /// </param>
+    public static XrefParseResult Parse(ReadOnlyMemory<byte> data, bool allowReconstruction, ReaderLimits limits)
     {
         int startxrefOffset;
         var startxrefUsable = false;
@@ -117,7 +124,7 @@ internal sealed class XrefParser
             // cross-reference stream — for ordinary encrypted content — and a number harvested from that
             // older revision would exempt the new object for the life of the reader.
             var crossReferenceStreamOffsets = new HashSet<long>();
-            var (trailer, revisions) = ParseRevisionChain(data, startxrefOffset, xref, freed, crossReferenceStreamOffsets);
+            var (trailer, revisions) = ParseRevisionChain(data, startxrefOffset, xref, freed, crossReferenceStreamOffsets, limits);
             var droppedOrphanedObjectStreamMembers = DropMembersOfFreedContainers(xref);
             return new XrefParseResult(
                 xref, trailer, startxrefOffset, revisions, crossReferenceStreamOffsets,
@@ -139,7 +146,7 @@ internal sealed class XrefParser
                 + "PdfReaderOptions.AllowReconstruction = true to PdfReader.Open to recover a document "
                 + "like this by scanning the file for object headers.");
 
-        return XrefReconstructor.Reconstruct(data);
+        return XrefReconstructor.Reconstruct(data, limits);
     }
 
     /// <summary>
@@ -339,7 +346,7 @@ internal sealed class XrefParser
 
     private static (PdfDictionary Trailer, IReadOnlyList<XrefRevision> Revisions) ParseRevisionChain(
         ReadOnlyMemory<byte> data, int xrefOffset, Dictionary<int, XrefEntry> xref, HashSet<int> freed,
-        HashSet<long> crossReferenceStreamOffsets)
+        HashSet<long> crossReferenceStreamOffsets, ReaderLimits limits)
     {
         var seenOffsets = new HashSet<int>();
         PdfDictionary? newestTrailer = null;
@@ -360,7 +367,7 @@ internal sealed class XrefParser
 
             revisionsNewestFirst.Add(new XrefRevision(currentOffset));
 
-            var trailer = ParseOneRevision(data, currentOffset, xref, freed, seenOffsets, crossReferenceStreamOffsets);
+            var trailer = ParseOneRevision(data, currentOffset, xref, freed, seenOffsets, crossReferenceStreamOffsets, limits);
             newestTrailer ??= trailer;
             anyRevisionDeclaredEncrypt |= trailer.TryGet(_encryptKey, out var revisionEncrypt) && revisionEncrypt is not null;
 
@@ -402,7 +409,7 @@ internal sealed class XrefParser
 
     private static PdfDictionary ParseOneRevision(
         ReadOnlyMemory<byte> data, int xrefOffset, Dictionary<int, XrefEntry> xref, HashSet<int> freed,
-        HashSet<int> seenOffsets, HashSet<long> crossReferenceStreamOffsets)
+        HashSet<int> seenOffsets, HashSet<long> crossReferenceStreamOffsets, ReaderLimits limits)
     {
         var span = data.Span;
 
@@ -446,7 +453,7 @@ internal sealed class XrefParser
         if (IsDigit(b))
         {
             // Cross-reference stream: "N G obj << ... >> stream ... endstream endobj"
-            var streamTrailer = ParseXrefStream(data, xrefOffset, xref, freed, localFreed, crossReferenceStreamOffsets);
+            var streamTrailer = ParseXrefStream(data, xrefOffset, xref, freed, localFreed, crossReferenceStreamOffsets, limits);
             freed.UnionWith(localFreed);
             return streamTrailer;
         }
@@ -495,7 +502,7 @@ internal sealed class XrefParser
                 // /Encrypt wins if both happen to declare one — that would be a malformed producer
                 // either way, and the classic trailer is what every pre-1.5 (and this) reader treats
                 // as authoritative for every other trailer key.
-                var xrefStmDict = ParseXrefStream(data, stmOffset, xref, freed, localFreed, crossReferenceStreamOffsets);
+                var xrefStmDict = ParseXrefStream(data, stmOffset, xref, freed, localFreed, crossReferenceStreamOffsets, limits);
                 if (!trailer.TryGet(_encryptKey, out _) && xrefStmDict.TryGet(_encryptKey, out var stmEncrypt) && stmEncrypt is not null)
                     trailer.Set(_encryptKey, stmEncrypt);
             }
@@ -623,7 +630,7 @@ internal sealed class XrefParser
 
     private static PdfDictionary ParseXrefStream(
         ReadOnlyMemory<byte> data, int xrefOffset, Dictionary<int, XrefEntry> xref, HashSet<int> freed,
-        HashSet<int> localFreed, HashSet<long> crossReferenceStreamOffsets)
+        HashSet<int> localFreed, HashSet<long> crossReferenceStreamOffsets, ReaderLimits limits)
     {
         var parser = new PdfObjectParser(data, xrefOffset);
         var result = parser.ParseIndirectObject();
@@ -637,7 +644,7 @@ internal sealed class XrefParser
         crossReferenceStreamOffsets.Add(xrefOffset);
 
         // Decode the stream body (typically FlateDecode, but use full chain for robustness)
-        var decodeResult = PdfFilters.Decode(streamObj);
+        var decodeResult = PdfFilters.Decode(streamObj, limits: limits);
         if (decodeResult is null)
             throw new InvalidDataException(
                 "Malformed PDF: xref stream uses an image filter that cannot be decoded.");

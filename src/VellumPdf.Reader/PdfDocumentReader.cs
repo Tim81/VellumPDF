@@ -61,6 +61,12 @@ public sealed class PdfDocumentReader : IDisposable
     private readonly Dictionary<string, CryptFilterMethod> _cryptFilterTable = new(StringComparer.Ordinal);
     private readonly bool _encryptMetadata = true;
 
+    // Resolved from PdfReaderOptions by ReaderLimits.Resolve (see PdfReader.Open) — the same values
+    // XrefParser.Parse and XrefReconstructor.Reconstruct were already handed for this read, so every
+    // decode and reconstruction budget check made through this instance agrees with the caller's
+    // chosen ceiling instead of a fixed constant.
+    private readonly ReaderLimits _limits;
+
     internal ReadOnlyMemory<byte> Bytes { get; }
     internal PdfDictionary Trailer { get; }
 
@@ -103,7 +109,7 @@ public sealed class PdfDocumentReader : IDisposable
     internal long ReconstructionBytesConsumed { get; }
 
     /// <summary>
-    /// Raw object-stream body bytes charged against <see cref="MaxAggregateReconstructionObjStmDecodeBytes"/>
+    /// Raw object-stream body bytes charged against <see cref="ReaderLimits.MaxAggregateReconstructionDecodeBytes"/>
     /// during Phase B's container expansion (B1), or 0 when <see cref="WasReconstructed"/> is false.
     /// Charged BEFORE a container is decoded, and the charge stands even when decoding then throws
     /// (a container that turns out not to be a genuine, decodable object stream) — otherwise a file
@@ -133,9 +139,11 @@ public sealed class PdfDocumentReader : IDisposable
     internal PdfDocumentReader(
         ReadOnlyMemory<byte> bytes,
         XrefParseResult parseResult,
+        ReaderLimits limits,
         string? password = null)
     {
         Bytes = bytes;
+        _limits = limits;
         _xref = parseResult.Xref;
         var trailer = parseResult.Trailer;
         Trailer = trailer;
@@ -249,17 +257,17 @@ public sealed class PdfDocumentReader : IDisposable
     // Aggregate budget for Phase B's B1, across every container reconstruction found. This bounds
     // RAW INPUT volume, not decoded output: the charge below is RawBodyLength (each container's
     // pre-decode extent, as Phase A measured it), not the size LoadObjectStream's decode later
-    // produces — so 512 MiB caps roughly that much compressed-on-disk body spread across every
-    // container, and the actual decoded volume can exceed it by whatever the containers' own
-    // compression ratio is (a highly compressible ObjStm body could still decode to several times
-    // this many bytes in aggregate). A single container's OWN decode is separately bounded by
-    // Filters.MaxDecodedBytes (512 MiB); without this aggregate raw-input cap, N reconstructed
-    // containers would let that per-container ceiling apply N times over — unbounded in total,
-    // since reconstruction has no xref-declared /Size to bound N by ahead of time. The raw-input
-    // charge, not a decoded-bytes one, is deliberate (row 15): it has to be knowable BEFORE the
-    // decode attempt, so a container that turns out not to be genuine still gets charged for the
-    // bytes it occupies rather than refunding itself by failing to decode.
-    private const long MaxAggregateReconstructionObjStmDecodeBytes = 512L * 1024 * 1024;
+    // produces — so ReaderLimits.MaxAggregateReconstructionDecodeBytes (512 MiB by default) caps
+    // roughly that much compressed-on-disk body spread across every container, and the actual
+    // decoded volume can exceed it by whatever the containers' own compression ratio is (a highly
+    // compressible ObjStm body could still decode to several times this many bytes in aggregate). A
+    // single container's OWN decode is separately bounded by ReaderLimits.MaxDecodedBytes; without
+    // this aggregate raw-input cap, N reconstructed containers would let that per-container ceiling
+    // apply N times over — unbounded in total, since reconstruction has no xref-declared /Size to
+    // bound N by ahead of time. The raw-input charge, not a decoded-bytes one, is deliberate (row
+    // 15): it has to be knowable BEFORE the decode attempt, so a container that turns out not to be
+    // genuine still gets charged for the bytes it occupies rather than refunding itself by failing
+    // to decode.
 
     /// <summary>
     /// Phase B of cross-reference reconstruction (#184), run once — after authentication, before
@@ -282,7 +290,7 @@ public sealed class PdfDocumentReader : IDisposable
         var reconstructionObjStmBytesCharged = 0L;
         foreach (var (container, rawBodyLength) in objectStreamContainers)
         {
-            if (reconstructionObjStmBytesCharged >= MaxAggregateReconstructionObjStmDecodeBytes)
+            if (reconstructionObjStmBytesCharged >= _limits.MaxAggregateReconstructionDecodeBytes)
                 break; // Budget spent — stop expanding. Security was already decided in Phase A;
                        // this cap only bounds how much further decode work Phase B does.
 
@@ -629,11 +637,11 @@ public sealed class PdfDocumentReader : IDisposable
     /// runs — not by mutating <see cref="ParsedStream.RawBody"/>, which stays the verbatim file
     /// bytes for §6.1.7.1 byte-level conformance checks (see the type's own doc comment). A stream
     /// whose effective crypt filter method is Identity is handed to
-    /// <see cref="PdfFilters.Decode(ParsedStream, Func{PdfObject?, PdfObject?}?)"/> unchanged; one
+    /// <see cref="PdfFilters.Decode(ParsedStream, Func{PdfObject?, PdfObject?}?, ReaderLimits?)"/> unchanged; one
     /// that needs decrypting is wrapped in a throwaway <see cref="ParsedStream"/> carrying the
     /// decrypted bytes, never exposed outside this method.
     /// </remarks>
-    internal byte[]? GetDecodedStreamData(ParsedStream stream) => PdfFilters.Decode(DecryptedStreamView(stream), ResolveMaybe);
+    internal byte[]? GetDecodedStreamData(ParsedStream stream) => PdfFilters.Decode(DecryptedStreamView(stream), ResolveMaybe, _limits);
 
     /// <summary>
     /// Returns a <see cref="ParsedStream"/> view of <paramref name="stream"/> whose body is
@@ -642,7 +650,7 @@ public sealed class PdfDocumentReader : IDisposable
     /// used to give every caller before #97, except correct on an encrypted document.
     ///
     /// <para>
-    /// Exists because <see cref="PdfFilters.Decode(ParsedStream, Func{PdfObject?, PdfObject?}?)"/>
+    /// Exists because <see cref="PdfFilters.Decode(ParsedStream, Func{PdfObject?, PdfObject?}?, ReaderLimits?)"/>
     /// returns <see langword="null"/> whenever an image filter (DCTDecode, JPXDecode, …) is present
     /// — by design, it never attempts to decode image data — which makes it unusable for a caller
     /// like <c>Jpeg2000Rule</c> that wants the raw-but-decrypted JP2/codestream bytes precisely

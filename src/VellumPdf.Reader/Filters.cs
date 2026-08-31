@@ -15,8 +15,6 @@ namespace VellumPdf.Reader;
 /// </summary>
 internal static class PdfFilters
 {
-    internal const long MaxDecodedBytes = 512L * 1024 * 1024;
-
     private static readonly PdfName _dp = new("DecodeParms");
     private static readonly PdfName _dp2 = new("DP");
     private static readonly PdfName _predictor = new("Predictor");
@@ -47,8 +45,18 @@ internal static class PdfFilters
     /// resolver is supplied those references are dereferenced; without one only direct values are
     /// honoured (the bootstrap xref-stream path, where the object graph is not yet resolvable).
     /// </param>
-    internal static bool TryDecode(ParsedStream stream, out byte[] decoded, Func<PdfObject?, PdfObject?>? resolve = null)
+    /// <param name="limits">
+    /// The resource ceilings for this decode — in particular
+    /// <see cref="ReaderLimits.MaxDecodedBytes"/>, the cap FlateDecode, LZWDecode, and
+    /// RunLengthDecode enforce on their output. Defaults to <see cref="ReaderLimits.Defaults"/> when
+    /// omitted, matching every call site that has not opted into
+    /// <see cref="PdfReaderOptions.MaxDecodedStreamBytes"/>.
+    /// </param>
+    internal static bool TryDecode(
+        ParsedStream stream, out byte[] decoded, Func<PdfObject?, PdfObject?>? resolve = null,
+        ReaderLimits? limits = null)
     {
+        var effectiveLimits = limits ?? ReaderLimits.Defaults;
         var filters = GetFilterList(stream.Dictionary, resolve);
         var parms = GetParmsList(stream.Dictionary, filters.Count, resolve);
 
@@ -66,7 +74,7 @@ internal static class PdfFilters
                 break;
             }
 
-            data = ApplyFilter(f, p, data);
+            data = ApplyFilter(f, p, data, effectiveLimits.MaxDecodedBytes);
         }
 
         decoded = data;
@@ -77,18 +85,20 @@ internal static class PdfFilters
     /// <param name="stream">The parsed stream whose filter chain is applied.</param>
     /// <param name="resolve">Optional indirect-reference resolver for <c>/Filter</c>/<c>/DecodeParms</c>;
     /// see <see cref="TryDecode"/>.</param>
-    internal static byte[]? Decode(ParsedStream stream, Func<PdfObject?, PdfObject?>? resolve = null)
+    /// <param name="limits">The decode ceiling to enforce; see <see cref="TryDecode"/>.</param>
+    internal static byte[]? Decode(
+        ParsedStream stream, Func<PdfObject?, PdfObject?>? resolve = null, ReaderLimits? limits = null)
     {
-        if (!TryDecode(stream, out var decoded, resolve))
+        if (!TryDecode(stream, out var decoded, resolve, limits))
             return null;
         return decoded;
     }
 
-    private static byte[] ApplyFilter(PdfName filter, PdfDictionary? parms, byte[] input)
+    private static byte[] ApplyFilter(PdfName filter, PdfDictionary? parms, byte[] input, long maxDecodedBytes)
     {
         if (filter.Value is "FlateDecode" or "Fl")
         {
-            var raw = InflateFlate(input);
+            var raw = InflateFlate(input, maxDecodedBytes);
             return ApplyPredictor(parms, raw);
         }
         if (filter.Value is "LZWDecode" or "LZW")
@@ -96,7 +106,7 @@ internal static class PdfFilters
             var earlyChange = 1;
             if (parms?.Get(_earlyChange) is PdfInteger ec)
                 earlyChange = (int)ec.Value;
-            var raw = DecodeLzw(input, earlyChange);
+            var raw = DecodeLzw(input, earlyChange, maxDecodedBytes);
             return ApplyPredictor(parms, raw);
         }
         if (filter.Value is "ASCIIHexDecode" or "AHx")
@@ -104,7 +114,7 @@ internal static class PdfFilters
         if (filter.Value is "ASCII85Decode" or "A85")
             return DecodeAscii85(input);
         if (filter.Value is "RunLengthDecode" or "RL")
-            return DecodeRunLength(input);
+            return DecodeRunLength(input, maxDecodedBytes);
 
         // /Crypt (ISO 32000-2 §7.4.10) is a no-op at this layer: PdfDocumentReader.GetDecodedStreamData
         // resolves which crypt filter method a stream's own /Crypt entry (or the document-wide /StmF)
@@ -122,7 +132,7 @@ internal static class PdfFilters
 
     // ── FlateDecode ──────────────────────────────────────────────────────────
 
-    internal static byte[] InflateFlate(byte[] input)
+    internal static byte[] InflateFlate(byte[] input, long maxDecodedBytes)
     {
         // FlateDecode is zlib (RFC 1950), but some producers emit raw deflate. Use the 2-byte
         // header as a fast-path hint for which to try first, then fall back to the other on a
@@ -132,7 +142,7 @@ internal static class PdfFilters
         var primaryIsZlib = LooksLikeZlib(input);
         try
         {
-            return Inflate(MakeDecompressor(input, primaryIsZlib));
+            return Inflate(MakeDecompressor(input, primaryIsZlib), maxDecodedBytes);
         }
         catch (DecompressionLimitExceededException ex)
         {
@@ -146,7 +156,7 @@ internal static class PdfFilters
             // is excluded so a real OOM is not masked as malformed input or retried.
             try
             {
-                return Inflate(MakeDecompressor(input, !primaryIsZlib));
+                return Inflate(MakeDecompressor(input, !primaryIsZlib), maxDecodedBytes);
             }
             catch (DecompressionLimitExceededException ex)
             {
@@ -176,7 +186,7 @@ internal static class PdfFilters
         return (cmf & 0x0F) == 8 && (((cmf << 8) | flg) % 31) == 0;
     }
 
-    private static byte[] Inflate(Stream decompressor)
+    private static byte[] Inflate(Stream decompressor, long maxDecodedBytes)
     {
         using var decoStream = decompressor;
         var ms = new MemoryStream();
@@ -186,18 +196,19 @@ internal static class PdfFilters
         while ((read = decoStream.Read(buf, 0, buf.Length)) > 0)
         {
             total += read;
-            if (total > MaxDecodedBytes)
+            if (total > maxDecodedBytes)
                 throw new DecompressionLimitExceededException(
-                    $"Decompressed stream size exceeds {MaxDecodedBytes / (1024 * 1024)} MB cap.");
+                    $"Decompressed stream size exceeds {maxDecodedBytes / (1024 * 1024)} MB cap.");
             ms.Write(buf, 0, read);
         }
         return ms.ToArray();
     }
 
     /// <summary>
-    /// Internal signal that decompression exceeded <see cref="MaxDecodedBytes"/>. A distinct type
-    /// lets <see cref="InflateFlate"/> distinguish the bomb guard from an ordinary format error so
-    /// it re-throws (as <see cref="InvalidDataException"/>) instead of retrying the other decoder.
+    /// Internal signal that decompression exceeded the decode's <see cref="ReaderLimits.MaxDecodedBytes"/>
+    /// cap. A distinct type lets <see cref="InflateFlate"/> distinguish the bomb guard from an
+    /// ordinary format error so it re-throws (as <see cref="InvalidDataException"/>) instead of
+    /// retrying the other decoder.
     /// </summary>
     private sealed class DecompressionLimitExceededException(string message) : Exception(message);
 
@@ -333,7 +344,7 @@ internal static class PdfFilters
 
     // ── LZWDecode ────────────────────────────────────────────────────────────
 
-    private static byte[] DecodeLzw(byte[] input, int earlyChange)
+    private static byte[] DecodeLzw(byte[] input, int earlyChange, long maxDecodedBytes)
     {
         const int ClearCode = 256;
         const int EoiCode = 257;
@@ -413,9 +424,9 @@ internal static class PdfFilters
                 throw new InvalidDataException($"LZWDecode: invalid code {code} at table size {table.Count}.");
             }
 
-            if (output.Length + entry.Length > MaxDecodedBytes)
+            if (output.Length + entry.Length > maxDecodedBytes)
                 throw new InvalidDataException(
-                    $"LZWDecode: decompressed size exceeds {MaxDecodedBytes / (1024 * 1024)} MB cap.");
+                    $"LZWDecode: decompressed size exceeds {maxDecodedBytes / (1024 * 1024)} MB cap.");
 
             output.Write(entry);
 
@@ -531,7 +542,7 @@ internal static class PdfFilters
 
     // ── RunLengthDecode ──────────────────────────────────────────────────────
 
-    private static byte[] DecodeRunLength(byte[] input)
+    private static byte[] DecodeRunLength(byte[] input, long maxDecodedBytes)
     {
         var output = new MemoryStream();
         var i = 0;
@@ -545,9 +556,9 @@ internal static class PdfFilters
                 var count = length + 1;
                 if (i + count > input.Length)
                     throw new InvalidDataException("RunLengthDecode: literal run extends past end of input.");
-                if (output.Length + count > MaxDecodedBytes)
+                if (output.Length + count > maxDecodedBytes)
                     throw new InvalidDataException(
-                        $"RunLengthDecode: decompressed size exceeds {MaxDecodedBytes / (1024 * 1024)} MB cap.");
+                        $"RunLengthDecode: decompressed size exceeds {maxDecodedBytes / (1024 * 1024)} MB cap.");
                 output.Write(input, i, count);
                 i += count;
             }
@@ -558,9 +569,9 @@ internal static class PdfFilters
                 if (i >= input.Length)
                     throw new InvalidDataException("RunLengthDecode: repeat run missing data byte.");
                 var b = input[i++];
-                if (output.Length + count > MaxDecodedBytes)
+                if (output.Length + count > maxDecodedBytes)
                     throw new InvalidDataException(
-                        $"RunLengthDecode: decompressed size exceeds {MaxDecodedBytes / (1024 * 1024)} MB cap.");
+                        $"RunLengthDecode: decompressed size exceeds {maxDecodedBytes / (1024 * 1024)} MB cap.");
                 for (var j = 0; j < count; j++)
                     output.WriteByte(b);
             }

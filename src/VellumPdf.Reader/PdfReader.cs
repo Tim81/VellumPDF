@@ -44,13 +44,18 @@ public static class PdfReader
     /// <exception cref="PdfPasswordException">Thrown when the document is encrypted and
     /// <see cref="PdfReaderOptions.Password"/> authenticates as neither the owner nor the user
     /// password.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when
+    /// <see cref="PdfReaderOptions.MaxDecodedStreamBytes"/> or
+    /// <see cref="PdfReaderOptions.ReconstructionBudgetMultiplier"/> is set above its default or
+    /// below its floor — see each property's own documentation for the allowed range.</exception>
     public static PdfDocumentReader Open(byte[] bytes, PdfReaderOptions options)
     {
         ArgumentNullException.ThrowIfNull(bytes);
         ArgumentNullException.ThrowIfNull(options);
+        var limits = ReaderLimits.Resolve(options);
         var data = new ReadOnlyMemory<byte>(bytes);
-        var parseResult = XrefParser.Parse(data, options.AllowReconstruction);
-        return new PdfDocumentReader(data, parseResult, options.Password);
+        var parseResult = XrefParser.Parse(data, options.AllowReconstruction, limits);
+        return new PdfDocumentReader(data, parseResult, limits, options.Password);
     }
 
     /// <summary>
@@ -77,6 +82,10 @@ public static class PdfReader
     /// <exception cref="PdfPasswordException">Thrown when the document is encrypted and
     /// <see cref="PdfReaderOptions.Password"/> authenticates as neither the owner nor the user
     /// password.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown for the same out-of-range
+    /// <see cref="PdfReaderOptions.MaxDecodedStreamBytes"/> or
+    /// <see cref="PdfReaderOptions.ReconstructionBudgetMultiplier"/> as
+    /// <see cref="Open(byte[], PdfReaderOptions)"/>.</exception>
     public static PdfDocumentReader Open(Stream stream, PdfReaderOptions options)
     {
         ArgumentNullException.ThrowIfNull(stream);
