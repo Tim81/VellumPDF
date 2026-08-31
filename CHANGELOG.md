@@ -268,9 +268,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   serializer inside the Reader package; it also still roadmapped the general reader's structural
   parser and content extraction at v2.1/v2.2, which have long since shipped and moved (content
   extraction is now v2.4, #98). The root README and all eight package READMEs get the same
-  correction to their shared roadmap section, plus a note that v2.3 is merged to main and pending
-  release rather than either "not shipped" or "released" — 2.2.0 remains the latest published
-  version until the maintainer tags 2.3.0.
+  correction to their shared roadmap section, marking v2.3.0 as the latest published release.
 
 - **CI's external oracles are now pinned instead of floating on whatever the runner image ships.**
   The build job itself moves off the floating `ubuntu-latest` label onto `ubuntu-24.04`, since

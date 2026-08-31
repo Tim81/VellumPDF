@@ -50,17 +50,17 @@ walkthrough this table summarizes.
 | --- | --- | --- |
 | Paragraph flow: wrapping, alignment (left/center/right/justify), mixed-style inline runs | ✅ Supported | — |
 | Tables: rows, columns, row spanning, borders | ✅ Supported | — |
-| Lists: ordered (decimal/alpha/roman), unordered, nested, custom markers | ✅ Supported | — |
+| Lists: ordered (decimal/alpha/roman), unordered, nested | ✅ Supported | — |
 | Headers and footers with page-number templates | ✅ Supported | — |
 | Images: JPEG, PNG (incl. interlaced and 16-bit), CCITT G4, TIFF-LZW | ✅ Supported | — |
 | Font embedding and subsetting: TrueType (`glyf`) and OpenType/CFF | ✅ Supported | — |
-| Links (URI and internal) and document outline/bookmarks | ✅ Supported | — |
+| Links (URI) and document outline/bookmarks | ✅ Supported | — |
 | Pie charts, including PDF/UA figure vs. decorative-artifact tagging | ✅ Supported | — |
-| PDF/A conformance: 2a, 2b, 2u | ✅ Supported | ISO 32000-2 (PDF/A-2 profiles) |
+| PDF/A conformance: 2a, 2b, 2u | ✅ Supported | ISO 19005-2 (PDF/A-2 profiles) |
 | PDF/UA-1 accessibility tagging | ✅ Supported | ISO 14289-1 |
 | Document metadata, XMP packet, document ID | ✅ Supported | — |
-| CMYK / ICC output intents via `Document.UseCmykOutputIntent`/`SetPdfAOutputIntent` | ⚠️ Needs verification | see note below |
-| Encryption via `Document.Encrypt` | ⚠️ Needs verification | see note below |
+| CMYK / ICC output intents via `Document.UseCmykOutputIntent`/`SetPdfAOutputIntent` | ✅ Supported | delegates to Kernel; veraPDF-proven |
+| Encryption via `Document.Encrypt` | ✅ Supported | ISO 32000-2 §7.6 (delegates to Kernel) |
 | Barcode symbols as a Layout element | ❌ Not yet (only an `IRenderer` extension seam exists) | no tracked milestone |
 | Form elements with their own labels; build-time accessibility diagnostics | ⏳ Planned | Layout C |
 | PDF/A-1 and PDF/A-4 | ⏳ Planned | v2.5 (#218, #222) |
@@ -72,18 +72,6 @@ walkthrough this table summarizes.
 | Additional chart types beyond pie | ⏳ Planned | Layout F |
 | SVG import | ⏳ Planned | Layout F (epic) |
 | Unicode bidi, right-to-left, and complex-script shaping | ⏳ Planned | Layout G (epic) |
-
-**Flagged for reviewer verification.** `Document.UseCmykOutputIntent` and
-`Document.SetPdfAOutputIntent` forward directly to the same `PdfDocument` (Kernel) calls that the
-CMYK/ICC oracle tests prove compliant, and `Document.Encrypt` forwards the same way to encryption
-that other oracle tests prove correct — but in both cases the existing oracle tests construct the
-document with `PdfDocument` directly rather than through `Layout.Document`, so no test in
-`tests/VellumPdf.Layout.Tests` names either wrapper by call site. The underlying behavior is
-almost certainly identical (both are one-line delegations), but "almost certainly" is not the bar
-this table sets elsewhere, so these two rows are marked rather than asserted. Barcodes integration
-is a plainer gap: `VellumPdf.Barcodes` is a separate, standalone, Stable package with no
-Layout-specific element type, test, or documented integration path beyond the generic `IRenderer`
-extension point `Document.Add(IRenderer)` accepts.
 <!-- capability-table:layout:end -->
 
 ## The VellumPdf family

@@ -68,11 +68,11 @@ for the narrative walkthrough this table summarizes.
 | Reading the document catalog | ✅ Supported | ISO 32000-2 §7.7.2 |
 | Reading digital signature metadata (`/ByteRange`, `/Contents`, `/M`, `/SubFilter`) | ✅ Supported (read only, not verified) | ISO 32000-2 §12.8 |
 | Writing a decrypted copy (`SaveDecrypted`/`SaveDecryptedAsync`) | ✅ Supported | #186 |
-| Lexer/parser hardened against malformed input (property-based fuzzing, round-trip oracle) | ✅ Supported | #392 |
+| Lexer/parser hardened against malformed input (property-based fuzzing, round-trip oracle) | ✅ Supported | #99 |
 | Text extraction | ⏳ Planned | v2.4 (#98) |
 | Image extraction | ⏳ Planned | v2.4 (#98) |
 | Graduating `VellumPdf.Reader` from Preview to Stable | ⏳ Planned | v2.4 (#187) |
-| Reading a document using an ISO/TS 32001–32004 PDF 2.0 extension (AES-GCM, PDF-MAC, SHA-3, EdDSA) | ❌ Rejected today (`UnsupportedPdfFeatureException`) | v2.6 (#236, #237, #238, #239) |
+| Reading a document that uses an ISO/TS 32001–32004 extension (AES-GCM, PDF-MAC, SHA-3, EdDSA) | ⚠️ Partial — AES-GCM is rejected (`UnsupportedPdfFeatureException`); PDF-MAC is ignored and SHA-3/EdDSA signatures read as opaque, none verified | v2.6 (#236, #237, #238, #239) |
 | Signature verification (integrity, coverage, certificate chains, revocation, achieved PAdES level) | ⏳ Planned | v2.13 |
 | Round-trip editing of an existing document | ⏳ Planned | v3.0, `VellumPdf.Editing` (Epic #101) |
 <!-- capability-table:reader:end -->
