@@ -280,6 +280,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **The CI coverage gate could pass with less real coverage than the run before it, and couldn't
+  say which report went missing.** Merging per `(assembly, file, line)` across cobertura reports
+  and counting a line once, covered if any report covered it, meant a report's exclusive lines left
+  both the numerator and the denominator when that report disappeared — dropping one whose
+  exclusive lines ran below the average made the merged percentage rise, not fall. The only guard
+  was a zero-file check, so six reports going to five passed silently. The gate now checks the
+  assembly *names* surviving the merge against an explicit set of the eight shipping assemblies
+  (`vellum-preflight` for `VellumPdf.Cli`), so a report that never got written, or one written empty
+  by a crashed run, fails by naming the missing assembly instead of moving an average. A
+  per-assembly floor (40%) stops a new subsystem landing at ~0% coverage from hiding behind the
+  other seven's average — a whole new module moves the combined figure by well under a point. A new
+  `coverlet.runsettings`, wired into the `dotnet test` step via `--settings`, excludes `[*.Tests]*`
+  and `[VellumPdf.TestSupport]*` from instrumentation, so the denominator means shipping code rather
+  than padding itself with near-100%-covered test helpers — measured on this branch, excluding them
+  raised the merged figure from 76.4% (44,702 unique lines, test assemblies instrumented) to 88.9%
+  (31,368 lines), because `VellumPdf.Conformance.Tests` had itself been running at only 46.5%. The
+  global threshold moves from 68% to 84% to match. (#229)
+
 - **The AOT smoke never covered `VellumPdf.Fonts.Standard14`, and never ran on Windows.**
   CI-only; nothing ships. This closes two holes in what the gate proves. The package embeds its 12
   Liberation TTFs as `EmbeddedResource` looked up by manifest string — exactly what trimming breaks

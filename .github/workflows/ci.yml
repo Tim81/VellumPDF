@@ -220,7 +220,7 @@ jobs:
           # always-available last-resort tool, so a detection miss that was a harmless no-op in
           # 19.x could launch a GUI here instead. Setting this explicitly closes that gap.
           DiffEngine_Disabled: 'true'
-        run: dotnet test VellumPdf.slnx -c Release --no-build --collect:"XPlat Code Coverage" --results-directory ${{ runner.temp }}/coverage
+        run: dotnet test VellumPdf.slnx -c Release --no-build --collect:"XPlat Code Coverage" --settings coverlet.runsettings --results-directory ${{ runner.temp }}/coverage
 
       - name: Enforce coverage threshold
         shell: bash
@@ -235,7 +235,23 @@ jobs:
               print("::error::No coverage.cobertura.xml files found under", cov_dir)
               sys.exit(1)
 
-          THRESHOLD = 68
+          THRESHOLD = 84
+          PER_ASSEMBLY_FLOOR = 40
+
+          # coverlet.runsettings excludes [*.Tests]* and [VellumPdf.TestSupport]*, so these eight
+          # are every assembly the run is supposed to instrument (#229). Cobertura's <package name>
+          # is the compiled assembly name, not the project name — VellumPdf.Cli builds as
+          # vellum-preflight. Add a ninth entry here when a ninth package ships under src/.
+          EXPECTED_ASSEMBLIES = frozenset({
+              "VellumPdf.Barcodes",
+              "VellumPdf.Conformance",
+              "VellumPdf.Fonts.Standard14",
+              "VellumPdf.Kernel",
+              "VellumPdf.Layout",
+              "VellumPdf.Reader",
+              "VellumPdf.Signing",
+              "vellum-preflight",
+          })
 
           # Each test project emits one cobertura report instrumenting the same shared
           # assemblies, so a source line appears in several reports. Merge per (file, line):
@@ -276,6 +292,52 @@ jobs:
               print(f"  {os.path.relpath(f, cov_dir)}: covered={fc}, valid={fv}, line-rate={fc/fv if fv else 0:.4f}")
               for key, v in file_lines.items():
                   merged[key] = merged.get(key, False) or v
+
+          # A crashed or partial run still writes a coverage.cobertura.xml (#229): the file-count
+          # check above can't tell that apart from a healthy one, and a report's exclusive lines
+          # leaving the denominator along with the numerator can make the percentage RISE while
+          # actual coverage falls. Checking which assembly NAMES survived the merge catches both
+          # a report that never got written and one that got written empty — either way the
+          # assembly has no keys in `merged` — and fails by name instead of by an arithmetic side
+          # effect. VellumPdf.TestSupport.Tests is expected to contribute no packages at all here:
+          # it only exercises VellumPdf.TestSupport, which the exclude filter above removes from
+          # instrumentation, so its own report is legitimately empty and this checks assembly
+          # identity rather than report count.
+          found_assemblies = frozenset(asm for asm, _, _ in merged)
+          missing = EXPECTED_ASSEMBLIES - found_assemblies
+          if missing:
+              print(f"::error::No coverage data for: {', '.join(sorted(missing))}. "
+                    "A report is missing, or the matching test project's report was written empty.")
+              sys.exit(1)
+          unexpected = found_assemblies - EXPECTED_ASSEMBLIES
+          if unexpected:
+              print(f"::error::Unexpected assemblies in coverage data: {', '.join(sorted(unexpected))}. "
+                    "Add them to EXPECTED_ASSEMBLIES if this is a new shipping package, or fix "
+                    "coverlet.runsettings if a test assembly is leaking through the exclude filter.")
+              sys.exit(1)
+
+          # A per-assembly floor so a new subsystem landing at ~0% coverage can't hide behind the
+          # other seven assemblies' average (#229) — a whole new module moves the combined figure
+          # by well under a point. This is a floor, not a target: set comfortably below every
+          # assembly's measured rate so it only fires on a real regression.
+          per_asm = {}
+          for (asm, fn, ln), v in merged.items():
+              c, t = per_asm.get(asm, (0, 0))
+              per_asm[asm] = (c + (1 if v else 0), t + 1)
+
+          print("Per-assembly line coverage:")
+          below_floor = []
+          for asm in sorted(per_asm):
+              c, t = per_asm[asm]
+              rate = c / t * 100 if t else 0
+              print(f"  {asm}: covered={c}, valid={t}, line-rate={rate:.2f}%")
+              if rate < PER_ASSEMBLY_FLOOR:
+                  below_floor.append((asm, c, t, rate))
+          if below_floor:
+              for asm, c, t, rate in below_floor:
+                  print(f"::error::{asm} line coverage {rate:.2f}% (covered={c}, valid={t}) "
+                        f"is below the {PER_ASSEMBLY_FLOOR}% per-assembly floor.")
+              sys.exit(1)
 
           total_valid = len(merged)
           total_covered = sum(1 for v in merged.values() if v)
