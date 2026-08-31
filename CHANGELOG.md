@@ -231,6 +231,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   dropped the one ISO 32000-1 had — which is why this has to be generated rather than transcribed.
   (#225)
 
+- **CsCheck-driven lexer/parser fuzzing, and a CI round-trip oracle for the third-party corpus
+  (#99).** `ParserFuzzTests` mutates the committed `Fixtures/Encrypted` and `Fixtures/ThirdParty`
+  corpora at the byte level and throws the result at `PdfLexer.NextToken`,
+  `PdfObjectParser.ParseObject`, and `PdfReader.Open` under both `AllowReconstruction` settings. It
+  is a robustness oracle, not a conformance one: only `InvalidDataException`,
+  `UnsupportedPdfFeatureException`, and `PdfPasswordException` may escape; a crash-class exception
+  (`IndexOutOfRangeException`, `NullReferenceException`, `OutOfMemoryException`,
+  `OverflowException`) is a finding, gated per-input by a wall-clock ceiling and, for `Open`, by
+  `PdfReaderOptions.MaxDecodedStreamBytes` pinned to its floor. Runs at a fast, bounded default
+  budget in every PR; `.github/workflows/fuzz-nightly.yml` runs the same tests on a schedule at a
+  budget roughly two orders of magnitude larger. A finding's fix must commit its minimized input to
+  the new `Fixtures/Fuzz/` corpus, SHA-256-pinned like the other two — see
+  `Fixtures/Fuzz/README.md`'s capture rule. Separately, `SaveDecryptedThirdPartyQpdfOracleTests`
+  extends #186's `SaveDecrypted` round-trip oracle (`qpdf --check` plus an object-graph comparison
+  against the reopened output) to the eleven third-party fixtures that can produce one, now that
+  `SaveDecrypted` accepts a reconstructed document — closing the half of #99 that was blocked on
+  #186 not existing yet.
+
 ### Changed
 
 - **CI's external oracles are now pinned instead of floating on whatever the runner image ships.**

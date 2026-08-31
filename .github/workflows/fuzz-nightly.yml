@@ -1,0 +1,73 @@
+name: Fuzz (nightly)
+
+# A much larger CsCheck budget than ci.yml's own PR-gating default, run against
+# VellumPdf.Reader.Tests' ParserFuzzTests (#99) on a schedule instead of every push. ci.yml already
+# runs these same Facts/Theories at a fast, bounded default (a few thousand iterations each) so
+# every PR gets some coverage cheaply; this workflow widens VELLUMPDF_FUZZ_ITER by roughly two
+# orders of magnitude and accepts a much longer run in exchange. See
+# tests/VellumPdf.Reader.Tests/ParserFuzzTests.cs's class doc for the oracle these tests apply
+# (a robustness floor, not a conformance oracle), and Fixtures/Fuzz/README.md for the capture rule
+# a finding here has to satisfy before it counts as fixed.
+
+on:
+  schedule:
+    # 03:17 UTC daily — off the hour, so it isn't competing with every other scheduled workflow's
+    # top-of-hour rush on GitHub's shared runner pool.
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+    inputs:
+      iterations:
+        description: 'VELLUMPDF_FUZZ_ITER for this run (per Fact/Theory case)'
+        required: false
+        default: '200000'
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-24.04
+    # A budget two orders of magnitude past ci.yml's own needs far more headroom than that
+    # workflow's 30-minute job — this one runs alone on a schedule, not alongside CI's other gates,
+    # so there is no shared budget to protect.
+    timeout-minutes: 180
+    env:
+      VELLUMPDF_FUZZ_ITER: ${{ inputs.iterations || '200000' }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+
+      - run: dotnet --version
+
+      # continue-on-error lets the artifact-upload step below still run when fuzzing finds
+      # something; the job is failed explicitly afterward instead, so a finding is never silently
+      # green. `steps.fuzz.outcome` reads the pre-override result even with continue-on-error set.
+      - name: Fuzz
+        id: fuzz
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          dotnet test tests/VellumPdf.Reader.Tests/VellumPdf.Reader.Tests.csproj -c Release \
+            --filter "FullyQualifiedName~ParserFuzzTests" \
+            2>&1 | tee fuzz-output.log
+
+      # CsCheck prints the failing case's seed and CsCheck's own shrunk, minimized input directly
+      # in the assertion failure message (see ParserFuzzTests.cs's "Determinism" doc) — there is no
+      # separate structured output to locate, so the run's own console log already carries
+      # everything a developer needs to reproduce and capture the finding.
+      - name: Upload fuzz output on failure
+        if: steps.fuzz.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-failure-${{ github.run_id }}
+          path: fuzz-output.log
+          retention-days: 30
+
+      - name: Fail the job if fuzzing found something
+        if: steps.fuzz.outcome == 'failure'
+        run: |
+          echo "::error::ParserFuzzTests found a crash-class exception at VELLUMPDF_FUZZ_ITER=${VELLUMPDF_FUZZ_ITER}. See the uploaded fuzz-output.log artifact for the printed CsCheck seed and minimized input. Per tests/VellumPdf.Reader.Tests/Fixtures/Fuzz/README.md, this is not resolved until the input is minimized, the underlying defect fixed, and the fixture committed to that folder."
+          exit 1

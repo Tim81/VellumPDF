@@ -278,8 +278,10 @@ jobs:
         #
         # Floors are 90% of a full local run with every oracle enabled (REQUIRE_ORACLES=1, QPDF_HOME
         # / POPPLER_HOME / VERAPDF_HOME all pointed at real installs), rounded down, measured
-        # against this same commit: verapdf 298, pdftoppm 135, python 135, qpdf 29, pdftotext 8,
-        # pdfsig 2. 90% tolerates ordinary run-to-run variance (a data-driven theory whose case
+        # against this same commit: verapdf 298, pdftoppm 135, python 135, qpdf 40, pdftotext 8,
+        # pdfsig 2. qpdf moved from 29 with #99's third-party SaveDecrypted round-trip oracle
+        # (SaveDecryptedThirdPartyQpdfOracleTests, 11 fixtures each running one `qpdf --check`).
+        # 90% tolerates ordinary run-to-run variance (a data-driven theory whose case
         # count shifts, a retried flake) without hiding a regression the way pinning the exact
         # measured count would risk doing on its own false positives. These floors are
         # shell-independent: CI always sets POPPLER_HOME, so it always gets poppler's
@@ -304,7 +306,7 @@ jobs:
             [verapdf]=268
             [pdftoppm]=121
             [python]=121
-            [qpdf]=26
+            [qpdf]=36
             [pdftotext]=7
             [pdfsig]=1
           )

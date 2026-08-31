@@ -43,8 +43,18 @@ internal static class SaveDecryptedGraphComparer
     /// baseline file, say, where <c>/ID</c> legitimately differs (a fresh, unrelated file has its own
     /// random ID) even though the reachable content matches.
     /// </para>
+    /// <para>
+    /// <paramref name="minimumComparedLeafCount"/> defaults to the value <see
+    /// cref="MinimumComparedLeafCount"/> was measured against — the encrypted corpus's own baseline,
+    /// which carries a real font and page content. The #196 third-party corpus's fixtures are
+    /// deliberately minimal structural probes rather than content-rich documents and measure 11-17
+    /// leaves each; a caller comparing that corpus passes a lower floor explicitly rather than
+    /// silently inheriting one calibrated for a different, richer fixture set.
+    /// </para>
     /// </summary>
-    public static void AssertCatalogsEqual(PdfDocumentReader left, PdfDocumentReader right, bool compareTrailer = true)
+    public static void AssertCatalogsEqual(
+        PdfDocumentReader left, PdfDocumentReader right, bool compareTrailer = true,
+        int minimumComparedLeafCount = MinimumComparedLeafCount)
     {
         var visited = new HashSet<(int, int)>();
         var state = new ComparisonState();
@@ -54,7 +64,7 @@ internal static class SaveDecryptedGraphComparer
             AssertTrailerInfoAndIdEqual(left, right, visited, state);
 
         Assert.True(
-            state.ComparedLeaves >= MinimumComparedLeafCount,
+            state.ComparedLeaves >= minimumComparedLeafCount,
             $"only {state.ComparedLeaves} leaf value(s) were actually compared — this comparison may "
             + "be hollow (near-empty graphs, or the same reader passed on both sides).");
     }
