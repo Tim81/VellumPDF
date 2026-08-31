@@ -9,8 +9,14 @@ build, test, and submit changes to VellumPdf.
 - **Docker** — needed to run the veraPDF conformance gate locally.
 - **qpdf** and **poppler-utils** — needed to run the structural-validator,
   text-extraction, signature, and barcode-rasterization oracle tests locally
-  (`qpdf`, `pdftotext`, `pdfsig`, `pdftoppm`). On Debian/Ubuntu:
-  `sudo apt-get install qpdf poppler-utils fonts-dejavu-core fonts-texgyre`.
+  (`qpdf`, `pdftotext`, `pdfsig`, `pdftoppm`). CI pins these (#230) rather than taking whatever
+  the runner image ships, so matching CI locally means matching its versions: qpdf 12.4.1
+  (installed in CI from the [official release
+  artifact](https://github.com/qpdf/qpdf/releases/tag/v12.4.1), since apt's qpdf on
+  `ubuntu-latest` is 11.9.0 and `--check`'s output has changed across qpdf majors), poppler-utils
+  24.02.0-1ubuntu9.9, fonts-dejavu-core 2.37-8, and fonts-texgyre 20180621-6. On Debian/Ubuntu,
+  install qpdf from the same release artifact and pin the rest with
+  `sudo apt-get install poppler-utils=24.02.0-1ubuntu9.9 fonts-dejavu-core=2.37-8 fonts-texgyre=20180621-6`.
   On Windows, PATH order between shells is not reliable — the same bare
   `pdftotext` can resolve to a completely different program depending on which
   shell launched the test host, so point `QPDF_HOME` and `POPPLER_HOME` at
@@ -18,8 +24,8 @@ build, test, and submit changes to VellumPdf.
   the directory holding the executable directly, its parent with a `bin`
   subdirectory under it, or its grandparent with a `Library\bin` subdirectory
   under it (the shape a Windows poppler build installed via winget uses) — so
-  `QPDF_HOME` can name either `...\qpdf-12.3.2-msvc64` or
-  `...\qpdf-12.3.2-msvc64\bin`, and `POPPLER_HOME` can name either the
+  `QPDF_HOME` can name either `...\qpdf-12.4.1-msvc64` or
+  `...\qpdf-12.4.1-msvc64\bin`, and `POPPLER_HOME` can name either the
   poppler install root or its `Library\bin` folder directly. A `*_HOME` that
   is set but does not resolve through any of these is reported as a
   misconfiguration (the same skip-locally/fail-on-CI outcome a wrong-tool
@@ -36,8 +42,10 @@ build, test, and submit changes to VellumPdf.
   (`ExternalToolResolutionTests`) checks that each tool resolves to itself
   on every run.
 - **Python with zxing-cpp** — the barcode decode oracle:
-  `python -m pip install zxing-cpp==3.0.0 pillow`. The version is pinned because
-  the EAN add-on text format differs between zxing-cpp releases.
+  `python -m pip install zxing-cpp==3.1.1 pillow==12.3.0`. zxing-cpp is pinned because the EAN
+  add-on text format differs between releases; the barcode oracle test asserts only the main
+  digits for that reason (`EanBarcode_Ean13WithAddOn_MainDigitsExact_AddOnTolerant`), so the pin
+  exists to keep CI reproducible rather than to work around a currently-failing assertion.
 
 ## Building and testing
 

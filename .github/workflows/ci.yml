@@ -9,6 +9,10 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      # Single source for the veraPDF Docker tag, referenced by both the image pull and the
+      # shim it backs (#230) — previously duplicated so bumping veraPDF meant editing two lines.
+      VERAPDF_TAG: v1.30.2
     steps:
       # Full history: the clean-room check scans the branch's commit MESSAGES as well as its files,
       # and a merged message cannot be corrected afterwards. The default depth-1 checkout gives it
@@ -18,7 +22,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-dotnet@v5
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '10.0.x'
 
@@ -45,11 +49,37 @@ jobs:
       - name: Build
         run: dotnet build VellumPdf.slnx -c Release --no-restore
 
-      - name: Install PDF validators
-        run: sudo apt-get update && sudo apt-get install -y qpdf poppler-utils fonts-dejavu-core fonts-texgyre
+      - name: Install poppler and fonts (pinned)
+        # Versions are whatever ubuntu-latest's noble apt archive currently serves; a font or
+        # poppler update changes fixture rendering and oracle output with no commit to blame
+        # (#230), so pin them the same way qpdf is pinned below instead of taking apt's default.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            poppler-utils=24.02.0-1ubuntu9.9 \
+            fonts-dejavu-core=2.37-8 \
+            fonts-texgyre=20180621-6
+
+      - name: Install qpdf (pinned)
+        # apt's qpdf on ubuntu-latest is 11.9.0, two majors behind upstream; `--check`'s output
+        # has changed across qpdf majors and #186's acceptance criterion is exactly that output
+        # (#230). Installed from the official release artifact instead, matched by checksum.
+        env:
+          QPDF_VERSION: '12.4.1'
+          QPDF_SHA256: 'db9122e88ec00c76ac6a14e09ffb92406db1773d47b968911ff6e69f28c09bf9'
+        run: |
+          set -euo pipefail
+          asset="qpdf-${QPDF_VERSION}-bin-linux-x86_64.zip"
+          curl -fsSL -o /tmp/qpdf.zip \
+            "https://github.com/qpdf/qpdf/releases/download/v${QPDF_VERSION}/${asset}"
+          echo "${QPDF_SHA256}  /tmp/qpdf.zip" | sha256sum -c -
+          sudo mkdir -p "/opt/qpdf-${QPDF_VERSION}"
+          sudo unzip -q /tmp/qpdf.zip -d "/opt/qpdf-${QPDF_VERSION}"
+          echo "/opt/qpdf-${QPDF_VERSION}/bin" >> "$GITHUB_PATH"
+          echo "QPDF_HOME=/opt/qpdf-${QPDF_VERSION}" >> "$GITHUB_ENV"
 
       - name: Pull veraPDF Docker image
-        run: docker pull verapdf/cli:v1.30.2
+        run: docker pull verapdf/cli:${{ env.VERAPDF_TAG }}
 
       - name: Install veraPDF shim
         run: |
@@ -59,18 +89,45 @@ jobs:
           # /tmp lets the tests' temp-dir PDF paths resolve identically in-container.
           sudo tee /usr/local/bin/verapdf > /dev/null << 'SHIM'
           #!/bin/sh
-          exec docker run --rm -v /tmp:/tmp -w /tmp verapdf/cli:v1.30.2 "$@"
+          exec docker run --rm -v /tmp:/tmp -w /tmp verapdf/cli:${{ env.VERAPDF_TAG }} "$@"
           SHIM
           sudo chmod +x /usr/local/bin/verapdf
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.x'
 
       - name: Install barcode decode oracle (zxing-cpp)
-        # Pinned: the EAN add-on text format differs across zxing-cpp versions. setup-python's
-        # toolcache interpreter avoids the PEP 668 externally-managed block on the system python.
-        run: python -m pip install zxing-cpp==3.0.0 pillow
+        # setup-python's toolcache interpreter avoids the PEP 668 externally-managed block on
+        # the system python. pillow is pinned alongside it so a Pillow release can't shift
+        # fixture rendering the same way an unpinned apt font package could (#230).
+        run: python -m pip install zxing-cpp==3.1.1 pillow==12.3.0
+
+      - name: Assert pinned oracle versions
+        # Prints and checks each pinned tool's own version report, so drift between this file
+        # and what actually got installed fails loudly instead of silently changing what every
+        # downstream oracle test validates against (#230).
+        run: |
+          set -euo pipefail
+
+          qpdf_version=$(qpdf --version)
+          echo "$qpdf_version"
+          echo "$qpdf_version" | grep -qF "12.4.1"
+
+          poppler_version=$(pdftotext -v 2>&1)
+          echo "$poppler_version"
+          echo "$poppler_version" | grep -qF "24.02.0"
+
+          verapdf_version=$(verapdf --version 2>&1)
+          echo "$verapdf_version"
+          echo "$verapdf_version" | grep -qF "1.30.2"
+
+          python -c "
+          import importlib.metadata as m
+          v = m.version('zxing-cpp')
+          print('zxing-cpp', v)
+          assert v == '3.1.1', v
+          "
 
       - name: Test
         # REQUIRE_VERAPDF makes the conformance oracle fail (not silently skip) if the verapdf
@@ -162,7 +219,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: actions/setup-dotnet@v5
+      - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '10.0.x'
 
