@@ -212,6 +212,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Nineteen `qpdf` oracle tests passed whether or not `qpdf` actually found anything.** Test-only;
+  nothing ships. `qpdf --show-linearization` exits 0 and prints no `WARNING` for a linearized *and*
+  a non-linearized file alike (measured against qpdf 12.4.1), so the eight `LinearizationQpdfTests`
+  cases that stopped at `exit == 0` plus `DoesNotContain("WARNING", ...)` would have stayed green
+  had `VellumPdf` silently stopped linearizing altogether. They now also assert
+  `Contains("linearization data:", stdout)`, the header qpdf prints only once it accepts a file's
+  hint tables. The other eleven — seven `QpdfCheck_Passes` cases in `PdfValidatorOracleTests`, four
+  in `ImageCodecOracleTests` — asserted only `qpdf --check`'s exit code, so a structural complaint
+  reported without a non-zero exit passed unnoticed; they now also assert
+  `Contains("No syntax or stream encoding errors found", stdout)`, again measured directly: present
+  on a clean file, absent (replaced by `WARNING` lines and exit 3) on a truncated copy of the same
+  fixture. All nineteen also now capture `ExternalTool.TryRun`'s `bool` return and the `timedOut`
+  output it had been discarding, rather than assuming both are always benign for a call that had
+  never actually failed either way. Found in review of #198 (PR #227). (#234)
+
 - **Oracle tests across three test projects reported a pass, not a skip, when their external tool
   was missing.** Test-only; nothing ships. `GateOnCi` — duplicated five times, next to five
   near-identical process runners, across the Barcodes, Kernel and Layout test projects (one file in

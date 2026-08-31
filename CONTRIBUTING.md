@@ -113,6 +113,15 @@ respectively. Set `REQUIRE_ORACLES=1` locally to reproduce the CI behaviour
 across the board, or one of the two scoped variables to reproduce just that
 oracle's CI behaviour.
 
+A tool that runs and answers is not the same as a tool that discriminated.
+`qpdf --check` exits 0 and prints no `WARNING` for both a linearized and a
+non-linearized file, so an assertion that stops at the exit code passes
+either way (#234). Before an oracle assertion ships, run the oracle by hand
+against a deliberately broken copy of the fixture — a truncated file, a
+flipped conformance flag — and note what changes in its output. Assert on
+that value, not just the exit code: `Assert.Contains("linearization data:",
+stdout)` fails on the broken copy where `exit == 0` alone does not.
+
 ### 6. AOT smoke test
 
 ```pwsh

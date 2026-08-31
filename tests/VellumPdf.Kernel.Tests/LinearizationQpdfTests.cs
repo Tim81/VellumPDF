@@ -131,6 +131,12 @@ public sealed class LinearizationQpdfTests : IDisposable
         Assert.False(timedOut, "qpdf --show-linearization timed out, or its output could not be fully captured.");
         Assert.True(exit == 0, $"exit {exit}.\n{stdout}\n{stderr}");
         Assert.DoesNotContain("WARNING", stdout);
+
+        // #234: exit 0 and no "WARNING" pass identically whether qpdf recognized the file as
+        // linearized or not — measured against qpdf 12.4.1, a non-linearized file also exits 0
+        // with no WARNING, just "... is not linearized". "linearization data:" is the header qpdf
+        // prints only once it has parsed a hint table it accepts as linearization.
+        Assert.Contains("linearization data:", stdout, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -163,6 +169,10 @@ public sealed class LinearizationQpdfTests : IDisposable
         Assert.False(timedOut, "qpdf --show-linearization timed out, or its output could not be fully captured.");
         Assert.True(exit == 0, $"exit {exit}.\n{stdout}\n{stderr}");
         Assert.DoesNotContain("WARNING", stdout);
+
+        // #234: see Linearized_EqualLengthPages_QpdfClean for why exit 0 plus no WARNING needs
+        // this positive check too.
+        Assert.Contains("linearization data:", stdout, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -203,6 +213,10 @@ public sealed class LinearizationQpdfTests : IDisposable
         Assert.False(timedOut, "qpdf --show-linearization timed out, or its output could not be fully captured.");
         Assert.True(exit == 0, $"exit {exit}.\n{stdout}\n{stderr}");
         Assert.DoesNotContain("WARNING", stdout);
+
+        // #234: see Linearized_EqualLengthPages_QpdfClean for why exit 0 plus no WARNING needs
+        // this positive check too.
+        Assert.Contains("linearization data:", stdout, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -240,6 +254,10 @@ public sealed class LinearizationQpdfTests : IDisposable
         Assert.DoesNotContain("WARNING", stdout);
         Assert.DoesNotContain("WARNING", stderr);
 
+        // #234: see Linearized_EqualLengthPages_QpdfClean for why exit 0 plus no WARNING needs
+        // this positive check too.
+        Assert.Contains("linearization data:", stdout, StringComparison.Ordinal);
+
         ExternalTool.TryRun("qpdf", ["--check", path], out var checkExit, out var checkOut, out var checkErr, out var checkTimedOut);
         Assert.False(checkTimedOut, "qpdf --check timed out, or its output could not be fully captured.");
         Assert.True(checkExit == 0,
@@ -276,6 +294,10 @@ public sealed class LinearizationQpdfTests : IDisposable
         Assert.True(exit == 0, $"exit {exit}.\n{stdout}\n{stderr}");
         Assert.DoesNotContain("WARNING", stdout);
         Assert.DoesNotContain("WARNING", stderr);
+
+        // #234: see Linearized_EqualLengthPages_QpdfClean for why exit 0 plus no WARNING needs
+        // this positive check too.
+        Assert.Contains("linearization data:", stdout, StringComparison.Ordinal);
 
         ExternalTool.TryRun("qpdf", ["--check", path], out var checkExit, out var checkOut, out var checkErr, out var checkTimedOut);
         Assert.False(checkTimedOut, "qpdf --check timed out, or its output could not be fully captured.");
@@ -317,6 +339,10 @@ public sealed class LinearizationQpdfTests : IDisposable
         Assert.DoesNotContain("WARNING", stdout);
         Assert.DoesNotContain("WARNING", stderr);
 
+        // #234: see Linearized_EqualLengthPages_QpdfClean for why exit 0 plus no WARNING needs
+        // this positive check too.
+        Assert.Contains("linearization data:", stdout, StringComparison.Ordinal);
+
         ExternalTool.TryRun("qpdf", ["--check", path], out var checkExit, out var checkOut, out var checkErr, out var checkTimedOut);
         Assert.False(checkTimedOut, "qpdf --check timed out, or its output could not be fully captured.");
         Assert.True(checkExit == 0,
@@ -355,6 +381,10 @@ public sealed class LinearizationQpdfTests : IDisposable
         Assert.DoesNotContain("WARNING", stdout);
         Assert.DoesNotContain("WARNING", stderr);
 
+        // #234: see Linearized_EqualLengthPages_QpdfClean for why exit 0 plus no WARNING needs
+        // this positive check too.
+        Assert.Contains("linearization data:", stdout, StringComparison.Ordinal);
+
         ExternalTool.TryRun("qpdf", ["--check", path], out var checkExit, out var checkOut, out var checkErr, out var checkTimedOut);
         Assert.False(checkTimedOut, "qpdf --check timed out, or its output could not be fully captured.");
         Assert.True(checkExit == 0,
@@ -390,6 +420,10 @@ public sealed class LinearizationQpdfTests : IDisposable
         Assert.True(exit == 0, $"exit {exit}.\n{stdout}\n{stderr}");
         Assert.DoesNotContain("WARNING", stdout);
         Assert.DoesNotContain("WARNING", stderr);
+
+        // #234: see Linearized_EqualLengthPages_QpdfClean for why exit 0 plus no WARNING needs
+        // this positive check too.
+        Assert.Contains("linearization data:", stdout, StringComparison.Ordinal);
 
         ExternalTool.TryRun("qpdf", ["--check", path], out var checkExit, out var checkOut, out var checkErr, out var checkTimedOut);
         Assert.False(checkTimedOut, "qpdf --check timed out, or its output could not be fully captured.");
