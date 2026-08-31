@@ -42,15 +42,28 @@ public sealed partial class PdfDocumentReader
     /// carries). The output's cross-reference table is a single classic table with no <c>/Prev</c>;
     /// <c>/ObjStm</c> containers, cross-reference streams, and the document's own linearization
     /// parameter dictionary are all dissolved — see <see cref="ComputeEmitSet"/> for exactly which
-    /// object numbers survive into the output.
+    /// object numbers survive into the output. What is NOT dissolved: a linearized input's hint
+    /// stream (the object the parameter dictionary's <c>/H</c> names) is an ordinary stream, not one
+    /// of the categories <see cref="ComputeEmitSet"/> excludes, so it survives as orphaned dead
+    /// weight — nothing in the output references it once the parameter dictionary that pointed at it
+    /// is gone. Harmless (it is just bytes nothing reads) but deliberately not cleaned up; finding it
+    /// would mean recognising a linearized layout well enough to name its hint stream specifically,
+    /// which is more machinery than a single, one-off dead object justifies.
     /// </para>
     /// <para>
     /// <strong>Signatures.</strong> Re-serialising the object graph invalidates every digital
     /// signature it carries by construction — a fresh <c>/ByteRange</c> no longer names the region
     /// the original signature was computed over. This method throws
     /// <see cref="InvalidOperationException"/> when the source document has one or more signatures
-    /// unless <see cref="PdfSaveDecryptedOptions.AllowInvalidatingSignatures"/> is set, and even then
-    /// a signature's own <c>/Contents</c> is copied verbatim: if the source encrypted that field —
+    /// unless <see cref="PdfSaveDecryptedOptions.AllowInvalidatingSignatures"/> is set. Detection does
+    /// NOT go through the public <see cref="Signatures"/> property (which walks <c>/AcroForm</c>'s
+    /// <c>/Fields</c> tree and can miss one an unusual field-tree shape hides — see that property's
+    /// own history): every object this method is about to emit is checked directly for the same
+    /// structural shape <see cref="DecryptObjectGraph"/> already uses to exempt a signature's
+    /// <c>/Contents</c> from decryption on read, so a signature this guard could miss is a signature
+    /// that would ALSO have had its <c>/Contents</c> decrypted on read — a strictly worse failure.
+    /// Even with the opt-in set, a signature's own <c>/Contents</c> is copied verbatim: if the source
+    /// encrypted that field —
     /// qpdf does this by default even for a document this library refuses to both sign and encrypt
     /// itself — the ciphertext lands where the DER signature bytes belong, permanently. This is not a
     /// decryption defect; the signature was already invalid the moment the byte range it was computed
@@ -69,8 +82,13 @@ public sealed partial class PdfDocumentReader
     /// (the same whole-file design <see cref="PdfReader"/> already uses), and the output is built in
     /// an internal buffer before anything reaches <paramref name="destination"/> — so peak memory is
     /// roughly three times the input file's size (source bytes, resolved object graph, output
-    /// buffer), and a failure partway through leaves <paramref name="destination"/> untouched rather
-    /// than holding a truncated file that looks genuinely decrypted.
+    /// buffer). A failure during serialisation (a malformed object, the signature guard, and so on)
+    /// therefore leaves <paramref name="destination"/> completely untouched. The final copy from the
+    /// buffer to <paramref name="destination"/> is NOT covered by that guarantee: a failure or a
+    /// cancelled <see cref="System.Threading.CancellationToken"/> partway through it can leave a
+    /// genuinely-plaintext, truncated prefix on the stream. A caller writing to a file and wanting an
+    /// all-or-nothing result on disk should write to a temporary file and rename it into place only
+    /// after this method returns.
     /// </para>
     /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="destination"/> is <see langword="null"/>.</exception>
@@ -138,7 +156,11 @@ public sealed partial class PdfDocumentReader
     /// thread-pool thread via <see cref="Task.Run(Action)"/> against an in-memory buffer; the buffer
     /// is then copied to <paramref name="destination"/> with an asynchronous write.
     /// <paramref name="cancellationToken"/> is honoured before serialisation starts and during the
-    /// final copy, but does not abort serialisation already in progress.
+    /// final copy, but does not abort serialisation already in progress. A token already cancelled
+    /// before serialisation starts leaves <paramref name="destination"/> untouched; one that fires
+    /// DURING the final copy can leave a genuinely-plaintext, truncated prefix already written —
+    /// see <see cref="SaveDecrypted(Stream)"/>'s own "Cost" remarks for what that means for a
+    /// caller writing to a file.
     /// </para>
     /// <para>
     /// The only overload of this method carrying a default argument (the public-API analyzer forbids
@@ -237,6 +259,52 @@ public sealed partial class PdfDocumentReader
     }
 
     /// <summary>
+    /// Whether any object in <paramref name="emitSet"/> resolves to something
+    /// <see cref="IsSignatureDictionary"/> recognises as a signature dictionary — the actual basis
+    /// for <see cref="SaveDecrypted(Stream)"/>'s signature-policy guard.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately independent of the public <see cref="Signatures"/> property, which walks
+    /// <c>/AcroForm</c>'s <c>/Fields</c> tree and can miss a real signature the guard still has to
+    /// catch — a field whose <c>/V</c> lives on a kid that inherits <c>/FT /Sig</c> from a
+    /// non-terminal ancestor (ISO 32000-2 §12.7.4.1) was exactly such a case before
+    /// <c>CollectFieldSignatures</c> was fixed to thread inheritance through the walk, and nothing
+    /// rules out some other field-tree shape this method has not been taught either. Scanning every
+    /// candidate object directly, the same way <see cref="DecryptObjectGraph"/> already decides the
+    /// <c>/Contents</c> exemption on read, costs nothing extra: every one of these objects is
+    /// force-resolved by <see cref="SerializeDecrypted"/>'s own emission loop regardless, so a
+    /// signature-shaped dictionary found here is a cache hit when the loop reaches it, not a second
+    /// parse.
+    /// </remarks>
+    private bool AnyEmittedSignatureDictionary(IEnumerable<int> emitSet)
+    {
+        foreach (var objectNumber in emitSet)
+        {
+            try
+            {
+                // A signature VALUE dictionary (what IsSignatureDictionary recognises) is never
+                // itself a stream — its /Contents is a string, not stream data — so a stream object
+                // can never match and is skipped without paying for the dictionary-shape check.
+                if (ResolveStream(objectNumber) is not null)
+                    continue;
+
+                if (Resolve(objectNumber) is PdfDictionary dict && IsSignatureDictionary(dict))
+                    return true;
+            }
+            catch (InvalidDataException ex)
+            {
+                // This scan can be the FIRST resolve attempt for a compressed-object-stream member
+                // (ComputeEmitSet's own classification pass only force-resolves top-level
+                // Uncompressed entries) — so a malformed one must still fail loud and name itself,
+                // not surface as a bare, unattributed exception from here.
+                throw WrapResolveFailure(objectNumber, ex);
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
     /// Force-resolves <paramref name="objectNumber"/> — as a stream when it is one, otherwise as an
     /// ordinary value — and returns its authoritative post-Restamp generation: the same value
     /// <see cref="EmitObject"/> writes into the output. Internal rather than private purely for the
@@ -257,14 +325,15 @@ public sealed partial class PdfDocumentReader
 
     private MemoryStream SerializeDecrypted(PdfSaveDecryptedOptions options)
     {
-        if (!options.AllowInvalidatingSignatures && Signatures.Count > 0)
+        var emitSet = ComputeEmitSet();
+
+        if (!options.AllowInvalidatingSignatures && AnyEmittedSignatureDictionary(emitSet))
             throw new InvalidOperationException(
                 "This document has one or more digital signatures. Re-serialising it invalidates "
                 + "every signature's /ByteRange, so each one would verify as \"document modified "
                 + "since signing\" with no way to distinguish that from genuine tampering. Set "
                 + "PdfSaveDecryptedOptions.AllowInvalidatingSignatures to accept that outcome.");
 
-        var emitSet = ComputeEmitSet();
         var orderedNumbers = emitSet.Order().ToList();
 
         var ms = new MemoryStream(Bytes.Length + 4096);
@@ -381,7 +450,12 @@ public sealed partial class PdfDocumentReader
     /// <c>PdfStream.WriteTo</c>, which re-Flates and would corrupt any stream using a different
     /// filter (or none), and never through <c>RawPdfStream</c>, which cannot express an arbitrary
     /// filter chain. <see cref="DecryptedStreamView"/> yields the body decrypted with every filter
-    /// intact — DCT, JPX, JBIG2, CCITT and their <c>/DecodeParms</c> all pass through verbatim.
+    /// intact, and this method copies that body and every dictionary entry it does not specifically
+    /// rewrite (see <see cref="RebuildStreamDictionary"/>) unchanged — nothing here is specific to
+    /// any one filter. DCT has a known-answer test pinning byte-for-byte passthrough
+    /// (<c>SaveDecryptedTests</c>); JPX, JBIG2 and CCITT follow the identical code path and are not
+    /// separately pinned, since nothing about this method distinguishes one opaque filter name from
+    /// another.
     /// </summary>
     private int EmitStream(PdfWriter writer, int objectNumber, ParsedStream stream)
     {
@@ -421,6 +495,12 @@ public sealed partial class PdfDocumentReader
     private PdfDictionary RebuildStreamDictionary(int objectNumber, PdfDictionary original, int newLength)
     {
         var filterRaw = original.Get(PdfName.Filter);
+        // Only a FIRST-position /Crypt is stripped, matching ISO 32000-2 §7.4.10's own requirement
+        // that /Crypt "shall be the first filter" when present. A /Crypt entry anywhere else in the
+        // chain is already malformed under that clause; this leaves it in place rather than guess at
+        // a shape the spec does not define. Benign in practice — Table 26's own default for an
+        // unresolved crypt filter is Identity, so a mis-placed /Crypt copied into supposedly
+        // plaintext output at worst names a no-op filter, not a claim that hides real ciphertext.
         var stripCrypt = CryptFilterResolver.FirstFilterName(original, ResolveMaybe) == "Crypt";
 
         if (stripCrypt && filterRaw is PdfIndirectReference)

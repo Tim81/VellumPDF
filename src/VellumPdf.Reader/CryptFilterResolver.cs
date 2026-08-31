@@ -209,12 +209,15 @@ internal static class CryptFilterResolver
 
     /// <summary>
     /// The <c>/DecodeParms</c> (or legacy <c>/DP</c>) dictionary that pairs with the FIRST filter —
-    /// a bare dictionary, or the first element of a parms array. Internal for the same reason as
-    /// <see cref="FirstFilterName"/>: <c>SaveDecrypted</c> needs the <c>/Crypt</c> filter's own parms
-    /// to find its <c>/Name</c>, and needs to know whether to drop a bare dictionary or an array
-    /// element when stripping that filter from the rewritten output.
+    /// a bare dictionary, or the first element of a parms array. Private: only this type's own
+    /// <see cref="ResolveStreamMethod"/> uses it, to find a <c>/Crypt</c> filter's <c>/Name</c> when
+    /// resolving which crypt filter method applies on read.
+    /// <c>PdfDocumentReader.SaveDecrypted</c> (#186) strips a leading <c>/Crypt</c> filter's
+    /// <c>/DecodeParms</c> entry on its own — locating it by key name directly in the dictionary
+    /// being rewritten, since it needs to mutate that entry rather than merely read it — so it does
+    /// not call this method at all.
     /// </summary>
-    internal static PdfDictionary? DecodeParmsForFirstFilter(PdfDictionary dict, Func<PdfObject?, PdfObject?>? resolve)
+    private static PdfDictionary? DecodeParmsForFirstFilter(PdfDictionary dict, Func<PdfObject?, PdfObject?>? resolve)
     {
         var parmsObj = Deref(resolve, dict.Get(_decodeParms) ?? dict.Get(_dp));
         return parmsObj switch

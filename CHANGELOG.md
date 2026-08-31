@@ -172,12 +172,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   Unencrypted input is accepted (the output degenerates to a normalised rewrite), and so is a
   reconstructed document (`PdfDocumentReader.WasReconstructed`) — unlike `AppendRevision`, a full
   rewrite does not depend on the base file's own byte layout. Throws `InvalidOperationException` on
-  a signed document unless `PdfSaveDecryptedOptions.AllowInvalidatingSignatures` is set: rewriting
-  the object graph moves every byte a signature's `/ByteRange` names, so re-serialising invalidates
-  every signature by construction. A stream's own filter chain and body pass through untouched — a
+  a signed document unless `PdfSaveDecryptedOptions.AllowInvalidatingSignatures` is set — detected
+  by scanning the emitted object graph directly for a signature dictionary's own shape, not by
+  trusting the `Signatures` property's `/AcroForm` field-tree walk, which can miss one reachable only
+  through an inherited `/FT` (ISO 32000-2 §12.7.4.1; that walk is now fixed too). Rewriting the
+  object graph moves every byte a signature's `/ByteRange` names, so re-serialising invalidates every
+  signature by construction. A stream's own filter chain and body pass through untouched — a
   passthrough image (DCTDecode, JPXDecode, and so on) is never re-encoded — except a leading
   `/Crypt` filter entry (ISO 32000-2 §7.4.10), which is stripped along with its paired
-  `/DecodeParms`, since the crypt filter no longer applies to plaintext output.
+  `/DecodeParms`, since the crypt filter no longer applies to plaintext output. A linearized input's
+  hint stream is left behind as unreferenced dead weight once the linearization parameter dictionary
+  pointing at it is dropped; serialisation failures leave the destination stream untouched, but a
+  failure or cancellation during the final copy from the internal buffer can leave a plaintext,
+  truncated prefix already written.
 - **`PdfReaderOptions.AllowReconstruction` — opt-in cross-reference reconstruction (#184).** When
   `startxref` is missing, unusable, or doesn't point at a recognisable xref table or stream,
   `PdfReader.Open` used to always throw. Setting `AllowReconstruction` instead rebuilds the table

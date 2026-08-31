@@ -1322,12 +1322,24 @@ public sealed partial class PdfDocumentReader : IDisposable
 
         var visited = new HashSet<int>();
         for (var i = 0; i < fieldsArray.Count; i++)
-            CollectFieldSignatures(fieldsArray[i], sigs, visited, 0);
+            CollectFieldSignatures(fieldsArray[i], sigs, visited, 0, inheritedFt: null);
 
         return sigs;
     }
 
-    private void CollectFieldSignatures(PdfObject fieldObj, List<PdfSignature> sigs, HashSet<int> visited, int depth)
+    /// <summary>
+    /// Walks one field-tree node. <paramref name="inheritedFt"/> is the nearest ancestor's own
+    /// <c>/FT</c>, threaded down because <c>/FT</c> is itself inheritable (ISO 32000-2 §12.7.4.1):
+    /// a non-terminal node can declare <c>/FT /Sig</c> once, with each kid supplying its own
+    /// <c>/V</c> (the actual terminal field) and no <c>/FT</c> of its own. An earlier version of
+    /// this method checked only the current node's OWN <c>/FT</c> and returned the moment it saw
+    /// <c>/FT /Sig</c> — whether or not that node had a <c>/V</c> — so a signature living on such a
+    /// kid was never reached: <see cref="Signatures"/> reported none, and
+    /// <see cref="SaveDecrypted(Stream)"/>'s opt-in guard, which used to trust that count, missed a
+    /// real signature entirely.
+    /// </summary>
+    private void CollectFieldSignatures(
+        PdfObject fieldObj, List<PdfSignature> sigs, HashSet<int> visited, int depth, PdfName? inheritedFt)
     {
         if (depth > MaxFieldTreeDepth)
             return;
@@ -1338,8 +1350,12 @@ public sealed partial class PdfDocumentReader : IDisposable
         if (resolved is not PdfDictionary field)
             return;
 
-        var ftObj = field.Get(new PdfName("FT"));
-        if (ftObj is PdfName ft && ft.Value == "Sig")
+        // /FT may itself be an indirect reference; a node without one inherits the ancestor's.
+        var ftRaw = field.Get(new PdfName("FT"));
+        var ownFt = (ftRaw is not null ? ResolveValue(ftRaw) : null) as PdfName;
+        var effectiveFt = ownFt ?? inheritedFt;
+
+        if (effectiveFt is not null && effectiveFt.Value == "Sig")
         {
             var vObj = field.Get(new PdfName("V"));
             if (vObj is not null)
@@ -1352,7 +1368,6 @@ public sealed partial class PdfDocumentReader : IDisposable
                         sigs.Add(sig);
                 }
             }
-            return;
         }
 
         var kidsObj = field.Get(PdfName.Kids);
@@ -1362,7 +1377,7 @@ public sealed partial class PdfDocumentReader : IDisposable
             if (kids is PdfArray kidsArray)
             {
                 for (var i = 0; i < kidsArray.Count; i++)
-                    CollectFieldSignatures(kidsArray[i], sigs, visited, depth + 1);
+                    CollectFieldSignatures(kidsArray[i], sigs, visited, depth + 1, effectiveFt);
             }
         }
     }
