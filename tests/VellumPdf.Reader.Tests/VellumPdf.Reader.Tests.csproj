@@ -16,6 +16,7 @@
 
   <ItemGroup>
     <PackageReference Include="coverlet.MTP" />
+    <PackageReference Include="CsCheck" />
     <PackageReference Include="System.Security.Cryptography.Pkcs" />
   </ItemGroup>
 
@@ -42,6 +43,16 @@
          the shared assembly manifest, from the flat-named Fixtures/Encrypted set. -->
     <EmbeddedResource Include="Fixtures\ThirdParty\*.pdf">
       <LogicalName>ThirdParty/%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Minimized fuzz-crash regressions (#99): every input ParserFuzzTests' oracle ever rejected,
+         captured here per the capture rule in this folder's own README.md, so a finding becomes a
+         permanent, fast, deterministic seed rather than a one-off CsCheck replay. Empty until the
+         first finding lands. -->
+    <EmbeddedResource Include="Fixtures\Fuzz\*.pdf">
+      <LogicalName>Fuzz/%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
   </ItemGroup>
 

@@ -206,6 +206,27 @@ of the test host's output directory and the run
 still produces a number, just a different one: coverlet.MTP's own defaults, not what the gate
 script in `ci.yml` actually thresholds.
 
+#### Fuzzing (#99)
+
+`VellumPdf.Reader.Tests/ParserFuzzTests.cs` runs CsCheck-driven byte-level mutation fuzzing against
+`PdfLexer`, `PdfObjectParser`, and `PdfReader.Open` as ordinary `dotnet test` cases, seeded from the
+committed `Fixtures/Encrypted`, `Fixtures/ThirdParty`, and `Fixtures/Fuzz` corpora.
+
+**A robustness oracle, not a conformance one.** The only thing it asserts is that no crash-class
+exception (`IndexOutOfRangeException`, `NullReferenceException`, `OutOfMemoryException`,
+`OverflowException`, and similar) ever escapes those three entry points — see the class doc for why
+throwing one of the three declared types is not required to be the correct outcome for a given
+mutated input. The default budget (`VELLUMPDF_FUZZ_ITER`, a few thousand iterations per case) is
+fast enough to run in every PR; `.github/workflows/fuzz-nightly.yml` runs the same tests on a
+schedule with a budget roughly two orders of magnitude larger.
+
+A failing case prints a CsCheck seed and its own minimized (shrunk) input directly in the assertion
+message. Reproduce it locally by setting `CsCheck_Seed` to that value and re-running — see
+`ParserFuzzTests.cs`'s "Determinism" doc. Finding a crash is not, on its own, a fix: per
+`Fixtures/Fuzz/README.md`'s capture rule, the fixing PR must minimize the input, fix the underlying
+defect, and commit the minimized bytes to `Fixtures/Fuzz/` (SHA-256-pinned and token-scanned, like
+the other two corpora) so the regression is fuzzed forever after rather than replayed once.
+
 ### 6. AOT smoke test
 
 ```pwsh
