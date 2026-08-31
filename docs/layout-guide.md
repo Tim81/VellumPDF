@@ -32,8 +32,11 @@ covers the lower layer these types are built on.
 
 Built from `src/VellumPdf.Layout/PublicAPI.Shipped.txt` and the test suite, not from the roadmap
 prose — a row is only marked Supported where a test or a public member proves it. Two rows are
-marked for reviewer verification rather than guessed: see the note below the table.
+marked for reviewer verification rather than guessed: see the note below the table. Also published
+in [the package README](https://github.com/Tim81/VellumPDF/blob/main/src/VellumPdf.Layout/README.md#capabilities);
+a guard test keeps the two copies byte-identical.
 
+<!-- capability-table:layout:start -->
 | Capability | Status | Target milestone / ISO reference |
 | --- | --- | --- |
 | Paragraph flow: wrapping, alignment (left/center/right/justify), mixed-style inline runs | ✅ Supported | — |
@@ -72,6 +75,7 @@ this table sets elsewhere, so these two rows are marked rather than asserted. Ba
 is a plainer gap: `VellumPdf.Barcodes` is a separate, standalone, Stable package with no
 Layout-specific element type, test, or documented integration path beyond the generic `IRenderer`
 extension point `Document.Add(IRenderer)` accepts.
+<!-- capability-table:layout:end -->
 
 ---
 

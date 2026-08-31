@@ -196,6 +196,10 @@ gets an all-or-nothing result on disk.
 
 ## 5. Reader capability table
 
+Also published in [the package README](https://github.com/Tim81/VellumPDF/blob/main/src/VellumPdf.Reader/README.md#capabilities);
+a guard test keeps the two copies byte-identical.
+
+<!-- capability-table:reader:start -->
 | Capability | Status | Target milestone / ISO reference |
 | --- | --- | --- |
 | Classic cross-reference tables | ✅ Supported | ISO 32000-2 §7.5.4 |
@@ -214,6 +218,7 @@ gets an all-or-nothing result on disk.
 | Reading a document using an ISO/TS 32001–32004 PDF 2.0 extension (AES-GCM, PDF-MAC, SHA-3, EdDSA) | ❌ Rejected today (`UnsupportedPdfFeatureException`) | v2.6 (#236, #237, #238, #239) |
 | Signature verification (integrity, coverage, certificate chains, revocation, achieved PAdES level) | ⏳ Planned | v2.13 |
 | Round-trip editing of an existing document | ⏳ Planned | v3.0, `VellumPdf.Editing` (Epic #101) |
+<!-- capability-table:reader:end -->
 
 ---
 

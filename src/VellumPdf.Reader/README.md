@@ -50,6 +50,33 @@ Reader guide, with a capability table and worked examples: <https://github.com/T
 
 Architecture and reader scope: <https://github.com/Tim81/VellumPDF/blob/main/docs/architecture.md>
 
+## Capabilities
+
+Built from the public API and the test suite, not from memory — a row is only marked Supported
+where a test proves it. See the [Reader guide](https://github.com/Tim81/VellumPDF/blob/main/docs/reader-guide.md)
+for the narrative walkthrough this table summarizes.
+
+<!-- capability-table:reader:start -->
+| Capability | Status | Target milestone / ISO reference |
+| --- | --- | --- |
+| Classic cross-reference tables | ✅ Supported | ISO 32000-2 §7.5.4 |
+| Cross-reference streams, object streams | ✅ Supported | ISO 32000-2 §7.5.7, §7.5.8 |
+| Hybrid-reference files (`/XRefStm`) | ✅ Supported | ISO 32000-2 §7.5.8.4 (#206) |
+| Cross-reference reconstruction for damaged files | ✅ Supported (opt-in) | ISO 32000-2 Annex C.4, informative (#184) |
+| Configurable, tighten-only resource limits | ✅ Supported | ISO 32000-2 Annex C.1/C.3, informative (#376) |
+| Decryption: Standard handler, `/V` 1/2/4/5, `/R` 2–6, RC4-40–128, AES-128/256 | ✅ Supported | ISO 32000-2 §7.6 |
+| Reading the document catalog | ✅ Supported | ISO 32000-2 §7.7.2 |
+| Reading digital signature metadata (`/ByteRange`, `/Contents`, `/M`, `/SubFilter`) | ✅ Supported (read only, not verified) | ISO 32000-2 §12.8 |
+| Writing a decrypted copy (`SaveDecrypted`/`SaveDecryptedAsync`) | ✅ Supported | #186 |
+| Lexer/parser hardened against malformed input (property-based fuzzing, round-trip oracle) | ✅ Supported | #392 |
+| Text extraction | ⏳ Planned | v2.4 (#98) |
+| Image extraction | ⏳ Planned | v2.4 (#98) |
+| Graduating `VellumPdf.Reader` from Preview to Stable | ⏳ Planned | v2.4 (#187) |
+| Reading a document using an ISO/TS 32001–32004 PDF 2.0 extension (AES-GCM, PDF-MAC, SHA-3, EdDSA) | ❌ Rejected today (`UnsupportedPdfFeatureException`) | v2.6 (#236, #237, #238, #239) |
+| Signature verification (integrity, coverage, certificate chains, revocation, achieved PAdES level) | ⏳ Planned | v2.13 |
+| Round-trip editing of an existing document | ⏳ Planned | v3.0, `VellumPdf.Editing` (Epic #101) |
+<!-- capability-table:reader:end -->
+
 ## The VellumPdf family
 
 | Package | Status | Summary |
