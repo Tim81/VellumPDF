@@ -215,6 +215,11 @@ jobs:
         env:
           REQUIRE_VERAPDF: '1'
           REQUIRE_BARCODE_ORACLE: '1'
+          # DiffEngine 20.0.0 reads its disable flag lazily instead of capturing it once at
+          # type-init (VerifyTests/DiffEngine#825) and now installs a bundled viewer as an
+          # always-available last-resort tool, so a detection miss that was a harmless no-op in
+          # 19.x could launch a GUI here instead. Setting this explicitly closes that gap.
+          DiffEngine_Disabled: 'true'
         run: dotnet test VellumPdf.slnx -c Release --no-build --collect:"XPlat Code Coverage" --results-directory ${{ runner.temp }}/coverage
 
       - name: Enforce coverage threshold

@@ -248,6 +248,35 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `latestPatch`, and all five `setup-dotnet` steps (`ci.yml` build and AOT smoke jobs, `release.yml`
   library and tool jobs, `docs.yml`) point at `global-json-file: global.json` rather than repeating
   the version inline, so the two can no longer drift apart. (#231)
+- **`Verify.XunitV3` moves to 32.0.0.** The dependency floor on `xunit.v3.extensibility.core` is
+  `[3.2.2, )`, open-ended and already satisfied by the xunit.v3 3.2.2 pin in
+  `Directory.Packages.props`, from which `extensibility.core` comes transitively, so the bump is
+  independent of #200's xunit v4 migration. The measured transitive delta against the base
+  commit's restore: `Verify` 31.28.0 → 32.0.0, moving in lockstep with `Verify.XunitV3` itself,
+  `DiffEngine` 19.3.3 → 20.0.0 (a major), and `Microsoft.Bcl.AsyncInterfaces` 10.0.10 → 10.0.11;
+  `Argon` and `SimpleInfoName` were already in 31.28.0's closure and did not move. DiffEngine
+  20.0.0 reads its own disable flag lazily rather than capturing it once at type-init
+  (VerifyTests/DiffEngine#825) and adds a bundled viewer as an always-available last-resort tool,
+  so a detection miss that was a harmless no-op in 19.x could now launch a GUI. `ci.yml`'s test
+  step sets `DiffEngine_Disabled: true` against that, and `tests/Directory.Build.props` sets
+  `<DiffEngineBundledViewer>false</DiffEngineBundledViewer>`, which drops the bundled viewer
+  binaries and the `DiffEngine.ViewerDirectory` path DiffEngine's build targets otherwise stamp
+  into each test project's `runtimeconfig.json` — a username-bearing absolute path this keeps out
+  of build artifacts. Neither setting reaches a developer's own installed diff tool (VS, Rider, VS
+  Code, WinMerge); only `DiffEngine_Disabled` does that. None of the five packages above appear in
+  `dotnet list package --vulnerable`. No `.verified.*` file under `tests/` changed. (#221)
+- Added `.github/dependabot.yml`: weekly `nuget`, `github-actions`, and `dotnet-sdk` checks. The
+  `nuget` group batches minor/patch bumps into one PR and excludes
+  `System.Security.Cryptography.Pkcs` — the one third-party runtime dependency this repository
+  ships, whose patches change emitted CMS/PAdES bytes — from that batch; majors stay individual, so
+  a snapshot-risk major like this one stays attributable to a single PR. `xunit.v3*` (matching
+  `xunit.v3` and `xunit.v3.assert`) and `xunit.runner.visualstudio` majors are ignored pending
+  #200's deliberate hold on the v3-to-v4 migration. `dotnet-sdk` covers the `global.json`
+  feature-band pin from #379: that updater does not read `rollForward`, so it proposes SDKs
+  outside the pinned 10.0.4xx band as readily as ones inside it — by design, since each such PR is
+  the deliberate band-move signal #379's CONTRIBUTING rule calls for, not noise. `github-actions`
+  carries no group: every action here is currently pinned to a floating major tag, so only major
+  bumps ever surface. (#221)
 
 ### Fixed
 

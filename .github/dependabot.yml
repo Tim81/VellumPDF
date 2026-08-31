@@ -1,0 +1,49 @@
+version: 2
+updates:
+  - package-ecosystem: "nuget"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      # Minor/patch bumps land together; a major stays its own PR so a snapshot-risk bump like
+      # #221 is attributable to one dependency, not buried in a batch. The one shipped runtime
+      # dependency is excluded even from this group: its patches change emitted CMS/PAdES bytes,
+      # so it does not belong next to routine test-tooling churn.
+      minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+        exclude-patterns:
+          - "System.Security.Cryptography.Pkcs"
+    ignore:
+      # #200 holds the xunit.v3 family and xunit.runner.visualstudio on 3.x deliberately until
+      # the Microsoft.Testing.Platform migration lands; a weekly major bump proposal here would
+      # target a known-red build. "xunit.v3*" matches both xunit.v3 and xunit.v3.assert.
+      - dependency-name: "xunit.v3*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "xunit.runner.visualstudio"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "ci"
+    # No group: every action here is currently pinned to a floating major tag (e.g.
+    # actions/checkout@v7), so only major bumps ever surface. A group block would read as doing
+    # something it cannot.
+
+  - package-ecosystem: "dotnet-sdk"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "chore(deps)"
+    # This updater parses global.json but does not act on rollForward, so it proposes SDKs
+    # outside the pinned 10.0.4xx feature band (a later 10.0.5xx, eventually 11.x) as readily as
+    # ones inside it. That is intended, not a bug in this config: #379 pins the band deliberately
+    # and its CONTRIBUTING rule requires a human to merge a band move on purpose and CI-validate
+    # it before the next tag, so each such PR is that signal, not noise to dismiss.
