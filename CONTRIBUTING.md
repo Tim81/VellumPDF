@@ -178,18 +178,33 @@ linearized` directly, so a test that reads that line already discriminates;
 the exit code is the part of `--check` that doesn't (a warning just adds
 `WARNING` lines and exit 3, on top of whichever of those two lines fired).
 
-The `Enforce coverage threshold` step that follows the `Test` step in `ci.yml` reads whatever the
-`--collect:"XPlat Code Coverage"` run wrote, so reproducing its percentage locally needs the same
-invocation, `--settings` included:
+The `Enforce coverage threshold` step that follows the `Test` step in `ci.yml` reads whatever that
+run wrote, so reproducing its percentage locally needs the same invocation. `coverlet.MTP` (#200)
+reads its instrumentation scope from `coverlet.testconfig.json` (copied to every test host's
+own output directory as `testconfig.json` by `tests/Directory.Build.props`) rather than a
+`--settings` runsettings file; on the command line, `--coverlet` after `--` is only the activation
+switch:
 
 ```bash
-dotnet test VellumPdf.slnx -c Release --collect:"XPlat Code Coverage" --settings coverlet.runsettings --results-directory <dir>
+dotnet test VellumPdf.slnx -c Release --results-directory <dir> -- --coverlet
 ```
 
-`coverlet.runsettings` excludes `*.Tests` assemblies and `VellumPdf.TestSupport` from
-instrumentation (#229). Drop `--settings` and the run still produces a number, just a different
-one: the unexcluded figure, measuring the eight shipping assemblies together with the test
-scaffolding built on top of them, not what the gate script in `ci.yml` actually thresholds.
+`coverlet.testconfig.json` scopes instrumentation to the eight shipping assemblies, the same
+scope `coverlet.runsettings` held under the old VSTest collector (#229), as an include allow-list
+rather than an exclude list. That distinction matters here specifically because coverlet.MTP's
+command-line mode, active whenever no config file is present, merges in its own default
+exclude-by-attribute list (`GeneratedCodeAttribute`, `CompilerGeneratedAttribute`), which silently
+drops every compiler- and source-generator-emitted member from instrumentation — VellumPdf.Cli's
+entire System.Text.Json source-generated `CliJsonContext` partial among them. A config file is
+authoritative and does not get that default list injected, so scoping through `testconfig.json`
+instead of `--coverlet-include`/`--coverlet-exclude` command-line options is what keeps generated
+code counted the way `coverlet.collector` counted it under VSTest; measured, every one of the eight
+assemblies' valid-line counts matched what this gate already carried before the migration (both
+have since moved independently as unrelated PRs added code; parity is about the migration dropping
+nothing, not about the two figures staying pinned together). Delete or rename `testconfig.json` out
+of the test host's output directory and the run
+still produces a number, just a different one: coverlet.MTP's own defaults, not what the gate
+script in `ci.yml` actually thresholds.
 
 ### 6. AOT smoke test
 

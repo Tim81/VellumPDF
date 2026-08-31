@@ -1,0 +1,9 @@
+{
+  "platformOptions": {
+    "Coverlet": {
+      "include": "[VellumPdf.*]*,[vellum*]*",
+      "exclude": "[*.Tests]*,[VellumPdf.TestSupport]*",
+      "format": "cobertura"
+    }
+  }
+}

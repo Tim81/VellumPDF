@@ -11,16 +11,13 @@
   </PropertyGroup>
 
   <!--
-    tests/Directory.Build.props adds "xunit.v3" (the full runner meta-package) plus the test-host
-    packages — all three assume an executable test project, which this library is not ("xunit.v3"
-    pulls in xunit.v3.core.mtp-v1, whose own buildTransitive targets enforce OutputType=Exe via a
-    build-time check). OracleGate only needs Assert.Skip/Assert.Fail, so swap the meta-package for
-    the assertion library alone.
+    tests/Directory.Build.props adds "xunit.v3" (the full runner meta-package), which assumes an
+    executable test project — this library is not one ("xunit.v3" pulls in xunit.v3.core.mtp-v2,
+    whose own buildTransitive targets enforce OutputType=Exe via a build-time check). OracleGate
+    only needs Assert.Skip/Assert.Fail, so swap the meta-package for the assertion library alone.
   -->
   <ItemGroup>
-    <PackageReference Remove="Microsoft.NET.Test.Sdk" />
     <PackageReference Remove="xunit.v3" />
-    <PackageReference Remove="xunit.runner.visualstudio" />
     <PackageReference Include="xunit.v3.assert" />
   </ItemGroup>
 
