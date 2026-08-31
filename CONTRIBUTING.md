@@ -114,13 +114,19 @@ across the board, or one of the two scoped variables to reproduce just that
 oracle's CI behaviour.
 
 A tool that runs and answers is not the same as a tool that discriminated.
-`qpdf --check` exits 0 and prints no `WARNING` for both a linearized and a
-non-linearized file, so an assertion that stops at the exit code passes
-either way (#234). Before an oracle assertion ships, run the oracle by hand
-against a deliberately broken copy of the fixture — a truncated file, a
-flipped conformance flag — and note what changes in its output. Assert on
-that value, not just the exit code: `Assert.Contains("linearization data:",
-stdout)` fails on the broken copy where `exit == 0` alone does not.
+`qpdf --show-linearization` exits 0 and prints no `WARNING` for both a
+linearized and a non-linearized file (the negative case just prints
+`<file> is not linearized` instead), so an assertion that stops at the exit
+code passes either way (#234). Before an oracle assertion ships, run the
+oracle by hand against a deliberately broken copy of the fixture — a
+truncated file, a flipped conformance flag — and note what changes in its
+output. Assert on that value, not just the exit code:
+`Assert.True(stdout.Contains("linearization data:"), ...)` fails on the
+broken copy where `exit == 0` alone does not. Not every command needs this:
+`qpdf --check` already prints `File is linearized` or `File is not
+linearized` directly, so a test that reads that line already discriminates;
+the exit code is the part of `--check` that doesn't (a warning just adds
+`WARNING` lines and exit 3, on top of whichever of those two lines fired).
 
 ### 6. AOT smoke test
 
