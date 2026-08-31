@@ -99,8 +99,8 @@ Command-line reference: <https://github.com/Tim81/VellumPDF#command-line-preflig
 ## Roadmap
 
 Planned direction, tracked as [GitHub milestones](https://github.com/Tim81/VellumPDF/milestones).
-These are scopes, not commitments — the milestones carry no due dates. 2.2.0 is the latest
-published release; 2.3 is merged to main and pending release.
+These are scopes, not commitments — the milestones carry no due dates. 2.3.0 is the latest
+published release.
 
 Scope past 2.5 runs as **two parallel tracks**, because auditing the layout engine turned up more
 work than the PDF 2.0 conformance gap did. Both ship from the same version numbers.
@@ -109,7 +109,7 @@ work than the PDF 2.0 conformance gap did. Both ship from the same version numbe
 
 | Milestone | Scope |
 | --- | --- |
-| **2.3 — Reader robustness** *(merged to main, pending release)* | Cross-reference reconstruction for damaged files (#184), a decrypted-copy writer (#186), the `/XRefStm` precedence decision (#206), reader fuzzing (#99), and the CI and oracle debt that makes all of it verifiable. |
+| **2.3 — Reader robustness** *(released)* | Cross-reference reconstruction for damaged files (#184), a decrypted-copy writer (#186), the `/XRefStm` precedence decision (#206), reader fuzzing (#99), and the CI and oracle debt that makes all of it verifiable. |
 | **2.4 — PDF content extraction** | Text and image extraction on top of the reader (#98), and graduating `VellumPdf.Reader` from Preview (#187). |
 | **2.5 — PDF/A-4 and PDF/A-1 profiles** | PDF/A-4 (#222) so conformance output stops downgrading to `%PDF-1.7`, PDF/A-1 (#218), and dropping the keys ISO 32000-2 deprecates (#325). |
 | **2.6 — ISO/TS extensions to PDF 2.0** | The four Technical Specifications that amend PDF 2.0: AES-GCM (#236), PDF MAC integrity (#237), SHA-3 (#238) and EdDSA (#239). The reader currently rejects every AES-GCM file, so this closes an interoperability bug as well as adding features. |

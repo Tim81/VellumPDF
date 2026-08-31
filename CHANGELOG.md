@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-08-31
+
 ### Breaking changes
 
 - **A same-revision `/XRefStm` no longer overrides a classic cross-reference table's free entry
@@ -2011,7 +2013,8 @@ few small additions. No public API was removed.
   headers, and no unbounded allocations driven by attacker-controlled length
   fields.
 
-[Unreleased]: https://github.com/Tim81/VellumPDF/compare/v2.2.0...HEAD
+[Unreleased]: https://github.com/Tim81/VellumPDF/compare/v2.3.0...HEAD
+[2.3.0]: https://github.com/Tim81/VellumPDF/releases/tag/v2.3.0
 [2.2.0]: https://github.com/Tim81/VellumPDF/releases/tag/v2.2.0
 [2.1.0]: https://github.com/Tim81/VellumPDF/releases/tag/v2.1.0
 [2.0.0]: https://github.com/Tim81/VellumPDF/releases/tag/v2.0.0
