@@ -283,6 +283,11 @@ public sealed class EncryptionTests
         Assert.Contains("dc:title", packet, StringComparison.Ordinal);
         Assert.Contains(title, packet, StringComparison.Ordinal);
 
+        // #199: Keywords is mirrored into pdf:Keywords now too, so it reads in cleartext here
+        // the same way title does — pin that directly rather than only through the negative
+        // /Info assertion below.
+        Assert.Contains(keywords, packet, StringComparison.Ordinal);
+
         // And the exemption has to stay narrow. Widening the predicate to every object leaves the
         // whole document cleartext, which every other assertion here tolerates. #199 now mirrors
         // Keywords into pdf:Keywords too, so the plain string does appear in the packet — but only

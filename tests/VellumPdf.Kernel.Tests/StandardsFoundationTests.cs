@@ -156,8 +156,13 @@ public sealed class StandardsFoundationTests
 
         var content = SaveToString(doc);
 
-        Assert.Contains("pdf, library, testing", content);
-        Assert.Contains("pdf:Keywords", content);
+        // Ordinal, and pin the whole wrapped element: the default (culture-sensitive)
+        // Contains collation-ignores the NULs in /Info's UTF-16BE copy of the same value,
+        // so a bare Contains("pdf, library, testing") or Contains("pdf:Keywords") stays
+        // green even if the writer never emits pdf:Keywords at all — /Info alone satisfies
+        // it. See Save_withKeywordsNeedingEscaping_xmpPacketEscapesThem for the mechanism.
+        Assert.Contains(
+            "<pdf:Keywords>pdf, library, testing</pdf:Keywords>", content, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -169,7 +174,7 @@ public sealed class StandardsFoundationTests
 
         var content = SaveToString(doc);
 
-        Assert.DoesNotContain("pdf:Keywords", content);
+        Assert.DoesNotContain("pdf:Keywords", content, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -207,8 +212,9 @@ public sealed class StandardsFoundationTests
         });
         var content = Encoding.Latin1.GetString(bytes);
 
-        Assert.Contains("signed, placeholder", content);
-        Assert.Contains("pdf:Keywords", content);
+        // Ordinal + whole element, same reason as Save_withKeywords_xmpPacketContainsPdfKeywords.
+        Assert.Contains(
+            "<pdf:Keywords>signed, placeholder</pdf:Keywords>", content, StringComparison.Ordinal);
     }
 
     [Fact]

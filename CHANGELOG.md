@@ -621,10 +621,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **`Info.Keywords` was never mirrored into the XMP packet.** `XmpMetadataWriter` already mirrored
   Title, Author, Subject, and Creator into `dc:title`, `dc:creator`, `dc:description`, and
   `xmp:CreatorTool`; Keywords was the one descriptive field that reached only `/Info`. It now emits
-  `pdf:Keywords` as scalar text, matching the value type ISO 32000-2 Table 349 gives it — not an
-  `rdf:Bag`, which is how `dc:language` is typed instead. This is symmetry, not a conformance fix:
-  ISO 19005-2's Info/XMP equivalence rule covers only the two date fields, so a field absent from
-  XMP was never itself a violation. It's user-visible with `EncryptMetadata = false` (#182): the XMP
+  `pdf:Keywords` as scalar text per the XMP Spec §8.7 Adobe PDF schema, not an `rdf:Bag`, which is
+  how `dc:language` is typed instead. This is symmetry, not a conformance fix: ISO 32000-2 §14.3.4's
+  Info/XMP equivalence rule scopes only to the two date fields, and absence from XMP is not itself
+  a violation under ISO 19005-2. It's user-visible with `EncryptMetadata = false` (#182): the XMP
   packet stays cleartext while `/Info` stays encrypted, and Keywords was the one descriptive field
   a consumer honouring that flag could never read in cleartext. (#199)
 
