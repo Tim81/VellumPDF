@@ -644,7 +644,7 @@ internal sealed class XrefParser
         crossReferenceStreamOffsets.Add(xrefOffset);
 
         // Decode the stream body (typically FlateDecode, but use full chain for robustness)
-        var decodeResult = PdfFilters.Decode(streamObj, limits: limits);
+        var decodeResult = PdfFilters.Decode(streamObj, limits);
         if (decodeResult is null)
             throw new InvalidDataException(
                 "Malformed PDF: xref stream uses an image filter that cannot be decoded.");

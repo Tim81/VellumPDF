@@ -67,6 +67,18 @@ public sealed class PdfDocumentReader : IDisposable
     // chosen ceiling instead of a fixed constant.
     private readonly ReaderLimits _limits;
 
+    /// <summary>
+    /// The resource ceilings this document was opened with. A caller that opens a nested or
+    /// embedded document from bytes found INSIDE this one — <c>VellumPdf.Conformance</c>'s
+    /// recursive PDF/A validation of an embedded file is the one case in this codebase today —
+    /// must pass this through to that nested <see cref="PdfReader.Open(byte[], ReaderLimits, string?)"/>
+    /// call. Otherwise a caller who tightened <see cref="PdfReaderOptions.MaxDecodedStreamBytes"/> or
+    /// <see cref="PdfReaderOptions.ReconstructionBudgetMultiplier"/> on THIS read gets the untightened
+    /// 512 MiB / 8× defaults back the moment a rule opens attacker-supplied bytes it found inside the
+    /// document — exactly the escape hatch the caller's tightened options were meant to close.
+    /// </summary>
+    internal ReaderLimits Limits => _limits;
+
     internal ReadOnlyMemory<byte> Bytes { get; }
     internal PdfDictionary Trailer { get; }
 
@@ -637,11 +649,11 @@ public sealed class PdfDocumentReader : IDisposable
     /// runs — not by mutating <see cref="ParsedStream.RawBody"/>, which stays the verbatim file
     /// bytes for §6.1.7.1 byte-level conformance checks (see the type's own doc comment). A stream
     /// whose effective crypt filter method is Identity is handed to
-    /// <see cref="PdfFilters.Decode(ParsedStream, Func{PdfObject?, PdfObject?}?, ReaderLimits?)"/> unchanged; one
+    /// <see cref="PdfFilters.Decode(ParsedStream, ReaderLimits, Func{PdfObject?, PdfObject?}?)"/> unchanged; one
     /// that needs decrypting is wrapped in a throwaway <see cref="ParsedStream"/> carrying the
     /// decrypted bytes, never exposed outside this method.
     /// </remarks>
-    internal byte[]? GetDecodedStreamData(ParsedStream stream) => PdfFilters.Decode(DecryptedStreamView(stream), ResolveMaybe, _limits);
+    internal byte[]? GetDecodedStreamData(ParsedStream stream) => PdfFilters.Decode(DecryptedStreamView(stream), _limits, ResolveMaybe);
 
     /// <summary>
     /// Returns a <see cref="ParsedStream"/> view of <paramref name="stream"/> whose body is
@@ -650,7 +662,7 @@ public sealed class PdfDocumentReader : IDisposable
     /// used to give every caller before #97, except correct on an encrypted document.
     ///
     /// <para>
-    /// Exists because <see cref="PdfFilters.Decode(ParsedStream, Func{PdfObject?, PdfObject?}?, ReaderLimits?)"/>
+    /// Exists because <see cref="PdfFilters.Decode(ParsedStream, ReaderLimits, Func{PdfObject?, PdfObject?}?)"/>
     /// returns <see langword="null"/> whenever an image filter (DCTDecode, JPXDecode, …) is present
     /// — by design, it never attempts to decode image data — which makes it unusable for a caller
     /// like <c>Jpeg2000Rule</c> that wants the raw-but-decrypted JP2/codestream bytes precisely

@@ -147,27 +147,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **`PdfReaderOptions.MaxDecodedStreamBytes` and `ReconstructionBudgetMultiplier` — configurable
   resource ceilings (#376).** Reconstruction's cost budget and the per-decode ceiling on decompressed
   stream output were fixed constants sized for a desktop: a 512 MiB decode cap and a reconstruction
-  work budget of `max(1 MiB, 8 × file length)`. ISO 32000-2 Annex C.1 states that the format itself
-  "does not restrict the size or quantity of things described", and Annex C.3 notes that available
-  memory "vary[ies] from one PDF processor to another" — the ceiling was always this library's own
-  choice, not a spec requirement, so a caller on a constrained device, or one hardening against a
+  work budget of `max(1 MiB, 8 × file length)`. ISO 32000-2 Annex C.1 (informative) states that "a
+  particular PDF processor running on a particular device and in a particular operating environment
+  will always have practical limits", and Annex C.3 (informative) adds that available memory is
+  "often much less in mobile devices than desktop computers" — the ceiling was always this library's
+  own choice, not a spec requirement, so a caller on a constrained device, or one hardening against a
   decompression bomb or a reconstruction budget attack, can now lower either value through
   `PdfReaderOptions`. Both remain tighten-only: a value above the existing default, or below a floor
   an ordinary document needs to open at all (1 MiB for the decode cap, a multiplier of 1 for the
   budget), makes `PdfReader.Open` throw `ArgumentOutOfRangeException` naming the property and its
   allowed range. The defaults are unchanged, so this adds no behaviour for a caller who does not set
-  either property.
+  either property. A nested read this library opens on a caller's behalf — recursive PDF/A
+  validation of an embedded-file attachment is the one case today — now inherits the outer read's
+  resolved ceiling too, rather than falling back to the 512 MiB / 8× defaults for attacker-supplied
+  bytes found inside an already-open document.
 
 - **`PdfReaderOptions.AllowReconstruction` — opt-in cross-reference reconstruction (#184).** When
   `startxref` is missing, unusable, or doesn't point at a recognisable xref table or stream,
-  `PdfReader.Open` used to always throw. Setting `AllowReconstruction` instead rebuilds the table by
-  walking the file once for `N G obj` headers (the recovery ISO 32000-2 Annex C.4, informative,
-  describes), budgeted at `max(1 MiB, 8 × file length)`. A document opened this way reports the fact
-  through the new `PdfDocumentReader.WasReconstructed`. Appending a further incremental revision to a
-  document opened this way, or to one repaired by dropping orphaned object-stream members, now
-  refuses: neither's object graph is what the file's own cross-reference table actually declared, so
-  building a signature revision on top of either would hand back an artifact this library cannot
-  reliably reopen.
+  `PdfReader.Open` used to always throw. Setting `AllowReconstruction` instead rebuilds the table
+  by walking the file once for `N G obj` headers (the recovery ISO 32000-2 Annex C.4, informative,
+  describes), budgeted at `max(1 MiB, 8 × file length)` — the multiplier is a fixed constant here;
+  #376 later makes it configurable via `PdfReaderOptions.ReconstructionBudgetMultiplier`. A
+  document opened this way reports the fact through the new `PdfDocumentReader.WasReconstructed`.
+  Appending a further incremental revision to a document opened this way, or to one repaired by
+  dropping orphaned object-stream members, now refuses: neither's object graph is what the file's
+  own cross-reference table actually declared, so building a signature revision on top of either
+  would hand back an artifact this library cannot reliably reopen.
   - Reconstruction now covers encrypted documents too, without ever handing back ciphertext as
     plaintext. A recovered trailer candidate that declares `/Encrypt` is carried through rather than
     refused. When nothing declares it (a trailer damaged past recovery), a confirmed object gets a

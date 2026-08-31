@@ -68,13 +68,14 @@ public sealed class PdfReaderOptions
     /// <summary>
     /// The ceiling, in bytes, on a single stream's decoded (post-filter) size, and on the aggregate
     /// raw object-stream bytes reconstruction's Phase B will decode while expanding a document whose
-    /// cross-reference table it rebuilt. Defaults to 512 MiB. ISO 32000-2 Annex C.1 states that "this
-    /// PDF standard does not restrict the size or quantity of things described in the PDF file
-    /// format", and Annex C.3 notes that available memory "vary[ies] from one PDF processor to
-    /// another" — 512 MiB is this library's own choice for a desktop host, not a spec requirement, so
-    /// a caller on a more constrained device, or one hardening against a decompression bomb, may
-    /// lower it. Raising it above the default is refused: nothing above 512 MiB has been exercised as
-    /// a safe ceiling, so this option can only tighten it.
+    /// cross-reference table it rebuilt. Defaults to 512 MiB. ISO 32000-2 Annex C.1 (informative)
+    /// states that "a particular PDF processor running on a particular device and in a particular
+    /// operating environment will always have practical limits", and Annex C.3 (informative) adds
+    /// that available memory is "often much less in mobile devices than desktop computers" — 512 MiB
+    /// is this library's own choice for a desktop host, not a spec requirement, so a caller on a more
+    /// constrained device, or one hardening against a decompression bomb, may lower it. Raising it
+    /// above the default is refused: nothing above 512 MiB has been exercised as a safe ceiling, so
+    /// this option can only tighten it.
     /// </summary>
     /// <exception cref="ArgumentOutOfRangeException">
     /// Thrown by <see cref="PdfReader.Open(byte[], PdfReaderOptions)"/> when set above the 512 MiB
@@ -83,12 +84,13 @@ public sealed class PdfReaderOptions
     public long MaxDecodedStreamBytes { get; init; } = ReaderLimits.DefaultMaxDecodedBytes;
 
     /// <summary>
-    /// The multiplier in cross-reference reconstruction's <c>max(1 MiB, N × file length)</c> work
-    /// budget (ISO 32000-2 Annex C.4), charged against every non-trivial operation while scanning a
-    /// document for object headers. Defaults to 8. Annex C.1/C.3 leave this ceiling to the
-    /// processor, as for <see cref="MaxDecodedStreamBytes"/> above; a caller hardening against a file
-    /// engineered to burn CPU across many decoy candidates may lower it. Raising it above the default
-    /// is refused for the same reason.
+    /// The multiplier in cross-reference reconstruction's (see <see cref="AllowReconstruction"/>,
+    /// ISO 32000-2 Annex C.4, informative) <c>max(1 MiB, N × file length)</c> work budget, charged
+    /// against every non-trivial operation while scanning a document for object headers. Defaults to
+    /// 8. The budget's ceiling itself is left to the processor by Annex C.1/C.3 (informative), not by
+    /// C.4 — the same rationale as <see cref="MaxDecodedStreamBytes"/> above; a caller hardening
+    /// against a file engineered to burn CPU across many decoy candidates may lower it. Raising it
+    /// above the default is refused for the same reason.
     /// </summary>
     /// <exception cref="ArgumentOutOfRangeException">
     /// Thrown by <see cref="PdfReader.Open(byte[], PdfReaderOptions)"/> when set above the default of

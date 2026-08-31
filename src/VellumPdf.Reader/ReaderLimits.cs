@@ -24,7 +24,7 @@ namespace VellumPdf.Reader;
 /// </param>
 /// <param name="ReconstructionBudgetMultiplier">
 /// The multiplier in <see cref="XrefReconstructor"/>'s <c>max(1 MiB, N × file length)</c> work
-/// budget for cross-reference reconstruction (ISO 32000-2 Annex C.4).
+/// budget for cross-reference reconstruction (ISO 32000-2 Annex C.4, informative).
 /// </param>
 internal readonly record struct ReaderLimits(
     long MaxDecodedBytes, long MaxAggregateReconstructionDecodeBytes, int ReconstructionBudgetMultiplier)
@@ -56,10 +56,11 @@ internal readonly record struct ReaderLimits(
     /// threaded through one read.
     /// </summary>
     /// <remarks>
-    /// Tighten-only: ISO 32000-2 Annex C.1 states plainly that "this PDF standard does not restrict
-    /// the size or quantity of things described in the PDF file format", and C.3 notes that
-    /// available memory "vary[ies] from one PDF processor to another" — the ceiling is this
-    /// processor's own choice, not a spec requirement, so <see cref="DefaultMaxDecodedBytes"/> and
+    /// Tighten-only: ISO 32000-2 Annex C.1 (informative) states that "a particular PDF processor
+    /// running on a particular device and in a particular operating environment will always have
+    /// practical limits", and Annex C.3 (informative) adds that available memory is "often much less
+    /// in mobile devices than desktop computers" — the ceiling is this processor's own choice, not a
+    /// spec requirement, so <see cref="DefaultMaxDecodedBytes"/> and
     /// <see cref="DefaultReconstructionBudgetMultiplier"/> are a safe upper bound a caller may only
     /// lower, never raise. A value under the corresponding floor is rejected too: below
     /// <see cref="MinMaxDecodedBytes"/> or <see cref="MinReconstructionBudgetMultiplier"/>, an
@@ -78,7 +79,8 @@ internal readonly record struct ReaderLimits(
             throw new ArgumentOutOfRangeException(
                 nameof(PdfReaderOptions.MaxDecodedStreamBytes), maxDecodedBytes,
                 $"{nameof(PdfReaderOptions.MaxDecodedStreamBytes)} must be between {MinMaxDecodedBytes} "
-                + $"and {DefaultMaxDecodedBytes} bytes (1 MiB to 512 MiB).");
+                + $"and {DefaultMaxDecodedBytes} bytes ({MinMaxDecodedBytes / 1024.0 / 1024.0:F0} MiB to "
+                + $"{DefaultMaxDecodedBytes / 1024.0 / 1024.0:F0} MiB).");
 
         var multiplier = options.ReconstructionBudgetMultiplier;
         if (multiplier < MinReconstructionBudgetMultiplier || multiplier > DefaultReconstructionBudgetMultiplier)

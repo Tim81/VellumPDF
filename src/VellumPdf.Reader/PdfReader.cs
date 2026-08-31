@@ -53,9 +53,39 @@ public static class PdfReader
         ArgumentNullException.ThrowIfNull(bytes);
         ArgumentNullException.ThrowIfNull(options);
         var limits = ReaderLimits.Resolve(options);
+        return OpenCore(bytes, limits, options.AllowReconstruction, options.Password);
+    }
+
+    /// <summary>
+    /// Opens a PDF document from bytes found INSIDE another document already under this library's
+    /// control — the one caller today is <c>VellumPdf.Conformance</c>'s recursive PDF/A validation
+    /// of an embedded-file attachment — using the SAME resolved <see cref="ReaderLimits"/> the outer
+    /// read was opened with (<see cref="PdfDocumentReader.Limits"/>). Without this overload, a nested
+    /// open has no <see cref="PdfReaderOptions"/> of its own to construct, and reaching for
+    /// <see cref="Open(byte[])"/> would silently widen a caller's tightened
+    /// <see cref="PdfReaderOptions.MaxDecodedStreamBytes"/> or
+    /// <see cref="PdfReaderOptions.ReconstructionBudgetMultiplier"/> back to the 512 MiB / 8×
+    /// defaults for attacker-supplied bytes nested inside the outer document — exactly the escape
+    /// hatch tightening those options was meant to close.
+    /// <para>
+    /// Reconstruction is never attempted for a nested open, matching every nested-open call site
+    /// before this overload existed, all of which used <see cref="Open(byte[])"/>'s
+    /// <see cref="PdfReaderOptions.AllowReconstruction"/> default of <see langword="false"/>.
+    /// </para>
+    /// </summary>
+    /// <exception cref="ArgumentNullException"><paramref name="bytes"/> is null.</exception>
+    internal static PdfDocumentReader Open(byte[] bytes, ReaderLimits limits, string? password = null)
+    {
+        ArgumentNullException.ThrowIfNull(bytes);
+        return OpenCore(bytes, limits, allowReconstruction: false, password);
+    }
+
+    private static PdfDocumentReader OpenCore(
+        byte[] bytes, ReaderLimits limits, bool allowReconstruction, string? password)
+    {
         var data = new ReadOnlyMemory<byte>(bytes);
-        var parseResult = XrefParser.Parse(data, options.AllowReconstruction, limits);
-        return new PdfDocumentReader(data, parseResult, limits, options.Password);
+        var parseResult = XrefParser.Parse(data, allowReconstruction, limits);
+        return new PdfDocumentReader(data, parseResult, limits, password);
     }
 
     /// <summary>
@@ -90,8 +120,12 @@ public static class PdfReader
     {
         ArgumentNullException.ThrowIfNull(stream);
         ArgumentNullException.ThrowIfNull(options);
+        // Resolved (and validated) before buffering: an out-of-range MaxDecodedStreamBytes or
+        // ReconstructionBudgetMultiplier should reject immediately, not after CopyTo has already
+        // read an unbounded stream fully into memory for an option value that was never usable.
+        var limits = ReaderLimits.Resolve(options);
         using var ms = new MemoryStream();
         stream.CopyTo(ms);
-        return Open(ms.ToArray(), options);
+        return OpenCore(ms.ToArray(), limits, options.AllowReconstruction, options.Password);
     }
 }

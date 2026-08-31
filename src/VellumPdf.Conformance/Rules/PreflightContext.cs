@@ -38,6 +38,15 @@ internal sealed class PreflightContext
     public PdfDictionary Trailer => Reader.Trailer;
 
     /// <summary>
+    /// The resource ceilings <see cref="Reader"/> was opened with. A rule that opens a NESTED
+    /// document from bytes found inside this one — an embedded-file attachment, for instance —
+    /// must pass this through to that nested open, or a caller who tightened either resource knob
+    /// on the outer read gets the untightened defaults back for attacker-supplied bytes nested
+    /// inside it. See <see cref="Reader.PdfDocumentReader.Limits"/>.
+    /// </summary>
+    public ReaderLimits Limits => Reader.Limits;
+
+    /// <summary>
     /// The raw PDF file bytes. Used by file-structure rules that inspect the physical layout
     /// (header line, binary marker) rather than the parsed object graph.
     /// </summary>

@@ -39,24 +39,25 @@ internal static class PdfFilters
     /// </summary>
     /// <param name="stream">The parsed stream whose filter chain is applied.</param>
     /// <param name="decoded">Receives the decoded (or partially decoded) bytes.</param>
+    /// <param name="limits">
+    /// The resource ceilings for this decode — in particular
+    /// <see cref="ReaderLimits.MaxDecodedBytes"/>, the cap FlateDecode, LZWDecode, and
+    /// RunLengthDecode enforce on their output. Required, not defaulted: an omitted argument here
+    /// used to decode silently at the 512 MiB default even for a caller who had tightened
+    /// <see cref="PdfReaderOptions.MaxDecodedStreamBytes"/> everywhere else, defeating the point of
+    /// the option without ever failing a build. Pass <see cref="ReaderLimits.Defaults"/> explicitly
+    /// at a genuine bootstrap call site that has no <see cref="PdfReaderOptions"/> of its own yet.
+    /// </param>
     /// <param name="resolve">
     /// Optional indirect-reference resolver. <c>/Filter</c> and <c>/DecodeParms</c> (and their array
     /// elements) may be indirect references — e.g. Ghostscript emits <c>/Filter 12 0 R</c>. When a
     /// resolver is supplied those references are dereferenced; without one only direct values are
     /// honoured (the bootstrap xref-stream path, where the object graph is not yet resolvable).
     /// </param>
-    /// <param name="limits">
-    /// The resource ceilings for this decode — in particular
-    /// <see cref="ReaderLimits.MaxDecodedBytes"/>, the cap FlateDecode, LZWDecode, and
-    /// RunLengthDecode enforce on their output. Defaults to <see cref="ReaderLimits.Defaults"/> when
-    /// omitted, matching every call site that has not opted into
-    /// <see cref="PdfReaderOptions.MaxDecodedStreamBytes"/>.
-    /// </param>
     internal static bool TryDecode(
-        ParsedStream stream, out byte[] decoded, Func<PdfObject?, PdfObject?>? resolve = null,
-        ReaderLimits? limits = null)
+        ParsedStream stream, out byte[] decoded, ReaderLimits limits,
+        Func<PdfObject?, PdfObject?>? resolve = null)
     {
-        var effectiveLimits = limits ?? ReaderLimits.Defaults;
         var filters = GetFilterList(stream.Dictionary, resolve);
         var parms = GetParmsList(stream.Dictionary, filters.Count, resolve);
 
@@ -74,7 +75,7 @@ internal static class PdfFilters
                 break;
             }
 
-            data = ApplyFilter(f, p, data, effectiveLimits.MaxDecodedBytes);
+            data = ApplyFilter(f, p, data, limits.MaxDecodedBytes);
         }
 
         decoded = data;
@@ -83,13 +84,13 @@ internal static class PdfFilters
 
     /// <summary>Returns decoded bytes or null if an image filter prevents full decode.</summary>
     /// <param name="stream">The parsed stream whose filter chain is applied.</param>
+    /// <param name="limits">The decode ceiling to enforce; see <see cref="TryDecode"/>.</param>
     /// <param name="resolve">Optional indirect-reference resolver for <c>/Filter</c>/<c>/DecodeParms</c>;
     /// see <see cref="TryDecode"/>.</param>
-    /// <param name="limits">The decode ceiling to enforce; see <see cref="TryDecode"/>.</param>
     internal static byte[]? Decode(
-        ParsedStream stream, Func<PdfObject?, PdfObject?>? resolve = null, ReaderLimits? limits = null)
+        ParsedStream stream, ReaderLimits limits, Func<PdfObject?, PdfObject?>? resolve = null)
     {
-        if (!TryDecode(stream, out var decoded, resolve, limits))
+        if (!TryDecode(stream, out var decoded, limits, resolve))
             return null;
         return decoded;
     }
@@ -198,7 +199,7 @@ internal static class PdfFilters
             total += read;
             if (total > maxDecodedBytes)
                 throw new DecompressionLimitExceededException(
-                    $"Decompressed stream size exceeds {maxDecodedBytes / (1024 * 1024)} MB cap.");
+                    $"Decompressed stream size exceeds {maxDecodedBytes} bytes ({maxDecodedBytes / 1024.0 / 1024.0:F2} MiB) cap.");
             ms.Write(buf, 0, read);
         }
         return ms.ToArray();
@@ -426,7 +427,7 @@ internal static class PdfFilters
 
             if (output.Length + entry.Length > maxDecodedBytes)
                 throw new InvalidDataException(
-                    $"LZWDecode: decompressed size exceeds {maxDecodedBytes / (1024 * 1024)} MB cap.");
+                    $"LZWDecode: decompressed size exceeds {maxDecodedBytes} bytes ({maxDecodedBytes / 1024.0 / 1024.0:F2} MiB) cap.");
 
             output.Write(entry);
 
@@ -558,7 +559,7 @@ internal static class PdfFilters
                     throw new InvalidDataException("RunLengthDecode: literal run extends past end of input.");
                 if (output.Length + count > maxDecodedBytes)
                     throw new InvalidDataException(
-                        $"RunLengthDecode: decompressed size exceeds {maxDecodedBytes / (1024 * 1024)} MB cap.");
+                        $"RunLengthDecode: decompressed size exceeds {maxDecodedBytes} bytes ({maxDecodedBytes / 1024.0 / 1024.0:F2} MiB) cap.");
                 output.Write(input, i, count);
                 i += count;
             }
@@ -571,7 +572,7 @@ internal static class PdfFilters
                 var b = input[i++];
                 if (output.Length + count > maxDecodedBytes)
                     throw new InvalidDataException(
-                        $"RunLengthDecode: decompressed size exceeds {maxDecodedBytes / (1024 * 1024)} MB cap.");
+                        $"RunLengthDecode: decompressed size exceeds {maxDecodedBytes} bytes ({maxDecodedBytes / 1024.0 / 1024.0:F2} MiB) cap.");
                 for (var j = 0; j < count; j++)
                     output.WriteByte(b);
             }

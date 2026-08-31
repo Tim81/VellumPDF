@@ -127,7 +127,7 @@ public sealed class XrefStreamTests
             .Set(PdfName.Length, compressed.Length);
 
         var stream = MakeParsedStream(dict, compressed);
-        var decoded = PdfFilters.Decode(stream);
+        var decoded = PdfFilters.Decode(stream, ReaderLimits.Defaults);
 
         Assert.NotNull(decoded);
         Assert.Equal([1, 2, 3, 4, 1, 2, 3, 4], decoded);
@@ -144,7 +144,7 @@ public sealed class XrefStreamTests
             .Set(PdfName.Length, compressed.Length);
 
         var stream = MakeParsedStream(dict, compressed);
-        var decoded = PdfFilters.Decode(stream);
+        var decoded = PdfFilters.Decode(stream, ReaderLimits.Defaults);
 
         Assert.NotNull(decoded);
         Assert.Equal(original, decoded);
@@ -163,7 +163,7 @@ public sealed class XrefStreamTests
             .Set(PdfName.Length, lzwBytes.Length);
 
         var stream = MakeParsedStream(dict, lzwBytes);
-        var decoded = PdfFilters.Decode(stream);
+        var decoded = PdfFilters.Decode(stream, ReaderLimits.Defaults);
 
         Assert.NotNull(decoded);
         Assert.Empty(decoded);
@@ -183,7 +183,7 @@ public sealed class XrefStreamTests
             .Set(PdfName.Length, lzwBytes.Length);
 
         var stream = MakeParsedStream(dict, lzwBytes);
-        var decoded = PdfFilters.Decode(stream);
+        var decoded = PdfFilters.Decode(stream, ReaderLimits.Defaults);
 
         Assert.NotNull(decoded);
         Assert.Equal([0x41], decoded);
@@ -200,7 +200,7 @@ public sealed class XrefStreamTests
             .Set(PdfName.Length, hex.Length);
 
         var stream = MakeParsedStream(dict, hex);
-        var decoded = PdfFilters.Decode(stream);
+        var decoded = PdfFilters.Decode(stream, ReaderLimits.Defaults);
 
         Assert.NotNull(decoded);
         Assert.Equal(Encoding.ASCII.GetBytes("Hello"), decoded);
@@ -219,7 +219,7 @@ public sealed class XrefStreamTests
             .Set(PdfName.Length, a85.Length);
 
         var stream = MakeParsedStream(dict, a85);
-        var decoded = PdfFilters.Decode(stream);
+        var decoded = PdfFilters.Decode(stream, ReaderLimits.Defaults);
 
         Assert.NotNull(decoded);
         Assert.Equal([0, 0, 0, 0], decoded);
@@ -239,7 +239,7 @@ public sealed class XrefStreamTests
             .Set(PdfName.Length, a85.Length);
 
         var stream = MakeParsedStream(dict, a85);
-        var decoded = PdfFilters.Decode(stream);
+        var decoded = PdfFilters.Decode(stream, ReaderLimits.Defaults);
 
         Assert.NotNull(decoded);
         Assert.Equal([0, 0, 0, 0], decoded);
@@ -256,7 +256,7 @@ public sealed class XrefStreamTests
             .Set(PdfName.Length, rl.Length);
 
         var stream = MakeParsedStream(dict, rl);
-        var decoded = PdfFilters.Decode(stream);
+        var decoded = PdfFilters.Decode(stream, ReaderLimits.Defaults);
 
         Assert.NotNull(decoded);
         Assert.Equal([0x41, 0x42, 0x43], decoded);
@@ -273,7 +273,7 @@ public sealed class XrefStreamTests
             .Set(PdfName.Length, rl.Length);
 
         var stream = MakeParsedStream(dict, rl);
-        var decoded = PdfFilters.Decode(stream);
+        var decoded = PdfFilters.Decode(stream, ReaderLimits.Defaults);
 
         Assert.NotNull(decoded);
         Assert.Equal([0x41, 0x41, 0x41], decoded);
@@ -284,26 +284,21 @@ public sealed class XrefStreamTests
     [Fact]
     public void Decompression_bomb_exceeds_cap_throws()
     {
-        // Build a ZLib stream that would inflate to more than the default decode cap.
-        // We can't actually create 512MB+ in a test, but we can set a fake cap.
-        // Instead, create a stream of zeros (highly compressible) and verify the
-        // existing cap behaviour by patching — actually, let's just test with a large
-        // FlateDecode stream that expands to just over the constant.
-        // Since the default cap is 512MB, we can't allocate that in a test.
-        // Instead verify the guard fires with a mocked approach: use a specially
-        // constructed test that compresses ~100KB of zeros and checks it decodes OK,
-        // then separately verify the guard constant is as documented.
+        // Allocating 512 MiB+ just to cross the DEFAULT cap in a unit test is wasteful, so this
+        // pins the constant instead and leaves the actual over-cap decode to
+        // ReaderLimitsTests.TightenedMaxDecodedStreamBytes_rejectsAStreamThatDecodesFineUnderTheDefault,
+        // which crosses a caller-tightened cap with a 2 MiB fixture — a real over-cap decode, not
+        // a stand-in for one, just against a smaller ceiling than the 512 MiB default.
         Assert.Equal(512L * 1024 * 1024, ReaderLimits.DefaultMaxDecodedBytes);
 
-        // And verify the guard fires: compress 2KB of data, but the limit is enforced.
-        // We'll test indirectly: create valid 1KB compressed data and confirm it decodes.
+        // The guard does not fire below the cap: compress 1 KiB of zeros and confirm it decodes.
         var smallData = new byte[1024];
         var compressed = Compress(smallData);
         var dict = new PdfDictionary()
             .Set(PdfName.Filter, PdfName.FlateDecode)
             .Set(PdfName.Length, compressed.Length);
         var stream = MakeParsedStream(dict, compressed);
-        var decoded = PdfFilters.Decode(stream);
+        var decoded = PdfFilters.Decode(stream, ReaderLimits.Defaults);
         Assert.NotNull(decoded);
         Assert.Equal(1024, decoded!.Length);
     }
@@ -323,7 +318,7 @@ public sealed class XrefStreamTests
 
         var stream = MakeParsedStream(dict, compressed);
 
-        Assert.Throws<InvalidDataException>(() => PdfFilters.Decode(stream));
+        Assert.Throws<InvalidDataException>(() => PdfFilters.Decode(stream, ReaderLimits.Defaults));
     }
 
     [Fact]
@@ -1518,7 +1513,7 @@ public sealed class XrefStreamTests
             .Set(PdfName.Length, compressed.Length);
         var stream = MakeParsedStream(dict, compressed);
 
-        var decoded = PdfFilters.Decode(stream);
+        var decoded = PdfFilters.Decode(stream, ReaderLimits.Defaults);
 
         Assert.Equal(original, decoded);
     }
@@ -1532,7 +1527,7 @@ public sealed class XrefStreamTests
             .Set(PdfName.Length, a85.Length);
         var stream = MakeParsedStream(dict, a85);
 
-        Assert.Throws<InvalidDataException>(() => PdfFilters.Decode(stream));
+        Assert.Throws<InvalidDataException>(() => PdfFilters.Decode(stream, ReaderLimits.Defaults));
     }
 
     private static byte[] BuildXrefStreamHugeOffset()

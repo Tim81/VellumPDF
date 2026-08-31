@@ -1179,14 +1179,14 @@ internal static class XrefReconstructor
     /// <see cref="InvalidDataException"/> outright on exhaustion, rather than degrading to a
     /// partial answer, mirroring Phase B's own B1 discipline
     /// (<c>PdfDocumentReader.ReconstructionPhaseB</c>'s comment on
-    /// <c>MaxAggregateReconstructionObjStmDecodeBytes</c>): charge BEFORE the expensive step, and
+    /// <see cref="ReaderLimits.MaxAggregateReconstructionDecodeBytes"/>): charge BEFORE the expensive step, and
     /// let the charge stand even when that step then fails, so a file built from many bogus
     /// candidates cannot dodge the aggregate cap by having each one fail cheaply.
     /// </para>
     /// <para>
     /// Unlike B1, though, the charge here has to be sized on the OUTPUT a decode could produce,
     /// not the raw input it reads — Phase B's raw-body pre-charge is charging against
-    /// <c>MaxAggregateReconstructionObjStmDecodeBytes</c>, a bound on compressed-on-disk bytes, but
+    /// <see cref="ReaderLimits.MaxAggregateReconstructionDecodeBytes"/>, a bound on compressed-on-disk bytes, but
     /// this method's cost is <see cref="PdfFilters.Decode"/>'s decompression work, and a Flate or
     /// LZW body's compression ratio is attacker-controlled: a ~500 KB raw body can inflate to the
     /// full <see cref="ReaderLimits.MaxDecodedBytes"/> (512 MiB by default) before <c>Decode</c>
@@ -1300,7 +1300,7 @@ internal static class XrefReconstructor
             byte[]? decoded;
             try
             {
-                decoded = PdfFilters.Decode(streamObj, limits: limits);
+                decoded = PdfFilters.Decode(streamObj, limits);
             }
             catch (InvalidDataException)
             {
