@@ -5,6 +5,7 @@ using System.Collections.Concurrent;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Text;
+using System.Threading;
 
 namespace VellumPdf.TestSupport;
 
@@ -137,6 +138,8 @@ public static class ExternalTool
         stdout = string.Empty;
         stderr = string.Empty;
         timedOut = false;
+
+        LogInvocation(tool, arguments);
 
         var launcher = ResolveLauncher(tool);
         var psi = new ProcessStartInfo(launcher.File)
@@ -770,4 +773,53 @@ public static class ExternalTool
 
     private static void ObserveAndForget(Task task)
         => _ = task.ContinueWith(t => _ = t.Exception, TaskScheduler.Default);
+
+    // ── Invocation logging (#228) ────────────────────────────────────────────────────────────
+
+    // #227 made a missing oracle tool fail loudly instead of passing vacuously, but it did
+    // nothing for a tool that is present and installed yet never actually gets called — a
+    // disabled filter, a gate condition that stopped matching, a refactor that quietly drops the
+    // call. That case is invisible from the test report: pass/skip counts are identical whether
+    // veraPDF validated 273 documents or zero, and only wall-clock time gives it away (#228).
+    // Counting invocations closes that gap, but the count has to be assembled workflow-side, not
+    // in-process: CI runs each test assembly as its own process, and there is no ordering
+    // guarantee that would let an in-process "assert the count on the last test" work. So this
+    // just appends one line per call and leaves the counting and the floor to ci.yml.
+    //
+    // ORACLE_INVOCATION_LOG is unset on every local run, and reading it once into a static field
+    // that is null in that case keeps this a strict no-op off CI: nothing below the null check
+    // ever touches the filesystem.
+    private static readonly string? InvocationLogPath = ResolveInvocationLogPath();
+
+    // RunProcess can run concurrently on multiple threads within one process — xunit
+    // parallelizes test collections by default, the same reason CheckIdentity's own
+    // IdentityCache exists — so appends need serializing even though the log path is already
+    // unique per OS process.
+    private static readonly Lock InvocationLogLock = new();
+
+    private static string? ResolveInvocationLogPath()
+    {
+        var basePath = Environment.GetEnvironmentVariable("ORACLE_INVOCATION_LOG");
+        if (string.IsNullOrEmpty(basePath))
+            return null;
+
+        // Suffixed with the process id, not shared, because CI runs each test assembly as its
+        // own process (Barcodes.Tests, Kernel.Tests, Layout.Tests, ...): File.AppendAllText's
+        // internal lock only serializes writers within one process, so several processes
+        // appending to one shared path would still interleave or truncate each other's writes.
+        return $"{basePath}.{Environment.ProcessId}";
+    }
+
+    private static void LogInvocation(string tool, IReadOnlyList<string> arguments)
+    {
+        if (InvocationLogPath is null)
+            return;
+
+        var firstArgument = arguments.Count > 0 ? arguments[0] : string.Empty;
+        var line = $"{tool}\t{firstArgument}{Environment.NewLine}";
+        lock (InvocationLogLock)
+        {
+            File.AppendAllText(InvocationLogPath, line);
+        }
+    }
 }

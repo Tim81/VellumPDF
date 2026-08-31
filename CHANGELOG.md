@@ -277,6 +277,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the deliberate band-move signal #379's CONTRIBUTING rule calls for, not noise. `github-actions`
   carries no group: every action here is currently pinned to a floating major tag, so only major
   bumps ever surface. (#221)
+- **CI now fails if an oracle tool stops actually being invoked, not just if it goes missing.**
+  #227 made a missing tool fail loudly instead of the suite passing vacuously, but a tool that
+  resolves correctly and is simply never called again — a disabled filter, a stale gate condition,
+  a refactor that drops the call — left the same pass/skip counts an engaged oracle would; only
+  wall-clock time gave it away. `ExternalTool.RunProcess` now appends one `tool<TAB>first-argument`
+  line per call to a file named by `ORACLE_INVOCATION_LOG` plus the current process id, when that
+  variable is set; it is unset on every local run, so this is a no-op outside CI. `ci.yml`'s Test
+  step sets it, and a new step after Test concatenates the per-process files (each test project
+  runs as its own process, so counting cannot happen in-process without an ordering guarantee no
+  runner gives it), sums a count per tool, and fails the build if any falls below a floor pinned
+  beside it — measured at 90% of a full local run with every oracle enabled: verapdf 274, pdftoppm
+  125, python 121, qpdf 28, pdftotext 10, pdfsig 4. (#228)
 
 ### Fixed
 
