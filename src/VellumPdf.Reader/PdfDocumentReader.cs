@@ -17,7 +17,7 @@ namespace VellumPdf.Reader;
 /// Instances are not thread-safe: object resolution and signature collection populate an
 /// internal cache without synchronization. Use one reader per thread.
 /// </remarks>
-public sealed class PdfDocumentReader : IDisposable
+public sealed partial class PdfDocumentReader : IDisposable
 {
     private readonly Dictionary<int, XrefEntry> _xref;
     // Cached alongside this object's AUTHORITATIVE generation, which is a single fact about the
@@ -58,6 +58,20 @@ public sealed class PdfDocumentReader : IDisposable
     // unencrypted document never pays for (or risks a bug in) any of this machinery.
     private readonly StandardSecurityDecryptor? _decryptor;
     private readonly byte[]? _fileKey;
+
+    /// <summary>
+    /// The object number of the trailer's <c>/Encrypt</c> dictionary, or <see langword="null"/> for
+    /// an unencrypted document. <see cref="SaveDecrypted(Stream)"/> excludes this object explicitly
+    /// (#186's blocking security requirement) — removing <c>/Encrypt</c> from the trailer is not the
+    /// same as removing the object itself, and the object still carries <c>/O</c>, <c>/U</c>,
+    /// <c>/OE</c>, <c>/UE</c> and <c>/Perms</c>, all of it offline-cracking material against the
+    /// original document's passwords. Captured here, not recomputed from the trailer at save time,
+    /// because <see cref="PurgeObjectsCachedDuringAuthentication"/> already needed the same value —
+    /// this just keeps the one fact around instead of re-deriving it from a trailer that may no
+    /// longer carry <c>/Encrypt</c> by the time a caller asks (see <see cref="ReconstructionPhaseB"/>,
+    /// which never touches <c>/Encrypt</c>, so this stays correct there too).
+    /// </summary>
+    private readonly int? _encryptObjectNumber;
     private readonly Dictionary<string, CryptFilterMethod> _cryptFilterTable = new(StringComparer.Ordinal);
     private readonly bool _encryptMetadata = true;
 
@@ -185,6 +199,7 @@ public sealed class PdfDocumentReader : IDisposable
             if (trailer.TryGet(new PdfName("Encrypt"), out var encryptRaw) && encryptRaw is not null)
             {
                 var encryptObjectNumber = (encryptRaw as PdfIndirectReference)?.ObjectNumber;
+                _encryptObjectNumber = encryptObjectNumber;
                 var encryptDict = ResolveValue(encryptRaw) as PdfDictionary
                     ?? throw new InvalidDataException("Malformed PDF: /Encrypt does not resolve to a dictionary.");
 
@@ -1306,13 +1321,36 @@ public sealed class PdfDocumentReader : IDisposable
             return sigs;
 
         var visited = new HashSet<int>();
+        var visitedSignatureValues = new HashSet<int>();
         for (var i = 0; i < fieldsArray.Count; i++)
-            CollectFieldSignatures(fieldsArray[i], sigs, visited, 0);
+            CollectFieldSignatures(fieldsArray[i], sigs, visited, visitedSignatureValues, 0, inheritedFt: null);
 
         return sigs;
     }
 
-    private void CollectFieldSignatures(PdfObject fieldObj, List<PdfSignature> sigs, HashSet<int> visited, int depth)
+    /// <summary>
+    /// Walks one field-tree node. <paramref name="inheritedFt"/> is the nearest ancestor's own
+    /// <c>/FT</c>, threaded down because <c>/FT</c> is itself inheritable (ISO 32000-2 §12.7.4.1):
+    /// a non-terminal node can declare <c>/FT /Sig</c> once, with each kid supplying its own
+    /// <c>/V</c> (the actual terminal field) and no <c>/FT</c> of its own. An earlier version of
+    /// this method checked only the current node's OWN <c>/FT</c> and returned the moment it saw
+    /// <c>/FT /Sig</c> — whether or not that node had a <c>/V</c> — so a signature living on such a
+    /// kid was never reached: <see cref="Signatures"/> reported none, and
+    /// <see cref="SaveDecrypted(Stream)"/>'s opt-in guard, which used to trust that count, missed a
+    /// real signature entirely.
+    /// <para>
+    /// <paramref name="visitedSignatureValues"/> is a SEPARATE dedupe set from
+    /// <paramref name="visited"/>, keyed on the <c>/V</c> TARGET's object number rather than the
+    /// field node's own — dropping the early return above (to fix the inheritance gap this
+    /// comment's first paragraph describes) means a node with its own <c>/V</c> that also has
+    /// <c>/Kids</c> now falls through to descend them too, and a kid whose own <c>/V</c> names the
+    /// SAME signature object (a widget-merged field repeating <c>/V</c> on both itself and its
+    /// parent, say) would otherwise be recorded twice.
+    /// </para>
+    /// </summary>
+    private void CollectFieldSignatures(
+        PdfObject fieldObj, List<PdfSignature> sigs, HashSet<int> visited, HashSet<int> visitedSignatureValues,
+        int depth, PdfName? inheritedFt)
     {
         if (depth > MaxFieldTreeDepth)
             return;
@@ -1323,11 +1361,19 @@ public sealed class PdfDocumentReader : IDisposable
         if (resolved is not PdfDictionary field)
             return;
 
-        var ftObj = field.Get(new PdfName("FT"));
-        if (ftObj is PdfName ft && ft.Value == "Sig")
+        // /FT may itself be an indirect reference; a node without one inherits the ancestor's.
+        var ftRaw = field.Get(new PdfName("FT"));
+        var ownFt = (ftRaw is not null ? ResolveValue(ftRaw) : null) as PdfName;
+        var effectiveFt = ownFt ?? inheritedFt;
+
+        if (effectiveFt is not null && effectiveFt.Value == "Sig")
         {
             var vObj = field.Get(new PdfName("V"));
-            if (vObj is not null)
+            // An indirect /V is deduped by its target's object number; a direct (inline) /V has no
+            // stable identity to dedupe by and is always recorded — a distinct dictionary object
+            // literally embedded in this one field can't also be reached from anywhere else.
+            var alreadyRecorded = vObj is PdfIndirectReference vRef && !visitedSignatureValues.Add(vRef.ObjectNumber);
+            if (vObj is not null && !alreadyRecorded)
             {
                 var sigDict = ResolveValue(vObj) as PdfDictionary;
                 if (sigDict is not null)
@@ -1337,7 +1383,6 @@ public sealed class PdfDocumentReader : IDisposable
                         sigs.Add(sig);
                 }
             }
-            return;
         }
 
         var kidsObj = field.Get(PdfName.Kids);
@@ -1347,7 +1392,7 @@ public sealed class PdfDocumentReader : IDisposable
             if (kids is PdfArray kidsArray)
             {
                 for (var i = 0; i < kidsArray.Count; i++)
-                    CollectFieldSignatures(kidsArray[i], sigs, visited, depth + 1);
+                    CollectFieldSignatures(kidsArray[i], sigs, visited, visitedSignatureValues, depth + 1, effectiveFt);
             }
         }
     }

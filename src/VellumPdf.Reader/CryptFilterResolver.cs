@@ -188,7 +188,15 @@ internal static class CryptFilterResolver
     private static bool IsExternalFileStream(PdfDictionary streamDict, Func<PdfObject?, PdfObject?>? resolve)
         => Deref(resolve, streamDict.Get(_f)) is PdfLiteralString or PdfHexString or PdfDictionary;
 
-    private static string? FirstFilterName(PdfDictionary dict, Func<PdfObject?, PdfObject?>? resolve)
+    /// <summary>
+    /// The name of the FIRST filter in <paramref name="dict"/>'s <c>/Filter</c> entry — a bare name,
+    /// or the first element of a filter array — or <see langword="null"/> when <c>/Filter</c> is
+    /// absent or empty. Internal rather than private: <c>PdfDocumentReader.SaveDecrypted</c> (#186)
+    /// reuses this to find and strip a leading <c>/Crypt</c> filter when rewriting a stream's
+    /// dictionary for plaintext output, the same lookup this type already does to resolve which
+    /// crypt filter method applies on read.
+    /// </summary>
+    internal static string? FirstFilterName(PdfDictionary dict, Func<PdfObject?, PdfObject?>? resolve)
     {
         var filterObj = Deref(resolve, dict.Get(PdfName.Filter));
         return filterObj switch
@@ -199,6 +207,16 @@ internal static class CryptFilterResolver
         };
     }
 
+    /// <summary>
+    /// The <c>/DecodeParms</c> (or legacy <c>/DP</c>) dictionary that pairs with the FIRST filter —
+    /// a bare dictionary, or the first element of a parms array. Private: only this type's own
+    /// <see cref="ResolveStreamMethod"/> uses it, to find a <c>/Crypt</c> filter's <c>/Name</c> when
+    /// resolving which crypt filter method applies on read.
+    /// <c>PdfDocumentReader.SaveDecrypted</c> (#186) strips a leading <c>/Crypt</c> filter's
+    /// <c>/DecodeParms</c> entry on its own — locating it by key name directly in the dictionary
+    /// being rewritten, since it needs to mutate that entry rather than merely read it — so it does
+    /// not call this method at all.
+    /// </summary>
     private static PdfDictionary? DecodeParmsForFirstFilter(PdfDictionary dict, Func<PdfObject?, PdfObject?>? resolve)
     {
         var parmsObj = Deref(resolve, dict.Get(_decodeParms) ?? dict.Get(_dp));
