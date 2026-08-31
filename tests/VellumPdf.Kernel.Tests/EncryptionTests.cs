@@ -284,11 +284,13 @@ public sealed class EncryptionTests
         Assert.Contains(title, packet, StringComparison.Ordinal);
 
         // And the exemption has to stay narrow. Widening the predicate to every object leaves the
-        // whole document cleartext, which every other assertion here tolerates. Keywords is the
-        // witness because XmpMetadataWriter has no pdf:Keywords branch (#199), so it reaches /Info
-        // and nowhere else. Search the bytes as written: PdfLiteralString.FromUnicode emits UTF-16BE
-        // with a BOM even for ASCII, so searching the plain text passes vacuously and reads as
-        // coverage it is not.
+        // whole document cleartext, which every other assertion here tolerates. #199 now mirrors
+        // Keywords into pdf:Keywords too, so the plain string does appear in the packet — but only
+        // as XmlEscape's plain UTF-8 text. AsWritten() instead reproduces /Info's own encoding:
+        // PdfLiteralString.FromUnicode's UTF-16BE-with-BOM, escaped by WriteTo. That is a distinct
+        // byte sequence (a NUL before every ASCII code unit) from the XMP mirror, so its absence
+        // here still isolates /Info: if it ever turned up, /Info leaked in cleartext rather than
+        // staying encrypted.
         Assert.DoesNotContain(AsWritten(keywords), raw, StringComparison.Ordinal);
     }
 

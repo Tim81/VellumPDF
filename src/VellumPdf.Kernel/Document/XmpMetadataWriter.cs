@@ -110,6 +110,15 @@ internal static class XmpMetadataWriter
         sb.Append(XmlEscape(producer));
         sb.Append("</pdf:Producer>\n");
 
+        // pdf:Keywords — scalar text (XMP Spec §8.7), not a container: see
+        // PropertyValueTypeRule's own ValueTypeKind.ScalarText mapping for this property.
+        if (!string.IsNullOrEmpty(info.Keywords))
+        {
+            sb.Append("    <pdf:Keywords>");
+            sb.Append(XmlEscape(info.Keywords));
+            sb.Append("</pdf:Keywords>\n");
+        }
+
         // Conformance identification schema — pdfuaid for PDF/UA-1, pdfaid for PDF/A levels.
         if (conformance == PdfConformance.PdfUA1)
         {

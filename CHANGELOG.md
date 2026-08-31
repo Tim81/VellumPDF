@@ -618,6 +618,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   — are recast with a colon, a full stop or a parenthesis instead of the dashes or the added
   commas that broke them. (#198 review, round 7)
 
+- **`Info.Keywords` was never mirrored into the XMP packet.** `XmpMetadataWriter` already mirrored
+  Title, Author, Subject, and Creator into `dc:title`, `dc:creator`, `dc:description`, and
+  `xmp:CreatorTool`; Keywords was the one descriptive field that reached only `/Info`. It now emits
+  `pdf:Keywords` as scalar text, matching the value type ISO 32000-2 Table 349 gives it — not an
+  `rdf:Bag`, which is how `dc:language` is typed instead. This is symmetry, not a conformance fix:
+  ISO 19005-2's Info/XMP equivalence rule covers only the two date fields, so a field absent from
+  XMP was never itself a violation. It's user-visible with `EncryptMetadata = false` (#182): the XMP
+  packet stays cleartext while `/Info` stays encrypted, and Keywords was the one descriptive field
+  a consumer honouring that flag could never read in cleartext. (#199)
+
 ## [2.2.0] - 2026-08-28
 
 ### Breaking changes

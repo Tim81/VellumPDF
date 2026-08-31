@@ -145,6 +145,72 @@ public sealed class StandardsFoundationTests
         Assert.Contains("pdf:Producer", content);
     }
 
+    // ── #199: Info.Keywords mirrored into pdf:Keywords ──────────────────────────
+
+    [Fact]
+    public void Save_withKeywords_xmpPacketContainsPdfKeywords()
+    {
+        using var doc = new PdfDocument();
+        doc.Info.Keywords = "pdf, library, testing";
+        doc.AddPage();
+
+        var content = SaveToString(doc);
+
+        Assert.Contains("pdf, library, testing", content);
+        Assert.Contains("pdf:Keywords", content);
+    }
+
+    [Fact]
+    public void Save_noKeywords_omitsPdfKeywords()
+    {
+        using var doc = new PdfDocument();
+        doc.Info.Title = "Has a title but no keywords";
+        doc.AddPage();
+
+        var content = SaveToString(doc);
+
+        Assert.DoesNotContain("pdf:Keywords", content);
+    }
+
+    [Fact]
+    public void Save_withKeywordsNeedingEscaping_xmpPacketEscapesThem()
+    {
+        using var doc = new PdfDocument();
+        doc.Info.Keywords = "PDF & \"tags\" <2.0>";
+        doc.AddPage();
+
+        var content = SaveToString(doc);
+
+        // Ordinal: the default (culture-sensitive) comparison treats the NUL bytes that
+        // separate every code unit in /Info's UTF-16BE encoding as collation-ignorable,
+        // which makes DoesNotContain("<2.0>", content) a false negative — it "finds" the
+        // unescaped needle spread across those NULs even though no such contiguous byte
+        // run exists.
+        Assert.Contains(
+            "PDF &amp; &quot;tags&quot; &lt;2.0&gt;", content, StringComparison.Ordinal);
+        Assert.DoesNotContain("<2.0>", content, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void PrepareForSigning_withKeywords_xmpPacketContainsPdfKeywords()
+    {
+        // BuildPacket is shared by the normal Save() path and the signature-placeholder
+        // path (PrepareForSigning); this pins the mirror on the second path too.
+        using var doc = new PdfDocument();
+        doc.Info.Keywords = "signed, placeholder";
+        doc.AddPage();
+
+        var bytes = doc.PrepareForSigning(new SignaturePlaceholderOptions
+        {
+            SigningTime = DateTimeOffset.UtcNow,
+            SignerName = "Test Signer",
+        });
+        var content = Encoding.Latin1.GetString(bytes);
+
+        Assert.Contains("signed, placeholder", content);
+        Assert.Contains("pdf:Keywords", content);
+    }
+
     [Fact]
     public void Save_metadataStream_hasNoFilterEntry()
     {
