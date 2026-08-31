@@ -675,9 +675,9 @@ public sealed class EncryptedReconstructionTests
     private static byte[] BuildFlateBombInflatingPastTheDecodeCap()
     {
         // 600 MiB of zero bytes deflates to roughly 600 KB (measured) — small enough to embed
-        // many copies in an in-memory fixture, and past the 512 MiB Filters.MaxDecodedBytes cap a
-        // single decode call already enforces, so this targets the COST of getting there across
-        // several candidates, not whether any one of them eventually fails.
+        // many copies in an in-memory fixture, and past the 512 MiB ReaderLimits.MaxDecodedBytes
+        // default cap a single decode call already enforces, so this targets the COST of getting
+        // there across several candidates, not whether any one of them eventually fails.
         const long InflatedBytes = 600L * 1024 * 1024;
 
         var compressed = new MemoryStream();

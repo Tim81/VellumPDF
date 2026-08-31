@@ -16,9 +16,13 @@ static VellumPdf.Reader.PdfReader.Open(System.IO.Stream! stream, VellumPdf.Reade
 VellumPdf.Reader.PdfReaderOptions
 VellumPdf.Reader.PdfReaderOptions.AllowReconstruction.get -> bool
 VellumPdf.Reader.PdfReaderOptions.AllowReconstruction.init -> void
+VellumPdf.Reader.PdfReaderOptions.MaxDecodedStreamBytes.get -> long
+VellumPdf.Reader.PdfReaderOptions.MaxDecodedStreamBytes.init -> void
 VellumPdf.Reader.PdfReaderOptions.Password.get -> string?
 VellumPdf.Reader.PdfReaderOptions.Password.init -> void
 VellumPdf.Reader.PdfReaderOptions.PdfReaderOptions() -> void
+VellumPdf.Reader.PdfReaderOptions.ReconstructionBudgetMultiplier.get -> int
+VellumPdf.Reader.PdfReaderOptions.ReconstructionBudgetMultiplier.init -> void
 VellumPdf.Reader.PdfSignature
 VellumPdf.Reader.PdfSignature.ByteRange.get -> System.ReadOnlyMemory<long>
 VellumPdf.Reader.PdfSignature.Contents.get -> System.ReadOnlyMemory<byte>

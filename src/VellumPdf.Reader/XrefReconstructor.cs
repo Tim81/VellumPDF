@@ -83,9 +83,10 @@ internal static class XrefReconstructor
     // A2's cost ceiling. Ample headroom for a genuinely damaged file's own structure while still
     // bounding a file deliberately padded with decoy headers or nested constructs: the aggregate
     // is what refuses, not any single per-construct cap (rows 1, 3, 5, 14 — none of them survive as
-    // a fixed constant in this design; the budget is the only backstop).
+    // a fixed constant in this design; the budget is the only backstop). The 1 MiB floor is fixed —
+    // only the multiplier is a caller's choice (see ReaderLimits.ReconstructionBudgetMultiplier);
+    // without it a tiny file's budget could be tightened to nothing at all.
     private const long MinReconstructionByteBudget = 1L * 1024 * 1024; // 1 MiB
-    private const int ReconstructionByteBudgetMultiplier = 8;
 
     // Row 4: a /Length that verifies exactly is preferred, but a stale value off by a handful of
     // bytes (a rounding difference, or an incremental edit that forgot to update it) still counts
@@ -131,10 +132,10 @@ internal static class XrefReconstructor
     /// refusing; opening the result still requires authenticating against it
     /// (<see cref="EncryptionSetup.Authenticate"/>).
     /// </exception>
-    internal static XrefParseResult Reconstruct(ReadOnlyMemory<byte> data)
+    internal static XrefParseResult Reconstruct(ReadOnlyMemory<byte> data, ReaderLimits limits)
     {
         var length = data.Length;
-        var budget = Math.Max(MinReconstructionByteBudget, (long)length * ReconstructionByteBudgetMultiplier);
+        var budget = Math.Max(MinReconstructionByteBudget, (long)length * limits.ReconstructionBudgetMultiplier);
         long consumed = 0;
 
         var xref = new Dictionary<int, XrefEntry>();
@@ -315,7 +316,7 @@ internal static class XrefReconstructor
         if (trailer.Get(_encryptKey) is not null)
         {
             consumed = CollectCrossReferenceStreamOffsets(
-                data, primaryByObjNum, secondaryExtents, budget, consumed, crossReferenceStreamOffsets);
+                data, primaryByObjNum, secondaryExtents, budget, consumed, crossReferenceStreamOffsets, limits);
         }
 
         // A reconstructed document has no trustworthy revision history either — the /Prev chain
@@ -1178,24 +1179,25 @@ internal static class XrefReconstructor
     /// <see cref="InvalidDataException"/> outright on exhaustion, rather than degrading to a
     /// partial answer, mirroring Phase B's own B1 discipline
     /// (<c>PdfDocumentReader.ReconstructionPhaseB</c>'s comment on
-    /// <c>MaxAggregateReconstructionObjStmDecodeBytes</c>): charge BEFORE the expensive step, and
+    /// <see cref="ReaderLimits.MaxAggregateReconstructionDecodeBytes"/>): charge BEFORE the expensive step, and
     /// let the charge stand even when that step then fails, so a file built from many bogus
     /// candidates cannot dodge the aggregate cap by having each one fail cheaply.
     /// </para>
     /// <para>
     /// Unlike B1, though, the charge here has to be sized on the OUTPUT a decode could produce,
     /// not the raw input it reads — Phase B's raw-body pre-charge is charging against
-    /// <c>MaxAggregateReconstructionObjStmDecodeBytes</c>, a bound on compressed-on-disk bytes, but
+    /// <see cref="ReaderLimits.MaxAggregateReconstructionDecodeBytes"/>, a bound on compressed-on-disk bytes, but
     /// this method's cost is <see cref="PdfFilters.Decode"/>'s decompression work, and a Flate or
     /// LZW body's compression ratio is attacker-controlled: a ~500 KB raw body can inflate to the
-    /// full <see cref="PdfFilters.MaxDecodedBytes"/> (512 MiB) before <c>Decode</c> notices and
-    /// throws. Charging only on a SUCCESSFUL decode's length — this method's own first cut — let a
-    /// run of such bombs each burn up to 512 MiB of decompression work uncharged before failing,
-    /// since every one of them ends in the SAME <see cref="InvalidDataException"/> a genuinely
-    /// malformed candidate does; the aggregate budget's fail-closed throw was never starved, but it
-    /// was also never actually reached in time to matter. So every attempt is pre-charged for the
-    /// worst case <see cref="PdfFilters.Decode"/> could produce — <c>min(MaxDecodedBytes,
-    /// remaining budget)</c> — before it runs, and only refunded down to the real decoded length
+    /// full <see cref="ReaderLimits.MaxDecodedBytes"/> (512 MiB by default) before <c>Decode</c>
+    /// notices and throws. Charging only on a SUCCESSFUL decode's length — this method's own first
+    /// cut — let a run of such bombs each burn up to that cap's worth of decompression work
+    /// uncharged before failing, since every one of them ends in the SAME
+    /// <see cref="InvalidDataException"/> a genuinely malformed candidate does; the aggregate
+    /// budget's fail-closed throw was never starved, but it was also never actually reached in time
+    /// to matter. So every attempt is pre-charged for the worst case <see cref="PdfFilters.Decode"/>
+    /// could produce — <c>min(limits.MaxDecodedBytes, remaining budget)</c> — before it runs, and
+    /// only refunded down to the real decoded length
     /// once decoding actually succeeds; a throw (bomb or otherwise malformed) leaves the worst-case
     /// charge standing. A legitimate, small, unencrypted §7.5.8.2 cross-reference stream still
     /// records its offset — decoding succeeds and the charge shrinks back to its real size before
@@ -1205,7 +1207,8 @@ internal static class XrefReconstructor
     /// </summary>
     private static long CollectCrossReferenceStreamOffsets(
         ReadOnlyMemory<byte> data, Dictionary<int, ObjectExtent> primaryByObjNum,
-        List<ObjectExtent> secondaryExtents, long budget, long consumed, HashSet<long> offsets)
+        List<ObjectExtent> secondaryExtents, long budget, long consumed, HashSet<long> offsets,
+        ReaderLimits limits)
     {
         // Checked AFTER an amount has already landed in `consumed` — never combined with the add
         // itself, unlike the main walk's own Charge — because the pre-charge below has to be
@@ -1291,13 +1294,13 @@ internal static class XrefReconstructor
             // a failed candidate — bomb or otherwise malformed — cannot dodge the aggregate cap by
             // failing cheaply, but not itself checked against the budget yet (see ThrowIfExhausted
             // above): a legitimate small stream needs the chance to refund this back down first.
-            var worstCase = Math.Min(PdfFilters.MaxDecodedBytes, Math.Max(0, budget - consumed));
+            var worstCase = Math.Min(limits.MaxDecodedBytes, Math.Max(0, budget - consumed));
             consumed += worstCase;
 
             byte[]? decoded;
             try
             {
-                decoded = PdfFilters.Decode(streamObj);
+                decoded = PdfFilters.Decode(streamObj, limits);
             }
             catch (InvalidDataException)
             {
