@@ -212,9 +212,9 @@ jobs:
         # REQUIRE_VERAPDF makes the conformance oracle fail (not silently skip) if the verapdf
         # shim is unavailable, so a broken image can't let the cross-validation gate pass vacuously.
         # REQUIRE_BARCODE_ORACLE does the same for the zxing-cpp decode oracle. ORACLE_INVOCATION_LOG
-        # makes ExternalTool.RunProcess append one line per oracle call to a file suffixed with its
-        # own process id, so the step below can assert the oracles didn't just resolve — they ran
-        # (#228).
+        # makes ExternalTool.RunProcess append one line per successful, non-probe oracle launch to a
+        # file suffixed with its own process id, so the step below can assert the oracles didn't
+        # just resolve — they actually ran (#228).
         env:
           REQUIRE_VERAPDF: '1'
           REQUIRE_BARCODE_ORACLE: '1'
@@ -227,7 +227,13 @@ jobs:
         # --settings alone would activate the coverage collector, but --collect stays too: it is
         # the documented, discoverable switch for "this run collects coverage", while --settings'
         # job here is narrower — supplying the exclude filters in coverlet.runsettings (#229).
-        run: dotnet test VellumPdf.slnx -c Release --no-build --collect:"XPlat Code Coverage" --settings coverlet.runsettings --results-directory ${{ runner.temp }}/coverage
+        run: |
+          # A stale per-process log from an earlier run on the same runner would otherwise be
+          # counted alongside this run's own files, letting a genuinely disengaged oracle hide
+          # behind leftovers — silent on a self-hosted or reused runner, though GitHub-hosted
+          # runners are ephemeral and would not carry one over on their own (#228 review).
+          rm -f "${{ runner.temp }}/oracle-invocations".*
+          dotnet test VellumPdf.slnx -c Release --no-build --collect:"XPlat Code Coverage" --settings coverlet.runsettings --results-directory ${{ runner.temp }}/coverage
 
       - name: Assert oracle invocation floors
         # #227 made a missing oracle tool fail loudly instead of passing vacuously; it says nothing
@@ -237,16 +243,25 @@ jobs:
         # to happen here, workflow-side, rather than as an in-process assertion: each test project
         # above runs as its own process, and nothing guarantees which one finishes last. Each
         # process appended its own '<tool><TAB><first argument>' lines to a file suffixed with its
-        # process id (see ORACLE_INVOCATION_LOG on the Test step); this step concatenates those
-        # files and sums a count per tool.
+        # process id (see ORACLE_INVOCATION_LOG on the Test step) for every successful, non-probe
+        # launch — an identity probe (ExternalTool.CheckIdentity) and a launch that never started
+        # are both excluded, so neither can pad a tool's count without the tool having actually
+        # validated anything; this step concatenates those files and sums a count per tool.
+        # python3 is folded into python's count: ZxingDecodeOracleTests falls back from "python" to
+        # "python3" and logs whichever name actually launched, so the two are one oracle under two
+        # possible names, not two oracles.
         #
         # Floors are 90% of a full local run with every oracle enabled (REQUIRE_ORACLES=1, QPDF_HOME
         # / POPPLER_HOME / VERAPDF_HOME all pointed at real installs), rounded down, measured
-        # against this same commit: verapdf 305, pdftoppm 139, python 135, qpdf 32, pdftotext 12,
-        # pdfsig 5. 90% tolerates ordinary run-to-run variance (a data-driven theory whose case count
-        # shifts, a retried flake) without hiding a regression the way pinning the exact measured
-        # count would risk doing on its own false positives. Re-measure and update these floors, and
-        # the numbers in this comment, whenever a fixture set changes size on purpose.
+        # against this same commit: verapdf 298, pdftoppm 135, python 135, qpdf 29, pdftotext 8,
+        # pdfsig 2. 90% tolerates ordinary run-to-run variance (a data-driven theory whose case
+        # count shifts, a retried flake) without hiding a regression the way pinning the exact
+        # measured count would risk doing on its own false positives. These floors are
+        # shell-independent: CI always sets POPPLER_HOME, so it always gets poppler's
+        # pdftotext/pdftoppm — the PowerShell/Git Bash divergence CONTRIBUTING.md documents (a bare
+        # "pdftotext" resolving to poppler vs. Xpdf depending on which shell launched the test host)
+        # only shows up when POPPLER_HOME is unset, which CI never does. Re-measure and update these
+        # floors, and the numbers in this comment, whenever a fixture set changes size on purpose.
         shell: bash
         run: |
           set -euo pipefail
@@ -261,18 +276,19 @@ jobs:
           echo "Invocation log files: ${files[*]}"
 
           declare -A floors=(
-            [verapdf]=274
-            [pdftoppm]=125
+            [verapdf]=268
+            [pdftoppm]=121
             [python]=121
-            [qpdf]=28
-            [pdftotext]=10
-            [pdfsig]=4
+            [qpdf]=26
+            [pdftotext]=7
+            [pdfsig]=1
           )
 
           failed=0
           printf '%-10s %8s %8s\n' tool count floor
           for tool in verapdf pdftoppm python qpdf pdftotext pdfsig; do
-            count=$(awk -F'\t' -v t="$tool" '$1 == t { c++ } END { print c + 0 }' "${files[@]}")
+            # python3 counts toward python's total: see the step comment above.
+            count=$(awk -F'\t' -v t="$tool" '$1 == t || (t == "python" && $1 == "python3") { c++ } END { print c + 0 }' "${files[@]}")
             floor=${floors[$tool]}
             printf '%-10s %8d %8d\n' "$tool" "$count" "$floor"
             if [ "$count" -lt "$floor" ]; then
