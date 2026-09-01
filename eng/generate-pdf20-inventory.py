@@ -106,7 +106,7 @@ STATUS = {
     "ISO 3166-1": (IMPL, "Via BCP 47 language tags.", ""),
     "JSA JIS X 4051": (OUT, "Japanese formatting rules. Not freely available; CJK line breaking would implement from UAX #14 and CSS Writing Modes instead.", "#321"),
     # Metadata and markup
-    "ISO 16684-1": (IMPL, "XMP packet written for every document.", ""),
+    "ISO 16684-1": (IMPL, "XMP packet written for every document, including Info.Keywords mirrored into pdf:Keywords.", ""),
     "W3C Recommendation XML 1.0": (IMPL, "XMP serialisation.", ""),
     "W3C Recommendation MathML 3.0": (NOT, "MathML in tagged PDF.", "#293"),
     "W3C Recommendation PLS 1.0": (NOT, "Pronunciation hints.", "#359"),

@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-09-01
+
 ### Breaking changes
 
 - **A same-revision `/XRefStm` no longer overrides a classic cross-reference table's free entry
@@ -249,7 +251,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `SaveDecrypted` accepts a reconstructed document — closing the half of #99 that was blocked on
   #186 not existing yet.
 
+- **`docs/reader-guide.md` and `docs/layout-guide.md`.** v2.3 added `SaveDecrypted`,
+  `AllowReconstruction`, and the tighten-only limit options to `VellumPdf.Reader`, and none of it
+  had a narrative guide — only XML docs and CHANGELOG entries. Each guide ends in a capability
+  table (Supported / Planned / Not yet, each row citing its milestone or ISO reference) built
+  from the actual public API and test suite rather than from memory, so a row is only marked
+  Supported where a test proves it; two Layout rows are marked for reviewer verification instead
+  of guessed. Registered in `docs/toc.yml` and linked from the root README and each package
+  README's roadmap section.
+
 ### Changed
+
+- **`docs/architecture.md` and the family of package READMEs now describe the reader as it exists
+  after v2.3, not before it.** The architecture doc still framed serialization as Kernel-only,
+  which stopped being true once `PdfDocumentReader.SaveDecrypted` shipped its own full-rewrite
+  serializer inside the Reader package; it also still roadmapped the general reader's structural
+  parser and content extraction at v2.1/v2.2, which have long since shipped and moved (content
+  extraction is now v2.4, #98). The root README and all eight package READMEs get the same
+  correction to their shared roadmap section, marking v2.3.0 as the latest published release.
 
 - **CI's external oracles are now pinned instead of floating on whatever the runner image ships.**
   The build job itself moves off the floating `ubuntu-latest` label onto `ubuntu-24.04`, since
@@ -1992,7 +2011,8 @@ few small additions. No public API was removed.
   headers, and no unbounded allocations driven by attacker-controlled length
   fields.
 
-[Unreleased]: https://github.com/Tim81/VellumPDF/compare/v2.2.0...HEAD
+[Unreleased]: https://github.com/Tim81/VellumPDF/compare/v2.3.0...HEAD
+[2.3.0]: https://github.com/Tim81/VellumPDF/releases/tag/v2.3.0
 [2.2.0]: https://github.com/Tim81/VellumPDF/releases/tag/v2.2.0
 [2.1.0]: https://github.com/Tim81/VellumPDF/releases/tag/v2.1.0
 [2.0.0]: https://github.com/Tim81/VellumPDF/releases/tag/v2.0.0

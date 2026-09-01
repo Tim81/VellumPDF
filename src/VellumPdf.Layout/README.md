@@ -34,7 +34,45 @@ Need precise, low-level drawing instead? Use the [`VellumPdf.Kernel`](https://ww
 
 ## Documentation
 
+Layout guide, with a capability table and worked examples: <https://github.com/Tim81/VellumPDF/blob/main/docs/layout-guide.md>
+
 Quick start and examples: <https://github.com/Tim81/VellumPDF#quick-start>
+
+## Capabilities
+
+Built from `src/VellumPdf.Layout/PublicAPI.Shipped.txt` and the test suite, not from the roadmap
+prose — a row is only marked Supported where a test or a public member proves it. See the
+[Layout guide](https://github.com/Tim81/VellumPDF/blob/main/docs/layout-guide.md) for the narrative
+walkthrough this table summarizes.
+
+<!-- capability-table:layout:start -->
+| Capability | Status | Target milestone / ISO reference |
+| --- | --- | --- |
+| Paragraph flow: wrapping, alignment (left/center/right/justify), mixed-style inline runs | ✅ Supported | — |
+| Tables: rows, columns, row spanning, borders | ✅ Supported | — |
+| Lists: ordered (decimal/alpha/roman), unordered, nested | ✅ Supported | — |
+| Headers and footers with page-number templates | ✅ Supported | — |
+| Images: JPEG, PNG (incl. interlaced and 16-bit), CCITT G4, TIFF-LZW | ✅ Supported | — |
+| Font embedding and subsetting: TrueType (`glyf`) and OpenType/CFF | ✅ Supported | — |
+| Links (URI) and document outline/bookmarks | ✅ Supported | — |
+| Pie charts, including PDF/UA figure vs. decorative-artifact tagging | ✅ Supported | — |
+| PDF/A conformance: 2a, 2b, 2u | ✅ Supported | ISO 19005-2 (PDF/A-2 profiles) |
+| PDF/UA-1 accessibility tagging | ✅ Supported | ISO 14289-1 |
+| Document metadata, XMP packet, document ID | ✅ Supported | — |
+| CMYK / ICC output intents via `Document.UseCmykOutputIntent`/`SetPdfAOutputIntent` | ✅ Supported | delegates to Kernel; veraPDF-proven |
+| Encryption via `Document.Encrypt` | ✅ Supported | ISO 32000-2 §7.6 (delegates to Kernel) |
+| Barcode symbols as a Layout element | ❌ Not yet (only an `IRenderer` extension seam exists) | no tracked milestone |
+| Form elements with their own labels; build-time accessibility diagnostics | ⏳ Planned | Layout C |
+| PDF/A-1 and PDF/A-4 | ⏳ Planned | v2.5 (#218, #222) |
+| PDF/UA-2 element set (generated contents/indexes, captions, table header semantics) | ⏳ Planned | Layout B |
+| Footnotes and endnotes | ⏳ Planned | Layout B |
+| Floats and hyphenation | ⏳ Planned | Layout D |
+| Widow and orphan control | ⏳ Planned | Layout D |
+| Multi-column flow | ⏳ Planned | Layout F |
+| Additional chart types beyond pie | ⏳ Planned | Layout F |
+| SVG import | ⏳ Planned | Layout F (epic) |
+| Unicode bidi, right-to-left, and complex-script shaping | ⏳ Planned | Layout G (epic) |
+<!-- capability-table:layout:end -->
 
 ## The VellumPdf family
 
@@ -44,7 +82,7 @@ Quick start and examples: <https://github.com/Tim81/VellumPDF#quick-start>
 | [VellumPdf.Fonts.Standard14](https://www.nuget.org/packages/VellumPdf.Fonts.Standard14) | Stable | Embeddable standard-14 font substitutes for PDF/A text. |
 | **VellumPdf.Layout** (this package) | Stable | High-level document builder: paragraphs, tables, images, pagination. |
 | [VellumPdf.Signing](https://www.nuget.org/packages/VellumPdf.Signing) | Stable | PAdES / PKCS#7 digital signatures with timestamps and LTV. |
-| [VellumPdf.Reader](https://www.nuget.org/packages/VellumPdf.Reader) | Preview | Opens existing PDFs, encrypted ones given their password; exposes catalog and signatures. |
+| [VellumPdf.Reader](https://www.nuget.org/packages/VellumPdf.Reader) | Preview | Opens existing PDFs, encrypted ones given their password; exposes catalog and signatures; writes a decrypted copy with configurable resource limits. |
 | [VellumPdf.Conformance](https://www.nuget.org/packages/VellumPdf.Conformance) | Stable | In-process PDF/A and PDF/UA preflight validation. |
 | [VellumPdf.Cli](https://www.nuget.org/packages/VellumPdf.Cli) | Stable | `vellum-preflight` command-line PDF/A and PDF/UA validator. |
 | [VellumPdf.Barcodes](https://www.nuget.org/packages/VellumPdf.Barcodes) | Stable | QR, Data Matrix, Aztec, PDF417, Code 128/GS1-128, Code 39, EAN/UPC, and ITF-14 as vectors. |
@@ -52,8 +90,8 @@ Quick start and examples: <https://github.com/Tim81/VellumPDF#quick-start>
 ## Roadmap
 
 Planned direction, tracked as [GitHub milestones](https://github.com/Tim81/VellumPDF/milestones).
-These are scopes, not commitments — the milestones carry no due dates, and nothing past 2.2.0
-has shipped yet.
+These are scopes, not commitments — the milestones carry no due dates. 2.3.0 is the latest
+published release.
 
 Scope past 2.5 runs as **two parallel tracks**, because auditing the layout engine turned up more
 work than the PDF 2.0 conformance gap did. Both ship from the same version numbers.
@@ -62,7 +100,7 @@ work than the PDF 2.0 conformance gap did. Both ship from the same version numbe
 
 | Milestone | Scope |
 | --- | --- |
-| **2.3 — Reader robustness** | Cross-reference reconstruction for damaged files (#184), a decrypted-copy writer (#186), the `/XRefStm` precedence decision (#206), reader fuzzing (#99), and the CI and oracle debt that makes all of it verifiable. |
+| **2.3 — Reader robustness** *(released)* | Cross-reference reconstruction for damaged files (#184), a decrypted-copy writer (#186), the `/XRefStm` precedence decision (#206), reader fuzzing (#99), and the CI and oracle debt that makes all of it verifiable. |
 | **2.4 — PDF content extraction** | Text and image extraction on top of the reader (#98), and graduating `VellumPdf.Reader` from Preview (#187). |
 | **2.5 — PDF/A-4 and PDF/A-1 profiles** | PDF/A-4 (#222) so conformance output stops downgrading to `%PDF-1.7`, PDF/A-1 (#218), and dropping the keys ISO 32000-2 deprecates (#325). |
 | **2.6 — ISO/TS extensions to PDF 2.0** | The four Technical Specifications that amend PDF 2.0: AES-GCM (#236), PDF MAC integrity (#237), SHA-3 (#238) and EdDSA (#239). The reader currently rejects every AES-GCM file, so this closes an interoperability bug as well as adding features. |
@@ -100,7 +138,9 @@ work than the PDF 2.0 conformance gap did. Both ship from the same version numbe
 
 What this library implements of ISO 32000-2 today is inventoried, reference by reference, in
 [PDF 2.0 conformance](../../docs/pdf20-conformance.md). It emits a `%PDF-2.0` header, which is not the
-same as conformance, and the table says which is which.
+same as conformance, and the table says which is which. The [Reader guide](../../docs/reader-guide.md)
+and [Layout guide](../../docs/layout-guide.md) each carry a capability table doing the same job for
+their own package, checked against the code and test suite rather than against this roadmap.
 
 `VellumPdf.Reader` is marked Preview in the table above; expect its public surface to settle
 as these milestones land. `VellumPdf.Conformance` graduated to Stable in 2.0.
