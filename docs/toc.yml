@@ -2,6 +2,10 @@
   href: architecture.md
 - name: Kernel Guide
   href: kernel-guide.md
+- name: Reader Guide
+  href: reader-guide.md
+- name: Layout Guide
+  href: layout-guide.md
 - name: Barcodes Guide
   href: barcodes-guide.md
 - name: Barcodes Roadmap

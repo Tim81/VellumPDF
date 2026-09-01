@@ -84,7 +84,7 @@ ISO 32000-2 cites **79** documents directly. What this library does with each:
 | ISO 15076-1 | Image technology colour management – Architecture, profile format and data str | Partial | ICCBased colour spaces and output intents; synthesized sRGB and CMYK profiles. #42 |
 | ISO 15444-1/IEC 15444-1 | Information technology - JPEG 2000 image coding system: Core coding system | Implemented | JPXDecode. #91 |
 | ISO 15948/IEC 15948 | Information technology - Computer graphics and image processing - Portable Net | Implemented | PNG predictors for Flate and LZW. |
-| ISO 16684-1 | Extensible metadata platform (XMP) specification - Part 1: Data model, seriali | Implemented | XMP packet written for every document. |
+| ISO 16684-1 | Extensible metadata platform (XMP) specification - Part 1: Data model, seriali | Implemented | XMP packet written for every document, including Info.Keywords mirrored into pdf:Keywords. |
 | ISO 17972-4 | Graphic technology - Colour data exchange format (CxF/X) - Part 4: Spot colour | Not implemented | CxF/X-4 spot colour characterisation — /SpectralData. #253 |
 | ISO 18619 | Image technology colour management – Black point compensation | Not implemented | Black point compensation — /UseBlackPtComp. #256 |
 | ISO 19162 | Geographic information – Well known text representation of coordinate referenc | Out of scope | Well-known text for coordinate reference systems — geospatial. #351 |

@@ -12,9 +12,12 @@ to a mature commercial PDF SDK, implemented **clean-room** from the open
 Reading existing PDFs is being added incrementally. v1.6 introduced `VellumPdf.Reader`
 for the signing LTV path (#49); it now also backs the conformance validator and
 handles cross-reference streams, object streams, hybrid-reference files, and encrypted
-documents (the Standard security handler, given the password). The full general
-reader is roadmapped as v2.1 (structural parser, Epic #100) and v2.2 (text and
-image extraction). Editing existing PDFs lands at v3.0 as a
+documents (the Standard security handler, given the password), including
+cross-reference reconstruction for damaged files and writing a decrypted copy of an
+encrypted document (v2.3, merged to main and pending release). Text and image
+extraction is the next reader milestone, v2.4 (#98); see the roadmap table in
+[README.md](../README.md#roadmap) for current status rather than a version list here,
+which only drifts (as this one did). Editing existing PDFs lands at v3.0 as a
 unified read-modify-write model that supersedes the write-once document API
 (Epic #101) — a breaking change, hence the major bump.
 
@@ -53,7 +56,7 @@ but the .NET base class library.
 
 ```
 (innermost — BCL only)
-  VellumPdf.Kernel        object model · writer (+ incremental-update seam) · filters ·
+  VellumPdf.Kernel        object model · write-once writer (+ incremental-update seam) · filters ·
                           document structure · low-level Canvas · fonts (parse/subset/embed) ·
                           images · metadata (Info + XMP) · marked-content / annotation /
                           AcroForm / conformance PRIMITIVES (the design-in seams)
@@ -63,7 +66,10 @@ but the .NET base class library.
         ▲
 (optional feature packages — depend inward only)
   VellumPdf.Reader        lexer · object parser · xref tables, xref/object streams,
-                          hybrid-reference files · catalog and signature navigation
+                          hybrid-reference files (+ reconstruction for damaged files) ·
+                          catalog and signature navigation · its own full-rewrite serializer
+                          (SaveDecrypted: single revision, classic xref, /Encrypt stripped —
+                          distinct from Kernel's write-once/incremental writer above)
   VellumPdf.Signing       incremental update + PKCS#7 / PAdES (+ LTV) · reads via Reader
   VellumPdf.Conformance   PDF/A-2 (b/u/a) · PDF/UA-1 · preflight validator · reads via Reader
   VellumPdf.Barcodes      QR (+ Micro QR, GS1, Structured Append) · PDF417 (+ Compact, Macro) ·
@@ -98,7 +104,10 @@ to retrofit:
 1. **Append-only / incremental writer** (for PAdES signing). The serializer
    models a file as one or more revisions, each with its own cross-reference
    section linked by `/Prev`, plus a signature `/Contents` placeholder and exact
-   `/ByteRange` backfill.
+   `/ByteRange` backfill. `VellumPdf.Reader` added a second, unrelated serializer in v2.3:
+   `PdfDocumentReader.SaveDecrypted` rewrites a document as a single revision with a classic
+   cross-reference table and no `/Encrypt`, for producing a decrypted copy. It shares no code
+   with this seam and never emits an incremental update.
 2. **Marked-content + structure-tree channel** (for PDF/UA and PDF/A-2a). The
    low-level canvas exposes marked-content operators; renderers register
    structure elements (P, H1–H6, Table/TR/TD, Figure+Alt, L/LI, Link, Artifact)
