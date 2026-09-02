@@ -80,10 +80,14 @@ public sealed class PdfReaderDiagnostic
 
     /// <summary>The zero-based page index the observation concerns, or <see langword="null"/> when
     /// it was not made during a per-page walk. Populated by the page-tree walker's own
-    /// <see cref="PdfReaderDiagnosticCode.PageAttributeInvalid"/> reports; every other code either
+    /// <see cref="PdfReaderDiagnosticCode.PageAttributeInvalid"/> reports against a LEAF's own
+    /// dictionary. A malformed attribute found on an ancestor page-tree node instead reports the
+    /// same code once against that node, with <see langword="null"/> here, since no leaf has been
+    /// reached yet at that point in the walk. A caller filtering diagnostics by page index alone
+    /// misses those and must also look at reports with a null page index. Every other code either
     /// concerns no specific page (a document-wide condition) or is reported before a page index is
     /// known (a page-tree shape problem found while locating the pages in the first place), so it
-    /// carries <see langword="null"/> here.</summary>
+    /// carries <see langword="null"/> here too.</summary>
     public int? PageIndex { get; }
 
     internal PdfReaderDiagnostic(
@@ -253,13 +257,19 @@ public enum PdfReaderDiagnosticCode
     /// <summary>
     /// The page tree nested deeper than <c>PageTreeWalker.MaxDepth</c> (256) levels. The walk stops
     /// descending into the subtree past that depth (its pages are not found) while siblings
-    /// already queued elsewhere in the walk continue normally.
+    /// already queued elsewhere in the walk continue normally. Only the FIRST occurrence in a walk
+    /// is retained past <see cref="PdfReaderOptions.MaxDiagnostics"/> (see that option's own doc);
+    /// a later occurrence against a different node is an ordinary report and can still be dropped
+    /// once the cap is reached.
     /// </summary>
     PageTreeDepthExceeded = 202,
 
     /// <summary>
     /// The page tree contains more than <c>PageTreeWalker.MaxLeaves</c> (100,000) page leaves. The
-    /// walk stops entirely at that point; pages found up to the cap are still returned.
+    /// walk stops entirely at that point; pages found up to the cap are still returned. Reported at
+    /// most once per walk (the walk stops immediately after), so it is retained past
+    /// <see cref="PdfReaderOptions.MaxDiagnostics"/> rather than risk going silent on exactly the
+    /// document where a caller most needs to know the page list is incomplete.
     /// </summary>
     PageTreeLeafLimitExceeded = 203,
 
@@ -272,11 +282,12 @@ public enum PdfReaderDiagnosticCode
 
     /// <summary>
     /// A page's <c>/MediaBox</c>, <c>/CropBox</c>, or <c>/Rotate</c>, its own or the value it would
-    /// otherwise inherit (ISO 32000-2 §7.7.3.4), either did not resolve to the shape §7.7.3.3
-    /// requires (a rectangle that is not a 4-element numeric array, or a <c>/Rotate</c> that is not
-    /// a multiple of 90), or, for <c>/MediaBox</c> specifically, was absent everywhere in the chain
-    /// even though Table 31 makes it Required. A resolved <c>/CropBox</c> that shares no overlap at
-    /// all with <c>/MediaBox</c> (ISO 32000-2 §14.11.2.1) reports this same code too.
+    /// otherwise inherit (ISO 32000-2 §7.7.3.4), either did not resolve to the shape a rectangle
+    /// requires under §7.9.5 (a 4-element numeric array), failed the multiple-of-90 rule §7.7.3.3
+    /// Table 31 sets for <c>/Rotate</c>, or, for <c>/MediaBox</c> specifically, was absent
+    /// everywhere in the chain even though Table 31 makes it Required. A resolved <c>/CropBox</c>
+    /// that shares no overlap at all with <c>/MediaBox</c> (ISO 32000-2 §14.11.2.1) reports this
+    /// same code too.
     /// <see cref="PdfReaderDiagnostic.Message"/> names which key and which condition. The reader
     /// substitutes a default (US Letter for a missing or malformed <c>/MediaBox</c>, the page's own
     /// <see cref="PdfReadPage.MediaBox"/> for a malformed or non-overlapping <c>/CropBox</c>, 0 for
@@ -287,9 +298,13 @@ public enum PdfReaderDiagnosticCode
     /// <summary>
     /// A dictionary reached through <c>/Kids</c> did not classify as either a page-tree node or a
     /// page object (ISO 32000-2 §7.7.3.2 Table 30, §7.7.3.3 Table 31): a <c>/Type /Pages</c> node
-    /// with no usable <c>/Kids</c> of its own, a <c>/Type /Page</c> object that also carries a
-    /// <c>/Kids</c> array, or a <c>/Type</c> naming neither. The first two are still used as a node
-    /// or a leaf respectively (with the offending part ignored); the third is skipped outright.
+    /// with no usable <c>/Kids</c> of its own, a node (typed <c>/Pages</c> or untyped) that also
+    /// carries a <c>/Contents</c> entry, which Table 30 does not list for a page-tree node, a
+    /// <c>/Type /Page</c> object that also carries a <c>/Kids</c> array, or a <c>/Type</c> naming
+    /// neither a node nor a page object. The node cases are still walked as a node (with the
+    /// offending part ignored, and its <c>/Contents</c>, if any, never treated as a page); a
+    /// <c>/Type /Page</c> object with a stray <c>/Kids</c> is still used as a leaf; a <c>/Type</c>
+    /// naming neither is skipped outright.
     /// </summary>
     PageTreeNodeMalformed = 206,
 
@@ -299,7 +314,9 @@ public enum PdfReaderDiagnosticCode
     /// <see cref="PageTreeLeafLimitExceeded"/> each bound one dimension of the tree; this bounds the
     /// walk's total work directly, since a branching factor of two or more makes the work a depth
     /// cap alone permits grow exponentially rather than linearly. The walk stops entirely at that
-    /// point; pages found up to the cap are still returned.
+    /// point; pages found up to the cap are still returned. Reported at most once per walk for the
+    /// same reason as <see cref="PageTreeLeafLimitExceeded"/>, and retained past
+    /// <see cref="PdfReaderOptions.MaxDiagnostics"/> for the same reason too.
     /// </summary>
     PageTreeNodeLimitExceeded = 207,
 
@@ -312,7 +329,10 @@ public enum PdfReaderDiagnosticCode
     /// The count is reports dropped, not distinct conditions dropped: past the cap the reader
     /// stops tracking which (code, object, page) triples it has already seen, so a triple first
     /// encountered there is counted again on every recurrence, while one already seen below the
-    /// cap keeps being deduped and never adds to the count at all.
+    /// cap keeps being deduped and never adds to the count at all. A handful of page-tree codes
+    /// (<see cref="PageTreeLeafLimitExceeded"/>, <see cref="PageTreeNodeLimitExceeded"/>, and the
+    /// first <see cref="PageTreeDepthExceeded"/> of a walk) are exempt from the cap entirely and
+    /// never reach this sentinel path at all; see <see cref="PdfReaderOptions.MaxDiagnostics"/>.
     /// </summary>
     DiagnosticsSuppressed = 900,
 }

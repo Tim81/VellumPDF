@@ -29,18 +29,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   trusting `/Count` would misreport page counts on ordinary files. Each `PdfReadPage` carries its
   `/MediaBox`, `/CropBox`, and `/Rotate` already resolved through the inheritance chain (§7.7.3.4):
   the nearest ancestor that defines a valid attribute wins over a farther one, and the page's own
-  entry wins over all of them when it is itself valid: the walk uses the tree the reader actually
-  descended, not a page's own `/Parent`, so a forged `/Parent` cannot redirect
-  inheritance. `CropBox` is additionally intersected with `MediaBox` per §14.11.2.1. The walk is
-  iterative, budgeted at 1,000,000 `/Kids` elements examined in total and capped at 256 levels of
-  nesting and 100,000 page leaves, and a repeated indirect reference to the same node, page object,
-  or shared `/Kids` array is treated as a cycle and skipped. A dictionary that fails to resolve, or
-  resolves to the wrong shape, is skipped rather than aborting the walk: eight new
+  entry wins over all of them when it is itself valid. The walk uses the tree the reader actually
+  descended, not a page's own `/Parent`, so a forged `/Parent` cannot redirect inheritance.
+  `CropBox` is additionally intersected with `MediaBox` per §14.11.2.1. The walk is iterative,
+  budgeted at 1,000,000 `/Kids` elements examined in total and capped at 256 levels of nesting and
+  100,000 page leaves, and a repeated indirect reference to the same node, page object, or shared
+  `/Kids` array is treated as a cycle and skipped. A dictionary that fails to resolve, or resolves
+  to the wrong shape, is skipped rather than aborting the walk: eight new
   `PdfReaderDiagnosticCode` values (`PageTreeMissing`, `PageTreeCycle`, `PageTreeDepthExceeded`,
   `PageTreeLeafLimitExceeded`, `PageTreeKidNotDictionary`, `PageAttributeInvalid`,
-  `PageTreeNodeMalformed`, `PageTreeNodeLimitExceeded`) report through the diagnostics channel #385
-  added rather than throwing; a page tree the walk cannot use at all leaves `PageCount` at 0.
-  Computed lazily, on first access, and cached for the reader's lifetime. (#98)
+  `PageTreeNodeMalformed`, `PageTreeNodeLimitExceeded`) report through the diagnostics channel added
+  in #385 rather than throwing; a page tree the walk cannot use at all leaves `PageCount` at 0. The
+  three codes that say the page list found so far is incomplete (`PageTreeLeafLimitExceeded`,
+  `PageTreeNodeLimitExceeded`, and the first `PageTreeDepthExceeded` of a walk) are retained past
+  `MaxDiagnostics` rather than risk being the one report a caller most needs and never sees, since
+  each is reported at most once per walk. Computed lazily, on first access, and cached for the
+  reader's lifetime. (#98)
 
 ## [2.3.0] - 2026-09-01
 

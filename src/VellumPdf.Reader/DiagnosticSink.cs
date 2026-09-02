@@ -9,7 +9,12 @@ namespace VellumPdf.Reader;
 /// Collects <see cref="PdfReaderDiagnostic"/> instances for one <see cref="PdfDocumentReader"/> (or
 /// one scoped operation on it — see <see cref="CreateScope"/>), deduplicated so the same condition
 /// against the same object is recorded once, and capped at <paramref name="cap"/> entries so one
-/// recurring across many objects cannot flood the list.
+/// recurring across many objects cannot flood the list. <see cref="ReportRetained"/> is the one
+/// exception to that cap: a caller uses it for the rare condition that must stay visible even on a
+/// document engineered to exhaust the cap on unrelated conditions first, since <see cref="Report"/>
+/// alone offers no way to tell such a condition apart from an ordinary one once the cap is full.
+/// <see cref="PageTreeWalker"/> is the one caller today, and bounds itself to at most three
+/// <see cref="ReportRetained"/> calls per walk (see its own remarks).
 /// </summary>
 /// <param name="cap">
 /// The maximum number of ordinary diagnostics this sink holds before it starts recording
@@ -17,7 +22,9 @@ namespace VellumPdf.Reader;
 /// <see cref="PdfReaderOptions.MaxDiagnostics"/>. The cap does not count that one sentinel entry
 /// itself, so a sink at capacity holds at most <paramref name="cap"/> ordinary diagnostics plus one
 /// sentinel, never more — and, per <see cref="TryAccept"/>, bounds the internal dedupe bookkeeping
-/// the same way, not just the list a caller sees.
+/// the same way, not just the list a caller sees. It also does not count anything recorded through
+/// <see cref="ReportRetained"/>, which bypasses <see cref="TryAccept"/> (and therefore this cap)
+/// entirely.
 /// </param>
 internal sealed class DiagnosticSink(int cap)
 {
@@ -49,6 +56,12 @@ internal sealed class DiagnosticSink(int cap)
     // appending a new entry per suppressed report, which would defeat the point of capping at all.
     private int? _suppressionIndex;
     private int _suppressedCount;
+
+    // Count of ordinary diagnostics TryAccept has accepted (Report/Forward only, never
+    // ReportRetained/ForwardRetained): the value the cap is actually checked against. Kept
+    // separate from _diagnostics.Count so a ReportRetained entry, which is also appended to
+    // _diagnostics, never advances this and so never brings the ordinary cap closer to full.
+    private int _ordinaryCount;
 
     private DiagnosticSink(DiagnosticSink parent) : this(parent._cap)
     {
@@ -124,6 +137,41 @@ internal sealed class DiagnosticSink(int cap)
     }
 
     /// <summary>
+    /// Records one observation the same way as <see cref="Report"/>, deduped by the same
+    /// (code, <paramref name="objectNumber"/>, <paramref name="pageIndex"/>) key, against the same
+    /// <c>_seen</c> set a prior <see cref="Report"/> of that key would also have used, except it
+    /// never consults <see cref="TryAccept"/>, so it is recorded (and forwarded to the parent sink,
+    /// when this sink is a <see cref="CreateScope"/> child) even once this sink is already at
+    /// capacity, and never itself counts toward that capacity. Reserved for a condition a caller
+    /// must be able to see regardless of how full the sink already is; see this class's own remarks
+    /// for the one caller today and its own bound on how often it uses this.
+    /// </summary>
+    internal void ReportRetained(
+        PdfReaderDiagnosticCode code, string message,
+        int? objectNumber = null, int? generation = null, int? pageIndex = null)
+    {
+        if (!_seen.Add((code, objectNumber, pageIndex)))
+            return;
+
+        var diagnostic =
+            new PdfReaderDiagnostic(code, message, objectNumber, generation, pageIndex);
+        _diagnostics.Add(diagnostic);
+        _parent?.ForwardRetained(diagnostic);
+    }
+
+    /// <summary>The <see cref="ReportRetained"/> counterpart to <see cref="Forward"/>: preserves
+    /// <paramref name="diagnostic"/>'s identity into this sink, bypassing <see cref="TryAccept"/>
+    /// the same way <see cref="ReportRetained"/> itself does.</summary>
+    private void ForwardRetained(PdfReaderDiagnostic diagnostic)
+    {
+        if (!_seen.Add((diagnostic.Code, diagnostic.ObjectNumber, diagnostic.PageIndex)))
+            return;
+
+        _diagnostics.Add(diagnostic);
+        _parent?.ForwardRetained(diagnostic);
+    }
+
+    /// <summary>
     /// Decides whether <paramref name="key"/> should be recorded as a new diagnostic — shared by
     /// <see cref="Report"/> and <see cref="Forward"/> so the two can never diverge on where the
     /// cap is actually checked relative to <c>_seen</c>.
@@ -148,11 +196,26 @@ internal sealed class DiagnosticSink(int cap)
     /// every one of its later recurrences reaches <see cref="RecordSuppression"/> again — the
     /// count past the cap is reports dropped, not distinct conditions dropped.
     /// </para>
+    /// <para>
+    /// <see cref="ReportRetained"/> and its <see cref="ForwardRetained"/> counterpart never call
+    /// this method: they read and write <c>_seen</c> directly instead, so a key they record is
+    /// still visible here (a later <see cref="Report"/> of the same key is deduped against it as
+    /// usual), but nothing about them advances <c>_ordinaryCount</c> or reaches
+    /// <see cref="RecordSuppression"/>. That is what keeps them exempt from this cap in both
+    /// directions: they are never suppressed by it, and they never bring anything reported
+    /// afterward closer to triggering it either.
+    /// </para>
     /// </remarks>
     private bool TryAccept((PdfReaderDiagnosticCode Code, int? ObjectNumber, int? PageIndex) key)
     {
-        if (_diagnostics.Count < _cap)
-            return _seen.Add(key);
+        if (_ordinaryCount < _cap)
+        {
+            if (!_seen.Add(key))
+                return false;
+
+            _ordinaryCount++;
+            return true;
+        }
 
         if (_seen.Contains(key))
             return false;

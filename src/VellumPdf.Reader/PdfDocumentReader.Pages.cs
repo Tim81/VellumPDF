@@ -21,6 +21,12 @@ public sealed partial class PdfDocumentReader
     /// commonly) yields an empty list and a <see cref="PdfReaderDiagnosticCode.PageTreeMissing"/>
     /// report, not an exception; a structural problem found partway through (a cycle, a nesting depth
     /// or leaf-count past the walker's own caps) yields whatever pages were found before that point.
+    /// The diagnostic that says so
+    /// (<see cref="PdfReaderDiagnosticCode.PageTreeLeafLimitExceeded"/>,
+    /// <see cref="PdfReaderDiagnosticCode.PageTreeNodeLimitExceeded"/>, or the first
+    /// <see cref="PdfReaderDiagnosticCode.PageTreeDepthExceeded"/> of the walk) is retained even
+    /// past <see cref="PdfReaderOptions.MaxDiagnostics"/>, so it stays visible on exactly the
+    /// document where a caller most needs to know this list is incomplete.
     /// A malformed object the walk encounters along the way (an indirect reference whose target
     /// fails to parse, a dictionary of the wrong shape) is reported and skipped the same way, so
     /// this property, <see cref="PageCount"/>, and <see cref="GetPage(int)"/> have no
