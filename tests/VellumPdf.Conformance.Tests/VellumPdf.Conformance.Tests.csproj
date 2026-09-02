@@ -45,10 +45,17 @@
       <LogicalName>jpx-encrypted-emptyuser.pdf</LogicalName>
     </EmbeddedResource>
     <!-- Built once by this library's own writer with the /P bit 10 accessibility bit deliberately
-         cleared, then committed — see Assets/README.md for exactly how and why it cannot be
-         regenerated once the Kernel /P fix lands. Used by UaEncryptionPermissionsRuleTests. -->
+         cleared, then committed — see Assets/README.md for exactly how, and why #397 will remove
+         the writer's ability to reproduce it. Used by UaEncryptionPermissionsRuleTests. -->
     <EmbeddedResource Include="Assets\enc-aes-256-p-bit10-clear.pdf">
       <LogicalName>enc-aes-256-p-bit10-clear.pdf</LogicalName>
+    </EmbeddedResource>
+    <!-- A byte-identical copy of VellumPdf.Reader.Tests/Fixtures/Encrypted/enc-aes-128.pdf (this
+         project does not reference VellumPdf.Reader.Tests, so fixtures it needs are copied rather
+         than shared). AESv2, user password "u", owner "o", /P -4 — the real-user-password fixture
+         PdfPreflightPasswordOverloadTests exercises the four new password overloads against. -->
+    <EmbeddedResource Include="Assets\enc-aes-128-userpw-u.pdf">
+      <LogicalName>enc-aes-128-userpw-u.pdf</LogicalName>
     </EmbeddedResource>
   </ItemGroup>
 

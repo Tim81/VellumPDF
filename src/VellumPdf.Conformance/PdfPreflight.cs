@@ -42,7 +42,7 @@ public static class PdfPreflight
     /// <param name="password">
     /// The password to open the document with, or <see langword="null"/> for a document that uses
     /// none. <see langword="null"/> and <see cref="string.Empty"/> are equivalent: both mean "the
-    /// empty user password" (see <see cref="Reader.PdfReaderOptions.Password"/>).
+    /// empty user password".
     /// </param>
     /// <exception cref="System.ArgumentNullException"><paramref name="bytes"/> is null.</exception>
     /// <exception cref="System.IO.InvalidDataException">The input is not a well-formed PDF.</exception>
@@ -83,7 +83,7 @@ public static class PdfPreflight
     /// <param name="password">
     /// The password to open the document with, or <see langword="null"/> for a document that uses
     /// none. <see langword="null"/> and <see cref="string.Empty"/> are equivalent: both mean "the
-    /// empty user password" (see <see cref="Reader.PdfReaderOptions.Password"/>).
+    /// empty user password".
     /// </param>
     /// <exception cref="System.ArgumentNullException"><paramref name="stream"/> is null.</exception>
     /// <exception cref="System.IO.InvalidDataException">The input is not a well-formed PDF.</exception>
@@ -213,7 +213,7 @@ public static class PdfPreflight
     /// <param name="password">
     /// The password to open the document with, or <see langword="null"/> for a document that uses
     /// none. <see langword="null"/> and <see cref="string.Empty"/> are equivalent: both mean "the
-    /// empty user password" (see <see cref="Reader.PdfReaderOptions.Password"/>).
+    /// empty user password".
     /// </param>
     /// <exception cref="System.ArgumentNullException"><paramref name="bytes"/> is null.</exception>
     /// <exception cref="System.NotSupportedException">No rule profile is registered for <paramref name="conformance"/> yet.</exception>
@@ -248,7 +248,7 @@ public static class PdfPreflight
     /// <param name="password">
     /// The password to open the document with, or <see langword="null"/> for a document that uses
     /// none. <see langword="null"/> and <see cref="string.Empty"/> are equivalent: both mean "the
-    /// empty user password" (see <see cref="Reader.PdfReaderOptions.Password"/>).
+    /// empty user password".
     /// </param>
     /// <exception cref="System.ArgumentNullException"><paramref name="stream"/> is null.</exception>
     /// <exception cref="System.NotSupportedException">No rule profile is registered for <paramref name="conformance"/> yet.</exception>

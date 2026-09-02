@@ -186,10 +186,10 @@ public sealed class EncryptedInputTests
     [Fact]
     public void UndefinedCryptFilter_withNoProfileFlag_reportsAnError_ratherThanNothing()
     {
-        // An EMPTY user password, so the CLI — which has no way to supply one — gets past
-        // authentication and actually reaches the crypt filter. With a password the password error
-        // fires first and this says nothing about the guard. That is also the shape most encrypted
-        // PDFs in the wild take. /O and /U were derived outside this library for the empty user
+        // An EMPTY user password, deliberately given no --password: authentication succeeds on it
+        // alone and the run reaches the crypt filter. With a password the password error fires
+        // first and this says nothing about the guard. That is also the shape most encrypted PDFs
+        // in the wild take. /O and /U were derived outside this library for the empty user
         // password, owner "o", /P -4 and the trailer /ID below.
         var path = WriteTempPdf(PasswordProtectedPdf(
             "<< /Filter /Standard /V 4 /R 4 /Length 128 "

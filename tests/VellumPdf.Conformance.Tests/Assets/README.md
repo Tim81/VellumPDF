@@ -1,8 +1,8 @@
 # Conformance test assets
 
 Fonts are third-party, permissively licensed, and documented by the `*-LICENSE.*` file beside each
-one. The two PDF fixtures below are this library's own output, committed rather than built at test
-time.
+one. The three PDF fixtures below are committed rather than built at test time; each section states
+its own provenance.
 
 ## `jpx-encrypted-emptyuser.pdf`
 
@@ -14,9 +14,9 @@ Generated once with qpdf (empty user password, owner `o`, AES-128) from the exac
 
 A §7.16-1 violator for `UaEncryptionPermissionsRuleTests`: its `/Encrypt` dictionary's `/P` entry
 has bit 10 clear, which ISO 32000-2 Table 22 says a writer "shall always set". Built once with
-this library's own writer, before the Kernel fix (a separate change) makes bit 10 unconditional,
-and committed because that later fix removes the only way to produce this shape from the writer
-again.
+this library's current writer and committed, because #397 ("Kernel: always set /P bit 10 in the
+encryption dictionary") will make bit 10 unconditional and leave no way to produce this shape from
+the writer once it lands.
 
 The writer emits AES-256 (`/V 5 /R 6`): `StandardSecurityHandler` implements only one
 Standard-security-handler configuration, so every document `PdfDocument.Encrypt` writes is
@@ -46,3 +46,14 @@ trusting anything else about it, so a regenerated file with the bit accidentally
 the rule test vacuous.
 
 SHA-256: `d7a788dc6463cc3f63325aaf27b0b71d56c0bc1501b1174e6334bad2fe66e324`
+
+## `enc-aes-128-userpw-u.pdf`
+
+A byte-identical copy of `VellumPdf.Reader.Tests/Fixtures/Encrypted/enc-aes-128.pdf` (AESv2,
+user password `u`, owner `o`, `/P -4` — see that project's own `Fixtures/Encrypted/README.md` for
+the qpdf command that built it). Copied rather than referenced because this project does not carry
+a project reference to `VellumPdf.Reader.Tests`. Used by `PdfPreflightPasswordOverloadTests` to
+exercise the four password-carrying `PdfPreflight` overloads against a document with a real
+(non-empty) password, the shape none of the other fixtures in this directory cover.
+
+SHA-256: `c525e277fdbfb1d332eda71df6f9894c80d1a11b34512967a44df1d81fd14f9a`

@@ -1,7 +1,9 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
+using System.Globalization;
 using System.Text;
+using System.Text.RegularExpressions;
 using VellumPdf.Document;
 using VellumPdf.Encryption;
 using VellumPdf.Reader;
@@ -40,10 +42,11 @@ public sealed class UaEncryptionPermissionsRuleTests
     // ── Fixture 2: violating, committed binary ────────────────────────────────────────────────────
 
     /// <summary>
-    /// <c>Assets/enc-aes-256-p-bit10-clear.pdf</c> was built once, before the Kernel <c>/P</c> fix,
-    /// with <c>Permissions = All &amp; ~Extract</c>: <c>P = (0xFFFFF0C0 | (0xD3C &amp; 0xFFF)) &amp; ~3
-    /// = -516</c> by hand. It is committed rather than regenerated because that Kernel fix removes
-    /// the writer's ability to produce a bit-10-clear file at all (see <c>Assets/README.md</c>).
+    /// <c>Assets/enc-aes-256-p-bit10-clear.pdf</c> was built once with the current writer, with
+    /// <c>Permissions = All &amp; ~Extract</c>: <c>P = (0xFFFFF0C0 | (0xD3C &amp; 0xFFF)) &amp; ~3
+    /// = -516</c> by hand. It is committed rather than regenerated because #397 will make the
+    /// writer set bit 10 unconditionally, leaving no way to reproduce this shape once it lands
+    /// (see <c>Assets/README.md</c>).
     /// </summary>
     [Fact]
     public void ViolatingFixture_bit10Clear_reportsOneError()
@@ -148,12 +151,24 @@ public sealed class UaEncryptionPermissionsRuleTests
     /// <summary>
     /// Reads /P straight off the trailer's /Encrypt dictionary, the same value
     /// <c>UaEncryptionPermissionsRule</c> checks, and asserts it equals <paramref name="expected"/>
-    /// — the hand-derived Table 22 value, not whatever the writer happens to emit.
+    /// — the hand-derived Table 22 value, not whatever the writer happens to emit. Scoped to the
+    /// <c>/Encrypt</c> object (<c>/Filter /Standard</c> to its <c>endobj</c>) and parsed as an int
+    /// rather than matched as a substring: an unanchored <c>"/P -4"</c> also matches inside
+    /// <c>"/P -44"</c>, a Table 22 value <see cref="StandardSecurityHandler"/> can genuinely
+    /// produce, so a substring match would not catch a regression that dropped extra bits.
     /// </summary>
     private static void AssertWrittenPValue(byte[] bytes, int expected)
     {
         var text = Encoding.Latin1.GetString(bytes);
-        Assert.Contains($"/P {expected}", text, StringComparison.Ordinal);
+        var encryptStart = text.IndexOf("/Filter /Standard", StringComparison.Ordinal);
+        Assert.True(encryptStart >= 0, "no /Encrypt dictionary (/Filter /Standard) found in the written bytes.");
+        var encryptEnd = text.IndexOf("endobj", encryptStart, StringComparison.Ordinal);
+        Assert.True(encryptEnd >= 0, "the /Encrypt object has no endobj terminator.");
+        var encryptObject = text[encryptStart..encryptEnd];
+
+        var match = Regex.Match(encryptObject, @"/P (-?\d+)");
+        Assert.True(match.Success, "the /Encrypt dictionary has no /P entry.");
+        Assert.Equal(expected, int.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture));
     }
 
     private static int CountOccurrences(string haystack, string needle)

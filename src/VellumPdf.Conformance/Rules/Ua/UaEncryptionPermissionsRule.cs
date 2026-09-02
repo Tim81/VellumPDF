@@ -41,6 +41,11 @@ internal sealed class UaEncryptionPermissionsRule : IConformanceRule
         if (encryptRef is null)
             return;
 
+        // Unreachable through PdfPreflight for the same reason as the missing-/P branch below:
+        // PdfDocumentReader's constructor already requires /Encrypt to resolve to a dictionary,
+        // throwing InvalidDataException("Malformed PDF: /Encrypt does not resolve to a dictionary.")
+        // before a document with a broken /Encrypt reference is ever handed to a rule. Kept for the
+        // same reason — it states the clause's full requirement rather than only the reachable part.
         if (context.Resolve(encryptRef) is not PdfDictionary encrypt)
         {
             context.Report(RuleId, Clause, PreflightSeverity.Error,
@@ -61,9 +66,12 @@ internal sealed class UaEncryptionPermissionsRule : IConformanceRule
             return;
         }
 
-        // PdfInteger.Value is a long; a 32-bit /P value such as 4294967292 (the unsigned reading of
-        // -4) has to fold back into the signed int32 the bit test operates on, matching how the
-        // reader itself narrows /P (VellumPdf.Reader.EncryptionSetup).
+        // PdfInteger.Value is a long, and the bit test below would work on it unnarrowed — 0x200
+        // sits well within the low 32 bits a value like 4294967292 (the unsigned reading of -4)
+        // shares with its signed int32 form. Narrowing here is for the MESSAGE text: Table 22's own
+        // NOTE prints its example permission value as -44, not 4294967252, and folding into int32
+        // is what makes this report the same signed form, matching how the reader itself narrows
+        // /P (VellumPdf.Reader.EncryptionSetup).
         var pValue = unchecked((int)p.Value);
 
         if ((pValue & 0x200) == 0)

@@ -245,6 +245,19 @@ internal static class VeraPdf
                 + $"stdout:\n{stdout}\nstderr:\n{stderr}");
         }
 
+        // A caller of this method reads the report by looking for what ISN'T there — a rule id or
+        // clause absent from the failed-rules list. An empty or truncated report would pass that
+        // kind of assertion vacuously (nothing is ever "in" an empty string), so this checks for the
+        // one element every real veraPDF 1.30.2 --format xml report contains before handing the
+        // string back, rather than leaving each caller to reinvent the same guard.
+        if (!stdout.Contains("<validationReport", StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"veraPDF's --format xml output for {path} ({flavour}) has no <validationReport> "
+                + "element; the report cannot be used as an oracle input.\n"
+                + $"stdout:\n{stdout}\nstderr:\n{stderr}");
+        }
+
         return stdout;
     }
 

@@ -19,6 +19,12 @@ public sealed class UaEncryptionPermissionsVeraPdfTests
 {
     private const string RuleId = "ISO14289-1:7.16-1";
 
+    // Measured directly from a local veraPDF 1.30.2 --format xml run against the ua1 flavour:
+    // <validationReport jobEndStatus="normal" profileName="PDF/UA-1 validation profile" ...>. A
+    // report that names some OTHER profile, or a truncated one that dropped this element entirely,
+    // must not let a "no clause 7.16" assertion below pass for the wrong reason.
+    private const string Ua1ProfileNameAttribute = "profileName=\"PDF/UA-1 validation profile\"";
+
     /// <summary>
     /// The committed violating fixture: veraPDF's own report names the exact rule this library's
     /// rule claims to implement, in the attribute order veraPDF 1.30.2 prints it.
@@ -46,10 +52,13 @@ public sealed class UaEncryptionPermissionsVeraPdfTests
     /// <summary>
     /// A writer-built, bit-10-set fixture draws no 7.16 element at all — veraPDF's XML report
     /// lists failed rules only, so a passing rule is absent rather than marked
-    /// <c>status="passed"</c> (measured on <c>enc-aes-128-emptyuser.pdf</c>, which fails nine other
-    /// rules and has no 7.16 element either). The overall verdict from <see cref="VeraPdf.Validate"/>
-    /// is asserted too, so this fixture is proven non-compliant for reasons OTHER than 7.16-1 rather
-    /// than merely unchecked.
+    /// <c>status="passed"</c> (measured on
+    /// <c>tests/VellumPdf.Reader.Tests/Fixtures/Encrypted/enc-aes-128-emptyuser.pdf</c>, which fails
+    /// nine other rules and has no 7.16 element either). "Absent" only means something once the
+    /// report is confirmed real: an empty or truncated string is also missing every clause, so this
+    /// asserts the report names the PDF/UA-1 profile before trusting that 7.16 is not in it. The
+    /// overall verdict from <see cref="VeraPdf.Validate"/> is asserted too, so this fixture is proven
+    /// non-compliant for reasons OTHER than 7.16-1 rather than merely unchecked.
     /// </summary>
     [Fact]
     public void CompliantFixture_veraPdfReportsNoClause716Element()
@@ -63,6 +72,7 @@ public sealed class UaEncryptionPermissionsVeraPdfTests
             Assert.False(VeraPdf.Validate(path, "ua1"), "untagged fixture; non-compliant for unrelated UA-1 reasons");
 
             var report = VeraPdf.Report(path, "ua1");
+            Assert.Contains(Ua1ProfileNameAttribute, report, StringComparison.Ordinal);
             Assert.DoesNotContain("clause=\"7.16\"", report, StringComparison.Ordinal);
         }
         finally
@@ -104,6 +114,8 @@ public sealed class UaEncryptionPermissionsVeraPdfTests
     /// and <see cref="PdfPreflight"/>'s new <c>password</c> parameter. Both open the file and agree
     /// there is no 7.16-1 finding — the fixture's <c>Permissions = All</c> sets bit 10 — even though
     /// the overall verdict stays non-compliant, for the unrelated reason this fixture is untagged.
+    /// The profile-name check on the report rules out an empty or truncated response agreeing by
+    /// accident.
     /// </summary>
     [Fact]
     public void UserPasswordDocument_withPassword_verdictMatchesVeraPdf()
@@ -120,6 +132,7 @@ public sealed class UaEncryptionPermissionsVeraPdfTests
             Assert.False(VeraPdf.Validate(path, "ua1", password: "u"));
 
             var report = VeraPdf.Report(path, "ua1", password: "u");
+            Assert.Contains(Ua1ProfileNameAttribute, report, StringComparison.Ordinal);
             var veraPdfHasFinding = report.Contains("clause=\"7.16\"", StringComparison.Ordinal);
 
             var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1, password: "u");

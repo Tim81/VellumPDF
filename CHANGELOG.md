@@ -17,9 +17,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `Validate(byte[]|Stream, PdfConformance, string?)` — that accept a password, so an encrypted
   document requiring one can now be validated at all; the existing overloads keep opening with no
   password and delegate to the new ones. `ConformanceCatalog` moves `7.16-1` from out-of-scope to
-  implemented; PDF/UA-1 total coverage is unchanged at 106 checks. (The 1.7.7 entry below describes
-  7.16-1 as needing "reader decryption" — that was the state before this release; the reader has
-  decrypted since #97, and what was actually missing was this password parameter.)
+  implemented: the catalog still lists 106 PDF/UA-1 checks, and implemented goes from 104 to 105.
+  (The 1.7.7 entry below describes 7.16-1 as needing "reader decryption" — that was the state before
+  this release; the reader has decrypted since #97, and what was actually missing was this password
+  parameter.)
 
 ### Changed
 
@@ -27,6 +28,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   profile auto-detection and validation. The password-protected-file message now says which of two
   things happened: no `--password` was given ("supply it with --password"), or the one given did not
   open the file ("the supplied --password does not open it").
+
+## [2.3.0] - 2026-09-01
 
 ### Breaking changes
 
