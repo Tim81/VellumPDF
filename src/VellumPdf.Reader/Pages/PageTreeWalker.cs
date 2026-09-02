@@ -20,9 +20,9 @@ namespace VellumPdf.Reader;
 /// <para>
 /// <c>/Count</c> is never consulted. §7.7.3.2 Table 30 requires a writer to keep it "consistent with
 /// the number of entries in the Kids array and its descendants which definitively determines the
-/// number of descendant pages" — the tree itself, not the redundant integer beside it — and real
-/// producers disagree with their own <c>/Count</c> often enough — off by the pages a later edit added
-/// or removed without updating it — that trusting it would misreport
+/// number of descendant pages", the tree itself, not the redundant integer beside it. Real
+/// producers disagree with their own <c>/Count</c> often enough (off by the pages a later edit added
+/// or removed without updating it) that trusting it would misreport
 /// <see cref="PdfDocumentReader.PageCount"/> on ordinary files, not just adversarial ones.
 /// </para>
 /// </remarks>
@@ -47,7 +47,7 @@ internal static class PageTreeWalker
     /// node combined. <see cref="MaxDepth"/> alone does not bound this: with a branching factor of
     /// two or more, every additional level of depth the cap still permits doubles the node count
     /// below it, so the work a full-depth tree demands is exponential in <see cref="MaxDepth"/>, not
-    /// linear in it — a depth cap generous enough for any real document is nowhere near tight enough
+    /// linear in it: a depth cap generous enough for any real document is nowhere near tight enough
     /// to also bound the work an adversarial one can force. This budget bounds the walk's own work
     /// directly instead of relying on the depth and leaf caps to do it as a side effect.
     /// </summary>
@@ -60,7 +60,7 @@ internal static class PageTreeWalker
     private static readonly PdfName CropBoxKey = new("CropBox");
 
     // Shared, read-only placeholder for a node classified as a page-tree node by its /Type alone,
-    // with no usable /Kids of its own — contributes zero children.
+    // with no usable /Kids of its own: contributes zero children.
     private static readonly PdfArray EmptyKids = new();
 
     /// <summary>Walks <paramref name="reader"/>'s page tree, reporting shape problems to
@@ -104,8 +104,8 @@ internal static class PageTreeWalker
         // Object numbers seen as EITHER a page-tree node, a page object, or a /Kids array reached
         // through an indirect reference, anywhere in the walk. ISO 32000-2 §7.7.3.2 and §7.7.3.3
         // each forbid a repeated indirect reference to the same node or page object, and describe
-        // /Kids as a tree, not a graph — nothing in the spec has two different nodes sharing one
-        // /Kids array object — so a second occurrence of a number already in this set is always a
+        // /Kids as a tree, not a graph (nothing in the spec has two different nodes sharing one
+        // /Kids array object), so a second occurrence of a number already in this set is always a
         // shape violation, whether it forms a genuine ancestor cycle, a redundant sibling reference,
         // or two parents claiming the same children by reusing one /Kids array object; all three are
         // reported and skipped the same way (see the PageTreeCycle reports below). Object numbers
@@ -218,23 +218,23 @@ internal static class PageTreeWalker
     /// §7.7.3.2 Table 30 and §7.7.3.3 Table 31 each make the respective entry Required):
     /// <list type="bullet">
     /// <item><description><c>/Type /Pages</c> is always a node, even with no usable <c>/Kids</c> of
-    /// its own — that reports <see cref="PdfReaderDiagnosticCode.PageTreeNodeMalformed"/> and
+    /// its own, which reports <see cref="PdfReaderDiagnosticCode.PageTreeNodeMalformed"/> and
     /// contributes zero children, except a present-but-empty <c>/Kids []</c>, a legal empty subtree
     /// that stays silent.</description></item>
     /// <item><description><c>/Type /Page</c> is always a leaf; a stray <c>/Kids</c> alongside it
-    /// reports <see cref="PdfReaderDiagnosticCode.PageTreeNodeMalformed"/> and is ignored —
+    /// reports <see cref="PdfReaderDiagnosticCode.PageTreeNodeMalformed"/> and is ignored:
     /// <c>/Type</c> wins.</description></item>
     /// <item><description><c>/Type</c> naming anything else (a stray <c>/Font</c>, the catalog
     /// itself) reports <see cref="PdfReaderDiagnosticCode.PageTreeNodeMalformed"/> and is skipped
-    /// entirely — it becomes neither a node nor a page.</description></item>
-    /// <item><description>No <c>/Type</c> at all falls back to the structural tell — a node when
-    /// <c>/Kids</c> resolves to an array, a leaf otherwise — silently either way: plenty of real
+    /// entirely; it becomes neither a node nor a page.</description></item>
+    /// <item><description>No <c>/Type</c> at all falls back to the structural tell: a node when
+    /// <c>/Kids</c> resolves to an array, a leaf otherwise. Silently either way: plenty of real
     /// producers omit <c>/Type /Page</c> on a genuine leaf, and nothing about that omission is
     /// ambiguous once the structural tell settles it.</description></item>
     /// </list>
     /// A <c>/Kids</c> entry that fails to resolve (an <see cref="InvalidDataException"/>-throwing
     /// indirect target) is treated the same as one that resolves to the wrong type or is absent
-    /// outright — see <see cref="TryResolve"/>.
+    /// outright. See <see cref="TryResolve"/>.
     /// </summary>
     private static NodeKind ClassifyNode(
         PdfDocumentReader reader, DiagnosticSink diagnostics, PdfDictionary dict, int objectNumber,
@@ -311,7 +311,7 @@ internal static class PageTreeWalker
         var mediaBox = ResolveRectangleAttribute(
             reader, diagnostics, dict, objectNumber, ancestors, PdfName.MediaBox,
             static f => f.Attributes.MediaBox, "MediaBox", LetterFallback,
-            "the Letter default (this reader's own convention — ISO 32000-2 names no default)",
+            "the Letter default (this reader's own convention: the specification names no default)",
             required: true, pageIndex, out _);
 
         var cropBoxRaw = ResolveRectangleAttribute(
@@ -337,7 +337,7 @@ internal static class PageTreeWalker
     /// <summary>
     /// ISO 32000-2 §7.9.5 permits a zero-area rectangle as written, but a zero-area crop box clips
     /// every page's content out of existence, which is never what a producer intended even when the
-    /// bytes technically allow it — so an intersection that collapses to nothing (no overlap on
+    /// bytes technically allow it, so an intersection that collapses to nothing (no overlap on
     /// either axis) is treated as malformed rather than honoured literally.
     /// </summary>
     private static PdfRectangle IntersectWithMediaBox(
@@ -363,12 +363,12 @@ internal static class PageTreeWalker
 
     /// <summary>
     /// One inheritable attribute's candidate values (ISO 32000-2 §7.7.3.4), nearest first: the leaf's
-    /// own entry (if it has one) followed by each ancestor frame's own entry that defines the key —
+    /// own entry (if it has one) followed by each ancestor frame's own entry that defines the key;
     /// a level that does not define it at all is skipped, not counted as a candidate. Deliberately
     /// never follows a page's own <c>/Parent</c> entry: a forged one must not be able to redirect
     /// inheritance away from the chain the walk actually descended. <paramref name="ancestors"/> is
-    /// the walk's own frame stack, and a <see cref="Stack{T}"/> enumerates top-first — the frame
-    /// pushed most recently, i.e. the immediate parent — so walking it in enumeration order already
+    /// the walk's own frame stack, and a <see cref="Stack{T}"/> enumerates top-first: the frame
+    /// pushed most recently, i.e. the immediate parent, so walking it in enumeration order already
     /// visits nearest ancestor first, with no separate distance bookkeeping needed.
     /// </summary>
     private static List<(PdfObject Raw, int SourceObjectNumber)> AttributeChain(
@@ -390,10 +390,10 @@ internal static class PageTreeWalker
     /// <summary>
     /// Resolves one rectangle-valued inheritable attribute by trying each candidate in
     /// <see cref="AttributeChain"/> order: the first one that resolves to a valid rectangle wins,
-    /// outright, even over a well-formed ancestor value further up — matching §7.7.3.4's "nearest
+    /// outright, even over a well-formed ancestor value further up, matching §7.7.3.4's "nearest
     /// ancestor" rule. A candidate that fails to resolve, or does not resolve to a 4-element numeric
     /// array (ISO 32000-2 §7.9.5), reports <see cref="PdfReaderDiagnosticCode.PageAttributeInvalid"/>
-    /// naming the object that supplied it and is skipped rather than treated as final — so a
+    /// naming the object that supplied it and is skipped rather than treated as final, so a
     /// malformed override does not hide a well-formed value further up the chain behind it. Only when
     /// no candidate at all resolves does <paramref name="fallback"/> apply.
     /// </summary>
@@ -470,8 +470,8 @@ internal static class PageTreeWalker
     /// <summary>Resolves <c>/Rotate</c> the same nearest-candidate-wins way as
     /// <see cref="ResolveRectangleAttribute"/>, defaulting to 0 when nothing in the chain ever
     /// resolves to a multiple of 90. Unlike <c>/MediaBox</c>, <c>/Rotate</c> is optional (ISO
-    /// 32000-2 Table 31), so a chain with no candidate at all — as opposed to one whose candidates
-    /// were all malformed — stays silent rather than reporting a diagnostic for the default.</summary>
+    /// 32000-2 Table 31), so a chain with no candidate at all (as opposed to one whose candidates
+    /// were all malformed) stays silent rather than reporting a diagnostic for the default.</summary>
     private static int ResolveRotateAttribute(
         PdfDocumentReader reader, DiagnosticSink diagnostics, PdfDictionary leaf, int leafObjectNumber,
         Stack<Frame> ancestors, int pageIndex)
@@ -510,7 +510,7 @@ internal static class PageTreeWalker
     /// an unresolvable or wrong-typed candidate is skipped silently here rather than reported:
     /// <c>/Resources</c> is only Required on a page that actually draws (ISO 32000-2 §7.7.3.3 Table
     /// 31), and a page with no <c>/Contents</c> legitimately has none, so this reader treats any
-    /// absence — outright or because a candidate did not pan out — the same way, whereas
+    /// absence, outright or because a candidate did not pan out, the same way, whereas
     /// <c>/MediaBox</c> is Required on every page and its absence is always worth a diagnostic.
     /// </summary>
     private static PdfDictionary? ResolveResourcesAttribute(
@@ -532,8 +532,8 @@ internal static class PageTreeWalker
 
     /// <summary>
     /// Resolves <paramref name="raw"/>, treating a target whose parse throws
-    /// <see cref="InvalidDataException"/> — e.g. a numeral too large for this parser
-    /// (<c>PdfObjectParser.ParseLong</c>) — the same as any other value the walk cannot use: skipped
+    /// <see cref="InvalidDataException"/> (e.g. a numeral too large for this parser,
+    /// <c>PdfObjectParser.ParseLong</c>) the same as any other value the walk cannot use: skipped
     /// and reported through the usual page-tree diagnostics rather than aborting the walk. Precedent:
     /// <c>PdfDocumentReader.cs</c>'s own object-stream member resolution and
     /// <c>PdfDocumentReader.SaveDecrypted.cs</c> already recover from this exception per object
@@ -580,7 +580,7 @@ internal static class PageTreeWalker
 
     /// <summary>
     /// A node's OWN inheritable attribute entries (ISO 32000-2 §7.7.3.4 Table 31) exactly as
-    /// <c>dict.Get</c> returns them — not yet resolved through an indirect reference, and not yet
+    /// <c>dict.Get</c> returns them, not yet resolved through an indirect reference, and not yet
     /// normalised. Kept raw rather than resolved at frame-push time so a malformed indirect target
     /// is only ever reported against the specific leaf whose lookup reached it, with that leaf's page
     /// index attached, instead of aborting the walk before any leaf asks for it at all.

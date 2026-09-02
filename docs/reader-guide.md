@@ -135,8 +135,8 @@ PdfReadPage first = reader.GetPage(0);          // throws ArgumentOutOfRangeExce
 `PageCount`/`Pages`/`GetPage` walk the page tree (ISO 32000-2 §7.7.3) from `/Root` → `/Pages` →
 `/Kids` on first access and cache the result — never in `PdfReader.Open` itself. The walk counts
 what `/Kids` actually contains, not any node's `/Count`: Table 30 puts the obligation on the
-writer, not the reader — the `/Kids` array and its descendants are what "definitively determines
-the number of descendant pages" — and real producers disagree with their own `/Kids` often enough
+writer, not the reader: the `/Kids` array and its descendants are what "definitively determines
+the number of descendant pages", and real producers disagree with their own `/Kids` often enough
 that trusting `/Count` would misreport ordinary files, not just adversarial ones. A dictionary
 reached through `/Kids` is classified by its own `/Type` first: `/Type /Pages` is always a node,
 `/Type /Page` always a leaf (a stray `/Kids` on a `/Type /Page` object is ignored), anything else
@@ -145,15 +145,15 @@ to whether it has a `/Kids` array, silently either way, since plenty of real pro
 `/Type /Page` on a genuine leaf.
 
 Each `PdfReadPage` exposes `MediaBox`, `CropBox`, and `Rotate` already resolved through the
-inheritance chain (§7.7.3.4) and normalised — corners ordered low-to-high, rotation folded to one
+inheritance chain (§7.7.3.4) and normalised: corners ordered low-to-high, rotation folded to one
 of 0/90/180/270. A malformed value anywhere in the chain is skipped in favour of the nearest
 ancestor that supplies a valid one, each skip reported as `PageAttributeInvalid`; only once nothing
-in the chain resolves at all does `MediaBox` fall back to US Letter (612 × 792 points — this
+in the chain resolves at all does `MediaBox` fall back to US Letter (612 × 792 points, this
 reader's own convention, since the specification names no default), `CropBox` to the page's own
 `MediaBox`, and `Rotate` to 0. `CropBox` is additionally intersected with `MediaBox` per §14.11.2.1
-once resolved — a crop region extending past the media box is clipped to it, not exposed as
+once resolved: a crop region extending past the media box is clipped to it, not exposed as
 written; a `CropBox` that shares no overlap with `MediaBox` at all falls back to `MediaBox` with its
-own `PageAttributeInvalid` report. A merely absent, optional `CropBox` or `Rotate` stays silent —
+own `PageAttributeInvalid` report. A merely absent, optional `CropBox` or `Rotate` stays silent:
 that is the spec's own default, not a problem. A page tree the walk cannot use at all reports
 `PageTreeMissing` and leaves `PageCount` at 0 rather than throwing; a cycle, a nesting depth past
 256, more than 100,000 leaves, or more than 1,000,000 `/Kids` elements examined in total reports its

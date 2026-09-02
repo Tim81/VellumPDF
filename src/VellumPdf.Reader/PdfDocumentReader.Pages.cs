@@ -15,14 +15,14 @@ public sealed partial class PdfDocumentReader
     /// §7.7.3.2 Table 30 makes that entry's obligation the <c>/Kids</c> array's, not the integer's
     /// own: a writer "shall ensure that the value of the Count key is consistent with the number of
     /// entries in the Kids array and its descendants which definitively determines the number of
-    /// descendant pages" — and real producers disagree with their own <c>/Kids</c> often enough that
+    /// descendant pages", and real producers disagree with their own <c>/Kids</c> often enough that
     /// trusting <c>/Count</c> would misreport this on ordinary files, not just adversarial ones. A
-    /// page tree the walk cannot use at all — a missing or non-dictionary <c>/Pages</c>, most
-    /// commonly — yields an empty list and a <see cref="PdfReaderDiagnosticCode.PageTreeMissing"/>
+    /// page tree the walk cannot use at all (a missing or non-dictionary <c>/Pages</c>, most
+    /// commonly) yields an empty list and a <see cref="PdfReaderDiagnosticCode.PageTreeMissing"/>
     /// report, not an exception; a structural problem found partway through (a cycle, a nesting depth
     /// or leaf-count past the walker's own caps) yields whatever pages were found before that point.
-    /// A malformed object the walk encounters along the way — an indirect reference whose target
-    /// fails to parse, a dictionary of the wrong shape — is reported and skipped the same way, so
+    /// A malformed object the walk encounters along the way (an indirect reference whose target
+    /// fails to parse, a dictionary of the wrong shape) is reported and skipped the same way, so
     /// this property, <see cref="PageCount"/>, and <see cref="GetPage(int)"/> have no
     /// <see cref="InvalidDataException"/> throw path left at all; <see cref="GetPage(int)"/> still
     /// throws <see cref="ArgumentOutOfRangeException"/> for an index outside <c>[0, PageCount)</c>.

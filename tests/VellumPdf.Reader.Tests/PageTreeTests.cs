@@ -255,7 +255,7 @@ public sealed class PageTreeTests
     public void SharedKidsArrayObject_isDetectedAsACycle_beforeExhaustingAnyBudget()
     {
         // Object 9 is BOTH the root's own /Kids array AND, via two direct (not indirect) dictionary
-        // elements inside that same array, each child's /Kids too — a tree walk that only guards
+        // elements inside that same array, each child's /Kids too. A tree walk that only guards
         // against a repeated NODE object (as opposed to a repeated /Kids ARRAY object) never revisits
         // the same object number here, because the two children themselves are direct dictionaries
         // (object number 0) rather than indirect references: only the shared array they both point
@@ -287,11 +287,11 @@ public sealed class PageTreeTests
     [Fact]
     public void ManyDistinctEmptyNodes_stopsAtTheKidsExaminedBudget_withNoCycleInvolved()
     {
-        // Every object number below is distinct — nothing here ever repeats, so the shared-/Kids
+        // Every object number below is distinct: nothing here ever repeats, so the shared-/Kids
         // cycle guard above cannot be what stops this walk. Each of the MaxKidsExamined + 1 root
         // kids is its own /Type /Pages node with an explicit, present-but-empty /Kids [] (a legal
         // empty subtree, not a malformed one), so none of them counts toward the 100,000-leaf cap
-        // either — only the total number of /Kids elements examined can stop this walk.
+        // either, so only the total number of /Kids elements examined can stop this walk.
         const int nodeCount = 1_000_001;
         var bytes = BuildManyEmptyPagesNodesPdf(nodeCount);
 
@@ -306,7 +306,7 @@ public sealed class PageTreeTests
             d => d.Code == PdfReaderDiagnosticCode.PageTreeNodeLimitExceeded && d.Severity == PdfReaderDiagnosticSeverity.Warning);
         Assert.DoesNotContain(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.PageTreeCycle);
 
-        // Not a hard budget assertion (machine-dependent) — a generous ceiling that fails loudly if
+        // Not a hard budget assertion (machine-dependent): a generous ceiling that fails loudly if
         // the walk regresses to something quadratic in the number of kids examined.
         Assert.True(
             stopwatch.Elapsed < TimeSpan.FromSeconds(30),
@@ -315,7 +315,7 @@ public sealed class PageTreeTests
 
     /// <summary>
     /// Builds a root whose <c>/Kids</c> array directly lists <paramref name="nodeCount"/> distinct
-    /// <c>&lt;&lt; /Type /Pages /Kids [] &gt;&gt;</c> objects — string-built rather than through
+    /// <c>&lt;&lt; /Type /Pages /Kids [] &gt;&gt;</c> objects, string-built rather than through
     /// <see cref="BuildPdf"/> for the same O(n) reason as <see cref="BuildLeafCapPdf"/>.
     /// </summary>
     private static byte[] BuildManyEmptyPagesNodesPdf(int nodeCount)
@@ -535,7 +535,7 @@ public sealed class PageTreeTests
     public void KidClassifiedByType_wrongTypeIsSkipped_neitherNodeNorPage()
     {
         // Root /Kids [1 0 R 3 0 R 4 0 R]: object 1 is the catalog itself (reused), object 3 is a
-        // /Type /Font dictionary — neither /Type /Pages nor /Type /Page — and object 4 is a real
+        // /Type /Font dictionary (neither /Type /Pages nor /Type /Page), and object 4 is a real
         // page. Both non-page objects report PageTreeNodeMalformed and contribute nothing.
         var bytes = BuildPdf(
             rootObjectNumber: 1,
@@ -642,7 +642,7 @@ public sealed class PageTreeTests
     [Fact]
     public void MiddleKidWithUnresolvableRotate_stillYieldsThreePages_withRotateZeroAndDiagnostic()
     {
-        // Object 5 alone holds the 40-digit literal — PdfObjectParser.ParseLong overflows long on
+        // Object 5 alone holds the 40-digit literal. PdfObjectParser.ParseLong overflows long on
         // it and throws while parsing object 5's OWN body, not object 3's (the page dict itself
         // parses fine; only resolving its /Rotate indirect reference fails). Before this fix, that
         // exception escaped PageTreeWalker.Walk entirely and PdfDocumentReader.Pages lost every

@@ -175,7 +175,7 @@ public sealed class ParserFuzzTests
             }
             catch (Exception ex) when (IsDeclaredVocabulary(ex))
             {
-                // Acceptable outcome — see the class doc.
+                // Acceptable outcome. See the class doc.
             }
 
             try
@@ -198,7 +198,7 @@ public sealed class ParserFuzzTests
             }
             catch (Exception ex) when (IsDeclaredVocabulary(ex))
             {
-                // Acceptable outcome — see the class doc.
+                // Acceptable outcome. See the class doc.
             }
         }
         catch (Exception ex) when (IsDeclaredVocabulary(ex))
