@@ -111,7 +111,7 @@ public sealed class EncryptionTests
     [Fact]
     public void Permissions_reserved_bits_7_and_8_are_always_set()
     {
-        // ISO 32000-2 Table 22: bits 7-8 (positions 6-7 from LSB) must be 1 for R >= 3,
+        // ISO 32000-2 Table 22: bits 7-8 (positions 6-7 from LSB) are "Reserved. Must be 1.",
         // regardless of the caller's requested permissions. PdfPermissions has no flag
         // at 1<<6/1<<7, so nothing the caller passes can turn these off.
         var allOff = new StandardSecurityHandler(new PdfEncryptionSettings
@@ -138,10 +138,96 @@ public sealed class EncryptionTests
             Permissions = PdfPermissions.None,
         });
 
-        // Bits 2..5 and 8..11 should be 0; bits 6..7 (0xC0) are forced to 1
-        // regardless of the requested permissions (ISO 32000-2 Table 22).
-        Assert.Equal(0, handler.PValue & 0xF3C);
+        // Positions counted from the LSB (0-based): 2..5, 8, 10 and 11 should be 0, while
+        // 6..7 (0xC0) and 9 (0x200) are forced to 1 regardless of the requested permissions.
+        // In Table 22's 1-based numbering those are bits 7-8 ("Reserved. Must be 1.") and
+        // bit 10, whose accessibility restriction PDF 2.0 deprecates and which writers shall
+        // always set so readers on earlier specifications keep treating extraction for
+        // accessibility as allowed.
+        Assert.Equal(0x200, handler.PValue & 0xF3C);
         Assert.Equal(0xC0, handler.PValue & 0xC0);
+    }
+
+    /// <summary>
+    /// Known-answer values for <c>/P</c>, worked out by hand from Table 22 rather than copied from
+    /// a program run, so a bug in the mask cannot be blessed by an expectation taken from the same
+    /// buggy output.
+    ///
+    /// <para><c>None</c>: enabledBits = 0. <c>(0xFFFFF2C0 | 0) &amp; ~3 = 0xFFFFF2C0</c>. As a signed
+    /// 32-bit value, <c>0x100000000 - 0xFFFFF2C0 = 0xD40 = 3392</c>, so <c>-3392</c>.</para>
+    ///
+    /// <para><c>Copy</c> (<c>1&lt;&lt;4 = 0x10</c>): <c>(0xFFFFF2C0 | 0x10) &amp; ~3 = 0xFFFFF2D0</c>.
+    /// <c>0x100000000 - 0xFFFFF2D0 = 0xD30 = 3376</c>, so <c>-3376</c>.</para>
+    ///
+    /// <para><c>All &amp; ~Extract</c>: <c>All</c> is
+    /// <c>Print|Modify|Copy|Annotate|FillForms|Extract|Assemble|PrintHighRes</c>
+    /// <c>= 0x4|0x8|0x10|0x20|0x100|0x200|0x400|0x800 = 0xF3C</c>. Minus <c>Extract (0x200)</c> is
+    /// <c>0xD3C</c>. <c>0xFFFFF2C0 | 0xD3C</c>: low 12 bits <c>0x2C0 | 0xD3C = 0xFFC</c>, so the
+    /// result is <c>0xFFFFFFFC</c>, already clear at positions 0-1, which is <c>-4</c>. Bit 10 being
+    /// forced on independently of the caller's flags is exactly why dropping <c>Extract</c> no
+    /// longer moves this value away from what <c>All</c> itself produces.</para>
+    ///
+    /// <para><c>All</c>: enabledBits = <c>0xF3C</c>. <c>0xFFFFF2C0 | 0xF3C</c>: low 12 bits
+    /// <c>0x2C0 | 0xF3C = 0xFFC</c>, identical to the previous case: the only bit <c>All</c> adds
+    /// over <c>All &amp; ~Extract</c> is <c>Extract</c> (<c>0x200</c>), which the mask supplies
+    /// anyway, so the result is again <c>0xFFFFFFFC = -4</c>.</para>
+    /// </summary>
+    [Theory]
+    [InlineData(PdfPermissions.None, -3392)]
+    [InlineData(PdfPermissions.Copy, -3376)]
+    [InlineData(PdfPermissions.All & ~PdfPermissions.Extract, -4)]
+    [InlineData(PdfPermissions.All, -4)]
+    public void PValue_matchesHandDerivedKnownAnswer(PdfPermissions permissions, int expected)
+    {
+        var handler = new StandardSecurityHandler(new PdfEncryptionSettings
+        {
+            UserPassword = "pw",
+            Permissions = permissions,
+        });
+
+        Assert.Equal(expected, handler.PValue);
+    }
+
+    /// <summary>
+    /// End-to-end version of <see cref="PValue_matchesHandDerivedKnownAnswer"/>: saves a full AES-256
+    /// R6 document (the writer's only mode) with <c>All &amp; ~Extract</c>, the exact permission set
+    /// #397 names, and checks the bytes that reach disk rather than only the handler's
+    /// in-memory value.
+    ///
+    /// <para>The <c>/Perms</c> seal (Algorithm 10) is checked too, but against a handler built with
+    /// the same permissions rather than against the bytes <c>PdfDocument.Save</c> wrote: the handler
+    /// <c>Save</c> constructs internally is not exposed, so there is no way from outside to recover
+    /// the file key that sealed that specific document's <c>/Perms</c>. <c>PValue</c> is a pure
+    /// function of <c>settings.Permissions</c> with no random input, so a second handler built from
+    /// the same permissions computes the identical <c>/P</c> and therefore seals the identical value;
+    /// the passwords (<c>DecryptPermsBlockForTest</c> fixes the user password it derives the file
+    /// key from), <c>/U</c>, <c>/O</c>, <c>/UE</c>, <c>/OE</c> and the random padding differ between the
+    /// two handlers, none of which this test depends on.</para>
+    /// </summary>
+    [Fact]
+    public void EncryptedDocument_allWithoutExtract_writesExpectedP()
+    {
+        var bytes = SaveEncrypted("u", "o", permissions: PdfPermissions.All & ~PdfPermissions.Extract);
+        var text = Encoding.Latin1.GetString(bytes);
+
+        // SaveEncrypted builds no structure tree, AcroForm or signature, so the only /P key in the
+        // file is the /Encrypt entry: the writer's other /P keys are indirect references
+        // (/P n 0 R: a widget's or signature's page, a structure element's parent), which this
+        // regex would match as well. A lone match therefore proves the value came from /Encrypt
+        // and not from one of those.
+        var declared = Assert.Single(Regex.Matches(text, @"/P (-?\d+)"));
+        Assert.Equal("-4", declared.Groups[1].Value);
+
+        var handler = new StandardSecurityHandler(new PdfEncryptionSettings
+        {
+            UserPassword = "TestPass@2026",
+            Permissions = PdfPermissions.All & ~PdfPermissions.Extract,
+        });
+        Assert.Equal(-4, handler.PValue);
+
+        var permsPlain = DecryptPermsBlockForTest(handler);
+        var pFromPerms = (int)(permsPlain[0] | (permsPlain[1] << 8) | (permsPlain[2] << 16) | (permsPlain[3] << 24));
+        Assert.Equal(-4, pFromPerms);
     }
 
     // ── Two-pass determinism: different keys each time ─────────────────────
@@ -1004,9 +1090,10 @@ public sealed class EncryptionTests
     /// makes this the class of defect only another implementation sees.
     ///
     /// <para>Editing <c>/P</c> in the written bytes is what separates the two sources. The document
-    /// is written granting print only; the edit declares full permissions over a seal that says
-    /// otherwise, and a reader that reads the seal still reports print alone. Same byte count, so
-    /// every cross-reference offset stays valid.</para>
+    /// is written granting print, and the writer always sets bit 10 as well (ISO 32000-2 Table 22,
+    /// #397); the edit declares full permissions over a seal that says otherwise, and a reader that
+    /// reads the seal still reports the document's narrower grant. Same byte count, so every
+    /// cross-reference offset stays valid.</para>
     /// </summary>
     [Fact]
     public void EncryptedDocument_permsIsTheSealedCopyOfP_notJustSixteenBytes()
@@ -1029,8 +1116,9 @@ public sealed class EncryptionTests
 
         using var reader = PdfReader.Open(patched, new PdfReaderOptions { Password = "u" });
 
-        // The seal wins: print only, not the everything the edited /P now claims.
-        Assert.Equal(PdfPermissions.Print, reader.Encryption!.Permissions);
+        // The seal wins: Print plus the bit 10 the writer always sets, not the everything the
+        // edited /P now claims.
+        Assert.Equal(PdfPermissions.Print | PdfPermissions.Extract, reader.Encryption!.Permissions);
     }
 
     /// <summary>

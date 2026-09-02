@@ -176,10 +176,12 @@ using (var edoc = new Document())
     }
 
     // /Perms, decrypted. Reading Permissions off the untouched document proves nothing — the reader
-    // falls back to the dictionary's /P when the seal fails, and /P says Print too, so the check
-    // passed even with the /Perms decryption stubbed to return zeroes. Editing /P in the written
-    // bytes is what separates the two sources: the edit claims everything, and a reader that reads
-    // the seal still reports print alone.
+    // falls back to the dictionary's /P when the seal fails, and /P carries the same value, so the
+    // check passed even with the /Perms decryption stubbed to return zeroes. Editing /P in the
+    // written bytes is what separates the two sources: the edit claims everything, and a reader
+    // that reads the seal still reports what was sealed. That is Print plus Extract, not Print
+    // alone: since #397 the writer sets /P bit 10 whatever the caller asked for (ISO 32000-2
+    // Table 22 has writers always set it), and the reader reports the sealed bit as Extract.
     var text = Encoding.Latin1.GetString(encrypted);
     var pAt = text.IndexOf("/P -", StringComparison.Ordinal);
     if (pAt < 0)
@@ -203,7 +205,7 @@ using (var edoc = new Document())
 
     using (var sealedReader = PdfReader.Open(tampered, new PdfReaderOptions { Password = "aot-user" }))
     {
-        if (sealedReader.Encryption!.Permissions != PdfPermissions.Print)
+        if (sealedReader.Encryption!.Permissions != (PdfPermissions.Print | PdfPermissions.Extract))
         {
             Console.Error.WriteLine(
                 $"FAIL: /Perms did not override an edited /P — got {sealedReader.Encryption.Permissions}");

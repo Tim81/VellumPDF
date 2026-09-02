@@ -556,13 +556,15 @@ public sealed class PdfDocument : IDisposable
                 "Remove Encrypt() or clear Conformance before calling Save().");
 
         // PDF/UA-1 does not prohibit encryption, but it requires that content remain
-        // extractable for assistive technology (ISO 14289-1 §7.16, carried by the
-        // /P bit 10 = PdfPermissions.Extract per ISO 32000-2 Table 22). Reject rather
-        // than silently force the bit on: PdfEncryptionSettings.Permissions defaults to
-        // All (which already includes Extract), so this only fires when the caller made
-        // an explicit, narrower permission choice — overriding that choice for them would
-        // trade one silent defect (unreadable by assistive tech) for another (a permission
-        // set that doesn't match what was requested).
+        // extractable for assistive technology (ISO 14289-1 §7.16). The written /P bit 10
+        // is always 1 regardless of PdfPermissions.Extract (ISO 32000-2 Table 22: the
+        // restriction it expressed is deprecated in PDF 2.0 and writers shall always set the
+        // bit), so this guard checks the caller's declared intent, not the emitted bit.
+        // Omitting Extract from PdfEncryptionSettings.Permissions says "do not allow
+        // accessibility extraction" even though the bit written no longer records that, so
+        // reject rather than silently let the mismatch through: Permissions defaults to All
+        // (which already includes Extract), so this only fires when the caller made an
+        // explicit, narrower permission choice that contradicts what PDF/UA-1 requires.
         if (Conformance == PdfConformance.PdfUA1
             && _encryptionSettings is { } uaEncryptionSettings
             && (uaEncryptionSettings.Permissions & PdfPermissions.Extract) == 0)

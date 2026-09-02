@@ -28,7 +28,15 @@ public enum PdfPermissions
     /// <summary>Fill in existing interactive form fields.</summary>
     FillForms = 1 << 8,
 
-    /// <summary>Extract text and graphics (disability accessibility support).</summary>
+    /// <summary>
+    /// Historical accessibility-extraction bit. The restriction it expressed is deprecated in
+    /// PDF 2.0 (ISO 32000-2 Table 22): readers shall ignore the bit, and writers shall always set it
+    /// regardless of what the caller passes here. The written <c>/P</c> bit no longer depends on
+    /// this flag. It is kept because <see cref="PdfEncryptionInfo.Permissions"/> reports it for
+    /// any file whose bit 10 is set (at <c>/R</c> 5 and 6, in the <c>/Perms</c> copy; see that
+    /// property's remarks), including the ones this library writes, and because
+    /// <c>PdfDocument</c>'s PDF/UA-1 check reads it as the caller's declared intent.
+    /// </summary>
     Extract = 1 << 9,
 
     /// <summary>Assemble the document (insert/delete pages, create bookmarks).</summary>

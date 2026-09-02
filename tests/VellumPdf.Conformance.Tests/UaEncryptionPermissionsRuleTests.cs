@@ -12,8 +12,9 @@ namespace VellumPdf.Conformance.Tests;
 /// <summary>
 /// ISO 14289-1 §7.16-1: an encrypted document's <c>/Encrypt</c> dictionary must have <c>/P</c> bit
 /// 10 set. Expected <c>/P</c> values below are derived from ISO 32000-2 Table 22 arithmetic
-/// (<c>StandardSecurityHandler</c>'s <c>P = (0xFFFFF0C0 | (enabledBits &amp; 0xFFF)) &amp; ~3</c>),
-/// not read back from whatever the writer happened to produce.
+/// (<c>StandardSecurityHandler</c>'s <c>P = (0xFFFFF2C0 | (enabledBits &amp; 0xFFF)) &amp; ~3</c>,
+/// bit 10 forced on since #397), not read back from whatever the writer happened to produce. The
+/// committed fixture's <c>-516</c> comes from the pre-#397 mask <c>0xFFFFF0C0</c>.
 /// </summary>
 public sealed class UaEncryptionPermissionsRuleTests
 {
@@ -22,9 +23,10 @@ public sealed class UaEncryptionPermissionsRuleTests
     // ── Fixture 1: compliant, writer-built ────────────────────────────────────────────────────────
 
     /// <summary>
-    /// <c>Permissions = All</c> sets every bit <c>StandardSecurityHandler</c> can set, including
-    /// bit 10 (<c>PdfPermissions.Extract</c>) — the writer's ordinary output already satisfies
-    /// §7.16-1. <c>P = (0xFFFFF0C0 | (0xF3C &amp; 0xFFF)) &amp; ~3 = -4</c> by hand.
+    /// <c>Permissions = All</c> sets every bit <c>StandardSecurityHandler</c> can set; bit 10 is
+    /// forced on by the handler's mask since #397 whatever the flags say, so the writer's
+    /// ordinary output already satisfies §7.16-1.
+    /// <c>P = (0xFFFFF2C0 | (0xF3C &amp; 0xFFF)) &amp; ~3 = -4</c> by hand.
     /// </summary>
     [Fact]
     public void CompliantDocument_AllPermissions_bit10Set_noFinding()
@@ -41,11 +43,11 @@ public sealed class UaEncryptionPermissionsRuleTests
     // ── Fixture 2: violating, committed binary ────────────────────────────────────────────────────
 
     /// <summary>
-    /// <c>Assets/enc-aes-256-p-bit10-clear.pdf</c> was built once with the current writer, with
+    /// <c>Assets/enc-aes-256-p-bit10-clear.pdf</c> was built once with the pre-#397 writer, with
     /// <c>Permissions = All &amp; ~Extract</c>: <c>P = (0xFFFFF0C0 | (0xD3C &amp; 0xFFF)) &amp; ~3
-    /// = -516</c> by hand. It is committed rather than regenerated because #397 will make the
-    /// writer set bit 10 unconditionally, leaving no way to reproduce this shape once it lands
-    /// (see <c>Assets/README.md</c>).
+    /// = -516</c> by hand under that writer's mask. It is committed rather than regenerated because
+    /// #397 made the writer set bit 10 unconditionally, so there is no longer a way to produce this
+    /// shape from the writer itself (see <c>Assets/README.md</c>).
     /// </summary>
     [Fact]
     public void ViolatingFixture_bit10Clear_reportsOneError()
