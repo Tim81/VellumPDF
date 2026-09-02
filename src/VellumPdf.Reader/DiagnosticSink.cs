@@ -16,7 +16,8 @@ namespace VellumPdf.Reader;
 /// <see cref="PdfReaderDiagnosticCode.DiagnosticsSuppressed"/> instead — see
 /// <see cref="PdfReaderOptions.MaxDiagnostics"/>. The cap does not count that one sentinel entry
 /// itself, so a sink at capacity holds at most <paramref name="cap"/> ordinary diagnostics plus one
-/// sentinel, never more.
+/// sentinel, never more — and, per <see cref="TryAccept"/>, bounds the internal dedupe bookkeeping
+/// the same way, not just the list a caller sees.
 /// </param>
 internal sealed class DiagnosticSink(int cap)
 {
@@ -24,6 +25,11 @@ internal sealed class DiagnosticSink(int cap)
     // deliberately excluded: two reports about the same object number and page but different
     // generations are still "the same condition" for a reader that already resolves by object
     // number first (see PdfDocumentReader.Resolve's own cache key).
+    //
+    // Bounded by TryAccept to at most _cap entries: nothing is ever added to this set once
+    // _diagnostics.Count reaches _cap (see that method), so a document engineered to report a
+    // huge number of DISTINCT triples cannot grow this set without limit just because every one
+    // of them past the cap is suppressed rather than recorded.
     private readonly HashSet<(PdfReaderDiagnosticCode Code, int? ObjectNumber, int? PageIndex)> _seen = [];
     private readonly List<PdfReaderDiagnostic> _diagnostics = [];
 
@@ -57,12 +63,25 @@ internal sealed class DiagnosticSink(int cap)
     internal IReadOnlyList<PdfReaderDiagnostic> Diagnostics => _diagnosticsView ??= _diagnostics.AsReadOnly();
 
     /// <summary>
+    /// The dedupe set's own size — test-only visibility for pinning that <see cref="TryAccept"/>
+    /// actually stops growing it once <see cref="Diagnostics"/> reaches its cap, rather than the
+    /// bounded-memory claim resting on <see cref="Diagnostics"/>.Count staying small alone.
+    /// </summary>
+    internal int SeenCount => _seen.Count;
+
+    /// <summary>
     /// Creates a child sink sharing this sink's cap: a report against the child is recorded in the
     /// child's own list AND forwarded to this sink, as the SAME <see cref="PdfReaderDiagnostic"/>
     /// instance — not a re-report that would construct a second, reference-distinct copy — so a
     /// per-operation result built from the child later carries diagnostics that are also, by
     /// reference, exactly what <see cref="PdfDocumentReader.Diagnostics"/> exposes.
     /// </summary>
+    /// <remarks>
+    /// Unused in this PR (#385 lands only the document-level sink; a per-operation result — the
+    /// first candidate is #98's text extraction — is what will actually call this). Present now,
+    /// and exercised directly by <c>DiagnosticSinkTests</c>, so the forwarding contract is pinned
+    /// before anything depends on it rather than designed against its first real caller.
+    /// </remarks>
     internal DiagnosticSink CreateScope() => new(this);
 
     /// <summary>
@@ -77,11 +96,11 @@ internal sealed class DiagnosticSink(int cap)
         PdfReaderDiagnosticCode code, string message,
         int? objectNumber = null, int? generation = null, int? pageIndex = null)
     {
-        if (!_seen.Add((code, objectNumber, pageIndex)))
+        if (!TryAccept((code, objectNumber, pageIndex)))
             return;
 
         var diagnostic = new PdfReaderDiagnostic(code, message, objectNumber, generation, pageIndex);
-        AddOrSuppress(diagnostic);
+        _diagnostics.Add(diagnostic);
         _parent?.Forward(diagnostic);
     }
 
@@ -92,19 +111,46 @@ internal sealed class DiagnosticSink(int cap)
     /// </summary>
     private void Forward(PdfReaderDiagnostic diagnostic)
     {
-        if (!_seen.Add((diagnostic.Code, diagnostic.ObjectNumber, diagnostic.PageIndex)))
+        if (!TryAccept((diagnostic.Code, diagnostic.ObjectNumber, diagnostic.PageIndex)))
             return;
 
-        AddOrSuppress(diagnostic);
+        _diagnostics.Add(diagnostic);
         _parent?.Forward(diagnostic);
     }
 
-    private void AddOrSuppress(PdfReaderDiagnostic diagnostic)
+    /// <summary>
+    /// Decides whether <paramref name="key"/> should be recorded as a new diagnostic — shared by
+    /// <see cref="Report"/> and <see cref="Forward"/> so the two can never diverge on where the
+    /// cap is actually checked relative to <c>_seen</c>.
+    /// </summary>
+    /// <remarks>
+    /// The cap is checked FIRST, before <c>_seen</c> is touched at all. Checking it after (the
+    /// original shape: add to <c>_seen</c> unconditionally, then decide whether the diagnostic
+    /// itself fits under the cap) still bounds the visible <see cref="Diagnostics"/> list to
+    /// <c>cap + 1</c> entries, but <c>_seen</c> itself grows by one for every DISTINCT
+    /// (code, object, page) triple ever reported, capped or not — a document engineered to trigger
+    /// a huge number of distinct conditions after the cap is already full would retain one
+    /// <c>HashSet</c> entry per condition forever, defeating the memory bound
+    /// <see cref="PdfReaderOptions.MaxDiagnostics"/> promises (measured: a million distinct object
+    /// numbers against <c>cap: 1</c> retained tens of megabytes in <c>_seen</c> alone, while
+    /// <see cref="Diagnostics"/> itself stayed at two entries).
+    /// <para>
+    /// Once at capacity, a key already in <c>_seen</c> from before the cap was reached is still a
+    /// genuine duplicate and must stay silent — deduping a repeat never counts as that repeat
+    /// being dropped, capped or not — so this still consults <c>_seen</c> there, just with
+    /// <c>Contains</c> rather than <c>Add</c>: nothing new is ever inserted into it past the cap.
+    /// </para>
+    /// </remarks>
+    private bool TryAccept((PdfReaderDiagnosticCode Code, int? ObjectNumber, int? PageIndex) key)
     {
         if (_diagnostics.Count < _cap)
-            _diagnostics.Add(diagnostic);
-        else
-            RecordSuppression();
+            return _seen.Add(key);
+
+        if (_seen.Contains(key))
+            return false;
+
+        RecordSuppression();
+        return false;
     }
 
     private void RecordSuppression()

@@ -246,6 +246,236 @@ public sealed class DiagnosticRoutingTests
         Assert.Equal(PdfReaderDiagnosticSeverity.Error, d.Severity);
     }
 
+    /// <summary>
+    /// The FlateDecode primary path above is one of three decoders that report
+    /// <see cref="PdfReaderDiagnosticCode.DecodedStreamLimitExceeded"/> before re-throwing; this
+    /// pins the LZWDecode guard. The input is not a real LZW encoding of a large payload (that
+    /// would need a matching encoder to build), but a hand-packed code sequence exploiting the
+    /// decoder's own KwKwK growth rule (ISO 32000-2 does not name it, but it is the classic LZW
+    /// "code not yet in the table" case): after one literal code primes the table, sending each
+    /// freshly created code back — 258, then 259, then 260, … — makes every entry one byte longer
+    /// than the last, so N such codes emit roughly N²/2 bytes from an input just tens of bits
+    /// long, well past the tightened cap after ~1,449 codes.
+    /// </summary>
+    [Fact]
+    public void DecodedStreamLimitExceeded_lzwDecode_stillThrows_butReportsErrorFirst()
+    {
+        var codes = new List<int> { 0 }; // one literal byte to prime prevEntry.
+        var table = 258;
+        for (var i = 0; i < 1500; i++)
+            codes.Add(table++); // always the code the decoder has not defined yet.
+
+        var packed = PackLzwCodes(codes);
+        var dict = new PdfDictionary().Set(PdfName.Filter, new PdfName("LZWDecode"));
+        var stream = MakeParsedStream(dict, packed);
+        var sink = new DiagnosticSink(cap: 10);
+        var tightened = ReaderLimits.Resolve(
+            new PdfReaderOptions { MaxDecodedStreamBytes = ReaderLimits.MinMaxDecodedBytes });
+
+        Assert.Throws<InvalidDataException>(() => PdfFilters.Decode(stream, tightened, diagnostics: sink));
+
+        var d = Assert.Single(sink.Diagnostics, x => x.Code == PdfReaderDiagnosticCode.DecodedStreamLimitExceeded);
+        Assert.Equal(PdfReaderDiagnosticSeverity.Error, d.Severity);
+    }
+
+    /// <summary>
+    /// Bit-packs <paramref name="codes"/> MSB-first within each byte — matching
+    /// <c>PdfFilters.DecodeLzw</c>'s own <c>ReadCode</c> — at a code width that starts at 9 bits
+    /// and grows exactly the way <c>DecodeLzw.MaybeGrow</c> does for the default
+    /// <c>/EarlyChange 1</c>: every code after the first primes one new table entry (mirroring
+    /// that every code but the first runs through the decoder's own
+    /// <c>if (prevEntry is not null) table.Add(...)</c> branch), and the code width steps up the
+    /// moment the simulated table count reaches <c>(1 &lt;&lt; codeSize) - 1</c>.
+    /// </summary>
+    private static byte[] PackLzwCodes(IReadOnlyList<int> codes)
+    {
+        var bits = new List<bool>();
+        var tableCount = 258; // 256 literals + Clear(256) + EOI(257).
+        var codeSize = 9;
+        var first = true;
+
+        foreach (var code in codes)
+        {
+            if (tableCount >= (1 << codeSize) - 1 && codeSize < 12)
+                codeSize++;
+
+            for (var bit = codeSize - 1; bit >= 0; bit--)
+                bits.Add(((code >> bit) & 1) != 0);
+
+            if (!first)
+                tableCount++;
+            first = false;
+        }
+
+        var bytes = new byte[(bits.Count + 7) / 8];
+        for (var i = 0; i < bits.Count; i++)
+        {
+            if (bits[i])
+                bytes[i / 8] |= (byte)(1 << (7 - (i % 8)));
+        }
+        return bytes;
+    }
+
+    /// <summary>
+    /// The RunLengthDecode twin, literal-run guard: pads to just under the tightened cap with
+    /// cheap repeat runs (2 input bytes each, 128 output bytes) and finishes with one 100-byte
+    /// literal run that pushes the total over.
+    /// </summary>
+    [Fact]
+    public void DecodedStreamLimitExceeded_runLengthDecode_literalRun_stillThrows_butReportsErrorFirst()
+    {
+        var input = BuildRunLengthOverflow(ReaderLimits.MinMaxDecodedBytes, finalRunIsLiteral: true);
+        var dict = new PdfDictionary().Set(PdfName.Filter, new PdfName("RunLengthDecode"));
+        var stream = MakeParsedStream(dict, input);
+        var sink = new DiagnosticSink(cap: 10);
+        var tightened = ReaderLimits.Resolve(
+            new PdfReaderOptions { MaxDecodedStreamBytes = ReaderLimits.MinMaxDecodedBytes });
+
+        Assert.Throws<InvalidDataException>(() => PdfFilters.Decode(stream, tightened, diagnostics: sink));
+
+        var d = Assert.Single(sink.Diagnostics, x => x.Code == PdfReaderDiagnosticCode.DecodedStreamLimitExceeded);
+        Assert.Equal(PdfReaderDiagnosticSeverity.Error, d.Severity);
+    }
+
+    /// <summary>The RunLengthDecode repeat-run guard twin of the test above.</summary>
+    [Fact]
+    public void DecodedStreamLimitExceeded_runLengthDecode_repeatRun_stillThrows_butReportsErrorFirst()
+    {
+        var input = BuildRunLengthOverflow(ReaderLimits.MinMaxDecodedBytes, finalRunIsLiteral: false);
+        var dict = new PdfDictionary().Set(PdfName.Filter, new PdfName("RunLengthDecode"));
+        var stream = MakeParsedStream(dict, input);
+        var sink = new DiagnosticSink(cap: 10);
+        var tightened = ReaderLimits.Resolve(
+            new PdfReaderOptions { MaxDecodedStreamBytes = ReaderLimits.MinMaxDecodedBytes });
+
+        Assert.Throws<InvalidDataException>(() => PdfFilters.Decode(stream, tightened, diagnostics: sink));
+
+        var d = Assert.Single(sink.Diagnostics, x => x.Code == PdfReaderDiagnosticCode.DecodedStreamLimitExceeded);
+        Assert.Equal(PdfReaderDiagnosticSeverity.Error, d.Severity);
+    }
+
+    /// <summary>
+    /// Builds a RunLengthDecode body that pads to <paramref name="cap"/> minus 50 bytes using
+    /// maximal repeat runs (a run count of 128 for 2 input bytes), then finishes with one 100-byte
+    /// run of the requested kind, pushing the decoded total to <paramref name="cap"/> plus 50 —
+    /// past the guard regardless of which run type does the pushing.
+    /// </summary>
+    private static byte[] BuildRunLengthOverflow(long cap, bool finalRunIsLiteral)
+    {
+        var ms = new MemoryStream();
+        var remaining = cap - 50;
+
+        while (remaining >= 128)
+        {
+            ms.WriteByte(129); // length 129 -> repeat count 257-129 = 128.
+            ms.WriteByte(0x00);
+            remaining -= 128;
+        }
+        if (remaining > 0)
+        {
+            // A short literal run for the remainder — literal supports any count from 1 to 128,
+            // avoiding the repeat run's own two-byte-minimum count.
+            var count = (int)remaining;
+            ms.WriteByte((byte)(count - 1));
+            ms.Write(new byte[count]);
+        }
+
+        if (finalRunIsLiteral)
+        {
+            ms.WriteByte(99); // length 99 -> literal count 100.
+            ms.Write(new byte[100]);
+        }
+        else
+        {
+            ms.WriteByte((byte)(257 - 100)); // length 157 -> repeat count 100.
+            ms.WriteByte(0x00);
+        }
+
+        return ms.ToArray();
+    }
+
+    /// <summary>
+    /// The fourth <see cref="PdfReaderDiagnosticCode.DecodedStreamLimitExceeded"/> site: the RETRY
+    /// decoder InflateFlate falls back to when the primary guess at zlib-vs-raw-deflate framing
+    /// turns out wrong. Reaching it needs input that (a) LooksLikeZlib misreads as zlib-framed, so
+    /// the primary attempt fails on an ordinary format error rather than the size cap, and (b) is
+    /// still genuinely valid, oversized raw deflate data when the retry reads the SAME bytes from
+    /// byte 0 instead of skipping a would-be two-byte header. See
+    /// <see cref="BuildRawDeflateMisreadAsZlib"/> for how those two bytes are made to do both jobs
+    /// at once.
+    /// </summary>
+    [Fact]
+    public void DecodedStreamLimitExceeded_flateRetryDecoder_stillThrows_butReportsErrorFirst()
+    {
+        var input = BuildRawDeflateMisreadAsZlib();
+        var dict = new PdfDictionary().Set(PdfName.Filter, PdfName.FlateDecode);
+        var stream = MakeParsedStream(dict, input);
+        var sink = new DiagnosticSink(cap: 10);
+        var tightened = ReaderLimits.Resolve(
+            new PdfReaderOptions { MaxDecodedStreamBytes = ReaderLimits.MinMaxDecodedBytes });
+
+        Assert.Throws<InvalidDataException>(() => PdfFilters.Decode(stream, tightened, diagnostics: sink));
+
+        var d = Assert.Single(sink.Diagnostics, x => x.Code == PdfReaderDiagnosticCode.DecodedStreamLimitExceeded);
+        Assert.Equal(PdfReaderDiagnosticSeverity.Error, d.Severity);
+    }
+
+    /// <summary>
+    /// Hand-builds raw DEFLATE data (RFC 1951 STORED blocks only — no Huffman coding, so every
+    /// byte is exact and controllable) whose first two bytes are ALSO a valid zlib CMF/FLG pair,
+    /// 0x78 0x9C, purely by how a stored block's own header happens to be laid out:
+    /// <list type="bullet">
+    /// <item><description>Byte 0 (0x78 = 0b0111_1000) is a stored-block header read LSB-first —
+    /// bit 0 (BFINAL) = 0, bits 1-2 (BTYPE) = 00 (stored); the remaining bits are padding to the
+    /// next byte boundary and RFC 1951 §3.2.4 says a decoder ignores them, so their actual value
+    /// (imposed here by needing byte 0 to equal 0x78) is irrelevant to a raw-deflate reading.
+    /// </description></item>
+    /// <item><description>Bytes 1-2 are that stored block's own 2-byte little-endian LEN field.
+    /// Its low byte has to be 0x9C for byte 1 to complete the zlib header, so LEN is fixed at
+    /// 0xFF9C (65436, the free high byte chosen near the 65535 per-block maximum); bytes 3-4 are
+    /// its one's-complement NLEN, and the 65436 zero bytes after that are the block's literal
+    /// payload.</description></item>
+    /// </list>
+    /// Interpreted as zlib (the primary attempt, since <c>LooksLikeZlib</c> reads exactly those
+    /// two bytes and sees 0x78 0x9C), the decoder treats byte 2 onward as the deflate payload —
+    /// which is actually the MIDDLE of the stored block above, not a fresh block header — and
+    /// fails with an ordinary format error. Interpreted as raw deflate from byte 0 (the retry),
+    /// the same bytes are exactly what they are: a genuine, valid stored-block stream. Sixteen
+    /// more full non-final stored blocks (65535 bytes each) and one empty final block bring the
+    /// total decoded size to 1,113,996 bytes, comfortably past the 1 MiB tightened cap this test
+    /// uses, so the retry's own bomb guard is what actually fires.
+    /// </summary>
+    private static byte[] BuildRawDeflateMisreadAsZlib()
+    {
+        var ms = new MemoryStream();
+
+        void WriteStoredBlock(byte headerByte, int len)
+        {
+            ms.WriteByte(headerByte);
+            ms.WriteByte((byte)(len & 0xFF));
+            ms.WriteByte((byte)((len >> 8) & 0xFF));
+            var nlen = ~len & 0xFFFF;
+            ms.WriteByte((byte)(nlen & 0xFF));
+            ms.WriteByte((byte)((nlen >> 8) & 0xFF));
+            ms.Write(new byte[len]);
+        }
+
+        // Block 1: header 0x78 (non-final, stored — see remarks); LEN = 0xFF9C so its low byte
+        // (this block's byte index 1, the array's byte index 1) is the required 0x9C.
+        WriteStoredBlock(0x78, 0xFF9C);
+
+        // Sixteen more non-final stored blocks (0x00 = BFINAL 0, BTYPE 00, clean padding) at the
+        // maximum stored-block length, pushing the running total well past 1 MiB.
+        for (var i = 0; i < 16; i++)
+            WriteStoredBlock(0x00, 65535);
+
+        // A final, empty stored block (0x01 = BFINAL 1, BTYPE 00) to terminate the stream cleanly
+        // — never actually reached, since the cap trips first, but keeps the fixture well-formed.
+        WriteStoredBlock(0x01, 0);
+
+        return ms.ToArray();
+    }
+
     // ── PdfDocumentReader: ObjectHeaderMismatch ──────────────────────────────────────────────────
 
     /// <summary>

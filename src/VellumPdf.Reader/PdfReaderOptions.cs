@@ -102,11 +102,13 @@ public sealed class PdfReaderOptions
     /// The maximum number of entries <see cref="PdfDocumentReader.Diagnostics"/> holds before
     /// further diagnostics are dropped in favour of one
     /// <see cref="PdfReaderDiagnosticCode.DiagnosticsSuppressed"/> entry recording how many were.
-    /// Defaults to 1000. Tighten-only, matching <see cref="MaxDecodedStreamBytes"/> and
+    /// Defaults to 1000. Bounds two things, not just the visible list: the reader's internal
+    /// dedupe bookkeeping stops growing at the same point, so a document engineered to report a
+    /// huge number of DISTINCT conditions — one per object, say — cannot retain unbounded memory
+    /// for that bookkeeping merely because every condition past the cap ends up suppressed rather
+    /// than kept. Tighten-only, matching <see cref="MaxDecodedStreamBytes"/> and
     /// <see cref="ReconstructionBudgetMultiplier"/> above: nothing about this cap is a spec
-    /// requirement, so a caller may lower it — to bound memory on a document engineered to trigger
-    /// the same recoverable condition on every one of a huge number of objects — but not raise it
-    /// past the shipped default.
+    /// requirement, so a caller may lower it but not raise it past the shipped default.
     /// </summary>
     /// <exception cref="ArgumentOutOfRangeException">
     /// Thrown by <see cref="PdfReader.Open(byte[], PdfReaderOptions)"/> when set above the default

@@ -133,7 +133,9 @@ public sealed class DiagnosticSinkTests
         // cap ordinary entries + exactly one sentinel, never an ever-growing tail.
         Assert.Equal(3, sink.Diagnostics.Count);
         var sentinel = Assert.Single(sink.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.DiagnosticsSuppressed);
-        Assert.Contains("2", sentinel.Message);
+        // The full count, not a substring match: "2" alone is also satisfied by "the 2-entry cap"
+        // regardless of how many were actually dropped.
+        Assert.StartsWith("2 diagnostics suppressed", sentinel.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -152,6 +154,33 @@ public sealed class DiagnosticSinkTests
         Assert.Equal(2, sink.Diagnostics.Count);
         var sentinel = Assert.Single(sink.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.DiagnosticsSuppressed);
         Assert.Contains("3", sentinel.Message);
+    }
+
+    /// <summary>
+    /// Regression for the bug the cap-then-dedupe reordering in <c>TryAccept</c> fixes: checking
+    /// the cap AFTER adding to <c>_seen</c> means a document that reports a huge number of
+    /// DISTINCT (code, object, page) triples keeps growing the dedupe set forever, even though
+    /// every one of those triples past the first is suppressed rather than recorded — a document
+    /// engineered to do exactly that (a condition reported once per object, across a huge number
+    /// of objects) retained tens of megabytes in <c>_seen</c> alone while <c>Diagnostics</c>
+    /// itself stayed at two entries, before this fix. Asserted on <c>SeenCount</c> rather than
+    /// <c>GC.GetTotalMemory</c>, which is not a reliable per-test signal.
+    /// </summary>
+    [Fact]
+    public void Report_manyDistinctReports_pastCap_doesNotGrowTheDedupeSetUnbounded()
+    {
+        var sink = new DiagnosticSink(cap: 1);
+
+        for (var i = 0; i < 100_000; i++)
+            sink.Report(PdfReaderDiagnosticCode.UnknownFilter, "m", objectNumber: i);
+
+        // At most `cap` entries are ever added to _seen — the ones accepted before the cap was
+        // first reached. Nothing past that point is ever inserted, however many distinct triples
+        // arrive afterward.
+        Assert.True(
+            sink.SeenCount <= 1,
+            $"the dedupe set held {sink.SeenCount} entries after 100,000 distinct reports against a cap of 1.");
+        Assert.Equal(2, sink.Diagnostics.Count); // 1 ordinary + 1 sentinel, regardless of object count.
     }
 
     [Fact]
@@ -214,16 +243,20 @@ public sealed class DiagnosticSinkTests
         Assert.Equal("direct", parentEntry.Message);
     }
 
+    /// <summary>
+    /// A <see cref="DiagnosticSink.CreateScope"/> child shares its parent's cap (10 here), so this
+    /// deliberately stays well under it — five reports, none suppressed. It exercises forwarding
+    /// at a size larger than the single-report tests above, not suppression itself: the child
+    /// cannot reach its own cap before the parent does (their caps are equal and every accepted
+    /// child report also reaches the parent), so a genuine "child suppresses, parent does not"
+    /// case does not exist under today's CreateScope, where cap is always inherited unchanged.
+    /// </summary>
     [Fact]
-    public void CreateScope_childSuppression_doesNotForceSuppressionOnParent()
+    public void CreateScope_reportsUnderCap_reachBothLists_withNoSentinel()
     {
         var parent = new DiagnosticSink(cap: 10);
         var child = parent.CreateScope();
 
-        // The child sink INHERITS the parent's cap (10), so hitting the child's own cap this
-        // small takes more reports than this test wants to write out by hand — instead this
-        // confirms the two counters are independent by construction: exhausting neither cap here,
-        // every report should reach both lists untouched by any suppression bookkeeping.
         for (var i = 0; i < 5; i++)
             child.Report(PdfReaderDiagnosticCode.UnknownFilter, $"m{i}", objectNumber: i);
 
