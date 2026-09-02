@@ -44,10 +44,10 @@
     <EmbeddedResource Include="Assets\jpx-encrypted-emptyuser.pdf">
       <LogicalName>jpx-encrypted-emptyuser.pdf</LogicalName>
     </EmbeddedResource>
-    <!-- Built once by this library's own writer with the /P bit 10 accessibility bit deliberately
-         cleared, then committed — see Assets/README.md for exactly how, and why #397 will remove
-         the writer's ability to reproduce it. Used by UaEncryptionPermissionsRuleTests,
-         UaEncryptionPermissionsVeraPdfTests, and EncryptedFixtureDigestTests, which pins every
+    <!-- Built once by the pre-#397 writer with /P bit 10 deliberately cleared, then committed;
+         see Assets/README.md for exactly how, and why #397 removed the writer's ability to
+         reproduce it. Read by three test classes: UaEncryptionPermissionsRuleTests,
+         UaEncryptionPermissionsVeraPdfTests and EncryptedFixtureDigestTests, which pins every
          fixture's SHA-256 to Assets/README.md. -->
     <EmbeddedResource Include="Assets\enc-aes-256-p-bit10-clear.pdf">
       <LogicalName>enc-aes-256-p-bit10-clear.pdf</LogicalName>

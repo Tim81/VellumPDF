@@ -20,9 +20,9 @@ Generated once with qpdf (empty user password, owner `o`, AES-128) from the exac
 
 A §7.16-1 violator for `UaEncryptionPermissionsRuleTests`: its `/Encrypt` dictionary's `/P` entry
 has bit 10 clear, which ISO 32000-2 Table 22 says a writer "shall always set". Built once with
-this library's current writer and committed, because #397 ("Kernel: always set /P bit 10 in the
-encryption dictionary") will make bit 10 unconditional and leave no way to produce this shape from
-the writer once it lands.
+the pre-#397 writer and committed, because #397 ("Kernel: always set /P bit 10 in the encryption
+dictionary (ISO 32000-2 Table 22)") made bit 10 unconditional, so there is no longer a way to
+produce this shape from the writer itself.
 
 The writer emits AES-256 (`/V 5 /R 6`): `StandardSecurityHandler` implements only one
 Standard-security-handler configuration, so every document `PdfDocument.Encrypt` writes is
@@ -30,7 +30,8 @@ V=5/R=6 regardless of what permissions it carries. At R6, `/P` is not a key inpu
 only feeds it in at R≤4), so this file's `/P` and its `/Perms` seal agree, and it opens the
 same way any other well-formed R6 document does.
 
-Provenance:
+Provenance (run against the pre-#397 writer at `1a85a66`; the current writer produces `/P -4` from
+the same recipe, so this block documents the file rather than reproducing it):
 
 ```csharp
 using var doc = new PdfDocument();
@@ -44,12 +45,12 @@ doc.Encrypt(new PdfEncryptionSettings
 doc.Save(stream);
 ```
 
-`Permissions = All & ~Extract` clears bit 10 (`PdfPermissions.Extract = 1 << 9`) while leaving every
-other bit as `StandardSecurityHandler` would set it for `All`. By Table 22 arithmetic
-(`P = (0xFFFFF0C0 | (enabledBits & 0xFFF)) & ~3`), that makes `/P` equal `-516` (`0xFFFFFDFC`) —
-`UaEncryptionPermissionsRuleTests` asserts the committed file's own `/P` still reads `-516` before
-trusting anything else about it, so a regenerated file with the bit accidentally set cannot make
-the rule test vacuous.
+Under that writer's mask, `Permissions = All & ~Extract` cleared bit 10 (`PdfPermissions.Extract =
+1 << 9`) while leaving every other bit as `StandardSecurityHandler` set it for `All`. By that
+mask's arithmetic (`P = (0xFFFFF0C0 | (enabledBits & 0xFFF)) & ~3`), `/P` came out as `-516`
+(`0xFFFFFDFC`). `UaEncryptionPermissionsRuleTests` asserts the committed file's own `/P` still
+reads `-516` before trusting anything else about it, so a regenerated file with the bit
+accidentally set cannot make the rule test vacuous.
 
 SHA-256: `d7a788dc6463cc3f63325aaf27b0b71d56c0bc1501b1174e6334bad2fe66e324`
 

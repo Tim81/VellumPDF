@@ -45,6 +45,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   was given, or an empty one was (`--password ""`), and either way it prints "supply it with
   --password"; a non-empty `--password` that does not open the file prints "the supplied
   --password does not open it". (#138)
+- **Encrypted documents written without `PdfPermissions.Extract` emit different `/P` and `/Perms`
+  bytes.** Bit 10 of `/P` is now always set, so a byte-for-byte diff against the same document
+  encrypted with an earlier version will show this difference, and the permissions such a
+  document reports on re-opening now include `Extract`. Documents written with `Extract`
+  (the default, since `All` includes it) carry the same `/P` value as before. See Fixed, below,
+  for why. (#397)
+
+### Fixed
+
+- **`/P` bit 10 is now always set on a newly written `/Encrypt` dictionary.** The restriction this
+  bit expressed is deprecated in PDF 2.0, and ISO 32000-2 Table 22 requires writers to set the bit
+  regardless of the permissions requested; the Standard security handler previously set it only
+  when `PdfPermissions.Extract` was included, so any permission set that omitted `Extract`
+  produced a Table 22 violation and failed PDF/UA-1 §7.16-1. `Permissions = None` now writes
+  `/P -3392` instead of `-3904`, `Copy` writes `-3376` instead of `-3888`, and `All & ~Extract`
+  writes `-4` instead of `-516`, the same value as `All`; at `/R` 6 the `/Perms` seal
+  (Algorithm 10) changes with it, since it seals the same `/P` value. A document written without
+  `Extract` therefore reads back with `Extract` included in `PdfEncryptionInfo.Permissions`. (#397)
 
 ## [2.3.0] - 2026-09-01
 
