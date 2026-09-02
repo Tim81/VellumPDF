@@ -26,8 +26,15 @@ namespace VellumPdf.Reader;
 /// The multiplier in <see cref="XrefReconstructor"/>'s <c>max(1 MiB, N × file length)</c> work
 /// budget for cross-reference reconstruction (ISO 32000-2 Annex C.4, informative).
 /// </param>
+/// <param name="MaxDiagnostics">
+/// The cap <see cref="DiagnosticSink"/> enforces on <see cref="PdfDocumentReader.Diagnostics"/> —
+/// see <see cref="PdfReaderOptions.MaxDiagnostics"/>.
+/// </param>
 internal readonly record struct ReaderLimits(
-    long MaxDecodedBytes, long MaxAggregateReconstructionDecodeBytes, int ReconstructionBudgetMultiplier)
+    long MaxDecodedBytes,
+    long MaxAggregateReconstructionDecodeBytes,
+    int ReconstructionBudgetMultiplier,
+    int MaxDiagnostics)
 {
     /// <summary>The processor's own choice of default per-decode ceiling: 512 MiB.</summary>
     internal const long DefaultMaxDecodedBytes = 512L * 1024 * 1024;
@@ -47,9 +54,19 @@ internal readonly record struct ReaderLimits(
     /// </summary>
     internal const int MinReconstructionBudgetMultiplier = 1;
 
+    /// <summary>The processor's own choice of default diagnostics cap: 1000 entries.</summary>
+    internal const int DefaultMaxDiagnostics = 1000;
+
+    /// <summary>
+    /// The floor a caller may tighten <see cref="PdfReaderOptions.MaxDiagnostics"/> down to: 1.
+    /// Zero would leave <see cref="DiagnosticSink"/> unable to record even its own suppression
+    /// sentinel.
+    /// </summary>
+    internal const int MinMaxDiagnostics = 1;
+
     /// <summary>The library's built-in ceilings — what every read used before this option existed.</summary>
     internal static ReaderLimits Defaults { get; } =
-        new(DefaultMaxDecodedBytes, DefaultMaxDecodedBytes, DefaultReconstructionBudgetMultiplier);
+        new(DefaultMaxDecodedBytes, DefaultMaxDecodedBytes, DefaultReconstructionBudgetMultiplier, DefaultMaxDiagnostics);
 
     /// <summary>
     /// Validates <paramref name="options"/>'s two resource knobs and resolves them into the limits
@@ -89,6 +106,13 @@ internal readonly record struct ReaderLimits(
                 $"{nameof(PdfReaderOptions.ReconstructionBudgetMultiplier)} must be between "
                 + $"{MinReconstructionBudgetMultiplier} and {DefaultReconstructionBudgetMultiplier}.");
 
-        return new ReaderLimits(maxDecodedBytes, maxDecodedBytes, multiplier);
+        var maxDiagnostics = options.MaxDiagnostics;
+        if (maxDiagnostics < MinMaxDiagnostics || maxDiagnostics > DefaultMaxDiagnostics)
+            throw new ArgumentOutOfRangeException(
+                nameof(PdfReaderOptions.MaxDiagnostics), maxDiagnostics,
+                $"{nameof(PdfReaderOptions.MaxDiagnostics)} must be between "
+                + $"{MinMaxDiagnostics} and {DefaultMaxDiagnostics}.");
+
+        return new ReaderLimits(maxDecodedBytes, maxDecodedBytes, multiplier, maxDiagnostics);
     }
 }

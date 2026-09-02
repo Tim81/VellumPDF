@@ -127,6 +127,25 @@ public sealed partial class PdfDocumentReader : IDisposable
     /// </summary>
     public bool WasReconstructed { get; }
 
+    private readonly DiagnosticSink _diagnostics;
+
+    /// <summary>
+    /// Conditions the reader noticed while opening or decoding this document — a rebuilt
+    /// cross-reference table, a dropped orphaned object-stream member, a filter chain entry that
+    /// did not resolve the way it declared itself — in the order they were observed. #385's
+    /// notify-and-continue channel: something recorded here did not stop the read, unlike an
+    /// exception, but is worth a caller's attention.
+    /// </summary>
+    /// <remarks>
+    /// A live view over the reader's own list, matching every other collection this type exposes:
+    /// not thread-safe, and its contents can grow as more of the document is read (a stream is
+    /// decoded lazily, on first access). Bounded by <see cref="PdfReaderOptions.MaxDiagnostics"/> —
+    /// past that cap, further conditions are folded into one
+    /// <see cref="PdfReaderDiagnosticCode.DiagnosticsSuppressed"/> entry rather than growing the
+    /// list without limit.
+    /// </remarks>
+    public IReadOnlyList<PdfReaderDiagnostic> Diagnostics { get; }
+
     /// <summary>
     /// Bytes actually charged during reconstruction's walk (<see cref="XrefReconstructor.Reconstruct"/>),
     /// or 0 when <see cref="WasReconstructed"/> is false. Diagnostic only, so a test can pin that a
@@ -179,6 +198,33 @@ public sealed partial class PdfDocumentReader : IDisposable
         DroppedOrphanedObjectStreamMembers = parseResult.DroppedOrphanedObjectStreamMembers;
         WasReconstructed = parseResult.WasReconstructed;
         ReconstructionBytesConsumed = parseResult.ReconstructionBytesConsumed;
+
+        // Created before anything below gets a chance to throw, so a condition this constructor
+        // itself observes — reconstruction having run, an orphaned object-stream member having
+        // been dropped — is recorded even if a LATER step (authentication, Phase B, /Root
+        // resolution) fails and the exception unwinds past every field assignment below this one.
+        // Diagnostics is a plain property wrapping the sink's own list rather than a
+        // ReadOnlyCollection over it, matching the live-view contract every other collection this
+        // type exposes documents (see the property's own remarks) — IReadOnlyList<T> already
+        // forbids mutation through the interface, so a second wrapper adds nothing.
+        _diagnostics = new DiagnosticSink(_limits.MaxDiagnostics);
+        Diagnostics = _diagnostics.Diagnostics;
+
+        if (WasReconstructed)
+        {
+            _diagnostics.Report(
+                PdfReaderDiagnosticCode.XrefReconstructed,
+                "The cross-reference table could not be read from its own startxref chain and was "
+                + "rebuilt by scanning the file (ISO 32000-2 Annex C.4, informative).");
+        }
+
+        if (DroppedOrphanedObjectStreamMembers)
+        {
+            _diagnostics.Report(
+                PdfReaderDiagnosticCode.OrphanedObjectStreamMembersDropped,
+                "One or more compressed-object-stream members were dropped from the merged "
+                + "cross-reference table because their container had no live entry.");
+        }
 
         // Everything from here on can throw partway through an encrypted document — a bad /Encrypt
         // shape, a failed Phase B recovery, a /Root that never resolves, a catalog that isn't a
@@ -341,6 +387,11 @@ public sealed partial class PdfDocumentReader : IDisposable
             {
                 // Not a genuine, decodable object stream — reconstruction is best-effort; move on.
                 // The charge above stands regardless.
+                _diagnostics.Report(
+                    PdfReaderDiagnosticCode.ObjectStreamContainerUnreadable,
+                    $"Object {container} looked like an object-stream container while reconstructing "
+                    + "the cross-reference table, but could not be decoded as one.",
+                    container);
             }
         }
         ReconstructionObjStmBytesCharged = reconstructionObjStmBytesCharged;
@@ -518,7 +569,14 @@ public sealed partial class PdfDocumentReader : IDisposable
         // generation up front.
         var xrefIsAuthoritative = entry.Generation != XrefEntry.UnknownGeneration;
         if (generation is not null && xrefIsAuthoritative && generation != entry.Generation)
+        {
+            _diagnostics.Report(
+                PdfReaderDiagnosticCode.ObjectGenerationMismatch,
+                $"Reference asked for generation {generation}, but the cross-reference table records "
+                + $"object {objectNumber} at generation {entry.Generation} (ISO 32000-2 §7.3.10).",
+                objectNumber, generation);
             return null;
+        }
 
         if (_resolveDepth >= MaxResolveDepth)
             throw new InvalidDataException(
@@ -536,7 +594,14 @@ public sealed partial class PdfDocumentReader : IDisposable
                 var result = parser.ParseIndirectObject();
 
                 if (result.ObjectNumber != objectNumber)
+                {
+                    _diagnostics.Report(
+                        PdfReaderDiagnosticCode.ObjectHeaderMismatch,
+                        $"The cross-reference table points object {objectNumber} at an offset whose "
+                        + $"own \"N G obj\" header names object {result.ObjectNumber} instead.",
+                        objectNumber, generation);
                     return null;
+                }
 
                 if (xrefIsAuthoritative)
                 {
@@ -664,11 +729,12 @@ public sealed partial class PdfDocumentReader : IDisposable
     /// runs — not by mutating <see cref="ParsedStream.RawBody"/>, which stays the verbatim file
     /// bytes for §6.1.7.1 byte-level conformance checks (see the type's own doc comment). A stream
     /// whose effective crypt filter method is Identity is handed to
-    /// <see cref="PdfFilters.Decode(ParsedStream, ReaderLimits, Func{PdfObject?, PdfObject?}?)"/> unchanged; one
+    /// <see cref="PdfFilters.Decode(ParsedStream, ReaderLimits, Func{PdfObject?, PdfObject?}?, DiagnosticSink?)"/> unchanged; one
     /// that needs decrypting is wrapped in a throwaway <see cref="ParsedStream"/> carrying the
     /// decrypted bytes, never exposed outside this method.
     /// </remarks>
-    internal byte[]? GetDecodedStreamData(ParsedStream stream) => PdfFilters.Decode(DecryptedStreamView(stream), _limits, ResolveMaybe);
+    internal byte[]? GetDecodedStreamData(ParsedStream stream) =>
+        PdfFilters.Decode(DecryptedStreamView(stream), _limits, ResolveMaybe, _diagnostics);
 
     /// <summary>
     /// Returns a <see cref="ParsedStream"/> view of <paramref name="stream"/> whose body is
@@ -677,7 +743,7 @@ public sealed partial class PdfDocumentReader : IDisposable
     /// used to give every caller before #97, except correct on an encrypted document.
     ///
     /// <para>
-    /// Exists because <see cref="PdfFilters.Decode(ParsedStream, ReaderLimits, Func{PdfObject?, PdfObject?}?)"/>
+    /// Exists because <see cref="PdfFilters.Decode(ParsedStream, ReaderLimits, Func{PdfObject?, PdfObject?}?, DiagnosticSink?)"/>
     /// returns <see langword="null"/> whenever an image filter (DCTDecode, JPXDecode, …) is present
     /// — by design, it never attempts to decode image data — which makes it unusable for a caller
     /// like <c>Jpeg2000Rule</c> that wants the raw-but-decrypted JP2/codestream bytes precisely

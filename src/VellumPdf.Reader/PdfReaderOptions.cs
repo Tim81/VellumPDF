@@ -97,4 +97,20 @@ public sealed class PdfReaderOptions
     /// 8 or below the floor of 1, at which the budget would stop scaling with file size at all.
     /// </exception>
     public int ReconstructionBudgetMultiplier { get; init; } = ReaderLimits.DefaultReconstructionBudgetMultiplier;
+
+    /// <summary>
+    /// The maximum number of entries <see cref="PdfDocumentReader.Diagnostics"/> holds before
+    /// further diagnostics are dropped in favour of one
+    /// <see cref="PdfReaderDiagnosticCode.DiagnosticsSuppressed"/> entry recording how many were.
+    /// Defaults to 1000. Tighten-only, matching <see cref="MaxDecodedStreamBytes"/> and
+    /// <see cref="ReconstructionBudgetMultiplier"/> above: nothing about this cap is a spec
+    /// requirement, so a caller may lower it — to bound memory on a document engineered to trigger
+    /// the same recoverable condition on every one of a huge number of objects — but not raise it
+    /// past the shipped default.
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Thrown by <see cref="PdfReader.Open(byte[], PdfReaderOptions)"/> when set above the default
+    /// of 1000 or below the floor of 1.
+    /// </exception>
+    public int MaxDiagnostics { get; init; } = ReaderLimits.DefaultMaxDiagnostics;
 }

@@ -480,6 +480,11 @@ public sealed class GenerationNumberTests
         var resolved = reader.Resolve(new PdfIndirectReference(10, 2));
 
         Assert.Null(resolved);
+        // #385: the divergence itself is a diagnostic.
+        var diagnostic = Assert.Single(
+            reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ObjectGenerationMismatch);
+        Assert.Equal(10, diagnostic.ObjectNumber);
+        Assert.Equal(2, diagnostic.Generation);
     }
 
     [Fact]

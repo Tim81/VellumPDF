@@ -54,12 +54,21 @@ internal static class PdfFilters
     /// resolver is supplied those references are dereferenced; without one only direct values are
     /// honoured (the bootstrap xref-stream path, where the object graph is not yet resolvable).
     /// </param>
+    /// <param name="diagnostics">
+    /// Optional sink for #385's diagnostics channel. Left null at every bootstrap call site that
+    /// runs before a <see cref="PdfDocumentReader"/> (and therefore its sink) exists —
+    /// <see cref="XrefParser"/> and <see cref="XrefReconstructor"/> decode the xref stream and
+    /// reconstruction candidates before that point. <see cref="PdfDocumentReader"/>'s own call
+    /// sites pass its sink.
+    /// </param>
     internal static bool TryDecode(
         ParsedStream stream, out byte[] decoded, ReaderLimits limits,
-        Func<PdfObject?, PdfObject?>? resolve = null)
+        Func<PdfObject?, PdfObject?>? resolve = null, DiagnosticSink? diagnostics = null)
     {
-        var filters = GetFilterList(stream.Dictionary, resolve);
-        var parms = GetParmsList(stream.Dictionary, filters.Count, resolve);
+        var objectNumber = stream.ObjectNumber;
+        var generation = stream.Generation;
+        var filters = GetFilterList(stream.Dictionary, resolve, diagnostics, objectNumber, generation);
+        var parms = GetParmsList(stream.Dictionary, filters.Count, resolve, diagnostics, objectNumber, generation);
 
         var data = stream.RawBody.ToArray();
         var fullyDecoded = true;
@@ -75,7 +84,7 @@ internal static class PdfFilters
                 break;
             }
 
-            data = ApplyFilter(f, p, data, limits.MaxDecodedBytes);
+            data = ApplyFilter(f, p, data, limits.MaxDecodedBytes, diagnostics, objectNumber, generation);
         }
 
         decoded = data;
@@ -87,35 +96,39 @@ internal static class PdfFilters
     /// <param name="limits">The decode ceiling to enforce; see <see cref="TryDecode"/>.</param>
     /// <param name="resolve">Optional indirect-reference resolver for <c>/Filter</c>/<c>/DecodeParms</c>;
     /// see <see cref="TryDecode"/>.</param>
+    /// <param name="diagnostics">Optional diagnostics sink; see <see cref="TryDecode"/>.</param>
     internal static byte[]? Decode(
-        ParsedStream stream, ReaderLimits limits, Func<PdfObject?, PdfObject?>? resolve = null)
+        ParsedStream stream, ReaderLimits limits, Func<PdfObject?, PdfObject?>? resolve = null,
+        DiagnosticSink? diagnostics = null)
     {
-        if (!TryDecode(stream, out var decoded, limits, resolve))
+        if (!TryDecode(stream, out var decoded, limits, resolve, diagnostics))
             return null;
         return decoded;
     }
 
-    private static byte[] ApplyFilter(PdfName filter, PdfDictionary? parms, byte[] input, long maxDecodedBytes)
+    private static byte[] ApplyFilter(
+        PdfName filter, PdfDictionary? parms, byte[] input, long maxDecodedBytes,
+        DiagnosticSink? diagnostics, int? objectNumber, int? generation)
     {
         if (filter.Value is "FlateDecode" or "Fl")
         {
-            var raw = InflateFlate(input, maxDecodedBytes);
-            return ApplyPredictor(parms, raw);
+            var raw = InflateFlate(input, maxDecodedBytes, diagnostics, objectNumber, generation);
+            return ApplyPredictor(parms, raw, diagnostics, objectNumber, generation);
         }
         if (filter.Value is "LZWDecode" or "LZW")
         {
             var earlyChange = 1;
             if (parms?.Get(_earlyChange) is PdfInteger ec)
                 earlyChange = (int)ec.Value;
-            var raw = DecodeLzw(input, earlyChange, maxDecodedBytes);
-            return ApplyPredictor(parms, raw);
+            var raw = DecodeLzw(input, earlyChange, maxDecodedBytes, diagnostics, objectNumber, generation);
+            return ApplyPredictor(parms, raw, diagnostics, objectNumber, generation);
         }
         if (filter.Value is "ASCIIHexDecode" or "AHx")
             return DecodeAsciiHex(input);
         if (filter.Value is "ASCII85Decode" or "A85")
             return DecodeAscii85(input);
         if (filter.Value is "RunLengthDecode" or "RL")
-            return DecodeRunLength(input, maxDecodedBytes);
+            return DecodeRunLength(input, maxDecodedBytes, diagnostics, objectNumber, generation);
 
         // /Crypt (ISO 32000-2 §7.4.10) is a no-op at this layer: PdfDocumentReader.GetDecodedStreamData
         // resolves which crypt filter method a stream's own /Crypt entry (or the document-wide /StmF)
@@ -128,12 +141,21 @@ internal static class PdfFilters
         if (filter.Value == "Crypt")
             return input;
 
+        // Reported before the throw, not instead of it (#385 routing is observe-only): a caller
+        // that catches the InvalidDataException upstream and keeps the reader alive still sees this
+        // in PdfDocumentReader.Diagnostics, and the reader gave up on the object either way, which
+        // is what makes this severity Error rather than Warning.
+        diagnostics?.Report(
+            PdfReaderDiagnosticCode.UnknownFilter, $"Unknown PDF filter: /{filter.Value}.",
+            objectNumber, generation);
         throw new InvalidDataException($"Unknown PDF filter: /{filter.Value}");
     }
 
     // ── FlateDecode ──────────────────────────────────────────────────────────
 
-    internal static byte[] InflateFlate(byte[] input, long maxDecodedBytes)
+    internal static byte[] InflateFlate(
+        byte[] input, long maxDecodedBytes,
+        DiagnosticSink? diagnostics = null, int? objectNumber = null, int? generation = null)
     {
         // FlateDecode is zlib (RFC 1950), but some producers emit raw deflate. Use the 2-byte
         // header as a fast-path hint for which to try first, then fall back to the other on a
@@ -148,6 +170,7 @@ internal static class PdfFilters
         catch (DecompressionLimitExceededException ex)
         {
             // A decompression bomb: surface it, never retry.
+            ReportDecodedStreamLimitExceeded(diagnostics, objectNumber, generation, ex.Message);
             throw new InvalidDataException(ex.Message);
         }
         catch (Exception primaryError) when (primaryError is not OutOfMemoryException)
@@ -161,6 +184,7 @@ internal static class PdfFilters
             }
             catch (DecompressionLimitExceededException ex)
             {
+                ReportDecodedStreamLimitExceeded(diagnostics, objectNumber, generation, ex.Message);
                 throw new InvalidDataException(ex.Message);
             }
             catch (Exception inner)
@@ -171,6 +195,15 @@ internal static class PdfFilters
             }
         }
     }
+
+    /// <summary>
+    /// Reports #385's <see cref="PdfReaderDiagnosticCode.DecodedStreamLimitExceeded"/> before the
+    /// three decompression bomb guards (FlateDecode, LZWDecode, RunLengthDecode) re-throw as
+    /// <see cref="InvalidDataException"/> — observe-only, the throw still happens either way.
+    /// </summary>
+    private static void ReportDecodedStreamLimitExceeded(
+        DiagnosticSink? diagnostics, int? objectNumber, int? generation, string message) =>
+        diagnostics?.Report(PdfReaderDiagnosticCode.DecodedStreamLimitExceeded, message, objectNumber, generation);
 
     private static Stream MakeDecompressor(byte[] input, bool zlib) => zlib
         ? new ZLibStream(new MemoryStream(input), CompressionMode.Decompress)
@@ -215,7 +248,8 @@ internal static class PdfFilters
 
     // ── Predictors ───────────────────────────────────────────────────────────
 
-    private static byte[] ApplyPredictor(PdfDictionary? parms, byte[] data)
+    private static byte[] ApplyPredictor(
+        PdfDictionary? parms, byte[] data, DiagnosticSink? diagnostics, int? objectNumber, int? generation)
     {
         if (parms is null) return data;
         if (parms.Get(_predictor) is not PdfInteger predObj) return data;
@@ -236,7 +270,7 @@ internal static class PdfFilters
                 $"FlateDecode predictor: invalid Columns/Colors/BitsPerComponent ({columns}/{colors}/{bpc}).");
 
         if (predictor == 2)
-            return ApplyTiffPredictor2(data, (int)columns, (int)colors, (int)bpc);
+            return ApplyTiffPredictor2(data, (int)columns, (int)colors, (int)bpc, diagnostics, objectNumber, generation);
 
         if (predictor >= 10 && predictor <= 15)
             return ApplyPngPredictor(data, (int)columns, (int)colors, (int)bpc);
@@ -244,7 +278,9 @@ internal static class PdfFilters
         return data;
     }
 
-    private static byte[] ApplyTiffPredictor2(byte[] data, int columns, int colors, int bpc)
+    private static byte[] ApplyTiffPredictor2(
+        byte[] data, int columns, int colors, int bpc,
+        DiagnosticSink? diagnostics, int? objectNumber, int? generation)
     {
         // TIFF predictor 2: horizontal differencing. Each sample undoes the delta.
         // Only 8-bit per component supported here; other BPC is uncommon in practice.
@@ -268,7 +304,15 @@ internal static class PdfFilters
             }
             else
             {
-                // Non-8-bit: copy as-is (not commonly needed by the PDF writer)
+                // Non-8-bit: copy as-is. ISO 32000-2 §7.4.4.4 does not restrict the TIFF predictor
+                // to 8-bit samples, but this decoder only undoes the horizontal difference at that
+                // depth — passing the still-differenced row through leaves every sample wrong at
+                // any other /BitsPerComponent (#385 tracks the fix as UnsupportedPredictor).
+                diagnostics?.Report(
+                    PdfReaderDiagnosticCode.UnsupportedPredictor,
+                    $"TIFF predictor (2) applied at BitsPerComponent {bpc}; only 8-bit is decoded "
+                    + "correctly, so these samples are copied through still horizontally differenced.",
+                    objectNumber, generation);
                 Array.Copy(data, src, result, dst, rowBytes);
             }
         }
@@ -345,7 +389,9 @@ internal static class PdfFilters
 
     // ── LZWDecode ────────────────────────────────────────────────────────────
 
-    private static byte[] DecodeLzw(byte[] input, int earlyChange, long maxDecodedBytes)
+    private static byte[] DecodeLzw(
+        byte[] input, int earlyChange, long maxDecodedBytes,
+        DiagnosticSink? diagnostics = null, int? objectNumber = null, int? generation = null)
     {
         const int ClearCode = 256;
         const int EoiCode = 257;
@@ -426,8 +472,12 @@ internal static class PdfFilters
             }
 
             if (output.Length + entry.Length > maxDecodedBytes)
-                throw new InvalidDataException(
-                    $"LZWDecode: decompressed size exceeds {maxDecodedBytes} bytes ({maxDecodedBytes / 1024.0 / 1024.0:F2} MiB) cap.");
+            {
+                var message =
+                    $"LZWDecode: decompressed size exceeds {maxDecodedBytes} bytes ({maxDecodedBytes / 1024.0 / 1024.0:F2} MiB) cap.";
+                ReportDecodedStreamLimitExceeded(diagnostics, objectNumber, generation, message);
+                throw new InvalidDataException(message);
+            }
 
             output.Write(entry);
 
@@ -543,7 +593,9 @@ internal static class PdfFilters
 
     // ── RunLengthDecode ──────────────────────────────────────────────────────
 
-    private static byte[] DecodeRunLength(byte[] input, long maxDecodedBytes)
+    private static byte[] DecodeRunLength(
+        byte[] input, long maxDecodedBytes,
+        DiagnosticSink? diagnostics = null, int? objectNumber = null, int? generation = null)
     {
         var output = new MemoryStream();
         var i = 0;
@@ -558,8 +610,12 @@ internal static class PdfFilters
                 if (i + count > input.Length)
                     throw new InvalidDataException("RunLengthDecode: literal run extends past end of input.");
                 if (output.Length + count > maxDecodedBytes)
-                    throw new InvalidDataException(
-                        $"RunLengthDecode: decompressed size exceeds {maxDecodedBytes} bytes ({maxDecodedBytes / 1024.0 / 1024.0:F2} MiB) cap.");
+                {
+                    var message =
+                        $"RunLengthDecode: decompressed size exceeds {maxDecodedBytes} bytes ({maxDecodedBytes / 1024.0 / 1024.0:F2} MiB) cap.";
+                    ReportDecodedStreamLimitExceeded(diagnostics, objectNumber, generation, message);
+                    throw new InvalidDataException(message);
+                }
                 output.Write(input, i, count);
                 i += count;
             }
@@ -571,8 +627,12 @@ internal static class PdfFilters
                     throw new InvalidDataException("RunLengthDecode: repeat run missing data byte.");
                 var b = input[i++];
                 if (output.Length + count > maxDecodedBytes)
-                    throw new InvalidDataException(
-                        $"RunLengthDecode: decompressed size exceeds {maxDecodedBytes} bytes ({maxDecodedBytes / 1024.0 / 1024.0:F2} MiB) cap.");
+                {
+                    var message =
+                        $"RunLengthDecode: decompressed size exceeds {maxDecodedBytes} bytes ({maxDecodedBytes / 1024.0 / 1024.0:F2} MiB) cap.";
+                    ReportDecodedStreamLimitExceeded(diagnostics, objectNumber, generation, message);
+                    throw new InvalidDataException(message);
+                }
                 for (var j = 0; j < count; j++)
                     output.WriteByte(b);
             }
@@ -585,7 +645,9 @@ internal static class PdfFilters
     private static PdfObject? Deref(Func<PdfObject?, PdfObject?>? resolve, PdfObject? obj)
         => resolve is null ? obj : resolve(obj);
 
-    private static List<PdfName> GetFilterList(PdfDictionary dict, Func<PdfObject?, PdfObject?>? resolve)
+    private static List<PdfName> GetFilterList(
+        PdfDictionary dict, Func<PdfObject?, PdfObject?>? resolve,
+        DiagnosticSink? diagnostics, int? objectNumber, int? generation)
     {
         // /Filter only. /F in a stream dictionary is the (external) file specification,
         // not a filter abbreviation, so it must not be consulted here.
@@ -597,19 +659,51 @@ internal static class PdfFilters
         // occurred" — the stream is handed back unfiltered, per spec, not flagged. See #373.
         if (filterObj is null) return [];
         if (filterObj is PdfName n) return [n];
+        if (filterObj is PdfNull)
+        {
+            // An EXPLICIT /Filter null, as opposed to the key being absent — still "no filter"
+            // under §7.3.9's equivalence, but distinct enough from an ordinary omission (a
+            // producer wrote something here) that it is worth an Info-level note rather than
+            // passing through in total silence.
+            diagnostics?.Report(
+                PdfReaderDiagnosticCode.FilterNull,
+                "/Filter is explicitly null; treated as absent per ISO 32000-2 §7.3.9.",
+                objectNumber, generation);
+            return [];
+        }
         if (filterObj is PdfArray arr)
         {
             var list = new List<PdfName>(arr.Count);
             for (var i = 0; i < arr.Count; i++)
             {
-                if (Deref(resolve, arr[i]) is PdfName fn) list.Add(fn);
+                var element = Deref(resolve, arr[i]);
+                if (element is PdfName fn)
+                {
+                    list.Add(fn);
+                    continue;
+                }
+
+                // #373: a non-name element is dropped from the chain rather than applied — this
+                // records that a producer wrote something the chain silently skips, which
+                // previously left no trace at all.
+                diagnostics?.Report(
+                    PdfReaderDiagnosticCode.FilterArrayElementNotName,
+                    $"/Filter array element {i} did not resolve to a name; dropped from the chain.",
+                    objectNumber, generation);
             }
             return list;
         }
+
+        diagnostics?.Report(
+            PdfReaderDiagnosticCode.FilterValueMalformed,
+            $"/Filter resolved to a {filterObj.GetType().Name}, neither a name, an array, nor null; treated as absent.",
+            objectNumber, generation);
         return [];
     }
 
-    private static List<PdfDictionary?> GetParmsList(PdfDictionary dict, int filterCount, Func<PdfObject?, PdfObject?>? resolve)
+    private static List<PdfDictionary?> GetParmsList(
+        PdfDictionary dict, int filterCount, Func<PdfObject?, PdfObject?>? resolve,
+        DiagnosticSink? diagnostics, int? objectNumber, int? generation)
     {
         var pObj = Deref(resolve, dict.Get(_dp) ?? dict.Get(_dp2));
         if (pObj is null)
@@ -623,9 +717,33 @@ internal static class PdfFilters
         {
             var list = new List<PdfDictionary?>(arr.Count);
             for (var i = 0; i < arr.Count; i++)
-                list.Add(Deref(resolve, arr[i]) is PdfDictionary d ? d : null);
+            {
+                var element = Deref(resolve, arr[i]);
+                if (element is PdfDictionary d)
+                {
+                    list.Add(d);
+                    continue;
+                }
+
+                // A non-dictionary, non-null element supplies no parameters for its filter — same
+                // "treated as absent" outcome as the catch-all below, reported here because it is
+                // the array-element shape rather than the whole entry that is malformed.
+                if (element is not (null or PdfNull))
+                {
+                    diagnostics?.Report(
+                        PdfReaderDiagnosticCode.DecodeParmsMalformed,
+                        $"/DecodeParms array element {i} did not resolve to a dictionary; treated as no parameters.",
+                        objectNumber, generation);
+                }
+                list.Add(null);
+            }
             return list;
         }
+
+        diagnostics?.Report(
+            PdfReaderDiagnosticCode.DecodeParmsMalformed,
+            $"/DecodeParms resolved to a {pObj.GetType().Name}, neither a dictionary, an array, nor null; treated as absent.",
+            objectNumber, generation);
         return [];
     }
 

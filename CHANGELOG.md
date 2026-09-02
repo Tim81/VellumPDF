@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **`PdfDocumentReader.Diagnostics` — a notify-and-continue channel for conditions the reader
+  recovers from instead of aborting on.** Twelve `PdfReaderDiagnosticCode` values cover file
+  structure and stream decoding for this release: a rebuilt cross-reference table, a dropped
+  orphaned object-stream member, an unreadable reconstruction candidate, an object whose header
+  disagrees with the cross-reference table (on its number or its generation), and six `/Filter`/
+  `/DecodeParms` shapes the reader already tolerated without saying so — including the TIFF
+  predictor at a `/BitsPerComponent` other than 8, which decodes wrong today and now says so.
+  `PdfReaderOptions.MaxDiagnostics` (default 1000, tighten-only like `MaxDecodedStreamBytes` and
+  `ReconstructionBudgetMultiplier`) bounds the list; past it, one `DiagnosticsSuppressed` entry
+  records how many further reports were dropped instead of growing without limit. Purely additive:
+  nothing that returned data now returns null, and nothing that used to succeed now throws. (#385)
+
 ## [2.3.0] - 2026-09-01
 
 ### Breaking changes
