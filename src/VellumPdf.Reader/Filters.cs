@@ -289,6 +289,25 @@ internal static class PdfFilters
         var rows = data.Length / rowBytes;
         var result = new byte[rows * rowBytes];
 
+        // Reported once per stream, ahead of the row loop, rather than once per row left to the
+        // sink's own dedupe: the condition ("this BitsPerComponent isn't decoded correctly") is a
+        // property of the stream, established before the first row is even read, not something
+        // that only becomes true partway through — hoisting it says so instead of relying on a
+        // cap-and-dedupe mechanism built for a different purpose to collapse the repeats down to
+        // one after the fact.
+        if (bpc != 8)
+        {
+            // ISO 32000-2 §7.4.4.4 does not restrict the TIFF predictor to 8-bit samples, but this
+            // decoder only undoes the horizontal difference at that depth — passing the
+            // still-differenced rows through leaves every sample wrong at any other
+            // /BitsPerComponent (#385 tracks the fix as UnsupportedPredictor).
+            diagnostics?.Report(
+                PdfReaderDiagnosticCode.UnsupportedPredictor,
+                $"TIFF predictor (2) applied at BitsPerComponent {bpc}; only 8-bit is decoded "
+                + "correctly, so these samples are copied through still horizontally differenced.",
+                objectNumber, generation);
+        }
+
         for (var row = 0; row < rows; row++)
         {
             var src = row * rowBytes;
@@ -304,15 +323,7 @@ internal static class PdfFilters
             }
             else
             {
-                // Non-8-bit: copy as-is. ISO 32000-2 §7.4.4.4 does not restrict the TIFF predictor
-                // to 8-bit samples, but this decoder only undoes the horizontal difference at that
-                // depth — passing the still-differenced row through leaves every sample wrong at
-                // any other /BitsPerComponent (#385 tracks the fix as UnsupportedPredictor).
-                diagnostics?.Report(
-                    PdfReaderDiagnosticCode.UnsupportedPredictor,
-                    $"TIFF predictor (2) applied at BitsPerComponent {bpc}; only 8-bit is decoded "
-                    + "correctly, so these samples are copied through still horizontally differenced.",
-                    objectNumber, generation);
+                // Non-8-bit: copy as-is — see the hoisted report above for why.
                 Array.Copy(data, src, result, dst, rowBytes);
             }
         }
@@ -706,7 +717,11 @@ internal static class PdfFilters
         DiagnosticSink? diagnostics, int? objectNumber, int? generation)
     {
         var pObj = Deref(resolve, dict.Get(_dp) ?? dict.Get(_dp2));
-        if (pObj is null)
+        // An explicit /DecodeParms null is equivalent to the entry being absent (ISO 32000-2
+        // §7.3.9), same as the array-element case just below treats a null element — so it is
+        // handled here rather than falling into the catch-all, which would otherwise report
+        // DecodeParmsMalformed with a message that contradicts the very rule this branch follows.
+        if (pObj is null or PdfNull)
         {
             var list = new List<PdfDictionary?>(filterCount);
             for (var i = 0; i < filterCount; i++) list.Add(null);

@@ -1,6 +1,8 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
+using System.Collections.ObjectModel;
+
 namespace VellumPdf.Reader;
 
 /// <summary>
@@ -24,6 +26,15 @@ internal sealed class DiagnosticSink(int cap)
     // number first (see PdfDocumentReader.Resolve's own cache key).
     private readonly HashSet<(PdfReaderDiagnosticCode Code, int? ObjectNumber, int? PageIndex)> _seen = [];
     private readonly List<PdfReaderDiagnostic> _diagnostics = [];
+
+    // Built lazily (a field initializer cannot reference another instance field, and this class
+    // uses a primary constructor with no body to compute it in) and cached from then on. A
+    // ReadOnlyCollection wraps _diagnostics by reference rather than copying it, so it still
+    // reflects every later Report/Forward call — the live-view contract Diagnostics documents —
+    // but, unlike handing out _diagnostics itself as an IReadOnlyList<T>, it cannot be downcast
+    // back to List<T> to mutate it. RecordSuppression's _suppressionIndex depends on nobody but
+    // this sink ever inserting, removing, or reordering entries.
+    private ReadOnlyCollection<PdfReaderDiagnostic>? _diagnosticsView;
     private readonly DiagnosticSink? _parent;
     private readonly int _cap = cap >= 1
         ? cap
@@ -43,7 +54,7 @@ internal sealed class DiagnosticSink(int cap)
 
     /// <summary>Every diagnostic this sink has recorded, in the order <see cref="Report"/> or
     /// forwarding from a <see cref="CreateScope"/> child added them.</summary>
-    internal IReadOnlyList<PdfReaderDiagnostic> Diagnostics => _diagnostics;
+    internal IReadOnlyList<PdfReaderDiagnostic> Diagnostics => _diagnosticsView ??= _diagnostics.AsReadOnly();
 
     /// <summary>
     /// Creates a child sink sharing this sink's cap: a report against the child is recorded in the

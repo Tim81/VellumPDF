@@ -203,10 +203,8 @@ public sealed partial class PdfDocumentReader : IDisposable
         // itself observes — reconstruction having run, an orphaned object-stream member having
         // been dropped — is recorded even if a LATER step (authentication, Phase B, /Root
         // resolution) fails and the exception unwinds past every field assignment below this one.
-        // Diagnostics is a plain property wrapping the sink's own list rather than a
-        // ReadOnlyCollection over it, matching the live-view contract every other collection this
-        // type exposes documents (see the property's own remarks) — IReadOnlyList<T> already
-        // forbids mutation through the interface, so a second wrapper adds nothing.
+        // DiagnosticSink.Diagnostics already hands back a ReadOnlyCollection wrapping its own live
+        // list (see that type), so this property is that same wrapper, not a second one.
         _diagnostics = new DiagnosticSink(_limits.MaxDiagnostics);
         Diagnostics = _diagnostics.Diagnostics;
 
@@ -557,7 +555,23 @@ public sealed partial class PdfDocumentReader : IDisposable
         // already carries this object's authoritative generation (see the field comment above), so
         // a warm hit never needs a second trip to _xref to check it.
         if (_cache.TryGetValue(objectNumber, out var cached))
-            return generation is null || cached.Generation == generation ? cached.Value : null;
+        {
+            if (generation is null || cached.Generation == generation)
+                return cached.Value;
+
+            // Reported here too, not just on the cold path below — otherwise whether this
+            // condition is recorded would depend on request order: a cold mismatch reports and
+            // caches nothing (this method returns before ever reaching _cache[objectNumber] = …),
+            // so the SAME mismatched request made twice must still report both times, and a
+            // caller who resolved the correct generation first must still see it on a later
+            // mismatched request against the now-warm cache.
+            _diagnostics.Report(
+                PdfReaderDiagnosticCode.ObjectGenerationMismatch,
+                $"Reference asked for generation {generation}, but the cross-reference table records "
+                + $"object {objectNumber} at generation {cached.Generation} (ISO 32000-2 §7.3.10).",
+                objectNumber, generation);
+            return null;
+        }
 
         if (!_xref.TryGetValue(objectNumber, out var entry))
             return null;
@@ -677,13 +691,32 @@ public sealed partial class PdfDocumentReader : IDisposable
 
         var xrefIsAuthoritative = entry.Generation != XrefEntry.UnknownGeneration;
         if (generation is not null && xrefIsAuthoritative && generation != entry.Generation)
+        {
+            // Mirrors Resolve(int, int?)'s own report for the identical condition — this method is
+            // a second entry point into the same object graph, not a different one, and a caller
+            // reaching a mismatched stream through here deserves the same diagnostic a caller
+            // reaching it through Resolve gets.
+            _diagnostics.Report(
+                PdfReaderDiagnosticCode.ObjectGenerationMismatch,
+                $"Reference asked for generation {generation}, but the cross-reference table records "
+                + $"object {objectNumber} at generation {entry.Generation} (ISO 32000-2 §7.3.10).",
+                objectNumber, generation);
             return null;
+        }
 
         var parser = new PdfObjectParser(Bytes, CheckedOffset(entry.Offset), ResolveLength);
         var result = parser.ParseIndirectObject();
 
         if (result.ObjectNumber != objectNumber)
+        {
+            // Mirrors Resolve(int, int?)'s own report for the identical condition.
+            _diagnostics.Report(
+                PdfReaderDiagnosticCode.ObjectHeaderMismatch,
+                $"The cross-reference table points object {objectNumber} at an offset whose "
+                + $"own \"N G obj\" header names object {result.ObjectNumber} instead.",
+                objectNumber, generation);
             return null;
+        }
 
         int actualGeneration;
         if (xrefIsAuthoritative)

@@ -61,7 +61,9 @@ public sealed class PdfReaderDiagnostic
 
     /// <summary>The generation of <see cref="ObjectNumber"/>, or <see langword="null"/> when
     /// <see cref="ObjectNumber"/> itself is <see langword="null"/> or the generation was not part
-    /// of what triggered the observation.</summary>
+    /// of what triggered the observation. For <see cref="PdfReaderDiagnosticCode.ObjectGenerationMismatch"/>
+    /// specifically, this is the generation the REQUEST asked for, not the one the cross-reference
+    /// table records for the object — the message names that one.</summary>
     public int? Generation { get; }
 
     /// <summary>The zero-based page index the observation concerns, or <see langword="null"/> when
@@ -82,7 +84,9 @@ public sealed class PdfReaderDiagnostic
 
     /// <summary>
     /// Formats as <c>"{Severity} {Code} obj {ObjectNumber} {Generation}: {Message}"</c>, omitting
-    /// the <c>obj</c> segment entirely when <see cref="ObjectNumber"/> is <see langword="null"/>.
+    /// the <c>obj</c> segment entirely when <see cref="ObjectNumber"/> is <see langword="null"/>,
+    /// and omitting just <c>{Generation}</c> — printing <see cref="ObjectNumber"/> alone — when
+    /// <see cref="ObjectNumber"/> is set but <see cref="Generation"/> is <see langword="null"/>.
     /// </summary>
     public override string ToString()
     {

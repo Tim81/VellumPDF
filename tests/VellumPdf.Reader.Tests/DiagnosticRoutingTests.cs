@@ -118,6 +118,52 @@ public sealed class DiagnosticRoutingTests
         Assert.Equal(PdfReaderDiagnosticSeverity.Warning, d.Severity);
     }
 
+    /// <summary>
+    /// An explicit <c>/DecodeParms null</c> — as opposed to the key being absent — is equivalent
+    /// to absent per ISO 32000-2 §7.3.9, so it must not fall into the catch-all that reports
+    /// <see cref="PdfReaderDiagnosticCode.DecodeParmsMalformed"/> with a "neither a dictionary, an
+    /// array, nor null" message that would then be false of its own input.
+    /// </summary>
+    [Fact]
+    public void DecodeParmsExplicitNull_wholeEntry_treatedAsAbsent_reportsNothing()
+    {
+        var body = "hello"u8.ToArray();
+        var compressed = CompressZlib(body);
+        var dict = new PdfDictionary()
+            .Set(PdfName.Filter, PdfName.FlateDecode)
+            .Set(new PdfName("DecodeParms"), PdfNull.Instance);
+        var stream = MakeParsedStream(dict, compressed);
+        var sink = new DiagnosticSink(cap: 10);
+
+        var decoded = PdfFilters.Decode(stream, ReaderLimits.Defaults, diagnostics: sink);
+
+        Assert.Equal(body, decoded);
+        Assert.Empty(sink.Diagnostics);
+    }
+
+    /// <summary>
+    /// The array-element twin of the test above: a <c>/DecodeParms</c> array whose element is
+    /// explicitly <c>null</c> rather than a dictionary is already silent (the array-element branch
+    /// excludes <c>null</c>/<see cref="PdfNull"/> from its own report) — pinned here so a future
+    /// change to that branch cannot regress it without a test noticing.
+    /// </summary>
+    [Fact]
+    public void DecodeParmsExplicitNull_arrayElement_treatedAsAbsent_reportsNothing()
+    {
+        var body = "hello"u8.ToArray();
+        var compressed = CompressZlib(body);
+        var dict = new PdfDictionary()
+            .Set(PdfName.Filter, new PdfArray().Add(PdfName.FlateDecode))
+            .Set(new PdfName("DecodeParms"), new PdfArray().Add(PdfNull.Instance));
+        var stream = MakeParsedStream(dict, compressed);
+        var sink = new DiagnosticSink(cap: 10);
+
+        var decoded = PdfFilters.Decode(stream, ReaderLimits.Defaults, diagnostics: sink);
+
+        Assert.Equal(body, decoded);
+        Assert.Empty(sink.Diagnostics);
+    }
+
     // ── Filters.cs: predictor ─────────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -218,6 +264,93 @@ public sealed class DiagnosticRoutingTests
         var d = Assert.Single(reader.Diagnostics, x => x.Code == PdfReaderDiagnosticCode.ObjectHeaderMismatch);
         Assert.Equal(PdfReaderDiagnosticSeverity.Warning, d.Severity);
         Assert.Equal(10, d.ObjectNumber);
+    }
+
+    // ── PdfDocumentReader: ResolveStream mirrors Resolve's own reports ───────────────────────────
+
+    /// <summary>
+    /// The stream twin of <see cref="ObjectHeaderMismatch_resolvesToNull_andReportsWarning"/>:
+    /// <c>ResolveStream(int, int?)</c> is a second entry point into the same object graph and must
+    /// report the identical condition, not stay silent because the caller happened to reach the
+    /// object through it instead of <c>Resolve</c>.
+    /// </summary>
+    [Fact]
+    public void ResolveStream_headerMismatch_returnsNull_andReportsWarning()
+    {
+        var bytes = BuildStreamHeaderMismatchDocument();
+        using var reader = PdfReader.Open(bytes);
+
+        Assert.Null(reader.ResolveStream(10));
+
+        var d = Assert.Single(reader.Diagnostics, x => x.Code == PdfReaderDiagnosticCode.ObjectHeaderMismatch);
+        Assert.Equal(PdfReaderDiagnosticSeverity.Warning, d.Severity);
+        Assert.Equal(10, d.ObjectNumber);
+    }
+
+    /// <summary>
+    /// The stream twin of <c>ClassicXref_referenceGenerationMismatch_resolvesToNull</c>
+    /// (<see cref="GenerationNumberTests"/>): the same ISO 32000-2 §7.3.10 divergence, reached
+    /// through <c>ResolveStream</c> instead of <c>Resolve</c>.
+    /// </summary>
+    [Fact]
+    public void ResolveStream_generationMismatch_returnsNull_andReportsWarning()
+    {
+        var bytes = BuildStreamGenerationMismatchDocument();
+        using var reader = PdfReader.Open(bytes);
+
+        Assert.Null(reader.ResolveStream(new PdfIndirectReference(10, 5)));
+
+        var d = Assert.Single(reader.Diagnostics, x => x.Code == PdfReaderDiagnosticCode.ObjectGenerationMismatch);
+        Assert.Equal(PdfReaderDiagnosticSeverity.Warning, d.Severity);
+        Assert.Equal(10, d.ObjectNumber);
+        Assert.Equal(5, d.Generation);
+    }
+
+    private static byte[] BuildStreamHeaderMismatchDocument()
+    {
+        var ms = new MemoryStream();
+        void W(string s) => ms.Write(Encoding.ASCII.GetBytes(s));
+
+        W("%PDF-1.4\n");
+        var obj1Offset = (int)ms.Position;
+        W("1 0 obj\n<< /Type /Catalog >>\nendobj\n");
+        // The xref below points object 10 at THIS offset, but the header here says "11 0 obj".
+        var mismatchOffset = (int)ms.Position;
+        W("11 0 obj\n<< /Length 5 >>\nstream\nhello\nendstream\nendobj\n");
+
+        var xrefOffset = (int)ms.Position;
+        W("xref\n0 2\n");
+        W($"{0:D10} 65535 f \n");
+        W($"{obj1Offset:D10} 00000 n \n");
+        W("10 1\n");
+        W($"{mismatchOffset:D10} 00000 n \n");
+        W("trailer\n<< /Size 11 /Root 1 0 R >>\n");
+        W($"startxref\n{xrefOffset}\n%%EOF\n");
+
+        return ms.ToArray();
+    }
+
+    private static byte[] BuildStreamGenerationMismatchDocument()
+    {
+        var ms = new MemoryStream();
+        void W(string s) => ms.Write(Encoding.ASCII.GetBytes(s));
+
+        W("%PDF-1.4\n");
+        var obj1Offset = (int)ms.Position;
+        W("1 0 obj\n<< /Type /Catalog >>\nendobj\n");
+        var obj10Offset = (int)ms.Position;
+        W("10 0 obj\n<< /Length 5 >>\nstream\nhello\nendstream\nendobj\n");
+
+        var xrefOffset = (int)ms.Position;
+        W("xref\n0 2\n");
+        W($"{0:D10} 65535 f \n");
+        W($"{obj1Offset:D10} 00000 n \n");
+        W("10 1\n");
+        W($"{obj10Offset:D10} 00000 n \n");
+        W("trailer\n<< /Size 11 /Root 1 0 R >>\n");
+        W($"startxref\n{xrefOffset}\n%%EOF\n");
+
+        return ms.ToArray();
     }
 
     // ── PdfReaderOptions.MaxDiagnostics wired end to end ─────────────────────────────────────────
