@@ -230,17 +230,17 @@ public enum PdfReaderDiagnosticCode
     // ── 2xx: page tree ──────────────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// The document has no usable page tree — the catalog's <c>/Pages</c> entry is absent, does not
+    /// The document has no usable page tree: the catalog's <c>/Pages</c> entry is absent, does not
     /// resolve to a dictionary, or that dictionary has no usable <c>/Kids</c> array (ISO 32000-2
     /// §7.7.2, §7.7.3.2). <see cref="PdfDocumentReader.PageCount"/> is 0 rather than the walk
-    /// throwing, but unlike a truncated walk this is a total loss, not a partial one — there is no
-    /// "less" to continue with — so it reports at <see cref="PdfReaderDiagnosticSeverity.Error"/>,
+    /// throwing, but unlike a truncated walk this is a total loss, not a partial one (there is no
+    /// "less" to continue with), so it reports at <see cref="PdfReaderDiagnosticSeverity.Error"/>,
     /// the same severity a stream the reader abandons outright already uses.
     /// </summary>
     PageTreeMissing = 200,
 
     /// <summary>
-    /// The same object number was reached twice while walking the page tree — as a page-tree node,
+    /// The same object number was reached twice while walking the page tree: as a page-tree node,
     /// a page object, or a <c>/Kids</c> array reached through an indirect reference, in any
     /// combination. ISO 32000-2 §7.7.3.2 and §7.7.3.3 each forbid a repeated indirect reference to
     /// the same node or page object, and describe <c>/Kids</c> as a tree rather than a graph, so this
@@ -252,7 +252,7 @@ public enum PdfReaderDiagnosticCode
 
     /// <summary>
     /// The page tree nested deeper than <c>PageTreeWalker.MaxDepth</c> (256) levels. The walk stops
-    /// descending into the subtree past that depth — its pages are not found — while siblings
+    /// descending into the subtree past that depth (its pages are not found) while siblings
     /// already queued elsewhere in the walk continue normally.
     /// </summary>
     PageTreeDepthExceeded = 202,
@@ -264,7 +264,7 @@ public enum PdfReaderDiagnosticCode
     PageTreeLeafLimitExceeded = 203,
 
     /// <summary>
-    /// An element of a <c>/Kids</c> array did not resolve to a dictionary — a name, a number, an
+    /// An element of a <c>/Kids</c> array did not resolve to a dictionary: a name, a number, an
     /// array, or a dangling indirect reference, none of which ISO 32000-2 §7.7.3.2 permits as a
     /// page-tree node or page object. The element is skipped.
     /// </summary>
@@ -350,7 +350,7 @@ internal static class PdfReaderDiagnosticSeverities
         // reserved for (as opposed to a condition where decoding continues on known-wrong content).
         PdfReaderDiagnosticCode.UnknownFilter => PdfReaderDiagnosticSeverity.Error,
         PdfReaderDiagnosticCode.DecodedStreamLimitExceeded => PdfReaderDiagnosticSeverity.Error,
-        // No "less" to continue with — see the code's own doc comment.
+        // No "less" to continue with: see the code's own doc comment.
         PdfReaderDiagnosticCode.PageTreeMissing => PdfReaderDiagnosticSeverity.Error,
         PdfReaderDiagnosticCode.PageTreeCycle => PdfReaderDiagnosticSeverity.Warning,
         PdfReaderDiagnosticCode.PageTreeDepthExceeded => PdfReaderDiagnosticSeverity.Warning,

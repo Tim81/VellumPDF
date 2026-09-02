@@ -13,7 +13,7 @@ namespace VellumPdf.Reader.Tests;
 /// Exercises the page-tree walk (#98 part 2): <see cref="PdfDocumentReader.PageCount"/>,
 /// <see cref="PdfDocumentReader.Pages"/>, and <see cref="PdfDocumentReader.GetPage(int)"/> against
 /// ISO 32000-2 §7.7.3's own tree shape, its inheritance rule (§7.7.3.4), and the walker's caps.
-/// Most fixtures are hand-built byte strings rather than <see cref="PdfDocument"/> output — the
+/// Most fixtures are hand-built byte strings rather than <see cref="PdfDocument"/> output: the
 /// writer only ever emits a single flat page-tree node, so the adversarial shapes here (nested
 /// intermediates, a forged <c>/Parent</c>, a cycle, a lying <c>/Count</c>) need to be written by
 /// hand to exist at all.
@@ -42,7 +42,7 @@ public sealed class PageTreeTests
     /// <summary>
     /// Builds a classic (non-stream) cross-reference table from a set of already-formatted indirect
     /// object bodies. Every reference between the bodies has to be written out by the caller as
-    /// literal <c>"N 0 R"</c> text — this helper only lays the objects out, records their offsets,
+    /// literal <c>"N 0 R"</c> text; this helper only lays the objects out, records their offsets,
     /// and writes the xref/trailer/startxref around them.
     /// </summary>
     private static byte[] BuildPdf(int rootObjectNumber, params (int Num, string Body)[] objects)
@@ -65,7 +65,7 @@ public sealed class PageTreeTests
         W("0000000000 65535 f \n");
         for (var i = 1; i <= maxNum; i++)
         {
-            // A number with no supplied body is left free — a dangling reference to it resolves to
+            // A number with no supplied body is left free: a dangling reference to it resolves to
             // null via the same path any other undefined object does (ISO 32000-2 §7.3.10: "not be
             // considered an error").
             W(offsets[i] is { } offset
@@ -213,7 +213,7 @@ public sealed class PageTreeTests
     public void ForgedParent_isIgnored_inheritanceFollowsTheRealAncestorChain()
     {
         // Object 3's /Parent points at object 4 (not its real ancestor), which carries a
-        // different /MediaBox — the walk must not follow it.
+        // different /MediaBox; the walk must not follow it.
         var bytes = BuildPdf(
             rootObjectNumber: 1,
             (1, "<< /Type /Catalog /Pages 2 0 R >>"),
@@ -416,7 +416,7 @@ public sealed class PageTreeTests
             reader.Diagnostics,
             d => d.Code == PdfReaderDiagnosticCode.PageTreeLeafLimitExceeded && d.Severity == PdfReaderDiagnosticSeverity.Warning);
 
-        // Not a hard budget assertion (machine-dependent) — a generous ceiling that fails loudly if
+        // Not a hard budget assertion (machine-dependent): a generous ceiling that fails loudly if
         // the walk regresses to something quadratic in leaf count.
         Assert.True(
             stopwatch.Elapsed < TimeSpan.FromSeconds(20),
@@ -425,7 +425,7 @@ public sealed class PageTreeTests
 
     /// <summary>
     /// Builds a flat page tree with <paramref name="leafCount"/> minimal <c>/Type /Page</c> leaves
-    /// sharing one inherited <c>/MediaBox</c> on the root, entirely through string building — going
+    /// sharing one inherited <c>/MediaBox</c> on the root, entirely through string building: going
     /// through <see cref="PdfDocument"/> or the tuple-based <see cref="BuildPdf"/> helper (both
     /// O(n²) at this size, the latter via its per-object offset array scan) would make a
     /// 100,001-leaf fixture too slow to build in a test.
@@ -519,7 +519,7 @@ public sealed class PageTreeTests
     public void RootTypedAsAPage_withKids_reportsPageTreeMissing_insteadOfWalkingIt()
     {
         // /Type /Page on the root wins over the /Kids array sitting right next to it, the same way
-        // it would for any other node reached through /Kids (see ClassifyByType) — the root is not
+        // it would for any other node reached through /Kids (see ClassifyByType); the root is not
         // exempt from that rule just because Walk reaches it a different way.
         var bytes = BuildPdf(
             rootObjectNumber: 1,

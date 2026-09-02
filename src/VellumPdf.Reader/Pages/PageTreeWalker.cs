@@ -11,7 +11,7 @@ namespace VellumPdf.Reader;
 /// <c>/Kids</c>, producing the ordered page list <see cref="PdfDocumentReader.Pages"/> exposes.
 /// </summary>
 /// <remarks>
-/// Iterative — an explicit stack rather than recursion, because tree depth is attacker-controlled
+/// Iterative: an explicit stack rather than recursion, because tree depth is attacker-controlled
 /// input; a hostile <c>/Kids</c> chain built to recurse one C# stack frame per level would otherwise
 /// risk an uncatchable <see cref="StackOverflowException"/>, the same class of defect
 /// <see cref="PdfDocumentReader"/>'s own <c>MaxResolveDepth</c> guards against for indirect-reference
@@ -30,7 +30,7 @@ internal static class PageTreeWalker
 {
     /// <summary>
     /// Hard cap on page-tree nesting depth. ISO 32000-2 places no limit on this, so the cap is this
-    /// processor's own choice (Annex C.1, informative, on practical processing limits) — see the
+    /// processor's own choice (Annex C.1, informative, on practical processing limits); see the
     /// type doc's own remarks for why it needs one at all.
     /// </summary>
     internal const int MaxDepth = 256;
@@ -64,7 +64,7 @@ internal static class PageTreeWalker
 
     private static readonly PdfRectangle LetterFallback = new(0, 0, 612, 792);
 
-    // Not one of PdfName's well-known statics (src/VellumPdf.Kernel/Core/PdfName.cs) — nothing
+    // Not one of PdfName's well-known statics (src/VellumPdf.Kernel/Core/PdfName.cs): nothing
     // outside the reader's page-tree walk needs a shared instance of this one yet.
     private static readonly PdfName CropBoxKey = new("CropBox");
 
@@ -519,7 +519,7 @@ internal static class PageTreeWalker
         }
 
         // ISO 32000-2 §7.9.5 defines a rectangle by its corners without requiring lower-left to
-        // precede upper-right numerically — a writer that emits [urx ury llx lly] is unusual but not
+        // precede upper-right numerically: a writer that emits [urx ury llx lly] is unusual but not
         // itself a violation, so this normalises rather than treating it as malformed.
         var x0 = Math.Min(values[0], values[2]);
         var x1 = Math.Max(values[0], values[2]);

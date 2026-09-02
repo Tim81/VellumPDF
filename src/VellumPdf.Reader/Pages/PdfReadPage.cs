@@ -14,7 +14,7 @@ namespace VellumPdf.Reader;
 /// </summary>
 public sealed class PdfReadPage
 {
-    /// <summary>Zero-based position in page-tree order, as the walk found it — see
+    /// <summary>Zero-based position in page-tree order, as the walk found it: see
     /// <see cref="PdfDocumentReader.Pages"/> for why this does not come from any node's
     /// <c>/Count</c>.</summary>
     public int Index { get; }

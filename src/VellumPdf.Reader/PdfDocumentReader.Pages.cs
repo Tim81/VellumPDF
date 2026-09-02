@@ -10,7 +10,7 @@ public sealed partial class PdfDocumentReader
     private IReadOnlyList<PdfReadPage>? _pages;
 
     /// <summary>
-    /// The document's pages, in page-tree order (ISO 32000-2 §7.7.3) — found by walking
+    /// The document's pages, in page-tree order (ISO 32000-2 §7.7.3), found by walking
     /// <c>/Root</c> → <c>/Pages</c> → <c>/Kids</c> rather than trusting any node's own <c>/Count</c>.
     /// §7.7.3.2 Table 30 makes that entry's obligation the <c>/Kids</c> array's, not the integer's
     /// own: a writer "shall ensure that the value of the Count key is consistent with the number of
@@ -29,13 +29,13 @@ public sealed partial class PdfDocumentReader
     /// </summary>
     /// <remarks>
     /// Computed on first access to this property, <see cref="PageCount"/>, or
-    /// <see cref="GetPage(int)"/> — never in the constructor — and cached for the life of this
+    /// <see cref="GetPage(int)"/> (never in the constructor) and cached for the life of this
     /// reader. Not thread-safe, like every other cache this type keeps.
     /// </remarks>
     public IReadOnlyList<PdfReadPage> Pages =>
         _pages ??= new ReadOnlyCollection<PdfReadPage>(PageTreeWalker.Walk(this, _diagnostics));
 
-    /// <summary>The number of pages the page-tree walk found — see <see cref="Pages"/> for what
+    /// <summary>The number of pages the page-tree walk found: see <see cref="Pages"/> for what
     /// that means when the tree is malformed. Never <c>/Count</c>.</summary>
     public int PageCount => Pages.Count;
 

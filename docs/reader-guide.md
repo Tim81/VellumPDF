@@ -119,7 +119,7 @@ signature's `/ByteRange`, `/Contents`, `/M` (as `SigningTime`), and `/SubFilter`
 *reading*, not *verification* — checking integrity, coverage, or a certificate chain is future
 work (see the capability table below).
 
-Page content — text runs, images — is not on the public surface yet; extracting it is the next
+Page content (text runs, images) is not on the public surface yet; extracting it is the next
 reader milestone. Locating the pages themselves is:
 
 ### Pages
@@ -133,7 +133,7 @@ PdfReadPage first = reader.GetPage(0);          // throws ArgumentOutOfRangeExce
 ```
 
 `PageCount`/`Pages`/`GetPage` walk the page tree (ISO 32000-2 §7.7.3) from `/Root` → `/Pages` →
-`/Kids` on first access and cache the result — never in `PdfReader.Open` itself. The walk counts
+`/Kids` on first access and cache the result (never in `PdfReader.Open` itself). The walk counts
 what `/Kids` actually contains, not any node's `/Count`. Table 30 puts that obligation on the
 writer, not the reader: the `/Kids` array and its descendants are what "definitively determines
 the number of descendant pages", and real producers disagree with their own `/Kids` often enough
@@ -186,7 +186,7 @@ cross-reference table it had to rebuild, a filter chain entry that didn't resolv
 declared itself, a TIFF predictor applied at a bit depth this decoder doesn't undo correctly. Each
 entry carries a `Code`, a `Severity` (`Info`/`Warning`/`Error`), a human-readable `Message`, and,
 where the condition concerns one, an `ObjectNumber` and `Generation`. `PageIndex` is also on every
-entry, populated by the page-tree walk's own `PageAttributeInvalid` reports (see Pages above) —
+entry, populated by the page-tree walk's own `PageAttributeInvalid` reports (see Pages above);
 every other code either concerns no specific page or is reported before a page index is known.
 `MaxDiagnostics` (default 1000) is tighten-only, matching `MaxDecodedStreamBytes` and
 `ReconstructionBudgetMultiplier` above — past the cap, a single `DiagnosticsSuppressed` entry says

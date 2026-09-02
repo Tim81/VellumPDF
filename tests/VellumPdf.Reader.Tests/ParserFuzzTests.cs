@@ -167,8 +167,8 @@ public sealed class ParserFuzzTests
 
             try
             {
-                // Open() alone does not reach every lazily-resolved path — several #196-era defects
-                // lived specifically in resolution, not in opening the file — so touch every object
+                // Open() alone does not reach every lazily-resolved path (several #196-era defects
+                // lived specifically in resolution, not in opening the file), so touch every object
                 // number the xref claims to know about.
                 foreach (var objectNumber in reader.ObjectNumbers)
                     reader.Resolve(objectNumber);
@@ -181,7 +181,7 @@ public sealed class ParserFuzzTests
             try
             {
                 // The page-tree walk (#98) is lazy too, and reads through the same mutated object
-                // graph — a hostile /Kids array or inherited attribute chain must degrade the same
+                // graph: a hostile /Kids array or inherited attribute chain must degrade the same
                 // way everything else in this harness does, not throw outside the declared
                 // vocabulary. Its own try/catch, separate from the resolve-all loop above: a seed
                 // whose resolve loop throws first must not skip exercising the page-tree walk on
