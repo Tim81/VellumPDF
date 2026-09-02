@@ -334,6 +334,117 @@ public sealed class SaveDecryptedTests
         return ms.ToArray();
     }
 
+    // ── #391: the Signatures.Count > 0 half of the guard is independently load-bearing ──────────
+
+    /// <summary>
+    /// A field-declared <c>/V</c> signature dictionary with no <c>/Type</c> and exactly one
+    /// structural key, <c>/ByteRange</c> — no <c>/Contents</c> at all. <c>ExtractSignature</c> still
+    /// records it (a byte range alone is enough, per its own "either field" check), so
+    /// <c>Signatures.Count</c> is 1. <c>IsSignatureDictionary</c>'s <c>/Type</c>-less fallback needs
+    /// BOTH a <c>/ByteRange</c> array AND a string <c>/Contents</c>, so this dictionary is invisible
+    /// to <c>AnyEmittedSignatureDictionary</c>'s recursive scan. Reverting the guard to that scan
+    /// alone — dropping its <c>Signatures.Count &gt; 0</c> half — would make <c>SaveDecrypted</c>
+    /// proceed here without the opt-in, so this pins the throw the union depends on (#391).
+    /// </summary>
+    [Fact]
+    public void SaveDecrypted_signatureValueMissingContents_stillThrowsWithoutOptIn()
+    {
+        var bytes = BuildDocumentWithByteRangeOnlySignatureValue();
+        using var reader = PdfReader.Open(bytes);
+        Assert.Single(reader.Signatures);
+
+        using var ms = new MemoryStream();
+        var ex = Assert.Throws<InvalidOperationException>(() => reader.SaveDecrypted(ms));
+        Assert.Contains("signature", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(0, ms.Length);
+
+        using var ms2 = new MemoryStream();
+        reader.SaveDecrypted(ms2, new PdfSaveDecryptedOptions { AllowInvalidatingSignatures = true });
+        Assert.True(ms2.Length > 0);
+    }
+
+    // Object 6 carries neither /Type nor /Contents — /ByteRange is its only structural key.
+    private static byte[] BuildDocumentWithByteRangeOnlySignatureValue()
+    {
+        var ms = new MemoryStream();
+        void W(string s) => ms.Write(Encoding.Latin1.GetBytes(s));
+
+        W("%PDF-1.7\n");
+        var o1 = (int)ms.Position;
+        W("1 0 obj\n<< /Type /Catalog /Pages 2 0 R /AcroForm 5 0 R >>\nendobj\n");
+        var o2 = (int)ms.Position;
+        W("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
+        var o3 = (int)ms.Position;
+        W("3 0 obj\n<< /Type /Page /Parent 2 0 R /Annots [4 0 R] >>\nendobj\n");
+        var o4 = (int)ms.Position;
+        W("4 0 obj\n<< /Type /Annot /Subtype /Widget /FT /Sig /V 6 0 R >>\nendobj\n");
+        var o5 = (int)ms.Position;
+        W("5 0 obj\n<< /Fields [4 0 R] >>\nendobj\n");
+        var o6 = (int)ms.Position;
+        W("6 0 obj\n<< /ByteRange [0 10 20 30] >>\nendobj\n");
+
+        var xrefOffset = (int)ms.Position;
+        W("xref\n0 7\n");
+        W("0000000000 65535 f \n");
+        foreach (var o in new[] { o1, o2, o3, o4, o5, o6 })
+            W($"{o:D10} 00000 n \n");
+        W("trailer\n<< /Size 7 /Root 1 0 R >>\n");
+        W($"startxref\n{xrefOffset}\n%%EOF\n");
+
+        return ms.ToArray();
+    }
+
+    // ── #391: the /V dedupe guards a widget-merged repeated /V target ────────────────────────────
+
+    /// <summary>
+    /// A widget-merged field: object 4 carries its own indirect <c>/V</c> AND a <c>/Kids</c> element
+    /// (object 5) whose <c>/V</c> repeats the SAME target. Without
+    /// <c>visitedSignatureValues</c> deduping by the <c>/V</c> target's object number,
+    /// <c>CollectFieldSignatures</c> would record the one underlying signature twice — once from
+    /// the parent, once from the kid inheriting <c>/FT /Sig</c> (#391).
+    /// </summary>
+    [Fact]
+    public void Signatures_widgetMergedFieldRepeatingV_dedupesToOne()
+    {
+        var bytes = BuildWidgetMergedSignatureField();
+        using var reader = PdfReader.Open(bytes);
+
+        Assert.Single(reader.Signatures);
+    }
+
+    private static byte[] BuildWidgetMergedSignatureField()
+    {
+        var ms = new MemoryStream();
+        void W(string s) => ms.Write(Encoding.Latin1.GetBytes(s));
+
+        W("%PDF-1.7\n");
+        var o1 = (int)ms.Position;
+        W("1 0 obj\n<< /Type /Catalog /Pages 2 0 R /AcroForm 3 0 R >>\nendobj\n");
+        var o2 = (int)ms.Position;
+        W("2 0 obj\n<< /Type /Pages /Kids [] /Count 0 >>\nendobj\n");
+        var o3 = (int)ms.Position;
+        W("3 0 obj\n<< /Fields [4 0 R] >>\nendobj\n");
+        // Object 4 is both the field AND a widget carrying its own /V, with a /Kids entry (object
+        // 5) whose /V names the SAME signature object 6 — the widget-merged shape.
+        var o4 = (int)ms.Position;
+        W("4 0 obj\n<< /Type /Annot /Subtype /Widget /FT /Sig /V 6 0 R /Kids [5 0 R] >>\nendobj\n");
+        var o5 = (int)ms.Position;
+        W("5 0 obj\n<< /Type /Annot /Subtype /Widget /Parent 4 0 R /V 6 0 R >>\nendobj\n");
+        var o6 = (int)ms.Position;
+        W("6 0 obj\n<< /Type /Sig /Filter /Adobe.PPKLite /SubFilter /adbe.pkcs7.detached "
+          + "/ByteRange [0 10 20 30] /Contents <DEADBEEF> >>\nendobj\n");
+
+        var xrefOffset = (int)ms.Position;
+        W("xref\n0 7\n");
+        W("0000000000 65535 f \n");
+        foreach (var o in new[] { o1, o2, o3, o4, o5, o6 })
+            W($"{o:D10} 00000 n \n");
+        W("trailer\n<< /Size 7 /Root 1 0 R >>\n");
+        W($"startxref\n{xrefOffset}\n%%EOF\n");
+
+        return ms.ToArray();
+    }
+
     // ── Fail-loud on an unresolvable object ──────────────────────────────────
 
     [Fact]

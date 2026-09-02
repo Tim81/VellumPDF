@@ -259,6 +259,16 @@ public sealed class ReaderLimitsTests
             PdfReader.Open([], new PdfReaderOptions { ReconstructionBudgetMultiplier = value }));
     }
 
+    // #385: MaxDiagnostics follows the exact same tighten-only pattern as the two limits above.
+    [Theory]
+    [InlineData(ReaderLimits.DefaultMaxDiagnostics + 1)] // above the default
+    [InlineData(ReaderLimits.MinMaxDiagnostics - 1)] // below the floor
+    public void MaxDiagnostics_outsideTheAllowedRange_throwsArgumentOutOfRange(int value)
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            PdfReader.Open([], new PdfReaderOptions { MaxDiagnostics = value }));
+    }
+
     // ── (d) defaults are unchanged ──────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -269,5 +279,6 @@ public sealed class ReaderLimitsTests
         Assert.Equal(512L * 1024 * 1024, limits.MaxDecodedBytes);
         Assert.Equal(512L * 1024 * 1024, limits.MaxAggregateReconstructionDecodeBytes);
         Assert.Equal(8, limits.ReconstructionBudgetMultiplier);
+        Assert.Equal(1000, limits.MaxDiagnostics);
     }
 }
