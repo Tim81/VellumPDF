@@ -282,8 +282,7 @@ jobs:
         # pdfsig 2. qpdf moved from 29 with #99's third-party SaveDecrypted round-trip oracle
         # (SaveDecryptedThirdPartyQpdfOracleTests, 11 fixtures each running one `qpdf --check`).
         # verapdf moved from 298 with #138's UaEncryptionPermissionsVeraPdfTests: 4 test methods,
-        # 6 verapdf launches total (two of the four call both Validate and Report), counted directly
-        # rather than re-run against the full suite.
+        # 6 verapdf launches total (two of the four call both Validate and Report).
         # 90% tolerates ordinary run-to-run variance (a data-driven theory whose case
         # count shifts, a retried flake) without hiding a regression the way pinning the exact
         # measured count would risk doing on its own false positives. These floors are

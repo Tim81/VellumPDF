@@ -63,6 +63,7 @@ public sealed class UaEncryptionPermissionsVeraPdfTests
         {
             var report = VeraPdf.Report(path, "ua1");
 
+            Assert.Contains(Ua1ProfileNameAttribute, report, StringComparison.Ordinal);
             Assert.Contains(
                 "clause=\"7.16\" testNumber=\"1\" status=\"failed\"", report, StringComparison.Ordinal);
         }

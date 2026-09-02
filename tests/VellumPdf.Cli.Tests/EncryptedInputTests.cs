@@ -154,10 +154,11 @@ public sealed class EncryptedInputTests
             var args = value is null
                 ? new[] { "-p", "2b", flag, path }
                 : new[] { "-p", "2b", flag, value, path };
-            var (code, _, err) = Run(args);
+            var (code, stdout, err) = Run(args);
 
             Assert.Equal(1, code);
             Assert.DoesNotContain("password-protected", err, StringComparison.Ordinal);
+            Assert.Contains("ISO19005-2:6.1.3-no-encrypt", stdout, StringComparison.Ordinal);
         }
         finally
         {
@@ -275,7 +276,8 @@ public sealed class EncryptedInputTests
 
     // An RC4 document whose user password is "u" — /O, /U, /P and the trailer /ID are the values
     // from the reader's own enc-rc4-128.pdf fixture, which is what makes them authenticate. Nothing
-    // here needs to decrypt; the CLI never gets past opening it.
+    // here needs to decrypt: the page tree is empty, so a run that authenticates reaches rule
+    // evaluation with no encrypted strings or streams to handle.
     private static byte[] PasswordProtectedPdf(string? encryptDict = null)
     {
         var id = Convert.ToHexStringLower([.. Enumerable.Range(0, 16).Select(i => (byte)i)]);

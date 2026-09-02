@@ -27,9 +27,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
-- **The password-protected-file message now says which of two things happened.** No `--password`
-  was given, or an empty one was ("supply it with --password"), or a non-empty one was given and
-  did not open the file ("the supplied --password does not open it").
+- **The password-protected-file message now says which of two outcomes happened.** No `--password`
+  was given, or an empty one was (`--password ""`), and either way it prints "supply it with
+  --password"; a non-empty `--password` that does not open the file prints "the supplied
+  --password does not open it". (#138)
 
 ## [2.3.0] - 2026-09-01
 
