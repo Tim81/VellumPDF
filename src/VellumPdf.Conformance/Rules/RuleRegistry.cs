@@ -217,6 +217,8 @@ internal static class RuleRegistry
         new UaFormStructElemRule(),
         // §7.20-2 — Form XObject unique semantic parent (structure-linked form drawn from 2+ pages):
         new UaFormXObjectSemanticParentRule(),
+        // §7.16-1 — encryption dictionary /P bit 10 (UA-1 only; PDF/A already forbids /Encrypt):
+        new UaEncryptionPermissionsRule(),
     ];
 
     /// <summary>

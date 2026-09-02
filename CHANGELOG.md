@@ -8,6 +8,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **PDF/UA-1 §7.16-1 conformance check, and a password for preflight (#138).** A new rule,
+  `UaEncryptionPermissionsRule`, reads an encrypted document's `/Encrypt` dictionary and reports an
+  error when its `/P` entry does not have bit 10 set — ISO 32000-2 Table 22 requires every writer to
+  set it, even though the accessibility restriction it once gated was deprecated in PDF 2.0, because
+  PDF/UA-1 (ISO 14289-1, based on the earlier ISO 32000-1) still checks it. `PdfPreflight` gains four
+  overloads — `DetectClaimedProfiles(byte[]|Stream, string?)` and
+  `Validate(byte[]|Stream, PdfConformance, string?)` — that accept a password, so an encrypted
+  document requiring one can now be validated at all; the existing overloads keep opening with no
+  password and delegate to the new ones. `ConformanceCatalog` moves `7.16-1` from out-of-scope to
+  implemented: the catalog still lists 106 PDF/UA-1 checks, and implemented goes from 104 to 105.
+  (The 1.7.7 entry below describes 7.16-1 as needing "reader decryption" — that was the state before
+  this release; the reader has decrypted since #97, and what was actually missing was this password
+  parameter.)
+- **`vellum-preflight` accepts `--password <pw>` / `--password=<pw>` (#138).** It threads through to
+  both profile auto-detection and validation, so an encrypted document requiring a password can now
+  be checked from the command line.
 - **`PdfDocumentReader.Diagnostics` — a notify-and-continue channel for conditions the reader
   recovers from instead of aborting on.** Twelve `PdfReaderDiagnosticCode` values cover file
   structure and stream decoding for this release: five for cross-reference and object resolution
@@ -22,6 +38,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   past it, one `DiagnosticsSuppressed` entry records how many further reports were dropped instead
   of growing without limit. Purely additive: nothing that returned data now returns null, and
   nothing that used to succeed now throws. (#385)
+
+### Changed
+
+- **The password-protected-file message now says which of two outcomes happened.** No `--password`
+  was given, or an empty one was (`--password ""`), and either way it prints "supply it with
+  --password"; a non-empty `--password` that does not open the file prints "the supplied
+  --password does not open it". (#138)
 
 ## [2.3.0] - 2026-09-01
 
