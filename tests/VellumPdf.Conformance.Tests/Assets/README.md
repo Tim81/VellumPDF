@@ -4,6 +4,12 @@ Fonts are third-party, permissively licensed, and documented by the `*-LICENSE.*
 one. The PDF fixtures below are committed rather than built at test time; each section states
 its own provenance.
 
+`EncryptedFixtureDigestTests.cs` pins the four §7.16-1 encryption fixtures below
+(`enc-aes-256-p-bit10-clear.pdf`, `enc-aes-256-emptyuser-p-all.pdf`, `enc-aes-256-userpw-u-p-all.pdf`,
+`enc-aes-128-userpw-u.pdf`) to the SHA-256 values recorded in their own sections, so the "re-check
+with veraPDF before updating the SHA" rule stated below fails the build rather than relying on
+someone remembering to follow it.
+
 ## `jpx-encrypted-emptyuser.pdf`
 
 Generated once with qpdf (empty user password, owner `o`, AES-128) from the exact bytes
@@ -57,9 +63,11 @@ The reason is a difference between this library's Algorithm 2.B and veraPDF's ow
 than round number minus 32", so it stops once `E[last] <= completedRounds - 32`. That is what
 `StandardSecurityHandler.Hash2B` does, and it agrees with qpdf and pdf.js. veraPDF's own
 `EncryptionToolsRevision5_6.computeHash` (in `veraPDF-parser`, package
-`org.verapdf.tools`) instead exits on `E[last] <= rounds - 33`, with `rounds` counted from 0, one
-round later than the spec text. The two readings only disagree when `E[last]` lands exactly on
-`completedRounds - 32`: veraPDF then runs one extra round, so it derives a different hash from the
+`org.verapdf.tools`) instead exits on `E[last] <= rounds - 32`, with `rounds` counted from 0 — in
+the spec's completed-rounds frame (`completedRounds = rounds + 1`) that is
+`E[last] <= completedRounds - 33`, one round later than the spec text. The two readings only
+disagree when `E[last]` lands exactly on `completedRounds - 32`: veraPDF then runs one extra
+round, so it derives a different hash from the
 same password and salt, and its own `/U` check on the file it just opened fails. That makes it
 refuse the document outright (exit 8, "appears to be an encrypted PDF file and could not be
 processed"), even though qpdf and poppler open the same bytes without complaint.
@@ -99,7 +107,10 @@ doc.Save(stream);
 
 Each candidate was checked with `verapdf.bat --flavour ua1 --format xml <file>` (adding
 `--password u` for the user-password file) before being committed: the run has to produce a
-`<validationReport` element rather than exit 8. Both files here passed on the first attempt.
+`<validationReport ` element (with the trailing space — a refused, exit-8 run's XML still contains
+the batch-level `<validationReports compliant=… nonCompliant=… failedJobs=…>` summary, which
+`<validationReport` without the space also matches) rather than exit 8. Both files here passed on
+the first attempt.
 
 If either file is ever regenerated, it must go through the same check before its SHA-256 below is
 updated. A regenerated file that has not been re-checked against veraPDF can reintroduce the

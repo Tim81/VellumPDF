@@ -50,7 +50,8 @@ internal sealed class UaEncryptionPermissionsRule : IConformanceRule
         {
             context.Report(RuleId, Clause, PreflightSeverity.Error,
                 "The trailer's /Encrypt entry does not resolve to a dictionary, so its /P entry "
-                + "cannot be checked for the required bit 10.");
+                + "cannot be checked for the required bit 10.",
+                objectRef: EncryptObjectRef(encryptRef));
             return;
         }
 
@@ -62,7 +63,8 @@ internal sealed class UaEncryptionPermissionsRule : IConformanceRule
         if (context.Resolve(encrypt.Get(_pKey)) is not PdfInteger p)
         {
             context.Report(RuleId, Clause, PreflightSeverity.Error,
-                "The encryption dictionary does not contain a /P entry.");
+                "The encryption dictionary has no integer /P entry.",
+                objectRef: EncryptObjectRef(encryptRef));
             return;
         }
 
@@ -78,7 +80,13 @@ internal sealed class UaEncryptionPermissionsRule : IConformanceRule
         {
             context.Report(RuleId, Clause, PreflightSeverity.Error,
                 "The encryption dictionary's /P entry does not have bit 10 set (P = "
-                + $"{pValue}); PDF writers shall always set this bit to 1.");
+                + $"{pValue}); PDF writers shall always set this bit to 1.",
+                objectRef: EncryptObjectRef(encryptRef));
         }
     }
+
+    // /Encrypt is ordinarily an indirect reference (the trailer points at it the same way it
+    // points at /Root); a direct dictionary is legal PDF too, and has no object number to report.
+    private static string? EncryptObjectRef(PdfObject encryptRef) =>
+        encryptRef is PdfIndirectReference r ? $"{r.ObjectNumber} {r.Generation} R" : null;
 }

@@ -46,7 +46,8 @@
     </EmbeddedResource>
     <!-- Built once by this library's own writer with the /P bit 10 accessibility bit deliberately
          cleared, then committed — see Assets/README.md for exactly how, and why #397 will remove
-         the writer's ability to reproduce it. Used by UaEncryptionPermissionsRuleTests. -->
+         the writer's ability to reproduce it. Used by UaEncryptionPermissionsRuleTests and
+         UaEncryptionPermissionsVeraPdfTests. -->
     <EmbeddedResource Include="Assets\enc-aes-256-p-bit10-clear.pdf">
       <LogicalName>enc-aes-256-p-bit10-clear.pdf</LogicalName>
     </EmbeddedResource>

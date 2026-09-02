@@ -252,8 +252,12 @@ internal static class PreflightRunner
     // profile auto-detection and validation itself. They are different call sites, not different
     // failures, and a user who sees two phrasings for the same condition reasonably assumes they
     // are two different problems. The wording splits on whether a --password was given at all: "you
-    // never told me" and "what you told me was wrong" point the user at different next steps.
-    private static string PasswordProtectedMessage(string filePath, string? password) => password is null
+    // never told me" and "what you told me was wrong" point the user at different next steps. An
+    // empty --password opens with the empty user password exactly like omitting the flag (ISO
+    // 32000-2 §7.6.4.3.2, Algorithm 2, step (a): an empty password string means there is no user
+    // password), so it belongs with "never told me" — checking for null alone would misreport it
+    // as a wrong password.
+    private static string PasswordProtectedMessage(string filePath, string? password) => string.IsNullOrEmpty(password)
         ? $"error: '{filePath}' is password-protected; supply it with --password."
         : $"error: '{filePath}' is password-protected; the supplied --password does not open it.";
 

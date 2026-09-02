@@ -1,12 +1,11 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
-using System.Globalization;
 using System.Text;
-using System.Text.RegularExpressions;
 using VellumPdf.Document;
 using VellumPdf.Encryption;
 using VellumPdf.Reader;
+using static VellumPdf.Conformance.Tests.EncryptDictionaryAssertions;
 
 namespace VellumPdf.Conformance.Tests;
 
@@ -32,7 +31,7 @@ public sealed class UaEncryptionPermissionsRuleTests
     {
         var bytes = BuildEncryptedOnePagePdf(PdfPermissions.All);
 
-        AssertWrittenPValue(bytes, -4);
+        AssertEncryptDictionaryIsR6WithP(bytes, -4);
 
         var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1, password: null);
 
@@ -56,7 +55,7 @@ public sealed class UaEncryptionPermissionsRuleTests
         // The rule reads the trailer's /Encrypt /P directly, so this precondition — checked the same
         // way the rule itself reads it — is what stops a regenerated fixture whose bit accidentally
         // came back set from turning the assertion below vacuous.
-        AssertWrittenPValue(bytes, -516);
+        AssertEncryptDictionaryIsR6WithP(bytes, -516);
 
         var result = PdfPreflight.Validate(bytes, PdfConformance.PdfUA1, password: null);
 
@@ -82,7 +81,7 @@ public sealed class UaEncryptionPermissionsRuleTests
     public void PatchedDictionaryP_disagreeingWithPerms_stillReportsError()
     {
         var original = BuildEncryptedOnePagePdf(PdfPermissions.All & ~PdfPermissions.Assemble);
-        AssertWrittenPValue(original, -1028);
+        AssertEncryptDictionaryIsR6WithP(original, -1028);
 
         var text = Encoding.Latin1.GetString(original);
         Assert.Equal(1, CountOccurrences(text, "-1028"));
@@ -146,29 +145,6 @@ public sealed class UaEncryptionPermissionsRuleTests
         using var ms = new MemoryStream();
         doc.Save(ms);
         return ms.ToArray();
-    }
-
-    /// <summary>
-    /// Reads /P straight off the trailer's /Encrypt dictionary, the same value
-    /// <c>UaEncryptionPermissionsRule</c> checks, and asserts it equals <paramref name="expected"/>
-    /// — the hand-derived Table 22 value, not whatever the writer happens to emit. Scoped to the
-    /// <c>/Encrypt</c> object (<c>/Filter /Standard</c> to its <c>endobj</c>) and parsed as an int
-    /// rather than matched as a substring: an unanchored <c>"/P -4"</c> also matches inside
-    /// <c>"/P -44"</c>, a Table 22 value <see cref="StandardSecurityHandler"/> can genuinely
-    /// produce, so a substring match would not catch a regression that dropped extra bits.
-    /// </summary>
-    private static void AssertWrittenPValue(byte[] bytes, int expected)
-    {
-        var text = Encoding.Latin1.GetString(bytes);
-        var encryptStart = text.IndexOf("/Filter /Standard", StringComparison.Ordinal);
-        Assert.True(encryptStart >= 0, "no /Encrypt dictionary (/Filter /Standard) found in the written bytes.");
-        var encryptEnd = text.IndexOf("endobj", encryptStart, StringComparison.Ordinal);
-        Assert.True(encryptEnd >= 0, "the /Encrypt object has no endobj terminator.");
-        var encryptObject = text[encryptStart..encryptEnd];
-
-        var match = Regex.Match(encryptObject, @"/P (-?\d+)");
-        Assert.True(match.Success, "the /Encrypt dictionary has no /P entry.");
-        Assert.Equal(expected, int.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture));
     }
 
     private static int CountOccurrences(string haystack, string needle)

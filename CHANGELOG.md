@@ -21,13 +21,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   (The 1.7.7 entry below describes 7.16-1 as needing "reader decryption" — that was the state before
   this release; the reader has decrypted since #97, and what was actually missing was this password
   parameter.)
+- **`vellum-preflight` accepts `--password <pw>` / `--password=<pw>` (#138).** It threads through to
+  both profile auto-detection and validation, so an encrypted document requiring a password can now
+  be checked from the command line.
 
 ### Changed
 
-- **`vellum-preflight` accepts `--password <pw>` / `--password=<pw>`.** It threads through to both
-  profile auto-detection and validation. The password-protected-file message now says which of two
-  things happened: no `--password` was given ("supply it with --password"), or the one given did not
-  open the file ("the supplied --password does not open it").
+- **The password-protected-file message now says which of two things happened.** No `--password`
+  was given, or an empty one was ("supply it with --password"), or a non-empty one was given and
+  did not open the file ("the supplied --password does not open it").
 
 ## [2.3.0] - 2026-09-01
 

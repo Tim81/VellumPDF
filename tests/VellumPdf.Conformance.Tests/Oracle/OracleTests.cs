@@ -249,8 +249,12 @@ internal static class VeraPdf
         // clause absent from the failed-rules list. An empty or truncated report would pass that
         // kind of assertion vacuously (nothing is ever "in" an empty string), so this checks for the
         // one element every real veraPDF 1.30.2 --format xml report contains before handing the
-        // string back, rather than leaving each caller to reinvent the same guard.
-        if (!stdout.Contains("<validationReport", StringComparison.Ordinal))
+        // string back, rather than leaving each caller to reinvent the same guard. The trailing
+        // space matters: "<validationReport " is the per-document element
+        // (`<validationReport jobEndStatus="normal" profileName=…`), while a refused (exit 8) run's
+        // XML still contains the batch-level `<validationReports compliant=… nonCompliant=…
+        // failedJobs=…>` summary, which "<validationReport" without the space also matches.
+        if (!stdout.Contains("<validationReport ", StringComparison.Ordinal))
         {
             throw new InvalidOperationException(
                 $"veraPDF's --format xml output for {path} ({flavour}) has no <validationReport> "
