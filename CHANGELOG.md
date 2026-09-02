@@ -13,11 +13,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   structure and stream decoding for this release: five for cross-reference and object resolution
   (a rebuilt cross-reference table, a dropped orphaned object-stream member, an unreadable
   reconstruction candidate, an object whose header disagrees with the cross-reference table, and
-  one whose generation does), and seven for `Filters.cs` — the five `/Filter`/`/DecodeParms` shapes
-  it already tolerated without saying so (including the TIFF predictor at a `/BitsPerComponent`
-  other than 8, which decodes wrong today and now says so) plus the two paths that already threw
-  (an unimplemented filter, the decoded-size cap). `PdfReaderOptions.MaxDiagnostics` (default 1000,
-  tighten-only like `MaxDecodedStreamBytes` and `ReconstructionBudgetMultiplier`) bounds the list;
+  one whose generation does), and seven for `Filters.cs` — four `/Filter`/`/DecodeParms` shapes it
+  already tolerated without saying so, the TIFF predictor applied at a `/BitsPerComponent` other
+  than 8 (a `/DecodeParms` parameter this decoder gets wrong today, and now says so), and the two
+  paths that already threw (an unimplemented filter, the decoded-size cap).
+  `PdfReaderOptions.MaxDiagnostics` (default 1000, tighten-only like `MaxDecodedStreamBytes` and
+  `ReconstructionBudgetMultiplier`) bounds the list;
   past it, one `DiagnosticsSuppressed` entry records how many further reports were dropped instead
   of growing without limit. Purely additive: nothing that returned data now returns null, and
   nothing that used to succeed now throws. (#385)

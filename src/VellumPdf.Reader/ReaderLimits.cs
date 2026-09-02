@@ -59,8 +59,7 @@ internal readonly record struct ReaderLimits(
 
     /// <summary>
     /// The floor a caller may tighten <see cref="PdfReaderOptions.MaxDiagnostics"/> down to: 1.
-    /// Zero would leave <see cref="DiagnosticSink"/> unable to record even its own suppression
-    /// sentinel.
+    /// Zero would turn every report into a suppression count, disabling the channel entirely.
     /// </summary>
     internal const int MinMaxDiagnostics = 1;
 
@@ -82,10 +81,10 @@ internal readonly record struct ReaderLimits(
     /// are each a safe upper bound a caller may only lower, never raise. A value under the
     /// corresponding floor is rejected too: below <see cref="MinMaxDecodedBytes"/> or
     /// <see cref="MinReconstructionBudgetMultiplier"/>, an otherwise ordinary document routinely
-    /// fails to decode or reconstruct at all; below <see cref="MinMaxDiagnostics"/> the sink would
-    /// have nowhere to record even its own suppression sentinel. Each of these is a configuration
-    /// mistake worth surfacing immediately, here, rather than as a confusing exception from a
-    /// different layer downstream.
+    /// fails to decode or reconstruct at all; below <see cref="MinMaxDiagnostics"/> every report
+    /// would turn into a suppression count, disabling the channel entirely. Each of these is a
+    /// configuration mistake worth surfacing immediately, here, rather than as a confusing
+    /// exception from a different layer downstream.
     /// </remarks>
     /// <exception cref="ArgumentOutOfRangeException">
     /// <see cref="PdfReaderOptions.MaxDecodedStreamBytes"/>,

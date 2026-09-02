@@ -60,7 +60,11 @@ public sealed class PdfReaderDiagnostic
     /// the code, not chosen per call site, so the same code always reports the same severity.</summary>
     public PdfReaderDiagnosticSeverity Severity { get; }
 
-    /// <summary>A human-readable description of what was observed.</summary>
+    /// <summary>
+    /// A human-readable description of what was observed. Not a compatibility contract: the
+    /// wording may change across releases, so a caller that needs to branch on the condition
+    /// should switch on <see cref="Code"/> instead of matching text here.
+    /// </summary>
     public string Message { get; }
 
     /// <summary>The object number the observation concerns, or <see langword="null"/> when it does
@@ -150,8 +154,10 @@ public enum PdfReaderDiagnosticCode
 
     /// <summary>
     /// Reconstruction (ISO 32000-2 Annex C.4, informative) found what looked like an object-stream
-    /// container while scanning the file, but the object could not actually be decoded as one.
-    /// Best-effort recovery: the scan moves on to the next candidate rather than aborting.
+    /// container while scanning the file, but the container could not actually be decoded. The
+    /// decode itself happens later, in Phase B's container expansion in
+    /// <see cref="PdfDocumentReader"/> — Phase A's scan only located the candidate. Best-effort
+    /// recovery: expansion moves on to the next candidate rather than aborting.
     /// </summary>
     ObjectStreamContainerUnreadable = 102,
 

@@ -137,9 +137,10 @@ public sealed partial class PdfDocumentReader : IDisposable
     /// exception, but is worth a caller's attention.
     /// </summary>
     /// <remarks>
-    /// A live view over the reader's own list, matching every other collection this type exposes:
-    /// not thread-safe, and its contents can grow as more of the document is read (a stream is
-    /// decoded lazily, on first access). Bounded by <see cref="PdfReaderOptions.MaxDiagnostics"/> —
+    /// A live view over the reader's own list: not thread-safe, like every other collection this
+    /// type exposes, and, unlike them, its contents can grow as the reader resolves more of the
+    /// file (a stream is decoded lazily, on first access). Bounded by
+    /// <see cref="PdfReaderOptions.MaxDiagnostics"/> —
     /// past that cap, further conditions are folded into one
     /// <see cref="PdfReaderDiagnosticCode.DiagnosticsSuppressed"/> entry rather than growing the
     /// list without limit.
@@ -680,7 +681,19 @@ public sealed partial class PdfDocumentReader : IDisposable
 
         // See Resolve(int, int?) for the single-lookup reasoning and what "authoritative" means.
         if (_streamCache.TryGetValue(objectNumber, out var cached))
-            return generation is null || cached.Generation == generation ? cached.Stream : null;
+        {
+            if (generation is null || cached.Generation == generation)
+                return cached.Stream;
+
+            // Reported here too, not just on the cold path below — see Resolve(int, int?)'s own
+            // warm-cache comment for why request order must not change whether this is recorded.
+            _diagnostics.Report(
+                PdfReaderDiagnosticCode.ObjectGenerationMismatch,
+                $"Reference asked for generation {generation}, but the cross-reference table records "
+                + $"object {objectNumber} at generation {cached.Generation} (ISO 32000-2 §7.3.10).",
+                objectNumber, generation);
+            return null;
+        }
 
         if (!_xref.TryGetValue(objectNumber, out var entry))
             return null;

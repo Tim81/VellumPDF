@@ -8,8 +8,8 @@ namespace VellumPdf.Reader;
 /// <summary>
 /// Collects <see cref="PdfReaderDiagnostic"/> instances for one <see cref="PdfDocumentReader"/> (or
 /// one scoped operation on it — see <see cref="CreateScope"/>), bounded to <paramref name="cap"/>
-/// entries and deduplicated so a condition that recurs across many objects does not turn the
-/// document-level list into noise.
+/// entries and deduplicated so the same condition against the same object is recorded once, and
+/// capped so one recurring across many objects cannot flood the list.
 /// </summary>
 /// <param name="cap">
 /// The maximum number of ordinary diagnostics this sink holds before it starts recording

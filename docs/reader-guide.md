@@ -134,8 +134,9 @@ var options = new PdfReaderOptions { MaxDiagnostics = 200 };
 `Diagnostics` (#385) lists what the reader recovered from instead of aborting on: a
 cross-reference table it had to rebuild, a filter chain entry that didn't resolve the way it
 declared itself, a TIFF predictor applied at a bit depth this decoder doesn't undo correctly. Each
-entry carries a `Code`, a `Severity` (`Info`/`Warning`/`Error`), and, where the condition concerns
-one, an `ObjectNumber` and `Generation`. `PageIndex` is also on every entry, but stays `null` until
+entry carries a `Code`, a `Severity` (`Info`/`Warning`/`Error`), a human-readable `Message`, and,
+where the condition concerns one, an `ObjectNumber` and `Generation`. `PageIndex` is also on every
+entry, but stays `null` until
 the page walk lands (#98) — nothing this release reports is scoped to a page. `MaxDiagnostics`
 (default 1000) is tighten-only, matching `MaxDecodedStreamBytes` and
 `ReconstructionBudgetMultiplier` above — past the cap, a single `DiagnosticsSuppressed` entry says

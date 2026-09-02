@@ -186,7 +186,38 @@ public sealed class DiagnosticRoutingTests
         var decoded = PdfFilters.Decode(stream, ReaderLimits.Defaults, diagnostics: sink);
 
         Assert.NotNull(decoded);
-        Assert.Equal(raw.Length, decoded!.Length); // copied through, not thrown away.
+        Assert.Equal(raw, decoded); // copied through byte-for-byte, not thrown away.
+        var d = Assert.Single(sink.Diagnostics, x => x.Code == PdfReaderDiagnosticCode.UnsupportedPredictor);
+        Assert.Equal(PdfReaderDiagnosticSeverity.Warning, d.Severity);
+    }
+
+    /// <summary>
+    /// Pins the <c>rows &gt; 0</c> gate (Filters.cs) at the boundary a <c>rows &gt; 1</c> mutation
+    /// would survive: that mutant only breaks
+    /// <see cref="UnsupportedPredictor_bodyShorterThanOneRow_reportsNothing"/> below the boundary,
+    /// not at it.
+    /// </summary>
+    [Fact]
+    public void UnsupportedPredictor_bodyExactlyOneRow_reportsWarning()
+    {
+        // Columns 8, Colors 1, BitsPerComponent 4 -> rowBytes = 4; a 4-byte body is exactly one row.
+        var raw = new byte[] { 0x12, 0x34, 0x56, 0x78 };
+        var compressed = CompressZlib(raw);
+        var parms = new PdfDictionary()
+            .Set(new PdfName("Predictor"), new PdfInteger(2))
+            .Set(new PdfName("Columns"), new PdfInteger(8))
+            .Set(new PdfName("Colors"), new PdfInteger(1))
+            .Set(new PdfName("BitsPerComponent"), new PdfInteger(4));
+        var dict = new PdfDictionary()
+            .Set(PdfName.Filter, PdfName.FlateDecode)
+            .Set(new PdfName("DecodeParms"), parms);
+        var stream = MakeParsedStream(dict, compressed);
+        var sink = new DiagnosticSink(cap: 10);
+
+        var decoded = PdfFilters.Decode(stream, ReaderLimits.Defaults, diagnostics: sink);
+
+        Assert.NotNull(decoded);
+        Assert.Equal(raw, decoded); // copied through byte-for-byte, not thrown away.
         var d = Assert.Single(sink.Diagnostics, x => x.Code == PdfReaderDiagnosticCode.UnsupportedPredictor);
         Assert.Equal(PdfReaderDiagnosticSeverity.Warning, d.Severity);
     }
@@ -566,6 +597,29 @@ public sealed class DiagnosticRoutingTests
         Assert.Equal(5, d.Generation);
     }
 
+    /// <summary>
+    /// The stream twin of <c>ClassicXref_referenceGenerationMismatch_afterAWarmCacheHit_stillReports</c>
+    /// (<see cref="GenerationNumberTests"/>): <c>ResolveStream(int, int?)</c>'s own warm-cache
+    /// branch must not depend on request order either — a correct resolve first (warming
+    /// <c>_streamCache</c>), then a mismatched one, must still report.
+    /// </summary>
+    [Fact]
+    public void ResolveStream_generationMismatch_afterAWarmCacheHit_stillReports()
+    {
+        var bytes = BuildStreamGenerationMismatchDocument();
+        using var reader = PdfReader.Open(bytes);
+
+        Assert.NotNull(reader.ResolveStream(new PdfIndirectReference(10, 0))); // warms _streamCache.
+        Assert.Empty(reader.Diagnostics);
+
+        Assert.Null(reader.ResolveStream(new PdfIndirectReference(10, 5)));
+
+        var d = Assert.Single(reader.Diagnostics, x => x.Code == PdfReaderDiagnosticCode.ObjectGenerationMismatch);
+        Assert.Equal(PdfReaderDiagnosticSeverity.Warning, d.Severity);
+        Assert.Equal(10, d.ObjectNumber);
+        Assert.Equal(5, d.Generation);
+    }
+
     private static byte[] BuildStreamHeaderMismatchDocument()
     {
         var ms = new MemoryStream();
@@ -634,7 +688,9 @@ public sealed class DiagnosticRoutingTests
         Assert.Equal(3, reader.Diagnostics.Count); // 2 ordinary + 1 sentinel.
         var sentinel = Assert.Single(
             reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.DiagnosticsSuppressed);
-        Assert.Contains("3", sentinel.Message); // 5 attempts - 2 recorded = 3 suppressed.
+        // 5 attempts - 2 recorded = 3 suppressed; StartsWith rather than Contains, because the
+        // message names the cap too (2), and Contains("3") alone can't tell those two numbers apart.
+        Assert.StartsWith("3 diagnostics suppressed", sentinel.Message, StringComparison.Ordinal);
     }
 
     private static byte[] BuildFiveObjectDocument()
