@@ -559,8 +559,8 @@ public sealed class PdfDocument : IDisposable
         // extractable for assistive technology (ISO 14289-1 §7.16). The written /P bit 10
         // is always 1 regardless of PdfPermissions.Extract (ISO 32000-2 Table 22: the
         // restriction it expressed is deprecated in PDF 2.0 and writers shall always set the
-        // bit), so this guard checks
-        // the caller's declared intent, not the emitted bit. Omitting Extract from
+        // bit), so this guard checks the caller's declared intent, not the emitted bit.
+        // Omitting Extract from
         // PdfEncryptionSettings.Permissions says "do not allow accessibility extraction"
         // even though the bit written no longer records that, so reject rather than silently
         // let the mismatch through: PdfEncryptionSettings.Permissions defaults to All (which

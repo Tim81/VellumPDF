@@ -21,8 +21,8 @@ Generated once with qpdf (empty user password, owner `o`, AES-128) from the exac
 A §7.16-1 violator for `UaEncryptionPermissionsRuleTests`: its `/Encrypt` dictionary's `/P` entry
 has bit 10 clear, which ISO 32000-2 Table 22 says a writer "shall always set". Built once with
 the pre-#397 writer and committed, because #397 ("Kernel: always set /P bit 10 in the encryption
-dictionary") made bit 10 unconditional, so there is no longer a way to produce this shape from
-the writer itself.
+dictionary (ISO 32000-2 Table 22)") made bit 10 unconditional, so there is no longer a way to
+produce this shape from the writer itself.
 
 The writer emits AES-256 (`/V 5 /R 6`): `StandardSecurityHandler` implements only one
 Standard-security-handler configuration, so every document `PdfDocument.Encrypt` writes is
@@ -48,9 +48,9 @@ doc.Save(stream);
 Under that writer's mask, `Permissions = All & ~Extract` cleared bit 10 (`PdfPermissions.Extract =
 1 << 9`) while leaving every other bit as `StandardSecurityHandler` set it for `All`. By that
 mask's arithmetic (`P = (0xFFFFF0C0 | (enabledBits & 0xFFF)) & ~3`), `/P` comes out as `-516`
-(`0xFFFFFDFC`). `UaEncryptionPermissionsRuleTests` asserts the committed file's
-own `/P` still reads `-516` before trusting anything else about it, so a regenerated file with the
-bit accidentally set cannot make the rule test vacuous.
+(`0xFFFFFDFC`). `UaEncryptionPermissionsRuleTests` asserts the committed file's own `/P` still
+reads `-516` before trusting anything else about it, so a regenerated file with the bit
+accidentally set cannot make the rule test vacuous.
 
 SHA-256: `d7a788dc6463cc3f63325aaf27b0b71d56c0bc1501b1174e6334bad2fe66e324`
 

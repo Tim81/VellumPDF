@@ -141,8 +141,9 @@ public sealed class EncryptionTests
         // Positions counted from the LSB (0-based): 2..5, 8, 10 and 11 should be 0, while
         // 6..7 (0xC0) and 9 (0x200) are forced to 1 regardless of the requested permissions.
         // In Table 22's 1-based numbering those are bits 7-8 ("Reserved. Must be 1.") and
-        // bit 10, deprecated in PDF 2.0, which writers shall always set so readers on earlier
-        // specifications keep treating extraction for accessibility as allowed.
+        // bit 10, whose accessibility restriction PDF 2.0 deprecates and which writers shall
+        // always set so readers on earlier specifications keep treating extraction for
+        // accessibility as allowed.
         Assert.Equal(0x200, handler.PValue & 0xF3C);
         Assert.Equal(0xC0, handler.PValue & 0xC0);
     }
@@ -210,9 +211,10 @@ public sealed class EncryptionTests
         var text = Encoding.Latin1.GetString(bytes);
 
         // SaveEncrypted builds no structure tree, AcroForm or signature, so the only /P key in the
-        // file is the /Encrypt entry: the writer's other /P keys are page back-references
-        // (/P n 0 R), which this regex would match as well. A lone match therefore proves the
-        // value came from /Encrypt and not from one of those.
+        // file is the /Encrypt entry: the writer's other /P keys are indirect references
+        // (/P n 0 R: a widget's or signature's page, a structure element's parent), which this
+        // regex would match as well. A lone match therefore proves the value came from /Encrypt
+        // and not from one of those.
         var declared = Assert.Single(Regex.Matches(text, @"/P (-?\d+)"));
         Assert.Equal("-4", declared.Groups[1].Value);
 
