@@ -99,6 +99,34 @@ public sealed class PdfObjectParserTests
         Assert.Equal(expected, r.Value, 6);
     }
 
+    [Fact]
+    public void RealWithEnoughIntegerDigitsToOverflowDouble_throwsInvalidDataException()
+    {
+        // ISO 32000-2 §7.3.3 gives real numbers an implementation-limited range (Annex C.1). A
+        // literal with 310+ integer digits parses to +/-Infinity under double.TryParse instead of
+        // failing outright, and PdfReal's own constructor rejects that with ArgumentException, a
+        // type no other caller of this parser expects to see escape an otherwise-successful parse.
+        var huge = "1" + new string('0', 309) + ".0";
+
+        var ex = Assert.Throws<InvalidDataException>(() => Parser(huge).ParseObject());
+
+        Assert.Contains("out of range", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void RealComfortablyBelowDoubleMaxValue_stillParses()
+    {
+        // Boundary companion to the overflow case above: a real of similar magnitude (around
+        // 1e300, comfortably under double.MaxValue's ~1.7977e308) is not itself a range violation.
+        var big = "1" + new string('0', 300) + ".0";
+
+        var obj = Parser(big).ParseObject();
+
+        var r = Assert.IsType<PdfReal>(obj);
+        Assert.True(double.IsFinite(r.Value));
+        Assert.True(r.Value > 1e299);
+    }
+
     // ── Name ───────────────────────────────────────────────────────────────
 
     [Theory]

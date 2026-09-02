@@ -21,7 +21,7 @@ VellumPdf.Reader.PdfReadPage.CropBox.get -> VellumPdf.Document.PdfRectangle!
 VellumPdf.Reader.PdfReadPage.Dictionary.get -> VellumPdf.Core.PdfDictionary!
 VellumPdf.Reader.PdfReadPage.Index.get -> int
 VellumPdf.Reader.PdfReadPage.MediaBox.get -> VellumPdf.Document.PdfRectangle!
-VellumPdf.Reader.PdfReadPage.ObjectNumber.get -> int
+VellumPdf.Reader.PdfReadPage.ObjectNumber.get -> int?
 VellumPdf.Reader.PdfReadPage.Rotate.get -> int
 VellumPdf.Reader.PdfReader
 static VellumPdf.Reader.PdfReader.Open(byte[]! bytes) -> VellumPdf.Reader.PdfDocumentReader!

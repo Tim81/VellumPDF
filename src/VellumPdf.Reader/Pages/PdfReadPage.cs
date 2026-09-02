@@ -20,14 +20,15 @@ public sealed class PdfReadPage
     public int Index { get; }
 
     /// <summary>
-    /// The indirect object number of this page's own dictionary, or <c>0</c> when the leaf was a
-    /// direct dictionary embedded inside a <c>/Kids</c> array rather than referenced indirectly.
-    /// Table 30 requires <c>/Kids</c> entries to be indirect references; a direct dictionary there is
-    /// tolerated by this reader rather than rejected, and reported as object number <c>0</c>, which
-    /// is otherwise unused (permanently reserved as the head of the free-object list, ISO 32000-2
-    /// §7.5.4), so it is safe to use as the "no object number" sentinel here.
+    /// The indirect object number of this page's own dictionary, or <see langword="null"/> when the
+    /// leaf was a direct dictionary embedded inside a <c>/Kids</c> array rather than referenced
+    /// indirectly. Table 30 requires <c>/Kids</c> entries to be indirect references; a direct
+    /// dictionary there is tolerated by this reader rather than rejected. Object number <c>0</c> is
+    /// never a valid page's number (it is permanently reserved as the head of the free-object list,
+    /// ISO 32000-2 §7.5.4), so it could have doubled as a "no object number" sentinel, but a nullable
+    /// is the honest shape for that and matches <see cref="PdfReaderDiagnostic.ObjectNumber"/>.
     /// </summary>
-    public int ObjectNumber { get; }
+    public int? ObjectNumber { get; }
 
     /// <summary>
     /// The page's own dictionary (ISO 32000-2 §7.7.3.3) from the reader's cached object graph, not a
@@ -85,7 +86,8 @@ public sealed class PdfReadPage
         PdfRectangle mediaBox, PdfRectangle cropBox, int rotate, PdfDictionary? resources)
     {
         Index = index;
-        ObjectNumber = objectNumber;
+        // objectNumber arrives as 0 for a direct /Kids element; see this type's ObjectNumber doc.
+        ObjectNumber = objectNumber == 0 ? null : objectNumber;
         Dictionary = dictionary;
         MediaBox = mediaBox;
         CropBox = cropBox;

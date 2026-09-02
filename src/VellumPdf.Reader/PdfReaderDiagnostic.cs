@@ -271,13 +271,16 @@ public enum PdfReaderDiagnosticCode
     PageTreeKidNotDictionary = 204,
 
     /// <summary>
-    /// A page's <c>/MediaBox</c>, <c>/CropBox</c>, or <c>/Rotate</c> — its own, or the value it
-    /// would otherwise inherit (ISO 32000-2 §7.7.3.4) — did not resolve to the shape §7.7.3.3
-    /// requires: a rectangle is not a 4-element numeric array, or <c>/Rotate</c> is not a multiple
-    /// of 90. <see cref="PdfReaderDiagnostic.Message"/> names which key. The reader substitutes a
-    /// default (US Letter for a missing or malformed <c>/MediaBox</c>, the page's own
-    /// <see cref="PdfReadPage.MediaBox"/> for <c>/CropBox</c>, 0 for <c>/Rotate</c>) rather than
-    /// leaving the attribute unset.
+    /// A page's <c>/MediaBox</c>, <c>/CropBox</c>, or <c>/Rotate</c>, its own or the value it would
+    /// otherwise inherit (ISO 32000-2 §7.7.3.4), either did not resolve to the shape §7.7.3.3
+    /// requires (a rectangle that is not a 4-element numeric array, or a <c>/Rotate</c> that is not
+    /// a multiple of 90), or, for <c>/MediaBox</c> specifically, was absent everywhere in the chain
+    /// even though Table 31 makes it Required. A resolved <c>/CropBox</c> that shares no overlap at
+    /// all with <c>/MediaBox</c> (ISO 32000-2 §14.11.2.1) reports this same code too.
+    /// <see cref="PdfReaderDiagnostic.Message"/> names which key and which condition. The reader
+    /// substitutes a default (US Letter for a missing or malformed <c>/MediaBox</c>, the page's own
+    /// <see cref="PdfReadPage.MediaBox"/> for a malformed or non-overlapping <c>/CropBox</c>, 0 for
+    /// <c>/Rotate</c>) rather than leaving the attribute unset.
     /// </summary>
     PageAttributeInvalid = 205,
 

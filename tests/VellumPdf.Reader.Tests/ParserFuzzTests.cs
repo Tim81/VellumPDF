@@ -196,9 +196,15 @@ public sealed class ParserFuzzTests
                     _ = page.Rotate;
                 }
             }
-            catch (Exception ex) when (IsDeclaredVocabulary(ex))
+            catch (Exception ex) when (IsPageWalkDeclaredVocabulary(ex))
             {
-                // Acceptable outcome. See the class doc.
+                // Acceptable outcome, but narrower than IsDeclaredVocabulary above: PageCount,
+                // Pages, and GetPage are documented to never let InvalidDataException escape.
+                // PageTreeWalker.TryResolve already converts it into a reported diagnostic and a
+                // skipped node, so accepting it here would hide a regression in that contract
+                // instead of catching it. PdfPasswordException is also excluded: the walk runs
+                // after PdfReader.Open already succeeded, so the password has already been
+                // checked and cannot be asked for again this deep.
             }
         }
         catch (Exception ex) when (IsDeclaredVocabulary(ex))
@@ -219,6 +225,9 @@ public sealed class ParserFuzzTests
 
     private static bool IsDeclaredVocabulary(Exception ex) =>
         ex is InvalidDataException or UnsupportedPdfFeatureException or PdfPasswordException;
+
+    /// <summary>Declared vocabulary for the page-walk sub-block only; see the catch site.</summary>
+    private static bool IsPageWalkDeclaredVocabulary(Exception ex) => ex is UnsupportedPdfFeatureException;
 
     // ── Mutation ─────────────────────────────────────────────────────────────
 

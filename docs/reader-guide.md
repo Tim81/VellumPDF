@@ -134,7 +134,7 @@ PdfReadPage first = reader.GetPage(0);          // throws ArgumentOutOfRangeExce
 
 `PageCount`/`Pages`/`GetPage` walk the page tree (ISO 32000-2 §7.7.3) from `/Root` → `/Pages` →
 `/Kids` on first access and cache the result — never in `PdfReader.Open` itself. The walk counts
-what `/Kids` actually contains, not any node's `/Count`: Table 30 puts the obligation on the
+what `/Kids` actually contains, not any node's `/Count`. Table 30 puts that obligation on the
 writer, not the reader: the `/Kids` array and its descendants are what "definitively determines
 the number of descendant pages", and real producers disagree with their own `/Kids` often enough
 that trusting `/Count` would misreport ordinary files, not just adversarial ones. A dictionary
@@ -144,6 +144,14 @@ is skipped and reported as `PageTreeNodeMalformed`; a dictionary with no `/Type`
 to whether it has a `/Kids` array, silently either way, since plenty of real producers omit
 `/Type /Page` on a genuine leaf.
 
+The root (`/Root/Pages`) is classified the same way before anything else runs: a root that is
+itself a leaf, or that names something other than `/Type /Pages` (the catalog dictionary reused as
+its own `/Pages` entry, say), reports `PageTreeMissing` instead of being walked, since ISO 32000-2
+§7.7.3.2 requires the root to be a page-tree node. Any node's `/Kids` resolving to a present but
+empty array, root included, contributes zero pages for that subtree with no diagnostic at all:
+§7.7.3 does not require a document to have at least one page, so an empty tree is a valid
+zero-page document, not a defect.
+
 Each `PdfReadPage` exposes `MediaBox`, `CropBox`, and `Rotate` already resolved through the
 inheritance chain (§7.7.3.4) and normalised: corners ordered low-to-high, rotation folded to one
 of 0/90/180/270. A malformed value anywhere in the chain is skipped in favour of the nearest
@@ -152,13 +160,17 @@ in the chain resolves at all does `MediaBox` fall back to US Letter (612 × 792 
 reader's own convention, since the specification names no default), `CropBox` to the page's own
 `MediaBox`, and `Rotate` to 0. `CropBox` is additionally intersected with `MediaBox` per §14.11.2.1
 once resolved: a crop region extending past the media box is clipped to it, not exposed as
-written; a `CropBox` that shares no overlap with `MediaBox` at all falls back to `MediaBox` with its
-own `PageAttributeInvalid` report. A merely absent, optional `CropBox` or `Rotate` stays silent:
-that is the spec's own default, not a problem. A page tree the walk cannot use at all reports
-`PageTreeMissing` and leaves `PageCount` at 0 rather than throwing; a cycle, a nesting depth past
-256, more than 100,000 leaves, or more than 1,000,000 `/Kids` elements examined in total reports its
-own code and returns whatever pages were found up to that point. See `PdfReaderDiagnosticCode`'s
-`2xx` block for the full list.
+written, and a zero-width or zero-height `CropBox` is kept exactly as written as long as it still
+touches the media box; a `CropBox` that shares no overlap with `MediaBox` at all falls back to
+`MediaBox` with its own `PageAttributeInvalid` report. A merely absent, optional `CropBox` or
+`Rotate` stays silent: that is the spec's own default, not a problem. A page tree the walk cannot
+use at all reports `PageTreeMissing` and leaves `PageCount` at 0 rather than throwing; a node whose
+own `/Type` or `/Kids` shape is wrong reports `PageTreeNodeMalformed` and is skipped or treated as
+best it can be, as described above; a cycle (`PageTreeCycle`), a nesting depth past 256
+(`PageTreeDepthExceeded`), more than 100,000 leaves (`PageTreeLeafLimitExceeded`), or more than
+1,000,000 `/Kids` elements examined in total (`PageTreeNodeLimitExceeded`) each report their own
+code and return whatever pages were found up to that point. See `PdfReaderDiagnosticCode`'s `2xx`
+block for the full list.
 
 ### Diagnostics
 
