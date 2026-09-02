@@ -260,17 +260,26 @@ public sealed class PdfValidatorOracleTests : IDisposable
         var p = int.Parse(match.Groups[1].Value);
 
         // Pin the exact value, not just the reserved-bit mask: for Permissions = Copy this is
-        // -3888 (0xFFFFF0D0 as a signed int32 — 0xFFFFF000 reserved-high | 0xC0 reserved-bits-7-8
-        // | 0x10 Copy). A mask-only assertion would pass even if some unrelated bit in /P were
-        // wrong; pinning the value is the known-answer test CLAUDE.md asks for.
-        Assert.Equal(-3888, p);
+        // -3376 (0xFFFFF2D0 as a signed int32 — 0xFFFFF000 reserved-high | 0xC0 reserved-bits-7-8
+        // | 0x200 bit 10 | 0x10 Copy). Bit 10 (ISO 32000-2 Table 22) is the deprecated
+        // accessibility-extraction bit; writers shall always set it to 1 regardless of the
+        // permissions requested (#397), which is why it is forced on here alongside bits 7-8. A
+        // mask-only assertion would pass even if some unrelated bit in /P were wrong; pinning the
+        // value is the known-answer test CLAUDE.md asks for.
+        Assert.Equal(-3376, p);
         Assert.True(
             (p & 0xC0) == 0xC0,
             $"Expected reserved bits 7-8 (0xC0) set in /P; qpdf reported P={p} (0x{(uint)p:X8}).\nstdout: {stdout}");
+        Assert.True(
+            (p & 0x200) == 0x200,
+            $"Expected bit 10 (0x200) set in /P; qpdf reported P={p} (0x{(uint)p:X8}).\nstdout: {stdout}");
 
         // Cross-check that qpdf's plain-language report matches the permissions the
-        // document was actually built with (Copy granted; Modify/Assemble withheld).
+        // document was actually built with (Copy granted; Modify/Assemble withheld), and that
+        // bit 10 reads as allowed at R >= 3 — the pre-#397 writer reported "not allowed" here
+        // because it left bit 10 clear whenever the caller omitted PdfPermissions.Extract.
         Assert.Contains("extract for any purpose: allowed", stdout, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("extract for accessibility: allowed", stdout, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("modify document assembly: not allowed", stdout, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("modify anything: not allowed", stdout, StringComparison.OrdinalIgnoreCase);
     }

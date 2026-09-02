@@ -28,7 +28,13 @@ public enum PdfPermissions
     /// <summary>Fill in existing interactive form fields.</summary>
     FillForms = 1 << 8,
 
-    /// <summary>Extract text and graphics (disability accessibility support).</summary>
+    /// <summary>
+    /// Historical accessibility-extraction bit. ISO 32000-2 Table 22 deprecates this bit in
+    /// PDF 2.0: readers shall ignore it, and writers shall always set it regardless of what the
+    /// caller passes here. The written /P bit no longer depends on this flag; it is kept for
+    /// reading files written to earlier specifications, and for <c>PdfDocument</c>'s PDF/UA-1
+    /// check on the caller's declared intent.
+    /// </summary>
     Extract = 1 << 9,
 
     /// <summary>Assemble the document (insert/delete pages, create bookmarks).</summary>

@@ -53,10 +53,13 @@ public sealed class StandardSecurityHandler : IPdfEncryptor
         // Bits 7–8 (positions 6–7 from LSB) must be 1 for R >= 3 — PdfPermissions has no
         // flag at 1<<6/1<<7 (the enum jumps Annotate=1<<5 straight to FillForms=1<<8), so
         // those two bits are forced on here rather than sourced from the caller's flags.
+        // Bit 10 (position 9 from LSB) is the deprecated accessibility-extraction bit: Table 22
+        // says readers shall ignore it and writers shall always set it to 1, so it is forced on
+        // here too, independent of whether the caller passed PdfPermissions.Extract.
         // Bits 13–32 (positions 12–31) are reserved = 1.
-        // Pattern: 0xFFFFF0C0 | enabledLowBits, then clear bits 0 and 1.
+        // Pattern: 0xFFFFF2C0 | enabledLowBits, then clear bits 0 and 1.
         var enabledBits = (int)settings.Permissions;
-        PValue = (int)((0xFFFFF0C0u | (uint)(enabledBits & 0xFFF)) & ~0x3u);
+        PValue = (int)((0xFFFFF2C0u | (uint)(enabledBits & 0xFFF)) & ~0x3u);
 
         var userPw = PasswordBytes(settings.UserPassword);
         // Null falls back to the user password (the documented behaviour); ThrowIfOwnerPasswordWouldBeIgnored

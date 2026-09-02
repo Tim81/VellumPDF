@@ -20,9 +20,9 @@ Generated once with qpdf (empty user password, owner `o`, AES-128) from the exac
 
 A §7.16-1 violator for `UaEncryptionPermissionsRuleTests`: its `/Encrypt` dictionary's `/P` entry
 has bit 10 clear, which ISO 32000-2 Table 22 says a writer "shall always set". Built once with
-this library's current writer and committed, because #397 ("Kernel: always set /P bit 10 in the
-encryption dictionary") will make bit 10 unconditional and leave no way to produce this shape from
-the writer once it lands.
+the pre-#397 writer and committed, because #397 ("Kernel: always set /P bit 10 in the encryption
+dictionary") made bit 10 unconditional, so there is no longer a way to produce this shape from
+the writer itself.
 
 The writer emits AES-256 (`/V 5 /R 6`): `StandardSecurityHandler` implements only one
 Standard-security-handler configuration, so every document `PdfDocument.Encrypt` writes is
