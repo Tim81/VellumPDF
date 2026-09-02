@@ -53,8 +53,9 @@ public sealed class StandardSecurityHandler : IPdfEncryptor
         // Bits 7–8 (positions 6–7 from LSB) are "Reserved. Must be 1." — PdfPermissions has no
         // flag at 1<<6/1<<7 (the enum jumps Annotate=1<<5 straight to FillForms=1<<8), so
         // those two bits are forced on here rather than sourced from the caller's flags.
-        // Bit 10 (position 9 from LSB) is the deprecated accessibility-extraction bit: Table 22
-        // says readers shall ignore it and writers shall always set it to 1, so it is forced on
+        // Bit 10 (position 9 from LSB) carried the accessibility-extraction restriction that
+        // PDF 2.0 deprecates: Table 22 says readers shall ignore it and writers shall always set
+        // it to 1, so it is forced on
         // here too, independent of whether the caller passed PdfPermissions.Extract.
         // Bits 13–32 (positions 12–31) are reserved = 1.
         // Pattern: 0xFFFFF2C0 | enabledLowBits, then clear positions 0-1 (Table 22 bits 1-2).

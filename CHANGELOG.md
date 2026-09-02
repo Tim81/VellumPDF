@@ -48,12 +48,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
-- **`/P` bit 10 is now always set on a newly written `/Encrypt` dictionary.** ISO 32000-2 Table 22
-  deprecates this bit in PDF 2.0 and requires writers to set it regardless of the permissions
-  requested; the Standard security handler previously set it only when `PdfPermissions.Extract` was
-  included, which produced a Table 22 violation and failed PDF/UA-1 §7.16-1. `Permissions = None`
-  now writes `/P -3392` instead of `-3904`, `Copy` writes `-3376` instead of `-3888`, and
-  `All & ~Extract` writes `-4`, the same value as `All`; at `/R` 6 the `/Perms` seal (Algorithm 10)
+- **`/P` bit 10 is now always set on a newly written `/Encrypt` dictionary.** The restriction this
+  bit expressed is deprecated in PDF 2.0, and ISO 32000-2 Table 22 requires writers to set the bit
+  regardless of the permissions requested; the Standard security handler previously set it only
+  when `PdfPermissions.Extract` was included, so any narrower permission set produced a Table 22
+  violation and failed PDF/UA-1 §7.16-1. `Permissions = None` now writes `/P -3392` instead of
+  `-3904`, `Copy` writes `-3376` instead of `-3888`, and `All & ~Extract` writes `-4` instead of
+  `-516`, the same value as `All`; at `/R` 6 the `/Perms` seal (Algorithm 10)
   changes with it, since it seals the same `/P` value. A document written with narrower permissions
   therefore reads back with `Extract` included in `PdfEncryptionInfo.Permissions`. (#397)
 

@@ -13,7 +13,8 @@ namespace VellumPdf.Conformance.Tests;
 /// ISO 14289-1 §7.16-1: an encrypted document's <c>/Encrypt</c> dictionary must have <c>/P</c> bit
 /// 10 set. Expected <c>/P</c> values below are derived from ISO 32000-2 Table 22 arithmetic
 /// (<c>StandardSecurityHandler</c>'s <c>P = (0xFFFFF2C0 | (enabledBits &amp; 0xFFF)) &amp; ~3</c>,
-/// bit 10 forced on since #397), not read back from whatever the writer happened to produce.
+/// bit 10 forced on since #397), not read back from whatever the writer happened to produce. The
+/// committed fixture's <c>-516</c> comes from the pre-#397 mask <c>0xFFFFF0C0</c>.
 /// </summary>
 public sealed class UaEncryptionPermissionsRuleTests
 {

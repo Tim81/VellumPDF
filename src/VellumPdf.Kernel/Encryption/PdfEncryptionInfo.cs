@@ -71,7 +71,11 @@ public sealed class PdfEncryptionInfo
     /// </summary>
     public int KeyLengthBits { get; }
 
-    /// <summary><c>/P</c>, decoded into the individual permission flags it grants.</summary>
+    /// <summary>
+    /// <c>/P</c>, decoded into the individual permission flags it grants. <see cref="PdfPermissions.Extract"/>
+    /// is included whenever bit 10 is set, which every writer following ISO 32000-2 Table 22 does
+    /// (this library's own since #397), so its presence says nothing about the author's intent.
+    /// </summary>
     /// <remarks>
     /// At <c>/R</c> 5 and 6 this is the copy sealed inside <c>/Perms</c> under the file key, not the
     /// dictionary's <c>/P</c> — the two are inputs to nothing at those revisions, so an editor can

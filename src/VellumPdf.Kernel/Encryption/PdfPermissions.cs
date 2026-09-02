@@ -29,11 +29,12 @@ public enum PdfPermissions
     FillForms = 1 << 8,
 
     /// <summary>
-    /// Historical accessibility-extraction bit. ISO 32000-2 Table 22 deprecates this bit in
-    /// PDF 2.0: readers shall ignore it, and writers shall always set it regardless of what the
-    /// caller passes here. The written /P bit no longer depends on this flag; it is kept for
-    /// reading files written to earlier specifications, and for <c>PdfDocument</c>'s PDF/UA-1
-    /// check on the caller's declared intent.
+    /// Historical accessibility-extraction bit. The restriction it expressed is deprecated in
+    /// PDF 2.0 (ISO 32000-2 Table 22): readers shall ignore the bit, and writers shall always set it
+    /// regardless of what the caller passes here. The written /P bit no longer depends on this
+    /// flag. It is kept because <see cref="PdfEncryptionInfo.Permissions"/> reports it for any
+    /// file whose bit 10 is set, including the ones this library writes, and because
+    /// <c>PdfDocument</c>'s PDF/UA-1 check reads it as the caller's declared intent.
     /// </summary>
     Extract = 1 << 9,
 

@@ -276,7 +276,8 @@ public sealed class PdfValidatorOracleTests : IDisposable
 
         // Cross-check that qpdf's plain-language report matches the permissions the
         // document was actually built with (Copy granted; Modify/Assemble withheld), and that
-        // bit 10 reads as allowed at R >= 3. The pre-#397 writer reported "not allowed" here
+        // qpdf consults bit 10 for that line at R >= 3. The pre-#397 writer reported "not allowed"
+        // here
         // because it left bit 10 clear whenever the caller omitted PdfPermissions.Extract.
         Assert.Contains("extract for any purpose: allowed", stdout, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("extract for accessibility: allowed", stdout, StringComparison.OrdinalIgnoreCase);

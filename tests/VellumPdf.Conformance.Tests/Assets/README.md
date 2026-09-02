@@ -46,9 +46,9 @@ doc.Save(stream);
 ```
 
 Under that writer's mask, `Permissions = All & ~Extract` cleared bit 10 (`PdfPermissions.Extract =
-1 << 9`) while leaving every other bit as `StandardSecurityHandler` set it for `All`. By Table 22
-arithmetic with the pre-#397 mask (`P = (0xFFFFF0C0 | (enabledBits & 0xFFF)) & ~3`), that makes
-`/P` equal `-516` (`0xFFFFFDFC`). `UaEncryptionPermissionsRuleTests` asserts the committed file's
+1 << 9`) while leaving every other bit as `StandardSecurityHandler` set it for `All`. By that
+mask's arithmetic (`P = (0xFFFFF0C0 | (enabledBits & 0xFFF)) & ~3`), `/P` comes out as `-516`
+(`0xFFFFFDFC`). `UaEncryptionPermissionsRuleTests` asserts the committed file's
 own `/P` still reads `-516` before trusting anything else about it, so a regenerated file with the
 bit accidentally set cannot make the rule test vacuous.
 

@@ -527,7 +527,7 @@ doc.Save(stream);
 |---|---|---|
 | `UserPassword` | `string?` | Password required to open the file |
 | `OwnerPassword` | `string?` | Null makes `UserPassword` serve as both, so anyone who can open the document holds owner access and `Permissions` restricts nobody — pass a distinct password when the permissions need to bind on someone who knows the user password |
-| `Permissions` | `PdfPermissions` | Flags: `Print`, `Modify`, `Copy`, `Annotate`, `FillForms`, `Extract`, `Assemble`, `PrintHighRes`, `All`, `None` |
+| `Permissions` | `PdfPermissions` | Flags: `Print`, `Modify`, `Copy`, `Annotate`, `FillForms`, `Extract`, `Assemble`, `PrintHighRes`, `All`, `None`. `Extract` no longer changes the written `/P`: bit 10 is always set since #397 (see the PDF/UA-1 note below) |
 | `EncryptMetadata` | `bool` | `false` leaves the whole XMP metadata stream as cleartext even though the rest of the document is encrypted: title, author, subject, language, creator tool, producer, and the creation and modification dates (default `true`) |
 
 **Guard:** an empty `OwnerPassword` beside a non-empty `UserPassword` throws. That combination
@@ -548,8 +548,8 @@ ISO 14289-1 §7.16 requires that assistive technology can still extract
 content from an encrypted, accessible document. The written `/P` no longer
 depends on that flag (ISO 32000-2 Table 22 has writers always set bit 10, and
 the handler does since #397), so the guard checks the caller's declared
-intent: omitting `Extract` from a PDF/UA-1 document says the opposite of what
-the profile promises, and the save refuses rather than guessing.
+intent: omitting `Extract` from `Permissions` on a PDF/UA-1 document says the
+opposite of what the profile promises, and the save refuses rather than guessing.
 
 ---
 

@@ -111,7 +111,7 @@ public sealed class EncryptionTests
     [Fact]
     public void Permissions_reserved_bits_7_and_8_are_always_set()
     {
-        // ISO 32000-2 Table 22: bits 7-8 (positions 6-7 from LSB) must be 1 for R >= 3,
+        // ISO 32000-2 Table 22: bits 7-8 (positions 6-7 from LSB) are "Reserved. Must be 1.",
         // regardless of the caller's requested permissions. PdfPermissions has no flag
         // at 1<<6/1<<7, so nothing the caller passes can turn these off.
         var allOff = new StandardSecurityHandler(new PdfEncryptionSettings
@@ -149,8 +149,8 @@ public sealed class EncryptionTests
 
     /// <summary>
     /// Known-answer values for <c>/P</c>, worked out by hand from Table 22 rather than copied from
-    /// a program run, so a mutation that lands on the same wrong answer the fixed implementation
-    /// would produce cannot slip through both at once.
+    /// a program run, so a bug in the mask cannot be blessed by an expectation taken from the same
+    /// buggy output.
     ///
     /// <para><c>None</c>: enabledBits = 0. <c>(0xFFFFF2C0 | 0) &amp; ~3 = 0xFFFFF2C0</c>. As a signed
     /// 32-bit value, <c>0x100000000 - 0xFFFFF2C0 = 0xD40 = 3392</c>, so <c>-3392</c>.</para>
@@ -162,7 +162,7 @@ public sealed class EncryptionTests
     /// <c>Print|Modify|Copy|Annotate|FillForms|Extract|Assemble|PrintHighRes</c>
     /// <c>= 0x4|0x8|0x10|0x20|0x100|0x200|0x400|0x800 = 0xF3C</c>. Minus <c>Extract (0x200)</c> is
     /// <c>0xD3C</c>. <c>0xFFFFF2C0 | 0xD3C</c>: low 12 bits <c>0x2C0 | 0xD3C = 0xFFC</c>, so the
-    /// result is <c>0xFFFFFFFC</c>, already clear on bits 0-1, which is <c>-4</c>. Bit 10 being
+    /// result is <c>0xFFFFFFFC</c>, already clear at positions 0-1, which is <c>-4</c>. Bit 10 being
     /// forced on independently of the caller's flags is exactly why dropping <c>Extract</c> no
     /// longer moves this value away from what <c>All</c> itself produces.</para>
     ///
@@ -190,7 +190,7 @@ public sealed class EncryptionTests
     /// <summary>
     /// End-to-end version of <see cref="PValue_matchesHandDerivedKnownAnswer"/>: saves a full AES-256
     /// R6 document (the writer's only mode) with <c>All &amp; ~Extract</c>, the exact permission set
-    /// #397 names, and checks the byte that actually reaches disk rather than only the handler's
+    /// #397 names, and checks the bytes that actually reach disk rather than only the handler's
     /// in-memory value.
     ///
     /// <para>The <c>/Perms</c> seal (Algorithm 10) is checked too, but against a handler built with
@@ -209,8 +209,10 @@ public sealed class EncryptionTests
         var bytes = SaveEncrypted("u", "o", permissions: PdfPermissions.All & ~PdfPermissions.Extract);
         var text = Encoding.Latin1.GetString(bytes);
 
-        // A single-page document carries exactly one /P, so a lone match also proves the regex
-        // did not pick up some other integer-valued /P key elsewhere in the file.
+        // SaveEncrypted builds no structure tree, AcroForm or signature, so the only /P key in the
+        // file is the /Encrypt entry: the writer's other /P keys are page back-references
+        // (/P n 0 R), which this regex would match as well. A lone match therefore proves the
+        // value came from /Encrypt and not from one of those.
         var declared = Assert.Single(Regex.Matches(text, @"/P (-?\d+)"));
         Assert.Equal("-4", declared.Groups[1].Value);
 
