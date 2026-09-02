@@ -192,10 +192,9 @@ public sealed class DiagnosticRoutingTests
     }
 
     /// <summary>
-    /// Pins the <c>rows &gt; 0</c> gate (Filters.cs) at the boundary a <c>rows &gt; 1</c> mutation
-    /// would survive: that mutant only breaks
-    /// <see cref="UnsupportedPredictor_bodyShorterThanOneRow_reportsNothing"/> below the boundary,
-    /// not at it.
+    /// Pins the <c>rows &gt; 0</c> gate (Filters.cs) at its boundary. The rows == 2 test above and
+    /// <see cref="UnsupportedPredictor_bodyShorterThanOneRow_reportsNothing"/> (rows == 0) cannot
+    /// tell <c>rows &gt; 0</c> from <c>rows &gt; 1</c>; only a body of exactly one row can.
     /// </summary>
     [Fact]
     public void UnsupportedPredictor_bodyExactlyOneRow_reportsWarning()

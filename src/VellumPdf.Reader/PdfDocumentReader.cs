@@ -563,9 +563,10 @@ public sealed partial class PdfDocumentReader : IDisposable
             // Reported here too, not just on the cold path below — otherwise whether this
             // condition is recorded would depend on request order: a cold mismatch reports and
             // caches nothing (this method returns before ever reaching _cache[objectNumber] = …),
-            // so the SAME mismatched request made twice must still report both times, and a
-            // caller who resolved the correct generation first must still see it on a later
-            // mismatched request against the now-warm cache.
+            // so the SAME mismatched request made twice must still call Report both times (the
+            // sink decides whether the repeat is recorded), and a caller who resolved the correct
+            // generation first must still see it on a later mismatched request against the
+            // now-warm cache.
             _diagnostics.Report(
                 PdfReaderDiagnosticCode.ObjectGenerationMismatch,
                 $"Reference asked for generation {generation}, but the cross-reference table records "
