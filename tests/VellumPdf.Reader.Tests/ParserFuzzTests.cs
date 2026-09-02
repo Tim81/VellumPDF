@@ -165,21 +165,40 @@ public sealed class ParserFuzzTests
             };
             using var reader = PdfReader.Open(bytes, options);
 
-            // Open() alone does not reach every lazily-resolved path — several #196-era defects
-            // lived specifically in resolution, not in opening the file — so touch every object
-            // number the xref claims to know about.
-            foreach (var objectNumber in reader.ObjectNumbers)
-                reader.Resolve(objectNumber);
-
-            // The page-tree walk (#98) is lazy too, and reads through the same mutated object
-            // graph — a hostile /Kids array or inherited attribute chain must degrade the same way
-            // everything else in this harness does, not throw outside the declared vocabulary.
-            _ = reader.PageCount;
-            foreach (var page in reader.Pages)
+            try
             {
-                _ = page.MediaBox;
-                _ = page.CropBox;
-                _ = page.Rotate;
+                // Open() alone does not reach every lazily-resolved path — several #196-era defects
+                // lived specifically in resolution, not in opening the file — so touch every object
+                // number the xref claims to know about.
+                foreach (var objectNumber in reader.ObjectNumbers)
+                    reader.Resolve(objectNumber);
+            }
+            catch (Exception ex) when (IsDeclaredVocabulary(ex))
+            {
+                // Acceptable outcome — see the class doc.
+            }
+
+            try
+            {
+                // The page-tree walk (#98) is lazy too, and reads through the same mutated object
+                // graph — a hostile /Kids array or inherited attribute chain must degrade the same
+                // way everything else in this harness does, not throw outside the declared
+                // vocabulary. Its own try/catch, separate from the resolve-all loop above: a seed
+                // whose resolve loop throws first must not skip exercising the page-tree walk on
+                // the same reader. MediaBox/CropBox/Rotate are already computed during the walk, so
+                // reading Dictionary is the only extra surface this loop needs to touch.
+                _ = reader.PageCount;
+                foreach (var page in reader.Pages)
+                {
+                    _ = page.Dictionary;
+                    _ = page.MediaBox;
+                    _ = page.CropBox;
+                    _ = page.Rotate;
+                }
+            }
+            catch (Exception ex) when (IsDeclaredVocabulary(ex))
+            {
+                // Acceptable outcome — see the class doc.
             }
         }
         catch (Exception ex) when (IsDeclaredVocabulary(ex))

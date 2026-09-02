@@ -240,11 +240,13 @@ public enum PdfReaderDiagnosticCode
     PageTreeMissing = 200,
 
     /// <summary>
-    /// The same object number was reached twice while walking the page tree — as a page-tree node
-    /// or a page object, in either combination. ISO 32000-2 §7.7.3.2 and §7.7.3.3 each forbid a
-    /// repeated indirect reference to the same node or page object, so this is always a shape
-    /// violation, whether it forms a genuine ancestor cycle or merely a redundant sibling reference;
-    /// either way the repeat is skipped and the walk continues.
+    /// The same object number was reached twice while walking the page tree — as a page-tree node,
+    /// a page object, or a <c>/Kids</c> array reached through an indirect reference, in any
+    /// combination. ISO 32000-2 §7.7.3.2 and §7.7.3.3 each forbid a repeated indirect reference to
+    /// the same node or page object, and describe <c>/Kids</c> as a tree rather than a graph, so this
+    /// is always a shape violation, whether it forms a genuine ancestor cycle, a redundant sibling
+    /// reference, or two nodes sharing one <c>/Kids</c> array object; either way the repeat is
+    /// skipped and the walk continues.
     /// </summary>
     PageTreeCycle = 201,
 
@@ -278,6 +280,25 @@ public enum PdfReaderDiagnosticCode
     /// leaving the attribute unset.
     /// </summary>
     PageAttributeInvalid = 205,
+
+    /// <summary>
+    /// A dictionary reached through <c>/Kids</c> did not classify as either a page-tree node or a
+    /// page object (ISO 32000-2 §7.7.3.2 Table 30, §7.7.3.3 Table 31): a <c>/Type /Pages</c> node
+    /// with no usable <c>/Kids</c> of its own, a <c>/Type /Page</c> object that also carries a
+    /// <c>/Kids</c> array, or a <c>/Type</c> naming neither. The first two are still used as a node
+    /// or a leaf respectively (with the offending part ignored); the third is skipped outright.
+    /// </summary>
+    PageTreeNodeMalformed = 206,
+
+    /// <summary>
+    /// The walk examined more than <c>PageTreeWalker.MaxKidsExamined</c> (1,000,000) <c>/Kids</c>
+    /// array elements in total. <see cref="PageTreeDepthExceeded"/> and
+    /// <see cref="PageTreeLeafLimitExceeded"/> each bound one dimension of the tree; this bounds the
+    /// walk's total work directly, since a branching factor of two or more makes the work a depth
+    /// cap alone permits grow exponentially rather than linearly. The walk stops entirely at that
+    /// point; pages found up to the cap are still returned.
+    /// </summary>
+    PageTreeNodeLimitExceeded = 207,
 
     // ── 9xx: reserved ───────────────────────────────────────────────────────────────────────────
 
@@ -333,6 +354,8 @@ internal static class PdfReaderDiagnosticSeverities
         PdfReaderDiagnosticCode.PageTreeLeafLimitExceeded => PdfReaderDiagnosticSeverity.Warning,
         PdfReaderDiagnosticCode.PageTreeKidNotDictionary => PdfReaderDiagnosticSeverity.Warning,
         PdfReaderDiagnosticCode.PageAttributeInvalid => PdfReaderDiagnosticSeverity.Warning,
+        PdfReaderDiagnosticCode.PageTreeNodeMalformed => PdfReaderDiagnosticSeverity.Warning,
+        PdfReaderDiagnosticCode.PageTreeNodeLimitExceeded => PdfReaderDiagnosticSeverity.Warning,
         PdfReaderDiagnosticCode.DiagnosticsSuppressed => PdfReaderDiagnosticSeverity.Warning,
         _ => throw new UnreachableException($"No severity is mapped for {code}."),
     };

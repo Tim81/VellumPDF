@@ -110,6 +110,9 @@ public sealed class PageTreeTests
         var expected = Enumerable.Range(0, kids.Count)
             .Select(i => Assert.IsType<PdfIndirectReference>(kids[i]).ObjectNumber);
         Assert.Equal(expected, reader.Pages.Select(p => p.ObjectNumber));
+
+        for (var i = 0; i < 3; i++)
+            Assert.Same(reader.Pages[i], reader.GetPage(i));
     }
 
     [Fact]
@@ -193,6 +196,15 @@ public sealed class PageTreeTests
         var rootInheritedPage = reader.Pages.Single(p => p.ObjectNumber == 6);
         AssertRectangle(0, 0, 200, 300, rootInheritedPage.MediaBox);
         Assert.Equal(90, rootInheritedPage.Rotate);
+
+        // Dictionary is the page's OWN dictionary, not a merged view carrying its inherited
+        // MediaBox in: resolving each object number directly gives back the exact same instance,
+        // and a page that inherits its MediaBox has no /MediaBox key of its own at all.
+        Assert.Same(reader.ResolveValue(new PdfIndirectReference(4, 0)), nearestAncestorPage.Dictionary);
+        Assert.Null(nearestAncestorPage.Dictionary.Get(PdfName.MediaBox));
+        Assert.Same(reader.ResolveValue(new PdfIndirectReference(5, 0)), ownAttributePage.Dictionary);
+        Assert.Same(reader.ResolveValue(new PdfIndirectReference(6, 0)), rootInheritedPage.Dictionary);
+        Assert.Null(rootInheritedPage.Dictionary.Get(PdfName.MediaBox));
     }
 
     // ── 5. Forged /Parent ─────────────────────────────────────────────────────────────────────────
@@ -235,6 +247,117 @@ public sealed class PageTreeTests
         var diagnostic = Assert.Single(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.PageTreeCycle);
         Assert.Equal(2, diagnostic.ObjectNumber);
         Assert.Equal(PdfReaderDiagnosticSeverity.Warning, diagnostic.Severity);
+    }
+
+    // ── 6b. Shared /Kids array object (exponential-walk guard) ───────────────────────────────────
+
+    [Fact]
+    public void SharedKidsArrayObject_isDetectedAsACycle_beforeExhaustingAnyBudget()
+    {
+        // Object 9 is BOTH the root's own /Kids array AND, via two direct (not indirect) dictionary
+        // elements inside that same array, each child's /Kids too — a tree walk that only guards
+        // against a repeated NODE object (as opposed to a repeated /Kids ARRAY object) never revisits
+        // the same object number here, because the two children themselves are direct dictionaries
+        // (object number 0) rather than indirect references: only the shared array they both point
+        // back at, object 9, ever repeats. Depth doubles every level with no cap of its own to stop
+        // it, so a walker that does not also key its cycle guard on the /Kids array's own object
+        // number never returns.
+        var bytes = BuildPdf(
+            rootObjectNumber: 1,
+            (1, "<< /Type /Catalog /Pages 2 0 R >>"),
+            (2, "<< /Type /Pages /Kids 9 0 R /Count 1 >>"),
+            (9, "[ << /Type /Pages /Kids 9 0 R >> << /Type /Pages /Kids 9 0 R >> ]"));
+
+        var stopwatch = Stopwatch.StartNew();
+        using var reader = Open(bytes);
+        var pageCount = reader.PageCount;
+        stopwatch.Stop();
+
+        Assert.True(
+            stopwatch.Elapsed < TimeSpan.FromSeconds(2),
+            $"Walking the shared-/Kids-array fixture took {stopwatch.Elapsed}, expected well under 2s.");
+        Assert.Equal(0, pageCount);
+        Assert.Contains(
+            reader.Diagnostics,
+            d => d.Code == PdfReaderDiagnosticCode.PageTreeCycle && d.Severity == PdfReaderDiagnosticSeverity.Warning);
+    }
+
+    // ── 6c. Pure node-count budget (no object ever repeats) ──────────────────────────────────────
+
+    [Fact]
+    public void ManyDistinctEmptyNodes_stopsAtTheKidsExaminedBudget_withNoCycleInvolved()
+    {
+        // Every object number below is distinct — nothing here ever repeats, so the shared-/Kids
+        // cycle guard above cannot be what stops this walk. Each of the MaxKidsExamined + 1 root
+        // kids is its own /Type /Pages node with an explicit, present-but-empty /Kids [] (a legal
+        // empty subtree, not a malformed one), so none of them counts toward the 100,000-leaf cap
+        // either — only the total number of /Kids elements examined can stop this walk.
+        const int nodeCount = 1_000_001;
+        var bytes = BuildManyEmptyPagesNodesPdf(nodeCount);
+
+        var stopwatch = Stopwatch.StartNew();
+        using var reader = Open(bytes);
+        var pageCount = reader.PageCount;
+        stopwatch.Stop();
+
+        Assert.Equal(0, pageCount);
+        Assert.Contains(
+            reader.Diagnostics,
+            d => d.Code == PdfReaderDiagnosticCode.PageTreeNodeLimitExceeded && d.Severity == PdfReaderDiagnosticSeverity.Warning);
+        Assert.DoesNotContain(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.PageTreeCycle);
+
+        // Not a hard budget assertion (machine-dependent) — a generous ceiling that fails loudly if
+        // the walk regresses to something quadratic in the number of kids examined.
+        Assert.True(
+            stopwatch.Elapsed < TimeSpan.FromSeconds(30),
+            $"Walking {nodeCount} distinct empty nodes took {stopwatch.Elapsed}, expected well under 30s.");
+    }
+
+    /// <summary>
+    /// Builds a root whose <c>/Kids</c> array directly lists <paramref name="nodeCount"/> distinct
+    /// <c>&lt;&lt; /Type /Pages /Kids [] &gt;&gt;</c> objects — string-built rather than through
+    /// <see cref="BuildPdf"/> for the same O(n) reason as <see cref="BuildLeafCapPdf"/>.
+    /// </summary>
+    private static byte[] BuildManyEmptyPagesNodesPdf(int nodeCount)
+    {
+        var sb = new StringBuilder(nodeCount * 40 + 4096);
+        sb.Append("%PDF-1.7\n");
+
+        var totalObjects = nodeCount + 3; // catalog (1), root Pages (2), nodes (3..nodeCount+2)
+        var offsets = new int[totalObjects];
+
+        offsets[1] = sb.Length;
+        sb.Append("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+
+        var kids = new StringBuilder(nodeCount * 8);
+        kids.Append('[');
+        for (var i = 0; i < nodeCount; i++)
+        {
+            if (i > 0)
+                kids.Append(' ');
+            kids.Append(i + 3).Append(" 0 R");
+        }
+        kids.Append(']');
+
+        offsets[2] = sb.Length;
+        sb.Append("2 0 obj\n<< /Type /Pages /Kids ").Append(kids).Append(" /Count 0 >>\nendobj\n");
+
+        for (var i = 0; i < nodeCount; i++)
+        {
+            var objNum = i + 3;
+            offsets[objNum] = sb.Length;
+            sb.Append(objNum).Append(" 0 obj\n<< /Type /Pages /Kids [] >>\nendobj\n");
+        }
+
+        var xrefOffset = sb.Length;
+        sb.Append("xref\n0 ").Append(totalObjects).Append('\n');
+        sb.Append("0000000000 65535 f \n");
+        for (var objNum = 1; objNum < totalObjects; objNum++)
+            sb.Append(offsets[objNum].ToString("D10")).Append(" 00000 n \n");
+        sb.Append("trailer\n<< /Size ").Append(totalObjects).Append(" /Root 1 0 R >>\n");
+        sb.Append("startxref\n").Append(xrefOffset).Append("\n%%EOF\n");
+
+        return Encoding.ASCII.GetBytes(sb.ToString());
     }
 
     // ── 7. Depth ──────────────────────────────────────────────────────────────────────────────────
@@ -406,6 +529,162 @@ public sealed class PageTreeTests
         Assert.Equal(PdfReaderDiagnosticSeverity.Warning, d.Severity);
     }
 
+    // ── 9b. Node/leaf classification ─────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void KidClassifiedByType_wrongTypeIsSkipped_neitherNodeNorPage()
+    {
+        // Root /Kids [1 0 R 3 0 R 4 0 R]: object 1 is the catalog itself (reused), object 3 is a
+        // /Type /Font dictionary — neither /Type /Pages nor /Type /Page — and object 4 is a real
+        // page. Both non-page objects report PageTreeNodeMalformed and contribute nothing.
+        var bytes = BuildPdf(
+            rootObjectNumber: 1,
+            (1, "<< /Type /Catalog /Pages 2 0 R >>"),
+            (2, "<< /Type /Pages /Kids [1 0 R 3 0 R 4 0 R] /Count 1 >>"),
+            (3, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"),
+            (4, "<< /Type /Page /MediaBox [0 0 100 100] >>"));
+
+        using var reader = Open(bytes);
+
+        Assert.Equal(1, reader.PageCount);
+        Assert.Equal(4, reader.Pages[0].ObjectNumber);
+
+        var malformed = reader.Diagnostics.Where(d => d.Code == PdfReaderDiagnosticCode.PageTreeNodeMalformed).ToList();
+        Assert.Equal(2, malformed.Count);
+        Assert.Contains(malformed, d => d.ObjectNumber == 1);
+        Assert.Contains(malformed, d => d.ObjectNumber == 3);
+    }
+
+    [Fact]
+    public void TypePagesWithNoUsableKids_reportsNodeMalformed_contributesNoChildren()
+    {
+        var bytes = BuildPdf(
+            rootObjectNumber: 1,
+            (1, "<< /Type /Catalog /Pages 2 0 R >>"),
+            (2, "<< /Type /Pages /Kids [3 0 R 5 0 R] /Count 1 >>"),
+            (3, "<< /Type /Pages >>"), // no /Kids at all: malformed, contributes nothing
+            (5, "<< /Type /Page /MediaBox [0 0 100 100] >>"));
+
+        using var reader = Open(bytes);
+
+        Assert.Equal(1, reader.PageCount);
+        var d = Assert.Single(reader.Diagnostics, x => x.Code == PdfReaderDiagnosticCode.PageTreeNodeMalformed);
+        Assert.Equal(3, d.ObjectNumber);
+    }
+
+    [Fact]
+    public void TypePagesWithEmptyKids_isSilent_legalEmptySubtree()
+    {
+        var bytes = BuildPdf(
+            rootObjectNumber: 1,
+            (1, "<< /Type /Catalog /Pages 2 0 R >>"),
+            (2, "<< /Type /Pages /Kids [3 0 R 5 0 R] /Count 1 >>"),
+            (3, "<< /Type /Pages /Kids [] >>"), // legal empty subtree: silent
+            (5, "<< /Type /Page /MediaBox [0 0 100 100] >>"));
+
+        using var reader = Open(bytes);
+
+        Assert.Equal(1, reader.PageCount);
+        Assert.DoesNotContain(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.PageTreeNodeMalformed);
+    }
+
+    [Fact]
+    public void TypePageWithStrayKids_isTreatedAsALeaf_kidsIgnored_withDiagnostic()
+    {
+        var bytes = BuildPdf(
+            rootObjectNumber: 1,
+            (1, "<< /Type /Catalog /Pages 2 0 R >>"),
+            (2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
+            // A /Type /Page object that also carries /Kids: /Type wins, it is still a leaf, and the
+            // stray /Kids never gets walked (object 9 does not exist, so a walk that mistakenly
+            // treated this as a node would report PageTreeKidNotDictionary instead).
+            (3, "<< /Type /Page /MediaBox [0 0 100 100] /Kids [9 0 R] >>"));
+
+        using var reader = Open(bytes);
+
+        Assert.Equal(1, reader.PageCount);
+        var d = Assert.Single(reader.Diagnostics, x => x.Code == PdfReaderDiagnosticCode.PageTreeNodeMalformed);
+        Assert.Equal(3, d.ObjectNumber);
+        Assert.DoesNotContain(reader.Diagnostics, x => x.Code == PdfReaderDiagnosticCode.PageTreeKidNotDictionary);
+    }
+
+    [Fact]
+    public void KidWithNoTypeAndNoKids_isALeafSilently()
+    {
+        var bytes = BuildPdf(
+            rootObjectNumber: 1,
+            (1, "<< /Type /Catalog /Pages 2 0 R >>"),
+            (2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
+            (3, "<< /MediaBox [0 0 100 100] >>")); // no /Type at all, no /Kids: tolerated as a leaf
+
+        using var reader = Open(bytes);
+
+        Assert.Equal(1, reader.PageCount);
+        Assert.DoesNotContain(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.PageTreeNodeMalformed);
+    }
+
+    [Fact]
+    public void DirectDictionaryKid_isOnePage_withObjectNumberZero()
+    {
+        var bytes = BuildPdf(
+            rootObjectNumber: 1,
+            (1, "<< /Type /Catalog /Pages 2 0 R >>"),
+            (2, "<< /Type /Pages /Kids [<< /Type /Page /MediaBox [0 0 100 100] >>] /Count 1 >>"));
+
+        using var reader = Open(bytes);
+
+        Assert.Equal(1, reader.PageCount);
+        Assert.Equal(0, reader.Pages[0].ObjectNumber);
+    }
+
+    // ── 9c. Malformed indirect targets recover instead of throwing ──────────────────────────────
+
+    [Fact]
+    public void MiddleKidWithUnresolvableRotate_stillYieldsThreePages_withRotateZeroAndDiagnostic()
+    {
+        // Object 5 alone holds the 40-digit literal — PdfObjectParser.ParseLong overflows long on
+        // it and throws while parsing object 5's OWN body, not object 3's (the page dict itself
+        // parses fine; only resolving its /Rotate indirect reference fails). Before this fix, that
+        // exception escaped PageTreeWalker.Walk entirely and PdfDocumentReader.Pages lost every
+        // page in the document, not just this one kid.
+        var bytes = BuildPdf(
+            rootObjectNumber: 1,
+            (1, "<< /Type /Catalog /Pages 2 0 R >>"),
+            (2, "<< /Type /Pages /Kids [3 0 R 4 0 R 6 0 R] /Count 3 /MediaBox [0 0 100 100] >>"),
+            (3, "<< /Type /Page >>"),
+            (4, "<< /Type /Page /Rotate 5 0 R >>"),
+            (5, "9999999999999999999999999999999999999999"), // overflows long: throws while parsing
+            (6, "<< /Type /Page >>"));
+
+        using var reader = Open(bytes);
+
+        Assert.Equal(3, reader.PageCount);
+        var middle = reader.Pages.Single(p => p.ObjectNumber == 4);
+        Assert.Equal(0, middle.Rotate);
+
+        var d = Assert.Single(reader.Diagnostics, x => x.Code == PdfReaderDiagnosticCode.PageAttributeInvalid);
+        Assert.Equal(4, d.ObjectNumber);
+        Assert.Contains("Rotate", d.Message);
+    }
+
+    [Fact]
+    public void MediaBoxElementWithUnresolvableTarget_fallsBackWithDiagnostic()
+    {
+        var bytes = BuildPdf(
+            rootObjectNumber: 1,
+            (1, "<< /Type /Catalog /Pages 2 0 R >>"),
+            (2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
+            (3, "<< /Type /Page /MediaBox [0 0 100 5 0 R] >>"),
+            (5, "9999999999999999999999999999999999999999"));
+
+        using var reader = Open(bytes);
+
+        Assert.Equal(1, reader.PageCount);
+        AssertRectangle(0, 0, 612, 792, reader.Pages[0].MediaBox);
+        var d = Assert.Single(reader.Diagnostics, x => x.Code == PdfReaderDiagnosticCode.PageAttributeInvalid);
+        Assert.Contains("MediaBox", d.Message);
+    }
+
     // ── 10. Attribute normalisation ───────────────────────────────────────────────────────────────
 
     [Fact]
@@ -440,10 +719,62 @@ public sealed class PageTreeTests
         Assert.DoesNotContain(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.PageAttributeInvalid);
     }
 
+    [Fact]
+    public void CropBox_extendingPastMediaBox_isClippedToTheIntersection_noDiagnostic()
+    {
+        // ISO 32000-2 §14.11.2.1: a crop box extending past the media box is treated as its
+        // intersection with it, not exposed as written.
+        var bytes = OnePageDocument("/MediaBox [0 0 100 100] /CropBox [-500 -500 900 900]");
+        using var reader = Open(bytes);
+
+        AssertRectangle(0, 0, 100, 100, reader.Pages[0].CropBox);
+        Assert.DoesNotContain(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.PageAttributeInvalid);
+    }
+
+    [Fact]
+    public void CropBox_disjointFromMediaBox_fallsBackToMediaBox_withDiagnostic()
+    {
+        var bytes = OnePageDocument("/MediaBox [0 0 100 100] /CropBox [200 200 300 300]");
+        using var reader = Open(bytes);
+
+        AssertRectangle(0, 0, 100, 100, reader.Pages[0].CropBox);
+        var d = Assert.Single(reader.Diagnostics, x => x.Code == PdfReaderDiagnosticCode.PageAttributeInvalid);
+        Assert.Contains("CropBox", d.Message);
+    }
+
+    [Fact]
+    public void CropBox_partiallyOverlappingMediaBox_isClippedToTheIntersection_noDiagnostic()
+    {
+        var bytes = OnePageDocument("/MediaBox [0 0 100 100] /CropBox [50 50 150 150]");
+        using var reader = Open(bytes);
+
+        AssertRectangle(50, 50, 100, 100, reader.Pages[0].CropBox);
+        Assert.DoesNotContain(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.PageAttributeInvalid);
+    }
+
+    [Fact]
+    public void OwnMalformedMediaBox_fallsBackToAValidAncestor_beforeLetter()
+    {
+        // The page's own /MediaBox is malformed (3 elements); the root's is valid. Falling straight
+        // to Letter here would silently discard a perfectly good ancestor value.
+        var bytes = BuildPdf(
+            rootObjectNumber: 1,
+            (1, "<< /Type /Catalog /Pages 2 0 R >>"),
+            (2, "<< /Type /Pages /Kids [3 0 R] /Count 1 /MediaBox [0 0 400 500] >>"),
+            (3, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 400] >>"));
+
+        using var reader = Open(bytes);
+
+        Assert.Equal(1, reader.PageCount);
+        AssertRectangle(0, 0, 400, 500, reader.Pages[0].MediaBox);
+        var d = Assert.Single(reader.Diagnostics, x => x.Code == PdfReaderDiagnosticCode.PageAttributeInvalid);
+        Assert.Equal(3, d.ObjectNumber);
+    }
+
     [Theory]
     [InlineData("450", 90)]
     [InlineData("-90", 270)]
-    [InlineData("90.0", 90)] // integer-valued real: accepted (see PageTreeWalker.NormalizeRotate)
+    [InlineData("90.0", 90)] // integer-valued real: accepted (see PageTreeWalker.ResolveRotateAttribute)
     public void Rotate_normalisesFoldedOrRealValue_noDiagnostic(string rawRotate, int expected)
     {
         var bytes = OnePageDocument($"/MediaBox [0 0 100 100] /Rotate {rawRotate}");

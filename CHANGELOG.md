@@ -24,19 +24,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   nothing that used to succeed now throws. (#385)
 - **`PdfDocumentReader.PageCount`, `Pages`, and `GetPage` — a page-tree walk over `/Root` →
   `/Pages` → `/Kids` (ISO 32000-2 §7.7.3).** `PageCount` is what the walk finds, never a node's own
-  `/Count` — §7.7.3.2 calls that entry redundant with the tree structure, and real producers
-  disagree with their own `/Kids` often enough that trusting it would misreport page counts on
-  ordinary files. Each `PdfReadPage` carries its `/MediaBox`, `/CropBox`, and `/Rotate` already
-  resolved through the inheritance chain (§7.7.3.4): the nearest ancestor that defines an attribute
-  wins over a farther one, and the page's own entry wins over all of them — by walking the tree the
-  reader actually descended, not by following a page's own `/Parent`, so a forged `/Parent` cannot
-  redirect inheritance. The walk is iterative, capped at 256 levels of nesting and 100,000 page
-  leaves, and a repeated indirect reference to the same node or page object is treated as a cycle
-  and skipped — all four new `PdfReaderDiagnosticCode` values (`PageTreeCycle`,
-  `PageTreeDepthExceeded`, `PageTreeLeafLimitExceeded`, `PageTreeKidNotDictionary`) plus
-  `PageTreeMissing` and `PageAttributeInvalid` report through the diagnostics channel #385 added
-  rather than throwing; a page tree the walk cannot use at all leaves `PageCount` at 0. Computed
-  lazily, on first access, and cached for the reader's lifetime. (#98)
+  `/Count` — Table 30 makes the `/Kids` array and its descendants what "definitively determines the
+  number of descendant pages", and real producers disagree with their own `/Kids` often enough that
+  trusting `/Count` would misreport page counts on ordinary files. Each `PdfReadPage` carries its
+  `/MediaBox`, `/CropBox`, and `/Rotate` already resolved through the inheritance chain (§7.7.3.4):
+  the nearest ancestor that defines a valid attribute wins over a farther one, and the page's own
+  entry wins over all of them when it is itself valid — by walking the tree the reader actually
+  descended, not by following a page's own `/Parent`, so a forged `/Parent` cannot redirect
+  inheritance. `CropBox` is additionally intersected with `MediaBox` per §14.11.2.1. The walk is
+  iterative, budgeted at 1,000,000 `/Kids` elements examined in total and capped at 256 levels of
+  nesting and 100,000 page leaves, and a repeated indirect reference to the same node, page object,
+  or shared `/Kids` array is treated as a cycle and skipped. A dictionary that fails to resolve, or
+  resolves to the wrong shape, is skipped rather than aborting the walk — eight new
+  `PdfReaderDiagnosticCode` values (`PageTreeMissing`, `PageTreeCycle`, `PageTreeDepthExceeded`,
+  `PageTreeLeafLimitExceeded`, `PageTreeKidNotDictionary`, `PageAttributeInvalid`,
+  `PageTreeNodeMalformed`, `PageTreeNodeLimitExceeded`) report through the diagnostics channel #385
+  added rather than throwing; a page tree the walk cannot use at all leaves `PageCount` at 0.
+  Computed lazily, on first access, and cached for the reader's lifetime. (#98)
 
 ## [2.3.0] - 2026-09-01
 

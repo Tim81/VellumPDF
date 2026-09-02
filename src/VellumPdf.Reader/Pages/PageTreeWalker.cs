@@ -18,11 +18,12 @@ namespace VellumPdf.Reader;
 /// chains. <see cref="MaxDepth"/> mirrors the depth cap <c>PreflightContext.WalkPages</c> already
 /// uses for the Conformance package's own page-tree walk.
 /// <para>
-/// <c>/Count</c> is never consulted. ISO 32000-2 §7.7.3.2's own NOTE calls it "redundant" with the
-/// tree structure the <c>/Kids</c> arrays already encode, and real producers disagree with their own
-/// <c>/Count</c> often enough — off by the pages a later edit added or removed without updating it —
-/// that trusting it would misreport <see cref="PdfDocumentReader.PageCount"/> on ordinary files, not
-/// just adversarial ones.
+/// <c>/Count</c> is never consulted. §7.7.3.2 Table 30 requires a writer to keep it "consistent with
+/// the number of entries in the Kids array and its descendants which definitively determines the
+/// number of descendant pages" — the tree itself, not the redundant integer beside it — and real
+/// producers disagree with their own <c>/Count</c> often enough — off by the pages a later edit added
+/// or removed without updating it — that trusting it would misreport
+/// <see cref="PdfDocumentReader.PageCount"/> on ordinary files, not just adversarial ones.
 /// </para>
 /// </remarks>
 internal static class PageTreeWalker
@@ -41,15 +42,25 @@ internal static class PageTreeWalker
     /// </summary>
     internal const int MaxLeaves = 100_000;
 
+    /// <summary>
+    /// Hard cap on the total number of <c>/Kids</c> array elements one walk examines, across every
+    /// node combined. <see cref="MaxDepth"/> alone does not bound this: with a branching factor of
+    /// two or more, every additional level of depth the cap still permits doubles the node count
+    /// below it, so the work a full-depth tree demands is exponential in <see cref="MaxDepth"/>, not
+    /// linear in it — a depth cap generous enough for any real document is nowhere near tight enough
+    /// to also bound the work an adversarial one can force. This budget bounds the walk's own work
+    /// directly instead of relying on the depth and leaf caps to do it as a side effect.
+    /// </summary>
+    internal const int MaxKidsExamined = 1_000_000;
+
     private static readonly PdfRectangle LetterFallback = new(0, 0, 612, 792);
 
     // Not one of PdfName's well-known statics (src/VellumPdf.Kernel/Core/PdfName.cs) — nothing
     // outside the reader's page-tree walk needs a shared instance of this one yet.
     private static readonly PdfName CropBoxKey = new("CropBox");
 
-    // Shared, read-only placeholder for a node classified as a page-tree node (ISO 32000-2 §7.7.3.2)
-    // by its /Type alone, with no usable /Kids of its own — contributes zero children rather than
-    // reporting a diagnostic, since an intermediate node with no descendants is not itself malformed.
+    // Shared, read-only placeholder for a node classified as a page-tree node by its /Type alone,
+    // with no usable /Kids of its own — contributes zero children.
     private static readonly PdfArray EmptyKids = new();
 
     /// <summary>Walks <paramref name="reader"/>'s page tree, reporting shape problems to
@@ -67,7 +78,7 @@ internal static class PageTreeWalker
         }
 
         var rootObjectNumber = (rootRaw as PdfIndirectReference)?.ObjectNumber ?? 0;
-        if (reader.ResolveValue(rootRaw) is not PdfDictionary rootDict)
+        if (!TryResolve(reader, rootRaw, out var rootResolved) || rootResolved is not PdfDictionary rootDict)
         {
             diagnostics.Report(
                 PdfReaderDiagnosticCode.PageTreeMissing,
@@ -77,7 +88,10 @@ internal static class PageTreeWalker
             return pages;
         }
 
-        if (ResolveOwn(reader, rootDict, PdfName.Kids) is not PdfArray rootKids)
+        var rootKidsRaw = rootDict.Get(PdfName.Kids);
+        var rootKidsArrayObjectNumber = (rootKidsRaw as PdfIndirectReference)?.ObjectNumber ?? 0;
+        if (rootKidsRaw is null || !TryResolve(reader, rootKidsRaw, out var rootKidsResolved)
+            || rootKidsResolved is not PdfArray rootKids)
         {
             diagnostics.Report(
                 PdfReaderDiagnosticCode.PageTreeMissing,
@@ -87,20 +101,26 @@ internal static class PageTreeWalker
             return pages;
         }
 
-        // Object numbers seen as EITHER a page-tree node or a page object, anywhere in the walk.
-        // ISO 32000-2 §7.7.3.2 and §7.7.3.3 each forbid a repeated indirect reference to the same
-        // node or page object, so a second occurrence of a number already in this set is always a
-        // shape violation — whether it forms a genuine ancestor cycle or merely a redundant sibling
-        // reference — and both are reported and skipped the same way (see the PageTreeCycle report
-        // below).
+        // Object numbers seen as EITHER a page-tree node, a page object, or a /Kids array reached
+        // through an indirect reference, anywhere in the walk. ISO 32000-2 §7.7.3.2 and §7.7.3.3
+        // each forbid a repeated indirect reference to the same node or page object, and describe
+        // /Kids as a tree, not a graph — nothing in the spec has two different nodes sharing one
+        // /Kids array object — so a second occurrence of a number already in this set is always a
+        // shape violation, whether it forms a genuine ancestor cycle, a redundant sibling reference,
+        // or two parents claiming the same children by reusing one /Kids array object; all three are
+        // reported and skipped the same way (see the PageTreeCycle reports below). Object numbers
+        // are unique within one file's cross-reference table, so folding node, page, and
+        // /Kids-array identities into a single set cannot false-positive one against another.
         var visited = new HashSet<int>();
         if (rootObjectNumber != 0)
             visited.Add(rootObjectNumber);
+        if (rootKidsArrayObjectNumber != 0)
+            visited.Add(rootKidsArrayObjectNumber);
 
         var stack = new Stack<Frame>();
-        stack.Push(new Frame(rootKids, rootObjectNumber, ReadOwnAttributes(reader, rootDict)));
+        stack.Push(new Frame(rootKids, rootObjectNumber, ReadOwnAttributes(rootDict)));
 
-        var depthExceededReported = false;
+        var kidsExamined = 0;
 
         while (stack.Count > 0)
         {
@@ -114,6 +134,16 @@ internal static class PageTreeWalker
             var kidRaw = frame.Kids[frame.NextIndex++];
             var kidObjectNumber = (kidRaw as PdfIndirectReference)?.ObjectNumber ?? 0;
 
+            kidsExamined++;
+            if (kidsExamined > MaxKidsExamined)
+            {
+                diagnostics.Report(
+                    PdfReaderDiagnosticCode.PageTreeNodeLimitExceeded,
+                    $"The page tree examined more than {MaxKidsExamined} /Kids array elements; the "
+                    + "walk stopped there.");
+                return pages;
+            }
+
             if (kidObjectNumber != 0 && !visited.Add(kidObjectNumber))
             {
                 diagnostics.Report(
@@ -125,7 +155,7 @@ internal static class PageTreeWalker
                 continue;
             }
 
-            if (reader.ResolveValue(kidRaw) is not PdfDictionary kidDict)
+            if (!TryResolve(reader, kidRaw, out var kidResolved) || kidResolved is not PdfDictionary kidDict)
             {
                 diagnostics.Report(
                     PdfReaderDiagnosticCode.PageTreeKidNotDictionary,
@@ -134,23 +164,34 @@ internal static class PageTreeWalker
                 continue;
             }
 
-            if (IsPagesNode(reader, kidDict, out var kidKids))
+            var kind = ClassifyNode(
+                reader, diagnostics, kidDict, kidObjectNumber, out var kidKids, out var kidKidsArrayObjectNumber);
+            if (kind == NodeKind.Skip)
+                continue;
+
+            if (kind == NodeKind.Node)
             {
+                if (kidKidsArrayObjectNumber != 0 && !visited.Add(kidKidsArrayObjectNumber))
+                {
+                    diagnostics.Report(
+                        PdfReaderDiagnosticCode.PageTreeCycle,
+                        $"The /Kids array object {kidKidsArrayObjectNumber} was already used "
+                        + "elsewhere in the page tree; the repeat was skipped.",
+                        kidKidsArrayObjectNumber);
+                    continue;
+                }
+
                 if (stack.Count >= MaxDepth)
                 {
-                    if (!depthExceededReported)
-                    {
-                        diagnostics.Report(
-                            PdfReaderDiagnosticCode.PageTreeDepthExceeded,
-                            $"The page tree nests more than {MaxDepth} levels deep; the walk stopped "
-                            + "descending past that depth.",
-                            NullIfZero(kidObjectNumber));
-                        depthExceededReported = true;
-                    }
+                    diagnostics.Report(
+                        PdfReaderDiagnosticCode.PageTreeDepthExceeded,
+                        $"The page tree nests more than {MaxDepth} levels deep; the walk stopped "
+                        + "descending past that depth.",
+                        NullIfZero(kidObjectNumber));
                     continue; // Skip this subtree; siblings already queued elsewhere still walk.
                 }
 
-                stack.Push(new Frame(kidKids, kidObjectNumber, ReadOwnAttributes(reader, kidDict)));
+                stack.Push(new Frame(kidKids, kidObjectNumber, ReadOwnAttributes(kidDict)));
                 continue;
             }
 
@@ -169,114 +210,235 @@ internal static class PageTreeWalker
         return pages;
     }
 
+    private enum NodeKind { Node, Leaf, Skip }
+
     /// <summary>
-    /// Whether <paramref name="dict"/> is an intermediate page-tree node rather than a page leaf: it
-    /// has a <c>/Kids</c> array of its own, or declares <c>/Type /Pages</c> even without a usable
-    /// one. A leaf that omits <c>/Type</c> entirely and has no <c>/Kids</c> is tolerated silently —
-    /// §7.7.3.3 requires <c>/Type /Page</c>, but plenty of real files leave it off a genuine leaf,
-    /// and nothing about that omission is ambiguous once <c>/Kids</c> is absent too.
+    /// Classifies <paramref name="dict"/> as an intermediate page-tree node or a page leaf, preferring
+    /// its own <c>/Type</c> over the mere presence of <c>/Kids</c> when the two disagree (ISO 32000-2
+    /// §7.7.3.2 Table 30 and §7.7.3.3 Table 31 each make the respective entry Required):
+    /// <list type="bullet">
+    /// <item><description><c>/Type /Pages</c> is always a node, even with no usable <c>/Kids</c> of
+    /// its own — that reports <see cref="PdfReaderDiagnosticCode.PageTreeNodeMalformed"/> and
+    /// contributes zero children, except a present-but-empty <c>/Kids []</c>, a legal empty subtree
+    /// that stays silent.</description></item>
+    /// <item><description><c>/Type /Page</c> is always a leaf; a stray <c>/Kids</c> alongside it
+    /// reports <see cref="PdfReaderDiagnosticCode.PageTreeNodeMalformed"/> and is ignored —
+    /// <c>/Type</c> wins.</description></item>
+    /// <item><description><c>/Type</c> naming anything else (a stray <c>/Font</c>, the catalog
+    /// itself) reports <see cref="PdfReaderDiagnosticCode.PageTreeNodeMalformed"/> and is skipped
+    /// entirely — it becomes neither a node nor a page.</description></item>
+    /// <item><description>No <c>/Type</c> at all falls back to the structural tell — a node when
+    /// <c>/Kids</c> resolves to an array, a leaf otherwise — silently either way: plenty of real
+    /// producers omit <c>/Type /Page</c> on a genuine leaf, and nothing about that omission is
+    /// ambiguous once the structural tell settles it.</description></item>
+    /// </list>
+    /// A <c>/Kids</c> entry that fails to resolve (an <see cref="InvalidDataException"/>-throwing
+    /// indirect target) is treated the same as one that resolves to the wrong type or is absent
+    /// outright — see <see cref="TryResolve"/>.
     /// </summary>
-    private static bool IsPagesNode(PdfDocumentReader reader, PdfDictionary dict, out PdfArray kids)
+    private static NodeKind ClassifyNode(
+        PdfDocumentReader reader, DiagnosticSink diagnostics, PdfDictionary dict, int objectNumber,
+        out PdfArray kids, out int kidsArrayObjectNumber)
     {
-        if (ResolveOwn(reader, dict, PdfName.Kids) is PdfArray ownKids)
+        var kidsRaw = dict.Get(PdfName.Kids);
+        kidsArrayObjectNumber = (kidsRaw as PdfIndirectReference)?.ObjectNumber ?? 0;
+        var kidsArray = kidsRaw is not null && TryResolve(reader, kidsRaw, out var kidsResolved)
+            ? kidsResolved as PdfArray
+            : null;
+
+        var type = dict.Get(PdfName.Type) as PdfName;
+
+        if (type is not null && type.Equals(PdfName.Page))
         {
-            kids = ownKids;
-            return true;
+            if (kidsRaw is not null)
+            {
+                diagnostics.Report(
+                    PdfReaderDiagnosticCode.PageTreeNodeMalformed,
+                    "A /Type /Page object also carries a /Kids array (ISO 32000-2 §7.7.3.3 Table 31 "
+                    + "requires /Type /Page on a leaf); the /Kids array was ignored.",
+                    NullIfZero(objectNumber));
+            }
+            kids = EmptyKids;
+            kidsArrayObjectNumber = 0;
+            return NodeKind.Leaf;
         }
 
-        if (dict.Get(PdfName.Type) is PdfName type && type.Equals(PdfName.Pages))
+        if (type is not null && !type.Equals(PdfName.Pages))
         {
+            diagnostics.Report(
+                PdfReaderDiagnosticCode.PageTreeNodeMalformed,
+                $"Object declares {type} where a page-tree node or page object was expected "
+                + "(ISO 32000-2 §7.7.3.2 Table 30, §7.7.3.3 Table 31); it was skipped.",
+                NullIfZero(objectNumber));
             kids = EmptyKids;
-            return true;
+            kidsArrayObjectNumber = 0;
+            return NodeKind.Skip;
+        }
+
+        if (type is not null) // /Type /Pages
+        {
+            if (kidsArray is null)
+            {
+                diagnostics.Report(
+                    PdfReaderDiagnosticCode.PageTreeNodeMalformed,
+                    "A /Type /Pages node has no usable /Kids array (ISO 32000-2 §7.7.3.2 Table 30 "
+                    + "makes it Required); it contributes no children.",
+                    NullIfZero(objectNumber));
+                kids = EmptyKids;
+                kidsArrayObjectNumber = 0;
+                return NodeKind.Node;
+            }
+            kids = kidsArray;
+            return NodeKind.Node;
+        }
+
+        // No /Type at all: fall back to the structural tell, tolerated silently either way.
+        if (kidsArray is not null)
+        {
+            kids = kidsArray;
+            return NodeKind.Node;
         }
 
         kids = EmptyKids;
-        return false;
+        kidsArrayObjectNumber = 0;
+        return NodeKind.Leaf;
     }
 
     private static PdfReadPage BuildPage(
         PdfDocumentReader reader, DiagnosticSink diagnostics, int pageIndex, int objectNumber,
         PdfDictionary dict, Stack<Frame> ancestors)
     {
-        var (mediaRaw, mediaSource) = FindInherited(reader, dict, objectNumber, ancestors, PdfName.MediaBox, static f => f.Attributes.MediaBox);
-        var mediaBox = NormalizeRectangle(
-            reader, mediaRaw, LetterFallback, requiredMissingDiagnostic: true, "MediaBox", mediaSource, pageIndex, diagnostics);
+        var mediaBox = ResolveRectangleAttribute(
+            reader, diagnostics, dict, objectNumber, ancestors, PdfName.MediaBox,
+            static f => f.Attributes.MediaBox, "MediaBox", LetterFallback,
+            "the Letter default (this reader's own convention — ISO 32000-2 names no default)",
+            required: true, pageIndex, out _);
 
-        var (cropRaw, cropSource) = FindInherited(reader, dict, objectNumber, ancestors, CropBoxKey, static f => f.Attributes.CropBox);
-        var cropBox = NormalizeRectangle(
-            reader, cropRaw, mediaBox, requiredMissingDiagnostic: false, "CropBox", cropSource, pageIndex, diagnostics);
+        var cropBoxRaw = ResolveRectangleAttribute(
+            reader, diagnostics, dict, objectNumber, ancestors, CropBoxKey,
+            static f => f.Attributes.CropBox, "CropBox", mediaBox, "the page's own MediaBox",
+            required: false, pageIndex, out var cropBoxFound);
 
-        var (rotateRaw, rotateSource) = FindInherited(reader, dict, objectNumber, ancestors, PdfName.Rotate, static f => f.Attributes.Rotate);
-        var rotate = NormalizeRotate(rotateRaw, rotateSource, pageIndex, diagnostics);
+        // ISO 32000-2 §14.11.2.1: "If the bounds of the crop, trim, bleed or art box extends outside
+        // of the bounds of the media box, a processor shall treat the box as its intersection with
+        // the media box." Skipped when nothing in the chain ever supplied a CropBox at all
+        // (cropBoxFound false): cropBoxRaw already equals mediaBox in that case, and intersecting it
+        // with itself risks a false "does not overlap" report if the media box itself happens to be
+        // zero-area.
+        var cropBox = cropBoxFound ? IntersectWithMediaBox(cropBoxRaw, mediaBox, diagnostics, pageIndex) : cropBoxRaw;
 
-        var (resourcesRaw, _) = FindInherited(reader, dict, objectNumber, ancestors, PdfName.Resources, static f => f.Attributes.Resources);
+        var rotate = ResolveRotateAttribute(reader, diagnostics, dict, objectNumber, ancestors, pageIndex);
 
-        return new PdfReadPage(pageIndex, objectNumber, dict, mediaBox, cropBox, rotate, resourcesRaw as PdfDictionary);
+        var resources = ResolveResourcesAttribute(reader, dict, objectNumber, ancestors);
+
+        return new PdfReadPage(pageIndex, objectNumber, dict, mediaBox, cropBox, rotate, resources);
     }
 
     /// <summary>
-    /// Resolves one inheritable attribute (ISO 32000-2 §7.7.3.4) for a page: the page's own entry
-    /// wins outright; otherwise the nearest ancestor that defines it wins. <paramref name="ancestors"/>
-    /// is the walk's own frame stack, and a <see cref="Stack{T}"/> enumerates top-first — the frame
-    /// pushed most recently, i.e. the page's immediate parent — so walking it in enumeration order
-    /// already visits nearest ancestor first, with no separate distance bookkeeping needed.
-    /// Deliberately never follows a page's own <c>/Parent</c> entry: a forged one must not be able to
-    /// redirect inheritance away from the chain the walk actually descended.
+    /// ISO 32000-2 §7.9.5 permits a zero-area rectangle as written, but a zero-area crop box clips
+    /// every page's content out of existence, which is never what a producer intended even when the
+    /// bytes technically allow it — so an intersection that collapses to nothing (no overlap on
+    /// either axis) is treated as malformed rather than honoured literally.
     /// </summary>
-    private static (PdfObject? Value, int SourceObjectNumber) FindInherited(
-        PdfDocumentReader reader, PdfDictionary leaf, int leafObjectNumber, Stack<Frame> ancestors,
-        PdfName key, Func<Frame, PdfObject?> selector)
+    private static PdfRectangle IntersectWithMediaBox(
+        PdfRectangle cropBox, PdfRectangle mediaBox, DiagnosticSink diagnostics, int pageIndex)
     {
-        if (ResolveOwn(reader, leaf, key) is { } own)
-            return (own, leafObjectNumber);
+        var x0 = Math.Max(cropBox.LlX, mediaBox.LlX);
+        var y0 = Math.Max(cropBox.LlY, mediaBox.LlY);
+        var x1 = Math.Min(cropBox.UrX, mediaBox.UrX);
+        var y1 = Math.Min(cropBox.UrY, mediaBox.UrY);
+
+        if (x1 <= x0 || y1 <= y0)
+        {
+            diagnostics.Report(
+                PdfReaderDiagnosticCode.PageAttributeInvalid,
+                "CropBox does not overlap MediaBox (ISO 32000-2 §14.11.2.1 requires their "
+                + "intersection); using MediaBox instead.",
+                null, null, pageIndex);
+            return mediaBox;
+        }
+
+        return new PdfRectangle(x0, y0, x1, y1);
+    }
+
+    /// <summary>
+    /// One inheritable attribute's candidate values (ISO 32000-2 §7.7.3.4), nearest first: the leaf's
+    /// own entry (if it has one) followed by each ancestor frame's own entry that defines the key —
+    /// a level that does not define it at all is skipped, not counted as a candidate. Deliberately
+    /// never follows a page's own <c>/Parent</c> entry: a forged one must not be able to redirect
+    /// inheritance away from the chain the walk actually descended. <paramref name="ancestors"/> is
+    /// the walk's own frame stack, and a <see cref="Stack{T}"/> enumerates top-first — the frame
+    /// pushed most recently, i.e. the immediate parent — so walking it in enumeration order already
+    /// visits nearest ancestor first, with no separate distance bookkeeping needed.
+    /// </summary>
+    private static List<(PdfObject Raw, int SourceObjectNumber)> AttributeChain(
+        PdfDictionary leaf, int leafObjectNumber, Stack<Frame> ancestors, PdfName key, Func<Frame, PdfObject?> selector)
+    {
+        var chain = new List<(PdfObject, int)>();
+        if (leaf.Get(key) is { } ownRaw)
+            chain.Add((ownRaw, leafObjectNumber));
 
         foreach (var frame in ancestors)
         {
-            if (selector(frame) is { } value)
-                return (value, frame.ObjectNumber);
+            if (selector(frame) is { } raw)
+                chain.Add((raw, frame.ObjectNumber));
         }
 
-        return (null, 0);
+        return chain;
     }
 
-    private static Attributes ReadOwnAttributes(PdfDocumentReader reader, PdfDictionary dict) => new(
-        Resources: ResolveOwn(reader, dict, PdfName.Resources),
-        MediaBox: ResolveOwn(reader, dict, PdfName.MediaBox),
-        CropBox: ResolveOwn(reader, dict, CropBoxKey),
-        Rotate: ResolveOwn(reader, dict, PdfName.Rotate));
-
-    private static PdfObject? ResolveOwn(PdfDocumentReader reader, PdfDictionary dict, PdfName key) =>
-        dict.Get(key) is { } raw ? reader.ResolveValue(raw) : null;
-
-    private static int? NullIfZero(int objectNumber) => objectNumber == 0 ? null : objectNumber;
-
-    // ── Attribute normalisation ──────────────────────────────────────────────────────────────────
-
-    private static PdfRectangle NormalizeRectangle(
-        PdfDocumentReader reader, PdfObject? raw, PdfRectangle fallback, bool requiredMissingDiagnostic,
-        string keyName, int sourceObjectNumber, int pageIndex, DiagnosticSink diagnostics)
+    /// <summary>
+    /// Resolves one rectangle-valued inheritable attribute by trying each candidate in
+    /// <see cref="AttributeChain"/> order: the first one that resolves to a valid rectangle wins,
+    /// outright, even over a well-formed ancestor value further up — matching §7.7.3.4's "nearest
+    /// ancestor" rule. A candidate that fails to resolve, or does not resolve to a 4-element numeric
+    /// array (ISO 32000-2 §7.9.5), reports <see cref="PdfReaderDiagnosticCode.PageAttributeInvalid"/>
+    /// naming the object that supplied it and is skipped rather than treated as final — so a
+    /// malformed override does not hide a well-formed value further up the chain behind it. Only when
+    /// no candidate at all resolves does <paramref name="fallback"/> apply.
+    /// </summary>
+    private static PdfRectangle ResolveRectangleAttribute(
+        PdfDocumentReader reader, DiagnosticSink diagnostics, PdfDictionary leaf, int leafObjectNumber,
+        Stack<Frame> ancestors, PdfName key, Func<Frame, PdfObject?> selector, string keyName,
+        PdfRectangle fallback, string fallbackDescription, bool required, int pageIndex, out bool found)
     {
-        if (raw is null)
+        var candidates = AttributeChain(leaf, leafObjectNumber, ancestors, key, selector);
+        found = false;
+
+        if (candidates.Count == 0)
         {
-            if (requiredMissingDiagnostic)
+            if (required)
             {
                 diagnostics.Report(
                     PdfReaderDiagnosticCode.PageAttributeInvalid,
-                    $"{keyName} is missing (ISO 32000-2 §7.7.3.3 makes it Required); using the "
-                    + "Letter default.",
-                    null, null, pageIndex);
+                    $"{keyName} is missing (ISO 32000-2 §7.7.3.3 makes it Required); using "
+                    + $"{fallbackDescription}.",
+                    NullIfZero(leafObjectNumber), null, pageIndex);
             }
             return fallback;
         }
 
-        if (TryReadRectangle(reader, raw, out var rect))
-            return rect;
+        for (var i = 0; i < candidates.Count; i++)
+        {
+            var (raw, sourceObjectNumber) = candidates[i];
+            var resolved = TryResolve(reader, raw, out var value) ? value : null;
+            if (resolved is not null && TryReadRectangle(reader, resolved, out var rect))
+            {
+                found = true;
+                return rect;
+            }
 
-        diagnostics.Report(
-            PdfReaderDiagnosticCode.PageAttributeInvalid,
-            $"{keyName} did not resolve to a 4-element numeric array (ISO 32000-2 §7.9.5); using "
-            + "the default instead.",
-            NullIfZero(sourceObjectNumber), null, pageIndex);
+            var isLast = i == candidates.Count - 1;
+            var trailer = isLast
+                ? $"using {fallbackDescription}."
+                : "continuing up the inheritance chain (ISO 32000-2 §7.7.3.4).";
+            diagnostics.Report(
+                PdfReaderDiagnosticCode.PageAttributeInvalid,
+                $"{keyName} on object {sourceObjectNumber} did not resolve to a 4-element numeric "
+                + $"array (ISO 32000-2 §7.9.5); {trailer}",
+                NullIfZero(sourceObjectNumber), null, pageIndex);
+        }
+
         return fallback;
     }
 
@@ -289,7 +451,8 @@ internal static class PageTreeWalker
         Span<double> values = stackalloc double[4];
         for (var i = 0; i < 4; i++)
         {
-            if (!TryReadNumber(reader.ResolveValue(arr[i]), out values[i]))
+            var element = TryResolve(reader, arr[i], out var resolved) ? resolved : null;
+            if (element is null || !TryReadNumber(element, out values[i]))
                 return false;
         }
 
@@ -304,37 +467,93 @@ internal static class PageTreeWalker
         return true;
     }
 
-    private static int NormalizeRotate(PdfObject? raw, int sourceObjectNumber, int pageIndex, DiagnosticSink diagnostics)
+    /// <summary>Resolves <c>/Rotate</c> the same nearest-candidate-wins way as
+    /// <see cref="ResolveRectangleAttribute"/>, defaulting to 0 when nothing in the chain ever
+    /// resolves to a multiple of 90. Unlike <c>/MediaBox</c>, <c>/Rotate</c> is optional (ISO
+    /// 32000-2 Table 31), so a chain with no candidate at all — as opposed to one whose candidates
+    /// were all malformed — stays silent rather than reporting a diagnostic for the default.</summary>
+    private static int ResolveRotateAttribute(
+        PdfDocumentReader reader, DiagnosticSink diagnostics, PdfDictionary leaf, int leafObjectNumber,
+        Stack<Frame> ancestors, int pageIndex)
     {
-        if (raw is null)
-            return 0;
+        var candidates = AttributeChain(leaf, leafObjectNumber, ancestors, PdfName.Rotate, static f => f.Attributes.Rotate);
 
-        if (!TryReadNumber(raw, out var value))
+        for (var i = 0; i < candidates.Count; i++)
         {
+            var (raw, sourceObjectNumber) = candidates[i];
+            var resolved = TryResolve(reader, raw, out var value) ? value : null;
+            double number = 0;
+            var isNumber = resolved is not null && TryReadNumber(resolved, out number);
+
+            // Checked in double space before any cast, so a huge (but still 90-divisible) value
+            // cannot overflow int on the way to being folded below (ISO 32000-2 §7.7.3.3: "The value
+            // shall be a multiple of 90.").
+            if (isNumber && number % 90 == 0)
+                return (int)((number % 360 + 360) % 360);
+
+            var isLast = i == candidates.Count - 1;
+            var trailer = isLast ? "using 0." : "continuing up the inheritance chain (ISO 32000-2 §7.7.3.4).";
+            var reason = isNumber
+                ? $"Rotate {number} on object {sourceObjectNumber} is not a multiple of 90 (ISO 32000-2 §7.7.3.3)"
+                : $"Rotate on object {sourceObjectNumber} did not resolve to a number";
             diagnostics.Report(
-                PdfReaderDiagnosticCode.PageAttributeInvalid,
-                "Rotate did not resolve to a number; using 0.",
+                PdfReaderDiagnosticCode.PageAttributeInvalid, $"{reason}; {trailer}",
                 NullIfZero(sourceObjectNumber), null, pageIndex);
-            return 0;
         }
 
-        // ISO 32000-2 §7.7.3.3: "The value shall be a multiple of 90." Checked in double space
-        // before any cast, so a huge (but still 90-divisible) value cannot overflow int on the way
-        // to being folded below.
-        if (value % 90 != 0)
-        {
-            diagnostics.Report(
-                PdfReaderDiagnosticCode.PageAttributeInvalid,
-                $"Rotate {value} is not a multiple of 90 (ISO 32000-2 §7.7.3.3); using 0.",
-                NullIfZero(sourceObjectNumber), null, pageIndex);
-            return 0;
-        }
-
-        // Folds a negative value or one past 360 into [0, 360) — e.g. -90 becomes 270, 450 becomes
-        // 90 — while the modulo above already confirmed the result lands on one of 0/90/180/270.
-        var folded = (value % 360 + 360) % 360;
-        return (int)folded;
+        return 0;
     }
+
+    /// <summary>
+    /// Resolves <c>/Resources</c> to the nearest candidate that resolves to a dictionary, or
+    /// <see langword="null"/> when nothing in the chain does. Unlike the three geometry attributes,
+    /// an unresolvable or wrong-typed candidate is skipped silently here rather than reported:
+    /// <c>/Resources</c> is only Required on a page that actually draws (ISO 32000-2 §7.7.3.3 Table
+    /// 31), and a page with no <c>/Contents</c> legitimately has none, so this reader treats any
+    /// absence — outright or because a candidate did not pan out — the same way, whereas
+    /// <c>/MediaBox</c> is Required on every page and its absence is always worth a diagnostic.
+    /// </summary>
+    private static PdfDictionary? ResolveResourcesAttribute(
+        PdfDocumentReader reader, PdfDictionary leaf, int leafObjectNumber, Stack<Frame> ancestors)
+    {
+        foreach (var (raw, _) in AttributeChain(leaf, leafObjectNumber, ancestors, PdfName.Resources, static f => f.Attributes.Resources))
+        {
+            if (TryResolve(reader, raw, out var resolved) && resolved is PdfDictionary dict)
+                return dict;
+        }
+        return null;
+    }
+
+    private static Attributes ReadOwnAttributes(PdfDictionary dict) => new(
+        Resources: dict.Get(PdfName.Resources),
+        MediaBox: dict.Get(PdfName.MediaBox),
+        CropBox: dict.Get(CropBoxKey),
+        Rotate: dict.Get(PdfName.Rotate));
+
+    /// <summary>
+    /// Resolves <paramref name="raw"/>, treating a target whose parse throws
+    /// <see cref="InvalidDataException"/> — e.g. a numeral too large for this parser
+    /// (<c>PdfObjectParser.ParseLong</c>) — the same as any other value the walk cannot use: skipped
+    /// and reported through the usual page-tree diagnostics rather than aborting the walk. Precedent:
+    /// <c>PdfDocumentReader.cs</c>'s own object-stream member resolution and
+    /// <c>PdfDocumentReader.SaveDecrypted.cs</c> already recover from this exception per object
+    /// rather than per document.
+    /// </summary>
+    private static bool TryResolve(PdfDocumentReader reader, PdfObject raw, out PdfObject? resolved)
+    {
+        try
+        {
+            resolved = reader.ResolveValue(raw);
+            return true;
+        }
+        catch (InvalidDataException)
+        {
+            resolved = null;
+            return false;
+        }
+    }
+
+    private static int? NullIfZero(int objectNumber) => objectNumber == 0 ? null : objectNumber;
 
     private static bool TryReadNumber(PdfObject? obj, out double value)
     {
@@ -349,8 +568,8 @@ internal static class PageTreeWalker
     // ── Frame ─────────────────────────────────────────────────────────────────────────────────────
 
     /// <summary>One open page-tree node on the walk's own stack — its <c>/Kids</c>, an iteration
-    /// cursor into that array, and the raw (not yet normalised) inheritable attributes it defines
-    /// itself, for <see cref="FindInherited"/> to consult on behalf of every descendant leaf.</summary>
+    /// cursor into that array, and the raw (not yet resolved or normalised) inheritable attributes it
+    /// defines itself, for the leaf-side resolvers to consult on behalf of every descendant.</summary>
     private sealed class Frame(PdfArray kids, int objectNumber, Attributes attributes)
     {
         internal PdfArray Kids { get; } = kids;
@@ -360,10 +579,11 @@ internal static class PageTreeWalker
     }
 
     /// <summary>
-    /// A node's OWN inheritable attribute values (ISO 32000-2 §7.7.3.4 Table 31), already resolved
-    /// through one indirect reference if the entry was one, but not yet normalised — normalisation
-    /// happens once, in <see cref="BuildPage"/>, against whichever node in the ancestor chain
-    /// actually supplied the value a given leaf inherits.
+    /// A node's OWN inheritable attribute entries (ISO 32000-2 §7.7.3.4 Table 31) exactly as
+    /// <c>dict.Get</c> returns them — not yet resolved through an indirect reference, and not yet
+    /// normalised. Kept raw rather than resolved at frame-push time so a malformed indirect target
+    /// is only ever reported against the specific leaf whose lookup reached it, with that leaf's page
+    /// index attached, instead of aborting the walk before any leaf asks for it at all.
     /// </summary>
     private readonly record struct Attributes(PdfObject? Resources, PdfObject? MediaBox, PdfObject? CropBox, PdfObject? Rotate);
 }

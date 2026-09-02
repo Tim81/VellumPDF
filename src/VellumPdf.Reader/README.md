@@ -66,7 +66,7 @@ for the narrative walkthrough this table summarizes.
 | Configurable, tighten-only resource limits | ✅ Supported | ISO 32000-2 Annex C.1/C.3, informative (#376) |
 | Decryption: Standard handler, `/V` 1/2/4/5, `/R` 2–6, RC4-40–128, AES-128/256 | ✅ Supported | ISO 32000-2 §7.6 |
 | Reading the document catalog | ✅ Supported | ISO 32000-2 §7.7.2 |
-| Page tree walk and page access (`PageCount`, `Pages`, `GetPage`) with inherited `/Resources`, `/MediaBox`, `/CropBox`, `/Rotate` | ✅ Supported | ISO 32000-2 §7.7.3 (#98) |
+| Page tree walk and page access (`PageCount`, `Pages`, `GetPage`) with inherited `/MediaBox`, `/CropBox`, `/Rotate` | ✅ Supported | ISO 32000-2 §7.7.3 (#98) |
 | Reading digital signature metadata (`/ByteRange`, `/Contents`, `/M`, `/SubFilter`) | ✅ Supported (read only, not verified) | ISO 32000-2 §12.8 |
 | Writing a decrypted copy (`SaveDecrypted`/`SaveDecryptedAsync`) | ✅ Supported | #186 |
 | Lexer/parser hardened against malformed input (property-based fuzzing, round-trip oracle) | ✅ Supported | #99 |

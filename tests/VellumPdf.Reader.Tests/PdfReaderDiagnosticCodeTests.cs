@@ -34,6 +34,8 @@ public sealed class PdfReaderDiagnosticCodeTests
         [PdfReaderDiagnosticCode.PageTreeLeafLimitExceeded] = 2,
         [PdfReaderDiagnosticCode.PageTreeKidNotDictionary] = 2,
         [PdfReaderDiagnosticCode.PageAttributeInvalid] = 2,
+        [PdfReaderDiagnosticCode.PageTreeNodeMalformed] = 2,
+        [PdfReaderDiagnosticCode.PageTreeNodeLimitExceeded] = 2,
         [PdfReaderDiagnosticCode.DiagnosticsSuppressed] = 9,
     };
 
@@ -130,6 +132,8 @@ public sealed class PdfReaderDiagnosticCodeTests
         [PdfReaderDiagnosticCode.PageTreeLeafLimitExceeded] = (203, PdfReaderDiagnosticSeverity.Warning),
         [PdfReaderDiagnosticCode.PageTreeKidNotDictionary] = (204, PdfReaderDiagnosticSeverity.Warning),
         [PdfReaderDiagnosticCode.PageAttributeInvalid] = (205, PdfReaderDiagnosticSeverity.Warning),
+        [PdfReaderDiagnosticCode.PageTreeNodeMalformed] = (206, PdfReaderDiagnosticSeverity.Warning),
+        [PdfReaderDiagnosticCode.PageTreeNodeLimitExceeded] = (207, PdfReaderDiagnosticSeverity.Warning),
         [PdfReaderDiagnosticCode.DiagnosticsSuppressed] = (900, PdfReaderDiagnosticSeverity.Warning),
     };
 
