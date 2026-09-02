@@ -1,8 +1,9 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
-using VellumPdf.Document;
-using VellumPdf.Encryption;
+using System.Globalization;
+using System.Text;
+using System.Text.RegularExpressions;
 using VellumPdf.Reader;
 
 namespace VellumPdf.Conformance.Tests;
@@ -14,6 +15,27 @@ namespace VellumPdf.Conformance.Tests;
 /// <c>InProcessVerdict_EqualsVeraPdf</c> with no password, and an encrypted fixture there would
 /// hit the refusal guard on every run rather than the one this class exists to exercise.
 /// </summary>
+/// <remarks>
+/// The three R6 fixtures the tests below read through <see cref="ReadEmbeddedFixture"/> are
+/// committed rather than built by each test, because a document built fresh at
+/// test time is an unreliable input to veraPDF here. ISO 32000-2 §7.6.4.3.4 Algorithm 2.B runs its
+/// hash loop for 64 rounds, then keeps going while the last byte of E is greater than the round
+/// number minus 32, so the correct exit test is <c>E[last] &lt;= completedRounds - 32</c>. That is
+/// what this library's <c>StandardSecurityHandler.Hash2B</c> does, and qpdf and pdf.js agree.
+/// veraPDF's own <c>EncryptionToolsRevision5_6.computeHash</c> (veraPDF-parser,
+/// <c>org.verapdf.tools</c>) instead exits on <c>E[last] &lt;= rounds - 33</c> with a zero-based
+/// round counter, one round later than the spec text. The two readings only disagree when
+/// <c>E[last]</c> lands exactly on <c>completedRounds - 32</c>, in which case veraPDF runs one
+/// extra round, derives a different hash from the same password and salt, and fails its own
+/// <c>/U</c> check on the file it just opened, refusing it outright (exit 8) even though qpdf and
+/// poppler read the same bytes without complaint. Because the writer draws its salts from
+/// <see cref="System.Security.Cryptography.RandomNumberGenerator"/>, whether a freshly written file
+/// lands on that boundary is chance, measured at 6 refusals out of 60 freshly built files, so a
+/// fixture built inline here would make these tests flaky against veraPDF for a reason unrelated to
+/// §7.16-1. See <c>Assets/README.md</c> for the exact provenance of each fixture. If a fixture is
+/// ever regenerated, it has to be re-checked with veraPDF before its SHA-256 is updated, the same
+/// way the check was done before it was first committed.
+/// </remarks>
 [Collection("veraPDF")]
 public sealed class UaEncryptionPermissionsVeraPdfTests
 {
@@ -65,7 +87,8 @@ public sealed class UaEncryptionPermissionsVeraPdfTests
     {
         VeraPdf.EnsureAvailable();
 
-        var bytes = BuildEncryptedOnePagePdf(userPassword: "", PdfPermissions.All);
+        var bytes = ReadEmbeddedFixture("enc-aes-256-emptyuser-p-all.pdf");
+        AssertEncryptDictionaryIsR6PAll(bytes);
         var path = WriteTempFile(bytes, "compliant");
         try
         {
@@ -93,7 +116,8 @@ public sealed class UaEncryptionPermissionsVeraPdfTests
     {
         VeraPdf.EnsureAvailable();
 
-        var bytes = BuildEncryptedOnePagePdf(userPassword: "u", PdfPermissions.All);
+        var bytes = ReadEmbeddedFixture("enc-aes-256-userpw-u-p-all.pdf");
+        AssertEncryptDictionaryIsR6PAll(bytes);
         var path = WriteTempFile(bytes, "userpw-nopw");
         try
         {
@@ -122,7 +146,8 @@ public sealed class UaEncryptionPermissionsVeraPdfTests
     {
         VeraPdf.EnsureAvailable();
 
-        var bytes = BuildEncryptedOnePagePdf(userPassword: "u", PdfPermissions.All);
+        var bytes = ReadEmbeddedFixture("enc-aes-256-userpw-u-p-all.pdf");
+        AssertEncryptDictionaryIsR6PAll(bytes);
         var path = WriteTempFile(bytes, "userpw-withpw");
         try
         {
@@ -149,20 +174,30 @@ public sealed class UaEncryptionPermissionsVeraPdfTests
 
     // ── Helpers ───────────────────────────────────────────────────────────────────────────────────
 
-    private static byte[] BuildEncryptedOnePagePdf(string userPassword, PdfPermissions permissions)
+    /// <summary>
+    /// Confirms the fixture actually carries the construct these tests rely on before consulting
+    /// veraPDF: an R6 <c>/Encrypt</c> dictionary with <c>/P -4</c> (every permission bit, including
+    /// bit 10, set). Scoped to the <c>/Encrypt</c> object the same way
+    /// <c>UaEncryptionPermissionsRuleTests.AssertWrittenPValue</c> is, so a regenerated fixture that
+    /// silently changed cipher, revision or permissions cannot make the veraPDF assertions below
+    /// pass for the wrong reason.
+    /// </summary>
+    private static void AssertEncryptDictionaryIsR6PAll(byte[] bytes)
     {
-        using var doc = new PdfDocument();
-        doc.AddPage();
-        doc.Encrypt(new PdfEncryptionSettings
-        {
-            UserPassword = userPassword,
-            OwnerPassword = userPassword.Length == 0 ? "vellum-test-owner" : null,
-            Permissions = permissions,
-        });
+        var text = Encoding.Latin1.GetString(bytes);
+        var encryptStart = text.IndexOf("/Filter /Standard", StringComparison.Ordinal);
+        Assert.True(encryptStart >= 0, "no /Encrypt dictionary (/Filter /Standard) found in the fixture.");
+        var encryptEnd = text.IndexOf("endobj", encryptStart, StringComparison.Ordinal);
+        Assert.True(encryptEnd >= 0, "the /Encrypt object has no endobj terminator.");
+        var encryptObject = text[encryptStart..encryptEnd];
 
-        using var ms = new MemoryStream();
-        doc.Save(ms);
-        return ms.ToArray();
+        var rMatch = Regex.Match(encryptObject, @"/R (\d+)");
+        Assert.True(rMatch.Success, "the /Encrypt dictionary has no /R entry.");
+        Assert.Equal(6, int.Parse(rMatch.Groups[1].Value, CultureInfo.InvariantCulture));
+
+        var pMatch = Regex.Match(encryptObject, @"/P (-?\d+)");
+        Assert.True(pMatch.Success, "the /Encrypt dictionary has no /P entry.");
+        Assert.Equal(-4, int.Parse(pMatch.Groups[1].Value, CultureInfo.InvariantCulture));
     }
 
     private static byte[] ReadEmbeddedFixture(string logicalName)

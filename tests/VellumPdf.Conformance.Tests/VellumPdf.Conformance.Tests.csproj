@@ -57,6 +57,21 @@
     <EmbeddedResource Include="Assets\enc-aes-128-userpw-u.pdf">
       <LogicalName>enc-aes-128-userpw-u.pdf</LogicalName>
     </EmbeddedResource>
+    <!-- Built once by this library's writer (empty user password, owner "vellum-test-owner",
+         Permissions = All) and committed rather than built in-test, then confirmed against a local
+         veraPDF 1.30.2 run before being checked in — see Assets/README.md and
+         UaEncryptionPermissionsVeraPdfTests.cs for why. Used by
+         CompliantFixture_veraPdfReportsNoClause716Element. -->
+    <EmbeddedResource Include="Assets\enc-aes-256-emptyuser-p-all.pdf">
+      <LogicalName>enc-aes-256-emptyuser-p-all.pdf</LogicalName>
+    </EmbeddedResource>
+    <!-- Built once by this library's writer (user password "u", Permissions = All) and committed
+         for the same reason as enc-aes-256-emptyuser-p-all.pdf above — see Assets/README.md. Used
+         by UserPasswordDocument_noPassword_refusalMatchesInProcessThrow and
+         UserPasswordDocument_withPassword_verdictMatchesVeraPdf. -->
+    <EmbeddedResource Include="Assets\enc-aes-256-userpw-u-p-all.pdf">
+      <LogicalName>enc-aes-256-userpw-u-p-all.pdf</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
 
 </Project>

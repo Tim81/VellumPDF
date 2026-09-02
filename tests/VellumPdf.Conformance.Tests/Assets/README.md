@@ -1,7 +1,7 @@
 # Conformance test assets
 
 Fonts are third-party, permissively licensed, and documented by the `*-LICENSE.*` file beside each
-one. The three PDF fixtures below are committed rather than built at test time; each section states
+one. The PDF fixtures below are committed rather than built at test time; each section states
 its own provenance.
 
 ## `jpx-encrypted-emptyuser.pdf`
@@ -46,6 +46,70 @@ trusting anything else about it, so a regenerated file with the bit accidentally
 the rule test vacuous.
 
 SHA-256: `d7a788dc6463cc3f63325aaf27b0b71d56c0bc1501b1174e6334bad2fe66e324`
+
+## `enc-aes-256-emptyuser-p-all.pdf` and `enc-aes-256-userpw-u-p-all.pdf`
+
+Used by `UaEncryptionPermissionsVeraPdfTests`. Both are R6 documents with `Permissions = All`
+(`/P -4`), committed instead of built by the test itself.
+
+The reason is a difference between this library's Algorithm 2.B and veraPDF's own. ISO 32000-2
+§7.6.4.3.4 runs the hash loop for 64 rounds, then keeps going "while the last byte of E is greater
+than round number minus 32", so it stops once `E[last] <= completedRounds - 32`. That is what
+`StandardSecurityHandler.Hash2B` does, and it agrees with qpdf and pdf.js. veraPDF's own
+`EncryptionToolsRevision5_6.computeHash` (in `veraPDF-parser`, package
+`org.verapdf.tools`) instead exits on `E[last] <= rounds - 33`, with `rounds` counted from 0, one
+round later than the spec text. The two readings only disagree when `E[last]` lands exactly on
+`completedRounds - 32`: veraPDF then runs one extra round, so it derives a different hash from the
+same password and salt, and its own `/U` check on the file it just opened fails. That makes it
+refuse the document outright (exit 8, "appears to be an encrypted PDF file and could not be
+processed"), even though qpdf and poppler open the same bytes without complaint.
+
+Because the writer draws its salts from `RandomNumberGenerator`, whether a freshly written file
+lands on that exact boundary is chance, not something the recipe controls. Measured at 6
+refusals out of 60 freshly built files. Building the fixture at test time therefore makes the test
+itself flaky against veraPDF for a reason that has nothing to do with the rule under test, so these
+two files are generated once, checked with veraPDF, and only committed once accepted. The writer is
+not being worked around here: `StandardSecurityHandler` implements what the spec says.
+
+Provenance (identical for both, only the encryption settings differ):
+
+```csharp
+using var doc = new PdfDocument();
+doc.AddPage();
+doc.Encrypt(new PdfEncryptionSettings
+{
+    UserPassword = "",                       // enc-aes-256-emptyuser-p-all.pdf
+    OwnerPassword = "vellum-test-owner",
+    Permissions = PdfPermissions.All,
+});
+doc.Save(stream);
+```
+
+```csharp
+using var doc = new PdfDocument();
+doc.AddPage();
+doc.Encrypt(new PdfEncryptionSettings
+{
+    UserPassword = "u",                      // enc-aes-256-userpw-u-p-all.pdf
+    OwnerPassword = null,
+    Permissions = PdfPermissions.All,
+});
+doc.Save(stream);
+```
+
+Each candidate was checked with `verapdf.bat --flavour ua1 --format xml <file>` (adding
+`--password u` for the user-password file) before being committed: the run has to produce a
+`<validationReport` element rather than exit 8. Both files here passed on the first attempt.
+
+If either file is ever regenerated, it must go through the same check before its SHA-256 below is
+updated. A regenerated file that has not been re-checked against veraPDF can reintroduce the
+one-in-ten refusal this section exists to remove.
+
+SHA-256 `enc-aes-256-emptyuser-p-all.pdf`:
+`ac213bd477b160d4fa0c6dbdbc5a59492045b58b38d562b8da2fd41fde26fc8b`
+
+SHA-256 `enc-aes-256-userpw-u-p-all.pdf`:
+`6f4a6b3fdd247842faf1712144392d81137d95990f185dec104b543ae11868f6`
 
 ## `enc-aes-128-userpw-u.pdf`
 
