@@ -880,8 +880,8 @@ public sealed class PageTreeTests
     [Fact]
     public void CropBox_zeroWidthAndContainedInMediaBox_isKeptAsWritten_noDiagnostic()
     {
-        // ISO 32000-2 §7.9.5's NOTE permits a zero-width or zero-height rectangle; it must not be
-        // silently replaced by MediaBox just because it has no area.
+        // ISO 32000-2 §7.9.5's NOTE records that rectangles can have zero width or height; it
+        // must not be silently replaced by MediaBox just because it has no area.
         var bytes = OnePageDocument("/MediaBox [0 0 612 792] /CropBox [100 100 100 300]");
         using var reader = Open(bytes);
 
@@ -1034,9 +1034,9 @@ public sealed class PageTreeTests
         // minimal leaves that inherit from the whole chain. A walk that re-scanned every ancestor
         // for every leaf would report each ancestor's defect once PER LEAF, costing depth times
         // leaves candidate checks per attribute; this asserts it is reported once PER NODE instead
-        // (DiagnosticSink dedupes by (code, object, page), so the three attribute reports for one
-        // node collapse into the one PageAttributeInvalid entry that key allows), and that the walk
-        // stays fast doing it.
+        // (ComputeEffectiveAttributes collects all three attribute failures on one node into one
+        // PageAttributeInvalid Report call, naming all three, rather than one call each), and that
+        // the walk stays fast doing it.
         const int nodeDepth = 200;
         const int leafCount = 5_000;
         var bytes = BuildDeepMalformedAttributeChainPdf(nodeDepth, leafCount, out var nodeObjectNumbers);
@@ -1479,10 +1479,11 @@ public sealed class PageTreeTests
     public void KidTypedAsTemplate_isSkipped_reportsNodeMalformed()
     {
         // Table 31's own Type row admits /Type /Template ("Template for an invisible Template
-        // page", ISO 32000-2 §12.7.7), but a Template page can never legally sit in /Kids:
-        // §12.7.7 requires it to have no /Parent entry, while Table 31 makes /Parent Required on
-        // any page object reached that way. The walker skips it the same way as any other /Type
-        // it does not recognise as a node or a leaf.
+        // page", ISO 32000-2 §7.7.3.3), but that same Table 31's Parent row exempts Template
+        // outright ("Objects of Type Template shall have no Parent key"), a rule §12.7.7 repeats,
+        // so a Template page has no parent and can never legally sit in any node's /Kids. The
+        // walker skips it the same way as any other /Type it does not recognise as a node or a
+        // leaf.
         var bytes = BuildPdf(
             rootObjectNumber: 1,
             (1, "<< /Type /Catalog /Pages 2 0 R >>"),
@@ -1497,6 +1498,108 @@ public sealed class PageTreeTests
         Assert.Equal(4, reader.Pages[0].ObjectNumber);
         var d = Assert.Single(reader.Diagnostics, x => x.Code == malformedCode);
         Assert.Equal(3, d.ObjectNumber);
+    }
+
+    // ── 13e. /Contents on the root node too ──
+
+    [Fact]
+    public void RootPagesNodeWithContents_reportsNodeMalformed_stillWalked()
+    {
+        // Walk's own root path never goes through ClassifyNode (the root is not reached via
+        // anyone else's /Kids), so it needs its own copy of the stray-/Contents check; this pins
+        // that the rule is uniform between the root and every other node.
+        var bytes = BuildPdf(
+            rootObjectNumber: 1,
+            (1, "<< /Type /Catalog /Pages 2 0 R >>"),
+            (2, "<< /Type /Pages /Kids [3 0 R] /Count 1 /Contents 9 0 R >>"),
+            (3, "<< /Type /Page /MediaBox [0 0 100 100] >>"));
+
+        using var reader = Open(bytes);
+        var malformedCode = PdfReaderDiagnosticCode.PageTreeNodeMalformed;
+
+        Assert.Equal(1, reader.PageCount);
+        var d = Assert.Single(reader.Diagnostics, x => x.Code == malformedCode);
+        Assert.Equal(2, d.ObjectNumber);
+        Assert.Contains("/Contents", d.Message);
+    }
+
+    // ── 13f. An explicit null value is equivalent to being absent (§7.3.9) ──
+
+    [Fact]
+    public void ContentsExplicitlyNull_onANode_isTreatedAsAbsent_noDiagnostic()
+    {
+        // ISO 32000-2 §7.3.9: "Specifying the null object as the value of a dictionary entry
+        // shall be equivalent to omitting the entry entirely." A node whose /Contents resolves to
+        // the null object must not be flagged the way a real stray /Contents entry is.
+        var bytes = BuildPdf(
+            rootObjectNumber: 1,
+            (1, "<< /Type /Catalog /Pages 2 0 R >>"),
+            (2, "<< /Type /Pages /Kids [3 0 R 5 0 R] /Count 2 >>"),
+            (3, "<< /Type /Pages /Kids [4 0 R] /Contents null >>"),
+            (4, "<< /Type /Page /MediaBox [0 0 100 100] >>"),
+            (5, "<< /Type /Page /MediaBox [0 0 100 100] >>"));
+
+        using var reader = Open(bytes);
+        var malformedCode = PdfReaderDiagnosticCode.PageTreeNodeMalformed;
+
+        Assert.Equal(2, reader.PageCount);
+        Assert.DoesNotContain(reader.Diagnostics, d => d.Code == malformedCode);
+    }
+
+    [Fact]
+    public void KidsExplicitlyNull_onATypePageObject_isTreatedAsAbsent_noDiagnostic()
+    {
+        var bytes = BuildPdf(
+            rootObjectNumber: 1,
+            (1, "<< /Type /Catalog /Pages 2 0 R >>"),
+            (2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
+            (3, "<< /Type /Page /MediaBox [0 0 100 100] /Kids null >>"));
+
+        using var reader = Open(bytes);
+        var malformedCode = PdfReaderDiagnosticCode.PageTreeNodeMalformed;
+
+        Assert.Equal(1, reader.PageCount);
+        Assert.DoesNotContain(reader.Diagnostics, d => d.Code == malformedCode);
+    }
+
+    [Fact]
+    public void MediaBoxAndRotateExplicitlyNull_onALeaf_areTreatedAsAbsent_noDiagnostic()
+    {
+        var bytes = BuildPdf(
+            rootObjectNumber: 1,
+            (1, "<< /Type /Catalog /Pages 2 0 R >>"),
+            (2, "<< /Type /Pages /Kids [3 0 R] /Count 1 /MediaBox [0 0 200 300] >>"),
+            (3, "<< /Type /Page /MediaBox null /Rotate null >>"));
+
+        using var reader = Open(bytes);
+        var invalidCode = PdfReaderDiagnosticCode.PageAttributeInvalid;
+
+        Assert.Equal(1, reader.PageCount);
+        AssertRectangle(0, 0, 200, 300, reader.Pages[0].MediaBox);
+        Assert.Equal(0, reader.Pages[0].Rotate);
+        Assert.DoesNotContain(reader.Diagnostics, d => d.Code == invalidCode);
+    }
+
+    [Fact]
+    public void MediaBoxExplicitlyNull_onAnAncestor_doesNotSuppressTheLeafsOwnMissingReport()
+    {
+        // An ancestor's /MediaBox null must not count as "the chain has a MediaBox" for
+        // MediaBoxEverPresent purposes (§7.3.9 again): if it did, a leaf with no valid MediaBox
+        // anywhere in the chain would silently get the Letter fallback with no diagnostic
+        // explaining why.
+        var bytes = BuildPdf(
+            rootObjectNumber: 1,
+            (1, "<< /Type /Catalog /Pages 2 0 R >>"),
+            (2, "<< /Type /Pages /Kids [3 0 R] /Count 1 /MediaBox null >>"),
+            (3, "<< /Type /Page >>"));
+
+        using var reader = Open(bytes);
+        var invalidCode = PdfReaderDiagnosticCode.PageAttributeInvalid;
+
+        Assert.Equal(1, reader.PageCount);
+        AssertRectangle(0, 0, 612, 792, reader.Pages[0].MediaBox);
+        var d = Assert.Single(reader.Diagnostics, x => x.Code == invalidCode);
+        Assert.Contains("MediaBox is missing", d.Message);
     }
 
     // ── Shared assertion helper ───────────────────────────────────────────────────────────────────

@@ -66,7 +66,8 @@ public sealed class PdfReadPage
     /// <summary>
     /// Degrees clockwise the page shall be rotated when displayed or printed (ISO 32000-2 §7.7.3.3),
     /// own or inherited, normalised to one of 0, 90, 180, or 270. An integral real such as
-    /// <c>90.0</c> is accepted, as is a negative value or one past 360 when it is still a multiple of
+    /// <c>90.0</c> is accepted too (this reader's own leniency: Table 31 types the entry as
+    /// integer), as is a negative value or one past 360 when it is still a multiple of
     /// 90 (e.g. <c>-90</c> becomes 270, <c>450</c> becomes 90); a value that is not a multiple of 90
     /// at all (which §7.7.3.3 forbids outright) is skipped in favour of the nearest ancestor that
     /// supplies a valid one, reported as <see cref="PdfReaderDiagnosticCode.PageAttributeInvalid"/>.

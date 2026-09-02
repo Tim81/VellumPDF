@@ -136,26 +136,31 @@ PdfReadPage first = reader.GetPage(0);          // throws ArgumentOutOfRangeExce
 `/Kids` on first access and cache the result (never in `PdfReader.Open` itself). The walk counts
 what `/Kids` actually contains, not any node's `/Count`. Table 30 puts that obligation on the
 writer, not the reader: the `/Kids` array and its descendants are what "definitively determines
-the number of descendant pages", and real producers disagree with their own `/Kids` often enough
-that trusting `/Count` would misreport ordinary files, not just adversarial ones. A dictionary
-reached through `/Kids` is classified by its own `/Type` first: `/Type /Pages` is always a node
-(a stray `/Contents` alongside it is reported as `PageTreeNodeMalformed`, since Table 30 does not
-list that key for a node, and never treated as a page), `/Type /Page` always a leaf (a stray
-`/Kids` on a `/Type /Page` object is ignored). `/Type /Template` (Table 31's own Type row admits
-it as the other legal page `/Type`, ISO 32000-2 §12.7.7's invisible template pages) and anything
-else naming neither is skipped and reported as `PageTreeNodeMalformed` too: a Template page can
-never legally be a `/Kids` child, since §12.7.7 requires it to have no `/Parent` entry while Table
-31 makes `/Parent` Required on any page object. A dictionary with no `/Type` at all falls back to
-whether it has a `/Kids` array, silently either way, since plenty of real producers omit
-`/Type /Page` on a genuine leaf.
+the number of descendant pages", and real producers disagree with their own `/Count` often enough
+that trusting it would misreport ordinary files, not just adversarial ones. A dictionary reached
+through `/Kids` is classified by its own `/Type` first: `/Type /Pages` is always a node, whether
+`/Type` names it explicitly or a usable `/Kids` array decides it structurally, and either way a
+stray `/Contents` alongside it is reported as `PageTreeNodeMalformed`: that key is a Table 31
+page-object entry with no row in Table 30's node listing, and §7.7.3.4 carries only inheritable
+attributes down to descendants, so on a node it describes nothing at all (a meaningless entry, not
+a conformance violation, but flagged anyway). `/Type /Page` is always a leaf; a stray `/Kids`
+alongside it is both ignored and reported as `PageTreeNodeMalformed` the same way. `/Type
+/Template` (Table 31's own Type row admits it as the other legal page `/Type`, §7.7.3.3) and
+anything naming neither is skipped and reported as `PageTreeNodeMalformed` too: that same Table
+31, in its Parent row, exempts Template from carrying one at all ("Objects of Type Template shall
+have no Parent key"), a rule §12.7.7 repeats, so a Template page has no parent and can never
+legitimately sit in any node's `/Kids`. A dictionary with no `/Type` at all falls back to whether
+it has a `/Kids` array for that classification, silently either way, since plenty of real
+producers omit `/Type /Page` on a genuine leaf.
 
-The root (`/Root/Pages`) is classified the same way before anything else runs: a root that is
-itself a leaf, or that names something other than `/Type /Pages` (the catalog dictionary reused as
-its own `/Pages` entry, say), reports `PageTreeMissing` instead of being walked, since ISO 32000-2
-§7.7.2 Table 29 requires `/Root/Pages` to be the root of the page tree and §7.7.3.2 defines what
-counts as one. Any node's `/Kids` resolving to a present but empty array, root included,
-contributes zero pages for that subtree with no diagnostic at all: §7.7.3 does not require a
-document to have at least one page, so an empty tree is a valid zero-page document, not a defect.
+The root (`/Root/Pages`) is classified the same way before anything else runs, the `/Contents`
+check included: a root that is itself a leaf, or that names something other than `/Type /Pages`
+(the catalog dictionary reused as its own `/Pages` entry, say), reports `PageTreeMissing` instead
+of being walked, since ISO 32000-2 §7.7.2 Table 29 requires `/Root/Pages` to be the root of the
+page tree and §7.7.3.2 defines what counts as one. Any node's `/Kids` resolving to a present but
+empty array, root included, contributes zero pages for that subtree with no diagnostic at all:
+§7.7.3 does not require a document to have at least one page, so an empty tree is a valid
+zero-page document, not a defect.
 
 Each `PdfReadPage` exposes `MediaBox`, `CropBox`, and `Rotate` already resolved through the
 inheritance chain (§7.7.3.4) and normalised: corners ordered low-to-high, rotation folded to one
@@ -167,12 +172,13 @@ reader's own convention, since the specification names no default), `CropBox` to
 once resolved: a crop region extending past the media box is clipped to it, not exposed as
 written, and a crop box that collapses to zero width or height at the intersection is kept as that
 zero-width (or zero-height) intersection rather than replaced, as long as it still touches the
-media box (ISO 32000-2 §7.9.5's NOTE permits a zero-width or zero-height rectangle); a `CropBox`
-that shares no overlap with `MediaBox` at all falls back to `MediaBox` with its own
-`PageAttributeInvalid` report. A merely absent, optional `CropBox` or
-`Rotate` stays silent: that is the spec's own default, not a problem. A page tree the walk cannot
-use at all reports `PageTreeMissing` and leaves `PageCount` at 0 rather than throwing; a node whose
-own `/Type` or `/Kids` shape is wrong reports `PageTreeNodeMalformed` and is skipped or treated as
+media box (ISO 32000-2 §7.9.5's NOTE records that rectangles can have zero width or height); a
+`CropBox` that shares no overlap with `MediaBox` at all (§14.11.2.1's intersection would be
+empty) falls back to `MediaBox` with its own `PageAttributeInvalid` report. A merely absent,
+optional `CropBox` or `Rotate` stays silent: that is the spec's own default, not a problem. A
+page tree the walk cannot use at all reports `PageTreeMissing` and leaves `PageCount` at 0
+rather than throwing; a node whose own `/Type` or `/Kids` shape is wrong reports
+`PageTreeNodeMalformed` and is skipped or treated as
 best it can be, as described above; a cycle (`PageTreeCycle`), a nesting depth past 256
 (`PageTreeDepthExceeded`), more than 100,000 leaves (`PageTreeLeafLimitExceeded`), or more than
 1,000,000 `/Kids` elements examined in total (`PageTreeNodeLimitExceeded`) each report their own
@@ -199,8 +205,12 @@ same code once against that node with `PageIndex` null, so filtering diagnostics
 alone misses it. A caller must also look at reports with a null page index; every other code
 either concerns no specific page or is reported before a page index is known.
 `MaxDiagnostics` (default 1000) is tighten-only, matching `MaxDecodedStreamBytes` and
-`ReconstructionBudgetMultiplier` above — past the cap, a single `DiagnosticsSuppressed` entry says
-how many further reports were dropped rather than growing the list without bound.
+`ReconstructionBudgetMultiplier` above: past the cap, a single `DiagnosticsSuppressed` entry says
+how many further reports were dropped rather than growing the list without bound. Exempt from
+that cap: the `2xx` page-tree codes that say the page list found so far is incomplete
+(`PageTreeLeafLimitExceeded`, `PageTreeNodeLimitExceeded`, and the first `PageTreeDepthExceeded`
+of a walk), each retained past `MaxDiagnostics` rather than risk going silent on exactly the
+input the cap exists to bound (see Pages above and `PdfReaderOptions.MaxDiagnostics`).
 
 `Diagnostics` is a live view: streams decode lazily, so the list can still grow after `Open`
 returns, as later calls resolve more of the document. Unlike the reader's other collections, which

@@ -13,8 +13,9 @@ namespace VellumPdf.Reader;
 /// exception to that cap: a caller uses it for the rare condition that must stay visible even on a
 /// document engineered to exhaust the cap on unrelated conditions first, since <see cref="Report"/>
 /// alone offers no way to tell such a condition apart from an ordinary one once the cap is full.
-/// <see cref="PageTreeWalker"/> is the one caller today, and bounds itself to at most three
-/// <see cref="ReportRetained"/> calls per walk (see its own remarks).
+/// <see cref="PageTreeWalker"/> is the one caller today, and bounds itself to at most two
+/// retained entries per walk, not three, even though three distinct codes each reach
+/// <see cref="ReportRetained"/> (see its own remarks for why).
 /// </summary>
 /// <param name="cap">
 /// The maximum number of ordinary diagnostics this sink holds before it starts recording

@@ -283,11 +283,12 @@ public enum PdfReaderDiagnosticCode
     /// <summary>
     /// A page's <c>/MediaBox</c>, <c>/CropBox</c>, or <c>/Rotate</c>, its own or the value it would
     /// otherwise inherit (ISO 32000-2 §7.7.3.4), either did not resolve to the shape a rectangle
-    /// requires under §7.9.5 (a 4-element numeric array), failed the multiple-of-90 rule §7.7.3.3
-    /// Table 31 sets for <c>/Rotate</c>, or, for <c>/MediaBox</c> specifically, was absent
-    /// everywhere in the chain even though Table 31 makes it Required. A resolved <c>/CropBox</c>
-    /// that shares no overlap at all with <c>/MediaBox</c> (ISO 32000-2 §14.11.2.1) reports this
-    /// same code too.
+    /// requires under §7.9.5 (a 4-element numeric array), or, for <c>/Rotate</c> specifically,
+    /// either did not resolve to a number at all (Table 31 types the entry as integer) or failed
+    /// the multiple-of-90 rule §7.7.3.3 Table 31 also sets for it, or, for <c>/MediaBox</c>
+    /// specifically, was absent everywhere in the chain even though Table 31 makes it Required. A
+    /// resolved <c>/CropBox</c> that shares no overlap at all with <c>/MediaBox</c> (ISO 32000-2
+    /// §14.11.2.1) reports this same code too.
     /// <see cref="PdfReaderDiagnostic.Message"/> names which key and which condition. The reader
     /// substitutes a default (US Letter for a missing or malformed <c>/MediaBox</c>, the page's own
     /// <see cref="PdfReadPage.MediaBox"/> for a malformed or non-overlapping <c>/CropBox</c>, 0 for
@@ -296,15 +297,19 @@ public enum PdfReaderDiagnosticCode
     PageAttributeInvalid = 205,
 
     /// <summary>
-    /// A dictionary reached through <c>/Kids</c> did not classify as either a page-tree node or a
-    /// page object (ISO 32000-2 §7.7.3.2 Table 30, §7.7.3.3 Table 31): a <c>/Type /Pages</c> node
-    /// with no usable <c>/Kids</c> of its own, a node (typed <c>/Pages</c> or untyped) that also
-    /// carries a <c>/Contents</c> entry, which Table 30 does not list for a page-tree node, a
-    /// <c>/Type /Page</c> object that also carries a <c>/Kids</c> array, or a <c>/Type</c> naming
+    /// A page-tree node dictionary, either reached through <c>/Kids</c> or the root named by the
+    /// catalog's own <c>/Pages</c> entry, did not classify as either a page-tree node or a page
+    /// object (ISO 32000-2 §7.7.3.2 Table 30, §7.7.3.3 Table 31): a <c>/Type /Pages</c> node with
+    /// no usable <c>/Kids</c> of its own, a node (typed <c>/Pages</c> or untyped) that also carries
+    /// a <c>/Contents</c> entry, a Table 31 page-object key with no row in Table 30's node listing
+    /// and, per §7.7.3.4, no inheritance path to any descendant either, so it describes nothing on
+    /// a node (not a conformance violation on its own, just a meaningless entry the reader flags),
+    /// a <c>/Type /Page</c> object that also carries a <c>/Kids</c> array, or a <c>/Type</c> naming
     /// neither a node nor a page object. The node cases are still walked as a node (with the
     /// offending part ignored, and its <c>/Contents</c>, if any, never treated as a page); a
     /// <c>/Type /Page</c> object with a stray <c>/Kids</c> is still used as a leaf; a <c>/Type</c>
-    /// naming neither is skipped outright.
+    /// naming neither is skipped outright, or, for the root specifically, reported as
+    /// <see cref="PageTreeMissing"/> instead since there is no tree left to walk at all.
     /// </summary>
     PageTreeNodeMalformed = 206,
 
