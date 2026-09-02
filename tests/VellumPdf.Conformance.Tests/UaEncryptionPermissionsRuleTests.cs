@@ -40,7 +40,7 @@ public sealed class UaEncryptionPermissionsRuleTests
     // ── Fixture 2: violating, committed binary ────────────────────────────────────────────────────
 
     /// <summary>
-    /// <c>Assets/enc-aes-128-p-bit10-clear.pdf</c> was built once, before the Kernel <c>/P</c> fix,
+    /// <c>Assets/enc-aes-256-p-bit10-clear.pdf</c> was built once, before the Kernel <c>/P</c> fix,
     /// with <c>Permissions = All &amp; ~Extract</c>: <c>P = (0xFFFFF0C0 | (0xD3C &amp; 0xFFF)) &amp; ~3
     /// = -516</c> by hand. It is committed rather than regenerated because that Kernel fix removes
     /// the writer's ability to produce a bit-10-clear file at all (see <c>Assets/README.md</c>).
@@ -48,7 +48,7 @@ public sealed class UaEncryptionPermissionsRuleTests
     [Fact]
     public void ViolatingFixture_bit10Clear_reportsOneError()
     {
-        var bytes = ReadEmbeddedFixture("enc-aes-128-p-bit10-clear.pdf");
+        var bytes = ReadEmbeddedFixture("enc-aes-256-p-bit10-clear.pdf");
 
         // The rule reads the trailer's /Encrypt /P directly, so this precondition — checked the same
         // way the rule itself reads it — is what stops a regenerated fixture whose bit accidentally

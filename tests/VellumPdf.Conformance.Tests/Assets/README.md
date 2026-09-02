@@ -10,7 +10,7 @@ Generated once with qpdf (empty user password, owner `o`, AES-128) from the exac
 `PdfPreflightTests.BuildJpxImagePdf(BuildJp2(nc: 2, bpc: 8).File)` produces. See
 `Jpeg2000Rule`'s encrypted-document tests in `PdfPreflightTests.cs` for what it pins.
 
-## `enc-aes-128-p-bit10-clear.pdf`
+## `enc-aes-256-p-bit10-clear.pdf`
 
 A §7.16-1 violator for `UaEncryptionPermissionsRuleTests`: its `/Encrypt` dictionary's `/P` entry
 has bit 10 clear, which ISO 32000-2 Table 22 says a writer "shall always set". Built once with
@@ -18,10 +18,11 @@ this library's own writer, before the Kernel fix (a separate change) makes bit 1
 and committed because that later fix removes the only way to produce this shape from the writer
 again.
 
-Despite the filename, the file is AES-256 (`/V 5 /R 6`): `StandardSecurityHandler` implements only
-the one Standard-security-handler configuration, so every document `PdfDocument.Encrypt` writes is
-V=5/R=6 regardless of what permissions it carries. The name is kept anyway — renaming a file that
-is already digest-pinned in a test trades one paper trail for another without fixing anything.
+The writer emits AES-256 (`/V 5 /R 6`): `StandardSecurityHandler` implements only one
+Standard-security-handler configuration, so every document `PdfDocument.Encrypt` writes is
+V=5/R=6 regardless of what permissions it carries. At R6, `/P` is not a key input (Algorithm 2
+only feeds it in at R≤4), so this file's `/P` and its `/Perms` seal agree, and it opens the
+same way any other well-formed R6 document does.
 
 Provenance:
 

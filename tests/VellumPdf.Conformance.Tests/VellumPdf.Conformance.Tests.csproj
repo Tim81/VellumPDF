@@ -47,8 +47,8 @@
     <!-- Built once by this library's own writer with the /P bit 10 accessibility bit deliberately
          cleared, then committed — see Assets/README.md for exactly how and why it cannot be
          regenerated once the Kernel /P fix lands. Used by UaEncryptionPermissionsRuleTests. -->
-    <EmbeddedResource Include="Assets\enc-aes-128-p-bit10-clear.pdf">
-      <LogicalName>enc-aes-128-p-bit10-clear.pdf</LogicalName>
+    <EmbeddedResource Include="Assets\enc-aes-256-p-bit10-clear.pdf">
+      <LogicalName>enc-aes-256-p-bit10-clear.pdf</LogicalName>
     </EmbeddedResource>
   </ItemGroup>
 

@@ -28,7 +28,7 @@ public sealed class UaEncryptionPermissionsVeraPdfTests
     {
         VeraPdf.EnsureAvailable();
 
-        var bytes = ReadEmbeddedFixture("enc-aes-128-p-bit10-clear.pdf");
+        var bytes = ReadEmbeddedFixture("enc-aes-256-p-bit10-clear.pdf");
         var path = WriteTempFile(bytes, "violating");
         try
         {
