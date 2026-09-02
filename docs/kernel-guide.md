@@ -546,7 +546,7 @@ It has its own, narrower guard instead — `PdfPermissions.Extract` must be
 included in `Permissions` (the default, `All`, already includes it), because
 ISO 14289-1 §7.16 requires that assistive technology can still extract
 content from an encrypted, accessible document. The written `/P` no longer
-depends on the flag (ISO 32000-2 Table 22 has writers always set bit 10, and
+depends on that flag (ISO 32000-2 Table 22 has writers always set bit 10, and
 the handler does since #397), so the guard checks the caller's declared
 intent: omitting `Extract` from a PDF/UA-1 document says the opposite of what
 the profile promises, and the save refuses rather than guessing.

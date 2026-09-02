@@ -142,7 +142,7 @@ public sealed class EncryptionTests
         // 6..7 (0xC0) and 9 (0x200) are forced to 1 regardless of the requested permissions.
         // In Table 22's 1-based numbering those are bits 7-8 ("Reserved. Must be 1.") and
         // bit 10, deprecated in PDF 2.0, which writers shall always set so readers on earlier
-        // specifications keep treating extraction as allowed.
+        // specifications keep treating extraction for accessibility as allowed.
         Assert.Equal(0x200, handler.PValue & 0xF3C);
         Assert.Equal(0xC0, handler.PValue & 0xC0);
     }
@@ -167,8 +167,9 @@ public sealed class EncryptionTests
     /// longer moves this value away from what <c>All</c> itself produces.</para>
     ///
     /// <para><c>All</c>: enabledBits = <c>0xF3C</c>. <c>0xFFFFF2C0 | 0xF3C</c>: low 12 bits
-    /// <c>0x2C0 | 0xF3C = 0xFFC</c> (identical to the previous case, since <c>0x2C0</c>'s bits are
-    /// already covered by <c>0xF3C</c>), so the result is again <c>0xFFFFFFFC = -4</c>.</para>
+    /// <c>0x2C0 | 0xF3C = 0xFFC</c>, identical to the previous case: the only bit <c>All</c> adds
+    /// over <c>All &amp; ~Extract</c> is <c>Extract</c> (<c>0x200</c>), which the mask supplies
+    /// anyway, so the result is again <c>0xFFFFFFFC = -4</c>.</para>
     /// </summary>
     [Theory]
     [InlineData(PdfPermissions.None, -3392)]
@@ -203,13 +204,14 @@ public sealed class EncryptionTests
     /// two handlers, none of which this test depends on.</para>
     /// </summary>
     [Fact]
-    public void EncryptedDocument_allWithoutExtract_writesExpectedPAndPerms()
+    public void EncryptedDocument_allWithoutExtract_writesExpectedP()
     {
         var bytes = SaveEncrypted("u", "o", permissions: PdfPermissions.All & ~PdfPermissions.Extract);
         var text = Encoding.Latin1.GetString(bytes);
 
-        var declared = Regex.Match(text, @"/P (-?\d+)");
-        Assert.True(declared.Success, "no /P found in the written document");
+        // A single-page document carries exactly one /P, so a lone match also proves the regex
+        // did not pick up some other integer-valued /P key elsewhere in the file.
+        var declared = Assert.Single(Regex.Matches(text, @"/P (-?\d+)"));
         Assert.Equal("-4", declared.Groups[1].Value);
 
         var handler = new StandardSecurityHandler(new PdfEncryptionSettings

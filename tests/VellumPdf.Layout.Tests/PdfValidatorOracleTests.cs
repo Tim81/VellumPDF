@@ -240,8 +240,8 @@ public sealed class PdfValidatorOracleTests : IDisposable
     [Fact]
     public void AesEncrypted_QpdfShowEncryption_ReportsReservedPermissionBitsSet()
     {
-        // #189: bits 7-8 (positions 6-7 from LSB) of /P must be 1 for R >= 3
-        // (ISO 32000-2 Table 22), independent of which permissions were requested.
+        // #189: bits 7-8 (positions 6-7 from LSB) of /P must be 1 (ISO 32000-2
+        // Table 22), independent of which permissions were requested.
         // Read the value qpdf parsed from our raw /P bytes rather than decrypting
         // our own /Perms block — a decrypt-and-compare against /Perms is derived
         // from the same PValue field and is structurally blind to this bug class.

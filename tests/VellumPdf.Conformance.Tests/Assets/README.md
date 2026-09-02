@@ -31,7 +31,7 @@ only feeds it in at R≤4), so this file's `/P` and its `/Perms` seal agree, and
 same way any other well-formed R6 document does.
 
 Provenance (run against the pre-#397 writer at `1a85a66`; the current writer produces `/P -4` from
-the same code, so this block documents the file rather than reproducing it):
+the same recipe, so this block documents the file rather than reproducing it):
 
 ```csharp
 using var doc = new PdfDocument();
@@ -48,10 +48,9 @@ doc.Save(stream);
 Under that writer's mask, `Permissions = All & ~Extract` cleared bit 10 (`PdfPermissions.Extract =
 1 << 9`) while leaving every other bit as `StandardSecurityHandler` set it for `All`. By Table 22
 arithmetic with the pre-#397 mask (`P = (0xFFFFF0C0 | (enabledBits & 0xFFF)) & ~3`), that makes
-`/P` equal `-516` (`0xFFFFFDFC`) —
-`UaEncryptionPermissionsRuleTests` asserts the committed file's own `/P` still reads `-516` before
-trusting anything else about it, so a regenerated file with the bit accidentally set cannot make
-the rule test vacuous.
+`/P` equal `-516` (`0xFFFFFDFC`). `UaEncryptionPermissionsRuleTests` asserts the committed file's
+own `/P` still reads `-516` before trusting anything else about it, so a regenerated file with the
+bit accidentally set cannot make the rule test vacuous.
 
 SHA-256: `d7a788dc6463cc3f63325aaf27b0b71d56c0bc1501b1174e6334bad2fe66e324`
 

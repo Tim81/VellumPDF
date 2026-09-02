@@ -561,7 +561,7 @@ public sealed class PdfDocument : IDisposable
         // is deprecated in PDF 2.0 and writers shall always set it), so this guard checks
         // the caller's declared intent, not the emitted bit. Omitting Extract from
         // PdfEncryptionSettings.Permissions says "do not allow accessibility extraction"
-        // even though the bit written no longer enforces that, so reject rather than silently
+        // even though the bit written no longer records that, so reject rather than silently
         // let the mismatch through: PdfEncryptionSettings.Permissions defaults to All (which
         // already includes Extract), so this only fires when the caller made an explicit,
         // narrower permission choice that contradicts what PDF/UA-1 requires.
