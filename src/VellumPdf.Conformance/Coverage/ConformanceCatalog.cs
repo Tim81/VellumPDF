@@ -431,6 +431,8 @@ public static class ConformanceCatalog
         "7.1-2",               // UaArtifactTaggingRule: non-Artifact BDC with MCID in ParentTree inside Artifact ancestor
         // Batch C3 — §7.1-3 SESimpleContentItem: real content must be tagged or marked as Artifact:
         "7.1-3",               // UaSimpleContentItemRule: content item (text/path/image/sh/EI) with no MCID and no Artifact ancestor
+        // §7.16-1 — encryption dictionary /P bit 10 (#138):
+        "7.16-1",              // UaEncryptionPermissionsRule: /Encrypt /P bit 10 set
     };
 
     // PDF/UA-1 checks the rules cover only partially (the common case is detected; some conditions
@@ -448,7 +450,6 @@ public static class ConformanceCatalog
     // from the feasible-coverage denominator).
     private static readonly Dictionary<string, string> PdfUaOutOfScope = new(StringComparer.Ordinal)
     {
-        ["7.16-1"] = "Out of scope (tracked in #138). The reader decrypts, and PdfPreflight already reads /Encrypt on a document it can open — including the empty user password most encrypted files use. What is out of scope is the rest: a preflight run has no way to be given a password, so a document that needs one cannot be checked at all, and reporting a verdict for some encrypted files and none for others is worse than reporting none.",
         // 7.21.3.1-1 is Partial (see PdfUaPartial): common Identity/embedded-CMap path verified;
         //   only the predefined-CJK-CMap residual is infeasible.
         // 7.20-2 moved to PdfUaImplemented (UaFormXObjectSemanticParentRule: a Form XObject with
@@ -496,7 +497,9 @@ public static class ConformanceCatalog
         //   OR Widget struct-elem /Alt; hidden/outside-crop exemptions via UaAnnotationHelper).
         // 7.18.4-2 moved to PdfUaImplemented (UA batch — UaFormStructElemRule: Form struct
         //   elem without /Role must have exactly one OBJR child; /Role attribute exempts).
-        // 7.16-1 moved to PdfUaOutOfScope (encrypted-document support; tracked in v2.1 reader/encryption epic #97/#100).
+        // 7.16-1 moved to PdfUaImplemented (UaEncryptionPermissionsRule: /Encrypt /P bit 10; #138
+        //   also added the PdfPreflight/CLI password parameter that a password-protected document
+        //   needs to reach rule evaluation at all).
 
         // §7.1 artifact/tagging rules — Batch C2:
         // 7.1-1 and 7.1-2 moved to PdfUaImplemented (Batch C2 — UaArtifactTaggingRule: Artifact

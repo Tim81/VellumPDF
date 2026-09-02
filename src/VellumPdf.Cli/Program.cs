@@ -140,14 +140,13 @@ internal static class PreflightRunner
                     stderr.WriteLine($"error: {ex.Message}");
                     return ExitCodes.UsageError;
                 }
-                // Profile auto-detection opens the document — with no password, because there is no
-                // way to supply one yet — so an encrypted file reaches THIS call before it ever
-                // reaches Validate below, and the catches down there never see it. Without these
-                // two, `vellum-preflight some-encrypted.pdf` (no -p, the default invocation) exits
-                // with an unhandled exception and a stack trace.
+                // Profile auto-detection opens the document, so an encrypted file reaches THIS call
+                // before it ever reaches Validate below, and the catches down there never see it.
+                // Without these two, `vellum-preflight some-encrypted.pdf` (no -p, the default
+                // invocation) exits with an unhandled exception and a stack trace.
                 catch (VellumPdf.Reader.PdfPasswordException)
                 {
-                    stderr.WriteLine(PasswordProtectedMessage(filePath));
+                    stderr.WriteLine(PasswordProtectedMessage(filePath, parsed.Password));
                     anyIoError = true;
                     continue;
                 }
@@ -173,7 +172,7 @@ internal static class PreflightRunner
                     PreflightResult result;
                     try
                     {
-                        result = PdfPreflight.Validate(bytes, profile);
+                        result = PdfPreflight.Validate(bytes, profile, parsed.Password);
                     }
                     catch (System.IO.InvalidDataException ex)
                     {
@@ -198,7 +197,7 @@ internal static class PreflightRunner
                     // would otherwise show up.
                     catch (VellumPdf.Reader.PdfPasswordException)
                     {
-                        stderr.WriteLine(PasswordProtectedMessage(filePath));
+                        stderr.WriteLine(PasswordProtectedMessage(filePath, parsed.Password));
                         anyIoError = true;
                         continue;
                     }
@@ -249,11 +248,14 @@ internal static class PreflightRunner
 
     private sealed class AutoNoClaim(string message) : Exception(message);
 
-    // One wording for both places a password-protected file can surface: profile auto-detection and
-    // validation itself. They are different call sites, not different failures, and a user who sees
-    // two phrasings for the same condition reasonably assumes they are two different problems.
-    private static string PasswordProtectedMessage(string filePath) =>
-        $"error: '{filePath}' is password-protected; vellum-preflight has no way to supply a password yet.";
+    // One wording per condition, shared by both places a password-protected file can surface:
+    // profile auto-detection and validation itself. They are different call sites, not different
+    // failures, and a user who sees two phrasings for the same condition reasonably assumes they
+    // are two different problems. The wording splits on whether a --password was given at all: "you
+    // never told me" and "what you told me was wrong" point the user at different next steps.
+    private static string PasswordProtectedMessage(string filePath, string? password) => password is null
+        ? $"error: '{filePath}' is password-protected; supply it with --password."
+        : $"error: '{filePath}' is password-protected; the supplied --password does not open it.";
 
     private static (IReadOnlyList<PdfConformance> Profiles, string Source) ResolveProfiles(
         ParsedArgs parsed,
@@ -278,7 +280,7 @@ internal static class PreflightRunner
         IReadOnlyList<PdfConformance> claimed;
         try
         {
-            claimed = PdfPreflight.DetectClaimedProfiles(bytes);
+            claimed = PdfPreflight.DetectClaimedProfiles(bytes, parsed.Password);
         }
         catch (System.IO.InvalidDataException ex)
         {

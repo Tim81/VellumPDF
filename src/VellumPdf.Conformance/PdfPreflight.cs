@@ -27,12 +27,32 @@ public static class PdfPreflight
     /// <exception cref="System.IO.InvalidDataException">The input is not a well-formed PDF.</exception>
     /// <exception cref="UnsupportedPdfFeatureException">The PDF uses a reader feature that is not yet supported.</exception>
     /// <exception cref="Reader.PdfPasswordException">The PDF is encrypted and its empty user password
-    /// does not authenticate. This overload opens the document with no password, so a
-    /// password-protected file cannot be inspected through it (see VellumPdf issue #97).</exception>
+    /// does not authenticate. This overload opens the document with no password; use
+    /// <see cref="DetectClaimedProfiles(byte[], string)"/> for a document that needs one.</exception>
     public static IReadOnlyList<PdfConformance> DetectClaimedProfiles(byte[] bytes)
+        => DetectClaimedProfiles(bytes, password: null);
+
+    /// <summary>
+    /// Reads the XMP /Metadata stream from the document catalog and returns the
+    /// conformance profiles the document claims via <c>pdfaid:part</c>/<c>pdfaid:conformance</c>
+    /// and <c>pdfuaid:part</c>. Returns an empty list when the catalog has no /Metadata or the
+    /// document makes no PDF/A or PDF/UA claim.
+    /// </summary>
+    /// <param name="bytes">The PDF file bytes.</param>
+    /// <param name="password">
+    /// The password to open the document with, or <see langword="null"/> for a document that uses
+    /// none. <see langword="null"/> and <see cref="string.Empty"/> are equivalent: both mean "the
+    /// empty user password" (see <see cref="Reader.PdfReaderOptions.Password"/>).
+    /// </param>
+    /// <exception cref="System.ArgumentNullException"><paramref name="bytes"/> is null.</exception>
+    /// <exception cref="System.IO.InvalidDataException">The input is not a well-formed PDF.</exception>
+    /// <exception cref="UnsupportedPdfFeatureException">The PDF uses a reader feature that is not yet supported.</exception>
+    /// <exception cref="Reader.PdfPasswordException">The PDF is encrypted and <paramref name="password"/>
+    /// does not authenticate as either the owner or the user password.</exception>
+    public static IReadOnlyList<PdfConformance> DetectClaimedProfiles(byte[] bytes, string? password)
     {
         ArgumentNullException.ThrowIfNull(bytes);
-        using var reader = PdfReader.Open(bytes);
+        using var reader = PdfReader.Open(bytes, new PdfReaderOptions { Password = password });
         return DetectClaimedProfiles(reader);
     }
 
@@ -48,12 +68,34 @@ public static class PdfPreflight
     /// <exception cref="System.ObjectDisposedException"><paramref name="stream"/> has been disposed.</exception>
     /// <exception cref="UnsupportedPdfFeatureException">The PDF uses a reader feature that is not yet supported.</exception>
     /// <exception cref="Reader.PdfPasswordException">The PDF is encrypted and its empty user password
-    /// does not authenticate. This overload opens the document with no password, so a
-    /// password-protected file cannot be inspected through it (see VellumPdf issue #97).</exception>
+    /// does not authenticate. This overload opens the document with no password; use
+    /// <see cref="DetectClaimedProfiles(Stream, string)"/> for a document that needs one.</exception>
     public static IReadOnlyList<PdfConformance> DetectClaimedProfiles(Stream stream)
+        => DetectClaimedProfiles(stream, password: null);
+
+    /// <summary>
+    /// Reads the XMP /Metadata stream from the document catalog and returns the
+    /// conformance profiles the document claims via <c>pdfaid:part</c>/<c>pdfaid:conformance</c>
+    /// and <c>pdfuaid:part</c>. Returns an empty list when the catalog has no /Metadata or the
+    /// document makes no PDF/A or PDF/UA claim.
+    /// </summary>
+    /// <param name="stream">The PDF data.</param>
+    /// <param name="password">
+    /// The password to open the document with, or <see langword="null"/> for a document that uses
+    /// none. <see langword="null"/> and <see cref="string.Empty"/> are equivalent: both mean "the
+    /// empty user password" (see <see cref="Reader.PdfReaderOptions.Password"/>).
+    /// </param>
+    /// <exception cref="System.ArgumentNullException"><paramref name="stream"/> is null.</exception>
+    /// <exception cref="System.IO.InvalidDataException">The input is not a well-formed PDF.</exception>
+    /// <exception cref="System.IO.IOException">Reading <paramref name="stream"/> failed.</exception>
+    /// <exception cref="System.ObjectDisposedException"><paramref name="stream"/> has been disposed.</exception>
+    /// <exception cref="UnsupportedPdfFeatureException">The PDF uses a reader feature that is not yet supported.</exception>
+    /// <exception cref="Reader.PdfPasswordException">The PDF is encrypted and <paramref name="password"/>
+    /// does not authenticate as either the owner or the user password.</exception>
+    public static IReadOnlyList<PdfConformance> DetectClaimedProfiles(Stream stream, string? password)
     {
         ArgumentNullException.ThrowIfNull(stream);
-        using var reader = PdfReader.Open(stream);
+        using var reader = PdfReader.Open(stream, new PdfReaderOptions { Password = password });
         return DetectClaimedProfiles(reader);
     }
 
@@ -153,9 +195,9 @@ public static class PdfPreflight
     /// <remarks>
     /// An encrypted document is opened with no password — equivalent to
     /// <see cref="PdfReader.Open(byte[])"/> — so this succeeds only for one that needs none, or
-    /// whose empty user password is sufficient. A document requiring a real password cannot be
-    /// validated through this overload; there is currently no <c>PdfPreflight.Validate</c> overload
-    /// that accepts one (see VellumPdf issue #97).
+    /// whose empty user password is sufficient. Use
+    /// <see cref="Validate(byte[], PdfConformance, string)"/> for a document requiring a real
+    /// password.
     /// </remarks>
     /// <exception cref="System.ArgumentNullException"><paramref name="bytes"/> is null.</exception>
     /// <exception cref="System.NotSupportedException">No rule profile is registered for <paramref name="conformance"/> yet.</exception>
@@ -163,14 +205,33 @@ public static class PdfPreflight
     /// <exception cref="UnsupportedPdfFeatureException">The PDF uses a reader feature that is not yet supported.</exception>
     /// <exception cref="PdfPasswordException">The PDF is encrypted and its empty user password does not authenticate.</exception>
     public static PreflightResult Validate(byte[] bytes, PdfConformance conformance)
+        => Validate(bytes, conformance, password: null);
+
+    /// <summary>Validates the PDF contained in <paramref name="bytes"/> against <paramref name="conformance"/>.</summary>
+    /// <param name="bytes">The PDF file bytes.</param>
+    /// <param name="conformance">The conformance level to validate against.</param>
+    /// <param name="password">
+    /// The password to open the document with, or <see langword="null"/> for a document that uses
+    /// none. <see langword="null"/> and <see cref="string.Empty"/> are equivalent: both mean "the
+    /// empty user password" (see <see cref="Reader.PdfReaderOptions.Password"/>).
+    /// </param>
+    /// <exception cref="System.ArgumentNullException"><paramref name="bytes"/> is null.</exception>
+    /// <exception cref="System.NotSupportedException">No rule profile is registered for <paramref name="conformance"/> yet.</exception>
+    /// <exception cref="System.IO.InvalidDataException">The input is not a well-formed PDF.</exception>
+    /// <exception cref="UnsupportedPdfFeatureException">The PDF uses a reader feature that is not yet supported.</exception>
+    /// <exception cref="PdfPasswordException"><paramref name="password"/> does not authenticate as
+    /// either the owner or the user password.</exception>
+    public static PreflightResult Validate(byte[] bytes, PdfConformance conformance, string? password)
     {
         ArgumentNullException.ThrowIfNull(bytes);
-        using var reader = PdfReader.Open(bytes);
+        using var reader = PdfReader.Open(bytes, new PdfReaderOptions { Password = password });
         return Validate(reader, conformance);
     }
 
     /// <summary>Validates the PDF read from <paramref name="stream"/> against <paramref name="conformance"/>.</summary>
-    /// <remarks>See <see cref="Validate(byte[], PdfConformance)"/>'s remarks: an encrypted document is opened with no password.</remarks>
+    /// <remarks>See <see cref="Validate(byte[], PdfConformance)"/>'s remarks: an encrypted document
+    /// is opened with no password. Use <see cref="Validate(Stream, PdfConformance, string)"/> for a
+    /// document requiring a real password.</remarks>
     /// <exception cref="System.ArgumentNullException"><paramref name="stream"/> is null.</exception>
     /// <exception cref="System.NotSupportedException">No rule profile is registered for <paramref name="conformance"/> yet.</exception>
     /// <exception cref="System.IO.InvalidDataException">The input is not a well-formed PDF.</exception>
@@ -179,9 +240,28 @@ public static class PdfPreflight
     /// <exception cref="UnsupportedPdfFeatureException">The PDF uses a reader feature that is not yet supported.</exception>
     /// <exception cref="PdfPasswordException">The PDF is encrypted and its empty user password does not authenticate.</exception>
     public static PreflightResult Validate(Stream stream, PdfConformance conformance)
+        => Validate(stream, conformance, password: null);
+
+    /// <summary>Validates the PDF read from <paramref name="stream"/> against <paramref name="conformance"/>.</summary>
+    /// <param name="stream">The PDF data.</param>
+    /// <param name="conformance">The conformance level to validate against.</param>
+    /// <param name="password">
+    /// The password to open the document with, or <see langword="null"/> for a document that uses
+    /// none. <see langword="null"/> and <see cref="string.Empty"/> are equivalent: both mean "the
+    /// empty user password" (see <see cref="Reader.PdfReaderOptions.Password"/>).
+    /// </param>
+    /// <exception cref="System.ArgumentNullException"><paramref name="stream"/> is null.</exception>
+    /// <exception cref="System.NotSupportedException">No rule profile is registered for <paramref name="conformance"/> yet.</exception>
+    /// <exception cref="System.IO.InvalidDataException">The input is not a well-formed PDF.</exception>
+    /// <exception cref="System.IO.IOException">Reading <paramref name="stream"/> failed.</exception>
+    /// <exception cref="System.ObjectDisposedException"><paramref name="stream"/> has been disposed.</exception>
+    /// <exception cref="UnsupportedPdfFeatureException">The PDF uses a reader feature that is not yet supported.</exception>
+    /// <exception cref="PdfPasswordException"><paramref name="password"/> does not authenticate as
+    /// either the owner or the user password.</exception>
+    public static PreflightResult Validate(Stream stream, PdfConformance conformance, string? password)
     {
         ArgumentNullException.ThrowIfNull(stream);
-        using var reader = PdfReader.Open(stream);
+        using var reader = PdfReader.Open(stream, new PdfReaderOptions { Password = password });
         return Validate(reader, conformance);
     }
 

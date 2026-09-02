@@ -10,7 +10,7 @@ namespace VellumPdf.Cli.Tests;
 /// What <c>vellum-preflight</c> does with a document it cannot decrypt. Since #97 the reader opens
 /// encrypted files instead of refusing them, which moved the failure from "unsupported feature" to
 /// "wrong password" — and moved it earlier, into profile auto-detection, which opens the document
-/// before validation ever runs.
+/// before validation ever runs. Since #138 the tool can supply one via <c>--password</c>.
 /// </summary>
 public sealed class EncryptedInputTests
 {
@@ -61,6 +61,93 @@ public sealed class EncryptedInputTests
         {
             File.Delete(path);
         }
+    }
+
+    /// <summary>
+    /// No <c>--password</c> at all names the fix: "supply it with --password". A wrong one names a
+    /// different one: "the supplied --password does not open it". Two distinct next steps, so two
+    /// distinct messages — conflating them would send someone who mistyped a password down the
+    /// "you never gave me one" path.
+    /// </summary>
+    [Fact]
+    public void PasswordProtectedFile_withWrongPassword_namesTheSuppliedPasswordAsWrong()
+    {
+        var path = WriteTempPdf(PasswordProtectedPdf());
+        try
+        {
+            var (code, _, err) = Run("--password", "not-u", path);
+
+            Assert.Equal(2, code);
+            Assert.Contains("the supplied --password does not open it", err, StringComparison.Ordinal);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    /// <summary>The no-password message points at the flag that would fix it.</summary>
+    [Fact]
+    public void PasswordProtectedFile_withNoPassword_namesTheFlagToSupplyIt()
+    {
+        var path = WriteTempPdf(PasswordProtectedPdf());
+        try
+        {
+            var (code, _, err) = Run(path);
+
+            Assert.Equal(2, code);
+            Assert.Contains("supply it with --password", err, StringComparison.Ordinal);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    /// <summary>
+    /// Both spellings — <c>--password u</c> and <c>--password=u</c> — reach the same parsed value,
+    /// so the correct password lets the run past authentication regardless of which one was used.
+    /// An explicit profile keeps the run from failing for the unrelated reason that this minimal
+    /// fixture makes no PDF/A or PDF/UA claim.
+    /// </summary>
+    [Theory]
+    [InlineData("--password", "u")]
+    [InlineData("--password=u", null)]
+    public void PasswordProtectedFile_withCorrectPassword_authenticatesAndRuns(string flag, string? value)
+    {
+        var path = WriteTempPdf(PasswordProtectedPdf());
+        try
+        {
+            var args = value is null
+                ? new[] { "-p", "2b", flag, path }
+                : new[] { "-p", "2b", flag, value, path };
+            var (code, _, err) = Run(args);
+
+            Assert.NotEqual(2, code);
+            Assert.DoesNotContain("password-protected", err, StringComparison.Ordinal);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    /// <summary>A <c>--password</c> with nothing after it is a usage error, like every other option
+    /// that takes an argument.</summary>
+    [Fact]
+    public void PasswordFlag_withNoValue_isAUsageError()
+    {
+        var (code, _, err) = Run("--password");
+
+        Assert.Equal(2, code);
+        Assert.Contains("--password requires an argument", err, StringComparison.Ordinal);
+    }
+
+    /// <summary>The help text documents the flag.</summary>
+    [Fact]
+    public void HelpText_MentionsPassword()
+    {
+        Assert.Contains("--password", HelpText.Text, StringComparison.Ordinal);
     }
 
     /// <summary>

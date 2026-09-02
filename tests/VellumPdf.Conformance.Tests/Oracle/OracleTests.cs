@@ -161,11 +161,16 @@ internal static class VeraPdf
     /// </summary>
     public static void EnsureAvailable() => ExternalTool.EnsureUsable("verapdf");
 
-    /// <summary>Returns true when veraPDF reports <paramref name="path"/> compliant with <paramref name="flavour"/>.</summary>
-    public static bool Validate(string path, string flavour)
+    /// <summary>
+    /// Returns true when veraPDF reports <paramref name="path"/> compliant with
+    /// <paramref name="flavour"/>. <paramref name="password"/>, when non-null, is passed through as
+    /// veraPDF's own <c>--password</c> option (docs.verapdf.org/cli/validation: empty user password
+    /// by default, <c>--password</c> otherwise).
+    /// </summary>
+    public static bool Validate(string path, string flavour, string? password = null)
     {
         ExternalTool.TryRun(
-            "verapdf", ["--flavour", flavour, "--format", "text", path],
+            "verapdf", BuildArguments(flavour, "text", path, password),
             out var exit, out var stdout, out var stderr, out var timedOut, timeoutMs: 120_000);
 
         if (timedOut)
@@ -202,5 +207,56 @@ internal static class VeraPdf
                 $"veraPDF returned error exit code {exit} for {path} ({flavour}).\n"
                 + $"stdout:\n{stdout}\nstderr:\n{stderr}"),
         };
+    }
+
+    /// <summary>
+    /// Returns veraPDF's own <c>--format xml</c> report for <paramref name="path"/> against
+    /// <paramref name="flavour"/>, for tests that need to inspect a specific rule's status rather
+    /// than the document's overall pass/fail verdict (<see cref="Validate"/>). Exit 0 and exit 1 —
+    /// compliant and non-compliant — both produce a report and are not distinguished here; the
+    /// caller inspects the XML for what it needs. The same encrypted-file refusal
+    /// <see cref="Validate"/> guards against applies here too: a vacuous report (or none at all)
+    /// from a file veraPDF refused to open would let a caller's rule-status assertion pass for the
+    /// wrong reason.
+    /// </summary>
+    public static string Report(string path, string flavour, string? password = null)
+    {
+        ExternalTool.TryRun(
+            "verapdf", BuildArguments(flavour, "xml", path, password),
+            out var exit, out var stdout, out var stderr, out var timedOut, timeoutMs: 120_000);
+
+        if (timedOut)
+        {
+            throw new InvalidOperationException(
+                $"veraPDF timed out validating {path} ({flavour}).\nstdout:\n{stdout}\nstderr:\n{stderr}");
+        }
+
+        if (stdout.Contains("appears to be an encrypted PDF", StringComparison.Ordinal)
+            || stderr.Contains("appears to be an encrypted PDF", StringComparison.Ordinal))
+            throw new InvalidOperationException(
+                $"veraPDF refused {path} as an encrypted PDF and did not validate it (exit {exit}); "
+                + "it cannot be used as an oracle input.\n"
+                + $"stdout:\n{stdout}\nstderr:\n{stderr}");
+
+        if (exit is not (0 or 1))
+        {
+            throw new InvalidOperationException(
+                $"veraPDF returned error exit code {exit} for {path} ({flavour}).\n"
+                + $"stdout:\n{stdout}\nstderr:\n{stderr}");
+        }
+
+        return stdout;
+    }
+
+    private static List<string> BuildArguments(string flavour, string format, string path, string? password)
+    {
+        var arguments = new List<string> { "--flavour", flavour, "--format", format };
+        if (password is not null)
+        {
+            arguments.Add("--password");
+            arguments.Add(password);
+        }
+        arguments.Add(path);
+        return arguments;
     }
 }
