@@ -47,8 +47,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   --password does not open it". (#138)
 - **Encrypted documents written without `PdfPermissions.Extract` emit different `/P` and `/Perms`
   bytes.** Bit 10 of `/P` is now always set, so a byte-for-byte diff against the same document
-  encrypted with an earlier version shows it wherever `Extract` was omitted, and the permissions
-  such a document reports on re-opening now include `Extract`. Documents written with `Extract`
+  encrypted with an earlier version will show this difference, and the permissions such a
+  document reports on re-opening now include `Extract`. Documents written with `Extract`
   (the default, since `All` includes it) carry the same `/P` value as before. See Fixed, below,
   for why. (#397)
 
