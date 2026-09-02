@@ -42,6 +42,8 @@ public sealed class XrefReconstructionTests
     {
         var reader = PdfReader.Open(damaged, new PdfReaderOptions { AllowReconstruction = true, Password = password });
         Assert.True(reader.WasReconstructed, "Expected the cross-reference table to have been rebuilt by scanning.");
+        // #385: WasReconstructed's own diagnostic — every caller of this helper implicitly pins it.
+        Assert.Contains(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.XrefReconstructed);
         return reader;
     }
 
@@ -1796,6 +1798,11 @@ public sealed class XrefReconstructionTests
             $"ReconstructionObjStmBytesCharged ({reconstructed.ReconstructionObjStmBytesCharged}) did not " +
             $"reflect the throwing container's {Row15GarbageLength}-byte raw body — a decode failure must " +
             "still charge the aggregate budget, or the cap this exists to enforce never trips.");
+
+        // #385: the same best-effort swallow this row is named for is also a diagnostics site.
+        var diagnostic = Assert.Single(
+            reconstructed.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ObjectStreamContainerUnreadable);
+        Assert.Equal(9, diagnostic.ObjectNumber);
     }
 
     // ── Rows 4/5, isolated from the line-initial T_scan tier ────────────────────────────────────

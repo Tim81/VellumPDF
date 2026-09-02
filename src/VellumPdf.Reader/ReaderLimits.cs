@@ -26,8 +26,15 @@ namespace VellumPdf.Reader;
 /// The multiplier in <see cref="XrefReconstructor"/>'s <c>max(1 MiB, N × file length)</c> work
 /// budget for cross-reference reconstruction (ISO 32000-2 Annex C.4, informative).
 /// </param>
+/// <param name="MaxDiagnostics">
+/// The cap <see cref="DiagnosticSink"/> enforces on <see cref="PdfDocumentReader.Diagnostics"/> —
+/// see <see cref="PdfReaderOptions.MaxDiagnostics"/>.
+/// </param>
 internal readonly record struct ReaderLimits(
-    long MaxDecodedBytes, long MaxAggregateReconstructionDecodeBytes, int ReconstructionBudgetMultiplier)
+    long MaxDecodedBytes,
+    long MaxAggregateReconstructionDecodeBytes,
+    int ReconstructionBudgetMultiplier,
+    int MaxDiagnostics)
 {
     /// <summary>The processor's own choice of default per-decode ceiling: 512 MiB.</summary>
     internal const long DefaultMaxDecodedBytes = 512L * 1024 * 1024;
@@ -47,30 +54,42 @@ internal readonly record struct ReaderLimits(
     /// </summary>
     internal const int MinReconstructionBudgetMultiplier = 1;
 
-    /// <summary>The library's built-in ceilings — what every read used before this option existed.</summary>
-    internal static ReaderLimits Defaults { get; } =
-        new(DefaultMaxDecodedBytes, DefaultMaxDecodedBytes, DefaultReconstructionBudgetMultiplier);
+    /// <summary>The processor's own choice of default diagnostics cap: 1000 entries.</summary>
+    internal const int DefaultMaxDiagnostics = 1000;
 
     /// <summary>
-    /// Validates <paramref name="options"/>'s two resource knobs and resolves them into the limits
-    /// threaded through one read.
+    /// The floor a caller may tighten <see cref="PdfReaderOptions.MaxDiagnostics"/> down to: 1.
+    /// Zero would turn every report into a suppression count, disabling the channel entirely.
+    /// </summary>
+    internal const int MinMaxDiagnostics = 1;
+
+    /// <summary>The library's built-in ceilings — what every read used before this option existed.</summary>
+    internal static ReaderLimits Defaults { get; } =
+        new(DefaultMaxDecodedBytes, DefaultMaxDecodedBytes, DefaultReconstructionBudgetMultiplier, DefaultMaxDiagnostics);
+
+    /// <summary>
+    /// Validates <paramref name="options"/>'s three resource knobs and resolves them into the
+    /// limits threaded through one read.
     /// </summary>
     /// <remarks>
     /// Tighten-only: ISO 32000-2 Annex C.1 (informative) states that "a particular PDF processor
     /// running on a particular device and in a particular operating environment will always have
     /// practical limits", and Annex C.3 (informative) adds that available memory is "often much less
     /// in mobile devices than desktop computers" — the ceiling is this processor's own choice, not a
-    /// spec requirement, so <see cref="DefaultMaxDecodedBytes"/> and
-    /// <see cref="DefaultReconstructionBudgetMultiplier"/> are a safe upper bound a caller may only
-    /// lower, never raise. A value under the corresponding floor is rejected too: below
-    /// <see cref="MinMaxDecodedBytes"/> or <see cref="MinReconstructionBudgetMultiplier"/>, an
-    /// otherwise ordinary document routinely fails to decode or reconstruct at all, which is a
-    /// configuration mistake worth surfacing immediately rather than as a confusing downstream
-    /// <see cref="InvalidDataException"/>.
+    /// spec requirement, so <see cref="DefaultMaxDecodedBytes"/>,
+    /// <see cref="DefaultReconstructionBudgetMultiplier"/>, and <see cref="DefaultMaxDiagnostics"/>
+    /// are each a safe upper bound a caller may only lower, never raise. A value under the
+    /// corresponding floor is rejected too: below <see cref="MinMaxDecodedBytes"/> or
+    /// <see cref="MinReconstructionBudgetMultiplier"/>, an otherwise ordinary document routinely
+    /// fails to decode or reconstruct at all; below <see cref="MinMaxDiagnostics"/> every report
+    /// would turn into a suppression count, disabling the channel entirely. Each of these is a
+    /// configuration mistake worth surfacing immediately, here, rather than as a confusing
+    /// exception from a different layer downstream.
     /// </remarks>
     /// <exception cref="ArgumentOutOfRangeException">
-    /// <see cref="PdfReaderOptions.MaxDecodedStreamBytes"/> or
-    /// <see cref="PdfReaderOptions.ReconstructionBudgetMultiplier"/> is outside its allowed range.
+    /// <see cref="PdfReaderOptions.MaxDecodedStreamBytes"/>,
+    /// <see cref="PdfReaderOptions.ReconstructionBudgetMultiplier"/>, or
+    /// <see cref="PdfReaderOptions.MaxDiagnostics"/> is outside its allowed range.
     /// </exception>
     internal static ReaderLimits Resolve(PdfReaderOptions options)
     {
@@ -89,6 +108,13 @@ internal readonly record struct ReaderLimits(
                 $"{nameof(PdfReaderOptions.ReconstructionBudgetMultiplier)} must be between "
                 + $"{MinReconstructionBudgetMultiplier} and {DefaultReconstructionBudgetMultiplier}.");
 
-        return new ReaderLimits(maxDecodedBytes, maxDecodedBytes, multiplier);
+        var maxDiagnostics = options.MaxDiagnostics;
+        if (maxDiagnostics < MinMaxDiagnostics || maxDiagnostics > DefaultMaxDiagnostics)
+            throw new ArgumentOutOfRangeException(
+                nameof(PdfReaderOptions.MaxDiagnostics), maxDiagnostics,
+                $"{nameof(PdfReaderOptions.MaxDiagnostics)} must be between "
+                + $"{MinMaxDiagnostics} and {DefaultMaxDiagnostics}.");
+
+        return new ReaderLimits(maxDecodedBytes, maxDecodedBytes, multiplier, maxDiagnostics);
     }
 }

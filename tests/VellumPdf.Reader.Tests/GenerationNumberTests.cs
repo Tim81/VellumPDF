@@ -480,6 +480,35 @@ public sealed class GenerationNumberTests
         var resolved = reader.Resolve(new PdfIndirectReference(10, 2));
 
         Assert.Null(resolved);
+        // #385: the divergence itself is a diagnostic.
+        var diagnostic = Assert.Single(
+            reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ObjectGenerationMismatch);
+        Assert.Equal(10, diagnostic.ObjectNumber);
+        Assert.Equal(2, diagnostic.Generation);
+    }
+
+    /// <summary>
+    /// #385: <see cref="PdfDocumentReader.Diagnostics"/> must not depend on request order. Object
+    /// 10 is resolved correctly first (generation 0), warming <c>_cache</c>, and only THEN with a
+    /// mismatched generation — the second call takes the cache-hit branch of
+    /// <c>Resolve(int, int?)</c>, which returns before ever reaching the cold path's own report.
+    /// </summary>
+    [Fact]
+    public void ClassicXref_referenceGenerationMismatch_afterAWarmCacheHit_stillReports()
+    {
+        var bytes = BuildClassicXrefPdf(obj10Generation: 0);
+        using var reader = PdfReader.Open(bytes);
+
+        Assert.NotNull(reader.Resolve(new PdfIndirectReference(10, 0))); // warms the cache.
+        Assert.Empty(reader.Diagnostics);
+
+        var resolved = reader.Resolve(new PdfIndirectReference(10, 1));
+
+        Assert.Null(resolved);
+        var diagnostic = Assert.Single(
+            reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ObjectGenerationMismatch);
+        Assert.Equal(10, diagnostic.ObjectNumber);
+        Assert.Equal(1, diagnostic.Generation);
     }
 
     [Fact]

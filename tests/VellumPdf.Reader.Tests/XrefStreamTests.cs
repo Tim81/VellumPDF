@@ -612,6 +612,8 @@ public sealed class XrefStreamTests
 
         Assert.Null(reader.Resolve(7)); // type-2, container 99, which no revision names anywhere
         Assert.True(reader.DroppedOrphanedObjectStreamMembers);
+        // #385: the flag's own diagnostic.
+        Assert.Contains(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.OrphanedObjectStreamMembersDropped);
 
         var obj6 = reader.Resolve(6);
         var dict = Assert.IsType<PdfDictionary>(obj6);
@@ -633,6 +635,7 @@ public sealed class XrefStreamTests
         using var reader = PdfReader.Open(bytes);
 
         Assert.False(reader.DroppedOrphanedObjectStreamMembers);
+        Assert.DoesNotContain(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.OrphanedObjectStreamMembersDropped);
 
         var obj6 = reader.Resolve(6);
         var dict = Assert.IsType<PdfDictionary>(obj6);

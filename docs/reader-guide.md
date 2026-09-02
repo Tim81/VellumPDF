@@ -62,6 +62,7 @@ var options = new PdfReaderOptions
     AllowReconstruction = true,
     MaxDecodedStreamBytes = 64 * 1024 * 1024,
     ReconstructionBudgetMultiplier = 4,
+    MaxDiagnostics = 200,
 };
 
 using var reader = PdfReader.Open(File.OpenRead("input.pdf"), options);
@@ -79,17 +80,19 @@ real `startxref` chain left for `/Prev` to extend, and a recovered trailer's `/I
 enough to carry into a new revision. Reconstruction also refuses outright the instant it finds
 any sign the document is encrypted, rather than guessing at a key.
 
-**`MaxDecodedStreamBytes`** and **`ReconstructionBudgetMultiplier`** are both **tighten-only**.
-Neither is a spec requirement — ISO 32000-2 Annex C.1 notes that "a particular PDF processor
-running on a particular device and in a particular operating environment will always have
+**`MaxDecodedStreamBytes`**, **`ReconstructionBudgetMultiplier`**, and **`MaxDiagnostics`** are all
+**tighten-only**. None is a spec requirement — ISO 32000-2 Annex C.1 notes that "a particular PDF
+processor running on a particular device and in a particular operating environment will always have
 practical limits", and Annex C.3 adds that available memory is "often much less in mobile devices
 than desktop computers." The defaults (512 MiB decoded-stream ceiling, an ×8 multiplier on
-reconstruction's `max(1 MiB, N × file length)` work budget) are this library's own choice for a
-desktop host, not something Annex C mandates. A caller on a more constrained device, or hardening
-against a decompression bomb or a file engineered to burn CPU across many decoy candidates, can
-lower either one. Raising either above its default throws `ArgumentOutOfRangeException` at
-`Open` time: nothing above the shipped defaults has been exercised as a safe ceiling, so these
-options can only make the reader stricter than it already is, never looser.
+reconstruction's `max(1 MiB, N × file length)` work budget, a 1000-entry diagnostics cap) are this
+library's own choice for a desktop host, not something Annex C mandates. A caller on a more
+constrained device, or hardening against a decompression bomb, a file engineered to burn CPU across
+many decoy candidates, or a document that would otherwise report the same recoverable condition on
+a huge number of objects, can lower any of the three. Raising any of them above its default throws
+`ArgumentOutOfRangeException` at `Open` time: nothing above the shipped defaults has been exercised
+as a safe ceiling, so these options can only make the reader stricter than it already is, never
+looser.
 
 ---
 
@@ -118,6 +121,33 @@ work (see the capability table below).
 
 Page content — text runs, images — is not on the public surface yet. `Catalog` and `Signatures`
 are what a v2.3 reader exposes; extracting page content is the next reader milestone.
+
+### Diagnostics
+
+```csharp
+foreach (PdfReaderDiagnostic d in reader.Diagnostics)
+    Console.WriteLine(d); // "{Severity} {Code} page {p} obj {n} {g}: {Message}"
+
+var options = new PdfReaderOptions { MaxDiagnostics = 200 };
+```
+
+`Diagnostics` (#385) lists what the reader recovered from instead of aborting on: a
+cross-reference table it had to rebuild, a filter chain entry that didn't resolve the way it
+declared itself, a TIFF predictor applied at a bit depth this decoder doesn't undo correctly. Each
+entry carries a `Code`, a `Severity` (`Info`/`Warning`/`Error`), a human-readable `Message`, and,
+where the condition concerns one, an `ObjectNumber` and `Generation`. `PageIndex` is also on every
+entry, but stays `null` until
+the page walk lands (#98) — nothing this release reports is scoped to a page. `MaxDiagnostics`
+(default 1000) is tighten-only, matching `MaxDecodedStreamBytes` and
+`ReconstructionBudgetMultiplier` above — past the cap, a single `DiagnosticsSuppressed` entry says
+how many further reports were dropped rather than growing the list without bound.
+
+`Diagnostics` is a live view: streams decode lazily, so the list can still grow after `Open`
+returns, as later calls resolve more of the document. Unlike the reader's other collections, which
+never change after construction, this one can grow while you enumerate it — and doing so
+invalidates the enumerator, throwing `InvalidOperationException` mid-loop. Call
+`reader.Diagnostics.ToList()` first if you need a stable snapshot to hold onto or hand to another
+thread.
 
 ---
 
@@ -212,6 +242,7 @@ a guard test keeps the two copies byte-identical.
 | Reading digital signature metadata (`/ByteRange`, `/Contents`, `/M`, `/SubFilter`) | ✅ Supported (read only, not verified) | ISO 32000-2 §12.8 |
 | Writing a decrypted copy (`SaveDecrypted`/`SaveDecryptedAsync`) | ✅ Supported | #186 |
 | Lexer/parser hardened against malformed input (property-based fuzzing, round-trip oracle) | ✅ Supported | #99 |
+| Diagnostics (`PdfDocumentReader.Diagnostics`) for conditions the reader recovers from instead of aborting on | ✅ Supported | ISO 32000-2 Annex I.2 (#385) |
 | Text extraction | ⏳ Planned | v2.4 (#98) |
 | Image extraction | ⏳ Planned | v2.4 (#98) |
 | Graduating `VellumPdf.Reader` from Preview to Stable | ⏳ Planned | v2.4 (#187) |
@@ -233,9 +264,9 @@ throws `PdfPasswordException` if the document needs a real one.
 best-effort: a wrong guess at the object graph during recovery produces a wrong, but internally
 consistent, decrypted copy.
 
-**`MaxDecodedStreamBytes` and `ReconstructionBudgetMultiplier` only go down.** Raising either
-above its shipped default throws at `Open` time rather than silently clamping — there is no way
-to ask the reader to trust a file more than its own defaults do.
+**`MaxDecodedStreamBytes`, `ReconstructionBudgetMultiplier`, and `MaxDiagnostics` only go down.**
+Raising any of them above its shipped default throws at `Open` time rather than silently
+clamping — there is no way to ask the reader to trust a file more than its own defaults do.
 
 **`SaveDecrypted` throws on a signed document unless you opt in, and opting in does not preserve
 the signature.** If your goal is a signed document you can still verify, this method is the wrong
