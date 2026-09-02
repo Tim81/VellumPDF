@@ -44,8 +44,9 @@ public sealed class PdfEncryptionSettings
     /// <summary>
     /// Access permissions. Defaults to <see cref="PdfPermissions.All"/>. Omitting
     /// <see cref="PdfPermissions.Extract"/> no longer clears a bit in the written <c>/P</c>
-    /// (ISO 32000-2 Table 22 has writers always set bit 10), but it still fails the PDF/UA-1
-    /// guard on <c>PdfDocument.Save</c>.
+    /// (ISO 32000-2 Table 22 has writers always set bit 10), but a
+    /// <see cref="Document.PdfConformance.PdfUA1"/> document still fails the guard on
+    /// <c>PdfDocument.Save</c>.
     /// </summary>
     public PdfPermissions Permissions { get; init; } = PdfPermissions.All;
 

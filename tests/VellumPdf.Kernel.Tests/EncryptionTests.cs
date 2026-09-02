@@ -191,7 +191,7 @@ public sealed class EncryptionTests
     /// <summary>
     /// End-to-end version of <see cref="PValue_matchesHandDerivedKnownAnswer"/>: saves a full AES-256
     /// R6 document (the writer's only mode) with <c>All &amp; ~Extract</c>, the exact permission set
-    /// #397 names, and checks the bytes that actually reach disk rather than only the handler's
+    /// #397 names, and checks the bytes that reach disk rather than only the handler's
     /// in-memory value.
     ///
     /// <para>The <c>/Perms</c> seal (Algorithm 10) is checked too, but against a handler built with
