@@ -30,7 +30,8 @@ V=5/R=6 regardless of what permissions it carries. At R6, `/P` is not a key inpu
 only feeds it in at R≤4), so this file's `/P` and its `/Perms` seal agree, and it opens the
 same way any other well-formed R6 document does.
 
-Provenance:
+Provenance (run against the pre-#397 writer at `1a85a66`; the current writer produces `/P -4` from
+the same code, so this block documents the file rather than reproducing it):
 
 ```csharp
 using var doc = new PdfDocument();
@@ -44,9 +45,10 @@ doc.Encrypt(new PdfEncryptionSettings
 doc.Save(stream);
 ```
 
-`Permissions = All & ~Extract` clears bit 10 (`PdfPermissions.Extract = 1 << 9`) while leaving every
-other bit as `StandardSecurityHandler` would set it for `All`. By Table 22 arithmetic
-(`P = (0xFFFFF0C0 | (enabledBits & 0xFFF)) & ~3`), that makes `/P` equal `-516` (`0xFFFFFDFC`) —
+Under that writer's mask, `Permissions = All & ~Extract` cleared bit 10 (`PdfPermissions.Extract =
+1 << 9`) while leaving every other bit as `StandardSecurityHandler` set it for `All`. By Table 22
+arithmetic with the pre-#397 mask (`P = (0xFFFFF0C0 | (enabledBits & 0xFFF)) & ~3`), that makes
+`/P` equal `-516` (`0xFFFFFDFC`) —
 `UaEncryptionPermissionsRuleTests` asserts the committed file's own `/P` still reads `-516` before
 trusting anything else about it, so a regenerated file with the bit accidentally set cannot make
 the rule test vacuous.

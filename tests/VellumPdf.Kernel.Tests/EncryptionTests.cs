@@ -138,10 +138,11 @@ public sealed class EncryptionTests
             Permissions = PdfPermissions.None,
         });
 
-        // Bits 2..5, 8..9 and 11 should be 0; bits 6..7 (0xC0) and bit 10 (0x200) are
-        // forced to 1 regardless of the requested permissions (ISO 32000-2 Table 22:
-        // bits 7-8 must be 1 for R >= 3, and bit 10, deprecated in PDF 2.0, must always
-        // be 1 so readers on earlier specifications keep treating extraction as allowed).
+        // Positions counted from the LSB (0-based): 2..5, 8, 10 and 11 should be 0, while
+        // 6..7 (0xC0) and 9 (0x200) are forced to 1 regardless of the requested permissions.
+        // In Table 22's 1-based numbering those are bits 7-8 ("Reserved. Must be 1.") and
+        // bit 10, deprecated in PDF 2.0, which writers shall always set so readers on earlier
+        // specifications keep treating extraction as allowed.
         Assert.Equal(0x200, handler.PValue & 0xF3C);
         Assert.Equal(0xC0, handler.PValue & 0xC0);
     }
@@ -192,12 +193,13 @@ public sealed class EncryptionTests
     /// in-memory value.
     ///
     /// <para>The <c>/Perms</c> seal (Algorithm 10) is checked too, but against a handler built with
-    /// the same settings rather than against the bytes <c>PdfDocument.Save</c> wrote: the handler
+    /// the same permissions rather than against the bytes <c>PdfDocument.Save</c> wrote: the handler
     /// <c>Save</c> constructs internally is not exposed, so there is no way from outside to recover
     /// the file key that sealed that specific document's <c>/Perms</c>. <c>PValue</c> is a pure
     /// function of <c>settings.Permissions</c> with no random input, so a second handler built from
-    /// the same settings computes the identical <c>/P</c> and therefore seals the identical value;
-    /// only <c>/U</c>, <c>/O</c>, <c>/UE</c>, <c>/OE</c> and the random padding differ between the
+    /// the same permissions computes the identical <c>/P</c> and therefore seals the identical value;
+    /// the passwords (<c>DecryptPermsBlockForTest</c> fixes the user password it derives the file
+    /// key from), <c>/U</c>, <c>/O</c>, <c>/UE</c>, <c>/OE</c> and the random padding differ between the
     /// two handlers, none of which this test depends on.</para>
     /// </summary>
     [Fact]
@@ -1108,7 +1110,7 @@ public sealed class EncryptionTests
 
         using var reader = PdfReader.Open(patched, new PdfReaderOptions { Password = "u" });
 
-        // The seal wins: print plus the bit-10 the writer always sets, not the everything the
+        // The seal wins: Print plus the bit 10 the writer always sets, not the everything the
         // edited /P now claims.
         Assert.Equal(PdfPermissions.Print | PdfPermissions.Extract, reader.Encryption!.Permissions);
     }

@@ -50,7 +50,7 @@ public sealed class StandardSecurityHandler : IPdfEncryptor
 
         // Derive /P integer (ISO 32000-2 Table 22).
         // Bits 1–2 (positions 0–1 from LSB) are reserved = 0.
-        // Bits 7–8 (positions 6–7 from LSB) must be 1 for R >= 3 — PdfPermissions has no
+        // Bits 7–8 (positions 6–7 from LSB) are "Reserved. Must be 1." — PdfPermissions has no
         // flag at 1<<6/1<<7 (the enum jumps Annotate=1<<5 straight to FillForms=1<<8), so
         // those two bits are forced on here rather than sourced from the caller's flags.
         // Bit 10 (position 9 from LSB) is the deprecated accessibility-extraction bit: Table 22

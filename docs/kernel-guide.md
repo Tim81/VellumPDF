@@ -545,7 +545,11 @@ supplying no password at all — a document-confidentiality failure, not just an
 It has its own, narrower guard instead — `PdfPermissions.Extract` must be
 included in `Permissions` (the default, `All`, already includes it), because
 ISO 14289-1 §7.16 requires that assistive technology can still extract
-content from an encrypted, accessible document.
+content from an encrypted, accessible document. The written `/P` no longer
+depends on the flag (ISO 32000-2 Table 22 has writers always set bit 10, and
+the handler does since #397), so the guard checks the caller's declared
+intent: omitting `Extract` from a PDF/UA-1 document says the opposite of what
+the profile promises, and the save refuses rather than guessing.
 
 ---
 
@@ -626,7 +630,8 @@ their `/Resources` dictionary.
 **PDF/A and encryption are mutually exclusive.**  Attempting both triggers a
 guard at save time. **PDF/UA-1 and encryption are not** — but the
 `Permissions` set on `Encrypt(...)` must include `PdfPermissions.Extract`, or
-the save is rejected instead of silently emitting a non-conformant file.
+the save is rejected: the emitted bit would be set either way, so the guard
+catches a declared intent that contradicts the PDF/UA-1 claim.
 
 **Standard-14 fonts are not embedded.**  For PDF/A or environments where
 viewers may not have the built-in fonts installed, use
