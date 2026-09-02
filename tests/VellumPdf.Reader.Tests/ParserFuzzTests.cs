@@ -170,6 +170,17 @@ public sealed class ParserFuzzTests
             // number the xref claims to know about.
             foreach (var objectNumber in reader.ObjectNumbers)
                 reader.Resolve(objectNumber);
+
+            // The page-tree walk (#98) is lazy too, and reads through the same mutated object
+            // graph — a hostile /Kids array or inherited attribute chain must degrade the same way
+            // everything else in this harness does, not throw outside the declared vocabulary.
+            _ = reader.PageCount;
+            foreach (var page in reader.Pages)
+            {
+                _ = page.MediaBox;
+                _ = page.CropBox;
+                _ = page.Rotate;
+            }
         }
         catch (Exception ex) when (IsDeclaredVocabulary(ex))
         {

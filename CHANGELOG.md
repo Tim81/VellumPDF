@@ -22,6 +22,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   past it, one `DiagnosticsSuppressed` entry records how many further reports were dropped instead
   of growing without limit. Purely additive: nothing that returned data now returns null, and
   nothing that used to succeed now throws. (#385)
+- **`PdfDocumentReader.PageCount`, `Pages`, and `GetPage` — a page-tree walk over `/Root` →
+  `/Pages` → `/Kids` (ISO 32000-2 §7.7.3).** `PageCount` is what the walk finds, never a node's own
+  `/Count` — §7.7.3.2 calls that entry redundant with the tree structure, and real producers
+  disagree with their own `/Kids` often enough that trusting it would misreport page counts on
+  ordinary files. Each `PdfReadPage` carries its `/MediaBox`, `/CropBox`, and `/Rotate` already
+  resolved through the inheritance chain (§7.7.3.4): the nearest ancestor that defines an attribute
+  wins over a farther one, and the page's own entry wins over all of them — by walking the tree the
+  reader actually descended, not by following a page's own `/Parent`, so a forged `/Parent` cannot
+  redirect inheritance. The walk is iterative, capped at 256 levels of nesting and 100,000 page
+  leaves, and a repeated indirect reference to the same node or page object is treated as a cycle
+  and skipped — all four new `PdfReaderDiagnosticCode` values (`PageTreeCycle`,
+  `PageTreeDepthExceeded`, `PageTreeLeafLimitExceeded`, `PageTreeKidNotDictionary`) plus
+  `PageTreeMissing` and `PageAttributeInvalid` report through the diagnostics channel #385 added
+  rather than throwing; a page tree the walk cannot use at all leaves `PageCount` at 0. Computed
+  lazily, on first access, and cached for the reader's lifetime. (#98)
 
 ## [2.3.0] - 2026-09-01
 

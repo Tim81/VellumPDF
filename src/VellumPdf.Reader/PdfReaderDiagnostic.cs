@@ -79,8 +79,11 @@ public sealed class PdfReaderDiagnostic
     public int? Generation { get; }
 
     /// <summary>The zero-based page index the observation concerns, or <see langword="null"/> when
-    /// it was not made during a per-page walk. No page walk exists yet as of this type shipping —
-    /// every diagnostic reported today carries <see langword="null"/> here.</summary>
+    /// it was not made during a per-page walk. Populated by the page-tree walker's own
+    /// <see cref="PdfReaderDiagnosticCode.PageAttributeInvalid"/> reports; every other code either
+    /// concerns no specific page (a document-wide condition) or is reported before a page index is
+    /// known (a page-tree shape problem found while locating the pages in the first place), so it
+    /// carries <see langword="null"/> here.</summary>
     public int? PageIndex { get; }
 
     internal PdfReaderDiagnostic(
@@ -224,6 +227,58 @@ public enum PdfReaderDiagnosticCode
     /// </summary>
     DecodedStreamLimitExceeded = 111,
 
+    // ── 2xx: page tree ──────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The document has no usable page tree — the catalog's <c>/Pages</c> entry is absent, does not
+    /// resolve to a dictionary, or that dictionary has no usable <c>/Kids</c> array (ISO 32000-2
+    /// §7.7.2, §7.7.3.2). <see cref="PdfDocumentReader.PageCount"/> is 0 rather than the walk
+    /// throwing, but unlike a truncated walk this is a total loss, not a partial one — there is no
+    /// "less" to continue with — so it reports at <see cref="PdfReaderDiagnosticSeverity.Error"/>,
+    /// the same severity a stream the reader abandons outright already uses.
+    /// </summary>
+    PageTreeMissing = 200,
+
+    /// <summary>
+    /// The same object number was reached twice while walking the page tree — as a page-tree node
+    /// or a page object, in either combination. ISO 32000-2 §7.7.3.2 and §7.7.3.3 each forbid a
+    /// repeated indirect reference to the same node or page object, so this is always a shape
+    /// violation, whether it forms a genuine ancestor cycle or merely a redundant sibling reference;
+    /// either way the repeat is skipped and the walk continues.
+    /// </summary>
+    PageTreeCycle = 201,
+
+    /// <summary>
+    /// The page tree nested deeper than <c>PageTreeWalker.MaxDepth</c> (256) levels. The walk stops
+    /// descending into the subtree past that depth — its pages are not found — while siblings
+    /// already queued elsewhere in the walk continue normally.
+    /// </summary>
+    PageTreeDepthExceeded = 202,
+
+    /// <summary>
+    /// The page tree contains more than <c>PageTreeWalker.MaxLeaves</c> (100,000) page leaves. The
+    /// walk stops entirely at that point; pages found up to the cap are still returned.
+    /// </summary>
+    PageTreeLeafLimitExceeded = 203,
+
+    /// <summary>
+    /// An element of a <c>/Kids</c> array did not resolve to a dictionary — a name, a number, an
+    /// array, or a dangling indirect reference, none of which ISO 32000-2 §7.7.3.2 permits as a
+    /// page-tree node or page object. The element is skipped.
+    /// </summary>
+    PageTreeKidNotDictionary = 204,
+
+    /// <summary>
+    /// A page's <c>/MediaBox</c>, <c>/CropBox</c>, or <c>/Rotate</c> — its own, or the value it
+    /// would otherwise inherit (ISO 32000-2 §7.7.3.4) — did not resolve to the shape §7.7.3.3
+    /// requires: a rectangle is not a 4-element numeric array, or <c>/Rotate</c> is not a multiple
+    /// of 90. <see cref="PdfReaderDiagnostic.Message"/> names which key. The reader substitutes a
+    /// default (US Letter for a missing or malformed <c>/MediaBox</c>, the page's own
+    /// <see cref="PdfReadPage.MediaBox"/> for <c>/CropBox</c>, 0 for <c>/Rotate</c>) rather than
+    /// leaving the attribute unset.
+    /// </summary>
+    PageAttributeInvalid = 205,
+
     // ── 9xx: reserved ───────────────────────────────────────────────────────────────────────────
 
     /// <summary>
@@ -271,6 +326,13 @@ internal static class PdfReaderDiagnosticSeverities
         // reserved for (as opposed to a condition where decoding continues on known-wrong content).
         PdfReaderDiagnosticCode.UnknownFilter => PdfReaderDiagnosticSeverity.Error,
         PdfReaderDiagnosticCode.DecodedStreamLimitExceeded => PdfReaderDiagnosticSeverity.Error,
+        // No "less" to continue with — see the code's own doc comment.
+        PdfReaderDiagnosticCode.PageTreeMissing => PdfReaderDiagnosticSeverity.Error,
+        PdfReaderDiagnosticCode.PageTreeCycle => PdfReaderDiagnosticSeverity.Warning,
+        PdfReaderDiagnosticCode.PageTreeDepthExceeded => PdfReaderDiagnosticSeverity.Warning,
+        PdfReaderDiagnosticCode.PageTreeLeafLimitExceeded => PdfReaderDiagnosticSeverity.Warning,
+        PdfReaderDiagnosticCode.PageTreeKidNotDictionary => PdfReaderDiagnosticSeverity.Warning,
+        PdfReaderDiagnosticCode.PageAttributeInvalid => PdfReaderDiagnosticSeverity.Warning,
         PdfReaderDiagnosticCode.DiagnosticsSuppressed => PdfReaderDiagnosticSeverity.Warning,
         _ => throw new UnreachableException($"No severity is mapped for {code}."),
     };

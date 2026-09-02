@@ -119,8 +119,32 @@ signature's `/ByteRange`, `/Contents`, `/M` (as `SigningTime`), and `/SubFilter`
 *reading*, not *verification* — checking integrity, coverage, or a certificate chain is future
 work (see the capability table below).
 
-Page content — text runs, images — is not on the public surface yet. `Catalog` and `Signatures`
-are what a v2.3 reader exposes; extracting page content is the next reader milestone.
+Page content — text runs, images — is not on the public surface yet; extracting it is the next
+reader milestone. Locating the pages themselves is:
+
+### Pages
+
+```csharp
+int count = reader.PageCount;                  // never trusts a node's own /Count
+foreach (PdfReadPage page in reader.Pages)
+    Console.WriteLine($"page {page.Index}: {page.MediaBox.Width}x{page.MediaBox.Height}, rotate {page.Rotate}");
+
+PdfReadPage first = reader.GetPage(0);          // throws ArgumentOutOfRangeException outside [0, PageCount)
+```
+
+`PageCount`/`Pages`/`GetPage` walk the page tree (ISO 32000-2 §7.7.3) from `/Root` → `/Pages` →
+`/Kids` on first access and cache the result — never in `PdfReader.Open` itself. The walk counts
+what `/Kids` actually contains, not any node's `/Count`: §7.7.3.2's own NOTE calls that entry
+redundant, and a writer's `/Count` disagreeing with its own `/Kids` is not something ISO 32000-2
+forbids a processor from encountering. Each `PdfReadPage` exposes `MediaBox`, `CropBox`, and
+`Rotate` already resolved through the inheritance chain (§7.7.3.4) and normalised — corners
+ordered low-to-high, rotation folded to one of 0/90/180/270 — falling back to US Letter, the page's
+own `MediaBox`, or 0 respectively when a value is missing or malformed, each with a
+`PageAttributeInvalid` diagnostic (except a merely absent, optional `CropBox` or `Rotate`, which is
+silent — that is the spec's own default, not a problem). A page tree the walk cannot use at all
+reports `PageTreeMissing` and leaves `PageCount` at 0 rather than throwing; a cycle, a nesting depth
+past 256, or more than 100,000 leaves reports its own code and returns whatever pages were found up
+to that point. See `PdfReaderDiagnosticCode`'s `2xx` block for the full list.
 
 ### Diagnostics
 
@@ -136,9 +160,9 @@ cross-reference table it had to rebuild, a filter chain entry that didn't resolv
 declared itself, a TIFF predictor applied at a bit depth this decoder doesn't undo correctly. Each
 entry carries a `Code`, a `Severity` (`Info`/`Warning`/`Error`), a human-readable `Message`, and,
 where the condition concerns one, an `ObjectNumber` and `Generation`. `PageIndex` is also on every
-entry, but stays `null` until
-the page walk lands (#98) — nothing this release reports is scoped to a page. `MaxDiagnostics`
-(default 1000) is tighten-only, matching `MaxDecodedStreamBytes` and
+entry, populated by the page-tree walk's own `PageAttributeInvalid` reports (see Pages above) —
+every other code either concerns no specific page or is reported before a page index is known.
+`MaxDiagnostics` (default 1000) is tighten-only, matching `MaxDecodedStreamBytes` and
 `ReconstructionBudgetMultiplier` above — past the cap, a single `DiagnosticsSuppressed` entry says
 how many further reports were dropped rather than growing the list without bound.
 
@@ -239,6 +263,7 @@ a guard test keeps the two copies byte-identical.
 | Configurable, tighten-only resource limits | ✅ Supported | ISO 32000-2 Annex C.1/C.3, informative (#376) |
 | Decryption: Standard handler, `/V` 1/2/4/5, `/R` 2–6, RC4-40–128, AES-128/256 | ✅ Supported | ISO 32000-2 §7.6 |
 | Reading the document catalog | ✅ Supported | ISO 32000-2 §7.7.2 |
+| Page tree walk and page access (`PageCount`, `Pages`, `GetPage`) with inherited `/Resources`, `/MediaBox`, `/CropBox`, `/Rotate` | ✅ Supported | ISO 32000-2 §7.7.3 (#98) |
 | Reading digital signature metadata (`/ByteRange`, `/Contents`, `/M`, `/SubFilter`) | ✅ Supported (read only, not verified) | ISO 32000-2 §12.8 |
 | Writing a decrypted copy (`SaveDecrypted`/`SaveDecryptedAsync`) | ✅ Supported | #186 |
 | Lexer/parser hardened against malformed input (property-based fuzzing, round-trip oracle) | ✅ Supported | #99 |
