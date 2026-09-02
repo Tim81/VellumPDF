@@ -191,6 +191,36 @@ public sealed class DiagnosticRoutingTests
         Assert.Equal(PdfReaderDiagnosticSeverity.Warning, d.Severity);
     }
 
+    /// <summary>
+    /// A body shorter than one row (<c>rowBytes</c>) at a non-8-bit depth has zero full rows, so
+    /// the decoder copies nothing and returns an empty array — the same outcome
+    /// <c>data.Length == 0</c> already gets without a diagnostic. Reporting here would flag a
+    /// condition that affected zero samples.
+    /// </summary>
+    [Fact]
+    public void UnsupportedPredictor_bodyShorterThanOneRow_reportsNothing()
+    {
+        // Columns 8, Colors 1, BitsPerComponent 4 -> rowBytes = 4; a 2-byte body has zero full rows.
+        var raw = new byte[] { 0x12, 0x34 };
+        var compressed = CompressZlib(raw);
+        var parms = new PdfDictionary()
+            .Set(new PdfName("Predictor"), new PdfInteger(2))
+            .Set(new PdfName("Columns"), new PdfInteger(8))
+            .Set(new PdfName("Colors"), new PdfInteger(1))
+            .Set(new PdfName("BitsPerComponent"), new PdfInteger(4));
+        var dict = new PdfDictionary()
+            .Set(PdfName.Filter, PdfName.FlateDecode)
+            .Set(new PdfName("DecodeParms"), parms);
+        var stream = MakeParsedStream(dict, compressed);
+        var sink = new DiagnosticSink(cap: 10);
+
+        var decoded = PdfFilters.Decode(stream, ReaderLimits.Defaults, diagnostics: sink);
+
+        Assert.NotNull(decoded);
+        Assert.Empty(decoded!);
+        Assert.Empty(sink.Diagnostics);
+    }
+
     [Fact]
     public void SupportedPredictor_bpcEight_reportsNothing()
     {

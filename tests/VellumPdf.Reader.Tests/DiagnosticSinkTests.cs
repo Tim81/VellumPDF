@@ -153,7 +153,7 @@ public sealed class DiagnosticSinkTests
         // Still 1 + 1: the sentinel's own slot was reused, not grown.
         Assert.Equal(2, sink.Diagnostics.Count);
         var sentinel = Assert.Single(sink.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.DiagnosticsSuppressed);
-        Assert.Contains("3", sentinel.Message);
+        Assert.StartsWith("3 diagnostics suppressed", sentinel.Message, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -195,6 +195,25 @@ public sealed class DiagnosticSinkTests
 
         var d = Assert.Single(sink.Diagnostics);
         Assert.Equal("a", d.Message);
+    }
+
+    /// <summary>
+    /// The suppressed count is reports dropped, not distinct conditions dropped: a key first
+    /// encountered PAST the cap is never remembered (see <c>TryAccept</c>), so every one of its
+    /// later recurrences is counted again — unlike the same-key-below-the-cap case above, which
+    /// stays silent forever once recorded once.
+    /// </summary>
+    [Fact]
+    public void Report_sameKey_repeatedPastTheCap_countsEachOccurrenceAsDropped()
+    {
+        var sink = new DiagnosticSink(cap: 1);
+
+        sink.Report(PdfReaderDiagnosticCode.UnknownFilter, "a", objectNumber: 1);
+        sink.Report(PdfReaderDiagnosticCode.UnknownFilter, "b", objectNumber: 2);
+        sink.Report(PdfReaderDiagnosticCode.UnknownFilter, "b-again", objectNumber: 2);
+
+        var sentinel = Assert.Single(sink.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.DiagnosticsSuppressed);
+        Assert.StartsWith("2 diagnostics suppressed", sentinel.Message, StringComparison.Ordinal);
     }
 
     // ── CreateScope ───────────────────────────────────────────────────────────────────────────────
@@ -263,6 +282,28 @@ public sealed class DiagnosticSinkTests
         Assert.Equal(5, child.Diagnostics.Count);
         Assert.Equal(5, parent.Diagnostics.Count);
         Assert.DoesNotContain(parent.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.DiagnosticsSuppressed);
+    }
+
+    // ── Live-view enumeration ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// <see cref="DiagnosticSink.Diagnostics"/> wraps the sink's own live <c>List&lt;T&gt;</c>
+    /// (see <see cref="DiagnosticSink"/>'s own remarks), so — unlike a defensively copied snapshot
+    /// — mutating the sink while enumerating it invalidates the enumerator. Pinned here because
+    /// docs/reader-guide.md promises the caller this behaviour by name.
+    /// </summary>
+    [Fact]
+    public void Diagnostics_reportedToWhileEnumerating_throwsInvalidOperationException()
+    {
+        var sink = new DiagnosticSink(cap: 10);
+        sink.Report(PdfReaderDiagnosticCode.UnknownFilter, "a", objectNumber: 1);
+        sink.Report(PdfReaderDiagnosticCode.UnknownFilter, "b", objectNumber: 2);
+
+        Assert.Throws<InvalidOperationException>(() =>
+        {
+            foreach (var _ in sink.Diagnostics)
+                sink.Report(PdfReaderDiagnosticCode.UnknownFilter, "c", objectNumber: 3);
+        });
     }
 
     // ── Construction ──────────────────────────────────────────────────────────────────────────────

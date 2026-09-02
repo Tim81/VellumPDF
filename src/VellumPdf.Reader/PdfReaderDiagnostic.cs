@@ -29,12 +29,20 @@ public enum PdfReaderDiagnosticSeverity
 /// what the reader had to work around without every one of those conditions aborting the read.
 /// </summary>
 /// <remarks>
-/// Annex I.2 lists conformance as a requirement on the FILE, not on every reader that opens one;
-/// nothing in ISO 32000-2 obliges a processor to refuse a document merely because some part of it
-/// is malformed, redundant, or unsupported. This channel is where the reader records that it took
-/// the best-effort path instead — <see cref="PdfDocumentReader.WasReconstructed"/> is the one
-/// precedent for this that already existed as its own boolean before this type did; every new
-/// notify-and-continue condition since goes through here instead of growing another one.
+/// ISO 32000-2 Annex I.2 states the norm this channel exists to satisfy: "Upon the first error
+/// that is caused by encountering an unrecognised feature, the PDF processor should notify the
+/// user that an error has occurred but that no further errors will be reported. … Processing
+/// should continue if possible." Annex I.1 frames the choice behind it: the PDF processor is free
+/// "to ignore or inform the user about objects not understood[, and] the decision … is made on a
+/// feature-by-feature basis, at the discretion of the PDF processor." Separately, §6.2 puts the
+/// conformance obligation on the FILE ("Conforming PDF files shall adhere to all requirements of
+/// this document"), not on every reader that opens one, and §6.3.2.1 lets a processor choose which
+/// subsets of PDF functionality it supports at all — so nothing in ISO 32000-2 obliges a reader to
+/// refuse a document merely because some part of it is malformed, redundant, or unsupported. This
+/// channel is where the reader records that it took the best-effort path instead —
+/// <see cref="PdfDocumentReader.WasReconstructed"/> is the one precedent for this that already
+/// existed as its own boolean before this type did; every new notify-and-continue condition since
+/// goes through here instead of growing another one.
 /// <para>
 /// Numeric values in <see cref="PdfReaderDiagnosticCode"/> are allocated in one hundred-wide block
 /// per subsystem — see that enum's own remarks — precisely so a later milestone's codes can append
@@ -83,19 +91,24 @@ public sealed class PdfReaderDiagnostic
     }
 
     /// <summary>
-    /// Formats as <c>"{Severity} {Code} obj {ObjectNumber} {Generation}: {Message}"</c>, omitting
-    /// the <c>obj</c> segment entirely when <see cref="ObjectNumber"/> is <see langword="null"/>,
-    /// and omitting just <c>{Generation}</c> — printing <see cref="ObjectNumber"/> alone — when
-    /// <see cref="ObjectNumber"/> is set but <see cref="Generation"/> is <see langword="null"/>.
+    /// Formats as <c>"{Severity} {Code} page {PageIndex} obj {ObjectNumber} {Generation}:
+    /// {Message}"</c>, for display and logging — not a parsing contract, so the exact spacing and
+    /// segment order may still change across releases. The <c>page</c> segment is omitted when
+    /// <see cref="PageIndex"/> is <see langword="null"/>; the <c>obj</c> segment is omitted
+    /// entirely when <see cref="ObjectNumber"/> is <see langword="null"/>, and printed without
+    /// <c>{Generation}</c> when <see cref="ObjectNumber"/> is set but <see cref="Generation"/> is
+    /// not. The two segments are independent — a diagnostic can carry a page with no object, an
+    /// object with no page, both, or neither.
     /// </summary>
     public override string ToString()
     {
+        var pagePart = PageIndex is null ? string.Empty : $" page {PageIndex}";
         var objectPart = ObjectNumber is null
             ? string.Empty
             : Generation is null
                 ? $" obj {ObjectNumber}"
                 : $" obj {ObjectNumber} {Generation}";
-        return $"{Severity} {Code}{objectPart}: {Message}";
+        return $"{Severity} {Code}{pagePart}{objectPart}: {Message}";
     }
 }
 
@@ -165,9 +178,10 @@ public enum PdfReaderDiagnosticCode
     FilterNull = 105,
 
     /// <summary>
-    /// An element of a <c>/Filter</c> array did not resolve to a name. ISO 32000-2 §7.4 requires
-    /// every element of a filter chain to be a filter name; the malformed element is dropped from
-    /// the chain rather than applied.
+    /// An element of a <c>/Filter</c> array did not resolve to a name. ISO 32000-2 §7.3.8 Table 5
+    /// defines <c>/Filter</c> as "the name, or an array of zero, one or several names, of
+    /// filter(s)"; §7.4 defines the cascade those names form. The malformed element is dropped
+    /// from the chain rather than applied.
     /// </summary>
     FilterArrayElementNotName = 106,
 
@@ -208,8 +222,12 @@ public enum PdfReaderDiagnosticCode
 
     /// <summary>
     /// <see cref="PdfReaderOptions.MaxDiagnostics"/> was reached; this is the one entry recorded in
-    /// its place for every diagnostic dropped after it, with the drop count folded into its own
+    /// its place for every report dropped after it, with the drop count folded into its own
     /// message so the list stays bounded without silently going quiet about how much it left out.
+    /// The count is reports dropped, not distinct conditions dropped: past the cap the reader
+    /// stops tracking which (code, object, page) triples it has already seen, so a triple first
+    /// encountered there is counted again on every recurrence, while one already seen below the
+    /// cap keeps being deduped and never adds to the count at all.
     /// </summary>
     DiagnosticsSuppressed = 900,
 }

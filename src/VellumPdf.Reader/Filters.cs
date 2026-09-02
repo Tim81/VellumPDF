@@ -294,8 +294,11 @@ internal static class PdfFilters
         // property of the stream, established before the first row is even read, not something
         // that only becomes true partway through — hoisting it says so instead of relying on a
         // cap-and-dedupe mechanism built for a different purpose to collapse the repeats down to
-        // one after the fact.
-        if (bpc != 8)
+        // one after the fact. Gated on rows > 0 to match data.Length == 0's own early return
+        // above: a body too short for even one row copies nothing and returns an empty array
+        // either way, so reporting here would flag a condition that never actually affected any
+        // samples.
+        if (bpc != 8 && rows > 0)
         {
             // ISO 32000-2 §7.4.4.4 does not restrict the TIFF predictor to 8-bit samples, but this
             // decoder only undoes the horizontal difference at that depth — passing the

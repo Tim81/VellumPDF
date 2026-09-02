@@ -96,4 +96,50 @@ public sealed class PdfReaderDiagnosticCodeTests
         sink.Report(code, "test");
         return Assert.Single(sink.Diagnostics);
     }
+
+    // ── Exact value + severity pins ──────────────────────────────────────────────────────────────
+
+    // The area/uniqueness tests above only bound a code to its 100-wide block; they would not
+    // notice two codes swapping their exact values within that block (XrefReconstructed and
+    // OrphanedObjectStreamMembersDropped trading 100/101, say). This table is the independently
+    // written, intended value for each code, so a swap in the enum fails the theory below instead
+    // of passing silently.
+    private static readonly Dictionary<PdfReaderDiagnosticCode, (int Value, PdfReaderDiagnosticSeverity Severity)> _expected = new()
+    {
+        [PdfReaderDiagnosticCode.XrefReconstructed] = (100, PdfReaderDiagnosticSeverity.Info),
+        [PdfReaderDiagnosticCode.OrphanedObjectStreamMembersDropped] = (101, PdfReaderDiagnosticSeverity.Warning),
+        [PdfReaderDiagnosticCode.ObjectStreamContainerUnreadable] = (102, PdfReaderDiagnosticSeverity.Warning),
+        [PdfReaderDiagnosticCode.ObjectHeaderMismatch] = (103, PdfReaderDiagnosticSeverity.Warning),
+        [PdfReaderDiagnosticCode.ObjectGenerationMismatch] = (104, PdfReaderDiagnosticSeverity.Warning),
+        [PdfReaderDiagnosticCode.FilterNull] = (105, PdfReaderDiagnosticSeverity.Info),
+        [PdfReaderDiagnosticCode.FilterArrayElementNotName] = (106, PdfReaderDiagnosticSeverity.Warning),
+        [PdfReaderDiagnosticCode.FilterValueMalformed] = (107, PdfReaderDiagnosticSeverity.Warning),
+        [PdfReaderDiagnosticCode.DecodeParmsMalformed] = (108, PdfReaderDiagnosticSeverity.Warning),
+        [PdfReaderDiagnosticCode.UnsupportedPredictor] = (109, PdfReaderDiagnosticSeverity.Warning),
+        [PdfReaderDiagnosticCode.UnknownFilter] = (110, PdfReaderDiagnosticSeverity.Error),
+        [PdfReaderDiagnosticCode.DecodedStreamLimitExceeded] = (111, PdfReaderDiagnosticSeverity.Error),
+        [PdfReaderDiagnosticCode.DiagnosticsSuppressed] = (900, PdfReaderDiagnosticSeverity.Warning),
+    };
+
+    public static IEnumerable<object[]> ExpectedValueAndSeverityCases() =>
+        _expected.Select(kv => new object[] { kv.Key, kv.Value.Value, kv.Value.Severity });
+
+    [Theory]
+    [MemberData(nameof(ExpectedValueAndSeverityCases))]
+    public void Code_hasThePinnedValueAndSeverity(
+        PdfReaderDiagnosticCode code, int expectedValue, PdfReaderDiagnosticSeverity expectedSeverity)
+    {
+        Assert.Equal(expectedValue, (int)code);
+
+        var diagnostic = MakeDiagnostic(code);
+        Assert.Equal(expectedSeverity, diagnostic.Severity);
+    }
+
+    [Fact]
+    public void ExpectedValueAndSeverityCases_coverEveryCode()
+    {
+        // Catches a code added without a matching row above — the theory itself only proves the
+        // rows it has are correct, not that every current member has one.
+        Assert.Equal(AllCodes().Length, _expected.Count);
+    }
 }

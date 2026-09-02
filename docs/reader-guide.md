@@ -126,7 +126,7 @@ are what a v2.3 reader exposes; extracting page content is the next reader miles
 
 ```csharp
 foreach (PdfReaderDiagnostic d in reader.Diagnostics)
-    Console.WriteLine(d); // "{Severity} {Code} obj {n} {g}: {Message}"
+    Console.WriteLine(d); // "{Severity} {Code} page {p} obj {n} {g}: {Message}"
 
 var options = new PdfReaderOptions { MaxDiagnostics = 200 };
 ```
@@ -135,16 +135,18 @@ var options = new PdfReaderOptions { MaxDiagnostics = 200 };
 cross-reference table it had to rebuild, a filter chain entry that didn't resolve the way it
 declared itself, a TIFF predictor applied at a bit depth this decoder doesn't undo correctly. Each
 entry carries a `Code`, a `Severity` (`Info`/`Warning`/`Error`), and, where the condition concerns
-one, an `ObjectNumber` and `Generation`. `MaxDiagnostics` (default 1000) is tighten-only, matching
-`MaxDecodedStreamBytes` and `ReconstructionBudgetMultiplier` above — past the cap, a single
-`DiagnosticsSuppressed` entry says how many further reports were dropped rather than growing the
-list without bound.
+one, an `ObjectNumber` and `Generation`. `PageIndex` is also on every entry, but stays `null` until
+the page walk lands (#98) — nothing this release reports is scoped to a page. `MaxDiagnostics`
+(default 1000) is tighten-only, matching `MaxDecodedStreamBytes` and
+`ReconstructionBudgetMultiplier` above — past the cap, a single `DiagnosticsSuppressed` entry says
+how many further reports were dropped rather than growing the list without bound.
 
 `Diagnostics` is a live view: streams decode lazily, so the list can still grow after `Open`
-returns, as later calls resolve more of the document. Enumerating it while another call on the
-same reader is in flight throws `InvalidOperationException`, matching every other collection this
-type exposes — call `reader.Diagnostics.ToList()` first if you need a stable snapshot to hold onto
-or hand to another thread.
+returns, as later calls resolve more of the document. Unlike the reader's other collections, which
+never change after construction, this one can grow while you enumerate it — and doing so
+invalidates the enumerator, throwing `InvalidOperationException` mid-loop. Call
+`reader.Diagnostics.ToList()` first if you need a stable snapshot to hold onto or hand to another
+thread.
 
 ---
 

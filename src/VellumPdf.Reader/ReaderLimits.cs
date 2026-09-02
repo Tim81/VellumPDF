@@ -69,25 +69,28 @@ internal readonly record struct ReaderLimits(
         new(DefaultMaxDecodedBytes, DefaultMaxDecodedBytes, DefaultReconstructionBudgetMultiplier, DefaultMaxDiagnostics);
 
     /// <summary>
-    /// Validates <paramref name="options"/>'s two resource knobs and resolves them into the limits
-    /// threaded through one read.
+    /// Validates <paramref name="options"/>'s three resource knobs and resolves them into the
+    /// limits threaded through one read.
     /// </summary>
     /// <remarks>
     /// Tighten-only: ISO 32000-2 Annex C.1 (informative) states that "a particular PDF processor
     /// running on a particular device and in a particular operating environment will always have
     /// practical limits", and Annex C.3 (informative) adds that available memory is "often much less
     /// in mobile devices than desktop computers" — the ceiling is this processor's own choice, not a
-    /// spec requirement, so <see cref="DefaultMaxDecodedBytes"/> and
-    /// <see cref="DefaultReconstructionBudgetMultiplier"/> are a safe upper bound a caller may only
-    /// lower, never raise. A value under the corresponding floor is rejected too: below
-    /// <see cref="MinMaxDecodedBytes"/> or <see cref="MinReconstructionBudgetMultiplier"/>, an
-    /// otherwise ordinary document routinely fails to decode or reconstruct at all, which is a
-    /// configuration mistake worth surfacing immediately rather than as a confusing downstream
-    /// <see cref="InvalidDataException"/>.
+    /// spec requirement, so <see cref="DefaultMaxDecodedBytes"/>,
+    /// <see cref="DefaultReconstructionBudgetMultiplier"/>, and <see cref="DefaultMaxDiagnostics"/>
+    /// are each a safe upper bound a caller may only lower, never raise. A value under the
+    /// corresponding floor is rejected too: below <see cref="MinMaxDecodedBytes"/> or
+    /// <see cref="MinReconstructionBudgetMultiplier"/>, an otherwise ordinary document routinely
+    /// fails to decode or reconstruct at all; below <see cref="MinMaxDiagnostics"/> the sink would
+    /// have nowhere to record even its own suppression sentinel. Each of these is a configuration
+    /// mistake worth surfacing immediately, here, rather than as a confusing exception from a
+    /// different layer downstream.
     /// </remarks>
     /// <exception cref="ArgumentOutOfRangeException">
-    /// <see cref="PdfReaderOptions.MaxDecodedStreamBytes"/> or
-    /// <see cref="PdfReaderOptions.ReconstructionBudgetMultiplier"/> is outside its allowed range.
+    /// <see cref="PdfReaderOptions.MaxDecodedStreamBytes"/>,
+    /// <see cref="PdfReaderOptions.ReconstructionBudgetMultiplier"/>, or
+    /// <see cref="PdfReaderOptions.MaxDiagnostics"/> is outside its allowed range.
     /// </exception>
     internal static ReaderLimits Resolve(PdfReaderOptions options)
     {

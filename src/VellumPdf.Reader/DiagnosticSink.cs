@@ -26,10 +26,7 @@ internal sealed class DiagnosticSink(int cap)
     // generations are still "the same condition" for a reader that already resolves by object
     // number first (see PdfDocumentReader.Resolve's own cache key).
     //
-    // Bounded by TryAccept to at most _cap entries: nothing is ever added to this set once
-    // _diagnostics.Count reaches _cap (see that method), so a document engineered to report a
-    // huge number of DISTINCT triples cannot grow this set without limit just because every one
-    // of them past the cap is suppressed rather than recorded.
+    // Bounded to at most _cap entries by TryAccept — see that method's remarks for why.
     private readonly HashSet<(PdfReaderDiagnosticCode Code, int? ObjectNumber, int? PageIndex)> _seen = [];
     private readonly List<PdfReaderDiagnostic> _diagnostics = [];
 
@@ -63,9 +60,8 @@ internal sealed class DiagnosticSink(int cap)
     internal IReadOnlyList<PdfReaderDiagnostic> Diagnostics => _diagnosticsView ??= _diagnostics.AsReadOnly();
 
     /// <summary>
-    /// The dedupe set's own size — test-only visibility for pinning that <see cref="TryAccept"/>
-    /// actually stops growing it once <see cref="Diagnostics"/> reaches its cap, rather than the
-    /// bounded-memory claim resting on <see cref="Diagnostics"/>.Count staying small alone.
+    /// The dedupe set's own size — test-only visibility for pinning <see cref="TryAccept"/>'s
+    /// bound on it directly, rather than only through <see cref="Diagnostics"/>.Count.
     /// </summary>
     internal int SeenCount => _seen.Count;
 
@@ -74,13 +70,22 @@ internal sealed class DiagnosticSink(int cap)
     /// child's own list AND forwarded to this sink, as the SAME <see cref="PdfReaderDiagnostic"/>
     /// instance — not a re-report that would construct a second, reference-distinct copy — so a
     /// per-operation result built from the child later carries diagnostics that are also, by
-    /// reference, exactly what <see cref="PdfDocumentReader.Diagnostics"/> exposes.
+    /// reference, exactly what <see cref="PdfDocumentReader.Diagnostics"/> exposes. That identity
+    /// guarantee holds only for reports the CHILD originates, though: if this sink already holds
+    /// the key from a direct <see cref="Report"/> of its own, its own dedupe keeps that earlier,
+    /// separately-constructed instance, and the child's later report of the same key never reaches
+    /// it at all (<see cref="TryAccept"/> returns before <see cref="Forward"/> is ever called).
     /// </summary>
     /// <remarks>
     /// Unused in this PR (#385 lands only the document-level sink; a per-operation result — the
     /// first candidate is #98's text extraction — is what will actually call this). Present now,
     /// and exercised directly by <c>DiagnosticSinkTests</c>, so the forwarding contract is pinned
     /// before anything depends on it rather than designed against its first real caller.
+    /// <para>
+    /// Each scope holds its own <c>cap</c>-bounded dedupe set (see <see cref="TryAccept"/>), so N
+    /// live scopes retain up to O(N × cap) between them — scopes are meant to be short-lived,
+    /// created for one operation and dropped once it finishes, not held for the life of the reader.
+    /// </para>
     /// </remarks>
     internal DiagnosticSink CreateScope() => new(this);
 
@@ -135,10 +140,13 @@ internal sealed class DiagnosticSink(int cap)
     /// numbers against <c>cap: 1</c> retained tens of megabytes in <c>_seen</c> alone, while
     /// <see cref="Diagnostics"/> itself stayed at two entries).
     /// <para>
-    /// Once at capacity, a key already in <c>_seen</c> from before the cap was reached is still a
-    /// genuine duplicate and must stay silent — deduping a repeat never counts as that repeat
-    /// being dropped, capped or not — so this still consults <c>_seen</c> there, just with
-    /// <c>Contains</c> rather than <c>Add</c>: nothing new is ever inserted into it past the cap.
+    /// Once at capacity, a key already in <c>_seen</c> from BELOW the cap is still a genuine
+    /// duplicate and stays silent — recorded once, then deduped forever after, exactly as it
+    /// would below the cap — so this still consults <c>_seen</c> there, just with <c>Contains</c>
+    /// rather than <c>Add</c>. A key NOT already in <c>_seen</c> gets the opposite treatment:
+    /// since nothing new is ever inserted past the cap, that key is never remembered either, so
+    /// every one of its later recurrences reaches <see cref="RecordSuppression"/> again — the
+    /// count past the cap is reports dropped, not distinct conditions dropped.
     /// </para>
     /// </remarks>
     private bool TryAccept((PdfReaderDiagnosticCode Code, int? ObjectNumber, int? PageIndex) key)
