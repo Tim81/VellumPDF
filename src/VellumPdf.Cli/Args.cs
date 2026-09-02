@@ -31,6 +31,7 @@ internal sealed class ParsedArgs
     internal bool NoColor { get; set; }
     internal bool ListProfiles { get; set; }
     internal bool Coverage { get; set; }
+    internal string? Password { get; set; }
     // null = all profiles; set = specific profile
     internal PdfConformance? CoverageProfile { get; set; }
     internal bool Version { get; set; }
@@ -96,6 +97,24 @@ internal static class ArgParser
                 var err = ParseProfiles(val, result);
                 if (err is not null)
                     return err;
+                i++;
+                continue;
+            }
+
+            // No -p short form: -p is already --profile.
+            if (arg == "--password")
+            {
+                i++;
+                if (i >= args.Length)
+                    return "--password requires an argument.";
+                result.Password = args[i];
+                i++;
+                continue;
+            }
+
+            if (arg.StartsWith("--password=", StringComparison.Ordinal))
+            {
+                result.Password = arg["--password=".Length..];
                 i++;
                 continue;
             }

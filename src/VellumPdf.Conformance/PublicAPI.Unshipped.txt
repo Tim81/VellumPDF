@@ -1,1 +1,5 @@
 #nullable enable
+static VellumPdf.Conformance.PdfPreflight.DetectClaimedProfiles(byte[]! bytes, string? password) -> System.Collections.Generic.IReadOnlyList<VellumPdf.Conformance.PdfConformance>!
+static VellumPdf.Conformance.PdfPreflight.DetectClaimedProfiles(System.IO.Stream! stream, string? password) -> System.Collections.Generic.IReadOnlyList<VellumPdf.Conformance.PdfConformance>!
+static VellumPdf.Conformance.PdfPreflight.Validate(byte[]! bytes, VellumPdf.Conformance.PdfConformance conformance, string? password) -> VellumPdf.Conformance.PreflightResult!
+static VellumPdf.Conformance.PdfPreflight.Validate(System.IO.Stream! stream, VellumPdf.Conformance.PdfConformance conformance, string? password) -> VellumPdf.Conformance.PreflightResult!

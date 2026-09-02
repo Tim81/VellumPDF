@@ -23,6 +23,7 @@ internal static class HelpText
                                  Comma-separated or repeated. Default: auto
           -f, --format <fmt>     Output format: text json sarif. Default: text
           -o, --output <path>    Write output to file instead of stdout
+          --password <pw>        Password for an encrypted input. Default: none (empty user password)
           --severity <sev>       Min severity of failures to show: error warning info. Default: error
           --fail-on <sev>        Exit-code threshold: error warning info none. Default: error
           -r, --recurse          Recurse into directories

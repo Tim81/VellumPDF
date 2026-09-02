@@ -45,15 +45,17 @@ public sealed class ConformanceCatalogTests
             Assert.Equal(0, s.Deferred);
         }
 
-        // The ONLY non-Implemented checks are these five, each tracked in a follow-up issue:
+        // The ONLY non-Implemented checks are these four, each tracked in a follow-up issue:
         //   - Partial (common path implemented + veraPDF-verified, residual infeasible clean-room):
         //     6.1.13-10, 6.2.11.3.1-1, 7.21.3.1-1 — predefined-CJK-CMap sub-conditions (#139).
-        //   - OutOfScope (not implemented at all): 6.8-5 (needs a PDF/A-1 profile, #140),
-        //     7.16-1 (needs a way to hand a preflight run an encrypted document's password, #138).
+        //   - OutOfScope (not implemented at all): 6.8-5 (needs a PDF/A-1 profile, #140).
+        // 7.16-1 moved to Implemented in #138: UaEncryptionPermissionsRule checks /Encrypt /P bit
+        // 10, and PdfPreflight/the CLI gained a password parameter so a password-protected document
+        // can reach rule evaluation at all.
         var expectedPartial = new HashSet<string>(StringComparer.Ordinal)
             { "6.1.13-10", "6.2.11.3.1-1", "7.21.3.1-1" };
         var expectedOutOfScope = new HashSet<string>(StringComparer.Ordinal)
-            { "6.8-5", "7.16-1" };
+            { "6.8-5" };
         Assert.Equal(
             expectedPartial,
             all.Where(c => c.Status == CoverageStatus.Partial).Select(c => c.TestId).ToHashSet(StringComparer.Ordinal));
