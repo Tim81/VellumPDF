@@ -22,9 +22,10 @@ public sealed class UaEncryptionPermissionsRuleTests
     // ── Fixture 1: compliant, writer-built ────────────────────────────────────────────────────────
 
     /// <summary>
-    /// <c>Permissions = All</c> sets every bit <c>StandardSecurityHandler</c> can set, including
-    /// bit 10 (<c>PdfPermissions.Extract</c>) — the writer's ordinary output already satisfies
-    /// §7.16-1. <c>P = (0xFFFFF2C0 | (0xF3C &amp; 0xFFF)) &amp; ~3 = -4</c> by hand.
+    /// <c>Permissions = All</c> sets every bit <c>StandardSecurityHandler</c> can set; bit 10 is
+    /// forced on by the handler's mask since #397 whatever the flags say, so the writer's
+    /// ordinary output already satisfies §7.16-1.
+    /// <c>P = (0xFFFFF2C0 | (0xF3C &amp; 0xFFF)) &amp; ~3 = -4</c> by hand.
     /// </summary>
     [Fact]
     public void CompliantDocument_AllPermissions_bit10Set_noFinding()
