@@ -59,7 +59,10 @@ internal interface IContentVisitor
     /// <see cref="Matrix.Identity"/> when absent or malformed. The interpreter does not compose this
     /// with the CTM itself; that is left to the caller.</param>
     /// <param name="boundingBox">The form's <c>/BBox</c> (Table 93, Required), or
-    /// <see langword="null"/> when absent or malformed.</param>
+    /// <see langword="null"/> when the entry is absent (Table 93 marks it Required, so a
+    /// <see langword="null"/> here is itself a malformation the visitor may report) or does not
+    /// resolve to a four-number array. This interpreter raises no new diagnostic of its own for
+    /// either case.</param>
     /// <param name="objectNumber">The form stream's own indirect object number.</param>
     /// <param name="offset">The byte offset of the <c>Do</c> operator that invoked this form, in the
     /// buffer the interpreter was walking at the time, i.e. the INVOKING stream's own offset space,

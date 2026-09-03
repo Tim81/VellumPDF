@@ -45,6 +45,7 @@ public sealed class PdfReaderDiagnosticCodeTests
         [PdfReaderDiagnosticCode.ResourceMissing] = 3,
         [PdfReaderDiagnosticCode.InlineImageMalformed] = 3,
         [PdfReaderDiagnosticCode.ContentStreamTooLarge] = 3,
+        [PdfReaderDiagnosticCode.ContentLimitExceeded] = 3,
         [PdfReaderDiagnosticCode.DiagnosticsSuppressed] = 9,
     };
 
@@ -144,7 +145,7 @@ public sealed class PdfReaderDiagnosticCodeTests
         [PdfReaderDiagnosticCode.PageTreeNodeMalformed] = (206, PdfReaderDiagnosticSeverity.Warning),
         [PdfReaderDiagnosticCode.PageTreeNodeLimitExceeded] = (207, PdfReaderDiagnosticSeverity.Warning),
         [PdfReaderDiagnosticCode.ContentStreamLexError] = (300, PdfReaderDiagnosticSeverity.Warning),
-        [PdfReaderDiagnosticCode.UnknownOperator] = (301, PdfReaderDiagnosticSeverity.Info),
+        [PdfReaderDiagnosticCode.UnknownOperator] = (301, PdfReaderDiagnosticSeverity.Warning),
         [PdfReaderDiagnosticCode.OperandStackMalformed] = (302, PdfReaderDiagnosticSeverity.Warning),
         [PdfReaderDiagnosticCode.FormXObjectDepthExceeded] = (303, PdfReaderDiagnosticSeverity.Warning),
         [PdfReaderDiagnosticCode.FormXObjectCycle] = (304, PdfReaderDiagnosticSeverity.Warning),
@@ -152,6 +153,7 @@ public sealed class PdfReaderDiagnosticCodeTests
         [PdfReaderDiagnosticCode.ResourceMissing] = (306, PdfReaderDiagnosticSeverity.Warning),
         [PdfReaderDiagnosticCode.InlineImageMalformed] = (307, PdfReaderDiagnosticSeverity.Warning),
         [PdfReaderDiagnosticCode.ContentStreamTooLarge] = (308, PdfReaderDiagnosticSeverity.Warning),
+        [PdfReaderDiagnosticCode.ContentLimitExceeded] = (309, PdfReaderDiagnosticSeverity.Warning),
         [PdfReaderDiagnosticCode.DiagnosticsSuppressed] = (900, PdfReaderDiagnosticSeverity.Warning),
     };
 

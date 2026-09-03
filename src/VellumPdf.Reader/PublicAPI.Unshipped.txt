@@ -37,6 +37,7 @@ VellumPdf.Reader.PdfReaderDiagnostic.PageIndex.get -> int?
 VellumPdf.Reader.PdfReaderDiagnostic.Severity.get -> VellumPdf.Reader.PdfReaderDiagnosticSeverity
 override VellumPdf.Reader.PdfReaderDiagnostic.ToString() -> string!
 VellumPdf.Reader.PdfReaderDiagnosticCode
+VellumPdf.Reader.PdfReaderDiagnosticCode.ContentLimitExceeded = 309 -> VellumPdf.Reader.PdfReaderDiagnosticCode
 VellumPdf.Reader.PdfReaderDiagnosticCode.ContentStreamLexError = 300 -> VellumPdf.Reader.PdfReaderDiagnosticCode
 VellumPdf.Reader.PdfReaderDiagnosticCode.ContentStreamTooLarge = 308 -> VellumPdf.Reader.PdfReaderDiagnosticCode
 VellumPdf.Reader.PdfReaderDiagnosticCode.DecodeParmsMalformed = 108 -> VellumPdf.Reader.PdfReaderDiagnosticCode

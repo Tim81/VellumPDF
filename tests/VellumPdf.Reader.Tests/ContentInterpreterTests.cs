@@ -224,7 +224,7 @@ public sealed class ContentInterpreterTests
 
         var reports = reader.Diagnostics.Where(d => d.Code == PdfReaderDiagnosticCode.UnknownOperator).ToList();
         Assert.Single(reports);
-        Assert.Equal(PdfReaderDiagnosticSeverity.Info, reports[0].Severity);
+        Assert.Equal(PdfReaderDiagnosticSeverity.Warning, reports[0].Severity);
         Assert.Contains("'Zork'", reports[0].Message);
     }
 
@@ -239,36 +239,73 @@ public sealed class ContentInterpreterTests
         Assert.Contains(visitor.Operators, o => o.Op == "Q");
     }
 
+    [Fact]
+    public void UnknownOperatorInsideBX_dropsItsOperands_perTable33()
+    {
+        // Table 33: "Unrecognised operators (along with their operands) shall be ignored without
+        // error until the balancing EX operator is encountered" (#402). Before the fix, the
+        // unknown-operator branch never cleared the operand stack regardless of _bxDepth, so the
+        // 1 2 3 preceding SomeFutureOp survived to be misread as w's own operand.
+        const string content = "BX\n1 2 3 SomeFutureOp\n5 w\nEX\n";
+
+        var (reader, _, visitor) = Run(BuildPageDoc(content));
+
+        Assert.Equal(["BX", "w", "EX"], visitor.Operators.Select(o => o.Op));
+        var w = visitor.Operators.Single(o => o.Op == "w");
+        Assert.Equal(5, ((PdfInteger)w.Operands[0]).Value);
+        Assert.DoesNotContain(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.OperandStackMalformed);
+        Assert.DoesNotContain(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.UnknownOperator);
+    }
+
     // ── Operand-stack and graphics-state caps ───────────────────────────────────────────────────
 
     [Fact]
-    public void OperandStackCap_32IsOk_33IsMalformed()
+    public void OperandStackCap_64IsOk_65IsALimitNotAMalformation()
     {
-        // 32 numeric operands, none consumed by a real operator (so this pins the CAP itself, not
-        // any one operator's own arity): the 32nd push must not itself overflow.
-        var okContent = string.Join(' ', Enumerable.Repeat("1", 32));
-        var overContent = string.Join(' ', Enumerable.Repeat("1", 33));
+        // 64 numeric operands, none consumed by an operator (so this pins the CAP itself, not any
+        // one operator's own arity): the 64th push must not itself overflow. 64, not 32:
+        // Table 73's scn operator can legally take 33+ operands for a DeviceN space with many
+        // colourants (see the cap's own comment in ContentInterpreter), so 32 rejected a legal call.
+        var okContent = string.Join(' ', Enumerable.Repeat("1", 64));
+        var overContent = string.Join(' ', Enumerable.Repeat("1", 65));
 
         var (okReader, _, _) = Run(BuildPageDoc(okContent));
-        Assert.DoesNotContain(okReader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.OperandStackMalformed);
+        Assert.DoesNotContain(okReader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ContentLimitExceeded);
 
         var (overReader, _, _) = Run(BuildPageDoc(overContent));
-        Assert.Contains(overReader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.OperandStackMalformed);
+        // This reader's own ceiling, not a producer-side malformation: ContentLimitExceeded (#402),
+        // not OperandStackMalformed.
+        Assert.Contains(overReader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ContentLimitExceeded);
+        Assert.DoesNotContain(overReader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.OperandStackMalformed);
     }
 
     [Fact]
-    public void TjArrayCap_8192IsOk_8193IsMalformed()
+    public void TjArrayCap_8192IsOk_8193IsALimitNotAMalformation()
     {
         var okArray = "[" + string.Concat(Enumerable.Repeat("0 ", 8192)) + "] TJ\n";
         var overArray = "[" + string.Concat(Enumerable.Repeat("0 ", 8193)) + "] TJ\n";
 
         var (okReader, _, okVisitor) = Run(BuildPageDoc(okArray));
-        Assert.DoesNotContain(okReader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.OperandStackMalformed);
+        Assert.DoesNotContain(okReader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ContentLimitExceeded);
         Assert.Single(okVisitor.Operators, o => o.Op == "TJ");
 
         var (overReader, _, overVisitor) = Run(BuildPageDoc(overArray));
-        Assert.Contains(overReader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.OperandStackMalformed);
+        Assert.Contains(overReader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ContentLimitExceeded);
+        Assert.DoesNotContain(overReader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.OperandStackMalformed);
         Assert.DoesNotContain(overVisitor.Operators, o => o.Op == "TJ");
+    }
+
+    [Fact]
+    public void TjOperand_notAnArray_reportsOperandStackMalformed_notALimit()
+    {
+        // A wrong TYPE (a producer-side malformation) must stay OperandStackMalformed even though
+        // the ELEMENT-COUNT cap right beside it in the same switch case moved to ContentLimitExceeded.
+        var (reader, _, visitor) = Run(BuildPageDoc("5 TJ\n1 w\n"));
+
+        Assert.Contains(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.OperandStackMalformed);
+        Assert.DoesNotContain(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ContentLimitExceeded);
+        Assert.DoesNotContain(visitor.Operators, o => o.Op == "TJ");
+        Assert.Contains(visitor.Operators, o => o.Op == "w");
     }
 
     [Fact]
@@ -488,6 +525,154 @@ public sealed class ContentInterpreterTests
         Assert.Equal(11, begin.ObjectNumber);
     }
 
+    [Fact]
+    public void Form_matrixAndBBox_resolveThroughAnIndirectReference()
+    {
+        // §7.3.10 lets any dictionary entry be given as an indirect reference; Table 93 gives
+        // /Matrix and /BBox no direct-only restriction, so both must resolve before the shape
+        // check ContentInterpreter runs against them (#402).
+        var doc = BuildPageDoc(
+            "/F1 Do\n", "<< /XObject << /F1 11 0 R >> >>",
+            new Obj(
+                11, "<< /Type /XObject /Subtype /Form /BBox 12 0 R /Matrix 13 0 R >>", []),
+            new Obj(12, "[1 2 3 4]"),
+            new Obj(13, "[2 0 0 2 5 6]"));
+
+        var (_, _, visitor) = Run(doc);
+
+        var begin = Assert.Single(visitor.FormBegins);
+        Assert.Equal(new Matrix(2, 0, 0, 2, 5, 6), begin.Matrix);
+        Assert.NotNull(begin.BBox);
+        Assert.Equal(1, begin.BBox!.LlX);
+        Assert.Equal(4, begin.BBox.UrY);
+    }
+
+    // ── Do brackets a form's content in an implicit q/Q (ISO 32000-2 §8.10.1) ───────────────────
+
+    [Fact]
+    public void Do_onAFormThatChangesTheCtm_doesNotLeakTheChangeIntoTheInvoker()
+    {
+        var doc = BuildPageDoc(
+            "/F1 Do\n1 w\n", "<< /XObject << /F1 11 0 R >> >>",
+            new Obj(
+                11, "<< /Type /XObject /Subtype /Form /BBox [0 0 10 10] >>",
+                "3 0 0 3 0 0 cm"u8.ToArray()));
+
+        var interpreter = RunAndKeepInterpreter(doc, out var reader);
+
+        Assert.Equal(Matrix.Identity, interpreter.GraphicsState.Ctm);
+        Assert.DoesNotContain(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.OperandStackMalformed);
+    }
+
+    [Fact]
+    public void Do_onAFormWithUnbalancedQ_doesNotPopThePagesOwnSave()
+    {
+        var doc = BuildPageDoc(
+            "q\n/F1 Do\nQ\n1 w\n", "<< /XObject << /F1 11 0 R >> >>",
+            new Obj(
+                11, "<< /Type /XObject /Subtype /Form /BBox [0 0 10 10] >>", "Q Q Q"u8.ToArray()));
+
+        var (reader, _, visitor) = Run(doc);
+
+        // The form's three stray 'Q's each report against the form's own object number, 11, and
+        // the page's own 'q'/'Q' pairing (opened before Do, closed after it) stays untouched: the
+        // page's own Q must not itself be reported as unbalanced.
+        var malformed = reader.Diagnostics.Where(d => d.Code == PdfReaderDiagnosticCode.OperandStackMalformed).ToList();
+        Assert.NotEmpty(malformed);
+        Assert.All(malformed, d => Assert.Equal(11, d.ObjectNumber));
+        Assert.Contains(visitor.Operators, o => o.Op == "w");
+    }
+
+    [Fact]
+    public void Do_onAQOnlyForm_drawn70Times_producesNoGraphicsStateDepthDiagnostic()
+    {
+        var pageContent = string.Concat(Enumerable.Repeat("/F1 Do\n", 70)) + "1 w\n";
+        var doc = BuildPageDoc(
+            pageContent, "<< /XObject << /F1 11 0 R >> >>",
+            new Obj(11, "<< /Type /XObject /Subtype /Form /BBox [0 0 10 10] >>", "q\n"u8.ToArray()));
+
+        var (reader, _, visitor) = Run(doc);
+
+        Assert.DoesNotContain(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ContentLimitExceeded);
+        Assert.Contains(visitor.Operators, o => o.Op == "w");
+    }
+
+    [Fact]
+    public void Do_onAFormWithAStrayEmcAndUnbalancedBX_leavesThePageStateBalanced()
+    {
+        var doc = BuildPageDoc(
+            "BDC\n/F1 Do\nEMC\nZorkAfterDo\n",
+            "<< /XObject << /F1 12 0 R >> >>",
+            new Obj(
+                11, "<< /Type /XObject /Subtype /Form /BBox [0 0 10 10] >>", "EMC"u8.ToArray()),
+            new Obj(
+                12, "<< /Type /XObject /Subtype /Form /BBox [0 0 10 10] "
+                + "/Resources << /XObject << /F1 11 0 R >> >> >>",
+                "/Span << >> BDC\n/F1 Do\n"u8.ToArray()));
+
+        var (reader, _, visitor) = Run(doc);
+
+        // The innermost form's stray EMC is reported against ITS OWN object number (11), and the
+        // page's own BDC (opened before Do, closed by the page's own EMC after it) still balances:
+        // no diagnostic against the page (null object number) for an unmatched EMC.
+        var emcReports = reader.Diagnostics
+            .Where(d => d.Code == PdfReaderDiagnosticCode.OperandStackMalformed
+                && d.Message.Contains("EMC", StringComparison.Ordinal))
+            .ToList();
+        Assert.Contains(emcReports, d => d.ObjectNumber == 11);
+        Assert.DoesNotContain(emcReports, d => d.ObjectNumber is null);
+
+        // The middle form's unbalanced BX leaves the PAGE outside a compatibility section once Do
+        // returns (the floor resets _bxDepth back to 0, not to "still inside BX"), so the page's
+        // own unknown operator right after Do is reported rather than silently swallowed.
+        Assert.Contains(
+            reader.Diagnostics,
+            d => d.Code == PdfReaderDiagnosticCode.UnknownOperator
+                && d.Message.Contains("ZorkAfterDo", StringComparison.Ordinal));
+    }
+
+    // ── The 64 MiB content budget covers Form XObject invocations too (#402) ───────────────────
+
+    [Fact]
+    public void FormDrawnRepeatedly_countsTowardTheSameContentBudgetAsThePage()
+    {
+        // A form whose own decoded content is ~20 MiB, drawn 4 times: well past the combined
+        // 64 MiB page-and-forms budget on the 4th invocation, without any single form or the
+        // page's own /Contents alone being anywhere near the cap.
+        var unit = "0 0 1 1 re\n"u8.ToArray();
+        var repeatsPerForm = (20 * 1024 * 1024) / unit.Length;
+        var formBody = new byte[unit.Length * repeatsPerForm];
+        for (var i = 0; i < repeatsPerForm; i++)
+            unit.CopyTo(formBody, i * unit.Length);
+
+        var pageContent = string.Concat(Enumerable.Repeat("/F1 Do\n", 4)) + "1 w\n";
+        var doc = BuildPageDoc(
+            pageContent, "<< /XObject << /F1 11 0 R >> >>",
+            new Obj(11, "<< /Type /XObject /Subtype /Form /BBox [0 0 10 10] >>", formBody));
+
+        var (reader, _, visitor) = Run(doc);
+
+        var tooLarge = reader.Diagnostics.Where(d => d.Code == PdfReaderDiagnosticCode.ContentStreamTooLarge).ToList();
+        Assert.Single(tooLarge);
+
+        // Expected operator count computed from the byte budget, not read off the output: the
+        // whole 64 MiB budget divided by one form's own byte length gives how many WHOLE forms
+        // fit, each contributing repeatsPerForm 're' operators (the page's own /Contents is a few
+        // bytes and negligible against a 64 MiB budget).
+        var wholeFormsThatFit = (int)(ContentInterpreterBudget.MaxContentBytes / formBody.Length);
+        var reOps = visitor.Operators.Where(o => o.Op == "re").ToList();
+        Assert.True(reOps.Count >= wholeFormsThatFit * repeatsPerForm);
+        Assert.True(reOps.Count < 4 * repeatsPerForm);
+        Assert.Contains(visitor.Operators, o => o.Op == "w"); // the page's own content after the last Do still ran
+    }
+
+    // Mirrors ContentInterpreter's own private MaxContentBytes so the test above can compute an
+    // expected operator count from the budget rather than reading it off the interpreter's output.
+    private static class ContentInterpreterBudget
+    {
+        internal const long MaxContentBytes = 64L * 1024 * 1024;
+    }
+
     // ── Inline images ────────────────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -535,6 +720,39 @@ public sealed class ContentInterpreterTests
         var img = Assert.Single(visitor.InlineImages);
         Assert.True(img.Data.AsSpan().SequenceEqual(data));
         Assert.Contains(visitor.Operators, o => o.Op == "Q");
+    }
+
+    [Fact]
+    public void NegativeL_reportsMalformed_andRecoversViaTheEiScan()
+    {
+        byte[] data = "ABCDEFGH"u8.ToArray();
+        var content = "BI /F /AHx /L -1 ID " + Encoding.ASCII.GetString(data) + " EI\nQ\n";
+
+        var (reader, _, visitor) = Run(BuildPageDoc(content));
+
+        Assert.Contains(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.InlineImageMalformed);
+        var img = Assert.Single(visitor.InlineImages);
+        Assert.True(img.Data.AsSpan().SequenceEqual(data));
+        Assert.Contains(visitor.Operators, o => o.Op == "Q");
+    }
+
+    [Theory]
+    [InlineData("4294967298")] // outside int's range
+    [InlineData("2.9")] // a PdfReal, not a PdfInteger (Table 87 types /W as integer)
+    public void InvalidW_takesTheEiScanPath_withTheMissingOrInvalidReport(string invalidWidth)
+    {
+        byte[] data = "ABCD"u8.ToArray();
+        var content = $"BI /W {invalidWidth} /H 2 /BPC 8 /CS /G ID "
+            + Encoding.ASCII.GetString(data) + " EI\nQ\n";
+
+        var (reader, _, visitor) = Run(BuildPageDoc(content));
+
+        Assert.Contains(
+            reader.Diagnostics,
+            d => d.Code == PdfReaderDiagnosticCode.InlineImageMalformed
+                && d.Message.Contains("missing, or carries an invalid", StringComparison.Ordinal));
+        var img = Assert.Single(visitor.InlineImages);
+        Assert.True(img.Data.AsSpan().SequenceEqual(data));
     }
 
     [Fact]
@@ -599,6 +817,218 @@ public sealed class ContentInterpreterTests
         var img = Assert.Single(visitor.InlineImages);
         Assert.True(img.Data.AsSpan().SequenceEqual(data));
         Assert.Equal("Q", Assert.Single(visitor.Operators).Op);
+    }
+
+    // ── The bounded resync probe (#402): linear-time scan, less strict, still rejects noise ────
+
+    [Fact]
+    public void ManyFalseEiCandidates_doesNotThrow_andReportsADiagnostic()
+    {
+        // Reproduces the pre-#402 quadratic blowup: N repeats of " EI (" (a false candidate
+        // followed by the start of a literal string) after a DCT-filtered image's own data. The
+        // unbounded probe this used to run from EVERY candidate re-lexed all the way to the end of
+        // the buffer looking for the string's own closing ')', which never comes; O(N) work per
+        // candidate made the whole scan O(N^2) (measured pre-fix: 100 KB content, 18 s; 400 KB,
+        // 305 s, from a 1.2 KB Flate-compressed source). The bounded probe caps the per-candidate
+        // cost, so this reads (with `dotnet test`'s own default timeout as the actual regression
+        // guard, per this repo's no-wall-clock-assertion rule) rather than hanging.
+        const int n = 20_000;
+        var falseCandidate = " EI ("u8.ToArray();
+        var noise = new byte[falseCandidate.Length * n];
+        for (var i = 0; i < n; i++)
+            falseCandidate.CopyTo(noise, i * falseCandidate.Length);
+
+        var content = "BI /F /DCT ID "u8.ToArray()
+            .Concat<byte>([0xFF, 0xD8, 0xFF])
+            .Concat(noise)
+            .ToArray();
+        var doc = BuildPageDocRaw(content);
+
+        var (reader, _, _) = Run(doc);
+
+        Assert.Contains(
+            reader.Diagnostics,
+            d => d.Code is PdfReaderDiagnosticCode.ContentStreamLexError
+                or PdfReaderDiagnosticCode.InlineImageMalformed);
+    }
+
+    [Fact]
+    public void FalseEiCandidate_followedByAnUnknownButPrintableOperator_isAccepted()
+    {
+        // 'PS' is an unrecognised-but-printable operator name (§7.8.2 tolerates it outside
+        // BX/EX); the probe accepts it as a plausible operator rather than rejecting the whole
+        // candidate on account of it, so the false EI right after the image data still resolves
+        // correctly, and 'PS' itself reaches the ordinary unknown-operator path once the
+        // interpreter's own main loop gets there.
+        byte[] data = [0xFF, 0xD8, 0xFF];
+        var content = "q\nBI /F /DCT ID "u8.ToArray()
+            .Concat(data)
+            .Concat(" EI PS Q 1 w\n"u8.ToArray())
+            .ToArray();
+        var doc = BuildPageDocRaw(content);
+
+        var (reader, _, visitor) = Run(doc);
+
+        var img = Assert.Single(visitor.InlineImages);
+        Assert.True(img.Data.AsSpan().SequenceEqual(data));
+        Assert.Contains(
+            reader.Diagnostics,
+            d => d.Code == PdfReaderDiagnosticCode.UnknownOperator
+                && d.Message.Contains("'PS'", StringComparison.Ordinal));
+        Assert.Equal(["q", "Q", "w"], visitor.Operators.Select(o => o.Op));
+    }
+
+    [Fact]
+    public void FalseEiCandidate_followedByABxExSection_isAccepted()
+    {
+        byte[] data = [0xFF, 0xD8, 0xFF];
+        var content = "q\nBI /F /DCT ID "u8.ToArray()
+            .Concat(data)
+            .Concat(" EI BX { } EX Q 1 w\n"u8.ToArray())
+            .ToArray();
+        var doc = BuildPageDocRaw(content);
+
+        var (reader, _, visitor) = Run(doc);
+
+        Assert.DoesNotContain(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.InlineImageMalformed);
+        Assert.DoesNotContain(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ContentStreamLexError);
+        var img = Assert.Single(visitor.InlineImages);
+        Assert.True(img.Data.AsSpan().SequenceEqual(data));
+        Assert.Contains(visitor.Operators, o => o.Op == "Q");
+        Assert.Contains(visitor.Operators, o => o.Op == "w");
+    }
+
+    [Fact]
+    public void TwoConsecutiveInlineImages_theSecondWithAShortDictionary_bothDelimitCorrectly()
+    {
+        byte[] data1 = [0x10, 0x20, 0x30, 0x40]; // no 'E'/'I' bytes: unambiguous EI scan
+        byte[] data2 = [0x99]; // /H is absent, so this one falls to the EI scan too
+        var content = "BI /F /DCT ID "u8.ToArray()
+            .Concat(data1).Concat(" EI\n"u8.ToArray())
+            .Concat("BI /IM true /W 8 ID "u8.ToArray())
+            .Concat(data2).Concat(" EI\nQ\n"u8.ToArray())
+            .ToArray();
+        var doc = BuildPageDocRaw(content);
+
+        var (reader, _, visitor) = Run(doc);
+
+        Assert.Equal(2, visitor.InlineImages.Count);
+        Assert.True(visitor.InlineImages[0].Data.AsSpan().SequenceEqual(data1));
+        Assert.True(visitor.InlineImages[1].Data.AsSpan().SequenceEqual(data2));
+        Assert.Contains(visitor.Operators, o => o.Op == "Q");
+    }
+
+    [Fact]
+    public void FalseEiCandidate_followedByALongLiteralStringStraddlingTheProbeWindow_isAccepted()
+    {
+        // The probe's own bounded lexer runs off its 128-byte window mid-string here (the literal
+        // is 200 bytes, longer than the window), the inconclusive case this reader accepts rather
+        // than rejects: PdfLexer's string readers advance Position as they read, so reaching the
+        // window's own end here means the window ran out, not that the bytes were malformed.
+        var longLiteral = new string('X', 200);
+        byte[] data = [0xFF, 0xD8, 0xFF];
+        var content = "BI /F /DCT ID "u8.ToArray()
+            .Concat(data)
+            .Concat(Encoding.ASCII.GetBytes($" EI ({longLiteral}) Tj\nQ\n"))
+            .ToArray();
+        var doc = BuildPageDocRaw(content);
+
+        var (reader, _, visitor) = Run(doc);
+
+        Assert.DoesNotContain(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.InlineImageMalformed);
+        var img = Assert.Single(visitor.InlineImages);
+        Assert.True(img.Data.AsSpan().SequenceEqual(data));
+        var tj = Assert.Single(visitor.Operators, o => o.Op == "Tj");
+        var str = (PdfLiteralString)tj.Operands[0];
+        Assert.Equal(longLiteral, Encoding.ASCII.GetString(str.Bytes.Span));
+    }
+
+    // ── A failed tier-a/tier-b end falls back to the scan instead of losing the stream (#402) ──
+
+    [Fact]
+    public void L_oneShort_reportsMalformed_andRecoversViaTheEiScan()
+    {
+        byte[] data = "ABCD"u8.ToArray();
+        var content = $"BI /F /AHx /L {data.Length - 1} ID "
+            + Encoding.ASCII.GetString(data) + " EI\nQ\n1 w\n";
+
+        var (reader, _, visitor) = Run(BuildPageDoc(content));
+
+        Assert.Contains(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.InlineImageMalformed);
+        var img = Assert.Single(visitor.InlineImages);
+        Assert.True(img.Data.AsSpan().SequenceEqual(data));
+        Assert.Contains(visitor.Operators, o => o.Op == "Q");
+        Assert.Contains(visitor.Operators, o => o.Op == "w");
+    }
+
+    [Fact]
+    public void IdFollowedByCrLf_unfilteredImage_treatsBothBytesAsOneSeparator()
+    {
+        var content = "BI /W 2 /H 2 /BPC 8 /CS /G ID\r\nABCD EI\nQ\n1 w\n";
+
+        var (reader, _, visitor) = Run(BuildPageDoc(content));
+
+        Assert.DoesNotContain(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.InlineImageMalformed);
+        var img = Assert.Single(visitor.InlineImages);
+        Assert.True(img.Data.AsSpan().SequenceEqual("ABCD"u8.ToArray()));
+        Assert.Contains(visitor.Operators, o => o.Op == "Q");
+        Assert.Contains(visitor.Operators, o => o.Op == "w");
+    }
+
+    [Fact]
+    public void IdFollowedByCrLf_withExplicitL_treatsBothBytesAsOneSeparator()
+    {
+        var content = "BI /F /AHx /L 4 ID\r\nABCD EI\nQ\n1 w\n";
+
+        var (reader, _, visitor) = Run(BuildPageDoc(content));
+
+        Assert.DoesNotContain(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.InlineImageMalformed);
+        var img = Assert.Single(visitor.InlineImages);
+        Assert.True(img.Data.AsSpan().SequenceEqual("ABCD"u8.ToArray()));
+        Assert.Contains(visitor.Operators, o => o.Op == "Q");
+        Assert.Contains(visitor.Operators, o => o.Op == "w");
+    }
+
+    [Fact]
+    public void W_zero_reportsMalformed_andRecoversViaTheEiScan()
+    {
+        var content = "BI /W 0 /H 2 /BPC 8 /CS /G ID ABCD EI\nQ\n1 w\n";
+
+        var (reader, _, visitor) = Run(BuildPageDoc(content));
+
+        Assert.Contains(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.InlineImageMalformed);
+        var img = Assert.Single(visitor.InlineImages);
+        Assert.True(img.Data.AsSpan().SequenceEqual("ABCD"u8.ToArray()));
+        Assert.Contains(visitor.Operators, o => o.Op == "Q");
+        Assert.Contains(visitor.Operators, o => o.Op == "w");
+    }
+
+    // ── Table 92 abbreviations inside a /CS array (#402) ────────────────────────────────────────
+
+    [Fact]
+    public void CsArray_tableNinetyTwoAbbreviationsExpand_andIndexedComponentCountDrivesTierB()
+    {
+        // §8.9.7's one composite inline colour space: [/I baseSpace hival lookup]. /I and /RGB
+        // (the array's first two elements) are Table 92 abbreviations; 1 and the hex string are
+        // left alone. An array whose first element is /Indexed counts one component regardless of
+        // the base space (§8.6.6.3: an Indexed sample is always a single index value), so tier b
+        // computes the data length without resolving /DeviceRGB's own component count at all. A
+        // literal " EI x" is embedded inside the tier-b-computed 5-byte data window: if this
+        // regressed to the EI scan (tier c) instead, that decoy would be mistaken for the
+        // terminator, and the image would come out 1 byte long instead of 5.
+        var content = "BI /W 5 /H 1 /BPC 8 /CS [/I /RGB 1 <000000FFFFFF>] ID  EI x EI\nQ\n1 w\n";
+
+        var (reader, _, visitor) = Run(BuildPageDoc(content));
+
+        var img = Assert.Single(visitor.InlineImages);
+        var csArray = (PdfArray)img.Dict.Get(PdfName.ColorSpace)!;
+        Assert.Equal(4, csArray.Count);
+        Assert.Equal("Indexed", ((PdfName)csArray[0]).Value);
+        Assert.Equal("DeviceRGB", ((PdfName)csArray[1]).Value);
+        Assert.Equal(1, ((PdfInteger)csArray[2]).Value);
+        Assert.True(img.Data.AsSpan().SequenceEqual(" EI x"u8.ToArray()));
+        Assert.Contains(visitor.Operators, o => o.Op == "Q");
+        Assert.Contains(visitor.Operators, o => o.Op == "w");
     }
 
     [Fact]
@@ -761,6 +1191,96 @@ public sealed class ContentInterpreterTests
         });
     }
 
+    [Fact]
+    public void ContentExceeding64MiB_acrossTwoStreams_appendsTheSecondStreamAfterTheFirst_notOverIt()
+    {
+        // A regression pin for a wrong Array.Copy overload (#402): copying the truncated tail
+        // chunk to index 0 of the capped buffer, rather than to `written`, silently overwrote the
+        // FIRST stream's own already-copied bytes once a second stream needed truncating. The
+        // single-stream cap test above cannot catch this: it never has anything already written
+        // when the truncation branch runs (`written == 0` there), so the wrong overload and the
+        // right one produce identical output in that one-stream case.
+        var unitA = "0 0 1 1 re\n"u8.ToArray();
+        var repeatsA = 40 * 1024 * 1024 / unitA.Length;
+        var rawA = new byte[unitA.Length * repeatsA];
+        for (var i = 0; i < repeatsA; i++)
+            unitA.CopyTo(rawA, i * unitA.Length);
+
+        var unitB = "1 w\n"u8.ToArray();
+        var repeatsB = 30 * 1024 * 1024 / unitB.Length;
+        var rawB = new byte[unitB.Length * repeatsB];
+        for (var i = 0; i < repeatsB; i++)
+            unitB.CopyTo(rawB, i * unitB.Length);
+
+        var doc = BuildPdf(
+            1,
+            new Obj(1, "<< /Type /Catalog /Pages 2 0 R >>"),
+            new Obj(2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
+            new Obj(3,
+                "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+                + "/Resources << >> /Contents [4 0 R 5 0 R] >>"),
+            new Obj(4, "<< /Filter /FlateDecode >>", Flate(rawA)),
+            new Obj(5, "<< /Filter /FlateDecode >>", Flate(rawB)));
+
+        var (reader, _, visitor) = Run(doc);
+
+        Assert.Contains(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ContentStreamTooLarge);
+        Assert.DoesNotContain(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.OperandStackMalformed);
+
+        var reOps = visitor.Operators.TakeWhile(o => o.Op == "re").ToList();
+        Assert.Equal(repeatsA, reOps.Count);
+        Assert.All(reOps, o => Assert.Equal(4, o.Operands.Count));
+
+        var rest = visitor.Operators.Skip(reOps.Count).ToList();
+        Assert.NotEmpty(rest);
+        Assert.True(rest.Count < repeatsB);
+        Assert.All(rest, o =>
+        {
+            Assert.Equal("w", o.Op);
+            Assert.Single(o.Operands);
+        });
+    }
+
+    // ── ContentStreamTooLarge and FormXObjectBudgetExceeded use ReportRetained (#402) ───────────
+
+    [Fact]
+    public void ContentStreamTooLarge_isRetainedEvenOnceMaxDiagnosticsIsAlreadySpent()
+    {
+        // Two pages: page 0 spends the whole cap (MaxDiagnostics = 1) on an ordinary UnknownOperator
+        // report; page 1's /Contents then exceeds the 64 MiB budget. Without ReportRetained, that
+        // second report would be silently dropped in favour of the DiagnosticsSuppressed sentinel,
+        // since the sink's ordinary cap (shared across the whole reader, not per page) is already
+        // full by the time page 1 is interpreted (#398 set this rule for PageTreeWalker; this is
+        // the content-interpreter counterpart).
+        var unit = "0 0 1 1 re\n"u8.ToArray();
+        var repeats = (67 * 1024 * 1024 / unit.Length) + 200_000;
+        var raw = new byte[unit.Length * repeats];
+        for (var i = 0; i < repeats; i++)
+            unit.CopyTo(raw, i * unit.Length);
+
+        var doc = BuildPdf(
+            1,
+            new Obj(1, "<< /Type /Catalog /Pages 2 0 R >>"),
+            new Obj(2, "<< /Type /Pages /Kids [3 0 R 6 0 R] /Count 2 >>"),
+            new Obj(3,
+                "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+                + "/Resources << >> /Contents 4 0 R >>"),
+            new Obj(4, "<< >>", "Zork\n"u8.ToArray()),
+            new Obj(6,
+                "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+                + "/Resources << >> /Contents 7 0 R >>"),
+            new Obj(7, "<< /Filter /FlateDecode >>", Flate(raw)));
+
+        var reader = PdfReader.Open(doc, new PdfReaderOptions { MaxDiagnostics = 1 });
+        var interpreter = new ContentInterpreter(reader);
+
+        interpreter.Run(reader.GetPage(0), new RecordingVisitor());
+        Assert.Contains(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.UnknownOperator);
+
+        interpreter.Run(reader.GetPage(1), new RecordingVisitor());
+        Assert.Contains(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ContentStreamTooLarge);
+    }
+
     // ── Fuzzing ──────────────────────────────────────────────────────────────────────────────────
 
     private static readonly byte[] FuzzSeed = BuildPdf(
@@ -826,23 +1346,43 @@ public sealed class ContentInterpreterTests
 
     private static void AssertInterpreterIsRobust(byte[] bytes)
     {
+        // Two separate try blocks, not one covering Open/GetPage/Run together: ContentInterpreter's
+        // own class doc promises InvalidDataException never escapes Run (UnsupportedPdfFeatureException
+        // is the one exception allowed to). One try block covering all three would make a Run-time
+        // InvalidDataException indistinguishable from an open-time one, silently accepting a
+        // regression in that promise as just another "acceptable outcome".
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        PdfDocumentReader? reader = null;
+        PdfReadPage? page = null;
         try
         {
-            using var reader = PdfReader.Open(bytes, new PdfReaderOptions
+            reader = PdfReader.Open(bytes, new PdfReaderOptions
             {
                 MaxDecodedStreamBytes = ReaderLimits.MinMaxDecodedBytes,
             });
-            if (reader.PageCount == 0)
-                return;
-            var interpreter = new ContentInterpreter(reader);
-            interpreter.Run(reader.GetPage(0), new RecordingVisitor());
+            if (reader.PageCount != 0)
+                page = reader.GetPage(0);
         }
         catch (Exception ex) when (ex is InvalidDataException or UnsupportedPdfFeatureException or PdfPasswordException)
         {
             // Acceptable outcome; see ParserFuzzTests' own class doc for the same policy this
             // interpreter follows: a robustness oracle, not a conformance one.
         }
+
+        if (page is not null)
+        {
+            try
+            {
+                var interpreter = new ContentInterpreter(reader!);
+                interpreter.Run(page, new RecordingVisitor());
+            }
+            catch (UnsupportedPdfFeatureException)
+            {
+                // The one exception Run's own class doc allows to propagate.
+            }
+        }
+
+        reader?.Dispose();
         Assert.True(
             stopwatch.Elapsed <= TimeSpan.FromSeconds(4),
             $"content interpretation took {stopwatch.Elapsed} on a {bytes.Length}-byte input.");

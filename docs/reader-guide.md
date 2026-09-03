@@ -357,7 +357,7 @@ throws `PdfPasswordException` if the document needs a real one.
 best-effort: a wrong guess at the object graph during recovery produces a wrong, but internally
 consistent, decrypted copy.
 
-**`MaxDecodedStreamBytes`, `ReconstructionBudgetMultiplier`, and `MaxDiagnostics` only go down.**
+**`MaxDecodedStreamBytes`, `ReconstructionBudgetMultiplier`, `MaxDiagnostics`, and `MaxFormXObjectDepth` only go down.**
 Raising any of them above its shipped default throws at `Open` time rather than silently
 clamping — there is no way to ask the reader to trust a file more than its own defaults do.
 

@@ -369,10 +369,11 @@ public enum PdfReaderDiagnosticCode
     /// lists, and it did not appear inside a <c>BX</c>/<c>EX</c> compatibility section (§7.8.2). ISO
     /// 32000-2 says "an error shall occur" for this case outside such a section; this reader instead
     /// reports it and continues, the same notify-and-continue choice every other diagnostic in this
-    /// channel makes. Reported at most once per (page, operator name) rather than once per
-    /// occurrence, since a producer that emits a future operator this reader does not know about
-    /// typically emits it many times on the same page. Silent inside a compatibility section, per
-    /// Table 33's own text: "Unrecognised operators ... shall be ignored without error."
+    /// channel makes. Reported at most once per page, because the sink's dedupe key is
+    /// (code, object, page) and this report carries no object number: a second distinct
+    /// unrecognised name on the same page is deduped away rather than reported. Silent inside a
+    /// compatibility section, per Table 33's own text: "Unrecognised operators ... shall be ignored
+    /// without error."
     /// </summary>
     UnknownOperator = 301,
 
@@ -380,17 +381,18 @@ public enum PdfReaderDiagnosticCode
     /// A content stream's operand-stack discipline broke down in one of several ways this
     /// interpreter groups under one code rather than one each, since every case has the same
     /// remedy: drop the offending operator (or, for an unbalanced <c>Q</c>/<c>EMC</c>, drop the
-    /// pop) and keep interpreting. Covers: more than 32 operands accumulated before an operator
-    /// (§7.8.2 gives an operator's operands no declared bound of its own; this reader's own
-    /// ceiling), a <c>TJ</c> array (§9.4.3) with more than 8192 elements, a number token that does
-    /// not parse or is not finite, a dictionary operand on an operator other than <c>BDC</c>/<c>DP</c>
-    /// (§7.8.2: "Dictionaries shall be permitted as operands only by certain specific operators"),
-    /// a known operator invoked with the wrong operand count for its own arity (Annex A Table A.1),
-    /// an unbalanced <c>Q</c> with no matching <c>q</c> on the graphics-state stack, more than 64
-    /// nested <c>q</c> saves, or an unbalanced <c>EMC</c>/deeply nested <c>BMC</c>/<c>BDC</c>
-    /// (§14.6.2) past the same 64-deep cap. An unbalanced <c>q</c> still open at the end of a
-    /// content stream is not reported: nothing downstream of this interpreter needs the graphics
-    /// state restored past the last operator it saw.
+    /// pop) and keep interpreting. Every case here is a PRODUCER-side malformation, the document
+    /// itself is wrong, not merely bigger than this reader is willing to process; see
+    /// <see cref="ContentLimitExceeded"/> for the four cases that are this reader's own processing
+    /// ceiling instead. Covers: a number token that does not parse, is not finite, or carries a
+    /// second sign character (<c>--5</c>, <c>-+5</c>: §7.3.3 allows only "an optional sign"), a
+    /// dictionary operand on an operator other than <c>BDC</c>/<c>DP</c> (§7.8.2: "Dictionaries
+    /// shall be permitted as operands only by certain specific operators"), a known operator
+    /// invoked with the wrong operand count for its own arity (Annex A Table A.1), an unbalanced
+    /// <c>Q</c> with no matching <c>q</c> on the graphics-state stack, or an unbalanced <c>EMC</c>
+    /// with no matching <c>BMC</c>/<c>BDC</c> (§14.6.1). An unbalanced <c>q</c> still open at the
+    /// end of a content stream is not reported: nothing downstream of this interpreter needs the
+    /// graphics state restored past the last operator it saw.
     /// </summary>
     OperandStackMalformed = 302,
 
@@ -417,7 +419,9 @@ public enum PdfReaderDiagnosticCode
     /// whole page, not per subtree) more than 4096 times. Descent into any further form stops for
     /// the rest of the page; operators already reported before the budget was reached are kept, and
     /// interpretation of the page's own (non-form) content continues past the point where the
-    /// budget was hit.
+    /// budget was hit. Reported through <c>DiagnosticSink.ReportRetained</c>: a condition that ends
+    /// the page's own form recursion for good is worth surfacing even once
+    /// <see cref="PdfReaderOptions.MaxDiagnostics"/> is spent on earlier, unrelated conditions.
     /// </summary>
     FormXObjectBudgetExceeded = 305,
 
@@ -432,24 +436,48 @@ public enum PdfReaderDiagnosticCode
     ResourceMissing = 306,
 
     /// <summary>
-    /// An inline image (ISO 32000-2 §8.9.7) could not be delimited or decoded: a filter this
-    /// interpreter never applies to inline image data (<c>JBIG2Decode</c>, <c>JPXDecode</c>, or
-    /// <c>Crypt</c>: §8.9.7 itself excludes all three from inline-image use), a missing <c>ID</c>
-    /// or <c>EI</c> operator, a missing <c>/W</c>, <c>/H</c>, or <c>/BPC</c> where the image's shape
-    /// requires one to compute the data length, or an <c>/L</c> (§8.9.7, Table 91; PDF 2.0) past the
-    /// end of the stream. The image is skipped (its data is still delimited well enough for
+    /// An inline image (ISO 32000-2 §8.9.7) could not be delimited or decoded, or one of its
+    /// dictionary entries was itself invalid: a filter this interpreter never applies to inline
+    /// image data (<c>JBIG2Decode</c>, <c>JPXDecode</c>, or <c>Crypt</c>: §8.9.7 itself excludes
+    /// all three from inline-image use), a missing <c>ID</c> or <c>EI</c> operator, a missing,
+    /// non-integer, or non-positive <c>/W</c>, <c>/H</c>, or <c>/BPC</c> where the image's shape
+    /// requires one to compute the data length (Table 87 types all three as positive integers), a
+    /// negative <c>/L</c> (§8.9.7, Table 91; PDF 2.0), an <c>/L</c> or computed length past the end
+    /// of the stream, or a computed length (from <c>/L</c> or from the image's own shape) that does
+    /// not land on the following <c>EI</c> operator, in which case this reader retries the EI scan
+    /// before giving up. The image is skipped (its data is still delimited well enough for
     /// interpretation of the rest of the content stream to continue), and no inline-image callback
     /// is raised for it.
     /// </summary>
     InlineImageMalformed = 307,
 
     /// <summary>
-    /// A page's <c>/Contents</c> (ISO 32000-2 §7.7.3.3 Table 31), concatenated across every stream
-    /// in the array with a newline inserted between streams so a token is never glued across a
-    /// stream boundary, exceeded 64 MiB of decoded bytes. Interpretation proceeds up to the cap and
-    /// stops there; operators reported before the cap was reached are kept.
+    /// This run's combined decoded-content budget, 64 MiB shared across the page's own
+    /// <c>/Contents</c> (ISO 32000-2 §7.7.3.3 Table 31) and every Form XObject it draws (§8.10), was
+    /// exceeded. <c>/Contents</c> is concatenated across every stream in its array with a newline
+    /// inserted between streams so a token is never glued across a stream boundary; a Form XObject
+    /// is counted again on every invocation, not once per distinct form object, since the
+    /// interpretation work a repeatedly-drawn form costs scales with invocations, not with how many
+    /// distinct form objects a page names. Interpretation proceeds up to the point the budget ran
+    /// out and stops there; operators reported before that point are kept. Reported through
+    /// <c>DiagnosticSink.ReportRetained</c>, and at most once per run: the truncation this reports
+    /// also drives the run's own remaining budget to exactly zero, so no later stream in the same
+    /// run can trigger a second report.
     /// </summary>
     ContentStreamTooLarge = 308,
+
+    /// <summary>
+    /// A content stream hit one of this reader's own processing ceilings rather than being
+    /// malformed by its producer: more than 64 operands accumulated before an operator (§7.8.2
+    /// gives an operator's own operand count no declared bound of its own), a <c>TJ</c> array
+    /// (§9.4.3) with more than 8192 elements, more than 64 nested <c>q</c> saves, or marked-content
+    /// nesting (§14.6.1) past the same 64-deep cap. Split out from <see cref="OperandStackMalformed"/>
+    /// (#402) so a caller can tell "this file hit a limit of this reader" apart from "this file is
+    /// malformed", a distinction the two codes sharing one value made impossible to draw. The
+    /// offending operator, or push, is dropped and interpretation continues, the same recovery
+    /// <see cref="OperandStackMalformed"/> uses.
+    /// </summary>
+    ContentLimitExceeded = 309,
 
     // ── 9xx: reserved ───────────────────────────────────────────────────────────────────────────
 
@@ -511,7 +539,7 @@ internal static class PdfReaderDiagnosticSeverities
         PdfReaderDiagnosticCode.PageTreeNodeMalformed => PdfReaderDiagnosticSeverity.Warning,
         PdfReaderDiagnosticCode.PageTreeNodeLimitExceeded => PdfReaderDiagnosticSeverity.Warning,
         PdfReaderDiagnosticCode.ContentStreamLexError => PdfReaderDiagnosticSeverity.Warning,
-        PdfReaderDiagnosticCode.UnknownOperator => PdfReaderDiagnosticSeverity.Info,
+        PdfReaderDiagnosticCode.UnknownOperator => PdfReaderDiagnosticSeverity.Warning,
         PdfReaderDiagnosticCode.OperandStackMalformed => PdfReaderDiagnosticSeverity.Warning,
         PdfReaderDiagnosticCode.FormXObjectDepthExceeded => PdfReaderDiagnosticSeverity.Warning,
         PdfReaderDiagnosticCode.FormXObjectCycle => PdfReaderDiagnosticSeverity.Warning,
@@ -519,6 +547,7 @@ internal static class PdfReaderDiagnosticSeverities
         PdfReaderDiagnosticCode.ResourceMissing => PdfReaderDiagnosticSeverity.Warning,
         PdfReaderDiagnosticCode.InlineImageMalformed => PdfReaderDiagnosticSeverity.Warning,
         PdfReaderDiagnosticCode.ContentStreamTooLarge => PdfReaderDiagnosticSeverity.Warning,
+        PdfReaderDiagnosticCode.ContentLimitExceeded => PdfReaderDiagnosticSeverity.Warning,
         PdfReaderDiagnosticCode.DiagnosticsSuppressed => PdfReaderDiagnosticSeverity.Warning,
         _ => throw new UnreachableException($"No severity is mapped for {code}."),
     };

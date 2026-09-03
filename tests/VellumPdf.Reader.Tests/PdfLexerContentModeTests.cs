@@ -82,6 +82,40 @@ public sealed class PdfLexerContentModeTests
     }
 
     [Fact]
+    public void ContentStreamMode_lexesTwoLoneGreaterThansSplitByWhitespace_asTwoOneByteKeywords()
+    {
+        // ">>" is one DictEnd token (above); "> >", with whitespace between the two bytes, is two
+        // separate one-byte Keyword tokens instead.
+        var lexer = new PdfLexer(Encoding.ASCII.GetBytes("> >"), contentStreamMode: true);
+
+        var first = lexer.NextToken();
+        var second = lexer.NextToken();
+        var third = lexer.NextToken();
+
+        Assert.Equal(TokenKind.Keyword, first.Kind);
+        Assert.Equal(1, first.Raw.Length);
+        Assert.Equal(TokenKind.Keyword, second.Kind);
+        Assert.Equal(1, second.Raw.Length);
+        Assert.Equal(TokenKind.EndOfInput, third.Kind);
+    }
+
+    [Fact]
+    public void ContentStreamMode_seekingPastAOneByteKeyword_lexesTheFollowingTokenNormally()
+    {
+        var lexer = new PdfLexer(Encoding.ASCII.GetBytes("{Tj"), contentStreamMode: true);
+
+        var brace = lexer.NextToken();
+        Assert.Equal(TokenKind.Keyword, brace.Kind);
+        Assert.Equal(1, lexer.Position);
+
+        lexer.Seek(1);
+        var next = lexer.NextToken();
+
+        Assert.Equal(TokenKind.Keyword, next.Kind);
+        Assert.Equal("Tj", Encoding.ASCII.GetString(next.Raw.Span));
+    }
+
+    [Fact]
     public void ContentStreamMode_insideACompatibilitySection_lexesAWholeBxToExSequenceWithoutThrowing()
     {
         // A PostScript-heritage compatibility fragment ISO 32000-2 §7.8.2 permits inside BX/EX.
