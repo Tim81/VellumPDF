@@ -1057,9 +1057,10 @@ internal sealed class ContentInterpreter
 
         if (_inTextObject)
         {
-            // §8.2 Figure 9 / Table 50: 'Do' is a General Graphics State category operator, not
-            // one Table 50 lists among the operators legal inside a text object; a producer that
-            // invokes it there is wrong regardless of what the named XObject turns out to be. The
+            // §8.2 Figure 9 admits only the general graphics state, colour, text state,
+            // text-positioning, text-showing and marked-content categories of Table 50 inside a
+            // text object; 'Do' sits in the XObjects category, so a producer that invokes it
+            // there is wrong regardless of what the named XObject turns out to be. The
             // recursion below still runs (a text-object violation is not itself a reason to skip
             // an otherwise-resolvable Form), but the shared _textState instance a form's own
             // content may disturb (BT/Td/ET, unbracketed by any q/Q-style save) is saved and
@@ -1068,8 +1069,8 @@ internal sealed class ContentInterpreter
             // (#402 round 2).
             diagnostics.Report(
                 PdfReaderDiagnosticCode.OperandStackMalformed,
-                "'Do' occurred inside a text object (ISO 32000-2 §8.2 Table 50); 'Do' is not one "
-                + "of the operators a text object's own state permits.",
+                "'Do' occurred inside a text object (ISO 32000-2 §8.2 Figure 9 admits no XObjects "
+                + "category operator there).",
                 ctx.DiagObjectNumber, pageIndex: pageIndex);
         }
 
@@ -1252,10 +1253,10 @@ internal sealed class ContentInterpreter
                     // and restored afterward too, so neither side of the boundary can consume a
                     // credit that belongs to the other's own over-cap pushes (#402 round 2).
                     //
-                    // §9.4.1/§9.4.2's text matrices (_textState) are ALSO saved and restored here,
-                    // even though 'Do' is not itself a text-showing operator and, per §8.2 Table
-                    // 50, is not one of the operators a text object's own state permits at all (see
-                    // the _inTextObject check above): that only says the INVOKING content is wrong
+                    // §9.4.1's text matrices (_textState) are ALSO saved and restored here, even
+                    // though 'Do' is not itself a text-showing operator and §8.2 Figure 9 admits no
+                    // XObjects-category operator inside a text object at all (see the
+                    // _inTextObject check above): that only says the INVOKING content is wrong
                     // to call 'Do' from inside a text object, not that the form's OWN content
                     // cannot open its own, entirely independent text object (a 'BT' resets
                     // TextMatrix/TextLineMatrix unconditionally, with no check against whatever the
@@ -1276,16 +1277,21 @@ internal sealed class ContentInterpreter
                     var savedIgnoredMcPushes = _ignoredMcPushes;
                     var savedTextMatrix = _textState.TextMatrix;
                     var savedTextLineMatrix = _textState.TextLineMatrix;
+                    var savedInTextObject = _inTextObject;
 
                     _gsFloor = savedGsStackCount;
                     _markedContentFloor = savedMarkedContentDepth;
                     _bxFloor = savedBxDepth;
                     _ignoredGsPushes = 0;
                     _ignoredMcPushes = 0;
+                    // The form's own content starts outside any text object whatever the invoker
+                    // was doing: its 'Do' is judged against its own BT/ET, and its ET must not
+                    // close the invoker's text object once Do returns.
+                    _inTextObject = false;
                     _gs = _gs.Clone();
 
-                    // §8.10.1 b): "Concatenates the matrix specified by the form dictionary's
-                    // Matrix entry with the current transformation matrix". Applied to the CLONE
+                    // §8.10.1 b): "Concatenates the matrix from the form dictionary's Matrix entry
+                    // with the current transformation matrix (CTM)". Applied to the CLONE
                     // above, not the invoker's own _gs, so a visitor reading GraphicsState.Ctm from
                     // inside the form's own first operator sees the composed matrix while the
                     // invoker's own CTM, restored in the finally below, is never touched by it
@@ -1316,6 +1322,7 @@ internal sealed class ContentInterpreter
                         _ignoredMcPushes = savedIgnoredMcPushes;
                         _textState.TextMatrix = savedTextMatrix;
                         _textState.TextLineMatrix = savedTextLineMatrix;
+                        _inTextObject = savedInTextObject;
                     }
                 }
             }

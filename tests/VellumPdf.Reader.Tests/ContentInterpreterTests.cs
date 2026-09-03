@@ -772,7 +772,7 @@ public sealed class ContentInterpreterTests
     [Fact]
     public void Do_insideATextObject_reportsOperandStackMalformedOnce_andStillRecurses()
     {
-        // §8.2 Table 50 does not list 'Do' among the operators a text object permits. This does
+        // §8.2 Figure 9 admits no XObjects-category (Table 50) operator inside a text object. This does
         // not itself stop the recursion (the form is still resolvable and drawn); it is purely a
         // producer-side diagnostic (#402 round 2).
         var doc = BuildPageDoc(
@@ -787,6 +787,50 @@ public sealed class ContentInterpreterTests
         Assert.Single(reports);
         Assert.Single(visitor.FormBegins);
         Assert.Contains(visitor.Operators, o => o.Op == "w"); // interpretation continued
+    }
+
+    [Fact]
+    public void Do_insideATextObject_judgesTheFormsOwnDoAgainstTheFormsOwnTextObjectState()
+    {
+        // The form's content starts outside any text object whatever the invoker was doing, so a
+        // 'Do' in a form that opens no BT of its own is not a violation even when the invoking
+        // 'Do' sat inside one. Before the HandleDo bracket saved the flag, the form's 'Do' was
+        // reported against the form's object number as well (#402 round 2).
+        var doc = BuildPageDoc(
+            "BT\n/F1 Do\nET\n", "<< /XObject << /F1 11 0 R >> >>",
+            new Obj(
+                11, "<< /Type /XObject /Subtype /Form /BBox [0 0 10 10] /Resources << /XObject << /F2 12 0 R >> >> >>",
+                "/F2 Do\n"u8.ToArray()),
+            new Obj(12, "<< /Type /XObject /Subtype /Form /BBox [0 0 10 10] >>", []));
+
+        var (reader, _, visitor) = Run(doc);
+
+        var reports = reader.Diagnostics.Where(d =>
+            d.Code == PdfReaderDiagnosticCode.OperandStackMalformed
+            && d.Message.Contains("text object", StringComparison.Ordinal)).ToList();
+        var report = Assert.Single(reports);
+        Assert.NotEqual(11, report.ObjectNumber);
+        Assert.Equal(2, visitor.FormBegins.Count);
+    }
+
+    [Fact]
+    public void Do_onAFormWithAnUnbalancedBT_doesNotLeaveTheInvokerInsideATextObject()
+    {
+        // The flag is restored when the form returns, so a form whose content opens BT and never
+        // closes it (a §9.4.1 violation of the form's own) cannot make the invoker's next 'Do'
+        // look like it sits inside a text object.
+        var doc = BuildPageDoc(
+            "/F1 Do\n/F2 Do\n1 w\n", "<< /XObject << /F1 11 0 R /F2 12 0 R >> >>",
+            new Obj(11, "<< /Type /XObject /Subtype /Form /BBox [0 0 10 10] >>", "BT\n"u8.ToArray()),
+            new Obj(12, "<< /Type /XObject /Subtype /Form /BBox [0 0 10 10] >>", []));
+
+        var (reader, _, visitor) = Run(doc);
+
+        Assert.DoesNotContain(reader.Diagnostics, d =>
+            d.Code == PdfReaderDiagnosticCode.OperandStackMalformed
+            && d.Message.Contains("text object", StringComparison.Ordinal));
+        Assert.Equal(2, visitor.FormBegins.Count);
+        Assert.Contains(visitor.Operators, o => o.Op == "w");
     }
 
     [Fact]

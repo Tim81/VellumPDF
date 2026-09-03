@@ -390,8 +390,8 @@ public enum PdfReaderDiagnosticCode
     /// shall be permitted as operands only by certain specific operators"), a known operator
     /// invoked with the wrong operand count for its own arity (Annex A Table A.1), an operand of
     /// the wrong type where the arity is otherwise right (a <c>TJ</c> whose single operand is not
-    /// an array, §9.4.3), a <c>Do</c> that occurred inside a text object (§8.2 Table 50, which does
-    /// not list <c>Do</c> among the operators a text object permits), an unbalanced <c>Q</c> with
+    /// an array, §9.4.3), a <c>Do</c> that occurred inside a text object (§8.2 Figure 9 admits no
+    /// operator of Table 50's XObjects category there), an unbalanced <c>Q</c> with
     /// no matching <c>q</c> on the graphics-state stack, or an unbalanced <c>EMC</c> with no
     /// matching <c>BMC</c>/<c>BDC</c> (§14.6.1). An unbalanced <c>q</c> still open at the end of a
     /// content stream is not reported: nothing downstream of this interpreter needs the graphics
