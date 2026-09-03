@@ -30,11 +30,16 @@ namespace VellumPdf.Reader;
 /// The cap <see cref="DiagnosticSink"/> enforces on <see cref="PdfDocumentReader.Diagnostics"/> —
 /// see <see cref="PdfReaderOptions.MaxDiagnostics"/>.
 /// </param>
+/// <param name="MaxFormXObjectDepth">
+/// The nesting-depth ceiling <c>ContentInterpreter</c> enforces on recursive Form XObject <c>Do</c>
+/// invocations (ISO 32000-2 §8.10); see <see cref="PdfReaderOptions.MaxFormXObjectDepth"/>.
+/// </param>
 internal readonly record struct ReaderLimits(
     long MaxDecodedBytes,
     long MaxAggregateReconstructionDecodeBytes,
     int ReconstructionBudgetMultiplier,
-    int MaxDiagnostics)
+    int MaxDiagnostics,
+    int MaxFormXObjectDepth)
 {
     /// <summary>The processor's own choice of default per-decode ceiling: 512 MiB.</summary>
     internal const long DefaultMaxDecodedBytes = 512L * 1024 * 1024;
@@ -63,9 +68,20 @@ internal readonly record struct ReaderLimits(
     /// </summary>
     internal const int MinMaxDiagnostics = 1;
 
+    /// <summary>The processor's own choice of default Form XObject recursion depth ceiling: 32.</summary>
+    internal const int DefaultMaxFormXObjectDepth = 32;
+
+    /// <summary>
+    /// The floor a caller may tighten <see cref="PdfReaderOptions.MaxFormXObjectDepth"/> down to: 1
+    /// (a Form XObject may still be invoked, but may not itself invoke another one).
+    /// </summary>
+    internal const int MinMaxFormXObjectDepth = 1;
+
     /// <summary>The library's built-in ceilings — what every read used before this option existed.</summary>
     internal static ReaderLimits Defaults { get; } =
-        new(DefaultMaxDecodedBytes, DefaultMaxDecodedBytes, DefaultReconstructionBudgetMultiplier, DefaultMaxDiagnostics);
+        new(
+            DefaultMaxDecodedBytes, DefaultMaxDecodedBytes, DefaultReconstructionBudgetMultiplier,
+            DefaultMaxDiagnostics, DefaultMaxFormXObjectDepth);
 
     /// <summary>
     /// Validates <paramref name="options"/>'s three resource knobs and resolves them into the
@@ -115,6 +131,14 @@ internal readonly record struct ReaderLimits(
                 $"{nameof(PdfReaderOptions.MaxDiagnostics)} must be between "
                 + $"{MinMaxDiagnostics} and {DefaultMaxDiagnostics}.");
 
-        return new ReaderLimits(maxDecodedBytes, maxDecodedBytes, multiplier, maxDiagnostics);
+        var maxFormXObjectDepth = options.MaxFormXObjectDepth;
+        if (maxFormXObjectDepth < MinMaxFormXObjectDepth || maxFormXObjectDepth > DefaultMaxFormXObjectDepth)
+            throw new ArgumentOutOfRangeException(
+                nameof(PdfReaderOptions.MaxFormXObjectDepth), maxFormXObjectDepth,
+                $"{nameof(PdfReaderOptions.MaxFormXObjectDepth)} must be between "
+                + $"{MinMaxFormXObjectDepth} and {DefaultMaxFormXObjectDepth}.");
+
+        return new ReaderLimits(
+            maxDecodedBytes, maxDecodedBytes, multiplier, maxDiagnostics, maxFormXObjectDepth);
     }
 }

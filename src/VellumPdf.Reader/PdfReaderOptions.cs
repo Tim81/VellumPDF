@@ -124,4 +124,26 @@ public sealed class PdfReaderOptions
     /// of 1000 or below the floor of 1.
     /// </exception>
     public int MaxDiagnostics { get; init; } = ReaderLimits.DefaultMaxDiagnostics;
+
+    /// <summary>
+    /// The nesting-depth ceiling the internal content-stream interpreter enforces on a recursive
+    /// Form XObject <c>Do</c> invocation (ISO 32000-2 §8.10): a form that itself draws a form, that
+    /// draws a form, and so on. Defaults to 32. ISO 32000-2 places no limit on this: a form's own
+    /// content stream is ordinary PDF syntax that may invoke any XObject, including another form,
+    /// so the ceiling is this processor's own choice against adversarial input (Annex C.1,
+    /// informative, on practical processing limits), the same rationale as
+    /// <see cref="MaxDecodedStreamBytes"/> above. Exceeding it reports
+    /// <c>PdfReaderDiagnosticCode.FormXObjectDepthExceeded</c> and stops descending into that
+    /// subtree rather than recursing further (an uncatchable <see cref="StackOverflowException"/>
+    /// is the alternative a hostile self-referential or deeply-chained form graph would otherwise
+    /// risk). Tighten-only, matching <see cref="MaxDecodedStreamBytes"/>,
+    /// <see cref="ReconstructionBudgetMultiplier"/>, and <see cref="MaxDiagnostics"/> above: nothing
+    /// about this cap is a spec requirement, so a caller may lower it but not raise it past the
+    /// shipped default.
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Thrown by <see cref="PdfReader.Open(byte[], PdfReaderOptions)"/> when set above the default
+    /// of 32 or below the floor of 1.
+    /// </exception>
+    public int MaxFormXObjectDepth { get; init; } = ReaderLimits.DefaultMaxFormXObjectDepth;
 }

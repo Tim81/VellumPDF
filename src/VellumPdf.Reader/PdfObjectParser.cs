@@ -292,7 +292,13 @@ internal sealed class PdfObjectParser
         return new PdfReal(d);
     }
 
-    private static PdfName ParseName(Token token)
+    /// <summary>
+    /// Decodes a <see cref="TokenKind.Name"/> token's raw bytes (including the leading <c>/</c>) into
+    /// a <see cref="PdfName"/>, applying <c>#XX</c> escapes (ISO 32000-2 §7.3.5). Internal, not
+    /// private, so <c>ContentInterpreter</c>'s own name-operand decoding shares this rather than
+    /// duplicating it.
+    /// </summary>
+    internal static PdfName ParseName(Token token)
     {
         // token.Raw includes the leading '/'
         var raw = token.Raw.Span[1..]; // skip '/'

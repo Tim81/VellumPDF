@@ -63,6 +63,7 @@ var options = new PdfReaderOptions
     MaxDecodedStreamBytes = 64 * 1024 * 1024,
     ReconstructionBudgetMultiplier = 4,
     MaxDiagnostics = 200,
+    MaxFormXObjectDepth = 16,
 };
 
 using var reader = PdfReader.Open(File.OpenRead("input.pdf"), options);
@@ -80,19 +81,24 @@ real `startxref` chain left for `/Prev` to extend, and a recovered trailer's `/I
 enough to carry into a new revision. Reconstruction also refuses outright the instant it finds
 any sign the document is encrypted, rather than guessing at a key.
 
-**`MaxDecodedStreamBytes`**, **`ReconstructionBudgetMultiplier`**, and **`MaxDiagnostics`** are all
-**tighten-only**. None is a spec requirement — ISO 32000-2 Annex C.1 notes that "a particular PDF
-processor running on a particular device and in a particular operating environment will always have
-practical limits", and Annex C.3 adds that available memory is "often much less in mobile devices
-than desktop computers." The defaults (512 MiB decoded-stream ceiling, an ×8 multiplier on
-reconstruction's `max(1 MiB, N × file length)` work budget, a 1000-entry diagnostics cap) are this
-library's own choice for a desktop host, not something Annex C mandates. A caller on a more
-constrained device, or hardening against a decompression bomb, a file engineered to burn CPU across
-many decoy candidates, or a document that would otherwise report the same recoverable condition on
-a huge number of objects, can lower any of the three. Raising any of them above its default throws
-`ArgumentOutOfRangeException` at `Open` time: nothing above the shipped defaults has been exercised
-as a safe ceiling, so these options can only make the reader stricter than it already is, never
-looser.
+**`MaxDecodedStreamBytes`**, **`ReconstructionBudgetMultiplier`**, **`MaxDiagnostics`**, and
+**`MaxFormXObjectDepth`** are all **tighten-only**. None is a spec requirement: ISO 32000-2 Annex
+C.1 notes that "a particular PDF processor running on a particular device and in a particular
+operating environment will always have practical limits", and Annex C.3 adds that available memory
+is "often much less in mobile devices than desktop computers." The defaults (512 MiB decoded-stream
+ceiling, an ×8 multiplier on reconstruction's `max(1 MiB, N × file length)` work budget, a
+1000-entry diagnostics cap, 32 levels of Form XObject recursion) are this library's own choice for
+a desktop host, not something Annex C mandates. A caller on a more constrained device, or hardening
+against a decompression bomb, a file engineered to burn CPU across many decoy candidates, a
+document that would otherwise report the same recoverable condition on a huge number of objects, or
+a page that nests Form XObjects (ISO 32000-2 §8.10) deeper than a caller wants to follow, can lower
+any of the four. Raising any of them above its default throws `ArgumentOutOfRangeException` at
+`Open` time: nothing above the shipped defaults has been exercised as a safe ceiling, so these
+options can only make the reader stricter than it already is, never looser.
+`MaxFormXObjectDepth` governs an internal content-stream interpreter this package does not expose
+directly yet. Text and image extraction, still ahead on the roadmap below, will be its first
+callers. It has no visible effect until then, but validates at `Open` time regardless, alongside
+the other three.
 
 ---
 

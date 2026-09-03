@@ -103,6 +103,37 @@ public sealed class PdfReaderOptionsTests
         Assert.DoesNotContain("correct horse battery staple", options.ToString());
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(33)]
+    public void MaxFormXObjectDepth_outsideRange_throwsArgumentOutOfRangeException(int value)
+    {
+        var bytes = Load("plaintext-baseline.pdf");
+
+        var ex = Assert.Throws<ArgumentOutOfRangeException>(
+            () => PdfReader.Open(bytes, new PdfReaderOptions { MaxFormXObjectDepth = value }));
+
+        Assert.Equal(nameof(PdfReaderOptions.MaxFormXObjectDepth), ex.ParamName);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(32)]
+    public void MaxFormXObjectDepth_atTheFloorOrCeiling_isAccepted(int value)
+    {
+        var bytes = Load("plaintext-baseline.pdf");
+
+        using var reader = PdfReader.Open(bytes, new PdfReaderOptions { MaxFormXObjectDepth = value });
+
+        Assert.NotNull(reader.Catalog);
+    }
+
+    [Fact]
+    public void DefaultOptions_carryTheDefaultMaxFormXObjectDepth()
+    {
+        Assert.Equal(32, new PdfReaderOptions().MaxFormXObjectDepth);
+    }
+
     private static byte[] Load(string name)
     {
         using var s = Assembly.GetExecutingAssembly().GetManifestResourceStream(name)

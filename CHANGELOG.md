@@ -62,6 +62,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   leaf and node limits each end the walk the instant they are reported, so at most one of that
   pair, plus the depth code's first occurrence, is ever retained in the same walk. Computed
   lazily, on first access, and cached for the reader's lifetime. (#98)
+- **A new option, `PdfReaderOptions.MaxFormXObjectDepth`, and nine new `PdfReaderDiagnosticCode`
+  values in a `3xx` block reserved for content streams.** The reader now has an internal
+  content-stream interpreter (ISO 32000-2 §7.8.2), shared machinery the two extraction milestones
+  still ahead of it (text, then images) will build on; a caller cannot invoke it directly in this
+  release, so the nine codes below cannot yet be reported to one. `MaxFormXObjectDepth` (default 32,
+  tighten-only like the three resource limits it joins) is the one part of this a caller sets
+  today: a ceiling on Form XObject recursion depth (§8.10) the interpreter enforces once something
+  does call it, reporting `FormXObjectDepthExceeded` and continuing rather than recursing
+  unboundedly. The rest of the interpreter follows the same policy throughout: a malformed or
+  unsupported construct is reported, not thrown, and interpretation continues past it. That is
+  what the other eight codes (`ContentStreamLexError`, `UnknownOperator`, `OperandStackMalformed`,
+  `FormXObjectCycle`, `FormXObjectBudgetExceeded`, `ResourceMissing`, `InlineImageMalformed`,
+  `ContentStreamTooLarge`) each describe. (#98)
 
 ### Changed
 

@@ -349,6 +349,108 @@ public enum PdfReaderDiagnosticCode
     /// </summary>
     PageTreeNodeLimitExceeded = 207,
 
+    // ── 3xx: content streams ────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The content-stream interpreter (ISO 32000-2 §7.8.2) hit an <see cref="InvalidDataException"/>
+    /// from the lexer or object parser partway through a page's content, or a member of the page's
+    /// <c>/Contents</c> array (§7.7.3.3 Table 31) did not resolve to a usable stream at all: a
+    /// non-stream element, a reference that fails to resolve, or a stream whose filter chain could
+    /// not be decoded (including one carrying an image filter, which this interpreter never
+    /// attempts to decode as content). Interpretation of that stream stops at the point of failure;
+    /// operators already reported to the caller's visitor before the failure are kept, and, for a
+    /// multi-stream <c>/Contents</c> array specifically, interpretation resumes with the next
+    /// stream in the array rather than abandoning the whole page.
+    /// </summary>
+    ContentStreamLexError = 300,
+
+    /// <summary>
+    /// A content-stream keyword token is not one of the 73 operators ISO 32000-2 Annex A Table A.1
+    /// lists, and it did not appear inside a <c>BX</c>/<c>EX</c> compatibility section (§7.8.2). ISO
+    /// 32000-2 says "an error shall occur" for this case outside such a section; this reader instead
+    /// reports it and continues, the same notify-and-continue choice every other diagnostic in this
+    /// channel makes. Reported at most once per (page, operator name) rather than once per
+    /// occurrence, since a producer that emits a future operator this reader does not know about
+    /// typically emits it many times on the same page. Silent inside a compatibility section, per
+    /// Table 33's own text: "Unrecognised operators ... shall be ignored without error."
+    /// </summary>
+    UnknownOperator = 301,
+
+    /// <summary>
+    /// A content stream's operand-stack discipline broke down in one of several ways this
+    /// interpreter groups under one code rather than one each, since every case has the same
+    /// remedy: drop the offending operator (or, for an unbalanced <c>Q</c>/<c>EMC</c>, drop the
+    /// pop) and keep interpreting. Covers: more than 32 operands accumulated before an operator
+    /// (§7.8.2 gives an operator's operands no declared bound of its own; this reader's own
+    /// ceiling), a <c>TJ</c> array (§9.4.3) with more than 8192 elements, a number token that does
+    /// not parse or is not finite, a dictionary operand on an operator other than <c>BDC</c>/<c>DP</c>
+    /// (§7.8.2: "Dictionaries shall be permitted as operands only by certain specific operators"),
+    /// a known operator invoked with the wrong operand count for its own arity (Annex A Table A.1),
+    /// an unbalanced <c>Q</c> with no matching <c>q</c> on the graphics-state stack, more than 64
+    /// nested <c>q</c> saves, or an unbalanced <c>EMC</c>/deeply nested <c>BMC</c>/<c>BDC</c>
+    /// (§14.6.2) past the same 64-deep cap. An unbalanced <c>q</c> still open at the end of a
+    /// content stream is not reported: nothing downstream of this interpreter needs the graphics
+    /// state restored past the last operator it saw.
+    /// </summary>
+    OperandStackMalformed = 302,
+
+    /// <summary>
+    /// A Form XObject <c>Do</c> (ISO 32000-2 §8.10) recursed past
+    /// <see cref="PdfReaderOptions.MaxFormXObjectDepth"/> levels deep. Descent into that subtree
+    /// stops; the <c>Do</c> operator itself is still reported to the caller's visitor, only the
+    /// recursive walk into the form's own content is skipped.
+    /// </summary>
+    FormXObjectDepthExceeded = 303,
+
+    /// <summary>
+    /// A Form XObject's own content, directly or through a chain of nested <c>Do</c> invocations,
+    /// draws itself again: the same indirect object number already open on the interpreter's own
+    /// recursion stack (ISO 32000-2 §8.10 describes no cycle of this kind as legal; a form's content
+    /// is ordinary content that may invoke any XObject, so nothing in the format itself prevents a
+    /// producer from writing one). Reported once per cycle found; the recursive invocation that
+    /// would close the cycle is skipped rather than recursing forever.
+    /// </summary>
+    FormXObjectCycle = 304,
+
+    /// <summary>
+    /// A single page invoked Form XObjects (successful <c>Do</c> recursions, counted across the
+    /// whole page, not per subtree) more than 4096 times. Descent into any further form stops for
+    /// the rest of the page; operators already reported before the budget was reached are kept, and
+    /// interpretation of the page's own (non-form) content continues past the point where the
+    /// budget was hit.
+    /// </summary>
+    FormXObjectBudgetExceeded = 305,
+
+    /// <summary>
+    /// A <c>Do</c>, <c>gs</c>, <c>Tf</c>, <c>cs</c>/<c>CS</c>, or <c>sh</c> operator, or an inline
+    /// image's <c>/CS</c> (<c>/ColorSpace</c>) entry, named a resource absent from the applicable
+    /// <c>/Resources</c> subdictionary (ISO 32000-2 §7.8.3): the page's own, or, inside a Form
+    /// XObject, that form's own <c>/Resources</c> falling back to its parent's when absent
+    /// (§8.10.2). The operator is still reported to the caller's visitor; only the interpreter's own
+    /// attempt to resolve the name failed.
+    /// </summary>
+    ResourceMissing = 306,
+
+    /// <summary>
+    /// An inline image (ISO 32000-2 §8.9.7) could not be delimited or decoded: a filter this
+    /// interpreter never applies to inline image data (<c>JBIG2Decode</c>, <c>JPXDecode</c>, or
+    /// <c>Crypt</c>: §8.9.7 itself excludes all three from inline-image use), a missing <c>ID</c>
+    /// or <c>EI</c> operator, a missing <c>/W</c>, <c>/H</c>, or <c>/BPC</c> where the image's shape
+    /// requires one to compute the data length, or an <c>/L</c> (§8.9.7, Table 91; PDF 2.0) past the
+    /// end of the stream. The image is skipped (its data is still delimited well enough for
+    /// interpretation of the rest of the content stream to continue), and no inline-image callback
+    /// is raised for it.
+    /// </summary>
+    InlineImageMalformed = 307,
+
+    /// <summary>
+    /// A page's <c>/Contents</c> (ISO 32000-2 §7.7.3.3 Table 31), concatenated across every stream
+    /// in the array with a newline inserted between streams so a token is never glued across a
+    /// stream boundary, exceeded 64 MiB of decoded bytes. Interpretation proceeds up to the cap and
+    /// stops there; operators reported before the cap was reached are kept.
+    /// </summary>
+    ContentStreamTooLarge = 308,
+
     // ── 9xx: reserved ───────────────────────────────────────────────────────────────────────────
 
     /// <summary>
@@ -408,6 +510,15 @@ internal static class PdfReaderDiagnosticSeverities
         PdfReaderDiagnosticCode.PageAttributeInvalid => PdfReaderDiagnosticSeverity.Warning,
         PdfReaderDiagnosticCode.PageTreeNodeMalformed => PdfReaderDiagnosticSeverity.Warning,
         PdfReaderDiagnosticCode.PageTreeNodeLimitExceeded => PdfReaderDiagnosticSeverity.Warning,
+        PdfReaderDiagnosticCode.ContentStreamLexError => PdfReaderDiagnosticSeverity.Warning,
+        PdfReaderDiagnosticCode.UnknownOperator => PdfReaderDiagnosticSeverity.Info,
+        PdfReaderDiagnosticCode.OperandStackMalformed => PdfReaderDiagnosticSeverity.Warning,
+        PdfReaderDiagnosticCode.FormXObjectDepthExceeded => PdfReaderDiagnosticSeverity.Warning,
+        PdfReaderDiagnosticCode.FormXObjectCycle => PdfReaderDiagnosticSeverity.Warning,
+        PdfReaderDiagnosticCode.FormXObjectBudgetExceeded => PdfReaderDiagnosticSeverity.Warning,
+        PdfReaderDiagnosticCode.ResourceMissing => PdfReaderDiagnosticSeverity.Warning,
+        PdfReaderDiagnosticCode.InlineImageMalformed => PdfReaderDiagnosticSeverity.Warning,
+        PdfReaderDiagnosticCode.ContentStreamTooLarge => PdfReaderDiagnosticSeverity.Warning,
         PdfReaderDiagnosticCode.DiagnosticsSuppressed => PdfReaderDiagnosticSeverity.Warning,
         _ => throw new UnreachableException($"No severity is mapped for {code}."),
     };

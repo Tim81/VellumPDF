@@ -36,6 +36,15 @@ public sealed class PdfReaderDiagnosticCodeTests
         [PdfReaderDiagnosticCode.PageAttributeInvalid] = 2,
         [PdfReaderDiagnosticCode.PageTreeNodeMalformed] = 2,
         [PdfReaderDiagnosticCode.PageTreeNodeLimitExceeded] = 2,
+        [PdfReaderDiagnosticCode.ContentStreamLexError] = 3,
+        [PdfReaderDiagnosticCode.UnknownOperator] = 3,
+        [PdfReaderDiagnosticCode.OperandStackMalformed] = 3,
+        [PdfReaderDiagnosticCode.FormXObjectDepthExceeded] = 3,
+        [PdfReaderDiagnosticCode.FormXObjectCycle] = 3,
+        [PdfReaderDiagnosticCode.FormXObjectBudgetExceeded] = 3,
+        [PdfReaderDiagnosticCode.ResourceMissing] = 3,
+        [PdfReaderDiagnosticCode.InlineImageMalformed] = 3,
+        [PdfReaderDiagnosticCode.ContentStreamTooLarge] = 3,
         [PdfReaderDiagnosticCode.DiagnosticsSuppressed] = 9,
     };
 
@@ -134,6 +143,15 @@ public sealed class PdfReaderDiagnosticCodeTests
         [PdfReaderDiagnosticCode.PageAttributeInvalid] = (205, PdfReaderDiagnosticSeverity.Warning),
         [PdfReaderDiagnosticCode.PageTreeNodeMalformed] = (206, PdfReaderDiagnosticSeverity.Warning),
         [PdfReaderDiagnosticCode.PageTreeNodeLimitExceeded] = (207, PdfReaderDiagnosticSeverity.Warning),
+        [PdfReaderDiagnosticCode.ContentStreamLexError] = (300, PdfReaderDiagnosticSeverity.Warning),
+        [PdfReaderDiagnosticCode.UnknownOperator] = (301, PdfReaderDiagnosticSeverity.Info),
+        [PdfReaderDiagnosticCode.OperandStackMalformed] = (302, PdfReaderDiagnosticSeverity.Warning),
+        [PdfReaderDiagnosticCode.FormXObjectDepthExceeded] = (303, PdfReaderDiagnosticSeverity.Warning),
+        [PdfReaderDiagnosticCode.FormXObjectCycle] = (304, PdfReaderDiagnosticSeverity.Warning),
+        [PdfReaderDiagnosticCode.FormXObjectBudgetExceeded] = (305, PdfReaderDiagnosticSeverity.Warning),
+        [PdfReaderDiagnosticCode.ResourceMissing] = (306, PdfReaderDiagnosticSeverity.Warning),
+        [PdfReaderDiagnosticCode.InlineImageMalformed] = (307, PdfReaderDiagnosticSeverity.Warning),
+        [PdfReaderDiagnosticCode.ContentStreamTooLarge] = (308, PdfReaderDiagnosticSeverity.Warning),
         [PdfReaderDiagnosticCode.DiagnosticsSuppressed] = (900, PdfReaderDiagnosticSeverity.Warning),
     };
 
