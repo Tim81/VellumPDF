@@ -19,8 +19,9 @@ internal readonly record struct Matrix(double A, double B, double C, double D, d
     /// Composes this matrix with <paramref name="other"/> so that applying the result to a point is
     /// the same as applying this matrix first, then <paramref name="other"/>, i.e.
     /// <c>this.Concat(other) == this × other</c> in row-vector convention. This is the operation
-    /// <c>cm</c> uses to fold its operand matrix into the CTM (§8.3.4: "the new matrix shall be the
-    /// result of premultiplying the specified matrix with the current matrix",
+    /// <c>cm</c> uses to fold its operand matrix into the CTM (§8.3.4: "when a new transformation
+    /// is concatenated with an existing one, the matrix representing it shall be multiplied
+    /// before (premultiplied with) the existing transformation matrix",
     /// <c>CTM_new = M × CTM_old</c>, i.e. <c>m.Concat(ctm)</c>), and the one <c>Td</c>/<c>TD</c> use
     /// to fold a translation into the text line matrix (§9.4.2).
     /// </summary>

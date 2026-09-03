@@ -5,10 +5,13 @@ namespace VellumPdf.Reader.Content;
 
 /// <summary>
 /// The text-positioning matrices ISO 32000-2 §9.4.2 tracks per text object: the text matrix and
-/// text line matrix. Deliberately separate from <see cref="GraphicsState"/>: §9.4.2 says these two
-/// matrices are "not part of the graphics state" and are not saved or restored by <c>q</c>/<c>Q</c>.
-/// Only <c>BT</c> resets them (to identity), and only <c>Td</c>, <c>TD</c>, <c>Tm</c>, and
-/// <c>T*</c> update them. Not stacked; the interpreter owns exactly one live instance.
+/// text line matrix. Deliberately separate from <see cref="GraphicsState"/>: §9.4.1 says these two
+/// matrices (along with the derived text rendering matrix this reader does not track) "may be
+/// specified only within a text object and shall not persist from one text object to the
+/// next", so they are never saved or restored by <c>q</c>/<c>Q</c> the way §8.4.4's own
+/// graphics-state parameters are. Only <c>BT</c> resets them (to identity), and only <c>Td</c>,
+/// <c>TD</c>, <c>Tm</c>, and <c>T*</c> update them. Not stacked; the interpreter owns exactly
+/// one live instance.
 /// </summary>
 internal sealed class TextState
 {

@@ -7,10 +7,12 @@ namespace VellumPdf.Reader.Content;
 /// The 73 content-stream operators ISO 32000-2 Annex A Table A.1 lists, alphabetically, with each
 /// one's operand count for <see cref="ContentInterpreter"/>'s stack-discipline check. A count of
 /// <see cref="Variable"/> marks the four colour operators (<c>SC</c>, <c>sc</c>, <c>SCN</c>,
-/// <c>scn</c>) whose own tables (§8.6.8) give them 1 to 4 numeric operands plus, for the <c>N</c>
-/// suffix, an optional trailing pattern name: no single fixed count describes them, so this
-/// interpreter accepts any operand count for them rather than reporting
-/// <see cref="PdfReaderDiagnosticCode.OperandStackMalformed"/> on a legitimately variable call.
+/// <c>scn</c>): Table 73 (§8.6.8) gives them one numeric operand per colourant of the current
+/// colour space, plus, for the <c>N</c> suffix, an optional trailing pattern name, and §8.6.6.5
+/// lets a DeviceN space name "an arbitrary number" of colourants, so no single fixed count (nor
+/// even a small fixed range) describes them; this interpreter accepts any operand count for them
+/// rather than reporting <see cref="PdfReaderDiagnosticCode.OperandStackMalformed"/> on a
+/// legitimately variable call.
 /// </summary>
 internal static class ContentOperators
 {
@@ -35,7 +37,10 @@ internal static class ContentOperators
         ["BX"] = 0,
         ["EX"] = 0,
 
-        // Table 351/352: marked-content operators.
+        // Table 352: marked-content operators. Annex A Table A.1's own cross-reference for BMC
+        // names Table 351 ("Entries in a data dictionary") instead, an error in the standard: BDC,
+        // DP, EMC, and MP all cite Table 352 the way BMC itself should, and Table 351 is the
+        // unrelated marked-content PROPERTY LIST shape, not the operator table).
         ["BDC"] = 2,
         ["BMC"] = 1,
         ["DP"] = 2,
@@ -129,11 +134,37 @@ internal static class ContentOperators
     /// A.1 lists.</summary>
     internal static bool IsKnown(string operatorName) => _arity.ContainsKey(operatorName);
 
+    // Backs the ReadOnlySpan<byte> overload below without re-hashing through a second dictionary:
+    // StringComparer.Ordinal implements IAlternateEqualityComparer<ReadOnlySpan<char>, string>, so
+    // this alternate lookup shares _arity's own buckets.
+    private static readonly Dictionary<string, int>.AlternateLookup<ReadOnlySpan<char>> _arityByChars =
+        _arity.GetAlternateLookup<ReadOnlySpan<char>>();
+
+    /// <summary>
+    /// Span-based overload of <see cref="IsKnown(string)"/> for a caller holding a keyword as raw
+    /// Latin-1 bytes rather than an already-allocated string. The inline-image resync probe
+    /// (<c>ContentInterpreter.ProbeOnce</c>) checks one candidate keyword per token it lexes, and
+    /// allocating a string for each one only to discard it after one <c>ContainsKey</c> call was
+    /// avoidable work on that hot path (#402 round 2).
+    /// </summary>
+    internal static bool IsKnown(ReadOnlySpan<byte> operatorName)
+    {
+        // No operator this table lists is longer than a couple of characters; a byte run this much
+        // longer can never match one, so this bails out before stack-allocating for a length a
+        // hostile or corrupted stream fully controls.
+        if (operatorName.Length > 8)
+            return false;
+
+        Span<char> chars = stackalloc char[operatorName.Length];
+        var written = System.Text.Encoding.Latin1.GetChars(operatorName, chars);
+        return _arityByChars.ContainsKey(chars[..written]);
+    }
+
     /// <summary>
     /// The operand count <paramref name="operatorName"/> expects, or <see cref="Variable"/> for the
     /// four colour operators this interpreter does not arity-check. Throws
-    /// <see cref="KeyNotFoundException"/> for a name <see cref="IsKnown"/> would report false for;
-    /// every call site checks that first.
+    /// <see cref="KeyNotFoundException"/> for a name <see cref="IsKnown(string)"/> would report
+    /// false for; every call site checks that first.
     /// </summary>
     internal static int ExpectedOperandCount(string operatorName) => _arity[operatorName];
 }

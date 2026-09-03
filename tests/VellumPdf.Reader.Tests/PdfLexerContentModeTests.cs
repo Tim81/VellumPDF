@@ -115,6 +115,28 @@ public sealed class PdfLexerContentModeTests
         Assert.Equal("Tj", Encoding.ASCII.GetString(next.Raw.Span));
     }
 
+    // TokenKind (internal) named by string here too, for the same CS0051 reason as
+    // AllTokenKindFixtures below.
+    [Theory]
+    [InlineData("}5", nameof(TokenKind.Integer), "5")]
+    [InlineData("}/N", nameof(TokenKind.Name), "/N")]
+    [InlineData("}(s)", nameof(TokenKind.LiteralString), "(s)")]
+    public void ContentStreamMode_aOneByteKeyword_abuttingANonKeywordToken_lexesBothSeparately(
+        string input, string expectedSecondKindName, string expectedSecondRaw)
+    {
+        var expectedSecondKind = Enum.Parse<TokenKind>(expectedSecondKindName);
+        var lexer = new PdfLexer(Encoding.ASCII.GetBytes(input), contentStreamMode: true);
+
+        var first = lexer.NextToken();
+        var second = lexer.NextToken();
+
+        Assert.Equal(TokenKind.Keyword, first.Kind);
+        Assert.Equal(1, first.Raw.Length);
+        Assert.Equal((byte)'}', first.Raw.Span[0]);
+        Assert.Equal(expectedSecondKind, second.Kind);
+        Assert.Equal(expectedSecondRaw, Encoding.ASCII.GetString(second.Raw.Span));
+    }
+
     [Fact]
     public void ContentStreamMode_insideACompatibilitySection_lexesAWholeBxToExSequenceWithoutThrowing()
     {

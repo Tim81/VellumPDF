@@ -17,9 +17,13 @@ internal interface IContentVisitor
 {
     /// <summary>
     /// Called for every recognised operator (Annex A Table A.1) the interpreter accepts, i.e. after
-    /// its own operand-count and stack-discipline checks pass; a malformed or unrecognised operator
-    /// never reaches this callback (see <see cref="PdfReaderDiagnosticCode.OperandStackMalformed"/>
-    /// and <see cref="PdfReaderDiagnosticCode.UnknownOperator"/>).
+    /// its own operand-count and stack-discipline checks pass. An unrecognised operator (see
+    /// <see cref="PdfReaderDiagnosticCode.UnknownOperator"/>) and an operator whose own arity or
+    /// operand-type check fails (see <see cref="PdfReaderDiagnosticCode.OperandStackMalformed"/>)
+    /// never reach this callback. The one exception is an unbalanced <c>Q</c> or <c>EMC</c>: the
+    /// interpreter still reaches this callback for it, with no operands, once it has reported the
+    /// missing <c>q</c>/<c>BMC</c>/<c>BDC</c> to pop, since ignoring the pop is itself the
+    /// operator's only effect and still needs reporting to a caller tracking operator sequence.
     /// </summary>
     /// <param name="operatorName">The operator keyword, e.g. <c>"Tj"</c> or <c>"re"</c>.</param>
     /// <param name="operands">
@@ -56,8 +60,13 @@ internal interface IContentVisitor
     /// </summary>
     /// <param name="formDictionary">The form XObject's own stream dictionary.</param>
     /// <param name="formMatrix">The form's <c>/Matrix</c> (ISO 32000-2 §8.10.2 Table 93), or
-    /// <see cref="Matrix.Identity"/> when absent or malformed. The interpreter does not compose this
-    /// with the CTM itself; that is left to the caller.</param>
+    /// <see cref="Matrix.Identity"/> when absent or malformed. The interpreter itself concatenates
+    /// this into <see cref="ContentInterpreter.GraphicsState"/>'s own CTM (§8.10.1 b)) before
+    /// interpreting the form's own content, so a callback reading <c>GraphicsState.Ctm</c> from
+    /// inside <see cref="OnOperator"/> for the form's own first operator already sees the composed
+    /// value. At the time THIS callback itself runs, <c>GraphicsState.Ctm</c> still holds the
+    /// invoker's own CTM, since the concatenation happens only after <see cref="OnFormBegin"/>
+    /// returns.</param>
     /// <param name="boundingBox">The form's <c>/BBox</c> (Table 93, Required), or
     /// <see langword="null"/> when the entry is absent (Table 93 marks it Required, so a
     /// <see langword="null"/> here is itself a malformation the visitor may report) or does not

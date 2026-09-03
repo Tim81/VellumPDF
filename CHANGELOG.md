@@ -83,7 +83,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `InlineImageMalformed`, and `ContentStreamTooLarge` (one 64 MiB decoded-content budget per page,
   shared between its own `/Contents` and every Form XObject it draws; each invocation of a form
   counts again, since the interpretation cost this bounds scales with how many times a form is
-  drawn). (#98)
+  drawn), charged against the budget as each `/Contents` element or form invocation decodes rather
+  than only once all of them already have, so a `/Contents` array naming the same oversized stream
+  many times cannot hold every decode in memory before the cap gets a chance to stop it. `Do` on a
+  Form XObject also concatenates the form's own `/Matrix` into the graphics state's CTM (§8.10.1 b)
+  before interpreting its content, so a caller reading the CTM from inside the form's own content
+  sees the composed value, not the invoker's own CTM with the form's matrix left for it to apply
+  separately. (#98)
 
 ### Changed
 

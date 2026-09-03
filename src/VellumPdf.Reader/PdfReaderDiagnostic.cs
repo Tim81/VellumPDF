@@ -388,11 +388,14 @@ public enum PdfReaderDiagnosticCode
     /// second sign character (<c>--5</c>, <c>-+5</c>: §7.3.3 allows only "an optional sign"), a
     /// dictionary operand on an operator other than <c>BDC</c>/<c>DP</c> (§7.8.2: "Dictionaries
     /// shall be permitted as operands only by certain specific operators"), a known operator
-    /// invoked with the wrong operand count for its own arity (Annex A Table A.1), an unbalanced
-    /// <c>Q</c> with no matching <c>q</c> on the graphics-state stack, or an unbalanced <c>EMC</c>
-    /// with no matching <c>BMC</c>/<c>BDC</c> (§14.6.1). An unbalanced <c>q</c> still open at the
-    /// end of a content stream is not reported: nothing downstream of this interpreter needs the
-    /// graphics state restored past the last operator it saw.
+    /// invoked with the wrong operand count for its own arity (Annex A Table A.1), an operand of
+    /// the wrong type where the arity is otherwise right (a <c>TJ</c> whose single operand is not
+    /// an array, §9.4.3), a <c>Do</c> that occurred inside a text object (§8.2 Table 50, which does
+    /// not list <c>Do</c> among the operators a text object permits), an unbalanced <c>Q</c> with
+    /// no matching <c>q</c> on the graphics-state stack, or an unbalanced <c>EMC</c> with no
+    /// matching <c>BMC</c>/<c>BDC</c> (§14.6.1). An unbalanced <c>q</c> still open at the end of a
+    /// content stream is not reported: nothing downstream of this interpreter needs the graphics
+    /// state restored past the last operator it saw.
     /// </summary>
     OperandStackMalformed = 302,
 
@@ -440,14 +443,24 @@ public enum PdfReaderDiagnosticCode
     /// dictionary entries was itself invalid: a filter this interpreter never applies to inline
     /// image data (<c>JBIG2Decode</c>, <c>JPXDecode</c>, or <c>Crypt</c>: §8.9.7 itself excludes
     /// all three from inline-image use), a missing <c>ID</c> or <c>EI</c> operator, a missing,
-    /// non-integer, or non-positive <c>/W</c>, <c>/H</c>, or <c>/BPC</c> where the image's shape
-    /// requires one to compute the data length (Table 87 types all three as positive integers), a
-    /// negative <c>/L</c> (§8.9.7, Table 91; PDF 2.0), an <c>/L</c> or computed length past the end
-    /// of the stream, or a computed length (from <c>/L</c> or from the image's own shape) that does
-    /// not land on the following <c>EI</c> operator, in which case this reader retries the EI scan
-    /// before giving up. The image is skipped (its data is still delimited well enough for
-    /// interpretation of the rest of the content stream to continue), and no inline-image callback
-    /// is raised for it.
+    /// non-integer, or non-positive <c>/W</c> or <c>/H</c>, a missing <c>/BPC</c> or one whose
+    /// value is not 1, 2, 4, or 8 (or, from PDF 1.5, 16) where the image's shape requires one to
+    /// compute the data length (Table 87 types <c>/W</c> and <c>/H</c> as integer and restricts
+    /// <c>/BPC</c>'s own value to that fixed set; "positive" for <c>/W</c>/<c>/H</c> is this
+    /// reader's own requirement, not the table's own wording), an <c>/L</c> present but not an
+    /// integer, or negative (§8.9.7, Table 91; PDF 2.0), an <c>/L</c> or computed length past the
+    /// end of the stream, or a computed length (from <c>/L</c> or from the image's own shape) that
+    /// does not land on the following <c>EI</c> operator, in which case this reader retries the EI
+    /// scan before giving up. No inline-image callback is raised for it. When the data was still
+    /// delimited (a disallowed filter, a length that the <c>EI</c> scan recovered) only the image
+    /// is skipped and interpretation of the rest of the content stream continues; when it could not
+    /// be delimited at all (no <c>ID</c>, no <c>EI</c>, a length past the end of the stream)
+    /// interpretation of that stream stops there, since nothing past that point can be
+    /// resynchronised reliably. Reported at most once per page: the sink's dedupe key is (code,
+    /// object, page), and every image on one content stream reports against that same object
+    /// (or, for the page's own top-level content specifically, the same <see langword="null"/>),
+    /// so a second inline image on the same page with its own, different malformation is not
+    /// listed separately.
     /// </summary>
     InlineImageMalformed = 307,
 

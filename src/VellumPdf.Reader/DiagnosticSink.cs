@@ -13,9 +13,13 @@ namespace VellumPdf.Reader;
 /// exception to that cap: a caller uses it for the rare condition that must stay visible even on a
 /// document engineered to exhaust the cap on unrelated conditions first, since <see cref="Report"/>
 /// alone offers no way to tell such a condition apart from an ordinary one once the cap is full.
-/// <see cref="PageTreeWalker"/> is the one caller today, and bounds itself to at most two
-/// retained entries per walk, not three, even though three distinct codes each reach
-/// <see cref="ReportRetained"/> (see its own remarks for why).
+/// <see cref="PageTreeWalker"/> is one caller, and bounds itself to at most two retained entries
+/// per walk, not three, even though three distinct codes each reach <see cref="ReportRetained"/>
+/// (see its own remarks for why). <c>ContentInterpreter</c> (#98) is the other: it bounds itself
+/// to at most two retained entries per <c>Run</c> the same way, one each for
+/// <see cref="PdfReaderDiagnosticCode.ContentStreamTooLarge"/> and
+/// <see cref="PdfReaderDiagnosticCode.FormXObjectBudgetExceeded"/> (see that type's own remarks
+/// for why each of those fires at most once).
 /// </summary>
 /// <param name="cap">
 /// The maximum number of ordinary diagnostics this sink holds before it starts recording
