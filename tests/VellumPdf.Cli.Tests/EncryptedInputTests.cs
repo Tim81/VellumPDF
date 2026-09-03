@@ -10,7 +10,7 @@ namespace VellumPdf.Cli.Tests;
 /// What <c>vellum-preflight</c> does with a document it cannot decrypt. Since #97 the reader opens
 /// encrypted files instead of refusing them, which moved the failure from "unsupported feature" to
 /// "wrong password" — and moved it earlier, into profile auto-detection, which opens the document
-/// before validation ever runs.
+/// before validation ever runs. Since #138 the tool can supply one via <c>--password</c>.
 /// </summary>
 public sealed class EncryptedInputTests
 {
@@ -64,6 +64,127 @@ public sealed class EncryptedInputTests
     }
 
     /// <summary>
+    /// No <c>--password</c> at all names the fix: "supply it with --password". A wrong one names a
+    /// different one: "the supplied --password does not open it". Two distinct next steps, so two
+    /// distinct messages — conflating them would send someone who mistyped a password down the
+    /// "you never gave me one" path. Pinned against two parser edge cases too: a value starting
+    /// with <c>-</c> is still consumed as the password rather than mistaken for another flag, and a
+    /// value containing <c>=</c> survives the <c>--password=</c> split intact.
+    /// </summary>
+    [Theory]
+    [InlineData("--password", "not-u")]
+    [InlineData("--password", "-x")]
+    [InlineData("--password=a=b", null)]
+    public void PasswordProtectedFile_withWrongPassword_namesTheSuppliedPasswordAsWrong(string flag, string? value)
+    {
+        var path = WriteTempPdf(PasswordProtectedPdf());
+        try
+        {
+            var args = value is null ? new[] { flag, path } : new[] { flag, value, path };
+            var (code, _, err) = Run(args);
+
+            Assert.Equal(2, code);
+            Assert.Contains("the supplied --password does not open it", err, StringComparison.Ordinal);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    /// <summary>The no-password message points at the flag that would fix it.</summary>
+    [Fact]
+    public void PasswordProtectedFile_withNoPassword_namesTheFlagToSupplyIt()
+    {
+        var path = WriteTempPdf(PasswordProtectedPdf());
+        try
+        {
+            var (code, _, err) = Run(path);
+
+            Assert.Equal(2, code);
+            Assert.Contains("supply it with --password", err, StringComparison.Ordinal);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    /// <summary>
+    /// <c>--password=</c> and omitting the flag both open with the empty user password (ISO
+    /// 32000-2 §7.6.4.3.2, Algorithm 2, step (a): an empty password string means there is no user
+    /// password), so an empty value gets the "you never gave me one" message too. Pins the
+    /// <c>string.IsNullOrEmpty</c> check in <c>PasswordProtectedMessage</c> against a regression to
+    /// a null-only check, which would misreport an explicitly empty password as a wrong one.
+    /// </summary>
+    [Fact]
+    public void PasswordProtectedFile_withEmptyPassword_namesTheFlagToSupplyIt()
+    {
+        var path = WriteTempPdf(PasswordProtectedPdf());
+        try
+        {
+            var (code, _, err) = Run("--password=", path);
+
+            Assert.Equal(2, code);
+            Assert.Contains("supply it with --password", err, StringComparison.Ordinal);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    /// <summary>
+    /// Both spellings — <c>--password u</c> and <c>--password=u</c> — reach the same parsed value,
+    /// so the correct password lets the run past authentication regardless of which one was used.
+    /// The run still exits 1, not 0: with the password accepted, validation reaches
+    /// <c>FileTrailerRule</c>, which reports <c>ISO19005-2:6.1.3-no-encrypt</c> because the trailer
+    /// still carries <c>/Encrypt</c> — a PDF/A-2b file must not be encrypted at all, correct
+    /// password or not — so 1 (non-conformant), not merely "not a usage error", is what a
+    /// successful authentication on this fixture actually produces.
+    /// </summary>
+    [Theory]
+    [InlineData("--password", "u")]
+    [InlineData("--password=u", null)]
+    public void PasswordProtectedFile_withCorrectPassword_authenticatesAndRuns(string flag, string? value)
+    {
+        var path = WriteTempPdf(PasswordProtectedPdf());
+        try
+        {
+            var args = value is null
+                ? new[] { "-p", "2b", flag, path }
+                : new[] { "-p", "2b", flag, value, path };
+            var (code, stdout, err) = Run(args);
+
+            Assert.Equal(1, code);
+            Assert.DoesNotContain("password-protected", err, StringComparison.Ordinal);
+            Assert.Contains("ISO19005-2:6.1.3-no-encrypt", stdout, StringComparison.Ordinal);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    /// <summary>A <c>--password</c> with nothing after it is a usage error, like every other option
+    /// that takes an argument.</summary>
+    [Fact]
+    public void PasswordFlag_withNoValue_isAUsageError()
+    {
+        var (code, _, err) = Run("--password");
+
+        Assert.Equal(2, code);
+        Assert.Contains("--password requires an argument", err, StringComparison.Ordinal);
+    }
+
+    /// <summary>The help text documents the flag.</summary>
+    [Fact]
+    public void HelpText_MentionsPassword()
+    {
+        Assert.Contains("--password", HelpText.Text, StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// The sibling condition on the same path. A public-key-encrypted document, or one naming a
     /// <c>/V</c> this library cannot implement, throws <c>UnsupportedPdfFeatureException</c> from the
     /// same auto-detection call — and that one reached <c>Main</c> as a stack trace and exit 127
@@ -99,10 +220,10 @@ public sealed class EncryptedInputTests
     [Fact]
     public void UndefinedCryptFilter_withNoProfileFlag_reportsAnError_ratherThanNothing()
     {
-        // An EMPTY user password, so the CLI — which has no way to supply one — gets past
-        // authentication and actually reaches the crypt filter. With a password the password error
-        // fires first and this says nothing about the guard. That is also the shape most encrypted
-        // PDFs in the wild take. /O and /U were derived outside this library for the empty user
+        // An EMPTY user password, deliberately given no --password: authentication succeeds on it
+        // alone and the run reaches the crypt filter. With a password the password error fires
+        // first and this says nothing about the guard. That is also the shape most encrypted PDFs
+        // in the wild take. /O and /U were derived outside this library for the empty user
         // password, owner "o", /P -4 and the trailer /ID below.
         var path = WriteTempPdf(PasswordProtectedPdf(
             "<< /Filter /Standard /V 4 /R 4 /Length 128 "
@@ -155,7 +276,8 @@ public sealed class EncryptedInputTests
 
     // An RC4 document whose user password is "u" — /O, /U, /P and the trailer /ID are the values
     // from the reader's own enc-rc4-128.pdf fixture, which is what makes them authenticate. Nothing
-    // here needs to decrypt; the CLI never gets past opening it.
+    // here needs to decrypt: the page tree is empty, so a run that authenticates reaches rule
+    // evaluation with no encrypted strings or streams to handle.
     private static byte[] PasswordProtectedPdf(string? encryptDict = null)
     {
         var id = Convert.ToHexStringLower([.. Enumerable.Range(0, 16).Select(i => (byte)i)]);

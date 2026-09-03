@@ -8,6 +8,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **PDF/UA-1 §7.16-1 conformance check, and a password for preflight (#138).** A new rule,
+  `UaEncryptionPermissionsRule`, reads an encrypted document's `/Encrypt` dictionary and reports an
+  error when its `/P` entry does not have bit 10 set — ISO 32000-2 Table 22 requires every writer to
+  set it, even though the accessibility restriction it once gated was deprecated in PDF 2.0, because
+  PDF/UA-1 (ISO 14289-1, based on the earlier ISO 32000-1) still checks it. `PdfPreflight` gains four
+  overloads — `DetectClaimedProfiles(byte[]|Stream, string?)` and
+  `Validate(byte[]|Stream, PdfConformance, string?)` — that accept a password, so an encrypted
+  document requiring one can now be validated at all; the existing overloads keep opening with no
+  password and delegate to the new ones. `ConformanceCatalog` moves `7.16-1` from out-of-scope to
+  implemented: the catalog still lists 106 PDF/UA-1 checks, and implemented goes from 104 to 105.
+  (The 1.7.7 entry below describes 7.16-1 as needing "reader decryption" — that was the state before
+  this release; the reader has decrypted since #97, and what was actually missing was this password
+  parameter.)
+- **`vellum-preflight` accepts `--password <pw>` / `--password=<pw>` (#138).** It threads through to
+  both profile auto-detection and validation, so an encrypted document requiring a password can now
+  be checked from the command line.
 - **`PdfDocumentReader.Diagnostics` — a notify-and-continue channel for conditions the reader
   recovers from instead of aborting on.** Twelve `PdfReaderDiagnosticCode` values cover file
   structure and stream decoding for this release: five for cross-reference and object resolution
@@ -61,6 +77,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   let this propagate: it catches the exception per object and reports a diagnostic
   (`PageTreeMissing`, `PageTreeKidNotDictionary`, `PageTreeNodeMalformed`, or
   `PageAttributeInvalid`, depending on where the literal sits) instead of throwing. (#98)
+
+- **The password-protected-file message now says which of two outcomes happened.** No `--password`
+  was given, or an empty one was (`--password ""`), and either way it prints "supply it with
+  --password"; a non-empty `--password` that does not open the file prints "the supplied
+  --password does not open it". (#138)
+- **Encrypted documents written without `PdfPermissions.Extract` emit different `/P` and `/Perms`
+  bytes.** Bit 10 of `/P` is now always set, so a byte-for-byte diff against the same document
+  encrypted with an earlier version will show this difference, and the permissions such a
+  document reports on re-opening now include `Extract`. Documents written with `Extract`
+  (the default, since `All` includes it) carry the same `/P` value as before. See Fixed, below,
+  for why. (#397)
+
+### Fixed
+
+- **`/P` bit 10 is now always set on a newly written `/Encrypt` dictionary.** The restriction this
+  bit expressed is deprecated in PDF 2.0, and ISO 32000-2 Table 22 requires writers to set the bit
+  regardless of the permissions requested; the Standard security handler previously set it only
+  when `PdfPermissions.Extract` was included, so any permission set that omitted `Extract`
+  produced a Table 22 violation and failed PDF/UA-1 §7.16-1. `Permissions = None` now writes
+  `/P -3392` instead of `-3904`, `Copy` writes `-3376` instead of `-3888`, and `All & ~Extract`
+  writes `-4` instead of `-516`, the same value as `All`; at `/R` 6 the `/Perms` seal
+  (Algorithm 10) changes with it, since it seals the same `/P` value. A document written without
+  `Extract` therefore reads back with `Extract` included in `PdfEncryptionInfo.Permissions`. (#397)
 
 ## [2.3.0] - 2026-09-01
 

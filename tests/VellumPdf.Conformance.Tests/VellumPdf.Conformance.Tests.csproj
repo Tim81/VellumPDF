@@ -44,6 +44,39 @@
     <EmbeddedResource Include="Assets\jpx-encrypted-emptyuser.pdf">
       <LogicalName>jpx-encrypted-emptyuser.pdf</LogicalName>
     </EmbeddedResource>
+    <!-- Built once by the pre-#397 writer with /P bit 10 deliberately cleared, then committed;
+         see Assets/README.md for exactly how, and why #397 removed the writer's ability to
+         reproduce it. Read by three test classes: UaEncryptionPermissionsRuleTests,
+         UaEncryptionPermissionsVeraPdfTests and EncryptedFixtureDigestTests, which pins every
+         fixture's SHA-256 to Assets/README.md. -->
+    <EmbeddedResource Include="Assets\enc-aes-256-p-bit10-clear.pdf">
+      <LogicalName>enc-aes-256-p-bit10-clear.pdf</LogicalName>
+    </EmbeddedResource>
+    <!-- A byte-identical copy of VellumPdf.Reader.Tests/Fixtures/Encrypted/enc-aes-128.pdf (this
+         project does not reference VellumPdf.Reader.Tests, so fixtures it needs are copied rather
+         than shared). AESv2, user password "u", owner "o", /P -4 — the real-user-password fixture
+         PdfPreflightPasswordOverloadTests exercises the four new password overloads against, and
+         EncryptedFixtureDigestTests, which pins every fixture's SHA-256 to Assets/README.md. -->
+    <EmbeddedResource Include="Assets\enc-aes-128-userpw-u.pdf">
+      <LogicalName>enc-aes-128-userpw-u.pdf</LogicalName>
+    </EmbeddedResource>
+    <!-- Built once by this library's writer (empty user password, owner "vellum-test-owner",
+         Permissions = All) and committed rather than built in-test, then confirmed against a local
+         veraPDF 1.30.2 run before being checked in — see Assets/README.md and
+         UaEncryptionPermissionsVeraPdfTests.cs for why. Used by
+         CompliantFixture_veraPdfReportsNoClause716Element and EncryptedFixtureDigestTests, which
+         pins every fixture's SHA-256 to Assets/README.md. -->
+    <EmbeddedResource Include="Assets\enc-aes-256-emptyuser-p-all.pdf">
+      <LogicalName>enc-aes-256-emptyuser-p-all.pdf</LogicalName>
+    </EmbeddedResource>
+    <!-- Built once by this library's writer (user password "u", Permissions = All) and committed
+         for the same reason as enc-aes-256-emptyuser-p-all.pdf above — see Assets/README.md. Used
+         by UserPasswordDocument_noPassword_refusalMatchesInProcessThrow,
+         UserPasswordDocument_withPassword_verdictMatchesVeraPdf, and EncryptedFixtureDigestTests,
+         which pins every fixture's SHA-256 to Assets/README.md. -->
+    <EmbeddedResource Include="Assets\enc-aes-256-userpw-u-p-all.pdf">
+      <LogicalName>enc-aes-256-userpw-u-p-all.pdf</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
 
 </Project>
