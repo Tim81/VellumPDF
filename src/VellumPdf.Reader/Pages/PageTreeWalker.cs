@@ -78,9 +78,8 @@ internal static class PageTreeWalker
     /// paragraph of the same subclause, after EXAMPLE 2, adds that following one all the way is
     /// required, not optional ("Except where documented to the contrary, any object value may be
     /// a direct or an indirect reference; the semantics are equivalent."), so this bound, like
-    /// <see cref="MaxDepth"/> and
-    /// <see cref="MaxKidsExamined"/> above, is this reader's own choice against adversarial input,
-    /// not a spec requirement.
+    /// <see cref="MaxDepth"/> and <see cref="MaxKidsExamined"/> above, is this reader's own choice
+    /// against adversarial input, not a spec requirement.
     /// </summary>
     internal const int MaxReferenceChainHops = 32;
 
@@ -204,15 +203,15 @@ internal static class PageTreeWalker
         // different aliases that both, one or more hops later, resolve to the same object are the
         // same entry in this set, so the second one is caught here even though the two /Kids
         // elements that led to it never shared an object number of their own. ISO 32000-2 §7.7.3.2
-        // and §7.7.3.3 each forbid a repeated indirect reference to the same node or page object,
-        // whether that repeat is written as the same reference twice or as two different aliases of
-        // it, and describe /Kids as a tree, not a graph, so a second occurrence of a NODE or PAGE
-        // object number already in this set is always a shape violation, regardless of whether it
-        // happens to loop back to an ancestor. A repeated /Kids ARRAY object is a different case:
-        // those two clauses name node and page objects specifically, not the array sitting between
-        // them, so two sibling nodes sharing one, even empty, /Kids array object is not itself a
-        // spec violation.
-        // This reader folds that case into the same visited set and the same PageTreeCycle report
+        // forbids multiple indirect references to the same page tree node, and §7.7.3.3 forbids
+        // multiple indirect references to the same page object, whether that repeat is written as
+        // the same reference twice or as two different aliases of it, and describe /Kids as a
+        // tree, not a graph, so a second occurrence of a NODE or PAGE object number already in
+        // this set is always a shape violation, regardless of whether it happens to loop back to
+        // an ancestor. A repeated /Kids ARRAY object is a different case: those two clauses name
+        // node and page objects specifically, not the array sitting between them, so two sibling
+        // nodes sharing one, even empty, /Kids array object is not itself a spec violation. This
+        // reader folds that case into the same visited set and the same PageTreeCycle report
         // anyway, as this reader's own rule rather than a spec requirement: it is the fix, kept
         // since round 1, for the exponential walk a shared array can otherwise force (see
         // SharedKidsArrayObject_isDetectedAsACycle_beforeExhaustingAnyBudget in PageTreeTests), and
@@ -847,11 +846,10 @@ internal static class PageTreeWalker
     /// subclause says following one all the way is required, not optional ("Except where
     /// documented to the contrary, any object value may be a direct or an indirect reference; the
     /// semantics are equivalent"), so a dictionary entry that names a reference to a reference
-    /// (to a reference...) is resolved the same as if it
-    /// named the final value directly. A cycle (a chain that returns to an object number already
-    /// seen earlier in the SAME chain, including a self-reference) or a chain longer than
-    /// <see cref="MaxReferenceChainHops"/> returns <see langword="false"/> with
-    /// <paramref name="resolved"/> <see langword="null"/>: the
+    /// (to a reference...) is resolved the same as if it named the final value directly. A cycle
+    /// (a chain that returns to an object number already seen earlier in the SAME chain, including
+    /// a self-reference) or a chain longer than <see cref="MaxReferenceChainHops"/> returns
+    /// <see langword="false"/> with <paramref name="resolved"/> <see langword="null"/>: the
     /// reference itself is real syntax, so this is "present but unusable", the same outcome a target
     /// that throws while parsing already gets below, not a new condition that needs its own
     /// diagnostic. <paramref name="cache"/> is consulted before every hop that would otherwise repeat
@@ -861,9 +859,11 @@ internal static class PageTreeWalker
     /// <see cref="InvalidDataException"/> (e.g. a numeral too large for this parser,
     /// <c>PdfObjectParser.ParseLong</c> or <c>ParseReal</c>) the same as any other value the walk
     /// cannot use: skipped and reported through the usual page-tree diagnostics rather than aborting
-    /// the walk. Precedent: <c>PdfDocumentReader.cs</c>'s own object-stream member resolution and
-    /// <c>PdfDocumentReader.SaveDecrypted.cs</c> already recover from this exception per object
-    /// rather than per document.
+    /// the walk. Precedent: reconstruction already recovers from this exception per object rather
+    /// than per document, both in <c>PdfDocumentReader.TryParseObjectStreamMemberDirect</c> (a
+    /// direct object-stream member parse that fails returns null instead of throwing) and in
+    /// <c>XrefReconstructor.cs</c>'s own scan (a probe that fails to parse one candidate is charged
+    /// and the scan resumes past it, rather than aborting).
     /// </summary>
     private static bool TryResolve(
         PdfDocumentReader reader, FailedResolveCache cache, PdfObject raw, out PdfObject? resolved) =>
@@ -1056,12 +1056,14 @@ internal static class PageTreeWalker
     /// <c>/CropBox</c>, <c>/Rotate</c>, <c>/Resources</c>, and each rectangle's array elements), so
     /// this cache's size is a small multiple of <see cref="MaxKidsExamined"/>, not that ceiling
     /// itself, since a given (object number, generation) pair only occupies one entry here no
-    /// matter how many kids point at it: the population is every distinct pair the walk actually
-    /// resolves, whether or not the cross-reference table names it, not a count bounded by the
-    /// xref table's own size (a reference to an object the xref has no entry for adds a key here
-    /// exactly the same as a reference to one it does have). Lives only as long as
-    /// one <see cref="Walk"/> call, since <see cref="PdfDocumentReader.Pages"/> walks the tree once
-    /// and caches the result rather than calling <see cref="Walk"/> again.
+    /// matter how many kids point at it: the population is every distinct pair the walk fails to
+    /// resolve, not every pair it resolves at all (a target that resolves successfully never
+    /// reaches <see cref="Add"/>). A reference to an object the xref has no entry for adds one key
+    /// here the same as a reference to an object the xref does list but whose own body fails to
+    /// parse; whether the xref names the object decides nothing about whether this cache holds an
+    /// entry for it. Lives only as long as one <see cref="Walk"/> call, since
+    /// <see cref="PdfDocumentReader.Pages"/> walks the tree once and caches the result rather than
+    /// calling <see cref="Walk"/> again.
     /// </summary>
     private sealed class FailedResolveCache
     {

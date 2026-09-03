@@ -196,8 +196,9 @@ code and return whatever pages were found up to that point. `PageTreeCycle` also
 reached through different aliases, not just a literal repeated reference: two `/Kids` elements
 naming different objects that both resolve, one or more indirect references later, to the same
 page or node still count as one repeated object, reported once as `PageTreeCycle` naming the
-object they both resolve to, with the page (or node) itself listed once, under its own object
-number. See `PdfReaderDiagnosticCode`'s `2xx` block for the full list.
+object they both resolve to. A shared page is listed once, under its own object number; a shared
+node's descendant pages are listed once each, the same as if the second alias had never been
+written. See `PdfReaderDiagnosticCode`'s `2xx` block for the full list.
 
 ### Diagnostics
 

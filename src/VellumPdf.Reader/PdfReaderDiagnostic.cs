@@ -244,13 +244,14 @@ public enum PdfReaderDiagnosticCode
     PageTreeMissing = 200,
 
     /// <summary>
-    /// The same object number was reached twice while walking the page tree: as a page-tree node,
-    /// a page object, or a <c>/Kids</c> array reached through an indirect reference, in any
-    /// combination. ISO 32000-2 §7.7.3.2 and §7.7.3.3 each forbid a repeated indirect reference to
-    /// the same node or page object, and describe <c>/Kids</c> as a tree rather than a graph, so this
-    /// is always a shape violation, whether it forms a genuine ancestor cycle, a redundant sibling
-    /// reference, or two nodes sharing one <c>/Kids</c> array object; either way the repeat is
-    /// skipped and the walk continues.
+    /// The same object number, the one a chain of indirect references ultimately resolves to
+    /// rather than any single reference along the way, was reached twice while walking the page
+    /// tree: as a page-tree node, a page object, or a <c>/Kids</c> array reached through an
+    /// indirect reference, in any combination. ISO 32000-2 §7.7.3.2 and §7.7.3.3 each forbid a
+    /// repeated indirect reference to the same node or page object, and describe <c>/Kids</c> as a
+    /// tree rather than a graph, so this is always a shape violation, whether it forms a genuine
+    /// ancestor cycle, a redundant sibling reference, or two nodes sharing one <c>/Kids</c> array
+    /// object; either way the repeat is skipped and the walk continues.
     /// </summary>
     PageTreeCycle = 201,
 
