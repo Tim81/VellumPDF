@@ -1,7 +1,6 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
-using System.Diagnostics.CodeAnalysis;
 using VellumPdf.Core;
 using VellumPdf.Document;
 
@@ -71,6 +70,17 @@ internal static class PageTreeWalker
     /// </summary>
     internal const int MaxKidsExamined = 1_000_000;
 
+    /// <summary>
+    /// Hard cap on how many hops one indirect-reference chain follows before this reader gives up
+    /// on it. ISO 32000-2 §7.3.10's 2020 NOTE permits chains of references with no length limit of
+    /// its own ("Any object outside of an object stream can consist solely of an object
+    /// reference. PDF syntax thus permits chains of such objects[; ...] the semantics are
+    /// equivalent" to a direct value), so this bound, like <see cref="MaxDepth"/> and
+    /// <see cref="MaxKidsExamined"/> above, is this reader's own choice against adversarial input,
+    /// not a spec requirement.
+    /// </summary>
+    internal const int MaxReferenceChainHops = 32;
+
     private static readonly PdfRectangle LetterFallback = new(0, 0, 612, 792);
 
     // Not one of PdfName's well-known statics (src/VellumPdf.Kernel/Core/PdfName.cs): nothing
@@ -86,20 +96,37 @@ internal static class PageTreeWalker
     internal static List<PdfReadPage> Walk(PdfDocumentReader reader, DiagnosticSink diagnostics)
     {
         var pages = new List<PdfReadPage>();
+        var cache = new FailedResolveCache();
 
         var rootRaw = reader.Catalog.Get(PdfName.Pages);
         var rootObjectNumber = (rootRaw as PdfIndirectReference)?.ObjectNumber ?? 0;
-        var rootResolved = ResolveOrAbsent(reader, rootRaw, out var rootAbsent);
+        var rootResolved = ResolveOrAbsent(reader, cache, rootRaw, out var rootAbsent);
 
         // A genuinely omitted /Pages entry and one that IS there but is null, directly or through
-        // a reference that resolves to null (ISO 32000-2 §7.3.9), are the same "no /Pages entry"
-        // condition; only a value that resolves to something else entirely reaches the "does not
-        // resolve to a dictionary" report below.
+        // a chain of references that resolves to null (ISO 32000-2 §7.3.9, §7.3.10), are the same
+        // "no /Pages entry" condition; a value that resolves to something else entirely reaches the
+        // "does not resolve to a dictionary" report below. The two null-equivalent cases still get
+        // different message text: a direct entry names no object to report, but a reference that
+        // resolves to nothing is worth naming, since the file plainly has SOME /Pages entry, just
+        // not a usable one.
         if (rootAbsent)
         {
-            diagnostics.Report(
-                PdfReaderDiagnosticCode.PageTreeMissing,
-                "The document catalog has no /Pages entry (ISO 32000-2 §7.7.2); the document has no pages.");
+            if (rootRaw is PdfIndirectReference)
+            {
+                diagnostics.Report(
+                    PdfReaderDiagnosticCode.PageTreeMissing,
+                    $"The document catalog's /Pages entry references object {rootObjectNumber}, "
+                    + "which does not exist or is the null object (ISO 32000-2 §7.3.9, §7.3.10); "
+                    + "the document has no pages.",
+                    rootObjectNumber);
+            }
+            else
+            {
+                diagnostics.Report(
+                    PdfReaderDiagnosticCode.PageTreeMissing,
+                    "The document catalog has no /Pages entry (ISO 32000-2 §7.7.2); the document has "
+                    + "no pages.");
+            }
             return pages;
         }
 
@@ -122,9 +149,9 @@ internal static class PageTreeWalker
         // children, it is not a page tree at all.
         var rootKidsRaw = rootDict.Get(PdfName.Kids);
         var rootKidsArrayObjectNumber = (rootKidsRaw as PdfIndirectReference)?.ObjectNumber ?? 0;
-        var rootKidsArray = ResolveOrAbsent(reader, rootKidsRaw, out _) as PdfArray;
+        var rootKidsArray = ResolveOrAbsent(reader, cache, rootKidsRaw, out _) as PdfArray;
 
-        var rootKind = ClassifyByType(rootDict, rootKidsArray, out var rootType);
+        var rootKind = ClassifyByType(reader, cache, rootDict, rootKidsArray, out var rootType);
         if (rootKind != NodeKind.Node)
         {
             var found = rootType is not null ? $"/Type {rootType}" : "no /Type and no /Kids array";
@@ -143,7 +170,8 @@ internal static class PageTreeWalker
         // flagged at all. Reported on its own rather than merged with the missing-/Kids case below:
         // the two are different codes (PageTreeNodeMalformed here, PageTreeMissing there), so
         // DiagnosticSink's dedupe key never collides between them and both can fire independently.
-        _ = ResolveOrAbsent(reader, rootDict.Get(PdfName.Contents), out var rootContentsAbsent);
+        _ = ResolveOrAbsent(
+            reader, cache, rootDict.Get(PdfName.Contents), out var rootContentsAbsent);
         if (!rootContentsAbsent)
         {
             diagnostics.Report(
@@ -187,7 +215,8 @@ internal static class PageTreeWalker
         if (rootKidsArrayObjectNumber != 0)
             visited.Add(rootKidsArrayObjectNumber);
 
-        var rootEffective = ComputeEffectiveAttributes(reader, diagnostics, rootDict, rootObjectNumber, default);
+        var rootEffective = ComputeEffectiveAttributes(
+            reader, cache, diagnostics, rootDict, rootObjectNumber, default);
 
         var stack = new Stack<Frame>();
         stack.Push(new Frame(rootKids, rootEffective));
@@ -235,7 +264,8 @@ internal static class PageTreeWalker
                 continue;
             }
 
-            if (!TryResolve(reader, kidRaw, out var kidResolved) || kidResolved is not PdfDictionary kidDict)
+            if (!TryResolve(reader, cache, kidRaw, out var kidResolved)
+                || kidResolved is not PdfDictionary kidDict)
             {
                 diagnostics.Report(
                     PdfReaderDiagnosticCode.PageTreeKidNotDictionary,
@@ -245,7 +275,8 @@ internal static class PageTreeWalker
             }
 
             var kind = ClassifyNode(
-                reader, diagnostics, kidDict, kidObjectNumber, out var kidKids, out var kidKidsArrayObjectNumber);
+                reader, cache, diagnostics, kidDict, kidObjectNumber, out var kidKids,
+                out var kidKidsArrayObjectNumber);
             if (kind == NodeKind.Skip)
                 continue;
 
@@ -279,7 +310,8 @@ internal static class PageTreeWalker
                     continue; // Skip this subtree; siblings already queued elsewhere still walk.
                 }
 
-                var kidEffective = ComputeEffectiveAttributes(reader, diagnostics, kidDict, kidObjectNumber, frame.Effective);
+                var kidEffective = ComputeEffectiveAttributes(
+                    reader, cache, diagnostics, kidDict, kidObjectNumber, frame.Effective);
                 stack.Push(new Frame(kidKids, kidEffective));
                 continue;
             }
@@ -295,7 +327,8 @@ internal static class PageTreeWalker
                 return pages;
             }
 
-            pages.Add(BuildPage(reader, diagnostics, pages.Count, kidObjectNumber, kidDict, frame.Effective));
+            pages.Add(BuildPage(
+                reader, cache, diagnostics, pages.Count, kidObjectNumber, kidDict, frame.Effective));
         }
 
         return pages;
@@ -310,6 +343,10 @@ internal static class PageTreeWalker
     /// <c>/Type /Pages</c> is always a node, a <c>/Type</c> naming anything else, including
     /// <c>/Type /Template</c>, is skipped outright, and no <c>/Type</c> at all falls back to the
     /// structural tell, a node when <paramref name="kidsArray"/> is non-null, a leaf otherwise.
+    /// <c>/Type</c> resolves through the same reference-chain-following path
+    /// (<see cref="ResolveOrAbsent"/>) as everything else in this walker: ISO 32000-2 §7.3.7 makes
+    /// only a dictionary's KEYS direct, not its values, so a <c>/Type</c> reached through one or
+    /// more indirect references is classified exactly the same as one written inline.
     /// <c>/Type /Template</c> is skipped rather than treated as a leaf even though Table 31's own
     /// Type row admits it ("shall be Page for a page object or Template for an invisible Template
     /// page", ISO 32000-2 §7.7.3.3): that same Table 31, in its Parent row, exempts Template
@@ -321,9 +358,11 @@ internal static class PageTreeWalker
     /// <see cref="Walk"/>'s own root check (which reports a non-node classification as
     /// <see cref="PdfReaderDiagnosticCode.PageTreeMissing"/> instead).
     /// </summary>
-    private static NodeKind ClassifyByType(PdfDictionary dict, PdfArray? kidsArray, out PdfName? type)
+    private static NodeKind ClassifyByType(
+        PdfDocumentReader reader, FailedResolveCache cache, PdfDictionary dict, PdfArray? kidsArray,
+        out PdfName? type)
     {
-        type = dict.Get(PdfName.Type) as PdfName;
+        type = ResolveOrAbsent(reader, cache, dict.Get(PdfName.Type), out _) as PdfName;
 
         if (type is not null && type.Equals(PdfName.Page))
             return NodeKind.Leaf;
@@ -393,15 +432,15 @@ internal static class PageTreeWalker
         + "descendants, so it describes nothing here; the content was not treated as a page";
 
     private static NodeKind ClassifyNode(
-        PdfDocumentReader reader, DiagnosticSink diagnostics, PdfDictionary dict, int objectNumber,
-        out PdfArray kids, out int kidsArrayObjectNumber)
+        PdfDocumentReader reader, FailedResolveCache cache, DiagnosticSink diagnostics,
+        PdfDictionary dict, int objectNumber, out PdfArray kids, out int kidsArrayObjectNumber)
     {
         var kidsRaw = dict.Get(PdfName.Kids);
         kidsArrayObjectNumber = (kidsRaw as PdfIndirectReference)?.ObjectNumber ?? 0;
-        var kidsResolved = ResolveOrAbsent(reader, kidsRaw, out var kidsAbsent);
+        var kidsResolved = ResolveOrAbsent(reader, cache, kidsRaw, out var kidsAbsent);
         var kidsArray = kidsResolved as PdfArray;
 
-        var kind = ClassifyByType(dict, kidsArray, out var type);
+        var kind = ClassifyByType(reader, cache, dict, kidsArray, out var type);
 
         switch (kind)
         {
@@ -437,7 +476,8 @@ internal static class PageTreeWalker
                     // appended.
                     List<string>? problems = null;
 
-                    _ = ResolveOrAbsent(reader, dict.Get(PdfName.Contents), out var contentsAbsent);
+                    _ = ResolveOrAbsent(
+                        reader, cache, dict.Get(PdfName.Contents), out var contentsAbsent);
                     if (!contentsAbsent)
                         (problems ??= []).Add(ContentsOnNodeProblem);
 
@@ -475,15 +515,15 @@ internal static class PageTreeWalker
     /// reporting once is what lets a caller see all of them.
     /// </summary>
     private static PdfReadPage BuildPage(
-        PdfDocumentReader reader, DiagnosticSink diagnostics, int pageIndex, int objectNumber,
-        PdfDictionary dict, EffectiveAttributes parent)
+        PdfDocumentReader reader, FailedResolveCache cache, DiagnosticSink diagnostics,
+        int pageIndex, int objectNumber, PdfDictionary dict, EffectiveAttributes parent)
     {
         var failures = new List<string>();
 
         var mediaBoxRaw = dict.Get(PdfName.MediaBox);
         var mediaBoxOrNull = ResolveRectangleAttribute(
-            reader, objectNumber, "MediaBox", mediaBoxRaw, parent.MediaBox, pageIndex, failures,
-            out var mediaBoxPresent);
+            reader, cache, objectNumber, "MediaBox", mediaBoxRaw, parent.MediaBox, pageIndex,
+            failures, out var mediaBoxPresent);
 
         PdfRectangle mediaBox;
         if (mediaBoxOrNull is { } mb)
@@ -509,8 +549,8 @@ internal static class PageTreeWalker
 
         var cropBoxRaw = dict.Get(CropBoxKey);
         var cropBoxOrNull = ResolveRectangleAttribute(
-            reader, objectNumber, "CropBox", cropBoxRaw, parent.CropBox, pageIndex, failures,
-            out _);
+            reader, cache, objectNumber, "CropBox", cropBoxRaw, parent.CropBox, pageIndex,
+            failures, out _);
 
         // ISO 32000-2 §14.11.2.1: "If the bounds of the crop, trim, bleed or art box extends outside
         // of the bounds of the media box, a processor shall treat the box as its intersection with
@@ -526,7 +566,7 @@ internal static class PageTreeWalker
 
         var rotateRaw = dict.Get(PdfName.Rotate);
         var rotate = ResolveRotateAttribute(
-            reader, objectNumber, rotateRaw, parent.Rotate, pageIndex, failures) ?? 0;
+            reader, cache, objectNumber, rotateRaw, parent.Rotate, pageIndex, failures) ?? 0;
 
         if (failures.Count > 0)
         {
@@ -536,7 +576,7 @@ internal static class PageTreeWalker
         }
 
         var resourcesRaw = dict.Get(PdfName.Resources);
-        var resources = ResolveResourcesAttribute(reader, resourcesRaw, parent.Resources);
+        var resources = ResolveResourcesAttribute(reader, cache, resourcesRaw, parent.Resources);
 
         return new PdfReadPage(pageIndex, objectNumber, dict, mediaBox, cropBox, rotate, resources);
     }
@@ -611,27 +651,36 @@ internal static class PageTreeWalker
     /// to redirect inheritance away from the chain the walk actually descended.
     /// </summary>
     private static PdfRectangle? ResolveRectangleAttribute(
-        PdfDocumentReader reader, int objectNumber, string keyName,
+        PdfDocumentReader reader, FailedResolveCache cache, int objectNumber, string keyName,
         PdfObject? raw, PdfRectangle? inherited, int? pageIndex, List<string> failures,
         out bool present)
     {
-        var resolved = ResolveOrAbsent(reader, raw, out var absent);
+        var resolved = ResolveOrAbsent(reader, cache, raw, out var absent);
         present = !absent;
         if (absent)
             return inherited;
 
-        if (resolved is not null && TryReadRectangle(reader, resolved, out var rect))
+        if (resolved is not null && TryReadRectangle(reader, cache, resolved, out var rect))
             return rect;
 
+        // A raw entry present but unresolvable at all (a cycle, too many chained references, or a
+        // target whose own parse threw) reads differently from one that resolved cleanly to a value
+        // of the wrong shape, so the message distinguishes them rather than blaming "did not resolve
+        // to a 4-element numeric array" on a chain that never produced any value to check the shape
+        // of in the first place.
+        var reason = resolved is null
+            ? "names a reference this reader could not resolve at all (a cycle, too many chained "
+              + "references, or an object that failed to parse)"
+            : "did not resolve to a 4-element numeric array (ISO 32000-2 §7.9.5)";
         failures.Add(
-            $"{keyName} on {DescribeSource(objectNumber, pageIndex)} did not resolve to a "
-            + "4-element numeric array (ISO 32000-2 §7.9.5); the nearest valid ancestor value, if "
-            + "any, is used instead.");
+            $"{keyName} on {DescribeSource(objectNumber, pageIndex)} {reason}; the nearest valid "
+            + "ancestor value, if any, is used instead.");
 
         return inherited;
     }
 
-    private static bool TryReadRectangle(PdfDocumentReader reader, PdfObject raw, out PdfRectangle rect)
+    private static bool TryReadRectangle(
+        PdfDocumentReader reader, FailedResolveCache cache, PdfObject raw, out PdfRectangle rect)
     {
         rect = LetterFallback;
         if (raw is not PdfArray arr || arr.Count != 4)
@@ -640,7 +689,7 @@ internal static class PageTreeWalker
         Span<double> values = stackalloc double[4];
         for (var i = 0; i < 4; i++)
         {
-            var element = TryResolve(reader, arr[i], out var resolved) ? resolved : null;
+            var element = TryResolve(reader, cache, arr[i], out var resolved) ? resolved : null;
             if (element is null || !TryReadNumber(element, out values[i]))
                 return false;
         }
@@ -664,15 +713,19 @@ internal static class PageTreeWalker
     /// <paramref name="failures"/> (see <see cref="ResolveRectangleAttribute"/>'s doc for why this
     /// does not report directly). Unlike <c>/MediaBox</c>, <c>/Rotate</c> is optional (ISO 32000-2
     /// Table 31), so an entry <see cref="ResolveOrAbsent"/> counts as absent (omitted outright,
-    /// null, or an indirect reference to a nonexistent or null object, ISO 32000-2 §7.3.9) falls
-    /// through to <paramref name="inherited"/> without any failure, and a chain that never
-    /// resolves at all is left for the caller to default to 0 silently.
+    /// null, or a reference chain that resolves to either of those, ISO 32000-2 §7.3.9) falls
+    /// through to <paramref name="inherited"/> without any failure. A chain that is present but
+    /// unusable (a cycle, too many hops, or a target that failed to parse) is not silent the same
+    /// way: <c>resolved</c> comes back <see langword="null"/> without <c>isNumber</c> being true,
+    /// so it takes the same "did not resolve to a number" failure branch below as any other
+    /// wrong-typed value, and <paramref name="inherited"/> only ends up defaulted to 0 by
+    /// <see cref="BuildPage"/>'s own <c>?? 0</c> when there is no ancestor value to fall back to.
     /// </summary>
     private static int? ResolveRotateAttribute(
-        PdfDocumentReader reader, int objectNumber, PdfObject? raw,
+        PdfDocumentReader reader, FailedResolveCache cache, int objectNumber, PdfObject? raw,
         int? inherited, int? pageIndex, List<string> failures)
     {
-        var resolved = ResolveOrAbsent(reader, raw, out var absent);
+        var resolved = ResolveOrAbsent(reader, cache, raw, out var absent);
         if (absent)
             return inherited;
 
@@ -707,9 +760,9 @@ internal static class PageTreeWalker
     /// <c>/MediaBox</c> is, always worth a diagnostic since nothing about that one is optional.
     /// </summary>
     private static PdfDictionary? ResolveResourcesAttribute(
-        PdfDocumentReader reader, PdfObject? raw, PdfDictionary? inherited)
+        PdfDocumentReader reader, FailedResolveCache cache, PdfObject? raw, PdfDictionary? inherited)
     {
-        var resolved = ResolveOrAbsent(reader, raw, out var absent);
+        var resolved = ResolveOrAbsent(reader, cache, raw, out var absent);
         return !absent && resolved is PdfDictionary dict ? dict : inherited;
     }
 
@@ -730,24 +783,25 @@ internal static class PageTreeWalker
     /// <see cref="BuildPage"/> for the leaf-side counterpart of the per-attribute part.
     /// </summary>
     private static EffectiveAttributes ComputeEffectiveAttributes(
-        PdfDocumentReader reader, DiagnosticSink diagnostics, PdfDictionary dict, int objectNumber,
-        EffectiveAttributes parent)
+        PdfDocumentReader reader, FailedResolveCache cache, DiagnosticSink diagnostics,
+        PdfDictionary dict, int objectNumber, EffectiveAttributes parent)
     {
         var failures = new List<string>();
 
         var mediaBoxRaw = dict.Get(PdfName.MediaBox);
         var mediaBox = ResolveRectangleAttribute(
-            reader, objectNumber, "MediaBox", mediaBoxRaw, parent.MediaBox, null, failures,
+            reader, cache, objectNumber, "MediaBox", mediaBoxRaw, parent.MediaBox, null, failures,
             out var mediaBoxPresent);
         var mediaBoxEverPresent = mediaBoxPresent || parent.MediaBoxEverPresent;
 
         var cropBoxRaw = dict.Get(CropBoxKey);
         var cropBox = ResolveRectangleAttribute(
-            reader, objectNumber, "CropBox", cropBoxRaw, parent.CropBox, null, failures, out _);
+            reader, cache, objectNumber, "CropBox", cropBoxRaw, parent.CropBox, null, failures,
+            out _);
 
         var rotateRaw = dict.Get(PdfName.Rotate);
-        var rotate =
-            ResolveRotateAttribute(reader, objectNumber, rotateRaw, parent.Rotate, null, failures);
+        var rotate = ResolveRotateAttribute(
+            reader, cache, objectNumber, rotateRaw, parent.Rotate, null, failures);
 
         if (failures.Count > 0)
         {
@@ -757,13 +811,25 @@ internal static class PageTreeWalker
         }
 
         var resourcesRaw = dict.Get(PdfName.Resources);
-        var resources = ResolveResourcesAttribute(reader, resourcesRaw, parent.Resources);
+        var resources = ResolveResourcesAttribute(reader, cache, resourcesRaw, parent.Resources);
 
         return new EffectiveAttributes(mediaBox, mediaBoxEverPresent, cropBox, rotate, resources);
     }
 
     /// <summary>
-    /// Resolves <paramref name="raw"/>, treating a target whose parse throws
+    /// Resolves <paramref name="raw"/>, following a chain of indirect references rather than
+    /// stopping at the first one: ISO 32000-2 §7.3.10's 2020 NOTE says such chains are permitted and
+    /// "the semantics are equivalent" to a direct value, so a dictionary entry that names a reference
+    /// to a reference (to a reference...) is resolved the same as if it named the final value
+    /// directly. A cycle (a chain that returns to an object number already seen earlier in the SAME
+    /// chain, including a self-reference) or a chain longer than <see cref="MaxReferenceChainHops"/>
+    /// returns <see langword="false"/> with <paramref name="resolved"/> <see langword="null"/>: the
+    /// reference itself is real syntax, so this is "present but unusable", the same outcome a target
+    /// that throws while parsing already gets below, not a new condition that needs its own
+    /// diagnostic. <paramref name="cache"/> is consulted before every hop that would otherwise repeat
+    /// a resolution this walk already knows fails, and updated after every hop that fails, so a chain
+    /// sharing a failing object with an earlier resolve in this walk costs one real parse, not one
+    /// per caller; see <see cref="FailedResolveCache"/>. Still treats a target whose own parse throws
     /// <see cref="InvalidDataException"/> (e.g. a numeral too large for this parser,
     /// <c>PdfObjectParser.ParseLong</c> or <c>ParseReal</c>) the same as any other value the walk
     /// cannot use: skipped and reported through the usual page-tree diagnostics rather than aborting
@@ -771,60 +837,105 @@ internal static class PageTreeWalker
     /// <c>PdfDocumentReader.SaveDecrypted.cs</c> already recover from this exception per object
     /// rather than per document.
     /// </summary>
-    private static bool TryResolve(PdfDocumentReader reader, PdfObject raw, out PdfObject? resolved)
+    private static bool TryResolve(
+        PdfDocumentReader reader, FailedResolveCache cache, PdfObject raw, out PdfObject? resolved)
     {
-        try
+        PdfObject? current = raw;
+        HashSet<int>? chainVisited = null;
+
+        for (var hop = 0; hop < MaxReferenceChainHops; hop++)
         {
-            resolved = reader.ResolveValue(raw);
-            return true;
+            if (current is not PdfIndirectReference reference)
+            {
+                resolved = current;
+                return true;
+            }
+
+            var key = (reference.ObjectNumber, reference.Generation);
+            if (cache.TryGet(key, out var cachedUnusable))
+            {
+                resolved = null;
+                return !cachedUnusable;
+            }
+
+            if (!(chainVisited ??= []).Add(reference.ObjectNumber))
+            {
+                // Cycle: this object number already appeared earlier in the same chain. Present but
+                // unusable, the same outcome a parse failure gets below, so the caller's own "did not
+                // resolve" report fires instead of this method inventing a new diagnostic for it.
+                cache.Add(key, unusable: true);
+                resolved = null;
+                return false;
+            }
+
+            try
+            {
+                current = reader.ResolveValue(reference);
+            }
+            catch (InvalidDataException)
+            {
+                cache.Add(key, unusable: true);
+                resolved = null;
+                return false;
+            }
+
+            if (current is null)
+                cache.Add(key, unusable: false);
         }
-        catch (InvalidDataException)
-        {
-            resolved = null;
-            return false;
-        }
+
+        // MaxReferenceChainHops reached without terminating: still real syntax the whole way, so
+        // this is "present but unusable" too, not absent -- the caller's normal diagnostic fires.
+        resolved = null;
+        return false;
     }
 
     private static int? NullIfZero(int objectNumber) => objectNumber == 0 ? null : objectNumber;
 
     /// <summary>
-    /// Whether <paramref name="value"/>, already resolved (or a direct value that never needed
-    /// resolving), is ISO 32000-2 §7.3.9's null-equivalent-to-absent: a C# <see langword="null"/>
-    /// (nothing there at all) or the singleton <see cref="PdfNull"/> instance (an explicit null
-    /// value). <see cref="ResolveOrAbsent"/> is the entry point that ALSO covers an unresolved
-    /// reference to either of those (§7.3.9's other sentence); this pure predicate is what it, and
-    /// any caller that has already resolved a value some other way, checks against.
-    /// </summary>
-    private static bool IsAbsent([NotNullWhen(false)] PdfObject? value) => value is null or PdfNull;
-
-    /// <summary>
     /// Resolves <paramref name="raw"/> once, tolerating <paramref name="raw"/> itself being C#
-    /// <see langword="null"/> (an absent dictionary key), and reports via
-    /// <paramref name="absent"/> whether the key counts as ISO 32000-2 §7.3.9 "not present". That
-    /// clause states two rules that both collapse to the same outcome here: "An indirect object
-    /// reference (see 7.3.10) to a nonexistent object shall be treated the same as a null
-    /// object[, and s]pecifying the null object as the value of a dictionary entry shall be
-    /// equivalent to omitting the entry entirely." So <paramref name="absent"/> is
-    /// <see langword="true"/> when the key is genuinely omitted, when its own value is a direct
-    /// <see cref="PdfNull"/>, or when it is an indirect reference that RESOLVES to either of those
-    /// (a reference naming a free or otherwise nonexistent object number resolves to a C#
-    /// <see langword="null"/> the same way an omitted key does, so the one
-    /// <see cref="IsAbsent(PdfObject?)"/> check below covers both). A reference this parser could
-    /// not resolve at all (<see cref="TryResolve"/> catching an <see cref="InvalidDataException"/>)
-    /// is NOT absent: the entry syntactically exists and names something, even if this parser
-    /// cannot make sense of what it names, a different condition from §7.3.9's "nonexistent
-    /// object". Every presence check in this walker resolves through here (or through
-    /// <see cref="IsAbsent(PdfObject?)"/> directly, when a value has already been resolved some
-    /// other way) instead of a bare <c>raw is null</c> check, which <see cref="PdfDictionary.Get"/>
-    /// defeats for a direct null value (it hands back the <see cref="PdfNull"/> singleton, not a
-    /// C# <see langword="null"/>) and which cannot see through a reference at all;
-    /// <c>Filters.cs</c>'s own <c>/Filter</c> lookup already special-cases <see cref="PdfNull"/>
-    /// the same way, though only for the direct case, not the indirect one this method also
-    /// covers. Resolves <paramref name="raw"/> at most once, so a caller that also needs the
-    /// resolved value gets it back from this same call rather than resolving it a second time.
+    /// <see langword="null"/> (an absent dictionary key), and reports via <paramref name="absent"/>
+    /// whether the key counts as ISO 32000-2 §7.3.9 "not present". That clause states two rules that
+    /// both collapse to the same outcome here: "An indirect object reference (see 7.3.10) to a
+    /// nonexistent object shall be treated the same as a null object[, and s]pecifying the null
+    /// object as the value of a dictionary entry shall be equivalent to omitting the entry entirely."
+    /// So <paramref name="absent"/> is <see langword="true"/> when the key is genuinely omitted, when
+    /// its own value is a direct <see cref="PdfNull"/>, or when it names a chain of one or more
+    /// indirect references (§7.3.10's own NOTE permits chains; see <see cref="TryResolve"/>) that
+    /// resolves to either of those.
+    /// <para>
+    /// A reference this parser could not resolve at all (<see cref="TryResolve"/> catching an
+    /// <see cref="InvalidDataException"/>, or finding a cycle, or exceeding
+    /// <see cref="MaxReferenceChainHops"/>) is NOT absent: the entry syntactically exists and names
+    /// something, even if this parser cannot make sense of what it names, a different condition from
+    /// §7.3.9's "nonexistent object". A reference that resolves cleanly to <see langword="null"/>
+    /// WITHOUT throwing -- a generation mismatch or an object-header mismatch, which
+    /// <see cref="PdfDocumentReader"/> already reports its own way -- lands on the absent side
+    /// instead: ISO 32000-2 §7.3.10 identifies an object by its number AND generation together, so a
+    /// mismatch on either names nothing, the same as a reference to an object number the
+    /// cross-reference table has no entry for at all.
+    /// </para>
+    /// <para>
+    /// One known gap: a reference into an object stream whose own member is missing currently throws
+    /// <see cref="InvalidDataException"/> inside <c>PdfDocumentReader.ResolveFromObjectStream</c>
+    /// rather than resolving cleanly to null the way a missing top-level object does, so this walker
+    /// treats it as present rather than absent. That is a <see cref="PdfDocumentReader"/>-wide gap,
+    /// not specific to the page tree, and is left for a follow-up rather than special-cased here.
+    /// </para>
+    /// Every presence check in this walker resolves through here instead of a bare
+    /// <c>raw is null</c> check, which <see cref="PdfDictionary.Get"/> defeats for a direct null
+    /// value (it hands back the <see cref="PdfNull"/> singleton, not a C# <see langword="null"/>) and
+    /// which cannot see through a reference at all. <c>Filters.cs</c>'s own <c>/Filter</c> lookup
+    /// already covers both the direct and the indirect case, for the same reason; where it differs is
+    /// that it does not catch <see cref="InvalidDataException"/> at all, so an unparseable
+    /// <c>/Filter</c> target simply propagates as an exception rather than being weighed against
+    /// absence. This walker cannot afford that (a malformed <c>/Contents</c> deep in the tree must
+    /// not abort the whole walk), which is why <see cref="TryResolve"/> catches the exception and
+    /// this method treats the result as present rather than absent. Resolves <paramref name="raw"/>
+    /// at most once, so a caller that also needs the resolved value gets it back from this same call
+    /// rather than resolving it a second time.
     /// </summary>
     private static PdfObject? ResolveOrAbsent(
-        PdfDocumentReader reader, PdfObject? raw, out bool absent)
+        PdfDocumentReader reader, FailedResolveCache cache, PdfObject? raw, out bool absent)
     {
         if (raw is null or PdfNull)
         {
@@ -832,14 +943,44 @@ internal static class PageTreeWalker
             return null;
         }
 
-        if (!TryResolve(reader, raw, out var resolved))
+        if (!TryResolve(reader, cache, raw, out var resolved))
         {
             absent = false;
             return null;
         }
 
-        absent = IsAbsent(resolved);
+        absent = resolved is null or PdfNull;
         return resolved;
+    }
+
+    /// <summary>
+    /// Remembers, for the rest of one <see cref="Walk"/> call, which (object number, generation)
+    /// pairs already failed to resolve to anything usable, whether by resolving cleanly to nothing
+    /// (a nonexistent object, a generation or header mismatch) or by throwing
+    /// <see cref="InvalidDataException"/> while parsing, or by taking part in a cycle.
+    /// <see cref="PdfDocumentReader"/>'s own resolve cache only remembers a SUCCESSFUL parse, so
+    /// without this, every node whose <c>/Contents</c> or <c>/MediaBox</c> points at the same large,
+    /// unparseable object would force a fresh parse attempt of it; consulting this cache first turns
+    /// that into one real attempt per walk. The two failure kinds are kept apart (<see cref="Add"/>'s
+    /// <c>unusable</c> flag) rather than merged into one "failed" bit: a target that
+    /// threw, or cycled, is present but unusable, so the walker's normal "did not resolve to X"
+    /// diagnostic should keep firing on every later hit; a target that resolved cleanly to nothing is
+    /// genuinely absent (ISO 32000-2 §7.3.9), so it should keep falling through to an inherited
+    /// value in silence, on the first hit and on every cached repeat alike. Bounded by the same
+    /// <see cref="MaxKidsExamined"/> ceiling that bounds how many distinct raw values a walk ever
+    /// hands to <see cref="TryResolve"/> in the first place, and lives only as long as one
+    /// <see cref="Walk"/> call, since <see cref="PdfDocumentReader.Pages"/> walks the tree once and
+    /// caches the result rather than calling <see cref="Walk"/> again.
+    /// </summary>
+    private sealed class FailedResolveCache
+    {
+        private readonly Dictionary<(int ObjectNumber, int Generation), bool> _failed = [];
+
+        internal bool TryGet((int ObjectNumber, int Generation) key, out bool unusable) =>
+            _failed.TryGetValue(key, out unusable);
+
+        internal void Add((int ObjectNumber, int Generation) key, bool unusable) =>
+            _failed[key] = unusable;
     }
 
     private static bool TryReadNumber(PdfObject? obj, out double value)

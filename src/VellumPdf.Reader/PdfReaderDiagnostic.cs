@@ -319,10 +319,19 @@ public enum PdfReaderDiagnosticCode
     /// <item><description>A <c>/Type</c> names neither a node nor a page object. It is skipped
     /// outright: neither a node nor a page.</description></item>
     /// </list>
-    /// Only the stray-<c>/Contents</c> case applies to the root, which the walk reaches without
-    /// going through the same classification the other three cases share: a root with no usable
-    /// <c>/Kids</c>, or whose own <c>/Type</c> does not classify it as a node at all, reports
-    /// <see cref="PageTreeMissing"/> instead, since there is then no tree left to walk.
+    /// Only the stray-<c>/Contents</c> case applies to the root: the other three all fire inside
+    /// <c>PageTreeWalker.ClassifyNode</c>, which classifies a dictionary reached through someone
+    /// else's <c>/Kids</c>, a method the root never runs, since nothing points at it through
+    /// <c>/Kids</c> in the first place. The root does share <c>ClassifyNode</c>'s own
+    /// <c>/Type</c>-driven half, <c>PageTreeWalker.ClassifyByType</c> (both call it, so
+    /// <c>/Type /Template</c> is skipped and an untyped dictionary falls back to its <c>/Kids</c>
+    /// shape the same way at the root as anywhere else); the root's own stray-<c>/Contents</c>
+    /// check runs separately, right after that shared classification, rather than inside
+    /// <c>ClassifyNode</c>. A root whose own <c>/Type</c> does not classify it as a node at all
+    /// never reaches that check and reports <see cref="PageTreeMissing"/> on its own instead; a
+    /// root that DOES classify as a node but has no usable <c>/Kids</c> also reports
+    /// <see cref="PageTreeMissing"/>, separately and not exclusively, since a stray
+    /// <c>/Contents</c> on that same root can still fire this code alongside it.
     /// </summary>
     PageTreeNodeMalformed = 206,
 

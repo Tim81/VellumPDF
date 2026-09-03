@@ -481,6 +481,44 @@ public sealed class PageTreeTests
     }
 
     [Fact]
+    public void PagesEntryReferencesAFreeObject_namesTheObjectInsteadOfTheGenericMessage()
+    {
+        // Object 9 is never defined, so it stays free in BuildPdf's own xref table (ISO 32000-2
+        // §7.3.10: a reference to a nonexistent object resolves the same as the null object). The
+        // catalog plainly HAS a /Pages entry here, unlike MissingPagesEntry_reportsPageTreeMissing
+        // above, so the report should name the object it points at rather than reusing that other
+        // case's "no /Pages entry" text.
+        var bytes = BuildPdf(1, (1, "<< /Type /Catalog /Pages 9 0 R >>"));
+        using var reader = Open(bytes);
+
+        Assert.Equal(0, reader.PageCount);
+        var d = Assert.Single(reader.Diagnostics, x => x.Code == PdfReaderDiagnosticCode.PageTreeMissing);
+        Assert.Equal(9, d.ObjectNumber);
+        Assert.Contains("object 9", d.Message);
+        Assert.DoesNotContain("no /Pages entry", d.Message);
+    }
+
+    [Fact]
+    public void PagesEntryGenerationMismatch_namesTheObjectInsteadOfTheGenericMessage()
+    {
+        // Object 2 exists, but only at generation 0; the catalog's own /Pages entry asks for
+        // generation 1. ISO 32000-2 §7.3.10 identifies an object by number AND generation
+        // together, so this resolves to null exactly like the free-object case above, and gets
+        // the same object-naming treatment rather than the generic "no /Pages entry" text.
+        var bytes = BuildPdf(
+            1,
+            (1, "<< /Type /Catalog /Pages 2 1 R >>"),
+            (2, "<< /Type /Pages /Kids [] /Count 0 >>"));
+        using var reader = Open(bytes);
+
+        Assert.Equal(0, reader.PageCount);
+        var d = Assert.Single(reader.Diagnostics, x => x.Code == PdfReaderDiagnosticCode.PageTreeMissing);
+        Assert.Equal(2, d.ObjectNumber);
+        Assert.Contains("object 2", d.Message);
+        Assert.DoesNotContain("no /Pages entry", d.Message);
+    }
+
+    [Fact]
     public void KidsNotAnArray_onTheRoot_reportsPageTreeMissing()
     {
         var bytes = BuildPdf(
@@ -686,6 +724,47 @@ public sealed class PageTreeTests
         Assert.Null(reader.Pages[0].ObjectNumber);
     }
 
+    [Fact]
+    public void IndirectType_resolvingToPages_isWalkedAsANode_noDiagnostic()
+    {
+        // ISO 32000-2 §7.3.7 makes only a dictionary's KEYS direct; /Type's own value may be an
+        // indirect reference like any other. Object 3's /Type is "9 0 R", not the name /Pages
+        // written inline, and classification must still see it as a node.
+        var bytes = BuildPdf(
+            rootObjectNumber: 1,
+            (1, "<< /Type /Catalog /Pages 2 0 R >>"),
+            (2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
+            (3, "<< /Type 9 0 R /Kids [4 0 R] >>"),
+            (4, "<< /Type /Page /MediaBox [0 0 100 100] >>"),
+            (9, "/Pages"));
+
+        using var reader = Open(bytes);
+
+        Assert.Equal(1, reader.PageCount);
+        Assert.DoesNotContain(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.PageTreeNodeMalformed);
+    }
+
+    [Fact]
+    public void IndirectType_resolvingToPage_withStrayKids_isALeaf_reportsNodeMalformed()
+    {
+        // Same indirection as above, but /Type 9 0 R resolves to /Page: object 3 classifies as a
+        // leaf, and its stray /Kids (which Table 31 does not list for a page object) is reported
+        // the same way a direct /Type /Page with stray /Kids already is.
+        var bytes = BuildPdf(
+            rootObjectNumber: 1,
+            (1, "<< /Type /Catalog /Pages 2 0 R >>"),
+            (2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
+            (3, "<< /Type 9 0 R /MediaBox [0 0 100 100] /Kids [4 0 R] >>"),
+            (4, "<< /Type /Page /MediaBox [0 0 100 100] >>"),
+            (9, "/Page"));
+
+        using var reader = Open(bytes);
+
+        Assert.Equal(1, reader.PageCount);
+        var d = Assert.Single(reader.Diagnostics, x => x.Code == PdfReaderDiagnosticCode.PageTreeNodeMalformed);
+        Assert.Equal(3, d.ObjectNumber);
+    }
+
     // ── 9c. Malformed indirect targets recover instead of throwing ──────────────────────────────
 
     [Fact]
@@ -734,12 +813,12 @@ public sealed class PageTreeTests
         Assert.Contains("MediaBox", d.Message);
     }
 
-    // A real literal with 310+ integer digits (ISO 32000-2 §7.3.3, Annex C.1's implementation-limited
-    // range) parses to +/-Infinity under double.TryParse; before this fix that reached PdfReal's
-    // constructor, which throws ArgumentException rather than InvalidDataException, so
-    // PageTreeWalker.TryResolve (which only catches InvalidDataException) let it escape
-    // PageCount/Pages/GetPage entirely instead of reporting and recovering the way every other
-    // malformed indirect target already does.
+    // A real literal with 310+ integer digits (ISO 32000-2 §7.3.3, Annex C.2 / Table C.1's
+    // implementation-limited range) parses to +/-Infinity under double.TryParse; before this fix
+    // that reached PdfReal's constructor, which throws ArgumentException rather than
+    // InvalidDataException, so PageTreeWalker.TryResolve (which only catches
+    // InvalidDataException) let it escape PageCount/Pages/GetPage entirely instead of reporting
+    // and recovering the way every other malformed indirect target already does.
     private static readonly string HugeRealLiteral = "1" + new string('0', 309) + ".0";
 
     [Fact]
@@ -808,6 +887,177 @@ public sealed class PageTreeTests
         Assert.Equal(3, reader.Pages[0].ObjectNumber);
         var d = Assert.Single(reader.Diagnostics, x => x.Code == PdfReaderDiagnosticCode.PageTreeKidNotDictionary);
         Assert.Equal(5, d.ObjectNumber);
+    }
+
+    // ── 9d. Reference chains (ISO 32000-2 §7.3.10's 2020 NOTE) ──────────────────────────────────
+
+    [Fact]
+    public void PagesEntry_isAReferenceToAReference_stillResolvesTheTree()
+    {
+        // Object 2's ENTIRE body is "3 0 R": a reference to a reference. §7.3.10's 2020 NOTE says
+        // chains like this are permitted and equivalent to a direct value, so the catalog's own
+        // /Pages 2 0 R must resolve through both hops to the real node at object 3, not report
+        // PageTreeMissing the way a single-hop resolver would.
+        var bytes = BuildPdf(
+            rootObjectNumber: 1,
+            (1, "<< /Type /Catalog /Pages 2 0 R >>"),
+            (2, "3 0 R"),
+            (3, "<< /Type /Pages /Kids [4 0 R] /Count 1 >>"),
+            (4, "<< /Type /Page /MediaBox [0 0 100 100] >>"));
+
+        using var reader = Open(bytes);
+
+        Assert.Equal(1, reader.PageCount);
+        Assert.DoesNotContain(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.PageTreeMissing);
+    }
+
+    [Fact]
+    public void Contents_isAReferenceChainResolvingToNull_isTreatedAsAbsent_noDiagnostic()
+    {
+        // /Contents 9 0 R -> object 9 is itself "10 0 R" -> object 10 is "null". The chain
+        // resolves to the null object two hops down, which is still §7.3.9 absent, the same as a
+        // direct null or a single dangling reference, not a malformed /Contents.
+        var bytes = BuildPdf(
+            rootObjectNumber: 1,
+            (1, "<< /Type /Catalog /Pages 2 0 R >>"),
+            (2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
+            (3, "<< /Type /Pages /Kids [4 0 R] /Contents 9 0 R >>"),
+            (4, "<< /Type /Page /MediaBox [0 0 100 100] >>"),
+            (9, "10 0 R"),
+            (10, "null"));
+
+        using var reader = Open(bytes);
+
+        Assert.Equal(1, reader.PageCount);
+        Assert.DoesNotContain(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.PageTreeNodeMalformed);
+    }
+
+    [Fact]
+    public void MediaBoxEntry_isAReferenceChainResolvingToARectangle_usesIt_noDiagnostic()
+    {
+        // /MediaBox 9 0 R -> object 9 is "10 0 R" -> object 10 is the real 4-element array. A
+        // single-hop resolver would stop at object 9, see a reference where it wanted a rectangle,
+        // and wrongly drop this valid value in favour of the Letter fallback.
+        var bytes = BuildPdf(
+            rootObjectNumber: 1,
+            (1, "<< /Type /Catalog /Pages 2 0 R >>"),
+            (2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
+            (3, "<< /Type /Page /MediaBox 9 0 R >>"),
+            (9, "10 0 R"),
+            (10, "[0 0 111 222]"));
+
+        using var reader = Open(bytes);
+
+        Assert.Equal(1, reader.PageCount);
+        AssertRectangle(0, 0, 111, 222, reader.Pages[0].MediaBox);
+        Assert.DoesNotContain(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.PageAttributeInvalid);
+    }
+
+    [Fact]
+    public void RotateEntry_isAMutualReferenceCycle_fallsBackWithDiagnostic_noStackOverflow()
+    {
+        // Object 5 points at object 6, which points back at object 5: a cycle with no null and no
+        // parse failure anywhere in it, so nothing terminates the chain except cycle detection
+        // itself. Present but unusable, same outcome as an unparseable target, not an infinite loop.
+        var bytes = BuildPdf(
+            rootObjectNumber: 1,
+            (1, "<< /Type /Catalog /Pages 2 0 R >>"),
+            (2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
+            (3, "<< /Type /Page /MediaBox [0 0 100 100] /Rotate 5 0 R >>"),
+            (5, "6 0 R"),
+            (6, "5 0 R"));
+
+        using var reader = Open(bytes);
+
+        Assert.Equal(1, reader.PageCount);
+        Assert.Equal(0, reader.Pages[0].Rotate);
+        var d = Assert.Single(reader.Diagnostics, x => x.Code == PdfReaderDiagnosticCode.PageAttributeInvalid);
+        Assert.Contains("Rotate", d.Message);
+    }
+
+    [Fact]
+    public void RotateEntry_isAChainLongerThanTheHopCap_fallsBackWithDiagnostic_noStackOverflow()
+    {
+        // A straight-line chain of MaxReferenceChainHops + 8 references, terminating in a real
+        // number that a single extra hop would have reached fine: the cap itself, not a cycle,
+        // is what makes this chain present-but-unusable.
+        const int chainLength = 40;
+        var objects = new List<(int Num, string Body)>
+        {
+            (1, "<< /Type /Catalog /Pages 2 0 R >>"),
+            (2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
+            (3, "<< /Type /Page /MediaBox [0 0 100 100] /Rotate 10 0 R >>"),
+        };
+        for (var i = 0; i < chainLength; i++)
+            objects.Add((10 + i, $"{11 + i} 0 R"));
+        objects.Add((10 + chainLength, "90"));
+
+        var bytes = BuildPdf(rootObjectNumber: 1, objects.ToArray());
+        using var reader = Open(bytes);
+
+        Assert.Equal(1, reader.PageCount);
+        Assert.Equal(0, reader.Pages[0].Rotate);
+        var d = Assert.Single(reader.Diagnostics, x => x.Code == PdfReaderDiagnosticCode.PageAttributeInvalid);
+        Assert.Contains("Rotate", d.Message);
+    }
+
+    // ── 9e. Negative resolve cache (#398): repeated failures cost one parse, not one per caller ──
+
+    [Fact]
+    public void ManyNodesSharingOneFailingContentsAndMediaBoxTarget_reportsCorrectly_costsOneParseEach()
+    {
+        // Every one of a few thousand sibling NODES (not leaves: a leaf's own /Contents is never
+        // resolved by this walker at all, and /MediaBox is only resolved once per node, at the
+        // point ComputeEffectiveAttributes pushes that node's Frame, so the shared failing targets
+        // have to sit on nodes to be hit once per node the way the reported bug was) points its
+        // own /Contents AND its own /MediaBox at the SAME two objects, one that throws while
+        // parsing and one that is a plain dangling reference. Before the walk-local negative
+        // cache, PdfDocumentReader's own resolve cache never remembers a failed resolution, so
+        // this reparsed the shared failing target once per node -- quadratic in node count. This
+        // only pins the OUTCOME (page count and diagnostics), not wall-clock time (CI runners
+        // flake on timing assertions, #400); the cache's effect on running time was measured
+        // manually instead (see the round's own report for the before/after numbers), at a scale
+        // this test does not attempt to reach: every node here reports its own distinct-object
+        // PageTreeNodeMalformed (see below), and PdfReaderOptions.MaxDiagnostics tops out at
+        // 1000, so n stays comfortably under that rather than exercising the (already separately
+        // tested) cap-and-suppress path too.
+        const int n = 900;
+        var objects = new List<(int Num, string Body)>
+        {
+            (1, "<< /Type /Catalog /Pages 2 0 R >>"),
+        };
+        var kids = string.Join(' ', Enumerable.Range(0, n).Select(i => $"{100 + i} 0 R"));
+        objects.Add((2, $"<< /Type /Pages /Kids [{kids}] /Count {n} >>"));
+        for (var i = 0; i < n; i++)
+        {
+            objects.Add((
+                100 + i,
+                "<< /Type /Pages /Kids [<< /Type /Page /MediaBox [0 0 100 100] >>] "
+                + "/Contents 9000 0 R /MediaBox 9001 0 R /Count 1 >>"));
+        }
+
+        // 9000: throws while parsing (a real literal 310 digits long, ISO 32000-2 Annex C.2 /
+        // Table C.1's implementation-limited range). 9001: a plain dangling reference (object 9999
+        // is never defined, so it stays free); this resolves cleanly to null rather than throwing,
+        // exercising the negative cache's OTHER outcome (absent, not present-but-unusable).
+        objects.Add((9000, HugeRealLiteral));
+        objects.Add((9001, "9999 0 R"));
+
+        var bytes = BuildPdf(rootObjectNumber: 1, objects.ToArray());
+        using var reader = Open(bytes);
+
+        Assert.Equal(n, reader.PageCount);
+        // Every node's own inline leaf has a real /MediaBox: this is checking that the tree still
+        // walks correctly at this scale, not the fallback path (that is 10d's job).
+        AssertRectangle(0, 0, 100, 100, reader.Pages[0].MediaBox);
+
+        // Table 30 lists no /Contents entry for a page-tree node, so every one of these n nodes
+        // reports it (ContentsOnNodeProblem); each node's /MediaBox is a chain that ultimately
+        // resolves cleanly to null (absent, ISO 32000-2 §7.3.9), which falls back to the inline
+        // leaf's own valid MediaBox silently, so PageAttributeInvalid never fires here at all.
+        var malformedCode = PdfReaderDiagnosticCode.PageTreeNodeMalformed;
+        Assert.Equal(n, reader.Diagnostics.Count(d => d.Code == malformedCode));
+        Assert.DoesNotContain(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.PageAttributeInvalid);
     }
 
     // ── 10. Attribute normalisation ───────────────────────────────────────────────────────────────
@@ -1440,9 +1690,10 @@ public sealed class PageTreeTests
             rootObjectNumber: 1,
             (1, "<< /Type /Catalog /Pages 2 0 R >>"),
             (2, "<< /Type /Pages /Kids [3 0 R 5 0 R] /Count 2 >>"),
-            (3, "<< /Type /Pages /Kids [4 0 R] /Contents [] >>"),
+            (3, "<< /Type /Pages /Kids [4 0 R] /Contents 6 0 R >>"),
             (4, "<< /Type /Page /MediaBox [0 0 100 100] >>"),
-            (5, "<< /Type /Page /MediaBox [0 0 100 100] >>"));
+            (5, "<< /Type /Page /MediaBox [0 0 100 100] >>"),
+            (6, "<< /Length 5 >>\nstream\nhello\nendstream"));
 
         using var reader = Open(bytes);
         var malformedCode = PdfReaderDiagnosticCode.PageTreeNodeMalformed;
@@ -1460,9 +1711,10 @@ public sealed class PageTreeTests
             rootObjectNumber: 1,
             (1, "<< /Type /Catalog /Pages 2 0 R >>"),
             (2, "<< /Type /Pages /Kids [3 0 R 5 0 R] /Count 2 >>"),
-            (3, "<< /Kids [4 0 R] /Contents [] >>"), // no /Type at all
+            (3, "<< /Kids [4 0 R] /Contents 6 0 R >>"), // no /Type at all
             (4, "<< /Type /Page /MediaBox [0 0 100 100] >>"),
-            (5, "<< /Type /Page /MediaBox [0 0 100 100] >>"));
+            (5, "<< /Type /Page /MediaBox [0 0 100 100] >>"),
+            (6, "<< /Length 5 >>\nstream\nhello\nendstream"));
 
         using var reader = Open(bytes);
         var malformedCode = PdfReaderDiagnosticCode.PageTreeNodeMalformed;
@@ -1511,8 +1763,9 @@ public sealed class PageTreeTests
         var bytes = BuildPdf(
             rootObjectNumber: 1,
             (1, "<< /Type /Catalog /Pages 2 0 R >>"),
-            (2, "<< /Type /Pages /Kids [3 0 R] /Count 1 /Contents [] >>"),
-            (3, "<< /Type /Page /MediaBox [0 0 100 100] >>"));
+            (2, "<< /Type /Pages /Kids [3 0 R] /Count 1 /Contents 4 0 R >>"),
+            (3, "<< /Type /Page /MediaBox [0 0 100 100] >>"),
+            (4, "<< /Length 5 >>\nstream\nhello\nendstream"));
 
         using var reader = Open(bytes);
         var malformedCode = PdfReaderDiagnosticCode.PageTreeNodeMalformed;
@@ -1530,8 +1783,8 @@ public sealed class PageTreeTests
     {
         // ISO 32000-2 §7.3.9: "Specifying the null object as the value of a dictionary entry
         // shall be equivalent to omitting the entry entirely." A node whose /Contents resolves to
-        // the null object must not be flagged the way one with a real target, as in
-        // TypePagesNodeWithContents_reportsNodeMalformed_stillWalkedAsANode above, is.
+        // the null object must not be flagged the way one whose /Contents names a real stream, as
+        // in TypePagesNodeWithContents_reportsNodeMalformed_stillWalkedAsANode above, is.
         var bytes = BuildPdf(
             rootObjectNumber: 1,
             (1, "<< /Type /Catalog /Pages 2 0 R >>"),

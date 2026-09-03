@@ -280,8 +280,8 @@ internal sealed class PdfObjectParser
         if (!double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out var d))
             throw new InvalidDataException($"Malformed real number: '{s}'.");
 
-        // ISO 32000-2 §7.3.3 gives real numbers an implementation-limited range (Annex C.1); a
-        // literal with enough integer digits (e.g. 300+) parses to +/-Infinity under
+        // ISO 32000-2 §7.3.3 gives real numbers an implementation-limited range (Annex C.2 /
+        // Table C.1); a literal with 310 or more integer digits parses to +/-Infinity under
         // double.TryParse instead of failing, and PdfReal's constructor rejects that with
         // ArgumentException rather than InvalidDataException. Every caller in this parser expects
         // malformed input to surface as InvalidDataException, so this is normalised here instead

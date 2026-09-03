@@ -102,10 +102,11 @@ public sealed class PdfObjectParserTests
     [Fact]
     public void RealWithEnoughIntegerDigitsToOverflowDouble_throwsInvalidDataException()
     {
-        // ISO 32000-2 §7.3.3 gives real numbers an implementation-limited range (Annex C.1). A
-        // literal with 310+ integer digits parses to +/-Infinity under double.TryParse instead of
-        // failing outright, and PdfReal's own constructor rejects that with ArgumentException, a
-        // type no other caller of this parser expects to see escape an otherwise-successful parse.
+        // ISO 32000-2 §7.3.3 gives real numbers an implementation-limited range (Annex C.2 /
+        // Table C.1). A literal with 310+ integer digits parses to +/-Infinity under
+        // double.TryParse instead of failing outright, and PdfReal's own constructor rejects that
+        // with ArgumentException, a type no other caller of this parser expects to see escape an
+        // otherwise-successful parse.
         var huge = "1" + new string('0', 309) + ".0";
 
         var ex = Assert.Throws<InvalidDataException>(() => Parser(huge).ParseObject());
