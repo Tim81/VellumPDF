@@ -836,6 +836,26 @@ public sealed class PageTreeTests
     }
 
     [Fact]
+    public void RealOutOfRange_inlineInTheCatalogDictionary_throwsFromOpenItself_notArgumentException()
+    {
+        // The literal sits directly (not behind a reference) inside the catalog object's own
+        // body, so parsing object 1 itself, which PdfReader.Open does eagerly to find /Root, is
+        // what throws; nothing in PageTreeWalker runs before this, since the walk only starts
+        // once Open has already returned a reader with a Catalog. This is the public-boundary
+        // claim the CHANGELOG makes: 2.3.0's PdfObjectParser.ParseReal had no non-finite guard at
+        // all, so this same literal instead reached PdfReal's constructor and threw
+        // ArgumentException out of Open.
+        var bytes = BuildPdf(
+            rootObjectNumber: 1,
+            (1, "<< /Type /Catalog /Pages 2 0 R /SomeReal " + HugeRealLiteral + " >>"),
+            (2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
+            (3, "<< /Type /Page /MediaBox [0 0 100 100] >>"));
+
+        var ex = Assert.Throws<InvalidDataException>(() => Open(bytes));
+        Assert.IsNotType<ArgumentException>(ex);
+    }
+
+    [Fact]
     public void RealOutOfRange_inALeafsOwnMediaBox_fallsBackToLetter_withDiagnostic_noThrow()
     {
         var bytes = BuildPdf(
@@ -976,6 +996,62 @@ public sealed class PageTreeTests
     }
 
     [Fact]
+    public void RotateEntry_isAChainOfExactlyTheHopCap_resolves_noDiagnostic()
+    {
+        // A straight-line chain needing exactly MaxReferenceChainHops (32) resolves to reach the
+        // terminal value: one indirect Rotate entry, then 31 more hops (chainLength 31, since the
+        // terminal object itself is also one resolve). TryResolve checks the CURRENT value before
+        // resolving, not after, so the 32nd resolve's own result has to be inspected without
+        // needing a 33rd loop iteration to see it; this pins that boundary rather than only the
+        // over-the-cap case below.
+        const int chainLength = 31;
+        var objects = new List<(int Num, string Body)>
+        {
+            (1, "<< /Type /Catalog /Pages 2 0 R >>"),
+            (2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
+            (3, "<< /Type /Page /MediaBox [0 0 100 100] /Rotate 10 0 R >>"),
+        };
+        for (var i = 0; i < chainLength; i++)
+            objects.Add((10 + i, $"{11 + i} 0 R"));
+        objects.Add((10 + chainLength, "90"));
+
+        var bytes = BuildPdf(rootObjectNumber: 1, objects.ToArray());
+        using var reader = Open(bytes);
+
+        Assert.Equal(1, reader.PageCount);
+        Assert.Equal(90, reader.Pages[0].Rotate);
+        Assert.DoesNotContain(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.PageAttributeInvalid);
+    }
+
+    [Fact]
+    public void RotateEntry_isAChainOneHopPastTheCap_fallsBackWithDiagnostic_noStackOverflow()
+    {
+        // The immediate next boundary past the success case above: a chain needing 33 resolves,
+        // one more than MaxReferenceChainHops permits, terminating in the same otherwise-valid
+        // value. This is the cap genuinely being exceeded, not the off-by-one the previous test
+        // guards against.
+        const int chainLength = 32;
+        var objects = new List<(int Num, string Body)>
+        {
+            (1, "<< /Type /Catalog /Pages 2 0 R >>"),
+            (2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
+            (3, "<< /Type /Page /MediaBox [0 0 100 100] /Rotate 10 0 R >>"),
+        };
+        for (var i = 0; i < chainLength; i++)
+            objects.Add((10 + i, $"{11 + i} 0 R"));
+        objects.Add((10 + chainLength, "90"));
+
+        var bytes = BuildPdf(rootObjectNumber: 1, objects.ToArray());
+        using var reader = Open(bytes);
+
+        Assert.Equal(1, reader.PageCount);
+        Assert.Equal(0, reader.Pages[0].Rotate);
+        var boundaryDiagnostic =
+            Assert.Single(reader.Diagnostics, x => x.Code == PdfReaderDiagnosticCode.PageAttributeInvalid);
+        Assert.Contains("Rotate", boundaryDiagnostic.Message);
+    }
+
+    [Fact]
     public void RotateEntry_isAChainLongerThanTheHopCap_fallsBackWithDiagnostic_noStackOverflow()
     {
         // A straight-line chain of MaxReferenceChainHops + 8 references, terminating in a real
@@ -1001,6 +1077,52 @@ public sealed class PageTreeTests
         Assert.Contains("Rotate", d.Message);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void ChainThroughAGenerationMismatch_isNotMistakenForACycle_sameDiagnosticsEitherOrder(
+        bool leafAFirst)
+    {
+        // Object 8 is written at generation 0. Object 9's own body is "8 1 R", asking for object 8
+        // at generation 1, which does not exist: a genuine ISO 32000-2 §7.3.10 generation mismatch,
+        // not a repeat of the same object. Leaf A's own /Rotate chain hits object 8 twice, once as
+        // "8 0 R" (its own entry) and once as "9 0 R"'s own target "8 1 R": the SAME object number,
+        // a DIFFERENT generation. Before this fix, the walk's own chain-cycle guard tracked only the
+        // object number, saw 8 twice, and reported a false cycle without ever asking the reader to
+        // resolve "8 1 R" at all, so ObjectGenerationMismatch never fired and both leaves fell back
+        // with a diagnostic of the walk's own invention. Leaf B's /Rotate is "8 1 R" directly, no
+        // chain at all, so it never depended on the (buggy) cycle guard; running leaf A first versus
+        // leaf B first previously produced different diagnostics depending on which one warmed the
+        // walk-local negative cache, which is what this test's two orders pin down as the same.
+        var bytes = BuildPdf(
+            rootObjectNumber: 1,
+            (1, "<< /Type /Catalog /Pages 2 0 R >>"),
+            (2, leafAFirst
+                ? "<< /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >>"
+                : "<< /Type /Pages /Kids [4 0 R 3 0 R] /Count 2 >>"),
+            (3, "<< /Type /Page /MediaBox [0 0 100 100] /Rotate 8 0 R >>"), // leaf A: chained
+            (4, "<< /Type /Page /MediaBox [0 0 100 100] /Rotate 8 1 R >>"), // leaf B: direct
+            (8, "9 0 R"),
+            (9, "8 1 R"));
+
+        using var reader = Open(bytes);
+
+        Assert.Equal(2, reader.PageCount);
+        foreach (var page in reader.Pages)
+            Assert.Equal(0, page.Rotate);
+
+        // Absent (ISO 32000-2 §7.3.9: a generation mismatch resolves the same as a nonexistent
+        // object) falls through to the default silently for BOTH leaves, in either order: neither
+        // one is "present but unusable", so PageAttributeInvalid never fires on either.
+        Assert.DoesNotContain(
+            reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.PageAttributeInvalid);
+
+        var mismatch = Assert.Single(
+            reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ObjectGenerationMismatch);
+        Assert.Equal(8, mismatch.ObjectNumber);
+        Assert.Equal(1, mismatch.Generation);
+    }
+
     // ── 9e. Negative resolve cache (#398): repeated failures cost one parse, not one per caller ──
 
     [Fact]
@@ -1013,11 +1135,13 @@ public sealed class PageTreeTests
         // own /Contents AND its own /MediaBox at the SAME two objects, one that throws while
         // parsing and one that is a plain dangling reference. Before the walk-local negative
         // cache, PdfDocumentReader's own resolve cache never remembers a failed resolution, so
-        // this reparsed the shared failing target once per node, quadratic in node count. This
-        // only pins the OUTCOME (page count and diagnostics), not wall-clock time (CI runners
-        // flake on timing assertions, #400); the cache's effect on running time was measured
-        // manually instead (see the round's own report for the before/after numbers), at a scale
-        // this test does not attempt to reach: every node here reports its own distinct-object
+        // this reparsed the shared failing target once per node: a fixed-size reparse repeated N
+        // times, linear in node count with a large constant (measured 3.7/7.1/14.7/30.0 s at
+        // 500/1000/2000/4000 nodes, doubling with N). This test only pins the OUTCOME (page count
+        // and diagnostics), not wall-clock time (CI runners flake on timing assertions, #400); the
+        // cache's effect on running time was measured manually instead (see the round's own report
+        // for the before/after numbers), at a scale this test does not attempt to reach: every node
+        // here reports its own distinct-object
         // PageTreeNodeMalformed (see below), and PdfReaderOptions.MaxDiagnostics tops out at
         // 1000, so n stays comfortably under that rather than exercising the (already separately
         // tested) cap-and-suppress path too.
@@ -1060,7 +1184,163 @@ public sealed class PageTreeTests
         Assert.DoesNotContain(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.PageAttributeInvalid);
     }
 
-    // ── 10. Attribute normalisation ───────────────────────────────────────────────────────────────
+    // ── 9f. Aliased kid identity (chain-following changes the repeat guard, #398 round 7) ──
+
+    [Fact]
+    public void TwoAliasesOfTheSamePage_reportOnePage_andCycleNamingTheRealObject()
+    {
+        // Objects 5 and 6 are each a single-hop reference to object 4, the real page; neither one
+        // IS object 4. Before this fix the repeat guard used the raw single-hop object number of
+        // each /Kids element (5, then 6), never saw either one repeat, and silently produced two
+        // pages sharing one PdfDictionary instance.
+        var bytes = BuildPdf(
+            rootObjectNumber: 1,
+            (1, "<< /Type /Catalog /Pages 2 0 R >>"),
+            (2, "<< /Type /Pages /Kids [5 0 R 6 0 R] /Count 2 >>"),
+            (4, "<< /Type /Page /MediaBox [0 0 100 100] >>"),
+            (5, "4 0 R"),
+            (6, "4 0 R"));
+
+        using var reader = Open(bytes);
+
+        Assert.Equal(1, reader.PageCount);
+        Assert.Equal(4, reader.Pages[0].ObjectNumber);
+        var d = Assert.Single(reader.Diagnostics, x => x.Code == PdfReaderDiagnosticCode.PageTreeCycle);
+        Assert.Equal(4, d.ObjectNumber);
+    }
+
+    [Fact]
+    public void DirectReferenceAndAnAliasOfTheSamePage_reportOnePage_andCycleNamingIt()
+    {
+        // The mixed case: /Kids [4 0 R 6 0 R], where 4 0 R names the real page directly and 6 0 R
+        // is a one-hop alias of it. The second kid must still be caught as the same object even
+        // though the first kid was never an alias at all.
+        var bytes = BuildPdf(
+            rootObjectNumber: 1,
+            (1, "<< /Type /Catalog /Pages 2 0 R >>"),
+            (2, "<< /Type /Pages /Kids [4 0 R 6 0 R] /Count 2 >>"),
+            (4, "<< /Type /Page /MediaBox [0 0 100 100] >>"),
+            (6, "4 0 R"));
+
+        using var reader = Open(bytes);
+
+        Assert.Equal(1, reader.PageCount);
+        Assert.Equal(4, reader.Pages[0].ObjectNumber);
+        var d = Assert.Single(reader.Diagnostics, x => x.Code == PdfReaderDiagnosticCode.PageTreeCycle);
+        Assert.Equal(4, d.ObjectNumber);
+    }
+
+    [Fact]
+    public void KidsArrayReachedThroughTwoDistinctAliasObjects_reportsCycleNamingTheRealArray()
+    {
+        // Two sibling NODES, object 3 and object 4, each name a DIFFERENT alias object (20 and 21)
+        // as their own /Kids entry; both aliases resolve, one hop later, to the SAME real array
+        // object, 30. This is the /Kids-array guard's own version of the two tests above: the
+        // terminal array identity, not either alias's own object number, is what the second node's
+        // /Kids has to collide with.
+        var bytes = BuildPdf(
+            rootObjectNumber: 1,
+            (1, "<< /Type /Catalog /Pages 2 0 R >>"),
+            (2, "<< /Type /Pages /Kids [3 0 R 4 0 R] /Count 1 >>"),
+            (3, "<< /Type /Pages /Kids 20 0 R >>"),
+            (4, "<< /Type /Pages /Kids 21 0 R >>"),
+            (20, "30 0 R"),
+            (21, "30 0 R"),
+            (30, "[40 0 R]"),
+            (40, "<< /Type /Page /MediaBox [0 0 100 100] >>"));
+
+        using var reader = Open(bytes);
+
+        Assert.Equal(1, reader.PageCount);
+        Assert.Equal(40, reader.Pages[0].ObjectNumber);
+        var d = Assert.Single(reader.Diagnostics, x => x.Code == PdfReaderDiagnosticCode.PageTreeCycle);
+        Assert.Equal(30, d.ObjectNumber);
+    }
+
+    [Fact]
+    public void PageReachedThroughAnAlias_hasTheAliasedTargetsOwnObjectNumber()
+    {
+        // Object 5 is a single-hop alias of the real page, object 4. PdfReadPage.ObjectNumber
+        // promises the page dictionary's own object (PdfReadPage.cs), which is 4, not 5.
+        var bytes = BuildPdf(
+            rootObjectNumber: 1,
+            (1, "<< /Type /Catalog /Pages 2 0 R >>"),
+            (2, "<< /Type /Pages /Kids [5 0 R] /Count 1 >>"),
+            (4, "<< /Type /Page /MediaBox [0 0 100 100] >>"),
+            (5, "4 0 R"));
+
+        using var reader = Open(bytes);
+
+        Assert.Equal(1, reader.PageCount);
+        Assert.Equal(4, reader.Pages[0].ObjectNumber);
+        Assert.DoesNotContain(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.PageTreeCycle);
+    }
+
+    [Fact]
+    public void PagesEntryChainedToAFreeObject_namesTheFinalObjectNotTheIntermediateOne()
+    {
+        // The catalog's own /Pages entry is object 2, but object 2's ENTIRE body is "9 0 R", a
+        // reference to a reference; object 9 is never defined. The reader has plainly followed a
+        // real chain here, so the report should name the object that actually turned out to be
+        // free, 9, not the intermediate object 2 the catalog happens to name directly.
+        var bytes = BuildPdf(
+            rootObjectNumber: 1,
+            (1, "<< /Type /Catalog /Pages 2 0 R >>"),
+            (2, "9 0 R"));
+
+        using var reader = Open(bytes);
+
+        Assert.Equal(0, reader.PageCount);
+        var d = Assert.Single(reader.Diagnostics, x => x.Code == PdfReaderDiagnosticCode.PageTreeMissing);
+        Assert.Equal(9, d.ObjectNumber);
+        Assert.Contains("object 9", d.Message);
+    }
+
+    [Fact]
+    public void AliasedNodeFanOutAt20Levels_terminatesImmediately_withOneCycleReportPerLevel()
+    {
+        // Twenty nested levels, each node's /Kids holding TWO different alias objects that both
+        // resolve, one hop later, to the SAME next node (or, at the last level, the same leaf
+        // page). Naive expansion that does not recognise the two aliases as the same object would
+        // double the work at every level: 2^20, over a million node visits, well past
+        // MaxKidsExamined. With the terminal-identity fix, only the FIRST alias at each level ever
+        // expands; the second is always an immediate PageTreeCycle, so the whole walk stays linear
+        // in the level count.
+        const int levels = 20;
+        var objects = new List<(int Num, string Body)>
+        {
+            (1, "<< /Type /Catalog /Pages 2 0 R >>"),
+            (2, "<< /Type /Pages /Kids [11 0 R] /Count 1 >>"),
+        };
+
+        for (var i = 1; i <= levels; i++)
+        {
+            var nodeNum = 10 + i;
+            var aliasA = 100 + i;
+            var aliasB = 200 + i;
+            var target = i < levels ? 10 + i + 1 : 999; // last level's alias points at the leaf
+            objects.Add((nodeNum, $"<< /Type /Pages /Kids [{aliasA} 0 R {aliasB} 0 R] /Count 1 >>"));
+            objects.Add((aliasA, $"{target} 0 R"));
+            objects.Add((aliasB, $"{target} 0 R"));
+        }
+
+        objects.Add((999, "<< /Type /Page /MediaBox [0 0 100 100] >>"));
+
+        var bytes = BuildPdf(rootObjectNumber: 1, objects.ToArray());
+        using var reader = Open(bytes);
+
+        Assert.Equal(1, reader.PageCount);
+        Assert.Equal(999, reader.Pages[0].ObjectNumber);
+
+        // One cycle per level: the second alias at each of the 20 levels resolves to an object
+        // already visited via the first. Each names a DIFFERENT terminal object (the 19
+        // intermediate nodes plus the leaf), so DiagnosticSink's own dedupe never collapses two of
+        // these into one.
+        var cycleCode = PdfReaderDiagnosticCode.PageTreeCycle;
+        Assert.Equal(levels, reader.Diagnostics.Count(d => d.Code == cycleCode));
+    }
+
+    // ── 10. Attribute normalisation ───────────────────────────────────────────────────────────────    // ── 10. Attribute normalisation ───────────────────────────────────────────────────────────────
 
     [Fact]
     public void MediaBox_reversedCorners_normalises_noDiagnostic()

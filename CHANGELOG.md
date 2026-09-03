@@ -55,9 +55,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   (ISO 32000-2 §7.3.3's implementation-limited range, Annex C.2 / Table C.1, informative); every
   other malformed-input path in this parser already surfaces as `InvalidDataException`, and this
   one now matches, reachable by any caller resolving a real number, not just the page-tree walk
-  that first exposed the mismatch. `PdfReader.Open` and page access (`PageCount`, `Pages`,
-  `GetPage`) now throw `InvalidDataException` for such a literal where 2.3.0 threw
-  `ArgumentException` out of `PdfReal`'s constructor. (#98)
+  that first exposed the mismatch. `PdfReader.Open` now throws `InvalidDataException` for such a
+  literal where 2.3.0 threw `ArgumentException` out of `PdfReal`'s constructor (2.3.0's
+  `ParseReal` had no non-finite guard at all). The page-tree walk, new in this release, is the one
+  caller that does not let this propagate: it catches the exception per object and reports a
+  diagnostic (`PageTreeMissing`, `PageTreeKidNotDictionary`, or `PageAttributeInvalid`, depending
+  on where the literal sits) instead of throwing. (#98)
 
 ## [2.3.0] - 2026-09-01
 

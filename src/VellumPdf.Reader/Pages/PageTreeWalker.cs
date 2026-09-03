@@ -72,10 +72,12 @@ internal static class PageTreeWalker
 
     /// <summary>
     /// Hard cap on how many hops one indirect-reference chain follows before this reader gives up
-    /// on it. ISO 32000-2 §7.3.10's 2020 NOTE permits chains of references with no length limit of
-    /// its own ("Any object outside of an object stream can consist solely of an object
-    /// reference. PDF syntax thus permits chains of such objects[; ...] the semantics are
-    /// equivalent" to a direct value), so this bound, like <see cref="MaxDepth"/> and
+    /// on it. ISO 32000-2 §7.3.10's 2020 NOTE permits such chains with no length limit of its own
+    /// ("Any object outside of an object stream can consist solely of an object reference. PDF
+    /// syntax thus permits chains of such objects."), and a later paragraph of the same subclause,
+    /// after EXAMPLE 2, adds that following one all the way is required, not optional ("Except
+    /// where documented to the contrary, any object value may be a direct or an indirect
+    /// reference; the semantics are equivalent."), so this bound, like <see cref="MaxDepth"/> and
     /// <see cref="MaxKidsExamined"/> above, is this reader's own choice against adversarial input,
     /// not a spec requirement.
     /// </summary>
@@ -99,8 +101,8 @@ internal static class PageTreeWalker
         var cache = new FailedResolveCache();
 
         var rootRaw = reader.Catalog.Get(PdfName.Pages);
-        var rootObjectNumber = (rootRaw as PdfIndirectReference)?.ObjectNumber ?? 0;
-        var rootResolved = ResolveOrAbsent(reader, cache, rootRaw, out var rootAbsent);
+        var rootResolved = ResolveOrAbsent(
+            reader, cache, rootRaw, out var rootAbsent, out var rootObjectNumber);
 
         // A genuinely omitted /Pages entry and one that IS there but is null, directly or through
         // a chain of references that resolves to null (ISO 32000-2 §7.3.9, §7.3.10), are the same
@@ -108,15 +110,17 @@ internal static class PageTreeWalker
         // "does not resolve to a dictionary" report below. The two null-equivalent cases still get
         // different message text: a direct entry names no object to report, but a reference that
         // resolves to nothing is worth naming, since the file plainly has SOME /Pages entry, just
-        // not a usable one.
+        // not a usable one. rootObjectNumber is the LAST reference this chain actually followed
+        // (see TryResolve), not necessarily the one /Pages names directly, so a two-hop chain to a
+        // free object names the free object here, not the intermediate one.
         if (rootAbsent)
         {
             if (rootRaw is PdfIndirectReference)
             {
                 diagnostics.Report(
                     PdfReaderDiagnosticCode.PageTreeMissing,
-                    $"The document catalog's /Pages entry (object {rootObjectNumber}) resolves to "
-                    + "no object or to the null object (ISO 32000-2 §7.3.9, §7.3.10); "
+                    $"The document catalog's /Pages entry resolves to object {rootObjectNumber}, "
+                    + "which does not exist or is the null object (ISO 32000-2 §7.3.9, §7.3.10); "
                     + "the document has no pages.",
                     rootObjectNumber);
             }
@@ -148,8 +152,8 @@ internal static class PageTreeWalker
         // (the catalog dictionary reused as its own /Pages, say) is not a page tree with zero
         // children, it is not a page tree at all.
         var rootKidsRaw = rootDict.Get(PdfName.Kids);
-        var rootKidsArrayObjectNumber = (rootKidsRaw as PdfIndirectReference)?.ObjectNumber ?? 0;
-        var rootKidsArray = ResolveOrAbsent(reader, cache, rootKidsRaw, out _) as PdfArray;
+        var rootKidsArray = ResolveOrAbsent(
+            reader, cache, rootKidsRaw, out _, out var rootKidsArrayObjectNumber) as PdfArray;
 
         var rootKind = ClassifyByType(reader, cache, rootDict, rootKidsArray, out var rootType);
         if (rootKind != NodeKind.Node)
@@ -192,10 +196,17 @@ internal static class PageTreeWalker
 
         var rootKids = rootKidsArray;
 
-        // Object numbers seen as EITHER a page-tree node, a page object, or a /Kids array reached
-        // through an indirect reference, anywhere in the walk. ISO 32000-2 §7.7.3.2 and §7.7.3.3
-        // each forbid a repeated indirect reference to the same node or page object, and describe
-        // /Kids as a tree, not a graph, so a second occurrence of a NODE or PAGE object number
+        // Object numbers seen as EITHER a page-tree node, a page object, or a /Kids array, anywhere
+        // in the walk. Every number added here is a TERMINAL object identity, the last reference
+        // TryResolve actually followed to reach the dictionary or array in question, not
+        // necessarily the object number some /Kids element or /Kids entry names directly: two
+        // different aliases that both, one or more hops later, resolve to the same object are the
+        // same entry in this set, so the second one is caught here even though the two /Kids
+        // elements that led to it never shared an object number of their own. ISO 32000-2 §7.7.3.2
+        // and §7.7.3.3 each forbid a repeated indirect reference to the same node or page object,
+        // whether that repeat is written as the same reference twice or as two different aliases of
+        // it, and describe /Kids as a tree, not a graph, so a second occurrence of a NODE or PAGE
+        // object number
         // already in this set is always a shape violation, regardless of whether it happens to loop
         // back to an ancestor. A repeated /Kids ARRAY object is a different case: those two clauses
         // name node and page objects specifically, not the array sitting between them, so two
@@ -238,7 +249,6 @@ internal static class PageTreeWalker
             }
 
             var kidRaw = frame.Kids[frame.NextIndex++];
-            var kidObjectNumber = (kidRaw as PdfIndirectReference)?.ObjectNumber ?? 0;
 
             kidsExamined++;
             if (kidsExamined > MaxKidsExamined)
@@ -253,6 +263,23 @@ internal static class PageTreeWalker
                 return pages;
             }
 
+            // Resolved BEFORE the visited/cycle check below, not the raw element's own single-hop
+            // object number: with TryResolve now following chains, two different /Kids entries can
+            // each be a reference to a DIFFERENT alias object that both, one or more hops later,
+            // resolve to the SAME page or node. kidObjectNumber is that terminal identity (the last
+            // reference actually followed, see TryResolve), so the second alias is caught as a
+            // repeat here instead of being walked (and, for a node, expanded) a second time under a
+            // different object number.
+            if (!TryResolve(reader, cache, kidRaw, out var kidResolved, out var kidObjectNumber)
+                || kidResolved is not PdfDictionary kidDict)
+            {
+                diagnostics.Report(
+                    PdfReaderDiagnosticCode.PageTreeKidNotDictionary,
+                    "A /Kids array element did not resolve to a dictionary; it was skipped.",
+                    NullIfZero(kidObjectNumber));
+                continue;
+            }
+
             if (kidObjectNumber != 0 && !visited.Add(kidObjectNumber))
             {
                 diagnostics.Report(
@@ -261,16 +288,6 @@ internal static class PageTreeWalker
                     + "§7.7.3.2 and §7.7.3.3 each forbid a repeated node or page object); the repeat "
                     + "was skipped.",
                     kidObjectNumber);
-                continue;
-            }
-
-            if (!TryResolve(reader, cache, kidRaw, out var kidResolved)
-                || kidResolved is not PdfDictionary kidDict)
-            {
-                diagnostics.Report(
-                    PdfReaderDiagnosticCode.PageTreeKidNotDictionary,
-                    "A /Kids array element did not resolve to a dictionary; it was skipped.",
-                    NullIfZero(kidObjectNumber));
                 continue;
             }
 
@@ -343,9 +360,10 @@ internal static class PageTreeWalker
     /// <c>/Type /Pages</c> is always a node, a <c>/Type</c> naming anything else, including
     /// <c>/Type /Template</c>, is skipped outright, and no <c>/Type</c> at all falls back to the
     /// structural tell, a node when <paramref name="kidsArray"/> is non-null, a leaf otherwise.
-    /// <c>/Type</c> resolves through the same reference-chain-following path
-    /// (<see cref="ResolveOrAbsent"/>) as everything else in this walker: ISO 32000-2 §7.3.7 makes
-    /// only a dictionary's KEYS direct, not its values, so a <c>/Type</c> reached through one or
+    /// <c>/Type</c> resolves through the same reference-chain-following path (
+    /// <see cref="ResolveOrAbsent(PdfDocumentReader, FailedResolveCache, PdfObject?, out bool)"/>)
+    /// as everything else in this walker: ISO 32000-2 §7.3.7 makes only a dictionary's KEYS
+    /// direct, not its values, so a <c>/Type</c> reached through one or
     /// more indirect references is classified exactly the same as one written inline.
     /// <c>/Type /Template</c> is skipped rather than treated as a leaf even though Table 31's own
     /// Type row admits it ("shall be Page for a page object or Template for an invisible Template
@@ -410,7 +428,8 @@ internal static class PageTreeWalker
     /// </list>
     /// A <c>/Kids</c> entry that fails to resolve (an <see cref="InvalidDataException"/>-throwing
     /// indirect target) is treated the same as one that resolves to the wrong type or is absent
-    /// outright. See <see cref="TryResolve"/>.
+    /// outright. See
+    /// <see cref="TryResolve(PdfDocumentReader, FailedResolveCache, PdfObject, out PdfObject?)"/>.
     /// <para>
     /// A <c>/Kids</c> element that resolves to a stream object reaches this method as that stream's
     /// OWN dictionary, since <see cref="PdfDocumentReader.Resolve(PdfIndirectReference)"/> returns a
@@ -436,8 +455,8 @@ internal static class PageTreeWalker
         PdfDictionary dict, int objectNumber, out PdfArray kids, out int kidsArrayObjectNumber)
     {
         var kidsRaw = dict.Get(PdfName.Kids);
-        kidsArrayObjectNumber = (kidsRaw as PdfIndirectReference)?.ObjectNumber ?? 0;
-        var kidsResolved = ResolveOrAbsent(reader, cache, kidsRaw, out var kidsAbsent);
+        var kidsResolved = ResolveOrAbsent(
+            reader, cache, kidsRaw, out var kidsAbsent, out kidsArrayObjectNumber);
         var kidsArray = kidsResolved as PdfArray;
 
         var kind = ClassifyByType(reader, cache, dict, kidsArray, out var type);
@@ -635,7 +654,9 @@ internal static class PageTreeWalker
     /// of the chain: <paramref name="raw"/> is that level's own entry, already looked up by the
     /// caller (<see langword="null"/> when the level does not define the key at all).
     /// <paramref name="present"/> reports whether <paramref name="raw"/> counted as present at
-    /// all (see <see cref="ResolveOrAbsent"/>); a present but unresolvable or wrong-shaped value
+    /// all (see
+    /// <see cref="ResolveOrAbsent(PdfDocumentReader, FailedResolveCache, PdfObject?, out bool)"/>);
+    /// a present but unresolvable or wrong-shaped value
     /// (not a 4-element numeric array, ISO 32000-2 §7.9.5) appends its own failure text to
     /// <paramref name="failures"/>, naming the object that supplied it, for the caller to report
     /// as one <see cref="PdfReaderDiagnosticCode.PageAttributeInvalid"/> entry alongside whatever
@@ -712,7 +733,9 @@ internal static class PageTreeWalker
     /// <paramref name="inherited"/> after appending its own failure text to
     /// <paramref name="failures"/> (see <see cref="ResolveRectangleAttribute"/>'s doc for why this
     /// does not report directly). Unlike <c>/MediaBox</c>, <c>/Rotate</c> is optional (ISO 32000-2
-    /// Table 31), so an entry <see cref="ResolveOrAbsent"/> counts as absent (omitted outright,
+    /// Table 31), so an entry
+    /// <see cref="ResolveOrAbsent(PdfDocumentReader, FailedResolveCache, PdfObject?, out bool)"/>
+    /// counts as absent (omitted outright,
     /// null, or a reference chain that resolves to either of those, ISO 32000-2 §7.3.9) falls
     /// through to <paramref name="inherited"/> without any failure. A chain that is present but
     /// unusable (a cycle, too many hops, or a target that failed to parse) is not silent the same
@@ -818,12 +841,15 @@ internal static class PageTreeWalker
 
     /// <summary>
     /// Resolves <paramref name="raw"/>, following a chain of indirect references rather than
-    /// stopping at the first one: ISO 32000-2 §7.3.10's 2020 NOTE says such chains are permitted and
-    /// "the semantics are equivalent" to a direct value, so a dictionary entry that names a reference
-    /// to a reference (to a reference...) is resolved the same as if it named the final value
-    /// directly. A cycle (a chain that returns to an object number already seen earlier in the SAME
-    /// chain, including a self-reference) or a chain longer than <see cref="MaxReferenceChainHops"/>
-    /// returns <see langword="false"/> with <paramref name="resolved"/> <see langword="null"/>: the
+    /// stopping at the first one: ISO 32000-2 §7.3.10's 2020 NOTE says such chains are permitted
+    /// ("PDF syntax thus permits chains of such objects."), and a later paragraph of the same
+    /// subclause says following one all the way is required, not optional ("any object value may
+    /// be a direct or an indirect reference; the semantics are equivalent"), so a dictionary entry
+    /// that names a reference to a reference (to a reference...) is resolved the same as if it
+    /// named the final value directly. A cycle (a chain that returns to an object number already
+    /// seen earlier in the SAME chain, including a self-reference) or a chain longer than
+    /// <see cref="MaxReferenceChainHops"/> returns <see langword="false"/> with
+    /// <paramref name="resolved"/> <see langword="null"/>: the
     /// reference itself is real syntax, so this is "present but unusable", the same outcome a target
     /// that throws while parsing already gets below, not a new condition that needs its own
     /// diagnostic. <paramref name="cache"/> is consulted before every hop that would otherwise repeat
@@ -838,10 +864,28 @@ internal static class PageTreeWalker
     /// rather than per document.
     /// </summary>
     private static bool TryResolve(
-        PdfDocumentReader reader, FailedResolveCache cache, PdfObject raw, out PdfObject? resolved)
+        PdfDocumentReader reader, FailedResolveCache cache, PdfObject raw, out PdfObject? resolved) =>
+        TryResolve(reader, cache, raw, out resolved, out _);
+
+    /// <summary>
+    /// The same as
+    /// <see cref="TryResolve(PdfDocumentReader, FailedResolveCache, PdfObject, out PdfObject?)"/>,
+    /// additionally reporting <paramref name="lastObjectNumber"/>: the object number of the LAST
+    /// indirect reference this call actually followed, 0 when <paramref name="raw"/> is a direct
+    /// value with no indirection at all. For a chain of two or more references, that is the
+    /// reference whose OWN value is <paramref name="resolved"/> (or, on failure, the last one this
+    /// call attempted before giving up), not necessarily the object <paramref name="raw"/> itself
+    /// names: a caller tracking object identity (a repeat guard, a diagnostic naming which object
+    /// is at fault) needs THIS number, not a raw single-hop read of <paramref name="raw"/>, since
+    /// two different aliases can both, one or more hops later, resolve to the very same object.
+    /// </summary>
+    private static bool TryResolve(
+        PdfDocumentReader reader, FailedResolveCache cache, PdfObject raw, out PdfObject? resolved,
+        out int lastObjectNumber)
     {
         PdfObject? current = raw;
-        HashSet<int>? chainVisited = null;
+        HashSet<(int ObjectNumber, int Generation)>? chainVisited = null;
+        lastObjectNumber = 0;
 
         for (var hop = 0; hop < MaxReferenceChainHops; hop++)
         {
@@ -852,17 +896,24 @@ internal static class PageTreeWalker
             }
 
             var key = (reference.ObjectNumber, reference.Generation);
+            lastObjectNumber = reference.ObjectNumber;
+
             if (cache.TryGet(key, out var cachedUnusable))
             {
                 resolved = null;
                 return !cachedUnusable;
             }
 
-            if (!(chainVisited ??= []).Add(reference.ObjectNumber))
+            if (!(chainVisited ??= []).Add(key))
             {
-                // Cycle: this object number already appeared earlier in the same chain. Present but
-                // unusable, the same outcome a parse failure gets below, so the caller's own "did not
-                // resolve" report fires instead of this method inventing a new diagnostic for it.
+                // Cycle: this exact (object number, generation) pair already appeared earlier in
+                // the same chain. Keyed on the pair, not the object number alone, so a hop from
+                // (n, 0) to (n, 1) is never mistaken for a cycle: ISO 32000-2 §7.3.10 identifies an
+                // object by number AND generation together, and a hop like that is a genuine
+                // generation mismatch, PdfDocumentReader's own ObjectGenerationMismatch to report,
+                // not a repeat of the same object. Present but unusable, the same outcome a parse
+                // failure gets below, so the caller's own "did not resolve" report fires instead of
+                // this method inventing a new diagnostic for it.
                 cache.Add(key, unusable: true);
                 resolved = null;
                 return false;
@@ -883,8 +934,17 @@ internal static class PageTreeWalker
                 cache.Add(key, unusable: false);
         }
 
-        // MaxReferenceChainHops reached without terminating: still real syntax the whole way, so
-        // this is "present but unusable" too, not absent, so the caller's normal diagnostic fires.
+        // MaxReferenceChainHops resolves have now run. The loop above checks the CURRENT value
+        // before resolving, not after, so without this inspection a chain of EXACTLY
+        // MaxReferenceChainHops references would wrongly fail here even though its last resolve,
+        // the one made on the final iteration, already landed on a usable value; only a chain that
+        // is STILL a reference after that many resolves has genuinely exceeded the cap.
+        if (current is not PdfIndirectReference)
+        {
+            resolved = current;
+            return true;
+        }
+
         resolved = null;
         return false;
     }
@@ -900,10 +960,13 @@ internal static class PageTreeWalker
     /// object as the value of a dictionary entry shall be equivalent to omitting the entry entirely."
     /// So <paramref name="absent"/> is <see langword="true"/> when the key is genuinely omitted, when
     /// its own value is a direct <see cref="PdfNull"/>, or when it names a chain of one or more
-    /// indirect references (§7.3.10's own NOTE permits chains; see <see cref="TryResolve"/>) that
-    /// resolves to either of those.
+    /// indirect references (§7.3.10's own NOTE permits chains; see
+    /// <see cref="TryResolve(PdfDocumentReader, FailedResolveCache, PdfObject, out PdfObject?)"/>)
+    /// that resolves to either of those.
     /// <para>
-    /// A reference this parser could not resolve at all (<see cref="TryResolve"/> catching an
+    /// A reference this parser could not resolve at all (see
+    /// <see cref="TryResolve(PdfDocumentReader, FailedResolveCache, PdfObject, out PdfObject?)"/>,
+    /// catching an
     /// <see cref="InvalidDataException"/>, or finding a cycle, or exceeding
     /// <see cref="MaxReferenceChainHops"/>) is NOT absent: the entry syntactically exists and names
     /// something, even if this parser cannot make sense of what it names, a different condition from
@@ -929,21 +992,38 @@ internal static class PageTreeWalker
     /// that it does not catch <see cref="InvalidDataException"/> at all, so an unparseable
     /// <c>/Filter</c> target simply propagates as an exception rather than being weighed against
     /// absence. This walker cannot afford that (a malformed <c>/Contents</c> deep in the tree must
-    /// not abort the whole walk), which is why <see cref="TryResolve"/> catches the exception and
-    /// this method treats the result as present rather than absent. Resolves <paramref name="raw"/>
+    /// not abort the whole walk), which is why
+    /// <see cref="TryResolve(PdfDocumentReader, FailedResolveCache, PdfObject, out PdfObject?)"/>
+    /// catches the exception and this method treats the result as present rather than absent.
+    /// Resolves <paramref name="raw"/>
     /// at most once, so a caller that also needs the resolved value gets it back from this same call
     /// rather than resolving it a second time.
     /// </summary>
     private static PdfObject? ResolveOrAbsent(
-        PdfDocumentReader reader, FailedResolveCache cache, PdfObject? raw, out bool absent)
+        PdfDocumentReader reader, FailedResolveCache cache, PdfObject? raw, out bool absent) =>
+        ResolveOrAbsent(reader, cache, raw, out absent, out _);
+
+    /// <summary>
+    /// The same as
+    /// <see cref="ResolveOrAbsent(PdfDocumentReader, FailedResolveCache, PdfObject?, out bool)"/>,
+    /// additionally reporting <paramref name="lastObjectNumber"/> the way
+    /// <see cref="TryResolve(PdfDocumentReader, FailedResolveCache, PdfObject, out PdfObject?, out int)"/>
+    /// does: the terminal object identity a caller needs for a repeat guard or for naming which
+    /// object is at fault, 0 when <paramref name="raw"/> is direct.
+    /// </summary>
+    private static PdfObject? ResolveOrAbsent(
+        PdfDocumentReader reader, FailedResolveCache cache, PdfObject? raw, out bool absent,
+        out int lastObjectNumber)
     {
+        lastObjectNumber = 0;
+
         if (raw is null or PdfNull)
         {
             absent = true;
             return null;
         }
 
-        if (!TryResolve(reader, cache, raw, out var resolved))
+        if (!TryResolve(reader, cache, raw, out var resolved, out lastObjectNumber))
         {
             absent = false;
             return null;
@@ -966,11 +1046,19 @@ internal static class PageTreeWalker
     /// threw, or cycled, is present but unusable, so the walker's normal "did not resolve to X"
     /// diagnostic should keep firing on every later hit; a target that resolved cleanly to nothing is
     /// genuinely absent (ISO 32000-2 §7.3.9), so it should keep falling through to an inherited
-    /// value in silence, on the first hit and on every cached repeat alike. Bounded by the same
-    /// <see cref="MaxKidsExamined"/> ceiling that bounds how many distinct raw values a walk ever
-    /// hands to <see cref="TryResolve"/> in the first place, and lives only as long as one
-    /// <see cref="Walk"/> call, since <see cref="PdfDocumentReader.Pages"/> walks the tree once and
-    /// caches the result rather than calling <see cref="Walk"/> again.
+    /// value in silence, on the first hit and on every cached repeat alike. NOT bounded by
+    /// <see cref="MaxKidsExamined"/> itself: one examined kid can drive several distinct
+    /// <see cref="TryResolve(PdfDocumentReader, FailedResolveCache, PdfObject, out PdfObject?)"/>
+    /// targets in the same pass (<c>/Type</c>, <c>/Kids</c>,
+    /// <c>/Contents</c>, and, resolving its own effective attributes, <c>/MediaBox</c>,
+    /// <c>/CropBox</c>, <c>/Rotate</c>, <c>/Resources</c>, and each rectangle's array elements), so
+    /// this cache's size is a small multiple of <see cref="MaxKidsExamined"/>, not that ceiling
+    /// itself. The real bound past that multiple is the number of distinct objects the file's own
+    /// cross-reference table can name at all, since a given (object number, generation) pair can
+    /// only occupy one entry here no matter how many kids point at it; on adversarial input this
+    /// cache's memory cost tracks the size of the xref table, not the walk. Lives only as long as
+    /// one <see cref="Walk"/> call, since <see cref="PdfDocumentReader.Pages"/> walks the tree once
+    /// and caches the result rather than calling <see cref="Walk"/> again.
     /// </summary>
     private sealed class FailedResolveCache
     {
