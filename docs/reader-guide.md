@@ -119,8 +119,87 @@ signature's `/ByteRange`, `/Contents`, `/M` (as `SigningTime`), and `/SubFilter`
 *reading*, not *verification* — checking integrity, coverage, or a certificate chain is future
 work (see the capability table below).
 
-Page content — text runs, images — is not on the public surface yet. `Catalog` and `Signatures`
-are what a v2.3 reader exposes; extracting page content is the next reader milestone.
+Page content (text runs, images) is not on the public surface yet; extracting it is the next
+reader milestone. Locating the pages themselves is:
+
+### Pages
+
+```csharp
+int count = reader.PageCount;                  // never trusts a node's own /Count
+foreach (PdfReadPage page in reader.Pages)
+    Console.WriteLine($"page {page.Index}: {page.MediaBox.Width}x{page.MediaBox.Height}, rotate {page.Rotate}");
+
+PdfReadPage first = reader.GetPage(0);          // throws ArgumentOutOfRangeException outside [0, PageCount)
+```
+
+`PageCount`/`Pages`/`GetPage` walk the page tree (ISO 32000-2 §7.7.3) from `/Root` → `/Pages` →
+`/Kids` on first access and cache the result (never in `PdfReader.Open` itself). The walk counts
+what `/Kids` actually contains, not any node's `/Count`. Table 30 puts that obligation on the
+writer, not the reader: the `/Kids` array and its descendants are what "definitively determines
+the number of descendant pages", and real producers disagree with their own `/Count` often enough
+that trusting it would misreport ordinary files, not just adversarial ones. A dictionary reached
+through `/Kids` is classified by its own `/Type` first: `/Type /Pages` is always a node, whether
+`/Type` names it explicitly or a usable `/Kids` array decides it structurally, and either way a
+stray `/Contents` alongside it is reported as `PageTreeNodeMalformed`: that key is a Table 31
+page-object entry with no row in Table 30's node listing, and §7.7.3.4 carries only inheritable
+attributes down to descendants, so on a node it describes nothing at all (a meaningless entry, not
+a conformance violation, but flagged anyway). `/Type /Page` is always a leaf; a stray `/Kids`
+alongside it is both ignored and reported as `PageTreeNodeMalformed` the same way. `/Type
+/Template` (Table 31's own Type row admits it as the other legal page `/Type`, §7.7.3.3) and
+anything naming neither is skipped and reported as `PageTreeNodeMalformed` too: that same Table
+31, in its Parent row, exempts Template from carrying one at all ("Objects of Type Template shall
+have no Parent key"), a rule §12.7.7 repeats, so a Template page has no parent and can never
+legitimately sit in any node's `/Kids`. A dictionary with no `/Type` at all falls back to whether
+it has a `/Kids` array for that classification, silently either way, since plenty of real
+producers omit `/Type /Page` on a genuine leaf. Absent, an explicit null, and a reference (or a
+chain of references, ISO 32000-2 §7.3.10's 2020 NOTE) that resolves to either of those are the
+same thing to the walker for a dictionary ENTRY throughout all of this: §7.3.9 makes a null value
+equivalent to an absent key, and extends that to a reference resolving to nothing. This
+equivalence is scoped to entries, not `/Kids` ARRAY ELEMENTS: `[3 0 R null]` or `[3 0 R 9 0 R]`
+with object 9 undefined still reports `PageTreeKidNotDictionary` for that element rather than
+silently skipping it, since Table 30's own `/Kids` row governs what counts as a valid child (a
+page object or another page-tree node) separately from §7.3.9's null-equivalence rule.
+
+The root (`/Root/Pages`) goes through the same `/Type`-and-structure classification: a root that
+is itself a leaf, or that names something other than `/Type /Pages` (the catalog dictionary
+reused as its own `/Pages` entry, say), reports `PageTreeMissing` instead of being walked, since
+ISO 32000-2 §7.7.2 Table 29 requires `/Root/Pages` to be the root of the page tree and §7.7.3.2
+defines what counts as one. Only a root that FAILS that classification skips its own
+stray-`/Contents` check; a root that clears it always reaches that check, whether or not it also
+has usable `/Kids` of its own, so a root with neither can report `PageTreeNodeMalformed` (the
+stray `/Contents`) and `PageTreeMissing` (the unusable `/Kids`) together, not one instead of the
+other. Any node's `/Kids` resolving to a present but empty array, root included, contributes zero
+pages for that subtree with no diagnostic at all: §7.7.3 does not require a document to have at
+least one page, so an empty tree is a valid zero-page document, not a defect.
+
+Each `PdfReadPage` exposes `MediaBox`, `CropBox`, and `Rotate` already resolved through the
+inheritance chain (§7.7.3.4) and normalised: corners ordered low-to-high, rotation folded to one
+of 0/90/180/270. A malformed value anywhere in the chain is skipped in favour of the nearest
+ancestor that supplies a valid one, each skip reported as `PageAttributeInvalid`; only once nothing
+in the chain resolves at all does `MediaBox` fall back to US Letter (612 × 792 points, this
+reader's own convention, since the specification names no default), `CropBox` to the page's own
+`MediaBox`, and `Rotate` to 0. `CropBox` is additionally intersected with `MediaBox` per §14.11.2.1
+once resolved: a crop region extending past the media box is clipped to it, not exposed as
+written, and a crop box that collapses to zero width or height at the intersection is kept as that
+zero-width (or zero-height) intersection rather than replaced, as long as it still touches the
+media box (ISO 32000-2 §7.9.5's NOTE records that rectangles can have zero width or height); a
+`CropBox` that shares no overlap with `MediaBox` at all (§14.11.2.1's intersection would be
+empty) falls back to `MediaBox` with its own `PageAttributeInvalid` report. A merely absent,
+optional `CropBox` or `Rotate` stays silent: that is the spec's own default, not a problem. A
+page tree the walk cannot use at all reports `PageTreeMissing` and leaves `PageCount` at 0
+rather than throwing; a node whose own `/Type` or `/Kids` shape is wrong is skipped, treated as a
+leaf, or still walked as a node, per the rules described above, and reports
+`PageTreeNodeMalformed` either way; a cycle (`PageTreeCycle`), a nesting depth past 256
+(`PageTreeDepthExceeded`), more than 100,000 leaves (`PageTreeLeafLimitExceeded`), or more than
+1,000,000 `/Kids` elements examined in total (`PageTreeNodeLimitExceeded`) each report their own
+code and return whatever pages were found up to that point. `PageTreeCycle` also covers a repeat
+reached through different aliases, not just a literal repeated reference: two `/Kids` elements
+naming different objects that both resolve, one or more indirect references later, to the same
+page or node still count as one repeated object, reported once as `PageTreeCycle` naming the
+object they both resolve to. A shared page is listed once, under its own object number; a shared
+node's descendant pages are listed once each, the same as if the second alias had never been
+written, apart from that diagnostic. See `PdfReaderDiagnosticCode`'s `2xx` block for the full
+list.
 
 ### Diagnostics
 
@@ -136,11 +215,18 @@ cross-reference table it had to rebuild, a filter chain entry that didn't resolv
 declared itself, a TIFF predictor applied at a bit depth this decoder doesn't undo correctly. Each
 entry carries a `Code`, a `Severity` (`Info`/`Warning`/`Error`), a human-readable `Message`, and,
 where the condition concerns one, an `ObjectNumber` and `Generation`. `PageIndex` is also on every
-entry, but stays `null` until
-the page walk lands (#98) — nothing this release reports is scoped to a page. `MaxDiagnostics`
-(default 1000) is tighten-only, matching `MaxDecodedStreamBytes` and
-`ReconstructionBudgetMultiplier` above — past the cap, a single `DiagnosticsSuppressed` entry says
-how many further reports were dropped rather than growing the list without bound.
+entry, populated by the page-tree walk's own `PageAttributeInvalid` reports against a page's own
+dictionary (see Pages above); a malformed attribute found on an ancestor node instead reports the
+same code once against that node with `PageIndex` null, so filtering diagnostics by page index
+alone misses it. A caller must also look at reports with a null page index; every other code
+either concerns no specific page or is reported before a page index is known.
+`MaxDiagnostics` (default 1000) is tighten-only, matching `MaxDecodedStreamBytes` and
+`ReconstructionBudgetMultiplier` above: past the cap, a single `DiagnosticsSuppressed` entry says
+how many further reports were dropped rather than growing the list without bound. Exempt from
+that cap: the `2xx` page-tree codes that say the page list found so far is incomplete
+(`PageTreeLeafLimitExceeded`, `PageTreeNodeLimitExceeded`, and the first `PageTreeDepthExceeded`
+of a walk), each retained past `MaxDiagnostics` rather than risk going silent on exactly the
+input the cap exists to bound (see Pages above and `PdfReaderOptions.MaxDiagnostics`).
 
 `Diagnostics` is a live view: streams decode lazily, so the list can still grow after `Open`
 returns, as later calls resolve more of the document. Unlike the reader's other collections, which
@@ -239,6 +325,7 @@ a guard test keeps the two copies byte-identical.
 | Configurable, tighten-only resource limits | ✅ Supported | ISO 32000-2 Annex C.1/C.3, informative (#376) |
 | Decryption: Standard handler, `/V` 1/2/4/5, `/R` 2–6, RC4-40–128, AES-128/256 | ✅ Supported | ISO 32000-2 §7.6 |
 | Reading the document catalog | ✅ Supported | ISO 32000-2 §7.7.2 |
+| Page tree walk and page access (`PageCount`, `Pages`, `GetPage`) with inherited `/MediaBox`, `/CropBox`, `/Rotate` | ✅ Supported | ISO 32000-2 §7.7.3 (#98) |
 | Reading digital signature metadata (`/ByteRange`, `/Contents`, `/M`, `/SubFilter`) | ✅ Supported (read only, not verified) | ISO 32000-2 §12.8 |
 | Writing a decrypted copy (`SaveDecrypted`/`SaveDecryptedAsync`) | ✅ Supported | #186 |
 | Lexer/parser hardened against malformed input (property-based fuzzing, round-trip oracle) | ✅ Supported | #99 |

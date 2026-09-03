@@ -165,11 +165,47 @@ public sealed class ParserFuzzTests
             };
             using var reader = PdfReader.Open(bytes, options);
 
-            // Open() alone does not reach every lazily-resolved path — several #196-era defects
-            // lived specifically in resolution, not in opening the file — so touch every object
-            // number the xref claims to know about.
-            foreach (var objectNumber in reader.ObjectNumbers)
-                reader.Resolve(objectNumber);
+            try
+            {
+                // Open() alone does not reach every lazily-resolved path (several #196-era defects
+                // lived specifically in resolution, not in opening the file), so touch every object
+                // number the xref claims to know about.
+                foreach (var objectNumber in reader.ObjectNumbers)
+                    reader.Resolve(objectNumber);
+            }
+            catch (Exception ex) when (IsDeclaredVocabulary(ex))
+            {
+                // Acceptable outcome. See the class doc.
+            }
+
+            try
+            {
+                // The page-tree walk (#98) is lazy too, and reads through the same mutated object
+                // graph: a hostile /Kids array or inherited attribute chain must degrade the same
+                // way everything else in this harness does, not throw outside the declared
+                // vocabulary. Its own try/catch, separate from the resolve-all loop above: a seed
+                // whose resolve loop throws first must not skip exercising the page-tree walk on
+                // the same reader. MediaBox/CropBox/Rotate are already computed during the walk, so
+                // reading Dictionary is the only extra surface this loop needs to touch.
+                _ = reader.PageCount;
+                foreach (var page in reader.Pages)
+                {
+                    _ = page.Dictionary;
+                    _ = page.MediaBox;
+                    _ = page.CropBox;
+                    _ = page.Rotate;
+                }
+            }
+            catch (Exception ex) when (IsPageWalkDeclaredVocabulary(ex))
+            {
+                // Acceptable outcome, but narrower than IsDeclaredVocabulary above: PageCount,
+                // Pages, and GetPage are documented to never let InvalidDataException escape.
+                // PageTreeWalker.TryResolve already converts it into a reported diagnostic and a
+                // skipped node, so accepting it here would hide a regression in that contract
+                // instead of catching it. PdfPasswordException is also excluded: the walk runs
+                // after PdfReader.Open already succeeded, so the password has already been
+                // checked and cannot be asked for again this deep.
+            }
         }
         catch (Exception ex) when (IsDeclaredVocabulary(ex))
         {
@@ -189,6 +225,9 @@ public sealed class ParserFuzzTests
 
     private static bool IsDeclaredVocabulary(Exception ex) =>
         ex is InvalidDataException or UnsupportedPdfFeatureException or PdfPasswordException;
+
+    /// <summary>Declared vocabulary for the page-walk sub-block only; see the catch site.</summary>
+    private static bool IsPageWalkDeclaredVocabulary(Exception ex) => ex is UnsupportedPdfFeatureException;
 
     // ── Mutation ─────────────────────────────────────────────────────────────
 

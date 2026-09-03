@@ -28,6 +28,14 @@ public sealed class PdfReaderDiagnosticCodeTests
         [PdfReaderDiagnosticCode.UnsupportedPredictor] = 1,
         [PdfReaderDiagnosticCode.UnknownFilter] = 1,
         [PdfReaderDiagnosticCode.DecodedStreamLimitExceeded] = 1,
+        [PdfReaderDiagnosticCode.PageTreeMissing] = 2,
+        [PdfReaderDiagnosticCode.PageTreeCycle] = 2,
+        [PdfReaderDiagnosticCode.PageTreeDepthExceeded] = 2,
+        [PdfReaderDiagnosticCode.PageTreeLeafLimitExceeded] = 2,
+        [PdfReaderDiagnosticCode.PageTreeKidNotDictionary] = 2,
+        [PdfReaderDiagnosticCode.PageAttributeInvalid] = 2,
+        [PdfReaderDiagnosticCode.PageTreeNodeMalformed] = 2,
+        [PdfReaderDiagnosticCode.PageTreeNodeLimitExceeded] = 2,
         [PdfReaderDiagnosticCode.DiagnosticsSuppressed] = 9,
     };
 
@@ -118,6 +126,14 @@ public sealed class PdfReaderDiagnosticCodeTests
         [PdfReaderDiagnosticCode.UnsupportedPredictor] = (109, PdfReaderDiagnosticSeverity.Warning),
         [PdfReaderDiagnosticCode.UnknownFilter] = (110, PdfReaderDiagnosticSeverity.Error),
         [PdfReaderDiagnosticCode.DecodedStreamLimitExceeded] = (111, PdfReaderDiagnosticSeverity.Error),
+        [PdfReaderDiagnosticCode.PageTreeMissing] = (200, PdfReaderDiagnosticSeverity.Error),
+        [PdfReaderDiagnosticCode.PageTreeCycle] = (201, PdfReaderDiagnosticSeverity.Warning),
+        [PdfReaderDiagnosticCode.PageTreeDepthExceeded] = (202, PdfReaderDiagnosticSeverity.Warning),
+        [PdfReaderDiagnosticCode.PageTreeLeafLimitExceeded] = (203, PdfReaderDiagnosticSeverity.Warning),
+        [PdfReaderDiagnosticCode.PageTreeKidNotDictionary] = (204, PdfReaderDiagnosticSeverity.Warning),
+        [PdfReaderDiagnosticCode.PageAttributeInvalid] = (205, PdfReaderDiagnosticSeverity.Warning),
+        [PdfReaderDiagnosticCode.PageTreeNodeMalformed] = (206, PdfReaderDiagnosticSeverity.Warning),
+        [PdfReaderDiagnosticCode.PageTreeNodeLimitExceeded] = (207, PdfReaderDiagnosticSeverity.Warning),
         [PdfReaderDiagnosticCode.DiagnosticsSuppressed] = (900, PdfReaderDiagnosticSeverity.Warning),
     };
 
