@@ -115,8 +115,8 @@ internal static class PageTreeWalker
             {
                 diagnostics.Report(
                     PdfReaderDiagnosticCode.PageTreeMissing,
-                    $"The document catalog's /Pages entry references object {rootObjectNumber}, "
-                    + "which does not exist or is the null object (ISO 32000-2 §7.3.9, §7.3.10); "
+                    $"The document catalog's /Pages entry (object {rootObjectNumber}) resolves to "
+                    + "no object or to the null object (ISO 32000-2 §7.3.9, §7.3.10); "
                     + "the document has no pages.",
                     rootObjectNumber);
             }
@@ -884,7 +884,7 @@ internal static class PageTreeWalker
         }
 
         // MaxReferenceChainHops reached without terminating: still real syntax the whole way, so
-        // this is "present but unusable" too, not absent -- the caller's normal diagnostic fires.
+        // this is "present but unusable" too, not absent, so the caller's normal diagnostic fires.
         resolved = null;
         return false;
     }
@@ -908,8 +908,8 @@ internal static class PageTreeWalker
     /// <see cref="MaxReferenceChainHops"/>) is NOT absent: the entry syntactically exists and names
     /// something, even if this parser cannot make sense of what it names, a different condition from
     /// §7.3.9's "nonexistent object". A reference that resolves cleanly to <see langword="null"/>
-    /// WITHOUT throwing -- a generation mismatch or an object-header mismatch, which
-    /// <see cref="PdfDocumentReader"/> already reports its own way -- lands on the absent side
+    /// WITHOUT throwing (a generation mismatch or an object-header mismatch, which
+    /// <see cref="PdfDocumentReader"/> already reports its own way) lands on the absent side
     /// instead: ISO 32000-2 §7.3.10 identifies an object by its number AND generation together, so a
     /// mismatch on either names nothing, the same as a reference to an object number the
     /// cross-reference table has no entry for at all.

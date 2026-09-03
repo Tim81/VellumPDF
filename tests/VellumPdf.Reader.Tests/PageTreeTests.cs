@@ -1013,7 +1013,7 @@ public sealed class PageTreeTests
         // own /Contents AND its own /MediaBox at the SAME two objects, one that throws while
         // parsing and one that is a plain dangling reference. Before the walk-local negative
         // cache, PdfDocumentReader's own resolve cache never remembers a failed resolution, so
-        // this reparsed the shared failing target once per node -- quadratic in node count. This
+        // this reparsed the shared failing target once per node, quadratic in node count. This
         // only pins the OUTCOME (page count and diagnostics), not wall-clock time (CI runners
         // flake on timing assertions, #400); the cache's effect on running time was measured
         // manually instead (see the round's own report for the before/after numbers), at a scale
