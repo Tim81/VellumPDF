@@ -71,7 +71,6 @@ internal sealed class ContentInterpreter
     private readonly HashSet<int> _openForms = [];
     private int _formDepth;
     private int _formInvocations;
-    private readonly HashSet<string> _reportedUnknownOperators = [];
     private ReadOnlyMemory<byte> _currentBuffer;
 
     /// <summary>The current graphics state, the top of the <c>q</c>/<c>Q</c> stack, readable from
@@ -113,7 +112,6 @@ internal sealed class ContentInterpreter
         _openForms.Clear();
         _formDepth = 0;
         _formInvocations = 0;
-        _reportedUnknownOperators.Clear();
 
         var diagnostics = _reader.CreateContentDiagnosticScope();
         var pageIndex = page.Index;
@@ -497,12 +495,14 @@ internal sealed class ContentInterpreter
             // ISO 32000-2 §7.8.2: "an error shall occur" outside a compatibility section; this
             // reader instead notifies and continues. Deliberately does NOT clear the operand stack
             // (this reader's own leniency, distinct from Table 33's "ignored ... along with
-            // operands" for a genuine future operator inside BX/EX): the most common way an
+            // operands" for a later PDF version's operator inside BX/EX): the most common way an
             // unrecognised keyword appears in an otherwise-conforming stream is a stray "R" left
             // over from indirect-reference syntax that §7.8.2 forbids in content streams at all
             // ("Indirect objects and object references shall not be permitted"), and the operands
             // that precede it usually belong to whatever REAL operator follows, not to "R" itself.
-            if (_bxDepth == 0 && _reportedUnknownOperators.Add(name))
+            // The sink's dedupe key is (code, object, page), so only the first unknown name on a
+            // page is recorded; a second distinct name on the same page is dropped by the sink.
+            if (_bxDepth == 0)
             {
                 diagnostics.Report(
                     PdfReaderDiagnosticCode.UnknownOperator,
@@ -1274,10 +1274,15 @@ internal sealed class ContentInterpreter
     }
 
     // Bounded lookahead: lexes up to a handful of tokens in content mode from a candidate resync
-    // point and accepts it if none of them throws before either running out of tokens to try or
-    // reaching end of input. This is what rejects a coincidental "EI" byte pair sitting inside
-    // DCT-compressed binary data, which is followed by more binary noise the lexer chokes on almost
-    // immediately (an unterminated literal string or hex string is the most common trip).
+    // point and accepts it only if none of them throws and every keyword among them is an operator
+    // Annex A Table A.1 defines (or true/false/null). The lexer alone is a weak filter for a
+    // coincidental "EI" byte pair inside DCT-compressed data: any run of bytes outside §7.2.2's
+    // whitespace and delimiter sets lexes as one Keyword token, so binary noise after a false EI
+    // very often lexes cleanly. Requiring the keywords to be operators is what rejects it, since
+    // a byte run like 0x8F 0x12 0xC4 is never an operator name. The one construct this rejects
+    // wrongly is an unknown operator inside a BX/EX section right after an inline image, which
+    // then falls through to a later EI candidate; the false-positive cost of accepting binary
+    // noise (the rest of the stream lost to ContentStreamLexError) is the worse of the two.
     private bool LooksLikeResyncPoint(int pos)
     {
         var probe = new PdfLexer(_currentBuffer, contentStreamMode: true);
@@ -1288,8 +1293,17 @@ internal sealed class ContentInterpreter
             {
                 if (probe.AtEnd)
                     return true;
-                if (probe.NextToken().Kind == TokenKind.EndOfInput)
+                var token = probe.NextToken();
+                if (token.Kind == TokenKind.EndOfInput)
                     return true;
+                if (token.Kind != TokenKind.Keyword)
+                    continue;
+
+                var raw = token.Raw.Span;
+                if (raw.SequenceEqual("true"u8) || raw.SequenceEqual("false"u8) || raw.SequenceEqual("null"u8))
+                    continue;
+                if (!ContentOperators.IsKnown(System.Text.Encoding.Latin1.GetString(raw)))
+                    return false;
             }
             return true;
         }

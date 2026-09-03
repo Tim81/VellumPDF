@@ -84,7 +84,7 @@ internal readonly record struct ReaderLimits(
             DefaultMaxDiagnostics, DefaultMaxFormXObjectDepth);
 
     /// <summary>
-    /// Validates <paramref name="options"/>'s three resource knobs and resolves them into the
+    /// Validates <paramref name="options"/>'s four resource knobs and resolves them into the
     /// limits threaded through one read.
     /// </summary>
     /// <remarks>
@@ -93,19 +93,21 @@ internal readonly record struct ReaderLimits(
     /// practical limits", and Annex C.3 (informative) adds that available memory is "often much less
     /// in mobile devices than desktop computers" — the ceiling is this processor's own choice, not a
     /// spec requirement, so <see cref="DefaultMaxDecodedBytes"/>,
-    /// <see cref="DefaultReconstructionBudgetMultiplier"/>, and <see cref="DefaultMaxDiagnostics"/>
-    /// are each a safe upper bound a caller may only lower, never raise. A value under the
+    /// <see cref="DefaultReconstructionBudgetMultiplier"/>, <see cref="DefaultMaxDiagnostics"/>, and
+    /// <see cref="DefaultMaxFormXObjectDepth"/> are each a safe upper bound a caller may only lower, never raise. A value under the
     /// corresponding floor is rejected too: below <see cref="MinMaxDecodedBytes"/> or
     /// <see cref="MinReconstructionBudgetMultiplier"/>, an otherwise ordinary document routinely
     /// fails to decode or reconstruct at all; below <see cref="MinMaxDiagnostics"/> every report
-    /// would turn into a suppression count, disabling the channel entirely. Each of these is a
+    /// would turn into a suppression count, disabling the channel entirely; below
+    /// <see cref="MinMaxFormXObjectDepth"/> no Form XObject could be entered at all. Each of these is a
     /// configuration mistake worth surfacing immediately, here, rather than as a confusing
     /// exception from a different layer downstream.
     /// </remarks>
     /// <exception cref="ArgumentOutOfRangeException">
     /// <see cref="PdfReaderOptions.MaxDecodedStreamBytes"/>,
-    /// <see cref="PdfReaderOptions.ReconstructionBudgetMultiplier"/>, or
-    /// <see cref="PdfReaderOptions.MaxDiagnostics"/> is outside its allowed range.
+    /// <see cref="PdfReaderOptions.ReconstructionBudgetMultiplier"/>,
+    /// <see cref="PdfReaderOptions.MaxDiagnostics"/>, or
+    /// <see cref="PdfReaderOptions.MaxFormXObjectDepth"/> is outside its allowed range.
     /// </exception>
     internal static ReaderLimits Resolve(PdfReaderOptions options)
     {

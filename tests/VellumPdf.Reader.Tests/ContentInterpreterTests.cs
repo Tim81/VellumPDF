@@ -214,15 +214,18 @@ public sealed class ContentInterpreterTests
     // ── BX/EX compatibility sections ────────────────────────────────────────────────────────────
 
     [Fact]
-    public void UnknownOperator_outsideBX_isReportedOncePerName_andInsideBX_isSilent()
+    public void UnknownOperator_outsideBX_isReportedOncePerPage_andInsideBX_isSilent()
     {
-        const string content = "Zork\nZork\nBX\nZork\n{ pop }\n> \nEX\n";
+        // Two distinct unknown names outside BX/EX: the sink dedupes on (code, object, page), so
+        // the page records the first one only.
+        const string content = "Zork\nZork\nBlat\nBX\nZork\n{ pop }\n> \nEX\n";
 
         var (reader, _, _) = Run(BuildPageDoc(content));
 
         var reports = reader.Diagnostics.Where(d => d.Code == PdfReaderDiagnosticCode.UnknownOperator).ToList();
         Assert.Single(reports);
         Assert.Equal(PdfReaderDiagnosticSeverity.Info, reports[0].Severity);
+        Assert.Contains("'Zork'", reports[0].Message);
     }
 
     [Fact]
@@ -569,6 +572,33 @@ public sealed class ContentInterpreterTests
         var img = Assert.Single(visitor.InlineImages);
         Assert.True(img.Data.AsSpan().SequenceEqual(data));
         Assert.Contains(visitor.Operators, o => o.Op == "Q");
+    }
+
+    [Fact]
+    public void DctInlineImage_withAFalseEiFollowedByBinaryNoise_isSkippedByTheScan()
+    {
+        // The harder false candidate: " EI " followed by bytes outside ISO 32000-2 §7.2.2's
+        // whitespace and delimiter sets, which the lexer accepts as one Keyword token without
+        // throwing. Only the probe's operator check (the keyword is not in Annex A Table A.1)
+        // rejects this one; the real EI follows and is accepted.
+        var falseCandidate = " EI "u8.ToArray();
+        byte[] noiseAfter = [0x8F, 0x12, 0xC4, 0x7A, 0x20, 0xFE, 0x01];
+        byte[] jpegNoise = [0xFF, 0xD8, 0xFF, 0xE0, 0x00];
+        var data = jpegNoise.Concat(falseCandidate).Concat(noiseAfter).ToArray();
+
+        var content = "BI /F /DCT ID "u8.ToArray()
+            .Concat(data)
+            .Concat(" EI\nQ\n"u8.ToArray())
+            .ToArray();
+        var doc = BuildPageDocRaw(content);
+
+        var (reader, _, visitor) = Run(doc);
+
+        Assert.DoesNotContain(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.InlineImageMalformed);
+        Assert.DoesNotContain(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ContentStreamLexError);
+        var img = Assert.Single(visitor.InlineImages);
+        Assert.True(img.Data.AsSpan().SequenceEqual(data));
+        Assert.Equal("Q", Assert.Single(visitor.Operators).Op);
     }
 
     [Fact]

@@ -91,10 +91,10 @@ internal sealed class DiagnosticSink(int cap)
     /// it at all (<see cref="TryAccept"/> returns before <see cref="Forward"/> is ever called).
     /// </summary>
     /// <remarks>
-    /// Unused in this PR (#385 lands only the document-level sink; a per-operation result — the
-    /// first candidate is #98's text extraction — is what will actually call this). Present now,
-    /// and exercised directly by <c>DiagnosticSinkTests</c>, so the forwarding contract is pinned
-    /// before anything depends on it rather than designed against its first real caller.
+    /// Landed with #385 ahead of any caller, exercised directly by <c>DiagnosticSinkTests</c> so the
+    /// forwarding contract was pinned before anything depended on it. The first caller is
+    /// <c>ContentInterpreter.Run</c> (#98), one scope per page interpreted, through
+    /// <see cref="PdfDocumentReader.CreateContentDiagnosticScope"/>.
     /// <para>
     /// Each scope holds its own <c>cap</c>-bounded dedupe set (see <see cref="TryAccept"/>), so N
     /// live scopes retain up to O(N × cap) between them — scopes are meant to be short-lived,
