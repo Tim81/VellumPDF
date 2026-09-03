@@ -1440,7 +1440,7 @@ public sealed class PageTreeTests
             rootObjectNumber: 1,
             (1, "<< /Type /Catalog /Pages 2 0 R >>"),
             (2, "<< /Type /Pages /Kids [3 0 R 5 0 R] /Count 2 >>"),
-            (3, "<< /Type /Pages /Kids [4 0 R] /Contents 9 0 R >>"),
+            (3, "<< /Type /Pages /Kids [4 0 R] /Contents [] >>"),
             (4, "<< /Type /Page /MediaBox [0 0 100 100] >>"),
             (5, "<< /Type /Page /MediaBox [0 0 100 100] >>"));
 
@@ -1460,7 +1460,7 @@ public sealed class PageTreeTests
             rootObjectNumber: 1,
             (1, "<< /Type /Catalog /Pages 2 0 R >>"),
             (2, "<< /Type /Pages /Kids [3 0 R 5 0 R] /Count 2 >>"),
-            (3, "<< /Kids [4 0 R] /Contents 9 0 R >>"), // no /Type at all
+            (3, "<< /Kids [4 0 R] /Contents [] >>"), // no /Type at all
             (4, "<< /Type /Page /MediaBox [0 0 100 100] >>"),
             (5, "<< /Type /Page /MediaBox [0 0 100 100] >>"));
 
@@ -1511,7 +1511,7 @@ public sealed class PageTreeTests
         var bytes = BuildPdf(
             rootObjectNumber: 1,
             (1, "<< /Type /Catalog /Pages 2 0 R >>"),
-            (2, "<< /Type /Pages /Kids [3 0 R] /Count 1 /Contents 9 0 R >>"),
+            (2, "<< /Type /Pages /Kids [3 0 R] /Count 1 /Contents [] >>"),
             (3, "<< /Type /Page /MediaBox [0 0 100 100] >>"));
 
         using var reader = Open(bytes);
@@ -1530,7 +1530,8 @@ public sealed class PageTreeTests
     {
         // ISO 32000-2 §7.3.9: "Specifying the null object as the value of a dictionary entry
         // shall be equivalent to omitting the entry entirely." A node whose /Contents resolves to
-        // the null object must not be flagged the way a real stray /Contents entry is.
+        // the null object must not be flagged the way one with a real target, as in
+        // TypePagesNodeWithContents_reportsNodeMalformed_stillWalkedAsANode above, is.
         var bytes = BuildPdf(
             rootObjectNumber: 1,
             (1, "<< /Type /Catalog /Pages 2 0 R >>"),
@@ -1600,6 +1601,86 @@ public sealed class PageTreeTests
         AssertRectangle(0, 0, 612, 792, reader.Pages[0].MediaBox);
         var d = Assert.Single(reader.Diagnostics, x => x.Code == invalidCode);
         Assert.Contains("MediaBox is missing", d.Message);
+    }
+
+    // ── 13g. §7.3.9's OTHER sentence: a reference to a nonexistent or null object ──
+
+    [Fact]
+    public void ContentsAsADanglingReference_onANode_isTreatedAsAbsent_noDiagnostic()
+    {
+        // ISO 32000-2 §7.3.9: "An indirect object reference (see 7.3.10) to a nonexistent object
+        // shall be treated the same as a null object." Object 9 is never emitted, so
+        // /Contents 9 0 R resolves to nothing, the same absence /Contents null already covers.
+        var bytes = BuildPdf(
+            rootObjectNumber: 1,
+            (1, "<< /Type /Catalog /Pages 2 0 R >>"),
+            (2, "<< /Type /Pages /Kids [3 0 R 5 0 R] /Count 2 >>"),
+            (3, "<< /Type /Pages /Kids [4 0 R] /Contents 9 0 R >>"), // object 9 never emitted
+            (4, "<< /Type /Page /MediaBox [0 0 100 100] >>"),
+            (5, "<< /Type /Page /MediaBox [0 0 100 100] >>"));
+
+        using var reader = Open(bytes);
+        var malformedCode = PdfReaderDiagnosticCode.PageTreeNodeMalformed;
+
+        Assert.Equal(2, reader.PageCount);
+        Assert.DoesNotContain(reader.Diagnostics, d => d.Code == malformedCode);
+    }
+
+    [Fact]
+    public void MediaBoxAsADanglingReference_onALeaf_isInheritedFromTheAncestor_noDiagnostic()
+    {
+        var bytes = BuildPdf(
+            rootObjectNumber: 1,
+            (1, "<< /Type /Catalog /Pages 2 0 R >>"),
+            (2, "<< /Type /Pages /Kids [3 0 R] /Count 1 /MediaBox [0 0 200 300] >>"),
+            (3, "<< /Type /Page /MediaBox 9 0 R >>")); // object 9 never emitted
+
+        using var reader = Open(bytes);
+        var invalidCode = PdfReaderDiagnosticCode.PageAttributeInvalid;
+
+        Assert.Equal(1, reader.PageCount);
+        AssertRectangle(0, 0, 200, 300, reader.Pages[0].MediaBox);
+        Assert.DoesNotContain(reader.Diagnostics, d => d.Code == invalidCode);
+    }
+
+    [Fact]
+    public void MediaBoxAsAReferenceToAnEmittedNullObject_onALeaf_isInherited_noDiagnostic()
+    {
+        // Unlike the dangling-reference case above, object 9 here really exists in the
+        // cross-reference table; its own body just happens to be the null object. §7.3.9 treats
+        // both the same way, and this pins that a real, resolvable object is not required to reach
+        // that outcome.
+        var bytes = BuildPdf(
+            rootObjectNumber: 1,
+            (1, "<< /Type /Catalog /Pages 2 0 R >>"),
+            (2, "<< /Type /Pages /Kids [3 0 R] /Count 1 /MediaBox [0 0 200 300] >>"),
+            (3, "<< /Type /Page /MediaBox 9 0 R >>"),
+            (9, "null"));
+
+        using var reader = Open(bytes);
+        var invalidCode = PdfReaderDiagnosticCode.PageAttributeInvalid;
+
+        Assert.Equal(1, reader.PageCount);
+        AssertRectangle(0, 0, 200, 300, reader.Pages[0].MediaBox);
+        Assert.DoesNotContain(reader.Diagnostics, d => d.Code == invalidCode);
+    }
+
+    [Fact]
+    public void PagesExplicitlyNull_onTheCatalog_reportsPageTreeMissing_withTheNoEntryMessage()
+    {
+        // A direct /Pages null is the same "no /Pages entry" condition as an omitted key
+        // (§7.3.9), so it gets the exact same message, not the "does not resolve to a
+        // dictionary" one reserved for a value that resolves to something else entirely.
+        var bytes = BuildPdf(1, (1, "<< /Type /Catalog /Pages null >>"));
+        using var reader = Open(bytes);
+
+        var missingCode = PdfReaderDiagnosticCode.PageTreeMissing;
+        Assert.Equal(0, reader.PageCount);
+        var d = Assert.Single(reader.Diagnostics, x => x.Code == missingCode);
+        Assert.Equal(
+            "The document catalog has no /Pages entry (ISO 32000-2 §7.7.2); the document has "
+            + "no pages.",
+            d.Message);
     }
 
     // ── Shared assertion helper ───────────────────────────────────────────────────────────────────

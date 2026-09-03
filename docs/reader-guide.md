@@ -151,16 +151,20 @@ anything naming neither is skipped and reported as `PageTreeNodeMalformed` too: 
 have no Parent key"), a rule §12.7.7 repeats, so a Template page has no parent and can never
 legitimately sit in any node's `/Kids`. A dictionary with no `/Type` at all falls back to whether
 it has a `/Kids` array for that classification, silently either way, since plenty of real
-producers omit `/Type /Page` on a genuine leaf.
+producers omit `/Type /Page` on a genuine leaf. Absent, an explicit null, and a reference to a
+missing or null object are the same thing to the walker throughout all of this: ISO 32000-2
+§7.3.9 makes a null value equivalent to an absent key, and extends that to a reference resolving
+to nothing.
 
-The root (`/Root/Pages`) is classified the same way before anything else runs, the `/Contents`
-check included: a root that is itself a leaf, or that names something other than `/Type /Pages`
-(the catalog dictionary reused as its own `/Pages` entry, say), reports `PageTreeMissing` instead
-of being walked, since ISO 32000-2 §7.7.2 Table 29 requires `/Root/Pages` to be the root of the
-page tree and §7.7.3.2 defines what counts as one. Any node's `/Kids` resolving to a present but
-empty array, root included, contributes zero pages for that subtree with no diagnostic at all:
-§7.7.3 does not require a document to have at least one page, so an empty tree is a valid
-zero-page document, not a defect.
+The root (`/Root/Pages`) goes through the same `/Type`-and-structure classification: a root that
+is itself a leaf, or that names something other than `/Type /Pages` (the catalog dictionary
+reused as its own `/Pages` entry, say), reports `PageTreeMissing` instead of being walked, since
+ISO 32000-2 §7.7.2 Table 29 requires `/Root/Pages` to be the root of the page tree and §7.7.3.2
+defines what counts as one. Only a root that clears that classification reaches its own
+stray-`/Contents` check; a root reported as `PageTreeMissing` never does. Any node's `/Kids`
+resolving to a present but empty array, root included, contributes zero pages for that subtree
+with no diagnostic at all: §7.7.3 does not require a document to have at least one page, so an
+empty tree is a valid zero-page document, not a defect.
 
 Each `PdfReadPage` exposes `MediaBox`, `CropBox`, and `Rotate` already resolved through the
 inheritance chain (§7.7.3.4) and normalised: corners ordered low-to-high, rotation folded to one
@@ -177,9 +181,9 @@ media box (ISO 32000-2 §7.9.5's NOTE records that rectangles can have zero widt
 empty) falls back to `MediaBox` with its own `PageAttributeInvalid` report. A merely absent,
 optional `CropBox` or `Rotate` stays silent: that is the spec's own default, not a problem. A
 page tree the walk cannot use at all reports `PageTreeMissing` and leaves `PageCount` at 0
-rather than throwing; a node whose own `/Type` or `/Kids` shape is wrong reports
-`PageTreeNodeMalformed` and is skipped or treated as
-best it can be, as described above; a cycle (`PageTreeCycle`), a nesting depth past 256
+rather than throwing; a node whose own `/Type` or `/Kids` shape is wrong is skipped, treated as a
+leaf, or still walked as a node, per the rules described above, and reports
+`PageTreeNodeMalformed` either way; a cycle (`PageTreeCycle`), a nesting depth past 256
 (`PageTreeDepthExceeded`), more than 100,000 leaves (`PageTreeLeafLimitExceeded`), or more than
 1,000,000 `/Kids` elements examined in total (`PageTreeNodeLimitExceeded`) each report their own
 code and return whatever pages were found up to that point. See `PdfReaderDiagnosticCode`'s `2xx`

@@ -47,6 +47,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   pair, plus the depth code's first occurrence, is ever retained in the same walk. Computed
   lazily, on first access, and cached for the reader's lifetime. (#98)
 
+### Changed
+
+- **`PdfObjectParser.ParseReal` now rejects an out-of-range real literal with
+  `InvalidDataException` instead of letting `PdfReal`'s constructor throw `ArgumentException`.**
+  A real number with enough integer digits (300+) parses to +/-Infinity under `double.TryParse`
+  (ISO 32000-2 §7.3.3's implementation-limited range, Annex C.1, informative); every other
+  malformed-input path in this parser already surfaces as `InvalidDataException`, and this one
+  now matches, reachable by any caller resolving a real number, not just the page-tree walk that
+  first exposed the mismatch. (#98)
+
 ## [2.3.0] - 2026-09-01
 
 ### Breaking changes
