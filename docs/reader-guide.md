@@ -198,7 +198,8 @@ naming different objects that both resolve, one or more indirect references late
 page or node still count as one repeated object, reported once as `PageTreeCycle` naming the
 object they both resolve to. A shared page is listed once, under its own object number; a shared
 node's descendant pages are listed once each, the same as if the second alias had never been
-written. See `PdfReaderDiagnosticCode`'s `2xx` block for the full list.
+written, apart from that diagnostic. See `PdfReaderDiagnosticCode`'s `2xx` block for the full
+list.
 
 ### Diagnostics
 

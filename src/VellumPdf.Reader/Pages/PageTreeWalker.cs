@@ -205,10 +205,10 @@ internal static class PageTreeWalker
         // elements that led to it never shared an object number of their own. ISO 32000-2 §7.7.3.2
         // forbids multiple indirect references to the same page tree node, and §7.7.3.3 forbids
         // multiple indirect references to the same page object, whether that repeat is written as
-        // the same reference twice or as two different aliases of it, and describe /Kids as a
-        // tree, not a graph, so a second occurrence of a NODE or PAGE object number already in
-        // this set is always a shape violation, regardless of whether it happens to loop back to
-        // an ancestor. A repeated /Kids ARRAY object is a different case: those two clauses name
+        // the same reference twice or as two different aliases of it. Both clauses describe /Kids
+        // as a tree, not a graph, so a second occurrence of a NODE or PAGE object number already
+        // in this set is always a shape violation, regardless of whether it happens to loop back
+        // to an ancestor. A repeated /Kids ARRAY object is a different case: those two clauses name
         // node and page objects specifically, not the array sitting between them, so two sibling
         // nodes sharing one, even empty, /Kids array object is not itself a spec violation. This
         // reader folds that case into the same visited set and the same PageTreeCycle report
@@ -284,9 +284,9 @@ internal static class PageTreeWalker
             {
                 diagnostics.Report(
                     PdfReaderDiagnosticCode.PageTreeCycle,
-                    $"Object {kidObjectNumber} appears more than once in the page tree (ISO 32000-2 "
-                    + "§7.7.3.2 and §7.7.3.3 each forbid a repeated node or page object); the repeat "
-                    + "was skipped.",
+                    $"Object {kidObjectNumber} appears more than once in the page tree "
+                    + "(ISO 32000-2 §7.7.3.2 for a page tree node, §7.7.3.3 for a page object); "
+                    + "the repeat was skipped.",
                     kidObjectNumber);
                 continue;
             }
@@ -862,8 +862,8 @@ internal static class PageTreeWalker
     /// the walk. Precedent: reconstruction already recovers from this exception per object rather
     /// than per document, both in <c>PdfDocumentReader.TryParseObjectStreamMemberDirect</c> (a
     /// direct object-stream member parse that fails returns null instead of throwing) and in
-    /// <c>XrefReconstructor.cs</c>'s own scan (a probe that fails to parse one candidate is charged
-    /// and the scan resumes past it, rather than aborting).
+    /// <c>XrefReconstructor.cs</c>'s own scan (a probe that fails to parse one candidate object,
+    /// not an xref stream, is charged and the scan resumes past it, rather than aborting).
     /// </summary>
     private static bool TryResolve(
         PdfDocumentReader reader, FailedResolveCache cache, PdfObject raw, out PdfObject? resolved) =>
@@ -1056,14 +1056,15 @@ internal static class PageTreeWalker
     /// <c>/CropBox</c>, <c>/Rotate</c>, <c>/Resources</c>, and each rectangle's array elements), so
     /// this cache's size is a small multiple of <see cref="MaxKidsExamined"/>, not that ceiling
     /// itself, since a given (object number, generation) pair only occupies one entry here no
-    /// matter how many kids point at it: the population is every distinct pair the walk fails to
-    /// resolve, not every pair it resolves at all (a target that resolves successfully never
-    /// reaches <see cref="Add"/>). A reference to an object the xref has no entry for adds one key
-    /// here the same as a reference to an object the xref does list but whose own body fails to
-    /// parse; whether the xref names the object decides nothing about whether this cache holds an
-    /// entry for it. Lives only as long as one <see cref="Walk"/> call, since
-    /// <see cref="PdfDocumentReader.Pages"/> walks the tree once and caches the result rather than
-    /// calling <see cref="Walk"/> again.
+    /// matter how many kids point at it: the population is every distinct pair whose own
+    /// resolution throws, cycles, or lands on nothing, not every pair the walk resolves at all (a
+    /// target that resolves successfully never reaches <see cref="Add"/>, and a chain that exhausts
+    /// <see cref="MaxReferenceChainHops"/> without terminating adds nothing either). A reference to
+    /// an object the xref has no entry for adds one key here the same as a reference to an object
+    /// the xref does list but whose own body fails to parse; whether the xref names the object
+    /// decides nothing about whether this cache holds an entry for it. Lives only as long as one
+    /// <see cref="Walk"/> call, since <see cref="PdfDocumentReader.Pages"/> walks the tree once
+    /// and caches the result rather than calling <see cref="Walk"/> again.
     /// </summary>
     private sealed class FailedResolveCache
     {
