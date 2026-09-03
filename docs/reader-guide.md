@@ -192,8 +192,12 @@ leaf, or still walked as a node, per the rules described above, and reports
 `PageTreeNodeMalformed` either way; a cycle (`PageTreeCycle`), a nesting depth past 256
 (`PageTreeDepthExceeded`), more than 100,000 leaves (`PageTreeLeafLimitExceeded`), or more than
 1,000,000 `/Kids` elements examined in total (`PageTreeNodeLimitExceeded`) each report their own
-code and return whatever pages were found up to that point. See `PdfReaderDiagnosticCode`'s `2xx`
-block for the full list.
+code and return whatever pages were found up to that point. `PageTreeCycle` also covers a repeat
+reached through different aliases, not just a literal repeated reference: two `/Kids` elements
+naming different objects that both resolve, one or more indirect references later, to the same
+page or node still count as one repeated object, reported once as `PageTreeCycle` naming the
+object they both resolve to, with the page (or node) itself listed once, under its own object
+number. See `PdfReaderDiagnosticCode`'s `2xx` block for the full list.
 
 ### Diagnostics
 

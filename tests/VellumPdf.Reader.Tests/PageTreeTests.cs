@@ -1135,16 +1135,15 @@ public sealed class PageTreeTests
         // own /Contents AND its own /MediaBox at the SAME two objects, one that throws while
         // parsing and one that is a plain dangling reference. Before the walk-local negative
         // cache, PdfDocumentReader's own resolve cache never remembers a failed resolution, so
-        // this reparsed the shared failing target once per node: a fixed-size reparse repeated N
-        // times, linear in node count with a large constant (measured 3.7/7.1/14.7/30.0 s at
-        // 500/1000/2000/4000 nodes, doubling with N). This test only pins the OUTCOME (page count
-        // and diagnostics), not wall-clock time (CI runners flake on timing assertions, #400); the
-        // cache's effect on running time was measured manually instead (see the round's own report
-        // for the before/after numbers), at a scale this test does not attempt to reach: every node
-        // here reports its own distinct-object
-        // PageTreeNodeMalformed (see below), and PdfReaderOptions.MaxDiagnostics tops out at
-        // 1000, so n stays comfortably under that rather than exercising the (already separately
-        // tested) cap-and-suppress path too.
+        // this reparsed the shared failing target once per node: cost linear in node count times
+        // the size of that target, not the fixed per-object cost the cache reduces it to. This
+        // test only pins the OUTCOME (page count and diagnostics), not wall-clock time (CI
+        // runners flake on timing assertions, #400; the cache's effect on running time was
+        // measured manually instead, see the round's own report), at a scale this test does not
+        // attempt to reach: every node here reports its own distinct-object PageTreeNodeMalformed
+        // (see below), and PdfReaderOptions.MaxDiagnostics tops out at 1000, so n stays
+        // comfortably under that rather than exercising the (already separately tested)
+        // cap-and-suppress path too.
         const int n = 900;
         var objects = new List<(int Num, string Body)>
         {
@@ -1301,11 +1300,16 @@ public sealed class PageTreeTests
     {
         // Twenty nested levels, each node's /Kids holding TWO different alias objects that both
         // resolve, one hop later, to the SAME next node (or, at the last level, the same leaf
-        // page). Naive expansion that does not recognise the two aliases as the same object would
-        // double the work at every level: 2^20, over a million node visits, well past
-        // MaxKidsExamined. With the terminal-identity fix, only the FIRST alias at each level ever
-        // expands; the second is always an immediate PageTreeCycle, so the whole walk stays linear
-        // in the level count.
+        // page). This is not a performance guard: keying the repeat check on each alias's own raw
+        // object number, rather than the terminal object it resolves to, already terminates fast
+        // here, since the aliases at any one level are only ever duplicated once each, not
+        // regenerated per path. Its own defect was a WRONG ANSWER: the walk pushed the shared next
+        // node twice (once per alias), so at the last level it read the shared leaf twice too, once
+        // through each alias, and had nothing to recognise those two reads as the same page, giving
+        // PageCount 2 for what is really one page, with ObjectNumber taken from whichever alias was
+        // read first rather than the leaf's own object. Resolving kid identity through the chain
+        // fixes that: one page, its own object number, and the redundant second visit at each level
+        // reported once as PageTreeCycle against the object it collided with.
         const int levels = 20;
         var objects = new List<(int Num, string Body)>
         {
@@ -1340,7 +1344,7 @@ public sealed class PageTreeTests
         Assert.Equal(levels, reader.Diagnostics.Count(d => d.Code == cycleCode));
     }
 
-    // ── 10. Attribute normalisation ───────────────────────────────────────────────────────────────    // ── 10. Attribute normalisation ───────────────────────────────────────────────────────────────
+    // ── 10. Attribute normalisation ───────────────────────────────────────────────────────────────
 
     [Fact]
     public void MediaBox_reversedCorners_normalises_noDiagnostic()
