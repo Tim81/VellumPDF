@@ -381,8 +381,8 @@ public enum PdfReaderDiagnosticCode
     /// A content stream's operand-stack discipline broke down in one of several ways this
     /// interpreter groups under one code rather than one each, since every case has the same
     /// remedy: drop the offending operator (or, for an unbalanced <c>Q</c>/<c>EMC</c>, drop the
-    /// pop) and keep interpreting. Every case here is a PRODUCER-side malformation, the document
-    /// itself is wrong, not merely bigger than this reader is willing to process; see
+    /// pop) and keep interpreting. Every case here is a producer-side malformation (the document
+    /// itself is wrong, not merely bigger than this reader is willing to process); see
     /// <see cref="ContentLimitExceeded"/> for the four cases that are this reader's own processing
     /// ceiling instead. Covers: a number token that does not parse, is not finite, or carries a
     /// second sign character (<c>--5</c>, <c>-+5</c>: §7.3.3 allows only "an optional sign"), a

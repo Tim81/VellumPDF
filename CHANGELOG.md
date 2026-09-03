@@ -80,10 +80,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   correct), `OperandStackMalformed` for a producer-side malformation, `ContentLimitExceeded` for
   this reader's own processing ceilings instead (an operand-count, `TJ`-array, `q`-depth, or
   marked-content-depth cap), `FormXObjectCycle`, `FormXObjectBudgetExceeded`, `ResourceMissing`,
-  `InlineImageMalformed`, and `ContentStreamTooLarge` (the same 64 MiB decoded-content budget now
-  covers every Form XObject a page draws, not only its own `/Contents`, and every invocation of a
-  form counts again, since the interpretation cost this bounds scales with how many times a form
-  is drawn). (#98)
+  `InlineImageMalformed`, and `ContentStreamTooLarge` (one 64 MiB decoded-content budget per page,
+  shared between its own `/Contents` and every Form XObject it draws; each invocation of a form
+  counts again, since the interpretation cost this bounds scales with how many times a form is
+  drawn). (#98)
 
 ### Changed
 
