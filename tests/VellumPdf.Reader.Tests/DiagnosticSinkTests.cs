@@ -216,6 +216,102 @@ public sealed class DiagnosticSinkTests
         Assert.StartsWith("2 diagnostics suppressed", sentinel.Message, StringComparison.Ordinal);
     }
 
+    // ── ReportRetained: bypasses the cap ──
+
+    private const PdfReaderDiagnosticCode LeafCapCode =
+        PdfReaderDiagnosticCode.PageTreeLeafLimitExceeded;
+
+    [Fact]
+    public void ReportRetained_atCap_isStillRecorded()
+    {
+        var sink = new DiagnosticSink(cap: 1);
+
+        sink.Report(PdfReaderDiagnosticCode.UnknownFilter, "a", objectNumber: 1); // fills the cap
+        sink.Report(PdfReaderDiagnosticCode.UnknownFilter, "b", objectNumber: 2); // suppressed
+
+        sink.ReportRetained(LeafCapCode, "leaf cap hit");
+
+        Assert.Contains(sink.Diagnostics, d => d.Code == LeafCapCode);
+    }
+
+    [Fact]
+    public void ReportRetained_sameKeyTwice_isDeduped()
+    {
+        var sink = new DiagnosticSink(cap: 10);
+
+        sink.ReportRetained(LeafCapCode, "first");
+        sink.ReportRetained(LeafCapCode, "second");
+
+        var d = Assert.Single(sink.Diagnostics, x => x.Code == LeafCapCode);
+        Assert.Equal("first", d.Message);
+    }
+
+    /// <summary>
+    /// ReportRetained and Report share the same dedupe set, not two independent ones: a key already
+    /// recorded through either call is still the same "already reported" condition to the other.
+    /// </summary>
+    [Fact]
+    public void ReportRetained_thenReport_sameKey_isDeduped()
+    {
+        var sink = new DiagnosticSink(cap: 10);
+
+        sink.ReportRetained(LeafCapCode, "retained");
+        sink.Report(LeafCapCode, "ordinary");
+
+        var d = Assert.Single(sink.Diagnostics, x => x.Code == LeafCapCode);
+        Assert.Equal("retained", d.Message);
+    }
+
+    [Fact]
+    public void ReportRetained_onChild_forwardsToParent_asTheSameInstance_evenAtParentsCap()
+    {
+        var parent = new DiagnosticSink(cap: 1);
+        var child = parent.CreateScope();
+
+        parent.Report(PdfReaderDiagnosticCode.UnknownFilter, "a", objectNumber: 1); // fills the cap
+
+        child.ReportRetained(LeafCapCode, "leaf cap hit");
+
+        var childEntry = Assert.Single(child.Diagnostics, d => d.Code == LeafCapCode);
+        var parentEntry = Assert.Single(parent.Diagnostics, d => d.Code == LeafCapCode);
+        Assert.Same(childEntry, parentEntry);
+    }
+
+    [Fact]
+    public void ReportRetained_doesNotCountTowardTheCap()
+    {
+        var sink = new DiagnosticSink(cap: 2);
+
+        sink.ReportRetained(LeafCapCode, "leaf cap hit");
+        sink.Report(PdfReaderDiagnosticCode.UnknownFilter, "a", objectNumber: 1);
+        sink.Report(PdfReaderDiagnosticCode.UnknownFilter, "b", objectNumber: 2);
+
+        // Both ordinary reports still fit under cap: 2, unaffected by the earlier retained entry.
+        var suppressed = PdfReaderDiagnosticCode.DiagnosticsSuppressed;
+        Assert.DoesNotContain(sink.Diagnostics, d => d.Code == suppressed);
+        Assert.Equal(3, sink.Diagnostics.Count); // 1 retained + 2 ordinary, no sentinel.
+    }
+
+    [Fact]
+    public void ReportRetained_doesNotDisturbAnAlreadyRecordedSentinel()
+    {
+        var sink = new DiagnosticSink(cap: 1);
+        var suppressed = PdfReaderDiagnosticCode.DiagnosticsSuppressed;
+
+        sink.Report(PdfReaderDiagnosticCode.UnknownFilter, "a", objectNumber: 1);
+        sink.Report(PdfReaderDiagnosticCode.UnknownFilter, "b", objectNumber: 2); // suppressed #1
+
+        sink.ReportRetained(LeafCapCode, "leaf cap hit");
+
+        var sentinel = Assert.Single(sink.Diagnostics, d => d.Code == suppressed);
+        Assert.StartsWith("1 diagnostic suppressed", sentinel.Message, StringComparison.Ordinal);
+
+        sink.Report(PdfReaderDiagnosticCode.UnknownFilter, "c", objectNumber: 3); // suppressed #2
+
+        var again = Assert.Single(sink.Diagnostics, d => d.Code == suppressed);
+        Assert.StartsWith("2 diagnostics suppressed", again.Message, StringComparison.Ordinal);
+    }
+
     // ── CreateScope ───────────────────────────────────────────────────────────────────────────────
 
     [Fact]

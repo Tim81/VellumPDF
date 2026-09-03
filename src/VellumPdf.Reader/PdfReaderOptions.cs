@@ -109,6 +109,16 @@ public sealed class PdfReaderOptions
     /// nothing about this cap is a spec requirement, so a caller may lower it but not raise it
     /// past the shipped default.
     /// </summary>
+    /// <remarks>
+    /// Plus at most one entry each for the page-tree codes that say the page list found so far is
+    /// incomplete: <see cref="PdfReaderDiagnosticCode.PageTreeLeafLimitExceeded"/>,
+    /// <see cref="PdfReaderDiagnosticCode.PageTreeNodeLimitExceeded"/>, and the FIRST
+    /// <see cref="PdfReaderDiagnosticCode.PageTreeDepthExceeded"/> of a walk, retained past this
+    /// cap rather than risk going silent on exactly the input this cap exists to bound. In
+    /// practice at most two of the three ever show up together: the leaf and node limits each end
+    /// the walk the instant they are reported, so only one of that pair can ever coexist with the
+    /// depth entry in the same walk's result.
+    /// </remarks>
     /// <exception cref="ArgumentOutOfRangeException">
     /// Thrown by <see cref="PdfReader.Open(byte[], PdfReaderOptions)"/> when set above the default
     /// of 1000 or below the floor of 1.

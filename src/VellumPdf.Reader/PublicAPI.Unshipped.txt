@@ -4,6 +4,9 @@ VellumPdf.Reader.PdfDocumentReader.Catalog.get -> VellumPdf.Core.PdfDictionary!
 VellumPdf.Reader.PdfDocumentReader.Diagnostics.get -> System.Collections.Generic.IReadOnlyList<VellumPdf.Reader.PdfReaderDiagnostic!>!
 VellumPdf.Reader.PdfDocumentReader.Dispose() -> void
 VellumPdf.Reader.PdfDocumentReader.Encryption.get -> VellumPdf.Encryption.PdfEncryptionInfo?
+VellumPdf.Reader.PdfDocumentReader.GetPage(int index) -> VellumPdf.Reader.PdfReadPage!
+VellumPdf.Reader.PdfDocumentReader.PageCount.get -> int
+VellumPdf.Reader.PdfDocumentReader.Pages.get -> System.Collections.Generic.IReadOnlyList<VellumPdf.Reader.PdfReadPage!>!
 VellumPdf.Reader.PdfDocumentReader.SaveDecrypted(System.IO.Stream! destination) -> void
 VellumPdf.Reader.PdfDocumentReader.SaveDecrypted(System.IO.Stream! destination, VellumPdf.Reader.PdfSaveDecryptedOptions! options) -> void
 VellumPdf.Reader.PdfDocumentReader.SaveDecryptedAsync(System.IO.Stream! destination) -> System.Threading.Tasks.Task!
@@ -13,6 +16,13 @@ VellumPdf.Reader.PdfDocumentReader.WasReconstructed.get -> bool
 VellumPdf.Reader.PdfPasswordException
 VellumPdf.Reader.PdfPasswordException.PdfPasswordException(string! message) -> void
 VellumPdf.Reader.PdfPasswordException.PdfPasswordException(string! message, System.Exception! inner) -> void
+VellumPdf.Reader.PdfReadPage
+VellumPdf.Reader.PdfReadPage.CropBox.get -> VellumPdf.Document.PdfRectangle!
+VellumPdf.Reader.PdfReadPage.Dictionary.get -> VellumPdf.Core.PdfDictionary!
+VellumPdf.Reader.PdfReadPage.Index.get -> int
+VellumPdf.Reader.PdfReadPage.MediaBox.get -> VellumPdf.Document.PdfRectangle!
+VellumPdf.Reader.PdfReadPage.ObjectNumber.get -> int?
+VellumPdf.Reader.PdfReadPage.Rotate.get -> int
 VellumPdf.Reader.PdfReader
 static VellumPdf.Reader.PdfReader.Open(byte[]! bytes) -> VellumPdf.Reader.PdfDocumentReader!
 static VellumPdf.Reader.PdfReader.Open(byte[]! bytes, VellumPdf.Reader.PdfReaderOptions! options) -> VellumPdf.Reader.PdfDocumentReader!
@@ -37,6 +47,14 @@ VellumPdf.Reader.PdfReaderDiagnosticCode.ObjectGenerationMismatch = 104 -> Vellu
 VellumPdf.Reader.PdfReaderDiagnosticCode.ObjectHeaderMismatch = 103 -> VellumPdf.Reader.PdfReaderDiagnosticCode
 VellumPdf.Reader.PdfReaderDiagnosticCode.ObjectStreamContainerUnreadable = 102 -> VellumPdf.Reader.PdfReaderDiagnosticCode
 VellumPdf.Reader.PdfReaderDiagnosticCode.OrphanedObjectStreamMembersDropped = 101 -> VellumPdf.Reader.PdfReaderDiagnosticCode
+VellumPdf.Reader.PdfReaderDiagnosticCode.PageAttributeInvalid = 205 -> VellumPdf.Reader.PdfReaderDiagnosticCode
+VellumPdf.Reader.PdfReaderDiagnosticCode.PageTreeCycle = 201 -> VellumPdf.Reader.PdfReaderDiagnosticCode
+VellumPdf.Reader.PdfReaderDiagnosticCode.PageTreeDepthExceeded = 202 -> VellumPdf.Reader.PdfReaderDiagnosticCode
+VellumPdf.Reader.PdfReaderDiagnosticCode.PageTreeKidNotDictionary = 204 -> VellumPdf.Reader.PdfReaderDiagnosticCode
+VellumPdf.Reader.PdfReaderDiagnosticCode.PageTreeLeafLimitExceeded = 203 -> VellumPdf.Reader.PdfReaderDiagnosticCode
+VellumPdf.Reader.PdfReaderDiagnosticCode.PageTreeMissing = 200 -> VellumPdf.Reader.PdfReaderDiagnosticCode
+VellumPdf.Reader.PdfReaderDiagnosticCode.PageTreeNodeLimitExceeded = 207 -> VellumPdf.Reader.PdfReaderDiagnosticCode
+VellumPdf.Reader.PdfReaderDiagnosticCode.PageTreeNodeMalformed = 206 -> VellumPdf.Reader.PdfReaderDiagnosticCode
 VellumPdf.Reader.PdfReaderDiagnosticCode.UnknownFilter = 110 -> VellumPdf.Reader.PdfReaderDiagnosticCode
 VellumPdf.Reader.PdfReaderDiagnosticCode.UnsupportedPredictor = 109 -> VellumPdf.Reader.PdfReaderDiagnosticCode
 VellumPdf.Reader.PdfReaderDiagnosticCode.XrefReconstructed = 100 -> VellumPdf.Reader.PdfReaderDiagnosticCode
