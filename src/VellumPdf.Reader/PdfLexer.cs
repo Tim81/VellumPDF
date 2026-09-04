@@ -77,6 +77,21 @@ internal sealed class PdfLexer
 {
     private readonly ReadOnlyMemory<byte> _data;
 
+    // Off by default: every existing consumer (the object parser, the 13 Conformance types (11
+    // rules and two helpers) that build their own PdfLexer, and every non-content test) relies on
+    // the file-structure lexer's stricter rule that a lone '{', '}', or unmatched '>' is malformed
+    // PDF. §7.2.3 Table 2 lists '{' and '}' as delimiters with no syntax of their own in the
+    // file-structure grammar; the one place they mean anything is inside a Type 4 PostScript
+    // calculator function body (§7.10.5), which this lexer is never pointed at, so the
+    // file-structure grammar itself has no production for a lone one and it stays malformed in
+    // default mode. A content stream is a different grammar: those same bytes are junk with no
+    // meaning of their own there either, but §7.8.2's BX/EX rule is the reason to tolerate junk
+    // inside a compatibility section rather than abort the whole page over it, so ContentInterpreter
+    // needs to lex them as harmless one-byte unknown-operator keywords instead. Opt-in, not a
+    // runtime detection of "is this a content stream", keeps that decision with the caller that
+    // already knows which grammar applies instead of guessing from the bytes.
+    private readonly bool _contentStreamMode;
+
     /// <summary>Current byte offset within <see cref="_data"/>.</summary>
     public int Position { get; private set; }
 
@@ -93,11 +108,24 @@ internal sealed class PdfLexer
         Position = offset;
     }
 
-    // ── ISO 32000-2 §7.2.2 — whitespace bytes ─────────────────────────────
+    /// <summary>
+    /// Creates a lexer over <paramref name="data"/> in content-stream mode (ISO 32000-2 §7.8.2): a
+    /// lone <c>{</c>, <c>}</c>, or unmatched <c>&gt;</c> lexes as a one-byte <see cref="TokenKind.Keyword"/>
+    /// token instead of throwing <see cref="InvalidDataException"/>. Every other token kind, and every
+    /// other lexer behaviour, is byte-identical to the default constructor's. This is strictly an
+    /// opt-in relaxation, never a stricter mode.
+    /// </summary>
+    internal PdfLexer(ReadOnlyMemory<byte> data, bool contentStreamMode)
+    {
+        _data = data;
+        _contentStreamMode = contentStreamMode;
+    }
+
+    // ── ISO 32000-2 §7.2.3 Table 1: whitespace bytes ──────────────────────
     private static bool IsWhitespace(byte b) =>
         b is 0 or 9 or 10 or 12 or 13 or 32;
 
-    // ── ISO 32000-2 §7.2.2 — delimiter bytes ──────────────────────────────
+    // ── ISO 32000-2 §7.2.3 Table 2: delimiter bytes ───────────────────────
     private static bool IsDelimiter(byte b) =>
         b is (byte)'(' or (byte)')' or (byte)'<' or (byte)'>'
           or (byte)'[' or (byte)']' or (byte)'{' or (byte)'}'
@@ -175,8 +203,10 @@ internal sealed class PdfLexer
     }
 
     /// <summary>
-    /// Advances the cursor to <paramref name="position"/>.
-    /// Must be &gt;= current <see cref="Position"/> and &lt;= <see cref="Length"/>.
+    /// Moves the cursor to <paramref name="position"/>, forward or backward. Only
+    /// <c>0 &lt;= position &lt;= <see cref="Length"/></c> is enforced; several callers deliberately
+    /// rewind past a position already read (a lookahead scan that backs off after deciding not to
+    /// consume it, say) and re-lex from there.
     /// </summary>
     public void Seek(int position)
     {
@@ -224,6 +254,14 @@ internal sealed class PdfLexer
                 Position += 2;
                 return new Token(TokenKind.DictEnd, _data.Slice(start, 2));
             }
+            if (_contentStreamMode)
+            {
+                // §7.8.2's compatibility section (BX/EX) tolerates PostScript-heritage tokens this
+                // grammar has no other use for; ContentInterpreter treats the resulting one-byte
+                // Keyword as just another unrecognised operator, same as '{' and '}' below.
+                Position++;
+                return new Token(TokenKind.Keyword, _data.Slice(start, 1));
+            }
             throw new InvalidDataException(
                 $"Unexpected '>' at offset {Position} (not part of '>>'); malformed PDF.");
         }
@@ -243,6 +281,13 @@ internal sealed class PdfLexer
         // Keyword (true, false, null, obj, endobj, stream, endstream, R, xref, trailer, startxref)
         if (IsRegular(b))
             return ReadKeyword(start);
+
+        if (_contentStreamMode && (b == (byte)'{' || b == (byte)'}'))
+        {
+            // See the '>' branch above and this lexer's content-stream-mode constructor doc.
+            Position++;
+            return new Token(TokenKind.Keyword, _data.Slice(start, 1));
+        }
 
         throw new InvalidDataException(
             $"Unexpected byte 0x{b:X2} at offset {Position}.");

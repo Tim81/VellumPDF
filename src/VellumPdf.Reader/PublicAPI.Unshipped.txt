@@ -37,15 +37,23 @@ VellumPdf.Reader.PdfReaderDiagnostic.PageIndex.get -> int?
 VellumPdf.Reader.PdfReaderDiagnostic.Severity.get -> VellumPdf.Reader.PdfReaderDiagnosticSeverity
 override VellumPdf.Reader.PdfReaderDiagnostic.ToString() -> string!
 VellumPdf.Reader.PdfReaderDiagnosticCode
+VellumPdf.Reader.PdfReaderDiagnosticCode.ContentLimitExceeded = 309 -> VellumPdf.Reader.PdfReaderDiagnosticCode
+VellumPdf.Reader.PdfReaderDiagnosticCode.ContentStreamLexError = 300 -> VellumPdf.Reader.PdfReaderDiagnosticCode
+VellumPdf.Reader.PdfReaderDiagnosticCode.ContentStreamTooLarge = 308 -> VellumPdf.Reader.PdfReaderDiagnosticCode
 VellumPdf.Reader.PdfReaderDiagnosticCode.DecodeParmsMalformed = 108 -> VellumPdf.Reader.PdfReaderDiagnosticCode
 VellumPdf.Reader.PdfReaderDiagnosticCode.DecodedStreamLimitExceeded = 111 -> VellumPdf.Reader.PdfReaderDiagnosticCode
 VellumPdf.Reader.PdfReaderDiagnosticCode.DiagnosticsSuppressed = 900 -> VellumPdf.Reader.PdfReaderDiagnosticCode
 VellumPdf.Reader.PdfReaderDiagnosticCode.FilterArrayElementNotName = 106 -> VellumPdf.Reader.PdfReaderDiagnosticCode
 VellumPdf.Reader.PdfReaderDiagnosticCode.FilterNull = 105 -> VellumPdf.Reader.PdfReaderDiagnosticCode
 VellumPdf.Reader.PdfReaderDiagnosticCode.FilterValueMalformed = 107 -> VellumPdf.Reader.PdfReaderDiagnosticCode
+VellumPdf.Reader.PdfReaderDiagnosticCode.FormXObjectBudgetExceeded = 305 -> VellumPdf.Reader.PdfReaderDiagnosticCode
+VellumPdf.Reader.PdfReaderDiagnosticCode.FormXObjectCycle = 304 -> VellumPdf.Reader.PdfReaderDiagnosticCode
+VellumPdf.Reader.PdfReaderDiagnosticCode.FormXObjectDepthExceeded = 303 -> VellumPdf.Reader.PdfReaderDiagnosticCode
+VellumPdf.Reader.PdfReaderDiagnosticCode.InlineImageMalformed = 307 -> VellumPdf.Reader.PdfReaderDiagnosticCode
 VellumPdf.Reader.PdfReaderDiagnosticCode.ObjectGenerationMismatch = 104 -> VellumPdf.Reader.PdfReaderDiagnosticCode
 VellumPdf.Reader.PdfReaderDiagnosticCode.ObjectHeaderMismatch = 103 -> VellumPdf.Reader.PdfReaderDiagnosticCode
 VellumPdf.Reader.PdfReaderDiagnosticCode.ObjectStreamContainerUnreadable = 102 -> VellumPdf.Reader.PdfReaderDiagnosticCode
+VellumPdf.Reader.PdfReaderDiagnosticCode.OperandStackMalformed = 302 -> VellumPdf.Reader.PdfReaderDiagnosticCode
 VellumPdf.Reader.PdfReaderDiagnosticCode.OrphanedObjectStreamMembersDropped = 101 -> VellumPdf.Reader.PdfReaderDiagnosticCode
 VellumPdf.Reader.PdfReaderDiagnosticCode.PageAttributeInvalid = 205 -> VellumPdf.Reader.PdfReaderDiagnosticCode
 VellumPdf.Reader.PdfReaderDiagnosticCode.PageTreeCycle = 201 -> VellumPdf.Reader.PdfReaderDiagnosticCode
@@ -55,7 +63,9 @@ VellumPdf.Reader.PdfReaderDiagnosticCode.PageTreeLeafLimitExceeded = 203 -> Vell
 VellumPdf.Reader.PdfReaderDiagnosticCode.PageTreeMissing = 200 -> VellumPdf.Reader.PdfReaderDiagnosticCode
 VellumPdf.Reader.PdfReaderDiagnosticCode.PageTreeNodeLimitExceeded = 207 -> VellumPdf.Reader.PdfReaderDiagnosticCode
 VellumPdf.Reader.PdfReaderDiagnosticCode.PageTreeNodeMalformed = 206 -> VellumPdf.Reader.PdfReaderDiagnosticCode
+VellumPdf.Reader.PdfReaderDiagnosticCode.ResourceMissing = 306 -> VellumPdf.Reader.PdfReaderDiagnosticCode
 VellumPdf.Reader.PdfReaderDiagnosticCode.UnknownFilter = 110 -> VellumPdf.Reader.PdfReaderDiagnosticCode
+VellumPdf.Reader.PdfReaderDiagnosticCode.UnknownOperator = 301 -> VellumPdf.Reader.PdfReaderDiagnosticCode
 VellumPdf.Reader.PdfReaderDiagnosticCode.UnsupportedPredictor = 109 -> VellumPdf.Reader.PdfReaderDiagnosticCode
 VellumPdf.Reader.PdfReaderDiagnosticCode.XrefReconstructed = 100 -> VellumPdf.Reader.PdfReaderDiagnosticCode
 VellumPdf.Reader.PdfReaderDiagnosticSeverity
@@ -69,6 +79,8 @@ VellumPdf.Reader.PdfReaderOptions.MaxDecodedStreamBytes.get -> long
 VellumPdf.Reader.PdfReaderOptions.MaxDecodedStreamBytes.init -> void
 VellumPdf.Reader.PdfReaderOptions.MaxDiagnostics.get -> int
 VellumPdf.Reader.PdfReaderOptions.MaxDiagnostics.init -> void
+VellumPdf.Reader.PdfReaderOptions.MaxFormXObjectDepth.get -> int
+VellumPdf.Reader.PdfReaderOptions.MaxFormXObjectDepth.init -> void
 VellumPdf.Reader.PdfReaderOptions.Password.get -> string?
 VellumPdf.Reader.PdfReaderOptions.Password.init -> void
 VellumPdf.Reader.PdfReaderOptions.PdfReaderOptions() -> void

@@ -288,6 +288,46 @@ public sealed class DiagnosticRoutingTests
     }
 
     [Fact]
+    public void UnknownFilter_withAnOversizedName_reportsOnlyAFixedExcerpt()
+    {
+        // A /Filter name has no length bound (Annex C.1), and UnknownFilter is retained for
+        // the reader's lifetime, so before this fix the whole name was interpolated via
+        // filter.Value: the same class of defect DiagnosticExcerpt exists to bound elsewhere in
+        // this reader (#402 round 8).
+        var hugeFilter = new string('A', 1 << 20);
+        var dict = new PdfDictionary().Set(PdfName.Filter, new PdfName(hugeFilter));
+        var stream = MakeParsedStream(dict, "hello"u8.ToArray());
+        var sink = new DiagnosticSink(cap: 10);
+
+        Assert.Throws<InvalidDataException>(() => PdfFilters.Decode(stream, ReaderLimits.Defaults, diagnostics: sink));
+
+        var d = Assert.Single(sink.Diagnostics, x => x.Code == PdfReaderDiagnosticCode.UnknownFilter);
+        Assert.Equal(
+            "Unknown PDF filter: /" + new string('A', 32) + "... (1048576 bytes).",
+            d.Message);
+    }
+
+    [Theory]
+    [InlineData(32, false)]
+    [InlineData(33, true)]
+    public void UnknownFilter_atTheExcerptBoundary_quotesThirtyTwoWhole_andExcerptsThirtyThree(
+        int nameLength, bool expectExcerpt)
+    {
+        var name = new string('A', nameLength);
+        var dict = new PdfDictionary().Set(PdfName.Filter, new PdfName(name));
+        var stream = MakeParsedStream(dict, "hello"u8.ToArray());
+        var sink = new DiagnosticSink(cap: 10);
+
+        Assert.Throws<InvalidDataException>(() => PdfFilters.Decode(stream, ReaderLimits.Defaults, diagnostics: sink));
+
+        var d = Assert.Single(sink.Diagnostics, x => x.Code == PdfReaderDiagnosticCode.UnknownFilter);
+        var expected = expectExcerpt
+            ? "Unknown PDF filter: /" + new string('A', 32) + $"... ({nameLength} bytes)."
+            : $"Unknown PDF filter: /{name}.";
+        Assert.Equal(expected, d.Message);
+    }
+
+    [Fact]
     public void DecodedStreamLimitExceeded_stillThrows_butReportsErrorFirst()
     {
         var decodedSize = (int)(ReaderLimits.MinMaxDecodedBytes * 2); // exceeds a tightened cap.
