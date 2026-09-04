@@ -411,6 +411,73 @@ public sealed class ContentInterpreterTests
     }
 
     [Fact]
+    public void HugeNestedArrayOperand_countsEveryDepth_boundingAllocation()
+    {
+        // The first version of CompositeOperandWithinCap counted depth-1 tokens only, so
+        // '[[1 1 1 ...]] TJ' counted as ONE element, passed the cap, and was materialised in full:
+        // the same 1,784 MiB shape as the flat array above, hidden behind a single pair of
+        // brackets. Every token at every depth counts now.
+        const int elementCount = 20_000_000;
+        var unit = "1 "u8.ToArray();
+        var arrayBody = new byte[unit.Length * elementCount];
+        for (var i = 0; i < elementCount; i++)
+            unit.CopyTo(arrayBody, i * unit.Length);
+        var content = "[["u8.ToArray().Concat(arrayBody).Concat("]] TJ\n1 w\n"u8.ToArray()).ToArray();
+        var doc = BuildPageDocRaw(content);
+
+        var before = GC.GetTotalAllocatedBytes(precise: true);
+        var (reader, _, visitor) = Run(doc);
+        var allocated = GC.GetTotalAllocatedBytes(precise: true) - before;
+
+        Assert.Single(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ContentLimitExceeded);
+        Assert.Equal(["w"], visitor.Operators.Select(o => o.Op));
+        Assert.True(
+            allocated < 96L * 1024 * 1024,
+            $"expected under 96 MiB allocated for the capped nested array; measured "
+            + $"{allocated / (1024.0 * 1024.0):F1} MiB.");
+    }
+
+    [Fact]
+    public void HugeUnterminatedArrayOperand_isDroppedAsOverCap_notMaterialisedBeforeTheLexError()
+    {
+        // An unterminated composite used to return "within cap" from the pre-scan so that
+        // ParseObject could re-derive the ContentStreamLexError, which it did, but only after
+        // allocating every element up to the point of failure. Over the cap, the composite is now
+        // dropped with one 309 and never parsed; the lexer is left at end of input, so no 300
+        // follows and nothing else is reported.
+        const int elementCount = 20_000_000;
+        var unit = "1 "u8.ToArray();
+        var arrayBody = new byte[unit.Length * elementCount];
+        for (var i = 0; i < elementCount; i++)
+            unit.CopyTo(arrayBody, i * unit.Length);
+        var content = "1 w\n["u8.ToArray().Concat(arrayBody).ToArray();
+        var doc = BuildPageDocRaw(content);
+
+        var before = GC.GetTotalAllocatedBytes(precise: true);
+        var (reader, _, visitor) = Run(doc);
+        var allocated = GC.GetTotalAllocatedBytes(precise: true) - before;
+
+        Assert.Single(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ContentLimitExceeded);
+        Assert.Equal(["w"], visitor.Operators.Select(o => o.Op));
+        Assert.True(
+            allocated < 96L * 1024 * 1024,
+            $"expected under 96 MiB allocated for the unterminated array; measured "
+            + $"{allocated / (1024.0 * 1024.0):F1} MiB.");
+    }
+
+    [Fact]
+    public void SmallUnterminatedArrayOperand_stillReportsTheLexError_notTheCap()
+    {
+        // Within the cap, an unterminated composite keeps its original outcome: ParseObject
+        // re-derives the failure and the stream ends with ContentStreamLexError, not 309.
+        var (reader, _, visitor) = Run(BuildPageDoc("1 w\n[1 2 3\n"));
+
+        Assert.Single(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ContentStreamLexError);
+        Assert.DoesNotContain(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ContentLimitExceeded);
+        Assert.Equal(["w"], visitor.Operators.Select(o => o.Op));
+    }
+
+    [Fact]
     public void UnbalancedQ_isIgnoredWithADiagnostic()
     {
         var (reader, _, visitor) = Run(BuildPageDoc("Q\n1 w\n"));

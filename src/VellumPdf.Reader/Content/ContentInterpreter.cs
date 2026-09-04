@@ -44,8 +44,10 @@ internal sealed class ContentInterpreter
     // 32 as this reader's own ceiling would reject a legal call, not just a hostile one.
     private const int MaxOperandsPerOperator = 64;
 
-    // This reader's own ceiling on how many depth-1 elements a single array or dictionary operand
-    // may carry (an array's own elements, or a dictionary's own keys and values counted together).
+    // This reader's own ceiling on how many tokens a single array or dictionary operand may carry,
+    // counted at every nesting depth (each element, key, value and nested opening delimiter is one
+    // token), so the count bounds what PdfObjectParser would allocate for the composite as a whole.
+    // Counting only the top level would let '[[1 1 1 ...]]' hide millions of elements behind one.
     // §9.4.3's own TJ array is what most directly exercises it, but CompositeOperandWithinCap
     // applies it to every composite operand this interpreter parses, not only TJ's, and enforces it
     // BEFORE PdfObjectParser ever materialises the composite (#402 round 3): a 20,000,000-element TJ
@@ -523,7 +525,7 @@ internal sealed class ContentInterpreter
                             // Pre-scanned with the lexer alone (no PdfObject allocation) before
                             // ParseObject ever materialises it: an adversarial TJ array can name
                             // millions of elements in a source text small enough to decode well
-                            // within the content budget, so the element-count cap has to be
+                            // within the content budget, so the token-count cap has to be
                             // consulted before the allocation it exists to bound, not after (#402
                             // round 3; see CompositeOperandWithinCap and MaxCompositeOperandElements).
                             if (CompositeOperandWithinCap(lexer))
@@ -537,7 +539,7 @@ internal sealed class ContentInterpreter
                                 var shape = token.Kind == TokenKind.ArrayBegin ? "An array" : "A dictionary";
                                 diagnostics.Report(
                                     PdfReaderDiagnosticCode.ContentLimitExceeded,
-                                    $"{shape} operand exceeds {MaxCompositeOperandElements} elements; "
+                                    $"{shape} operand exceeds {MaxCompositeOperandElements} tokens; "
                                     + "the operator taking it was dropped.",
                                     ctx.DiagObjectNumber, pageIndex: pageIndex);
                             }
@@ -684,13 +686,15 @@ internal sealed class ContentInterpreter
 
     // Pre-scans an array or dictionary operand with the LEXER ALONE, starting right after its
     // already-consumed opening token, to decide whether it stays within
-    // MaxCompositeOperandElements before PdfObjectParser ever allocates a PdfObject for it. Counts
-    // only DEPTH-1 tokens: the ones that are this composite's own direct elements (an array) or
-    // keys and values (a dictionary), the same items PdfArray.Count/PdfDictionary.Count would count
-    // once materialised. A nested array or dictionary counts once, at its own opening token, not
-    // once per token it itself contains. Leaves the lexer positioned right after the matching close
-    // either way, so the caller can either seek back to re-parse it (within cap) or simply continue
-    // with the next token (over cap: nothing more from this composite is needed).
+    // MaxCompositeOperandElements before PdfObjectParser ever allocates a PdfObject for it. Every
+    // token inside the composite counts, at any depth, because every one of them becomes an
+    // allocation once materialised; closing delimiters are the exception, since they allocate
+    // nothing. Leaves the lexer positioned right after the matching close, so the caller can either
+    // seek back to re-parse it (within cap) or simply continue with the next token (over cap:
+    // nothing more from this composite is needed). An unterminated composite is judged by the
+    // same count: within the cap, the caller's ParseObject re-derives the failure and reports it
+    // (ContentStreamLexError, 300) the way it always has; over the cap it is dropped as over-cap
+    // without ever being parsed, since parsing it would allocate everything before failing.
     private static bool CompositeOperandWithinCap(PdfLexer lexer)
     {
         var depth = 1;
@@ -704,20 +708,16 @@ internal sealed class ContentInterpreter
             }
             catch (InvalidDataException)
             {
-                // No matching close inside this composite: not this method's problem to diagnose.
-                // The caller seeks back to the opening token and lets ParseObject re-derive the
-                // same failure and report it (ContentStreamLexError, #300), the way it always has.
-                return true;
+                break;
             }
 
             if (token.Kind == TokenKind.EndOfInput)
-                return true; // Same: unterminated composite, ParseObject's own retry reports it.
+                break;
 
             switch (token.Kind)
             {
                 case TokenKind.ArrayBegin or TokenKind.DictBegin:
-                    if (depth == 1)
-                        count++;
+                    count++;
                     depth++;
                     break;
 
@@ -726,8 +726,7 @@ internal sealed class ContentInterpreter
                     break;
 
                 default:
-                    if (depth == 1)
-                        count++;
+                    count++;
                     break;
             }
         }

@@ -507,8 +507,9 @@ public enum PdfReaderDiagnosticCode
     /// <summary>
     /// A content stream hit one of this reader's own processing ceilings rather than being
     /// malformed by its producer: more than 64 operands accumulated before an operator (§7.8.2
-    /// gives an operator's own operand count no declared bound of its own), a <c>TJ</c> array
-    /// (§9.4.3) with more than 8192 elements, more than 64 nested <c>q</c> saves, or marked-content
+    /// gives an operator's own operand count no declared bound of its own), an array or dictionary
+    /// operand (a <c>TJ</c> array, §9.4.3, being the usual one) carrying more than 8192 tokens
+    /// counted at every nesting depth, more than 64 nested <c>q</c> saves, or marked-content
     /// nesting (§14.6.1) past the same 64-deep cap. Split out from <see cref="OperandStackMalformed"/>
     /// (#402) so a caller can tell "this file hit a limit of this reader" apart from "this file is
     /// malformed", a distinction the two codes sharing one value made impossible to draw. The

@@ -78,8 +78,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   what the other nine codes describe: `ContentStreamLexError`, `UnknownOperator` (`Warning`
   severity: an operator this reader skipped is a best-effort reading, not proof the output is
   correct), `OperandStackMalformed` for a producer-side malformation, `ContentLimitExceeded` for
-  this reader's own processing ceilings instead (an operand-count, `TJ`-array, `q`-depth, or
-  marked-content-depth cap), `FormXObjectCycle`, `FormXObjectBudgetExceeded`, `ResourceMissing`,
+  this reader's own processing ceilings instead (an operand-count, array-or-dictionary-operand
+  token, `q`-depth, or marked-content-depth cap), `FormXObjectCycle`, `FormXObjectBudgetExceeded`, `ResourceMissing`,
   `InlineImageMalformed`, and `ContentStreamTooLarge` (one 64 MiB decoded-content budget per page,
   shared between its own `/Contents` and every Form XObject it draws; each invocation of a form
   counts again, since the interpretation cost this bounds scales with how many times a form is
