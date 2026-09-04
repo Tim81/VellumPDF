@@ -2143,7 +2143,7 @@ public sealed class ContentInterpreterTests
     {
         // Before this fix, an exception thrown at the buffer's own TRUE end (not an artificial
         // probe-window clip) was treated exactly like a malformed byte found strictly inside the
-        // window: an outright Reject. That misjudged the ONE 'EI' this content actually has as a
+        // window: an outright Reject. That misjudged the ONE 'EI' this content has as a
         // false candidate, losing the image and reporting a false InlineImageMalformed, when the
         // 'EI' was correctly delimited all along, and the unterminated token after it belongs to
         // the OUTER lexer's own ContentStreamLexError instead.
@@ -2250,6 +2250,29 @@ public sealed class ContentInterpreterTests
         var (reader, _, visitor) = Run(doc);
 
         Assert.DoesNotContain(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.InlineImageMalformed);
+        var img = Assert.Single(visitor.InlineImages);
+        Assert.True(img.Data.AsSpan().SequenceEqual(data));
+        Assert.Contains(visitor.Operators, o => o.Op == "Q");
+    }
+
+    [Fact]
+    public void CrLfSeparator_whoseLengthIsWrongUnderBothReadings_recoversThroughTheScanWithoutALeadingLf()
+    {
+        // /L 2 is wrong for a 4-byte payload, so neither the one-byte reading nor the CR LF retry
+        // lands on 'EI' and the image falls through to the EI scan. That scan has no length to
+        // verify a reading against, so it takes tier c's own reading, the CR LF fold: the recovered
+        // data must be the payload alone, not the payload with the separator's LF prepended.
+        byte[] data = "ABCD"u8.ToArray();
+        var raw = "BI /W 4 /H 1 /BPC 8 /CS /G /L 2 ID\r\n"u8.ToArray()
+            .Concat(data)
+            .Concat(" EI\nQ\n"u8.ToArray())
+            .ToArray();
+        var doc = BuildPageDocRaw(raw);
+
+        var (reader, _, visitor) = Run(doc);
+
+        var diag = Assert.Single(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.InlineImageMalformed);
+        Assert.Contains("did not land on an 'EI' operator", diag.Message);
         var img = Assert.Single(visitor.InlineImages);
         Assert.True(img.Data.AsSpan().SequenceEqual(data));
         Assert.Contains(visitor.Operators, o => o.Op == "Q");

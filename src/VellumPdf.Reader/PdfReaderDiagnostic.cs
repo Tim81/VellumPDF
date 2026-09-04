@@ -408,12 +408,12 @@ public enum PdfReaderDiagnosticCode
     /// an array (§9.4.3); a non-numeric operand to <c>cm</c>, <c>Tc</c>, <c>Tw</c>, <c>Tz</c>,
     /// <c>TL</c>, <c>Tf</c>'s second, <c>Tr</c>, <c>Ts</c>, <c>Td</c>, <c>TD</c>, or <c>Tm</c>; a
     /// non-name operand to <c>Tf</c>'s first, to <c>Do</c>, or to <c>gs</c>/<c>cs</c>/<c>CS</c>/<c>sh</c>
-    /// (#402 round 4: this reader reads that operand for its own resource lookup, the same reason
-    /// <c>Do</c>'s own name operand is checked); a non-string operand to <c>'</c>, or a non-numeric
-    /// first or second or non-string third operand to <c>"</c> (#402 round 4; Table 107) (#402
-    /// round 3 for the rest of this list; every operator this interpreter recognises but does not
-    /// name above only forwards its own operands to the visitor untouched, so their operand types
-    /// are the visitor's to type-check, not this interpreter's); a <c>Do</c> that occurred inside a
+    /// (this reader reads that operand for its own resource lookup, the same reason <c>Do</c>'s
+    /// own name operand is checked); a non-string operand to <c>'</c>, or a non-numeric first or
+    /// second or non-string third operand to <c>"</c> (Table 107) (#402 rounds 3 and 4; every
+    /// operator this interpreter recognises but does not name above only forwards its own operands
+    /// to the visitor untouched, so their operand types are the visitor's to type-check, not this
+    /// interpreter's); a <c>Do</c> that occurred inside a
     /// text object (§8.2 Figure 9 admits no operator of Table 50's XObjects category there), an
     /// unbalanced <c>Q</c> with no matching <c>q</c> on the graphics-state stack, or an unbalanced
     /// <c>EMC</c> with no matching <c>BMC</c>/<c>BDC</c> (§14.6.1). An unbalanced <c>q</c> still
@@ -501,10 +501,8 @@ public enum PdfReaderDiagnosticCode
     /// specifically, <see langword="null"/>), so a second inline image on the SAME content stream
     /// with its own, different malformation is not listed separately, but the same page's own
     /// content and each Form XObject it draws dedupe independently, since each carries a distinct
-    /// object number here (#402 round 4: an earlier version of this doc said "per page" outright,
-    /// which undercounts a page invoking two forms that each carry their own malformed inline
-    /// image, since the two reports land against two different object numbers and are not deduped
-    /// against each other at all).
+    /// object number here: a page invoking two forms that each carry their own malformed inline
+    /// image lists two reports (#402 round 4).
     /// </summary>
     InlineImageMalformed = 307,
 

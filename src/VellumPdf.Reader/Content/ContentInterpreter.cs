@@ -1776,11 +1776,10 @@ internal sealed class ContentInterpreter
         // in), §8.9.7 says only "a single white-space character". isCrLf records whether the
         // mandated byte happened to be a CR immediately followed by an LF, so tiers a/b below (each
         // of which has a declared or computed length to verify a reading against) can retry the
-        // two-byte reading once should the one-byte reading fail to land on 'EI' (#402 round 4: an
-        // earlier version preferred the two-byte reading first and retried the one-byte reading
-        // second, which fed a payload's own leading LF byte to the ID separator instead of to the
-        // image data whenever a producer wrote a lone CR before a payload that happened to start
-        // with LF).
+        // two-byte reading once should the one-byte reading fail to land on 'EI' (#402 round 4:
+        // reading the pair first fed a payload's own leading LF byte to the ID separator instead of
+        // to the image data whenever a producer wrote a lone CR before a payload that happened to
+        // start with LF).
         var isCrLf = false;
         var oneByteSeparatorPos = lexer.Position;
         if (lexer.TryPeek() is var separatorByte && separatorByte >= 0
@@ -1866,8 +1865,7 @@ internal sealed class ContentInterpreter
             // CR immediately followed by an LF, retry once with §7.2.3's own fold: both bytes
             // consumed as the separator instead, since a producer that wrote a two-byte CR-LF
             // separator is exactly the case the one-byte reading above would otherwise misjudge
-            // (#402 round 4; this mirrors, in the opposite direction, an earlier version that tried
-            // the fold FIRST and retried the one-byte reading second). The malformed report just
+            // (#402 round 4). The malformed report just
             // below is skipped when this retry alone is what recovers the image: a conforming file
             // recovered from cleanly must not carry a warning about it (#402 round 2). The EI-scan
             // fallback below is a DIFFERENT case: reaching it at all means neither reading's
@@ -1901,6 +1899,12 @@ internal sealed class ContentInterpreter
 
             if (resyncPos is null)
             {
+                // Neither reading's length landed on 'EI', so from here on this is tier c's own
+                // situation: a scan with no length to verify a reading against. It takes tier c's
+                // reading too (the CR-LF fold; see the comment on the tier-c branch above) rather
+                // than keeping the one-byte reading tiers a/b started from, so a CR LF producer
+                // whose /L is wrong does not get a spurious LF prepended to its recovered data.
+                dataStart = foldedSeparatorPos;
                 var scanEnd = ScanForEi(dataStart, ctx.DiagObjectNumber);
                 if (scanEnd is not null)
                 {
@@ -2152,7 +2156,7 @@ internal sealed class ContentInterpreter
     // shapes is accepted with no diagnostic. A '%' comment is the easiest worked example: one
     // running from right after a false 'EI' to the end of its own line can swallow the LATER,
     // terminating 'EI' written on that same line, so the operator that follows the comment's own
-    // line is what the probe actually sees, and it accepts through the ordinary Table A.1 rule with
+    // line is what the probe sees, and it accepts through the ordinary Table A.1 rule with
     // nothing to tell the two apart. The same blind spot applies to a coincidental operator inside
     // compressed noise (" EI n ", " EI W ", " EI f " each
     // truncate the image data with no 307 and hand the visitor a spurious operator) and to " EI BI "
@@ -2252,7 +2256,7 @@ internal sealed class ContentInterpreter
         /// <summary>A lex failure that ran off the buffer's own TRUE end (not this probe's own
         /// window clip) trying to close a token: an unterminated literal or hex string with no more
         /// buffer left to find its closing delimiter in, say. Weaker evidence than <see cref="Reject"/>:
-        /// this scan cannot tell "the file genuinely ends mid-token" apart from "this false 'EI' sits
+        /// this scan cannot tell "the file ends mid-token" apart from "this false 'EI' sits
         /// inside image data whose next token happens to run to the file's own end without closing"
         /// (#402 round 4; see ScanForEi's own remarks on how this outcome is used as a fallback
         /// rather than rejected outright).</summary>
@@ -2399,7 +2403,7 @@ internal sealed class ContentInterpreter
             // this the first time it happens, naming the offset AND object number this candidate
             // was accepted at without verification (#402 round 4: recording diagObjectNumber here,
             // alongside the offset, is what lets a LATER report against a different content
-            // stream's own object number still name where the budget actually ran out, rather than
+            // stream's own object number still name where the budget ran out, rather than
             // pairing this offset with whatever object happens to be current when it is reported),
             // so a caller can tell "the interpreter confirmed this resync point" apart from "the
             // interpreter ran out of budget and took its best guess" (#402 round 3).
