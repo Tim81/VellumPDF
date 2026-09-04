@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 using VellumPdf.Core;
+using VellumPdf.Reader;
 
 namespace VellumPdf.Conformance.Rules.Transparency;
 
@@ -98,7 +99,8 @@ internal sealed class BlendModeRule : IConformanceRule
                 RuleId,
                 Clause,
                 PreflightSeverity.Error,
-                $"The blend mode /{blendMode.Value} is not one of the standard blend modes permitted in PDF/A-2.");
+                $"The blend mode /{DiagnosticExcerpt.Quote(blendMode.Value)} is not one of the "
+                + "standard blend modes permitted in PDF/A-2.");
         }
     }
 }

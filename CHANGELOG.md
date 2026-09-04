@@ -131,6 +131,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   writes `-4` instead of `-516`, the same value as `All`; at `/R` 6 the `/Perms` seal
   (Algorithm 10) changes with it, since it seals the same `/P` value. A document written without
   `Extract` therefore reads back with `Extract` included in `PdfEncryptionInfo.Permissions`. (#397)
+- **A preflight finding could retain a producer-sized string for the result's lifetime.** A rule
+  that names the offending value in its message interpolated it whole, so one oversized `/Filter`
+  name shared by 400 streams kept 705.7 MiB of message text alive from a 990 KB file. Every
+  `PreflightAssertion.Message` is now cut at 1024 characters with its length appended, and the eight
+  rules that quote a name keep the first 32 characters plus the byte count. Verdicts, rule ids and
+  counts are unchanged; a message for a value of 32 characters or fewer is byte-identical. (#403)
 
 ## [2.3.0] - 2026-09-01
 

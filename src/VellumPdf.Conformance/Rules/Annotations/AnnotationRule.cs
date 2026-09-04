@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 using VellumPdf.Core;
+using VellumPdf.Reader;
 
 namespace VellumPdf.Conformance.Rules.Annotations;
 
@@ -63,7 +64,12 @@ internal sealed class AnnotationRule : IConformanceRule
                 continue;
             }
 
-            var label = subtype is null ? "An annotation" : $"A /{subtype} annotation";
+            // Quoted here, once, because label is reused by the nine messages below; an unquoted
+            // oversized /Subtype would otherwise be cut by the sink in each of them instead of
+            // excerpted once (#403).
+            var label = subtype is null
+                ? "An annotation"
+                : $"A /{DiagnosticExcerpt.Quote(subtype)} annotation";
 
             // §6.3.2: a /Popup annotation is driven by its parent and is exempt from the annotation
             // flag requirements (it need not even carry an /F). Every other annotation's flags are
@@ -95,7 +101,8 @@ internal sealed class AnnotationRule : IConformanceRule
                     {
                         apHasOnlyN = false;
                         context.Report(RuleId, Clause, PreflightSeverity.Error,
-                            $"{label}'s appearance dictionary (/AP) shall contain only the /N entry (found /{entry.Key.Value}).");
+                            $"{label}'s appearance dictionary (/AP) shall contain only the /N "
+                            + $"entry (found /{DiagnosticExcerpt.Quote(entry.Key.Value)}).");
                         break;
                     }
 
