@@ -7,7 +7,7 @@ public sealed partial class PdfDocumentReader
 {
     /// <summary>
     /// Creates a fresh <see cref="DiagnosticSink"/> scope (see <see cref="DiagnosticSink.CreateScope"/>)
-    /// forwarding into this reader's own diagnostics. <c>ContentInterpreter.Run</c> is the first real
+    /// forwarding into this reader's own diagnostics. <c>ContentInterpreter.Run</c> is the first
     /// caller of <see cref="DiagnosticSink.CreateScope"/> (see that method's own remarks), creating
     /// one scope per page interpreted so a caller who runs the interpreter over the same page more
     /// than once (text extraction, then image extraction, per #98) gets a fresh, page-scoped

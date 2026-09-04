@@ -121,11 +121,11 @@ internal sealed class PdfLexer
         _contentStreamMode = contentStreamMode;
     }
 
-    // ── ISO 32000-2 §7.2.2 — whitespace bytes ─────────────────────────────
+    // ── ISO 32000-2 §7.2.3 Table 1: whitespace bytes ──────────────────────
     private static bool IsWhitespace(byte b) =>
         b is 0 or 9 or 10 or 12 or 13 or 32;
 
-    // ── ISO 32000-2 §7.2.2 — delimiter bytes ──────────────────────────────
+    // ── ISO 32000-2 §7.2.3 Table 2: delimiter bytes ───────────────────────
     private static bool IsDelimiter(byte b) =>
         b is (byte)'(' or (byte)')' or (byte)'<' or (byte)'>'
           or (byte)'[' or (byte)']' or (byte)'{' or (byte)'}'

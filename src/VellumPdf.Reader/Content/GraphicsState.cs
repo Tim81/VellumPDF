@@ -20,18 +20,20 @@ internal sealed class GraphicsState
     /// <summary>The current transformation matrix, concatenated by <c>cm</c> (§8.3.4).</summary>
     internal Matrix Ctm { get; set; } = Matrix.Identity;
 
-    /// <summary>Character spacing, <c>Tc</c> (§9.3.2). Added to the horizontal or vertical
-    /// component of each glyph's displacement, depending on the writing mode.</summary>
+    /// <summary>Character spacing, <c>Tc</c> (§9.3.2), also settable by <c>"</c>'s own <c>ac</c>
+    /// operand (Table 107). Added to the horizontal or vertical component of each glyph's
+    /// displacement, depending on the writing mode.</summary>
     internal double CharSpacing { get; set; }
 
-    /// <summary>Word spacing, <c>Tw</c> (§9.3.3). Added only after a single-byte code 32.</summary>
+    /// <summary>Word spacing, <c>Tw</c> (§9.3.3), also settable by <c>"</c>'s own <c>aw</c> operand
+    /// (Table 107). Added only after a single-byte code 32.</summary>
     internal double WordSpacing { get; set; }
 
     /// <summary>Horizontal scaling, <c>Tz</c> (§9.3.4), as a percentage; 100 is unscaled.</summary>
     internal double HorizontalScaling { get; set; } = 100;
 
-    /// <summary>Leading, <c>TL</c> (§9.3.5): the line-to-line advance <c>T*</c> and <c>'</c> use, and
-    /// what <c>TD</c> sets from its own <c>ty</c> operand.</summary>
+    /// <summary>Leading, <c>TL</c> (§9.3.5): the line-to-line advance <c>T*</c>, <c>'</c>, and
+    /// <c>"</c> use, and what <c>TD</c> sets from its own <c>ty</c> operand.</summary>
     internal double Leading { get; set; }
 
     /// <summary>

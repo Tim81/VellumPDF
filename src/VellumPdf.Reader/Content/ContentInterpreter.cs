@@ -75,7 +75,7 @@ internal sealed class ContentInterpreter
     // can interpret far more total content than its own /Contents ever declares.
     private const long MaxContentBytes = 64L * 1024 * 1024;
 
-    // The bounded resync probe (see ProbeOnce/LooksLikeResyncPoint) spends at most this many bytes
+    // The bounded resync probe (see ProbeOnce/ClassifyResyncPoint) spends at most this many bytes
     // of lexing across an ENTIRE Run, shared by every 'EI' candidate ScanForEi tries: bounding the
     // RUN's own total work, not each candidate's, is what keeps ScanForEi's amortised cost linear in
     // the content length rather than quadratic (#402 round 3; a per-candidate byte/token cap alone
@@ -85,8 +85,11 @@ internal sealed class ContentInterpreter
     // each immediately followed by an unterminated string, "\" EI (\"" repeated, drove that cost to
     // 16.6 s per decoded MiB with no diagnostic to explain it). Once this budget is spent, every
     // later candidate in the Run is accepted unverified rather than probed at all (see
-    // ProbeOutcome.Exhausted): the total probe lexing one Run can ever do is bounded to this many
-    // bytes plus at most one further window, whatever the content size or candidate count.
+    // ProbeOutcome.Exhausted): the total probe lexing one Run can ever do is bounded to exactly
+    // this many bytes, whatever the content size or candidate count (#402 round 4: ProbeOnce's own
+    // window length is Math.Min(remaining, _probeBytesRemaining), so a window can never itself run
+    // past what is left of the budget; measured at exactly 16,777,216 charged at the 1, 4, and
+    // 16 MiB settings alike, not that plus a further window's own worth).
     private const long MaxProbeBytesPerRun = 16L * 1024 * 1024;
 
     private static readonly PdfName XObjectSubtypeForm = new("Form");
@@ -119,12 +122,19 @@ internal sealed class ContentInterpreter
     private ReadOnlyMemory<byte> _currentBuffer;
 
     // The resync probe's own remaining share of MaxProbeBytesPerRun, and whether it has already
-    // been spent this Run. Once _probeBudgetExhausted is true, LooksLikeResyncPoint accepts every
+    // been spent this Run. Once _probeBudgetExhausted is true, ClassifyResyncPoint accepts every
     // later 'EI' candidate without probing it at all (see ProbeOnce's Exhausted outcome), and
-    // HandleInlineImage reports that once, at the offset it first happened.
+    // HandleInlineImage reports that against EVERY later inline image this Run delimits, not only
+    // the one whose own scan spent the budget: the sink's own (code, object, page) dedupe key means
+    // a later image inside a DIFFERENT content stream (a different Form XObject, or the page's own
+    // content once a form already spent it) is not deduped against the first report at all, so the
+    // message names the offset AND the object number of the FIRST occurrence explicitly
+    // (_probeBudgetExhaustedAtObjectNumber), rather than letting a later report's own ctx attribute
+    // an offset from a DIFFERENT buffer to itself (#402 round 4).
     private long _probeBytesRemaining;
     private bool _probeBudgetExhausted;
     private int _probeBudgetExhaustedAtOffset;
+    private int? _probeBudgetExhaustedAtObjectNumber;
 
     // Pushes PushGraphicsState/PushMarkedContent dropped for being over MaxGraphicsStateDepth or
     // MaxMarkedContentDepth: a matching 'Q'/'EMC' consumes one of these before it may report an
@@ -214,6 +224,7 @@ internal sealed class ContentInterpreter
         _probeBytesRemaining = MaxProbeBytesPerRun;
         _probeBudgetExhausted = false;
         _probeBudgetExhaustedAtOffset = 0;
+        _probeBudgetExhaustedAtObjectNumber = null;
         ProbeBytesConsumed = 0;
 
         var diagnostics = _reader.CreateContentDiagnosticScope();
@@ -528,7 +539,7 @@ internal sealed class ContentInterpreter
                             // within the content budget, so the token-count cap has to be
                             // consulted before the allocation it exists to bound, not after (#402
                             // round 3; see CompositeOperandWithinCap and MaxCompositeOperandElements).
-                            if (CompositeOperandWithinCap(lexer))
+                            if (CompositeOperandWithinCap(lexer, out var countPassLexerFailed))
                             {
                                 lexer.Seek(offset);
                                 PushOperand(parser.ParseObject(), ctx, diagnostics, pageIndex);
@@ -542,6 +553,24 @@ internal sealed class ContentInterpreter
                                     $"{shape} operand exceeds {MaxCompositeOperandElements} tokens; "
                                     + "the operator taking it was dropped.",
                                     ctx.DiagObjectNumber, pageIndex: pageIndex);
+                                if (countPassLexerFailed)
+                                {
+                                    // The count pass itself hit a malformed byte inside the
+                                    // composite (an unterminated string, say) before it ever
+                                    // reached the cap-comparison this branch reports 309 for; that
+                                    // failure did not merely bail the count pass out early on count
+                                    // alone, so it gets its own 300 too (#402 round 4: an
+                                    // over-cap composite whose count pass failed this way used to
+                                    // report only the 309, silently ending interpretation of the
+                                    // rest of the stream with nothing to explain why, where the
+                                    // identical failure on an UNDER-cap composite already reported
+                                    // 300 through ParseObject's own re-parse).
+                                    diagnostics.Report(
+                                        PdfReaderDiagnosticCode.ContentStreamLexError,
+                                        "The content stream's syntax could not be interpreted past "
+                                        + "this point; interpretation of it stopped here.",
+                                        ctx.DiagObjectNumber, pageIndex: pageIndex);
+                                }
                             }
                             break;
 
@@ -689,16 +718,24 @@ internal sealed class ContentInterpreter
     // MaxCompositeOperandElements before PdfObjectParser ever allocates a PdfObject for it. Every
     // token inside the composite counts, at any depth, because every one of them becomes an
     // allocation once materialised; closing delimiters are the exception, since they allocate
-    // nothing. Leaves the lexer positioned right after the matching close, so the caller can either
-    // seek back to re-parse it (within cap) or simply continue with the next token (over cap:
-    // nothing more from this composite is needed). An unterminated composite is judged by the
-    // same count: within the cap, the caller's ParseObject re-derives the failure and reports it
-    // (ContentStreamLexError, 300) the way it always has; over the cap it is dropped as over-cap
-    // without ever being parsed, since parsing it would allocate everything before failing.
-    private static bool CompositeOperandWithinCap(PdfLexer lexer)
+    // nothing. When the composite terminates cleanly, this leaves the lexer positioned right after
+    // the matching close, so the caller can either seek back to re-parse it (within cap) or move on
+    // to the next token (over cap: nothing more from this composite is needed); an
+    // unterminated composite (see lexerFailed below) leaves the lexer wherever the failed token
+    // left it instead, which is NOT necessarily right after any close (#402 round 4: qualifying
+    // this to the terminated case, since the unterminated one two paragraphs below already
+    // contradicted an unqualified claim here). An unterminated composite is judged by the same
+    // count: within the cap, the caller's ParseObject re-derives the failure and reports it
+    // (ContentStreamLexError, 300) the way it always has; over the cap, lexerFailed tells the
+    // caller to report that same 300 directly, since nothing will re-parse this composite to
+    // derive it the way the within-cap path does (#402 round 4: over the cap used to report only
+    // ContentLimitExceeded, silently dropping the fact that the composite was ALSO malformed and
+    // not merely oversized).
+    private static bool CompositeOperandWithinCap(PdfLexer lexer, out bool lexerFailed)
     {
         var depth = 1;
         var count = 0;
+        lexerFailed = false;
         while (depth > 0)
         {
             Token token;
@@ -708,6 +745,7 @@ internal sealed class ContentInterpreter
             }
             catch (InvalidDataException)
             {
+                lexerFailed = true;
                 break;
             }
 
@@ -781,6 +819,25 @@ internal sealed class ContentInterpreter
         if (_operandOverflow)
         {
             arityOk = false;
+            // A 'q', 'BMC', or 'BDC' dropped here for one of this reader's own ceilings (an
+            // over-cap composite operand, or the 64-operand-per-operator cap in PushOperand) is
+            // still credited toward its own matching pop, the same as an over-DEPTH push already
+            // is in PushGraphicsState/PushMarkedContent: §14.6.2 puts no size bound on a property
+            // list, so a producer whose BDC's own dictionary operand happens to exceed this
+            // reader's own MaxCompositeOperandElements, and who then balances that BDC with an
+            // EMC, must not ALSO be accused of an unbalanced EMC purely because this reader
+            // declined to push the marked-content nesting it was asked to (#402 round 4). An
+            // arity-mismatch drop (e.g. '1 q') is producer-side, not this reader's own ceiling, so
+            // it keeps reporting through the branch below instead.
+            switch (name)
+            {
+                case "q":
+                    _ignoredGsPushes++;
+                    break;
+                case "BMC" or "BDC":
+                    _ignoredMcPushes++;
+                    break;
+            }
             ClearOperands(); // Already reported when the overflow itself happened.
         }
         else if (expected != ContentOperators.Variable && _operands.Count != expected)
@@ -829,13 +886,17 @@ internal sealed class ContentInterpreter
             }
         }
 
-        // A numeric or name operand this interpreter reads for its OWN state (cm/Tf/Td/etc. below)
-        // used to be handed to NumberOperand or a bare pattern match unchecked: a wrongly typed
-        // operand at the right arity silently substituted 0, or (for Do) silently dropped the
-        // invocation, with no diagnostic at all (#402 round 3). An operator this interpreter only
-        // forwards to the visitor untouched (w, J, the colour operators, ...) is exempt: its own
-        // operand types are the visitor's to type-check, not this interpreter's, since this
-        // interpreter never reads them for its own state.
+        // A numeric, name, or string operand this interpreter reads for its OWN state, or reads to
+        // look up a resource on its own behalf (cm/Tf/Td/'/"/gs/cs/CS/sh/Do/etc. below), used to be
+        // handed to NumberOperand or a bare pattern match unchecked: a wrongly typed operand at the
+        // right arity silently substituted 0, silently no-oped a resource lookup, or (for Do)
+        // silently dropped the invocation, with no diagnostic at all (#402 round 3; the resource-
+        // lookup operators gs/cs/CS/sh joined this check in round 4, since ValidateNamedResource and
+        // ValidateColorSpaceResource already read _operands[0] as a name and silently no-op on a
+        // wrong type otherwise). An operator this interpreter only forwards to the visitor untouched
+        // (w, J, the colour-setting operators, ...) is exempt: its own operand types are the
+        // visitor's to type-check, not this interpreter's, since this interpreter never reads them
+        // for its own state or its own resource lookups.
         if (!ValidateOperandTypes(name, ctx, diagnostics, pageIndex))
             return;
 
@@ -928,6 +989,22 @@ internal sealed class ContentInterpreter
                 _textState.MoveTextPosition(0, -_gs.Leading);
                 break;
 
+            case "'":
+                // Table 107: "This operator shall have the same effect as the code: T* string Tj".
+                // T*'s own move (§9.4.3) runs here; the text-showing half stays the visitor's, the
+                // same as Tj's own string operand, which this interpreter never reads (#402 round 4).
+                _textState.MoveTextPosition(0, -_gs.Leading);
+                break;
+
+            case "\"":
+                // Table 107: "This operator shall have the same effect as this code: aw Tw ac Tc
+                // string '". aw and ac land in the text state before the T*-equivalent move that
+                // "'" itself performs (#402 round 4).
+                _gs.WordSpacing = NumberOperand(0);
+                _gs.CharSpacing = NumberOperand(1);
+                _textState.MoveTextPosition(0, -_gs.Leading);
+                break;
+
             case "BDC" or "BMC":
                 PushMarkedContent(ctx, diagnostics, pageIndex);
                 break;
@@ -975,13 +1052,14 @@ internal sealed class ContentInterpreter
     private static bool IsNumericOperand(PdfObject obj) => obj is PdfInteger or PdfReal;
 
     // Type-checks the operands of every operator this interpreter reads for its own graphics or
-    // text state, ahead of the switch below that reads them: by the time this runs, the
-    // arity check above already guarantees _operands.Count matches each name's own Table A.1 arity,
-    // so only the TYPE of each operand is in question here. A mismatch reports
-    // OperandStackMalformed (the same code the 302 doc already covers "an operand of the wrong type
-    // where the arity is otherwise right" under) and drops the operator entirely, the way the
-    // dictionary-operand check just above does, rather than letting NumberOperand's own 0-default
-    // or a silent Do no-op mask the malformation (#402 round 3).
+    // text state, or for its own resource lookup, ahead of the switch below (or, for gs/cs/CS/sh,
+    // the resource-lookup helpers) that read them: by the time this runs, the arity check above
+    // already guarantees _operands.Count matches each name's own Table A.1 arity, so only the TYPE
+    // of each operand is in question here. A mismatch reports OperandStackMalformed (the same code
+    // the 302 doc already covers "an operand of the wrong type where the arity is otherwise right"
+    // under) and drops the operator entirely, the way the dictionary-operand check just above does,
+    // rather than letting NumberOperand's own 0-default or a silent Do/gs/cs/CS/sh no-op mask the
+    // malformation (#402 round 3; gs/cs/CS/sh joined this method in round 4).
     private bool ValidateOperandTypes(string name, StreamContext ctx, DiagnosticSink diagnostics, int pageIndex)
     {
         bool ok;
@@ -1006,6 +1084,23 @@ internal sealed class ContentInterpreter
                 break;
 
             case "Do":
+                ok = _operands[0] is PdfName;
+                break;
+
+            case "'":
+                ok = _operands[0] is PdfLiteralString or PdfHexString;
+                break;
+
+            case "\"":
+                ok = IsNumericOperand(_operands[0]) && IsNumericOperand(_operands[1])
+                    && _operands[2] is PdfLiteralString or PdfHexString;
+                break;
+
+            // Table 73 (§8.6.8): CS/cs's own operand is "name". Table 56 (§8.4.4): gs's own operand
+            // is "dictName". Table 76 (§8.7.4.2): sh's own operand is "name". All three are read for
+            // a resource lookup below (ValidateColorSpaceResource/HandleExtGState/ValidateNamedResource),
+            // the same reason Do's own name operand is checked here rather than left to the visitor.
+            case "cs" or "CS" or "gs" or "sh":
                 ok = _operands[0] is PdfName;
                 break;
 
@@ -1236,6 +1331,8 @@ internal sealed class ContentInterpreter
                 ctx.DiagObjectNumber, pageIndex: pageIndex);
         }
 
+        // Defensive only: ValidateOperandTypes (~:839) already guarantees a one-element, PdfName
+        // operand for 'Do' by the time HandleOperator dispatches here (#402 round 4).
         if (xobjectNameOperand is not PdfName xobjectName)
             return;
 
@@ -1663,35 +1760,53 @@ internal sealed class ContentInterpreter
         // whitespace byte was consumed for every filter shape, so 'BI /F /A85 /L 48 ID  <48-byte
         // payload> EI' (two spaces after ID) came out 3 bytes short: the fixed-at-one skip left the
         // payload's own second byte behind as data, and the rest re-lexed as content instead.
-        // §7.2.3: "The combination of a CARRIAGE RETURN followed immediately by a LINE FEED shall be
-        // treated as one EOL marker", so a CR immediately followed by an LF is consumed as that ONE
-        // separator, not as the separator plus a data byte, before any of the above.
-        var skipsExtraWhitespace = filterNames.Count > 0
-            && filterNames[0].Value is "ASCIIHexDecode" or "ASCII85Decode";
-        var consumedCrLf = false;
+        // Decided from the RAW /Filter array's own element 0, not filterNames[0]: CollectFilterNames
+        // drops a non-name element rather than keeping its place in the array, so '/F [null /A85]'
+        // would otherwise promote /A85 into filterNames[0] and skip whitespace as though IT were
+        // position 0, when the array's own position 0 is neither AHx nor A85 at all (#402 round 4).
+        var skipsExtraWhitespace = FirstFilterIsAsciiHexOrAscii85(dict);
+
+        // §8.9.7: "the ID operator shall be followed by a single white-space character, and the
+        // next character shall be interpreted as the first byte of image data." Exactly ONE byte is
+        // consumed as that mandated separator below, even when it is a CR immediately followed by
+        // an LF, which §7.2.3's own EOL rule folds into one two-byte marker for LINE-ENDING
+        // purposes only; §8.9.7 does not import that fold, and unlike §7.3.8.1 (which names
+        // "CARRIAGE RETURN LINE FEED" outright on the one construct, a stream's own
+        // keyword-to-data boundary, where a spec author who wanted the fold applied there wrote it
+        // in), §8.9.7 says only "a single white-space character". isCrLf records whether the
+        // mandated byte happened to be a CR immediately followed by an LF, so tiers a/b below (each
+        // of which has a declared or computed length to verify a reading against) can retry the
+        // two-byte reading once should the one-byte reading fail to land on 'EI' (#402 round 4: an
+        // earlier version preferred the two-byte reading first and retried the one-byte reading
+        // second, which fed a payload's own leading LF byte to the ID separator instead of to the
+        // image data whenever a producer wrote a lone CR before a payload that happened to start
+        // with LF).
+        var isCrLf = false;
+        var oneByteSeparatorPos = lexer.Position;
         if (lexer.TryPeek() is var separatorByte && separatorByte >= 0
             && PdfLexer.IsWhitespaceByte((byte)separatorByte))
         {
-            if (separatorByte == (byte)'\r' && lexer.Position + 1 < _currentBuffer.Length
-                && _currentBuffer.Span[lexer.Position + 1] == (byte)'\n')
-            {
-                lexer.Seek(lexer.Position + 2);
-                consumedCrLf = true;
-            }
-            else
-            {
-                lexer.Seek(lexer.Position + 1);
-            }
+            isCrLf = separatorByte == (byte)'\r' && lexer.Position + 1 < _currentBuffer.Length
+                && _currentBuffer.Span[lexer.Position + 1] == (byte)'\n';
+            lexer.Seek(lexer.Position + 1);
+            oneByteSeparatorPos = lexer.Position;
 
             if (skipsExtraWhitespace)
             {
                 while (lexer.TryPeek() is var extraByte && extraByte >= 0
                     && PdfLexer.IsWhitespaceByte((byte)extraByte))
                     lexer.Seek(lexer.Position + 1);
+                // NOTE 2's own "skip any further white-space [after the first]" already consumes a
+                // following LF the same way whether the CR alone or the CR LF pair is read as the
+                // mandated separator, so the two readings converge on the same position here: there
+                // is nothing left for tiers a/b's own retry, below, to try a second time.
+                oneByteSeparatorPos = lexer.Position;
+                isCrLf = false;
             }
         }
+        var foldedSeparatorPos = isCrLf ? oneByteSeparatorPos + 1 : oneByteSeparatorPos;
 
-        var dataStart = lexer.Position;
+        var dataStart = oneByteSeparatorPos;
 
         var length = TryLengthFromDictionary(dict, dataStart, ctx, diagnostics, pageIndex, out var lengthPastEnd);
         var usedTierA = length is not null;
@@ -1707,7 +1822,15 @@ internal sealed class ContentInterpreter
         var lengthFromScan = false;
         if (length is null)
         {
-            var scanEnd = ScanForEi(dataStart);
+            // Tier c has no declared or computed length to verify either ID-separator reading
+            // against, so unlike tiers a/b just above it cannot retry between the two; it keeps
+            // §7.2.3's own CR-LF fold as its one reading instead (#402 round 4): the fold misjudges
+            // only a lone-CR separator immediately followed by an LF payload byte, a narrower
+            // failure mode than the one-byte reading's own would be here, which would prepend a
+            // spurious LF onto every ordinary CR LF producer's data, the common case, whenever this
+            // scan has no length to tell the two readings apart with.
+            dataStart = foldedSeparatorPos;
+            var scanEnd = ScanForEi(dataStart, ctx.DiagObjectNumber);
             if (scanEnd is null)
             {
                 ReportProbeBudgetExhaustedIfNeeded(ctx, diagnostics, pageIndex);
@@ -1736,24 +1859,26 @@ internal sealed class ContentInterpreter
         // (lengthFromScan) since it already IS that fallback.
         if (resyncPos is null && !lengthFromScan)
         {
-            // §7.2.3 treats a CR immediately followed by an LF as one EOL marker, but for binary
-            // image data that reading is ambiguous: a producer may have meant only the CR as the ID
-            // separator, with the LF as the image's own first byte. Retry once with the data window
-            // shifted one byte earlier, since a payload that happens to begin with LF right after a
-            // CR separator is exactly the case the CR-LF-as-one-marker choice above would otherwise
-            // misjudge. The malformed report just below is skipped when this retry alone is what
-            // recovers the image: a conforming file whose payload happens to start with LF right
-            // after a lone CR separator must not carry a warning it recovered from cleanly
-            // (#402 round 2; reporting unconditionally before the retry even ran is what made a
-            // correctly-recovered file carry one anyway). The EI-scan fallback below is a
-            // DIFFERENT case: reaching it at all means the declared or computed length was wrong
-            // outright, not merely ambiguous, so recovering through IT still reports.
+            // dataStart is still the one-byte-separator reading here (lengthFromScan is false, so
+            // tier c's own reassignment above never ran). §8.9.7 gives that one-byte reading no way
+            // to tell a lone-CR separator immediately followed by an LF payload byte apart from a
+            // two-byte CR-LF separator, so when it fails to land on 'EI' and the mandated byte was a
+            // CR immediately followed by an LF, retry once with §7.2.3's own fold: both bytes
+            // consumed as the separator instead, since a producer that wrote a two-byte CR-LF
+            // separator is exactly the case the one-byte reading above would otherwise misjudge
+            // (#402 round 4; this mirrors, in the opposite direction, an earlier version that tried
+            // the fold FIRST and retried the one-byte reading second). The malformed report just
+            // below is skipped when this retry alone is what recovers the image: a conforming file
+            // recovered from cleanly must not carry a warning about it (#402 round 2). The EI-scan
+            // fallback below is a DIFFERENT case: reaching it at all means neither reading's
+            // declared or computed length landed on 'EI', not merely one of the two, so recovering
+            // through IT still reports.
             var recoveredViaCrRetry = false;
-            if (consumedCrLf)
+            if (isCrLf)
             {
-                var retryStart = dataStart - 1;
+                var retryStart = foldedSeparatorPos;
                 var retryEnd = retryStart + length.Value;
-                if (retryStart >= 0 && retryEnd <= _currentBuffer.Length)
+                if (retryEnd <= _currentBuffer.Length)
                 {
                     var retryResync = SkipToEi(retryEnd);
                     if (retryResync is not null)
@@ -1776,7 +1901,7 @@ internal sealed class ContentInterpreter
 
             if (resyncPos is null)
             {
-                var scanEnd = ScanForEi(dataStart);
+                var scanEnd = ScanForEi(dataStart, ctx.DiagObjectNumber);
                 if (scanEnd is not null)
                 {
                     length = scanEnd.Value - dataStart;
@@ -1810,20 +1935,31 @@ internal sealed class ContentInterpreter
         return true;
     }
 
-    // Reports, once per Run (the sink's own (code, object, page) dedupe folds every later call),
-    // that the resync probe's own MaxProbeBytesPerRun budget ran out before a candidate 'EI' could
-    // be confirmed, so it (and every later candidate this Run) was accepted unverified instead
-    // (#402 round 3; see ProbeOnce's Exhausted outcome and LooksLikeResyncPoint).
+    // Reports that the resync probe's own MaxProbeBytesPerRun budget ran out before a candidate
+    // 'EI' could be confirmed, so it (and every later candidate this Run) was accepted unverified
+    // instead (#402 round 3; see ProbeOnce's Exhausted outcome and ClassifyResyncPoint). Called for
+    // every inline image this Run still delimits once the budget is spent, not only the one whose
+    // own scan spent it: the sink's own (code, object, page) dedupe collapses every call against
+    // the SAME object into one, but a later inline image inside a DIFFERENT content stream (a
+    // different Form XObject, or the page's own content once a form already spent the budget) is
+    // not deduped against that first report at all, so this names the offset AND the object number
+    // (or "the page's own content" when that object number is null) of the FIRST occurrence
+    // explicitly, rather than pairing the first offset with whatever object happens to be current
+    // on a later, separately-reported call (#402 round 4).
     private void ReportProbeBudgetExhaustedIfNeeded(
         StreamContext ctx, DiagnosticSink diagnostics, int pageIndex)
     {
         if (!_probeBudgetExhausted)
             return;
 
+        var firstSpentIn = _probeBudgetExhaustedAtObjectNumber is { } objectNumber
+            ? $"object {objectNumber}"
+            : "the page's own content";
         ReportInlineImageMalformed(
             $"the resync probe's {MaxProbeBytesPerRun / (1024 * 1024)} MiB per-run byte budget was "
-            + $"spent before the candidate 'EI' at offset {_probeBudgetExhaustedAtOffset} could be "
-            + "confirmed; it, and every later candidate this run, was accepted without verification",
+            + $"first spent at offset {_probeBudgetExhaustedAtOffset} of {firstSpentIn}, before a "
+            + "candidate 'EI' there could be confirmed; that candidate, and every later candidate "
+            + "this run, was accepted without verification",
             ctx, diagnostics, pageIndex);
     }
 
@@ -1849,6 +1985,22 @@ internal sealed class ContentInterpreter
             }
         }
         return names;
+    }
+
+    // NOTE 2's "final or only filter" is array position 0 (see the remarks above
+    // skipsExtraWhitespace's own assignment); this reads that position directly off the RAW
+    // /Filter value rather than off CollectFilterNames' own result, since a non-name element there
+    // is dropped rather than kept in place, which would otherwise let a later name slide into
+    // position 0 (#402 round 4).
+    private static bool FirstFilterIsAsciiHexOrAscii85(PdfDictionary dict)
+    {
+        var first = dict.Get(PdfName.Filter) switch
+        {
+            PdfName n => n,
+            PdfArray { Count: > 0 } arr => arr[0] as PdfName,
+            _ => null,
+        };
+        return first?.Value is "ASCIIHexDecode" or "ASCII85Decode";
     }
 
     // Tier (a): /L, PDF 2.0's own Table 91 entry (§8.9.7). See InlineImageAbbreviations' own remarks
@@ -1988,16 +2140,27 @@ internal sealed class ContentInterpreter
     }
 
     // Tier (c): scan for whitespace-EI-whitespace/EOF, accepted only when the bounded probe just
-    // past the candidate (LooksLikeResyncPoint) does not reject it. Residual gap this scan cannot
-    // close on its own (stated here and in the PR body, not fixed: closing it needs decoding the
-    // image data itself, out of scope for a byte-level scan): a '%' comment after a false 'EI' that
-    // runs to the end of its line can swallow the terminating 'EI' written on that same line, so
-    // the operator that follows the comment's own line accepts the false candidate with no
-    // diagnostic. The bytes are well-formed content either way, so this scan has no way to tell
-    // the two apart.
-    private int? ScanForEi(int dataStart)
+    // past the candidate (ClassifyResyncPoint) does not reject it outright. A WeakReject verdict
+    // (see ProbeOutcome's own remarks) is remembered as a fallback rather than rejected on the
+    // spot: the FIRST such candidate is kept while the scan keeps looking for a stronger one, and
+    // is returned only once the scan finds no Accept-or-Exhausted candidate at all (#402 round 4).
+    // Residual gap this scan cannot close on its own (stated here and in the PR body, not fixed:
+    // closing it needs decoding the image data itself, out of scope for a byte-level scan): any
+    // whitespace-delimited 'EI' followed by bytes that lex as a Table A.1 operator, as 'BI', or as
+    // the buffer's own end is indistinguishable, at the byte level, from a resync point the
+    // terminating 'EI' itself sets, so a false 'EI' immediately followed by any of those three
+    // shapes is accepted with no diagnostic. A '%' comment is the easiest worked example: one
+    // running from right after a false 'EI' to the end of its own line can swallow the LATER,
+    // terminating 'EI' written on that same line, so the operator that follows the comment's own
+    // line is what the probe actually sees, and it accepts through the ordinary Table A.1 rule with
+    // nothing to tell the two apart. The same blind spot applies to a coincidental operator inside
+    // compressed noise (" EI n ", " EI W ", " EI f " each
+    // truncate the image data with no 307 and hand the visitor a spurious operator) and to " EI BI "
+    // (the BI accept rule below): the bytes are well-formed content either way.
+    private int? ScanForEi(int dataStart, int? diagObjectNumber)
     {
         var span = _currentBuffer.Span;
+        int? weakCandidate = null;
         for (var i = dataStart; i + 1 < span.Length; i++)
         {
             if (span[i] != (byte)'E' || span[i + 1] != (byte)'I')
@@ -2013,24 +2176,40 @@ internal sealed class ContentInterpreter
             if (!followedOk)
                 continue;
 
-            if (!LooksLikeResyncPoint(after))
+            var verdict = ClassifyResyncPoint(after, diagObjectNumber);
+            if (verdict == ResyncVerdict.Reject)
                 continue;
 
-            // Strips the single white-space byte §8.9.7 excludes from the image data (the one
-            // delimiting 'EI'). §7.2.3 makes a CARRIAGE RETURN immediately followed by a LINE FEED
-            // ONE EOL marker, not two separate white-space bytes, so when that pair sits right
-            // before 'EI' both bytes are the delimiter, not just the LF (#402 round 3: stripping
-            // only the LF left the CR behind as the image's own trailing byte).
-            var dataEnd = i;
-            if (i > dataStart && PdfLexer.IsWhitespaceByte(span[i - 1]))
-            {
-                dataEnd = i - 1;
-                if (dataEnd > dataStart && span[dataEnd] == (byte)'\n' && span[dataEnd - 1] == (byte)'\r')
-                    dataEnd--;
-            }
-            return dataEnd;
+            var dataEnd = TrimEiDelimiter(span, dataStart, i);
+            if (verdict == ResyncVerdict.Accept)
+                return dataEnd;
+
+            // WeakReject: this candidate's own probe ran off the buffer's TRUE end mid-token
+            // (§8.9.7 gives this scan no way to tell "the file ends with a malformed token" apart
+            // from "this false 'EI' sits inside image data whose next token happens to run to the
+            // file's own end without closing"), which is weaker evidence than a malformed byte
+            // found strictly inside the probe window (still a Reject, above). Only the FIRST one is
+            // kept: a later, stronger candidate always wins over an earlier weak one.
+            weakCandidate ??= dataEnd;
         }
-        return null;
+        return weakCandidate;
+    }
+
+    // Strips the single white-space byte §8.9.7 excludes from the image data (the one delimiting
+    // 'EI'). §7.2.3 makes a CARRIAGE RETURN immediately followed by a LINE FEED ONE EOL marker, not
+    // two separate white-space bytes, so when that pair sits right before 'EI' both bytes are the
+    // delimiter, not just the LF (#402 round 3: stripping only the LF left the CR behind as the
+    // image's own trailing byte).
+    private static int TrimEiDelimiter(ReadOnlySpan<byte> span, int dataStart, int eiOffset)
+    {
+        var dataEnd = eiOffset;
+        if (eiOffset > dataStart && PdfLexer.IsWhitespaceByte(span[eiOffset - 1]))
+        {
+            dataEnd = eiOffset - 1;
+            if (dataEnd > dataStart && span[dataEnd] == (byte)'\n' && span[dataEnd - 1] == (byte)'\r')
+                dataEnd--;
+        }
+        return dataEnd;
     }
 
     // Confirms an 'EI' candidate at exactly a known offset (used once tier a/b already computed a
@@ -2066,13 +2245,22 @@ internal sealed class ContentInterpreter
         Accept,
 
         /// <summary>An 'EI' or 'ID' keyword (still inside image data that continues to a LATER
-        /// 'EI'), a keyword containing a non-printable byte, or a lex failure that was not merely
-        /// this probe running out of budget.</summary>
+        /// 'EI'), a keyword containing a non-printable byte, or a lex failure found strictly inside
+        /// an unclipped window (a malformed byte the buffer's true end had nothing to do with).</summary>
         Reject,
 
+        /// <summary>A lex failure that ran off the buffer's own TRUE end (not this probe's own
+        /// window clip) trying to close a token: an unterminated literal or hex string with no more
+        /// buffer left to find its closing delimiter in, say. Weaker evidence than <see cref="Reject"/>:
+        /// this scan cannot tell "the file genuinely ends mid-token" apart from "this false 'EI' sits
+        /// inside image data whose next token happens to run to the file's own end without closing"
+        /// (#402 round 4; see ScanForEi's own remarks on how this outcome is used as a fallback
+        /// rather than rejected outright).</summary>
+        WeakReject,
+
         /// <summary>The probe's own share of MaxProbeBytesPerRun ran out before it reached an
-        /// Accept or Reject outcome. Treated as an accept by LooksLikeResyncPoint (see its own
-        /// remarks), but distinctly, so HandleInlineImage can report that this candidate was
+        /// Accept, Reject, or WeakReject outcome. Treated as an accept by ClassifyResyncPoint (see
+        /// its own remarks), but distinctly, so HandleInlineImage can report that this candidate was
         /// accepted unverified rather than confirmed.</summary>
         Exhausted,
     }
@@ -2109,13 +2297,18 @@ internal sealed class ContentInterpreter
             catch (InvalidDataException)
             {
                 // Ran off the end of the window mid-token (an unterminated literal or hex string,
-                // say): Exhausted only when that running-off was purely the budget's own limit
-                // (window clipped, and the lexer's own Position landed at or past the window's own
-                // length trying to close the token); anything else, including a malformed byte
-                // found strictly inside an unclipped window, rejects outright.
-                outcome = windowClipped && probe.Position >= window.Length
-                    ? ProbeOutcome.Exhausted
-                    : ProbeOutcome.Reject;
+                // say). Three cases share this one catch block, distinguished by WHICH end the
+                // token ran off: the budget's own artificial clip (Exhausted, windowClipped and the
+                // lexer's own Position landed at or past the window's own length), the buffer's own
+                // TRUE end with nothing left to close the token (WeakReject, the same Position
+                // check but an unclipped window: #402 round 4), or a malformed byte found strictly
+                // inside an unclipped window, short of either end (Reject outright).
+                outcome = (windowClipped, probe.Position >= window.Length) switch
+                {
+                    (true, true) => ProbeOutcome.Exhausted,
+                    (false, true) => ProbeOutcome.WeakReject,
+                    _ => ProbeOutcome.Reject,
+                };
                 break;
             }
 
@@ -2187,22 +2380,42 @@ internal sealed class ContentInterpreter
         return outcome;
     }
 
-    private bool LooksLikeResyncPoint(int pos)
+    // ScanForEi's own verdict on one candidate: Accept ends the scan immediately, Reject moves on
+    // to the next candidate with nothing kept, and WeakReject moves on too but leaves the candidate
+    // behind as a fallback ScanForEi returns if nothing stronger ever turns up (#402 round 4).
+    private enum ResyncVerdict
+    {
+        Accept,
+        Reject,
+        WeakReject,
+    }
+
+    private ResyncVerdict ClassifyResyncPoint(int pos, int? diagObjectNumber)
     {
         var outcome = ProbeOnce(pos);
         if (outcome == ProbeOutcome.Exhausted)
         {
             // Accepted unverified, once and for the rest of this Run: HandleInlineImage reports
-            // this the first time it happens, naming the offset accepted without verification, so a
-            // caller can tell "the interpreter confirmed this resync point" apart from "the
+            // this the first time it happens, naming the offset AND object number this candidate
+            // was accepted at without verification (#402 round 4: recording diagObjectNumber here,
+            // alongside the offset, is what lets a LATER report against a different content
+            // stream's own object number still name where the budget actually ran out, rather than
+            // pairing this offset with whatever object happens to be current when it is reported),
+            // so a caller can tell "the interpreter confirmed this resync point" apart from "the
             // interpreter ran out of budget and took its best guess" (#402 round 3).
             if (!_probeBudgetExhausted)
             {
                 _probeBudgetExhausted = true;
                 _probeBudgetExhaustedAtOffset = pos;
+                _probeBudgetExhaustedAtObjectNumber = diagObjectNumber;
             }
-            return true;
+            return ResyncVerdict.Accept;
         }
-        return outcome == ProbeOutcome.Accept;
+        return outcome switch
+        {
+            ProbeOutcome.Accept => ResyncVerdict.Accept,
+            ProbeOutcome.WeakReject => ResyncVerdict.WeakReject,
+            _ => ResyncVerdict.Reject,
+        };
     }
 }

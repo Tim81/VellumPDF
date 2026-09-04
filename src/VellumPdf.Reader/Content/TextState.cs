@@ -10,8 +10,9 @@ namespace VellumPdf.Reader.Content;
 /// specified only within a text object and shall not persist from one text object to the
 /// next", so they are never saved or restored by <c>q</c>/<c>Q</c> the way §8.4.4's own
 /// graphics-state parameters are. Only <c>BT</c> resets them (to identity), and only <c>Td</c>,
-/// <c>TD</c>, <c>Tm</c>, and <c>T*</c> update them. Not stacked; the interpreter owns exactly
-/// one live instance.
+/// <c>TD</c>, <c>Tm</c>, <c>T*</c>, and the two Table 107 line-showing operators <c>'</c> and
+/// <c>"</c> (each defined as having the same effect as <c>T*</c> followed by a text-showing
+/// operator) update them. Not stacked; the interpreter owns exactly one live instance.
 /// </summary>
 internal sealed class TextState
 {
