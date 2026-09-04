@@ -9,14 +9,12 @@ namespace VellumPdf.Reader;
 /// Bounds how much of a producer-controlled name or keyword a retained diagnostic quotes. A
 /// diagnostic's job is to identify a malformed token, not to carry the whole thing: neither
 /// <c>PdfLexer.ReadKeyword</c> nor <see cref="PdfName"/> bounds a token's own length, and Annex
-/// C.1 puts no bound on either ("this PDF standard does not restrict the size or quantity of
-/// things described in the PDF file format"; Table C.1's 127-byte name length is only
+/// C.1 puts no bound on either ("In general, this PDF standard does not restrict the size or
+/// quantity of things described in the PDF file format"; Table C.1's 127-byte name length is only
 /// informative). A <see cref="PdfReaderDiagnostic"/> is retained for the reader's lifetime
 /// (<see cref="DiagnosticSink"/>), so quoting an oversized token whole would turn one attacker- or
 /// corruption-controlled byte run into a comparably sized permanent allocation, once per
-/// (code, object, page) the sink's dedupe key admits (#402 round 6; round 8 moved this out of
-/// <c>ContentInterpreter</c> once <c>Filters.cs</c> and <c>PageTreeWalker</c> needed the same
-/// bound).
+/// (code, object, page) the sink's dedupe key admits (#402).
 /// </summary>
 internal static class DiagnosticExcerpt
 {

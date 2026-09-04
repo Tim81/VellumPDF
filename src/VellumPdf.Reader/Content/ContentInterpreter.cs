@@ -58,13 +58,14 @@ internal sealed class ContentInterpreter
 
     // §8.9.7's Table 91 lists eleven inline image dictionary entries (BitsPerComponent, ColorSpace,
     // Decode, DecodeParms, Filter, Height, ImageMask, Intent, Interpolate, Length, Width; Table 92
-    // layers abbreviations onto some of their VALUES, not further entries), and §8.9.7
-    // itself says "Entries other than those listed shall be ignored", so this reader's ceiling
-    // on how many key/value pairs one inline image dictionary may carry, before HandleInlineImage
-    // gives up on it, is generous by construction: no conformant producer's dictionary comes close.
-    // It exists to bound how much a hostile BI...ID section can make this reader allocate one
-    // PdfName key (and, per MaxCompositeOperandElements above, one capped value) at a time: the
-    // check fires on the 65th pair whether or not an ID ever follows it (#402 round 7).
+    // layers abbreviations onto some of their VALUES, not further entries), and §8.9.7 itself says
+    // "Entries other than those listed shall be ignored", so this reader's ceiling on how many
+    // key/value pairs one inline image dictionary may carry, before HandleInlineImage gives up on
+    // it, is generous by construction: a dictionary using only Table 91's keys, full or
+    // abbreviated, has at most 21 pairs. It exists to bound how much a hostile BI...ID section can
+    // make this reader allocate one PdfName key (and, per MaxCompositeOperandElements above, one
+    // capped value) at a time: the check fires on the 65th pair whether or not an ID ever follows
+    // it (#402 round 7).
     private const int MaxInlineImageDictionaryPairs = 64;
 
     // §8.4.4's q/Q pair; this reader's own ceiling on how deep a legitimate document nests them.
@@ -276,19 +277,19 @@ internal sealed class ContentInterpreter
         }
         finally
         {
-            // Clears the collections and objects that can still hold a content-derived reference
-            // once Run returns (_operands, _gsStack, _gs itself, _openForms), plus _operandOverflow,
-            // the bool that pairs with _operands and would otherwise silently suppress operand
-            // collection on the NEXT Run if left set: an attacker-sized operand pushed but never
-            // consumed by a later operator (no closing operator at all, or one that never sets a
-            // new GraphicsState field to overwrite it) must not stay pinned on this interpreter for
-            // the rest of its own lifetime, since an interpreter that is reused only after a long
-            // delay, or never reused again, would otherwise keep the LAST Run's own content alive
-            // regardless of the entry resets above. Every value-typed counter and depth
-            // (_bxDepth, _formDepth, the probe budget, and the rest of the entry-reset block above)
-            // is already reset on entry, so it needs no exit-time counterpart here; ProbeBytesConsumed
-            // is left alone for the same reason plus one more: a test reads it after Run returns as
-            // telemetry, not as content-derived state (#402 round 7).
+            // Only _operands, _gsStack and _gs itself can still hold a content-derived reference
+            // once Run returns: an attacker-sized operand pushed but never consumed (no closing
+            // operator at all, or one that never overwrites the GraphicsState field holding it)
+            // must not stay pinned on this interpreter for the rest of its own lifetime, since an
+            // interpreter reused only after a long delay, or never reused, would otherwise keep the
+            // LAST Run's content alive regardless of the entry resets above (#402 round 7).
+            // _openForms holds object numbers only and _operandOverflow is a bool, and both are
+            // reset on entry like every other value-typed field (_bxDepth, _formDepth, the probe
+            // budget); they are cleared here as well so the exit state matches the entry state
+            // rather than because either can pin content. _textState.BeginText() restores the two
+            // matrices §9.4.1 scopes to a text object for the same symmetry. ProbeBytesConsumed is
+            // left alone: a test reads it after Run returns as telemetry, not as content-derived
+            // state.
             _operands.Clear();
             _operandOverflow = false;
             _gsStack.Clear();
@@ -1752,9 +1753,9 @@ internal sealed class ContentInterpreter
             }
 
             // Checked before this key is even decoded into a PdfName, not after: an over-cap
-            // dictionary must not keep paying per-pair allocation cost for entries this reader is
+            // dictionary must not keep paying per-pair allocation cost for pairs this reader is
             // about to drop the whole image over anyway (#402 round 7; see
-            // MaxInlineImageDictionaryPairs for why no conformant producer comes near 64).
+            // MaxInlineImageDictionaryPairs for the 21-pair bound a Table 91-only dictionary has).
             if (entryCount >= MaxInlineImageDictionaryPairs)
             {
                 diagnostics.Report(
@@ -1805,10 +1806,6 @@ internal sealed class ContentInterpreter
                     }
                     return false;
                 }
-                // valueTok already holds this token's Kind (ArrayBegin or DictBegin) from before
-                // the pre-scan above; re-lexing it here would derive nothing this Seek alone
-                // doesn't already leave true, since the pre-scan itself never reassigns valueTok.
-                lexer.Seek(valueStart);
             }
 
             PdfObject value;
@@ -1841,6 +1838,22 @@ internal sealed class ContentInterpreter
             {
                 lexer.Seek(valueStart);
                 value = parser.ParseObject();
+
+                // §7.8.2: "Indirect objects and object references shall not be permitted at all"
+                // in a content stream. Table 91's entries each already have a documented default
+                // or an existing missing-entry diagnostic, so the entry is treated as absent
+                // rather than dropping the whole image over it: /F 5 0 R falls through to the
+                // unfiltered-data-length computation from /W /H /BPC /CS, and /W 5 0 R becomes a
+                // missing /W, which those existing paths already report.
+                if (value is PdfIndirectReference)
+                {
+                    diagnostics.Report(
+                        PdfReaderDiagnosticCode.InlineImageMalformed,
+                        "An inline image dictionary value is an indirect reference, which §7.8.2 "
+                        + "does not permit in a content stream; the entry was ignored.",
+                        ctx.DiagObjectNumber, pageIndex: pageIndex);
+                    continue;
+                }
             }
 
             dict.Set(key, value);

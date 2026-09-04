@@ -2967,7 +2967,7 @@ public sealed class ContentInterpreterTests
     [Theory]
     [InlineData(32, false)]
     [InlineData(33, true)]
-    public void UnknownOperator_atTheExcerptBoundary_truncatesOnlyPastMaxQuotedTokenChars(
+    public void UnknownOperator_atTheExcerptBoundary_truncatesOnlyPastDiagnosticExcerptMaxChars(
         int keywordLength, bool expectTruncation)
     {
         var keyword = new string('A', keywordLength);
@@ -3142,11 +3142,11 @@ public sealed class ContentInterpreterTests
         Assert.Empty(visitor.Operators);
         // An allocation bound, not a wall-clock one (#400), but tight enough to
         // discriminate the fix from the defect: on the PRE-fix path this /D array still gets fully
-        // materialised (~72 bytes per element, about 1.5 MB for 20,000 elements) before the cap is
-        // ever consulted, and 16 MiB left that far under the old bound, which is why round 8 tightened
-        // it. Measured on the fixed code: 96,952 bytes for this ~40 KB content stream (the
-        // cap is decided by the lexer alone, so the array is never materialised); 1 MiB leaves ample
-        // margin over the fixed figure while still failing on the unfixed one.
+        // materialised (about 82 bytes per element, 1.65 MB measured for 20,000 elements) before
+        // the cap is ever consulted, and 16 MiB left that far under the old bound, which is why
+        // round 8 tightened it. Measured on the fixed code: 96,952 bytes for this ~40 KB content
+        // stream (the cap is decided by the lexer alone, so the array is never materialised); 1
+        // MiB leaves ample margin over the fixed figure while still failing on the unfixed one.
         Assert.True(
             allocated < 1L * 1024 * 1024,
             $"expected under 1 MiB allocated; measured {allocated / 1024.0:F2} KiB.");
@@ -3223,13 +3223,13 @@ public sealed class ContentInterpreterTests
     [Theory]
     [InlineData(65)]
     [InlineData(100)]
-    public void InlineImageDictionary_withMoreEntriesThanTheCap_reportsOnce_andDropsTheImage(int entryCount)
+    public void InlineImageDictionary_withMorePairsThanTheCap_reportsOnce_andDropsTheImage(int pairCount)
     {
         // Table 91 lists eleven entries; a producer's own dictionary never comes close to 64, so
         // this covers only a hostile BI...ID section: the check fires on the 65th key-value pair
         // whether or not an ID ever follows it. 65 is the first count over the cap; 100 shows the
         // report stays a single one however far past it.
-        var keys = string.Concat(Enumerable.Range(0, entryCount).Select(i => $"/K{i:D3} 1 "));
+        var keys = string.Concat(Enumerable.Range(0, pairCount).Select(i => $"/K{i:D3} 1 "));
         var content = "BI " + keys + "ID ABC EI\nQ\n";
         var doc = BuildPageDoc(content);
 
@@ -3246,11 +3246,11 @@ public sealed class ContentInterpreterTests
     [Theory]
     [InlineData(60)]
     [InlineData(64)]
-    public void InlineImageDictionary_withEntriesUpToTheCap_deliversTheImage(int entryCount)
+    public void InlineImageDictionary_withPairsUpToTheCap_deliversTheImage(int pairCount)
     {
         // 64 is the cap itself and must still deliver: the check rejects the 65th entry, not the
         // 64th.
-        var keys = string.Concat(Enumerable.Range(0, entryCount).Select(i => $"/K{i:D3} 1 "));
+        var keys = string.Concat(Enumerable.Range(0, pairCount).Select(i => $"/K{i:D3} 1 "));
         var content = "BI " + keys + "ID ABC EI\nQ\n";
         var doc = BuildPageDoc(content);
 
@@ -3259,6 +3259,61 @@ public sealed class ContentInterpreterTests
         Assert.DoesNotContain(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ContentLimitExceeded);
         var img = Assert.Single(visitor.InlineImages);
         Assert.True(img.Data.AsSpan().SequenceEqual("ABC"u8));
+        Assert.Contains(visitor.Operators, o => o.Op == "Q");
+    }
+
+    // ── An indirect reference as an inline image dictionary value (#402 round 9) ───────────────
+    //
+    // §7.8.2: "Indirect objects and object references shall not be permitted at all" in a content
+    // stream. PdfObjectParser.ParseObject happily returns a PdfIndirectReference for "5 0 R"; the
+    // key/value loop used to store it in the delivered dictionary with no diagnostic at all.
+
+    [Fact]
+    public void InlineImageDictionary_withAnIndirectReferenceValue_reportsInlineImageMalformed_andIgnoresTheEntry()
+    {
+        var content = "BI /F 5 0 R /W 1 /H 1 /BPC 8 /CS /G ID \x01 EI\n1 w\n";
+        var doc = BuildPageDoc(content);
+
+        var (reader, _, visitor) = Run(doc);
+
+        var report = Assert.Single(reader.Diagnostics);
+        Assert.Equal(PdfReaderDiagnosticCode.InlineImageMalformed, report.Code);
+        Assert.Equal(
+            "An inline image dictionary value is an indirect reference, which §7.8.2 does not "
+            + "permit in a content stream; the entry was ignored.",
+            report.Message);
+        var img = Assert.Single(visitor.InlineImages);
+        Assert.True(img.Data.AsSpan().SequenceEqual(new byte[] { 0x01 }));
+        Assert.Null(img.Dict.Get(PdfName.Filter));
+        Assert.Null(img.Dict.Get(new PdfName("F")));
+        Assert.Contains(visitor.Operators, o => o.Op == "w");
+    }
+
+    [Fact]
+    public void InlineImageDictionary_withAnIndirectReferenceWidth_reportsInlineImageMalformed_andRecoversViaTheEiScan()
+    {
+        // Ignoring the /W entry leaves TryComputeUnfilteredLength with no width to compute a data
+        // length from, so tier b (the unfiltered-length computation) declines and this falls
+        // through to tier c, the EI scan: with only one data byte before 'EI' the scan lands on it
+        // cleanly, so the image is still delivered, just without a /Width entry. The missing-/W
+        // report tier b would otherwise add is not separately observable: the sink's (code, object,
+        // page) dedupe key collapses it into the indirect-reference report already made for the
+        // same content stream, so only that first report survives.
+        var content = "BI /W 5 0 R /H 1 /BPC 8 /CS /G ID \x01 EI\nQ\n";
+        var doc = BuildPageDoc(content);
+
+        var (reader, _, visitor) = Run(doc);
+
+        var report = Assert.Single(
+            reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.InlineImageMalformed);
+        Assert.Equal(
+            "An inline image dictionary value is an indirect reference, which §7.8.2 does not "
+            + "permit in a content stream; the entry was ignored.",
+            report.Message);
+        var img = Assert.Single(visitor.InlineImages);
+        Assert.True(img.Data.AsSpan().SequenceEqual(new byte[] { 0x01 }));
+        Assert.Null(img.Dict.Get(new PdfName("Width")));
+        Assert.NotNull(img.Dict.Get(new PdfName("Height")));
         Assert.Contains(visitor.Operators, o => o.Op == "Q");
     }
 

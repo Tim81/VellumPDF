@@ -479,8 +479,10 @@ public enum PdfReaderDiagnosticCode
     /// <c>/BPC</c> or one whose value is not 1, 2, 4, or 8 (or, from PDF 1.5, 16) where the image's
     /// shape requires one to compute the data length (Table 87 types <c>/W</c> and <c>/H</c> as
     /// integer and restricts <c>/BPC</c>'s own value to that fixed set; "positive" for
-    /// <c>/W</c>/<c>/H</c> is this reader's own requirement, not the table's own wording), an
-    /// <c>/L</c> present but not an integer, or negative (§8.9.7, Table 91; PDF 2.0), an <c>/L</c>
+    /// <c>/W</c>/<c>/H</c> is this reader's own requirement, not the table's own wording), a
+    /// dictionary value that is an indirect reference, which §7.8.2 does not permit in a content
+    /// stream, in which case that entry is ignored, an <c>/L</c> present but not an integer, or
+    /// negative (§8.9.7, Table 91; PDF 2.0), an <c>/L</c>
     /// naming a length past the end of the stream (a computed length that overruns the stream instead
     /// falls back to the <c>EI</c> scan below with no report of its own), a computed length (from
     /// <c>/L</c> or from the image's own shape) that does not land on the following <c>EI</c>
@@ -537,25 +539,25 @@ public enum PdfReaderDiagnosticCode
     /// value made impossible to draw.
     /// <para>
     /// Recovery differs by which ceiling fired. For the operand-count, composite-token, and depth
-    /// ceilings, the offending operator, or push, is dropped and interpretation continues, the same
-    /// recovery <see cref="OperandStackMalformed"/> uses. For the two inline-image ceilings, the
-    /// image itself is dropped and interpretation of that content stream (the page's content,
+    /// ceilings, the offending operator, or push, is dropped and interpretation continues, the
+    /// same recovery <see cref="OperandStackMalformed"/> uses. For the two inline-image ceilings,
+    /// the image itself is dropped and interpretation of that content stream (the page's content,
     /// or the one Form XObject being drawn) ends there instead, the way
     /// <see cref="InlineImageMalformed"/> ends it when an image cannot be delimited at all: the
-    /// drop happens before the image's data has been delimited, so nothing past that point can
-    /// be resynchronised reliably either. A <c>q</c>, <c>BMC</c>, or <c>BDC</c> dropped for any
-    /// ceiling other than the two inline-image ones still consumes its matching <c>Q</c> or <c>EMC</c> silently, so a
-    /// conformant file is not also charged an <see cref="OperandStackMalformed"/> for this
-    /// reader's own ceiling.
+    /// drop happens before the image's data has been delimited, so nothing past that point can be
+    /// resynchronised reliably either. A <c>q</c>, <c>BMC</c>, or <c>BDC</c> dropped for any
+    /// ceiling other than the two inline-image ones still consumes its matching <c>Q</c> or
+    /// <c>EMC</c> silently, so a conformant file is not also charged an
+    /// <see cref="OperandStackMalformed"/> for this reader's own ceiling.
     /// </para>
     /// <para>
     /// The inline image dictionary's 64-pair cap rejects nothing §8.9.7 itself requires: §8.9.7
     /// says entries other than the ones Table 91 lists "shall be ignored" and sets no count, so a
-    /// dictionary of 65 ignorable entries is not, by that clause, non-conformant. No
-    /// producer's dictionary comes anywhere close, though: Table 91 lists eleven entries, and
-    /// Table 92 layers abbreviations onto some of their values rather than adding further entries.
-    /// The cap exists to bound how much work a hostile dictionary can make this reader
-    /// do per pair, not to reject a legal one.
+    /// dictionary of 65 ignorable entries is not, by that clause, non-conformant. A dictionary
+    /// that uses only the keys Table 91 defines, under their full names or the abbreviations the
+    /// same table gives them, has at most 21 pairs, and Table 92 adds abbreviations for values
+    /// (colour spaces and filters), not further keys. The cap exists to bound how much work a
+    /// hostile dictionary can make this reader do per pair, not to reject a legal one.
     /// </para>
     /// </summary>
     ContentLimitExceeded = 309,

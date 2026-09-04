@@ -93,14 +93,13 @@ internal static class PageTreeWalker
     // with no usable /Kids of its own: contributes zero children.
     private static readonly PdfArray EmptyKids = new();
 
-    // A /Type value has no length bound of its own (Annex C.1: "this PDF standard does not
-    // restrict the size or quantity of things described in the PDF file format"), and both
+    // A /Type value has no length bound of its own (Annex C.1: "In general, this PDF standard does
+    // not restrict the size or quantity of things described in the PDF file format"), and both
     // diagnostics that quote it (PageTreeMissing on the tree's own root, PageTreeNodeMalformed on
     // any other node) are retained for the reader's own lifetime (DiagnosticSink), so interpolating
     // an oversized /Type name whole would turn one attacker- or corruption-controlled byte run into
     // a comparably sized permanent allocation, once per (code, object) the sink's own dedupe key
-    // admits: the same class of defect DiagnosticExcerpt exists to bound (#402 round 7 sweep;
-    // round 8 moved the excerpting itself into that shared helper).
+    // admits: the same class of defect DiagnosticExcerpt exists to bound (#402).
     private static string QuoteType(PdfName? type) =>
         type is null ? "no /Type" : "/" + DiagnosticExcerpt.Quote(type.Value);
 
