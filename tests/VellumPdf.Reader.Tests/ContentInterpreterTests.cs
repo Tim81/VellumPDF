@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 using System.IO.Compression;
+using System.Reflection;
 using System.Text;
 using CsCheck;
 using VellumPdf.Core;
@@ -2907,9 +2908,9 @@ public sealed class ContentInterpreterTests
     // unrecognised operator or a missing named resource used to decode and interpolate the whole
     // token into its own diagnostic Message. A Diagnostic is retained for the reader's own
     // lifetime, so a multi-megabyte token produced a comparably sized permanent allocation; these
-    // pin the fixed-size excerpt QuoteExcerpt reports instead. 4 MiB is well under both the 64 MiB
-    // content budget and PdfReaderOptions.MaxDecodedStreamBytes's own 512 MiB default, so neither
-    // needs raising for these fixtures.
+    // pin the fixed-size excerpt DiagnosticExcerpt.Quote reports instead. 4 MiB is well under both
+    // the 64 MiB content budget and PdfReaderOptions.MaxDecodedStreamBytes's own 512 MiB default, so
+    // neither needs raising for these fixtures.
 
     [Fact]
     public void UnknownOperator_ofAttackerControlledLength_reportsOnlyAFixedExcerpt()
@@ -3062,8 +3063,8 @@ public sealed class ContentInterpreterTests
             Assert.True(
                 report.Message.Length < 200, $"expected under 200 chars, got {report.Message.Length}.");
             Assert.Equal(
-                "The page's content could not be fully resolved: an object it references could "
-                + "not be parsed.",
+                "The page's content could not be fully resolved: an object it references could not "
+                + "be parsed.",
                 report.Message);
         }
         Assert.Equal([0, 1], reports.Select(r => r.PageIndex).OrderBy(p => p));
@@ -3071,6 +3072,38 @@ public sealed class ContentInterpreterTests
         Assert.True(
             totalMessageLength < 1000,
             $"expected under 1000 total chars across every diagnostic, got {totalMessageLength}.");
+    }
+
+    // ── Filters.cs's UnknownFilter diagnostic is excerpted too (#402 round 8) ───────────────────
+
+    [Fact]
+    public void PageContentsWithAnOversizedUnknownFilterName_reportsOnlyBoundedMessages()
+    {
+        // Object 4's /Filter is a single 1,000,000-byte name PdfFilters.ApplyFilter does not
+        // recognise. This used to interpolate the name whole into a retained UnknownFilter (110)
+        // diagnostic before the resulting InvalidDataException reached AddElement's catch (see
+        // the two tests above), which reports a second, fixed-text ContentStreamLexError (300); the
+        // sweep that found this HIGH also confirmed AddElement's catch was already bounded.
+        var hugeFilter = new string('A', 1_000_000);
+        var doc = BuildPdf(
+            1,
+            new Obj(1, "<< /Type /Catalog /Pages 2 0 R >>"),
+            new Obj(2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
+            new Obj(3,
+                "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+                + "/Resources << >> /Contents 4 0 R >>"),
+            new Obj(4, $"<< /Filter /{hugeFilter} >>", "x"u8.ToArray()));
+
+        var (reader, _, visitor) = Run(doc);
+
+        foreach (var d in reader.Diagnostics)
+        {
+            Assert.True(
+                d.Message.Length < 200, $"expected under 200 chars, got {d.Message.Length} ({d.Code}).");
+        }
+        Assert.Single(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.UnknownFilter);
+        Assert.Single(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ContentStreamLexError);
+        Assert.Empty(visitor.Operators); // Run returned normally, with no content to interpret.
     }
 
     // ── Inline image dictionary values bypass the composite cap (#402 round 7) ─────────────────────
@@ -3107,12 +3140,16 @@ public sealed class ContentInterpreterTests
         // malformed-dictionary path does (see HandleInlineImage's own class doc): '1 w', after the
         // image's own 'EI', is never reached.
         Assert.Empty(visitor.Operators);
-        // An allocation bound, not a wall-clock one (#400): generous by design. Measured on the
-        // fixed code: 96,952 bytes (94.7 KiB) for this ~40 KB content stream (the cap is decided by
-        // the lexer alone, so the array is never materialised); 16 MiB leaves ample margin.
+        // An allocation bound, not a wall-clock one (#400), but tight enough to
+        // discriminate the fix from the defect: on the PRE-fix path this /D array still gets fully
+        // materialised (~72 bytes per element, about 1.5 MB for 20,000 elements) before the cap is
+        // ever consulted, and 16 MiB left that far under the old bound, which is why round 8 tightened
+        // it. Measured on the fixed code: 96,952 bytes for this ~40 KB content stream (the
+        // cap is decided by the lexer alone, so the array is never materialised); 1 MiB leaves ample
+        // margin over the fixed figure while still failing on the unfixed one.
         Assert.True(
-            allocated < 16L * 1024 * 1024,
-            $"expected under 16 MiB allocated; measured {allocated / (1024.0 * 1024.0):F2} MiB.");
+            allocated < 1L * 1024 * 1024,
+            $"expected under 1 MiB allocated; measured {allocated / 1024.0:F2} KiB.");
     }
 
     [Fact]
@@ -3132,6 +3169,25 @@ public sealed class ContentInterpreterTests
         Assert.Equal(
             "An inline image dictionary value exceeds 8192 tokens; the image was dropped.",
             report.Message);
+        Assert.Empty(visitor.InlineImages);
+        Assert.Empty(visitor.Operators);
+    }
+
+    [Fact]
+    public void InlineImageDictionaryValue_overTheCap_withAMalformedTokenInside_reportsTheLexErrorAlongsideTheCap()
+    {
+        // Mirrors OverCapArrayOperand_withAMalformedTokenInside_reportsTheLexErrorAlongsideTheCap
+        // above: the unterminated string right after the over-cap array is its own lex failure (no
+        // closing ')' anywhere in the rest of the buffer), not merely the count pass bailing out at
+        // the cap, so this branch (valueLexerFailed) has to report both a 309 and a 300, the same
+        // way the main operand loop's twin already does.
+        var content = "BI /D [" + string.Concat(Enumerable.Repeat("1 ", 20_000)) + " (abc ] ID ABC EI Q";
+        var doc = BuildPageDoc(content);
+
+        var (reader, _, visitor) = Run(doc);
+
+        Assert.Single(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ContentLimitExceeded);
+        Assert.Single(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ContentStreamLexError);
         Assert.Empty(visitor.InlineImages);
         Assert.Empty(visitor.Operators);
     }
@@ -3170,8 +3226,9 @@ public sealed class ContentInterpreterTests
     public void InlineImageDictionary_withMoreEntriesThanTheCap_reportsOnce_andDropsTheImage(int entryCount)
     {
         // Table 91 lists eleven entries; a producer's own dictionary never comes close to 64, so
-        // this covers only a hostile BI...ID section that never reaches ID at all. 65 is the first
-        // count over the cap; 100 shows the report stays a single one however far past it.
+        // this covers only a hostile BI...ID section: the check fires on the 65th key-value pair
+        // whether or not an ID ever follows it. 65 is the first count over the cap; 100 shows the
+        // report stays a single one however far past it.
         var keys = string.Concat(Enumerable.Range(0, entryCount).Select(i => $"/K{i:D3} 1 "));
         var content = "BI " + keys + "ID ABC EI\nQ\n";
         var doc = BuildPageDoc(content);
@@ -3180,7 +3237,7 @@ public sealed class ContentInterpreterTests
 
         var report = Assert.Single(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ContentLimitExceeded);
         Assert.Equal(
-            "An inline image dictionary has more than 64 entries; the image was dropped.",
+            "An inline image dictionary has more than 64 key-value pairs; the image was dropped.",
             report.Message);
         Assert.Empty(visitor.InlineImages);
         Assert.DoesNotContain(visitor.Operators, o => o.Op == "Q");
@@ -3259,6 +3316,96 @@ public sealed class ContentInterpreterTests
         Assert.False(
             weakRef!.IsAlive,
             "expected the Tf font operand to be collectable once Run has returned.");
+        GC.KeepAlive(interpreter);
+    }
+
+    private static readonly FieldInfo OperandsField =
+        typeof(ContentInterpreter).GetField("_operands", BindingFlags.NonPublic | BindingFlags.Instance)!;
+
+    // No operator ever reaches this operand (see the test below), so it never reaches
+    // IContentVisitor.OnOperator either, unlike the Tf-operand test above: an inline image placed
+    // after it gives OnInlineImage a callback that still fires while the operand is sitting,
+    // untouched, in the interpreter's operand list (HandleInlineImage never reads or clears
+    // that list), reached here through reflection since ContentInterpreter keeps the list private.
+    private sealed class PendingOperandCapturingVisitor(ContentInterpreter interpreter) : IContentVisitor
+    {
+        public WeakReference? PendingOperand { get; private set; }
+
+        public void OnOperator(string operatorName, IReadOnlyList<PdfObject> operands, int offset) { }
+
+        public void OnInlineImage(PdfDictionary dictionary, ReadOnlyMemory<byte> data, int offset)
+        {
+            var operands = (List<PdfObject>)OperandsField.GetValue(interpreter)!;
+            if (operands.Count > 0 && PendingOperand is null)
+                PendingOperand = new WeakReference(operands[0]);
+        }
+
+        public void OnFormBegin(
+            PdfDictionary formDictionary, Matrix formMatrix, PdfRectangle? boundingBox, int objectNumber,
+            int offset)
+        { }
+
+        public void OnFormEnd(int objectNumber) { }
+    }
+
+    [Fact]
+    public void Run_dropsAnOperandNoOperatorConsumed_soItBecomesCollectable()
+    {
+        // Round 7's primary repro for the finally block's _operands.Clear(): an
+        // attacker-sized name pushed but never consumed by ANY operator (measured, pre-fix:
+        // 33,562,352 bytes retained from a 16,779-byte file). The 1x1 inline image after it is
+        // pure scaffolding to reach the operand through OnInlineImage (see
+        // PendingOperandCapturingVisitor above); it plays no other role in what this pins.
+        var content = "/" + new string('B', 16_777_216) + " BI /W 1 /H 1 /BPC 8 /CS /G ID \x01 EI\n";
+        var doc = BuildPageDoc(content);
+        var reader = PdfReader.Open(doc, new PdfReaderOptions());
+        var page = reader.GetPage(0);
+        var interpreter = new ContentInterpreter(reader);
+        var visitor = new PendingOperandCapturingVisitor(interpreter);
+
+        interpreter.Run(page, visitor);
+
+        var weakRef = visitor.PendingOperand;
+        Assert.NotNull(weakRef);
+
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+
+        Assert.False(
+            weakRef!.IsAlive,
+            "expected the unconsumed operand to be collectable once Run has returned.");
+        GC.KeepAlive(interpreter);
+    }
+
+    [Fact]
+    public void Run_dropsAnOperandOnlyAGraphicsStateCloneHolds_soItBecomesCollectable()
+    {
+        // Round 7's primary repro for the finally block's _gsStack.Clear(): PushGraphicsState
+        // pushes the CURRENT _gs onto _gsStack and replaces _gs with a clone (ContentInterpreter.cs,
+        // PushGraphicsState), so the first Tf's big name operand survives on the STACK, not in
+        // _gs, once a second Tf overwrites the clone's Font with something else. A throwaway
+        // visitor captures only the FIRST Tf's operand, the same way the test above does.
+        var content = "/" + new string('B', 4_194_304) + " 12 Tf\nq\n/F2 6 Tf\n1 w\n";
+        var doc = BuildPageDoc(content);
+        var reader = PdfReader.Open(doc, new PdfReaderOptions());
+        var page = reader.GetPage(0);
+        var interpreter = new ContentInterpreter(reader);
+        var visitor = new FontOperandCapturingVisitor();
+
+        interpreter.Run(page, visitor);
+
+        var weakRef = visitor.FontOperand;
+        Assert.NotNull(weakRef);
+
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+
+        Assert.False(
+            weakRef!.IsAlive,
+            "expected the first Tf's font operand, surviving only in the q clone on _gsStack, "
+            + "to be collectable once Run has returned.");
         GC.KeepAlive(interpreter);
     }
 

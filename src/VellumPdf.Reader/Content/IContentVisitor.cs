@@ -11,7 +11,9 @@ namespace VellumPdf.Reader.Content;
 /// stream (ISO 32000-2 §7.8.2). A caller reads <see cref="ContentInterpreter.GraphicsState"/> and
 /// <see cref="ContentInterpreter.TextState"/> from inside these callbacks to see the state as of the
 /// event; both are mutated in place, so a callback that needs a value after the interpreter has
-/// moved on must copy it out rather than hold the reference.
+/// moved on must copy it out rather than hold the reference. Both are also reset to a fresh default
+/// the moment <see cref="ContentInterpreter.Run"/> returns, so a value read after that point is a
+/// fresh default, not the last state <c>Run</c> left behind.
 /// </summary>
 internal interface IContentVisitor
 {

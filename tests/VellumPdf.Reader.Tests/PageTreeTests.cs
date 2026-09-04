@@ -589,9 +589,8 @@ public sealed class PageTreeTests
     {
         // A /Type value has no length bound of its own (Annex C.1), and PageTreeMissing is retained
         // for the reader's own lifetime, so before this fix the root's own bogus /Type name was
-        // interpolated whole via PdfName.ToString(): the same class of defect ContentInterpreter's
-        // own QuoteExcerpt exists to bound, found sweeping this PR's other diagnostic sites for it
-        // (#402 round 7).
+        // interpolated whole via PdfName.ToString(): the same class of defect DiagnosticExcerpt
+        // exists to bound, found sweeping this PR's other diagnostic sites for it (#402 round 7).
         var hugeType = new string('A', 1_000_000);
         var bytes = BuildPdf(
             rootObjectNumber: 1,
@@ -607,7 +606,7 @@ public sealed class PageTreeTests
         // citation), so the bound here is against the 1,000,000-char /Type value this message used
         // to carry whole, not against PageTreeMissing's own fixed text.
         Assert.True(d.Message.Length < 300, $"expected under 300 chars, got {d.Message.Length}.");
-        var expectedExcerpt = $"/Type /{new string('A', 32)}... (1000000 chars)";
+        var expectedExcerpt = $"/Type /{new string('A', 32)}... (1000000 bytes)";
         Assert.Contains(expectedExcerpt, d.Message, StringComparison.Ordinal);
     }
 
@@ -690,7 +689,7 @@ public sealed class PageTreeTests
         var d = Assert.Single(reader.Diagnostics, x => x.Code == PdfReaderDiagnosticCode.PageTreeNodeMalformed);
         Assert.Equal(3, d.ObjectNumber);
         Assert.True(d.Message.Length < 200, $"expected under 200 chars, got {d.Message.Length}.");
-        var expectedExcerpt = $"Object declares /{new string('B', 32)}... (1000000 chars)";
+        var expectedExcerpt = $"Object declares /{new string('B', 32)}... (1000000 bytes)";
         Assert.Contains(expectedExcerpt, d.Message, StringComparison.Ordinal);
     }
 

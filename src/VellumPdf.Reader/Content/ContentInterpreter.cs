@@ -62,10 +62,10 @@ internal sealed class ContentInterpreter
     // itself says "Entries other than those listed shall be ignored", so this reader's own ceiling
     // on how many key/value pairs one inline image dictionary may carry, before HandleInlineImage
     // gives up on it, is generous by construction: no conformant producer's dictionary comes close.
-    // It exists only to bound how much a hostile BI...ID section, one that never reaches ID at all,
-    // can make this reader allocate one PdfName key (and, per MaxCompositeOperandElements above, one
-    // capped value) at a time (#402 round 7).
-    private const int MaxInlineImageDictionaryEntries = 64;
+    // It exists to bound how much a hostile BI...ID section can make this reader allocate one
+    // PdfName key (and, per MaxCompositeOperandElements above, one capped value) at a time: the
+    // check fires on the 65th pair whether or not an ID ever follows it (#402 round 7).
+    private const int MaxInlineImageDictionaryPairs = 64;
 
     // §8.4.4's q/Q pair; this reader's own ceiling on how deep a legitimate document nests them.
     private const int MaxGraphicsStateDepth = 64;
@@ -102,16 +102,6 @@ internal sealed class ContentInterpreter
     // past what is left of the budget; measured at exactly 16,777,216 charged at the 1, 4, and
     // 16 MiB settings alike, not that plus a further window's own worth).
     private const long MaxProbeBytesPerRun = 16L * 1024 * 1024;
-
-    // A diagnostic's job is to identify a malformed keyword or name, not to carry the whole thing:
-    // PdfLexer.ReadKeyword bounds neither a keyword's own length nor, per PdfName, a name's, and
-    // Annex C.1 puts no bound on either ("this PDF standard does not restrict the size or quantity
-    // of things described in the PDF file format"; Table C.1's 127-byte name length is only
-    // informative). A Diagnostic is retained for the reader's own lifetime (DiagnosticSink), so
-    // quoting an oversized token whole would turn one attacker- or corruption-controlled byte run
-    // into a comparably sized permanent allocation, once per (code, object, page) the sink's dedupe
-    // key admits (#402 round 6).
-    private const int MaxQuotedTokenChars = 32;
 
     private static readonly PdfName XObjectSubtypeForm = new("Form");
     private static readonly PdfName XObjectSubtypeImage = new("Image");
@@ -179,11 +169,14 @@ internal sealed class ContentInterpreter
 
     /// <summary>The current graphics state, the top of the <c>q</c>/<c>Q</c> stack, readable from
     /// inside an <see cref="IContentVisitor"/> callback. Mutated in place; a callback that needs a
-    /// value after the interpreter moves on must copy it.</summary>
+    /// value after the interpreter moves on must copy it. Reset to a fresh default the moment
+    /// <see cref="Run"/> returns, so a value read after that point is not the last state the run
+    /// left behind.</summary>
     internal GraphicsState GraphicsState => _gs;
 
     /// <summary>The current text-positioning state, readable the same way as
-    /// <see cref="GraphicsState"/>.</summary>
+    /// <see cref="GraphicsState"/>, and reset on the same schedule: a fresh default once
+    /// <see cref="Run"/> returns.</summary>
     internal TextState TextState => _textState;
 
     /// <summary>
@@ -283,15 +276,19 @@ internal sealed class ContentInterpreter
         }
         finally
         {
-            // Clears every content-derived reference this Run's own per-Run state may still hold,
-            // so an attacker-sized operand pushed but never consumed by a later operator (no
-            // closing operator at all, or one that never sets a new GraphicsState field to
-            // overwrite it) does not stay pinned on this interpreter for the rest of its own
-            // lifetime: the entry resets above already give the NEXT Run a clean slate, but an
-            // interpreter that is reused only after a long delay, or never reused again, would
-            // otherwise keep the LAST Run's own content alive regardless. ProbeBytesConsumed is
-            // left alone: a test reads it after Run returns as telemetry, not as content-derived
-            // state (#402 round 7).
+            // Clears the collections and objects that can still hold a content-derived reference
+            // once Run returns (_operands, _gsStack, _gs itself, _openForms), plus _operandOverflow,
+            // the bool that pairs with _operands and would otherwise silently suppress operand
+            // collection on the NEXT Run if left set: an attacker-sized operand pushed but never
+            // consumed by a later operator (no closing operator at all, or one that never sets a
+            // new GraphicsState field to overwrite it) must not stay pinned on this interpreter for
+            // the rest of its own lifetime, since an interpreter that is reused only after a long
+            // delay, or never reused again, would otherwise keep the LAST Run's own content alive
+            // regardless of the entry resets above. Every value-typed counter and depth
+            // (_bxDepth, _formDepth, the probe budget, and the rest of the entry-reset block above)
+            // is already reset on entry, so it needs no exit-time counterpart here; ProbeBytesConsumed
+            // is left alone for the same reason plus one more: a test reads it after Run returns as
+            // telemetry, not as content-derived state (#402 round 7).
             _operands.Clear();
             _operandOverflow = false;
             _gsStack.Clear();
@@ -637,8 +634,8 @@ internal sealed class ContentInterpreter
                                 else
                                 {
                                     // Decoded only far enough to name the operator or, for an
-                                    // unrecognised one, excerpt it in the 301 below (QuoteExcerpt
-                                    // truncates past MaxQuotedTokenChars anyway); ReadKeyword puts
+                                    // unrecognised one, excerpt it in the 301 below (DiagnosticExcerpt.Quote
+                                    // truncates past DiagnosticExcerpt.MaxChars anyway); ReadKeyword puts
                                     // no bound on a keyword's own length, so materialising the
                                     // whole thing here for an attacker-sized token would allocate
                                     // what the diagnostic then discards most of (#402 round 6).
@@ -646,11 +643,11 @@ internal sealed class ContentInterpreter
                                     // ContentOperators.IsKnown(string), a bare dictionary lookup
                                     // with no length guard of its own (only the ReadOnlySpan<byte>
                                     // overload the resync probe uses, in ContentOperators.cs, bails
-                                    // out past 8 bytes); a keyword truncated to MaxQuotedTokenChars
+                                    // out past 8 bytes); a keyword truncated to DiagnosticExcerpt.MaxChars
                                     // + 1 bytes still fails that lookup exactly the way the whole
                                     // one did, since no key in the table is longer than 3 characters,
                                     // and every recognised operator is decoded in full either way.
-                                    var decodeLength = Math.Min(raw.Length, MaxQuotedTokenChars + 1);
+                                    var decodeLength = Math.Min(raw.Length, DiagnosticExcerpt.MaxChars + 1);
                                     var name = System.Text.Encoding.Latin1.GetString(raw[..decodeLength]);
                                     HandleOperator(
                                         name, raw.Length, offset, ctx, visitor, diagnostics, pageIndex);
@@ -837,21 +834,6 @@ internal sealed class ContentInterpreter
         return count <= MaxCompositeOperandElements;
     }
 
-    // Quotes at most MaxQuotedTokenChars of a diagnostic-bound name or keyword; see that constant
-    // for why. byteLength is the DECODED value's own byte length (Latin1: one char per byte), not
-    // necessarily the raw token's: for a PdfName it is just text.Length, but a name whose raw token
-    // used one or more '#xx' escapes (§7.3.5) decodes to fewer bytes than it was written in, so the
-    // raw token can run longer than byteLength reports ('/' + 40 'B' + '#20' x10 is a 71-byte raw
-    // token whose decoded Value is 50 bytes, and this reports "(50 bytes)"). The one caller that
-    // decodes only far enough to excerpt an oversized keyword (HandleOperator's own dispatch site)
-    // passes the raw token's own length separately, since text itself is already truncated there.
-    private static string QuoteExcerpt(string text) => QuoteExcerpt(text, text.Length);
-
-    private static string QuoteExcerpt(string text, int byteLength) =>
-        byteLength <= MaxQuotedTokenChars
-            ? text
-            : $"{text[..MaxQuotedTokenChars]}... ({byteLength} bytes)";
-
     // ── Operator dispatch ────────────────────────────────────────────────────────────────────────
 
     private void HandleOperator(
@@ -880,7 +862,7 @@ internal sealed class ContentInterpreter
             {
                 diagnostics.Report(
                     PdfReaderDiagnosticCode.UnknownOperator,
-                    $"'{QuoteExcerpt(name, keywordByteLength)}' is not one of the operators ISO "
+                    $"'{DiagnosticExcerpt.Quote(name, keywordByteLength)}' is not one of the operators ISO "
                     + "32000-2 Annex A Table A.1 defines; it was ignored.",
                     pageIndex: pageIndex);
             }
@@ -1323,7 +1305,7 @@ internal sealed class ContentInterpreter
 
         diagnostics.Report(
             PdfReaderDiagnosticCode.ResourceMissing,
-            $"'{op}' names '/{QuoteExcerpt(name.Value)}', absent from the applicable /Resources "
+            $"'{op}' names '/{DiagnosticExcerpt.Quote(name.Value)}', absent from the applicable /Resources "
             + $"/{category.Value} dictionary.",
             ctx.DiagObjectNumber, pageIndex: pageIndex);
     }
@@ -1354,7 +1336,7 @@ internal sealed class ContentInterpreter
         {
             diagnostics.Report(
                 PdfReaderDiagnosticCode.ResourceMissing,
-                $"'gs' names '/{QuoteExcerpt(gsName.Value)}', absent from the applicable /Resources "
+                $"'gs' names '/{DiagnosticExcerpt.Quote(gsName.Value)}', absent from the applicable /Resources "
                 + "/ExtGState dictionary.",
                 ctx.DiagObjectNumber, pageIndex: pageIndex);
             return;
@@ -1420,7 +1402,7 @@ internal sealed class ContentInterpreter
         {
             diagnostics.Report(
                 PdfReaderDiagnosticCode.ResourceMissing,
-                $"'Do' names '/{QuoteExcerpt(xobjectName.Value)}', absent from the applicable "
+                $"'Do' names '/{DiagnosticExcerpt.Quote(xobjectName.Value)}', absent from the applicable "
                 + "/Resources /XObject dictionary.",
                 ctx.DiagObjectNumber, pageIndex: pageIndex);
             return;
@@ -1430,7 +1412,7 @@ internal sealed class ContentInterpreter
         {
             diagnostics.Report(
                 PdfReaderDiagnosticCode.ResourceMissing,
-                $"'Do' names '/{QuoteExcerpt(xobjectName.Value)}', present in the applicable "
+                $"'Do' names '/{DiagnosticExcerpt.Quote(xobjectName.Value)}', present in the applicable "
                 + "/Resources /XObject dictionary but not as an indirect reference to a stream.",
                 ctx.DiagObjectNumber, pageIndex: pageIndex);
             return;
@@ -1441,7 +1423,7 @@ internal sealed class ContentInterpreter
         {
             diagnostics.Report(
                 PdfReaderDiagnosticCode.ResourceMissing,
-                $"'Do' names '/{QuoteExcerpt(xobjectName.Value)}', but object "
+                $"'Do' names '/{DiagnosticExcerpt.Quote(xobjectName.Value)}', but object "
                 + $"{xobjectRef.ObjectNumber} does not resolve to a stream.",
                 ctx.DiagObjectNumber, pageIndex: pageIndex);
             return;
@@ -1451,7 +1433,7 @@ internal sealed class ContentInterpreter
         {
             diagnostics.Report(
                 PdfReaderDiagnosticCode.ResourceMissing,
-                $"'Do' names '/{QuoteExcerpt(xobjectName.Value)}', object {stream.ObjectNumber}, "
+                $"'Do' names '/{DiagnosticExcerpt.Quote(xobjectName.Value)}', object {stream.ObjectNumber}, "
                 + "whose /Subtype is missing or is not a name, so it cannot be used as an XObject.",
                 stream.ObjectNumber, pageIndex: pageIndex);
             return;
@@ -1464,8 +1446,8 @@ internal sealed class ContentInterpreter
         {
             diagnostics.Report(
                 PdfReaderDiagnosticCode.ResourceMissing,
-                $"'Do' names '/{QuoteExcerpt(xobjectName.Value)}', object {stream.ObjectNumber}, "
-                + $"whose /Subtype '/{QuoteExcerpt(subtype.Value)}' is neither /Form nor /Image, "
+                $"'Do' names '/{DiagnosticExcerpt.Quote(xobjectName.Value)}', object {stream.ObjectNumber}, "
+                + $"whose /Subtype '/{DiagnosticExcerpt.Quote(subtype.Value)}' is neither /Form nor /Image, "
                 + "so it cannot be used as an XObject.",
                 stream.ObjectNumber, pageIndex: pageIndex);
             return;
@@ -1734,8 +1716,11 @@ internal sealed class ContentInterpreter
 
     /// <summary>Parses one <c>BI</c>…<c>ID</c>…<c>EI</c> inline image starting with <c>BI</c>
     /// already consumed by the caller. Returns <see langword="false"/> when the image's key/value
-    /// dictionary or data could not be delimited at all: the caller stops interpreting this
-    /// stream, since nothing past this point can be resynchronised reliably.</summary>
+    /// dictionary or data could not be delimited at all, or when the dictionary hit one of this
+    /// reader's ceilings (<see cref="MaxCompositeOperandElements"/> on a value,
+    /// <see cref="MaxInlineImageDictionaryPairs"/> on the pair count): the caller stops interpreting
+    /// this stream either way, since a ceiling drop happens before the image's data has been
+    /// delimited, leaving nothing past that point to resynchronise on reliably.</summary>
     private bool HandleInlineImage(
         PdfLexer lexer, PdfObjectParser parser, StreamContext ctx, IContentVisitor visitor,
         DiagnosticSink diagnostics, int pageIndex, int biOffset)
@@ -1769,13 +1754,13 @@ internal sealed class ContentInterpreter
             // Checked before this key is even decoded into a PdfName, not after: an over-cap
             // dictionary must not keep paying per-pair allocation cost for entries this reader is
             // about to drop the whole image over anyway (#402 round 7; see
-            // MaxInlineImageDictionaryEntries for why 64 rejects nothing conformant).
-            if (entryCount >= MaxInlineImageDictionaryEntries)
+            // MaxInlineImageDictionaryPairs for why 64 rejects nothing conformant).
+            if (entryCount >= MaxInlineImageDictionaryPairs)
             {
                 diagnostics.Report(
                     PdfReaderDiagnosticCode.ContentLimitExceeded,
-                    $"An inline image dictionary has more than {MaxInlineImageDictionaryEntries} "
-                    + "entries; the image was dropped.",
+                    $"An inline image dictionary has more than {MaxInlineImageDictionaryPairs} "
+                    + "key-value pairs; the image was dropped.",
                     ctx.DiagObjectNumber, pageIndex: pageIndex);
                 return false;
             }
@@ -1820,8 +1805,10 @@ internal sealed class ContentInterpreter
                     }
                     return false;
                 }
+                // valueTok already holds this token's Kind (ArrayBegin or DictBegin) from before
+                // the pre-scan above; re-lexing it here would derive nothing this Seek alone
+                // doesn't already leave true, since the pre-scan itself never reassigns valueTok.
                 lexer.Seek(valueStart);
-                valueTok = lexer.NextToken();
             }
 
             PdfObject value;
@@ -2288,7 +2275,7 @@ internal sealed class ContentInterpreter
         {
             diagnostics.Report(
                 PdfReaderDiagnosticCode.ResourceMissing,
-                $"An inline image's /CS names '/{QuoteExcerpt(csName.Value)}', absent from the "
+                $"An inline image's /CS names '/{DiagnosticExcerpt.Quote(csName.Value)}', absent from the "
                 + "applicable /Resources /ColorSpace dictionary.",
                 ctx.DiagObjectNumber, pageIndex: pageIndex);
         }
@@ -2369,13 +2356,13 @@ internal sealed class ContentInterpreter
     }
 
     // Confirms an 'EI' candidate at exactly a known offset (used once tier a/b already computed a
-    // length): skips zero or more §8.9.7 white-space bytes, then requires the bytes right after to
-    // literally spell "EI"; nothing before 'EI' is REQUIRED to be white space, only tolerated when
-    // present ('/L 4 ID ABCDEIQ ' delimits with no white-space byte immediately before 'EI' and no
-    // 307). Unlike ScanForEi (tier c), this does not search (it verifies one position only) and
-    // checks nothing about what follows 'EI': ScanForEi's own followedOk check (whitespace or a
-    // delimiter right after 'EI') has no counterpart here, so a tier a/b image is delivered even
-    // when the byte immediately after 'EI' is neither.
+    // length): skips zero or more §7.2.3 Table 1 white-space bytes, then requires the bytes right
+    // after to literally spell "EI"; nothing before 'EI' is REQUIRED to be white space, only
+    // tolerated when present ('/L 4 ID ABCDEIQ ' delimits with no white-space byte immediately
+    // before 'EI' and no 307). Unlike ScanForEi (tier c), this does not search (it verifies one
+    // position only) and checks nothing about what follows 'EI': ScanForEi's own followedOk check
+    // (whitespace or a delimiter right after 'EI') has no counterpart here, so a tier a/b image is
+    // delivered even when the byte immediately after 'EI' is neither.
     private int? SkipToEi(int dataEnd)
     {
         var pos = dataEnd;

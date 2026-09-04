@@ -393,34 +393,33 @@ public enum PdfReaderDiagnosticCode
     UnknownOperator = 301,
 
     /// <summary>
-    /// A content stream's operand-stack discipline broke down in one of several ways this
-    /// interpreter groups under one code rather than one each, since every case has the same
-    /// remedy: drop the offending operator (or, for an unbalanced <c>Q</c>/<c>EMC</c>, drop the
-    /// pop) and keep interpreting. Every case here is producer-side except a numeric literal whose
-    /// value exceeds this reader's own <see cref="long"/> or <see cref="double"/> range, which is
-    /// reported here, rather than as <see cref="ContentLimitExceeded"/>, because what gets dropped
-    /// is the operand itself, not an operator or a push; see <see cref="ContentLimitExceeded"/> for
-    /// the four cases that are this reader's own processing ceiling instead. Covers: a number token
-    /// that does not parse, is not finite, or carries a
-    /// second sign character (<c>--5</c>, <c>-+5</c>: §7.3.3 allows only "an optional sign"), a
-    /// dictionary operand on an operator other than <c>BDC</c>/<c>DP</c> (§7.8.2: "Dictionaries
-    /// shall be permitted as operands only by certain specific operators"), a known operator
-    /// invoked with the wrong operand count for its own arity (Annex A Table A.1), an operand of
-    /// the wrong type where the arity is otherwise right: a <c>TJ</c> whose single operand is not
-    /// an array (§9.4.3); a non-numeric operand to <c>cm</c>, <c>Tc</c>, <c>Tw</c>, <c>Tz</c>,
+    /// A content stream's operand-stack discipline broke down in one of several ways this interpreter
+    /// groups under one code rather than one each, since every case has the same remedy: drop the
+    /// offending operator (or, for an unbalanced <c>Q</c>/<c>EMC</c>, drop the pop) and keep
+    /// interpreting. Every case here is producer-side except a numeric literal whose value exceeds
+    /// this reader's own <see cref="long"/> or <see cref="double"/> range, which is reported here,
+    /// rather than as <see cref="ContentLimitExceeded"/>, because what gets dropped is the operand
+    /// itself, not an operator or a push; see <see cref="ContentLimitExceeded"/> for the cases that
+    /// are this reader's own processing ceiling instead. Covers: a number token that does not parse,
+    /// is not finite, or carries a second sign character (<c>--5</c>, <c>-+5</c>: §7.3.3 allows only
+    /// "an optional sign"), a dictionary operand on an operator other than <c>BDC</c>/<c>DP</c>
+    /// (§7.8.2: "Dictionaries shall be permitted as operands only by certain specific operators"), a
+    /// known operator invoked with the wrong operand count for its own arity (Annex A Table A.1), an
+    /// operand of the wrong type where the arity is otherwise right: a <c>TJ</c> whose single operand
+    /// is not an array (§9.4.3); a non-numeric operand to <c>cm</c>, <c>Tc</c>, <c>Tw</c>, <c>Tz</c>,
     /// <c>TL</c>, <c>Tf</c>'s second, <c>Tr</c>, <c>Ts</c>, <c>Td</c>, <c>TD</c>, or <c>Tm</c>; a
-    /// non-name operand to <c>Tf</c>'s first, to <c>Do</c>, or to <c>gs</c>/<c>cs</c>/<c>CS</c>/<c>sh</c>
-    /// (this reader reads that operand for its own resource lookup, the same reason <c>Do</c>'s
-    /// own name operand is checked); a non-string operand to <c>'</c>, or a non-numeric first or
-    /// second or non-string third operand to <c>"</c> (Table 107) (#402 rounds 3 and 4; every
-    /// operator this interpreter recognises but does not name above only forwards its own operands
-    /// to the visitor untouched, so their operand types are the visitor's to type-check, not this
-    /// interpreter's); a <c>Do</c> that occurred inside a text object (§8.2 Figure 9 admits no
-    /// operator of Table 50's XObjects category there), an unbalanced <c>Q</c> with no matching
-    /// <c>q</c> on the graphics-state stack, or an unbalanced <c>EMC</c> with no matching
-    /// <c>BMC</c>/<c>BDC</c> (§14.6.1). An unbalanced <c>q</c> still
-    /// open at the end of a content stream is not reported: nothing downstream of this interpreter
-    /// needs the graphics state restored past the last operator it saw.
+    /// non-name operand to <c>Tf</c>'s first, to <c>Do</c>, or to
+    /// <c>gs</c>/<c>cs</c>/<c>CS</c>/<c>sh</c> (this reader reads that operand for its own resource
+    /// lookup, the same reason <c>Do</c>'s own name operand is checked); a non-string operand to
+    /// <c>'</c>, or a non-numeric first or second or non-string third operand to <c>"</c> (Table 107)
+    /// (#402 rounds 3 and 4; every operator this interpreter recognises but does not name above only
+    /// forwards its own operands to the visitor untouched, so their operand types are the visitor's to
+    /// type-check, not this interpreter's); a <c>Do</c> that occurred inside a text object (§8.2
+    /// Figure 9 admits no operator of Table 50's XObjects category there), an unbalanced <c>Q</c> with
+    /// no matching <c>q</c> on the graphics-state stack, or an unbalanced <c>EMC</c> with no matching
+    /// <c>BMC</c>/<c>BDC</c> (§14.6.1). An unbalanced <c>q</c> still open at the end of a content
+    /// stream is not reported: nothing downstream of this interpreter needs the graphics state
+    /// restored past the last operator it saw.
     /// </summary>
     OperandStackMalformed = 302,
 
@@ -471,24 +470,23 @@ public enum PdfReaderDiagnosticCode
     ResourceMissing = 306,
 
     /// <summary>
-    /// An inline image (ISO 32000-2 §8.9.7) could not be delimited, one of its dictionary entries
-    /// was itself invalid, or this run's own resync-probe budget ran out before a candidate
-    /// <c>EI</c> could be confirmed (#402 round 3; see <c>ContentInterpreter.ProbeOnce</c>): a
-    /// filter this interpreter never applies to inline image data (<c>JBIG2Decode</c>,
-    /// <c>JPXDecode</c>, or <c>Crypt</c>: §8.9.7 itself excludes all three from inline-image use),
-    /// a missing <c>ID</c> or <c>EI</c> operator, a missing, non-integer, or non-positive
-    /// <c>/W</c> or <c>/H</c>, a missing <c>/BPC</c> or one whose
-    /// value is not 1, 2, 4, or 8 (or, from PDF 1.5, 16) where the image's shape requires one to
-    /// compute the data length (Table 87 types <c>/W</c> and <c>/H</c> as integer and restricts
-    /// <c>/BPC</c>'s own value to that fixed set; "positive" for <c>/W</c>/<c>/H</c> is this
-    /// reader's own requirement, not the table's own wording), an <c>/L</c> present but not an
-    /// integer, or negative (§8.9.7, Table 91; PDF 2.0), an <c>/L</c> naming a length past the
-    /// end of the stream (a computed length that overruns the stream instead falls back to the
-    /// <c>EI</c> scan below with no report of its own), a computed length (from <c>/L</c> or from
-    /// the image's own shape) that does not land on the following <c>EI</c> operator, in which
-    /// case this reader retries the <c>EI</c> scan before giving up, or the resync probe spending
-    /// its whole per-run byte budget before it could confirm a candidate <c>EI</c>, in which case
-    /// that candidate is accepted unverified rather than left unresolved. The inline-image
+    /// An inline image (ISO 32000-2 §8.9.7) could not be delimited, one of its dictionary entries was
+    /// itself invalid, or this run's own resync-probe budget ran out before a candidate <c>EI</c>
+    /// could be confirmed (#402 round 3; see <c>ContentInterpreter.ProbeOnce</c>): a filter this
+    /// interpreter never applies to inline image data (<c>JBIG2Decode</c>, <c>JPXDecode</c>, or
+    /// <c>Crypt</c>: §8.9.7 itself excludes all three from inline-image use), a missing <c>ID</c> or
+    /// <c>EI</c> operator, a missing, non-integer, or non-positive <c>/W</c> or <c>/H</c>, a missing
+    /// <c>/BPC</c> or one whose value is not 1, 2, 4, or 8 (or, from PDF 1.5, 16) where the image's
+    /// shape requires one to compute the data length (Table 87 types <c>/W</c> and <c>/H</c> as
+    /// integer and restricts <c>/BPC</c>'s own value to that fixed set; "positive" for
+    /// <c>/W</c>/<c>/H</c> is this reader's own requirement, not the table's own wording), an
+    /// <c>/L</c> present but not an integer, or negative (§8.9.7, Table 91; PDF 2.0), an <c>/L</c>
+    /// naming a length past the end of the stream (a computed length that overruns the stream instead
+    /// falls back to the <c>EI</c> scan below with no report of its own), a computed length (from
+    /// <c>/L</c> or from the image's own shape) that does not land on the following <c>EI</c>
+    /// operator, in which case this reader retries the <c>EI</c> scan before giving up, or the resync
+    /// probe spending its whole per-run byte budget before it could confirm a candidate <c>EI</c>, in
+    /// which case that candidate is accepted unverified rather than left unresolved. The inline-image
     /// callback is raised whenever the image was delimited AND its filter chain is one this reader
     /// accepts on an inline image, including after an <c>/L</c>-past-the-end or
     /// did-not-land-on-<c>EI</c> recovery, or a probe-budget-exhausted acceptance (#402 round 4: a
@@ -497,8 +495,8 @@ public enum PdfReaderDiagnosticCode
     /// (<c>JBIG2Decode</c>, <c>JPXDecode</c>, or <c>Crypt</c>) still delimits the image, so
     /// interpretation of the rest of the content stream continues past its <c>EI</c>, but skips the
     /// callback for that image; when the image could not be delimited at all (no <c>ID</c>, no
-    /// <c>EI</c>) interpretation of that stream stops there instead, since nothing past that point
-    /// can be resynchronised reliably.
+    /// <c>EI</c>) interpretation of that stream stops there instead, since nothing past that point can
+    /// be resynchronised reliably.
     /// Reported at most once per content stream (the page's own content, or one Form XObject) per
     /// page: the sink's dedupe key is (code, object, page), and every image on one content stream
     /// reports against that stream's own object number (or, for the page's own top-level content
@@ -530,15 +528,35 @@ public enum PdfReaderDiagnosticCode
     /// malformed by its producer: more than 64 operands accumulated before an operator (§7.8.2
     /// gives an operator's own operand count no declared bound of its own), an array or dictionary
     /// operand (a <c>TJ</c> array, §9.4.3, being the usual one) carrying more than 8192 tokens
-    /// counted at every nesting depth, more than 64 nested <c>q</c> saves, or marked-content
-    /// nesting (§14.6.1) past the same 64-deep cap. Split out from <see cref="OperandStackMalformed"/>
-    /// (#402) so a caller can tell "this file hit a limit of this reader" apart from "this file is
-    /// malformed", a distinction the two codes sharing one value made impossible to draw. The
-    /// offending operator, or push, is dropped and interpretation continues, the same recovery
-    /// <see cref="OperandStackMalformed"/> uses. A <c>q</c>, <c>BMC</c>, or <c>BDC</c> dropped for
-    /// one of these ceilings still consumes its matching <c>Q</c> or <c>EMC</c> silently, so a
+    /// counted at every nesting depth, more than 64 nested <c>q</c> saves, marked-content nesting
+    /// (§14.6.1) past the same 64-deep cap, an inline image dictionary (§8.9.7) value that is an
+    /// array or dictionary carrying more than 8192 tokens by that same count, or an inline image
+    /// dictionary carrying more than 64 key-value pairs. Split out from
+    /// <see cref="OperandStackMalformed"/> (#402) so a caller can tell "this file hit a limit of
+    /// this reader" apart from "this file is malformed", a distinction the two codes sharing one
+    /// value made impossible to draw.
+    /// <para>
+    /// Recovery differs by which ceiling fired. For the operand-count, composite-token, and depth
+    /// ceilings, the offending operator, or push, is dropped and interpretation continues, the same
+    /// recovery <see cref="OperandStackMalformed"/> uses. For the two inline-image ceilings, the
+    /// image itself is dropped and interpretation of that content stream (the page's content,
+    /// or the one Form XObject being drawn) ends there instead, the way
+    /// <see cref="InlineImageMalformed"/> ends it when an image cannot be delimited at all: the
+    /// drop happens before the image's data has been delimited, so nothing past that point can
+    /// be resynchronised reliably either. A <c>q</c>, <c>BMC</c>, or <c>BDC</c> dropped for any
+    /// ceiling other than the two inline-image ones still consumes its matching <c>Q</c> or <c>EMC</c> silently, so a
     /// conformant file is not also charged an <see cref="OperandStackMalformed"/> for this
     /// reader's own ceiling.
+    /// </para>
+    /// <para>
+    /// The inline image dictionary's 64-pair cap rejects nothing §8.9.7 itself requires: §8.9.7
+    /// says entries other than the ones Table 91 lists "shall be ignored" and sets no count, so a
+    /// dictionary of 65 ignorable entries is not, by that clause, non-conformant. No
+    /// producer's dictionary comes anywhere close, though: Table 91 lists eleven entries, and
+    /// Table 92 layers abbreviations onto some of their values rather than adding further entries.
+    /// The cap exists to bound how much work a hostile dictionary can make this reader
+    /// do per pair, not to reject a legal one.
+    /// </para>
     /// </summary>
     ContentLimitExceeded = 309,
 

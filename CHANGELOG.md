@@ -81,7 +81,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   literal past this reader's own `long`/`double` range, since what gets dropped there is the
   operand itself, not an operator or a push), `ContentLimitExceeded` for this reader's own
   processing ceilings instead (an operand-count, array-or-dictionary-operand token, `q`-depth, or
-  marked-content-depth cap), `FormXObjectCycle`, `FormXObjectBudgetExceeded`, `ResourceMissing`,
+  marked-content-depth cap, plus two more for an inline image's dictionary: a value exceeding
+  the same token cap, or the dictionary itself exceeding 64 key-value pairs), `FormXObjectCycle`,
+  `FormXObjectBudgetExceeded`, `ResourceMissing`,
   `InlineImageMalformed`, and `ContentStreamTooLarge` (one 64 MiB decoded-content budget per page,
   shared between its own `/Contents` and every Form XObject it draws; each invocation of a form
   counts again, since the interpretation cost this bounds scales with how many times a form is

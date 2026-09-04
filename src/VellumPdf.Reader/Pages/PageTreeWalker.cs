@@ -99,16 +99,10 @@ internal static class PageTreeWalker
     // any other node) are retained for the reader's own lifetime (DiagnosticSink), so interpolating
     // an oversized /Type name whole would turn one attacker- or corruption-controlled byte run into
     // a comparably sized permanent allocation, once per (code, object) the sink's own dedupe key
-    // admits: the same class of defect ContentInterpreter.QuoteExcerpt exists to bound (#402
-    // round 7 sweep).
-    private const int MaxQuotedTypeChars = 32;
-
+    // admits: the same class of defect DiagnosticExcerpt exists to bound (#402 round 7 sweep;
+    // round 8 moved the excerpting itself into that shared helper).
     private static string QuoteType(PdfName? type) =>
-        type is null
-            ? "no /Type"
-            : type.Value.Length <= MaxQuotedTypeChars
-                ? type.ToString()
-                : $"/{type.Value[..MaxQuotedTypeChars]}... ({type.Value.Length} chars)";
+        type is null ? "no /Type" : "/" + DiagnosticExcerpt.Quote(type.Value);
 
     /// <summary>Walks <paramref name="reader"/>'s page tree, reporting shape problems to
     /// <paramref name="diagnostics"/> along the way, and returns the pages found in tree order.</summary>
