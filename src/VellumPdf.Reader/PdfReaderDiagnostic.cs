@@ -359,7 +359,7 @@ public enum PdfReaderDiagnosticCode
     /// not be decoded (including one carrying an image filter, which this interpreter never
     /// attempts to decode as content). Operators already reported to the caller's visitor before
     /// the failure are kept either way, but the two cases end a different amount of the page's
-    /// content (#402 round 3): an element that fails to resolve or decode is simply skipped, and
+    /// content (#402 round 3): an element that fails to resolve or decode is skipped, and
     /// interpretation resumes with the NEXT stream in a multi-stream <c>/Contents</c> array, since
     /// every element still contributes its own decoded bytes to one buffer built from the whole
     /// array before interpretation of any of it begins. A lexer or parser failure happens INSIDE
@@ -396,10 +396,12 @@ public enum PdfReaderDiagnosticCode
     /// A content stream's operand-stack discipline broke down in one of several ways this
     /// interpreter groups under one code rather than one each, since every case has the same
     /// remedy: drop the offending operator (or, for an unbalanced <c>Q</c>/<c>EMC</c>, drop the
-    /// pop) and keep interpreting. Every case here is a producer-side malformation (the document
-    /// itself is wrong, not merely bigger than this reader is willing to process); see
-    /// <see cref="ContentLimitExceeded"/> for the four cases that are this reader's own processing
-    /// ceiling instead. Covers: a number token that does not parse, is not finite, or carries a
+    /// pop) and keep interpreting. Every case here is producer-side except a numeric literal whose
+    /// value exceeds this reader's own <see cref="long"/> or <see cref="double"/> range, which is
+    /// reported here, rather than as <see cref="ContentLimitExceeded"/>, because what gets dropped
+    /// is the operand itself, not an operator or a push; see <see cref="ContentLimitExceeded"/> for
+    /// the four cases that are this reader's own processing ceiling instead. Covers: a number token
+    /// that does not parse, is not finite, or carries a
     /// second sign character (<c>--5</c>, <c>-+5</c>: §7.3.3 allows only "an optional sign"), a
     /// dictionary operand on an operator other than <c>BDC</c>/<c>DP</c> (§7.8.2: "Dictionaries
     /// shall be permitted as operands only by certain specific operators"), a known operator
@@ -413,10 +415,10 @@ public enum PdfReaderDiagnosticCode
     /// second or non-string third operand to <c>"</c> (Table 107) (#402 rounds 3 and 4; every
     /// operator this interpreter recognises but does not name above only forwards its own operands
     /// to the visitor untouched, so their operand types are the visitor's to type-check, not this
-    /// interpreter's); a <c>Do</c> that occurred inside a
-    /// text object (§8.2 Figure 9 admits no operator of Table 50's XObjects category there), an
-    /// unbalanced <c>Q</c> with no matching <c>q</c> on the graphics-state stack, or an unbalanced
-    /// <c>EMC</c> with no matching <c>BMC</c>/<c>BDC</c> (§14.6.1). An unbalanced <c>q</c> still
+    /// interpreter's); a <c>Do</c> that occurred inside a text object (§8.2 Figure 9 admits no
+    /// operator of Table 50's XObjects category there), an unbalanced <c>Q</c> with no matching
+    /// <c>q</c> on the graphics-state stack, or an unbalanced <c>EMC</c> with no matching
+    /// <c>BMC</c>/<c>BDC</c> (§14.6.1). An unbalanced <c>q</c> still
     /// open at the end of a content stream is not reported: nothing downstream of this interpreter
     /// needs the graphics state restored past the last operator it saw.
     /// </summary>
@@ -471,11 +473,11 @@ public enum PdfReaderDiagnosticCode
     /// <summary>
     /// An inline image (ISO 32000-2 §8.9.7) could not be delimited, one of its dictionary entries
     /// was itself invalid, or this run's own resync-probe budget ran out before a candidate
-    /// <c>EI</c> could be confirmed (#402 round 3; see
-    /// <c>ContentInterpreter.ProbeOnce</c>): a filter this interpreter never applies to inline
-    /// image data (<c>JBIG2Decode</c>, <c>JPXDecode</c>, or <c>Crypt</c>: §8.9.7 itself excludes
-    /// all three from inline-image use), a missing <c>ID</c> or <c>EI</c> operator, a missing,
-    /// non-integer, or non-positive <c>/W</c> or <c>/H</c>, a missing <c>/BPC</c> or one whose
+    /// <c>EI</c> could be confirmed (#402 round 3; see <c>ContentInterpreter.ProbeOnce</c>): a
+    /// filter this interpreter never applies to inline image data (<c>JBIG2Decode</c>,
+    /// <c>JPXDecode</c>, or <c>Crypt</c>: §8.9.7 itself excludes all three from inline-image use),
+    /// a missing <c>ID</c> or <c>EI</c> operator, a missing, non-integer, or non-positive
+    /// <c>/W</c> or <c>/H</c>, a missing <c>/BPC</c> or one whose
     /// value is not 1, 2, 4, or 8 (or, from PDF 1.5, 16) where the image's shape requires one to
     /// compute the data length (Table 87 types <c>/W</c> and <c>/H</c> as integer and restricts
     /// <c>/BPC</c>'s own value to that fixed set; "positive" for <c>/W</c>/<c>/H</c> is this

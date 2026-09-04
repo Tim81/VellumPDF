@@ -2048,8 +2048,8 @@ public sealed class ContentInterpreterTests
         // The round-2 probe's own first, 128-byte window ran off mid-string here (the literal is
         // 200 bytes, longer than that window) and needed a second, larger window to accept it. The
         // round-3 probe has no fixed window at all, only the shared per-Run budget (#402 round 3),
-        // so a 200-byte literal that closes properly is neutral and simply keeps the probe lexing
-        // until it reaches 'Tj', a known operator: accepted the same way, just without a retry.
+        // so a 200-byte literal that closes properly is neutral and keeps the probe lexing until it
+        // reaches 'Tj', a known operator: accepted the same way, just without a retry.
         var longLiteral = new string('X', 200);
         byte[] data = [0xFF, 0xD8, 0xFF];
         var content = "BI /F /DCT ID "u8.ToArray()
@@ -2288,14 +2288,14 @@ public sealed class ContentInterpreterTests
     [Fact]
     public void CrLfSeparator_whosePayloadEndsInWhiteSpace_isReadTheStrictWayWithNoRetry()
     {
-        // Pins the §8.9.7 one-byte reading for this ambiguous file, not a defect. The producer
-        // wrote a two-byte CR LF separator, and the payload's own true last byte is itself white
-        // space (LF), so the strict one-byte reading, which leaves the payload's true first byte
-        // (the LF from the CR-LF pair) at the front of the data instead of consuming it as part of
-        // the separator, still lands on 'EI': SkipToEi skips leading white space before 'EI', and
-        // that displaced trailing byte gets skipped the same way. The CR-LF retry above this test
-        // never runs, so the visitor receives the data shifted one byte with no diagnostic; §8.9.7
-        // gives the reader no way to tell this apart from a producer that meant a lone CR instead.
+        // Pins the §8.9.7 one-byte reading for this ambiguous file, not a defect. The producer wrote a
+        // two-byte CR LF separator, and the payload's own true last byte is itself white space (LF), so
+        // the strict one-byte reading, which leaves the LF from the CR LF pair at the front of the data
+        // instead of consuming it as part of the separator, still lands on 'EI': SkipToEi skips leading
+        // white space before 'EI', and that displaced trailing byte gets skipped the same way. The CR-LF
+        // retry above this test never runs, so the visitor receives the data shifted one byte with no
+        // diagnostic; §8.9.7 gives the reader no way to tell this apart from a producer that meant a
+        // lone CR instead.
         byte[] delivered = [0x0A, 0x41, 0x42, 0x43];
         byte[] payload = [0x41, 0x42, 0x43, 0x0A];
         var raw = "BI /W 4 /H 1 /BPC 8 /CS /G /L 4 ID\r\n"u8.ToArray()
@@ -2805,6 +2805,87 @@ public sealed class ContentInterpreterTests
 
         interpreter.Run(reader.GetPage(1), new RecordingVisitor());
         Assert.Contains(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ContentStreamTooLarge);
+    }
+
+    // ── An unrecognised token is excerpted, not quoted whole (#402 round 6) ─────────────────────
+    //
+    // PdfLexer.ReadKeyword bounds neither a keyword's own length nor, per PdfName, a name's, so an
+    // unrecognised operator or a missing named resource used to decode and interpolate the whole
+    // token into its own diagnostic Message. A Diagnostic is retained for the reader's own
+    // lifetime, so a multi-megabyte token produced a comparably sized permanent allocation; these
+    // pin the fixed-size excerpt QuoteExcerpt reports instead. 4 MiB is well under both the 64 MiB
+    // content budget and PdfReaderOptions.MaxDecodedStreamBytes's own 512 MiB default, so neither
+    // needs raising for these fixtures.
+
+    [Fact]
+    public void UnknownOperator_ofAttackerControlledLength_reportsOnlyAFixedExcerpt()
+    {
+        var keyword = new string('A', 4_194_304);
+        var content = Encoding.ASCII.GetBytes(keyword + "\n1 w\n");
+        var doc = BuildPdf(
+            1,
+            new Obj(1, "<< /Type /Catalog /Pages 2 0 R >>"),
+            new Obj(2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
+            new Obj(3,
+                "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+                + "/Resources << >> /Contents 4 0 R >>"),
+            new Obj(4, "<< /Filter /FlateDecode >>", Flate(content)));
+
+        var (reader, _, visitor) = Run(doc);
+
+        var reports = reader.Diagnostics.Where(d => d.Code == PdfReaderDiagnosticCode.UnknownOperator).ToList();
+        var report = Assert.Single(reports);
+        Assert.True(
+            report.Message.Length < 200,
+            $"expected a message under 200 chars, got {report.Message.Length}.");
+        var expectedExcerpt = $"'{new string('A', 32)}... (4194304 bytes)'";
+        Assert.StartsWith(expectedExcerpt, report.Message, StringComparison.Ordinal);
+
+        var w = Assert.Single(visitor.Operators);
+        Assert.Equal("w", w.Op);
+    }
+
+    [Fact]
+    public void ResourceMissing_forADoNameOfAttackerControlledLength_reportsOnlyAFixedExcerpt()
+    {
+        var xobjectName = new string('B', 4_194_304);
+        var content = Encoding.ASCII.GetBytes($"/{xobjectName} Do\n1 w\n");
+        var doc = BuildPdf(
+            1,
+            new Obj(1, "<< /Type /Catalog /Pages 2 0 R >>"),
+            new Obj(2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
+            new Obj(3,
+                "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+                + "/Resources << >> /Contents 4 0 R >>"),
+            new Obj(4, "<< /Filter /FlateDecode >>", Flate(content)));
+
+        var (reader, _, visitor) = Run(doc);
+
+        var reports = reader.Diagnostics.Where(d => d.Code == PdfReaderDiagnosticCode.ResourceMissing).ToList();
+        var report = Assert.Single(reports);
+        var expectedExcerpt = $"/{new string('B', 32)}... (4194304 bytes)'";
+        Assert.Contains(expectedExcerpt, report.Message, StringComparison.Ordinal);
+
+        Assert.Contains(visitor.Operators, o => o.Op == "w");
+    }
+
+    [Theory]
+    [InlineData(32, false)]
+    [InlineData(33, true)]
+    public void UnknownOperator_atTheExcerptBoundary_truncatesOnlyPastMaxQuotedTokenChars(
+        int keywordLength, bool expectTruncation)
+    {
+        var keyword = new string('A', keywordLength);
+        var doc = BuildPageDocRaw(Encoding.ASCII.GetBytes(keyword + "\n"));
+
+        var (reader, _, _) = Run(doc);
+
+        var reports = reader.Diagnostics.Where(d => d.Code == PdfReaderDiagnosticCode.UnknownOperator).ToList();
+        var report = Assert.Single(reports);
+        var expectedQuoted = expectTruncation
+            ? $"'{keyword[..32]}... ({keywordLength} bytes)'"
+            : $"'{keyword}'";
+        Assert.Contains(expectedQuoted, report.Message, StringComparison.Ordinal);
     }
 
     // ── Fuzzing ──────────────────────────────────────────────────────────────────────────────────

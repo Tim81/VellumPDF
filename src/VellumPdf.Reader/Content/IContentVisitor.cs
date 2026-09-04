@@ -54,10 +54,9 @@ internal interface IContentVisitor
     /// Called once a <c>Do</c> operator (already reported through <see cref="OnOperator"/>) has
     /// been resolved to a <c>/Subtype /Form</c> stream and every recursion guard (depth, cycle,
     /// per-page budget) has passed, raised for every <c>Do</c> that reaches that point, including
-    /// one whose content then fails to decode or is skipped for this run's own content budget
-    /// (#402 round 3: an earlier version of this doc said the call happens only immediately before
-    /// the interpreter recurses into the form's own content, which is false; the decode
-    /// itself, and the budget check ahead of it, both happen AFTER this callback, not before it).
+    /// one whose content then fails to decode or is skipped for this run's own content budget: the
+    /// decode itself, and the budget check ahead of it, both happen AFTER this callback runs, not
+    /// before it (#402 round 3).
     /// Matched by exactly one <see cref="OnFormEnd"/> call once the form's own content finishes
     /// interpreting (or is skipped, in the cases above), even if that content raises further
     /// nested <see cref="OnFormBegin"/> calls of its own in between.

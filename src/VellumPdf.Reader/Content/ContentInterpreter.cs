@@ -92,6 +92,16 @@ internal sealed class ContentInterpreter
     // 16 MiB settings alike, not that plus a further window's own worth).
     private const long MaxProbeBytesPerRun = 16L * 1024 * 1024;
 
+    // A diagnostic's job is to identify a malformed keyword or name, not to carry the whole thing:
+    // PdfLexer.ReadKeyword bounds neither a keyword's own length nor, per PdfName, a name's, and
+    // Annex C.1 puts no bound on either ("this PDF standard does not restrict the size or quantity
+    // of things described in the PDF file format"; Table C.1's 127-byte name length is only
+    // informative). A Diagnostic is retained for the reader's own lifetime (DiagnosticSink), so
+    // quoting an oversized token whole would turn one attacker- or corruption-controlled byte run
+    // into a comparably sized permanent allocation, once per (code, object, page) the sink's dedupe
+    // key admits (#402 round 6).
+    private const int MaxQuotedTokenChars = 32;
+
     private static readonly PdfName XObjectSubtypeForm = new("Form");
     private static readonly PdfName XObjectSubtypeImage = new("Image");
     private static readonly PdfName ImageMaskKey = new("ImageMask");
@@ -590,8 +600,21 @@ internal sealed class ContentInterpreter
                                 }
                                 else
                                 {
-                                    var name = System.Text.Encoding.Latin1.GetString(raw);
-                                    HandleOperator(name, offset, ctx, visitor, diagnostics, pageIndex);
+                                    // Decoded only far enough to name the operator or, for an
+                                    // unrecognised one, excerpt it in the 301 below (QuoteExcerpt
+                                    // truncates past MaxQuotedTokenChars anyway); ReadKeyword puts
+                                    // no bound on a keyword's own length, so materialising the
+                                    // whole thing here for an attacker-sized token would allocate
+                                    // what the diagnostic then discards most of (#402 round 6).
+                                    // ContentOperators.IsKnown rejects anything over 8 characters
+                                    // (ContentOperators.cs), so a keyword truncated to
+                                    // MaxQuotedTokenChars + 1 bytes still fails dispatch exactly
+                                    // the way the whole one did, and every recognised operator,
+                                    // never more than 3 characters, is decoded in full either way.
+                                    var decodeLength = Math.Min(raw.Length, MaxQuotedTokenChars + 1);
+                                    var name = System.Text.Encoding.Latin1.GetString(raw[..decodeLength]);
+                                    HandleOperator(
+                                        name, raw.Length, offset, ctx, visitor, diagnostics, pageIndex);
                                 }
                                 break;
                             }
@@ -634,11 +657,11 @@ internal sealed class ContentInterpreter
             ctx.DiagObjectNumber, pageIndex: pageIndex);
     }
 
-    // System.Buffers.Text.Utf8Parser backs this, but against a normalised copy of the token's
-    // bytes, not the raw span, because PDF's own numeric grammar
-    // (ISO 32000-2 §7.3.3) allows a bare leading or trailing decimal point ("-.5", "6.") that the
-    // BCL's own double formats do not universally accept the same way across runtimes; padding a
-    // missing digit on either side of '.' sidesteps that without reimplementing number parsing.
+    // System.Buffers.Text.Utf8Parser backs this, but against a normalised copy of the token's bytes,
+    // not the raw span, because PDF's own numeric grammar (ISO 32000-2 §7.3.3) allows a bare leading
+    // or trailing decimal point ("-.5", "6.") that the BCL's own double formats do not universally
+    // accept the same way across runtimes; padding a missing digit on either side of '.' sidesteps
+    // that without reimplementing number parsing.
     private static bool TryParseOperandNumber(ReadOnlySpan<byte> raw, bool isReal, out PdfObject? result)
     {
         result = null;
@@ -669,7 +692,8 @@ internal sealed class ContentInterpreter
         }
 
         // The token length is attacker-controlled, so only stackalloc for short literals; an
-        // operand of a million digits would otherwise overflow the stack (an uncatchable crash).
+        // operand of a million digits or more would otherwise overflow the stack (an uncatchable
+        // crash).
         var paddedLength = span.Length + 2;
         Span<byte> padded = paddedLength <= 1024 ? stackalloc byte[paddedLength] : new byte[paddedLength];
         var len = 0;
@@ -774,11 +798,23 @@ internal sealed class ContentInterpreter
         return count <= MaxCompositeOperandElements;
     }
 
+    // Quotes at most MaxQuotedTokenChars of a diagnostic-bound name or keyword; see that constant
+    // for why. byteLength is the token's own full length, which for a PdfName's Value is just
+    // text.Length (Latin1: one char per byte); the one caller that decodes only far enough to
+    // excerpt an oversized keyword (HandleOperator's own dispatch site) passes the raw token's
+    // length separately, since text itself is already truncated there.
+    private static string QuoteExcerpt(string text) => QuoteExcerpt(text, text.Length);
+
+    private static string QuoteExcerpt(string text, int byteLength) =>
+        byteLength <= MaxQuotedTokenChars
+            ? text
+            : $"{text[..MaxQuotedTokenChars]}... ({byteLength} bytes)";
+
     // ── Operator dispatch ────────────────────────────────────────────────────────────────────────
 
     private void HandleOperator(
-        string name, int offset, StreamContext ctx, IContentVisitor visitor, DiagnosticSink diagnostics,
-        int pageIndex)
+        string name, int keywordByteLength, int offset, StreamContext ctx, IContentVisitor visitor,
+        DiagnosticSink diagnostics, int pageIndex)
     {
         if (!ContentOperators.IsKnown(name))
         {
@@ -802,8 +838,8 @@ internal sealed class ContentInterpreter
             {
                 diagnostics.Report(
                     PdfReaderDiagnosticCode.UnknownOperator,
-                    $"'{name}' is not one of the operators ISO 32000-2 Annex A Table A.1 defines; "
-                    + "it was ignored.",
+                    $"'{QuoteExcerpt(name, keywordByteLength)}' is not one of the operators ISO "
+                    + "32000-2 Annex A Table A.1 defines; it was ignored.",
                     pageIndex: pageIndex);
             }
             ClearOperands();
@@ -1245,8 +1281,8 @@ internal sealed class ContentInterpreter
 
         diagnostics.Report(
             PdfReaderDiagnosticCode.ResourceMissing,
-            $"'{op}' names '/{name.Value}', absent from the applicable /Resources /{category.Value} "
-            + "dictionary.",
+            $"'{op}' names '/{QuoteExcerpt(name.Value)}', absent from the applicable /Resources "
+            + $"/{category.Value} dictionary.",
             ctx.DiagObjectNumber, pageIndex: pageIndex);
     }
 
@@ -1276,8 +1312,8 @@ internal sealed class ContentInterpreter
         {
             diagnostics.Report(
                 PdfReaderDiagnosticCode.ResourceMissing,
-                $"'gs' names '/{gsName.Value}', absent from the applicable /Resources /ExtGState "
-                + "dictionary.",
+                $"'gs' names '/{QuoteExcerpt(gsName.Value)}', absent from the applicable /Resources "
+                + "/ExtGState dictionary.",
                 ctx.DiagObjectNumber, pageIndex: pageIndex);
             return;
         }
@@ -1342,8 +1378,8 @@ internal sealed class ContentInterpreter
         {
             diagnostics.Report(
                 PdfReaderDiagnosticCode.ResourceMissing,
-                $"'Do' names '/{xobjectName.Value}', absent from the applicable /Resources /XObject "
-                + "dictionary.",
+                $"'Do' names '/{QuoteExcerpt(xobjectName.Value)}', absent from the applicable "
+                + "/Resources /XObject dictionary.",
                 ctx.DiagObjectNumber, pageIndex: pageIndex);
             return;
         }
@@ -1352,8 +1388,8 @@ internal sealed class ContentInterpreter
         {
             diagnostics.Report(
                 PdfReaderDiagnosticCode.ResourceMissing,
-                $"'Do' names '/{xobjectName.Value}', present in the applicable /Resources "
-                + "/XObject dictionary but not as an indirect reference to a stream.",
+                $"'Do' names '/{QuoteExcerpt(xobjectName.Value)}', present in the applicable "
+                + "/Resources /XObject dictionary but not as an indirect reference to a stream.",
                 ctx.DiagObjectNumber, pageIndex: pageIndex);
             return;
         }
@@ -1363,8 +1399,8 @@ internal sealed class ContentInterpreter
         {
             diagnostics.Report(
                 PdfReaderDiagnosticCode.ResourceMissing,
-                $"'Do' names '/{xobjectName.Value}', but object {xobjectRef.ObjectNumber} does not "
-                + "resolve to a stream.",
+                $"'Do' names '/{QuoteExcerpt(xobjectName.Value)}', but object "
+                + $"{xobjectRef.ObjectNumber} does not resolve to a stream.",
                 ctx.DiagObjectNumber, pageIndex: pageIndex);
             return;
         }
@@ -1373,8 +1409,8 @@ internal sealed class ContentInterpreter
         {
             diagnostics.Report(
                 PdfReaderDiagnosticCode.ResourceMissing,
-                $"'Do' names '/{xobjectName.Value}', object {stream.ObjectNumber}, whose "
-                + "/Subtype is missing or is not a name, so it cannot be used as an XObject.",
+                $"'Do' names '/{QuoteExcerpt(xobjectName.Value)}', object {stream.ObjectNumber}, "
+                + "whose /Subtype is missing or is not a name, so it cannot be used as an XObject.",
                 stream.ObjectNumber, pageIndex: pageIndex);
             return;
         }
@@ -1386,9 +1422,9 @@ internal sealed class ContentInterpreter
         {
             diagnostics.Report(
                 PdfReaderDiagnosticCode.ResourceMissing,
-                $"'Do' names '/{xobjectName.Value}', object {stream.ObjectNumber}, whose /Subtype "
-                + $"'/{subtype.Value}' is neither /Form nor /Image, so it cannot be used as an "
-                + "XObject.",
+                $"'Do' names '/{QuoteExcerpt(xobjectName.Value)}', object {stream.ObjectNumber}, "
+                + $"whose /Subtype '/{QuoteExcerpt(subtype.Value)}' is neither /Form nor /Image, "
+                + "so it cannot be used as an XObject.",
                 stream.ObjectNumber, pageIndex: pageIndex);
             return;
         }
@@ -1870,12 +1906,12 @@ internal sealed class ContentInterpreter
             // (#402 round 4). This retry only runs when the one-byte reading's own resync above
             // already failed to land on 'EI'; it does not cover every CR-LF producer. When the
             // payload's own last byte happens to be white space, the one-byte reading is off by one
-            // (it left the payload's true first byte, the LF, at the front of the data) but still
-            // lands on 'EI' regardless, because SkipToEi skips leading white space before checking
-            // for 'EI' and that displaced trailing byte gets skipped the same way. The retry never
-            // runs in that case, and the visitor receives the data shifted one byte, with no
-            // diagnostic. That is the reading §8.9.7 mandates ("a single white-space character"),
-            // not a defect this retry is meant to close.
+            // (it left the LF of the CR LF pair at the front of the data) but still lands on 'EI'
+            // regardless, because SkipToEi skips leading white space before checking for 'EI' and
+            // that displaced trailing byte gets skipped the same way. The retry never runs in that
+            // case, and the visitor receives the data shifted one byte, with no diagnostic. That is
+            // the reading §8.9.7 mandates ("a single white-space character"), not a defect this
+            // retry is meant to close.
             //
             // The malformed report just below is skipped when this retry alone is what recovers the
             // image: a conforming file recovered from cleanly must not carry a warning about it
@@ -2095,8 +2131,10 @@ internal sealed class ContentInterpreter
         // rowBytes can reach roughly 2^34 (width up to int.MaxValue, bpc up to 16) and height up to
         // int.MaxValue - 1 (~2^31), so this multiply can wrap a signed 64-bit long. The wrap is
         // harmless: the total < 0 check below and the bounds check that follows it both still run,
-        // and a surviving wrapped value that passes both merely fails to land on 'EI' and recovers
-        // through the scan (tier c), the same recovery an ordinary overrun takes.
+        // and a surviving wrapped value that passes both takes the did-not-land-on-'EI' path
+        // instead: a 307 reports first, then the scan (tier c) recovers the image. Measured with
+        // /W 1824726041 /H 1263665316 /BPC 16 /CS /CMYK (rowBytes * height wraps to 32): one image
+        // delivered, the operators that followed it reached the visitor, and exactly one 307.
         var total = rowBytes * height.Value;
         if (total < 0 || dataStart + total > _currentBuffer.Length)
             return null; // Fall back to the EI scan rather than trusting a runaway computed size.
@@ -2152,8 +2190,8 @@ internal sealed class ContentInterpreter
         {
             diagnostics.Report(
                 PdfReaderDiagnosticCode.ResourceMissing,
-                $"An inline image's /CS names '/{csName.Value}', absent from the applicable "
-                + "/Resources /ColorSpace dictionary.",
+                $"An inline image's /CS names '/{QuoteExcerpt(csName.Value)}', absent from the "
+                + "applicable /Resources /ColorSpace dictionary.",
                 ctx.DiagObjectNumber, pageIndex: pageIndex);
         }
         return -1;
@@ -2233,8 +2271,11 @@ internal sealed class ContentInterpreter
     }
 
     // Confirms an 'EI' candidate at exactly a known offset (used once tier a/b already computed a
-    // length) by requiring the bytes there literally spell "EI" preceded and followed the way §8.9.7
-    // describes; unlike ScanForEi this does not search, it verifies one position.
+    // length) by requiring the bytes there literally spell "EI" preceded the way §8.9.7 describes.
+    // Unlike ScanForEi (tier c), this does not search (it verifies one position only) and checks
+    // nothing about what follows 'EI': ScanForEi's own followedOk check (whitespace or a delimiter
+    // right after 'EI') has no counterpart here, so a tier a/b image is delivered even when the byte
+    // immediately after 'EI' is neither.
     private int? SkipToEi(int dataEnd)
     {
         var pos = dataEnd;
@@ -2254,10 +2295,10 @@ internal sealed class ContentInterpreter
     // second, larger window mask the terminating 'EI' whose own legitimate follow-on token
     // happened to be longer still). A candidate needs a POSITIVE reason to accept now, not merely
     // the absence of a rejecting keyword: a number, name, string, array/dictionary delimiter,
-    // true/false/null, or an
-    // unknown-but-printable keyword is neutral and keeps the probe lexing rather than accepting by
-    // default, closing the round-2 gap where a straddling but well-formed array or dictionary (never
-    // itself a keyword) produced the identical wrong "accept" outcome an unterminated string used to.
+    // true/false/null, or an unknown-but-printable keyword is neutral and keeps the probe lexing
+    // rather than accepting by default, closing the round-2 gap where a straddling but well-formed
+    // array or dictionary (never itself a keyword) produced the identical wrong "accept" outcome an
+    // unterminated string used to.
     private enum ProbeOutcome
     {
         /// <summary>A Table A.1 operator other than 'EI'/'ID', 'BI', or the buffer's own true end
