@@ -58,8 +58,8 @@ internal sealed class ContentInterpreter
 
     // §8.9.7's Table 91 lists eleven inline image dictionary entries (BitsPerComponent, ColorSpace,
     // Decode, DecodeParms, Filter, Height, ImageMask, Intent, Interpolate, Length, Width; Table 92
-    // layers abbreviations onto some of their VALUES, not further entries of its own), and §8.9.7
-    // itself says "Entries other than those listed shall be ignored", so this reader's own ceiling
+    // layers abbreviations onto some of their VALUES, not further entries), and §8.9.7
+    // itself says "Entries other than those listed shall be ignored", so this reader's ceiling
     // on how many key/value pairs one inline image dictionary may carry, before HandleInlineImage
     // gives up on it, is generous by construction: no conformant producer's dictionary comes close.
     // It exists to bound how much a hostile BI...ID section can make this reader allocate one
@@ -1754,7 +1754,7 @@ internal sealed class ContentInterpreter
             // Checked before this key is even decoded into a PdfName, not after: an over-cap
             // dictionary must not keep paying per-pair allocation cost for entries this reader is
             // about to drop the whole image over anyway (#402 round 7; see
-            // MaxInlineImageDictionaryPairs for why 64 rejects nothing conformant).
+            // MaxInlineImageDictionaryPairs for why no conformant producer comes near 64).
             if (entryCount >= MaxInlineImageDictionaryPairs)
             {
                 diagnostics.Report(
