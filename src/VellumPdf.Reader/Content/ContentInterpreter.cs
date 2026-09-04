@@ -668,7 +668,10 @@ internal sealed class ContentInterpreter
             return true;
         }
 
-        Span<byte> padded = stackalloc byte[span.Length + 2];
+        // The token length is attacker-controlled, so only stackalloc for short literals; an
+        // operand of a million digits would otherwise overflow the stack (an uncatchable crash).
+        var paddedLength = span.Length + 2;
+        Span<byte> padded = paddedLength <= 1024 ? stackalloc byte[paddedLength] : new byte[paddedLength];
         var len = 0;
         if (span.IsEmpty || span[0] == (byte)'.')
             padded[len++] = (byte)'0';
@@ -990,7 +993,7 @@ internal sealed class ContentInterpreter
                 break;
 
             case "'":
-                // Table 107: "This operator shall have the same effect as the code: T* string Tj".
+                // Table 107: "This operator shall have the same effect as the code T* string Tj".
                 // T*'s own move (§9.4.3) runs here; the text-showing half stays the visitor's, the
                 // same as Tj's own string operand, which this interpreter never reads (#402 round 4).
                 _textState.MoveTextPosition(0, -_gs.Leading);
@@ -1317,13 +1320,12 @@ internal sealed class ContentInterpreter
             // text-positioning, text-showing, marked-content, and compatibility categories of
             // Table 50 inside a text object (seven, not six: #402 round 3); 'Do' sits in the
             // XObjects category, so a producer that invokes it there is wrong regardless of what
-            // the named XObject turns out to be. The
-            // recursion below still runs (a text-object violation is not itself a reason to skip
-            // an otherwise-resolvable Form), but the shared _textState instance a form's own
-            // content may disturb (BT/Td/ET, unbracketed by any q/Q-style save) is saved and
-            // restored around that recursion below regardless of this check, so the report here is
-            // purely informational: nothing downstream depends on _inTextObject to avoid the leak
-            // (#402 round 2).
+            // the named XObject turns out to be. The recursion below still runs (a text-object
+            // violation is not itself a reason to skip an otherwise-resolvable Form), but the
+            // shared _textState instance a form's own content may disturb (BT/Td/ET, unbracketed by
+            // any q/Q-style save) is saved and restored around that recursion below regardless of
+            // this check, so the report here is purely informational: nothing downstream depends on
+            // _inTextObject to avoid the leak (#402 round 2).
             diagnostics.Report(
                 PdfReaderDiagnosticCode.OperandStackMalformed,
                 "'Do' occurred inside a text object (ISO 32000-2 §8.2 Figure 9 admits no XObjects "
@@ -1739,8 +1741,8 @@ internal sealed class ContentInterpreter
             f.Value is "JBIG2Decode" or "JPXDecode" or "Crypt");
 
         // §8.9.7's normative sentence excludes ASCIIHexDecode/ASCII85Decode "as one of its filters"
-        // from the single-white-space rule; NOTE 2 gives the actual skip-without-decoding recipe,
-        // scoped narrower, to "the final or only filter": "if the final or only filter is
+        // from the single-white-space rule; NOTE 2 gives the skip-without-decoding recipe, scoped
+        // narrower, to "the final or only filter": "if the final or only filter is
         // ASCIIHexDecode or ASCII85Decode skip any further white-space [after the first]" before
         // counting /L's own bytes. NOTE 2's own skip only ever touches the raw bytes right after
         // ID, so its "final" filter can only mean final in ENCODING order: the filter applied LAST
@@ -1770,16 +1772,16 @@ internal sealed class ContentInterpreter
         // next character shall be interpreted as the first byte of image data." Exactly ONE byte is
         // consumed as that mandated separator below, even when it is a CR immediately followed by
         // an LF, which §7.2.3's own EOL rule folds into one two-byte marker for LINE-ENDING
-        // purposes only; §8.9.7 does not import that fold, and unlike §7.3.8.1 (which names
-        // "CARRIAGE RETURN LINE FEED" outright on the one construct, a stream's own
-        // keyword-to-data boundary, where a spec author who wanted the fold applied there wrote it
-        // in), §8.9.7 says only "a single white-space character". isCrLf records whether the
-        // mandated byte happened to be a CR immediately followed by an LF, so tiers a/b below (each
-        // of which has a declared or computed length to verify a reading against) can retry the
-        // two-byte reading once should the one-byte reading fail to land on 'EI' (#402 round 4:
-        // reading the pair first fed a payload's own leading LF byte to the ID separator instead of
-        // to the image data whenever a producer wrote a lone CR before a payload that happened to
-        // start with LF).
+        // purposes only; §8.9.7 does not import that fold, and unlike §7.3.8.1 (which requires "an
+        // end-of-line marker consisting of either a CARRIAGE RETURN and a LINE FEED or just a LINE
+        // FEED" outright on the one construct, a stream's own keyword-to-data boundary, where a spec
+        // author who wanted the fold applied there wrote it in), §8.9.7 says only "a single
+        // white-space character". isCrLf records whether the mandated byte happened to be a CR
+        // immediately followed by an LF, so tiers a/b below (each of which has a declared or
+        // computed length to verify a reading against) can retry the two-byte reading once should
+        // the one-byte reading fail to land on 'EI' (#402 round 4: reading the pair first fed a
+        // payload's own leading LF byte to the ID separator instead of to the image data whenever a
+        // producer wrote a lone CR before a payload that happened to start with LF).
         var isCrLf = false;
         var oneByteSeparatorPos = lexer.Position;
         if (lexer.TryPeek() is var separatorByte && separatorByte >= 0
@@ -1865,12 +1867,21 @@ internal sealed class ContentInterpreter
             // CR immediately followed by an LF, retry once with §7.2.3's own fold: both bytes
             // consumed as the separator instead, since a producer that wrote a two-byte CR-LF
             // separator is exactly the case the one-byte reading above would otherwise misjudge
-            // (#402 round 4). The malformed report just
-            // below is skipped when this retry alone is what recovers the image: a conforming file
-            // recovered from cleanly must not carry a warning about it (#402 round 2). The EI-scan
-            // fallback below is a DIFFERENT case: reaching it at all means neither reading's
-            // declared or computed length landed on 'EI', not merely one of the two, so recovering
-            // through IT still reports.
+            // (#402 round 4). This retry only runs when the one-byte reading's own resync above
+            // already failed to land on 'EI'; it does not cover every CR-LF producer. When the
+            // payload's own last byte happens to be white space, the one-byte reading is off by one
+            // (it left the payload's true first byte, the LF, at the front of the data) but still
+            // lands on 'EI' regardless, because SkipToEi skips leading white space before checking
+            // for 'EI' and that displaced trailing byte gets skipped the same way. The retry never
+            // runs in that case, and the visitor receives the data shifted one byte, with no
+            // diagnostic. That is the reading §8.9.7 mandates ("a single white-space character"),
+            // not a defect this retry is meant to close.
+            //
+            // The malformed report just below is skipped when this retry alone is what recovers the
+            // image: a conforming file recovered from cleanly must not carry a warning about it
+            // (#402 round 2). The EI-scan fallback below is a DIFFERENT case: reaching it at all
+            // means neither reading's declared or computed length landed on 'EI', not merely one of
+            // the two, so recovering through IT still reports.
             var recoveredViaCrRetry = false;
             if (isCrLf)
             {
@@ -2081,6 +2092,11 @@ internal sealed class ContentInterpreter
             return null; // Unknown colour space: fall back to the EI scan (tier c).
 
         var rowBytes = ((long)width.Value * bpc.Value * components + 7) / 8;
+        // rowBytes can reach roughly 2^34 (width up to int.MaxValue, bpc up to 16) and height up to
+        // int.MaxValue - 1 (~2^31), so this multiply can wrap a signed 64-bit long. The wrap is
+        // harmless: the total < 0 check below and the bounds check that follows it both still run,
+        // and a surviving wrapped value that passes both merely fails to land on 'EI' and recovers
+        // through the scan (tier c), the same recovery an ordinary overrun takes.
         var total = rowBytes * height.Value;
         if (total < 0 || dataStart + total > _currentBuffer.Length)
             return null; // Fall back to the EI scan rather than trusting a runaway computed size.
@@ -2152,15 +2168,15 @@ internal sealed class ContentInterpreter
     // closing it needs decoding the image data itself, out of scope for a byte-level scan): any
     // whitespace-delimited 'EI' followed by bytes that lex as a Table A.1 operator, as 'BI', or as
     // the buffer's own end is indistinguishable, at the byte level, from a resync point the
-    // terminating 'EI' itself sets, so a false 'EI' immediately followed by any of those three
-    // shapes is accepted with no diagnostic. A '%' comment is the easiest worked example: one
-    // running from right after a false 'EI' to the end of its own line can swallow the LATER,
-    // terminating 'EI' written on that same line, so the operator that follows the comment's own
-    // line is what the probe sees, and it accepts through the ordinary Table A.1 rule with
+    // terminating 'EI' itself sets, so a false 'EI' followed, after any run of neutral tokens, by
+    // any of those three shapes is accepted with no diagnostic. A '%' comment is the easiest worked
+    // example: one running from right after a false 'EI' to the end of its own line can swallow the
+    // LATER, terminating 'EI' written on that same line, so the operator that follows the comment's
+    // own line is what the probe sees, and it accepts through the ordinary Table A.1 rule with
     // nothing to tell the two apart. The same blind spot applies to a coincidental operator inside
-    // compressed noise (" EI n ", " EI W ", " EI f " each
-    // truncate the image data with no 307 and hand the visitor a spurious operator) and to " EI BI "
-    // (the BI accept rule below): the bytes are well-formed content either way.
+    // compressed noise (" EI n ", " EI W ", " EI f " each truncate the image data with no 307 and
+    // hand the visitor a spurious operator) and to " EI BI " (the BI accept rule below): the bytes
+    // are well-formed content either way.
     private int? ScanForEi(int dataStart, int? diagObjectNumber)
     {
         var span = _currentBuffer.Span;
@@ -2250,7 +2266,8 @@ internal sealed class ContentInterpreter
 
         /// <summary>An 'EI' or 'ID' keyword (still inside image data that continues to a LATER
         /// 'EI'), a keyword containing a non-printable byte, or a lex failure found strictly inside
-        /// an unclipped window (a malformed byte the buffer's true end had nothing to do with).</summary>
+        /// the window, clipped or not (a malformed byte neither the window's own clip nor the
+        /// buffer's true end had anything to do with).</summary>
         Reject,
 
         /// <summary>A lex failure that ran off the buffer's own TRUE end (not this probe's own
@@ -2306,7 +2323,7 @@ internal sealed class ContentInterpreter
                 // lexer's own Position landed at or past the window's own length), the buffer's own
                 // TRUE end with nothing left to close the token (WeakReject, the same Position
                 // check but an unclipped window: #402 round 4), or a malformed byte found strictly
-                // inside an unclipped window, short of either end (Reject outright).
+                // inside the window, short of either end, clipped or not (Reject outright).
                 outcome = (windowClipped, probe.Position >= window.Length) switch
                 {
                     (true, true) => ProbeOutcome.Exhausted,

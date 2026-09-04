@@ -215,6 +215,33 @@ public sealed class ContentInterpreterTests
         Assert.Same(PdfNull.Instance, sc.Operands[2]);
     }
 
+    [Fact]
+    public void RealOperandOfTwoMillionDigits_isParsedOnTheHeap_andRunReturns()
+    {
+        // TryParseOperandNumber used to size its padding buffer with a raw stackalloc keyed on the
+        // numeric token's own length. PdfLexer.ReadNumeric puts no bound on that length (it is a
+        // content-stream operand, not a value this reader's own resource caps ever see), so an
+        // operand of about 1.5 million digits overflowed the stack outright, an uncatchable crash
+        // this type's own contract (above) says a malformed or absurd construct must not cause. On
+        // the heap Utf8Parser still parses this exactly: a two-million-digit literal is conformant,
+        // if absurd, §7.3.3 syntax, so its value survives rather than falling back to a malformed
+        // report. This must not run against the pre-fix binary: there it kills the whole test host.
+        var digits = new string('1', 2_000_000);
+        var content = "0." + digits + " w\n1 w\n";
+        // About 2 MiB of content, far under the default MaxDecodedStreamBytes the Run helper leaves
+        // in force, so a limit diagnostic cannot be what Assert.Empty below is looking at.
+        Assert.True(content.Length < ReaderLimits.DefaultMaxDecodedBytes);
+
+        var (reader, _, visitor) = Run(BuildPageDoc(content));
+
+        var wCalls = visitor.Operators.Where(o => o.Op == "w").ToList();
+        Assert.Equal(2, wCalls.Count);
+        var real = (PdfReal)wCalls[0].Operands[0];
+        Assert.Equal(0.1111111111, real.Value, 9);
+        Assert.Equal(1, ((PdfInteger)wCalls[1].Operands[0]).Value);
+        Assert.Empty(reader.Diagnostics);
+    }
+
     // ── BX/EX compatibility sections ────────────────────────────────────────────────────────────
 
     [Fact]
@@ -610,7 +637,10 @@ public sealed class ContentInterpreterTests
     public void QDroppedForTheOperandCountCap_creditsOnlyOneQ_aSecondQStillReportsUnbalanced()
     {
         // Only ONE 'q' was dropped, so only one credit exists: a second 'Q' past it finds nothing
-        // pushed and no credit left, and reports the ordinary unbalanced-pop diagnostic.
+        // pushed and no credit left, and reports the ordinary unbalanced-pop diagnostic. This test
+        // guards over-crediting rather than pinning the round-4 fix itself (the two sibling tests
+        // do that): a credit of 2 for the one dropped 'q' would silence both 'Q's, leaving
+        // `unbalanced` empty and failing Assert.Single below.
         var content = string.Join(' ', Enumerable.Repeat("1", 65)) + " q\nQ\nQ\n1 w\n";
 
         var (reader, _, visitor) = Run(BuildPageDoc(content));
@@ -759,7 +789,7 @@ public sealed class ContentInterpreterTests
     [Fact]
     public void Quote_movesToTheNextLine_andForwardsTheStringOperandUntouched()
     {
-        // Table 107: "' ... shall have the same effect as the code: T* string Tj". Before this fix,
+        // Table 107: "' ... shall have the same effect as the code T* string Tj". Before this fix,
         // ' fell through to the default (state-inert) case: the text matrices were left untouched
         // and the string operand still reached the visitor, since forwarding happens either way.
         const string content = "BT\n100 TL\n5 0 Td\n(a) '\nET\n";
@@ -2252,6 +2282,33 @@ public sealed class ContentInterpreterTests
         Assert.DoesNotContain(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.InlineImageMalformed);
         var img = Assert.Single(visitor.InlineImages);
         Assert.True(img.Data.AsSpan().SequenceEqual(data));
+        Assert.Contains(visitor.Operators, o => o.Op == "Q");
+    }
+
+    [Fact]
+    public void CrLfSeparator_whosePayloadEndsInWhiteSpace_isReadTheStrictWayWithNoRetry()
+    {
+        // Pins the §8.9.7 one-byte reading for this ambiguous file, not a defect. The producer
+        // wrote a two-byte CR LF separator, and the payload's own true last byte is itself white
+        // space (LF), so the strict one-byte reading, which leaves the payload's true first byte
+        // (the LF from the CR-LF pair) at the front of the data instead of consuming it as part of
+        // the separator, still lands on 'EI': SkipToEi skips leading white space before 'EI', and
+        // that displaced trailing byte gets skipped the same way. The CR-LF retry above this test
+        // never runs, so the visitor receives the data shifted one byte with no diagnostic; §8.9.7
+        // gives the reader no way to tell this apart from a producer that meant a lone CR instead.
+        byte[] delivered = [0x0A, 0x41, 0x42, 0x43];
+        byte[] payload = [0x41, 0x42, 0x43, 0x0A];
+        var raw = "BI /W 4 /H 1 /BPC 8 /CS /G /L 4 ID\r\n"u8.ToArray()
+            .Concat(payload)
+            .Concat("EI\nQ\n"u8.ToArray())
+            .ToArray();
+        var doc = BuildPageDocRaw(raw);
+
+        var (reader, _, visitor) = Run(doc);
+
+        Assert.DoesNotContain(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.InlineImageMalformed);
+        var img = Assert.Single(visitor.InlineImages);
+        Assert.True(img.Data.AsSpan().SequenceEqual(delivered));
         Assert.Contains(visitor.Operators, o => o.Op == "Q");
     }
 

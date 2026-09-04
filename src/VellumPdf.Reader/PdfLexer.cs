@@ -77,19 +77,19 @@ internal sealed class PdfLexer
 {
     private readonly ReadOnlyMemory<byte> _data;
 
-    // Off by default: every existing consumer (the object parser, the 11 Conformance rules that
-    // build their own PdfLexer, and every non-content test) relies on the file-structure lexer's
-    // stricter rule that a lone '{', '}', or unmatched '>' is malformed PDF. §7.2.3 Table 2 lists
-    // '{' and '}' as delimiters with no syntax of their own in the file-structure grammar; the one
-    // place they mean anything is inside a Type 4 PostScript calculator function body (§7.10.5),
-    // which this lexer is never pointed at, so the file-structure grammar itself has no production
-    // for a lone one and it stays malformed in default mode. A content stream is a different
-    // grammar: those same bytes are junk with no meaning of their own there either, but §7.8.2's
-    // BX/EX rule is the reason to tolerate junk inside a compatibility section rather than abort
-    // the whole page over it, so ContentInterpreter needs to lex them as harmless one-byte
-    // unknown-operator keywords instead. Opt-in, not a runtime detection of "is this a content
-    // stream", keeps that decision with the caller that already knows which grammar applies
-    // instead of guessing from the bytes.
+    // Off by default: every existing consumer (the object parser, the 13 Conformance types (11
+    // rules and two helpers) that build their own PdfLexer, and every non-content test) relies on
+    // the file-structure lexer's stricter rule that a lone '{', '}', or unmatched '>' is malformed
+    // PDF. §7.2.3 Table 2 lists '{' and '}' as delimiters with no syntax of their own in the
+    // file-structure grammar; the one place they mean anything is inside a Type 4 PostScript
+    // calculator function body (§7.10.5), which this lexer is never pointed at, so the
+    // file-structure grammar itself has no production for a lone one and it stays malformed in
+    // default mode. A content stream is a different grammar: those same bytes are junk with no
+    // meaning of their own there either, but §7.8.2's BX/EX rule is the reason to tolerate junk
+    // inside a compatibility section rather than abort the whole page over it, so ContentInterpreter
+    // needs to lex them as harmless one-byte unknown-operator keywords instead. Opt-in, not a
+    // runtime detection of "is this a content stream", keeps that decision with the caller that
+    // already knows which grammar applies instead of guessing from the bytes.
     private readonly bool _contentStreamMode;
 
     /// <summary>Current byte offset within <see cref="_data"/>.</summary>
@@ -203,8 +203,10 @@ internal sealed class PdfLexer
     }
 
     /// <summary>
-    /// Advances the cursor to <paramref name="position"/>.
-    /// Must be &gt;= current <see cref="Position"/> and &lt;= <see cref="Length"/>.
+    /// Moves the cursor to <paramref name="position"/>, forward or backward. Only
+    /// <c>0 &lt;= position &lt;= <see cref="Length"/></c> is enforced; several callers deliberately
+    /// rewind past a position already read (a lookahead scan that backs off after deciding not to
+    /// consume it, say) and re-lex from there.
     /// </summary>
     public void Seek(int position)
     {
