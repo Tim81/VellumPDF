@@ -160,6 +160,25 @@ public sealed class PdfLexerContentModeTests
             kinds);
     }
 
+    [Fact]
+    public void ContentStreamMode_stillThrowsOnALoneCloseParen()
+    {
+        // Content-stream mode relaxes exactly three bytes ('{', '}', a lone '>'), per this file's
+        // own class doc; a lone ')' is not one of them and must keep throwing (#402 round 3, C5: a
+        // boundary pin so a later change to what this mode relaxes cannot widen it here silently).
+        var lexer = new PdfLexer(")"u8.ToArray(), contentStreamMode: true);
+
+        Assert.Throws<InvalidDataException>(() => lexer.NextToken());
+    }
+
+    [Fact]
+    public void ContentStreamMode_stillThrowsOnAnUnterminatedLiteralString()
+    {
+        var lexer = new PdfLexer("(never closed"u8.ToArray(), contentStreamMode: true);
+
+        Assert.Throws<InvalidDataException>(() => lexer.NextToken());
+    }
+
     // ── Every other token kind lexes identically in both modes ─────────────────────────────────────
 
     // MemberData parameters must be public-accessible types (CS0051), so TokenKind (internal, via

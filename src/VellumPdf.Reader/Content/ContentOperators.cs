@@ -9,8 +9,8 @@ namespace VellumPdf.Reader.Content;
 /// <see cref="Variable"/> marks the four colour operators (<c>SC</c>, <c>sc</c>, <c>SCN</c>,
 /// <c>scn</c>): Table 73 (§8.6.8) gives them one numeric operand per colourant of the current
 /// colour space, plus, for the <c>N</c> suffix, an optional trailing pattern name, and §8.6.6.5
-/// lets a DeviceN space name "an arbitrary number" of colourants, so no single fixed count (nor
-/// even a small fixed range) describes them; this interpreter accepts any operand count for them
+/// lets a DeviceN space name "an arbitrary number of colour components", so no single fixed count
+/// (nor even a small fixed range) describes them; this interpreter accepts any operand count for them
 /// rather than reporting <see cref="PdfReaderDiagnosticCode.OperandStackMalformed"/> on a
 /// legitimately variable call.
 /// </summary>
@@ -39,8 +39,10 @@ internal static class ContentOperators
 
         // Table 352: marked-content operators. Annex A Table A.1's own cross-reference for BMC
         // names Table 351 ("Entries in a data dictionary") instead, an error in the standard: BDC,
-        // DP, EMC, and MP all cite Table 352 the way BMC itself should, and Table 351 is the
-        // unrelated marked-content PROPERTY LIST shape, not the operator table).
+        // DP, EMC, and MP all cite Table 352 the way BMC itself should. Table 351 belongs to
+        // §14.5's page-piece dictionaries (page-piece private data: LastModified, Private) and has
+        // nothing to do with marked content; a marked-content property list (§14.6.2) is described
+        // in prose and has no table of its own (#402 round 3).
         ["BDC"] = 2,
         ["BMC"] = 1,
         ["DP"] = 2,

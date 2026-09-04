@@ -94,8 +94,9 @@ internal readonly record struct ReaderLimits(
     /// in mobile devices than desktop computers" — the ceiling is this processor's own choice, not a
     /// spec requirement, so <see cref="DefaultMaxDecodedBytes"/>,
     /// <see cref="DefaultReconstructionBudgetMultiplier"/>, <see cref="DefaultMaxDiagnostics"/>, and
-    /// <see cref="DefaultMaxFormXObjectDepth"/> are each a safe upper bound a caller may only lower, never raise. A value under the
-    /// corresponding floor is rejected too: below <see cref="MinMaxDecodedBytes"/> or
+    /// <see cref="DefaultMaxFormXObjectDepth"/> are each a safe upper bound a caller may only
+    /// lower, never raise. A value under the corresponding floor is rejected too: below
+    /// <see cref="MinMaxDecodedBytes"/> or
     /// <see cref="MinReconstructionBudgetMultiplier"/>, an otherwise ordinary document routinely
     /// fails to decode or reconstruct at all; below <see cref="MinMaxDiagnostics"/> every report
     /// would turn into a suppression count, disabling the channel entirely; below

@@ -51,12 +51,16 @@ internal interface IContentVisitor
     void OnInlineImage(PdfDictionary dictionary, ReadOnlyMemory<byte> data, int offset);
 
     /// <summary>
-    /// Called immediately before the interpreter recurses into a Form XObject's own content, once a
-    /// <c>Do</c> operator (already reported through <see cref="OnOperator"/>) has been resolved to a
-    /// <c>/Subtype /Form</c> stream and every recursion guard (depth, cycle, per-page budget) has
-    /// passed. Matched by exactly one <see cref="OnFormEnd"/> call once the form's own content
-    /// finishes interpreting, even if that content raises further nested <see cref="OnFormBegin"/>
-    /// calls of its own in between.
+    /// Called once a <c>Do</c> operator (already reported through <see cref="OnOperator"/>) has
+    /// been resolved to a <c>/Subtype /Form</c> stream and every recursion guard (depth, cycle,
+    /// per-page budget) has passed, raised for every <c>Do</c> that reaches that point, including
+    /// one whose content then fails to decode or is skipped for this run's own content budget
+    /// (#402 round 3: an earlier version of this doc said the call happens only immediately before
+    /// the interpreter recurses into the form's own content, which is false; the decode
+    /// itself, and the budget check ahead of it, both happen AFTER this callback, not before it).
+    /// Matched by exactly one <see cref="OnFormEnd"/> call once the form's own content finishes
+    /// interpreting (or is skipped, in the cases above), even if that content raises further
+    /// nested <see cref="OnFormBegin"/> calls of its own in between.
     /// </summary>
     /// <param name="formDictionary">The form XObject's own stream dictionary.</param>
     /// <param name="formMatrix">The form's <c>/Matrix</c> (ISO 32000-2 §8.10.2 Table 93), or

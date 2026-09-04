@@ -357,10 +357,15 @@ public enum PdfReaderDiagnosticCode
     /// <c>/Contents</c> array (§7.7.3.3 Table 31) did not resolve to a usable stream at all: a
     /// non-stream element, a reference that fails to resolve, or a stream whose filter chain could
     /// not be decoded (including one carrying an image filter, which this interpreter never
-    /// attempts to decode as content). Interpretation of that stream stops at the point of failure;
-    /// operators already reported to the caller's visitor before the failure are kept, and, for a
-    /// multi-stream <c>/Contents</c> array specifically, interpretation resumes with the next
-    /// stream in the array rather than abandoning the whole page.
+    /// attempts to decode as content). Operators already reported to the caller's visitor before
+    /// the failure are kept either way, but the two cases end a different amount of the page's
+    /// content (#402 round 3): an element that fails to resolve or decode is simply skipped, and
+    /// interpretation resumes with the NEXT stream in a multi-stream <c>/Contents</c> array, since
+    /// every element still contributes its own decoded bytes to one buffer built from the whole
+    /// array before interpretation of any of it begins. A lexer or parser failure happens INSIDE
+    /// that already-concatenated buffer, so it ends interpretation for the rest of the page's
+    /// content outright, later <c>/Contents</c> array elements included, not merely the one
+    /// stream the failure happened to fall in.
     /// </summary>
     ContentStreamLexError = 300,
 
@@ -389,13 +394,18 @@ public enum PdfReaderDiagnosticCode
     /// dictionary operand on an operator other than <c>BDC</c>/<c>DP</c> (§7.8.2: "Dictionaries
     /// shall be permitted as operands only by certain specific operators"), a known operator
     /// invoked with the wrong operand count for its own arity (Annex A Table A.1), an operand of
-    /// the wrong type where the arity is otherwise right (a <c>TJ</c> whose single operand is not
-    /// an array, §9.4.3), a <c>Do</c> that occurred inside a text object (§8.2 Figure 9 admits no
-    /// operator of Table 50's XObjects category there), an unbalanced <c>Q</c> with
-    /// no matching <c>q</c> on the graphics-state stack, or an unbalanced <c>EMC</c> with no
-    /// matching <c>BMC</c>/<c>BDC</c> (§14.6.1). An unbalanced <c>q</c> still open at the end of a
-    /// content stream is not reported: nothing downstream of this interpreter needs the graphics
-    /// state restored past the last operator it saw.
+    /// the wrong type where the arity is otherwise right: a <c>TJ</c> whose single operand is not
+    /// an array (§9.4.3); a non-numeric operand to <c>cm</c>, <c>Tc</c>, <c>Tw</c>, <c>Tz</c>,
+    /// <c>TL</c>, <c>Tf</c>'s second, <c>Tr</c>, <c>Ts</c>, <c>Td</c>, <c>TD</c>, or <c>Tm</c>; or a
+    /// non-name operand to <c>Tf</c>'s first or to <c>Do</c> (#402 round 3; every OTHER operator
+    /// this interpreter recognises only forwards its own operands to the visitor untouched, so
+    /// their operand types are the visitor's to type-check, not this interpreter's); a <c>Do</c>
+    /// that occurred inside a text object (§8.2 Figure 9 admits no operator of Table 50's XObjects
+    /// category there), an unbalanced <c>Q</c> with no matching <c>q</c> on the graphics-state
+    /// stack, or an unbalanced <c>EMC</c> with no matching <c>BMC</c>/<c>BDC</c> (§14.6.1). An
+    /// unbalanced <c>q</c> still open at the end of a content stream is not reported: nothing
+    /// downstream of this interpreter needs the graphics state restored past the last operator it
+    /// saw.
     /// </summary>
     OperandStackMalformed = 302,
 
@@ -418,13 +428,19 @@ public enum PdfReaderDiagnosticCode
     FormXObjectCycle = 304,
 
     /// <summary>
-    /// A single page invoked Form XObjects (successful <c>Do</c> recursions, counted across the
-    /// whole page, not per subtree) more than 4096 times. Descent into any further form stops for
-    /// the rest of the page; operators already reported before the budget was reached are kept, and
-    /// interpretation of the page's own (non-form) content continues past the point where the
-    /// budget was hit. Reported through <c>DiagnosticSink.ReportRetained</c>: a condition that ends
-    /// the page's own form recursion for good is worth surfacing even once
-    /// <see cref="PdfReaderOptions.MaxDiagnostics"/> is spent on earlier, unrelated conditions.
+    /// A single page invoked Form XObjects (<c>Do</c> invocations that reached the form, counted
+    /// across the whole page, not per subtree, and including one whose content then failed to
+    /// decode or was skipped for the run's own content budget; #402 round 3 fixed this doc, which
+    /// previously said "successful" recursions, to say so) more than 4096 times. ISO 32000-2 places
+    /// no limit of its own on how deeply or how often a page may invoke <c>Do</c> (§8.10); this cap
+    /// is this reader's own bound against a wide, shallow invocation graph a depth cap alone would
+    /// not catch. Descent
+    /// into any further form stops for the rest of the page; operators already reported before the
+    /// budget was reached are kept, and interpretation of the page's own (non-form) content
+    /// continues past the point where the budget was hit. Reported through
+    /// <c>DiagnosticSink.ReportRetained</c>: a condition that ends the page's own form recursion for
+    /// good is worth surfacing even once <see cref="PdfReaderOptions.MaxDiagnostics"/> is spent on
+    /// earlier, unrelated conditions.
     /// </summary>
     FormXObjectBudgetExceeded = 305,
 
@@ -433,14 +449,19 @@ public enum PdfReaderDiagnosticCode
     /// image's <c>/CS</c> (<c>/ColorSpace</c>) entry, named a resource absent from the applicable
     /// <c>/Resources</c> subdictionary (ISO 32000-2 §7.8.3): the page's own, or, inside a Form
     /// XObject, that form's own <c>/Resources</c> falling back to its parent's when absent
-    /// (§8.10.2). The operator is still reported to the caller's visitor; only the interpreter's own
-    /// attempt to resolve the name failed.
+    /// (§8.10.2). Also covers <c>Do</c> naming an <c>/XObject</c> entry that IS present but is not
+    /// a usable XObject stream (#402 round 3): not an indirect reference, does not resolve to a
+    /// stream, or resolves to one whose <c>/Subtype</c> is missing, is not a name, or names neither
+    /// <c>/Form</c> nor <c>/Image</c> (Table 86). The operator is still reported to the caller's
+    /// visitor either way; only the interpreter's own attempt to resolve or use the name failed.
     /// </summary>
     ResourceMissing = 306,
 
     /// <summary>
-    /// An inline image (ISO 32000-2 §8.9.7) could not be delimited or decoded, or one of its
-    /// dictionary entries was itself invalid: a filter this interpreter never applies to inline
+    /// An inline image (ISO 32000-2 §8.9.7) could not be delimited or decoded, one of its
+    /// dictionary entries was itself invalid, or this run's own resync-probe budget ran out before
+    /// a candidate <c>EI</c> could be confirmed (#402 round 3; see
+    /// <c>ContentInterpreter.ProbeOnce</c>): a filter this interpreter never applies to inline
     /// image data (<c>JBIG2Decode</c>, <c>JPXDecode</c>, or <c>Crypt</c>: §8.9.7 itself excludes
     /// all three from inline-image use), a missing <c>ID</c> or <c>EI</c> operator, a missing,
     /// non-integer, or non-positive <c>/W</c> or <c>/H</c>, a missing <c>/BPC</c> or one whose
@@ -449,18 +470,22 @@ public enum PdfReaderDiagnosticCode
     /// <c>/BPC</c>'s own value to that fixed set; "positive" for <c>/W</c>/<c>/H</c> is this
     /// reader's own requirement, not the table's own wording), an <c>/L</c> present but not an
     /// integer, or negative (§8.9.7, Table 91; PDF 2.0), an <c>/L</c> or computed length past the
-    /// end of the stream, or a computed length (from <c>/L</c> or from the image's own shape) that
-    /// does not land on the following <c>EI</c> operator, in which case this reader retries the EI
-    /// scan before giving up. No inline-image callback is raised for it. When the data was still
-    /// delimited (a disallowed filter, a length that the <c>EI</c> scan recovered) only the image
-    /// is skipped and interpretation of the rest of the content stream continues; when it could not
-    /// be delimited at all (no <c>ID</c>, no <c>EI</c>, a length past the end of the stream)
-    /// interpretation of that stream stops there, since nothing past that point can be
-    /// resynchronised reliably. Reported at most once per page: the sink's dedupe key is (code,
-    /// object, page), and every image on one content stream reports against that same object
-    /// (or, for the page's own top-level content specifically, the same <see langword="null"/>),
-    /// so a second inline image on the same page with its own, different malformation is not
-    /// listed separately.
+    /// end of the stream, a computed length (from <c>/L</c> or from the image's own shape) that
+    /// does not land on the following <c>EI</c> operator, in which case this reader retries the
+    /// <c>EI</c> scan before giving up, or the resync probe spending its whole per-run byte budget
+    /// before it could confirm a candidate <c>EI</c>, in which case that candidate is accepted
+    /// unverified rather than left unresolved. The inline-image callback IS raised whenever the
+    /// image was still delimited by the time this reports, including after an <c>/L</c>-past-the-end
+    /// or did-not-land-on-<c>EI</c> recovery, or a probe-budget-exhausted acceptance; it is not
+    /// raised only when the image could not be delimited at all. When the data was still delimited
+    /// (a disallowed filter, a length the <c>EI</c> scan recovered, or a probe-budget-exhausted
+    /// acceptance) only the image is skipped and interpretation of the rest of the content stream
+    /// continues; when it could not be delimited at all (no <c>ID</c>, no <c>EI</c>) interpretation
+    /// of that stream stops there, since nothing past that point can be resynchronised reliably.
+    /// Reported at most once per page: the sink's dedupe key is (code, object, page), and every
+    /// image on one content stream reports against that same object (or, for the page's own
+    /// top-level content specifically, the same <see langword="null"/>), so a second inline image
+    /// on the same page with its own, different malformation is not listed separately.
     /// </summary>
     InlineImageMalformed = 307,
 

@@ -11,8 +11,8 @@ namespace VellumPdf.Reader.Content;
 /// </summary>
 internal readonly record struct Matrix(double A, double B, double C, double D, double E, double F)
 {
-    /// <summary>The identity matrix <c>[1 0 0 1 0 0]</c>: §8.3.4's own default for <c>/Matrix</c>
-    /// and the CTM at the start of every content stream.</summary>
+    /// <summary>The identity matrix <c>[1 0 0 1 0 0]</c>: the CTM at the start of every content
+    /// stream, and Table 93's own default for a form's <c>/Matrix</c> (§8.10.2).</summary>
     internal static readonly Matrix Identity = new(1, 0, 0, 1, 0, 0);
 
     /// <summary>
