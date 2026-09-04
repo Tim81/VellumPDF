@@ -15,8 +15,9 @@ The PDF reader of **[VellumPdf](https://github.com/Tim81/VellumPDF)**, a depende
   is encrypted rather than guessing at a key. `PdfDocumentReader.WasReconstructed` reports whether
   a given document took this path.
 - Tighten-only resource limits (`PdfReaderOptions.MaxDecodedStreamBytes`,
-  `ReconstructionBudgetMultiplier`) for a caller hardening against a decompression bomb or a file
-  engineered to burn CPU — both can only lower the shipped default, never raise it.
+  `ReconstructionBudgetMultiplier`, `MaxDiagnostics`, `MaxFormXObjectDepth`) for a caller hardening
+  against a decompression bomb, a file engineered to burn CPU, or a deeply nested Form XObject
+  graph: each can only lower the shipped default, never raise it.
 - Exposes the document catalog and digital signatures. Stream decoding is internal for now: the
   public surface reads structure and signatures, not page content — see the roadmap below.
 - Writes a decrypted copy of an encrypted document (`PdfDocumentReader.SaveDecrypted`), refusing a

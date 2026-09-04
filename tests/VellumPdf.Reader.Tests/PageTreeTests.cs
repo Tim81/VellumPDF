@@ -585,6 +585,32 @@ public sealed class PageTreeTests
     }
 
     [Fact]
+    public void RootWithAnOversizedType_reportsOnlyAFixedExcerpt()
+    {
+        // A /Type value has no length bound of its own (Annex C.1), and PageTreeMissing is retained
+        // for the reader's own lifetime, so before this fix the root's own bogus /Type name was
+        // interpolated whole via PdfName.ToString(): the same class of defect DiagnosticExcerpt
+        // exists to bound, found sweeping this PR's other diagnostic sites for it (#402 round 7).
+        var hugeType = new string('A', 1_000_000);
+        var bytes = BuildPdf(
+            rootObjectNumber: 1,
+            (1, "<< /Type /Catalog /Pages 2 0 R >>"),
+            (2, $"<< /Type /{hugeType} /Kids [3 0 R] /Count 1 >>"),
+            (3, "<< /Type /Page /MediaBox [0 0 100 100] >>"));
+
+        using var reader = Open(bytes);
+
+        Assert.Equal(0, reader.PageCount);
+        var d = Assert.Single(reader.Diagnostics, x => x.Code == PdfReaderDiagnosticCode.PageTreeMissing);
+        // The fixed sentence this excerpt sits inside is itself close to 200 chars (the ISO
+        // citation), so the bound here is against the 1,000,000-char /Type value this message used
+        // to carry whole, not against PageTreeMissing's own fixed text.
+        Assert.True(d.Message.Length < 300, $"expected under 300 chars, got {d.Message.Length}.");
+        var expectedExcerpt = $"/Type /{new string('A', 32)}... (1000000 bytes)";
+        Assert.Contains(expectedExcerpt, d.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void RootWithEmptyKids_yieldsZeroPages_withNoDiagnosticAtAll()
     {
         // ISO 32000-2 §7.7.3 does not require a document to have at least one page: an empty tree
@@ -640,6 +666,31 @@ public sealed class PageTreeTests
         Assert.Equal(2, malformed.Count);
         Assert.Contains(malformed, d => d.ObjectNumber == 1);
         Assert.Contains(malformed, d => d.ObjectNumber == 3);
+    }
+
+    [Fact]
+    public void KidWithAnOversizedType_reportsOnlyAFixedExcerpt()
+    {
+        // Same defect as RootWithAnOversizedType_reportsOnlyAFixedExcerpt above, on the OTHER
+        // ClassifyByType Skip site (a non-root node reached through /Kids): the sink's own (code,
+        // object, page) dedupe key does not collapse this against a DIFFERENT object's own report,
+        // so several oversized-/Type kids each retain their own excerpt-bounded copy rather than
+        // sharing amplification the way a page-scoped report would (#402 round 7).
+        var hugeType = new string('B', 1_000_000);
+        var bytes = BuildPdf(
+            rootObjectNumber: 1,
+            (1, "<< /Type /Catalog /Pages 2 0 R >>"),
+            (2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
+            (3, $"<< /Type /{hugeType} >>"));
+
+        using var reader = Open(bytes);
+
+        Assert.Equal(0, reader.PageCount);
+        var d = Assert.Single(reader.Diagnostics, x => x.Code == PdfReaderDiagnosticCode.PageTreeNodeMalformed);
+        Assert.Equal(3, d.ObjectNumber);
+        Assert.True(d.Message.Length < 200, $"expected under 200 chars, got {d.Message.Length}.");
+        var expectedExcerpt = $"Object declares /{new string('B', 32)}... (1000000 bytes)";
+        Assert.Contains(expectedExcerpt, d.Message, StringComparison.Ordinal);
     }
 
     [Fact]

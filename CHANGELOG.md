@@ -62,6 +62,37 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   leaf and node limits each end the walk the instant they are reported, so at most one of that
   pair, plus the depth code's first occurrence, is ever retained in the same walk. Computed
   lazily, on first access, and cached for the reader's lifetime. (#98)
+- **A new option, `PdfReaderOptions.MaxFormXObjectDepth`, and ten new `PdfReaderDiagnosticCode`
+  values in a `3xx` block reserved for content streams.** The reader now has an internal
+  content-stream interpreter (ISO 32000-2 §7.8.2), shared machinery the two extraction milestones
+  still ahead of it (text, then images) will build on; a caller cannot invoke it directly in this
+  release, so the ten codes below cannot yet be reported to one. `MaxFormXObjectDepth` (default 32,
+  tighten-only like the three resource limits it joins) is the one part of this a caller sets
+  today: a ceiling on Form XObject recursion depth (§8.10) the interpreter enforces once something
+  does call it, reporting `FormXObjectDepthExceeded` and continuing rather than recursing
+  unboundedly. `Do` on a Form XObject brackets the form's own content in an implicit save and
+  restore of the graphics state, marked-content nesting, and BX/EX compatibility depth, mirroring
+  §8.10.1's own steps a) and e), so nothing the form does to any of the three leaks into the page
+  that invoked it. The rest of the interpreter follows the same policy throughout: a malformed or
+  unsupported construct is reported, not thrown, and interpretation continues past it. That is
+  what the other nine codes describe: `ContentStreamLexError`, `UnknownOperator` (`Warning`
+  severity: an operator this reader skipped is a best-effort reading, not proof the output is
+  correct), `OperandStackMalformed` for a producer-side malformation (also covering a numeric
+  literal past this reader's own `long`/`double` range, since what gets dropped there is the operand
+  itself, not an operator or a push), `ContentLimitExceeded` for this reader's own processing
+  ceilings instead (an operand-count, array-or-dictionary-operand token, `q`-depth, or
+  marked-content-depth cap, plus two more for an inline image's dictionary: a value exceeding the
+  same token cap, or the dictionary itself exceeding 64 key-value pairs), `FormXObjectCycle`,
+  `FormXObjectBudgetExceeded`, `ResourceMissing`, `InlineImageMalformed`, and
+  `ContentStreamTooLarge` (one 64 MiB decoded-content budget per page, shared between its own
+  `/Contents` and every Form XObject it draws; each invocation of a form counts again, since the
+  interpretation cost this bounds scales with how many times a form is drawn), charged against the
+  budget as each `/Contents` element or form invocation decodes rather than only once all of them
+  already have, so a `/Contents` array naming the same oversized stream many times cannot hold every
+  decode in memory before the cap gets a chance to stop it. `Do` on a Form XObject also concatenates
+  the form's own `/Matrix` into the graphics state's CTM (§8.10.1 b) before interpreting its
+  content, so a caller reading the CTM from inside the form's own content sees the composed value,
+  not the invoker's own CTM with the form's matrix left for it to apply separately. (#98)
 
 ### Changed
 

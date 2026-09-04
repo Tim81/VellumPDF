@@ -93,6 +93,16 @@ internal static class PageTreeWalker
     // with no usable /Kids of its own: contributes zero children.
     private static readonly PdfArray EmptyKids = new();
 
+    // A /Type value has no length bound of its own (Annex C.1: "In general, this PDF standard does
+    // not restrict the size or quantity of things described in the PDF file format"), and both
+    // diagnostics that quote it (PageTreeMissing on the tree's own root, PageTreeNodeMalformed on
+    // any other node) are retained for the reader's own lifetime (DiagnosticSink), so interpolating
+    // an oversized /Type name whole would turn one attacker- or corruption-controlled byte run into
+    // a comparably sized permanent allocation, once per (code, object) the sink's own dedupe key
+    // admits: the same class of defect DiagnosticExcerpt exists to bound (#402).
+    private static string QuoteType(PdfName? type) =>
+        type is null ? "no /Type" : "/" + DiagnosticExcerpt.Quote(type.Value);
+
     /// <summary>Walks <paramref name="reader"/>'s page tree, reporting shape problems to
     /// <paramref name="diagnostics"/> along the way, and returns the pages found in tree order.</summary>
     internal static List<PdfReadPage> Walk(PdfDocumentReader reader, DiagnosticSink diagnostics)
@@ -158,7 +168,9 @@ internal static class PageTreeWalker
         var rootKind = ClassifyByType(reader, cache, rootDict, rootKidsArray, out var rootType);
         if (rootKind != NodeKind.Node)
         {
-            var found = rootType is not null ? $"/Type {rootType}" : "no /Type and no /Kids array";
+            var found = rootType is not null
+                ? $"/Type {QuoteType(rootType)}"
+                : "no /Type and no /Kids array";
             diagnostics.Report(
                 PdfReaderDiagnosticCode.PageTreeMissing,
                 $"The page tree root is not a page-tree node ({found}); ISO 32000-2 §7.7.2 Table "
@@ -480,7 +492,7 @@ internal static class PageTreeWalker
             case NodeKind.Skip:
                 diagnostics.Report(
                     PdfReaderDiagnosticCode.PageTreeNodeMalformed,
-                    $"Object declares {type} where a page-tree node or page object was expected "
+                    $"Object declares {QuoteType(type)} where a page-tree node or page object was expected "
                     + "(ISO 32000-2 §7.7.3.2 Table 30, §7.7.3.3 Table 31); it was skipped.",
                     NullIfZero(objectNumber));
                 kids = EmptyKids;

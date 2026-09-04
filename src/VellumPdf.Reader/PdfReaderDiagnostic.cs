@@ -349,6 +349,219 @@ public enum PdfReaderDiagnosticCode
     /// </summary>
     PageTreeNodeLimitExceeded = 207,
 
+    // ── 3xx: content streams ────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// The content-stream interpreter (ISO 32000-2 §7.8.2) hit an <see cref="InvalidDataException"/>
+    /// from the lexer or object parser partway through a page's content, or a member of the page's
+    /// <c>/Contents</c> array (§7.7.3.3 Table 31) did not resolve to a usable stream at all: a
+    /// non-stream element, a reference that fails to resolve, or a stream whose filter chain could
+    /// not be decoded (including one carrying an image filter, which this interpreter never
+    /// attempts to decode as content). Operators already reported to the caller's visitor before
+    /// the failure are kept either way, but the two cases end a different amount of the page's
+    /// content (#402 round 3): an element that fails to resolve or decode is skipped, and
+    /// interpretation resumes with the NEXT stream in a multi-stream <c>/Contents</c> array, since
+    /// every element still contributes its own decoded bytes to one buffer built from the whole
+    /// array before interpretation of any of it begins. A lexer or parser failure happens INSIDE
+    /// that already-concatenated buffer, so it ends interpretation for the rest of the page's
+    /// content outright, later <c>/Contents</c> array elements included, not merely the one
+    /// stream the failure happened to fall in.
+    /// <para>
+    /// Two further cases report this same code but concern neither a <c>/Contents</c> element nor
+    /// the page's own concatenated buffer (#402 round 4): a Form XObject's own content stream
+    /// (§8.10) failing to decode, reported against that form's own object number and skipping only
+    /// that one <c>Do</c> invocation's descent, the rest of the page's content (and any sibling
+    /// invocation of the same form) unaffected; and an <see cref="InvalidDataException"/> reaching
+    /// <c>ContentInterpreter.Run</c>'s own outer catch from a malformed indirect-reference chain met
+    /// while resolving a resource, XObject, or nested Form XObject, which ends interpretation of the
+    /// whole page (nothing narrower than the page itself is available to resume from at that point).
+    /// </para>
+    /// </summary>
+    ContentStreamLexError = 300,
+
+    /// <summary>
+    /// A content-stream keyword token is not one of the 73 operators ISO 32000-2 Annex A Table A.1
+    /// lists, and it did not appear inside a <c>BX</c>/<c>EX</c> compatibility section (§7.8.2). ISO
+    /// 32000-2 says "an error shall occur" for this case outside such a section; this reader instead
+    /// reports it and continues, the same notify-and-continue choice every other diagnostic in this
+    /// channel makes. Reported at most once per page, because the sink's dedupe key is
+    /// (code, object, page) and this report carries no object number: a second distinct
+    /// unrecognised name on the same page is deduped away rather than reported. Silent inside a
+    /// compatibility section, per Table 33's own text: "Unrecognised operators ... shall be ignored
+    /// without error."
+    /// </summary>
+    UnknownOperator = 301,
+
+    /// <summary>
+    /// A content stream's operand-stack discipline broke down in one of several ways this interpreter
+    /// groups under one code rather than one each, since every case has the same remedy: drop the
+    /// offending operator (or, for an unbalanced <c>Q</c>/<c>EMC</c>, drop the pop) and keep
+    /// interpreting. Every case here is producer-side except a numeric literal whose value exceeds
+    /// this reader's own <see cref="long"/> or <see cref="double"/> range, which is reported here,
+    /// rather than as <see cref="ContentLimitExceeded"/>, because what gets dropped is the operand
+    /// itself, not an operator or a push; see <see cref="ContentLimitExceeded"/> for the cases that
+    /// are this reader's own processing ceiling instead. Covers: a number token that does not parse,
+    /// is not finite, or carries a second sign character (<c>--5</c>, <c>-+5</c>: §7.3.3 allows only
+    /// "an optional sign"), a dictionary operand on an operator other than <c>BDC</c>/<c>DP</c>
+    /// (§7.8.2: "Dictionaries shall be permitted as operands only by certain specific operators"), a
+    /// known operator invoked with the wrong operand count for its own arity (Annex A Table A.1), an
+    /// operand of the wrong type where the arity is otherwise right: a <c>TJ</c> whose single operand
+    /// is not an array (§9.4.3); a non-numeric operand to <c>cm</c>, <c>Tc</c>, <c>Tw</c>, <c>Tz</c>,
+    /// <c>TL</c>, <c>Tf</c>'s second, <c>Tr</c>, <c>Ts</c>, <c>Td</c>, <c>TD</c>, or <c>Tm</c>; a
+    /// non-name operand to <c>Tf</c>'s first, to <c>Do</c>, or to
+    /// <c>gs</c>/<c>cs</c>/<c>CS</c>/<c>sh</c> (this reader reads that operand for its own resource
+    /// lookup, the same reason <c>Do</c>'s own name operand is checked); a non-string operand to
+    /// <c>'</c>, or a non-numeric first or second or non-string third operand to <c>"</c> (Table 107)
+    /// (#402 rounds 3 and 4; every operator this interpreter recognises but does not name above only
+    /// forwards its own operands to the visitor untouched, so their operand types are the visitor's to
+    /// type-check, not this interpreter's); a <c>Do</c> that occurred inside a text object (§8.2
+    /// Figure 9 admits no operator of Table 50's XObjects category there), an unbalanced <c>Q</c> with
+    /// no matching <c>q</c> on the graphics-state stack, or an unbalanced <c>EMC</c> with no matching
+    /// <c>BMC</c>/<c>BDC</c> (§14.6.1). An unbalanced <c>q</c> still open at the end of a content
+    /// stream is not reported: nothing downstream of this interpreter needs the graphics state
+    /// restored past the last operator it saw.
+    /// </summary>
+    OperandStackMalformed = 302,
+
+    /// <summary>
+    /// A Form XObject <c>Do</c> (ISO 32000-2 §8.10) recursed past
+    /// <see cref="PdfReaderOptions.MaxFormXObjectDepth"/> levels deep. Descent into that subtree
+    /// stops; the <c>Do</c> operator itself is still reported to the caller's visitor, only the
+    /// recursive walk into the form's own content is skipped.
+    /// </summary>
+    FormXObjectDepthExceeded = 303,
+
+    /// <summary>
+    /// A Form XObject's own content, directly or through a chain of nested <c>Do</c> invocations,
+    /// draws itself again: the same indirect object number already open on the interpreter's own
+    /// recursion stack (ISO 32000-2 §8.10 describes no cycle of this kind as legal; a form's content
+    /// is ordinary content that may invoke any XObject, so nothing in the format itself prevents a
+    /// producer from writing one). Reported once per cycle found; the recursive invocation that
+    /// would close the cycle is skipped rather than recursing forever.
+    /// </summary>
+    FormXObjectCycle = 304,
+
+    /// <summary>
+    /// A single page invoked Form XObjects (<c>Do</c> invocations that reached the form, counted
+    /// across the whole page, not per subtree, and including one whose content then failed to
+    /// decode or was skipped for the run's own content budget (#402 round 3)) more than 4096
+    /// times. ISO 32000-2 places no limit of its own on how deeply or how often a page may invoke
+    /// <c>Do</c> (§8.10); this cap is this reader's own bound against a wide, shallow invocation
+    /// graph a depth cap alone would not catch. Descent into any further form stops for the rest of
+    /// the page; operators already reported before the budget was reached are kept, and
+    /// interpretation of the page's own (non-form) content continues past the point where the
+    /// budget was hit. Reported through <c>DiagnosticSink.ReportRetained</c>: a condition that ends
+    /// the page's own form recursion for good is worth surfacing even once
+    /// <see cref="PdfReaderOptions.MaxDiagnostics"/> is spent on earlier, unrelated conditions.
+    /// </summary>
+    FormXObjectBudgetExceeded = 305,
+
+    /// <summary>
+    /// A <c>Do</c>, <c>gs</c>, <c>Tf</c>, <c>cs</c>/<c>CS</c>, or <c>sh</c> operator, or an inline
+    /// image's <c>/CS</c> (<c>/ColorSpace</c>) entry, named a resource absent from the applicable
+    /// <c>/Resources</c> subdictionary (ISO 32000-2 §7.8.3): the page's own, or, inside a Form
+    /// XObject, that form's own <c>/Resources</c> falling back to its parent's when absent
+    /// (§8.10.2). Also covers <c>Do</c> naming an <c>/XObject</c> entry that IS present but is not
+    /// a usable XObject stream (#402 round 3): not an indirect reference, does not resolve to a
+    /// stream, or resolves to one whose <c>/Subtype</c> is missing, is not a name, or names neither
+    /// <c>/Form</c> nor <c>/Image</c> (Table 86). The operator is still reported to the caller's
+    /// visitor either way; only the interpreter's own attempt to resolve or use the name failed.
+    /// </summary>
+    ResourceMissing = 306,
+
+    /// <summary>
+    /// An inline image (ISO 32000-2 §8.9.7) could not be delimited, one of its dictionary entries
+    /// was itself invalid, or this run's own resync-probe budget ran out before a candidate
+    /// <c>EI</c> could be confirmed (#402 round 3; see <c>ContentInterpreter.ProbeOnce</c>): a
+    /// filter this interpreter never applies to inline image data (<c>JBIG2Decode</c>,
+    /// <c>JPXDecode</c>, or <c>Crypt</c>: §8.9.7 itself excludes all three from inline-image use),
+    /// a missing <c>ID</c> or <c>EI</c> operator, a missing, non-integer, or non-positive <c>/W</c>
+    /// or <c>/H</c>, a missing <c>/BPC</c> or one whose value is not 1, 2, 4, or 8 (or, from PDF
+    /// 1.5, 16) where the image's shape requires one to compute the data length (Table 87 types
+    /// <c>/W</c> and <c>/H</c> as integer and restricts <c>/BPC</c>'s own value to that fixed set;
+    /// "positive" for <c>/W</c>/<c>/H</c> is this reader's own requirement, not the table's own
+    /// wording), a dictionary value that is an indirect reference, which §7.8.2 does not permit in
+    /// a content stream (that entry is ignored; a reference nested inside an array or dictionary
+    /// value is not examined), an <c>/L</c> present but not an integer, or negative (§8.9.7, Table
+    /// 91; PDF 2.0), an <c>/L</c> naming a length past the end of the stream (a computed length
+    /// that overruns the stream instead falls back to the <c>EI</c> scan below with no report of
+    /// its own), a computed length (from <c>/L</c> or from the image's own shape) that does not
+    /// land on the following <c>EI</c> operator, in which case this reader retries the <c>EI</c>
+    /// scan before giving up, or the resync probe spending its whole per-run byte budget before it
+    /// could confirm a candidate <c>EI</c>, in which case that candidate is accepted unverified
+    /// rather than left unresolved. The inline-image callback is raised whenever the image was
+    /// delimited AND its filter chain is one this reader accepts on an inline image, including
+    /// after an <c>/L</c>-past-the-end or did-not-land-on-<c>EI</c> recovery, or a
+    /// probe-budget-exhausted acceptance (#402 round 4: a disallowed filter delimits the image just
+    /// as successfully as an accepted one, so "was delimited" alone is not what decides whether the
+    /// callback fires). A disallowed filter (<c>JBIG2Decode</c>, <c>JPXDecode</c>, or <c>Crypt</c>)
+    /// still delimits the image, so interpretation of the rest of the content stream continues past
+    /// its <c>EI</c>, but skips the callback for that image; when the image could not be delimited
+    /// at all (no <c>ID</c>, no <c>EI</c>) interpretation of that stream stops there instead, since
+    /// nothing past that point can be resynchronised reliably.
+    /// Reported at most once per content stream (the page's own content, or one Form XObject) per
+    /// page: the sink's dedupe key is (code, object, page), and every image on one content stream
+    /// reports against that stream's own object number (or, for the page's own top-level content
+    /// specifically, <see langword="null"/>), so a second report of this code against the same
+    /// content stream, whether from another image or from a second malformation of the same one,
+    /// is not listed separately, but the same page's own content and each Form XObject it draws
+    /// dedupe independently, since each carries a distinct object number here: a page invoking two
+    /// forms that each carry their own malformed inline image lists two reports (#402 round 4).
+    /// </summary>
+    InlineImageMalformed = 307,
+
+    /// <summary>
+    /// This run's combined decoded-content budget, 64 MiB shared across the page's own
+    /// <c>/Contents</c> (ISO 32000-2 §7.7.3.3 Table 31) and every Form XObject it draws (§8.10), was
+    /// exceeded. <c>/Contents</c> is concatenated across every stream in its array with a newline
+    /// inserted between streams so a token is never glued across a stream boundary; a Form XObject
+    /// is counted again on every invocation, not once per distinct form object, since the
+    /// interpretation work a repeatedly-drawn form costs scales with invocations, not with how many
+    /// distinct form objects a page names. Interpretation proceeds up to the point the budget ran
+    /// out and stops there; operators reported before that point are kept. Reported through
+    /// <c>DiagnosticSink.ReportRetained</c>, and at most once per run: the truncation this reports
+    /// also drives the run's own remaining budget to exactly zero, so no later stream in the same
+    /// run can trigger a second report.
+    /// </summary>
+    ContentStreamTooLarge = 308,
+
+    /// <summary>
+    /// A content stream hit one of this reader's own processing ceilings rather than being
+    /// malformed by its producer: more than 64 operands accumulated before an operator (§7.8.2
+    /// gives an operator's own operand count no declared bound of its own), an array or dictionary
+    /// operand (a <c>TJ</c> array, §9.4.3, being the usual one) carrying more than 8192 tokens
+    /// counted at every nesting depth, more than 64 nested <c>q</c> saves, marked-content nesting
+    /// (§14.6.1) past the same 64-deep cap, an inline image dictionary (§8.9.7) value that is an
+    /// array or dictionary carrying more than 8192 tokens by that same count, or an inline image
+    /// dictionary carrying more than 64 key-value pairs. Split out from
+    /// <see cref="OperandStackMalformed"/> (#402) so a caller can tell "this file hit a limit of
+    /// this reader" apart from "this file is malformed", a distinction the two codes sharing one
+    /// value made impossible to draw.
+    /// <para>
+    /// Recovery differs by which ceiling fired. For the operand-count, composite-token, and depth
+    /// ceilings, the offending operator, or push, is dropped and interpretation continues, the
+    /// same recovery <see cref="OperandStackMalformed"/> uses. For the two inline-image ceilings,
+    /// the image itself is dropped and interpretation of that content stream (the page's content,
+    /// or the one Form XObject being drawn) ends there instead, the way
+    /// <see cref="InlineImageMalformed"/> ends it when an image cannot be delimited at all: the
+    /// drop happens before the image's data has been delimited, so nothing past that point can be
+    /// resynchronised reliably either. A <c>q</c>, <c>BMC</c>, or <c>BDC</c> dropped for any
+    /// ceiling other than the two inline-image ones still consumes its matching <c>Q</c> or
+    /// <c>EMC</c> silently, so a conformant file is not also charged an
+    /// <see cref="OperandStackMalformed"/> for this reader's own ceiling.
+    /// </para>
+    /// <para>
+    /// The inline image dictionary's 64-pair cap rejects nothing §8.9.7 itself requires: §8.9.7
+    /// says entries other than the ones Table 91 lists "shall be ignored" and sets no count, so a
+    /// dictionary of 65 ignorable entries is not, by that clause, non-conformant. A dictionary
+    /// that uses only the keys Table 91 defines, under their full names or the abbreviations the
+    /// same table gives them, has at most 21 pairs, and Table 92 adds abbreviations for values
+    /// (colour spaces and filters), not further keys. The cap exists to bound how much work a
+    /// hostile dictionary can make this reader do per pair, not to reject a legal one.
+    /// </para>
+    /// </summary>
+    ContentLimitExceeded = 309,
+
     // ── 9xx: reserved ───────────────────────────────────────────────────────────────────────────
 
     /// <summary>
@@ -408,6 +621,16 @@ internal static class PdfReaderDiagnosticSeverities
         PdfReaderDiagnosticCode.PageAttributeInvalid => PdfReaderDiagnosticSeverity.Warning,
         PdfReaderDiagnosticCode.PageTreeNodeMalformed => PdfReaderDiagnosticSeverity.Warning,
         PdfReaderDiagnosticCode.PageTreeNodeLimitExceeded => PdfReaderDiagnosticSeverity.Warning,
+        PdfReaderDiagnosticCode.ContentStreamLexError => PdfReaderDiagnosticSeverity.Warning,
+        PdfReaderDiagnosticCode.UnknownOperator => PdfReaderDiagnosticSeverity.Warning,
+        PdfReaderDiagnosticCode.OperandStackMalformed => PdfReaderDiagnosticSeverity.Warning,
+        PdfReaderDiagnosticCode.FormXObjectDepthExceeded => PdfReaderDiagnosticSeverity.Warning,
+        PdfReaderDiagnosticCode.FormXObjectCycle => PdfReaderDiagnosticSeverity.Warning,
+        PdfReaderDiagnosticCode.FormXObjectBudgetExceeded => PdfReaderDiagnosticSeverity.Warning,
+        PdfReaderDiagnosticCode.ResourceMissing => PdfReaderDiagnosticSeverity.Warning,
+        PdfReaderDiagnosticCode.InlineImageMalformed => PdfReaderDiagnosticSeverity.Warning,
+        PdfReaderDiagnosticCode.ContentStreamTooLarge => PdfReaderDiagnosticSeverity.Warning,
+        PdfReaderDiagnosticCode.ContentLimitExceeded => PdfReaderDiagnosticSeverity.Warning,
         PdfReaderDiagnosticCode.DiagnosticsSuppressed => PdfReaderDiagnosticSeverity.Warning,
         _ => throw new UnreachableException($"No severity is mapped for {code}."),
     };
