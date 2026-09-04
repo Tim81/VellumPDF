@@ -470,35 +470,35 @@ public enum PdfReaderDiagnosticCode
     ResourceMissing = 306,
 
     /// <summary>
-    /// An inline image (ISO 32000-2 §8.9.7) could not be delimited, one of its dictionary entries was
-    /// itself invalid, or this run's own resync-probe budget ran out before a candidate <c>EI</c>
-    /// could be confirmed (#402 round 3; see <c>ContentInterpreter.ProbeOnce</c>): a filter this
-    /// interpreter never applies to inline image data (<c>JBIG2Decode</c>, <c>JPXDecode</c>, or
-    /// <c>Crypt</c>: §8.9.7 itself excludes all three from inline-image use), a missing <c>ID</c> or
-    /// <c>EI</c> operator, a missing, non-integer, or non-positive <c>/W</c> or <c>/H</c>, a missing
-    /// <c>/BPC</c> or one whose value is not 1, 2, 4, or 8 (or, from PDF 1.5, 16) where the image's
-    /// shape requires one to compute the data length (Table 87 types <c>/W</c> and <c>/H</c> as
-    /// integer and restricts <c>/BPC</c>'s own value to that fixed set; "positive" for
-    /// <c>/W</c>/<c>/H</c> is this reader's own requirement, not the table's own wording), a
-    /// dictionary value that is an indirect reference, which §7.8.2 does not permit in a content
-    /// stream, in which case that entry is ignored, an <c>/L</c> present but not an integer, or
-    /// negative (§8.9.7, Table 91; PDF 2.0), an <c>/L</c>
-    /// naming a length past the end of the stream (a computed length that overruns the stream instead
-    /// falls back to the <c>EI</c> scan below with no report of its own), a computed length (from
-    /// <c>/L</c> or from the image's own shape) that does not land on the following <c>EI</c>
-    /// operator, in which case this reader retries the <c>EI</c> scan before giving up, or the resync
-    /// probe spending its whole per-run byte budget before it could confirm a candidate <c>EI</c>, in
-    /// which case that candidate is accepted unverified rather than left unresolved. The inline-image
-    /// callback is raised whenever the image was delimited AND its filter chain is one this reader
-    /// accepts on an inline image, including after an <c>/L</c>-past-the-end or
-    /// did-not-land-on-<c>EI</c> recovery, or a probe-budget-exhausted acceptance (#402 round 4: a
-    /// disallowed filter delimits the image just as successfully as an accepted one, so "was
-    /// delimited" alone is not what decides whether the callback fires). A disallowed filter
-    /// (<c>JBIG2Decode</c>, <c>JPXDecode</c>, or <c>Crypt</c>) still delimits the image, so
-    /// interpretation of the rest of the content stream continues past its <c>EI</c>, but skips the
-    /// callback for that image; when the image could not be delimited at all (no <c>ID</c>, no
-    /// <c>EI</c>) interpretation of that stream stops there instead, since nothing past that point can
-    /// be resynchronised reliably.
+    /// An inline image (ISO 32000-2 §8.9.7) could not be delimited, one of its dictionary entries
+    /// was itself invalid, or this run's own resync-probe budget ran out before a candidate
+    /// <c>EI</c> could be confirmed (#402 round 3; see <c>ContentInterpreter.ProbeOnce</c>): a
+    /// filter this interpreter never applies to inline image data (<c>JBIG2Decode</c>,
+    /// <c>JPXDecode</c>, or <c>Crypt</c>: §8.9.7 itself excludes all three from inline-image use),
+    /// a missing <c>ID</c> or <c>EI</c> operator, a missing, non-integer, or non-positive <c>/W</c>
+    /// or <c>/H</c>, a missing <c>/BPC</c> or one whose value is not 1, 2, 4, or 8 (or, from PDF
+    /// 1.5, 16) where the image's shape requires one to compute the data length (Table 87 types
+    /// <c>/W</c> and <c>/H</c> as integer and restricts <c>/BPC</c>'s own value to that fixed set;
+    /// "positive" for <c>/W</c>/<c>/H</c> is this reader's own requirement, not the table's own
+    /// wording), a dictionary value that is an indirect reference, which §7.8.2 does not permit in
+    /// a content stream (that entry is ignored; a reference nested inside an array or dictionary
+    /// value is not examined), an <c>/L</c> present but not an integer, or negative (§8.9.7, Table
+    /// 91; PDF 2.0), an <c>/L</c> naming a length past the end of the stream (a computed length
+    /// that overruns the stream instead falls back to the <c>EI</c> scan below with no report of
+    /// its own), a computed length (from <c>/L</c> or from the image's own shape) that does not
+    /// land on the following <c>EI</c> operator, in which case this reader retries the <c>EI</c>
+    /// scan before giving up, or the resync probe spending its whole per-run byte budget before it
+    /// could confirm a candidate <c>EI</c>, in which case that candidate is accepted unverified
+    /// rather than left unresolved. The inline-image callback is raised whenever the image was
+    /// delimited AND its filter chain is one this reader accepts on an inline image, including
+    /// after an <c>/L</c>-past-the-end or did-not-land-on-<c>EI</c> recovery, or a
+    /// probe-budget-exhausted acceptance (#402 round 4: a disallowed filter delimits the image just
+    /// as successfully as an accepted one, so "was delimited" alone is not what decides whether the
+    /// callback fires). A disallowed filter (<c>JBIG2Decode</c>, <c>JPXDecode</c>, or <c>Crypt</c>)
+    /// still delimits the image, so interpretation of the rest of the content stream continues past
+    /// its <c>EI</c>, but skips the callback for that image; when the image could not be delimited
+    /// at all (no <c>ID</c>, no <c>EI</c>) interpretation of that stream stops there instead, since
+    /// nothing past that point can be resynchronised reliably.
     /// Reported at most once per content stream (the page's own content, or one Form XObject) per
     /// page: the sink's dedupe key is (code, object, page), and every image on one content stream
     /// reports against that stream's own object number (or, for the page's own top-level content

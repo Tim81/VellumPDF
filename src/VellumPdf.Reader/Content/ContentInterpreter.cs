@@ -283,13 +283,13 @@ internal sealed class ContentInterpreter
             // must not stay pinned on this interpreter for the rest of its own lifetime, since an
             // interpreter reused only after a long delay, or never reused, would otherwise keep the
             // LAST Run's content alive regardless of the entry resets above (#402 round 7).
-            // _openForms holds object numbers only and _operandOverflow is a bool, and both are
-            // reset on entry like every other value-typed field (_bxDepth, _formDepth, the probe
-            // budget); they are cleared here as well so the exit state matches the entry state
-            // rather than because either can pin content. _textState.BeginText() restores the two
-            // matrices §9.4.1 scopes to a text object for the same symmetry. ProbeBytesConsumed is
-            // left alone: a test reads it after Run returns as telemetry, not as content-derived
-            // state.
+            // _openForms holds object numbers only and _operandOverflow is a bool; neither can pin
+            // content, and both are reset on entry alongside the value-typed fields (_bxDepth,
+            // _formDepth, the probe budget). They are cleared here as well so the exit state
+            // matches the entry state. _textState.BeginText() restores the two matrices this reader
+            // tracks of the three §9.4.1 scopes to a text object (Tm, Tlm, and the derived Trm) for
+            // the same symmetry. ProbeBytesConsumed and ContentStreamsDecoded are left alone: tests
+            // read both after Run returns as telemetry, not as content-derived state.
             _operands.Clear();
             _operandOverflow = false;
             _gsStack.Clear();
@@ -1844,7 +1844,11 @@ internal sealed class ContentInterpreter
                 // or an existing missing-entry diagnostic, so the entry is treated as absent
                 // rather than dropping the whole image over it: /F 5 0 R falls through to the
                 // unfiltered-data-length computation from /W /H /BPC /CS, and /W 5 0 R becomes a
-                // missing /W, which those existing paths already report.
+                // missing /W, which those existing paths already report. Only the value itself is
+                // tested: a reference nested inside an array or dictionary value (/F [5 0 R]) is
+                // stored as parsed and drops out downstream, since CollectFilterNames keeps name
+                // elements only and ResolveComponentCount never resolves an /Indexed base, so it
+                // changes no output and draws no report.
                 if (value is PdfIndirectReference)
                 {
                     diagnostics.Report(
