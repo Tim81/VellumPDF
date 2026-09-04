@@ -60,7 +60,7 @@ public sealed class PdfLexerContentModeTests
     [Fact]
     public void ContentStreamMode_lexesADictionaryEndImmediatelyAfterALoneGreaterThan()
     {
-        // "> >>": a lone '>' keyword token, then a real dictionary-end token right after it.
+        // "> >>": a lone '>' keyword token, then a two-byte '>>' dictionary-end token right after it.
         var lexer = new PdfLexer(Encoding.ASCII.GetBytes("> >>"), contentStreamMode: true);
 
         var first = lexer.NextToken();

@@ -46,7 +46,10 @@ internal interface IContentVisitor
     /// abbreviation already expanded (e.g. <c>/W</c> to <c>/Width</c>, <c>/CS /G</c> to
     /// <c>/ColorSpace /DeviceGray</c>).</param>
     /// <param name="data">The image's own (still filtered, undecoded) sample data: the bytes between
-    /// <c>ID</c> and <c>EI</c>, excluding the delimiting white space.</param>
+    /// <c>ID</c> and <c>EI</c>, excluding the delimiting white space. A slice over the interpreter's
+    /// own content buffer (up to the 64 MiB per-run budget), valid only for the duration of this
+    /// callback, so a callback that needs it after returning must copy it out, not hold the slice:
+    /// holding it pins the whole buffer alive, not just this image's own share of it.</param>
     /// <param name="offset">The byte offset of the <c>BI</c> operator that began this image.</param>
     void OnInlineImage(PdfDictionary dictionary, ReadOnlyMemory<byte> data, int offset);
 
@@ -56,10 +59,9 @@ internal interface IContentVisitor
     /// per-page budget) has passed, raised for every <c>Do</c> that reaches that point, including
     /// one whose content then fails to decode or is skipped for this run's own content budget: the
     /// decode itself, and the budget check ahead of it, both happen AFTER this callback runs, not
-    /// before it (#402 round 3).
-    /// Matched by exactly one <see cref="OnFormEnd"/> call once the form's own content finishes
-    /// interpreting (or is skipped, in the cases above), even if that content raises further
-    /// nested <see cref="OnFormBegin"/> calls of its own in between.
+    /// before it (#402 round 3). Matched by exactly one <see cref="OnFormEnd"/> call once the
+    /// form's own content finishes interpreting (or is skipped, in the cases above), even if that
+    /// content raises further nested <see cref="OnFormBegin"/> calls of its own in between.
     /// </summary>
     /// <param name="formDictionary">The form XObject's own stream dictionary.</param>
     /// <param name="formMatrix">The form's <c>/Matrix</c> (ISO 32000-2 §8.10.2 Table 93), or

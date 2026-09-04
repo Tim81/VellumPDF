@@ -63,6 +63,40 @@ public sealed class ContentInterpreterTests
         return ms.ToArray();
     }
 
+    /// <summary>Same layout as <see cref="BuildPdf"/>, but writes each object's bytes verbatim
+    /// rather than through the <c>"N 0 obj\n{dict}\nendobj\n"</c> template: needed when a fixture
+    /// deliberately writes an object whose own header does not parse (#402 round 7).</summary>
+    private static byte[] BuildPdfWithRawObjectBytes(
+        int rootObjectNumber, params (int Num, byte[] Bytes)[] objects)
+    {
+        var ms = new MemoryStream();
+        void W(string s) => ms.Write(Encoding.ASCII.GetBytes(s));
+
+        W("%PDF-1.7\n");
+
+        var maxNum = objects.Max(o => o.Num);
+        var offsets = new int?[maxNum + 1];
+        foreach (var obj in objects.OrderBy(o => o.Num))
+        {
+            offsets[obj.Num] = (int)ms.Position;
+            ms.Write(obj.Bytes);
+        }
+
+        var xrefOffset = (int)ms.Position;
+        W($"xref\n0 {maxNum + 1}\n");
+        W("0000000000 65535 f \n");
+        for (var i = 1; i <= maxNum; i++)
+        {
+            W(offsets[i] is { } offset
+                ? $"{offset:D10} 00000 n \n"
+                : "0000000000 65535 f \n");
+        }
+        W($"trailer\n<< /Size {maxNum + 1} /Root {rootObjectNumber} 0 R >>\n");
+        W($"startxref\n{xrefOffset}\n%%EOF\n");
+
+        return ms.ToArray();
+    }
+
     private static byte[] Flate(byte[] raw)
     {
         var ms = new MemoryStream();
@@ -128,6 +162,56 @@ public sealed class ContentInterpreterTests
             FormBegins.Add((formDictionary, formMatrix, boundingBox, objectNumber, offset));
 
         public void OnFormEnd(int objectNumber) => FormEnds.Add(objectNumber);
+    }
+
+    /// <summary>A copy of the <see cref="ContentInterpreter.GraphicsState"/>/
+    /// <see cref="ContentInterpreter.TextState"/> field values as of one <c>OnOperator</c> call.
+    /// <see cref="Run"/>'s own exit-time reset (#402 round 7) means neither is readable once
+    /// <see cref="ContentInterpreter.Run"/> itself returns, so a test that wants "the state after
+    /// the page's own last operator" reads it here instead, captured DURING that operator's own
+    /// callback the way <see cref="IContentVisitor"/>'s own class doc already says both are meant
+    /// to be read.</summary>
+    private sealed record ContentStateSnapshot(
+        Matrix Ctm, double CharSpacing, double WordSpacing, double HorizontalScaling, double Leading,
+        PdfObject? Font, double FontSize, int RenderMode, double Rise, Matrix TextMatrix,
+        Matrix TextLineMatrix);
+
+    private sealed class StateSnapshotVisitor(ContentInterpreter interpreter) : IContentVisitor
+    {
+        public List<(string Op, List<PdfObject> Operands, int Offset)> Operators { get; } = [];
+
+        /// <summary>The state snapshot as of the MOST RECENT <c>OnOperator</c> call, updated on
+        /// every one; still <see langword="null"/> if no operator ever reached this visitor.</summary>
+        public ContentStateSnapshot? LastState { get; private set; }
+
+        public void OnOperator(string operatorName, IReadOnlyList<PdfObject> operands, int offset)
+        {
+            Operators.Add((operatorName, [.. operands], offset));
+            var gs = interpreter.GraphicsState;
+            var ts = interpreter.TextState;
+            LastState = new ContentStateSnapshot(
+                gs.Ctm, gs.CharSpacing, gs.WordSpacing, gs.HorizontalScaling, gs.Leading, gs.Font,
+                gs.FontSize, gs.RenderMode, gs.Rise, ts.TextMatrix, ts.TextLineMatrix);
+        }
+
+        public void OnInlineImage(PdfDictionary dictionary, ReadOnlyMemory<byte> data, int offset) { }
+
+        public void OnFormBegin(
+            PdfDictionary formDictionary, Matrix formMatrix, PdfRectangle? boundingBox, int objectNumber,
+            int offset)
+        { }
+
+        public void OnFormEnd(int objectNumber) { }
+    }
+
+    private static (PdfDocumentReader Reader, ContentStateSnapshot? State, StateSnapshotVisitor Visitor)
+        RunAndCaptureFinalState(byte[] pdfBytes)
+    {
+        var reader = PdfReader.Open(pdfBytes);
+        var interpreter = new ContentInterpreter(reader);
+        var visitor = new StateSnapshotVisitor(interpreter);
+        interpreter.Run(reader.GetPage(0), visitor);
+        return (reader, visitor.LastState, visitor);
     }
 
     private static (PdfDocumentReader Reader, ContentInterpreter Interpreter, RecordingVisitor Visitor) Run(
@@ -564,19 +648,20 @@ public sealed class ContentInterpreterTests
         // Before the fix, the pushes past MaxGraphicsStateDepth (64) were dropped but their
         // matching 'Q's still popped anyway, so a balanced 'q'...'Q' sequence deeper than the cap
         // reported BOTH ContentLimitExceeded (for the dropped pushes) AND OperandStackMalformed
-        // (for the "Q"s that found nothing real left on the stack once the real pushes were
+        // (for the "Q"s that found nothing left on the stack once the producer's own pushes were
         // exhausted), and desynchronised GraphicsState.Ctm from the actual nesting besides.
         var content = string.Concat(Enumerable.Repeat("q\n", depth))
             + "2 0 0 2 10 20 cm\n"
             + string.Concat(Enumerable.Repeat("Q\n", depth));
 
-        var interpreter = RunAndKeepInterpreter(BuildPageDoc(content), out var reader);
+        var (reader, state, _) = RunAndCaptureFinalState(BuildPageDoc(content));
 
         Assert.Contains(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ContentLimitExceeded);
         Assert.DoesNotContain(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.OperandStackMalformed);
         // Every 'q' was balanced by a 'Q', so the CTM the 'cm' set inside is restored to identity,
-        // whether or not this reader's own stack held every one of those saves.
-        Assert.Equal(Matrix.Identity, interpreter.GraphicsState.Ctm);
+        // whether or not this reader's own stack held every one of those saves. The LAST 'Q' is
+        // what the snapshot reflects, so this is exactly the state the page itself ends on.
+        Assert.Equal(Matrix.Identity, state!.Ctm);
     }
 
     [Fact]
@@ -659,19 +744,17 @@ public sealed class ContentInterpreterTests
     [Fact]
     public void GraphicsStateStack_savesAndRestoresTheCtm()
     {
-        var interpreter = RunAndKeepInterpreter(
-            BuildPageDoc("q\n2 0 0 2 10 20 cm\nQ\n"), out _);
+        var (_, state, _) = RunAndCaptureFinalState(BuildPageDoc("q\n2 0 0 2 10 20 cm\nQ\n"));
 
-        Assert.Equal(Matrix.Identity, interpreter.GraphicsState.Ctm);
+        Assert.Equal(Matrix.Identity, state!.Ctm);
     }
 
     [Fact]
     public void Cm_concatenatesOntoTheCurrentCtm()
     {
-        var interpreter = RunAndKeepInterpreter(
-            BuildPageDoc("2 0 0 2 10 20 cm\n"), out _);
+        var (_, state, _) = RunAndCaptureFinalState(BuildPageDoc("2 0 0 2 10 20 cm\n"));
 
-        Assert.Equal(new Matrix(2, 0, 0, 2, 10, 20), interpreter.GraphicsState.Ctm);
+        Assert.Equal(new Matrix(2, 0, 0, 2, 10, 20), state!.Ctm);
     }
 
     [Fact]
@@ -683,41 +766,32 @@ public sealed class ContentInterpreterTests
             + "5 -6 TD\n"
             + "1 0 0 1 100 200 Tm\n"
             + "T*\n";
-        var interpreter = RunAndKeepInterpreter(
+        var (_, state, _) = RunAndCaptureFinalState(
             BuildPageDoc(content, "<< /Font << /F1 5 0 R >> >>",
-                new Obj(5, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")),
-            out _);
+                new Obj(5, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")));
 
-        Assert.Equal(1, interpreter.GraphicsState.CharSpacing);
-        Assert.Equal(2, interpreter.GraphicsState.WordSpacing);
-        Assert.Equal(150, interpreter.GraphicsState.HorizontalScaling);
-        Assert.Equal(6, interpreter.GraphicsState.Leading); // TD's ty=-6 sets TL=-(-6)=6
-        Assert.Equal("F1", ((PdfName)interpreter.GraphicsState.Font!).Value);
-        Assert.Equal(24, interpreter.GraphicsState.FontSize);
-        Assert.Equal(2, interpreter.GraphicsState.RenderMode);
-        Assert.Equal(3, interpreter.GraphicsState.Rise);
+        Assert.Equal(1, state!.CharSpacing);
+        Assert.Equal(2, state.WordSpacing);
+        Assert.Equal(150, state.HorizontalScaling);
+        Assert.Equal(6, state.Leading); // TD's ty=-6 sets TL=-(-6)=6
+        Assert.Equal("F1", ((PdfName)state.Font!).Value);
+        Assert.Equal(24, state.FontSize);
+        Assert.Equal(2, state.RenderMode);
+        Assert.Equal(3, state.Rise);
 
         // After Tm replaces both matrices with [1 0 0 1 100 200], T* moves by (0, -TL=-6):
         // Tlm_new = [1 0 0 1 0 -6] x [1 0 0 1 100 200] = [1 0 0 1 100 194].
-        Assert.Equal(new Matrix(1, 0, 0, 1, 100, 194), interpreter.TextState.TextMatrix);
+        Assert.Equal(new Matrix(1, 0, 0, 1, 100, 194), state.TextMatrix);
     }
 
     [Fact]
     public void BT_resetsTheTextMatrices()
     {
         const string content = "1 0 0 1 100 200 Tm\nBT\n";
-        var interpreter = RunAndKeepInterpreter(BuildPageDoc(content), out _);
+        var (_, state, _) = RunAndCaptureFinalState(BuildPageDoc(content));
 
-        Assert.Equal(Matrix.Identity, interpreter.TextState.TextMatrix);
-        Assert.Equal(Matrix.Identity, interpreter.TextState.TextLineMatrix);
-    }
-
-    private static ContentInterpreter RunAndKeepInterpreter(byte[] pdfBytes, out PdfDocumentReader reader)
-    {
-        reader = PdfReader.Open(pdfBytes);
-        var interpreter = new ContentInterpreter(reader);
-        interpreter.Run(reader.GetPage(0), new RecordingVisitor());
-        return interpreter;
+        Assert.Equal(Matrix.Identity, state!.TextMatrix);
+        Assert.Equal(Matrix.Identity, state.TextLineMatrix);
     }
 
     // ── An operand of the wrong type at the right arity reports 302 and drops the operator,
@@ -728,10 +802,11 @@ public sealed class ContentInterpreterTests
     {
         // Before this fix, NumberOperand substituted 0 for the string operand with no diagnostic,
         // so this delivered Ctm = [1 0 0 1 0 50] instead of leaving the identity CTM untouched.
-        var interpreter = RunAndKeepInterpreter(
-            BuildPageDoc("1 0 0 1 (x) 50 cm\n"), out var reader);
+        // 'cm' itself never reaches the visitor (the type check drops it before EmitAndClear), so
+        // the state snapshot below is taken at the trailing 'w' instead.
+        var (reader, state, _) = RunAndCaptureFinalState(BuildPageDoc("1 0 0 1 (x) 50 cm\n1 w\n"));
 
-        Assert.Equal(Matrix.Identity, interpreter.GraphicsState.Ctm);
+        Assert.Equal(Matrix.Identity, state!.Ctm);
         var reports = reader.Diagnostics.Where(d => d.Code == PdfReaderDiagnosticCode.OperandStackMalformed)
             .ToList();
         Assert.Single(reports);
@@ -746,16 +821,17 @@ public sealed class ContentInterpreterTests
         // non-numeric ty operand ("/N", a name) coerced to 0 while tx=10 was still applied,
         // delivering TextMatrix = [1 0 0 1 10 0] instead of leaving it at the identity. Both Tf and
         // Td are dropped entirely now; only one 302 is recorded, since the sink dedupes on (code,
-        // object, page) and both reports share the same key.
-        var interpreter = RunAndKeepInterpreter(
+        // object, page) and both reports share the same key. 'ET' is the last operator to reach
+        // the visitor (Tf and Td are both dropped), so the snapshot at 'ET' is exactly the state
+        // this page ends on.
+        var (reader, state, _) = RunAndCaptureFinalState(
             BuildPageDoc(
                 "BT\n/F1 (12) Tf\n10 /N Td\nET\n", "<< /Font << /F1 5 0 R >> >>",
-                new Obj(5, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")),
-            out var reader);
+                new Obj(5, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")));
 
-        Assert.Null(interpreter.GraphicsState.Font);
-        Assert.Equal(0, interpreter.GraphicsState.FontSize);
-        Assert.Equal(Matrix.Identity, interpreter.TextState.TextMatrix);
+        Assert.Null(state!.Font);
+        Assert.Equal(0, state.FontSize);
+        Assert.Equal(Matrix.Identity, state.TextMatrix);
         var reports = reader.Diagnostics.Where(d => d.Code == PdfReaderDiagnosticCode.OperandStackMalformed)
             .ToList();
         Assert.Single(reports);
@@ -793,12 +869,13 @@ public sealed class ContentInterpreterTests
         // ' fell through to the default (state-inert) case: the text matrices were left untouched
         // and the string operand still reached the visitor, since forwarding happens either way.
         const string content = "BT\n100 TL\n5 0 Td\n(a) '\nET\n";
-        var (reader, interpreter, visitor) = Run(BuildPageDoc(content));
+        var (reader, state, visitor) = RunAndCaptureFinalState(BuildPageDoc(content));
 
         // Td moves the line matrix to [1 0 0 1 5 0]; ' then moves by (0, -TL=-100):
-        // Tlm_new = [1 0 0 1 0 -100] x [1 0 0 1 5 0] = [1 0 0 1 5 -100].
-        Assert.Equal(new Matrix(1, 0, 0, 1, 5, -100), interpreter.TextState.TextLineMatrix);
-        Assert.Equal(new Matrix(1, 0, 0, 1, 5, -100), interpreter.TextState.TextMatrix);
+        // Tlm_new = [1 0 0 1 0 -100] x [1 0 0 1 5 0] = [1 0 0 1 5 -100]. 'ET' follows and does not
+        // disturb either matrix, so the snapshot at 'ET' (the last operator) still reflects it.
+        Assert.Equal(new Matrix(1, 0, 0, 1, 5, -100), state!.TextLineMatrix);
+        Assert.Equal(new Matrix(1, 0, 0, 1, 5, -100), state.TextMatrix);
         Assert.DoesNotContain(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.OperandStackMalformed);
 
         var quote = visitor.Operators.Single(o => o.Op == "'");
@@ -812,13 +889,13 @@ public sealed class ContentInterpreterTests
         // Table 107: "\" ... shall have the same effect as this code: aw Tw ac Tc string '": aw and
         // ac land in the text state before the T*-equivalent move.
         const string content = "BT\n50 TL\n7 8 (x) \"\nET\n";
-        var (reader, interpreter, visitor) = Run(BuildPageDoc(content));
+        var (reader, state, visitor) = RunAndCaptureFinalState(BuildPageDoc(content));
 
-        Assert.Equal(7, interpreter.GraphicsState.WordSpacing);
-        Assert.Equal(8, interpreter.GraphicsState.CharSpacing);
+        Assert.Equal(7, state!.WordSpacing);
+        Assert.Equal(8, state.CharSpacing);
         // TextLineMatrix starts at identity (no Td/Tm ran); " moves by (0, -TL=-50):
         // Tlm_new = [1 0 0 1 0 -50] x [1 0 0 1 0 0] = [1 0 0 1 0 -50].
-        Assert.Equal(new Matrix(1, 0, 0, 1, 0, -50), interpreter.TextState.TextLineMatrix);
+        Assert.Equal(new Matrix(1, 0, 0, 1, 0, -50), state.TextLineMatrix);
         Assert.DoesNotContain(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.OperandStackMalformed);
 
         var quote = visitor.Operators.Single(o => o.Op == "\"");
@@ -829,12 +906,12 @@ public sealed class ContentInterpreterTests
     public void DoubleQuote_withNonNumericSpacingOperands_reportsOnce_andIsDropped()
     {
         const string content = "BT\n(a) (b) (x) \"\nET\n";
-        var (reader, interpreter, visitor) = Run(BuildPageDoc(content));
+        var (reader, state, visitor) = RunAndCaptureFinalState(BuildPageDoc(content));
 
         Assert.DoesNotContain(visitor.Operators, o => o.Op == "\"");
-        Assert.Equal(0, interpreter.GraphicsState.WordSpacing);
-        Assert.Equal(0, interpreter.GraphicsState.CharSpacing);
-        Assert.Equal(Matrix.Identity, interpreter.TextState.TextLineMatrix);
+        Assert.Equal(0, state!.WordSpacing);
+        Assert.Equal(0, state.CharSpacing);
+        Assert.Equal(Matrix.Identity, state.TextLineMatrix);
         var reports = reader.Diagnostics.Where(d => d.Code == PdfReaderDiagnosticCode.OperandStackMalformed)
             .ToList();
         Assert.Single(reports);
@@ -844,10 +921,10 @@ public sealed class ContentInterpreterTests
     public void Quote_withANonStringOperand_reportsOnce_andIsDropped()
     {
         const string content = "BT\n5 '\nET\n";
-        var (reader, interpreter, visitor) = Run(BuildPageDoc(content));
+        var (reader, state, visitor) = RunAndCaptureFinalState(BuildPageDoc(content));
 
         Assert.DoesNotContain(visitor.Operators, o => o.Op == "'");
-        Assert.Equal(Matrix.Identity, interpreter.TextState.TextLineMatrix);
+        Assert.Equal(Matrix.Identity, state!.TextLineMatrix);
         var reports = reader.Diagnostics.Where(d => d.Code == PdfReaderDiagnosticCode.OperandStackMalformed)
             .ToList();
         Assert.Single(reports);
@@ -858,17 +935,16 @@ public sealed class ContentInterpreterTests
     [Fact]
     public void Gs_withFont_surfacesTheFontSelectionToTheState()
     {
-        var interpreter = RunAndKeepInterpreter(
+        var (_, state, _) = RunAndCaptureFinalState(
             BuildPageDoc(
                 "/G1 gs\n",
                 "<< /ExtGState << /G1 6 0 R >> >>",
                 new Obj(5, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"),
-                new Obj(6, "<< /Type /ExtGState /Font [5 0 R 18] >>")),
-            out _);
+                new Obj(6, "<< /Type /ExtGState /Font [5 0 R 18] >>")));
 
-        var fontRef = Assert.IsType<PdfIndirectReference>(interpreter.GraphicsState.Font);
+        var fontRef = Assert.IsType<PdfIndirectReference>(state!.Font);
         Assert.Equal(5, fontRef.ObjectNumber);
-        Assert.Equal(18, interpreter.GraphicsState.FontSize);
+        Assert.Equal(18, state.FontSize);
     }
 
     [Fact]
@@ -1095,26 +1171,37 @@ public sealed class ContentInterpreterTests
                 "0 0 1 1 re"u8.ToArray()));
 
         Matrix? ctmInsideForm = null;
+        Matrix? ctmAfterForm = null;
         var reader = PdfReader.Open(doc);
         var interpreter = new ContentInterpreter(reader);
-        var probe = new CtmProbeVisitor(() => ctmInsideForm ??= interpreter.GraphicsState.Ctm);
+        // Both captured DURING their own callback (#402 round 7: Run's own exit-time reset means
+        // GraphicsState is not readable once Run itself returns), not just the inside-the-form one:
+        // the invoker's own restored CTM is read from 'w', the operator right after 'Do' returns,
+        // rather than from the interpreter after Run.
+        var probe = new CtmProbeVisitor(
+            () => ctmInsideForm ??= interpreter.GraphicsState.Ctm,
+            () => ctmAfterForm ??= interpreter.GraphicsState.Ctm);
         interpreter.Run(reader.GetPage(0), probe);
 
         // §8.3.4: CTM_new = M x CTM_old; the invoker's own CTM at the point of Do is identity, so
         // the composed value equals the form's own /Matrix exactly.
         Assert.Equal(new Matrix(2, 0, 0, 2, 10, 10), ctmInsideForm);
         // The invoker's own CTM is untouched once Do returns.
-        Assert.Equal(Matrix.Identity, interpreter.GraphicsState.Ctm);
+        Assert.Equal(Matrix.Identity, ctmAfterForm);
     }
 
-    private sealed class CtmProbeVisitor(Action onFirstOperatorInsideForm) : IContentVisitor
+    private sealed class CtmProbeVisitor(
+        Action onFirstOperatorInsideForm, Action onFirstOperatorAfterForm) : IContentVisitor
     {
         private bool _insideForm;
+        private bool _formEnded;
 
         public void OnOperator(string operatorName, IReadOnlyList<PdfObject> operands, int offset)
         {
             if (_insideForm)
                 onFirstOperatorInsideForm();
+            else if (_formEnded)
+                onFirstOperatorAfterForm();
         }
 
         public void OnInlineImage(PdfDictionary dictionary, ReadOnlyMemory<byte> data, int offset) { }
@@ -1124,7 +1211,11 @@ public sealed class ContentInterpreterTests
             int offset) =>
             _insideForm = true;
 
-        public void OnFormEnd(int objectNumber) => _insideForm = false;
+        public void OnFormEnd(int objectNumber)
+        {
+            _insideForm = false;
+            _formEnded = true;
+        }
     }
 
     // ── HandleDo reports a resource that resolves but is not a usable XObject (#402 round 2) ─────
@@ -1197,9 +1288,11 @@ public sealed class ContentInterpreterTests
                 11, "<< /Type /XObject /Subtype /Form /BBox [0 0 10 10] >>",
                 "3 0 0 3 0 0 cm"u8.ToArray()));
 
-        var interpreter = RunAndKeepInterpreter(doc, out var reader);
+        var (reader, state, _) = RunAndCaptureFinalState(doc);
 
-        Assert.Equal(Matrix.Identity, interpreter.GraphicsState.Ctm);
+        // 'w', the trailing top-level operator, is state-neutral (line width is not tracked), so
+        // the snapshot at 'w' still reflects the CTM exactly as Do's own finally restored it.
+        Assert.Equal(Matrix.Identity, state!.Ctm);
         Assert.DoesNotContain(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.OperandStackMalformed);
     }
 
@@ -1218,10 +1311,11 @@ public sealed class ContentInterpreterTests
                 11, "<< /Type /XObject /Subtype /Form /BBox [0 0 10 10] >>",
                 "BT 999 888 Td ET"u8.ToArray()));
 
-        var interpreter = RunAndKeepInterpreter(doc, out _);
+        var (_, state, _) = RunAndCaptureFinalState(doc);
 
-        Assert.Equal(Matrix.Identity, interpreter.TextState.TextMatrix);
-        Assert.Equal(Matrix.Identity, interpreter.TextState.TextLineMatrix);
+        // Same reasoning as the CTM test above: 'w' does not disturb either text matrix.
+        Assert.Equal(Matrix.Identity, state!.TextMatrix);
+        Assert.Equal(Matrix.Identity, state.TextLineMatrix);
     }
 
     [Fact]
@@ -1572,7 +1666,7 @@ public sealed class ContentInterpreterTests
         // ASCIIHexDecode or ASCII85Decode skips any FURTHER white-space too, before /L's own bytes
         // are counted. Before this fix, at most one whitespace byte was ever consumed regardless of
         // filter, so the second space here was misread as the payload's own first byte and /L=4
-        // came out 3 bytes short of the real data.
+        // came out 3 bytes short of the image data.
         byte[] data = "ABCD"u8.ToArray();
         var content = $"BI /F /A85 /L {data.Length} ID  "
             + Encoding.ASCII.GetString(data) + " EI\nQ\n1 w\n";
@@ -1724,7 +1818,7 @@ public sealed class ContentInterpreterTests
     {
         // A whitespace-delimited "EI" followed by an unterminated literal string, which never
         // closes anywhere in the rest of the content stream. The resync probe's lex attempt from
-        // that point throws, so ScanForEi rejects it and keeps looking for the real one.
+        // that point throws, so ScanForEi rejects it and keeps looking for the terminating 'EI'.
         var falseCandidate = " EI (unterminated "u8.ToArray();
         byte[] jpegNoise = [0x01, 0x02, 0xFF, 0xD8, 0xFF];
         var data = jpegNoise.Concat(falseCandidate).Concat(new byte[] { 3, 4, 5 }).ToArray();
@@ -2886,6 +2980,286 @@ public sealed class ContentInterpreterTests
             ? $"'{keyword[..32]}... ({keywordLength} bytes)'"
             : $"'{keyword}'";
         Assert.Contains(expectedQuoted, report.Message, StringComparison.Ordinal);
+    }
+
+    // ── Run's own outer catch no longer forwards ex.Message (#402 round 7) ──────────────────────
+    //
+    // PdfObjectParser's own "N G obj" header check and its numeric-range checks interpolate the
+    // whole malformed token into their own exception's Message, with no bound of its own (out of
+    // this PR's scope: PdfDocumentReader.Open's own callers read that Message directly too).
+    // BuildPageContentBuffer's ResolveStream/ResolveValue calls have no local catch for either, so
+    // an InvalidDataException from either used to reach Run's own outer catch and get interpolated
+    // into a diagnostic Message retained for the reader's own lifetime, in full.
+
+    [Fact]
+    public void UnparsableContentsObjectHeader_reportsAFixedMessage_notTheWholeToken()
+    {
+        // Object 4's own "N G obj" header names no "obj" keyword at all, just 4,194,304 'A' bytes:
+        // PdfObjectParser.ParseIndirectObject's own ExpectToken(Keyword, "'obj' keyword") accepts
+        // that as A Keyword token, then IsKeyword(objKw.Raw, "obj") rejects it and throws with the
+        // whole token quoted. ResolveStream (PdfDocumentReader.cs) calls ParseIndirectObject with
+        // no local catch, so this reaches BuildPageContentBuffer's own AddElement (which only
+        // catches around GetDecodedStreamData, not around ResolveStream itself) and then Run's own
+        // outer catch, before InterpretStream is ever entered.
+        var badHeader = "4 0 " + new string('A', 4_194_304) + "\n";
+        var doc = BuildPdfWithRawObjectBytes(
+            1,
+            (1, Encoding.ASCII.GetBytes("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n")),
+            (2, Encoding.ASCII.GetBytes("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n")),
+            (3, Encoding.ASCII.GetBytes(
+                "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+                + "/Resources << >> /Contents 4 0 R >>\nendobj\n")),
+            (4, Encoding.ASCII.GetBytes(badHeader)));
+
+        var (reader, _, visitor) = Run(doc);
+
+        var report = Assert.Single(
+            reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ContentStreamLexError);
+        Assert.True(
+            report.Message.Length < 200, $"expected under 200 chars, got {report.Message.Length}.");
+        Assert.Equal(
+            "The page's content could not be fully resolved: an object it references could not "
+            + "be parsed.",
+            report.Message);
+        Assert.Equal(0, report.PageIndex);
+        Assert.Empty(visitor.Operators);
+    }
+
+    [Fact]
+    public void TwoPagesSharingAMalformedContentsDictionary_eachReportOneBoundedMessage()
+    {
+        // Same bug, reached through PdfObjectParser.ParseReal's own "Real number out of range"
+        // exception instead: a 2,000,000-digit real literal in the STREAM'S OWN dictionary parses
+        // to +Infinity under double.TryParse and is rejected there, while ParseDictionary is still
+        // parsing the dictionary itself, well before "stream" is ever looked for. Two pages share
+        // object 4, so each page's own Run independently re-parses it and independently throws:
+        // Run's own catch reports no object number, so the sink's (code, object, page) dedupe key
+        // does not collapse the two pages' reports into one the way an object-scoped report would.
+        var digits = new string('1', 2_000_000);
+        var doc = BuildPdfWithRawObjectBytes(
+            1,
+            (1, Encoding.ASCII.GetBytes("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n")),
+            (2, Encoding.ASCII.GetBytes(
+                "2 0 obj\n<< /Type /Pages /Kids [3 0 R 5 0 R] /Count 2 >>\nendobj\n")),
+            (3, Encoding.ASCII.GetBytes(
+                "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+                + "/Resources << >> /Contents 4 0 R >>\nendobj\n")),
+            (5, Encoding.ASCII.GetBytes(
+                "5 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+                + "/Resources << >> /Contents 4 0 R >>\nendobj\n")),
+            (4, Encoding.ASCII.GetBytes($"4 0 obj\n<< /Bogus {digits}.0 >>\nendobj\n")));
+
+        var reader = PdfReader.Open(doc, new PdfReaderOptions());
+        var interpreter = new ContentInterpreter(reader);
+        interpreter.Run(reader.GetPage(0), new RecordingVisitor());
+        interpreter.Run(reader.GetPage(1), new RecordingVisitor());
+
+        var reports = reader.Diagnostics
+            .Where(d => d.Code == PdfReaderDiagnosticCode.ContentStreamLexError).ToList();
+        Assert.Equal(2, reports.Count);
+        foreach (var report in reports)
+        {
+            Assert.True(
+                report.Message.Length < 200, $"expected under 200 chars, got {report.Message.Length}.");
+            Assert.Equal(
+                "The page's content could not be fully resolved: an object it references could "
+                + "not be parsed.",
+                report.Message);
+        }
+        Assert.Equal([0, 1], reports.Select(r => r.PageIndex).OrderBy(p => p));
+        var totalMessageLength = reader.Diagnostics.Sum(d => d.Message.Length);
+        Assert.True(
+            totalMessageLength < 1000,
+            $"expected under 1000 total chars across every diagnostic, got {totalMessageLength}.");
+    }
+
+    // ── Inline image dictionary values bypass the composite cap (#402 round 7) ─────────────────────
+    //
+    // The key/value loop in HandleInlineImage used to hand every value straight to
+    // parser.ParseObject() with no CompositeOperandWithinCap pre-scan, so an array or dictionary
+    // value here bypassed MaxCompositeOperandElements entirely, and the number of key/value pairs
+    // the loop admitted was uncapped too.
+
+    [Fact]
+    public void InlineImageDictionaryArrayValue_overTheCompositeCap_dropsTheImage_boundingAllocation()
+    {
+        // /D [1 1 1 ...] used to be fully materialised as a PdfArray, one boxed PdfInteger per
+        // element, before any cap was consulted: measured (pre-fix, 10,000,000 elements) 892.4 MiB
+        // allocated for one dropped image and no diagnostic. 20,000 elements is already well over
+        // MaxCompositeOperandElements (8192), so this is over the cap on a ~40 KB content stream,
+        // not a stress case.
+        var content = "BI /D [" + string.Concat(Enumerable.Repeat("1 ", 20_000)) + "] ID ABC EI\n1 w\n";
+        var doc = BuildPageDoc(content);
+
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        var (reader, _, visitor) = Run(doc);
+        var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        var report = Assert.Single(
+            reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ContentLimitExceeded);
+        Assert.Equal(
+            "An inline image dictionary value exceeds 8192 tokens; the image was dropped.",
+            report.Message);
+        Assert.DoesNotContain(
+            reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ContentStreamLexError);
+        Assert.Empty(visitor.InlineImages);
+        // HandleInlineImage's own "return false" ends the stream the same way every other
+        // malformed-dictionary path does (see HandleInlineImage's own class doc): '1 w', after the
+        // image's own 'EI', is never reached.
+        Assert.Empty(visitor.Operators);
+        // An allocation bound, not a wall-clock one (#400): generous by design. Measured on the
+        // fixed code: 96,952 bytes (94.7 KiB) for this ~40 KB content stream (the cap is decided by
+        // the lexer alone, so the array is never materialised); 16 MiB leaves ample margin.
+        Assert.True(
+            allocated < 16L * 1024 * 1024,
+            $"expected under 16 MiB allocated; measured {allocated / (1024.0 * 1024.0):F2} MiB.");
+    }
+
+    [Fact]
+    public void InlineImageDictionaryFilterArrayValue_overTheCompositeCap_dropsTheImage()
+    {
+        // The /F-array branch (the abbreviation-expanding one) copies every element into a fresh
+        // List<PdfObject> and PdfArray on top of parser.ParseObject()'s own allocation, so it is
+        // checked separately from the general /D case above: both call sites need the same
+        // pre-scan, not just one of them.
+        var content = "BI /F [" + string.Concat(Enumerable.Repeat("/AHx ", 20_000)) + "] ID ABC EI\n1 w\n";
+        var doc = BuildPageDoc(content);
+
+        var (reader, _, visitor) = Run(doc);
+
+        var report = Assert.Single(
+            reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ContentLimitExceeded);
+        Assert.Equal(
+            "An inline image dictionary value exceeds 8192 tokens; the image was dropped.",
+            report.Message);
+        Assert.Empty(visitor.InlineImages);
+        Assert.Empty(visitor.Operators);
+    }
+
+    [Theory]
+    [InlineData(8192, false)]
+    [InlineData(8193, true)]
+    public void InlineImageDictionaryArrayValue_atTheCompositeCapBoundary(
+        int elementCount, bool expectDropped)
+    {
+        var content = "BI /D [" + string.Concat(Enumerable.Repeat("1 ", elementCount)) + "] ID ABC EI\nQ\n";
+        var doc = BuildPageDoc(content);
+
+        var (reader, _, visitor) = Run(doc);
+
+        if (expectDropped)
+        {
+            Assert.Single(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ContentLimitExceeded);
+            Assert.Empty(visitor.InlineImages);
+            Assert.DoesNotContain(visitor.Operators, o => o.Op == "Q");
+        }
+        else
+        {
+            Assert.DoesNotContain(
+                reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ContentLimitExceeded);
+            var img = Assert.Single(visitor.InlineImages);
+            var decodeArray = (PdfArray)img.Dict.Get(new PdfName("Decode"))!;
+            Assert.Equal(elementCount, decodeArray.Count);
+            Assert.Contains(visitor.Operators, o => o.Op == "Q");
+        }
+    }
+
+    [Theory]
+    [InlineData(65)]
+    [InlineData(100)]
+    public void InlineImageDictionary_withMoreEntriesThanTheCap_reportsOnce_andDropsTheImage(int entryCount)
+    {
+        // Table 91 lists eleven entries; a producer's own dictionary never comes close to 64, so
+        // this covers only a hostile BI...ID section that never reaches ID at all. 65 is the first
+        // count over the cap; 100 shows the report stays a single one however far past it.
+        var keys = string.Concat(Enumerable.Range(0, entryCount).Select(i => $"/K{i:D3} 1 "));
+        var content = "BI " + keys + "ID ABC EI\nQ\n";
+        var doc = BuildPageDoc(content);
+
+        var (reader, _, visitor) = Run(doc);
+
+        var report = Assert.Single(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ContentLimitExceeded);
+        Assert.Equal(
+            "An inline image dictionary has more than 64 entries; the image was dropped.",
+            report.Message);
+        Assert.Empty(visitor.InlineImages);
+        Assert.DoesNotContain(visitor.Operators, o => o.Op == "Q");
+    }
+
+    [Theory]
+    [InlineData(60)]
+    [InlineData(64)]
+    public void InlineImageDictionary_withEntriesUpToTheCap_deliversTheImage(int entryCount)
+    {
+        // 64 is the cap itself and must still deliver: the check rejects the 65th entry, not the
+        // 64th.
+        var keys = string.Concat(Enumerable.Range(0, entryCount).Select(i => $"/K{i:D3} 1 "));
+        var content = "BI " + keys + "ID ABC EI\nQ\n";
+        var doc = BuildPageDoc(content);
+
+        var (reader, _, visitor) = Run(doc);
+
+        Assert.DoesNotContain(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ContentLimitExceeded);
+        var img = Assert.Single(visitor.InlineImages);
+        Assert.True(img.Data.AsSpan().SequenceEqual("ABC"u8));
+        Assert.Contains(visitor.Operators, o => o.Op == "Q");
+    }
+
+    // ── Run resets its own state on exit, not only entry (#402 round 7) ────────────────────────────
+
+    private sealed class FontOperandCapturingVisitor : IContentVisitor
+    {
+        public WeakReference? FontOperand { get; private set; }
+
+        public void OnOperator(string operatorName, IReadOnlyList<PdfObject> operands, int offset)
+        {
+            if (operatorName == "Tf" && FontOperand is null)
+                FontOperand = new WeakReference(operands[0]);
+        }
+
+        public void OnInlineImage(PdfDictionary dictionary, ReadOnlyMemory<byte> data, int offset) { }
+
+        public void OnFormBegin(
+            PdfDictionary formDictionary, Matrix formMatrix, PdfRectangle? boundingBox, int objectNumber,
+            int offset)
+        { }
+
+        public void OnFormEnd(int objectNumber) { }
+    }
+
+    [Fact]
+    public void Run_dropsAnUnconsumedFontOperandOnExit_soItBecomesCollectable()
+    {
+        // GraphicsState.Font (set by Tf) is the one PdfObject field this interpreter's own state
+        // keeps past the operator that set it. Without Run's own exit-time reset, an
+        // attacker-sized name operand pushed through Tf, with no later Tf or 'gs' to overwrite
+        // Font and no Q to pop it, stayed referenced by _gs for as long as this interpreter
+        // instance itself lived, not merely for the duration of Run (measured, pre-fix: a
+        // 4,194,304-byte name operand retained 33,562,352 bytes from a 16,779-byte file, 2000x; a
+        // second Run on the same interpreter did not release it either). A throwaway visitor is
+        // used here, not RecordingVisitor: RecordingVisitor's own Operators list keeps a strong
+        // reference to every operand it has ever seen, by design (#98), which would keep this
+        // WeakReference alive regardless of what Run itself does.
+        var content = "/" + new string('B', 4_194_304) + " 12 Tf\n1 w\n";
+        var doc = BuildPageDoc(content);
+        var reader = PdfReader.Open(doc, new PdfReaderOptions());
+        var page = reader.GetPage(0);
+        var interpreter = new ContentInterpreter(reader);
+        var visitor = new FontOperandCapturingVisitor();
+
+        interpreter.Run(page, visitor);
+
+        var weakRef = visitor.FontOperand;
+        Assert.NotNull(weakRef);
+
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+
+        Assert.False(
+            weakRef!.IsAlive,
+            "expected the Tf font operand to be collectable once Run has returned.");
+        GC.KeepAlive(interpreter);
     }
 
     // ── Fuzzing ──────────────────────────────────────────────────────────────────────────────────

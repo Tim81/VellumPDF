@@ -56,6 +56,17 @@ internal sealed class ContentInterpreter
     // 977 MiB committed for one dropped operator and one 309.
     private const int MaxCompositeOperandElements = 8192;
 
+    // §8.9.7's Table 91 lists eleven inline image dictionary entries (BitsPerComponent, ColorSpace,
+    // Decode, DecodeParms, Filter, Height, ImageMask, Intent, Interpolate, Length, Width; Table 92
+    // layers abbreviations onto some of their VALUES, not further entries of its own), and §8.9.7
+    // itself says "Entries other than those listed shall be ignored", so this reader's own ceiling
+    // on how many key/value pairs one inline image dictionary may carry, before HandleInlineImage
+    // gives up on it, is generous by construction: no conformant producer's dictionary comes close.
+    // It exists only to bound how much a hostile BI...ID section, one that never reaches ID at all,
+    // can make this reader allocate one PdfName key (and, per MaxCompositeOperandElements above, one
+    // capped value) at a time (#402 round 7).
+    private const int MaxInlineImageDictionaryEntries = 64;
+
     // §8.4.4's q/Q pair; this reader's own ceiling on how deep a legitimate document nests them.
     private const int MaxGraphicsStateDepth = 64;
 
@@ -249,7 +260,7 @@ internal sealed class ContentInterpreter
             var ctx = new StreamContext(page.Resources, soleObjectNumber);
             InterpretStream(buffer, ctx, visitor, pageIndex, diagnostics);
         }
-        catch (InvalidDataException ex)
+        catch (InvalidDataException)
         {
             // The outermost guard for a malformed indirect-reference chain reached through
             // resource, XObject, or Form XObject resolution (a corrupt cross-reference offset,
@@ -258,10 +269,35 @@ internal sealed class ContentInterpreter
             // handles those). Consistent with this type's own class doc promise that
             // InvalidDataException never escapes Run, and with the notify-and-continue policy
             // every other diagnostic in this channel follows.
+            //
+            // The exception's own Message is not forwarded: PdfObjectParser quotes the offending
+            // header keyword or numeric literal whole, with no bound of its own, and a diagnostic
+            // is retained for the reader's own lifetime (DiagnosticSink), so an attacker- or
+            // corruption-sized token would become a comparably sized permanent allocation once per
+            // (code, object, page) the sink's own dedupe key admits (#402 round 7).
             diagnostics.Report(
                 PdfReaderDiagnosticCode.ContentStreamLexError,
-                $"The page's content could not be fully resolved: {ex.Message}",
+                "The page's content could not be fully resolved: an object it references could "
+                + "not be parsed.",
                 pageIndex: pageIndex);
+        }
+        finally
+        {
+            // Clears every content-derived reference this Run's own per-Run state may still hold,
+            // so an attacker-sized operand pushed but never consumed by a later operator (no
+            // closing operator at all, or one that never sets a new GraphicsState field to
+            // overwrite it) does not stay pinned on this interpreter for the rest of its own
+            // lifetime: the entry resets above already give the NEXT Run a clean slate, but an
+            // interpreter that is reused only after a long delay, or never reused again, would
+            // otherwise keep the LAST Run's own content alive regardless. ProbeBytesConsumed is
+            // left alone: a test reads it after Run returns as telemetry, not as content-derived
+            // state (#402 round 7).
+            _operands.Clear();
+            _operandOverflow = false;
+            _gsStack.Clear();
+            _gs = new GraphicsState();
+            _openForms.Clear();
+            _textState.BeginText();
         }
     }
 
@@ -606,11 +642,14 @@ internal sealed class ContentInterpreter
                                     // no bound on a keyword's own length, so materialising the
                                     // whole thing here for an attacker-sized token would allocate
                                     // what the diagnostic then discards most of (#402 round 6).
-                                    // ContentOperators.IsKnown rejects anything over 8 characters
-                                    // (ContentOperators.cs), so a keyword truncated to
-                                    // MaxQuotedTokenChars + 1 bytes still fails dispatch exactly
-                                    // the way the whole one did, and every recognised operator,
-                                    // never more than 3 characters, is decoded in full either way.
+                                    // HandleOperator's own dispatch below goes through
+                                    // ContentOperators.IsKnown(string), a bare dictionary lookup
+                                    // with no length guard of its own (only the ReadOnlySpan<byte>
+                                    // overload the resync probe uses, in ContentOperators.cs, bails
+                                    // out past 8 bytes); a keyword truncated to MaxQuotedTokenChars
+                                    // + 1 bytes still fails that lookup exactly the way the whole
+                                    // one did, since no key in the table is longer than 3 characters,
+                                    // and every recognised operator is decoded in full either way.
                                     var decodeLength = Math.Min(raw.Length, MaxQuotedTokenChars + 1);
                                     var name = System.Text.Encoding.Latin1.GetString(raw[..decodeLength]);
                                     HandleOperator(
@@ -692,8 +731,8 @@ internal sealed class ContentInterpreter
         }
 
         // The token length is attacker-controlled, so only stackalloc for short literals; an
-        // operand of a million digits or more would otherwise overflow the stack (an uncatchable
-        // crash).
+        // operand of about 1.5 million digits or more would otherwise overflow the stack (an
+        // uncatchable crash); one million digits alone still returns normally.
         var paddedLength = span.Length + 2;
         Span<byte> padded = paddedLength <= 1024 ? stackalloc byte[paddedLength] : new byte[paddedLength];
         var len = 0;
@@ -799,10 +838,13 @@ internal sealed class ContentInterpreter
     }
 
     // Quotes at most MaxQuotedTokenChars of a diagnostic-bound name or keyword; see that constant
-    // for why. byteLength is the token's own full length, which for a PdfName's Value is just
-    // text.Length (Latin1: one char per byte); the one caller that decodes only far enough to
-    // excerpt an oversized keyword (HandleOperator's own dispatch site) passes the raw token's
-    // length separately, since text itself is already truncated there.
+    // for why. byteLength is the DECODED value's own byte length (Latin1: one char per byte), not
+    // necessarily the raw token's: for a PdfName it is just text.Length, but a name whose raw token
+    // used one or more '#xx' escapes (§7.3.5) decodes to fewer bytes than it was written in, so the
+    // raw token can run longer than byteLength reports ('/' + 40 'B' + '#20' x10 is a 71-byte raw
+    // token whose decoded Value is 50 bytes, and this reports "(50 bytes)"). The one caller that
+    // decodes only far enough to excerpt an oversized keyword (HandleOperator's own dispatch site)
+    // passes the raw token's own length separately, since text itself is already truncated there.
     private static string QuoteExcerpt(string text) => QuoteExcerpt(text, text.Length);
 
     private static string QuoteExcerpt(string text, int byteLength) =>
@@ -831,7 +873,7 @@ internal sealed class ContentInterpreter
             // (no-op) execution just as much as to a recognised one (#402 round 2; an earlier
             // version kept the operands outside BX/EX on the theory that a stray "R" left over
             // from indirect-reference syntax §7.8.2 forbids in content streams usually belonged to
-            // whatever REAL operator followed rather than to "R" itself, but that leniency broke a
+            // whatever OPERATOR followed rather than to "R" itself, but that leniency broke a
             // differently-shaped input just as easily: '10 20 Zork' ahead of '1 w' silently fed
             // the leftover 20 into 'w' as its own operand instead of 1).
             if (_bxDepth <= 0)
@@ -1699,6 +1741,7 @@ internal sealed class ContentInterpreter
         DiagnosticSink diagnostics, int pageIndex, int biOffset)
     {
         var dict = new PdfDictionary();
+        var entryCount = 0;
 
         while (true)
         {
@@ -1723,6 +1766,21 @@ internal sealed class ContentInterpreter
                 return false;
             }
 
+            // Checked before this key is even decoded into a PdfName, not after: an over-cap
+            // dictionary must not keep paying per-pair allocation cost for entries this reader is
+            // about to drop the whole image over anyway (#402 round 7; see
+            // MaxInlineImageDictionaryEntries for why 64 rejects nothing conformant).
+            if (entryCount >= MaxInlineImageDictionaryEntries)
+            {
+                diagnostics.Report(
+                    PdfReaderDiagnosticCode.ContentLimitExceeded,
+                    $"An inline image dictionary has more than {MaxInlineImageDictionaryEntries} "
+                    + "entries; the image was dropped.",
+                    ctx.DiagObjectNumber, pageIndex: pageIndex);
+                return false;
+            }
+            entryCount++;
+
             var key = InlineImageAbbreviations.ExpandKey(PdfObjectParser.ParseName(keyTok));
             var isColorSpaceKey = key.Equals(PdfName.ColorSpace);
             var isFilterKey = key.Equals(PdfName.Filter);
@@ -1730,6 +1788,41 @@ internal sealed class ContentInterpreter
             lexer.SkipWhitespaceAndComments();
             var valueStart = lexer.Position;
             var valueTok = lexer.NextToken();
+
+            // Pre-scanned with the lexer alone, exactly the way the main operand loop's own
+            // ArrayBegin/DictBegin case does (see CompositeOperandWithinCap's own remarks), before
+            // either PdfObjectParser branch below ever materialises the value: an inline image
+            // dictionary value has no operator-level arity check of its own to fall back on for
+            // this, so without this pre-scan a value here bypassed MaxCompositeOperandElements
+            // entirely, even though every other array or dictionary this interpreter parses from
+            // content is bounded by it (#402 round 7).
+            if (valueTok.Kind is TokenKind.ArrayBegin or TokenKind.DictBegin)
+            {
+                if (!CompositeOperandWithinCap(lexer, out var valueLexerFailed))
+                {
+                    diagnostics.Report(
+                        PdfReaderDiagnosticCode.ContentLimitExceeded,
+                        $"An inline image dictionary value exceeds {MaxCompositeOperandElements} "
+                        + "tokens; the image was dropped.",
+                        ctx.DiagObjectNumber, pageIndex: pageIndex);
+                    if (valueLexerFailed)
+                    {
+                        // Same reasoning as the identical branch in the main operand loop's own
+                        // ArrayBegin/DictBegin case above: the count pass itself hit a malformed
+                        // byte before it ever reached the cap comparison this 309 already covers,
+                        // so that failure gets its own 300 too rather than silently ending
+                        // interpretation with nothing to explain why.
+                        diagnostics.Report(
+                            PdfReaderDiagnosticCode.ContentStreamLexError,
+                            "The content stream's syntax could not be interpreted past this "
+                            + "point; interpretation of it stopped here.",
+                            ctx.DiagObjectNumber, pageIndex: pageIndex);
+                    }
+                    return false;
+                }
+                lexer.Seek(valueStart);
+                valueTok = lexer.NextToken();
+            }
 
             PdfObject value;
             if (valueTok.Kind == TokenKind.Name && (isColorSpaceKey || isFilterKey))
@@ -1904,14 +1997,15 @@ internal sealed class ContentInterpreter
             // consumed as the separator instead, since a producer that wrote a two-byte CR-LF
             // separator is exactly the case the one-byte reading above would otherwise misjudge
             // (#402 round 4). This retry only runs when the one-byte reading's own resync above
-            // already failed to land on 'EI'; it does not cover every CR-LF producer. When the
-            // payload's own last byte happens to be white space, the one-byte reading is off by one
-            // (it left the LF of the CR LF pair at the front of the data) but still lands on 'EI'
-            // regardless, because SkipToEi skips leading white space before checking for 'EI' and
-            // that displaced trailing byte gets skipped the same way. The retry never runs in that
-            // case, and the visitor receives the data shifted one byte, with no diagnostic. That is
-            // the reading §8.9.7 mandates ("a single white-space character"), not a defect this
-            // retry is meant to close.
+            // already failed to land on 'EI'; it does not cover every CR-LF producer. The CR LF
+            // pair at the mandated separator is what shifts the one-byte reading off by one in the
+            // first place (it leaves the LF of the pair at the front of the data instead of
+            // consuming it as part of the separator); when the payload's own last byte then happens
+            // to be white space, that shifted reading still lands on 'EI' regardless, because
+            // SkipToEi skips leading white space before checking for 'EI', so the displaced trailing
+            // byte gets skipped the same way. The retry never runs in that case, and the visitor
+            // receives the data shifted one byte, with no diagnostic. That is the reading §8.9.7
+            // mandates ("a single white-space character"), not a defect this retry is meant to close.
             //
             // The malformed report just below is skipped when this retry alone is what recovers the
             // image: a conforming file recovered from cleanly must not carry a warning about it
@@ -2131,10 +2225,14 @@ internal sealed class ContentInterpreter
         // rowBytes can reach roughly 2^34 (width up to int.MaxValue, bpc up to 16) and height up to
         // int.MaxValue - 1 (~2^31), so this multiply can wrap a signed 64-bit long. The wrap is
         // harmless: the total < 0 check below and the bounds check that follows it both still run,
-        // and a surviving wrapped value that passes both takes the did-not-land-on-'EI' path
-        // instead: a 307 reports first, then the scan (tier c) recovers the image. Measured with
-        // /W 1824726041 /H 1263665316 /BPC 16 /CS /CMYK (rowBytes * height wraps to 32): one image
-        // delivered, the operators that followed it reached the visitor, and exactly one 307.
+        // and a surviving wrapped value that passes both usually takes the did-not-land-on-'EI'
+        // path instead (a 307 reports first, then the scan, tier c, recovers the image), UNLESS the
+        // wrapped value happens to land exactly on an 'EI', in which case it is silently accepted
+        // with no diagnostic at all, the same as any other length that happens to be right. Measured
+        // with /W 1824726041 /H 1263665316 /BPC 16 /CS /CMYK (rowBytes * height wraps to 32): one
+        // image delivered, the operators that followed it reached the visitor, and exactly one 307.
+        // With 32 bytes of image data instead of a mismatched payload, the same wrapped total (32)
+        // lands squarely on 'EI': one 32-byte image delivered, zero 307s.
         var total = rowBytes * height.Value;
         if (total < 0 || dataStart + total > _currentBuffer.Length)
             return null; // Fall back to the EI scan rather than trusting a runaway computed size.
@@ -2271,11 +2369,13 @@ internal sealed class ContentInterpreter
     }
 
     // Confirms an 'EI' candidate at exactly a known offset (used once tier a/b already computed a
-    // length) by requiring the bytes there literally spell "EI" preceded the way §8.9.7 describes.
-    // Unlike ScanForEi (tier c), this does not search (it verifies one position only) and checks
-    // nothing about what follows 'EI': ScanForEi's own followedOk check (whitespace or a delimiter
-    // right after 'EI') has no counterpart here, so a tier a/b image is delivered even when the byte
-    // immediately after 'EI' is neither.
+    // length): skips zero or more §8.9.7 white-space bytes, then requires the bytes right after to
+    // literally spell "EI"; nothing before 'EI' is REQUIRED to be white space, only tolerated when
+    // present ('/L 4 ID ABCDEIQ ' delimits with no white-space byte immediately before 'EI' and no
+    // 307). Unlike ScanForEi (tier c), this does not search (it verifies one position only) and
+    // checks nothing about what follows 'EI': ScanForEi's own followedOk check (whitespace or a
+    // delimiter right after 'EI') has no counterpart here, so a tier a/b image is delivered even
+    // when the byte immediately after 'EI' is neither.
     private int? SkipToEi(int dataEnd)
     {
         var pos = dataEnd;
