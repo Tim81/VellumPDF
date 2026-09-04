@@ -395,9 +395,14 @@ public sealed class ContentInterpreterTests
         var content = "["u8.ToArray().Concat(arrayBody).Concat("] TJ\n1 w\n"u8.ToArray()).ToArray();
         var doc = BuildPageDocRaw(content);
 
-        var before = GC.GetTotalAllocatedBytes(precise: true);
+        // Measured per thread, not process-wide: the test host runs classes in parallel, and the
+        // process-wide counter charged this delta with whatever the other classes allocated at the
+        // same moment (1125.1 MiB and 373.1 MiB on the CI runner for a shape that costs 76.3 MiB
+        // alone). Run interprets synchronously on the calling thread, so the thread-local counter
+        // sees exactly this call's allocations.
+        var before = GC.GetAllocatedBytesForCurrentThread();
         var (reader, _, visitor) = Run(doc);
-        var allocated = GC.GetTotalAllocatedBytes(precise: true) - before;
+        var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
 
         Assert.Contains(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ContentLimitExceeded);
         Assert.Equal(["w"], visitor.Operators.Select(o => o.Op));
@@ -425,9 +430,9 @@ public sealed class ContentInterpreterTests
         var content = "[["u8.ToArray().Concat(arrayBody).Concat("]] TJ\n1 w\n"u8.ToArray()).ToArray();
         var doc = BuildPageDocRaw(content);
 
-        var before = GC.GetTotalAllocatedBytes(precise: true);
+        var before = GC.GetAllocatedBytesForCurrentThread();
         var (reader, _, visitor) = Run(doc);
-        var allocated = GC.GetTotalAllocatedBytes(precise: true) - before;
+        var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
 
         Assert.Single(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ContentLimitExceeded);
         Assert.Equal(["w"], visitor.Operators.Select(o => o.Op));
@@ -453,9 +458,9 @@ public sealed class ContentInterpreterTests
         var content = "1 w\n["u8.ToArray().Concat(arrayBody).ToArray();
         var doc = BuildPageDocRaw(content);
 
-        var before = GC.GetTotalAllocatedBytes(precise: true);
+        var before = GC.GetAllocatedBytesForCurrentThread();
         var (reader, _, visitor) = Run(doc);
-        var allocated = GC.GetTotalAllocatedBytes(precise: true) - before;
+        var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
 
         Assert.Single(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ContentLimitExceeded);
         Assert.Equal(["w"], visitor.Operators.Select(o => o.Op));
