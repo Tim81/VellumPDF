@@ -601,7 +601,9 @@ public enum PdfReaderDiagnosticCode
 
     /// <summary>
     /// A glyph was decoded whose character code has no Unicode mapping, while at least one other
-    /// code in the same font does. Reported once per font, on the first such glyph decoded.
+    /// code in the same font does. Reported once per font, on the first such glyph decoded. Not
+    /// reported while the font names a <c>/ToUnicode</c> stream this reader does not parse yet,
+    /// since that stream may map the code (§9.10.2 gives it priority over the glyph-name route).
     /// </summary>
     UnmappedGlyphs = 404,
 

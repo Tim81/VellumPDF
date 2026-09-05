@@ -18,11 +18,10 @@ public sealed partial class PdfDocumentReader
     /// </summary>
     /// <remarks>
     /// Returns <see langword="null"/> silently, with no diagnostic, for <c>/Subtype /Type0</c> and
-    /// <c>/Subtype /Type3</c>: PRs 6 and 7 (#98) add readers for those, and reporting
+    /// <c>/Subtype /Type3</c>: readers for those are not built yet (#98), and reporting
     /// <see cref="PdfReaderDiagnosticCode.FontUnreadable"/> here would fire on every CJK or Type 3
-    /// document until then, which is not this reader's own limitation to report yet. Not wired to
-    /// <c>ContentInterpreter</c> in this PR (PR 5 does that), so the only callers today are
-    /// tests.
+    /// document until they are. Not yet wired to <c>ContentInterpreter</c>, so the only callers
+    /// today are tests.
     /// </remarks>
     internal PdfFontReader? GetFontReader(PdfObject rawFontEntry, DiagnosticSink sink, int? pageIndex)
     {

@@ -9,8 +9,11 @@ namespace VellumPdf.Reader.Fonts;
 /// to glyph-name table, plus MacExpertEncoding, which this reader recognises by name only (see
 /// <see cref="MacExpert"/>). Symbol and ZapfDingbats are not named encodings a font's own
 /// <c>/Encoding</c> entry can select; their built-in encodings live in
-/// <see cref="SymbolFontMetrics"/> instead (Annex D.1: "PDF processors shall not have a predefined
-/// encoding named StandardEncoding" governs the name lookup, not the table's own correctness).
+/// <see cref="SymbolFontMetrics"/> instead. §9.6.5 lists three predefined encoding names
+/// (MacRomanEncoding, MacExpertEncoding, WinAnsiEncoding), and Annex D.1 says "PDF processors
+/// shall not have a predefined encoding named StandardEncoding"; <see cref="TryGetNamed"/>
+/// accepts <c>StandardEncoding</c> by name anyway, silently, as a leniency toward producers that
+/// write it. The table itself is needed regardless, as the default base encoding of Table 112.
 /// </summary>
 /// <remarks>
 /// Transcribed from the Annex D.2 table (rendered page images, not the Conformance package's copy)
@@ -28,8 +31,8 @@ namespace VellumPdf.Reader.Fonts;
 /// <c>/Differences</c> entry, per the footnotes' own example.
 /// <para>
 /// <c>src/VellumPdf.Conformance/Rules/Fonts/SimpleFontEncoding.cs</c> carries its own copy of
-/// these three tables, deliberately not touched by this reader (no file under
-/// <c>VellumPdf.Conformance</c> changes in this PR). It diverges from the tables here at exactly
+/// these three tables, deliberately left as it is (Conformance is Shipped and its verdicts are
+/// pinned against veraPDF). It diverges from the tables here at exactly
 /// eight WinAnsi codes (the six bullet fills above, plus 0xA0 and 0xAD, which that copy encodes
 /// under the AGL's own non-breaking-space/soft-hyphen names instead of the plain ones this reader
 /// uses) and seventeen MacRoman codes: fifteen where that copy carries a Mac OS Roman (1, 0)
@@ -68,7 +71,10 @@ internal static class SimpleFontEncodings
     /// MacExpertEncoding) is not transcribed here: no oracle in this test suite exercises it, and
     /// fonts that declare it are rare, so a font naming it gets the same outcome as a symbolic
     /// font with no encoding: every code has no name, and text extraction reports no glyph for any
-    /// of them, rather than this reader refusing to recognise the name at all.
+    /// of them, rather than this reader refusing to recognise the name at all. Because the cells
+    /// are null for want of a transcription, not because Annex D.4 leaves them undefined,
+    /// <see cref="SimpleFontReader"/> does not run §9.6.5.4's StandardEncoding fill over a table
+    /// built from this one.
     /// </summary>
     public static ReadOnlySpan<string?> MacExpert => _macExpert;
 

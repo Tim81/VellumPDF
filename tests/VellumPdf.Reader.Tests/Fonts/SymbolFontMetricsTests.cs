@@ -36,7 +36,7 @@ public sealed class SymbolFontMetricsTests
         Assert.Equal(202, SymbolFontMetrics.ZapfDingbatsWidths.Count);
     }
 
-    // ── Kernel width route, through a real SimpleFontReader ─────────────────────────────────────
+    // ── Kernel width route, through SimpleFontReader ────────────────────────────────────────────
 
     private static PdfDictionary FontDict(string baseFont, PdfArray? differences = null)
     {

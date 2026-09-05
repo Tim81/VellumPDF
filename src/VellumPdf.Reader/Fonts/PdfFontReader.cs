@@ -14,9 +14,10 @@ namespace VellumPdf.Reader.Fonts;
 /// unless the font descriptor overrides it) when the font gives this code no width of its own,
 /// never <see langword="null"/>.</param>
 /// <param name="Unicode">The code's Unicode mapping, or <see langword="null"/> when no route maps
-/// it (§9.10.2). This PR's <see cref="SimpleFontReader"/> populates this only from the glyph-name
-/// route (the AGL, or the ZapfDingbats list); the higher-priority <c>/ToUnicode</c> route is parsed
-/// starting in a later PR, tracked by <see cref="PdfFontReader.HasToUnicode"/> until then.</param>
+/// it (§9.10.2). <see cref="SimpleFontReader"/> populates this from the glyph-name route only
+/// (the AGL, or the ZapfDingbats list); the higher-priority <c>/ToUnicode</c> route is not parsed
+/// yet (#98), and <see cref="PdfFontReader.HasToUnicode"/> records whether the font names
+/// one.</param>
 /// <param name="IsSpaceCode">Whether this is the single-byte code 32, the word-spacing code
 /// <c>Tw</c> applies to (§9.3.3) for a simple font.</param>
 internal readonly record struct DecodedGlyph(
@@ -37,9 +38,11 @@ internal abstract class PdfFontReader
     public abstract bool TryDecodeNext(ReadOnlySpan<byte> bytes, ref int offset, out DecodedGlyph glyph);
 
     /// <summary>
-    /// Whether this font's dictionary names a <c>/ToUnicode</c> stream (§9.10.3). This PR only
-    /// records the fact; a later PR parses the stream and gives it priority over the glyph-name
-    /// route in <see cref="DecodedGlyph.Unicode"/>, per §9.10.2's own ordering.
+    /// Whether this font's dictionary names a <c>/ToUnicode</c> stream (§9.10.3). Recorded, not
+    /// parsed yet (#98): once parsed, that stream takes priority over the glyph-name route in
+    /// <see cref="DecodedGlyph.Unicode"/>, per §9.10.2's own ordering. Until then a
+    /// <see langword="true"/> here suppresses <see cref="PdfReaderDiagnosticCode.UnmappedGlyphs"/>,
+    /// since the unparsed stream may map the code.
     /// </summary>
     public abstract bool HasToUnicode { get; }
 }

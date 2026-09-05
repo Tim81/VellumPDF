@@ -8,16 +8,19 @@ namespace VellumPdf.Reader.Fonts;
 /// <summary>
 /// Resolves a font's <c>/BaseFont</c> name to one of the 14 standard fonts ISO 32000-2 §9.6.2.2
 /// names (Helvetica, Times, Courier in their four styles each, Symbol, ZapfDingbats), for the
-/// built-in encoding and AFM-width fallback §9.6.2.1 requires when a font has no
-/// <c>/Widths</c>/<c>/FontDescriptor</c>.
+/// AFM-width fallback and the built-in encoding of a standard 14 font that omits <c>/Widths</c>
+/// and <c>/FontDescriptor</c>: Table 109 (§9.6.2.1) makes those entries optional for the
+/// standard 14 in PDF 1.0 to 1.7, and §9.6.2.2 requires a processor to have the fonts' metrics
+/// available.
 /// </summary>
 /// <remarks>
 /// Beyond the 14 exact names, this class also recognises a fixed list of Windows/Word substitute
 /// names (<c>Arial</c>, <c>Times New Roman</c>, <c>Courier New</c>, and their bold/italic
 /// combinations) as aliases for the metrically closest standard font. ISO 32000-2 names only the
 /// 14 exact strings; this alias list is a reader heuristic with no basis in the standard, and it
-/// only ever selects a WIDTH table (§3.9 step 9), never a glyph mapping, which continues to come
-/// from the font's own <c>/Encoding</c> resolution regardless of which alias matched.
+/// only ever selects a width table (the AFM fill in <see cref="SimpleFontReader"/>), never a
+/// glyph mapping, which continues to come from the font's own <c>/Encoding</c> resolution
+/// regardless of which alias matched.
 /// </remarks>
 internal static class Standard14Names
 {

@@ -9,7 +9,7 @@ namespace VellumPdf.Reader.Tests.Fonts;
 /// Shared fixture builders for the <c>Fonts/</c> test classes: a minimal, hand-built PDF byte
 /// stream (the <c>ContentInterpreterTests</c> / <c>PageTreeTests</c> style: a raw text template
 /// per object, not <c>VellumPdf.Document.PdfDocument</c>) that gives
-/// <see cref="VellumPdf.Reader.Fonts.SimpleFontReader.Create"/> a real
+/// <see cref="VellumPdf.Reader.Fonts.SimpleFontReader.Create"/> a live
 /// <see cref="PdfDocumentReader"/> to resolve indirect references through, with exact control over
 /// object shapes a document writer would never produce.
 /// </summary>

@@ -216,6 +216,50 @@ public sealed class SimpleFontEncodingsTests
     }
 
     [Fact]
+    public void WinAnsi_definesEveryCode_thatStandardDefines()
+    {
+        // So §9.6.5.4's StandardEncoding fill (SimpleFontReader) changes nothing over a WinAnsi
+        // base table; the twelve cells it does change are all MacRoman's (next test).
+        for (var code = 0; code < 256; code++)
+        {
+            if (SimpleFontEncodings.Standard[code] is not null)
+                Assert.NotNull(SimpleFontEncodings.WinAnsi[code]);
+        }
+    }
+
+    [Fact]
+    public void MacRoman_leavesExactlyTwelveStandardCodes_undefined()
+    {
+        // The cells §9.6.5.4's StandardEncoding fill adds over a /BaseEncoding /MacRomanEncoding
+        // table, read off Annex D.2: each is a StandardEncoding column entry whose MacRoman column
+        // is blank.
+        var expected = new Dictionary<int, string>
+        {
+            [0xAD] = "guilsinglright",
+            [0xB2] = "dagger",
+            [0xB3] = "daggerdbl",
+            [0xB6] = "paragraph",
+            [0xB7] = "bullet",
+            [0xB8] = "quotesinglbase",
+            [0xB9] = "quotedblbase",
+            [0xBA] = "quotedblright",
+            [0xBD] = "perthousand",
+            [0xC3] = "circumflex",
+            [0xC5] = "macron",
+            [0xC6] = "breve",
+        };
+
+        var actual = new Dictionary<int, string>();
+        for (var code = 0; code < 256; code++)
+        {
+            if (SimpleFontEncodings.Standard[code] is { } name && SimpleFontEncodings.MacRoman[code] is null)
+                actual[code] = name;
+        }
+
+        Assert.Equal(expected, actual);
+    }
+
+    [Fact]
     public void SharedStatics_areImmutable_acrossFonts()
     {
         // A per-font table is always a fresh copy (SimpleFontReader.ToArray()s the shared span

@@ -277,6 +277,93 @@ public sealed class SimpleFontReaderTests
         Assert.Equal("’", Decode(reader, 0x27).Unicode); // the stated deviation.
     }
 
+    // Discriminating cell for §9.6.5.4's closing rule: StandardEncoding's 0xB2 is dagger, a cell
+    // Annex D.2's MacRoman column leaves blank (MacRomanEncoding puts dagger at 0xA0 instead).
+    private static PdfDictionary MacRomanBaseDictionary() =>
+        new PdfDictionary().Set(new PdfName("BaseEncoding"), "MacRomanEncoding");
+
+    private static PdfDictionary NonsymbolicDescriptor() =>
+        new PdfDictionary().Set(new PdfName("Flags"), new PdfInteger(32));
+
+    [Fact]
+    public void NonsymbolicTrueType_dictionaryWithMacRomanBase_fillsUndefinedCellsFromStandard()
+    {
+        using var doc = FontTestSupport.OpenMinimal();
+        var sink = new DiagnosticSink(50);
+        var fontDict = new PdfDictionary()
+            .Set(PdfName.Subtype, "TrueType").Set(PdfName.BaseFont, "Foo")
+            .Set(new PdfName("FontDescriptor"), NonsymbolicDescriptor())
+            .Set(PdfName.Encoding, MacRomanBaseDictionary());
+        var reader = Build(doc, fontDict, sink);
+
+        Assert.Equal("†", Decode(reader, 0xB2).Unicode); // filled from StandardEncoding.
+        Assert.Equal("†", Decode(reader, 0xA0).Unicode); // MacRoman's own dagger, untouched.
+        Assert.Equal("'", Decode(reader, 0x27).Unicode); // MacRoman's quotesingle wins over Standard's quoteright.
+        Assert.DoesNotContain(sink.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.FontEncodingMalformed);
+    }
+
+    [Fact]
+    public void NonsymbolicTrueType_namedMacRomanEncoding_isNotFilledFromStandard()
+    {
+        // The fill belongs to §9.6.5.4's dictionary bullet only; a name /Encoding takes Annex D.2's
+        // MacRoman column as it stands.
+        using var doc = FontTestSupport.OpenMinimal();
+        var sink = new DiagnosticSink(50);
+        var fontDict = new PdfDictionary()
+            .Set(PdfName.Subtype, "TrueType").Set(PdfName.BaseFont, "Foo")
+            .Set(new PdfName("FontDescriptor"), NonsymbolicDescriptor())
+            .Set(PdfName.Encoding, "MacRomanEncoding");
+        var reader = Build(doc, fontDict, sink);
+
+        Assert.Null(Decode(reader, 0xB2).Unicode);
+        Assert.Equal("†", Decode(reader, 0xA0).Unicode);
+    }
+
+    [Fact]
+    public void NonsymbolicType1_dictionaryWithMacRomanBase_isNotFilledFromStandard()
+    {
+        // §9.6.5.2 states no fill rule for Type1 fonts.
+        using var doc = FontTestSupport.OpenMinimal();
+        var sink = new DiagnosticSink(50);
+        var fontDict = Type1("Foo")
+            .Set(new PdfName("FontDescriptor"), NonsymbolicDescriptor())
+            .Set(PdfName.Encoding, MacRomanBaseDictionary());
+        var reader = Build(doc, fontDict, sink);
+
+        Assert.Null(Decode(reader, 0xB2).Unicode);
+    }
+
+    [Fact]
+    public void SymbolicTrueType_dictionaryWithMacRomanBase_isNotFilledFromStandard()
+    {
+        // §9.6.5.4's table-building paragraph applies to a dictionary /Encoding only when the
+        // Nonsymbolic flag is set.
+        using var doc = FontTestSupport.OpenMinimal();
+        var sink = new DiagnosticSink(50);
+        var fontDict = new PdfDictionary()
+            .Set(PdfName.Subtype, "TrueType").Set(PdfName.BaseFont, "Foo")
+            .Set(new PdfName("FontDescriptor"), new PdfDictionary().Set(new PdfName("Flags"), new PdfInteger(4)))
+            .Set(PdfName.Encoding, MacRomanBaseDictionary());
+        var reader = Build(doc, fontDict, sink);
+
+        Assert.Null(Decode(reader, 0xB2).Unicode);
+    }
+
+    [Fact]
+    public void NonsymbolicTrueType_dictionaryWithMacExpertBase_isNotFilledFromStandard()
+    {
+        using var doc = FontTestSupport.OpenMinimal();
+        var sink = new DiagnosticSink(50);
+        var fontDict = new PdfDictionary()
+            .Set(PdfName.Subtype, "TrueType").Set(PdfName.BaseFont, "Foo")
+            .Set(new PdfName("FontDescriptor"), NonsymbolicDescriptor())
+            .Set(PdfName.Encoding, new PdfDictionary().Set(new PdfName("BaseEncoding"), "MacExpertEncoding"));
+        var reader = Build(doc, fontDict, sink);
+
+        Assert.Null(Decode(reader, 0x41).Unicode);
+        Assert.Null(Decode(reader, 0xB2).Unicode);
+    }
+
     // ── 9: Symbol / ZapfDingbats base fonts ──────────────────────────────────────────────────────
 
     [Fact]
@@ -315,6 +402,46 @@ public sealed class SimpleFontReaderTests
         Assert.Equal(390, a89.Width);
     }
 
+    [Fact]
+    public void SymbolBaseFont_differences_overrideTheBuiltInEncoding()
+    {
+        // Table 112: with no /BaseEncoding, /Differences describes differences from the font's
+        // built-in encoding; §9.6.5.2: an /Encoding entry "shall override a Type 1 font's mapping
+        // from character codes to character names". Symbol is not exempt.
+        using var doc = FontTestSupport.OpenMinimal();
+        var sink = new DiagnosticSink(50);
+        var differences = new PdfArray().Add(new PdfInteger(0x61)).Add(new PdfName("gamma"));
+        var encoding = new PdfDictionary().Set(new PdfName("Differences"), differences);
+        var reader = Build(doc, Type1("Symbol").Set(PdfName.Encoding, encoding), sink);
+
+        var gamma = Decode(reader, 0x61);
+        Assert.Equal("γ", gamma.Unicode);
+        Assert.Equal(411, gamma.Width); // the AFM width of gamma, not alpha's 631.
+
+        var beta = Decode(reader, 0x62); // untouched by /Differences: still the built-in beta.
+        Assert.Equal("β", beta.Unicode);
+        Assert.Equal(549, beta.Width);
+
+        Assert.Empty(sink.Diagnostics);
+    }
+
+    [Fact]
+    public void SymbolBaseFont_namedWinAnsiEncoding_replacesTheBuiltInEncoding()
+    {
+        // A named /Encoding replaces the whole base table (§9.6.5, Table 112). Symbol's AFM has
+        // no glyph named "a", so the width falls back to MissingWidth, 0 here.
+        using var doc = FontTestSupport.OpenMinimal();
+        var sink = new DiagnosticSink(50);
+        var fontDict = Type1("Symbol").Set(PdfName.Encoding, "WinAnsiEncoding");
+        var reader = Build(doc, fontDict, sink);
+
+        var a = Decode(reader, 0x61);
+        Assert.Equal("a", a.Unicode);
+        Assert.Equal(0, a.Width);
+
+        Assert.Empty(sink.Diagnostics);
+    }
+
     // ── 10: 403 vs 404 ───────────────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -351,6 +478,25 @@ public sealed class SimpleFontReaderTests
         Decode(reader, 0x41); // a second decode of the same unmapped code: nothing new reported.
         Assert.Single(sink.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.UnmappedGlyphs);
         Assert.DoesNotContain(sink.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.FontNoUnicodeRoute);
+    }
+
+    [Fact]
+    public void WinAnsiFont_unmappedDifferenceName_withToUnicode_reportsNeither404Nor403()
+    {
+        // The unparsed /ToUnicode stream may map code 65 (§9.10.2 gives it priority over the
+        // glyph-name route), so a missing glyph-name mapping is not yet an unmapped glyph.
+        using var doc = FontTestSupport.Open(
+            new FontTestSupport.Obj(5, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica "
+                + "/Encoding << /BaseEncoding /WinAnsiEncoding /Differences [65 /g123] >> "
+                + "/ToUnicode 7 0 R >>"),
+            new FontTestSupport.Obj(7, "<< >>", "/CIDInit /ProcSet findresource begin\n"u8.ToArray()));
+        var sink = new DiagnosticSink(50);
+        var reader = Build(doc, Assert.IsType<PdfDictionary>(doc.Resolve(5)), sink);
+
+        Assert.True(reader.HasToUnicode);
+        Assert.Null(Decode(reader, 0x41).Unicode);
+        Assert.Equal("B", Decode(reader, 0x42).Unicode);
+        Assert.Empty(sink.Diagnostics);
     }
 
     // ── 11: /Widths ──────────────────────────────────────────────────────────────────────────────

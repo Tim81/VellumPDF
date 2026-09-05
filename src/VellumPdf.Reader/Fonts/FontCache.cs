@@ -14,7 +14,7 @@ namespace VellumPdf.Reader.Fonts;
 /// Insert-only: past <see cref="MaxCachedFonts"/> entries, a lookup still builds and returns a
 /// reader, just without adding it to the cache. This is a deliberate departure from evicting the
 /// least-recently-used entry: an LRU cache is more machinery than a document with more than
-/// 10,000 distinct font objects (itself far past what any real PDF carries) is worth building for,
+/// 10,000 distinct font objects (far past what any PDF in practice carries) is worth building for,
 /// and the fallback costs only a rebuilt reader, not a wrong one.
 /// </remarks>
 internal sealed class FontCache

@@ -19,8 +19,19 @@ namespace VellumPdf.Reader.Fonts;
 /// Type1, MMType1 and TrueType alike, rather than branching by subtype, since without parsing the
 /// font program itself there is no way to tell a Type1 font's built-in encoding from a TrueType
 /// one's: both are unavailable data, and the two subclauses converge on the same practical
-/// fallback (StandardEncoding for a nonsymbolic font) wherever a real font program would
-/// otherwise supply an answer this reader cannot.
+/// fallback (StandardEncoding for a nonsymbolic font) wherever the font program would
+/// otherwise supply an answer this reader cannot. The one step that does branch on the subtype
+/// needs no font program: §9.6.5.4's closing rule for a TrueType font whose <c>/Encoding</c> is a
+/// dictionary, "Finally, any undefined entries in the table shall be filled using
+/// StandardEncoding", is applied after <c>/Differences</c> when the font is nonsymbolic (Table 121
+/// makes the Symbolic and Nonsymbolic flags exclusive, so the clause's Nonsymbolic condition is
+/// read from the Symbolic bit). The only cells it can change are the twelve StandardEncoding
+/// cells MacRomanEncoding leaves undefined (<c>SimpleFontEncodingsTests</c> pins the set;
+/// WinAnsiEncoding leaves none, and a dictionary without <c>/BaseEncoding</c> starts from
+/// StandardEncoding already), fewer when <c>/Differences</c> has named one of them, and it is
+/// skipped for a <c>/BaseEncoding /MacExpertEncoding</c>, whose table this reader
+/// carries as all-null (<see cref="SimpleFontEncodings.MacExpert"/>), so "undefined" cannot be told
+/// from "not transcribed". §9.6.5.2 states no such rule for Type1 fonts, and none is applied.
 /// <para>
 /// Every dictionary entry this class reads, wherever it is read, goes through
 /// <see cref="PdfDocumentReader.ResolveValue"/> before its type is tested (one hop, a dangling
@@ -35,9 +46,6 @@ internal sealed class SimpleFontReader : PdfFontReader
 {
     private static readonly PdfName _fontDescriptorKey = new("FontDescriptor");
     private static readonly PdfName _flagsKey = new("Flags");
-    private static readonly PdfName _fontFileKey = new("FontFile");
-    private static readonly PdfName _fontFile2Key = new("FontFile2");
-    private static readonly PdfName _fontFile3Key = new("FontFile3");
     private static readonly PdfName _baseEncodingKey = new("BaseEncoding");
     private static readonly PdfName _differencesKey = new("Differences");
     private static readonly PdfName _firstCharKey = new("FirstChar");
@@ -127,7 +135,7 @@ internal sealed class SimpleFontReader : PdfFontReader
                 $"has no usable /BaseFont: {excerpt}.");
         }
 
-        // Step 3: symbolic / embedded.
+        // Step 3: symbolic.
         var descriptor = Resolve(reader, fontDict.Get(_fontDescriptorKey)) as PdfDictionary;
         bool symbolic;
         if (descriptor is not null && Resolve(reader, descriptor.Get(_flagsKey)) is PdfInteger flags)
@@ -139,27 +147,21 @@ internal sealed class SimpleFontReader : PdfFontReader
             symbolic = afmName is "Symbol" or "ZapfDingbats";
         }
 
-        var embedded = descriptor is not null
-            && (Resolve(reader, descriptor.Get(_fontFileKey)) is PdfStream
-                || Resolve(reader, descriptor.Get(_fontFile2Key)) is PdfStream
-                || Resolve(reader, descriptor.Get(_fontFile3Key)) is PdfStream);
-        _ = embedded; // Table 112's embedded/not-embedded split collapses to one rule here; see TableDefault.
+        // Step 4: base table, then /Differences. Symbol and ZapfDingbats get no special path
+        // here: their built-in encodings are the Table 112 default base encoding (the "font's
+        // built-in encoding" case), and §9.6.5.2 says an /Encoding entry, "if present, shall
+        // override a Type 1 font's mapping from character codes to character names", so a named
+        // /Encoding or a /Differences array applies to them exactly as to any other font.
+        var table = ResolveEncodingTable(
+            reader, fontDict, symbolic, afmName, out var encodingDict, out var standardFillAllowed);
+        if (encodingDict is not null)
+        {
+            ApplyDifferences(reader, encodingDict, table);
 
-        // Step 4: base table.
-        string?[] table;
-        if (afmName == "Symbol")
-        {
-            table = SymbolFontMetrics.SymbolEncoding.ToArray();
-        }
-        else if (afmName == "ZapfDingbats")
-        {
-            table = SymbolFontMetrics.ZapfDingbatsEncoding.ToArray();
-        }
-        else
-        {
-            table = ResolveEncodingTable(reader, fontDict, symbolic, out var encodingDict);
-            if (encodingDict is not null)
-                ApplyDifferences(reader, encodingDict, table);
+            // Step 5: §9.6.5.4's closing rule (see the class remarks for its exact scope).
+            var trueType = Resolve(reader, fontDict.Get(PdfName.Subtype)) is PdfName { Value: "TrueType" };
+            if (trueType && !symbolic && standardFillAllowed)
+                FillUndefinedFromStandard(table);
         }
 
         _names = table;
@@ -198,8 +200,17 @@ internal sealed class SimpleFontReader : PdfFontReader
         if (usesAfmWidths)
             FillAfmWidths(afmName!, table, unicode, widths, descriptorMissingWidth);
 
-        // /ToUnicode: recorded only, not parsed; a later PR adds that (see PdfFontReader's doc).
-        _hasToUnicode = Resolve(reader, fontDict.Get(_toUnicodeKey)) is PdfStream;
+        // /ToUnicode: recorded only, not parsed yet (see PdfFontReader's doc). A stream object is
+        // always indirect (§7.3.8.1), and PdfDocumentReader.Resolve hands back a stream object's
+        // dictionary rather than a stream, so the reference is followed with ResolveStream; the
+        // direct PdfStream arm serves dictionaries built in memory, which a parsed file never
+        // produces.
+        _hasToUnicode = fontDict.Get(_toUnicodeKey) switch
+        {
+            PdfIndirectReference toUnicodeRef => reader.ResolveStream(toUnicodeRef) is not null,
+            PdfStream => true,
+            _ => false,
+        };
 
         // Step 10: 403, reported once, right here; 404 is decided lazily in TryDecodeNext, using
         // _hasAnyMappedCode computed above so that check costs nothing per decoded byte.
@@ -211,15 +222,21 @@ internal sealed class SimpleFontReader : PdfFontReader
         }
     }
 
+    // standardFillAllowed is true for an encoding dictionary whose base table is one this reader
+    // transcribes in full, so that its null cells are the "undefined entries" §9.6.5.4 speaks of;
+    // it is false for a name /Encoding (the clause's fill belongs to the dictionary case only) and
+    // for a /BaseEncoding /MacExpertEncoding (see the class remarks).
     private string?[] ResolveEncodingTable(
-        PdfDocumentReader reader, PdfDictionary fontDict, bool symbolic, out PdfDictionary? encodingDict)
+        PdfDocumentReader reader, PdfDictionary fontDict, bool symbolic, string? afmName,
+        out PdfDictionary? encodingDict, out bool standardFillAllowed)
     {
         encodingDict = null;
+        standardFillAllowed = false;
         var encoding = Resolve(reader, fontDict.Get(PdfName.Encoding));
         switch (encoding)
         {
             case null:
-                return TableDefault(symbolic);
+                return TableDefault(symbolic, afmName);
 
             case PdfName named:
                 if (SimpleFontEncodings.TryGetNamed(named.Value, out var byName))
@@ -227,33 +244,48 @@ internal sealed class SimpleFontReader : PdfFontReader
                 ReportOnce(ref _reported401, PdfReaderDiagnosticCode.FontEncodingMalformed,
                     $"/Encoding names an encoding this reader does not know: "
                     + $"{DiagnosticExcerpt.Quote(named.Value)}.");
-                return TableDefault(symbolic);
+                return TableDefault(symbolic, afmName);
 
             case PdfDictionary dict:
                 encodingDict = dict;
+                standardFillAllowed = true;
                 var baseEncoding = Resolve(reader, dict.Get(_baseEncodingKey));
                 if (baseEncoding is null)
-                    return TableDefault(symbolic);
+                    return TableDefault(symbolic, afmName);
                 if (baseEncoding is PdfName baseName && SimpleFontEncodings.TryGetNamed(baseName.Value, out var baseTable))
+                {
+                    standardFillAllowed = baseName.Value != "MacExpertEncoding";
                     return baseTable.ToArray();
+                }
                 ReportOnce(ref _reported401, PdfReaderDiagnosticCode.FontEncodingMalformed,
                     "/Encoding's /BaseEncoding names an encoding this reader does not know.");
-                return TableDefault(symbolic);
+                return TableDefault(symbolic, afmName);
 
             default:
                 ReportOnce(ref _reported401, PdfReaderDiagnosticCode.FontEncodingMalformed,
                     "/Encoding is neither a known encoding name nor an encoding dictionary.");
-                return TableDefault(symbolic);
+                return TableDefault(symbolic, afmName);
         }
     }
 
-    // Table 112's default base encoding: the standard reads embedded → the font program's own
-    // built-in encoding, not embedded → StandardEncoding (nonsymbolic) or the built-in encoding
-    // (symbolic). This reader never parses a font program, so both branches land on the same
-    // answer regardless of embedding (StandardEncoding for nonsymbolic, all-null for symbolic),
-    // which is why "embedded" plays no part in this method itself (see the class doc's own note).
-    private static string?[] TableDefault(bool symbolic) =>
-        symbolic ? new string?[256] : SimpleFontEncodings.Standard.ToArray();
+    // Table 112's default base encoding is the font program's built-in encoding for an embedded
+    // font or a symbolic one, and StandardEncoding for a nonsymbolic one. This reader never
+    // parses a font program, so the built-in encoding is known only for the two standard 14
+    // fonts Annex D.5 and D.6 print it for; every other symbolic font gets an all-null table,
+    // and whether the font is embedded plays no part.
+    private static string?[] TableDefault(bool symbolic, string? afmName) => afmName switch
+    {
+        "Symbol" => SymbolFontMetrics.SymbolEncoding.ToArray(),
+        "ZapfDingbats" => SymbolFontMetrics.ZapfDingbatsEncoding.ToArray(),
+        _ => symbolic ? new string?[256] : SimpleFontEncodings.Standard.ToArray(),
+    };
+
+    private static void FillUndefinedFromStandard(string?[] table)
+    {
+        var standard = SimpleFontEncodings.Standard;
+        for (var code = 0; code < 256; code++)
+            table[code] ??= standard[code];
+    }
 
     private void ApplyDifferences(PdfDocumentReader reader, PdfDictionary encodingDict, string?[] table)
     {
@@ -404,8 +436,10 @@ internal sealed class SimpleFontReader : PdfFontReader
         var code = bytes[offset];
         offset++;
 
+        // 404 is withheld while the font names a /ToUnicode stream this reader does not parse
+        // yet: that stream has priority over the glyph-name route (§9.10.2) and may map the code.
         var unicode = _unicode[code];
-        if (unicode is null && !_reportedNoUnicodeOrUnmapped && _hasAnyMappedCode)
+        if (unicode is null && !_reportedNoUnicodeOrUnmapped && _hasAnyMappedCode && !_hasToUnicode)
         {
             ReportOnce(ref _reportedNoUnicodeOrUnmapped, PdfReaderDiagnosticCode.UnmappedGlyphs,
                 "decoded a glyph whose code has no Unicode mapping, though other codes in this font do.");
