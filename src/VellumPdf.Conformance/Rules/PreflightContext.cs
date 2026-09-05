@@ -515,11 +515,40 @@ internal sealed class PreflightContext
     /// </summary>
     public ReadOnlyMemory<byte> DecryptedRawBody(ParsedStream stream) => Reader.DecryptedStreamView(stream).RawBody;
 
+    /// <summary>
+    /// The longest message a <see cref="PreflightAssertion"/> retains. A message identifies a
+    /// finding; it carries at most an excerpt of an oversized producer value, never the whole of
+    /// one. Many rules interpolate a name, a string or a keyword the document controls, and
+    /// ISO 32000-2 Annex C.1 sets no bound on any of those ("In general, this PDF standard does
+    /// not restrict the size or quantity of things described in the PDF file format"), so
+    /// without this cut one
+    /// 900,000-byte /Filter name shared by 400 pages retained 705.7 MiB (GC delta) of message text
+    /// from a 990 KB file (measured in #403). 1024 characters is roughly twice the longest sentence
+    /// any rule composes on its own (522 characters, A2aContentItemTaggingRule) and short enough
+    /// that a result list of thousands of findings stays a few megabytes.
+    /// <para>
+    /// This cut is the only bound most messages have. Ten sites whose message names a producer
+    /// value (a /Filter, an action type, a named action, an annotation /Subtype or /AP key, a
+    /// composite font's /Encoding CMap name in two rules, a /RoleMap or /Perms key, a blend mode)
+    /// additionally excerpt it through the Reader's <see cref="DiagnosticExcerpt"/> before
+    /// interpolating, so the sentence keeps its shape; every other producer-controlled
+    /// interpolation is cut mid-value here when the value is oversized (#405 lists them). The two
+    /// differ in what they can assume: a <see cref="PdfName"/> parsed from a document is Latin-1
+    /// (one character per byte, never a surrogate pair), so
+    /// <see cref="DiagnosticExcerpt.Quote(string)"/> slices freely and counts bytes, while this cut
+    /// sees text decoded from UTF-16BE too and has to step around a surrogate pair.
+    /// </para>
+    /// </summary>
+    internal const int MaxMessageChars = 1024;
+
     /// <summary>Records a finding for the current validation pass.</summary>
     /// <param name="ruleId">Stable rule identifier (typically the rule's <see cref="IConformanceRule.RuleId"/>).</param>
     /// <param name="clause">Specification clause citation.</param>
     /// <param name="severity">The finding's severity.</param>
-    /// <param name="message">Human-readable description.</param>
+    /// <param name="message">Human-readable description. Text past <see cref="MaxMessageChars"/>
+    /// characters is replaced by <c>... (N chars)</c>, N being the full length in characters
+    /// (UTF-16 code units). One character less is kept when the cut would split a surrogate
+    /// pair.</param>
     /// <param name="objectRef">Optional <c>"N 0 R"</c> object location.</param>
     public void Report(
         string ruleId,
@@ -527,5 +556,20 @@ internal sealed class PreflightContext
         PreflightSeverity severity,
         string message,
         string? objectRef = null)
-        => _assertions.Add(new PreflightAssertion(ruleId, clause, severity, message, objectRef));
+    {
+        if (message is { Length: > MaxMessageChars })
+        {
+            // A message can end mid-surrogate-pair when the producer value came from UTF-16BE
+            // text (A2aLangSyntaxRule, UaLangSyntaxRule, XmpPacket): cutting inside the pair would
+            // leave a lone high surrogate in the retained string, which the CLI's SARIF writer
+            // (Formatter.WriteSarif) would then have to serialize (#403).
+            var cut = MaxMessageChars;
+            if (char.IsHighSurrogate(message[cut - 1]))
+                cut--;
+            message = string.Concat(message.AsSpan(0, cut), "... (", message.Length.ToString(),
+                " chars)");
+        }
+
+        _assertions.Add(new PreflightAssertion(ruleId, clause, severity, message, objectRef));
+    }
 }

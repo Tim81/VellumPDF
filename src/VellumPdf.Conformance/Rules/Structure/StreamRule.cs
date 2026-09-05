@@ -150,11 +150,15 @@ internal sealed class StreamRule : IConformanceRule
         }
 
         // Any other filter name (including LZWDecode) is forbidden.
+        // The name is producer-controlled and unbounded (Annex C.1); the excerpt is what
+        // the retained message keeps of it (#403). NumericLimitsRule reports the length
+        // violation itself.
         context.Report(
             "ISO19005-2:6.1.7.2-1-filter",
             "ISO 19005-2:2011, 6.1.7.2",
             PreflightSeverity.Error,
-            $"A stream uses the /{filterName.Value} filter, which is not permitted in PDF/A-2.");
+            $"A stream uses the /{DiagnosticExcerpt.Quote(filterName.Value)} filter, "
+            + "which is not permitted in PDF/A-2.");
         return true;
     }
 
