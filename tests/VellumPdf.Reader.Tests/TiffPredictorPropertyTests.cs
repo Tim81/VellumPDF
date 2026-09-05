@@ -10,15 +10,22 @@ namespace VellumPdf.Reader.Tests;
 /// <summary>
 /// Differential property test for TIFF predictor 2 (ISO 32000-2 §7.4.4.4): for a random shape and a
 /// random row body, the implementation must agree byte for byte with an independently written
-/// reference decoder over every supported bit depth, colour count and row count. A known-answer
-/// test only ever proves the cases someone thought to write down; this generates the shape space
-/// the cumulative-sum rule has to hold over.
+/// reference decoder. A known-answer test only ever proves the cases someone thought to write
+/// down; this generates the shape space the cumulative-sum rule has to hold over.
+/// <para>
+/// The shape space covers every bit depth <c>Filters.cs</c> accepts and the whole colour count it
+/// accepts (1 to 32). Column counts run to 200 rather than to the 1 048 576 the guard admits,
+/// because the byte loops the implementation uses process a row in chunks and a defect that starts
+/// partway along a row is only reachable once a generated row is longer than one such chunk; 200
+/// columns clears that at every depth, while generating megabyte rows would cost far more than it
+/// finds. Row counts run to 4, enough for the per-row restart to be exercised repeatedly.
+/// </para>
 /// </summary>
 public sealed class TiffPredictorPropertyTests
 {
     private static readonly Gen<(int Bpc, int Colors, int Columns, int Rows)> ShapeGen =
         Gen.Select(
-            Gen.OneOfConst(1, 2, 4, 8, 16), Gen.Int[1, 4], Gen.Int[1, 16], Gen.Int[1, 4],
+            Gen.OneOfConst(1, 2, 4, 8, 16), Gen.Int[1, 32], Gen.Int[1, 200], Gen.Int[1, 4],
             (bpc, colors, columns, rows) => (bpc, colors, columns, rows));
 
     // Each shape needs a body of exactly rowBytes * rows: too short and Filters.cs's own

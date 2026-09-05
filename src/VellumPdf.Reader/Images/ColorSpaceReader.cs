@@ -296,11 +296,19 @@ internal sealed class ColorSpaceReader(
             // The decode underneath this runs against `tightened`, a cap this reader chose, not
             // the caller's own PdfReaderOptions.MaxDecodedStreamBytes; reporting it against the
             // sink the caller reads from would raise DecodedStreamLimitExceeded (111) naming a
-            // limit the caller never set. A throwaway sink swallows that inner report; the 501
-            // below, which names the cap and the reason for it, is what reaches the caller instead.
+            // limit the caller never set. It goes to a local sink instead, and only that one code
+            // is dropped from it: an unknown filter or an unsupported predictor on a lookup stream
+            // says nothing about this reader's cap and still belongs to the caller. The 501 below,
+            // which names the cap and the reason for it, is what stands in for the 111.
             var tightened = limits with { MaxDecodedBytes = cap };
+            var inner = new DiagnosticSink(cap: 8);
             var bytes = ancillaryCache.GetOrDecode(
-                reader, stream, AncillaryRole.IndexedLookup, budget, tightened, new DiagnosticSink(cap: 1));
+                reader, stream, AncillaryRole.IndexedLookup, budget, tightened, inner);
+            foreach (var d in inner.Diagnostics)
+            {
+                if (d.Code != PdfReaderDiagnosticCode.DecodedStreamLimitExceeded)
+                    diagnostics.Report(d.Code, d.Message, d.ObjectNumber, d.Generation, d.PageIndex);
+            }
             if (bytes is null)
             {
                 Report(diagnostics, objectNumber, generation, pageIndex,

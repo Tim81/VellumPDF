@@ -116,7 +116,7 @@ public sealed class PdfExtractedImage
     /// buffer, not appended to this one), <c>.ccitt</c> for <see
     /// cref="PdfImageEncoding.CcittFax"/>, and, for <see cref="PdfImageEncoding.Jpx"/>, <c>.jp2</c>
     /// when the payload begins with the ISO/IEC 15444-1 JP2 signature box and <c>.j2k</c> when it
-    /// instead begins with a bare codestream's SOC marker (see <see
+    /// instead begins with the SOC-then-SIZ marker pair that opens a bare codestream (see <see
     /// cref="PdfReaderDiagnosticCode.ImageJpxSignatureUnrecognised"/> for both, and for the third
     /// shape that also reports it and falls back to <c>.jp2</c>).
     /// </summary>
@@ -201,10 +201,10 @@ public sealed class PdfExtractedImage
     /// costs; <c>bitDepth</c> here is the PNG output depth, 8 or 16, not <see
     /// cref="BitsPerComponent"/>, and <c>channels</c> is 1 for a grey image, 3 for RGB or Indexed
     /// (an Indexed image's own indices are expanded to 8-bit RGB triples first, up to 24 times <see
-    /// cref="Data"/>'s own length at 1 bit per index; both that expansion buffer and the
-    /// interleaved row buffer above are live at once, so the peak is up to 32 times <see
-    /// cref="Data"/>'s own length). This is independent of <see cref="Data"/>'s own length, unlike
-    /// <see cref="TryEncodePng"/>'s bound.
+    /// cref="Data"/>'s own length at 1 bit per index; that expansion buffer and the interleaved row
+    /// buffer above are live at once, the latter reaching 32 times, so the peak is up to 56 times
+    /// <see cref="Data"/>'s own length). This is independent of <see cref="Data"/>'s own
+    /// length, unlike <see cref="TryEncodePng"/>'s bound.
     /// </remarks>
     public bool TryEncodePngWithAlpha([NotNullWhen(true)] out byte[]? png) =>
         PngEncoder.TryEncodeWithAlpha(this, out png);
