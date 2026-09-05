@@ -542,7 +542,8 @@ public sealed class PreflightMessageBoundTests
                 $"A retained message of rule {a.RuleId} was {a.Message.Length} chars."));
 
         // 128 Ki characters for 407 findings; the pre-fix total for this fixture was 693.6 MiB of
-        // message text (#403's 705.7 MiB figure is from a 990 KB variant of the same shape).
+        // message text (#403's 705.7 MiB is a GC delta measured on a 990 KB variant of the same
+        // shape).
         var totalLength = result.Assertions.Sum(a => a.Message.Length);
         Assert.True(totalLength < 131_072, $"Total retained message length was {totalLength} chars.");
 

@@ -517,7 +517,8 @@ internal sealed class PreflightContext
 
     /// <summary>
     /// The longest message a <see cref="PreflightAssertion"/> retains. A message identifies a
-    /// finding; it carries at most an excerpt of the producer's value, never the whole of it. Many
+    /// finding; it carries at most an excerpt of an oversized producer value, never the whole of
+    /// one. Many
     /// rules interpolate a name, a string or a keyword the document controls, and ISO 32000-2 Annex
     /// C.1 sets no bound on any of those ("In general, this PDF standard does not restrict the size
     /// or quantity of things described in the PDF file format"), so without this cut one
