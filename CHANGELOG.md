@@ -93,6 +93,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the form's own `/Matrix` into the graphics state's CTM (§8.10.1 b) before interpreting its
   content, so a caller reading the CTM from inside the form's own content sees the composed value,
   not the invoker's own CTM with the form's matrix left for it to apply separately. (#98)
+- **Simple-font decoding for text extraction.** Type1, MMType1 and TrueType fonts map character
+  codes to glyph names through StandardEncoding, WinAnsiEncoding, MacRomanEncoding, the built-in
+  Symbol and ZapfDingbats encodings and `/Differences`, then to Unicode through the Adobe Glyph
+  List (ISO 32000-2 §9.6.5, §9.10.2, Annex D), with `/Widths` and the standard 14 metrics for
+  widths. Five diagnostic codes 400 to 404 report unreadable fonts, malformed encodings or
+  widths, fonts with no route to Unicode, and unmapped glyphs. Text extraction itself lands in a
+  later change. (#98)
 
 ### Changed
 
