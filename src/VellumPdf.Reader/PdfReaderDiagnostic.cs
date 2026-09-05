@@ -573,6 +573,56 @@ public enum PdfReaderDiagnosticCode
     /// </summary>
     ContentLimitExceeded = 309,
 
+    // ── 4xx: fonts and Unicode mapping ──────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// A simple font's resource dictionary was not a dictionary at all, had no usable
+    /// <c>/BaseFont</c>, named a <c>/Subtype</c> this reader knows nothing about (not
+    /// <c>/Type0</c> or <c>/Type3</c>, which are silent until this reader gains readers for them),
+    /// or the reader could not resolve the font dictionary or one of its entries because building
+    /// it hit this reader's own indirect-object resolution depth limit. ISO 32000-2 §9.6.2.1
+    /// Table 109 makes <c>/Type</c>, <c>/Subtype</c> and <c>/BaseFont</c> all required entries of
+    /// a font dictionary. Reported once per font.
+    /// </summary>
+    FontUnreadable = 400,
+
+    /// <summary>
+    /// A simple font's <c>/Encoding</c> (ISO 32000-2 §9.6.5) was neither a known encoding name nor
+    /// an encoding dictionary, its <c>/BaseEncoding</c> named an encoding this reader does not
+    /// know or was itself an unresolved indirect reference, its <c>/Differences</c> was present
+    /// but not an array, or a <c>/Differences</c> element was out of range, named a glyph longer
+    /// than this reader's own name-length bound, was of a type §9.6.5.1 does not permit there
+    /// (only integers and names), or was an indirect reference, which §7.3.10 permits but this
+    /// reader does not follow inside the array. Every element condition except the over-long name
+    /// stops the array from being applied any further. Reported once per font.
+    /// </summary>
+    FontEncodingMalformed = 401,
+
+    /// <summary>
+    /// A simple font's <c>/FirstChar</c>, <c>/LastChar</c>, or <c>/Widths</c> (ISO 32000-2 Table
+    /// 109) was missing, mistyped, holding a non-number element, out of range, or shorter than
+    /// <c>LastChar - FirstChar + 1</c> requires, or the font had no <c>/Widths</c> at all and is
+    /// not one of the standard 14 fonts (§9.6.2.1). A malformed <c>/Widths</c> is not repaired
+    /// from the standard 14 font's own AFM metrics even when the font is one of them; every code
+    /// keeps <c>MissingWidth</c>. Reported once per font.
+    /// </summary>
+    FontWidthsMalformed = 402,
+
+    /// <summary>
+    /// No code in this font has a route to Unicode: it names no <c>/ToUnicode</c> stream, and no
+    /// glyph name its encoding assigns is one the Adobe Glyph List, or the ZapfDingbats glyph
+    /// list, maps (§9.10.2). Reported once per font.
+    /// </summary>
+    FontNoUnicodeRoute = 403,
+
+    /// <summary>
+    /// A glyph was decoded whose character code has no Unicode mapping, while at least one other
+    /// code in the same font does. Reported once per font, on the first such glyph decoded. Not
+    /// reported while the font names a <c>/ToUnicode</c> stream this reader does not parse yet,
+    /// since that stream may map the code (§9.10.2 gives it priority over the glyph-name route).
+    /// </summary>
+    UnmappedGlyphs = 404,
+
     // ── 5xx: images ─────────────────────────────────────────────────────────────────────────────
 
     /// <summary> An image dictionary's own required entries (ISO 32000-2 Table 87) were missing or
@@ -771,6 +821,12 @@ internal static class PdfReaderDiagnosticSeverities
         PdfReaderDiagnosticCode.InlineImageMalformed => PdfReaderDiagnosticSeverity.Warning,
         PdfReaderDiagnosticCode.ContentStreamTooLarge => PdfReaderDiagnosticSeverity.Warning,
         PdfReaderDiagnosticCode.ContentLimitExceeded => PdfReaderDiagnosticSeverity.Warning,
+        PdfReaderDiagnosticCode.FontUnreadable => PdfReaderDiagnosticSeverity.Warning,
+        PdfReaderDiagnosticCode.FontEncodingMalformed => PdfReaderDiagnosticSeverity.Warning,
+        PdfReaderDiagnosticCode.FontWidthsMalformed => PdfReaderDiagnosticSeverity.Warning,
+        PdfReaderDiagnosticCode.FontNoUnicodeRoute => PdfReaderDiagnosticSeverity.Info,
+        PdfReaderDiagnosticCode.UnmappedGlyphs => PdfReaderDiagnosticSeverity.Info,
+
         PdfReaderDiagnosticCode.ImageDictionaryInvalid => PdfReaderDiagnosticSeverity.Warning,
         PdfReaderDiagnosticCode.ImageColorSpaceUnsupported => PdfReaderDiagnosticSeverity.Warning,
         PdfReaderDiagnosticCode.ImageDecodeArrayInvalid => PdfReaderDiagnosticSeverity.Warning,

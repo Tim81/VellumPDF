@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 using VellumPdf.Core;
+using VellumPdf.Reader;
 
 namespace VellumPdf.Conformance.Rules.Actions;
 
@@ -137,7 +138,8 @@ internal sealed class ActionRule : IConformanceRule
                 s is null
                     ? "An action dictionary has no /S action-type key (only GoTo, GoToR, GoToE, Thread, "
                       + "URI, Named, and SubmitForm are permitted in PDF/A)."
-                    : $"The action type /{s.Value} is not permitted in PDF/A.");
+                    : $"The action type /{DiagnosticExcerpt.Quote(s.Value)} is not permitted "
+                      + "in PDF/A.");
         }
         else if (s.Value == "Named"
             && context.Resolve(action.Get(_n)) is PdfName named
@@ -148,8 +150,8 @@ internal sealed class ActionRule : IConformanceRule
                 "ISO19005-2:6.5.1-named-action",
                 "ISO 19005-2:2011, 6.5.1",
                 PreflightSeverity.Error,
-                $"The named action /{named.Value} is not permitted in PDF/A "
-                + "(only NextPage, PrevPage, FirstPage, and LastPage are allowed).");
+                $"The named action /{DiagnosticExcerpt.Quote(named.Value)} is not permitted "
+                + "in PDF/A (only NextPage, PrevPage, FirstPage, and LastPage are allowed).");
         }
 
         // /Next is either a single action or an array of actions executed afterwards.

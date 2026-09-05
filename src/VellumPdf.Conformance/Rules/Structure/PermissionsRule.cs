@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 using VellumPdf.Core;
+using VellumPdf.Reader;
 
 namespace VellumPdf.Conformance.Rules.Structure;
 
@@ -39,7 +40,8 @@ internal sealed class PermissionsRule : IConformanceRule
                 continue;
             context.Report(
                 RuleId, Clause, PreflightSeverity.Error,
-                $"The permissions dictionary contains the key /{entry.Key.Value}; only /UR3 and /DocMDP "
+                $"The permissions dictionary contains the key "
+                + $"/{DiagnosticExcerpt.Quote(entry.Key.Value)}; only /UR3 and /DocMDP "
                 + "are permitted in PDF/A-2.");
             return; // One report suffices; the verdict is unaffected by the count.
         }

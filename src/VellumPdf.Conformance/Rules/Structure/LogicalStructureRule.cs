@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 using VellumPdf.Core;
+using VellumPdf.Reader;
 
 namespace VellumPdf.Conformance.Rules.Structure;
 
@@ -69,7 +70,8 @@ internal sealed class LogicalStructureRule : IConformanceRule
                     RuleId,
                     Clause,
                     PreflightSeverity.Error,
-                    $"The structure tree /RoleMap entry /{entry.Key.Value} shall map to a name.");
+                    $"The structure tree /RoleMap entry "
+                    + $"/{DiagnosticExcerpt.Quote(entry.Key.Value)} shall map to a name.");
             }
         }
 

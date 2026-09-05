@@ -94,6 +94,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the form's own `/Matrix` into the graphics state's CTM (§8.10.1 b) before interpreting its
   content, so a caller reading the CTM from inside the form's own content sees the composed value,
   not the invoker's own CTM with the form's matrix left for it to apply separately. (#98)
+- **Simple-font decoding for text extraction.** Type1, MMType1 and TrueType fonts map character
+  codes to glyph names through StandardEncoding, WinAnsiEncoding, MacRomanEncoding, the built-in
+  Symbol and ZapfDingbats encodings and `/Differences`, then to Unicode through the Adobe Glyph
+  List (ISO 32000-2 §9.6.5, §9.10.2, Annex D), with `/Widths` and the standard 14 metrics for
+  widths. Five diagnostic codes 400 to 404 report unreadable fonts, malformed encodings or
+  widths, fonts with no route to Unicode, and unmapped glyphs. Text extraction itself lands in a
+  later change. (#98)
 - **Image extraction (#98).** `PdfDocumentReader.ExtractImages()` and `PdfReadPage.ExtractImages()`
   return every image XObject and inline image a page's content draws, including those inside form
   XObjects and, by default, inside annotation `/AP /N` appearance streams, in draw order. DCT, JPX,
@@ -134,6 +141,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   document reports on re-opening now include `Extract`. Documents written with `Extract`
   (the default, since `All` includes it) carry the same `/P` value as before. See Fixed, below,
   for why. (#397)
+- **A preflight finding's message text changes for a named value longer than 32 characters, and for
+  any message longer than 1024 characters.** Ten rule sites that quote a producer-supplied name (a
+  stream `/Filter`, an action `/S` or named action `/N`, an annotation `/Subtype` or an extra `/AP`
+  key, a composite font's `/Encoding` CMap name in two rules, a `/RoleMap` key, a `/Perms` key, a
+  blend mode) now keep the first 32 characters followed by `... (N bytes)`, and every
+  `PreflightAssertion.Message` past 1024 characters ends in `... (N chars)`. `vellum-preflight`'s
+  text, JSON and SARIF output carries the same text. Verdicts, rule ids, clauses and assertion
+  counts are unaffected, and at these ten sites a message whose named value is 32 characters or
+  shorter is byte-identical to before. See Fixed, below, for why. (#403)
 
 ### Fixed
 
@@ -146,6 +162,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   writes `-4` instead of `-516`, the same value as `All`; at `/R` 6 the `/Perms` seal
   (Algorithm 10) changes with it, since it seals the same `/P` value. A document written without
   `Extract` therefore reads back with `Extract` included in `PdfEncryptionInfo.Permissions`. (#397)
+- **A preflight finding could retain a producer-sized string for the result's lifetime.** A rule
+  that names the offending value in its message interpolated it whole, so one oversized `/Filter`
+  name shared by 400 pages kept 705.7 MiB (GC delta) of message text alive from a 990 KB file
+  (measured in #403). Every `PreflightAssertion.Message` is now cut at 1024 characters with its
+  length appended, and the ten sites that quoted a name whole keep the first 32 characters plus the
+  byte count; the remaining sites that interpolate a producer value rely on the 1024-character cut
+  and are listed in #405. What this bounds is the retained result; the transient allocation the
+  Reader makes while building its own exception message for an unknown filter is unchanged and
+  tracked in #406. (#403)
 
 ## [2.3.0] - 2026-09-01
 
