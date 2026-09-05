@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 using VellumPdf.Core;
+using VellumPdf.Reader;
 
 namespace VellumPdf.Conformance.Rules.Fonts;
 
@@ -399,8 +400,9 @@ internal sealed class FontStructureRule : IConformanceRule
             return;
         if (context.Resolve(font.Get(_encoding)) is PdfName name && !_predefinedCMaps.Contains(name.Value))
             Report(context, "6.2.11.3.3-cmap-name", "ISO 19005-2:2011, 6.2.11.3.3",
-                $"A composite font's /Encoding names the CMap /{name.Value}, which is neither one of the "
-                + "predefined CMaps nor an embedded CMap stream.");
+                $"A composite font's /Encoding names the CMap "
+                + $"/{DiagnosticExcerpt.Quote(name.Value)}, which is neither one of the predefined "
+                + "CMaps nor an embedded CMap stream.");
     }
 
     // §6.2.11.3.1-1: the CIDSystemInfo of a composite font's descendant CIDFont and its CMap must be

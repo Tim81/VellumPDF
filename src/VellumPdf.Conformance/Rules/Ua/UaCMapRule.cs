@@ -81,8 +81,9 @@ internal sealed class UaCMapRule : IConformanceRule
                         RuleId1,
                         Clause,
                         PreflightSeverity.Error,
-                        $"A composite font's /Encoding names the CMap /{nameVal.Value}, which is neither "
-                        + "one of the predefined CMaps nor an embedded CMap stream (§7.21.3.3).");
+                        $"A composite font's /Encoding names the CMap "
+                        + $"/{DiagnosticExcerpt.Quote(nameVal.Value)}, which is neither one of the "
+                        + "predefined CMaps nor an embedded CMap stream (§7.21.3.3).");
                 }
                 // Predefined name (including Identity-H/V): §7.21.3.3-2/-3 have no embedded program
                 // to check — they do not apply to predefined-name encodings.
