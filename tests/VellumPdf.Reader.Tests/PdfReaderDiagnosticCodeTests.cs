@@ -46,6 +46,11 @@ public sealed class PdfReaderDiagnosticCodeTests
         [PdfReaderDiagnosticCode.InlineImageMalformed] = 3,
         [PdfReaderDiagnosticCode.ContentStreamTooLarge] = 3,
         [PdfReaderDiagnosticCode.ContentLimitExceeded] = 3,
+        [PdfReaderDiagnosticCode.FontUnreadable] = 4,
+        [PdfReaderDiagnosticCode.FontEncodingMalformed] = 4,
+        [PdfReaderDiagnosticCode.FontWidthsMalformed] = 4,
+        [PdfReaderDiagnosticCode.FontNoUnicodeRoute] = 4,
+        [PdfReaderDiagnosticCode.UnmappedGlyphs] = 4,
         [PdfReaderDiagnosticCode.DiagnosticsSuppressed] = 9,
     };
 
@@ -154,6 +159,11 @@ public sealed class PdfReaderDiagnosticCodeTests
         [PdfReaderDiagnosticCode.InlineImageMalformed] = (307, PdfReaderDiagnosticSeverity.Warning),
         [PdfReaderDiagnosticCode.ContentStreamTooLarge] = (308, PdfReaderDiagnosticSeverity.Warning),
         [PdfReaderDiagnosticCode.ContentLimitExceeded] = (309, PdfReaderDiagnosticSeverity.Warning),
+        [PdfReaderDiagnosticCode.FontUnreadable] = (400, PdfReaderDiagnosticSeverity.Warning),
+        [PdfReaderDiagnosticCode.FontEncodingMalformed] = (401, PdfReaderDiagnosticSeverity.Warning),
+        [PdfReaderDiagnosticCode.FontWidthsMalformed] = (402, PdfReaderDiagnosticSeverity.Warning),
+        [PdfReaderDiagnosticCode.FontNoUnicodeRoute] = (403, PdfReaderDiagnosticSeverity.Info),
+        [PdfReaderDiagnosticCode.UnmappedGlyphs] = (404, PdfReaderDiagnosticSeverity.Info),
         [PdfReaderDiagnosticCode.DiagnosticsSuppressed] = (900, PdfReaderDiagnosticSeverity.Warning),
     };
 
