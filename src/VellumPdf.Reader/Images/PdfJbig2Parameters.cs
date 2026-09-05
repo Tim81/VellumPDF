@@ -13,7 +13,9 @@ public sealed class PdfJbig2Parameters
 {
     /// <summary>
     /// The decoded <c>/JBIG2Globals</c> stream (ISO 32000-2 §7.4.7): globally-referenced segments
-    /// this image's own embedded segments depend on. Empty when the image names no globals stream.
+    /// this image's own embedded segments depend on. Empty when the image names no globals stream,
+    /// or when the one it names does not resolve to a stream, fails to decode, or is refused by the
+    /// decode budget (see <see cref="PdfReaderDiagnosticCode.ImageDictionaryInvalid"/>).
     /// </summary>
     public ReadOnlyMemory<byte> Globals { get; }
 

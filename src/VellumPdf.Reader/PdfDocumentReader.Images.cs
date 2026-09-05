@@ -24,6 +24,12 @@ public sealed partial class PdfDocumentReader
     /// cref="PdfImageExtractionResult.Images"/>, immediately after the image that reached it,
     /// subject to the same dedupe.
     /// </summary>
+    /// <remarks>
+    /// Extraction reports what the file contains, not what a renderer would show: optional-content
+    /// visibility (Table 87's <c>/OC</c> entry, and the catalog's own <c>OCProperties</c>) and an
+    /// annotation's Hidden flag (ISO 32000-2 §12.5.3, <c>/F</c>) are not evaluated, so an image in
+    /// an <c>OFF</c> optional-content group or behind a Hidden annotation is still returned.
+    /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="options"/> is <see
     /// langword="null"/>.</exception>
     /// <exception cref="ObjectDisposedException">This reader has been disposed.</exception>

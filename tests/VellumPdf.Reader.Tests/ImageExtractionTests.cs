@@ -522,6 +522,30 @@ public sealed class ImageExtractionTests
         Assert.Contains(result.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ImageMaskInvalid);
     }
 
+    [Fact]
+    public void MaskStream_carriesItsOwnSMask_reports503_explicitMaskDropped()
+    {
+        var pdf = BuildPdf(1,
+            new Obj(1, "<< /Type /Catalog /Pages 2 0 R >>"),
+            new Obj(2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
+            new Obj(3, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] "
+                + "/Resources << /XObject << /Im0 10 0 R >> >> /Contents 4 0 R >>"),
+            new Obj(4, "<< >>", "/Im0 Do"u8.ToArray()),
+            new Obj(10, "<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /BitsPerComponent 8 "
+                + "/ColorSpace /DeviceGray /Filter /FlateDecode /Mask 11 0 R >>", Flate([1])),
+            new Obj(11, "<< /Type /XObject /Subtype /Image /Width 8 /Height 1 /ImageMask true "
+                + "/Filter /FlateDecode /SMask 12 0 R >>", Flate([0xFF])),
+            new Obj(12, "<< /Type /XObject /Subtype /Image /Width 8 /Height 1 /BitsPerComponent 8 "
+                + "/ColorSpace /DeviceGray /Filter /FlateDecode >>", Flate(new byte[8])));
+
+        using var reader = Open(pdf);
+        var result = reader.ExtractImages();
+        var extracted = Assert.Single(result.Images);
+
+        Assert.Null(extracted.ExplicitMask);
+        Assert.Contains(result.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ImageMaskInvalid);
+    }
+
     // ── 9. JPX ───────────────────────────────────────────────────────────────────────────────────
 
     private static readonly byte[] Jp2Signature =
@@ -538,6 +562,7 @@ public sealed class ImageExtractionTests
         var result = reader.ExtractImages();
         var extracted = Assert.Single(result.Images);
 
+        Assert.Equal(payload, extracted.Data.ToArray());
         Assert.Equal(".jp2", extracted.FileExtension);
         Assert.Equal(0, extracted.BitsPerComponent);
         Assert.False(extracted.CanEncodePng);
@@ -555,6 +580,7 @@ public sealed class ImageExtractionTests
         var result = reader.ExtractImages();
         var extracted = Assert.Single(result.Images);
 
+        Assert.Equal(payload, extracted.Data.ToArray());
         Assert.Equal(".j2k", extracted.FileExtension);
         Assert.Single(result.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ImageJpxSignatureUnrecognised);
     }
@@ -570,6 +596,7 @@ public sealed class ImageExtractionTests
         var result = reader.ExtractImages();
         var extracted = Assert.Single(result.Images);
 
+        Assert.Equal(payload, extracted.Data.ToArray());
         Assert.Equal(".jp2", extracted.FileExtension);
         Assert.Single(result.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ImageJpxSignatureUnrecognised);
     }
@@ -610,6 +637,34 @@ public sealed class ImageExtractionTests
         Assert.Contains(result.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ImageMaskInvalid);
     }
 
+    // ── 9b. /SMaskInData on a non-JPX image: Table 87 scopes it to JPXDecode alone ───────────────
+
+    [Fact]
+    public void NonJpx_sMaskInData1_besideValidSMask_smaskKept_sMaskInDataZero_reports500Not503()
+    {
+        var pdf = BuildPdf(1,
+            new Obj(1, "<< /Type /Catalog /Pages 2 0 R >>"),
+            new Obj(2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
+            new Obj(3, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] "
+                + "/Resources << /XObject << /Im0 10 0 R >> >> /Contents 4 0 R >>"),
+            new Obj(4, "<< >>", "/Im0 Do"u8.ToArray()),
+            new Obj(10, "<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /BitsPerComponent 8 "
+                + "/ColorSpace /DeviceGray /Filter /FlateDecode /SMaskInData 1 /SMask 11 0 R >>", Flate([1])),
+            new Obj(11, "<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /BitsPerComponent 8 "
+                + "/ColorSpace /DeviceGray /Filter /FlateDecode >>", Flate([2])));
+
+        using var reader = Open(pdf);
+        var result = reader.ExtractImages();
+
+        Assert.Equal(2, result.Images.Count);
+        var extracted = result.Images[0];
+        Assert.Equal(0, extracted.SMaskInData);
+        Assert.NotNull(extracted.SoftMask);
+        Assert.Same(extracted.SoftMask, result.Images[1]);
+        Assert.Single(result.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ImageDictionaryInvalid);
+        Assert.DoesNotContain(result.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ImageMaskInvalid);
+    }
+
     // ── 10. JBIG2 with /JBIG2Globals ─────────────────────────────────────────────────────────────
 
     [Fact]
@@ -635,21 +690,46 @@ public sealed class ImageExtractionTests
         Assert.False(extracted.CanEncodePng);
     }
 
+    [Fact]
+    public void Jbig2_globalsReferenceUnresolvable_reports500_globalsEmpty_imageKept()
+    {
+        var pdf = BuildPdf(1,
+            new Obj(1, "<< /Type /Catalog /Pages 2 0 R >>"),
+            new Obj(2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
+            new Obj(3, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] "
+                + "/Resources << /XObject << /Im0 10 0 R >> >> /Contents 4 0 R >>"),
+            new Obj(4, "<< >>", "/Im0 Do"u8.ToArray()),
+            new Obj(10, "<< /Type /XObject /Subtype /Image /Width 8 /Height 8 /BitsPerComponent 1 "
+                + "/ColorSpace /DeviceGray /Filter /JBIG2Decode "
+                + "/DecodeParms << /JBIG2Globals 99 0 R >> >>", "JBIG2-SEGMENTS"u8.ToArray()));
+        // Object 99 is never defined: /JBIG2Globals names it, but it does not resolve to a stream.
+
+        using var reader = Open(pdf);
+        var result = reader.ExtractImages();
+        var extracted = Assert.Single(result.Images);
+
+        Assert.Equal("JBIG2-SEGMENTS"u8.ToArray(), extracted.Data.ToArray());
+        Assert.Empty(extracted.Jbig2!.Globals.ToArray());
+        Assert.Contains(result.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ImageDictionaryInvalid);
+    }
+
     // ── 11. CCITT ────────────────────────────────────────────────────────────────────────────────
 
     [Fact]
     public void Ccitt_withDecodeParms_allEightMembersMatch()
     {
+        var payload = "CCITT-PAYLOAD"u8.ToArray();
         var pdf = BuildOnePageWithImage(
             "<< /Type /XObject /Subtype /Image /Width 1728 /Height 4 /BitsPerComponent 1 "
-            + "/Filter /CCITTFaxDecode "
+            + "/ColorSpace /DeviceGray /Filter /CCITTFaxDecode "
             + "/DecodeParms << /K -1 /Columns 1728 /Rows 4 /BlackIs1 true /EncodedByteAlign true "
             + "/EndOfLine true /EndOfBlock false /DamagedRowsBeforeError 2 >> >>",
-            "CCITT-PAYLOAD"u8.ToArray());
+            payload);
 
         using var reader = Open(pdf);
         var extracted = Assert.Single(reader.ExtractImages().Images);
 
+        Assert.Equal(payload, extracted.Data.ToArray());
         Assert.Equal(-1, extracted.CcittFax!.K);
         Assert.Equal(1728, extracted.CcittFax.Columns);
         Assert.Equal(4, extracted.CcittFax.Rows);
@@ -664,14 +744,16 @@ public sealed class ImageExtractionTests
     [Fact]
     public void Ccitt_withoutDecodeParms_table11Defaults()
     {
+        var payload = "CCITT-PAYLOAD"u8.ToArray();
         var pdf = BuildOnePageWithImage(
             "<< /Type /XObject /Subtype /Image /Width 1728 /Height 4 /BitsPerComponent 1 "
-            + "/Filter /CCITTFaxDecode >>",
-            "CCITT-PAYLOAD"u8.ToArray());
+            + "/ColorSpace /DeviceGray /Filter /CCITTFaxDecode >>",
+            payload);
 
         using var reader = Open(pdf);
         var extracted = Assert.Single(reader.ExtractImages().Images);
 
+        Assert.Equal(payload, extracted.Data.ToArray());
         Assert.Equal(0, extracted.CcittFax!.K);
         Assert.Equal(1728, extracted.CcittFax.Columns);
         Assert.Equal(0, extracted.CcittFax.Rows);
@@ -687,7 +769,7 @@ public sealed class ImageExtractionTests
     {
         var pdf = BuildOnePageWithImage(
             "<< /Type /XObject /Subtype /Image /Width 8 /Height 1 /BitsPerComponent 8 "
-            + "/Filter /CCITTFaxDecode >>",
+            + "/ColorSpace /DeviceGray /Filter /CCITTFaxDecode >>",
             "X"u8.ToArray());
 
         using var reader = Open(pdf);
@@ -696,6 +778,72 @@ public sealed class ImageExtractionTests
 
         Assert.Equal(1, extracted.BitsPerComponent);
         Assert.Contains(result.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ImageBitsPerComponentOverridden);
+    }
+
+    // ── 11b. Table 87's fixed depth applies even when /BitsPerComponent is absent or wrong ───────
+
+    [Fact]
+    public void Dct_noBitsPerComponent_forcedToEight_reports505_imageKept()
+    {
+        var pdf = BuildOnePageWithImage(
+            "<< /Type /XObject /Subtype /Image /Width 1 /Height 1 "
+            + "/ColorSpace /DeviceGray /Filter /DCTDecode >>",
+            "JPEG"u8.ToArray());
+
+        using var reader = Open(pdf);
+        var result = reader.ExtractImages();
+        var extracted = Assert.Single(result.Images);
+
+        Assert.Equal(8, extracted.BitsPerComponent);
+        Assert.Single(result.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ImageBitsPerComponentOverridden);
+    }
+
+    [Fact]
+    public void Dct_bitsPerComponentTwelve_forcedToEight_reports505_imageKept()
+    {
+        var pdf = BuildOnePageWithImage(
+            "<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /BitsPerComponent 12 "
+            + "/ColorSpace /DeviceGray /Filter /DCTDecode >>",
+            "JPEG"u8.ToArray());
+
+        using var reader = Open(pdf);
+        var result = reader.ExtractImages();
+        var extracted = Assert.Single(result.Images);
+
+        Assert.Equal(8, extracted.BitsPerComponent);
+        Assert.Single(result.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ImageBitsPerComponentOverridden);
+    }
+
+    [Fact]
+    public void Ccitt_noBitsPerComponent_forcedToOne_reports505_imageKept()
+    {
+        var pdf = BuildOnePageWithImage(
+            "<< /Type /XObject /Subtype /Image /Width 8 /Height 1 "
+            + "/ColorSpace /DeviceGray /Filter /CCITTFaxDecode >>",
+            "X"u8.ToArray());
+
+        using var reader = Open(pdf);
+        var result = reader.ExtractImages();
+        var extracted = Assert.Single(result.Images);
+
+        Assert.Equal(1, extracted.BitsPerComponent);
+        Assert.Single(result.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ImageBitsPerComponentOverridden);
+    }
+
+    [Fact]
+    public void Jbig2_noBitsPerComponent_forcedToOne_reports505_imageKept()
+    {
+        var pdf = BuildOnePageWithImage(
+            "<< /Type /XObject /Subtype /Image /Width 8 /Height 1 "
+            + "/ColorSpace /DeviceGray /Filter /JBIG2Decode >>",
+            "X"u8.ToArray());
+
+        using var reader = Open(pdf);
+        var result = reader.ExtractImages();
+        var extracted = Assert.Single(result.Images);
+
+        Assert.Equal(1, extracted.BitsPerComponent);
+        Assert.Single(result.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ImageBitsPerComponentOverridden);
     }
 
     // ── 12. DCT /DecodeParms ─────────────────────────────────────────────────────────────────────
@@ -724,6 +872,26 @@ public sealed class ImageExtractionTests
         using var reader = Open(pdf);
         var extracted = Assert.Single(reader.ExtractImages().Images);
         Assert.Null(extracted.Dct!.ColorTransform);
+    }
+
+    /// <summary>
+    /// <c>/DecodeParms</c> carries two elements against a one-element <c>/Filter</c> chain: the
+    /// filter chain's own positional alignment (<c>DecodeCore</c> in Filters.cs) puts the image
+    /// filter's own parms at index 0, the same index as the filter itself, not at the array's last
+    /// element. A last-element heuristic would read the second dictionary instead and report 1.
+    /// </summary>
+    [Fact]
+    public void Dct_decodeParmsLongerThanFilterChain_usesPositionallyAlignedDict_notLastElement()
+    {
+        var pdf = BuildOnePageWithImage(
+            "<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /BitsPerComponent 8 "
+            + "/ColorSpace /DeviceRGB /Filter /DCTDecode "
+            + "/DecodeParms [<< /ColorTransform 1 >> << /ColorTransform 0 >>] >>",
+            "JPEG"u8.ToArray());
+
+        using var reader = Open(pdf);
+        var extracted = Assert.Single(reader.ExtractImages().Images);
+        Assert.Equal(1, extracted.Dct!.ColorTransform);
     }
 
     [Fact]
@@ -778,6 +946,27 @@ public sealed class ImageExtractionTests
         var result = reader.ExtractImages(new PdfImageExtractionOptions { IncludeInlineImages = false });
 
         Assert.Empty(result.Images);
+    }
+
+    [Fact]
+    public void InlineImage_jbig2Filter_neverDelimitedAsAnImage_reports307()
+    {
+        // §7.4.7 and §8.9.7 both forbid JBIG2Decode on an inline image; the content interpreter's
+        // own hasDisallowedFilter guard (shared with JPXDecode and Crypt) reports this and skips
+        // the OnInlineImage callback entirely, so ImageDecoder never sees it.
+        var content = "BI /W 1 /H 1 /F /JBIG2Decode /L 1 ID \x00 EI"u8.ToArray();
+        var pdf = BuildPdf(1,
+            new Obj(1, "<< /Type /Catalog /Pages 2 0 R >>"),
+            new Obj(2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
+            new Obj(3, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Resources << >> "
+                + "/Contents 4 0 R >>"),
+            new Obj(4, "<< >>", content));
+
+        using var reader = Open(pdf);
+        var result = reader.ExtractImages();
+
+        Assert.Empty(result.Images);
+        Assert.Contains(result.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.InlineImageMalformed);
     }
 
     [Fact]
@@ -975,6 +1164,127 @@ public sealed class ImageExtractionTests
         var result = reader.ExtractImages();
 
         Assert.Single(result.Images);
+    }
+
+    // §12.5.3's /F Hidden flag and Table 87's /OC entry are both rendering-time visibility, not
+    // conformance; extraction reports what the file contains, so an image behind either is still
+    // returned with no diagnostic naming the reason.
+    [Fact]
+    public void Annotation_hiddenFlag_appearanceStillWalked_imageStillReturned()
+    {
+        var pdf = BuildPdf(1,
+            new Obj(1, "<< /Type /Catalog /Pages 2 0 R >>"),
+            new Obj(2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
+            new Obj(3, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Resources << >> "
+                + "/Contents 4 0 R /Annots [5 0 R] >>"),
+            new Obj(4, "<< >>", []),
+            // /F 2: bit 2 (Hidden), ISO 32000-2 Table 168.
+            new Obj(5, "<< /Type /Annot /Subtype /Stamp /Rect [0 0 1 1] /F 2 /AP << /N 20 0 R >> >>"),
+            new Obj(20, "<< /Type /XObject /Subtype /Form /BBox [0 0 1 1] "
+                + "/Resources << /XObject << /Im0 10 0 R >> >> >>", "/Im0 Do"u8.ToArray()),
+            new Obj(10, "<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /BitsPerComponent 8 "
+                + "/ColorSpace /DeviceGray /Filter /FlateDecode >>", Flate([1])));
+
+        using var reader = Open(pdf);
+        var result = reader.ExtractImages();
+
+        Assert.Single(result.Images);
+    }
+
+    [Fact]
+    public void ImageInOffOptionalContentGroup_stillReturned_ocNotEvaluated()
+    {
+        var pdf = BuildPdf(1,
+            new Obj(1, "<< /Type /Catalog /Pages 2 0 R /OCProperties << /D << /OFF [20 0 R] >> >> >>"),
+            new Obj(2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
+            new Obj(3, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] "
+                + "/Resources << /XObject << /Im0 10 0 R >> >> /Contents 4 0 R >>"),
+            new Obj(4, "<< >>", "/Im0 Do"u8.ToArray()),
+            new Obj(10, "<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /BitsPerComponent 8 "
+                + "/ColorSpace /DeviceGray /Filter /FlateDecode /OC 20 0 R >>", Flate([1])),
+            new Obj(20, "<< /Type /OCG /Name (Layer) >>"));
+
+        using var reader = Open(pdf);
+        var result = reader.ExtractImages();
+
+        Assert.Single(result.Images);
+    }
+
+    // ── 16b. Nothing escapes ExtractImages() through a malformed indirect-reference chain ────────
+
+    // Patches one cross-reference row's own offset digits to a value past the file's own length,
+    // the shape PdfDocumentReader.CheckedOffset turns into InvalidDataException: resolving THAT
+    // object (however it is reached) throws instead of returning a value. BuildPdf's own xref
+    // table writes each row as exactly 20 bytes ("{offset:D10} 00000 n \n", or the free entry's
+    // "0000000000 65535 f \n"), immediately after "xref\n0 {size}\n", so row N's own offset digits
+    // sit at a byte position this method can compute directly rather than re-parsing the table.
+    private static byte[] PoisonObjectOffset(byte[] pdf, int objectNumber)
+    {
+        var marker = "xref\n0 "u8;
+        var markerStart = FindSequence(pdf, marker);
+        if (markerStart < 0)
+            throw new InvalidOperationException("xref table marker not found");
+        var lineEnd = Array.IndexOf(pdf, (byte)'\n', markerStart + marker.Length);
+        var rowsStart = lineEnd + 1;
+        var rowStart = rowsStart + objectNumber * 20;
+
+        var poisoned = (byte[])pdf.Clone();
+        // 999999999 (nine digits, zero-padded to the field's own ten): parses as a valid int
+        // offset, so XrefParser accepts the row; it is still far past any small fixture's own
+        // length, so CheckedOffset is what refuses it, not the parse itself.
+        "0999999999"u8.ToArray().CopyTo(poisoned, rowStart);
+        return poisoned;
+    }
+
+    [Fact]
+    public void AnnotsArrayObjectPoisoned_reports509_pageContentImageStillReturned()
+    {
+        var pdf = BuildPdf(1,
+            new Obj(1, "<< /Type /Catalog /Pages 2 0 R >>"),
+            new Obj(2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
+            new Obj(3, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] "
+                + "/Resources << /XObject << /Im0 10 0 R >> >> /Contents 4 0 R /Annots 6 0 R >>"),
+            new Obj(4, "<< >>", "/Im0 Do"u8.ToArray()),
+            new Obj(10, "<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /BitsPerComponent 8 "
+                + "/ColorSpace /DeviceGray /Filter /FlateDecode >>", Flate([1])),
+            new Obj(6, "[7 0 R]"),
+            new Obj(7, "<< /Type /Annot /Subtype /Stamp /Rect [0 0 1 1] >>"));
+
+        var poisoned = PoisonObjectOffset(pdf, 6); // the /Annots array object itself
+
+        using var reader = PdfReader.Open(poisoned);
+        var result = reader.ExtractImages();
+
+        Assert.Single(result.Images);
+        Assert.Contains(result.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.AnnotationAppearanceUnusable);
+    }
+
+    [Fact]
+    public void AppearanceStreamResourcesObjectPoisoned_reports300_pageContentImageStillReturned()
+    {
+        // Object 8 (the appearance stream) itself resolves fine; its own /Resources names object
+        // 9, whose offset is poisoned. RunFormXObject resolves /Resources inside its own try, AFTER
+        // WalkAnnotationAppearances has already resolved object 8 as a stream successfully, so this
+        // exercises RunFormXObject's own catch specifically, not the walker's.
+        var pdf = BuildPdf(1,
+            new Obj(1, "<< /Type /Catalog /Pages 2 0 R >>"),
+            new Obj(2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
+            new Obj(3, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] "
+                + "/Resources << /XObject << /Im0 10 0 R >> >> /Contents 4 0 R /Annots [7 0 R] >>"),
+            new Obj(4, "<< >>", "/Im0 Do"u8.ToArray()),
+            new Obj(10, "<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /BitsPerComponent 8 "
+                + "/ColorSpace /DeviceGray /Filter /FlateDecode >>", Flate([1])),
+            new Obj(7, "<< /Type /Annot /Subtype /Stamp /Rect [0 0 1 1] /AP << /N 8 0 R >> >>"),
+            new Obj(8, "<< /Type /XObject /Subtype /Form /BBox [0 0 1 1] /Resources 9 0 R >>", []),
+            new Obj(9, "<< /Font << >> >>"));
+
+        var poisoned = PoisonObjectOffset(pdf, 9); // the appearance stream's own /Resources
+
+        using var reader = PdfReader.Open(poisoned);
+        var result = reader.ExtractImages();
+
+        Assert.Single(result.Images);
+        Assert.Contains(result.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ContentStreamLexError);
     }
 
     // ── 17. Diagnostics identity ─────────────────────────────────────────────────────────────────

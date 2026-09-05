@@ -379,6 +379,14 @@ public enum PdfReaderDiagnosticCode
     /// while resolving a resource, XObject, or nested Form XObject, which ends interpretation of the
     /// whole page (nothing narrower than the page itself is available to resume from at that point).
     /// </para>
+    /// <para>
+    /// A third case (#98) reports it against an annotation appearance stream's own object number:
+    /// <c>ContentInterpreter.RunFormXObject</c> carries the same outer catch as <c>Run</c>, since
+    /// it runs after <c>Run</c> has already returned for the page's own content and needs its own
+    /// guard against the identical malformed-reference failure. Only that one appearance stream's
+    /// interpretation ends; the annotation walk itself continues with the next one (see <see
+    /// cref="AnnotationAppearanceUnusable"/> for the resolution failures the walk itself catches).
+    /// </para>
     /// </summary>
     ContentStreamLexError = 300,
 
@@ -569,15 +577,21 @@ public enum PdfReaderDiagnosticCode
 
     /// <summary> An image dictionary's own required entries (ISO 32000-2 Table 87) were missing or
     /// invalid: <c>/Width</c> or <c>/Height</c> absent, non-integer, or outside 1..<see
-    /// cref="int.MaxValue"/> (the image is skipped); <c>/BitsPerComponent</c> absent where Table 87
-    /// requires it, or outside {1, 2, 4, 8, 16} (skipped); an <c>/ImageMask true</c> image also
+    /// cref="int.MaxValue"/> (the image is skipped); <c>/BitsPerComponent</c> absent, non-integer,
+    /// or outside {1, 2, 4, 8, 16} on a <c>Raw</c>-encoded image whose filter chain does not end in
+    /// <c>RunLengthDecode</c> (skipped; a <c>CCITTFaxDecode</c>, <c>JBIG2Decode</c>, or
+    /// <c>DCTDecode</c> image, or a <c>RunLengthDecode</c>-terminated chain, instead keeps the
+    /// fixed depth Table 87 gives it regardless of what the dictionary says, reported through <see
+    /// cref="ImageBitsPerComponentOverridden"/>); an <c>/ImageMask true</c> image also
     /// carrying <c>/ColorSpace</c> or <c>/Mask</c>, neither of which Table 87 permits on a mask
     /// (both ignored, the mask itself kept); a <c>/DecodeParms /BitsPerComponent</c> that disagrees
     /// with the image dictionary's own value (the dictionary's value wins); a malformed CCITT
     /// parameter (Table 11's own default is used instead); a <c>/DecodeParms /ColorTransform</c>
-    /// outside {0, 1} (Table 13 permits only those two; treated as absent); or <c>/SMaskInData</c>
-    /// outside {0, 1, 2} (Table 87; treated as 0). <see cref="PdfReaderDiagnostic.Message"/> names
-    /// which.
+    /// outside {0, 1} (Table 13 permits only those two; treated as absent); an <c>/SMaskInData</c>
+    /// outside {0, 1, 2} on a <c>JPXDecode</c> image (Table 87; treated as 0); or an
+    /// <c>/SMaskInData</c> present on any other encoding (Table 87 scopes the entry to
+    /// <c>JPXDecode</c> images and calls it meaningless otherwise; ignored). <see
+    /// cref="PdfReaderDiagnostic.Message"/> names which.
     /// </summary>
     ImageDictionaryInvalid = 500,
 
@@ -622,10 +636,12 @@ public enum PdfReaderDiagnosticCode
 
     /// <summary>
     /// Table 87's own filter rule, or <c>/ImageMask true</c>, forced an image's effective
-    /// <c>/BitsPerComponent</c> to a value other than the one the dictionary states: a
-    /// <c>CCITTFaxDecode</c> or <c>JBIG2Decode</c> image is always 1-bit; a <c>DCTDecode</c> image,
-    /// or one whose last filter is <c>RunLengthDecode</c>, is always 8-bit; an image mask is always
-    /// 1-bit. Reported at most once per image, before anything is sized from the corrected depth.
+    /// <c>/BitsPerComponent</c> to a value other than the one the dictionary states, or supplied
+    /// one where the dictionary carried none at all (missing, non-integer, or outside
+    /// {1, 2, 4, 8, 16}): a <c>CCITTFaxDecode</c> or <c>JBIG2Decode</c> image is always 1-bit; a
+    /// <c>DCTDecode</c> image, or one whose last filter is <c>RunLengthDecode</c>, is always 8-bit;
+    /// an image mask is always 1-bit. Reported at most once per image, before anything is sized
+    /// from the corrected depth.
     /// </summary>
     ImageBitsPerComponentOverridden = 505,
 
@@ -661,9 +677,11 @@ public enum PdfReaderDiagnosticCode
     /// walked for images: the page's <c>/Annots</c> is not an array; an element is not a
     /// dictionary; an <c>/AP /N</c> entry is neither a stream nor a dictionary of appearance
     /// states; an appearance stream's own <c>/Subtype</c> is <c>/Image</c> rather than <c>/Form</c>
-    /// (or absent, which §12.5.5 also treats as a form); or one of this reader's own per-page
-    /// bounds on <c>/Annots</c> elements, appearance-state sub-dictionary entries, or distinct
-    /// appearance streams was reached. Reported at most once per page.
+    /// (an absent <c>/Subtype</c> is treated as a form by this reader, not a case §12.5.5 itself
+    /// addresses); an object <c>/Annots</c>, an annotation, or an appearance stream references
+    /// could not be resolved at all (a malformed indirect-reference chain); or one of this reader's
+    /// own per-page bounds on <c>/Annots</c> elements, appearance-state sub-dictionary entries, or
+    /// distinct appearance streams was reached. Reported at most once per page.
     /// </summary>
     AnnotationAppearanceUnusable = 509,
 

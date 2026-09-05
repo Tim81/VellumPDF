@@ -119,9 +119,16 @@ public sealed class TiffPredictorTests
     [Fact]
     public void Bpc16_Colors1_Columns2_bigEndian()
     {
-        // Two big-endian 16-bit samples, 0x0001 and 0x0001, accumulate to 0x0001 and 0x0002.
-        var decoded = Decode([0x00, 0x01, 0x00, 0x01], columns: 2, colors: 1, bpc: 16);
-        Assert.Equal(new byte[] { 0x00, 0x01, 0x00, 0x02 }, decoded);
+        // Two big-endian 16-bit samples, 0x00FF (255) and 0x0002 (2). The second has no prior
+        // component (colors = 1, so every sample predicts from the one before it), so it
+        // accumulates to 255 + 2 = 257 = 0x0101: the addition carries out of the low byte into the
+        // high byte. An implementation that read and wrote consistently little-endian instead of
+        // big-endian would still land on the same bytes for a pair with no carry (the KAT this
+        // replaces, 0x0001 + 0x0001 = 0x0002), since byte0 alone determines the low 8 bits either
+        // way; only a pair whose sum crosses the byte boundary, like this one, tells the two
+        // apart.
+        var decoded = Decode([0x00, 0xFF, 0x00, 0x02], columns: 2, colors: 1, bpc: 16);
+        Assert.Equal(new byte[] { 0x00, 0xFF, 0x01, 0x01 }, decoded);
     }
 
     /// <summary> The pre-existing <c>rows = data.Length / rowBytes</c> behaviour (Filters.cs) is

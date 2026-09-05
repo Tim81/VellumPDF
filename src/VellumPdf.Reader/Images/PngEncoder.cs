@@ -168,6 +168,14 @@ internal static class PngEncoder
             || mask.Data.Length < mask.ExpectedSampleDataLength)
             return false;
 
+        // Table 143 permits a Decode entry on a soft mask, default [0 1]; this method interleaves
+        // the mask's stored bytes unchanged (per TryEncodePngWithAlpha's own doc), which is PNG
+        // alpha only under that default mapping. A [1 0] mask, or any other non-default array,
+        // would write an inverted alpha channel with no diagnostic to explain it, so it is refused
+        // instead.
+        if (mask.Decode is { Count: 2 } maskDecode && (maskDecode[0] != 0 || maskDecode[1] != 1))
+            return false;
+
         byte[] colorRows;
         PngColorType alphaColorType;
         int colorBitDepth;
@@ -185,6 +193,15 @@ internal static class PngEncoder
             alphaColorType = colorType == PngColorType.Grayscale ? PngColorType.GrayscaleAlpha : PngColorType.RgbAlpha;
             colorBitDepth = bitDepth;
         }
+
+        // ISO/IEC 15948's IHDR colour-type/bit-depth table permits colour type 4
+        // (GrayscaleAlpha) and 6 (RgbAlpha) only at bit depths 8 and 16. A grey image at 1, 2, or 4
+        // bits reaches this method (TryDetermineMapping accepts those depths for colour type 0,
+        // which has no such restriction), but an alpha channel cannot be interleaved onto it: the
+        // Indexed branch above always forces colorBitDepth to 8, so only the grey/RGB branch can
+        // still be sub-byte here.
+        if (colorBitDepth is not (8 or 16))
+            return false;
 
         var samplesPerPixel = alphaColorType == PngColorType.GrayscaleAlpha ? 1 : 3;
         var bytesPerSample = colorBitDepth / 8;

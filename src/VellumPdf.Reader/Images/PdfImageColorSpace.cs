@@ -18,8 +18,8 @@ public sealed class PdfImageColorSpace
 
     /// <summary> The number of colour components a sample carries in this space: 1 for DeviceGray,
     /// CalGray, Indexed, and Separation; 3 for DeviceRgb, CalRgb, and Lab; 4 for DeviceCmyk; the
-    /// ICC profile's own <c>/N</c> for IccBased; and the colourant-name array's length (1 to 64)
-    /// for DeviceN.
+    /// ICC profile's own <c>/N</c> for IccBased; and the colourant-name array's length for DeviceN,
+    /// 1 to 64 (this reader's own cap; ISO 32000-2 §8.6.6.5 allows an arbitrary number).
     /// </summary>
     public int ComponentCount { get; }
 
@@ -45,7 +45,9 @@ public sealed class PdfImageColorSpace
 
     /// <summary>
     /// An <see cref="PdfImageColorSpaceFamily.IccBased"/> space's decoded ICC profile stream bytes
-    /// (ISO 32000-2 §8.6.5.5). Empty for every other family.
+    /// (ISO 32000-2 §8.6.5.5). Empty for every other family, and also empty for an IccBased space
+    /// itself when the profile stream failed to decode or was refused by the decode budget, with no
+    /// diagnostic of its own for either case.
     /// </summary>
     public ReadOnlyMemory<byte> IccProfile { get; }
 

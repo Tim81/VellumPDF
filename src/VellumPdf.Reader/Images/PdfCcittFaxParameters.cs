@@ -26,8 +26,8 @@ public sealed class PdfCcittFaxParameters
     /// Default 0.</summary>
     public int Rows { get; }
 
-    /// <summary>Whether 0 bits represent black pixels rather than white. Default
-    /// <see langword="false"/>.</summary>
+    /// <summary>Whether 1 bits are black pixels and 0 bits white, the reverse of the normal PDF
+    /// syntactic convention for image data. Default <see langword="false"/>.</summary>
     public bool BlackIs1 { get; }
 
     /// <summary>Whether encoded data is aligned to a byte boundary at the end of each row.

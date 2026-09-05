@@ -106,10 +106,13 @@ public sealed class PdfExtractedImage
     /// for <see cref="PdfImageEncoding.Raw"/> (a caller cannot losslessly serialise samples into a
     /// file format from this property alone; use <see cref="TryEncodePng"/> for that), <c>.jpg</c>
     /// for <see cref="PdfImageEncoding.Jpeg"/>, <c>.jb2</c> for <see
-    /// cref="PdfImageEncoding.Jbig2"/>, <c>.ccitt</c> for <see cref="PdfImageEncoding.CcittFax"/>,
-    /// and, for <see cref="PdfImageEncoding.Jpx"/>, <c>.jp2</c> when the payload begins with the
-    /// ISO/IEC 15444-1 JP2 signature box and <c>.j2k</c> when it instead begins with a bare
-    /// codestream's SOC marker (see <see
+    /// cref="PdfImageEncoding.Jbig2"/> (§7.4.7's embedded-organisation segment sequence, not a
+    /// standalone loadable JBIG2 file: the file header, page association, and end-of-file segments
+    /// are absent, and <see cref="Jbig2"/>'s own <see cref="PdfJbig2Parameters.Globals"/> travels
+    /// as a separate buffer, not appended to this one), <c>.ccitt</c> for <see
+    /// cref="PdfImageEncoding.CcittFax"/>, and, for <see cref="PdfImageEncoding.Jpx"/>, <c>.jp2</c>
+    /// when the payload begins with the ISO/IEC 15444-1 JP2 signature box and <c>.j2k</c> when it
+    /// instead begins with a bare codestream's SOC marker (see <see
     /// cref="PdfReaderDiagnosticCode.ImageJpxSignatureUnrecognised"/> for both, and for the third
     /// shape that also reports it and falls back to <c>.jp2</c>).
     /// </summary>
@@ -119,7 +122,9 @@ public sealed class PdfExtractedImage
     /// The soft mask reached through this image's own <c>/SMask</c> (ISO 32000-2 §11.6.5.2), or
     /// <see langword="null"/> when absent or invalid
     /// (<see cref="PdfReaderDiagnosticCode.ImageMaskInvalid"/>). Also present in its own right in
-    /// the enclosing extraction result's own image list, immediately after this image.
+    /// <see cref="PdfImageExtractionResult.Images"/>: immediately after this image, the first time
+    /// a document-level call reaches it, or every time a page-level call does (per-call dedupe
+    /// applies to this entry the same way it applies to any other).
     /// </summary>
     public PdfExtractedImage? SoftMask { get; }
 
@@ -147,9 +152,10 @@ public sealed class PdfExtractedImage
     /// <see cref="Encoding"/> <see cref="PdfImageEncoding.Raw"/>, a <see cref="BitsPerComponent"/>
     /// of 1, 2, 4, 8, or 16, a <see cref="Data"/> at least as long as this image's own expected
     /// sample length, and a colour space (or stencil-mask shape) PNG itself can represent: grey at
-    /// any of those depths, RGB at 8 or 16, or an Indexed image at 8 bits or below. This answers a
-    /// question about this API's own capability, not about the document: a passthrough (DCT, JPX,
-    /// JBIG2, CCITT) image is never eligible, since re-encoding its payload would not be lossless.
+    /// any of those depths, RGB at 8 or 16, or an Indexed image over a grey or RGB base at 8 bits
+    /// or below. This answers a question about this API's own capability, not about the document: a
+    /// passthrough (DCT, JPX, JBIG2, CCITT) image is never eligible, since re-encoding its payload
+    /// would not be lossless.
     /// </summary>
     public bool CanEncodePng => PngEncoder.CanEncode(this);
 
@@ -171,12 +177,25 @@ public sealed class PdfExtractedImage
     /// alpha is not premultiplied, so interleaving would write the wrong pixels); its <see
     /// cref="Width"/> and <see cref="Height"/> equal this image's own (Table 143 permits a
     /// differently sized soft mask, but resampling one onto the other's grid would not be lossless,
-    /// and this method does not resample); it has a single colour component; and its own sample
-    /// depth equals the PNG output depth (8 or 16) this image maps to, which for an Indexed image
-    /// is not the same as its own <see cref="BitsPerComponent"/> (the index depth, not the sample
-    /// depth). Otherwise returns <see langword="false"/> with <paramref name="png"/> <see
+    /// and this method does not resample); it has a single colour component; its own sample depth
+    /// equals the PNG output depth (8 or 16) this image maps to, which for an Indexed image is not
+    /// the same as its own <see cref="BitsPerComponent"/> (the index depth, not the sample depth);
+    /// ISO/IEC 15948's IHDR table permits an alpha-carrying colour type only at 8 or 16 bits, so a
+    /// grey image mapping to colour type 0 at 1, 2, or 4 bits (see <see cref="TryEncodePng"/>) is
+    /// never eligible here, whatever its own soft mask looks like; and its own <see cref="Decode"/>
+    /// is either absent or <c>[0 1]</c> (Table 143's own default), since this method interleaves
+    /// the mask's stored bytes unchanged and a non-default array would invert the resulting alpha
+    /// channel. Otherwise returns <see langword="false"/> with <paramref name="png"/> <see
     /// langword="null"/>, including every case <see cref="CanEncodePng"/> itself is false.
     /// </summary>
+    /// <remarks>
+    /// Allocates <c>Width * (channels + 1) * (bitDepth / 8) * Height</c> bytes for the interleaved
+    /// row buffer before compression, plus 57 bytes of chunk overhead and whatever zlib itself
+    /// costs; <c>channels</c> is 1 for a grey image, 3 for RGB or Indexed (an Indexed image's own
+    /// indices are expanded to 8-bit RGB triples first, up to 32 times <see cref="Data"/>'s own
+    /// length at 1 bit per index). This is independent of <see cref="Data"/>'s own length, unlike
+    /// <see cref="TryEncodePng"/>'s bound.
+    /// </remarks>
     public bool TryEncodePngWithAlpha([NotNullWhen(true)] out byte[]? png) =>
         PngEncoder.TryEncodeWithAlpha(this, out png);
 

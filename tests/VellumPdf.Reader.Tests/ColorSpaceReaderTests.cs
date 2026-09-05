@@ -276,6 +276,50 @@ public sealed class ColorSpaceReaderTests
         Assert.Single(sink.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ImageColorSpaceUnsupported);
     }
 
+    /// <summary>
+    /// An Indexed space whose base is a resource name resolving back to the same Indexed array
+    /// (<c>/CS0 = [/Indexed /CS0 1 &lt;...&gt;]</c>) used to recurse
+    /// <c>ReadCore(/CS0, true) -&gt; ReadIndexed -&gt; ReadCore(/CS0, true) -&gt; ...</c> forever,
+    /// crashing the process with an uncatchable <see cref="StackOverflowException"/>. Terminates at
+    /// 501 instead, both because the base is now read with <c>allowResourceLookup: false</c> and
+    /// independently through <c>MaxColorSpaceNesting</c>.
+    /// </summary>
+    [Fact]
+    public void Indexed_baseIsResourceNameCyclingToSelf_terminatesAt501_ratherThanLooping()
+    {
+        var pdf = BuildPdf(1, new Obj(1, "<< /Type /Catalog /Pages 2 0 R >>"), new Obj(2, "<< /Type /Pages /Kids [] /Count 0 >>"));
+        var (reader, csReader, sink) = Setup(pdf);
+        var resources = (PdfDictionary)ParseValue(
+            reader, "<< /ColorSpace << /CS0 [/Indexed /CS0 1 <FF00FF00FF00>] >> >>");
+
+        var cs = csReader.Read(ParseValue(reader, "/CS0"), resources, sink, null, null, 0);
+
+        Assert.Null(cs);
+        Assert.Single(sink.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ImageColorSpaceUnsupported);
+    }
+
+    /// <summary>
+    /// The two-name variant of the same cycle: <c>/CS0</c>'s base names <c>/CS1</c>, whose own base
+    /// names <c>/CS0</c> back. A fix that only special-cased a base naming ITSELF (rather than
+    /// disabling the resource-name hop for an Indexed base entirely, or capping recursion depth)
+    /// would still loop forever on this shape.
+    /// </summary>
+    [Fact]
+    public void Indexed_baseIsResourceNameCyclingThroughTwoNames_terminatesAt501_ratherThanLooping()
+    {
+        var pdf = BuildPdf(1, new Obj(1, "<< /Type /Catalog /Pages 2 0 R >>"), new Obj(2, "<< /Type /Pages /Kids [] /Count 0 >>"));
+        var (reader, csReader, sink) = Setup(pdf);
+        var resources = (PdfDictionary)ParseValue(
+            reader,
+            "<< /ColorSpace << /CS0 [/Indexed /CS1 1 <FF00FF00FF00>] "
+            + "/CS1 [/Indexed /CS0 1 <FF00FF00FF00>] >> >>");
+
+        var cs = csReader.Read(ParseValue(reader, "/CS0"), resources, sink, null, null, 0);
+
+        Assert.Null(cs);
+        Assert.Single(sink.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ImageColorSpaceUnsupported);
+    }
+
     [Fact]
     public void UnresolvableName_reports501()
     {

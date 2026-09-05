@@ -1,18 +1,26 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
+using System.IO.Compression;
 using System.Text;
 using CsCheck;
+using VellumPdf.Canvas;
 using VellumPdf.Core;
+using VellumPdf.Document;
+using VellumPdf.Encryption;
+using VellumPdf.Images;
 
 namespace VellumPdf.Reader.Tests;
 
 /// <summary>
-/// <c>ExtractImages</c> (#98): byte-level mutation of a seed document built fresh for this file
-/// (a Raw grey image, a DCT passthrough image, an Indexed image, and an inline
-/// image), asserting the invariants a hostile or corrupted document must never violate. Every
-/// assertion runs under a TIGHTENED <see cref="ReaderLimits.MinMaxDecodedBytes"/> (1 MiB): at the
-/// 512 MiB default, the size invariants below would hold vacuously against fixtures this small.
+/// <c>ExtractImages</c> (#98): byte-level mutation of two seed documents built fresh for this file
+/// (one plaintext, covering a Raw grey image, a DCT passthrough image, an Indexed image reached
+/// both directly and through a resource name, a Flate-compressed image under a TIFF predictor, a
+/// soft-masked and an explicit-masked image, a /Decode array, an annotation appearance drawing its
+/// own image, and one inline image; one AES-256-encrypted, so the corpus also reaches the
+/// decryption path), asserting the invariants a hostile or corrupted document must never violate.
+/// Every assertion runs under a TIGHTENED <see cref="ReaderLimits.MinMaxDecodedBytes"/> (1 MiB): at
+/// the 512 MiB default, the size invariants below would hold vacuously against fixtures this small.
 /// </summary>
 public sealed class ImageExtractionFuzzTests
 {
@@ -57,17 +65,33 @@ public sealed class ImageExtractionFuzzTests
         return ms.ToArray();
     }
 
+    private static byte[] Flate(byte[] raw)
+    {
+        var ms = new MemoryStream();
+        using (var z = new ZLibStream(ms, CompressionLevel.Fastest, leaveOpen: true))
+            z.Write(raw);
+        return ms.ToArray();
+    }
+
     // The seed: one page drawing a Raw grey XObject, a DCT passthrough XObject, an Indexed
-    // XObject, and one inline image, built fresh rather than reused from
-    // ParserFuzzTests' embedded-resource corpus, which carries no images at all.
+    // XObject, a Flate-compressed Raw XObject under a TIFF predictor, a soft-masked XObject
+    // carrying a /Decode array, a stencil-masked XObject, an Indexed XObject resolved through a
+    // resource name, an annotation whose /AP /N draws its own image, and one inline image. Built
+    // fresh rather than reused from ParserFuzzTests' embedded-resource corpus, which carries no
+    // images at all.
     private static readonly byte[] FuzzSeed = BuildPdf(1,
         new Obj(1, "<< /Type /Catalog /Pages 2 0 R >>"),
         new Obj(2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
         new Obj(3,
             "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] "
-            + "/Resources << /XObject << /Im0 10 0 R /Im1 11 0 R /Im2 12 0 R >> >> /Contents 4 0 R >>"),
+            + "/Resources << /XObject << /Im0 10 0 R /Im1 11 0 R /Im2 12 0 R /Im3 13 0 R "
+            + "/Im4 15 0 R /Im5 17 0 R /Im6 18 0 R >> "
+            + "/ColorSpace << /CS0 [/Indexed /DeviceRGB 1 <FF000000FF00>] >> >> "
+            + "/Annots [20 0 R] /Contents 4 0 R >>"),
         new Obj(4, "<< >>",
-            "/Im0 Do\n/Im1 Do\n/Im2 Do\nBI /W 2 /H 2 /CS /G /BPC 8 /L 4 ID \x01\x02\x03\x04 EI"u8.ToArray()),
+            Encoding.Latin1.GetBytes(
+                "/Im0 Do\n/Im1 Do\n/Im2 Do\n/Im3 Do\n/Im4 Do\n/Im5 Do\n/Im6 Do\n"
+                + "BI /W 2 /H 2 /CS /G /BPC 8 /L 4 ID \x01\x02\x03\x04 EI")),
         new Obj(10,
             "<< /Type /XObject /Subtype /Image /Width 2 /Height 2 /BitsPerComponent 8 "
             + "/ColorSpace /DeviceGray >>", [0x11, 0x22, 0x33, 0x44]),
@@ -76,7 +100,67 @@ public sealed class ImageExtractionFuzzTests
             + "/ColorSpace /DeviceRGB /Filter /DCTDecode >>", "NOT-REALLY-A-JPEG"u8.ToArray()),
         new Obj(12,
             "<< /Type /XObject /Subtype /Image /Width 2 /Height 1 /BitsPerComponent 8 "
-            + "/ColorSpace [/Indexed /DeviceRGB 1 <FF000000FF00>] >>", [0, 1]));
+            + "/ColorSpace [/Indexed /DeviceRGB 1 <FF000000FF00>] >>", [0, 1]),
+        // A Flate-compressed Raw image under a TIFF predictor (#376/A4): 2x2 grey 8bpc,
+        // horizontally differenced (byte0 unchanged, byte1 -= byte0 per row) then Flate-compressed,
+        // so the fuzz corpus exercises a compressed image whose retained decode differs from its
+        // stored body length.
+        new Obj(13,
+            "<< /Type /XObject /Subtype /Image /Width 2 /Height 2 /BitsPerComponent 8 "
+            + "/ColorSpace /DeviceGray /Filter /FlateDecode "
+            + "/DecodeParms << /Predictor 2 /Colors 1 /BitsPerComponent 8 /Columns 2 >> >>",
+            Flate([0x10, 0x10, 0x30, 0x10])),
+        // The soft mask a /SMask entry names (object 15 below).
+        new Obj(14,
+            "<< /Type /XObject /Subtype /Image /Width 2 /Height 2 /BitsPerComponent 8 "
+            + "/ColorSpace /DeviceGray >>", [0x01, 0x02, 0x03, 0x04]),
+        // A base image carrying both /SMask and /Decode.
+        new Obj(15,
+            "<< /Type /XObject /Subtype /Image /Width 2 /Height 2 /BitsPerComponent 8 "
+            + "/ColorSpace /DeviceGray /SMask 14 0 R /Decode [0 1] >>", [0x11, 0x22, 0x33, 0x44]),
+        // The stencil mask a /Mask entry names (object 17 below).
+        new Obj(16,
+            "<< /Type /XObject /Subtype /Image /Width 8 /Height 1 /ImageMask true >>", [0b10101010]),
+        // A base image carrying an explicit /Mask.
+        new Obj(17,
+            "<< /Type /XObject /Subtype /Image /Width 2 /Height 2 /BitsPerComponent 8 "
+            + "/ColorSpace /DeviceGray /Mask 16 0 R >>", [0xAA, 0xBB, 0xCC, 0xDD]),
+        // An Indexed space resolved through the page's own /ColorSpace resource name /CS0.
+        new Obj(18,
+            "<< /Type /XObject /Subtype /Image /Width 2 /Height 1 /BitsPerComponent 8 "
+            + "/ColorSpace /CS0 >>", [0, 1]),
+        new Obj(20, "<< /Type /Annot /Subtype /Stamp /Rect [0 0 1 1] /AP << /N 21 0 R >> >>"),
+        new Obj(21,
+            "<< /Type /XObject /Subtype /Form /BBox [0 0 1 1] "
+            + "/Resources << /XObject << /ImA 22 0 R >> >> >>", "/ImA Do"u8.ToArray()),
+        new Obj(22,
+            "<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /BitsPerComponent 8 "
+            + "/ColorSpace /DeviceGray >>", [0x55]));
+
+    // A second seed built with the Kernel writer, encrypted (AES-256, empty user password), so the
+    // fuzz corpus also reaches the DecryptedStreamView path an encrypted document's image bytes
+    // travel through. The writer (StandardSecurityHandler) only ever produces V=5/R=6 (AES-256);
+    // it exposes no algorithm knob, so an AES-128 seed would need a hand-rolled V=4/R=4 /Encrypt
+    // dictionary computed independently of the writer, which this fix-up declines as more risk
+    // than the extra shape is worth.
+    private static byte[] BuildEncryptedFuzzSeed()
+    {
+        using var doc = new PdfDocument();
+        var page = doc.AddPage();
+        var image = new PdfImageXObject(
+            width: 2, height: 2, streamData: [0x11, 0x22, 0x33, 0x44], filter: PdfName.FlateDecode,
+            colorSpace: ImageColorSpace.DeviceGray, bitsPerComponent: 8);
+        doc.RegisterImageXObject(page, image, "Im0");
+        var canvas = new PdfCanvas(page);
+        canvas.DoXObject("Im0");
+        canvas.Finish();
+        doc.Encrypt(new PdfEncryptionSettings { UserPassword = "" });
+        var ms = new MemoryStream();
+        doc.Save(ms);
+        return ms.ToArray();
+    }
+
+    private static readonly byte[] EncryptedFuzzSeed = BuildEncryptedFuzzSeed();
 
     private readonly record struct MutationOp(int Kind, int Position, byte Value, int Length);
 
@@ -85,8 +169,13 @@ public sealed class ImageExtractionFuzzTests
             Gen.Int[0, 5], Gen.Int[0, int.MaxValue], Gen.Byte, Gen.Int[1, 32],
             (kind, position, value, length) => new MutationOp(kind, position, value, length));
 
+    // Half the sampled cases mutate the plaintext seed, half the encrypted one: two independent
+    // corpora rather than one corpus diluted by a coin flip nobody can see the effect of.
+    private static readonly Gen<byte[]> SeedGen =
+        Gen.Int[0, 1].Select(i => i == 0 ? FuzzSeed : EncryptedFuzzSeed);
+
     private static readonly Gen<byte[]> FuzzInputGen =
-        MutationOpGen.Array[1, 8].Select(ops => Mutate(FuzzSeed, ops));
+        Gen.Select(SeedGen, MutationOpGen.Array[1, 8], (seed, ops) => Mutate(seed, ops));
 
     private static byte[] Mutate(byte[] seed, MutationOp[] ops)
     {

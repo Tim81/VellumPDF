@@ -245,13 +245,16 @@ thread.
 
 ```csharp
 var result = reader.ExtractImages(); // or reader.GetPage(0).ExtractImages()
+var i = 0;
 foreach (var image in result.Images)
 {
     Console.WriteLine($"{image.Width}x{image.Height} {image.Encoding}");
+    var name = image.ObjectNumber?.ToString() ?? $"inline-{i}";
     if (image.TryEncodePng(out var png))
-        File.WriteAllBytes($"image-{image.ObjectNumber}.png", png);
+        File.WriteAllBytes($"image-{name}.png", png);
     else
-        File.WriteAllBytes($"image-{image.ObjectNumber}{image.FileExtension}", image.Data.ToArray());
+        File.WriteAllBytes($"image-{name}{image.FileExtension}", image.Data.ToArray());
+    i++;
 }
 ```
 
@@ -259,7 +262,10 @@ foreach (var image in result.Images)
 (ISO 32000-2 §8.9), including images inside Form XObjects and, by default, inside annotation
 appearance streams (§12.5.5), in draw order. `PdfDocumentReader.ExtractImages()` returns each
 distinct image once, at the first page that draws it; `PdfReadPage.ExtractImages()` returns every
-occurrence on that one page, undeduped.
+occurrence on that one page, undeduped. Extraction reports what the file contains, not what a
+renderer would show: optional-content visibility (Table 87's `/OC` entry) and an annotation's
+Hidden flag (§12.5.3, `/F`) are not evaluated, so an image in an `OFF` optional-content group or
+behind a Hidden annotation is still returned.
 
 Nothing is transcoded. A `DCTDecode`, `JPXDecode`, `JBIG2Decode`, or `CCITTFaxDecode` image comes
 back as `Data` holding its stored, still-encoded payload (a JPEG file, a JPEG 2000 file or bare
@@ -274,7 +280,13 @@ grey at 1, 2, 4, 8, or 16 bits, RGB at 8 or 16, and an indexed image over either
 below. It answers a question about this method's own capability, not about the document, so a
 passthrough image (DCT, JPX, JBIG2, CCITT) is never eligible; re-encoding its payload would not be
 lossless. `TryEncodePngWithAlpha` additionally interleaves a matching `SoftMask` as the PNG's alpha
-channel, when one is present and shaped so the interleave stays lossless.
+channel, when one is present and shaped so the interleave stays lossless: PNG permits an
+alpha-carrying colour type only at 8 or 16 bits per sample, so the parent image and its soft mask
+must both map to one of those two depths, at the same depth as each other, and the mask's own
+`Decode` must be absent or `[0 1]`. The alpha path allocates `Width * (channels + 1) * (bitDepth /
+8) * Height` bytes for the interleaved buffer, independent of `Data`'s own length; an indexed
+image's stored indices are expanded to 8-bit RGB triples first, up to 32 times `Data`'s own length
+at 1 bit per index.
 
 ---
 

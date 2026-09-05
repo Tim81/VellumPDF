@@ -1777,12 +1777,16 @@ internal sealed class ContentInterpreter
         ArgumentNullException.ThrowIfNull(formStream);
         ArgumentNullException.ThrowIfNull(visitor);
 
-        // Resets everything Run resets EXCEPT _contentBytesRemaining and _formInvocations; see this
-        // method's own remarks for why those two keep counting across the call. _openForms and
-        // _formDepth are reset too, but not to Run's own top-level values: this appearance stream
-        // is itself the thing being entered, the way a Form XObject Do invokes is by the time
-        // InvokeForm's own body runs, so its own object number seeds the cycle set and its own
-        // recursion depth starts at 1, not 0.
+        // Resets everything Run resets EXCEPT the content budget (_contentBytesRemaining), the
+        // form-invocation budget (_formInvocations), the resync-probe budget and its exhausted
+        // markers (_probeBytesRemaining, _probeBudgetExhausted, _probeBudgetExhaustedAtOffset,
+        // _probeBudgetExhaustedAtObjectNumber), and the two counters tests read as telemetry
+        // (ContentStreamsDecoded, ProbeBytesConsumed, which keeps accumulating); see this method's
+        // own remarks for why those stay shared across the page and every appearance on it.
+        // _openForms and _formDepth are reset too, but not to Run's own top-level values: this
+        // appearance stream is itself the thing being entered, the way a Form XObject Do invokes is
+        // by the time InvokeForm's own body runs, so its own object number seeds the cycle set and
+        // its own recursion depth starts at 1, not 0.
         _gs = new GraphicsState();
         _gsStack.Clear();
         _textState.BeginText();
@@ -1814,6 +1818,20 @@ internal sealed class ContentInterpreter
                 var formCtx = new StreamContext(formResources, objectNumber);
                 InterpretStream(decoded, formCtx, visitor, pageIndex, diagnostics);
             }
+        }
+        catch (InvalidDataException)
+        {
+            // The same malformed indirect-reference-chain guard Run's own outer catch provides
+            // (see its own remarks): ResolveDictionaryEntry above resolves formStream's own
+            // /Resources through PdfDocumentReader.Resolve, which can throw on a corrupt
+            // cross-reference offset the same way it can from inside Run. Without this catch, a
+            // poisoned appearance stream escapes ExtractImages() entirely, since this method runs
+            // after Run has already returned and its own try covers no further caller.
+            diagnostics.Report(
+                PdfReaderDiagnosticCode.ContentStreamLexError,
+                $"Form XObject {objectNumber}'s content could not be fully resolved: an object it "
+                + "references could not be parsed.",
+                objectNumber, pageIndex: pageIndex);
         }
         finally
         {

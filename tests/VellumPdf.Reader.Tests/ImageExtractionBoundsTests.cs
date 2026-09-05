@@ -172,6 +172,48 @@ public sealed class ImageExtractionBoundsTests
         Assert.Single(result.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ImageExtractionBudgetExhausted);
     }
 
+    /// <summary>
+    /// Charges the budget against what a Raw image's decode retains, not the declared
+    /// <c>rowBytes * Height</c>: each image here declares a 1x1 sample buffer (1 byte) but its
+    /// Flate body inflates to 700,000 bytes. Charging the declared size would let arbitrarily many
+    /// of these fit inside a 1 MiB budget while retaining hundreds of times that; charging the
+    /// retained size means the second one already exceeds it.
+    /// </summary>
+    [Fact]
+    public void AggregateBudgetAcrossCall_chargesDecodedSize_notDeclaredSize_forCompressedRawImages()
+    {
+        var limit = ReaderLimits.MinMaxDecodedBytes; // 1 MiB
+        var inflated = new byte[700_000];
+        var compressed = Flate(inflated);
+        var objs = new List<Obj>
+        {
+            new(1, "<< /Type /Catalog /Pages 2 0 R >>"),
+            new(2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
+            new(3, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] "
+                + "/Resources << /XObject << /Im0 10 0 R /Im1 11 0 R >> >> /Contents 4 0 R >>"),
+            new(4, "<< >>", "/Im0 Do\n/Im1 Do"u8.ToArray()),
+        };
+        for (var i = 0; i < 2; i++)
+        {
+            objs.Add(new Obj(10 + i,
+                "<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /BitsPerComponent 8 "
+                + "/ColorSpace /DeviceGray /Filter /FlateDecode >>", compressed));
+        }
+        var pdf = BuildPdf(1, [.. objs]);
+
+        using var reader = PdfReader.Open(pdf, new PdfReaderOptions { MaxDecodedStreamBytes = limit });
+        var result = reader.ExtractImages();
+
+        var extracted = Assert.Single(result.Images);
+        Assert.Equal(inflated.Length, extracted.Data.Length);
+        Assert.Single(result.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ImageExtractionBudgetExhausted);
+
+        long totalBytes = 0;
+        foreach (var image in result.Images)
+            totalBytes += image.Data.Length;
+        Assert.True(totalBytes <= limit, $"sum of Data.Length ({totalBytes}) exceeds the limit ({limit})");
+    }
+
     // ── occurrence cap (100,000), shared by drawn/inline images and derived masks ──────────────
 
     [Fact]
@@ -218,6 +260,148 @@ public sealed class ImageExtractionBoundsTests
 
         Assert.Empty(result.Images);
         Assert.Contains(result.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.AnnotationAppearanceUnusable);
+    }
+
+    [Fact]
+    public void AnnotsExceedsElementCap_reports509_furtherElementsNotExamined()
+    {
+        const int Count = 4096 + 1;
+        var annotsArray = new StringBuilder("[");
+        for (var i = 0; i < Count; i++)
+            annotsArray.Append("5 0 R ");
+        annotsArray.Append(']');
+
+        var pdf = BuildPdf(1,
+            new Obj(1, "<< /Type /Catalog /Pages 2 0 R >>"),
+            new Obj(2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
+            new Obj(3, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Resources << >> "
+                + $"/Contents 4 0 R /Annots {annotsArray} >>"),
+            new Obj(4, "<< >>", []),
+            new Obj(5, "<< /Type /Annot /Subtype /Stamp /Rect [0 0 1 1] >>"));
+
+        using var reader = PdfReader.Open(pdf);
+        var result = reader.ExtractImages();
+
+        Assert.Empty(result.Images);
+        Assert.Contains(result.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.AnnotationAppearanceUnusable);
+    }
+
+    [Fact]
+    public void DistinctAppearanceStreamsExceedsCap_reports509_furtherOnesNotRun()
+    {
+        const int Count = 1024 + 1;
+        var objs = new List<Obj>
+        {
+            new(1, "<< /Type /Catalog /Pages 2 0 R >>"),
+            new(2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
+        };
+        var annotsArray = new StringBuilder("[");
+        for (var i = 0; i < Count; i++)
+        {
+            var annotNum = 100 + i * 2;
+            var apNum = annotNum + 1;
+            annotsArray.Append($"{annotNum} 0 R ");
+            objs.Add(new Obj(annotNum,
+                $"<< /Type /Annot /Subtype /Stamp /Rect [0 0 1 1] /AP << /N {apNum} 0 R >> >>"));
+            objs.Add(new Obj(apNum, "<< /Type /XObject /Subtype /Form /BBox [0 0 1 1] >>", []));
+        }
+        annotsArray.Append(']');
+
+        objs.Add(new Obj(3, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] /Resources << >> "
+            + $"/Contents 4 0 R /Annots {annotsArray} >>"));
+        objs.Add(new Obj(4, "<< >>", []));
+        var pdf = BuildPdf(1, [.. objs]);
+
+        using var reader = PdfReader.Open(pdf);
+        var result = reader.ExtractImages();
+
+        Assert.Contains(result.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.AnnotationAppearanceUnusable);
+    }
+
+    // ── decoded chain / underlying decode failure: 508 plus the underlying 1xx code ─────────────
+
+    [Fact]
+    public void DecodedChainFails_reports508AndUnderlying1xxCode_imageSkipped()
+    {
+        // Declares 1x1 (rowBytes * Height = 1 byte), well under the pre-decode 507 check, but the
+        // Flate body inflates to 2,000,000 bytes: past the tightened 1 MiB MaxDecodedStreamBytes,
+        // so the decompression-bomb guard inside FlateDecode itself throws, reporting 111
+        // (DecodedStreamLimitExceeded) before BuildImage reports 508 (ImageDataUnreadable) over the
+        // resulting decode failure.
+        var pdf = BuildPdf(1,
+            new Obj(1, "<< /Type /Catalog /Pages 2 0 R >>"),
+            new Obj(2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
+            new Obj(3, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] "
+                + "/Resources << /XObject << /Im0 10 0 R >> >> /Contents 4 0 R >>"),
+            new Obj(4, "<< >>", "/Im0 Do"u8.ToArray()),
+            new Obj(10, "<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /BitsPerComponent 8 "
+                + "/ColorSpace /DeviceGray /Filter /FlateDecode >>", Flate(new byte[2_000_000])));
+
+        using var reader = PdfReader.Open(
+            pdf, new PdfReaderOptions { MaxDecodedStreamBytes = ReaderLimits.MinMaxDecodedBytes });
+        var result = reader.ExtractImages();
+
+        Assert.Empty(result.Images);
+        Assert.Contains(result.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ImageDataUnreadable);
+        Assert.Contains(result.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.DecodedStreamLimitExceeded);
+    }
+
+    // ── colour space: Indexed lookup decode bounded to a small multiple of what it needs ────────
+
+    [Fact]
+    public void IndexedLookupStreamInflatesFarPastWhatItNeeds_reports501_boundedAllocation()
+    {
+        // hival 3 over DeviceRGB needs (3 + 1) * 3 = 12 bytes; the lookup stream here inflates to
+        // 4,000,000, which this reader refuses to decode in full just to keep those 12.
+        var oversizedLookup = Flate(new byte[4_000_000]);
+        var pdf = BuildPdf(1,
+            new Obj(1, "<< /Type /Catalog /Pages 2 0 R >>"),
+            new Obj(2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
+            new Obj(3, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] "
+                + "/Resources << /XObject << /Im0 10 0 R >> >> /Contents 4 0 R >>"),
+            new Obj(4, "<< >>", "/Im0 Do"u8.ToArray()),
+            new Obj(10, "<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /BitsPerComponent 8 "
+                + "/ColorSpace [/Indexed /DeviceRGB 3 11 0 R] /Filter /FlateDecode >>", Flate([0])),
+            new Obj(11, "<< /Filter /FlateDecode >>", oversizedLookup));
+
+        using var reader = PdfReader.Open(pdf);
+
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        var result = reader.ExtractImages();
+        var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        Assert.Empty(result.Images);
+        Assert.Contains(result.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ImageColorSpaceUnsupported);
+        // Well under the 4,000,000-byte inflated lookup: a generous ceiling that still catches a
+        // regression that decodes the lookup stream in full before refusing it.
+        Assert.True(allocated < 1024 * 1024, $"expected a bounded allocation, measured {allocated} bytes");
+    }
+
+    // ── colour space unknown: /Decode array length has its own cap, not just a known one ────────
+
+    [Fact]
+    public void DecodeArrayUnboundedWhenColorSpaceUnknown_reports502_imageStillReturned()
+    {
+        var decodeArray = new StringBuilder("[");
+        for (var i = 0; i < 10_000; i++)
+            decodeArray.Append("0 1 ");
+        decodeArray.Append(']');
+
+        var pdf = BuildPdf(1,
+            new Obj(1, "<< /Type /Catalog /Pages 2 0 R >>"),
+            new Obj(2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
+            new Obj(3, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] "
+                + "/Resources << /XObject << /Im0 10 0 R >> >> /Contents 4 0 R >>"),
+            new Obj(4, "<< >>", "/Im0 Do"u8.ToArray()),
+            new Obj(10, "<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /BitsPerComponent 8 "
+                + $"/Filter /DCTDecode /Decode {decodeArray} >>", "JPEG"u8.ToArray()));
+
+        using var reader = PdfReader.Open(pdf);
+        var result = reader.ExtractImages();
+        var extracted = Assert.Single(result.Images);
+
+        Assert.Null(extracted.Decode);
+        Assert.Contains(result.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ImageDecodeArrayInvalid);
     }
 
     // ── appearance content/invocations share the page's own Run budgets ────────────────────────

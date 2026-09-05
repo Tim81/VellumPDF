@@ -105,9 +105,26 @@ internal sealed class ImageReachabilityWalker : IContentVisitor
         if (annotsRaw is null)
             return;
 
-        if (_reader.ResolveValue(annotsRaw) is not PdfArray annots)
+        PdfArray annots;
+        try
         {
-            Report("/Annots is not an array (ISO 32000-2 §7.7.3.3); annotation appearances were not walked.");
+            if (_reader.ResolveValue(annotsRaw) is not PdfArray resolvedAnnots)
+            {
+                Report("/Annots is not an array (ISO 32000-2 §7.7.3.3); annotation appearances were not walked.");
+                return;
+            }
+            annots = resolvedAnnots;
+        }
+        catch (InvalidDataException)
+        {
+            // PdfDocumentReader.Resolve and friends can throw here on a corrupt cross-reference
+            // offset the same way they can from inside ContentInterpreter.Run; this method runs
+            // AFTER Run has already returned, so Run's own outer catch does not cover it (see this
+            // type's own class doc). Without this catch, a poisoned /Annots object escapes
+            // ExtractImages() entirely instead of degrading the way the equivalent poison on a
+            // content stream already does.
+            Report("/Annots could not be fully resolved: an object it references could not be "
+                + "parsed; annotation appearances were not walked.");
             return;
         }
 
@@ -124,86 +141,108 @@ internal sealed class ImageReachabilityWalker : IContentVisitor
             }
             examined++;
 
-            if (_reader.ResolveValue(annots[i]) is not PdfDictionary annotDict)
+            try
             {
-                Report("An /Annots element is not a dictionary; it was skipped.");
-                continue;
-            }
-
-            var apRaw = annotDict.Get(ApKey);
-            if (apRaw is null)
-                continue;
-
-            if (_reader.ResolveValue(apRaw) is not PdfDictionary apDict)
-            {
-                Report("/AP is present but not a dictionary; it was skipped.");
-                continue;
-            }
-
-            var nRaw = apDict.Get(PdfName.N);
-            if (nRaw is null)
-                continue;
-
-            var streamsToRun = new List<ParsedStream>();
-            var singleStream = nRaw is PdfIndirectReference nRef ? _reader.ResolveStream(nRef) : null;
-            if (singleStream is not null)
-            {
-                streamsToRun.Add(singleStream);
-            }
-            else if (_reader.ResolveValue(nRaw) is PdfDictionary stateDict)
-            {
-                var statesExamined = 0;
-                foreach (var entry in stateDict.Entries)
-                {
-                    if (statesExamined >= MaxAppearanceStatesPerAnnotation)
-                    {
-                        Report(
-                            $"/AP /N has more than {MaxAppearanceStatesPerAnnotation} appearance-state "
-                            + "entries; further ones were not examined.");
-                        break;
-                    }
-                    statesExamined++;
-
-                    // A state entry that is not itself an indirect reference to a stream is not an
-                    // appearance to run. Table 170 does not require every state to be one, so this
-                    // is not itself reported.
-                    if (entry.Value is PdfIndirectReference stateRef
-                        && _reader.ResolveStream(stateRef) is { } stateStream)
-                    {
-                        streamsToRun.Add(stateStream);
-                    }
-                }
-            }
-            else
-            {
-                Report("/AP /N is neither a stream nor a dictionary (ISO 32000-2 Table 170); it was skipped.");
-                continue;
-            }
-
-            foreach (var stream in streamsToRun)
-            {
-                if (stream.Dictionary.Get(PdfName.Subtype) is PdfName subtype && subtype.Equals(ImageSubtypeValue))
-                {
-                    Report("An /AP /N appearance stream's /Subtype is /Image, not /Form (ISO 32000-2 "
-                        + "§12.5.5 describes an appearance stream as a form XObject); it was skipped.");
-                    continue;
-                }
-
-                if (!seenObjectNumbers.Add(stream.ObjectNumber))
-                    continue; // Already run for an earlier annotation on this page.
-
-                if (runAppearances >= MaxAnnotationAppearancesPerPage)
-                {
-                    Report(
-                        $"More than {MaxAnnotationAppearancesPerPage} distinct appearance streams were "
-                        + "found on this page; further ones were not run.");
+                if (!WalkOneAnnotation(page, annots[i], seenObjectNumbers, ref runAppearances))
                     return;
-                }
-                runAppearances++;
-
-                _interpreter.RunFormXObject(page, stream, this, _diagnostics);
+            }
+            catch (InvalidDataException)
+            {
+                // Same reasoning as the /Annots catch above, scoped to one annotation: a poisoned
+                // object reached through THIS annotation's own /AP, /N, or appearance stream must
+                // not stop the page's remaining annotations from being walked.
+                Report($"Annotation {i} could not be fully resolved: an object it references could "
+                    + "not be parsed; it was skipped.");
             }
         }
+    }
+
+    // Returns false when the caller must stop walking the page entirely (the distinct-appearance
+    // cap was reached); true otherwise, whether or not this annotation contributed an appearance.
+    private bool WalkOneAnnotation(
+        PdfReadPage page, PdfObject annotRaw, HashSet<int> seenObjectNumbers, ref int runAppearances)
+    {
+        if (_reader.ResolveValue(annotRaw) is not PdfDictionary annotDict)
+        {
+            Report("An /Annots element is not a dictionary; it was skipped.");
+            return true;
+        }
+
+        var apRaw = annotDict.Get(ApKey);
+        if (apRaw is null)
+            return true;
+
+        if (_reader.ResolveValue(apRaw) is not PdfDictionary apDict)
+        {
+            Report("/AP is present but not a dictionary; it was skipped.");
+            return true;
+        }
+
+        var nRaw = apDict.Get(PdfName.N);
+        if (nRaw is null)
+            return true;
+
+        var streamsToRun = new List<ParsedStream>();
+        var singleStream = nRaw is PdfIndirectReference nRef ? _reader.ResolveStream(nRef) : null;
+        if (singleStream is not null)
+        {
+            streamsToRun.Add(singleStream);
+        }
+        else if (_reader.ResolveValue(nRaw) is PdfDictionary stateDict)
+        {
+            var statesExamined = 0;
+            foreach (var entry in stateDict.Entries)
+            {
+                if (statesExamined >= MaxAppearanceStatesPerAnnotation)
+                {
+                    Report(
+                        $"/AP /N has more than {MaxAppearanceStatesPerAnnotation} appearance-state "
+                        + "entries; further ones were not examined.");
+                    break;
+                }
+                statesExamined++;
+
+                // A state entry that is not itself an indirect reference to a stream is not an
+                // appearance to run. Table 170 does not require every state to be one, so this
+                // is not itself reported.
+                if (entry.Value is PdfIndirectReference stateRef
+                    && _reader.ResolveStream(stateRef) is { } stateStream)
+                {
+                    streamsToRun.Add(stateStream);
+                }
+            }
+        }
+        else
+        {
+            Report("/AP /N is neither a stream nor a dictionary (ISO 32000-2 Table 170); it was skipped.");
+            return true;
+        }
+
+        foreach (var stream in streamsToRun)
+        {
+            if (stream.Dictionary.Get(PdfName.Subtype) is PdfName subtype && subtype.Equals(ImageSubtypeValue))
+            {
+                Report("An /AP /N appearance stream's /Subtype is /Image, not /Form (ISO 32000-2 "
+                    + "§12.5.5 describes an appearance stream as a form XObject); it was skipped.");
+                continue;
+            }
+
+            if (!seenObjectNumbers.Add(stream.ObjectNumber))
+                continue; // Already run for an earlier annotation on this page.
+
+            if (runAppearances >= MaxAnnotationAppearancesPerPage)
+            {
+                Report(
+                    $"More than {MaxAnnotationAppearancesPerPage} distinct appearance streams were "
+                    + "found on this page; further ones were not run.");
+                return false;
+            }
+            runAppearances++;
+
+            _interpreter.RunFormXObject(page, stream, this, _diagnostics);
+        }
+
+        return true;
     }
 
     private void Report(string message) =>

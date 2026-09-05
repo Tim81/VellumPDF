@@ -217,6 +217,94 @@ public sealed class PngEncoderTests
         Assert.Null(png);
     }
 
+    /// <summary>
+    /// ISO/IEC 15948's IHDR colour-type/bit-depth table permits colour type 4 (GrayscaleAlpha)
+    /// only at 8 or 16 bits: an 8x1 DeviceGray image with a same-depth, same-size DeviceGray
+    /// <c>/SMask</c> at 1, 2, or 4 bits must be refused, not written as an empty, sample-less
+    /// type-4 PNG.
+    /// </summary>
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(4)]
+    public void TryEncodeWithAlpha_greySubEightBit_withMatchingSoftMask_isFalse(int bpc)
+    {
+        var rowBytes = (8 * bpc + 7) / 8;
+        var mask = MakeImage(8, 1, bpc, DeviceGray, new byte[rowBytes]);
+        var image = MakeImage(8, 1, bpc, DeviceGray, new byte[rowBytes], softMask: mask);
+
+        Assert.False(image.TryEncodePngWithAlpha(out var png));
+        Assert.Null(png);
+    }
+
+    /// <summary>
+    /// The positive control for the Theory above: the same shape at 8 bits must still succeed, as
+    /// colour type 4 at depth 8 is exactly what ISO/IEC 15948's IHDR table permits. Parses IHDR and
+    /// the IDAT payload directly rather than trusting only the boolean result.
+    /// </summary>
+    [Fact]
+    public void TryEncodeWithAlpha_grey8_ihdrColorType4Depth8_idatHoldsColourAndAlphaInterleaved()
+    {
+        var mask = MakeImage(8, 1, 8, DeviceGray, [0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08]);
+        var image = MakeImage(8, 1, 8, DeviceGray, [0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80], softMask: mask);
+
+        Assert.True(image.TryEncodePngWithAlpha(out var png));
+        Assert.Equal((byte)PngColorType.GrayscaleAlpha, png![8 + 8 + 9]);
+        Assert.Equal(8, png[8 + 8 + 8]);
+
+        var idat = InflateChunk(png, "IDAT"u8);
+        // 8 pixels, one filter byte (None, 0) plus 2 bytes per pixel (grey, alpha) = 17 bytes.
+        Assert.Equal(17, idat.Length);
+        Assert.Equal(0, idat[0]);
+        for (var px = 0; px < 8; px++)
+        {
+            Assert.Equal((byte)(0x10 * (px + 1)), idat[1 + px * 2]);
+            Assert.Equal((byte)(px + 1), idat[1 + px * 2 + 1]);
+        }
+    }
+
+    /// <summary>
+    /// Table 143 permits a soft mask's own <c>/Decode</c>, default <c>[0 1]</c>; a non-default
+    /// array would invert the interleaved alpha channel with no diagnostic, so it is refused
+    /// instead (mirroring the <c>HasMatte</c> gate's own "the bytes do not mean what PNG alpha
+    /// means" reasoning).
+    /// </summary>
+    [Fact]
+    public void TryEncodeWithAlpha_softMaskDecodeInverted_isFalse()
+    {
+        var mask = new PdfExtractedImage(
+            pageIndex: 0, objectNumber: 2, generation: 0, isInline: false, isStencilMask: false,
+            isExplicitMask: false, hasMatte: false, width: 1, height: 1, bitsPerComponent: 8,
+            sMaskInData: 0, colorSpace: DeviceGray, decode: new List<double> { 1, 0 },
+            encoding: PdfImageEncoding.Raw, data: new byte[] { 0xFF }, fileExtension: ".bin",
+            softMask: null, explicitMask: null, jbig2: null, ccittFax: null, dct: null,
+            interpolate: false, isSoftMask: true);
+        var image = MakeImage(1, 1, 8, DeviceGray, [0x11], softMask: mask);
+
+        Assert.False(image.TryEncodePngWithAlpha(out var png));
+        Assert.Null(png);
+    }
+
+    /// <summary>
+    /// The positive control for the Decode gate above: an explicit default <c>[0 1]</c> is not a
+    /// non-default array and must still succeed.
+    /// </summary>
+    [Fact]
+    public void TryEncodeWithAlpha_softMaskDecodeDefault_stillSucceeds()
+    {
+        var mask = new PdfExtractedImage(
+            pageIndex: 0, objectNumber: 2, generation: 0, isInline: false, isStencilMask: false,
+            isExplicitMask: false, hasMatte: false, width: 1, height: 1, bitsPerComponent: 8,
+            sMaskInData: 0, colorSpace: DeviceGray, decode: new List<double> { 0, 1 },
+            encoding: PdfImageEncoding.Raw, data: new byte[] { 0xFF }, fileExtension: ".bin",
+            softMask: null, explicitMask: null, jbig2: null, ccittFax: null, dct: null,
+            interpolate: false, isSoftMask: true);
+        var image = MakeImage(1, 1, 8, DeviceGray, [0x11], softMask: mask);
+
+        Assert.True(image.TryEncodePngWithAlpha(out var png));
+        Assert.NotNull(png);
+    }
+
     // ── Round-trip through the Kernel PNG loader (type 0 and type 2 only: those are the shapes
     // the loader leaves bit-exact) ─────────────────────────────────────────────────────────────
 
@@ -246,6 +334,9 @@ public sealed class PngEncoderTests
 
         Assert.Equal(samples, decoded);
     }
+
+    private static byte[] InflateChunk(byte[] png, ReadOnlySpan<byte> type) =>
+        FlateDecompress(ExtractChunk(png, type));
 
     private static byte[] ExtractChunk(byte[] png, ReadOnlySpan<byte> type)
     {

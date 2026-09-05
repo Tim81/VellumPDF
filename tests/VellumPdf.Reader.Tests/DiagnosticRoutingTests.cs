@@ -167,14 +167,12 @@ public sealed class DiagnosticRoutingTests
     // ── Filters.cs: predictor ─────────────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// #98 taught the TIFF predictor to un-differentiate <c>/BitsPerComponent</c> 4 the same way it
-    /// already did 8, so the two rows this test feeds it now decode instead of copying through
-    /// still differenced. Known-answer bytes, derived by hand from ISO 32000-2 §7.4.4.4's own
+    /// The TIFF predictor (#98) un-differences <c>/BitsPerComponent</c> 4 the same way it already
+    /// does 8, so the two rows this test feeds it decode rather than copying through still
+    /// differenced. Known-answer bytes, derived by hand from ISO 32000-2 §7.4.4.4's own
     /// cumulative-sum rule: row one, nibbles 1 2 3 4 5 6 7 8, accumulates modulo 16 to 1 3 6 A F 5
-    /// C 4 (<c>13 6A F5 C4</c>); row
-    /// two, nibbles 9 A B C D E F 0, accumulates to 9 3 E A 7 5 4 4 (<c>93 EA 75 44</c>). Renamed
-    /// from <c>UnsupportedPredictor_bpcNotEight_reportsWarning_stillReturnsBytes</c>: that name
-    /// described the pre-#98 behaviour this test now pins the opposite of.
+    /// C 4 (<c>13 6A F5 C4</c>); row two, nibbles 9 A B C D E F 0, accumulates to 9 3 E A 7 5 4 4
+    /// (<c>93 EA 75 44</c>).
     /// </summary>
     [Fact]
     public void TiffPredictor2_bpcFour_twoRows_decodesCorrectly_reportsNothing()
@@ -201,8 +199,7 @@ public sealed class DiagnosticRoutingTests
 
     /// <summary>
     /// The one-row twin of the test above, pinning the same known-answer arithmetic against a
-    /// body exactly one row long. Renamed from
-    /// <c>UnsupportedPredictor_bodyExactlyOneRow_reportsWarning</c> for the same reason.
+    /// body exactly one row long.
     /// </summary>
     [Fact]
     public void TiffPredictor2_bpcFour_oneRow_decodesCorrectly_reportsNothing()

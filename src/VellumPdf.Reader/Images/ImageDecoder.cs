@@ -161,6 +161,13 @@ internal sealed class AncillaryStreamCache
 /// </summary>
 internal sealed class ImageDecoder
 {
+    // Bounds a /Decode array's element count when the colour space it would otherwise be checked
+    // against could not be determined (a passthrough image with ColorSpace null): twice
+    // ColorSpaceReader.MaxDeviceNComponents, the longest array a resolvable colour space could
+    // ever require of this reader, so a colour space this reader cannot resolve is not thereby
+    // given a LARGER allowance than one it can.
+    private const int MaxDecodeElementsUnknownColorSpace = 128;
+
     private static readonly PdfName WidthKey = new("Width");
     private static readonly PdfName HeightKey = new("Height");
     private static readonly PdfName BitsPerComponentKey = new("BitsPerComponent");
@@ -187,8 +194,10 @@ internal sealed class ImageDecoder
     // opens a bare JPEG 2000 codestream with no box structure around it. Neither string occurs in
     // ISO 32000-2 itself (§7.4.9 only requires "a full JPX file structure"); both come from the
     // JPEG 2000 standard, which ISO 32000-2 normatively references there. Kernel's
-    // JpxImageLoader.cs holds the same two constants for its own, unrelated purpose (reading a JPX
-    // file to determine its dimensions), not shared with this reader.
+    // JpxImageLoader.cs holds the same twelve-byte signature box for its own, unrelated purpose
+    // (reading a JPX file to determine its dimensions), and a two-byte form of the same SOC marker
+    // (MarkerSOC = 0xFF4F) rather than this reader's four-byte SOC-then-SIZ prefix; neither is
+    // shared with this reader.
     private static readonly byte[] Jp2Signature =
         [0x00, 0x00, 0x00, 0x0C, 0x6A, 0x50, 0x20, 0x20, 0x0D, 0x0A, 0x87, 0x0A];
     private static readonly byte[] BareCodestreamStart = [0xFF, 0x4F, 0xFF, 0x51];
@@ -324,7 +333,41 @@ internal sealed class ImageDecoder
         }
         else
         {
-            if (dictionaryBpc is not (1 or 2 or 4 or 8 or 16))
+            // Table 87 fixes the delivered depth for these filters without consulting the
+            // dictionary at all ("a CCITTFaxDecode or JBIG2Decode filter shall always deliver 1-bit
+            // samples, a RunLengthDecode or DCTDecode filter shall always deliver 8-bit samples"),
+            // the same way it fixes an image mask's depth at 1 above; only a Raw image whose chain
+            // does not end in RunLengthDecode needs the dictionary's own value to lay out samples,
+            // so only that case skips the image over a missing or out-of-set one.
+            var isCcittOrJbig2 = encoding is PdfImageEncoding.CcittFax or PdfImageEncoding.Jbig2;
+            var isRunLengthTerminated =
+                encoding == PdfImageEncoding.Raw && lastFilterName?.Value is "RunLengthDecode" or "RL";
+
+            if (isCcittOrJbig2)
+            {
+                if (dictionaryBpc != 1)
+                {
+                    diagnostics.Report(
+                        PdfReaderDiagnosticCode.ImageBitsPerComponentOverridden,
+                        "CCITTFaxDecode and JBIG2Decode always deliver 1-bit samples (ISO 32000-2 "
+                        + "Table 87); /BitsPerComponent was overridden to 1.",
+                        objectNumber, generation, pageIndex);
+                }
+                bitsPerComponent = 1;
+            }
+            else if (encoding == PdfImageEncoding.Jpeg || isRunLengthTerminated)
+            {
+                if (dictionaryBpc != 8)
+                {
+                    diagnostics.Report(
+                        PdfReaderDiagnosticCode.ImageBitsPerComponentOverridden,
+                        "DCTDecode, and a chain whose last filter is RunLengthDecode, always deliver "
+                        + "8-bit samples (ISO 32000-2 Table 87); /BitsPerComponent was overridden to 8.",
+                        objectNumber, generation, pageIndex);
+                }
+                bitsPerComponent = 8;
+            }
+            else if (dictionaryBpc is not (1 or 2 or 4 or 8 or 16))
             {
                 diagnostics.Report(
                     PdfReaderDiagnosticCode.ImageDictionaryInvalid,
@@ -333,36 +376,17 @@ internal sealed class ImageDecoder
                     objectNumber, generation, pageIndex);
                 return null;
             }
-            bitsPerComponent = dictionaryBpc.Value;
-
-            if (encoding is PdfImageEncoding.CcittFax or PdfImageEncoding.Jbig2)
+            else
             {
-                if (bitsPerComponent != 1)
-                {
-                    diagnostics.Report(
-                        PdfReaderDiagnosticCode.ImageBitsPerComponentOverridden,
-                        "CCITTFaxDecode and JBIG2Decode always deliver 1-bit samples (ISO 32000-2 "
-                        + "Table 87); /BitsPerComponent was overridden to 1.",
-                        objectNumber, generation, pageIndex);
-                    bitsPerComponent = 1;
-                }
-            }
-            else if (encoding == PdfImageEncoding.Jpeg
-                || (encoding == PdfImageEncoding.Raw && lastFilterName?.Value is "RunLengthDecode" or "RL"))
-            {
-                if (bitsPerComponent != 8)
-                {
-                    diagnostics.Report(
-                        PdfReaderDiagnosticCode.ImageBitsPerComponentOverridden,
-                        "DCTDecode, and a chain whose last filter is RunLengthDecode, always deliver "
-                        + "8-bit samples (ISO 32000-2 Table 87); /BitsPerComponent was overridden to 8.",
-                        objectNumber, generation, pageIndex);
-                    bitsPerComponent = 8;
-                }
+                bitsPerComponent = dictionaryBpc.Value;
             }
 
-            var operativeParms = ReadOperativeDecodeParms(dict);
-            if (operativeParms?.Get(BitsPerComponentKey) is PdfInteger parmsBpc
+            // The decode has not run yet at this point, so the positionally aligned parms
+            // DecodeCore later returns in ImageDecodeResult.ImageFilterParms is not available; this
+            // pre-decode cross-check uses the same last-element heuristic ReadOperativeDecodeParms
+            // has always used, not the aligned value the "── parameters ──" section below reads.
+            var decodeParmsForBpcCheck = ReadOperativeDecodeParms(dict);
+            if (decodeParmsForBpcCheck?.Get(BitsPerComponentKey) is PdfInteger parmsBpc
                 && (int)parmsBpc.Value != bitsPerComponent)
             {
                 diagnostics.Report(
@@ -431,10 +455,11 @@ internal sealed class ImageDecoder
             return null;
         }
 
-        // ── aggregate budget, before the decode this image would otherwise pay for ───────────────
-        var chargeSize = encoding == PdfImageEncoding.Raw ? expectedRawLength : passthroughBodyLength;
-        if (!Budget.TryChargeBytes(chargeSize))
-            return null; // 510 already reported by TryChargeBytes, once per call.
+        // ── aggregate budget: an already-exhausted budget skips the decode outright ──────────────
+        // (510 was reported the first time TryChargeBytes below failed for any earlier image in
+        // this call; nothing further is reported here).
+        if (Budget.IsByteBudgetExhausted)
+            return null;
 
         // ── bytes ────────────────────────────────────────────────────────────────────────────────
         var decodeResult = decodeBytes();
@@ -448,6 +473,18 @@ internal sealed class ImageDecoder
             return null;
         }
         var data = decodeResult.Data;
+
+        // ── aggregate budget: charged against what is retained (data.Length), not the pre-decode
+        // estimate above ─────────────────────────────────────────────────────────────────────────
+        // A compressed Raw stream can inflate far past rowBytes * Height (the departure this
+        // reader takes of keeping trailing bytes past that point rather than truncating to it, see
+        // ImageSampleDataShort's own doc for the analogous short case); charging the declared size
+        // instead of the retained one would let such a stream retain arbitrarily more than the
+        // budget while reporting nothing. Charging after the decode means one oversized image can
+        // still be decoded once before its own charge fails, but the failure is reported and the
+        // image itself is not returned, so nothing beyond that one decode is retained past budget.
+        if (!Budget.TryChargeBytes(data.Length))
+            return null; // 510 already reported by TryChargeBytes, once per call.
 
         string fileExtension;
         if (encoding == PdfImageEncoding.Jpx)
@@ -507,19 +544,33 @@ internal sealed class ImageDecoder
         PdfExtractedImage? explicitMask = null;
         if (role == ImageRole.Image)
         {
+            // Table 87 scopes /SMaskInData "(Optional for images that use the JPXDecode filter,
+            // meaningless otherwise; PDF 1.5)"; reading it, and enforcing its "SMask shall not be
+            // specified" conflict, for any other encoding drops a conforming /SMask over an entry
+            // the table itself says means nothing there.
             var sMaskInDataRaw = ResolveEntry(dict, SMaskInDataKey);
-            if (sMaskInDataRaw is PdfInteger smidInt)
+            if (encoding == PdfImageEncoding.Jpx)
             {
-                var v = (int)smidInt.Value;
-                if (v is 0 or 1 or 2)
+                if (sMaskInDataRaw is PdfInteger smidInt)
                 {
-                    sMaskInData = v;
+                    var v = (int)smidInt.Value;
+                    if (v is 0 or 1 or 2)
+                    {
+                        sMaskInData = v;
+                    }
+                    else
+                    {
+                        diagnostics.Report(
+                            PdfReaderDiagnosticCode.ImageDictionaryInvalid,
+                            $"/SMaskInData {v} is outside {{0, 1, 2}} (ISO 32000-2 Table 87); treated as 0.",
+                            objectNumber, generation, pageIndex);
+                    }
                 }
-                else
+                else if (sMaskInDataRaw is not null)
                 {
                     diagnostics.Report(
                         PdfReaderDiagnosticCode.ImageDictionaryInvalid,
-                        $"/SMaskInData {v} is outside {{0, 1, 2}} (ISO 32000-2 Table 87); treated as 0.",
+                        "/SMaskInData is present but not an integer (ISO 32000-2 Table 87); treated as 0.",
                         objectNumber, generation, pageIndex);
                 }
             }
@@ -527,14 +578,16 @@ internal sealed class ImageDecoder
             {
                 diagnostics.Report(
                     PdfReaderDiagnosticCode.ImageDictionaryInvalid,
-                    "/SMaskInData is present but not an integer (ISO 32000-2 Table 87); treated as 0.",
+                    "/SMaskInData is present on a non-JPXDecode image; ISO 32000-2 Table 87 scopes "
+                    + "it \"Optional for images that use the JPXDecode filter, meaningless "
+                    + "otherwise\"; ignored.",
                     objectNumber, generation, pageIndex);
             }
 
             var smaskRaw = dict.Get(SMaskKey);
             if (smaskRaw is not null)
             {
-                if (sMaskInData != 0)
+                if (encoding == PdfImageEncoding.Jpx && sMaskInData != 0)
                 {
                     diagnostics.Report(
                         PdfReaderDiagnosticCode.ImageMaskInvalid,
@@ -554,7 +607,24 @@ internal sealed class ImageDecoder
             {
                 if (ResolveEntry(maskStream.Dictionary, ImageMaskKey) is PdfBoolean { Value: true })
                 {
-                    explicitMask = DecodeXObjectCore(maskStream, resources, pageIndex, ImageRole.ExplicitMask, diagnostics);
+                    // Neither §8.9.6.3 nor Table 87 forbids an explicit mask from carrying its own
+                    // /Mask or /SMask the way Table 143 forbids it on a soft mask, but this reader
+                    // does not chain masks a second level for either role: dropping this one
+                    // silently would leave the 503 doc's "a mask carrying its own /Mask or /SMask"
+                    // true only for the soft-mask role it was written against.
+                    if (maskStream.Dictionary.Get(SMaskKey) is not null || maskStream.Dictionary.Get(MaskKey) is not null)
+                    {
+                        diagnostics.Report(
+                            PdfReaderDiagnosticCode.ImageMaskInvalid,
+                            "/Mask itself carries /Mask or /SMask; this reader does not chain masks "
+                            + "a second level regardless of which role reached the mask, so the "
+                            + "/Mask entry was dropped.",
+                            objectNumber, generation, pageIndex);
+                    }
+                    else
+                    {
+                        explicitMask = DecodeXObjectCore(maskStream, resources, pageIndex, ImageRole.ExplicitMask, diagnostics);
+                    }
                 }
                 else
                 {
@@ -581,29 +651,50 @@ internal sealed class ImageDecoder
         PdfJbig2Parameters? jbig2 = null;
         PdfCcittFaxParameters? ccittFax = null;
         PdfDctParameters? dct = null;
-        var operativeParmsForStep11 = ReadOperativeDecodeParms(dict);
+        // The image filter's own /DecodeParms entry, positionally aligned by DecodeCore against
+        // the filter chain it already walked (Filters.cs), rather than re-derived here: this is
+        // the same dictionary the decode above ran under, not a second, independent guess at it.
+        var operativeParms = decodeResult.ImageFilterParms;
 
         if (encoding == PdfImageEncoding.Jbig2)
         {
             var globals = ReadOnlyMemory<byte>.Empty;
-            if (operativeParmsForStep11?.Get(Jbig2GlobalsKey) is PdfIndirectReference globalsRef
+            if (operativeParms?.Get(Jbig2GlobalsKey) is PdfIndirectReference globalsRef
                 && _reader.ResolveStream(globalsRef) is { } globalsStream)
             {
                 var bytes = _ancillaryCache.GetOrDecode(
                     _reader, globalsStream, AncillaryRole.Jbig2Globals, Budget, _limits, diagnostics);
                 if (bytes is not null)
+                {
                     globals = bytes;
+                }
+                else
+                {
+                    diagnostics.Report(
+                        PdfReaderDiagnosticCode.ImageDictionaryInvalid,
+                        "/JBIG2Globals names a stream that could not be decoded or was refused by "
+                        + "the decode budget; the image is kept with no globals.",
+                        objectNumber, generation, pageIndex);
+                }
+            }
+            else if (operativeParms?.Get(Jbig2GlobalsKey) is not null)
+            {
+                diagnostics.Report(
+                    PdfReaderDiagnosticCode.ImageDictionaryInvalid,
+                    "/JBIG2Globals is present but does not resolve to a stream (ISO 32000-2 §7.4.7 "
+                    + "types it stream); the image is kept with no globals.",
+                    objectNumber, generation, pageIndex);
             }
             jbig2 = new PdfJbig2Parameters(globals);
         }
         else if (encoding == PdfImageEncoding.CcittFax)
         {
-            ccittFax = ReadCcittParameters(operativeParmsForStep11, objectNumber, generation, pageIndex, diagnostics);
+            ccittFax = ReadCcittParameters(operativeParms, objectNumber, generation, pageIndex, diagnostics);
         }
         else if (encoding == PdfImageEncoding.Jpeg)
         {
             int? colorTransform = null;
-            var ctRaw = operativeParmsForStep11?.Get(ColorTransformKey) is { } ctObj
+            var ctRaw = operativeParms?.Get(ColorTransformKey) is { } ctObj
                 ? _reader.ResolveValue(ctObj) : null;
             if (ctRaw is PdfInteger ctInt)
             {
@@ -758,10 +849,13 @@ internal sealed class ImageDecoder
             return null;
         }
 
-        // Table 88 gives Indexed and an image mask a fixed length of 2, regardless of the base
-        // space's own component count; every other family needs 2 * ComponentCount. When the
+        // An image mask's own fixed length of 2 is Table 87's Decode row ("If ImageMask is true,
+        // the array shall be either [0 1] or [1 0]") and §8.9.6.2; every other family needs
+        // 2 * ComponentCount, which already gives Indexed (one component) a length of 2 without a
+        // separate rule, since this reader reports Indexed's own ComponentCount as 1. When the
         // colour space itself could not be determined (a passthrough image with ColorSpace null),
-        // there is no basis to check the length against, so the array is exposed unchecked.
+        // there is no basis to check the length against, so the array is exposed unchecked (subject
+        // to the cap below).
         int? expectedLength = isStencilMask || colorSpace?.Family == PdfImageColorSpaceFamily.Indexed
             ? 2
             : colorSpace?.ComponentCount * 2;
@@ -775,6 +869,20 @@ internal sealed class ImageDecoder
                 PdfReaderDiagnosticCode.ImageDecodeArrayInvalid,
                 $"/Decode has {arr.Count} elements; ISO 32000-2 §8.9.5.2 requires exactly {len} "
                 + "for this image's colour space. Exposed as null.",
+                objectNumber, generation, pageIndex);
+            return null;
+        }
+
+        // expectedLength is null exactly when the colour space could not be determined (a
+        // passthrough image kept past a 501); arr.Count is otherwise unbounded there, so this cap
+        // is checked against the count alone, before EnumerateArray below ever resolves an element.
+        if (expectedLength is null && arr.Count > MaxDecodeElementsUnknownColorSpace)
+        {
+            diagnostics.Report(
+                PdfReaderDiagnosticCode.ImageDecodeArrayInvalid,
+                $"/Decode has {arr.Count} elements with no colour space to check its length "
+                + $"against; this reader's own cap for that case is "
+                + $"{MaxDecodeElementsUnknownColorSpace}. Exposed as null.",
                 objectNumber, generation, pageIndex);
             return null;
         }
@@ -800,7 +908,9 @@ internal sealed class ImageDecoder
             }
         }
 
-        return values;
+        // AsReadOnly, not the List<double> itself: a caller holding IReadOnlyList<double> should
+        // not be able to downcast back to a mutable list and change what this image reports.
+        return values.AsReadOnly();
     }
 
     // The image dictionary's own /DecodeParms (never /DP: an inline image's abbreviation is already

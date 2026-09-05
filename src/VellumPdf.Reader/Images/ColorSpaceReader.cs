@@ -25,6 +25,24 @@ internal sealed class ColorSpaceReader(
     // clause oppositely.
     private const int MaxDeviceNComponents = 64;
 
+    // §8.6.6.3 forbids an Indexed base from being itself Indexed or Pattern, so the only nesting
+    // an Indexed space's own base can legally add is none at all; the single further hop this
+    // reader's own resource-name leniency (see Read's own doc) can still take before ReadIndexed's
+    // recursive call into ReadCore is reached is the whole of the legal space. 3 is generous
+    // headroom over that, not a value derived from a clause: it exists so a future recursive arm
+    // (an ICCBased alternate, say) added without re-reading this reasoning still terminates.
+    private const int MaxColorSpaceNesting = 3;
+
+    // An Indexed lookup table retains at most (hival + 1) * Base.ComponentCount bytes (256 * 4 =
+    // 1024, worst case), but the STREAM behind it can be Flate- or LZW-compressed and inflate to
+    // whatever limits.MaxDecodedBytes otherwise permits before that truncation ever runs, which a
+    // small file can turn into hundreds of megabytes retained for a moment just to keep a handful
+    // of them. The cap below bounds the DECODE itself to a small multiple of what the table
+    // needs, floored so a lookup stream's own padding or an unrelated trailing object sharing its
+    // container is not refused for a legitimate few extra bytes.
+    private const long MaxLookupDecodeMultiplier = 4;
+    private const long MinLookupDecodeBytes = 64 * 1024;
+
     private static readonly PdfName IccBasedTag = new("ICCBased");
     private static readonly PdfName IndexedTag = new("Indexed");
     private static readonly PdfName CalGrayTag = new("CalGray");
@@ -37,7 +55,7 @@ internal sealed class ColorSpaceReader(
     /// Resolves <paramref name="csValue"/> against <paramref name="resources"/>' own
     /// <c>/ColorSpace</c> subdictionary when it names a resource rather than a device space,
     /// exactly the lookup ISO 32000-2 §8.9.7 provides for an inline image's <c>/CS</c>, and, per
-    /// §8.6.1, a leniency (not a conformance path) for an image XObject's own <c>/ColorSpace</c>,
+    /// §8.6.3, a leniency (not a conformance path) for an image XObject's own <c>/ColorSpace</c>,
     /// which "shall always be defined directly as a PDF object, not by an entry in the ColorSpace
     /// resource subdictionary". Producers write it anyway, so it is attempted either way; when it
     /// succeeds, no diagnostic is raised for having taken the leniency.
@@ -45,12 +63,20 @@ internal sealed class ColorSpaceReader(
     internal PdfImageColorSpace? Read(
         PdfObject? csValue, PdfDictionary? resources, DiagnosticSink diagnostics, int? objectNumber,
         int? generation, int pageIndex) =>
-        ReadCore(csValue, resources, diagnostics, objectNumber, generation, pageIndex, allowResourceLookup: true);
+        ReadCore(csValue, resources, diagnostics, objectNumber, generation, pageIndex, allowResourceLookup: true, depth: 0);
 
     private PdfImageColorSpace? ReadCore(
         PdfObject? csValue, PdfDictionary? resources, DiagnosticSink diagnostics, int? objectNumber,
-        int? generation, int pageIndex, bool allowResourceLookup)
+        int? generation, int pageIndex, bool allowResourceLookup, int depth)
     {
+        if (depth > MaxColorSpaceNesting)
+        {
+            Report(diagnostics, objectNumber, generation, pageIndex,
+                $"/ColorSpace nests more than {MaxColorSpaceNesting} levels deep (through an Indexed "
+                + "base or a resource-name lookup); this reader does not follow it further.");
+            return null;
+        }
+
         if (csValue is null)
         {
             Report(diagnostics, objectNumber, generation, pageIndex, "/ColorSpace is absent.");
@@ -79,16 +105,20 @@ internal sealed class ColorSpaceReader(
             // THAT entry is itself just a bare, non-device name, this does not loop back into
             // another resource lookup for it (allowResourceLookup: false below); a /CS0 entry
             // whose own value is the name /CS0 terminates at 501 rather than recursing forever.
+            // MaxColorSpaceNesting above bounds the same recursion independently, in case a future
+            // caller ever threads allowResourceLookup: true through more than one hop.
             if (allowResourceLookup && resources is not null
                 && TryGetColorSpaceResourceEntry(resources, name) is { } entry)
             {
-                return ReadCore(entry, resources, diagnostics, objectNumber, generation, pageIndex, allowResourceLookup: false);
+                return ReadCore(
+                    entry, resources, diagnostics, objectNumber, generation, pageIndex,
+                    allowResourceLookup: false, depth: depth + 1);
             }
 
             Report(diagnostics, objectNumber, generation, pageIndex,
                 $"/ColorSpace names '/{DiagnosticExcerpt.Quote(name.Value)}', which is not a device "
                 + "colour space and could not be resolved from the applicable /Resources "
-                + "/ColorSpace subdictionary (ISO 32000-2 §8.6.1).");
+                + "/ColorSpace subdictionary (ISO 32000-2 §8.6.3).");
             return null;
         }
 
@@ -97,7 +127,7 @@ internal sealed class ColorSpaceReader(
             if (tag.Equals(IccBasedTag))
                 return ReadIccBased(arr, diagnostics, objectNumber, generation, pageIndex);
             if (tag.Equals(IndexedTag))
-                return ReadIndexed(arr, resources, diagnostics, objectNumber, generation, pageIndex);
+                return ReadIndexed(arr, resources, diagnostics, objectNumber, generation, pageIndex, depth);
             if (tag.Equals(CalGrayTag))
                 return new PdfImageColorSpace(PdfImageColorSpaceFamily.CalGray, 1);
             if (tag.Equals(CalRgbTag))
@@ -160,7 +190,7 @@ internal sealed class ColorSpaceReader(
 
     private PdfImageColorSpace? ReadIndexed(
         PdfArray arr, PdfDictionary? resources, DiagnosticSink diagnostics, int? objectNumber,
-        int? generation, int pageIndex)
+        int? generation, int pageIndex, int depth)
     {
         if (arr.Count != 4)
         {
@@ -189,7 +219,16 @@ internal sealed class ColorSpaceReader(
             return null;
         }
 
-        var baseSpace = ReadCore(arr[1], resources, diagnostics, objectNumber, generation, pageIndex, allowResourceLookup: true);
+        // The base is read with allowResourceLookup: false, not true: §8.6.3's own leniency-sized
+        // resource lookup is granted at most once, to the /ColorSpace entry itself (see Read's own
+        // doc); §8.6.3 goes on to say "this convention also applies when colour spaces are defined
+        // in terms of other colour spaces", so an Indexed space's base gets no lookup of its own,
+        // and a base that is a bare resource name is refused as an unresolvable name rather than
+        // read through the resource subdictionary a second time. depth + 1 also bounds this
+        // independently through MaxColorSpaceNesting, whatever allowResourceLookup is passed.
+        var baseSpace = ReadCore(
+            arr[1], resources, diagnostics, objectNumber, generation, pageIndex,
+            allowResourceLookup: false, depth: depth + 1);
         if (baseSpace is null)
             return null; // Already reported by the recursive call.
         if (baseSpace.Family == PdfImageColorSpaceFamily.Indexed)
@@ -211,7 +250,7 @@ internal sealed class ColorSpaceReader(
         var hival = (int)hivalInt.Value;
 
         var expectedLength = (long)(hival + 1) * baseSpace.ComponentCount;
-        var lookupBytes = ReadLookupBytes(arr[3], diagnostics, pageIndex);
+        var lookupBytes = ReadLookupBytes(arr[3], expectedLength, diagnostics, objectNumber, generation, pageIndex);
         if (lookupBytes is null || lookupBytes.Length < expectedLength)
         {
             // This reader's own policy, not a clause citation: §8.6.6.3 says the table "shall be"
@@ -229,11 +268,32 @@ internal sealed class ColorSpaceReader(
             PdfImageColorSpaceFamily.Indexed, 1, @base: baseSpace, highValue: hival, lookup: lookupBytes);
     }
 
-    private byte[]? ReadLookupBytes(PdfObject rawUnresolved, DiagnosticSink diagnostics, int pageIndex)
+    private byte[]? ReadLookupBytes(
+        PdfObject rawUnresolved, long expectedLength, DiagnosticSink diagnostics, int? objectNumber,
+        int? generation, int pageIndex)
     {
         if (rawUnresolved is PdfIndirectReference reference && reader.ResolveStream(reference) is { } stream)
         {
-            return ancillaryCache.GetOrDecode(reader, stream, AncillaryRole.IndexedLookup, budget, limits, diagnostics);
+            var cap = Math.Max(expectedLength * MaxLookupDecodeMultiplier, MinLookupDecodeBytes);
+            if (cap >= limits.MaxDecodedBytes)
+                return ancillaryCache.GetOrDecode(reader, stream, AncillaryRole.IndexedLookup, budget, limits, diagnostics);
+
+            // Decoded (and cached) under the tightened cap, not limits itself: AncillaryStreamCache
+            // keys its cache on (object, generation, role) alone, so a later reference to this same
+            // stream from a DIFFERENT Indexed space with a larger expectedLength would also see
+            // this call's null rather than retry at its own, larger cap. That is the conservative
+            // direction to err in for a bound meant to refuse, not the reverse.
+            var tightened = limits with { MaxDecodedBytes = cap };
+            var bytes = ancillaryCache.GetOrDecode(
+                reader, stream, AncillaryRole.IndexedLookup, budget, tightened, diagnostics);
+            if (bytes is null)
+            {
+                Report(diagnostics, objectNumber, generation, pageIndex,
+                    "Indexed color space's lookup stream failed to decode, or decodes to more than "
+                    + $"{cap} bytes, well past the {expectedLength} its own hival and base require; "
+                    + "this reader does not inflate one that far to keep a fraction of the result.");
+            }
+            return bytes;
         }
 
         return reader.ResolveValue(rawUnresolved) switch
@@ -267,9 +327,11 @@ internal sealed class ColorSpaceReader(
         return new PdfImageColorSpace(PdfImageColorSpaceFamily.DeviceN, names.Count);
     }
 
-    // §8.6.1: an inline image's /CS may name a key in the current resource dictionary's own
-    // /ColorSpace subdictionary; §8.9.7 provides the identical lookup for an image XObject as a
-    // producer leniency this reader honours without treating it as itself a conformance defect.
+    // §8.9.7 is what grants an inline image's /CS a lookup into the current resource dictionary's
+    // own /ColorSpace subdictionary; §8.6.3 forbids the identical lookup for an image XObject
+    // ("this convention also applies when colour spaces are defined in terms of other colour
+    // spaces" reaches an Indexed base the same way), so honouring it there anyway is a producer
+    // leniency this reader takes without treating it as itself a conformance defect.
     private PdfObject? TryGetColorSpaceResourceEntry(PdfDictionary resources, PdfName name)
     {
         var categoryRaw = resources.Get(PdfName.ColorSpace);

@@ -98,11 +98,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   return every image XObject and inline image a page's content draws, including those inside form
   XObjects and, by default, inside annotation `/AP /N` appearance streams, in draw order. DCT, JPX,
   JBIG2, and CCITT payloads come back verbatim with their decode parameters; every other image comes
-  back as its stored samples, with a lossless PNG on request (`TryEncodePng`,
-  `TryEncodePngWithAlpha`) for grey images at 1 to 16 bits, RGB at 8 and 16, and indexed palettes
-  over either at 8 bits and below. Nothing is colour-converted or re-encoded, and `/Decode` is
-  exposed but never applied. Twelve diagnostic codes, 500 to 511, report what could not be
-  extracted and why.
+  back as its stored samples, with a lossless PNG on request: `TryEncodePng` for grey images at 1 to
+  16 bits, RGB at 8 and 16, and indexed palettes over either at 8 bits and below; `TryEncodePngWithAlpha`
+  additionally interleaves a matching soft mask as PNG alpha, when the parent image and the mask
+  both map to the same 8- or 16-bit depth PNG's alpha-carrying colour types require. Nothing is
+  colour-converted or re-encoded, and `/Decode` is exposed but never applied. Twelve diagnostic
+  codes, 500 to 511, report what could not be extracted and why.
 
 ### Changed
 
