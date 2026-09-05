@@ -32,7 +32,7 @@ namespace VellumPdf.Reader.Fonts;
 /// <see cref="GetOrCreate"/> at all, so it is not cached here: that rejection's diagnostic is
 /// reported again on every page that names the same font object, unlike a font whose own
 /// <c>SimpleFontReader.Create</c> reported a diagnostic, which is cached like any other. Not
-/// thread-safe, like every other cache this type keeps.
+/// thread-safe, like every other cache the reader keeps.
 /// </para>
 /// </remarks>
 internal sealed class FontCache

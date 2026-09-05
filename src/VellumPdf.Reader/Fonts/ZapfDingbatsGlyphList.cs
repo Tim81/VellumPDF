@@ -20,8 +20,8 @@ namespace VellumPdf.Reader.Fonts;
 /// remarks name as <c>ZapfDingbats.afm</c>-only (0x80 through 0x8D: <c>a85</c> through
 /// <c>a96</c>, <c>a205</c>, <c>a206</c>). Those 14 names carry ordinary Unicode mappings in
 /// Adobe's own <c>zapfdingbats.txt</c> (the ornamental-bracket block, U+2768–U+2775), which the
-/// Adobe Glyph List proper does not list at all; omitting them here would leave those codes with
-/// no Unicode route at all, which <c>SimpleFontReaderTests</c> pins directly against 0x80.
+/// Adobe Glyph List proper does not list; omitting them here would leave those codes with no
+/// Unicode route at all, which <c>SimpleFontReaderTests</c> pins directly against 0x80.
 /// </remarks>
 internal static class ZapfDingbatsGlyphList
 {

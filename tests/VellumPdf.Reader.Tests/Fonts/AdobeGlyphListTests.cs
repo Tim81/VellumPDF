@@ -158,9 +158,10 @@ public sealed class AdobeGlyphListTests
     [Fact]
     public void TryMapToUnicode_singleComponentName_returnsTheSameInstanceEachCall()
     {
-        // Pins the round-1 allocation fix directly: a single-component name returns the map's own
-        // string (or TryUniName/TryUName's own freshly built one) rather than a fresh copy routed
-        // through a StringBuilder each call, so two calls with the same name share one instance.
+        // A single-component name returns the map's own string (or TryUniName/TryUName's own
+        // freshly built one) rather than a copy routed through a StringBuilder each call, so two
+        // calls with the same name share one instance; the multi-component path is the only one
+        // that composes.
         Assert.True(AdobeGlyphList.TryMapToUnicode("ffi", out var first));
         Assert.True(AdobeGlyphList.TryMapToUnicode("ffi", out var second));
         Assert.Same(first, second);

@@ -183,9 +183,9 @@ internal sealed class SimpleFontReader : PdfFontReader
 
         // Step 3: symbolic. A /Flags of the wrong type (Table 121 requires an integer; a real
         // is the one a producer is most likely to write by mistake) is treated the same as an
-        // absent one, silently: this class has four diagnostic codes, all for the font
-        // dictionary itself, and none of them fits a malformed descriptor entry, so a fifth code
-        // is not added here for a producer defect this reader has never observed in practice.
+        // absent one, silently: this class's four diagnostic codes all describe the font
+        // dictionary itself, none fits a malformed descriptor entry, and none is added, since the
+        // Table 112 default below leaves the font in a usable state either way.
         var descriptor = Resolve(reader, fontDict.Get(_fontDescriptorKey)) as PdfDictionary;
         var resolvedFlags = descriptor is not null
             ? Resolve(reader, descriptor.Get(_flagsKey)) as PdfInteger

@@ -580,10 +580,10 @@ public enum PdfReaderDiagnosticCode
     /// an encoding dictionary, its <c>/BaseEncoding</c> named an encoding this reader does not
     /// know or was itself an unresolved indirect reference, its <c>/Differences</c> was present
     /// but not an array, or a <c>/Differences</c> element was out of range, named a glyph longer
-    /// than this reader's own name-length bound, or was of a type §9.6.5.1 does not permit there
-    /// (only integers and names), including an indirect reference, which §7.3.10 permits but this
-    /// reader does not follow (stops the array from being applied any further). Reported once per
-    /// font.
+    /// than this reader's own name-length bound, was of a type §9.6.5.1 does not permit there
+    /// (only integers and names), or was an indirect reference, which §7.3.10 permits but this
+    /// reader does not follow inside the array. Every element condition except the over-long name
+    /// stops the array from being applied any further. Reported once per font.
     /// </summary>
     FontEncodingMalformed = 401,
 

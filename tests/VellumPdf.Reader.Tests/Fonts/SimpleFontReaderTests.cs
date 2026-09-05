@@ -507,6 +507,25 @@ public sealed class SimpleFontReaderTests
     }
 
     [Fact]
+    public void TrueTypeWithDescriptorButNoFlags_dictionaryWithMacRomanBase_isNotFilledFromStandard()
+    {
+        // A descriptor without /Flags has no Nonsymbolic flag to be "set" (§9.6.5.4), so the
+        // fill must not run; this is the shape that separates a gate on the resolved /Flags from
+        // a gate on the descriptor's mere presence, which the Table 112 fallback would then read
+        // as nonsymbolic and fill.
+        using var doc = FontTestSupport.OpenMinimal();
+        var sink = new DiagnosticSink(50);
+        var fontDict = new PdfDictionary()
+            .Set(PdfName.Subtype, "TrueType").Set(PdfName.BaseFont, "Foo")
+            .Set(new PdfName("FontDescriptor"), new PdfDictionary())
+            .Set(PdfName.Encoding, MacRomanBaseDictionary());
+        var reader = Build(doc, fontDict, sink);
+
+        Assert.Null(Decode(reader, 0xB2).Unicode); // not filled.
+        Assert.Equal("†", Decode(reader, 0xA0).Unicode); // MacRoman's own dagger, untouched.
+    }
+
+    [Fact]
     public void DescriptorlessTrueType_dictionaryWithMacRomanBase_isNotFilledFromStandard()
     {
         // §9.6.5.4 conditions the fill on "the font descriptor's Nonsymbolic flag", a flag of a
@@ -721,10 +740,10 @@ public sealed class SimpleFontReaderTests
     public void Helvetica_noWidths_descriptorPresentNoFlags_stillFillsAfmWidth()
     {
         // The AFM width fill depends only on /Widths being absent and the font resolving to one
-        // of the standard 14 (see FillAfmWidths' own remarks); it does not also require a present
-        // /FontDescriptor or /Flags. Gating it on those would contradict Table 109, which makes
-        // /FontDescriptor optional for the standard 14 in PDF 1.0 to 1.7, and would break
-        // Helvetica_noEncoding_noWidths_nonsymbolic above, which has no /FontDescriptor at all.
+        // of the standard 14; a present /FontDescriptor without /Flags neither enables nor
+        // disables it. The §9.6.5.4 encoding fill is the one that reads /Flags, and
+        // TrueTypeWithDescriptorButNoFlags_dictionaryWithMacRomanBase_isNotFilledFromStandard
+        // pins that side.
         using var doc = FontTestSupport.OpenMinimal();
         var sink = new DiagnosticSink(50);
         var fontDict = Type1("Helvetica").Set(new PdfName("FontDescriptor"), new PdfDictionary());
