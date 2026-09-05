@@ -53,10 +53,9 @@ namespace VellumPdf.Reader.Fonts;
 /// <c>/ToUnicode</c>, whose reference is followed with
 /// <see cref="PdfDocumentReader.ResolveStream(PdfIndirectReference)"/> because <c>Resolve</c>
 /// hands back a stream object's dictionary and never the <see cref="PdfStream"/> itself. An
-/// element of
-/// <c>/Differences</c> is read raw as well (§9.6.5.1, step 5 below), but that is an array element
-/// rather than a dictionary entry: §7.3.10 permits an indirect reference there and this reader
-/// deliberately does not resolve one, recording that as a reader limitation
+/// element of <c>/Differences</c> is read raw as well (§9.6.5.1, in <c>ApplyDifferences</c>), but
+/// that is an array element rather than a dictionary entry: §7.3.10 permits an indirect reference
+/// there and this reader deliberately does not resolve one, recording that as a reader limitation
 /// (<see cref="PdfReaderDiagnosticCode.FontEncodingMalformed"/>) rather than silently supporting
 /// or silently rejecting it.
 /// </para>
@@ -196,7 +195,7 @@ internal sealed class SimpleFontReader : PdfFontReader
         // class's five diagnostic codes, 400 to 402 describe the font dictionary and 403/404 its
         // Unicode routing, so none fits a malformed descriptor entry, and no sixth is added, since
         // the Table 112 default below leaves the font in a usable state either way. What the
-        // producer loses is step 8's §9.6.5.4 fill: on a nonsymbolic TrueType with a dictionary
+        // producer loses is step 5's §9.6.5.4 fill: on a nonsymbolic TrueType with a dictionary
         // /Encoding, a /Flags the reader cannot read leaves the twelve StandardEncoding cells
         // undefined that a readable one would have filled.
         var descriptor = Resolve(reader, fontDict.Get(_fontDescriptorKey)) as PdfDictionary;
@@ -433,8 +432,8 @@ internal sealed class SimpleFontReader : PdfFontReader
                     else
                     {
                         // A later assignment overwrites an earlier one at the same code. ISO
-                        // 32000-2 §9.6.5 forbids overlapping sequences; this reader allows the
-                        // overwrite and reports nothing for it (see the class doc's own remarks).
+                        // 32000-2 §9.6.5.1 forbids overlapping sequences; this reader allows
+                        // the overwrite and reports nothing for it (see the class remarks).
                         table[code] = glyphName.Value;
                     }
                     code++;
