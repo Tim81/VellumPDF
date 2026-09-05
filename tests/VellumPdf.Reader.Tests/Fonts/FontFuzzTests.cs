@@ -8,12 +8,17 @@ using VellumPdf.Reader.Fonts;
 namespace VellumPdf.Reader.Tests.Fonts;
 
 /// <summary>
-/// CsCheck property test over mutated font dictionaries: random <c>/Encoding</c> shapes,
-/// <c>/Differences</c> arrays mixing every element type, random <c>/Widths</c> lengths and
-/// element types, random <c>/Flags</c>, and random base font names including a 1 KiB one.
-/// <see cref="SimpleFontReader.Create"/> is asserted to never throw and to report at most four
-/// distinct diagnostic codes per font (400 to 402, plus one of 403/404), and
-/// <see cref="PdfFontReader.TryDecodeNext"/> over every byte value is asserted to never throw.
+/// CsCheck property tests over mutated font dictionaries. The first drives
+/// <see cref="SimpleFontReader.Create"/> directly: random <c>/Subtype</c>s, <c>/Encoding</c>
+/// shapes (including an indirect reference to an existing object and a two-hop chain neither
+/// this class nor <see cref="SimpleFontReader"/> follows), <c>/Differences</c> arrays mixing
+/// every element type, random <c>/Widths</c> lengths and element types, random <c>/Flags</c>,
+/// random <c>/ToUnicode</c> shapes (direct and indirect), and random base font names including a
+/// 1 KiB one. The second drives <see cref="PdfDocumentReader.GetFontReader"/> itself, including
+/// its own indirect resolution of the font entry and its <c>/Subtype</c>. Both assert: no
+/// exception escapes, at most four distinct diagnostic codes are reported per font (400 to 402,
+/// plus one of 403/404), and <see cref="PdfFontReader.TryDecodeNext"/> over every byte value
+/// never throws.
 /// </summary>
 public sealed class FontFuzzTests
 {
@@ -30,6 +35,24 @@ public sealed class FontFuzzTests
             }
         }
     }
+
+    // Object numbers pre-registered in the fixture document built by OpenFixture(), used by the
+    // indirect-shape generators below so a resolve inside SimpleFontReader.Create or
+    // GetFontReader hits an object present in the document rather than a dangling reference.
+    private const int EncodingDictObject = 50;
+    private const int EncodingChainHeadObject = 51;
+    private const int EncodingChainTargetObject = 52;
+    private const int ToUnicodeStreamObject = 60;
+    private const int FontDictObject = 100;
+    private const int NonDictionaryObject = 102;
+
+    private static PdfDocumentReader OpenFixture() => FontTestSupport.Open(
+        new FontTestSupport.Obj(EncodingDictObject, "<< /BaseEncoding /WinAnsiEncoding /Differences [65 /A] >>"),
+        new FontTestSupport.Obj(EncodingChainHeadObject, $"{EncodingChainTargetObject} 0 R"),
+        new FontTestSupport.Obj(EncodingChainTargetObject, "<< /BaseEncoding /MacRomanEncoding >>"),
+        new FontTestSupport.Obj(ToUnicodeStreamObject, "<< >>", "/CIDInit /ProcSet findresource begin\n"u8.ToArray()),
+        new FontTestSupport.Obj(FontDictObject, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"),
+        new FontTestSupport.Obj(NonDictionaryObject, "42"));
 
     // PdfName's own constructor rejects an empty string (ArgumentException); the case where a
     // parsed PDF represents a bare "/" as a zero-length name never reaches PdfName's constructor
@@ -56,6 +79,11 @@ public sealed class FontFuzzTests
         Gen.Const((PdfObject?)new PdfName("MacRomanEncoding")),
         Gen.Const((PdfObject?)new PdfName("Bogus")),
         Gen.Const((PdfObject?)new PdfInteger(42)),
+        // Resolves in one hop to the encoding dictionary at EncodingDictObject.
+        Gen.Const((PdfObject?)new PdfIndirectReference(EncodingDictObject, 0)),
+        // Resolves in one hop to ANOTHER reference (EncodingChainHeadObject's own content is
+        // "EncodingChainTargetObject 0 R"): the two-hop chain this reader does not follow.
+        Gen.Const((PdfObject?)new PdfIndirectReference(EncodingChainHeadObject, 0)),
         DifferencesGen.Select(diffs =>
         {
             var dict = new PdfDictionary().Set(new PdfName("Differences"), diffs);
@@ -85,13 +113,32 @@ public sealed class FontFuzzTests
     private static readonly Gen<int> FlagsGen = Gen.OneOf(
         Gen.Const(0), Gen.Const(4), Gen.Const(32), Gen.Const(36), Gen.Int[-1000, 1000]);
 
+    // Subtypes this reader's own Create() doesn't gate on (unlike GetFontReader, which decides
+    // whether to call Create at all): every value here still reaches Create, so this only varies
+    // whether the "trueType" branch of step 5 (the StandardEncoding fill) fires.
+    private static readonly Gen<PdfObject?> SubtypeGen = Gen.OneOf(
+        Gen.Const((PdfObject?)new PdfName("Type1")),
+        Gen.Const((PdfObject?)new PdfName("MMType1")),
+        Gen.Const((PdfObject?)new PdfName("TrueType")),
+        Gen.Const((PdfObject?)new PdfName("Type0")),
+        Gen.Const((PdfObject?)new PdfName("Type3")),
+        Gen.Const((PdfObject?)new PdfName("Bogus")),
+        Gen.Const((PdfObject?)new PdfInteger(7)),
+        Gen.Const((PdfObject?)null)); // omitted entirely
+
+    private static readonly Gen<PdfObject?> ToUnicodeGen = Gen.OneOf(
+        Gen.Const((PdfObject?)null),
+        Gen.Const((PdfObject?)new PdfStream("/CIDInit /ProcSet findresource begin\n"u8.ToArray())),
+        Gen.Const((PdfObject?)new PdfIndirectReference(ToUnicodeStreamObject, 0)));
+
     private static readonly Gen<PdfDictionary> FontDictGen = Gen.Select(
-        BaseFontGen, EncodingGen, WidthsGen, FlagsGen,
-        (baseFont, encoding, widths, flags) =>
+        BaseFontGen, EncodingGen, WidthsGen, FlagsGen, SubtypeGen, ToUnicodeGen,
+        (baseFont, encoding, widths, flags, subtype, toUnicode) =>
         {
-            var dict = new PdfDictionary()
-                .Set(PdfName.Subtype, "Type1")
-                .Set(PdfName.BaseFont, baseFont);
+            var dict = new PdfDictionary();
+            if (subtype is not null)
+                dict.Set(PdfName.Subtype, subtype);
+            dict.Set(PdfName.BaseFont, baseFont);
             if (encoding is not null)
                 dict.Set(PdfName.Encoding, encoding);
             if (widths is not null)
@@ -102,41 +149,85 @@ public sealed class FontFuzzTests
             }
             var descriptor = new PdfDictionary().Set(new PdfName("Flags"), new PdfInteger(flags));
             dict.Set(new PdfName("FontDescriptor"), descriptor);
+            if (toUnicode is not null)
+                dict.Set(new PdfName("ToUnicode"), toUnicode);
             return dict;
         });
+
+    private static void AssertOnlyDocumentedCodes(DiagnosticSink sink)
+    {
+        var distinctCodes = sink.Diagnostics.Select(d => d.Code).Distinct().ToList();
+        Assert.True(
+            distinctCodes.Count <= 4,
+            $"expected at most 4 distinct codes, got {distinctCodes.Count}: {string.Join(", ", distinctCodes)}");
+        foreach (var code in distinctCodes)
+        {
+            Assert.True(
+                code is PdfReaderDiagnosticCode.FontUnreadable
+                    or PdfReaderDiagnosticCode.FontEncodingMalformed
+                    or PdfReaderDiagnosticCode.FontWidthsMalformed
+                    or PdfReaderDiagnosticCode.FontNoUnicodeRoute
+                    or PdfReaderDiagnosticCode.UnmappedGlyphs,
+                $"unexpected code {code}");
+        }
+    }
+
+    private static void DecodeEveryByte(PdfFontReader reader)
+    {
+        for (var b = 0; b < 256; b++)
+        {
+            ReadOnlySpan<byte> bytes = [(byte)b];
+            var offset = 0;
+            reader.TryDecodeNext(bytes, ref offset, out _);
+        }
+    }
 
     [Fact]
     public void Create_neverThrows_reportsAtMostFourDistinctCodes_decodeNeverThrows()
     {
-        using var doc = FontTestSupport.OpenMinimal();
+        using var doc = OpenFixture();
+        // threads: 1: every sample resolves against the one shared doc (the indirect /Encoding
+        // shapes each need an object already present in it to resolve against), and
+        // PdfDocumentReader's own object cache is a plain Dictionary, not built for concurrent
+        // access from multiple worker threads. Running serially keeps the test out of that
+        // cache's concurrency behaviour, which is not what this test is about.
         FontDictGen.Sample(
             fontDict =>
             {
                 var sink = new DiagnosticSink(cap: 50);
                 var reader = SimpleFontReader.Create(doc, fontDict, null, null, sink, null);
-
-                var distinctCodes = sink.Diagnostics.Select(d => d.Code).Distinct().ToList();
-                Assert.True(
-                    distinctCodes.Count <= 4,
-                    $"expected at most 4 distinct codes, got {distinctCodes.Count}: {string.Join(", ", distinctCodes)}");
-                foreach (var code in distinctCodes)
-                {
-                    Assert.True(
-                        code is PdfReaderDiagnosticCode.FontUnreadable
-                            or PdfReaderDiagnosticCode.FontEncodingMalformed
-                            or PdfReaderDiagnosticCode.FontWidthsMalformed
-                            or PdfReaderDiagnosticCode.FontNoUnicodeRoute
-                            or PdfReaderDiagnosticCode.UnmappedGlyphs,
-                        $"unexpected code {code}");
-                }
-
-                for (var b = 0; b < 256; b++)
-                {
-                    ReadOnlySpan<byte> bytes = [(byte)b];
-                    var offset = 0;
-                    reader.TryDecodeNext(bytes, ref offset, out _);
-                }
+                AssertOnlyDocumentedCodes(sink);
+                DecodeEveryByte(reader);
             },
-            iter: FuzzBudget.Iterations);
+            iter: FuzzBudget.Iterations, threads: 1);
+    }
+
+    // Direct dictionaries drawn from FontDictGen exercise GetFontReader's own dispatch on
+    // /Subtype; the three indirect shapes exercise its own two ResolveValue calls (the font entry
+    // itself, then /Subtype) against an existing dictionary object, an existing non-dictionary
+    // object, and a dangling reference, none of which should ever escape as an exception.
+    private static readonly Gen<PdfObject> FontEntryGen = Gen.OneOf(
+        FontDictGen.Select(d => (PdfObject)d),
+        Gen.Const((PdfObject)new PdfIndirectReference(FontDictObject, 0)),
+        Gen.Const((PdfObject)new PdfIndirectReference(NonDictionaryObject, 0)),
+        Gen.Const((PdfObject)new PdfIndirectReference(999, 0)),
+        Gen.Const((PdfObject)new PdfInteger(3)));
+
+    [Fact]
+    public void GetFontReader_neverThrows_reportsAtMostFourDistinctCodes_decodeNeverThrows()
+    {
+        using var doc = OpenFixture();
+        // threads: 1: see Create_neverThrows' own comment; FontCache adds its own plain
+        // Dictionary on top, written on every cache miss for the same shared doc.
+        FontEntryGen.Sample(
+            entry =>
+            {
+                var sink = new DiagnosticSink(cap: 50);
+                var reader = doc.GetFontReader(entry, sink, pageIndex: null);
+                AssertOnlyDocumentedCodes(sink);
+                if (reader is not null)
+                    DecodeEveryByte(reader);
+            },
+            iter: FuzzBudget.Iterations, threads: 1);
     }
 }

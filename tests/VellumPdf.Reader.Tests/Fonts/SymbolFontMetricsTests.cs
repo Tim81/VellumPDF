@@ -10,10 +10,10 @@ namespace VellumPdf.Reader.Tests.Fonts;
 
 /// <summary>
 /// Pins <see cref="SymbolFontMetrics"/>' generated widths against the AFM files (every number
-/// here was read from <c>Symbol.afm</c>/<c>ZapfDingbats.afm</c> directly, via
-/// <c>grep N &lt;name&gt; ;</c>, not from the generated file or the Kernel table), and the
-/// standard-14 width route (<see cref="Standard14Metrics.GetWidth"/>) through a live
-/// <see cref="SimpleFontReader"/>.
+/// here was read from the AFM file directly, via <c>grep N &lt;name&gt; ;</c>, not from the
+/// generated file), for the two symbolic fonts and, through
+/// <see cref="SymbolFontMetrics.TryGetTextFontWidths"/> and a live <see cref="SimpleFontReader"/>,
+/// the twelve nonsymbolic text fonts' own name-keyed width tables.
 /// </summary>
 public sealed class SymbolFontMetricsTests
 {
@@ -36,7 +36,62 @@ public sealed class SymbolFontMetricsTests
         Assert.Equal(202, SymbolFontMetrics.ZapfDingbatsWidths.Count);
     }
 
-    // ── Kernel width route, through SimpleFontReader ────────────────────────────────────────────
+    // ── Text-font width tables: name-keyed, no WinAnsi dependency ───────────────────────────────
+    // "lslash" and "fraction" have no WinAnsi code point; each font's own AFM WX for both, plus
+    // for "A" (inside WinAnsi), pins that the lookup is by glyph name, so a name outside WinAnsi
+    // cannot fall back to another glyph's width.
+
+    [Theory]
+    [InlineData("Helvetica", "A", 667)]
+    [InlineData("Helvetica", "fraction", 167)]
+    [InlineData("Helvetica", "lslash", 222)]
+    [InlineData("Helvetica-Bold", "A", 722)]
+    [InlineData("Helvetica-Bold", "fraction", 167)]
+    [InlineData("Helvetica-Bold", "lslash", 278)]
+    [InlineData("Helvetica-Oblique", "A", 667)]
+    [InlineData("Helvetica-Oblique", "fraction", 167)]
+    [InlineData("Helvetica-Oblique", "lslash", 222)]
+    [InlineData("Helvetica-BoldOblique", "A", 722)]
+    [InlineData("Helvetica-BoldOblique", "fraction", 167)]
+    [InlineData("Helvetica-BoldOblique", "lslash", 278)]
+    [InlineData("Times-Roman", "A", 722)]
+    [InlineData("Times-Roman", "fraction", 167)]
+    [InlineData("Times-Roman", "lslash", 278)]
+    [InlineData("Times-Bold", "A", 722)]
+    [InlineData("Times-Bold", "fraction", 167)]
+    [InlineData("Times-Bold", "lslash", 278)]
+    [InlineData("Times-Italic", "A", 611)]
+    [InlineData("Times-Italic", "fraction", 167)]
+    [InlineData("Times-Italic", "lslash", 278)]
+    [InlineData("Times-BoldItalic", "A", 667)]
+    [InlineData("Times-BoldItalic", "fraction", 167)]
+    [InlineData("Times-BoldItalic", "lslash", 278)]
+    [InlineData("Courier", "A", 600)]
+    [InlineData("Courier", "fraction", 600)]
+    [InlineData("Courier", "lslash", 600)]
+    [InlineData("Courier-Bold", "A", 600)]
+    [InlineData("Courier-Bold", "fraction", 600)]
+    [InlineData("Courier-Bold", "lslash", 600)]
+    [InlineData("Courier-Oblique", "A", 600)]
+    [InlineData("Courier-Oblique", "fraction", 600)]
+    [InlineData("Courier-Oblique", "lslash", 600)]
+    [InlineData("Courier-BoldOblique", "A", 600)]
+    [InlineData("Courier-BoldOblique", "fraction", 600)]
+    [InlineData("Courier-BoldOblique", "lslash", 600)]
+    public void TextFontWidths_pinnedAgainstAfm(string afmName, string glyphName, int width)
+    {
+        Assert.True(SymbolFontMetrics.TryGetTextFontWidths(afmName, out var widths));
+        Assert.Equal(width, widths[glyphName]);
+    }
+
+    [Fact]
+    public void TextFontWidths_unknownAfmName_returnsFalse()
+    {
+        Assert.False(SymbolFontMetrics.TryGetTextFontWidths("Symbol", out _));
+        Assert.False(SymbolFontMetrics.TryGetTextFontWidths("Helvetica-Narrow", out _));
+    }
+
+    // ── Standard 14 width route, through SimpleFontReader ───────────────────────────────────────
 
     private static PdfDictionary FontDict(string baseFont, PdfArray? differences = null)
     {
@@ -81,11 +136,14 @@ public sealed class SymbolFontMetricsTests
     }
 
     [Fact]
-    public void FiOutsideWinAnsi_measuresAsQuestionMark_556()
+    public void FiOutsideWinAnsi_measuresAsItsOwnAfmWidth_500()
     {
+        // "fi" has no WinAnsi code point; a code-point-keyed lookup would fall back to another
+        // glyph's width (Helvetica's "?" is 556). The name-keyed table measures Helvetica.afm's
+        // own "fi" at 500.
         var differences = new PdfArray().Add(new PdfInteger(65)).Add(new PdfName("fi"));
         var reader = Build(FontDict("Helvetica", differences));
-        Assert.Equal(556, WidthOf(reader, 0x41));
+        Assert.Equal(500, WidthOf(reader, 0x41));
     }
 
     [Fact]

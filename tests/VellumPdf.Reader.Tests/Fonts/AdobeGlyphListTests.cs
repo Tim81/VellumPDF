@@ -49,7 +49,8 @@ public sealed class AdobeGlyphListTests
     [InlineData("uni004")] // short group
     [InlineData("uni00410")] // 5 digits
     [InlineData("uni0041x")]
-    [InlineData("uniD800")] // surrogate
+    [InlineData("uniD800")] // surrogate, via the uniXXXX route
+    [InlineData("uD800")] // surrogate, via the uXXXX..uXXXXXX route (TryUName's own guard)
     [InlineData("u110000")] // past U+10FFFF
     [InlineData("uni00e9")] // lowercase hex
     [InlineData("a__b")]
@@ -58,9 +59,19 @@ public sealed class AdobeGlyphListTests
     [InlineData(".notdef")]
     [InlineData("uni0000")]
     [InlineData("f_g_nonexistent")]
+    [InlineData("uni")] // the "uni" prefix alone, no hex digits: neither route accepts it
+    [InlineData(".")] // truncates at the dot to an empty name
+    [InlineData("")]
     public void TryMapToUnicode_rejectsTheseNames(string name)
     {
         Assert.False(AdobeGlyphList.TryMapToUnicode(name, out _));
+    }
+
+    [Fact]
+    public void TryMapToUnicode_u10FFFF_givesTheMaximumCodePoint()
+    {
+        Assert.True(AdobeGlyphList.TryMapToUnicode("u10FFFF", out var unicode));
+        Assert.Equal(char.ConvertFromUtf32(0x10FFFF), unicode);
     }
 
     [Fact]

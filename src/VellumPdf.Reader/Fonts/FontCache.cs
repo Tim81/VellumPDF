@@ -16,6 +16,16 @@ namespace VellumPdf.Reader.Fonts;
 /// least-recently-used entry: an LRU cache is more machinery than a document with more than
 /// 10,000 distinct font objects (far past what any PDF in practice carries) is worth building for,
 /// and the fallback costs only a rebuilt reader, not a wrong one.
+/// <para>
+/// Retained size at the cap, measured with <c>GC.GetTotalMemory(true)</c> before and after
+/// building 10,000 fonts and keeping every one reachable (a bare <c>SimpleFontReader</c> retains
+/// about 6,464 B each, about 62 MiB total; a full 10,000-entry cache built through
+/// <c>PdfDocumentReader.GetFontReader</c>, which also grows the reader's own resolved-object
+/// cache alongside it, retains about 7,639 B per font, about 73 MiB total). Both figures dropped
+/// from an earlier measurement (about 9,872 B and 10,495 B respectively) once
+/// <c>AdobeGlyphList.TryMapToUnicode</c> stopped routing a single-component glyph name through a
+/// <c>StringBuilder</c>, which was most of the per-font cost.
+/// </para>
 /// </remarks>
 internal sealed class FontCache
 {

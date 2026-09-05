@@ -10,19 +10,15 @@ namespace VellumPdf.Reader.Fonts;
 /// route of ISO 32000-2 §9.10.2. Backed by the embedded <c>AdobeGlyphList.txt</c> resource, the
 /// same file <c>src/VellumPdf.Conformance/Resources/AdobeGlyphList.txt</c> ships (copied
 /// byte-for-byte; see NOTICE), parsed once per process into a name-to-Unicode-string dictionary of
-/// 4282 entries. 81 of those entries carry more than one code point (mostly Hebrew presentation
-/// forms whose AGL name decomposes into a base letter plus a combining point), so the map's value
-/// is a string, not a single <see langword="char"/>.
+/// 4282 entries. 81 of those entries carry more than one code point (mostly Hebrew
+/// letter-plus-point combinations, a base letter in the U+05xx block followed by its own
+/// combining point), so the map's value is a string, not a single <see langword="char"/>.
 /// </summary>
 /// <remarks>
 /// This reader's own <see cref="TryMapToUnicode"/> departs from the AGL Specification's algorithm
-/// in three ways, each because the two ends of the departure are indistinguishable to a caller
-/// that only gets a Unicode string back:
+/// in two ways, each because the two ends of the departure are indistinguishable to a caller that
+/// only gets a Unicode string back:
 /// <list type="bullet">
-/// <item><description>Only uppercase <c>uni</c>/<c>u</c> hex digits are recognised. The AGL
-/// Specification itself writes the synthetic forms in uppercase; the Conformance package's own
-/// copy (<c>src/VellumPdf.Conformance/Rules/Fonts/AdobeGlyphList.cs</c>) additionally accepts
-/// lowercase, which this reader does not.</description></item>
 /// <item><description>A component with no mapping fails the whole name. The AGL Specification
 /// maps such a component to the empty string and continues, but an empty string is
 /// indistinguishable from a mapped control character once concatenated into the result, so this
@@ -31,6 +27,11 @@ namespace VellumPdf.Reader.Fonts;
 /// <c>.notdef</c>, which the bundled list maps to U+0000, and the literal name
 /// <c>uni0000</c>.</description></item>
 /// </list>
+/// Accepting only uppercase <c>uni</c>/<c>u</c> hex digits is not a third departure: the AGL
+/// Specification itself requires "a sequence of uppercase hexadecimal digits" for both synthetic
+/// forms. The Conformance package's own copy
+/// (<c>src/VellumPdf.Conformance/Rules/Fonts/AdobeGlyphList.cs</c>) additionally accepts
+/// lowercase; on hex-digit case, this reader is the stricter of the two, not the looser.
 /// </remarks>
 internal static class AdobeGlyphList
 {
@@ -72,6 +73,21 @@ internal static class AdobeGlyphList
             return false;
 
         var map = _map.Value;
+
+        // The common case is a single component (no '_'): return TryMapComponent's own string
+        // directly, most often the map's own value for the name, rather than copying it through a
+        // StringBuilder. This is where most of FontCache's per-font retained bytes came from
+        // before this fast path existed (see FontCache.MaxCachedFonts).
+        if (trimmed.IndexOf('_') < 0)
+        {
+            if (!TryMapComponent(map, trimmed, out var single))
+                return false;
+            if (single.Length == 1 && single[0] == '\0')
+                return false; // .notdef and uni0000 both resolve here; treated as unmapped.
+            unicode = single;
+            return true;
+        }
+
         var result = new System.Text.StringBuilder();
         var start = 0;
         while (start <= trimmed.Length)
@@ -210,6 +226,8 @@ internal static class AdobeGlyphList
                     ok = false;
                     break;
                 }
+                // Unguarded: AdobeGlyphList.txt is a pinned, byte-identity-checked embedded
+                // resource, never a surrogate half or a value past 0x10FFFF (NOTICE, Count tests).
                 sb.Append(char.ConvertFromUtf32(cp));
             }
             if (ok)

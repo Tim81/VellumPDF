@@ -42,11 +42,12 @@ namespace VellumPdf.Reader.Fonts;
 /// <c>summation</c>, <c>product</c>, <c>pi</c>, <c>integral</c>, <c>Omega</c>, <c>radical</c>,
 /// <c>approxequal</c>, <c>Delta</c>, <c>lozenge</c> and <c>apple</c>; §9.6.5.4 places Table 113 in
 /// the TrueType (1, 0) subtable fallback step, not in building the base encoding table), plus two
-/// codes where that copy's name disagrees with Annex D.2's own MacRoman column: 0xCA
-/// (Annex D.2 pairs it with <c>space</c>, footnote 6's dual mapping) and 0xDB (Annex D.2 and
-/// footnote 1 both read <c>currency</c>; Apple's own later Mac OS Roman revision reassigned that
-/// code to the Euro sign, but "this incompatible change has not been reflected in PDF's
-/// MacRomanEncoding, which continues to map code 333 to currency").
+/// codes where that copy's name disagrees with this class's own table: 0xCA (Annex D.2's own
+/// MacRoman column is blank there; footnote 6 assigns it <c>space</c>, "encoded as 312 (octal) in
+/// MacRomanEncoding", the same code WinAnsi's own footnote 6 dual-maps at 0xA0) and 0xDB (Annex
+/// D.2's own column reads <c>currency</c>; footnote 1: Apple's later Mac OS Roman revision
+/// reassigned that code to the Euro sign, but "this incompatible change has not been reflected in
+/// PDF's MacRomanEncoding, which continues to map code 333 to currency").
 /// </para>
 /// </remarks>
 internal static class SimpleFontEncodings
@@ -68,7 +69,7 @@ internal static class SimpleFontEncodings
 
     /// <summary>
     /// MacExpertEncoding: every cell is <see langword="null"/>. Annex D.4 (Expert set and
-    /// MacExpertEncoding) is not transcribed here: no oracle in this test suite exercises it, and
+    /// MacExpert encoding) is not transcribed here: no oracle in this test suite exercises it, and
     /// fonts that declare it are rare, so a font naming it gets the same outcome as a symbolic
     /// font with no encoding: every code has no name, and text extraction reports no glyph for any
     /// of them, rather than this reader refusing to recognise the name at all. Because the cells

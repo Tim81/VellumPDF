@@ -37,6 +37,15 @@ public sealed class ZapfDingbatsGlyphListTests
     }
 
     [Fact]
+    public void TryMap_unknownName_outParamIsEmptyStringNotNull()
+    {
+        // The out parameter is declared non-nullable; an unknown name must not hand the caller a
+        // null string through it.
+        Assert.False(ZapfDingbatsGlyphList.TryMap("a999", out var unicode));
+        Assert.Equal("", unicode);
+    }
+
+    [Fact]
     public void EntryCount_is201()
     {
         // Not 188: the committed ZapfDingbatsGlyphList.txt is the Adobe AGL repository's own

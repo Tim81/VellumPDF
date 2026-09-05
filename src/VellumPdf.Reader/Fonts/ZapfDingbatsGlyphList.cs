@@ -35,7 +35,16 @@ internal static class ZapfDingbatsGlyphList
     /// <c>_</c>-composition) to its Unicode code point. Returns <see langword="false"/> when the
     /// name is not in the list.
     /// </summary>
-    public static bool TryMap(string name, out string unicode) => _map.Value.TryGetValue(name, out unicode!);
+    public static bool TryMap(string name, out string unicode)
+    {
+        if (_map.Value.TryGetValue(name, out var mapped))
+        {
+            unicode = mapped;
+            return true;
+        }
+        unicode = "";
+        return false;
+    }
 
     private static Dictionary<string, string> Load()
     {
@@ -55,7 +64,11 @@ internal static class ZapfDingbatsGlyphList
             if (semi <= 0 || semi >= line.Length - 1)
                 continue;
             if (int.TryParse(line[(semi + 1)..], System.Globalization.NumberStyles.HexNumber, null, out var cp))
+            {
+                // Unguarded: ZapfDingbatsGlyphList.txt is a pinned embedded resource (NOTICE
+                // records its source commit and SHA-256), never a surrogate half in practice.
                 map[line[..semi]] = char.ConvertFromUtf32(cp);
+            }
         }
         return map;
     }

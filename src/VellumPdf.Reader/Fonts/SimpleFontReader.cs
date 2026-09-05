@@ -1,8 +1,8 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
+using System.Globalization;
 using VellumPdf.Core;
-using VellumPdf.Fonts;
 
 namespace VellumPdf.Reader.Fonts;
 
@@ -10,7 +10,7 @@ namespace VellumPdf.Reader.Fonts;
 /// Decodes a Type1, MMType1 or TrueType simple font (ISO 32000-2 §9.6.5): resolves the font's
 /// character-code-to-glyph-name table from its <c>/Encoding</c>, then to Unicode through the Adobe
 /// Glyph List, and its per-code advance widths from <c>/Widths</c> or, for a standard 14 font with
-/// none, the Kernel's own AFM metrics.
+/// none, <see cref="SymbolFontMetrics"/>' own name-keyed AFM widths.
 /// </summary>
 /// <remarks>
 /// §9.6.5.4 gives TrueType fonts their own base-encoding rule, distinct from Type1's (§9.6.5.2):
@@ -23,15 +23,27 @@ namespace VellumPdf.Reader.Fonts;
 /// otherwise supply an answer this reader cannot. The one step that does branch on the subtype
 /// needs no font program: §9.6.5.4's closing rule for a TrueType font whose <c>/Encoding</c> is a
 /// dictionary, "Finally, any undefined entries in the table shall be filled using
-/// StandardEncoding", is applied after <c>/Differences</c> when the font is nonsymbolic (Table 121
-/// makes the Symbolic and Nonsymbolic flags exclusive, so the clause's Nonsymbolic condition is
-/// read from the Symbolic bit). The only cells it can change are the twelve StandardEncoding
-/// cells MacRomanEncoding leaves undefined (<c>SimpleFontEncodingsTests</c> pins the set;
-/// WinAnsiEncoding leaves none, and a dictionary without <c>/BaseEncoding</c> starts from
-/// StandardEncoding already), fewer when <c>/Differences</c> has named one of them, and it is
-/// skipped for a <c>/BaseEncoding /MacExpertEncoding</c>, whose table this reader
-/// carries as all-null (<see cref="SimpleFontEncodings.MacExpert"/>), so "undefined" cannot be told
-/// from "not transcribed". §9.6.5.2 states no such rule for Type1 fonts, and none is applied.
+/// StandardEncoding", is applied after <c>/Differences</c>. The clause's own precondition for
+/// building this table at all names "the font descriptor's Nonsymbolic flag" of Table 121, a
+/// condition on a descriptor that is present, so this reader runs the fill only when
+/// <c>/FontDescriptor</c> and its <c>/Flags</c> both exist. The Table 112 default elsewhere in this
+/// class treats a missing descriptor as nonsymbolic, and that default is not extended here: Table
+/// 109 makes <c>/FontDescriptor</c> required, optional only in PDF 1.0 to 1.7 for the standard 14,
+/// so its absence on any other font is a producer defect, and running a fill the clause conditions
+/// on the descriptor would be papering over it. Which flag decides the state follows §9.8.2, "A PDF
+/// processor should always check the Symbolic flag to determine whether the state is Symbolic or
+/// NonSymbolic": the fill runs when the Symbolic flag is clear. Table 121 requires the two flags to
+/// be complementary ("This flag and the Nonsymbolic flag shall not both be set or both be clear"),
+/// so the two readings agree on every conformant descriptor and differ only on one whose flags
+/// disagree, where the Symbolic flag wins here as it does when the constructor classifies the
+/// font at step 3. The only cells the
+/// fill can change are the twelve StandardEncoding cells MacRomanEncoding leaves undefined
+/// (<c>SimpleFontEncodingsTests</c> pins the set; WinAnsiEncoding leaves none, and a dictionary
+/// without <c>/BaseEncoding</c> starts from StandardEncoding already), fewer when
+/// <c>/Differences</c> has named one of them, and it is skipped for a
+/// <c>/BaseEncoding /MacExpertEncoding</c>, whose table this reader carries as all-null
+/// (<see cref="SimpleFontEncodings.MacExpert"/>), so "undefined" cannot be told from "not
+/// transcribed". §9.6.5.2 states no such rule for Type1 fonts, and none is applied.
 /// <para>
 /// Every dictionary entry this class reads, wherever it is read, goes through
 /// <see cref="PdfDocumentReader.ResolveValue"/> before its type is tested (one hop, a dangling
@@ -40,6 +52,30 @@ namespace VellumPdf.Reader.Fonts;
 /// indirect reference there and this reader deliberately does not resolve one, recording that as a
 /// reader limitation (<see cref="PdfReaderDiagnosticCode.FontEncodingMalformed"/>) rather than
 /// silently supporting or silently rejecting it.
+/// </para>
+/// <para>
+/// A <c>/Differences</c> name longer than <see cref="AdobeGlyphList.MaxGlyphNameLength"/> reports
+/// that same reader limitation and leaves the code undefined, rather than keeping whatever name
+/// the base encoding had assigned there: the oversized name still occupies its slot in the
+/// sequence (the running code still advances past it), so refusing to record it erases the base
+/// encoding's own glyph at that code, it does not preserve it.
+/// </para>
+/// <para>
+/// ISO 32000-2 §9.6.5 states the ordering rule for <c>/Differences</c> sequences verbatim: "These
+/// sequences may be specified in any order but shall not overlap." This reader does not enforce
+/// that rule: two sequences that assign the same code are applied in array order, so a later one
+/// silently overwrites an earlier one's name there, with no diagnostic for the overlap itself.
+/// </para>
+/// <para>
+/// §9.6.5.4 also states, verbatim: "When the font has no Encoding entry, or the font descriptor's
+/// Symbolic flag is set (in which case the Encoding entry is ignored), this shall occur: ..." (the
+/// steps that follow need a (3, 0) or (1, 0) cmap subtable from the font program, which this
+/// reader does not read). For a TrueType font whose descriptor sets the Symbolic flag but which
+/// still carries a dictionary <c>/Encoding</c>, this reader honours the entry rather than ignoring
+/// it: the clause's own alternative needs font-program data this reader has no access to, and the
+/// clause's preceding paragraph already readmits a symbolic font that names MacRomanEncoding or
+/// WinAnsiEncoding, so following a dictionary the file went to the trouble of writing is closer to
+/// what the font program would have produced than discarding it.
 /// </para>
 /// </remarks>
 internal sealed class SimpleFontReader : PdfFontReader
@@ -100,8 +136,13 @@ internal sealed class SimpleFontReader : PdfFontReader
         }
         catch (InvalidDataException)
         {
-            // reader.Resolve throws past MaxResolveDepth (PdfDocumentReader.cs); nothing else in
-            // Populate is expected to throw, and the fuzz test is the proof that holds.
+            // reader.Resolve throws past MaxResolveDepth (PdfDocumentReader.cs). FontFuzzTests
+            // covers a wide range of malformed dictionaries (subtypes, /Encoding shapes including
+            // an indirect chain, /Differences, /Widths, /ToUnicode shapes) without reaching this
+            // catch; it is not itself the proof this clause is the only thing Populate can throw.
+            // GetFontReader's own dedicated regression test drives a MaxResolveDepth chain through
+            // a font entry instead, since building one needs an object graph parsed from bytes,
+            // not a fuzzed in-memory dictionary.
             self._names = new string?[256];
             self._widths = new double[256];
             self._unicode = new string?[256];
@@ -137,15 +178,29 @@ internal sealed class SimpleFontReader : PdfFontReader
 
         // Step 3: symbolic.
         var descriptor = Resolve(reader, fontDict.Get(_fontDescriptorKey)) as PdfDictionary;
+        var resolvedFlags = descriptor is not null
+            ? Resolve(reader, descriptor.Get(_flagsKey)) as PdfInteger
+            : null;
         bool symbolic;
-        if (descriptor is not null && Resolve(reader, descriptor.Get(_flagsKey)) is PdfInteger flags)
+        if (resolvedFlags is not null)
         {
-            symbolic = (flags.Value & SymbolicFlagBit) != 0;
+            symbolic = (resolvedFlags.Value & SymbolicFlagBit) != 0;
         }
         else
         {
             symbolic = afmName is "Symbol" or "ZapfDingbats";
         }
+
+        // §9.6.5.4's own StandardEncoding fill (step 5) is conditioned on "the font descriptor's
+        // Nonsymbolic flag ... is set" (see the class remarks): a condition on a present
+        // descriptor, unlike the Table 112 default above, which treats a missing descriptor as
+        // nonsymbolic. Table 109 makes /FontDescriptor required, optional only in PDF 1.0 to 1.7
+        // for the standard 14, so its absence on any other font is a producer defect this reader
+        // does not paper over by running the fill. With a descriptor present, the state is read
+        // from the Symbolic flag, as step 3 read it, per §9.8.2's "A PDF processor should always
+        // check the Symbolic flag"; a descriptor whose two flags disagree is not read differently
+        // here than there.
+        var descriptorNonsymbolic = resolvedFlags is not null && !symbolic;
 
         // Step 4: base table, then /Differences. Symbol and ZapfDingbats get no special path
         // here: their built-in encodings are the Table 112 default base encoding (the "font's
@@ -158,9 +213,10 @@ internal sealed class SimpleFontReader : PdfFontReader
         {
             ApplyDifferences(reader, encodingDict, table);
 
-            // Step 5: §9.6.5.4's closing rule (see the class remarks for its exact scope).
+            // Step 5: §9.6.5.4's closing rule (see the class remarks for its exact scope and for
+            // why this needs a present descriptor rather than "!symbolic" alone).
             var trueType = Resolve(reader, fontDict.Get(PdfName.Subtype)) is PdfName { Value: "TrueType" };
-            if (trueType && !symbolic && standardFillAllowed)
+            if (trueType && descriptorNonsymbolic && standardFillAllowed)
                 FillUndefinedFromStandard(table);
         }
 
@@ -198,7 +254,7 @@ internal sealed class SimpleFontReader : PdfFontReader
         // Step 9: AFM widths, only when /Widths itself was absent (step 7 deferred this here,
         // since a text font's width needs this step's own Unicode table).
         if (usesAfmWidths)
-            FillAfmWidths(afmName!, table, unicode, widths, descriptorMissingWidth);
+            FillAfmWidths(afmName!, table, widths, descriptorMissingWidth);
 
         // /ToUnicode: recorded only, not parsed yet (see PdfFontReader's doc). A stream object is
         // always indirect (§7.3.8.1), and PdfDocumentReader.Resolve hands back a stream object's
@@ -257,6 +313,17 @@ internal sealed class SimpleFontReader : PdfFontReader
                     standardFillAllowed = baseName.Value != "MacExpertEncoding";
                     return baseTable.ToArray();
                 }
+                if (baseEncoding is PdfIndirectReference)
+                {
+                    // A reference here has already been through one Resolve hop and is STILL a
+                    // reference: a second link in the chain, which this reader does not follow
+                    // (see the class remarks). Naming it "an encoding this reader does not know"
+                    // would be wrong: it names no encoding at all, resolved or not.
+                    ReportOnce(ref _reported401, PdfReaderDiagnosticCode.FontEncodingMalformed,
+                        "/Encoding's /BaseEncoding is an indirect reference this reader does not "
+                        + "follow past one hop.");
+                    return TableDefault(symbolic, afmName);
+                }
                 ReportOnce(ref _reported401, PdfReaderDiagnosticCode.FontEncodingMalformed,
                     "/Encoding's /BaseEncoding names an encoding this reader does not know.");
                 return TableDefault(symbolic, afmName);
@@ -289,8 +356,16 @@ internal sealed class SimpleFontReader : PdfFontReader
 
     private void ApplyDifferences(PdfDocumentReader reader, PdfDictionary encodingDict, string?[] table)
     {
-        if (Resolve(reader, encodingDict.Get(_differencesKey)) is not PdfArray differences)
+        var resolved = Resolve(reader, encodingDict.Get(_differencesKey));
+        if (resolved is null or PdfNull)
+            return; // absent (ISO 32000-2 §7.3.9): omitted, a direct null, or a dangling reference.
+
+        if (resolved is not PdfArray differences)
+        {
+            ReportOnce(ref _reported401, PdfReaderDiagnosticCode.FontEncodingMalformed,
+                $"/Differences is present but not an array: {DescribeNonArrayType(resolved)}.");
             return;
+        }
 
         var code = 0;
         for (var i = 0; i < differences.Count; i++)
@@ -337,10 +412,31 @@ internal sealed class SimpleFontReader : PdfFontReader
                 default:
                     ReportOnce(ref _reported401, PdfReaderDiagnosticCode.FontEncodingMalformed,
                         "/Differences contains an element this reader does not resolve.");
-                    break; // continue with the next element; code is unchanged.
+                    // Stop applying the array at the first element this reader cannot interpret,
+                    // rather than resuming after it with the running code unchanged: that
+                    // resumption is what let a later name silently overwrite an earlier one's
+                    // code.
+                    return;
             }
         }
     }
+
+    // Names a resolved value's type for the 401 message reported when /Differences is present but
+    // not an array: a name or keyword goes through DiagnosticExcerpt, matching every other Report
+    // call in this class.
+    private static string DescribeNonArrayType(PdfObject value) => value switch
+    {
+        PdfDictionary => "a dictionary",
+        PdfIndirectReference => "an indirect reference this reader does not follow past one hop",
+        PdfName n => $"the name {DiagnosticExcerpt.Quote(n.Value)}",
+        PdfInteger i => $"the integer {i.Value}",
+        // Invariant so the message does not change with the host culture's decimal separator.
+        PdfReal r => $"the number {r.Value.ToString(CultureInfo.InvariantCulture)}",
+        PdfBoolean b => $"the boolean {(b.Value ? "true" : "false")}",
+        PdfLiteralString or PdfHexString => "a string",
+        PdfStream => "a stream",
+        _ => "a value of a type this reader does not recognise",
+    };
 
     /// <summary>Returns <see langword="true"/> when /Widths was absent, meaning step 9's AFM fill
     /// applies (only for a standard 14 or aliased font; any other font keeps MissingWidth
@@ -399,22 +495,16 @@ internal sealed class SimpleFontReader : PdfFontReader
         return false;
     }
 
-    private static void FillAfmWidths(
-        string afmName, string?[] table, string?[] unicode, double[] widths, double missingWidth)
+    // Name-keyed for every one of the fourteen standard 14 fonts (SymbolFontMetrics' own
+    // generator reads all fourteen AFM files), so this lookup needs no Unicode round trip and no
+    // dependence on whether the glyph's Unicode value happens to fall inside WinAnsiEncoding: a
+    // text font's own AFM lists a width for every glyph name it defines, encodable in WinAnsi or
+    // not.
+    private static void FillAfmWidths(string afmName, string?[] table, double[] widths, double missingWidth)
     {
-        if (Standard14Names.TryGetKernelFont(afmName, out var font))
-        {
-            for (var code = 0; code < 256; code++)
-            {
-                if (table[code] is null)
-                    continue;
-                var u = unicode[code];
-                widths[code] = u is { Length: 1 } ? Standard14Metrics.GetWidth(font, u[0]) : missingWidth;
-            }
-            return;
-        }
-
-        var byName = afmName == "Symbol" ? SymbolFontMetrics.SymbolWidths : SymbolFontMetrics.ZapfDingbatsWidths;
+        var byName = SymbolFontMetrics.TryGetTextFontWidths(afmName, out var textWidths)
+            ? textWidths
+            : afmName == "Symbol" ? SymbolFontMetrics.SymbolWidths : SymbolFontMetrics.ZapfDingbatsWidths;
         for (var code = 0; code < 256; code++)
         {
             var name = table[code];

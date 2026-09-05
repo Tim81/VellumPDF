@@ -569,18 +569,21 @@ public enum PdfReaderDiagnosticCode
     /// <c>/BaseFont</c>, named a <c>/Subtype</c> this reader knows nothing about (not
     /// <c>/Type0</c> or <c>/Type3</c>, which are silent until this reader gains readers for them),
     /// or building it hit this reader's own indirect-object resolution depth limit
-    /// (<see cref="InvalidDataException"/> from <c>PdfDocumentReader.Resolve</c>). Reported once
-    /// per font.
+    /// (<see cref="InvalidDataException"/> from <c>PdfDocumentReader.Resolve</c>). ISO 32000-2
+    /// §9.6.2.1 Table 109 makes <c>/Type</c>, <c>/Subtype</c> and <c>/BaseFont</c> all required
+    /// entries of a font dictionary. Reported once per font.
     /// </summary>
     FontUnreadable = 400,
 
     /// <summary>
     /// A simple font's <c>/Encoding</c> (ISO 32000-2 §9.6.5) was neither a known encoding name nor
     /// an encoding dictionary, its <c>/BaseEncoding</c> named an encoding this reader does not
-    /// know, or a <c>/Differences</c> element was out of range, named a glyph longer than this
-    /// reader's own name-length bound, or was of a type this reader does not resolve (an indirect
-    /// reference, legal per §7.3.10, is reported under this code as a reader limitation, not a
-    /// malformation). Reported once per font.
+    /// know or was itself an unresolved indirect reference, its <c>/Differences</c> was present
+    /// but not an array, or a <c>/Differences</c> element was out of range, named a glyph longer
+    /// than this reader's own name-length bound, or was of a type this reader does not resolve (an
+    /// indirect reference, legal per §7.3.10, is reported under this code as a reader limitation,
+    /// not a malformation, and stops the array from being applied any further). Reported once per
+    /// font.
     /// </summary>
     FontEncodingMalformed = 401,
 
@@ -588,7 +591,9 @@ public enum PdfReaderDiagnosticCode
     /// A simple font's <c>/FirstChar</c>, <c>/LastChar</c>, or <c>/Widths</c> (ISO 32000-2 Table
     /// 109) was missing, mistyped, out of range, or shorter than
     /// <c>LastChar - FirstChar + 1</c> requires, or the font had no <c>/Widths</c> at all and is
-    /// not one of the standard 14 fonts (§9.6.2.1). Reported once per font.
+    /// not one of the standard 14 fonts (§9.6.2.1). A malformed <c>/Widths</c> is not repaired
+    /// from the standard 14 font's own AFM metrics even when the font is one of them; every code
+    /// keeps <c>MissingWidth</c>. Reported once per font.
     /// </summary>
     FontWidthsMalformed = 402,
 

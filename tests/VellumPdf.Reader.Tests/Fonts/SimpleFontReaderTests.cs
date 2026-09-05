@@ -176,6 +176,71 @@ public sealed class SimpleFontReaderTests
         Assert.Single(sink.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.FontEncodingMalformed);
     }
 
+    [Theory]
+    [InlineData("dictionary")]
+    [InlineData("integer")]
+    public void Differences_presentButNotAnArray_reports401Once(string shape)
+    {
+        using var doc = FontTestSupport.OpenMinimal();
+        var sink = new DiagnosticSink(50);
+        PdfObject differences = shape switch
+        {
+            "dictionary" => new PdfDictionary(),
+            "integer" => new PdfInteger(7),
+            _ => throw new ArgumentOutOfRangeException(nameof(shape)),
+        };
+        var encoding = new PdfDictionary().Set(new PdfName("Differences"), differences);
+        var fontDict = Type1("Helvetica").Set(PdfName.Encoding, encoding);
+        Build(doc, fontDict, sink);
+
+        var d = Assert.Single(sink.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.FontEncodingMalformed);
+        Assert.Contains("not an array", d.Message);
+    }
+
+    [Fact]
+    public void Differences_selfReferentialChain_stillAReferenceAfterOneHop_reports401Once()
+    {
+        // Object 4's own content is "5 0 R": resolving /Differences (a reference to object 4)
+        // takes exactly one hop and returns that value unresolved, still a PdfIndirectReference,
+        // the same unresolved-second-hop shape /BaseEncoding can carry, exercised here for
+        // /Differences itself rather than being silently dropped as if absent.
+        using var doc = FontTestSupport.Open(
+            new FontTestSupport.Obj(4, "5 0 R"),
+            new FontTestSupport.Obj(5, "[1 2 3]"));
+        var sink = new DiagnosticSink(50);
+        var encoding = new PdfDictionary().Set(new PdfName("Differences"), new PdfIndirectReference(4, 0));
+        var fontDict = Type1("Helvetica").Set(PdfName.Encoding, encoding);
+        Build(doc, fontDict, sink);
+
+        var d = Assert.Single(sink.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.FontEncodingMalformed);
+        Assert.Contains("not an array", d.Message);
+    }
+
+    [Fact]
+    public void Differences_badElement_stopsApplyingArray_laterNamesKeepBaseEncoding()
+    {
+        // /Differences [65 /A 9 0 R /zcaron /Zcaron]: object 9 does not exist, so the reference is
+        // reported and the array stops being applied there. Before the fix this reader resumed
+        // after the bad element with the running code unchanged, so /zcaron landed on B (0x42) and
+        // /Zcaron on C (0x43) instead of being skipped; both must keep their StandardEncoding
+        // names here.
+        using var doc = FontTestSupport.OpenMinimal();
+        var sink = new DiagnosticSink(50);
+        var differences = new PdfArray()
+            .Add(new PdfInteger(65)).Add(new PdfName("A"))
+            .Add(new PdfIndirectReference(9, 0))
+            .Add(new PdfName("zcaron")).Add(new PdfName("Zcaron"));
+        var encoding = new PdfDictionary().Set(new PdfName("Differences"), differences);
+        var fontDict = Type1("Helvetica").Set(PdfName.Encoding, encoding);
+        var reader = Build(doc, fontDict, sink);
+
+        Assert.Equal("A", Decode(reader, 0x41).Unicode); // applied before the bad element.
+        Assert.Equal("B", Decode(reader, 0x42).Unicode); // StandardEncoding, not overwritten.
+        Assert.Equal("C", Decode(reader, 0x43).Unicode); // StandardEncoding, not overwritten.
+        var d = Assert.Single(sink.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.FontEncodingMalformed);
+        Assert.Contains("does not resolve", d.Message);
+    }
+
     // ── 6: /Encoding shapes ──────────────────────────────────────────────────────────────────────
 
     [Fact]
@@ -215,6 +280,26 @@ public sealed class SimpleFontReaderTests
         Build(doc, fontDict, sink);
 
         Assert.Empty(sink.Diagnostics);
+    }
+
+    [Fact]
+    public void Encoding_chainedBaseEncodingReference_reports401WithReferenceMessage()
+    {
+        // 4 0 R -> 5 0 R -> /WinAnsiEncoding: resolving /BaseEncoding (a reference to object 4)
+        // takes one hop and returns object 4's own content, itself the reference "5 0 R", never
+        // following on to the name at object 5. The message must say so rather than "names an
+        // encoding this reader does not know", which is true of a bad name, not an unresolved
+        // reference.
+        using var doc = FontTestSupport.Open(
+            new FontTestSupport.Obj(4, "5 0 R"),
+            new FontTestSupport.Obj(5, "/WinAnsiEncoding"));
+        var sink = new DiagnosticSink(50);
+        var encoding = new PdfDictionary().Set(new PdfName("BaseEncoding"), new PdfIndirectReference(4, 0));
+        var fontDict = Type1("Helvetica").Set(PdfName.Encoding, encoding);
+        Build(doc, fontDict, sink);
+
+        var d = Assert.Single(sink.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.FontEncodingMalformed);
+        Assert.Contains("indirect reference this reader does not follow past one hop", d.Message);
     }
 
     // ── 7: symbolic flag ─────────────────────────────────────────────────────────────────────────
@@ -349,6 +434,27 @@ public sealed class SimpleFontReaderTests
         Assert.Null(Decode(reader, 0xB2).Unicode);
     }
 
+    [Theory]
+    [InlineData(36, false)] // Symbolic and Nonsymbolic both set: Symbolic wins, no fill.
+    [InlineData(0, true)] // both clear: Symbolic is clear, so the state is nonsymbolic; fill.
+    public void TrueTypeWithDisagreeingFlags_symbolicFlagDecidesTheFill(int flags, bool filled)
+    {
+        // Table 121 forbids both shapes; §9.8.2 says which flag a processor reads when they occur:
+        // "A PDF processor should always check the Symbolic flag to determine whether the state is
+        // Symbolic or NonSymbolic". The fill follows that, not the Nonsymbolic bit's own value.
+        using var doc = FontTestSupport.OpenMinimal();
+        var sink = new DiagnosticSink(50);
+        var descriptor = new PdfDictionary().Set(new PdfName("Flags"), new PdfInteger(flags));
+        var fontDict = new PdfDictionary()
+            .Set(PdfName.Subtype, "TrueType").Set(PdfName.BaseFont, "Foo")
+            .Set(new PdfName("FontDescriptor"), descriptor)
+            .Set(PdfName.Encoding, MacRomanBaseDictionary());
+        var reader = Build(doc, fontDict, sink);
+
+        Assert.Equal(filled ? "†" : null, Decode(reader, 0xB2).Unicode);
+        Assert.Equal("†", Decode(reader, 0xA0).Unicode); // MacRoman's own dagger either way.
+    }
+
     [Fact]
     public void NonsymbolicTrueType_dictionaryWithMacExpertBase_isNotFilledFromStandard()
     {
@@ -362,6 +468,44 @@ public sealed class SimpleFontReaderTests
 
         Assert.Null(Decode(reader, 0x41).Unicode);
         Assert.Null(Decode(reader, 0xB2).Unicode);
+    }
+
+    [Fact]
+    public void DescriptorlessTrueType_dictionaryWithMacRomanBase_isNotFilledFromStandard()
+    {
+        // §9.6.5.4 conditions the fill on "the font descriptor's Nonsymbolic flag", a flag of a
+        // descriptor that is present: with no /FontDescriptor at all the precondition is not met
+        // and the fill must not run, even though this reader's Table 112 fallback elsewhere
+        // treats a missing descriptor as nonsymbolic.
+        using var doc = FontTestSupport.OpenMinimal();
+        var sink = new DiagnosticSink(50);
+        var fontDict = new PdfDictionary()
+            .Set(PdfName.Subtype, "TrueType").Set(PdfName.BaseFont, "Foo")
+            .Set(PdfName.Encoding, MacRomanBaseDictionary());
+        var reader = Build(doc, fontDict, sink);
+
+        Assert.Null(Decode(reader, 0xB2).Unicode); // not filled: the twelve cells stay undefined.
+        Assert.Equal("†", Decode(reader, 0xA0).Unicode); // MacRoman's own dagger, untouched.
+    }
+
+    [Fact]
+    public void SymbolicTrueType_namedWinAnsiEncoding_isHonoured_pinning()
+    {
+        // §9.6.5.4, verbatim: "When the font has no Encoding entry, or the font descriptor's
+        // Symbolic flag is set (in which case the Encoding entry is ignored), this shall occur:
+        // ...". This reader does not implement that alternative (it needs a font-program cmap this
+        // reader does not read) and instead honours a present /Encoding even for a symbolic
+        // TrueType font; this pins that departure, not a defect.
+        using var doc = FontTestSupport.OpenMinimal();
+        var sink = new DiagnosticSink(50);
+        var descriptor = new PdfDictionary().Set(new PdfName("Flags"), new PdfInteger(4));
+        var fontDict = new PdfDictionary()
+            .Set(PdfName.Subtype, "TrueType").Set(PdfName.BaseFont, "Foo")
+            .Set(new PdfName("FontDescriptor"), descriptor)
+            .Set(PdfName.Encoding, "WinAnsiEncoding");
+        var reader = Build(doc, fontDict, sink);
+
+        Assert.Equal("A", Decode(reader, 0x41).Unicode);
     }
 
     // ── 9: Symbol / ZapfDingbats base fonts ──────────────────────────────────────────────────────
@@ -693,6 +837,24 @@ public sealed class SimpleFontReaderTests
         var a = doc.GetFontReader(Type1("Helvetica"), sink, null);
         var b = doc.GetFontReader(Type1("Helvetica"), sink, null);
         Assert.NotSame(a, b);
+    }
+
+    [Fact]
+    public void GetFontReader_fontEntryNamesADeepLengthChain_reports400Once_noThrow()
+    {
+        // The /Font entry itself (object 3) is a stream whose /Length chains 120 links deep, past
+        // MaxResolveDepth (100). ResolveValue(rawFontEntry) re-enters resolution while parsing that
+        // stream's own structure, so the depth limit throws before the dictionary-type check below
+        // it ever runs; GetFontReader must catch that itself rather than let it escape.
+        var bytes = FontTestSupport.BuildDeepIndirectLengthChain(firstChainObject: 3, chainLen: 120);
+        using var doc = PdfReader.Open(bytes);
+        var sink = new DiagnosticSink(50);
+
+        var result = doc.GetFontReader(new PdfIndirectReference(3, 0), sink, null);
+
+        Assert.Null(result);
+        var d = Assert.Single(sink.Diagnostics);
+        Assert.Equal(PdfReaderDiagnosticCode.FontUnreadable, d.Code);
     }
 
     // ── 14: diagnostics carry object number, generation, page index ─────────────────────────────

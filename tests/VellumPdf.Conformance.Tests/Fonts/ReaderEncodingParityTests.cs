@@ -50,4 +50,23 @@ public sealed class ReaderEncodingParityTests
         ];
         Assert.Equal(expected.Order(), DifferingCodes(ConformanceEncoding.MacRoman, ReaderEncodings.MacRoman).Order());
     }
+
+    // The class doc of both AdobeGlyphList copies asserts the two embedded AdobeGlyphList.txt
+    // resources are byte-identical; nothing before this test compared the two files.
+    [Fact]
+    public void AdobeGlyphListResource_isByteIdenticalAcrossReaderAndConformance()
+    {
+        using var readerStream = typeof(VellumPdf.Reader.Fonts.AdobeGlyphList).Assembly
+            .GetManifestResourceStream("AdobeGlyphList.txt")!;
+        using var conformanceStream = typeof(VellumPdf.Conformance.Rules.Fonts.AdobeGlyphList).Assembly
+            .GetManifestResourceStream("AdobeGlyphList.txt")!;
+
+        using var readerBytes = new MemoryStream();
+        using var conformanceBytes = new MemoryStream();
+        readerStream.CopyTo(readerBytes);
+        conformanceStream.CopyTo(conformanceBytes);
+
+        Assert.Equal(conformanceBytes.Length, readerBytes.Length);
+        Assert.Equal(conformanceBytes.ToArray(), readerBytes.ToArray());
+    }
 }
