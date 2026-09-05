@@ -382,6 +382,31 @@ public sealed class ImageExtractionBoundsTests
         Assert.True(allocated < 1024 * 1024, $"expected a bounded allocation, measured {allocated} bytes");
     }
 
+    // A lookup stream's decode raises its diagnostics against a cap this reader chose, so the one
+    // that names that cap is dropped. Every other code it can raise belongs to the caller: an
+    // unknown filter says nothing about the cap and is the caller's own file to fix.
+    [Fact]
+    public void IndexedLookupStreamWithAnUnknownFilter_reports110AndTheColorSpaceCode()
+    {
+        var pdf = BuildPdf(1,
+            new Obj(1, "<< /Type /Catalog /Pages 2 0 R >>"),
+            new Obj(2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
+            new Obj(3, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] "
+                + "/Resources << /XObject << /Im0 10 0 R >> >> /Contents 4 0 R >>"),
+            new Obj(4, "<< >>", "/Im0 Do"u8.ToArray()),
+            new Obj(10, "<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /BitsPerComponent 8 "
+                + "/ColorSpace [/Indexed /DeviceRGB 3 11 0 R] /Filter /FlateDecode >>", Flate([0])),
+            new Obj(11, "<< /Filter /NoSuchFilter >>", [1, 2, 3, 4]));
+
+        using var reader = PdfReader.Open(pdf);
+        var result = reader.ExtractImages();
+
+        Assert.Contains(result.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.UnknownFilter);
+        Assert.Contains(result.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ImageColorSpaceUnsupported);
+        Assert.DoesNotContain(result.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.DecodedStreamLimitExceeded);
+        Assert.Single(result.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.UnknownFilter);
+    }
+
     // ── colour space unknown: /Decode array length has its own cap, not just a known one ────────
 
     [Fact]

@@ -14,11 +14,12 @@ namespace VellumPdf.Reader.Tests;
 /// down; this generates the shape space the cumulative-sum rule has to hold over.
 /// <para>
 /// The shape space covers every bit depth <c>Filters.cs</c> accepts and the whole colour count it
-/// accepts (1 to 32). Column counts run to 200 rather than to the 1 048 576 the guard admits,
-/// because the byte loops the implementation uses process a row in chunks and a defect that starts
-/// partway along a row is only reachable once a generated row is longer than one such chunk; 200
-/// columns clears that at every depth, while generating megabyte rows would cost far more than it
-/// finds. Row counts run to 4, enough for the per-row restart to be exercised repeatedly.
+/// accepts (1 to 32), so a defect keyed to a component stride cannot hide above the range. Column
+/// counts run to 200 against a guard that admits 1 048 576, which puts the widest generated row at
+/// 6 400 bytes at 8 bits per component and 12 800 at 16: far enough into a row for a defect keyed
+/// to a position within one to show, and not a proof that none survives above it. That ceiling is
+/// a cost choice, since generating megabyte rows would cost far more than it finds. Row counts run
+/// to 4, enough for the per-row restart to be exercised repeatedly.
 /// </para>
 /// </summary>
 public sealed class TiffPredictorPropertyTests
@@ -149,8 +150,8 @@ public sealed class TiffPredictorPropertyTests
         /// Iterations per property run, overridable via <c>VELLUMPDF_FUZZ_ITER</c>. A copy of
         /// <c>ImageExtractionFuzzTests.FuzzBudget</c>'s own copy of
         /// <c>ParserFuzzTests.FuzzBudget</c>, for the reason that one already gives: lifting it
-        /// into a shared file would touch <c>VellumPdf.TestSupport</c>, which the image and text
-        /// lanes both build against in parallel this milestone.
+        /// into a shared file would touch <c>VellumPdf.TestSupport</c>, which several test
+        /// projects build against.
         /// </summary>
         internal static long Iterations
         {

@@ -288,7 +288,7 @@ must both map to one of those two depths, at the same depth as each other, and t
 not `BitsPerComponent`), independent of `Data`'s own length; an indexed image's stored indices are
 expanded to 8-bit RGB triples first, up to 24 times `Data`'s own length at 1 bit per index, and
 that expansion buffer and the interleaved buffer above are both live at once, the latter reaching
-32 times, so the peak is up to 56 times `Data`'s own length.
+32 times, so the peak is up to 56 times `Data`'s own length, plus whatever zlib itself costs.
 
 ---
 

@@ -302,6 +302,30 @@ public sealed class ColorSpaceReaderTests
     }
 
     /// <summary>
+    /// The two guards on that recursion are independent, and the cycle tests around this one pass
+    /// with either alone, so neither is pinned by them. This one isolates the resource-name half:
+    /// an Indexed base that names a resource entry resolving straight to a device space, in two
+    /// levels, so <c>MaxColorSpaceNesting</c> cannot fire and only <c>allowResourceLookup: false</c>
+    /// decides the outcome. ISO 32000-2 §8.6.3 is why it is refused rather than followed: a colour
+    /// space named by an image "shall always be defined directly as a PDF object, not by an entry
+    /// in the ColorSpace resource subdictionary", and the clause extends that to spaces "defined in
+    /// terms of other colour spaces", which is what an Indexed base is.
+    /// </summary>
+    [Fact]
+    public void Indexed_baseIsAResourceNameResolvingToADeviceSpace_isRefusedAt501()
+    {
+        var pdf = BuildPdf(1, new Obj(1, "<< /Type /Catalog /Pages 2 0 R >>"), new Obj(2, "<< /Type /Pages /Kids [] /Count 0 >>"));
+        var (reader, csReader, sink) = Setup(pdf);
+        var resources = (PdfDictionary)ParseValue(
+            reader, "<< /ColorSpace << /CS0 [/Indexed /CS1 1 <FF00FF00FF00>] /CS1 /DeviceRGB >> >>");
+
+        var cs = csReader.Read(ParseValue(reader, "/CS0"), resources, sink, null, null, 0);
+
+        Assert.Null(cs);
+        Assert.Single(sink.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ImageColorSpaceUnsupported);
+    }
+
+    /// <summary>
     /// The two-name variant of the same cycle: <c>/CS0</c>'s base names <c>/CS1</c>, whose own base
     /// names <c>/CS0</c> back. A fix that only special-cased a base naming ITSELF (rather than
     /// disabling the resource-name hop for an Indexed base entirely, or capping recursion depth)
