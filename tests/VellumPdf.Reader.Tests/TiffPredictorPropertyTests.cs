@@ -19,7 +19,8 @@ namespace VellumPdf.Reader.Tests;
 /// 6 400 bytes at 8 bits per component and 12 800 at 16: far enough into a row for a defect keyed
 /// to a position within one to show, and not a proof that none survives above it. That ceiling is
 /// a cost choice, since generating megabyte rows would cost far more than it finds. Row counts run
-/// to 4, enough for the per-row restart to be exercised repeatedly.
+/// to 4, enough for the per-row restart to be exercised repeatedly, and bounded for the same reason
+/// the column count is: a defect that only appears from some later row on would survive this.
 /// </para>
 /// </summary>
 public sealed class TiffPredictorPropertyTests

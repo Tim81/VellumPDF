@@ -8,7 +8,8 @@ using VellumPdf.Core;
 namespace VellumPdf.Reader.Tests;
 
 /// <summary>
-/// One test per resource ceiling <c>ExtractImages</c> enforces (#98), named after the condition it
+/// One test per resource ceiling <c>ExtractImages</c> enforces (#98), plus one for the diagnostics
+/// a refused decode routes to the caller, named after the condition it
 /// pins. Where a test bounds memory, the call is bracketed with
 /// <see cref="GC.GetAllocatedBytesForCurrentThread"/> under a stated bound, following the
 /// <c>ContentInterpreterTests</c> precedent; that counter is thread-local, never process-wide, and
@@ -401,10 +402,9 @@ public sealed class ImageExtractionBoundsTests
         using var reader = PdfReader.Open(pdf);
         var result = reader.ExtractImages();
 
-        Assert.Contains(result.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.UnknownFilter);
+        Assert.Single(result.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.UnknownFilter);
         Assert.Contains(result.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ImageColorSpaceUnsupported);
         Assert.DoesNotContain(result.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.DecodedStreamLimitExceeded);
-        Assert.Single(result.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.UnknownFilter);
     }
 
     // ── colour space unknown: /Decode array length has its own cap, not just a known one ────────

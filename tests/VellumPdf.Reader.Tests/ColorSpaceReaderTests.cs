@@ -305,8 +305,12 @@ public sealed class ColorSpaceReaderTests
     /// The two guards on that recursion are independent, and the cycle tests around this one pass
     /// with either alone, so neither is pinned by them. This one isolates the resource-name half:
     /// an Indexed base that names a resource entry resolving straight to a device space, in two
-    /// levels, so <c>MaxColorSpaceNesting</c> cannot fire and only <c>allowResourceLookup: false</c>
-    /// decides the outcome. ISO 32000-2 §8.6.3 is why it is refused rather than followed: a colour
+    /// levels, so <c>MaxColorSpaceNesting</c> cannot fire and only
+    /// <c>allowResourceLookup: false</c> decides the outcome. The nesting cap has no such test and
+    /// can have none while this guard stands: both recursive arms pass
+    /// <c>allowResourceLookup: false</c>, so the deepest value a document can drive is 2 against a
+    /// check that fires above 3. It is headroom for a future recursive arm, which is what its own
+    /// comment says it is. ISO 32000-2 §8.6.3 is why it is refused rather than followed: a colour
     /// space named by an image "shall always be defined directly as a PDF object, not by an entry
     /// in the ColorSpace resource subdictionary", and the clause extends that to spaces "defined in
     /// terms of other colour spaces", which is what an Indexed base is.

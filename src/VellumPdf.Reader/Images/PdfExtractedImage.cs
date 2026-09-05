@@ -203,8 +203,10 @@ public sealed class PdfExtractedImage
     /// (an Indexed image's own indices are expanded to 8-bit RGB triples first, up to 24 times <see
     /// cref="Data"/>'s own length at 1 bit per index; that expansion buffer and the interleaved row
     /// buffer above are live at once, the latter reaching 32 times, so the peak is up to 56 times
-    /// <see cref="Data"/>'s own length). This is independent of <see cref="Data"/>'s own
-    /// length, unlike <see cref="TryEncodePng"/>'s bound.
+    /// <see cref="Data"/>'s own length). The interleaved buffer itself is sized from the image's
+    /// dimensions rather than from <see cref="Data"/>'s length, unlike
+    /// <see cref="TryEncodePng"/>'s bound; the multiples above hold only because a stored index is
+    /// at least one bit.
     /// </remarks>
     public bool TryEncodePngWithAlpha([NotNullWhen(true)] out byte[]? png) =>
         PngEncoder.TryEncodeWithAlpha(this, out png);
