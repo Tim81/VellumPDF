@@ -7,11 +7,21 @@ using VellumPdf.Core;
 namespace VellumPdf.Reader;
 
 /// <summary>
-/// Applies PDF filter chains to stream bodies (ISO 32000-2 §7.4).
-/// Handles FlateDecode, LZWDecode, ASCIIHexDecode, ASCII85Decode, RunLengthDecode
-/// and their predictors. Image filters (DCTDecode, JPXDecode, JBIG2Decode,
-/// CCITTFaxDecode) are recognised but left undecoded — callers receive a false
-/// fullyDecoded flag.
+/// The stopping filter's canonical Table 6 name, its <c>/DecodeParms</c> entry (values unresolved:
+/// see <c>ImageDecoder</c>'s own remarks on why it re-resolves them), and the bytes decoded up to
+/// that filter. <see cref="Succeeded"/> is false when a filter threw or a decode bound was hit; the
+/// underlying condition has already been reported through the diagnostics sink by then, so a caller
+/// adds no second report of it (#98).
+/// </summary>
+internal readonly record struct ImageDecodeResult(
+    byte[] Data, PdfName? ImageFilter, PdfDictionary? ImageFilterParms, bool Succeeded);
+
+/// <summary> Applies PDF filter chains to stream bodies (ISO 32000-2 §7.4). Handles FlateDecode,
+/// LZWDecode, ASCIIHexDecode, ASCII85Decode, RunLengthDecode and their predictors. Image filters
+/// (DCTDecode, JPXDecode, JBIG2Decode, CCITTFaxDecode) are recognised but left undecoded by <see
+/// cref="TryDecode"/> and <see cref="Decode"/>: callers receive a false fullyDecoded flag.
+/// <c>DecodeForImage</c> (#98) is the one caller that wants the bytes up to that filter instead of
+/// a stop signal.
 /// </summary>
 internal static class PdfFilters
 {
@@ -30,6 +40,35 @@ internal static class PdfFilters
         "JBIG2Decode",
         "CCITTFaxDecode", "CCF",
     ];
+
+    /// <summary> Names, without decoding anything, the image filter that would stop a full decode
+    /// of <paramref name="dictionary"/>'s own filter chain (<c>ImageFilter</c>, or <see
+    /// langword="null"/> when every filter in the chain is one <see cref="Decode"/> can consume in
+    /// full, in which case the image reaches the <c>Raw</c> path) and the chain's own last filter
+    /// (<c>LastFilterName</c>, or <see langword="null"/> for no filter at all). Used by
+    /// <c>ImageDecoder</c> (#98): both size and depth have to be settled before any decode is
+    /// attempted, so they cannot wait for <c>DecodeForImage</c> itself to run. Any diagnostic
+    /// <see cref="GetFilterList"/> reports here (a malformed
+    /// <c>/Filter</c> shape) is deduped against the identical report <see cref="DecodeCore"/> makes
+    /// for the same object when the decode runs later, so nothing is reported twice.
+    /// </summary>
+    internal static (PdfName? ImageFilter, PdfName? LastFilterName) PeekFilterInfo(
+        PdfDictionary dictionary, Func<PdfObject?, PdfObject?>? resolve, DiagnosticSink? diagnostics,
+        int? objectNumber, int? generation)
+    {
+        var filters = GetFilterList(dictionary, resolve, diagnostics, objectNumber, generation);
+        PdfName? imageFilter = null;
+        foreach (var f in filters)
+        {
+            if (_imageFilters.Contains(f.Value))
+            {
+                imageFilter = f;
+                break;
+            }
+        }
+        var last = filters.Count > 0 ? filters[^1] : null;
+        return (imageFilter, last);
+    }
 
     /// <summary>
     /// Tries to decode the full filter chain for <paramref name="stream"/>.
@@ -65,37 +104,18 @@ internal static class PdfFilters
         ParsedStream stream, out byte[] decoded, ReaderLimits limits,
         Func<PdfObject?, PdfObject?>? resolve = null, DiagnosticSink? diagnostics = null)
     {
-        var objectNumber = stream.ObjectNumber;
-        var generation = stream.Generation;
-        var filters = GetFilterList(stream.Dictionary, resolve, diagnostics, objectNumber, generation);
-        var parms = GetParmsList(stream.Dictionary, filters.Count, resolve, diagnostics, objectNumber, generation);
-
-        var data = stream.RawBody.ToArray();
-        var fullyDecoded = true;
-
-        for (var i = 0; i < filters.Count; i++)
-        {
-            var f = filters[i];
-            var p = i < parms.Count ? parms[i] : null;
-
-            if (_imageFilters.Contains(f.Value))
-            {
-                fullyDecoded = false;
-                break;
-            }
-
-            data = ApplyFilter(f, p, data, limits.MaxDecodedBytes, diagnostics, objectNumber, generation);
-        }
-
-        decoded = data;
-        return fullyDecoded;
+        var result = DecodeCore(
+            stream.Dictionary, stream.RawBody, stream.ObjectNumber, stream.Generation, limits, resolve,
+            diagnostics);
+        decoded = result.Data;
+        return result.ImageFilter is null;
     }
 
     /// <summary>Returns decoded bytes or null if an image filter prevents full decode.</summary>
     /// <param name="stream">The parsed stream whose filter chain is applied.</param>
     /// <param name="limits">The decode ceiling to enforce; see <see cref="TryDecode"/>.</param>
-    /// <param name="resolve">Optional indirect-reference resolver for <c>/Filter</c>/<c>/DecodeParms</c>;
-    /// see <see cref="TryDecode"/>.</param>
+    /// <param name="resolve">Optional indirect-reference resolver for
+    /// <c>/Filter</c>/<c>/DecodeParms</c>; see <see cref="TryDecode"/>.</param>
     /// <param name="diagnostics">Optional diagnostics sink; see <see cref="TryDecode"/>.</param>
     internal static byte[]? Decode(
         ParsedStream stream, ReaderLimits limits, Func<PdfObject?, PdfObject?>? resolve = null,
@@ -106,6 +126,111 @@ internal static class PdfFilters
         return decoded;
     }
 
+    // Shared throwing core behind TryDecode and DecodeForImage (#98). Runs the filter chain exactly
+    // as TryDecode always has, up to and not including the first image filter, and lets every
+    // InvalidDataException the chain raises escape uncaught: TryDecode's own throw is load-bearing
+    // (11 call sites across XrefParser, XrefReconstructor, PdfDocumentReader and their own tests
+    // assert it), so this core must not swallow anything TryDecode itself did not.
+    private static ImageDecodeResult DecodeCore(
+        PdfDictionary dictionary, ReadOnlyMemory<byte> rawBody, int? objectNumber, int? generation,
+        ReaderLimits limits, Func<PdfObject?, PdfObject?>? resolve, DiagnosticSink? diagnostics)
+    {
+        var filters = GetFilterList(dictionary, resolve, diagnostics, objectNumber, generation);
+        var parms = GetParmsList(dictionary, filters.Count, resolve, diagnostics, objectNumber, generation);
+
+        var data = rawBody.ToArray();
+        PdfName? imageFilter = null;
+        PdfDictionary? imageFilterParms = null;
+
+        for (var i = 0; i < filters.Count; i++)
+        {
+            var f = filters[i];
+            var p = i < parms.Count ? parms[i] : null;
+
+            if (_imageFilters.Contains(f.Value))
+            {
+                imageFilter = f;
+                imageFilterParms = p;
+                break;
+            }
+
+            data = ApplyFilter(f, p, data, limits.MaxDecodedBytes, diagnostics, objectNumber, generation);
+        }
+
+        return new ImageDecodeResult(data, imageFilter, imageFilterParms, Succeeded: true);
+    }
+
+    /// <summary> Decodes an image XObject's filter chain up to (not including) the image filter
+    /// that stops it, for <c>ImageDecoder</c> (#98). Unlike <see cref="TryDecode"/>, never throws:
+    /// an <see cref="InvalidDataException"/> from <see cref="DecodeCore"/> (a filter this reader
+    /// does not implement, a decompression bomb, an invalid predictor parameter) is caught here and
+    /// reported through <see cref="ImageDecodeResult.Succeeded"/> instead, since the underlying
+    /// condition has already been reported through <paramref name="diagnostics"/> by one of <see
+    /// cref="DecodeCore"/>'s own call sites (<see
+    /// cref="PdfReaderDiagnosticCode.UnknownFilter"/>-class codes); this method adds no second
+    /// report of the same condition.
+    /// </summary>
+    /// <param name="stream">The image XObject stream, already decrypted (see
+    /// <c>PdfDocumentReader.DecryptedStreamView</c>); this method never reads <see
+    /// cref="ParsedStream.RawBody"/> from an encrypted stream directly.</param>
+    /// <param name="limits">The decode ceiling to enforce; see <see cref="TryDecode"/>.</param>
+    /// <param name="resolve">Optional indirect-reference resolver for
+    /// <c>/Filter</c>/<c>/DecodeParms</c>.</param>
+    /// <param name="diagnostics">Optional diagnostics sink.</param>
+    internal static ImageDecodeResult DecodeForImage(
+        ParsedStream stream, ReaderLimits limits, Func<PdfObject?, PdfObject?>? resolve,
+        DiagnosticSink? diagnostics)
+    {
+        // Charged before any copy: Filters.cs's own body-length copy below (inside DecodeCore) is
+        // unconditional, and for a DCTDecode/JPXDecode/JBIG2Decode/CCITTFaxDecode stream whose
+        // image filter comes first that copy is never otherwise bounded by MaxDecodedBytes (that
+        // bound is enforced only inside InflateFlate/DecodeLzw/DecodeRunLength, none of which this
+        // stream's chain ever reaches).
+        if (stream.RawBody.Length > limits.MaxDecodedBytes)
+            return new ImageDecodeResult([], null, null, Succeeded: false);
+
+        try
+        {
+            return DecodeCore(
+                stream.Dictionary, stream.RawBody, stream.ObjectNumber, stream.Generation, limits,
+                resolve, diagnostics);
+        }
+        catch (InvalidDataException)
+        {
+            return new ImageDecodeResult([], null, null, Succeeded: false);
+        }
+    }
+
+    /// <summary> The inline-image overload of <c>DecodeForImage</c>.
+    /// <see cref="ParsedStream"/>'s own constructor requires a non-null object number and
+    /// generation (its remarks warn that a synthesised (0, 0) decrypts under the wrong per-object
+    /// key), and an inline image has none, so it is decoded directly from its dictionary and
+    /// already-plaintext data instead of a fabricated stream (content streams are decrypted whole
+    /// before this interpreter ever sees them).
+    /// </summary>
+    /// <param name="dictionary">The inline image's key/value pairs, abbreviations already
+    /// expanded.</param>
+    /// <param name="data">The image's own bytes between <c>ID</c> and <c>EI</c>.</param>
+    /// <param name="limits">The decode ceiling to enforce; see <see cref="TryDecode"/>.</param>
+    /// <param name="resolve">Optional indirect-reference resolver.</param>
+    /// <param name="diagnostics">Optional diagnostics sink.</param>
+    internal static ImageDecodeResult DecodeForImage(
+        PdfDictionary dictionary, ReadOnlyMemory<byte> data, ReaderLimits limits,
+        Func<PdfObject?, PdfObject?>? resolve, DiagnosticSink? diagnostics)
+    {
+        if (data.Length > limits.MaxDecodedBytes)
+            return new ImageDecodeResult([], null, null, Succeeded: false);
+
+        try
+        {
+            return DecodeCore(dictionary, data, null, null, limits, resolve, diagnostics);
+        }
+        catch (InvalidDataException)
+        {
+            return new ImageDecodeResult([], null, null, Succeeded: false);
+        }
+    }
+
     private static byte[] ApplyFilter(
         PdfName filter, PdfDictionary? parms, byte[] input, long maxDecodedBytes,
         DiagnosticSink? diagnostics, int? objectNumber, int? generation)
@@ -113,7 +238,7 @@ internal static class PdfFilters
         if (filter.Value is "FlateDecode" or "Fl")
         {
             var raw = InflateFlate(input, maxDecodedBytes, diagnostics, objectNumber, generation);
-            return ApplyPredictor(parms, raw, diagnostics, objectNumber, generation);
+            return ApplyPredictor(parms, raw);
         }
         if (filter.Value is "LZWDecode" or "LZW")
         {
@@ -121,7 +246,7 @@ internal static class PdfFilters
             if (parms?.Get(_earlyChange) is PdfInteger ec)
                 earlyChange = (int)ec.Value;
             var raw = DecodeLzw(input, earlyChange, maxDecodedBytes, diagnostics, objectNumber, generation);
-            return ApplyPredictor(parms, raw, diagnostics, objectNumber, generation);
+            return ApplyPredictor(parms, raw);
         }
         if (filter.Value is "ASCIIHexDecode" or "AHx")
             return DecodeAsciiHex(input);
@@ -256,8 +381,7 @@ internal static class PdfFilters
 
     // ── Predictors ───────────────────────────────────────────────────────────
 
-    private static byte[] ApplyPredictor(
-        PdfDictionary? parms, byte[] data, DiagnosticSink? diagnostics, int? objectNumber, int? generation)
+    private static byte[] ApplyPredictor(PdfDictionary? parms, byte[] data)
     {
         if (parms is null) return data;
         if (parms.Get(_predictor) is not PdfInteger predObj) return data;
@@ -278,7 +402,7 @@ internal static class PdfFilters
                 $"FlateDecode predictor: invalid Columns/Colors/BitsPerComponent ({columns}/{colors}/{bpc}).");
 
         if (predictor == 2)
-            return ApplyTiffPredictor2(data, (int)columns, (int)colors, (int)bpc, diagnostics, objectNumber, generation);
+            return ApplyTiffPredictor2(data, (int)columns, (int)colors, (int)bpc);
 
         if (predictor >= 10 && predictor <= 15)
             return ApplyPngPredictor(data, (int)columns, (int)colors, (int)bpc);
@@ -286,56 +410,91 @@ internal static class PdfFilters
         return data;
     }
 
-    private static byte[] ApplyTiffPredictor2(
-        byte[] data, int columns, int colors, int bpc,
-        DiagnosticSink? diagnostics, int? objectNumber, int? generation)
+    // TIFF predictor 2 (ISO 32000-2 §7.4.4.4): horizontal differencing per colour component. Each
+    // sample is the sum, modulo 2^BitsPerComponent, of the still-differenced value read and every
+    // prior instance of that same component earlier in the row: "The TIFF function group shall
+    // predict each colour component from the prior instance of that component" (§7.4.4.4). A row's
+    // own leading `colors` samples have no such prior instance and are left as read. Rows never
+    // predict across each other: each restarts at its own first `colors` samples, the same rule
+    // for every supported bit depth (1, 2, 4, 8, 16).
+    private static byte[] ApplyTiffPredictor2(byte[] data, int columns, int colors, int bpc)
     {
-        // TIFF predictor 2: horizontal differencing. Each sample undoes the delta.
-        // Only 8-bit per component supported here; other BPC is uncommon in practice.
+        // "A row shall occupy a whole number of bytes, rounded up if necessary" (§7.4.4.4).
         var rowBytes = (columns * colors * bpc + 7) / 8;
         if (data.Length == 0 || rowBytes == 0) return data;
         var rows = data.Length / rowBytes;
         var result = new byte[rows * rowBytes];
 
-        // Reported once per stream, ahead of the row loop, rather than once per row left to the
-        // sink's own dedupe: the condition ("this BitsPerComponent isn't decoded correctly") is a
-        // property of the stream, established before the first row is even read, not something
-        // that only becomes true partway through — hoisting it says so instead of relying on a
-        // cap-and-dedupe mechanism built for a different purpose to collapse the repeats down to
-        // one after the fact. Gated on rows > 0 to match data.Length == 0's own early return
-        // above: a body too short for even one row copies nothing and returns an empty array
-        // either way, so reporting here would flag a condition that never actually affected any
-        // samples.
-        if (bpc != 8 && rows > 0)
+        if (bpc == 8)
         {
-            // ISO 32000-2 §7.4.4.4 does not restrict the TIFF predictor to 8-bit samples, but this
-            // decoder only undoes the horizontal difference at that depth — passing the
-            // still-differenced rows through leaves every sample wrong at any other
-            // /BitsPerComponent (#385 tracks the fix as UnsupportedPredictor).
-            diagnostics?.Report(
-                PdfReaderDiagnosticCode.UnsupportedPredictor,
-                $"TIFF predictor (2) applied at BitsPerComponent {bpc}; only 8-bit is decoded "
-                + "correctly, so these samples are copied through still horizontally differenced.",
-                objectNumber, generation);
-        }
-
-        for (var row = 0; row < rows; row++)
-        {
-            var src = row * rowBytes;
-            var dst = row * rowBytes;
-
-            if (bpc == 8)
+            for (var row = 0; row < rows; row++)
             {
+                var src = row * rowBytes;
+                var dst = row * rowBytes;
                 for (var i = 0; i < rowBytes; i++)
                 {
                     var prev = i >= colors ? result[dst + i - colors] : (byte)0;
                     result[dst + i] = (byte)(data[src + i] + prev);
                 }
             }
-            else
+            return result;
+        }
+
+        if (bpc == 16)
+        {
+            // No padding at 16 bits: columns*colors*16 is always a multiple of 8, so rowBytes is
+            // exactly samplesPerRow * 2 with nothing left over to preserve untouched.
+            var samplesPerRow = columns * colors;
+            for (var row = 0; row < rows; row++)
             {
-                // Non-8-bit: copy as-is — see the hoisted report above for why.
-                Array.Copy(data, src, result, dst, rowBytes);
+                var rowStart = row * rowBytes;
+                var decoded = new ushort[samplesPerRow];
+                for (var i = 0; i < samplesPerRow; i++)
+                {
+                    // "units of 16 bits shall be given with the most significant byte first"
+                    // (ISO 32000-2 §8.9.3).
+                    var raw = (ushort)((data[rowStart + i * 2] << 8) | data[rowStart + i * 2 + 1]);
+                    var prev = i >= colors ? decoded[i - colors] : (ushort)0;
+                    decoded[i] = (ushort)(raw + prev);
+                }
+                for (var i = 0; i < samplesPerRow; i++)
+                {
+                    result[rowStart + i * 2] = (byte)(decoded[i] >> 8);
+                    result[rowStart + i * 2 + 1] = (byte)decoded[i];
+                }
+            }
+            return result;
+        }
+
+        // bpc 1, 2, 4: unpack one byte per component value (never bpc/8 bytes, which is 0 at every
+        // sub-byte depth), predict, and repack "from high-order to low-order bits" (§7.4.4.4). A
+        // row whose sample count does not fill its last byte carries padding bits past the last
+        // sample; those are copied through untouched (result starts as a copy of data) and never
+        // read as part of any sample, so they cannot be accumulated into or overwritten below.
+        var samplesPerRow2 = columns * colors;
+        var mask = (1 << bpc) - 1;
+        var samplesPerByte = 8 / bpc;
+        var samples = new byte[samplesPerRow2];
+        for (var row = 0; row < rows; row++)
+        {
+            var rowStart = row * rowBytes;
+            Array.Copy(data, rowStart, result, rowStart, rowBytes);
+
+            for (var i = 0; i < samplesPerRow2; i++)
+            {
+                var byteIndex = rowStart + i / samplesPerByte;
+                var shift = 8 - bpc - (i % samplesPerByte) * bpc;
+                samples[i] = (byte)((data[byteIndex] >> shift) & mask);
+            }
+
+            for (var i = 0; i < samplesPerRow2; i++)
+            {
+                if (i >= colors)
+                    samples[i] = (byte)((samples[i] + samples[i - colors]) & mask);
+
+                var byteIndex = rowStart + i / samplesPerByte;
+                var shift = 8 - bpc - (i % samplesPerByte) * bpc;
+                result[byteIndex] = (byte)((result[byteIndex] & ~(mask << shift)) | (samples[i] << shift));
             }
         }
         return result;

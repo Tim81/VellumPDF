@@ -82,9 +82,17 @@ public sealed class PdfReadPage
     /// </summary>
     internal PdfDictionary? Resources { get; }
 
+    /// <summary> The reader this page came from (#98), so <see cref="ExtractImages()"/> can walk
+    /// this page's content and resolve its streams without a second constructor parameter threaded
+    /// through every call. Every <see cref="PdfReadPage"/> comes from exactly one reader's own
+    /// page-tree walk (<see cref="PdfDocumentReader.Pages"/>), so this is never null.
+    /// </summary>
+    internal PdfDocumentReader Reader { get; }
+
     internal PdfReadPage(
         int index, int objectNumber, PdfDictionary dictionary,
-        PdfRectangle mediaBox, PdfRectangle cropBox, int rotate, PdfDictionary? resources)
+        PdfRectangle mediaBox, PdfRectangle cropBox, int rotate, PdfDictionary? resources,
+        PdfDocumentReader reader)
     {
         Index = index;
         // objectNumber arrives as 0 for a direct /Kids element; see this type's ObjectNumber doc.
@@ -94,5 +102,31 @@ public sealed class PdfReadPage
         CropBox = cropBox;
         Rotate = rotate;
         Resources = resources;
+        Reader = reader;
+    }
+
+    /// <summary> Returns every image XObject and inline image this page's content draws (ISO
+    /// 32000-2 §8.9), including those inside Form XObjects and, by default, inside annotation
+    /// appearance streams (§12.5.5), in draw order (#98). Equivalent to <see
+    /// cref="ExtractImages(PdfImageExtractionOptions)"/> with the default options.
+    /// </summary>
+    /// <exception cref="ObjectDisposedException"><see cref="Reader"/> has been
+    /// disposed.</exception>
+    public PdfImageExtractionResult ExtractImages() => ExtractImages(new PdfImageExtractionOptions());
+
+    /// <summary> Returns every image XObject and inline image this page's content draws (ISO
+    /// 32000-2 §8.9), per <paramref name="options"/>, in draw order. The same XObject drawn twice
+    /// on this page is returned twice, sharing one decoded <see cref="PdfExtractedImage.Data"/>
+    /// instance (#98): unlike <see cref="PdfDocumentReader.ExtractImages()"/>, a page-level result
+    /// is not deduped by object identity.
+    /// </summary>
+    /// <exception cref="ArgumentNullException"><paramref name="options"/> is <see
+    /// langword="null"/>.</exception>
+    /// <exception cref="ObjectDisposedException"><see cref="Reader"/> has been
+    /// disposed.</exception>
+    public PdfImageExtractionResult ExtractImages(PdfImageExtractionOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        return Reader.ExtractImagesFromPage(this, options);
     }
 }

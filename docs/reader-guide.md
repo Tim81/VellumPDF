@@ -241,6 +241,41 @@ invalidates the enumerator, throwing `InvalidOperationException` mid-loop. Call
 `reader.Diagnostics.ToList()` first if you need a stable snapshot to hold onto or hand to another
 thread.
 
+### Extracting images
+
+```csharp
+var result = reader.ExtractImages(); // or reader.GetPage(0).ExtractImages()
+foreach (var image in result.Images)
+{
+    Console.WriteLine($"{image.Width}x{image.Height} {image.Encoding}");
+    if (image.TryEncodePng(out var png))
+        File.WriteAllBytes($"image-{image.ObjectNumber}.png", png);
+    else
+        File.WriteAllBytes($"image-{image.ObjectNumber}{image.FileExtension}", image.Data.ToArray());
+}
+```
+
+`ExtractImages` (#98) walks a page's content for every image XObject and inline image it draws
+(ISO 32000-2 §8.9), including images inside Form XObjects and, by default, inside annotation
+appearance streams (§12.5.5), in draw order. `PdfDocumentReader.ExtractImages()` returns each
+distinct image once, at the first page that draws it; `PdfReadPage.ExtractImages()` returns every
+occurrence on that one page, undeduped.
+
+Nothing is transcoded. A `DCTDecode`, `JPXDecode`, `JBIG2Decode`, or `CCITTFaxDecode` image comes
+back as `Data` holding its stored, still-encoded payload (a JPEG file, a JPEG 2000 file or bare
+codestream, an embedded-organisation JBIG2 segment sequence, a CCITT fax bitstream) with its own
+decode parameters exposed on `Jbig2`, `CcittFax`, or `Dct`. Every other image is fully decoded to
+its samples (`Encoding == PdfImageEncoding.Raw`), laid out exactly as ISO 32000-2 §8.9.3
+describes. `/Decode` is exposed on every image but never applied: this reader hands back stored or
+decoded samples, not remapped ones.
+
+`TryEncodePng` losslessly re-encodes a `Raw` image as a PNG when its colour space maps onto one:
+grey at 1, 2, 4, 8, or 16 bits, RGB at 8 or 16, and an indexed image over either at 8 bits and
+below. It answers a question about this method's own capability, not about the document, so a
+passthrough image (DCT, JPX, JBIG2, CCITT) is never eligible; re-encoding its payload would not be
+lossless. `TryEncodePngWithAlpha` additionally interleaves a matching `SoftMask` as the PNG's alpha
+channel, when one is present and shaped so the interleave stays lossless.
+
 ---
 
 ## 4. Writing a decrypted copy
@@ -337,7 +372,7 @@ a guard test keeps the two copies byte-identical.
 | Lexer/parser hardened against malformed input (property-based fuzzing, round-trip oracle) | ✅ Supported | #99 |
 | Diagnostics (`PdfDocumentReader.Diagnostics`) for conditions the reader recovers from instead of aborting on | ✅ Supported | ISO 32000-2 Annex I.2 (#385) |
 | Text extraction | ⏳ Planned | v2.4 (#98) |
-| Image extraction | ⏳ Planned | v2.4 (#98) |
+| Image extraction (`ExtractImages`; DCT, JPX, JBIG2 and CCITT payloads returned undecoded) | ✅ Supported | ISO 32000-2 §8.9, §7.4.7, §7.4.9 (#98) |
 | Graduating `VellumPdf.Reader` from Preview to Stable | ⏳ Planned | v2.4 (#187) |
 | Reading a document that uses an ISO/TS 32001–32004 extension (AES-GCM, PDF-MAC, SHA-3, EdDSA) | ⚠️ Partial — AES-GCM is rejected (`UnsupportedPdfFeatureException`); PDF-MAC is ignored and SHA-3/EdDSA signatures read as opaque, none verified | v2.6 (#236, #237, #238, #239) |
 | Signature verification (integrity, coverage, certificate chains, revocation, achieved PAdES level) | ⏳ Planned | v2.13 |

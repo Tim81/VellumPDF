@@ -1009,8 +1009,12 @@ public sealed partial class PdfDocumentReader : IDisposable
     internal PdfObject? ResolveValue(PdfObject obj) =>
         obj is PdfIndirectReference r ? Resolve(r) : obj;
 
-    /// <summary>Null-tolerant <see cref="ResolveValue"/> for use as a filter-chain resolver.</summary>
-    private PdfObject? ResolveMaybe(PdfObject? obj) => obj is null ? null : ResolveValue(obj);
+    /// <summary> Null-tolerant <see cref="ResolveValue"/> for use as a filter-chain resolver.
+    /// Internal (not private) since #98: <c>ImageDecoder</c> passes this as the resolver
+    /// <c>PdfFilters.DecodeForImage</c> and <c>ColorSpaceReader</c> take, the same role it already
+    /// plays for <see cref="GetDecodedStreamData"/>.
+    /// </summary>
+    internal PdfObject? ResolveMaybe(PdfObject? obj) => obj is null ? null : ResolveValue(obj);
 
     /// <inheritdoc />
     /// <summary>

@@ -31,6 +31,12 @@ namespace VellumPdf.Reader.Content;
 /// because its own report carries no object number, so the sink's own (code, object, page) dedupe
 /// already collapses every recursion past the 4096-invocation ceiling to one entry on its own.
 /// </para>
+/// <para>
+/// <see cref="RunFormXObject"/> (#98) continues one <see cref="Run"/>'s own budgets rather than
+/// resetting them, so the "at most two retained entries per <see cref="Run"/>" statement above
+/// stays true across a page's own content and every annotation appearance stream run on it, not
+/// only across the page's own content alone.
+/// </para>
 /// </remarks>
 internal sealed class ContentInterpreter
 {
@@ -181,6 +187,20 @@ internal sealed class ContentInterpreter
     internal TextState TextState => _textState;
 
     /// <summary>
+    /// The <c>/Resources</c> dictionary in effect for the callback currently running (the page's
+    /// own, or the invoking Form XObject's after the §8.10.2 fallback), or <see langword="null"/>
+    /// when none applies. Set immediately before <see cref="IContentVisitor.OnInlineImage"/> and
+    /// <see cref="IContentVisitor.OnImageXObject"/> and cleared immediately after, so a value read
+    /// outside either callback is <see langword="null"/> rather than a stale one (#98). Exists so a
+    /// visitor can resolve an inline image's or an image XObject's named colour space (§8.6.1,
+    /// §8.9.7) against the resources this interpreter already has in hand, without this interpreter
+    /// substituting a resolved colour-space object into a dictionary it hands the visitor: §7.8.2
+    /// forbids a stream operand in content, and §8.6.1 forbids an inline colour-space array, so
+    /// neither shape belongs in what <see cref="IContentVisitor.OnInlineImage"/> receives.
+    /// </summary>
+    internal PdfDictionary? CurrentResources { get; private set; }
+
+    /// <summary>
     /// Test-only visibility into how many content streams (the page's own <c>/Contents</c>
     /// elements, and Form XObject invocations) this <see cref="Run"/> decoded, so a test
     /// can pin how early the per-Run content budget stops further decoding without asserting on
@@ -209,11 +229,21 @@ internal sealed class ContentInterpreter
     /// <summary>
     /// Interprets <paramref name="page"/>'s content (ISO 32000-2 §7.8.2), reporting every event to
     /// <paramref name="visitor"/> and every recoverable condition through this reader's diagnostics
-    /// channel, scoped per call via <see cref="PdfDocumentReader.CreateContentDiagnosticScope"/>.
+    /// channel, scoped per call via <see cref="PdfDocumentReader.CreateContentDiagnosticScope"/>
+    /// unless <paramref name="scope"/> supplies one instead.
     /// Never throws for a malformed document; <see cref="UnsupportedPdfFeatureException"/> is the
     /// one exception allowed to propagate (see this type's own remarks).
     /// </summary>
-    internal void Run(PdfReadPage page, IContentVisitor visitor)
+    /// <param name="page">The page whose content is interpreted.</param>
+    /// <param name="visitor">Receives every event this walk produces.</param>
+    /// <param name="scope">
+    /// The diagnostics scope to report into (#98), so a caller running this interpreter more than
+    /// once over the same page (text extraction, then image extraction) can share one scope across
+    /// both walks rather than each creating its own. Defaults to a fresh
+    /// <see cref="PdfDocumentReader.CreateContentDiagnosticScope"/> child, matching every existing
+    /// caller's own two-argument call, which compiles unchanged against this optional parameter.
+    /// </param>
+    internal void Run(PdfReadPage page, IContentVisitor visitor, DiagnosticSink? scope = null)
     {
         ArgumentNullException.ThrowIfNull(page);
         ArgumentNullException.ThrowIfNull(visitor);
@@ -241,8 +271,9 @@ internal sealed class ContentInterpreter
         _probeBudgetExhaustedAtOffset = 0;
         _probeBudgetExhaustedAtObjectNumber = null;
         ProbeBytesConsumed = 0;
+        CurrentResources = null;
 
-        var diagnostics = _reader.CreateContentDiagnosticScope();
+        var diagnostics = scope ?? _reader.CreateContentDiagnosticScope();
         var pageIndex = page.Index;
 
         try
@@ -296,6 +327,7 @@ internal sealed class ContentInterpreter
             _gs = new GraphicsState();
             _openForms.Clear();
             _textState.BeginText();
+            CurrentResources = null;
         }
     }
 
@@ -1441,7 +1473,24 @@ internal sealed class ContentInterpreter
         }
 
         if (subtype.Equals(XObjectSubtypeImage))
-            return; // An Image XObject: no recursion; the caller already got Do.
+        {
+            // No OnFormBegin/OnFormEnd pair (an image XObject has no content to recurse into) and
+            // no resource lookup beyond ctx.Resources itself: CurrentResources hands the visitor
+            // exactly what this interpreter already resolved for the invoking stream, the same
+            // value OnInlineImage exposes it through (CurrentResources' own doc explains why this
+            // interpreter does not substitute a resolved colour space into the dictionary or
+            // stream instead).
+            CurrentResources = ctx.Resources;
+            try
+            {
+                visitor.OnImageXObject(stream, offset);
+            }
+            finally
+            {
+                CurrentResources = null;
+            }
+            return;
+        }
 
         if (!subtype.Equals(XObjectSubtypeForm))
         {
@@ -1454,6 +1503,20 @@ internal sealed class ContentInterpreter
             return;
         }
 
+        InvokeForm(stream, ctx.Resources, offset, visitor, diagnostics, pageIndex);
+    }
+
+    // The recursion guards, OnFormBegin/OnFormEnd bracketing, and graphics/text-state save-restore
+    // dance §8.10.1 requires around one 'Do'-invoked Form XObject, factored out of HandleDo (#98)
+    // so RunFormXObject's own entry into an annotation appearance stream (§12.5.5), which shares
+    // every one of these guards and this same save-restore shape, is not a second, drifting copy of
+    // it. invokerResources is ctx.Resources for a 'Do'-invoked form; RunFormXObject has no invoking
+    // content stream of its own, so it passes the page's /Resources instead (§8.10.2's fallback
+    // reads the same either way: a form's own /Resources when present, the caller's otherwise).
+    private void InvokeForm(
+        ParsedStream stream, PdfDictionary? invokerResources, int offset, IContentVisitor visitor,
+        DiagnosticSink diagnostics, int pageIndex)
+    {
         var objectNumber = stream.ObjectNumber;
 
         if (_formInvocations >= MaxFormInvocationsPerPage)
@@ -1505,7 +1568,7 @@ internal sealed class ContentInterpreter
             var bbox = ReadFormBBox(formDict);
             // §8.10.2: a form's /Resources is optional but strongly recommended; when absent, the
             // invoking content stream's own resources apply.
-            var formResources = ResolveDictionaryEntry(formDict, PdfName.Resources) ?? ctx.Resources;
+            var formResources = ResolveDictionaryEntry(formDict, PdfName.Resources) ?? invokerResources;
 
             visitor.OnFormBegin(formDict, matrix, bbox, objectNumber, offset);
             try
@@ -1520,47 +1583,7 @@ internal sealed class ContentInterpreter
                 // this Run's own shared budget when it DOES decode: the cost being bounded is
                 // interpretation WORK, and a form drawn many times is interpreted that many times,
                 // not decoded-and-cached once.
-                byte[]? decoded = null;
-                if (_contentBytesRemaining > 0)
-                {
-                    try
-                    {
-                        decoded = _reader.GetDecodedStreamData(stream);
-                    }
-                    catch (InvalidDataException)
-                    {
-                        diagnostics.Report(
-                            PdfReaderDiagnosticCode.ContentStreamLexError,
-                            $"Form XObject {objectNumber}'s content stream failed to decode.",
-                            objectNumber, pageIndex: pageIndex);
-                        decoded = null;
-                    }
-
-                    if (decoded is not null)
-                    {
-                        ContentStreamsDecoded++;
-                        if (decoded.Length > _contentBytesRemaining)
-                        {
-                            var take = TruncateAtWhitespaceBoundary(
-                                decoded, (int)Math.Min(decoded.Length, _contentBytesRemaining));
-                            decoded = decoded.AsSpan(0, take).ToArray();
-                            diagnostics.ReportRetained(
-                                PdfReaderDiagnosticCode.ContentStreamTooLarge,
-                                $"Form XObject {objectNumber}'s content pushed this Run's combined "
-                                + $"page-and-forms budget past {MaxContentBytes / (1024 * 1024)} MiB; "
-                                + "interpretation of it stopped there.",
-                                objectNumber, pageIndex: pageIndex);
-                            // See BuildPageContentBuffer's own remark on why this is forced to
-                            // exactly zero rather than left at whatever the whitespace back-off did
-                            // not use.
-                            _contentBytesRemaining = 0;
-                        }
-                        else
-                        {
-                            _contentBytesRemaining -= decoded.Length;
-                        }
-                    }
-                }
+                var decoded = DecodeFormContent(stream, diagnostics, pageIndex);
 
                 if (decoded is not null)
                 {
@@ -1672,6 +1695,137 @@ internal sealed class ContentInterpreter
         {
             _formDepth--;
             _openForms.Remove(objectNumber);
+        }
+    }
+
+    // Shared by InvokeForm and RunFormXObject (#98): decodes stream's content against this Run's
+    // own remaining share of MaxContentBytes, truncating and reporting ContentStreamTooLarge at
+    // most once, the same way BuildPageContentBuffer's own /Contents budget check does. Returns
+    // null when the budget was already spent, the decode itself failed (reported here as
+    // ContentStreamLexError against stream's own object number), or nothing more remains to
+    // interpret.
+    private byte[]? DecodeFormContent(ParsedStream stream, DiagnosticSink diagnostics, int pageIndex)
+    {
+        if (_contentBytesRemaining <= 0)
+            return null;
+
+        var objectNumber = stream.ObjectNumber;
+        byte[]? decoded;
+        try
+        {
+            decoded = _reader.GetDecodedStreamData(stream);
+        }
+        catch (InvalidDataException)
+        {
+            diagnostics.Report(
+                PdfReaderDiagnosticCode.ContentStreamLexError,
+                $"Form XObject {objectNumber}'s content stream failed to decode.",
+                objectNumber, pageIndex: pageIndex);
+            return null;
+        }
+
+        if (decoded is null)
+            return null; // An image filter in the chain: never valid on a Form XObject's content.
+
+        ContentStreamsDecoded++;
+        if (decoded.Length > _contentBytesRemaining)
+        {
+            var take = TruncateAtWhitespaceBoundary(
+                decoded, (int)Math.Min(decoded.Length, _contentBytesRemaining));
+            decoded = decoded.AsSpan(0, take).ToArray();
+            diagnostics.ReportRetained(
+                PdfReaderDiagnosticCode.ContentStreamTooLarge,
+                $"Form XObject {objectNumber}'s content pushed this Run's combined "
+                + $"page-and-forms budget past {MaxContentBytes / (1024 * 1024)} MiB; "
+                + "interpretation of it stopped there.",
+                objectNumber, pageIndex: pageIndex);
+            // See BuildPageContentBuffer's own remark on why this is forced to exactly zero rather
+            // than left at whatever the whitespace back-off did not use.
+            _contentBytesRemaining = 0;
+        }
+        else
+        {
+            _contentBytesRemaining -= decoded.Length;
+        }
+        return decoded;
+    }
+
+    /// <summary> Interprets one annotation appearance stream (ISO 32000-2 §12.5.5) as a Form
+    /// XObject invoked at the page level. Continues the budgets <see cref="Run"/> established for
+    /// this page rather than resetting them, so a page's content and every appearance on it share
+    /// one 64 MiB decoded-content ceiling and one 4096-invocation ceiling: resetting either per
+    /// appearance, as a hostile document engineers many appearances on one page to exploit, would
+    /// multiply the ceiling by however many appearances the page carries (see <see
+    /// cref="MaxContentBytes"/>'s own remarks on why #402 made the content budget per-<see
+    /// cref="Run"/> and shared). Call it only after <see cref="Run"/> has run on this instance for
+    /// the same page; an appearance stream's diagnostics need somewhere to land, and <see
+    /// cref="Run"/> is what creates that scope by default.
+    /// </summary>
+    /// <param name="page">The page <paramref name="formStream"/>'s annotation belongs to; supplies
+    /// the <c>/Resources</c> fallback (§8.10.2) when the appearance stream has none of its
+    /// own.</param>
+    /// <param name="formStream">The appearance stream, resolved and identified by its own object
+    /// number by the caller (<c>ImageReachabilityWalker</c>).</param>
+    /// <param name="visitor">Receives every event this walk produces, the same as <see
+    /// cref="Run"/>.</param>
+    /// <param name="scope">The diagnostics scope to report into; see <see cref="Run"/>'s own
+    /// <paramref name="scope"/> parameter.</param>
+    internal void RunFormXObject(
+        PdfReadPage page, ParsedStream formStream, IContentVisitor visitor, DiagnosticSink? scope = null)
+    {
+        ArgumentNullException.ThrowIfNull(page);
+        ArgumentNullException.ThrowIfNull(formStream);
+        ArgumentNullException.ThrowIfNull(visitor);
+
+        // Resets everything Run resets EXCEPT _contentBytesRemaining and _formInvocations; see this
+        // method's own remarks for why those two keep counting across the call. _openForms and
+        // _formDepth are reset too, but not to Run's own top-level values: this appearance stream
+        // is itself the thing being entered, the way a Form XObject Do invokes is by the time
+        // InvokeForm's own body runs, so its own object number seeds the cycle set and its own
+        // recursion depth starts at 1, not 0.
+        _gs = new GraphicsState();
+        _gsStack.Clear();
+        _textState.BeginText();
+        _operands.Clear();
+        _operandOverflow = false;
+        _bxDepth = 0;
+        _markedContentDepth = 0;
+        _inTextObject = false;
+        _openForms.Clear();
+        _openForms.Add(formStream.ObjectNumber);
+        _formDepth = 1;
+        _gsFloor = 0;
+        _markedContentFloor = 0;
+        _bxFloor = 0;
+        _ignoredGsPushes = 0;
+        _ignoredMcPushes = 0;
+        CurrentResources = null;
+
+        var diagnostics = scope ?? _reader.CreateContentDiagnosticScope();
+        var pageIndex = page.Index;
+        var objectNumber = formStream.ObjectNumber;
+
+        try
+        {
+            var formResources = ResolveDictionaryEntry(formStream.Dictionary, PdfName.Resources) ?? page.Resources;
+            var decoded = DecodeFormContent(formStream, diagnostics, pageIndex);
+            if (decoded is not null)
+            {
+                var formCtx = new StreamContext(formResources, objectNumber);
+                InterpretStream(decoded, formCtx, visitor, pageIndex, diagnostics);
+            }
+        }
+        finally
+        {
+            // Same exit-state cleanup Run's own finally applies, for the same reason: nothing
+            // content-derived should stay reachable from this instance once the call returns.
+            _operands.Clear();
+            _operandOverflow = false;
+            _gsStack.Clear();
+            _gs = new GraphicsState();
+            _openForms.Clear();
+            _textState.BeginText();
+            CurrentResources = null;
         }
     }
 
@@ -2080,7 +2234,20 @@ internal sealed class ContentInterpreter
             return true;
         }
 
-        visitor.OnInlineImage(dict, data, biOffset);
+        // CurrentResources hands the visitor the resources this callback already resolved for the
+        // current stream, so a named /CS can be resolved against them without this interpreter
+        // substituting a resolved colour-space object into dict itself (see CurrentResources' own
+        // doc for why that would be wrong for both an inline image and a content stream in
+        // general).
+        CurrentResources = ctx.Resources;
+        try
+        {
+            visitor.OnInlineImage(dict, data, biOffset);
+        }
+        finally
+        {
+            CurrentResources = null;
+        }
         return true;
     }
 

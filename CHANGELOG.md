@@ -31,8 +31,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   reconstruction candidate, an object whose header disagrees with the cross-reference table, and
   one whose generation does), and seven for `Filters.cs` — four `/Filter`/`/DecodeParms` shapes it
   already tolerated without saying so, the TIFF predictor applied at a `/BitsPerComponent` other
-  than 8 (a `/DecodeParms` parameter this decoder gets wrong today, and now says so), and the two
-  paths that already threw (an unimplemented filter, the decoded-size cap).
+  than 8 (`UnsupportedPredictor`, added here; the underlying decode is fixed later in this same
+  release, by #98, described in its own bullet under Changed), and the two paths that already
+  threw (an unimplemented filter, the decoded-size cap).
   `PdfReaderOptions.MaxDiagnostics` (default 1000, tighten-only like `MaxDecodedStreamBytes` and
   `ReconstructionBudgetMultiplier`) bounds the list;
   past it, one `DiagnosticsSuppressed` entry records how many further reports were dropped instead
@@ -93,9 +94,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the form's own `/Matrix` into the graphics state's CTM (§8.10.1 b) before interpreting its
   content, so a caller reading the CTM from inside the form's own content sees the composed value,
   not the invoker's own CTM with the form's matrix left for it to apply separately. (#98)
+- **Image extraction (#98).** `PdfDocumentReader.ExtractImages()` and `PdfReadPage.ExtractImages()`
+  return every image XObject and inline image a page's content draws, including those inside form
+  XObjects and, by default, inside annotation `/AP /N` appearance streams, in draw order. DCT, JPX,
+  JBIG2, and CCITT payloads come back verbatim with their decode parameters; every other image comes
+  back as its stored samples, with a lossless PNG on request (`TryEncodePng`,
+  `TryEncodePngWithAlpha`) for grey images at 1 to 16 bits, RGB at 8 and 16, and indexed palettes
+  over either at 8 bits and below. Nothing is colour-converted or re-encoded, and `/Decode` is
+  exposed but never applied. Twelve diagnostic codes, 500 to 511, report what could not be
+  extracted and why.
 
 ### Changed
 
+- **TIFF predictor 2 at 1, 2, 4, and 16 bits per component (#98).** `FlateDecode` and `LZWDecode`
+  streams with `/Predictor 2` at those depths are now un-predicted per ISO 32000-2 §7.4.4.4. Before
+  this change the rows were copied through still differenced, with an `UnsupportedPredictor`
+  diagnostic saying so; that code is no longer raised by anything.
 - **`PdfObjectParser.ParseReal` now rejects an out-of-range real literal with
   `InvalidDataException` instead of letting `PdfReal`'s constructor throw `ArgumentException`.**
   A real number with 310 or more integer digits parses to +/-Infinity under `double.TryParse`
