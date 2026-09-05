@@ -30,10 +30,10 @@ public sealed class PreflightAssertion
     /// A human-readable description of the finding. Not a compatibility contract: the wording may
     /// change across releases, so a caller that needs to branch on the condition should switch on
     /// <see cref="RuleId"/> instead of matching text here. The text is bounded: past 1024
-    /// characters it is replaced by <c>... (N chars)</c> with N the full length. Some rules
-    /// additionally excerpt the producer name they quote, keeping its first 32 characters
-    /// followed by <c>... (N bytes)</c>; elsewhere an oversized producer value is bounded by the
-    /// 1024-character cut alone.
+    /// characters it is replaced by <c>... (N chars)</c> with N the full length. Ten sites
+    /// additionally excerpt the producer name they quote, keeping an oversized one to its first
+    /// 32 characters followed by <c>... (N bytes)</c>; every other producer value is bounded by
+    /// the 1024-character cut alone.
     /// </summary>
     public string Message { get; }
 

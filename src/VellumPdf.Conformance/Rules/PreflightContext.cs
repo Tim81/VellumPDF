@@ -518,10 +518,10 @@ internal sealed class PreflightContext
     /// <summary>
     /// The longest message a <see cref="PreflightAssertion"/> retains. A message identifies a
     /// finding; it carries at most an excerpt of an oversized producer value, never the whole of
-    /// one. Many
-    /// rules interpolate a name, a string or a keyword the document controls, and ISO 32000-2 Annex
-    /// C.1 sets no bound on any of those ("In general, this PDF standard does not restrict the size
-    /// or quantity of things described in the PDF file format"), so without this cut one
+    /// one. Many rules interpolate a name, a string or a keyword the document controls, and
+    /// ISO 32000-2 Annex C.1 sets no bound on any of those ("In general, this PDF standard does
+    /// not restrict the size or quantity of things described in the PDF file format"), so
+    /// without this cut one
     /// 900,000-byte /Filter name shared by 400 pages retained 705.7 MiB (GC delta) of message text
     /// from a 990 KB file (measured in #403). 1024 characters is roughly twice the longest sentence
     /// any rule composes on its own (522 characters, A2aContentItemTaggingRule) and short enough
