@@ -52,7 +52,8 @@ public sealed class ReaderEncodingParityTests
     }
 
     // The class doc of both AdobeGlyphList copies asserts the two embedded AdobeGlyphList.txt
-    // resources are byte-identical; nothing before this test compared the two files.
+    // resources are byte-identical; this test compares the two files directly rather than
+    // trusting that claim.
     [Fact]
     public void AdobeGlyphListResource_isByteIdenticalAcrossReaderAndConformance()
     {

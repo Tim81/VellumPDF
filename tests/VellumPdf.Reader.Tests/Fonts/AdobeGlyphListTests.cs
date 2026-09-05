@@ -109,6 +109,68 @@ public sealed class AdobeGlyphListTests
     }
 
     [Fact]
+    public void TryMapToUnicode_underscoreAlone_false()
+    {
+        Assert.False(AdobeGlyphList.TryMapToUnicode("_", out _));
+    }
+
+    [Fact]
+    public void TryMapToUnicode_uni0041_B_composesAB()
+    {
+        Assert.True(AdobeGlyphList.TryMapToUnicode("uni0041_B", out var unicode));
+        Assert.Equal("AB", unicode);
+    }
+
+    [Fact]
+    public void TryMapToUnicode_lengthBoundary_exactly128Characters_accepted()
+    {
+        // 63 one-character components ("a") plus one two-character component ("AE"), joined by
+        // 63 underscores: 63 + 2 + 63 = 128, the exact upper bound. A ">=" off-by-one in the
+        // length gate would reject this, and only 127-character names would ever be exercised.
+        var components = Enumerable.Repeat("a", 63).Append("AE");
+        var name = string.Join('_', components);
+        Assert.Equal(128, name.Length);
+        Assert.True(AdobeGlyphList.TryMapToUnicode(name, out var unicode));
+        Assert.Equal(new string('a', 63) + "Æ", unicode);
+    }
+
+    [Fact]
+    public void TryMapToUnicode_uni0000_uni0000_composesTwoNulCharacters()
+    {
+        // The U+0000 rejection (this class's own remarks) fires only when the whole result is a
+        // single U+0000 character; two components that each individually resolve to U+0000
+        // concatenate to a two-character result, which that check does not catch.
+        Assert.True(AdobeGlyphList.TryMapToUnicode("uni0000_uni0000", out var unicode));
+        Assert.Equal("\0\0", unicode);
+    }
+
+    [Theory]
+    [InlineData("uniD7FF", true)]
+    [InlineData("uniD800", false)]
+    [InlineData("uniDFFF", false)]
+    [InlineData("uniE000", true)]
+    [InlineData("uniFFFF", true)]
+    public void TryMapToUnicode_uniSurrogateBoundary(string name, bool expected)
+    {
+        Assert.Equal(expected, AdobeGlyphList.TryMapToUnicode(name, out _));
+    }
+
+    [Fact]
+    public void TryMapToUnicode_singleComponentName_returnsTheSameInstanceEachCall()
+    {
+        // Pins the round-1 allocation fix directly: a single-component name returns the map's own
+        // string (or TryUniName/TryUName's own freshly built one) rather than a fresh copy routed
+        // through a StringBuilder each call, so two calls with the same name share one instance.
+        Assert.True(AdobeGlyphList.TryMapToUnicode("ffi", out var first));
+        Assert.True(AdobeGlyphList.TryMapToUnicode("ffi", out var second));
+        Assert.Same(first, second);
+
+        Assert.True(AdobeGlyphList.TryMapToUnicode("A", out var firstA));
+        Assert.True(AdobeGlyphList.TryMapToUnicode("A", out var secondA));
+        Assert.Same(firstA, secondA);
+    }
+
+    [Fact]
     public void ListSize_is4282()
     {
         Assert.Equal(4282, AdobeGlyphList.Count);

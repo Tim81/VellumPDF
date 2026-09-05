@@ -1,7 +1,6 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
-using VellumPdf.Fonts;
 using VellumPdf.Reader.Fonts;
 
 namespace VellumPdf.Reader.Tests.Fonts;
@@ -73,18 +72,5 @@ public sealed class Standard14NamesTests
     public void TryResolve_200CharacterName_false()
     {
         Assert.False(Standard14Names.TryResolve(new string('A', 200), out _));
-    }
-
-    [Fact]
-    public void TryGetKernelFont_timesRoman_givesKernelEnum()
-    {
-        Assert.True(Standard14Names.TryGetKernelFont("Times-Roman", out var font));
-        Assert.Equal(Standard14.TimesRoman, font);
-    }
-
-    [Fact]
-    public void TryGetKernelFont_symbol_false()
-    {
-        Assert.False(Standard14Names.TryGetKernelFont("Symbol", out _));
     }
 }

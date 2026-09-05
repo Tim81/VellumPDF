@@ -16,11 +16,12 @@ namespace VellumPdf.Reader.Fonts;
 /// <remarks>
 /// The file carries 201 name-to-codepoint lines, one for every <c>ZapfDingbats.afm</c> glyph name
 /// except <c>space</c> (which needs no lookup: it is U+0020 under every encoding this reader
-/// builds). That includes the 14 names <c>SymbolFontMetrics</c>' own remarks name as
-/// <c>ZapfDingbats.afm</c>-only codes (<c>a85</c> through <c>a96</c>, <c>a205</c>, <c>a206</c>):
-/// they carry ordinary AGL Unicode mappings (the ornamental-bracket block, U+2768–U+2775), and
-/// omitting them here would leave the codes that use them (0x80–0x8D) with no Unicode route at
-/// all, which <c>SimpleFontReaderTests</c> pins directly against 0x80.
+/// builds). That includes the 14 names assigned to the codes <c>SymbolFontMetrics</c>' own
+/// remarks name as <c>ZapfDingbats.afm</c>-only (0x80 through 0x8D: <c>a85</c> through
+/// <c>a96</c>, <c>a205</c>, <c>a206</c>). Those 14 names carry ordinary Unicode mappings in
+/// Adobe's own <c>zapfdingbats.txt</c> (the ornamental-bracket block, U+2768–U+2775), which the
+/// Adobe Glyph List proper does not list at all; omitting them here would leave those codes with
+/// no Unicode route at all, which <c>SimpleFontReaderTests</c> pins directly against 0x80.
 /// </remarks>
 internal static class ZapfDingbatsGlyphList
 {

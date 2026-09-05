@@ -1,8 +1,6 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
-using VellumPdf.Fonts;
-
 namespace VellumPdf.Reader.Fonts;
 
 /// <summary>
@@ -63,22 +61,6 @@ internal static class Standard14Names
         "Symbol", "ZapfDingbats",
     };
 
-    private static readonly Dictionary<string, Standard14> _kernelFonts = new(StringComparer.Ordinal)
-    {
-        ["Helvetica"] = Standard14.Helvetica,
-        ["Helvetica-Bold"] = Standard14.HelveticaBold,
-        ["Helvetica-Oblique"] = Standard14.HelveticaOblique,
-        ["Helvetica-BoldOblique"] = Standard14.HelveticaBoldOblique,
-        ["Times-Roman"] = Standard14.TimesRoman,
-        ["Times-Bold"] = Standard14.TimesBold,
-        ["Times-Italic"] = Standard14.TimesItalic,
-        ["Times-BoldItalic"] = Standard14.TimesBoldItalic,
-        ["Courier"] = Standard14.Courier,
-        ["Courier-Bold"] = Standard14.CourierBold,
-        ["Courier-Oblique"] = Standard14.CourierOblique,
-        ["Courier-BoldOblique"] = Standard14.CourierBoldOblique,
-    };
-
     /// <summary>
     /// Maps a <c>/BaseFont</c> name to the AFM font name it resolves to (e.g. <c>Arial,Bold</c> to
     /// <c>Helvetica-Bold</c>, <c>ABCDEF+Times-Roman</c> to <c>Times-Roman</c>). Returns
@@ -92,7 +74,7 @@ internal static class Standard14Names
         if (baseFont.Length == 0 || baseFont.Length > AdobeGlyphList.MaxGlyphNameLength)
             return false;
 
-        // A subset tag is exactly six uppercase letters followed by '+' (ISO 32000-2 §9.9.1).
+        // A subset tag is exactly six uppercase letters followed by '+' (ISO 32000-2 §9.9.2).
         var name = baseFont;
         if (name.Length > 7 && name[6] == '+' && IsSubsetTag(name))
             name = name[7..];
@@ -121,12 +103,4 @@ internal static class Standard14Names
         }
         return true;
     }
-
-    /// <summary>
-    /// Returns the <see cref="Standard14"/> member for one of the 12 text fonts. Returns
-    /// <see langword="false"/> for <c>Symbol</c>, <c>ZapfDingbats</c>, or any name
-    /// <see cref="TryResolve"/> itself would not have produced.
-    /// </summary>
-    public static bool TryGetKernelFont(string afmName, out Standard14 font) =>
-        _kernelFonts.TryGetValue(afmName, out font);
 }

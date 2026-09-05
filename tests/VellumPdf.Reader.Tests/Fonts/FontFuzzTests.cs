@@ -12,13 +12,15 @@ namespace VellumPdf.Reader.Tests.Fonts;
 /// <see cref="SimpleFontReader.Create"/> directly: random <c>/Subtype</c>s, <c>/Encoding</c>
 /// shapes (including an indirect reference to an existing object and a two-hop chain neither
 /// this class nor <see cref="SimpleFontReader"/> follows), <c>/Differences</c> arrays mixing
-/// every element type, random <c>/Widths</c> lengths and element types, random <c>/Flags</c>,
-/// random <c>/ToUnicode</c> shapes (direct and indirect), and random base font names including a
-/// 1 KiB one. The second drives <see cref="PdfDocumentReader.GetFontReader"/> itself, including
-/// its own indirect resolution of the font entry and its <c>/Subtype</c>. Both assert: no
-/// exception escapes, at most four distinct diagnostic codes are reported per font (400 to 402,
-/// plus one of 403/404), and <see cref="PdfFontReader.TryDecodeNext"/> over every byte value
-/// never throws.
+/// every element type, a non-array <c>/Differences</c> (an integer, a name, a dictionary, or an
+/// indirect reference), random <c>/Widths</c> lengths and element types including an indirect
+/// reference (to an existing object, a dangling one, or a null object) both as an element and as
+/// the whole <c>/Widths</c> value, random <c>/Flags</c>, random <c>/ToUnicode</c> shapes (direct
+/// and indirect), and random base font names including a 1 KiB one. The second drives
+/// <see cref="PdfDocumentReader.GetFontReader"/> itself, including its own indirect resolution of
+/// the font entry and its <c>/Subtype</c>. Both assert: no exception escapes, at most four
+/// distinct diagnostic codes are reported per font (400 to 402, plus one of 403/404), and
+/// <see cref="PdfFontReader.TryDecodeNext"/> over every byte value never throws.
 /// </summary>
 public sealed class FontFuzzTests
 {
@@ -43,6 +45,9 @@ public sealed class FontFuzzTests
     private const int EncodingChainHeadObject = 51;
     private const int EncodingChainTargetObject = 52;
     private const int ToUnicodeStreamObject = 60;
+    private const int NullObject = 61;
+    private const int WidthsNumberObject = 62;
+    private const int WidthsArrayObject = 63;
     private const int FontDictObject = 100;
     private const int NonDictionaryObject = 102;
 
@@ -51,6 +56,9 @@ public sealed class FontFuzzTests
         new FontTestSupport.Obj(EncodingChainHeadObject, $"{EncodingChainTargetObject} 0 R"),
         new FontTestSupport.Obj(EncodingChainTargetObject, "<< /BaseEncoding /MacRomanEncoding >>"),
         new FontTestSupport.Obj(ToUnicodeStreamObject, "<< >>", "/CIDInit /ProcSet findresource begin\n"u8.ToArray()),
+        new FontTestSupport.Obj(NullObject, "null"),
+        new FontTestSupport.Obj(WidthsNumberObject, "123"),
+        new FontTestSupport.Obj(WidthsArrayObject, "[100 200 300]"),
         new FontTestSupport.Obj(FontDictObject, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"),
         new FontTestSupport.Obj(NonDictionaryObject, "42"));
 
@@ -72,6 +80,20 @@ public sealed class FontFuzzTests
     private static readonly Gen<PdfArray> DifferencesGen =
         DifferencesElementGen.Array[0, 12].Select(items => new PdfArray(items));
 
+    // /Differences present but not an array at all: an integer, a name, a dictionary, and an
+    // indirect reference that is still a reference after one hop (EncodingChainHeadObject's own
+    // content is a reference to EncodingChainTargetObject), the same shape
+    // Differences_selfReferentialChain_stillAReferenceAfterOneHop_reports401Once pins directly.
+    private static readonly Gen<PdfObject> NonArrayDifferencesGen = Gen.OneOf(
+        Gen.Int[-10, 300].Select(i => (PdfObject)new PdfInteger(i)),
+        NameGen.Select(n => (PdfObject)new PdfName(n)),
+        Gen.Const((PdfObject)new PdfDictionary()),
+        Gen.Const((PdfObject)new PdfIndirectReference(EncodingChainHeadObject, 0)));
+
+    private static readonly Gen<PdfObject> DifferencesValueGen = Gen.OneOf(
+        DifferencesGen.Select(a => (PdfObject)a),
+        NonArrayDifferencesGen);
+
     private static readonly Gen<PdfObject?> EncodingGen = Gen.OneOf(
         Gen.Const((PdfObject?)null),
         Gen.Const((PdfObject?)new PdfName("StandardEncoding")),
@@ -84,26 +106,37 @@ public sealed class FontFuzzTests
         // Resolves in one hop to ANOTHER reference (EncodingChainHeadObject's own content is
         // "EncodingChainTargetObject 0 R"): the two-hop chain this reader does not follow.
         Gen.Const((PdfObject?)new PdfIndirectReference(EncodingChainHeadObject, 0)),
-        DifferencesGen.Select(diffs =>
+        DifferencesValueGen.Select(diffs =>
         {
             var dict = new PdfDictionary().Set(new PdfName("Differences"), diffs);
             return (PdfObject?)dict;
         }),
         Gen.Select(Gen.OneOf(Gen.Const("WinAnsiEncoding"), Gen.Const("Bogus"), Gen.Const("MacRomanEncoding")),
-            DifferencesGen,
+            DifferencesValueGen,
             (baseName, diffs) => (PdfObject?)new PdfDictionary()
                 .Set(new PdfName("BaseEncoding"), new PdfName(baseName))
                 .Set(new PdfName("Differences"), diffs)));
 
+    // Includes a reference to an object the fixture defines (WidthsNumberObject, a bare integer),
+    // a dangling one, and one to a null object, so a /Widths element can resolve, dangle, or
+    // resolve to PdfNull, alongside the direct-value shapes.
     private static readonly Gen<PdfObject> WidthsElementGen = Gen.OneOf(
         Gen.Int[-100, 2000].Select(i => (PdfObject)new PdfInteger(i)),
         Gen.Double[-100, 2000].Select(d => (PdfObject)new PdfReal(d)),
-        NameGen.Select(n => (PdfObject)new PdfName(n)));
+        NameGen.Select(n => (PdfObject)new PdfName(n)),
+        Gen.Const((PdfObject)new PdfIndirectReference(WidthsNumberObject, 0)),
+        Gen.Const((PdfObject)new PdfIndirectReference(999, 0)),
+        Gen.Const((PdfObject)new PdfIndirectReference(NullObject, 0)));
 
+    // /Widths itself as an indirect reference: to an array the fixture defines
+    // (WidthsArrayObject), a dangling one, and one to a null object.
     private static readonly Gen<PdfObject?> WidthsGen = Gen.OneOf(
         Gen.Const((PdfObject?)null),
         WidthsElementGen.Array[0, 10].Select(items => (PdfObject?)new PdfArray(items)),
-        Gen.Const((PdfObject?)new PdfInteger(5)));
+        Gen.Const((PdfObject?)new PdfInteger(5)),
+        Gen.Const((PdfObject?)new PdfIndirectReference(WidthsArrayObject, 0)),
+        Gen.Const((PdfObject?)new PdfIndirectReference(999, 0)),
+        Gen.Const((PdfObject?)new PdfIndirectReference(NullObject, 0)));
 
     private static readonly Gen<string> BaseFontGen = Gen.OneOf(
         Gen.Const("Helvetica"), Gen.Const("Symbol"), Gen.Const("ZapfDingbats"),

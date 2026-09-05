@@ -50,11 +50,13 @@ public sealed class ZapfDingbatsGlyphListTests
     {
         // Not 188: the committed ZapfDingbatsGlyphList.txt is the Adobe AGL repository's own
         // zapfdingbats.txt normalised verbatim, and that file maps all 202 ZapfDingbats.afm glyph
-        // names except "space" (which needs no lookup), including the 14 names SymbolFontMetrics'
-        // own remarks describe as ZapfDingbats.afm-only codes (a85 through a96, a205, a206), which
-        // Annex D.6 does not document but which do have ordinary AGL Unicode mappings. Trimming
-        // the list to the 188 names Annex D.6 documents would leave 0x80 ("a89") with no Unicode
-        // route at all, contradicting the KAT SimpleFontReaderTests pins for that exact code.
+        // names except "space" (which needs no lookup), including the 14 names assigned to codes
+        // 0x80 through 0x8D (a85 through a96, a205, a206), which SymbolFontMetrics' own remarks
+        // describe as ZapfDingbats.afm-only and Annex D.6 does not document. Those 14 names carry
+        // ordinary Unicode mappings in Adobe's own zapfdingbats.txt, not in the Adobe Glyph List
+        // proper. Trimming the list to the 188 names Annex D.6 documents would leave 0x80 ("a89")
+        // with no Unicode route at all, contradicting the KAT SimpleFontReaderTests pins for that
+        // exact code.
         Assert.Equal(201, ZapfDingbatsGlyphList.Count);
     }
 }

@@ -143,7 +143,7 @@ public sealed class SimpleFontReaderTests
     }
 
     [Fact]
-    public void Differences_unresolvedElementType_reports401WithDoesNotResolveMessage()
+    public void Differences_unresolvedElementType_reports401WithIndirectReferenceMessage()
     {
         using var doc = FontTestSupport.OpenMinimal();
         var sink = new DiagnosticSink(50);
@@ -156,7 +156,10 @@ public sealed class SimpleFontReaderTests
         Assert.Equal("A", Decode(reader, 0x41).Unicode); // kept its base StandardEncoding name.
         var d = Assert.Single(sink.Diagnostics);
         Assert.Equal(PdfReaderDiagnosticCode.FontEncodingMalformed, d.Code);
-        Assert.Contains("does not resolve", d.Message);
+        Assert.Equal(
+            "/Differences contains an indirect reference, which this reader does not follow "
+                + "inside /Differences.",
+            d.Message);
     }
 
     [Fact]
@@ -220,10 +223,10 @@ public sealed class SimpleFontReaderTests
     public void Differences_badElement_stopsApplyingArray_laterNamesKeepBaseEncoding()
     {
         // /Differences [65 /A 9 0 R /zcaron /Zcaron]: object 9 does not exist, so the reference is
-        // reported and the array stops being applied there. Before the fix this reader resumed
-        // after the bad element with the running code unchanged, so /zcaron landed on B (0x42) and
-        // /Zcaron on C (0x43) instead of being skipped; both must keep their StandardEncoding
-        // names here.
+        // reported and the array stops being applied there; /zcaron and /Zcaron must keep their
+        // StandardEncoding names rather than landing on B (0x42) and C (0x43), which is where
+        // they would land if this reader resumed after the bad element with the running code
+        // left unchanged.
         using var doc = FontTestSupport.OpenMinimal();
         var sink = new DiagnosticSink(50);
         var differences = new PdfArray()
@@ -238,7 +241,40 @@ public sealed class SimpleFontReaderTests
         Assert.Equal("B", Decode(reader, 0x42).Unicode); // StandardEncoding, not overwritten.
         Assert.Equal("C", Decode(reader, 0x43).Unicode); // StandardEncoding, not overwritten.
         var d = Assert.Single(sink.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.FontEncodingMalformed);
-        Assert.Contains("does not resolve", d.Message);
+        Assert.Contains("does not follow inside /Differences", d.Message);
+    }
+
+    [Fact]
+    public void Differences_realElement_reports401WithExactMessage()
+    {
+        using var doc = FontTestSupport.OpenMinimal();
+        var sink = new DiagnosticSink(50);
+        var differences = new PdfArray().Add(new PdfReal(65.0)).Add(new PdfName("A"));
+        var encoding = new PdfDictionary().Set(new PdfName("Differences"), differences);
+        var fontDict = Type1("Helvetica").Set(PdfName.Encoding, encoding);
+        Build(doc, fontDict, sink);
+
+        var d = Assert.Single(sink.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.FontEncodingMalformed);
+        Assert.Equal(
+            "/Differences contains an element that is neither an integer nor a name (the number 65).",
+            d.Message);
+    }
+
+    [Fact]
+    public void Differences_indirectReferenceElement_reports401WithExactMessage()
+    {
+        using var doc = FontTestSupport.OpenMinimal();
+        var sink = new DiagnosticSink(50);
+        var differences = new PdfArray().Add(new PdfIndirectReference(1, 0)).Add(new PdfName("A"));
+        var encoding = new PdfDictionary().Set(new PdfName("Differences"), differences);
+        var fontDict = Type1("Helvetica").Set(PdfName.Encoding, encoding);
+        Build(doc, fontDict, sink);
+
+        var d = Assert.Single(sink.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.FontEncodingMalformed);
+        Assert.Equal(
+            "/Differences contains an indirect reference, which this reader does not follow "
+                + "inside /Differences.",
+            d.Message);
     }
 
     // ── 6: /Encoding shapes ──────────────────────────────────────────────────────────────────────
@@ -682,6 +718,22 @@ public sealed class SimpleFontReaderTests
     }
 
     [Fact]
+    public void Helvetica_noWidths_descriptorPresentNoFlags_stillFillsAfmWidth()
+    {
+        // The AFM width fill depends only on /Widths being absent and the font resolving to one
+        // of the standard 14 (see FillAfmWidths' own remarks); it does not also require a present
+        // /FontDescriptor or /Flags. Gating it on those would contradict Table 109, which makes
+        // /FontDescriptor optional for the standard 14 in PDF 1.0 to 1.7, and would break
+        // Helvetica_noEncoding_noWidths_nonsymbolic above, which has no /FontDescriptor at all.
+        using var doc = FontTestSupport.OpenMinimal();
+        var sink = new DiagnosticSink(50);
+        var fontDict = Type1("Helvetica").Set(new PdfName("FontDescriptor"), new PdfDictionary());
+        var reader = Build(doc, fontDict, sink);
+
+        Assert.Equal(556, Decode(reader, 0xB2).Width); // dagger's Helvetica AFM width, not MissingWidth.
+    }
+
+    [Fact]
     public void Widths_shortArray_reports402Once_missingWidthForShortfall()
     {
         using var doc = FontTestSupport.OpenMinimal();
@@ -763,7 +815,7 @@ public sealed class SimpleFontReaderTests
         Assert.Equal(PdfReaderDiagnosticCode.FontWidthsMalformed, d.Code);
     }
 
-    // ── 12: dangling reference ───────────────────────────────────────────────────────────────────
+    // ── 12: dangling reference, null entries ─────────────────────────────────────────────────────
 
     [Fact]
     public void DanglingEncodingReference_treatedAsAbsent_no401()
@@ -774,6 +826,80 @@ public sealed class SimpleFontReaderTests
         var reader = Build(doc, fontDict, sink);
 
         Assert.Equal("’", Decode(reader, 0x27).Unicode); // falls back to StandardEncoding.
+        Assert.DoesNotContain(sink.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.FontEncodingMalformed);
+    }
+
+    [Fact]
+    public void Widths_directNull_treatedAsAbsent_usesAfmWidth_no402()
+    {
+        // ISO 32000-2 §7.3.7: a dictionary entry whose value is null is treated the same as if
+        // the entry does not exist, so this must behave exactly like NonStandardFont's own
+        // /Widths-absent case above, not like a malformed one.
+        using var doc = FontTestSupport.OpenMinimal();
+        var sink = new DiagnosticSink(50);
+        var fontDict = Type1("Helvetica").Set(new PdfName("Widths"), PdfNull.Instance);
+        var reader = Build(doc, fontDict, sink);
+
+        Assert.Equal(667, Decode(reader, 0x41).Width);
+        Assert.DoesNotContain(sink.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.FontWidthsMalformed);
+    }
+
+    [Fact]
+    public void Widths_referenceToNullObject_treatedAsAbsent_usesAfmWidth_no402()
+    {
+        using var doc = FontTestSupport.Open(
+            new FontTestSupport.Obj(5, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica "
+                + "/Widths 7 0 R >>"),
+            new FontTestSupport.Obj(7, "null"));
+        var sink = new DiagnosticSink(50);
+        var fontDict = (PdfDictionary)doc.Resolve(5)!;
+        var reader = Build(doc, fontDict, sink, objectNumber: 5, generation: 0);
+
+        Assert.Equal(667, Decode(reader, 0x41).Width);
+        Assert.DoesNotContain(sink.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.FontWidthsMalformed);
+    }
+
+    [Fact]
+    public void Widths_wrongTypeNotNull_stillReports402()
+    {
+        // The negative control for the two tests above: a present, wrong-typed, non-null /Widths
+        // must still be reported, so the null normalisation is not swallowing malformed entries.
+        using var doc = FontTestSupport.OpenMinimal();
+        var sink = new DiagnosticSink(50);
+        var fontDict = Type1("Helvetica")
+            .Set(new PdfName("FirstChar"), new PdfInteger(65))
+            .Set(new PdfName("LastChar"), new PdfInteger(65))
+            .Set(new PdfName("Widths"), new PdfInteger(5));
+        Build(doc, fontDict, sink);
+
+        var d = Assert.Single(sink.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.FontWidthsMalformed);
+        Assert.Contains("not an array", d.Message);
+    }
+
+    [Fact]
+    public void Encoding_directNull_treatedAsAbsent_usesStandardEncoding_no401()
+    {
+        using var doc = FontTestSupport.OpenMinimal();
+        var sink = new DiagnosticSink(50);
+        var fontDict = Type1("Helvetica").Set(PdfName.Encoding, PdfNull.Instance);
+        var reader = Build(doc, fontDict, sink);
+
+        Assert.Equal("’", Decode(reader, 0x27).Unicode); // StandardEncoding's quoteright.
+        Assert.DoesNotContain(sink.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.FontEncodingMalformed);
+    }
+
+    [Fact]
+    public void Encoding_referenceToNullObject_treatedAsAbsent_no401()
+    {
+        using var doc = FontTestSupport.Open(
+            new FontTestSupport.Obj(5, "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica "
+                + "/Encoding 7 0 R >>"),
+            new FontTestSupport.Obj(7, "null"));
+        var sink = new DiagnosticSink(50);
+        var fontDict = (PdfDictionary)doc.Resolve(5)!;
+        var reader = Build(doc, fontDict, sink, objectNumber: 5, generation: 0);
+
+        Assert.Equal("’", Decode(reader, 0x27).Unicode); // StandardEncoding's quoteright.
         Assert.DoesNotContain(sink.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.FontEncodingMalformed);
     }
 
@@ -857,6 +983,16 @@ public sealed class SimpleFontReaderTests
         Assert.Equal(PdfReaderDiagnosticCode.FontUnreadable, d.Code);
     }
 
+    [Fact]
+    public void GetFontReader_disposedReader_throwsObjectDisposedException()
+    {
+        var doc = FontTestSupport.OpenMinimal();
+        doc.Dispose();
+        var sink = new DiagnosticSink(50);
+
+        Assert.Throws<ObjectDisposedException>(() => doc.GetFontReader(Type1("Helvetica"), sink, null));
+    }
+
     // ── 14: diagnostics carry object number, generation, page index ─────────────────────────────
 
     [Fact]
@@ -907,11 +1043,50 @@ public sealed class SimpleFontReaderTests
         Build(doc, fontDict, new DiagnosticSink(50));
         var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
 
-        // Measured 31,752 bytes on this runtime (the per-font string/width/Unicode tables, the
+        // Measured 6,464 bytes on this runtime (the per-font string/width/Unicode tables, the
         // ToArray() copies of the shared encoding statics, and the Unicode strings themselves);
         // 64 KiB is a generous bound that still fails if Create starts copying the
         // 100,000-element array instead of indexing into it.
         Assert.True(allocated < 64 * 1024, $"Create allocated {allocated} bytes, expected < 64 KiB.");
+    }
+
+    [Fact]
+    public void Create_allocatesUnder64KiB_forA100000ElementDifferencesArray()
+    {
+        using var doc = FontTestSupport.OpenMinimal();
+
+        // 100,000 (code, oversized-name) pairs, alternating over all 256 codes: every element is
+        // read (unlike the /Widths array above, where only LastChar - FirstChar + 1 elements are
+        // read), so this is the array-length cap this class' own comment on that test says the
+        // parser has none of; the 401 message for the first oversized element must not be built
+        // for every later one, only to be discarded by ReportOnce.
+        var oversizedName = new PdfName(new string('a', 129));
+        var differences = new PdfArray();
+        for (var i = 0; i < 100_000; i++)
+        {
+            differences.Add(new PdfInteger(i % 256));
+            differences.Add(oversizedName);
+        }
+        var encoding = new PdfDictionary().Set(new PdfName("Differences"), differences);
+        var fontDict = Type1("Helvetica").Set(PdfName.Encoding, encoding);
+
+        // Warm-up: JIT and any lazy static (AdobeGlyphList's own load) must not be charged to the
+        // measured call.
+        Build(doc, Type1("Helvetica"), new DiagnosticSink(50));
+
+        var sink = new DiagnosticSink(50);
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        var reader = Build(doc, fontDict, sink);
+        var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        // Measured 13,336 bytes on this runtime; 64 KiB is the same generous bound the /Widths
+        // KAT above uses.
+        Assert.True(allocated < 64 * 1024, $"Create allocated {allocated} bytes, expected < 64 KiB.");
+        // Every code winds up undefined, so this font also has no Unicode route at all
+        // (FontNoUnicodeRoute, 403), legitimately, alongside the 401 this test pins.
+        Assert.Single(sink.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.FontEncodingMalformed);
+        for (var code = 0; code < 256; code++)
+            Assert.Null(Decode(reader, (byte)code).Unicode);
     }
 
     // ── 17: DiagnosticExcerpt quoting ────────────────────────────────────────────────────────────

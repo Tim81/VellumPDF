@@ -104,6 +104,15 @@ MUSTREAD_PARAGRAPH = (
 C_RECORD = re.compile(r"^C (-?\d+) ; WX (-?\d+) ; N (\S+) ;")
 VERSION_LINE = re.compile(r"^Version (\S+)$")
 
+# The AFM's own Notice line carries the copyright sentence (also duplicated onto its own Comment
+# Copyright line, read separately below) immediately followed, with no separating space, by a
+# trademark sentence where the font has one: Helvetica's four files name Linotype-Hell AG,
+# Times' four name it too, and ZapfDingbats names International Typeface Corporation. Symbol and
+# the four Courier files carry no trademark sentence at all. This captures whatever follows
+# "Reserved." on that line, case-insensitive in "Rights"/"rights" and "Reserved"/"reserved" only
+# ("All" itself is capitalised the same way in every one of the fourteen files).
+TRADEMARK_AFTER_RESERVED = re.compile(r"All [Rr]ights [Rr]eserved\.(.*)$")
+
 
 def normalize(raw_bytes):
     text = raw_bytes.decode("latin-1")
@@ -132,12 +141,15 @@ def load_afm(afm_dir, filename):
 
 def parse_afm(filename, normalized):
     copyright_line = None
+    notice_line = None
     version = None
     records = []
     seen_names = set()
     for line in normalized.split("\n"):
         if line.startswith("Comment Copyright") and copyright_line is None:
             copyright_line = line
+        if line.startswith("Notice") and notice_line is None:
+            notice_line = line
         if version is None:
             m = VERSION_LINE.match(line)
             if m:
@@ -161,6 +173,9 @@ def parse_afm(filename, normalized):
     if copyright_line is None:
         print(f"{filename}: no Comment Copyright line found", file=sys.stderr)
         sys.exit(1)
+    if notice_line is None:
+        print(f"{filename}: no Notice line found", file=sys.stderr)
+        sys.exit(1)
     if version is None:
         print(f"{filename}: no Version line found", file=sys.stderr)
         sys.exit(1)
@@ -172,7 +187,11 @@ def parse_afm(filename, normalized):
         )
         sys.exit(1)
 
-    return records, copyright_line, version
+    m = TRADEMARK_AFTER_RESERVED.search(notice_line)
+    trademark = m.group(1).strip() if m else ""
+    trademark = trademark if trademark else None
+
+    return records, copyright_line, version, trademark
 
 
 def format_encoding(field_name, records):
@@ -215,7 +234,7 @@ def wrap_comment(text, width=96):
 
 
 def generate_source(parsed):
-    # parsed: filename -> (records, copyright_line, version), in FONT_TABLE order.
+    # parsed: filename -> (records, copyright_line, version, trademark), in FONT_TABLE order.
     o = []
     w = o.append
 
@@ -229,14 +248,17 @@ def generate_source(parsed):
     w("// Inputs (Adobe Core-14 AFM files, MustRead.html, Adobe Systems, 1997), each one's own")
     w("// Version line, and the normalised SHA-256 this generator pinned it against:")
     for filename, _, _, _ in FONT_TABLE:
-        _, _, version = parsed[filename]
+        _, _, version, _ = parsed[filename]
         w(f"// {filename} (Version {version})")
         w(f"//   {MANIFEST[filename]}")
     w("//")
     for filename, _, _, _ in FONT_TABLE:
-        _, copyright_line, _ = parsed[filename]
+        _, copyright_line, _, trademark = parsed[filename]
         for line in wrap_comment(f"{filename}: {copyright_line}"):
             w(line)
+        if trademark:
+            for line in wrap_comment(f"{filename}: {trademark}"):
+                w(line)
     w("//")
     for line in wrap_comment(MUSTREAD_PARAGRAPH):
         w(line)

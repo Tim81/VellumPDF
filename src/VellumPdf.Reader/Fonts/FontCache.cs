@@ -18,13 +18,21 @@ namespace VellumPdf.Reader.Fonts;
 /// and the fallback costs only a rebuilt reader, not a wrong one.
 /// <para>
 /// Retained size at the cap, measured with <c>GC.GetTotalMemory(true)</c> before and after
-/// building 10,000 fonts and keeping every one reachable (a bare <c>SimpleFontReader</c> retains
-/// about 6,464 B each, about 62 MiB total; a full 10,000-entry cache built through
+/// building 10,000 fonts and keeping every one reachable: a bare <c>SimpleFontReader</c> retains
+/// about 6,464 B each (about 62 MiB total); a full 10,000-entry cache built through
 /// <c>PdfDocumentReader.GetFontReader</c>, which also grows the reader's own resolved-object
-/// cache alongside it, retains about 7,639 B per font, about 73 MiB total). Both figures dropped
-/// from an earlier measurement (about 9,872 B and 10,495 B respectively) once
-/// <c>AdobeGlyphList.TryMapToUnicode</c> stopped routing a single-component glyph name through a
-/// <c>StringBuilder</c>, which was most of the per-font cost.
+/// cache alongside it, retains about 7,639 B per font (about 73 MiB total).
+/// <c>AdobeGlyphList.TryMapToUnicode</c> returns the mapped string for a single-component glyph
+/// name directly rather than routing it through a <c>StringBuilder</c>, which accounts for most
+/// of that per-font retained cost.
+/// </para>
+/// <para>
+/// A font <c>PdfDocumentReader.GetFontReader</c> itself rejects (an unreadable font resource, or
+/// a <c>/Subtype</c> naming a type this reader does not know) never reaches
+/// <see cref="GetOrCreate"/> at all, so it is not cached here: that rejection's diagnostic is
+/// reported again on every page that names the same font object, unlike a font whose own
+/// <c>SimpleFontReader.Create</c> reported a diagnostic, which is cached like any other. Not
+/// thread-safe, like every other cache this type keeps.
 /// </para>
 /// </remarks>
 internal sealed class FontCache

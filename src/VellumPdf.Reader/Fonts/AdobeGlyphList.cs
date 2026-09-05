@@ -23,9 +23,10 @@ namespace VellumPdf.Reader.Fonts;
 /// maps such a component to the empty string and continues, but an empty string is
 /// indistinguishable from a mapped control character once concatenated into the result, so this
 /// reader treats it as no mapping instead.</description></item>
-/// <item><description>A result of exactly U+0000 is also treated as no mapping. This covers both
-/// <c>.notdef</c>, which the bundled list maps to U+0000, and the literal name
-/// <c>uni0000</c>.</description></item>
+/// <item><description>A result of exactly U+0000 is also treated as no mapping. This covers the
+/// literal names <c>uni0000</c> and <c>u0000</c>. <c>.notdef</c> never reaches this rule: its
+/// leading <c>.</c> is the first character, so the dot-suffix trim leaves an empty name, rejected
+/// by the empty-name check before any component is looked up at all.</description></item>
 /// </list>
 /// Accepting only uppercase <c>uni</c>/<c>u</c> hex digits is not a third departure: the AGL
 /// Specification itself requires "a sequence of uppercase hexadecimal digits" for both synthetic
@@ -76,14 +77,17 @@ internal static class AdobeGlyphList
 
         // The common case is a single component (no '_'): return TryMapComponent's own string
         // directly, most often the map's own value for the name, rather than copying it through a
-        // StringBuilder. This is where most of FontCache's per-font retained bytes came from
-        // before this fast path existed (see FontCache.MaxCachedFonts).
+        // StringBuilder. Routing every single-component name through a StringBuilder instead is
+        // the single largest source of FontCache's per-font retained bytes (see
+        // FontCache.MaxCachedFonts).
         if (trimmed.IndexOf('_') < 0)
         {
             if (!TryMapComponent(map, trimmed, out var single))
                 return false;
+            // uni0000 and u0000 resolve to U+0000 here and are treated as unmapped (the class
+            // remarks); .notdef never reaches this line at all, its trimmed name is already empty.
             if (single.Length == 1 && single[0] == '\0')
-                return false; // .notdef and uni0000 both resolve here; treated as unmapped.
+                return false;
             unicode = single;
             return true;
         }
@@ -107,8 +111,11 @@ internal static class AdobeGlyphList
             start = underscore + 1;
         }
 
+        // Only a whole result of exactly one U+0000 character is rejected here; two components
+        // that each resolve to U+0000 (uni0000_uni0000) concatenate to a two-character result and
+        // are not caught by this check (AdobeGlyphListTests pins that shape directly).
         if (result.Length == 1 && result[0] == '\0')
-            return false; // .notdef and uni0000 both resolve here; treated as unmapped.
+            return false;
 
         unicode = result.ToString();
         return true;
@@ -226,8 +233,9 @@ internal static class AdobeGlyphList
                     ok = false;
                     break;
                 }
-                // Unguarded: AdobeGlyphList.txt is a pinned, byte-identity-checked embedded
-                // resource, never a surrogate half or a value past 0x10FFFF (NOTICE, Count tests).
+                // Unguarded: pinned by byte-identity with the Conformance copy
+                // (ReaderEncodingParityTests) and by ListSize_is4282, which fails if a bad value
+                // throws out of Load; never a surrogate half or a value past 0x10FFFF.
                 sb.Append(char.ConvertFromUtf32(cp));
             }
             if (ok)

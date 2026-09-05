@@ -40,22 +40,33 @@ using System.Collections.Frozen;
 // All rights reserved.
 // ZapfDingbats.afm: Comment Copyright (c) 1985, 1987, 1988, 1989, 1997 Adobe Systems
 // Incorporated. All Rights Reserved.
+// ZapfDingbats.afm: ITC Zapf Dingbats is a registered trademark of International Typeface
+// Corporation.
 // Helvetica.afm: Comment Copyright (c) 1985, 1987, 1989, 1990, 1997 Adobe Systems Incorporated.
 // All Rights Reserved.
+// Helvetica.afm: Helvetica is a trademark of Linotype-Hell AG and/or its subsidiaries.
 // Helvetica-Bold.afm: Comment Copyright (c) 1985, 1987, 1989, 1990, 1997 Adobe Systems
 // Incorporated.  All Rights Reserved.
+// Helvetica-Bold.afm: Helvetica is a trademark of Linotype-Hell AG and/or its subsidiaries.
 // Helvetica-Oblique.afm: Comment Copyright (c) 1985, 1987, 1989, 1990, 1997 Adobe Systems
 // Incorporated.  All Rights Reserved.
+// Helvetica-Oblique.afm: Helvetica is a trademark of Linotype-Hell AG and/or its subsidiaries.
 // Helvetica-BoldOblique.afm: Comment Copyright (c) 1985, 1987, 1989, 1990, 1997 Adobe Systems
 // Incorporated.  All Rights Reserved.
+// Helvetica-BoldOblique.afm: Helvetica is a trademark of Linotype-Hell AG and/or its
+// subsidiaries.
 // Times-Roman.afm: Comment Copyright (c) 1985, 1987, 1989, 1990, 1993, 1997 Adobe Systems
 // Incorporated.  All Rights Reserved.
+// Times-Roman.afm: Times is a trademark of Linotype-Hell AG and/or its subsidiaries.
 // Times-Bold.afm: Comment Copyright (c) 1985, 1987, 1989, 1990, 1993, 1997 Adobe Systems
 // Incorporated.  All Rights Reserved.
+// Times-Bold.afm: Times is a trademark of Linotype-Hell AG and/or its subsidiaries.
 // Times-Italic.afm: Comment Copyright (c) 1985, 1987, 1989, 1990, 1993, 1997 Adobe Systems
 // Incorporated.  All Rights Reserved.
+// Times-Italic.afm: Times is a trademark of Linotype-Hell AG and/or its subsidiaries.
 // Times-BoldItalic.afm: Comment Copyright (c) 1985, 1987, 1989, 1990, 1993, 1997 Adobe Systems
 // Incorporated.  All Rights Reserved.
+// Times-BoldItalic.afm: Times is a trademark of Linotype-Hell AG and/or its subsidiaries.
 // Courier.afm: Comment Copyright (c) 1989, 1990, 1991, 1992, 1993, 1997 Adobe Systems
 // Incorporated.  All Rights Reserved.
 // Courier-Bold.afm: Comment Copyright (c) 1989, 1990, 1991, 1993, 1997 Adobe Systems

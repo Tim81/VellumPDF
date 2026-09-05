@@ -17,11 +17,15 @@ public sealed partial class PdfDocumentReader
     /// resolved here before its <c>/Subtype</c> is read.
     /// </summary>
     /// <remarks>
+    /// Throws <see cref="ObjectDisposedException"/> when this reader is disposed, checked before
+    /// anything else, the same as every other entry point on this class.
+    /// <para>
     /// Returns <see langword="null"/> silently, with no diagnostic, for <c>/Subtype /Type0</c> and
     /// <c>/Subtype /Type3</c>: readers for those are not built yet (#98), and reporting
     /// <see cref="PdfReaderDiagnosticCode.FontUnreadable"/> here would fire on every CJK or Type 3
     /// document until they are. Not yet wired to <c>ContentInterpreter</c>, so the only callers
     /// today are tests.
+    /// </para>
     /// <para>
     /// Both resolves this method does of its own (the font entry itself, then its <c>/Subtype</c>)
     /// go through a single <see langword="try"/>/<see langword="catch"/> for
@@ -36,6 +40,8 @@ public sealed partial class PdfDocumentReader
     /// </remarks>
     internal PdfFontReader? GetFontReader(PdfObject rawFontEntry, DiagnosticSink sink, int? pageIndex)
     {
+        ThrowIfDisposed();
+
         int? objectNumber = null;
         int? generation = null;
         if (rawFontEntry is PdfIndirectReference r)

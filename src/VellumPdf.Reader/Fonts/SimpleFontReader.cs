@@ -45,9 +45,11 @@ namespace VellumPdf.Reader.Fonts;
 /// (<see cref="SimpleFontEncodings.MacExpert"/>), so "undefined" cannot be told from "not
 /// transcribed". §9.6.5.2 states no such rule for Type1 fonts, and none is applied.
 /// <para>
-/// Every dictionary entry this class reads, wherever it is read, goes through
-/// <see cref="PdfDocumentReader.ResolveValue"/> before its type is tested (one hop, a dangling
-/// reference resolving to <see langword="null"/> and treated as absent), with one exception: an
+/// Every dictionary entry this class reads, wherever it is read, goes through this class's own
+/// <c>Resolve</c> helper before its type is tested (one hop through
+/// <see cref="PdfDocumentReader.ResolveValue"/>, with a dangling reference or a resolved
+/// <see cref="PdfNull"/>, direct or reached through that hop, normalised to
+/// <see langword="null"/> and treated as absent per §7.3.7), with one exception: an
 /// element of <c>/Differences</c> is read raw (§9.6.5, step 5 below), because §7.3.10 permits an
 /// indirect reference there and this reader deliberately does not resolve one, recording that as a
 /// reader limitation (<see cref="PdfReaderDiagnosticCode.FontEncodingMalformed"/>) rather than
@@ -97,9 +99,12 @@ internal sealed class SimpleFontReader : PdfFontReader
     private readonly int? _generation;
     private readonly int? _pageIndex;
 
-    private string?[] _names = new string?[256];
-    private double[] _widths = new double[256];
-    private string?[] _unicode = new string?[256];
+    // Empty placeholders: Populate (or Create's own catch block) always replaces all three with a
+    // freshly built 256-element array before any caller can observe them, so allocating that size
+    // here too would be a second, wasted allocation per font.
+    private string?[] _names = [];
+    private double[] _widths = [];
+    private string?[] _unicode = [];
     private bool _hasToUnicode;
     private bool _hasAnyMappedCode;
 
@@ -176,7 +181,11 @@ internal sealed class SimpleFontReader : PdfFontReader
                 $"has no usable /BaseFont: {excerpt}.");
         }
 
-        // Step 3: symbolic.
+        // Step 3: symbolic. A /Flags of the wrong type (Table 121 requires an integer; a real
+        // is the one a producer is most likely to write by mistake) is treated the same as an
+        // absent one, silently: this class has four diagnostic codes, all for the font
+        // dictionary itself, and none of them fits a malformed descriptor entry, so a fifth code
+        // is not added here for a producer defect this reader has never observed in practice.
         var descriptor = Resolve(reader, fontDict.Get(_fontDescriptorKey)) as PdfDictionary;
         var resolvedFlags = descriptor is not null
             ? Resolve(reader, descriptor.Get(_flagsKey)) as PdfInteger
@@ -357,8 +366,8 @@ internal sealed class SimpleFontReader : PdfFontReader
     private void ApplyDifferences(PdfDocumentReader reader, PdfDictionary encodingDict, string?[] table)
     {
         var resolved = Resolve(reader, encodingDict.Get(_differencesKey));
-        if (resolved is null or PdfNull)
-            return; // absent (ISO 32000-2 §7.3.9): omitted, a direct null, or a dangling reference.
+        if (resolved is null)
+            return; // absent (see this class's Resolve helper): omitted, null, or a dangling reference.
 
         if (resolved is not PdfArray differences)
         {
@@ -394,9 +403,18 @@ internal sealed class SimpleFontReader : PdfFontReader
                     }
                     if (glyphName.Value.Length > AdobeGlyphList.MaxGlyphNameLength)
                     {
-                        ReportOnce(ref _reported401, PdfReaderDiagnosticCode.FontEncodingMalformed,
-                            $"/Differences names a glyph longer than {AdobeGlyphList.MaxGlyphNameLength} characters: "
-                            + $"{DiagnosticExcerpt.Quote(glyphName.Value)}.");
+                        // The flag is tested before the message is built, not just inside
+                        // ReportOnce, because this is the one Report call in this class reachable
+                        // from an unbounded loop: building the interpolated message and the
+                        // DiagnosticExcerpt.Quote call for every oversized element, only to have
+                        // ReportOnce discard all but the first, is an allocation a 100,000-element
+                        // array should not have to pay for.
+                        if (!_reported401)
+                        {
+                            ReportOnce(ref _reported401, PdfReaderDiagnosticCode.FontEncodingMalformed,
+                                $"/Differences names a glyph longer than {AdobeGlyphList.MaxGlyphNameLength} characters: "
+                                + $"{DiagnosticExcerpt.Quote(glyphName.Value)}.");
+                        }
                         table[code] = null; // the code stays undefined; see this class's own doc.
                     }
                     else
@@ -410,8 +428,15 @@ internal sealed class SimpleFontReader : PdfFontReader
                     break;
 
                 default:
+                    // §9.6.5.1 permits only integers and names in this array; a direct real,
+                    // string, boolean, dictionary or nested array is not "unresolved", it is of a
+                    // type the clause does not permit there. An indirect reference is the one
+                    // shape §7.3.10 does permit, that this reader still does not follow.
+                    var kind = element is PdfIndirectReference
+                        ? "an indirect reference, which this reader does not follow inside /Differences"
+                        : $"an element that is neither an integer nor a name ({DescribeNonArrayType(element)})";
                     ReportOnce(ref _reported401, PdfReaderDiagnosticCode.FontEncodingMalformed,
-                        "/Differences contains an element this reader does not resolve.");
+                        $"/Differences contains {kind}.");
                     // Stop applying the array at the first element this reader cannot interpret,
                     // rather than resuming after it with the running code unchanged: that
                     // resumption is what let a later name silently overwrite an earlier one's
@@ -422,8 +447,8 @@ internal sealed class SimpleFontReader : PdfFontReader
     }
 
     // Names a resolved value's type for the 401 message reported when /Differences is present but
-    // not an array: a name or keyword goes through DiagnosticExcerpt, matching every other Report
-    // call in this class.
+    // not an array, or contains an element of a type §9.6.5.1 does not permit there: a name or
+    // keyword goes through DiagnosticExcerpt, matching every other Report call in this class.
     private static string DescribeNonArrayType(PdfObject value) => value switch
     {
         PdfDictionary => "a dictionary",
@@ -499,7 +524,11 @@ internal sealed class SimpleFontReader : PdfFontReader
     // generator reads all fourteen AFM files), so this lookup needs no Unicode round trip and no
     // dependence on whether the glyph's Unicode value happens to fall inside WinAnsiEncoding: a
     // text font's own AFM lists a width for every glyph name it defines, encodable in WinAnsi or
-    // not.
+    // not. The trade this keying makes: a /Differences name absent from the font's own AFM (a
+    // uniXXXX name, say, which no AFM's own N record ever uses) keeps MissingWidth rather than
+    // falling back through a Unicode round trip that might have found it. Glyph-name keying
+    // matches the AFM's own key, and a uniXXXX name in /Differences on a non-embedded standard 14
+    // font is a producer choice this AFM lookup was never going to be able to serve either way.
     private static void FillAfmWidths(string afmName, string?[] table, double[] widths, double missingWidth)
     {
         var byName = SymbolFontMetrics.TryGetTextFontWidths(afmName, out var textWidths)
@@ -547,7 +576,21 @@ internal sealed class SimpleFontReader : PdfFontReader
         _sink.Report(code, message, _objectNumber, _generation, _pageIndex);
     }
 
-    /// <summary>Null-tolerant single-hop resolution through <paramref name="reader"/>.</summary>
-    private static PdfObject? Resolve(PdfDocumentReader reader, PdfObject? raw) =>
-        raw is null ? null : reader.ResolveValue(raw);
+    /// <summary>
+    /// Null-tolerant single-hop resolution through <paramref name="reader"/>. Also normalises a
+    /// resolved <see cref="PdfNull"/>, direct or reached through the one hop, to
+    /// <see langword="null"/>: ISO 32000-2 §7.3.7 states, verbatim, "A dictionary entry whose
+    /// value is null (see 7.3.9, "Null object") shall be treated the same as if the entry does
+    /// not exist", and every entry this class reads goes through this one helper, so that rule
+    /// applies uniformly to <c>/Encoding</c>, <c>/Widths</c>, <c>/FirstChar</c>, <c>/LastChar</c>,
+    /// <c>/BaseFont</c>, <c>/FontDescriptor</c>, <c>/MissingWidth</c>, <c>/BaseEncoding</c>,
+    /// <c>/Flags</c> and <c>/Differences</c> from this one site.
+    /// </summary>
+    private static PdfObject? Resolve(PdfDocumentReader reader, PdfObject? raw)
+    {
+        if (raw is null)
+            return null;
+        var resolved = reader.ResolveValue(raw);
+        return resolved is PdfNull ? null : resolved;
+    }
 }

@@ -568,10 +568,10 @@ public enum PdfReaderDiagnosticCode
     /// A simple font's resource dictionary was not a dictionary at all, had no usable
     /// <c>/BaseFont</c>, named a <c>/Subtype</c> this reader knows nothing about (not
     /// <c>/Type0</c> or <c>/Type3</c>, which are silent until this reader gains readers for them),
-    /// or building it hit this reader's own indirect-object resolution depth limit
-    /// (<see cref="InvalidDataException"/> from <c>PdfDocumentReader.Resolve</c>). ISO 32000-2
-    /// §9.6.2.1 Table 109 makes <c>/Type</c>, <c>/Subtype</c> and <c>/BaseFont</c> all required
-    /// entries of a font dictionary. Reported once per font.
+    /// or the reader could not resolve the font dictionary or one of its entries because building
+    /// it hit this reader's own indirect-object resolution depth limit. ISO 32000-2 §9.6.2.1
+    /// Table 109 makes <c>/Type</c>, <c>/Subtype</c> and <c>/BaseFont</c> all required entries of
+    /// a font dictionary. Reported once per font.
     /// </summary>
     FontUnreadable = 400,
 
@@ -580,9 +580,9 @@ public enum PdfReaderDiagnosticCode
     /// an encoding dictionary, its <c>/BaseEncoding</c> named an encoding this reader does not
     /// know or was itself an unresolved indirect reference, its <c>/Differences</c> was present
     /// but not an array, or a <c>/Differences</c> element was out of range, named a glyph longer
-    /// than this reader's own name-length bound, or was of a type this reader does not resolve (an
-    /// indirect reference, legal per §7.3.10, is reported under this code as a reader limitation,
-    /// not a malformation, and stops the array from being applied any further). Reported once per
+    /// than this reader's own name-length bound, or was of a type §9.6.5.1 does not permit there
+    /// (only integers and names), including an indirect reference, which §7.3.10 permits but this
+    /// reader does not follow (stops the array from being applied any further). Reported once per
     /// font.
     /// </summary>
     FontEncodingMalformed = 401,
