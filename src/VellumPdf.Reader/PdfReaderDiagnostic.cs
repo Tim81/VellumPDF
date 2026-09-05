@@ -562,6 +562,49 @@ public enum PdfReaderDiagnosticCode
     /// </summary>
     ContentLimitExceeded = 309,
 
+    // ── 4xx: fonts and Unicode mapping ──────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// A simple font's resource dictionary was not a dictionary at all, had no usable
+    /// <c>/BaseFont</c>, named a <c>/Subtype</c> this reader knows nothing about (not
+    /// <c>/Type0</c> or <c>/Type3</c>, which are silent until this reader gains readers for them),
+    /// or building it hit this reader's own indirect-object resolution depth limit
+    /// (<see cref="InvalidDataException"/> from <c>PdfDocumentReader.Resolve</c>). Reported once
+    /// per font.
+    /// </summary>
+    FontUnreadable = 400,
+
+    /// <summary>
+    /// A simple font's <c>/Encoding</c> (ISO 32000-2 §9.6.5) was neither a known encoding name nor
+    /// an encoding dictionary, its <c>/BaseEncoding</c> named an encoding this reader does not
+    /// know, or a <c>/Differences</c> element was out of range, named a glyph longer than this
+    /// reader's own name-length bound, or was of a type this reader does not resolve (an indirect
+    /// reference, legal per §7.3.10, is reported under this code as a reader limitation, not a
+    /// malformation). Reported once per font.
+    /// </summary>
+    FontEncodingMalformed = 401,
+
+    /// <summary>
+    /// A simple font's <c>/FirstChar</c>, <c>/LastChar</c>, or <c>/Widths</c> (ISO 32000-2 Table
+    /// 109) was missing, mistyped, out of range, or shorter than
+    /// <c>LastChar - FirstChar + 1</c> requires, or the font had no <c>/Widths</c> at all and is
+    /// not one of the standard 14 fonts (§9.6.2.1). Reported once per font.
+    /// </summary>
+    FontWidthsMalformed = 402,
+
+    /// <summary>
+    /// No code in this font has a route to Unicode: it names no <c>/ToUnicode</c> stream, and no
+    /// glyph name its encoding assigns is one the Adobe Glyph List, or the ZapfDingbats glyph
+    /// list, maps (§9.10.2). Reported once per font.
+    /// </summary>
+    FontNoUnicodeRoute = 403,
+
+    /// <summary>
+    /// A glyph was decoded whose character code has no Unicode mapping, while at least one other
+    /// code in the same font does. Reported once per font, on the first such glyph decoded.
+    /// </summary>
+    UnmappedGlyphs = 404,
+
     // ── 9xx: reserved ───────────────────────────────────────────────────────────────────────────
 
     /// <summary>
@@ -631,6 +674,11 @@ internal static class PdfReaderDiagnosticSeverities
         PdfReaderDiagnosticCode.InlineImageMalformed => PdfReaderDiagnosticSeverity.Warning,
         PdfReaderDiagnosticCode.ContentStreamTooLarge => PdfReaderDiagnosticSeverity.Warning,
         PdfReaderDiagnosticCode.ContentLimitExceeded => PdfReaderDiagnosticSeverity.Warning,
+        PdfReaderDiagnosticCode.FontUnreadable => PdfReaderDiagnosticSeverity.Warning,
+        PdfReaderDiagnosticCode.FontEncodingMalformed => PdfReaderDiagnosticSeverity.Warning,
+        PdfReaderDiagnosticCode.FontWidthsMalformed => PdfReaderDiagnosticSeverity.Warning,
+        PdfReaderDiagnosticCode.FontNoUnicodeRoute => PdfReaderDiagnosticSeverity.Info,
+        PdfReaderDiagnosticCode.UnmappedGlyphs => PdfReaderDiagnosticSeverity.Info,
         PdfReaderDiagnosticCode.DiagnosticsSuppressed => PdfReaderDiagnosticSeverity.Warning,
         _ => throw new UnreachableException($"No severity is mapped for {code}."),
     };

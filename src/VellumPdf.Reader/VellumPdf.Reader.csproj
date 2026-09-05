@@ -4,6 +4,19 @@
     <ProjectReference Include="..\VellumPdf.Kernel\VellumPdf.Kernel.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Adobe Glyph List (BSD-3-Clause; see NOTICE). Byte-identical to the Conformance package's
+         own copy; embedded for the glyph-name-to-Unicode route of ISO 32000-2 §9.10.2. -->
+    <EmbeddedResource Include="Resources\AdobeGlyphList.txt">
+      <LogicalName>AdobeGlyphList.txt</LogicalName>
+    </EmbeddedResource>
+    <!-- ZapfDingbats glyph list (BSD-3-Clause; see NOTICE), normalised from the Adobe AGL
+         repository's own zapfdingbats.txt. -->
+    <EmbeddedResource Include="Resources\ZapfDingbatsGlyphList.txt">
+      <LogicalName>ZapfDingbatsGlyphList.txt</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
   <PropertyGroup>
     <RootNamespace>VellumPdf.Reader</RootNamespace>
     <AssemblyName>VellumPdf.Reader</AssemblyName>

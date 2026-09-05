@@ -1,0 +1,429 @@
+// Copyright © Timothy van der Ham (@Tim81)
+// SPDX-License-Identifier: Apache-2.0
+
+using VellumPdf.Core;
+using VellumPdf.Fonts;
+
+namespace VellumPdf.Reader.Fonts;
+
+/// <summary>
+/// Decodes a Type1, MMType1 or TrueType simple font (ISO 32000-2 §9.6.5): resolves the font's
+/// character-code-to-glyph-name table from its <c>/Encoding</c>, then to Unicode through the Adobe
+/// Glyph List, and its per-code advance widths from <c>/Widths</c> or, for a standard 14 font with
+/// none, the Kernel's own AFM metrics.
+/// </summary>
+/// <remarks>
+/// §9.6.5.4 gives TrueType fonts their own base-encoding rule, distinct from Type1's (§9.6.5.2):
+/// initialise from the named encoding or <c>/Differences</c>' own <c>/BaseEncoding</c>, then fill
+/// anything still undefined from StandardEncoding. This reader applies that same rule uniformly to
+/// Type1, MMType1 and TrueType alike, rather than branching by subtype, since without parsing the
+/// font program itself there is no way to tell a Type1 font's built-in encoding from a TrueType
+/// one's: both are unavailable data, and the two subclauses converge on the same practical
+/// fallback (StandardEncoding for a nonsymbolic font) wherever a real font program would
+/// otherwise supply an answer this reader cannot.
+/// <para>
+/// Every dictionary entry this class reads, wherever it is read, goes through
+/// <see cref="PdfDocumentReader.ResolveValue"/> before its type is tested (one hop, a dangling
+/// reference resolving to <see langword="null"/> and treated as absent), with one exception: an
+/// element of <c>/Differences</c> is read raw (§9.6.5, step 5 below), because §7.3.10 permits an
+/// indirect reference there and this reader deliberately does not resolve one, recording that as a
+/// reader limitation (<see cref="PdfReaderDiagnosticCode.FontEncodingMalformed"/>) rather than
+/// silently supporting or silently rejecting it.
+/// </para>
+/// </remarks>
+internal sealed class SimpleFontReader : PdfFontReader
+{
+    private static readonly PdfName _fontDescriptorKey = new("FontDescriptor");
+    private static readonly PdfName _flagsKey = new("Flags");
+    private static readonly PdfName _fontFileKey = new("FontFile");
+    private static readonly PdfName _fontFile2Key = new("FontFile2");
+    private static readonly PdfName _fontFile3Key = new("FontFile3");
+    private static readonly PdfName _baseEncodingKey = new("BaseEncoding");
+    private static readonly PdfName _differencesKey = new("Differences");
+    private static readonly PdfName _firstCharKey = new("FirstChar");
+    private static readonly PdfName _lastCharKey = new("LastChar");
+    private static readonly PdfName _widthsKey = new("Widths");
+    private static readonly PdfName _missingWidthKey = new("MissingWidth");
+    private static readonly PdfName _toUnicodeKey = new("ToUnicode");
+
+    private const int SymbolicFlagBit = 4; // bit position 3 (ISO 32000-2 Table 121): value 2^(3-1).
+
+    private readonly DiagnosticSink _sink;
+    private readonly int? _objectNumber;
+    private readonly int? _generation;
+    private readonly int? _pageIndex;
+
+    private string?[] _names = new string?[256];
+    private double[] _widths = new double[256];
+    private string?[] _unicode = new string?[256];
+    private bool _hasToUnicode;
+    private bool _hasAnyMappedCode;
+
+    private bool _reported400;
+    private bool _reported401;
+    private bool _reported402;
+    private bool _reportedNoUnicodeOrUnmapped;
+
+    private SimpleFontReader(DiagnosticSink sink, int? objectNumber, int? generation, int? pageIndex)
+    {
+        _sink = sink;
+        _objectNumber = objectNumber;
+        _generation = generation;
+        _pageIndex = pageIndex;
+    }
+
+    /// <inheritdoc />
+    public override bool HasToUnicode => _hasToUnicode;
+
+    /// <summary>
+    /// Builds a reader for a Type1, MMType1 or TrueType font dictionary. <paramref name="reader"/>
+    /// resolves indirect references (see this class's own remarks); <paramref name="objectNumber"/>
+    /// and <paramref name="generation"/>, when the font dictionary itself was reached through one,
+    /// and <paramref name="pageIndex"/> are attached to every diagnostic this build reports.
+    /// </summary>
+    internal static SimpleFontReader Create(
+        PdfDocumentReader reader, PdfDictionary fontDict, int? objectNumber, int? generation,
+        DiagnosticSink sink, int? pageIndex)
+    {
+        var self = new SimpleFontReader(sink, objectNumber, generation, pageIndex);
+        try
+        {
+            self.Populate(reader, fontDict);
+        }
+        catch (InvalidDataException)
+        {
+            // reader.Resolve throws past MaxResolveDepth (PdfDocumentReader.cs); nothing else in
+            // Populate is expected to throw, and the fuzz test is the proof that holds.
+            self._names = new string?[256];
+            self._widths = new double[256];
+            self._unicode = new string?[256];
+            self._hasToUnicode = false;
+            self._hasAnyMappedCode = false;
+            self.ReportOnce(ref self._reported400, PdfReaderDiagnosticCode.FontUnreadable,
+                "building this font hit the reader's own indirect-object resolution depth limit.");
+        }
+        return self;
+    }
+
+    private void Populate(PdfDocumentReader reader, PdfDictionary fontDict)
+    {
+        // Step 2: /BaseFont. A name longer than Standard14Names could ever resolve is no more
+        // usable than a missing or wrong-typed one: it never selects a standard 14 font, and
+        // quoting it whole in a diagnostic would be the unbounded-allocation risk
+        // DiagnosticExcerpt exists to avoid, so both report the same 400 message.
+        var baseFontResolved = Resolve(reader, fontDict.Get(PdfName.BaseFont));
+        string? afmName = null;
+        if (baseFontResolved is PdfName baseFontName && baseFontName.Value.Length <= AdobeGlyphList.MaxGlyphNameLength)
+        {
+            Standard14Names.TryResolve(baseFontName.Value, out var resolved);
+            afmName = resolved.Length == 0 ? null : resolved;
+        }
+        else
+        {
+            var excerpt = baseFontResolved is PdfName oversized
+                ? DiagnosticExcerpt.Quote(oversized.Value)
+                : "(not a name)";
+            ReportOnce(ref _reported400, PdfReaderDiagnosticCode.FontUnreadable,
+                $"has no usable /BaseFont: {excerpt}.");
+        }
+
+        // Step 3: symbolic / embedded.
+        var descriptor = Resolve(reader, fontDict.Get(_fontDescriptorKey)) as PdfDictionary;
+        bool symbolic;
+        if (descriptor is not null && Resolve(reader, descriptor.Get(_flagsKey)) is PdfInteger flags)
+        {
+            symbolic = (flags.Value & SymbolicFlagBit) != 0;
+        }
+        else
+        {
+            symbolic = afmName is "Symbol" or "ZapfDingbats";
+        }
+
+        var embedded = descriptor is not null
+            && (Resolve(reader, descriptor.Get(_fontFileKey)) is PdfStream
+                || Resolve(reader, descriptor.Get(_fontFile2Key)) is PdfStream
+                || Resolve(reader, descriptor.Get(_fontFile3Key)) is PdfStream);
+        _ = embedded; // Table 112's embedded/not-embedded split collapses to one rule here; see TableDefault.
+
+        // Step 4: base table.
+        string?[] table;
+        if (afmName == "Symbol")
+        {
+            table = SymbolFontMetrics.SymbolEncoding.ToArray();
+        }
+        else if (afmName == "ZapfDingbats")
+        {
+            table = SymbolFontMetrics.ZapfDingbatsEncoding.ToArray();
+        }
+        else
+        {
+            table = ResolveEncodingTable(reader, fontDict, symbolic, out var encodingDict);
+            if (encodingDict is not null)
+                ApplyDifferences(reader, encodingDict, table);
+        }
+
+        _names = table;
+
+        // Step 6/7: widths.
+        var descriptorMissingWidth = 0.0;
+        if (descriptor is not null && Resolve(reader, descriptor.Get(_missingWidthKey)) is { } mw)
+        {
+            descriptorMissingWidth = mw switch { PdfInteger i => i.Value, PdfReal r => r.Value, _ => 0.0 };
+        }
+
+        var widths = new double[256];
+        Array.Fill(widths, descriptorMissingWidth);
+        var usesAfmWidths = BuildWidths(reader, fontDict, widths, afmName);
+        _widths = widths;
+
+        // Step 8: Unicode, per code, from the glyph name.
+        var unicode = new string?[256];
+        var zapf = afmName == "ZapfDingbats";
+        for (var code = 0; code < 256; code++)
+        {
+            var name = table[code];
+            if (name is null)
+                continue;
+
+            if (zapf && ZapfDingbatsGlyphList.TryMap(name, out var zapfUnicode))
+                unicode[code] = zapfUnicode;
+            else if (AdobeGlyphList.TryMapToUnicode(name, out var aglUnicode))
+                unicode[code] = aglUnicode;
+        }
+        _unicode = unicode;
+        _hasAnyMappedCode = Array.Exists(unicode, u => u is not null);
+
+        // Step 9: AFM widths, only when /Widths itself was absent (step 7 deferred this here,
+        // since a text font's width needs this step's own Unicode table).
+        if (usesAfmWidths)
+            FillAfmWidths(afmName!, table, unicode, widths, descriptorMissingWidth);
+
+        // /ToUnicode: recorded only, not parsed; a later PR adds that (see PdfFontReader's doc).
+        _hasToUnicode = Resolve(reader, fontDict.Get(_toUnicodeKey)) is PdfStream;
+
+        // Step 10: 403, reported once, right here; 404 is decided lazily in TryDecodeNext, using
+        // _hasAnyMappedCode computed above so that check costs nothing per decoded byte.
+        if (!_hasToUnicode && !_hasAnyMappedCode)
+        {
+            ReportOnce(ref _reportedNoUnicodeOrUnmapped, PdfReaderDiagnosticCode.FontNoUnicodeRoute,
+                "no code in this font has a route to Unicode: no /ToUnicode stream, and no glyph "
+                + "name the Adobe Glyph List (or the ZapfDingbats list) maps.");
+        }
+    }
+
+    private string?[] ResolveEncodingTable(
+        PdfDocumentReader reader, PdfDictionary fontDict, bool symbolic, out PdfDictionary? encodingDict)
+    {
+        encodingDict = null;
+        var encoding = Resolve(reader, fontDict.Get(PdfName.Encoding));
+        switch (encoding)
+        {
+            case null:
+                return TableDefault(symbolic);
+
+            case PdfName named:
+                if (SimpleFontEncodings.TryGetNamed(named.Value, out var byName))
+                    return byName.ToArray();
+                ReportOnce(ref _reported401, PdfReaderDiagnosticCode.FontEncodingMalformed,
+                    $"/Encoding names an encoding this reader does not know: "
+                    + $"{DiagnosticExcerpt.Quote(named.Value)}.");
+                return TableDefault(symbolic);
+
+            case PdfDictionary dict:
+                encodingDict = dict;
+                var baseEncoding = Resolve(reader, dict.Get(_baseEncodingKey));
+                if (baseEncoding is null)
+                    return TableDefault(symbolic);
+                if (baseEncoding is PdfName baseName && SimpleFontEncodings.TryGetNamed(baseName.Value, out var baseTable))
+                    return baseTable.ToArray();
+                ReportOnce(ref _reported401, PdfReaderDiagnosticCode.FontEncodingMalformed,
+                    "/Encoding's /BaseEncoding names an encoding this reader does not know.");
+                return TableDefault(symbolic);
+
+            default:
+                ReportOnce(ref _reported401, PdfReaderDiagnosticCode.FontEncodingMalformed,
+                    "/Encoding is neither a known encoding name nor an encoding dictionary.");
+                return TableDefault(symbolic);
+        }
+    }
+
+    // Table 112's default base encoding: the standard reads embedded → the font program's own
+    // built-in encoding, not embedded → StandardEncoding (nonsymbolic) or the built-in encoding
+    // (symbolic). This reader never parses a font program, so both branches land on the same
+    // answer regardless of embedding (StandardEncoding for nonsymbolic, all-null for symbolic),
+    // which is why "embedded" plays no part in this method itself (see the class doc's own note).
+    private static string?[] TableDefault(bool symbolic) =>
+        symbolic ? new string?[256] : SimpleFontEncodings.Standard.ToArray();
+
+    private void ApplyDifferences(PdfDocumentReader reader, PdfDictionary encodingDict, string?[] table)
+    {
+        if (Resolve(reader, encodingDict.Get(_differencesKey)) is not PdfArray differences)
+            return;
+
+        var code = 0;
+        for (var i = 0; i < differences.Count; i++)
+        {
+            // Raw, not resolved: §7.3.10 permits an indirect reference here, and this reader
+            // deliberately does not follow one; see the class doc's own remarks.
+            var element = differences[i];
+            switch (element)
+            {
+                case PdfInteger codeInt:
+                    if (codeInt.Value is < 0 or > 255)
+                    {
+                        ReportOnce(ref _reported401, PdfReaderDiagnosticCode.FontEncodingMalformed,
+                            $"/Differences sets the current code to {codeInt.Value}, outside 0..255.");
+                        return; // the rest of the array is ignored.
+                    }
+                    code = (int)codeInt.Value;
+                    break;
+
+                case PdfName glyphName:
+                    if (code > 255)
+                    {
+                        ReportOnce(ref _reported401, PdfReaderDiagnosticCode.FontEncodingMalformed,
+                            "/Differences assigns a name past code 255.");
+                        return; // stop.
+                    }
+                    if (glyphName.Value.Length > AdobeGlyphList.MaxGlyphNameLength)
+                    {
+                        ReportOnce(ref _reported401, PdfReaderDiagnosticCode.FontEncodingMalformed,
+                            $"/Differences names a glyph longer than {AdobeGlyphList.MaxGlyphNameLength} characters: "
+                            + $"{DiagnosticExcerpt.Quote(glyphName.Value)}.");
+                        table[code] = null; // the code stays undefined; see this class's own doc.
+                    }
+                    else
+                    {
+                        // A later assignment overwrites an earlier one at the same code. ISO
+                        // 32000-2 §9.6.5 forbids overlapping sequences; this reader allows the
+                        // overwrite and reports nothing for it (see the class doc's own remarks).
+                        table[code] = glyphName.Value;
+                    }
+                    code++;
+                    break;
+
+                default:
+                    ReportOnce(ref _reported401, PdfReaderDiagnosticCode.FontEncodingMalformed,
+                        "/Differences contains an element this reader does not resolve.");
+                    break; // continue with the next element; code is unchanged.
+            }
+        }
+    }
+
+    /// <summary>Returns <see langword="true"/> when /Widths was absent, meaning step 9's AFM fill
+    /// applies (only for a standard 14 or aliased font; any other font keeps MissingWidth
+    /// everywhere and reports 402).</summary>
+    private bool BuildWidths(PdfDocumentReader reader, PdfDictionary fontDict, double[] widths, string? afmName)
+    {
+        var widthsResolved = Resolve(reader, fontDict.Get(_widthsKey));
+        if (widthsResolved is null)
+        {
+            if (afmName is not null)
+                return true;
+
+            ReportOnce(ref _reported402, PdfReaderDiagnosticCode.FontWidthsMalformed,
+                "has no /Widths and is not a standard 14 font.");
+            return false;
+        }
+
+        var firstCharResolved = Resolve(reader, fontDict.Get(_firstCharKey));
+        var lastCharResolved = Resolve(reader, fontDict.Get(_lastCharKey));
+        if (firstCharResolved is not PdfInteger first || first.Value is < 0 or > 255
+            || lastCharResolved is not PdfInteger last || last.Value is < 0 or > 255
+            || first.Value > last.Value)
+        {
+            ReportOnce(ref _reported402, PdfReaderDiagnosticCode.FontWidthsMalformed,
+                "/FirstChar or /LastChar is missing, mistyped, out of range, or FirstChar exceeds LastChar.");
+            return false;
+        }
+
+        if (widthsResolved is not PdfArray widthsArray)
+        {
+            ReportOnce(ref _reported402, PdfReaderDiagnosticCode.FontWidthsMalformed,
+                "/Widths is not an array.");
+            return false;
+        }
+
+        var firstChar = (int)first.Value;
+        var span = (int)(last.Value - first.Value + 1);
+        var usable = Math.Min(widthsArray.Count, span);
+        var malformed = widthsArray.Count < span;
+        for (var i = 0; i < usable; i++)
+        {
+            var element = Resolve(reader, widthsArray[i]);
+            switch (element)
+            {
+                case PdfInteger wi: widths[firstChar + i] = wi.Value; break;
+                case PdfReal wr: widths[firstChar + i] = wr.Value; break;
+                default: malformed = true; break;
+            }
+        }
+
+        if (malformed)
+        {
+            ReportOnce(ref _reported402, PdfReaderDiagnosticCode.FontWidthsMalformed,
+                "/Widths is shorter than LastChar - FirstChar + 1, or contains a non-number element.");
+        }
+        return false;
+    }
+
+    private static void FillAfmWidths(
+        string afmName, string?[] table, string?[] unicode, double[] widths, double missingWidth)
+    {
+        if (Standard14Names.TryGetKernelFont(afmName, out var font))
+        {
+            for (var code = 0; code < 256; code++)
+            {
+                if (table[code] is null)
+                    continue;
+                var u = unicode[code];
+                widths[code] = u is { Length: 1 } ? Standard14Metrics.GetWidth(font, u[0]) : missingWidth;
+            }
+            return;
+        }
+
+        var byName = afmName == "Symbol" ? SymbolFontMetrics.SymbolWidths : SymbolFontMetrics.ZapfDingbatsWidths;
+        for (var code = 0; code < 256; code++)
+        {
+            var name = table[code];
+            if (name is null)
+                continue;
+            widths[code] = byName.TryGetValue(name, out var w) ? w : missingWidth;
+        }
+    }
+
+    /// <inheritdoc />
+    public override bool TryDecodeNext(ReadOnlySpan<byte> bytes, ref int offset, out DecodedGlyph glyph)
+    {
+        if (offset >= bytes.Length)
+        {
+            glyph = default;
+            return false;
+        }
+
+        var code = bytes[offset];
+        offset++;
+
+        var unicode = _unicode[code];
+        if (unicode is null && !_reportedNoUnicodeOrUnmapped && _hasAnyMappedCode)
+        {
+            ReportOnce(ref _reportedNoUnicodeOrUnmapped, PdfReaderDiagnosticCode.UnmappedGlyphs,
+                "decoded a glyph whose code has no Unicode mapping, though other codes in this font do.");
+        }
+
+        glyph = new DecodedGlyph(code, 1, _widths[code], unicode, code == 32);
+        return true;
+    }
+
+    private void ReportOnce(ref bool flag, PdfReaderDiagnosticCode code, string message)
+    {
+        if (flag)
+            return;
+        flag = true;
+        _sink.Report(code, message, _objectNumber, _generation, _pageIndex);
+    }
+
+    /// <summary>Null-tolerant single-hop resolution through <paramref name="reader"/>.</summary>
+    private static PdfObject? Resolve(PdfDocumentReader reader, PdfObject? raw) =>
+        raw is null ? null : reader.ResolveValue(raw);
+}
