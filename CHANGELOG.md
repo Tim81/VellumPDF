@@ -119,6 +119,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   document reports on re-opening now include `Extract`. Documents written with `Extract`
   (the default, since `All` includes it) carry the same `/P` value as before. See Fixed, below,
   for why. (#397)
+- **A preflight finding's message text changes for a named value longer than 32 characters, and for
+  any message longer than 1024 characters.** Ten rule sites that quote a producer-supplied name (a
+  stream `/Filter`, an action `/S` or named action `/N`, an annotation `/Subtype` or an extra `/AP`
+  key, a composite font's `/Encoding` CMap name in two rules, a `/RoleMap` key, a `/Perms` key, a
+  blend mode) now keep the first 32 characters followed by `... (N bytes)`, and every
+  `PreflightAssertion.Message` past 1024 characters ends in `... (N chars)`. `vellum-preflight`'s
+  text, JSON and SARIF output carries the same text. Verdicts, rule ids, clauses and assertion
+  counts are unaffected, and a message whose named value is 32 characters or shorter is
+  byte-identical to before. See Fixed, below, for why. (#403)
 
 ### Fixed
 
@@ -133,10 +142,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `Extract` therefore reads back with `Extract` included in `PdfEncryptionInfo.Permissions`. (#397)
 - **A preflight finding could retain a producer-sized string for the result's lifetime.** A rule
   that names the offending value in its message interpolated it whole, so one oversized `/Filter`
-  name shared by 400 streams kept 705.7 MiB of message text alive from a 990 KB file. Every
-  `PreflightAssertion.Message` is now cut at 1024 characters with its length appended, and the eight
-  rules that quote a name keep the first 32 characters plus the byte count. Verdicts, rule ids and
-  counts are unchanged; a message for a value of 32 characters or fewer is byte-identical. (#403)
+  name shared by 400 pages kept 705.7 MiB of message text alive from a 990 KB file (measured in
+  #403). Every `PreflightAssertion.Message` is now cut at 1024 characters with its length appended,
+  and the ten sites that quoted a name whole keep the first 32 characters plus the byte count; the
+  remaining sites that interpolate a producer value rely on the 1024-character cut and are listed
+  in #405. What this bounds is the retained result; the transient allocation the Reader makes while
+  building its own exception message for an unknown filter is unchanged and tracked in #406. (#403)
 
 ## [2.3.0] - 2026-09-01
 

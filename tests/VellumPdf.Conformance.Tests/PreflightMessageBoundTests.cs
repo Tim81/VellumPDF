@@ -1,7 +1,6 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
 
-using System.Linq;
 using System.Text;
 using VellumPdf.Canvas;
 using VellumPdf.Conformance.Rules;
@@ -14,10 +13,12 @@ namespace VellumPdf.Conformance.Tests;
 
 /// <summary>
 /// Value-level tests for the #403 message bound: <see cref="PreflightContext.Report"/> cuts a
-/// message at <see cref="PreflightContext.MaxMessageChars"/>, and the nine sites that quote a
-/// producer <see cref="PdfName"/> whole excerpt it through
+/// message at <see cref="PreflightContext.MaxMessageChars"/>, and the ten sites that quoted a
+/// producer <see cref="PdfName"/> whole (nine <c>.Value</c> interpolations and the annotation
+/// label <c>AnnotationRule</c> builds from one) excerpt it through
 /// <see cref="DiagnosticExcerpt.Quote(string)"/> first, so the sentence shape survives instead of
-/// being cut mid-word by the sink.
+/// being cut mid-word by the sink. Every other producer-controlled interpolation relies on the
+/// sink cut alone; #405 lists them.
 /// </summary>
 public sealed class PreflightMessageBoundTests
 {
@@ -134,8 +135,8 @@ public sealed class PreflightMessageBoundTests
 
     /// <summary>
     /// Builds a UA-1 tagged document with one embedded (Type0) font selected via Tf, mirroring
-    /// <c>OracleCorpus.WriterPdfTagged</c>. Kept independent because that method builds a
-    /// registered oracle fixture (#403 must not change what any oracle test validates).
+    /// <c>OracleCorpus.WriterPdfTagged</c>. Kept independent because that method is private to
+    /// <c>OracleCorpus</c>.
     /// </summary>
     private static byte[] BuildUa1TaggedPdf()
     {
@@ -199,7 +200,7 @@ public sealed class PreflightMessageBoundTests
         return reader.AppendRevision([(type0Ref.ObjectNumber, 0, clone)]);
     }
 
-    // ── Site 1 / site 2: the shared oversized-/Filter fixture ───────────────────────────────────
+    // ── The shared oversized-/Filter fixture: the StreamRule site, and the sink ─────────────────
 
     [Fact]
     public void StreamFilter_withAnOversizedName_reportsAFixedExcerpt()
@@ -237,7 +238,7 @@ public sealed class PreflightMessageBoundTests
         Assert.All(matching, a => Assert.Equal(expected, a.Message));
     }
 
-    // ── Sites 3-10: one test per Layer B site ────────────────────────────────────────────────────
+    // ── One test per remaining site that quotes a producer name ──────────────────────────────────
 
     [Fact]
     public void ActionType_withAnOversizedName_reportsAFixedExcerpt()
@@ -484,7 +485,9 @@ public sealed class PreflightMessageBoundTests
                 break;
         }
 
-        Assert.False(retained.Length > 0 && char.IsHighSurrogate(retained[^1]));
+        // Scenario 2 fails here when the surrogate step-back in Report is removed: the cut would
+        // then land between the two halves of U+1F600 and leave a lone high surrogate.
+        Assert.DoesNotContain(retained, char.IsSurrogate);
     }
 
     // ── The issue's own shape: 400 pages sharing one oversized /Filter name ─────────────────────
@@ -515,8 +518,15 @@ public sealed class PreflightMessageBoundTests
 
         var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2A);
 
-        Assert.All(result.Assertions, a => Assert.True(a.Message.Length <= PreflightContext.MaxMessageChars + 22));
+        // "... (" + up to ten digits of length + " chars)" is the longest suffix Report appends.
+        const int maxSuffixChars = 5 + 10 + 7;
+        Assert.All(
+            result.Assertions,
+            a => Assert.True(
+                a.Message.Length <= PreflightContext.MaxMessageChars + maxSuffixChars,
+                $"A retained message of rule {a.RuleId} was {a.Message.Length} chars."));
 
+        // 128 Ki characters for 407 findings; the pre-fix total was 705.7 MiB of message text.
         var totalLength = result.Assertions.Sum(a => a.Message.Length);
         Assert.True(totalLength < 131_072, $"Total retained message length was {totalLength} chars.");
 
