@@ -88,7 +88,11 @@ public sealed class FontFuzzTests
         Gen.Int[-10, 300].Select(i => (PdfObject)new PdfInteger(i)),
         NameGen.Select(n => (PdfObject)new PdfName(n)),
         Gen.Const((PdfObject)new PdfDictionary()),
-        Gen.Const((PdfObject)new PdfIndirectReference(EncodingChainHeadObject, 0)));
+        Gen.Const((PdfObject)new PdfIndirectReference(EncodingChainHeadObject, 0)),
+        // Direct and one-hop null, which §7.3.7 makes equivalent to an absent /Differences: the
+        // encoding dictionary's other entries still apply and no 401 is reported.
+        Gen.Const((PdfObject)PdfNull.Instance),
+        Gen.Const((PdfObject)new PdfIndirectReference(NullObject, 0)));
 
     private static readonly Gen<PdfObject> DifferencesValueGen = Gen.OneOf(
         DifferencesGen.Select(a => (PdfObject)a),
@@ -101,6 +105,11 @@ public sealed class FontFuzzTests
         Gen.Const((PdfObject?)new PdfName("MacRomanEncoding")),
         Gen.Const((PdfObject?)new PdfName("Bogus")),
         Gen.Const((PdfObject?)new PdfInteger(42)),
+        // Direct and one-hop null. §7.3.7 makes both the same as an absent /Encoding, so the font
+        // keeps its built-in or standard base encoding and reports nothing; the corpus reached
+        // that rule through /Widths only before these two arms.
+        Gen.Const((PdfObject?)PdfNull.Instance),
+        Gen.Const((PdfObject?)new PdfIndirectReference(NullObject, 0)),
         // Resolves in one hop to the encoding dictionary at EncodingDictObject.
         Gen.Const((PdfObject?)new PdfIndirectReference(EncodingDictObject, 0)),
         // Resolves in one hop to ANOTHER reference (EncodingChainHeadObject's own content is

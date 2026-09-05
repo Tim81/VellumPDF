@@ -124,10 +124,12 @@ Adobe Core 14 AFM font metrics
   and that this paragraph is not modified. Adobe Systems has no responsibility
   or obligation to support the use of the AFM files.
 
-  This entry exists because that licence conditions redistribution on the
-  copyright and trademark notices above being retained; SymbolFontMetrics.cs
-  is a derived table of glyph names, codes and advance widths, not a copy of
-  the AFM files themselves.
+  That licence conditions redistribution of the AFM files themselves on all
+  copyright notices being retained, and SymbolFontMetrics.cs is a derived
+  table of glyph names, codes and advance widths rather than a copy of those
+  files, so the condition does not reach it. This entry reproduces the
+  notices anyway, because a reader of the generated table has no other way to
+  learn where its numbers came from.
 
 ────────────────────────────────────────────────────────────────────────────────
 Third-party data used to build documentation (not bundled)

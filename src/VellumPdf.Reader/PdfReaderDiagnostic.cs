@@ -589,7 +589,7 @@ public enum PdfReaderDiagnosticCode
 
     /// <summary>
     /// A simple font's <c>/FirstChar</c>, <c>/LastChar</c>, or <c>/Widths</c> (ISO 32000-2 Table
-    /// 109) was missing, mistyped, out of range, or shorter than
+    /// 109) was missing, mistyped, holding a non-number element, out of range, or shorter than
     /// <c>LastChar - FirstChar + 1</c> requires, or the font had no <c>/Widths</c> at all and is
     /// not one of the standard 14 fonts (§9.6.2.1). A malformed <c>/Widths</c> is not repaired
     /// from the standard 14 font's own AFM metrics even when the font is one of them; every code

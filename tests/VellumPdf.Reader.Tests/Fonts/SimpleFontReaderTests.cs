@@ -256,7 +256,67 @@ public sealed class SimpleFontReaderTests
 
         var d = Assert.Single(sink.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.FontEncodingMalformed);
         Assert.Equal(
-            "/Differences contains an element that is neither an integer nor a name (the number 65).",
+            "/Differences contains an element that is neither an integer nor a name "
+                + "(the real number 65).",
+            d.Message);
+    }
+
+    // A nested array and a null are both types this reader defines and handles elsewhere, so the
+    // catch-all wording ("a type this reader does not recognise") would be false for either.
+    [Fact]
+    public void Differences_nestedArrayElement_reports401WithExactMessage()
+    {
+        using var doc = FontTestSupport.OpenMinimal();
+        var sink = new DiagnosticSink(50);
+        var differences = new PdfArray()
+            .Add(new PdfInteger(65))
+            .Add(new PdfArray().Add(new PdfName("A")))
+            .Add(new PdfName("B"));
+        var encoding = new PdfDictionary().Set(new PdfName("Differences"), differences);
+        var fontDict = Type1("Helvetica").Set(PdfName.Encoding, encoding);
+        Build(doc, fontDict, sink);
+
+        var d = Assert.Single(sink.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.FontEncodingMalformed);
+        Assert.Equal(
+            "/Differences contains an element that is neither an integer nor a name "
+                + "(a nested array).",
+            d.Message);
+    }
+
+    // §9.6.5.1 makes each code "the first index in a sequence of character codes to be changed",
+    // so an array opening with a name names no starting code. The reader starts it at 0 rather
+    // than discarding the array, and says nothing.
+    [Fact]
+    public void Differences_arrayOpeningWithAName_startsAtCodeZero_withNoDiagnostic()
+    {
+        using var doc = FontTestSupport.OpenMinimal();
+        var sink = new DiagnosticSink(50);
+        var differences = new PdfArray().Add(new PdfName("A")).Add(new PdfName("B"));
+        var encoding = new PdfDictionary().Set(new PdfName("Differences"), differences);
+        var fontDict = Type1("Helvetica").Set(PdfName.Encoding, encoding);
+        var font = Build(doc, fontDict, sink);
+
+        Assert.Empty(sink.Diagnostics);
+        Assert.Equal("A", Decode(font, 0x00).Unicode);
+        Assert.Equal("B", Decode(font, 0x01).Unicode);
+    }
+
+    [Fact]
+    public void Differences_nullElement_reports401WithExactMessage()
+    {
+        using var doc = FontTestSupport.OpenMinimal();
+        var sink = new DiagnosticSink(50);
+        var differences = new PdfArray()
+            .Add(new PdfInteger(65))
+            .Add(PdfNull.Instance)
+            .Add(new PdfName("B"));
+        var encoding = new PdfDictionary().Set(new PdfName("Differences"), differences);
+        var fontDict = Type1("Helvetica").Set(PdfName.Encoding, encoding);
+        Build(doc, fontDict, sink);
+
+        var d = Assert.Single(sink.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.FontEncodingMalformed);
+        Assert.Equal(
+            "/Differences contains an element that is neither an integer nor a name (a null).",
             d.Message);
     }
 

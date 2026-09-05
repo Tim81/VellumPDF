@@ -49,11 +49,16 @@ namespace VellumPdf.Reader.Fonts;
 /// <c>Resolve</c> helper before its type is tested (one hop through
 /// <see cref="PdfDocumentReader.ResolveValue"/>, with a dangling reference or a resolved
 /// <see cref="PdfNull"/>, direct or reached through that hop, normalised to
-/// <see langword="null"/> and treated as absent per §7.3.7), with one exception: an
-/// element of <c>/Differences</c> is read raw (§9.6.5, step 5 below), because §7.3.10 permits an
-/// indirect reference there and this reader deliberately does not resolve one, recording that as a
-/// reader limitation (<see cref="PdfReaderDiagnosticCode.FontEncodingMalformed"/>) rather than
-/// silently supporting or silently rejecting it.
+/// <see langword="null"/> and treated as absent per §7.3.7), with one exception:
+/// <c>/ToUnicode</c>, whose reference is followed with
+/// <see cref="PdfDocumentReader.ResolveStream(PdfIndirectReference)"/> because <c>Resolve</c>
+/// hands back a stream object's dictionary and never the <see cref="PdfStream"/> itself. An
+/// element of
+/// <c>/Differences</c> is read raw as well (§9.6.5.1, step 5 below), but that is an array element
+/// rather than a dictionary entry: §7.3.10 permits an indirect reference there and this reader
+/// deliberately does not resolve one, recording that as a reader limitation
+/// (<see cref="PdfReaderDiagnosticCode.FontEncodingMalformed"/>) rather than silently supporting
+/// or silently rejecting it.
 /// </para>
 /// <para>
 /// A <c>/Differences</c> name longer than <see cref="AdobeGlyphList.MaxGlyphNameLength"/> reports
@@ -63,10 +68,14 @@ namespace VellumPdf.Reader.Fonts;
 /// encoding's own glyph at that code, it does not preserve it.
 /// </para>
 /// <para>
-/// ISO 32000-2 §9.6.5 states the ordering rule for <c>/Differences</c> sequences verbatim: "These
+/// ISO 32000-2 §9.6.5.1 states the ordering rule for <c>/Differences</c> sequences verbatim: "These
 /// sequences may be specified in any order but shall not overlap." This reader does not enforce
 /// that rule: two sequences that assign the same code are applied in array order, so a later one
 /// silently overwrites an earlier one's name there, with no diagnostic for the overlap itself.
+/// The same clause says "Each code shall be the first index in a sequence of character codes to be
+/// changed", so an array opening with a name has no code to start from; this reader starts it at
+/// code 0 and reports nothing, on the same reasoning as the overlap: applying the names a producer
+/// wrote loses less than discarding the whole array over its missing first element.
 /// </para>
 /// <para>
 /// §9.6.5.4 also states, verbatim: "When the font has no Encoding entry, or the font descriptor's
@@ -181,11 +190,15 @@ internal sealed class SimpleFontReader : PdfFontReader
                 $"has no usable /BaseFont: {excerpt}.");
         }
 
-        // Step 3: symbolic. A /Flags of the wrong type (Table 121 requires an integer; a real
-        // is the one a producer is most likely to write by mistake) is treated the same as an
-        // absent one, silently: this class's four diagnostic codes all describe the font
-        // dictionary itself, none fits a malformed descriptor entry, and none is added, since the
-        // Table 112 default below leaves the font in a usable state either way.
+        // Step 3: symbolic. A /Flags of the wrong type (Table 120 types the entry as an integer
+        // and §7.3.3 forbids a real where an integer is expected; a real is the one a producer is
+        // most likely to write by mistake) is treated the same as an absent one, silently: of this
+        // class's five diagnostic codes, 400 to 402 describe the font dictionary and 403/404 its
+        // Unicode routing, so none fits a malformed descriptor entry, and no sixth is added, since
+        // the Table 112 default below leaves the font in a usable state either way. What the
+        // producer loses is step 8's §9.6.5.4 fill: on a nonsymbolic TrueType with a dictionary
+        // /Encoding, a /Flags the reader cannot read leaves the twelve StandardEncoding cells
+        // undefined that a readable one would have filled.
         var descriptor = Resolve(reader, fontDict.Get(_fontDescriptorKey)) as PdfDictionary;
         var resolvedFlags = descriptor is not null
             ? Resolve(reader, descriptor.Get(_flagsKey)) as PdfInteger
@@ -456,9 +469,11 @@ internal sealed class SimpleFontReader : PdfFontReader
         PdfName n => $"the name {DiagnosticExcerpt.Quote(n.Value)}",
         PdfInteger i => $"the integer {i.Value}",
         // Invariant so the message does not change with the host culture's decimal separator.
-        PdfReal r => $"the number {r.Value.ToString(CultureInfo.InvariantCulture)}",
+        PdfReal r => $"the real number {r.Value.ToString(CultureInfo.InvariantCulture)}",
         PdfBoolean b => $"the boolean {(b.Value ? "true" : "false")}",
         PdfLiteralString or PdfHexString => "a string",
+        PdfArray => "a nested array",
+        PdfNull => "a null",
         PdfStream => "a stream",
         _ => "a value of a type this reader does not recognise",
     };
@@ -581,10 +596,14 @@ internal sealed class SimpleFontReader : PdfFontReader
     /// resolved <see cref="PdfNull"/>, direct or reached through the one hop, to
     /// <see langword="null"/>: ISO 32000-2 §7.3.7 states, verbatim, "A dictionary entry whose
     /// value is null (see 7.3.9, "Null object") shall be treated the same as if the entry does
-    /// not exist", and every entry this class reads goes through this one helper, so that rule
-    /// applies uniformly to <c>/Encoding</c>, <c>/Widths</c>, <c>/FirstChar</c>, <c>/LastChar</c>,
-    /// <c>/BaseFont</c>, <c>/FontDescriptor</c>, <c>/MissingWidth</c>, <c>/BaseEncoding</c>,
-    /// <c>/Flags</c> and <c>/Differences</c> from this one site.
+    /// not exist", and every entry this class reads but <c>/ToUnicode</c> goes through this one
+    /// helper, so that rule applies uniformly to <c>/Subtype</c>, <c>/Encoding</c>,
+    /// <c>/Widths</c>, <c>/FirstChar</c>, <c>/LastChar</c>, <c>/BaseFont</c>,
+    /// <c>/FontDescriptor</c>, <c>/MissingWidth</c>, <c>/BaseEncoding</c>, <c>/Flags</c> and
+    /// <c>/Differences</c> from this one site. <c>/ToUnicode</c> takes
+    /// <see cref="PdfDocumentReader.ResolveStream(PdfIndirectReference)"/> instead, which
+    /// returns null for both a dangling reference and a null target, so it reaches the same
+    /// outcome by its own route.
     /// </summary>
     private static PdfObject? Resolve(PdfDocumentReader reader, PdfObject? raw)
     {
