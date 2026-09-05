@@ -126,8 +126,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   blend mode) now keep the first 32 characters followed by `... (N bytes)`, and every
   `PreflightAssertion.Message` past 1024 characters ends in `... (N chars)`. `vellum-preflight`'s
   text, JSON and SARIF output carries the same text. Verdicts, rule ids, clauses and assertion
-  counts are unaffected, and a message whose named value is 32 characters or shorter is
-  byte-identical to before. See Fixed, below, for why. (#403)
+  counts are unaffected, and at these ten sites a message whose named value is 32 characters or
+  shorter is byte-identical to before. See Fixed, below, for why. (#403)
 
 ### Fixed
 
@@ -142,12 +142,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `Extract` therefore reads back with `Extract` included in `PdfEncryptionInfo.Permissions`. (#397)
 - **A preflight finding could retain a producer-sized string for the result's lifetime.** A rule
   that names the offending value in its message interpolated it whole, so one oversized `/Filter`
-  name shared by 400 pages kept 705.7 MiB of message text alive from a 990 KB file (measured in
-  #403). Every `PreflightAssertion.Message` is now cut at 1024 characters with its length appended,
-  and the ten sites that quoted a name whole keep the first 32 characters plus the byte count; the
-  remaining sites that interpolate a producer value rely on the 1024-character cut and are listed
-  in #405. What this bounds is the retained result; the transient allocation the Reader makes while
-  building its own exception message for an unknown filter is unchanged and tracked in #406. (#403)
+  name shared by 400 pages kept 705.7 MiB (GC delta) of message text alive from a 990 KB file
+  (measured in #403). Every `PreflightAssertion.Message` is now cut at 1024 characters with its
+  length appended, and the ten sites that quoted a name whole keep the first 32 characters plus the
+  byte count; the remaining sites that interpolate a producer value rely on the 1024-character cut
+  and are listed in #405. What this bounds is the retained result; the transient allocation the
+  Reader makes while building its own exception message for an unknown filter is unchanged and
+  tracked in #406. (#403)
 
 ## [2.3.0] - 2026-09-01
 

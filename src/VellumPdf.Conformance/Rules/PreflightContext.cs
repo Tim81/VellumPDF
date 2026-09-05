@@ -521,10 +521,10 @@ internal sealed class PreflightContext
     /// rules interpolate a name, a string or a keyword the document controls, and ISO 32000-2 Annex
     /// C.1 sets no bound on any of those ("In general, this PDF standard does not restrict the size
     /// or quantity of things described in the PDF file format"), so without this cut one
-    /// 900,000-byte /Filter name shared by 400 pages retained 705.7 MiB of message text from a 990
-    /// KB file (measured in #403). 1024 characters is roughly twice the longest sentence any rule
-    /// composes on its own (522 characters, A2aContentItemTaggingRule) and short enough that a
-    /// result list of thousands of findings stays a few megabytes.
+    /// 900,000-byte /Filter name shared by 400 pages retained 705.7 MiB (GC delta) of message text
+    /// from a 990 KB file (measured in #403). 1024 characters is roughly twice the longest sentence
+    /// any rule composes on its own (522 characters, A2aContentItemTaggingRule) and short enough
+    /// that a result list of thousands of findings stays a few megabytes.
     /// <para>
     /// This cut is the only bound most messages have. Ten sites whose message names a producer
     /// value (a /Filter, an action type, a named action, an annotation /Subtype or /AP key, a
@@ -532,10 +532,10 @@ internal sealed class PreflightContext
     /// additionally excerpt it through the Reader's <see cref="DiagnosticExcerpt"/> before
     /// interpolating, so the sentence keeps its shape; every other producer-controlled
     /// interpolation is cut mid-value here when the value is oversized (#405 lists them). The two
-    /// differ in what they can assume: a <see cref="PdfName"/> value is Latin-1 (one character per
-    /// byte, never a surrogate pair), so <see cref="DiagnosticExcerpt.Quote(string)"/> slices
-    /// freely and counts bytes, while this cut sees text decoded from UTF-16BE too and has to step
-    /// around a surrogate pair.
+    /// differ in what they can assume: a <see cref="PdfName"/> parsed from a document is Latin-1
+    /// (one character per byte, never a surrogate pair), so
+    /// <see cref="DiagnosticExcerpt.Quote(string)"/> slices freely and counts bytes, while this cut
+    /// sees text decoded from UTF-16BE too and has to step around a surrogate pair.
     /// </para>
     /// </summary>
     internal const int MaxMessageChars = 1024;
@@ -565,7 +565,8 @@ internal sealed class PreflightContext
             var cut = MaxMessageChars;
             if (char.IsHighSurrogate(message[cut - 1]))
                 cut--;
-            message = $"{message[..cut]}... ({message.Length} chars)";
+            message = string.Concat(message.AsSpan(0, cut), "... (", message.Length.ToString(),
+                " chars)");
         }
 
         _assertions.Add(new PreflightAssertion(ruleId, clause, severity, message, objectRef));

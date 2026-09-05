@@ -173,7 +173,7 @@ public sealed class PreflightMessageBoundTests
     /// <summary>
     /// Rewrites the fixture's Type0 font's /Encoding to an oversized name via an incremental
     /// update, mirroring <c>OracleCorpus.Ua1BadCMapName</c>'s clone-and-AppendRevision step (that
-    /// method itself is a registered oracle fixture and is not reused directly).
+    /// method hardcodes a ten-character name, so it cannot produce an oversized one).
     /// </summary>
     private static byte[] BuildUa1OversizedCMapNamePdf(int nameBytes)
     {
@@ -485,9 +485,24 @@ public sealed class PreflightMessageBoundTests
                 break;
         }
 
-        // Scenario 2 fails here when the surrogate step-back in Report is removed: the cut would
-        // then land between the two halves of U+1F600 and leave a lone high surrogate.
-        Assert.DoesNotContain(retained, char.IsSurrogate);
+        // The Assert.Equal above is the discriminating check: with the surrogate step-back in
+        // Report removed, scenario 2 keeps 1024 characters and lands between the two halves of
+        // U+1F600, so the expected 1023-character prefix no longer matches. The walk below restates
+        // the invariant that check implies (no lone surrogate anywhere in the retained text) in the
+        // form the CLI's SARIF writer needs.
+        for (var i = 0; i < retained.Length; i++)
+        {
+            if (char.IsHighSurrogate(retained[i]))
+            {
+                Assert.True(i + 1 < retained.Length && char.IsLowSurrogate(retained[i + 1]),
+                    $"Lone high surrogate at index {i}.");
+                i++;
+            }
+            else
+            {
+                Assert.False(char.IsLowSurrogate(retained[i]), $"Lone low surrogate at index {i}.");
+            }
+        }
     }
 
     // ── The issue's own shape: 400 pages sharing one oversized /Filter name ─────────────────────
@@ -526,7 +541,8 @@ public sealed class PreflightMessageBoundTests
                 a.Message.Length <= PreflightContext.MaxMessageChars + maxSuffixChars,
                 $"A retained message of rule {a.RuleId} was {a.Message.Length} chars."));
 
-        // 128 Ki characters for 407 findings; the pre-fix total was 705.7 MiB of message text.
+        // 128 Ki characters for 407 findings; the pre-fix total for this fixture was 693.6 MiB of
+        // message text (#403's 705.7 MiB figure is from a 990 KB variant of the same shape).
         var totalLength = result.Assertions.Sum(a => a.Message.Length);
         Assert.True(totalLength < 131_072, $"Total retained message length was {totalLength} chars.");
 
