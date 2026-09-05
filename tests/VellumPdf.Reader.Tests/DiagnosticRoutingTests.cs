@@ -166,10 +166,18 @@ public sealed class DiagnosticRoutingTests
 
     // ── Filters.cs: predictor ─────────────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// The TIFF predictor (#98) un-differences <c>/BitsPerComponent</c> 4 the same way it already
+    /// does 8, so the two rows this test feeds it decode rather than copying through still
+    /// differenced. Known-answer bytes, derived by hand from ISO 32000-2 §7.4.4.4's own
+    /// cumulative-sum rule: row one, nibbles 1 2 3 4 5 6 7 8, accumulates modulo 16 to 1 3 6 A F 5
+    /// C 4 (<c>13 6A F5 C4</c>); row two, nibbles 9 A B C D E F 0, accumulates to 9 3 E A 7 5 4 4
+    /// (<c>93 EA 75 44</c>).
+    /// </summary>
     [Fact]
-    public void UnsupportedPredictor_bpcNotEight_reportsWarning_stillReturnsBytes()
+    public void TiffPredictor2_bpcFour_twoRows_decodesCorrectly_reportsNothing()
     {
-        // Columns 8, Colors 1, BitsPerComponent 4 -> rowBytes = 4; two rows of arbitrary content.
+        // Columns 8, Colors 1, BitsPerComponent 4 -> rowBytes = 4; two rows.
         var raw = new byte[] { 0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0 };
         var compressed = CompressZlib(raw);
         var parms = new PdfDictionary()
@@ -185,19 +193,16 @@ public sealed class DiagnosticRoutingTests
 
         var decoded = PdfFilters.Decode(stream, ReaderLimits.Defaults, diagnostics: sink);
 
-        Assert.NotNull(decoded);
-        Assert.Equal(raw, decoded); // copied through byte-for-byte, not thrown away.
-        var d = Assert.Single(sink.Diagnostics, x => x.Code == PdfReaderDiagnosticCode.UnsupportedPredictor);
-        Assert.Equal(PdfReaderDiagnosticSeverity.Warning, d.Severity);
+        Assert.Equal(new byte[] { 0x13, 0x6A, 0xF5, 0xC4, 0x93, 0xEA, 0x75, 0x44 }, decoded);
+        Assert.Empty(sink.Diagnostics);
     }
 
     /// <summary>
-    /// Pins the <c>rows &gt; 0</c> gate (Filters.cs) at its boundary. The rows == 2 test above and
-    /// <see cref="UnsupportedPredictor_bodyShorterThanOneRow_reportsNothing"/> (rows == 0) cannot
-    /// tell <c>rows &gt; 0</c> from <c>rows &gt; 1</c>; only a body of exactly one row can.
+    /// The one-row twin of the test above, pinning the same known-answer arithmetic against a
+    /// body exactly one row long.
     /// </summary>
     [Fact]
-    public void UnsupportedPredictor_bodyExactlyOneRow_reportsWarning()
+    public void TiffPredictor2_bpcFour_oneRow_decodesCorrectly_reportsNothing()
     {
         // Columns 8, Colors 1, BitsPerComponent 4 -> rowBytes = 4; a 4-byte body is exactly one row.
         var raw = new byte[] { 0x12, 0x34, 0x56, 0x78 };
@@ -215,10 +220,8 @@ public sealed class DiagnosticRoutingTests
 
         var decoded = PdfFilters.Decode(stream, ReaderLimits.Defaults, diagnostics: sink);
 
-        Assert.NotNull(decoded);
-        Assert.Equal(raw, decoded); // copied through byte-for-byte, not thrown away.
-        var d = Assert.Single(sink.Diagnostics, x => x.Code == PdfReaderDiagnosticCode.UnsupportedPredictor);
-        Assert.Equal(PdfReaderDiagnosticSeverity.Warning, d.Severity);
+        Assert.Equal(new byte[] { 0x13, 0x6A, 0xF5, 0xC4 }, decoded);
+        Assert.Empty(sink.Diagnostics);
     }
 
     /// <summary>

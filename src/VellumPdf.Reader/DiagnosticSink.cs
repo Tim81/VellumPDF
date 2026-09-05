@@ -19,7 +19,12 @@ namespace VellumPdf.Reader;
 /// to at most two retained entries per <c>Run</c> the same way, one each for
 /// <see cref="PdfReaderDiagnosticCode.ContentStreamTooLarge"/> and
 /// <see cref="PdfReaderDiagnosticCode.FormXObjectBudgetExceeded"/> (see that type's own remarks
-/// for why each of those fires at most once).
+/// for why each of those fires at most once). <c>ImageDecoder</c> (#98) is the third: it bounds
+/// itself to at most two retained entries per <c>ExtractImages</c> call, one each for
+/// <see cref="PdfReaderDiagnosticCode.ImageExtractionBudgetExhausted"/> and
+/// <see cref="PdfReaderDiagnosticCode.ImageOccurrenceLimitExceeded"/>, both keyed
+/// <c>(code, null, null)</c> so the two conditions cannot collide under one key the way two
+/// same-keyed retained entries would.
 /// </summary>
 /// <param name="cap">
 /// The maximum number of ordinary diagnostics this sink holds before it starts recording

@@ -609,7 +609,7 @@ internal static class PageTreeWalker
         var resourcesRaw = dict.Get(PdfName.Resources);
         var resources = ResolveResourcesAttribute(reader, cache, resourcesRaw, parent.Resources);
 
-        return new PdfReadPage(pageIndex, objectNumber, dict, mediaBox, cropBox, rotate, resources);
+        return new PdfReadPage(pageIndex, objectNumber, dict, mediaBox, cropBox, rotate, resources, reader);
     }
 
     /// <summary>

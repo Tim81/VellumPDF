@@ -211,11 +211,14 @@ public enum PdfReaderDiagnosticCode
     /// </summary>
     DecodeParmsMalformed = 108,
 
-    /// <summary>
-    /// A TIFF predictor (ISO 32000-2 §7.4.4.4, predictor value 2) was applied to a stream whose
-    /// <c>/BitsPerComponent</c> is not 8. The decoder copies the row through unmodified rather than
-    /// undoing the horizontal difference at that bit depth, so the decoded samples are wrong at any
-    /// other <c>/BitsPerComponent</c> until that case is implemented.
+    /// <summary> No longer raised, since #98 (v2.4): the TIFF predictor (ISO 32000-2 §7.4.4.4,
+    /// predictor value 2) now un-predicts <c>/BitsPerComponent</c> 1, 2, 4, and 16 the same way it
+    /// already did 8, so the "these samples are copied through still differenced" condition this
+    /// code named cannot occur any more. <c>ApplyPredictor</c> still throws <see
+    /// cref="InvalidDataException"/> for any <c>/BitsPerComponent</c> outside {1, 2, 4, 8, 16} (an
+    /// existing check, unrelated to this code). Kept, not removed: values in this enum are
+    /// append-only, and a caller may still hold a persisted report carrying it from a read made
+    /// before #98.
     /// </summary>
     UnsupportedPredictor = 109,
 
@@ -375,6 +378,14 @@ public enum PdfReaderDiagnosticCode
     /// <c>ContentInterpreter.Run</c>'s own outer catch from a malformed indirect-reference chain met
     /// while resolving a resource, XObject, or nested Form XObject, which ends interpretation of the
     /// whole page (nothing narrower than the page itself is available to resume from at that point).
+    /// </para>
+    /// <para>
+    /// A third case (#98) reports it against an annotation appearance stream's own object number:
+    /// <c>ContentInterpreter.RunFormXObject</c> carries the same outer catch as <c>Run</c>, since
+    /// it runs after <c>Run</c> has already returned for the page's own content and needs its own
+    /// guard against the identical malformed-reference failure. Only that one appearance stream's
+    /// interpretation ends; the annotation walk itself continues with the next one (see <see
+    /// cref="AnnotationAppearanceUnusable"/> for the resolution failures the walk itself catches).
     /// </para>
     /// </summary>
     ContentStreamLexError = 300,
@@ -612,6 +623,136 @@ public enum PdfReaderDiagnosticCode
     /// </summary>
     UnmappedGlyphs = 404,
 
+    // ── 5xx: images ─────────────────────────────────────────────────────────────────────────────
+
+    /// <summary> An image dictionary's own required entries (ISO 32000-2 Table 87) were missing or
+    /// invalid: <c>/Width</c> or <c>/Height</c> absent, non-integer, or outside 1..<see
+    /// cref="int.MaxValue"/> (the image is skipped); <c>/BitsPerComponent</c> absent, non-integer,
+    /// or outside {1, 2, 4, 8, 16} on a <c>Raw</c>-encoded image whose filter chain does not end in
+    /// <c>RunLengthDecode</c> (skipped; a <c>CCITTFaxDecode</c>, <c>JBIG2Decode</c>, or
+    /// <c>DCTDecode</c> image, or a <c>RunLengthDecode</c>-terminated chain, instead keeps the
+    /// fixed depth Table 87 gives it regardless of what the dictionary says, reported through <see
+    /// cref="ImageBitsPerComponentOverridden"/>); an <c>/ImageMask true</c> image also
+    /// carrying <c>/ColorSpace</c> or <c>/Mask</c>, neither of which Table 87 permits on a mask
+    /// (both ignored, the mask itself kept); a <c>/DecodeParms /BitsPerComponent</c> that disagrees
+    /// with the image dictionary's own value (the dictionary's value wins); a malformed CCITT
+    /// parameter (Table 11's own default is used instead); a <c>/DecodeParms /ColorTransform</c>
+    /// outside {0, 1} (Table 13 permits only those two; treated as absent); an <c>/SMaskInData</c>
+    /// outside {0, 1, 2} on a <c>JPXDecode</c> image (Table 87; treated as 0); or an
+    /// <c>/SMaskInData</c> present on any other encoding (Table 87 scopes the entry to
+    /// <c>JPXDecode</c> images and calls it meaningless otherwise; ignored). <see
+    /// cref="PdfReaderDiagnostic.Message"/> names which.
+    /// </summary>
+    ImageDictionaryInvalid = 500,
+
+    /// <summary> An image's <c>/ColorSpace</c> could not be turned into a usable colour space:
+    /// absent where Table 87 requires it, <c>/Pattern</c> (Table 88 marks Pattern
+    /// "Not permitted with images"), a name that resolves to nothing this reader understands, or a
+    /// malformed Indexed, ICCBased, or DeviceN space (§8.6.6.3, §8.6.5, §8.6.6.5). A
+    /// <c>Raw</c>-encoded image is skipped, since its sample buffer cannot be laid out without a
+    /// component count; a passthrough image (DCT, JPX, JBIG2, CCITT) is kept with its colour space
+    /// exposed as <see langword="null"/>, since its payload is still verbatim and useful without
+    /// one.
+    /// </summary>
+    ImageColorSpaceUnsupported = 501,
+
+    /// <summary> An image's <c>/Decode</c> array (ISO 32000-2 §8.9.5.2) was not an array of numbers
+    /// whose length is exactly twice the colour space's component count (or, for an image mask,
+    /// exactly two, per Table 87's <c>Decode</c> row and §8.9.6.2; or, for an Indexed space,
+    /// exactly two, per Table 88). Exposed as <see langword="null"/> rather than
+    /// applied either way: this reader never applies a <c>/Decode</c> array to the samples it
+    /// returns.
+    /// </summary>
+    ImageDecodeArrayInvalid = 502,
+
+    /// <summary>
+    /// An image's <c>/SMask</c> or <c>/Mask</c> could not be used as documented there: an
+    /// <c>/SMask</c> whose own <c>/ColorSpace</c> is not DeviceGray (Table 143 requires it), a
+    /// <c>/Mask</c> stream without <c>/ImageMask true</c> (§8.9.6.3 requires the mask stream to be
+    /// an image mask), a mask carrying its own <c>/Mask</c> or <c>/SMask</c> (Table 143 requires
+    /// both absent on a soft mask; this reader does not chain masks a second level regardless), or
+    /// <c>/SMaskInData</c> non-zero beside a present <c>/SMask</c> (Table 87: "If this entry has a
+    /// non-zero value, SMask shall not be specified"). The offending entry is dropped; the parent
+    /// image is kept.
+    /// </summary>
+    ImageMaskInvalid = 503,
+
+    /// <summary>
+    /// A <c>Raw</c>-encoded image's decoded sample buffer was shorter than
+    /// <c>rowBytes * Height</c> (ISO 32000-2 §8.9.3). The image is kept with the short buffer,
+    /// unpadded: this reader does not invent trailing sample bytes a producer never wrote, and
+    /// its <c>CanEncodePng</c> is false, since a PNG encoder would read past the buffer's end.
+    /// </summary>
+    ImageSampleDataShort = 504,
+
+    /// <summary>
+    /// Table 87's own filter rule, or <c>/ImageMask true</c>, forced an image's effective
+    /// <c>/BitsPerComponent</c> to a value other than the one the dictionary states, or supplied
+    /// one where the dictionary carried none at all (missing, non-integer, or outside
+    /// {1, 2, 4, 8, 16}): a <c>CCITTFaxDecode</c> or <c>JBIG2Decode</c> image is always 1-bit; a
+    /// <c>DCTDecode</c> image, or one whose last filter is <c>RunLengthDecode</c>, is always 8-bit;
+    /// an image mask is always 1-bit. Reported at most once per image, before anything is sized
+    /// from the corrected depth.
+    /// </summary>
+    ImageBitsPerComponentOverridden = 505,
+
+    /// <summary>
+    /// A <c>JPXDecode</c> image's payload did not begin with the ISO/IEC 15444-1 JP2 signature box.
+    /// ISO 32000-2 §7.4.9 requires "a full JPX file structure", so a bare codestream (starting
+    /// <c>FF 4F FF 51</c>, SOC then SIZ) is non-conforming rather than an alternative shape this
+    /// reader treats as equally valid; it is still returned, as <c>.j2k</c>. A payload matching
+    /// neither shape is also returned, as <c>.jp2</c>, on the same basis. Informational: the bytes
+    /// are exposed unchanged either way, so nothing about extraction failed.
+    /// </summary>
+    ImageJpxSignatureUnrecognised = 506,
+
+    /// <summary> One image's own decoded size (<c>rowBytes * Height</c> for a <c>Raw</c> image, or
+    /// the stored body length for a passthrough one) exceeded <see
+    /// cref="PdfReaderOptions.MaxDecodedStreamBytes"/>. That image is skipped before any decode is
+    /// attempted; later images in the same call are unaffected. Carries the image's own object
+    /// number, unlike <see cref="ImageExtractionBudgetExhausted"/> and <see
+    /// cref="ImageOccurrenceLimitExceeded"/> below, which are call-wide.
+    /// </summary>
+    ImageLimitExceeded = 507,
+
+    /// <summary>
+    /// An image's filter chain could not be decoded: a filter this reader does not implement threw,
+    /// or a decode bound (a decompression-bomb cap, an invalid predictor parameter) was hit. The
+    /// underlying condition already carries its own <c>1xx</c> code through the same diagnostics
+    /// channel; this code says only that the image itself could not be extracted as a result. The
+    /// image is skipped.
+    /// </summary>
+    ImageDataUnreadable = 508,
+
+    /// <summary> An annotation's appearance stream (ISO 32000-2 §12.5.5, Table 170) could not be
+    /// walked for images: the page's <c>/Annots</c> is not an array; an element is not a
+    /// dictionary; an <c>/AP /N</c> entry is neither a stream nor a dictionary of appearance
+    /// states; an appearance stream's own <c>/Subtype</c> is <c>/Image</c> rather than <c>/Form</c>
+    /// (an absent <c>/Subtype</c> is treated as a form by this reader, not a case §12.5.5 itself
+    /// addresses); an object <c>/Annots</c>, an annotation, or an appearance stream references
+    /// could not be resolved at all (a malformed indirect-reference chain); or one of this reader's
+    /// own per-page bounds on <c>/Annots</c> elements, appearance-state sub-dictionary entries, or
+    /// distinct appearance streams was reached. Reported at most once per page.
+    /// </summary>
+    AnnotationAppearanceUnusable = 509,
+
+    /// <summary>
+    /// The sum of every buffer one <c>ExtractImages</c> call holds (sample buffers, passthrough
+    /// payloads, ICC profiles, palettes, JBIG2 globals, inline-image copies) reached
+    /// <see cref="PdfReaderOptions.MaxDecodedStreamBytes"/>. Reported once per call through
+    /// <c>DiagnosticSink.ReportRetained</c>, keyed <c>(510, null, null)</c>; every image
+    /// this call has not yet decoded is skipped without decoding from that point on.
+    /// </summary>
+    ImageExtractionBudgetExhausted = 510,
+
+    /// <summary> One <c>ExtractImages</c> call reached <c>100,000</c> image occurrences: drawn
+    /// image XObjects, inline images, and derived masks (a <c>/SMask</c> or <c>/Mask</c> counts
+    /// against this the same as a drawn image) all share one counter. Reported once per call
+    /// through <c>DiagnosticSink.ReportRetained</c>; every further occurrence in the same call is
+    /// skipped without decoding.
+    /// </summary>
+    ImageOccurrenceLimitExceeded = 511,
+
     // ── 9xx: reserved ───────────────────────────────────────────────────────────────────────────
 
     /// <summary>
@@ -686,6 +827,19 @@ internal static class PdfReaderDiagnosticSeverities
         PdfReaderDiagnosticCode.FontWidthsMalformed => PdfReaderDiagnosticSeverity.Warning,
         PdfReaderDiagnosticCode.FontNoUnicodeRoute => PdfReaderDiagnosticSeverity.Info,
         PdfReaderDiagnosticCode.UnmappedGlyphs => PdfReaderDiagnosticSeverity.Info,
+
+        PdfReaderDiagnosticCode.ImageDictionaryInvalid => PdfReaderDiagnosticSeverity.Warning,
+        PdfReaderDiagnosticCode.ImageColorSpaceUnsupported => PdfReaderDiagnosticSeverity.Warning,
+        PdfReaderDiagnosticCode.ImageDecodeArrayInvalid => PdfReaderDiagnosticSeverity.Warning,
+        PdfReaderDiagnosticCode.ImageMaskInvalid => PdfReaderDiagnosticSeverity.Warning,
+        PdfReaderDiagnosticCode.ImageSampleDataShort => PdfReaderDiagnosticSeverity.Warning,
+        PdfReaderDiagnosticCode.ImageBitsPerComponentOverridden => PdfReaderDiagnosticSeverity.Warning,
+        PdfReaderDiagnosticCode.ImageJpxSignatureUnrecognised => PdfReaderDiagnosticSeverity.Info,
+        PdfReaderDiagnosticCode.ImageLimitExceeded => PdfReaderDiagnosticSeverity.Warning,
+        PdfReaderDiagnosticCode.ImageDataUnreadable => PdfReaderDiagnosticSeverity.Warning,
+        PdfReaderDiagnosticCode.AnnotationAppearanceUnusable => PdfReaderDiagnosticSeverity.Warning,
+        PdfReaderDiagnosticCode.ImageExtractionBudgetExhausted => PdfReaderDiagnosticSeverity.Warning,
+        PdfReaderDiagnosticCode.ImageOccurrenceLimitExceeded => PdfReaderDiagnosticSeverity.Warning,
         PdfReaderDiagnosticCode.DiagnosticsSuppressed => PdfReaderDiagnosticSeverity.Warning,
         _ => throw new UnreachableException($"No severity is mapped for {code}."),
     };
