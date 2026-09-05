@@ -58,10 +58,11 @@ public sealed class PdfExtractedImage
     /// <summary>
     /// The image's effective bits per component, after the Table 87 filter-forced overrides
     /// (<see cref="PdfReaderDiagnosticCode.ImageBitsPerComponentOverridden"/>) and the
-    /// <c>/ImageMask</c> override. 0 for every <see cref="PdfImageEncoding.Jpx"/> image: Table 87
-    /// says the dictionary's own <c>/BitsPerComponent</c> "shall be ignored if present" for a
-    /// JPXDecode image, and ISO 32000-2 §7.4.9 allows a different depth (1 to 38) per component, so
-    /// no single scalar describes it.
+    /// <c>/ImageMask</c> override. 0 for a <see cref="PdfImageEncoding.Jpx"/> image that is not an
+    /// image mask: Table 87 says the dictionary's own <c>/BitsPerComponent</c> "shall be ignored
+    /// if present" for a JPXDecode image, and ISO 32000-2 §7.4.9 allows a different depth (1 to
+    /// 38) per component, so no single scalar describes it. An <c>/ImageMask true</c> JPX image
+    /// reports 1 instead, the one depth §7.4.9's own last bullet requires its data to carry.
     /// </summary>
     public int BitsPerComponent { get; }
 
@@ -70,7 +71,9 @@ public sealed class PdfExtractedImage
     /// when <see cref="Encoding"/> is <see cref="PdfImageEncoding.Jpx"/>: a non-zero value there
     /// says the JPX payload's own data carries the soft-mask (1) or premultiplied-alpha (2)
     /// information Table 87 describes, which this reader does not decode out of the payload itself.
-    /// Always 0 for every other encoding.
+    /// Always 0 for every other encoding, and read only for a drawn image: the same entry on a
+    /// stream reached as another image's <see cref="SoftMask"/> or <see cref="ExplicitMask"/> is
+    /// not read and raises no diagnostic.
     /// </summary>
     public int SMaskInData { get; }
 
@@ -107,9 +110,10 @@ public sealed class PdfExtractedImage
     /// file format from this property alone; use <see cref="TryEncodePng"/> for that), <c>.jpg</c>
     /// for <see cref="PdfImageEncoding.Jpeg"/>, <c>.jb2</c> for <see
     /// cref="PdfImageEncoding.Jbig2"/> (§7.4.7's embedded-organisation segment sequence, not a
-    /// standalone loadable JBIG2 file: the file header, page association, and end-of-file segments
-    /// are absent, and <see cref="Jbig2"/>'s own <see cref="PdfJbig2Parameters.Globals"/> travels
-    /// as a separate buffer, not appended to this one), <c>.ccitt</c> for <see
+    /// standalone loadable JBIG2 file: the file header, end-of-page segments, and end-of-file
+    /// segment are absent, while each remaining segment's own page association field is 1, and
+    /// <see cref="Jbig2"/>'s own <see cref="PdfJbig2Parameters.Globals"/> travels as a separate
+    /// buffer, not appended to this one), <c>.ccitt</c> for <see
     /// cref="PdfImageEncoding.CcittFax"/>, and, for <see cref="PdfImageEncoding.Jpx"/>, <c>.jp2</c>
     /// when the payload begins with the ISO/IEC 15444-1 JP2 signature box and <c>.j2k</c> when it
     /// instead begins with a bare codestream's SOC marker (see <see
@@ -121,10 +125,13 @@ public sealed class PdfExtractedImage
     /// <summary>
     /// The soft mask reached through this image's own <c>/SMask</c> (ISO 32000-2 §11.6.5.2), or
     /// <see langword="null"/> when absent or invalid
-    /// (<see cref="PdfReaderDiagnosticCode.ImageMaskInvalid"/>). Also present in its own right in
-    /// <see cref="PdfImageExtractionResult.Images"/>: immediately after this image, the first time
-    /// a document-level call reaches it, or every time a page-level call does (per-call dedupe
-    /// applies to this entry the same way it applies to any other).
+    /// (<see cref="PdfReaderDiagnosticCode.ImageMaskInvalid"/>). Subject to the same per-call
+    /// dedupe (by object number and generation) as any other image: when this mask's own stream is
+    /// the first occurrence of that object the call reaches, it also appears in its own right in
+    /// <see cref="PdfImageExtractionResult.Images"/>, immediately after this image; when that same
+    /// stream was already returned earlier in the call (drawn directly, or reached as an earlier
+    /// image's own mask), dedupe keeps that earlier entry instead, and this property is the only
+    /// place the mask relationship to THIS image is recorded.
     /// </summary>
     public PdfExtractedImage? SoftMask { get; }
 
@@ -191,9 +198,12 @@ public sealed class PdfExtractedImage
     /// <remarks>
     /// Allocates <c>Width * (channels + 1) * (bitDepth / 8) * Height</c> bytes for the interleaved
     /// row buffer before compression, plus 57 bytes of chunk overhead and whatever zlib itself
-    /// costs; <c>channels</c> is 1 for a grey image, 3 for RGB or Indexed (an Indexed image's own
-    /// indices are expanded to 8-bit RGB triples first, up to 32 times <see cref="Data"/>'s own
-    /// length at 1 bit per index). This is independent of <see cref="Data"/>'s own length, unlike
+    /// costs; <c>bitDepth</c> here is the PNG output depth, 8 or 16, not <see
+    /// cref="BitsPerComponent"/>, and <c>channels</c> is 1 for a grey image, 3 for RGB or Indexed
+    /// (an Indexed image's own indices are expanded to 8-bit RGB triples first, up to 24 times <see
+    /// cref="Data"/>'s own length at 1 bit per index; both that expansion buffer and the
+    /// interleaved row buffer above are live at once, so the peak is up to 32 times <see
+    /// cref="Data"/>'s own length). This is independent of <see cref="Data"/>'s own length, unlike
     /// <see cref="TryEncodePng"/>'s bound.
     /// </remarks>
     public bool TryEncodePngWithAlpha([NotNullWhen(true)] out byte[]? png) =>

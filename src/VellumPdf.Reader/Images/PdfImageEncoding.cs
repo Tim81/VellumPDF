@@ -22,7 +22,7 @@ public enum PdfImageEncoding
     Jpx = 2,
 
     /// <summary>The stored <c>JBIG2Decode</c> payload (ISO 32000-2 §7.4.7), an
-    /// embedded-organisation JBIG2 segment sequence. The published standard does not itself state
+    /// embedded-organisation JBIG2 segment sequence. ISO 32000-2 does not itself state
     /// whether a decoded JBIG2 bitmap's 1 bit means black or white; JBIG2 decoders conventionally
     /// deliver 1 as black, the opposite of a 1-bit <c>/DeviceGray</c> sample under the default
     /// <c>/Decode [0 1]</c>, so a caller that decodes this payload and paints the result as

@@ -284,9 +284,11 @@ channel, when one is present and shaped so the interleave stays lossless: PNG pe
 alpha-carrying colour type only at 8 or 16 bits per sample, so the parent image and its soft mask
 must both map to one of those two depths, at the same depth as each other, and the mask's own
 `Decode` must be absent or `[0 1]`. The alpha path allocates `Width * (channels + 1) * (bitDepth /
-8) * Height` bytes for the interleaved buffer, independent of `Data`'s own length; an indexed
-image's stored indices are expanded to 8-bit RGB triples first, up to 32 times `Data`'s own length
-at 1 bit per index.
+8) * Height` bytes for the interleaved buffer (`bitDepth` here is the PNG output depth, 8 or 16,
+not `BitsPerComponent`), independent of `Data`'s own length; an indexed image's stored indices are
+expanded to 8-bit RGB triples first, up to 24 times `Data`'s own length at 1 bit per index, and
+that expansion buffer and the interleaved buffer above are both live at once, up to 32 times
+`Data`'s own length combined.
 
 ---
 

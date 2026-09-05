@@ -180,6 +180,15 @@ internal sealed class ColorSpaceReader(
             return null;
         }
 
+        // Decoded under `limits` as configured, not a tightened multiple the way an Indexed lookup
+        // is: a lookup's own hival and base give this reader an expected length to compare a
+        // decode against and refuse the difference, but a profile stream has no such closed-form
+        // size this reader can derive without parsing the profile itself, and the decoded bytes
+        // are the value IccProfile hands back whole, not a handful kept from a much larger decode.
+        // ImageCallBudget still charges every byte of it once, so one call's aggregate retention
+        // stays bounded; a caller wanting a smaller ceiling on this one stream already has one,
+        // PdfReaderOptions.MaxDecodedStreamBytes, which raises DecodedStreamLimitExceeded (111)
+        // naming the limit that caller configured.
         var profileBytes = ancillaryCache.GetOrDecode(
             reader, profileStream, AncillaryRole.IccProfile, budget, limits, diagnostics);
 
@@ -283,9 +292,15 @@ internal sealed class ColorSpaceReader(
             // stream from a DIFFERENT Indexed space with a larger expectedLength would also see
             // this call's null rather than retry at its own, larger cap. That is the conservative
             // direction to err in for a bound meant to refuse, not the reverse.
+            //
+            // The decode underneath this runs against `tightened`, a cap this reader chose, not
+            // the caller's own PdfReaderOptions.MaxDecodedStreamBytes; reporting it against the
+            // sink the caller reads from would raise DecodedStreamLimitExceeded (111) naming a
+            // limit the caller never set. A throwaway sink swallows that inner report; the 501
+            // below, which names the cap and the reason for it, is what reaches the caller instead.
             var tightened = limits with { MaxDecodedBytes = cap };
             var bytes = ancillaryCache.GetOrDecode(
-                reader, stream, AncillaryRole.IndexedLookup, budget, tightened, diagnostics);
+                reader, stream, AncillaryRole.IndexedLookup, budget, tightened, new DiagnosticSink(cap: 1));
             if (bytes is null)
             {
                 Report(diagnostics, objectNumber, generation, pageIndex,

@@ -113,7 +113,7 @@ public sealed class ImageExtractionTests
     [Fact]
     public void DctPassthrough_dataIsVerbatim_encodingJpeg_canEncodePngFalse()
     {
-        var jpegBytes = "NOT-A-REAL-JPEG-BUT-A-RECOGNISABLE-PASSTHROUGH-BODY-0123456789"u8.ToArray();
+        var jpegBytes = "NOT-A-JPEG-BUT-A-RECOGNISABLE-PASSTHROUGH-BODY-0123456789"u8.ToArray();
         var image = new PdfImageXObject(
             width: 8, height: 6, streamData: jpegBytes, filter: PdfName.DCTDecode,
             colorSpace: ImageColorSpace.DeviceRgb, bitsPerComponent: 8);
@@ -563,6 +563,7 @@ public sealed class ImageExtractionTests
         var extracted = Assert.Single(result.Images);
 
         Assert.Equal(payload, extracted.Data.ToArray());
+        Assert.Equal(PdfImageEncoding.Jpx, extracted.Encoding);
         Assert.Equal(".jp2", extracted.FileExtension);
         Assert.Equal(0, extracted.BitsPerComponent);
         Assert.False(extracted.CanEncodePng);
@@ -730,6 +731,7 @@ public sealed class ImageExtractionTests
         var extracted = Assert.Single(reader.ExtractImages().Images);
 
         Assert.Equal(payload, extracted.Data.ToArray());
+        Assert.Equal(PdfImageEncoding.CcittFax, extracted.Encoding);
         Assert.Equal(-1, extracted.CcittFax!.K);
         Assert.Equal(1728, extracted.CcittFax.Columns);
         Assert.Equal(4, extracted.CcittFax.Rows);

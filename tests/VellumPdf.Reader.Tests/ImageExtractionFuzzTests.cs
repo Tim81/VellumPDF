@@ -16,11 +16,15 @@ namespace VellumPdf.Reader.Tests;
 /// <c>ExtractImages</c> (#98): byte-level mutation of two seed documents built fresh for this file
 /// (one plaintext, covering a Raw grey image, a DCT passthrough image, an Indexed image reached
 /// both directly and through a resource name, a Flate-compressed image under a TIFF predictor, a
-/// soft-masked and an explicit-masked image, a /Decode array, an annotation appearance drawing its
-/// own image, and one inline image; one AES-256-encrypted, so the corpus also reaches the
-/// decryption path), asserting the invariants a hostile or corrupted document must never violate.
-/// Every assertion runs under a TIGHTENED <see cref="ReaderLimits.MinMaxDecodedBytes"/> (1 MiB): at
-/// the 512 MiB default, the size invariants below would hold vacuously against fixtures this small.
+/// soft-masked and an explicit-masked image, a /Decode array, two large Raw images, an annotation
+/// appearance drawing its own image, and one inline image; one AES-256-encrypted, so the corpus
+/// also reaches the decryption path), asserting the invariants a hostile or corrupted document
+/// must never violate. Every assertion runs under a TIGHTENED
+/// <see cref="ReaderLimits.MinMaxDecodedBytes"/> (1 MiB) rather than the 512 MiB default, so the
+/// two large seed images below land within reach of the ceiling at a few hundred kilobytes each,
+/// not hundreds of megabytes; the tightened number by itself proves nothing; what makes the size
+/// assertions below capable of failing is a seed whose own decoded size is comparable to whichever
+/// ceiling is in force.
 /// </summary>
 public sealed class ImageExtractionFuzzTests
 {
@@ -76,21 +80,51 @@ public sealed class ImageExtractionFuzzTests
     // The seed: one page drawing a Raw grey XObject, a DCT passthrough XObject, an Indexed
     // XObject, a Flate-compressed Raw XObject under a TIFF predictor, a soft-masked XObject
     // carrying a /Decode array, a stencil-masked XObject, an Indexed XObject resolved through a
-    // resource name, an annotation whose /AP /N draws its own image, and one inline image. Built
-    // fresh rather than reused from ParserFuzzTests' embedded-resource corpus, which carries no
-    // images at all.
+    // resource name, two large Flate-compressed Raw XObjects, an annotation whose /AP /N draws its
+    // own image, and one inline image. Built fresh rather than reused from ParserFuzzTests'
+    // embedded-resource corpus, which carries no images at all.
+    //
+    // /Im7 and /Im8 (objects 30, 31) exist so the aggregate byte ceiling this property checks is
+    // reachable at all. Without them, every seed image inflates to a handful of bytes, and the
+    // mutator (single-byte edits, a duplication capped at 32 bytes per op and 8 ops, a 1 MiB buffer
+    // cap) cannot assemble a compressed body decoding past a few hundred bytes from any of them: no
+    // number of iterations gets the sum-of-buffers assertion within striking distance of the 1 MiB
+    // tightened ceiling, and ImageExtractionBudgetExhausted (510) never fires. A Flate body that
+    // already decodes to 700,000 bytes closes most of that gap before any mutation runs, and puts
+    // both under test. ImageDataUnreadable (508, a decode failure past the point a filter chain
+    // commits to one) needed no such change: it already fires on a large minority of iterations
+    // under arbitrary corruption alone, which is the one thing this corpus adds that a
+    // known-answer test cannot. ImageOccurrenceLimitExceeded (511, 100,000 occurrences in one call)
+    // stays out of reach by design at any seed size sane enough to keep this test fast; a
+    // known-answer test is the right instrument for that one, not a larger corpus.
+    private static byte[] LargeGrayBody(int length)
+    {
+        var body = new byte[length];
+        for (var i = 0; i < length; i++)
+            body[i] = (byte)(i % 251);
+        return body;
+    }
+
+    private static byte[] FlateSmallest(byte[] raw)
+    {
+        var ms = new MemoryStream();
+        using (var z = new ZLibStream(ms, CompressionLevel.SmallestSize, leaveOpen: true))
+            z.Write(raw);
+        return ms.ToArray();
+    }
+
     private static readonly byte[] FuzzSeed = BuildPdf(1,
         new Obj(1, "<< /Type /Catalog /Pages 2 0 R >>"),
         new Obj(2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
         new Obj(3,
             "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 100 100] "
             + "/Resources << /XObject << /Im0 10 0 R /Im1 11 0 R /Im2 12 0 R /Im3 13 0 R "
-            + "/Im4 15 0 R /Im5 17 0 R /Im6 18 0 R >> "
+            + "/Im4 15 0 R /Im5 17 0 R /Im6 18 0 R /Im7 30 0 R /Im8 31 0 R >> "
             + "/ColorSpace << /CS0 [/Indexed /DeviceRGB 1 <FF000000FF00>] >> >> "
             + "/Annots [20 0 R] /Contents 4 0 R >>"),
         new Obj(4, "<< >>",
             Encoding.Latin1.GetBytes(
-                "/Im0 Do\n/Im1 Do\n/Im2 Do\n/Im3 Do\n/Im4 Do\n/Im5 Do\n/Im6 Do\n"
+                "/Im0 Do\n/Im1 Do\n/Im2 Do\n/Im3 Do\n/Im4 Do\n/Im5 Do\n/Im6 Do\n/Im7 Do\n/Im8 Do\n"
                 + "BI /W 2 /H 2 /CS /G /BPC 8 /L 4 ID \x01\x02\x03\x04 EI")),
         new Obj(10,
             "<< /Type /XObject /Subtype /Image /Width 2 /Height 2 /BitsPerComponent 8 "
@@ -101,7 +135,7 @@ public sealed class ImageExtractionFuzzTests
         new Obj(12,
             "<< /Type /XObject /Subtype /Image /Width 2 /Height 1 /BitsPerComponent 8 "
             + "/ColorSpace [/Indexed /DeviceRGB 1 <FF000000FF00>] >>", [0, 1]),
-        // A Flate-compressed Raw image under a TIFF predictor (#376/A4): 2x2 grey 8bpc,
+        // A Flate-compressed Raw image under a TIFF predictor (#376): 2x2 grey 8bpc,
         // horizontally differenced (byte0 unchanged, byte1 -= byte0 per row) then Flate-compressed,
         // so the fuzz corpus exercises a compressed image whose retained decode differs from its
         // stored body length.
@@ -135,14 +169,24 @@ public sealed class ImageExtractionFuzzTests
             + "/Resources << /XObject << /ImA 22 0 R >> >> >>", "/ImA Do"u8.ToArray()),
         new Obj(22,
             "<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /BitsPerComponent 8 "
-            + "/ColorSpace /DeviceGray >>", [0x55]));
+            + "/ColorSpace /DeviceGray >>", [0x55]),
+        // 1000 x 700 x 8bpc DeviceGray, 700,000 bytes decoded each, compressed at
+        // CompressionLevel.SmallestSize rather than the Fastest every other seed body uses above,
+        // so the two of them add on the order of a kilobyte to this file rather than an order of
+        // magnitude more.
+        new Obj(30,
+            "<< /Type /XObject /Subtype /Image /Width 1000 /Height 700 /BitsPerComponent 8 "
+            + "/ColorSpace /DeviceGray /Filter /FlateDecode >>", FlateSmallest(LargeGrayBody(700_000))),
+        new Obj(31,
+            "<< /Type /XObject /Subtype /Image /Width 1000 /Height 700 /BitsPerComponent 8 "
+            + "/ColorSpace /DeviceGray /Filter /FlateDecode >>", FlateSmallest(LargeGrayBody(700_000))));
 
     // A second seed built with the Kernel writer, encrypted (AES-256, empty user password), so the
     // fuzz corpus also reaches the DecryptedStreamView path an encrypted document's image bytes
     // travel through. The writer (StandardSecurityHandler) only ever produces V=5/R=6 (AES-256);
     // it exposes no algorithm knob, so an AES-128 seed would need a hand-rolled V=4/R=4 /Encrypt
-    // dictionary computed independently of the writer, which this fix-up declines as more risk
-    // than the extra shape is worth.
+    // dictionary computed independently of the writer, declined here as more risk than the extra
+    // shape is worth.
     private static byte[] BuildEncryptedFuzzSeed()
     {
         using var doc = new PdfDocument();
@@ -249,10 +293,11 @@ public sealed class ImageExtractionFuzzTests
                         "a Raw image with no colour space reached the returned list (the "
                         + "colour-space-resolution check should have skipped it)");
                     // No upper bound relative to rowBytes * Height: a Raw image's decode keeps a
-                    // longer buffer exactly as decoded ("more bytes than expected are kept with no
-                    // diagnostic... discarding them would be this reader inventing a rule"), since
-                    // an unfiltered stream's own decode has no row-truncation step to bound it by.
-                    // Only the aggregate MaxDecodedBytes ceiling checked below still applies.
+                    // longer buffer exactly as decoded, with no diagnostic raised over the excess
+                    // (the mirror case, a SHORT buffer, is what ImageSampleDataShort (504) reports;
+                    // a long one is not a defect this reader has a rule to invent). An unfiltered
+                    // stream's own decode has no row-truncation step to bound it by. Only the
+                    // aggregate MaxDecodedBytes ceiling checked below still applies.
                 }
 
                 Assert.True(

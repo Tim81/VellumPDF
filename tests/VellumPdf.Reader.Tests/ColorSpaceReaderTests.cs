@@ -148,7 +148,8 @@ public sealed class ColorSpaceReaderTests
         // §8.6.6.5 allows an arbitrary number; this reader's own cap matches
         // ContentInterpreter.MaxOperandsPerOperator (64), not Annex C.2's informative 32.
         Assert.NotNull(cs64);
-        Assert.Equal(64, cs64!.ComponentCount);
+        Assert.Equal(PdfImageColorSpaceFamily.DeviceN, cs64!.Family);
+        Assert.Equal(64, cs64.ComponentCount);
 
         var names65 = string.Join(" ", Enumerable.Range(0, 65).Select(i => $"/C{i}"));
         var cs65 = csReader.Read(ParseValue(reader, $"[/DeviceN [{names65}] /DeviceGray 5 0 R]"), null, sink, null, null, 0);
@@ -171,7 +172,8 @@ public sealed class ColorSpaceReaderTests
         var (reader, csReader, sink) = Setup(pdf);
 
         var n1 = csReader.Read(ParseValue(reader, "[/ICCBased 10 0 R]"), null, sink, null, null, 0);
-        Assert.Equal(1, n1!.ComponentCount);
+        Assert.Equal(PdfImageColorSpaceFamily.IccBased, n1!.Family);
+        Assert.Equal(1, n1.ComponentCount);
         Assert.Equal("x"u8.ToArray(), n1.IccProfile.ToArray());
 
         var n3 = csReader.Read(ParseValue(reader, "[/ICCBased 11 0 R]"), null, sink, null, null, 0);
@@ -278,11 +280,12 @@ public sealed class ColorSpaceReaderTests
 
     /// <summary>
     /// An Indexed space whose base is a resource name resolving back to the same Indexed array
-    /// (<c>/CS0 = [/Indexed /CS0 1 &lt;...&gt;]</c>) used to recurse
-    /// <c>ReadCore(/CS0, true) -&gt; ReadIndexed -&gt; ReadCore(/CS0, true) -&gt; ...</c> forever,
-    /// crashing the process with an uncatchable <see cref="StackOverflowException"/>. Terminates at
-    /// 501 instead, both because the base is now read with <c>allowResourceLookup: false</c> and
-    /// independently through <c>MaxColorSpaceNesting</c>.
+    /// (<c>/CS0 = [/Indexed /CS0 1 &lt;...&gt;]</c>) would recurse
+    /// <c>ReadCore(/CS0, true) -&gt; ReadIndexed -&gt; ReadCore(/CS0, true) -&gt; ...</c> forever
+    /// without the two guards below, crashing the process with an uncatchable
+    /// <see cref="StackOverflowException"/>. Terminates at 501 instead, both because the base is
+    /// read with <c>allowResourceLookup: false</c> and independently through
+    /// <c>MaxColorSpaceNesting</c>.
     /// </summary>
     [Fact]
     public void Indexed_baseIsResourceNameCyclingToSelf_terminatesAt501_ratherThanLooping()

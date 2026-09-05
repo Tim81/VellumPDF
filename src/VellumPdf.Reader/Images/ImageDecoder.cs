@@ -508,7 +508,8 @@ internal sealed class ImageDecoder
                 diagnostics.Report(
                     PdfReaderDiagnosticCode.ImageJpxSignatureUnrecognised,
                     "The JPXDecode payload begins with neither the ISO/IEC 15444-1 signature box "
-                    + "nor a bare codestream's SOC marker; returned as .jp2 unchanged.",
+                    + "nor the SOC-then-SIZ marker pair that opens a bare codestream; returned as "
+                    + ".jp2 unchanged.",
                     objectNumber, generation, pageIndex);
             }
         }
@@ -915,10 +916,12 @@ internal sealed class ImageDecoder
 
     // The image dictionary's own /DecodeParms (never /DP: an inline image's abbreviation is already
     // expanded by the interpreter before this decoder ever sees the dictionary, and an XObject
-    // dictionary must spell the key out in full). An array is aligned with /Filter positionally;
-    // this reader's own image-parameter reads (BitsPerComponent cross-check, CCITT/DCT/JBIG2
-    // parameters) all concern the filter that shapes the image data, which for the short
-    // filter chains an image dictionary carries is the LAST element.
+    // dictionary must spell the key out in full). An array is aligned with /Filter positionally,
+    // and this reader takes the LAST element, the filter that shapes the image data, for the short
+    // filter chains an image dictionary carries. The one remaining caller is the pre-decode
+    // /BitsPerComponent cross-check above, which runs before DecodeCore's own positionally aligned
+    // ImageDecodeResult.ImageFilterParms exists to read instead; the CCITT/DCT/JBIG2 parameter
+    // reads further down now go through that aligned value (operativeParms), not this method.
     private PdfDictionary? ReadOperativeDecodeParms(PdfDictionary dict)
     {
         var raw = dict.Get(DecodeParmsKey);

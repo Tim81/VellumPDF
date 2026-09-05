@@ -657,8 +657,9 @@ public enum PdfReaderDiagnosticCode
     ImageColorSpaceUnsupported = 501,
 
     /// <summary> An image's <c>/Decode</c> array (ISO 32000-2 §8.9.5.2) was not an array of numbers
-    /// whose length is exactly twice the colour space's component count (or, for an image mask or
-    /// an Indexed space, exactly two, per Table 88). Exposed as <see langword="null"/> rather than
+    /// whose length is exactly twice the colour space's component count (or, for an image mask,
+    /// exactly two, per Table 87's <c>Decode</c> row and §8.9.6.2; or, for an Indexed space,
+    /// exactly two, per Table 88). Exposed as <see langword="null"/> rather than
     /// applied either way: this reader never applies a <c>/Decode</c> array to the samples it
     /// returns.
     /// </summary>

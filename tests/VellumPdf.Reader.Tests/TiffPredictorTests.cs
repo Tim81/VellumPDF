@@ -70,9 +70,12 @@ public sealed class TiffPredictorTests
     [Fact]
     public void Bpc2_Colors1_Columns4_wrapsModulo4()
     {
-        // 0x55 = 01 01 01 01: samples 1 1 1 1 accumulate to 1 2 3 0 (mod 4) -> 01 10 11 00 = 0x6C.
-        var decoded = Decode([0x55], columns: 4, colors: 1, bpc: 2);
-        Assert.Equal(new byte[] { 0x6C }, decoded);
+        // 0xAA = 10 10 10 10: samples 2 2 2 2 accumulate to 2 0 2 0 (mod 4) -> 10 00 10 00 = 0x88.
+        // The wrap at the second sample only shows up once the running sum is masked back into
+        // range before it feeds the third sample's own addition; an implementation that carried
+        // the unmasked sum forward would diverge from here on, one wrap into the row.
+        var decoded = Decode([0xAA], columns: 4, colors: 1, bpc: 2);
+        Assert.Equal(new byte[] { 0x88 }, decoded);
     }
 
     [Fact]
@@ -123,12 +126,40 @@ public sealed class TiffPredictorTests
         // component (colors = 1, so every sample predicts from the one before it), so it
         // accumulates to 255 + 2 = 257 = 0x0101: the addition carries out of the low byte into the
         // high byte. An implementation that read and wrote consistently little-endian instead of
-        // big-endian would still land on the same bytes for a pair with no carry (the KAT this
-        // replaces, 0x0001 + 0x0001 = 0x0002), since byte0 alone determines the low 8 bits either
-        // way; only a pair whose sum crosses the byte boundary, like this one, tells the two
-        // apart.
+        // big-endian would still land on the same bytes for a pair with no carry, such as
+        // 0x0001 + 0x0001 = 0x0002, since byte0 alone determines the low 8 bits either way; only a
+        // pair whose sum crosses the byte boundary, like this one, tells the two apart.
         var decoded = Decode([0x00, 0xFF, 0x00, 0x02], columns: 2, colors: 1, bpc: 16);
         Assert.Equal(new byte[] { 0x00, 0xFF, 0x01, 0x01 }, decoded);
+    }
+
+    [Fact]
+    public void Bpc16_Colors3_Columns2_predictsThreePositionsBack()
+    {
+        // Six 16-bit samples, colors = 3: the first three (0x0001, 0x0002, 0x0003) have no prior
+        // instance of their own component and pass through. The next three each add the component
+        // three samples back: 0x0001+0x0001=0x0002, 0x0001+0x0002=0x0003, 0x0001+0x0003=0x0004.
+        var decoded = Decode(
+            [0x00, 0x01, 0x00, 0x02, 0x00, 0x03, 0x00, 0x01, 0x00, 0x01, 0x00, 0x01],
+            columns: 2, colors: 3, bpc: 16);
+        Assert.Equal(
+            new byte[] { 0x00, 0x01, 0x00, 0x02, 0x00, 0x03, 0x00, 0x02, 0x00, 0x03, 0x00, 0x04 },
+            decoded);
+    }
+
+    [Fact]
+    public void Bpc16_Colors1_Columns2_twoRows_restartsPerRow()
+    {
+        // Row 1: 0x00FF (255), 0x0002 (2) -> second sample has no prior row to draw from, so it
+        // predicts from the first sample in its own row: 2 + 255 = 257 = 0x0101. Row 2 restarts at
+        // its own first sample rather than continuing from row 1's last one: 0x0001, then
+        // 0x0001 + 0x0001 = 0x0002.
+        var decoded = Decode(
+            [0x00, 0xFF, 0x00, 0x02, 0x00, 0x01, 0x00, 0x01],
+            columns: 2, colors: 1, bpc: 16);
+        Assert.Equal(
+            new byte[] { 0x00, 0xFF, 0x01, 0x01, 0x00, 0x01, 0x00, 0x02 },
+            decoded);
     }
 
     /// <summary> The pre-existing <c>rows = data.Length / rowBytes</c> behaviour (Filters.cs) is

@@ -372,6 +372,11 @@ public sealed class ImageExtractionBoundsTests
 
         Assert.Empty(result.Images);
         Assert.Contains(result.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ImageColorSpaceUnsupported);
+        // The cap this decode is refused against is this reader's own multiple of the lookup's
+        // expected length, not the caller's MaxDecodedStreamBytes (512 MiB by default here), so the
+        // 501 above is the only diagnostic this refusal raises: DecodedStreamLimitExceeded names a
+        // limit the caller never configured, and would mislead one reading it alone.
+        Assert.DoesNotContain(result.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.DecodedStreamLimitExceeded);
         // Well under the 4,000,000-byte inflated lookup: a generous ceiling that still catches a
         // regression that decodes the lookup stream in full before refusing it.
         Assert.True(allocated < 1024 * 1024, $"expected a bounded allocation, measured {allocated} bytes");

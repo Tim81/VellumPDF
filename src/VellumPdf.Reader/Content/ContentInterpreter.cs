@@ -192,10 +192,10 @@ internal sealed class ContentInterpreter
     /// when none applies. Set immediately before <see cref="IContentVisitor.OnInlineImage"/> and
     /// <see cref="IContentVisitor.OnImageXObject"/> and cleared immediately after, so a value read
     /// outside either callback is <see langword="null"/> rather than a stale one (#98). Exists so a
-    /// visitor can resolve an inline image's or an image XObject's named colour space (§8.6.1,
+    /// visitor can resolve an inline image's or an image XObject's named colour space (§8.6.3,
     /// §8.9.7) against the resources this interpreter already has in hand, without this interpreter
     /// substituting a resolved colour-space object into a dictionary it hands the visitor: §7.8.2
-    /// forbids a stream operand in content, and §8.6.1 forbids an inline colour-space array, so
+    /// forbids a stream operand in content, and §8.6.3 forbids an inline colour-space array, so
     /// neither shape belongs in what <see cref="IContentVisitor.OnInlineImage"/> receives.
     /// </summary>
     internal PdfDictionary? CurrentResources { get; private set; }

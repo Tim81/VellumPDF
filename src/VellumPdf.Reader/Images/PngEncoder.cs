@@ -6,7 +6,7 @@ using System.IO.Compression;
 
 namespace VellumPdf.Reader;
 
-/// <summary>The PNG colour type byte (PNG Annex, §11.2.2), as this encoder's own <c>Encode</c>
+/// <summary>The PNG colour type byte (ISO/IEC 15948 §11.2.2), as this encoder's own <c>Encode</c>
 /// writes it into IHDR.</summary>
 internal enum PngColorType : byte
 {
