@@ -21,7 +21,7 @@
     <RootNamespace>VellumPdf.Reader</RootNamespace>
     <AssemblyName>VellumPdf.Reader</AssemblyName>
     <PackageId>VellumPdf.Reader</PackageId>
-    <Description>PDF reader for VellumPdf: opens an existing PDF (classic cross-reference tables, cross-reference and object streams, hybrid-reference files, and encrypted documents given their password) and exposes its catalog and digital signatures, on a bounds-checked lexer and object parser (ISO 32000-2 §7.2–7.5). BCL-only; zero runtime dependencies. The foundation for PAdES long-term validation and a growing general reader; content extraction is not supported yet.</Description>
+    <Description>PDF reader for VellumPdf: opens an existing PDF (classic cross-reference tables, cross-reference and object streams, hybrid-reference files, and encrypted documents given their password) and exposes its catalog and digital signatures, on a bounds-checked lexer and object parser (ISO 32000-2 §7.2–7.5). BCL-only; zero runtime dependencies. The foundation for PAdES long-term validation and a growing general reader; image extraction is supported and text extraction is in progress.</Description>
     <PackageTags>pdf;reader;parser;aot</PackageTags>
   </PropertyGroup>
 

@@ -1,9 +1,22 @@
 #nullable enable
+VellumPdf.Reader.PdfCcittFaxParameters
+VellumPdf.Reader.PdfCcittFaxParameters.BlackIs1.get -> bool
+VellumPdf.Reader.PdfCcittFaxParameters.Columns.get -> int
+VellumPdf.Reader.PdfCcittFaxParameters.DamagedRowsBeforeError.get -> int
+VellumPdf.Reader.PdfCcittFaxParameters.EncodedByteAlign.get -> bool
+VellumPdf.Reader.PdfCcittFaxParameters.EndOfBlock.get -> bool
+VellumPdf.Reader.PdfCcittFaxParameters.EndOfLine.get -> bool
+VellumPdf.Reader.PdfCcittFaxParameters.K.get -> int
+VellumPdf.Reader.PdfCcittFaxParameters.Rows.get -> int
+VellumPdf.Reader.PdfDctParameters
+VellumPdf.Reader.PdfDctParameters.ColorTransform.get -> int?
 VellumPdf.Reader.PdfDocumentReader
 VellumPdf.Reader.PdfDocumentReader.Catalog.get -> VellumPdf.Core.PdfDictionary!
 VellumPdf.Reader.PdfDocumentReader.Diagnostics.get -> System.Collections.Generic.IReadOnlyList<VellumPdf.Reader.PdfReaderDiagnostic!>!
 VellumPdf.Reader.PdfDocumentReader.Dispose() -> void
 VellumPdf.Reader.PdfDocumentReader.Encryption.get -> VellumPdf.Encryption.PdfEncryptionInfo?
+VellumPdf.Reader.PdfDocumentReader.ExtractImages() -> VellumPdf.Reader.PdfImageExtractionResult!
+VellumPdf.Reader.PdfDocumentReader.ExtractImages(VellumPdf.Reader.PdfImageExtractionOptions! options) -> VellumPdf.Reader.PdfImageExtractionResult!
 VellumPdf.Reader.PdfDocumentReader.GetPage(int index) -> VellumPdf.Reader.PdfReadPage!
 VellumPdf.Reader.PdfDocumentReader.PageCount.get -> int
 VellumPdf.Reader.PdfDocumentReader.Pages.get -> System.Collections.Generic.IReadOnlyList<VellumPdf.Reader.PdfReadPage!>!
@@ -13,12 +26,74 @@ VellumPdf.Reader.PdfDocumentReader.SaveDecryptedAsync(System.IO.Stream! destinat
 VellumPdf.Reader.PdfDocumentReader.SaveDecryptedAsync(System.IO.Stream! destination, VellumPdf.Reader.PdfSaveDecryptedOptions! options, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 VellumPdf.Reader.PdfDocumentReader.Signatures.get -> System.Collections.Generic.IReadOnlyList<VellumPdf.Reader.PdfSignature!>!
 VellumPdf.Reader.PdfDocumentReader.WasReconstructed.get -> bool
+VellumPdf.Reader.PdfExtractedImage
+VellumPdf.Reader.PdfExtractedImage.BitsPerComponent.get -> int
+VellumPdf.Reader.PdfExtractedImage.CanEncodePng.get -> bool
+VellumPdf.Reader.PdfExtractedImage.CcittFax.get -> VellumPdf.Reader.PdfCcittFaxParameters?
+VellumPdf.Reader.PdfExtractedImage.ColorSpace.get -> VellumPdf.Reader.PdfImageColorSpace?
+VellumPdf.Reader.PdfExtractedImage.Data.get -> System.ReadOnlyMemory<byte>
+VellumPdf.Reader.PdfExtractedImage.Dct.get -> VellumPdf.Reader.PdfDctParameters?
+VellumPdf.Reader.PdfExtractedImage.Decode.get -> System.Collections.Generic.IReadOnlyList<double>?
+VellumPdf.Reader.PdfExtractedImage.Encoding.get -> VellumPdf.Reader.PdfImageEncoding
+VellumPdf.Reader.PdfExtractedImage.ExplicitMask.get -> VellumPdf.Reader.PdfExtractedImage?
+VellumPdf.Reader.PdfExtractedImage.FileExtension.get -> string!
+VellumPdf.Reader.PdfExtractedImage.Generation.get -> int?
+VellumPdf.Reader.PdfExtractedImage.HasMatte.get -> bool
+VellumPdf.Reader.PdfExtractedImage.Height.get -> int
+VellumPdf.Reader.PdfExtractedImage.IsExplicitMask.get -> bool
+VellumPdf.Reader.PdfExtractedImage.IsInline.get -> bool
+VellumPdf.Reader.PdfExtractedImage.IsStencilMask.get -> bool
+VellumPdf.Reader.PdfExtractedImage.Jbig2.get -> VellumPdf.Reader.PdfJbig2Parameters?
+VellumPdf.Reader.PdfExtractedImage.ObjectNumber.get -> int?
+VellumPdf.Reader.PdfExtractedImage.PageIndex.get -> int
+VellumPdf.Reader.PdfExtractedImage.SMaskInData.get -> int
+VellumPdf.Reader.PdfExtractedImage.SoftMask.get -> VellumPdf.Reader.PdfExtractedImage?
+VellumPdf.Reader.PdfExtractedImage.TryEncodePng(out byte[]? png) -> bool
+VellumPdf.Reader.PdfExtractedImage.TryEncodePngWithAlpha(out byte[]? png) -> bool
+VellumPdf.Reader.PdfExtractedImage.Width.get -> int
+VellumPdf.Reader.PdfImageColorSpace
+VellumPdf.Reader.PdfImageColorSpace.Base.get -> VellumPdf.Reader.PdfImageColorSpace?
+VellumPdf.Reader.PdfImageColorSpace.ComponentCount.get -> int
+VellumPdf.Reader.PdfImageColorSpace.Family.get -> VellumPdf.Reader.PdfImageColorSpaceFamily
+VellumPdf.Reader.PdfImageColorSpace.HighValue.get -> int
+VellumPdf.Reader.PdfImageColorSpace.IccProfile.get -> System.ReadOnlyMemory<byte>
+VellumPdf.Reader.PdfImageColorSpace.Lookup.get -> System.ReadOnlyMemory<byte>
+VellumPdf.Reader.PdfImageColorSpaceFamily
+VellumPdf.Reader.PdfImageColorSpaceFamily.CalGray = 3 -> VellumPdf.Reader.PdfImageColorSpaceFamily
+VellumPdf.Reader.PdfImageColorSpaceFamily.CalRgb = 4 -> VellumPdf.Reader.PdfImageColorSpaceFamily
+VellumPdf.Reader.PdfImageColorSpaceFamily.DeviceCmyk = 2 -> VellumPdf.Reader.PdfImageColorSpaceFamily
+VellumPdf.Reader.PdfImageColorSpaceFamily.DeviceGray = 0 -> VellumPdf.Reader.PdfImageColorSpaceFamily
+VellumPdf.Reader.PdfImageColorSpaceFamily.DeviceN = 9 -> VellumPdf.Reader.PdfImageColorSpaceFamily
+VellumPdf.Reader.PdfImageColorSpaceFamily.DeviceRgb = 1 -> VellumPdf.Reader.PdfImageColorSpaceFamily
+VellumPdf.Reader.PdfImageColorSpaceFamily.IccBased = 6 -> VellumPdf.Reader.PdfImageColorSpaceFamily
+VellumPdf.Reader.PdfImageColorSpaceFamily.Indexed = 7 -> VellumPdf.Reader.PdfImageColorSpaceFamily
+VellumPdf.Reader.PdfImageColorSpaceFamily.Lab = 5 -> VellumPdf.Reader.PdfImageColorSpaceFamily
+VellumPdf.Reader.PdfImageColorSpaceFamily.Separation = 8 -> VellumPdf.Reader.PdfImageColorSpaceFamily
+VellumPdf.Reader.PdfImageEncoding
+VellumPdf.Reader.PdfImageEncoding.CcittFax = 4 -> VellumPdf.Reader.PdfImageEncoding
+VellumPdf.Reader.PdfImageEncoding.Jbig2 = 3 -> VellumPdf.Reader.PdfImageEncoding
+VellumPdf.Reader.PdfImageEncoding.Jpeg = 1 -> VellumPdf.Reader.PdfImageEncoding
+VellumPdf.Reader.PdfImageEncoding.Jpx = 2 -> VellumPdf.Reader.PdfImageEncoding
+VellumPdf.Reader.PdfImageEncoding.Raw = 0 -> VellumPdf.Reader.PdfImageEncoding
+VellumPdf.Reader.PdfImageExtractionOptions
+VellumPdf.Reader.PdfImageExtractionOptions.IncludeAnnotationAppearances.get -> bool
+VellumPdf.Reader.PdfImageExtractionOptions.IncludeAnnotationAppearances.init -> void
+VellumPdf.Reader.PdfImageExtractionOptions.IncludeInlineImages.get -> bool
+VellumPdf.Reader.PdfImageExtractionOptions.IncludeInlineImages.init -> void
+VellumPdf.Reader.PdfImageExtractionOptions.PdfImageExtractionOptions() -> void
+VellumPdf.Reader.PdfImageExtractionResult
+VellumPdf.Reader.PdfImageExtractionResult.Diagnostics.get -> System.Collections.Generic.IReadOnlyList<VellumPdf.Reader.PdfReaderDiagnostic!>!
+VellumPdf.Reader.PdfImageExtractionResult.Images.get -> System.Collections.Generic.IReadOnlyList<VellumPdf.Reader.PdfExtractedImage!>!
+VellumPdf.Reader.PdfJbig2Parameters
+VellumPdf.Reader.PdfJbig2Parameters.Globals.get -> System.ReadOnlyMemory<byte>
 VellumPdf.Reader.PdfPasswordException
 VellumPdf.Reader.PdfPasswordException.PdfPasswordException(string! message) -> void
 VellumPdf.Reader.PdfPasswordException.PdfPasswordException(string! message, System.Exception! inner) -> void
 VellumPdf.Reader.PdfReadPage
 VellumPdf.Reader.PdfReadPage.CropBox.get -> VellumPdf.Document.PdfRectangle!
 VellumPdf.Reader.PdfReadPage.Dictionary.get -> VellumPdf.Core.PdfDictionary!
+VellumPdf.Reader.PdfReadPage.ExtractImages() -> VellumPdf.Reader.PdfImageExtractionResult!
+VellumPdf.Reader.PdfReadPage.ExtractImages(VellumPdf.Reader.PdfImageExtractionOptions! options) -> VellumPdf.Reader.PdfImageExtractionResult!
 VellumPdf.Reader.PdfReadPage.Index.get -> int
 VellumPdf.Reader.PdfReadPage.MediaBox.get -> VellumPdf.Document.PdfRectangle!
 VellumPdf.Reader.PdfReadPage.ObjectNumber.get -> int?
@@ -37,6 +112,7 @@ VellumPdf.Reader.PdfReaderDiagnostic.PageIndex.get -> int?
 VellumPdf.Reader.PdfReaderDiagnostic.Severity.get -> VellumPdf.Reader.PdfReaderDiagnosticSeverity
 override VellumPdf.Reader.PdfReaderDiagnostic.ToString() -> string!
 VellumPdf.Reader.PdfReaderDiagnosticCode
+VellumPdf.Reader.PdfReaderDiagnosticCode.AnnotationAppearanceUnusable = 509 -> VellumPdf.Reader.PdfReaderDiagnosticCode
 VellumPdf.Reader.PdfReaderDiagnosticCode.ContentLimitExceeded = 309 -> VellumPdf.Reader.PdfReaderDiagnosticCode
 VellumPdf.Reader.PdfReaderDiagnosticCode.ContentStreamLexError = 300 -> VellumPdf.Reader.PdfReaderDiagnosticCode
 VellumPdf.Reader.PdfReaderDiagnosticCode.ContentStreamTooLarge = 308 -> VellumPdf.Reader.PdfReaderDiagnosticCode
@@ -53,6 +129,17 @@ VellumPdf.Reader.PdfReaderDiagnosticCode.FontWidthsMalformed = 402 -> VellumPdf.
 VellumPdf.Reader.PdfReaderDiagnosticCode.FormXObjectBudgetExceeded = 305 -> VellumPdf.Reader.PdfReaderDiagnosticCode
 VellumPdf.Reader.PdfReaderDiagnosticCode.FormXObjectCycle = 304 -> VellumPdf.Reader.PdfReaderDiagnosticCode
 VellumPdf.Reader.PdfReaderDiagnosticCode.FormXObjectDepthExceeded = 303 -> VellumPdf.Reader.PdfReaderDiagnosticCode
+VellumPdf.Reader.PdfReaderDiagnosticCode.ImageBitsPerComponentOverridden = 505 -> VellumPdf.Reader.PdfReaderDiagnosticCode
+VellumPdf.Reader.PdfReaderDiagnosticCode.ImageColorSpaceUnsupported = 501 -> VellumPdf.Reader.PdfReaderDiagnosticCode
+VellumPdf.Reader.PdfReaderDiagnosticCode.ImageDataUnreadable = 508 -> VellumPdf.Reader.PdfReaderDiagnosticCode
+VellumPdf.Reader.PdfReaderDiagnosticCode.ImageDecodeArrayInvalid = 502 -> VellumPdf.Reader.PdfReaderDiagnosticCode
+VellumPdf.Reader.PdfReaderDiagnosticCode.ImageDictionaryInvalid = 500 -> VellumPdf.Reader.PdfReaderDiagnosticCode
+VellumPdf.Reader.PdfReaderDiagnosticCode.ImageExtractionBudgetExhausted = 510 -> VellumPdf.Reader.PdfReaderDiagnosticCode
+VellumPdf.Reader.PdfReaderDiagnosticCode.ImageJpxSignatureUnrecognised = 506 -> VellumPdf.Reader.PdfReaderDiagnosticCode
+VellumPdf.Reader.PdfReaderDiagnosticCode.ImageLimitExceeded = 507 -> VellumPdf.Reader.PdfReaderDiagnosticCode
+VellumPdf.Reader.PdfReaderDiagnosticCode.ImageMaskInvalid = 503 -> VellumPdf.Reader.PdfReaderDiagnosticCode
+VellumPdf.Reader.PdfReaderDiagnosticCode.ImageOccurrenceLimitExceeded = 511 -> VellumPdf.Reader.PdfReaderDiagnosticCode
+VellumPdf.Reader.PdfReaderDiagnosticCode.ImageSampleDataShort = 504 -> VellumPdf.Reader.PdfReaderDiagnosticCode
 VellumPdf.Reader.PdfReaderDiagnosticCode.InlineImageMalformed = 307 -> VellumPdf.Reader.PdfReaderDiagnosticCode
 VellumPdf.Reader.PdfReaderDiagnosticCode.ObjectGenerationMismatch = 104 -> VellumPdf.Reader.PdfReaderDiagnosticCode
 VellumPdf.Reader.PdfReaderDiagnosticCode.ObjectHeaderMismatch = 103 -> VellumPdf.Reader.PdfReaderDiagnosticCode
