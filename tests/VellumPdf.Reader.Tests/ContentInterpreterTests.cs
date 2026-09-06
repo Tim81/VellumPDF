@@ -150,6 +150,7 @@ public sealed class ContentInterpreterTests
         public List<(PdfDictionary Dict, byte[] Data, int Offset)> InlineImages { get; } = [];
         public List<(PdfDictionary Dict, Matrix Matrix, PdfRectangle? BBox, int ObjectNumber, int Offset)> FormBegins { get; } = [];
         public List<int> FormEnds { get; } = [];
+        public List<(int ObjectNumber, int Offset)> ImageXObjects { get; } = [];
 
         public void OnOperator(string operatorName, IReadOnlyList<PdfObject> operands, int offset) =>
             Operators.Add((operatorName, [.. operands], offset));
@@ -163,6 +164,9 @@ public sealed class ContentInterpreterTests
             FormBegins.Add((formDictionary, formMatrix, boundingBox, objectNumber, offset));
 
         public void OnFormEnd(int objectNumber) => FormEnds.Add(objectNumber);
+
+        public void OnImageXObject(ParsedStream stream, int offset) =>
+            ImageXObjects.Add((stream.ObjectNumber, offset));
     }
 
     /// <summary>A copy of the <see cref="ContentInterpreter.GraphicsState"/>/
@@ -203,6 +207,8 @@ public sealed class ContentInterpreterTests
         { }
 
         public void OnFormEnd(int objectNumber) { }
+
+        public void OnImageXObject(ParsedStream stream, int offset) { }
     }
 
     private static (PdfDocumentReader Reader, ContentStateSnapshot? State, StateSnapshotVisitor Visitor)
@@ -1217,6 +1223,8 @@ public sealed class ContentInterpreterTests
             _insideForm = false;
             _formEnded = true;
         }
+
+        public void OnImageXObject(ParsedStream stream, int offset) { }
     }
 
     // ── HandleDo reports a resource that resolves but is not a usable XObject (#402 round 2) ─────
@@ -3337,6 +3345,8 @@ public sealed class ContentInterpreterTests
         { }
 
         public void OnFormEnd(int objectNumber) { }
+
+        public void OnImageXObject(ParsedStream stream, int offset) { }
     }
 
     [Fact]
@@ -3401,6 +3411,8 @@ public sealed class ContentInterpreterTests
         { }
 
         public void OnFormEnd(int objectNumber) { }
+
+        public void OnImageXObject(ParsedStream stream, int offset) { }
     }
 
     [Fact]
@@ -3643,6 +3655,323 @@ public sealed class ContentInterpreterTests
             stopwatch.Elapsed <= TimeSpan.FromSeconds(4),
             $"content interpretation took {stopwatch.Elapsed} on a {bytes.Length}-byte input.");
         return reachedRun;
+    }
+
+    // ── #98: OnImageXObject, CurrentResources, RunFormXObject ───────────────────────────────────
+
+    private static readonly string OneByOneGrayImageDict =
+        "<< /Type /XObject /Subtype /Image /Width 1 /Height 1 /BitsPerComponent 8 "
+        + "/ColorSpace /DeviceGray /Filter /FlateDecode >>";
+
+    [Fact]
+    public void OnImageXObject_raisedOnce_carryingObjectNumber_forAnImageDo()
+    {
+        var pdf = BuildPageDoc(
+            "/Im0 Do",
+            "<< /XObject << /Im0 10 0 R >> >>",
+            new Obj(10, OneByOneGrayImageDict, Flate([0x11])));
+
+        var (_, _, visitor) = Run(pdf);
+
+        var (objectNumber, _) = Assert.Single(visitor.ImageXObjects);
+        Assert.Equal(10, objectNumber);
+    }
+
+    [Fact]
+    public void OnImageXObject_notRaised_forAFormDo()
+    {
+        var pdf = BuildPageDoc(
+            "/Fm0 Do",
+            "<< /XObject << /Fm0 10 0 R >> >>",
+            new Obj(10, "<< /Type /XObject /Subtype /Form /BBox [0 0 1 1] >>", []));
+
+        var (_, _, visitor) = Run(pdf);
+
+        Assert.Empty(visitor.ImageXObjects);
+    }
+
+    private sealed class ResourceCapturingVisitor(ContentInterpreter interpreter) : IContentVisitor
+    {
+        public List<PdfDictionary?> InlineImageResources { get; } = [];
+        public List<PdfDictionary?> ImageXObjectResources { get; } = [];
+        public bool SawNonNullResourcesDuringAnOperator { get; private set; }
+
+        public void OnOperator(string operatorName, IReadOnlyList<PdfObject> operands, int offset)
+        {
+            if (interpreter.CurrentResources is not null)
+                SawNonNullResourcesDuringAnOperator = true;
+        }
+
+        public void OnInlineImage(PdfDictionary dictionary, ReadOnlyMemory<byte> data, int offset) =>
+            InlineImageResources.Add(interpreter.CurrentResources);
+
+        public void OnFormBegin(
+            PdfDictionary formDictionary, Matrix formMatrix, PdfRectangle? boundingBox, int objectNumber,
+            int offset)
+        { }
+
+        public void OnFormEnd(int objectNumber) { }
+
+        public void OnImageXObject(ParsedStream stream, int offset) =>
+            ImageXObjectResources.Add(interpreter.CurrentResources);
+    }
+
+    /// <summary>
+    /// <see cref="ContentInterpreter.CurrentResources"/> is the page's own <c>/Resources</c> for an
+    /// image XObject drawn at page level, is <see langword="null"/> during every ordinary operator
+    /// callback (it is set only immediately around <c>OnInlineImage</c>/<c>OnImageXObject</c>), and
+    /// is <see langword="null"/> again once <see cref="ContentInterpreter.Run"/> returns.
+    /// </summary>
+    [Fact]
+    public void CurrentResources_isPageResources_forAnImageXObjectAtPageLevel_nullElsewhere()
+    {
+        var pdf = BuildPageDoc(
+            "0 0 1 1 re\n/Im0 Do",
+            "<< /XObject << /Im0 10 0 R >> /ColorSpace << /CS0 /DeviceGray >> >>",
+            new Obj(10, OneByOneGrayImageDict, Flate([0x11])));
+
+        var reader = PdfReader.Open(pdf);
+        var page = reader.GetPage(0);
+        var interpreter = new ContentInterpreter(reader);
+        var visitor = new ResourceCapturingVisitor(interpreter);
+        interpreter.Run(page, visitor);
+
+        var resources = Assert.Single(visitor.ImageXObjectResources);
+        Assert.NotNull(resources);
+        Assert.True(resources!.Get(PdfName.ColorSpace) is not null);
+        Assert.False(visitor.SawNonNullResourcesDuringAnOperator);
+        Assert.Null(interpreter.CurrentResources);
+    }
+
+    /// <summary>
+    /// Inside a Form XObject whose own <c>/Resources</c> differs from the page's,
+    /// <see cref="ContentInterpreter.CurrentResources"/> is the FORM's own resources (§8.10.2),
+    /// not the page's.
+    /// </summary>
+    [Fact]
+    public void CurrentResources_isFormResources_forAnImageXObjectInsideAForm()
+    {
+        var pdf = BuildPageDoc(
+            "/Fm0 Do",
+            "<< /XObject << /Fm0 10 0 R >> /Marker /PageMarker >>",
+            new Obj(10,
+                "<< /Type /XObject /Subtype /Form /BBox [0 0 1 1] "
+                + "/Resources << /XObject << /Im0 11 0 R >> /Marker /FormMarker >> >>",
+                Encoding.ASCII.GetBytes("/Im0 Do")),
+            new Obj(11, OneByOneGrayImageDict, Flate([0x11])));
+
+        var reader = PdfReader.Open(pdf);
+        var page = reader.GetPage(0);
+        var interpreter = new ContentInterpreter(reader);
+        var visitor = new ResourceCapturingVisitor(interpreter);
+        interpreter.Run(page, visitor);
+
+        var resources = Assert.Single(visitor.ImageXObjectResources);
+        Assert.NotNull(resources);
+        var marker = Assert.IsType<PdfName>(resources!.Get(new PdfName("Marker")));
+        Assert.Equal("FormMarker", marker.Value);
+    }
+
+    /// <summary> Proof that exposing <c>CurrentResources</c> rather than substituting a resolved
+    /// colour space into the inline image dictionary changes nothing about how an inline image
+    /// naming an Indexed resource is delimited: it still takes the tier-c
+    /// <c>EI</c> scan (an Indexed <c>/CS</c> gives <see cref="ContentInterpreter"/> no component
+    /// count to compute tier b's length from), the visitor still receives a <c>data</c> slice of
+    /// the same length as before, and the dictionary the visitor sees still holds the bare name,
+    /// not a resolved array.
+    /// </summary>
+    [Fact]
+    public void InlineImage_namedIndexedColorSpace_stillUsesTierCScan_dictionaryStillHoldsBareName()
+    {
+        // BI /W 2 /H 1 /CS /CS0 /BPC 8 ID <4 bytes> EI, with /CS0 an Indexed resource. There is no
+        // /L, and tier b (computed length) cannot run for a named, non-device colour space
+        // (ResolveComponentCount returns -1 for anything but the three device names or the
+        // composite [/Indexed ...] array), so this can only have been delimited by the EI scan.
+        var content = "BI /W 2 /H 1 /CS /CS0 /BPC 8 ID \x01\x02\x03\x04 EI"u8.ToArray();
+        var pdf = BuildPageDocRaw(
+            content, "<< /ColorSpace << /CS0 [/Indexed /DeviceRGB 1 <FF0000FFFFFF>] >> >>");
+
+        var (_, _, visitor) = Run(pdf);
+
+        var (dict, data, _) = Assert.Single(visitor.InlineImages);
+        Assert.Equal(4, data.Length);
+        Assert.Equal(new byte[] { 1, 2, 3, 4 }, data);
+        var csValue = dict.Get(PdfName.ColorSpace);
+        Assert.IsType<PdfName>(csValue);
+        Assert.Equal("CS0", ((PdfName)csValue!).Value);
+    }
+
+    [Fact]
+    public void RunFormXObject_onFormThatDrawsAnImage_findsIt()
+    {
+        var pdf = BuildPageDoc(
+            "0 0 1 1 re",
+            "<< >>",
+            new Obj(10,
+                "<< /Type /XObject /Subtype /Form /BBox [0 0 1 1] "
+                + "/Resources << /XObject << /Im0 11 0 R >> >> >>",
+                Encoding.ASCII.GetBytes("/Im0 Do")),
+            new Obj(11, OneByOneGrayImageDict, Flate([0x11])));
+
+        var reader = PdfReader.Open(pdf);
+        var page = reader.GetPage(0);
+        var interpreter = new ContentInterpreter(reader);
+        var visitor = new RecordingVisitor();
+        interpreter.Run(page, visitor);
+        var formStream = reader.ResolveStream(10)!;
+
+        interpreter.RunFormXObject(page, formStream, visitor);
+
+        Assert.Single(visitor.ImageXObjects);
+    }
+
+    [Fact]
+    public void RunFormXObject_formWithNoResources_fallsBackToPageResources()
+    {
+        var pdf = BuildPageDoc(
+            "0 0 1 1 re",
+            "<< /XObject << /Im0 11 0 R >> >>",
+            new Obj(10, "<< /Type /XObject /Subtype /Form /BBox [0 0 1 1] >>",
+                Encoding.ASCII.GetBytes("/Im0 Do")),
+            new Obj(11, OneByOneGrayImageDict, Flate([0x11])));
+
+        var reader = PdfReader.Open(pdf);
+        var page = reader.GetPage(0);
+        var interpreter = new ContentInterpreter(reader);
+        var visitor = new RecordingVisitor();
+        interpreter.Run(page, visitor);
+        var formStream = reader.ResolveStream(10)!;
+
+        interpreter.RunFormXObject(page, formStream, visitor);
+
+        Assert.Single(visitor.ImageXObjects);
+    }
+
+    [Fact]
+    public void RunFormXObject_formThatInvokesItself_reportsCycle_doesNotRecurse()
+    {
+        var pdf = BuildPageDoc(
+            "0 0 1 1 re",
+            "<< >>",
+            new Obj(10,
+                "<< /Type /XObject /Subtype /Form /BBox [0 0 1 1] "
+                + "/Resources << /XObject << /Self 10 0 R >> >> >>",
+                Encoding.ASCII.GetBytes("/Self Do")));
+
+        var reader = PdfReader.Open(pdf);
+        var page = reader.GetPage(0);
+        var interpreter = new ContentInterpreter(reader);
+        var visitor = new RecordingVisitor();
+        var scope = reader.CreateContentDiagnosticScope();
+        interpreter.Run(page, visitor, scope);
+        var formStream = reader.ResolveStream(10)!;
+
+        interpreter.RunFormXObject(page, formStream, visitor, scope);
+
+        Assert.Contains(scope.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.FormXObjectCycle);
+    }
+
+    [Fact]
+    public void RunFormXObject_pastTheDepthCap_reportsDepthExceeded()
+    {
+        // A chain of nine nested forms (10 -> 11 -> ... -> 18), each invoking the next; with
+        // MaxFormXObjectDepth tightened to 2 and RunFormXObject's own entry starting at depth 1
+        // (as if the appearance stream were already one level in), the third level in the chain
+        // exceeds the cap.
+        var objs = new List<Obj>();
+        for (var i = 10; i <= 18; i++)
+        {
+            var next = i + 1;
+            var content = i < 18 ? $"/Next Do" : "";
+            var resources = i < 18 ? $"<< /XObject << /Next {next} 0 R >> >>" : "<< >>";
+            objs.Add(new Obj(i,
+                $"<< /Type /XObject /Subtype /Form /BBox [0 0 1 1] /Resources {resources} >>",
+                Encoding.ASCII.GetBytes(content)));
+        }
+        var pdf = BuildPageDoc("0 0 1 1 re", "<< >>", [.. objs]);
+
+        var reader = PdfReader.Open(pdf, new PdfReaderOptions { MaxFormXObjectDepth = 2 });
+        var page = reader.GetPage(0);
+        var interpreter = new ContentInterpreter(reader);
+        var visitor = new RecordingVisitor();
+        var scope = reader.CreateContentDiagnosticScope();
+        interpreter.Run(page, visitor, scope);
+        var formStream = reader.ResolveStream(10)!;
+
+        interpreter.RunFormXObject(page, formStream, visitor, scope);
+
+        Assert.Contains(scope.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.FormXObjectDepthExceeded);
+    }
+
+    /// <summary>
+    /// <see cref="ContentInterpreter.RunFormXObject"/> does NOT reset the per-<c>Run</c> content or
+    /// form-invocation budgets: this is the test that fails if that reset is reintroduced.
+    /// </summary>
+    [Fact]
+    public void RunFormXObject_doesNotResetTheContentBudget_reportsContentStreamTooLarge()
+    {
+        // A form whose own content is a single oversized literal string comment-like run: cheapest
+        // way to build many decoded bytes without an image XObject. 64 MiB is the per-Run budget; a
+        // ~65 MiB single content stream on the page already spends nearly all of it in Run, and the
+        // appearance's own single byte then pushes it over.
+        var bigContent = new byte[64 * 1024 * 1024 - 1024];
+        Array.Fill(bigContent, (byte)' ');
+        var pdf = BuildPageDocRaw(
+            bigContent, "<< >>",
+            new Obj(10, "<< /Type /XObject /Subtype /Form /BBox [0 0 1 1] >>",
+                Encoding.ASCII.GetBytes(new string(' ', 4096))));
+
+        var reader = PdfReader.Open(pdf);
+        var page = reader.GetPage(0);
+        var interpreter = new ContentInterpreter(reader);
+        var visitor = new RecordingVisitor();
+        var scope = reader.CreateContentDiagnosticScope();
+        interpreter.Run(page, visitor, scope);
+        var formStream = reader.ResolveStream(10)!;
+
+        interpreter.RunFormXObject(page, formStream, visitor, scope);
+
+        Assert.Contains(scope.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ContentStreamTooLarge);
+    }
+
+    [Fact]
+    public void RunFormXObject_afterFormInvocationBudgetSpent_reportsFormXObjectBudgetExceeded()
+    {
+        // 4096 self-contained one-operator forms, each drawn once from the page: spends the whole
+        // MaxFormInvocationsPerPage budget inside Run itself. A further RunFormXObject then reports
+        // the same budget exhausted rather than silently succeeding.
+        var objs = new List<Obj>();
+        var drawOps = new StringBuilder();
+        for (var i = 100; i < 100 + 4096; i++)
+        {
+            objs.Add(new Obj(i, "<< /Type /XObject /Subtype /Form /BBox [0 0 1 1] >>", []));
+            drawOps.Append($"/F{i} Do\n");
+        }
+        var xobjectDict = new StringBuilder("<< ");
+        for (var i = 100; i < 100 + 4096; i++)
+            xobjectDict.Append($"/F{i} {i} 0 R ");
+        xobjectDict.Append(">>");
+
+        objs.Add(new Obj(9999, "<< /Type /XObject /Subtype /Form /BBox [0 0 1 1] >>", []));
+        objs.Add(new Obj(10,
+            "<< /Type /XObject /Subtype /Form /BBox [0 0 1 1] "
+            + "/Resources << /XObject << /Extra 9999 0 R >> >> >>",
+            Encoding.ASCII.GetBytes("/Extra Do")));
+
+        var pdf = BuildPageDoc(
+            drawOps.ToString(), $"<< /XObject {xobjectDict} >>", [.. objs]);
+
+        var reader = PdfReader.Open(pdf);
+        var page = reader.GetPage(0);
+        var interpreter = new ContentInterpreter(reader);
+        var visitor = new RecordingVisitor();
+        var scope = reader.CreateContentDiagnosticScope();
+        interpreter.Run(page, visitor, scope);
+        var formStream = reader.ResolveStream(10)!;
+
+        interpreter.RunFormXObject(page, formStream, visitor, scope);
+
+        Assert.Contains(scope.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.FormXObjectBudgetExceeded);
     }
 
     private static class FuzzBudget

@@ -58,9 +58,9 @@ internal static class HandBuiltEncryptedDocuments
 
         var members = "<< /Type /Catalog /Pages 3 0 R >> << /Type /Pages /Kids [] /Count 0 >>";
         var header = "2 0 3 34 ";
-        var objStmBody = Encrypt(1, effectiveGeneration, Encoding.Latin1.GetBytes(header + members));
+        var objStmBody = Encrypt("enc-rc4-128.pdf", "u", 1, effectiveGeneration, Encoding.Latin1.GetBytes(header + members));
 
-        var probe = Encrypt(5, 0, "OBJSTM-CATALOG"u8.ToArray());
+        var probe = Encrypt("enc-rc4-128.pdf", "u", 5, 0, "OBJSTM-CATALOG"u8.ToArray());
 
         var ms = new MemoryStream();
         void W(string t) => ms.Write(Encoding.Latin1.GetBytes(t));
@@ -111,9 +111,15 @@ internal static class HandBuiltEncryptedDocuments
     // need: open the fixture whose /Encrypt dictionary they copy, take its armed decryptor and file
     // key, and run the plaintext through it. Producing the ciphertext any other way would mean a
     // second, hand-rolled RC4 in the test project — a copy of the thing under test.
-    private static byte[] Encrypt(int objectNumber, int generation, byte[] plaintext)
+    //
+    // Internal, not private, since #98: an image-bearing RC4-128 fixture (ImageExtractionTests)
+    // reuses this same encrypt-under-a-committed-fixture's-key approach rather than hand-rolling a
+    // second one, taking the fixture name and password as parameters instead of this class's own
+    // hardcoded "enc-rc4-128.pdf" so a caller can build against whichever committed fixture its own
+    // /Encrypt dictionary and /ID were copied from.
+    internal static byte[] Encrypt(string fixtureName, string password, int objectNumber, int generation, byte[] plaintext)
     {
-        using var reader = PdfReader.Open(Load("enc-rc4-128.pdf"), new PdfReaderOptions { Password = "u" });
+        using var reader = PdfReader.Open(Load(fixtureName), new PdfReaderOptions { Password = password });
         var type = typeof(PdfDocumentReader);
         var decryptor = (StandardSecurityDecryptor)type
             .GetField("_decryptor", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(reader)!;

@@ -51,6 +51,19 @@ public sealed class PdfReaderDiagnosticCodeTests
         [PdfReaderDiagnosticCode.FontWidthsMalformed] = 4,
         [PdfReaderDiagnosticCode.FontNoUnicodeRoute] = 4,
         [PdfReaderDiagnosticCode.UnmappedGlyphs] = 4,
+
+        [PdfReaderDiagnosticCode.ImageDictionaryInvalid] = 5,
+        [PdfReaderDiagnosticCode.ImageColorSpaceUnsupported] = 5,
+        [PdfReaderDiagnosticCode.ImageDecodeArrayInvalid] = 5,
+        [PdfReaderDiagnosticCode.ImageMaskInvalid] = 5,
+        [PdfReaderDiagnosticCode.ImageSampleDataShort] = 5,
+        [PdfReaderDiagnosticCode.ImageBitsPerComponentOverridden] = 5,
+        [PdfReaderDiagnosticCode.ImageJpxSignatureUnrecognised] = 5,
+        [PdfReaderDiagnosticCode.ImageLimitExceeded] = 5,
+        [PdfReaderDiagnosticCode.ImageDataUnreadable] = 5,
+        [PdfReaderDiagnosticCode.AnnotationAppearanceUnusable] = 5,
+        [PdfReaderDiagnosticCode.ImageExtractionBudgetExhausted] = 5,
+        [PdfReaderDiagnosticCode.ImageOccurrenceLimitExceeded] = 5,
         [PdfReaderDiagnosticCode.DiagnosticsSuppressed] = 9,
     };
 
@@ -164,6 +177,19 @@ public sealed class PdfReaderDiagnosticCodeTests
         [PdfReaderDiagnosticCode.FontWidthsMalformed] = (402, PdfReaderDiagnosticSeverity.Warning),
         [PdfReaderDiagnosticCode.FontNoUnicodeRoute] = (403, PdfReaderDiagnosticSeverity.Info),
         [PdfReaderDiagnosticCode.UnmappedGlyphs] = (404, PdfReaderDiagnosticSeverity.Info),
+
+        [PdfReaderDiagnosticCode.ImageDictionaryInvalid] = (500, PdfReaderDiagnosticSeverity.Warning),
+        [PdfReaderDiagnosticCode.ImageColorSpaceUnsupported] = (501, PdfReaderDiagnosticSeverity.Warning),
+        [PdfReaderDiagnosticCode.ImageDecodeArrayInvalid] = (502, PdfReaderDiagnosticSeverity.Warning),
+        [PdfReaderDiagnosticCode.ImageMaskInvalid] = (503, PdfReaderDiagnosticSeverity.Warning),
+        [PdfReaderDiagnosticCode.ImageSampleDataShort] = (504, PdfReaderDiagnosticSeverity.Warning),
+        [PdfReaderDiagnosticCode.ImageBitsPerComponentOverridden] = (505, PdfReaderDiagnosticSeverity.Warning),
+        [PdfReaderDiagnosticCode.ImageJpxSignatureUnrecognised] = (506, PdfReaderDiagnosticSeverity.Info),
+        [PdfReaderDiagnosticCode.ImageLimitExceeded] = (507, PdfReaderDiagnosticSeverity.Warning),
+        [PdfReaderDiagnosticCode.ImageDataUnreadable] = (508, PdfReaderDiagnosticSeverity.Warning),
+        [PdfReaderDiagnosticCode.AnnotationAppearanceUnusable] = (509, PdfReaderDiagnosticSeverity.Warning),
+        [PdfReaderDiagnosticCode.ImageExtractionBudgetExhausted] = (510, PdfReaderDiagnosticSeverity.Warning),
+        [PdfReaderDiagnosticCode.ImageOccurrenceLimitExceeded] = (511, PdfReaderDiagnosticSeverity.Warning),
         [PdfReaderDiagnosticCode.DiagnosticsSuppressed] = (900, PdfReaderDiagnosticSeverity.Warning),
     };
 

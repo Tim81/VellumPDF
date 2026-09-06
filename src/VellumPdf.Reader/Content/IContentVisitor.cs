@@ -92,4 +92,17 @@ internal interface IContentVisitor
     /// <param name="objectNumber">The same form stream object number <see cref="OnFormBegin"/>
     /// reported.</param>
     void OnFormEnd(int objectNumber);
+
+    /// <summary> Called for each <c>Do</c> whose operand resolved to an image XObject (ISO 32000-2
+    /// §8.9.5), after <see cref="OnOperator"/> reported the <c>Do</c> itself and after the same
+    /// resource resolution this interpreter performs for a form, including the §8.10.2 fallback to
+    /// the invoking stream's own resources. No <see cref="OnFormBegin"/>/<see cref="OnFormEnd"/>
+    /// pair brackets it: an image XObject has no content to recurse into.
+    /// </summary>
+    /// <param name="stream">The resolved image stream. Its body is the stored (possibly encrypted)
+    /// bytes, so a visitor that reads it goes through <c>PdfDocumentReader.DecryptedStreamView</c>
+    /// rather than <see cref="ParsedStream.RawBody"/> directly.</param>
+    /// <param name="offset">The byte offset of the <c>Do</c> operator, in the buffer the
+    /// interpreter was walking at the time, i.e. the invoking stream's own offset space.</param>
+    void OnImageXObject(ParsedStream stream, int offset);
 }
