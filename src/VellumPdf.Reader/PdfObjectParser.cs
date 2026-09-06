@@ -149,8 +149,12 @@ internal sealed class PdfObjectParser
         var objKw = ExpectToken(TokenKind.Keyword, "'obj' keyword");
 
         if (!IsKeyword(objKw.Raw, "obj"u8))
-            // Excerpted for the same reason as ParseKeywordObject (#406): a keyword token has no
-            // length bound, and this message is one PdfPreflight's per-rule catch retains.
+            // Excerpted, not interpolated whole (#406): a keyword token has no length bound
+            // (Annex C.1). Unlike ParseIndirectObject's identical check, this method's only two
+            // callers are both in XrefReconstructor (#184), and both catch InvalidDataException
+            // here and discard it — the message reaches no consumer, PdfPreflight's per-rule catch
+            // included. Excerpting still matters: building the unbounded string is itself the
+            // per-throw cost a huge keyword pays regardless of who ends up seeing the result.
             throw new InvalidDataException(
                 $"Expected 'obj' keyword, got "
                 + $"'{DiagnosticExcerpt.Quote(Encoding.Latin1.GetString(objKw.Raw.Span), objKw.Raw.Length)}' "
@@ -222,8 +226,8 @@ internal sealed class PdfObjectParser
         if (raw.SequenceEqual("false"u8)) return PdfBoolean.False;
         if (raw.SequenceEqual("null"u8)) return PdfNull.Instance;
         // Excerpted, not interpolated whole: PdfLexer.ReadKeyword puts no bound on a keyword's own
-        // length (Annex C.1), and PdfPreflight's per-rule catch (#97, bounded at the sink by #403)
-        // keeps a copy of this message, so an oversized keyword would otherwise be rebuilt at full
+        // length (Annex C.1), and PdfPreflight's per-rule catch (bounded at the sink by #403) keeps
+        // a copy of this message, so an oversized keyword would otherwise be rebuilt at full
         // size on every rule that decodes the object carrying it (#406). `raw` is the still-encoded
         // span, so its own length is passed rather than relying on the decoded string's — the two
         // agree here (a bare keyword has no #xx escape to shorten it), but passing the span's own

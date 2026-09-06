@@ -224,7 +224,7 @@ public sealed class PreflightMessageBoundTests
 
         var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
 
-        // Filters.InflateFilter (#406) now excerpts the filter name in the thrown message the same
+        // PdfFilters.ApplyFilter (#406) now excerpts the filter name in the thrown message the same
         // way it already excerpted the diagnostic, so the message a rule-evaluation catch wraps
         // never reaches PreflightContext.MaxMessageChars in the first place — there is nothing left
         // for the sink cut below to do on this path, unlike before #406.

@@ -332,6 +332,13 @@ internal sealed class XrefParser
             absolutePos++;
 
         var offsetStr = Encoding.ASCII.GetString(span[numStart..absolutePos]);
+        // Not excerpted (#406 round 4): the digit-scan loop above puts no bound on how long a run
+        // of digits it will consume, the same shape as ReadInt's subsection-header integer below —
+        // but unlike that one, every throw out of this method (this one included) is caught by
+        // Parse's own try/catch around the FindLastStartxref call above and discarded outright, so
+        // the message never escapes Parse regardless of how long the digit run was. This fires at
+        // most once per Open, not once per stream, so the per-throw allocation this sweep otherwise
+        // bounds elsewhere is a single one-off here rather than a cost that multiplies.
         if (!int.TryParse(offsetStr, NumberStyles.None, CultureInfo.InvariantCulture, out var xrefOffset)
             || xrefOffset < 0)
             throw new InvalidDataException(

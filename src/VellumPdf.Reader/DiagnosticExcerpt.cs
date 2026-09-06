@@ -30,12 +30,15 @@ internal static class DiagnosticExcerpt
     /// token used one or more <c>#xx</c> escapes (§7.3.5) decodes to fewer bytes than it was
     /// written in, so the raw token can run longer than <paramref name="byteLength"/> reports
     /// (<c>'/' + 40 'B' + '#20' x10</c> is a 71-byte raw token whose decoded Value is 50 bytes, and
-    /// this reports "(50 bytes)"). Several callers across <c>PdfObjectParser</c>, <c>XrefParser</c>,
-    /// <c>EncryptionSetup</c> and <c>XrefReconstructor</c> pass the raw span's own length instead of
-    /// relying on the single-argument overload's <c>text.Length</c> default — a plain convention at
-    /// those sites, not a correctness requirement, since none of them can carry a <c>#xx</c> escape.
-    /// <c>ContentInterpreter.HandleOperator</c>'s own dispatch site is the one caller where the two
-    /// genuinely differ: it decodes only far enough to excerpt an oversized keyword, so
+    /// this reports "(50 bytes)"). A caller that still has the raw token in hand — a bare keyword or
+    /// numeric literal, neither of which has a <c>#xx</c> escape to decode — passes the raw span's
+    /// own length here instead of relying on the single-argument overload's <c>text.Length</c>
+    /// default; this is a convention at those call sites, not a correctness requirement, since the
+    /// two lengths already agree for them. A caller quoting a <see cref="PdfName"/>'s decoded
+    /// <c>Value</c> instead uses the single-argument overload, because an escape in the raw token
+    /// would make the two lengths disagree and the decoded value's own length is the correct one to
+    /// report. <c>ContentInterpreter.HandleOperator</c>'s own dispatch site is the one caller where
+    /// neither reason applies cleanly: it decodes only far enough to excerpt an oversized keyword, so
     /// <paramref name="text"/> itself is already truncated and its own length would undercount.
     /// <para>
     /// Precondition: <paramref name="byteLength"/> above <see cref="MaxChars"/> must imply

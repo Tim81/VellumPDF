@@ -151,12 +151,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   counts are unaffected, and at these ten sites a message whose named value is 32 characters or
   shorter is byte-identical to before. See Fixed, below, for why. (#403)
 - **A preflight "Rule evaluation failed" finding's excerpt of the token that broke the underlying
-  rule drops from 1024 characters to 32.** `PdfPreflight`'s per-rule catch wraps a rule's thrown
-  exception message verbatim, and #403 already cut the retained result at 1024 characters — the
-  token was never quoted whole once retained. What changes here is where the cut happens: the
-  Reader sites described under Fixed below now excerpt to 32 characters at the throw itself, so the
-  wrapped text arrives short and the 1024-character sink cut has nothing left to do on this path.
-  Every other finding is unaffected. (#406)
+  rule drops from 979 characters to 32.** `PdfPreflight`'s per-rule catch wraps a rule's thrown
+  exception message verbatim behind a fixed "Rule evaluation failed: " prefix, and #403 already cut
+  the whole assertion message — prefix included — at 1024 characters, leaving the token itself 979
+  of those before this change. What changes here is where the cut happens: the Reader sites
+  described under Fixed below now excerpt to 32 characters at the throw itself, so the wrapped text
+  arrives short and the 1024-character sink cut has nothing left to do on this path. Every other
+  finding is unaffected. (#406)
 
 ### Fixed
 
@@ -182,9 +183,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   that quoted a producer-controlled token whole, now excerpt it instead.** None of `PdfLexer`'s
   keyword, name, or numeric token readers bound a token's own length (Annex C.1), so a 900,000-byte
   `/Filter` name shared by 400 `/Contents` streams in a 960 KiB file threw 2,404 times and allocated
-  4126.8 MiB, 99.4% of the run — even though the diagnostic reported alongside that same throw
-  already excerpted the name. #403 fixed that diagnostic; this fixes the throw itself and eleven
-  more sites across four files, twelve in total:
+  4126.8 MiB, 99.4% of the run's allocation — even though the diagnostic reported alongside that
+  same throw already excerpted the name. #403 fixed that diagnostic; this fixes the throw itself and
+  eleven more sites across four files, twelve in total:
 
   | Site | Exception |
   | --- | --- |
@@ -201,25 +202,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   | `EncryptionSetup.Authenticate`'s unimplemented-`/CFM` `/StrF` throw | `UnsupportedPdfFeatureException` |
   | `XrefReconstructor`'s refused-security-handler throw | `UnsupportedPdfFeatureException` |
 
-  The nine `InvalidDataException` sites give `PdfPreflight`'s per-rule catch (#403), which keeps a
-  thrown message for the result's lifetime, a bounded copy to keep. The three
-  `UnsupportedPdfFeatureException` sites never reach that catch — it excludes the type by name, so
-  the exception propagates to the caller instead of becoming a finding — and get the same treatment
-  for two different reasons: building the unbounded string is itself a per-throw cost regardless of
-  who retains it, and `VellumPdf.Cli` catches this exception type and writes `ex.Message` to stderr
-  whole, so an oversized name used to reach the terminal in full. Every site now excerpts through
-  `DiagnosticExcerpt.Quote` the way #403's sibling diagnostics already did.
+  Seven of the nine `InvalidDataException` sites are reachable from `PdfPreflight.Validate`'s rule
+  loop, so they give the per-rule catch (#403), which keeps a thrown message for the result's
+  lifetime, a bounded copy to keep. The other two do not: `ProbeIndirectObjectHeader`'s only two
+  production callers, both in `XrefReconstructor`, catch `InvalidDataException` there and discard
+  it outright, and `XrefParser.ReadInt` runs inside `PdfReader.Open`, before the rule loop starts,
+  so nothing retains it either. Those two, together with the three
+  `UnsupportedPdfFeatureException` sites — which never reach that catch at all, since it excludes
+  the type by name and lets the exception propagate to the caller instead of becoming a finding —
+  get the same treatment for a different reason: building the unbounded string is itself a
+  per-throw cost regardless of who retains it, and for the three `UnsupportedPdfFeatureException`
+  sites specifically, `VellumPdf.Cli` also catches that exception type and writes `ex.Message` to
+  stderr whole, so an oversized name used to reach the terminal in full. Every site now excerpts
+  through `DiagnosticExcerpt.Quote` the way #403's sibling diagnostics already did.
 
   A handful of similar-looking sites are already bounded and were left alone: a fixed-width xref
   table field, a value drawn from a fixed set (a token kind, a CLR type name, a resource-category
   constant), a numeric value (bounded by the digit count of a 64-bit integer), and the fixed
   sentence a genuine BCL decompression failure is normalised to (the message actually *re-thrown*
   on a decompression bomb is `DecompressionLimitExceededException`, a `VellumPdf` type built from
-  numerics — not a re-thrown `DeflateStream`/`GZipStream` message, and this package has no
-  `GZipStream` anywhere in it), and `XrefParser`'s own `startxref`-offset scan: its 1 MiB tail
-  window bounds the scan, but what actually keeps an oversized offset from
-  reaching a caller is that `XrefParser.Parse` wraps the scan in its own catch and discards the
-  exception outright, so the message never escapes `Parse` regardless of how wide that window is.
+  numerics — not a re-thrown `DeflateStream`/`GZipStream` message, and `VellumPdf.Reader` has no
+  `GZipStream` anywhere in it), and `XrefParser`'s own `startxref`-offset scan, including the
+  unbounded digit run it reads back if the offset itself fails to parse: its 1 MiB tail window
+  bounds the initial scan, but what actually keeps any of this method's throws from reaching a
+  caller is that `XrefParser.Parse` wraps the whole scan in one catch and discards the exception
+  outright, whichever of its throws fired, so the message never escapes `Parse` regardless of how
+  wide that window is or how long the digit run was.
   (#406)
 
 ## [2.3.0] - 2026-09-01

@@ -120,8 +120,8 @@ public sealed class PdfObjectParserTests
     // literal has no exponent syntax (ISO 32000-2 §7.3.3's grammar is sign, digits, dot, digits —
     // no 'E'), so overflowing double.TryParse to +/-Infinity needs roughly 310 integer digits.
     // Nothing 32 or 33 characters long can trigger this throw at all; the shortest reachable token
-    // is already three orders of magnitude past the excerpt threshold. What IS pinned below is the
-    // excerpted shape at the shortest length that actually reaches this branch.
+    // (310 characters) is already one order of magnitude past the excerpt threshold (32). What IS
+    // pinned below is the excerpted shape at the shortest length that actually reaches this branch.
 
     [Fact]
     public void RealOutOfRange_throwsOnlyAFixedExcerpt()

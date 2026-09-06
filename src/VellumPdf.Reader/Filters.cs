@@ -275,7 +275,7 @@ internal static class PdfFilters
         // to it, so an attacker- or corruption-sized name would otherwise be rebuilt at full size on
         // every one of those streams' decode attempts. The diagnostic is retained for the reader's
         // lifetime once per (code, object, page) the sink's dedupe key admits (#402 round 8), and
-        // PdfPreflight's per-rule catch (#97, bounded at the sink by #403) keeps a copy of the
+        // PdfPreflight's per-rule catch (bounded at the sink by #403) keeps a copy of the
         // thrown message too — but even without a retaining caller, building the unbounded string
         // is itself the per-throw cost a shared oversized name multiplies across every stream that
         // names it (#406).
