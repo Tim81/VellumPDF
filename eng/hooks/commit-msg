@@ -1,0 +1,147 @@
+#!/bin/sh
+# Remove AI-assistant attribution from a commit message before it is written.
+#
+# Authorship in this repository is human; the tooling is not a co-author. The rule
+# is written in CLAUDE.md, which is untracked here, so PR #411 is the reference
+# that survives a clone. Stating it in prose was not enough: assistant CLIs append a
+# co-author trailer by default, and 159 commits made between 2026-06-19 and
+# 2026-06-23 reached main carrying one, which credited the @claude account with
+# 159 commits on this repository's contributors graph. Added in PR #411.
+#
+# This strips the offending lines and exits 0 rather than rejecting the commit.
+# A non-zero exit would put an assistant into a loop re-adding the same trailer,
+# and a rejected commit loses whatever the author had typed.
+
+# grep reports "binary file matches" and suppresses its output when the input
+# holds an invalid multibyte sequence, which would otherwise replace the whole
+# message with that notice, or with nothing. Pinning C makes every byte a byte,
+# and also avoids -i folding under a Turkish locale. Git for Windows ships grep
+# 3.0, where a negated bracket expression does not match a multibyte character in
+# a UTF-8 locale, so the ^[^A-Za-z]{0,8} anchor below skipped right over the robot
+# emoji and left the footer this hook exists to remove in place. Bisected: ^.{0,8}
+# matches the emoji, ^[^A-Za-z]{0,8} does not.
+LC_ALL=C
+export LC_ALL
+unset GREP_OPTIONS GREP_COLORS
+
+msg=$1
+[ -n "$msg" ] && [ -f "$msg" ] || exit 0
+
+# Everything below anchors at column 0, which git requires of a trailer (it also
+# requires the trailing paragraph, so this is necessary rather than sufficient).
+# Anchoring keeps an indented, quoted example inside a body alive, which matters
+# because this repository quotes the trailer it is removing.
+
+# Keys whose value is an identity, so a bot address is what identifies them.
+# `signed-off-by` is deliberately absent: GitHub never credits a contributor
+# from a DCO sign-off, so matching it could only ever delete a human's
+# certification. `generated-by` stays here rather than with the tool keys below
+# because its value is often a script path that may name a tool in passing.
+keys='co-authored-by|generated-by'
+
+# Keys whose value is a bare tool name with no address, so the name has to be
+# matched. The whole value must be tool names and separators: that strips
+# "Made-with: Cursor" and "Assisted-by: Cursor, Claude" while leaving any
+# sentence that merely contains a vendor name alone.
+tool_keys='assisted-by|made-with|made-by'
+vend='claude( code)?|copilot|cursor( agent)?|codex|chatgpt|gemini([ -]cli)?|jules|aider|continue|openhands|replit|lovable|devin|amp|trae|qodo|factory|anthropic|openai|windsurf|cline|zed'
+
+# Match the address, never the display name. A vendor substring in a display name
+# deletes real people: "Cody Rivera", "Claude Perrault", "Devin Coldewey" and
+# "Ali Haider" all carry one. The domain is label-anchored ("@" or a dot before
+# the name) because an unanchored "amp" matches human@example.com.
+#
+# Two escape hatches beyond the domain list: any [bot]@ address, which covers
+# app identities whose git metadata froze under an old codename (Lovable still
+# commits as gpt-engineer-app[bot]); and the GitHub noreply form, where the
+# agent name sits in the local part.
+#
+# The address is anchored on both sides. Left-anchoring alone still deleted
+# pat@openai.community and pat@cursor.communications.net, because a trailing
+# [^>]* swallowed whatever followed the domain.
+#
+# Known limit: a vendor employee committing from their work address matches.
+# Add an allowlist here if that ever becomes real. jules@google.com is listed
+# deliberately despite Jules being a common given name: the agent commits from
+# that literal address, and the rule only fires on a co-author line.
+bot='<([^>]*\[bot\]@[^>]*|[^>]*(claude|copilot|codex|cursoragent|devin|jules|aider|openhands|traecli|augment)[^>]*@users\.noreply\.github\.com|copilot@github\.com|jules@google\.com|gemini-cli@google\.com|junie@jetbrains\.com|traecli@bytedance\.com|[^>]*@([a-z0-9-]+\.)*(anthropic\.com|openai\.com|cursor\.(com|sh)|devin\.ai|cognition\.ai|all-hands\.dev|openhands\.dev|aider\.chat|replit\.com|bolt\.new|lovable\.dev|continue\.dev|zed\.dev|ampcode\.com|charlielabs\.ai|augmentcode\.com|qodo\.ai|factory\.ai|trae\.ai))>'
+
+# Session bookkeeping keys, and the bare session URL some tools leave behind. The
+# URL rule is anchored at column 0, so a link inside a sentence survives; a
+# documentation page whose own path contains "session" would not.
+book='(claude|ai|cursor|devin)-session|replit-[a-z-]+|amp-thread-id'
+
+# The "Generated with [Tool]" footer carries no address, so it is the one place
+# a vendor name has to be matched. Two guards keep it off ordinary prose. The
+# leading run admits the robot emoji, a bullet or a diff marker but not a word,
+# so "It was generated with Claude and then edited" survives. The line must then
+# END at the tool name or its link, so "Built with continue-on-error so a flaky
+# oracle does not mask the rest" survives too. Several vendor names here are
+# ordinary words, and continue-on-error appears in this repository's own
+# workflows.
+foot='^[^A-Za-z]{0,8}(generated|created|written|built) with [^A-Za-z]*(claude|copilot|cursor|codex|chatgpt|gemini|jules|aider|continue|openhands|replit|lovable|devin|amp|trae|qodo|factory|anthropic|openai)([ -](code|cli|agent|developer))?\]?( ?\([^)]*\))?[[:space:]]*$'
+
+tool="^($tool_keys)[[:space:]]*:[[:space:]]*($vend)([[:space:],]+(and[[:space:]]+)?($vend))*[[:space:]]*$"
+
+pat="^($keys)[[:space:]]*:.*$bot|$tool|^($book)[[:space:]]*:|^https?://[a-z.]*(claude\.ai|cursor\.com|devin\.ai)/[^ ]*session|$foot"
+
+# Nothing to do: leave the file untouched so a message that needed no edit stays
+# byte-for-byte identical, and so no misleading note is printed.
+hits=$(grep -a -ciE "$pat" "$msg" 2>/dev/null)
+case $hits in ''|*[!0-9]*) exit 0 ;; esac
+[ "$hits" -gt 0 ] || exit 0
+
+removed=$(grep -a -iE "$pat" "$msg" | sed 's/[[:space:]]*$//' | paste -sd';' - 2>/dev/null) ||
+  removed="$hits line(s)"
+
+tmp=$(mktemp "$msg.aistrip.XXXXXX" 2>/dev/null) || {
+  printf 'commit-msg: no temporary file; trailer left in place
+' >&2
+  exit 0
+}
+# A handler that only cleaned up would fall through into the rewrite below with
+# $tmp already gone, so the signal traps exit rather than resume.
+trap 'rm -f "$tmp" "$tmp.raw"' EXIT
+trap 'rm -f "$tmp" "$tmp.raw"; exit 0' HUP INT TERM
+
+# Drop the matched lines, then close the gap they leave: trailing blank lines
+# go, and a run of blanks collapses to one.
+# Run the two stages separately. A pipeline reports only its last command's
+# status, so a grep that died mid-stream would hand awk a truncated message and
+# still look successful. grep exits 1 when it keeps nothing, which is legitimate
+# here; above that is a real failure.
+grep -a -viE "$pat" "$msg" > "$tmp.raw"
+[ $? -le 1 ] || exit 0
+
+if ! awk '
+  { a[NR] = $0 }
+  END {
+    n = NR
+    while (n > 0 && a[n] ~ /^[[:space:]]*$/) n--
+    blank = 0
+    for (i = 1; i <= n; i++) {
+      if (a[i] ~ /^[[:space:]]*$/) blank++; else blank = 0
+      if (blank < 2) print a[i]
+    }
+  }
+' < "$tmp.raw" > "$tmp"; then
+  exit 0
+fi
+
+# A failed tool or a full disk yields an empty $tmp. Never hand git an empty
+# message: leaving the trailer in place is recoverable, a lost message is not.
+if [ -s "$msg" ] && [ ! -s "$tmp" ]; then
+  printf 'commit-msg: refusing to empty the message; trailer left in place\n' >&2
+  exit 0
+fi
+
+# Rename rather than redirect. `> "$msg"` truncates before anything is written,
+# so a cat that failed or fell short left the message destroyed while the hook
+# reported it had been left alone. A same-directory rename is atomic.
+if ! mv -f "$tmp" "$msg"; then
+  printf 'commit-msg: could not rewrite the message; trailer left in place\n' >&2
+  exit 0
+fi
+
+printf 'commit-msg: removed AI attribution: %s\n' "$removed" >&2
+exit 0
