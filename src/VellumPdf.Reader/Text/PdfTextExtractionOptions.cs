@@ -25,8 +25,23 @@ public sealed class PdfTextExtractionOptions
     /// <summary>
     /// The text inserted between two pages' own extracted text, on
     /// <see cref="PdfDocumentReader.ExtractText(PdfTextExtractionOptions)"/>. Default
-    /// <c>"\f"</c> (form feed), the same page separator <c>pdftotext</c> emits, so a caller
-    /// diffing this reader's own output against that oracle needs no separator translation.
+    /// <c>"\f"</c> (form feed), the same character <c>pdftotext</c> emits between pages.
     /// </summary>
-    public string PageSeparator { get; init; } = "\f";
+    /// <exception cref="ArgumentNullException">Set to <see langword="null"/>. Checked in this
+    /// property's own <c>init</c> accessor, unlike <see cref="Pages"/> above (whose validity
+    /// depends on which overload consumes it, so it cannot be judged from this type alone): a
+    /// <see langword="null"/> separator is invalid regardless of context, so this options object
+    /// is either fully valid or never constructed at all, and both <see
+    /// cref="PdfDocumentReader.ExtractText(PdfTextExtractionOptions)"/> and <see
+    /// cref="PdfReadPage.ExtractText(PdfTextExtractionOptions)"/> can rely on that without
+    /// re-checking it themselves.</exception>
+    public string PageSeparator
+    {
+        get;
+        init
+        {
+            ArgumentNullException.ThrowIfNull(value);
+            field = value;
+        }
+    } = "\f";
 }

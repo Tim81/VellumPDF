@@ -64,6 +64,18 @@ internal sealed class TextAssembler
             _currentLineY = glyph.LineY;
             _currentFontSize = glyph.FontSize;
         }
+        else if (!double.IsFinite(_currentLineY) && double.IsFinite(glyph.LineY))
+        {
+            // SameLine treats a non-finite _currentLineY as matching ANY glyph, finite or not
+            // (see its own remarks), which is what stops a malformed Tm/cm from fragmenting the
+            // page into one run per glyph while the overflow lasts. Left at that, the stuck
+            // non-finite key would go on matching every later glyph forever, even once real,
+            // finite positions return — folding every genuinely distinct line after the
+            // excursion into this one run instead of just the excursion itself. Adopting the
+            // first finite LineY seen after the excursion re-anchors the key, so the NEXT actual
+            // line break is judged against a real baseline again.
+            _currentLineY = glyph.LineY;
+        }
 
         _currentEndX = glyph.Trm.E;
         if (glyph.Characters.Length > 0)

@@ -30,11 +30,6 @@ public sealed partial class PdfDocumentReader
     /// </summary>
     /// <exception cref="ArgumentNullException"><paramref name="options"/> is <see
     /// langword="null"/>.</exception>
-    /// <exception cref="ArgumentException"><paramref name="options"/>.<see
-    /// cref="PdfTextExtractionOptions.PageSeparator"/> is <see langword="null"/>. Checked here
-    /// rather than in the property's own <c>init</c>, the same way
-    /// <c>ReaderLimits.Resolve</c> validates <see cref="PdfReaderOptions"/> at the point of use
-    /// rather than at construction.</exception>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="options"/>.<see
     /// cref="PdfTextExtractionOptions.Pages"/> resolves outside <c>0..</c><see
     /// cref="PageCount"/>.</exception>
@@ -44,21 +39,17 @@ public sealed partial class PdfDocumentReader
         ArgumentNullException.ThrowIfNull(options);
         ThrowIfDisposed();
 
-        if (options.PageSeparator is null)
-        {
-            throw new ArgumentException(
-                $"{nameof(PdfTextExtractionOptions.PageSeparator)} must not be null.", nameof(options));
-        }
-
+        // options.PageSeparator cannot be null here: its own init accessor already refused that
+        // (PdfTextExtractionOptions.PageSeparator's own doc explains why that check belongs there
+        // and not here, unlike Pages below).
+        //
         // Range.GetOffsetAndLength itself throws ArgumentOutOfRangeException for a range outside
         // 0..PageCount, matching what GetPage(int) already documents for a single out-of-range
         // index.
         var (start, length) = options.Pages.GetOffsetAndLength(PageCount);
 
         var scope = CreateContentDiagnosticScope();
-        var budget = new TextCallBudget(
-            TextCallBudget.DefaultMaxGlyphsPerPage, TextCallBudget.DefaultMaxCharactersPerPage,
-            TextCallBudget.DefaultMaxRunsPerPage, _limits.MaxDecodedBytes, scope);
+        var budget = CreateTextCallBudget(scope);
 
         var pageTexts = new List<string>(length);
         for (var i = 0; i < length; i++)
@@ -91,13 +82,27 @@ public sealed partial class PdfDocumentReader
         }
 
         var scope = CreateContentDiagnosticScope();
-        var budget = new TextCallBudget(
-            TextCallBudget.DefaultMaxGlyphsPerPage, TextCallBudget.DefaultMaxCharactersPerPage,
-            TextCallBudget.DefaultMaxRunsPerPage, _limits.MaxDecodedBytes, scope);
+        var budget = CreateTextCallBudget(scope);
 
         var text = ExtractTextFromPageCore(page, budget, scope);
         return new PdfTextExtractionResult(text, scope.Diagnostics);
     }
+
+    // Both ExtractText overloads above build an identical, freshly call-scoped TextCallBudget, so
+    // this factors out both the duplication and the one comment explaining _limits.MaxDecodedBytes'
+    // second job.
+    //
+    // _limits.MaxDecodedBytes is a BYTE ceiling (PdfReaderOptions.MaxDecodedStreamBytes has the
+    // full explanation) reused here, unconverted, as the call-wide CHARACTER ceiling: #98 adds no
+    // character-specific option of its own, so a caller who tightens MaxDecodedStreamBytes to
+    // bound decode memory also, incidentally, caps how much text one ExtractText call can return.
+    // The two units happen to share a numeric type (long) and nothing else; TextCallBudgetTests,
+    // which pins how TryConsumeCharacters actually treats this parameter, constructs it from
+    // literals rather than through this reuse, since that reuse is this method's choice, not
+    // TextCallBudget's.
+    private TextCallBudget CreateTextCallBudget(DiagnosticSink scope) => new(
+        TextCallBudget.DefaultMaxGlyphsPerPage, TextCallBudget.DefaultMaxCharactersPerPage,
+        TextCallBudget.DefaultMaxRunsPerPage, _limits.MaxDecodedBytes, scope);
 
     // Runs one page's own content (never its annotation appearances) through a fresh
     // ContentInterpreter and TextExtractionVisitor sharing budget and scope with the caller, so a

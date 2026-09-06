@@ -46,6 +46,20 @@ internal sealed class GraphicsState
     /// </summary>
     internal PdfObject? Font { get; set; }
 
+    /// <summary>
+    /// The <c>/Resources</c> dictionary that was current when <see cref="Font"/> was last set
+    /// (ISO 32000-2 §9.3.1 Table 103: <c>Tf</c> binds "a font resource in the Font subdictionary
+    /// of the current resource dictionary" at the point it executes, not at the point a later
+    /// text-showing operator reads it). Needed only to resolve a <c>Tf</c>-set <see cref="PdfName"/>
+    /// against the correct <c>/Font</c> subdictionary: an ExtGState's <c>/Font</c> array (§8.4.5
+    /// Table 57) names its font dictionary directly, so a caller resolving <see cref="Font"/> for
+    /// that case never consults this property at all. §8.10.1's implicit save carries this
+    /// alongside <see cref="Font"/> into a Form XObject's graphics state (<see cref="Clone"/>), so
+    /// text shown inside a form that never calls its own <c>Tf</c> resolves the invoker's font
+    /// name against the invoker's resources, not the form's.
+    /// </summary>
+    internal PdfDictionary? FontResources { get; set; }
+
     /// <summary>Font size in unscaled text-space units, from the same <c>Tf</c> or <c>gs</c> call
     /// that set <see cref="Font"/>.</summary>
     internal double FontSize { get; set; }

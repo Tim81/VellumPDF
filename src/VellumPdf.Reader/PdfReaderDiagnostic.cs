@@ -629,8 +629,14 @@ public enum PdfReaderDiagnosticCode
     /// decodes simple fonts only (Type1, MMType1, TrueType) as of #98, so text shown through a font
     /// of either type produces no characters and no advance, distinct from <see
     /// cref="FontUnreadable"/> (400), which means the font dictionary itself is broken rather than
-    /// merely of a type this reader cannot decode yet. Reported once per font, from
-    /// <c>PdfDocumentReader.GetFontReader</c> rather than the text-extraction visitor: only
+    /// merely of a type this reader cannot decode yet. Reported once per font PER PAGE, not once
+    /// per font overall: the dedupe key <c>DiagnosticSink</c> reports through is <c>(code, object
+    /// number, page index)</c>, so the same font used on two pages is reported once on each. A
+    /// direct (non-indirect-reference) font dictionary has no object number of its own, so two
+    /// DIFFERENT direct font dictionaries on the SAME page both dedupe on <see
+    /// langword="null"/> and collapse into a single report, undercounting how many actually
+    /// unsupported fonts that page uses; an indirect reference does not share this gap. Reported
+    /// from <c>PdfDocumentReader.GetFontReader</c> rather than the text-extraction visitor: only
     /// <c>GetFontReader</c> can tell "unsupported type" apart from "already reported unreadable"
     /// without asking the visitor to reimplement that distinction.
     /// </summary>

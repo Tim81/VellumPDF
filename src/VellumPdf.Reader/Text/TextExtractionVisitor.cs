@@ -154,7 +154,14 @@ internal sealed class TextExtractionVisitor : IContentVisitor
             return;
         }
 
-        var fontReader = ResolveFont(gs.Font, _interpreter.CurrentResources);
+        // GraphicsState.FontResources, not _interpreter.CurrentResources: ISO 32000-2 §9.3.1
+        // Table 103 binds 'Tf' to the resource dictionary in effect when IT executes, and
+        // CurrentResources is the resources of whatever content stream is being interpreted
+        // RIGHT NOW, which is the callee's, not necessarily the caller's, once a Form XObject with
+        // its own /Resources is on the stack (#417 round 2: resolving against CurrentResources
+        // here silently dropped a form's inherited text, or resolved it against the wrong font
+        // entirely, whenever the form declared a /Font subdictionary of its own).
+        var fontReader = ResolveFont(gs.Font, gs.FontResources);
         if (fontReader is null)
             return; // Already reported (400/405), or the /Font resource itself is missing (306).
 
@@ -176,9 +183,12 @@ internal sealed class TextExtractionVisitor : IContentVisitor
             var trm = GlyphPositioner.ComputeTextRenderingMatrix(
                 gs.FontSize, gs.HorizontalScaling, gs.Rise, tm, ctm);
             // The line-grouping key: the same Trm with rise forced to zero (see
-            // PositionedGlyph.LineY's own remarks for why rise must not enter it).
-            var lineY = GlyphPositioner.ComputeTextRenderingMatrix(
-                gs.FontSize, gs.HorizontalScaling, 0, tm, ctm).F;
+            // PositionedGlyph.LineY's own remarks for why rise must not enter it), projected onto
+            // the direction normal to the baseline rather than read as plain F (see
+            // GlyphPositioner.ComputeLineKey's own remarks: F alone is only the
+            // perpendicular-to-baseline coordinate when the page is not rotated).
+            var lineY = GlyphPositioner.ComputeLineKey(
+                GlyphPositioner.ComputeTextRenderingMatrix(gs.FontSize, gs.HorizontalScaling, 0, tm, ctm));
             var tx = GlyphPositioner.ComputeGlyphDisplacement(
                 glyph, gs.FontSize, gs.CharSpacing, gs.WordSpacing, gs.HorizontalScaling);
 
@@ -191,8 +201,7 @@ internal sealed class TextExtractionVisitor : IContentVisitor
                 if (!_budget.TryConsumeCharacters(characters.Length, _pageIndex))
                     return;
 
-                var positioned = new PositionedGlyph(
-                    characters, glyph.Code, trm, lineY, tx, gs.FontSize, gs.RenderMode);
+                var positioned = new PositionedGlyph(characters, trm, lineY, gs.FontSize);
                 if (!_assembler.Add(positioned))
                     return;
             }
@@ -232,9 +241,14 @@ internal sealed class TextExtractionVisitor : IContentVisitor
             }
         }
 
-        // rawFontEntry is null exactly when the /Resources /Font lookup itself failed: the
-        // interpreter's own ValidateFontResource already reported ResourceMissing (306) for that at
-        // 'Tf' time, so nothing further is reported here.
+        // rawFontEntry is null exactly when the /Resources /Font lookup itself failed against
+        // GraphicsState.FontResources: the interpreter's own ValidateFontResource already checked
+        // the SAME name against the SAME resources dictionary (the one current at 'Tf' time) and
+        // reported ResourceMissing (306) for it there, so nothing further is reported here. This
+        // held even before FontResources existed as long as the resources in effect never changed
+        // between 'Tf' and the show operator; it silently stopped holding once a Form XObject with
+        // its own /Resources sat between the two (#417 round 2), which is why FontResources is
+        // captured at 'Tf' time instead of read from whatever is current when this method runs.
         var fontReader = rawFontEntry is null
             ? null
             : _reader.GetFontReader(rawFontEntry, _diagnostics, _pageIndex);

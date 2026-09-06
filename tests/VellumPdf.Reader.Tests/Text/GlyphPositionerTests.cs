@@ -86,6 +86,120 @@ public sealed class GlyphPositionerTests
         Assert.NotEqual(painted.F, lineKey.F);
     }
 
+    /// <summary>
+    /// The same composition with a NON-100% horizontal scaling, deliberately combined with a
+    /// non-diagonal CTM so a defect that scaled the wrong pair of parameter-matrix components (or
+    /// dropped Th from the parameter matrix entirely, applying it only to <see
+    /// cref="GlyphPositioner.ComputeGlyphDisplacement"/>'s advance instead) cannot hide behind
+    /// every other KAT and the differential test's generator both happening to exercise Th=100
+    /// three times over (see <see cref="Generator_reachesItsStatedRanges"/>'s remarks).
+    /// Hand-computed: parameters = [Tfs·Th 0 0 Tfs 0 Trise] = [5 0 0 10 0 0] (Tfs=10,
+    /// Th=50%); parameters·Ctm with Ctm=[0 1 -1 0 5 5]: A=5×0+0×(-1)=0, B=5×1+0×0=5,
+    /// C=0×0+10×(-1)=-10, D=0×1+10×0=0, E=0×0+0×(-1)+5=5, F=0×1+0×0+5=5. A defect using Tfs (10)
+    /// in place of Tfs·Th (5) for A/B would instead give A=0, B=10 — different enough from A=0,
+    /// B=5 that this KAT is discriminating.
+    /// </summary>
+    [Fact]
+    public void ComputeTextRenderingMatrix_appliesTh_underARotatedCtm_withNonDefaultScaling()
+    {
+        var trm = GlyphPositioner.ComputeTextRenderingMatrix(
+            fontSize: 10, horizontalScaling: 50, rise: 0, textMatrix: Matrix.Identity,
+            ctm: new Matrix(0, 1, -1, 0, 5, 5));
+
+        AssertMatrix(new Matrix(0, 5, -10, 0, 5, 5), trm);
+    }
+
+    // ── Line-grouping key (a heuristic of this reader's, not an ISO formula) ────────────────────
+
+    /// <summary>
+    /// Under an UNROTATED page (Ctm's B is 0), the key reduces to plain F exactly: the whole
+    /// point of <see cref="GlyphPositioner.ComputeLineKey"/> is that it agrees with the simpler,
+    /// pre-existing "just read F" approach in the common case and differs only once the page is
+    /// rotated.
+    /// </summary>
+    [Fact]
+    public void ComputeLineKey_reducesToPlainF_whenUnrotated()
+    {
+        var trm = GlyphPositioner.ComputeTextRenderingMatrix(
+            fontSize: 12, horizontalScaling: 100, rise: 0, textMatrix: Matrix.Identity,
+            ctm: new Matrix(2, 0, 0, 2, 100, 37));
+
+        AssertClose(trm.F, GlyphPositioner.ComputeLineKey(trm), "unrotated line key");
+    }
+
+    /// <summary>
+    /// The discriminating fixture for #417's rotated-text defect: under a 90° rotation (Ctm =
+    /// [0 1 -1 0 0 0]), two glyphs at different points ALONG the baseline (simulated the way text
+    /// extraction actually advances between glyphs: <c>Matrix.Translation(tx, 0).Concat(tm)</c>)
+    /// must compute the SAME key, even though their <c>F</c> values differ (0 and 10 — reading
+    /// plain <c>F</c>, the defect this method exists to fix, would put every glyph on its own
+    /// line here). A third glyph moved PERPENDICULAR to the
+    /// baseline instead (a genuine line break under this same rotation) must compute a DIFFERENT
+    /// key from the first two. Hand-computed: parameters = [12 0 0 12 0 0] (Tfs=12); glyph 1's Tm =
+    /// Identity gives Trm = [0 12 -12 0 0 0]; glyph 2's Tm = [1 0 0 1 10 0] (advanced by tx=10
+    /// along the baseline) gives Trm = [0 12 -12 0 0 10] — different F (0 vs 10), same key (both
+    /// 0, since A×F-B×E over |A,B|=12 is (0×F-12×0)/12 = 0 for glyph 1 and (0×10-12×0)/12 = 0 for
+    /// glyph 2). Glyph 3's Tm = [1 0 0 1 0 5] (shifted perpendicular to the baseline in text
+    /// space) gives Trm = [0 12 -12 0 -5 0]; key = (0×0-12×(-5))/12 = 5, different from 0.
+    /// </summary>
+    [Fact]
+    public void ComputeLineKey_sameAlongBaseline_differsAcrossARealLineBreak_underRotation()
+    {
+        var ctm = new Matrix(0, 1, -1, 0, 0, 0);
+
+        var trm1 = GlyphPositioner.ComputeTextRenderingMatrix(12, 100, 0, Matrix.Identity, ctm);
+        var advancedTm = Matrix.Translation(10, 0).Concat(Matrix.Identity);
+        var trm2 = GlyphPositioner.ComputeTextRenderingMatrix(12, 100, 0, advancedTm, ctm);
+        var perpendicularTm = new Matrix(1, 0, 0, 1, 0, 5);
+        var trm3 = GlyphPositioner.ComputeTextRenderingMatrix(12, 100, 0, perpendicularTm, ctm);
+
+        AssertClose(0, trm1.F, "glyph 1 F");
+        AssertClose(10, trm2.F, "glyph 2 F");
+        Assert.NotEqual(trm1.F, trm2.F);
+
+        var key1 = GlyphPositioner.ComputeLineKey(trm1);
+        var key2 = GlyphPositioner.ComputeLineKey(trm2);
+        var key3 = GlyphPositioner.ComputeLineKey(trm3);
+
+        AssertClose(0, key1, "glyph 1 key");
+        AssertClose(key1, key2, "glyph 2 key (same baseline)");
+        AssertClose(5, key3, "glyph 3 key (real line break)");
+        Assert.NotEqual(key1, key3);
+    }
+
+    /// <summary>
+    /// A regression this PR's own round-2 review found empirically, not one a reviewer named: an
+    /// individually-finite but extreme CTM (10^170-scale, reached the same way the overflow
+    /// fixtures in <c>TextExtractionEndToEndTests</c> reach one) composes, through <see
+    /// cref="ComputeTextRenderingMatrix"/>, to a Trm around 10^71–10^72 — still comfortably finite,
+    /// and still the same magnitude for two genuinely DIFFERENT, ordinary-scale text lines under
+    /// that CTM. The naive <c>(A·F − B·E)/√(A²+B²)</c> form of the projection squares or multiplies
+    /// components that size directly, which overflows to <c>±Infinity</c> well before the division
+    /// would bring the result back into range — so two lines 100 units apart both computed
+    /// <c>NaN</c>, which <see cref="TextAssembler"/> reads as "same line", collapsing genuinely
+    /// distinct lines together (caught by
+    /// <see cref="TextExtractionEndToEndTests.NonFiniteLineY_doesNotStickPastTheExcursion_laterDistinctLinesStillSeparate"/>
+    /// failing before this method's own division-before-multiplication fix). Pinned here directly,
+    /// without going through content-stream parsing, so a future regression fails fast.
+    /// </summary>
+    [Fact]
+    public void ComputeLineKey_doesNotOverflowToNaN_forLargeButFiniteBaselines()
+    {
+        var huge = double.Parse(
+            "1" + new string('0', 170) + ".0", System.Globalization.CultureInfo.InvariantCulture);
+        var ctm = new Matrix(huge, 0, 0, huge, huge, huge);
+
+        var line1 = GlyphPositioner.ComputeTextRenderingMatrix(12, 100, 0, new Matrix(1, 0, 0, 1, 100, 700), ctm);
+        var line2 = GlyphPositioner.ComputeTextRenderingMatrix(12, 100, 0, new Matrix(1, 0, 0, 1, 100, 600), ctm);
+
+        var key1 = GlyphPositioner.ComputeLineKey(line1);
+        var key2 = GlyphPositioner.ComputeLineKey(line2);
+
+        Assert.True(double.IsFinite(key1), $"key1 was {key1}, expected finite");
+        Assert.True(double.IsFinite(key2), $"key2 was {key2}, expected finite");
+        Assert.NotEqual(key1, key2);
+    }
+
     // ── Per-glyph displacement (§9.4.4, §9.3.3) ─────────────────────────────────────────────────
 
     /// <summary>
@@ -110,7 +224,7 @@ public sealed class GlyphPositionerTests
     }
 
     /// <summary>
-    /// Table 107: Th scales the ENTIRE horizontal bracket, including Tc and Tw, not only the
+    /// §9.3.4: Th scales the ENTIRE horizontal bracket, including Tc and Tw, not only the
     /// glyph's own width. With w0=0.2 (Width 200), Tfs=10, Tc=2, Tw=3, Th=50%: tx = (0.2×10 + 2 +
     /// 3) × 0.5 = 3.5. A defect that let Th scale only the width term would instead give
     /// (0.2×10×0.5) + 2 + 3 = 6.0 — different enough from 3.5 that this KAT is discriminating.
@@ -269,10 +383,30 @@ public sealed class GlyphPositionerTests
             var combinedTx = ((w0 - (tjOrZero / 1000.0)) * c.Tfs + c.Tc + (appliesWordSpacing ? c.Tw : 0)) * th;
             referenceTm = Multiply(Translate3(combinedTx), referenceTm);
 
-            var tolerance = 1e-6 + 1e-9 * Math.Max(
-                Math.Max(Math.Abs(productionTrm.E), Math.Abs(productionTrm.F)),
-                Math.Max(Math.Abs(referenceTrm3[2, 0]), Math.Abs(referenceTrm3[2, 1])));
+            var magnitude = Math.Max(
+                Math.Max(
+                    Math.Max(Math.Abs(productionTrm.A), Math.Abs(productionTrm.B)),
+                    Math.Max(Math.Abs(productionTrm.C), Math.Abs(productionTrm.D))),
+                Math.Max(Math.Abs(productionTrm.E), Math.Abs(productionTrm.F)));
+            var tolerance = 1e-6 + 1e-9 * magnitude;
 
+            // The linear part (A/B/C/D), not only the translation (E/F): a misplaced Th (scaling
+            // the wrong pair of components, or a transposed compose that swaps B and C) never
+            // moves a glyph's ORIGIN, only its painted ORIENTATION and SIZE. Comparing E/F alone
+            // let both mutations through (#417 round 2: this test's PR body claims it catches "a
+            // transposed compose or a misplaced Th", which required this).
+            Assert.True(
+                Math.Abs(productionTrm.A - referenceTrm3[0, 0]) <= tolerance,
+                $"glyph {i}: A differs: production {productionTrm.A}, reference {referenceTrm3[0, 0]} (case: {c})");
+            Assert.True(
+                Math.Abs(productionTrm.B - referenceTrm3[0, 1]) <= tolerance,
+                $"glyph {i}: B differs: production {productionTrm.B}, reference {referenceTrm3[0, 1]} (case: {c})");
+            Assert.True(
+                Math.Abs(productionTrm.C - referenceTrm3[1, 0]) <= tolerance,
+                $"glyph {i}: C differs: production {productionTrm.C}, reference {referenceTrm3[1, 0]} (case: {c})");
+            Assert.True(
+                Math.Abs(productionTrm.D - referenceTrm3[1, 1]) <= tolerance,
+                $"glyph {i}: D differs: production {productionTrm.D}, reference {referenceTrm3[1, 1]} (case: {c})");
             Assert.True(
                 Math.Abs(productionTrm.E - referenceTrm3[2, 0]) <= tolerance,
                 $"glyph {i}: X differs: production {productionTrm.E}, reference {referenceTrm3[2, 0]} (case: {c})");

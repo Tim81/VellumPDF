@@ -188,7 +188,7 @@ internal sealed class ContentInterpreter
 
     /// <summary>
     /// The <c>/Resources</c> dictionary in effect for the content stream currently being
-    /// interpreted (the page's own, or a Form XObject's own after the §8.10.2 fallback), or
+    /// interpreted (the page's own, or a Form XObject's own after the §7.8.3 fallback), or
     /// <see langword="null"/> when none applies. Current for the ENTIRE walk of that stream, not
     /// only around <see cref="IContentVisitor.OnInlineImage"/>/<see
     /// cref="IContentVisitor.OnImageXObject"/> (#98 originally scoped it that narrowly, since image
@@ -197,7 +197,7 @@ internal sealed class ContentInterpreter
     /// /Font</c> name against the resources in effect at the time). Tracks
     /// <see cref="InterpretStream"/>'s own recursion: the invoker's value is saved on entry and
     /// restored once that call returns, so a Form XObject's own content sees its own resources
-    /// during its own operators (and, per §8.10.2, the invoker's own value is what a Form XObject
+    /// during its own operators (and, per §7.8.3, the invoker's own value is what a Form XObject
     /// with no <c>/Resources</c> of its own inherits) while the invoker's operators, before and
     /// after that recursion, keep seeing the invoker's own. <see langword="null"/> again once
     /// <see cref="Run"/> or <see cref="RunFormXObject"/> returns. Exists so a visitor can resolve a
@@ -1066,6 +1066,7 @@ internal sealed class ContentInterpreter
             case "Tf":
                 ValidateFontResource(ctx, diagnostics, pageIndex);
                 _gs.Font = _operands[0];
+                _gs.FontResources = ctx.Resources;
                 _gs.FontSize = NumberOperand(1);
                 break;
 
@@ -1401,7 +1402,13 @@ internal sealed class ContentInterpreter
         if (extGState.Get(FontKey) is { } fontRaw && _reader.ResolveValue(fontRaw) is PdfArray fontArray
             && fontArray.Count == 2)
         {
+            // Table 57's own font element is already an indirect reference to a font dictionary,
+            // not a /Resources /Font name, so this path needs no resource dictionary to resolve it
+            // against; FontResources is cleared here (rather than left at whatever Tf last set) so
+            // a later Tf-bound resolution never picks up a stale resources dictionary that has
+            // nothing to do with this gs-bound font.
             _gs.Font = fontArray[0];
+            _gs.FontResources = null;
             _gs.FontSize = ReadNumber(fontArray[1]);
         }
     }

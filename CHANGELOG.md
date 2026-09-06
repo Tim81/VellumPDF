@@ -112,18 +112,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   colour-converted or re-encoded, and `/Decode` is exposed but never applied. Twelve diagnostic
   codes, 500 to 511, report what could not be extracted and why.
 - **Text extraction from simple fonts (#98).** `PdfDocumentReader.ExtractText()` and
-  `PdfReadPage.ExtractText()` return the text a page's own content draws — Type1, MMType1, and
+  `PdfReadPage.ExtractText()` return the text a page's content draws — Type1, MMType1, and
   TrueType fonts only, through the simple-font decoding added above; Type0, Type3, `/ToUnicode`,
-  `/ActualText`, and rotation- or gap-aware line grouping are not implemented yet — positioned by
-  ISO 32000-2 §9.4.4's text-space matrix arithmetic (`Trm`, and the per-glyph and `TJ` advances) and
-  joined into lines wherever the baseline changes. Word spacing applies only to a single-byte code
-  32 per §9.3.3; a code with no Unicode route still advances the text matrix so later glyphs keep
-  their position, contributing no character. Annotation appearance streams are excluded, unlike
-  `ExtractImages()`: §12.5.5 makes an appearance a rendering convenience layered on the page, and
-  extraction draws that line for text where it does not for images. Three new diagnostic codes:
-  `FontTypeUnsupported` (405, a font this reader cannot decode yet), and, in a new `6xx` text-
-  extraction block, `TextExtractionLimitExceeded` (600) and `TextShownWithoutFont` (601, a show
-  operator before any `Tf`).
+  `/ActualText`, and rotation-, word-, and paragraph-aware line grouping are not implemented yet.
+  Concretely, that last gap means no space is synthesised for a positioning gap: `[(Hello) -500
+  (World)] TJ` extracts as `HelloWorld`, not `Hello World`. Positioned by ISO 32000-2 §9.4.4's
+  text-space matrix arithmetic (`Trm`, and the per-glyph and `TJ` advances) and joined into lines
+  wherever the baseline changes — a font set by `Tf` before a Form XObject with its own
+  `/Resources` is invoked, and never re-set inside the form, resolves against the resources in
+  effect when `Tf` ran, not the form's, per §9.3.1 Table 103. Word spacing applies only to a
+  single-byte code 32 per §9.3.3; a code with no Unicode route still advances the text matrix so
+  later glyphs keep their position, contributing no character. Annotation appearance streams are
+  excluded, unlike `ExtractImages()`: §12.5.5 makes an appearance a rendering convenience layered
+  on the page, and extraction draws that line for text where it does not for images. Three new
+  diagnostic codes: `FontTypeUnsupported` (405, a font this reader cannot decode yet), and, in a
+  new `6xx` text-extraction block, `TextExtractionLimitExceeded` (600) and `TextShownWithoutFont`
+  (601, a show operator before any `Tf`).
 
 ### Changed
 

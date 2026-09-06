@@ -22,7 +22,8 @@ public sealed partial class PdfDocumentReader
     /// <para>
     /// Returns <see langword="null"/> for <c>/Subtype /Type0</c> and <c>/Subtype /Type3</c>: readers
     /// for those are not built yet (#98). Text extraction (#98) makes that omission user-visible, so
-    /// this reports <see cref="PdfReaderDiagnosticCode.FontTypeUnsupported"/> once per font instead
+    /// this reports <see cref="PdfReaderDiagnosticCode.FontTypeUnsupported"/> (once per font per
+    /// page — see that code's own doc for the exact dedupe key and its one gap) instead
     /// of the silence an earlier version of this method chose, back when the only callers were
     /// tests that already knew which fonts this reader could not decode. <see
     /// cref="PdfReaderDiagnosticCode.FontUnreadable"/> stays wrong for this case even now: it means
