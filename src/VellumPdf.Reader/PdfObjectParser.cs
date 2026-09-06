@@ -222,12 +222,12 @@ internal sealed class PdfObjectParser
         if (raw.SequenceEqual("false"u8)) return PdfBoolean.False;
         if (raw.SequenceEqual("null"u8)) return PdfNull.Instance;
         // Excerpted, not interpolated whole: PdfLexer.ReadKeyword puts no bound on a keyword's own
-        // length (Annex C.1), and PdfPreflight's per-rule catch (#406) keeps a copy of this message,
-        // so an oversized keyword would otherwise be rebuilt at full size on every rule that decodes
-        // the object carrying it. `raw` is the still-encoded span, so its own length is passed
-        // rather than inferred from the decoded string (DiagnosticExcerpt.Quote's one-argument
-        // overload would do the same thing here, since Latin1 decodes one byte to one char, but
-        // passing it explicitly keeps this call correct if that ever stops being true).
+        // length (Annex C.1), and PdfPreflight's per-rule catch (#97, bounded at the sink by #403)
+        // keeps a copy of this message, so an oversized keyword would otherwise be rebuilt at full
+        // size on every rule that decodes the object carrying it (#406). `raw` is the still-encoded
+        // span, so its own length is passed rather than relying on the decoded string's — the two
+        // agree here (a bare keyword has no #xx escape to shorten it), but passing the span's own
+        // length is this sweep's convention at every site that still has the span in hand.
         throw new InvalidDataException(
             $"Unexpected keyword '{DiagnosticExcerpt.Quote(Encoding.Latin1.GetString(raw), raw.Length)}' "
             + "where a PDF object was expected.");

@@ -788,11 +788,13 @@ internal sealed class XrefParser
         var s = Encoding.ASCII.GetString(span[start..pos]);
         // Excerpted, not interpolated whole (#406): the digit-scan loop above puts no bound on how
         // long a run of digits it will consume, so a subsection header padded with a huge digit
-        // run reaches this with `s` sized to match, and this message is one PdfPreflight's per-rule
-        // catch retains.
+        // run reaches this with `s` sized to match. This runs inside PdfReader.Open, before
+        // PdfPreflight's rule loop ever starts, so nothing retains the message here — but building
+        // the unbounded string is itself the per-throw cost a huge digit run pays regardless of who
+        // ends up seeing it.
         if (!int.TryParse(s, NumberStyles.None, CultureInfo.InvariantCulture, out var value))
             throw new InvalidDataException(
-                $"Malformed PDF: could not parse integer '{DiagnosticExcerpt.Quote(s)}'.");
+                $"Malformed PDF: could not parse integer '{DiagnosticExcerpt.Quote(s, pos - start)}'.");
 
         return (value, pos);
     }

@@ -582,6 +582,72 @@ public sealed class EncryptedReconstructionTests
         Assert.Contains("Adobe.PPKLite", ex.Message, StringComparison.Ordinal);
     }
 
+    // ── T8 addendum: the refusal message excerpts an oversized /Filter name (#406 round 2) ──────────
+    //
+    // Unlike T8 above, this dictionary carries no /SubFilter at all — /Filter + /V alone is already
+    // Table 20's spec-minimal shape (HasPr2EncryptionEvidenceShape), and ClassifyEncryptionDictionary
+    // returns None for it (no /R, /O, /U and no recognised /SubFilter), which is "not
+    // StandardHandler" exactly the same as T8's PublicKeyHandler result — so this reaches the same
+    // refusal, naming the same /Filter, through the plainer of the two non-Standard classifications.
+
+    private static byte[] BuildEncryptionShapedDictionaryNoTrailer(string filterName)
+    {
+        var ms = new MemoryStream();
+        void W(string s) => ms.Write(Encoding.ASCII.GetBytes(s));
+
+        W("%PDF-1.7\n");
+        W("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
+        W("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
+        W("3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] >>\nendobj\n");
+        W($"9 0 obj\n<< /Filter /{filterName} /V 1 >>\nendobj\n");
+        W("%%EOF\n");
+        return ms.ToArray();
+    }
+
+    [Fact]
+    public void T8Addendum_UnclassifiableHandler_withAnOversizedFilterName_throwsOnlyAFixedExcerpt()
+    {
+        var name = new string('Q', 1 << 20);
+        var bytes = BuildEncryptionShapedDictionaryNoTrailer(name);
+
+        var ex = Assert.Throws<UnsupportedPdfFeatureException>(() =>
+            PdfReader.Open(bytes, new PdfReaderOptions { AllowReconstruction = true }));
+
+        Assert.Equal(
+            "Malformed PDF: reconstruction found an encryption dictionary naming the security "
+            + "handler /" + new string('Q', 32) + "... (1048576 bytes), which is a public-key or "
+            + "unrecognised handler this pass cannot open (ISO 32000-2 §7.6.5.2, Table 20) — opening "
+            + "the file as plaintext over ciphertext is not an option, and this pass only decrypts "
+            + "the Standard handler. Rebuilding the cross-reference table of a document damaged this "
+            + "badly is not supported.",
+            ex.Message);
+    }
+
+    [Theory]
+    [InlineData(32, false)]
+    [InlineData(33, true)]
+    public void T8Addendum_atTheExcerptBoundary_quotesThirtyTwoWhole_andExcerptsThirtyThree(
+        int nameLength, bool expectExcerpt)
+    {
+        var name = new string('Q', nameLength);
+        var bytes = BuildEncryptionShapedDictionaryNoTrailer(name);
+
+        var ex = Assert.Throws<UnsupportedPdfFeatureException>(() =>
+            PdfReader.Open(bytes, new PdfReaderOptions { AllowReconstruction = true }));
+
+        var handlerClause = expectExcerpt
+            ? "/" + new string('Q', 32) + $"... ({nameLength} bytes)"
+            : $"/{name}";
+        var expected =
+            "Malformed PDF: reconstruction found an encryption dictionary naming the security "
+            + $"handler {handlerClause}, which is a public-key or unrecognised handler this pass "
+            + "cannot open (ISO 32000-2 §7.6.5.2, Table 20) — opening the file as plaintext over "
+            + "ciphertext is not an option, and this pass only decrypts the Standard handler. "
+            + "Rebuilding the cross-reference table of a document damaged this badly is not "
+            + "supported.";
+        Assert.Equal(expected, ex.Message);
+    }
+
     // ── T9: ordinary plaintext /Filter and /V usage is not mistaken for encryption ─────────────────
 
     // #184 PR3 (security-conservative revision, overriding the plan's literal T9): a standalone

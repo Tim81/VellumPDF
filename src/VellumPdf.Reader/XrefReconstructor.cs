@@ -859,9 +859,16 @@ internal static class XrefReconstructor
             // Named when a single parsed /Filter actually triggered the refusal (the common,
             // diagnosable case); generic otherwise — the secondary-quarantined and whole-file-sweep
             // paths have no one dictionary to point at.
+            //
+            // Excerpted, not interpolated whole (#406): this /Filter comes off a reconstruction-
+            // walked dictionary with no length bound of its own (Annex C.1), same as any other
+            // producer-controlled name. UnsupportedPdfFeatureException is excluded from
+            // PdfPreflight's per-rule catch, so this never becomes a retained finding — it
+            // propagates to the caller, and VellumPdf.Cli writes it to stderr whole.
             var handlerClause = refusedHandlerFilter is { } filterName
-                ? $"found an encryption dictionary naming the security handler /{filterName}, which "
-                  + "is a public-key or unrecognised handler this pass cannot open"
+                ? $"found an encryption dictionary naming the security handler "
+                  + $"/{DiagnosticExcerpt.Quote(filterName)}, which is a public-key or unrecognised "
+                  + "handler this pass cannot open"
                 : "found evidence that this document is encrypted, but either not in a place this "
                   + "pass can point a trailer reference at, or not disambiguated as the Standard "
                   + "handler";

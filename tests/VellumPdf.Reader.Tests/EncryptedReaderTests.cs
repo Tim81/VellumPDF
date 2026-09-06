@@ -275,6 +275,44 @@ public sealed class EncryptedReaderTests
         Assert.Throws<UnsupportedPdfFeatureException>(() => PdfReader.Open(bytes));
     }
 
+    // ── Non-Standard /Filter: the message excerpts an oversized name (#406 round 2) ──────────────────
+    //
+    // A /Filter name has no length bound (Annex C.1), and this throw fires before anything else in
+    // Authenticate has validated the dictionary, so a name this large is real.
+
+    [Fact]
+    public void NonStandardFilter_withAnOversizedName_throwsOnlyAFixedExcerpt()
+    {
+        var name = new string('Q', 1 << 20);
+        var bytes = BuildTrailerWithEncryptDict($"<< /Filter /{name} /V 1 /R 2 >>");
+
+        var ex = Assert.Throws<UnsupportedPdfFeatureException>(() => PdfReader.Open(bytes));
+
+        Assert.Equal(
+            "/Encrypt /Filter /" + new string('Q', 32) + "... (1048576 bytes) is not a security "
+            + "handler VellumPdf.Reader supports; only /Standard is.",
+            ex.Message);
+    }
+
+    [Theory]
+    [InlineData(32, false)]
+    [InlineData(33, true)]
+    public void NonStandardFilter_atTheExcerptBoundary_quotesThirtyTwoWhole_andExcerptsThirtyThree(
+        int nameLength, bool expectExcerpt)
+    {
+        var name = new string('Q', nameLength);
+        var bytes = BuildTrailerWithEncryptDict($"<< /Filter /{name} /V 1 /R 2 >>");
+
+        var ex = Assert.Throws<UnsupportedPdfFeatureException>(() => PdfReader.Open(bytes));
+
+        var expected = expectExcerpt
+            ? "/Encrypt /Filter /" + new string('Q', 32) + $"... ({nameLength} bytes) is not a "
+              + "security handler VellumPdf.Reader supports; only /Standard is."
+            : $"/Encrypt /Filter /{name} is not a security handler VellumPdf.Reader supports; only "
+              + "/Standard is.";
+        Assert.Equal(expected, ex.Message);
+    }
+
     /// <summary>
     /// Table 20 makes <c>/Filter</c> required, and an <c>/Encrypt</c> dictionary without one names no
     /// handler at all. Assuming <c>/Standard</c> there would apply this handler's algorithms to a

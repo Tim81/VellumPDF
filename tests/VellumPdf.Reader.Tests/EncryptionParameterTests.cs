@@ -895,6 +895,60 @@ public sealed class EncryptionParameterTests
         Assert.Contains("StdCF", ex.Message, StringComparison.Ordinal);
     }
 
+    // ── /StrF naming a defined but unimplemented filter: the message excerpts an oversized crypt
+    //    filter name (#406 round 2) ────────────────────────────────────────────────────────────────
+    //
+    // The excerpted value is the /CF key itself (also named by /StrF), not the /CFM: cfTable is
+    // keyed by the /CF dictionary's own entry name, and that name has no length bound (Annex C.1)
+    // any more than a /Filter name does.
+
+    [Fact]
+    public void StrF_namingAnOversizedCryptFilterName_throwsOnlyAFixedExcerpt()
+    {
+        var name = new string('Z', 1 << 20);
+        var doc = BuildWithEncryptDict(
+            "<< /Filter /Standard /V 4 /R 4 /Length 128 "
+            + $"/CF << /{name} << /CFM /SomeFutureAlgorithm /Length 16 >> >> /StmF /Identity "
+            + $"/StrF /{name} "
+            + "/O <2a2f0a1990192c60114730bdcd39f37828a53c89a340dd473c85299dc5258e1c> "
+            + "/U <6c8913ac9fc602eb1aad2a1ec614bee90021446990b9e4114071a4d9104984c1> /P -4 >>");
+
+        var ex = Assert.Throws<UnsupportedPdfFeatureException>(
+            () => PdfReader.Open(doc, new PdfReaderOptions { Password = "u" }));
+
+        Assert.Equal(
+            "/Encrypt /StrF names the crypt filter '" + new string('Z', 32) + "... (1048576 bytes)', "
+            + "whose /CFM this library does not implement, so no string in the document can be "
+            + "decrypted.",
+            ex.Message);
+    }
+
+    [Theory]
+    [InlineData(32, false)]
+    [InlineData(33, true)]
+    public void StrF_atTheExcerptBoundary_quotesThirtyTwoWhole_andExcerptsThirtyThree(
+        int nameLength, bool expectExcerpt)
+    {
+        var name = new string('Z', nameLength);
+        var doc = BuildWithEncryptDict(
+            "<< /Filter /Standard /V 4 /R 4 /Length 128 "
+            + $"/CF << /{name} << /CFM /SomeFutureAlgorithm /Length 16 >> >> /StmF /Identity "
+            + $"/StrF /{name} "
+            + "/O <2a2f0a1990192c60114730bdcd39f37828a53c89a340dd473c85299dc5258e1c> "
+            + "/U <6c8913ac9fc602eb1aad2a1ec614bee90021446990b9e4114071a4d9104984c1> /P -4 >>");
+
+        var ex = Assert.Throws<UnsupportedPdfFeatureException>(
+            () => PdfReader.Open(doc, new PdfReaderOptions { Password = "u" }));
+
+        var expected = expectExcerpt
+            ? "/Encrypt /StrF names the crypt filter '" + new string('Z', 32) + $"... ({nameLength} bytes)', "
+              + "whose /CFM this library does not implement, so no string in the document can be "
+              + "decrypted."
+            : $"/Encrypt /StrF names the crypt filter '{name}', whose /CFM this library does not "
+              + "implement, so no string in the document can be decrypted.";
+        Assert.Equal(expected, ex.Message);
+    }
+
     /// <summary>
     /// Algorithm 13 verifies the permission bits. Byte 8 of the decrypted <c>/Perms</c> block carries
     /// the <c>/EncryptMetadata</c> flag instead, and a producer that writes it inconsistently with the

@@ -343,9 +343,11 @@ public static class PdfPreflight
                 // "cannot evaluate" and "wrong password" are both a distinct signal that should
                 // propagate to the caller rather than be reported as a conformance violation.
                 //
-                // ex.Message can itself quote a whole oversized token (a filter name, a raw
-                // parser token); PreflightContext.Report bounds the retained message at
-                // MaxMessageChars, so that whole is not retained here either (#403).
+                // ex.Message is bounded at the throw for every producer token this library knows
+                // about (#406), but a rule can fail for a reason this catch has no inventory of —
+                // a future Reader exception this sweep never reached, or a message a rule builds
+                // itself. MaxMessageChars is the backstop for that unknown case, not a cut this
+                // path is known to still need today (#403).
                 context.Report(rule.RuleId, rule.Clause, PreflightSeverity.Error,
                     $"Rule evaluation failed: {ex.Message}");
             }

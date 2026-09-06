@@ -242,6 +242,16 @@ public sealed class PreflightMessageBoundTests
         Assert.All(matching, a => Assert.Equal(expected, a.Message));
     }
 
+    // No case here drives an oversized message through the rule-evaluation catch (PdfPreflight.cs,
+    // the `catch (Exception ex) ...` around `rule.Evaluate`) from something OTHER than a Reader
+    // token: after #406 (both rounds), every VellumPdf.Reader exception a rule can trigger is
+    // excerpted at the throw, and no rule under VellumPdf.Conformance interpolates producer content
+    // into an exception it lets escape — each one that touches untrusted structure (CMap programs,
+    // CFF/Type1 glyph data, ASN.1 signature contents, XMP XML) catches broadly and reports or
+    // returns instead of throwing. PreflightContext.Report's own 1024-character cut is still pinned
+    // directly by Report_atTheBoundary_keepsExactlyMaxMessageChars below; what is not currently
+    // demonstrable is a real, reachable exception that needs it on the way through this catch.
+
     // ── One test per remaining site that quotes a producer name ──────────────────────────────────
 
     [Fact]
