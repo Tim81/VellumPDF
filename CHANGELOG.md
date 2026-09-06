@@ -150,6 +150,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   text, JSON and SARIF output carries the same text. Verdicts, rule ids, clauses and assertion
   counts are unaffected, and at these ten sites a message whose named value is 32 characters or
   shorter is byte-identical to before. See Fixed, below, for why. (#403)
+- **A preflight "Rule evaluation failed" finding now quotes a bounded excerpt of the token that
+  broke the underlying rule, not the whole thing.** `PdfPreflight`'s per-rule catch wraps a rule's
+  thrown exception message verbatim (#403); since that message is now bounded at the Reader sites
+  described under Fixed below instead of carrying the producer's whole token, the wrapped text is
+  shorter there and no longer needs the 1024-character sink cut to stay readable. Every other
+  finding is unaffected. (#406)
 
 ### Fixed
 
@@ -171,6 +177,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   and are listed in #405. What this bounds is the retained result; the transient allocation the
   Reader makes while building its own exception message for an unknown filter is unchanged and
   tracked in #406. (#403)
+- **`PdfFilters.ApplyFilter`'s unknown-filter exception, and every other Reader exception message
+  that quoted a producer-controlled token whole, now excerpt it instead.** None of `PdfLexer`'s
+  keyword, name, or numeric token readers bound a token's own length (Annex C.1), so a 900,000-byte
+  `/Filter` name shared by 400 `/Contents` streams in a 960 KB file threw 2,404 times and allocated
+  about 4.1 GiB, 99.4% of the run — even though the diagnostic reported alongside that same throw
+  already excerpted the name. #403 fixed that half; this fixes the other, and gives
+  `PdfPreflight`'s per-rule catch (#403), which keeps a thrown message for the result's lifetime,
+  a bounded copy to keep. `PdfObjectParser`'s unexpected-keyword, malformed-`obj`/`endobj`-keyword,
+  malformed-real, and malformed-integer messages, `XrefParser.ReadInt`'s malformed-subsection-header
+  message, and `EncryptionSetup.Authenticate`'s unsupported-security-handler message get the same
+  treatment, each now excerpting through `DiagnosticExcerpt.Quote` the way #403's sibling
+  diagnostics already did. A handful of similar-looking sites are already bounded and were left
+  alone: a fixed-width xref table field, a value drawn from a fixed set (a token kind, a CLR type
+  name, a resource-category constant), and `XrefParser`'s own `startxref`-offset scan, capped by its
+  own 1 MiB tail window regardless of file size. (#406)
 
 ## [2.3.0] - 2026-09-01
 

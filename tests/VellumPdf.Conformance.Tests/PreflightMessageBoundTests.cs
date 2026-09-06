@@ -218,14 +218,18 @@ public sealed class PreflightMessageBoundTests
     }
 
     [Fact]
-    public void RuleEvaluationFailure_withAnOversizedToken_isBoundedByTheSink()
+    public void RuleEvaluationFailure_withAnOversizedToken_isBoundedAtTheThrow()
     {
         var bytes = BuildOversizedFilterPdf(new string('A', 1_048_576));
 
         var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
 
-        var full = "Rule evaluation failed: Unknown PDF filter: /" + new string('A', 1_048_576);
-        var expected = full[..1024] + $"... ({full.Length} chars)";
+        // Filters.InflateFilter (#406) now excerpts the filter name in the thrown message the same
+        // way it already excerpted the diagnostic, so the message a rule-evaluation catch wraps
+        // never reaches PreflightContext.MaxMessageChars in the first place — there is nothing left
+        // for the sink cut below to do on this path, unlike before #406.
+        var expected = "Rule evaluation failed: Unknown PDF filter: /" + new string('A', 32)
+            + "... (1048576 bytes)";
 
         // Several rules try to decode the same oversized-filter /Contents stream and each wraps
         // the same InvalidDataException as its own "Rule evaluation failed" finding (#403); assert

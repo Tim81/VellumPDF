@@ -330,6 +330,48 @@ public sealed class DiagnosticRoutingTests
         Assert.Equal(expected, d.Message);
     }
 
+    // ── Filters.cs: the thrown message excerpts the same way the diagnostic does (#406) ─────────────
+
+    [Fact]
+    public void UnknownFilter_withAnOversizedName_throwsOnlyAFixedExcerpt()
+    {
+        // Before #406 this threw with the whole million-byte name interpolated, even though the
+        // diagnostic reported alongside it (asserted above) already excerpted the same value:
+        // PdfPreflight's per-rule catch retains a thrown message, so the two sites need the same
+        // bound, not just the retained diagnostic.
+        var hugeFilter = new string('A', 1 << 20);
+        var dict = new PdfDictionary().Set(PdfName.Filter, new PdfName(hugeFilter));
+        var stream = MakeParsedStream(dict, "hello"u8.ToArray());
+        var sink = new DiagnosticSink(cap: 10);
+
+        var ex = Assert.Throws<InvalidDataException>(
+            () => PdfFilters.Decode(stream, ReaderLimits.Defaults, diagnostics: sink));
+
+        Assert.Equal(
+            "Unknown PDF filter: /" + new string('A', 32) + "... (1048576 bytes)",
+            ex.Message);
+    }
+
+    [Theory]
+    [InlineData(32, false)]
+    [InlineData(33, true)]
+    public void UnknownFilter_throwMessage_atTheExcerptBoundary_quotesThirtyTwoWhole_andExcerptsThirtyThree(
+        int nameLength, bool expectExcerpt)
+    {
+        var name = new string('A', nameLength);
+        var dict = new PdfDictionary().Set(PdfName.Filter, new PdfName(name));
+        var stream = MakeParsedStream(dict, "hello"u8.ToArray());
+        var sink = new DiagnosticSink(cap: 10);
+
+        var ex = Assert.Throws<InvalidDataException>(
+            () => PdfFilters.Decode(stream, ReaderLimits.Defaults, diagnostics: sink));
+
+        var expected = expectExcerpt
+            ? "Unknown PDF filter: /" + new string('A', 32) + $"... ({nameLength} bytes)"
+            : $"Unknown PDF filter: /{name}";
+        Assert.Equal(expected, ex.Message);
+    }
+
     [Fact]
     public void DecodedStreamLimitExceeded_stillThrows_butReportsErrorFirst()
     {

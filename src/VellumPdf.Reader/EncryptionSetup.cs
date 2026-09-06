@@ -75,8 +75,12 @@ internal static class EncryptionSetup
                 "does not support; only the Standard security handler (/Filter /Standard) is supported.");
         if (filterName != "Standard")
         {
+            // Excerpted, not interpolated whole (#406): a /Filter name has no length bound (Annex
+            // C.1), and this is the one call in Authenticate that runs before anything else has
+            // validated the dictionary, so a name this large is still possible here.
+            var excerpt = filterName is null ? "(missing)" : DiagnosticExcerpt.Quote(filterName);
             throw new UnsupportedPdfFeatureException(
-                $"/Encrypt /Filter /{filterName ?? "(missing)"} is not a security handler VellumPdf.Reader " +
+                $"/Encrypt /Filter /{excerpt} is not a security handler VellumPdf.Reader " +
                 "supports; only /Standard is.");
         }
 

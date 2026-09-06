@@ -800,6 +800,44 @@ public sealed class PdfObjectParserTests
         Assert.Contains("Unexpected keyword", ex.Message);
     }
 
+    // ── Unexpected keyword as object: the message excerpts an oversized one (#406) ─────────────────
+
+    [Fact]
+    public void UnknownKeywordAsObject_withAnOversizedKeyword_throwsOnlyAFixedExcerpt()
+    {
+        // PdfLexer.ReadKeyword puts no bound on a keyword's own length (Annex C.1), and
+        // PdfPreflight's per-rule catch retains a thrown message, so this needs the same excerpt
+        // DiagnosticExcerpt already gives a /Filter name or any other retained producer value.
+        var keyword = new string('B', 1 << 20);
+
+        var ex = Assert.Throws<InvalidDataException>(() => Parser(keyword).ParseObject());
+
+        Assert.Equal(
+            "Unexpected keyword '" + new string('B', 32) + "... (1048576 bytes)' "
+            + "where a PDF object was expected.",
+            ex.Message);
+    }
+
+    [Theory]
+    [InlineData(32, false)]
+    [InlineData(33, true)]
+    public void UnknownKeywordAsObject_atTheExcerptBoundary_quotesThirtyTwoWhole_andExcerptsThirtyThree(
+        int keywordLength, bool expectExcerpt)
+    {
+        // A bare run of letters is still a valid, if unrecognised, keyword token at any length —
+        // ReadKeyword only stops at whitespace or a delimiter (Table 1/Table 2) — so this boundary
+        // is reachable the same way the oversized case above is, just one byte short of it.
+        var keyword = new string('B', keywordLength);
+
+        var ex = Assert.Throws<InvalidDataException>(() => Parser(keyword).ParseObject());
+
+        var expected = expectExcerpt
+            ? "Unexpected keyword '" + new string('B', 32) + $"... ({keywordLength} bytes)' "
+              + "where a PDF object was expected."
+            : $"Unexpected keyword '{keyword}' where a PDF object was expected.";
+        Assert.Equal(expected, ex.Message);
+    }
+
     // ── Decode helpers: direct static tests ────────────────────────────────
 
     [Fact]

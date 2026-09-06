@@ -269,19 +269,20 @@ internal static class PdfFilters
         // Reported before the throw, not instead of it (#385 routing is observe-only): a caller
         // that catches the InvalidDataException upstream and keeps the reader alive still sees this
         // in PdfDocumentReader.Diagnostics, and the reader gave up on the object either way, which
-        // is what makes this severity Error rather than Warning. The name is excerpted, not
-        // interpolated whole: a /Filter name has no length bound (Annex C.1), this
-        // dictionary's filter object is dereferenced once and shared by every stream that
-        // resolves to it, and a diagnostic is retained for the reader's lifetime, so an
-        // attacker- or corruption-sized name would become a comparably sized permanent allocation
-        // once per (code, object, page) the sink's dedupe key admits, per stream (#402 round 8; the
-        // throw below keeps the whole name, since it is transient and AddElement replaces its
-        // Message before any caller sees it).
+        // is what makes this severity Error rather than Warning. The name is excerpted in both
+        // places, not interpolated whole: a /Filter name has no length bound (Annex C.1), and this
+        // dictionary's filter object is dereferenced once and shared by every stream that resolves
+        // to it, so an attacker- or corruption-sized name would otherwise be rebuilt at full size on
+        // every one of those streams' decode attempts. The diagnostic is retained for the reader's
+        // lifetime once per (code, object, page) the sink's dedupe key admits (#402 round 8), and
+        // PdfPreflight's per-rule catch (#406) keeps a copy of the thrown message too — but even
+        // without a retaining caller, building the unbounded string is itself the per-throw cost a
+        // shared oversized name multiplies across every stream that names it.
         diagnostics?.Report(
             PdfReaderDiagnosticCode.UnknownFilter,
             $"Unknown PDF filter: /{DiagnosticExcerpt.Quote(filter.Value)}.",
             objectNumber, generation);
-        throw new InvalidDataException($"Unknown PDF filter: /{filter.Value}");
+        throw new InvalidDataException($"Unknown PDF filter: /{DiagnosticExcerpt.Quote(filter.Value)}");
     }
 
     // ── FlateDecode ──────────────────────────────────────────────────────────
