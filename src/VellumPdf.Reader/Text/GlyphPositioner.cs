@@ -74,11 +74,12 @@ internal static class GlyphPositioner
     /// cref="Matrix.F"/>), projected onto the direction normal to the baseline <paramref
     /// name="trm"/>'s linear part carries. Not simply <see cref="Matrix.F"/>: that IS the
     /// perpendicular-to-baseline coordinate only when the baseline runs parallel to the device
-    /// x-axis (an unrotated page, the common case, where this reduces to plain <c>F</c> exactly,
-    /// since <c>B</c> is 0 there); under a rotation, or any CTM/Tm with a non-zero <c>B</c>, <c>F</c>
-    /// is instead the coordinate ALONG the advancing baseline, so every glyph on one rotated line
-    /// computed a distinct key and opened its own one-glyph run (#417 round 2: "Hello" under a 90°
-    /// rotation extracted as "H\ne\nl\nl\no").
+    /// x-axis (an unrotated page, the common case, where this reduces to plain <c>F</c> exactly —
+    /// see the sign-canonicalisation remarks below for why that holds regardless of the SIGN of
+    /// <c>A</c>); under a rotation, or any CTM/Tm with a non-zero <c>B</c>, <c>F</c> is instead the
+    /// coordinate ALONG the advancing baseline, so every glyph on one rotated line computed a
+    /// distinct key and opened its own one-glyph run (#417 round 2: "Hello" under a 90° rotation
+    /// extracted as "H\ne\nl\nl\no").
     /// <para>
     /// Showing a glyph advances the text matrix by a multiple of <c>(A, B)</c> — the device-space
     /// direction text-space <c>(1, 0)</c> maps to — so <paramref name="trm"/>'s <c>(E, F)</c> moves
@@ -87,15 +88,23 @@ internal static class GlyphPositioner
     /// the baseline runs in device space, and changes only when the pen moves perpendicular to it,
     /// which is what a real line break does. This is a heuristic of this reader's, not an ISO
     /// 32000-2 formula: the specification does not define "the same line" for extracted text at
-    /// all.
+    /// all. It also does not distinguish orientation: a 270°-rotated line and an unrelated
+    /// horizontal line can key to the same value when their perpendicular offsets happen to
+    /// coincide (a collision this method does not attempt to resolve, since doing so would need the
+    /// key to carry more than one number — a possible future refinement, not attempted here).
     /// </para>
     /// <paramref name="trm"/> should already have rise forced to zero, the same way <see
     /// cref="ComputeTextRenderingMatrix"/>'s <c>rise</c> parameter allows: rise can reach either
     /// <c>E</c> or <c>F</c> through a non-zero <c>C</c> in the Tm/CTM (not only <c>F</c>, once the
     /// page is rotated), and must not affect line grouping any more than it does when the page is
     /// not rotated. Degenerate (a zero-magnitude baseline direction, from a zero font size or
-    /// horizontal scaling) or already non-finite input naturally propagates to a non-finite result,
-    /// which <see cref="TextAssembler"/>'s line comparison already treats as "same line as before".
+    /// horizontal scaling) or already non-finite input naturally propagates to <c>NaN</c>, which
+    /// <see cref="TextAssembler"/>'s line comparison already treats as "same line as before"; an
+    /// OVERFLOWING (individually-finite but too-large-to-represent) magnitude is forced to
+    /// <c>NaN</c> for the same reason rather than left to round to 0 (#417 round 4 LOW 2): a
+    /// magnitude of <c>+Infinity</c> would otherwise make every direction cosine below round to 0,
+    /// producing a deceptively FINITE key of exactly 0 for every line that overflows this way,
+    /// merging any two of them instead of reporting the degenerate case honestly.
     /// <para>
     /// Computed as <c>(A/|A,B|)·F − (B/|A,B|)·E</c> — the direction cosines of the baseline times
     /// <paramref name="trm"/>'s translation — rather than the algebraically equivalent
@@ -111,11 +120,48 @@ internal static class GlyphPositioner
     /// <c>NaN</c> the naive way, which <see cref="TextAssembler"/> then read as "same line",
     /// collapsing them together.
     /// </para>
+    /// <para>
+    /// Each product is skipped outright, rather than computed and left to divide out, when its own
+    /// factor (<c>A</c> or <c>B</c>) is exactly 0 (#417 round 4 LOW 1): <c>0/|A,B| = 0</c> exactly
+    /// whenever <c>|A,B|</c> itself is a positive, finite number, but a plain <c>0 * trm.F</c> still
+    /// produces <c>NaN</c> the moment <c>trm.F</c> (or <c>trm.E</c>) is itself infinite — reachable
+    /// on an UNROTATED page (<c>B</c> already 0) from the same all-digit-literal overflow family
+    /// the fixtures above use, where <c>trm.E</c> or <c>trm.F</c> individually overflows even though
+    /// <c>trm.A</c>/<c>trm.B</c> do not. <c>0 × ∞</c> is <c>NaN</c> under IEEE 754 regardless of
+    /// which factor is which, so skipping the multiplication is not an approximation, only a way to
+    /// keep a zero component from ever reaching one.
+    /// </para>
+    /// <para>
+    /// <c>A</c> and <c>B</c> (but not <c>E</c> and <c>F</c>) are sign-canonicalised before any of
+    /// the above — negated together, as a pair, whenever <c>A</c> is negative or (<c>A</c> is 0 and)
+    /// <c>B</c> is negative — because a NEGATIVE <c>Tfs</c> (#417 round 4 LOW 3: a producer's own
+    /// choice, however unusual, ISO 32000-2 §9.6.2.1 Table 109 does not forbid) flips <c>A</c> and
+    /// <c>B</c>'s own sign end to end through the parameters matrix's <c>Tfs·Th</c> term, without
+    /// touching <c>E</c> or <c>F</c> at all — those trace only to Tm's and the CTM's own
+    /// translation, never to <c>Tfs</c> — so leaving the raw sign in would flip this whole key for
+    /// two glyphs on the exact same physical baseline that differ only in which sign of <c>Tfs</c>
+    /// painted them, splitting one line into two. Canonicalising first makes the key depend only on
+    /// the baseline's geometric POSITION, never on which direction along it text-space <c>+x</c>
+    /// happens to point for a given glyph.
+    /// </para>
     /// </summary>
     internal static double ComputeLineKey(Matrix trm)
     {
-        var magnitude = Hypot(trm.A, trm.B);
-        return trm.A / magnitude * trm.F - trm.B / magnitude * trm.E;
+        var a = trm.A;
+        var b = trm.B;
+        if (a < 0 || (a == 0 && b < 0))
+        {
+            a = -a;
+            b = -b;
+        }
+
+        var magnitude = Hypot(a, b);
+        if (magnitude == 0 || !double.IsFinite(magnitude))
+            return double.NaN;
+
+        var term1 = a == 0 ? 0.0 : a / magnitude * trm.F;
+        var term2 = b == 0 ? 0.0 : b / magnitude * trm.E;
+        return term1 - term2;
     }
 
     // A numerically stable sqrt(a^2 + b^2) (the classic scale-by-the-larger-term technique):

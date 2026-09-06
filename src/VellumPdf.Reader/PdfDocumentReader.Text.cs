@@ -22,11 +22,13 @@ public sealed partial class PdfDocumentReader
 
     /// <summary>
     /// Returns every simple-font glyph this document's pages draw through their own content, per
-    /// <paramref name="options"/>. <c>/ToUnicode</c>, predefined CMaps, Type0 and Type3 fonts,
-    /// <c>/ActualText</c>, <c>/ReversedChars</c>, and rotation-, word-, and paragraph-aware line
-    /// grouping all land in a later change (#98); a code this reader cannot decode contributes no
-    /// character but still advances the text matrix, so later glyphs on the same line stay
-    /// correctly positioned.
+    /// <paramref name="options"/>. Line grouping is rotation-aware. <c>/ToUnicode</c>, predefined
+    /// CMaps, Type0 and Type3 fonts, <c>/ActualText</c>, <c>/ReversedChars</c>, and word- and
+    /// paragraph-aware line grouping all land in a later change (#98); concretely, the word-aware
+    /// gap means no space is synthesised for a positioning gap (<c>[(Hello) -500 (World)] TJ</c>
+    /// extracts as <c>HelloWorld</c>, not <c>Hello World</c>). A code this reader cannot decode
+    /// contributes no character but still advances the text matrix, so later glyphs on the same
+    /// line stay correctly positioned.
     /// </summary>
     /// <exception cref="ArgumentNullException"><paramref name="options"/> is <see
     /// langword="null"/>.</exception>
@@ -39,6 +41,23 @@ public sealed partial class PdfDocumentReader
         ArgumentNullException.ThrowIfNull(options);
         ThrowIfDisposed();
 
+        var scope = CreateContentDiagnosticScope();
+        return ExtractText(options, scope, CreateTextCallBudget(scope));
+    }
+
+    // The actual multi-page loop, factored out from the public overload above so a test can drive
+    // the SAME per-page loop with an injected TextCallBudget of its own choosing (MEDIUM 3, #417
+    // round 4): TextExtractionEndToEndTests' own
+    // BeginPage_resetsPerPageBudget_acrossRealPages_inTheProductionLoopShape test hand-rolled this
+    // loop instead of calling it, which meant deleting budget.BeginPage() from
+    // ExtractTextFromPageCore below left the whole suite green — that test called BeginPage()
+    // itself and so exercised its own COPY of the reset, not the one production actually runs.
+    // Nothing about validating options or building the default budget belongs here: those are the
+    // public overload's own job, and this seam exists to bypass exactly that default construction
+    // when a test needs a non-default budget, not to duplicate it.
+    internal PdfTextExtractionResult ExtractText(
+        PdfTextExtractionOptions options, DiagnosticSink scope, TextCallBudget budget)
+    {
         // options.PageSeparator cannot be null here: its own init accessor already refused that
         // (PdfTextExtractionOptions.PageSeparator's own doc explains why that check belongs there
         // and not here, unlike Pages below).
@@ -47,9 +66,6 @@ public sealed partial class PdfDocumentReader
         // 0..PageCount, matching what GetPage(int) already documents for a single out-of-range
         // index.
         var (start, length) = options.Pages.GetOffsetAndLength(PageCount);
-
-        var scope = CreateContentDiagnosticScope();
-        var budget = CreateTextCallBudget(scope);
 
         var pageTexts = new List<string>(length);
         for (var i = 0; i < length; i++)

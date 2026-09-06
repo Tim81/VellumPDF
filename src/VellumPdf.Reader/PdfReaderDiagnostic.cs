@@ -422,7 +422,10 @@ public enum PdfReaderDiagnosticCode
     /// <c>TL</c>, <c>Tf</c>'s second, <c>Tr</c>, <c>Ts</c>, <c>Td</c>, <c>TD</c>, or <c>Tm</c>; a
     /// non-name operand to <c>Tf</c>'s first, to <c>Do</c>, or to
     /// <c>gs</c>/<c>cs</c>/<c>CS</c>/<c>sh</c> (this reader reads that operand for its own resource
-    /// lookup, the same reason <c>Do</c>'s own name operand is checked); a non-string operand to
+    /// lookup, the same reason <c>Do</c>'s own name operand is checked); an ExtGState's own
+    /// <c>/Font</c> array (Table 57) whose first element is not an indirect reference to a font
+    /// dictionary (the entry is ignored; whatever font <c>Tf</c>, or an earlier conforming
+    /// <c>gs</c>, already bound stays in effect); a non-string operand to
     /// <c>'</c>, or a non-numeric first or second or non-string third operand to <c>"</c> (Table 107)
     /// (#402 rounds 3 and 4; every operator this interpreter recognises but does not name above only
     /// forwards its own operands to the visitor untouched, so their operand types are the visitor's to

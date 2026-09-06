@@ -27,12 +27,23 @@ internal sealed class TextExtractionVisitor : IContentVisitor
     private readonly int _pageIndex;
     private readonly TextAssembler _assembler;
 
-    // Keyed on REFERENCE equality of both the Tf (or gs /Font) operand and the resources dictionary
-    // in effect when it is looked up, not structural equality: PdfName compares by value, so two
-    // unrelated "/F1" operands from two different /Resources subdictionaries would otherwise
-    // collide on one cache entry and hand one font's glyphs the other's metrics.
-    private readonly Dictionary<(PdfObject Font, PdfDictionary? Resources), PdfFontReader?> _fontLookup =
-        new(FontLookupKeyComparer.Instance);
+    // Keyed on REFERENCE equality of the Tf (or gs /Font) operand alone, not structural equality:
+    // PdfName compares by value, so two unrelated "/F1" operands from two different /Resources
+    // subdictionaries would otherwise collide on one cache entry and hand one font's glyphs the
+    // other's metrics. The resources dictionary in effect at the lookup does NOT also need to be
+    // part of this key (#417 round 4 MEDIUM 4): every 'Tf' operand is a freshly lexed PdfObject —
+    // ContentInterpreter.PushOperand/PdfObjectParser never intern or reuse one across two distinct
+    // 'Tf' occurrences — so a given operand instance is captured into GraphicsState.Font together
+    // with the SAME GraphicsState.FontResources that was current at that one 'Tf', and a
+    // later 'q'/'Q' restores both fields as one unit, never one without the other; the pairing
+    // this key exists to protect can therefore never drift apart for a given Font instance. The
+    // 'gs' path is even more direct: ResolveFont below never reads its own `resources` parameter
+    // at all for a non-PdfName operand (Table 57's own font element resolves independent of any
+    // /Resources dictionary), so a `Resources` component would be inert there regardless. Keeping
+    // it anyway, asserted but structurally unreachable, is what the previous shape of this key did;
+    // dropping it is the fix, not a regression.
+    private readonly Dictionary<PdfObject, PdfFontReader?> _fontLookup =
+        new(FontOperandReferenceComparer.Instance);
 
     internal TextExtractionVisitor(
         PdfDocumentReader reader, ContentInterpreter interpreter, TextCallBudget budget,
@@ -192,7 +203,7 @@ internal sealed class TextExtractionVisitor : IContentVisitor
             var tx = GlyphPositioner.ComputeGlyphDisplacement(
                 glyph, gs.FontSize, gs.CharSpacing, gs.WordSpacing, gs.HorizontalScaling);
 
-            // §404 (UnmappedGlyphs) already covers the no-Unicode-route case from
+            // 404 (UnmappedGlyphs) already covers the no-Unicode-route case from
             // PdfFontReader.TryDecodeNext itself; this reader adds no character for it but still
             // applies the advance below, so later glyphs on the line stay correctly positioned.
             var characters = glyph.Unicode ?? string.Empty;
@@ -221,8 +232,7 @@ internal sealed class TextExtractionVisitor : IContentVisitor
 
     private PdfFontReader? ResolveFont(PdfObject fontOperand, PdfDictionary? resources)
     {
-        var key = (fontOperand, resources);
-        if (_fontLookup.TryGetValue(key, out var cached))
+        if (_fontLookup.TryGetValue(fontOperand, out var cached))
             return cached;
 
         // A bare Tf operand is a /Resources /Font name; an ExtGState's own /Font array already
@@ -241,19 +251,24 @@ internal sealed class TextExtractionVisitor : IContentVisitor
             }
         }
 
-        // rawFontEntry is null exactly when the /Resources /Font lookup itself failed against
-        // GraphicsState.FontResources: the interpreter's own ValidateFontResource already checked
-        // the SAME name against the SAME resources dictionary (the one current at 'Tf' time) and
-        // reported ResourceMissing (306) for it there, so nothing further is reported here. This
-        // held even before FontResources existed as long as the resources in effect never changed
-        // between 'Tf' and the show operator; it silently stopped holding once a Form XObject with
-        // its own /Resources sat between the two (#417 round 2), which is why FontResources is
-        // captured at 'Tf' time instead of read from whatever is current when this method runs.
+        // rawFontEntry is null exactly when fontOperand was a PdfName (only 'Tf' produces one —
+        // ContentInterpreter.HandleExtGState rejects a non-conforming ExtGState /Font array
+        // outright rather than ever storing a bare name here, #417 round 4) AND the /Resources
+        // /Font lookup against GraphicsState.FontResources then failed. The interpreter's own
+        // ValidateFontResource already checked the SAME name against the SAME resources dictionary
+        // (the one current at 'Tf' time) and reported ResourceMissing (306) for it there, so
+        // nothing further is reported here for THAT path. This does not extend to 'gs': it never
+        // calls ValidateFontResource, but as of the ExtGState shape check above, its own /Font
+        // operand is never a PdfName needing a resources lookup at all, so this comment's claim has
+        // nothing left to be wrong about on that path either. Capturing FontResources at 'Tf' time
+        // (rather than reading whatever is current when this method runs) is what keeps this
+        // holding once a Form XObject with its own /Resources sits between 'Tf' and the show
+        // operator (#417 round 2).
         var fontReader = rawFontEntry is null
             ? null
             : _reader.GetFontReader(rawFontEntry, _diagnostics, _pageIndex);
 
-        _fontLookup[key] = fontReader;
+        _fontLookup[fontOperand] = fontReader;
         return fontReader;
     }
 
@@ -289,16 +304,17 @@ internal sealed class TextExtractionVisitor : IContentVisitor
         _ => 0,
     };
 
-    private sealed class FontLookupKeyComparer : IEqualityComparer<(PdfObject Font, PdfDictionary? Resources)>
+    // PdfObject has no override of its own, but PdfName (the common case: every 'Tf' operand) does,
+    // by VALUE (see its own Equals/GetHashCode) — Dictionary<PdfObject, ...>'s default comparer
+    // would call straight into that override and defeat the whole point of this field's own key
+    // (see its doc), so this forces reference identity explicitly instead of relying on whatever
+    // Equals/GetHashCode a future PdfObject subtype happens to define.
+    private sealed class FontOperandReferenceComparer : IEqualityComparer<PdfObject>
     {
-        internal static readonly FontLookupKeyComparer Instance = new();
+        internal static readonly FontOperandReferenceComparer Instance = new();
 
-        public bool Equals(
-            (PdfObject Font, PdfDictionary? Resources) x, (PdfObject Font, PdfDictionary? Resources) y) =>
-            ReferenceEquals(x.Font, y.Font) && ReferenceEquals(x.Resources, y.Resources);
+        public bool Equals(PdfObject? x, PdfObject? y) => ReferenceEquals(x, y);
 
-        public int GetHashCode((PdfObject Font, PdfDictionary? Resources) obj) => HashCode.Combine(
-            RuntimeHelpers.GetHashCode(obj.Font),
-            obj.Resources is null ? 0 : RuntimeHelpers.GetHashCode(obj.Resources));
+        public int GetHashCode(PdfObject obj) => RuntimeHelpers.GetHashCode(obj);
     }
 }

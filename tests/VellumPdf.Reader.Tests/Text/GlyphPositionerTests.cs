@@ -168,6 +168,51 @@ public sealed class GlyphPositionerTests
     }
 
     /// <summary>
+    /// MEDIUM 2 (#417 round 4): every other <c>ComputeLineKey</c> call in this file, and every one
+    /// <c>TextExtractionVisitor</c> ever makes, has <c>A</c> or <c>B</c> exactly 0 (an unrotated
+    /// page, or a rotation that is an exact multiple of 90°), so <see cref="GlyphPositioner"/>'s own
+    /// <c>Hypot</c> always takes its <c>b == 0</c> shortcut and returns <c>a</c> unchanged — the
+    /// scaling branch (<c>a * Math.Sqrt(1 + ratio * ratio)</c>) never runs under the whole suite.
+    /// <c>return a;</c> in that branch's place still passes every other KAT here (a mutant this PR's
+    /// own review caught surviving), because two glyphs on the SAME wrongly-scaled line still agree
+    /// with EACH OTHER; only a fixture that pins the correct ABSOLUTE key, not merely equality
+    /// between two glyphs, tells the mutant apart from the real formula. A 45° CTM
+    /// <c>[√2/2 √2/2 −√2/2 √2/2 0 0]</c> makes <c>A = B</c> (so <c>ratio</c> is exactly 1, avoiding
+    /// the <c>b == 0</c> shortcut entirely) with Tfs=12, Tm=<c>[1 0 0 1 100 700]</c>: hand-computed,
+    /// <c>A = B = 6√2 ≈ 8.485281374</c>, <c>E = -300√2 ≈ -424.264069</c>, <c>F = 400√2 ≈
+    /// 565.685425</c>, <c>Hypot(A, B) = 12</c> (since <c>6√2 · √2 = 12</c>), and
+    /// <c>key = (A/12)·F − (B/12)·E = (√2/2)·400√2 − (√2/2)·(−300√2) = 400 − (−300) = 700</c>
+    /// exactly. <c>return a;</c> instead yields <c>A = 6√2 ≈ 8.485…</c> as the "magnitude", giving a
+    /// key of roughly 989.949 — clearly not 700, but STILL equal for both glyphs, which is why a
+    /// same-line-only assertion would have let it through. A second glyph advanced 50 TEXT-SPACE
+    /// units along the baseline (<c>Matrix.Translation(50, 0).Concat(tm)</c>, the same idiom
+    /// <c>TextExtractionVisitor.ShowString</c> uses between glyphs) must compute the SAME 700: moving
+    /// along the baseline is exactly the direction this projection is orthogonal to.
+    /// </summary>
+    [Fact]
+    public void ComputeLineKey_pinsExactValue_atANonAxisAlignedAngle_notMerelyGlyphEquality()
+    {
+        var root2Over2 = Math.Sqrt(2) / 2;
+        var ctm = new Matrix(root2Over2, root2Over2, -root2Over2, root2Over2, 0, 0);
+        var tm = new Matrix(1, 0, 0, 1, 100, 700);
+
+        var trm1 = GlyphPositioner.ComputeTextRenderingMatrix(12, 100, 0, tm, ctm);
+        AssertClose(6 * Math.Sqrt(2), trm1.A, "glyph 1 A");
+        AssertClose(6 * Math.Sqrt(2), trm1.B, "glyph 1 B");
+        AssertClose(-300 * Math.Sqrt(2), trm1.E, "glyph 1 E");
+        AssertClose(400 * Math.Sqrt(2), trm1.F, "glyph 1 F");
+
+        var advancedTm = Matrix.Translation(50, 0).Concat(tm);
+        var trm2 = GlyphPositioner.ComputeTextRenderingMatrix(12, 100, 0, advancedTm, ctm);
+
+        var key1 = GlyphPositioner.ComputeLineKey(trm1);
+        var key2 = GlyphPositioner.ComputeLineKey(trm2);
+
+        AssertClose(700.0, key1, "glyph 1 key, pinned absolute value");
+        AssertClose(700.0, key2, "glyph 2 key (advanced along the baseline), pinned absolute value");
+    }
+
+    /// <summary>
     /// A regression this PR's own round-2 review found empirically, not one a reviewer named: an
     /// individually-finite but extreme CTM (10^170-scale, reached the same way the overflow
     /// fixtures in <c>TextExtractionEndToEndTests</c> reach one) composes, through <see
@@ -198,6 +243,73 @@ public sealed class GlyphPositionerTests
         Assert.True(double.IsFinite(key1), $"key1 was {key1}, expected finite");
         Assert.True(double.IsFinite(key2), $"key2 was {key2}, expected finite");
         Assert.NotEqual(key1, key2);
+    }
+
+    /// <summary>
+    /// LOW 1 (#417 round 4): on an UNROTATED page (<c>B == 0</c>), an overflowing <c>E</c> (or
+    /// <c>F</c>) used to poison the whole key through <c>0.0 / magnitude * E == NaN</c> — <c>B</c>'s
+    /// own zero contribution should drop out of the formula entirely instead, since <c>0 × ∞</c> is
+    /// <c>NaN</c> under IEEE 754 regardless of which factor overflowed. Reachable from the same
+    /// all-digit-literal overflow family <see
+    /// cref="ComputeLineKey_doesNotOverflowToNaN_forLargeButFiniteBaselines"/> above uses, except
+    /// here only the TRANSLATION overflows (<paramref name="trm"/>'s <c>A</c>/<c>B</c> stay
+    /// ordinary), so <c>Hypot</c> itself is not exercised at all and this is pinned directly against
+    /// a synthesized <see cref="Matrix"/> instead.
+    /// </summary>
+    [Fact]
+    public void ComputeLineKey_zeroTimesInfinity_doesNotPoisonTheKey_onAnUnrotatedPage()
+    {
+        var trm = new Matrix(12, 0, 0, 12, double.PositiveInfinity, 700);
+
+        var key = GlyphPositioner.ComputeLineKey(trm);
+
+        AssertClose(700.0, key, "unrotated key with an overflowing E");
+    }
+
+    /// <summary>
+    /// LOW 2 (#417 round 4): a magnitude too large to represent as a finite <see cref="double"/> —
+    /// reachable once <c>|A| = |B|</c> exceeds roughly <c>1.271×10^308</c> (<see
+    /// cref="GlyphPositioner"/>'s own private <c>Hypot</c> then has its <c>a·√2</c> exceed
+    /// <see cref="double.MaxValue"/>) — must not silently round every
+    /// direction cosine below to 0 and report a deceptively FINITE key of exactly 0: two real,
+    /// distinct lines that both overflow this way would then merge on that shared 0 instead of
+    /// propagating the non-finite result <see cref="TextAssembler"/> already knows how to treat as
+    /// "same line as before" without actually claiming a specific, wrong position.
+    /// </summary>
+    [Fact]
+    public void ComputeLineKey_overflowingMagnitude_returnsNaN_notADeceptiveZero()
+    {
+        const double huge = 1.3e308;
+        var trm1 = new Matrix(huge, huge, -huge, huge, 100, 700);
+        var trm2 = new Matrix(huge, huge, -huge, huge, 100, 600);
+
+        var key1 = GlyphPositioner.ComputeLineKey(trm1);
+        var key2 = GlyphPositioner.ComputeLineKey(trm2);
+
+        Assert.True(double.IsNaN(key1), $"key1 was {key1}, expected NaN");
+        Assert.True(double.IsNaN(key2), $"key2 was {key2}, expected NaN");
+    }
+
+    /// <summary>
+    /// LOW 3 (#417 round 4): a negative <c>Tfs</c> flips <c>A</c> and <c>B</c> end to end through
+    /// the parameters matrix's own <c>Tfs·Th</c> term, without touching <c>E</c> or <c>F</c> at all
+    /// (those trace only to Tm's and the CTM's own translation) — so two glyphs on the exact SAME
+    /// physical baseline that differ only in the sign of <c>Tfs</c> must still key identically.
+    /// Concretely, <c>BT /F1 12 Tf 100 700 Td (AB) Tj -12 Tf (CD) Tj ET</c>: before this fix, "AB"
+    /// keyed 700 and "CD" keyed -700, splitting one physical line into two.
+    /// </summary>
+    [Fact]
+    public void ComputeLineKey_signCanonicalized_negativeFontSizeMidLine_doesNotSplitTheLine()
+    {
+        var tm = new Matrix(1, 0, 0, 1, 100, 700);
+        var positiveTfsTrm = GlyphPositioner.ComputeTextRenderingMatrix(12, 100, 0, tm, Matrix.Identity);
+        var negativeTfsTrm = GlyphPositioner.ComputeTextRenderingMatrix(-12, 100, 0, tm, Matrix.Identity);
+
+        var positiveKey = GlyphPositioner.ComputeLineKey(positiveTfsTrm);
+        var negativeKey = GlyphPositioner.ComputeLineKey(negativeTfsTrm);
+
+        AssertClose(700.0, positiveKey, "positive Tfs key");
+        AssertClose(700.0, negativeKey, "negative Tfs key, canonicalized to match");
     }
 
     // ── Per-glyph displacement (§9.4.4, §9.3.3) ─────────────────────────────────────────────────
@@ -295,7 +407,11 @@ public sealed class GlyphPositionerTests
     [Fact]
     public void ProductionAndReferenceImplementation_agreeOnEveryGlyphOrigin()
     {
-        CaseGen.Sample(c => AssertBothImplementationsAgree(c), iter: FuzzBudget.Iterations);
+        // threads: 1: matches FontFuzzTests' own convention (see its comments) for a suite this
+        // repository already found losing updates under the default multi-threaded sampler — see
+        // Generator_reachesItsStatedRanges below, which shares this generator and hit that exact
+        // failure mode with its own plain-double accumulators.
+        CaseGen.Sample(c => AssertBothImplementationsAgree(c), iter: FuzzBudget.Iterations, threads: 1);
     }
 
     /// <summary>Measures the generator's own reach directly, rather than trusting the range
@@ -332,7 +448,14 @@ public sealed class GlyphPositionerTests
                 if (g.IsSpaceCode && g.CodeLength == 1) sawSpaceApplies = true;
                 if (!(g.IsSpaceCode && g.CodeLength == 1)) sawSpaceSuppressed = true;
             }
-        }, iter: FuzzBudget.Iterations);
+            // threads: 1 (LOW 8, #417 round 4): every accumulator above is a plain double or bool,
+            // not an atomic type, and CsCheck's default sampler runs the callback from multiple
+            // worker threads — an instrumented run measured 2,959 of 3,000 cases actually landing
+            // at the default versus exactly 3,000 with threads: 1, i.e. updates were being
+            // silently lost, not merely reordered. FontFuzzTests hits the same class of hazard for
+            // a different reason (a shared, non-concurrent PdfDocumentReader/FontCache) and uses
+            // the same fix.
+        }, iter: FuzzBudget.Iterations, threads: 1);
 
         Assert.True(minTfs <= 2 && maxTfs >= 140, $"Tfs reached [{minTfs}, {maxTfs}]");
         Assert.True(minTz <= 15 && maxTz >= 380, $"Tz reached [{minTz}, {maxTz}]");

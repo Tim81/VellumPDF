@@ -114,8 +114,8 @@ public sealed class TextExtractionEndToEndTests
     /// A Form XObject's own text is included, positioned through its own <c>/Matrix</c> (§8.10.2)
     /// rather than the invoker's own text-matrix trajectory, and the invoker's own text matrix is
     /// unaffected once the form's content finishes: the page's own content keeps ONE text object
-    /// open across the intervening <c>Do</c> (itself informational-only per §9.4.1, which lists the
-    /// categories a text object may contain and does not include XObjects, but still processed —
+    /// open across the intervening <c>Do</c> (itself informational-only per §8.2 Table 50, which
+    /// lists the categories a text object may contain and does not include XObjects, but still processed —
     /// see <c>ContentInterpreter.HandleDo</c>'s own remarks), so "Y" shown after the
     /// form returns lands on the exact same baseline as "X" shown before it, producing three
     /// distinct lines in content order rather than "X" and "Y" merging with "Inside" or with each
@@ -196,6 +196,48 @@ public sealed class TextExtractionEndToEndTests
         var result = PdfReader.Open(pdf).GetPage(0).ExtractText();
 
         Assert.Equal("A", result.Text);
+    }
+
+    /// <summary>
+    /// MEDIUM 4 (#417 round 4): the discriminating fixture the PR body wrongly claimed already
+    /// existed for the font memo's own keying — every other form fixture here has the form inherit
+    /// its font WITHOUT issuing its own 'Tf' at all, so only ever ONE Font operand instance is ever
+    /// memoized and the memo never has two entries to tell apart. Here the form issues its OWN
+    /// <c>/F1 12 Tf</c>, bound (through its own <c>/Resources</c>) to a DIFFERENT font than the
+    /// invoker's <c>/F1</c>, and both are shown: the page's own <c>/F1</c> (object 5, plain
+    /// WinAnsiEncoding: code 65 is "A") before the 'Do', the form's own <c>/F1</c> (object 6,
+    /// remapped via <c>/Differences</c>: code 65 is "B") inside it, and the page's <c>/F1</c> again
+    /// after the 'Do' returns — restored by the implicit save/restore §8.10.1 requires around a
+    /// Form XObject invocation, with no second 'Tf' of its own. A memo that collapsed these two
+    /// DIFFERENT Font operand instances onto one cache entry (the exact PdfName collision <see
+    /// cref="TextExtractionVisitor"/>'s own memo field doc describes) would reuse whichever font
+    /// resolved FIRST for the second lookup too, producing "AAA" or "BBB" instead of "A\nB\nA". The
+    /// three lines, not two, mirror
+    /// <see cref="FormXObjectText_included_matrixReflected_invokerTextMatrixUnchangedAfter"/>
+    /// above: <c>TextAssembler</c> only ever compares against the immediately PRECEDING line, so the
+    /// third glyph does not merge back into the first run even though it shares that run's baseline.
+    /// </summary>
+    [Fact]
+    public void FormXObjectOwnTf_bindsDifferentFontThanInvokers_bothShown()
+    {
+        const string remappedF1Dict =
+            "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica "
+            + "/Encoding << /BaseEncoding /WinAnsiEncoding /Differences [65 /B] >> "
+            + "/FirstChar 65 /LastChar 65 /Widths [600] >>";
+
+        var pdf = TextTestSupport.BuildPageDoc(
+            "BT /F1 12 Tf 100 700 Td <41> Tj\n/Fm0 Do\n<41> Tj ET",
+            "<< /Font << /F1 5 0 R >> /XObject << /Fm0 10 0 R >> >>",
+            new TextTestSupport.Obj(5, TextTestSupport.SimpleFontDict(65, 65, 600)),
+            new TextTestSupport.Obj(6, remappedF1Dict),
+            new TextTestSupport.Obj(10,
+                "<< /Type /XObject /Subtype /Form /BBox [0 0 200 200] "
+                + "/Resources << /Font << /F1 6 0 R >> >> >>",
+                System.Text.Encoding.ASCII.GetBytes("BT /F1 12 Tf 0 0 Td <41> Tj ET")));
+
+        var result = PdfReader.Open(pdf).GetPage(0).ExtractText();
+
+        Assert.Equal("A\nB\nA", result.Text);
     }
 
     /// <summary>
@@ -288,6 +330,55 @@ public sealed class TextExtractionEndToEndTests
         var result = PdfReader.Open(pdf).GetPage(0).ExtractText();
 
         Assert.Equal("A", result.Text);
+    }
+
+    /// <summary>
+    /// MEDIUM 1 (#417 round 4): Table 57 requires an ExtGState's own <c>/Font</c> array's first
+    /// element to be an indirect reference to a font dictionary; this producer puts a bare
+    /// <c>/Resources /Font</c> name there instead. Before this fix, <c>HandleExtGState</c> stored
+    /// that name into <c>GraphicsState.Font</c> unchecked and cleared <c>FontResources</c> to
+    /// <see langword="null"/> in the same step, so <c>TextExtractionVisitor.ResolveFont</c> (which
+    /// treats a non-<c>PdfName</c> operand as already resolved and a <c>PdfName</c> one as a
+    /// <c>/Resources</c> lookup — the name here IS a <c>PdfName</c>) looked it up against a null
+    /// resources dictionary, found nothing, and returned <see langword="null"/> with NO diagnostic
+    /// at all: "A" vanished silently. This asserts both halves of the fix: no font was ever bound
+    /// (there is no preceding 'Tf' for this fixture), so the text is empty, AND that emptiness is
+    /// explained by diagnostics rather than left to look like an ordinary empty page.
+    /// </summary>
+    [Fact]
+    public void ExtGStateFont_nonReferenceElement_reportsDiagnostic_notSilentlyLossy()
+    {
+        var pdf = TextTestSupport.BuildPageDoc(
+            "/GS0 gs\nBT (A) Tj ET",
+            "<< /Font << /F1 5 0 R >> /ExtGState << /GS0 << /Font [/F1 12] >> >> >>",
+            new TextTestSupport.Obj(5, TextTestSupport.SimpleFontDict()));
+
+        var result = PdfReader.Open(pdf).GetPage(0).ExtractText();
+
+        Assert.Equal(string.Empty, result.Text);
+        Assert.Contains(result.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.OperandStackMalformed);
+        Assert.Contains(result.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.TextShownWithoutFont);
+    }
+
+    /// <summary>
+    /// The other half of MEDIUM 1: a working font bound by a preceding, conforming 'Tf' must
+    /// survive a later, non-conforming 'gs' rather than being clobbered by it — "leaving a working
+    /// binding in place beats replacing it with a guaranteed-unresolvable one" (#417 round 4's own
+    /// brief). Both "A" (via 'Tf') and "B" (after the rejected 'gs') must come through using the
+    /// SAME font, since the malformed 'gs' is dropped entirely rather than partially applied.
+    /// </summary>
+    [Fact]
+    public void ExtGStateFont_nonReferenceElement_leavesPriorTfBindingInPlace()
+    {
+        var pdf = TextTestSupport.BuildPageDoc(
+            "BT /F1 12 Tf (A) Tj /GS0 gs (B) Tj ET",
+            "<< /Font << /F1 5 0 R >> /ExtGState << /GS0 << /Font [/F1 12] >> >> >>",
+            new TextTestSupport.Obj(5, TextTestSupport.SimpleFontDict()));
+
+        var result = PdfReader.Open(pdf).GetPage(0).ExtractText();
+
+        Assert.Equal("AB", result.Text);
+        Assert.Contains(result.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.OperandStackMalformed);
     }
 
     /// <summary>
@@ -422,23 +513,35 @@ public sealed class TextExtractionEndToEndTests
             viaQuoteRuns.Select(r => (r.Text, r.Baseline)), viaTStarTjRuns.Select(r => (r.Text, r.Baseline)));
     }
 
+    /// <summary>
+    /// LOW 7 (#417 round 4): comparing TEXT alone cannot see a doubled move any more than
+    /// <see cref="QuoteOperator_equalsTStarThenTj"/> above could for <c>'</c> (MEDIUM 8, round 2) —
+    /// inserting a spurious extra <c>T*</c>-equivalent move before <c>"</c>'s own show still
+    /// produces "Line1"/"Line2" as the run text, so only a pre-existing
+    /// <c>ContentInterpreterTests</c> case caught the doubled-move defect this comment describes.
+    /// Made symmetric with that test: <c>Td 100 700</c> then <c>14 TL</c> put "Line1" at baseline
+    /// 700; one <c>T*</c>-equivalent move (leading 14, moved down) puts "Line2" at exactly
+    /// <c>700 - 14 = 686</c>, whether it arrives via <c>"</c> (with its own <c>Tw</c>/<c>Tc</c>
+    /// operands, 2 and 3) or via the separate <c>2 Tw 3 Tc</c> plus <c>'</c> this test already
+    /// checked for text-only equivalence. A doubled move would land it at 672.
+    /// </summary>
     [Fact]
     public void DoubleQuoteOperator_equalsTwAndTcThenQuote()
     {
-        var viaDoubleQuote = TextTestSupport.BuildPageDoc(
-            "BT /F1 12 Tf 100 700 Td 14 TL 2 3 (Hi) \" ET",
-            "<< /Font << /F1 5 0 R >> >>",
-            new TextTestSupport.Obj(5, TextTestSupport.SimpleFontDict()));
-        var viaTwTcQuote = TextTestSupport.BuildPageDoc(
-            "BT /F1 12 Tf 100 700 Td 14 TL 2 Tw 3 Tc (Hi) ' ET",
-            "<< /Font << /F1 5 0 R >> >>",
-            new TextTestSupport.Obj(5, TextTestSupport.SimpleFontDict()));
+        var (viaDoubleQuoteRuns, _) = RunTextExtractionVisitor(
+            "BT /F1 12 Tf 100 700 Td 14 TL (Line1) Tj 2 3 (Line2) \" ET", TextTestSupport.SimpleFontDict());
+        var (viaTwTcQuoteRuns, _) = RunTextExtractionVisitor(
+            "BT /F1 12 Tf 100 700 Td 14 TL (Line1) Tj 2 Tw 3 Tc (Line2) ' ET", TextTestSupport.SimpleFontDict());
 
-        var doubleQuoteResult = PdfReader.Open(viaDoubleQuote).GetPage(0).ExtractText();
-        var twTcQuoteResult = PdfReader.Open(viaTwTcQuote).GetPage(0).ExtractText();
+        Assert.Equal(2, viaDoubleQuoteRuns.Count);
+        Assert.Equal("Line1", viaDoubleQuoteRuns[0].Text);
+        Assert.Equal("Line2", viaDoubleQuoteRuns[1].Text);
+        Assert.Equal(700.0, viaDoubleQuoteRuns[0].Baseline, 6);
+        Assert.Equal(686.0, viaDoubleQuoteRuns[1].Baseline, 6);
 
-        Assert.Equal("Hi", doubleQuoteResult.Text);
-        Assert.Equal(doubleQuoteResult.Text, twTcQuoteResult.Text);
+        Assert.Equal(
+            viaDoubleQuoteRuns.Select(r => (r.Text, r.Baseline)),
+            viaTwTcQuoteRuns.Select(r => (r.Text, r.Baseline)));
     }
 
     // ── Honesty tests ────────────────────────────────────────────────────────────────────────────
@@ -785,6 +888,40 @@ public sealed class TextExtractionEndToEndTests
     }
 
     /// <summary>
+    /// MEDIUM 3 (#417 round 4): the hand-rolled loop below only ever proved that a COPY of
+    /// production's per-page walk resets its budget — <c>ExtractTextFromPageCore</c>'s own
+    /// <c>budget.BeginPage()</c> call, the fourth budget-charge site the PR body once claimed all
+    /// four integration tests covered, was never exercised by it at all, and deleting that line
+    /// left the whole suite green. This drives the REAL loop instead, through the internal
+    /// <c>PdfDocumentReader.ExtractText(PdfTextExtractionOptions, DiagnosticSink, TextCallBudget)</c>
+    /// seam (MEDIUM 3's own fix: <c>ExtractText(PdfTextExtractionOptions)</c> now forwards to it),
+    /// with the same tight per-page glyph ceiling (3) as the test below: page 1 exhausts on its
+    /// five 'A's ("AAA" then stop), and if <c>BeginPage()</c> were removed from PRODUCTION's own
+    /// per-page walk, page 2 would refuse its very first glyph too and come back empty instead of
+    /// its own "BBB".
+    /// </summary>
+    [Fact]
+    public void ExtractText_realDocumentLevelLoop_resetsPerPageGlyphBudget_acrossRealPages()
+    {
+        var pdf = TextTestSupport.BuildMultiPageDoc(
+            ["BT /F1 12 Tf 100 700 Td (AAAAA) Tj ET", "BT /F1 12 Tf 100 700 Td (BBBBB) Tj ET"],
+            "<< /Font << /F1 100 0 R >> >>",
+            new TextTestSupport.Obj(100, TextTestSupport.SimpleFontDict()));
+        var reader = PdfReader.Open(pdf);
+        var scope = reader.CreateContentDiagnosticScope();
+        var budget = new TextCallBudget(
+            maxGlyphsPerPage: 3, maxCharactersPerPage: 1_000_000, maxRunsPerPage: 1_000_000,
+            maxCharactersPerCall: 1_000_000, scope);
+
+        var result = reader.ExtractText(new PdfTextExtractionOptions(), scope, budget);
+
+        // Pages join with PdfTextExtractionOptions.PageSeparator (default "\f"), not "\n": that
+        // joins RUNS within one page.
+        Assert.Equal("AAA\fBBB", result.Text);
+        Assert.Contains(result.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.TextExtractionLimitExceeded);
+    }
+
+    /// <summary>
     /// Mirrors <see cref="PdfDocumentReader.ExtractText(PdfTextExtractionOptions)"/>'s per-page
     /// loop exactly: one shared budget and diagnostics scope, <c>BeginPage()</c> then a fresh
     /// <c>ContentInterpreter</c>/<c>TextExtractionVisitor</c> pair for each of two REAL pages. A
@@ -792,7 +929,11 @@ public sealed class TextExtractionEndToEndTests
     /// <c>BeginPage()</c> were removed from that per-page walk, <see
     /// cref="TextCallBudget.IsPageExhausted"/> would stay <see langword="true"/> from page 1, and
     /// page 2 would refuse its very FIRST glyph too, producing an empty page 2 instead of its own
-    /// "AAA".
+    /// "AAA". Kept alongside <see
+    /// cref="ExtractText_realDocumentLevelLoop_resetsPerPageGlyphBudget_acrossRealPages"/> above,
+    /// which drives PRODUCTION's own loop instead of this one's hand-rolled copy (MEDIUM 3, #417
+    /// round 4) — this one still pins the same behaviour directly against
+    /// <c>ContentInterpreter</c>/<c>TextExtractionVisitor</c>, with no dependency on the seam above.
     /// </summary>
     [Fact]
     public void BeginPage_resetsPerPageBudget_acrossRealPages_inTheProductionLoopShape()
