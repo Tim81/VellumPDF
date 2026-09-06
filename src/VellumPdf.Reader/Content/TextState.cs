@@ -17,7 +17,18 @@ namespace VellumPdf.Reader.Content;
 /// </summary>
 internal sealed class TextState
 {
-    /// <summary>The text matrix, <c>Tm</c>: maps text space to the CTM's user space.</summary>
+    /// <summary>
+    /// The text matrix, <c>Tm</c>: maps text space to the CTM's user space. The setter is public
+    /// within this assembly (not read-only) for one caller besides this class's own <c>Td</c>/
+    /// <c>TD</c>/<c>Tm</c>/<c>'</c>/<c>"</c> handling: <see cref="TextExtractionVisitor"/> (#98)
+    /// writes the post-advance matrix back here after positioning a glyph (§9.4.4's own <c>tx</c>
+    /// applied via <c>Matrix.Translation(tx, 0).Concat(TextMatrix)</c>), since <c>Tj</c> and the
+    /// other text-showing operators never touch <see cref="TextMatrix"/> on this interpreter's own
+    /// side (see <c>ContentInterpreter</c>'s own remarks on <c>Tj</c>). This is the only correct
+    /// place for that write: <c>BT</c> and every text-positioning operator already reset or move
+    /// this property, and Form XObject invocation already saves and restores it, so a caller-side
+    /// shadow copy of the same value would be a second, driftable implementation of both.
+    /// </summary>
     internal Matrix TextMatrix { get; set; } = Matrix.Identity;
 
     /// <summary>The text line matrix: the text matrix at the start of the current line, what

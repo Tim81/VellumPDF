@@ -17,6 +17,8 @@ VellumPdf.Reader.PdfDocumentReader.Dispose() -> void
 VellumPdf.Reader.PdfDocumentReader.Encryption.get -> VellumPdf.Encryption.PdfEncryptionInfo?
 VellumPdf.Reader.PdfDocumentReader.ExtractImages() -> VellumPdf.Reader.PdfImageExtractionResult!
 VellumPdf.Reader.PdfDocumentReader.ExtractImages(VellumPdf.Reader.PdfImageExtractionOptions! options) -> VellumPdf.Reader.PdfImageExtractionResult!
+VellumPdf.Reader.PdfDocumentReader.ExtractText() -> VellumPdf.Reader.PdfTextExtractionResult!
+VellumPdf.Reader.PdfDocumentReader.ExtractText(VellumPdf.Reader.PdfTextExtractionOptions! options) -> VellumPdf.Reader.PdfTextExtractionResult!
 VellumPdf.Reader.PdfDocumentReader.GetPage(int index) -> VellumPdf.Reader.PdfReadPage!
 VellumPdf.Reader.PdfDocumentReader.PageCount.get -> int
 VellumPdf.Reader.PdfDocumentReader.Pages.get -> System.Collections.Generic.IReadOnlyList<VellumPdf.Reader.PdfReadPage!>!
@@ -94,6 +96,8 @@ VellumPdf.Reader.PdfReadPage.CropBox.get -> VellumPdf.Document.PdfRectangle!
 VellumPdf.Reader.PdfReadPage.Dictionary.get -> VellumPdf.Core.PdfDictionary!
 VellumPdf.Reader.PdfReadPage.ExtractImages() -> VellumPdf.Reader.PdfImageExtractionResult!
 VellumPdf.Reader.PdfReadPage.ExtractImages(VellumPdf.Reader.PdfImageExtractionOptions! options) -> VellumPdf.Reader.PdfImageExtractionResult!
+VellumPdf.Reader.PdfReadPage.ExtractText() -> VellumPdf.Reader.PdfTextExtractionResult!
+VellumPdf.Reader.PdfReadPage.ExtractText(VellumPdf.Reader.PdfTextExtractionOptions! options) -> VellumPdf.Reader.PdfTextExtractionResult!
 VellumPdf.Reader.PdfReadPage.Index.get -> int
 VellumPdf.Reader.PdfReadPage.MediaBox.get -> VellumPdf.Document.PdfRectangle!
 VellumPdf.Reader.PdfReadPage.ObjectNumber.get -> int?
@@ -124,6 +128,7 @@ VellumPdf.Reader.PdfReaderDiagnosticCode.FilterNull = 105 -> VellumPdf.Reader.Pd
 VellumPdf.Reader.PdfReaderDiagnosticCode.FilterValueMalformed = 107 -> VellumPdf.Reader.PdfReaderDiagnosticCode
 VellumPdf.Reader.PdfReaderDiagnosticCode.FontEncodingMalformed = 401 -> VellumPdf.Reader.PdfReaderDiagnosticCode
 VellumPdf.Reader.PdfReaderDiagnosticCode.FontNoUnicodeRoute = 403 -> VellumPdf.Reader.PdfReaderDiagnosticCode
+VellumPdf.Reader.PdfReaderDiagnosticCode.FontTypeUnsupported = 405 -> VellumPdf.Reader.PdfReaderDiagnosticCode
 VellumPdf.Reader.PdfReaderDiagnosticCode.FontUnreadable = 400 -> VellumPdf.Reader.PdfReaderDiagnosticCode
 VellumPdf.Reader.PdfReaderDiagnosticCode.FontWidthsMalformed = 402 -> VellumPdf.Reader.PdfReaderDiagnosticCode
 VellumPdf.Reader.PdfReaderDiagnosticCode.FormXObjectBudgetExceeded = 305 -> VellumPdf.Reader.PdfReaderDiagnosticCode
@@ -155,6 +160,8 @@ VellumPdf.Reader.PdfReaderDiagnosticCode.PageTreeMissing = 200 -> VellumPdf.Read
 VellumPdf.Reader.PdfReaderDiagnosticCode.PageTreeNodeLimitExceeded = 207 -> VellumPdf.Reader.PdfReaderDiagnosticCode
 VellumPdf.Reader.PdfReaderDiagnosticCode.PageTreeNodeMalformed = 206 -> VellumPdf.Reader.PdfReaderDiagnosticCode
 VellumPdf.Reader.PdfReaderDiagnosticCode.ResourceMissing = 306 -> VellumPdf.Reader.PdfReaderDiagnosticCode
+VellumPdf.Reader.PdfReaderDiagnosticCode.TextExtractionLimitExceeded = 600 -> VellumPdf.Reader.PdfReaderDiagnosticCode
+VellumPdf.Reader.PdfReaderDiagnosticCode.TextShownWithoutFont = 601 -> VellumPdf.Reader.PdfReaderDiagnosticCode
 VellumPdf.Reader.PdfReaderDiagnosticCode.UnknownFilter = 110 -> VellumPdf.Reader.PdfReaderDiagnosticCode
 VellumPdf.Reader.PdfReaderDiagnosticCode.UnknownOperator = 301 -> VellumPdf.Reader.PdfReaderDiagnosticCode
 VellumPdf.Reader.PdfReaderDiagnosticCode.UnmappedGlyphs = 404 -> VellumPdf.Reader.PdfReaderDiagnosticCode
@@ -187,6 +194,15 @@ VellumPdf.Reader.PdfSignature.ByteRange.get -> System.ReadOnlyMemory<long>
 VellumPdf.Reader.PdfSignature.Contents.get -> System.ReadOnlyMemory<byte>
 VellumPdf.Reader.PdfSignature.SigningTime.get -> string?
 VellumPdf.Reader.PdfSignature.SubFilter.get -> VellumPdf.Core.PdfName?
+VellumPdf.Reader.PdfTextExtractionOptions
+VellumPdf.Reader.PdfTextExtractionOptions.PageSeparator.get -> string!
+VellumPdf.Reader.PdfTextExtractionOptions.PageSeparator.init -> void
+VellumPdf.Reader.PdfTextExtractionOptions.Pages.get -> System.Range
+VellumPdf.Reader.PdfTextExtractionOptions.Pages.init -> void
+VellumPdf.Reader.PdfTextExtractionOptions.PdfTextExtractionOptions() -> void
+VellumPdf.Reader.PdfTextExtractionResult
+VellumPdf.Reader.PdfTextExtractionResult.Diagnostics.get -> System.Collections.Generic.IReadOnlyList<VellumPdf.Reader.PdfReaderDiagnostic!>!
+VellumPdf.Reader.PdfTextExtractionResult.Text.get -> string!
 VellumPdf.Reader.UnsupportedPdfFeatureException
 VellumPdf.Reader.UnsupportedPdfFeatureException.UnsupportedPdfFeatureException(string! message) -> void
 VellumPdf.Reader.UnsupportedPdfFeatureException.UnsupportedPdfFeatureException(string! message, System.Exception! inner) -> void

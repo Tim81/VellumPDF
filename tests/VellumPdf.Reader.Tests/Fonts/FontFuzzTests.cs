@@ -200,8 +200,8 @@ public sealed class FontFuzzTests
     {
         var distinctCodes = sink.Diagnostics.Select(d => d.Code).Distinct().ToList();
         Assert.True(
-            distinctCodes.Count <= 4,
-            $"expected at most 4 distinct codes, got {distinctCodes.Count}: {string.Join(", ", distinctCodes)}");
+            distinctCodes.Count <= 5,
+            $"expected at most 5 distinct codes, got {distinctCodes.Count}: {string.Join(", ", distinctCodes)}");
         foreach (var code in distinctCodes)
         {
             Assert.True(
@@ -209,7 +209,11 @@ public sealed class FontFuzzTests
                     or PdfReaderDiagnosticCode.FontEncodingMalformed
                     or PdfReaderDiagnosticCode.FontWidthsMalformed
                     or PdfReaderDiagnosticCode.FontNoUnicodeRoute
-                    or PdfReaderDiagnosticCode.UnmappedGlyphs,
+                    or PdfReaderDiagnosticCode.UnmappedGlyphs
+                    // #98: GetFontReader (not Create, which SubtypeGen's own comment above says
+                    // never gates on /Subtype) now reports this for the /Type0 and /Type3 samples
+                    // SubtypeGen deliberately generates.
+                    or PdfReaderDiagnosticCode.FontTypeUnsupported,
                 $"unexpected code {code}");
         }
     }

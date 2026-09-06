@@ -290,6 +290,38 @@ expanded to 8-bit RGB triples first, up to 24 times `Data`'s own length at 1 bit
 that expansion buffer and the interleaved buffer above are both live at once, the latter reaching
 32 times, so the peak is up to 56 times `Data`'s own length, plus whatever zlib itself costs.
 
+### Extracting text
+
+```csharp
+var result = reader.ExtractText(); // or reader.GetPage(0).ExtractText()
+Console.WriteLine(result.Text);
+```
+
+`ExtractText` (#98) walks a page's content and positions every glyph a simple font (Type1, MMType1,
+or TrueType) shows, per ISO 32000-2 §9.4.4's own text-space matrix arithmetic, and assembles the
+result in content order with a newline wherever the baseline changes.
+`PdfDocumentReader.ExtractText()` joins every page's own text with
+`PdfTextExtractionOptions.PageSeparator` (default `"\f"`, matching `pdftotext`);
+`PdfReadPage.ExtractText()` returns one page's text alone, and rejects a non-default
+`PdfTextExtractionOptions.Pages` outright rather than silently ignoring it, since a page-level call
+already names its one page.
+
+Only the page's own content is walked: unlike `ExtractImages()`, an annotation's appearance stream
+(§12.5.5) is never included. §12.5.5 treats an appearance as a rendering convenience layered on top
+of a page, not part of what the page itself draws, and text extraction draws that line where image
+extraction does not.
+
+Word spacing (`Tw`, §9.3.3) applies only to a single-byte character code 32, never to a byte value
+32 inside a multi-byte code; character spacing (`Tc`) and horizontal scaling (`Tz`) apply to every
+glyph. Text rendering mode is not filtered on: invisible text (`3 Tr`) is included, which is why a
+scanned page carrying an invisible OCR text layer over its own image still extracts. A character
+code with no route to Unicode contributes no character to the result, but its own advance is still
+applied, so later glyphs on the same line keep their correct position rather than drifting left.
+
+Not implemented yet: `/ToUnicode` and predefined CMaps, Type0 and Type3 fonts (reported as
+`FontTypeUnsupported`, code 405, rather than silently producing no text), `/ActualText`,
+`/ReversedChars`, and rotation-, word-, and paragraph-aware line grouping.
+
 ---
 
 ## 4. Writing a decrypted copy
@@ -385,7 +417,7 @@ a guard test keeps the two copies byte-identical.
 | Writing a decrypted copy (`SaveDecrypted`/`SaveDecryptedAsync`) | ✅ Supported | #186 |
 | Lexer/parser hardened against malformed input (property-based fuzzing, round-trip oracle) | ✅ Supported | #99 |
 | Diagnostics (`PdfDocumentReader.Diagnostics`) for conditions the reader recovers from instead of aborting on | ✅ Supported | ISO 32000-2 Annex I.2 (#385) |
-| Text extraction | ⏳ Planned | v2.4 (#98) |
+| Text extraction (`ExtractText`) | ⚠️ Partial — simple fonts (Type1, MMType1, TrueType) only, positioned per ISO 32000-2 §9.4.4, page content only (not annotation appearances); `/ToUnicode`, predefined CMaps, Type0/Type3 fonts, `/ActualText`, `/ReversedChars`, and rotation/word/paragraph-aware line grouping not yet implemented | ISO 32000-2 §9.4.4 (#98) |
 | Image extraction (`ExtractImages`; DCT, JPX, JBIG2 and CCITT payloads returned undecoded) | ✅ Supported | ISO 32000-2 §8.9, §7.4.7, §7.4.9 (#98) |
 | Graduating `VellumPdf.Reader` from Preview to Stable | ⏳ Planned | v2.4 (#187) |
 | Reading a document that uses an ISO/TS 32001–32004 extension (AES-GCM, PDF-MAC, SHA-3, EdDSA) | ⚠️ Partial — AES-GCM is rejected (`UnsupportedPdfFeatureException`); PDF-MAC is ignored and SHA-3/EdDSA signatures read as opaque, none verified | v2.6 (#236, #237, #238, #239) |

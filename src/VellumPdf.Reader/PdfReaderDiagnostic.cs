@@ -136,6 +136,7 @@ public sealed class PdfReaderDiagnostic
 /// <item><description><c>3xx</c> — content streams.</description></item>
 /// <item><description><c>4xx</c> — fonts and Unicode mapping.</description></item>
 /// <item><description><c>5xx</c> — images.</description></item>
+/// <item><description><c>6xx</c> — text extraction.</description></item>
 /// <item><description><c>9xx</c> — reserved for the channel's own bookkeeping (currently just
 /// <see cref="DiagnosticsSuppressed"/>).</description></item>
 /// </list>
@@ -623,6 +624,18 @@ public enum PdfReaderDiagnosticCode
     /// </summary>
     UnmappedGlyphs = 404,
 
+    /// <summary>
+    /// A <c>/Font</c> resource's <c>/Subtype</c> is <c>/Type0</c> or <c>/Type3</c>: this reader
+    /// decodes simple fonts only (Type1, MMType1, TrueType) as of #98, so text shown through a font
+    /// of either type produces no characters and no advance, distinct from <see
+    /// cref="FontUnreadable"/> (400), which means the font dictionary itself is broken rather than
+    /// merely of a type this reader cannot decode yet. Reported once per font, from
+    /// <c>PdfDocumentReader.GetFontReader</c> rather than the text-extraction visitor: only
+    /// <c>GetFontReader</c> can tell "unsupported type" apart from "already reported unreadable"
+    /// without asking the visitor to reimplement that distinction.
+    /// </summary>
+    FontTypeUnsupported = 405,
+
     // ── 5xx: images ─────────────────────────────────────────────────────────────────────────────
 
     /// <summary> An image dictionary's own required entries (ISO 32000-2 Table 87) were missing or
@@ -753,6 +766,26 @@ public enum PdfReaderDiagnosticCode
     /// </summary>
     ImageOccurrenceLimitExceeded = 511,
 
+    // ── 6xx: text extraction ────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// One <c>ExtractText</c> call reached one of <c>TextCallBudget</c>'s own ceilings: glyphs per
+    /// page, characters per page, runs per page, or the call-wide character total. <see
+    /// cref="PdfReaderDiagnostic.Message"/> names which. Reported once per call through
+    /// <c>DiagnosticSink.ReportRetained</c>, since a condition that truncates the extracted text
+    /// must stay visible even once the ordinary diagnostics cap is already full; the rest of the
+    /// page that tripped it is skipped and the walk continues to the next page.
+    /// </summary>
+    TextExtractionLimitExceeded = 600,
+
+    /// <summary>
+    /// A text-showing operator (<c>Tj</c>, <c>TJ</c>, <c>'</c>, or <c>"</c>) ran before any <c>Tf</c>
+    /// had set a font. §9.3.1 gives font and size no initial value: they "shall be specified
+    /// explicitly using Tf before any text is shown." No characters or advance come from a show
+    /// operator this applies to. Reported once per page.
+    /// </summary>
+    TextShownWithoutFont = 601,
+
     // ── 9xx: reserved ───────────────────────────────────────────────────────────────────────────
 
     /// <summary>
@@ -827,6 +860,7 @@ internal static class PdfReaderDiagnosticSeverities
         PdfReaderDiagnosticCode.FontWidthsMalformed => PdfReaderDiagnosticSeverity.Warning,
         PdfReaderDiagnosticCode.FontNoUnicodeRoute => PdfReaderDiagnosticSeverity.Info,
         PdfReaderDiagnosticCode.UnmappedGlyphs => PdfReaderDiagnosticSeverity.Info,
+        PdfReaderDiagnosticCode.FontTypeUnsupported => PdfReaderDiagnosticSeverity.Warning,
 
         PdfReaderDiagnosticCode.ImageDictionaryInvalid => PdfReaderDiagnosticSeverity.Warning,
         PdfReaderDiagnosticCode.ImageColorSpaceUnsupported => PdfReaderDiagnosticSeverity.Warning,
@@ -840,6 +874,8 @@ internal static class PdfReaderDiagnosticSeverities
         PdfReaderDiagnosticCode.AnnotationAppearanceUnusable => PdfReaderDiagnosticSeverity.Warning,
         PdfReaderDiagnosticCode.ImageExtractionBudgetExhausted => PdfReaderDiagnosticSeverity.Warning,
         PdfReaderDiagnosticCode.ImageOccurrenceLimitExceeded => PdfReaderDiagnosticSeverity.Warning,
+        PdfReaderDiagnosticCode.TextExtractionLimitExceeded => PdfReaderDiagnosticSeverity.Warning,
+        PdfReaderDiagnosticCode.TextShownWithoutFont => PdfReaderDiagnosticSeverity.Warning,
         PdfReaderDiagnosticCode.DiagnosticsSuppressed => PdfReaderDiagnosticSeverity.Warning,
         _ => throw new UnreachableException($"No severity is mapped for {code}."),
     };

@@ -985,18 +985,26 @@ public sealed class SimpleFontReaderTests
     // ── 13: GetFontReader ────────────────────────────────────────────────────────────────────────
 
     [Fact]
-    public void GetFontReader_type0AndType3_returnNull_noDiagnostic()
+    public void GetFontReader_type0AndType3_returnNull_report405NotFontUnreadable()
     {
+        // #98: text extraction makes "this reader cannot decode this font type yet" user-visible,
+        // so this reports FontTypeUnsupported (405) rather than staying silent the way an earlier
+        // version of GetFontReader did back when only tests called it.
         using var doc = FontTestSupport.OpenMinimal();
         var sink = new DiagnosticSink(50);
 
         var type0 = new PdfDictionary().Set(PdfName.Subtype, "Type0");
         Assert.Null(doc.GetFontReader(type0, sink, null));
 
+        var d = Assert.Single(sink.Diagnostics);
+        Assert.Equal(PdfReaderDiagnosticCode.FontTypeUnsupported, d.Code);
+
         var type3 = new PdfDictionary().Set(PdfName.Subtype, "Type3");
         Assert.Null(doc.GetFontReader(type3, sink, null));
 
-        Assert.Empty(sink.Diagnostics);
+        // Both calls carry no object number, so the sink's own (code, object, page) dedupe key
+        // collapses them to the one entry above rather than adding a second.
+        Assert.Single(sink.Diagnostics);
     }
 
     [Fact]

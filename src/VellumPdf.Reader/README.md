@@ -72,7 +72,7 @@ for the narrative walkthrough this table summarizes.
 | Writing a decrypted copy (`SaveDecrypted`/`SaveDecryptedAsync`) | ✅ Supported | #186 |
 | Lexer/parser hardened against malformed input (property-based fuzzing, round-trip oracle) | ✅ Supported | #99 |
 | Diagnostics (`PdfDocumentReader.Diagnostics`) for conditions the reader recovers from instead of aborting on | ✅ Supported | ISO 32000-2 Annex I.2 (#385) |
-| Text extraction | ⏳ Planned | v2.4 (#98) |
+| Text extraction (`ExtractText`) | ⚠️ Partial — simple fonts (Type1, MMType1, TrueType) only, positioned per ISO 32000-2 §9.4.4, page content only (not annotation appearances); `/ToUnicode`, predefined CMaps, Type0/Type3 fonts, `/ActualText`, `/ReversedChars`, and rotation/word/paragraph-aware line grouping not yet implemented | ISO 32000-2 §9.4.4 (#98) |
 | Image extraction (`ExtractImages`; DCT, JPX, JBIG2 and CCITT payloads returned undecoded) | ✅ Supported | ISO 32000-2 §8.9, §7.4.7, §7.4.9 (#98) |
 | Graduating `VellumPdf.Reader` from Preview to Stable | ⏳ Planned | v2.4 (#187) |
 | Reading a document that uses an ISO/TS 32001–32004 extension (AES-GCM, PDF-MAC, SHA-3, EdDSA) | ⚠️ Partial — AES-GCM is rejected (`UnsupportedPdfFeatureException`); PDF-MAC is ignored and SHA-3/EdDSA signatures read as opaque, none verified | v2.6 (#236, #237, #238, #239) |

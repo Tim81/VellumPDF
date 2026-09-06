@@ -111,6 +111,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   both map to the same 8- or 16-bit depth PNG's alpha-carrying colour types require. Nothing is
   colour-converted or re-encoded, and `/Decode` is exposed but never applied. Twelve diagnostic
   codes, 500 to 511, report what could not be extracted and why.
+- **Text extraction from simple fonts (#98).** `PdfDocumentReader.ExtractText()` and
+  `PdfReadPage.ExtractText()` return the text a page's own content draws — Type1, MMType1, and
+  TrueType fonts only, through the simple-font decoding added above; Type0, Type3, `/ToUnicode`,
+  `/ActualText`, and rotation- or gap-aware line grouping are not implemented yet — positioned by
+  ISO 32000-2 §9.4.4's text-space matrix arithmetic (`Trm`, and the per-glyph and `TJ` advances) and
+  joined into lines wherever the baseline changes. Word spacing applies only to a single-byte code
+  32 per §9.3.3; a code with no Unicode route still advances the text matrix so later glyphs keep
+  their position, contributing no character. Annotation appearance streams are excluded, unlike
+  `ExtractImages()`: §12.5.5 makes an appearance a rendering convenience layered on the page, and
+  extraction draws that line for text where it does not for images. Three new diagnostic codes:
+  `FontTypeUnsupported` (405, a font this reader cannot decode yet), and, in a new `6xx` text-
+  extraction block, `TextExtractionLimitExceeded` (600) and `TextShownWithoutFont` (601, a show
+  operator before any `Tf`).
 
 ### Changed
 

@@ -187,16 +187,27 @@ internal sealed class ContentInterpreter
     internal TextState TextState => _textState;
 
     /// <summary>
-    /// The <c>/Resources</c> dictionary in effect for the callback currently running (the page's
-    /// own, or the invoking Form XObject's after the §8.10.2 fallback), or <see langword="null"/>
-    /// when none applies. Set immediately before <see cref="IContentVisitor.OnInlineImage"/> and
-    /// <see cref="IContentVisitor.OnImageXObject"/> and cleared immediately after, so a value read
-    /// outside either callback is <see langword="null"/> rather than a stale one (#98). Exists so a
-    /// visitor can resolve an inline image's or an image XObject's named colour space (§8.6.3,
-    /// §8.9.7) against the resources this interpreter already has in hand, without this interpreter
-    /// substituting a resolved colour-space object into a dictionary it hands the visitor: §7.8.2
-    /// forbids a stream operand in content, and §8.6.3 forbids an inline colour-space array, so
-    /// neither shape belongs in what <see cref="IContentVisitor.OnInlineImage"/> receives.
+    /// The <c>/Resources</c> dictionary in effect for the content stream currently being
+    /// interpreted (the page's own, or a Form XObject's own after the §8.10.2 fallback), or
+    /// <see langword="null"/> when none applies. Current for the ENTIRE walk of that stream, not
+    /// only around <see cref="IContentVisitor.OnInlineImage"/>/<see
+    /// cref="IContentVisitor.OnImageXObject"/> (#98 originally scoped it that narrowly, since image
+    /// extraction was this type's only caller; text extraction (#98) needs it during
+    /// <see cref="IContentVisitor.OnOperator"/> too, to resolve <c>Tf</c>'s bare <c>/Resources
+    /// /Font</c> name against the resources in effect at the time). Tracks
+    /// <see cref="InterpretStream"/>'s own recursion: the invoker's value is saved on entry and
+    /// restored once that call returns, so a Form XObject's own content sees its own resources
+    /// during its own operators (and, per §8.10.2, the invoker's own value is what a Form XObject
+    /// with no <c>/Resources</c> of its own inherits) while the invoker's operators, before and
+    /// after that recursion, keep seeing the invoker's own. <see langword="null"/> again once
+    /// <see cref="Run"/> or <see cref="RunFormXObject"/> returns. Exists so a visitor can resolve a
+    /// named resource (a font, an inline image's or image XObject's colour space, §8.6.3/§8.9.7)
+    /// against the resources this interpreter already has in hand, without this interpreter
+    /// substituting a resolved object into a dictionary it hands the visitor: §7.8.2 forbids a
+    /// stream operand in content, and §8.6.3 forbids an inline colour-space array, so neither shape
+    /// belongs in what <see cref="IContentVisitor.OnInlineImage"/> receives, and the same
+    /// reservation extends to a font: <see cref="GraphicsState.Font"/> stays the bare operand Tf
+    /// received, not a resolved font reader, for the same reason.
     /// </summary>
     internal PdfDictionary? CurrentResources { get; private set; }
 
@@ -567,7 +578,9 @@ internal sealed class ContentInterpreter
         DiagnosticSink diagnostics)
     {
         var outerBuffer = _currentBuffer;
+        var outerResources = CurrentResources;
         _currentBuffer = data;
+        CurrentResources = ctx.Resources;
         try
         {
             var lexer = new PdfLexer(data, contentStreamMode: true);
@@ -707,6 +720,7 @@ internal sealed class ContentInterpreter
         finally
         {
             _currentBuffer = outerBuffer;
+            CurrentResources = outerResources;
         }
     }
 
@@ -1475,20 +1489,10 @@ internal sealed class ContentInterpreter
         if (subtype.Equals(XObjectSubtypeImage))
         {
             // No OnFormBegin/OnFormEnd pair (an image XObject has no content to recurse into) and
-            // no resource lookup beyond ctx.Resources itself: CurrentResources hands the visitor
-            // exactly what this interpreter already resolved for the invoking stream, the same
-            // value OnInlineImage exposes it through (CurrentResources' own doc explains why this
-            // interpreter does not substitute a resolved colour space into the dictionary or
-            // stream instead).
-            CurrentResources = ctx.Resources;
-            try
-            {
-                visitor.OnImageXObject(stream, offset);
-            }
-            finally
-            {
-                CurrentResources = null;
-            }
+            // no resource lookup beyond ctx.Resources itself: CurrentResources already holds it,
+            // current for this whole InterpretStream call (see that property's own doc), so nothing
+            // further needs to be set here.
+            visitor.OnImageXObject(stream, offset);
             return;
         }
 
@@ -2252,20 +2256,10 @@ internal sealed class ContentInterpreter
             return true;
         }
 
-        // CurrentResources hands the visitor the resources this callback already resolved for the
-        // current stream, so a named /CS can be resolved against them without this interpreter
-        // substituting a resolved colour-space object into dict itself (see CurrentResources' own
-        // doc for why that would be wrong for both an inline image and a content stream in
-        // general).
-        CurrentResources = ctx.Resources;
-        try
-        {
-            visitor.OnInlineImage(dict, data, biOffset);
-        }
-        finally
-        {
-            CurrentResources = null;
-        }
+        // CurrentResources already holds ctx.Resources for this whole InterpretStream call (see
+        // that property's own doc), so a named /CS can be resolved against it without this
+        // interpreter substituting a resolved colour-space object into dict itself.
+        visitor.OnInlineImage(dict, data, biOffset);
         return true;
     }
 

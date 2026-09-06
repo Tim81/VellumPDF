@@ -3718,12 +3718,14 @@ public sealed class ContentInterpreterTests
 
     /// <summary>
     /// <see cref="ContentInterpreter.CurrentResources"/> is the page's own <c>/Resources</c> for an
-    /// image XObject drawn at page level, is <see langword="null"/> during every ordinary operator
-    /// callback (it is set only immediately around <c>OnInlineImage</c>/<c>OnImageXObject</c>), and
-    /// is <see langword="null"/> again once <see cref="ContentInterpreter.Run"/> returns.
+    /// image XObject drawn at page level, is that SAME dictionary during every ordinary operator
+    /// callback too (#98 widened it from the narrower "only around
+    /// <c>OnInlineImage</c>/<c>OnImageXObject</c>" scope image extraction alone needed, since text
+    /// extraction's own <c>Tf</c> handling needs it during <c>OnOperator</c>), and is
+    /// <see langword="null"/> again once <see cref="ContentInterpreter.Run"/> returns.
     /// </summary>
     [Fact]
-    public void CurrentResources_isPageResources_forAnImageXObjectAtPageLevel_nullElsewhere()
+    public void CurrentResources_isPageResources_forAnImageXObjectAtPageLevel_andEveryOperator()
     {
         var pdf = BuildPageDoc(
             "0 0 1 1 re\n/Im0 Do",
@@ -3739,7 +3741,7 @@ public sealed class ContentInterpreterTests
         var resources = Assert.Single(visitor.ImageXObjectResources);
         Assert.NotNull(resources);
         Assert.True(resources!.Get(PdfName.ColorSpace) is not null);
-        Assert.False(visitor.SawNonNullResourcesDuringAnOperator);
+        Assert.True(visitor.SawNonNullResourcesDuringAnOperator);
         Assert.Null(interpreter.CurrentResources);
     }
 
@@ -3770,6 +3772,121 @@ public sealed class ContentInterpreterTests
         Assert.NotNull(resources);
         var marker = Assert.IsType<PdfName>(resources!.Get(new PdfName("Marker")));
         Assert.Equal("FormMarker", marker.Value);
+    }
+
+    private static readonly PdfName MarkerKey = new("Marker");
+
+    private static string? MarkerOf(PdfDictionary? d) => (d?.Get(MarkerKey) as PdfName)?.Value;
+
+    private sealed class PerOperatorResourceVisitor(ContentInterpreter interpreter) : IContentVisitor
+    {
+        public List<(string Op, PdfDictionary? Resources)> Operators { get; } = [];
+        public List<PdfDictionary?> ResourcesDuringFormBegin { get; } = [];
+
+        public void OnOperator(string operatorName, IReadOnlyList<PdfObject> operands, int offset) =>
+            Operators.Add((operatorName, interpreter.CurrentResources));
+
+        public void OnInlineImage(PdfDictionary dictionary, ReadOnlyMemory<byte> data, int offset) { }
+
+        public void OnFormBegin(
+            PdfDictionary formDictionary, Matrix formMatrix, PdfRectangle? boundingBox, int objectNumber,
+            int offset) =>
+            ResourcesDuringFormBegin.Add(interpreter.CurrentResources);
+
+        public void OnFormEnd(int objectNumber) { }
+
+        public void OnImageXObject(ParsedStream stream, int offset) { }
+    }
+
+    /// <summary>
+    /// The four resource-scoping guarantees #98 widened <see cref="ContentInterpreter.CurrentResources"/>
+    /// to provide, captured during ORDINARY operators (not only <c>OnImageXObject</c>/<c>OnInlineImage</c>,
+    /// which the two tests just above already cover): it is the form's own inside a Form XObject's
+    /// content and the page's again once that content finishes interpreting.
+    /// </summary>
+    [Fact]
+    public void CurrentResources_isFormsOwnDuringItsOperators_andThePagesAgainAfterwards()
+    {
+        var pdf = BuildPageDoc(
+            "0 0 1 1 re\n/Fm0 Do\n0 0 2 2 re",
+            "<< /XObject << /Fm0 10 0 R >> /Marker /PageMarker >>",
+            new Obj(10,
+                "<< /Type /XObject /Subtype /Form /BBox [0 0 1 1] "
+                + "/Resources << /Marker /FormMarker >> >>",
+                Encoding.ASCII.GetBytes("0 0 3 3 re")));
+
+        var reader = PdfReader.Open(pdf);
+        var page = reader.GetPage(0);
+        var interpreter = new ContentInterpreter(reader);
+        var visitor = new PerOperatorResourceVisitor(interpreter);
+        interpreter.Run(page, visitor);
+
+        var reOps = visitor.Operators.Where(o => o.Op == "re").ToList();
+        Assert.Equal(3, reOps.Count);
+        Assert.Equal("PageMarker", MarkerOf(reOps[0].Resources));
+        Assert.Equal("FormMarker", MarkerOf(reOps[1].Resources));
+        Assert.Equal("PageMarker", MarkerOf(reOps[2].Resources));
+        Assert.Same(reOps[0].Resources, reOps[2].Resources);
+    }
+
+    /// <summary>
+    /// <see cref="ContentInterpreter.CurrentResources"/> is still the INVOKER's own resources
+    /// during <see cref="IContentVisitor.OnFormBegin"/>, mirroring how <see
+    /// cref="ContentInterpreter.GraphicsState"/>.<c>Ctm</c> behaves there (see that callback's own
+    /// doc): the interpreter switches to the form's own resources only once it starts interpreting
+    /// the form's own content, which happens after this callback returns.
+    /// </summary>
+    [Fact]
+    public void CurrentResources_isInvokersOwn_duringOnFormBegin()
+    {
+        var pdf = BuildPageDoc(
+            "/Fm0 Do",
+            "<< /XObject << /Fm0 10 0 R >> /Marker /PageMarker >>",
+            new Obj(10,
+                "<< /Type /XObject /Subtype /Form /BBox [0 0 1 1] "
+                + "/Resources << /Marker /FormMarker >> >>",
+                []));
+
+        var reader = PdfReader.Open(pdf);
+        var page = reader.GetPage(0);
+        var interpreter = new ContentInterpreter(reader);
+        var visitor = new PerOperatorResourceVisitor(interpreter);
+        interpreter.Run(page, visitor);
+
+        var resources = Assert.Single(visitor.ResourcesDuringFormBegin);
+        Assert.Equal("PageMarker", MarkerOf(resources));
+    }
+
+    /// <summary>
+    /// <see cref="ContentInterpreter.CurrentResources"/> is the appearance stream's OWN resources
+    /// during <see cref="ContentInterpreter.RunFormXObject"/>'s own operators, not the page's, and
+    /// is <see langword="null"/> again once that call returns — the same contract <see
+    /// cref="ContentInterpreter.Run"/> itself provides, extended to this second entry point.
+    /// </summary>
+    [Fact]
+    public void CurrentResources_isAppearanceStreamsOwn_underRunFormXObject_nullAfter()
+    {
+        var pdf = BuildPageDoc(
+            "0 0 1 1 re",
+            "<< /Marker /PageMarker >>",
+            new Obj(10,
+                "<< /Type /XObject /Subtype /Form /BBox [0 0 1 1] "
+                + "/Resources << /Marker /AppearanceMarker >> >>",
+                Encoding.ASCII.GetBytes("0 0 2 2 re")));
+
+        var reader = PdfReader.Open(pdf);
+        var page = reader.GetPage(0);
+        var interpreter = new ContentInterpreter(reader);
+        var visitor = new PerOperatorResourceVisitor(interpreter);
+        interpreter.Run(page, visitor);
+        visitor.Operators.Clear(); // Isolate what RunFormXObject itself produces below.
+
+        var formStream = reader.ResolveStream(10)!;
+        interpreter.RunFormXObject(page, formStream, visitor);
+
+        var re = Assert.Single(visitor.Operators, o => o.Op == "re");
+        Assert.Equal("AppearanceMarker", MarkerOf(re.Resources));
+        Assert.Null(interpreter.CurrentResources);
     }
 
     /// <summary> Proof that exposing <c>CurrentResources</c> rather than substituting a resolved

@@ -51,6 +51,7 @@ public sealed class PdfReaderDiagnosticCodeTests
         [PdfReaderDiagnosticCode.FontWidthsMalformed] = 4,
         [PdfReaderDiagnosticCode.FontNoUnicodeRoute] = 4,
         [PdfReaderDiagnosticCode.UnmappedGlyphs] = 4,
+        [PdfReaderDiagnosticCode.FontTypeUnsupported] = 4,
 
         [PdfReaderDiagnosticCode.ImageDictionaryInvalid] = 5,
         [PdfReaderDiagnosticCode.ImageColorSpaceUnsupported] = 5,
@@ -64,6 +65,8 @@ public sealed class PdfReaderDiagnosticCodeTests
         [PdfReaderDiagnosticCode.AnnotationAppearanceUnusable] = 5,
         [PdfReaderDiagnosticCode.ImageExtractionBudgetExhausted] = 5,
         [PdfReaderDiagnosticCode.ImageOccurrenceLimitExceeded] = 5,
+        [PdfReaderDiagnosticCode.TextExtractionLimitExceeded] = 6,
+        [PdfReaderDiagnosticCode.TextShownWithoutFont] = 6,
         [PdfReaderDiagnosticCode.DiagnosticsSuppressed] = 9,
     };
 
@@ -177,6 +180,7 @@ public sealed class PdfReaderDiagnosticCodeTests
         [PdfReaderDiagnosticCode.FontWidthsMalformed] = (402, PdfReaderDiagnosticSeverity.Warning),
         [PdfReaderDiagnosticCode.FontNoUnicodeRoute] = (403, PdfReaderDiagnosticSeverity.Info),
         [PdfReaderDiagnosticCode.UnmappedGlyphs] = (404, PdfReaderDiagnosticSeverity.Info),
+        [PdfReaderDiagnosticCode.FontTypeUnsupported] = (405, PdfReaderDiagnosticSeverity.Warning),
 
         [PdfReaderDiagnosticCode.ImageDictionaryInvalid] = (500, PdfReaderDiagnosticSeverity.Warning),
         [PdfReaderDiagnosticCode.ImageColorSpaceUnsupported] = (501, PdfReaderDiagnosticSeverity.Warning),
@@ -190,6 +194,8 @@ public sealed class PdfReaderDiagnosticCodeTests
         [PdfReaderDiagnosticCode.AnnotationAppearanceUnusable] = (509, PdfReaderDiagnosticSeverity.Warning),
         [PdfReaderDiagnosticCode.ImageExtractionBudgetExhausted] = (510, PdfReaderDiagnosticSeverity.Warning),
         [PdfReaderDiagnosticCode.ImageOccurrenceLimitExceeded] = (511, PdfReaderDiagnosticSeverity.Warning),
+        [PdfReaderDiagnosticCode.TextExtractionLimitExceeded] = (600, PdfReaderDiagnosticSeverity.Warning),
+        [PdfReaderDiagnosticCode.TextShownWithoutFont] = (601, PdfReaderDiagnosticSeverity.Warning),
         [PdfReaderDiagnosticCode.DiagnosticsSuppressed] = (900, PdfReaderDiagnosticSeverity.Warning),
     };
 
