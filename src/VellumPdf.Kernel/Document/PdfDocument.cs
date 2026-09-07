@@ -1325,7 +1325,7 @@ public sealed class PdfDocument : IDisposable
     /// <strong>PDF/A output requirements (all must be satisfied by the caller):</strong>
     /// <list type="bullet">
     ///   <item>Use <see cref="UseTrueTypeFont"/> for all fonts — Standard-14 unembedded fonts fail
-    ///         the PDF/A font-embedding rule (ISO 19005-2 §6.3.3).</item>
+    ///         the PDF/A font-embedding rule (ISO 19005-2 §6.2.11.4.1).</item>
     ///   <item>Do not use <see cref="Encrypt"/> — PDF/A prohibits encryption (ISO 19005-2 §6.3.1).</item>
     ///   <item>Set <see cref="Tagged"/> = true (or use <see cref="PdfConformance.PdfA2a"/>) for
     ///         conformance level A.</item>
