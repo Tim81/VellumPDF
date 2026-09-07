@@ -350,7 +350,8 @@ def rule_class_provenance():
     The 50/101/53 this replaced were still correct when they were checked, which is the point:
     nothing re-derived them, so nothing would have said otherwise. The same family of hand-typed
     figures was wrong the day it was written: "69 rule files" landed in the commit immediately
-    before this one and both undercounted and named the wrong population. It is 71 rule classes. A rule class is a .cs file under Rules/ containing
+    before this one, and it both undercounted and named the wrong population; it is 71 rule
+    classes. A rule class is a .cs file under Rules/ containing
     ": IConformanceRule"; Rules/ also holds helper files that are not rule classes, and counting
     those instead gives a larger denominator, which is how the acquisition ledger came to report
     105 of a population of 101.
@@ -416,7 +417,7 @@ def render():
     w("> cross-check: with no text to consult, a disagreement has nothing to decide it. ISO 14289-1")
     w("> was in the same position until it was acquired on 2026-09-07; the")
     w(f"> {rule_14289_1} rule classes citing it are now checkable against the text but have not yet")
-    w(f"> been re-derived. The word \"clean-room\" appears in the XML-doc of {clean_room} of the")
+    w(f"> been re-derived. The word \"clean-room\" appears somewhere in {clean_room} of the")
     w(f"> {rule_total} rule classes, and {clean_room_verapdf} of those also name veraPDF somewhere in")
     w("> the file. Neither is the same as having checked the rule against a clause, which is what")
     w("> #418 tracks for ISO 19005-2 and #428 for ISO 14289-1.")

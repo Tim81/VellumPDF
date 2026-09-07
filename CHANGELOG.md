@@ -281,7 +281,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   50, 101 and 53 as literals that nothing checked. They were still correct when audited, which is
   the point: nothing re-derived them, so nothing would have reported otherwise. The same family of
   typed figures was wrong the day it was written: "69 rule files" landed in the commit immediately
-  before this branch and both undercounted and named the wrong population. It is 71 rule classes. `rule_class_provenance()` now scans the rule classes at
+  before this branch and both undercounted and named the wrong population. It is 71 rule
+  classes. `rule_class_provenance()` now scans the rule classes at
   generation time instead, and the first version of it repeated the mistake in miniature by matching
   "Clean-room" case-sensitively and missing the one rule class that writes it in lower case.
   The acquisition ledger still said "Neither standard has ever been held", and its own 53/56/105
