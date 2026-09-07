@@ -37,13 +37,18 @@ case "$PREFIX" in
   /*) ;;
   *) echo "prefix must be an absolute path, got '$PREFIX'" >&2; exit 1 ;;
 esac
-SRC="$PREFIX/src"
-mkdir -p "$SRC"
 
-for tool in make cc curl tar sha256sum sha512sum nproc; do
+for tool in make cc curl; do
   command -v "$tool" >/dev/null || { echo "$tool not found; install build-essential and curl" >&2; exit 1; }
 done
+for tool in tar sha256sum sha512sum; do
+  command -v "$tool" >/dev/null || { echo "$tool not found; install it from your distribution's base tools" >&2; exit 1; }
+done
+# nproc is not required: a missing one falls back to a single job below rather than aborting.
 JOBS="$(nproc 2>/dev/null || echo 1)"
+
+SRC="$PREFIX/src"
+mkdir -p "$SRC"
 
 echo "=== Ghostscript $GS_VER"
 cd "$SRC"

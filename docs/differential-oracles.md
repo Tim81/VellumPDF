@@ -3,7 +3,9 @@
 `VellumPdf.Conformance` is the authoritative normative implementation. Everything on this page is
 an *oracle*: an external program whose output is evidence about a document, never a verdict on it.
 Where an oracle and this library disagree, the ISO text decides, and the disagreement is recorded
-rather than resolved by changing a rule to match a tool.
+rather than resolved by changing a rule to match a tool. That is the target, not the current state:
+PDF/A-2 is the standing exception, since ISO 19005-2 is not held and veraPDF's profiles are both the
+source those rules were authored from and the arbiter CI fails the build on (#418).
 
 This page records what two new oracles actually do, measured rather than read. It exists because
 both of them mislead you if you assume the obvious things — that a clean exit means a clean file,
@@ -22,8 +24,11 @@ Windows zip only for the `x.y.0` release: 1.28.1, 1.28.2 and 1.28.3 all 404, whi
 live), but it holds for 1.28. One version number then covers Linux and Windows, which is what keeps
 a developer's run comparable to CI's.
 
-Checksums verified at build time: Ghostscript against the `SHA512SUMS` published beside the release
-asset, MuPDF's source tarball at
+Checksums are committed literals, not values fetched at run time: fetching a sums file from the
+same host as the tarball it describes only catches a truncated download, not a replaced one.
+Ghostscript's pinned SHA-512 is
+`480aef1284dbe4d059dd0f9cc60dd5772d5093239df68b838f7f4f7d2efd77de8f03a7baeffbdbe65126a660c1c169137dd7d8cc28dd3bab59cd286a24ca1491`;
+MuPDF's pinned SHA-256 is
 `21c7f064903154f1c3a7458bee81f130fc36f9b5147ea13328f9980e02d2dea2`.
 
 The executable is `gs` on Linux and `gswin64c.exe` on Windows, unlike every other oracle here, so
