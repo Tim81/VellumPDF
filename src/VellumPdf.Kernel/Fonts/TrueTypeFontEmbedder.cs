@@ -221,6 +221,11 @@ public sealed class TrueTypeFontEmbedder
 
     // ── Private helpers ─────────────────────────────────────────────────────
 
+    // Registry/Ordering/Supplement is the character-collection identifier Adobe TN5014 §4.2
+    // ("CIDFont Resource Keys") makes required for CIDSystemInfo, per §3.2's "Registry,
+    // Ordering, and Supplement entries are required in every CIDFont." This embedder never draws
+    // CIDs from a registered collection — every subset assigns its own CIDs 1:1 with GIDs — so
+    // "Identity" names that fact rather than any collection TN5014 actually lists.
     private Core.PdfDictionary BuildCidSystemInfo() => new Core.PdfDictionary()
         .Set(new Core.PdfName("Registry"), new Core.PdfLiteralString(Encoding.ASCII.GetBytes("Adobe")))
         .Set(new Core.PdfName("Ordering"), new Core.PdfLiteralString(Encoding.ASCII.GetBytes("Identity")))
@@ -526,7 +531,9 @@ public sealed class TrueTypeFontEmbedder
             .OrderBy(p => p.gid)
             .ToList();
 
-        // Write in chunks of 100
+        // Write in chunks of 100: Adobe TN5014 §7.4 caps beginbfchar/endbfchar at "a maximum of
+        // 100 lines in each ~bfchar set" — a limit ISO 32000-2 §9.10.3 carries over unchanged by
+        // pointing ToUnicode CMap syntax at this same technical note.
         const int chunk = 100;
         for (var start = 0; start < pairs.Count; start += chunk)
         {

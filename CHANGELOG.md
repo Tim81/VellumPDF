@@ -315,6 +315,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   the package README did, and is corrected with it. Two of the files this entry describes are
   excluded from the repository and so are not visible in the diff.
 
+- **Cited FIPS 197, FIPS 180-4, FIPS 186-5 and Adobe TN5014 in code that predates having a copy of
+  any of them.** The R6 key-derivation hash in `StandardSecurityHandler` now points at
+  FIPS 197 §5 for the fixed 128-bit AES block size that lets a 16-byte IV cover both the AES-128
+  step inside the hash and the AES-256 encryption around it, and at FIPS 180-4 §1 for the three
+  digest sizes its SHA-256/384/512 branch chooses between. `EcdsaSignatureConverter` points at
+  FIPS 186-5 §6.4.1 for the pair-of-integers signature shape it converts between P1363 and DER.
+  `CffFont` and `TrueTypeFontEmbedder` point at Adobe TN5014 §4.2 for what a CFF's ROS operator and
+  a CIDFont's `/CIDSystemInfo` actually identify, and TN5014 §7.4 for the 100-line cap the
+  ToUnicode CMap writer already chunked to without saying why. Left uncited: AES itself, which
+  this library never reimplements — every use goes through the BCL's `Aes` class. Also left
+  uncited: the SHA-2 compression function inside `Sha2DigestAlgorithm`, which delegates to the BCL
+  too and says so directly instead of manufacturing a clause number for code that does not live
+  here.
+
 ## [2.3.0] - 2026-09-01
 
 ### Breaking changes

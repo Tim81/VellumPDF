@@ -599,7 +599,14 @@ internal sealed class CffFont
                     var b1 = dict[i];
                     switch (b1)
                     {
-                        case 30: // ROS — marks CID-keyed
+                        case 30:
+                            // ROS — marks CID-keyed. Its three operands are SIDs/number for the
+                            // Registry, Ordering and Supplement that together name a character
+                            // collection, per Adobe TN5014 §4.2 ("CIDFont Resource Keys" —
+                            // CIDSystemInfo's Registry/Ordering/Supplement triple, each marked
+                            // required) and §3.2's "Registry, Ordering, and Supplement entries
+                            // are required in every CIDFont." Only presence is checked here; the
+                            // operands themselves are never read.
                             isCidKeyed = true;
                             break;
                         case 36: // FDArray
