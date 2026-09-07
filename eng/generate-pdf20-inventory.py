@@ -3,12 +3,15 @@
 #
 # Generates docs/pdf20-conformance.md, the inventory that the PDF 2.0 claim is gated on (#225).
 #
-# "Supports PDF 2.0" is a claim nobody can check. This produces one anybody can, from two
-# machine-readable sources published by the PDF Association, both Apache-2.0:
+# "Supports PDF 2.0" is a claim nobody can check. This produces one anybody can, from three
+# machine-readable sources published by the PDF Association:
 #
 #   * pdf-association/PDF2NormRefs: what ISO 32000-2 CITES, the normative-reference graph.
 #   * pdf-association/arlington-pdf-model: what ISO 32000-2 DEFINES, every object and key, with
 #     SinceVersion and DeprecatedIn per key.
+#   * pdf-association/pdf-extensions: what AMENDS ISO 32000-2, the registry of published extensions.
+#
+# The first two are Apache-2.0 for software and CC-BY-4.0 for data; the third is CC-BY-4.0 outright.
 #
 # Only the second maps to features: knowing the standard cites ISO 15444-1 tells you JPEG 2000 is in
 # scope, not which dictionary keys a conforming writer must produce. Both axes are emitted, as
@@ -19,7 +22,11 @@
 #   * Use the Arlington tsv/2.0/ set (611 files), NOT tsv/latest/ (613). The two extras are
 #     ActionNOP and ActionSetState, which are not part of PDF 2.0. Generating from latest silently
 #     overstates the standard.
-#   * PDF2NormRefs lives on branch "master", not "main".
+#   * PDF2NormRefs lives on branch "master", not "main". pdf-extensions lives on "main".
+#   * The extension table prints pdf-extensions' own "date" field, so any upstream edit makes the
+#     checked-in file stale even when no rendered row changed. That is a deliberate trade: the date
+#     is what tells a reader how current the table is, and docs-inventory.yml already leaves
+#     upstream drift to a human rather than failing the main build.
 #
 # ISO 32000-2 Annex I is normative and contains NO feature table. The standard dropped the
 # per-version table ISO 32000-1 Annex H carried. There is nothing to transcribe, which is why this
@@ -45,6 +52,7 @@ import zipfile
 NORMREFS_URL = "https://raw.githubusercontent.com/pdf-association/PDF2NormRefs/master/data/referencesGraph.json"
 ARLINGTON_URL = "https://codeload.github.com/pdf-association/arlington-pdf-model/zip/refs/heads/master"
 ARLINGTON_TSV_DIR = "/tsv/2.0/"
+EXTENSIONS_URL = "https://raw.githubusercontent.com/pdf-association/pdf-extensions/main/extensions/pdf-extensions.json"
 OUTPUT_PATH = "docs/pdf20-conformance.md"
 
 # Verdicts. Kept deliberately few: a reader should be able to hold the whole vocabulary in mind.
@@ -104,7 +112,7 @@ STATUS = {
     "INCITS 4": (IMPL, "ASCII.", ""),
     "IETF RFC 5646 BCP 47": (PART, "/Lang written; not validated as a well-formed tag.", ""),
     "ISO 3166-1": (IMPL, "Via BCP 47 language tags.", ""),
-    "JSA JIS X 4051": (OUT, "Japanese formatting rules. Not freely available; CJK line breaking would implement from UAX #14 and CSS Writing Modes instead.", "#321"),
+    "JSA JIS X 4051": (OUT, "Japanese formatting rules. Not freely available; CJK line breaking would implement from W3C JLReq, which is based on it, with UAX #14 and UAX #11.", "#321"),
     # Metadata and markup
     "ISO 16684-1": (IMPL, "XMP packet written for every document, including Info.Keywords mirrored into pdf:Keywords.", ""),
     "W3C Recommendation XML 1.0": (IMPL, "XMP serialisation.", ""),
@@ -225,12 +233,32 @@ DEPRECATIONS = [
     ("Transfer functions in the graphics state", "Never written; must stay that way.", "#256"),
 ]
 
-# ── The ISO/TS extension series ───────────────────────────────────────────────────────────────────
-EXTENSIONS = [
-    ("ISO/TS 32001:2022", "SHA-3 and SHAKE256 digests", 32001, NOT, "#238"),
-    ("ISO/TS 32002:2022", "EdDSA and extended elliptic curves", 32002, NOT, "#239"),
-    ("ISO/TS 32003:2023", "AES-GCM", 32003, NOT, "#236"),
-    ("ISO/TS 32004:2024", "PDF MAC integrity protection", 32004, NOT, "#237"),
+# ── The extension series ──────────────────────────────────────────────────────────────────────────
+# Derived, not transcribed. This table was hand-written once and went stale: it claimed four
+# Technical Specifications while ISO/TS 24064 and ISO/TS 32007 were already published, and it knew
+# nothing of the PDF Association's own Brotli extension. The registry below is the same source the
+# PDF Association generates its public extensions page from, so the list tracks upstream rather
+# than whatever was true here on the day it was last edited.
+#
+# Only BaseVersion 2.0 entries are emitted. The registry also carries ADBE, ESIC and ESIX entries
+# against BaseVersion 1.7, which are extensions to PDF 1.7 rather than to this standard.
+#
+# Verdicts are curated, keyed by "<developer prefix>:<ExtensionLevel>". A registry entry with no
+# key here emits "Not assessed", the same way STATUS does, so a new extension shows up as an
+# unanswered question rather than a confident-looking default.
+EXTENSION_STATUS = {
+    "ISO_:32001": (NOT, "#238"),
+    "ISO_:32002": (NOT, "#239"),
+    "ISO_:32003": (NOT, "#236"),
+    "ISO_:32004": (NOT, "#237"),
+    "ISO_:24064": (NOT, "#427"),
+    "ISO_:32007": (NOT, "#427"),
+    "PDFa:1": (NOT, "#412"),
+}
+
+# ISO/TS 32005 amends PDF 2.0 but defines no developer extension dictionary, so it is absent from
+# the registry by design. It is the one row that still has to be stated by hand.
+EXTENSIONS_UNREGISTERED = [
     ("ISO/TS 32005:2023", "PDF 1.7 and 2.0 structure namespace inclusion", None, NOT, "#274"),
 ]
 
@@ -263,6 +291,34 @@ def level1_references():
     return rows
 
 
+def pdf_extensions():
+    """Every published PDF 2.0 extension, from the PDF Association's own registry."""
+    data = json.loads(fetch(EXTENSIONS_URL).decode("utf-8"))
+    rows = []
+    for group in data["extensionsList"]:
+        prefix = group["prefix"]
+        for e in group["extensions"]:
+            if e.get("BaseVersion") != "2.0":
+                continue
+            level = e["ExtensionLevel"]
+            # OfficialName is the full ISO title; everything from "Document management" on is
+            # boilerplate shared by every part, so the designation alone is what the table wants.
+            # Pipes would silently break the Markdown table's columns; level1_references does the
+            # same. OfficialName is required upstream but is empty on at least one 1.7 entry, so
+            # fall back rather than render a blank cell.
+            spec = (e.get("OfficialName") or "").split(" Document management")[0].strip()
+            spec = (spec or f"{prefix} extension level {level}").replace("|", "-")
+            # ShortDesc prefixes most entries with "PDF 2.0", which is redundant in a table whose
+            # every row is a PDF 2.0 extension.
+            adds = e.get("ShortDesc", "").replace("|", "-")
+            if adds.startswith("PDF 2.0 "):
+                adds = adds[len("PDF 2.0 "):]
+            verdict, issue = EXTENSION_STATUS.get(f"{prefix}:{level}", ("Not assessed", ""))
+            rows.append((spec, adds, f"{prefix} {level}", verdict, issue))
+    rows.sort(key=lambda r: r[0])
+    return rows + EXTENSIONS_UNREGISTERED, data.get("date", "")
+
+
 def arlington_delta():
     """Objects and keys new in, or deprecated in, PDF 2.0. From tsv/2.0/ — see the header note."""
     import csv
@@ -286,6 +342,7 @@ def arlington_delta():
 def render():
     refs = level1_references()
     new_objects, new_keys, dep_keys, tsv_count = arlington_delta()
+    extensions, extensions_date = pdf_extensions()
     counts = {}
     for r in refs:
         verdict = STATUS.get(r["key"], (None,))[0]
@@ -301,11 +358,19 @@ def render():
     w("anybody can: every document the standard cites, every feature it says it added, and every key it")
     w("deprecated, each with what this library does about it.")
     w("")
-    w("It is generated from two datasets the PDF Association publishes, plus the specification's own")
+    w("It is generated from three datasets the PDF Association publishes, plus the specification's own")
     w("clause 0.3. Regenerate with `python eng/generate-pdf20-inventory.py`.")
     w("")
     w("> **This is a coverage inventory, not a conformance test.** Whether output actually conforms is")
     w("> decided by the veraPDF profiles the test suite runs against, not by this page.")
+    w("")
+    w("> **The PDF/A-2 clause citations are unverified.** ISO 19005-2 is not among the specifications")
+    w("> held locally. 50 of the 101 rule classes in `VellumPdf.Conformance` cite it, and they are")
+    w("> validated against veraPDF's bundled profiles, which encode the standard as test cases rather")
+    w("> than reproducing its text, so those clause numbers have no locally checkable source.")
+    w("> ISO 14289-1 was in the same position until it was acquired on 2026-09-07; the 53 rule classes")
+    w("> citing it can now be re-derived against the text, which #418 tracks along with the XML-doc")
+    w("> comments that still describe every rule as authored from the specification.")
     w("")
     w("## Normative references")
     w("")
@@ -348,16 +413,20 @@ def render():
     for name, state, issue in DEPRECATIONS:
         w(f"| {name} | {state} | {'' if issue == 'clean' else issue} |")
     w("")
-    w("## The ISO/TS extension series")
+    w("## The extension series")
     w("")
-    w("\"PDF 2.0\" as deployed is not only ISO 32000-2:2020. Four Technical Specifications amend it, and a")
-    w("fifth supplies structure-namespace rules it left undefined. Each is declared in a document through")
-    w("a developer extensions dictionary (ISO 32000-2 7.12.3).")
+    w("\"PDF 2.0\" as deployed is not only ISO 32000-2:2020. Published extensions amend it, most declared")
+    w("in a document through a developer extensions dictionary (ISO 32000-2 7.12.3). The rows below come")
+    w("from the PDF Association's extension registry rather than from a list kept here, because a list")
+    w(f"kept here went stale. Registry dated {extensions_date}.")
     w("")
-    w("| Specification | Adds | ExtensionLevel | Status | Issue |")
+    w("| Specification | Adds | Prefix and level | Status | Issue |")
     w("| --- | --- | --- | --- | --- |")
-    for spec, adds, level, verdict, issue in EXTENSIONS:
-        w(f"| {spec} | {adds} | {level or '-'} | {verdict} | {issue} |")
+    for spec, adds, level, verdict, issue in extensions:
+        w(f"| {spec} | {adds} | {level if level is not None else '-'} | {verdict} | {issue} |")
+    w("")
+    w("ISO/TS 32005 is the exception: it amends PDF 2.0 but defines no extension dictionary, so it")
+    w("appears in no registry and is stated by hand.")
     w("")
     w("## The key-level delta")
     w("")
@@ -410,6 +479,13 @@ def render():
     w("")
     w("The material is provided as-is, without warranties or conditions of any kind; see the licences")
     w("above for the governing disclaimers.")
+    w("")
+    w("The extension table comes from a third PDF Association dataset,")
+    w("[pdf-association/pdf-extensions](https://github.com/pdf-association/pdf-extensions),")
+    w("`extensions/pdf-extensions.json`. It is licensed **CC-BY-4.0** outright rather than dually, and")
+    w("carries no DARPA acknowledgement. Use here is likewise modified: rows are filtered to")
+    w("BaseVersion 2.0, the shared title boilerplate is trimmed, and the status and issue columns are")
+    w("this project's own.")
     w("")
     w("Two caveats about the data rather than its licensing. PDF2NormRefs was last updated 2021-10-27,")
     w("so its `status` field has drifted — treat it as a hint and re-check anything load-bearing. And")

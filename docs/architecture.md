@@ -36,13 +36,25 @@ unified read-modify-write model that supersedes the write-once document API
 - The names of disallowed reference libraries must not appear anywhere in the
   repository. This is enforced in CI by `eng/clean-room-check.ps1`.
 
-**Provenance.** The specifications themselves are held locally and read directly:
+**Provenance.** Part of the specification set is held locally and read directly:
 ISO 32000-2:2020 with Errata Collection 3, the ISO/TS 32001–32005 extension series,
-ISO 14289-2 (PDF/UA-2), WTPDF 1.0 and the PDF 2.0 Application Notes. So clause citations
-in this codebase point at text that was actually consulted rather than at a clause number
-carried over from a secondary source, and a reviewer can check any of them. The copies are
-licensed to one person and are excluded from the repository via `.git/info/exclude`; see
-`CLAUDE.md` for how to query them.
+ISO 14289-2 (PDF/UA-2), WTPDF 1.0 and the PDF 2.0 Application Notes. Clause citations to
+those documents point at text that was actually consulted, and a reviewer can check any of
+them. The copies are licensed to one person and are excluded from the repository via
+`.git/info/exclude`; see `CLAUDE.md` for how to query them and for the ledger of what is
+held, what is missing and what each missing document unblocks.
+
+The archival standards are the gap. ISO 19005-2 is not held, and 50 of the 101 rule classes in
+`VellumPdf.Conformance` cite it. Those rules are validated against veraPDF's bundled profiles,
+which encode the standard as test cases rather than reproducing its text, so their clause numbers
+have no locally checkable source. Treat a citation to ISO 19005 as unverified until the standard
+is acquired and the rule re-derived against it.
+
+ISO 14289-1 was in the same position until it was acquired on 2026-09-07, so the 53 rule classes
+citing it are now checkable against the text. They have not been checked yet. Note also that the
+XML-doc comment on 69 rule files still says the rule was derived from the specification text
+rather than from a third-party validation profile, which was not true of those two standards when
+it was written. #418 tracks both the re-derivation and the comment sweep.
 
 Holding a standard is not implementing one, so this licenses no conformance claim. See
 [PDF 2.0 conformance](pdf20-conformance.md) for what the library actually does, and note it

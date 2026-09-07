@@ -254,6 +254,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   wide that window is or how long the digit run was.
   (#406)
 
+### Documentation
+
+- **The PDF 2.0 extension table is generated from the PDF Association's registry (#225).**
+  `eng/generate-pdf20-inventory.py` held the extension list as a literal, and the literal went
+  stale: it listed five, four Technical Specifications plus ISO/TS 32005, where the registry now
+  carries six ISO extensions. ISO/TS 24064:2023 for STEP AP 242 and ISO/TS 32007:2024 for glTF
+  were both missing, and it knew nothing of the PDF Association's own Brotli stream-compression
+  extension. The table now comes from `pdf-association/pdf-extensions`, the same dataset the
+  Association generates its public extensions page from, joining `PDF2NormRefs` and `arlington-
+  pdf-model` as a third source. Verdicts stay curated and an unrecognised extension emits "Not
+  assessed" rather than a guess. ISO/TS 32005 declares no extension dictionary and so appears in
+  no registry; it is the one row still stated by hand. `NOTICE` carries the CC-BY-4.0 attribution.
+- **Recorded that the PDF/A-2 clause citations are unverified (#418).** ISO 19005-2 is not among
+  the copies held locally, and 50 of the 101 rule classes in `VellumPdf.Conformance` cite it.
+  Those rules are validated against veraPDF's bundled profiles, which encode the standard as test
+  cases rather than reproducing its text, so their clause numbers have no locally checkable
+  source. `docs/architecture.md` previously claimed every clause citation in the codebase pointed
+  at consulted text, which was true only of the PDF 2.0 half; it and `docs/pdf20-conformance.md`
+  now say where the gap is. ISO 14289-1 was in the same position and was acquired on 2026-09-07,
+  so the 53 rule classes citing it are now checkable but not yet checked; #418 tracks that pass
+  and the XML-doc comments that still describe every rule as derived from the specification text.
+
 ## [2.3.0] - 2026-09-01
 
 ### Breaking changes
@@ -559,6 +581,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `docs/architecture.md` records that the specifications are now held and read locally, so clause
   citations in this codebase point at text that was actually consulted. That is a provenance
   statement, not a conformance claim — see the inventory for what is actually implemented.
+  (Corrected under Unreleased: it held for the PDF 2.0 documents only. ISO 19005-2 and
+  ISO 14289-1 were not held at the time, and the rules citing them were validated against
+  veraPDF's profiles rather than the text. See #418.)
 - `docs/toc.yml` registers the barcodes roadmap and the new inventory, taking the published site from
   three of six files to five of seven. (#220)
 - **Dropped the `Microsoft.SourceLink.GitHub` package reference.** The .NET SDK has imported
