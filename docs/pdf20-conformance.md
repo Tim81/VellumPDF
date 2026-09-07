@@ -16,8 +16,11 @@ clause 0.3. Regenerate with `python eng/generate-pdf20-inventory.py`.
 > held locally. 50 of the 101 rule classes in `VellumPdf.Conformance` cite
 > it, and they are validated against veraPDF's bundled profiles, which encode the standard as
 > test cases rather than reproducing its text, so those clause numbers have no locally
-> checkable source. For PDF/A-2, and only there, veraPDF is the arbiter rather than a
-> cross-check: with no text to consult, a disagreement has nothing to decide it. ISO 14289-1
+> checkable source. For PDF/A-2, and only there, veraPDF is what CI fails the build on rather
+> than a cross-check, since no held text is there to decide a disagreement. Of those
+> 50, 48 carry a dated `ISO 19005-2:2011` citation and are the
+> re-derivation work; the other two are PDF/UA-1 rules mentioning a PDF/A clause in prose.
+> ISO 14289-1
 > was in the same position until it was acquired on 2026-09-07; the
 > 53 rule classes citing it are now checkable against the text but have not yet
 > been re-derived. The word "clean-room" appears somewhere in 71 of the
