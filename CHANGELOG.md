@@ -260,13 +260,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `docs/differential-oracles.md` records what each one actually does, run against five fixtures on
   WSL Ubuntu 24.04, and `eng/oracles/install-oracles.sh` builds both from pinned upstream sources
   with their checksums verified. Neither comes from apt: noble ships Ghostscript 10.02.1 and MuPDF
-  1.23.10, and 1.23.10 has no `mutool audit`, no `show -r` and few of `clean`'s options, so a
-  developer's run would exercise different code from CI's. Four measurements decide how either can
-  be invoked at all. Ghostscript sends errors to stderr and warnings to stdout, so a test reading
-  only stderr passes every warning-class defect; `-q` suppresses its error report entirely, making
-  three damaged fixtures indistinguishable from the valid one; three of five damaged fixtures exit
-  0, and a zero-byte file exits 0 in silence, so a run has to prove it did work rather than prove
-  it did not complain. MuPDF puts everything on stderr and catches that zero-byte file, while
+  1.23.10, and 1.23.10 has no `mutool audit`, no `show -r` and only 21 of `clean`'s roughly 33
+  options, so a developer's run would exercise different code from CI's. Four measurements decide
+  how either can be invoked at all. Ghostscript sends errors to stderr and warnings to stdout, so a
+  test reading only stderr passes every warning-class defect; `-q` suppresses its error report
+  entirely, making three damaged fixtures indistinguishable from the valid one; all four damaged
+  fixtures exit 0 without `-dPDFSTOPONERROR`, and a zero-byte file's exit prints only a version
+  banner, no diagnostic and no proof-of-work line, so a run has to prove it did work rather than
+  prove it did not complain. MuPDF puts everything on stderr and catches that zero-byte file, while
   Ghostscript catches a corrupted `/Type /Catalog` that MuPDF passes without a word, which is the
   argument for holding both opinions rather than either. Output was byte-identical across ten runs
   per engine per fixture, so normalisation is needed for comparison across machines and versions
