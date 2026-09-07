@@ -45,6 +45,7 @@
 import io
 import json
 import os
+import re
 import sys
 import urllib.request
 import zipfile
@@ -348,12 +349,15 @@ def rule_class_provenance():
 
     The 50/101/53 this replaced were still correct when they were checked, which is the point:
     nothing re-derived them, so nothing would have said otherwise. The same family of hand-typed
-    figures had already rotted elsewhere, where "69 rule files" in docs/architecture.md and
-    CLAUDE.md should have read 70. A rule class is a .cs file under Rules/ containing
+    figures had already rotted next door, where "69 rule files" both undercounted and named the
+    wrong population: it is 71 rule classes. A rule class is a .cs file under Rules/ containing
     ": IConformanceRule"; Rules/ also holds helper files that are not rule classes, and counting
-    those instead gives a larger denominator, which is how ACQUISITION.md came to report 105 of
-    a population of 101.
+    those instead gives a larger denominator, which is how the acquisition ledger came to report
+    105 of a population of 101.
     """
+    if not os.path.isdir(RULES_DIR):
+        raise SystemExit(f"{RULES_DIR} not found; run this from a full checkout")
+
     total = citing_19005_2 = citing_14289_1 = clean_room = clean_room_verapdf = 0
     for root, _, files in os.walk(RULES_DIR):
         for name in files:
@@ -364,11 +368,17 @@ def rule_class_provenance():
             if ": IConformanceRule" not in text:
                 continue
             total += 1
-            citing_19005_2 += "19005-2" in text
-            citing_14289_1 += "14289-1" in text
-            if "Clean-room" in text:
+            if "19005-2" in text:
+                citing_19005_2 += 1
+            if "14289-1" in text:
+                citing_14289_1 += 1
+            # Case-insensitively: one rule class writes "Authored clean-room from ISO 14289-1"
+            # in lower case, and a case-sensitive match silently dropped it, which is how the
+            # first version of this function reported 70 where the answer is 71.
+            if re.search("clean-room", text, re.IGNORECASE):
                 clean_room += 1
-                clean_room_verapdf += "veraPDF" in text
+                if "veraPDF" in text:
+                    clean_room_verapdf += 1
     return total, citing_19005_2, citing_14289_1, clean_room, clean_room_verapdf
 
 
@@ -396,18 +406,20 @@ def render():
     w("clause 0.3. Regenerate with `python eng/generate-pdf20-inventory.py`.")
     w("")
     w("> **This is a coverage inventory, not a conformance test.** Whether output actually conforms is")
-    w("> decided by the veraPDF profiles the test suite runs against, not by this page.")
+    w("> settled by the test suite, not by this page.")
     w("")
     w("> **The PDF/A-2 clause citations are unverified.** ISO 19005-2 is not among the specifications")
     w(f"> held locally. {rule_19005_2} of the {rule_total} rule classes in `VellumPdf.Conformance` cite")
     w("> it, and they are validated against veraPDF's bundled profiles, which encode the standard as")
     w("> test cases rather than reproducing its text, so those clause numbers have no locally")
-    w("> checkable source. ISO 14289-1 was in the same position until it was acquired on 2026-09-07;")
-    w(f"> the {rule_14289_1} rule classes citing it are now checkable against the text but have not yet")
-    w(f"> been re-derived. {clean_room} of the {rule_total} rule classes carry a Clean-room derivation")
-    w(f"> sentence, and {clean_room_verapdf} of those already name veraPDF in the file as the check")
-    w("> rather than the source of the rule. #418 tracks both the ISO 14289-1 re-derivation and the")
-    w("> remaining XML-doc sweep.")
+    w("> checkable source. For PDF/A-2, and only there, veraPDF is the arbiter rather than a")
+    w("> cross-check: with no text to consult, a disagreement has nothing to decide it. ISO 14289-1")
+    w("> was in the same position until it was acquired on 2026-09-07; the")
+    w(f"> {rule_14289_1} rule classes citing it are now checkable against the text but have not yet")
+    w(f"> been re-derived. An XML-doc comment saying the rule was derived from the specification")
+    w(f"> text appears on {clean_room} of the {rule_total} rule classes, and {clean_room_verapdf} of")
+    w("> those mention veraPDF elsewhere in the same file. #418 tracks the ISO 19005-2 half and #428")
+    w("> the ISO 14289-1 re-derivation.")
     w("")
     w("## Normative references")
     w("")

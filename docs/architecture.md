@@ -26,7 +26,9 @@ unified read-modify-write model that supersedes the write-once document API
 - The implementation is written from open published specifications (ISO
   32000, OpenType/TrueType, WOFF, XMP, PKCS, etc.) and, for barcode
   symbologies whose governing standard is patented, the original patent (for
-  example US 5,591,956 for Aztec Code).
+  example US 5,591,956 for Aztec Code). One documented exception: where a
+  standard has never been held, the rules citing it were authored against
+  veraPDF's profiles instead. See Provenance below for which, and #418.
 - **No** source code from any third-party PDF or barcode library is copied or
   referenced. A reference decoder, zxing-cpp, is used only as an
   interoperability cross-check in the test suite, never as a source of
@@ -39,7 +41,7 @@ unified read-modify-write model that supersedes the write-once document API
 **Provenance.** Part of the specification set is held locally and read directly:
 ISO 32000-2:2020 with Errata Collection 3, the ISO/TS 32001–32005 extension series,
 ISO 14289-1 (PDF/UA-1) and ISO 14289-2 (PDF/UA-2), WTPDF 1.0, the Tagged PDF Best Practice
-Guide, PDF Declarations and the PDF 2.0 Application Notes. `docs/iso/free/` adds 35 freely
+Guide, PDF Declarations and the PDF 2.0 Application Notes. A second, freely redistributable set adds 35
 redistributable specifications this library also cites, including ISO 32000-1:2008, ICC.1:2010,
 the ITU-T T.4/T.6/X.690 recommendations, the Adobe font technical notes, TIFF 6.0, the NIST
 FIPS documents, ECMA-363, the Matterhorn Protocol, the Unicode annexes and the W3C
@@ -58,7 +60,7 @@ is acquired and the rule re-derived against it.
 ISO 14289-1 was in the same position until it was acquired on 2026-09-07, so the 53 rule classes
 citing it are now checkable against the text. They have not been checked yet. The XML-doc
 comment stating a rule was derived from the specification text, rather than from a validation
-profile, appears on 70 of the 101 rule classes. 49 of those 70 already name veraPDF elsewhere in
+profile, appears on 71 of the 101 rule classes. 50 of those 71 mention veraPDF elsewhere in
 the same file. #418 tracks both the re-derivation and the comment sweep.
 
 Holding a standard is not implementing one, so this licenses no conformance claim. See
@@ -179,9 +181,12 @@ to retrofit:
   `pdftotext` (text round-trip → proves `ToUnicode`), `pdfsig` (PAdES signature
   validity), and zxing-cpp (decode round-trip for every barcode symbology, via a
   rasterized `pdftoppm` page). `VellumPdf.Conformance` is the authoritative normative
-  implementation; these tools produce evidence, not verdicts. Where a tool and this library
-  disagree, the ISO text decides, and the disagreement is recorded rather than settled by
-  changing a rule to match the tool.
+  implementation, and these tools are meant to produce evidence rather than verdicts: where a
+  tool and this library disagree and the standard is held locally, the text decides and the
+  disagreement is recorded rather than settled by changing a rule to match the tool. That is
+  the target, not yet the state. For PDF/A-2 it is currently false in both directions, because
+  ISO 19005-2 has never been held: veraPDF's profiles are the source those rules were authored
+  from and the arbiter CI fails the build on. #418 tracks closing that.
 - **A missing tool fails the build rather than skipping the test**: almost every oracle
   test routes through a shared `OracleGate`, which calls `Assert.Fail` instead of
   `Assert.Skip` when `CI`, `GITHUB_ACTIONS`, or `REQUIRE_ORACLES` is set — the one exception

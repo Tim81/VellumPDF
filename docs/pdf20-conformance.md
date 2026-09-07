@@ -10,18 +10,20 @@ It is generated from three datasets the PDF Association publishes, plus the spec
 clause 0.3. Regenerate with `python eng/generate-pdf20-inventory.py`.
 
 > **This is a coverage inventory, not a conformance test.** Whether output actually conforms is
-> decided by the veraPDF profiles the test suite runs against, not by this page.
+> settled by the test suite, not by this page.
 
 > **The PDF/A-2 clause citations are unverified.** ISO 19005-2 is not among the specifications
 > held locally. 50 of the 101 rule classes in `VellumPdf.Conformance` cite
 > it, and they are validated against veraPDF's bundled profiles, which encode the standard as
 > test cases rather than reproducing its text, so those clause numbers have no locally
-> checkable source. ISO 14289-1 was in the same position until it was acquired on 2026-09-07;
-> the 53 rule classes citing it are now checkable against the text but have not yet
-> been re-derived. 70 of the 101 rule classes carry a Clean-room derivation
-> sentence, and 49 of those already name veraPDF in the file as the check
-> rather than the source of the rule. #418 tracks both the ISO 14289-1 re-derivation and the
-> remaining XML-doc sweep.
+> checkable source. For PDF/A-2, and only there, veraPDF is the arbiter rather than a
+> cross-check: with no text to consult, a disagreement has nothing to decide it. ISO 14289-1
+> was in the same position until it was acquired on 2026-09-07; the
+> 53 rule classes citing it are now checkable against the text but have not yet
+> been re-derived. An XML-doc comment saying the rule was derived from the specification
+> text appears on 71 of the 101 rule classes, and 50 of
+> those mention veraPDF elsewhere in the same file. #418 tracks the ISO 19005-2 half and #428
+> the ISO 14289-1 re-derivation.
 
 ## Normative references
 
