@@ -587,6 +587,18 @@ public enum PdfReaderDiagnosticCode
     /// sink dedupes on <c>(code, object, page)</c>: an unbalanced <c>Q</c> or any of that code's
     /// other, unrelated cases reported first on the same page silently absorbed this one, so a
     /// document that mixed the two defects never reported the font problem at all.
+    /// <para>
+    /// The object this reports against is the ExtGState dictionary itself (its indirect reference,
+    /// when it has one), not the content stream that names it via <c>gs</c> (#417 round 8): two
+    /// content streams share one object number apiece, so keying on the stream instead would
+    /// collapse two DIFFERENT malformed ExtGStates named from the same stream into a single
+    /// report, and when the two arms above disagree, the survivor's message then asserts an
+    /// outcome that is false for whichever one it ate. A direct (non-indirect-reference) ExtGState
+    /// dictionary has no object number of its own, so two DIFFERENT direct ExtGState dictionaries
+    /// on the SAME page still collapse into one report the same way <see
+    /// cref="FontTypeUnsupported"/> (405) collapses two direct font dictionaries; an indirect
+    /// reference does not share this gap.
+    /// </para>
     /// </summary>
     ExtGStateFontMalformed = 310,
 
@@ -802,9 +814,9 @@ public enum PdfReaderDiagnosticCode
 
     /// <summary>
     /// A text-showing operator (<c>Tj</c>, <c>TJ</c>, <c>'</c>, or <c>"</c>) ran before any <c>Tf</c>
-    /// had set a font. §9.3.1 gives font and size no initial value: they "shall be specified
-    /// explicitly using Tf before any text is shown." No characters or advance come from a show
-    /// operator this applies to. Reported once per page.
+    /// had set a font. §9.3.1 Table 103's <c>Tf</c> row gives font and size no initial value: they
+    /// "shall be specified explicitly by using Tf before any text is shown." No characters or
+    /// advance come from a show operator this applies to. Reported once per page.
     /// </summary>
     TextShownWithoutFont = 601,
 

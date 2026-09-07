@@ -350,6 +350,40 @@ public sealed class GlyphPositionerTests
         AssertClose(700.0, negativeKey, "negative Tfs key, canonicalized to match");
     }
 
+    /// <summary>
+    /// #417 round 8: the sign guard above (<c>a &lt; 0 || (a == 0 &amp;&amp; b &lt; 0)</c>) has two
+    /// disjuncts, and an identity CTM only ever drives <c>a</c> negative, never exactly 0 with
+    /// <c>b</c> negative — so <see
+    /// cref="ComputeLineKey_signCanonicalized_negativeFontSizeMidLine_doesNotSplitTheLine"/> above
+    /// stays green even with <c>|| (a == 0 &amp;&amp; b &lt; 0)</c> deleted outright, pinning only
+    /// the first half of the guard. A 90° CTM (<c>[0 1 -1 0 0 0]</c>, the same rotation <see
+    /// cref="ComputeLineKey_sameAlongBaseline_differsAcrossARealLineBreak_underRotation"/> uses)
+    /// makes <c>A</c> exactly 0 for BOTH signs of Tfs, so the sign carries entirely on <c>B</c>
+    /// instead: hand-computed, <c>parameters × Tm × CTM</c> for Tfs=+12 gives Trm
+    /// <c>(A=0, B=12, C=-12, D=0, E=-700, F=100)</c>, and for Tfs=-12,
+    /// <c>(A=0, B=-12, C=12, D=0, E=-700, F=100)</c> — A identical, B negated. With the full guard,
+    /// <c>b=12</c> stays as-is (not negative) and <c>b=-12</c> flips to 12, so both key
+    /// <c>0 - (12/12)×(-700) = 700</c>. Deleting the second disjunct leaves the <c>b=-12</c> case
+    /// unflipped: <c>0 - (-12/12)×(-700) = -700</c>, splitting one physical line into two.
+    /// </summary>
+    [Fact]
+    public void ComputeLineKey_signCanonicalized_negativeFontSizeUnderRotation_viaBAlone()
+    {
+        var tm = new Matrix(1, 0, 0, 1, 100, 700);
+        var rotate90 = new Matrix(0, 1, -1, 0, 0, 0);
+        var positiveTfsTrm = GlyphPositioner.ComputeTextRenderingMatrix(12, 100, 0, tm, rotate90);
+        var negativeTfsTrm = GlyphPositioner.ComputeTextRenderingMatrix(-12, 100, 0, tm, rotate90);
+
+        AssertMatrix(new Matrix(0, 12, -12, 0, -700, 100), positiveTfsTrm);
+        AssertMatrix(new Matrix(0, -12, 12, 0, -700, 100), negativeTfsTrm);
+
+        var positiveKey = GlyphPositioner.ComputeLineKey(positiveTfsTrm);
+        var negativeKey = GlyphPositioner.ComputeLineKey(negativeTfsTrm);
+
+        AssertClose(700.0, positiveKey, "positive Tfs key, rotated");
+        AssertClose(700.0, negativeKey, "negative Tfs key, rotated, canonicalized to match");
+    }
+
     // ── Per-glyph displacement (§9.4.4, §9.3.3) ─────────────────────────────────────────────────
 
     /// <summary>

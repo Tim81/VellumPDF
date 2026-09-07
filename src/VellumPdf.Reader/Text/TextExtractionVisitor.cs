@@ -154,9 +154,9 @@ internal sealed class TextExtractionVisitor : IContentVisitor
         var gs = _interpreter.GraphicsState;
         if (gs.Font is null)
         {
-            // §9.3.1: font and size have no initial value and "shall be specified explicitly using
-            // Tf before any text is shown." No characters, no advance: there is no font to decode
-            // this string's codes with at all.
+            // §9.3.1 Table 103's Tf row: font and size have no initial value and "shall be
+            // specified explicitly by using Tf before any text is shown." No characters, no
+            // advance: there is no font to decode this string's codes with at all.
             _diagnostics.Report(
                 PdfReaderDiagnosticCode.TextShownWithoutFont,
                 "A text-showing operator ran before any 'Tf' set a font (ISO 32000-2 §9.3.1); it "
@@ -252,17 +252,18 @@ internal sealed class TextExtractionVisitor : IContentVisitor
         }
 
         // rawFontEntry is null exactly when fontOperand was a PdfName (only 'Tf' produces one —
-        // ContentInterpreter.HandleExtGState rejects a non-conforming ExtGState /Font array
-        // outright rather than ever storing a bare name here, #417 round 4) AND the /Resources
-        // /Font lookup against GraphicsState.FontResources then failed. The interpreter's own
-        // ValidateFontResource already checked the SAME name against the SAME resources dictionary
-        // (the one current at 'Tf' time) and reported ResourceMissing (306) for it there, so
-        // nothing further is reported here for THAT path. This does not extend to 'gs': it never
-        // calls ValidateFontResource, but as of the ExtGState shape check above, its own /Font
-        // operand is never a PdfName needing a resources lookup at all, so this comment's claim has
-        // nothing left to be wrong about on that path either. Capturing FontResources at 'Tf' time
-        // (rather than reading whatever is current when this method runs) is what keeps this
-        // holding once a Form XObject with its own /Resources sits between 'Tf' and the show
+        // ContentInterpreter.HandleExtGState never stores a bare name into GraphicsState.Font at
+        // all: its own Table 57 shape check accepts an indirect reference or, since #417 round 5, a
+        // direct font dictionary, and rejects anything else outright rather than storing it here)
+        // AND the /Resources /Font lookup against GraphicsState.FontResources then failed. The
+        // interpreter's own ValidateFontResource already checked the SAME name against the SAME
+        // resources dictionary (the one current at 'Tf' time) and reported ResourceMissing (306)
+        // for it there, so nothing further is reported here for THAT path. This does not extend to
+        // 'gs': it never calls ValidateFontResource, but as of the ExtGState shape check above, its
+        // own /Font operand is never a PdfName needing a resources lookup at all, so this comment's
+        // claim has nothing left to be wrong about on that path either. Capturing FontResources at
+        // 'Tf' time (rather than reading whatever is current when this method runs) is what keeps
+        // this holding once a Form XObject with its own /Resources sits between 'Tf' and the show
         // operator (#417 round 2).
         var fontReader = rawFontEntry is null
             ? null

@@ -1392,6 +1392,19 @@ internal sealed class ContentInterpreter
         if (_reader.ResolveValue(raw) is not PdfDictionary extGState)
             return;
 
+        // DiagnosticSink dedupes 310 on (code, object, page) alone (its own doc). Reporting
+        // ctx.DiagObjectNumber here — the content stream's object, not the ExtGState's — would
+        // collapse two DIFFERENT malformed ExtGStates named from the same stream into one survivor,
+        // whose message then asserts an outcome ("resolved and used anyway" vs "ignored") that is
+        // simply false for whichever report it ate (#417 round 8). Attributing the diagnostic to
+        // the ExtGState object itself, when it has one, keys the two apart; a direct ExtGState
+        // dictionary has no object number of its own to key on, so two of those still collapse the
+        // same way two same-shaped 'gs' malformations always would (see FontTypeUnsupported's own
+        // analogous note).
+        var extGStateObjectNumber = raw is PdfIndirectReference extGStateRef
+            ? extGStateRef.ObjectNumber
+            : ctx.DiagObjectNumber;
+
         // Table 57: /Font is "an array of the form [font size] where font shall be an indirect
         // reference to a font dictionary". §7.3.10 lets any dictionary entry be given as an
         // indirect reference, not only the ones a table says must be one, so /Font's own value is
@@ -1432,7 +1445,7 @@ internal sealed class ContentInterpreter
                         $"'gs' names '/{DiagnosticExcerpt.Quote(gsName.Value)}', whose /ExtGState /Font "
                         + "array's first element is a direct font dictionary rather than an indirect "
                         + "reference (ISO 32000-2 §8.4.5 Table 57); the font was resolved and used anyway.",
-                        ctx.DiagObjectNumber, pageIndex: pageIndex);
+                        extGStateObjectNumber, pageIndex: pageIndex);
                 }
             }
             else
@@ -1447,7 +1460,7 @@ internal sealed class ContentInterpreter
                     $"'gs' names '/{DiagnosticExcerpt.Quote(gsName.Value)}', whose /ExtGState /Font "
                     + "array's first element is neither an indirect reference nor a direct dictionary "
                     + "(ISO 32000-2 §8.4.5 Table 57); the ExtGState's /Font entry was ignored.",
-                    ctx.DiagObjectNumber, pageIndex: pageIndex);
+                    extGStateObjectNumber, pageIndex: pageIndex);
             }
         }
     }
