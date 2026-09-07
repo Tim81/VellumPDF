@@ -20,10 +20,10 @@ clause 0.3. Regenerate with `python eng/generate-pdf20-inventory.py`.
 > cross-check: with no text to consult, a disagreement has nothing to decide it. ISO 14289-1
 > was in the same position until it was acquired on 2026-09-07; the
 > 53 rule classes citing it are now checkable against the text but have not yet
-> been re-derived. An XML-doc comment saying the rule was derived from the specification
-> text appears on 71 of the 101 rule classes, and 50 of
-> those mention veraPDF elsewhere in the same file. #418 tracks the ISO 19005-2 half and #428
-> the ISO 14289-1 re-derivation.
+> been re-derived. The word "clean-room" appears in the XML-doc of 71 of the
+> 101 rule classes, and 50 of those also name veraPDF somewhere in
+> the file. Neither is the same as having checked the rule against a clause, which is what
+> #418 tracks for ISO 19005-2 and #428 for ISO 14289-1.
 
 ## Normative references
 

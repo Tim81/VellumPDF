@@ -273,9 +273,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   source. `docs/architecture.md` previously claimed every clause citation in the codebase pointed
   at consulted text, which was true only of the PDF 2.0 half; it and `docs/pdf20-conformance.md`
   now say where the gap is. ISO 14289-1 was in the same position and was acquired on 2026-09-07,
-  so the 53 rule classes citing it are now checkable but not yet checked; #418 tracks that pass
+  so the 53 rule classes citing it are now checkable but not yet checked; #428 tracks that pass
   and the XML-doc comments that describe a rule as derived from the specification text, which
-  appear on 70 of the 101 rule classes rather than on all of them.
+  appear on 71 of the 101 rule classes rather than on all of them.
 - **The PDF/A-2 disclosure numbers are generated instead of typed, and the ISO 14289-1 acquisition
   is now reflected everywhere it was missing (#418).** `eng/generate-pdf20-inventory.py` carried
   50, 101 and 53 as literals that nothing checked. They were still correct when audited, which is

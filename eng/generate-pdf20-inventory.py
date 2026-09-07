@@ -377,7 +377,7 @@ def rule_class_provenance():
             # first version of this function reported 70 where the answer is 71.
             if re.search("clean-room", text, re.IGNORECASE):
                 clean_room += 1
-                if "veraPDF" in text:
+                if re.search("verapdf", text, re.IGNORECASE):
                     clean_room_verapdf += 1
     return total, citing_19005_2, citing_14289_1, clean_room, clean_room_verapdf
 
@@ -416,10 +416,10 @@ def render():
     w("> cross-check: with no text to consult, a disagreement has nothing to decide it. ISO 14289-1")
     w("> was in the same position until it was acquired on 2026-09-07; the")
     w(f"> {rule_14289_1} rule classes citing it are now checkable against the text but have not yet")
-    w(f"> been re-derived. An XML-doc comment saying the rule was derived from the specification")
-    w(f"> text appears on {clean_room} of the {rule_total} rule classes, and {clean_room_verapdf} of")
-    w("> those mention veraPDF elsewhere in the same file. #418 tracks the ISO 19005-2 half and #428")
-    w("> the ISO 14289-1 re-derivation.")
+    w(f"> been re-derived. The word \"clean-room\" appears in the XML-doc of {clean_room} of the")
+    w(f"> {rule_total} rule classes, and {clean_room_verapdf} of those also name veraPDF somewhere in")
+    w("> the file. Neither is the same as having checked the rule against a clause, which is what")
+    w("> #418 tracks for ISO 19005-2 and #428 for ISO 14289-1.")
     w("")
     w("## Normative references")
     w("")

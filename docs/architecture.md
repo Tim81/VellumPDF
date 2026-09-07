@@ -29,8 +29,8 @@ unified read-modify-write model that supersedes the write-once document API
   example US 5,591,956 for Aztec Code). One documented exception: where a
   standard has never been held, the rules citing it were authored against
   veraPDF's profiles instead. See Provenance below for which, and #418.
-- **No** source code from any third-party PDF or barcode library is copied or
-  referenced. A reference decoder, zxing-cpp, is used only as an
+- **No** source code from any third-party PDF or barcode library is copied.
+  Rule *predicates* for a standard that is not held are the documented exception above. A reference decoder, zxing-cpp, is used only as an
   interoperability cross-check in the test suite, never as a source of
   implementation; this includes verifying the exact Aztec placement
   coordinates, since the relevant ISO/IEC 24778 figures are not freely
@@ -60,8 +60,11 @@ is acquired and the rule re-derived against it.
 ISO 14289-1 was in the same position until it was acquired on 2026-09-07, so the 53 rule classes
 citing it are now checkable against the text. They have not been checked yet. The XML-doc
 comment stating a rule was derived from the specification text, rather than from a validation
-profile, appears on 71 of the 101 rule classes. 50 of those 71 mention veraPDF in the same
-file. #418 tracks the ISO 19005-2 half and #428 the ISO 14289-1 re-derivation.
+profile, is not evenly applied: the word "clean-room" appears in the XML-doc of 71 of the 101
+rule classes, 50 of those also name veraPDF somewhere in the file, and eight of the remaining 30
+assert specification provenance without using the word at all. Counting the phrase is not the
+same as auditing the claim. #418 tracks the ISO 19005-2 half and #428 the ISO 14289-1
+re-derivation.
 
 Holding a standard is not implementing one, so this licenses no conformance claim. See
 [PDF 2.0 conformance](pdf20-conformance.md) for what the library actually does, and note it
