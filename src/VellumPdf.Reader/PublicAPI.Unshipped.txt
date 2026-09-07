@@ -123,6 +123,7 @@ VellumPdf.Reader.PdfReaderDiagnosticCode.ContentStreamTooLarge = 308 -> VellumPd
 VellumPdf.Reader.PdfReaderDiagnosticCode.DecodeParmsMalformed = 108 -> VellumPdf.Reader.PdfReaderDiagnosticCode
 VellumPdf.Reader.PdfReaderDiagnosticCode.DecodedStreamLimitExceeded = 111 -> VellumPdf.Reader.PdfReaderDiagnosticCode
 VellumPdf.Reader.PdfReaderDiagnosticCode.DiagnosticsSuppressed = 900 -> VellumPdf.Reader.PdfReaderDiagnosticCode
+VellumPdf.Reader.PdfReaderDiagnosticCode.ExtGStateFontMalformed = 310 -> VellumPdf.Reader.PdfReaderDiagnosticCode
 VellumPdf.Reader.PdfReaderDiagnosticCode.FilterArrayElementNotName = 106 -> VellumPdf.Reader.PdfReaderDiagnosticCode
 VellumPdf.Reader.PdfReaderDiagnosticCode.FilterNull = 105 -> VellumPdf.Reader.PdfReaderDiagnosticCode
 VellumPdf.Reader.PdfReaderDiagnosticCode.FilterValueMalformed = 107 -> VellumPdf.Reader.PdfReaderDiagnosticCode

@@ -52,9 +52,12 @@ public sealed partial class PdfDocumentReader
     // loop instead of calling it, which meant deleting budget.BeginPage() from
     // ExtractTextFromPageCore below left the whole suite green — that test called BeginPage()
     // itself and so exercised its own COPY of the reset, not the one production actually runs.
-    // Nothing about validating options or building the default budget belongs here: those are the
-    // public overload's own job, and this seam exists to bypass exactly that default construction
-    // when a test needs a non-default budget, not to duplicate it.
+    // Null-checking options and building the default budget stay the public overload's own job;
+    // this seam exists to bypass exactly that default construction when a test needs a non-default
+    // budget, not to duplicate it. The page-range check the public overload's own <exception>
+    // documents is NOT one of those two: options.Pages.GetOffsetAndLength below is what actually
+    // throws ArgumentOutOfRangeException, so it runs here, on every call through either overload,
+    // not in the caller above.
     internal PdfTextExtractionResult ExtractText(
         PdfTextExtractionOptions options, DiagnosticSink scope, TextCallBudget budget)
     {

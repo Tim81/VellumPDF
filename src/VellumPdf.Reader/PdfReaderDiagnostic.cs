@@ -422,10 +422,7 @@ public enum PdfReaderDiagnosticCode
     /// <c>TL</c>, <c>Tf</c>'s second, <c>Tr</c>, <c>Ts</c>, <c>Td</c>, <c>TD</c>, or <c>Tm</c>; a
     /// non-name operand to <c>Tf</c>'s first, to <c>Do</c>, or to
     /// <c>gs</c>/<c>cs</c>/<c>CS</c>/<c>sh</c> (this reader reads that operand for its own resource
-    /// lookup, the same reason <c>Do</c>'s own name operand is checked); an ExtGState's own
-    /// <c>/Font</c> array (Table 57) whose first element is not an indirect reference to a font
-    /// dictionary (the entry is ignored; whatever font <c>Tf</c>, or an earlier conforming
-    /// <c>gs</c>, already bound stays in effect); a non-string operand to
+    /// lookup, the same reason <c>Do</c>'s own name operand is checked); a non-string operand to
     /// <c>'</c>, or a non-numeric first or second or non-string third operand to <c>"</c> (Table 107)
     /// (#402 rounds 3 and 4; every operator this interpreter recognises but does not name above only
     /// forwards its own operands to the visitor untouched, so their operand types are the visitor's to
@@ -576,6 +573,22 @@ public enum PdfReaderDiagnosticCode
     /// </para>
     /// </summary>
     ContentLimitExceeded = 309,
+
+    /// <summary>
+    /// A <c>gs</c>-invoked graphics state parameter dictionary's own <c>/Font</c> array (ISO
+    /// 32000-2 §8.4.5 Table 57) did not match the shape Table 57 requires: its first element is
+    /// neither an indirect reference to a font dictionary nor a direct font dictionary (the entry
+    /// is ignored; whatever font <c>Tf</c>, or an earlier conforming <c>gs</c>, already bound stays
+    /// in effect), or it IS a direct font dictionary, which Table 57's own text requires to be an
+    /// indirect reference instead (accepted anyway and used as the font: a direct font dictionary
+    /// resolves the same way an indirect one does, so rejecting it would trade a working binding
+    /// for an unresolvable one over a wording technicality). Split out from
+    /// <see cref="OperandStackMalformed"/> into its own code (#417 round 5) because that code's
+    /// sink dedupes on <c>(code, object, page)</c>: an unbalanced <c>Q</c> or any of that code's
+    /// other, unrelated cases reported first on the same page silently absorbed this one, so a
+    /// document that mixed the two defects never reported the font problem at all.
+    /// </summary>
+    ExtGStateFontMalformed = 310,
 
     // ── 4xx: fonts and Unicode mapping ──────────────────────────────────────────────────────────
 
@@ -864,6 +877,7 @@ internal static class PdfReaderDiagnosticSeverities
         PdfReaderDiagnosticCode.InlineImageMalformed => PdfReaderDiagnosticSeverity.Warning,
         PdfReaderDiagnosticCode.ContentStreamTooLarge => PdfReaderDiagnosticSeverity.Warning,
         PdfReaderDiagnosticCode.ContentLimitExceeded => PdfReaderDiagnosticSeverity.Warning,
+        PdfReaderDiagnosticCode.ExtGStateFontMalformed => PdfReaderDiagnosticSeverity.Warning,
         PdfReaderDiagnosticCode.FontUnreadable => PdfReaderDiagnosticSeverity.Warning,
         PdfReaderDiagnosticCode.FontEncodingMalformed => PdfReaderDiagnosticSeverity.Warning,
         PdfReaderDiagnosticCode.FontWidthsMalformed => PdfReaderDiagnosticSeverity.Warning,

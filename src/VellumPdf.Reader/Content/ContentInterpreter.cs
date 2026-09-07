@@ -1401,39 +1401,53 @@ internal sealed class ContentInterpreter
         if (extGState.Get(FontKey) is { } fontRaw && _reader.ResolveValue(fontRaw) is PdfArray fontArray
             && fontArray.Count == 2)
         {
-            // A producer that puts a bare name (or any other non-reference) in the font slot is
-            // not conforming to Table 57. Rejecting the shape outright, rather than storing it
-            // anyway, matters because TextExtractionVisitor.ResolveFont treats a non-PdfName
-            // GraphicsState.Font as already an indirect reference to a font dictionary and skips
-            // the /Resources /Font lookup a PdfName would get (#417 round 4: storing a bare name
-            // here left it looking resolved while pointing at a resources dictionary this method
-            // just nulled out, so the show operator found no font and reported nothing at all).
-            // Leaving Font/FontResources/FontSize untouched keeps whatever 'Tf' (or an earlier,
-            // conforming 'gs') already bound, the same "drop the operator, keep interpreting"
-            // recovery ValidateOperandTypes uses elsewhere in this class.
-            if (fontArray[0] is not PdfIndirectReference)
+            // Table 57's letter requires an indirect reference; a direct font dictionary is not
+            // that, but it is still a fully resolvable font (FontCache's own doc treats a direct
+            // font dictionary as legal, if unusual, under §7.8.2, and GetFontReader resolves one
+            // the same way it resolves a reference). Rejecting that shape outright, the way a bare
+            // name or any other value must be rejected, would discard a font this reader can
+            // otherwise use and, with a preceding valid 'Tf' in scope, leave that stale binding
+            // decoding glyphs through the wrong widths instead of the ExtGState's own ones (#417
+            // round 5: round 4 lumped both shapes into one rejection).
+            if (fontArray[0] is PdfIndirectReference or PdfDictionary)
             {
-                diagnostics.Report(
-                    PdfReaderDiagnosticCode.OperandStackMalformed,
-                    $"'gs' names '/{DiagnosticExcerpt.Quote(gsName.Value)}', whose /ExtGState /Font "
-                    + "array's first element is not an indirect reference to a font dictionary "
-                    + "(ISO 32000-2 §8.4.5 Table 57); the ExtGState's /Font entry was ignored.",
-                    ctx.DiagObjectNumber, pageIndex: pageIndex);
-            }
-            else
-            {
-                // Table 57's own font element is already an indirect reference to a font
-                // dictionary, not a /Resources /Font name, so this path needs no resource
-                // dictionary to resolve it against. Setting FontResources to null here is NOT
-                // load-bearing (#417 round 4 LOW 11): TextExtractionVisitor.ResolveFont never
-                // reads its own `resources` parameter at all for a non-PdfName Font operand (the
-                // case this branch always produces), and a later 'Tf' overwrites FontResources
-                // itself regardless of what it was left at, so leaving the previous value in place
-                // instead would change nothing observable. Cleared anyway, as cheap defence against
-                // a future change to ResolveFont that starts reading it for this path too.
+                // Table 57's own font element resolves independent of any /Resources dictionary,
+                // whether it is the indirect reference the table names or the direct dictionary
+                // this reader also accepts, so this path needs no resource dictionary of its own.
+                // Setting FontResources to null here is NOT load-bearing (#417 round 4 LOW 11):
+                // TextExtractionVisitor.ResolveFont never reads its own `resources` parameter at
+                // all for a non-PdfName Font operand (the case this branch always produces), and a
+                // later 'Tf' overwrites FontResources itself regardless of what it was left at, so
+                // leaving the previous value in place instead would change nothing observable.
+                // Cleared anyway, as cheap defence against a future change to ResolveFont that
+                // starts reading it for this path too.
                 _gs.Font = fontArray[0];
                 _gs.FontResources = null;
                 _gs.FontSize = ReadNumber(fontArray[1]);
+
+                if (fontArray[0] is PdfDictionary)
+                {
+                    diagnostics.Report(
+                        PdfReaderDiagnosticCode.ExtGStateFontMalformed,
+                        $"'gs' names '/{DiagnosticExcerpt.Quote(gsName.Value)}', whose /ExtGState /Font "
+                        + "array's first element is a direct font dictionary rather than an indirect "
+                        + "reference (ISO 32000-2 §8.4.5 Table 57); the font was resolved and used anyway.",
+                        ctx.DiagObjectNumber, pageIndex: pageIndex);
+                }
+            }
+            else
+            {
+                // A producer that puts a bare name (or any other non-reference, non-dictionary
+                // value) in the font slot leaves nothing this reader can resolve as a font at all.
+                // Leaving Font/FontResources/FontSize untouched keeps whatever 'Tf' (or an earlier,
+                // conforming 'gs') already bound, the same "drop the operator, keep interpreting"
+                // recovery ValidateOperandTypes uses elsewhere in this class.
+                diagnostics.Report(
+                    PdfReaderDiagnosticCode.ExtGStateFontMalformed,
+                    $"'gs' names '/{DiagnosticExcerpt.Quote(gsName.Value)}', whose /ExtGState /Font "
+                    + "array's first element is neither an indirect reference nor a direct dictionary "
+                    + "(ISO 32000-2 §8.4.5 Table 57); the ExtGState's /Font entry was ignored.",
+                    ctx.DiagObjectNumber, pageIndex: pageIndex);
             }
         }
     }
@@ -1609,8 +1623,11 @@ internal sealed class ContentInterpreter
             var formDict = stream.Dictionary;
             var matrix = ReadFormMatrix(formDict);
             var bbox = ReadFormBBox(formDict);
-            // §7.8.3: a form's /Resources is optional but strongly recommended; when absent, the
-            // invoking content stream's own resources apply.
+            // §8.10.2 Table 93's own Resources row: "Optional but strongly recommended". §7.8.3's
+            // last bullet is what makes an absent one harmless here rather than merely tolerated —
+            // resources a form XObject omitted "shall be inherited from the resource dictionary of
+            // the page on which they are used" — so the invoking content stream's own resources
+            // apply instead.
             var formResources = ResolveDictionaryEntry(formDict, PdfName.Resources) ?? invokerResources;
 
             visitor.OnFormBegin(formDict, matrix, bbox, objectNumber, offset);
@@ -1805,7 +1822,7 @@ internal sealed class ContentInterpreter
     /// cref="Run"/> is what creates that scope by default.
     /// </summary>
     /// <param name="page">The page <paramref name="formStream"/>'s annotation belongs to; supplies
-    /// the <c>/Resources</c> fallback (§8.10.2) when the appearance stream has none of its
+    /// the <c>/Resources</c> fallback (§7.8.3) when the appearance stream has none of its
     /// own.</param>
     /// <param name="formStream">The appearance stream, resolved and identified by its own object
     /// number by the caller (<c>ImageReachabilityWalker</c>).</param>

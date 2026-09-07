@@ -356,7 +356,12 @@ public sealed class TextExtractionEndToEndTests
         var result = PdfReader.Open(pdf).GetPage(0).ExtractText();
 
         Assert.Equal(string.Empty, result.Text);
-        Assert.Contains(result.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.OperandStackMalformed);
+        var d = Assert.Single(result.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ExtGStateFontMalformed);
+        Assert.Equal(
+            "'gs' names '/GS0', whose /ExtGState /Font array's first element is neither an "
+            + "indirect reference nor a direct dictionary (ISO 32000-2 §8.4.5 Table 57); the "
+            + "ExtGState's /Font entry was ignored.",
+            d.Message);
         Assert.Contains(result.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.TextShownWithoutFont);
     }
 
@@ -378,7 +383,63 @@ public sealed class TextExtractionEndToEndTests
         var result = PdfReader.Open(pdf).GetPage(0).ExtractText();
 
         Assert.Equal("AB", result.Text);
+        var d = Assert.Single(result.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ExtGStateFontMalformed);
+        Assert.Equal(
+            "'gs' names '/GS0', whose /ExtGState /Font array's first element is neither an "
+            + "indirect reference nor a direct dictionary (ISO 32000-2 §8.4.5 Table 57); the "
+            + "ExtGState's /Font entry was ignored.",
+            d.Message);
+    }
+
+    /// <summary>
+    /// #417 round 5: Table 57's own text requires an ExtGState's <c>/Font</c> array's first
+    /// element to be an indirect reference, but round 4's rejection lumped a DIRECT font dictionary
+    /// in with a bare name or any other non-reference value. A direct font dictionary has no object
+    /// number of its own (legal per <c>FontCache</c>'s own doc) and resolves through
+    /// <c>PdfDocumentReader.GetFontReader</c> exactly the way an indirect reference does, so
+    /// rejecting it discarded a font this reader could otherwise use. This asserts the text still
+    /// comes through, and that the deviation from Table 57's own wording is still reported rather
+    /// than silently accepted.
+    /// </summary>
+    [Fact]
+    public void ExtGStateFont_directDictionaryElement_isAcceptedAndExtractsText()
+    {
+        var pdf = TextTestSupport.BuildPageDoc(
+            "/GS0 gs\nBT (A) Tj ET",
+            "<< /ExtGState << /GS0 << /Font [" + TextTestSupport.SimpleFontDict() + " 12] >> >> >>");
+
+        var result = PdfReader.Open(pdf).GetPage(0).ExtractText();
+
+        Assert.Equal("A", result.Text);
+        var d = Assert.Single(result.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ExtGStateFontMalformed);
+        Assert.Equal(
+            "'gs' names '/GS0', whose /ExtGState /Font array's first element is a direct font "
+            + "dictionary rather than an indirect reference (ISO 32000-2 §8.4.5 Table 57); the "
+            + "font was resolved and used anyway.",
+            d.Message);
+    }
+
+    /// <summary>
+    /// #417 round 5: <c>ExtGStateFontMalformed</c> must not be dedupable away by an unrelated
+    /// <c>OperandStackMalformed</c> report on the same page — an unbalanced <c>Q</c> is one of the
+    /// commonest producer defects and reports that code first, and <c>DiagnosticSink</c> dedupes on
+    /// <c>(code, object, page)</c>. Before this fix, the malformed ExtGState font shared
+    /// <c>OperandStackMalformed</c> with the unbalanced <c>Q</c>, so the font report was the SECOND
+    /// occurrence of that code on this page and never reported at all. Both diagnostics must
+    /// survive with the codes now distinct.
+    /// </summary>
+    [Fact]
+    public void UnbalancedQ_andMalformedExtGStateFont_onSamePage_bothDiagnosticsSurvive()
+    {
+        var pdf = TextTestSupport.BuildPageDoc(
+            "Q\n/GS0 gs\nBT (A) Tj ET",
+            "<< /Font << /F1 5 0 R >> /ExtGState << /GS0 << /Font [/F1 12] >> >> >>",
+            new TextTestSupport.Obj(5, TextTestSupport.SimpleFontDict()));
+
+        var result = PdfReader.Open(pdf).GetPage(0).ExtractText();
+
         Assert.Contains(result.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.OperandStackMalformed);
+        Assert.Contains(result.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ExtGStateFontMalformed);
     }
 
     /// <summary>
@@ -448,6 +509,66 @@ public sealed class TextExtractionEndToEndTests
         Assert.Equal("ABLine1", runs[0].Text);
         Assert.Equal("Line2", runs[1].Text);
         Assert.NotEqual(runs[0].Baseline, runs[1].Baseline);
+    }
+
+    /// <summary>
+    /// #417 round 5: the end-to-end mirror of <see
+    /// cref="GlyphPositionerTests.ComputeLineKey_zeroTimesInfinity_doesNotPoisonTheKey_onARotatedPage"/>,
+    /// reached through real content rather than a synthesized <c>Matrix</c>. Each line resets the
+    /// CTM to a fresh 90°-family rotation (<c>0 1 -1 {huge} 0 0 cm</c>, isolated per line by
+    /// <c>q</c>/<c>Q</c>) with an absolute <c>Tm</c> whose own translation is a different
+    /// all-digit-literal magnitude (10^170 vs. 10^175): the resulting Trm has <c>A</c> exactly 0,
+    /// <c>B</c> exactly 12, an ordinary finite <c>E</c> that differs between the two lines by the
+    /// same 10^170-vs-10^175 gap, and an <c>F</c> that overflows to <c>+Infinity</c> in both (their
+    /// own Tm translation multiplied by the CTM's own huge <c>D</c>). With the <c>a == 0</c> guard,
+    /// <c>ComputeLineKey</c> never lets that overflowing <c>F</c> into the computation, so the two
+    /// lines key to two different, ordinary finite values and land in separate runs. Deleting
+    /// <c>a == 0 ? 0.0 :</c> alone makes <c>term1</c> evaluate <c>0 * (+Infinity) == NaN</c> for
+    /// BOTH lines, and <see cref="TextAssembler.SameLine"/> treats a non-finite key as matching
+    /// anything — merging "Line1" and "Line2" into one run.
+    /// </summary>
+    [Fact]
+    public void RotatedOverflowingLines_stayDistinct_viaTheAEqualsZeroGuard()
+    {
+        var huge170 = "1" + new string('0', 170) + ".0";
+        var huge175 = "1" + new string('0', 175) + ".0";
+        var (runs, _) = RunTextExtractionVisitor(
+            "q\n"
+            + $"0 1 -1 {huge170} 0 0 cm\n"
+            + $"BT /F1 12 Tf 1 0 0 1 100 {huge170} Tm (Line1) Tj ET\n"
+            + "Q\n"
+            + "q\n"
+            + $"0 1 -1 {huge170} 0 0 cm\n"
+            + $"BT /F1 12 Tf 1 0 0 1 100 {huge175} Tm (Line2) Tj ET\n"
+            + "Q",
+            TextTestSupport.SimpleFontDict());
+
+        Assert.Equal(2, runs.Count);
+        Assert.Equal("Line1", runs[0].Text);
+        Assert.Equal("Line2", runs[1].Text);
+    }
+
+    /// <summary>
+    /// #417 round 5: the end-to-end mirror of <see
+    /// cref="GlyphPositionerTests.ComputeLineKey_zeroMagnitude_returnsNaN_notADeceptiveZero"/>,
+    /// reached through real content: a zero font size mid-line, from <c>/F1 0 Tf</c> (§9.3.1's own
+    /// note permits negative text font size, and this reader applies no lower bound either), zeroes
+    /// both <paramref name="trm"/>'s <c>A</c> and <c>B</c> for "B" alone. With the explicit
+    /// <c>magnitude == 0</c> check, that key is <c>NaN</c>, which <see
+    /// cref="TextAssembler.SameLine"/> treats as matching the surrounding, ordinary-size lines on
+    /// either side, keeping "A", "B", and "C" in one run. Deleting the check alone (leaving
+    /// <c>!double.IsFinite(magnitude)</c>) makes that key a deceptively FINITE 0 instead —
+    /// different from "A" and "C"'s own key of 700 — opening two extra one-glyph runs.
+    /// </summary>
+    [Fact]
+    public void ZeroFontSizeMidLine_doesNotSplitTheLine_viaTheMagnitudeGuard()
+    {
+        var (runs, _) = RunTextExtractionVisitor(
+            "BT /F1 12 Tf 100 700 Td (A) Tj /F1 0 Tf (B) Tj /F1 12 Tf (C) Tj ET",
+            TextTestSupport.SimpleFontDict());
+
+        var run = Assert.Single(runs);
+        Assert.Equal("ABC", run.Text);
     }
 
     /// <summary>A numeric <c>Tj</c> operand (never permitted by §9.4.3, which types it a string) is

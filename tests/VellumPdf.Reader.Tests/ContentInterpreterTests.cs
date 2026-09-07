@@ -962,6 +962,28 @@ public sealed class ContentInterpreterTests
         Assert.Contains(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ResourceMissing);
     }
 
+    /// <summary>
+    /// #417 round 5: Table 57's own text requires the <c>/Font</c> array's first element to be an
+    /// indirect reference, but a direct font dictionary is a legal, fully resolvable PDF object
+    /// too. Deleting the <c>or PdfDictionary</c> half of <c>HandleExtGState</c>'s own type check
+    /// leaves this test failing: <c>state.Font</c> would stay <see langword="null"/> instead of
+    /// carrying the dictionary, since a rejected shape leaves <c>Font</c>/<c>FontSize</c> untouched.
+    /// </summary>
+    [Fact]
+    public void Gs_withDirectFontDictionary_bindsFontDespiteTable57Deviation()
+    {
+        var (reader, state, _) = RunAndCaptureFinalState(
+            BuildPageDoc(
+                "/G1 gs\n",
+                "<< /ExtGState << /G1 6 0 R >> >>",
+                new Obj(6, "<< /Type /ExtGState /Font "
+                    + "[<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> 18] >>")));
+
+        Assert.IsType<PdfDictionary>(state!.Font);
+        Assert.Equal(18, state.FontSize);
+        Assert.Contains(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ExtGStateFontMalformed);
+    }
+
     // ── gs/cs/CS/sh read their own operand for a resource lookup, so a wrong type reports 302 the
     // same way Do's own does, rather than the lookup silently no-op'ing (#402 round 4) ────────────
 

@@ -267,6 +267,25 @@ public sealed class GlyphPositionerTests
     }
 
     /// <summary>
+    /// #417 round 5: the mirror of the test above, for the <c>a == 0</c> short-circuit rather than
+    /// <c>b == 0</c>. On a 90°-family rotation (<c>A == 0</c>), an overflowing <c>F</c> used to
+    /// poison the whole key through <c>0.0 / magnitude * F == NaN</c> the same way an overflowing
+    /// <c>E</c> did on an unrotated page; <c>A</c>'s own zero contribution must drop out instead.
+    /// Deleting <c>a == 0 ? 0.0 :</c> alone (leaving the <c>b == 0</c> guard in place) leaves this
+    /// failing: <c>term1</c> becomes <c>0 / 12 * (+Infinity) == NaN</c>, and the key becomes
+    /// <c>NaN - 100 == NaN</c> instead of the correct <c>-100</c>.
+    /// </summary>
+    [Fact]
+    public void ComputeLineKey_zeroTimesInfinity_doesNotPoisonTheKey_onARotatedPage()
+    {
+        var trm = new Matrix(0, 12, -12, 0, 100, double.PositiveInfinity);
+
+        var key = GlyphPositioner.ComputeLineKey(trm);
+
+        AssertClose(-100.0, key, "rotated key with an overflowing F");
+    }
+
+    /// <summary>
     /// LOW 2 (#417 round 4): a magnitude too large to represent as a finite <see cref="double"/> —
     /// reachable once <c>|A| = |B|</c> exceeds roughly <c>1.271×10^308</c> (<see
     /// cref="GlyphPositioner"/>'s own private <c>Hypot</c> then has its <c>a·√2</c> exceed
@@ -288,6 +307,25 @@ public sealed class GlyphPositionerTests
 
         Assert.True(double.IsNaN(key1), $"key1 was {key1}, expected NaN");
         Assert.True(double.IsNaN(key2), $"key2 was {key2}, expected NaN");
+    }
+
+    /// <summary>
+    /// #417 round 5: a zero-magnitude baseline direction (<c>A == B == 0</c>, from a zero font size
+    /// or horizontal scaling) must return <c>NaN</c>, not a deceptively FINITE 0. Deleting the
+    /// explicit <c>magnitude == 0</c> check alone (leaving <c>!double.IsFinite(magnitude)</c> in
+    /// place) leaves this failing: with both <c>A</c> and <c>B</c> exactly 0, the <c>a == 0</c> and
+    /// <c>b == 0</c> short-circuits skip both terms of the subtraction and return exactly 0 for
+    /// <paramref name="trm"/>'s own <c>F</c>/<c>E</c> of 700/100 alike — the same collapse two
+    /// genuinely different degenerate lines would share.
+    /// </summary>
+    [Fact]
+    public void ComputeLineKey_zeroMagnitude_returnsNaN_notADeceptiveZero()
+    {
+        var trm = new Matrix(0, 0, 0, 0, 100, 700);
+
+        var key = GlyphPositioner.ComputeLineKey(trm);
+
+        Assert.True(double.IsNaN(key), $"key was {key}, expected NaN");
     }
 
     /// <summary>

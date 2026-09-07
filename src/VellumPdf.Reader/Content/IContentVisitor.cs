@@ -95,7 +95,7 @@ internal interface IContentVisitor
 
     /// <summary> Called for each <c>Do</c> whose operand resolved to an image XObject (ISO 32000-2
     /// §8.9.5), after <see cref="OnOperator"/> reported the <c>Do</c> itself and after the same
-    /// resource resolution this interpreter performs for a form, including the §8.10.2 fallback to
+    /// resource resolution this interpreter performs for a form, including the §7.8.3 fallback to
     /// the invoking stream's own resources. No <see cref="OnFormBegin"/>/<see cref="OnFormEnd"/>
     /// pair brackets it: an image XObject has no content to recurse into.
     /// </summary>

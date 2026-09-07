@@ -97,9 +97,14 @@ internal static class GlyphPositioner
     /// cref="ComputeTextRenderingMatrix"/>'s <c>rise</c> parameter allows: rise can reach either
     /// <c>E</c> or <c>F</c> through a non-zero <c>C</c> in the Tm/CTM (not only <c>F</c>, once the
     /// page is rotated), and must not affect line grouping any more than it does when the page is
-    /// not rotated. Degenerate (a zero-magnitude baseline direction, from a zero font size or
-    /// horizontal scaling) or already non-finite input naturally propagates to <c>NaN</c>, which
-    /// <see cref="TextAssembler"/>'s line comparison already treats as "same line as before"; an
+    /// not rotated. A degenerate (zero-magnitude) baseline direction — from a zero font size or
+    /// horizontal scaling — is forced to <c>NaN</c> by this method's own explicit
+    /// <c>magnitude == 0</c> check, not left to reach it on its own: once <c>A</c> and <c>B</c> are
+    /// both exactly 0, the <c>a == 0</c>/<c>b == 0</c> short-circuits below would otherwise skip
+    /// both terms and return a deceptively FINITE key of exactly 0 instead. Already non-finite
+    /// <paramref name="trm"/> input reaches <c>NaN</c> through ordinary IEEE 754 propagation
+    /// instead, needing no guard of its own; either way the result is what
+    /// <see cref="TextAssembler"/>'s line comparison already treats as "same line as before". An
     /// OVERFLOWING (individually-finite but too-large-to-represent) magnitude is forced to
     /// <c>NaN</c> for the same reason rather than left to round to 0 (#417 round 4 LOW 2): a
     /// magnitude of <c>+Infinity</c> would otherwise make every direction cosine below round to 0,
@@ -135,7 +140,8 @@ internal static class GlyphPositioner
     /// <c>A</c> and <c>B</c> (but not <c>E</c> and <c>F</c>) are sign-canonicalised before any of
     /// the above — negated together, as a pair, whenever <c>A</c> is negative or (<c>A</c> is 0 and)
     /// <c>B</c> is negative — because a NEGATIVE <c>Tfs</c> (#417 round 4 LOW 3: a producer's own
-    /// choice, however unusual, ISO 32000-2 §9.6.2.1 Table 109 does not forbid) flips <c>A</c> and
+    /// choice; ISO 32000-2 §9.3.1 Table 103's own <c>Tf</c> row says only that size "shall be a
+    /// number representing a scale factor", not that it be positive) flips <c>A</c> and
     /// <c>B</c>'s own sign end to end through the parameters matrix's <c>Tfs·Th</c> term, without
     /// touching <c>E</c> or <c>F</c> at all — those trace only to Tm's and the CTM's own
     /// translation, never to <c>Tfs</c> — so leaving the raw sign in would flip this whole key for
@@ -167,8 +173,14 @@ internal static class GlyphPositioner
     // A numerically stable sqrt(a^2 + b^2) (the classic scale-by-the-larger-term technique):
     // never squares either argument directly, so it stays finite whenever the larger of the two
     // itself is, even where a naive Math.Sqrt(a*a + b*b) would overflow first (see
-    // ComputeLineKey's own remarks). Returns 0 when both arguments are exactly 0, and propagates
-    // NaN/Infinity unchanged when either argument already is one.
+    // ComputeLineKey's own remarks). Returns 0 when both arguments are exactly 0 — but also when
+    // ONLY the first is: Hypot(0, NaN) returns 0, not NaN, because "b > a" is false for a NaN b (a
+    // NaN comparison is always false, so the swap meant to put the larger magnitude first never
+    // runs) and the a == 0 check right after fires on the untouched first argument regardless of
+    // what the second one is. No consequence for ComputeLineKey today, since its own
+    // magnitude == 0 check already treats an exact 0 as its own case before this asymmetry could
+    // matter, but this is not "NaN/Infinity propagates unchanged whenever either argument already
+    // is one" — only when the FIRST argument is not itself exactly 0.
     private static double Hypot(double a, double b)
     {
         a = Math.Abs(a);
