@@ -43,8 +43,8 @@ unified read-modify-write model that supersedes the write-once document API
 **Provenance.** Part of the specification set is held locally and read directly:
 ISO 32000-2:2020 with Errata Collection 3, the ISO/TS 32001–32005 extension series,
 ISO 14289-1 (PDF/UA-1) and ISO 14289-2 (PDF/UA-2), WTPDF 1.0, the Tagged PDF Best Practice
-Guide, PDF Declarations and the PDF 2.0 Application Notes. A second, freely redistributable set adds 35
-redistributable documents, most but not all of them cited by this library, including ISO 32000-1:2008, ICC.1:2010,
+Guide, PDF Declarations and the PDF 2.0 Application Notes. A second, freely redistributable set adds
+several dozen more, most but not all of them cited by this library, including ISO 32000-1:2008, ICC.1:2010,
 the ITU-T T.4/T.6/X.690 recommendations, the Adobe font technical notes, TIFF 6.0, the NIST
 FIPS documents, ECMA-363, the Matterhorn Protocol, the Unicode annexes and the W3C
 international-layout set. Clause citations to any of these documents point at text that was

@@ -290,8 +290,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   helpers that are not rules, so 105 exceeding the 101 rule classes that exist was the giveaway.
   Both are corrected and cross-referenced against the smaller rule-class counts
   `docs/architecture.md` uses. That file and the project instructions now list ISO 14289-1, the
-  Tagged PDF Best Practice Guide, PDF Declarations and the freely redistributable set (35 documents,
-  not 34) among what is held, and `src/VellumPdf.Conformance/README.md` now names which standards
+  Tagged PDF Best Practice Guide, PDF Declarations and the freely redistributable set among what is
+  held, and `src/VellumPdf.Conformance/README.md` now names which standards
   its own rules were authored from.
   The root `README.md` carried the same unqualified "written from published specifications" claim
   the package README did, and is corrected with it. Two of the files this entry describes are
