@@ -87,6 +87,26 @@ public sealed class PdfLexerTests
         Assert.Equal(TokenKind.Real, tok.Kind);
     }
 
+    [Fact]
+    public void NoExponentSyntax_lexesAsIntegerThenKeyword()
+    {
+        // ISO 32000-2 §7.3.3's real-number grammar is sign, digits, dot, digits — no 'e' exponent —
+        // so "1e309" is not one numeric token. PdfObjectParserTests's malformed-real unreachability
+        // argument depends on that: ReadNumeric stops at the first non-digit, non-dot byte, so the
+        // only way ParseReal's malformed-real throw fires is a bare sign-and-dot token, two
+        // characters at most. Teaching this lexer an exponent syntax is exactly the change that
+        // would make that throw reachable with an unbounded digit run instead.
+        var lex = Lex("1e309");
+
+        var first = lex.NextToken();
+        Assert.Equal(TokenKind.Integer, first.Kind);
+        Assert.Equal("1", System.Text.Encoding.Latin1.GetString(first.Raw.Span));
+
+        var second = lex.NextToken();
+        Assert.Equal(TokenKind.Keyword, second.Kind);
+        Assert.Equal("e309", System.Text.Encoding.Latin1.GetString(second.Raw.Span));
+    }
+
     // ── Keyword tokens ─────────────────────────────────────────────────────
 
     [Theory]

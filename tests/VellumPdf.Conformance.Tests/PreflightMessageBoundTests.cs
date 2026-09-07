@@ -218,14 +218,18 @@ public sealed class PreflightMessageBoundTests
     }
 
     [Fact]
-    public void RuleEvaluationFailure_withAnOversizedToken_isBoundedByTheSink()
+    public void RuleEvaluationFailure_withAnOversizedToken_isBoundedAtTheThrow()
     {
         var bytes = BuildOversizedFilterPdf(new string('A', 1_048_576));
 
         var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
 
-        var full = "Rule evaluation failed: Unknown PDF filter: /" + new string('A', 1_048_576);
-        var expected = full[..1024] + $"... ({full.Length} chars)";
+        // PdfFilters.ApplyFilter (#406) now excerpts the filter name in the thrown message the same
+        // way it already excerpted the diagnostic, so the message a rule-evaluation catch wraps
+        // never reaches PreflightContext.MaxMessageChars in the first place — there is nothing left
+        // for the sink cut below to do on this path, unlike before #406.
+        var expected = "Rule evaluation failed: Unknown PDF filter: /" + new string('A', 32)
+            + "... (1048576 bytes)";
 
         // Several rules try to decode the same oversized-filter /Contents stream and each wraps
         // the same InvalidDataException as its own "Rule evaluation failed" finding (#403); assert
@@ -237,6 +241,16 @@ public sealed class PreflightMessageBoundTests
         Assert.NotEmpty(matching);
         Assert.All(matching, a => Assert.Equal(expected, a.Message));
     }
+
+    // No case here drives an oversized message through the rule-evaluation catch (PdfPreflight.cs,
+    // the `catch (Exception ex) ...` around `rule.Evaluate`) from something OTHER than a Reader
+    // token: after #406 (both rounds), every VellumPdf.Reader exception a rule can trigger is
+    // excerpted at the throw, and no rule under VellumPdf.Conformance interpolates producer content
+    // into an exception it lets escape — each one that touches untrusted structure (CMap programs,
+    // CFF/Type1 glyph data, ASN.1 signature contents, XMP XML) catches broadly and reports or
+    // returns instead of throwing. PreflightContext.Report's own 1024-character cut is still pinned
+    // directly by Report_atTheBoundary_keepsExactlyMaxMessageChars below; what is not currently
+    // demonstrable is a real, reachable exception that needs it on the way through this catch.
 
     // ── One test per remaining site that quotes a producer name ──────────────────────────────────
 

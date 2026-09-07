@@ -92,8 +92,12 @@ internal sealed class PdfObjectParser
         var objKw = ExpectToken(TokenKind.Keyword, "'obj' keyword");
 
         if (!IsKeyword(objKw.Raw, "obj"u8))
+            // Excerpted for the same reason as ParseKeywordObject (#406): a keyword token has no
+            // length bound, and this message is one PdfPreflight's per-rule catch retains.
             throw new InvalidDataException(
-                $"Expected 'obj' keyword, got '{Encoding.Latin1.GetString(objKw.Raw.Span)}' at offset {_lexer.Position}.");
+                $"Expected 'obj' keyword, got "
+                + $"'{DiagnosticExcerpt.Quote(Encoding.Latin1.GetString(objKw.Raw.Span), objKw.Raw.Length)}' "
+                + $"at offset {_lexer.Position}.");
 
         var objectNumber = ParseObjectNumber(objNumTok.Raw, "object number");
         var generation = ParseObjectNumber(genTok.Raw, "generation number");
@@ -145,8 +149,16 @@ internal sealed class PdfObjectParser
         var objKw = ExpectToken(TokenKind.Keyword, "'obj' keyword");
 
         if (!IsKeyword(objKw.Raw, "obj"u8))
+            // Excerpted, not interpolated whole (#406): a keyword token has no length bound
+            // (Annex C.1). Unlike ParseIndirectObject's identical check, this method's only two
+            // callers are both in XrefReconstructor (#184), and both catch InvalidDataException
+            // here and discard it — the message reaches no consumer, PdfPreflight's per-rule catch
+            // included. Excerpting still matters: building the unbounded string is itself the
+            // per-throw cost a huge keyword pays regardless of who ends up seeing the result.
             throw new InvalidDataException(
-                $"Expected 'obj' keyword, got '{Encoding.Latin1.GetString(objKw.Raw.Span)}' at offset {_lexer.Position}.");
+                $"Expected 'obj' keyword, got "
+                + $"'{DiagnosticExcerpt.Quote(Encoding.Latin1.GetString(objKw.Raw.Span), objKw.Raw.Length)}' "
+                + $"at offset {_lexer.Position}.");
 
         var objectNumber = ParseObjectNumber(objNumTok.Raw, "object number");
         var generation = ParseObjectNumber(genTok.Raw, "generation number");
@@ -213,8 +225,16 @@ internal sealed class PdfObjectParser
         if (raw.SequenceEqual("true"u8)) return PdfBoolean.True;
         if (raw.SequenceEqual("false"u8)) return PdfBoolean.False;
         if (raw.SequenceEqual("null"u8)) return PdfNull.Instance;
+        // Excerpted, not interpolated whole: PdfLexer.ReadKeyword puts no bound on a keyword's own
+        // length (Annex C.1), and PdfPreflight's per-rule catch (bounded at the sink by #403) keeps
+        // a copy of this message, so an oversized keyword would otherwise be rebuilt at full
+        // size on every rule that decodes the object carrying it (#406). `raw` is the still-encoded
+        // span, so its own length is passed rather than relying on the decoded string's — the two
+        // agree here (a bare keyword has no #xx escape to shorten it), but passing the span's own
+        // length is this sweep's convention at every site that still has the span in hand.
         throw new InvalidDataException(
-            $"Unexpected keyword '{Encoding.Latin1.GetString(raw)}' where a PDF object was expected.");
+            $"Unexpected keyword '{DiagnosticExcerpt.Quote(Encoding.Latin1.GetString(raw), raw.Length)}' "
+            + "where a PDF object was expected.");
     }
 
     /// <summary>
@@ -277,8 +297,12 @@ internal sealed class PdfObjectParser
     private static PdfReal ParseReal(Token token)
     {
         var s = Encoding.Latin1.GetString(token.Raw.Span);
+        // Excerpted for the same reason as ParseKeywordObject (#406): PdfLexer.ReadNumeric puts no
+        // bound on a numeric token's own digit run (Annex C.1), and this message is one
+        // PdfPreflight's per-rule catch retains.
         if (!double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out var d))
-            throw new InvalidDataException($"Malformed real number: '{s}'.");
+            throw new InvalidDataException(
+                $"Malformed real number: '{DiagnosticExcerpt.Quote(s, token.Raw.Length)}'.");
 
         // ISO 32000-2 §7.3.3 gives real numbers an implementation-limited range (Annex C.2 /
         // Table C.1); a literal with 310 or more integer digits parses to +/-Infinity under
@@ -287,7 +311,8 @@ internal sealed class PdfObjectParser
         // malformed input to surface as InvalidDataException, so this is normalised here instead
         // of leaking a different exception type out of an otherwise-successful parse.
         if (!double.IsFinite(d))
-            throw new InvalidDataException($"Real number out of range: '{s}'.");
+            throw new InvalidDataException(
+                $"Real number out of range: '{DiagnosticExcerpt.Quote(s, token.Raw.Length)}'.");
 
         return new PdfReal(d);
     }
@@ -759,8 +784,13 @@ internal sealed class PdfObjectParser
         _lexer.SkipWhitespaceAndComments();
         var tok = _lexer.NextToken();
         if (tok.Kind != TokenKind.Keyword || !IsKeyword(tok.Raw, "endobj"u8))
+            // Excerpted for the same reason as ParseKeywordObject (#406): whatever token was found
+            // in place of 'endobj' has no length bound of its own, and this message is one
+            // PdfPreflight's per-rule catch retains.
             throw new InvalidDataException(
-                $"Expected 'endobj', got '{Encoding.Latin1.GetString(tok.Raw.Span)}' at offset {_lexer.Position}.");
+                $"Expected 'endobj', got "
+                + $"'{DiagnosticExcerpt.Quote(Encoding.Latin1.GetString(tok.Raw.Span), tok.Raw.Length)}' "
+                + $"at offset {_lexer.Position}.");
     }
 
     private static bool IsKeyword(ReadOnlyMemory<byte> raw, ReadOnlySpan<byte> keyword) =>
@@ -769,8 +799,11 @@ internal sealed class PdfObjectParser
     private static long ParseLong(ReadOnlyMemory<byte> raw)
     {
         var s = Encoding.Latin1.GetString(raw.Span);
+        // Excerpted for the same reason as ParseKeywordObject (#406): PdfLexer.ReadNumeric puts no
+        // bound on a numeric token's own digit run (Annex C.1), and this message is one
+        // PdfPreflight's per-rule catch retains.
         if (!long.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out var v))
-            throw new InvalidDataException($"Malformed integer: '{s}'.");
+            throw new InvalidDataException($"Malformed integer: '{DiagnosticExcerpt.Quote(s, raw.Length)}'.");
         return v;
     }
 

@@ -75,8 +75,11 @@ internal static class EncryptionSetup
                 "does not support; only the Standard security handler (/Filter /Standard) is supported.");
         if (filterName != "Standard")
         {
+            // Excerpted, not interpolated whole (#406): a /Filter name has no length bound (Annex
+            // C.1), and nothing here validates its length either, so a name this large is real.
+            var excerpt = filterName is null ? "(missing)" : DiagnosticExcerpt.Quote(filterName);
             throw new UnsupportedPdfFeatureException(
-                $"/Encrypt /Filter /{filterName ?? "(missing)"} is not a security handler VellumPdf.Reader " +
+                $"/Encrypt /Filter /{excerpt} is not a security handler VellumPdf.Reader " +
                 "supports; only /Standard is.");
         }
 
@@ -214,10 +217,16 @@ internal static class EncryptionSetup
             // a /StrF naming a /CF entry the document never defines is malformed, while one naming a
             // /CFM this library does not implement is a valid document beyond our reach — the
             // distinction /V 3 already draws.
+            //
+            // Excerpted, not interpolated whole (#406): a /CF key has no length bound (Annex C.1)
+            // any more than a /Filter name does. UnsupportedPdfFeatureException is excluded from
+            // PdfPreflight's per-rule catch, so this never becomes a retained finding — it
+            // propagates to the caller, and VellumPdf.Cli writes it to stderr whole.
             throw strFName is not null && cfTable.ContainsKey(strFName)
                 ? new UnsupportedPdfFeatureException(
-                    $"/Encrypt /StrF names the crypt filter '{strFName}', whose /CFM this library does "
-                    + "not implement, so no string in the document can be decrypted.")
+                    $"/Encrypt /StrF names the crypt filter '{DiagnosticExcerpt.Quote(strFName)}', whose "
+                    + "/CFM this library does not implement, so no string in the document can be "
+                    + "decrypted.")
                 : new InvalidDataException(
                     "Malformed PDF: /Encrypt /StrF names a /CF entry the document does not define, so "
                     + "no string in the document can be decrypted.");

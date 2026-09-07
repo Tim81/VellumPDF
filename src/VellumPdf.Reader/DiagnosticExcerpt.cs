@@ -30,10 +30,24 @@ internal static class DiagnosticExcerpt
     /// token used one or more <c>#xx</c> escapes (§7.3.5) decodes to fewer bytes than it was
     /// written in, so the raw token can run longer than <paramref name="byteLength"/> reports
     /// (<c>'/' + 40 'B' + '#20' x10</c> is a 71-byte raw token whose decoded Value is 50 bytes, and
-    /// this reports "(50 bytes)"). The one caller that decodes only far enough to excerpt an
-    /// oversized keyword (<c>ContentInterpreter.HandleOperator</c>'s own dispatch site) passes the
-    /// raw token's own length separately, since <paramref name="text"/> itself is already
-    /// truncated there.
+    /// this reports "(50 bytes)"). A caller that still has the raw token in hand — a bare keyword or
+    /// numeric literal, neither of which has a <c>#xx</c> escape to decode — passes the raw span's
+    /// own length here instead of relying on the single-argument overload's <c>text.Length</c>
+    /// default; this is a convention at those call sites, not a correctness requirement, since the
+    /// two lengths already agree for them. A caller quoting a <see cref="PdfName"/>'s decoded
+    /// <c>Value</c> instead uses the single-argument overload, because an escape in the raw token
+    /// would make the two lengths disagree and the decoded value's own length is the correct one to
+    /// report. <c>ContentInterpreter.HandleOperator</c>'s own dispatch site is the one caller where
+    /// neither reason applies cleanly: it decodes only far enough to excerpt an oversized keyword, so
+    /// <paramref name="text"/> itself is already truncated and its own length would undercount.
+    /// <para>
+    /// Precondition: <paramref name="byteLength"/> above <see cref="MaxChars"/> must imply
+    /// <paramref name="text"/> is at least <see cref="MaxChars"/> characters long, or
+    /// <c>text[..MaxChars]</c> throws instead of diagnosing. Every current caller decodes as Latin1
+    /// (one byte, one char), so this holds by construction; a future caller decoding as UTF-8 (or
+    /// any variable-width encoding) and passing the encoded byte length here — rather than the
+    /// decoded character count — would violate it.
+    /// </para>
     /// </summary>
     internal static string Quote(string text, int byteLength) =>
         byteLength <= MaxChars

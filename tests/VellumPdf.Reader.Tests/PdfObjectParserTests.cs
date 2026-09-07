@@ -114,6 +114,46 @@ public sealed class PdfObjectParserTests
         Assert.Contains("out of range", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
+    // ── Real number out of range: the message excerpts an oversized token (#406 round 2) ────────────
+    //
+    // The 32-vs-33-character boundary theory every other site gets is not reachable here: a real
+    // literal has no exponent syntax (ISO 32000-2 §7.3.3's grammar is sign, digits, dot, digits —
+    // no 'E'), so overflowing double.TryParse to +/-Infinity needs roughly 310 integer digits.
+    // Nothing 32 or 33 characters long can trigger this throw at all; the shortest reachable token
+    // (310 characters) is already one order of magnitude past the excerpt threshold (32). What IS
+    // pinned below is the excerpted shape at the shortest length that actually reaches this branch.
+
+    [Fact]
+    public void RealOutOfRange_throwsOnlyAFixedExcerpt()
+    {
+        var huge = "1" + new string('0', 309) + ".0";
+
+        var ex = Assert.Throws<InvalidDataException>(() => Parser(huge).ParseObject());
+
+        Assert.Equal(
+            "Real number out of range: '" + huge[..32] + $"... ({huge.Length} bytes)'.",
+            ex.Message);
+    }
+
+    // ── Malformed real number: unreachable at excerpt length ─────────────────────────────────────────
+    //
+    // PdfLexer.ReadNumeric only ever produces a Real token shaped as [sign] digits* '.' digits* —
+    // it stops the moment it sees a byte that is not a digit or the one decimal point, so a Real
+    // token that FAILS double.TryParse (as opposed to overflowing it) can only be a bare sign and/or
+    // dot with no digit on either side: ".", "+.", "-.". Any digit anywhere in the token makes
+    // double.TryParse succeed (to a finite value, or to +/-Infinity, which is the out-of-range case
+    // above, not this one). The longest such token is two characters, so this branch can never
+    // receive anything DiagnosticExcerpt.MaxChars (32) would excerpt — there is no 32-vs-33 boundary
+    // to pin here, only the short-token behaviour, which is unaffected by this excerpt in the first
+    // place (32 or fewer chars is byte-identical to the pre-#406 message either way).
+    [Fact]
+    public void MalformedReal_theOnlyReachableTokenShape_isTwoCharactersOrFewer()
+    {
+        var ex = Assert.Throws<InvalidDataException>(() => Parser("-.").ParseObject());
+
+        Assert.Equal("Malformed real number: '-.'.", ex.Message);
+    }
+
     [Fact]
     public void RealComfortablyBelowDoubleMaxValue_stillParses()
     {
@@ -562,6 +602,113 @@ public sealed class PdfObjectParserTests
         Assert.Contains("obj", ex.Message);
     }
 
+    // ── 'obj' keyword mismatch: the message excerpts an oversized token (#406 round 2) ──────────────
+    //
+    // ParseIndirectObject and ProbeIndirectObjectHeader each have their own copy of this check
+    // (#406's own sweep named both as separate sites), so each needs its own boundary pin: fixing
+    // one and reverting the other leaves this half of the suite green.
+
+    [Fact]
+    public void MissingObjKeyword_withAnOversizedToken_throwsOnlyAFixedExcerpt()
+    {
+        var keyword = new string('B', 1 << 20);
+
+        var ex = Assert.Throws<InvalidDataException>(() =>
+            Parser("1 0 " + keyword).ParseIndirectObject());
+
+        Assert.Equal(
+            "Expected 'obj' keyword, got '" + new string('B', 32) + "... (1048576 bytes)' "
+            + $"at offset {4 + keyword.Length}.",
+            ex.Message);
+    }
+
+    [Theory]
+    [InlineData(32, false)]
+    [InlineData(33, true)]
+    public void MissingObjKeyword_atTheExcerptBoundary_quotesThirtyTwoWhole_andExcerptsThirtyThree(
+        int keywordLength, bool expectExcerpt)
+    {
+        var keyword = new string('B', keywordLength);
+
+        var ex = Assert.Throws<InvalidDataException>(() =>
+            Parser("1 0 " + keyword).ParseIndirectObject());
+
+        var offset = 4 + keyword.Length;
+        var expected = expectExcerpt
+            ? "Expected 'obj' keyword, got '" + new string('B', 32) + $"... ({keywordLength} bytes)' "
+              + $"at offset {offset}."
+            : $"Expected 'obj' keyword, got '{keyword}' at offset {offset}.";
+        Assert.Equal(expected, ex.Message);
+    }
+
+    [Fact]
+    public void ProbeIndirectObjectHeader_missingObjKeyword_withAnOversizedToken_throwsOnlyAFixedExcerpt()
+    {
+        var keyword = new string('B', 1 << 20);
+
+        var ex = Assert.Throws<InvalidDataException>(() =>
+            Parser("1 0 " + keyword).ProbeIndirectObjectHeader());
+
+        Assert.Equal(
+            "Expected 'obj' keyword, got '" + new string('B', 32) + "... (1048576 bytes)' "
+            + $"at offset {4 + keyword.Length}.",
+            ex.Message);
+    }
+
+    [Theory]
+    [InlineData(32, false)]
+    [InlineData(33, true)]
+    public void ProbeIndirectObjectHeader_missingObjKeyword_atTheExcerptBoundary_quotesThirtyTwoWhole_andExcerptsThirtyThree(
+        int keywordLength, bool expectExcerpt)
+    {
+        var keyword = new string('B', keywordLength);
+
+        var ex = Assert.Throws<InvalidDataException>(() =>
+            Parser("1 0 " + keyword).ProbeIndirectObjectHeader());
+
+        var offset = 4 + keyword.Length;
+        var expected = expectExcerpt
+            ? "Expected 'obj' keyword, got '" + new string('B', 32) + $"... ({keywordLength} bytes)' "
+              + $"at offset {offset}."
+            : $"Expected 'obj' keyword, got '{keyword}' at offset {offset}.";
+        Assert.Equal(expected, ex.Message);
+    }
+
+    // ── 'endobj' mismatch: the message excerpts an oversized token (#406 round 2) ────────────────────
+
+    [Fact]
+    public void MissingEndobj_withAnOversizedToken_throwsOnlyAFixedExcerpt()
+    {
+        var keyword = new string('C', 1 << 20);
+
+        var ex = Assert.Throws<InvalidDataException>(() =>
+            Parser("1 0 obj\n42\n" + keyword).ParseIndirectObject());
+
+        Assert.Equal(
+            "Expected 'endobj', got '" + new string('C', 32) + "... (1048576 bytes)' "
+            + $"at offset {11 + keyword.Length}.",
+            ex.Message);
+    }
+
+    [Theory]
+    [InlineData(32, false)]
+    [InlineData(33, true)]
+    public void MissingEndobj_atTheExcerptBoundary_quotesThirtyTwoWhole_andExcerptsThirtyThree(
+        int keywordLength, bool expectExcerpt)
+    {
+        var keyword = new string('C', keywordLength);
+
+        var ex = Assert.Throws<InvalidDataException>(() =>
+            Parser("1 0 obj\n42\n" + keyword).ParseIndirectObject());
+
+        var offset = 11 + keyword.Length;
+        var expected = expectExcerpt
+            ? "Expected 'endobj', got '" + new string('C', 32) + $"... ({keywordLength} bytes)' "
+              + $"at offset {offset}."
+            : $"Expected 'endobj', got '{keyword}' at offset {offset}.";
+        Assert.Equal(expected, ex.Message);
+    }
+
     // ── Stream object ──────────────────────────────────────────────────────
 
     [Fact]
@@ -790,6 +937,39 @@ public sealed class PdfObjectParserTests
         Assert.Equal(-100L, n.Value);
     }
 
+    // ── Malformed integer: the message excerpts an oversized token (#406 round 2) ────────────────────
+    //
+    // PdfLexer.ReadNumeric puts no bound on a digit run's length (Annex C.1), so a run long enough
+    // to overflow long.TryParse (more than ~19 digits) reaches ParseLong with the whole run.
+
+    [Fact]
+    public void MalformedInteger_withAnOversizedDigitRun_throwsOnlyAFixedExcerpt()
+    {
+        var digits = new string('9', 1 << 20);
+
+        var ex = Assert.Throws<InvalidDataException>(() => Parser(digits).ParseObject());
+
+        Assert.Equal(
+            "Malformed integer: '" + new string('9', 32) + "... (1048576 bytes)'.",
+            ex.Message);
+    }
+
+    [Theory]
+    [InlineData(32, false)]
+    [InlineData(33, true)]
+    public void MalformedInteger_atTheExcerptBoundary_quotesThirtyTwoWhole_andExcerptsThirtyThree(
+        int digitCount, bool expectExcerpt)
+    {
+        var digits = new string('9', digitCount);
+
+        var ex = Assert.Throws<InvalidDataException>(() => Parser(digits).ParseObject());
+
+        var expected = expectExcerpt
+            ? "Malformed integer: '" + new string('9', 32) + $"... ({digitCount} bytes)'."
+            : $"Malformed integer: '{digits}'.";
+        Assert.Equal(expected, ex.Message);
+    }
+
     // ── Unexpected keyword as object ───────────────────────────────────────
 
     [Fact]
@@ -798,6 +978,44 @@ public sealed class PdfObjectParserTests
         var ex = Assert.Throws<InvalidDataException>(() =>
             Parser("garbage").ParseObject());
         Assert.Contains("Unexpected keyword", ex.Message);
+    }
+
+    // ── Unexpected keyword as object: the message excerpts an oversized one (#406) ─────────────────
+
+    [Fact]
+    public void UnknownKeywordAsObject_withAnOversizedKeyword_throwsOnlyAFixedExcerpt()
+    {
+        // PdfLexer.ReadKeyword puts no bound on a keyword's own length (Annex C.1), and
+        // PdfPreflight's per-rule catch retains a thrown message, so this needs the same excerpt
+        // DiagnosticExcerpt already gives a /Filter name or any other retained producer value.
+        var keyword = new string('B', 1 << 20);
+
+        var ex = Assert.Throws<InvalidDataException>(() => Parser(keyword).ParseObject());
+
+        Assert.Equal(
+            "Unexpected keyword '" + new string('B', 32) + "... (1048576 bytes)' "
+            + "where a PDF object was expected.",
+            ex.Message);
+    }
+
+    [Theory]
+    [InlineData(32, false)]
+    [InlineData(33, true)]
+    public void UnknownKeywordAsObject_atTheExcerptBoundary_quotesThirtyTwoWhole_andExcerptsThirtyThree(
+        int keywordLength, bool expectExcerpt)
+    {
+        // A bare run of letters is still a valid, if unrecognised, keyword token at any length —
+        // ReadKeyword only stops at whitespace or a delimiter (Table 1/Table 2) — so this boundary
+        // is reachable the same way the oversized case above is, just one byte short of it.
+        var keyword = new string('B', keywordLength);
+
+        var ex = Assert.Throws<InvalidDataException>(() => Parser(keyword).ParseObject());
+
+        var expected = expectExcerpt
+            ? "Unexpected keyword '" + new string('B', 32) + $"... ({keywordLength} bytes)' "
+              + "where a PDF object was expected."
+            : $"Unexpected keyword '{keyword}' where a PDF object was expected.";
+        Assert.Equal(expected, ex.Message);
     }
 
     // ── Decode helpers: direct static tests ────────────────────────────────

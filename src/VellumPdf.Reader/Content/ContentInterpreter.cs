@@ -295,11 +295,12 @@ internal sealed class ContentInterpreter
             // InvalidDataException never escapes Run, and with the notify-and-continue policy
             // every other diagnostic in this channel follows.
             //
-            // The exception's own Message is not forwarded: PdfObjectParser quotes the offending
-            // header keyword or numeric literal whole, with no bound of its own, and a diagnostic
-            // is retained for the reader's own lifetime (DiagnosticSink), so an attacker- or
-            // corruption-sized token would become a comparably sized permanent allocation once per
-            // (code, object, page) the sink's own dedupe key admits (#402 round 7).
+            // The exception's own Message is not forwarded, even though every producer token it
+            // could name is bounded at the throw as of #406: the failure can originate anywhere
+            // along an indirect-reference chain — a bad xref offset, a cycle, an object stream
+            // whose own decode fails — and this catch has no way to tell which of those actually
+            // fired. A fixed sentence names the one fact every case shares (the reference could not
+            // be resolved) instead of forwarding whichever message happened to propagate.
             diagnostics.Report(
                 PdfReaderDiagnosticCode.ContentStreamLexError,
                 "The page's content could not be fully resolved: an object it references could "

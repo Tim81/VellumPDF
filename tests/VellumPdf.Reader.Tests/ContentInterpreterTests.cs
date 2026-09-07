@@ -2993,9 +2993,10 @@ public sealed class ContentInterpreterTests
 
     // ── Run's own outer catch no longer forwards ex.Message (#402 round 7) ──────────────────────
     //
-    // PdfObjectParser's own "N G obj" header check and its numeric-range checks interpolate the
-    // whole malformed token into their own exception's Message, with no bound of its own (out of
-    // this PR's scope: PdfDocumentReader.Open's own callers read that Message directly too).
+    // PdfObjectParser's own "N G obj" header check and its numeric-range checks throw with an
+    // excerpt of the malformed token, bounded at DiagnosticExcerpt.MaxChars since #406 — but Run's
+    // outer catch reports a fixed sentence regardless of what ex.Message says, so this suite still
+    // needs to pin that independently of whatever bound the thrown message happens to carry.
     // BuildPageContentBuffer's ResolveStream/ResolveValue calls have no local catch for either, so
     // an InvalidDataException from either used to reach Run's own outer catch and get interpolated
     // into a diagnostic Message retained for the reader's own lifetime, in full.
@@ -3005,11 +3006,11 @@ public sealed class ContentInterpreterTests
     {
         // Object 4's own "N G obj" header names no "obj" keyword at all, just 4,194,304 'A' bytes:
         // PdfObjectParser.ParseIndirectObject's own ExpectToken(Keyword, "'obj' keyword") accepts
-        // that as A Keyword token, then IsKeyword(objKw.Raw, "obj") rejects it and throws with the
-        // whole token quoted. ResolveStream (PdfDocumentReader.cs) calls ParseIndirectObject with
-        // no local catch, so this reaches BuildPageContentBuffer's own AddElement (which only
-        // catches around GetDecodedStreamData, not around ResolveStream itself) and then Run's own
-        // outer catch, before InterpretStream is ever entered.
+        // that as A Keyword token, then IsKeyword(objKw.Raw, "obj") rejects it and throws with a
+        // bounded excerpt of the token (#406). ResolveStream (PdfDocumentReader.cs) calls
+        // ParseIndirectObject with no local catch, so this reaches BuildPageContentBuffer's own
+        // AddElement (which only catches around GetDecodedStreamData, not around ResolveStream
+        // itself) and then Run's own outer catch, before InterpretStream is ever entered.
         var badHeader = "4 0 " + new string('A', 4_194_304) + "\n";
         var doc = BuildPdfWithRawObjectBytes(
             1,
