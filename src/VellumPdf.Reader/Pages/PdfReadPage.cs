@@ -129,4 +129,29 @@ public sealed class PdfReadPage
         ArgumentNullException.ThrowIfNull(options);
         return Reader.ExtractImagesFromPage(this, options);
     }
+
+    /// <summary> Returns every simple-font glyph this page's own content draws (ISO 32000-2
+    /// §9.4.4), positioned and assembled in content order (#98). Equivalent to
+    /// <see cref="ExtractText(PdfTextExtractionOptions)"/> with the default options.
+    /// </summary>
+    /// <exception cref="ObjectDisposedException"><see cref="Reader"/> has been
+    /// disposed.</exception>
+    public PdfTextExtractionResult ExtractText() => ExtractText(new PdfTextExtractionOptions());
+
+    /// <summary> Returns every simple-font glyph this page's own content draws, per <paramref
+    /// name="options"/>.
+    /// </summary>
+    /// <exception cref="ArgumentNullException"><paramref name="options"/> is <see
+    /// langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="options"/>.<see
+    /// cref="PdfTextExtractionOptions.Pages"/> is not <see cref="Range.All"/>: a page-level call
+    /// already names one page, so a caller-supplied range has nothing to apply to. Silently
+    /// ignoring it would misrepresent what was extracted, so this reader refuses instead.</exception>
+    /// <exception cref="ObjectDisposedException"><see cref="Reader"/> has been
+    /// disposed.</exception>
+    public PdfTextExtractionResult ExtractText(PdfTextExtractionOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        return Reader.ExtractTextFromPage(this, options);
+    }
 }

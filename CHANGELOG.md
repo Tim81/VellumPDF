@@ -111,6 +111,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   both map to the same 8- or 16-bit depth PNG's alpha-carrying colour types require. Nothing is
   colour-converted or re-encoded, and `/Decode` is exposed but never applied. Twelve diagnostic
   codes, 500 to 511, report what could not be extracted and why.
+- **Text extraction from simple fonts (#98).** `PdfDocumentReader.ExtractText()` and
+  `PdfReadPage.ExtractText()` return the text a page's content draws — Type1, MMType1, and
+  TrueType fonts only, through the simple-font decoding added above; Type0, Type3, `/ToUnicode`,
+  predefined CMaps, `/ActualText`, `/ReversedChars`, and word- and paragraph-aware line grouping
+  are not implemented yet. Concretely, the word-aware gap means no space is synthesised for a
+  positioning gap: `[(Hello) -500 (World)] TJ` extracts as `HelloWorld`, not `Hello World`. Line
+  grouping IS rotation-aware: a rotated page's baseline stays one line rather than opening a new
+  run per glyph. Positioned by ISO 32000-2 §9.4.4's text-space matrix arithmetic (`Trm`, and the
+  per-glyph and `TJ` advances) and joined into lines wherever the baseline changes — a font set by
+  `Tf` before a Form XObject with its own `/Resources` is invoked, and never re-set inside the
+  form, resolves against the resources in effect when `Tf` ran, not the form's, per §9.3.1
+  Table 103. An ExtGState's own `/Font` (§8.4.5 Table 57) sets font and size the same way, without
+  needing a `Tf` at all; Table 57's own text requires its first element to be an indirect
+  reference to a font dictionary, but a direct font dictionary there is accepted and used too,
+  since it resolves the same way and rejecting it would trade a working font binding for an
+  unresolvable one. Word spacing applies only to a single-byte code 32 per §9.3.3; a code with no
+  Unicode route still advances the text matrix so later glyphs keep their position, contributing
+  no character. Annotation appearance streams are excluded, unlike `ExtractImages()`: §12.5.5
+  makes an appearance a rendering convenience layered on the page, and extraction draws that line
+  for text where it does not for images. Four new diagnostic codes: `ExtGStateFontMalformed` (310,
+  an ExtGState `/Font` array not matching Table 57's own shape), `FontTypeUnsupported` (405, a font
+  this reader cannot decode yet), and, in a new `6xx` text-extraction block,
+  `TextExtractionLimitExceeded` (600) and `TextShownWithoutFont` (601, a show operator before any
+  `Tf`).
 
 ### Changed
 

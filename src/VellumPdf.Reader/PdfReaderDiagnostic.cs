@@ -136,6 +136,7 @@ public sealed class PdfReaderDiagnostic
 /// <item><description><c>3xx</c> — content streams.</description></item>
 /// <item><description><c>4xx</c> — fonts and Unicode mapping.</description></item>
 /// <item><description><c>5xx</c> — images.</description></item>
+/// <item><description><c>6xx</c> — text extraction.</description></item>
 /// <item><description><c>9xx</c> — reserved for the channel's own bookkeeping (currently just
 /// <see cref="DiagnosticsSuppressed"/>).</description></item>
 /// </list>
@@ -573,6 +574,34 @@ public enum PdfReaderDiagnosticCode
     /// </summary>
     ContentLimitExceeded = 309,
 
+    /// <summary>
+    /// A <c>gs</c>-invoked graphics state parameter dictionary's own <c>/Font</c> array (ISO
+    /// 32000-2 §8.4.5 Table 57) did not match the shape Table 57 requires: its first element is
+    /// neither an indirect reference to a font dictionary nor a direct font dictionary (the entry
+    /// is ignored; whatever font <c>Tf</c>, or an earlier conforming <c>gs</c>, already bound stays
+    /// in effect), or it IS a direct font dictionary, which Table 57's own text requires to be an
+    /// indirect reference instead (accepted anyway and used as the font: a direct font dictionary
+    /// resolves the same way an indirect one does, so rejecting it would trade a working binding
+    /// for an unresolvable one over a wording technicality). Split out from
+    /// <see cref="OperandStackMalformed"/> into its own code (#417 round 5) because that code's
+    /// sink dedupes on <c>(code, object, page)</c>: an unbalanced <c>Q</c> or any of that code's
+    /// other, unrelated cases reported first on the same page silently absorbed this one, so a
+    /// document that mixed the two defects never reported the font problem at all.
+    /// <para>
+    /// The object this reports against is the ExtGState dictionary itself (its indirect reference,
+    /// when it has one), not the content stream that names it via <c>gs</c> (#417 round 8): two
+    /// content streams share one object number apiece, so keying on the stream instead would
+    /// collapse two DIFFERENT malformed ExtGStates named from the same stream into a single
+    /// report, and when the two arms above disagree, the survivor's message then asserts an
+    /// outcome that is false for whichever one it ate. A direct (non-indirect-reference) ExtGState
+    /// dictionary has no object number of its own, so two DIFFERENT direct ExtGState dictionaries
+    /// on the SAME page still collapse into one report the same way <see
+    /// cref="FontTypeUnsupported"/> (405) collapses two direct font dictionaries; an indirect
+    /// reference does not share this gap.
+    /// </para>
+    /// </summary>
+    ExtGStateFontMalformed = 310,
+
     // ── 4xx: fonts and Unicode mapping ──────────────────────────────────────────────────────────
 
     /// <summary>
@@ -622,6 +651,24 @@ public enum PdfReaderDiagnosticCode
     /// since that stream may map the code (§9.10.2 gives it priority over the glyph-name route).
     /// </summary>
     UnmappedGlyphs = 404,
+
+    /// <summary>
+    /// A <c>/Font</c> resource's <c>/Subtype</c> is <c>/Type0</c> or <c>/Type3</c>: this reader
+    /// decodes simple fonts only (Type1, MMType1, TrueType) as of #98, so text shown through a font
+    /// of either type produces no characters and no advance, distinct from <see
+    /// cref="FontUnreadable"/> (400), which means the font dictionary itself is broken rather than
+    /// merely of a type this reader cannot decode yet. Reported once per font PER PAGE, not once
+    /// per font overall: the dedupe key <c>DiagnosticSink</c> reports through is <c>(code, object
+    /// number, page index)</c>, so the same font used on two pages is reported once on each. A
+    /// direct (non-indirect-reference) font dictionary has no object number of its own, so two
+    /// DIFFERENT direct font dictionaries on the SAME page both dedupe on <see
+    /// langword="null"/> and collapse into a single report, undercounting how many actually
+    /// unsupported fonts that page uses; an indirect reference does not share this gap. Reported
+    /// from <c>PdfDocumentReader.GetFontReader</c> rather than the text-extraction visitor: only
+    /// <c>GetFontReader</c> can tell "unsupported type" apart from "already reported unreadable"
+    /// without asking the visitor to reimplement that distinction.
+    /// </summary>
+    FontTypeUnsupported = 405,
 
     // ── 5xx: images ─────────────────────────────────────────────────────────────────────────────
 
@@ -753,6 +800,26 @@ public enum PdfReaderDiagnosticCode
     /// </summary>
     ImageOccurrenceLimitExceeded = 511,
 
+    // ── 6xx: text extraction ────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// One <c>ExtractText</c> call reached one of <c>TextCallBudget</c>'s own ceilings: glyphs per
+    /// page, characters per page, runs per page, or the call-wide character total. <see
+    /// cref="PdfReaderDiagnostic.Message"/> names which. Reported once per call through
+    /// <c>DiagnosticSink.ReportRetained</c>, since a condition that truncates the extracted text
+    /// must stay visible even once the ordinary diagnostics cap is already full; the rest of the
+    /// page that tripped it is skipped and the walk continues to the next page.
+    /// </summary>
+    TextExtractionLimitExceeded = 600,
+
+    /// <summary>
+    /// A text-showing operator (<c>Tj</c>, <c>TJ</c>, <c>'</c>, or <c>"</c>) ran before any <c>Tf</c>
+    /// had set a font. §9.3.1 Table 103's <c>Tf</c> row gives font and size no initial value: they
+    /// "shall be specified explicitly by using Tf before any text is shown." No characters or
+    /// advance come from a show operator this applies to. Reported once per page.
+    /// </summary>
+    TextShownWithoutFont = 601,
+
     // ── 9xx: reserved ───────────────────────────────────────────────────────────────────────────
 
     /// <summary>
@@ -822,11 +889,13 @@ internal static class PdfReaderDiagnosticSeverities
         PdfReaderDiagnosticCode.InlineImageMalformed => PdfReaderDiagnosticSeverity.Warning,
         PdfReaderDiagnosticCode.ContentStreamTooLarge => PdfReaderDiagnosticSeverity.Warning,
         PdfReaderDiagnosticCode.ContentLimitExceeded => PdfReaderDiagnosticSeverity.Warning,
+        PdfReaderDiagnosticCode.ExtGStateFontMalformed => PdfReaderDiagnosticSeverity.Warning,
         PdfReaderDiagnosticCode.FontUnreadable => PdfReaderDiagnosticSeverity.Warning,
         PdfReaderDiagnosticCode.FontEncodingMalformed => PdfReaderDiagnosticSeverity.Warning,
         PdfReaderDiagnosticCode.FontWidthsMalformed => PdfReaderDiagnosticSeverity.Warning,
         PdfReaderDiagnosticCode.FontNoUnicodeRoute => PdfReaderDiagnosticSeverity.Info,
         PdfReaderDiagnosticCode.UnmappedGlyphs => PdfReaderDiagnosticSeverity.Info,
+        PdfReaderDiagnosticCode.FontTypeUnsupported => PdfReaderDiagnosticSeverity.Warning,
 
         PdfReaderDiagnosticCode.ImageDictionaryInvalid => PdfReaderDiagnosticSeverity.Warning,
         PdfReaderDiagnosticCode.ImageColorSpaceUnsupported => PdfReaderDiagnosticSeverity.Warning,
@@ -840,6 +909,8 @@ internal static class PdfReaderDiagnosticSeverities
         PdfReaderDiagnosticCode.AnnotationAppearanceUnusable => PdfReaderDiagnosticSeverity.Warning,
         PdfReaderDiagnosticCode.ImageExtractionBudgetExhausted => PdfReaderDiagnosticSeverity.Warning,
         PdfReaderDiagnosticCode.ImageOccurrenceLimitExceeded => PdfReaderDiagnosticSeverity.Warning,
+        PdfReaderDiagnosticCode.TextExtractionLimitExceeded => PdfReaderDiagnosticSeverity.Warning,
+        PdfReaderDiagnosticCode.TextShownWithoutFont => PdfReaderDiagnosticSeverity.Warning,
         PdfReaderDiagnosticCode.DiagnosticsSuppressed => PdfReaderDiagnosticSeverity.Warning,
         _ => throw new UnreachableException($"No severity is mapped for {code}."),
     };

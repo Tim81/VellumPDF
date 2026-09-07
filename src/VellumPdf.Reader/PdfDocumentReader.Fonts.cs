@@ -20,11 +20,14 @@ public sealed partial class PdfDocumentReader
     /// Throws <see cref="ObjectDisposedException"/> when this reader is disposed, checked before
     /// anything else, the same as every other entry point on this class.
     /// <para>
-    /// Returns <see langword="null"/> silently, with no diagnostic, for <c>/Subtype /Type0</c> and
-    /// <c>/Subtype /Type3</c>: readers for those are not built yet (#98), and reporting
-    /// <see cref="PdfReaderDiagnosticCode.FontUnreadable"/> here would fire on every CJK or Type 3
-    /// document until they are. Not yet wired to <c>ContentInterpreter</c>, so the only callers
-    /// today are tests.
+    /// Returns <see langword="null"/> for <c>/Subtype /Type0</c> and <c>/Subtype /Type3</c>: readers
+    /// for those are not built yet (#98). Text extraction (#98) makes that omission user-visible, so
+    /// this reports <see cref="PdfReaderDiagnosticCode.FontTypeUnsupported"/> (once per font per
+    /// page — see that code's own doc for the exact dedupe key and its one gap) instead
+    /// of the silence an earlier version of this method chose, back when the only callers were
+    /// tests that already knew which fonts this reader could not decode. <see
+    /// cref="PdfReaderDiagnosticCode.FontUnreadable"/> stays wrong for this case even now: it means
+    /// the font dictionary itself is broken, and a Type0 or Type3 font dictionary usually is not.
     /// </para>
     /// <para>
     /// Both resolves this method does of its own (the font entry itself, then its <c>/Subtype</c>)
@@ -83,6 +86,11 @@ public sealed partial class PdfDocumentReader
                     () => SimpleFontReader.Create(this, fontDict, objectNumber, generation, sink, pageIndex));
 
             case "Type0" or "Type3":
+                sink.Report(
+                    PdfReaderDiagnosticCode.FontTypeUnsupported,
+                    $"/Subtype /{subtype!.Value} is not one of the simple-font types (Type1, "
+                    + "MMType1, TrueType) this reader decodes for text extraction (#98).",
+                    objectNumber, generation, pageIndex);
                 return null;
 
             default:

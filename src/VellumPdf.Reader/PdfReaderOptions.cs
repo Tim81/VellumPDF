@@ -76,6 +76,17 @@ public sealed class PdfReaderOptions
     /// constrained device, or one hardening against a decompression bomb, may lower it. Raising it
     /// above the default is refused: nothing above 512 MiB has been exercised as a safe ceiling, so
     /// this option can only tighten it.
+    /// <para>
+    /// <see cref="PdfDocumentReader.ExtractText(PdfTextExtractionOptions)"/> (#98) also reuses this
+    /// SAME value, unconverted, as a call-wide ceiling on total CHARACTERS extracted across every
+    /// page one call visits — a byte budget standing in for a character count, since #98 adds no
+    /// character-specific option of its own. A caller tightening this option to bound decode
+    /// memory therefore also caps how much text one <c>ExtractText</c> call can return, which has
+    /// nothing to do with decode memory as such; lowering it enough to matter for memory (well under
+    /// the default) will, in practice, never be reached by ordinary text volumes, but a caller
+    /// relying on this option for BOTH purposes at once should not assume the two ceilings are
+    /// independent.
+    /// </para>
     /// </summary>
     /// <exception cref="ArgumentOutOfRangeException">
     /// Thrown by <see cref="PdfReader.Open(byte[], PdfReaderOptions)"/> when set above the 512 MiB

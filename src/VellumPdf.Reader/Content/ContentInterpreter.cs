@@ -188,15 +188,28 @@ internal sealed class ContentInterpreter
 
     /// <summary>
     /// The <c>/Resources</c> dictionary in effect for the callback currently running (the page's
-    /// own, or the invoking Form XObject's after the §8.10.2 fallback), or <see langword="null"/>
+    /// own, or the invoking Form XObject's after the §7.8.3 fallback), or <see langword="null"/>
     /// when none applies. Set immediately before <see cref="IContentVisitor.OnInlineImage"/> and
     /// <see cref="IContentVisitor.OnImageXObject"/> and cleared immediately after, so a value read
-    /// outside either callback is <see langword="null"/> rather than a stale one (#98). Exists so a
+    /// outside either callback is <see langword="null"/> rather than a stale one. Exists so a
     /// visitor can resolve an inline image's or an image XObject's named colour space (§8.6.3,
     /// §8.9.7) against the resources this interpreter already has in hand, without this interpreter
     /// substituting a resolved colour-space object into a dictionary it hands the visitor: §7.8.2
     /// forbids a stream operand in content, and §8.6.3 forbids an inline colour-space array, so
     /// neither shape belongs in what <see cref="IContentVisitor.OnInlineImage"/> receives.
+    /// <para>
+    /// Once widened to stay current for an entire <see cref="InterpretStream"/> call, on the theory
+    /// that text extraction would also need it during <see cref="IContentVisitor.OnOperator"/> to
+    /// resolve <c>Tf</c>'s bare <c>/Resources /Font</c> name (#417 round 2's own reasoning). That
+    /// need never materialised: <see cref="TextExtractionVisitor"/> resolves a font through
+    /// <see cref="GraphicsState.FontResources"/>, captured at <c>Tf</c> time on the graphics state
+    /// itself, not through this property, precisely because a value that tracks
+    /// <see cref="InterpretStream"/>'s own CURRENT recursion depth is the wrong shape for a lookup
+    /// that must use the resources in effect when <c>Tf</c> ran, not whatever is current when the
+    /// show operator later reads it (see that field's own remarks). Narrowed back to its original
+    /// two-callback scope once that was established (#417 round 4 LOW 5): nothing reads it outside
+    /// those two windows, so the wider scope had no consumer left to justify it.
+    /// </para>
     /// </summary>
     internal PdfDictionary? CurrentResources { get; private set; }
 
@@ -560,7 +573,7 @@ internal sealed class ContentInterpreter
 
     /// <summary>Resources and diagnostic-attribution identity for one content stream being
     /// interpreted: the page's own for the top-level call, a Form XObject's own (falling back to
-    /// its invoker's per §8.10.2) for a recursive one.</summary>
+    /// its invoker's per §7.8.3) for a recursive one.</summary>
     private readonly record struct StreamContext(PdfDictionary? Resources, int? DiagObjectNumber);
 
     private void InterpretStream(
@@ -1053,6 +1066,7 @@ internal sealed class ContentInterpreter
             case "Tf":
                 ValidateFontResource(ctx, diagnostics, pageIndex);
                 _gs.Font = _operands[0];
+                _gs.FontResources = ctx.Resources;
                 _gs.FontSize = NumberOperand(1);
                 break;
 
@@ -1379,6 +1393,19 @@ internal sealed class ContentInterpreter
         if (_reader.ResolveValue(raw) is not PdfDictionary extGState)
             return;
 
+        // DiagnosticSink dedupes 310 on (code, object, page) alone (its own doc). Reporting
+        // ctx.DiagObjectNumber here — the content stream's object, not the ExtGState's — would
+        // collapse two DIFFERENT malformed ExtGStates named from the same stream into one survivor,
+        // whose message then asserts an outcome ("resolved and used anyway" vs "ignored") that is
+        // simply false for whichever report it ate (#417 round 8). Attributing the diagnostic to
+        // the ExtGState object itself, when it has one, keys the two apart; a direct ExtGState
+        // dictionary has no object number of its own to key on, so two of those still collapse the
+        // same way two same-shaped 'gs' malformations always would (see FontTypeUnsupported's own
+        // analogous note).
+        var extGStateObjectNumber = raw is PdfIndirectReference extGStateRef
+            ? extGStateRef.ObjectNumber
+            : ctx.DiagObjectNumber;
+
         // Table 57: /Font is "an array of the form [font size] where font shall be an indirect
         // reference to a font dictionary". §7.3.10 lets any dictionary entry be given as an
         // indirect reference, not only the ones a table says must be one, so /Font's own value is
@@ -1388,8 +1415,54 @@ internal sealed class ContentInterpreter
         if (extGState.Get(FontKey) is { } fontRaw && _reader.ResolveValue(fontRaw) is PdfArray fontArray
             && fontArray.Count == 2)
         {
-            _gs.Font = fontArray[0];
-            _gs.FontSize = ReadNumber(fontArray[1]);
+            // Table 57's letter requires an indirect reference; a direct font dictionary is not
+            // that, but it is still a fully resolvable font (FontCache's own doc treats a direct
+            // font dictionary as legal, if unusual, under §7.8.2, and GetFontReader resolves one
+            // the same way it resolves a reference). Rejecting that shape outright, the way a bare
+            // name or any other value must be rejected, would discard a font this reader can
+            // otherwise use and, with a preceding valid 'Tf' in scope, leave that stale binding
+            // decoding glyphs through the wrong widths instead of the ExtGState's own ones (#417
+            // round 5: round 4 lumped both shapes into one rejection).
+            if (fontArray[0] is PdfIndirectReference or PdfDictionary)
+            {
+                // Table 57's own font element resolves independent of any /Resources dictionary,
+                // whether it is the indirect reference the table names or the direct dictionary
+                // this reader also accepts, so this path needs no resource dictionary of its own.
+                // Setting FontResources to null here is NOT load-bearing (#417 round 4 LOW 11):
+                // TextExtractionVisitor.ResolveFont never reads its own `resources` parameter at
+                // all for a non-PdfName Font operand (the case this branch always produces), and a
+                // later 'Tf' overwrites FontResources itself regardless of what it was left at, so
+                // leaving the previous value in place instead would change nothing observable.
+                // Cleared anyway, as cheap defence against a future change to ResolveFont that
+                // starts reading it for this path too.
+                _gs.Font = fontArray[0];
+                _gs.FontResources = null;
+                _gs.FontSize = ReadNumber(fontArray[1]);
+
+                if (fontArray[0] is PdfDictionary)
+                {
+                    diagnostics.Report(
+                        PdfReaderDiagnosticCode.ExtGStateFontMalformed,
+                        $"'gs' names '/{DiagnosticExcerpt.Quote(gsName.Value)}', whose /ExtGState /Font "
+                        + "array's first element is a direct font dictionary rather than an indirect "
+                        + "reference (ISO 32000-2 §8.4.5 Table 57); the font was resolved and used anyway.",
+                        extGStateObjectNumber, pageIndex: pageIndex);
+                }
+            }
+            else
+            {
+                // A producer that puts a bare name (or any other non-reference, non-dictionary
+                // value) in the font slot leaves nothing this reader can resolve as a font at all.
+                // Leaving Font/FontResources/FontSize untouched keeps whatever 'Tf' (or an earlier,
+                // conforming 'gs') already bound, the same "drop the operator, keep interpreting"
+                // recovery ValidateOperandTypes uses elsewhere in this class.
+                diagnostics.Report(
+                    PdfReaderDiagnosticCode.ExtGStateFontMalformed,
+                    $"'gs' names '/{DiagnosticExcerpt.Quote(gsName.Value)}', whose /ExtGState /Font "
+                    + "array's first element is neither an indirect reference nor a direct dictionary "
+                    + "(ISO 32000-2 §8.4.5 Table 57); the ExtGState's /Font entry was ignored.",
+                    extGStateObjectNumber, pageIndex: pageIndex);
+            }
         }
     }
 
@@ -1475,12 +1548,9 @@ internal sealed class ContentInterpreter
 
         if (subtype.Equals(XObjectSubtypeImage))
         {
-            // No OnFormBegin/OnFormEnd pair (an image XObject has no content to recurse into) and
-            // no resource lookup beyond ctx.Resources itself: CurrentResources hands the visitor
-            // exactly what this interpreter already resolved for the invoking stream, the same
-            // value OnInlineImage exposes it through (CurrentResources' own doc explains why this
-            // interpreter does not substitute a resolved colour space into the dictionary or
-            // stream instead).
+            // No OnFormBegin/OnFormEnd pair (an image XObject has no content to recurse into).
+            // CurrentResources is set narrowly around this one callback (its own doc explains why),
+            // so a visitor reading it from inside OnImageXObject sees ctx.Resources.
             CurrentResources = ctx.Resources;
             try
             {
@@ -1512,7 +1582,7 @@ internal sealed class ContentInterpreter
     // so RunFormXObject's own entry into an annotation appearance stream (§12.5.5), which shares
     // every one of these guards and this same save-restore shape, is not a second, drifting copy of
     // it. invokerResources is ctx.Resources for a 'Do'-invoked form; RunFormXObject has no invoking
-    // content stream of its own, so it passes the page's /Resources instead (§8.10.2's fallback
+    // content stream of its own, so it passes the page's /Resources instead (§7.8.3's fallback
     // reads the same either way: a form's own /Resources when present, the caller's otherwise).
     private void InvokeForm(
         ParsedStream stream, PdfDictionary? invokerResources, int offset, IContentVisitor visitor,
@@ -1567,8 +1637,11 @@ internal sealed class ContentInterpreter
             var formDict = stream.Dictionary;
             var matrix = ReadFormMatrix(formDict);
             var bbox = ReadFormBBox(formDict);
-            // §8.10.2: a form's /Resources is optional but strongly recommended; when absent, the
-            // invoking content stream's own resources apply.
+            // §8.10.2 Table 93's own Resources row: "Optional but strongly recommended". §7.8.3's
+            // last bullet is what makes an absent one harmless here rather than merely tolerated —
+            // resources a form XObject omitted "shall be inherited from the resource dictionary of
+            // the page on which they are used" — so the invoking content stream's own resources
+            // apply instead.
             var formResources = ResolveDictionaryEntry(formDict, PdfName.Resources) ?? invokerResources;
 
             visitor.OnFormBegin(formDict, matrix, bbox, objectNumber, offset);
@@ -1763,7 +1836,7 @@ internal sealed class ContentInterpreter
     /// cref="Run"/> is what creates that scope by default.
     /// </summary>
     /// <param name="page">The page <paramref name="formStream"/>'s annotation belongs to; supplies
-    /// the <c>/Resources</c> fallback (§8.10.2) when the appearance stream has none of its
+    /// the <c>/Resources</c> fallback (§7.8.3) when the appearance stream has none of its
     /// own.</param>
     /// <param name="formStream">The appearance stream, resolved and identified by its own object
     /// number by the caller (<c>ImageReachabilityWalker</c>).</param>
@@ -2253,11 +2326,9 @@ internal sealed class ContentInterpreter
             return true;
         }
 
-        // CurrentResources hands the visitor the resources this callback already resolved for the
-        // current stream, so a named /CS can be resolved against them without this interpreter
-        // substituting a resolved colour-space object into dict itself (see CurrentResources' own
-        // doc for why that would be wrong for both an inline image and a content stream in
-        // general).
+        // CurrentResources is set narrowly around this one callback (its own doc explains why), so
+        // a named /CS can be resolved against it without this interpreter substituting a resolved
+        // colour-space object into dict itself.
         CurrentResources = ctx.Resources;
         try
         {

@@ -962,6 +962,28 @@ public sealed class ContentInterpreterTests
         Assert.Contains(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ResourceMissing);
     }
 
+    /// <summary>
+    /// #417 round 5: Table 57's own text requires the <c>/Font</c> array's first element to be an
+    /// indirect reference, but a direct font dictionary is a legal, fully resolvable PDF object
+    /// too. Deleting the <c>or PdfDictionary</c> half of <c>HandleExtGState</c>'s own type check
+    /// leaves this test failing: <c>state.Font</c> would stay <see langword="null"/> instead of
+    /// carrying the dictionary, since a rejected shape leaves <c>Font</c>/<c>FontSize</c> untouched.
+    /// </summary>
+    [Fact]
+    public void Gs_withDirectFontDictionary_bindsFontDespiteTable57Deviation()
+    {
+        var (reader, state, _) = RunAndCaptureFinalState(
+            BuildPageDoc(
+                "/G1 gs\n",
+                "<< /ExtGState << /G1 6 0 R >> >>",
+                new Obj(6, "<< /Type /ExtGState /Font "
+                    + "[<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> 18] >>")));
+
+        Assert.IsType<PdfDictionary>(state!.Font);
+        Assert.Equal(18, state.FontSize);
+        Assert.Contains(reader.Diagnostics, d => d.Code == PdfReaderDiagnosticCode.ExtGStateFontMalformed);
+    }
+
     // ── gs/cs/CS/sh read their own operand for a resource lookup, so a wrong type reports 302 the
     // same way Do's own does, rather than the lookup silently no-op'ing (#402 round 4) ────────────
 
@@ -3719,12 +3741,17 @@ public sealed class ContentInterpreterTests
 
     /// <summary>
     /// <see cref="ContentInterpreter.CurrentResources"/> is the page's own <c>/Resources</c> for an
-    /// image XObject drawn at page level, is <see langword="null"/> during every ordinary operator
-    /// callback (it is set only immediately around <c>OnInlineImage</c>/<c>OnImageXObject</c>), and
-    /// is <see langword="null"/> again once <see cref="ContentInterpreter.Run"/> returns.
+    /// image XObject drawn at page level, is <see langword="null"/> during an ORDINARY operator
+    /// callback ('re' here — LOW 5, #417 round 4: briefly widened to span every operator, on the
+    /// theory that text extraction's own <c>Tf</c> handling would need it during
+    /// <c>OnOperator</c> too; that need never materialised, since
+    /// <see cref="TextExtractionVisitor"/> resolves a font through
+    /// <see cref="GraphicsState.FontResources"/> instead — see <see
+    /// cref="ContentInterpreter.CurrentResources"/>'s own doc — so the widening was reverted),
+    /// and is <see langword="null"/> again once <see cref="ContentInterpreter.Run"/> returns.
     /// </summary>
     [Fact]
-    public void CurrentResources_isPageResources_forAnImageXObjectAtPageLevel_nullElsewhere()
+    public void CurrentResources_isPageResources_forAnImageXObjectAtPageLevel_nullForOrdinaryOperators()
     {
         var pdf = BuildPageDoc(
             "0 0 1 1 re\n/Im0 Do",
@@ -3771,6 +3798,120 @@ public sealed class ContentInterpreterTests
         Assert.NotNull(resources);
         var marker = Assert.IsType<PdfName>(resources!.Get(new PdfName("Marker")));
         Assert.Equal("FormMarker", marker.Value);
+    }
+
+    private sealed class PerOperatorResourceVisitor(ContentInterpreter interpreter) : IContentVisitor
+    {
+        public List<(string Op, PdfDictionary? Resources)> Operators { get; } = [];
+        public List<PdfDictionary?> ResourcesDuringFormBegin { get; } = [];
+
+        public void OnOperator(string operatorName, IReadOnlyList<PdfObject> operands, int offset) =>
+            Operators.Add((operatorName, interpreter.CurrentResources));
+
+        public void OnInlineImage(PdfDictionary dictionary, ReadOnlyMemory<byte> data, int offset) { }
+
+        public void OnFormBegin(
+            PdfDictionary formDictionary, Matrix formMatrix, PdfRectangle? boundingBox, int objectNumber,
+            int offset) =>
+            ResourcesDuringFormBegin.Add(interpreter.CurrentResources);
+
+        public void OnFormEnd(int objectNumber) { }
+
+        public void OnImageXObject(ParsedStream stream, int offset) { }
+    }
+
+    /// <summary>
+    /// LOW 5 (#417 round 4): <see cref="ContentInterpreter.CurrentResources"/>'s ordinary-operator
+    /// widening (once meant to track the form/page boundary through EVERY operator, per this test's
+    /// own name before this fix) was reverted once its only claimed reason — text extraction's own
+    /// <c>Tf</c> handling — turned out not to read it at all (see <see
+    /// cref="ContentInterpreter.CurrentResources"/>'s own doc). This now pins the opposite: an
+    /// ordinary operator ('re') sees a <see langword="null"/> <c>CurrentResources</c> whether it
+    /// runs at page level or inside a Form XObject with its own <c>/Resources</c>.
+    /// </summary>
+    [Fact]
+    public void CurrentResources_isNull_forOrdinaryOperators_insideAndOutsideAForm()
+    {
+        var pdf = BuildPageDoc(
+            "0 0 1 1 re\n/Fm0 Do\n0 0 2 2 re",
+            "<< /XObject << /Fm0 10 0 R >> /Marker /PageMarker >>",
+            new Obj(10,
+                "<< /Type /XObject /Subtype /Form /BBox [0 0 1 1] "
+                + "/Resources << /Marker /FormMarker >> >>",
+                Encoding.ASCII.GetBytes("0 0 3 3 re")));
+
+        var reader = PdfReader.Open(pdf);
+        var page = reader.GetPage(0);
+        var interpreter = new ContentInterpreter(reader);
+        var visitor = new PerOperatorResourceVisitor(interpreter);
+        interpreter.Run(page, visitor);
+
+        var reOps = visitor.Operators.Where(o => o.Op == "re").ToList();
+        Assert.Equal(3, reOps.Count);
+        Assert.All(reOps, o => Assert.Null(o.Resources));
+    }
+
+    /// <summary>
+    /// <see cref="ContentInterpreter.CurrentResources"/> is <see langword="null"/> during
+    /// <see cref="IContentVisitor.OnFormBegin"/>: unlike <see
+    /// cref="ContentInterpreter.GraphicsState"/>.<c>Ctm</c>, which the invoker's own value already
+    /// reaches that callback with, this property is set only around
+    /// <see cref="IContentVisitor.OnInlineImage"/>/<see cref="IContentVisitor.OnImageXObject"/>
+    /// (LOW 5, #417 round 4 — see that property's own doc for why the wider scope this test once
+    /// pinned was reverted), and <c>OnFormBegin</c> is neither.
+    /// </summary>
+    [Fact]
+    public void CurrentResources_isNull_duringOnFormBegin()
+    {
+        var pdf = BuildPageDoc(
+            "/Fm0 Do",
+            "<< /XObject << /Fm0 10 0 R >> /Marker /PageMarker >>",
+            new Obj(10,
+                "<< /Type /XObject /Subtype /Form /BBox [0 0 1 1] "
+                + "/Resources << /Marker /FormMarker >> >>",
+                []));
+
+        var reader = PdfReader.Open(pdf);
+        var page = reader.GetPage(0);
+        var interpreter = new ContentInterpreter(reader);
+        var visitor = new PerOperatorResourceVisitor(interpreter);
+        interpreter.Run(page, visitor);
+
+        var resources = Assert.Single(visitor.ResourcesDuringFormBegin);
+        Assert.Null(resources);
+    }
+
+    /// <summary>
+    /// <see cref="ContentInterpreter.CurrentResources"/> is <see langword="null"/> during an
+    /// ordinary operator under <see cref="ContentInterpreter.RunFormXObject"/> too, and stays
+    /// <see langword="null"/> once that call returns — this property's own narrow scope (LOW 5,
+    /// #417 round 4) applies equally to this second entry point, not only <see
+    /// cref="ContentInterpreter.Run"/>.
+    /// </summary>
+    [Fact]
+    public void CurrentResources_isNull_forOrdinaryOperators_underRunFormXObject()
+    {
+        var pdf = BuildPageDoc(
+            "0 0 1 1 re",
+            "<< /Marker /PageMarker >>",
+            new Obj(10,
+                "<< /Type /XObject /Subtype /Form /BBox [0 0 1 1] "
+                + "/Resources << /Marker /AppearanceMarker >> >>",
+                Encoding.ASCII.GetBytes("0 0 2 2 re")));
+
+        var reader = PdfReader.Open(pdf);
+        var page = reader.GetPage(0);
+        var interpreter = new ContentInterpreter(reader);
+        var visitor = new PerOperatorResourceVisitor(interpreter);
+        interpreter.Run(page, visitor);
+        visitor.Operators.Clear(); // Isolate what RunFormXObject itself produces below.
+
+        var formStream = reader.ResolveStream(10)!;
+        interpreter.RunFormXObject(page, formStream, visitor);
+
+        var re = Assert.Single(visitor.Operators, o => o.Op == "re");
+        Assert.Null(re.Resources);
+        Assert.Null(interpreter.CurrentResources);
     }
 
     /// <summary> Proof that exposing <c>CurrentResources</c> rather than substituting a resolved

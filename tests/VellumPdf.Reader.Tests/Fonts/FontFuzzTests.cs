@@ -19,8 +19,15 @@ namespace VellumPdf.Reader.Tests.Fonts;
 /// and indirect), and random base font names including a 1 KiB one. The second drives
 /// <see cref="PdfDocumentReader.GetFontReader"/> itself, including its own indirect resolution of
 /// the font entry and its <c>/Subtype</c>. Both assert: no exception escapes, at most four
-/// distinct diagnostic codes are reported per font (400 to 402, plus one of 403/404), and
-/// <see cref="PdfFontReader.TryDecodeNext"/> over every byte value never throws.
+/// distinct diagnostic codes are reported per font, and <see
+/// cref="PdfFontReader.TryDecodeNext"/> over every byte value never throws. The bound stays four
+/// even though five distinct codes are documented (400 to 402, plus one of 403/404, OR 405 alone
+/// — see <see cref="AssertOnlyDocumentedCodes"/>'s remarks): 405 fires only when
+/// <c>GetFontReader</c> declines to call <c>Create</c> at all (a <c>/Type0</c> or <c>/Type3</c>
+/// sample), which makes it mutually exclusive with every code <c>Create</c> itself reports, so no
+/// single sample can ever combine 405 with any of the other four. Measured (#417 round 2): with
+/// the bound at 4, both fuzz methods below pass at 3,000 iterations AND at 100,000; lowering it to
+/// 3 fails, so 4 is exactly tight, not a slack round number.
 /// </summary>
 public sealed class FontFuzzTests
 {
@@ -199,6 +206,10 @@ public sealed class FontFuzzTests
     private static void AssertOnlyDocumentedCodes(DiagnosticSink sink)
     {
         var distinctCodes = sink.Diagnostics.Select(d => d.Code).Distinct().ToList();
+        // 4, not 5: FontTypeUnsupported (405) and the four codes Create itself can report
+        // (400–402, plus one of 403/404) are mutually exclusive per sample — see this class's own
+        // remarks — so the true worst case for one font never exceeds 4, even though the set of
+        // codes considered valid below has 5 members across the two mutually exclusive groups.
         Assert.True(
             distinctCodes.Count <= 4,
             $"expected at most 4 distinct codes, got {distinctCodes.Count}: {string.Join(", ", distinctCodes)}");
@@ -209,7 +220,11 @@ public sealed class FontFuzzTests
                     or PdfReaderDiagnosticCode.FontEncodingMalformed
                     or PdfReaderDiagnosticCode.FontWidthsMalformed
                     or PdfReaderDiagnosticCode.FontNoUnicodeRoute
-                    or PdfReaderDiagnosticCode.UnmappedGlyphs,
+                    or PdfReaderDiagnosticCode.UnmappedGlyphs
+                    // #98: GetFontReader (not Create, which SubtypeGen's own comment above says
+                    // never gates on /Subtype) now reports this for the /Type0 and /Type3 samples
+                    // SubtypeGen deliberately generates.
+                    or PdfReaderDiagnosticCode.FontTypeUnsupported,
                 $"unexpected code {code}");
         }
     }
