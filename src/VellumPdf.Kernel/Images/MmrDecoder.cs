@@ -135,7 +135,7 @@ internal static class MmrDecoder
             curCE[ceIdx + 1] = width;
     }
 
-    // ── Mode codes (T.6 Table 2) ──────────────────────────────────────────────
+    // ── Mode codes (T.6 Table 1) ──────────────────────────────────────────────
 
     // We encode vertical modes as their delta value (-3 .. +3) and use the
     // special constants below for Pass and Horizontal.
@@ -154,7 +154,8 @@ internal static class MmrDecoder
     /// <summary>Reads the next T.6 2D mode codeword (MSB-first).</summary>
     private static int ReadMode(ref BitReader r)
     {
-        // T.6 mode table (ISO/IEC 11544 Table 2 / ITU-T T.6 §4):
+        // T.6 mode table (ITU-T T.6 §2.2.3, Table 1/T.6 — the "two-dimensional code table"
+        // §2.2.3.3 names when it defines the horizontal-mode flag code):
         //  1             -> V(0)      delta = 0
         //  011           -> H
         //  010           -> V(-1)     delta = -1
