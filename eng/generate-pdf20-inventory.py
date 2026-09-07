@@ -349,8 +349,8 @@ def rule_class_provenance():
 
     The 50/101/53 this replaced were still correct when they were checked, which is the point:
     nothing re-derived them, so nothing would have said otherwise. The same family of hand-typed
-    figures had already rotted next door, where "69 rule files" both undercounted and named the
-    wrong population: it is 71 rule classes. A rule class is a .cs file under Rules/ containing
+    figures was wrong the day it was written: "69 rule files" landed in the commit immediately
+    before this one and both undercounted and named the wrong population. It is 71 rule classes. A rule class is a .cs file under Rules/ containing
     ": IConformanceRule"; Rules/ also holds helper files that are not rule classes, and counting
     those instead gives a larger denominator, which is how the acquisition ledger came to report
     105 of a population of 101.

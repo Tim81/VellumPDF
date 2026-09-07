@@ -32,10 +32,10 @@ public enum CoverageStatus
 /// </summary>
 /// <remarks>
 /// The test ids are ISO 19005 / ISO 14289 clause references (facts); the titles, notes, and status
-/// are this project's own assessment. No veraPDF profile content is embodied here. Where the standard
-/// is held locally (ISO 32000-2, ISO 14289-1 and -2) the rules are authored from its text and veraPDF
-/// is only an oracle; ISO 19005-2 (PDF/A-2) is not held, so those checks are authored against
-/// veraPDF's bundled profiles instead (#418).
+/// are this project's own assessment. No veraPDF profile content is embodied here. Where the
+/// standard is held locally, which for these rules means ISO 14289-1 and ISO 32000-1, the rules
+/// are authored from its text and veraPDF is only an oracle. ISO 19005-2 (PDF/A-2) is not held,
+/// so those checks are authored against veraPDF's bundled profiles instead (#418).
 /// </remarks>
 public sealed class ConformanceCheck
 {

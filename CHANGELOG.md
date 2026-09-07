@@ -280,17 +280,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   is now reflected everywhere it was missing (#418).** `eng/generate-pdf20-inventory.py` carried
   50, 101 and 53 as literals that nothing checked. They were still correct when audited, which is
   the point: nothing re-derived them, so nothing would have reported otherwise. The same family of
-  typed figures had already rotted next door, where "69 rule files" both undercounted and named the
-  wrong population; it is 71 rule classes. `rule_class_provenance()` now scans the rule classes at
+  typed figures was wrong the day it was written: "69 rule files" landed in the commit immediately
+  before this branch and both undercounted and named the wrong population. It is 71 rule classes. `rule_class_provenance()` now scans the rule classes at
   generation time instead, and the first version of it repeated the mistake in miniature by matching
   "Clean-room" case-sensitively and missing the one rule class that writes it in lower case.
   The acquisition ledger still said "Neither standard has ever been held", and its own 53/56/105
   figures were rule-class counts in name only — they count files, and the directory also holds
   helpers that are not rules, so 105 exceeding the 101 rule classes that exist was the giveaway.
   Both are corrected and cross-referenced against the smaller rule-class counts
-  `docs/architecture.md` uses. That file, the project instructions and
-  `src/VellumPdf.Conformance/README.md` now list ISO 14289-1, the Tagged PDF Best Practice Guide,
-  PDF Declarations and the freely redistributable set (35 documents, not 34) among what is held.
+  `docs/architecture.md` uses. That file and the project instructions now list ISO 14289-1, the
+  Tagged PDF Best Practice Guide, PDF Declarations and the freely redistributable set (35 documents,
+  not 34) among what is held, and `src/VellumPdf.Conformance/README.md` now names which standards
+  its own rules were authored from.
   The root `README.md` carried the same unqualified "written from published specifications" claim
   the package README did, and is corrected with it. Two of the files this entry describes are
   excluded from the repository and so are not visible in the diff.

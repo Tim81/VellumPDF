@@ -42,7 +42,7 @@ unified read-modify-write model that supersedes the write-once document API
 ISO 32000-2:2020 with Errata Collection 3, the ISO/TS 32001–32005 extension series,
 ISO 14289-1 (PDF/UA-1) and ISO 14289-2 (PDF/UA-2), WTPDF 1.0, the Tagged PDF Best Practice
 Guide, PDF Declarations and the PDF 2.0 Application Notes. A second, freely redistributable set adds 35
-redistributable specifications this library also cites, including ISO 32000-1:2008, ICC.1:2010,
+redistributable documents, most but not all of them cited by this library, including ISO 32000-1:2008, ICC.1:2010,
 the ITU-T T.4/T.6/X.690 recommendations, the Adobe font technical notes, TIFF 6.0, the NIST
 FIPS documents, ECMA-363, the Matterhorn Protocol, the Unicode annexes and the W3C
 international-layout set. Clause citations to any of these documents point at text that was
@@ -60,8 +60,8 @@ is acquired and the rule re-derived against it.
 ISO 14289-1 was in the same position until it was acquired on 2026-09-07, so the 53 rule classes
 citing it are now checkable against the text. They have not been checked yet. The XML-doc
 comment stating a rule was derived from the specification text, rather than from a validation
-profile, appears on 71 of the 101 rule classes. 50 of those 71 mention veraPDF elsewhere in
-the same file. #418 tracks both the re-derivation and the comment sweep.
+profile, appears on 71 of the 101 rule classes. 50 of those 71 mention veraPDF in the same
+file. #418 tracks the ISO 19005-2 half and #428 the ISO 14289-1 re-derivation.
 
 Holding a standard is not implementing one, so this licenses no conformance claim. See
 [PDF 2.0 conformance](pdf20-conformance.md) for what the library actually does, and note it
