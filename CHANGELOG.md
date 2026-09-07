@@ -274,7 +274,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   at consulted text, which was true only of the PDF 2.0 half; it and `docs/pdf20-conformance.md`
   now say where the gap is. ISO 14289-1 was in the same position and was acquired on 2026-09-07,
   so the 53 rule classes citing it are now checkable but not yet checked; #418 tracks that pass
-  and the XML-doc comments that still describe every rule as derived from the specification text.
+  and the XML-doc comments that describe a rule as derived from the specification text, which
+  appear on 70 of the 101 rule classes rather than on all of them.
+- **The PDF/A-2 disclosure numbers are generated instead of typed, and the ISO 14289-1 acquisition
+  is now reflected everywhere it was missing (#418).** `eng/generate-pdf20-inventory.py` carried
+  50, 101 and 53 as literals that nothing checked. They were still correct when audited, which is
+  the point: nothing re-derived them, so nothing would have reported otherwise, and the same family
+  of typed figures had already rotted where "69 rule files" should have read 70.
+  `rule_class_provenance()` now scans
+  `src/VellumPdf.Conformance/Rules/` at generation time instead. `docs/iso/ACQUISITION.md` still
+  said "Neither standard has ever been held" and its own 53/56/105 figures were rule-class counts
+  in name only — they are files under `Rules/`, which also holds helper files that are not rules,
+  and 105 exceeding the 101 rule classes that exist was the giveaway; both are corrected and
+  cross-referenced against the smaller rule-class counts `docs/architecture.md` uses. That file,
+  `CLAUDE.md` and `src/VellumPdf.Conformance/README.md` now list ISO 14289-1, the Tagged PDF Best
+  Practice Guide, PDF Declarations and the `docs/iso/free/` set (35 files, not 34) among what is
+  held, and say the "derived from the specification" XML-doc sentence appears on 70 rule classes,
+  49 of which already name veraPDF in the same file, rather than "69 rule files".
 
 ## [2.3.0] - 2026-09-01
 

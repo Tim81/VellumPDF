@@ -339,10 +339,44 @@ def arlington_delta():
     return sorted(new_objects), new_keys, dep_keys, len(names)
 
 
+RULES_DIR = os.path.join(os.path.dirname(__file__), "..", "src", "VellumPdf.Conformance", "Rules")
+
+
+def rule_class_provenance():
+    """Counts behind the PDF/A-2 and PDF/UA-1 disclosure below, read from the rule classes
+    themselves rather than typed.
+
+    The 50/101/53 this replaced were still correct when they were checked, which is the point:
+    nothing re-derived them, so nothing would have said otherwise. The same family of hand-typed
+    figures had already rotted elsewhere, where "69 rule files" in docs/architecture.md and
+    CLAUDE.md should have read 70. A rule class is a .cs file under Rules/ containing
+    ": IConformanceRule"; Rules/ also holds helper files that are not rule classes, and counting
+    those instead gives a larger denominator, which is how ACQUISITION.md came to report 105 of
+    a population of 101.
+    """
+    total = citing_19005_2 = citing_14289_1 = clean_room = clean_room_verapdf = 0
+    for root, _, files in os.walk(RULES_DIR):
+        for name in files:
+            if not name.endswith(".cs"):
+                continue
+            with open(os.path.join(root, name), "r", encoding="utf-8") as f:
+                text = f.read()
+            if ": IConformanceRule" not in text:
+                continue
+            total += 1
+            citing_19005_2 += "19005-2" in text
+            citing_14289_1 += "14289-1" in text
+            if "Clean-room" in text:
+                clean_room += 1
+                clean_room_verapdf += "veraPDF" in text
+    return total, citing_19005_2, citing_14289_1, clean_room, clean_room_verapdf
+
+
 def render():
     refs = level1_references()
     new_objects, new_keys, dep_keys, tsv_count = arlington_delta()
     extensions, extensions_date = pdf_extensions()
+    rule_total, rule_19005_2, rule_14289_1, clean_room, clean_room_verapdf = rule_class_provenance()
     counts = {}
     for r in refs:
         verdict = STATUS.get(r["key"], (None,))[0]
@@ -365,12 +399,15 @@ def render():
     w("> decided by the veraPDF profiles the test suite runs against, not by this page.")
     w("")
     w("> **The PDF/A-2 clause citations are unverified.** ISO 19005-2 is not among the specifications")
-    w("> held locally. 50 of the 101 rule classes in `VellumPdf.Conformance` cite it, and they are")
-    w("> validated against veraPDF's bundled profiles, which encode the standard as test cases rather")
-    w("> than reproducing its text, so those clause numbers have no locally checkable source.")
-    w("> ISO 14289-1 was in the same position until it was acquired on 2026-09-07; the 53 rule classes")
-    w("> citing it can now be re-derived against the text, which #418 tracks along with the XML-doc")
-    w("> comments that still describe every rule as authored from the specification.")
+    w(f"> held locally. {rule_19005_2} of the {rule_total} rule classes in `VellumPdf.Conformance` cite")
+    w("> it, and they are validated against veraPDF's bundled profiles, which encode the standard as")
+    w("> test cases rather than reproducing its text, so those clause numbers have no locally")
+    w("> checkable source. ISO 14289-1 was in the same position until it was acquired on 2026-09-07;")
+    w(f"> the {rule_14289_1} rule classes citing it are now checkable against the text but have not yet")
+    w(f"> been re-derived. {clean_room} of the {rule_total} rule classes carry a Clean-room derivation")
+    w(f"> sentence, and {clean_room_verapdf} of those already name veraPDF in the file as the check")
+    w("> rather than the source of the rule. #418 tracks both the ISO 14289-1 re-derivation and the")
+    w("> remaining XML-doc sweep.")
     w("")
     w("## Normative references")
     w("")

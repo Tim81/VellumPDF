@@ -38,11 +38,16 @@ unified read-modify-write model that supersedes the write-once document API
 
 **Provenance.** Part of the specification set is held locally and read directly:
 ISO 32000-2:2020 with Errata Collection 3, the ISO/TS 32001–32005 extension series,
-ISO 14289-2 (PDF/UA-2), WTPDF 1.0 and the PDF 2.0 Application Notes. Clause citations to
-those documents point at text that was actually consulted, and a reviewer can check any of
-them. The copies are licensed to one person and are excluded from the repository via
-`.git/info/exclude`; see `CLAUDE.md` for how to query them and for the ledger of what is
-held, what is missing and what each missing document unblocks.
+ISO 14289-1 (PDF/UA-1) and ISO 14289-2 (PDF/UA-2), WTPDF 1.0, the Tagged PDF Best Practice
+Guide, PDF Declarations and the PDF 2.0 Application Notes. `docs/iso/free/` adds 35 freely
+redistributable specifications this library also cites, including ISO 32000-1:2008, ICC.1:2010,
+the ITU-T T.4/T.6/X.690 recommendations, the Adobe font technical notes, TIFF 6.0, the NIST
+FIPS documents, ECMA-363, the Matterhorn Protocol, the Unicode annexes and the W3C
+international-layout set. Clause citations to any of these documents point at text that was
+actually consulted, and a reviewer can check any of them. The sponsored copies are licensed to
+one person, and the free set is redistributable but kept out anyway; both are excluded from the
+repository via `.git/info/exclude`. See `CLAUDE.md` for how to query them and for the ledger of
+what is held, what is missing and what each missing document unblocks.
 
 The archival standards are the gap. ISO 19005-2 is not held, and 50 of the 101 rule classes in
 `VellumPdf.Conformance` cite it. Those rules are validated against veraPDF's bundled profiles,
@@ -51,10 +56,10 @@ have no locally checkable source. Treat a citation to ISO 19005 as unverified un
 is acquired and the rule re-derived against it.
 
 ISO 14289-1 was in the same position until it was acquired on 2026-09-07, so the 53 rule classes
-citing it are now checkable against the text. They have not been checked yet. Note also that the
-XML-doc comment on 69 rule files still says the rule was derived from the specification text
-rather than from a third-party validation profile, which was not true of those two standards when
-it was written. #418 tracks both the re-derivation and the comment sweep.
+citing it are now checkable against the text. They have not been checked yet. The XML-doc
+comment stating a rule was derived from the specification text, rather than from a validation
+profile, appears on 70 of the 101 rule classes. 49 of those 70 already name veraPDF elsewhere in
+the same file. #418 tracks both the re-derivation and the comment sweep.
 
 Holding a standard is not implementing one, so this licenses no conformance claim. See
 [PDF 2.0 conformance](pdf20-conformance.md) for what the library actually does, and note it
@@ -173,7 +178,10 @@ to retrofit:
   `qpdf --check` and `--show-linearization` (structural and linearization),
   `pdftotext` (text round-trip → proves `ToUnicode`), `pdfsig` (PAdES signature
   validity), and zxing-cpp (decode round-trip for every barcode symbology, via a
-  rasterized `pdftoppm` page).
+  rasterized `pdftoppm` page). `VellumPdf.Conformance` is the authoritative normative
+  implementation; these tools produce evidence, not verdicts. Where a tool and this library
+  disagree, the ISO text decides, and the disagreement is recorded rather than settled by
+  changing a rule to match the tool.
 - **A missing tool fails the build rather than skipping the test**: almost every oracle
   test routes through a shared `OracleGate`, which calls `Assert.Fail` instead of
   `Assert.Skip` when `CI`, `GITHUB_ACTIONS`, or `REQUIRE_ORACLES` is set — the one exception
