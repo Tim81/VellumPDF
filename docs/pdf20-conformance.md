@@ -6,11 +6,19 @@ ISO 32000-2 is large, and "supports PDF 2.0" is a claim nobody can check. This t
 anybody can: every document the standard cites, every feature it says it added, and every key it
 deprecated, each with what this library does about it.
 
-It is generated from two datasets the PDF Association publishes, plus the specification's own
+It is generated from three datasets the PDF Association publishes, plus the specification's own
 clause 0.3. Regenerate with `python eng/generate-pdf20-inventory.py`.
 
 > **This is a coverage inventory, not a conformance test.** Whether output actually conforms is
 > decided by the veraPDF profiles the test suite runs against, not by this page.
+
+> **The PDF/A-2 clause citations are unverified.** ISO 19005-2 is not among the specifications
+> held locally. 50 of the 101 rule classes in `VellumPdf.Conformance` cite it, and they are
+> validated against veraPDF's bundled profiles, which encode the standard as test cases rather
+> than reproducing its text, so those clause numbers have no locally checkable source.
+> ISO 14289-1 was in the same position until it was acquired on 2026-09-07; the 53 rule classes
+> citing it can now be re-derived against the text, which #418 tracks along with the XML-doc
+> comments that still describe every rule as authored from the specification.
 
 ## Normative references
 
@@ -94,7 +102,7 @@ ISO 32000-2 cites **79** documents directly. What this library does with each:
 | ITU-T Recommendation T.4 | Standardization of Group 3 facsimile terminals for document transmission | Implemented | CCITT Group 3. #48 |
 | ITU-T Recommendation T.6 | Facsimile coding schemes and coding control functions for Group 4 facsimile ap | Implemented | CCITT Group 4. #48 |
 | ITU-T Recommendation X.680/ISO 8824-1/IEC 8824-1 | Information technology – Abstract Syntax Notation One (ASN.1): Specification o | Implemented | ASN.1, via System.Formats.Asn1. |
-| JSA JIS X 4051 | Formatting rules for Japanese documents | Out of scope | Japanese formatting rules. Not freely available; CJK line breaking would implement from UAX #14 and CSS Writing Modes instead. #321 |
+| JSA JIS X 4051 | Formatting rules for Japanese documents | Out of scope | Japanese formatting rules. Not freely available; CJK line breaking would implement from W3C JLReq, which is based on it, with UAX #14 and UAX #11. #321 |
 | NIST FIPS PUB 180-4 | Secure Hash Standard (SHS) | Implemented | SHA-2 family. |
 | NIST FIPS PUB 186-4 | Digital Signature Standard, describes DSA signatures | Implemented | DSA and ECDSA parameters. |
 | NIST FIPS PUB 197 | Advanced Encryption Standard (AES) | Implemented | AES. |
@@ -185,19 +193,26 @@ statement about correctness, not coverage.
 | UR signatures | Never written. |  |
 | Transfer functions in the graphics state | Never written; must stay that way. | #256 |
 
-## The ISO/TS extension series
+## The extension series
 
-"PDF 2.0" as deployed is not only ISO 32000-2:2020. Four Technical Specifications amend it, and a
-fifth supplies structure-namespace rules it left undefined. Each is declared in a document through
-a developer extensions dictionary (ISO 32000-2 7.12.3).
+"PDF 2.0" as deployed is not only ISO 32000-2:2020. Published extensions amend it, most declared
+in a document through a developer extensions dictionary (ISO 32000-2 7.12.3). The rows below come
+from the PDF Association's extension registry rather than from a list kept here, because a list
+kept here went stale. Registry dated 2026-03-17.
 
-| Specification | Adds | ExtensionLevel | Status | Issue |
+| Specification | Adds | Prefix and level | Status | Issue |
 | --- | --- | --- | --- | --- |
-| ISO/TS 32001:2022 | SHA-3 and SHAKE256 digests | 32001 | Not implemented | #238 |
-| ISO/TS 32002:2022 | EdDSA and extended elliptic curves | 32002 | Not implemented | #239 |
-| ISO/TS 32003:2023 | AES-GCM | 32003 | Not implemented | #236 |
-| ISO/TS 32004:2024 | PDF MAC integrity protection | 32004 | Not implemented | #237 |
+| Brotli compression in PDF 2.0 | Brotli compression | PDFa 1 | Not implemented | #412 |
+| ISO/TS 24064:2023 | RichMedia STEP AP 242 support | ISO_ 24064 | Not implemented | #427 |
+| ISO/TS 32001:2022 | Hash Algorithm extensions (SHA-3 and SHAKE256) | ISO_ 32001 | Not implemented | #238 |
+| ISO/TS 32002:2022 | Digital Signature extensions | ISO_ 32002 | Not implemented | #239 |
+| ISO/TS 32003:2023 | AES-GCM support | ISO_ 32003 | Not implemented | #236 |
+| ISO/TS 32004:2024 | Integrity protection in encrypted documents | ISO_ 32004 | Not implemented | #237 |
+| ISO/TS 32007:2024 | RichMedia glTF support | ISO_ 32007 | Not implemented | #427 |
 | ISO/TS 32005:2023 | PDF 1.7 and 2.0 structure namespace inclusion | - | Not implemented | #274 |
+
+ISO/TS 32005 is the exception: it amends PDF 2.0 but defines no extension dictionary, so it
+appears in no registry and is stated by hand.
 
 ## The key-level delta
 
@@ -250,6 +265,13 @@ Both NOTICE files carry this acknowledgement, reproduced as supplied:
 
 The material is provided as-is, without warranties or conditions of any kind; see the licences
 above for the governing disclaimers.
+
+The extension table comes from a third PDF Association dataset,
+[pdf-association/pdf-extensions](https://github.com/pdf-association/pdf-extensions),
+`extensions/pdf-extensions.json`. It is licensed **CC-BY-4.0** outright rather than dually, and
+carries no DARPA acknowledgement. Use here is likewise modified: rows are filtered to
+BaseVersion 2.0, the shared title boilerplate is trimmed, and the status and issue columns are
+this project's own.
 
 Two caveats about the data rather than its licensing. PDF2NormRefs was last updated 2021-10-27,
 so its `status` field has drifted — treat it as a hint and re-check anything load-bearing. And

@@ -167,3 +167,18 @@ PDF Association specification datasets
   The material is provided as-is, without warranties or conditions of any kind.
   Full attribution accompanies the generated document itself, in
   docs/pdf20-conformance.md.
+
+PDF Association extension registry
+  Copyright  : PDF Association, Inc. https://www.pdfa.org
+  Source     : https://github.com/pdf-association/pdf-extensions
+               (extensions/pdf-extensions.json, branch main)
+  Use        : The extension table in docs/pdf20-conformance.md is generated
+               from it by eng/generate-pdf20-inventory.py, in modified form:
+               rows filtered to BaseVersion 2.0, the title boilerplate shared
+               by every ISO part trimmed, and status and issue columns added
+               that are this project's assessment, not the PDF Association's.
+  Not shipped: Downloaded at generation time; not in this tree and not in any
+               VellumPdf NuGet package.
+  Licence    : Creative Commons Attribution 4.0 International, outright rather
+               than dually. It carries no DARPA acknowledgement.
+               https://creativecommons.org/licenses/by/4.0/

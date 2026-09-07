@@ -3,7 +3,7 @@
 [![NuGet](https://img.shields.io/nuget/v/VellumPdf.Conformance.svg)](https://www.nuget.org/packages/VellumPdf.Conformance)
 [![CI](https://github.com/Tim81/VellumPDF/actions/workflows/ci.yml/badge.svg)](https://github.com/Tim81/VellumPDF/actions/workflows/ci.yml)
 
-In-process PDF/A and PDF/UA preflight validation for **[VellumPdf](https://github.com/Tim81/VellumPDF)**, a dependency-free PDF library for .NET 10. It opens a PDF through `VellumPdf.Reader` and runs a registry of clean-room conformance rules authored from the ISO specifications, with no external veraPDF Docker image required.
+In-process PDF/A and PDF/UA preflight validation for **[VellumPdf](https://github.com/Tim81/VellumPDF)**, a dependency-free PDF library for .NET 10. It opens a PDF through `VellumPdf.Reader` and runs a registry of clean-room conformance rules, with no external veraPDF Docker image required. The rules are written from published specifications and every one is cross-checked against veraPDF in CI; [docs/pdf20-conformance.md](https://github.com/Tim81/VellumPDF/blob/main/docs/pdf20-conformance.md) records which ISO clause citations are checkable against a locally held copy of the standard and which are not.
 
 - Validates PDF/A-2b/2u/2a and PDF/UA-1.
 - Returns machine-readable assertions: rule id, ISO clause, severity, and object reference.
