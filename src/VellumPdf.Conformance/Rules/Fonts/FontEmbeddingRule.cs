@@ -6,16 +6,24 @@ using VellumPdf.Core;
 namespace VellumPdf.Conformance.Rules.Fonts;
 
 /// <summary>
-/// ISO 19005-2 §6.3.4–§6.3.5 (Fonts). Every font used in a PDF/A file shall be embedded: a
-/// simple font's <c>/FontDescriptor</c> must carry an embedded font program (<c>/FontFile</c>,
-/// <c>/FontFile2</c>, or <c>/FontFile3</c>), and a composite (<c>/Type0</c>) font's descendant
-/// CIDFont must likewise embed its program. The unembedded Standard-14 fonts are therefore not
-/// valid in PDF/A.
+/// ISO 19005-2 §6.2.11.4.1 (Embedding, General). The font programs for all fonts used for
+/// rendering shall be embedded: a simple font's <c>/FontDescriptor</c> must carry an embedded font
+/// program (<c>/FontFile</c>, <c>/FontFile2</c>, or <c>/FontFile3</c>), and a composite
+/// (<c>/Type0</c>) font's descendant CIDFont must likewise embed its program. The unembedded
+/// Standard-14 fonts are therefore not valid in PDF/A.
 /// </summary>
 /// <remarks>
-/// Authored from ISO 19005-2:2011, 6.3.4–6.3.5 and ISO 32000-1:2008, 9.6–9.7. Clean-room: derived
-/// from the specification text, not from any third-party validation profile. <c>/Type3</c> fonts
-/// define their glyphs as content streams and so are embedded by construction.
+/// Re-derived from ISO 19005-2:2011, 6.2.11.4.1 and ISO 32000-1:2008, 9.9, against the standard's
+/// own text (#418). Clean-room: derived from the specification text, not from any third-party
+/// validation profile. veraPDF was consulted only to confirm that the corrected clause is the one
+/// it keys the same requirement to, which is oracle use and not a source.
+/// <para>
+/// This rule previously cited §6.3.4–§6.3.5. Those numbers are ISO 19005-<em>1</em> numbering, where
+/// clause 6.3 is Fonts. In ISO 19005-2 clause 6.3 is Annotations, its four sub-clauses end at 6.3.4
+/// "Display of annotation contents", and there is no 6.3.5 at all. Embedding is 6.2.11.4, with
+/// 6.2.11.4.1 General and 6.2.11.4.2 Subset embedding.
+/// </para>
+/// <c>/Type3</c> fonts define their glyphs as content streams and so are embedded by construction.
 /// <para>
 /// Only fonts that a page actually selects via a <c>Tf</c> operator in its content stream are
 /// validated (matching veraPDF, which validates only the current graphics state — issue #118).
@@ -26,9 +34,9 @@ namespace VellumPdf.Conformance.Rules.Fonts;
 /// </remarks>
 internal sealed class FontEmbeddingRule : IConformanceRule
 {
-    public string RuleId => "ISO19005-2:6.3.4-font-embedding";
+    public string RuleId => "ISO19005-2:6.2.11.4.1-font-embedding";
 
-    public string Clause => "ISO 19005-2:2011, 6.3.4";
+    public string Clause => "ISO 19005-2:2011, 6.2.11.4.1";
 
     private static readonly PdfName _descendantFonts = new("DescendantFonts");
     private static readonly PdfName _fontDescriptor = new("FontDescriptor");

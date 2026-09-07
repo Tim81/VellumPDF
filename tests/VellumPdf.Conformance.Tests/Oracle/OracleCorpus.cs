@@ -144,7 +144,7 @@ public static class OracleCorpus
                 Conformance.PdfConformance.PdfA2B, "2b", ExpectedCompliant: true),
 
             // A PDF/A-2b document that draws text with a non-embedded standard-14 font. PDF/A requires
-            // every font embedded (ISO 19005-2 §6.2.11.4.1 / §6.3.4), so both veraPDF and the in-process
+            // every font embedded (ISO 19005-2 §6.2.11.4.1), so both veraPDF and the in-process
             // FontEmbeddingRule reject it. Cross-validates the font-embedding rule's negative path.
             // Uses only the built-in standard-14 metrics, so no external font asset is needed.
             new OracleFixture("pdfa2b-nonembedded-font", WriterPdfNonEmbeddedFont(),

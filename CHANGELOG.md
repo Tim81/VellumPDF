@@ -185,6 +185,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Five PDF/A clause citations named clauses that say something else, and one of them reached the
+  emitted output.** `FontEmbeddingRule` cited ISO 19005-2 §6.3.4–§6.3.5 for font embedding, in its
+  summary, its `RuleId` and its `Clause` property. Clause 6.3 of ISO 19005-2 is Annotations: it has
+  four sub-clauses ending at 6.3.4, "Display of annotation contents", and there is no 6.3.5 at all.
+  Those are ISO 19005-1 numbers, where 6.3 is Fonts. Embedding is §6.2.11.4.1, with §6.2.11.4.2 for
+  subsets. The rule now emits `ISO19005-2:6.2.11.4.1-font-embedding` and
+  `ISO 19005-2:2011, 6.2.11.4.1`, so a caller matching the old rule id or clause string will see the
+  new one. `PdfConformance` carried three more of the same kind in a single doc block: font
+  embedding at §6.3.3, the `/Encrypt` prohibition at §6.3.1 and the output intent at §6.2.2, which
+  are Annotation appearances, Annotation types and Content streams. They are now §6.2.11.4.1, §6.1.3
+  and §6.2.3. `PdfDocument` repeated the §6.3.3 font claim. Each replacement was read in the
+  standard before it was written. (#418)
+
 - **`/P` bit 10 is now always set on a newly written `/Encrypt` dictionary.** The restriction this
   bit expressed is deprecated in PDF 2.0, and ISO 32000-2 Table 22 requires writers to set the bit
   regardless of the permissions requested; the Standard security handler previously set it only
@@ -285,6 +298,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   per engine per fixture, so normalisation is needed for comparison across machines and versions
   rather than for run-to-run stability. Nothing is wired into the test suite yet; this is the
   measurement that has to exist before an assertion can be written against either tool.
+
+- **`PdfConformance` now says what each PDF/A clause requires, not just which clause it is.** The
+  enum is where a caller meets PDF/A, and its doc block listed obligations with bare clause numbers
+  attached, four of them wrong. It now states the requirement behind each one: what the `pdfaid`
+  schema carries and that its values do not themselves determine conformance, what the trailer must
+  contain and what it must not, that font embedding is scoped to fonts used for rendering and
+  exempts text rendering mode 3, and that the output intent is conditional on device colour spaces
+  rather than unconditional. It also records the three conformance levels as the exclusions Clause 5
+  actually defines, and that the `/S` value stays `GTS_PDFA1` in part 2, so there is no
+  `GTS_PDFA2` to look for. (#418)
 
 - **The PDF 2.0 extension table is generated from the PDF Association's registry (#225).**
   `eng/generate-pdf20-inventory.py` held the extension list as a literal, and the literal went

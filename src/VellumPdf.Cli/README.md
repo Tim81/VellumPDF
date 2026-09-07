@@ -56,8 +56,8 @@ profile's check catalogue, and `failedChecks` and `inconclusive` are new.
     "total": 144                            // passed + failedChecks + inconclusive + notEvaluated
   },
   "failed": [
-    { "ruleId": "ISO19005-2:6.3.4-font-embedding",
-      "clause": "ISO 19005-2:2011, 6.3.4",
+    { "ruleId": "ISO19005-2:6.2.11.4.1-font-embedding",
+      "clause": "ISO 19005-2:2011, 6.2.11.4.1",
       "severity": "ERROR",
       "message": "The font /Helvetica is not embedded; ..." }
     // "objectRef" is present only when the rule identified an object
