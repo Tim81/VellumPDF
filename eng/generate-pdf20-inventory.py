@@ -45,6 +45,7 @@
 import io
 import json
 import os
+import re
 import sys
 import urllib.request
 import zipfile
@@ -339,10 +340,61 @@ def arlington_delta():
     return sorted(new_objects), new_keys, dep_keys, len(names)
 
 
+RULES_DIR = os.path.join(os.path.dirname(__file__), "..", "src", "VellumPdf.Conformance", "Rules")
+
+
+def rule_class_provenance():
+    """Counts behind the PDF/A-2 and PDF/UA-1 disclosure below, read from the rule classes
+    themselves rather than typed.
+
+    The 50/101/53 this replaced were still correct when they were checked, which is the point:
+    nothing re-derived them, so nothing would have said otherwise. The same family of hand-typed
+    figures was wrong the day it was written: "69 rule files" landed in the commit immediately
+    before this one, and it both undercounted and named the wrong population; it is 71 rule
+    classes. A rule class is a .cs file under Rules/ containing
+    ": IConformanceRule"; Rules/ also holds helper files that are not rule classes, and counting
+    those instead gives a larger denominator, which is how the acquisition ledger came to report
+    105 of a population of 101.
+    """
+    if not os.path.isdir(RULES_DIR):
+        raise SystemExit(f"{RULES_DIR} not found; run this from a full checkout")
+
+    total = citing_19005_2 = citing_19005_2_dated = citing_14289_1 = clean_room = clean_room_verapdf = 0
+    for root, _, files in os.walk(RULES_DIR):
+        for name in files:
+            if not name.endswith(".cs"):
+                continue
+            with open(os.path.join(root, name), "r", encoding="utf-8") as f:
+                text = f.read()
+            if ": IConformanceRule" not in text:
+                continue
+            total += 1
+            if "19005-2" in text:
+                citing_19005_2 += 1
+            # The dated form is the one that marks a rule as authored against that standard. The
+            # loose count is larger because two PDF/UA-1 rules mention a PDF/A clause in prose,
+            # so re-deriving against ISO 19005-2 is 48 rules of work, not 50 (#418).
+            if "ISO 19005-2:2011" in text:
+                citing_19005_2_dated += 1
+            if "14289-1" in text:
+                citing_14289_1 += 1
+            # Case-insensitively: one rule class writes "Authored clean-room from ISO 14289-1"
+            # in lower case, and a case-sensitive match silently dropped it, which is how the
+            # first version of this function reported 70 where the answer is 71.
+            if re.search("clean-room", text, re.IGNORECASE):
+                clean_room += 1
+                if re.search("verapdf", text, re.IGNORECASE):
+                    clean_room_verapdf += 1
+    return (total, citing_19005_2, citing_19005_2_dated, citing_14289_1, clean_room,
+            clean_room_verapdf)
+
+
 def render():
     refs = level1_references()
     new_objects, new_keys, dep_keys, tsv_count = arlington_delta()
     extensions, extensions_date = pdf_extensions()
+    (rule_total, rule_19005_2, rule_19005_2_dated, rule_14289_1, clean_room,
+     clean_room_verapdf) = rule_class_provenance()
     counts = {}
     for r in refs:
         verdict = STATUS.get(r["key"], (None,))[0]
@@ -362,15 +414,23 @@ def render():
     w("clause 0.3. Regenerate with `python eng/generate-pdf20-inventory.py`.")
     w("")
     w("> **This is a coverage inventory, not a conformance test.** Whether output actually conforms is")
-    w("> decided by the veraPDF profiles the test suite runs against, not by this page.")
+    w("> settled by the test suite, not by this page.")
     w("")
     w("> **The PDF/A-2 clause citations are unverified.** ISO 19005-2 is not among the specifications")
-    w("> held locally. 50 of the 101 rule classes in `VellumPdf.Conformance` cite it, and they are")
-    w("> validated against veraPDF's bundled profiles, which encode the standard as test cases rather")
-    w("> than reproducing its text, so those clause numbers have no locally checkable source.")
-    w("> ISO 14289-1 was in the same position until it was acquired on 2026-09-07; the 53 rule classes")
-    w("> citing it can now be re-derived against the text, which #418 tracks along with the XML-doc")
-    w("> comments that still describe every rule as authored from the specification.")
+    w(f"> held locally. {rule_19005_2} of the {rule_total} rule classes in `VellumPdf.Conformance` cite")
+    w("> it, and they are validated against veraPDF's bundled profiles, which encode the standard as")
+    w("> test cases rather than reproducing its text, so those clause numbers have no locally")
+    w("> checkable source. For PDF/A-2, and only there, veraPDF is what CI fails the build on rather")
+    w("> than a cross-check, since no held text is there to decide a disagreement. Of those")
+    w(f"> {rule_19005_2}, {rule_19005_2_dated} carry a dated `ISO 19005-2:2011` citation and are the")
+    w("> re-derivation work; the other two are PDF/UA-1 rules mentioning a PDF/A clause in prose.")
+    w("> ISO 14289-1")
+    w("> was in the same position until it was acquired on 2026-09-07; the")
+    w(f"> {rule_14289_1} rule classes citing it are now checkable against the text but have not yet")
+    w(f"> been re-derived. The word \"clean-room\" appears somewhere in {clean_room} of the")
+    w(f"> {rule_total} rule classes, and {clean_room_verapdf} of those also name veraPDF somewhere in")
+    w("> the file. Neither is the same as having checked the rule against a clause, which is what")
+    w("> #418 tracks for ISO 19005-2 and #428 for ISO 14289-1.")
     w("")
     w("## Normative references")
     w("")

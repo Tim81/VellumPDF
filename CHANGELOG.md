@@ -291,8 +291,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   source. `docs/architecture.md` previously claimed every clause citation in the codebase pointed
   at consulted text, which was true only of the PDF 2.0 half; it and `docs/pdf20-conformance.md`
   now say where the gap is. ISO 14289-1 was in the same position and was acquired on 2026-09-07,
-  so the 53 rule classes citing it are now checkable but not yet checked; #418 tracks that pass
-  and the XML-doc comments that still describe every rule as derived from the specification text.
+  so the 53 rule classes citing it are now checkable but not yet checked; #428 tracks that pass
+  and the XML-doc comments that describe a rule as derived from the specification text, which
+  appear on 71 of the 101 rule classes rather than on all of them.
+- **The PDF/A-2 disclosure numbers are generated instead of typed, and the ISO 14289-1 acquisition
+  is now reflected everywhere it was missing (#418).** `eng/generate-pdf20-inventory.py` carried
+  50, 101 and 53 as literals that nothing checked. They were still correct when audited, which is
+  the point: nothing re-derived them, so nothing would have reported otherwise. The same family of
+  typed figures was wrong the day it was written: "69 rule files" landed in the commit immediately
+  before this branch and both undercounted and named the wrong population. It is 71 rule
+  classes. `rule_class_provenance()` now scans the rule classes at
+  generation time instead, and the first version of it repeated the mistake in miniature by matching
+  "Clean-room" case-sensitively and missing the one rule class that writes it in lower case.
+  The acquisition ledger still said "Neither standard has ever been held", and its own 53/56/105
+  figures were rule-class counts in name only — they count files, and the directory also holds
+  helpers that are not rules, so 105 exceeding the 101 rule classes that exist was the giveaway.
+  Both are corrected and cross-referenced against the smaller rule-class counts
+  `docs/architecture.md` uses. That file and the project instructions now list ISO 14289-1, the
+  Tagged PDF Best Practice Guide, PDF Declarations and the freely redistributable set among what is
+  held, and `src/VellumPdf.Conformance/README.md` now names which standards
+  its own rules were authored from.
+  The root `README.md` carried the same unqualified "written from published specifications" claim
+  the package README did, and is corrected with it. Two of the files this entry describes are
+  excluded from the repository and so are not visible in the diff.
 
 ## [2.3.0] - 2026-09-01
 

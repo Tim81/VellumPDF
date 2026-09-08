@@ -10,15 +10,23 @@ It is generated from three datasets the PDF Association publishes, plus the spec
 clause 0.3. Regenerate with `python eng/generate-pdf20-inventory.py`.
 
 > **This is a coverage inventory, not a conformance test.** Whether output actually conforms is
-> decided by the veraPDF profiles the test suite runs against, not by this page.
+> settled by the test suite, not by this page.
 
 > **The PDF/A-2 clause citations are unverified.** ISO 19005-2 is not among the specifications
-> held locally. 50 of the 101 rule classes in `VellumPdf.Conformance` cite it, and they are
-> validated against veraPDF's bundled profiles, which encode the standard as test cases rather
-> than reproducing its text, so those clause numbers have no locally checkable source.
-> ISO 14289-1 was in the same position until it was acquired on 2026-09-07; the 53 rule classes
-> citing it can now be re-derived against the text, which #418 tracks along with the XML-doc
-> comments that still describe every rule as authored from the specification.
+> held locally. 50 of the 101 rule classes in `VellumPdf.Conformance` cite
+> it, and they are validated against veraPDF's bundled profiles, which encode the standard as
+> test cases rather than reproducing its text, so those clause numbers have no locally
+> checkable source. For PDF/A-2, and only there, veraPDF is what CI fails the build on rather
+> than a cross-check, since no held text is there to decide a disagreement. Of those
+> 50, 48 carry a dated `ISO 19005-2:2011` citation and are the
+> re-derivation work; the other two are PDF/UA-1 rules mentioning a PDF/A clause in prose.
+> ISO 14289-1
+> was in the same position until it was acquired on 2026-09-07; the
+> 53 rule classes citing it are now checkable against the text but have not yet
+> been re-derived. The word "clean-room" appears somewhere in 71 of the
+> 101 rule classes, and 50 of those also name veraPDF somewhere in
+> the file. Neither is the same as having checked the rule against a clause, which is what
+> #418 tracks for ISO 19005-2 and #428 for ISO 14289-1.
 
 ## Normative references
 

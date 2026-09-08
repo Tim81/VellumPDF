@@ -32,8 +32,11 @@ public enum CoverageStatus
 /// </summary>
 /// <remarks>
 /// The test ids are ISO 19005 / ISO 14289 clause references (facts); the titles, notes, and status
-/// are this project's own assessment. No veraPDF profile content is embodied here — the clean-room
-/// stance (rules authored from the ISO text, veraPDF used only as an oracle) is preserved.
+/// are this project's own assessment. No veraPDF profile content is embodied here. Where the
+/// standard is held, the rules are authored from its text and veraPDF is only an oracle. Where it
+/// is not, they are authored against veraPDF's bundled profiles instead; ISO 19005-2 (PDF/A-2) is
+/// the case that matters, at 50 of the 101 rule classes (#418). docs/pdf20-conformance.md records
+/// which citations are checkable against a held copy and which are not.
 /// </remarks>
 public sealed class ConformanceCheck
 {
