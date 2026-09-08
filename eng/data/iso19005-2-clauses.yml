@@ -1,0 +1,138 @@
+# Clause inventory for ISO 19005-2:2011 (PDF/A-2), clause 6 "Technical requirements".
+#
+# WHY THIS EXISTS. Conformance coverage has been measured against veraPDF's test ids, which makes
+# the profile the population: a requirement neither veraPDF nor this library checks cannot show up,
+# because both sides agree by omission. This file makes the standard's own clause list the
+# population instead, so "nothing checks this" becomes a visible value rather than an invisible one.
+#
+# WHAT IT IS. Clause numbers and headings only. No normative text is reproduced here; the standard
+# is not held as a file and must not be transcribed into this repository. Each entry says what the
+# clause is called and how it is scoped, not what it requires.
+#
+# HOW IT WAS BUILT. Read clause by clause from NEN-ISO 19005-2:2011 en through a licensed
+# single-user viewer on 2026-09-07 (see docs/iso/ACQUISITION.md). Verified by a person, and not
+# reproducible by CI or from a clone. Refs #418.
+#
+# scope: file      - constrains the conforming file; a validator can check it
+#        reader    - constrains a conforming reader; a file validator has nothing to check
+#        container - a heading whose children carry the requirements
+# level: which conformance levels the clause applies to. Clause 5 defines the levels purely by
+#        exclusion: Level B omits 6.2.11.7 and 6.7, Level U omits 6.7, Level A omits nothing.
+#        Absent means all three.
+
+standard: ISO 19005-2:2011
+part: 2
+read_on: 2026-09-07
+source: NEN Connect licensed viewer, record 161167
+
+clauses:
+  - { id: "6.1",        title: "File structure",                          scope: container }
+  - { id: "6.1.1",      title: "General",                                 scope: file }
+  - { id: "6.1.2",      title: "File header",                             scope: file }
+  - { id: "6.1.3",      title: "File trailer",                            scope: file }
+  - { id: "6.1.4",      title: "Cross-reference table",                   scope: file }
+  - { id: "6.1.5",      title: "Document information dictionary",         scope: reader }
+  - { id: "6.1.6",      title: "String objects",                          scope: file }
+  - { id: "6.1.7",      title: "Stream objects",                          scope: container }
+  - { id: "6.1.7.1",    title: "General",                                 scope: file }
+  - { id: "6.1.7.2",    title: "Filters",                                 scope: file }
+  - { id: "6.1.8",      title: "Name objects",                            scope: file }
+  - { id: "6.1.9",      title: "Indirect objects",                        scope: file }
+  - { id: "6.1.10",     title: "Inline image dictionaries",               scope: file }
+  - { id: "6.1.11",     title: "Linearized PDF",                          scope: file }
+  - { id: "6.1.12",     title: "Permissions",                             scope: file }
+  - { id: "6.1.13",     title: "Implementation limits",                   scope: file }
+
+  - { id: "6.2",        title: "Graphics",                                scope: container }
+  - { id: "6.2.1",      title: "General",                                 scope: file }
+  - { id: "6.2.2",      title: "Content streams",                         scope: file }
+  - { id: "6.2.3",      title: "Output intent",                           scope: file }
+  - { id: "6.2.4",      title: "Colour spaces",                           scope: container }
+  - { id: "6.2.4.1",    title: "General",                                 scope: file }
+  - { id: "6.2.4.2",    title: "ICCBased colour spaces",                  scope: file }
+  - { id: "6.2.4.3",    title: "Uncalibrated/Device colour spaces",       scope: file }
+  - { id: "6.2.4.4",    title: "Separation and DeviceN colour spaces",    scope: file }
+  - { id: "6.2.4.5",    title: "Indexed and Pattern colour spaces",       scope: file }
+  - { id: "6.2.5",      title: "Extended graphics state",                 scope: file }
+  - { id: "6.2.6",      title: "Rendering intents",                       scope: file }
+  - { id: "6.2.7",      title: "Flatness",                                scope: file }
+  - { id: "6.2.8",      title: "Images",                                  scope: container }
+  - { id: "6.2.8.1",    title: "General",                                 scope: file }
+  - { id: "6.2.8.2",    title: "Thumbnail images",                        scope: reader }
+  - { id: "6.2.8.3",    title: "JPEG2000",                                scope: file }
+  - { id: "6.2.9",      title: "XObjects",                                scope: file }
+  - { id: "6.2.10",     title: "Transparency",                            scope: file }
+  - { id: "6.2.11",     title: "Fonts",                                   scope: container }
+  - { id: "6.2.11.1",   title: "General",                                 scope: file }
+  - { id: "6.2.11.2",   title: "Font types",                              scope: file }
+  - { id: "6.2.11.3",   title: "Composite fonts",                         scope: container }
+  - { id: "6.2.11.3.1", title: "General",                                 scope: file }
+  - { id: "6.2.11.3.2", title: "CIDFonts",                                scope: file }
+  - { id: "6.2.11.3.3", title: "CMaps",                                   scope: file }
+  - { id: "6.2.11.4",   title: "Embedding",                               scope: container }
+  - { id: "6.2.11.4.1", title: "General",                                 scope: file }
+  - { id: "6.2.11.4.2", title: "Subset embedding",                        scope: file }
+  - { id: "6.2.11.5",   title: "Font metrics",                            scope: file }
+  - { id: "6.2.11.6",   title: "Character encodings",                     scope: file }
+  - { id: "6.2.11.7",   title: "Unicode character maps",                  scope: container, level: "A,U" }
+  - { id: "6.2.11.7.1", title: "General",                                 scope: file,      level: "A,U" }
+  - { id: "6.2.11.7.2", title: "Level A and Level U conformance",         scope: file,      level: "A,U" }
+  - { id: "6.2.11.7.3", title: "Level A conformance",                     scope: file,      level: "A" }
+  - { id: "6.2.11.8",   title: "Use of .notdef glyph",                    scope: file }
+
+  - { id: "6.3",        title: "Annotations",                             scope: container }
+  - { id: "6.3.1",      title: "Annotation types",                        scope: file }
+  - { id: "6.3.2",      title: "Annotation dictionaries",                 scope: file }
+  - { id: "6.3.3",      title: "Annotation appearances",                  scope: file }
+  - { id: "6.3.4",      title: "Display of annotation contents",          scope: reader }
+
+  - { id: "6.4",        title: "Interactive forms",                       scope: container }
+  - { id: "6.4.1",      title: "General",                                 scope: file }
+  - { id: "6.4.2",      title: "XFA forms",                               scope: file }
+  - { id: "6.4.3",      title: "Digital signatures",                      scope: file }
+
+  - { id: "6.5",        title: "Action",                                  scope: container }
+  - { id: "6.5.1",      title: "General",                                 scope: file }
+  - { id: "6.5.2",      title: "Trigger events",                          scope: file }
+  - { id: "6.5.3",      title: "Handling of GoToR, URI and SubmitForm actions", scope: reader }
+
+  - { id: "6.6",        title: "Metadata",                                scope: container }
+  - { id: "6.6.1",      title: "General",                                 scope: container }
+  - { id: "6.6.2",      title: "Metadata streams",                        scope: container }
+  - { id: "6.6.2.1",    title: "General",                                 scope: file }
+  - { id: "6.6.2.2",    title: "Namespaces and prefixes",                 scope: file }
+  - { id: "6.6.2.3",    title: "Schemas",                                 scope: container }
+  - { id: "6.6.2.3.1",  title: "General",                                 scope: file }
+  - { id: "6.6.2.3.2",  title: "Extension schemas",                       scope: file }
+  - { id: "6.6.2.3.3",  title: "Extension schema container schemas",      scope: file }
+  - { id: "6.6.3",      title: "Document information dictionary",         scope: file }
+  - { id: "6.6.4",      title: "Version and conformance level identification", scope: file }
+  - { id: "6.6.5",      title: "File identifiers",                        scope: file }
+  - { id: "6.6.6",      title: "File provenance information",             scope: file }
+
+  - { id: "6.7",        title: "Logical structure",                       scope: container, level: "A" }
+  - { id: "6.7.1",      title: "General",                                 scope: container, level: "A" }
+  - { id: "6.7.2",      title: "Tagged PDF",                              scope: container, level: "A" }
+  - { id: "6.7.2.1",    title: "General",                                 scope: file,      level: "A" }
+  - { id: "6.7.2.2",    title: "Mark information dictionary",             scope: file,      level: "A" }
+  - { id: "6.7.3",      title: "Artefacts",                               scope: container, level: "A" }
+  - { id: "6.7.3.1",    title: "Specification of artefacts",              scope: file,      level: "A" }
+  - { id: "6.7.3.2",    title: "Word boundaries",                         scope: file,      level: "A" }
+  - { id: "6.7.3.3",    title: "Structure hierarchy",                     scope: file,      level: "A" }
+  - { id: "6.7.3.4",    title: "Structure types",                         scope: file,      level: "A" }
+  - { id: "6.7.4",      title: "Natural language specification",          scope: file,      level: "A" }
+  - { id: "6.7.5",      title: "Alternate descriptions",                  scope: file,      level: "A" }
+  - { id: "6.7.6",      title: "Non-textual annotations",                 scope: file,      level: "A" }
+  - { id: "6.7.7",      title: "Replacement text",                        scope: file,      level: "A" }
+  - { id: "6.7.8",      title: "Expansions of abbreviations and acronyms", scope: file,     level: "A" }
+
+  - { id: "6.8",        title: "Embedded files",                          scope: file }
+  - { id: "6.9",        title: "Optional content",                        scope: file }
+  - { id: "6.10",       title: "Use of alternate presentations and transitions", scope: file }
+  - { id: "6.11",       title: "Document requirements",                   scope: file }
+
+annexes:
+  - { id: "A", title: "Method for determining transparency on a page", normative: true }
+  - { id: "B", title: "Requirements for digital signatures in PDF/A",  normative: true }
+  - { id: "C", title: "Best practices for PDF/A",                      normative: false }
+  - { id: "D", title: "Incorporation of XFA datasets into a PDF/A-2 conforming file", normative: false }
