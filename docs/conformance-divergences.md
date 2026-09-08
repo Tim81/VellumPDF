@@ -155,9 +155,10 @@ These are not disagreements and do not belong in the table above, but they are t
 alone is not enough. A diff between two implementations cannot surface a requirement both of them
 omit, because they agree.
 
-Measured against `eng/data/iso19005-2-clauses.yml`, which lists ISO 19005-2 clause 6 by number and
-heading, 19 of its 73 file-scoped clauses are checked by neither this library nor veraPDF. Run
-`eng/clause-coverage.py` for the current split.
+Measured against an inventory of ISO 19005-2 clause 6 by number and heading, 19 of its 73
+file-scoped clauses are checked by neither this library nor veraPDF. That inventory and the script
+that reports the split are being added under #418; until they land, the figures here are a snapshot
+rather than something a clone can recompute.
 
 Seven of the 19 are Level A only, and Level A is the accessibility level this library advertises:
 
@@ -180,6 +181,11 @@ so under the current two-directional diff being right registers as a phantom id.
 
 A row goes in when a disagreement is established against the specification, not when it is suspected.
 State which reading established it and whether a clone can confirm it.
+
+Record the verdict, not the argument that produced it. "Matches 6.2.11.4.1" is a verdict; working
+through why it matches, clause by clause, would restate the standard through the side door. The
+"what the standard requires" sentence in each row above is one sentence per divergence, which is
+quotation-scale; a document of them would not be.
 
 A row comes out when the code and the tool agree again, which for the gated rows means after the
 per-rule comparison lands and the correction is made. Removing a row is a claim that the divergence
