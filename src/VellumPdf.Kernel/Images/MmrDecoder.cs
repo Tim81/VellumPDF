@@ -238,7 +238,7 @@ internal static class MmrDecoder
         var total = 0;
         while (true)
         {
-            var (value, isMakeup) = color == 0 ? ReadWhite(ref r) : ReadBlack(ref r);
+            var (value, isMakeup) = ReadRun(ref r, color);
             total += value;
             if (total > maxRun)
                 throw new InvalidDataException(
@@ -247,345 +247,187 @@ internal static class MmrDecoder
         }
     }
 
-    // White run-length codes (ITU-T T.4 Table 2).
-    // Returns (runLength, isMakeup).
-    private static (int run, bool makeup) ReadWhite(ref BitReader r)
+    // ── Run-length code tables (ITU-T T.4 Tables 2, 3a and 3b) ────────────────
+
+    // Transcribed from the standard and kept as literal code words so a reviewer can diff this
+    // block against Table 2, Table 3a and Table 3b directly. That check is the one #440 needed and
+    // did not have: the black table these replace disagreed with Table 2 (terminating codes) in 60
+    // of its 64 entries and with Table 3a (make-up codes) in all 27 of its 27, and was not either
+    // table in any recognisable form, while the white table was correct apart from a missing run
+    // of 1.
+    //
+    // Applying the old table's own lookup rule — shortest matching length wins — 48 of its 91
+    // entries were shadowed by a shorter entry and could never have been reached at all: all six
+    // 001101xxx runs, all six 000100xxx runs, the four 11-bit make-ups 384 through 576, and among
+    // them 0100, 0101 and 0111, which sat behind the three-bit prefixes 010 and 011 that the reader
+    // returned on first. A code word cannot coexist with its own prefix in a prefix code, so their
+    // presence was the signal that the table had never been transcribed from a real one.
+    // CodeTablesAreAPrefixCode in the tests now asserts that property, which closes the
+    // unreachable-entry half of the defect. The other half was entries that were reachable and
+    // simply wrong, and only the value-level known-answer vectors catch those.
+
+    // ITU-T T.4 Table 2, white terminating codes, runs 0 to 63.
+    private static readonly string[] WhiteTerminating =
+    [
+        "00110101", "000111", "0111", "1000",                       // 0-3
+        "1011", "1100", "1110", "1111",                             // 4-7
+        "10011", "10100", "00111", "01000",                         // 8-11
+        "001000", "000011", "110100", "110101",                     // 12-15
+        "101010", "101011", "0100111", "0001100",                   // 16-19
+        "0001000", "0010111", "0000011", "0000100",                 // 20-23
+        "0101000", "0101011", "0010011", "0100100",                 // 24-27
+        "0011000", "00000010", "00000011", "00011010",              // 28-31
+        "00011011", "00010010", "00010011", "00010100",             // 32-35
+        "00010101", "00010110", "00010111", "00101000",             // 36-39
+        "00101001", "00101010", "00101011", "00101100",             // 40-43
+        "00101101", "00000100", "00000101", "00001010",             // 44-47
+        "00001011", "01010010", "01010011", "01010100",             // 48-51
+        "01010101", "00100100", "00100101", "01011000",             // 52-55
+        "01011001", "01011010", "01011011", "01001010",             // 56-59
+        "01001011", "00110010", "00110011", "00110100",             // 60-63
+    ];
+
+    // ITU-T T.4 Table 2, black terminating codes, runs 0 to 63.
+    private static readonly string[] BlackTerminating =
+    [
+        "0000110111", "010", "11", "10",                            // 0-3
+        "011", "0011", "0010", "00011",                             // 4-7
+        "000101", "000100", "0000100", "0000101",                   // 8-11
+        "0000111", "00000100", "00000111", "000011000",             // 12-15
+        "0000010111", "0000011000", "0000001000", "00001100111",    // 16-19
+        "00001101000", "00001101100", "00000110111", "00000101000", // 20-23
+        "00000010111", "00000011000", "000011001010", "000011001011",// 24-27
+        "000011001100", "000011001101", "000001101000", "000001101001",// 28-31
+        "000001101010", "000001101011", "000011010010", "000011010011",// 32-35
+        "000011010100", "000011010101", "000011010110", "000011010111",// 36-39
+        "000001101100", "000001101101", "000011011010", "000011011011",// 40-43
+        "000001010100", "000001010101", "000001010110", "000001010111",// 44-47
+        "000001100100", "000001100101", "000001010010", "000001010011",// 48-51
+        "000000100100", "000000110111", "000000111000", "000000100111",// 52-55
+        "000000101000", "000001011000", "000001011001", "000000101011",// 56-59
+        "000000101100", "000001011010", "000001100110", "000001100111",// 60-63
+    ];
+
+    // ITU-T T.4 Table 3a, white make-up codes, runs 64 to 1728 in steps of 64.
+    private static readonly string[] WhiteMakeUp =
+    [
+        "11011", "10010", "010111", "0110111",                      // 64-256
+        "00110110", "00110111", "01100100", "01100101",             // 320-512
+        "01101000", "01100111", "011001100", "011001101",           // 576-768
+        "011010010", "011010011", "011010100", "011010101",         // 832-1024
+        "011010110", "011010111", "011011000", "011011001",         // 1088-1280
+        "011011010", "011011011", "010011000", "010011001",         // 1344-1536
+        "010011010", "011000", "010011011",                         // 1600-1728
+    ];
+
+    // ITU-T T.4 Table 3a, black make-up codes, runs 64 to 1728 in steps of 64.
+    private static readonly string[] BlackMakeUp =
+    [
+        "0000001111", "000011001000", "000011001001", "000001011011",// 64-256
+        "000000110011", "000000110100", "000000110101", "0000001101100",// 320-512
+        "0000001101101", "0000001001010", "0000001001011", "0000001001100",// 576-768
+        "0000001001101", "0000001110010", "0000001110011", "0000001110100",// 832-1024
+        "0000001110101", "0000001110110", "0000001110111", "0000001010010",// 1088-1280
+        "0000001010011", "0000001010100", "0000001010101", "0000001011010",// 1344-1536
+        "0000001011011", "0000001100100", "0000001100101",          // 1600-1728
+    ];
+
+    // ITU-T T.4 Table 3b, the extended make-up codes 1792 to 2560, shared by both colours.
+    private static readonly string[] SharedMakeUp =
+    [
+        "00000001000", "00000001100", "00000001101", "000000010010",// 1792-1984
+        "000000010011", "000000010100", "000000010101", "000000010110",// 2048-2240
+        "000000010111", "000000011100", "000000011101", "000000011110",// 2304-2496
+        "000000011111",                                             // 2560
+    ];
+
+    // The longest code word in any of the three tables is 13 bits: twenty black make-up codes,
+    // every one from run 512 through run 1728, are that length. A code word longer than that
+    // cannot exist, so a reader that has consumed 13 bits without a match is looking at data that
+    // is not T.4 at all.
+    internal const int MaxRunCodeBits = 13;
+
+    /// <summary>
+    /// The two decoding tables as <see cref="ReadRun"/> composes them, for the prefix-code
+    /// assertion in the tests. Each colour sees its own terminating and make-up codes plus the
+    /// shared extended ones, and it is within one of those sets that no code word may be a prefix
+    /// of another. Across the two colours code words collide freely and legitimately: 010 is black
+    /// 1 and also the first three bits of white 11.
+    /// </summary>
+    internal static (string Colour, string[] CodeWords)[] DecodingTables =>
+    [
+        ("white", [.. ComposeEntries(WhiteTerminating, WhiteMakeUp).Select(e => e.CodeWord)]),
+        ("black", [.. ComposeEntries(BlackTerminating, BlackMakeUp).Select(e => e.CodeWord)]),
+    ];
+
+    private static readonly Dictionary<int, (int Run, bool MakeUp)> WhiteCodes =
+        BuildCodes(WhiteTerminating, WhiteMakeUp);
+
+    private static readonly Dictionary<int, (int Run, bool MakeUp)> BlackCodes =
+        BuildCodes(BlackTerminating, BlackMakeUp);
+
+    /// <summary>
+    /// Merges one colour's terminating and make-up codes with the shared extended make-up codes,
+    /// pairing each code word with the run length and make-up flag it decodes to. This is the one
+    /// place that composition happens: both <see cref="DecodingTables"/> (the prefix-code
+    /// assertion's view) and <see cref="BuildCodes"/> (the decoder's lookup table) enumerate this
+    /// same sequence, so they cannot drift into decoding a code word the prefix check never saw.
+    /// </summary>
+    private static IEnumerable<(string CodeWord, int Run, bool MakeUp)> ComposeEntries(
+        string[] terminating, string[] makeUp)
     {
-        // Uses a lookup table indexed by up to 12 bits of lookahead.
-        // We read one bit at a time, matching the prefix table.
-        Span<int> b = stackalloc int[12];
-        int n = 0;
-
-        for (; n < 12; n++)
-        {
-            b[n] = r.ReadBit();
-
-            if (n == 3) // 4 bits
-            {
-                int v = B(b, 4);
-                switch (v)
-                {
-                    case 0b0111: return (2, false);
-                    case 0b1000: return (3, false);
-                    case 0b1011: return (4, false);
-                    case 0b1100: return (5, false);
-                    case 0b1110: return (6, false);
-                    case 0b1111: return (7, false);
-                }
-            }
-
-            if (n == 4) // 5 bits
-            {
-                int v = B(b, 5);
-                switch (v)
-                {
-                    case 0b10011: return (8, false);
-                    case 0b10100: return (9, false);
-                    case 0b00111: return (10, false);
-                    case 0b01000: return (11, false);
-                    case 0b11011: return (64, true);
-                    case 0b10010: return (128, true);
-                }
-            }
-
-            if (n == 5) // 6 bits
-            {
-                int v = B(b, 6);
-                switch (v)
-                {
-                    case 0b001000: return (12, false);
-                    case 0b000011: return (13, false);
-                    case 0b110100: return (14, false);
-                    case 0b110101: return (15, false);
-                    case 0b101010: return (16, false);
-                    case 0b101011: return (17, false);
-                    case 0b010111: return (192, true);
-                    case 0b011000: return (1664, true);
-                }
-            }
-
-            if (n == 6) // 7 bits
-            {
-                int v = B(b, 7);
-                switch (v)
-                {
-                    case 0b0100111: return (18, false);
-                    case 0b0001100: return (19, false);
-                    case 0b0001000: return (20, false);
-                    case 0b0010111: return (21, false);
-                    case 0b0000011: return (22, false);
-                    case 0b0000100: return (23, false);
-                    case 0b0101000: return (24, false);
-                    case 0b0101011: return (25, false);
-                    case 0b0010011: return (26, false);
-                    case 0b0100100: return (27, false);
-                    case 0b0011000: return (28, false);
-                    case 0b0110111: return (256, true);
-                }
-            }
-
-            if (n == 7) // 8 bits
-            {
-                int v = B(b, 8);
-                switch (v)
-                {
-                    case 0b00110101: return (0, false);
-                    case 0b00000010: return (29, false);
-                    case 0b00000011: return (30, false);
-                    case 0b00011010: return (31, false);
-                    case 0b00011011: return (32, false);
-                    case 0b00010010: return (33, false);
-                    case 0b00010011: return (34, false);
-                    case 0b00010100: return (35, false);
-                    case 0b00010101: return (36, false);
-                    case 0b00010110: return (37, false);
-                    case 0b00010111: return (38, false);
-                    case 0b00101000: return (39, false);
-                    case 0b00101001: return (40, false);
-                    case 0b00101010: return (41, false);
-                    case 0b00101011: return (42, false);
-                    case 0b00101100: return (43, false);
-                    case 0b00101101: return (44, false);
-                    case 0b00000100: return (45, false);
-                    case 0b00000101: return (46, false);
-                    case 0b00001010: return (47, false);
-                    case 0b00001011: return (48, false);
-                    case 0b01010010: return (49, false);
-                    case 0b01010011: return (50, false);
-                    case 0b01010100: return (51, false);
-                    case 0b01010101: return (52, false);
-                    case 0b00100100: return (53, false);
-                    case 0b00100101: return (54, false);
-                    case 0b01011000: return (55, false);
-                    case 0b01011001: return (56, false);
-                    case 0b01011010: return (57, false);
-                    case 0b01011011: return (58, false);
-                    case 0b01001010: return (59, false);
-                    case 0b01001011: return (60, false);
-                    case 0b00110010: return (61, false);
-                    case 0b00110011: return (62, false);
-                    case 0b00110100: return (63, false);
-                    case 0b00110110: return (320, true);
-                    case 0b00110111: return (384, true);
-                    case 0b01100100: return (448, true);
-                    case 0b01100101: return (512, true);
-                    case 0b01101000: return (576, true);
-                    case 0b01100111: return (640, true);
-                }
-            }
-
-            if (n == 8) // 9 bits
-            {
-                int v = B(b, 9);
-                switch (v)
-                {
-                    case 0b011001100: return (704, true);
-                    case 0b011001101: return (768, true);
-                    case 0b011010010: return (832, true);
-                    case 0b011010011: return (896, true);
-                    case 0b011010100: return (960, true);
-                    case 0b011010101: return (1024, true);
-                    case 0b011010110: return (1088, true);
-                    case 0b011010111: return (1152, true);
-                    case 0b011011000: return (1216, true);
-                    case 0b011011001: return (1280, true);
-                    case 0b011011010: return (1344, true);
-                    case 0b011011011: return (1408, true);
-                    case 0b010011000: return (1472, true);
-                    case 0b010011001: return (1536, true);
-                    case 0b010011010: return (1600, true);
-                    case 0b010011011: return (1728, true);
-                }
-            }
-        }
-
-        throw new InvalidDataException("JBIG2 MMR: unrecognised white run-length code.");
+        for (var run = 0; run < terminating.Length; run++)
+            yield return (terminating[run], run, false);
+        for (var i = 0; i < makeUp.Length; i++)
+            yield return (makeUp[i], 64 * (i + 1), true);
+        for (var i = 0; i < SharedMakeUp.Length; i++)
+            yield return (SharedMakeUp[i], 1792 + (64 * i), true);
     }
 
-    // Black run-length codes (ITU-T T.4 Table 3).
-    private static (int run, bool makeup) ReadBlack(ref BitReader r)
+    /// <summary>
+    /// Keys every code word by its length and value together. Length has to be part of the key
+    /// because the tables are a prefix code over variable-length words: 11 is black 2 and 0011 is
+    /// black 5, and their numeric values collide once the leading zeros are dropped.
+    /// </summary>
+    private static Dictionary<int, (int Run, bool MakeUp)> BuildCodes(string[] terminating, string[] makeUp)
     {
-        Span<int> b = stackalloc int[13];
-        int n = 0;
+        var codes = new Dictionary<int, (int Run, bool MakeUp)>(terminating.Length + makeUp.Length + SharedMakeUp.Length);
+        foreach (var (codeWord, run, makeup) in ComposeEntries(terminating, makeUp))
+            codes.Add(Key(codeWord), (run, makeup));
+        return codes;
+    }
 
-        for (; n < 13; n++)
+    /// <summary>Packs a code word's bit length and value into one lookup key.</summary>
+    private static int Key(string codeWord)
+    {
+        var value = 0;
+        foreach (var c in codeWord)
+            value = (value << 1) | (c == '1' ? 1 : 0);
+        return Key(codeWord.Length, value);
+    }
+
+    /// <summary>Packs a bit length and value into the same lookup key <see cref="Key(string)"/> uses.</summary>
+    private static int Key(int length, int value) => (length << 16) | value;
+
+    /// <summary>
+    /// Reads one T.4 run-length code word of the given colour, MSB-first, by consuming bits until
+    /// the accumulated value matches a code word of exactly that length.
+    /// </summary>
+    private static (int run, bool makeup) ReadRun(ref BitReader r, int color)
+    {
+        var codes = color == 0 ? WhiteCodes : BlackCodes;
+        var value = 0;
+        for (var bits = 1; bits <= MaxRunCodeBits; bits++)
         {
-            b[n] = r.ReadBit();
-
-            if (n == 1) // 2 bits
-            {
-                int v = B(b, 2);
-                switch (v)
-                {
-                    case 0b10: return (3, false);
-                    case 0b11: return (2, false);
-                }
-            }
-
-            if (n == 2) // 3 bits
-            {
-                int v = B(b, 3);
-                switch (v)
-                {
-                    case 0b010: return (1, false);
-                    case 0b011: return (4, false);
-                }
-            }
-
-            if (n == 3) // 4 bits
-            {
-                int v = B(b, 4);
-                switch (v)
-                {
-                    case 0b0100: return (6, false);
-                    case 0b0101: return (5, false);
-                    case 0b0111: return (7, false);
-                }
-            }
-
-            if (n == 4) // 5 bits
-            {
-                int v = B(b, 5);
-                switch (v)
-                {
-                    case 0b00100: return (9, false);
-                    case 0b00011: return (10, false);
-                    case 0b01000: return (8, false);
-                }
-            }
-
-            if (n == 5) // 6 bits
-            {
-                int v = B(b, 6);
-                switch (v)
-                {
-                    case 0b000101: return (11, false);
-                    case 0b000100: return (12, false);
-                    case 0b001101: return (13, false);
-                }
-            }
-
-            if (n == 6) // 7 bits
-            {
-                int v = B(b, 7);
-                switch (v)
-                {
-                    case 0b0001101: return (14, false);
-                    case 0b0001100: return (15, false);
-                    case 0b0001000: return (16, false);
-                    case 0b0000111: return (17, false);
-                    case 0b0001111: return (0, false);
-                }
-            }
-
-            if (n == 7) // 8 bits
-            {
-                int v = B(b, 8);
-                switch (v)
-                {
-                    case 0b00001000: return (18, false);
-                    case 0b00101000: return (19, false);
-                    case 0b00010111: return (20, false);
-                    case 0b00011000: return (21, false);
-                    case 0b00100111: return (22, false);
-                    case 0b00100000: return (23, false);
-                    case 0b00010100: return (24, false);
-                    case 0b00001111: return (64, true);
-                    case 0b00001100: return (128, true);
-                }
-            }
-
-            if (n == 8) // 9 bits
-            {
-                int v = B(b, 9);
-                switch (v)
-                {
-                    case 0b000011011: return (27, false);
-                    case 0b000011010: return (28, false);
-                    case 0b000110111: return (29, false);
-                    case 0b000110110: return (30, false);
-                    case 0b001100100: return (31, false);
-                    case 0b001100101: return (32, false);
-                    case 0b001101000: return (33, false);
-                    case 0b001101001: return (34, false);
-                    case 0b001101010: return (35, false);
-                    case 0b001101011: return (36, false);
-                    case 0b001101100: return (37, false);
-                    case 0b001101101: return (38, false);
-                    case 0b000100000: return (39, false);
-                    case 0b000100001: return (40, false);
-                    case 0b000100010: return (41, false);
-                    case 0b000100011: return (42, false);
-                    case 0b000100100: return (43, false);
-                    case 0b000100101: return (44, false);
-                    case 0b000011000: return (45, false);
-                    case 0b000010111: return (46, false);
-                    case 0b000011100: return (47, false);
-                    case 0b000011101: return (48, false);
-                    case 0b000011110: return (49, false);
-                    case 0b000011111: return (50, false);
-                    case 0b000010000: return (51, false);
-                    case 0b000010001: return (52, false);
-                    case 0b000010010: return (53, false);
-                    case 0b000010011: return (54, false);
-                    case 0b000010100: return (55, false);
-                    case 0b000010101: return (56, false);
-                    case 0b000010110: return (57, false);
-                    case 0b000001101: return (192, true);
-                    case 0b000001100: return (256, true);
-                }
-            }
-
-            if (n == 9) // 10 bits
-            {
-                int v = B(b, 10);
-                switch (v)
-                {
-                    case 0b0001011011: return (25, false);
-                    case 0b0001011010: return (26, false);
-                    case 0b0000100110: return (63, false);
-                    case 0b0000100111: return (62, false);
-                    case 0b0000110011: return (320, true);
-                }
-            }
-
-            if (n == 10) // 11 bits — remaining black codes and makeup
-            {
-                int v = B(b, 11);
-                switch (v)
-                {
-                    case 0b00001101110: return (58, false);
-                    case 0b00001101100: return (59, false);
-                    case 0b00001101000: return (60, false);
-                    case 0b00001101010: return (61, false);
-                    case 0b00000110100: return (384, true);
-                    case 0b00000110101: return (448, true);
-                    case 0b00000110110: return (512, true);
-                    case 0b00000110111: return (576, true);
-                    case 0b00000011000: return (640, true);
-                    case 0b00000011001: return (704, true);
-                    case 0b00000011010: return (768, true);
-                    case 0b00000011011: return (832, true);
-                    case 0b00000010100: return (896, true);
-                    case 0b00000010101: return (960, true);
-                    case 0b00000010110: return (1024, true);
-                    case 0b00000010111: return (1088, true);
-                    case 0b00000011100: return (1152, true);
-                    case 0b00000011101: return (1216, true);
-                    case 0b00000001000: return (1280, true);
-                    case 0b00000001100: return (1344, true);
-                    case 0b00000001001: return (1408, true);
-                    case 0b00000001101: return (1472, true);
-                    case 0b00000001010: return (1536, true);
-                    case 0b00000001110: return (1600, true);
-                    case 0b00000001111: return (1664, true);
-                    case 0b00000001011: return (1728, true);
-                }
-            }
+            value = (value << 1) | r.ReadBit();
+            if (codes.TryGetValue(Key(bits, value), out var hit))
+                return (hit.Run, hit.MakeUp);
         }
 
-        throw new InvalidDataException("JBIG2 MMR: unrecognised black run-length code.");
+        throw new InvalidDataException(
+            "JBIG2 MMR: run-length code word is not in ITU-T T.4 Table 2, 3a or 3b.");
     }
+
 
     /// <summary>
     /// Appends a changing-element x-coordinate to <paramref name="ce"/>, rejecting overflow.
@@ -649,17 +491,6 @@ internal static class MmrDecoder
         {
             output[rowOffset + x / 8] |= (byte)(1 << (7 - (x % 8)));
         }
-    }
-
-    // ── Bit-assembly helper ───────────────────────────────────────────────────
-
-    /// <summary>Packs the first <paramref name="count"/> bits of <paramref name="b"/> into an int (MSB first).</summary>
-    private static int B(Span<int> b, int count)
-    {
-        var v = 0;
-        for (var i = 0; i < count; i++)
-            v = (v << 1) | b[i];
-        return v;
     }
 
     // ── Bit reader ────────────────────────────────────────────────────────────
