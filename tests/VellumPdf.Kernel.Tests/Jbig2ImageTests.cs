@@ -1083,6 +1083,154 @@ public sealed class Jbig2ImageTests
         Assert.Equal([0x33, 0x3E], raster);
     }
 
+    // ── MmrDecoder: a0 starts one position before the row (ITU-T T.6, 2.2.5.1) ────
+
+    // 2.2.5.1: "The first starting picture element a0 on each coding line is imaginarily set
+    // at a position just before the first picture element". FindB1's a0 comparison is strict
+    // (ce[i] > a0), so a0 = 0 skips a changing element that is legitimately at column 0. A
+    // reference row whose own first changing element sits at column 0 (i.e. the reference row
+    // starts black) is one way to put a changing element there.
+
+    /// <summary>
+    /// A width-4, height-2 image, both rows <c>B B W W</c>. Row 0 is Horizontal with a white run of zero
+    /// (2.2.5.1's a0a1 - 1 convention: the first run on a line is coded one shorter, so a
+    /// black-starting line still opens with a white codeword) followed by a black run of 2,
+    /// giving row 0's first changing element at column 0. Row 1 is three V(0) codes: the first
+    /// resolves b1 against that column-0 element, which needs a0 = -1 to find at all, and the
+    /// second paints the black run the first V(0) left implicit. This vector is built
+    /// specifically to put a changing element at column 0 on the reference row, and its expected
+    /// raster is worked out from the standard's decoding procedure by hand, not read off the
+    /// decoder.
+    /// </summary>
+    [Fact]
+    public void MmrDecoder_ReferenceRowStartsBlack_VerticalModeFindsB1AtColumnZero()
+    {
+        var mmr = PackMsbFirst(
+            (0b001, 3), (0b00110101, 8), (0b11, 2), (0b1, 1), // row 0: H, white 0, black 2, V(0)
+            (0b1, 1), (0b1, 1), (0b1, 1));                    // row 1: V(0), V(0), V(0)
+
+        var raster = DecodeMmrRaster(width: 4, height: 2, mmr);
+
+        Assert.Equal([0xC0, 0xC0], raster);
+    }
+
+    /// <summary>
+    /// Same column-0 reference element as above, but the coding row uses VR(1) rather than
+    /// V(0), pinning the fix for a non-zero vertical delta too. Row 0 is <c>B B B W W W W W</c>
+    /// (changing elements at 0 and 3); row 1's VR(1) resolves b1 = 0 and a1 = b1 + 1 = 1, then
+    /// two V(0) codes carry the row to the edge, giving row 1 <c>W B B W W W W W</c>. This
+    /// vector's expected raster is worked out from the standard's decoding procedure by hand,
+    /// not read off the decoder.
+    /// </summary>
+    [Fact]
+    public void MmrDecoder_ReferenceRowStartsBlack_VRModeFindsB1AtColumnZero()
+    {
+        var mmr = PackMsbFirst(
+            (0b001, 3), (0b00110101, 8), (0b10, 2), (0b1, 1), // row 0: H, white 0, black 3, V(0)
+            (0b011, 3), (0b1, 1), (0b1, 1));                  // row 1: VR(1), V(0), V(0)
+
+        var raster = DecodeMmrRaster(width: 8, height: 2, mmr);
+
+        Assert.Equal([0xE0, 0x60], raster);
+    }
+
+    /// <summary>
+    /// Pass mode against a reference row that begins black, which is the mode that reads both
+    /// b1 and b2 off the reference line. Row 0 is <c>B B W W W B B B</c> (changing elements at
+    /// 0, 2, 5, 8). Row 1 opens with Pass: b1 = 0 (the column-0 element under test) and b2 = 2
+    /// (the next one), so Pass paints white 0..2 and leaves a0 at 2 with the colour unchanged.
+    /// Two V(0) codes then resolve the rest of row 1 against the reference's remaining
+    /// elements, giving <c>W W W W W B B B</c>.
+    /// <para>
+    /// Without the fix, FindB1 resolves the Pass b1 to 5 instead of 0 (skipping both the
+    /// column-0 element and the one at 2), b2 becomes 8, and the single Pass codeword paints
+    /// the entire row white and consumes the whole line — the two trailing V(0) codes are never
+    /// reached. That collapses row 1 to all-white, which this vector's non-zero expectation
+    /// catches.
+    /// </para>
+    /// <para>
+    /// Row 0's second code word deviates from what a conforming encoder would choose there: after
+    /// the first Horizontal call leaves a0 = 2, the next changing element is a1 = 5 and b1 (against
+    /// the virtual all-white line above row 0) is 8, so <c>|a1 - b1| = 3</c> selects VL(3) under
+    /// 2.2.4 Step 2(ii), not a second Horizontal code word. The decoder accepts any legal T.6 code
+    /// sequence, not only the one a real encoder would have chosen, so the stream below is still
+    /// valid and decodes unambiguously to the raster asserted here. The deviation does not affect
+    /// what this vector proves about Pass mode.
+    /// </para>
+    /// <para>
+    /// This vector is built specifically to put a changing element at column 0 on the reference
+    /// row, and its expected raster is worked out from the standard's decoding procedure by
+    /// hand, not read off the decoder.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void MmrDecoder_PassModeAgainstReferenceRowStartingBlack_ReadsB1AndB2Correctly()
+    {
+        var mmr = PackMsbFirst(
+            (0b001, 3), (0b00110101, 8), (0b11, 2),   // row 0: H, white 0, black 2
+            (0b001, 3), (0b1000, 4), (0b10, 2),       // row 0: H, white 3, black 3 (non-canonical; see doc)
+            (0b0001, 4), (0b1, 1), (0b1, 1));          // row 1: Pass, V(0), V(0)
+
+        var raster = DecodeMmrRaster(width: 8, height: 2, mmr);
+
+        Assert.Equal([0xC7, 0x07], raster);
+    }
+
+    /// <summary>
+    /// The vertical arm's <c>a1 != a0</c> guard, pinned with a conformant three-row stream
+    /// rather than the a1 = -1 input <see cref="MmrDecoder_VerticalMode_ImaginaryA0ClampFloorsAtZeroNotNegativeOne"/>
+    /// needs. Row 0, the reference row, is <c>W B B B</c> (changing elements at 1 and 4),
+    /// encoded as Horizontal with a white run of 1 then a black run of 3 (ITU-T T.4 Table 2),
+    /// which closes the row exactly at width so no trailing V(0) is needed.
+    /// <para>
+    /// Row 1 is coded entirely black. Against refCE = [1, 4, …], ITU-T T.6 2.2.4 resolves b1 = 1
+    /// (the first reference element ahead of the imaginary a0 = -1, opposite the white a0Col),
+    /// and the coding line's own first transition to black sits at a1 = 0, one element left of
+    /// b1, so 2.2.4 Step 2(ii) selects VL(1). That places a0 at 0 and flips the colour to black;
+    /// a second codeword, V(0), then resolves b1 = 4 against the now-black a0Col and paints
+    /// x = 0..4 black, closing the row. Row 1's own raster is 0xF0 either way the guard reads,
+    /// because <c>FillRun</c> paints from <c>Math.Max(a0, 0)</c> regardless of what the guard
+    /// decides to append — the guard only controls what row 1 records as its own changing-element
+    /// list for row 2 to read.
+    /// </para>
+    /// <para>
+    /// With the guard as fixed (<c>a1 != a0</c>, comparing against the unclamped a0 = -1), the
+    /// VL(1) step appends a1 = 0 to row 1's list before the V(0) step appends 4, giving
+    /// row 1's list [0, 4, …]. Row 2, two more V(0) codewords, then resolves b1 = 0 on the first
+    /// (painting nothing, since a0Col is white) and b1 = 4 on the second (painting x = 0..4
+    /// black), closing row 2 at 0xF0, the same as row 1.
+    /// </para>
+    /// <para>
+    /// Reverting the guard alone to <c>a1 != Math.Max(a0, 0)</c> compares a1 = 0 against
+    /// Math.Max(-1, 0) = 0 instead, reads that as no change, and drops the append — row 1's list
+    /// becomes [4, …] instead of [0, 4, …]. Row 2's first V(0) then resolves b1 = 4 directly,
+    /// clamps a1 to 4, and closes the row after that single codeword: nothing is painted (a0Col
+    /// is still white), the row's second V(0) codeword is left unread, and row 2 comes out 0x00
+    /// instead of 0xF0. Reverting a0's own start back to 0 (rather than -1) corrupts row 1's list
+    /// the same way for the same reason — with a0 = 0, the VL(1) step's own guard compares
+    /// a1 = 0 against a0 = 0 and drops the append before the reverted-guard case is even
+    /// reached — and produces the same wrong row 2.
+    /// </para>
+    /// <para>
+    /// Row 0 and row 1's code words are both what ITU-T T.6 2.2.4 selects for this shape, so this
+    /// vector's expected raster is fully derivable from the standard, unlike
+    /// <see cref="MmrDecoder_VerticalMode_ImaginaryA0ClampFloorsAtZeroNotNegativeOne"/>'s VL(1)
+    /// against a b1 of 0, which encodes an a1 no conformant encoder emits.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void MmrDecoder_VerticalMode_GuardRetainsColumnZeroElementForFollowingRow()
+    {
+        var mmr = PackMsbFirst(
+            (0b001, 3), (0b000111, 6), (0b10, 2),  // row 0: H, white run 1, black run 3
+            (0b010, 3), (0b1, 1),                   // row 1: VL(1), V(0)
+            (0b1, 1), (0b1, 1));                    // row 2: V(0), V(0)
+
+        var raster = DecodeMmrRaster(width: 4, height: 3, mmr);
+
+        Assert.Equal([0x70, 0xF0, 0xF0], raster);
+    }
+
     /// <summary>
     /// <c>DecodeRun</c>'s make-up accumulation: a run of 64 to 1728 pixels is coded as one
     /// make-up code word followed by one terminating code word (ITU-T T.4, 4.1.1 "Data"), and
@@ -1153,7 +1301,7 @@ public sealed class Jbig2ImageTests
     /// 2, closed to the edge with V(0), giving reference changing elements at x = 2, x = 4 and
     /// x = 8 — refCE = [2, 4, 8, 8, 8, …].
     /// <para>
-    /// Row 1 opens with VR(2): b1 = 2 (the first reference element ahead of a0 = 0), so
+    /// Row 1 opens with VR(2): b1 = 2 (the first reference element ahead of a0 = -1), so
     /// a1 = 2 + 2 = 4, landing a0 exactly on refCE[1] = 4 and turning the colour black. The
     /// second codeword, V(0), is where the strictness matters: FindB1 must find the first
     /// reference element strictly greater than a0 = 4 of matching (odd-index, white-following)
@@ -1169,7 +1317,7 @@ public sealed class Jbig2ImageTests
     /// </para>
     /// This is the comparison operator in FindB1, not a0's initial value (that is #442's
     /// concern, addressed in PR #444, which stacks on #441, itself based on this branch);
-    /// a0 here starts at 0 as it always does.
+    /// a0 here starts at -1, as it does at the start of every row.
     /// </summary>
     [Fact]
     public void MmrDecoder_FindB1_SkipsAReferenceElementA0SitsExactlyOn()
@@ -1185,8 +1333,9 @@ public sealed class Jbig2ImageTests
     }
 
     /// <summary>
-    /// The vertical arm's clamp lower bound. <c>a1 = Math.Clamp(b1 + delta, a0, width)</c> must
-    /// floor at a0, not 0: a1 regressing behind a0 would let the coding line run backwards,
+    /// The vertical arm's clamp lower bound. <c>a1 = Math.Clamp(b1 + delta, Math.Max(a0, 0),
+    /// width)</c> must floor at a0 (here a non-negative a0, so <c>Math.Max(a0, 0)</c> is a0
+    /// itself), not 0: a1 regressing behind a0 would let the coding line run backwards,
     /// repainting and re-recording changing elements it already passed.
     /// <para>
     /// Row 0 is Horizontal, white run 3 then black run 1 (ITU-T T.4 Table 2), closed to the edge
@@ -1230,6 +1379,62 @@ public sealed class Jbig2ImageTests
         var raster = DecodeMmrRaster(width: 8, height: 2, mmr);
 
         Assert.Equal([0x10, 0x00], raster);
+    }
+
+    // ── MmrDecoder: clamp floor at a value 2.2.5.1 itself does not reach ──────
+    // The vector below feeds the vertical arm a b1 + delta of -1, which 2.2.5.1 never produces
+    // for conformant input (a1 is always >= 0 by definition). The standard's decoding procedure
+    // is therefore silent on what happens here; the expected raster comes from this decoder's
+    // own clamp-floor policy, not from working the standard's procedure by hand as the vectors
+    // above do — see the vector's own doc comment for the derivation.
+
+    /// <summary>
+    /// The vertical arm's clamp lower bound must floor at zero, not at the imaginary a0 = -1 that
+    /// FindB1 and the <c>a1 != a0</c> guard need to see. Flooring at a0 instead lets a1 reach -1:
+    /// at the start of a row, against a reference row that starts black, VL(1) resolves b1 = 0
+    /// (needing a0 = -1 to find it, as in the vectors above), so b1 + delta = 0 - 1 = -1. Floored
+    /// at zero, a1 = 0; floored at a0, a1 stays -1, equal to a0, and the guard drops the column-0
+    /// changing element from the row's own list — the same corruption the guard fix above closes,
+    /// reopened one clamp over.
+    /// <para>
+    /// Row 0 is one Horizontal codeword, white run 0 then black run 8 (ITU-T T.4 Table 2), filling
+    /// the row black and giving refCE = [0, 8, 8, …] for row 1.
+    /// </para>
+    /// <para>
+    /// Row 1: VL(1) gives a1 = -1 either way. FillRun's start is <c>Math.Max(a0, 0)</c> regardless
+    /// of which clamp is under test, so the paint is identical under both, and a0Col flips to
+    /// black either way; the closing V(0) then paints 0..8 black (b1 = refCE[1] = 8), so row 1 is
+    /// 0xFF under both. What differs is only what row 1 records as its own changing elements:
+    /// [0, 8, …] correct (a1 = 0 is a real transition, appended), [8, …] under the reverted clamp
+    /// (a1 = -1 = a0, nothing appended).
+    /// </para>
+    /// <para>
+    /// Row 2 is where that missing element becomes observable. Its first V(0) resolves b1 against
+    /// whichever refCE[0] row 1 left behind: 0 under the fix, giving a1 = 0 and leaving the row
+    /// open for a second V(0) to paint 0..8 black (0xFF); 8 under the reverted clamp, so a1 = 8
+    /// closes the row immediately with nothing painted (0x00), and the packed second V(0) is left
+    /// unread.
+    /// </para>
+    /// <para>
+    /// Row 1's VL(1) is not something a conformant encoder emits: a1 is by definition the next
+    /// changing element to the right of a0, and 2.2.5.1 places a0 just before column 0, so a1 &gt;=
+    /// 0 always. b1 + delta = -1 here is reachable only because this vector deliberately targets
+    /// the clamp floor with malformed input; the standard defines no decoding procedure for it, so
+    /// row 1's expected raster follows from the decoder's own clamping policy (floor at zero, not
+    /// at a0), not from a value 2.2.5.1 specifies.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void MmrDecoder_VerticalMode_ImaginaryA0ClampFloorsAtZeroNotNegativeOne()
+    {
+        var mmr = PackMsbFirst(
+            (0b001, 3), (0b00110101, 8), (0b000101, 6), // row 0: H, white run 0, black run 8
+            (0b010, 3), (0b1, 1),                        // row 1: VL(1), V(0)
+            (0b1, 1), (0b1, 1));                         // row 2: V(0), V(0) (reverted clamp reads only the first)
+
+        var raster = DecodeMmrRaster(width: 8, height: 3, mmr);
+
+        Assert.Equal([0xFF, 0xFF, 0xFF], raster);
     }
 
     /// <summary>

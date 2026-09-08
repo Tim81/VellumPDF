@@ -26,6 +26,16 @@ internal static class MmrDecoder
     /// <returns>A byte array of length rowBytes * height, MSB-first packed pixels.</returns>
     public static byte[] Decode(ReadOnlySpan<byte> data, int width, int height, int rowBytes)
     {
+        // width <= 0 is currently only rejected by Jbig2ImageLoader's own inline check
+        // (`regionWidth <= 0 || regionHeight <= 0`, ahead of the call to this method) — the
+        // ValidateDimensions call it also makes checks the page dimensions from ReadPageInfo,
+        // not this region, and does not imply this check either: the containment test
+        // `(long)regionX + regionWidth > pageWidth` passes when regionWidth is 0. Checking
+        // width here too keeps the invariant local rather than borrowed from a caller, instead
+        // of leaving it to whatever the scratch allocation below happens to do with it.
+        if (width <= 0)
+            throw new InvalidDataException($"JBIG2 MMR: width {width} must be positive.");
+
         // The changing-element scratch below is sized to the row width (8 bytes per pixel of
         // width). A width within MaxPixels but with an extreme aspect ratio (e.g. 100M×1)
         // could otherwise drive a ~800 MB scratch allocation from a few bytes of compressed
@@ -66,7 +76,15 @@ internal static class MmrDecoder
         int[] refCE, int[] curCE,
         int width, byte[] output, int rowOffset)
     {
-        var a0 = 0; // current x position
+        // T.6 2.2.5.1: a0 is imaginarily set just before the first picture element and is
+        // regarded as white, so it starts one position left of the raster, not on it. Kept
+        // unclamped here for FindB1's search below and for the vertical arm's a1 != a0 guard
+        // further down, both of which need to see a0 = -1: FindB1 to land b1 on a reference
+        // changing element sitting at column 0, and the guard to tell a real transition at
+        // column 0 (a1 = 0) apart from a0 itself. Math.Max(a0, 0) clamps it back to a real
+        // pixel position at every site that indexes or fills the raster, and also floors the
+        // vertical arm's own clamp, which must never emit a1 = -1 (see below).
+        var a0 = -1; // current x position
         var a0Col = 0; // color at a0 (0 = white, 1 = black); coding line starts white
         var ceIdx = 0; // index into curCE
 
@@ -81,7 +99,7 @@ internal static class MmrDecoder
                         // b2 = next CE after b1 on ref.
                         var b1 = FindB1(refCE, a0, a0Col);
                         var b2 = NextCE(refCE, b1);
-                        FillRun(output, rowOffset, a0, b2, a0Col);
+                        FillRun(output, rowOffset, Math.Max(a0, 0), b2, a0Col);
                         a0 = b2;
                         // a0Col is unchanged in pass mode.
                         break;
@@ -95,9 +113,15 @@ internal static class MmrDecoder
                         // make-up total on malformed input.
                         var run1 = DecodeRun(ref reader, a0Col, width);
                         var run2 = DecodeRun(ref reader, 1 - a0Col, width);
-                        var a1 = Math.Min(a0 + run1, width);
+                        // 2.2.5.1: "the first run length on a line a0a1 is replaced by
+                        // a0a1 - 1", i.e. the first code word on a line already encodes one
+                        // less than the true run from the imaginary a0. Clamping a0 to 0
+                        // before adding the decoded run supplies that missing +1 (-1 clamped
+                        // to 0 is one more than -1); once a0 is a real position the clamp is
+                        // a no-op and the ordinary a0 + run applies.
+                        var a1 = Math.Min(Math.Max(a0, 0) + run1, width);
                         var a2 = Math.Min(a1 + run2, width);
-                        FillRun(output, rowOffset, a0, a1, a0Col);
+                        FillRun(output, rowOffset, Math.Max(a0, 0), a1, a0Col);
                         AppendCe(curCE, ref ceIdx, a1);
                         FillRun(output, rowOffset, a1, a2, 1 - a0Col);
                         AppendCe(curCE, ref ceIdx, a2);
@@ -117,8 +141,20 @@ internal static class MmrDecoder
                         // Vertical modes V(0), V(+1..+3), V(-1..-3).
                         var delta = (int)mode; // encoded as the delta value directly
                         var b1 = FindB1(refCE, a0, a0Col);
-                        var a1 = Math.Clamp(b1 + delta, a0, width);
-                        FillRun(output, rowOffset, a0, a1, a0Col);
+                        // Unlike FindB1 above and the a1 != a0 guard below, this clamp must
+                        // never itself land on a1 = -1 (2.2.5.1 defines no picture element
+                        // there), so its lower bound is the real pixel position Math.Max(a0, 0),
+                        // not a0 directly. That floor is what keeps the guard below able to
+                        // tell a real column-0 transition apart from a0: without it, VL(1)
+                        // against b1 = 0 would clamp to a1 = -1, equal to the unclamped a0, and
+                        // the guard would read a real transition as "no change" (see the
+                        // MmrDecoder_VerticalMode_ImaginaryA0ClampFloorsAtZeroNotNegativeOne
+                        // known-answer vector, which pins exactly this).
+                        var a1 = Math.Clamp(b1 + delta, Math.Max(a0, 0), width);
+                        FillRun(output, rowOffset, Math.Max(a0, 0), a1, a0Col);
+                        // Compared against the unclamped a0: when a0 = -1 and a1 = 0 this is
+                        // a real changing element at column 0 (2.2.5.1), which a comparison
+                        // against a clamped a0 of 0 would miss.
                         if (a1 != a0)
                             AppendCe(curCE, ref ceIdx, a1);
                         a0 = a1;
