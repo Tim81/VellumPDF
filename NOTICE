@@ -13,13 +13,15 @@ of implementation; this includes verifying the exact Aztec module-placement
 coordinates, since the relevant ISO/IEC 24778 figures are not freely
 available. A conformance validator, veraPDF, is used as a test oracle in the
 same way; unlike zxing-cpp it is also, for now, a source of implementation,
-because where a standard this project validates against is not held, the
-conformance rules citing that standard were authored from veraPDF's published
-validation profiles rather than from the standard's own text. Today that
-applies to ISO 19005-2 (PDF/A-2) alone, and re-deriving those rules from the
-text is tracked as issue #418. Beyond that, no source code is copied from,
-and this product is not derived from, any third-party PDF or barcode
-library.
+because where a standard this project validates against was not held at the
+time its rules were written, the conformance rules citing that standard were
+authored from veraPDF's published validation profiles rather than from the
+standard's own text. That applies to ISO 19005-2 (PDF/A-2), which is still not
+held, and to ISO 14289-1 (PDF/UA-1), which was acquired only after its rules
+were written. Holding a standard does not re-author the rules that predate it,
+so both sets are still to be re-derived; that work is tracked as issues #418
+and #428. Beyond that, no source code is copied from, and this product is not
+derived from, any third-party PDF or barcode library.
 
 Licensed under the Apache License, Version 2.0 (the "License"); you may not use
 the files in this repository except in compliance with the License. A copy of
