@@ -135,7 +135,7 @@ internal static class MmrDecoder
             curCE[ceIdx + 1] = width;
     }
 
-    // ── Mode codes (T.6 Table 2) ──────────────────────────────────────────────
+    // ── Mode codes (T.6 Table 1) ──────────────────────────────────────────────
 
     // We encode vertical modes as their delta value (-3 .. +3) and use the
     // special constants below for Pass and Horizontal.
@@ -154,17 +154,26 @@ internal static class MmrDecoder
     /// <summary>Reads the next T.6 2D mode codeword (MSB-first).</summary>
     private static int ReadMode(ref BitReader r)
     {
-        // T.6 mode table (ISO/IEC 11544 Table 2 / ITU-T T.6 §4):
-        //  1             -> V(0)      delta = 0
-        //  011           -> H
-        //  010           -> V(-1)     delta = -1
-        //  0011          -> V(+1)     delta = +1
-        //  0010          -> V(-2)     delta = -2
-        //  000011        -> V(+2)     delta = +2
-        //  000010        -> V(-3)     delta = -3
-        //  0000011       -> V(+3)     delta = +3
-        //  0000001       -> Pass
-        //  000000000001  -> EOFB
+        // WARNING: what this method decodes is NOT Table 1/T.6. The tree below disagrees with the
+        // standard on five of its nine codewords and is tracked as #437. The citation is given so
+        // the discrepancy is checkable, not because the code implements it.
+        //
+        // Table 1/T.6 (ITU-T T.6 §2.2.3, the "two-dimensional code table" that §2.2.3.3 names when
+        // it defines the horizontal-mode flag code), against what the branches below return:
+        //  1             -> V(0)   both agree
+        //  010           -> VL(1)  both agree, delta = -1
+        //  000011        -> VR(2)  both agree, delta = +2
+        //  0000011       -> VR(3)  both agree, delta = +3
+        //  011           -> VR(1) in T.6, delta = +1; read as Horizontal here
+        //  001           -> Horizontal in T.6; not reachable here, and a fourth bit is consumed
+        //  0001          -> Pass in T.6; discarded here as "unexpected", and a fifth bit consumed
+        //  000010        -> VL(2) in T.6, delta = -2; read as V(-3) here
+        //  0000001       -> the Extension prefix in T.6; read as Pass here
+        //
+        // The two length mismatches desynchronise the bit stream rather than only mis-reading a
+        // mode, so everything after a 001 or 0001 is read at the wrong offset. Only
+        // Jbig2ImageLoader reaches this, for MMR-coded generic regions; CcittImageLoader throws
+        // for k < 0 and never decodes Group 4 at all.
 
         if (r.ReadBit() == 1) return 0; // V(0)
 

@@ -41,20 +41,27 @@ public static class JpegImageLoader
             i += 2;
             if (marker == 0xD9) break; // EOI
 
-            // Every marker segment except SOI/EOI carries a 2-byte length.
+            // Every marker segment except SOI/EOI carries a 2-byte length (ITU-T T.81 §B.1.1.4).
+            // Table B.1 marks SOI and EOI with an asterisk because each "stands alone, that is,
+            // ... is not the start of a marker segment" (§B.1.1.3) — neither has one to read.
             if (i + 1 >= data.Length) break;
             var length = (data[i] << 8) | data[i + 1];
             if (length < 2)
                 throw new InvalidDataException("Malformed JPEG: invalid marker segment length.");
 
-            // SOF markers: C0-C3, C5-C7, C9-CB, CD-CF
+            // SOF markers: C0-C3, C5-C7, C9-CB, CD-CF. Table B.1 assigns the gaps to other
+            // marker segments, not to frame headers: C4 is DHT (Define Huffman table), C8 is
+            // JPG (reserved for JPEG extensions), CC is DAC (Define arithmetic coding
+            // conditioning).
             if ((marker >= 0xC0 && marker <= 0xC3) ||
                 (marker >= 0xC5 && marker <= 0xC7) ||
                 (marker >= 0xC9 && marker <= 0xCB) ||
                 (marker >= 0xCD && marker <= 0xCF))
             {
                 // SOF payload (relative to the length field): precision(+2), height(+3..+4),
-                // width(+5..+6), components(+7). Bound the read before touching those bytes.
+                // width(+5..+6), components(+7) — the P/Y/X/Nf field order after Lf in the
+                // frame header syntax of Figure B.3 (ITU-T T.81 §B.2.2). Bound the read before
+                // touching those bytes.
                 if (i + 7 >= data.Length)
                     throw new InvalidDataException("Malformed JPEG: truncated SOF segment.");
                 var h = (data[i + 3] << 8) | data[i + 4];

@@ -17,6 +17,13 @@ public static class EcdsaSignatureConverter
     /// per RFC 7518 §3.4 — to the DER <c>ECDSA-Sig-Value</c> sequence that
     /// <see cref="IExternalSigner.SignAsync"/> must return for an EC certificate.
     /// </summary>
+    /// <remarks>
+    /// The pair being split here is the signature itself, not an encoding artefact: FIPS 186-5
+    /// §6.4.1 declares its Output as exactly "a pair of integers (r, s)", so both wire forms —
+    /// P1363's fixed-width concatenation and DER's
+    /// <c>SEQUENCE</c> of two <c>INTEGER</c>s — are re-encodings of that same pair, never a third
+    /// value.
+    /// </remarks>
     /// <param name="rawSignature">
     /// The raw signature: <c>r</c> and <c>s</c>, each a fixed-length unsigned big-endian
     /// integer matching the curve's field size, concatenated with no separator.

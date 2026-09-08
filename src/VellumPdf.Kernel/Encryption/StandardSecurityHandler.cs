@@ -162,6 +162,12 @@ public sealed class StandardSecurityHandler : IPdfEncryptor
             }
 
             // E = AES-128-CBC-NoPadding(key=K[0..16], iv=K[16..32], K1)
+            // The key is 16 bytes (AES-128) but so is the IV taken from the next 16 bytes of K —
+            // CBC's IV is always one cipher block, and FIPS 197 fixes that block at 128 bits for
+            // every key length (§5, Table 3: Nb=4 words for AES-128, -192 and -256 alike). The
+            // same fixed block size is why Encrypt() below still uses a 16-byte IV despite its
+            // 256-bit key (AES-256-CBC); ComputePerms() has no IV at all — it runs AES-256-ECB,
+            // and its 16 bytes are the Algorithm 10 plaintext block, not an IV.
             var e = AES128CBCEncryptNoPadding(k[..16], k[16..32], k1);
 
             // Determine next hash based on (sum of first 16 bytes of E) mod 3
@@ -170,6 +176,12 @@ public sealed class StandardSecurityHandler : IPdfEncryptor
                 mod += e[j];
             mod %= 3;
 
+            // SHA-256, SHA-384 and SHA-512 are three of the fixed-length message digests FIPS
+            // 180-4 specifies (§1, Figure 1 gives their output sizes as 256/384/512 bits). Each
+            // one consumes all of E; what varies is the digest length produced — 32, 48 or 64
+            // bytes — which sets blockLen (and so K1's size) for the next iteration. Only the key
+            // returned after the loop, below, is cut to the first 32 bytes; no round's own digest
+            // is truncated.
             k = mod switch
             {
                 0 => SHA256.HashData(e),

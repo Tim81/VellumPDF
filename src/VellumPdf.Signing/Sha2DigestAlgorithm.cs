@@ -14,6 +14,11 @@ namespace VellumPdf.Signing;
 /// computed with are selected by the same switch over the same input. Kept apart, they are two
 /// tables that have to be edited in step — the class of drift that produced the per-hash OID
 /// gap in issue #166, where the SHA-384/512 arms of two such tables went unexercised.
+///
+/// SHA-256, SHA-384 and SHA-512 are three of the message digests FIPS 180-4 specifies; <see
+/// cref="Hash"/> delegates to the BCL's implementation of each rather than reproducing FIPS
+/// 180-4's compression function here, so the standard has nothing further to cite against this
+/// file beyond naming which three digests it is.
 /// </remarks>
 internal static class Sha2DigestAlgorithm
 {
