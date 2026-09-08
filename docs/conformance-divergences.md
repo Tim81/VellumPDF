@@ -75,62 +75,51 @@ nothing announces it. D1 at least fires.
 
 Checkable: the PDF/UA-1 half, yes. The PDF/A-2 half rests on the viewer.
 
-## D3 — An allow-list described as what the clause says
-
-- Rule: `ActionRule`
-- Clauses: ISO 19005-2 6.5.1, with 5.1
-- Status: not gated · prose only
-
-The clause is written as three prohibitions, and 5.1 permits anything not explicitly forbidden.
-veraPDF quotes that deny-list sentence verbatim as its description and then tests an allow-list of
-seven action types. `ActionRule` implements the allow-list and its remarks assert "The clause is an
-allow-list", which describes veraPDF's test rather than the clause.
-
-**Second reading.** Subtracting the forbidden types from the set ISO 32000-1 12.6.4 defines leaves
-exactly the seven the rule permits, so the two formulations coincide for defined types and part
-company only for undefined or vendor ones — which the rule's own comment says it means to reject.
-
-**Why it is here anyway.** The behaviour is defensible; the sentence is not, and it sits under a
-clean-room remark claiming derivation from the specification text. This is the third rule where the
-profile's framing survived into our prose, after D1 and D2, and none of the three was found by a
-test, because in each case the behaviour and the description diverged rather than the behaviour and
-the tool.
-
-Checkable: the ISO 32000-1 arithmetic is, from the held copy. The ISO 19005-2 clause structure is
-not.
-
-## D4 — Font embedding ignores the rendering-mode-3 exemption
+## D4 — Font embedding and the rendering-mode-3 exemption
 
 - Rule: `FontEmbeddingRule`
 - Clause: ISO 19005-2 6.2.11.4.1
-- Status: not gated
+- Status: not gated · corrected, and now stricter than veraPDF in two named ways
 
 The clause scopes embedding to fonts "used for rendering", and its NOTE 2 exempts a font referenced
-solely in text rendering mode 3, which is invisible. veraPDF exempts it too. This library exempts
-nothing: `FontEmbeddingRule` enumerates through `PreflightContext.EnumerateUsedFonts()`, and that
-set is populated in `ContentStreamUsage` on the `Tf` operator alone, with no reference to the
-rendering mode the same pass already tracks.
+solely in text rendering mode 3, which is invisible. veraPDF exempts it too. This library used to
+exempt nothing: `FontEmbeddingRule` enumerated through `PreflightContext.EnumerateUsedFonts()`, and
+that set is populated on the `Tf` operator alone, with no reference to the rendering mode the same
+pass already tracks. It was the one divergence where this library was stricter than the standard
+*and* stricter than the profile at once, so correcting it moved toward both.
 
-**Why it is the odd row.** This is not inherited from anywhere. It is the one divergence where this
-library is stricter than the standard *and* stricter than the profile at the same time, so
-correcting it moves toward both.
+**Practical effect, before.** A scanned page with an invisible OCR text layer selects a font and
+draws it in mode 3, so the rule demanded embedding for a font the standard exempts. That is the
+commonest mode-3 case in the wild.
 
-**The correct pattern already exists in the tree twice.** `UaFontEmbeddingRule` walks
-`usage.TextShows` and requires a positively determined mode other than 3, and it settles the
-parse-gap case where the mode could not be determined. `GlyphPresenceRule` carries the same
-exemption.
+**What the rule does now.** A font is exempt only when it has a confirmed mode-3 show and no show
+that is anything else, tallied per font across the whole document rather than per page.
 
-**Practical effect.** A scanned page with an invisible OCR text layer selects a font and draws it in
-mode 3, so this rule demands embedding for a font the standard exempts. That is the commonest
-mode-3 case in the wild.
+**What still diverges, both in the stricter direction.** First, veraPDF's `PDFA-2B 6.2.11.4.1-1`
+tests `Subtype == "Type3" || Subtype == "Type0" || renderingMode == 3 || containsFontFile == true`,
+so it exempts every composite font outright. This library follows `/DescendantFonts` and checks the
+CIDFont's descriptor, because nothing in 6.2.11.4.1 exempts composite fonts. Second, the exemption
+here is suppressed for the whole document when a page can reach a content stream the scan does not
+read — a drawn form XObject, an annotation appearance stream, a selected Type 3 font, or content
+that failed to decode or parse. veraPDF carries no such condition. Both make this library report
+where the profile would accept.
 
-Checkable: the code half, yes. The clause and its NOTE rest on the viewer.
+**A deliberate departure from the pattern this row once recommended.** An earlier version of this
+row pointed at `UaFontEmbeddingRule` as the model, including its treatment of a rendering mode that
+could not be determined, which that rule treats as not-a-visible-draw and therefore exempt. This
+rule does the opposite and requires a positively confirmed mode 3. `ContentStreamUsage` clears its
+integer operand on a real-number token, so a producer emitting `0.0 Tr` leaves every following show
+with an unknown mode; exempting on that would hide visible text behind a malformed operator. The
+PDF/UA-1 rule still has that hole and it belongs to #428.
+
+Checkable: the code half, yes, and veraPDF's predicate can be read out of the bundled profile in
+`bin/cli-1.30.2.jar`. The clause and its NOTE rest on the viewer.
 
 ## D5 — A correct severity with the wrong justification
 
 - Rule: `A2aContentItemTaggingRule`, via `RuleRegistry`
 - Clause: ISO 19005-2 6.7.3.3
-- Status: not gated · reasoning only
+- Status: not gated · justification corrected, the check itself still diverges
 
 The clause carries one requirement, that the structure hierarchy be rooted in `StructTreeRoot`, and
 one recommendation, that a writer capture it to the finest granularity available. Nothing requires
@@ -141,9 +130,14 @@ The justification is not. `RuleRegistry` says:
 > Warning, not error: veraPDF's PDF/A-2a profile implements no equivalent, so an error here would
 > contradict the reference implementation.
 
-The severity is derived from tool agreement, and veraPDF is called the reference implementation. The
-real reason is that the clause states a recommendation rather than a requirement. Nothing behavioural
-changes; the sentence does.
+The severity was derived from tool agreement, and veraPDF was called the reference implementation.
+The real reason is that the clause states a recommendation rather than a requirement. The registry
+comment and the rule's remarks now say that, and the diagnostic the caller reads no longer names
+veraPDF; a conformance message should describe the document.
+
+**What still diverges.** The check itself. veraPDF's PDF/A-2a profile carries no equivalent, so this
+library reports something the profile does not. That is a real disagreement and it stays, at warning
+severity, on the clause's own terms.
 
 Checkable: the registry comment, yes. The clause is the viewer's.
 
@@ -156,9 +150,10 @@ alone is not enough. A diff between two implementations cannot surface a require
 omit, because they agree.
 
 Measured against an inventory of ISO 19005-2 clause 6 by number and heading, 19 of its 73
-file-scoped clauses are checked by neither this library nor veraPDF. That inventory and the script
-that reports the split are being added under #418; until they land, the figures here are a snapshot
-rather than something a clone can recompute.
+file-scoped clauses are checked by neither this library nor veraPDF. The inventory is
+`eng/data/iso19005-2-clauses.yml` and `eng/clause-coverage.py` reports the split, so a clone can
+recompute the figure. It reads the profiles out of the veraPDF jar when one is reachable and says so
+when it is not, rather than reporting a smaller gap in silence.
 
 Seven of the 19 are Level A only, and Level A is the accessibility level this library advertises:
 
