@@ -14,3 +14,5 @@
   href: pdf20-conformance.md
 - name: Differential Oracles
   href: differential-oracles.md
+- name: Conformance Divergences
+  href: conformance-divergences.md
