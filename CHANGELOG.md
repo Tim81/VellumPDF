@@ -327,14 +327,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Documentation
 
 - **Where the conformance rules knowingly disagree with veraPDF is written down (#418, #419).**
-  `docs/conformance-divergences.md` records five cases, each with what the standard requires, what an
+  `docs/conformance-divergences.md` records each case with what the standard requires, what an
   independent second reading found, what veraPDF does, which one this library follows, and whether a
-  reader with only this repository can confirm it. Two are inherited from the profile and are gated
-  behind the per-rule comparison, since correcting them makes this library disagree with veraPDF and
-  the id diff currently fails in both directions. One is the reverse case, where this library is
-  stricter than both the standard and the profile. The file exists because a diff that treats
-  profile membership as the passing condition makes the profile authoritative by construction, and
-  because a diff between two implementations cannot surface a requirement both omit: 19 of the 73
+  reader with only this repository can confirm it. Two rows are inherited from the profile and are
+  gated behind the per-rule comparison, since correcting them makes this library disagree with
+  veraPDF and the id diff currently fails in both directions. Two more are corrected in this same
+  release and keep their rows because a narrower disagreement remains in each; a third, where
+  `ActionRule`'s prose described the profile's framing rather than the clause, is corrected and its
+  row removed, since nothing about that rule diverges any more. The file exists because a diff that
+  treats profile membership as the passing condition makes the profile authoritative by construction,
+  and because a diff between two implementations cannot surface a requirement both omit: 19 of the 73
   file-scoped clauses in the archival standard are checked by neither, seven of them at the
   accessibility level this library advertises.
 
