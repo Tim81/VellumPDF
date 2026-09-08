@@ -256,6 +256,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Documentation
 
+- **Where the conformance rules knowingly disagree with veraPDF is written down (#418, #419).**
+  `docs/conformance-divergences.md` records five cases, each with what the standard requires, what an
+  independent second reading found, what veraPDF does, which one this library follows, and whether a
+  reader with only this repository can confirm it. Two are inherited from the profile and are gated
+  behind the per-rule comparison, since correcting them makes this library disagree with veraPDF and
+  the id diff currently fails in both directions. One is the reverse case, where this library is
+  stricter than both the standard and the profile. The file exists because a diff that treats
+  profile membership as the passing condition makes the profile authoritative by construction, and
+  because a diff between two implementations cannot surface a requirement both omit: 19 of the 73
+  file-scoped clauses in the archival standard are checked by neither, seven of them at the
+  accessibility level this library advertises.
+
 - **Measured behaviour of two candidate differential oracles, Ghostscript and MuPDF (#420).**
   `docs/differential-oracles.md` records what each one actually does, run against five fixtures on
   WSL Ubuntu 24.04, and `eng/oracles/install-oracles.sh` builds both from pinned upstream sources
