@@ -14,8 +14,11 @@ namespace VellumPdf.Images;
 ///
 /// <para>When <see cref="ImageDecodeMode.DecodeToRaster"/> is requested via
 /// <see cref="ImageLoadOptions.DecodeMode"/>, the stream is decoded to a 1-bpp raster and
-/// re-encoded with <c>/FlateDecode</c> (lossless). Only 1D (K=0 and K&lt;0/G4) rows are
-/// decoded; 2D (K&gt;0, Modified READ) rows throw <see cref="NotSupportedException"/>.</para>
+/// re-encoded with <c>/FlateDecode</c> (lossless). Only T.4 1-D rows are decoded (K=0, and
+/// the 1-D rows of K&gt;0). Requesting a raster for Group 4 (K&lt;0, T.6) throws
+/// <see cref="NotSupportedException"/> outright, and a Modified READ 2-D row under K&gt;0
+/// throws the same way — there is no passthrough fallback for either; use the default
+/// passthrough mode for those streams instead.</para>
 ///
 /// <para><b>K parameter semantics (ISO 32000-2 Table 10):</b></para>
 /// <list type="bullet">
@@ -44,8 +47,10 @@ public static class CcittImageLoader
     /// <paramref name="options"/>.<see cref="ImageLoadOptions.DecodeMode"/> is
     /// <see cref="ImageDecodeMode.DecodeToRaster"/>, the stream is decoded to a 1-bpp raster and
     /// re-encoded with <c>/FlateDecode</c> (lossless) instead. Raster decode supports 1-D rows
-    /// only: <see cref="CcittOptions.K"/> greater than zero (Group 3 mixed) and less than zero
-    /// (Group 4) both throw <see cref="NotSupportedException"/>.
+    /// only. <see cref="CcittOptions.K"/> less than zero (Group 4) throws
+    /// <see cref="NotSupportedException"/> immediately. K greater than zero (Group 3 mixed)
+    /// decodes each row's 1-D tag bit and its run lengths, and throws the same way only when a
+    /// row's tag bit selects a 2-D (Modified READ) row.
     /// </remarks>
     /// <param name="ccittData">The raw CCITT-compressed bytes. Must be non-empty.</param>
     /// <param name="columns">Image width in pixels. Must be positive.</param>
@@ -374,10 +379,12 @@ public static class CcittImageLoader
     private const int EolLen = 12;
 
     /// <summary>
-    /// Decodes a CCITT T.4 1D (Modified Huffman) or T.6 (Group 4 MMR) stream to a 1-bpp
-    /// packed raster (MSB-first, rows padded to byte boundaries).
-    /// <para>T.6 (k &lt; 0) and T.4 1D (k = 0) are decoded. T.4 mixed 1D/2D (k &gt; 0)
-    /// throws <see cref="NotSupportedException"/> for 2D rows.</para>
+    /// Decodes a CCITT T.4 1-D (Modified Huffman) stream to a 1-bpp packed raster (MSB-first,
+    /// rows padded to byte boundaries).
+    /// <para>Only T.4 1-D rows are decoded: k = 0, and the 1-D rows of k &gt; 0. Group 4
+    /// (k &lt; 0, T.6 MMR) is not decoded here at all — the first thing this method does for a
+    /// negative k is throw. The T.6 decoder that does exist, <see cref="MmrDecoder"/>, is
+    /// reached only from <c>Jbig2ImageLoader</c>. A 2-D row under k &gt; 0 throws as well.</para>
     /// </summary>
     internal static byte[] DecodeCcittToRaster(
         byte[] data,

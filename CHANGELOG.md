@@ -253,6 +253,43 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   §6.2.11.4.1, §6.1.3 and §6.2.3. `PdfDocument` repeated the §6.3.3 font claim. Each replacement was
   read in the standard before it was written. (#418)
 
+- **JBIG2 images with MMR-coded generic regions decoded to the wrong pixels (#437).** `MmrDecoder`
+  read a two-dimensional mode table that was not the one in ITU-T T.6. Six of its ten code words
+  were wrong: the three-bit Horizontal flag `001` was never a decision point in the old tree — it
+  read a fourth bit at that branch and returned +1 for `0011` instead — while VR(1)'s own code,
+  `011`, was misread as Horizontal; Pass (`0001`) was discarded as "unexpected" and a fifth bit
+  consumed with it; VL(2) resolved to the wrong delta (−3 instead of −2); VL(3) resolved to Pass, a
+  different mode entirely rather than a wrong delta; and the extension prefix fell through to the
+  same end-of-block scan a truncated stream reaches. Horizontal and Pass are the two length
+  mismatches: three and four bits long where the decoder consumed four and five, so a stream
+  containing either desynchronised and every mode after it was read at the wrong bit offset. Only
+  `Jbig2ImageLoader` reaches this path, for generic regions coded with MMR. `CcittImageLoader`
+  throws for `K < 0` and never decodes Group 4 at all, so no CCITT image was affected. An extension
+  code now fails the decode with a message that names it. ITU-T T.88 6.2.6 forbids T.6's extension
+  codes in MMR-encoded JBIG2 data — the clause constrains the data, not the decoder's response —
+  and an extension prefix already failed the decode before this change too, by falling through to
+  the same end-of-block scan a truncated stream reaches; what changes is that the message now names
+  the extension code instead of blaming truncation. The two malformed-input tests that encoded a
+  mode code word — the run-length-cap test and the changing-element bounds-check test — were
+  written against the same wrong table as the code — one of them encoding `011` under the comment
+  `// H` — so they agreed with the decoder rather than with the standard. The run-length-cap
+  test's own assertion held regardless: a Horizontal codeword followed by a make-up run of 64
+  against a width of 2 trips the cap whether the flag code is right or wrong. The test named for
+  the changing-element bounds check did not hold the same way: under the wrong flag code its
+  black codeword `0001111` matched `ReadBlack`'s five-bit case for a run of 10, which overshoots
+  a width of 2 and trips the run-length cap before the bounds check is ever reached, and
+  correcting only the flag code, keeping that same run code, still trips the cap first — fixing
+  the mode table does not fix the run length it decodes to. Reaching the bounds check needed a
+  fixture rewrite, not just the flag fix, which is what the three repeats of a zero-width white
+  run and a black run of 1 below do instead. Both are re-authored from the standard and joined by
+  known-answer vectors that carry an expected raster per code word — including a make-up-code
+  accumulation vector, since none of the file's pre-existing fixtures completed a multi-code run —
+  except the extension prefix, which has no valid raster to derive and asserts the rejection
+  message instead. `CcittImageLoader`'s summary also claimed Group 4 (`K < 0`) rows are decoded, when
+  `DecodeCcittToRaster` throws immediately for `k < 0`; and `Load`'s remarks claimed `K > 0`
+  throws outright, when it decodes 1-D rows and throws only when a row's tag bit selects a 2-D
+  row.
+
 - **`/P` bit 10 is now always set on a newly written `/Encrypt` dictionary.** The restriction this
   bit expressed is deprecated in PDF 2.0, and ISO 32000-2 Table 22 requires writers to set the bit
   regardless of the permissions requested; the Standard security handler previously set it only

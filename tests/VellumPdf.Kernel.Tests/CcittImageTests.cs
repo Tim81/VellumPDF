@@ -380,7 +380,7 @@ public sealed class CcittImageTests
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    private static byte[] DecompressFlateStream(VellumPdf.Core.PdfStream pdfStream)
+    internal static byte[] DecompressFlateStream(VellumPdf.Core.PdfStream pdfStream)
     {
         using var pdfMs = new MemoryStream();
         var writer = new VellumPdf.IO.PdfWriter(pdfMs);
