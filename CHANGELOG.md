@@ -150,6 +150,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **Three rule justifications now derive from the clause rather than from veraPDF, and one of them
+  reached the caller.** `ActionRule` claimed §6.5.1 "is an allow-list", and separately claimed
+  derivation from the specification text while a comment a hundred lines below justified its
+  null-`/S` branch by describing veraPDF's predicate. The clause is written as three prohibitions.
+  What makes the seven-type allow-list correct is §5.1, which permits any valid ISO 32000-1 feature
+  the standard does not forbid: subtract the eleven types §6.5.1 forbids from ISO 32000-1 §12.6.4
+  and exactly those seven remain, so for every type the base standard defines the two formulations
+  agree. `A2aContentItemTaggingRule` reports a warning rather than an error because §6.7.3.3 states
+  granularity as a *should* and not a *shall*, not because veraPDF's profile lacks the check; its
+  diagnostic message no longer names veraPDF to the reader, which is the part a caller sees.
+  Behaviour, rule ids, clause strings and severities are unchanged. The generated provenance count
+  in `docs/pdf20-conformance.md` moves accordingly, from 50 of 71 rule classes naming veraPDF to 49.
+  (#418)
+
 - **TIFF predictor 2 at 1, 2, 4, and 16 bits per component (#98).** `FlateDecode` and `LZWDecode`
   streams with `/Predictor 2` at those depths are now un-predicted per ISO 32000-2 §7.4.4.4. Before
   this change the rows were copied through still differenced, with an `UnsupportedPredictor`
