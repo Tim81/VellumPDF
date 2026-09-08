@@ -8,6 +8,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Clause coverage can now be measured against ISO 19005-2 itself, not against veraPDF's test
+  ids.** `eng/data/iso19005-2-clauses.yml` lists every clause of the standard's clause 6, and
+  `eng/clause-coverage.py` reports what checks each one. Measuring coverage against a validator's
+  test ids makes that validator the population, so a requirement neither it nor this library checks
+  cannot appear in any comparison between them: both sides agree by omission and the diff is silent.
+  Against the standard's own clause list, 19 of the 73 file-scoped clauses turn out to be checked by
+  neither, seven of them Level A accessibility requirements including alternate descriptions,
+  replacement text and expansions of abbreviations. The inventory holds clause numbers and headings
+  only; no normative text is reproduced, since the standard is not held as a file. Clauses that bind
+  a conforming reader rather than a conforming file are marked and excluded, so a missing rule
+  against one of those is not counted as a gap. (#418)
+
 - **PDF/UA-1 §7.16-1 conformance check, and a password for preflight (#138).** A new rule,
   `UaEncryptionPermissionsRule`, reads an encrypted document's `/Encrypt` dictionary and reports an
   error when its `/P` entry does not have bit 10 set — ISO 32000-2 Table 22 requires every writer to
