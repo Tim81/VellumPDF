@@ -449,6 +449,161 @@ public sealed class PdfPreflightTests
     }
 
     /// <summary>
+    /// Same layout as <see cref="BuildFontPdf(PdfObj[])"/>, but with the page content stream
+    /// supplied by the caller instead of the fixed <c>BT /F0 12 Tf ET</c> — for the rendering-mode
+    /// fixtures below, where the <c>Tr</c> operand and the presence of a show are what is under test.
+    /// </summary>
+    private static byte[] BuildFontPdf(string content, params PdfObj[] fontObjects)
+    {
+        var contentObjNum = 6 + fontObjects.Length;
+        var objects = new List<PdfObj>
+        {
+            new("<< /Type /Catalog /Pages 2 0 R >>"),
+            _pagesObj,
+            new($"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources 4 0 R /Contents {contentObjNum} 0 R >>"),
+            new("<< /Font 5 0 R >>"),
+            new("<< /F0 6 0 R >>"),
+        };
+        objects.AddRange(fontObjects);
+        objects.Add(new PdfObj(string.Empty, Encoding.ASCII.GetBytes(content)));
+        return AssemblePdf(objects);
+    }
+
+    /// <summary>
+    /// A two-page doc where both pages share one <c>/Resources /Font /F0</c> pointing at the same
+    /// font object, each with its own content stream. Used for the §6.2.11.4.1 rendering-mode-3
+    /// exemption fixture that shows the same font invisibly on one page and visibly on another
+    /// (aggregation must be document-wide, not per page).
+    /// </summary>
+    private static byte[] BuildTwoPageFontPdf(string content1, string content2, params PdfObj[] fontObjects)
+    {
+        // Objects: 1=catalog 2=pages 3=page1 4=page2 5=resources-dict 6=font-dict-map 7..=fontObjects
+        var contentObjNum1 = 7 + fontObjects.Length;
+        var contentObjNum2 = contentObjNum1 + 1;
+        var objects = new List<PdfObj>
+        {
+            new("<< /Type /Catalog /Pages 2 0 R >>"),
+            new("<< /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >>"),
+            new($"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources 5 0 R /Contents {contentObjNum1} 0 R >>"),
+            new($"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources 5 0 R /Contents {contentObjNum2} 0 R >>"),
+            new("<< /Font 6 0 R >>"),
+            new("<< /F0 7 0 R >>"),
+        };
+        objects.AddRange(fontObjects);
+        objects.Add(new PdfObj(string.Empty, Encoding.ASCII.GetBytes(content1)));
+        objects.Add(new PdfObj(string.Empty, Encoding.ASCII.GetBytes(content2)));
+        return AssemblePdf(objects);
+    }
+
+    /// <summary>
+    /// A simple TrueType font (plus its <c>/FontDescriptor</c>, and a <c>/FontFile2</c> stream when
+    /// <paramref name="embedded"/>) at object <paramref name="fontObjNum"/>, sized for the §6.2.11.4.1
+    /// rendering-mode fixtures — <c>/FirstChar 65 /LastChar 66</c> covers both "A" and "B" so a
+    /// content stream can show either. <paramref name="baseFont"/> distinguishes two fonts in the
+    /// same fixture (the two-font per-resource-name keying test needs each font to report under its
+    /// own name).
+    /// </summary>
+    private static PdfObj[] TrueTypeFontObjects(int fontObjNum, bool embedded, string baseFont = "VellumTestFont")
+    {
+        var descNum = fontObjNum + 1;
+        var descriptorExtra = embedded ? $" /FontFile2 {descNum + 1} 0 R" : string.Empty;
+        var font = new PdfObj(
+            $"<< /Type /Font /Subtype /TrueType /BaseFont /{baseFont} /FirstChar 65 /LastChar 66 "
+            + $"/Widths [600 600] /Encoding /WinAnsiEncoding /FontDescriptor {descNum} 0 R >>");
+        var descriptor = new PdfObj(
+            $"<< /Type /FontDescriptor /FontName /{baseFont} /Flags 32 /FontBBox [0 -200 1000 800] "
+            + $"/ItalicAngle 0 /Ascent 800 /Descent -200 /CapHeight 700 /StemV 80{descriptorExtra} >>");
+        return embedded
+            ? [font, descriptor, new PdfObj("/Length1 4", [1, 2, 3, 4])]
+            : [font, descriptor];
+    }
+
+    /// <summary>
+    /// Same layout as <see cref="BuildFontPdf(string, PdfObj[])"/>, but with two font resources,
+    /// <c>/F0</c> and <c>/F1</c>, each naming its own font object — for the two-font fixture that
+    /// pins per-font (not per-resource-dictionary) keying.
+    /// </summary>
+    private static byte[] BuildTwoFontPdf(string content, PdfObj[] font0Objects, PdfObj[] font1Objects)
+    {
+        var font1StartNum = 6 + font0Objects.Length;
+        var contentObjNum = font1StartNum + font1Objects.Length;
+        var objects = new List<PdfObj>
+        {
+            new("<< /Type /Catalog /Pages 2 0 R >>"),
+            _pagesObj,
+            new($"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources 4 0 R /Contents {contentObjNum} 0 R >>"),
+            new("<< /Font 5 0 R >>"),
+            new($"<< /F0 6 0 R /F1 {font1StartNum} 0 R >>"),
+        };
+        objects.AddRange(font0Objects);
+        objects.AddRange(font1Objects);
+        objects.Add(new PdfObj(string.Empty, Encoding.ASCII.GetBytes(content)));
+        return AssemblePdf(objects);
+    }
+
+    /// <summary>
+    /// Same layout as <see cref="BuildFontPdf(string, PdfObj[])"/>, but the page resources also carry
+    /// an <c>/XObject</c> dictionary with one entry, <c>/X0</c>, whose dictionary literal is
+    /// <paramref name="xObjectDict"/> and whose stream body is <paramref name="xObjectStream"/> — for
+    /// the B2 fixtures where the page draws a form or image XObject alongside the font show under
+    /// test.
+    /// </summary>
+    private static byte[] BuildFontPdfWithXObject(
+        string content, string xObjectDict, byte[] xObjectStream, params PdfObj[] fontObjects)
+    {
+        var xObjNum = 7 + fontObjects.Length;
+        var contentObjNum = xObjNum + 1;
+        var objects = new List<PdfObj>
+        {
+            new("<< /Type /Catalog /Pages 2 0 R >>"),
+            _pagesObj,
+            new($"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources 4 0 R /Contents {contentObjNum} 0 R >>"),
+            new("<< /Font 5 0 R /XObject 6 0 R >>"),
+            new("<< /F0 7 0 R >>"),
+            new($"<< /X0 {xObjNum} 0 R >>"),
+        };
+        objects.AddRange(fontObjects);
+        objects.Add(new PdfObj(xObjectDict, xObjectStream));
+        objects.Add(new PdfObj(string.Empty, Encoding.ASCII.GetBytes(content)));
+        return AssemblePdf(objects);
+    }
+
+    /// <summary>
+    /// A two-page doc where the mode-3 tally and the drawn form XObject live on different pages:
+    /// page 1 carries <c>/Resources /Font /F0</c> (no <c>/XObject</c>) and <paramref name="content1"/>;
+    /// page 2 carries <c>/Resources /XObject /X0</c> and <paramref name="content2"/>, with no
+    /// <c>/Font</c> entry of its own at all. Pins that the B2 form-XObject check runs against every
+    /// page, including one that selects no font — a scan that skipped fontless pages would never see
+    /// page 2's form XObject and would wrongly let page 1's mode-3 show through unexempted.
+    /// </summary>
+    private static byte[] BuildTwoPageFontPdfWithXObjectOnSecondPage(
+        string content1, string content2, string xObjectDict, byte[] xObjectStream, params PdfObj[] fontObjects)
+    {
+        // Objects: 1=catalog 2=pages 3=page1 4=page2 5=page1-resources 6=page2-resources
+        // 7=font-map 8=xobject-map 9..=fontObjects, then the XObject, then content1, content2.
+        const int fontStartNum = 9;
+        var xObjNum = fontStartNum + fontObjects.Length;
+        var contentObjNum1 = xObjNum + 1;
+        var contentObjNum2 = contentObjNum1 + 1;
+        var objects = new List<PdfObj>
+        {
+            new("<< /Type /Catalog /Pages 2 0 R >>"),
+            new("<< /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >>"),
+            new($"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources 5 0 R /Contents {contentObjNum1} 0 R >>"),
+            new($"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources 6 0 R /Contents {contentObjNum2} 0 R >>"),
+            new("<< /Font 7 0 R >>"),
+            new("<< /XObject 8 0 R >>"),
+            new($"<< /F0 {fontStartNum} 0 R >>"),
+            new($"<< /X0 {xObjNum} 0 R >>"),
+        };
+        objects.AddRange(fontObjects);
+        objects.Add(new PdfObj(xObjectDict, xObjectStream));
+        objects.Add(new PdfObj(string.Empty, Encoding.ASCII.GetBytes(content1)));
+        objects.Add(new PdfObj(string.Empty, Encoding.ASCII.GetBytes(content2)));
+        return AssemblePdf(objects);
+    }
+
+    /// <summary>
     /// Builds a one-page doc where the page dictionary carries <paramref name="pageExtra"/> (e.g.
     /// <c>"/Annots [4 0 R]"</c>) and <paramref name="extra"/> supplies objects 4..N.
     /// </summary>
@@ -2776,6 +2931,254 @@ public sealed class PdfPreflightTests
         var assertion = Assert.Single(result.Assertions);
         Assert.Equal("ISO19005-2:6.2.11.4.1-font-embedding", assertion.RuleId);
         Assert.Contains("Helvetica", assertion.Message);
+    }
+
+    // ── §6.2.11.4.1 NOTE 2: the text-rendering-mode-3 exemption ────────────────
+
+    [Fact]
+    public void Validate_NonEmbeddedFontShownOnlyInvisibly_IsExempt()
+    {
+        // §6.2.11.4.1 NOTE 2: mode 3 neither strokes, fills nor clips, so a font shown only that
+        // way is not "used for rendering". The lone show here is mode 3, so the font is exempt.
+        var bytes = BuildFontPdf(
+            "BT 3 Tr /F0 12 Tf 100 500 Td (A) Tj ET",
+            TrueTypeFontObjects(fontObjNum: 6, embedded: false));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.11.4.1-font-embedding");
+        Assert.True(result.IsCompliant);
+        Assert.Empty(result.Assertions);
+    }
+
+    [Fact]
+    public void Validate_NonEmbeddedFontShownInvisiblyThenVisibly_ReportsError()
+    {
+        // A second show at mode 0 is a confirmed visible draw, so the exemption does not apply
+        // even though an earlier show on the same font was mode 3.
+        var bytes = BuildFontPdf(
+            "BT 3 Tr /F0 12 Tf (A) Tj 0 Tr (B) Tj ET",
+            TrueTypeFontObjects(fontObjNum: 6, embedded: false));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.11.4.1-font-embedding");
+    }
+
+    [Fact]
+    public void Validate_NonEmbeddedFontWithUnparseableRenderingMode_ReportsError()
+    {
+        // "/foo Tr" has a name where Tr expects an integer, so the mode cannot be parsed
+        // (RenderingMode == -1). That is not a confirmed mode-3 show, so it defeats the exemption
+        // the same as any other non-3 mode — this is the only show recorded for the font, and it
+        // is not enough to exempt it.
+        var bytes = BuildFontPdf(
+            "BT /foo Tr /F0 12 Tf (A) Tj ET",
+            TrueTypeFontObjects(fontObjNum: 6, embedded: false));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.11.4.1-font-embedding");
+    }
+
+    [Fact]
+    public void Validate_NonEmbeddedFontSelectedButNeverShown_ReportsError()
+    {
+        // A font selected by Tf but never actually shown has no text-show event at all, so the
+        // mode-3 exemption (which requires a confirmed mode-3 show) cannot apply. Narrowing the
+        // check to require a show in the first place — rather than merely a Tf selection — is a
+        // separate change with no tracking issue open for it yet.
+        var bytes = BuildFontPdf(TrueTypeFontObjects(fontObjNum: 6, embedded: false));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.11.4.1-font-embedding");
+    }
+
+    [Fact]
+    public void Validate_NonEmbeddedFontRenderingModeSetBeforeTextObject_IsExempt()
+    {
+        // ISO 32000-1 Table 107: BT initialises only Tm/Tlm, and §9.3.1 makes the rendering mode
+        // part of the graphics state, so a Tr set before BT still governs the show inside it.
+        var bytes = BuildFontPdf(
+            "3 Tr BT /F0 12 Tf (A) Tj ET",
+            TrueTypeFontObjects(fontObjNum: 6, embedded: false));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.11.4.1-font-embedding");
+        Assert.True(result.IsCompliant);
+        Assert.Empty(result.Assertions);
+    }
+
+    [Fact]
+    public void Validate_NonEmbeddedFontRenderingModeRestoredByQ_ReportsError()
+    {
+        // The 3 Tr set inside q/Q is undone by Q before BT, so the show is drawn at the default
+        // mode 0 (visible) — the graphics-state save/restore has to be honoured, not just BT.
+        var bytes = BuildFontPdf(
+            "q 3 Tr Q BT /F0 12 Tf (A) Tj ET",
+            TrueTypeFontObjects(fontObjNum: 6, embedded: false));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.11.4.1-font-embedding");
+    }
+
+    [Fact]
+    public void Validate_NonEmbeddedFontInvisibleOnOnePageVisibleOnAnother_ReportsError()
+    {
+        // Usage has to be tallied across the whole document, not decided per page: the same font
+        // object is shown invisibly on page 1 and visibly on page 2, and it is the same font
+        // object across both — not a rendering mode carrying over between unrelated content
+        // streams — that makes the visible show on page 2 count against it.
+        var bytes = BuildTwoPageFontPdf(
+            "BT 3 Tr /F0 12 Tf (A) Tj ET",
+            "BT /F0 12 Tf (A) Tj ET",
+            TrueTypeFontObjects(fontObjNum: 7, embedded: false));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.11.4.1-font-embedding");
+    }
+
+    [Fact]
+    public void Validate_EmbeddedFontShownInvisiblyThenVisibly_NoFontEmbeddingFinding()
+    {
+        // Same usage pattern as the non-embedded case above (which does report), but this font
+        // carries a /FontFile2 — the rendering-mode tally is orthogonal to whether embedding
+        // itself is satisfied.
+        var bytes = BuildFontPdf(
+            "BT 3 Tr /F0 12 Tf (A) Tj 0 Tr (B) Tj ET",
+            TrueTypeFontObjects(fontObjNum: 6, embedded: true));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.11.4.1-font-embedding");
+        Assert.True(result.IsCompliant);
+        Assert.Empty(result.Assertions);
+    }
+
+    [Fact]
+    public void Validate_NonEmbeddedFontSelectedButUnshownOnOnePage_ThenShownAtMode3OnAnother_IsExempt()
+    {
+        // Per-page aggregation would find no show at all on page 1 (only a bare Tf selection) and
+        // a mode-3 show on page 2, and neither page alone has a defeating show — but neither would
+        // a per-page decision on page 1 see the mode-3 confirmation from page 2 either. Aggregating
+        // document-wide is what lets the page-2 mode-3 show carry the exemption.
+        var bytes = BuildTwoPageFontPdf(
+            "BT /F0 12 Tf ET",
+            "BT 3 Tr /F0 12 Tf (A) Tj ET",
+            TrueTypeFontObjects(fontObjNum: 7, embedded: false));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.11.4.1-font-embedding");
+        Assert.True(result.IsCompliant);
+        Assert.Empty(result.Assertions);
+    }
+
+    [Fact]
+    public void Validate_TwoNonEmbeddedFonts_OnlyTheVisiblyShownOneReports()
+    {
+        // /F0 is shown only at mode 3 (exempt); /F1 is shown at mode 0 (reported). There was no
+        // two-font fixture anywhere in this file before this test, so per-font keying — as opposed
+        // to per-resource-dictionary or per-page state — was entirely unverified.
+        var bytes = BuildTwoFontPdf(
+            "BT 3 Tr /F0 12 Tf (A) Tj ET BT 0 Tr /F1 12 Tf (A) Tj ET",
+            TrueTypeFontObjects(fontObjNum: 6, embedded: false, baseFont: "VellumTestFontF0"),
+            TrueTypeFontObjects(fontObjNum: 8, embedded: false, baseFont: "VellumTestFontF1"));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        var assertion = Assert.Single(
+            result.Assertions, a => a.RuleId == "ISO19005-2:6.2.11.4.1-font-embedding");
+        Assert.Contains("VellumTestFontF1", assertion.Message);
+        Assert.DoesNotContain("VellumTestFontF0", assertion.Message);
+    }
+
+    [Fact]
+    public void Validate_NonEmbeddedFontShownAtMode3BehindDrawnFormXObject_ReportsError()
+    {
+        // The page also draws a form XObject; its content is a stream this scan does not read, so
+        // per B2 the mode-3 exemption is suppressed document-wide rather than trusted on a picture
+        // that could be missing a visible show hiding inside the form.
+        var bytes = BuildFontPdfWithXObject(
+            "BT 3 Tr /F0 12 Tf (A) Tj ET /X0 Do",
+            "/Type /XObject /Subtype /Form /BBox [0 0 1 1] /Resources << >>",
+            [],
+            TrueTypeFontObjects(fontObjNum: 6, embedded: false));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.11.4.1-font-embedding");
+    }
+
+    [Fact]
+    public void Validate_NonEmbeddedFontShownAtMode3BehindDrawnImageXObject_IsExempt()
+    {
+        // The regression guard for B2 case 1: an image XObject carries no text of its own and must
+        // not defeat the exemption — this is the commonest real case it exists to serve, a scanned
+        // page with an invisible OCR text layer drawn over the page image.
+        var bytes = BuildFontPdfWithXObject(
+            "BT 3 Tr /F0 12 Tf (A) Tj ET /X0 Do",
+            "/Type /XObject /Subtype /Image /Width 1 /Height 1 /BitsPerComponent 1 /ImageMask true",
+            [0],
+            TrueTypeFontObjects(fontObjNum: 6, embedded: false));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.DoesNotContain(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.11.4.1-font-embedding");
+        Assert.True(result.IsCompliant);
+        Assert.Empty(result.Assertions);
+    }
+
+    [Fact]
+    public void Validate_NonEmbeddedFontMode3TallyOnOnePage_FormXObjectOnFontlessPage_ReportsError()
+    {
+        // The mode-3 show is on page 1; the drawn form XObject is on page 2, which has no
+        // /Resources /Font entry of its own. PageMayHideTextShow has to run for every page,
+        // including one that selects no font — a scan that skipped fontless pages would never
+        // see page 2's form XObject, and page 1's mode-3 show would wrongly stand exempt.
+        var bytes = BuildTwoPageFontPdfWithXObjectOnSecondPage(
+            "BT 3 Tr /F0 12 Tf 100 500 Td (A) Tj ET",
+            "/X0 Do",
+            "/Type /XObject /Subtype /Form /BBox [0 0 1 1] /Resources << >>",
+            [],
+            TrueTypeFontObjects(fontObjNum: 9, embedded: false));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.11.4.1-font-embedding");
+    }
+
+    [Fact]
+    public void Validate_NonEmbeddedFontShownOnlyAtClippingMode_ReportsError()
+    {
+        // Mode 7 (add to clipping path) is not rendered either, but the NOTE names mode 3 only —
+        // the exemption tracks what the clause's own NOTE confirms, not every non-painting mode.
+        var bytes = BuildFontPdf(
+            "BT 7 Tr /F0 12 Tf (A) Tj ET",
+            TrueTypeFontObjects(fontObjNum: 6, embedded: false));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.11.4.1-font-embedding");
+    }
+
+    [Fact]
+    public void Validate_NonEmbeddedFontUnparseableRenderingModeThenVisibleShow_ReportsError()
+    {
+        // A positive twin for the unparseable-Tr case above: the visible second show pins that the
+        // font was actually reached and evaluated, so the unparseable-Tr test cannot be passing
+        // vacuously (e.g. by the font never being checked at all).
+        var bytes = BuildFontPdf(
+            "BT /foo Tr /F0 12 Tf (A) Tj 0 Tr (B) Tj ET",
+            TrueTypeFontObjects(fontObjNum: 6, embedded: false));
+
+        var result = PdfPreflight.Validate(bytes, PdfConformance.PdfA2B);
+
+        Assert.Contains(result.Assertions, a => a.RuleId == "ISO19005-2:6.2.11.4.1-font-embedding");
     }
 
     [Fact]

@@ -202,7 +202,8 @@ internal sealed class ContentUsage
         List<TextShowMcContext> textShowContexts,
         List<SimpleContentItem> simpleContentItems,
         HashSet<string> usedPatterns,
-        HashSet<string> usedPropertiesNames)
+        HashSet<string> usedPropertiesNames,
+        bool contentIncomplete)
     {
         AppliedExtGStates = appliedExtGStates;
         UsesDeviceColour = usesDeviceColour;
@@ -220,6 +221,7 @@ internal sealed class ContentUsage
         SimpleContentItems = simpleContentItems;
         UsedPatterns = usedPatterns;
         UsedPropertiesNames = usedPropertiesNames;
+        ContentIncomplete = contentIncomplete;
     }
 
     /// <summary>The ExtGState resource names actually applied by a <c>gs</c> operator.</summary>
@@ -303,6 +305,14 @@ internal sealed class ContentUsage
     /// not walked — under-detection, FP-safe).
     /// </summary>
     public IReadOnlyList<SimpleContentItem> SimpleContentItems { get; }
+
+    /// <summary>
+    /// True when the page's content stream could not be fully read: <c>/Contents</c> was present
+    /// but nothing decoded from it, or the operator loop stopped early on malformed content. A
+    /// rule that depends on having seen every operator in the stream — not merely on what it did
+    /// see — should treat a page with this set as unscannable rather than trust a partial result.
+    /// </summary>
+    public bool ContentIncomplete { get; }
 }
 
 /// <summary>
@@ -375,6 +385,9 @@ internal static class ContentStreamUsage
         var xObjectIsImage = BuildXObjectImageSet(context, page);
 
         var content = GetContentBytes(context, page);
+        // GetContentBytes returns null both when /Contents is absent and when it is present but
+        // failed to decode; only the latter means content that should have been there was missed.
+        var contentIncomplete = content is null && page.Get(_contents) is not null;
         if (content is { Length: > 0 })
         {
             try
@@ -793,7 +806,9 @@ internal static class ContentStreamUsage
             }
             catch
             {
-                // Malformed content — keep whatever was collected before the failure.
+                // Malformed content — keep whatever was collected before the failure. Everything
+                // past the failure point, including any Tr/show pairing, was never seen.
+                contentIncomplete = true;
             }
         }
 
@@ -801,7 +816,7 @@ internal static class ContentStreamUsage
             drawnXObjects, renderingIntents,
             selectedColorSpaces, usedFonts, paintedShadings, textShows,
             markedContentSequences, textShowContexts, simpleContentItems,
-            usedPatterns, usedPropertiesNames);
+            usedPatterns, usedPropertiesNames, contentIncomplete);
     }
 
     // Build a TextShowMcContext from the current MC stack state.

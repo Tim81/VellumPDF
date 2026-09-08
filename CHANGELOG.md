@@ -197,6 +197,37 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Font embedding now honours the text-rendering-mode-3 exemption, without letting a blind spot in
+  the content scan grant it.** ISO 19005-2 §6.2.11.4.1 scopes the requirement to fonts used *for
+  rendering*, and its NOTE 2 records that mode 3 neither strokes, fills nor clips, so a font drawn
+  only that way is not rendered. `FontEmbeddingRule` had no rendering-mode filter at all, which made
+  it stricter than the standard and stricter than veraPDF, and reported a false positive on the
+  commonest real case: a scanned page carrying an invisible OCR text layer. `PdfConformance` has
+  documented the exemption since the clause citations were corrected earlier in this release, so the
+  rule was contradicting a claim the library already made to callers.
+
+  A font is now exempt only when it has a confirmed mode-3 show and no show that is anything else.
+  Every visible mode defeats the exemption, and so do two cases that are not visible draws: mode 7,
+  which adds glyphs to the clipping path and is not what the NOTE names, and the sentinel for a
+  rendering mode that could not be parsed. That last one matters more than it looks. The content
+  scanner clears its integer operand on a real-number token, so a producer emitting `0.0 Tr` — a
+  real where the operand must be an integer — leaves every following show with an unknown mode.
+  Treating unknown as "not a visible draw" would have exempted text that renders in every viewer.
+
+  The exemption is also suppressed for the whole document when a page's scan could have missed a
+  text show, because the scan reads a page's own `/Contents` and never descends into form XObjects,
+  Type 3 glyph procedures, or annotation appearance streams. Before this change that limit only ever
+  widened the set of fonts checked, which is the safe direction; using it to narrow the set would
+  have turned it into a wrong exemption, and a validator's false negatives are its worst output.
+  A drawn form XObject, an annotation with an appearance stream, a selected Type 3 font, or content
+  that failed to decode or parse therefore all fall back to checking every used font. Drawn *image*
+  XObjects deliberately do not, since they carry no text and suppressing on them would defeat the
+  scanned-page case the exemption exists for.
+
+  One incidental change to emitted output: a font dictionary written directly into `/Resources
+  /Font` and used on several pages was previously reported once per page and is now reported once.
+  Indirect font references were already deduplicated. (#418)
+
 - **Five PDF/A clause citations named clauses that say something else, and one of them reached the
   emitted output.** `FontEmbeddingRule` cited ISO 19005-2 §6.3.4–§6.3.5 for font embedding, in its
   summary, its `RuleId` and its `Clause` property. Clause 6.3 of ISO 19005-2 is Annotations: it has
