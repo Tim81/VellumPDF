@@ -7,12 +7,26 @@
 #
 # This runs as its own workflow rather than a step in the CI build for one reason: the
 # generator downloads its inputs, and the Arlington archive alone is ~38 MB. Paying that
-# on every push would tax runs that cannot possibly have caused drift. The path filter
-# limits it to the two files that can.
+# on every push would tax runs that cannot possibly have caused drift, so the filter
+# lists exactly the paths that can — which is every local input the generator reads,
+# plus this file.
+#
+# One of those is a source directory, and that is deliberate. rule_class_provenance()
+# reads src/VellumPdf.Conformance/Rules/ and derives six of the figures on the page,
+# including how many rule classes claim clean-room derivation and how many of those also
+# name veraPDF. Without that path a pull request editing only rule comments moves the
+# published figures with the gate never running, which is precisely what the #418 and
+# #428 re-derivation batches do. It costs ordinary source edits a run, and that is the
+# right trade for a page whose whole argument is that its claims are checkable.
 #
 # Not covered: drift caused by the upstream datasets changing under a table nobody
 # touched. Gating unrelated pull requests on someone else's repository changing would be
 # wrong, so that case is deliberately left to a human re-running the generator.
+#
+# Worth knowing, since the rule path makes it reachable: --check regenerates the whole
+# page, so upstream drift can now fail a pull request that only edited a rule comment and
+# caused no drift of its own. That is a false red on the contributor's change rather than
+# a missed one, which is the safer direction, but it is a real cost of the wider filter.
 
 name: Docs inventory
 
@@ -22,12 +36,14 @@ on:
     paths:
       - 'docs/pdf20-conformance.md'
       - 'eng/generate-pdf20-inventory.py'
+      - 'src/VellumPdf.Conformance/Rules/**'
       - '.github/workflows/docs-inventory.yml'
   pull_request:
     branches: [ main ]
     paths:
       - 'docs/pdf20-conformance.md'
       - 'eng/generate-pdf20-inventory.py'
+      - 'src/VellumPdf.Conformance/Rules/**'
       - '.github/workflows/docs-inventory.yml'
 
 jobs:
