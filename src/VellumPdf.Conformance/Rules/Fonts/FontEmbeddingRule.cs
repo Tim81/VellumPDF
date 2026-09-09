@@ -20,7 +20,7 @@ namespace VellumPdf.Conformance.Rules.Fonts;
 /// source. That is not true of the rule as a whole: the <c>Tf</c>-only scope below was adopted for
 /// parity with veraPDF under issue #118, and re-deriving it is part of #418 rather than done here.
 /// <para>
-/// The summary states the clause's obligation, and this rule is stricter than it. NOTE 2 exempts a
+/// The summary states the clause's obligation, and this rule is stricter than it in one direction. NOTE 2 exempts a
 /// font drawn only in text rendering mode 3, and nothing here implements that, so a font used
 /// invisibly is reported. An attempt on this branch was withdrawn after three reviewers found seven
 /// ways it read absence of evidence as evidence of absence; the correction is specified in #458 and

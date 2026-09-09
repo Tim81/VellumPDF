@@ -11,7 +11,8 @@
 #
 # HOW IT WAS BUILT. Read clause by clause from NEN-ISO 19005-2:2011 en through a licensed
 # single-user viewer on 2026-09-07 (see docs/iso/ACQUISITION.md). Verified by a person, and not
-# reproducible by CI or from a clone. Refs #418.
+# reproducible by CI or from a clone. Every heading here was read; one entry's scope was not
+# settled in that session and says so rather than borrowing a classification. Refs #418.
 #
 # scope: file      - constrains the conforming file; a validator can check it
 #        reader    - constrains a conforming reader; a file validator has nothing to check

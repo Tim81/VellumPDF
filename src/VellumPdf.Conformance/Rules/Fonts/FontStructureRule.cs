@@ -31,8 +31,8 @@ namespace VellumPdf.Conformance.Rules.Fonts;
 /// Only fonts that a page actually selects via a <c>Tf</c> operator in its content stream are
 /// validated (matching veraPDF, which validates only the current graphics state — issue #118).
 /// Fonts present in <c>/Resources /Font</c> but never selected are not checked. Fonts used only
-/// within form XObjects, Type 3 glyph procedures, or annotation appearance streams are a deferred
-/// edge and are not yet detected here.
+/// within form XObjects, Type 3 glyph procedures, or annotation appearance streams are not detected
+/// here at all, which is tracked as issue #450.
 /// </para>
 /// <para>
 /// Deferred to the font-<em>program</em> parser: glyph presence (§6.2.11.4.1), glyph-width

@@ -18,7 +18,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   replacement text and expansions of abbreviations. The inventory holds clause numbers and headings
   only; no normative text is reproduced, since the standard is not held as a file. Clauses that bind
   a conforming reader rather than a conforming file are marked and excluded, so a missing rule
-  against one of those is not counted as a gap. (#418)
+  against one of those is not counted as a gap, as are the two that state which files a subclause
+  applies to rather than a requirement. The report names every clause it excludes, because one
+  dropped silently is the failure the inventory exists to prevent. (#418)
 
 - **PDF/UA-1 §7.16-1 conformance check, and a password for preflight (#138).** A new rule,
   `UaEncryptionPermissionsRule`, reads an encrypted document's `/Encrypt` dictionary and reports an
@@ -232,12 +234,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   is no 6.3.5 at all. Those are ISO 19005-1 numbers, where 6.3 is Fonts. Embedding is §6.2.11.4.1,
   with §6.2.11.4.2 for subsets. The rule now emits `ISO19005-2:6.2.11.4.1-font-embedding` as its id
   and `ISO 19005-2:2011, 6.2.11.4.1` as its clause, so a caller matching either of the old strings
-  will see the new one. That correction also reaches the command line: `vellum-preflight` reconciles a descriptive
-  rule id against the catalogue by clause, and clause `6.3.4` matched no catalogue entry while
-  `6.2.11.4.1` matches two. On a file that fails font embedding, those two checks were therefore
-  reported as **passed** and are now reported as inconclusive, so the summary counts move. Measured
-  on `GoldenTests.StandardFont_rawBytes.verified.pdf` at profile 2b: passed 132 to 130, inconclusive
-  9 to 11, with `6.2.11.4.1-1` and `-2` the two that moved. That is the honesty failure
+  will see the new one. That correction also reaches the command line: `vellum-preflight` reconciles
+  a descriptive rule id against the catalogue by clause, and clause `6.3.4` matched no catalogue
+  entry while `6.2.11.4.1` matches two. On a file that fails font embedding, those two checks were
+  therefore reported as **passed** and are now reported as inconclusive, so the summary counts move.
+  Measured on `GoldenTests.StandardFont_rawBytes.verified.pdf` at profile 2b: passed 132 to 130,
+  inconclusive 9 to 11, with `6.2.11.4.1-1` and `-2` the two that moved. That is the honesty failure
   `ClausePassedHonestyTests` exists to prevent, and the wrong clause string was hiding it. Eight
   more of the same kind are corrected alongside them, in `PdfDocument` and `SrgbIccProfile`: three
   cited §6.3.1, Annotation types, for the `/Encrypt` prohibition that lives in §6.1.3, one of them
