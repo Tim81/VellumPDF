@@ -33,7 +33,8 @@ namespace VellumPdf.Document;
 ///         <c>Document.LoadTrueTypeFont</c> / <c>PdfDocument.UseTrueTypeFont</c>; the unembedded
 ///         Standard-14 faces are <strong>not</strong> valid in PDF/A.</item>
 ///   <item><b>§6.1.3</b> — no encryption. <c>PdfDocument.Save</c> refuses rather than emit an
-///         encrypted file while <c>PdfDocument.Conformance</c> is set.</item>
+///         encrypted file while <c>PdfDocument.Conformance</c> is set to a PDF/A value. <c>PdfUA1</c>
+///         is deliberately outside that check and may be encrypted.</item>
 ///   <item><b>§6.2.3</b> — an ICC OutputIntent, <em>conditionally</em>: §6.2.4.3 is what makes one
 ///         mandatory, when uncalibrated device colour spaces are used. Its <c>/S</c> value stays
 ///         <c>GTS_PDFA1</c> in part 2, so there is no <c>GTS_PDFA2</c> to look for.

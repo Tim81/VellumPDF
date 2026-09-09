@@ -155,13 +155,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   derivation from the specification text while a comment a hundred lines below justified its
   null-`/S` branch by describing veraPDF's predicate. The clause is written as three prohibitions.
   What makes the seven-type allow-list correct is §5.1, which permits any valid ISO 32000-1 feature
-  the standard does not forbid: subtract the eleven types §6.5.1 forbids from ISO 32000-1 §12.6.4
-  and exactly those seven remain, so for every type the base standard defines the two formulations
-  agree. `A2aContentItemTaggingRule` reports a warning rather than an error because §6.7.3.3 states
-  granularity as a *should* and not a *shall*, not because veraPDF's profile lacks the check; its
-  diagnostic message no longer names veraPDF to the reader, which is the part a caller sees.
-  Behaviour, rule ids, clause strings and severities are unchanged. The generated provenance count
-  in `docs/pdf20-conformance.md` moves accordingly, from 50 of 71 rule classes naming veraPDF to 49.
+  the standard does not forbid: subtract the eleven types §6.5.1 forbids from the eighteen ISO
+  32000-1 Table 198 enumerates and exactly those seven remain, so for every type the base standard
+  defines the two formulations agree. `A2aContentItemTaggingRule` reports a warning rather than an
+  error because §6.7.3.3 states granularity as a *should* and not a *shall*, not because veraPDF's
+  profile lacks the check; its diagnostic message no longer names veraPDF to the reader, and now
+  says what to do about the finding rather than only how to make the build fail on it. Behaviour,
+  rule ids, clause strings and severities are unchanged. The generated provenance count in
+  `docs/pdf20-conformance.md` moves accordingly, from 50 of 71 rule classes naming veraPDF to 49.
   (#418)
 
 - **TIFF predictor 2 at 1, 2, 4, and 16 bits per component (#98).** `FlateDecode` and `LZWDecode`
@@ -229,9 +230,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   summary, its remarks, its `RuleId` and its `Clause` property. Clause 6.3 of ISO 19005-2 is
   Annotations: it has four sub-clauses ending at 6.3.4, "Display of annotation contents", and there
   is no 6.3.5 at all. Those are ISO 19005-1 numbers, where 6.3 is Fonts. Embedding is §6.2.11.4.1,
-  with §6.2.11.4.2 for subsets. The rule now emits `ISO19005-2:6.2.11.4.1-font-embedding` and `ISO
-  19005-2:2011, 6.2.11.4.1`, so a caller matching the old rule id or clause string will see the new
-  one. That correction also reaches the command line: `vellum-preflight` reconciles a descriptive
+  with §6.2.11.4.2 for subsets. The rule now emits `ISO19005-2:6.2.11.4.1-font-embedding` as its id
+  and `ISO 19005-2:2011, 6.2.11.4.1` as its clause, so a caller matching either of the old strings
+  will see the new one. That correction also reaches the command line: `vellum-preflight` reconciles a descriptive
   rule id against the catalogue by clause, and clause `6.3.4` matched no catalogue entry while
   `6.2.11.4.1` matches two. On a file that fails font embedding, those two checks were therefore
   reported as **passed** and are now reported as inconclusive, so the summary counts move. Measured

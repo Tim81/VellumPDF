@@ -23,7 +23,7 @@ Two rows are **gated**. Correcting them makes this library disagree with veraPDF
 fails the aggregate oracle and the id diff as they stand today. Those corrections wait for the
 per-rule comparison in #419. The other two are not gated. D4's correction moves toward the standard
 and the tool at once, so nothing holds it back but the care it needs, which is #458. D5 is corrected
-already, and what remains of it is a check the profile simply does not carry.
+already, and what remains of it is a check the profile does not carry.
 
 ---
 
@@ -141,9 +141,10 @@ omit, because they agree.
 
 Measured against an inventory of ISO 19005-2 clause 6 by number and heading, 19 of its 73
 file-scoped clauses are checked by neither this library nor veraPDF. The inventory is
-`eng/data/iso19005-2-clauses.yml` and `eng/clause-coverage.py` reports the split, so a clone can
-recompute the figure. It reads the profiles out of the veraPDF jar when one is reachable and says so
-when it is not, rather than reporting a smaller gap in silence.
+`eng/data/iso19005-2-clauses.yml`, and `eng/clause-coverage.py` reports the split, so a clone that
+has a veraPDF jar can recompute the figure. Without one the script says the profiles are unavailable
+and reports the 20 clauses no rule cites, rather than silently counting every clause as one veraPDF
+does not check.
 
 Seven of the 19 are Level A only, and Level A is the accessibility level this library advertises:
 

@@ -23,16 +23,16 @@ namespace VellumPdf.Conformance.Rules.Actions;
 /// permitted, and a named action other than the four page-navigation ones shall not be permitted.
 /// What makes the seven-type allow-list below correct is ISO 19005-2 §5.1, which separately permits
 /// any valid ISO 32000-1 feature the standard does not explicitly forbid: subtracting the eleven
-/// forbidden types from ISO 32000-1 §12.6.4's full action set leaves exactly these seven, so for
-/// every action type the base standard defines, the deny-list §6.5.1 states and the allow-list this
-/// rule checks agree. They diverge only for an action type ISO 32000-1 does not define, and
+/// forbidden types from the eighteen ISO 32000-1 Table 198 enumerates leaves exactly these seven, so
+/// for every action type the base standard defines, the deny-list §6.5.1 states and the allow-list
+/// this rule checks agree. They diverge only for an action type ISO 32000-1 does not define, and
 /// rejecting one of those is still correct — §5.1 permits valid ISO 32000-1 features, and a vendor
 /// <c>/S</c> value is not one. (An earlier version of this rule took its allow-list shape from a
 /// third-party validation profile rather than from this derivation.) Inspects the document catalog's
 /// <c>/OpenAction</c>, each annotation's <c>/A</c>, and the additional-action (<c>/AA</c>)
 /// dictionaries on the catalog, pages, and annotations, following any <c>/Next</c> chain. Form-field
-/// <c>/A</c>/<c>/AA</c> reached through the AcroForm field tree is checked by
-/// <see cref="Forms.InteractiveFormRule"/> under §6.4.1, not by this rule.
+/// <c>/A</c>/<c>/AA</c> reached through the AcroForm field tree is checked by <see
+/// cref="Forms.InteractiveFormRule"/> under §6.4.1, not by this rule.
 /// </remarks>
 internal sealed class ActionRule : IConformanceRule
 {
@@ -51,9 +51,9 @@ internal sealed class ActionRule : IConformanceRule
     private static readonly PdfName _names = new("Names");
     private static readonly PdfName _javaScript = new("JavaScript");
 
-    // §6.5.1-1: ISO 32000-1 §12.6.4's action set minus the eleven types §6.5.1 forbids (see the
-    // class remarks for the derivation). Every other /S value — including unknown/vendor types —
-    // is forbidden, so this is checked as an allow-list, not a deny-list.
+    // §6.5.1-1: the eighteen types ISO 32000-1 Table 198 enumerates, minus the eleven §6.5.1 forbids
+    // (see the class remarks for the derivation). Every other /S value — including unknown/vendor
+    // types — is forbidden, so this is checked as an allow-list, not a deny-list.
     private static readonly HashSet<string> _permittedActions = new(StringComparer.Ordinal)
     {
         "GoTo", "GoToR", "GoToE", "Thread", "URI", "Named", "SubmitForm",

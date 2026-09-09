@@ -16,6 +16,12 @@
 # scope: file      - constrains the conforming file; a validator can check it
 #        reader    - constrains a conforming reader; a file validator has nothing to check
 #        container - a heading whose children carry the requirements
+#        applies   - a General clause that says which files or conformance levels the surrounding
+#                    subclause applies to, and states no requirement of its own. It has no children,
+#                    so "container" would misdescribe it.
+#        unread    - the clause exists, and its scope was not settled in the reading session. It is
+#                    excluded from the file-scoped population and the report names it, so it stays a
+#                    visible gap rather than a silent one.
 # level: which conformance levels the clause applies to. Clause 5 defines the levels purely by
 #        exclusion: Level B omits 6.2.11.7 and 6.7, Level U omits 6.7, Level A omits nothing.
 #        Absent means all three.
@@ -97,7 +103,9 @@ clauses:
   - { id: "6.5.3",      title: "Handling of GoToR, URI and SubmitForm actions", scope: reader }
 
   - { id: "6.6",        title: "Metadata",                                scope: container }
-  - { id: "6.6.1",      title: "General",                                 scope: container }
+  # Scope unsettled. Whether 6.6.1 carries a requirement of its own or only introduces 6.6.2 to
+  # 6.6.6 was not read in the 2026-09-07 session. Needs a viewer session, not a guess.
+  - { id: "6.6.1",      title: "General",                                 scope: unread }
   - { id: "6.6.2",      title: "Metadata streams",                        scope: container }
   - { id: "6.6.2.1",    title: "General",                                 scope: file }
   - { id: "6.6.2.2",    title: "Namespaces and prefixes",                 scope: file }
@@ -111,7 +119,10 @@ clauses:
   - { id: "6.6.6",      title: "File provenance information",             scope: file }
 
   - { id: "6.7",        title: "Logical structure",                       scope: container, level: "A" }
-  - { id: "6.7.1",      title: "General",                                 scope: container, level: "A" }
+  # Read on 2026-09-07: 6.7.1 states that subclause 6.7 applies only to files claiming Level A. That
+  # is an applicability statement, not a requirement a validator checks a file against, and it has no
+  # children. PdfConformance cites the same sentence for the Level A carve-out.
+  - { id: "6.7.1",      title: "General",                                 scope: applies, level: "A" }
   - { id: "6.7.2",      title: "Tagged PDF",                              scope: container, level: "A" }
   - { id: "6.7.2.1",    title: "General",                                 scope: file,      level: "A" }
   - { id: "6.7.2.2",    title: "Mark information dictionary",             scope: file,      level: "A" }

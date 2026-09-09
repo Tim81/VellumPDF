@@ -49,9 +49,9 @@ profile's check catalogue, and `failedChecks` and `inconclusive` are new.
   "conformant": false,
   "summary": {
     "error": 4, "warning": 0, "info": 0,   // rule assertions, by severity
-    "passed": 132,                          // catalogue checks satisfied
+    "passed": 130,                          // catalogue checks satisfied
     "failedChecks": 0,                      // catalogue checks a rule named by test id
-    "inconclusive": 9,                      // clause failed, specific check unidentified
+    "inconclusive": 11,                     // clause failed, specific check unidentified
     "partial": 2, "deferred": 0,            // subsets of notEvaluated
     "total": 144                            // passed + failedChecks + inconclusive + notEvaluated
   },

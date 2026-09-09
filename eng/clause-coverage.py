@@ -13,11 +13,21 @@ Two populations are compared against it:
 
   ours  - clause numbers appearing in a rule class that cites ISO 19005-2:2011. Deliberately
           generous: any 6.x token in such a file counts, so a rule citing a parent clause is
-          credited with it. Erring generous keeps the gap list conservative.
-  vera  - clause attributes in veraPDF's PDFA-2A/2B/2U profiles, read from the CLI jar.
+          credited with it. Erring generous keeps the gap list conservative. It also credits a
+          clause a comment names only to disclaim it, which FontEmbeddingRule now does for the
+          6.3.4 it used to cite wrongly. That one is reader-scoped and excluded anyway, but the
+          generosity is wider than the parent-clause case this note was written for.
+  vera  - clause attributes in veraPDF's PDFA-2A/2B/2U profiles, read from the CLI jar. Generous
+          in the same direction: it scrapes every clause= attribute rather than only a rule's own
+          id, so it also picks up the ISO 32000-1 clauses those rules reference. On veraPDF 1.30.2
+          that is 75 values scraped against 54 belonging to a rule. None of the extras collides
+          with an ISO 19005-2 clause 6 id today, but ISO 32000-1 has its own clause 6, so one
+          could.
 
 Clauses scoped `reader` are excluded. Those bind a conforming reader rather than a conforming
 file, so a file validator correctly has no rule for them: 6.5.3, 6.3.4, 6.1.5 and 6.2.8.2.
+Clauses scoped `applies` and `unread` are excluded too, and the report names them at the end. A
+clause dropped from the population without being named is the failure this tool exists to prevent.
 
 Usage:  python eng/clause-coverage.py [--json]
         VERAPDF_HOME or a verapdf in the home directory supplies the profile jar; without it the
@@ -133,6 +143,7 @@ def main() -> int:
             "read_on": inv["read_on"],
             "verapdf_jar": str(jar) if jar else None,
             "clauses": rows,
+            "excluded": [dict(c) for c in entries if c["scope"] in ("applies", "unread")],
         }, indent=1))
         return 0
 
@@ -145,6 +156,8 @@ def main() -> int:
     print(f"  file-scoped           {len(checkable)}")
     print(f"  reader-scoped         {sum(1 for c in entries if c['scope'] == 'reader')}  (out of scope for a file validator)")
     print(f"  containers            {sum(1 for c in entries if c['scope'] == 'container')}")
+    print(f"  applicability only    {sum(1 for c in entries if c['scope'] == 'applies')}")
+    print(f"  scope not yet read    {sum(1 for c in entries if c['scope'] == 'unread')}")
     print()
     if vera is None:
         print("  veraPDF profiles unavailable; set VERAPDF_HOME to compare against them.")
@@ -160,10 +173,26 @@ def main() -> int:
             continue
         print(f"{label}: {len(hits)}")
         for r in hits:
-            level = "   [Level A only]" if r.get("level") == "A" else ""
+            lvl = r.get("level")
+            if lvl:
+                parts = lvl.split(",")
+                names = parts[0] if len(parts) == 1 else " and ".join([", ".join(parts[:-1]), parts[-1]])
+                level = f"   [Level{'' if len(parts) == 1 else 's'} {names} only]"
+            else:
+                level = ""
             print(f"   {r['id']:<12} {r['title']}{level}")
         print()
     print("counts: " + ", ".join(f"{k}={v}" for k, v in sorted(counts.items())))
+
+    for label, scope in (("applicability only, no requirement to check against a file", "applies"),
+                         ("scope not yet read, excluded from every count above", "unread")):
+        hits = [c for c in entries if c["scope"] == scope]
+        if not hits:
+            continue
+        print()
+        print(f"{label}: {len(hits)}")
+        for c in hits:
+            print(f"   {c['id']:<12} {c['title']}")
     return 0
 
 

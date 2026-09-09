@@ -133,8 +133,8 @@ internal static class RuleRegistry
         // §6.7.4-1 — /Lang value syntax (catalog + structure elements):
         new A2aLangSyntaxRule(),
         // §6.7.3.3 — real content that no structure element describes. Warning, not error: the
-        // clause's own text states this as a should, not a shall. See A2aContentItemTaggingRule's
-        // remarks.
+        // clause's own text states this as a should, not a shall. The reasoning is in
+        // A2aContentItemTaggingRule's remarks.
         new A2aContentItemTaggingRule(),
     ];
 

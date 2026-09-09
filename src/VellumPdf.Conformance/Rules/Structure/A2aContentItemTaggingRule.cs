@@ -74,10 +74,10 @@ internal sealed class A2aContentItemTaggingRule : IConformanceRule
                     PreflightSeverity.Warning,
                     "A real-content operator on this page is neither tagged (no enclosing "
                     + "marked-content sequence carries an MCID) nor marked as an artifact, so no "
-                    + "structure element describes it. Capturing the structure hierarchy to this "
-                    + "granularity is a recommendation under §6.7.3.3, not a requirement, which is "
-                    + "why this is reported as a warning rather than an error. Use --fail-on "
-                    + "warning to treat it as a failure.");
+                    + "structure element describes it. Enclose it in a marked-content sequence "
+                    + "carrying an MCID, or mark it as an artifact. §6.7.3.3 states this "
+                    + "granularity as a recommendation rather than a requirement, so it is "
+                    + "reported as a warning; use --fail-on warning to fail on it.");
                 break;
             }
         }

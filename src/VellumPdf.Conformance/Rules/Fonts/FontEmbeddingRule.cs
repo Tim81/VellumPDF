@@ -20,6 +20,13 @@ namespace VellumPdf.Conformance.Rules.Fonts;
 /// source. That is not true of the rule as a whole: the <c>Tf</c>-only scope below was adopted for
 /// parity with veraPDF under issue #118, and re-deriving it is part of #418 rather than done here.
 /// <para>
+/// The summary states the clause's obligation, and this rule is stricter than it. NOTE 2 exempts a
+/// font drawn only in text rendering mode 3, and nothing here implements that, so a font used
+/// invisibly is reported. An attempt on this branch was withdrawn after three reviewers found seven
+/// ways it read absence of evidence as evidence of absence; the correction is specified in #458 and
+/// recorded as row D4 of <c>docs/conformance-divergences.md</c>.
+/// </para>
+/// <para>
 /// This rule previously cited §6.3.4–§6.3.5. Those numbers are ISO 19005-<em>1</em> numbering, where
 /// clause 6.3 is Fonts. In ISO 19005-2 clause 6.3 is Annotations, its four sub-clauses end at 6.3.4
 /// "Display of annotation contents", and there is no 6.3.5 at all. Embedding is 6.2.11.4, with
