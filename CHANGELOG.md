@@ -290,6 +290,26 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   throws outright, when it decodes 1-D rows and throws only when a row's tag bit selects a 2-D
   row.
 
+- **JBIG2 MMR Horizontal mode decoded the wrong run lengths (#440).** `MmrDecoder`'s black
+  run-length table disagreed with ITU-T T.4 Table 2 (terminating codes) in 60 of its 64 entries and
+  with Table 3a (make-up codes) in all 27 of its 27, and was not either table in any recognisable
+  form. Only black runs 1 to 4 matched. A black run of 7 decoded as 10. Applying the table's own
+  lookup rule — shortest matching length wins — 48 of its 91 entries were shadowed by a shorter
+  entry and could never be reached at all, among them `0100`, `0101` and `0111`, which sat behind
+  the three-bit prefixes `010` and `011` that the reader returned on first; a code word cannot
+  coexist with its own prefix in a prefix code. The white table was correct except that a run of 1
+  had no code word, so a single white pixel could not be decoded. The extended make-up codes of
+  Table 3b, runs 1792 to 2560, were missing from both, which capped any decodable run at 1791 — the
+  largest run codeable as a 1728 make-up plus a 63 terminating — regardless of image width. Reached
+  from `Jbig2ImageLoader` through Horizontal mode, the only mode that reads a run length. Both
+  tables are now transcribed from Tables 2, 3a and 3b as literal code words a reviewer can diff
+  against the standard, and the reader looks them up by length and value rather than through a
+  hand-built branch tree. Known-answer vectors now sweep every terminating code in Table 2, every
+  make-up code in Table 3a and Table 3b, and a make-up code followed by a terminating one, pinning
+  the exact decoded raster for each rather than sampling a handful. A new assertion that each
+  colour's table is a prefix code, with both colour names present and 104 code words apiece, is
+  what makes the unreachable-entry mistake impossible to reland.
+
 - **`/P` bit 10 is now always set on a newly written `/Encrypt` dictionary.** The restriction this
   bit expressed is deprecated in PDF 2.0, and ISO 32000-2 Table 22 requires writers to set the bit
   regardless of the permissions requested; the Standard security handler previously set it only

@@ -188,6 +188,21 @@ public sealed class Jbig2ImageTests
         return bytes;
     }
 
+    /// <summary>Converts a Table 2/3a/3b code word written as a string of '0'/'1' into (value, bit-length).</summary>
+    private static (int value, int bits) ParseCodeWord(string codeWord) => (Convert.ToInt32(codeWord, 2), codeWord.Length);
+
+    /// <summary>Packs a string of '0'/'1' characters into a byte array, MSB first, matching <see cref="PackMsbFirst"/>'s bit order.</summary>
+    private static byte[] PackBinaryString(string bits)
+    {
+        var bytes = new byte[(bits.Length + 7) / 8];
+        for (var i = 0; i < bits.Length; i++)
+        {
+            if (bits[i] == '1')
+                bytes[i / 8] |= (byte)(0x80 >> (i % 8));
+        }
+        return bytes;
+    }
+
     /// <summary>
     /// Builds a JBIG2 file with a single MMR-coded immediate generic region (type 38) carrying
     /// <paramref name="mmr"/> as its compressed data, plus the page-info and EOF segments.
@@ -697,33 +712,33 @@ public sealed class Jbig2ImageTests
     [Fact]
     public void Load_DecodeToRaster_MmrZeroRunHorizontalFlood_ThrowsInvalidData()
     {
-        // Width 3, three repeats of H / white 0 / black 1. Each repeat appends two changing
-        // elements without advancing a0 to the width, so the third repeat's second AppendCe
-        // call is the sixth append against a curCE array sized width + 2 = 5 (valid indices
-        // 0..4): idx reaches 5 there, which is exactly where the bounds check must fire.
+        // Repeated zero-run Horizontal modes never advance the coding position but push two
+        // changing elements each iteration. The bounds-checked changing-element append must
+        // reject this with InvalidDataException rather than overrunning the CE array
+        // (which previously surfaced as IndexOutOfRangeException).
         //
-        // Unlike the zero-run vector this replaces, a0 does advance by one pixel per repeat
-        // (the black run is 1, not 0), so the fixture reaches the width + 2 array's true capacity
-        // rather than looping forever short of it — and it stays clear of the run-length cap in
-        // MmrRunExceedsWidth, whose "exceeds the image width" message this test's assertion must
-        // not collide with. Asserting on AppendCe's own message is what makes this test actually
-        // exercise the guard: before this fixture, a mutant that replaced AppendCe's guard body
-        // with a different exception type left the whole suite green, because this test's fixture
-        // threw MmrRunExceedsWidth's message from a different guard first and Assert.Throws alone
-        // could not tell the two apart.
-        (int, int)[] zeroWidthBlackOne =
+        // Both run-length codes must be the real terminating-0 code words (ITU-T T.4 Table 2), or
+        // the fixture exercises a different guard: an earlier version of this fixture used
+        // 0001111 for black 0, which was itself one of the pre-#440 table's 48 shadowed entries.
+        // Under that old table, 00011 — the first five of those seven bits — already matched and
+        // returned run 10, which exceeds the width of 2, so the run-length cap fired on the very
+        // first Horizontal; the test never reached the changing-element guard it is named for,
+        // before or after the table correction. What the correction changed is the decoded value,
+        // 10 to 7, not which guard fires: the cap trips on that decoded value, and the leftover
+        // two bits of 0001111 are never read either way.
+        (int, int)[] zeroRunHorizontal =
         [
-            (0b001, 3),         // Horizontal mode — the flag code of ITU-T T.6, 2.2.3.3
-            (0b00110101, 8),    // white run length 0 (terminating)
-            (0b010, 3),         // black run length 1 (terminating)
+            (0b001, 3),            // Horizontal mode — the flag code of ITU-T T.6, 2.2.3.3
+            (0b00110101, 8),       // white run length 0 (terminating)
+            (0b0000110111, 10),    // black run length 0 (terminating), ITU-T T.4 Table 2
         ];
-        var mmr = PackMsbFirst([.. zeroWidthBlackOne, .. zeroWidthBlackOne, .. zeroWidthBlackOne]);
-        var jbig2 = BuildJbig2WithMmrRegion(width: 3, height: 1, mmr);
+        var mmr = PackMsbFirst([.. zeroRunHorizontal, .. zeroRunHorizontal, .. zeroRunHorizontal]);
+        var jbig2 = BuildJbig2WithMmrRegion(width: 2, height: 1, mmr);
 
         var opts = new ImageLoadOptions { DecodeMode = ImageDecodeMode.DecodeToRaster };
-
         var ex = Assert.Throws<InvalidDataException>(() => Jbig2ImageLoader.Load(jbig2, opts));
-        Assert.Contains("too many changing elements", ex.Message, StringComparison.Ordinal);
+
+        Assert.Contains("changing elements", ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -738,6 +753,111 @@ public sealed class Jbig2ImageTests
 
         var opts = new ImageLoadOptions { DecodeMode = ImageDecodeMode.DecodeToRaster };
         Assert.Throws<InvalidDataException>(() => Jbig2ImageLoader.Load(jbig2, opts));
+    }
+
+    // ── MmrDecoder: Horizontal-mode width clamps ──────────────────────────────
+
+    // <c>DecodeRow</c>'s Horizontal arm computes <c>a1 = Math.Min(a0 + run1, width)</c> and
+    // <c>a2 = Math.Min(a1 + run2, width)</c>. Both lines predate this PR — they are not part of
+    // its diff. Only <c>a1</c> had no fixture pinning it: removing it alone leaves the inherited
+    // suite entirely green, because no fixture before this PR ever drove <c>a0 + run1</c> to a
+    // point where the clamped and unclamped values differ. <c>a2</c> is not in the same state —
+    // <see cref="MmrDecoder_HorizontalRun_CapDoesNotFireAtExactlyMaxRun"/>, inherited from the
+    // parent PR, already depends on it: that test's own summary says its black run "is clamped
+    // away entirely by the Horizontal arm's <c>Math.Min(a1 + run2, width)</c>", and removing only
+    // that clamp fails exactly that one test with an <see cref="IndexOutOfRangeException"/>.
+    // Against the inherited suite, removing both clamps together failed that same test and no
+    // other, since with the inherited fixtures <c>a1</c>'s clamp was never the one doing the work.
+    // The two fixtures below close that gap, so against this tree removing both clamps fails them
+    // as well. Neither clamp is redundant with
+    // <c>DecodeRun</c>'s own cap, which bounds a single run against the *full* image width rather
+    // than what is left of the row, so a run the cap accepts can still carry a0 past width once
+    // added to it. <c>FillRun</c> has no bounds check of its own, so an uncapped a1 or a2 escapes
+    // as an <see cref="IndexOutOfRangeException"/> out of <see cref="Jbig2ImageLoader.Load"/> —
+    // unhandled, the same failure class that
+    // <see cref="Load_DecodeToRaster_MmrZeroRunHorizontalFlood_ThrowsInvalidData"/> keeps out of
+    // the changing-element array by a different mechanism (a bounds check that throws
+    // <see cref="InvalidDataException"/> in that array's case). The two fixtures below close the
+    // <c>a1</c> gap and give <c>a2</c> a fixture that isolates it from <c>a1</c> instead of relying
+    // on the inherited test's side effect; the rasters are worked out from the standard's decoding
+    // procedure, not read off the decoder, matching the discipline the rest of this file uses for
+    // MMR fixtures.
+
+    /// <summary>
+    /// Pins the first clamp, <c>a1 = Math.Min(a0 + run1, width)</c>. <c>DecodeRun</c>'s own cap
+    /// cannot substitute for it here: the cap bounds <c>run1</c> against the full width (128), and
+    /// 128 is itself a valid run, so the cap never fires — only <c>a1</c>'s own clamp keeps
+    /// <c>a0 + run1</c> from exceeding the row once <c>a0</c> is already non-zero.
+    /// <para>
+    /// Row 0 is Horizontal, white run 64 then black run 64 (ITU-T T.4 Table 3a make-up codes,
+    /// each closed with the run-0 terminating code), closing the row exactly at the 128-pixel
+    /// width with reference changing elements at x = 64 and x = 128 — refCE = [64, 128, 128, …].
+    /// Row 0's own raster is white 0-63, black 64-127: 8 bytes of 0x00 then 8 bytes of 0xFF.
+    /// </para>
+    /// <para>
+    /// Row 1 opens with V(0), which steps a0 to refCE[0] = 64 and turns the colour black — this is
+    /// what gets a0 off zero without touching either clamp under test. Horizontal then reads a
+    /// black run of 128 (ITU-T T.4 Table 3a make-up code for 128, closed with terminating 0):
+    /// <c>DecodeRun</c> accepts it, since 128 does not exceed the 128-pixel <c>maxRun</c> it is
+    /// checked against, but <c>a0 + run1 = 64 + 128 = 192</c> is 64 pixels past the row. The
+    /// correctly clamped decode paints black from a0 = 64 through a1 = 128 (the row's last 8
+    /// bytes) and, because a1 already sits at width, the run-0 white run that follows paints
+    /// nothing further and the row ends there — row 1 reads identically to row 0.
+    /// </para>
+    /// <para>
+    /// Removing the a1 clamp lets <c>FillRun</c> receive (64, 192) for a row whose pixel columns
+    /// run only to x = 128: <c>rowOffset + 191 / 8</c> indexes past the end of the two-row output
+    /// array (32 bytes total; this row's own 16 bytes span byte offsets 16-31), and the decode
+    /// throws <see cref="IndexOutOfRangeException"/> before returning a raster to compare at all.
+    /// Verified by deleting the <c>Math.Min</c> call locally and re-running this test.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void MmrDecoder_HorizontalMode_A1ClampCapsARunThatCarriesANonZeroA0PastWidth()
+    {
+        var mmr = PackMsbFirst(
+            (0b001, 3), (0b11011, 5), (0b00110101, 8),          // row 0: H, white make-up 64 + term 0
+            (0b0000001111, 10), (0b0000110111, 10),             // row 0: black make-up 64 + term 0
+            (0b1, 1),                                            // row 1: V(0) — a0 = 64, colour black
+            (0b001, 3), (0b000011001000, 12), (0b0000110111, 10), // row 1: H, black make-up 128 + term 0
+            (0b00110101, 8));                                    // row 1: white term 0 (run 0)
+
+        var raster = DecodeMmrRaster(width: 128, height: 2, mmr);
+
+        var row = new byte[] { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
+        Assert.Equal([.. row, .. row], raster);
+    }
+
+    /// <summary>
+    /// Pins the second clamp, <c>a2 = Math.Min(a1 + run2, width)</c>, using the reviewer's own
+    /// repro from the #441 third-round notes: Horizontal, white run 64 then black run 128, on a
+    /// 128-pixel row. <c>a1 = 64</c> is unaffected (the white run alone does not reach width), so
+    /// this isolates the second clamp from the first.
+    /// <para>
+    /// The correctly clamped decode paints white 0-63 (a0 = 0 to a1 = 64) then black 64-127
+    /// (a1 = 64 to a2 = <c>Math.Min(64 + 128, 128) = 128</c>) — 8 bytes of 0x00 then 8 bytes of
+    /// 0xFF, the same pattern <see cref="MmrDecoder_HorizontalMode_A1ClampCapsARunThatCarriesANonZeroA0PastWidth"/>
+    /// pins for its own reasons.
+    /// </para>
+    /// <para>
+    /// Removing the a2 clamp leaves <c>a2 = 64 + 128 = 192</c>, and <c>FillRun</c> paints black
+    /// through <c>rowOffset + 191 / 8</c> against a one-row, 16-byte output array — an
+    /// <see cref="IndexOutOfRangeException"/> in place of a raster. Verified by deleting the
+    /// second <c>Math.Min</c> call locally and re-running this test.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void MmrDecoder_HorizontalMode_A2ClampCapsTheSecondRunAtWidth()
+    {
+        var mmr = PackMsbFirst(
+            (0b001, 3), (0b11011, 5), (0b00110101, 8),          // H, white make-up 64 + term 0
+            (0b000011001000, 12), (0b0000110111, 10));          // black make-up 128 + term 0
+
+        var raster = DecodeMmrRaster(width: 128, height: 1, mmr);
+
+        Assert.Equal(
+            new byte[] { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF },
+            raster);
     }
 
     // ── MmrDecoder: known-answer vectors from Table 1/T.6 ─────────────────────
@@ -1130,6 +1250,455 @@ public sealed class Jbig2ImageTests
         Assert.Equal(height, img.Height);
         return CcittImageTests.DecompressFlateStream(img.BuildStream());
     }
+    // ── MmrDecoder: run-length known-answer vectors (ITU-T T.4 Table 2) ───────
+
+    // Same discipline as the mode-table vectors above. Each stream is hand-encoded from Table 2
+    // and each expected raster is worked out from the standard, not read off the decoder. Most
+    // cases below fail against the run tables that shipped before #440; black runs 1 to 4 are the
+    // exception, since the pre-#440 black codes for those four runs already matched Table 2.
+    //
+    // Horizontal mode is the only mode that reads a run length, so every vector goes through it:
+    // 001 (the flag code), then a white run, then a black run.
+
+    /// <summary>
+    /// Black terminating codes, on a 32-pixel row that starts with a white run of 0 so the black
+    /// run begins at x = 0 and the raster is the run itself. Run 7 is the case measured in #440,
+    /// where the old table returned 10.
+    /// </summary>
+    [Theory]
+    [InlineData(0b0000110111, 10, 0, "00000000")]  // black 0  — its own entry, 0001111, was unreachable behind 00011
+    [InlineData(0b010, 3, 1, "80000000")]          // black 1
+    [InlineData(0b11, 2, 2, "C0000000")]           // black 2
+    [InlineData(0b10, 2, 3, "E0000000")]           // black 3
+    [InlineData(0b011, 3, 4, "F0000000")]          // black 4
+    [InlineData(0b0011, 4, 5, "F8000000")]         // black 5  — old table's entry 0101 was unreachable behind 010
+    [InlineData(0b0010, 4, 6, "FC000000")]         // black 6
+    [InlineData(0b00011, 5, 7, "FE000000")]        // black 7  — old table returned 10
+    [InlineData(0b000101, 6, 8, "FF000000")]       // black 8  — old table returned 11
+    [InlineData(0b000100, 6, 9, "FF800000")]       // black 9  — old table returned 12
+    [InlineData(0b0000100, 7, 10, "FFC00000")]     // black 10
+    [InlineData(0b0000111, 7, 12, "FFF00000")]     // black 12 — old table returned 17
+    [InlineData(0b00000100, 8, 13, "FFF80000")]    // black 13
+    public void MmrDecoder_BlackTerminatingCodes_DecodeToTheRunTable2Gives(
+        int codeWord, int bits, int expectedRun, string expectedHex)
+    {
+        var mmr = PackMsbFirst(
+            (0b001, 3),          // Horizontal
+            (0b00110101, 8),     // white run 0
+            (codeWord, bits),    // the black run under test
+            (0b1, 1));           // V(0) to carry the row to the right edge
+
+        var raster = DecodeMmrRaster(width: 32, height: 1, mmr);
+
+        Assert.Equal(expectedHex, Convert.ToHexString(raster));
+        Assert.Equal(expectedRun, raster.Sum(b => System.Numerics.BitOperations.PopCount(b)));
+    }
+
+    /// <summary>
+    /// White run 1, which had no code word at all in the table that shipped before #440. Its
+    /// absence meant a single white pixel could not be decoded: the reader consumed 000111 and
+    /// went looking for a longer code word.
+    /// </summary>
+    [Fact]
+    public void MmrDecoder_WhiteRunOfOne_HasACodeWordAtAll()
+    {
+        var mmr = PackMsbFirst(
+            (0b001, 3),          // Horizontal
+            (0b000111, 6),       // white run 1 (ITU-T T.4 Table 2)
+            (0b11, 2),           // black run 2
+            (0b1, 1));           // V(0)
+
+        var raster = DecodeMmrRaster(width: 32, height: 1, mmr);
+
+        Assert.Equal("60000000", Convert.ToHexString(raster)); // white at 0, black at 1 and 2
+    }
+
+    /// <summary>
+    /// A make-up code followed by a terminating code, which is how Table 3a says any run of 64 or
+    /// more is written: white 64 + white 0, then black 64 + black 3, on a row wide enough to hold
+    /// them.
+    /// <para>
+    /// The expected raster is worked out from the run lengths directly: white 0-63, black 64-130
+    /// (the 64-run make-up plus the 3-run terminating code = 67 pixels), then white 131-135 from
+    /// the closing V(0). A popcount pins the black-pixel total but not their position — shifting
+    /// the whole run one pixel right leaves 67 black bits either way — so the comparison here is
+    /// the exact packed bytes, the same idiom the run-table vectors above use.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void MmrDecoder_MakeUpCodes_AddToTheFollowingTerminatingCode()
+    {
+        var mmr = PackMsbFirst(
+            (0b001, 3),          // Horizontal
+            (0b11011, 5),        // white make-up 64
+            (0b00110101, 8),     // white terminating 0  => white run 64
+            (0b0000001111, 10),  // black make-up 64
+            (0b10, 2),           // black terminating 3  => black run 67
+            (0b1, 1));           // V(0)
+
+        var raster = DecodeMmrRaster(width: 136, height: 1, mmr);
+
+        Assert.Equal("0000000000000000FFFFFFFFFFFFFFFFE0", Convert.ToHexString(raster));
+    }
+
+    /// <summary>
+    /// The tables are a prefix code, so no code word may be a prefix of another. Asserting it is
+    /// what makes #440's specific failure impossible to reland: the black table that shipped had
+    /// 0100, 0101 and 0111 sitting behind 010 and 011, which the reader returned on first, so
+    /// those three entries could never be reached and their presence went unnoticed for as long as
+    /// nothing checked this property.
+    ///
+    /// The prefix check alone does not look at which colours or how many entries
+    /// <see cref="MmrDecoder.DecodingTables"/> actually returned — an empty table, or a table
+    /// missing a whole colour, is trivially a prefix code — so it is asserted here too: both
+    /// colour names present, and 104 code words apiece (64 Table 2 terminating codes, 27 Table 3a
+    /// make-up codes, and Table 3b's 13 shared codes appended to each). Without that, a mutant
+    /// that made <see cref="MmrDecoder.DecodingTables"/> return only the black entry passed this
+    /// test with zero failures (#441).
+    /// </summary>
+    [Fact]
+    public void MmrDecoder_CodeTablesAreAPrefixCode()
+    {
+        var tables = MmrDecoder.DecodingTables;
+
+        Assert.Equal(2, tables.Length);
+        Assert.Contains(tables, t => t.Colour == "white");
+        Assert.Contains(tables, t => t.Colour == "black");
+        foreach (var (colour, table) in tables)
+            Assert.Equal(104, table.Length);
+
+        foreach (var (colour, table) in tables)
+        {
+            var words = table.ToList();
+            Assert.Equal(words.Count, words.Distinct(StringComparer.Ordinal).Count());
+
+            foreach (var word in words)
+            {
+                var prefixed = words.Where(w => w != word && w.StartsWith(word, StringComparison.Ordinal)).ToList();
+                Assert.True(
+                    prefixed.Count == 0,
+                    $"{colour}: {word} is a prefix of {string.Join(", ", prefixed)}, so those are unreachable.");
+            }
+        }
+    }
+
+    // ── MmrDecoder: value-level coverage of what the KAT vectors above leave unpinned ─────────
+
+    /// <summary>
+    /// Every terminating run 0-63, both colours, decoded in a single row: 64 Horizontal-mode pairs
+    /// of (white i, black i) back to back. Each Horizontal call returns the colour to white (two
+    /// transitions net to zero), so the pairs chain with no V(0) between them, and 2 * (0+1+...+63)
+    /// = 4032 pixels of that is exactly what the 64 pairs commit to.
+    ///
+    /// Of the run-length known-answer vectors above, the ones that read a run code pin only 17 of
+    /// the 195 code words (#441);
+    /// a transposition of two same-length code words leaves <see cref="MmrDecoder_CodeTablesAreAPrefixCode"/>
+    /// satisfied, since swapping two entries changes nothing about which words are whose prefix.
+    /// This vector exercises every terminating code word in Table 2 and pins the whole raster with
+    /// an exact compare, so a transposition anywhere in either terminating table now moves a run
+    /// boundary and fails it.
+    ///
+    /// The row is one pixel wider than those 4032, closed with a trailing V(0) rather than ending
+    /// exactly where the 64 pairs stop. Without that extra pixel, inflating the very last code word
+    /// read — black terminating 63 — is invisible: <c>DecodeRow</c>'s <c>a2 = Math.Min(a1 + run2,
+    /// width)</c> clamps any inflated run back down to the same width the correct run already
+    /// lands on, so the raster comes out identical either way. The trailing V(0) instead paints a
+    /// pixel the correct decode leaves white (default 0) and the inflated one paints black, so an
+    /// inflation of that last entry — to 64, or to any larger value, since the clamp collapses them
+    /// all to the same wrong fill — now moves that pixel and fails the comparison. There is no
+    /// longer black code word to substitute for run 64: Table 3a's own make-up code for it would
+    /// desynchronise the bitstream rather than merely inflate the run, so this was verified by
+    /// inflating the decoded run length for black terminating 63 directly in the decoder and
+    /// confirming the assertion fails where it previously did not.
+    ///
+    /// The code words are transcribed independently of <see cref="MmrDecoder.DecodingTables"/>
+    /// rather than read from it. A shared transcription error is exactly what would cancel itself
+    /// out — the same wrong value on both sides still agrees — so keeping the two transcriptions
+    /// independent is what makes that failure mode unlikely rather than what rules it out. The
+    /// expected raster is not decoded from anything: it comes directly from ITU-T T.4's own
+    /// definition of a run — "white i" is i consecutive white pixels, "black i" is i consecutive
+    /// black pixels — by filling i zero bits then i one bits for each i, plus the one trailing white
+    /// pixel the closing V(0) paints.
+    /// </summary>
+    [Fact]
+    public void MmrDecoder_AllTerminatingRuns_ProduceTheExactTable2Raster()
+    {
+        // ITU-T T.4 Table 2, white terminating codes, runs 0-63.
+        string[] whiteTerminating =
+        [
+            "00110101", "000111", "0111", "1000",
+            "1011", "1100", "1110", "1111",
+            "10011", "10100", "00111", "01000",
+            "001000", "000011", "110100", "110101",
+            "101010", "101011", "0100111", "0001100",
+            "0001000", "0010111", "0000011", "0000100",
+            "0101000", "0101011", "0010011", "0100100",
+            "0011000", "00000010", "00000011", "00011010",
+            "00011011", "00010010", "00010011", "00010100",
+            "00010101", "00010110", "00010111", "00101000",
+            "00101001", "00101010", "00101011", "00101100",
+            "00101101", "00000100", "00000101", "00001010",
+            "00001011", "01010010", "01010011", "01010100",
+            "01010101", "00100100", "00100101", "01011000",
+            "01011001", "01011010", "01011011", "01001010",
+            "01001011", "00110010", "00110011", "00110100",
+        ];
+
+        // ITU-T T.4 Table 2, black terminating codes, runs 0-63.
+        string[] blackTerminating =
+        [
+            "0000110111", "010", "11", "10",
+            "011", "0011", "0010", "00011",
+            "000101", "000100", "0000100", "0000101",
+            "0000111", "00000100", "00000111", "000011000",
+            "0000010111", "0000011000", "0000001000", "00001100111",
+            "00001101000", "00001101100", "00000110111", "00000101000",
+            "00000010111", "00000011000", "000011001010", "000011001011",
+            "000011001100", "000011001101", "000001101000", "000001101001",
+            "000001101010", "000001101011", "000011010010", "000011010011",
+            "000011010100", "000011010101", "000011010110", "000011010111",
+            "000001101100", "000001101101", "000011011010", "000011011011",
+            "000001010100", "000001010101", "000001010110", "000001010111",
+            "000001100100", "000001100101", "000001010010", "000001010011",
+            "000000100100", "000000110111", "000000111000", "000000100111",
+            "000000101000", "000001011000", "000001011001", "000000101011",
+            "000000101100", "000001011010", "000001100110", "000001100111",
+        ];
+
+        var codes = new List<(int value, int bits)>();
+        var expectedBits = new System.Text.StringBuilder();
+        for (var run = 0; run < 64; run++)
+        {
+            codes.Add((0b001, 3)); // Horizontal flag
+            codes.Add(ParseCodeWord(whiteTerminating[run]));
+            codes.Add(ParseCodeWord(blackTerminating[run]));
+            expectedBits.Append('0', run);
+            expectedBits.Append('1', run);
+        }
+
+        // Close the row one pixel past the 4032 the 64 pairs commit to, so the very last code word
+        // read (black terminating 63) is not in tail position against the row's own width — see the
+        // remarks above.
+        codes.Add((0b1, 1)); // V(0)
+        expectedBits.Append('0');
+
+        var width = expectedBits.Length;
+        var mmr = PackMsbFirst([.. codes]);
+        var raster = DecodeMmrRaster(width, height: 1, mmr);
+
+        Assert.Equal(Convert.ToHexString(PackBinaryString(expectedBits.ToString())), Convert.ToHexString(raster));
+    }
+
+    /// <summary>
+    /// All 27 white and 27 black make-up codes of Table 3a, each closed with the run's terminating
+    /// code so <c>DecodeRun</c>'s accumulate-then-terminate loop actually exercises the make-up
+    /// value rather than just matching it. The terminating sweep above never reaches Table 3a at
+    /// all, so a transposition confined to the make-up codes — black make-up runs 320 and 384
+    /// swapping, say — would leave that vector passing, and the file's other Table 3a value-level
+    /// pins don't cover 320 or 384 either, so no value-level check in this file catches that
+    /// specific swap (#441). A deletion — the
+    /// entry for white run 1728 going missing, say — is a different case: no value-level KAT
+    /// catches it either, but it does fail <see cref="MmrDecoder_CodeTablesAreAPrefixCode"/>'s
+    /// count assertion, which is a shape check rather than a value-level one, so it does not also
+    /// catch the transposition.
+    ///
+    /// The last entry read in the row — black make-up 1728, closed with terminating 0 — sits in the
+    /// same tail position <see cref="MmrDecoder_AllTerminatingRuns_ProduceTheExactTable2Raster"/>
+    /// closes with a trailing V(0), and for the same reason: <c>a2</c>'s clamp to width silently
+    /// absorbs an inflated final run, so this sweep closes with one too, one pixel past the 48384
+    /// the 27 pairs commit to.
+    ///
+    /// As above, the code words are transcribed independently of <see cref="MmrDecoder"/>'s own
+    /// tables and the expected raster comes from the run-length definition directly, not from
+    /// decoding anything: run <c>64 * (i + 1)</c> is <c>64 * (i + 1)</c> consecutive pixels of that
+    /// colour.
+    /// </summary>
+    [Fact]
+    public void MmrDecoder_AllMakeUpCodes_ProduceTheExactTable3aRaster()
+    {
+        // ITU-T T.4 Table 3a, white make-up codes, runs 64 to 1728 in steps of 64.
+        string[] whiteMakeUp =
+        [
+            "11011", "10010", "010111", "0110111",
+            "00110110", "00110111", "01100100", "01100101",
+            "01101000", "01100111", "011001100", "011001101",
+            "011010010", "011010011", "011010100", "011010101",
+            "011010110", "011010111", "011011000", "011011001",
+            "011011010", "011011011", "010011000", "010011001",
+            "010011010", "011000", "010011011",
+        ];
+
+        // ITU-T T.4 Table 3a, black make-up codes, runs 64 to 1728 in steps of 64.
+        string[] blackMakeUp =
+        [
+            "0000001111", "000011001000", "000011001001", "000001011011",
+            "000000110011", "000000110100", "000000110101", "0000001101100",
+            "0000001101101", "0000001001010", "0000001001011", "0000001001100",
+            "0000001001101", "0000001110010", "0000001110011", "0000001110100",
+            "0000001110101", "0000001110110", "0000001110111", "0000001010010",
+            "0000001010011", "0000001010100", "0000001010101", "0000001011010",
+            "0000001011011", "0000001100100", "0000001100101",
+        ];
+
+        const string whiteTerminatingZero = "00110101";
+        const string blackTerminatingZero = "0000110111";
+
+        var codes = new List<(int value, int bits)>();
+        var expectedBits = new System.Text.StringBuilder();
+        for (var i = 0; i < 27; i++)
+        {
+            var run = 64 * (i + 1);
+            codes.Add((0b001, 3)); // Horizontal flag
+            codes.Add(ParseCodeWord(whiteMakeUp[i]));
+            codes.Add(ParseCodeWord(whiteTerminatingZero));
+            codes.Add(ParseCodeWord(blackMakeUp[i]));
+            codes.Add(ParseCodeWord(blackTerminatingZero));
+            expectedBits.Append('0', run);
+            expectedBits.Append('1', run);
+        }
+
+        // Close the row one pixel past the 48384 the 27 pairs commit to, so the very last code word
+        // read (black make-up 1728) is not in tail position against the row's own width — see the
+        // remarks above.
+        codes.Add((0b1, 1)); // V(0)
+        expectedBits.Append('0');
+
+        var width = expectedBits.Length;
+        var mmr = PackMsbFirst([.. codes]);
+        var raster = DecodeMmrRaster(width, height: 1, mmr);
+
+        Assert.Equal(Convert.ToHexString(PackBinaryString(expectedBits.ToString())), Convert.ToHexString(raster));
+    }
+
+    /// <summary>
+    /// All thirteen Table 3b entries, once for white and once for black, each closed with the
+    /// terminating code for run 7 rather than run 0 — <see cref="MmrDecoder_SharedMakeUpCode_DecodesARunOf1792"/>
+    /// closes its one vector with terminating 0, and a run of 1792 + 0 is 1792 pixels regardless of
+    /// whether the make-up code that produced the 1792 is followed by a terminating code at all,
+    /// so it cannot tell a decoder that reads the shared entries as make-up codes from one that
+    /// reads them as terminating and stops one code word short, leaving the next code word's bits
+    /// unread in the stream. Closing every entry with a nonzero terminating run instead means a
+    /// decoder that stops early is missing exactly those 7 pixels and has desynchronised on top of
+    /// that, so it cannot land on the same raster by coincidence.
+    ///
+    /// Table 3b is shared, but before this vector only the black side of it was exercised, and only
+    /// by the single run in <see cref="MmrDecoder_SharedMakeUpCode_DecodesARunOf1792"/>; this sweep
+    /// is the first to exercise the white side, and pins all thirteen entries for both colours
+    /// rather than one entry for one. Every one of the thirteen entries is closed rather than only
+    /// the first, so a transposition, a stride error, or a missing entry anywhere in the table
+    /// moves a run boundary and fails the comparison, the way
+    /// <see cref="MmrDecoder_AllMakeUpCodes_ProduceTheExactTable3aRaster"/> does for Table 3a.
+    ///
+    /// The shared code words are transcribed independently of <see cref="MmrDecoder"/>'s own table,
+    /// from ITU-T T.4 Table 3b directly, and so is the terminating-7 code word for each colour,
+    /// from Table 2. The expected raster comes from the run-length definition, not from decoding
+    /// anything: run <c>1792 + 64 * i + 7</c> is that many consecutive pixels of the colour coded.
+    /// </summary>
+    [Fact]
+    public void MmrDecoder_SharedMakeUpCodes_ProduceTheExactTable3bRaster()
+    {
+        // ITU-T T.4 Table 3b, the extended make-up codes 1792 to 2560, shared by both colours.
+        string[] sharedMakeUp =
+        [
+            "00000001000", "00000001100", "00000001101", "000000010010",
+            "000000010011", "000000010100", "000000010101", "000000010110",
+            "000000010111", "000000011100", "000000011101", "000000011110",
+            "000000011111",
+        ];
+
+        // ITU-T T.4 Table 2, the terminating code for run 7, both colours.
+        const string whiteTerminatingSeven = "1111";
+        const string blackTerminatingSeven = "00011";
+        const int terminatingRun = 7;
+
+        var codes = new List<(int value, int bits)>();
+        var expectedBits = new System.Text.StringBuilder();
+        for (var i = 0; i < sharedMakeUp.Length; i++)
+        {
+            var run = 1792 + (64 * i) + terminatingRun;
+            codes.Add((0b001, 3)); // Horizontal flag
+            codes.Add(ParseCodeWord(sharedMakeUp[i]));
+            codes.Add(ParseCodeWord(whiteTerminatingSeven));
+            codes.Add(ParseCodeWord(sharedMakeUp[i]));
+            codes.Add(ParseCodeWord(blackTerminatingSeven));
+            expectedBits.Append('0', run);
+            expectedBits.Append('1', run);
+        }
+
+        var width = expectedBits.Length;
+        var mmr = PackMsbFirst([.. codes]);
+        var raster = DecodeMmrRaster(width, height: 1, mmr);
+
+        Assert.Equal(Convert.ToHexString(PackBinaryString(expectedBits.ToString())), Convert.ToHexString(raster));
+    }
+
+    /// <summary>
+    /// <see cref="MmrDecoder.MaxRunCodeBits"/> is the bit budget <c>ReadRun</c> allocates before
+    /// giving up on a run-length code word. Nothing tied it to the tables it exists to bound. Set
+    /// one bit too low and the twenty 13-bit black make-up codes (runs 512 through 1728) become
+    /// unlookupable, since <c>ReadRun</c> loops <c>bits &lt;= MaxRunCodeBits</c>; that direction is
+    /// already caught by <see cref="MmrDecoder_AllMakeUpCodes_ProduceTheExactTable3aRaster"/>,
+    /// which throws once it reaches one of those codes (confirmed by building at 12: that test
+    /// fails with "run-length code word is not in ITU-T T.4 Table 2, 3a or 3b").
+    /// <para>
+    /// Set one bit too high and this assertion is the only thing that pins the value directly.
+    /// Rebuilding at 14 does also fail
+    /// <see cref="Load_DecodeToRaster_UnrecognisedRunLengthCode_ThrowsInvalidData"/>, but not
+    /// because anything there asserts the budget: that fixture is two bytes, <c>ReadRun</c> asks
+    /// for a fourteenth bit at the extra width, and <c>BitReader</c> throws its own "unexpected
+    /// end of compressed data" before <c>ReadRun</c>'s own fallback throw is ever reached, so
+    /// <c>Assert.Contains("Table 2", ...)</c> fails on that unrelated message. A fixture with more
+    /// trailing bits would not fail at all: nothing else in the suite reads a budget-worth of
+    /// leftover zero bits and expects a specific throw. This assertion is the direct one.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void MmrDecoder_MaxRunCodeBits_EqualsTheLongestCodeWordInTheTables()
+    {
+        var longest = MmrDecoder.DecodingTables.SelectMany(t => t.CodeWords).Max(w => w.Length);
+        Assert.Equal(MmrDecoder.MaxRunCodeBits, longest);
+    }
+
+    /// <summary>
+    /// A run of 1792 needs one of Table 3b's shared extended make-up codes: Table 3a's own black
+    /// make-up codes stop at 1728, so any run of 1792 or more has to route through
+    /// <c>SharedMakeUp</c> at least once. This is the vector that pins that route through the
+    /// black table (#441).
+    /// </summary>
+    [Fact]
+    public void MmrDecoder_SharedMakeUpCode_DecodesARunOf1792()
+    {
+        var mmr = PackMsbFirst(
+            (0b001, 3),             // Horizontal
+            (0b00110101, 8),        // white terminating 0
+            (0b00000001000, 11),    // black shared make-up 1792 (ITU-T T.4 Table 3b)
+            (0b0000110111, 10));    // black terminating 0 => black run 1792 + 0 = 1792
+
+        var raster = DecodeMmrRaster(width: 1792, height: 1, mmr);
+
+        Assert.Equal(224, raster.Length);
+        Assert.All(raster, b => Assert.Equal(0xFF, b));
+    }
+
+    /// <summary>
+    /// Thirteen zero bits after the Horizontal flag never match a code word at any of the thirteen
+    /// prefix lengths <c>ReadRun</c> tries: no white, black, or shared code word in Table 2, 3a or
+    /// 3b is all zero at any length from 1 through 13, so <c>ReadRun</c>'s fallback throw is
+    /// reachable rather than dead code — replacing it with <c>return (0, false)</c> failed no test
+    /// before this one (#441).
+    /// </summary>
+    [Fact]
+    public void Load_DecodeToRaster_UnrecognisedRunLengthCode_ThrowsInvalidData()
+    {
+        var mmr = PackMsbFirst((0b001, 3), (0, 13));
+        var jbig2 = BuildJbig2WithMmrRegion(width: 32, height: 1, mmr);
+        var opts = new ImageLoadOptions { DecodeMode = ImageDecodeMode.DecodeToRaster };
+
+        var ex = Assert.Throws<InvalidDataException>(() => Jbig2ImageLoader.Load(jbig2, opts));
+
+        Assert.Contains("Table 2", ex.Message, StringComparison.Ordinal);
+    }
+
     // ── Helper to build a JBIG2 buffer with an extra segment of a given type ──
 
     private static byte[] BuildJbig2WithSegmentType(
