@@ -183,6 +183,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   arrives short and the 1024-character sink cut has nothing left to do on this path. Every other
   finding is unaffected. (#406)
 
+- **The generated-inventory gate now runs on the directory its own generator reads.**
+  `docs-inventory.yml` triggered on `docs/pdf20-conformance.md`, the generator, and itself, while
+  `rule_class_provenance()` in that generator reads `src/VellumPdf.Conformance/Rules/` and derives
+  six of the figures published on the page, among them how many rule classes claim clean-room
+  derivation and how many of those also name veraPDF. A pull request editing only rule comments
+  therefore moved the published figures with the gate silently skipped. The workflow's own header
+  claimed the filter covered everything that could cause drift, which stopped being true once the
+  generator started reading source. That directory is now in both path lists, and the header says
+  what the wider filter costs: ordinary source edits pay a run, and because `--check` regenerates
+  the whole page, upstream drift can now fail a pull request that caused none of its own. It matters
+  now because every batch of the #418 and #428 re-derivation edits exactly those comments, so the
+  disclosure measuring the sweep would have gone stale as the sweep ran. (#418)
+
 ### Fixed
 
 - **`/P` bit 10 is now always set on a newly written `/Encrypt` dictionary.** The restriction this
