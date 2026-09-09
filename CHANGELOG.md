@@ -327,16 +327,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   reader with only this repository can confirm it. Two rows are inherited from the profile and are
   gated behind the per-rule comparison, since correcting them makes this library disagree with
   veraPDF and the id diff currently fails in both directions. One has its justification corrected in
-  this same release and keeps its row, because the check itself still disagrees with the profile even
-  once the reasoning is right. Another, where `ActionRule`'s prose described the profile's framing
-  rather than the clause, is corrected and its row removed, since nothing about that rule diverges
-  any more. The row on font embedding is left standing: its correction turned out to need more care
-  than a single change could carry, and is specified separately in #458. The file exists because a
-  diff that treats profile membership as the passing condition makes the profile authoritative by
-  construction,
-  and because a diff between two implementations cannot surface a requirement both omit: 19 of the 73
-  file-scoped clauses in the archival standard are checked by neither, seven of them at the
-  accessibility level this library advertises.
+  this same release and keeps its row, because the check itself still disagrees with the profile
+  even once the reasoning is right. Another, where `ActionRule`'s prose described the profile's
+  framing rather than the clause, is corrected and its row removed, since nothing about that rule
+  diverges any more. The row on font embedding is left standing: its correction turned out to need
+  more care than a single change could carry, and is specified separately in #458. The file exists
+  because a diff that treats profile membership as the passing condition makes the profile
+  authoritative by construction, and because a diff between two implementations cannot surface a
+  requirement both omit: 19 of the 73 file-scoped clauses in the archival standard are checked by
+  neither, seven of them at the accessibility level this library advertises.
 
 - **Measured behaviour of two candidate differential oracles, Ghostscript and MuPDF (#420).**
   `docs/differential-oracles.md` records what each one actually does, run against five fixtures on

@@ -523,9 +523,10 @@ internal sealed class PreflightContext
     /// not restrict the size or quantity of things described in the PDF file format"), so
     /// without this cut one
     /// 900,000-byte /Filter name shared by 400 pages retained 705.7 MiB (GC delta) of message text
-    /// from a 990 KB file (measured in #403). 1024 characters is roughly twice the longest sentence
-    /// any rule composes on its own (522 characters, A2aContentItemTaggingRule) and short enough
-    /// that a result list of thousands of findings stays a few megabytes.
+    /// from a 990 KB file (measured in #403). 1024 characters is comfortably above the longest
+    /// message any rule composes on its own (396 characters, A2aContentItemTaggingRule, remeasured
+    /// after #418 shortened it from 522) and short enough that a result list of thousands of
+    /// findings stays a few megabytes.
     /// <para>
     /// This cut is the only bound most messages have. Ten sites whose message names a producer
     /// value (a /Filter, an action type, a named action, an annotation /Subtype or /AP key, a

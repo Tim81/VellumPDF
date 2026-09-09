@@ -15,21 +15,24 @@ namespace VellumPdf.Conformance.Rules.Fonts;
 /// <remarks>
 /// Re-derived from ISO 19005-2:2011, 6.2.11.4.1 and ISO 32000-1:2008, 9.9, against the standard's
 /// own text (#418). Clean-room: derived from the specification text, not from any third-party
-/// validation profile. veraPDF was consulted only to confirm that the corrected clause is the one
-/// it keys the same requirement to, which is oracle use and not a source.
+/// validation profile. In this re-derivation veraPDF was consulted only to confirm that the
+/// corrected clause is the one it keys the same requirement to, which is oracle use and not a
+/// source. That is not true of the rule as a whole: the <c>Tf</c>-only scope below was adopted for
+/// parity with veraPDF under issue #118, and re-deriving it is part of #418 rather than done here.
 /// <para>
 /// This rule previously cited §6.3.4–§6.3.5. Those numbers are ISO 19005-<em>1</em> numbering, where
 /// clause 6.3 is Fonts. In ISO 19005-2 clause 6.3 is Annotations, its four sub-clauses end at 6.3.4
 /// "Display of annotation contents", and there is no 6.3.5 at all. Embedding is 6.2.11.4, with
 /// 6.2.11.4.1 General and 6.2.11.4.2 Subset embedding.
 /// </para>
-/// <c>/Type3</c> fonts define their glyphs as content streams and so are embedded by construction.
+/// <para><c>/Type3</c> fonts define their glyphs as content streams and so are embedded by
+/// construction.</para>
 /// <para>
 /// Only fonts that a page actually selects via a <c>Tf</c> operator in its content stream are
 /// validated (matching veraPDF, which validates only the current graphics state — issue #118).
 /// Fonts present in <c>/Resources /Font</c> but never selected are not checked. Fonts used only
-/// within form XObjects, Type 3 glyph procedures, or annotation appearance streams are a deferred
-/// edge and are not yet detected here.
+/// within form XObjects, Type 3 glyph procedures, or annotation appearance streams are not detected
+/// here at all, which is tracked as issue #450.
 /// </para>
 /// </remarks>
 internal sealed class FontEmbeddingRule : IConformanceRule

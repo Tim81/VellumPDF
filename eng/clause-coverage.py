@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Report ISO 19005-2 clause coverage: what the standard requires, and what checks it.
 
-Coverage here has been measured against veraPDF's test ids, which quietly makes the profile the
+Coverage used to be measured against veraPDF's test ids, which quietly made the profile the
 population. A requirement that neither veraPDF nor this library checks cannot appear in a
 profile diff, because both sides agree by omission. This script uses the standard's own clause
 list instead, so "nothing checks this" is a value the report can print.
