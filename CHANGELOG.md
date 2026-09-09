@@ -323,24 +323,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   (#406)
 
 - **A denial-of-service regression test was cancelled by its own budget on the shared runner
-  (#400).** `EncryptDictionaryDenialOfServiceTests` opened an `/Encrypt` dictionary carrying 100,000
-  filler keys under a ten-second budget, as the #208 regression pin. It failed on GitHub's runner at
-  least three times on branches touching neither the reader nor the test, always reported as
-  `failed (canceled)` a hair over ten seconds, against a third of a second here. The most recent was
-  a branch whose entire diff was a workflow file and a CHANGELOG entry. A time budget only pins a
-  regression if the pre-fix cost exceeds it on the slowest machine the suite ever runs on, and the
-  margin was not what it looked like: #400 records that assembly at 6m 21s on the runner against 34s
-  here, and it runs its classes in parallel with the CsCheck fuzzer, which takes every core.
+  (#400).** Test-only; nothing ships. `EncryptDictionaryDenialOfServiceTests` opened an `/Encrypt`
+  dictionary carrying 100,000 filler keys under a ten-second budget, as the #208 regression pin. It
+  failed on GitHub's runner three times on branches touching neither the reader nor the test, always
+  reported as `failed (canceled)` a hair over ten seconds, against a third of a second here. #400
+  was opened on the first two; the third arrived a week later, on a branch whose entire diff was a
+  workflow file and a CHANGELOG entry. A time budget only pins a regression if the pre-fix cost
+  exceeds it on the slowest machine the suite ever runs on, and the margin was not what it looked
+  like: #400 records that assembly at 6m 21s on the runner against 34s here, and it runs its classes
+  in parallel with the CsCheck fuzzer, which takes every core.
 
   Raising the budget alone would have weakened the pin, which is why #400 rejected it. Raising the
   key count instead widens the gap the budget sits in, because the guarded cost grows with the
   square of that count while the fixed cost grows with the count itself. Measured in Release with
-  `PdfDictionary`'s index disabled: 538 ms at 12,500 keys, 1.6 s at 25,000, 6.7 s at 50,000, 34 s at
-  100,000 and 126 s at 200,000, each doubling costing between 2.9 and 5.1 times as much. Carried out
-  one more doubling, 400,000 keys lands near eight minutes broken, against about a quarter of a
-  second fixed. The eight minutes is extrapolated rather than measured: the only direct observation
-  at 400,000 broken is the test being cancelled at its budget, which is a floor and not a ceiling.
-  The test now builds that many keys under a two-minute budget.
+  `PdfDictionary`'s index disabled by raising `IndexThreshold` to `int.MaxValue`: 538 ms at 12,500
+  keys, 1.6 s at 25,000, 6.7 s at 50,000, 34 s at 100,000 and 126 s at 200,000, each doubling
+  costing between 2.9 and 5.1 times as much. The series fits an exponent of 1.97, so the next
+  doubling was projected at the quadratic's 4x rather than anywhere in that band: 400,000 keys lands
+  near eight minutes broken, against about a quarter of a second fixed. The eight minutes is
+  extrapolated rather than measured. The direction was measured: with `IndexThreshold` raised the
+  test does fail, cancelled at 120.2 s, which puts a floor under the broken cost and no ceiling. The
+  test now builds that many keys under a two-minute budget, asserts the last filler key is actually
+  in the bytes it opens, so it cannot pass by the fixture quietly ceasing to be huge, and is renamed
+  from `HugeEncryptDictionary_opensUnderTimeout` to
+  `HugeEncryptDictionary_opensWellInsideTheBudget`, since #400 cites the old name.
 
   What that buys, measured. Run alone the whole test takes about half a second, and inside its own
   assembly about two, so it uses at most a couple of per cent of the budget. Under deliberate
@@ -351,24 +357,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
   The passing margin is what improves, and that is the one #400 is about. The failing side barely
   moves: the pre-fix cost overran the old ten-second budget about three and a half times at 100,000
-  keys, and on the extrapolation above overruns this one about four times at 400,000.
+  keys, and on the extrapolation above overruns this one about four times at 400,000. #400's body
+  puts that first overrun at two to three times; the 3.4 above is a remeasurement and supersedes it.
 
-  An intermediate version compared timings at two key counts and asserted a ratio. It flaked worse
-  than what it replaced, and the measurement is recorded here because the reasoning was appealing
-  and wrong: taking the fastest of several samples drags a short measurement down to its floor under
+  An intermediate version compared timings at two key counts and asserted a ratio. It discriminated
+  worse than what it replaced, and that is recorded here because the reasoning was appealing and
+  wrong: taking the fastest of several samples drags a short measurement down to its floor under
   contention while a long one absorbs every preemption, so the ratio grows rather than cancelling.
   Under load the benign ratio reached 24.6 against 26.1 for the real defect, and taking more samples
   made it worse. The same mistake nearly reached this entry a second time, as a passing margin
   derived by scaling a local timing by an assembly-level slowdown: under a lighter run, 64 busy
-  loops rather than 256, the assembly slowed 2.4x while this one test slowed 11x, because a single
-  CPU-bound region absorbs preemption far worse than an average over many.
+  loops rather than 256, the assembly slowed 2.4x while this one test slowed 11x off its alone cost,
+  and the heavier run says the same on those same baselines, 13.7x against 75x. A single CPU-bound
+  region absorbs preemption far worse than an average over many.
 
-  Six other tests use an absolute budget in the same way, one of them
-  (`ManyStreamsWithNoEolBeforeTheirOwnEndstream_DoesNotBecomeQuadratic`) in this same assembly and
-  therefore sharing a process with the fuzzer. That one was measured while checking this change and
-  has more relative headroom than the new pin, at 13 ms against ten seconds in Release. The other
-  five have not been measured. None has been seen to fail and all are left for the sweep #400 asks
-  for.
+  Six other tests use an absolute `Timeout` in the same way, and all six share a process with a
+  CsCheck fuzzer rather than only the one in this assembly: `Microsoft.Testing.Platform` gives each
+  test project its own process, and the five in `VellumPdf.Kernel.Tests` sit alongside
+  `PropertyTests`, which samples generators at CsCheck's default iteration count. `ParserFuzzTests`
+  in this assembly is the lighter of the two, since it caps itself through `FuzzBudget`. Only
+  `ManyStreamsWithNoEolBeforeTheirOwnEndstream_DoesNotBecomeQuadratic` was measured while checking
+  this change, at 13 ms against ten seconds in Release, more relative headroom than the new pin.
+  None of the six has failed on CI. The saturation run above did break five tests in this assembly,
+  which is what deliberate saturation is for and is not evidence about CI. Two of the unmeasured
+  five, in `PdfDictionaryIndexTests`, are the other half of the #208 pin and are sized by the same
+  local reasoning #400 disproved, so they are where the sweep should start. That sweep is also wider
+  than these six, since #400 greps for `Stopwatch` and `TimeSpan.FromSeconds` as well, and its own
+  twin case was a `Stopwatch` assertion rather than a `Timeout`.
 
 ### Documentation
 
