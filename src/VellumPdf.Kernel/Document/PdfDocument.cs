@@ -797,9 +797,11 @@ public sealed class PdfDocument : IDisposable
         var metadataRef = registry.Reserve();
         registry.SetValue(metadataRef, metadataStream);
 
-        // ── Build sRGB ICC OutputIntent (PDF/A-2 §6.2.2) ─────────────────
-        // An /OutputIntents array with a GTS_PDFA1 entry referencing an sRGB ICC
-        // stream is required for all PDF/A-2 conformance levels.
+        // ── Build sRGB ICC OutputIntent (PDF/A-2 §6.2.3) ─────────────────
+        // §6.2.4.3 is what makes an output intent mandatory, and only when the file uses
+        // uncalibrated device colour. Emitting an /OutputIntents array with a GTS_PDFA1 entry
+        // referencing an sRGB ICC stream unconditionally satisfies that without having to detect
+        // device colour use, which is why this does not test for it.
         PdfIndirectReference? outputIntentsRef = null;
         if (Conformance != PdfConformance.None)
             outputIntentsRef = BuildOutputIntents(registry);
@@ -1287,8 +1289,8 @@ public sealed class PdfDocument : IDisposable
         if (structTreeRootRef is not null)
             catalog.Set(new PdfName("StructTreeRoot"), structTreeRootRef);
 
-        // PDF/A output intent (sRGB ICC, §6.2.2) — required when signing a conformance
-        // document, just as on the regular Save path.
+        // PDF/A output intent (sRGB ICC, §6.2.3) — emitted when signing a conformance document,
+        // just as on the regular Save path, and for the same reason: see BuildOutputIntents.
         if (Conformance != PdfConformance.None)
             catalog.Set(new PdfName("OutputIntents"), new PdfArray([BuildOutputIntents(registry)]));
 

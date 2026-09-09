@@ -18,7 +18,7 @@ namespace VellumPdf.Conformance.Rules.Actions;
 /// </summary>
 /// <remarks>
 /// Authored from ISO 19005-2:2011, 6.5.1 and ISO 32000-1:2008, 12.6. Clean-room: §6.5.1 itself is
-/// phrased as three prohibitions, not a permission list — the eleven named action types above shall
+/// phrased as three prohibitions, not a permission list — the eleven action types the summary names shall
 /// not be permitted, the deprecated <c>SetState</c>/<c>NoOp</c> actions shall not be permitted, and a
 /// named action other than the four page-navigation ones shall not be permitted. What makes the
 /// seven-type allow-list below correct is ISO 19005-2 §5.1, which separately permits any valid

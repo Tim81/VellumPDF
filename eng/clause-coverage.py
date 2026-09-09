@@ -20,7 +20,7 @@ Clauses scoped `reader` are excluded. Those bind a conforming reader rather than
 file, so a file validator correctly has no rule for them: 6.5.3, 6.3.4, 6.1.5 and 6.2.8.2.
 
 Usage:  python eng/clause-coverage.py [--json]
-        VERAPDF_HOME or a verapdf on PATH supplies the profile jar; without it the veraPDF
+        VERAPDF_HOME or a verapdf in the home directory supplies the profile jar; without it
         column is reported as unavailable rather than as empty.
 
 Refs #418.
@@ -66,7 +66,12 @@ def clauses_cited_by_rules(known: set[str]) -> set[str]:
 
 
 def find_profile_jar() -> Path | None:
-    """The veraPDF CLI jar, via VERAPDF_HOME, PATH, or the conventional home directory."""
+    """The veraPDF CLI jar, via VERAPDF_HOME or the conventional home directory.
+
+    Deliberately not a PATH lookup: CI resolves veraPDF by bare name through a Docker shim that
+    keeps the jar inside the container, so finding the executable there would say nothing about
+    whether its profiles can be read.
+    """
     candidates = []
     home = os.environ.get("VERAPDF_HOME")
     if home:

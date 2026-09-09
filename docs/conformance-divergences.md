@@ -79,7 +79,7 @@ Checkable: the PDF/UA-1 half, yes. The PDF/A-2 half rests on the viewer.
 
 - Rule: `FontEmbeddingRule`
 - Clause: ISO 19005-2 6.2.11.4.1
-- Status: not gated
+- Status: not gated · correction specified in #458
 
 The clause scopes embedding to fonts "used for rendering", and its NOTE 2 exempts a font referenced
 solely in text rendering mode 3, which is invisible. veraPDF exempts it too. This library exempts
@@ -102,7 +102,7 @@ mode-3 case in the wild.
 
 Checkable: the code half, yes. The clause and its NOTE rest on the viewer.
 
-## D5 — A correct severity with the wrong justification
+## D5 — A correct severity that used to be justified by the tool
 
 - Rule: `A2aContentItemTaggingRule`, via `RuleRegistry`
 - Clause: ISO 19005-2 6.7.3.3
@@ -112,7 +112,7 @@ The clause carries one requirement, that the structure hierarchy be rooted in `S
 one recommendation, that a writer capture it to the finest granularity available. Nothing requires
 every content item to be described. This library reports a warning, which is right.
 
-The justification is not. `RuleRegistry` says:
+The justification was not. `RuleRegistry` used to say:
 
 > Warning, not error: veraPDF's PDF/A-2a profile implements no equivalent, so an error here would
 > contradict the reference implementation.

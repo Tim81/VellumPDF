@@ -231,11 +231,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   Those are ISO 19005-1 numbers, where 6.3 is Fonts. Embedding is §6.2.11.4.1, with §6.2.11.4.2 for
   subsets. The rule now emits `ISO19005-2:6.2.11.4.1-font-embedding` and
   `ISO 19005-2:2011, 6.2.11.4.1`, so a caller matching the old rule id or clause string will see the
-  new one. Six more of the same kind are corrected alongside them, in
+  new one. That correction also reaches the command line: `vellum-preflight` reconciles a
+  descriptive rule id against the catalogue by clause, and clause `6.3.4` matched no catalogue entry
+  while `6.2.11.4.1` matches two. On a file that fails font embedding, those two checks were
+  therefore reported as **passed** and are now reported as inconclusive, so the summary counts move.
+  Measured on `GoldenTests.StandardFont_rawBytes.verified.pdf` at profile 2b: passed 132 to 130,
+  inconclusive 9 to 11, with `6.2.11.4.1-1` and `-2` the two that moved. That is the honesty failure
+  `ClausePassedHonestyTests` exists to prevent, and the wrong clause string was hiding it.
+  Eight more of the same kind are corrected alongside them, in
   `PdfDocument` and `SrgbIccProfile`: three cited §6.3.1, Annotation types, for the `/Encrypt`
   prohibition that lives in §6.1.3, one of them inside a thrown exception message a caller reads;
-  three cited §6.2.2, Content streams, for the output intent in §6.2.3, and one of those also called
-  the output intent unconditional when §6.2.4.3 makes it conditional on device colour. `PdfConformance` carried three more of the same kind in a single doc block: font
+  five cited §6.2.2, Content streams, for the output intent in §6.2.3, and two of those also called
+  the output intent required at every conformance level, where §6.2.4.3 makes it conditional on the
+  file using uncalibrated device colour. It took three passes to find them all, each prompted by a
+  reviewer observing that the one before had stopped short.
+  `PdfConformance` carried three more of the same kind in a single doc block: font
   embedding at §6.3.3, the `/Encrypt` prohibition at §6.3.1 and the output intent at §6.2.2, which
   are Annotation appearances, Annotation types and Content streams. They are now §6.2.11.4.1, §6.1.3
   and §6.2.3. `PdfDocument` repeated the §6.3.3 font claim. Each replacement was read in the
@@ -321,8 +331,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   this same release and keeps its row, because the check itself still disagrees with the profile even
   once the reasoning is right. Another, where `ActionRule`'s prose described the profile's framing
   rather than the clause, is corrected and its row removed, since nothing about that rule diverges
-  any more. The fourth, on font embedding, is left standing: its correction turned out to need more
-  care than a single change could carry and is being done separately. The file exists because a diff that
+  any more. The row on font embedding is left standing: its correction turned out to need more care
+  than a single change could carry, and is specified separately in #458. The file exists because a diff that
   treats profile membership as the passing condition makes the profile authoritative by construction,
   and because a diff between two implementations cannot surface a requirement both omit: 19 of the 73
   file-scoped clauses in the archival standard are checked by neither, seven of them at the
@@ -348,7 +358,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **`PdfConformance` now says what each PDF/A clause requires, not just which clause it is.** The
   enum is where a caller meets PDF/A, and its doc block listed obligations with bare clause numbers
-  attached, four of them wrong. It now states the obligation behind each one and what this library
+  attached, three of them wrong. It now states the obligation behind each one and what this library
   does about it: what the `pdfaid` schema carries and that its values do not themselves determine
   conformance, what the trailer must contain and what it must not, that font programs must be
   embeddable for unlimited universal rendering, and that the output intent is conditional on device

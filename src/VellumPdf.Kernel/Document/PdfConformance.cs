@@ -7,7 +7,9 @@ namespace VellumPdf.Document;
 /// Requested PDF/A conformance level for the document.
 ///
 /// <para>
-/// Setting a non-<see cref="None"/> value instructs VellumPdf to:
+/// Setting one of the PDF/A values below instructs VellumPdf to the following.
+/// <see cref="PdfUA1"/> is also non-<see cref="None"/> but is a different standard, and gets a
+/// <c>pdfuaid</c> schema rather than the <c>pdfaid</c> one described here.
 /// <list type="bullet">
 ///   <item><b>§6.6.4</b> — include the <c>pdfaid</c> XMP schema in the metadata stream. The schema
 ///         uses the namespace <c>http://www.aiim.org/pdfa/ns/id/</c> and carries <c>part</c> (2 for
