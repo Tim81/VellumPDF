@@ -226,30 +226,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **Sixteen PDF/A clause citations named clauses that say something else, and several reached the
   emitted output.** `FontEmbeddingRule` cited ISO 19005-2 §6.3.4–§6.3.5 for font embedding, in its
-  summary, its `RuleId` and its `Clause` property. Clause 6.3 of ISO 19005-2 is Annotations: it has
-  four sub-clauses ending at 6.3.4, "Display of annotation contents", and there is no 6.3.5 at all.
-  Those are ISO 19005-1 numbers, where 6.3 is Fonts. Embedding is §6.2.11.4.1, with §6.2.11.4.2 for
-  subsets. The rule now emits `ISO19005-2:6.2.11.4.1-font-embedding` and
-  `ISO 19005-2:2011, 6.2.11.4.1`, so a caller matching the old rule id or clause string will see the
-  new one. That correction also reaches the command line: `vellum-preflight` reconciles a
-  descriptive rule id against the catalogue by clause, and clause `6.3.4` matched no catalogue entry
-  while `6.2.11.4.1` matches two. On a file that fails font embedding, those two checks were
-  therefore reported as **passed** and are now reported as inconclusive, so the summary counts move.
-  Measured on `GoldenTests.StandardFont_rawBytes.verified.pdf` at profile 2b: passed 132 to 130,
-  inconclusive 9 to 11, with `6.2.11.4.1-1` and `-2` the two that moved. That is the honesty failure
-  `ClausePassedHonestyTests` exists to prevent, and the wrong clause string was hiding it.
-  Eight more of the same kind are corrected alongside them, in
-  `PdfDocument` and `SrgbIccProfile`: three cited §6.3.1, Annotation types, for the `/Encrypt`
-  prohibition that lives in §6.1.3, one of them inside a thrown exception message a caller reads;
-  five cited §6.2.2, Content streams, for the output intent in §6.2.3, and two of those also called
-  the output intent required at every conformance level, where §6.2.4.3 makes it conditional on the
-  file using uncalibrated device colour. It took three passes to find them all, each prompted by a
-  reviewer observing that the one before had stopped short.
-  `PdfConformance` carried three more of the same kind in a single doc block: font
-  embedding at §6.3.3, the `/Encrypt` prohibition at §6.3.1 and the output intent at §6.2.2, which
-  are Annotation appearances, Annotation types and Content streams. They are now §6.2.11.4.1, §6.1.3
-  and §6.2.3. `PdfDocument` repeated the §6.3.3 font claim. Each replacement was read in the
-  standard before it was written. (#418)
+  summary, its remarks, its `RuleId` and its `Clause` property. Clause 6.3 of ISO 19005-2 is
+  Annotations: it has four sub-clauses ending at 6.3.4, "Display of annotation contents", and there
+  is no 6.3.5 at all. Those are ISO 19005-1 numbers, where 6.3 is Fonts. Embedding is §6.2.11.4.1,
+  with §6.2.11.4.2 for subsets. The rule now emits `ISO19005-2:6.2.11.4.1-font-embedding` and `ISO
+  19005-2:2011, 6.2.11.4.1`, so a caller matching the old rule id or clause string will see the new
+  one. That correction also reaches the command line: `vellum-preflight` reconciles a descriptive
+  rule id against the catalogue by clause, and clause `6.3.4` matched no catalogue entry while
+  `6.2.11.4.1` matches two. On a file that fails font embedding, those two checks were therefore
+  reported as **passed** and are now reported as inconclusive, so the summary counts move. Measured
+  on `GoldenTests.StandardFont_rawBytes.verified.pdf` at profile 2b: passed 132 to 130, inconclusive
+  9 to 11, with `6.2.11.4.1-1` and `-2` the two that moved. That is the honesty failure
+  `ClausePassedHonestyTests` exists to prevent, and the wrong clause string was hiding it. Eight
+  more of the same kind are corrected alongside them, in `PdfDocument` and `SrgbIccProfile`: three
+  cited §6.3.1, Annotation types, for the `/Encrypt` prohibition that lives in §6.1.3, one of them
+  inside a thrown exception message a caller reads; five cited §6.2.2, Content streams, for the
+  output intent in §6.2.3, and two of those also called the output intent required at every
+  conformance level, where §6.2.4.3 makes it conditional on the file using uncalibrated device
+  colour. It took three passes to find them all, each prompted by a reviewer observing that the one
+  before had stopped short. `PdfConformance` carried three more of the same kind in a single doc
+  block: font embedding at §6.3.3, the `/Encrypt` prohibition at §6.3.1 and the output intent at
+  §6.2.2, which are Annotation appearances, Annotation types and Content streams. They are now
+  §6.2.11.4.1, §6.1.3 and §6.2.3. `PdfDocument` repeated the §6.3.3 font claim. Each replacement was
+  read in the standard before it was written. (#418)
 
 - **`/P` bit 10 is now always set on a newly written `/Encrypt` dictionary.** The restriction this
   bit expressed is deprecated in PDF 2.0, and ISO 32000-2 Table 22 requires writers to set the bit
@@ -333,8 +332,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   rather than the clause, is corrected and its row removed, since nothing about that rule diverges
   any more. The row on font embedding is left standing: its correction turned out to need more care
   than a single change could carry, and is specified separately in #458. The file exists because a
-  diff that
-  treats profile membership as the passing condition makes the profile authoritative by construction,
+  diff that treats profile membership as the passing condition makes the profile authoritative by
+  construction,
   and because a diff between two implementations cannot surface a requirement both omit: 19 of the 73
   file-scoped clauses in the archival standard are checked by neither, seven of them at the
   accessibility level this library advertises.

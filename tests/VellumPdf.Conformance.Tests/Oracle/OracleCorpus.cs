@@ -428,10 +428,11 @@ public static class OracleCorpus
             // ExpectedCompliant is TRUE, and that is the point of the fixture. veraPDF's PDFA-2A.xml
             // implements no SESimpleContentItem rule — its only clause-6.7.3.3 rule is the
             // /StructTreeRoot presence check — so it reports this file compliant. A2aContentItemTaggingRule
-            // does detect the untagged content, but reports it as a Warning precisely so that
-            // IsCompliant continues to agree with veraPDF here. This fixture is therefore the
-            // regression guard for that agreement: if the rule is ever promoted to Error, this
-            // fixture fails and forces the divergence to be dealt with deliberately.
+            // does detect the untagged content, and reports it as a Warning because §6.7.3.3 states
+            // granularity as a should rather than a shall — see that rule's remarks. Agreement with
+            // veraPDF is the consequence, not the reason. This fixture is the regression guard for
+            // that agreement all the same: if the severity is ever promoted to Error, it fails and
+            // forces the divergence to be dealt with deliberately.
             // A2aContentItemTaggingRuleTests asserts the warning itself fires.
             new OracleFixture("pdfa2a-untagged-real-content",
                 A2aUntaggedRealContent(),

@@ -21,7 +21,8 @@ file, so a file validator correctly has no rule for them: 6.5.3, 6.3.4, 6.1.5 an
 
 Usage:  python eng/clause-coverage.py [--json]
         VERAPDF_HOME or a verapdf in the home directory supplies the profile jar; without it the
-        veraPDF column is reported as unavailable rather than as empty.
+        report says the profiles are unavailable, rather than counting every clause as one
+        veraPDF does not check.
 
 Refs #418.
 """
