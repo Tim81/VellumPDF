@@ -151,71 +151,73 @@ internal static class MmrDecoder
         public const int Eofb = Mode_Eofb;
     }
 
-    /// <summary>Reads the next T.6 2D mode codeword (MSB-first).</summary>
+    /// <summary>Reads the next T.6 two-dimensional mode codeword (MSB-first).</summary>
     private static int ReadMode(ref BitReader r)
     {
-        // WARNING: what this method decodes is NOT Table 1/T.6. The tree below disagrees with the
-        // standard on five of its nine codewords and is tracked as #437. The citation is given so
-        // the discrepancy is checkable, not because the code implements it.
+        // Table 1/T.6 (ITU-T T.6, 2.2.3), read as a prefix tree. Pairing the table's notation
+        // and code-word columns correctly matters more than it looks: extracted naively the two
+        // columns sit one row apart, which yields VR(1) = 1 and shifts every vertical mode.
         //
-        // Table 1/T.6 (ITU-T T.6 §2.2.3, the "two-dimensional code table" that §2.2.3.3 names when
-        // it defines the horizontal-mode flag code), against what the branches below return:
-        //  1             -> V(0)   both agree
-        //  010           -> VL(1)  both agree, delta = -1
-        //  000011        -> VR(2)  both agree, delta = +2
-        //  0000011       -> VR(3)  both agree, delta = +3
-        //  011           -> VR(1) in T.6, delta = +1; read as Horizontal here
-        //  001           -> Horizontal in T.6; not reachable here, and a fourth bit is consumed
-        //  0001          -> Pass in T.6; discarded here as "unexpected", and a fifth bit consumed
-        //  000010        -> VL(2) in T.6, delta = -2; read as V(-3) here
-        //  0000001       -> the Extension prefix in T.6; read as Pass here
+        //   1        V(0)         0001     Pass
+        //   011      VR(1)  +1    001      Horizontal, then M(a0a1) + M(a1a2)
+        //   010      VL(1)  -1    0000001  Extension prefix
+        //   000011   VR(2)  +2
+        //   000010   VL(2)  -2
+        //   0000011  VR(3)  +3
+        //   0000010  VL(3)  -3
         //
-        // The two length mismatches desynchronise the bit stream rather than only mis-reading a
-        // mode, so everything after a 001 or 0001 is read at the wrong offset. Only
-        // Jbig2ImageLoader reaches this, for MMR-coded generic regions; CcittImageLoader throws
-        // for k < 0 and never decodes Group 4 at all.
+        // Clause 2.2.3.3 states the horizontal flag code directly, as "001" "taken from the
+        // two-dimensional code table (Table 1/T.6)" — so it comes from the same table, just read
+        // independently of how the notation and code-word columns happen to be laid out on the
+        // page. That is what settles the entry a mis-aligned reading gets wrong: 011 is VR(1), not
+        // Horizontal.
+        //
+        // Before #437 this tree disagreed with the table on six of those ten code words. Two of
+        // them, 001 and 0001, also consumed one bit too many, so everything after them was read
+        // at the wrong offset: the stream desynchronised rather than merely mis-decoding a mode.
 
-        if (r.ReadBit() == 1) return 0; // V(0)
+        if (r.ReadBit() == 1)
+            return 0; // 1 — V(0)
+
+        if (r.ReadBit() == 1)
+            return r.ReadBit() == 1 ? 1 : -1; // 011 — VR(1); 010 — VL(1)
+
+        if (r.ReadBit() == 1)
+            return Mode.Horizontal; // 001
+
+        if (r.ReadBit() == 1)
+            return Mode.Pass; // 0001
+
+        if (r.ReadBit() == 1)
+            return r.ReadBit() == 1 ? 2 : -2; // 000011 — VR(2); 000010 — VL(2)
+
+        if (r.ReadBit() == 1)
+            return r.ReadBit() == 1 ? 3 : -3; // 0000011 — VR(3); 0000010 — VL(3)
 
         if (r.ReadBit() == 1)
         {
-            // 01x
-            return r.ReadBit() == 1 ? Mode.Horizontal : -1; // 011=H, 010=V(-1)
+            // 0000001 — the extension prefix. ITU-T T.88 6.2.6 forbids the extension codes of
+            // T.6, uncompressed mode included, from appearing in MMR-encoded JBIG2 data, and a
+            // JBIG2 generic region is the only caller that reaches this decoder. The clause
+            // constrains the data, not the decoder's response; failing is a choice, not a
+            // mandate. Before #437 this prefix fell through to the end-of-block scan below,
+            // which returns Mode.Eofb, and DecodeRow's Mode.Eofb case has always thrown
+            // InvalidDataException unconditionally — so it still threw, just under a message
+            // that blamed truncation instead of naming the code that was present.
+            throw new InvalidDataException(
+                "JBIG2 MMR: T.6 extension code encountered; ITU-T T.88 6.2.6 forbids extension " +
+                "codes in MMR-encoded JBIG2 data.");
         }
 
-        if (r.ReadBit() == 1)
-        {
-            // 001x
-            return r.ReadBit() == 1 ? 1 : -2; // 0011=V(+1), 0010=V(-2)
-        }
-
-        if (r.ReadBit() == 1)
-        {
-            // 0001x — unexpected in T.6 table; treat as V(0) to avoid hang.
-            _ = r.ReadBit();
-            return 0;
-        }
-
-        if (r.ReadBit() == 1)
-        {
-            // 00001x
-            return r.ReadBit() == 1 ? 2 : -3; // 000011=V(+2), 000010=V(-3)
-        }
-
-        if (r.ReadBit() == 1)
-        {
-            // 000001x
-            return r.ReadBit() == 1 ? 3 : Mode.Pass; // 0000011=V(+3), 0000001=Pass
-        }
-
-        // 0000000... — could be EOFB (000000000001) or padding.
-        // We've read 7 bits of 0s so far; EOFB is 12 bits = 00000000 00 01.
-        // Read 5 more bits (total 12) checking for EOFB.
+        // 0000000... — EOFB (two EOLs of 000000000001) or byte padding. Seven zero bits have been
+        // consumed to reach here and an EOL is twelve bits, so five more decide it. Every path
+        // through this loop returns Mode.Eofb, and DecodeRow's Mode.Eofb case throws
+        // unconditionally either way, so which branch fires below is not otherwise observable.
         for (var i = 0; i < 5; i++)
         {
             if (r.TryReadBit(out var b) && b == 1)
             {
-                // This is the EOFB-terminating 1 (or any stray 1 after 0s).
+                // The EOL-terminating 1, or any stray 1 after the run of zeros.
                 return Mode.Eofb;
             }
         }
