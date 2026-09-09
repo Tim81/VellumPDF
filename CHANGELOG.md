@@ -231,7 +231,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   Those are ISO 19005-1 numbers, where 6.3 is Fonts. Embedding is §6.2.11.4.1, with §6.2.11.4.2 for
   subsets. The rule now emits `ISO19005-2:6.2.11.4.1-font-embedding` and
   `ISO 19005-2:2011, 6.2.11.4.1`, so a caller matching the old rule id or clause string will see the
-  new one. `PdfConformance` carried three more of the same kind in a single doc block: font
+  new one. Six more of the same kind are corrected alongside them, in
+  `PdfDocument` and `SrgbIccProfile`: three cited §6.3.1, Annotation types, for the `/Encrypt`
+  prohibition that lives in §6.1.3, one of them inside a thrown exception message a caller reads;
+  three cited §6.2.2, Content streams, for the output intent in §6.2.3, and one of those also called
+  the output intent unconditional when §6.2.4.3 makes it conditional on device colour. `PdfConformance` carried three more of the same kind in a single doc block: font
   embedding at §6.3.3, the `/Encrypt` prohibition at §6.3.1 and the output intent at §6.2.2, which
   are Annotation appearances, Annotation types and Content streams. They are now §6.2.11.4.1, §6.1.3
   and §6.2.3. `PdfDocument` repeated the §6.3.3 font claim. Each replacement was read in the
@@ -313,10 +317,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   independent second reading found, what veraPDF does, which one this library follows, and whether a
   reader with only this repository can confirm it. Two rows are inherited from the profile and are
   gated behind the per-rule comparison, since correcting them makes this library disagree with
-  veraPDF and the id diff currently fails in both directions. Two more are corrected in this same
-  release and keep their rows because a narrower disagreement remains in each; a third, where
-  `ActionRule`'s prose described the profile's framing rather than the clause, is corrected and its
-  row removed, since nothing about that rule diverges any more. The file exists because a diff that
+  veraPDF and the id diff currently fails in both directions. One has its justification corrected in
+  this same release and keeps its row, because the check itself still disagrees with the profile even
+  once the reasoning is right. Another, where `ActionRule`'s prose described the profile's framing
+  rather than the clause, is corrected and its row removed, since nothing about that rule diverges
+  any more. The fourth, on font embedding, is left standing: its correction turned out to need more
+  care than a single change could carry and is being done separately. The file exists because a diff that
   treats profile membership as the passing condition makes the profile authoritative by construction,
   and because a diff between two implementations cannot surface a requirement both omit: 19 of the 73
   file-scoped clauses in the archival standard are checked by neither, seven of them at the
@@ -342,13 +348,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **`PdfConformance` now says what each PDF/A clause requires, not just which clause it is.** The
   enum is where a caller meets PDF/A, and its doc block listed obligations with bare clause numbers
-  attached, four of them wrong. It now states the requirement behind each one: what the `pdfaid`
-  schema carries and that its values do not themselves determine conformance, what the trailer must
-  contain and what it must not, that font embedding is scoped to fonts used for rendering and
-  exempts text rendering mode 3, and that the output intent is conditional on device colour spaces
-  rather than unconditional. It also records the three conformance levels as the exclusions Clause 5
-  actually defines, and that the `/S` value stays `GTS_PDFA1` in part 2, so there is no
-  `GTS_PDFA2` to look for. (#418)
+  attached, four of them wrong. It now states the obligation behind each one and what this library
+  does about it: what the `pdfaid` schema carries and that its values do not themselves determine
+  conformance, what the trailer must contain and what it must not, that font programs must be
+  embeddable for unlimited universal rendering, and that the output intent is conditional on device
+  colour rather than unconditional. It also records the three conformance levels as the exclusions
+  Clause 5 actually defines, and that the `/S` value stays `GTS_PDFA1` in part 2, so there is no
+  `GTS_PDFA2` to look for. Each entry is this project's own statement of the obligation rather than
+  a restatement of the clause, since ISO 19005-2 is not held here and must not be transcribed.
+  (#418)
 
 - **The PDF 2.0 extension table is generated from the PDF Association's registry (#225).**
   `eng/generate-pdf20-inventory.py` held the extension list as a literal, and the literal went

@@ -15,9 +15,7 @@ namespace VellumPdf.Document;
 ///         <c>amd</c> and <c>corr</c> amendment and corrigendum identifiers. The clause is explicit
 ///         that these values do <em>not</em> by themselves determine conformance: that is settled by
 ///         Clause 5. They are a claim, not a proof.</item>
-///   <item><b>§6.1.3</b> — write a document <c>/ID</c> array in the trailer. The trailer dictionary
-///         shall contain the <c>ID</c> keyword whose value is File Identifiers as defined in
-///         ISO 32000-1:2008, 14.4.</item>
+///   <item><b>§6.1.3</b> — write a document <c>/ID</c> array in the trailer.</item>
 ///   <item><b>§6.7.2.2</b> — set <c>/MarkInfo &lt;&lt; /Marked true &gt;&gt;</c> in the catalog. Note
 ///         this is a Level A requirement only: §6.7.1 says subclause 6.7 applies only to files
 ///         meeting Level A conformance, and that Level B and Level U may ignore it. Writing it for
@@ -28,29 +26,18 @@ namespace VellumPdf.Document;
 /// <para>
 /// A fully conforming PDF/A file also requires:
 /// <list type="bullet">
-///   <item><b>§6.2.11.4.1</b> — embedded fonts. The font programs for all fonts <em>used for
-///         rendering</em> shall be embedded, and a font counts as used when at least one of its
-///         glyphs is referenced from a content stream. Only programs legally embeddable for
-///         unlimited, universal rendering may be used, and an embedded font shall define every glyph
-///         referenced for rendering. Use <c>Document.LoadTrueTypeFont</c> /
-///         <c>PdfDocument.UseTrueTypeFont</c>; the unembedded Standard-14 faces are
-///         <strong>not</strong> valid in PDF/A. A font drawn only in text rendering mode 3 is not
-///         rendered and is exempt.</item>
-///   <item><b>§6.1.3</b> — no encryption. The <c>Encrypt</c> keyword shall not be present in the
-///         trailer dictionary, which has the effect of disallowing encryption and password-protected
-///         access permissions. The same clause also forbids any data after the last <c>%%EOF</c>
-///         beyond a single optional end-of-line marker.</item>
-///   <item><b>§6.2.3</b> — an ICC OutputIntent, <em>conditionally</em>. A conforming file
-///         <em>may</em> specify its rendering colour characteristics with a PDF/A OutputIntent; what
-///         makes one mandatory is §6.2.4.3, which requires it when uncalibrated (device) colour
-///         spaces are used. When present it shall be an OutputIntent dictionary in the file's
-///         <c>/OutputIntents</c> array with <c>GTS_PDFA1</c> as its <c>/S</c> value and a valid ICC
-///         profile stream as <c>/DestOutputProfile</c>. The <c>/S</c> value stays <c>GTS_PDFA1</c>
-///         in this part; a NOTE records that it was kept for compatibility with ISO 19005-1, so
-///         there is no <c>GTS_PDFA2</c>. The profile shall be an output (<c>prtr</c>) or monitor
-///         (<c>mntr</c>) profile in GRAY, RGB or CMYK. <c>PdfDocument.Save</c> emits an sRGB
-///         OutputIntent whenever <c>Conformance != None</c>, which satisfies the conditional
-///         requirement without having to detect device colour use.</item>
+///   <item><b>§6.2.11.4.1</b> — embed the program of every font used to render text, and use only
+///         programs that may be embedded for unlimited, universal rendering. Use
+///         <c>Document.LoadTrueTypeFont</c> / <c>PdfDocument.UseTrueTypeFont</c>; the unembedded
+///         Standard-14 faces are <strong>not</strong> valid in PDF/A.</item>
+///   <item><b>§6.1.3</b> — no encryption. <c>PdfDocument.Save</c> refuses rather than emit an
+///         encrypted file while <c>PdfDocument.Conformance</c> is set.</item>
+///   <item><b>§6.2.3</b> — an ICC OutputIntent, <em>conditionally</em>: §6.2.4.3 is what makes one
+///         mandatory, when uncalibrated device colour spaces are used. Its <c>/S</c> value stays
+///         <c>GTS_PDFA1</c> in part 2, so there is no <c>GTS_PDFA2</c> to look for.
+///         <c>PdfDocument.Save</c> emits an sRGB OutputIntent whenever
+///         <c>PdfDocument.Conformance</c> is set, which satisfies the condition without having to
+///         detect device colour use.</item>
 /// </list>
 /// </para>
 ///

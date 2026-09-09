@@ -12,7 +12,7 @@ namespace VellumPdf.Document;
 /// <para>
 /// The profile is constructed programmatically from the well-known sRGB primaries,
 /// D65/D50 white point, and the standard sRGB tone response curve (γ≈2.2 piece-wise).
-/// All tags required by PDF/A-2 (ISO 19005-2 §6.2.2) are included:
+/// All tags required by PDF/A-2 (ISO 19005-2 §6.2.3) are included:
 /// <c>cprt</c>, <c>desc</c>, <c>wtpt</c>, <c>rXYZ</c>, <c>gXYZ</c>, <c>bXYZ</c>,
 /// <c>rTRC</c>, <c>gTRC</c>, <c>bTRC</c>.
 /// </para>
@@ -27,7 +27,7 @@ internal static class SrgbIccProfile
 
     /// <summary>
     /// Constructs a minimal but complete sRGB ICC v2 profile with all tags required
-    /// by PDF/A-2 (ISO 19005-2 §6.2.2).
+    /// by PDF/A-2 (ISO 19005-2 §6.2.3).
     /// </summary>
     private static byte[] BuildMinimalSrgbV2()
     {

@@ -542,7 +542,7 @@ public sealed class PdfDocument : IDisposable
                 "UseObjectStreams cannot be combined with Encrypt(). " +
                 "Object-stream encryption is not supported. Remove one of these options.");
 
-        // PDF/A prohibits encryption (ISO 19005-2 §6.3.1). Fail fast rather than emit
+        // PDF/A prohibits encryption (ISO 19005-2 §6.1.3, File trailer). Fail fast rather than emit
         // a document that claims conformance but can never validate. PDF/UA-1 is a
         // separate conformance family (ISO 14289-1) with no such prohibition, so it gets
         // its own check below instead. Written as "not (None or PdfUA1)" rather than an
@@ -552,7 +552,7 @@ public sealed class PdfDocument : IDisposable
         if (Conformance is not (PdfConformance.None or PdfConformance.PdfUA1)
             && _encryptionSettings is not null)
             throw new InvalidOperationException(
-                "PDF/A prohibits encryption (ISO 19005-2 §6.3.1). " +
+                "PDF/A prohibits encryption (ISO 19005-2 §6.1.3). " +
                 "Remove Encrypt() or clear Conformance before calling Save().");
 
         // PDF/UA-1 does not prohibit encryption, but it requires that content remain
@@ -1313,7 +1313,7 @@ public sealed class PdfDocument : IDisposable
 
     /// <summary>
     /// Builds and registers the /OutputIntents array entry referencing an ICC profile stream.
-    /// Required by PDF/A-2 (ISO 19005-2 §6.2.2) for all conformance levels.
+    /// Required by PDF/A-2 (ISO 19005-2 §6.2.3) when the file uses device colour, per §6.2.4.3.
     ///
     /// <para>
     /// Uses the profile configured via <see cref="SetPdfAOutputIntent"/> or
@@ -1326,7 +1326,7 @@ public sealed class PdfDocument : IDisposable
     /// <list type="bullet">
     ///   <item>Use <see cref="UseTrueTypeFont"/> for all fonts — Standard-14 unembedded fonts fail
     ///         the PDF/A font-embedding rule (ISO 19005-2 §6.2.11.4.1).</item>
-    ///   <item>Do not use <see cref="Encrypt"/> — PDF/A prohibits encryption (ISO 19005-2 §6.3.1).</item>
+    ///   <item>Do not use <see cref="Encrypt"/> — PDF/A prohibits encryption (ISO 19005-2 §6.1.3).</item>
     ///   <item>Set <see cref="Tagged"/> = true (or use <see cref="PdfConformance.PdfA2a"/>) for
     ///         conformance level A.</item>
     /// </list>

@@ -75,45 +75,32 @@ nothing announces it. D1 at least fires.
 
 Checkable: the PDF/UA-1 half, yes. The PDF/A-2 half rests on the viewer.
 
-## D4 — Font embedding and the rendering-mode-3 exemption
+## D4 — Font embedding ignores the rendering-mode-3 exemption
 
 - Rule: `FontEmbeddingRule`
 - Clause: ISO 19005-2 6.2.11.4.1
-- Status: not gated · corrected, and now stricter than veraPDF in two named ways
+- Status: not gated
 
 The clause scopes embedding to fonts "used for rendering", and its NOTE 2 exempts a font referenced
-solely in text rendering mode 3, which is invisible. veraPDF exempts it too. This library used to
-exempt nothing: `FontEmbeddingRule` enumerated through `PreflightContext.EnumerateUsedFonts()`, and
-that set is populated on the `Tf` operator alone, with no reference to the rendering mode the same
-pass already tracks. It was the one divergence where this library was stricter than the standard
-*and* stricter than the profile at once, so correcting it moved toward both.
+solely in text rendering mode 3, which is invisible. veraPDF exempts it too. This library exempts
+nothing: `FontEmbeddingRule` enumerates through `PreflightContext.EnumerateUsedFonts()`, and that
+set is populated in `ContentStreamUsage` on the `Tf` operator alone, with no reference to the
+rendering mode the same pass already tracks.
 
-**Practical effect, before.** A scanned page with an invisible OCR text layer selects a font and
-draws it in mode 3, so the rule demanded embedding for a font the standard exempts. That is the
-commonest mode-3 case in the wild.
+**Why it is the odd row.** This is not inherited from anywhere. It is the one divergence where this
+library is stricter than the standard *and* stricter than the profile at the same time, so
+correcting it moves toward both.
 
-**What the rule does now.** A font is exempt only when it has a confirmed mode-3 show and no show
-that is anything else, tallied per font across the whole document rather than per page.
+**The correct pattern already exists in the tree twice.** `UaFontEmbeddingRule` walks
+`usage.TextShows` and requires a positively determined mode other than 3, and it settles the
+parse-gap case where the mode could not be determined. `GlyphPresenceRule` carries the same
+exemption.
 
-**What still diverges, both in the stricter direction.** First, veraPDF's `PDFA-2B 6.2.11.4.1-1`
-tests `Subtype == "Type3" || Subtype == "Type0" || renderingMode == 3 || containsFontFile == true`,
-so it exempts every composite font outright. This library follows `/DescendantFonts` and checks the
-CIDFont's descriptor, because nothing in 6.2.11.4.1 exempts composite fonts. Second, the exemption
-here is suppressed for the whole document when a page can reach a content stream the scan does not
-read — a drawn form XObject, an annotation appearance stream, a selected Type 3 font, or content
-that failed to decode or parse. veraPDF carries no such condition. Both make this library report
-where the profile would accept.
+**Practical effect.** A scanned page with an invisible OCR text layer selects a font and draws it in
+mode 3, so this rule demands embedding for a font the standard exempts. That is the commonest
+mode-3 case in the wild.
 
-**A deliberate departure from the pattern this row once recommended.** An earlier version of this
-row pointed at `UaFontEmbeddingRule` as the model, including its treatment of a rendering mode that
-could not be determined, which that rule treats as not-a-visible-draw and therefore exempt. This
-rule does the opposite and requires a positively confirmed mode 3. `ContentStreamUsage` clears its
-integer operand on a real-number token, so a producer emitting `0.0 Tr` leaves every following show
-with an unknown mode; exempting on that would hide visible text behind a malformed operator. The
-PDF/UA-1 rule still has that hole and it belongs to #428.
-
-Checkable: the code half, yes, and veraPDF's predicate can be read out of the bundled profile in
-`bin/cli-1.30.2.jar`. The clause and its NOTE rest on the viewer.
+Checkable: the code half, yes. The clause and its NOTE rest on the viewer.
 
 ## D5 — A correct severity with the wrong justification
 
