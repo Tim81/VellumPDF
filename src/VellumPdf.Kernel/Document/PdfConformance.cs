@@ -7,7 +7,7 @@ namespace VellumPdf.Document;
 /// Requested PDF/A conformance level for the document.
 ///
 /// <para>
-/// Setting one of the PDF/A values below instructs VellumPdf to the following.
+/// Setting one of the PDF/A values below makes VellumPdf do each of the following.
 /// <see cref="PdfUA1"/> is also non-<see cref="None"/> but is a different standard, and gets a
 /// <c>pdfuaid</c> schema rather than the <c>pdfaid</c> one described here.
 /// <list type="bullet">

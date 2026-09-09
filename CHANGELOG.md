@@ -224,7 +224,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
-- **Five PDF/A clause citations named clauses that say something else, and one of them reached the
+- **Sixteen PDF/A clause citations named clauses that say something else, and several reached the
   emitted output.** `FontEmbeddingRule` cited ISO 19005-2 §6.3.4–§6.3.5 for font embedding, in its
   summary, its `RuleId` and its `Clause` property. Clause 6.3 of ISO 19005-2 is Annotations: it has
   four sub-clauses ending at 6.3.4, "Display of annotation contents", and there is no 6.3.5 at all.
@@ -332,7 +332,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   once the reasoning is right. Another, where `ActionRule`'s prose described the profile's framing
   rather than the clause, is corrected and its row removed, since nothing about that rule diverges
   any more. The row on font embedding is left standing: its correction turned out to need more care
-  than a single change could carry, and is specified separately in #458. The file exists because a diff that
+  than a single change could carry, and is specified separately in #458. The file exists because a
+  diff that
   treats profile membership as the passing condition makes the profile authoritative by construction,
   and because a diff between two implementations cannot surface a requirement both omit: 19 of the 73
   file-scoped clauses in the archival standard are checked by neither, seven of them at the

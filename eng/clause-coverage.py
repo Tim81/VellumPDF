@@ -20,8 +20,8 @@ Clauses scoped `reader` are excluded. Those bind a conforming reader rather than
 file, so a file validator correctly has no rule for them: 6.5.3, 6.3.4, 6.1.5 and 6.2.8.2.
 
 Usage:  python eng/clause-coverage.py [--json]
-        VERAPDF_HOME or a verapdf in the home directory supplies the profile jar; without it
-        column is reported as unavailable rather than as empty.
+        VERAPDF_HOME or a verapdf in the home directory supplies the profile jar; without it the
+        veraPDF column is reported as unavailable rather than as empty.
 
 Refs #418.
 """

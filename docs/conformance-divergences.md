@@ -21,8 +21,9 @@ whether it rests on a document nobody here holds.
 
 Two rows are **gated**. Correcting them makes this library disagree with veraPDF on a profile, which
 fails the aggregate oracle and the id diff as they stand today. Those corrections wait for the
-per-rule comparison in #419. The others are not gated, because fixing them moves toward the tool
-rather than away from it.
+per-rule comparison in #419. The other two are not gated. D4's correction moves toward the standard
+and the tool at once, so nothing holds it back but the care it needs, which is #458. D5 is corrected
+already, and what remains of it is a check the profile simply does not carry.
 
 ---
 
@@ -126,7 +127,9 @@ veraPDF; a conformance message should describe the document.
 library reports something the profile does not. That is a real disagreement and it stays, at warning
 severity, on the clause's own terms.
 
-Checkable: the registry comment, yes. The clause is the viewer's.
+Checkable: the profile, yes — `PDFA-2A.xml` in the veraPDF jar has one rule at 6.7.3.3 and no
+content-item rule, which is the divergence itself. The registry comment quoted above is the one this
+change replaced, so it is checkable only in the history. The clause is the viewer's.
 
 ---
 

@@ -22,7 +22,7 @@
 
 standard: ISO 19005-2:2011
 part: 2
-read_on: 2026-09-07
+read_on: "2026-09-07"   # quoted: bare YAML dates become datetime.date, which --json cannot emit
 source: NEN Connect licensed viewer, record 161167
 
 clauses:
