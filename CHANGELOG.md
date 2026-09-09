@@ -310,6 +310,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   colour's table is a prefix code, with both colour names present and 104 code words apiece, is
   what makes the unreachable-entry mistake impossible to reland.
 
+- **JBIG2 MMR decoding could produce wrong pixels when a row's own changing elements or a
+  referenced row's changing elements touched column 0, and the error could then carry into
+  following rows.** `MmrDecoder` started the coding-line position `a0` at 0 instead of the
+  imaginary position just before the first pixel that ITU-T T.6 2.2.5.1 requires (`a0 = -1`,
+  treated as white). Two distinct paths reached wrong pixels from that one wrong start. First,
+  `FindB1`'s strict `ce[i] > a0` comparison: with `a0 = 0` it skipped a reference changing element
+  that legitimately sits at column 0, so `b1` resolved past it for a row whose opening code word
+  (vertical or Pass) reads the reference line against a reference row beginning with a black run.
+  Second, and reachable regardless of what the reference row starts with: the vertical modes' own
+  `if (a1 != a0)` guard. With `a0 = 0` and a vertical delta that also resolved `a1` to 0 (a real
+  transition at column 0, coded relative to the imaginary a0), the guard read `0 == 0` as "no
+  change" and silently dropped that changing element from the row's own list. Horizontal mode
+  reads no reference changing element for its own first code word, so a Horizontal-opening row
+  never diverges on its own; it can still come out wrong once an earlier row in the same image
+  has dropped a changing element through either path above, because that row's corrupted list is
+  what a later vertical or Pass code word in the Horizontal-opening row then reads as its own
+  reference. A reader could see the pixel colour come out wrong anywhere in the row, in either
+  direction and not confined to the row's own left edge, with the error able to carry into rows
+  below the one holding the changing element. `a0` now starts at -1 and stays unclamped
+  everywhere `FindB1` and the vertical guard compare against it, with `Math.Max(a0, 0)`
+  supplying a real pixel position at the sites that fill or index the raster; that same clamp,
+  folded into Horizontal mode's own `a0 + run1` arithmetic, also gives, per 2.2.5.1's
+  `a0a1 - 1` convention, that mode's first run on a line the pixel its code word already leaves
+  out. (#442)
+
 - **`/P` bit 10 is now always set on a newly written `/Encrypt` dictionary.** The restriction this
   bit expressed is deprecated in PDF 2.0, and ISO 32000-2 Table 22 requires writers to set the bit
   regardless of the permissions requested; the Standard security handler previously set it only
