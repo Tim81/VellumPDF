@@ -37,14 +37,12 @@ on:
       - 'docs/pdf20-conformance.md'
       - 'eng/generate-pdf20-inventory.py'
       - 'src/VellumPdf.Conformance/Rules/**'
-      - '.github/workflows/docs-inventory.yml'
   pull_request:
     branches: [ main ]
     paths:
       - 'docs/pdf20-conformance.md'
       - 'eng/generate-pdf20-inventory.py'
       - 'src/VellumPdf.Conformance/Rules/**'
-      - '.github/workflows/docs-inventory.yml'
 
 jobs:
   check:

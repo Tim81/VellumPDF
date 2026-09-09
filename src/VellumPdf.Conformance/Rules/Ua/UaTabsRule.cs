@@ -1,5 +1,6 @@
 // Copyright © Timothy van der Ham (@Tim81)
 // SPDX-License-Identifier: Apache-2.0
+// Throwaway edit to isolate a CI path filter. Not for merge.
 
 using VellumPdf.Core;
 
