@@ -338,15 +338,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   square of that count while the fixed cost grows with the count itself. Measured in Release with
   `PdfDictionary`'s index disabled by raising `IndexThreshold` to `int.MaxValue`: 538 ms at 12,500
   keys, 1.6 s at 25,000, 6.7 s at 50,000, 34 s at 100,000 and 126 s at 200,000, each doubling
-  costing between 2.9 and 5.1 times as much. The series fits an exponent of 1.97, so the next
-  doubling was projected at the quadratic's 4x rather than anywhere in that band: 400,000 keys lands
-  near eight minutes broken, against about a quarter of a second fixed. The eight minutes is
-  extrapolated rather than measured. The direction was measured: with `IndexThreshold` raised the
-  test does fail, cancelled at 120.2 s, which puts a floor under the broken cost and no ceiling. The
-  test now builds that many keys under a two-minute budget, asserts the last filler key is actually
-  in the bytes it opens, so it cannot pass by the fixture quietly ceasing to be huge, and is renamed
-  from `HugeEncryptDictionary_opensUnderTimeout` to
-  `HugeEncryptDictionary_opensWellInsideTheBudget`, since #400 cites the old name.
+  costing between 2.9 and 5.1 times as much. The endpoints imply an exponent of 1.97 and a
+  least-squares fit over all five points gives 2.02, so the next doubling was projected at the
+  quadratic's 4x rather than anywhere in that band: 400,000 keys lands near eight minutes broken,
+  against about a quarter of a second of open cost fixed, which is not the same measurement as the
+  half second the whole test takes with the fixture built. The eight minutes is extrapolated rather
+  than measured. The direction was measured: with `IndexThreshold` raised the test does fail,
+  cancelled at 120.2 s, which puts a floor under the broken cost and no ceiling. The test now builds
+  that many keys under a two-minute budget, asserts the last filler key is actually in the bytes it
+  opens, so it cannot pass by the fixture quietly ceasing to be huge, and is renamed from
+  `HugeEncryptDictionary_opensUnderTimeout` to `HugeEncryptDictionary_opensWellInsideTheBudget`,
+  since #400 cites the old name.
 
   What that buys, measured. Run alone the whole test takes about half a second, and inside its own
   assembly about two, so it uses at most a couple of per cent of the budget. Under deliberate
@@ -375,7 +377,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   CsCheck fuzzer rather than only the one in this assembly: `Microsoft.Testing.Platform` gives each
   test project its own process, and the five in `VellumPdf.Kernel.Tests` sit alongside
   `PropertyTests`, which samples generators at CsCheck's default iteration count. `ParserFuzzTests`
-  in this assembly is the lighter of the two, since it caps itself through `FuzzBudget`. Only
+  in this assembly is the heavier of the two: `FuzzBudget.DefaultIterations` is 3,000 against
+  CsCheck's default of 100, and five more classes in this assembly sample at the same budget. Only
   `ManyStreamsWithNoEolBeforeTheirOwnEndstream_DoesNotBecomeQuadratic` was measured while checking
   this change, at 13 ms against ten seconds in Release, more relative headroom than the new pin.
   None of the six has failed on CI. The saturation run above did break five tests in this assembly,

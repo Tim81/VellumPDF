@@ -37,8 +37,9 @@ namespace VellumPdf.Reader.Tests;
 /// Release on the development machine, with <c>PdfDictionary</c>'s index disabled by raising
 /// <c>IndexThreshold</c> to <c>int.MaxValue</c>: 538 ms at 12,500 keys, 1.6 s at 25,000, 6.7 s at
 /// 50,000, 34 s of open cost at 100,000 and 126 s at 200,000, each doubling costing between 2.9 and
-/// 5.1 times as much. The whole series fits an exponent of 1.97, so one more doubling was projected
-/// at the quadratic's 4x rather than anywhere in that band: 400,000 keys lands near eight minutes
+/// 5.1 times as much. The endpoints imply an exponent of 1.97 and a least-squares fit over all five
+/// points gives 2.02, so one more doubling was projected at the quadratic's 4x rather than anywhere
+/// in that band: 400,000 keys lands near eight minutes
 /// broken, against about a quarter of a second of open cost fixed. The eight minutes is extrapolated,
 /// not measured. What was measured is the direction: with <c>IndexThreshold</c> raised the test does
 /// fail, cancelled at 120.2 s, which puts a floor under the broken cost and no ceiling.
@@ -119,10 +120,11 @@ public sealed class EncryptDictionaryDenialOfServiceTests
     {
         var bytes = BuildDocumentWithHugeEncryptDict(FillerKeyCount);
 
-        // Without this the test cannot tell "the fix works" from "the fixture stopped being huge".
-        // PdfObjectParser caps nesting depth and nothing else today, but an entry cap is exactly the
-        // hardening this neighbourhood attracts, and the day one lands at a few thousand entries the
-        // open returns fast, both assertions below still hold, and the pin silently stops pinning.
+        // Without this the test cannot tell "the fix works" from "the fixture stopped being huge",
+        // which a mis-edit of the builder above would do silently. It checks the bytes and not the
+        // parsed document, so it does not catch a reader that later starts discarding entries; that
+        // would still return fast with both assertions below intact. Catching it needs an assertion
+        // on what the open produced, and the /Encrypt dictionary is not reachable from here.
         Assert.Contains(
             $"/Junk{FillerKeyCount - 1} {FillerKeyCount - 1}",
             Encoding.Latin1.GetString(bytes),
