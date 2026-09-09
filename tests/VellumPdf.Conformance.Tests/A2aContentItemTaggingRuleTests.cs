@@ -10,10 +10,11 @@ namespace VellumPdf.Conformance.Tests;
 /// detector it replaced.
 /// </summary>
 /// <remarks>
-/// The oracle corpus can only assert that <c>IsCompliant</c> agrees with veraPDF, and this rule is
-/// deliberately a warning so that it does agree. So the oracle cannot see the rule fire at all —
-/// these tests are the only thing that proves it works, and the only thing that would notice if it
-/// silently stopped firing.
+/// The oracle corpus can only assert that <c>IsCompliant</c> agrees with veraPDF, and this rule
+/// reports a warning rather than an error because §6.7.3.3 states granularity as a should. One
+/// effect of that severity is that the verdict still agrees, so the oracle cannot see the rule fire
+/// at all — these tests are the only thing that proves it works, and the only thing that would
+/// notice if it silently stopped firing.
 /// </remarks>
 public sealed class A2aContentItemTaggingRuleTests
 {
@@ -28,8 +29,10 @@ public sealed class A2aContentItemTaggingRuleTests
         Assert.Equal(PreflightSeverity.Warning, assertion.Severity);
         Assert.Equal("ISO 19005-2:2011, 6.7.3.3", assertion.Clause);
 
-        // The whole point of the severity choice: the verdict still matches veraPDF, which reports
-        // this file compliant because its PDF/A-2a profile implements no content-item rule.
+        // A warning does not make a file non-compliant, so the verdict still matches veraPDF, which
+        // reports this file compliant because its PDF/A-2a profile implements no content-item rule.
+        // That match is a consequence of the severity, not the reason for it: the reason is that
+        // §6.7.3.3 states granularity as a should rather than a shall.
         Assert.True(
             result.IsCompliant,
             "A warning must not change the verdict — pdfa2a-untagged-real-content asserts veraPDF parity on it.");

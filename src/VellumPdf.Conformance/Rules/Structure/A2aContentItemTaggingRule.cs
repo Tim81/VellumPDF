@@ -9,18 +9,19 @@ namespace VellumPdf.Conformance.Rules.Structure;
 /// structure that describes its content.
 /// </summary>
 /// <remarks>
-/// <para><strong>This check has no counterpart in veraPDF's PDF/A-2a profile, which is why it
-/// reports <see cref="PreflightSeverity.Warning"/> rather than
-/// <see cref="PreflightSeverity.Error"/>.</strong> veraPDF 1.30.2's bundled <c>PDFA-2A.xml</c>
-/// carries 153 rules, of which exactly one sits at clause 6.7.3.3 — the check that the document
-/// catalog contains a <c>/StructTreeRoot</c> — and the profile contains no
-/// <c>SESimpleContentItem</c> rule at all. The equivalent content-item predicate exists only in
-/// veraPDF's <c>PDFUA-1.xml</c>. Reporting an error here would therefore make this library
-/// contradict the reference implementation on a file veraPDF certifies as compliant, and would
-/// break the corpus invariant that both validators agree on every fixture's verdict. A warning
-/// keeps <see cref="PreflightResult.IsCompliant"/> aligned with veraPDF while still telling the
-/// caller what is wrong; <c>vellum-preflight --fail-on warning</c> turns it into a build failure
-/// for callers who want that.</para>
+/// <para><strong>Why this is a <see cref="PreflightSeverity.Warning"/>, not an
+/// <see cref="PreflightSeverity.Error"/>.</strong> §6.7.3.3, "Structure hierarchy", has exactly two
+/// normative sentences: a shall that the logical structure be described by a hierarchy rooted in the
+/// Catalog's <c>/StructTreeRoot</c>, and a should that writers capture that hierarchy to the finest
+/// granularity possible. Nothing in the clause requires every content item to be described by a
+/// structure element — what this rule reports is the should, a recommendation, not the shall, a
+/// requirement, so <see cref="PreflightSeverity.Warning"/> is the correct severity on the standard's
+/// own terms. <c>vellum-preflight --fail-on warning</c> turns it into a build failure for callers who
+/// want that. (This rule's framing as a per-content-item check does not match what the clause heading
+/// names — the completeness of the hierarchy, not individual content items — and that mismatch is
+/// left unresolved here; it belongs to the batch that re-derives clause 6.7 as a whole.) veraPDF's
+/// PDF/A-2a profile implements no equivalent check, which matters when comparing this library's
+/// verdict against veraPDF's on a fixture, but that absence is not why this rule is a warning.</para>
 ///
 /// <para><strong>Why the check is needed at all.</strong> Presence of a <c>/StructTreeRoot</c> is
 /// not evidence that the structure tree describes anything. A document carrying
@@ -73,12 +74,10 @@ internal sealed class A2aContentItemTaggingRule : IConformanceRule
                     PreflightSeverity.Warning,
                     "A real-content operator on this page is neither tagged (no enclosing "
                     + "marked-content sequence carries an MCID) nor marked as an artifact, so no "
-                    + "structure element describes it. A PDF/A-2a document's logical structure is "
-                    + "required to describe its content, and a /StructTreeRoot that describes "
-                    + "nothing does not satisfy that. Note that veraPDF's PDF/A-2a profile does "
-                    + "not implement this check, so it reports such a file as compliant; this is "
-                    + "reported as a warning for that reason. Use --fail-on warning to treat it "
-                    + "as a failure.");
+                    + "structure element describes it. Enclose it in a marked-content sequence "
+                    + "carrying an MCID, or mark it as an artifact. §6.7.3.3 states this "
+                    + "granularity as a recommendation rather than a requirement, so it is "
+                    + "reported as a warning; use --fail-on warning to fail on it.");
                 break;
             }
         }

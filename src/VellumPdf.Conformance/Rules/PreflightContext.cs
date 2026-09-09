@@ -380,9 +380,9 @@ internal sealed class PreflightContext
     /// </summary>
     /// <remarks>
     /// Limitation: fonts referenced only from form XObjects, Type 3 glyph procedures, or annotation
-    /// appearance streams are not yet detected here — they are a deferred edge. This means
-    /// fonts used <em>only</em> in those contexts are currently under-detected (not validated)
-    /// rather than over-rejected, which is the conservative direction.
+    /// appearance streams are not detected here at all, which is tracked as issue #450 and inherited
+    /// by every rule that calls this. Fonts used <em>only</em> in those contexts are therefore
+    /// under-detected rather than over-rejected, which is the conservative direction.
     /// </remarks>
     public IEnumerable<PdfDictionary> EnumerateUsedFonts()
     {
@@ -523,9 +523,11 @@ internal sealed class PreflightContext
     /// not restrict the size or quantity of things described in the PDF file format"), so
     /// without this cut one
     /// 900,000-byte /Filter name shared by 400 pages retained 705.7 MiB (GC delta) of message text
-    /// from a 990 KB file (measured in #403). 1024 characters is roughly twice the longest sentence
-    /// any rule composes on its own (522 characters, A2aContentItemTaggingRule) and short enough
-    /// that a result list of thousands of findings stays a few megabytes.
+    /// from a 990 KB file (measured in #403). 1024 characters is comfortably above the longest
+    /// message any rule composes on its own, remeasured on this branch at 408 characters in
+    /// A2aContentItemTaggingRule, whose message #418 rewrote twice; the runner-up is 385 in
+    /// UaFormXObjectSemanticParentRule. It is short enough that a result list of thousands of
+    /// findings stays a few megabytes.
     /// <para>
     /// This cut is the only bound most messages have. Ten sites whose message names a producer
     /// value (a /Filter, an action type, a named action, an annotation /Subtype or /AP key, a

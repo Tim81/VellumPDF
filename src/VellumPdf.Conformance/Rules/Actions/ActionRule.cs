@@ -17,13 +17,22 @@ namespace VellumPdf.Conformance.Rules.Actions;
 /// forbidden.
 /// </summary>
 /// <remarks>
-/// Authored from ISO 19005-2:2011, 6.5.1 and ISO 32000-1:2008, 12.6. Clean-room: derived from the
-/// specification text, not from any third-party validation profile. The clause is an allow-list (an
-/// action's <c>/S</c> must be one of the seven permitted types), so the rule is too — this rejects
-/// unknown and vendor action types, not just a fixed deny-list. Inspects the document catalog's
+/// Authored from ISO 19005-2:2011, 6.5.1 and ISO 32000-1:2008, 12.6. Clean-room: §6.5.1 itself is
+/// phrased as three prohibitions, not a permission list — the eleven action types §6.5.1 forbids by
+/// name shall not be permitted, the deprecated <c>SetState</c>/<c>NoOp</c> actions shall not be
+/// permitted, and a named action other than the four page-navigation ones shall not be permitted.
+/// What makes the seven-type allow-list below correct is ISO 19005-2 §5.1, which separately permits
+/// any valid ISO 32000-1 feature the standard does not explicitly forbid: subtracting the eleven
+/// forbidden types from the eighteen ISO 32000-1 Table 198 enumerates leaves exactly these seven, so
+/// for every action type the base standard defines, the deny-list §6.5.1 states and the allow-list
+/// this rule checks agree. They diverge only for an action type ISO 32000-1 does not define, and
+/// rejecting one of those is still correct — §5.1 permits valid ISO 32000-1 features, and a vendor
+/// <c>/S</c> value is not one. (An earlier version of this rule took its allow-list shape from a
+/// third-party validation profile rather than from this derivation.) Inspects the document catalog's
 /// <c>/OpenAction</c>, each annotation's <c>/A</c>, and the additional-action (<c>/AA</c>)
 /// dictionaries on the catalog, pages, and annotations, following any <c>/Next</c> chain. Form-field
-/// <c>/AA</c> reached only through the AcroForm field tree (not via a widget annotation) is deferred.
+/// <c>/A</c>/<c>/AA</c> reached through the AcroForm field tree is checked by <see
+/// cref="Forms.InteractiveFormRule"/> under §6.4.1, not by this rule.
 /// </remarks>
 internal sealed class ActionRule : IConformanceRule
 {
@@ -42,8 +51,9 @@ internal sealed class ActionRule : IConformanceRule
     private static readonly PdfName _names = new("Names");
     private static readonly PdfName _javaScript = new("JavaScript");
 
-    // §6.5.1-1: the only action types PDF/A-2 permits (ISO 32000-1 §12.6.4). Every other /S value —
-    // including unknown/vendor types — is forbidden, so this is an allow-list, not a deny-list.
+    // §6.5.1-1: the eighteen types ISO 32000-1 Table 198 enumerates, minus the eleven §6.5.1 forbids
+    // (see the class remarks for the derivation). Every other /S value — including unknown/vendor
+    // types — is forbidden, so this is checked as an allow-list, not a deny-list.
     private static readonly HashSet<string> _permittedActions = new(StringComparer.Ordinal)
     {
         "GoTo", "GoToR", "GoToE", "Thread", "URI", "Named", "SubmitForm",
@@ -125,9 +135,9 @@ internal sealed class ActionRule : IConformanceRule
         if (context.Resolve(actionObj) is not PdfDictionary action)
             return;
 
-        // §6.5.1-1: an action is permitted only if its /S is one of the seven allowed names. veraPDF's
-        // test (S == "GoTo" || …) fails when /S is absent or not a name, so a recognised action with no
-        // resolvable permitted /S is itself a violation — not just one bearing a forbidden type.
+        // §6.5.1-1: an action is permitted only if its /S is one of the seven allowed names, so an
+        // action dictionary with no resolvable /S — or one that is present but not a permitted name —
+        // is itself a violation, not just one bearing a recognisably forbidden type.
         var s = context.Resolve(action.Get(_s)) as PdfName;
         if (s is null || !_permittedActions.Contains(s.Value))
         {

@@ -21,8 +21,9 @@ whether it rests on a document nobody here holds.
 
 Two rows are **gated**. Correcting them makes this library disagree with veraPDF on a profile, which
 fails the aggregate oracle and the id diff as they stand today. Those corrections wait for the
-per-rule comparison in #419. The others are not gated, because fixing them moves toward the tool
-rather than away from it.
+per-rule comparison in #419. The other two are not gated. D4's correction moves toward the standard
+and the tool at once, so nothing holds it back but the care it needs, which is #458. D5 is corrected
+already, and what remains of it is a check the profile does not carry.
 
 ---
 
@@ -75,35 +76,11 @@ nothing announces it. D1 at least fires.
 
 Checkable: the PDF/UA-1 half, yes. The PDF/A-2 half rests on the viewer.
 
-## D3 — An allow-list described as what the clause says
-
-- Rule: `ActionRule`
-- Clauses: ISO 19005-2 6.5.1, with 5.1
-- Status: not gated · prose only
-
-The clause is written as three prohibitions, and 5.1 permits anything not explicitly forbidden.
-veraPDF quotes that deny-list sentence verbatim as its description and then tests an allow-list of
-seven action types. `ActionRule` implements the allow-list and its remarks assert "The clause is an
-allow-list", which describes veraPDF's test rather than the clause.
-
-**Second reading.** Subtracting the forbidden types from the set ISO 32000-1 12.6.4 defines leaves
-exactly the seven the rule permits, so the two formulations coincide for defined types and part
-company only for undefined or vendor ones — which the rule's own comment says it means to reject.
-
-**Why it is here anyway.** The behaviour is defensible; the sentence is not, and it sits under a
-clean-room remark claiming derivation from the specification text. This is the third rule where the
-profile's framing survived into our prose, after D1 and D2, and none of the three was found by a
-test, because in each case the behaviour and the description diverged rather than the behaviour and
-the tool.
-
-Checkable: the ISO 32000-1 arithmetic is, from the held copy. The ISO 19005-2 clause structure is
-not.
-
 ## D4 — Font embedding ignores the rendering-mode-3 exemption
 
 - Rule: `FontEmbeddingRule`
 - Clause: ISO 19005-2 6.2.11.4.1
-- Status: not gated
+- Status: not gated · correction specified in #458
 
 The clause scopes embedding to fonts "used for rendering", and its NOTE 2 exempts a font referenced
 solely in text rendering mode 3, which is invisible. veraPDF exempts it too. This library exempts
@@ -126,26 +103,33 @@ mode-3 case in the wild.
 
 Checkable: the code half, yes. The clause and its NOTE rest on the viewer.
 
-## D5 — A correct severity with the wrong justification
+## D5 — A correct severity that used to be justified by the tool
 
 - Rule: `A2aContentItemTaggingRule`, via `RuleRegistry`
 - Clause: ISO 19005-2 6.7.3.3
-- Status: not gated · reasoning only
+- Status: not gated · justification corrected, the check itself still diverges
 
 The clause carries one requirement, that the structure hierarchy be rooted in `StructTreeRoot`, and
 one recommendation, that a writer capture it to the finest granularity available. Nothing requires
 every content item to be described. This library reports a warning, which is right.
 
-The justification is not. `RuleRegistry` says:
+The justification was not. `RuleRegistry` used to say:
 
 > Warning, not error: veraPDF's PDF/A-2a profile implements no equivalent, so an error here would
 > contradict the reference implementation.
 
-The severity is derived from tool agreement, and veraPDF is called the reference implementation. The
-real reason is that the clause states a recommendation rather than a requirement. Nothing behavioural
-changes; the sentence does.
+The severity was derived from tool agreement, and veraPDF was called the reference implementation.
+The real reason is that the clause states a recommendation rather than a requirement. The registry
+comment and the rule's remarks now say that, and the diagnostic the caller reads no longer names
+veraPDF; a conformance message should describe the document.
 
-Checkable: the registry comment, yes. The clause is the viewer's.
+**What still diverges.** The check itself. veraPDF's PDF/A-2a profile carries no equivalent, so this
+library reports something the profile does not. That is a real disagreement and it stays, at warning
+severity, on the clause's own terms.
+
+Checkable: the profile, yes — `PDFA-2A.xml` in the veraPDF jar has one rule at 6.7.3.3 and no
+content-item rule, which is the divergence itself. The registry comment quoted above is the one this
+change replaced, so it is checkable only in the history. The clause is the viewer's.
 
 ---
 
@@ -156,9 +140,11 @@ alone is not enough. A diff between two implementations cannot surface a require
 omit, because they agree.
 
 Measured against an inventory of ISO 19005-2 clause 6 by number and heading, 19 of its 73
-file-scoped clauses are checked by neither this library nor veraPDF. That inventory and the script
-that reports the split are being added under #418; until they land, the figures here are a snapshot
-rather than something a clone can recompute.
+file-scoped clauses are checked by neither this library nor veraPDF. The inventory is
+`eng/data/iso19005-2-clauses.yml`, and `eng/clause-coverage.py` reports the split, so a clone that
+has a veraPDF jar can recompute the figure. Without one the script says the profiles are unavailable
+and reports the 20 clauses no rule cites, rather than silently counting every clause as one veraPDF
+does not check.
 
 Seven of the 19 are Level A only, and Level A is the accessibility level this library advertises:
 

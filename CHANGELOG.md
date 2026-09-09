@@ -8,6 +8,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Clause coverage can now be measured against ISO 19005-2 itself, not against veraPDF's test
+  ids.** `eng/data/iso19005-2-clauses.yml` lists every clause of the standard's clause 6, and
+  `eng/clause-coverage.py` reports what checks each one. Measuring coverage against a validator's
+  test ids makes that validator the population, so a requirement neither it nor this library checks
+  cannot appear in any comparison between them: both sides agree by omission and the diff is silent.
+  Against the standard's own clause list, 19 of the 73 file-scoped clauses turn out to be checked by
+  neither, seven of them Level A accessibility requirements including alternate descriptions,
+  replacement text and expansions of abbreviations. The inventory holds clause numbers and headings
+  only; no normative text is reproduced, since the standard is not held as a file. Clauses that bind
+  a conforming reader rather than a conforming file are marked and excluded, so a missing rule
+  against one of those is not counted as a gap, as are the two that state which files a subclause
+  applies to rather than a requirement. The report names every clause it excludes, because one
+  dropped silently is the failure the inventory exists to prevent. (#418)
+
 - **PDF/UA-1 §7.16-1 conformance check, and a password for preflight (#138).** A new rule,
   `UaEncryptionPermissionsRule`, reads an encrypted document's `/Encrypt` dictionary and reports an
   error when its `/P` entry does not have bit 10 set — ISO 32000-2 Table 22 requires every writer to
@@ -138,6 +152,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **Three rule justifications now derive from the clause rather than from veraPDF, and one of them
+  reached the caller.** `ActionRule` claimed §6.5.1 "is an allow-list", and separately claimed
+  derivation from the specification text while a comment a hundred lines below justified its
+  null-`/S` branch by describing veraPDF's predicate. The clause is written as three prohibitions.
+  What makes the seven-type allow-list correct is §5.1, which permits any valid ISO 32000-1 feature
+  the standard does not forbid: subtract the eleven types §6.5.1 forbids from the eighteen ISO
+  32000-1 Table 198 enumerates and exactly those seven remain, so for every type the base standard
+  defines the two formulations agree. `A2aContentItemTaggingRule` reports a warning rather than an
+  error because §6.7.3.3 states granularity as a *should* and not a *shall*, not because veraPDF's
+  profile lacks the check; its diagnostic message no longer names veraPDF to the reader, and now
+  says what to do about the finding rather than only how to make the build fail on it. Behaviour,
+  rule ids, clause strings and severities are unchanged. The generated provenance count in
+  `docs/pdf20-conformance.md` moves accordingly, from 50 of 71 rule classes naming veraPDF to 49.
+  (#418)
+
 - **TIFF predictor 2 at 1, 2, 4, and 16 bits per component (#98).** `FlateDecode` and `LZWDecode`
   streams with `/Predictor 2` at those depths are now un-predicted per ISO 32000-2 §7.4.4.4. Before
   this change the rows were copied through still differenced, with an `UnsupportedPredictor`
@@ -197,6 +226,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   disclosure measuring the sweep would have gone stale as the sweep ran. (#418)
 
 ### Fixed
+
+- **Sixteen PDF/A clause citations named clauses that say something else, and several reached the
+  emitted output.** `FontEmbeddingRule` cited ISO 19005-2 §6.3.4–§6.3.5 for font embedding, in its
+  summary, its remarks, its `RuleId` and its `Clause` property. Clause 6.3 of ISO 19005-2 is
+  Annotations: it has four sub-clauses ending at 6.3.4, "Display of annotation contents", and there
+  is no 6.3.5 at all. Those are ISO 19005-1 numbers, where 6.3 is Fonts. Embedding is §6.2.11.4.1,
+  with §6.2.11.4.2 for subsets. The rule now emits `ISO19005-2:6.2.11.4.1-font-embedding` as its id
+  and `ISO 19005-2:2011, 6.2.11.4.1` as its clause, so a caller matching either of the old strings
+  will see the new one. That correction also reaches the command line: `vellum-preflight` reconciles
+  a descriptive rule id against the catalogue by clause, and clause `6.3.4` matched no catalogue
+  entry while `6.2.11.4.1` matches two. On a file that fails font embedding, those two checks were
+  therefore reported as **passed** and are now reported as inconclusive, so the summary counts move.
+  Measured on `GoldenTests.StandardFont_rawBytes.verified.pdf` at profile 2b: passed 132 to 130,
+  inconclusive 9 to 11, with `6.2.11.4.1-1` and `-2` the two that moved. That is the honesty failure
+  `ClausePassedHonestyTests` exists to prevent, and the wrong clause string was hiding it. Eight
+  more of the same kind are corrected alongside them, in `PdfDocument` and `SrgbIccProfile`: three
+  cited §6.3.1, Annotation types, for the `/Encrypt` prohibition that lives in §6.1.3, one of them
+  inside a thrown exception message a caller reads; five cited §6.2.2, Content streams, for the
+  output intent in §6.2.3, and two of those also called the output intent required at every
+  conformance level, where §6.2.4.3 makes it conditional on the file using uncalibrated device
+  colour. It took three passes to find them all, each prompted by a reviewer observing that the one
+  before had stopped short. `PdfConformance` carried three more of the same kind in a single doc
+  block: font embedding at §6.3.3, the `/Encrypt` prohibition at §6.3.1 and the output intent at
+  §6.2.2, which are Annotation appearances, Annotation types and Content streams. They are now
+  §6.2.11.4.1, §6.1.3 and §6.2.3. `PdfDocument` repeated the §6.3.3 font claim. Each replacement was
+  read in the standard before it was written. (#418)
 
 - **`/P` bit 10 is now always set on a newly written `/Encrypt` dictionary.** The restriction this
   bit expressed is deprecated in PDF 2.0, and ISO 32000-2 Table 22 requires writers to set the bit
@@ -270,16 +325,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Documentation
 
 - **Where the conformance rules knowingly disagree with veraPDF is written down (#418, #419).**
-  `docs/conformance-divergences.md` records five cases, each with what the standard requires, what an
+  `docs/conformance-divergences.md` records each case with what the standard requires, what an
   independent second reading found, what veraPDF does, which one this library follows, and whether a
-  reader with only this repository can confirm it. Two are inherited from the profile and are gated
-  behind the per-rule comparison, since correcting them makes this library disagree with veraPDF and
-  the id diff currently fails in both directions. One is the reverse case, where this library is
-  stricter than both the standard and the profile. The file exists because a diff that treats
-  profile membership as the passing condition makes the profile authoritative by construction, and
-  because a diff between two implementations cannot surface a requirement both omit: 19 of the 73
-  file-scoped clauses in the archival standard are checked by neither, seven of them at the
-  accessibility level this library advertises.
+  reader with only this repository can confirm it. Two rows are inherited from the profile and are
+  gated behind the per-rule comparison, since correcting them makes this library disagree with
+  veraPDF and the id diff currently fails in both directions. One has its justification corrected in
+  this same release and keeps its row, because the check itself still disagrees with the profile
+  even once the reasoning is right. Another, where `ActionRule`'s prose described the profile's
+  framing rather than the clause, is corrected and its row removed, since nothing about that rule
+  diverges any more. The row on font embedding is left standing: its correction turned out to need
+  more care than a single change could carry, and is specified separately in #458. The file exists
+  because a diff that treats profile membership as the passing condition makes the profile
+  authoritative by construction, and because a diff between two implementations cannot surface a
+  requirement both omit: 19 of the 73 file-scoped clauses in the archival standard are checked by
+  neither, seven of them at the accessibility level this library advertises.
 
 - **Measured behaviour of two candidate differential oracles, Ghostscript and MuPDF (#420).**
   `docs/differential-oracles.md` records what each one actually does, run against five fixtures on
@@ -298,6 +357,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   per engine per fixture, so normalisation is needed for comparison across machines and versions
   rather than for run-to-run stability. Nothing is wired into the test suite yet; this is the
   measurement that has to exist before an assertion can be written against either tool.
+
+- **`PdfConformance` now says what each PDF/A clause requires, not just which clause it is.** The
+  enum is where a caller meets PDF/A, and its doc block listed obligations with bare clause numbers
+  attached, three of them wrong. It now states the obligation behind each one and what this library
+  does about it: what the `pdfaid` schema carries and that its values do not themselves determine
+  conformance, what the trailer must contain and what it must not, that font programs must be
+  embeddable for unlimited universal rendering, and that the output intent is conditional on device
+  colour rather than unconditional. It also records the three conformance levels as the exclusions
+  Clause 5 actually defines, and that the `/S` value stays `GTS_PDFA1` in part 2, so there is no
+  `GTS_PDFA2` to look for. Each entry is this project's own statement of the obligation rather than
+  a restatement of the clause, since ISO 19005-2 is not held here and must not be transcribed.
+  (#418)
 
 - **The PDF 2.0 extension table is generated from the PDF Association's registry (#225).**
   `eng/generate-pdf20-inventory.py` held the extension list as a literal, and the literal went

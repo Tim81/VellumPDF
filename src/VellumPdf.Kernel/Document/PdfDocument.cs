@@ -542,7 +542,7 @@ public sealed class PdfDocument : IDisposable
                 "UseObjectStreams cannot be combined with Encrypt(). " +
                 "Object-stream encryption is not supported. Remove one of these options.");
 
-        // PDF/A prohibits encryption (ISO 19005-2 §6.3.1). Fail fast rather than emit
+        // PDF/A prohibits encryption (ISO 19005-2 §6.1.3, File trailer). Fail fast rather than emit
         // a document that claims conformance but can never validate. PDF/UA-1 is a
         // separate conformance family (ISO 14289-1) with no such prohibition, so it gets
         // its own check below instead. Written as "not (None or PdfUA1)" rather than an
@@ -552,7 +552,7 @@ public sealed class PdfDocument : IDisposable
         if (Conformance is not (PdfConformance.None or PdfConformance.PdfUA1)
             && _encryptionSettings is not null)
             throw new InvalidOperationException(
-                "PDF/A prohibits encryption (ISO 19005-2 §6.3.1). " +
+                "PDF/A prohibits encryption (ISO 19005-2 §6.1.3). " +
                 "Remove Encrypt() or clear Conformance before calling Save().");
 
         // PDF/UA-1 does not prohibit encryption, but it requires that content remain
@@ -797,9 +797,11 @@ public sealed class PdfDocument : IDisposable
         var metadataRef = registry.Reserve();
         registry.SetValue(metadataRef, metadataStream);
 
-        // ── Build sRGB ICC OutputIntent (PDF/A-2 §6.2.2) ─────────────────
-        // An /OutputIntents array with a GTS_PDFA1 entry referencing an sRGB ICC
-        // stream is required for all PDF/A-2 conformance levels.
+        // ── Build sRGB ICC OutputIntent (PDF/A-2 §6.2.3) ─────────────────
+        // §6.2.4.3 is what makes an output intent mandatory, and only when the file uses
+        // uncalibrated device colour. Emitting an /OutputIntents array with a GTS_PDFA1 entry
+        // referencing an sRGB ICC stream unconditionally satisfies that without having to detect
+        // device colour use, which is why this does not test for it.
         PdfIndirectReference? outputIntentsRef = null;
         if (Conformance != PdfConformance.None)
             outputIntentsRef = BuildOutputIntents(registry);
@@ -1287,8 +1289,8 @@ public sealed class PdfDocument : IDisposable
         if (structTreeRootRef is not null)
             catalog.Set(new PdfName("StructTreeRoot"), structTreeRootRef);
 
-        // PDF/A output intent (sRGB ICC, §6.2.2) — required when signing a conformance
-        // document, just as on the regular Save path.
+        // PDF/A output intent (sRGB ICC, §6.2.3) — emitted when signing a conformance document,
+        // just as on the regular Save path, and for the same reason: see BuildOutputIntents.
         if (Conformance != PdfConformance.None)
             catalog.Set(new PdfName("OutputIntents"), new PdfArray([BuildOutputIntents(registry)]));
 
@@ -1313,7 +1315,7 @@ public sealed class PdfDocument : IDisposable
 
     /// <summary>
     /// Builds and registers the /OutputIntents array entry referencing an ICC profile stream.
-    /// Required by PDF/A-2 (ISO 19005-2 §6.2.2) for all conformance levels.
+    /// Required by PDF/A-2 (ISO 19005-2 §6.2.3) when the file uses device colour, per §6.2.4.3.
     ///
     /// <para>
     /// Uses the profile configured via <see cref="SetPdfAOutputIntent"/> or
@@ -1325,8 +1327,8 @@ public sealed class PdfDocument : IDisposable
     /// <strong>PDF/A output requirements (all must be satisfied by the caller):</strong>
     /// <list type="bullet">
     ///   <item>Use <see cref="UseTrueTypeFont"/> for all fonts — Standard-14 unembedded fonts fail
-    ///         the PDF/A font-embedding rule (ISO 19005-2 §6.3.3).</item>
-    ///   <item>Do not use <see cref="Encrypt"/> — PDF/A prohibits encryption (ISO 19005-2 §6.3.1).</item>
+    ///         the PDF/A font-embedding rule (ISO 19005-2 §6.2.11.4.1).</item>
+    ///   <item>Do not use <see cref="Encrypt"/> — PDF/A prohibits encryption (ISO 19005-2 §6.1.3).</item>
     ///   <item>Set <see cref="Tagged"/> = true (or use <see cref="PdfConformance.PdfA2a"/>) for
     ///         conformance level A.</item>
     /// </list>

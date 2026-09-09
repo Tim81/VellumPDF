@@ -2774,7 +2774,7 @@ public sealed class PdfPreflightTests
 
         Assert.False(result.IsCompliant);
         var assertion = Assert.Single(result.Assertions);
-        Assert.Equal("ISO19005-2:6.3.4-font-embedding", assertion.RuleId);
+        Assert.Equal("ISO19005-2:6.2.11.4.1-font-embedding", assertion.RuleId);
         Assert.Contains("Helvetica", assertion.Message);
     }
 
@@ -3088,7 +3088,7 @@ public sealed class PdfPreflightTests
 
         Assert.False(result.IsCompliant);
         var assertion = Assert.Single(result.Assertions);
-        Assert.Equal("ISO19005-2:6.3.4-font-embedding", assertion.RuleId);
+        Assert.Equal("ISO19005-2:6.2.11.4.1-font-embedding", assertion.RuleId);
     }
 
     [Fact]
@@ -4521,7 +4521,7 @@ public sealed class PdfPreflightTests
 
         Assert.False(result.IsCompliant);
         var assertion = Assert.Single(result.Assertions);
-        Assert.Equal("ISO19005-2:6.3.4-font-embedding", assertion.RuleId);
+        Assert.Equal("ISO19005-2:6.2.11.4.1-font-embedding", assertion.RuleId);
     }
 
     [Fact]
@@ -4537,7 +4537,7 @@ public sealed class PdfPreflightTests
 
         Assert.False(result.IsCompliant);
         var assertion = Assert.Single(result.Assertions);
-        Assert.Equal("ISO19005-2:6.3.4-font-embedding", assertion.RuleId);
+        Assert.Equal("ISO19005-2:6.2.11.4.1-font-embedding", assertion.RuleId);
     }
 
     [Fact]

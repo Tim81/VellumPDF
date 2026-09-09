@@ -63,7 +63,7 @@ ISO 14289-1 was in the same position until it was acquired on 2026-09-07, so the
 citing it are now checkable against the text. They have not been checked yet. The XML-doc
 comment stating a rule was derived from the specification text, rather than from a validation
 profile, is not evenly applied: the word "clean-room" appears somewhere in 71 of the 101
-rule classes, 50 of those also name veraPDF somewhere in the file, and eight of the remaining 30
+rule classes, 49 of those also name veraPDF somewhere in the file, and eight of the remaining 30
 assert specification provenance without using the word at all. Counting the phrase is not the
 same as auditing the claim. #418 tracks the ISO 19005-2 half and #428 the ISO 14289-1
 re-derivation.
