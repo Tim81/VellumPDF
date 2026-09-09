@@ -325,7 +325,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **A denial-of-service regression test was cancelled by its own budget on the shared runner
   (#400).** `EncryptDictionaryDenialOfServiceTests` opened an `/Encrypt` dictionary carrying 100,000
   filler keys under a ten-second budget, as the #208 regression pin. It failed on GitHub's runner at
-  least three times on branches touching neither the reader nor the test, always as
+  least three times on branches touching neither the reader nor the test, always reported as
   `failed (canceled)` a hair over ten seconds, against a third of a second here. The most recent was
   a branch whose entire diff was a workflow file and a CHANGELOG entry. A time budget only pins a
   regression if the pre-fix cost exceeds it on the slowest machine the suite ever runs on, and the
@@ -333,21 +333,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   here, and it runs its classes in parallel with the CsCheck fuzzer, which takes every core.
 
   Raising the budget alone would have weakened the pin, which is why #400 rejected it. Raising the
-  key count instead widens the gap the budget sits in, because the guarded cost grows with the square
-  of that count while the fixed cost grows with the count itself. Measured in Release with
+  key count instead widens the gap the budget sits in, because the guarded cost grows with the
+  square of that count while the fixed cost grows with the count itself. Measured in Release with
   `PdfDictionary`'s index disabled: 538 ms at 12,500 keys, 1.6 s at 25,000, 6.7 s at 50,000, 34 s at
   100,000 and 126 s at 200,000, each doubling costing between 2.9 and 5.1 times as much. Carried out
   one more doubling, 400,000 keys lands near eight minutes broken, against about a quarter of a
-  second fixed. The eight minutes is extrapolated rather than measured: the only direct observation at
-  400,000 broken is the test being cancelled at its budget, which is a floor and not a ceiling. The
-  test now builds that many keys under a two-minute budget.
+  second fixed. The eight minutes is extrapolated rather than measured: the only direct observation
+  at 400,000 broken is the test being cancelled at its budget, which is a floor and not a ceiling.
+  The test now builds that many keys under a two-minute budget.
 
   What that buys, measured. Run alone the whole test takes about half a second, and inside its own
   assembly about two, so it uses at most a couple of per cent of the budget. Under deliberate
   saturation — the full assembly plus 256 busy loops on sixteen cores, which slowed the assembly
-  13.7x and broke five other tests — it took 37.7 s and passed. Failing it would need about 240 times
-  the alone cost, or 60 times the in-assembly cost, where the budget it replaces failed at about 30
-  times.
+  13.7x and broke five other tests — it took 37.7 s and passed. Failing it would need about 240
+  times the alone cost, or 60 times the in-assembly cost, where the budget it replaces failed at
+  about 30 times.
 
   The passing margin is what improves, and that is the one #400 is about. The failing side barely
   moves: the pre-fix cost overran the old ten-second budget about three and a half times at 100,000
@@ -359,8 +359,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   contention while a long one absorbs every preemption, so the ratio grows rather than cancelling.
   Under load the benign ratio reached 24.6 against 26.1 for the real defect, and taking more samples
   made it worse. The same mistake nearly reached this entry a second time, as a passing margin
-  derived by scaling a local timing by an assembly-level slowdown: under a lighter run, 64 busy loops
-  rather than 256, the assembly slowed 2.4x while this one test slowed 11x, because a single
+  derived by scaling a local timing by an assembly-level slowdown: under a lighter run, 64 busy
+  loops rather than 256, the assembly slowed 2.4x while this one test slowed 11x, because a single
   CPU-bound region absorbs preemption far worse than an average over many.
 
   Six other tests use an absolute budget in the same way, one of them

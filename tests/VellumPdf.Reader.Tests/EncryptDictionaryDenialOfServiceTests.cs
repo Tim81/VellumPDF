@@ -54,13 +54,13 @@ namespace VellumPdf.Reader.Tests;
 /// </para>
 ///
 /// <para>
-/// Note that a passing margin cannot be had by scaling a local timing by an assembly-level
-/// slowdown. Under a lighter run, 64 busy loops rather than 256, the assembly slowed 2.4x while
-/// this single test slowed 11x, because one CPU-bound region absorbs preemption far worse than an
-/// average over many. That is the
-/// same mistake as the design this replaces, which compared two timings and asserted a ratio:
-/// taking the fastest of several samples drags a short measurement to its floor under contention
-/// while a long one absorbs every preemption, so the ratio grows instead of cancelling.
+/// Note that a passing margin cannot be had by scaling a local timing by an assembly-level slowdown.
+/// Under a lighter run, 64 busy loops rather than 256, the assembly slowed 2.4x while this single
+/// test slowed 11x, because one CPU-bound region absorbs preemption far worse than an average over
+/// many. That is the same mistake as the design this replaces, which compared two timings and
+/// asserted a ratio: taking the fastest of several samples drags a short measurement to its floor
+/// under contention while a long one absorbs every preemption, so the ratio grows instead of
+/// cancelling.
 /// </para>
 /// </summary>
 public sealed class EncryptDictionaryDenialOfServiceTests
@@ -83,10 +83,9 @@ public sealed class EncryptDictionaryDenialOfServiceTests
     /// <summary>
     /// The document — <see cref="FillerKeyCount"/> filler keys in <c>/Encrypt</c>, opened with the
     /// correct user password — still has to authenticate and decrypt for this to prove anything: a
-    /// fix that
-    /// merely swallowed the slowdown behind an early exception would not show that the real path —
-    /// dereference, crypt filter table, key derivation — got fast too, so the assertions below check
-    /// the encryption state the open produced rather than only that it returned.
+    /// fix that merely swallowed the slowdown behind an early exception would not show that the real
+    /// path — dereference, crypt filter table, key derivation — got fast too, so the assertions below
+    /// check the encryption state the open produced rather than only that it returned.
     /// </summary>
     // xUnit1069 wants TestContext.Current.CancellationToken threaded through so the Timeout can end
     // the test promptly; PdfReader.Open takes no CancellationToken, and there is nothing to thread
