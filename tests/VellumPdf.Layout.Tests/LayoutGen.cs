@@ -200,32 +200,35 @@ internal static class LayoutGen
 
     /// <summary>
     /// The word every generated table cell holds, and also — via <c>DocSpec.Word</c>, which this
-    /// field fills directly in <see cref="ValidDoc"/> below rather than being drawn from its own
-    /// generator — the word <see cref="ParagraphText"/> repeats three times and every generated
-    /// list item holds. #468 is why it was ever a two-character constant rather than a generated
-    /// string: before that fix, `TableGridResolver.AutoWidth` floored a column at its minimum
-    /// content width and never capped the sum, so a long enough word pushed the table off the
-    /// page. Measured on this generator's own worst table corner — a 400pt page, 60pt margins,
-    /// three auto-width columns at 24pt, so a content box 280pt wide ending at x = 340 — on the
-    /// word family "W" followed by g's, the rightmost cell rectangle's right edge sat at 340
-    /// through five characters, 364.128 at six, and 404.16 at seven: past the content box at six,
-    /// and past the 400pt page itself at seven.
+    /// field fills directly in <see cref="ValidDoc"/> above rather than being drawn from its own
+    /// generator — the word <see cref="ParagraphText"/> repeats three times. Every generated list
+    /// item holds it too, but a list item never wraps or hard-breaks it: measured at forty items
+    /// across all four <see cref="ListStyle"/> values, the word draws whole regardless of length,
+    /// so only the cell and the paragraph are coupled to this constant, not three elements.
     ///
-    /// It stops one character short of that six-character boundary rather than reaching or passing
-    /// it, and the reason is #473, not #468. For a cell holding one word and nothing else, this
-    /// generator's own default padding included, the same worst corner reduces to one number: a
-    /// column's content-floor width and its capped, final width coincide once the word alone
-    /// exceeds 81.33pt (a 93.33pt equal share minus the default padding), so a word crossing that
-    /// line trips #468's old overflow and #473's new hard-break at once — measured at size 24,
-    /// three repetitions plus two spaces of "Wgggg" (five characters) total 241.44pt, "Wggggg"
-    /// (six) 281.472pt against a 280pt content width. Widening the whole way would turn this
-    /// shared word into a three-way-coupled test fixture: <see cref="ParagraphText"/> and every list
-    /// item would start hard-breaking too, at the exact geometry this generator already visits, and
-    /// <c>PropertyTests.ValidDocument_placesNothingOutsideThePage</c> pins each of those as one
-    /// literal per element — a correct assumption this pull request does not extend to relaxing.
-    /// "Wgggg" stays under the 81.33pt line by 5.3pt at this generator's own worst corner, so it
-    /// widens the constant without crossing into either defect; #468 itself is covered where a
-    /// property has to be — failing before the fix and passing after — by
+    /// #468 is why it was ever a two-character constant rather than a generated string: before
+    /// that fix, `TableGridResolver.AutoWidth` floored a column at its minimum content width and
+    /// never capped the sum, so a long enough word pushed the table off the page. At this
+    /// generator's narrowest content box — a 400pt page, 60pt margins, size 24, so 280pt — on the
+    /// word family "W" followed by g's, the cell's content floor and its capped, final width
+    /// coincide at 81.33pt (a 93.33pt equal share minus the default padding) and diverge above it,
+    /// since the capped width stays at 93.33pt while the floor keeps growing. The paragraph's own
+    /// three-repetition line wraps, rather than hard-breaking, past a different threshold, 88.89pt
+    /// — first true in this word family at "Wggggg" (six characters, 89.376pt), which also happens
+    /// to be the first length past the cell's 81.33pt line. The two thresholds differ; they cross
+    /// in the same character step here only because this word family's words are 13.34pt apart at
+    /// this size, not because the two elements share a geometry.
+    ///
+    /// Widening the constant past that shared step does not make the paragraph hard-break: it only
+    /// wraps, and a single word first exceeds the 280pt box outright — the paragraph's own
+    /// hard-break trigger — at twenty-one characters. What actually fails first is
+    /// <c>PropertyTests.ValidDocument_placesNothingOutsideThePage</c>'s per-element placement
+    /// counts, which pin the paragraph as one literal and each cell as the cell word once: the
+    /// cell's hard-break at six characters already produces two literals where that property
+    /// expects one, well before the paragraph's own count would move. "Wgggg" (five characters)
+    /// stays under both the cell's 81.33pt line and the paragraph's 88.89pt one, so it widens the
+    /// constant without crossing either; #468 itself is covered where a property has to be —
+    /// failing before the fix and passing after — by
     /// <c>TableColumnAxisTests.AutoWidth_columnFloorsExceedingTheSum_capsToTheContentBox</c>, a
     /// fixed fixture built for exactly this corner rather than a shared, randomly-visited one.
     /// </summary>
