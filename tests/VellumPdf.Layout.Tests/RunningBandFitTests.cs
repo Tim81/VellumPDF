@@ -186,9 +186,14 @@ public sealed class RunningBandFitTests
     /// Only the first space of a run is a cut point. Recording every space would land the cut on
     /// the last of a consecutive run and keep the ones before it, so the drawn text would end in
     /// whitespace and the returned width would charge the alignment for ink that is not there.
+    ///
+    /// The guard is about a run that follows a token. A template that is nothing but spaces still
+    /// keeps them, because the first space sits at index 0 and the word-boundary branch refuses
+    /// that, so the mid-token fallback takes the whole fitted prefix. Measured, the returned width
+    /// still matches what is drawn, so nothing shifts — the drawn text is simply spaces.
     /// </summary>
     [Fact]
-    public void Band_cutAtConsecutiveSpaces_keepsNoTrailingSpace()
+    public void Band_cutAfterAToken_keepsNoTrailingSpaceFromTheRun()
     {
         var template = new string(Wide, 5) + "  " + new string(Wide, 30);
         var band = BandPlacement(RenderWithFooter(template, HorizontalAlignment.Center));

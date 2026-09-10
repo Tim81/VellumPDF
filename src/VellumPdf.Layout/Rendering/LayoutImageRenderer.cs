@@ -29,13 +29,13 @@ public sealed class LayoutImageRenderer : IRenderer
 
         if (!double.IsFinite(imgW) || imgW <= 0)
             throw new ArgumentException(
-                FormattableString.Invariant(
-                $"Image width must be a positive finite number (was {imgW})."),
+                // No invariant wrapper: PdfImageXObject.Width is int, so this carries no decimal
+                // separator to vary. The floating-point messages in this assembly are wrapped.
+                $"Image width must be a positive finite number (was {imgW}).",
                 nameof(_img));
         if (!double.IsFinite(imgH) || imgH <= 0)
             throw new ArgumentException(
-                FormattableString.Invariant(
-                $"Image height must be a positive finite number (was {imgH})."),
+                $"Image height must be a positive finite number (was {imgH}).",
                 nameof(_img));
 
         _w = _img.Width ?? area.Width;

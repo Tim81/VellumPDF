@@ -319,12 +319,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   nothing fits, nothing is emitted at all, not even the marked-content pair, since setting a font
   registers a page resource and an empty band would otherwise add a `/Font` entry to every page.
 
-  A band that already fitted keeps its exact bytes from this change, and that is measured rather
-  than assumed: the decompressed content streams of fifteen fitting-band configurations hash
-  identically across it, including embedded-font bands and bands containing escaped characters,
-  and the before build was confirmed not to contain the fix first, since equal hashes would
-  otherwise only prove the same build was measured twice. The colour change below does move those
-  bytes, so a band that fits is byte-stable across this commit and not across the release.
+  A band that already fitted keeps its exact bytes from this change, with one exception, and that
+  is measured rather than assumed: the decompressed content streams of nine fitting-band
+  configurations hash identically across it — three alignments over three templates — and the
+  before build was confirmed not to contain the fix first, since equal hashes would otherwise only
+  prove the same build was measured twice. Reviewers extended the same check to twenty-one
+  configurations, adding embedded-font bands and bands containing escaped characters, without
+  finding a difference.
+
+  The exception is a band whose template is empty. That previously emitted a text object showing
+  an empty string and now emits nothing, which removes five lines per band placement and, on a
+  document whose only text was such a band, the page's `/Font` entry too. So two changes here move
+  bytes for a document that was already fine: this one for an empty template, and the colour change
+  below for every band that draws.
 
   When the whole string fits, its width comes from one measurement of the whole string rather than
   from the walk's running total, because the metrics sum integer thousandths and scale once at the
@@ -353,8 +360,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   band's own text object held no `rg` operator at all and the footer rendered red. The colour a band
   showed was therefore a property of whatever happened to be drawn above it.
 
-  This is the one change here that moves bytes for a document that was already correct: a banded
-  document gains one colour operator per band per page, wherever the band emits any text. A band
+  This change moves bytes for every banded document that was already correct: it gains one colour
+  operator per band per page, wherever the band emits any text. A band
   that fits nothing returns before the colour is set and gains none. Measured on a
   twelve-band-placement document, colour operators go from 30 to 42, and the relation held at every
   page count swept: the delta is twice the page count for a two-band document.
@@ -373,12 +380,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   Writing a test to pin the new message turned up a second defect: exception messages across
   `VellumPdf.Layout` interpolated their figures with the current culture, so a content area printed
   as `161,6pt` on a comma-decimal machine and `161.6pt` on an English runner, and a test pinning
-  any of them would pass on CI and fail locally. Every exception message in the assembly that
-  interpolates a floating-point figure now formats invariantly: six in `DocumentRenderer`, two in
-  `LayoutImageRenderer` and four in `PieChartRenderer`. The first pass through this fixed four of
-  the six in `DocumentRenderer` and claimed all of them, which the same file falsified. Left alone
-  deliberately: `LayoutBox.ToString`, which is a shipped public member rather than a message, and
-  the interpolations of integers and enumeration members, which carry no separator to vary.
+  any of them would pass on CI and fail locally. All ten exception messages in the assembly that
+  interpolate a floating-point figure now format invariantly: six in `DocumentRenderer` and four in
+  `PieChartRenderer`. Getting to that count took two corrections of its own. The first pass fixed
+  four of the six in `DocumentRenderer` and claimed all of them, which the same file falsified. The
+  second wrapped two messages in `LayoutImageRenderer` as well and said twelve, but
+  `PdfImageXObject.Width` and `Height` are `int`, so those two carry no separator to vary and the
+  wrappers were no-ops; they are reverted. Left alone deliberately for the same reason:
+  interpolations of integers and enumeration members, and `LayoutBox.ToString`, which is a shipped
+  public member rather than a message.
 
 - **A document deep enough to need more than about 4,250 page continuations killed the process
   (#459).** `DocumentRenderer` recursed once per continuation, so stack depth grew with the
