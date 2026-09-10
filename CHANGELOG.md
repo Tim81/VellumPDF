@@ -303,6 +303,53 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **A table's column count came from its first row, an explicit widths array was applied
+  literally, auto widths were never capped, and a cell wider than its column drew off the page
+  (#480, #477, #468, #473).** Four defects in `TableGridResolver` and `TableRenderer`'s cell text
+  path, fixed together because the plan's own analysis found that any one alone reintroduced
+  another.
+
+  `Resolve` took the column count from `table.Rows.FirstOrDefault()` alone, so a row after the
+  first with more cells than it lost every one of them past that count: `DrawRow`'s own
+  `while (col < _colWidths.Length)` loop had no column to put them in. The count is now the widest
+  row, not the first.
+
+  An explicit `SetColumnWidths` array was copied into `ColWidths` verbatim. An array shorter than
+  the resolved column count silently dropped the trailing columns at the array boundary, and a
+  zero entry rendered at zero width even though `TableElement.ColWidths` and `SetColumnWidths`
+  both document zero as meaning auto and neither implemented it. Both are now reconciled against
+  the column count: a missing or zero entry means auto, and the auto columns take the width left
+  over after the explicit ones, weighted by content and floored at their own minimum content
+  width. A negative entry advanced `x` backwards for every following column; refusing it would
+  turn a document that renders today into a thrown exception, which a patch release should not do,
+  so it is clamped to the same auto meaning as zero instead — a maintainer decision, since the plan
+  left it open.
+
+  `AutoWidth` floored each column at its minimum content width and never capped the sum, so once
+  every column's floor alone was wider than its proportional share, the total exceeded the
+  available width with nothing pulling it back. Measured on a 400pt page, 60pt margins, three
+  auto-width columns at Helvetica 24pt — a content box ending at x 340 — on the word family "W"
+  followed by g's: the rightmost cell's right edge sat at 340 through five characters, 364.128 at
+  six (past the content box), and 404.16 at seven (past the page). Every column is now scaled down
+  proportionally when the floors overrun the available width, whether the sum came from
+  `AutoWidth` or from an oversized explicit array; either way an auto column's own floor is kept
+  out of that scale-down as long as the explicit columns can absorb the correction on their own,
+  so a floor is not pushed below what its own content needs.
+
+  `WordWrapLines` emitted a word wider than the column whole. Measured on a 300pt column (288pt
+  inner width), a cell holding 60 "W"s at 10pt: before the fix that drew as one 60-character
+  literal at `Tm` x -83.2 under Centre and -222.4 under Right, both off the page. It now
+  hard-breaks at character granularity, the same behaviour `ParagraphRenderer.HardBreakWord`
+  already has for a paragraph line (#472) — kept as a separate copy, since the two callers differ
+  in what they know about their own box. The centre and right offsets are floored at the cell's
+  own left edge for the one case a break cannot avoid, a single over-wide rune: measured on a 20pt
+  column with zero padding, one "W" at 106pt, `Tm` x -30.064 under Right and 9.968 under Centre
+  before the fix, both now land on the column's own left edge.
+
+  The row axis, the spans, and the list defects this same plan identified are a separate pull
+  request; three corpus fixtures pin that a header row's own position, a table whose margin
+  exceeds its row height, and a two-row rowspan are all unmoved by this one.
+
 - **A running band wider than the content box was drawn off the page (#365).** `DrawBandText`
   measured the whole resolved template, positioned it by an alignment formula that had never been
   given a bound, and emitted every glyph. Measured on a 200pt page with zero margins and a footer

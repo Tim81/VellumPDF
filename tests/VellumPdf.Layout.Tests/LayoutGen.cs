@@ -219,7 +219,7 @@ internal static class LayoutGen
     /// line trips #468's old overflow and #473's new hard-break at once — measured at size 24,
     /// three repetitions plus two spaces of "Wgggg" (five characters) total 241.44pt, "Wggggg"
     /// (six) 281.472pt against a 280pt content width. Widening the whole way would turn this
-    /// shared word into three-way-coupled test fixture: <see cref="ParagraphText"/> and every list
+    /// shared word into a three-way-coupled test fixture: <see cref="ParagraphText"/> and every list
     /// item would start hard-breaking too, at the exact geometry this generator already visits, and
     /// <c>PropertyTests.ValidDocument_placesNothingOutsideThePage</c> pins each of those as one
     /// literal per element — a correct assumption this pull request does not extend to relaxing.
