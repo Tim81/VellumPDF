@@ -256,6 +256,46 @@ public sealed partial class TableColumnAxisTests
     }
 
     /// <summary>
+    /// A non-finite explicit width is the fourth input that cannot be honoured, alongside a missing
+    /// entry, an explicit zero and a negative width, and it is the only one whose old behaviour
+    /// produced something that is not a PDF at all. Measured on eedaa3c, a 400x300pt page at 10pt
+    /// margins with widths of NaN, 100 and 100: the first cell emitted <c>w=NaN</c>, positive
+    /// infinity emitted <c>w=Infinity</c> and negative infinity <c>w=-Infinity</c>, and each also
+    /// left the x operand of every following column non-numeric. The resolver now classifies all
+    /// three as auto, so the row resolves to the same widths a zero array would give.
+    ///
+    /// This asserts the absence of the token rather than only the widths, because a width
+    /// assertion alone would pass on a stream that still carried <c>NaN</c> somewhere else in it.
+    /// </summary>
+    [Theory]
+    [InlineData(double.NaN)]
+    [InlineData(double.PositiveInfinity)]
+    [InlineData(double.NegativeInfinity)]
+    public void ExplicitWidths_nonFinite_resolveAsAutoAndEmitNoSuchToken(double first)
+    {
+        using var doc = new Document
+        {
+            PageSize = new PdfRectangle(0, 0, 400, 300),
+            Margins = new EdgeInsets(10),
+        };
+        var t = new TableElement { DefaultCellStyle = Style() };
+        t.SetColumnWidths(first, 100, 100);
+        var row = t.AddRow();
+        row.AddCell("c0"); row.AddCell("c1"); row.AddCell("c2");
+        doc.Add(t);
+
+        var stream = RenderAndDecompress(doc);
+
+        Assert.DoesNotContain("NaN", stream, StringComparison.Ordinal);
+        Assert.DoesNotContain("Infinity", stream, StringComparison.Ordinal);
+        Assert.DoesNotContain("\u221E", stream, StringComparison.Ordinal);
+
+        var widths = CellRectangles(stream).Select(r => r.W).ToArray();
+        Assert.Equal(3, widths.Length);
+        Assert.All(widths, w => Assert.True(w > 0, $"a column resolved to {w}"));
+    }
+
+    /// <summary>
     /// Page 200x200, margin 10 (available 180), two 500pt columns — 1000pt against 180. Before the
     /// fix the array was copied verbatim, so the second column's rectangle started at x 510,
     /// entirely off a 200pt page. The resolved sum is now capped to the available width.

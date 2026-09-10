@@ -29,10 +29,11 @@ internal sealed class TableGridResolver
 
     public void Resolve(TableElement table, double availableWidth)
     {
-        // The column count is the widest row, not merely the first (#480 section 1). A table's
-        // rows are free to carry different cell counts — nothing in ISO 32000-2's table model
-        // requires uniformity — so a later row with an extra cell was losing it entirely: the grid
-        // never had a column for it.
+        // The column count is the widest row, not merely the first (#480 section 1). Nothing stops
+        // a caller giving one row more cells than another: Row.AddCell checks no other row's arity,
+        // and TableElement exposes no column count to check against. So a later row with an extra
+        // cell was losing it entirely, because the grid never had a column for it. Measured before
+        // this fix, a first row of two cells and a second of three drew four literals and not five.
         ColCount = 0;
         foreach (var row in table.Rows)
         {
@@ -84,7 +85,15 @@ internal sealed class TableGridResolver
             // A missing entry (the array shorter than the column count) reads as 0.0, the same
             // auto sentinel as an explicit zero.
             raw[i] = i < table.ColWidths.Count ? table.ColWidths[i] : 0.0;
-            if (raw[i] < 0 || raw[i] == 0)
+
+            // Auto covers four inputs, not two. A missing entry and an explicit zero are the
+            // documented ones. A negative width and a non-finite one cannot be honoured at all,
+            // and the alternative to treating them as auto is what this method emitted before:
+            // measured on eedaa3c, an explicit NaN width put the token "NaN" where a PDF number
+            // belongs, positive infinity put "Infinity" and negative infinity "-Infinity", and
+            // each also poisoned the x operand of every following column. A stream carrying those
+            // tokens is not a PDF, so replacing them changes only output that was already invalid.
+            if (!double.IsFinite(raw[i]) || raw[i] <= 0)
             {
                 isAuto[i] = true;
             }
