@@ -88,19 +88,10 @@ public sealed class PieChartRenderer : IRenderer
     public void Draw(DrawContext ctx)
     {
         var area = _occupied.Deflate(_chart.Margins);
-
-        // Align within the chart's own margins while the circle fits between them, and within the
-        // content box when it does not. Clamping the diameter alone leaves the margins to push the
-        // circle out on whichever side the alignment favours, and only Centre escapes that: on a
-        // 452pt content box with the default 6pt margins, a clamped Left circle reached 4.8pt past
-        // the page and a Right one 4.8pt before it, while Centre stayed inside. The margins are
-        // what give way, because they are the chart's preference and the box is the page's limit.
-        var alignsWithin = _placementDiameter <= area.Width ? area : _occupied;
-
         var xOff = _chart.Alignment switch
         {
-            HorizontalAlignment.Center => (alignsWithin.Width - _placementDiameter) / 2,
-            HorizontalAlignment.Right => alignsWithin.Width - _placementDiameter,
+            HorizontalAlignment.Center => (area.Width - _placementDiameter) / 2,
+            HorizontalAlignment.Right => area.Width - _placementDiameter,
             _ => 0,
         };
 
@@ -108,12 +99,34 @@ public sealed class PieChartRenderer : IRenderer
         // equals _placementDiameter -- not necessarily _chart.Diameter, which the clamp in
         // Layout may have shrunk to fit the area -- and the circle is centred horizontally
         // within the content width. Reserving the unclamped Diameter here would hold vertical
-        // space nothing draws in. The vertical margins are always honoured, because the
-        // reservation includes them; only the horizontal pair can be overridden above.
-        var (_, y, _, _) = ctx.ToPdfRect(area);
-        var (x, _, _, _) = ctx.ToPdfRect(alignsWithin);
+        // space nothing draws in.
+        var (areaX, y, _, _) = ctx.ToPdfRect(area);
+        var (boxX, _, _, _) = ctx.ToPdfRect(_occupied);
+
+        // Clamping the diameter is not sufficient on its own. The offset above is measured inside
+        // the area the chart's own margins deflate, so a circle as wide as the content box is then
+        // pushed out of it by a margin on whichever side the alignment favours: measured on a
+        // 400x900pt page with 50pt margins and the chart's default 6pt, a Diameter 300 circle in
+        // the [50, 350] box ran to [56, 356] under Left and [44, 344] under Right, and on a
+        // 454.4pt page with a 1.2pt document margin each of those was 4.8pt off the page itself.
+        //
+        // So the position is clamped into the content box rather than the alignment being measured
+        // against a different width. That distinction is what keeps a chart that already fits from
+        // moving: a Diameter of 290 with the default margins sits at [56, 346], inside the box,
+        // and switching the basis instead would have moved it to [50, 340]. The clamp cannot fire
+        // on a circle whose edges are already inside the box, by construction. It is skipped
+        // entirely when the diameter is wider than the box, which only the non-positive-width
+        // branch in Layout can leave behind, since Math.Clamp requires its bounds in order.
+        // The difference is parenthesised for the reason written out in LayoutImageRenderer's own
+        // clamp: left-associated, (boxX + _occupied.Width) - _placementDiameter cancels
+        // catastrophically when the circle nearly fills the box and can land below boxX, which
+        // hands Math.Clamp a maximum below its minimum. Taking the difference first cannot.
+        var left = areaX + xOff;
+        if (_placementDiameter <= _occupied.Width)
+            left = Math.Clamp(left, boxX, boxX + (_occupied.Width - _placementDiameter));
+
         var radius = _placementDiameter / 2;
-        var cx = x + xOff + radius;
+        var cx = left + radius;
         var cy = y + radius;
 
         // Single pass: total magnitude, count of drawable (non-zero) slices, and the lone
