@@ -1,10 +1,18 @@
 name: CI
 
+# `release/**` is here so a patch cut from a tag can be verified before it ships. Every patch tag
+# so far (v1.5.1 through v1.8.2) was an ancestor of `main` and got its CI as an ordinary push, but
+# a release branch built on an older tag never touches `main` and would otherwise be tagged and
+# published having run nothing at all. `release.yml` fires on any `v*` tag and pushes to NuGet
+# after a restore, a build and a pack, running none of the gates in this file: not the clean-room
+# check, the vulnerable-package scan, the pinned-oracle and invocation-floor asserts, the tests,
+# the coverage threshold, the format check or the AOT smoke. A published version is immutable
+# (#462).
 on:
   push:
-    branches: [ main, v1.7-conformance ]
+    branches: [ main, v1.7-conformance, 'release/**' ]
   pull_request:
-    branches: [ main, v1.7-conformance ]
+    branches: [ main, v1.7-conformance, 'release/**' ]
 
 jobs:
   build:
